@@ -171,15 +171,15 @@ Search::Worker::Worker(SharedState&                    sharedState,
     options(sharedState.options),
     threads(sharedState.threads),
     tt(sharedState.tt),
-    networks(sharedState.networks),
-    refreshTable(networks[token]) {
+    network(sharedState.network),
+    refreshTable(network[token]) {
     clear();
 }
 
 void Search::Worker::ensure_network_replicated() {
     // Access once to force lazy initialization.
     // We do this because we want to avoid initialization during search.
-    (void) (networks[numaAccessToken]);
+    (void) (network[numaAccessToken]);
 }
 
 void Search::Worker::start_searching() {
@@ -639,7 +639,7 @@ void Search::Worker::clear() {
     for (size_t i = 1; i < reductions.size(); ++i)
         reductions[i] = int(2763 / 128.0 * std::log(i));
 
-    refreshTable.clear(networks[numaAccessToken]);
+    refreshTable.clear(network[numaAccessToken]);
 }
 
 
@@ -1785,7 +1785,7 @@ TimePoint Search::Worker::elapsed() const {
 TimePoint Search::Worker::elapsed_time() const { return main_manager()->tm.elapsed_time(); }
 
 Value Search::Worker::evaluate(const Position& pos) {
-    return Eval::evaluate(networks[numaAccessToken], pos, accumulatorStack, refreshTable,
+    return Eval::evaluate(network[numaAccessToken], pos, accumulatorStack, refreshTable,
                           optimism[pos.side_to_move()]);
 }
 
