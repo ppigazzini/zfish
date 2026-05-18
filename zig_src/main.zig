@@ -2,6 +2,7 @@ const std = @import("std");
 
 const benchmark_port = @import("benchmark_rewrites");
 const memory_port = @import("memory.zig");
+const misc_port = @import("misc_rewrites");
 const score_port = @import("score.zig");
 const evaluate_port = @import("evaluate_rewrites");
 const nnue_misc_port = @import("nnue_misc_rewrites");
@@ -37,6 +38,52 @@ pub export fn zfish_std_aligned_alloc(alignment: usize, size: usize) ?*anyopaque
 
 pub export fn zfish_std_aligned_free(ptr: ?*anyopaque) void {
     memory_port.stdAlignedFree(ptr);
+}
+
+pub export fn zfish_misc_hash_bytes(
+    data_ptr: [*]const u8,
+    data_len: usize,
+) u64 {
+    return misc_port.hashBytes(data_ptr[0..data_len]);
+}
+
+pub export fn zfish_misc_str_to_size_t(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) usize {
+    return misc_port.strToSizeT(input_ptr[0..input_len]);
+}
+
+pub export fn zfish_misc_read_file_to_string(
+    path_ptr: [*]const u8,
+    path_len: usize,
+) ?[*:0]u8 {
+    return misc_port.readFileToString(path_ptr[0..path_len]);
+}
+
+pub export fn zfish_misc_remove_whitespace(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) ?[*:0]u8 {
+    return misc_port.removeWhitespace(input_ptr[0..input_len]);
+}
+
+pub export fn zfish_misc_is_whitespace(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) bool {
+    return misc_port.isWhitespace(input_ptr[0..input_len]);
+}
+
+pub export fn zfish_misc_get_binary_directory(
+    argv0_ptr: [*]const u8,
+    argv0_len: usize,
+) ?[*:0]u8 {
+    return misc_port.getBinaryDirectory(argv0_ptr[0..argv0_len]);
+}
+
+pub export fn zfish_misc_get_working_directory() ?[*:0]u8 {
+    return misc_port.getWorkingDirectory();
 }
 
 pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
