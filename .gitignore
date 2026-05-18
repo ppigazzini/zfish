@@ -1,3 +1,16 @@
+# zfish project files
+/.zig-cache
+/zig-out
+/__DEV/
+__pycache__
+./venv
+*.pyc
+*.pyo
+*.pyd
+pyproject.toml
+.pre-commit-config.yaml
+uv.lock
+
 # Files from build
 **/*.o
 **/*.s
