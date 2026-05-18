@@ -10,6 +10,7 @@ const network_port = @import("network_rewrites");
 const nnue_feature_port = @import("nnue_feature_rewrites");
 const option_port = @import("option_rewrites");
 const score_port = @import("score.zig");
+const thread_port = @import("thread_rewrites");
 const evaluate_port = @import("evaluate_rewrites");
 const nnue_misc_port = @import("nnue_misc_rewrites");
 const timeman_port = @import("timeman_rewrites");
@@ -137,6 +138,17 @@ pub export fn zfish_movepick_partial_insertion_sort(
     limit: c_int,
 ) void {
     return movepick_port.partialInsertionSort(entries, count, limit);
+}
+
+pub export fn zfish_thread_next_power_of_two(count: u64) usize {
+    return thread_port.nextPowerOfTwo(count);
+}
+
+pub export fn zfish_thread_pick_best_thread(
+    summaries: [*]const thread_port.ThreadSummary,
+    count: usize,
+) usize {
+    return thread_port.pickBestThread(summaries, count);
 }
 
 pub export fn zfish_network_load(
