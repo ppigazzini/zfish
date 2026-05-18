@@ -47,6 +47,7 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "stockfish",
         .root_module = b.createModule(.{
+            .root_source_file = b.path("zig_src/main.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,
@@ -68,7 +69,6 @@ pub fn build(b: *std.Build) void {
         "benchmark.cpp",
         "bitboard.cpp",
         "evaluate.cpp",
-        "main.cpp",
         "misc.cpp",
         "movegen.cpp",
         "movepick.cpp",
@@ -87,8 +87,12 @@ pub fn build(b: *std.Build) void {
         "nnue/features/half_ka_v2_hm.cpp",
         "nnue/features/full_threats.cpp",
         "engine.cpp",
-        "score.cpp",
-        "memory.cpp",
+    };
+
+    const zig_compat_sources = &.{
+        "main_bridge.cpp",
+        "memory_bridge.cpp",
+        "score_bridge.cpp",
     };
 
     exe.root_module.addIncludePath(b.path("src"));
@@ -105,6 +109,11 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addCSourceFiles(.{
         .root = b.path("src"),
         .files = stockfish_sources,
+        .flags = compile_flags.items,
+    });
+    exe.root_module.addCSourceFiles(.{
+        .root = b.path("zig_compat"),
+        .files = zig_compat_sources,
         .flags = compile_flags.items,
     });
     exe.root_module.linkSystemLibrary("pthread", .{});
