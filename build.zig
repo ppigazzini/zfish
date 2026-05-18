@@ -194,7 +194,6 @@ pub fn build(b: *std.Build) void {
     const zig_compat_sources = &.{
         "bitboard_bridge.cpp",
         "engine_bridge.cpp",
-        "misc_bridge.cpp",
         "nnue_accumulator_bridge.cpp",
         "position_bridge.cpp",
         "search_bridge.cpp",
