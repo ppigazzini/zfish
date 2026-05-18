@@ -1599,21 +1599,6 @@ void Engine::trace_eval() const {
     sync_cout << "\n" << Eval::trace(p, *network) << sync_endl;
 }
 
-const OptionsMap& Engine::get_options() const { return options; }
-OptionsMap&       Engine::get_options() { return options; }
-
-std::string Engine::fen() const { return pos.fen(); }
-
-void Engine::flip() { pos.flip(); }
-
-std::string Engine::visualize() const {
-    std::stringstream ss;
-    ss << pos;
-    return ss.str();
-}
-
-int Engine::get_hashfull(int maxAge) const { return tt.hashfull(maxAge); }
-
 std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
     if (pos.checkers())
         return "Final evaluation: none (in check)";
