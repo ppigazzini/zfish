@@ -202,16 +202,6 @@ struct AccumulatorBridgeAccess {
 };
 
 extern "C" {
-struct ZfishHalfDiff {
-    std::uint8_t from;
-    std::uint8_t to;
-    std::uint8_t pc;
-    std::uint8_t remove_sq;
-    std::uint8_t add_sq;
-    std::uint8_t remove_pc;
-    std::uint8_t add_pc;
-};
-
 struct ZfishDirtyThreatRaw {
     std::uint32_t data;
 };
@@ -222,13 +212,6 @@ struct ZfishFullDiff {
     std::uint8_t ksq;
 };
 
-struct ZfishHalfThreatParams {
-    std::uint8_t perspective;
-    std::uint8_t square;
-    std::uint8_t piece;
-    std::uint8_t king_square;
-};
-
 struct ZfishFullThreatParams {
     std::uint8_t perspective;
     std::uint8_t attacker;
@@ -237,9 +220,6 @@ struct ZfishFullThreatParams {
     std::uint8_t attacked;
     std::uint8_t king_square;
 };
-
-std::uint32_t zfish_half_ka_make_index(ZfishHalfThreatParams params);
-bool          zfish_half_ka_requires_refresh(ZfishHalfDiff diff, std::uint8_t perspective);
 
 std::uint32_t zfish_full_threats_make_index(ZfishFullThreatParams params);
 bool          zfish_full_threats_requires_refresh(ZfishFullDiff diff, std::uint8_t perspective);
@@ -969,13 +949,6 @@ void update_threats_accumulator_full(Color                               perspec
 
 namespace Features {
 
-IndexType HalfKAv2_hm::make_index(Color perspective, Square s, Piece pc, Square ksq) {
-    return zfish_half_ka_make_index({static_cast<std::uint8_t>(perspective),
-                                     static_cast<std::uint8_t>(s),
-                                     static_cast<std::uint8_t>(pc),
-                                     static_cast<std::uint8_t>(ksq)});
-}
-
 void HalfKAv2_hm::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
     Square   ksq = pos.square<KING>(perspective);
     Bitboard bb  = pos.pieces();
@@ -997,15 +970,6 @@ void HalfKAv2_hm::append_changed_indices(
 
     if (diff.add_sq != SQ_NONE)
         added.push_back(make_index(perspective, diff.add_sq, diff.add_pc, ksq));
-}
-
-bool HalfKAv2_hm::requires_refresh(const DiffType& diff, Color perspective) {
-    return zfish_half_ka_requires_refresh(
-      {static_cast<std::uint8_t>(diff.from), static_cast<std::uint8_t>(diff.to),
-       static_cast<std::uint8_t>(diff.pc), static_cast<std::uint8_t>(diff.remove_sq),
-       static_cast<std::uint8_t>(diff.add_sq), static_cast<std::uint8_t>(diff.remove_pc),
-       static_cast<std::uint8_t>(diff.add_pc)},
-      static_cast<std::uint8_t>(perspective));
 }
 
 IndexType FullThreats::make_index(
