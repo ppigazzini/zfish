@@ -52,9 +52,7 @@
 #include "../src/position.cpp"
 
 #define PieceToChar engine_bridge_tbprobe_piece_to_char
-#define take_string_and_free engine_bridge_take_string_and_free
 #include "engine_bridge.cpp"
-#undef take_string_and_free
 #undef PieceToChar
 #include "search_bridge.cpp"
 
