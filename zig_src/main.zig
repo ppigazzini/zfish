@@ -5,6 +5,7 @@ const bitboard_port = @import("bitboard_rewrites");
 const memory_port = @import("memory.zig");
 const misc_port = @import("misc_rewrites");
 const movegen_port = @import("movegen_rewrites");
+const network_port = @import("network_rewrites");
 const nnue_feature_port = @import("nnue_feature_rewrites");
 const option_port = @import("option_rewrites");
 const score_port = @import("score.zig");
@@ -118,6 +119,57 @@ pub export fn zfish_movegen_generate_non_evasions(
     move_list: [*]u16,
 ) usize {
     return movegen_port.generateNonEvasions(pos, move_list);
+}
+
+pub export fn zfish_network_load(
+    network: *anyopaque,
+    root_directory_ptr: [*]const u8,
+    root_directory_len: usize,
+    evalfile_path_ptr: [*]const u8,
+    evalfile_path_len: usize,
+) void {
+    return network_port.load(
+        network,
+        root_directory_ptr,
+        root_directory_len,
+        evalfile_path_ptr,
+        evalfile_path_len,
+    );
+}
+
+pub export fn zfish_network_save(
+    network: *const anyopaque,
+    has_filename: u8,
+    filename_ptr: [*]const u8,
+    filename_len: usize,
+) network_port.SaveResult {
+    return network_port.save(network, has_filename, filename_ptr, filename_len);
+}
+
+pub export fn zfish_network_verify(
+    network: *const anyopaque,
+    evalfile_path_ptr: [*]const u8,
+    evalfile_path_len: usize,
+) network_port.VerifyResult {
+    return network_port.verify(network, evalfile_path_ptr, evalfile_path_len);
+}
+
+pub export fn zfish_network_evaluate(
+    network: *const anyopaque,
+    pos: *const anyopaque,
+    accumulator_stack: *anyopaque,
+    cache: *anyopaque,
+) network_port.EvalOutput {
+    return network_port.evaluate(network, pos, accumulator_stack, cache);
+}
+
+pub export fn zfish_network_trace_evaluate(
+    network: *const anyopaque,
+    pos: *const anyopaque,
+    accumulator_stack: *anyopaque,
+    cache: *anyopaque,
+) network_port.TraceOutput {
+    return network_port.traceEvaluate(network, pos, accumulator_stack, cache);
 }
 
 pub export fn zfish_tt_entry_save(

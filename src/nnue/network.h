@@ -103,6 +103,7 @@ class Network {
     static constexpr std::uint32_t hash =
       FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value();
 
+    friend struct NetworkBridgeAccess;
     friend struct AccumulatorCaches;
 };
 
