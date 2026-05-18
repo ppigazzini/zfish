@@ -57,6 +57,9 @@ struct ZfishParsedPosition {
 
 ZfishParsedLimits zfish_uci_parse_limits(const unsigned char* input_ptr, std::size_t input_len);
 ZfishParsedPosition zfish_uci_parse_position(const unsigned char* input_ptr, std::size_t input_len);
+const char* zfish_uci_help_text();
+const char* zfish_uci_format_unknown_command(const unsigned char* command_ptr,
+                                             std::size_t          command_len);
 const char* zfish_uci_format_info_string(const unsigned char* input_ptr, std::size_t input_len);
 const char* zfish_uci_format_score(std::uint8_t kind, int value, int extra);
 int         zfish_uci_to_cp(int value, int material);
@@ -124,6 +127,8 @@ class UCIEngine {
     static std::string move(Move m, bool chess960 = false);
     static std::string wdl(Value v, const Position& pos);
     static std::string to_lower(std::string str);
+    static std::string help_text();
+    static std::string format_unknown_command(std::string_view command);
     static Move        to_move(const Position& pos, std::string str);
 
     static Search::LimitsType parse_limits(std::istream& is);
@@ -234,6 +239,15 @@ inline std::string UCIEngine::move(Move m, bool chess960) {
 inline std::string UCIEngine::to_lower(std::string str) {
     return take_zig_uci_string_and_free(
       zfish_uci_to_lower(reinterpret_cast<const unsigned char*>(str.data()), str.size()));
+}
+
+inline std::string UCIEngine::help_text() {
+    return take_zig_uci_string_and_free(zfish_uci_help_text());
+}
+
+inline std::string UCIEngine::format_unknown_command(std::string_view command) {
+    return take_zig_uci_string_and_free(
+      zfish_uci_format_unknown_command(reinterpret_cast<const unsigned char*>(command.data()), command.size()));
 }
 
 inline Search::LimitsType UCIEngine::parse_limits(std::istream& is) {
