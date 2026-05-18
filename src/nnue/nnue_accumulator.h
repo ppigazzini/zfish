@@ -155,6 +155,8 @@ class AccumulatorStack {
     std::array<AccumulatorState<PSQFeatureSet>, MaxSize>    psq_accumulators;
     std::array<AccumulatorState<ThreatFeatureSet>, MaxSize> threat_accumulators;
     std::size_t                                             size = 1;
+
+    friend struct AccumulatorBridgeAccess;
 };
 
 }  // namespace Stockfish::Eval::NNUE
