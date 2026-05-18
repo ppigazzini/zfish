@@ -101,9 +101,13 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
 
 // Add correctionHistory value to raw staticEval and guarantee evaluation
 // does not hit the tablebase range.
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_TO_CORRECTED_STATIC_EVAL
 Value to_corrected_static_eval(const Value v, const int cv) {
     return std::clamp(v + cv / 131072, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
 }
+#else
+Value to_corrected_static_eval(const Value v, const int cv);
+#endif
 
 void update_correction_history(const Position& pos,
                                Stack* const    ss,
@@ -130,7 +134,11 @@ void update_correction_history(const Position& pos,
 }
 
 // Add a small random component to draw evaluations to avoid 3-fold blindness
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_VALUE_DRAW
 Value value_draw(size_t nodes) { return VALUE_DRAW - 1 + Value(nodes & 0x2); }
+#else
+Value value_draw(size_t nodes);
+#endif
 Value value_to_tt(Value v, int ply);
 Value value_from_tt(Value v, int ply, int r50c);
 void  update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus);
@@ -1767,10 +1775,12 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     return bestValue;
 }
 
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_REDUCTION
 int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
     int reductionScale = reductions[d] * reductions[mn];
     return reductionScale - delta * 617 / rootDelta + !i * reductionScale * 194 / 512 + 1027;
 }
+#endif
 
 // elapsed() returns the time elapsed since the search started. If the
 // 'nodestime' option is enabled, it will return the count of nodes searched
