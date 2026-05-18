@@ -22,6 +22,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <iterator>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -81,6 +82,11 @@ struct ZfishScoreClass {
     int win;
 };
 
+struct ZfishTuneNextResult {
+    const char* token;
+    const char* remaining;
+};
+
 struct ZfishBenchmarkSetupOutput {
     int         tt_size;
     int         threads;
@@ -95,6 +101,10 @@ ZfishScoreClass zfish_classify_score(int value,
                                      int value_tb_win_in_max_ply,
                                      int value_tb,
                                      int value_mate);
+ZfishTuneNextResult zfish_tune_next(const unsigned char* names_ptr,
+                                    std::size_t          names_len,
+                                    std::uint8_t         pop);
+bool zfish_tune_should_make_option(int min_value, int max_value);
 const char* zfish_benchmark_setup_bench(const unsigned char* current_fen_ptr,
                                         std::size_t          current_fen_len,
                                         const unsigned char* args_ptr,
@@ -182,6 +192,16 @@ std::string read_remaining_args(std::istream& is) {
     std::string args;
     std::getline(is, args);
     return args;
+}
+
+std::map<std::string, int> TuneResults;
+const Option*             LastOption = nullptr;
+
+std::optional<std::string> on_tune(const Option& o) {
+    if (!Tune::update_on_last || LastOption == &o)
+        Tune::read_options();
+
+    return std::nullopt;
 }
 
 }  // namespace
@@ -690,6 +710,57 @@ void UCIEngine::terminate_on_critical_error(const std::string& fullCommand,
               << sync_endl;
     std::exit(1);
 }
+
+bool Tune::update_on_last;
+OptionsMap* Tune::options;
+
+void Tune::make_option(OptionsMap* opts, const std::string& name, int value, const SetRange& range) {
+    const auto bounds = range(value);
+    if (!zfish_tune_should_make_option(bounds.first, bounds.second))
+        return;
+
+    if (TuneResults.count(name))
+        value = TuneResults[name];
+
+    opts->add(name, Option(value, bounds.first, bounds.second, on_tune));
+    LastOption = &((*opts)[name]);
+
+    std::cout << name << ","                                 \
+              << value << ","                                \
+              << bounds.first << ","                         \
+              << bounds.second << ","                        \
+              << (bounds.second - bounds.first) / 20.0 << "," \
+              << "0.0020" << std::endl;
+}
+
+std::string Tune::next(std::string& names, bool pop) {
+    const auto result = zfish_tune_next(reinterpret_cast<const unsigned char*>(names.data()),
+                                        names.size(), static_cast<std::uint8_t>(pop ? 1 : 0));
+    const auto token = take_string_and_free(result.token);
+    names            = take_string_and_free(result.remaining);
+    return token;
+}
+
+template<>
+void Tune::Entry<int>::init_option() {
+    make_option(options, name, value, range);
+}
+
+template<>
+void Tune::Entry<int>::read_option() {
+    if (options->count(name))
+        value = int((*options)[name]);
+}
+
+template<>
+void Tune::Entry<Tune::PostUpdate>::init_option() {}
+
+template<>
+void Tune::Entry<Tune::PostUpdate>::read_option() {
+    value();
+}
+
+void Tune::read_results() { /* ...insert your values here... */ }
 
 Score::Score(Value v, const Position& pos) {
         assert(-VALUE_INFINITE < v && v < VALUE_INFINITE);
