@@ -20,6 +20,28 @@
 
 #include <cstdint>
 
+#if defined(ZFISH_ZIG_BUILD)
+extern "C" {
+struct ZfishFullDiff {
+  std::uint8_t us;
+  std::uint8_t prev_ksq;
+  std::uint8_t ksq;
+};
+
+struct ZfishFullThreatParams {
+  std::uint8_t perspective;
+  std::uint8_t attacker;
+  std::uint8_t from_sq;
+  std::uint8_t to_sq;
+  std::uint8_t attacked;
+  std::uint8_t king_square;
+};
+
+std::uint32_t zfish_full_threats_make_index(ZfishFullThreatParams params);
+bool          zfish_full_threats_requires_refresh(ZfishFullDiff diff, std::uint8_t perspective);
+}
+#endif
+
 #include "../../misc.h"
 #include "../../types.h"
 #include "../nnue_common.h"
@@ -100,6 +122,25 @@ class FullThreats {
     // that a full accumulator refresh is required.
     static bool requires_refresh(const DiffType& diff, Color perspective);
 };
+
+#if defined(ZFISH_ZIG_BUILD)
+inline IndexType FullThreats::make_index(
+  Color perspective, Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
+    return zfish_full_threats_make_index({static_cast<std::uint8_t>(perspective),
+                                          static_cast<std::uint8_t>(attkr),
+                                          static_cast<std::uint8_t>(from),
+                                          static_cast<std::uint8_t>(to),
+                                          static_cast<std::uint8_t>(attkd),
+                                          static_cast<std::uint8_t>(ksq)});
+}
+
+inline bool FullThreats::requires_refresh(const DiffType& diff, Color perspective) {
+    return zfish_full_threats_requires_refresh(
+      {static_cast<std::uint8_t>(diff.us), static_cast<std::uint8_t>(diff.prevKsq),
+       static_cast<std::uint8_t>(diff.ksq)},
+      static_cast<std::uint8_t>(perspective));
+}
+#endif
 
 }  // namespace Stockfish::Eval::NNUE::Features
 
