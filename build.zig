@@ -197,7 +197,6 @@ pub fn build(b: *std.Build) void {
         "misc_bridge.cpp",
         "nnue_accumulator_bridge.cpp",
         "network_bridge.cpp",
-        "nnue_features_bridge.cpp",
         "position_bridge.cpp",
         "search_bridge.cpp",
         "tbprobe_bridge.cpp",
