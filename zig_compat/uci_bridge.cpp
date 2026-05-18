@@ -1601,6 +1601,54 @@ void dbg_clear() {
     extremes.fill({});
 }
 
+std::string take_string_and_free_engine_required_uci(const char* rendered) {
+    if (!rendered)
+        std::abort();
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+
+std::uint64_t hash_bytes(const char* data, size_t size) {
+    return zfish_misc_hash_bytes(reinterpret_cast<const unsigned char*>(data), size);
+}
+
+void start_logger(const std::string& fname) { Logger::start(fname); }
+
+size_t str_to_size_t(const std::string& s) {
+    return zfish_misc_str_to_size_t(reinterpret_cast<const unsigned char*>(s.data()), s.size());
+}
+
+std::optional<std::string> read_file_to_string(const std::string& path) {
+    const char* rendered =
+      zfish_misc_read_file_to_string(reinterpret_cast<const unsigned char*>(path.data()), path.size());
+    if (!rendered)
+        return std::nullopt;
+
+    return take_string_and_free_engine_required_uci(rendered);
+}
+
+void remove_whitespace(std::string& s) {
+    const char* rendered =
+      zfish_misc_remove_whitespace(reinterpret_cast<const unsigned char*>(s.data()), s.size());
+        s = take_string_and_free_engine_required_uci(rendered);
+}
+
+bool is_whitespace(std::string_view s) {
+    return zfish_misc_is_whitespace(reinterpret_cast<const unsigned char*>(s.data()), s.size());
+}
+
+std::string CommandLine::get_binary_directory(std::string argv0) {
+    const char* rendered = zfish_misc_get_binary_directory(
+      reinterpret_cast<const unsigned char*>(argv0.data()), argv0.size());
+    return take_string_and_free_engine_required_uci(rendered);
+}
+
+std::string CommandLine::get_working_directory() {
+    return take_string_and_free_engine_required_uci(zfish_misc_get_working_directory());
+}
+
 constexpr auto BenchmarkCommand = "speedtest";
 
 template<typename... Ts>
