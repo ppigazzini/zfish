@@ -2471,16 +2471,6 @@ struct ZfishBenchmarkSetupOutput {
     const char* filled_invocation_ptr;
 };
 
-struct ZfishParsedSetOption {
-    const char* name;
-    const char* value;
-};
-
-struct ZfishAssignmentResult {
-    std::uint8_t accepted;
-    const char*  normalized_value;
-};
-
 ZfishScoreClass zfish_classify_score(int value,
                                      int value_tb_win_in_max_ply,
                                      int value_tb,
@@ -2489,24 +2479,6 @@ ZfishTuneNextResult zfish_tune_next(const unsigned char* names_ptr,
                                     std::size_t          names_len,
                                     std::uint8_t         pop);
 bool zfish_tune_should_make_option(int min_value, int max_value);
-bool zfish_option_case_insensitive_less(const unsigned char* left_ptr,
-                                        std::size_t          left_len,
-                                        const unsigned char* right_ptr,
-                                        std::size_t          right_len);
-ZfishParsedSetOption zfish_option_parse_setoption(const unsigned char* input_ptr,
-                                                  std::size_t          input_len);
-bool zfish_option_combo_equals(const unsigned char* current_ptr,
-                               std::size_t          current_len,
-                               const unsigned char* query_ptr,
-                               std::size_t          query_len);
-ZfishAssignmentResult zfish_option_validate_assignment(const unsigned char* type_ptr,
-                                                       std::size_t          type_len,
-                                                       const unsigned char* value_ptr,
-                                                       std::size_t          value_len,
-                                                       int                  min_value,
-                                                       int                  max_value,
-                                                       const unsigned char* default_ptr,
-                                                       std::size_t          default_len);
 const char*   zfish_position_build_endgame_fen(const unsigned char* code_ptr,
                                                std::size_t          code_len,
                                                std::uint8_t         color);
@@ -3074,29 +3046,8 @@ Move UCIEngine::to_move(const Position& pos, std::string str) {
 bool Tune::update_on_last;
 OptionsMap* Tune::options;
 
-bool CaseInsensitiveLess::operator()(const std::string& left, const std::string& right) const {
-    return zfish_option_case_insensitive_less(
-      reinterpret_cast<const unsigned char*>(left.data()), left.size(),
-      reinterpret_cast<const unsigned char*>(right.data()), right.size());
-}
-
 void OptionsMap::add_info_listener(InfoListener&& message_func) {
     info = std::move(message_func);
-}
-
-void OptionsMap::setoption(std::istringstream& is) {
-    std::string rest;
-    std::getline(is, rest);
-
-    const auto parsed = zfish_option_parse_setoption(
-      reinterpret_cast<const unsigned char*>(rest.data()), rest.size());
-    const auto name  = take_string_and_free(parsed.name);
-    const auto value = take_string_and_free(parsed.value);
-
-    if (options_map.count(name))
-        options_map[name] = value;
-    else
-        sync_cout << "No such option: " << name << sync_endl;
 }
 
 const Option& OptionsMap::operator[](const std::string& name) const {
@@ -3176,39 +3127,7 @@ Option::operator std::string() const {
     return currentValue;
 }
 
-bool Option::operator==(const char* value) const {
-    assert(type == "combo");
-    return zfish_option_combo_equals(
-      reinterpret_cast<const unsigned char*>(currentValue.data()), currentValue.size(),
-      reinterpret_cast<const unsigned char*>(value), std::char_traits<char>::length(value));
-}
-
 bool Option::operator!=(const char* value) const { return !(*this == value); }
-
-Option& Option::operator=(const std::string& value) {
-    assert(!type.empty());
-
-    const auto result = zfish_option_validate_assignment(
-      reinterpret_cast<const unsigned char*>(type.data()), type.size(),
-      reinterpret_cast<const unsigned char*>(value.data()), value.size(), min, max,
-      reinterpret_cast<const unsigned char*>(defaultValue.data()), defaultValue.size());
-
-    if (!result.accepted)
-        return *this;
-
-    if (type != "button")
-        currentValue = take_string_and_free(result.normalized_value);
-
-    if (on_change)
-    {
-        const auto ret = on_change(*this);
-
-        if (ret && parent != nullptr && parent->info != nullptr)
-            parent->info(ret);
-    }
-
-    return *this;
-}
 
 std::ostream& operator<<(std::ostream& os, const OptionsMap& optionsMap) {
     for (size_t idx = 0; idx < optionsMap.options_map.size(); ++idx)
