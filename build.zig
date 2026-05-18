@@ -129,6 +129,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const nnue_accumulator_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/eval/nnue_accumulator_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const network_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/eval/network_rewrites.zig"),
         .target = target,
@@ -146,6 +151,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("misc_rewrites", misc_rewrites);
     exe.root_module.addImport("movegen_rewrites", movegen_rewrites);
     exe.root_module.addImport("movepick_rewrites", movepick_rewrites);
+    exe.root_module.addImport("nnue_accumulator_rewrites", nnue_accumulator_rewrites);
     exe.root_module.addImport("network_rewrites", network_rewrites);
     exe.root_module.addImport("nnue_feature_rewrites", nnue_feature_rewrites);
     exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
@@ -169,7 +175,6 @@ pub fn build(b: *std.Build) void {
         "position.cpp",
         "search.cpp",
         "syzygy/tbprobe.cpp",
-        "nnue/nnue_accumulator.cpp",
     };
 
     const zig_compat_sources = &.{
@@ -181,6 +186,7 @@ pub fn build(b: *std.Build) void {
         "misc_bridge.cpp",
         "movegen_bridge.cpp",
         "movepick_bridge.cpp",
+        "nnue_accumulator_bridge.cpp",
         "network_bridge.cpp",
         "nnue_features_bridge.cpp",
         "score_bridge.cpp",
