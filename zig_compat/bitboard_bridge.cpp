@@ -124,6 +124,7 @@ std::string take_string_and_free(const char* rendered) {
 
 extern "C" {
 const char* zfish_bitboard_pretty(Bitboard bitboard);
+void        zfish_bitboards_init();
 }
 
 namespace Bitboards {
@@ -160,5 +161,9 @@ void init() {
 std::string pretty(Bitboard b) { return take_string_and_free(zfish_bitboard_pretty(b)); }
 
 }  // namespace Bitboards
+
+extern "C" void zfish_bitboards_init() {
+    Stockfish::Bitboards::init();
+}
 
 }  // namespace Stockfish
