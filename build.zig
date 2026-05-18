@@ -23,6 +23,11 @@ pub fn build(b: *std.Build) void {
         "optimize",
         "Prioritize performance, safety, or binary size",
     ) orelse .ReleaseFast;
+    const signature_ref = b.option(
+        []const u8,
+        "signature-ref",
+        "Expected bench signature for tests/signature.sh; omit to print the current signature",
+    );
     const requested_arch = b.option(
         []const u8,
         "arch",
@@ -148,12 +153,34 @@ pub fn build(b: *std.Build) void {
     );
     uci_step.dependOn(&uci_run.step);
 
+    const signature_cmd = b.addSystemCommand(&.{
+        "env",
+        b.fmt("STOCKFISH_BIN={s}", .{b.getInstallPath(.bin, "stockfish")}),
+        "bash",
+        b.pathFromRoot("tests/signature.sh"),
+    });
+    signature_cmd.step.dependOn(install_step);
+    signature_cmd.step.dependOn(&net_cmd.step);
+    signature_cmd.setCwd(b.path("src"));
+    if (signature_ref) |reference|
+        signature_cmd.addArg(reference);
+
+    const signature_step = b.step(
+        "signature",
+        if (signature_ref != null)
+            "Verify the Zig-built Stockfish bench signature through tests/signature.sh"
+        else
+            "Report the Zig-built Stockfish bench signature through tests/signature.sh",
+    );
+    signature_step.dependOn(&signature_cmd.step);
+
     const parity_step = b.step(
         "parity",
-        "Run the current bench and UCI parity checks through the Zig build entry",
+        "Run the current bench, UCI, and signature checks through the Zig build entry",
     );
     parity_step.dependOn(&bench_run.step);
     parity_step.dependOn(&uci_run.step);
+    parity_step.dependOn(&signature_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
