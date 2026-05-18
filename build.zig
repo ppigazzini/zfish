@@ -211,7 +211,6 @@ pub fn build(b: *std.Build) void {
         "uci_bridge.cpp",
         "ucioption_bridge.cpp",
         "evaluate_bridge.cpp",
-        "nnue_misc_bridge.cpp",
     };
 
     exe.root_module.addIncludePath(b.path("src"));
