@@ -5,6 +5,7 @@ const bitboard_port = @import("bitboard_rewrites");
 const memory_port = @import("memory.zig");
 const misc_port = @import("misc_rewrites");
 const movegen_port = @import("movegen_rewrites");
+const movepick_port = @import("movepick_rewrites");
 const network_port = @import("network_rewrites");
 const nnue_feature_port = @import("nnue_feature_rewrites");
 const option_port = @import("option_rewrites");
@@ -119,6 +120,23 @@ pub export fn zfish_movegen_generate_non_evasions(
     move_list: [*]u16,
 ) usize {
     return movegen_port.generateNonEvasions(pos, move_list);
+}
+
+pub export fn zfish_movepick_score_moves(
+    kind: u8,
+    inputs: [*]const movepick_port.ScoreInput,
+    count: usize,
+    outputs: [*]movepick_port.SortEntry,
+) void {
+    return movepick_port.scoreMoves(kind, inputs, count, outputs);
+}
+
+pub export fn zfish_movepick_partial_insertion_sort(
+    entries: [*]movepick_port.SortEntry,
+    count: usize,
+    limit: c_int,
+) void {
+    return movepick_port.partialInsertionSort(entries, count, limit);
 }
 
 pub export fn zfish_network_load(
