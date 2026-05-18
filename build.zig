@@ -94,6 +94,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const tbprobe_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/tbprobe_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const thread_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/support/thread_rewrites.zig"),
         .target = target,
@@ -168,6 +173,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("option_rewrites", option_rewrites);
     exe.root_module.addImport("position_rewrites", position_rewrites);
     exe.root_module.addImport("search_rewrites", search_rewrites);
+    exe.root_module.addImport("tbprobe_rewrites", tbprobe_rewrites);
     exe.root_module.addImport("timeman_rewrites", timeman_rewrites);
     exe.root_module.addImport("thread_rewrites", thread_rewrites);
     exe.root_module.addImport("tt_rewrites", tt_rewrites);
@@ -183,9 +189,7 @@ pub fn build(b: *std.Build) void {
     }) catch @panic("OOM");
     compile_flags.appendSlice(b.allocator, arch.flags) catch @panic("OOM");
 
-    const stockfish_sources = &.{
-        "syzygy/tbprobe.cpp",
-    };
+    const stockfish_sources = &.{};
 
     const zig_compat_sources = &.{
         "benchmark_bridge.cpp",
@@ -202,6 +206,7 @@ pub fn build(b: *std.Build) void {
         "position_bridge.cpp",
         "search_bridge.cpp",
         "score_bridge.cpp",
+        "tbprobe_bridge.cpp",
         "thread_bridge.cpp",
         "timeman_bridge.cpp",
         "tt_bridge.cpp",
@@ -223,11 +228,13 @@ pub fn build(b: *std.Build) void {
         exe.root_module.addCMacro("GIT_SHA", sha);
     if (git_info.date) |date|
         exe.root_module.addCMacro("GIT_DATE", date);
-    exe.root_module.addCSourceFiles(.{
-        .root = b.path("src"),
-        .files = stockfish_sources,
-        .flags = compile_flags.items,
-    });
+    if (stockfish_sources.len != 0) {
+        exe.root_module.addCSourceFiles(.{
+            .root = b.path("src"),
+            .files = stockfish_sources,
+            .flags = compile_flags.items,
+        });
+    }
     exe.root_module.addCSourceFiles(.{
         .root = b.path("zig_compat"),
         .files = zig_compat_sources,
