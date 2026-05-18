@@ -54,9 +54,14 @@ const char*   zfish_position_format_fen(const unsigned char* board_ptr,
                                         int                  game_ply);
 std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
                                                   std::size_t piece_count_len);
+void          zfish_position_init_runtime();
 
 std::uint64_t zfish_position_material_zobrist(std::uint8_t piece, std::size_t count_index) {
     return Stockfish::Zobrist::psq[piece][8 + count_index];
+}
+
+void zfish_position_init_runtime() {
+    Stockfish::Position::init();
 }
 }
 

@@ -146,6 +146,7 @@ const char*   zfish_misc_remove_whitespace(const unsigned char* input_ptr, std::
 bool          zfish_misc_is_whitespace(const unsigned char* input_ptr, std::size_t input_len);
 const char*   zfish_misc_get_binary_directory(const unsigned char* argv0_ptr, std::size_t argv0_len);
 const char*   zfish_misc_get_working_directory();
+const char*   zfish_misc_engine_info_text();
 }
 
 namespace Stockfish {
@@ -191,6 +192,16 @@ std::string engine_version_info() {
 std::string engine_info(bool to_uci) {
     return engine_version_info() + (to_uci ? "\nid author " : " by ")
          + "the Stockfish developers (see AUTHORS file)";
+}
+
+extern "C" const char* zfish_misc_engine_info_text() {
+    const auto value = engine_info();
+    auto*      buffer = static_cast<char*>(std::malloc(value.size() + 1));
+    if (!buffer)
+        return nullptr;
+
+    std::memcpy(buffer, value.c_str(), value.size() + 1);
+    return buffer;
 }
 
 std::string compiler_info() {

@@ -1,4 +1,8 @@
 const std = @import("std");
+const c = @cImport({
+    @cInclude("stdlib.h");
+    @cInclude("stdio.h");
+});
 
 const benchmark_port = @import("benchmark_rewrites");
 const bitboard_port = @import("bitboard_rewrites");
@@ -22,7 +26,12 @@ const timeman_port = @import("timeman_rewrites");
 const tt_port = @import("tt_rewrites");
 const uci_port = @import("uci_rewrites");
 
-extern fn zfish_main_run(argc: c_int, argv: [*]const [*:0]const u8) c_int;
+extern fn zfish_bitboards_init() void;
+extern fn zfish_position_init_runtime() void;
+extern fn zfish_misc_engine_info_text() ?[*:0]u8;
+extern fn zfish_uci_create_runtime(argc: c_int, argv: [*]const [*:0]const u8) ?*anyopaque;
+extern fn zfish_uci_loop_runtime(runtime: *anyopaque) void;
+extern fn zfish_uci_destroy_runtime(runtime: ?*anyopaque) void;
 
 pub fn main(init: std.process.Init) !void {
     var argc: usize = 0;
@@ -40,10 +49,18 @@ pub fn main(init: std.process.Init) !void {
         argv[index] = arg.ptr;
     }
 
-    const exit_code = zfish_main_run(@intCast(argc), argv.ptr);
-    if (exit_code != 0) {
-        std.process.exit(@intCast(exit_code));
-    }
+    const info = zfish_misc_engine_info_text() orelse return error.OutOfMemory;
+    defer c.free(@ptrCast(info));
+
+    _ = c.puts(@ptrCast(info));
+
+    zfish_bitboards_init();
+    zfish_position_init_runtime();
+
+    const runtime = zfish_uci_create_runtime(@intCast(argc), argv.ptr) orelse return error.OutOfMemory;
+    defer zfish_uci_destroy_runtime(runtime);
+
+    zfish_uci_loop_runtime(runtime);
 }
 
 pub export fn zfish_std_aligned_alloc(alignment: usize, size: usize) ?*anyopaque {
