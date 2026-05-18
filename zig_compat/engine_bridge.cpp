@@ -1445,21 +1445,6 @@ std::optional<PositionSetError> Engine::set_position(const std::string&         
     return std::nullopt;
 }
 
-std::ostream& operator<<(std::ostream& os, SyncCout sc) {
-    static std::mutex m;
-
-    if (sc == IO_LOCK)
-        m.lock();
-
-    if (sc == IO_UNLOCK)
-        m.unlock();
-
-    return os;
-}
-
-void sync_cout_start() { std::cout << IO_LOCK; }
-void sync_cout_end() { std::cout << IO_UNLOCK; }
-
 void TBTables::add(const std::vector<PieceType>& pieces) {
     const std::string code = take_string_and_free_engine_required(
       zfish_tbprobe_build_code(reinterpret_cast<const unsigned char*>(pieces.data()), pieces.size()));

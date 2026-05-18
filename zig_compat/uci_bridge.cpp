@@ -1688,6 +1688,21 @@ std::string CommandLine::get_working_directory() {
     return take_string_and_free_engine_required_uci(zfish_misc_get_working_directory());
 }
 
+std::ostream& operator<<(std::ostream& os, SyncCout sc) {
+    static std::mutex m;
+
+    if (sc == IO_LOCK)
+        m.lock();
+
+    if (sc == IO_UNLOCK)
+        m.unlock();
+
+    return os;
+}
+
+void sync_cout_start() { std::cout << IO_LOCK; }
+void sync_cout_end() { std::cout << IO_UNLOCK; }
+
 constexpr auto BenchmarkCommand = "speedtest";
 
 template<typename... Ts>
