@@ -1140,6 +1140,8 @@ std::string build_nnue_trace(Stockfish::Position&                     pos,
                              const Stockfish::Eval::NNUE::Network&     network,
                              Stockfish::Eval::NNUE::AccumulatorCaches& caches);
 
+constexpr std::string_view version = "dev";
+
 std::string engine_version_info() {
     std::stringstream ss;
     ss << "Stockfish " << version << std::setfill('0');

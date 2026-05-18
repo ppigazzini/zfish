@@ -1293,8 +1293,6 @@ class Logger {
     }
 };
 
-constexpr std::string_view version = "dev";
-
 std::string take_string_and_free_engine_required(const char* rendered) {
     if (!rendered)
         std::abort();
