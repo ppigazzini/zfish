@@ -51,6 +51,8 @@
 #define ZFISH_POSITION_BRIDGE_SKIP_FEN
 #include "../src/position.cpp"
 
+#include "search_bridge.cpp"
+
 namespace Stockfish {
 
 constexpr auto BenchmarkCommand = "speedtest";
