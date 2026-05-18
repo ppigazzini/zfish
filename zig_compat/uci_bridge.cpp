@@ -2452,12 +2452,6 @@ struct ZfishParsedPosition {
     const char*  moves;
 };
 
-struct ZfishScoreClass {
-    int kind;
-    int plies;
-    int win;
-};
-
 struct ZfishBenchmarkSetupOutput {
     int         tt_size;
     int         threads;
@@ -2466,10 +2460,6 @@ struct ZfishBenchmarkSetupOutput {
     const char* filled_invocation_ptr;
 };
 
-ZfishScoreClass zfish_classify_score(int value,
-                                     int value_tb_win_in_max_ply,
-                                     int value_tb,
-                                     int value_mate);
 const char*   zfish_position_build_endgame_fen(const unsigned char* code_ptr,
                                                std::size_t          code_len,
                                                std::uint8_t         color);
@@ -3135,21 +3125,6 @@ void Tune::Entry<Tune::PostUpdate>::read_option() {
 }
 
 void Tune::read_results() { /* ...insert your values here... */ }
-
-Score::Score(Value v, const Position& pos) {
-        assert(-VALUE_INFINITE < v && v < VALUE_INFINITE);
-
-        const auto score_class =
-            zfish_classify_score(v, VALUE_TB_WIN_IN_MAX_PLY, VALUE_TB, VALUE_MATE);
-
-        switch (score_class.kind)
-        {
-        case 0 : score = InternalUnits{UCIEngine::to_cp(v, pos)}; break;
-        case 1 : score = Tablebase{score_class.plies, score_class.win != 0}; break;
-        case 2 : score = Mate{score_class.plies}; break;
-        default : std::abort();
-        }
-}
 
 }  // namespace Stockfish
 
