@@ -2,6 +2,8 @@ const std = @import("std");
 
 const memory_port = @import("memory.zig");
 const score_port = @import("score.zig");
+const evaluate_port = @import("evaluate_rewrites");
+const nnue_misc_port = @import("nnue_misc_rewrites");
 const timeman_port = @import("timeman_rewrites");
 
 extern fn zfish_main_run(argc: c_int, argv: [*]const [*:0]const u8) c_int;
@@ -61,4 +63,22 @@ pub export fn zfish_timeman_init(
     input: timeman_port.TimemanInput,
 ) timeman_port.TimemanOutput {
     return timeman_port.init(input);
+}
+
+pub export fn zfish_eval_compute_value(
+    input: evaluate_port.EvalInput,
+) c_int {
+    return evaluate_port.computeValue(input);
+}
+
+pub export fn zfish_eval_format_trace(
+    input: evaluate_port.EvalTraceInput,
+) ?[*:0]u8 {
+    return evaluate_port.formatTrace(input);
+}
+
+pub export fn zfish_nnue_format_trace(
+    input: nnue_misc_port.NnueTraceInput,
+) ?[*:0]u8 {
+    return nnue_misc_port.formatTrace(input);
 }
