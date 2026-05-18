@@ -7,6 +7,7 @@ const memory_port = @import("memory.zig");
 const misc_port = @import("misc_rewrites");
 const movegen_port = @import("movegen_rewrites");
 const movepick_port = @import("movepick_rewrites");
+const nnue_accumulator_port = @import("nnue_accumulator_rewrites");
 const network_port = @import("network_rewrites");
 const nnue_feature_port = @import("nnue_feature_rewrites");
 const option_port = @import("option_rewrites");
@@ -181,6 +182,15 @@ pub export fn zfish_engine_format_network_status(
     error_len: usize,
 ) ?[*:0]u8 {
     return engine_port.formatNetworkStatus(replica_index, status, error_ptr, error_len);
+}
+
+pub export fn zfish_accumulator_evaluate(
+    stack: *anyopaque,
+    pos: *const anyopaque,
+    feature_transformer: *const anyopaque,
+    cache: *anyopaque,
+) void {
+    return nnue_accumulator_port.evaluate(stack, pos, feature_transformer, cache);
 }
 
 pub export fn zfish_network_load(
