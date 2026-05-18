@@ -62,9 +62,11 @@
 #include "uci.h"
 #include "ucioption.h"
 
+#define PieceToChar engine_bridge_tbprobe_piece_to_char
 #define ZFISH_TBPROBE_BRIDGE_SKIP_DTZ_BEFORE_ZEROING
 #define ZFISH_TBPROBE_BRIDGE_SKIP_ADD
 #include "../src/syzygy/tbprobe.cpp"
+#undef PieceToChar
 
 #include "nnue_accumulator_bridge.cpp"
 
