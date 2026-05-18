@@ -192,7 +192,6 @@ pub fn build(b: *std.Build) void {
     const stockfish_sources = &.{};
 
     const zig_compat_sources = &.{
-        "bitboard_bridge.cpp",
         "engine_bridge.cpp",
         "nnue_accumulator_bridge.cpp",
         "position_bridge.cpp",
