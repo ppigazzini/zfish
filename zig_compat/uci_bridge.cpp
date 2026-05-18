@@ -1770,6 +1770,79 @@ std::optional<PositionSetError> Engine::set_position(const std::string&         
     return std::nullopt;
 }
 
+Engine::Engine(std::optional<std::string> path) :
+        binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
+        numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
+        states(new std::deque<StateInfo>(1)),
+        threads(),
+        network(numaContext, get_default_network()) {
+
+        pos.set(StartFEN, false, &states->back());
+
+        options.add(
+            "Debug Log File", Option("", [](const Option& o) {
+                    start_logger(o);
+                    return std::nullopt;
+            }));
+
+        options.add(
+            "NumaPolicy", Option("auto", [this](const Option& o) {
+                    set_numa_config_from_option(o);
+                    return numa_config_information_as_string() + "\n"
+                             + thread_allocation_information_as_string();
+            }));
+
+        options.add(
+            "Threads", Option(1, 1, MaxThreads, [this](const Option&) {
+                    resize_threads();
+                    return thread_allocation_information_as_string();
+            }));
+
+        options.add(
+            "Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {
+                    set_tt_size(o);
+                    return std::nullopt;
+            }));
+
+        options.add(
+            "Clear Hash", Option([this](const Option&) {
+                    search_clear();
+                    return std::nullopt;
+            }));
+
+        options.add("Ponder", Option(false));
+        options.add("MultiPV", Option(1, 1, MAX_MOVES));
+        options.add("Skill Level", Option(20, 0, 20));
+        options.add("Move Overhead", Option(10, 0, 5000));
+        options.add("nodestime", Option(0, 0, 10000));
+        options.add("UCI_Chess960", Option(false));
+        options.add("UCI_LimitStrength", Option(false));
+        options.add("UCI_Elo",
+                                Option(Stockfish::Search::Skill::LowestElo, Stockfish::Search::Skill::LowestElo,
+                                             Stockfish::Search::Skill::HighestElo));
+        options.add("UCI_ShowWDL", Option(false));
+
+        options.add(
+            "SyzygyPath", Option("", [](const Option& o) {
+                    Tablebases::init(o);
+                    return std::nullopt;
+            }));
+
+        options.add("SyzygyProbeDepth", Option(1, 1, 100));
+        options.add("Syzygy50MoveRule", Option(true));
+        options.add("SyzygyProbeLimit", Option(7, 0, 7));
+
+        options.add(
+            "EvalFile", Option(EvalFileDefaultName, [this](const Option& o) {
+                    load_network(o);
+                    return std::nullopt;
+            }));
+
+        threads.clear();
+        threads.ensure_network_replicated();
+        resize_threads();
+}
+
 constexpr auto BenchmarkCommand = "speedtest";
 
 template<typename... Ts>
