@@ -56,7 +56,7 @@
 #include "engine_bridge.cpp"
 #undef take_string_and_free
 #undef PieceToChar
-#include "search_bridge.cpp"
+#include "search_bridge_body.inc"
 
 namespace Stockfish {
 
