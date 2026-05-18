@@ -55,6 +55,13 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const timeman_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/time/timeman_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("timeman_rewrites", timeman_rewrites);
+
     var compile_flags = std.ArrayList([]const u8).empty;
     compile_flags.appendSlice(b.allocator, &.{
         "-std=c++17",
@@ -75,7 +82,6 @@ pub fn build(b: *std.Build) void {
         "position.cpp",
         "search.cpp",
         "thread.cpp",
-        "timeman.cpp",
         "tt.cpp",
         "uci.cpp",
         "ucioption.cpp",
@@ -93,6 +99,7 @@ pub fn build(b: *std.Build) void {
         "main_bridge.cpp",
         "memory_bridge.cpp",
         "score_bridge.cpp",
+        "timeman_bridge.cpp",
     };
 
     exe.root_module.addIncludePath(b.path("src"));
