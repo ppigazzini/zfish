@@ -14,6 +14,7 @@ const option_port = @import("option_rewrites");
 const position_port = @import("position_rewrites");
 const search_port = @import("search_rewrites");
 const score_port = @import("score.zig");
+const tbprobe_port = @import("tbprobe_rewrites");
 const thread_port = @import("thread_rewrites");
 const evaluate_port = @import("evaluate_rewrites");
 const nnue_misc_port = @import("nnue_misc_rewrites");
@@ -159,6 +160,17 @@ pub export fn zfish_search_reduction(
     improving: u8,
 ) c_int {
     return search_port.reduction(reductions_ptr, depth, move_number, delta, root_delta, improving != 0);
+}
+
+pub export fn zfish_tbprobe_build_code(
+    piece_types_ptr: [*]const u8,
+    piece_count: usize,
+) ?[*:0]u8 {
+    return tbprobe_port.buildCode(piece_types_ptr, piece_count);
+}
+
+pub export fn zfish_tbprobe_dtz_before_zeroing(wdl: c_int) c_int {
+    return tbprobe_port.dtzBeforeZeroing(wdl);
 }
 
 pub export fn zfish_movegen_generate_captures(
