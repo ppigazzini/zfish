@@ -144,7 +144,7 @@ fn initMagics(pt: PieceType, table: []u64, magics: *[64][2]Magic) void {
         var rng = Prng.init(magic_seeds[1][rankOf(square)]);
         while (true) {
             magic_ref.magic = 0;
-            while (@popCount((magic_ref.magic * magic_ref.mask) >> 56) < 6) {
+            while (@popCount((magic_ref.magic *% magic_ref.mask) >> 56) < 6) {
                 magic_ref.magic = rng.sparseRand();
             }
 
@@ -175,7 +175,7 @@ fn attacksBb(pt: PieceType, square: usize, occupied: u64, magics: *[64][2]Magic)
 }
 
 fn computeMagicIndex(magic_ref: Magic, occupied: u64) usize {
-    return @intCast(((occupied & magic_ref.mask) * magic_ref.magic) >> @as(u6, @intCast(magic_ref.shift)));
+    return @intCast(((occupied & magic_ref.mask) *% magic_ref.magic) >> @as(u6, @intCast(magic_ref.shift)));
 }
 
 fn pseudoAttacks(pt: PieceType, square: usize) u64 {
@@ -266,7 +266,7 @@ const Prng = struct {
         self.state ^= self.state >> 12;
         self.state ^= self.state << 25;
         self.state ^= self.state >> 27;
-        return self.state * 2685821657736338717;
+        return self.state *% 2685821657736338717;
     }
 
     fn sparseRand(self: *Prng) u64 {
