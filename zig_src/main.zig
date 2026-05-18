@@ -2,6 +2,7 @@ const std = @import("std");
 
 const benchmark_port = @import("benchmark_rewrites");
 const bitboard_port = @import("bitboard_rewrites");
+const engine_port = @import("engine_rewrites");
 const memory_port = @import("memory.zig");
 const misc_port = @import("misc_rewrites");
 const movegen_port = @import("movegen_rewrites");
@@ -149,6 +150,37 @@ pub export fn zfish_thread_pick_best_thread(
     count: usize,
 ) usize {
     return thread_port.pickBestThread(summaries, count);
+}
+
+pub export fn zfish_engine_format_numa_info(
+    config_ptr: [*]const u8,
+    config_len: usize,
+) ?[*:0]u8 {
+    return engine_port.formatNumaInfo(config_ptr, config_len);
+}
+
+pub export fn zfish_engine_format_thread_binding(
+    pairs_ptr: [*]const engine_port.CountPair,
+    pair_count: usize,
+) ?[*:0]u8 {
+    return engine_port.formatThreadBinding(pairs_ptr, pair_count);
+}
+
+pub export fn zfish_engine_format_thread_allocation(
+    thread_count: usize,
+    binding_ptr: [*]const u8,
+    binding_len: usize,
+) ?[*:0]u8 {
+    return engine_port.formatThreadAllocation(thread_count, binding_ptr, binding_len);
+}
+
+pub export fn zfish_engine_format_network_status(
+    replica_index: usize,
+    status: u8,
+    error_ptr: [*]const u8,
+    error_len: usize,
+) ?[*:0]u8 {
+    return engine_port.formatNetworkStatus(replica_index, status, error_ptr, error_len);
 }
 
 pub export fn zfish_network_load(

@@ -1,0 +1,372 @@
+/*
+  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+
+  Stockfish is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Stockfish is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include "engine.h"
+
+#include <algorithm>
+#include <cassert>
+#include <deque>
+#include <iosfwd>
+#include <memory>
+#include <ostream>
+#include <sstream>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "evaluate.h"
+#include "misc.h"
+#include "nnue/network.h"
+#include "nnue/nnue_common.h"
+#include "nnue/nnue_misc.h"
+#include "numa.h"
+#include "perft.h"
+#include "position.h"
+#include "search.h"
+#include "shm.h"
+#include "syzygy/tbprobe.h"
+#include "types.h"
+#include "uci.h"
+#include "ucioption.h"
+
+namespace Stockfish {
+
+namespace NN = Eval::NNUE;
+
+constexpr int MaxHashMB  = Is64Bit ? 33554432 : 2048;
+int           MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
+
+constexpr NumaAutoPolicy DefaultNumaPolicy = BundledL3Policy{32};
+
+extern "C" {
+struct ZfishCountPair {
+    std::size_t current;
+    std::size_t total;
+};
+
+const char* zfish_engine_format_numa_info(const unsigned char* config_ptr, std::size_t config_len);
+const char* zfish_engine_format_thread_binding(const ZfishCountPair* pairs_ptr, std::size_t pair_count);
+const char* zfish_engine_format_thread_allocation(std::size_t          thread_count,
+                                                  const unsigned char* binding_ptr,
+                                                  std::size_t          binding_len);
+const char* zfish_engine_format_network_status(std::size_t          replica_index,
+                                               std::uint8_t        status,
+                                               const unsigned char* error_ptr,
+                                               std::size_t          error_len);
+}
+
+Engine::Engine(std::optional<std::string> path) :
+    binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
+    numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
+    states(new std::deque<StateInfo>(1)),
+    threads(),
+    network(numaContext, get_default_network()) {
+
+    pos.set(StartFEN, false, &states->back());
+
+    options.add(
+      "Debug Log File", Option("", [](const Option& o) {
+          start_logger(o);
+          return std::nullopt;
+      }));
+
+    options.add(
+      "NumaPolicy", Option("auto", [this](const Option& o) {
+          set_numa_config_from_option(o);
+          return numa_config_information_as_string() + "\n"
+               + thread_allocation_information_as_string();
+      }));
+
+    options.add(
+      "Threads", Option(1, 1, MaxThreads, [this](const Option&) {
+          resize_threads();
+          return thread_allocation_information_as_string();
+      }));
+
+    options.add(
+      "Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {
+          set_tt_size(o);
+          return std::nullopt;
+      }));
+
+    options.add(
+      "Clear Hash", Option([this](const Option&) {
+          search_clear();
+          return std::nullopt;
+      }));
+
+    options.add("Ponder", Option(false));
+    options.add("MultiPV", Option(1, 1, MAX_MOVES));
+    options.add("Skill Level", Option(20, 0, 20));
+    options.add("Move Overhead", Option(10, 0, 5000));
+    options.add("nodestime", Option(0, 0, 10000));
+    options.add("UCI_Chess960", Option(false));
+    options.add("UCI_LimitStrength", Option(false));
+    options.add("UCI_Elo",
+                Option(Stockfish::Search::Skill::LowestElo, Stockfish::Search::Skill::LowestElo,
+                       Stockfish::Search::Skill::HighestElo));
+    options.add("UCI_ShowWDL", Option(false));
+
+    options.add(
+      "SyzygyPath", Option("", [](const Option& o) {
+          Tablebases::init(o);
+          return std::nullopt;
+      }));
+
+    options.add("SyzygyProbeDepth", Option(1, 1, 100));
+    options.add("Syzygy50MoveRule", Option(true));
+    options.add("SyzygyProbeLimit", Option(7, 0, 7));
+
+    options.add(
+      "EvalFile", Option(EvalFileDefaultName, [this](const Option& o) {
+          load_network(o);
+          return std::nullopt;
+      }));
+
+    threads.clear();
+    threads.ensure_network_replicated();
+    resize_threads();
+}
+
+std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
+    verify_network();
+
+    return Benchmark::perft(fen, depth, isChess960);
+}
+
+void Engine::go(Search::LimitsType& limits) {
+    assert(limits.perft == 0);
+    verify_network();
+
+    threads.start_thinking(options, pos, states, limits);
+}
+void Engine::stop() { threads.stop = true; }
+
+void Engine::search_clear() {
+    wait_for_search_finished();
+
+    tt.clear(threads);
+    threads.clear();
+
+    Tablebases::init(options["SyzygyPath"]);
+}
+
+void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
+    updateContext.onUpdateNoMoves = std::move(f);
+}
+
+void Engine::set_on_update_full(std::function<void(const Engine::InfoFull&)>&& f) {
+    updateContext.onUpdateFull = std::move(f);
+}
+
+void Engine::set_on_iter(std::function<void(const Engine::InfoIter&)>&& f) {
+    updateContext.onIter = std::move(f);
+}
+
+void Engine::set_on_bestmove(std::function<void(std::string_view, std::string_view)>&& f) {
+    updateContext.onBestmove = std::move(f);
+}
+
+void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {
+    onVerifyNetwork = std::move(f);
+}
+
+void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search_finished(); }
+
+std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
+                                                     const std::vector<std::string>& moves) {
+    states   = StateListPtr(new std::deque<StateInfo>(1));
+    auto err = pos.set(fen, options["UCI_Chess960"], &states->back());
+    if (err.has_value())
+        return err;
+
+    for (const auto& move : moves)
+    {
+        auto m = UCIEngine::to_move(pos, move);
+
+        if (m == Move::none())
+            return PositionSetError("Illegal move: " + move);
+
+        states->emplace_back();
+        pos.do_move(m, states->back());
+    }
+
+    return std::nullopt;
+}
+
+void Engine::set_numa_config_from_option(const std::string& o) {
+    if (o == "auto" || o == "system")
+    {
+        numaContext.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy));
+    }
+    else if (o == "hardware")
+    {
+        numaContext.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy, false));
+    }
+    else if (o == "none")
+    {
+        numaContext.set_numa_config(NumaConfig{});
+    }
+    else
+    {
+        numaContext.set_numa_config(NumaConfig::from_string(o));
+    }
+
+    resize_threads();
+    threads.ensure_network_replicated();
+}
+
+void Engine::resize_threads() {
+    threads.wait_for_search_finished();
+    threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists, network},
+                updateContext);
+
+    set_tt_size(options["Hash"]);
+    threads.ensure_network_replicated();
+}
+
+void Engine::set_tt_size(size_t mb) {
+    wait_for_search_finished();
+    tt.resize(mb, threads);
+}
+
+void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
+
+void Engine::verify_network() const {
+    network->verify(options["EvalFile"], onVerifyNetwork);
+
+    auto statuses = network.get_status_and_errors();
+    for (size_t i = 0; i < statuses.size(); ++i)
+    {
+        const auto [status, error] = statuses[i];
+        const std::string error_text = error.value_or(std::string{});
+        const char* message = zfish_engine_format_network_status(
+          i + 1,
+          static_cast<std::uint8_t>(status),
+          reinterpret_cast<const unsigned char*>(error_text.data()),
+          error_text.size());
+        if (!message)
+            std::abort();
+        onVerifyNetwork(message);
+        std::free(const_cast<char*>(message));
+    }
+}
+
+std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
+
+    auto network_ = std::make_unique<NN::Network>(NN::EvalFile{EvalFileDefaultName, "None", ""});
+
+    network_->load(binaryDirectory, "");
+
+    return network_;
+}
+
+void Engine::load_network(const std::string& file) {
+    network.modify_and_replicate(
+      [this, &file](NN::Network& network_) { network_.load(binaryDirectory, file); });
+    threads.clear();
+    threads.ensure_network_replicated();
+}
+
+void Engine::save_network(const std::pair<std::optional<std::string>, std::string> file) {
+    network.modify_and_replicate([&file](NN::Network& network_) { network_.save(file.first); });
+}
+
+void Engine::trace_eval() const {
+    StateListPtr trace_states(new std::deque<StateInfo>(1));
+    Position     p;
+    p.set(pos.fen(), options["UCI_Chess960"], &trace_states->back());
+
+    verify_network();
+
+    sync_cout << "\n" << Eval::trace(p, *network) << sync_endl;
+}
+
+const OptionsMap& Engine::get_options() const { return options; }
+OptionsMap&       Engine::get_options() { return options; }
+
+std::string Engine::fen() const { return pos.fen(); }
+
+void Engine::flip() { pos.flip(); }
+
+std::string Engine::visualize() const {
+    std::stringstream ss;
+    ss << pos;
+    return ss.str();
+}
+
+int Engine::get_hashfull(int maxAge) const { return tt.hashfull(maxAge); }
+
+std::vector<std::pair<size_t, size_t>> Engine::get_bound_thread_count_by_numa_node() const {
+    auto                                   counts = threads.get_bound_thread_count_by_numa_node();
+    const NumaConfig&                      cfg    = numaContext.get_numa_config();
+    std::vector<std::pair<size_t, size_t>> ratios;
+    NumaIndex                              n = 0;
+    for (; n < counts.size(); ++n)
+        ratios.emplace_back(counts[n], cfg.num_cpus_in_numa_node(n));
+    if (!counts.empty())
+        for (; n < cfg.num_numa_nodes(); ++n)
+            ratios.emplace_back(0, cfg.num_cpus_in_numa_node(n));
+    return ratios;
+}
+
+std::string Engine::get_numa_config_as_string() const {
+    return numaContext.get_numa_config().to_string();
+}
+
+std::string Engine::numa_config_information_as_string() const {
+    auto cfgStr = get_numa_config_as_string();
+    const char* rendered = zfish_engine_format_numa_info(
+      reinterpret_cast<const unsigned char*>(cfgStr.data()), cfgStr.size());
+    if (!rendered)
+        std::abort();
+    std::string result(rendered);
+    std::free(const_cast<char*>(rendered));
+    return result;
+}
+
+std::string Engine::thread_binding_information_as_string() const {
+    auto boundThreadsByNode = get_bound_thread_count_by_numa_node();
+    if (boundThreadsByNode.empty())
+        return {};
+
+    std::vector<ZfishCountPair> pairs;
+    pairs.reserve(boundThreadsByNode.size());
+    for (auto&& [current, total] : boundThreadsByNode)
+        pairs.push_back(ZfishCountPair{current, total});
+
+    const char* rendered = zfish_engine_format_thread_binding(pairs.data(), pairs.size());
+    if (!rendered)
+        std::abort();
+    std::string result(rendered);
+    std::free(const_cast<char*>(rendered));
+    return result;
+}
+
+std::string Engine::thread_allocation_information_as_string() const {
+    const size_t threadsSize = threads.size();
+    const auto   binding = thread_binding_information_as_string();
+    const char*  rendered = zfish_engine_format_thread_allocation(
+      threadsSize, reinterpret_cast<const unsigned char*>(binding.data()), binding.size());
+    if (!rendered)
+        std::abort();
+    std::string result(rendered);
+    std::free(const_cast<char*>(rendered));
+    return result;
+}
+}
