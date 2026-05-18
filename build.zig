@@ -89,6 +89,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const bitboard_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/board/bitboard_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const uci_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/uci/uci_rewrites.zig"),
         .target = target,
@@ -105,6 +110,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addImport("benchmark_rewrites", benchmark_rewrites);
+    exe.root_module.addImport("bitboard_rewrites", bitboard_rewrites);
     exe.root_module.addImport("evaluate_rewrites", evaluate_rewrites);
     exe.root_module.addImport("misc_rewrites", misc_rewrites);
     exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
@@ -124,7 +130,6 @@ pub fn build(b: *std.Build) void {
     compile_flags.appendSlice(b.allocator, arch.flags) catch @panic("OOM");
 
     const stockfish_sources = &.{
-        "bitboard.cpp",
         "movegen.cpp",
         "movepick.cpp",
         "position.cpp",
@@ -140,6 +145,7 @@ pub fn build(b: *std.Build) void {
 
     const zig_compat_sources = &.{
         "benchmark_bridge.cpp",
+        "bitboard_bridge.cpp",
         "main_bridge.cpp",
         "memory_bridge.cpp",
         "misc_bridge.cpp",
