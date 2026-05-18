@@ -9,6 +9,7 @@ const evaluate_port = @import("evaluate_rewrites");
 const nnue_misc_port = @import("nnue_misc_rewrites");
 const timeman_port = @import("timeman_rewrites");
 const tt_port = @import("tt_rewrites");
+const uci_port = @import("uci_rewrites");
 
 extern fn zfish_main_run(argc: c_int, argv: [*]const [*:0]const u8) c_int;
 
@@ -197,6 +198,145 @@ pub export fn zfish_tune_next(
 
 pub export fn zfish_tune_should_make_option(min_value: c_int, max_value: c_int) bool {
     return option_port.tuneShouldMakeOption(min_value, max_value);
+}
+
+pub export fn zfish_uci_parse_limits(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) uci_port.ParsedLimits {
+    return uci_port.parseLimits(input_ptr[0..input_len]);
+}
+
+pub export fn zfish_uci_parse_position(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) uci_port.ParsedPosition {
+    return uci_port.parsePosition(input_ptr[0..input_len]);
+}
+
+pub export fn zfish_uci_format_info_string(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) ?[*:0]u8 {
+    return uci_port.formatInfoString(input_ptr[0..input_len]);
+}
+
+pub export fn zfish_uci_format_score(kind: u8, value: c_int, extra: c_int) ?[*:0]u8 {
+    return uci_port.formatScore(kind, value, extra);
+}
+
+pub export fn zfish_uci_to_cp(value: c_int, material: c_int) c_int {
+    return uci_port.toCp(value, material);
+}
+
+pub export fn zfish_uci_wdl(value: c_int, material: c_int) ?[*:0]u8 {
+    return uci_port.wdl(value, material);
+}
+
+pub export fn zfish_uci_format_square(file: u8, rank: u8) ?[*:0]u8 {
+    return uci_port.formatSquare(file, rank);
+}
+
+pub export fn zfish_uci_format_move(
+    from_file: u8,
+    from_rank: u8,
+    to_file: u8,
+    to_rank: u8,
+    promotion: u8,
+) ?[*:0]u8 {
+    return uci_port.formatMove(from_file, from_rank, to_file, to_rank, promotion);
+}
+
+pub export fn zfish_uci_to_lower(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) ?[*:0]u8 {
+    return uci_port.toLower(input_ptr[0..input_len]);
+}
+
+pub export fn zfish_uci_format_info_no_moves(
+    depth: c_int,
+    score_ptr: [*]const u8,
+    score_len: usize,
+) ?[*:0]u8 {
+    return uci_port.formatInfoNoMoves(depth, score_ptr[0..score_len]);
+}
+
+pub export fn zfish_uci_format_info_full(
+    depth: c_int,
+    sel_depth: c_int,
+    multi_pv: usize,
+    score_ptr: [*]const u8,
+    score_len: usize,
+    bound_ptr: [*]const u8,
+    bound_len: usize,
+    wdl_ptr: [*]const u8,
+    wdl_len: usize,
+    show_wdl: u8,
+    nodes: usize,
+    nps: usize,
+    hashfull: c_int,
+    tb_hits: usize,
+    time_ms: usize,
+    pv_ptr: [*]const u8,
+    pv_len: usize,
+) ?[*:0]u8 {
+    return uci_port.formatInfoFull(
+        depth,
+        sel_depth,
+        multi_pv,
+        score_ptr[0..score_len],
+        bound_ptr[0..bound_len],
+        wdl_ptr[0..wdl_len],
+        show_wdl,
+        nodes,
+        nps,
+        hashfull,
+        tb_hits,
+        time_ms,
+        pv_ptr[0..pv_len],
+    );
+}
+
+pub export fn zfish_uci_format_info_iter(
+    depth: c_int,
+    currmove_ptr: [*]const u8,
+    currmove_len: usize,
+    currmove_number: c_int,
+) ?[*:0]u8 {
+    return uci_port.formatInfoIter(depth, currmove_ptr[0..currmove_len], currmove_number);
+}
+
+pub export fn zfish_uci_format_bestmove(
+    bestmove_ptr: [*]const u8,
+    bestmove_len: usize,
+    ponder_ptr: [*]const u8,
+    ponder_len: usize,
+) ?[*:0]u8 {
+    return uci_port.formatBestmove(
+        bestmove_ptr[0..bestmove_len],
+        ponder_ptr[0..ponder_len],
+    );
+}
+
+pub export fn zfish_uci_help_text() ?[*:0]u8 {
+    return uci_port.helpText();
+}
+
+pub export fn zfish_uci_format_unknown_command(
+    command_ptr: [*]const u8,
+    command_len: usize,
+) ?[*:0]u8 {
+    return uci_port.formatUnknownCommand(command_ptr[0..command_len]);
+}
+
+pub export fn zfish_uci_format_critical_error(
+    command_ptr: [*]const u8,
+    command_len: usize,
+    message_ptr: [*]const u8,
+    message_len: usize,
+) ?[*:0]u8 {
+    return uci_port.formatCriticalError(command_ptr[0..command_len], message_ptr[0..message_len]);
 }
 
 pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
