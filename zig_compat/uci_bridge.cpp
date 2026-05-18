@@ -32,6 +32,7 @@
 #include "engine.h"
 #include "memory.h"
 #include "movegen.h"
+#include "numa.h"
 #include "position.h"
 #include "score.h"
 #include "search.h"
@@ -74,8 +75,23 @@ struct ZfishParsedPosition {
     const char*  moves;
 };
 
+struct ZfishBenchmarkSetupOutput {
+    int         tt_size;
+    int         threads;
+    const char* commands_ptr;
+    const char* original_invocation_ptr;
+    const char* filled_invocation_ptr;
+};
+
 ZfishParsedLimits zfish_uci_parse_limits(const unsigned char* input_ptr, std::size_t input_len);
 ZfishParsedPosition zfish_uci_parse_position(const unsigned char* input_ptr, std::size_t input_len);
+const char* zfish_benchmark_setup_bench(const unsigned char* current_fen_ptr,
+                                        std::size_t          current_fen_len,
+                                        const unsigned char* args_ptr,
+                                        std::size_t          args_len);
+ZfishBenchmarkSetupOutput zfish_benchmark_setup_benchmark(const unsigned char* args_ptr,
+                                                          std::size_t          args_len,
+                                                          int                  hardware_concurrency);
 const char* zfish_uci_format_info_string(const unsigned char* input_ptr, std::size_t input_len);
 const char* zfish_uci_format_score(std::uint8_t kind, int value, int extra);
 int         zfish_uci_to_cp(int value, int material);
@@ -150,6 +166,12 @@ std::vector<std::string> split_newlines(const std::string& text) {
 int material_count(const Position& pos) {
     return pos.count<PAWN>() + 3 * pos.count<KNIGHT>() + 3 * pos.count<BISHOP>()
          + 5 * pos.count<ROOK>() + 9 * pos.count<QUEEN>();
+}
+
+std::string read_remaining_args(std::istream& is) {
+    std::string args;
+    std::getline(is, args);
+    return args;
 }
 
 }  // namespace
@@ -307,7 +329,12 @@ void UCIEngine::bench(std::istream& args) {
         on_update_full(i, options["UCI_ShowWDL"]);
     });
 
-    std::vector<std::string> list = Benchmark::setup_bench(engine.fen(), args);
+        const std::string benchmarkArgs = read_remaining_args(args);
+        const std::string currentFen = engine.fen();
+        const char* rendered = zfish_benchmark_setup_bench(
+            reinterpret_cast<const unsigned char*>(currentFen.data()), currentFen.size(),
+            reinterpret_cast<const unsigned char*>(benchmarkArgs.data()), benchmarkArgs.size());
+        std::vector<std::string> list = split_newlines(take_string_and_free(rendered));
 
     num = count_if(list.begin(), list.end(),
                    [](const std::string& s) { return s.find("go ") == 0 || s.find("eval") == 0; });
@@ -378,7 +405,17 @@ void UCIEngine::benchmark(std::istream& args) {
     engine.set_on_bestmove([](const auto&, const auto&) {});
     engine.set_on_verify_network([](const auto&) {});
 
-    Benchmark::BenchmarkSetup setup = Benchmark::setup_benchmark(args);
+        const std::string benchmarkArgs = read_remaining_args(args);
+        const auto setupOutput = zfish_benchmark_setup_benchmark(
+            reinterpret_cast<const unsigned char*>(benchmarkArgs.data()), benchmarkArgs.size(),
+            static_cast<int>(get_hardware_concurrency()));
+
+        Benchmark::BenchmarkSetup setup{};
+        setup.ttSize = setupOutput.tt_size;
+        setup.threads = setupOutput.threads;
+        setup.commands = split_newlines(take_string_and_free(setupOutput.commands_ptr));
+        setup.originalInvocation = take_string_and_free(setupOutput.original_invocation_ptr);
+        setup.filledInvocation = take_string_and_free(setupOutput.filled_invocation_ptr);
 
     const auto numGoCommands = count_if(setup.commands.begin(), setup.commands.end(),
                                         [](const std::string& s) { return s.find("go ") == 0; });
