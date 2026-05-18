@@ -18,10 +18,15 @@
 #ifndef NNUE_FEATURES_FULL_THREATS_INCLUDED
 #define NNUE_FEATURES_FULL_THREATS_INCLUDED
 
+#include <cstddef>
 #include <cstdint>
 
 #if defined(ZFISH_ZIG_BUILD)
 extern "C" {
+struct ZfishDirtyThreatRaw {
+  std::uint32_t data;
+};
+
 struct ZfishFullDiff {
   std::uint8_t us;
   std::uint8_t prev_ksq;
@@ -37,7 +42,16 @@ struct ZfishFullThreatParams {
   std::uint8_t king_square;
 };
 
+struct ZfishFullAppendResult {
+  std::size_t   len;
+  std::uint32_t indices[128];
+};
+
 std::uint32_t zfish_full_threats_make_index(ZfishFullThreatParams params);
+ZfishFullAppendResult zfish_full_threats_append_changed(std::uint8_t               perspective,
+                            std::uint8_t               king_square,
+                            const ZfishDirtyThreatRaw* list_ptr,
+                            std::size_t                list_len);
 bool          zfish_full_threats_requires_refresh(ZfishFullDiff diff, std::uint8_t perspective);
 }
 #endif
@@ -139,6 +153,37 @@ inline bool FullThreats::requires_refresh(const DiffType& diff, Color perspectiv
       {static_cast<std::uint8_t>(diff.us), static_cast<std::uint8_t>(diff.prevKsq),
        static_cast<std::uint8_t>(diff.ksq)},
       static_cast<std::uint8_t>(perspective));
+}
+
+inline void FullThreats::append_changed_indices(Color                   perspective,
+                                                Square                  ksq,
+                                                const DiffType&         diff,
+                                                IndexList&              removed,
+                                                IndexList&              added,
+                                                FusedUpdateData*,
+                                                bool,
+                                                const ThreatWeightType* prefetchBase,
+                                                IndexType               prefetchStride) {
+    const auto& list = diff.list;
+
+    ZfishDirtyThreatRaw raw_list[MaxActiveDimensions]{};
+    for (std::size_t i = 0; i < list.size(); ++i)
+        raw_list[i].data = list[i].raw();
+
+    const auto result = zfish_full_threats_append_changed(
+      static_cast<std::uint8_t>(perspective), static_cast<std::uint8_t>(ksq), raw_list, list.size());
+    assert(result.len == list.size());
+
+    for (std::size_t i = 0; i < result.len; ++i)
+    {
+        const auto raw       = list[i].raw();
+        const bool add       = raw >> 31;
+        const auto index     = static_cast<IndexType>(result.indices[i]);
+        if (prefetchBase)
+            prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(reinterpret_cast<const void*>(
+              reinterpret_cast<uintptr_t>(prefetchBase) + index * prefetchStride));
+        (add ? added : removed).push_back_if_lt(index, Dimensions);
+    }
 }
 #endif
 
