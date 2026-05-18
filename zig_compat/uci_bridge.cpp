@@ -51,9 +51,7 @@
 #define ZFISH_POSITION_BRIDGE_SKIP_FEN
 #include "../src/position.cpp"
 
-#define PieceToChar engine_bridge_tbprobe_piece_to_char
 #include "engine_bridge.cpp"
-#undef PieceToChar
 #include "search_bridge.cpp"
 
 namespace Stockfish {
