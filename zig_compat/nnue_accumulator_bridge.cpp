@@ -1000,29 +1000,6 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
     }
 }
 
-void FullThreats::append_changed_indices(Color                   perspective,
-                                         Square                  ksq,
-                                         const DiffType&         diff,
-                                         IndexList&              removed,
-                                         IndexList&              added,
-                                         FusedUpdateData*,
-                                         bool,
-                                         const ThreatWeightType* prefetchBase,
-                                         IndexType               prefetchStride) {
-    const auto& list = diff.list;
-    for (std::size_t i = 0; i < list.size(); ++i)
-    {
-        const auto raw = list[i].raw();
-        const bool add = raw >> 31;
-        const IndexType index = make_index(perspective, list[i].pc(), list[i].pc_sq(),
-                                           list[i].threatened_sq(), list[i].threatened_pc(), ksq);
-        if (prefetchBase)
-            prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(reinterpret_cast<const void*>(
-              reinterpret_cast<uintptr_t>(prefetchBase) + index * prefetchStride));
-        (add ? added : removed).push_back_if_lt(index, Dimensions);
-    }
-}
-
 }  // namespace Features
 
 }  // namespace Stockfish::Eval::NNUE

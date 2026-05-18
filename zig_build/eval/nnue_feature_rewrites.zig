@@ -132,7 +132,7 @@ fn appendFullIndex(
     attacked: u8,
     king_square: u8,
 ) void {
-    const idx = fullMakeIndex(.{
+    result.indices[result.len] = fullMakeIndex(.{
         .perspective = perspective,
         .attacker = attacker,
         .from_sq = from_sq,
@@ -140,10 +140,7 @@ fn appendFullIndex(
         .attacked = attacked,
         .king_square = king_square,
     });
-    if (idx < full_dimensions) {
-        result.indices[result.len] = idx;
-        result.len += 1;
-    }
+    result.len += 1;
 }
 
 const DecodedThreat = struct {
