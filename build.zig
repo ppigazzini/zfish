@@ -60,6 +60,18 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const evaluate_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/eval/evaluate_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const nnue_misc_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/eval/nnue_misc_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("evaluate_rewrites", evaluate_rewrites);
+    exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
     exe.root_module.addImport("timeman_rewrites", timeman_rewrites);
 
     var compile_flags = std.ArrayList([]const u8).empty;
@@ -75,7 +87,6 @@ pub fn build(b: *std.Build) void {
     const stockfish_sources = &.{
         "benchmark.cpp",
         "bitboard.cpp",
-        "evaluate.cpp",
         "misc.cpp",
         "movegen.cpp",
         "movepick.cpp",
@@ -88,7 +99,6 @@ pub fn build(b: *std.Build) void {
         "tune.cpp",
         "syzygy/tbprobe.cpp",
         "nnue/nnue_accumulator.cpp",
-        "nnue/nnue_misc.cpp",
         "nnue/network.cpp",
         "nnue/features/half_ka_v2_hm.cpp",
         "nnue/features/full_threats.cpp",
@@ -100,6 +110,8 @@ pub fn build(b: *std.Build) void {
         "memory_bridge.cpp",
         "score_bridge.cpp",
         "timeman_bridge.cpp",
+        "evaluate_bridge.cpp",
+        "nnue_misc_bridge.cpp",
     };
 
     exe.root_module.addIncludePath(b.path("src"));
