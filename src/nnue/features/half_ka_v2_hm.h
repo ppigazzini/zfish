@@ -23,6 +23,30 @@
 
 #include <cstdint>
 
+#if defined(ZFISH_ZIG_BUILD)
+extern "C" {
+struct ZfishHalfDiff {
+    std::uint8_t from;
+    std::uint8_t to;
+    std::uint8_t pc;
+    std::uint8_t remove_sq;
+    std::uint8_t add_sq;
+    std::uint8_t remove_pc;
+    std::uint8_t add_pc;
+};
+
+struct ZfishHalfThreatParams {
+    std::uint8_t perspective;
+    std::uint8_t square;
+    std::uint8_t piece;
+    std::uint8_t king_square;
+};
+
+std::uint32_t zfish_half_ka_make_index(ZfishHalfThreatParams params);
+bool          zfish_half_ka_requires_refresh(ZfishHalfDiff diff, std::uint8_t perspective);
+}
+#endif
+
 #include "../../misc.h"
 #include "../../types.h"
 #include "../nnue_common.h"
@@ -134,6 +158,24 @@ class HalfKAv2_hm {
     // that a full accumulator refresh is required.
     static bool requires_refresh(const DiffType& diff, Color perspective);
 };
+
+#if defined(ZFISH_ZIG_BUILD)
+inline IndexType HalfKAv2_hm::make_index(Color perspective, Square s, Piece pc, Square ksq) {
+    return zfish_half_ka_make_index({static_cast<std::uint8_t>(perspective),
+                                     static_cast<std::uint8_t>(s),
+                                     static_cast<std::uint8_t>(pc),
+                                     static_cast<std::uint8_t>(ksq)});
+}
+
+inline bool HalfKAv2_hm::requires_refresh(const DiffType& diff, Color perspective) {
+    return zfish_half_ka_requires_refresh(
+      {static_cast<std::uint8_t>(diff.from), static_cast<std::uint8_t>(diff.to),
+       static_cast<std::uint8_t>(diff.pc), static_cast<std::uint8_t>(diff.remove_sq),
+       static_cast<std::uint8_t>(diff.add_sq), static_cast<std::uint8_t>(diff.remove_pc),
+       static_cast<std::uint8_t>(diff.add_pc)},
+      static_cast<std::uint8_t>(perspective));
+}
+#endif
 
 }  // namespace Stockfish::Eval::NNUE::Features
 
