@@ -21,6 +21,7 @@
 #ifndef NNUE_FEATURES_HALF_KA_V2_HM_H_INCLUDED
 #define NNUE_FEATURES_HALF_KA_V2_HM_H_INCLUDED
 
+#include <cstddef>
 #include <cstdint>
 
 #if defined(ZFISH_ZIG_BUILD)
@@ -42,7 +43,15 @@ struct ZfishHalfThreatParams {
     std::uint8_t king_square;
 };
 
+struct ZfishHalfAppendResult {
+    std::size_t   len;
+    std::uint32_t indices[32];
+};
+
 std::uint32_t zfish_half_ka_make_index(ZfishHalfThreatParams params);
+ZfishHalfAppendResult zfish_half_ka_append_changed(std::uint8_t perspective,
+                                                   std::uint8_t king_square,
+                                                   ZfishHalfDiff diff);
 bool          zfish_half_ka_requires_refresh(ZfishHalfDiff diff, std::uint8_t perspective);
 }
 #endif
@@ -174,6 +183,29 @@ inline bool HalfKAv2_hm::requires_refresh(const DiffType& diff, Color perspectiv
        static_cast<std::uint8_t>(diff.add_sq), static_cast<std::uint8_t>(diff.remove_pc),
        static_cast<std::uint8_t>(diff.add_pc)},
       static_cast<std::uint8_t>(perspective));
+}
+
+inline void HalfKAv2_hm::append_changed_indices(
+    Color perspective, Square ksq, const DiffType& diff, IndexList& removed, IndexList& added) {
+        const auto result = zfish_half_ka_append_changed(
+            static_cast<std::uint8_t>(perspective), static_cast<std::uint8_t>(ksq),
+            {static_cast<std::uint8_t>(diff.from), static_cast<std::uint8_t>(diff.to),
+             static_cast<std::uint8_t>(diff.pc), static_cast<std::uint8_t>(diff.remove_sq),
+             static_cast<std::uint8_t>(diff.add_sq), static_cast<std::uint8_t>(diff.remove_pc),
+             static_cast<std::uint8_t>(diff.add_pc)});
+
+        std::size_t next = 0;
+        removed.push_back(static_cast<IndexType>(result.indices[next++]));
+        if (diff.to != SQ_NONE)
+                added.push_back(static_cast<IndexType>(result.indices[next++]));
+
+        if (diff.remove_sq != SQ_NONE)
+                removed.push_back(static_cast<IndexType>(result.indices[next++]));
+
+        if (diff.add_sq != SQ_NONE)
+                added.push_back(static_cast<IndexType>(result.indices[next++]));
+
+        assert(next == result.len);
 }
 #endif
 
