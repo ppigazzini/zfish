@@ -941,19 +941,6 @@ void HalfKAv2_hm::append_active_indices(Color perspective, const Position& pos, 
     }
 }
 
-void HalfKAv2_hm::append_changed_indices(
-  Color perspective, Square ksq, const DiffType& diff, IndexList& removed, IndexList& added) {
-    removed.push_back(make_index(perspective, diff.from, diff.pc, ksq));
-    if (diff.to != SQ_NONE)
-        added.push_back(make_index(perspective, diff.to, diff.pc, ksq));
-
-    if (diff.remove_sq != SQ_NONE)
-        removed.push_back(make_index(perspective, diff.remove_sq, diff.remove_pc, ksq));
-
-    if (diff.add_sq != SQ_NONE)
-        added.push_back(make_index(perspective, diff.add_sq, diff.add_pc, ksq));
-}
-
 void FullThreats::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
     const Square   ksq      = pos.square<KING>(perspective);
     const Bitboard occupied = pos.pieces();
