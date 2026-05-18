@@ -84,6 +84,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const thread_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/thread_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const tt_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/support/tt_rewrites.zig"),
         .target = target,
@@ -140,6 +145,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
     exe.root_module.addImport("option_rewrites", option_rewrites);
     exe.root_module.addImport("timeman_rewrites", timeman_rewrites);
+    exe.root_module.addImport("thread_rewrites", thread_rewrites);
     exe.root_module.addImport("tt_rewrites", tt_rewrites);
     exe.root_module.addImport("uci_rewrites", uci_rewrites);
 
@@ -156,7 +162,6 @@ pub fn build(b: *std.Build) void {
     const stockfish_sources = &.{
         "position.cpp",
         "search.cpp",
-        "thread.cpp",
         "syzygy/tbprobe.cpp",
         "nnue/nnue_accumulator.cpp",
         "engine.cpp",
@@ -173,6 +178,7 @@ pub fn build(b: *std.Build) void {
         "network_bridge.cpp",
         "nnue_features_bridge.cpp",
         "score_bridge.cpp",
+        "thread_bridge.cpp",
         "timeman_bridge.cpp",
         "tt_bridge.cpp",
         "tune_bridge.cpp",
