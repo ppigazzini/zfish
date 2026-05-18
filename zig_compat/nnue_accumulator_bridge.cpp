@@ -371,12 +371,6 @@ void zfish_accumulator_refresh_latest(void*          stack_ptr,
 }
 }
 
-void AccumulatorStack::evaluate(const Position&           pos,
-                                const FeatureTransformer& featureTransformer,
-                                AccumulatorCaches&        cache) noexcept {
-    zfish_accumulator_evaluate(this, &pos, &featureTransformer, &cache);
-}
-
 template<typename FeatureSet>
 void AccumulatorStack::forward_update_incremental(Color                     perspective,
                                                   const Position&           pos,

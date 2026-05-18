@@ -37,6 +37,15 @@ class Position;
 
 namespace Stockfish::Eval::NNUE {
 
+#if defined(ZFISH_ZIG_BUILD)
+extern "C" {
+void zfish_accumulator_evaluate(void*       stack,
+                                const void* pos,
+                                const void* feature_transformer,
+                                void*       cache);
+}
+#endif
+
 struct alignas(CacheLineSize) Accumulator;
 
 class FeatureTransformer;
@@ -158,6 +167,14 @@ class AccumulatorStack {
 
     friend struct AccumulatorBridgeAccess;
 };
+
+#if defined(ZFISH_ZIG_BUILD)
+inline void AccumulatorStack::evaluate(const Position&           pos,
+                                       const FeatureTransformer& featureTransformer,
+                                       [[maybe_unused]] AccumulatorCaches& cache) noexcept {
+    zfish_accumulator_evaluate(this, &pos, &featureTransformer, &cache);
+}
+#endif
 
 }  // namespace Stockfish::Eval::NNUE
 
