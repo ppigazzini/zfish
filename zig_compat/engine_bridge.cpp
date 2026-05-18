@@ -1379,8 +1379,6 @@ Engine::Engine(std::optional<std::string> path) :
     resize_threads();
 }
 
-void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search_finished(); }
-
 std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
                                                      const std::vector<std::string>& moves) {
     states   = StateListPtr(new std::deque<StateInfo>(1));
