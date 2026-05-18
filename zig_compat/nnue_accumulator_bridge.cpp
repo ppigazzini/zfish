@@ -206,24 +206,6 @@ struct ZfishDirtyThreatRaw {
     std::uint32_t data;
 };
 
-struct ZfishFullDiff {
-    std::uint8_t us;
-    std::uint8_t prev_ksq;
-    std::uint8_t ksq;
-};
-
-struct ZfishFullThreatParams {
-    std::uint8_t perspective;
-    std::uint8_t attacker;
-    std::uint8_t from_sq;
-    std::uint8_t to_sq;
-    std::uint8_t attacked;
-    std::uint8_t king_square;
-};
-
-std::uint32_t zfish_full_threats_make_index(ZfishFullThreatParams params);
-bool          zfish_full_threats_requires_refresh(ZfishFullDiff diff, std::uint8_t perspective);
-
 void zfish_accumulator_evaluate(void*                  stack,
                                 const void*            pos,
                                 const void*            feature_transformer,
@@ -972,16 +954,6 @@ void HalfKAv2_hm::append_changed_indices(
         added.push_back(make_index(perspective, diff.add_sq, diff.add_pc, ksq));
 }
 
-IndexType FullThreats::make_index(
-  Color perspective, Piece attacker, Square from, Square to, Piece attacked, Square ksq) {
-    return zfish_full_threats_make_index({static_cast<std::uint8_t>(perspective),
-                                          static_cast<std::uint8_t>(attacker),
-                                          static_cast<std::uint8_t>(from),
-                                          static_cast<std::uint8_t>(to),
-                                          static_cast<std::uint8_t>(attacked),
-                                          static_cast<std::uint8_t>(ksq)});
-}
-
 void FullThreats::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
     const Square   ksq      = pos.square<KING>(perspective);
     const Bitboard occupied = pos.pieces();
@@ -1062,13 +1034,6 @@ void FullThreats::append_changed_indices(Color                   perspective,
               reinterpret_cast<uintptr_t>(prefetchBase) + index * prefetchStride));
         (add ? added : removed).push_back_if_lt(index, Dimensions);
     }
-}
-
-bool FullThreats::requires_refresh(const DiffType& diff, Color perspective) {
-    return zfish_full_threats_requires_refresh(
-      {static_cast<std::uint8_t>(diff.us), static_cast<std::uint8_t>(diff.prevKsq),
-       static_cast<std::uint8_t>(diff.ksq)},
-      static_cast<std::uint8_t>(perspective));
 }
 
 }  // namespace Features
