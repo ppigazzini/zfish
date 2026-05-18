@@ -74,6 +74,11 @@ pub fn build(b: *std.Build) void {
     benchmark_rewrites.addAnonymousImport("benchmark_source_data", .{
         .root_source_file = benchmark_source_module,
     });
+    const misc_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/misc_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const evaluate_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/eval/evaluate_rewrites.zig"),
         .target = target,
@@ -86,6 +91,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("benchmark_rewrites", benchmark_rewrites);
     exe.root_module.addImport("evaluate_rewrites", evaluate_rewrites);
+    exe.root_module.addImport("misc_rewrites", misc_rewrites);
     exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
     exe.root_module.addImport("timeman_rewrites", timeman_rewrites);
 
@@ -101,7 +107,6 @@ pub fn build(b: *std.Build) void {
 
     const stockfish_sources = &.{
         "bitboard.cpp",
-        "misc.cpp",
         "movegen.cpp",
         "movepick.cpp",
         "position.cpp",
@@ -123,6 +128,7 @@ pub fn build(b: *std.Build) void {
         "benchmark_bridge.cpp",
         "main_bridge.cpp",
         "memory_bridge.cpp",
+        "misc_bridge.cpp",
         "score_bridge.cpp",
         "timeman_bridge.cpp",
         "evaluate_bridge.cpp",
