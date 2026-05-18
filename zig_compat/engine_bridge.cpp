@@ -29,6 +29,7 @@
 #include <optional>
 #include <ostream>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -52,6 +53,10 @@
 #include "types.h"
 #include "uci.h"
 #include "ucioption.h"
+
+#define ZFISH_TBPROBE_BRIDGE_SKIP_DTZ_BEFORE_ZEROING
+#define ZFISH_TBPROBE_BRIDGE_SKIP_ADD
+#include "../src/syzygy/tbprobe.cpp"
 
 #if !defined(UNIVERSAL_BINARY) && !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
 INCBIN(EmbeddedNNUE, EvalFileDefaultName);
@@ -108,9 +113,22 @@ struct ZfishNnueTraceInput {
 
 const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
+const char* zfish_tbprobe_build_code(const unsigned char* piece_types_ptr, std::size_t piece_count);
+int         zfish_tbprobe_dtz_before_zeroing(int wdl);
 }
 
 namespace {
+
+std::string take_string_and_free(const char* rendered) {
+    if (!rendered)
+        std::abort();
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+
+int dtz_before_zeroing(WDLScore wdl) { return zfish_tbprobe_dtz_before_zeroing(int(wdl)); }
 
 std::string build_nnue_trace(Stockfish::Position&                     pos,
                              const Stockfish::Eval::NNUE::Network&     network,
@@ -478,6 +496,34 @@ std::string Engine::thread_allocation_information_as_string() const {
     std::string result(rendered);
     std::free(const_cast<char*>(rendered));
     return result;
+}
+
+void TBTables::add(const std::vector<PieceType>& pieces) {
+    const std::string code = take_string_and_free(
+      zfish_tbprobe_build_code(reinterpret_cast<const unsigned char*>(pieces.data()), pieces.size()));
+
+    TBFile file_dtz(code + ".rtbz");
+    if (file_dtz.is_open())
+    {
+        file_dtz.close();
+        foundDTZFiles++;
+    }
+
+    TBFile file(code + ".rtbw");
+
+    if (!file.is_open())
+        return;
+
+    file.close();
+    foundWDLFiles++;
+
+    MaxCardinality = std::max(int(pieces.size()), MaxCardinality);
+
+    wdlTable.emplace_back(code);
+    dtzTable.emplace_back(wdlTable.back());
+
+    insert(wdlTable.back().key, &wdlTable.back(), &dtzTable.back());
+    insert(wdlTable.back().key2, &wdlTable.back(), &dtzTable.back());
 }
 
 namespace Eval::NNUE {
