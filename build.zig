@@ -79,6 +79,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const movepick_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/movepick_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const tt_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/support/tt_rewrites.zig"),
         .target = target,
@@ -129,6 +134,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("evaluate_rewrites", evaluate_rewrites);
     exe.root_module.addImport("misc_rewrites", misc_rewrites);
     exe.root_module.addImport("movegen_rewrites", movegen_rewrites);
+    exe.root_module.addImport("movepick_rewrites", movepick_rewrites);
     exe.root_module.addImport("network_rewrites", network_rewrites);
     exe.root_module.addImport("nnue_feature_rewrites", nnue_feature_rewrites);
     exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
@@ -148,7 +154,6 @@ pub fn build(b: *std.Build) void {
     compile_flags.appendSlice(b.allocator, arch.flags) catch @panic("OOM");
 
     const stockfish_sources = &.{
-        "movepick.cpp",
         "position.cpp",
         "search.cpp",
         "thread.cpp",
@@ -164,6 +169,7 @@ pub fn build(b: *std.Build) void {
         "memory_bridge.cpp",
         "misc_bridge.cpp",
         "movegen_bridge.cpp",
+        "movepick_bridge.cpp",
         "network_bridge.cpp",
         "nnue_features_bridge.cpp",
         "score_bridge.cpp",
