@@ -84,6 +84,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const option_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/uci/option_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const evaluate_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/eval/evaluate_rewrites.zig"),
         .target = target,
@@ -98,6 +103,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("evaluate_rewrites", evaluate_rewrites);
     exe.root_module.addImport("misc_rewrites", misc_rewrites);
     exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
+    exe.root_module.addImport("option_rewrites", option_rewrites);
     exe.root_module.addImport("timeman_rewrites", timeman_rewrites);
     exe.root_module.addImport("tt_rewrites", tt_rewrites);
 
@@ -119,8 +125,6 @@ pub fn build(b: *std.Build) void {
         "search.cpp",
         "thread.cpp",
         "uci.cpp",
-        "ucioption.cpp",
-        "tune.cpp",
         "syzygy/tbprobe.cpp",
         "nnue/nnue_accumulator.cpp",
         "nnue/network.cpp",
@@ -137,6 +141,8 @@ pub fn build(b: *std.Build) void {
         "score_bridge.cpp",
         "timeman_bridge.cpp",
         "tt_bridge.cpp",
+        "tune_bridge.cpp",
+        "ucioption_bridge.cpp",
         "evaluate_bridge.cpp",
         "nnue_misc_bridge.cpp",
     };
