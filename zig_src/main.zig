@@ -2,6 +2,7 @@ const std = @import("std");
 
 const memory_port = @import("memory.zig");
 const score_port = @import("score.zig");
+const timeman_port = @import("timeman_rewrites");
 
 extern fn zfish_main_run(argc: c_int, argv: [*]const [*:0]const u8) c_int;
 
@@ -54,4 +55,10 @@ pub export fn zfish_classify_score(
     value_mate: c_int,
 ) score_port.ScoreClass {
     return score_port.classify(value, value_tb_win_in_max_ply, value_tb, value_mate);
+}
+
+pub export fn zfish_timeman_init(
+    input: timeman_port.TimemanInput,
+) timeman_port.TimemanOutput {
+    return timeman_port.init(input);
 }
