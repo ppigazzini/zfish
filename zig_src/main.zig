@@ -67,7 +67,15 @@ pub export fn zfish_std_aligned_alloc(alignment: usize, size: usize) ?*anyopaque
     return memory_port.stdAlignedAlloc(alignment, size);
 }
 
+pub export fn @"_ZN9Stockfish17std_aligned_allocEmm"(alignment: usize, size: usize) ?*anyopaque {
+    return memory_port.stdAlignedAlloc(alignment, size);
+}
+
 pub export fn zfish_std_aligned_free(ptr: ?*anyopaque) void {
+    memory_port.stdAlignedFree(ptr);
+}
+
+pub export fn @"_ZN9Stockfish16std_aligned_freeEPv"(ptr: ?*anyopaque) void {
     memory_port.stdAlignedFree(ptr);
 }
 
@@ -660,11 +668,23 @@ pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
     return memory_port.alignedLargePagesAlloc(alloc_size);
 }
 
+pub export fn @"_ZN9Stockfish25aligned_large_pages_allocEm"(alloc_size: usize) ?*anyopaque {
+    return memory_port.alignedLargePagesAlloc(alloc_size);
+}
+
 pub export fn zfish_aligned_large_pages_free(ptr: ?*anyopaque) void {
     memory_port.alignedLargePagesFree(ptr);
 }
 
+pub export fn @"_ZN9Stockfish24aligned_large_pages_freeEPv"(ptr: ?*anyopaque) void {
+    memory_port.alignedLargePagesFree(ptr);
+}
+
 pub export fn zfish_has_large_pages() bool {
+    return memory_port.hasLargePages();
+}
+
+pub export fn @"_ZN9Stockfish15has_large_pagesEv"() bool {
     return memory_port.hasLargePages();
 }
 

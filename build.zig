@@ -195,7 +195,6 @@ pub fn build(b: *std.Build) void {
         "benchmark_bridge.cpp",
         "bitboard_bridge.cpp",
         "engine_bridge.cpp",
-        "memory_bridge.cpp",
         "misc_bridge.cpp",
         "movegen_bridge.cpp",
         "movepick_bridge.cpp",
