@@ -12,6 +12,7 @@ const network_port = @import("network_rewrites");
 const nnue_feature_port = @import("nnue_feature_rewrites");
 const option_port = @import("option_rewrites");
 const position_port = @import("position_rewrites");
+const search_port = @import("search_rewrites");
 const score_port = @import("score.zig");
 const thread_port = @import("thread_rewrites");
 const evaluate_port = @import("evaluate_rewrites");
@@ -139,6 +140,25 @@ pub export fn zfish_position_compute_material_key(
     piece_count_len: usize,
 ) u64 {
     return position_port.computeMaterialKey(piece_counts_ptr, piece_count_len);
+}
+
+pub export fn zfish_search_to_corrected_static_eval(v: c_int, cv: c_int) c_int {
+    return search_port.toCorrectedStaticEval(v, cv);
+}
+
+pub export fn zfish_search_value_draw(nodes: usize) c_int {
+    return search_port.valueDraw(nodes);
+}
+
+pub export fn zfish_search_reduction(
+    reductions_ptr: [*]const c_int,
+    depth: c_int,
+    move_number: c_int,
+    delta: c_int,
+    root_delta: c_int,
+    improving: u8,
+) c_int {
+    return search_port.reduction(reductions_ptr, depth, move_number, delta, root_delta, improving != 0);
 }
 
 pub export fn zfish_movegen_generate_captures(
