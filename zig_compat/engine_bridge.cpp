@@ -1379,29 +1379,6 @@ Engine::Engine(std::optional<std::string> path) :
     resize_threads();
 }
 
-std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
-    verify_network();
-
-    return Benchmark::perft(fen, depth, isChess960);
-}
-
-void Engine::go(Search::LimitsType& limits) {
-    assert(limits.perft == 0);
-    verify_network();
-
-    threads.start_thinking(options, pos, states, limits);
-}
-void Engine::stop() { threads.stop = true; }
-
-void Engine::search_clear() {
-    wait_for_search_finished();
-
-    tt.clear(threads);
-    threads.clear();
-
-    Tablebases::init(options["SyzygyPath"]);
-}
-
 void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
     updateContext.onUpdateNoMoves = std::move(f);
 }
