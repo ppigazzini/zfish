@@ -2507,13 +2507,6 @@ ZfishAssignmentResult zfish_option_validate_assignment(const unsigned char* type
                                                        int                  max_value,
                                                        const unsigned char* default_ptr,
                                                        std::size_t          default_len);
-const char* zfish_benchmark_setup_bench(const unsigned char* current_fen_ptr,
-                                        std::size_t          current_fen_len,
-                                        const unsigned char* args_ptr,
-                                        std::size_t          args_len);
-ZfishBenchmarkSetupOutput zfish_benchmark_setup_benchmark(const unsigned char* args_ptr,
-                                                          std::size_t          args_len,
-                                                          int                  hardware_concurrency);
 const char*   zfish_position_build_endgame_fen(const unsigned char* code_ptr,
                                                std::size_t          code_len,
                                                std::uint8_t         color);
@@ -2856,12 +2849,7 @@ void UCIEngine::bench(std::istream& args) {
         on_update_full(i, options["UCI_ShowWDL"]);
     });
 
-        const std::string benchmarkArgs = read_remaining_args(args);
-        const std::string currentFen = engine.fen();
-        const char* rendered = zfish_benchmark_setup_bench(
-            reinterpret_cast<const unsigned char*>(currentFen.data()), currentFen.size(),
-            reinterpret_cast<const unsigned char*>(benchmarkArgs.data()), benchmarkArgs.size());
-        std::vector<std::string> list = split_newlines(take_string_and_free(rendered));
+    std::vector<std::string> list = Benchmark::setup_bench(engine.fen(), args);
 
     num = count_if(list.begin(), list.end(),
                    [](const std::string& s) { return s.find("go ") == 0 || s.find("eval") == 0; });
@@ -2932,17 +2920,7 @@ void UCIEngine::benchmark(std::istream& args) {
     engine.set_on_bestmove([](const auto&, const auto&) {});
     engine.set_on_verify_network([](const auto&) {});
 
-        const std::string benchmarkArgs = read_remaining_args(args);
-        const auto setupOutput = zfish_benchmark_setup_benchmark(
-            reinterpret_cast<const unsigned char*>(benchmarkArgs.data()), benchmarkArgs.size(),
-            static_cast<int>(get_hardware_concurrency()));
-
-        Benchmark::BenchmarkSetup setup{};
-        setup.ttSize = setupOutput.tt_size;
-        setup.threads = setupOutput.threads;
-        setup.commands = split_newlines(take_string_and_free(setupOutput.commands_ptr));
-        setup.originalInvocation = take_string_and_free(setupOutput.original_invocation_ptr);
-        setup.filledInvocation = take_string_and_free(setupOutput.filled_invocation_ptr);
+    Benchmark::BenchmarkSetup setup = Benchmark::setup_benchmark(args);
 
     const auto numGoCommands = count_if(setup.commands.begin(), setup.commands.end(),
                                         [](const std::string& s) { return s.find("go ") == 0; });
