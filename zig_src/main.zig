@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const benchmark_port = @import("benchmark_rewrites");
+const bitboard_port = @import("bitboard_rewrites");
 const memory_port = @import("memory.zig");
 const misc_port = @import("misc_rewrites");
 const option_port = @import("option_rewrites");
@@ -337,6 +338,32 @@ pub export fn zfish_uci_format_critical_error(
     message_len: usize,
 ) ?[*:0]u8 {
     return uci_port.formatCriticalError(command_ptr[0..command_len], message_ptr[0..message_len]);
+}
+
+pub export fn zfish_bitboard_init(
+    popcnt16: *[1 << 16]u8,
+    square_distance: *[64][64]u8,
+    line_bb: *[64][64]u64,
+    between_bb: *[64][64]u64,
+    ray_pass_bb: *[64][64]u64,
+    magics: *[64][2]bitboard_port.Magic,
+    rook_table: [*]u64,
+    bishop_table: [*]u64,
+) void {
+    return bitboard_port.init(
+        popcnt16,
+        square_distance,
+        line_bb,
+        between_bb,
+        ray_pass_bb,
+        magics,
+        rook_table,
+        bishop_table,
+    );
+}
+
+pub export fn zfish_bitboard_pretty(bitboard: u64) ?[*:0]u8 {
+    return bitboard_port.pretty(bitboard);
 }
 
 pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
