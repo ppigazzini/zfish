@@ -114,6 +114,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const network_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/eval/network_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const nnue_misc_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/eval/nnue_misc_rewrites.zig"),
         .target = target,
@@ -124,6 +129,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("evaluate_rewrites", evaluate_rewrites);
     exe.root_module.addImport("misc_rewrites", misc_rewrites);
     exe.root_module.addImport("movegen_rewrites", movegen_rewrites);
+    exe.root_module.addImport("network_rewrites", network_rewrites);
     exe.root_module.addImport("nnue_feature_rewrites", nnue_feature_rewrites);
     exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
     exe.root_module.addImport("option_rewrites", option_rewrites);
@@ -148,7 +154,6 @@ pub fn build(b: *std.Build) void {
         "thread.cpp",
         "syzygy/tbprobe.cpp",
         "nnue/nnue_accumulator.cpp",
-        "nnue/network.cpp",
         "engine.cpp",
     };
 
@@ -159,6 +164,7 @@ pub fn build(b: *std.Build) void {
         "memory_bridge.cpp",
         "misc_bridge.cpp",
         "movegen_bridge.cpp",
+        "network_bridge.cpp",
         "nnue_features_bridge.cpp",
         "score_bridge.cpp",
         "timeman_bridge.cpp",
