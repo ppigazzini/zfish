@@ -60,6 +60,20 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const benchmark_source_files = b.addWriteFiles();
+    _ = benchmark_source_files.addCopyFile(b.path("src/benchmark.cpp"), "benchmark.cpp");
+    const benchmark_source_module = benchmark_source_files.add(
+        "benchmark_source_data.zig",
+        "pub const source = @embedFile(\"benchmark.cpp\");\n",
+    );
+    const benchmark_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/bench/benchmark_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    benchmark_rewrites.addAnonymousImport("benchmark_source_data", .{
+        .root_source_file = benchmark_source_module,
+    });
     const evaluate_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/eval/evaluate_rewrites.zig"),
         .target = target,
@@ -70,6 +84,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe.root_module.addImport("benchmark_rewrites", benchmark_rewrites);
     exe.root_module.addImport("evaluate_rewrites", evaluate_rewrites);
     exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
     exe.root_module.addImport("timeman_rewrites", timeman_rewrites);
@@ -85,7 +100,6 @@ pub fn build(b: *std.Build) void {
     compile_flags.appendSlice(b.allocator, arch.flags) catch @panic("OOM");
 
     const stockfish_sources = &.{
-        "benchmark.cpp",
         "bitboard.cpp",
         "misc.cpp",
         "movegen.cpp",
@@ -106,6 +120,7 @@ pub fn build(b: *std.Build) void {
     };
 
     const zig_compat_sources = &.{
+        "benchmark_bridge.cpp",
         "main_bridge.cpp",
         "memory_bridge.cpp",
         "score_bridge.cpp",

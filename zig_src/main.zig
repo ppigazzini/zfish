@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const benchmark_port = @import("benchmark_rewrites");
 const memory_port = @import("memory.zig");
 const score_port = @import("score.zig");
 const evaluate_port = @import("evaluate_rewrites");
@@ -81,4 +82,24 @@ pub export fn zfish_nnue_format_trace(
     input: nnue_misc_port.NnueTraceInput,
 ) ?[*:0]u8 {
     return nnue_misc_port.formatTrace(input);
+}
+
+pub export fn zfish_benchmark_setup_bench(
+    current_fen_ptr: [*]const u8,
+    current_fen_len: usize,
+    args_ptr: [*]const u8,
+    args_len: usize,
+) ?[*:0]u8 {
+    return benchmark_port.setupBench(
+        current_fen_ptr[0..current_fen_len],
+        args_ptr[0..args_len],
+    );
+}
+
+pub export fn zfish_benchmark_setup_benchmark(
+    args_ptr: [*]const u8,
+    args_len: usize,
+    hardware_concurrency: c_int,
+) benchmark_port.BenchmarkSetupOutput {
+    return benchmark_port.setupBenchmark(args_ptr[0..args_len], hardware_concurrency);
 }
