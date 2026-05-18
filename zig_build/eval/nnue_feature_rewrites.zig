@@ -52,9 +52,7 @@ pub const FullThreatParams = extern struct {
 
 pub fn halfMakeIndex(params: HalfThreatParams) u32 {
     const flip: u32 = 56 * params.perspective;
-    return (@as(u32, params.square) ^ orient_tbl_half[params.king_square] ^ flip)
-        + piece_square_index[params.perspective][params.piece]
-        + king_buckets[params.king_square ^ params.perspective * 56];
+    return (@as(u32, params.square) ^ orient_tbl_half[params.king_square] ^ flip) + piece_square_index[params.perspective][params.piece] + king_buckets[params.king_square ^ params.perspective * 56];
 }
 
 pub fn halfAppendChanged(perspective: u8, king_square: u8, diff: HalfDiff) HalfAppendResult {
@@ -77,17 +75,14 @@ pub fn halfRequiresRefresh(diff: HalfDiff, perspective: u8) bool {
 }
 
 pub fn fullMakeIndex(params: FullThreatParams) u32 {
-    const orientation: i32 = @as(i32, orient_tbl_full[params.king_square])
-        ^ @as(i32, 56 * params.perspective);
+    const orientation: i32 = @as(i32, orient_tbl_full[params.king_square]) ^ @as(i32, 56 * params.perspective);
     const from_oriented: usize = @intCast(@as(u8, params.from_sq) ^ @as(u8, @intCast(orientation)));
     const to_oriented: usize = @intCast(@as(u8, params.to_sq) ^ @as(u8, @intCast(orientation)));
     const swap: u8 = 8 * params.perspective;
     const attacker_oriented: usize = params.attacker ^ swap;
     const attacked_oriented: usize = params.attacked ^ swap;
     const less: usize = @intFromBool(from_oriented < to_oriented);
-    return index_lut1[attacker_oriented][attacked_oriented][less]
-        + offsets[attacker_oriented][from_oriented]
-        + index_lut2[attacker_oriented][from_oriented][to_oriented];
+    return index_lut1[attacker_oriented][attacked_oriented][less] + offsets[attacker_oriented][from_oriented] + index_lut2[attacker_oriented][from_oriented][to_oriented];
 }
 
 pub fn fullAppendChanged(
@@ -115,8 +110,7 @@ pub fn fullAppendChanged(
 }
 
 pub fn fullRequiresRefresh(diff: FullDiff, perspective: u8) bool {
-    return perspective == diff.us
-        and (((@as(i8, @bitCast(diff.ksq)) & 0b100) != (@as(i8, @bitCast(diff.prev_ksq)) & 0b100)));
+    return perspective == diff.us and (((@as(i8, @bitCast(diff.ksq)) & 0b100) != (@as(i8, @bitCast(diff.prev_ksq)) & 0b100)));
 }
 
 fn appendHalfIndex(result: *HalfAppendResult, perspective: u8, square: u8, piece: u8, king_square: u8) void {
@@ -380,8 +374,7 @@ fn initIndexLuts() [16][16][2]u32 {
             }
 
             const feature_slot: u32 = @intCast(colorOf(attacked) * (num_valid_targets[attacker] / 2) + map_value);
-            const feature = helper_offsets[attacker].cumulative_offset
-                + feature_slot * helper_offsets[attacker].cumulative_piece_offset;
+            const feature = helper_offsets[attacker].cumulative_offset + feature_slot * helper_offsets[attacker].cumulative_piece_offset;
 
             indices[attacker][attacked][0] = feature;
             indices[attacker][attacked][1] = if (semi_excluded) full_dimensions else feature;
@@ -401,9 +394,9 @@ const king_buckets = [64]u32{
     20 * ps_nb, 21 * ps_nb, 22 * ps_nb, 23 * ps_nb, 23 * ps_nb, 22 * ps_nb, 21 * ps_nb, 20 * ps_nb,
     16 * ps_nb, 17 * ps_nb, 18 * ps_nb, 19 * ps_nb, 19 * ps_nb, 18 * ps_nb, 17 * ps_nb, 16 * ps_nb,
     12 * ps_nb, 13 * ps_nb, 14 * ps_nb, 15 * ps_nb, 15 * ps_nb, 14 * ps_nb, 13 * ps_nb, 12 * ps_nb,
-    8 * ps_nb, 9 * ps_nb, 10 * ps_nb, 11 * ps_nb, 11 * ps_nb, 10 * ps_nb, 9 * ps_nb, 8 * ps_nb,
-    4 * ps_nb, 5 * ps_nb, 6 * ps_nb, 7 * ps_nb, 7 * ps_nb, 6 * ps_nb, 5 * ps_nb, 4 * ps_nb,
-    0 * ps_nb, 1 * ps_nb, 2 * ps_nb, 3 * ps_nb, 3 * ps_nb, 2 * ps_nb, 1 * ps_nb, 0 * ps_nb,
+    8 * ps_nb,  9 * ps_nb,  10 * ps_nb, 11 * ps_nb, 11 * ps_nb, 10 * ps_nb, 9 * ps_nb,  8 * ps_nb,
+    4 * ps_nb,  5 * ps_nb,  6 * ps_nb,  7 * ps_nb,  7 * ps_nb,  6 * ps_nb,  5 * ps_nb,  4 * ps_nb,
+    0 * ps_nb,  1 * ps_nb,  2 * ps_nb,  3 * ps_nb,  3 * ps_nb,  2 * ps_nb,  1 * ps_nb,  0 * ps_nb,
 };
 
 const orient_tbl_half = [64]u32{

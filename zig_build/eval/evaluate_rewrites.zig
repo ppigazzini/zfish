@@ -31,8 +31,7 @@ pub fn computeValue(input: EvalInput) c_int {
     nnue -= @divTrunc(nnue * nnue_complexity, 18236);
 
     var value = @divTrunc(
-        nnue * (77871 + @as(i64, input.material))
-            + optimism * (7191 + @as(i64, input.material)),
+        nnue * (77871 + @as(i64, input.material)) + optimism * (7191 + @as(i64, input.material)),
         77871,
     );
 

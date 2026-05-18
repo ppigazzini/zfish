@@ -151,28 +151,25 @@ fn tuneNextAlloc(names: []const u8, pop: u8) !TuneNextResult {
         remaining = remaining[comma_index + 1 ..];
     }
 
-    const next_remaining = if (pop != 0)
-        blk: {
-            const comma_index = std.mem.indexOfScalar(u8, names, ',') orelse names.len;
-            if (comma_index == names.len) {
-                break :blk "";
-            }
-
-            var balance_names = names;
-            var local_token = std.ArrayList(u8).empty;
-            defer local_token.deinit(allocator);
-            while (true) {
-                const index = std.mem.indexOfScalar(u8, balance_names, ',') orelse balance_names.len;
-                const segment = trimAsciiWhitespace(balance_names[0..index]);
-                try local_token.appendSlice(allocator, segment);
-                if (countChar(local_token.items, '(') == countChar(local_token.items, ')') or index == balance_names.len) {
-                    break :blk if (index == balance_names.len) "" else balance_names[index + 1 ..];
-                }
-                balance_names = balance_names[index + 1 ..];
-            }
+    const next_remaining = if (pop != 0) blk: {
+        const comma_index = std.mem.indexOfScalar(u8, names, ',') orelse names.len;
+        if (comma_index == names.len) {
+            break :blk "";
         }
-    else
-        names;
+
+        var balance_names = names;
+        var local_token = std.ArrayList(u8).empty;
+        defer local_token.deinit(allocator);
+        while (true) {
+            const index = std.mem.indexOfScalar(u8, balance_names, ',') orelse balance_names.len;
+            const segment = trimAsciiWhitespace(balance_names[0..index]);
+            try local_token.appendSlice(allocator, segment);
+            if (countChar(local_token.items, '(') == countChar(local_token.items, ')') or index == balance_names.len) {
+                break :blk if (index == balance_names.len) "" else balance_names[index + 1 ..];
+            }
+            balance_names = balance_names[index + 1 ..];
+        }
+    } else names;
 
     return .{
         .token = try allocCString(token.items),

@@ -106,31 +106,22 @@ fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: c_int) !Benchmark
     defer original_invocation.deinit(allocator);
 
     const parsed_threads = token_iter.next();
-    const threads: c_int = if (parsed_threads) |token|
-        blk: {
-            try appendOriginalToken(&original_invocation, allocator, token);
-            break :blk try std.fmt.parseInt(c_int, token, 10);
-        }
-    else
-        @max(@as(c_int, 1), hardware_concurrency);
+    const threads: c_int = if (parsed_threads) |token| blk: {
+        try appendOriginalToken(&original_invocation, allocator, token);
+        break :blk try std.fmt.parseInt(c_int, token, 10);
+    } else @max(@as(c_int, 1), hardware_concurrency);
 
     const parsed_tt_size = token_iter.next();
-    const tt_size: c_int = if (parsed_tt_size) |token|
-        blk: {
-            try appendOriginalToken(&original_invocation, allocator, token);
-            break :blk try std.fmt.parseInt(c_int, token, 10);
-        }
-    else
-        128 * threads;
+    const tt_size: c_int = if (parsed_tt_size) |token| blk: {
+        try appendOriginalToken(&original_invocation, allocator, token);
+        break :blk try std.fmt.parseInt(c_int, token, 10);
+    } else 128 * threads;
 
     const parsed_desired_time = token_iter.next();
-    const desired_time_s: c_int = if (parsed_desired_time) |token|
-        blk: {
-            try appendOriginalToken(&original_invocation, allocator, token);
-            break :blk try std.fmt.parseInt(c_int, token, 10);
-        }
-    else
-        150;
+    const desired_time_s: c_int = if (parsed_desired_time) |token| blk: {
+        try appendOriginalToken(&original_invocation, allocator, token);
+        break :blk try std.fmt.parseInt(c_int, token, 10);
+    } else 150;
 
     const filled_invocation = try std.fmt.allocPrint(
         arena,
