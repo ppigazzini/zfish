@@ -2481,8 +2481,6 @@ struct ZfishAssignmentResult {
     const char*  normalized_value;
 };
 
-ZfishParsedLimits zfish_uci_parse_limits(const unsigned char* input_ptr, std::size_t input_len);
-ZfishParsedPosition zfish_uci_parse_position(const unsigned char* input_ptr, std::size_t input_len);
 ZfishScoreClass zfish_classify_score(int value,
                                      int value_tb_win_in_max_ply,
                                      int value_tb,
@@ -2843,34 +2841,6 @@ void UCIEngine::loop() {
     } while (token != "quit" && cli.argc == 1);
 }
 
-Search::LimitsType UCIEngine::parse_limits(std::istream& is) {
-    Search::LimitsType limits;
-    limits.startTime = now();
-
-    std::string rest;
-    std::getline(is, rest);
-    const auto parsed = zfish_uci_parse_limits(reinterpret_cast<const unsigned char*>(rest.data()),
-                                               rest.size());
-
-    limits.time[WHITE] = parsed.wtime;
-    limits.time[BLACK] = parsed.btime;
-    limits.inc[WHITE] = parsed.winc;
-    limits.inc[BLACK] = parsed.binc;
-    limits.movestogo = parsed.movestogo;
-    limits.depth = parsed.depth;
-    limits.nodes = parsed.nodes;
-    limits.movetime = parsed.movetime;
-    limits.mate = parsed.mate;
-    limits.perft = parsed.perft;
-    limits.infinite = parsed.infinite;
-    limits.ponderMode = parsed.ponder_mode != 0;
-
-    for (const auto& move : split_newlines(take_string_and_free(parsed.searchmoves)))
-        limits.searchmoves.push_back(move);
-
-    return limits;
-}
-
 void UCIEngine::go(std::istringstream& is) {
 
     Search::LimitsType limits = parse_limits(is);
@@ -3117,23 +3087,6 @@ std::uint64_t UCIEngine::perft(const Search::LimitsType& limits) {
     auto nodes = engine.perft(engine.fen(), limits.perft, engine.get_options()["UCI_Chess960"]);
     sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
     return nodes;
-}
-
-void UCIEngine::position(std::istringstream& is) {
-    const std::string fullCommand = is.str();
-    const auto parsed = zfish_uci_parse_position(
-      reinterpret_cast<const unsigned char*>(fullCommand.data()), fullCommand.size());
-    if (!parsed.ok)
-        return;
-
-    const auto fen = take_string_and_free(parsed.fen);
-    std::vector<std::string> moves = split_newlines(take_string_and_free(parsed.moves));
-
-    auto err = engine.set_position(fen, moves);
-    if (err.has_value())
-    {
-        terminate_on_critical_error(fullCommand, err->what());
-    }
 }
 
 Move UCIEngine::to_move(const Position& pos, std::string str) {

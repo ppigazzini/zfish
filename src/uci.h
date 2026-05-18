@@ -33,6 +33,30 @@
 
 #if defined(ZFISH_ZIG_BUILD)
 extern "C" {
+struct ZfishParsedLimits {
+    std::int64_t  wtime;
+    std::int64_t  btime;
+    std::int64_t  winc;
+    std::int64_t  binc;
+    int           movestogo;
+    int           depth;
+    int           mate;
+    int           perft;
+    int           infinite;
+    std::int64_t  movetime;
+    std::uint64_t nodes;
+    std::uint8_t  ponder_mode;
+    const char*   searchmoves;
+};
+
+struct ZfishParsedPosition {
+    std::uint8_t ok;
+    const char*  fen;
+    const char*  moves;
+};
+
+ZfishParsedLimits zfish_uci_parse_limits(const unsigned char* input_ptr, std::size_t input_len);
+ZfishParsedPosition zfish_uci_parse_position(const unsigned char* input_ptr, std::size_t input_len);
 const char* zfish_uci_format_info_string(const unsigned char* input_ptr, std::size_t input_len);
 const char* zfish_uci_format_score(std::uint8_t kind, int value, int extra);
 int         zfish_uci_to_cp(int value, int material);
@@ -210,6 +234,54 @@ inline std::string UCIEngine::move(Move m, bool chess960) {
 inline std::string UCIEngine::to_lower(std::string str) {
     return take_zig_uci_string_and_free(
       zfish_uci_to_lower(reinterpret_cast<const unsigned char*>(str.data()), str.size()));
+}
+
+inline Search::LimitsType UCIEngine::parse_limits(std::istream& is) {
+    Search::LimitsType limits;
+    limits.startTime = now();
+
+    std::string rest;
+    std::getline(is, rest);
+    const auto parsed = zfish_uci_parse_limits(reinterpret_cast<const unsigned char*>(rest.data()),
+                                               rest.size());
+
+    limits.time[WHITE]   = parsed.wtime;
+    limits.time[BLACK]   = parsed.btime;
+    limits.inc[WHITE]    = parsed.winc;
+    limits.inc[BLACK]    = parsed.binc;
+    limits.movestogo     = parsed.movestogo;
+    limits.depth         = parsed.depth;
+    limits.nodes         = parsed.nodes;
+    limits.movetime      = parsed.movetime;
+    limits.mate          = parsed.mate;
+    limits.perft         = parsed.perft;
+    limits.infinite      = parsed.infinite;
+    limits.ponderMode    = parsed.ponder_mode != 0;
+
+    const auto searchmoves = take_zig_uci_string_and_free(parsed.searchmoves);
+    for (const auto move : split(searchmoves, "\n"))
+        limits.searchmoves.emplace_back(move);
+
+    return limits;
+}
+
+inline void UCIEngine::position(std::istringstream& is) {
+    const std::string fullCommand = is.str();
+    const auto parsed = zfish_uci_parse_position(
+      reinterpret_cast<const unsigned char*>(fullCommand.data()), fullCommand.size());
+    if (!parsed.ok)
+        return;
+
+    const auto fen       = take_zig_uci_string_and_free(parsed.fen);
+    const auto movesText = take_zig_uci_string_and_free(parsed.moves);
+
+    std::vector<std::string> moves;
+    for (const auto move : split(movesText, "\n"))
+        moves.emplace_back(move);
+
+    auto err = engine.set_position(fen, moves);
+    if (err.has_value())
+        terminate_on_critical_error(fullCommand, err->what());
 }
 
 inline void UCIEngine::on_update_no_moves(const Engine::InfoShort& info) {
