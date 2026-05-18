@@ -1747,6 +1747,8 @@ void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {
     onVerifyNetwork = std::move(f);
 }
 
+void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search_finished(); }
+
 constexpr auto BenchmarkCommand = "speedtest";
 
 template<typename... Ts>
