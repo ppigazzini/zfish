@@ -4,6 +4,7 @@ const benchmark_port = @import("benchmark_rewrites");
 const bitboard_port = @import("bitboard_rewrites");
 const memory_port = @import("memory.zig");
 const misc_port = @import("misc_rewrites");
+const nnue_feature_port = @import("nnue_feature_rewrites");
 const option_port = @import("option_rewrites");
 const score_port = @import("score.zig");
 const evaluate_port = @import("evaluate_rewrites");
@@ -364,6 +365,49 @@ pub export fn zfish_bitboard_init(
 
 pub export fn zfish_bitboard_pretty(bitboard: u64) ?[*:0]u8 {
     return bitboard_port.pretty(bitboard);
+}
+
+pub export fn zfish_half_ka_make_index(
+    params: nnue_feature_port.HalfThreatParams,
+) u32 {
+    return nnue_feature_port.halfMakeIndex(params);
+}
+
+pub export fn zfish_half_ka_append_changed(
+    perspective: u8,
+    king_square: u8,
+    diff: nnue_feature_port.HalfDiff,
+) nnue_feature_port.HalfAppendResult {
+    return nnue_feature_port.halfAppendChanged(perspective, king_square, diff);
+}
+
+pub export fn zfish_half_ka_requires_refresh(
+    diff: nnue_feature_port.HalfDiff,
+    perspective: u8,
+) bool {
+    return nnue_feature_port.halfRequiresRefresh(diff, perspective);
+}
+
+pub export fn zfish_full_threats_make_index(
+    params: nnue_feature_port.FullThreatParams,
+) u32 {
+    return nnue_feature_port.fullMakeIndex(params);
+}
+
+pub export fn zfish_full_threats_append_changed(
+    perspective: u8,
+    king_square: u8,
+    list_ptr: [*]const nnue_feature_port.DirtyThreatRaw,
+    list_len: usize,
+) nnue_feature_port.FullAppendResult {
+    return nnue_feature_port.fullAppendChanged(perspective, king_square, list_ptr, list_len);
+}
+
+pub export fn zfish_full_threats_requires_refresh(
+    diff: nnue_feature_port.FullDiff,
+    perspective: u8,
+) bool {
+    return nnue_feature_port.fullRequiresRefresh(diff, perspective);
 }
 
 pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
