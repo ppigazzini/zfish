@@ -2,6 +2,7 @@
 # obtain and optionally verify Bench / signature
 # if no reference is given, the output is deliberately limited to just the signature
 
+stockfish_bin="${STOCKFISH_BIN:-./stockfish}"
 STDOUT_FILE=$(mktemp)
 STDERR_FILE=$(mktemp)
 
@@ -18,7 +19,7 @@ error()
 trap 'error ${LINENO}' ERR
 
 # obtain
-eval "$RUN_PREFIX ./stockfish bench" > "$STDOUT_FILE" 2> "$STDERR_FILE" || error ${LINENO}
+eval "$RUN_PREFIX \"$stockfish_bin\" bench" > "$STDOUT_FILE" 2> "$STDERR_FILE" || error ${LINENO}
 signature=$(grep "Nodes searched  : " "$STDERR_FILE" | awk '{print $4}')
 
 rm -f "$STDOUT_FILE" "$STDERR_FILE"
