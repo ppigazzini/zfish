@@ -79,6 +79,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const engine_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/engine_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const movepick_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/support/movepick_rewrites.zig"),
         .target = target,
@@ -136,6 +141,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("benchmark_rewrites", benchmark_rewrites);
     exe.root_module.addImport("bitboard_rewrites", bitboard_rewrites);
+    exe.root_module.addImport("engine_rewrites", engine_rewrites);
     exe.root_module.addImport("evaluate_rewrites", evaluate_rewrites);
     exe.root_module.addImport("misc_rewrites", misc_rewrites);
     exe.root_module.addImport("movegen_rewrites", movegen_rewrites);
@@ -164,12 +170,12 @@ pub fn build(b: *std.Build) void {
         "search.cpp",
         "syzygy/tbprobe.cpp",
         "nnue/nnue_accumulator.cpp",
-        "engine.cpp",
     };
 
     const zig_compat_sources = &.{
         "benchmark_bridge.cpp",
         "bitboard_bridge.cpp",
+        "engine_bridge.cpp",
         "main_bridge.cpp",
         "memory_bridge.cpp",
         "misc_bridge.cpp",
