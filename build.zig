@@ -199,7 +199,6 @@ pub fn build(b: *std.Build) void {
         "position_bridge.cpp",
         "search_bridge.cpp",
         "tbprobe_bridge.cpp",
-        "thread_bridge.cpp",
         "uci_bridge.cpp",
     };
 
