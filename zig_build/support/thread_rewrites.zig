@@ -36,8 +36,7 @@ pub fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
         const best_decisive = isDecisiveBest(best);
         const current_decisive = isDecisiveBest(current);
         const better_voting_value =
-            threadVotingValue(current, min_score) * @as(c_int, current.pv_has_more_than_two)
-            > threadVotingValue(best, min_score) * @as(c_int, best.pv_has_more_than_two);
+            threadVotingValue(current, min_score) * @as(c_int, current.pv_has_more_than_two) > threadVotingValue(best, min_score) * @as(c_int, best.pv_has_more_than_two);
 
         if (best_decisive) {
             if (current_decisive and absInt(current.score) > absInt(best.score)) {
@@ -45,7 +44,8 @@ pub fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
             }
         } else if (current_decisive or
             (!isLoss(current.score) and
-            (current_vote > best_vote or (current_vote == best_vote and better_voting_value)))) {
+                (current_vote > best_vote or (current_vote == best_vote and better_voting_value))))
+        {
             best_index = index;
         }
     }

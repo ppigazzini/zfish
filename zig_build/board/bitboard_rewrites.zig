@@ -40,13 +40,10 @@ pub fn init(
             for (0..64) |s2| {
                 if ((pseudoAttacks(pt, s1) & squareBb(s2)) != 0) {
                     line_bb[s1][s2] =
-                        (attacksBb(pt, s1, 0, magics) & attacksBb(pt, s2, 0, magics))
-                        | squareBb(s1) | squareBb(s2);
+                        (attacksBb(pt, s1, 0, magics) & attacksBb(pt, s2, 0, magics)) | squareBb(s1) | squareBb(s2);
                     between_bb[s1][s2] =
-                        attacksBb(pt, s1, squareBb(s2), magics)
-                        & attacksBb(pt, s2, squareBb(s1), magics);
-                    ray_pass_bb[s1][s2] = attacksBb(pt, s1, 0, magics)
-                        & (attacksBb(pt, s2, squareBb(s1), magics) | squareBb(s2));
+                        attacksBb(pt, s1, squareBb(s2), magics) & attacksBb(pt, s2, squareBb(s1), magics);
+                    ray_pass_bb[s1][s2] = attacksBb(pt, s1, 0, magics) & (attacksBb(pt, s2, squareBb(s1), magics) | squareBb(s2));
                 }
                 between_bb[s1][s2] |= squareBb(s2);
             }
@@ -122,8 +119,7 @@ fn initMagics(pt: PieceType, table: []u64, magics: *[64][2]Magic) void {
     const table_index = magicIndexForPiece(pt);
 
     for (0..64) |square| {
-        const edges = ((rank_1_bb | rank_8_bb) & ~rankBb(square))
-            | ((file_a_bb | file_h_bb) & ~fileBb(square));
+        const edges = ((rank_1_bb | rank_8_bb) & ~rankBb(square)) | ((file_a_bb | file_h_bb) & ~fileBb(square));
         var magic_ref = &magics[square][table_index];
         const attacks = slidingAttack(pt, square, 0);
         magic_ref.mask = attacks & ~edges;

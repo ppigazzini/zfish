@@ -160,12 +160,7 @@ pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[*:0]u8 {
 
 pub fn helpText() ?[*:0]u8 {
     return allocCString(
-        "\nStockfish is a powerful chess engine for playing and analyzing.\n"
-        ++ "It is released as free software licensed under the GNU GPLv3 License.\n"
-        ++ "Stockfish is normally used with a graphical user interface (GUI) and implements\n"
-        ++ "the Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc.\n"
-        ++ "For any further information, visit https://github.com/official-stockfish/Stockfish#readme\n"
-        ++ "or read the corresponding README.md and Copying.txt files distributed along with this program.\n",
+        "\nStockfish is a powerful chess engine for playing and analyzing.\n" ++ "It is released as free software licensed under the GNU GPLv3 License.\n" ++ "Stockfish is normally used with a graphical user interface (GUI) and implements\n" ++ "the Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc.\n" ++ "For any further information, visit https://github.com/official-stockfish/Stockfish#readme\n" ++ "or read the corresponding README.md and Copying.txt files distributed along with this program.\n",
     ) catch null;
 }
 

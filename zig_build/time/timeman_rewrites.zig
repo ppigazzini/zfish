@@ -88,20 +88,15 @@ pub fn init(input: TimemanInput) TimemanOutput {
         const max_constant = @max(3.3744 + 3.0608 * log_time_in_sec, 3.1441);
 
         opt_scale = @min(
-            0.012112
-                + std.math.pow(f64, @as(f64, @floatFromInt(input.ply)) + 3.22713, 0.46866)
-                    * opt_constant,
-            0.19404 * @as(f64, @floatFromInt(output.time_us))
-                / @as(f64, @floatFromInt(time_left)),
+            0.012112 + std.math.pow(f64, @as(f64, @floatFromInt(input.ply)) + 3.22713, 0.46866) * opt_constant,
+            0.19404 * @as(f64, @floatFromInt(output.time_us)) / @as(f64, @floatFromInt(time_left)),
         ) * original_time_adjust;
 
         max_scale = @min(6.873, max_constant + @as(f64, @floatFromInt(input.ply)) / 12.352);
     } else {
         opt_scale = @min(
-            (0.88 + @as(f64, @floatFromInt(input.ply)) / 116.4)
-                / @as(f64, @floatFromInt(mtg)),
-            0.88 * @as(f64, @floatFromInt(output.time_us))
-                / @as(f64, @floatFromInt(time_left)),
+            (0.88 + @as(f64, @floatFromInt(input.ply)) / 116.4) / @as(f64, @floatFromInt(mtg)),
+            0.88 * @as(f64, @floatFromInt(output.time_us)) / @as(f64, @floatFromInt(time_left)),
         );
         max_scale = 1.3 + 0.11 * @as(f64, @floatFromInt(mtg));
     }
@@ -113,8 +108,7 @@ pub fn init(input: TimemanInput) TimemanOutput {
     output.maximum_time = @intFromFloat(@max(
         @as(f64, @floatFromInt(output.optimum_time)),
         @min(
-            0.8097 * @as(f64, @floatFromInt(output.time_us))
-                - @as(f64, @floatFromInt(move_overhead)),
+            0.8097 * @as(f64, @floatFromInt(output.time_us)) - @as(f64, @floatFromInt(move_overhead)),
             max_scale * @as(f64, @floatFromInt(output.optimum_time)),
         ),
     ));

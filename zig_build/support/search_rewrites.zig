@@ -28,8 +28,5 @@ pub fn reduction(
     const depth_index: usize = @intCast(depth);
     const move_index: usize = @intCast(move_number);
     const reduction_scale = reductions_ptr[depth_index] * reductions_ptr[move_index];
-    return reduction_scale
-        - @divTrunc(delta * 617, root_delta)
-        + (if (!improving) @divTrunc(reduction_scale * 194, 512) else 0)
-        + 1027;
+    return reduction_scale - @divTrunc(delta * 617, root_delta) + (if (!improving) @divTrunc(reduction_scale * 194, 512) else 0) + 1027;
 }
