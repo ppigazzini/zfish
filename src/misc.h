@@ -24,6 +24,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <exception>  // IWYU pragma: keep
 // IWYU pragma: no_include <__exception/terminate.h>
@@ -43,6 +44,18 @@
 
 #define stringify2(x) #x
 #define stringify(x) stringify2(x)
+
+#if defined(ZFISH_ZIG_BUILD)
+extern "C" {
+std::uint64_t zfish_misc_hash_bytes(const unsigned char* data_ptr, std::size_t data_len);
+std::size_t   zfish_misc_str_to_size_t(const unsigned char* input_ptr, std::size_t input_len);
+const char*   zfish_misc_read_file_to_string(const unsigned char* path_ptr, std::size_t path_len);
+const char*   zfish_misc_remove_whitespace(const unsigned char* input_ptr, std::size_t input_len);
+bool          zfish_misc_is_whitespace(const unsigned char* input_ptr, std::size_t input_len);
+const char*   zfish_misc_get_binary_directory(const unsigned char* argv0_ptr, std::size_t argv0_len);
+const char*   zfish_misc_get_working_directory();
+}
+#endif
 
 namespace Stockfish {
 
@@ -493,6 +506,54 @@ struct CommandLine {
     int    argc;
     char** argv;
 };
+
+#if defined(ZFISH_ZIG_BUILD)
+inline std::string take_zig_misc_string_and_free_required(const char* rendered) {
+    if (!rendered)
+        std::abort();
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+
+inline size_t str_to_size_t(const std::string& s) {
+    return zfish_misc_str_to_size_t(reinterpret_cast<const unsigned char*>(s.data()), s.size());
+}
+
+inline std::optional<std::string> read_file_to_string(const std::string& path) {
+    const char* rendered =
+      zfish_misc_read_file_to_string(reinterpret_cast<const unsigned char*>(path.data()), path.size());
+    if (!rendered)
+        return std::nullopt;
+
+    return take_zig_misc_string_and_free_required(rendered);
+}
+
+inline void remove_whitespace(std::string& s) {
+    const char* rendered =
+      zfish_misc_remove_whitespace(reinterpret_cast<const unsigned char*>(s.data()), s.size());
+    s = take_zig_misc_string_and_free_required(rendered);
+}
+
+inline bool is_whitespace(std::string_view s) {
+    return zfish_misc_is_whitespace(reinterpret_cast<const unsigned char*>(s.data()), s.size());
+}
+
+inline uint64_t hash_bytes(const char* data, size_t size) {
+    return zfish_misc_hash_bytes(reinterpret_cast<const unsigned char*>(data), size);
+}
+
+inline std::string CommandLine::get_binary_directory(std::string argv0) {
+    const char* rendered = zfish_misc_get_binary_directory(
+      reinterpret_cast<const unsigned char*>(argv0.data()), argv0.size());
+    return take_zig_misc_string_and_free_required(rendered);
+}
+
+inline std::string CommandLine::get_working_directory() {
+    return take_zig_misc_string_and_free_required(zfish_misc_get_working_directory());
+}
+#endif
 
 namespace Utility {
 

@@ -201,6 +201,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addCMacro("DIS_64BIT", "1");
     exe.root_module.addCMacro("USE_PTHREADS", "1");
     exe.root_module.addCMacro("NNUE_EMBEDDING_OFF", "1");
+    exe.root_module.addCMacro("ZFISH_ZIG_BUILD", "1");
     exe.root_module.addCMacro("ARCH", arch.name);
     applyMacros(exe.root_module, arch.macros);
     if (git_info.sha) |sha|
