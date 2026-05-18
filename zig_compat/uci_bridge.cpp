@@ -2429,14 +2429,6 @@ Engine::Engine(std::optional<std::string> path) :
 
 constexpr auto BenchmarkCommand = "speedtest";
 
-template<typename... Ts>
-struct overload: Ts... {
-    using Ts::operator()...;
-};
-
-template<typename... Ts>
-overload(Ts...) -> overload<Ts...>;
-
 extern "C" {
 struct ZfishParsedLimits {
     std::int64_t wtime;
@@ -2524,52 +2516,9 @@ const char* zfish_benchmark_setup_bench(const unsigned char* current_fen_ptr,
 ZfishBenchmarkSetupOutput zfish_benchmark_setup_benchmark(const unsigned char* args_ptr,
                                                           std::size_t          args_len,
                                                           int                  hardware_concurrency);
-const char* zfish_uci_format_info_string(const unsigned char* input_ptr, std::size_t input_len);
-const char* zfish_uci_format_score(std::uint8_t kind, int value, int extra);
-int         zfish_uci_to_cp(int value, int material);
-const char* zfish_uci_wdl(int value, int material);
-const char* zfish_uci_format_square(std::uint8_t file, std::uint8_t rank);
-const char* zfish_uci_format_move(std::uint8_t from_file,
-                                  std::uint8_t from_rank,
-                                  std::uint8_t to_file,
-                                  std::uint8_t to_rank,
-                                  std::uint8_t promotion);
-const char* zfish_uci_to_lower(const unsigned char* input_ptr, std::size_t input_len);
-const char* zfish_uci_format_info_no_moves(int depth,
-                                           const unsigned char* score_ptr,
-                                           std::size_t          score_len);
-const char* zfish_uci_format_info_full(int                   depth,
-                                       int                   sel_depth,
-                                       std::size_t           multi_pv,
-                                       const unsigned char*  score_ptr,
-                                       std::size_t           score_len,
-                                       const unsigned char*  bound_ptr,
-                                       std::size_t           bound_len,
-                                       const unsigned char*  wdl_ptr,
-                                       std::size_t           wdl_len,
-                                       std::uint8_t          show_wdl,
-                                       std::size_t           nodes,
-                                       std::size_t           nps,
-                                       int                   hashfull,
-                                       std::size_t           tb_hits,
-                                       std::size_t           time_ms,
-                                       const unsigned char*  pv_ptr,
-                                       std::size_t           pv_len);
-const char* zfish_uci_format_info_iter(int                  depth,
-                                       const unsigned char* currmove_ptr,
-                                       std::size_t          currmove_len,
-                                       int                  currmove_number);
-const char* zfish_uci_format_bestmove(const unsigned char* bestmove_ptr,
-                                      std::size_t          bestmove_len,
-                                      const unsigned char* ponder_ptr,
-                                      std::size_t          ponder_len);
 const char* zfish_uci_help_text();
 const char* zfish_uci_format_unknown_command(const unsigned char* command_ptr,
                                              std::size_t          command_len);
-const char* zfish_uci_format_critical_error(const unsigned char* command_ptr,
-                                            std::size_t          command_len,
-                                            const unsigned char* message_ptr,
-                                            std::size_t          message_len);
 const char*   zfish_position_build_endgame_fen(const unsigned char* code_ptr,
                                                std::size_t          code_len,
                                                std::uint8_t         color);
@@ -2621,11 +2570,6 @@ std::vector<std::string> split_newlines(const std::string& text) {
     while (std::getline(is, line))
         result.push_back(line);
     return result;
-}
-
-int material_count(const Position& pos) {
-    return pos.count<PAWN>() + 3 * pos.count<KNIGHT>() + 3 * pos.count<BISHOP>()
-         + 5 * pos.count<ROOK>() + 9 * pos.count<QUEEN>();
 }
 
 std::string read_remaining_args(std::istream& is) {
@@ -2804,17 +2748,6 @@ string Position::fen() const {
       static_cast<std::uint8_t>(whiteOoRook), static_cast<std::uint8_t>(whiteOooRook),
       static_cast<std::uint8_t>(blackOoRook), static_cast<std::uint8_t>(blackOooRook),
       static_cast<std::uint8_t>(ep_square()), st->rule50, gamePly));
-}
-
-void UCIEngine::print_info_string(std::string_view str) {
-    const auto rendered = take_string_and_free(
-      zfish_uci_format_info_string(reinterpret_cast<const unsigned char*>(str.data()), str.size()));
-    if (rendered.empty())
-        return;
-
-    sync_cout_start();
-    std::cout << rendered << '\n';
-    sync_cout_end();
 }
 
 UCIEngine::UCIEngine(int argc, char** argv) :
@@ -3203,60 +3136,6 @@ void UCIEngine::position(std::istringstream& is) {
     }
 }
 
-std::string UCIEngine::format_score(const Score& s) {
-    return s.visit(overload{[](Score::Mate mate) -> std::string {
-                                return take_string_and_free(zfish_uci_format_score(0, mate.plies, 0));
-                            },
-                            [](Score::Tablebase tb) -> std::string {
-                                return take_string_and_free(
-                                  zfish_uci_format_score(1, tb.plies, tb.win ? 1 : 0));
-                            },
-                            [](Score::InternalUnits units) -> std::string {
-                                return take_string_and_free(
-                                  zfish_uci_format_score(2, units.value, 0));
-                            }});
-}
-
-int UCIEngine::to_cp(Value v, const Position& pos) {
-    return zfish_uci_to_cp(v, material_count(pos));
-}
-
-std::string UCIEngine::wdl(Value v, const Position& pos) {
-    return take_string_and_free(zfish_uci_wdl(v, material_count(pos)));
-}
-
-std::string UCIEngine::square(Square s) {
-    return take_string_and_free(
-      zfish_uci_format_square(static_cast<std::uint8_t>(file_of(s)), static_cast<std::uint8_t>(rank_of(s))));
-}
-
-std::string UCIEngine::move(Move m, bool chess960) {
-    if (m == Move::none())
-        return "(none)";
-
-    if (m == Move::null())
-        return "0000";
-
-    Square from = m.from_sq();
-    Square to   = m.to_sq();
-
-    if (m.type_of() == CASTLING && !chess960)
-        to = make_square(to > from ? FILE_G : FILE_C, rank_of(from));
-
-    const auto promotion = m.type_of() == PROMOTION ? static_cast<std::uint8_t>(" pnbrqk"[m.promotion_type()]) : 0;
-
-    return take_string_and_free(zfish_uci_format_move(static_cast<std::uint8_t>(file_of(from)),
-                                                      static_cast<std::uint8_t>(rank_of(from)),
-                                                      static_cast<std::uint8_t>(file_of(to)),
-                                                      static_cast<std::uint8_t>(rank_of(to)),
-                                                      promotion));
-}
-
-std::string UCIEngine::to_lower(std::string str) {
-    return take_string_and_free(
-      zfish_uci_to_lower(reinterpret_cast<const unsigned char*>(str.data()), str.size()));
-}
-
 Move UCIEngine::to_move(const Position& pos, std::string str) {
     str = to_lower(str);
 
@@ -3265,50 +3144,6 @@ Move UCIEngine::to_move(const Position& pos, std::string str) {
             return m;
 
     return Move::none();
-}
-
-void UCIEngine::on_update_no_moves(const Engine::InfoShort& info) {
-    const auto score = format_score(info.score);
-    sync_cout << take_string_and_free(zfish_uci_format_info_no_moves(
-                   info.depth, reinterpret_cast<const unsigned char*>(score.data()), score.size()))
-              << sync_endl;
-}
-
-void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
-    const auto score = format_score(info.score);
-    sync_cout << take_string_and_free(zfish_uci_format_info_full(
-                   info.depth, info.selDepth, info.multiPV,
-                   reinterpret_cast<const unsigned char*>(score.data()), score.size(),
-                   reinterpret_cast<const unsigned char*>(info.bound.data()), info.bound.size(),
-                   reinterpret_cast<const unsigned char*>(info.wdl.data()), info.wdl.size(),
-                   static_cast<std::uint8_t>(showWDL ? 1 : 0), info.nodes, info.nps, info.hashfull,
-                   info.tbHits, info.timeMs, reinterpret_cast<const unsigned char*>(info.pv.data()),
-                   info.pv.size()))
-              << sync_endl;
-}
-
-void UCIEngine::on_iter(const Engine::InfoIter& info) {
-    sync_cout
-      << take_string_and_free(zfish_uci_format_info_iter(
-           info.depth, reinterpret_cast<const unsigned char*>(info.currmove.data()),
-           info.currmove.size(), info.currmovenumber))
-      << sync_endl;
-}
-
-void UCIEngine::on_bestmove(std::string_view bestmove, std::string_view ponder) {
-    sync_cout << take_string_and_free(zfish_uci_format_bestmove(
-                   reinterpret_cast<const unsigned char*>(bestmove.data()), bestmove.size(),
-                   reinterpret_cast<const unsigned char*>(ponder.data()), ponder.size()))
-              << sync_endl;
-}
-
-void UCIEngine::terminate_on_critical_error(const std::string& fullCommand,
-                                            const std::string& message) {
-    sync_cout << take_string_and_free(zfish_uci_format_critical_error(
-                   reinterpret_cast<const unsigned char*>(fullCommand.data()), fullCommand.size(),
-                   reinterpret_cast<const unsigned char*>(message.data()), message.size()))
-              << sync_endl;
-    std::exit(1);
 }
 
 bool Tune::update_on_last;

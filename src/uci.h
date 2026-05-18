@@ -19,20 +19,70 @@
 #ifndef UCI_H_INCLUDED
 #define UCI_H_INCLUDED
 
+#include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <string_view>
 
 #include "engine.h"
 #include "misc.h"
+#include "score.h"
 #include "search.h"
+
+#if defined(ZFISH_ZIG_BUILD)
+extern "C" {
+const char* zfish_uci_format_info_string(const unsigned char* input_ptr, std::size_t input_len);
+const char* zfish_uci_format_score(std::uint8_t kind, int value, int extra);
+int         zfish_uci_to_cp(int value, int material);
+const char* zfish_uci_wdl(int value, int material);
+const char* zfish_uci_format_square(std::uint8_t file, std::uint8_t rank);
+const char* zfish_uci_format_move(std::uint8_t from_file,
+                                  std::uint8_t from_rank,
+                                  std::uint8_t to_file,
+                                  std::uint8_t to_rank,
+                                  std::uint8_t promotion);
+const char* zfish_uci_to_lower(const unsigned char* input_ptr, std::size_t input_len);
+const char* zfish_uci_format_info_no_moves(int                  depth,
+                                           const unsigned char* score_ptr,
+                                           std::size_t          score_len);
+const char* zfish_uci_format_info_full(int                  depth,
+                                       int                  sel_depth,
+                                       std::size_t          multi_pv,
+                                       const unsigned char* score_ptr,
+                                       std::size_t          score_len,
+                                       const unsigned char* bound_ptr,
+                                       std::size_t          bound_len,
+                                       const unsigned char* wdl_ptr,
+                                       std::size_t          wdl_len,
+                                       std::uint8_t         show_wdl,
+                                       std::size_t          nodes,
+                                       std::size_t          nps,
+                                       int                  hashfull,
+                                       std::size_t          tb_hits,
+                                       std::size_t          time_ms,
+                                       const unsigned char* pv_ptr,
+                                       std::size_t          pv_len);
+const char* zfish_uci_format_info_iter(int                  depth,
+                                       const unsigned char* currmove_ptr,
+                                       std::size_t          currmove_len,
+                                       int                  currmove_number);
+const char* zfish_uci_format_bestmove(const unsigned char* bestmove_ptr,
+                                      std::size_t          bestmove_len,
+                                      const unsigned char* ponder_ptr,
+                                      std::size_t          ponder_len);
+const char* zfish_uci_format_critical_error(const unsigned char* command_ptr,
+                                            std::size_t          command_len,
+                                            const unsigned char* message_ptr,
+                                            std::size_t          message_len);
+}
+#endif
 
 namespace Stockfish {
 
 class Position;
 class Move;
-class Score;
 enum Square : uint8_t;
 using Value = int;
 
@@ -79,6 +129,133 @@ class UCIEngine {
     [[noreturn]] void terminate_on_critical_error(const std::string& fullCommand,
                                                   const std::string& message);
 };
+
+#if defined(ZFISH_ZIG_BUILD)
+inline std::string take_zig_uci_string_and_free(const char* rendered) {
+    if (!rendered)
+        return {};
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+
+inline int zig_uci_material_count(const Position& pos) {
+    return pos.count<PAWN>() + 3 * pos.count<KNIGHT>() + 3 * pos.count<BISHOP>()
+         + 5 * pos.count<ROOK>() + 9 * pos.count<QUEEN>();
+}
+
+inline void UCIEngine::print_info_string(std::string_view str) {
+    const auto rendered = take_zig_uci_string_and_free(
+      zfish_uci_format_info_string(reinterpret_cast<const unsigned char*>(str.data()), str.size()));
+    if (rendered.empty())
+        return;
+
+    sync_cout_start();
+    std::cout << rendered << '\n';
+    sync_cout_end();
+}
+
+inline std::string UCIEngine::format_score(const Score& s) {
+    if (s.is<Score::Mate>())
+    {
+        const auto mate = s.get<Score::Mate>();
+        return take_zig_uci_string_and_free(zfish_uci_format_score(0, mate.plies, 0));
+    }
+
+    if (s.is<Score::Tablebase>())
+    {
+        const auto tb = s.get<Score::Tablebase>();
+        return take_zig_uci_string_and_free(zfish_uci_format_score(1, tb.plies, tb.win ? 1 : 0));
+    }
+
+    const auto units = s.get<Score::InternalUnits>();
+    return take_zig_uci_string_and_free(zfish_uci_format_score(2, units.value, 0));
+}
+
+inline int UCIEngine::to_cp(Value v, const Position& pos) {
+    return zfish_uci_to_cp(v, zig_uci_material_count(pos));
+}
+
+inline std::string UCIEngine::wdl(Value v, const Position& pos) {
+    return take_zig_uci_string_and_free(zfish_uci_wdl(v, zig_uci_material_count(pos)));
+}
+
+inline std::string UCIEngine::square(Square s) {
+    return take_zig_uci_string_and_free(
+      zfish_uci_format_square(static_cast<std::uint8_t>(file_of(s)), static_cast<std::uint8_t>(rank_of(s))));
+}
+
+inline std::string UCIEngine::move(Move m, bool chess960) {
+    if (m == Move::none())
+        return "(none)";
+
+    if (m == Move::null())
+        return "0000";
+
+    Square from = m.from_sq();
+    Square to   = m.to_sq();
+
+    if (m.type_of() == CASTLING && !chess960)
+        to = make_square(to > from ? FILE_G : FILE_C, rank_of(from));
+
+    const auto promotion =
+      m.type_of() == PROMOTION ? static_cast<std::uint8_t>(" pnbrqk"[m.promotion_type()]) : 0;
+
+    return take_zig_uci_string_and_free(zfish_uci_format_move(
+      static_cast<std::uint8_t>(file_of(from)), static_cast<std::uint8_t>(rank_of(from)),
+      static_cast<std::uint8_t>(file_of(to)), static_cast<std::uint8_t>(rank_of(to)), promotion));
+}
+
+inline std::string UCIEngine::to_lower(std::string str) {
+    return take_zig_uci_string_and_free(
+      zfish_uci_to_lower(reinterpret_cast<const unsigned char*>(str.data()), str.size()));
+}
+
+inline void UCIEngine::on_update_no_moves(const Engine::InfoShort& info) {
+    const auto score = format_score(info.score);
+    sync_cout << take_zig_uci_string_and_free(zfish_uci_format_info_no_moves(
+                   info.depth, reinterpret_cast<const unsigned char*>(score.data()), score.size()))
+              << sync_endl;
+}
+
+inline void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
+    const auto score = format_score(info.score);
+    sync_cout << take_zig_uci_string_and_free(zfish_uci_format_info_full(
+                   info.depth, info.selDepth, info.multiPV,
+                   reinterpret_cast<const unsigned char*>(score.data()), score.size(),
+                   reinterpret_cast<const unsigned char*>(info.bound.data()), info.bound.size(),
+                   reinterpret_cast<const unsigned char*>(info.wdl.data()), info.wdl.size(),
+                   static_cast<std::uint8_t>(showWDL ? 1 : 0), info.nodes, info.nps, info.hashfull,
+                   info.tbHits, info.timeMs, reinterpret_cast<const unsigned char*>(info.pv.data()),
+                   info.pv.size()))
+              << sync_endl;
+}
+
+inline void UCIEngine::on_iter(const Engine::InfoIter& info) {
+    sync_cout
+      << take_zig_uci_string_and_free(zfish_uci_format_info_iter(
+           info.depth, reinterpret_cast<const unsigned char*>(info.currmove.data()),
+           info.currmove.size(), info.currmovenumber))
+      << sync_endl;
+}
+
+inline void UCIEngine::on_bestmove(std::string_view bestmove, std::string_view ponder) {
+    sync_cout << take_zig_uci_string_and_free(zfish_uci_format_bestmove(
+                   reinterpret_cast<const unsigned char*>(bestmove.data()), bestmove.size(),
+                   reinterpret_cast<const unsigned char*>(ponder.data()), ponder.size()))
+              << sync_endl;
+}
+
+inline void UCIEngine::terminate_on_critical_error(const std::string& fullCommand,
+                                                   const std::string& message) {
+    sync_cout << take_zig_uci_string_and_free(zfish_uci_format_critical_error(
+                   reinterpret_cast<const unsigned char*>(fullCommand.data()), fullCommand.size(),
+                   reinterpret_cast<const unsigned char*>(message.data()), message.size()))
+              << sync_endl;
+    std::exit(1);
+}
+#endif
 
 }  // namespace Stockfish
 
