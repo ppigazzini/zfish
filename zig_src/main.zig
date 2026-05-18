@@ -11,6 +11,7 @@ const nnue_accumulator_port = @import("nnue_accumulator_rewrites");
 const network_port = @import("network_rewrites");
 const nnue_feature_port = @import("nnue_feature_rewrites");
 const option_port = @import("option_rewrites");
+const position_port = @import("position_rewrites");
 const score_port = @import("score.zig");
 const thread_port = @import("thread_rewrites");
 const evaluate_port = @import("evaluate_rewrites");
@@ -95,6 +96,49 @@ pub export fn zfish_misc_get_binary_directory(
 
 pub export fn zfish_misc_get_working_directory() ?[*:0]u8 {
     return misc_port.getWorkingDirectory();
+}
+
+pub export fn zfish_position_build_endgame_fen(
+    code_ptr: [*]const u8,
+    code_len: usize,
+    color: u8,
+) ?[*:0]u8 {
+    return position_port.buildEndgameFen(code_ptr, code_len, color);
+}
+
+pub export fn zfish_position_format_fen(
+    board_ptr: [*]const u8,
+    side_to_move: u8,
+    chess960: u8,
+    castling_rights: u8,
+    white_oo_rook_square: u8,
+    white_ooo_rook_square: u8,
+    black_oo_rook_square: u8,
+    black_ooo_rook_square: u8,
+    ep_square: u8,
+    rule50: c_int,
+    game_ply: c_int,
+) ?[*:0]u8 {
+    return position_port.formatFen(
+        board_ptr,
+        side_to_move,
+        chess960,
+        castling_rights,
+        white_oo_rook_square,
+        white_ooo_rook_square,
+        black_oo_rook_square,
+        black_ooo_rook_square,
+        ep_square,
+        rule50,
+        game_ply,
+    );
+}
+
+pub export fn zfish_position_compute_material_key(
+    piece_counts_ptr: [*]const c_int,
+    piece_count_len: usize,
+) u64 {
+    return position_port.computeMaterialKey(piece_counts_ptr, piece_count_len);
 }
 
 pub export fn zfish_movegen_generate_captures(
