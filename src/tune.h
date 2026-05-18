@@ -20,11 +20,31 @@
 #define TUNE_H_INCLUDED
 
 #include <cstddef>
+#include <cstdint>
+#include <iostream>
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>  // IWYU pragma: keep
 #include <utility>
 #include <vector>
+
+#if defined(ZFISH_ZIG_BUILD)
+    #include "ucioption.h"
+
+extern "C" {
+struct ZfishTuneNextResult {
+        const char* token;
+        const char* remaining;
+};
+
+ZfishTuneNextResult zfish_tune_next(const unsigned char* names_ptr,
+                                                                        std::size_t          names_len,
+                                                                        std::uint8_t         pop);
+bool zfish_tune_should_make_option(int min_value, int max_value);
+}
+#endif
 
 namespace Stockfish {
 
@@ -169,6 +189,48 @@ class Tune {
     static bool        update_on_last;
     static OptionsMap* options;
 };
+
+#if defined(ZFISH_ZIG_BUILD)
+inline std::map<std::string, int> TuneResults;
+inline const Option*              LastOption = nullptr;
+
+inline std::optional<std::string> on_tune(const Option& option) {
+    if (!Tune::update_on_last || LastOption == &option)
+        Tune::read_options();
+
+    return std::nullopt;
+}
+
+inline void Tune::make_option(OptionsMap* opts,
+                              const std::string& name,
+                              int                value,
+                              const SetRange&    range) {
+    const auto bounds = range(value);
+    if (!zfish_tune_should_make_option(bounds.first, bounds.second))
+        return;
+
+    if (TuneResults.count(name))
+        value = TuneResults[name];
+
+    opts->add(name, Option(value, bounds.first, bounds.second, on_tune));
+    LastOption = &((*opts)[name]);
+
+    std::cout << name << ","
+              << value << ","
+              << bounds.first << ","
+              << bounds.second << ","
+              << (bounds.second - bounds.first) / 20.0 << ","
+              << "0.0020" << std::endl;
+}
+
+inline std::string Tune::next(std::string& names, bool pop) {
+    const auto result = zfish_tune_next(reinterpret_cast<const unsigned char*>(names.data()),
+                                        names.size(), static_cast<std::uint8_t>(pop ? 1 : 0));
+    const auto token = take_zig_option_string_and_free(result.token);
+    names            = take_zig_option_string_and_free(result.remaining);
+    return token;
+}
+#endif
 
 template<typename... Args>
 constexpr void tune_check_args(Args&&...) {
