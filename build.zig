@@ -205,7 +205,6 @@ pub fn build(b: *std.Build) void {
         "thread_bridge.cpp",
         "tt_bridge.cpp",
         "uci_bridge.cpp",
-        "evaluate_bridge.cpp",
     };
 
     exe.root_module.addIncludePath(b.path("src"));
