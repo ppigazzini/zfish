@@ -3,6 +3,7 @@ const std = @import("std");
 const benchmark_port = @import("benchmark_rewrites");
 const memory_port = @import("memory.zig");
 const misc_port = @import("misc_rewrites");
+const option_port = @import("option_rewrites");
 const score_port = @import("score.zig");
 const evaluate_port = @import("evaluate_rewrites");
 const nnue_misc_port = @import("nnue_misc_rewrites");
@@ -140,6 +141,62 @@ pub export fn zfish_tt_probe(
     depth_none: c_int,
 ) tt_port.TtProbeOutput {
     return tt_port.probe(cluster, key, generation, depth_none);
+}
+
+pub export fn zfish_option_case_insensitive_less(
+    left_ptr: [*]const u8,
+    left_len: usize,
+    right_ptr: [*]const u8,
+    right_len: usize,
+) bool {
+    return option_port.caseInsensitiveLess(left_ptr[0..left_len], right_ptr[0..right_len]);
+}
+
+pub export fn zfish_option_parse_setoption(
+    input_ptr: [*]const u8,
+    input_len: usize,
+) option_port.ParsedSetOption {
+    return option_port.parseSetOption(input_ptr[0..input_len]);
+}
+
+pub export fn zfish_option_combo_equals(
+    current_ptr: [*]const u8,
+    current_len: usize,
+    query_ptr: [*]const u8,
+    query_len: usize,
+) bool {
+    return option_port.comboEquals(current_ptr[0..current_len], query_ptr[0..query_len]);
+}
+
+pub export fn zfish_option_validate_assignment(
+    type_ptr: [*]const u8,
+    type_len: usize,
+    value_ptr: [*]const u8,
+    value_len: usize,
+    min_value: c_int,
+    max_value: c_int,
+    default_ptr: [*]const u8,
+    default_len: usize,
+) option_port.AssignmentResult {
+    return option_port.validateAssignment(
+        type_ptr[0..type_len],
+        value_ptr[0..value_len],
+        min_value,
+        max_value,
+        default_ptr[0..default_len],
+    );
+}
+
+pub export fn zfish_tune_next(
+    names_ptr: [*]const u8,
+    names_len: usize,
+    pop: u8,
+) option_port.TuneNextResult {
+    return option_port.tuneNext(names_ptr[0..names_len], pop);
+}
+
+pub export fn zfish_tune_should_make_option(min_value: c_int, max_value: c_int) bool {
+    return option_port.tuneShouldMakeOption(min_value, max_value);
 }
 
 pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
