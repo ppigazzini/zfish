@@ -51,7 +51,54 @@ struct ZfishEvalTraceInput {
 
 int         zfish_eval_compute_value(ZfishEvalInput input);
 const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
+
+struct ZfishNnueTraceInput {
+  std::uint8_t side_to_move_white;
+  std::size_t  bucket_count;
+  std::size_t  correct_bucket;
+  const int*   psqt_cp;
+  const int*   positional_cp;
+};
+
+const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 }
+
+namespace {
+
+std::string build_nnue_trace(Stockfish::Position&                     pos,
+               const Stockfish::Eval::NNUE::Network&     network,
+               Stockfish::Eval::NNUE::AccumulatorCaches& caches) {
+  auto accumulators = std::make_unique<Stockfish::Eval::NNUE::AccumulatorStack>();
+  accumulators->reset();
+
+  const auto t = network.trace_evaluate(pos, *accumulators, caches);
+
+  int psqt_cp[Stockfish::Eval::NNUE::LayerStacks];
+  int positional_cp[Stockfish::Eval::NNUE::LayerStacks];
+  for (std::size_t bucket = 0; bucket < Stockfish::Eval::NNUE::LayerStacks; ++bucket)
+  {
+    psqt_cp[bucket] = Stockfish::UCIEngine::to_cp(t.psqt[bucket], pos);
+    positional_cp[bucket] = Stockfish::UCIEngine::to_cp(t.positional[bucket], pos);
+  }
+
+  const ZfishNnueTraceInput input = {
+    .side_to_move_white = static_cast<std::uint8_t>(pos.side_to_move() == Stockfish::WHITE ? 1 : 0),
+    .bucket_count       = Stockfish::Eval::NNUE::LayerStacks,
+    .correct_bucket     = t.correctBucket,
+    .psqt_cp            = psqt_cp,
+    .positional_cp      = positional_cp,
+  };
+
+  const char* rendered = zfish_nnue_format_trace(input);
+  if (!rendered)
+    std::abort();
+
+  std::string result(rendered);
+  std::free(const_cast<char*>(rendered));
+  return result;
+}
+
+}  // namespace
 
 namespace Stockfish {
 
@@ -84,7 +131,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
     auto accumulators = std::make_unique<Eval::NNUE::AccumulatorStack>();
     auto caches       = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
 
-    const auto inner_trace = NNUE::trace(pos, network, *caches);
+    const auto inner_trace = build_nnue_trace(pos, network, *caches);
     const auto [psqt, positional] = network.evaluate(pos, *accumulators, *caches);
 
     Value nnue = psqt + positional;
