@@ -206,7 +206,6 @@ pub fn build(b: *std.Build) void {
         "thread_bridge.cpp",
         "tt_bridge.cpp",
         "uci_bridge.cpp",
-        "ucioption_bridge.cpp",
         "evaluate_bridge.cpp",
     };
 
