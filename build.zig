@@ -192,6 +192,7 @@ pub fn build(b: *std.Build) void {
     const stockfish_sources = &.{};
 
     const zig_compat_sources = &.{
+        "nnue_accumulator_bridge.cpp",
         "uci_bridge.cpp",
     };
 
