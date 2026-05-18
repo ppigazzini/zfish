@@ -138,6 +138,7 @@ T number(void* addr) {
 // DTZ tables don't store valid scores for moves that reset the rule50 counter
 // like captures and pawn moves but we can easily recover the correct dtz of the
 // previous move if we know the position's WDL score.
+#ifndef ZFISH_TBPROBE_BRIDGE_SKIP_DTZ_BEFORE_ZEROING
 int dtz_before_zeroing(WDLScore wdl) {
     return wdl == WDLWin         ? 1
          : wdl == WDLCursedWin   ? 101
@@ -145,6 +146,9 @@ int dtz_before_zeroing(WDLScore wdl) {
          : wdl == WDLLoss        ? -1
                                  : 0;
 }
+#else
+int dtz_before_zeroing(WDLScore wdl);
+#endif
 
 // Return the sign of a number (-1, 0, 1)
 template<typename T>
@@ -524,6 +528,7 @@ TBTables TBTables;
 
 // If the corresponding file exists two new objects TBTable<WDL> and TBTable<DTZ>
 // are created and added to the lists and hash table. Called at init time.
+#ifndef ZFISH_TBPROBE_BRIDGE_SKIP_ADD
 void TBTables::add(const std::vector<PieceType>& pieces) {
 
     std::string code;
@@ -556,6 +561,7 @@ void TBTables::add(const std::vector<PieceType>& pieces) {
     insert(wdlTable.back().key, &wdlTable.back(), &dtzTable.back());
     insert(wdlTable.back().key2, &wdlTable.back(), &dtzTable.back());
 }
+#endif
 
 // TB tables are compressed with canonical Huffman code. The compressed data is divided into
 // blocks of size d->sizeofBlock, and each block stores a variable number of symbols.
