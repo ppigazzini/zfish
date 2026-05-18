@@ -230,7 +230,7 @@ std::array<DebugExtremes, MaxDebugSlots> extremes;
 
 constexpr std::string_view version = "dev";
 
-std::string take_string_and_free(const char* rendered) {
+std::string take_string_and_free_engine_required(const char* rendered) {
     if (!rendered)
         std::abort();
 
@@ -880,13 +880,13 @@ std::optional<std::string> read_file_to_string(const std::string& path) {
     if (!rendered)
         return std::nullopt;
 
-    return take_string_and_free(rendered);
+    return take_string_and_free_engine_required(rendered);
 }
 
 void remove_whitespace(std::string& s) {
     const char* rendered =
       zfish_misc_remove_whitespace(reinterpret_cast<const unsigned char*>(s.data()), s.size());
-    s = take_string_and_free(rendered);
+    s = take_string_and_free_engine_required(rendered);
 }
 
 bool is_whitespace(std::string_view s) {
@@ -896,15 +896,15 @@ bool is_whitespace(std::string_view s) {
 std::string CommandLine::get_binary_directory(std::string argv0) {
     const char* rendered = zfish_misc_get_binary_directory(
       reinterpret_cast<const unsigned char*>(argv0.data()), argv0.size());
-    return take_string_and_free(rendered);
+    return take_string_and_free_engine_required(rendered);
 }
 
 std::string CommandLine::get_working_directory() {
-    return take_string_and_free(zfish_misc_get_working_directory());
+    return take_string_and_free_engine_required(zfish_misc_get_working_directory());
 }
 
 void TBTables::add(const std::vector<PieceType>& pieces) {
-    const std::string code = take_string_and_free(
+    const std::string code = take_string_and_free_engine_required(
       zfish_tbprobe_build_code(reinterpret_cast<const unsigned char*>(pieces.data()), pieces.size()));
 
     TBFile file_dtz(code + ".rtbz");
