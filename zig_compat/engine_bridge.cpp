@@ -66,6 +66,8 @@
 #define ZFISH_TBPROBE_BRIDGE_SKIP_ADD
 #include "../src/syzygy/tbprobe.cpp"
 
+#include "nnue_accumulator_bridge.cpp"
+
 #if !defined(UNIVERSAL_BINARY) && !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
 INCBIN(EmbeddedNNUE, EvalFileDefaultName);
 #elif defined(UNIVERSAL_BINARY)
