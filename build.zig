@@ -79,6 +79,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const tt_rewrites = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/tt_rewrites.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const evaluate_rewrites = b.createModule(.{
         .root_source_file = b.path("zig_build/eval/evaluate_rewrites.zig"),
         .target = target,
@@ -94,6 +99,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("misc_rewrites", misc_rewrites);
     exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
     exe.root_module.addImport("timeman_rewrites", timeman_rewrites);
+    exe.root_module.addImport("tt_rewrites", tt_rewrites);
 
     var compile_flags = std.ArrayList([]const u8).empty;
     compile_flags.appendSlice(b.allocator, &.{
@@ -112,7 +118,6 @@ pub fn build(b: *std.Build) void {
         "position.cpp",
         "search.cpp",
         "thread.cpp",
-        "tt.cpp",
         "uci.cpp",
         "ucioption.cpp",
         "tune.cpp",
@@ -131,6 +136,7 @@ pub fn build(b: *std.Build) void {
         "misc_bridge.cpp",
         "score_bridge.cpp",
         "timeman_bridge.cpp",
+        "tt_bridge.cpp",
         "evaluate_bridge.cpp",
         "nnue_misc_bridge.cpp",
     };

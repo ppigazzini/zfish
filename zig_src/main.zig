@@ -7,6 +7,7 @@ const score_port = @import("score.zig");
 const evaluate_port = @import("evaluate_rewrites");
 const nnue_misc_port = @import("nnue_misc_rewrites");
 const timeman_port = @import("timeman_rewrites");
+const tt_port = @import("tt_rewrites");
 
 extern fn zfish_main_run(argc: c_int, argv: [*]const [*:0]const u8) c_int;
 
@@ -84,6 +85,61 @@ pub export fn zfish_misc_get_binary_directory(
 
 pub export fn zfish_misc_get_working_directory() ?[*:0]u8 {
     return misc_port.getWorkingDirectory();
+}
+
+pub export fn zfish_tt_entry_save(
+    entry: *tt_port.TtEntry,
+    key: u64,
+    value: c_int,
+    pv: u8,
+    bound: u8,
+    depth: c_int,
+    depth_none: c_int,
+    move16: u16,
+    eval: c_int,
+    curr_generation: u8,
+) void {
+    tt_port.entrySave(entry, key, value, pv, bound, depth, depth_none, move16, eval, curr_generation);
+}
+
+pub export fn zfish_tt_entry_read(
+    entry: *const tt_port.TtEntry,
+    depth_none: c_int,
+) tt_port.TtReadOutput {
+    return tt_port.entryRead(entry, depth_none);
+}
+
+pub export fn zfish_tt_entry_relative_age(
+    entry: *const tt_port.TtEntry,
+    curr_generation: u8,
+) u8 {
+    return tt_port.entryRelativeAge(entry, curr_generation);
+}
+
+pub export fn zfish_tt_generation_next(curr_generation: u8) u8 {
+    return tt_port.generationNext(curr_generation);
+}
+
+pub export fn zfish_tt_hashfull(
+    clusters: [*]const tt_port.TtCluster,
+    cluster_count: usize,
+    generation: u8,
+    max_age: c_int,
+) c_int {
+    return tt_port.hashfull(clusters, cluster_count, generation, max_age);
+}
+
+pub export fn zfish_tt_first_entry_index(key: u64, cluster_count: usize) usize {
+    return tt_port.firstEntryIndex(key, cluster_count);
+}
+
+pub export fn zfish_tt_probe(
+    cluster: *const tt_port.TtCluster,
+    key: u64,
+    generation: u8,
+    depth_none: c_int,
+) tt_port.TtProbeOutput {
+    return tt_port.probe(cluster, key, generation, depth_none);
 }
 
 pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
