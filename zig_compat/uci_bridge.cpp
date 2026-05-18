@@ -2514,9 +2514,6 @@ const char* zfish_benchmark_setup_bench(const unsigned char* current_fen_ptr,
 ZfishBenchmarkSetupOutput zfish_benchmark_setup_benchmark(const unsigned char* args_ptr,
                                                           std::size_t          args_len,
                                                           int                  hardware_concurrency);
-const char* zfish_uci_help_text();
-const char* zfish_uci_format_unknown_command(const unsigned char* command_ptr,
-                                             std::size_t          command_len);
 const char*   zfish_position_build_endgame_fen(const unsigned char* code_ptr,
                                                std::size_t          code_len,
                                                std::uint8_t         color);
@@ -2831,12 +2828,9 @@ void UCIEngine::loop() {
         }
         else if (token == "--help" || token == "help" || token == "--license"
                  || token == "license")
-            sync_cout << take_string_and_free(zfish_uci_help_text()) << sync_endl;
+            sync_cout << help_text() << sync_endl;
         else if (!token.empty() && token[0] != '#')
-            sync_cout
-              << take_string_and_free(zfish_uci_format_unknown_command(
-                   reinterpret_cast<const unsigned char*>(cmd.data()), cmd.size()))
-              << sync_endl;
+            sync_cout << format_unknown_command(cmd) << sync_endl;
 
     } while (token != "quit" && cli.argc == 1);
 }
