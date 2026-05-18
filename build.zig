@@ -198,7 +198,6 @@ pub fn build(b: *std.Build) void {
         "nnue_accumulator_bridge.cpp",
         "position_bridge.cpp",
         "search_bridge.cpp",
-        "tbprobe_bridge.cpp",
         "uci_bridge.cpp",
     };
 
