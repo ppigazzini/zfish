@@ -4,6 +4,7 @@ const benchmark_port = @import("benchmark_rewrites");
 const bitboard_port = @import("bitboard_rewrites");
 const memory_port = @import("memory.zig");
 const misc_port = @import("misc_rewrites");
+const movegen_port = @import("movegen_rewrites");
 const nnue_feature_port = @import("nnue_feature_rewrites");
 const option_port = @import("option_rewrites");
 const score_port = @import("score.zig");
@@ -89,6 +90,34 @@ pub export fn zfish_misc_get_binary_directory(
 
 pub export fn zfish_misc_get_working_directory() ?[*:0]u8 {
     return misc_port.getWorkingDirectory();
+}
+
+pub export fn zfish_movegen_generate_captures(
+    pos: *const anyopaque,
+    move_list: [*]u16,
+) usize {
+    return movegen_port.generateCaptures(pos, move_list);
+}
+
+pub export fn zfish_movegen_generate_quiets(
+    pos: *const anyopaque,
+    move_list: [*]u16,
+) usize {
+    return movegen_port.generateQuiets(pos, move_list);
+}
+
+pub export fn zfish_movegen_generate_evasions(
+    pos: *const anyopaque,
+    move_list: [*]u16,
+) usize {
+    return movegen_port.generateEvasions(pos, move_list);
+}
+
+pub export fn zfish_movegen_generate_non_evasions(
+    pos: *const anyopaque,
+    move_list: [*]u16,
+) usize {
+    return movegen_port.generateNonEvasions(pos, move_list);
 }
 
 pub export fn zfish_tt_entry_save(
