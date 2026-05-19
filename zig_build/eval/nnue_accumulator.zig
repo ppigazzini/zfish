@@ -5,12 +5,16 @@ const threat_feature: u8 = 1;
 const white: u8 = 0;
 const black: u8 = 1;
 const king_piece: u8 = 6;
+const sq_none: u8 = 64;
 const max_stack_size: usize = 247;
 const nnue_align: usize = 64;
 const color_count: usize = 2;
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
 const dirty_threat_capacity: usize = 96;
+const psq_index_capacity: usize = 32;
+const threat_index_capacity: usize = 128;
+const threat_dimensions: u32 = 60720;
 
 const HalfDiff = extern struct {
     pc: u8,
@@ -43,16 +47,43 @@ pub const StackPushOutput = extern struct {
     dirty_threats: *anyopaque,
 };
 
-extern fn zfish_accumulator_incremental_step(
-    stack: *anyopaque,
-    feature_kind: u8,
-    forward: bool,
+const HalfAppendDiff = extern struct {
+    from: u8,
+    to: u8,
+    pc: u8,
+    remove_sq: u8,
+    add_sq: u8,
+    remove_pc: u8,
+    add_pc: u8,
+};
+
+const FullAppendDiff = extern struct {
+    us: u8,
+    prev_ksq: u8,
+    ksq: u8,
+};
+
+const HalfAppendResult = extern struct {
+    len: usize,
+    indices: [psq_index_capacity]u32,
+};
+
+const FullAppendResult = extern struct {
+    len: usize,
+    indices: [threat_index_capacity]u32,
+};
+
+extern fn zfish_half_ka_append_changed(
     perspective: u8,
-    pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
-    target_index: usize,
-    computed_index: usize,
-) void;
+    king_square: u8,
+    diff: HalfAppendDiff,
+) HalfAppendResult;
+extern fn zfish_full_threats_append_changed(
+    perspective: u8,
+    king_square: u8,
+    list_ptr: [*]const DirtyThreatRaw,
+    list_len: usize,
+) FullAppendResult;
 extern fn zfish_accumulator_refresh_latest(
     stack: *anyopaque,
     feature_kind: u8,
@@ -61,6 +92,11 @@ extern fn zfish_accumulator_refresh_latest(
     feature_transformer: *const anyopaque,
     cache: *anyopaque,
 ) void;
+extern fn zfish_accumulator_king_square(pos: *const anyopaque, perspective: u8) u8;
+extern fn zfish_accumulator_psq_weights(feature_transformer: *const anyopaque) [*]const i16;
+extern fn zfish_accumulator_psq_psqt_weights(feature_transformer: *const anyopaque) [*]const i32;
+extern fn zfish_accumulator_threat_weights(feature_transformer: *const anyopaque) [*]const i8;
+extern fn zfish_accumulator_threat_psqt_weights(feature_transformer: *const anyopaque) [*]const i32;
 
 const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32) + color_count * @sizeOf(bool);
 const computed_offset = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32);
@@ -171,7 +207,7 @@ fn evaluateSide(
     if (stateComputed(stack, feature_kind, last_usable, perspective)) {
         var next = last_usable + 1;
         while (next < size) : (next += 1) {
-            zfish_accumulator_incremental_step(
+            incrementalStep(
                 stack,
                 feature_kind,
                 true,
@@ -194,7 +230,7 @@ fn evaluateSide(
 
         var computed_index = size - 1;
         while (computed_index > last_usable) : (computed_index -= 1) {
-            zfish_accumulator_incremental_step(
+            incrementalStep(
                 stack,
                 feature_kind,
                 false,
@@ -204,6 +240,301 @@ fn evaluateSide(
                 computed_index - 1,
                 computed_index,
             );
+        }
+    }
+}
+
+fn incrementalStep(
+    stack: *anyopaque,
+    feature_kind: u8,
+    forward: bool,
+    perspective: u8,
+    pos: *const anyopaque,
+    feature_transformer: *const anyopaque,
+    target_index: usize,
+    computed_index: usize,
+) void {
+    const king_square = zfish_accumulator_king_square(pos, perspective);
+
+    switch (feature_kind) {
+        psq_feature => incrementalStepPsq(
+            stack,
+            forward,
+            perspective,
+            king_square,
+            feature_transformer,
+            target_index,
+            computed_index,
+        ),
+        threat_feature => incrementalStepThreat(
+            stack,
+            forward,
+            perspective,
+            king_square,
+            feature_transformer,
+            target_index,
+            computed_index,
+        ),
+        else => unreachable,
+    }
+}
+
+fn incrementalStepPsq(
+    stack: *anyopaque,
+    forward: bool,
+    perspective: u8,
+    king_square: u8,
+    feature_transformer: *const anyopaque,
+    target_index: usize,
+    computed_index: usize,
+) void {
+    std.debug.assert(stateComputed(stack, psq_feature, computed_index, perspective));
+    std.debug.assert(!stateComputed(stack, psq_feature, target_index, perspective));
+
+    const diff = if (forward)
+        psqDiff(stateBytesConst(psq_feature, target_index, stack))
+    else
+        psqDiff(stateBytesConst(psq_feature, computed_index, stack));
+
+    const append = zfish_half_ka_append_changed(perspective, king_square, .{
+        .from = diff.from,
+        .to = diff.to,
+        .pc = diff.pc,
+        .remove_sq = diff.remove_sq,
+        .add_sq = diff.add_sq,
+        .remove_pc = diff.remove_pc,
+        .add_pc = diff.add_pc,
+    });
+
+    var removed = [_]u32{0} ** psq_index_capacity;
+    var added = [_]u32{0} ** psq_index_capacity;
+    var removed_len: usize = 0;
+    var added_len: usize = 0;
+    var cursor: usize = 0;
+
+    appendHalfChange(&removed, &removed_len, &added, &added_len, append.indices[cursor], forward);
+    cursor += 1;
+
+    if (diff.to != sq_none) {
+        appendHalfChange(&removed, &removed_len, &added, &added_len, append.indices[cursor], !forward);
+        cursor += 1;
+    }
+    if (diff.remove_sq != sq_none) {
+        appendHalfChange(&removed, &removed_len, &added, &added_len, append.indices[cursor], forward);
+        cursor += 1;
+    }
+    if (diff.add_sq != sq_none) {
+        appendHalfChange(&removed, &removed_len, &added, &added_len, append.indices[cursor], !forward);
+    }
+
+    applyPsqDelta(
+        stack,
+        perspective,
+        feature_transformer,
+        target_index,
+        computed_index,
+        removed[0..removed_len],
+        added[0..added_len],
+    );
+}
+
+fn incrementalStepThreat(
+    stack: *anyopaque,
+    forward: bool,
+    perspective: u8,
+    king_square: u8,
+    feature_transformer: *const anyopaque,
+    target_index: usize,
+    computed_index: usize,
+) void {
+    std.debug.assert(stateComputed(stack, threat_feature, computed_index, perspective));
+    std.debug.assert(!stateComputed(stack, threat_feature, target_index, perspective));
+
+    const diff = if (forward)
+        threatDiff(stateBytesConst(threat_feature, target_index, stack))
+    else
+        threatDiff(stateBytesConst(threat_feature, computed_index, stack));
+
+    const append = zfish_full_threats_append_changed(
+        perspective,
+        king_square,
+        @ptrCast(&diff.list.values),
+        diff.list.size_,
+    );
+
+    var removed = [_]u32{0} ** threat_index_capacity;
+    var added = [_]u32{0} ** threat_index_capacity;
+    var removed_len: usize = 0;
+    var added_len: usize = 0;
+
+    for (append.indices[0..append.len], 0..) |index, list_index| {
+        if (index >= threat_dimensions) {
+            continue;
+        }
+        const is_add = (diff.list.values[list_index].data >> 31) != 0;
+        if (is_add == forward) {
+            added[added_len] = index;
+            added_len += 1;
+        } else {
+            removed[removed_len] = index;
+            removed_len += 1;
+        }
+    }
+
+    applyThreatDelta(
+        stack,
+        perspective,
+        feature_transformer,
+        target_index,
+        computed_index,
+        removed[0..removed_len],
+        added[0..added_len],
+    );
+}
+
+fn appendHalfChange(
+    removed: *[psq_index_capacity]u32,
+    removed_len: *usize,
+    added: *[psq_index_capacity]u32,
+    added_len: *usize,
+    index: u32,
+    is_removed: bool,
+) void {
+    if (is_removed) {
+        removed[removed_len.*] = index;
+        removed_len.* += 1;
+    } else {
+        added[added_len.*] = index;
+        added_len.* += 1;
+    }
+}
+
+fn applyPsqDelta(
+    stack: *anyopaque,
+    perspective: u8,
+    feature_transformer: *const anyopaque,
+    target_index: usize,
+    computed_index: usize,
+    removed: []const u32,
+    added: []const u32,
+) void {
+    applyAccumulatorDeltaI16(
+        stateAccumulationMut(psq_feature, target_index, stack, perspective),
+        stateAccumulationConst(psq_feature, computed_index, stack, perspective),
+        removed,
+        added,
+        zfish_accumulator_psq_weights(feature_transformer),
+    );
+    applyPsqtDelta(
+        statePsqtMut(psq_feature, target_index, stack, perspective),
+        statePsqtConst(psq_feature, computed_index, stack, perspective),
+        removed,
+        added,
+        zfish_accumulator_psq_psqt_weights(feature_transformer),
+    );
+    stateBytesMut(psq_feature, target_index, stack)[computed_offset + perspective] = 1;
+}
+
+fn applyThreatDelta(
+    stack: *anyopaque,
+    perspective: u8,
+    feature_transformer: *const anyopaque,
+    target_index: usize,
+    computed_index: usize,
+    removed: []const u32,
+    added: []const u32,
+) void {
+    applyAccumulatorDeltaI8(
+        stateAccumulationMut(threat_feature, target_index, stack, perspective),
+        stateAccumulationConst(threat_feature, computed_index, stack, perspective),
+        removed,
+        added,
+        zfish_accumulator_threat_weights(feature_transformer),
+    );
+    applyPsqtDelta(
+        statePsqtMut(threat_feature, target_index, stack, perspective),
+        statePsqtConst(threat_feature, computed_index, stack, perspective),
+        removed,
+        added,
+        zfish_accumulator_threat_psqt_weights(feature_transformer),
+    );
+    stateBytesMut(threat_feature, target_index, stack)[computed_offset + perspective] = 1;
+}
+
+fn applyAccumulatorDeltaI16(
+    target: []i16,
+    source: []const i16,
+    removed: []const u32,
+    added: []const u32,
+    weights: [*]const i16,
+) void {
+    @memcpy(target, source);
+
+    for (removed) |index| {
+        const row_offset = @as(usize, index) * half_dimensions;
+        var dim: usize = 0;
+        while (dim < half_dimensions) : (dim += 1) {
+            target[dim] -= weights[row_offset + dim];
+        }
+    }
+
+    for (added) |index| {
+        const row_offset = @as(usize, index) * half_dimensions;
+        var dim: usize = 0;
+        while (dim < half_dimensions) : (dim += 1) {
+            target[dim] += weights[row_offset + dim];
+        }
+    }
+}
+
+fn applyAccumulatorDeltaI8(
+    target: []i16,
+    source: []const i16,
+    removed: []const u32,
+    added: []const u32,
+    weights: [*]const i8,
+) void {
+    @memcpy(target, source);
+
+    for (removed) |index| {
+        const row_offset = @as(usize, index) * half_dimensions;
+        var dim: usize = 0;
+        while (dim < half_dimensions) : (dim += 1) {
+            target[dim] -= @as(i16, weights[row_offset + dim]);
+        }
+    }
+
+    for (added) |index| {
+        const row_offset = @as(usize, index) * half_dimensions;
+        var dim: usize = 0;
+        while (dim < half_dimensions) : (dim += 1) {
+            target[dim] += @as(i16, weights[row_offset + dim]);
+        }
+    }
+}
+
+fn applyPsqtDelta(
+    target: []i32,
+    source: []const i32,
+    removed: []const u32,
+    added: []const u32,
+    weights: [*]const i32,
+) void {
+    @memcpy(target, source);
+
+    for (removed) |index| {
+        const row_offset = @as(usize, index) * psqt_buckets;
+        var bucket: usize = 0;
+        while (bucket < psqt_buckets) : (bucket += 1) {
+            target[bucket] -= weights[row_offset + bucket];
+        }
+    }
+
+    for (added) |index| {
+        const row_offset = @as(usize, index) * psqt_buckets;
+        var bucket: usize = 0;
+        while (bucket < psqt_buckets) : (bucket += 1) {
+            target[bucket] += weights[row_offset + bucket];
         }
     }
 }
@@ -286,8 +617,40 @@ fn stateBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
     return stackBytesMut(stack) + stateOffset(feature_kind, index);
 }
 
+fn stateAccumulationConst(feature_kind: u8, index: usize, stack: *const anyopaque, perspective: u8) []const i16 {
+    const offset = perspective * half_dimensions * @sizeOf(i16);
+    const ptr: [*]const i16 = @ptrCast(@alignCast(stateBytesConst(feature_kind, index, stack) + offset));
+    return ptr[0..half_dimensions];
+}
+
+fn stateAccumulationMut(feature_kind: u8, index: usize, stack: *anyopaque, perspective: u8) []i16 {
+    const offset = perspective * half_dimensions * @sizeOf(i16);
+    const ptr: [*]i16 = @ptrCast(@alignCast(stateBytesMut(feature_kind, index, stack) + offset));
+    return ptr[0..half_dimensions];
+}
+
+fn statePsqtConst(feature_kind: u8, index: usize, stack: *const anyopaque, perspective: u8) []const i32 {
+    const offset = color_count * half_dimensions * @sizeOf(i16) + perspective * psqt_buckets * @sizeOf(i32);
+    const ptr: [*]const i32 = @ptrCast(@alignCast(stateBytesConst(feature_kind, index, stack) + offset));
+    return ptr[0..psqt_buckets];
+}
+
+fn statePsqtMut(feature_kind: u8, index: usize, stack: *anyopaque, perspective: u8) []i32 {
+    const offset = color_count * half_dimensions * @sizeOf(i16) + perspective * psqt_buckets * @sizeOf(i32);
+    const ptr: [*]i32 = @ptrCast(@alignCast(stateBytesMut(feature_kind, index, stack) + offset));
+    return ptr[0..psqt_buckets];
+}
+
 fn diffBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
     return stateBytesMut(feature_kind, index, stack) + diffOffset(feature_kind);
+}
+
+fn psqDiff(bytes: [*]const u8) HalfDiff {
+    return @as(*const HalfDiff, @ptrCast(@alignCast(bytes + psq_diff_offset))).*;
+}
+
+fn threatDiff(bytes: [*]const u8) ThreatDiffView {
+    return @as(*const ThreatDiffView, @ptrCast(@alignCast(bytes + threat_diff_offset))).*;
 }
 
 fn zeroDiff(bytes: [*]u8, feature_kind: u8, index: usize, len: usize) void {
