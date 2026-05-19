@@ -184,6 +184,14 @@ pub export fn zfish_bitboards_init_runtime(
     );
 }
 
+pub export fn zfish_bitboards_init_magics_runtime(
+    entries: *[64][2]bitboard_port.MagicInitEntry,
+    rook_table_ptr: [*]u64,
+    bishop_table_ptr: [*]u64,
+) void {
+    return bitboard_port.initMagicRuntime(entries, rook_table_ptr, bishop_table_ptr);
+}
+
 pub export fn zfish_search_to_corrected_static_eval(v: c_int, cv: c_int) c_int {
     return search_port.toCorrectedStaticEval(v, cv);
 }
