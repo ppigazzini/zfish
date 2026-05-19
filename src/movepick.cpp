@@ -108,7 +108,6 @@ struct MoveSorter {
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
-#if !defined(ZFISH_ZIG_BUILD)
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
     ExtMove *sortedEnd = begin, *p = begin + 1;
 
@@ -130,8 +129,6 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
     }
     sorter.write_sorted(begin, sortedEnd - begin + 1);
     // Use scalar implementation for any remaining elements
-#endif
-
 #endif
 
     for (; p < end; ++p)

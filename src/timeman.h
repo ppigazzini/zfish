@@ -19,8 +19,6 @@
 #ifndef TIMEMAN_H_INCLUDED
 #define TIMEMAN_H_INCLUDED
 
-#include <algorithm>
-#include <cassert>
 #include <cstdint>
 
 #include "misc.h"
@@ -63,21 +61,6 @@ class TimeManagement {
     std::int64_t availableNodes = -1;     // When in 'nodes as time' mode
     bool         useNodesTime   = false;  // True if we are in 'nodes as time' mode
 };
-
-  #if defined(ZFISH_ZIG_BUILD)
-  inline TimePoint TimeManagement::optimum() const { return optimumTime; }
-
-  inline TimePoint TimeManagement::maximum() const { return maximumTime; }
-
-  inline void TimeManagement::clear() {
-    availableNodes = -1;  // When in 'nodes as time' mode
-  }
-
-  inline void TimeManagement::advance_nodes_time(std::int64_t nodes) {
-    assert(useNodesTime);
-    availableNodes = std::max(std::int64_t(0), availableNodes - nodes);
-  }
-  #endif
 
 }  // namespace Stockfish
 

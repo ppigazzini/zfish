@@ -19,49 +19,11 @@
 #ifndef MOVEPICK_H_INCLUDED
 #define MOVEPICK_H_INCLUDED
 
-#include <cstddef>
-#include <cstdint>
-
 #include "history.h"
 #include "movegen.h"
 #include "types.h"
 
-#if defined(ZFISH_ZIG_BUILD)
-extern "C" {
-struct ZfishMoveSortEntry {
-  std::uint16_t raw_move;
-  std::uint16_t reserved;
-  int           value;
-};
-
-void zfish_movepick_partial_insertion_sort(ZfishMoveSortEntry* entries,
-                       std::size_t         count,
-                       int                 limit);
-}
-#endif
-
 namespace Stockfish {
-
-#if defined(ZFISH_ZIG_BUILD)
-inline void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
-  const auto count = static_cast<std::size_t>(end - begin);
-  ZfishMoveSortEntry entries[MAX_MOVES]{};
-
-  for (std::size_t i = 0; i < count; ++i)
-  {
-    entries[i].raw_move = begin[i].raw();
-    entries[i].value    = begin[i].value;
-  }
-
-  zfish_movepick_partial_insertion_sort(entries, count, limit);
-
-  for (std::size_t i = 0; i < count; ++i)
-  {
-    begin[i]       = Move(entries[i].raw_move);
-    begin[i].value = entries[i].value;
-  }
-}
-#endif
 
 class Position;
 

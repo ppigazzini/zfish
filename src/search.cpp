@@ -105,7 +105,7 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
 Value to_corrected_static_eval(const Value v, const int cv) {
     return std::clamp(v + cv / 131072, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
 }
-#elif !defined(ZFISH_ZIG_BUILD)
+#else
 Value to_corrected_static_eval(const Value v, const int cv);
 #endif
 
@@ -136,7 +136,7 @@ void update_correction_history(const Position& pos,
 // Add a small random component to draw evaluations to avoid 3-fold blindness
 #ifndef ZFISH_SEARCH_BRIDGE_SKIP_VALUE_DRAW
 Value value_draw(size_t nodes) { return VALUE_DRAW - 1 + Value(nodes & 0x2); }
-#elif !defined(ZFISH_ZIG_BUILD)
+#else
 Value value_draw(size_t nodes);
 #endif
 Value value_to_tt(Value v, int ply);
