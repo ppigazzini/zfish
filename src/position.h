@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstdlib>
 #include <deque>
 #include <iosfwd>
 #include <memory>
@@ -32,10 +33,42 @@
 #include "bitboard.h"
 #include "types.h"
 
+#if defined(ZFISH_ZIG_BUILD)
+extern "C" {
+const char* zfish_position_build_endgame_fen(const unsigned char* code_ptr,
+                                             std::size_t          code_len,
+                                             std::uint8_t         color);
+const char* zfish_position_format_fen(const unsigned char* board_ptr,
+                                      std::uint8_t         side_to_move,
+                                      std::uint8_t         chess960,
+                                      std::uint8_t         castling_rights,
+                                      std::uint8_t         white_oo_rook_square,
+                                      std::uint8_t         white_ooo_rook_square,
+                                      std::uint8_t         black_oo_rook_square,
+                                      std::uint8_t         black_ooo_rook_square,
+                                      std::uint8_t         ep_square,
+                                      int                  rule50,
+                                      int                  game_ply);
+std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
+                                                  std::size_t piece_count_len);
+}
+#endif
+
 namespace Stockfish {
 
 class TranspositionTable;
 struct SharedHistories;
+
+#if defined(ZFISH_ZIG_BUILD)
+inline std::string take_zig_position_string_and_free_required(const char* rendered) {
+    if (!rendered)
+        std::abort();
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+#endif
 
 // StateInfo struct stores information needed to restore a Position object to
 // its previous state when we retract a move. Whenever a move is made on the
@@ -319,6 +352,34 @@ inline Key Position::key() const { return adjust_key50(st->key); }
 inline Key Position::adjust_key50(Key k) const {
     return st->rule50 < 14 ? k : k ^ make_key((st->rule50 - 14) / 8);
 }
+
+#if defined(ZFISH_ZIG_BUILD)
+inline Key Position::compute_material_key() const {
+        return zfish_position_compute_material_key(pieceCount, PIECE_NB);
+}
+
+inline std::optional<PositionSetError> Position::set(const std::string& code,
+                                                                                                         Color              c,
+                                                                                                         StateInfo*         si) {
+        const auto fenStr = take_zig_position_string_and_free_required(zfish_position_build_endgame_fen(
+            reinterpret_cast<const unsigned char*>(code.data()), code.size(), static_cast<std::uint8_t>(c)));
+        return set(fenStr, false, si);
+}
+
+inline std::string Position::fen() const {
+        const auto whiteOoRook = can_castle(WHITE_OO) ? castling_rook_square(WHITE_OO) : SQ_NONE;
+        const auto whiteOooRook = can_castle(WHITE_OOO) ? castling_rook_square(WHITE_OOO) : SQ_NONE;
+        const auto blackOoRook = can_castle(BLACK_OO) ? castling_rook_square(BLACK_OO) : SQ_NONE;
+        const auto blackOooRook = can_castle(BLACK_OOO) ? castling_rook_square(BLACK_OOO) : SQ_NONE;
+
+        return take_zig_position_string_and_free_required(zfish_position_format_fen(
+            reinterpret_cast<const unsigned char*>(board.data()), static_cast<std::uint8_t>(sideToMove),
+            static_cast<std::uint8_t>(chess960), static_cast<std::uint8_t>(st->castlingRights),
+            static_cast<std::uint8_t>(whiteOoRook), static_cast<std::uint8_t>(whiteOooRook),
+            static_cast<std::uint8_t>(blackOoRook), static_cast<std::uint8_t>(blackOooRook),
+            static_cast<std::uint8_t>(ep_square()), st->rule50, gamePly));
+}
+#endif
 
 inline Key Position::pawn_key() const { return st->pawnKey; }
 
