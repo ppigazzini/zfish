@@ -109,6 +109,40 @@ pub fn fullAppendChanged(
     return result;
 }
 
+pub fn fullAppendActive(
+    perspective: u8,
+    king_square: u8,
+    piece_array: [*]const u8,
+) FullAppendResult {
+    const pieces = piece_array[0..square_count];
+    const occupied = occupiedFromPieces(pieces);
+    const pawns = piecesOfType(pieces, pawn_piece_type);
+
+    var result: FullAppendResult = .{ .len = 0, .indices = [_]u32{0} ** 128 };
+    var color_index: u8 = 0;
+
+    while (color_index < 2) : (color_index += 1) {
+        const color = perspective ^ color_index;
+        appendActivePawnThreats(&result, pieces, occupied, pawns, perspective, color, king_square);
+
+        var piece_type: u8 = knight_piece_type;
+        while (piece_type < king_piece_type) : (piece_type += 1) {
+            const attacker = makePiece(color, piece_type);
+            var attackers = piecesOfExact(pieces, attacker);
+            while (attackers != 0) {
+                const from = popLsb(&attackers);
+                var attacks = attacksBb(piece_type, from, occupied) & occupied;
+                while (attacks != 0) {
+                    const to = popLsb(&attacks);
+                    appendFullActiveIndex(&result, perspective, attacker, from, to, pieces[to], king_square);
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 pub fn fullRequiresRefresh(diff: FullDiff, perspective: u8) bool {
     return perspective == diff.us and (((@as(i8, @bitCast(diff.ksq)) & 0b100) != (@as(i8, @bitCast(diff.prev_ksq)) & 0b100)));
 }
@@ -141,6 +175,72 @@ fn appendFullIndex(
         .king_square = king_square,
     });
     result.len += 1;
+}
+
+fn appendActivePawnThreats(
+    result: *FullAppendResult,
+    pieces: []const u8,
+    occupied: u64,
+    pawns: u64,
+    perspective: u8,
+    color: u8,
+    king_square: u8,
+) void {
+    const attacker = makePiece(color, pawn_piece_type);
+    const color_pawns = piecesOfExact(pieces, attacker);
+    const pushers = pawnSinglePush(color ^ 1, pawns) & color_pawns;
+
+    if (color == white) {
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_east, color_pawns) & occupied, north_east);
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_west, color_pawns) & occupied, north_west);
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north, pushers), north);
+    } else {
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_west, color_pawns) & occupied, south_west);
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_east, color_pawns) & occupied, south_east);
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south, pushers), south);
+    }
+}
+
+fn processPawnAttacks(
+    result: *FullAppendResult,
+    perspective: u8,
+    attacker: u8,
+    king_square: u8,
+    pieces: []const u8,
+    attacks: u64,
+    attack_dir: i8,
+) void {
+    var pending = attacks;
+    while (pending != 0) {
+        const to = popLsb(&pending);
+        const from: usize = @intCast(@as(i32, @intCast(to)) - @as(i32, attack_dir));
+        appendFullActiveIndex(result, perspective, attacker, from, to, pieces[to], king_square);
+    }
+}
+
+fn appendFullActiveIndex(
+    result: *FullAppendResult,
+    perspective: u8,
+    attacker: u8,
+    from_sq: usize,
+    to_sq: usize,
+    attacked: u8,
+    king_square: u8,
+) void {
+    const index = fullMakeIndex(.{
+        .perspective = perspective,
+        .attacker = attacker,
+        .from_sq = @intCast(from_sq),
+        .to_sq = @intCast(to_sq),
+        .attacked = attacked,
+        .king_square = king_square,
+    });
+
+    if (index < full_dimensions) {
+        std.debug.assert(result.len < result.indices.len);
+        result.indices[result.len] = index;
+        result.len += 1;
+    }
 }
 
 const DecodedThreat = struct {
@@ -209,6 +309,63 @@ fn safeDestination(square: usize, step: i8) u64 {
         return 0;
     }
     return squareBb(@intCast(target));
+}
+
+fn attacksBb(piece_type: u8, square: usize, occupied: u64) u64 {
+    return switch (piece_type) {
+        knight_piece_type => knightAttack(square),
+        bishop_piece_type => slidingAttack(bishop_piece_type, square, occupied),
+        rook_piece_type => slidingAttack(rook_piece_type, square, occupied),
+        queen_piece_type => slidingAttack(queen_piece_type, square, occupied),
+        else => 0,
+    };
+}
+
+fn piecesOfExact(pieces: []const u8, wanted: u8) u64 {
+    var bitboard: u64 = 0;
+    var square: usize = 0;
+    while (square < pieces.len) : (square += 1) {
+        if (pieces[square] == wanted) {
+            bitboard |= squareBb(square);
+        }
+    }
+    return bitboard;
+}
+
+fn piecesOfType(pieces: []const u8, wanted_type: u8) u64 {
+    var bitboard: u64 = 0;
+    var square: usize = 0;
+    while (square < pieces.len) : (square += 1) {
+        const piece = pieces[square];
+        if (piece != no_piece and typeOf(piece) == wanted_type) {
+            bitboard |= squareBb(square);
+        }
+    }
+    return bitboard;
+}
+
+fn occupiedFromPieces(pieces: []const u8) u64 {
+    var bitboard: u64 = 0;
+    var square: usize = 0;
+    while (square < pieces.len) : (square += 1) {
+        if (pieces[square] != no_piece) {
+            bitboard |= squareBb(square);
+        }
+    }
+    return bitboard;
+}
+
+fn pawnSinglePush(color: u8, bitboard: u64) u64 {
+    return if (color == white)
+        shift(north, bitboard)
+    else
+        shift(south, bitboard);
+}
+
+fn popLsb(bitboard: *u64) usize {
+    const square: usize = @intCast(@ctz(bitboard.*));
+    bitboard.* &= bitboard.* - 1;
+    return square;
 }
 
 fn slidingAttack(piece_type: u8, square: usize, occupied: u64) u64 {
@@ -463,7 +620,9 @@ const b_king: usize = 14;
 
 const all_pieces = [_]usize{ w_pawn, w_knight, w_bishop, w_rook, w_queen, w_king, b_pawn, b_knight, b_bishop, b_rook, b_queen, b_king };
 
+const no_piece: u8 = 0;
 const sq_none: u8 = 64;
+const square_count: usize = 64;
 const sq_a2: usize = 8;
 const sq_h7: usize = 55;
 
