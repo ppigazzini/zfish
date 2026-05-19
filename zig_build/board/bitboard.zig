@@ -7,6 +7,8 @@ pub const Magic = extern struct {
     shift: c_uint,
 };
 
+extern fn zfish_movegen_attacks(piece_type: u8, square: u8, occupied: u64) u64;
+
 pub fn init(
     popcnt16: *[1 << 16]u8,
     square_distance: *[64][64]u8,
@@ -16,6 +18,20 @@ pub fn init(
     magics: *[64][2]Magic,
     rook_table: [*]u64,
     bishop_table: [*]u64,
+) void {
+    initMagics(PieceType.rook, rook_table[0..0x19000], magics);
+    initMagics(PieceType.bishop, bishop_table[0..0x1480], magics);
+
+    initDerivedTablesFromMagics(popcnt16, square_distance, line_bb, between_bb, ray_pass_bb, magics);
+}
+
+fn initDerivedTablesFromMagics(
+    popcnt16: *[1 << 16]u8,
+    square_distance: *[64][64]u8,
+    line_bb: *[64][64]u64,
+    between_bb: *[64][64]u64,
+    ray_pass_bb: *[64][64]u64,
+    magics: *[64][2]Magic,
 ) void {
     for (0..(1 << 16)) |index| {
         popcnt16[index] = @intCast(@popCount(index));
@@ -32,9 +48,6 @@ pub fn init(
         }
     }
 
-    initMagics(PieceType.rook, rook_table[0..0x19000], magics);
-    initMagics(PieceType.bishop, bishop_table[0..0x1480], magics);
-
     for (0..64) |s1| {
         for (piece_types) |pt| {
             for (0..64) |s2| {
@@ -44,6 +57,44 @@ pub fn init(
                     between_bb[s1][s2] =
                         attacksBb(pt, s1, squareBb(s2), magics) & attacksBb(pt, s2, squareBb(s1), magics);
                     ray_pass_bb[s1][s2] = attacksBb(pt, s1, 0, magics) & (attacksBb(pt, s2, squareBb(s1), magics) | squareBb(s2));
+                }
+                between_bb[s1][s2] |= squareBb(s2);
+            }
+        }
+    }
+}
+
+pub fn initRuntimeTables(
+    popcnt16: *[1 << 16]u8,
+    square_distance: *[64][64]u8,
+    line_bb: *[64][64]u64,
+    between_bb: *[64][64]u64,
+    ray_pass_bb: *[64][64]u64,
+) void {
+    for (0..(1 << 16)) |index| {
+        popcnt16[index] = @intCast(@popCount(index));
+    }
+
+    for (0..64) |s1| {
+        for (0..64) |s2| {
+            const file_distance = absDiff(fileOf(s1), fileOf(s2));
+            const rank_distance = absDiff(rankOf(s1), rankOf(s2));
+            square_distance[s1][s2] = @intCast(@max(file_distance, rank_distance));
+            line_bb[s1][s2] = 0;
+            between_bb[s1][s2] = 0;
+            ray_pass_bb[s1][s2] = 0;
+        }
+    }
+
+    for (0..64) |s1| {
+        for (piece_types) |pt| {
+            for (0..64) |s2| {
+                if ((pseudoAttacks(pt, s1) & squareBb(s2)) != 0) {
+                    line_bb[s1][s2] =
+                        (cxxAttacks(pt, s1, 0) & cxxAttacks(pt, s2, 0)) | squareBb(s1) | squareBb(s2);
+                    between_bb[s1][s2] =
+                        cxxAttacks(pt, s1, squareBb(s2)) & cxxAttacks(pt, s2, squareBb(s1));
+                    ray_pass_bb[s1][s2] = cxxAttacks(pt, s1, 0) & (cxxAttacks(pt, s2, squareBb(s1)) | squareBb(s2));
                 }
                 between_bb[s1][s2] |= squareBb(s2);
             }
@@ -172,6 +223,10 @@ fn initMagics(pt: PieceType, table: []u64, magics: *[64][2]Magic) void {
 fn attacksBb(pt: PieceType, square: usize, occupied: u64, magics: *[64][2]Magic) u64 {
     const magic_ref = magics[square][magicIndexForPiece(pt)];
     return magic_ref.attacks[computeMagicIndex(magic_ref, occupied)];
+}
+
+fn cxxAttacks(pt: PieceType, square: usize, occupied: u64) u64 {
+    return zfish_movegen_attacks(@intFromEnum(pt), @intCast(square), occupied);
 }
 
 fn computeMagicIndex(magic_ref: Magic, occupied: u64) usize {

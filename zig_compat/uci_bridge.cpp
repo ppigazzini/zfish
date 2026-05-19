@@ -752,6 +752,11 @@ struct ZfishThreadSummary {
 std::size_t zfish_thread_next_power_of_two(std::uint64_t count);
 std::size_t zfish_thread_pick_best_thread(const ZfishThreadSummary* summaries,
                                           std::size_t               count);
+void zfish_bitboards_init_runtime(std::uint8_t         (*popcnt16_ptr)[1 << 16],
+                                  std::uint8_t         (*square_distance_ptr)[64][64],
+                                  std::uint64_t        (*line_bb_ptr)[64][64],
+                                  std::uint64_t        (*between_bb_ptr)[64][64],
+                                  std::uint64_t        (*ray_pass_bb_ptr)[64][64]);
 }
 
 namespace Stockfish {
@@ -1933,32 +1938,10 @@ extern "C" {
 namespace Bitboards {
 
 void init() {
-    for (unsigned i = 0; i < (1 << 16); ++i)
-        PopCnt16[i] = uint8_t(std::bitset<16>(i).count());
-
-    for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
-        for (Square s2 = SQ_A1; s2 <= SQ_H8; ++s2)
-            SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
-
     init_magics(ROOK, const_cast<MagicMask*>(RookTable.data()), Magics, true);
     init_magics(BISHOP, const_cast<MagicMask*>(BishopTable.data()), Magics, true);
 
-    for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
-    {
-        for (PieceType pt : {BISHOP, ROOK})
-            for (Square s2 = SQ_A1; s2 <= SQ_H8; ++s2)
-            {
-                if (PseudoAttacks[pt][s1] & s2)
-                {
-                    LineBB[s1][s2] = (attacks_bb(pt, s1, 0) & attacks_bb(pt, s2, 0)) | s1 | s2;
-                    BetweenBB[s1][s2] =
-                      (attacks_bb(pt, s1, square_bb(s2)) & attacks_bb(pt, s2, square_bb(s1)));
-                    RayPassBB[s1][s2] =
-                      attacks_bb(pt, s1, 0) & (attacks_bb(pt, s2, square_bb(s1)) | s2);
-                }
-                BetweenBB[s1][s2] |= s2;
-            }
-    }
+    zfish_bitboards_init_runtime(&PopCnt16, &SquareDistance, &LineBB, &BetweenBB, &RayPassBB);
 }
 
 #include "uci_bridge/bitboard_pretty.inc"
