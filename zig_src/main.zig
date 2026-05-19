@@ -314,6 +314,31 @@ pub export fn zfish_engine_format_numa_info(
     return engine_port.formatNumaInfo(config_ptr, config_len);
 }
 
+pub export fn zfish_engine_set_position(
+    pos: *anyopaque,
+    states: *anyopaque,
+    chess960_enabled: u8,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    moves_ptr: ?[*]const engine_port.ByteView,
+    move_count: usize,
+) ?[*:0]u8 {
+    return engine_port.setPosition(pos, states, chess960_enabled, fen_ptr, fen_len, moves_ptr, move_count);
+}
+
+pub export fn zfish_engine_stop(threads: *anyopaque) void {
+    return engine_port.stop(threads);
+}
+
+pub export fn zfish_engine_search_clear(
+    threads: *anyopaque,
+    tt: *anyopaque,
+    syzygy_path_ptr: [*]const u8,
+    syzygy_path_len: usize,
+) void {
+    return engine_port.searchClear(threads, tt, syzygy_path_ptr[0..syzygy_path_len]);
+}
+
 pub export fn zfish_engine_format_thread_binding(
     pairs_ptr: [*]const engine_port.CountPair,
     pair_count: usize,

@@ -1919,6 +1919,61 @@ void zfish_thread_start_searching(void* thread_ptr) {
     static_cast<Thread*>(thread_ptr)->start_searching();
 }
 
+void* zfish_engine_states_reset(void* states_ptr) {
+    auto& states = *static_cast<StateListPtr*>(states_ptr);
+    states       = StateListPtr(new std::deque<StateInfo>(1));
+    return &states->back();
+}
+
+void* zfish_engine_states_push(void* states_ptr) {
+    auto& states = *static_cast<StateListPtr*>(states_ptr);
+    states->emplace_back();
+    return &states->back();
+}
+
+const char* zfish_engine_position_set(void*                pos_ptr,
+                                      const unsigned char* fen_ptr,
+                                      std::size_t          fen_len,
+                                      std::uint8_t         chess960_enabled,
+                                      void*                state_ptr) {
+    const std::string fen(reinterpret_cast<const char*>(fen_ptr), fen_len);
+    const auto        err = static_cast<Position*>(pos_ptr)->set(
+      fen, chess960_enabled != 0, static_cast<StateInfo*>(state_ptr));
+    if (!err.has_value())
+        return nullptr;
+
+    const auto message = std::string(err->what());
+    auto*      buffer  = static_cast<char*>(std::malloc(message.size() + 1));
+    if (!buffer)
+        std::abort();
+    std::memcpy(buffer, message.c_str(), message.size() + 1);
+    return buffer;
+}
+
+void zfish_engine_position_do_move(void* pos_ptr, std::uint16_t move_raw, void* state_ptr) {
+    static_cast<Position*>(pos_ptr)->do_move(Move(move_raw), *static_cast<StateInfo*>(state_ptr));
+}
+
+void zfish_engine_threads_set_stop(void* threads_ptr) {
+    static_cast<ThreadPool*>(threads_ptr)->stop = true;
+}
+
+void zfish_engine_threads_wait_finished(void* threads_ptr) {
+    static_cast<ThreadPool*>(threads_ptr)->main_thread()->wait_for_search_finished();
+}
+
+void zfish_engine_tt_clear(void* tt_ptr, void* threads_ptr) {
+    static_cast<TranspositionTable*>(tt_ptr)->clear(*static_cast<ThreadPool*>(threads_ptr));
+}
+
+void zfish_engine_threads_clear(void* threads_ptr) {
+    static_cast<ThreadPool*>(threads_ptr)->clear();
+}
+
+void zfish_engine_tablebases_init(const unsigned char* path_ptr, std::size_t path_len) {
+    Tablebases::init(std::string(reinterpret_cast<const char*>(path_ptr), path_len));
+}
+
 }
 
 void ThreadPool::start_thinking(const OptionsMap&  options,
@@ -2037,6 +2092,26 @@ std::string build_nnue_trace(Stockfish::Position&                     pos,
 
 #include "uci_bridge/sync_cout_helpers.inc"
 
+struct EngineMoveView {
+    const unsigned char* ptr;
+    std::size_t          len;
+};
+
+extern "C" {
+const char* zfish_engine_set_position(void*                pos,
+                                      void*                states,
+                                      std::uint8_t         chess960_enabled,
+                                      const unsigned char* fen_ptr,
+                                      std::size_t          fen_len,
+                                      const EngineMoveView* moves_ptr,
+                                      std::size_t          move_count);
+void        zfish_engine_stop(void* threads);
+void        zfish_engine_search_clear(void*                threads,
+                                      void*                tt,
+                                      const unsigned char* syzygy_path_ptr,
+                                      std::size_t          syzygy_path_len);
+}
+
 std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
     verify_network();
 
@@ -2050,11 +2125,33 @@ void Engine::go(Search::LimitsType& limits) {
     threads.start_thinking(options, pos, states, limits);
 }
 
-#include "uci_bridge/engine_stop_and_clear.inc"
-
 #include "uci_bridge/engine_listener_helpers.inc"
 
-#include "uci_bridge/engine_set_position.inc"
+std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
+                                                     const std::vector<std::string>& moves) {
+    std::vector<EngineMoveView> move_views;
+    move_views.reserve(moves.size());
+    for (const auto& move : moves)
+        move_views.push_back({reinterpret_cast<const unsigned char*>(move.data()), move.size()});
+
+    const char* error = zfish_engine_set_position(
+      &pos, &states, static_cast<std::uint8_t>(static_cast<int>(options["UCI_Chess960"])),
+      reinterpret_cast<const unsigned char*>(fen.data()), fen.size(),
+      move_views.empty() ? nullptr : move_views.data(), move_views.size());
+    if (!error)
+        return std::nullopt;
+
+    return PositionSetError(take_string_and_free_engine_required(error));
+}
+
+void Engine::stop() { zfish_engine_stop(&threads); }
+
+void Engine::search_clear() {
+    const auto syzygy_path = std::string(options["SyzygyPath"]);
+    zfish_engine_search_clear(&threads, &tt,
+                              reinterpret_cast<const unsigned char*>(syzygy_path.data()),
+                              syzygy_path.size());
+}
 
 Engine::Engine(std::optional<std::string> path) :
         binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
