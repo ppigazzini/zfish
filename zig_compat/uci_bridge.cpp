@@ -691,6 +691,13 @@ struct ZfishTtProbeOutput {
     ZfishTtReadOutput data;
 };
 
+struct ZfishBitboardMagicInitEntry {
+    std::uint64_t mask;
+    std::uint64_t magic;
+    unsigned      shift;
+    std::size_t   attack_offset;
+};
+
 int zfish_search_to_corrected_static_eval(int v, int cv);
 int zfish_search_value_draw(std::size_t nodes);
 int zfish_search_reduction(const int* reductions,
@@ -757,6 +764,10 @@ void zfish_bitboards_init_runtime(std::uint8_t         (*popcnt16_ptr)[1 << 16],
                                   std::uint64_t        (*line_bb_ptr)[64][64],
                                   std::uint64_t        (*between_bb_ptr)[64][64],
                                   std::uint64_t        (*ray_pass_bb_ptr)[64][64]);
+void zfish_bitboards_init_magics_runtime(
+    ZfishBitboardMagicInitEntry (*entries_ptr)[64][2],
+    std::uint64_t*               rook_table_ptr,
+    std::uint64_t*               bishop_table_ptr);
 }
 
 namespace Stockfish {
@@ -1854,78 +1865,23 @@ Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 alignas(64) Magic Magics[SQUARE_NB][2];
 
 namespace {
-
-using MagicMask = Bitboard;
-
-[[maybe_unused]] constexpr Bitboard constexpr_pext(Bitboard b, Bitboard m) {
-    Bitboard result = 0, bit = 0;
-    while (m)
-    {
-        Bitboard last = m & -m;
-        result |= bool(b & last) << bit++;
-        m ^= last;
-    }
-    return result;
-}
-
-void init_magics(PieceType pt, MagicMask table[], Magic magics[][2], [[maybe_unused]] bool tableAlreadyInit) {
-    tableAlreadyInit = false;
-
-    int seeds[][RANK_NB] = {{8977, 44560, 54343, 38998, 5731, 95205, 104912, 17020},
-                            {728, 10316, 55013, 32803, 12281, 15100, 16645, 255}};
-
-    Bitboard occupancy[4096];
-    int      epoch[4096] = {}, cnt = 0;
-    Bitboard reference[4096] = {};
-    int      size = 0;
-
-    for (Square s = SQ_A1; s <= SQ_H8; ++s)
-    {
-        Bitboard edges = ((Rank1BB | Rank8BB) & ~rank_bb(s)) | ((FileABB | FileHBB) & ~file_bb(s));
-
-        Magic&   m       = magics[s][pt - BISHOP];
-        Bitboard attacks = Bitboards::sliding_attack(pt, s, 0);
-        m.mask           = attacks & ~edges;
-        m.shift          = (Is64Bit ? 64 : 32) - popcount(m.mask);
-
-        m.attacks = s == SQ_A1 ? table : magics[s - 1][pt - BISHOP].attacks + size;
-        size      = 0;
-
-        Bitboard b = 0;
-        do
-        {
-            occupancy[size] = b;
-            reference[size] = Bitboards::sliding_attack(pt, s, b);
-
-            size++;
-            b = (b - m.mask) & m.mask;
-        } while (b);
-
-        PRNG rng(seeds[Is64Bit][rank_of(s)]);
-
-        for (int i = 0; i < size;)
-        {
-            for (m.magic = 0; popcount((m.magic * m.mask) >> 56) < 6;)
-                m.magic = rng.sparse_rand<Bitboard>();
-
-            for (++cnt, i = 0; i < size; ++i)
-            {
-                unsigned idx = m.index(occupancy[i]);
-
-                if (epoch[idx] < cnt)
-                {
-                    epoch[idx]     = cnt;
-                    m.attacks[idx] = reference[i];
-                }
-                else if (m.attacks[idx] != reference[i])
-                    break;
-            }
-        }
-    }
-}
-
 std::array<Bitboard, 0x19000> RookTable;
 std::array<Bitboard, 0x1480>  BishopTable;
+ZfishBitboardMagicInitEntry    BitboardMagicEntries[SQUARE_NB][2];
+
+void assign_magic_entries() {
+    for (Square s = SQ_A1; s <= SQ_H8; ++s)
+        for (int idx = 0; idx < 2; ++idx)
+        {
+            const auto& entry = BitboardMagicEntries[s][idx];
+            auto&       magic = Magics[s][idx];
+
+            magic.mask  = entry.mask;
+            magic.magic = entry.magic;
+            magic.shift = entry.shift;
+            magic.attacks = (idx == 0 ? BishopTable.data() : RookTable.data()) + entry.attack_offset;
+        }
+}
 
 }  // namespace
 
@@ -1938,8 +1894,8 @@ extern "C" {
 namespace Bitboards {
 
 void init() {
-    init_magics(ROOK, const_cast<MagicMask*>(RookTable.data()), Magics, true);
-    init_magics(BISHOP, const_cast<MagicMask*>(BishopTable.data()), Magics, true);
+    zfish_bitboards_init_magics_runtime(&BitboardMagicEntries, RookTable.data(), BishopTable.data());
+    assign_magic_entries();
 
     zfish_bitboards_init_runtime(&PopCnt16, &SquareDistance, &LineBB, &BetweenBB, &RayPassBB);
 }
