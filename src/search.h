@@ -43,7 +43,28 @@
 #include "timeman.h"
 #include "types.h"
 
+#if defined(ZFISH_ZIG_BUILD)
+extern "C" {
+int zfish_search_to_corrected_static_eval(int v, int cv);
+int zfish_search_value_draw(std::size_t nodes);
+int zfish_search_reduction(const int*   reductions,
+                           int          depth,
+                           int          move_number,
+                           int          delta,
+                           int          root_delta,
+                           std::uint8_t improving);
+}
+#endif
+
 namespace Stockfish {
+
+#if defined(ZFISH_ZIG_BUILD)
+inline Value to_corrected_static_eval(const Value v, const int cv) {
+    return Value(zfish_search_to_corrected_static_eval(v, cv));
+}
+
+inline Value value_draw(std::size_t nodes) { return Value(zfish_search_value_draw(nodes)); }
+#endif
 
 // Different node types, used as a template parameter
 enum NodeType {
@@ -415,6 +436,12 @@ struct ConthistBonus {
     int index;
     int weight;
 };
+
+#if defined(ZFISH_ZIG_BUILD)
+inline int Worker::reduction(bool i, Depth d, int mn, int delta) const {
+    return zfish_search_reduction(reductions.data(), d, mn, delta, rootDelta, std::uint8_t(i));
+}
+#endif
 
 
 }  // namespace Search
