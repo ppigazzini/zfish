@@ -1,25 +1,30 @@
 # REPORT-1-CODEBASE
 
 Date: `2026-05-19`
-Baseline: `89a59d0a` (`port: split bridge position format helpers`)
+Baseline: current worktree on top of `b9275148` (`port: collapse retained bridge split follow-up series`)
 
 ## Executive Summary
 
-zfish has already crossed the line from a Zig-orchestrated wrapper build into a
-Zig-owned build graph and Zig-owned runtime shell for Linux `x86_64`.
+zfish has a Zig-owned build graph for Linux `x86_64`, but it does not yet have
+a Zig-owned runtime.
 
-The current `build.zig` no longer compiles any imported upstream `.cpp`
-translation units directly through `stockfish_sources`; that list is empty.
-Instead, the live build compiles:
+The live `build.zig` compiles:
 
-- `zig_src/main.zig` as the entrypoint
+- `zig_src/main.zig` as the process entrypoint
 - `19` Zig modules under `zig_build/`
-- `2` retained C++ compatibility translation units under `zig_compat/`
+- `2` retained first-party C++ compatibility translation units under
+  `zig_compat/`
 
-That means the remaining porting risk is concentrated rather than spread across
-the imported upstream tree. The port is now structurally close to completion,
-but it is not functionally complete yet because the two retained C++ bridge
-translation units still own first-party runtime behavior.
+The imported upstream `.cpp` translation-unit list in `build.zig` is empty, so
+the broad build-graph migration is already done. The remaining problem is
+concentrated: the runtime still depends on `zig_compat/uci_bridge.cpp` and
+`zig_compat/nnue_accumulator_bridge.cpp`, plus imported upstream bodies that are
+textually included into the UCI bridge.
+
+That means the program is no longer in a file-count phase. It is in a boundary-
+elimination phase. Future progress must be measured by reduction of live C++
+runtime ownership, not by further decomposition of retained C++ into smaller
+files.
 
 ## Live Validation Snapshot
 
@@ -33,218 +38,290 @@ Observed results:
 
 - build succeeded
 - `signature OK: 2336177`
-- `id name Stockfish dev-20260519-89a59d0a`
+- `id name Stockfish dev-20260519-b9275148`
 - `uciok`
 
-## Status Quo
+## Current Architecture
 
-### 1. Build And Ownership Boundary
+### 1. Build And Workflow Ownership
 
-- `build.zig` is the active local control plane for the owned Linux `x86_64`
-  runtime path.
-- `zig_src/main.zig` owns process startup, allocator exports, and the public
-  Zig-to-C ABI surface for the current runtime.
-- `zig_build/` already contains owned Zig modules across the main runtime
-  domains:
-  - `bench/`
-  - `board/`
-  - `eval/`
-  - `support/`
-  - `time/`
-  - `uci/`
-- Imported upstream files under `src/`, `tests/`, and `scripts/` are now acting
-  primarily as behavioral oracle, headers/data input, and parity harness rather
-  than as the compiled engine body for the Zig path.
+- `build.zig` is the active owned build graph for Linux `x86_64`.
+- `stockfish_sources` is empty, so the Zig build no longer compiles imported
+  upstream `.cpp` translation units directly.
+- `zig_compat_sources` contains only:
+  - `nnue_accumulator_bridge.cpp`
+  - `uci_bridge.cpp`
+- `build.zig` exposes owned developer steps for `net`, `bench`, `uci`,
+  `signature`, and `parity`.
+- `NNUE_EMBEDDING_OFF` is still defined in the Zig build, so the default net is
+  still an external runtime dependency fetched through `scripts/net.sh`.
 
-### 2. What Is Still Retained In C++
+### 2. Zig-Owned Surface Already In Place
 
-The remaining first-party runtime ownership is concentrated in two files:
+The current build graph wires `19` Zig modules across the main runtime domains:
+
+- `bench/`
+- `board/`
+- `eval/`
+- `support/`
+- `time/`
+- `uci/`
+
+This is real structural progress. The project is no longer using Zig only as a
+shell around the full upstream build. It already has a substantial Zig runtime
+surface and a Zig entrypoint in `zig_src/main.zig`.
+
+### 3. Actual Remaining C++ Runtime Owners
+
+The remaining first-party runtime ownership is still concentrated in two files,
+but those two files are not trivial glue.
 
 1. `zig_compat/uci_bridge.cpp`
-   - `2558` lines in the current worktree
-   - already decomposed into `28` local include slices under
-     `zig_compat/uci_bridge/`
-   - still owns real runtime behavior, not just ABI glue
-   - the retained logic includes the UCI shell/control path, position formatting
-     helpers, move parsing helpers, and other engine-facing orchestration
+   - `2449` lines in the current worktree
+   - `77` fragment files under `zig_compat/uci_bridge/`
+   - still owns substantial runtime behavior
+   - textually includes imported upstream bodies from:
+     - `../src/position.cpp`
+     - `../src/syzygy/tbprobe.cpp`
+   - still owns or hosts:
+     - UCI engine boot and loop entrypoints
+     - network load/save/verify/evaluate/trace behavior
+     - tablebase add/update glue
+     - position runtime exports and formatting helpers
+     - bitboard and move-generation bridge exports
+     - logging, formatting, and control-path helpers
 
 2. `zig_compat/nnue_accumulator_bridge.cpp`
-   - `875` lines in the current worktree
-   - still owns accumulator stack manipulation, refresh/incremental update
-     dispatch, and related NNUE bridge behavior
+   - `311` lines in the current worktree
+   - `55` fragment files under `zig_compat/nnue_accumulator_bridge/`
+   - still owns performance-sensitive NNUE accumulator behavior through:
+     - `zfish_accumulator_incremental_step`
+     - `zfish_accumulator_refresh_latest`
 
-This is the key reality of the codebase: compilation ownership has moved to
-Zig, but logic ownership is not fully Zig-owned until these retained bridges are
-eliminated or reduced to trivial ABI shims.
+The file length is now small because the code has been split into include
+fragments, not because the ownership has moved to Zig.
 
-### 3. Upstream Dependency Shape
+### 4. Live Zig-To-C++ Dependency Map
 
-The project is no longer dependent on compiling upstream runtime translation
-units in the Zig build, but it still depends on upstream assets and definitions
-for:
+The current Zig modules still delegate important runtime behavior back into
+retained C++.
 
-- header types and constants consumed by retained C++ bridge code
-- test and parity scripts under `tests/`
-- helper scripts such as `scripts/net.sh`
-- engine data files in `src/`
+- `zig_src/main.zig` still boots through retained C++ externs for:
+  - engine info text
+  - bitboard runtime init
+  - position runtime init
+  - UCI engine create/loop/destroy
+- `zig_build/eval/network.zig` still depends on `8` `zfish_network_*` externs
+  for network name access, load/save, piece counting, bucket evaluation, and
+  verification.
+- `zig_build/eval/nnue_accumulator.zig` still depends on `2`
+  `zfish_accumulator_*` externs for incremental and refresh evaluation.
 
-This is acceptable for the current milestone, but it is not the end state. The
-contract in `__DEV/00-CONTRACT.md` is explicit that the destination is a fully
-independent Zig runtime with no first-party upstream C++ runtime dependency.
+This is the clearest statement of the current gap: the build graph is Zig-led,
+but the runtime still crosses into first-party C++ for boot, UCI control,
+network evaluation, and NNUE accumulator updates.
 
-### 4. Documentation Drift
+### 5. What The Bridge Fragmentation Did And Did Not Achieve
 
-`__DEV/2-MILESTONES.md` still describes `M3` as “6 of the current 24
-translation units” rewritten. That was accurate for an earlier phase, but it is
-behind live code now.
+The bridge split work has value, but it has a narrow kind of value.
 
-The live build graph shows a later reality:
+What it did achieve:
 
-- the Zig path compiles no upstream `.cpp` translation units directly
-- the remaining retained runtime is concentrated in two compatibility files
-- the real open problem is not broad file-count coverage anymore; it is removal
-  of the last concentrated C++ runtime owners
+- made the remaining C++ owners easier to inspect
+- made review boundaries more local
+- exposed the real remaining runtime seams explicitly
 
-## Porting Gap Analysis
+What it did not achieve:
 
-The remaining work is not “port more files” in the abstract. The concrete gaps
-are:
+- it did not reduce first-party C++ runtime dependence by itself
+- it did not remove the `zfish_network_*` or `zfish_accumulator_*` boundaries
+- it did not make the runtime materially more Zig-owned
 
-1. Remove retained runtime logic from `zig_compat/uci_bridge.cpp`
-   - The file is already split into smaller include slices, which makes it more
-     reviewable, but most of that code still executes in C++.
+That distinction matters for planning. The next phase should remove boundaries,
+not add more fragments.
 
-2. Port the NNUE accumulator bridge to Zig
-   - `zig_compat/nnue_accumulator_bridge.cpp` is still a substantial retained
-     logic owner and is the highest-leverage remaining C++ surface after the UCI
-     bridge.
+## Main Gaps And Risks
 
-3. Replace C++-only runtime assumptions with Zig-owned data/layout control
-   - The final state cannot depend on first-party C++ types being the runtime
-     source of truth.
+### 1. NNUE Accumulator Ownership Is Still In C++
 
-4. Make `zig build` the default zfish workflow rather than an alternate path
-   - The code is ahead of the developer workflow story; the repo still treats
-     upstream `src/Makefile` as a normal control path rather than purely as an
-     oracle.
+`zig_build/eval/nnue_accumulator.zig` already provides the traversal and stack-
+walking shell, but the hot-path refresh and incremental update logic still runs
+in C++. That is a correctness risk and a performance risk because it keeps one
+of the most sensitive engine paths outside Zig ownership.
 
-## Recommended Completion Plan
+### 2. NNUE Network Ownership Is Still In C++
 
-### Phase A: Finish Turning `zig_compat/uci_bridge.cpp` Into Thin Glue
+`zig_build/eval/network.zig` is a Zig orchestration layer over retained C++
+network behavior. Load/save/verify/evaluate/trace are not yet Zig-owned.
 
-Goal:
-move all remaining behavior in the UCI bridge into Zig-owned modules, leaving at
-most a narrow ABI adapter.
+### 3. UCI And Engine Control Are Still C++-Owned
 
-Recommended slice order:
+`zig_src/main.zig` still creates and drives a retained C++ `UCIEngine`. That
+means startup, protocol loop behavior, and some engine-control surfaces are not
+yet owned by Zig.
 
-1. Port the command-loop and orchestration methods now still owned by
-   `UCIEngine` in C++.
-2. Port bench, benchmark, perft, move parsing, and option plumbing into
-   `zig_build/uci/`.
-3. Move string formatting and protocol-output helpers into Zig and reduce the
-   bridge to marshaling only.
-4. Delete local include slices as soon as the corresponding Zig owner exists.
+### 4. Imported Upstream Runtime Bodies Are Still Included In A Retained Bridge
 
-Exit condition:
+`zig_compat/uci_bridge.cpp` still includes upstream `position.cpp` and
+`tbprobe.cpp` bodies with skip macros. Even though they are not compiled as
+top-level translation units in `build.zig`, they are still part of the runtime
+artifact through the retained bridge.
 
-- `zig_compat/uci_bridge.cpp` is either deleted or reduced to trivial wrapper
-  code with no material engine logic.
+### 5. Milestone Framing Is Behind Live Reality
 
-### Phase B: Port `zig_compat/nnue_accumulator_bridge.cpp`
+`__DEV/2-MILESTONES.md` still frames `M3` as “6 of the current 24 translation
+units” rewritten. That no longer matches the live architecture.
 
-Goal:
-move accumulator state ownership, refresh logic, and incremental update logic
-into Zig.
+The current reality is boundary-based:
 
-Recommended slice order:
+- direct upstream `.cpp` compilation in the Zig build is already gone
+- the remaining first-party runtime risk is concentrated in two retained bridge
+  translation units and their extern surfaces
 
-1. Split the current file into smaller owned include slices, mirroring the same
-   isolation strategy used successfully for `uci_bridge.cpp`.
-2. Port `AccumulatorStack` shape, reset/push/pop behavior, and dirty-state
-   packing into Zig.
-3. Port refresh paths first.
-4. Port incremental update paths second.
-5. Keep parity checks explicit around eval and search-facing behavior after each
-   slice.
+## Work Still To Be Done
 
-Why this order:
+The remaining work is not “port more code somewhere in Zig” in the abstract. It
+is a specific sequence of ownership transfers.
 
-- it localizes the highest-risk retained core before reopening broad engine-core
-  migration work
-- it turns the current large C++ file into a set of independently reviewable
-  Zig replacement targets
+1. Move the NNUE accumulator refresh and incremental update logic from
+   `zig_compat/nnue_accumulator_bridge.cpp` into Zig.
+2. Move NNUE network load/save/verify/evaluate/trace behavior from
+   `zig_compat/uci_bridge.cpp` into `zig_build/eval/`.
+3. Move engine boot, UCI loop, and remaining control-path helpers out of
+   `zig_compat/uci_bridge.cpp` and into Zig-owned modules.
+4. Replace the imported runtime-body inclusions from `position.cpp` and
+   `tbprobe.cpp` with Zig-owned logic or with much narrower non-runtime seams.
+5. Update docs, milestones, and workflow defaults so they describe the codebase
+   in terms of remaining C++ runtime boundaries rather than old translation-unit
+   counts.
 
-Exit condition:
+## Recommended High-Level Milestone Plan
 
-- `zig_compat/nnue_accumulator_bridge.cpp` is deleted or reduced to trivial ABI
-  glue with no algorithmic ownership
-
-### Phase C: Remove Remaining First-Party C++ Runtime Ownership
+### M1: Accumulator Ownership Transfer
 
 Goal:
-ensure no first-party runtime behavior is still implemented in imported or
-compatibility C++.
+make `zig_build/eval/nnue_accumulator.zig` the real owner of accumulator
+refresh and incremental update behavior.
 
-Concrete checkpoints:
+Scope:
 
-- no nontrivial engine logic remains in `zig_compat/*.cpp`
-- Zig-owned modules define the runtime control flow and core data manipulation
-- upstream `src/` is an oracle/input surface only
+- port refresh and incremental logic into Zig
+- preserve current data layout and hot-path behavior
+- remove the runtime need for:
+  - `zfish_accumulator_incremental_step`
+  - `zfish_accumulator_refresh_latest`
 
-### Phase D: Finish Workflow Ownership
+Exit criteria:
+
+- the accumulator hot path is Zig-owned
+- `zig_compat/nnue_accumulator_bridge.cpp` is deleted or reduced to trivial,
+  non-algorithmic glue
+
+### M2: Network Ownership Transfer
 
 Goal:
-make the codebase operationally Zig-first, not just implementation-first.
+make `zig_build/eval/network.zig` the real owner of NNUE network behavior.
 
-Concrete work:
+Scope:
 
-- make local docs default to `zig build`
-- keep `src/Makefile` only for comparison and regression triage
-- preserve parity gates for `bench`, `uci`, and signature checks from the Zig
-  artifact
+- port network load/save/verify/evaluate/trace behavior into Zig
+- port parameter read/write helpers into Zig
+- remove the runtime need for the current `zfish_network_*` extern surface
 
-## Immediate Next Slices
+Exit criteria:
 
-If the project continues from the current state, the highest-value next work is:
+- `zig_build/eval/network.zig` no longer depends on retained C++ network
+  evaluation and serialization helpers
+- the network bridge in `zig_compat/uci_bridge.cpp` is deleted or reduced to
+  trivial compatibility glue
 
-1. decompose `zig_compat/nnue_accumulator_bridge.cpp` into small include-owned
-   slices so the remaining C++ ownership is explicit and bounded
-2. port accumulator stack state and refresh behavior into `zig_build/eval/`
-3. port the remaining `UCIEngine` orchestration methods into `zig_build/uci/`
-4. refresh `__DEV/2-MILESTONES.md` so it reflects the live architecture instead
-   of the older “6 of 24 translation units” snapshot
+### M3: UCI And Engine Control Transfer
 
-## Git Hygiene Status
+Goal:
+move startup, protocol loop, and remaining engine-control ownership into Zig.
 
-Current repo-local artifact and temp directories in the worktree are:
+Scope:
 
-- `/.zig-cache/`
-- `/zig-out/`
-- nested temp data under `/.zig-cache/tmp/`
+- port `UCIEngine`-owned behavior into `zig_build/uci/` and `zig_src/`
+- move protocol formatting and command orchestration out of retained C++
+- eliminate the boot dependency from `zig_src/main.zig` on retained C++ UCI
+  creation and loop control
 
-The ignore file should cover those roots explicitly. A reachable-history scan
-for the repo's own build-artifact candidates found no committed temporary build
-artifact path under the current history for:
+Exit criteria:
 
-- `/.zig-cache/`
-- `/zig-out/`
-- `/src/temp_builds/`
-- `/src/stockfish*`
-- `/.build_sha.txt`
-- `/.build_date.txt`
-- `/tests/bench_tmp.epd`
+- `zig_src/main.zig` no longer drives a retained C++ UCI engine
+- the UCI loop and control plane are Zig-owned on Linux `x86_64`
 
-So the required hygiene action here is to harden `.gitignore`, not to perform a
-blind history rewrite with no confirmed target.
+### M4: Upstream Runtime-Body Eviction
+
+Goal:
+remove the remaining imported upstream runtime bodies from the retained bridge.
+
+Scope:
+
+- replace the `position.cpp` inclusion path with Zig-owned runtime logic
+- replace the `tbprobe.cpp` inclusion path with Zig-owned logic or a much
+  narrower retained seam
+- remove any remaining first-party runtime behavior from `zig_compat/*.cpp`
+
+Exit criteria:
+
+- no first-party upstream runtime body is textually included into retained
+  bridge code
+- `zig_compat/` no longer owns substantive engine behavior
+
+### M5: Zig-First Workflow And Documentation
+
+Goal:
+make the codebase operationally Zig-first after the runtime boundary is gone.
+
+Scope:
+
+- update `__DEV/2-MILESTONES.md` to reflect boundary-based progress
+- update docs so `zig build` is the default developer workflow
+- keep upstream `src/Makefile` as parity oracle and regression reference, not
+  as normal zfish control plane
+
+Exit criteria:
+
+- docs and code agree on the live ownership model
+- `zig build` is the normal development entrypoint for Linux `x86_64`
+
+### M6: Post-Linux Expansion
+
+Goal:
+restore non-Linux and non-`x86_64` targets only after Linux `x86_64` runtime
+ownership is fully Zig-owned.
+
+Scope:
+
+- widen targets one by one
+- reintroduce CI and packaging claims only after explicit validation
+
+Exit criteria:
+
+- each restored target has explicit ownership, validation, and docs
+
+## Immediate Recommendations
+
+The highest-value next slices are:
+
+1. remove one real accumulator boundary from C++ rather than adding another
+   bridge fragment
+2. remove one real network boundary from C++ rather than further splitting the
+   retained network bridge
+3. rewrite `__DEV/2-MILESTONES.md` so the milestone sequence matches the live
+   architecture and the new ownership-based completion criteria
 
 ## Bottom Line
 
-The port is no longer blocked by broad architectural uncertainty. The structure
-is already in place: Zig owns the build, the entrypoint, and most modules. The
-remaining task is to remove the last two concentrated C++ runtime owners in a
-disciplined, parity-gated sequence.
+zfish is past the hard part of build-graph migration and into the harder part
+of runtime ownership migration. The current architecture is already narrowed to
+two retained first-party C++ runtime owners, which is good news, but those two
+owners still sit directly on UCI startup, network behavior, tablebase glue, and
+NNUE accumulator updates.
 
-That means the completion strategy should now optimize for elimination of the
-two retained bridge files rather than for another round of scattered,
-file-count-based progress.
+So the right plan from here is not another round of C++ reshaping. The right
+plan is a milestone sequence that deletes the remaining C++ runtime boundaries,
+starting with the accumulator and network seams and ending with a Zig-owned
+UCI/runtime shell for Linux `x86_64`.
