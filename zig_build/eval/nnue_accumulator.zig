@@ -38,6 +38,11 @@ const ThreatDiffView = extern struct {
     ksq: u8,
 };
 
+pub const StackPushOutput = extern struct {
+    dirty_piece: *anyopaque,
+    dirty_threats: *anyopaque,
+};
+
 extern fn zfish_accumulator_incremental_step(
     stack: *anyopaque,
     feature_kind: u8,
@@ -80,6 +85,76 @@ pub fn evaluate(
     evaluateSide(psq_feature, black, stack, pos, feature_transformer, cache);
     evaluateSide(threat_feature, white, stack, pos, feature_transformer, cache);
     evaluateSide(threat_feature, black, stack, pos, feature_transformer, cache);
+}
+
+pub fn stackLatestPsq(stack: *const anyopaque) *const anyopaque {
+    return @ptrCast(stateBytesConst(psq_feature, stackSize(stack) - 1, stack));
+}
+
+pub fn stackLatestThreat(stack: *const anyopaque) *const anyopaque {
+    return @ptrCast(stateBytesConst(threat_feature, stackSize(stack) - 1, stack));
+}
+
+pub fn stackMutLatestPsq(stack: *anyopaque) *anyopaque {
+    return @ptrCast(stateBytesMut(psq_feature, stackSize(stack) - 1, stack));
+}
+
+pub fn stackMutLatestThreat(stack: *anyopaque) *anyopaque {
+    return @ptrCast(stateBytesMut(threat_feature, stackSize(stack) - 1, stack));
+}
+
+pub fn stackPsqArray(stack: *const anyopaque) *const anyopaque {
+    return @ptrCast(stackBytes(stack));
+}
+
+pub fn stackThreatArray(stack: *const anyopaque) *const anyopaque {
+    return @ptrCast(stackBytes(stack) + threat_array_offset);
+}
+
+pub fn stackMutPsqArray(stack: *anyopaque) *anyopaque {
+    return @ptrCast(stackBytesMut(stack));
+}
+
+pub fn stackMutThreatArray(stack: *anyopaque) *anyopaque {
+    return @ptrCast(stackBytesMut(stack) + threat_array_offset);
+}
+
+pub fn stackReset(stack: *anyopaque) void {
+    const bytes = stackBytesMut(stack);
+
+    clearComputed(bytes, psq_feature, 0);
+    zeroDiff(bytes, psq_feature, 0, @sizeOf(HalfDiff));
+
+    clearComputed(bytes, threat_feature, 0);
+    zeroDiff(bytes, threat_feature, 0, @sizeOf(ThreatDiffView));
+
+    setStackSize(bytes, 1);
+}
+
+pub fn stackPush(stack: *anyopaque) StackPushOutput {
+    const bytes = stackBytesMut(stack);
+    const index = stackSize(stack);
+    std.debug.assert(index < max_stack_size);
+
+    clearComputed(bytes, psq_feature, index);
+    clearComputed(bytes, threat_feature, index);
+
+    const dirty_threats: *ThreatDiffView = @ptrCast(@alignCast(diffBytesMut(threat_feature, index, stack)));
+    dirty_threats.list.size_ = 0;
+
+    setStackSize(bytes, index + 1);
+
+    return .{
+        .dirty_piece = @ptrCast(diffBytesMut(psq_feature, index, stack)),
+        .dirty_threats = @ptrCast(dirty_threats),
+    };
+}
+
+pub fn stackPop(stack: *anyopaque) void {
+    const bytes = stackBytesMut(stack);
+    const size = stackSize(stack);
+    std.debug.assert(size > 1);
+    setStackSize(bytes, size - 1);
 }
 
 fn evaluateSide(
@@ -156,14 +231,26 @@ fn stackBytes(stack: *const anyopaque) [*]const u8 {
     return @ptrCast(stack);
 }
 
+fn stackBytesMut(stack: *anyopaque) [*]u8 {
+    return @ptrCast(stack);
+}
+
 fn stackSize(stack: *const anyopaque) usize {
     const bytes = stackBytes(stack);
     return std.mem.readInt(usize, bytes[stack_size_offset..][0..@sizeOf(usize)], .little);
 }
 
+fn setStackSize(bytes: [*]u8, size: usize) void {
+    std.mem.writeInt(usize, bytes[stack_size_offset..][0..@sizeOf(usize)], size, .little);
+}
+
 fn stateComputed(stack: *const anyopaque, feature_kind: u8, index: usize, perspective: u8) bool {
     const bytes = stackBytes(stack);
     return bytes[stateOffset(feature_kind, index) + computed_offset + perspective] != 0;
+}
+
+fn clearComputed(bytes: [*]u8, feature_kind: u8, index: usize) void {
+    @memset(bytes[stateOffset(feature_kind, index) + computed_offset ..][0..color_count], 0);
 }
 
 fn stateRequiresRefresh(stack: *const anyopaque, feature_kind: u8, index: usize, perspective: u8) bool {
@@ -181,6 +268,30 @@ fn stateOffset(feature_kind: u8, index: usize) usize {
         threat_feature => threat_array_offset + index * threat_state_stride,
         else => unreachable,
     };
+}
+
+fn diffOffset(feature_kind: u8) usize {
+    return switch (feature_kind) {
+        psq_feature => psq_diff_offset,
+        threat_feature => threat_diff_offset,
+        else => unreachable,
+    };
+}
+
+fn stateBytesConst(feature_kind: u8, index: usize, stack: *const anyopaque) [*]const u8 {
+    return stackBytes(stack) + stateOffset(feature_kind, index);
+}
+
+fn stateBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
+    return stackBytesMut(stack) + stateOffset(feature_kind, index);
+}
+
+fn diffBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
+    return stateBytesMut(feature_kind, index, stack) + diffOffset(feature_kind);
+}
+
+fn zeroDiff(bytes: [*]u8, feature_kind: u8, index: usize, len: usize) void {
+    @memset(bytes[stateOffset(feature_kind, index) + diffOffset(feature_kind) ..][0..len], 0);
 }
 
 fn psqRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) bool {
