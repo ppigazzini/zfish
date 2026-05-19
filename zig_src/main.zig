@@ -168,6 +168,22 @@ pub export fn zfish_position_compute_material_key(
     return position_port.computeMaterialKey(piece_counts_ptr, piece_count_len);
 }
 
+pub export fn zfish_bitboards_init_runtime(
+    popcnt16: *[1 << 16]u8,
+    square_distance: *[64][64]u8,
+    line_bb: *[64][64]u64,
+    between_bb: *[64][64]u64,
+    ray_pass_bb: *[64][64]u64,
+) void {
+    return bitboard_port.initRuntimeTables(
+        popcnt16,
+        square_distance,
+        line_bb,
+        between_bb,
+        ray_pass_bb,
+    );
+}
+
 pub export fn zfish_search_to_corrected_static_eval(v: c_int, cv: c_int) c_int {
     return search_port.toCorrectedStaticEval(v, cv);
 }
