@@ -38,21 +38,15 @@ const ThreatDiffView = extern struct {
     ksq: u8,
 };
 
-extern fn zfish_accumulator_forward_update(
+extern fn zfish_accumulator_incremental_step(
     stack: *anyopaque,
     feature_kind: u8,
+    forward: bool,
     perspective: u8,
     pos: *const anyopaque,
     feature_transformer: *const anyopaque,
-    begin: usize,
-) void;
-extern fn zfish_accumulator_backward_update(
-    stack: *anyopaque,
-    feature_kind: u8,
-    perspective: u8,
-    pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
-    end: usize,
+    target_index: usize,
+    computed_index: usize,
 ) void;
 extern fn zfish_accumulator_refresh_latest(
     stack: *anyopaque,
@@ -97,16 +91,22 @@ fn evaluateSide(
     cache: *anyopaque,
 ) void {
     const last_usable = findLastUsable(feature_kind, stack, perspective);
+    const size = stackSize(stack);
 
     if (stateComputed(stack, feature_kind, last_usable, perspective)) {
-        zfish_accumulator_forward_update(
-            stack,
-            feature_kind,
-            perspective,
-            pos,
-            feature_transformer,
-            last_usable,
-        );
+        var next = last_usable + 1;
+        while (next < size) : (next += 1) {
+            zfish_accumulator_incremental_step(
+                stack,
+                feature_kind,
+                true,
+                perspective,
+                pos,
+                feature_transformer,
+                next,
+                next - 1,
+            );
+        }
     } else {
         zfish_accumulator_refresh_latest(
             stack,
@@ -116,14 +116,20 @@ fn evaluateSide(
             feature_transformer,
             cache,
         );
-        zfish_accumulator_backward_update(
-            stack,
-            feature_kind,
-            perspective,
-            pos,
-            feature_transformer,
-            last_usable,
-        );
+
+        var computed_index = size - 1;
+        while (computed_index > last_usable) : (computed_index -= 1) {
+            zfish_accumulator_incremental_step(
+                stack,
+                feature_kind,
+                false,
+                perspective,
+                pos,
+                feature_transformer,
+                computed_index - 1,
+                computed_index,
+            );
+        }
     }
 }
 

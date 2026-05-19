@@ -120,40 +120,31 @@ void AccumulatorStack::pop() noexcept {
 }
 
 struct AccumulatorBridgeAccess {
-    static void forwardPsq(AccumulatorStack&           stack,
-                           Color                       perspective,
-                           const Position&             pos,
-                           const FeatureTransformer&   featureTransformer,
-                           std::size_t                 begin) {
-        stack.forward_update_incremental<PSQFeatureSet>(
-          perspective, pos, featureTransformer, begin);
-    }
+        template<bool Forward>
+        static void incrementalPsqStep(AccumulatorStack&         stack,
+                                                                     Color                     perspective,
+                                                                     const Position&           pos,
+                                                                     const FeatureTransformer& featureTransformer,
+                                                                     std::size_t               target_index,
+                                                                     std::size_t               computed_index) {
+                update_accumulator_incremental<Forward, PSQFeatureSet>(
+                    perspective, featureTransformer, pos.square<KING>(perspective),
+                    stack.mut_accumulators<PSQFeatureSet>()[target_index],
+                    stack.accumulators<PSQFeatureSet>()[computed_index]);
+        }
 
-    static void forwardThreat(AccumulatorStack&         stack,
-                              Color                     perspective,
-                              const Position&           pos,
-                              const FeatureTransformer& featureTransformer,
-                              std::size_t               begin) {
-        stack.forward_update_incremental<ThreatFeatureSet>(
-          perspective, pos, featureTransformer, begin);
-    }
-
-    static void backwardPsq(AccumulatorStack&         stack,
-                            Color                     perspective,
-                            const Position&           pos,
-                            const FeatureTransformer& featureTransformer,
-                            std::size_t               end) {
-        stack.backward_update_incremental<PSQFeatureSet>(perspective, pos, featureTransformer, end);
-    }
-
-    static void backwardThreat(AccumulatorStack&         stack,
-                               Color                     perspective,
-                               const Position&           pos,
-                               const FeatureTransformer& featureTransformer,
-                               std::size_t               end) {
-        stack.backward_update_incremental<ThreatFeatureSet>(
-          perspective, pos, featureTransformer, end);
-    }
+        template<bool Forward>
+        static void incrementalThreatStep(AccumulatorStack&         stack,
+                                                                            Color                     perspective,
+                                                                            const Position&           pos,
+                                                                            const FeatureTransformer& featureTransformer,
+                                                                            std::size_t               target_index,
+                                                                            std::size_t               computed_index) {
+                update_accumulator_incremental<Forward, ThreatFeatureSet>(
+                    perspective, featureTransformer, pos.square<KING>(perspective),
+                    stack.mut_accumulators<ThreatFeatureSet>()[target_index],
+                    stack.accumulators<ThreatFeatureSet>()[computed_index]);
+        }
 
     static void refreshPsq(AccumulatorStack&         stack,
                            Color                     perspective,
@@ -185,56 +176,42 @@ void zfish_accumulator_evaluate(void*                  stack,
                                 const void*            feature_transformer,
                                 void*                  cache);
 
-void zfish_accumulator_forward_update(void*          stack_ptr,
-                                      std::uint8_t   feature_kind,
-                                      std::uint8_t   perspective,
-                                      const void*    pos_ptr,
-                                      const void*    feature_transformer_ptr,
-                                      std::size_t    begin) {
-    auto&       stack              = *static_cast<AccumulatorStack*>(stack_ptr);
-    const auto& pos                = *static_cast<const Position*>(pos_ptr);
-    const auto& featureTransformer =
+void zfish_accumulator_incremental_step(void*         stack_ptr,
+                                        std::uint8_t  feature_kind,
+                                        bool          forward,
+                                        std::uint8_t  perspective,
+                                        const void*   pos_ptr,
+                                        const void*   feature_transformer_ptr,
+                                        std::size_t   target_index,
+                                        std::size_t   computed_index) {
+        auto&       stack              = *static_cast<AccumulatorStack*>(stack_ptr);
+        const auto& pos                = *static_cast<const Position*>(pos_ptr);
+        const auto& featureTransformer =
       *static_cast<const FeatureTransformer*>(feature_transformer_ptr);
-    const auto side = static_cast<Color>(perspective);
+        const auto side = static_cast<Color>(perspective);
 
-    switch (feature_kind)
-    {
-    case ZfishAccumulatorPsqFeature:
-        AccumulatorBridgeAccess::forwardPsq(stack, side, pos, featureTransformer, begin);
-        return;
-    case ZfishAccumulatorThreatFeature:
-        AccumulatorBridgeAccess::forwardThreat(stack, side, pos, featureTransformer, begin);
-        return;
-    default:
-        assert(false);
-        return;
-    }
-}
-
-void zfish_accumulator_backward_update(void*         stack_ptr,
-                                       std::uint8_t  feature_kind,
-                                       std::uint8_t  perspective,
-                                       const void*   pos_ptr,
-                                       const void*   feature_transformer_ptr,
-                                       std::size_t   end) {
-    auto&       stack              = *static_cast<AccumulatorStack*>(stack_ptr);
-    const auto& pos                = *static_cast<const Position*>(pos_ptr);
-    const auto& featureTransformer =
-      *static_cast<const FeatureTransformer*>(feature_transformer_ptr);
-    const auto side = static_cast<Color>(perspective);
-
-    switch (feature_kind)
-    {
-    case ZfishAccumulatorPsqFeature:
-        AccumulatorBridgeAccess::backwardPsq(stack, side, pos, featureTransformer, end);
-        return;
-    case ZfishAccumulatorThreatFeature:
-        AccumulatorBridgeAccess::backwardThreat(stack, side, pos, featureTransformer, end);
-        return;
-    default:
-        assert(false);
-        return;
-    }
+        switch (feature_kind)
+        {
+        case ZfishAccumulatorPsqFeature:
+                if (forward)
+                        AccumulatorBridgeAccess::incrementalPsqStep<true>(
+                            stack, side, pos, featureTransformer, target_index, computed_index);
+                else
+                        AccumulatorBridgeAccess::incrementalPsqStep<false>(
+                            stack, side, pos, featureTransformer, target_index, computed_index);
+                return;
+        case ZfishAccumulatorThreatFeature:
+                if (forward)
+                        AccumulatorBridgeAccess::incrementalThreatStep<true>(
+                            stack, side, pos, featureTransformer, target_index, computed_index);
+                else
+                        AccumulatorBridgeAccess::incrementalThreatStep<false>(
+                            stack, side, pos, featureTransformer, target_index, computed_index);
+                return;
+        default:
+                assert(false);
+                return;
+        }
 }
 
 void zfish_accumulator_refresh_latest(void*          stack_ptr,
@@ -263,45 +240,6 @@ void zfish_accumulator_refresh_latest(void*          stack_ptr,
         return;
     }
 }
-}
-
-template<typename FeatureSet>
-void AccumulatorStack::forward_update_incremental(Color                     perspective,
-                                                  const Position&           pos,
-                                                  const FeatureTransformer& featureTransformer,
-                                                  const std::size_t         begin) noexcept {
-    assert(begin < accumulators<FeatureSet>().size());
-    assert(accumulators<FeatureSet>()[begin].computed[perspective]);
-
-    const Square ksq = pos.square<KING>(perspective);
-
-    for (std::size_t next = begin + 1; next < size; next++)
-    {
-        update_accumulator_incremental<true>(perspective, featureTransformer, ksq,
-                                             mut_accumulators<FeatureSet>()[next],
-                                             accumulators<FeatureSet>()[next - 1]);
-    }
-
-    assert(latest<FeatureSet>().computed[perspective]);
-}
-
-template<typename FeatureSet>
-void AccumulatorStack::backward_update_incremental(Color                     perspective,
-                                                   const Position&           pos,
-                                                   const FeatureTransformer& featureTransformer,
-                                                   const std::size_t         end) noexcept {
-    assert(end < accumulators<FeatureSet>().size());
-    assert(end < size);
-    assert(latest<FeatureSet>().computed[perspective]);
-
-    const Square ksq = pos.square<KING>(perspective);
-
-    for (std::int64_t next = std::int64_t(size) - 2; next >= std::int64_t(end); next--)
-        update_accumulator_incremental<false>(perspective, featureTransformer, ksq,
-                                              mut_accumulators<FeatureSet>()[next],
-                                              accumulators<FeatureSet>()[next + 1]);
-
-    assert(accumulators<FeatureSet>()[end].computed[perspective]);
 }
 
 namespace {
