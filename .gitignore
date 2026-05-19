@@ -1,10 +1,10 @@
 # zfish project files
-/.zig-cache/
-/zig-cache/
-/zig-out/
-/__DEV/
+.zig-cache/
+zig-cache/
+zig-out/
+__DEV/
 __pycache__
-./venv
+.venv
 *.pyc
 *.pyo
 *.pyd
