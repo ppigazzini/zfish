@@ -267,6 +267,25 @@ pub export fn zfish_movepick_partial_insertion_sort(
     return movepick_port.partialInsertionSort(entries, count, limit);
 }
 
+pub export fn zfish_movepick_init_main_stage(
+    has_checkers: u8,
+    has_tt_move: u8,
+    depth: c_int,
+) c_int {
+    return movepick_port.initMainStage(has_checkers != 0, has_tt_move != 0, depth);
+}
+
+pub export fn zfish_movepick_init_probcut_stage(has_tt_move: u8) c_int {
+    return movepick_port.initProbcutStage(has_tt_move != 0);
+}
+
+pub export fn zfish_movepick_next_move(
+    state: *movepick_port.MovePickerState,
+    context: *const movepick_port.MovePickerContext,
+) u16 {
+    return movepick_port.nextMove(state, context);
+}
+
 pub export fn zfish_thread_next_power_of_two(count: u64) usize {
     return thread_port.nextPowerOfTwo(count);
 }
