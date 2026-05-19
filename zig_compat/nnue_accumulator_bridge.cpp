@@ -37,13 +37,6 @@ using namespace SIMD;
 
 namespace {
 
-template<bool Forward, typename FeatureSet>
-void update_accumulator_incremental(Color                               perspective,
-                                    const FeatureTransformer&           featureTransformer,
-                                    const Square                        ksq,
-                                    AccumulatorState<FeatureSet>&       target_state,
-                                    const AccumulatorState<FeatureSet>& computed);
-
 void update_accumulator_refresh_cache(Color                            perspective,
                                       const FeatureTransformer&        featureTransformer,
                                       const Position&                  pos,
@@ -155,10 +148,6 @@ void AccumulatorStack::pop() noexcept {
 }
 
 struct AccumulatorBridgeAccess {
-#include "nnue_accumulator_bridge/bridge_access_incremental_psq.inc"
-
-#include "nnue_accumulator_bridge/bridge_access_incremental_threat.inc"
-
 #include "nnue_accumulator_bridge/bridge_access_refresh_psq.inc"
 
 #include "nnue_accumulator_bridge/bridge_access_refresh_threat.inc"
@@ -168,27 +157,6 @@ extern "C" {
 #include "nnue_accumulator_bridge/dirty_threat_raw.inc"
 
 #include "nnue_accumulator_bridge/accumulator_evaluate_decl.inc"
-
-void zfish_accumulator_incremental_step(void*         stack_ptr,
-                                        std::uint8_t  feature_kind,
-                                        bool          forward,
-                                        std::uint8_t  perspective,
-                                        const void*   pos_ptr,
-                                        const void*   feature_transformer_ptr,
-                                        std::size_t   target_index,
-                                        std::size_t   computed_index) {
-#include "nnue_accumulator_bridge/accumulator_incremental_step_prelude.inc"
-
-        switch (feature_kind)
-        {
-        case ZfishAccumulatorPsqFeature:
-    #include "nnue_accumulator_bridge/accumulator_incremental_step_psq_case.inc"
-        case ZfishAccumulatorThreatFeature:
-     #include "nnue_accumulator_bridge/accumulator_incremental_step_threat_case.inc"
-        default:
-    #include "nnue_accumulator_bridge/accumulator_incremental_step_default_case.inc"
-        }
-}
 
 void zfish_accumulator_refresh_latest(void*          stack_ptr,
                                       std::uint8_t   feature_kind,
@@ -208,86 +176,34 @@ void zfish_accumulator_refresh_latest(void*          stack_ptr,
 #include "nnue_accumulator_bridge/accumulator_refresh_latest_default_case.inc"
     }
 }
+
+std::uint8_t zfish_accumulator_king_square(const void* pos_ptr, std::uint8_t perspective) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    return static_cast<std::uint8_t>(pos.square<KING>(Color(perspective)));
+}
+
+const std::int16_t* zfish_accumulator_psq_weights(const void* feature_transformer_ptr) {
+    const auto& featureTransformer = *static_cast<const FeatureTransformer*>(feature_transformer_ptr);
+    return &featureTransformer.weights[0];
+}
+
+const std::int32_t* zfish_accumulator_psq_psqt_weights(const void* feature_transformer_ptr) {
+    const auto& featureTransformer = *static_cast<const FeatureTransformer*>(feature_transformer_ptr);
+    return &featureTransformer.psqtWeights[0];
+}
+
+const std::int8_t* zfish_accumulator_threat_weights(const void* feature_transformer_ptr) {
+    const auto& featureTransformer = *static_cast<const FeatureTransformer*>(feature_transformer_ptr);
+    return &featureTransformer.threatWeights[0];
+}
+
+const std::int32_t* zfish_accumulator_threat_psqt_weights(const void* feature_transformer_ptr) {
+    const auto& featureTransformer = *static_cast<const FeatureTransformer*>(feature_transformer_ptr);
+    return &featureTransformer.threatPsqtWeights[0];
+}
 }
 
 namespace {
-
-template<typename VectorWrapper,
-         IndexType Width,
-         UpdateOperation... ops,
-         typename ElementType,
-         typename... Ts,
-         std::enable_if_t<is_all_same_v<ElementType, Ts...>, bool> = true>
-#include "nnue_accumulator_bridge/fused_row_reduce.inc"
-
-template<typename FeatureSet>
-struct AccumulatorUpdateContext {
-    Color                               perspective;
-    const FeatureTransformer&           featureTransformer;
-    const AccumulatorState<FeatureSet>& from;
-    AccumulatorState<FeatureSet>&       to;
-
-#include "nnue_accumulator_bridge/update_context_ctor.inc"
-
-#include "nnue_accumulator_bridge/update_context_apply_indices.inc"
-
-    void apply(const typename FeatureSet::IndexList& added,
-               const typename FeatureSet::IndexList& removed) {
-    #include "nnue_accumulator_bridge/update_context_apply_delta_prelude.inc"
-
-#ifdef VECTOR
-        using Tiling = SIMDTiling<Dimensions, Dimensions, PSQTBuckets>;
-
-        vec_t      acc[Tiling::NumRegs];
-        psqt_vec_t psqt[Tiling::NumPsqtRegs];
-
-        const auto* threatWeights = &featureTransformer.threatWeights[0];
-
-#include "nnue_accumulator_bridge/update_context_apply_delta_vector_acc.inc"
-
-#include "nnue_accumulator_bridge/update_context_apply_delta_vector_psqt.inc"
-
-#else
-#include "nnue_accumulator_bridge/update_context_apply_delta_scalar.inc"
-
-#endif
-    }
-};
-
-#include "nnue_accumulator_bridge/make_update_context.inc"
-
-template<bool Forward, typename FeatureSet>
-void update_accumulator_incremental(Color                               perspective,
-                                    const FeatureTransformer&           featureTransformer,
-                                    const Square                        ksq,
-                                    AccumulatorState<FeatureSet>&       target_state,
-                                    const AccumulatorState<FeatureSet>& computed) {
-
-#include "nnue_accumulator_bridge/update_incremental_changed_indices.inc"
-
-#include "nnue_accumulator_bridge/update_incremental_context_and_threat.inc"
-    else
-    {
-#include "nnue_accumulator_bridge/update_incremental_size_guards.inc"
-
-        if ((Forward && removedSize == 1) || (!Forward && addedSize == 1))
-        {
-#include "nnue_accumulator_bridge/update_incremental_apply_case_1_1.inc"
-        }
-        else if (Forward && addedSize == 1)
-        {
-    #include "nnue_accumulator_bridge/update_incremental_apply_case_1_2.inc"
-        }
-        else if (!Forward && removedSize == 1)
-        {
-    #include "nnue_accumulator_bridge/update_incremental_apply_case_2_1.inc"
-        }
-        else
-        {
-    #include "nnue_accumulator_bridge/update_incremental_apply_case_2_2.inc"
-        }
-    }
-}
 
 Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
                             const std::array<Piece, SQUARE_NB>& newPieces) {
