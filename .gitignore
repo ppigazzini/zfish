@@ -1,6 +1,7 @@
 # zfish project files
-/.zig-cache
-/zig-out
+/.zig-cache/
+/zig-cache/
+/zig-out/
 /__DEV/
 __pycache__
 ./venv
@@ -15,7 +16,7 @@ uv.lock
 **/*.o
 **/*.s
 src/.depend
-src/temp_builds
+src/temp_builds/
 .build_sha.txt
 .build_date.txt
 
