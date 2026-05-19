@@ -800,14 +800,6 @@ struct ZfishTtProbeOutput {
     ZfishTtReadOutput data;
 };
 
-int zfish_search_to_corrected_static_eval(int v, int cv);
-int zfish_search_value_draw(std::size_t nodes);
-int zfish_search_reduction(const int* reductions,
-                           int        depth,
-                           int        move_number,
-                           int        delta,
-                           int        root_delta,
-                           std::uint8_t improving);
 ZfishTimemanOutput zfish_timeman_init(ZfishTimemanInput input);
 void zfish_movepick_score_moves(std::uint8_t               kind,
                                 const ZfishMoveScoreInput* inputs,
@@ -889,12 +881,6 @@ enum Stages {
     QCAPTURE
 };
 
-Value to_corrected_static_eval(const Value v, const int cv) {
-    return Value(zfish_search_to_corrected_static_eval(v, cv));
-}
-
-Value value_draw(size_t nodes) { return Value(zfish_search_value_draw(nodes)); }
-
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
     const auto count = static_cast<std::size_t>(end - begin);
     ZfishMoveSortEntry entries[MAX_MOVES]{};
@@ -915,10 +901,6 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
 }
 
 }  // namespace
-
-int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
-    return zfish_search_reduction(reductions.data(), d, mn, delta, rootDelta, std::uint8_t(i));
-}
 
 TimePoint TimeManagement::optimum() const { return optimumTime; }
 TimePoint TimeManagement::maximum() const { return maximumTime; }
