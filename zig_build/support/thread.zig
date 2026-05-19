@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const value_none: c_int = 32002;
 const value_infinite: c_int = 32001;
 const value_tb_win_in_max_ply: c_int = 31507;
@@ -10,6 +12,50 @@ pub const ThreadSummary = extern struct {
     score: c_int,
     root_depth: c_int,
 };
+
+pub const ByteView = extern struct {
+    ptr: ?[*]const u8,
+    len: usize,
+};
+
+pub const TbConfig = extern struct {
+    cardinality: c_int,
+    root_in_tb: u8,
+    use_rule50: u8,
+    probe_depth: c_int,
+};
+
+extern fn zfish_threadpool_wait_main_thread(pool: *anyopaque) void;
+extern fn zfish_threadpool_reset_start_state(pool: *anyopaque, ponder_mode: u8) void;
+extern fn zfish_position_collect_legal_move_raws(
+    pos: *const anyopaque,
+    out_moves: [*]u16,
+    capacity: usize,
+) usize;
+extern fn zfish_limits_ponder_mode(limits: *const anyopaque) u8;
+extern fn zfish_limits_searchmove_count(limits: *const anyopaque) usize;
+extern fn zfish_limits_searchmove_text(limits: *const anyopaque, index: usize) ByteView;
+extern fn zfish_uci_to_move_raw(pos: *const anyopaque, text_ptr: [*]const u8, text_len: usize) u16;
+extern fn zfish_move_none_raw() u16;
+extern fn zfish_root_moves_create(move_raws: ?[*]const u16, count: usize) *anyopaque;
+extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
+extern fn zfish_threadpool_rank_root_moves(
+    options: *const anyopaque,
+    pos: *anyopaque,
+    root_moves: *anyopaque,
+) TbConfig;
+extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
+extern fn zfish_threadpool_thread_at(pool: *anyopaque, index: usize) *anyopaque;
+extern fn zfish_thread_run_root_setup(
+    thread: *anyopaque,
+    limits: *const anyopaque,
+    root_moves: *const anyopaque,
+    pos: *const anyopaque,
+    setup_state: *const anyopaque,
+    tb_config: TbConfig,
+) void;
+extern fn zfish_thread_wait_for_search_finished(thread: *anyopaque) void;
+extern fn zfish_thread_start_searching(thread: *anyopaque) void;
 
 pub fn nextPowerOfTwo(count: u64) usize {
     if (count <= 1)
@@ -53,6 +99,69 @@ pub fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
     return best_index;
 }
 
+pub fn startThinking(
+    pool: *anyopaque,
+    options: *const anyopaque,
+    pos: *anyopaque,
+    limits: *const anyopaque,
+    setup_state: *const anyopaque,
+) void {
+    zfish_threadpool_wait_main_thread(pool);
+    zfish_threadpool_reset_start_state(pool, zfish_limits_ponder_mode(limits));
+
+    var legal_move_buffer: [256]u16 = undefined;
+    const legal_move_count = zfish_position_collect_legal_move_raws(
+        pos,
+        legal_move_buffer[0..].ptr,
+        legal_move_buffer.len,
+    );
+    const legal_moves = legal_move_buffer[0..legal_move_count];
+    const none_raw = zfish_move_none_raw();
+
+    var selected_moves = std.ArrayList(u16).empty;
+    defer selected_moves.deinit(std.heap.c_allocator);
+
+    const searchmove_count = zfish_limits_searchmove_count(limits);
+    var index: usize = 0;
+    while (index < searchmove_count) : (index += 1) {
+        const move_text = zfish_limits_searchmove_text(limits, index);
+        const text_ptr = move_text.ptr orelse continue;
+        const move_raw = zfish_uci_to_move_raw(pos, text_ptr, move_text.len);
+        if (move_raw != none_raw and containsMove(legal_moves, move_raw)) {
+            selected_moves.append(std.heap.c_allocator, move_raw) catch @panic("OOM");
+        }
+    }
+
+    if (selected_moves.items.len == 0) {
+        selected_moves.appendSlice(std.heap.c_allocator, legal_moves) catch @panic("OOM");
+    }
+
+    const move_raws_ptr: ?[*]const u16 = if (selected_moves.items.len == 0)
+        null
+    else
+        selected_moves.items.ptr;
+    const root_moves = zfish_root_moves_create(move_raws_ptr, selected_moves.items.len);
+    defer zfish_root_moves_destroy(root_moves);
+
+    const tb_config = zfish_threadpool_rank_root_moves(options, pos, root_moves);
+    const thread_count = zfish_threadpool_thread_count(pool);
+
+    index = 0;
+    while (index < thread_count) : (index += 1) {
+        const thread = zfish_threadpool_thread_at(pool, index);
+        zfish_thread_run_root_setup(thread, limits, root_moves, pos, setup_state, tb_config);
+    }
+
+    index = 0;
+    while (index < thread_count) : (index += 1) {
+        const thread = zfish_threadpool_thread_at(pool, index);
+        zfish_thread_wait_for_search_finished(thread);
+    }
+
+    const main_thread = zfish_threadpool_thread_at(pool, 0);
+    zfish_thread_start_searching(main_thread);
+}
+
 fn voteForMove(
     summaries: [*]const ThreadSummary,
     count: usize,
@@ -90,4 +199,14 @@ fn isDecisiveBest(summary: ThreadSummary) bool {
 
 fn absInt(value: c_int) c_int {
     return if (value < 0) -value else value;
+}
+
+fn containsMove(moves: []const u16, target: u16) bool {
+    for (moves) |move_raw| {
+        if (move_raw == target) {
+            return true;
+        }
+    }
+
+    return false;
 }
