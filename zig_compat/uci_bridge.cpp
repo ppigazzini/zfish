@@ -638,6 +638,30 @@ struct ZfishMoveSortEntry {
     int           value;
 };
 
+struct ZfishMovePickerState {
+    std::uint16_t      tt_move_raw;
+    int                stage;
+    int                threshold;
+    int                depth;
+    std::uint8_t       skip_quiets;
+    std::size_t        cur;
+    std::size_t        end_cur;
+    std::size_t        end_bad_captures;
+    std::size_t        end_captures;
+    std::size_t        end_generated;
+    ZfishMoveSortEntry moves[Stockfish::MAX_MOVES];
+};
+
+struct ZfishMovePickerContext {
+    const void* pos;
+    const void* main_history;
+    const void* low_ply_history;
+    const void* capture_history;
+    const void* continuation_history;
+    const void* shared_history;
+    int         ply;
+};
+
 struct ZfishEvalInput {
     int psqt;
     int positional;
@@ -714,6 +738,12 @@ void zfish_movepick_score_moves(std::uint8_t               kind,
 void zfish_movepick_partial_insertion_sort(ZfishMoveSortEntry* entries,
                                            std::size_t         count,
                                            int                 limit);
+int zfish_movepick_init_main_stage(std::uint8_t has_checkers,
+                                   std::uint8_t has_tt_move,
+                                   int          depth);
+int zfish_movepick_init_probcut_stage(std::uint8_t has_tt_move);
+std::uint16_t zfish_movepick_next_move(ZfishMovePickerState*         state,
+                                       const ZfishMovePickerContext* context);
 int zfish_eval_compute_value(ZfishEvalInput input);
 std::size_t zfish_movegen_generate_captures(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_quiets(const void* pos, std::uint16_t* move_list);
@@ -802,23 +832,92 @@ Value to_corrected_static_eval(const Value v, const int cv) {
 
 Value value_draw(size_t nodes) { return Value(zfish_search_value_draw(nodes)); }
 
-void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
-    const auto count = static_cast<std::size_t>(end - begin);
-    ZfishMoveSortEntry entries[MAX_MOVES]{};
+template<GenType Type>
+std::size_t score_move_list(const Position&              pos,
+                            const ButterflyHistory*      mainHistory,
+                            const LowPlyHistory*         lowPlyHistory,
+                            const CapturePieceToHistory* captureHistory,
+                            const PieceToHistory* const* continuationHistory,
+                            const SharedHistories*       sharedHistory,
+                            int                          ply,
+                            const MoveList<Type>&        ml,
+                            ZfishMoveSortEntry*          outputs) {
 
-    for (std::size_t i = 0; i < count; ++i)
+    static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
+
+    Color us = pos.side_to_move();
+
+    [[maybe_unused]] Bitboard threatByLesser[KING + 1];
+    if constexpr (Type == QUIETS)
     {
-        entries[i].raw_move = begin[i].raw();
-        entries[i].value    = begin[i].value;
+        threatByLesser[PAWN]   = 0;
+        threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
+        threatByLesser[ROOK] =
+          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
+        threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
+        threatByLesser[KING]  = 0;
     }
 
-    zfish_movepick_partial_insertion_sort(entries, count, limit);
+    ZfishMoveScoreInput inputs[MAX_MOVES]{};
+    std::size_t         count = 0;
 
-    for (std::size_t i = 0; i < count; ++i)
+    for (auto move : ml)
     {
-        begin[i]       = Move(entries[i].raw_move);
-        begin[i].value = entries[i].value;
+        const Square    from          = move.from_sq();
+        const Square    to            = move.to_sq();
+        const Piece     pc            = pos.moved_piece(move);
+        const PieceType pt            = type_of(pc);
+        const Piece     capturedPiece = pos.piece_on(to);
+
+        auto& input = inputs[count++];
+        input.raw_move             = move.raw();
+        input.capture_history      = 0;
+        input.captured_piece_value = 0;
+        input.main_history         = 0;
+        input.pawn_history         = 0;
+        input.continuation_sum     = 0;
+        input.check_bonus          = 0;
+        input.from_threatened      = 0;
+        input.to_threatened        = 0;
+        input.capture_stage        = 0;
+        input.piece_value          = 0;
+        input.low_ply_bonus        = 0;
+
+        if constexpr (Type == CAPTURES)
+        {
+            input.capture_history      = (*captureHistory)[pc][to][type_of(capturedPiece)];
+            input.captured_piece_value = int(PieceValue[capturedPiece]);
+        }
+        else if constexpr (Type == QUIETS)
+        {
+            input.main_history     = (*mainHistory)[us][move.raw()];
+            input.pawn_history     = sharedHistory->pawn_entry(pos)[pc][to];
+            input.continuation_sum = (*continuationHistory[0])[pc][to]
+                                     + (*continuationHistory[1])[pc][to]
+                                     + (*continuationHistory[2])[pc][to]
+                                     + (*continuationHistory[3])[pc][to]
+                                     + (*continuationHistory[5])[pc][to];
+            input.check_bonus      = (pos.check_squares(pt) & to) && pos.see_ge(move, -75);
+            input.from_threatened  = bool(threatByLesser[pt] & from);
+            input.to_threatened    = bool(threatByLesser[pt] & to);
+            input.piece_value      = int(PieceValue[pt]);
+            if (ply < LOW_PLY_HISTORY_SIZE)
+                input.low_ply_bonus = 8 * (*lowPlyHistory)[ply][move.raw()] / (1 + ply);
+        }
+        else
+        {
+            input.main_history         = (*mainHistory)[us][move.raw()];
+            input.continuation_sum     = (*continuationHistory[0])[pc][to];
+            input.captured_piece_value = int(PieceValue[capturedPiece]);
+            input.capture_stage        = pos.capture_stage(move);
+        }
     }
+
+    const std::uint8_t kind = Type == CAPTURES ? std::uint8_t{0}
+                                : Type == QUIETS ? std::uint8_t{1}
+                                                 : std::uint8_t{2};
+    zfish_movepick_score_moves(kind, inputs, count, outputs);
+    return count;
 }
 
 }  // namespace
@@ -911,104 +1010,50 @@ MovePicker::MovePicker(const Position&              p,
     continuationHistory(ch),
     sharedHistory(sh),
     ttMove(ttm),
+        cur(moves),
+        endCur(moves),
+        endBadCaptures(moves),
+        endCaptures(moves),
+        endGenerated(moves),
+        threshold(0),
     depth(d),
     ply(pl) {
 
-    if (pos.checkers())
-        stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
-
-    else
-        stage = (depth > 0 ? MAIN_TT : QSEARCH_TT) + !(ttm && pos.pseudo_legal(ttm));
+        stage = zfish_movepick_init_main_stage(
+            std::uint8_t(pos.checkers() ? 1 : 0),
+            std::uint8_t(ttm && pos.pseudo_legal(ttm) ? 1 : 0),
+            depth);
 }
 
 MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceToHistory* cph) :
     pos(p),
+        mainHistory(nullptr),
+        lowPlyHistory(nullptr),
     captureHistory(cph),
+        continuationHistory(nullptr),
+        sharedHistory(nullptr),
     ttMove(ttm),
-    threshold(th) {
+        cur(moves),
+        endCur(moves),
+        endBadCaptures(moves),
+        endCaptures(moves),
+        endGenerated(moves),
+        threshold(th),
+        depth(0),
+        ply(0) {
     assert(!pos.checkers());
 
-    stage = PROBCUT_TT + !(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm));
+        stage = zfish_movepick_init_probcut_stage(
+            std::uint8_t(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm) ? 1 : 0));
 }
 
 template<GenType Type>
 ExtMove* MovePicker::score(const MoveList<Type>& ml) {
 
-    static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
-
-    Color us = pos.side_to_move();
-
-    [[maybe_unused]] Bitboard threatByLesser[KING + 1];
-    if constexpr (Type == QUIETS)
-    {
-        threatByLesser[PAWN]   = 0;
-        threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
-        threatByLesser[ROOK] =
-          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
-        threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
-        threatByLesser[KING]  = 0;
-    }
-
-    ZfishMoveScoreInput inputs[MAX_MOVES]{};
     ZfishMoveSortEntry  outputs[MAX_MOVES]{};
-    std::size_t         count = 0;
-
-    for (auto move : ml)
-    {
-        const Square    from          = move.from_sq();
-        const Square    to            = move.to_sq();
-        const Piece     pc            = pos.moved_piece(move);
-        const PieceType pt            = type_of(pc);
-        const Piece     capturedPiece = pos.piece_on(to);
-
-        auto& input = inputs[count++];
-        input.raw_move             = move.raw();
-        input.capture_history      = 0;
-        input.captured_piece_value = 0;
-        input.main_history         = 0;
-        input.pawn_history         = 0;
-        input.continuation_sum     = 0;
-        input.check_bonus          = 0;
-        input.from_threatened      = 0;
-        input.to_threatened        = 0;
-        input.capture_stage        = 0;
-        input.piece_value          = 0;
-        input.low_ply_bonus        = 0;
-
-        if constexpr (Type == CAPTURES)
-        {
-            input.capture_history      = (*captureHistory)[pc][to][type_of(capturedPiece)];
-            input.captured_piece_value = int(PieceValue[capturedPiece]);
-        }
-        else if constexpr (Type == QUIETS)
-        {
-            input.main_history     = (*mainHistory)[us][move.raw()];
-            input.pawn_history     = sharedHistory->pawn_entry(pos)[pc][to];
-            input.continuation_sum = (*continuationHistory[0])[pc][to]
-                                     + (*continuationHistory[1])[pc][to]
-                                     + (*continuationHistory[2])[pc][to]
-                                     + (*continuationHistory[3])[pc][to]
-                                     + (*continuationHistory[5])[pc][to];
-            input.check_bonus      = (pos.check_squares(pt) & to) && pos.see_ge(move, -75);
-            input.from_threatened  = bool(threatByLesser[pt] & from);
-            input.to_threatened    = bool(threatByLesser[pt] & to);
-            input.piece_value      = int(PieceValue[pt]);
-            if (ply < LOW_PLY_HISTORY_SIZE)
-                input.low_ply_bonus = 8 * (*lowPlyHistory)[ply][move.raw()] / (1 + ply);
-        }
-        else
-        {
-            input.main_history         = (*mainHistory)[us][move.raw()];
-            input.continuation_sum     = (*continuationHistory[0])[pc][to];
-            input.captured_piece_value = int(PieceValue[capturedPiece]);
-            input.capture_stage        = pos.capture_stage(move);
-        }
-    }
-
-    const std::uint8_t kind = Type == CAPTURES ? std::uint8_t{0}
-                                : Type == QUIETS ? std::uint8_t{1}
-                                                 : std::uint8_t{2};
-    zfish_movepick_score_moves(kind, inputs, count, outputs);
+    const std::size_t   count = score_move_list<Type>(
+      pos, mainHistory, lowPlyHistory, captureHistory, continuationHistory, sharedHistory, ply, ml,
+      outputs);
 
     ExtMove* it = cur;
     for (std::size_t i = 0; i < count; ++i)
@@ -1020,118 +1065,115 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
     return it;
 }
 
-template<typename Pred>
-Move MovePicker::select(Pred filter) {
-
-    for (; cur < endCur; ++cur)
-        if (*cur != ttMove && filter())
-            return *cur++;
-
-    return Move::none();
-}
-
 Move MovePicker::next_move() {
 
-    constexpr int goodQuietThreshold = -14000;
-top:
-    switch (stage)
+    ZfishMovePickerState state{};
+    state.tt_move_raw      = ttMove.raw();
+    state.stage            = stage;
+    state.threshold        = threshold;
+    state.depth            = depth;
+    state.skip_quiets      = std::uint8_t(skipQuiets ? 1 : 0);
+    state.cur              = static_cast<std::size_t>(cur - moves);
+    state.end_cur          = static_cast<std::size_t>(endCur - moves);
+    state.end_bad_captures = static_cast<std::size_t>(endBadCaptures - moves);
+    state.end_captures     = static_cast<std::size_t>(endCaptures - moves);
+    state.end_generated    = static_cast<std::size_t>(endGenerated - moves);
+
+    const auto usedBefore = std::max(
+      {state.cur, state.end_cur, state.end_bad_captures, state.end_captures, state.end_generated});
+
+    for (std::size_t i = 0; i < usedBefore; ++i)
     {
-
-    case MAIN_TT :
-    case EVASION_TT :
-    case QSEARCH_TT :
-    case PROBCUT_TT :
-        ++stage;
-        return ttMove;
-
-    case CAPTURE_INIT :
-    case PROBCUT_INIT :
-    case QCAPTURE_INIT : {
-        MoveList<CAPTURES> ml(pos);
-
-        cur = endBadCaptures = moves;
-        endCur = endCaptures = score<CAPTURES>(ml);
-
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
-        ++stage;
-        goto top;
+        state.moves[i].raw_move = moves[i].raw();
+        state.moves[i].reserved = 0;
+        state.moves[i].value    = moves[i].value;
     }
 
-    case GOOD_CAPTURE :
-        if (select([&]() {
-                if (pos.see_ge(*cur, -cur->value / 18))
-                    return true;
-                std::swap(*endBadCaptures++, *cur);
-                return false;
-            }))
-            return *(cur - 1);
+    const ZfishMovePickerContext context = {
+        .pos                  = &pos,
+        .main_history         = mainHistory,
+        .low_ply_history      = lowPlyHistory,
+        .capture_history      = captureHistory,
+        .continuation_history = continuationHistory,
+        .shared_history       = sharedHistory,
+        .ply                  = ply,
+    };
 
-        ++stage;
-        [[fallthrough]];
+    const Move result = Move(zfish_movepick_next_move(&state, &context));
 
-    case QUIET_INIT :
-        if (!skipQuiets)
-        {
-            MoveList<QUIETS> ml(pos);
+    ttMove         = Move(state.tt_move_raw);
+    stage          = state.stage;
+    threshold      = state.threshold;
+    depth          = Depth(state.depth);
+    skipQuiets     = state.skip_quiets != 0;
+    cur            = moves + state.cur;
+    endCur         = moves + state.end_cur;
+    endBadCaptures = moves + state.end_bad_captures;
+    endCaptures    = moves + state.end_captures;
+    endGenerated   = moves + state.end_generated;
 
-            endCur = endGenerated = score<QUIETS>(ml);
+    const auto usedAfter = std::max(
+      {state.cur, state.end_cur, state.end_bad_captures, state.end_captures, state.end_generated});
 
-            partial_insertion_sort(cur, endCur, -3560 * depth);
-        }
-
-        ++stage;
-        [[fallthrough]];
-
-    case GOOD_QUIET :
-        if (!skipQuiets && select([&]() { return cur->value > goodQuietThreshold; }))
-            return *(cur - 1);
-
-        cur    = moves;
-        endCur = endBadCaptures;
-
-        ++stage;
-        [[fallthrough]];
-
-    case BAD_CAPTURE :
-        if (select([]() { return true; }))
-            return *(cur - 1);
-
-        cur    = endCaptures;
-        endCur = endGenerated;
-
-        ++stage;
-        [[fallthrough]];
-
-    case BAD_QUIET :
-        if (!skipQuiets)
-            return select([&]() { return cur->value <= goodQuietThreshold; });
-
-        return Move::none();
-
-    case EVASION_INIT : {
-        MoveList<EVASIONS> ml(pos);
-
-        cur    = moves;
-        endCur = endGenerated = score<EVASIONS>(ml);
-
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
-        ++stage;
-        [[fallthrough]];
+    for (std::size_t i = 0; i < usedAfter; ++i)
+    {
+        moves[i]       = Move(state.moves[i].raw_move);
+        moves[i].value = state.moves[i].value;
     }
 
-    case EVASION :
-    case QCAPTURE :
-        return select([]() { return true; });
-
-    case PROBCUT :
-        return select([&]() { return pos.see_ge(*cur, threshold); });
-    }
-
-    assert(false);
-    return Move::none();
+    return result;
 }
 
 void MovePicker::skip_quiet_moves() { skipQuiets = true; }
+
+extern "C" std::size_t zfish_movepick_score_captures(const void* pos_ptr,
+                                                      const void* capture_history_ptr,
+                                                      ZfishMoveSortEntry* outputs) {
+    const auto& pos            = *static_cast<const Position*>(pos_ptr);
+    const auto* captureHistory = static_cast<const CapturePieceToHistory*>(capture_history_ptr);
+    MoveList<CAPTURES> ml(pos);
+    return score_move_list<CAPTURES>(
+      pos, nullptr, nullptr, captureHistory, nullptr, nullptr, 0, ml, outputs);
+}
+
+extern "C" std::size_t zfish_movepick_score_quiets(const void* pos_ptr,
+                                                    const void* main_history_ptr,
+                                                    const void* low_ply_history_ptr,
+                                                    const void* continuation_history_ptr,
+                                                    const void* shared_history_ptr,
+                                                    int         ply,
+                                                    ZfishMoveSortEntry* outputs) {
+    const auto& pos                 = *static_cast<const Position*>(pos_ptr);
+    const auto* mainHistory         = static_cast<const ButterflyHistory*>(main_history_ptr);
+    const auto* lowPlyHistory       = static_cast<const LowPlyHistory*>(low_ply_history_ptr);
+        const auto* continuationHistory =
+            static_cast<const PieceToHistory* const*>(continuation_history_ptr);
+    const auto* sharedHistory       = static_cast<const SharedHistories*>(shared_history_ptr);
+    MoveList<QUIETS> ml(pos);
+    return score_move_list<QUIETS>(
+      pos, mainHistory, lowPlyHistory, nullptr, continuationHistory, sharedHistory, ply, ml,
+      outputs);
+}
+
+extern "C" std::size_t zfish_movepick_score_evasions(const void* pos_ptr,
+                                                      const void* main_history_ptr,
+                                                      const void* continuation_history_ptr,
+                                                      ZfishMoveSortEntry* outputs) {
+    const auto& pos                 = *static_cast<const Position*>(pos_ptr);
+    const auto* mainHistory         = static_cast<const ButterflyHistory*>(main_history_ptr);
+        const auto* continuationHistory =
+            static_cast<const PieceToHistory* const*>(continuation_history_ptr);
+    MoveList<EVASIONS> ml(pos);
+    return score_move_list<EVASIONS>(
+      pos, mainHistory, nullptr, nullptr, continuationHistory, nullptr, 0, ml, outputs);
+}
+
+extern "C" std::uint8_t zfish_movepick_see_ge(const void* pos_ptr,
+                                               std::uint16_t raw_move,
+                                               int           threshold) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    return std::uint8_t(pos.see_ge(Move(raw_move), threshold) ? 1 : 0);
+}
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
 
