@@ -5,7 +5,10 @@ const threat_feature: u8 = 1;
 const white: u8 = 0;
 const black: u8 = 1;
 const king_piece: u8 = 6;
+const pawn_piece_type: u8 = 1;
+const no_piece: u8 = 0;
 const sq_none: u8 = 64;
+const square_count: usize = 64;
 const max_stack_size: usize = 247;
 const nnue_align: usize = 64;
 const color_count: usize = 2;
@@ -63,6 +66,13 @@ const FullAppendDiff = extern struct {
     ksq: u8,
 };
 
+const HalfMakeIndexParams = extern struct {
+    perspective: u8,
+    square: u8,
+    piece: u8,
+    king_square: u8,
+};
+
 const HalfAppendResult = extern struct {
     len: usize,
     indices: [psq_index_capacity]u32,
@@ -78,21 +88,21 @@ extern fn zfish_half_ka_append_changed(
     king_square: u8,
     diff: HalfAppendDiff,
 ) HalfAppendResult;
+extern fn zfish_half_ka_make_index(params: HalfMakeIndexParams) u32;
 extern fn zfish_full_threats_append_changed(
     perspective: u8,
     king_square: u8,
     list_ptr: [*]const DirtyThreatRaw,
     list_len: usize,
 ) FullAppendResult;
-extern fn zfish_accumulator_refresh_latest(
-    stack: *anyopaque,
-    feature_kind: u8,
+extern fn zfish_full_threats_append_active(
     perspective: u8,
-    pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
-    cache: *anyopaque,
-) void;
+    king_square: u8,
+    piece_array: [*]const u8,
+) FullAppendResult;
 extern fn zfish_accumulator_king_square(pos: *const anyopaque, perspective: u8) u8;
+extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
+extern fn zfish_accumulator_cache_entry(cache: *anyopaque, king_square: u8, perspective: u8) *anyopaque;
 extern fn zfish_accumulator_psq_weights(feature_transformer: *const anyopaque) [*]const i16;
 extern fn zfish_accumulator_psq_psqt_weights(feature_transformer: *const anyopaque) [*]const i32;
 extern fn zfish_accumulator_threat_weights(feature_transformer: *const anyopaque) [*]const i8;
@@ -110,6 +120,14 @@ const threat_array_offset = psq_array_bytes;
 const threat_array_bytes = threat_state_stride * max_stack_size;
 const stack_size_offset = threat_array_offset + threat_array_bytes;
 const threat_refresh_diff_offset = threat_diff_offset + @sizeOf(DirtyThreatListView);
+const cache_entry_psqt_offset = half_dimensions * @sizeOf(i16);
+const cache_entry_pieces_offset = cache_entry_psqt_offset + psqt_buckets * @sizeOf(i32);
+const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
+
+const PositionSnapshot = struct {
+    pieces: [square_count]u8,
+    occupied: u64,
+};
 
 pub fn evaluate(
     stack: *anyopaque,
@@ -219,10 +237,10 @@ fn evaluateSide(
             );
         }
     } else {
-        zfish_accumulator_refresh_latest(
-            stack,
+        refreshLatest(
             feature_kind,
             perspective,
+            stack,
             pos,
             feature_transformer,
             cache,
@@ -242,6 +260,119 @@ fn evaluateSide(
             );
         }
     }
+}
+
+fn refreshLatest(
+    feature_kind: u8,
+    perspective: u8,
+    stack: *anyopaque,
+    pos: *const anyopaque,
+    feature_transformer: *const anyopaque,
+    cache: *anyopaque,
+) void {
+    const king_square = zfish_accumulator_king_square(pos, perspective);
+
+    switch (feature_kind) {
+        psq_feature => refreshLatestPsq(perspective, king_square, stack, pos, feature_transformer, cache),
+        threat_feature => refreshLatestThreat(perspective, king_square, stack, pos, feature_transformer),
+        else => unreachable,
+    }
+}
+
+fn refreshLatestPsq(
+    perspective: u8,
+    king_square: u8,
+    stack: *anyopaque,
+    pos: *const anyopaque,
+    feature_transformer: *const anyopaque,
+    cache: *anyopaque,
+) void {
+    const latest_index = stackSize(stack) - 1;
+    const entry_ptr = zfish_accumulator_cache_entry(cache, king_square, perspective);
+    const snapshot = positionSnapshot(pos);
+    const entry_pieces = cacheEntryPiecesMut(entry_ptr);
+
+    var removed = [_]u32{0} ** psq_index_capacity;
+    var added = [_]u32{0} ** psq_index_capacity;
+    var removed_len: usize = 0;
+    var added_len: usize = 0;
+    var square: usize = 0;
+
+    while (square < square_count) : (square += 1) {
+        const old_piece = entry_pieces[square];
+        const new_piece = snapshot.pieces[square];
+        if (old_piece != new_piece and old_piece != no_piece) {
+            removed[removed_len] = zfish_half_ka_make_index(.{
+                .perspective = perspective,
+                .square = @intCast(square),
+                .piece = old_piece,
+                .king_square = king_square,
+            });
+            removed_len += 1;
+        }
+    }
+
+    square = 0;
+    while (square < square_count) : (square += 1) {
+        const old_piece = entry_pieces[square];
+        const new_piece = snapshot.pieces[square];
+        if (old_piece != new_piece and new_piece != no_piece) {
+            added[added_len] = zfish_half_ka_make_index(.{
+                .perspective = perspective,
+                .square = @intCast(square),
+                .piece = new_piece,
+                .king_square = king_square,
+            });
+            added_len += 1;
+        }
+    }
+
+    applyAccumulatorDeltaInPlaceI16(
+        cacheEntryAccumulationMut(entry_ptr),
+        removed[0..removed_len],
+        added[0..added_len],
+        zfish_accumulator_psq_weights(feature_transformer),
+    );
+    applyPsqtDeltaInPlace(
+        cacheEntryPsqtMut(entry_ptr),
+        removed[0..removed_len],
+        added[0..added_len],
+        zfish_accumulator_psq_psqt_weights(feature_transformer),
+    );
+
+    @memcpy(entry_pieces, snapshot.pieces[0..]);
+    setCacheEntryPieceBb(entry_ptr, snapshot.occupied);
+
+    @memcpy(
+        stateAccumulationMut(psq_feature, latest_index, stack, perspective),
+        cacheEntryAccumulationConst(entry_ptr),
+    );
+    @memcpy(
+        statePsqtMut(psq_feature, latest_index, stack, perspective),
+        cacheEntryPsqtConst(entry_ptr),
+    );
+    stateBytesMut(psq_feature, latest_index, stack)[computed_offset + perspective] = 1;
+}
+
+fn refreshLatestThreat(
+    perspective: u8,
+    king_square: u8,
+    stack: *anyopaque,
+    pos: *const anyopaque,
+    feature_transformer: *const anyopaque,
+) void {
+    const latest_index = stackSize(stack) - 1;
+    const snapshot = positionSnapshot(pos);
+    const active = zfish_full_threats_append_active(perspective, king_square, @ptrCast(&snapshot.pieces));
+    const accumulation = stateAccumulationMut(threat_feature, latest_index, stack, perspective);
+    const psqt = statePsqtMut(threat_feature, latest_index, stack, perspective);
+
+    @memset(accumulation, 0);
+    @memset(psqt, 0);
+
+    accumulateRowsI8(accumulation, active.indices[0..active.len], zfish_accumulator_threat_weights(feature_transformer));
+    accumulatePsqtRows(psqt, active.indices[0..active.len], zfish_accumulator_threat_psqt_weights(feature_transformer));
+    stateBytesMut(threat_feature, latest_index, stack)[computed_offset + perspective] = 1;
 }
 
 fn incrementalStep(
@@ -487,6 +618,29 @@ fn applyAccumulatorDeltaI16(
     }
 }
 
+fn applyAccumulatorDeltaInPlaceI16(
+    target: []i16,
+    removed: []const u32,
+    added: []const u32,
+    weights: [*]const i16,
+) void {
+    for (removed) |index| {
+        const row_offset = @as(usize, index) * half_dimensions;
+        var dim: usize = 0;
+        while (dim < half_dimensions) : (dim += 1) {
+            target[dim] -= weights[row_offset + dim];
+        }
+    }
+
+    for (added) |index| {
+        const row_offset = @as(usize, index) * half_dimensions;
+        var dim: usize = 0;
+        while (dim < half_dimensions) : (dim += 1) {
+            target[dim] += weights[row_offset + dim];
+        }
+    }
+}
+
 fn applyAccumulatorDeltaI8(
     target: []i16,
     source: []const i16,
@@ -513,6 +667,16 @@ fn applyAccumulatorDeltaI8(
     }
 }
 
+fn accumulateRowsI8(target: []i16, rows: []const u32, weights: [*]const i8) void {
+    for (rows) |index| {
+        const row_offset = @as(usize, index) * half_dimensions;
+        var dim: usize = 0;
+        while (dim < half_dimensions) : (dim += 1) {
+            target[dim] += @as(i16, weights[row_offset + dim]);
+        }
+    }
+}
+
 fn applyPsqtDelta(
     target: []i32,
     source: []const i32,
@@ -531,6 +695,39 @@ fn applyPsqtDelta(
     }
 
     for (added) |index| {
+        const row_offset = @as(usize, index) * psqt_buckets;
+        var bucket: usize = 0;
+        while (bucket < psqt_buckets) : (bucket += 1) {
+            target[bucket] += weights[row_offset + bucket];
+        }
+    }
+}
+
+fn applyPsqtDeltaInPlace(
+    target: []i32,
+    removed: []const u32,
+    added: []const u32,
+    weights: [*]const i32,
+) void {
+    for (removed) |index| {
+        const row_offset = @as(usize, index) * psqt_buckets;
+        var bucket: usize = 0;
+        while (bucket < psqt_buckets) : (bucket += 1) {
+            target[bucket] -= weights[row_offset + bucket];
+        }
+    }
+
+    for (added) |index| {
+        const row_offset = @as(usize, index) * psqt_buckets;
+        var bucket: usize = 0;
+        while (bucket < psqt_buckets) : (bucket += 1) {
+            target[bucket] += weights[row_offset + bucket];
+        }
+    }
+}
+
+fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i32) void {
+    for (rows) |index| {
         const row_offset = @as(usize, index) * psqt_buckets;
         var bucket: usize = 0;
         while (bucket < psqt_buckets) : (bucket += 1) {
@@ -617,6 +814,57 @@ fn stateBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
     return stackBytesMut(stack) + stateOffset(feature_kind, index);
 }
 
+fn positionSnapshot(pos: *const anyopaque) PositionSnapshot {
+    var snapshot = PositionSnapshot{
+        .pieces = [_]u8{0} ** square_count,
+        .occupied = 0,
+    };
+
+    zfish_accumulator_position_snapshot(pos, @ptrCast(&snapshot.pieces));
+
+    var square: usize = 0;
+    while (square < square_count) : (square += 1) {
+        if (snapshot.pieces[square] != no_piece) {
+            snapshot.occupied |= squareMask(square);
+        }
+    }
+
+    return snapshot;
+}
+
+fn cacheEntryBytesMut(entry: *anyopaque) [*]u8 {
+    return @ptrCast(entry);
+}
+
+fn cacheEntryAccumulationConst(entry: *const anyopaque) []const i16 {
+    const ptr: [*]const i16 = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(entry))));
+    return ptr[0..half_dimensions];
+}
+
+fn cacheEntryAccumulationMut(entry: *anyopaque) []i16 {
+    const ptr: [*]i16 = @ptrCast(@alignCast(cacheEntryBytesMut(entry)));
+    return ptr[0..half_dimensions];
+}
+
+fn cacheEntryPsqtConst(entry: *const anyopaque) []const i32 {
+    const ptr: [*]const i32 = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(entry)) + cache_entry_psqt_offset));
+    return ptr[0..psqt_buckets];
+}
+
+fn cacheEntryPsqtMut(entry: *anyopaque) []i32 {
+    const ptr: [*]i32 = @ptrCast(@alignCast(cacheEntryBytesMut(entry) + cache_entry_psqt_offset));
+    return ptr[0..psqt_buckets];
+}
+
+fn cacheEntryPiecesMut(entry: *anyopaque) []u8 {
+    return (cacheEntryBytesMut(entry) + cache_entry_pieces_offset)[0..square_count];
+}
+
+fn setCacheEntryPieceBb(entry: *anyopaque, piece_bb: u64) void {
+    const bytes = cacheEntryBytesMut(entry);
+    std.mem.writeInt(u64, bytes[cache_entry_piece_bb_offset..][0..@sizeOf(u64)], piece_bb, .little);
+}
+
 fn stateAccumulationConst(feature_kind: u8, index: usize, stack: *const anyopaque, perspective: u8) []const i16 {
     const offset = perspective * half_dimensions * @sizeOf(i16);
     const ptr: [*]const i16 = @ptrCast(@alignCast(stateBytesConst(feature_kind, index, stack) + offset));
@@ -643,6 +891,10 @@ fn statePsqtMut(feature_kind: u8, index: usize, stack: *anyopaque, perspective: 
 
 fn diffBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
     return stateBytesMut(feature_kind, index, stack) + diffOffset(feature_kind);
+}
+
+fn squareMask(square: usize) u64 {
+    return @as(u64, 1) << @as(u6, @intCast(square));
 }
 
 fn psqDiff(bytes: [*]const u8) HalfDiff {

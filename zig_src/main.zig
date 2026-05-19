@@ -744,6 +744,14 @@ pub export fn zfish_full_threats_append_changed(
     return nnue_feature_port.fullAppendChanged(perspective, king_square, list_ptr, list_len);
 }
 
+pub export fn zfish_full_threats_append_active(
+    perspective: u8,
+    king_square: u8,
+    piece_array: [*]const u8,
+) nnue_feature_port.FullAppendResult {
+    return nnue_feature_port.fullAppendActive(perspective, king_square, piece_array);
+}
+
 pub export fn zfish_full_threats_requires_refresh(
     diff: nnue_feature_port.FullDiff,
     perspective: u8,

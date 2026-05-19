@@ -147,39 +147,27 @@ void AccumulatorStack::pop() noexcept {
     zfish_accumulator_stack_pop(this);
 }
 
-struct AccumulatorBridgeAccess {
-#include "nnue_accumulator_bridge/bridge_access_refresh_psq.inc"
-
-#include "nnue_accumulator_bridge/bridge_access_refresh_threat.inc"
-};
-
 extern "C" {
 #include "nnue_accumulator_bridge/dirty_threat_raw.inc"
 
 #include "nnue_accumulator_bridge/accumulator_evaluate_decl.inc"
 
-void zfish_accumulator_refresh_latest(void*          stack_ptr,
-                                      std::uint8_t   feature_kind,
-                                      std::uint8_t   perspective,
-                                      const void*    pos_ptr,
-                                      const void*    feature_transformer_ptr,
-                                      void*          cache_ptr) {
-#include "nnue_accumulator_bridge/accumulator_refresh_latest_prelude.inc"
-
-    switch (feature_kind)
-    {
-    case ZfishAccumulatorPsqFeature:
-#include "nnue_accumulator_bridge/accumulator_refresh_latest_psq_case.inc"
-    case ZfishAccumulatorThreatFeature:
-#include "nnue_accumulator_bridge/accumulator_refresh_latest_threat_case.inc"
-    default:
-#include "nnue_accumulator_bridge/accumulator_refresh_latest_default_case.inc"
-    }
-}
-
 std::uint8_t zfish_accumulator_king_square(const void* pos_ptr, std::uint8_t perspective) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
     return static_cast<std::uint8_t>(pos.square<KING>(Color(perspective)));
+}
+
+void zfish_accumulator_position_snapshot(const void* pos_ptr, std::uint8_t* pieces_out) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    const auto& pieces = pos.piece_array();
+
+    for (Square sq = SQUARE_ZERO; sq < SQUARE_NB; ++sq)
+        pieces_out[sq] = static_cast<std::uint8_t>(pieces[sq]);
+}
+
+void* zfish_accumulator_cache_entry(void* cache_ptr, std::uint8_t king_square, std::uint8_t perspective) {
+    auto& cache = *static_cast<AccumulatorCaches*>(cache_ptr);
+    return &cache[Square(king_square)][Color(perspective)];
 }
 
 const std::int16_t* zfish_accumulator_psq_weights(const void* feature_transformer_ptr) {
@@ -202,104 +190,5 @@ const std::int32_t* zfish_accumulator_threat_psqt_weights(const void* feature_tr
     return &featureTransformer.threatPsqtWeights[0];
 }
 }
-
-namespace {
-
-Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
-                            const std::array<Piece, SQUARE_NB>& newPieces) {
-#if defined(USE_AVX2)
-#include "nnue_accumulator_bridge/get_changed_pieces_avx2.inc"
-#elif defined(USE_NEON)
-#include "nnue_accumulator_bridge/get_changed_pieces_neon.inc"
-#else
-#include "nnue_accumulator_bridge/get_changed_pieces_scalar.inc"
-#endif
-}
-
-void update_accumulator_refresh_cache(Color                            perspective,
-                                      const FeatureTransformer&        featureTransformer,
-                                      const Position&                  pos,
-                                      AccumulatorState<PSQFeatureSet>& accumulator,
-                                      AccumulatorCaches&               cache) {
-#include "nnue_accumulator_bridge/update_refresh_cache_prelude.inc"
-
-#include "nnue_accumulator_bridge/update_refresh_cache_changed_bitboards.inc"
-
-#include "nnue_accumulator_bridge/update_refresh_cache_collect_indices.inc"
-
-#include "nnue_accumulator_bridge/update_refresh_cache_sync_entry.inc"
-
-#ifdef VECTOR
-    vec_t      acc[Tiling::NumRegs];
-    psqt_vec_t psqt[Tiling::NumPsqtRegs];
-
-    const auto* weights = &featureTransformer.weights[0];
-
-#include "nnue_accumulator_bridge/update_refresh_cache_vector_acc.inc"
-
-#include "nnue_accumulator_bridge/update_refresh_cache_vector_psqt.inc"
-
-#else
-
-    #include "nnue_accumulator_bridge/update_refresh_cache_scalar_removed.inc"
-    #include "nnue_accumulator_bridge/update_refresh_cache_scalar_added.inc"
-
-    #include "nnue_accumulator_bridge/update_refresh_cache_scalar_copyback.inc"
-#endif
-}
-
-void update_threats_accumulator_full(Color                               perspective,
-                                     const FeatureTransformer&           featureTransformer,
-                                     const Position&                     pos,
-                                     AccumulatorState<ThreatFeatureSet>& accumulator) {
-#include "nnue_accumulator_bridge/update_threats_full_prelude.inc"
-
-#ifdef VECTOR
-    vec_t      acc[Tiling::NumRegs];
-    psqt_vec_t psqt[Tiling::NumPsqtRegs];
-
-    const auto* threatWeights = &featureTransformer.threatWeights[0];
-
-#include "nnue_accumulator_bridge/update_threats_full_vector_acc.inc"
-
-#include "nnue_accumulator_bridge/update_threats_full_vector_psqt.inc"
-
-#else
-
-    #include "nnue_accumulator_bridge/update_threats_full_scalar.inc"
-
-#endif
-}
-
-}  // namespace
-
-namespace Features {
-
-void HalfKAv2_hm::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
-    Square   ksq = pos.square<KING>(perspective);
-    Bitboard bb  = pos.pieces();
-    while (bb)
-    {
-        Square s = pop_lsb(bb);
-        active.push_back(make_index(perspective, s, pos.piece_on(s), ksq));
-    }
-}
-
-void FullThreats::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
-    const Square   ksq      = pos.square<KING>(perspective);
-    const Bitboard occupied = pos.pieces();
-    const Bitboard pawns    = pos.pieces(PAWN);
-
-    for (Color color : {WHITE, BLACK})
-    {
-        const Color c = Color(perspective ^ color);
-
-#include "nnue_accumulator_bridge/full_threats_pawn_attacks.inc"
-
-#include "nnue_accumulator_bridge/full_threats_piece_attacks.inc"
-    }
-}
-
-}  // namespace Features
 
 }  // namespace Stockfish::Eval::NNUE
