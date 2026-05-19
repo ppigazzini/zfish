@@ -3,6 +3,10 @@ const std = @import("std");
 const output_scale: c_int = 16;
 const layer_stacks: usize = 8;
 const internal_dir = "<internal>";
+const cache_line_size: usize = 64;
+const transformed_feature_bytes: usize = 1024;
+const square_count: usize = 64;
+const no_piece: u8 = 0;
 
 pub const ByteView = extern struct {
     ptr: [*]const u8,
@@ -53,14 +57,20 @@ extern fn zfish_network_save_named(
     filename_ptr: [*]const u8,
     filename_len: usize,
 ) bool;
-extern fn zfish_network_piece_count(pos: *const anyopaque) usize;
-extern fn zfish_network_evaluate_bucket_raw(
+extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
+extern fn zfish_network_transform_bucket(
     network: *const anyopaque,
     pos: *const anyopaque,
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
     bucket: usize,
-) EvalOutput;
+    transformed_ptr: [*]u8,
+) c_int;
+extern fn zfish_network_propagate_bucket(
+    network: *const anyopaque,
+    bucket: usize,
+    transformed_ptr: [*]const u8,
+) c_int;
 extern fn zfish_network_verify_info(network: *const anyopaque) VerifyInfo;
 
 pub fn load(
@@ -176,9 +186,9 @@ pub fn evaluate(
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
 ) EvalOutput {
-    const piece_count = zfish_network_piece_count(pos);
+    const piece_count = pieceCount(pos);
     const bucket = (piece_count - 1) / 4;
-    const raw = zfish_network_evaluate_bucket_raw(network, pos, accumulator_stack, cache, bucket);
+    const raw = evaluateBucketRaw(network, pos, accumulator_stack, cache, bucket);
     return .{
         .psqt = @divTrunc(raw.psqt, output_scale),
         .positional = @divTrunc(raw.positional, output_scale),
@@ -196,17 +206,53 @@ pub fn traceEvaluate(
         .positional = [_]c_int{0} ** layer_stacks,
         .correct_bucket = 0,
     };
-    const piece_count = zfish_network_piece_count(pos);
+    const piece_count = pieceCount(pos);
     output.correct_bucket = (piece_count - 1) / 4;
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
-        const raw = zfish_network_evaluate_bucket_raw(network, pos, accumulator_stack, cache, bucket);
+        const raw = evaluateBucketRaw(network, pos, accumulator_stack, cache, bucket);
         output.psqt[bucket] = @divTrunc(raw.psqt, output_scale);
         output.positional[bucket] = @divTrunc(raw.positional, output_scale);
     }
 
     return output;
+}
+
+fn evaluateBucketRaw(
+    network: *const anyopaque,
+    pos: *const anyopaque,
+    accumulator_stack: *anyopaque,
+    cache: *anyopaque,
+    bucket: usize,
+) EvalOutput {
+    var transformed: [transformed_feature_bytes]u8 align(cache_line_size) = undefined;
+
+    return .{
+        .psqt = zfish_network_transform_bucket(
+            network,
+            pos,
+            accumulator_stack,
+            cache,
+            bucket,
+            @ptrCast(&transformed),
+        ),
+        .positional = zfish_network_propagate_bucket(network, bucket, @ptrCast(&transformed)),
+    };
+}
+
+fn pieceCount(pos: *const anyopaque) usize {
+    var pieces = [_]u8{0} ** square_count;
+    zfish_accumulator_position_snapshot(pos, @ptrCast(&pieces));
+
+    var count: usize = 0;
+    for (pieces) |piece| {
+        if (piece != no_piece) {
+            count += 1;
+        }
+    }
+
+    return count;
 }
 
 fn viewToSlice(view: ByteView) []const u8 {
