@@ -738,12 +738,6 @@ struct ZfishMoveScoreInput {
     int           low_ply_bonus;
 };
 
-struct ZfishMoveSortEntry {
-    std::uint16_t raw_move;
-    std::uint16_t reserved;
-    int           value;
-};
-
 struct ZfishEvalInput {
     int psqt;
     int positional;
@@ -802,9 +796,6 @@ void zfish_movepick_score_moves(std::uint8_t               kind,
                                 const ZfishMoveScoreInput* inputs,
                                 std::size_t                count,
                                 ZfishMoveSortEntry*        outputs);
-void zfish_movepick_partial_insertion_sort(ZfishMoveSortEntry* entries,
-                                           std::size_t         count,
-                                           int                 limit);
 int zfish_eval_compute_value(ZfishEvalInput input);
 std::size_t zfish_movegen_generate_captures(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_quiets(const void* pos, std::uint16_t* move_list);
@@ -877,25 +868,6 @@ enum Stages {
     QCAPTURE_INIT,
     QCAPTURE
 };
-
-void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
-    const auto count = static_cast<std::size_t>(end - begin);
-    ZfishMoveSortEntry entries[MAX_MOVES]{};
-
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        entries[i].raw_move = begin[i].raw();
-        entries[i].value    = begin[i].value;
-    }
-
-    zfish_movepick_partial_insertion_sort(entries, count, limit);
-
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        begin[i]       = Move(entries[i].raw_move);
-        begin[i].value = entries[i].value;
-    }
-}
 
 }  // namespace
 
