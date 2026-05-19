@@ -1,4 +1,7 @@
 const std = @import("std");
+const c = @cImport({
+    @cInclude("stdlib.h");
+});
 
 const output_scale: c_int = 16;
 const layer_stacks: usize = 8;
@@ -7,9 +10,17 @@ const cache_line_size: usize = 64;
 const transformed_feature_bytes: usize = 1024;
 const square_count: usize = 64;
 const no_piece: u8 = 0;
+const network_version: u32 = 0x7AF32F20;
+const hash_combine_magic: usize = 0x9e3779b9;
+const none_name = "None";
 
 pub const ByteView = extern struct {
     ptr: [*]const u8,
+    len: usize,
+};
+
+pub const OwnedByteView = extern struct {
+    ptr: ?[*]const u8,
     len: usize,
 };
 
@@ -44,19 +55,34 @@ pub const TraceOutput = extern struct {
 
 extern fn zfish_network_default_name(network: *const anyopaque) ByteView;
 extern fn zfish_network_current_name(network: *const anyopaque) ByteView;
-extern fn zfish_network_load_user_net(
+extern fn zfish_network_description(network: *const anyopaque) ByteView;
+extern fn zfish_network_embedded_bytes() ByteView;
+extern fn zfish_network_mark_initialized(network: *anyopaque) void;
+extern fn zfish_network_set_loaded_state(
     network: *anyopaque,
-    dir_ptr: [*]const u8,
-    dir_len: usize,
-    path_ptr: [*]const u8,
-    path_len: usize,
+    current_name_ptr: [*]const u8,
+    current_name_len: usize,
+    description_ptr: [*]const u8,
+    description_len: usize,
 ) void;
-extern fn zfish_network_load_internal(network: *anyopaque) void;
-extern fn zfish_network_save_named(
-    network: *const anyopaque,
-    filename_ptr: [*]const u8,
-    filename_len: usize,
-) bool;
+extern fn zfish_network_is_initialized(network: *const anyopaque) bool;
+extern fn zfish_network_hash_value() u32;
+extern fn zfish_network_feature_transformer_read_blob(
+    network: *anyopaque,
+    data_ptr: [*]const u8,
+    data_len: usize,
+) usize;
+extern fn zfish_network_layer_read_blob(
+    network: *anyopaque,
+    bucket: usize,
+    data_ptr: [*]const u8,
+    data_len: usize,
+) usize;
+extern fn zfish_network_feature_transformer_write_blob(network: *const anyopaque) OwnedByteView;
+extern fn zfish_network_layer_write_blob(network: *const anyopaque, bucket: usize) OwnedByteView;
+extern fn zfish_network_feature_transformer_content_hash(network: *const anyopaque) usize;
+extern fn zfish_network_layer_content_hash(network: *const anyopaque, bucket: usize) usize;
+extern fn zfish_network_eval_file_content_hash(network: *const anyopaque) usize;
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_network_transform_bucket(
     network: *const anyopaque,
@@ -91,11 +117,11 @@ pub fn load(
     for (dirs) |directory| {
         if (!equalCurrentName(network, evalfile_path)) {
             if (!std.mem.eql(u8, directory, internal_dir)) {
-                zfish_network_load_user_net(network, directory.ptr, directory.len, evalfile_path.ptr, evalfile_path.len);
+                loadUserNet(network, directory, evalfile_path);
             }
 
             if (std.mem.eql(u8, directory, internal_dir) and std.mem.eql(u8, evalfile_path, default_name)) {
-                zfish_network_load_internal(network);
+                loadInternal(network);
             }
         }
     }
@@ -127,7 +153,7 @@ pub fn save(
         actual_filename = default_name;
     }
 
-    const saved = zfish_network_save_named(network, actual_filename.ptr, actual_filename.len);
+    const saved = saveNamed(network, actual_filename);
     return .{
         .saved = boolToU8(saved),
         .message = if (saved)
@@ -219,6 +245,23 @@ pub fn traceEvaluate(
     return output;
 }
 
+pub fn contentHash(network: *const anyopaque) usize {
+    if (!zfish_network_is_initialized(network)) {
+        return 0;
+    }
+
+    var hash: usize = 0;
+    hashCombine(&hash, zfish_network_feature_transformer_content_hash(network));
+
+    var bucket: usize = 0;
+    while (bucket < layer_stacks) : (bucket += 1) {
+        hashCombine(&hash, zfish_network_layer_content_hash(network, bucket));
+    }
+
+    hashCombine(&hash, zfish_network_eval_file_content_hash(network));
+    return hash;
+}
+
 fn evaluateBucketRaw(
     network: *const anyopaque,
     pos: *const anyopaque,
@@ -253,6 +296,202 @@ fn pieceCount(pos: *const anyopaque) usize {
     }
 
     return count;
+}
+
+const Header = struct {
+    hash_value: u32,
+    description: []const u8,
+};
+
+fn loadUserNet(network: *anyopaque, dir: []const u8, evalfile_path: []const u8) void {
+    zfish_network_mark_initialized(network);
+
+    var arena_state = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var threaded = std.Io.Threaded.init(std.heap.c_allocator, .{});
+    const io = threaded.io();
+
+    const path = std.mem.concat(arena, u8, &.{ dir, evalfile_path }) catch return;
+    const file = openFileForRead(io, path) catch return;
+    defer file.close(io);
+
+    const stat = file.stat(io) catch return;
+    var reader_buffer: [4096]u8 = undefined;
+    var reader = file.reader(io, &reader_buffer);
+
+    const bytes = reader.interface.readAlloc(arena, stat.size) catch return;
+    _ = loadNetworkBytes(network, bytes, evalfile_path);
+}
+
+fn loadInternal(network: *anyopaque) void {
+    zfish_network_mark_initialized(network);
+
+    const default_name = viewToSlice(zfish_network_default_name(network));
+    _ = loadNetworkBytes(network, viewToSlice(zfish_network_embedded_bytes()), default_name);
+}
+
+fn saveNamed(network: *const anyopaque, filename: []const u8) bool {
+    const current_name = viewToSlice(zfish_network_current_name(network));
+    if (current_name.len == 0 or std.mem.eql(u8, current_name, none_name)) {
+        return false;
+    }
+
+    const description = viewToSlice(zfish_network_description(network));
+    var threaded = std.Io.Threaded.init(std.heap.c_allocator, .{});
+    const io = threaded.io();
+    const file = openFileForWrite(io, filename) catch return false;
+    defer file.close(io);
+    var writer_buffer: [4096]u8 = undefined;
+    var writer = file.writer(io, &writer_buffer);
+
+    writeHeader(&writer.interface, zfish_network_hash_value(), description) catch return false;
+    writeOwnedBlob(&writer.interface, zfish_network_feature_transformer_write_blob(network)) catch return false;
+
+    var bucket: usize = 0;
+    while (bucket < layer_stacks) : (bucket += 1) {
+        writeOwnedBlob(&writer.interface, zfish_network_layer_write_blob(network, bucket)) catch return false;
+    }
+
+    writer.interface.flush() catch return false;
+
+    return true;
+}
+
+fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []const u8) bool {
+    var offset: usize = 0;
+    const header = readHeader(bytes, &offset) orelse return false;
+    if (header.hash_value != zfish_network_hash_value()) {
+        return false;
+    }
+
+    if (!readFeatureTransformer(network, bytes, &offset)) {
+        return false;
+    }
+
+    var bucket: usize = 0;
+    while (bucket < layer_stacks) : (bucket += 1) {
+        if (!readLayer(network, bucket, bytes, &offset)) {
+            return false;
+        }
+    }
+
+    if (offset != bytes.len) {
+        return false;
+    }
+
+    zfish_network_set_loaded_state(
+        network,
+        current_name.ptr,
+        current_name.len,
+        header.description.ptr,
+        header.description.len,
+    );
+    return true;
+}
+
+fn readHeader(bytes: []const u8, offset: *usize) ?Header {
+    const version = readU32Le(bytes, offset) orelse return null;
+    const hash_value = readU32Le(bytes, offset) orelse return null;
+    const description_len_u32 = readU32Le(bytes, offset) orelse return null;
+    if (version != network_version) {
+        return null;
+    }
+
+    const description_len: usize = @intCast(description_len_u32);
+    if (offset.* + description_len > bytes.len) {
+        return null;
+    }
+
+    const description = bytes[offset.* .. offset.* + description_len];
+    offset.* += description_len;
+    return .{ .hash_value = hash_value, .description = description };
+}
+
+fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize) bool {
+    const remaining = bytes[offset.*..];
+    const consumed = zfish_network_feature_transformer_read_blob(network, remaining.ptr, remaining.len);
+    if (consumed == 0 or consumed > remaining.len) {
+        return false;
+    }
+    offset.* += consumed;
+    return true;
+}
+
+fn readLayer(network: *anyopaque, bucket: usize, bytes: []const u8, offset: *usize) bool {
+    const remaining = bytes[offset.*..];
+    const consumed = zfish_network_layer_read_blob(network, bucket, remaining.ptr, remaining.len);
+    if (consumed == 0 or consumed > remaining.len) {
+        return false;
+    }
+    offset.* += consumed;
+    return true;
+}
+
+fn openFileForRead(io: std.Io, path: []const u8) !std.Io.File {
+    if (std.fs.path.isAbsolute(path)) {
+        return std.Io.Dir.openFileAbsolute(io, path, .{});
+    }
+
+    return std.Io.Dir.cwd().openFile(io, path, .{});
+}
+
+fn openFileForWrite(io: std.Io, path: []const u8) !std.Io.File {
+    if (std.fs.path.isAbsolute(path)) {
+        return std.Io.Dir.createFileAbsolute(io, path, .{ .truncate = true });
+    }
+
+    return std.Io.Dir.cwd().createFile(io, path, .{ .truncate = true });
+}
+
+fn writeHeader(writer: *std.Io.Writer, hash_value: u32, description: []const u8) !void {
+    var header = [_]u8{0} ** 12;
+    writeU32LeInto(header[0..4], network_version);
+    writeU32LeInto(header[4..8], hash_value);
+    writeU32LeInto(header[8..12], @intCast(description.len));
+    try writer.writeAll(&header);
+    try writer.writeAll(description);
+}
+
+fn writeOwnedBlob(writer: *std.Io.Writer, blob: OwnedByteView) !void {
+    defer freeOwnedBlob(blob);
+    const bytes = ownedViewToSlice(blob) orelse return error.OutOfMemory;
+    try writer.writeAll(bytes);
+}
+
+fn freeOwnedBlob(blob: OwnedByteView) void {
+    if (blob.ptr) |ptr| {
+        c.free(@ptrCast(@constCast(ptr)));
+    }
+}
+
+fn ownedViewToSlice(view: OwnedByteView) ?[]const u8 {
+    const ptr = view.ptr orelse return null;
+    return ptr[0..view.len];
+}
+
+fn readU32Le(bytes: []const u8, offset: *usize) ?u32 {
+    if (offset.* + 4 > bytes.len) {
+        return null;
+    }
+
+    const start = offset.*;
+    offset.* += 4;
+    return @as(u32, bytes[start])
+        | (@as(u32, bytes[start + 1]) << 8)
+        | (@as(u32, bytes[start + 2]) << 16)
+        | (@as(u32, bytes[start + 3]) << 24);
+}
+
+fn writeU32LeInto(bytes: []u8, value: u32) void {
+    bytes[0] = @intCast(value & 0xff);
+    bytes[1] = @intCast((value >> 8) & 0xff);
+    bytes[2] = @intCast((value >> 16) & 0xff);
+    bytes[3] = @intCast((value >> 24) & 0xff);
+}
+
+fn hashCombine(seed: *usize, value: usize) void {
+    seed.* ^= value +% hash_combine_magic +% (seed.* << 6) +% (seed.* >> 2);
 }
 
 fn viewToSlice(view: ByteView) []const u8 {
