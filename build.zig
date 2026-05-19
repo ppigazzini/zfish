@@ -55,8 +55,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    const timeman_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/time/timeman_rewrites.zig"),
+    const timeman_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/time/timeman.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -66,118 +66,118 @@ pub fn build(b: *std.Build) void {
         "benchmark_source_data.zig",
         "pub const source = @embedFile(\"benchmark.cpp\");\n",
     );
-    const benchmark_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/bench/benchmark_rewrites.zig"),
+    const benchmark_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/bench/benchmark.zig"),
         .target = target,
         .optimize = optimize,
     });
-    benchmark_rewrites.addAnonymousImport("benchmark_source_data", .{
+    benchmark_module.addAnonymousImport("benchmark_source_data", .{
         .root_source_file = benchmark_source_module,
     });
-    const misc_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/misc_rewrites.zig"),
+    const misc_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/misc.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const engine_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/engine_rewrites.zig"),
+    const engine_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/engine.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const movepick_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/movepick_rewrites.zig"),
+    const movepick_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/movepick.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const search_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/search_rewrites.zig"),
+    const search_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/search.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const tbprobe_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/tbprobe_rewrites.zig"),
+    const tbprobe_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/tbprobe.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const thread_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/thread_rewrites.zig"),
+    const thread_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/thread.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const tt_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/tt_rewrites.zig"),
+    const tt_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/tt.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const option_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/uci/option_rewrites.zig"),
+    const option_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/uci/option.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const bitboard_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/board/bitboard_rewrites.zig"),
+    const bitboard_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/board/bitboard.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const position_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/board/position_rewrites.zig"),
+    const position_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/board/position.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const movegen_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/board/movegen_rewrites.zig"),
+    const movegen_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/board/movegen.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const nnue_feature_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/nnue_feature_rewrites.zig"),
+    const nnue_feature_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/eval/nnue_feature.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const uci_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/uci/uci_rewrites.zig"),
+    const uci_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/uci/uci.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const evaluate_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/evaluate_rewrites.zig"),
+    const evaluate_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/eval/evaluate.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const nnue_accumulator_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/nnue_accumulator_rewrites.zig"),
+    const nnue_accumulator_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/eval/nnue_accumulator.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const network_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/network_rewrites.zig"),
+    const network_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/eval/network.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const nnue_misc_rewrites = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/nnue_misc_rewrites.zig"),
+    const nnue_misc_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/eval/nnue_misc.zig"),
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addImport("benchmark_rewrites", benchmark_rewrites);
-    exe.root_module.addImport("bitboard_rewrites", bitboard_rewrites);
-    exe.root_module.addImport("engine_rewrites", engine_rewrites);
-    exe.root_module.addImport("evaluate_rewrites", evaluate_rewrites);
-    exe.root_module.addImport("misc_rewrites", misc_rewrites);
-    exe.root_module.addImport("movegen_rewrites", movegen_rewrites);
-    exe.root_module.addImport("movepick_rewrites", movepick_rewrites);
-    exe.root_module.addImport("nnue_accumulator_rewrites", nnue_accumulator_rewrites);
-    exe.root_module.addImport("network_rewrites", network_rewrites);
-    exe.root_module.addImport("nnue_feature_rewrites", nnue_feature_rewrites);
-    exe.root_module.addImport("nnue_misc_rewrites", nnue_misc_rewrites);
-    exe.root_module.addImport("option_rewrites", option_rewrites);
-    exe.root_module.addImport("position_rewrites", position_rewrites);
-    exe.root_module.addImport("search_rewrites", search_rewrites);
-    exe.root_module.addImport("tbprobe_rewrites", tbprobe_rewrites);
-    exe.root_module.addImport("timeman_rewrites", timeman_rewrites);
-    exe.root_module.addImport("thread_rewrites", thread_rewrites);
-    exe.root_module.addImport("tt_rewrites", tt_rewrites);
-    exe.root_module.addImport("uci_rewrites", uci_rewrites);
+    exe.root_module.addImport("benchmark", benchmark_module);
+    exe.root_module.addImport("bitboard", bitboard_module);
+    exe.root_module.addImport("engine", engine_module);
+    exe.root_module.addImport("evaluate", evaluate_module);
+    exe.root_module.addImport("misc", misc_module);
+    exe.root_module.addImport("movegen", movegen_module);
+    exe.root_module.addImport("movepick", movepick_module);
+    exe.root_module.addImport("nnue_accumulator", nnue_accumulator_module);
+    exe.root_module.addImport("network", network_module);
+    exe.root_module.addImport("nnue_feature", nnue_feature_module);
+    exe.root_module.addImport("nnue_misc", nnue_misc_module);
+    exe.root_module.addImport("option", option_module);
+    exe.root_module.addImport("position", position_module);
+    exe.root_module.addImport("search", search_module);
+    exe.root_module.addImport("tbprobe", tbprobe_module);
+    exe.root_module.addImport("timeman", timeman_module);
+    exe.root_module.addImport("thread", thread_module);
+    exe.root_module.addImport("tt", tt_module);
+    exe.root_module.addImport("uci", uci_module);
 
     var compile_flags = std.ArrayList([]const u8).empty;
     compile_flags.appendSlice(b.allocator, &.{
