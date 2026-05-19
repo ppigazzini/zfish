@@ -58,23 +58,101 @@ void update_threats_accumulator_full(Color                               perspec
 constexpr std::uint8_t ZfishAccumulatorPsqFeature    = 0;
 constexpr std::uint8_t ZfishAccumulatorThreatFeature = 1;
 
+extern "C" {
+struct ZfishAccumulatorStackPushResult {
+    void* dirty_piece;
+    void* dirty_threats;
+};
+
+const void* zfish_accumulator_stack_latest_psq(const void* stack);
+const void* zfish_accumulator_stack_latest_threat(const void* stack);
+void*       zfish_accumulator_stack_mut_latest_psq(void* stack);
+void*       zfish_accumulator_stack_mut_latest_threat(void* stack);
+const void* zfish_accumulator_stack_psq_array(const void* stack);
+const void* zfish_accumulator_stack_threat_array(const void* stack);
+void*       zfish_accumulator_stack_mut_psq_array(void* stack);
+void*       zfish_accumulator_stack_mut_threat_array(void* stack);
+void        zfish_accumulator_stack_reset(void* stack);
+ZfishAccumulatorStackPushResult zfish_accumulator_stack_push(void* stack);
+void                            zfish_accumulator_stack_pop(void* stack);
+}
+
 }  // namespace
 
-#include "nnue_accumulator_bridge/stack_latest.inc"
+template<typename T>
+const AccumulatorState<T>& AccumulatorStack::latest() const noexcept {
+    static_assert(std::is_same_v<T, PSQFeatureSet> || std::is_same_v<T, ThreatFeatureSet>,
+                  "Invalid Feature Set Type");
 
-#include "nnue_accumulator_bridge/stack_latest_instantiations.inc"
+    if constexpr (std::is_same_v<T, PSQFeatureSet>)
+        return *static_cast<const AccumulatorState<PSQFeatureSet>*>(
+          zfish_accumulator_stack_latest_psq(this));
 
-#include "nnue_accumulator_bridge/stack_mut_latest.inc"
+    if constexpr (std::is_same_v<T, ThreatFeatureSet>)
+        return *static_cast<const AccumulatorState<ThreatFeatureSet>*>(
+          zfish_accumulator_stack_latest_threat(this));
+}
 
-#include "nnue_accumulator_bridge/stack_accumulators.inc"
+template const AccumulatorState<PSQFeatureSet>& AccumulatorStack::latest() const noexcept;
+template const AccumulatorState<ThreatFeatureSet>& AccumulatorStack::latest() const noexcept;
 
-#include "nnue_accumulator_bridge/stack_mut_accumulators.inc"
+template<typename T>
+AccumulatorState<T>& AccumulatorStack::mut_latest() noexcept {
+    static_assert(std::is_same_v<T, PSQFeatureSet> || std::is_same_v<T, ThreatFeatureSet>,
+                  "Invalid Feature Set Type");
 
-#include "nnue_accumulator_bridge/stack_reset.inc"
+    if constexpr (std::is_same_v<T, PSQFeatureSet>)
+        return *static_cast<AccumulatorState<PSQFeatureSet>*>(
+          zfish_accumulator_stack_mut_latest_psq(this));
 
-#include "nnue_accumulator_bridge/stack_push.inc"
+    if constexpr (std::is_same_v<T, ThreatFeatureSet>)
+        return *static_cast<AccumulatorState<ThreatFeatureSet>*>(
+          zfish_accumulator_stack_mut_latest_threat(this));
+}
 
-#include "nnue_accumulator_bridge/stack_pop.inc"
+template<typename T>
+const std::array<AccumulatorState<T>, AccumulatorStack::MaxSize>&
+AccumulatorStack::accumulators() const noexcept {
+    static_assert(std::is_same_v<T, PSQFeatureSet> || std::is_same_v<T, ThreatFeatureSet>,
+                  "Invalid Feature Set Type");
+
+    if constexpr (std::is_same_v<T, PSQFeatureSet>)
+        return *static_cast<const std::array<AccumulatorState<PSQFeatureSet>, MaxSize>*>(
+          zfish_accumulator_stack_psq_array(this));
+
+    if constexpr (std::is_same_v<T, ThreatFeatureSet>)
+        return *static_cast<const std::array<AccumulatorState<ThreatFeatureSet>, MaxSize>*>(
+          zfish_accumulator_stack_threat_array(this));
+}
+
+template<typename T>
+std::array<AccumulatorState<T>, AccumulatorStack::MaxSize>&
+AccumulatorStack::mut_accumulators() noexcept {
+    static_assert(std::is_same_v<T, PSQFeatureSet> || std::is_same_v<T, ThreatFeatureSet>,
+                  "Invalid Feature Set Type");
+
+    if constexpr (std::is_same_v<T, PSQFeatureSet>)
+        return *static_cast<std::array<AccumulatorState<PSQFeatureSet>, MaxSize>*>(
+          zfish_accumulator_stack_mut_psq_array(this));
+
+    if constexpr (std::is_same_v<T, ThreatFeatureSet>)
+        return *static_cast<std::array<AccumulatorState<ThreatFeatureSet>, MaxSize>*>(
+          zfish_accumulator_stack_mut_threat_array(this));
+}
+
+void AccumulatorStack::reset() noexcept {
+    zfish_accumulator_stack_reset(this);
+}
+
+std::pair<DirtyPiece&, DirtyThreats&> AccumulatorStack::push() noexcept {
+    const auto pushed = zfish_accumulator_stack_push(this);
+    return {*static_cast<DirtyPiece*>(pushed.dirty_piece),
+            *static_cast<DirtyThreats*>(pushed.dirty_threats)};
+}
+
+void AccumulatorStack::pop() noexcept {
+    zfish_accumulator_stack_pop(this);
+}
 
 struct AccumulatorBridgeAccess {
 #include "nnue_accumulator_bridge/bridge_access_incremental_psq.inc"

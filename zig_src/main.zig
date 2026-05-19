@@ -337,6 +337,50 @@ pub export fn zfish_accumulator_evaluate(
     return nnue_accumulator_port.evaluate(stack, pos, feature_transformer, cache);
 }
 
+pub export fn zfish_accumulator_stack_latest_psq(stack: *const anyopaque) *const anyopaque {
+    return nnue_accumulator_port.stackLatestPsq(stack);
+}
+
+pub export fn zfish_accumulator_stack_latest_threat(stack: *const anyopaque) *const anyopaque {
+    return nnue_accumulator_port.stackLatestThreat(stack);
+}
+
+pub export fn zfish_accumulator_stack_mut_latest_psq(stack: *anyopaque) *anyopaque {
+    return nnue_accumulator_port.stackMutLatestPsq(stack);
+}
+
+pub export fn zfish_accumulator_stack_mut_latest_threat(stack: *anyopaque) *anyopaque {
+    return nnue_accumulator_port.stackMutLatestThreat(stack);
+}
+
+pub export fn zfish_accumulator_stack_psq_array(stack: *const anyopaque) *const anyopaque {
+    return nnue_accumulator_port.stackPsqArray(stack);
+}
+
+pub export fn zfish_accumulator_stack_threat_array(stack: *const anyopaque) *const anyopaque {
+    return nnue_accumulator_port.stackThreatArray(stack);
+}
+
+pub export fn zfish_accumulator_stack_mut_psq_array(stack: *anyopaque) *anyopaque {
+    return nnue_accumulator_port.stackMutPsqArray(stack);
+}
+
+pub export fn zfish_accumulator_stack_mut_threat_array(stack: *anyopaque) *anyopaque {
+    return nnue_accumulator_port.stackMutThreatArray(stack);
+}
+
+pub export fn zfish_accumulator_stack_reset(stack: *anyopaque) void {
+    return nnue_accumulator_port.stackReset(stack);
+}
+
+pub export fn zfish_accumulator_stack_push(stack: *anyopaque) nnue_accumulator_port.StackPushOutput {
+    return nnue_accumulator_port.stackPush(stack);
+}
+
+pub export fn zfish_accumulator_stack_pop(stack: *anyopaque) void {
+    return nnue_accumulator_port.stackPop(stack);
+}
+
 pub export fn zfish_network_load(
     network: *anyopaque,
     root_directory_ptr: [*]const u8,
