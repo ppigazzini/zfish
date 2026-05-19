@@ -902,18 +902,6 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
 
 }  // namespace
 
-TimePoint TimeManagement::optimum() const { return optimumTime; }
-TimePoint TimeManagement::maximum() const { return maximumTime; }
-
-void TimeManagement::clear() {
-    availableNodes = -1;
-}
-
-void TimeManagement::advance_nodes_time(std::int64_t nodes) {
-    assert(useNodesTime);
-    availableNodes = std::max(int64_t(0), availableNodes - nodes);
-}
-
 void TimeManagement::init(Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
