@@ -33,7 +33,10 @@
 #include <utility>
 #include <vector>
 
+#define private public
 #include "benchmark.h"
+#include "search.h"
+#undef private
 #include "engine.h"
 #include "memory.h"
 #include "misc.h"
@@ -41,7 +44,6 @@
 #include "numa.h"
 #include "position.h"
 #include "score.h"
-#include "search.h"
 #include "tune.h"
 #include "types.h"
 #include "ucioption.h"
@@ -921,9 +923,21 @@ struct ZfishThreadSummary {
     int           root_depth;
 };
 
+struct ZfishTbConfig {
+    int          cardinality;
+    std::uint8_t root_in_tb;
+    std::uint8_t use_rule50;
+    int          probe_depth;
+};
+
 std::size_t zfish_thread_next_power_of_two(std::uint64_t count);
 std::size_t zfish_thread_pick_best_thread(const ZfishThreadSummary* summaries,
                                           std::size_t               count);
+void         zfish_thread_start_thinking(void*        pool,
+                                         const void*  options,
+                                         void*        pos,
+                                         const void*  limits,
+                                         const void*  setup_state);
 void zfish_bitboards_init_runtime(std::uint8_t         (*popcnt16_ptr)[1 << 16],
                                   std::uint8_t         (*square_distance_ptr)[64][64],
                                   std::uint64_t        (*line_bb_ptr)[64][64],
@@ -1725,60 +1739,198 @@ void ThreadPool::wait_on_thread(size_t threadId) {
 
 size_t ThreadPool::num_threads() const { return threads.size(); }
 
+namespace {
+
+struct ZfishSearchMoveView {
+    const unsigned char* ptr;
+    std::size_t          len;
+};
+
+// Bridge-only view that mirrors Search::Worker layout for Zig-owned start_thinking setup.
+struct WorkerBridgeLayout {
+    ButterflyHistory                 mainHistory;
+    LowPlyHistory                    lowPlyHistory;
+    CapturePieceToHistory            captureHistory;
+    ContinuationHistory              continuationHistory[2][2];
+    CorrectionHistory<Continuation>  continuationCorrectionHistory;
+    TTMoveHistory                    ttMoveHistory;
+    SharedHistories&                 sharedHistory;
+    Search::LimitsType               limits;
+    std::size_t                      pvIdx;
+    std::size_t                      pvLast;
+    std::atomic<std::uint64_t>       nodes;
+    std::atomic<std::uint64_t>       tbHits;
+    std::atomic<std::uint64_t>       bestMoveChanges;
+    int                              selDepth;
+    int                              nmpMinPly;
+    Value                            optimism[COLOR_NB];
+    Position                         rootPos;
+    StateInfo                        rootState;
+    Search::RootMoves                rootMoves;
+    Depth                            rootDepth;
+    Value                            rootDelta;
+    Search::PVMoves                  lastIterationPV;
+    std::size_t                      threadIdx;
+    std::size_t                      numaThreadIdx;
+    std::size_t                      numaTotal;
+    NumaReplicatedAccessToken        numaAccessToken;
+    std::array<int, MAX_MOVES>       reductions;
+    std::unique_ptr<Search::ISearchManager> manager;
+    Tablebases::Config               tbConfig;
+    const OptionsMap&                options;
+    ThreadPool&                      threads;
+    TranspositionTable&              tt;
+    const LazyNumaReplicatedSystemWide<Eval::NNUE::Network>& network;
+    Eval::NNUE::AccumulatorStack     accumulatorStack;
+    Eval::NNUE::AccumulatorCaches    refreshTable;
+};
+
+static_assert(sizeof(WorkerBridgeLayout) == sizeof(Search::Worker));
+static_assert(alignof(WorkerBridgeLayout) == alignof(Search::Worker));
+
+WorkerBridgeLayout* bridge_worker(Thread* thread) {
+    return reinterpret_cast<WorkerBridgeLayout*>(thread->worker.get());
+}
+
+}  // namespace
+
+extern "C" {
+
+std::uint8_t zfish_limits_ponder_mode(const void* limits_ptr) {
+    return static_cast<const Search::LimitsType*>(limits_ptr)->ponderMode ? 1 : 0;
+}
+
+std::size_t zfish_limits_searchmove_count(const void* limits_ptr) {
+    return static_cast<const Search::LimitsType*>(limits_ptr)->searchmoves.size();
+}
+
+ZfishSearchMoveView zfish_limits_searchmove_text(const void* limits_ptr, std::size_t index) {
+    const auto& searchmoves = static_cast<const Search::LimitsType*>(limits_ptr)->searchmoves;
+    assert(index < searchmoves.size());
+    const auto& text = searchmoves[index];
+    return {reinterpret_cast<const unsigned char*>(text.data()), text.size()};
+}
+
+std::uint16_t zfish_uci_to_move_raw(const void*          pos_ptr,
+                                    const unsigned char* text_ptr,
+                                    std::size_t          text_len) {
+    if (!text_ptr && text_len == 0)
+        return Move::none().raw();
+
+    std::string text(reinterpret_cast<const char*>(text_ptr), text_len);
+    return UCIEngine::to_move(*static_cast<const Position*>(pos_ptr), std::move(text)).raw();
+}
+
+std::uint16_t zfish_move_none_raw() { return Move::none().raw(); }
+
+std::size_t zfish_position_collect_legal_move_raws(const void*    pos_ptr,
+                                                   std::uint16_t* out_moves,
+                                                   std::size_t    capacity) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    std::size_t count = 0;
+    for (const auto& move : MoveList<LEGAL>(pos))
+    {
+        assert(count < capacity);
+        out_moves[count++] = move.raw();
+    }
+    return count;
+}
+
+void* zfish_root_moves_create(const std::uint16_t* move_raws, std::size_t count) {
+    auto root_moves = std::make_unique<Search::RootMoves>();
+    root_moves->reserve(count);
+    for (std::size_t index = 0; index < count; ++index)
+        root_moves->emplace_back(Move(move_raws[index]));
+    return root_moves.release();
+}
+
+void zfish_root_moves_destroy(void* root_moves_ptr) {
+    delete static_cast<Search::RootMoves*>(root_moves_ptr);
+}
+
+ZfishTbConfig zfish_threadpool_rank_root_moves(const void* options_ptr,
+                                               void*       pos_ptr,
+                                               void*       root_moves_ptr) {
+    const auto config = Tablebases::rank_root_moves(*static_cast<const OptionsMap*>(options_ptr),
+                                                    *static_cast<Position*>(pos_ptr),
+                                                    *static_cast<Search::RootMoves*>(root_moves_ptr));
+    return {config.cardinality, static_cast<std::uint8_t>(config.rootInTB),
+            static_cast<std::uint8_t>(config.useRule50), config.probeDepth};
+}
+
+std::size_t zfish_threadpool_thread_count(const void* pool_ptr) {
+    return static_cast<const ThreadPool*>(pool_ptr)->size();
+}
+
+void* zfish_threadpool_thread_at(void* pool_ptr, std::size_t index) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    assert(index < pool->size());
+    return (*(pool->begin() + static_cast<std::ptrdiff_t>(index))).get();
+}
+
+void zfish_threadpool_wait_main_thread(void* pool_ptr) {
+    static_cast<ThreadPool*>(pool_ptr)->main_thread()->wait_for_search_finished();
+}
+
+void zfish_threadpool_reset_start_state(void* pool_ptr, std::uint8_t ponder_mode) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->stopOnPonderhit = pool->stop = false;
+    pool->main_manager()->ponder          = ponder_mode != 0;
+    pool->increaseDepth                   = true;
+}
+
+void zfish_thread_run_root_setup(void*         thread_ptr,
+                                 const void*   limits_ptr,
+                                 const void*   root_moves_ptr,
+                                 const void*   pos_ptr,
+                                 const void*   setup_state_ptr,
+                                 ZfishTbConfig tb_config) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    const auto limits = *static_cast<const Search::LimitsType*>(limits_ptr);
+    const auto root_moves = *static_cast<const Search::RootMoves*>(root_moves_ptr);
+    const auto* pos = static_cast<const Position*>(pos_ptr);
+    const auto setup_state = *static_cast<const StateInfo*>(setup_state_ptr);
+    const auto fen = pos->fen();
+    const bool chess960 = pos->is_chess960();
+    const Tablebases::Config config{tb_config.cardinality, tb_config.root_in_tb != 0,
+                                    tb_config.use_rule50 != 0, Depth(tb_config.probe_depth)};
+
+    thread->run_custom_job([thread, limits, root_moves, fen = std::move(fen), chess960,
+                            setup_state, config]() {
+        auto* worker = bridge_worker(thread);
+        worker->limits          = limits;
+        worker->nodes           = 0;
+        worker->tbHits          = 0;
+        worker->bestMoveChanges = 0;
+        worker->nmpMinPly       = 0;
+        worker->rootDepth       = 0;
+        worker->rootMoves       = root_moves;
+        worker->rootPos.set(fen, chess960, &worker->rootState);
+        worker->rootState = setup_state;
+        worker->tbConfig  = config;
+    });
+}
+
+void zfish_thread_wait_for_search_finished(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->wait_for_search_finished();
+}
+
+void zfish_thread_start_searching(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->start_searching();
+}
+
+}
+
 void ThreadPool::start_thinking(const OptionsMap&  options,
                                 Position&          pos,
                                 StateListPtr&      states,
                                 Search::LimitsType limits) {
-
-    main_thread()->wait_for_search_finished();
-
-    main_manager()->stopOnPonderhit = stop = false;
-    main_manager()->ponder          = limits.ponderMode;
-
-    increaseDepth = true;
-
-    Search::RootMoves rootMoves;
-    const auto        legalmoves = MoveList<LEGAL>(pos);
-
-    for (const auto& uciMove : limits.searchmoves)
-    {
-        auto move = UCIEngine::to_move(pos, uciMove);
-
-        if (std::find(legalmoves.begin(), legalmoves.end(), move) != legalmoves.end())
-            rootMoves.emplace_back(move);
-    }
-
-    if (rootMoves.empty())
-        for (const auto& m : legalmoves)
-            rootMoves.emplace_back(m);
-
-    Tablebases::Config tbConfig = Tablebases::rank_root_moves(options, pos, rootMoves);
-
     assert(states.get() || setupStates.get());
 
     if (states.get())
         setupStates = std::move(states);
 
-    for (auto&& th : threads)
-    {
-        th->run_custom_job([&]() {
-            th->worker->limits           = limits;
-            th->worker->nodes            = 0;
-            th->worker->tbHits           = 0;
-            th->worker->bestMoveChanges  = 0;
-            th->worker->nmpMinPly        = 0;
-            th->worker->rootDepth        = 0;
-            th->worker->rootMoves        = rootMoves;
-            th->worker->rootPos.set(pos.fen(), pos.is_chess960(), &th->worker->rootState);
-            th->worker->rootState = setupStates->back();
-            th->worker->tbConfig  = tbConfig;
-        });
-    }
-
-    for (auto&& th : threads)
-        th->wait_for_search_finished();
-
-    main_thread()->start_searching();
+    zfish_thread_start_thinking(this, &options, &pos, &limits, &setupStates->back());
 }
 
 Thread* ThreadPool::get_best_thread() const {
@@ -1891,7 +2043,12 @@ std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960
     return Benchmark::perft(fen, depth, isChess960);
 }
 
-#include "uci_bridge/engine_go.inc"
+void Engine::go(Search::LimitsType& limits) {
+    assert(limits.perft == 0);
+    verify_network();
+
+    threads.start_thinking(options, pos, states, limits);
+}
 
 #include "uci_bridge/engine_stop_and_clear.inc"
 

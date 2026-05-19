@@ -297,6 +297,16 @@ pub export fn zfish_thread_pick_best_thread(
     return thread_port.pickBestThread(summaries, count);
 }
 
+pub export fn zfish_thread_start_thinking(
+    pool: *anyopaque,
+    options: *const anyopaque,
+    pos: *anyopaque,
+    limits: *const anyopaque,
+    setup_state: *const anyopaque,
+) void {
+    return thread_port.startThinking(pool, options, pos, limits, setup_state);
+}
+
 pub export fn zfish_engine_format_numa_info(
     config_ptr: [*]const u8,
     config_len: usize,
