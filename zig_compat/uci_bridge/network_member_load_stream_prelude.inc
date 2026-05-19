@@ -1,2 +1,0 @@
-    initialize();
-    std::string description;
