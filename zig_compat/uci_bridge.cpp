@@ -380,18 +380,30 @@ ZfishNetworkTraceOutput zfish_network_trace_evaluate(const void* network,
 
 #include "uci_bridge/network_save_named_export.inc"
 
-#include "uci_bridge/network_piece_count.inc"
+int zfish_network_transform_bucket(const void* network_ptr,
+                                                                     const void* pos_ptr,
+                                                                     void*       accumulator_stack_ptr,
+                                                                     void*       cache_ptr,
+                                                                     std::size_t bucket,
+                                                                     unsigned char* transformed_ptr) {
+        const auto& network = *static_cast<const Network*>(network_ptr);
+        const auto& pos = *static_cast<const Position*>(pos_ptr);
+        auto&       accumulator_stack = *static_cast<AccumulatorStack*>(accumulator_stack_ptr);
+        auto&       cache = *static_cast<AccumulatorCaches*>(cache_ptr);
+        auto*       transformed_features = reinterpret_cast<TransformedFeatureType*>(transformed_ptr);
 
-ZfishNetworkEvalOutput zfish_network_evaluate_bucket_raw(const void* network_ptr,
-                                                         const void* pos_ptr,
-                                                         void*       accumulator_stack_ptr,
-                                                         void*       cache_ptr,
-                                                         std::size_t bucket) {
-#include "uci_bridge/network_evaluate_bucket_raw_prelude.inc"
+        return static_cast<int>(NetworkBridgeAccess::featureTransformer(network).transform(
+            pos, accumulator_stack, cache, transformed_features, bucket));
+}
 
-#include "uci_bridge/network_evaluate_bucket_raw_transform.inc"
+int zfish_network_propagate_bucket(const void*         network_ptr,
+                                                                     std::size_t        bucket,
+                                                                     const unsigned char* transformed_ptr) {
+        const auto& network = *static_cast<const Network*>(network_ptr);
+        const auto* transformed_features = reinterpret_cast<const TransformedFeatureType*>(transformed_ptr);
 
-#include "uci_bridge/network_evaluate_bucket_raw_return.inc"
+        return static_cast<int>(NetworkBridgeAccess::layer(network, bucket).propagate(
+            transformed_features));
 }
 
 #include "uci_bridge/network_verify_info.inc"
