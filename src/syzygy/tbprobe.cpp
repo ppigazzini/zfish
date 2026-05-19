@@ -146,7 +146,7 @@ int dtz_before_zeroing(WDLScore wdl) {
          : wdl == WDLLoss        ? -1
                                  : 0;
 }
-#elif !defined(ZFISH_ZIG_BUILD)
+#else
 int dtz_before_zeroing(WDLScore wdl);
 #endif
 

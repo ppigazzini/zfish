@@ -532,7 +532,7 @@ void Position::set_state() const {
     st->materialKey = compute_material_key();
 }
 
-#if !defined(ZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY) && !defined(ZFISH_ZIG_BUILD)
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY
 Key Position::compute_material_key() const {
     Key k = 0;
     for (Piece pc : Pieces)
@@ -545,7 +545,7 @@ Key Position::compute_material_key() const {
 
 // Overload to initialize the position object with the given endgame code string
 // like "KBPKN". It's mainly a helper to get the material key out of an endgame code.
-#if !defined(ZFISH_POSITION_BRIDGE_SKIP_ENDGAME_SET) && !defined(ZFISH_ZIG_BUILD)
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_ENDGAME_SET
 std::optional<PositionSetError> Position::set(const string& code, Color c, StateInfo* si) {
 
     assert(code[0] == 'K');
@@ -568,7 +568,7 @@ std::optional<PositionSetError> Position::set(const string& code, Color c, State
 
 // Returns a FEN representation of the position. In case of
 // Chess960 the Shredder-FEN notation is used. This is mainly a debugging function.
-#if !defined(ZFISH_POSITION_BRIDGE_SKIP_FEN) && !defined(ZFISH_ZIG_BUILD)
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_FEN
 string Position::fen() const {
 
     int                emptyCnt;

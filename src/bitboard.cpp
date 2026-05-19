@@ -43,7 +43,6 @@ using MagicMask = Bitboard;
 
 // Returns an ASCII representation of a bitboard suitable
 // to be printed to standard output. Useful for debugging.
-#if !defined(ZFISH_ZIG_BUILD)
 std::string Bitboards::pretty(Bitboard b) {
 
     std::string s = "+---+---+---+---+---+---+---+---+\n";
@@ -62,7 +61,6 @@ std::string Bitboards::pretty(Bitboard b) {
 
     return s;
 }
-#endif
 
 #ifdef USE_HYPERBOLA_QUINT
 static Bitboard line_mask(Square sq, Direction d1, Direction d2) {
