@@ -3128,38 +3128,18 @@ void Tune::read_results() { /* ...insert your values here... */ }
 
 }  // namespace Stockfish
 
-namespace {
-
-struct ZfishUciRuntimeHandle {
-    std::vector<std::string>      ownedArgv;
-    std::vector<char*>            mutableArgv;
-    std::unique_ptr<Stockfish::UCIEngine> uci;
-};
-
-}  // namespace
-
 extern "C" {
-void* zfish_uci_create_runtime(int argc, const char* const* argv) {
-    auto runtime = std::make_unique<ZfishUciRuntimeHandle>();
-    runtime->ownedArgv.reserve(static_cast<std::size_t>(argc));
-    runtime->mutableArgv.reserve(static_cast<std::size_t>(argc));
-
-    for (int i = 0; i < argc; ++i)
-        runtime->ownedArgv.emplace_back(argv[i] ? argv[i] : "");
-
-    for (auto& arg : runtime->ownedArgv)
-        runtime->mutableArgv.push_back(arg.data());
-
-    runtime->uci = std::make_unique<Stockfish::UCIEngine>(argc, runtime->mutableArgv.data());
-    Stockfish::Tune::init(runtime->uci->engine_options());
-    return runtime.release();
+void* zfish_uci_create_engine(int argc, char* const* argv) {
+    auto uci = std::make_unique<Stockfish::UCIEngine>(argc, const_cast<char**>(argv));
+    Stockfish::Tune::init(uci->engine_options());
+    return uci.release();
 }
 
-void zfish_uci_loop_runtime(void* runtime_ptr) {
-    static_cast<ZfishUciRuntimeHandle*>(runtime_ptr)->uci->loop();
+void zfish_uci_loop_engine(void* engine_ptr) {
+    static_cast<Stockfish::UCIEngine*>(engine_ptr)->loop();
 }
 
-void zfish_uci_destroy_runtime(void* runtime_ptr) {
-    delete static_cast<ZfishUciRuntimeHandle*>(runtime_ptr);
+void zfish_uci_destroy_engine(void* engine_ptr) {
+    delete static_cast<Stockfish::UCIEngine*>(engine_ptr);
 }
 }

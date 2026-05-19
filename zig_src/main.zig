@@ -29,9 +29,9 @@ const uci_port = @import("uci_rewrites");
 extern fn zfish_bitboards_init() void;
 extern fn zfish_position_init_runtime() void;
 extern fn zfish_misc_engine_info_text() ?[*:0]u8;
-extern fn zfish_uci_create_runtime(argc: c_int, argv: [*]const [*:0]const u8) ?*anyopaque;
-extern fn zfish_uci_loop_runtime(runtime: *anyopaque) void;
-extern fn zfish_uci_destroy_runtime(runtime: ?*anyopaque) void;
+extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
+extern fn zfish_uci_loop_engine(engine: *anyopaque) void;
+extern fn zfish_uci_destroy_engine(engine: ?*anyopaque) void;
 
 pub fn main(init: std.process.Init) !void {
     var argc: usize = 0;
@@ -40,13 +40,13 @@ pub fn main(init: std.process.Init) !void {
         argc += 1;
     }
 
-    const argv = try init.gpa.alloc([*:0]const u8, argc);
+    const argv = try init.gpa.alloc([*:0]u8, argc);
     defer init.gpa.free(argv);
 
     var fill_iter = std.process.Args.Iterator.init(init.minimal.args);
     var index: usize = 0;
     while (fill_iter.next()) |arg| : (index += 1) {
-        argv[index] = arg.ptr;
+        argv[index] = @constCast(arg.ptr);
     }
 
     const info = zfish_misc_engine_info_text() orelse return error.OutOfMemory;
@@ -57,10 +57,10 @@ pub fn main(init: std.process.Init) !void {
     zfish_bitboards_init();
     zfish_position_init_runtime();
 
-    const runtime = zfish_uci_create_runtime(@intCast(argc), argv.ptr) orelse return error.OutOfMemory;
-    defer zfish_uci_destroy_runtime(runtime);
+    const engine = zfish_uci_create_engine(@intCast(argc), argv.ptr) orelse return error.OutOfMemory;
+    defer zfish_uci_destroy_engine(engine);
 
-    zfish_uci_loop_runtime(runtime);
+    zfish_uci_loop_engine(engine);
 }
 
 pub export fn zfish_std_aligned_alloc(alignment: usize, size: usize) ?*anyopaque {
