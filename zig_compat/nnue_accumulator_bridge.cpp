@@ -1,19 +1,19 @@
 /*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
+    Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+    Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
-  Stockfish is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+    Stockfish is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-  Stockfish is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+    Stockfish is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <array>
@@ -120,32 +120,6 @@ void AccumulatorStack::pop() noexcept {
 }
 
 struct AccumulatorBridgeAccess {
-    static std::size_t stackSize(const AccumulatorStack& stack) { return stack.size; }
-
-    static bool psqComputed(const AccumulatorStack& stack, std::size_t index, Color perspective) {
-        return stack.accumulators<PSQFeatureSet>()[index].computed[perspective];
-    }
-
-    static bool threatComputed(const AccumulatorStack& stack,
-                               std::size_t            index,
-                               Color                  perspective) {
-        return stack.accumulators<ThreatFeatureSet>()[index].computed[perspective];
-    }
-
-    static bool psqRequiresRefresh(const AccumulatorStack& stack,
-                                   std::size_t            index,
-                                   Color                  perspective) {
-        return PSQFeatureSet::requires_refresh(stack.accumulators<PSQFeatureSet>()[index].diff,
-                                               perspective);
-    }
-
-    static bool threatRequiresRefresh(const AccumulatorStack& stack,
-                                      std::size_t            index,
-                                      Color                  perspective) {
-        return ThreatFeatureSet::requires_refresh(
-          stack.accumulators<ThreatFeatureSet>()[index].diff, perspective);
-    }
-
     static void forwardPsq(AccumulatorStack&           stack,
                            Color                       perspective,
                            const Position&             pos,
@@ -210,48 +184,6 @@ void zfish_accumulator_evaluate(void*                  stack,
                                 const void*            pos,
                                 const void*            feature_transformer,
                                 void*                  cache);
-
-std::size_t zfish_accumulator_stack_size(const void* stack_ptr) {
-    return AccumulatorBridgeAccess::stackSize(*static_cast<const AccumulatorStack*>(stack_ptr));
-}
-
-bool zfish_accumulator_state_computed(const void*    stack_ptr,
-                                      std::uint8_t   feature_kind,
-                                      std::size_t    index,
-                                      std::uint8_t   perspective) {
-    const auto& stack = *static_cast<const AccumulatorStack*>(stack_ptr);
-    const auto  side  = static_cast<Color>(perspective);
-
-    switch (feature_kind)
-    {
-    case ZfishAccumulatorPsqFeature:
-        return AccumulatorBridgeAccess::psqComputed(stack, index, side);
-    case ZfishAccumulatorThreatFeature:
-        return AccumulatorBridgeAccess::threatComputed(stack, index, side);
-    default:
-        assert(false);
-        return false;
-    }
-}
-
-bool zfish_accumulator_requires_refresh(const void*  stack_ptr,
-                                        std::uint8_t feature_kind,
-                                        std::size_t  index,
-                                        std::uint8_t perspective) {
-    const auto& stack = *static_cast<const AccumulatorStack*>(stack_ptr);
-    const auto  side  = static_cast<Color>(perspective);
-
-    switch (feature_kind)
-    {
-    case ZfishAccumulatorPsqFeature:
-        return AccumulatorBridgeAccess::psqRequiresRefresh(stack, index, side);
-    case ZfishAccumulatorThreatFeature:
-        return AccumulatorBridgeAccess::threatRequiresRefresh(stack, index, side);
-    default:
-        assert(false);
-        return false;
-    }
-}
 
 void zfish_accumulator_forward_update(void*          stack_ptr,
                                       std::uint8_t   feature_kind,
