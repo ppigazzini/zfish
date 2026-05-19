@@ -2460,24 +2460,7 @@ struct ZfishBenchmarkSetupOutput {
     const char* filled_invocation_ptr;
 };
 
-const char*   zfish_position_build_endgame_fen(const unsigned char* code_ptr,
-                                               std::size_t          code_len,
-                                               std::uint8_t         color);
-const char*   zfish_position_format_fen(const unsigned char* board_ptr,
-                                        std::uint8_t         side_to_move,
-                                        std::uint8_t         chess960,
-                                        std::uint8_t         castling_rights,
-                                        std::uint8_t         white_oo_rook_square,
-                                        std::uint8_t         white_ooo_rook_square,
-                                        std::uint8_t         black_oo_rook_square,
-                                        std::uint8_t         black_ooo_rook_square,
-                                        std::uint8_t         ep_square,
-                                        int                  rule50,
-                                        int                  game_ply);
-std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
-                                                  std::size_t piece_count_len);
 void          zfish_position_init_runtime();
-const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
 }
 
@@ -2486,15 +2469,6 @@ namespace {
 std::string take_string_and_free(const char* rendered) {
     if (!rendered)
         return {};
-
-    std::string value(rendered);
-    std::free(const_cast<char*>(rendered));
-    return value;
-}
-
-std::string take_string_and_free_required(const char* rendered) {
-    if (!rendered)
-        std::abort();
 
     std::string value(rendered);
     std::free(const_cast<char*>(rendered));
@@ -2635,33 +2609,7 @@ void init() {
     }
 }
 
-std::string pretty(Bitboard b) { return take_string_and_free(zfish_bitboard_pretty(b)); }
-
 }  // namespace Bitboards
-
-Key Position::compute_material_key() const {
-    return zfish_position_compute_material_key(pieceCount, PIECE_NB);
-}
-
-std::optional<PositionSetError> Position::set(const string& code, Color c, StateInfo* si) {
-    const auto fenStr = take_string_and_free_required(zfish_position_build_endgame_fen(
-      reinterpret_cast<const unsigned char*>(code.data()), code.size(), static_cast<std::uint8_t>(c)));
-    return set(fenStr, false, si);
-}
-
-string Position::fen() const {
-    const auto whiteOoRook = can_castle(WHITE_OO) ? castling_rook_square(WHITE_OO) : SQ_NONE;
-    const auto whiteOooRook = can_castle(WHITE_OOO) ? castling_rook_square(WHITE_OOO) : SQ_NONE;
-    const auto blackOoRook = can_castle(BLACK_OO) ? castling_rook_square(BLACK_OO) : SQ_NONE;
-    const auto blackOooRook = can_castle(BLACK_OOO) ? castling_rook_square(BLACK_OOO) : SQ_NONE;
-
-    return take_string_and_free_required(zfish_position_format_fen(
-      reinterpret_cast<const unsigned char*>(board.data()), static_cast<std::uint8_t>(sideToMove),
-      static_cast<std::uint8_t>(chess960), static_cast<std::uint8_t>(st->castlingRights),
-      static_cast<std::uint8_t>(whiteOoRook), static_cast<std::uint8_t>(whiteOooRook),
-      static_cast<std::uint8_t>(blackOoRook), static_cast<std::uint8_t>(blackOooRook),
-      static_cast<std::uint8_t>(ep_square()), st->rule50, gamePly));
-}
 
 UCIEngine::UCIEngine(int argc, char** argv) :
     engine(argv[0]),
