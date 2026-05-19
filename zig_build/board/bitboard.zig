@@ -7,7 +7,23 @@ pub const Magic = extern struct {
     shift: c_uint,
 };
 
+pub const MagicInitEntry = extern struct {
+    mask: u64,
+    magic: u64,
+    shift: c_uint,
+    attack_offset: usize,
+};
+
 extern fn zfish_movegen_attacks(piece_type: u8, square: u8, occupied: u64) u64;
+
+pub fn initMagicRuntime(
+    entries: *[64][2]MagicInitEntry,
+    rook_table: [*]u64,
+    bishop_table: [*]u64,
+) void {
+    initMagicEntries(PieceType.rook, rook_table[0..0x19000], entries);
+    initMagicEntries(PieceType.bishop, bishop_table[0..0x1480], entries);
+}
 
 pub fn init(
     popcnt16: *[1 << 16]u8,
@@ -161,6 +177,8 @@ const magic_seeds = [_][8]u64{
     .{ 728, 10316, 55013, 32803, 12281, 15100, 16645, 255 },
 };
 
+const magic_is_64bit_index = false;
+
 fn initMagics(pt: PieceType, table: []u64, magics: *[64][2]Magic) void {
     var occupancy: [4096]u64 = undefined;
     var epoch: [4096]c_int = [_]c_int{0} ** 4096;
@@ -220,6 +238,70 @@ fn initMagics(pt: PieceType, table: []u64, magics: *[64][2]Magic) void {
     }
 }
 
+fn initMagicEntries(
+    pt: PieceType,
+    table: []u64,
+    entries: *[64][2]MagicInitEntry,
+) void {
+    var occupancy: [4096]u64 = undefined;
+    var epoch: [4096]c_int = [_]c_int{0} ** 4096;
+    var reference: [4096]u64 = [_]u64{0} ** 4096;
+    var cnt: c_int = 0;
+    var previous_size: usize = 0;
+    const table_index = magicIndexForPiece(pt);
+
+    for (0..64) |square| {
+        const edges = ((rank_1_bb | rank_8_bb) & ~rankBb(square)) | ((file_a_bb | file_h_bb) & ~fileBb(square));
+        var entry = &entries[square][table_index];
+        const attacks = slidingAttack(pt, square, 0);
+        entry.mask = attacks & ~edges;
+        entry.shift = @intCast((if (magic_is_64bit_index) 64 else 32) - @popCount(entry.mask));
+        entry.attack_offset = if (square == 0)
+            0
+        else
+            entries[square - 1][table_index].attack_offset + previous_size;
+
+        var size: usize = 0;
+        var subset: u64 = 0;
+        while (true) {
+            occupancy[size] = subset;
+            reference[size] = slidingAttack(pt, square, subset);
+            size += 1;
+            subset = (subset -% entry.mask) & entry.mask;
+            if (subset == 0) {
+                break;
+            }
+        }
+
+        var rng = Prng.init(magic_seeds[if (magic_is_64bit_index) 1 else 0][rankOf(square)]);
+        while (true) {
+            entry.magic = 0;
+            while (@popCount((entry.magic *% entry.mask) >> 56) < 6) {
+                entry.magic = rng.sparseRand();
+            }
+
+            cnt += 1;
+            var index: usize = 0;
+            while (index < size) : (index += 1) {
+                const attack_index = computeMagicIndexEntry(entry.*, occupancy[index]);
+                const table_index_offset = entry.attack_offset + attack_index;
+                if (epoch[attack_index] < cnt) {
+                    epoch[attack_index] = cnt;
+                    table[table_index_offset] = reference[index];
+                } else if (table[table_index_offset] != reference[index]) {
+                    break;
+                }
+            }
+
+            if (index == size) {
+                break;
+            }
+        }
+
+        previous_size = size;
+    }
+}
+
 fn attacksBb(pt: PieceType, square: usize, occupied: u64, magics: *[64][2]Magic) u64 {
     const magic_ref = magics[square][magicIndexForPiece(pt)];
     return magic_ref.attacks[computeMagicIndex(magic_ref, occupied)];
@@ -227,6 +309,19 @@ fn attacksBb(pt: PieceType, square: usize, occupied: u64, magics: *[64][2]Magic)
 
 fn cxxAttacks(pt: PieceType, square: usize, occupied: u64) u64 {
     return zfish_movegen_attacks(@intFromEnum(pt), @intCast(square), occupied);
+}
+
+fn computeMagicIndexEntry(entry: MagicInitEntry, occupied: u64) usize {
+    if (magic_is_64bit_index) {
+        return @intCast(((occupied & entry.mask) *% entry.magic) >> @as(u6, @intCast(entry.shift)));
+    }
+
+    const lo = @as(u32, @truncate(occupied)) & @as(u32, @truncate(entry.mask));
+    const hi = @as(u32, @truncate(occupied >> 32)) & @as(u32, @truncate(entry.mask >> 32));
+    const magic_lo = @as(u32, @truncate(entry.magic));
+    const magic_hi = @as(u32, @truncate(entry.magic >> 32));
+    const mixed = (lo *% magic_lo) ^ (hi *% magic_hi);
+    return @intCast(mixed >> @as(u5, @intCast(entry.shift)));
 }
 
 fn computeMagicIndex(magic_ref: Magic, occupied: u64) usize {
