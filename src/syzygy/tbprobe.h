@@ -23,6 +23,12 @@
 #include <string>
 #include <vector>
 
+#if defined(ZFISH_ZIG_BUILD)
+extern "C" {
+int zfish_tbprobe_dtz_before_zeroing(int wdl);
+}
+#endif
+
 
 namespace Stockfish {
 class Position;
@@ -60,6 +66,12 @@ enum ProbeState {
     CHANGE_STM        = -1,  // DTZ should check the other side
     ZEROING_BEST_MOVE = 2    // Best move zeroes DTZ (capture or pawn move)
 };
+
+#if defined(ZFISH_ZIG_BUILD)
+inline int dtz_before_zeroing(WDLScore wdl) {
+    return zfish_tbprobe_dtz_before_zeroing(int(wdl));
+}
+#endif
 
 extern int MaxCardinality;
 

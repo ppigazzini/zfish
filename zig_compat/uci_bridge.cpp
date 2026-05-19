@@ -187,7 +187,6 @@ struct ZfishNnueTraceInput {
 const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 const char* zfish_tbprobe_build_code(const unsigned char* piece_types_ptr, std::size_t piece_count);
-int         zfish_tbprobe_dtz_before_zeroing(int wdl);
 const char*   zfish_misc_engine_info_text();
 }
 
@@ -261,8 +260,6 @@ std::string take_string_and_free_engine_required(const char* rendered) {
     std::free(const_cast<char*>(rendered));
     return value;
 }
-
-int dtz_before_zeroing(WDLScore wdl) { return zfish_tbprobe_dtz_before_zeroing(int(wdl)); }
 
 }  // namespace
 
