@@ -283,17 +283,30 @@ void TBTables::add(const std::vector<PieceType>& pieces) {
 namespace Eval::NNUE {
 
 struct NetworkBridgeAccess {
-#include "uci_bridge/network_bridge_eval_file.inc"
+    static EvalFile& evalFile(Network& network) { return network.evalFile; }
+    static const EvalFile& evalFile(const Network& network) { return network.evalFile; }
 
-#include "uci_bridge/network_bridge_load_user_net.inc"
+    static FeatureTransformer& featureTransformer(Network& network) {
+        return network.featureTransformer;
+    }
 
-#include "uci_bridge/network_bridge_load_internal.inc"
+    static const FeatureTransformer& featureTransformer(const Network& network) {
+        return network.featureTransformer;
+    }
 
-#include "uci_bridge/network_bridge_save_named.inc"
+    static NetworkArchitecture& layer(Network& network, std::size_t bucket) {
+        return network.network[bucket];
+    }
 
-#include "uci_bridge/network_bridge_feature_transformer.inc"
+    static const NetworkArchitecture& layer(const Network& network, std::size_t bucket) {
+        return network.network[bucket];
+    }
 
-#include "uci_bridge/network_bridge_layer.inc"
+    static void markInitialized(Network& network) { network.initialized = true; }
+
+    static bool isInitialized(const Network& network) { return network.initialized; }
+
+    static std::uint32_t hashValue() { return Network::hash; }
 };
 
 
@@ -305,17 +318,67 @@ struct NetworkBridgeAccess {
 namespace Detail {
 
 template<typename T>
-#include "uci_bridge/network_detail_read_parameters.inc"
+bool read_parameters(std::istream& stream, T& reference) {
+
+    std::uint32_t header;
+    header = read_little_endian<std::uint32_t>(stream);
+    if (!stream || header != T::get_hash_value())
+        return false;
+    return reference.read_parameters(stream);
+}
 
 template<typename T>
-#include "uci_bridge/network_detail_write_parameters.inc"
+bool write_parameters(std::ostream& stream, const T& reference) {
+
+    write_little_endian<std::uint32_t>(stream, T::get_hash_value());
+    return reference.write_parameters(stream);
+}
 
 }  // namespace Detail
+
+namespace {
+
+class NetworkBlobBuffer: public std::basic_streambuf<char> {
+   public:
+    NetworkBlobBuffer(const unsigned char* data, std::size_t len) {
+        auto* begin = const_cast<char*>(reinterpret_cast<const char*>(data));
+        setg(begin, begin, begin + len);
+    }
+
+    std::size_t consumed() const { return std::size_t(gptr() - eback()); }
+};
+
+template<typename T>
+std::size_t read_parameters_blob(const unsigned char* data_ptr, std::size_t data_len, T& reference) {
+    NetworkBlobBuffer buffer(data_ptr, data_len);
+    std::istream      stream(&buffer);
+
+    if (!Detail::read_parameters(stream, reference))
+        return 0;
+
+    return buffer.consumed();
+}
+
+template<typename T>
+std::optional<std::string> write_parameters_blob(const T& reference) {
+    std::ostringstream stream(std::ios::out | std::ios::binary);
+    if (!Detail::write_parameters(stream, reference))
+        return std::nullopt;
+
+    return stream.str();
+}
+
+}  // namespace
 
 
 
 extern "C" {
 struct ZfishByteView {
+    const unsigned char* ptr;
+    std::size_t          len;
+};
+
+struct ZfishOwnedByteView {
     const unsigned char* ptr;
     std::size_t          len;
 };
@@ -370,15 +433,110 @@ ZfishNetworkTraceOutput zfish_network_trace_evaluate(const void* network,
                                                      void*       accumulator_stack,
                                                      void*       cache);
 
-#include "uci_bridge/network_default_name.inc"
+std::size_t zfish_network_content_hash(const void* network);
 
-#include "uci_bridge/network_current_name.inc"
+ZfishByteView zfish_network_default_name(const void* network_ptr) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    return {reinterpret_cast<const unsigned char*>(NetworkBridgeAccess::evalFile(network).defaultName.data()),
+            NetworkBridgeAccess::evalFile(network).defaultName.size()};
+}
 
-#include "uci_bridge/network_load_user_net.inc"
+ZfishByteView zfish_network_current_name(const void* network_ptr) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    return {reinterpret_cast<const unsigned char*>(NetworkBridgeAccess::evalFile(network).current.data()),
+            NetworkBridgeAccess::evalFile(network).current.size()};
+}
 
-#include "uci_bridge/network_load_internal_export.inc"
+ZfishByteView zfish_network_description(const void* network_ptr) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    return {reinterpret_cast<const unsigned char*>(NetworkBridgeAccess::evalFile(network).netDescription.data()),
+            NetworkBridgeAccess::evalFile(network).netDescription.size()};
+}
 
-#include "uci_bridge/network_save_named_export.inc"
+ZfishByteView zfish_network_embedded_bytes() {
+    return {reinterpret_cast<const unsigned char*>(gEmbeddedNNUEData), std::size_t(gEmbeddedNNUESize)};
+}
+
+void zfish_network_mark_initialized(void* network_ptr) {
+    auto& network = *static_cast<Network*>(network_ptr);
+    NetworkBridgeAccess::markInitialized(network);
+}
+
+void zfish_network_set_loaded_state(void*                network_ptr,
+                                    const unsigned char* current_name_ptr,
+                                    std::size_t          current_name_len,
+                                    const unsigned char* description_ptr,
+                                    std::size_t          description_len) {
+    auto& eval_file = NetworkBridgeAccess::evalFile(*static_cast<Network*>(network_ptr));
+    eval_file.current = std::string(reinterpret_cast<const char*>(current_name_ptr), current_name_len);
+    eval_file.netDescription =
+      std::string(reinterpret_cast<const char*>(description_ptr), description_len);
+}
+
+bool zfish_network_is_initialized(const void* network_ptr) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    return NetworkBridgeAccess::isInitialized(network);
+}
+
+std::uint32_t zfish_network_hash_value() { return NetworkBridgeAccess::hashValue(); }
+
+std::size_t zfish_network_feature_transformer_read_blob(void*                network_ptr,
+                                                        const unsigned char* data_ptr,
+                                                        std::size_t          data_len) {
+    auto& network = *static_cast<Network*>(network_ptr);
+    return read_parameters_blob(data_ptr, data_len, NetworkBridgeAccess::featureTransformer(network));
+}
+
+std::size_t zfish_network_layer_read_blob(void*                network_ptr,
+                                          std::size_t         bucket,
+                                          const unsigned char* data_ptr,
+                                          std::size_t          data_len) {
+    auto& network = *static_cast<Network*>(network_ptr);
+    return read_parameters_blob(data_ptr, data_len, NetworkBridgeAccess::layer(network, bucket));
+}
+
+ZfishOwnedByteView zfish_network_feature_transformer_write_blob(const void* network_ptr) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    const auto  bytes = write_parameters_blob(NetworkBridgeAccess::featureTransformer(network));
+    if (!bytes.has_value())
+        return {nullptr, 0};
+
+    auto* copy = static_cast<unsigned char*>(std::malloc(bytes->size()));
+    if (!copy)
+        return {nullptr, 0};
+
+    std::memcpy(copy, bytes->data(), bytes->size());
+    return {copy, bytes->size()};
+}
+
+ZfishOwnedByteView zfish_network_layer_write_blob(const void* network_ptr, std::size_t bucket) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    const auto  bytes = write_parameters_blob(NetworkBridgeAccess::layer(network, bucket));
+    if (!bytes.has_value())
+        return {nullptr, 0};
+
+    auto* copy = static_cast<unsigned char*>(std::malloc(bytes->size()));
+    if (!copy)
+        return {nullptr, 0};
+
+    std::memcpy(copy, bytes->data(), bytes->size());
+    return {copy, bytes->size()};
+}
+
+std::size_t zfish_network_feature_transformer_content_hash(const void* network_ptr) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    return NetworkBridgeAccess::featureTransformer(network).get_content_hash();
+}
+
+std::size_t zfish_network_layer_content_hash(const void* network_ptr, std::size_t bucket) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    return NetworkBridgeAccess::layer(network, bucket).get_content_hash();
+}
+
+std::size_t zfish_network_eval_file_content_hash(const void* network_ptr) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    return std::hash<EvalFile>{}(NetworkBridgeAccess::evalFile(network));
+}
 
 int zfish_network_transform_bucket(const void* network_ptr,
                                                                      const void* pos_ptr,
@@ -406,7 +564,16 @@ int zfish_network_propagate_bucket(const void*         network_ptr,
             transformed_features));
 }
 
-#include "uci_bridge/network_verify_info.inc"
+ZfishNetworkVerifyInfo zfish_network_verify_info(const void* network_ptr) {
+    const auto& network = *static_cast<const Network*>(network_ptr);
+    const auto& feature_transformer = NetworkBridgeAccess::featureTransformer(network);
+    const auto& layer = NetworkBridgeAccess::layer(network, 0);
+    return {sizeof(feature_transformer) + sizeof(NetworkArchitecture) * LayerStacks,
+            feature_transformer.InputDimensions,
+            layer.TransformedFeatureDimensions,
+            layer.FC_0_OUTPUTS,
+            layer.FC_1_OUTPUTS};
+}
 }
 
 
@@ -420,114 +587,70 @@ int zfish_network_propagate_bucket(const void*         network_ptr,
 
 
 void Network::load(const std::string& rootDirectory, std::string evalfilePath) {
-#include "uci_bridge/network_member_load.inc"
+    zfish_network_load(this,
+                       reinterpret_cast<const unsigned char*>(rootDirectory.data()),
+                       rootDirectory.size(),
+                       reinterpret_cast<const unsigned char*>(evalfilePath.data()),
+                       evalfilePath.size());
 }
 
 bool Network::save(const std::optional<std::string>& filename) const {
-#include "uci_bridge/network_member_save_prelude.inc"
+    const std::string filenameText = filename.value_or(std::string{});
+    const auto        result = zfish_network_save(this,
+                                           static_cast<std::uint8_t>(filename.has_value()),
+                                           reinterpret_cast<const unsigned char*>(filenameText.data()),
+                                           filenameText.size());
 
-#include "uci_bridge/network_member_save_message.inc"
+    if (result.message)
+    {
+        sync_cout << result.message << sync_endl;
+        std::free(const_cast<char*>(result.message));
+    }
 
-#include "uci_bridge/network_member_save_return.inc"
+    return result.saved != 0;
 }
 
 NetworkOutput Network::evaluate(const Position&    pos,
                                 AccumulatorStack&  accumulatorStack,
                                 AccumulatorCaches& cache) const {
-#include "uci_bridge/network_member_evaluate.inc"
+    const auto output = zfish_network_evaluate(this, &pos, &accumulatorStack, &cache);
+    return {static_cast<Value>(output.psqt), static_cast<Value>(output.positional)};
 }
 
 void Network::verify(std::string                                  evalfilePath,
                      const std::function<void(std::string_view)>& f) const {
-#include "uci_bridge/network_member_verify_prelude.inc"
+    const auto result = zfish_network_verify(this,
+                                             reinterpret_cast<const unsigned char*>(evalfilePath.data()),
+                                             evalfilePath.size());
 
-#include "uci_bridge/network_member_verify_message.inc"
+    if (f && result.message)
+        f(result.message);
 
-#include "uci_bridge/network_member_verify_exit.inc"
+    if (result.message)
+        std::free(const_cast<char*>(result.message));
+
+    if (result.should_exit)
+        exit(EXIT_FAILURE);
 }
 
 NnueEvalTrace Network::trace_evaluate(const Position&    pos,
                                       AccumulatorStack&  accumulatorStack,
                                       AccumulatorCaches& cache) const {
-#include "uci_bridge/network_member_trace_prelude.inc"
+    const auto output = zfish_network_trace_evaluate(this, &pos, &accumulatorStack, &cache);
 
-#include "uci_bridge/network_member_trace_loop.inc"
+    NnueEvalTrace trace{};
+    trace.correctBucket = output.correct_bucket;
+    for (IndexType bucket = 0; bucket < LayerStacks; ++bucket)
+    {
+        trace.psqt[bucket] = output.psqt[bucket];
+        trace.positional[bucket] = output.positional[bucket];
+    }
 
-#include "uci_bridge/network_member_trace_return.inc"
-}
-
-void Network::load_user_net(const std::string& dir, const std::string& evalfilePath) {
-#include "uci_bridge/network_member_load_user_net_prelude.inc"
-
-#include "uci_bridge/network_member_load_user_net_apply.inc"
-}
-
-void Network::load_internal() {
-#include "uci_bridge/network_member_load_internal_memory_buffer.inc"
-
-#include "uci_bridge/network_member_load_internal_setup.inc"
-
-#include "uci_bridge/network_member_load_internal_apply.inc"
-}
-
-void Network::initialize() {
-#include "uci_bridge/network_member_initialize.inc"
-}
-
-bool Network::save(std::ostream&      stream,
-                   const std::string& name,
-                   const std::string& netDescription) const {
-#include "uci_bridge/network_member_save_name_guard.inc"
-
-#include "uci_bridge/network_member_save_write_return.inc"
-}
-
-std::optional<std::string> Network::load(std::istream& stream) {
-#include "uci_bridge/network_member_load_stream_prelude.inc"
-
-#include "uci_bridge/network_member_load_stream_return.inc"
+    return trace;
 }
 
 std::size_t Network::get_content_hash() const {
-#include "uci_bridge/network_member_hash_guard.inc"
-
-#include "uci_bridge/network_member_hash_body.inc"
-}
-
-bool Network::read_header(std::istream& stream, std::uint32_t* hashValue, std::string* desc) const {
-#include "uci_bridge/network_member_read_header_prelude.inc"
-
-#include "uci_bridge/network_member_read_header_tail.inc"
-}
-
-bool Network::write_header(std::ostream&      stream,
-                           std::uint32_t      hashValue,
-                           const std::string& desc) const {
-#include "uci_bridge/network_member_write_header.inc"
-}
-
-bool Network::read_parameters(std::istream& stream, std::string& netDescription) {
-#include "uci_bridge/network_member_read_parameters_prelude.inc"
-
-    for (std::size_t i = 0; i < LayerStacks; ++i)
-    {
-        if (!Detail::read_parameters(stream, network[i]))
-            return false;
-    }
-    return stream && stream.peek() == std::ios::traits_type::eof();
-}
-
-bool Network::write_parameters(std::ostream& stream, const std::string& netDescription) const {
-    if (!write_header(stream, Network::hash, netDescription))
-        return false;
-    if (!Detail::write_parameters(stream, featureTransformer))
-        return false;
-    for (std::size_t i = 0; i < LayerStacks; ++i)
-    {
-        if (!Detail::write_parameters(stream, network[i]))
-            return false;
-    }
-    return bool(stream);
+    return zfish_network_content_hash(this);
 }
 
 }  // namespace Eval::NNUE

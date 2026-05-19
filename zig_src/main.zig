@@ -432,6 +432,10 @@ pub export fn zfish_network_trace_evaluate(
     return network_port.traceEvaluate(network, pos, accumulator_stack, cache);
 }
 
+pub export fn zfish_network_content_hash(network: *const anyopaque) usize {
+    return network_port.contentHash(network);
+}
+
 pub export fn zfish_tt_entry_save(
     entry: *tt_port.TtEntry,
     key: u64,
