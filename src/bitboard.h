@@ -38,12 +38,33 @@
 
 namespace Stockfish {
 
+#if defined(ZFISH_ZIG_BUILD)
+extern "C" {
+const char* zfish_bitboard_pretty(std::uint64_t bitboard);
+}
+
+inline std::string take_zig_bitboard_string_and_free(const char* rendered) {
+    if (!rendered)
+        return {};
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+#endif
+
 namespace Bitboards {
 
 void        init();
 std::string pretty(Bitboard b);
 
 }  // namespace Stockfish::Bitboards
+
+#if defined(ZFISH_ZIG_BUILD)
+inline std::string Bitboards::pretty(Bitboard b) {
+    return take_zig_bitboard_string_and_free(zfish_bitboard_pretty(b));
+}
+#endif
 
 #ifdef USE_AVX512
 // clang-format off
