@@ -207,6 +207,9 @@ struct ZfishEngineTablebaseProbe {
 const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 const char* zfish_engine_eval_trace(void* pos, const void* network);
+std::uint8_t zfish_engine_pending_states_available(void* states_slot);
+std::uint8_t zfish_engine_handoff_pending_states(void* pool, void* states_slot);
+void         zfish_engine_release_pending_state_slot(void* states_slot);
 void zfish_engine_load_network(void*                threads,
                                void*                network,
                                const unsigned char* root_directory_ptr,
@@ -2219,16 +2222,46 @@ void zfish_threadpool_add_worker_thread_unbound_current(void*       pool_ptr,
             total_numa, OptionalThreadToNumaNodeBinder(numa_id)));
 }
 
-void* zfish_engine_states_reset(void* states_ptr) {
-    auto& states = *static_cast<StateListPtr*>(states_ptr);
-    states       = StateListPtr(new std::deque<StateInfo>(1));
-    return &states->back();
+struct ZfishPendingStateListStorage {
+    StateListPtr states;
+
+    ZfishPendingStateListStorage() :
+        states(new std::deque<StateInfo>(1)) {}
+};
+
+void* zfish_engine_state_list_storage_create() {
+    return new (std::nothrow) ZfishPendingStateListStorage();
 }
 
-void* zfish_engine_states_push(void* states_ptr) {
-    auto& states = *static_cast<StateListPtr*>(states_ptr);
-    states->emplace_back();
-    return &states->back();
+void zfish_engine_state_list_storage_destroy(void* storage_ptr) {
+    delete static_cast<ZfishPendingStateListStorage*>(storage_ptr);
+}
+
+void* zfish_engine_state_list_storage_reset(void* storage_ptr) {
+    auto& storage = *static_cast<ZfishPendingStateListStorage*>(storage_ptr);
+    storage.states = StateListPtr(new std::deque<StateInfo>(1));
+    return &storage.states->back();
+}
+
+void* zfish_engine_state_list_storage_push(void* storage_ptr) {
+    auto& storage = *static_cast<ZfishPendingStateListStorage*>(storage_ptr);
+    storage.states->emplace_back();
+    return &storage.states->back();
+}
+
+std::uint8_t zfish_engine_state_list_storage_has_states(const void* storage_ptr) {
+    return static_cast<const ZfishPendingStateListStorage*>(storage_ptr)->states ? std::uint8_t{1}
+                                                                                 : std::uint8_t{0};
+}
+
+std::uint8_t zfish_threadpool_take_setup_states_from_storage(void* pool_ptr, void* storage_ptr) {
+    auto& pool = *static_cast<ThreadPool*>(pool_ptr);
+    auto& storage = *static_cast<ZfishPendingStateListStorage*>(storage_ptr);
+    if (!storage.states)
+        return std::uint8_t{0};
+
+    pool.setupStates = std::move(storage.states);
+    return std::uint8_t{1};
 }
 
 const char* zfish_engine_position_set(void*                pos_ptr,
@@ -2461,10 +2494,22 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
                                 Position&          pos,
                                 StateListPtr&      states,
                                 Search::LimitsType limits) {
-    assert(states.get() || setupStates.get());
+    const bool has_pending_states = zfish_engine_pending_states_available(&states) != 0;
+    assert(has_pending_states || states.get() || setupStates.get());
 
-    if (states.get())
+    if (has_pending_states)
+    {
+        const auto handoff_ok = zfish_engine_handoff_pending_states(this, &states);
+        assert(handoff_ok != 0);
+        if (handoff_ok == 0)
+            std::abort();
+    }
+    else if (states.get())
         setupStates = std::move(states);
+
+    assert(setupStates.get());
+    if (!setupStates)
+        std::abort();
 
     zfish_thread_start_thinking(this, &options, &pos, &limits, &setupStates->back());
 }
@@ -2921,6 +2966,8 @@ void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search
 
 std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
                                                      const std::vector<std::string>& moves) {
+    states.reset();
+
     std::vector<EngineMoveView> move_views;
     move_views.reserve(moves.size());
     for (const auto& move : moves)
@@ -3820,6 +3867,8 @@ void zfish_uci_loop_engine(void* engine_ptr) {
 }
 
 void zfish_uci_destroy_engine(void* engine_ptr) {
-    delete static_cast<Stockfish::UCIEngine*>(engine_ptr);
+    auto* uci_engine = static_cast<Stockfish::UCIEngine*>(engine_ptr);
+    zfish_engine_release_pending_state_slot(&uci_engine->engine.states);
+    delete uci_engine;
 }
 }

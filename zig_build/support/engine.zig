@@ -5,6 +5,13 @@ const c = @cImport({
 });
 const position_port = @import("position");
 
+const PendingStateEntry = struct {
+    slot_key: usize,
+    storage: *anyopaque,
+};
+
+var pending_state_entries = std.ArrayListUnmanaged(PendingStateEntry).empty;
+
 const layer_stacks: usize = 8;
 const square_count: usize = 64;
 const piece_to_char = " PNBRQK  pnbrqk";
@@ -84,8 +91,15 @@ pub const NnueTraceInput = extern struct {
     positional_cp: [*]const c_int,
 };
 
-extern fn zfish_engine_states_reset(states: *anyopaque) *anyopaque;
-extern fn zfish_engine_states_push(states: *anyopaque) *anyopaque;
+extern fn zfish_engine_state_list_storage_create() ?*anyopaque;
+extern fn zfish_engine_state_list_storage_destroy(storage: ?*anyopaque) void;
+extern fn zfish_engine_state_list_storage_reset(storage: *anyopaque) *anyopaque;
+extern fn zfish_engine_state_list_storage_push(storage: *anyopaque) *anyopaque;
+extern fn zfish_engine_state_list_storage_has_states(storage: *const anyopaque) u8;
+extern fn zfish_threadpool_take_setup_states_from_storage(
+    pool: *anyopaque,
+    storage: *anyopaque,
+) u8;
 extern fn zfish_engine_position_set(
     pos: *anyopaque,
     fen_ptr: [*]const u8,
@@ -187,14 +201,15 @@ extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 
 pub fn setPosition(
     pos: *anyopaque,
-    states: *anyopaque,
+    states_slot: *anyopaque,
     chess960_enabled: u8,
     fen_ptr: [*]const u8,
     fen_len: usize,
     moves_ptr: ?[*]const ByteView,
     move_count: usize,
 ) ?[*:0]u8 {
-    const root_state = zfish_engine_states_reset(states);
+    const state_storage = ensurePendingStateStorage(states_slot);
+    const root_state = zfish_engine_state_list_storage_reset(state_storage);
 
     if (zfish_engine_position_set(pos, fen_ptr, fen_len, chess960_enabled, root_state)) |err| {
         return err;
@@ -211,11 +226,27 @@ pub fn setPosition(
             return allocMessage("Illegal move: {s}", .{move_text});
         }
 
-        const next_state = zfish_engine_states_push(states);
+        const next_state = zfish_engine_state_list_storage_push(state_storage);
         zfish_engine_position_do_move(pos, move_raw, next_state);
     }
 
     return null;
+}
+
+pub fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
+    const state_storage = lookupPendingStateStorage(@intFromPtr(states_slot)) orelse return 0;
+    return zfish_engine_state_list_storage_has_states(state_storage);
+}
+
+pub fn handoffPendingStates(pool: *anyopaque, states_slot: *anyopaque) u8 {
+    const state_storage = lookupPendingStateStorage(@intFromPtr(states_slot)) orelse return 0;
+    return zfish_threadpool_take_setup_states_from_storage(pool, state_storage);
+}
+
+pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
+    if (removePendingStateStorage(@intFromPtr(states_slot))) |state_storage| {
+        zfish_engine_state_list_storage_destroy(state_storage);
+    }
 }
 
 pub fn stop(threads: *anyopaque) void {
@@ -314,6 +345,54 @@ pub fn saveNetwork(network: *anyopaque, filename_opt: ?[]const u8) void {
     const has_filename: u8 = if (filename_opt != null) 1 else 0;
     const filename = filename_opt orelse "";
     zfish_engine_network_save_replicated(network, has_filename, filename.ptr, filename.len);
+}
+
+fn ensurePendingStateStorage(states_slot: *anyopaque) *anyopaque {
+    const slot_key = @intFromPtr(states_slot);
+
+    if (findPendingStateIndex(slot_key)) |index| {
+        return pending_state_entries.items[index].storage;
+    }
+
+    const state_storage = zfish_engine_state_list_storage_create() orelse @panic("OOM");
+    pending_state_entries.append(std.heap.c_allocator, .{
+        .slot_key = slot_key,
+        .storage = state_storage,
+    }) catch {
+        zfish_engine_state_list_storage_destroy(state_storage);
+        @panic("OOM");
+    };
+
+    return state_storage;
+}
+
+fn lookupPendingStateStorage(slot_key: usize) ?*anyopaque {
+    if (findPendingStateIndex(slot_key)) |index| {
+        return pending_state_entries.items[index].storage;
+    }
+
+    return null;
+}
+
+fn removePendingStateStorage(slot_key: usize) ?*anyopaque {
+    if (findPendingStateIndex(slot_key)) |index| {
+        const state_storage = pending_state_entries.items[index].storage;
+        _ = pending_state_entries.swapRemove(index);
+        return state_storage;
+    }
+
+    return null;
+}
+
+fn findPendingStateIndex(slot_key: usize) ?usize {
+    var index: usize = 0;
+    while (index < pending_state_entries.items.len) : (index += 1) {
+        if (pending_state_entries.items[index].slot_key == slot_key) {
+            return index;
+        }
+    }
+
+    return null;
 }
 
 pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
