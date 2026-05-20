@@ -377,6 +377,21 @@ pub export fn zfish_engine_set_position(
     return engine_port.setPosition(pos, states, chess960_enabled, fen_ptr, fen_len, moves_ptr, move_count);
 }
 
+pub export fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8 {
+    return engine_port.pendingStatesAvailable(states_slot);
+}
+
+pub export fn zfish_engine_handoff_pending_states(
+    pool: *anyopaque,
+    states_slot: *anyopaque,
+) u8 {
+    return engine_port.handoffPendingStates(pool, states_slot);
+}
+
+pub export fn zfish_engine_release_pending_state_slot(states_slot: *anyopaque) void {
+    return engine_port.releasePendingStateSlot(states_slot);
+}
+
 pub export fn zfish_engine_stop(threads: *anyopaque) void {
     return engine_port.stop(threads);
 }
