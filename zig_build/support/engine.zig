@@ -1,4 +1,17 @@
 const std = @import("std");
+const c = @cImport({
+    @cInclude("stdlib.h");
+    @cInclude("stdio.h");
+});
+
+const layer_stacks: usize = 8;
+const square_count: usize = 64;
+const piece_to_char = " PNBRQK  pnbrqk";
+const max_ply: c_int = 246;
+const value_mate: c_int = 32000;
+const value_tb: c_int = value_mate - max_ply - 1;
+const value_tb_win_in_max_ply: c_int = value_tb - max_ply;
+const value_tb_loss_in_max_ply: c_int = -value_tb_win_in_max_ply;
 
 pub const CountPair = extern struct {
     current: usize,
@@ -8,6 +21,59 @@ pub const CountPair = extern struct {
 pub const ByteView = extern struct {
     ptr: ?[*]const u8,
     len: usize,
+};
+
+pub const PositionSummary = extern struct {
+    side_to_move_white: u8,
+    checkers: u64,
+    key: u64,
+    material: c_int,
+    rule50_count: c_int,
+};
+
+pub const TablebaseProbe = extern struct {
+    available: u8,
+    wdl: c_int,
+    wdl_state: c_int,
+    dtz: c_int,
+    dtz_state: c_int,
+};
+
+pub const EvalInput = extern struct {
+    psqt: c_int,
+    positional: c_int,
+    optimism: c_int,
+    material: c_int,
+    rule50_count: c_int,
+    value_tb_loss_in_max_ply: c_int,
+    value_tb_win_in_max_ply: c_int,
+};
+
+pub const EvalOutput = extern struct {
+    psqt: c_int,
+    positional: c_int,
+};
+
+pub const TraceOutput = extern struct {
+    psqt: [layer_stacks]c_int,
+    positional: [layer_stacks]c_int,
+    correct_bucket: usize,
+};
+
+pub const EvalTraceInput = extern struct {
+    inner_trace_ptr: [*]const u8,
+    inner_trace_len: usize,
+    nnue_internal_value: c_int,
+    nnue_white_cp: c_int,
+    final_white_cp: c_int,
+};
+
+pub const NnueTraceInput = extern struct {
+    side_to_move_white: u8,
+    bucket_count: usize,
+    correct_bucket: usize,
+    psqt_cp: [*]const c_int,
+    positional_cp: [*]const c_int,
 };
 
 extern fn zfish_engine_states_reset(states: *anyopaque) *anyopaque;
@@ -27,6 +93,31 @@ extern fn zfish_engine_threads_wait_finished(threads: *anyopaque) void;
 extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
 extern fn zfish_engine_threads_clear(threads: *anyopaque) void;
 extern fn zfish_engine_tablebases_init(path_ptr: [*]const u8, path_len: usize) void;
+extern fn zfish_engine_position_summary(pos: *const anyopaque, out: *PositionSummary) void;
+extern fn zfish_engine_position_fen(pos: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_position_probe_tablebases(pos: *const anyopaque) TablebaseProbe;
+extern fn zfish_engine_accumulator_stack_create() ?*anyopaque;
+extern fn zfish_engine_accumulator_stack_destroy(stack: ?*anyopaque) void;
+extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*anyopaque;
+extern fn zfish_engine_accumulator_caches_destroy(caches: ?*anyopaque) void;
+extern fn zfish_accumulator_stack_reset(stack: *anyopaque) void;
+extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
+extern fn zfish_network_evaluate(
+    network: *const anyopaque,
+    pos: *const anyopaque,
+    accumulator_stack: *anyopaque,
+    cache: *anyopaque,
+) EvalOutput;
+extern fn zfish_network_trace_evaluate(
+    network: *const anyopaque,
+    pos: *const anyopaque,
+    accumulator_stack: *anyopaque,
+    cache: *anyopaque,
+) TraceOutput;
+extern fn zfish_eval_compute_value(input: EvalInput) c_int;
+extern fn zfish_eval_format_trace(input: EvalTraceInput) ?[*:0]u8;
+extern fn zfish_nnue_format_trace(input: NnueTraceInput) ?[*:0]u8;
+extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 
 pub fn setPosition(
     pos: *anyopaque,
@@ -70,6 +161,99 @@ pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8)
     zfish_engine_tt_clear(tt, threads);
     zfish_engine_threads_clear(threads);
     zfish_engine_tablebases_init(syzygy_path.ptr, syzygy_path.len);
+}
+
+pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
+    const summary = positionSummary(pos);
+    if (summary.checkers != 0)
+        return allocMessage("Final evaluation: none (in check)", .{});
+
+    const caches = zfish_engine_accumulator_caches_create(network) orelse return null;
+    defer zfish_engine_accumulator_caches_destroy(caches);
+
+    const inner_trace_ptr = buildNnueTrace(pos, network, summary, caches) orelse return null;
+    defer c.free(@ptrCast(inner_trace_ptr));
+    const inner_trace = std.mem.span(inner_trace_ptr);
+
+    const accumulators = zfish_engine_accumulator_stack_create() orelse return null;
+    defer zfish_engine_accumulator_stack_destroy(accumulators);
+
+    const nnue_output = zfish_network_evaluate(network, pos, accumulators, caches);
+    const nnue_value = nnue_output.psqt + nnue_output.positional;
+    const nnue_white_side = if (summary.side_to_move_white != 0) nnue_value else -nnue_value;
+
+    const final_value = zfish_eval_compute_value(.{
+        .psqt = nnue_output.psqt,
+        .positional = nnue_output.positional,
+        .optimism = 0,
+        .material = summary.material,
+        .rule50_count = summary.rule50_count,
+        .value_tb_loss_in_max_ply = value_tb_loss_in_max_ply,
+        .value_tb_win_in_max_ply = value_tb_win_in_max_ply,
+    });
+    const final_white_side = if (summary.side_to_move_white != 0) final_value else -final_value;
+
+    return zfish_eval_format_trace(.{
+        .inner_trace_ptr = inner_trace.ptr,
+        .inner_trace_len = inner_trace.len,
+        .nnue_internal_value = nnue_value,
+        .nnue_white_cp = zfish_uci_to_cp(nnue_white_side, summary.material),
+        .final_white_cp = zfish_uci_to_cp(final_white_side, summary.material),
+    });
+}
+
+pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
+    const allocator = std.heap.c_allocator;
+    var pieces: [square_count]u8 = [_]u8{0} ** square_count;
+    zfish_accumulator_position_snapshot(pos, &pieces);
+
+    const summary = positionSummary(pos);
+    const fen_ptr = zfish_engine_position_fen(pos) orelse return null;
+    defer c.free(@ptrCast(fen_ptr));
+    const fen = std.mem.span(fen_ptr);
+
+    var buffer = std.ArrayList(u8).empty;
+    defer buffer.deinit(allocator);
+
+    buffer.appendSlice(allocator, "\n +---+---+---+---+---+---+---+---+\n") catch return null;
+
+    var rank: usize = 8;
+    while (rank > 0) {
+        rank -= 1;
+
+        var file: usize = 0;
+        while (file < 8) : (file += 1) {
+            const square_index = rank * 8 + file;
+            buffer.appendSlice(allocator, " | ") catch return null;
+            buffer.append(allocator, piece_to_char[pieces[square_index]]) catch return null;
+        }
+
+        appendFormat(
+            &buffer,
+            " | {d}\n +---+---+---+---+---+---+---+---+\n",
+            .{rank + 1},
+        ) catch return null;
+    }
+
+    buffer.appendSlice(allocator, "   a   b   c   d   e   f   g   h\n\nFen: ") catch return null;
+    buffer.appendSlice(allocator, fen) catch return null;
+    buffer.appendSlice(allocator, "\nKey: ") catch return null;
+    appendHexKey(&buffer, summary.key) catch return null;
+    buffer.appendSlice(allocator, "\nCheckers: ") catch return null;
+    appendCheckers(&buffer, summary.checkers) catch return null;
+
+    const tb = zfish_engine_position_probe_tablebases(pos);
+    if (tb.available != 0) {
+        buffer.appendSlice(allocator, "\nTablebases WDL: ") catch return null;
+        appendPaddedInt(&buffer, tb.wdl) catch return null;
+        appendFormat(&buffer, " ({d})\nTablebases DTZ: ", .{tb.wdl_state}) catch return null;
+        appendPaddedInt(&buffer, tb.dtz) catch return null;
+        appendFormat(&buffer, " ({d})", .{tb.dtz_state}) catch return null;
+    }
+
+    const owned = allocator.allocSentinel(u8, buffer.items.len, 0) catch return null;
+    @memcpy(owned[0..buffer.items.len], buffer.items);
+    return owned.ptr;
 }
 
 pub fn formatNumaInfo(config_ptr: [*]const u8, config_len: usize) ?[*:0]u8 {
@@ -147,4 +331,73 @@ fn allocMessage(comptime fmt: []const u8, args: anytype) ?[*:0]u8 {
     const owned = allocator.allocSentinel(u8, rendered.len, 0) catch return null;
     @memcpy(owned[0..rendered.len], rendered);
     return owned.ptr;
+}
+
+fn buildNnueTrace(
+    pos: *anyopaque,
+    network: *const anyopaque,
+    summary: PositionSummary,
+    caches: *anyopaque,
+) ?[*:0]u8 {
+    const accumulators = zfish_engine_accumulator_stack_create() orelse return null;
+    defer zfish_engine_accumulator_stack_destroy(accumulators);
+    zfish_accumulator_stack_reset(accumulators);
+
+    const trace = zfish_network_trace_evaluate(network, pos, accumulators, caches);
+    var psqt_cp: [layer_stacks]c_int = undefined;
+    var positional_cp: [layer_stacks]c_int = undefined;
+
+    var bucket: usize = 0;
+    while (bucket < layer_stacks) : (bucket += 1) {
+        psqt_cp[bucket] = zfish_uci_to_cp(trace.psqt[bucket], summary.material);
+        positional_cp[bucket] = zfish_uci_to_cp(trace.positional[bucket], summary.material);
+    }
+
+    return zfish_nnue_format_trace(.{
+        .side_to_move_white = summary.side_to_move_white,
+        .bucket_count = layer_stacks,
+        .correct_bucket = trace.correct_bucket,
+        .psqt_cp = &psqt_cp,
+        .positional_cp = &positional_cp,
+    });
+}
+
+fn positionSummary(pos: *const anyopaque) PositionSummary {
+    var summary: PositionSummary = undefined;
+    zfish_engine_position_summary(pos, &summary);
+    return summary;
+}
+
+fn appendFormat(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
+    const allocator = std.heap.c_allocator;
+    const rendered = try std.fmt.allocPrint(allocator, fmt, args);
+    defer allocator.free(rendered);
+    try buffer.appendSlice(allocator, rendered);
+}
+
+fn appendHexKey(buffer: *std.ArrayList(u8), key: u64) !void {
+    var numeric: [32]u8 = undefined;
+    const len = c.snprintf(&numeric, numeric.len, "%016llX", @as(c_ulonglong, key));
+    try buffer.appendSlice(std.heap.c_allocator, numeric[0..@intCast(len)]);
+}
+
+fn appendPaddedInt(buffer: *std.ArrayList(u8), value: c_int) !void {
+    var numeric: [32]u8 = undefined;
+    const len = c.snprintf(&numeric, numeric.len, "%4d", value);
+    try buffer.appendSlice(std.heap.c_allocator, numeric[0..@intCast(len)]);
+}
+
+fn appendCheckers(buffer: *std.ArrayList(u8), checkers: u64) !void {
+    var remaining = checkers;
+    while (remaining != 0) {
+        const square: usize = @intCast(@ctz(remaining));
+        remaining &= remaining - 1;
+
+        const square_text = [_]u8{
+            @as(u8, 'a') + @as(u8, @intCast(square % 8)),
+            @as(u8, '1') + @as(u8, @intCast(square / 8)),
+        };
+        try buffer.appendSlice(std.heap.c_allocator, &square_text);
+        try buffer.append(std.heap.c_allocator, ' ');
+    }
 }
