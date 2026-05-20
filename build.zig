@@ -102,6 +102,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const uci_move_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/uci_move.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const movepick_module = b.createModule(.{
         .root_source_file = b.path("zig_build/support/movepick.zig"),
         .target = target,
@@ -178,8 +183,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     engine_module.addImport("position", position_module);
+    engine_module.addImport("uci_move", uci_move_module);
     movepick_module.addImport("bitboard", bitboard_module);
     movegen_module.addImport("bitboard", bitboard_module);
+    thread_module.addImport("uci_move", uci_move_module);
     uci_module.addImport("benchmark", benchmark_module);
     uci_module.addImport("misc", misc_module);
     exe.root_module.addImport("benchmark", benchmark_module);

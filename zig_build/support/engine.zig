@@ -4,6 +4,7 @@ const c = @cImport({
     @cInclude("stdio.h");
 });
 const position_port = @import("position");
+const uci_move = @import("uci_move");
 
 const PendingStateEntry = struct {
     slot_key: usize,
@@ -126,8 +127,6 @@ extern fn zfish_engine_position_set(
     state: *anyopaque,
 ) ?[*:0]u8;
 extern fn zfish_engine_position_do_move(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
-extern fn zfish_uci_to_move_raw(pos: *const anyopaque, text_ptr: [*]const u8, text_len: usize) u16;
-extern fn zfish_move_none_raw() u16;
 extern fn zfish_engine_threads_set_stop(threads: *anyopaque) void;
 extern fn zfish_engine_threads_wait_finished(threads: *anyopaque) void;
 extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
@@ -347,11 +346,11 @@ pub fn setPosition(
     }
 
     const move_views = if (moves_ptr) |ptr| ptr[0..move_count] else &[_]ByteView{};
-    const none_raw = zfish_move_none_raw();
+    const none_raw = uci_move.noneRaw();
 
     for (move_views) |view| {
         const move_text = if (view.ptr) |ptr| ptr[0..view.len] else "";
-        const move_raw = if (view.ptr) |ptr| zfish_uci_to_move_raw(pos, ptr, view.len) else none_raw;
+        const move_raw = if (view.ptr) |ptr| uci_move.toMoveRaw(pos, ptr[0..view.len]) else none_raw;
 
         if (move_raw == none_raw) {
             return allocMessage("Illegal move: {s}", .{move_text});
