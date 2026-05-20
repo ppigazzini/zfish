@@ -31,6 +31,10 @@ const numa_policy_auto: u8 = 1;
 
 extern fn zfish_threadpool_wait_main_thread(pool: *anyopaque) void;
 extern fn zfish_threadpool_reset_start_state(pool: *anyopaque, ponder_mode: u8) void;
+extern fn zfish_threadpool_take_setup_states_from_slot(pool: *anyopaque, states_slot: *anyopaque) u8;
+extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
+extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
+extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
 extern fn zfish_movegen_generate_legal(
     pos: *const anyopaque,
     out_moves: [*]u16,
@@ -292,10 +296,20 @@ pub fn startThinking(
     options: *const anyopaque,
     pos: *anyopaque,
     limits: *const anyopaque,
-    setup_state: *const anyopaque,
+    states_slot: *anyopaque,
 ) void {
     zfish_threadpool_wait_main_thread(pool);
     zfish_threadpool_reset_start_state(pool, zfish_limits_ponder_mode(limits));
+
+    if (zfish_engine_pending_states_available(states_slot) != 0) {
+        if (zfish_engine_handoff_pending_states(pool, states_slot) == 0)
+            @panic("failed to hand off pending setup states");
+    } else if (zfish_threadpool_take_setup_states_from_slot(pool, states_slot) == 0) {
+        @panic("missing setup states");
+    }
+
+    const setup_state = zfish_threadpool_setup_state_back(pool) orelse
+        @panic("missing setup state");
 
     var legal_move_buffer: [256]u16 = undefined;
     const legal_move_count = zfish_movegen_generate_legal(pos, legal_move_buffer[0..].ptr);

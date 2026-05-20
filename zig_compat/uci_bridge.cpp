@@ -208,8 +208,6 @@ struct ZfishEngineTablebaseProbe {
 const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 const char* zfish_engine_eval_trace(void* pos, const void* network);
-std::uint8_t zfish_engine_pending_states_available(void* states_slot);
-std::uint8_t zfish_engine_handoff_pending_states(void* pool, void* states_slot);
 void         zfish_engine_release_pending_state_slot(void* states_slot);
 void zfish_engine_load_network(void*                threads,
                                void*                network,
@@ -1071,7 +1069,7 @@ void         zfish_thread_start_thinking(void*        pool,
                                          const void*  options,
                                          void*        pos,
                                          const void*  limits,
-                                         const void*  setup_state);
+                                         void*        states_slot);
 void zfish_threadpool_reconfigure(void*       pool,
                                   const void* numa_config,
                                   const void* shared_state,
@@ -2250,6 +2248,24 @@ std::uint8_t zfish_threadpool_take_setup_states_from_storage(void* pool_ptr, voi
     return std::uint8_t{1};
 }
 
+std::uint8_t zfish_threadpool_take_setup_states_from_slot(void* pool_ptr, void* states_slot_ptr) {
+    auto& pool = *static_cast<ThreadPool*>(pool_ptr);
+    auto& states = *static_cast<StateListPtr*>(states_slot_ptr);
+
+    if (states.get())
+        pool.setupStates = std::move(states);
+
+    return pool.setupStates ? std::uint8_t{1} : std::uint8_t{0};
+}
+
+const void* zfish_threadpool_setup_state_back(const void* pool_ptr) {
+    const auto& pool = *static_cast<const ThreadPool*>(pool_ptr);
+    if (!pool.setupStates)
+        return nullptr;
+
+    return &pool.setupStates->back();
+}
+
 const char* zfish_engine_position_set(void*                pos_ptr,
                                       const unsigned char* fen_ptr,
                                       std::size_t          fen_len,
@@ -2480,24 +2496,7 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
                                 Position&          pos,
                                 StateListPtr&      states,
                                 Search::LimitsType limits) {
-    const bool has_pending_states = zfish_engine_pending_states_available(&states) != 0;
-    assert(has_pending_states || states.get() || setupStates.get());
-
-    if (has_pending_states)
-    {
-        const auto handoff_ok = zfish_engine_handoff_pending_states(this, &states);
-        assert(handoff_ok != 0);
-        if (handoff_ok == 0)
-            std::abort();
-    }
-    else if (states.get())
-        setupStates = std::move(states);
-
-    assert(setupStates.get());
-    if (!setupStates)
-        std::abort();
-
-    zfish_thread_start_thinking(this, &options, &pos, &limits, &setupStates->back());
+    zfish_thread_start_thinking(this, &options, &pos, &limits, &states);
 }
 
 Thread* ThreadPool::get_best_thread() const {
