@@ -81,6 +81,14 @@ extern fn zfish_shared_state_insert_history(
     size: usize,
     do_bind: u8,
 ) void;
+const NumaNodeCallback = *const fn (?*anyopaque) callconv(.c) void;
+
+extern fn zfish_numa_config_execute_on_numa_node(
+    numa_config: *const anyopaque,
+    numa_index: usize,
+    callback: NumaNodeCallback,
+    context: ?*anyopaque,
+) void;
 extern fn zfish_numa_config_suggests_binding_threads(
     numa_config: *const anyopaque,
     requested: usize,
@@ -91,17 +99,105 @@ extern fn zfish_numa_config_distribute_threads_among_nodes(
     out_nodes: [*]usize,
 ) usize;
 extern fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize;
-extern fn zfish_threadpool_add_thread_from_state(
+extern fn zfish_threadpool_add_main_thread_bound_current(
     pool: *anyopaque,
     numa_config: *const anyopaque,
     shared_state: *const anyopaque,
     update_context: *const anyopaque,
-    do_bind: u8,
     thread_id: usize,
     idx_in_numa: usize,
     total_numa: usize,
     numa_id: usize,
 ) void;
+extern fn zfish_threadpool_add_main_thread_unbound_current(
+    pool: *anyopaque,
+    shared_state: *const anyopaque,
+    update_context: *const anyopaque,
+    thread_id: usize,
+    idx_in_numa: usize,
+    total_numa: usize,
+    numa_id: usize,
+) void;
+extern fn zfish_threadpool_add_worker_thread_bound_current(
+    pool: *anyopaque,
+    numa_config: *const anyopaque,
+    shared_state: *const anyopaque,
+    thread_id: usize,
+    idx_in_numa: usize,
+    total_numa: usize,
+    numa_id: usize,
+) void;
+extern fn zfish_threadpool_add_worker_thread_unbound_current(
+    pool: *anyopaque,
+    shared_state: *const anyopaque,
+    thread_id: usize,
+    idx_in_numa: usize,
+    total_numa: usize,
+    numa_id: usize,
+) void;
+
+const CreateThreadContext = struct {
+    pool: *anyopaque,
+    numa_config: *const anyopaque,
+    shared_state: *const anyopaque,
+    update_context: *const anyopaque,
+    thread_id: usize,
+    idx_in_numa: usize,
+    total_numa: usize,
+    numa_id: usize,
+    do_bind: bool,
+};
+
+fn createThreadOnCurrentNode(context_ptr: ?*anyopaque) callconv(.c) void {
+    const context: *const CreateThreadContext = @ptrCast(@alignCast(context_ptr.?));
+
+    if (context.thread_id == 0) {
+        if (context.do_bind) {
+            zfish_threadpool_add_main_thread_bound_current(
+                context.pool,
+                context.numa_config,
+                context.shared_state,
+                context.update_context,
+                context.thread_id,
+                context.idx_in_numa,
+                context.total_numa,
+                context.numa_id,
+            );
+        } else {
+            zfish_threadpool_add_main_thread_unbound_current(
+                context.pool,
+                context.shared_state,
+                context.update_context,
+                context.thread_id,
+                context.idx_in_numa,
+                context.total_numa,
+                context.numa_id,
+            );
+        }
+        return;
+    }
+
+    if (context.do_bind) {
+        zfish_threadpool_add_worker_thread_bound_current(
+            context.pool,
+            context.numa_config,
+            context.shared_state,
+            context.thread_id,
+            context.idx_in_numa,
+            context.total_numa,
+            context.numa_id,
+        );
+    } else {
+        zfish_threadpool_add_worker_thread_unbound_current(
+            context.pool,
+            context.shared_state,
+            context.thread_id,
+            context.idx_in_numa,
+            context.total_numa,
+            context.numa_id,
+        );
+    }
+}
 
 pub fn nextPowerOfTwo(count: u64) usize {
     if (count <= 1)
@@ -187,17 +283,28 @@ pub fn reconfigure(
         const idx_in_numa = created_per_node[numa_id];
         created_per_node[numa_id] += 1;
 
-        zfish_threadpool_add_thread_from_state(
-            pool,
-            numa_config,
-            shared_state,
-            update_context,
-            @intFromBool(do_bind),
-            thread_id,
-            idx_in_numa,
-            threads_per_node[numa_id],
-            numa_id,
-        );
+        var create_context = CreateThreadContext{
+            .pool = pool,
+            .numa_config = numa_config,
+            .shared_state = shared_state,
+            .update_context = update_context,
+            .thread_id = thread_id,
+            .idx_in_numa = idx_in_numa,
+            .total_numa = threads_per_node[numa_id],
+            .numa_id = numa_id,
+            .do_bind = do_bind,
+        };
+
+        if (do_bind) {
+            zfish_numa_config_execute_on_numa_node(
+                numa_config,
+                numa_id,
+                createThreadOnCurrentNode,
+                &create_context,
+            );
+        } else {
+            createThreadOnCurrentNode(&create_context);
+        }
     }
 
     clear(pool);
