@@ -1,4 +1,8 @@
 const std = @import("std");
+const c = @cImport({
+    @cInclude("stdlib.h");
+});
+const position_port = @import("position");
 const uci_move = @import("uci_move");
 
 const value_none: c_int = 32002;
@@ -6,6 +10,11 @@ const value_infinite: c_int = 32001;
 const value_tb_win_in_max_ply: c_int = 31507;
 const value_tb_loss_in_max_ply: c_int = -31507;
 const max_thread_summaries: usize = 1024;
+const square_count: usize = 64;
+const white_oo: u8 = 1;
+const white_ooo: u8 = 2;
+const black_oo: u8 = 4;
+const black_ooo: u8 = 8;
 
 pub const ThreadSummary = extern struct {
     pv0_raw: u16,
@@ -27,6 +36,21 @@ pub const TbConfig = extern struct {
     probe_depth: c_int,
 };
 
+const RootSetupInput = extern struct {
+    limits: *const anyopaque,
+    root_moves: *const anyopaque,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    setup_state: *const anyopaque,
+    chess960: u8,
+    tb_config: TbConfig,
+};
+
+const RootSetupContext = struct {
+    thread: *anyopaque,
+    input: RootSetupInput,
+};
+
 const numa_policy_none: u8 = 0;
 const numa_policy_auto: u8 = 1;
 
@@ -36,6 +60,7 @@ extern fn zfish_threadpool_take_setup_states_from_slot(pool: *anyopaque, states_
 extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
 extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
 extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
+extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_movegen_generate_legal(
     pos: *const anyopaque,
     out_moves: [*]u16,
@@ -43,6 +68,13 @@ extern fn zfish_movegen_generate_legal(
 extern fn zfish_limits_ponder_mode(limits: *const anyopaque) u8;
 extern fn zfish_limits_searchmove_count(limits: *const anyopaque) usize;
 extern fn zfish_limits_searchmove_text(limits: *const anyopaque, index: usize) ByteView;
+extern fn zfish_position_side_to_move(pos: *const anyopaque) u8;
+extern fn zfish_position_castling_rights(pos: *const anyopaque) u8;
+extern fn zfish_position_castling_rook_square(pos: *const anyopaque, castling_right: u8) u8;
+extern fn zfish_position_ep_square(pos: *const anyopaque) u8;
+extern fn zfish_position_rule50_count(pos: *const anyopaque) c_int;
+extern fn zfish_position_game_ply(pos: *const anyopaque) c_int;
+extern fn zfish_position_is_chess960(pos: *const anyopaque) u8;
 extern fn zfish_root_moves_create(move_raws: ?[*]const u16, count: usize) *anyopaque;
 extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
 extern fn zfish_threadpool_rank_root_moves(
@@ -62,14 +94,14 @@ extern fn zfish_threadpool_bound_nodes_assign(
 extern fn zfish_thread_nodes_searched(thread: *const anyopaque) u64;
 extern fn zfish_thread_tb_hits(thread: *const anyopaque) u64;
 extern fn zfish_thread_fill_summary(thread: *const anyopaque, out: *ThreadSummary) void;
-extern fn zfish_thread_run_root_setup(
+const ThreadCallback = *const fn (?*anyopaque) callconv(.c) void;
+
+extern fn zfish_thread_run_callback(
     thread: *anyopaque,
-    limits: *const anyopaque,
-    root_moves: *const anyopaque,
-    pos: *const anyopaque,
-    setup_state: *const anyopaque,
-    tb_config: TbConfig,
+    callback: ThreadCallback,
+    context: ?*anyopaque,
 ) void;
+extern fn zfish_thread_worker_apply_root_setup(thread: *anyopaque, input: *const RootSetupInput) void;
 extern fn zfish_thread_clear_worker(thread: *anyopaque) void;
 extern fn zfish_thread_wait_for_search_finished(thread: *anyopaque) void;
 extern fn zfish_thread_start_searching(thread: *anyopaque) void;
@@ -139,6 +171,30 @@ fn createThreadOnCurrentNode(context_ptr: ?*anyopaque) callconv(.c) void {
         context.idx_in_numa,
         context.total_numa,
         context.numa_id,
+    );
+}
+
+fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
+    const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
+    zfish_thread_worker_apply_root_setup(context.thread, &context.input);
+}
+
+fn buildRootFen(pos: *const anyopaque) ?[*:0]u8 {
+    var pieces: [square_count]u8 = undefined;
+    zfish_accumulator_position_snapshot(pos, &pieces);
+
+    return position_port.formatFen(
+        @ptrCast(&pieces),
+        zfish_position_side_to_move(pos),
+        zfish_position_is_chess960(pos),
+        zfish_position_castling_rights(pos),
+        zfish_position_castling_rook_square(pos, white_oo),
+        zfish_position_castling_rook_square(pos, white_ooo),
+        zfish_position_castling_rook_square(pos, black_oo),
+        zfish_position_castling_rook_square(pos, black_ooo),
+        zfish_position_ep_square(pos),
+        zfish_position_rule50_count(pos),
+        zfish_position_game_ply(pos),
     );
 }
 
@@ -341,12 +397,31 @@ pub fn startThinking(
     defer zfish_root_moves_destroy(root_moves);
 
     const tb_config = zfish_threadpool_rank_root_moves(options, pos, root_moves);
+    const root_fen = buildRootFen(pos) orelse @panic("OOM");
+    defer c.free(@ptrCast(root_fen));
+    const root_fen_text = std.mem.span(root_fen);
+    const chess960 = zfish_position_is_chess960(pos);
     const thread_count = zfish_threadpool_thread_count(pool);
+    const allocator = std.heap.c_allocator;
+    const root_setup_contexts = allocator.alloc(RootSetupContext, thread_count) catch @panic("OOM");
+    defer allocator.free(root_setup_contexts);
 
     index = 0;
     while (index < thread_count) : (index += 1) {
         const thread = zfish_threadpool_thread_at(pool, index);
-        zfish_thread_run_root_setup(thread, limits, root_moves, pos, setup_state, tb_config);
+        root_setup_contexts[index] = .{
+            .thread = thread,
+            .input = .{
+                .limits = limits,
+                .root_moves = root_moves,
+                .fen_ptr = root_fen,
+                .fen_len = root_fen_text.len,
+                .setup_state = setup_state,
+                .chess960 = chess960,
+                .tb_config = tb_config,
+            },
+        };
+        zfish_thread_run_callback(thread, applyRootSetup, &root_setup_contexts[index]);
     }
 
     index = 0;

@@ -1067,6 +1067,18 @@ struct ZfishTbConfig {
     int          probe_depth;
 };
 
+using ZfishOpaqueCallback = void (*)(void*);
+
+struct ZfishThreadRootSetupInput {
+    const void*         limits_ptr;
+    const void*         root_moves_ptr;
+    const unsigned char* fen_ptr;
+    std::size_t         fen_len;
+    const void*         setup_state_ptr;
+    std::uint8_t        chess960;
+    ZfishTbConfig       tb_config;
+};
+
 std::size_t zfish_thread_next_power_of_two(std::uint64_t count);
 std::size_t zfish_thread_pick_best_thread(const ZfishThreadSummary* summaries,
                                           std::size_t               count);
@@ -1079,6 +1091,9 @@ void zfish_threadpool_reconfigure(void*       pool,
                                   const void* numa_config,
                                   const void* shared_state,
                                   const void* update_context);
+void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context);
+void zfish_thread_worker_apply_root_setup(void* thread_ptr,
+                                          const ZfishThreadRootSetupInput* input);
 void zfish_threadpool_clear(void* pool);
 void zfish_threadpool_start_searching(void* pool);
 void zfish_threadpool_wait_for_search_finished(void* pool);
@@ -1948,36 +1963,34 @@ void zfish_threadpool_reset_start_state(void* pool_ptr, std::uint8_t ponder_mode
     pool->increaseDepth                   = true;
 }
 
-void zfish_thread_run_root_setup(void*         thread_ptr,
-                                 const void*   limits_ptr,
-                                 const void*   root_moves_ptr,
-                                 const void*   pos_ptr,
-                                 const void*   setup_state_ptr,
-                                 ZfishTbConfig tb_config) {
+void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context) {
     auto* thread = static_cast<Thread*>(thread_ptr);
-    const auto limits = *static_cast<const Search::LimitsType*>(limits_ptr);
-    const auto root_moves = *static_cast<const Search::RootMoves*>(root_moves_ptr);
-    const auto* pos = static_cast<const Position*>(pos_ptr);
-    const auto setup_state = *static_cast<const StateInfo*>(setup_state_ptr);
-    const auto fen = pos->fen();
-    const bool chess960 = pos->is_chess960();
-    const Tablebases::Config config{tb_config.cardinality, tb_config.root_in_tb != 0,
-                                    tb_config.use_rule50 != 0, Depth(tb_config.probe_depth)};
+    thread->run_custom_job([callback, context]() { callback(context); });
+}
 
-    thread->run_custom_job([thread, limits, root_moves, fen = std::move(fen), chess960,
-                            setup_state, config]() {
-        auto* worker = bridge_worker(thread);
-        worker->limits          = limits;
-        worker->nodes           = 0;
-        worker->tbHits          = 0;
-        worker->bestMoveChanges = 0;
-        worker->nmpMinPly       = 0;
-        worker->rootDepth       = 0;
-        worker->rootMoves       = root_moves;
-        worker->rootPos.set(fen, chess960, &worker->rootState);
-        worker->rootState = setup_state;
-        worker->tbConfig  = config;
-    });
+void zfish_thread_worker_apply_root_setup(void*                           thread_ptr,
+                                          const ZfishThreadRootSetupInput* input_ptr) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    const auto& input = *input_ptr;
+    const auto limits = *static_cast<const Search::LimitsType*>(input.limits_ptr);
+    const auto root_moves = *static_cast<const Search::RootMoves*>(input.root_moves_ptr);
+    const auto setup_state = *static_cast<const StateInfo*>(input.setup_state_ptr);
+    const auto fen = std::string(reinterpret_cast<const char*>(input.fen_ptr), input.fen_len);
+    const Tablebases::Config config{input.tb_config.cardinality, input.tb_config.root_in_tb != 0,
+                                    input.tb_config.use_rule50 != 0,
+                                    Depth(input.tb_config.probe_depth)};
+
+    auto* worker = bridge_worker(thread);
+    worker->limits          = limits;
+    worker->nodes           = 0;
+    worker->tbHits          = 0;
+    worker->bestMoveChanges = 0;
+    worker->nmpMinPly       = 0;
+    worker->rootDepth       = 0;
+    worker->rootMoves       = root_moves;
+    worker->rootPos.set(fen, input.chess960 != 0, &worker->rootState);
+    worker->rootState = setup_state;
+    worker->tbConfig  = config;
 }
 
 void zfish_thread_wait_for_search_finished(void* thread_ptr) {
@@ -2100,8 +2113,6 @@ std::size_t zfish_numa_config_distribute_threads_among_nodes(const void* numa_co
 std::size_t zfish_numa_config_node_count(const void* numa_config_ptr) {
     return static_cast<const NumaConfig*>(numa_config_ptr)->num_numa_nodes();
 }
-
-using ZfishOpaqueCallback = void (*)(void*);
 
 void zfish_numa_config_execute_on_numa_node(const void*       numa_config_ptr,
                                                                                         std::size_t       numa_index,
