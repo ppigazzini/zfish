@@ -1883,18 +1883,6 @@ ZfishSearchMoveView zfish_limits_searchmove_text(const void* limits_ptr, std::si
     return {reinterpret_cast<const unsigned char*>(text.data()), text.size()};
 }
 
-std::uint16_t zfish_uci_to_move_raw(const void*          pos_ptr,
-                                    const unsigned char* text_ptr,
-                                    std::size_t          text_len) {
-    if (!text_ptr && text_len == 0)
-        return Move::none().raw();
-
-    std::string text(reinterpret_cast<const char*>(text_ptr), text_len);
-    return UCIEngine::to_move(*static_cast<const Position*>(pos_ptr), std::move(text)).raw();
-}
-
-std::uint16_t zfish_move_none_raw() { return Move::none().raw(); }
-
 void* zfish_root_moves_create(const std::uint16_t* move_raws, std::size_t count) {
     auto root_moves = std::make_unique<Search::RootMoves>();
     root_moves->reserve(count);

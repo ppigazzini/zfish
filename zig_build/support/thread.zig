@@ -1,4 +1,5 @@
 const std = @import("std");
+const uci_move = @import("uci_move");
 
 const value_none: c_int = 32002;
 const value_infinite: c_int = 32001;
@@ -42,8 +43,6 @@ extern fn zfish_movegen_generate_legal(
 extern fn zfish_limits_ponder_mode(limits: *const anyopaque) u8;
 extern fn zfish_limits_searchmove_count(limits: *const anyopaque) usize;
 extern fn zfish_limits_searchmove_text(limits: *const anyopaque, index: usize) ByteView;
-extern fn zfish_uci_to_move_raw(pos: *const anyopaque, text_ptr: [*]const u8, text_len: usize) u16;
-extern fn zfish_move_none_raw() u16;
 extern fn zfish_root_moves_create(move_raws: ?[*]const u16, count: usize) *anyopaque;
 extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
 extern fn zfish_threadpool_rank_root_moves(
@@ -314,7 +313,7 @@ pub fn startThinking(
     var legal_move_buffer: [256]u16 = undefined;
     const legal_move_count = zfish_movegen_generate_legal(pos, legal_move_buffer[0..].ptr);
     const legal_moves = legal_move_buffer[0..legal_move_count];
-    const none_raw = zfish_move_none_raw();
+    const none_raw = uci_move.noneRaw();
 
     var selected_moves = std.ArrayList(u16).empty;
     defer selected_moves.deinit(std.heap.c_allocator);
@@ -324,7 +323,7 @@ pub fn startThinking(
     while (index < searchmove_count) : (index += 1) {
         const move_text = zfish_limits_searchmove_text(limits, index);
         const text_ptr = move_text.ptr orelse continue;
-        const move_raw = zfish_uci_to_move_raw(pos, text_ptr, move_text.len);
+        const move_raw = uci_move.toMoveRaw(pos, text_ptr[0..move_text.len]);
         if (move_raw != none_raw and containsMove(legal_moves, move_raw)) {
             selected_moves.append(std.heap.c_allocator, move_raw) catch @panic("OOM");
         }
