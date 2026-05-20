@@ -914,6 +914,15 @@ struct ZfishMovegenSnapshot {
     std::uint64_t blockers_for_king[2];
 };
 
+struct ZfishSeeSnapshot {
+    std::uint8_t  side_to_move;
+    std::uint64_t pieces_all;
+    std::uint64_t pieces_by_color[2];
+    std::uint64_t pieces_by_type[8];
+    std::uint64_t blockers_for_king[2];
+    std::uint64_t pinners[2];
+};
+
 struct ZfishTtEntry {
     std::uint16_t key16;
     std::uint8_t  depth8;
@@ -1370,11 +1379,27 @@ Move MovePicker::next_move() {
 
 void MovePicker::skip_quiet_moves() { skipQuiets = true; }
 
-extern "C" std::uint8_t zfish_movepick_see_ge(const void* pos_ptr,
-                                               std::uint16_t raw_move,
-                                               int           threshold) {
+extern "C" void zfish_movepick_fill_see_snapshot(const void* pos_ptr, ZfishSeeSnapshot* out) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
-    return std::uint8_t(pos.see_ge(Move(raw_move), threshold) ? 1 : 0);
+
+    if (!out)
+        return;
+
+    out->side_to_move = static_cast<std::uint8_t>(pos.side_to_move());
+    out->pieces_all = pos.pieces();
+    out->pieces_by_color[WHITE] = pos.pieces(WHITE);
+    out->pieces_by_color[BLACK] = pos.pieces(BLACK);
+    out->pieces_by_type[ALL_PIECES] = out->pieces_all;
+    out->pieces_by_type[PAWN] = pos.pieces(PAWN);
+    out->pieces_by_type[KNIGHT] = pos.pieces(KNIGHT);
+    out->pieces_by_type[BISHOP] = pos.pieces(BISHOP);
+    out->pieces_by_type[ROOK] = pos.pieces(ROOK);
+    out->pieces_by_type[QUEEN] = pos.pieces(QUEEN);
+    out->pieces_by_type[KING] = pos.pieces(KING);
+    out->blockers_for_king[WHITE] = pos.blockers_for_king(WHITE);
+    out->blockers_for_king[BLACK] = pos.blockers_for_king(BLACK);
+    out->pinners[WHITE] = pos.pinners(WHITE);
+    out->pinners[BLACK] = pos.pinners(BLACK);
 }
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
