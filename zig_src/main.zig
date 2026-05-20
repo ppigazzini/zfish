@@ -339,6 +339,17 @@ pub export fn zfish_engine_search_clear(
     return engine_port.searchClear(threads, tt, syzygy_path_ptr[0..syzygy_path_len]);
 }
 
+pub export fn zfish_engine_eval_trace(
+    pos: *anyopaque,
+    network: *const anyopaque,
+) ?[*:0]u8 {
+    return engine_port.evalTrace(pos, network);
+}
+
+pub export fn zfish_engine_visualize(pos: *const anyopaque) ?[*:0]u8 {
+    return engine_port.visualize(pos);
+}
+
 pub export fn zfish_engine_format_thread_binding(
     pairs_ptr: [*]const engine_port.CountPair,
     pair_count: usize,
