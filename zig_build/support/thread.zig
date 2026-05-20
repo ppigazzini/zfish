@@ -26,6 +26,9 @@ pub const TbConfig = extern struct {
     probe_depth: c_int,
 };
 
+const numa_policy_none: u8 = 0;
+const numa_policy_auto: u8 = 1;
+
 extern fn zfish_threadpool_wait_main_thread(pool: *anyopaque) void;
 extern fn zfish_threadpool_reset_start_state(pool: *anyopaque, ponder_mode: u8) void;
 extern fn zfish_movegen_generate_legal(
@@ -47,6 +50,12 @@ extern fn zfish_threadpool_rank_root_moves(
 extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_thread_at(pool: *anyopaque, index: usize) *anyopaque;
 extern fn zfish_threadpool_reset_clear_state(pool: *anyopaque) void;
+extern fn zfish_threadpool_reset_for_reconfigure(pool: *anyopaque) void;
+extern fn zfish_threadpool_bound_nodes_assign(
+    pool: *anyopaque,
+    nodes: ?[*]const usize,
+    count: usize,
+) void;
 extern fn zfish_thread_nodes_searched(thread: *const anyopaque) u64;
 extern fn zfish_thread_tb_hits(thread: *const anyopaque) u64;
 extern fn zfish_thread_fill_summary(thread: *const anyopaque, out: *ThreadSummary) void;
@@ -62,11 +71,137 @@ extern fn zfish_thread_clear_worker(thread: *anyopaque) void;
 extern fn zfish_thread_wait_for_search_finished(thread: *anyopaque) void;
 extern fn zfish_thread_start_searching(thread: *anyopaque) void;
 extern fn zfish_thread_ensure_network_replicated(thread: *anyopaque) void;
+extern fn zfish_shared_state_threads_value(shared_state: *const anyopaque) usize;
+extern fn zfish_shared_state_numa_policy_mode(shared_state: *const anyopaque) u8;
+extern fn zfish_shared_state_clear_histories(shared_state: *const anyopaque) void;
+extern fn zfish_shared_state_insert_history(
+    shared_state: *const anyopaque,
+    numa_config: *const anyopaque,
+    numa_index: usize,
+    size: usize,
+    do_bind: u8,
+) void;
+extern fn zfish_numa_config_suggests_binding_threads(
+    numa_config: *const anyopaque,
+    requested: usize,
+) u8;
+extern fn zfish_numa_config_distribute_threads_among_nodes(
+    numa_config: *const anyopaque,
+    requested: usize,
+    out_nodes: [*]usize,
+) usize;
+extern fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize;
+extern fn zfish_threadpool_add_thread_from_state(
+    pool: *anyopaque,
+    numa_config: *const anyopaque,
+    shared_state: *const anyopaque,
+    update_context: *const anyopaque,
+    do_bind: u8,
+    thread_id: usize,
+    idx_in_numa: usize,
+    total_numa: usize,
+    numa_id: usize,
+) void;
 
 pub fn nextPowerOfTwo(count: u64) usize {
     if (count <= 1)
         return 1;
     return @as(usize, 2) << @as(u6, @intCast(63 - @clz(count - 1)));
+}
+
+pub fn reconfigure(
+    pool: *anyopaque,
+    numa_config: *const anyopaque,
+    shared_state: *const anyopaque,
+    update_context: *const anyopaque,
+) void {
+    if (zfish_threadpool_thread_count(pool) > 0) {
+        zfish_threadpool_wait_main_thread(pool);
+        zfish_threadpool_reset_for_reconfigure(pool);
+    }
+
+    const requested = zfish_shared_state_threads_value(shared_state);
+    if (requested == 0) {
+        return;
+    }
+
+    var do_bind = false;
+    switch (zfish_shared_state_numa_policy_mode(shared_state)) {
+        numa_policy_none => do_bind = false,
+        numa_policy_auto => do_bind = zfish_numa_config_suggests_binding_threads(numa_config, requested) != 0,
+        else => do_bind = true,
+    }
+
+    const allocator = std.heap.c_allocator;
+    const bound_nodes = allocator.alloc(usize, requested) catch @panic("OOM");
+    defer allocator.free(bound_nodes);
+
+    if (do_bind) {
+        _ = zfish_numa_config_distribute_threads_among_nodes(
+            numa_config,
+            requested,
+            bound_nodes.ptr,
+        );
+        zfish_threadpool_bound_nodes_assign(pool, bound_nodes.ptr, requested);
+    } else {
+        zfish_threadpool_bound_nodes_assign(pool, null, 0);
+    }
+
+    const node_count = @max(zfish_numa_config_node_count(numa_config), @as(usize, 1));
+    const threads_per_node = allocator.alloc(usize, node_count) catch @panic("OOM");
+    defer allocator.free(threads_per_node);
+    @memset(threads_per_node, 0);
+
+    if (do_bind) {
+        var index: usize = 0;
+        while (index < requested) : (index += 1) {
+            threads_per_node[bound_nodes[index]] += 1;
+        }
+    } else {
+        threads_per_node[0] = requested;
+    }
+
+    zfish_shared_state_clear_histories(shared_state);
+
+    var node_index: usize = 0;
+    while (node_index < node_count) : (node_index += 1) {
+        const count = threads_per_node[node_index];
+        if (count != 0) {
+            zfish_shared_state_insert_history(
+                shared_state,
+                numa_config,
+                node_index,
+                nextPowerOfTwo(count),
+                @intFromBool(do_bind),
+            );
+        }
+    }
+
+    const created_per_node = allocator.alloc(usize, node_count) catch @panic("OOM");
+    defer allocator.free(created_per_node);
+    @memset(created_per_node, 0);
+
+    var thread_id: usize = 0;
+    while (thread_id < requested) : (thread_id += 1) {
+        const numa_id: usize = if (do_bind) bound_nodes[thread_id] else 0;
+        const idx_in_numa = created_per_node[numa_id];
+        created_per_node[numa_id] += 1;
+
+        zfish_threadpool_add_thread_from_state(
+            pool,
+            numa_config,
+            shared_state,
+            update_context,
+            @intFromBool(do_bind),
+            thread_id,
+            idx_in_numa,
+            threads_per_node[numa_id],
+            numa_id,
+        );
+    }
+
+    clear(pool);
+    zfish_threadpool_wait_main_thread(pool);
 }
 
 pub fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
