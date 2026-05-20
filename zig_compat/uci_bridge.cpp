@@ -207,6 +207,16 @@ struct ZfishEngineTablebaseProbe {
 const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 const char* zfish_engine_eval_trace(void* pos, const void* network);
+void zfish_engine_load_network(void*                threads,
+                               void*                network,
+                               const unsigned char* root_directory_ptr,
+                               std::size_t          root_directory_len,
+                               const unsigned char* evalfile_path_ptr,
+                               std::size_t          evalfile_path_len);
+void zfish_engine_save_network(void*                network,
+                               std::uint8_t         has_filename,
+                               const unsigned char* filename_ptr,
+                               std::size_t          filename_len);
 const char* zfish_engine_fen(const void* pos);
 const char* zfish_engine_visualize(const void* pos);
 void        zfish_tbprobe_add_tables(void* tables,
@@ -1061,6 +1071,10 @@ void         zfish_thread_start_thinking(void*        pool,
                                          void*        pos,
                                          const void*  limits,
                                          const void*  setup_state);
+void zfish_threadpool_reconfigure(void*       pool,
+                                  const void* numa_config,
+                                  const void* shared_state,
+                                  const void* update_context);
 void zfish_threadpool_clear(void* pool);
 void zfish_threadpool_start_searching(void* pool);
 void zfish_threadpool_wait_for_search_finished(void* pool);
@@ -1068,6 +1082,31 @@ void zfish_threadpool_ensure_network_replicated(void* pool);
 std::uint64_t zfish_threadpool_nodes_searched(void* pool);
 std::uint64_t zfish_threadpool_tb_hits(void* pool);
 std::size_t   zfish_threadpool_best_thread_index(void* pool);
+void zfish_threadpool_reset_for_reconfigure(void* pool);
+void zfish_threadpool_bound_nodes_assign(void* pool, const std::size_t* nodes, std::size_t count);
+std::size_t zfish_shared_state_threads_value(const void* shared_state);
+std::uint8_t zfish_shared_state_numa_policy_mode(const void* shared_state);
+void zfish_shared_state_clear_histories(const void* shared_state);
+void zfish_shared_state_insert_history(const void*  shared_state,
+                                       const void*  numa_config,
+                                       std::size_t  numa_index,
+                                       std::size_t  size,
+                                       std::uint8_t do_bind);
+std::uint8_t zfish_numa_config_suggests_binding_threads(const void* numa_config,
+                                                        std::size_t requested);
+std::size_t zfish_numa_config_distribute_threads_among_nodes(const void* numa_config,
+                                                             std::size_t requested,
+                                                             std::size_t* out_nodes);
+std::size_t zfish_numa_config_node_count(const void* numa_config);
+void zfish_threadpool_add_thread_from_state(void*       pool,
+                                            const void* numa_config,
+                                            const void* shared_state,
+                                            const void* update_context,
+                                            std::uint8_t do_bind,
+                                            std::size_t  thread_id,
+                                            std::size_t  idx_in_numa,
+                                            std::size_t  total_numa,
+                                            std::size_t  numa_id);
 void zfish_bitboards_init_runtime(std::uint8_t         (*popcnt16_ptr)[1 << 16],
                                   std::uint8_t         (*square_distance_ptr)[64][64],
                                   std::uint64_t        (*line_bb_ptr)[64][64],
@@ -1779,89 +1818,7 @@ static size_t next_power_of_two(uint64_t count) {
 void ThreadPool::set(const NumaConfig&                           numaConfig,
                      Search::SharedState                         sharedState,
                      const Search::SearchManager::UpdateContext& updateContext) {
-
-    if (threads.size() > 0)
-    {
-        main_thread()->wait_for_search_finished();
-
-        threads.clear();
-
-        boundThreadToNumaNode.clear();
-    }
-
-    const size_t requested = sharedState.options["Threads"];
-
-    if (requested > 0)
-    {
-        const std::string numaPolicy(sharedState.options["NumaPolicy"]);
-        const bool        doBindThreads = [&]() {
-            if (numaPolicy == "none")
-                return false;
-
-            if (numaPolicy == "auto")
-                return numaConfig.suggests_binding_threads(requested);
-
-            return true;
-        }();
-
-        std::map<NumaIndex, size_t> counts;
-        boundThreadToNumaNode = doBindThreads
-                                  ? numaConfig.distribute_threads_among_numa_nodes(requested)
-                                  : std::vector<NumaIndex>{};
-
-        if (boundThreadToNumaNode.empty())
-            counts[0] = requested;
-        else
-        {
-            for (size_t i = 0; i < boundThreadToNumaNode.size(); ++i)
-                counts[boundThreadToNumaNode[i]]++;
-        }
-
-        sharedState.sharedHistories.clear();
-        for (auto pair : counts)
-        {
-            NumaIndex numaIndex = pair.first;
-            uint64_t  count     = pair.second;
-            auto      f         = [&]() {
-                sharedState.sharedHistories.try_emplace(numaIndex, next_power_of_two(count));
-            };
-            if (doBindThreads)
-                numaConfig.execute_on_numa_node(numaIndex, f);
-            else
-                f();
-        }
-
-        auto threadsPerNode = counts;
-        counts.clear();
-
-        while (threads.size() < requested)
-        {
-            const size_t    threadId      = threads.size();
-            const NumaIndex numaId        = doBindThreads ? boundThreadToNumaNode[threadId] : 0;
-            auto            create_thread = [&]() {
-                auto manager = threadId == 0
-                                 ? std::unique_ptr<Search::ISearchManager>(
-                                     std::make_unique<Search::SearchManager>(updateContext))
-                                 : std::make_unique<Search::NullSearchManager>();
-
-                auto binder = doBindThreads ? OptionalThreadToNumaNodeBinder(numaConfig, numaId)
-                                            : OptionalThreadToNumaNodeBinder(numaId);
-
-                threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager),
-                                                              threadId, counts[numaId]++,
-                                                              threadsPerNode[numaId], binder));
-            };
-
-            if (doBindThreads)
-                numaConfig.execute_on_numa_node(numaId, create_thread);
-            else
-                create_thread();
-        }
-
-        clear();
-
-        main_thread()->wait_for_search_finished();
-    }
+    zfish_threadpool_reconfigure(this, &numaConfig, &sharedState, &updateContext);
 }
 
 void ThreadPool::clear() {
@@ -2105,6 +2062,119 @@ void zfish_threadpool_reset_clear_state(void* pool_ptr) {
     pool->main_manager()->tm.clear();
 }
 
+void zfish_threadpool_reset_for_reconfigure(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->threads.clear();
+    pool->boundThreadToNumaNode.clear();
+}
+
+void zfish_threadpool_bound_nodes_assign(void* pool_ptr,
+                                         const std::size_t* nodes_ptr,
+                                         std::size_t        count) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    if (!nodes_ptr || count == 0)
+    {
+        pool->boundThreadToNumaNode.clear();
+        return;
+    }
+
+    pool->boundThreadToNumaNode.assign(nodes_ptr, nodes_ptr + count);
+}
+
+std::size_t zfish_shared_state_threads_value(const void* shared_state_ptr) {
+    const auto& shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
+    return static_cast<std::size_t>(shared_state.options["Threads"]);
+}
+
+std::uint8_t zfish_shared_state_numa_policy_mode(const void* shared_state_ptr) {
+    const auto&       shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
+    const std::string numa_policy(shared_state.options["NumaPolicy"]);
+
+    if (numa_policy == "none")
+        return 0;
+    if (numa_policy == "auto")
+        return 1;
+    return 2;
+}
+
+void zfish_shared_state_clear_histories(const void* shared_state_ptr) {
+    const auto& shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
+    shared_state.sharedHistories.clear();
+}
+
+void zfish_shared_state_insert_history(const void*  shared_state_ptr,
+                                       const void*  numa_config_ptr,
+                                       std::size_t  numa_index,
+                                       std::size_t  size,
+                                       std::uint8_t do_bind) {
+    const auto& shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
+    const auto& numa_config  = *static_cast<const NumaConfig*>(numa_config_ptr);
+
+    auto insert = [&]() { shared_state.sharedHistories.try_emplace(numa_index, size); };
+    if (do_bind != 0)
+        numa_config.execute_on_numa_node(numa_index, insert);
+    else
+        insert();
+}
+
+std::uint8_t zfish_numa_config_suggests_binding_threads(const void* numa_config_ptr,
+                                                        std::size_t requested) {
+    return static_cast<const NumaConfig*>(numa_config_ptr)->suggests_binding_threads(requested)
+             ? std::uint8_t{1}
+             : std::uint8_t{0};
+}
+
+std::size_t zfish_numa_config_distribute_threads_among_nodes(const void* numa_config_ptr,
+                                                             std::size_t requested,
+                                                             std::size_t* out_nodes) {
+    const auto distribution =
+      static_cast<const NumaConfig*>(numa_config_ptr)->distribute_threads_among_numa_nodes(
+        requested);
+    if (out_nodes)
+        std::copy(distribution.begin(), distribution.end(), out_nodes);
+    return distribution.size();
+}
+
+std::size_t zfish_numa_config_node_count(const void* numa_config_ptr) {
+    return static_cast<const NumaConfig*>(numa_config_ptr)->num_numa_nodes();
+}
+
+void zfish_threadpool_add_thread_from_state(void*       pool_ptr,
+                                            const void* numa_config_ptr,
+                                            const void* shared_state_ptr,
+                                            const void* update_context_ptr,
+                                            std::uint8_t do_bind,
+                                            std::size_t  thread_id,
+                                            std::size_t  idx_in_numa,
+                                            std::size_t  total_numa,
+                                            std::size_t  numa_id) {
+    auto*       pool = static_cast<ThreadPool*>(pool_ptr);
+    const auto& numa_config = *static_cast<const NumaConfig*>(numa_config_ptr);
+        auto&       shared_state =
+            *const_cast<Search::SharedState*>(static_cast<const Search::SharedState*>(shared_state_ptr));
+    const auto& update_context =
+      *static_cast<const Search::SearchManager::UpdateContext*>(update_context_ptr);
+
+    auto create_thread = [&]() {
+        auto manager = thread_id == 0
+                         ? std::unique_ptr<Search::ISearchManager>(
+                             std::make_unique<Search::SearchManager>(update_context))
+                         : std::make_unique<Search::NullSearchManager>();
+
+        auto binder = do_bind != 0 ? OptionalThreadToNumaNodeBinder(numa_config, numa_id)
+                                   : OptionalThreadToNumaNodeBinder(numa_id);
+
+        pool->threads.emplace_back(std::make_unique<Thread>(shared_state, std::move(manager),
+                                                            thread_id, idx_in_numa, total_numa,
+                                                            binder));
+    };
+
+    if (do_bind != 0)
+        numa_config.execute_on_numa_node(numa_id, create_thread);
+    else
+        create_thread();
+}
+
 void* zfish_engine_states_reset(void* states_ptr) {
     auto& states = *static_cast<StateListPtr*>(states_ptr);
     states       = StateListPtr(new std::deque<StateInfo>(1));
@@ -2206,6 +2276,37 @@ void zfish_engine_tt_resize(void* tt_ptr, std::size_t mb, void* threads_ptr) {
 
 void zfish_engine_main_manager_set_ponder(void* threads_ptr, std::uint8_t ponder) {
     static_cast<ThreadPool*>(threads_ptr)->main_manager()->ponder = ponder != 0;
+}
+
+void zfish_engine_network_load_replicated(void*                network_ptr,
+                                          const unsigned char* root_directory_ptr,
+                                          std::size_t          root_directory_len,
+                                          const unsigned char* evalfile_path_ptr,
+                                          std::size_t          evalfile_path_len) {
+    auto& network = *static_cast<LazyNumaReplicatedSystemWide<Eval::NNUE::Network>*>(network_ptr);
+    const std::string root_directory(reinterpret_cast<const char*>(root_directory_ptr),
+                                     root_directory_len);
+    const std::string evalfile_path(reinterpret_cast<const char*>(evalfile_path_ptr),
+                                    evalfile_path_len);
+
+    network.modify_and_replicate([&](Eval::NNUE::Network& network_) {
+        network_.load(root_directory, evalfile_path);
+    });
+}
+
+void zfish_engine_network_save_replicated(void*                network_ptr,
+                                          std::uint8_t         has_filename,
+                                          const unsigned char* filename_ptr,
+                                          std::size_t          filename_len) {
+    auto& network = *static_cast<LazyNumaReplicatedSystemWide<Eval::NNUE::Network>*>(network_ptr);
+    const std::optional<std::string> filename =
+      has_filename != 0
+        ? std::optional<std::string>(
+            std::string(reinterpret_cast<const char*>(filename_ptr), filename_len))
+        : std::nullopt;
+
+    network.modify_and_replicate(
+      [&](Eval::NNUE::Network& network_) { network_.save(filename); });
 }
 
 std::size_t zfish_tbprobe_max_cardinality() {
@@ -2563,14 +2664,17 @@ std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
 }
 
 void Engine::load_network(const std::string& file) {
-    network.modify_and_replicate(
-      [this, &file](NN::Network& network_) { network_.load(binaryDirectory, file); });
-    threads.clear();
-    threads.ensure_network_replicated();
+    zfish_engine_load_network(&threads, &network,
+                              reinterpret_cast<const unsigned char*>(binaryDirectory.data()),
+                              binaryDirectory.size(),
+                              reinterpret_cast<const unsigned char*>(file.data()), file.size());
 }
 
 void Engine::save_network(const std::pair<std::optional<std::string>, std::string> file) {
-    network.modify_and_replicate([&file](NN::Network& network_) { network_.save(file.first); });
+    const std::string filename = file.first.value_or(std::string{});
+    zfish_engine_save_network(&network, static_cast<std::uint8_t>(file.first.has_value()),
+                              reinterpret_cast<const unsigned char*>(filename.data()),
+                              filename.size());
 }
 
 constexpr int MaxDebugSlots = 32;

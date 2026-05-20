@@ -321,6 +321,15 @@ pub export fn zfish_thread_start_thinking(
     return thread_port.startThinking(pool, options, pos, limits, setup_state);
 }
 
+pub export fn zfish_threadpool_reconfigure(
+    pool: *anyopaque,
+    numa_config: *const anyopaque,
+    shared_state: *const anyopaque,
+    update_context: *const anyopaque,
+) void {
+    return thread_port.reconfigure(pool, numa_config, shared_state, update_context);
+}
+
 pub export fn zfish_threadpool_clear(pool: *anyopaque) void {
     return thread_port.clear(pool);
 }
@@ -426,6 +435,34 @@ pub export fn zfish_engine_search_clear(
     syzygy_path_len: usize,
 ) void {
     return engine_port.searchClear(threads, tt, syzygy_path_ptr[0..syzygy_path_len]);
+}
+
+pub export fn zfish_engine_load_network(
+    threads: *anyopaque,
+    network: *anyopaque,
+    root_directory_ptr: [*]const u8,
+    root_directory_len: usize,
+    evalfile_path_ptr: [*]const u8,
+    evalfile_path_len: usize,
+) void {
+    return engine_port.loadNetwork(
+        threads,
+        network,
+        root_directory_ptr[0..root_directory_len],
+        evalfile_path_ptr[0..evalfile_path_len],
+    );
+}
+
+pub export fn zfish_engine_save_network(
+    network: *anyopaque,
+    has_filename: u8,
+    filename_ptr: [*]const u8,
+    filename_len: usize,
+) void {
+    return engine_port.saveNetwork(
+        network,
+        if (has_filename != 0) filename_ptr[0..filename_len] else null,
+    );
 }
 
 pub export fn zfish_engine_eval_trace(
