@@ -16,6 +16,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#define private public
 #include "uci.h"
 
 #include <algorithm>
@@ -33,7 +34,6 @@
 #include <utility>
 #include <vector>
 
-#define private public
 #include "benchmark.h"
 #include "search.h"
 #undef private
@@ -328,7 +328,7 @@ struct ZfishTBTablesLayout {
 };
 
 static_assert(sizeof(ZfishTBTablesLayout) == sizeof(TBTables));
-static_assert(alignof(ZfishTBTablesLayout) == alignof(TBTables));
+static_assert(alignof(ZfishTBTablesLayout) == alignof(decltype(TBTables)));
 
 void zfish_tbprobe_tables_insert(ZfishTBTablesLayout* tables,
                                  Key                  key,
@@ -2910,6 +2910,10 @@ struct ZfishParsedPosition {
     const char*  moves;
 };
 
+struct ZfishUciDispatchResult {
+    std::uint8_t should_quit;
+};
+
 struct ZfishBenchmarkSetupOutput {
     int         tt_size;
     int         threads;
@@ -2937,6 +2941,8 @@ std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
+ZfishUciDispatchResult zfish_uci_dispatch_command(void* engine, const unsigned char* input_ptr,
+                                                  std::size_t input_len);
 }
 
 namespace {
@@ -3093,60 +3099,9 @@ void UCIEngine::loop() {
         if (cli.argc == 1 && !getline(std::cin, cmd))
             cmd = "quit";
 
-        std::istringstream is(cmd);
-
-        token.clear();
-        is >> token;
-
-        if (token == "quit" || token == "stop")
-            engine.stop();
-        else if (token == "ponderhit")
-            engine.set_ponderhit(false);
-        else if (token == "uci")
-        {
-            sync_cout << "id name " << engine_info(true) << "\n" << engine.get_options() << sync_endl;
-            sync_cout << "uciok" << sync_endl;
-        }
-        else if (token == "setoption")
-            setoption(is);
-        else if (token == "go")
-        {
-            print_info_string(engine.numa_config_information_as_string());
-            print_info_string(engine.thread_allocation_information_as_string());
-            go(is);
-        }
-        else if (token == "position")
-            position(is);
-        else if (token == "ucinewgame")
-            engine.search_clear();
-        else if (token == "isready")
-            sync_cout << "readyok" << sync_endl;
-        else if (token == "flip")
-            engine.flip();
-        else if (token == "bench")
-            bench(is);
-        else if (token == BenchmarkCommand)
-            benchmark(is);
-        else if (token == "d")
-            sync_cout << engine.visualize() << sync_endl;
-        else if (token == "eval")
-            engine.trace_eval();
-        else if (token == "compiler")
-            sync_cout << compiler_info() << sync_endl;
-        else if (token == "export_net")
-        {
-            std::pair<std::optional<std::string>, std::string> file;
-
-            if (is >> file.second)
-                file.first = file.second;
-
-            engine.save_network(file);
-        }
-        else if (token == "--help" || token == "help" || token == "--license"
-                 || token == "license")
-            sync_cout << help_text() << sync_endl;
-        else if (!token.empty() && token[0] != '#')
-            sync_cout << format_unknown_command(cmd) << sync_endl;
+        const auto result = zfish_uci_dispatch_command(
+          this, reinterpret_cast<const unsigned char*>(cmd.data()), cmd.size());
+        token = result.should_quit != 0 ? "quit" : "";
 
     } while (token != "quit" && cli.argc == 1);
 }
@@ -3382,6 +3337,164 @@ std::uint64_t UCIEngine::perft(const Search::LimitsType& limits) {
     auto nodes = engine.perft(engine.fen(), limits.perft, engine.get_options()["UCI_Chess960"]);
     sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
     return nodes;
+}
+
+extern "C" {
+
+void zfish_uci_command_stop(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.stop();
+}
+
+void zfish_uci_command_ponderhit(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.set_ponderhit(false);
+}
+
+void zfish_uci_command_uci(void* engine_ptr) {
+    auto& engine = static_cast<UCIEngine*>(engine_ptr)->engine;
+    sync_cout << "id name " << engine_info(true) << "\n" << engine.get_options() << sync_endl;
+    sync_cout << "uciok" << sync_endl;
+}
+
+void zfish_uci_command_setoption(void*                engine_ptr,
+                                 const unsigned char* name_ptr,
+                                 std::size_t          name_len,
+                                 const unsigned char* value_ptr,
+                                 std::size_t          value_len) {
+    auto*       uci_engine = static_cast<UCIEngine*>(engine_ptr);
+    std::string command = "name ";
+    command.append(reinterpret_cast<const char*>(name_ptr), name_len);
+    if (value_len != 0)
+    {
+        command += " value ";
+        command.append(reinterpret_cast<const char*>(value_ptr), value_len);
+    }
+    std::istringstream is(command);
+    uci_engine->setoption(is);
+}
+
+void zfish_uci_command_go(void* engine_ptr, ZfishParsedLimits parsed) {
+    auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
+    UCIEngine::print_info_string(uci_engine->engine.numa_config_information_as_string());
+    UCIEngine::print_info_string(uci_engine->engine.thread_allocation_information_as_string());
+
+    std::string command;
+    if (parsed.ponder_mode)
+        command += "ponder ";
+    if (parsed.searchmoves && *parsed.searchmoves)
+    {
+        command += "searchmoves ";
+        command += parsed.searchmoves;
+        command += ' ';
+    }
+    if (parsed.wtime)
+        command += "wtime " + std::to_string(parsed.wtime) + " ";
+    if (parsed.btime)
+        command += "btime " + std::to_string(parsed.btime) + " ";
+    if (parsed.winc)
+        command += "winc " + std::to_string(parsed.winc) + " ";
+    if (parsed.binc)
+        command += "binc " + std::to_string(parsed.binc) + " ";
+    if (parsed.movestogo)
+        command += "movestogo " + std::to_string(parsed.movestogo) + " ";
+    if (parsed.depth)
+        command += "depth " + std::to_string(parsed.depth) + " ";
+    if (parsed.mate)
+        command += "mate " + std::to_string(parsed.mate) + " ";
+    if (parsed.perft)
+        command += "perft " + std::to_string(parsed.perft) + " ";
+    if (parsed.infinite)
+        command += "infinite ";
+    if (parsed.movetime)
+        command += "movetime " + std::to_string(parsed.movetime) + " ";
+    if (parsed.nodes)
+        command += "nodes " + std::to_string(parsed.nodes) + " ";
+
+    std::istringstream is(command);
+    uci_engine->go(is);
+}
+
+void zfish_uci_command_position(void*                engine_ptr,
+                                const unsigned char* full_command_ptr,
+                                std::size_t          full_command_len,
+                                const unsigned char* fen_ptr,
+                                std::size_t          fen_len,
+                                const unsigned char* moves_ptr,
+                                std::size_t          moves_len) {
+    auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
+    std::string fen(reinterpret_cast<const char*>(fen_ptr), fen_len);
+    std::vector<std::string> moves;
+    std::string              moves_text(reinterpret_cast<const char*>(moves_ptr), moves_len);
+    std::istringstream       moves_stream(moves_text);
+    std::string              token;
+    while (std::getline(moves_stream, token))
+        if (!token.empty())
+            moves.push_back(token);
+
+    auto err = uci_engine->engine.set_position(fen, moves);
+    if (err.has_value())
+    {
+        uci_engine->terminate_on_critical_error(
+          std::string(reinterpret_cast<const char*>(full_command_ptr), full_command_len), err->what());
+    }
+}
+
+void zfish_uci_command_search_clear(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.search_clear();
+}
+
+void zfish_uci_command_isready() {
+    sync_cout << "readyok" << sync_endl;
+}
+
+void zfish_uci_command_flip(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.flip();
+}
+
+void zfish_uci_command_bench(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len) {
+    std::istringstream is(std::string(reinterpret_cast<const char*>(args_ptr), args_len));
+    static_cast<UCIEngine*>(engine_ptr)->bench(is);
+}
+
+void zfish_uci_command_benchmark(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len) {
+    std::istringstream is(std::string(reinterpret_cast<const char*>(args_ptr), args_len));
+    static_cast<UCIEngine*>(engine_ptr)->benchmark(is);
+}
+
+void zfish_uci_command_visualize(void* engine_ptr) {
+    sync_cout << static_cast<UCIEngine*>(engine_ptr)->engine.visualize() << sync_endl;
+}
+
+void zfish_uci_command_eval(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.trace_eval();
+}
+
+void zfish_uci_command_compiler() {
+    sync_cout << compiler_info() << sync_endl;
+}
+
+void zfish_uci_command_export_net(void*                engine_ptr,
+                                  std::uint8_t         has_filename,
+                                  const unsigned char* filename_ptr,
+                                  std::size_t          filename_len) {
+    std::pair<std::optional<std::string>, std::string> file;
+    if (has_filename != 0)
+    {
+        file.second.assign(reinterpret_cast<const char*>(filename_ptr), filename_len);
+        file.first = file.second;
+    }
+    static_cast<UCIEngine*>(engine_ptr)->engine.save_network(file);
+}
+
+void zfish_uci_command_help() {
+    sync_cout << UCIEngine::help_text() << sync_endl;
+}
+
+void zfish_uci_command_unknown(const unsigned char* command_ptr, std::size_t command_len) {
+    sync_cout << UCIEngine::format_unknown_command(
+      std::string(reinterpret_cast<const char*>(command_ptr), command_len))
+              << sync_endl;
+}
+
 }
 
 Move UCIEngine::to_move(const Position& pos, std::string str) {
