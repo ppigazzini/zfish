@@ -122,6 +122,19 @@ extern fn zfish_engine_option_hash_value(options: *const anyopaque) usize;
 extern fn zfish_engine_threads_ensure_network_replicated(threads: *anyopaque) void;
 extern fn zfish_engine_tt_resize(tt: *anyopaque, mb: usize, threads: *anyopaque) void;
 extern fn zfish_engine_main_manager_set_ponder(threads: *anyopaque, ponder: u8) void;
+extern fn zfish_engine_network_load_replicated(
+    network: *anyopaque,
+    root_directory_ptr: [*]const u8,
+    root_directory_len: usize,
+    evalfile_path_ptr: [*]const u8,
+    evalfile_path_len: usize,
+) void;
+extern fn zfish_engine_network_save_replicated(
+    network: *anyopaque,
+    has_filename: u8,
+    filename_ptr: [*]const u8,
+    filename_len: usize,
+) void;
 extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_bound_node_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usize) usize;
@@ -256,6 +269,29 @@ pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8)
     zfish_engine_tt_clear(tt, threads);
     zfish_engine_threads_clear(threads);
     zfish_engine_tablebases_init(syzygy_path.ptr, syzygy_path.len);
+}
+
+pub fn loadNetwork(
+    threads: *anyopaque,
+    network: *anyopaque,
+    root_directory: []const u8,
+    evalfile_path: []const u8,
+) void {
+    zfish_engine_network_load_replicated(
+        network,
+        root_directory.ptr,
+        root_directory.len,
+        evalfile_path.ptr,
+        evalfile_path.len,
+    );
+    zfish_engine_threads_clear(threads);
+    zfish_engine_threads_ensure_network_replicated(threads);
+}
+
+pub fn saveNetwork(network: *anyopaque, filename_opt: ?[]const u8) void {
+    const has_filename: u8 = if (filename_opt != null) 1 else 0;
+    const filename = filename_opt orelse "";
+    zfish_engine_network_save_replicated(network, has_filename, filename.ptr, filename.len);
 }
 
 pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
