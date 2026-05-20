@@ -88,6 +88,7 @@ fn parseSetOptionAlloc(input: []const u8) !ParsedSetOption {
     };
 }
 
+
 fn validateAssignmentAlloc(
     type_name: []const u8,
     value: []const u8,

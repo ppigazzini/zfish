@@ -28,7 +28,6 @@ const uci_port = @import("uci");
 
 extern fn zfish_bitboards_init() void;
 extern fn zfish_position_init_runtime() void;
-extern fn zfish_misc_engine_info_text() ?[*:0]u8;
 extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
 extern fn zfish_uci_loop_engine(engine: *anyopaque) void;
 extern fn zfish_uci_destroy_engine(engine: ?*anyopaque) void;
@@ -124,6 +123,50 @@ pub export fn zfish_misc_get_binary_directory(
 
 pub export fn zfish_misc_get_working_directory() ?[*:0]u8 {
     return misc_port.getWorkingDirectory();
+}
+
+pub export fn zfish_misc_engine_version_info_text() ?[*:0]u8 {
+    return misc_port.engineVersionInfoText();
+}
+
+pub export fn zfish_misc_engine_info_text() ?[*:0]u8 {
+    return misc_port.engineInfoText(0);
+}
+
+pub export fn zfish_misc_engine_info_mode(to_uci: u8) ?[*:0]u8 {
+    return misc_port.engineInfoText(to_uci);
+}
+
+pub export fn zfish_misc_compiler_info_text() ?[*:0]u8 {
+    return misc_port.compilerInfoText();
+}
+
+pub export fn zfish_misc_dbg_hit_on(cond: u8, slot: c_int) void {
+    misc_port.dbgHitOn(cond != 0, slot);
+}
+
+pub export fn zfish_misc_dbg_mean_of(value: i64, slot: c_int) void {
+    misc_port.dbgMeanOf(value, slot);
+}
+
+pub export fn zfish_misc_dbg_stdev_of(value: i64, slot: c_int) void {
+    misc_port.dbgStdevOf(value, slot);
+}
+
+pub export fn zfish_misc_dbg_extremes_of(value: i64, slot: c_int) void {
+    misc_port.dbgExtremesOf(value, slot);
+}
+
+pub export fn zfish_misc_dbg_correl_of(value1: i64, value2: i64, slot: c_int) void {
+    misc_port.dbgCorrelOf(value1, value2, slot);
+}
+
+pub export fn zfish_misc_dbg_print() void {
+    misc_port.dbgPrint();
+}
+
+pub export fn zfish_misc_dbg_clear() void {
+    misc_port.dbgClear();
 }
 
 pub export fn zfish_position_build_endgame_fen(
@@ -364,6 +407,20 @@ pub export fn zfish_engine_format_numa_info(
     config_len: usize,
 ) ?[*:0]u8 {
     return engine_port.formatNumaInfo(config_ptr, config_len);
+}
+
+pub export fn zfish_engine_init_body(engine: *anyopaque) void {
+    return engine_port.initBody(engine);
+}
+
+pub export fn zfish_engine_option_on_change(
+    engine: *anyopaque,
+    callback_kind: u8,
+    value_ptr: [*]const u8,
+    value_len: usize,
+    int_value: c_int,
+) ?[*:0]u8 {
+    return engine_port.optionOnChange(engine, callback_kind, value_ptr, value_len, int_value);
 }
 
 pub export fn zfish_engine_set_position(
@@ -834,6 +891,26 @@ pub export fn zfish_uci_dispatch_command(
     input_len: usize,
 ) uci_port.DispatchResult {
     return uci_port.dispatchCommand(engine, input_ptr[0..input_len]);
+}
+
+pub export fn zfish_uci_loop_runtime(uci_ptr: *anyopaque) void {
+    return uci_port.loopRuntime(uci_ptr);
+}
+
+pub export fn zfish_uci_bench_runtime(
+    uci_ptr: *anyopaque,
+    args_ptr: [*]const u8,
+    args_len: usize,
+) void {
+    return uci_port.benchRuntime(uci_ptr, args_ptr[0..args_len]);
+}
+
+pub export fn zfish_uci_benchmark_runtime(
+    uci_ptr: *anyopaque,
+    args_ptr: [*]const u8,
+    args_len: usize,
+) void {
+    return uci_port.benchmarkRuntime(uci_ptr, args_ptr[0..args_len]);
 }
 
 pub export fn zfish_uci_format_info_string(
