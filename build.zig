@@ -178,6 +178,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     engine_module.addImport("position", position_module);
+    movepick_module.addImport("bitboard", bitboard_module);
     movegen_module.addImport("bitboard", bitboard_module);
     uci_module.addImport("benchmark", benchmark_module);
     uci_module.addImport("misc", misc_module);
