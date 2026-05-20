@@ -206,6 +206,24 @@ const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 const char* zfish_engine_eval_trace(void* pos, const void* network);
 const char* zfish_engine_visualize(const void* pos);
+void        zfish_engine_set_numa_config_from_option(void*                numa_context,
+                                                     const void*          options,
+                                                     void*                threads,
+                                                     void*                tt,
+                                                     void*                shared_hists,
+                                                     void*                network,
+                                                     const void*          update_context,
+                                                     const unsigned char* option_ptr,
+                                                     std::size_t          option_len);
+void        zfish_engine_resize_threads(const void* numa_context,
+                                        const void* options,
+                                        void*       threads,
+                                        void*       tt,
+                                        void*       shared_hists,
+                                        void*       network,
+                                        const void* update_context);
+void        zfish_engine_set_tt_size(void* threads, void* tt, std::size_t mb);
+void        zfish_engine_set_ponderhit(void* threads, std::uint8_t ponder);
 const char* zfish_tbprobe_build_code(const unsigned char* piece_types_ptr, std::size_t piece_count);
 int         zfish_tbprobe_dtz_before_zeroing(int wdl);
 const char*   zfish_misc_engine_info_text();
@@ -1976,8 +1994,68 @@ void zfish_engine_threads_set_stop(void* threads_ptr) {
     static_cast<ThreadPool*>(threads_ptr)->stop = true;
 }
 
+void zfish_engine_numa_set_system(void* numa_context_ptr, std::uint8_t hardware) {
+    auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
+    if (hardware != 0)
+        numa_context.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy, false));
+    else
+        numa_context.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy));
+}
+
+void zfish_engine_numa_set_none(void* numa_context_ptr) {
+    static_cast<NumaReplicationContext*>(numa_context_ptr)->set_numa_config(NumaConfig{});
+}
+
+void zfish_engine_numa_set_from_string(void*                numa_context_ptr,
+                                       const unsigned char* text_ptr,
+                                       std::size_t          text_len) {
+    auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
+    numa_context.set_numa_config(
+      NumaConfig::from_string(std::string(reinterpret_cast<const char*>(text_ptr), text_len)));
+}
+
+void zfish_engine_threadpool_wait_finished(void* threads_ptr) {
+    static_cast<ThreadPool*>(threads_ptr)->wait_for_search_finished();
+}
+
+void zfish_engine_threads_reconfigure(void*       threads_ptr,
+                                      const void* numa_context_ptr,
+                                      const void* options_ptr,
+                                      void*       tt_ptr,
+                                      void*       shared_hists_ptr,
+                                      void*       network_ptr,
+                                      const void* update_context_ptr) {
+    auto&       threads = *static_cast<ThreadPool*>(threads_ptr);
+    const auto& numa_context = *static_cast<const NumaReplicationContext*>(numa_context_ptr);
+    const auto& options = *static_cast<const OptionsMap*>(options_ptr);
+    auto&       tt = *static_cast<TranspositionTable*>(tt_ptr);
+    auto&       shared_hists = *static_cast<std::map<NumaIndex, SharedHistories>*>(shared_hists_ptr);
+    auto&       network = *static_cast<LazyNumaReplicatedSystemWide<Eval::NNUE::Network>*>(network_ptr);
+    const auto& update_context =
+      *static_cast<const Search::SearchManager::UpdateContext*>(update_context_ptr);
+
+    threads.set(numa_context.get_numa_config(), {options, threads, tt, shared_hists, network},
+                update_context);
+}
+
+std::size_t zfish_engine_option_hash_value(const void* options_ptr) {
+    return static_cast<std::size_t>((*static_cast<const OptionsMap*>(options_ptr))["Hash"]);
+}
+
+void zfish_engine_threads_ensure_network_replicated(void* threads_ptr) {
+    static_cast<ThreadPool*>(threads_ptr)->ensure_network_replicated();
+}
+
 void zfish_engine_threads_wait_finished(void* threads_ptr) {
     static_cast<ThreadPool*>(threads_ptr)->main_thread()->wait_for_search_finished();
+}
+
+void zfish_engine_tt_resize(void* tt_ptr, std::size_t mb, void* threads_ptr) {
+    static_cast<TranspositionTable*>(tt_ptr)->resize(mb, *static_cast<ThreadPool*>(threads_ptr));
+}
+
+void zfish_engine_main_manager_set_ponder(void* threads_ptr, std::uint8_t ponder) {
+    static_cast<ThreadPool*>(threads_ptr)->main_manager()->ponder = ponder != 0;
 }
 
 void zfish_engine_tt_clear(void* tt_ptr, void* threads_ptr) {
@@ -2133,8 +2211,6 @@ namespace Stockfish {
 
 #include "uci_bridge/engine_network_helpers.inc"
 
-#include "uci_bridge/engine_runtime_controls.inc"
-
 #include "uci_bridge/debug_state.inc"
 
 #include "uci_bridge/debug_hit.inc"
@@ -2232,6 +2308,30 @@ std::optional<PositionSetError> Engine::set_position(const std::string&         
 }
 
 void Engine::stop() { zfish_engine_stop(&threads); }
+
+void Engine::set_numa_config_from_option(const std::string& o) {
+    zfish_engine_set_numa_config_from_option(
+      &numaContext,
+      &options,
+      &threads,
+      &tt,
+      &sharedHists,
+      &network,
+      &updateContext,
+      reinterpret_cast<const unsigned char*>(o.data()),
+      o.size());
+}
+
+void Engine::resize_threads() {
+    zfish_engine_resize_threads(&numaContext, &options, &threads, &tt, &sharedHists, &network,
+                                &updateContext);
+}
+
+void Engine::set_tt_size(size_t mb) { zfish_engine_set_tt_size(&threads, &tt, mb); }
+
+void Engine::set_ponderhit(bool b) {
+    zfish_engine_set_ponderhit(&threads, static_cast<std::uint8_t>(b ? 1 : 0));
+}
 
 void Engine::search_clear() {
     const auto syzygy_path = std::string(options["SyzygyPath"]);
