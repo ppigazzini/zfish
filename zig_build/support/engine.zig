@@ -3,10 +3,18 @@ const c = @cImport({
     @cInclude("stdlib.h");
     @cInclude("stdio.h");
 });
+const position_port = @import("position");
 
 const layer_stacks: usize = 8;
 const square_count: usize = 64;
 const piece_to_char = " PNBRQK  pnbrqk";
+const white: u8 = 0;
+const black: u8 = 1;
+const white_oo: u8 = 1;
+const white_ooo: u8 = 2;
+const black_oo: u8 = 4;
+const black_ooo: u8 = 8;
+const sq_none: u8 = 64;
 const max_ply: c_int = 246;
 const value_mate: c_int = 32000;
 const value_tb: c_int = value_mate - max_ply - 1;
@@ -114,15 +122,33 @@ extern fn zfish_engine_option_hash_value(options: *const anyopaque) usize;
 extern fn zfish_engine_threads_ensure_network_replicated(threads: *anyopaque) void;
 extern fn zfish_engine_tt_resize(tt: *anyopaque, mb: usize, threads: *anyopaque) void;
 extern fn zfish_engine_main_manager_set_ponder(threads: *anyopaque, ponder: u8) void;
-extern fn zfish_engine_position_summary(pos: *const anyopaque, out: *PositionSummary) void;
-extern fn zfish_engine_position_fen(pos: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_position_probe_tablebases(pos: *const anyopaque) TablebaseProbe;
+extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
+extern fn zfish_threadpool_bound_node_count(pool: *const anyopaque) usize;
+extern fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usize) usize;
+extern fn zfish_numa_context_node_count(numa_context: *const anyopaque) usize;
+extern fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize;
 extern fn zfish_engine_accumulator_stack_create() ?*anyopaque;
 extern fn zfish_engine_accumulator_stack_destroy(stack: ?*anyopaque) void;
 extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*anyopaque;
 extern fn zfish_engine_accumulator_caches_destroy(caches: ?*anyopaque) void;
 extern fn zfish_accumulator_stack_reset(stack: *anyopaque) void;
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
+extern fn zfish_position_side_to_move(pos: *const anyopaque) u8;
+extern fn zfish_position_checkers(pos: *const anyopaque) u64;
+extern fn zfish_position_key(pos: *const anyopaque) u64;
+extern fn zfish_position_material_value(pos: *const anyopaque) c_int;
+extern fn zfish_position_rule50_count(pos: *const anyopaque) c_int;
+extern fn zfish_position_castling_rights(pos: *const anyopaque) u8;
+extern fn zfish_position_castling_rook_square(pos: *const anyopaque, castling_right: u8) u8;
+extern fn zfish_position_ep_square(pos: *const anyopaque) u8;
+extern fn zfish_position_is_chess960(pos: *const anyopaque) u8;
+extern fn zfish_position_game_ply(pos: *const anyopaque) c_int;
+extern fn zfish_tbprobe_max_cardinality() usize;
+extern fn zfish_tbprobe_probe_fen(
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    chess960: u8,
+) TablebaseProbe;
 extern fn zfish_network_evaluate(
     network: *const anyopaque,
     pos: *const anyopaque,
@@ -271,15 +297,19 @@ pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
     });
 }
 
+pub fn fen(pos: *const anyopaque) ?[*:0]u8 {
+    return positionFen(pos, null);
+}
+
 pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
     const allocator = std.heap.c_allocator;
     var pieces: [square_count]u8 = [_]u8{0} ** square_count;
     zfish_accumulator_position_snapshot(pos, &pieces);
 
     const summary = positionSummary(pos);
-    const fen_ptr = zfish_engine_position_fen(pos) orelse return null;
+    const fen_ptr = positionFen(pos, &pieces) orelse return null;
     defer c.free(@ptrCast(fen_ptr));
-    const fen = std.mem.span(fen_ptr);
+    const fen_text = std.mem.span(fen_ptr);
 
     var buffer = std.ArrayList(u8).empty;
     defer buffer.deinit(allocator);
@@ -305,13 +335,13 @@ pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
     }
 
     buffer.appendSlice(allocator, "   a   b   c   d   e   f   g   h\n\nFen: ") catch return null;
-    buffer.appendSlice(allocator, fen) catch return null;
+    buffer.appendSlice(allocator, fen_text) catch return null;
     buffer.appendSlice(allocator, "\nKey: ") catch return null;
     appendHexKey(&buffer, summary.key) catch return null;
     buffer.appendSlice(allocator, "\nCheckers: ") catch return null;
     appendCheckers(&buffer, summary.checkers) catch return null;
 
-    const tb = zfish_engine_position_probe_tablebases(pos);
+    const tb = probeTablebases(pos, &pieces);
     if (tb.available != 0) {
         buffer.appendSlice(allocator, "\nTablebases WDL: ") catch return null;
         appendPaddedInt(&buffer, tb.wdl) catch return null;
@@ -373,6 +403,53 @@ pub fn formatThreadAllocation(
     );
 }
 
+pub fn threadBindingInformation(
+    numa_context: *const anyopaque,
+    threads: *const anyopaque,
+) ?[*:0]u8 {
+    const bound_count = zfish_threadpool_bound_node_count(threads);
+    if (bound_count == 0)
+        return allocMessage("", .{});
+
+    const allocator = std.heap.c_allocator;
+    const node_count = zfish_numa_context_node_count(numa_context);
+
+    const counts = allocator.alloc(usize, node_count) catch return null;
+    defer allocator.free(counts);
+    @memset(counts, 0);
+
+    var index: usize = 0;
+    while (index < bound_count) : (index += 1) {
+        const node = zfish_threadpool_bound_node_at(threads, index);
+        if (node < node_count)
+            counts[node] += 1;
+    }
+
+    const pairs = allocator.alloc(CountPair, node_count) catch return null;
+    defer allocator.free(pairs);
+
+    index = 0;
+    while (index < node_count) : (index += 1) {
+        pairs[index] = .{
+            .current = counts[index],
+            .total = zfish_numa_context_cpus_in_node(numa_context, index),
+        };
+    }
+
+    return formatThreadBinding(pairs.ptr, pairs.len);
+}
+
+pub fn threadAllocationInformation(
+    numa_context: *const anyopaque,
+    threads: *const anyopaque,
+) ?[*:0]u8 {
+    const binding_ptr = threadBindingInformation(numa_context, threads) orelse return null;
+    defer c.free(@ptrCast(binding_ptr));
+
+    const binding = std.mem.span(binding_ptr);
+    return formatThreadAllocation(zfish_threadpool_thread_count(threads), binding.ptr, binding.len);
+}
+
 pub fn formatNetworkStatus(
     replica_index: usize,
     status: u8,
@@ -432,9 +509,80 @@ fn buildNnueTrace(
 }
 
 fn positionSummary(pos: *const anyopaque) PositionSummary {
-    var summary: PositionSummary = undefined;
-    zfish_engine_position_summary(pos, &summary);
-    return summary;
+    return .{
+        .side_to_move_white = if (zfish_position_side_to_move(pos) == white) 1 else 0,
+        .checkers = zfish_position_checkers(pos),
+        .key = zfish_position_key(pos),
+        .material = zfish_position_material_value(pos),
+        .rule50_count = zfish_position_rule50_count(pos),
+    };
+}
+
+fn positionFen(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) ?[*:0]u8 {
+    var pieces_storage: [square_count]u8 = undefined;
+    const pieces: *const [square_count]u8 = if (pieces_opt) |provided|
+        provided
+    else blk: {
+        zfish_accumulator_position_snapshot(pos, &pieces_storage);
+        break :blk &pieces_storage;
+    };
+
+    return position_port.formatFen(
+        @ptrCast(pieces),
+        zfish_position_side_to_move(pos),
+        zfish_position_is_chess960(pos),
+        zfish_position_castling_rights(pos),
+        zfish_position_castling_rook_square(pos, white_oo),
+        zfish_position_castling_rook_square(pos, white_ooo),
+        zfish_position_castling_rook_square(pos, black_oo),
+        zfish_position_castling_rook_square(pos, black_ooo),
+        zfish_position_ep_square(pos),
+        zfish_position_rule50_count(pos),
+        zfish_position_game_ply(pos),
+    );
+}
+
+fn probeTablebases(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) TablebaseProbe {
+    if (zfish_position_castling_rights(pos) != 0) {
+        return emptyTablebaseProbe();
+    }
+
+    var pieces_storage: [square_count]u8 = undefined;
+    const pieces: *const [square_count]u8 = if (pieces_opt) |provided|
+        provided
+    else blk: {
+        zfish_accumulator_position_snapshot(pos, &pieces_storage);
+        break :blk &pieces_storage;
+    };
+
+    if (countPieces(pieces) > zfish_tbprobe_max_cardinality()) {
+        return emptyTablebaseProbe();
+    }
+
+    const fen_ptr = positionFen(pos, pieces) orelse return emptyTablebaseProbe();
+    defer c.free(@ptrCast(fen_ptr));
+    const fen_text = std.mem.span(fen_ptr);
+    return zfish_tbprobe_probe_fen(fen_text.ptr, fen_text.len, zfish_position_is_chess960(pos));
+}
+
+fn countPieces(pieces: *const [square_count]u8) usize {
+    var count: usize = 0;
+    for (pieces.*) |piece| {
+        if (piece != 0) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
+fn emptyTablebaseProbe() TablebaseProbe {
+    return .{
+        .available = 0,
+        .wdl = 0,
+        .wdl_state = 0,
+        .dtz = 0,
+        .dtz_state = 0,
+    };
 }
 
 fn appendFormat(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {

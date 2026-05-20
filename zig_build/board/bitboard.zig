@@ -14,7 +14,11 @@ pub const MagicInitEntry = extern struct {
     attack_offset: usize,
 };
 
-extern fn zfish_movegen_attacks(piece_type: u8, square: u8, occupied: u64) u64;
+const knight_piece: u8 = 2;
+const bishop_piece: u8 = 3;
+const rook_piece: u8 = 4;
+const queen_piece: u8 = 5;
+const king_piece: u8 = 6;
 
 pub fn initMagicRuntime(
     entries: *[64][2]MagicInitEntry,
@@ -107,15 +111,32 @@ pub fn initRuntimeTables(
             for (0..64) |s2| {
                 if ((pseudoAttacks(pt, s1) & squareBb(s2)) != 0) {
                     line_bb[s1][s2] =
-                        (cxxAttacks(pt, s1, 0) & cxxAttacks(pt, s2, 0)) | squareBb(s1) | squareBb(s2);
+                        (slidingAttack(pt, s1, 0) & slidingAttack(pt, s2, 0)) | squareBb(s1) | squareBb(s2);
                     between_bb[s1][s2] =
-                        cxxAttacks(pt, s1, squareBb(s2)) & cxxAttacks(pt, s2, squareBb(s1));
-                    ray_pass_bb[s1][s2] = cxxAttacks(pt, s1, 0) & (cxxAttacks(pt, s2, squareBb(s1)) | squareBb(s2));
+                        slidingAttack(pt, s1, squareBb(s2)) & slidingAttack(pt, s2, squareBb(s1));
+                    ray_pass_bb[s1][s2] = slidingAttack(pt, s1, 0) & (slidingAttack(pt, s2, squareBb(s1)) | squareBb(s2));
                 }
                 between_bb[s1][s2] |= squareBb(s2);
             }
         }
     }
+}
+
+pub fn attacks(piece_type: u8, square: u8, occupied: u64) u64 {
+    const sq = @as(usize, @intCast(square));
+    return switch (piece_type) {
+        knight_piece => knightAttacks(sq),
+        bishop_piece => slidingAttack(PieceType.bishop, sq, occupied),
+        rook_piece => slidingAttack(PieceType.rook, sq, occupied),
+        queen_piece =>
+            slidingAttack(PieceType.bishop, sq, occupied) | slidingAttack(PieceType.rook, sq, occupied),
+        king_piece => kingAttacks(sq),
+        else => 0,
+    };
+}
+
+pub fn between(from: u8, to: u8) u64 {
+    return betweenSquares(@as(usize, @intCast(from)), @as(usize, @intCast(to)));
 }
 
 pub fn pretty(bitboard: u64) ?[*:0]u8 {
@@ -190,8 +211,8 @@ fn initMagics(pt: PieceType, table: []u64, magics: *[64][2]Magic) void {
     for (0..64) |square| {
         const edges = ((rank_1_bb | rank_8_bb) & ~rankBb(square)) | ((file_a_bb | file_h_bb) & ~fileBb(square));
         var magic_ref = &magics[square][table_index];
-        const attacks = slidingAttack(pt, square, 0);
-        magic_ref.mask = attacks & ~edges;
+        const attack_mask = slidingAttack(pt, square, 0);
+        magic_ref.mask = attack_mask & ~edges;
         magic_ref.shift = @intCast(64 - @popCount(magic_ref.mask));
         magic_ref.attacks = if (square == 0)
             table.ptr
@@ -253,8 +274,8 @@ fn initMagicEntries(
     for (0..64) |square| {
         const edges = ((rank_1_bb | rank_8_bb) & ~rankBb(square)) | ((file_a_bb | file_h_bb) & ~fileBb(square));
         var entry = &entries[square][table_index];
-        const attacks = slidingAttack(pt, square, 0);
-        entry.mask = attacks & ~edges;
+        const attack_mask = slidingAttack(pt, square, 0);
+        entry.mask = attack_mask & ~edges;
         entry.shift = @intCast((if (magic_is_64bit_index) 64 else 32) - @popCount(entry.mask));
         entry.attack_offset = if (square == 0)
             0
@@ -307,10 +328,6 @@ fn attacksBb(pt: PieceType, square: usize, occupied: u64, magics: *[64][2]Magic)
     return magic_ref.attacks[computeMagicIndex(magic_ref, occupied)];
 }
 
-fn cxxAttacks(pt: PieceType, square: usize, occupied: u64) u64 {
-    return zfish_movegen_attacks(@intFromEnum(pt), @intCast(square), occupied);
-}
-
 fn computeMagicIndexEntry(entry: MagicInitEntry, occupied: u64) usize {
     if (magic_is_64bit_index) {
         return @intCast(((occupied & entry.mask) *% entry.magic) >> @as(u6, @intCast(entry.shift)));
@@ -333,7 +350,7 @@ fn pseudoAttacks(pt: PieceType, square: usize) u64 {
 }
 
 fn slidingAttack(pt: PieceType, square: usize, occupied: u64) u64 {
-    var attacks: u64 = 0;
+    var result: u64 = 0;
     const directions = if (pt == PieceType.rook) rook_directions[0..] else bishop_directions[0..];
     for (directions) |direction| {
         var current = square;
@@ -342,14 +359,102 @@ fn slidingAttack(pt: PieceType, square: usize, occupied: u64) u64 {
             if (destination == 0) {
                 break;
             }
-            attacks |= destination;
+            result |= destination;
             current = lsb(destination);
             if ((occupied & destination) != 0) {
                 break;
             }
         }
     }
-    return attacks;
+    return result;
+}
+
+fn betweenSquares(from: usize, to: usize) u64 {
+    var result = squareBb(to);
+    if (from == to) {
+        return result;
+    }
+
+    const step = lineStep(from, to) orelse return result;
+    var current = from;
+    while (true) {
+        const destination = safeDestination(current, step);
+        if (destination == 0) {
+            return result;
+        }
+
+        result |= destination;
+        current = lsb(destination);
+        if (current == to) {
+            return result;
+        }
+    }
+}
+
+fn lineStep(from: usize, to: usize) ?i8 {
+    const from_file = fileOf(from);
+    const to_file = fileOf(to);
+    const from_rank = rankOf(from);
+    const to_rank = rankOf(to);
+
+    if (from_file == to_file) {
+        return if (to_rank > from_rank) north else south;
+    }
+
+    if (from_rank == to_rank) {
+        return if (to_file > from_file) east else west;
+    }
+
+    if (absDiff(from_file, to_file) != absDiff(from_rank, to_rank)) {
+        return null;
+    }
+
+    if (to_rank > from_rank) {
+        return if (to_file > from_file) north_east else north_west;
+    }
+
+    return if (to_file > from_file) south_east else south_west;
+}
+
+fn knightAttacks(square: usize) u64 {
+    var result: u64 = 0;
+    const file = @as(i32, @intCast(fileOf(square)));
+    const rank = @as(i32, @intCast(rankOf(square)));
+    const offsets = [_][2]i32{
+        .{ -2, -1 }, .{ -2, 1 }, .{ -1, -2 }, .{ -1, 2 },
+        .{ 1, -2 },  .{ 1, 2 },  .{ 2, -1 },  .{ 2, 1 },
+    };
+
+    for (offsets) |offset| {
+        result |= squareAt(file + offset[0], rank + offset[1]);
+    }
+
+    return result;
+}
+
+fn kingAttacks(square: usize) u64 {
+    var result: u64 = 0;
+    const file = @as(i32, @intCast(fileOf(square)));
+    const rank = @as(i32, @intCast(rankOf(square)));
+    const offsets = [_][2]i32{
+        .{ -1, -1 }, .{ -1, 0 }, .{ -1, 1 },
+        .{ 0, -1 },               .{ 0, 1 },
+        .{ 1, -1 },  .{ 1, 0 },  .{ 1, 1 },
+    };
+
+    for (offsets) |offset| {
+        result |= squareAt(file + offset[0], rank + offset[1]);
+    }
+
+    return result;
+}
+
+fn squareAt(file: i32, rank: i32) u64 {
+    if (file < 0 or file >= 8 or rank < 0 or rank >= 8) {
+        return 0;
+    }
+
+    return squareBb(@as(usize, @intCast(rank * 8 + file)));
 }
 
 fn safeDestination(square: usize, step: i8) u64 {

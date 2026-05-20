@@ -159,6 +159,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    engine_module.addImport("position", position_module);
+    movegen_module.addImport("bitboard", bitboard_module);
     exe.root_module.addImport("benchmark", benchmark_module);
     exe.root_module.addImport("bitboard", bitboard_module);
     exe.root_module.addImport("engine", engine_module);

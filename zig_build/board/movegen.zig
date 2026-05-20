@@ -1,3 +1,6 @@
+const std = @import("std");
+const bitboard = @import("bitboard");
+
 const white: u8 = 0;
 const black: u8 = 1;
 
@@ -30,6 +33,7 @@ const north_west: i8 = north + west;
 const promotion: u16 = 1 << 14;
 const en_passant: u16 = 2 << 14;
 const castling: u16 = 3 << 14;
+const move_type_mask: u16 = 3 << 14;
 
 const file_a_bb: u64 = 0x0101010101010101;
 const file_h_bb: u64 = file_a_bb << 7;
@@ -70,8 +74,18 @@ const MoveWriter = struct {
 };
 
 extern fn zfish_movegen_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
-extern fn zfish_movegen_attacks(piece_type: u8, square: u8, occupied: u64) u64;
-extern fn zfish_movegen_between(from: u8, to: u8) u64;
+extern fn zfish_position_move_is_legal(pos: *const anyopaque, raw_move: u16) u8;
+extern fn zfish_position_side_to_move(pos: *const anyopaque) u8;
+extern fn zfish_position_pieces_all(pos: *const anyopaque) u64;
+extern fn zfish_position_pieces_by_color(pos: *const anyopaque, color: u8) u64;
+extern fn zfish_position_pieces_by_type(pos: *const anyopaque, piece_type: u8) u64;
+extern fn zfish_position_king_square(pos: *const anyopaque, color: u8) u8;
+extern fn zfish_position_ep_square(pos: *const anyopaque) u8;
+extern fn zfish_position_checkers(pos: *const anyopaque) u64;
+extern fn zfish_position_blockers_for_king(pos: *const anyopaque, color: u8) u64;
+extern fn zfish_position_castling_rights(pos: *const anyopaque) u8;
+extern fn zfish_position_castling_impeded(pos: *const anyopaque, castling_right: u8) u8;
+extern fn zfish_position_castling_rook_square(pos: *const anyopaque, castling_right: u8) u8;
 
 pub fn generateCaptures(pos: *const anyopaque, move_list: [*]u16) usize {
     return generate(.captures, pos, move_list);
@@ -89,14 +103,63 @@ pub fn generateNonEvasions(pos: *const anyopaque, move_list: [*]u16) usize {
     return generate(.non_evasions, pos, move_list);
 }
 
-fn generate(comptime kind: GenType, pos: *const anyopaque, move_list: [*]u16) usize {
-    var snapshot: PositionSnapshot = undefined;
-    zfish_movegen_fill_snapshot(pos, &snapshot);
+pub fn generateLegal(pos: *const anyopaque, move_list: [*]u16) usize {
+    var snapshot = loadSnapshot(pos);
 
+    const count = if (snapshot.checkers != 0)
+        generateWithSnapshot(.evasions, &snapshot, move_list)
+    else
+        generateWithSnapshot(.non_evasions, &snapshot, move_list);
+
+    return filterLegalMoves(pos, &snapshot, move_list, count);
+}
+
+fn generate(comptime kind: GenType, pos: *const anyopaque, move_list: [*]u16) usize {
+    var snapshot = loadSnapshot(pos);
+
+    return generateWithSnapshot(kind, &snapshot, move_list);
+}
+
+fn loadSnapshot(pos: *const anyopaque) PositionSnapshot {
+    var snapshot = std.mem.zeroes(PositionSnapshot);
+
+    snapshot.side_to_move = zfish_position_side_to_move(pos);
+    snapshot.pieces_all = zfish_position_pieces_all(pos);
+    snapshot.pieces_by_color[white] = zfish_position_pieces_by_color(pos, white);
+    snapshot.pieces_by_color[black] = zfish_position_pieces_by_color(pos, black);
+    snapshot.pieces_by_type[no_piece_type] = snapshot.pieces_all;
+    snapshot.pieces_by_type[pawn] = zfish_position_pieces_by_type(pos, pawn);
+    snapshot.pieces_by_type[knight] = zfish_position_pieces_by_type(pos, knight);
+    snapshot.pieces_by_type[bishop] = zfish_position_pieces_by_type(pos, bishop);
+    snapshot.pieces_by_type[rook] = zfish_position_pieces_by_type(pos, rook);
+    snapshot.pieces_by_type[queen] = zfish_position_pieces_by_type(pos, queen);
+    snapshot.pieces_by_type[king] = zfish_position_pieces_by_type(pos, king);
+    snapshot.king_square[white] = zfish_position_king_square(pos, white);
+    snapshot.king_square[black] = zfish_position_king_square(pos, black);
+    snapshot.ep_square = zfish_position_ep_square(pos);
+    snapshot.checkers = zfish_position_checkers(pos);
+    snapshot.blockers_for_king[white] = zfish_position_blockers_for_king(pos, white);
+    snapshot.blockers_for_king[black] = zfish_position_blockers_for_king(pos, black);
+    snapshot.castling_rights = zfish_position_castling_rights(pos);
+
+    const rights = [_]u8{ white_oo, white_ooo, black_oo, black_ooo };
+    for (rights) |right| {
+        snapshot.castling_impeded[right] = zfish_position_castling_impeded(pos, right);
+        snapshot.castling_rook_square[right] = zfish_position_castling_rook_square(pos, right);
+    }
+
+    return snapshot;
+}
+
+fn generateWithSnapshot(
+    comptime kind: GenType,
+    snapshot: *const PositionSnapshot,
+    move_list: [*]u16,
+) usize {
     var writer = MoveWriter{ .moves = move_list };
     switch (snapshot.side_to_move) {
-        white => generateAll(white, kind, &snapshot, &writer),
-        black => generateAll(black, kind, &snapshot, &writer),
+        white => generateAll(white, kind, snapshot, &writer),
+        black => generateAll(black, kind, snapshot, &writer),
         else => unreachable,
     }
 
@@ -115,7 +178,7 @@ fn generateAll(
 
     if (kind != .evasions or !moreThanOne(snapshot.checkers)) {
         target = switch (kind) {
-            .evasions => zfish_movegen_between(ksq, lsb(snapshot.checkers)),
+            .evasions => bitboard.between(ksq, lsb(snapshot.checkers)),
             .non_evasions => ~piecesColor(snapshot, us),
             .captures => piecesColor(snapshot, them),
             .quiets => ~snapshot.pieces_all,
@@ -129,7 +192,7 @@ fn generateAll(
     }
 
     const king_target = if (kind == .evasions) ~piecesColor(snapshot, us) else target;
-    splatMoves(writer, ksq, zfish_movegen_attacks(king, ksq, 0) & king_target);
+    splatMoves(writer, ksq, bitboard.attacks(king, ksq, 0) & king_target);
 
     if ((kind == .quiets or kind == .non_evasions) and canCastleAny(snapshot, us)) {
         const king_side = kingSideRight(us);
@@ -232,7 +295,7 @@ fn generateMoves(
     var pieces = piecesColorType(snapshot, us, piece_type);
     while (pieces != 0) {
         const from = popLsb(&pieces);
-        const attacks = zfish_movegen_attacks(piece_type, from, snapshot.pieces_all) & target;
+        const attacks = bitboard.attacks(piece_type, from, snapshot.pieces_all) & target;
         splatMoves(writer, from, attacks);
     }
 }
@@ -336,6 +399,44 @@ fn moreThanOne(bb: u64) bool {
 
 fn squareBb(square: u8) u64 {
     return @as(u64, 1) << @as(u6, @intCast(square));
+}
+
+fn filterLegalMoves(
+    pos: *const anyopaque,
+    snapshot: *const PositionSnapshot,
+    move_list: [*]u16,
+    count: usize,
+) usize {
+    const us = snapshot.side_to_move;
+    const pinned = snapshot.blockers_for_king[us] & piecesColor(snapshot, us);
+    const king_square = snapshot.king_square[us];
+
+    var keep_count: usize = 0;
+    var index: usize = 0;
+    while (index < count) : (index += 1) {
+        const raw_move = move_list[index];
+        if (!requiresLegalCheck(raw_move, pinned, king_square) or
+            zfish_position_move_is_legal(pos, raw_move) != 0)
+        {
+            move_list[keep_count] = raw_move;
+            keep_count += 1;
+        }
+    }
+
+    return keep_count;
+}
+
+fn requiresLegalCheck(raw_move: u16, pinned: u64, king_square: u8) bool {
+    const from = moveFrom(raw_move);
+    return ((pinned & squareBb(from)) != 0) or from == king_square or moveType(raw_move) == en_passant;
+}
+
+fn moveFrom(raw_move: u16) u8 {
+    return @intCast((raw_move >> 6) & 0x3f);
+}
+
+fn moveType(raw_move: u16) u16 {
+    return raw_move & move_type_mask;
 }
 
 fn lsb(bb: u64) u8 {

@@ -258,13 +258,11 @@ pub export fn zfish_movegen_generate_non_evasions(
     return movegen_port.generateNonEvasions(pos, move_list);
 }
 
-pub export fn zfish_movepick_score_moves(
-    kind: u8,
-    inputs: [*]const movepick_port.ScoreInput,
-    count: usize,
-    outputs: [*]movepick_port.SortEntry,
-) void {
-    return movepick_port.scoreMoves(kind, inputs, count, outputs);
+pub export fn zfish_movegen_generate_legal(
+    pos: *const anyopaque,
+    move_list: [*]u16,
+) usize {
+    return movegen_port.generateLegal(pos, move_list);
 }
 
 pub export fn zfish_movepick_partial_insertion_sort(
@@ -273,6 +271,14 @@ pub export fn zfish_movepick_partial_insertion_sort(
     limit: c_int,
 ) void {
     return movepick_port.partialInsertionSort(entries, count, limit);
+}
+
+pub export fn zfish_movepick_score_list(
+    kind: u8,
+    context: *const movepick_port.MovePickerContext,
+    outputs: [*]movepick_port.SortEntry,
+) usize {
+    return movepick_port.scoreList(kind, context, outputs);
 }
 
 pub export fn zfish_movepick_init_main_stage(
@@ -313,6 +319,34 @@ pub export fn zfish_thread_start_thinking(
     setup_state: *const anyopaque,
 ) void {
     return thread_port.startThinking(pool, options, pos, limits, setup_state);
+}
+
+pub export fn zfish_threadpool_clear(pool: *anyopaque) void {
+    return thread_port.clear(pool);
+}
+
+pub export fn zfish_threadpool_start_searching(pool: *anyopaque) void {
+    return thread_port.startSearching(pool);
+}
+
+pub export fn zfish_threadpool_wait_for_search_finished(pool: *anyopaque) void {
+    return thread_port.waitForSearchFinished(pool);
+}
+
+pub export fn zfish_threadpool_ensure_network_replicated(pool: *anyopaque) void {
+    return thread_port.ensureNetworkReplicated(pool);
+}
+
+pub export fn zfish_threadpool_nodes_searched(pool: *anyopaque) u64 {
+    return thread_port.nodesSearched(pool);
+}
+
+pub export fn zfish_threadpool_tb_hits(pool: *anyopaque) u64 {
+    return thread_port.tbHits(pool);
+}
+
+pub export fn zfish_threadpool_best_thread_index(pool: *anyopaque) usize {
+    return thread_port.bestThreadIndex(pool);
 }
 
 pub export fn zfish_engine_format_numa_info(
@@ -401,6 +435,10 @@ pub export fn zfish_engine_eval_trace(
     return engine_port.evalTrace(pos, network);
 }
 
+pub export fn zfish_engine_fen(pos: *const anyopaque) ?[*:0]u8 {
+    return engine_port.fen(pos);
+}
+
 pub export fn zfish_engine_visualize(pos: *const anyopaque) ?[*:0]u8 {
     return engine_port.visualize(pos);
 }
@@ -418,6 +456,20 @@ pub export fn zfish_engine_format_thread_allocation(
     binding_len: usize,
 ) ?[*:0]u8 {
     return engine_port.formatThreadAllocation(thread_count, binding_ptr, binding_len);
+}
+
+pub export fn zfish_engine_thread_binding_information(
+    numa_context: *const anyopaque,
+    threads: *const anyopaque,
+) ?[*:0]u8 {
+    return engine_port.threadBindingInformation(numa_context, threads);
+}
+
+pub export fn zfish_engine_thread_allocation_information(
+    numa_context: *const anyopaque,
+    threads: *const anyopaque,
+) ?[*:0]u8 {
+    return engine_port.threadAllocationInformation(numa_context, threads);
 }
 
 pub export fn zfish_engine_format_network_status(
@@ -590,6 +642,25 @@ pub export fn zfish_tt_probe(
     depth_none: c_int,
 ) tt_port.TtProbeOutput {
     return tt_port.probe(cluster, key, generation, depth_none);
+}
+
+pub export fn zfish_tt_resize_state(
+    table_ptr: *?*anyopaque,
+    cluster_count_ptr: *usize,
+    generation_ptr: *u8,
+    mb: usize,
+    threads: *anyopaque,
+) void {
+    return tt_port.resizeState(table_ptr, cluster_count_ptr, generation_ptr, mb, threads);
+}
+
+pub export fn zfish_tt_clear_state(
+    table: ?*anyopaque,
+    cluster_count: usize,
+    generation_ptr: *u8,
+    threads: *anyopaque,
+) void {
+    return tt_port.clearState(table, cluster_count, generation_ptr, threads);
 }
 
 pub export fn zfish_option_case_insensitive_less(
