@@ -186,8 +186,26 @@ struct ZfishNnueTraceInput {
     const int*   positional_cp;
 };
 
+struct ZfishEnginePositionSummary {
+    std::uint8_t  side_to_move_white;
+    std::uint64_t checkers;
+    std::uint64_t key;
+    int           material;
+    int           rule50_count;
+};
+
+struct ZfishEngineTablebaseProbe {
+    std::uint8_t available;
+    int          wdl;
+    int          wdl_state;
+    int          dtz;
+    int          dtz_state;
+};
+
 const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
+const char* zfish_engine_eval_trace(void* pos, const void* network);
+const char* zfish_engine_visualize(const void* pos);
 const char* zfish_tbprobe_build_code(const unsigned char* piece_types_ptr, std::size_t piece_count);
 int         zfish_tbprobe_dtz_before_zeroing(int wdl);
 const char*   zfish_misc_engine_info_text();
@@ -1974,6 +1992,67 @@ void zfish_engine_tablebases_init(const unsigned char* path_ptr, std::size_t pat
     Tablebases::init(std::string(reinterpret_cast<const char*>(path_ptr), path_len));
 }
 
+void zfish_engine_position_summary(const void* pos_ptr, ZfishEnginePositionSummary* out) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    *out            = {
+      .side_to_move_white = static_cast<std::uint8_t>(pos.side_to_move() == WHITE ? 1 : 0),
+      .checkers           = pos.checkers(),
+      .key                = pos.key(),
+      .material           = 534 * pos.count<PAWN>() + pos.non_pawn_material(),
+      .rule50_count       = pos.rule50_count(),
+    };
+}
+
+const char* zfish_engine_position_fen(const void* pos_ptr) {
+    const auto fen = static_cast<const Position*>(pos_ptr)->fen();
+    auto*      out = static_cast<char*>(std::malloc(fen.size() + 1));
+    if (!out)
+        return nullptr;
+
+    std::memcpy(out, fen.c_str(), fen.size() + 1);
+    return out;
+}
+
+ZfishEngineTablebaseProbe zfish_engine_position_probe_tablebases(const void* pos_ptr) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    if (Tablebases::MaxCardinality < popcount(pos.pieces()) || pos.can_castle(ANY_CASTLING))
+        return {};
+
+    StateInfo p_state;
+    Position  probe_pos;
+    probe_pos.set(pos.fen(), pos.is_chess960(), &p_state);
+
+    Tablebases::ProbeState wdl_state = Tablebases::FAIL;
+    Tablebases::ProbeState dtz_state = Tablebases::FAIL;
+    const auto             wdl       = Tablebases::probe_wdl(probe_pos, &wdl_state);
+    const auto             dtz       = Tablebases::probe_dtz(probe_pos, &dtz_state);
+
+    return {
+      .available = 1,
+      .wdl       = static_cast<int>(wdl),
+      .wdl_state = static_cast<int>(wdl_state),
+      .dtz       = dtz,
+      .dtz_state = static_cast<int>(dtz_state),
+    };
+}
+
+void* zfish_engine_accumulator_stack_create() {
+    return new (std::nothrow) Eval::NNUE::AccumulatorStack();
+}
+
+void zfish_engine_accumulator_stack_destroy(void* stack_ptr) {
+    delete static_cast<Eval::NNUE::AccumulatorStack*>(stack_ptr);
+}
+
+void* zfish_engine_accumulator_caches_create(const void* network_ptr) {
+    return new (std::nothrow)
+      Eval::NNUE::AccumulatorCaches(*static_cast<const Eval::NNUE::Network*>(network_ptr));
+}
+
+void zfish_engine_accumulator_caches_destroy(void* caches_ptr) {
+    delete static_cast<Eval::NNUE::AccumulatorCaches*>(caches_ptr);
+}
+
 }
 
 void ThreadPool::start_thinking(const OptionsMap&  options,
@@ -2048,25 +2127,13 @@ void ThreadPool::ensure_network_replicated() {
 
 namespace Stockfish {
 
-std::string build_nnue_trace(Stockfish::Position&                     pos,
-                             const Stockfish::Eval::NNUE::Network&     network,
-                             Stockfish::Eval::NNUE::AccumulatorCaches& caches);
-
 #include "uci_bridge/misc_text.inc"
 
 #include "uci_bridge/engine_numa_text.inc"
 
-#include "uci_bridge/engine_view_helpers.inc"
-
 #include "uci_bridge/engine_network_helpers.inc"
 
-#include "uci_bridge/engine_trace_eval.inc"
-
 #include "uci_bridge/engine_runtime_controls.inc"
-
-#include "uci_bridge/eval_trace_entry.inc"
-
-#include "uci_bridge/nnue_trace_builder.inc"
 
 #include "uci_bridge/debug_state.inc"
 
@@ -2125,7 +2192,27 @@ void Engine::go(Search::LimitsType& limits) {
     threads.start_thinking(options, pos, states, limits);
 }
 
-#include "uci_bridge/engine_listener_helpers.inc"
+void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
+    updateContext.onUpdateNoMoves = std::move(f);
+}
+
+void Engine::set_on_update_full(std::function<void(const Engine::InfoFull&)>&& f) {
+    updateContext.onUpdateFull = std::move(f);
+}
+
+void Engine::set_on_iter(std::function<void(const Engine::InfoIter&)>&& f) {
+    updateContext.onIter = std::move(f);
+}
+
+void Engine::set_on_bestmove(std::function<void(std::string_view, std::string_view)>&& f) {
+    updateContext.onBestmove = std::move(f);
+}
+
+void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {
+    onVerifyNetwork = std::move(f);
+}
+
+void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search_finished(); }
 
 std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
                                                      const std::vector<std::string>& moves) {
@@ -2151,6 +2238,16 @@ void Engine::search_clear() {
     zfish_engine_search_clear(&threads, &tt,
                               reinterpret_cast<const unsigned char*>(syzygy_path.data()),
                               syzygy_path.size());
+}
+
+void Engine::trace_eval() const {
+    StateListPtr trace_states(new std::deque<StateInfo>(1));
+    Position     p;
+    p.set(pos.fen(), options["UCI_Chess960"], &trace_states->back());
+
+    verify_network();
+
+    sync_cout << "\n" << Eval::trace(p, *network) << sync_endl;
 }
 
 Engine::Engine(std::optional<std::string> path) :
@@ -2315,6 +2412,23 @@ void assign_magic_entries() {
 }
 
 }  // namespace
+
+const OptionsMap& Engine::get_options() const { return options; }
+OptionsMap&       Engine::get_options() { return options; }
+
+std::string Engine::fen() const { return pos.fen(); }
+
+void Engine::flip() { pos.flip(); }
+
+std::string Engine::visualize() const {
+    return take_string_and_free_required(zfish_engine_visualize(&pos));
+}
+
+int Engine::get_hashfull(int maxAge) const { return tt.hashfull(maxAge); }
+
+std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
+    return take_string_and_free_required(zfish_engine_eval_trace(&pos, &network));
+}
 
 extern "C" {
 
