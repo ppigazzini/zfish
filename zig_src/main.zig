@@ -218,6 +218,14 @@ pub export fn zfish_tbprobe_build_code(
     return tbprobe_port.buildCode(piece_types_ptr, piece_count);
 }
 
+pub export fn zfish_tbprobe_add_tables(
+    tables: *anyopaque,
+    piece_types_ptr: [*]const u8,
+    piece_count: usize,
+) void {
+    return tbprobe_port.addTables(tables, piece_types_ptr, piece_count);
+}
+
 pub export fn zfish_tbprobe_dtz_before_zeroing(wdl: c_int) c_int {
     return tbprobe_port.dtzBeforeZeroing(wdl);
 }

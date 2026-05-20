@@ -1,7 +1,34 @@
 const std = @import("std");
+const c = @cImport({
+    @cInclude("stdlib.h");
+});
 
 const piece_to_char = " PNBRQK";
 const king: u8 = 6;
+
+extern fn zfish_tbprobe_has_wdl_file(code_ptr: [*]const u8, code_len: usize) u8;
+extern fn zfish_tbprobe_has_dtz_file(code_ptr: [*]const u8, code_len: usize) u8;
+extern fn zfish_tbprobe_note_dtz_found(tables: *anyopaque) void;
+extern fn zfish_tbprobe_register_wdl_table(
+    tables: *anyopaque,
+    code_ptr: [*]const u8,
+    code_len: usize,
+    piece_count: usize,
+) void;
+
+pub fn addTables(tables: *anyopaque, piece_types_ptr: [*]const u8, piece_count: usize) void {
+    const code_ptr = buildCode(piece_types_ptr, piece_count) orelse return;
+    defer c.free(@ptrCast(code_ptr));
+
+    const code = std.mem.span(code_ptr);
+    if (zfish_tbprobe_has_dtz_file(code.ptr, code.len) != 0)
+        zfish_tbprobe_note_dtz_found(tables);
+
+    if (zfish_tbprobe_has_wdl_file(code.ptr, code.len) == 0)
+        return;
+
+    zfish_tbprobe_register_wdl_table(tables, code.ptr, code.len, piece_count);
+}
 
 pub fn buildCode(piece_types_ptr: [*]const u8, piece_count: usize) ?[*:0]u8 {
     return buildCodeAlloc(piece_types_ptr[0..piece_count]) catch null;
