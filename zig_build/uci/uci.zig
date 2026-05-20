@@ -1,4 +1,11 @@
 const std = @import("std");
+const c = @cImport({
+    @cInclude("stdlib.h");
+    @cInclude("sys/time.h");
+});
+
+const benchmark_port = @import("benchmark");
+const misc_port = @import("misc");
 
 pub const DispatchResult = extern struct {
     should_quit: u8,
@@ -34,22 +41,12 @@ pub const ParsedPosition = extern struct {
 extern fn zfish_uci_command_stop(engine: *anyopaque) void;
 extern fn zfish_uci_command_ponderhit(engine: *anyopaque) void;
 extern fn zfish_uci_command_uci(engine: *anyopaque) void;
-extern fn zfish_uci_command_setoption(
-    engine: *anyopaque,
-    name_ptr: [*]const u8,
-    name_len: usize,
-    value_ptr: [*]const u8,
-    value_len: usize,
-) void;
-extern fn zfish_uci_command_go(engine: *anyopaque, limits: ParsedLimits) void;
-extern fn zfish_uci_command_position(
+extern fn zfish_uci_command_setoption_text(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
+extern fn zfish_uci_command_go_text(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
+extern fn zfish_uci_command_position_text(
     engine: *anyopaque,
     full_command_ptr: [*]const u8,
     full_command_len: usize,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    moves_ptr: [*]const u8,
-    moves_len: usize,
 ) void;
 extern fn zfish_uci_command_search_clear(engine: *anyopaque) void;
 extern fn zfish_uci_command_isready() void;
@@ -68,6 +65,19 @@ extern fn zfish_uci_command_export_net(
 extern fn zfish_uci_command_help() void;
 extern fn zfish_uci_command_unknown(command_ptr: [*]const u8, command_len: usize) void;
 extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize) ParsedSetOption;
+extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
+extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
+extern fn zfish_uci_read_command_line() ?[*:0]u8;
+extern fn zfish_uci_engine_perft_depth(uci_ptr: *anyopaque, depth: c_int) u64;
+extern fn zfish_uci_engine_wait_finished(uci_ptr: *anyopaque) void;
+extern fn zfish_uci_engine_nodes_searched(uci_ptr: *const anyopaque) u64;
+extern fn zfish_uci_engine_reset_nodes_searched() void;
+extern fn zfish_uci_engine_hashfull(uci_ptr: *const anyopaque, max_age: c_int) c_int;
+extern fn zfish_uci_engine_fen_text(uci_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_uci_engine_numa_config_string(uci_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_uci_engine_thread_binding_info_text(uci_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_uci_set_quiet_listeners(uci_ptr: *anyopaque) void;
+extern fn zfish_uci_set_default_listeners(uci_ptr: *anyopaque) void;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -252,33 +262,17 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
     }
 
     if (std.mem.eql(u8, token, "setoption")) {
-        const parsed = zfish_option_parse_setoption(args.ptr, args.len);
-        defer freeMaybeCString(parsed.name);
-        defer freeMaybeCString(parsed.value);
-
-        const name = if (parsed.name) |ptr| std.mem.span(ptr) else "";
-        const value = if (parsed.value) |ptr| std.mem.span(ptr) else "";
-        zfish_uci_command_setoption(engine, name.ptr, name.len, value.ptr, value.len);
+        zfish_uci_command_setoption_text(engine, args.ptr, args.len);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "go")) {
-        const limits = parseLimits(trimmed);
-        defer freeMaybeCString(limits.searchmoves);
-        zfish_uci_command_go(engine, limits);
+        zfish_uci_command_go_text(engine, args.ptr, args.len);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "position")) {
-        const parsed = parsePosition(trimmed);
-        defer freeMaybeCString(parsed.fen);
-        defer freeMaybeCString(parsed.moves);
-
-        if (parsed.ok != 0) {
-            const fen = std.mem.span(parsed.fen.?);
-            const moves = if (parsed.moves) |ptr| std.mem.span(ptr) else "";
-            zfish_uci_command_position(engine, trimmed.ptr, trimmed.len, fen.ptr, fen.len, moves.ptr, moves.len);
-        }
+        zfish_uci_command_position_text(engine, trimmed.ptr, trimmed.len);
         return .{ .should_quit = 0 };
     }
 
@@ -335,6 +329,293 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
 
     zfish_uci_command_unknown(trimmed.ptr, trimmed.len);
     return .{ .should_quit = 0 };
+}
+
+pub fn loopRuntime(uci_ptr: *anyopaque) void {
+    const allocator = std.heap.c_allocator;
+    const argc = zfish_uci_cli_argc(uci_ptr);
+
+    if (argc != 1) {
+        var command = std.ArrayList(u8).empty;
+        defer command.deinit(allocator);
+
+        var index: c_int = 1;
+        while (index < argc) : (index += 1) {
+            const arg_ptr = zfish_uci_cli_arg_at(uci_ptr, index) orelse continue;
+            if (command.items.len != 0) {
+                command.append(allocator, ' ') catch return;
+            }
+            command.appendSlice(allocator, std.mem.span(arg_ptr)) catch return;
+        }
+
+        _ = dispatchCommand(uci_ptr, command.items);
+        return;
+    }
+
+    while (true) {
+        const command_ptr = zfish_uci_read_command_line();
+        if (command_ptr) |ptr| {
+            defer c.free(@ptrCast(ptr));
+            const result = dispatchCommand(uci_ptr, std.mem.span(ptr));
+            if (result.should_quit != 0) {
+                return;
+            }
+        } else {
+            _ = dispatchCommand(uci_ptr, "quit");
+            return;
+        }
+    }
+}
+
+pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
+    const current_fen_ptr = zfish_uci_engine_fen_text(uci_ptr) orelse return;
+    defer c.free(@ptrCast(current_fen_ptr));
+
+    const commands_ptr = benchmark_port.setupBench(std.mem.span(current_fen_ptr), args) orelse return;
+    defer c.free(@ptrCast(commands_ptr));
+    const commands = std.mem.span(commands_ptr);
+
+    const total_positions = countBenchPositions(commands);
+    var nodes: u64 = 0;
+    var current_position: u64 = 1;
+    var elapsed_start = nowMillis();
+
+    var line_iter = std.mem.splitScalar(u8, commands, '\n');
+    while (line_iter.next()) |command| {
+        const token = firstToken(command);
+        if (token.len == 0) {
+            continue;
+        }
+
+        if (std.mem.eql(u8, token, "go") or std.mem.eql(u8, token, "eval")) {
+            const fen_ptr = zfish_uci_engine_fen_text(uci_ptr) orelse return;
+            defer c.free(@ptrCast(fen_ptr));
+            std.debug.print(
+                "\nPosition: {d}/{d} ({s})\n",
+                .{ current_position, total_positions, std.mem.span(fen_ptr) },
+            );
+            current_position += 1;
+
+            if (std.mem.eql(u8, token, "go")) {
+                const limits = parseLimits(command);
+                defer freeMaybeCString(limits.searchmoves);
+
+                if (limits.perft != 0) {
+                    nodes += zfish_uci_engine_perft_depth(uci_ptr, limits.perft);
+                } else {
+                    zfish_uci_engine_reset_nodes_searched();
+                    _ = dispatchCommand(uci_ptr, command);
+                    zfish_uci_engine_wait_finished(uci_ptr);
+                    nodes += zfish_uci_engine_nodes_searched(uci_ptr);
+                }
+            } else {
+                _ = dispatchCommand(uci_ptr, command);
+            }
+            continue;
+        }
+
+        _ = dispatchCommand(uci_ptr, command);
+        if (std.mem.eql(u8, token, "ucinewgame")) {
+            elapsed_start = nowMillis();
+        }
+    }
+
+    var elapsed = nowMillis() - elapsed_start + 1;
+    if (elapsed <= 0) {
+        elapsed = 1;
+    }
+
+    misc_port.dbgPrint();
+    const elapsed_u64: u64 = @intCast(elapsed);
+    const nps = if (elapsed_u64 == 0) 0 else @divTrunc(nodes * 1000, elapsed_u64);
+    std.debug.print(
+        "\n===========================\nTotal time (ms) : {d}\nNodes searched  : {d}\nNodes/second    : {d}\n",
+        .{ elapsed, nodes, nps },
+    );
+}
+
+pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
+    const warmup_positions: usize = 3;
+    zfish_uci_set_quiet_listeners(uci_ptr);
+    defer zfish_uci_set_default_listeners(uci_ptr);
+
+    const setup = benchmark_port.setupBenchmark(args, misc_port.hardwareConcurrency());
+    defer freeMaybeCString(setup.commands_ptr);
+    defer freeMaybeCString(setup.original_invocation_ptr);
+    defer freeMaybeCString(setup.filled_invocation_ptr);
+
+    const commands_ptr = setup.commands_ptr orelse return;
+    const commands = std.mem.span(commands_ptr);
+    const total_go_commands = countGoCommands(commands);
+
+    const threads_command = std.fmt.allocPrint(std.heap.c_allocator, "setoption name Threads value {d}", .{setup.threads}) catch return;
+    defer std.heap.c_allocator.free(threads_command);
+    _ = dispatchCommand(uci_ptr, threads_command);
+
+    const hash_command = std.fmt.allocPrint(std.heap.c_allocator, "setoption name Hash value {d}", .{setup.tt_size}) catch return;
+    defer std.heap.c_allocator.free(hash_command);
+    _ = dispatchCommand(uci_ptr, hash_command);
+
+    _ = dispatchCommand(uci_ptr, "setoption name UCI_Chess960 value false");
+
+    var warmup_count: usize = 1;
+    var line_iter = std.mem.splitScalar(u8, commands, '\n');
+    while (line_iter.next()) |command| {
+        const token = firstToken(command);
+        if (token.len == 0) {
+            continue;
+        }
+
+        if (std.mem.eql(u8, token, "go")) {
+            std.debug.print("\rWarmup position {d}/{d}", .{ warmup_count, warmup_positions });
+            _ = dispatchCommand(uci_ptr, command);
+            zfish_uci_engine_wait_finished(uci_ptr);
+            warmup_count += 1;
+        } else {
+            _ = dispatchCommand(uci_ptr, command);
+        }
+
+        if (warmup_count > warmup_positions) {
+            break;
+        }
+    }
+
+    std.debug.print("\n", .{});
+
+    zfish_uci_command_search_clear(uci_ptr);
+
+    var total_time: i64 = 0;
+    var total_nodes: u64 = 0;
+    var position_index: usize = 1;
+    var hashfull_reads: c_int = 0;
+    var total_hashfull_single: c_int = 0;
+    var total_hashfull_game: c_int = 0;
+    var max_hashfull_single: c_int = 0;
+    var max_hashfull_game: c_int = 0;
+
+    line_iter = std.mem.splitScalar(u8, commands, '\n');
+    while (line_iter.next()) |command| {
+        const token = firstToken(command);
+        if (token.len == 0) {
+            continue;
+        }
+
+        if (std.mem.eql(u8, token, "go")) {
+            std.debug.print("\rPosition {d}/{d}", .{ position_index, total_go_commands });
+            position_index += 1;
+
+            const started = nowMillis();
+            _ = dispatchCommand(uci_ptr, command);
+            zfish_uci_engine_wait_finished(uci_ptr);
+
+            total_time += nowMillis() - started;
+            total_nodes += zfish_uci_engine_nodes_searched(uci_ptr);
+
+            hashfull_reads += 1;
+            const hashfull_single = zfish_uci_engine_hashfull(uci_ptr, 0);
+            const hashfull_game = zfish_uci_engine_hashfull(uci_ptr, 999);
+            max_hashfull_single = @max(max_hashfull_single, hashfull_single);
+            max_hashfull_game = @max(max_hashfull_game, hashfull_game);
+            total_hashfull_single += hashfull_single;
+            total_hashfull_game += hashfull_game;
+        } else {
+            _ = dispatchCommand(uci_ptr, command);
+        }
+    }
+
+    if (total_time <= 0) {
+        total_time = 1;
+    }
+
+    misc_port.dbgPrint();
+    std.debug.print("\n", .{});
+
+    const version_ptr = misc_port.engineVersionInfoText() orelse return;
+    defer c.free(@ptrCast(version_ptr));
+    const compiler_ptr = misc_port.compilerInfoText() orelse return;
+    defer c.free(@ptrCast(compiler_ptr));
+    const numa_ptr = zfish_uci_engine_numa_config_string(uci_ptr) orelse return;
+    defer c.free(@ptrCast(numa_ptr));
+    const binding_ptr = zfish_uci_engine_thread_binding_info_text(uci_ptr) orelse return;
+    defer c.free(@ptrCast(binding_ptr));
+
+    const binding = if (std.mem.span(binding_ptr).len == 0) "none" else std.mem.span(binding_ptr);
+    const original_invocation = if (setup.original_invocation_ptr) |ptr| std.mem.span(ptr) else "";
+    const filled_invocation = if (setup.filled_invocation_ptr) |ptr| std.mem.span(ptr) else "";
+    const average_hashfull_single = if (hashfull_reads == 0) 0 else @divTrunc(total_hashfull_single, hashfull_reads);
+    const average_hashfull_game = if (hashfull_reads == 0) 0 else @divTrunc(total_hashfull_game, hashfull_reads);
+    const total_time_u64: u64 = @intCast(total_time);
+    const nps = if (total_time_u64 == 0) 0 else @divTrunc(total_nodes * 1000, total_time_u64);
+
+    std.debug.print(
+        "===========================\nVersion                    : {s}{s}" ++
+            "Large pages                : {s}\n" ++
+            "User invocation            : speedtest {s}\n" ++
+            "Filled invocation          : speedtest {s}\n" ++
+            "Available processors       : {s}\n" ++
+            "Thread count               : {d}\n" ++
+            "Thread binding             : {s}\n" ++
+            "TT size [MiB]              : {d}\n" ++
+            "Hash max, avg [per mille]  : \n" ++
+            "    single search          : {d}, {d}\n" ++
+            "    single game            : {d}, {d}\n" ++
+            "Total nodes searched       : {d}\n" ++
+            "Total search time [s]      : {}\n" ++
+            "Nodes/second               : {d}\n",
+        .{
+            std.mem.span(version_ptr),
+            std.mem.span(compiler_ptr),
+            if (misc_port.hasLargePages()) "yes" else "no",
+            original_invocation,
+            filled_invocation,
+            std.mem.span(numa_ptr),
+            setup.threads,
+            binding,
+            setup.tt_size,
+            max_hashfull_single,
+            average_hashfull_single,
+            max_hashfull_game,
+            average_hashfull_game,
+            total_nodes,
+            @as(f64, @floatFromInt(total_time)) / 1000.0,
+            nps,
+        },
+    );
+}
+
+fn countBenchPositions(commands: []const u8) u64 {
+    var total: u64 = 0;
+    var line_iter = std.mem.splitScalar(u8, commands, '\n');
+    while (line_iter.next()) |command| {
+        const token = firstToken(command);
+        if (std.mem.eql(u8, token, "go") or std.mem.eql(u8, token, "eval")) {
+            total += 1;
+        }
+    }
+    return total;
+}
+
+fn countGoCommands(commands: []const u8) usize {
+    var total: usize = 0;
+    var line_iter = std.mem.splitScalar(u8, commands, '\n');
+    while (line_iter.next()) |command| {
+        if (std.mem.eql(u8, firstToken(command), "go")) {
+            total += 1;
+        }
+    }
+    return total;
+}
+
+
+fn firstToken(command: []const u8) []const u8 {
+    var token_iter = std.mem.tokenizeAny(u8, command, " \t\r\n");
+    return token_iter.next() orelse "";
+}
+
+fn nowMillis() i64 {
+    var tv: c.struct_timeval = undefined;
+    _ = c.gettimeofday(&tv, null);
+    return @as(i64, @intCast(tv.tv_sec)) * 1000 + @divTrunc(@as(i64, @intCast(tv.tv_usec)), 1000);
 }
 
 fn parseLimitsAlloc(input: []const u8) !ParsedLimits {
