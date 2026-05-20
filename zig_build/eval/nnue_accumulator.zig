@@ -18,6 +18,7 @@ const dirty_threat_capacity: usize = 96;
 const psq_index_capacity: usize = 32;
 const threat_index_capacity: usize = 128;
 const threat_dimensions: u32 = 60720;
+const psq_feature_dimensions: usize = 22528;
 
 const HalfDiff = extern struct {
     pc: u8,
@@ -100,13 +101,8 @@ extern fn zfish_full_threats_append_active(
     king_square: u8,
     piece_array: [*]const u8,
 ) FullAppendResult;
-extern fn zfish_accumulator_king_square(pos: *const anyopaque, perspective: u8) u8;
-extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
-extern fn zfish_accumulator_cache_entry(cache: *anyopaque, king_square: u8, perspective: u8) *anyopaque;
-extern fn zfish_accumulator_psq_weights(feature_transformer: *const anyopaque) [*]const i16;
-extern fn zfish_accumulator_psq_psqt_weights(feature_transformer: *const anyopaque) [*]const i32;
-extern fn zfish_accumulator_threat_weights(feature_transformer: *const anyopaque) [*]const i8;
-extern fn zfish_accumulator_threat_psqt_weights(feature_transformer: *const anyopaque) [*]const i32;
+extern fn zfish_position_king_square(pos_ptr: *const anyopaque, color: u8) u8;
+extern fn zfish_position_piece_on(pos_ptr: *const anyopaque, square: u8) u8;
 
 const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32) + color_count * @sizeOf(bool);
 const computed_offset = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32);
@@ -123,6 +119,15 @@ const threat_refresh_diff_offset = threat_diff_offset + @sizeOf(DirtyThreatListV
 const cache_entry_psqt_offset = half_dimensions * @sizeOf(i16);
 const cache_entry_pieces_offset = cache_entry_psqt_offset + psqt_buckets * @sizeOf(i32);
 const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
+const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
+const feature_transformer_biases_bytes = half_dimensions * @sizeOf(i16);
+const feature_transformer_psq_weights_bytes = half_dimensions * psq_feature_dimensions * @sizeOf(i16);
+const feature_transformer_threat_weights_bytes = half_dimensions * @as(usize, threat_dimensions) * @sizeOf(i8);
+const feature_transformer_psqt_weights_bytes = psq_feature_dimensions * psqt_buckets * @sizeOf(i32);
+const feature_transformer_weights_offset = roundUp(feature_transformer_biases_bytes, nnue_align);
+const feature_transformer_threat_weights_offset = roundUp(feature_transformer_weights_offset + feature_transformer_psq_weights_bytes, nnue_align);
+const feature_transformer_psqt_weights_offset = roundUp(feature_transformer_threat_weights_offset + feature_transformer_threat_weights_bytes, nnue_align);
+const feature_transformer_threat_psqt_weights_offset = roundUp(feature_transformer_psqt_weights_offset + feature_transformer_psqt_weights_bytes, nnue_align);
 
 const PositionSnapshot = struct {
     pieces: [square_count]u8,
@@ -270,7 +275,7 @@ fn refreshLatest(
     feature_transformer: *const anyopaque,
     cache: *anyopaque,
 ) void {
-    const king_square = zfish_accumulator_king_square(pos, perspective);
+    const king_square = zfish_position_king_square(pos, perspective);
 
     switch (feature_kind) {
         psq_feature => refreshLatestPsq(perspective, king_square, stack, pos, feature_transformer, cache),
@@ -288,7 +293,7 @@ fn refreshLatestPsq(
     cache: *anyopaque,
 ) void {
     const latest_index = stackSize(stack) - 1;
-    const entry_ptr = zfish_accumulator_cache_entry(cache, king_square, perspective);
+    const entry_ptr = cacheEntry(cache, king_square, perspective);
     const snapshot = positionSnapshot(pos);
     const entry_pieces = cacheEntryPiecesMut(entry_ptr);
 
@@ -331,13 +336,13 @@ fn refreshLatestPsq(
         cacheEntryAccumulationMut(entry_ptr),
         removed[0..removed_len],
         added[0..added_len],
-        zfish_accumulator_psq_weights(feature_transformer),
+        featureTransformerPsqWeights(feature_transformer),
     );
     applyPsqtDeltaInPlace(
         cacheEntryPsqtMut(entry_ptr),
         removed[0..removed_len],
         added[0..added_len],
-        zfish_accumulator_psq_psqt_weights(feature_transformer),
+        featureTransformerPsqPsqtWeights(feature_transformer),
     );
 
     @memcpy(entry_pieces, snapshot.pieces[0..]);
@@ -370,8 +375,8 @@ fn refreshLatestThreat(
     @memset(accumulation, 0);
     @memset(psqt, 0);
 
-    accumulateRowsI8(accumulation, active.indices[0..active.len], zfish_accumulator_threat_weights(feature_transformer));
-    accumulatePsqtRows(psqt, active.indices[0..active.len], zfish_accumulator_threat_psqt_weights(feature_transformer));
+    accumulateRowsI8(accumulation, active.indices[0..active.len], featureTransformerThreatWeights(feature_transformer));
+    accumulatePsqtRows(psqt, active.indices[0..active.len], featureTransformerThreatPsqtWeights(feature_transformer));
     stateBytesMut(threat_feature, latest_index, stack)[computed_offset + perspective] = 1;
 }
 
@@ -385,7 +390,7 @@ fn incrementalStep(
     target_index: usize,
     computed_index: usize,
 ) void {
-    const king_square = zfish_accumulator_king_square(pos, perspective);
+    const king_square = zfish_position_king_square(pos, perspective);
 
     switch (feature_kind) {
         psq_feature => incrementalStepPsq(
@@ -554,14 +559,14 @@ fn applyPsqDelta(
         stateAccumulationConst(psq_feature, computed_index, stack, perspective),
         removed,
         added,
-        zfish_accumulator_psq_weights(feature_transformer),
+        featureTransformerPsqWeights(feature_transformer),
     );
     applyPsqtDelta(
         statePsqtMut(psq_feature, target_index, stack, perspective),
         statePsqtConst(psq_feature, computed_index, stack, perspective),
         removed,
         added,
-        zfish_accumulator_psq_psqt_weights(feature_transformer),
+        featureTransformerPsqPsqtWeights(feature_transformer),
     );
     stateBytesMut(psq_feature, target_index, stack)[computed_offset + perspective] = 1;
 }
@@ -580,14 +585,14 @@ fn applyThreatDelta(
         stateAccumulationConst(threat_feature, computed_index, stack, perspective),
         removed,
         added,
-        zfish_accumulator_threat_weights(feature_transformer),
+        featureTransformerThreatWeights(feature_transformer),
     );
     applyPsqtDelta(
         statePsqtMut(threat_feature, target_index, stack, perspective),
         statePsqtConst(threat_feature, computed_index, stack, perspective),
         removed,
         added,
-        zfish_accumulator_threat_psqt_weights(feature_transformer),
+        featureTransformerThreatPsqtWeights(feature_transformer),
     );
     stateBytesMut(threat_feature, target_index, stack)[computed_offset + perspective] = 1;
 }
@@ -820,10 +825,9 @@ fn positionSnapshot(pos: *const anyopaque) PositionSnapshot {
         .occupied = 0,
     };
 
-    zfish_accumulator_position_snapshot(pos, @ptrCast(&snapshot.pieces));
-
     var square: usize = 0;
     while (square < square_count) : (square += 1) {
+        snapshot.pieces[square] = zfish_position_piece_on(pos, @intCast(square));
         if (snapshot.pieces[square] != no_piece) {
             snapshot.occupied |= squareMask(square);
         }
@@ -832,8 +836,37 @@ fn positionSnapshot(pos: *const anyopaque) PositionSnapshot {
     return snapshot;
 }
 
+fn cacheEntry(cache: *anyopaque, king_square: u8, perspective: u8) *anyopaque {
+    return @ptrCast(cacheBytesMut(cache) +
+        ((@as(usize, king_square) * color_count + @as(usize, perspective)) * cache_entry_bytes));
+}
+
+fn cacheBytesMut(cache: *anyopaque) [*]u8 {
+    return @ptrCast(cache);
+}
+
 fn cacheEntryBytesMut(entry: *anyopaque) [*]u8 {
     return @ptrCast(entry);
+}
+
+fn featureTransformerPsqWeights(feature_transformer: *const anyopaque) [*]const i16 {
+    const bytes: [*]const u8 = @ptrCast(feature_transformer);
+    return @ptrCast(@alignCast(bytes + feature_transformer_weights_offset));
+}
+
+fn featureTransformerThreatWeights(feature_transformer: *const anyopaque) [*]const i8 {
+    const bytes: [*]const u8 = @ptrCast(feature_transformer);
+    return @ptrCast(bytes + feature_transformer_threat_weights_offset);
+}
+
+fn featureTransformerPsqPsqtWeights(feature_transformer: *const anyopaque) [*]const i32 {
+    const bytes: [*]const u8 = @ptrCast(feature_transformer);
+    return @ptrCast(@alignCast(bytes + feature_transformer_psqt_weights_offset));
+}
+
+fn featureTransformerThreatPsqtWeights(feature_transformer: *const anyopaque) [*]const i32 {
+    const bytes: [*]const u8 = @ptrCast(feature_transformer);
+    return @ptrCast(@alignCast(bytes + feature_transformer_threat_psqt_weights_offset));
 }
 
 fn cacheEntryAccumulationConst(entry: *const anyopaque) []const i16 {

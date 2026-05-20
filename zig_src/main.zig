@@ -32,6 +32,7 @@ extern fn zfish_misc_engine_info_text() ?[*:0]u8;
 extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
 extern fn zfish_uci_loop_engine(engine: *anyopaque) void;
 extern fn zfish_uci_destroy_engine(engine: ?*anyopaque) void;
+extern fn zfish_position_piece_on(pos_ptr: *const anyopaque, square: u8) u8;
 
 pub fn main(init: std.process.Init) !void {
     var argc: usize = 0;
@@ -584,6 +585,48 @@ pub export fn zfish_accumulator_stack_push(stack: *anyopaque) nnue_accumulator_p
 
 pub export fn zfish_accumulator_stack_pop(stack: *anyopaque) void {
     return nnue_accumulator_port.stackPop(stack);
+}
+
+pub export fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void {
+    var square: usize = 0;
+    while (square < 64) : (square += 1) {
+        pieces_out[square] = zfish_position_piece_on(pos, @intCast(square));
+    }
+}
+
+const AccumulatorStackPushPair = extern struct {
+    first: *anyopaque,
+    second: *anyopaque,
+};
+
+pub export fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack5resetEv(stack: *anyopaque) void {
+    return nnue_accumulator_port.stackReset(stack);
+}
+
+pub export fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack4pushEv(
+    stack: *anyopaque,
+) AccumulatorStackPushPair {
+    const pushed = nnue_accumulator_port.stackPush(stack);
+    return .{
+        .first = pushed.dirty_piece,
+        .second = pushed.dirty_threats,
+    };
+}
+
+pub export fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack3popEv(stack: *anyopaque) void {
+    return nnue_accumulator_port.stackPop(stack);
+}
+
+pub export fn _ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11HalfKAv2_hmEEERKNS1_16AccumulatorStateIT_EEv(
+    stack: *const anyopaque,
+) *const anyopaque {
+    return nnue_accumulator_port.stackLatestPsq(stack);
+}
+
+pub export fn _ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11FullThreatsEEERKNS1_16AccumulatorStateIT_EEv(
+    stack: *const anyopaque,
+) *const anyopaque {
+    return nnue_accumulator_port.stackLatestThreat(stack);
 }
 
 pub export fn zfish_network_load(
