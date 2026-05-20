@@ -4,6 +4,7 @@ const value_none: c_int = 32002;
 const value_infinite: c_int = 32001;
 const value_tb_win_in_max_ply: c_int = 31507;
 const value_tb_loss_in_max_ply: c_int = -31507;
+const max_thread_summaries: usize = 1024;
 
 pub const ThreadSummary = extern struct {
     pv0_raw: u16,
@@ -27,10 +28,9 @@ pub const TbConfig = extern struct {
 
 extern fn zfish_threadpool_wait_main_thread(pool: *anyopaque) void;
 extern fn zfish_threadpool_reset_start_state(pool: *anyopaque, ponder_mode: u8) void;
-extern fn zfish_position_collect_legal_move_raws(
+extern fn zfish_movegen_generate_legal(
     pos: *const anyopaque,
     out_moves: [*]u16,
-    capacity: usize,
 ) usize;
 extern fn zfish_limits_ponder_mode(limits: *const anyopaque) u8;
 extern fn zfish_limits_searchmove_count(limits: *const anyopaque) usize;
@@ -46,6 +46,10 @@ extern fn zfish_threadpool_rank_root_moves(
 ) TbConfig;
 extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_thread_at(pool: *anyopaque, index: usize) *anyopaque;
+extern fn zfish_threadpool_reset_clear_state(pool: *anyopaque) void;
+extern fn zfish_thread_nodes_searched(thread: *const anyopaque) u64;
+extern fn zfish_thread_tb_hits(thread: *const anyopaque) u64;
+extern fn zfish_thread_fill_summary(thread: *const anyopaque, out: *ThreadSummary) void;
 extern fn zfish_thread_run_root_setup(
     thread: *anyopaque,
     limits: *const anyopaque,
@@ -54,8 +58,10 @@ extern fn zfish_thread_run_root_setup(
     setup_state: *const anyopaque,
     tb_config: TbConfig,
 ) void;
+extern fn zfish_thread_clear_worker(thread: *anyopaque) void;
 extern fn zfish_thread_wait_for_search_finished(thread: *anyopaque) void;
 extern fn zfish_thread_start_searching(thread: *anyopaque) void;
+extern fn zfish_thread_ensure_network_replicated(thread: *anyopaque) void;
 
 pub fn nextPowerOfTwo(count: u64) usize {
     if (count <= 1)
@@ -110,11 +116,7 @@ pub fn startThinking(
     zfish_threadpool_reset_start_state(pool, zfish_limits_ponder_mode(limits));
 
     var legal_move_buffer: [256]u16 = undefined;
-    const legal_move_count = zfish_position_collect_legal_move_raws(
-        pos,
-        legal_move_buffer[0..].ptr,
-        legal_move_buffer.len,
-    );
+    const legal_move_count = zfish_movegen_generate_legal(pos, legal_move_buffer[0..].ptr);
     const legal_moves = legal_move_buffer[0..legal_move_count];
     const none_raw = zfish_move_none_raw();
 
@@ -160,6 +162,87 @@ pub fn startThinking(
 
     const main_thread = zfish_threadpool_thread_at(pool, 0);
     zfish_thread_start_searching(main_thread);
+}
+
+pub fn clear(pool: *anyopaque) void {
+    const thread_count = zfish_threadpool_thread_count(pool);
+    if (thread_count == 0) {
+        return;
+    }
+
+    var index: usize = 0;
+    while (index < thread_count) : (index += 1) {
+        zfish_thread_clear_worker(zfish_threadpool_thread_at(pool, index));
+    }
+
+    index = 0;
+    while (index < thread_count) : (index += 1) {
+        zfish_thread_wait_for_search_finished(zfish_threadpool_thread_at(pool, index));
+    }
+
+    zfish_threadpool_reset_clear_state(pool);
+}
+
+pub fn nodesSearched(pool: *anyopaque) u64 {
+    const thread_count = zfish_threadpool_thread_count(pool);
+    var total: u64 = 0;
+    var index: usize = 0;
+    while (index < thread_count) : (index += 1) {
+        total += zfish_thread_nodes_searched(zfish_threadpool_thread_at(pool, index));
+    }
+    return total;
+}
+
+pub fn tbHits(pool: *anyopaque) u64 {
+    const thread_count = zfish_threadpool_thread_count(pool);
+    var total: u64 = 0;
+    var index: usize = 0;
+    while (index < thread_count) : (index += 1) {
+        total += zfish_thread_tb_hits(zfish_threadpool_thread_at(pool, index));
+    }
+    return total;
+}
+
+pub fn bestThreadIndex(pool: *anyopaque) usize {
+    const thread_count = zfish_threadpool_thread_count(pool);
+    if (thread_count == 0) {
+        return 0;
+    }
+    if (thread_count > max_thread_summaries) {
+        @panic("thread summary buffer too small");
+    }
+
+    var summaries: [max_thread_summaries]ThreadSummary = undefined;
+    var index: usize = 0;
+    while (index < thread_count) : (index += 1) {
+        zfish_thread_fill_summary(zfish_threadpool_thread_at(pool, index), &summaries[index]);
+    }
+
+    return pickBestThread(&summaries, thread_count);
+}
+
+pub fn startSearching(pool: *anyopaque) void {
+    const thread_count = zfish_threadpool_thread_count(pool);
+    var index: usize = 1;
+    while (index < thread_count) : (index += 1) {
+        zfish_thread_start_searching(zfish_threadpool_thread_at(pool, index));
+    }
+}
+
+pub fn waitForSearchFinished(pool: *anyopaque) void {
+    const thread_count = zfish_threadpool_thread_count(pool);
+    var index: usize = 1;
+    while (index < thread_count) : (index += 1) {
+        zfish_thread_wait_for_search_finished(zfish_threadpool_thread_at(pool, index));
+    }
+}
+
+pub fn ensureNetworkReplicated(pool: *anyopaque) void {
+    const thread_count = zfish_threadpool_thread_count(pool);
+    var index: usize = 0;
+    while (index < thread_count) : (index += 1) {
+        zfish_thread_ensure_network_replicated(zfish_threadpool_thread_at(pool, index));
+    }
 }
 
 fn voteForMove(

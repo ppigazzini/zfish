@@ -37,6 +37,69 @@ pub const TtProbeOutput = extern struct {
     data: TtReadOutput,
 };
 
+extern fn zfish_tt_alloc_clusters(byte_count: usize) ?*anyopaque;
+extern fn zfish_tt_free_clusters(ptr: ?*anyopaque) void;
+extern fn zfish_tt_report_alloc_failure(mb: usize) noreturn;
+extern fn zfish_threadpool_num_threads(threads: *const anyopaque) usize;
+extern fn zfish_threadpool_zero_tt_slice(
+    threads: *anyopaque,
+    thread_id: usize,
+    table: ?*anyopaque,
+    start_cluster: usize,
+    cluster_len: usize,
+) void;
+extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
+
+pub fn resizeState(
+    table_ptr: *?*anyopaque,
+    cluster_count_ptr: *usize,
+    generation_ptr: *u8,
+    mb: usize,
+    threads: *anyopaque,
+) void {
+    zfish_tt_free_clusters(table_ptr.*);
+
+    const cluster_count = mb * 1024 * 1024 / @sizeOf(TtCluster);
+    cluster_count_ptr.* = cluster_count;
+
+    const table = zfish_tt_alloc_clusters(cluster_count * @sizeOf(TtCluster)) orelse
+        zfish_tt_report_alloc_failure(mb);
+    table_ptr.* = table;
+
+    clearState(table, cluster_count, generation_ptr, threads);
+}
+
+pub fn clearState(
+    table: ?*anyopaque,
+    cluster_count: usize,
+    generation_ptr: *u8,
+    threads: *anyopaque,
+) void {
+    generation_ptr.* = 0;
+
+    const thread_count = zfish_threadpool_num_threads(threads);
+    if (table == null or cluster_count == 0 or thread_count == 0) {
+        return;
+    }
+
+    var thread_index: usize = 0;
+    while (thread_index < thread_count) : (thread_index += 1) {
+        const stride = cluster_count / thread_count;
+        const start = stride * thread_index;
+        const len = if (thread_index + 1 != thread_count)
+            stride
+        else
+            cluster_count - start;
+
+        zfish_threadpool_zero_tt_slice(threads, thread_index, table, start, len);
+    }
+
+    thread_index = 0;
+    while (thread_index < thread_count) : (thread_index += 1) {
+        zfish_threadpool_wait_thread(threads, thread_index);
+    }
+}
+
 pub fn entrySave(
     entry: *TtEntry,
     key: u64,

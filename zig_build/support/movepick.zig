@@ -3,6 +3,16 @@ const std = @import("std");
 const captures: u8 = 0;
 const quiets: u8 = 1;
 const evasions: u8 = 2;
+const white: u8 = 0;
+const black: u8 = 1;
+
+const no_piece_type: u8 = 0;
+const pawn: u8 = 1;
+const knight: u8 = 2;
+const bishop: u8 = 3;
+const rook: u8 = 4;
+const queen: u8 = 5;
+const king: u8 = 6;
 
 const main_tt: c_int = 0;
 const capture_init: c_int = 1;
@@ -27,6 +37,12 @@ const qcapture: c_int = 15;
 const max_moves: usize = 256;
 const good_quiet_threshold: c_int = -14000;
 const min_sort_limit: c_int = std.math.minInt(c_int);
+const low_ply_history_size: c_int = 5;
+
+const piece_values = [_]c_int{
+    0, 208, 781, 825, 1276, 2538, 0, 0,
+    0, 208, 781, 825, 1276, 2538, 0, 0,
+};
 
 pub const ScoreInput = extern struct {
     raw_move: u16,
@@ -73,26 +89,34 @@ pub const MovePickerContext = extern struct {
     ply: c_int,
 };
 
-extern fn zfish_movepick_score_captures(
-    pos: *const anyopaque,
+extern fn zfish_movegen_generate_captures(pos: *const anyopaque, move_list: [*]u16) usize;
+extern fn zfish_movegen_generate_quiets(pos: *const anyopaque, move_list: [*]u16) usize;
+extern fn zfish_movegen_generate_evasions(pos: *const anyopaque, move_list: [*]u16) usize;
+extern fn zfish_position_side_to_move(pos: *const anyopaque) u8;
+extern fn zfish_position_piece_on(pos: *const anyopaque, square: u8) u8;
+extern fn zfish_position_attacks_by(pos: *const anyopaque, piece_type: u8, color: u8) u64;
+extern fn zfish_position_check_squares(pos: *const anyopaque, piece_type: u8) u64;
+extern fn zfish_position_capture_stage(pos: *const anyopaque, raw_move: u16) u8;
+extern fn zfish_history_main_score(main_history: *const anyopaque, side_to_move: u8, raw_move: u16) c_int;
+extern fn zfish_history_low_ply_score(low_ply_history: *const anyopaque, ply: c_int, raw_move: u16) c_int;
+extern fn zfish_history_capture_score(
     capture_history: *const anyopaque,
-    outputs: [*]SortEntry,
-) usize;
-extern fn zfish_movepick_score_quiets(
-    pos: *const anyopaque,
-    main_history: *const anyopaque,
-    low_ply_history: *const anyopaque,
-    continuation_history: *const anyopaque,
+    piece: u8,
+    square: u8,
+    captured_piece_type: u8,
+) c_int;
+extern fn zfish_history_pawn_score(
     shared_history: *const anyopaque,
-    ply: c_int,
-    outputs: [*]SortEntry,
-) usize;
-extern fn zfish_movepick_score_evasions(
     pos: *const anyopaque,
-    main_history: *const anyopaque,
+    piece: u8,
+    square: u8,
+) c_int;
+extern fn zfish_history_continuation_score(
     continuation_history: *const anyopaque,
-    outputs: [*]SortEntry,
-) usize;
+    slot: usize,
+    piece: u8,
+    square: u8,
+) c_int;
 extern fn zfish_movepick_see_ge(pos: *const anyopaque, raw_move: u16, threshold: c_int) bool;
 
 pub fn initMainStage(has_checkers: bool, has_tt_move: bool, depth: c_int) c_int {
@@ -140,6 +164,135 @@ pub fn scoreMoves(
     }
 }
 
+pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEntry) usize {
+    var move_list: [max_moves]u16 = undefined;
+    const count = switch (kind) {
+        captures => zfish_movegen_generate_captures(context.pos, move_list[0..].ptr),
+        quiets => zfish_movegen_generate_quiets(context.pos, move_list[0..].ptr),
+        evasions => zfish_movegen_generate_evasions(context.pos, move_list[0..].ptr),
+        else => unreachable,
+    };
+
+    var inputs: [max_moves]ScoreInput = undefined;
+    const side_to_move = zfish_position_side_to_move(context.pos);
+
+    var threat_by_lesser: [7]u64 = [_]u64{0} ** 7;
+    if (kind == quiets) {
+        const them: u8 = if (side_to_move == white) black else white;
+        threat_by_lesser[pawn] = 0;
+        threat_by_lesser[knight] = zfish_position_attacks_by(context.pos, pawn, them);
+        threat_by_lesser[bishop] = threat_by_lesser[knight];
+        threat_by_lesser[rook] =
+            zfish_position_attacks_by(context.pos, knight, them) |
+            zfish_position_attacks_by(context.pos, bishop, them) |
+            threat_by_lesser[knight];
+        threat_by_lesser[queen] = zfish_position_attacks_by(context.pos, rook, them) |
+            threat_by_lesser[rook];
+        threat_by_lesser[king] = 0;
+    }
+
+    var index: usize = 0;
+    while (index < count) : (index += 1) {
+        const raw_move = move_list[index];
+        const from = moveFrom(raw_move);
+        const to = moveTo(raw_move);
+        const piece = zfish_position_piece_on(context.pos, from);
+        const piece_type = typeOf(piece);
+        const captured_piece = zfish_position_piece_on(context.pos, to);
+
+        var input = ScoreInput{
+            .raw_move = raw_move,
+            .check_bonus = 0,
+            .from_threatened = 0,
+            .to_threatened = 0,
+            .capture_stage = 0,
+            .capture_history = 0,
+            .captured_piece_value = 0,
+            .main_history = 0,
+            .pawn_history = 0,
+            .continuation_sum = 0,
+            .piece_value = 0,
+            .low_ply_bonus = 0,
+        };
+
+        switch (kind) {
+            captures => {
+                input.capture_history = zfish_history_capture_score(
+                    context.capture_history orelse unreachable,
+                    piece,
+                    to,
+                    typeOf(captured_piece),
+                );
+                input.captured_piece_value = piece_values[@as(usize, captured_piece)];
+            },
+            quiets => {
+                const continuation_history = context.continuation_history orelse unreachable;
+
+                input.main_history = zfish_history_main_score(
+                    context.main_history orelse unreachable,
+                    side_to_move,
+                    raw_move,
+                );
+                input.pawn_history = zfish_history_pawn_score(
+                    context.shared_history orelse unreachable,
+                    context.pos,
+                    piece,
+                    to,
+                );
+                input.continuation_sum =
+                    zfish_history_continuation_score(continuation_history, 0, piece, to) +
+                    zfish_history_continuation_score(continuation_history, 1, piece, to) +
+                    zfish_history_continuation_score(continuation_history, 2, piece, to) +
+                    zfish_history_continuation_score(continuation_history, 3, piece, to) +
+                    zfish_history_continuation_score(continuation_history, 5, piece, to);
+                input.check_bonus = @intFromBool(
+                    (zfish_position_check_squares(context.pos, piece_type) & squareMask(to)) != 0 and
+                        zfish_movepick_see_ge(context.pos, raw_move, -75),
+                );
+                input.from_threatened = @intFromBool(
+                    (threat_by_lesser[piece_type] & squareMask(from)) != 0,
+                );
+                input.to_threatened = @intFromBool(
+                    (threat_by_lesser[piece_type] & squareMask(to)) != 0,
+                );
+                input.piece_value = piece_values[@as(usize, piece_type)];
+
+                if (context.ply < low_ply_history_size) {
+                    input.low_ply_bonus = @divTrunc(
+                        8 * zfish_history_low_ply_score(
+                            context.low_ply_history orelse unreachable,
+                            context.ply,
+                            raw_move,
+                        ),
+                        1 + context.ply,
+                    );
+                }
+            },
+            evasions => {
+                input.main_history = zfish_history_main_score(
+                    context.main_history orelse unreachable,
+                    side_to_move,
+                    raw_move,
+                );
+                input.continuation_sum = zfish_history_continuation_score(
+                    context.continuation_history orelse unreachable,
+                    0,
+                    piece,
+                    to,
+                );
+                input.captured_piece_value = piece_values[@as(usize, captured_piece)];
+                input.capture_stage = zfish_position_capture_stage(context.pos, raw_move);
+            },
+            else => unreachable,
+        }
+
+        inputs[index] = input;
+    }
+
+    scoreMoves(kind, inputs[0..].ptr, count, outputs);
+    return count;
+}
+
 pub fn partialInsertionSort(entries: [*]SortEntry, count: usize, limit: c_int) void {
     if (count == 0)
         return;
@@ -173,11 +326,7 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
                 state.cur = 0;
                 state.end_bad_captures = 0;
 
-                const count = zfish_movepick_score_captures(
-                    context.pos,
-                    context.capture_history orelse unreachable,
-                    state.moves[state.cur..].ptr,
-                );
+                const count = scoreList(captures, context, state.moves[state.cur..].ptr);
 
                 state.end_cur = state.cur + count;
                 state.end_captures = state.end_cur;
@@ -195,15 +344,7 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
             },
             quiet_init => {
                 if (!skipQuiets(state)) {
-                    const count = zfish_movepick_score_quiets(
-                        context.pos,
-                        context.main_history orelse unreachable,
-                        context.low_ply_history orelse unreachable,
-                        context.continuation_history orelse unreachable,
-                        context.shared_history orelse unreachable,
-                        context.ply,
-                        state.moves[state.cur..].ptr,
-                    );
+                    const count = scoreList(quiets, context, state.moves[state.cur..].ptr);
 
                     state.end_cur = state.cur + count;
                     state.end_generated = state.end_cur;
@@ -251,12 +392,7 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
             evasion_init => {
                 state.cur = 0;
 
-                const count = zfish_movepick_score_evasions(
-                    context.pos,
-                    context.main_history orelse unreachable,
-                    context.continuation_history orelse unreachable,
-                    state.moves[state.cur..].ptr,
-                );
+                const count = scoreList(evasions, context, state.moves[state.cur..].ptr);
 
                 state.end_cur = state.cur + count;
                 state.end_generated = state.end_cur;
@@ -364,4 +500,20 @@ fn selectProbcut(state: *MovePickerState, context: *const MovePickerContext) ?u1
     }
 
     return null;
+}
+
+fn moveFrom(raw_move: u16) u8 {
+    return @intCast((raw_move >> 6) & 0x3F);
+}
+
+fn moveTo(raw_move: u16) u8 {
+    return @intCast(raw_move & 0x3F);
+}
+
+fn typeOf(piece: u8) u8 {
+    return piece & 7;
+}
+
+fn squareMask(square: u8) u64 {
+    return @as(u64, 1) << @intCast(square);
 }

@@ -166,6 +166,8 @@ const char* zfish_engine_format_thread_binding(const ZfishCountPair* pairs_ptr, 
 const char* zfish_engine_format_thread_allocation(std::size_t          thread_count,
                                                   const unsigned char* binding_ptr,
                                                   std::size_t          binding_len);
+const char* zfish_engine_thread_binding_information(const void* numa_context, const void* threads);
+const char* zfish_engine_thread_allocation_information(const void* numa_context, const void* threads);
 const char* zfish_engine_format_network_status(std::size_t          replica_index,
                                                std::uint8_t        status,
                                                const unsigned char* error_ptr,
@@ -205,6 +207,7 @@ struct ZfishEngineTablebaseProbe {
 const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 const char* zfish_engine_eval_trace(void* pos, const void* network);
+const char* zfish_engine_fen(const void* pos);
 const char* zfish_engine_visualize(const void* pos);
 void        zfish_tbprobe_add_tables(void* tables,
                                      const unsigned char* piece_types_ptr,
@@ -843,21 +846,6 @@ struct ZfishTimemanOutput {
     std::uint8_t use_nodes_time;
 };
 
-struct ZfishMoveScoreInput {
-    std::uint16_t raw_move;
-    std::uint8_t  check_bonus;
-    std::uint8_t  from_threatened;
-    std::uint8_t  to_threatened;
-    std::uint8_t  capture_stage;
-    int           capture_history;
-    int           captured_piece_value;
-    int           main_history;
-    int           pawn_history;
-    int           continuation_sum;
-    int           piece_value;
-    int           low_ply_bonus;
-};
-
 struct ZfishMoveSortEntry {
     std::uint16_t raw_move;
     std::uint16_t reserved;
@@ -957,10 +945,6 @@ int zfish_search_reduction(const int* reductions,
                            int        root_delta,
                            std::uint8_t improving);
 ZfishTimemanOutput zfish_timeman_init(ZfishTimemanInput input);
-void zfish_movepick_score_moves(std::uint8_t               kind,
-                                const ZfishMoveScoreInput* inputs,
-                                std::size_t                count,
-                                ZfishMoveSortEntry*        outputs);
 void zfish_movepick_partial_insertion_sort(ZfishMoveSortEntry* entries,
                                            std::size_t         count,
                                            int                 limit);
@@ -968,6 +952,9 @@ int zfish_movepick_init_main_stage(std::uint8_t has_checkers,
                                    std::uint8_t has_tt_move,
                                    int          depth);
 int zfish_movepick_init_probcut_stage(std::uint8_t has_tt_move);
+std::size_t zfish_movepick_score_list(std::uint8_t                 kind,
+                                      const ZfishMovePickerContext* context,
+                                      ZfishMoveSortEntry*           outputs);
 std::uint16_t zfish_movepick_next_move(ZfishMovePickerState*         state,
                                        const ZfishMovePickerContext* context);
 int zfish_eval_compute_value(ZfishEvalInput input);
@@ -975,11 +962,49 @@ std::size_t zfish_movegen_generate_captures(const void* pos, std::uint16_t* move
 std::size_t zfish_movegen_generate_quiets(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_evasions(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_non_evasions(const void* pos, std::uint16_t* move_list);
-void        zfish_movegen_fill_snapshot(const void* pos_ptr, ZfishMovegenSnapshot* out);
-std::uint64_t zfish_movegen_attacks(std::uint8_t piece_type,
-                                    std::uint8_t square,
-                                    std::uint64_t occupied);
-std::uint64_t zfish_movegen_between(std::uint8_t from, std::uint8_t to);
+std::size_t zfish_movegen_generate_legal(const void* pos, std::uint16_t* move_list);
+std::uint8_t  zfish_position_side_to_move(const void* pos_ptr);
+std::uint64_t zfish_position_pieces_all(const void* pos_ptr);
+std::uint64_t zfish_position_pieces_by_color(const void* pos_ptr, std::uint8_t color);
+std::uint64_t zfish_position_pieces_by_type(const void* pos_ptr, std::uint8_t piece_type);
+std::uint8_t  zfish_position_king_square(const void* pos_ptr, std::uint8_t color);
+std::uint8_t  zfish_position_ep_square(const void* pos_ptr);
+std::uint64_t zfish_position_checkers(const void* pos_ptr);
+std::uint64_t zfish_position_blockers_for_king(const void* pos_ptr, std::uint8_t color);
+std::uint8_t  zfish_position_castling_rights(const void* pos_ptr);
+std::uint8_t  zfish_position_castling_impeded(const void* pos_ptr, std::uint8_t castling_right);
+std::uint8_t  zfish_position_castling_rook_square(const void* pos_ptr,
+                                                  std::uint8_t castling_right);
+std::uint64_t zfish_position_key(const void* pos_ptr);
+int           zfish_position_material_value(const void* pos_ptr);
+int           zfish_position_rule50_count(const void* pos_ptr);
+int           zfish_position_game_ply(const void* pos_ptr);
+std::uint8_t  zfish_position_is_chess960(const void* pos_ptr);
+std::uint8_t  zfish_position_piece_on(const void* pos_ptr, std::uint8_t square);
+std::uint64_t zfish_position_attacks_by(const void*      pos_ptr,
+                                        std::uint8_t     piece_type,
+                                        std::uint8_t     color);
+std::uint64_t zfish_position_check_squares(const void* pos_ptr, std::uint8_t piece_type);
+std::uint8_t  zfish_position_capture_stage(const void* pos_ptr, std::uint16_t raw_move);
+std::uint8_t zfish_position_move_is_legal(const void* pos_ptr, std::uint16_t raw_move);
+int zfish_history_main_score(const void* main_history_ptr,
+                             std::uint8_t side_to_move,
+                             std::uint16_t raw_move);
+int zfish_history_low_ply_score(const void* low_ply_history_ptr,
+                                int         ply,
+                                std::uint16_t raw_move);
+int zfish_history_capture_score(const void*  capture_history_ptr,
+                                std::uint8_t piece,
+                                std::uint8_t to,
+                                std::uint8_t captured_piece_type);
+int zfish_history_pawn_score(const void*      shared_history_ptr,
+                             const void*      pos_ptr,
+                             std::uint8_t     piece,
+                             std::uint8_t     to);
+int zfish_history_continuation_score(const void*  continuation_history_ptr,
+                                     std::size_t  slot,
+                                     std::uint8_t piece,
+                                     std::uint8_t to);
 void zfish_tt_entry_save(ZfishTtEntry* entry,
                          std::uint64_t key,
                          int           value,
@@ -1003,6 +1028,15 @@ ZfishTtProbeOutput zfish_tt_probe(const ZfishTtCluster* cluster,
                                   std::uint64_t         key,
                                   std::uint8_t          generation,
                                   int                   depth_none);
+void zfish_tt_resize_state(void**        table_ptr,
+                           std::size_t*  cluster_count_ptr,
+                           std::uint8_t* generation_ptr,
+                           std::size_t   mb,
+                           void*         threads_ptr);
+void zfish_tt_clear_state(void*          table_ptr,
+                          std::size_t    cluster_count,
+                          std::uint8_t*  generation_ptr,
+                          void*          threads_ptr);
 
 struct ZfishThreadSummary {
     std::uint16_t pv0_raw;
@@ -1027,6 +1061,13 @@ void         zfish_thread_start_thinking(void*        pool,
                                          void*        pos,
                                          const void*  limits,
                                          const void*  setup_state);
+void zfish_threadpool_clear(void* pool);
+void zfish_threadpool_start_searching(void* pool);
+void zfish_threadpool_wait_for_search_finished(void* pool);
+void zfish_threadpool_ensure_network_replicated(void* pool);
+std::uint64_t zfish_threadpool_nodes_searched(void* pool);
+std::uint64_t zfish_threadpool_tb_hits(void* pool);
+std::size_t   zfish_threadpool_best_thread_index(void* pool);
 void zfish_bitboards_init_runtime(std::uint8_t         (*popcnt16_ptr)[1 << 16],
                                   std::uint8_t         (*square_distance_ptr)[64][64],
                                   std::uint64_t        (*line_bb_ptr)[64][64],
@@ -1069,94 +1110,6 @@ Value to_corrected_static_eval(const Value v, const int cv) {
 }
 
 Value value_draw(size_t nodes) { return Value(zfish_search_value_draw(nodes)); }
-
-template<GenType Type>
-std::size_t score_move_list(const Position&              pos,
-                            const ButterflyHistory*      mainHistory,
-                            const LowPlyHistory*         lowPlyHistory,
-                            const CapturePieceToHistory* captureHistory,
-                            const PieceToHistory* const* continuationHistory,
-                            const SharedHistories*       sharedHistory,
-                            int                          ply,
-                            const MoveList<Type>&        ml,
-                            ZfishMoveSortEntry*          outputs) {
-
-    static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
-
-    Color us = pos.side_to_move();
-
-    [[maybe_unused]] Bitboard threatByLesser[KING + 1];
-    if constexpr (Type == QUIETS)
-    {
-        threatByLesser[PAWN]   = 0;
-        threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
-        threatByLesser[ROOK] =
-          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
-        threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
-        threatByLesser[KING]  = 0;
-    }
-
-    ZfishMoveScoreInput inputs[MAX_MOVES]{};
-    std::size_t         count = 0;
-
-    for (auto move : ml)
-    {
-        const Square    from          = move.from_sq();
-        const Square    to            = move.to_sq();
-        const Piece     pc            = pos.moved_piece(move);
-        const PieceType pt            = type_of(pc);
-        const Piece     capturedPiece = pos.piece_on(to);
-
-        auto& input = inputs[count++];
-        input.raw_move             = move.raw();
-        input.capture_history      = 0;
-        input.captured_piece_value = 0;
-        input.main_history         = 0;
-        input.pawn_history         = 0;
-        input.continuation_sum     = 0;
-        input.check_bonus          = 0;
-        input.from_threatened      = 0;
-        input.to_threatened        = 0;
-        input.capture_stage        = 0;
-        input.piece_value          = 0;
-        input.low_ply_bonus        = 0;
-
-        if constexpr (Type == CAPTURES)
-        {
-            input.capture_history      = (*captureHistory)[pc][to][type_of(capturedPiece)];
-            input.captured_piece_value = int(PieceValue[capturedPiece]);
-        }
-        else if constexpr (Type == QUIETS)
-        {
-            input.main_history     = (*mainHistory)[us][move.raw()];
-            input.pawn_history     = sharedHistory->pawn_entry(pos)[pc][to];
-            input.continuation_sum = (*continuationHistory[0])[pc][to]
-                                     + (*continuationHistory[1])[pc][to]
-                                     + (*continuationHistory[2])[pc][to]
-                                     + (*continuationHistory[3])[pc][to]
-                                     + (*continuationHistory[5])[pc][to];
-            input.check_bonus      = (pos.check_squares(pt) & to) && pos.see_ge(move, -75);
-            input.from_threatened  = bool(threatByLesser[pt] & from);
-            input.to_threatened    = bool(threatByLesser[pt] & to);
-            input.piece_value      = int(PieceValue[pt]);
-            if (ply < LOW_PLY_HISTORY_SIZE)
-                input.low_ply_bonus = 8 * (*lowPlyHistory)[ply][move.raw()] / (1 + ply);
-        }
-        else
-        {
-            input.main_history         = (*mainHistory)[us][move.raw()];
-            input.continuation_sum     = (*continuationHistory[0])[pc][to];
-            input.captured_piece_value = int(PieceValue[capturedPiece]);
-            input.capture_stage        = pos.capture_stage(move);
-        }
-    }
-
-    const std::uint8_t kind = Type == CAPTURES ? std::uint8_t{0}
-                                : Type == QUIETS ? std::uint8_t{1}
-                                                 : std::uint8_t{2};
-    zfish_movepick_score_moves(kind, inputs, count, outputs);
-    return count;
-}
 
 }  // namespace
 
@@ -1286,12 +1239,26 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 }
 
 template<GenType Type>
-ExtMove* MovePicker::score(const MoveList<Type>& ml) {
+ExtMove* MovePicker::score(const MoveList<Type>&) {
 
-    ZfishMoveSortEntry  outputs[MAX_MOVES]{};
-    const std::size_t   count = score_move_list<Type>(
-      pos, mainHistory, lowPlyHistory, captureHistory, continuationHistory, sharedHistory, ply, ml,
-      outputs);
+    static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
+
+    const std::uint8_t kind = Type == CAPTURES ? std::uint8_t{0}
+                                : Type == QUIETS ? std::uint8_t{1}
+                                                 : std::uint8_t{2};
+
+    const ZfishMovePickerContext context = {
+      .pos                  = &pos,
+      .main_history         = mainHistory,
+      .low_ply_history      = lowPlyHistory,
+      .capture_history      = captureHistory,
+      .continuation_history = continuationHistory,
+      .shared_history       = sharedHistory,
+      .ply                  = ply,
+    };
+
+    ZfishMoveSortEntry outputs[MAX_MOVES]{};
+    const std::size_t  count = zfish_movepick_score_list(kind, &context, outputs);
 
     ExtMove* it = cur;
     for (std::size_t i = 0; i < count; ++i)
@@ -1364,48 +1331,6 @@ Move MovePicker::next_move() {
 
 void MovePicker::skip_quiet_moves() { skipQuiets = true; }
 
-extern "C" std::size_t zfish_movepick_score_captures(const void* pos_ptr,
-                                                      const void* capture_history_ptr,
-                                                      ZfishMoveSortEntry* outputs) {
-    const auto& pos            = *static_cast<const Position*>(pos_ptr);
-    const auto* captureHistory = static_cast<const CapturePieceToHistory*>(capture_history_ptr);
-    MoveList<CAPTURES> ml(pos);
-    return score_move_list<CAPTURES>(
-      pos, nullptr, nullptr, captureHistory, nullptr, nullptr, 0, ml, outputs);
-}
-
-extern "C" std::size_t zfish_movepick_score_quiets(const void* pos_ptr,
-                                                    const void* main_history_ptr,
-                                                    const void* low_ply_history_ptr,
-                                                    const void* continuation_history_ptr,
-                                                    const void* shared_history_ptr,
-                                                    int         ply,
-                                                    ZfishMoveSortEntry* outputs) {
-    const auto& pos                 = *static_cast<const Position*>(pos_ptr);
-    const auto* mainHistory         = static_cast<const ButterflyHistory*>(main_history_ptr);
-    const auto* lowPlyHistory       = static_cast<const LowPlyHistory*>(low_ply_history_ptr);
-        const auto* continuationHistory =
-            static_cast<const PieceToHistory* const*>(continuation_history_ptr);
-    const auto* sharedHistory       = static_cast<const SharedHistories*>(shared_history_ptr);
-    MoveList<QUIETS> ml(pos);
-    return score_move_list<QUIETS>(
-      pos, mainHistory, lowPlyHistory, nullptr, continuationHistory, sharedHistory, ply, ml,
-      outputs);
-}
-
-extern "C" std::size_t zfish_movepick_score_evasions(const void* pos_ptr,
-                                                      const void* main_history_ptr,
-                                                      const void* continuation_history_ptr,
-                                                      ZfishMoveSortEntry* outputs) {
-    const auto& pos                 = *static_cast<const Position*>(pos_ptr);
-    const auto* mainHistory         = static_cast<const ButterflyHistory*>(main_history_ptr);
-        const auto* continuationHistory =
-            static_cast<const PieceToHistory* const*>(continuation_history_ptr);
-    MoveList<EVASIONS> ml(pos);
-    return score_move_list<EVASIONS>(
-      pos, mainHistory, nullptr, nullptr, continuationHistory, nullptr, 0, ml, outputs);
-}
-
 extern "C" std::uint8_t zfish_movepick_see_ge(const void* pos_ptr,
                                                std::uint16_t raw_move,
                                                int           threshold) {
@@ -1415,45 +1340,190 @@ extern "C" std::uint8_t zfish_movepick_see_ge(const void* pos_ptr,
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
 
-extern "C" void zfish_movegen_fill_snapshot(const void* pos_ptr, ZfishMovegenSnapshot* out) {
+extern "C" std::uint8_t zfish_position_side_to_move(const void* pos_ptr) {
+    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->side_to_move());
+}
+
+extern "C" std::uint64_t zfish_position_pieces_all(const void* pos_ptr) {
+    return static_cast<const Position*>(pos_ptr)->pieces();
+}
+
+extern "C" std::uint64_t zfish_position_pieces_by_color(const void* pos_ptr, std::uint8_t color) {
+    return static_cast<const Position*>(pos_ptr)->pieces(static_cast<Color>(color));
+}
+
+extern "C" std::uint64_t zfish_position_pieces_by_type(const void*    pos_ptr,
+                                                         std::uint8_t piece_type) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
+    return piece_type == static_cast<std::uint8_t>(ALL_PIECES)
+             ? pos.pieces()
+             : pos.pieces(static_cast<PieceType>(piece_type));
+}
 
-    *out                        = {};
-    out->side_to_move           = static_cast<std::uint8_t>(pos.side_to_move());
-    out->pieces_all             = pos.pieces();
-    out->pieces_by_color[WHITE] = pos.pieces(WHITE);
-    out->pieces_by_color[BLACK] = pos.pieces(BLACK);
-    out->pieces_by_type[ALL_PIECES] = pos.pieces();
-    out->pieces_by_type[PAWN]       = pos.pieces(PAWN);
-    out->pieces_by_type[KNIGHT]     = pos.pieces(KNIGHT);
-    out->pieces_by_type[BISHOP]     = pos.pieces(BISHOP);
-    out->pieces_by_type[ROOK]       = pos.pieces(ROOK);
-    out->pieces_by_type[QUEEN]      = pos.pieces(QUEEN);
-    out->pieces_by_type[KING]       = pos.pieces(KING);
-    out->king_square[WHITE]         = static_cast<std::uint8_t>(pos.square<KING>(WHITE));
-    out->king_square[BLACK]         = static_cast<std::uint8_t>(pos.square<KING>(BLACK));
-    out->ep_square                  = static_cast<std::uint8_t>(pos.ep_square());
-    out->checkers                   = pos.checkers();
-    out->blockers_for_king[WHITE]   = pos.blockers_for_king(WHITE);
-    out->blockers_for_king[BLACK]   = pos.blockers_for_king(BLACK);
+extern "C" std::uint8_t zfish_position_king_square(const void* pos_ptr, std::uint8_t color) {
+    return static_cast<std::uint8_t>(
+      static_cast<const Position*>(pos_ptr)->square<KING>(static_cast<Color>(color)));
+}
 
+extern "C" std::uint8_t zfish_position_ep_square(const void* pos_ptr) {
+    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->ep_square());
+}
+
+extern "C" std::uint64_t zfish_position_checkers(const void* pos_ptr) {
+    return static_cast<const Position*>(pos_ptr)->checkers();
+}
+
+extern "C" std::uint64_t zfish_position_blockers_for_king(const void* pos_ptr,
+                                                            std::uint8_t color) {
+    return static_cast<const Position*>(pos_ptr)->blockers_for_king(static_cast<Color>(color));
+}
+
+extern "C" std::uint8_t zfish_position_castling_rights(const void* pos_ptr) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    std::uint8_t rights = 0;
     for (const auto cr : {WHITE_OO, WHITE_OOO, BLACK_OO, BLACK_OOO})
-    {
         if (pos.can_castle(cr))
-            out->castling_rights |= static_cast<std::uint8_t>(cr);
-        out->castling_impeded[cr]    = static_cast<std::uint8_t>(pos.castling_impeded(cr));
-        out->castling_rook_square[cr] = static_cast<std::uint8_t>(pos.castling_rook_square(cr));
+            rights |= static_cast<std::uint8_t>(cr);
+    return rights;
+}
+
+extern "C" std::uint8_t zfish_position_castling_impeded(const void* pos_ptr,
+                                                          std::uint8_t castling_right) {
+    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->castling_impeded(
+      static_cast<CastlingRights>(castling_right)));
+}
+
+extern "C" std::uint8_t zfish_position_castling_rook_square(const void* pos_ptr,
+                                                              std::uint8_t castling_right) {
+    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->castling_rook_square(
+      static_cast<CastlingRights>(castling_right)));
+}
+
+extern "C" std::uint64_t zfish_position_key(const void* pos_ptr) {
+    return static_cast<const Position*>(pos_ptr)->key();
+}
+
+extern "C" int zfish_position_material_value(const void* pos_ptr) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    return 534 * pos.count<PAWN>() + pos.non_pawn_material();
+}
+
+extern "C" int zfish_position_rule50_count(const void* pos_ptr) {
+    return static_cast<const Position*>(pos_ptr)->rule50_count();
+}
+
+extern "C" int zfish_position_game_ply(const void* pos_ptr) {
+    return static_cast<const Position*>(pos_ptr)->game_ply();
+}
+
+extern "C" std::uint8_t zfish_position_is_chess960(const void* pos_ptr) {
+    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->is_chess960() ? 1 : 0);
+}
+
+extern "C" std::uint8_t zfish_position_piece_on(const void* pos_ptr, std::uint8_t square) {
+    return static_cast<std::uint8_t>(
+      static_cast<const Position*>(pos_ptr)->piece_on(static_cast<Square>(square)));
+}
+
+extern "C" std::uint64_t zfish_position_attacks_by(const void*      pos_ptr,
+                                                    std::uint8_t     piece_type,
+                                                    std::uint8_t     color) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    const auto  c   = static_cast<Color>(color);
+
+    switch (static_cast<PieceType>(piece_type))
+    {
+    case PAWN:
+        return pos.attacks_by<PAWN>(c);
+    case KNIGHT:
+        return pos.attacks_by<KNIGHT>(c);
+    case BISHOP:
+        return pos.attacks_by<BISHOP>(c);
+    case ROOK:
+        return pos.attacks_by<ROOK>(c);
+    case QUEEN:
+        return pos.attacks_by<QUEEN>(c);
+    case KING:
+        return pos.attacks_by<KING>(c);
+    default:
+        return 0;
     }
 }
 
-extern "C" std::uint64_t zfish_movegen_attacks(std::uint8_t piece_type,
-                                                std::uint8_t square,
-                                                std::uint64_t occupied) {
-    return attacks_bb(static_cast<PieceType>(piece_type), static_cast<Square>(square), occupied);
+extern "C" std::uint64_t zfish_position_check_squares(const void* pos_ptr,
+                                                       std::uint8_t piece_type) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+
+    switch (static_cast<PieceType>(piece_type))
+    {
+    case PAWN:
+        return pos.check_squares(PAWN);
+    case KNIGHT:
+        return pos.check_squares(KNIGHT);
+    case BISHOP:
+        return pos.check_squares(BISHOP);
+    case ROOK:
+        return pos.check_squares(ROOK);
+    case QUEEN:
+        return pos.check_squares(QUEEN);
+    case KING:
+        return pos.check_squares(KING);
+    default:
+        return 0;
+    }
 }
 
-extern "C" std::uint64_t zfish_movegen_between(std::uint8_t from, std::uint8_t to) {
-    return between_bb(static_cast<Square>(from), static_cast<Square>(to));
+extern "C" std::uint8_t zfish_position_capture_stage(const void* pos_ptr,
+                                                      std::uint16_t raw_move) {
+    return static_cast<std::uint8_t>(
+      static_cast<const Position*>(pos_ptr)->capture_stage(Move(raw_move)) ? 1 : 0);
+}
+
+extern "C" std::uint8_t zfish_position_move_is_legal(const void* pos_ptr,
+                                                       std::uint16_t raw_move) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    return std::uint8_t(pos.legal(Move(raw_move)) ? 1 : 0);
+}
+
+extern "C" int zfish_history_main_score(const void*      main_history_ptr,
+                                         std::uint8_t     side_to_move,
+                                         std::uint16_t raw_move) {
+    const auto* mainHistory = static_cast<const ButterflyHistory*>(main_history_ptr);
+    return (*mainHistory)[static_cast<Color>(side_to_move)][raw_move];
+}
+
+extern "C" int zfish_history_low_ply_score(const void* low_ply_history_ptr,
+                                            int         ply,
+                                            std::uint16_t raw_move) {
+    const auto* lowPlyHistory = static_cast<const LowPlyHistory*>(low_ply_history_ptr);
+    return (*lowPlyHistory)[ply][raw_move];
+}
+
+extern "C" int zfish_history_capture_score(const void*  capture_history_ptr,
+                                            std::uint8_t piece,
+                                            std::uint8_t to,
+                                            std::uint8_t captured_piece_type) {
+    const auto* captureHistory = static_cast<const CapturePieceToHistory*>(capture_history_ptr);
+    return (*captureHistory)[static_cast<Piece>(piece)][static_cast<Square>(to)]
+                            [static_cast<PieceType>(captured_piece_type)];
+}
+
+extern "C" int zfish_history_pawn_score(const void*      shared_history_ptr,
+                                         const void*      pos_ptr,
+                                         std::uint8_t     piece,
+                                         std::uint8_t     to) {
+    const auto* sharedHistory = static_cast<const SharedHistories*>(shared_history_ptr);
+    const auto& pos           = *static_cast<const Position*>(pos_ptr);
+    return sharedHistory->pawn_entry(pos)[static_cast<Piece>(piece)][static_cast<Square>(to)];
+}
+
+extern "C" int zfish_history_continuation_score(const void*  continuation_history_ptr,
+                                                 std::size_t  slot,
+                                                 std::uint8_t piece,
+                                                 std::uint8_t to) {
+    const auto* continuationHistory =
+      static_cast<const PieceToHistory* const*>(continuation_history_ptr);
+    return (*continuationHistory[slot])[static_cast<Piece>(piece)][static_cast<Square>(to)];
 }
 
 template<>
@@ -1483,21 +1553,8 @@ Move* generate<NON_EVASIONS>(const Position& pos, Move* moveList) {
 
 template<>
 Move* generate<LEGAL>(const Position& pos, Move* moveList) {
-
-    Color    us     = pos.side_to_move();
-    Bitboard pinned = pos.blockers_for_king(us) & pos.pieces(us);
-    Square   ksq    = pos.square<KING>(us);
-    Move*    cur    = moveList;
-
-    moveList = pos.checkers() ? generate<EVASIONS>(pos, moveList) : generate<NON_EVASIONS>(pos, moveList);
-    while (cur != moveList)
-        if (((pinned & cur->from_sq()) || cur->from_sq() == ksq || cur->type_of() == EN_PASSANT)
-            && !pos.legal(*cur))
-            *cur = *(--moveList);
-        else
-            ++cur;
-
-    return moveList;
+    const auto count = zfish_movegen_generate_legal(&pos, reinterpret_cast<std::uint16_t*>(moveList));
+    return moveList + count;
 }
 
 static constexpr int ClusterSize = 3;
@@ -1550,39 +1607,47 @@ struct Cluster {
 
 static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
 
+extern "C" void* zfish_tt_alloc_clusters(std::size_t byte_count) {
+    return aligned_large_pages_alloc(byte_count);
+}
+
+extern "C" void zfish_tt_free_clusters(void* ptr) { aligned_large_pages_free(ptr); }
+
+extern "C" void zfish_tt_report_alloc_failure(std::size_t mb_size) {
+    std::cerr << "Failed to allocate " << mb_size << "MB for transposition table." << std::endl;
+    std::exit(EXIT_FAILURE);
+}
+
+extern "C" std::size_t zfish_threadpool_num_threads(const void* threads_ptr) {
+    return static_cast<const ThreadPool*>(threads_ptr)->num_threads();
+}
+
+extern "C" void zfish_threadpool_zero_tt_slice(void*        threads_ptr,
+                                                 std::size_t thread_id,
+                                                 void*       table_ptr,
+                                                 std::size_t start_cluster,
+                                                 std::size_t cluster_len) {
+    if (cluster_len == 0 || !table_ptr)
+        return;
+
+    auto* threads = static_cast<ThreadPool*>(threads_ptr);
+    auto* table = static_cast<Cluster*>(table_ptr);
+    threads->run_on_thread(thread_id, [table, start_cluster, cluster_len]() {
+        std::memset(&table[start_cluster], 0, cluster_len * sizeof(Cluster));
+    });
+}
+
+extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thread_id) {
+    static_cast<ThreadPool*>(threads_ptr)->wait_on_thread(thread_id);
+}
+
 void TranspositionTable::resize(size_t mbSize, ThreadPool& threads) {
-    aligned_large_pages_free(table);
-
-    clusterCount = mbSize * 1024 * 1024 / sizeof(Cluster);
-
-    table = static_cast<Cluster*>(aligned_large_pages_alloc(clusterCount * sizeof(Cluster)));
-
-    if (!table)
-    {
-        std::cerr << "Failed to allocate " << mbSize << "MB for transposition table." << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    clear(threads);
+    zfish_tt_resize_state(reinterpret_cast<void**>(&table), &clusterCount, &generation8, mbSize,
+                          &threads);
 }
 
 void TranspositionTable::clear(ThreadPool& threads) {
-    generation8              = 0;
-    const size_t threadCount = threads.num_threads();
-
-    for (size_t i = 0; i < threadCount; ++i)
-    {
-        threads.run_on_thread(i, [this, i, threadCount]() {
-            const size_t stride = clusterCount / threadCount;
-            const size_t start  = stride * i;
-            const size_t len    = i + 1 != threadCount ? stride : clusterCount - start;
-
-            std::memset(&table[start], 0, len * sizeof(Cluster));
-        });
-    }
-
-    for (size_t i = 0; i < threadCount; ++i)
-        threads.wait_on_thread(i);
+    zfish_tt_clear_state(table, clusterCount, &generation8, &threads);
 }
 
 int TranspositionTable::hashfull(int maxAge) const {
@@ -1702,8 +1767,10 @@ void Thread::idle_loop() {
 
 Search::SearchManager* ThreadPool::main_manager() { return main_thread()->worker->main_manager(); }
 
-uint64_t ThreadPool::nodes_searched() const { return accumulate(&Search::Worker::nodes); }
-uint64_t ThreadPool::tb_hits() const { return accumulate(&Search::Worker::tbHits); }
+uint64_t ThreadPool::nodes_searched() const {
+    return zfish_threadpool_nodes_searched(const_cast<ThreadPool*>(this));
+}
+uint64_t ThreadPool::tb_hits() const { return zfish_threadpool_tb_hits(const_cast<ThreadPool*>(this)); }
 
 static size_t next_power_of_two(uint64_t count) {
     return zfish_thread_next_power_of_two(count);
@@ -1798,22 +1865,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
 }
 
 void ThreadPool::clear() {
-    if (threads.size() == 0)
-        return;
-
-    for (auto&& th : threads)
-        th->clear_worker();
-
-    for (auto&& th : threads)
-        th->wait_for_search_finished();
-
-    main_manager()->bestPreviousAverageScore = VALUE_INFINITE;
-    main_manager()->previousTimeReduction    = 0.85;
-
-    main_manager()->callsCnt           = 0;
-    main_manager()->bestPreviousScore  = VALUE_INFINITE;
-    main_manager()->originalTimeAdjust = -1;
-    main_manager()->tm.clear();
+    zfish_threadpool_clear(this);
 }
 
 void ThreadPool::run_on_thread(size_t threadId, std::function<void()> f) {
@@ -1912,19 +1964,6 @@ std::uint16_t zfish_uci_to_move_raw(const void*          pos_ptr,
 
 std::uint16_t zfish_move_none_raw() { return Move::none().raw(); }
 
-std::size_t zfish_position_collect_legal_move_raws(const void*    pos_ptr,
-                                                   std::uint16_t* out_moves,
-                                                   std::size_t    capacity) {
-    const auto& pos = *static_cast<const Position*>(pos_ptr);
-    std::size_t count = 0;
-    for (const auto& move : MoveList<LEGAL>(pos))
-    {
-        assert(count < capacity);
-        out_moves[count++] = move.raw();
-    }
-    return count;
-}
-
 void* zfish_root_moves_create(const std::uint16_t* move_raws, std::size_t count) {
     auto root_moves = std::make_unique<Search::RootMoves>();
     root_moves->reserve(count);
@@ -1949,6 +1988,28 @@ ZfishTbConfig zfish_threadpool_rank_root_moves(const void* options_ptr,
 
 std::size_t zfish_threadpool_thread_count(const void* pool_ptr) {
     return static_cast<const ThreadPool*>(pool_ptr)->size();
+}
+
+std::size_t zfish_threadpool_bound_node_count(const void* pool_ptr) {
+    return static_cast<const ThreadPool*>(pool_ptr)->boundThreadToNumaNode.size();
+}
+
+std::size_t zfish_threadpool_bound_node_at(const void* pool_ptr, std::size_t index) {
+    const auto* pool = static_cast<const ThreadPool*>(pool_ptr);
+    assert(index < pool->boundThreadToNumaNode.size());
+    return pool->boundThreadToNumaNode[index];
+}
+
+std::size_t zfish_numa_context_node_count(const void* numa_context_ptr) {
+    return static_cast<const NumaReplicationContext*>(numa_context_ptr)
+      ->get_numa_config()
+      .num_numa_nodes();
+}
+
+std::size_t zfish_numa_context_cpus_in_node(const void* numa_context_ptr, std::size_t node) {
+    const auto& cfg = static_cast<const NumaReplicationContext*>(numa_context_ptr)->get_numa_config();
+    assert(node < cfg.num_numa_nodes());
+    return cfg.num_cpus_in_numa_node(node);
 }
 
 void* zfish_threadpool_thread_at(void* pool_ptr, std::size_t index) {
@@ -2006,6 +2067,42 @@ void zfish_thread_wait_for_search_finished(void* thread_ptr) {
 
 void zfish_thread_start_searching(void* thread_ptr) {
     static_cast<Thread*>(thread_ptr)->start_searching();
+}
+
+std::uint64_t zfish_thread_nodes_searched(const void* thread_ptr) {
+    return static_cast<const Thread*>(thread_ptr)->worker->nodes.load(std::memory_order_relaxed);
+}
+
+std::uint64_t zfish_thread_tb_hits(const void* thread_ptr) {
+    return static_cast<const Thread*>(thread_ptr)->worker->tbHits.load(std::memory_order_relaxed);
+}
+
+void zfish_thread_fill_summary(const void* thread_ptr, ZfishThreadSummary* out) {
+    const auto* thread = static_cast<const Thread*>(thread_ptr);
+    const auto& root_move = thread->worker->rootMoves[0];
+    out->pv0_raw = root_move.pv[0].raw();
+    out->score_is_bound = root_move.score_is_bound();
+    out->pv_has_more_than_two = root_move.pv.size() > 2;
+    out->score = root_move.score;
+    out->root_depth = int(thread->worker->rootDepth);
+}
+
+void zfish_thread_clear_worker(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->clear_worker();
+}
+
+void zfish_thread_ensure_network_replicated(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->ensure_network_replicated();
+}
+
+void zfish_threadpool_reset_clear_state(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->bestPreviousAverageScore = VALUE_INFINITE;
+    pool->main_manager()->previousTimeReduction    = 0.85;
+    pool->main_manager()->callsCnt                 = 0;
+    pool->main_manager()->bestPreviousScore        = VALUE_INFINITE;
+    pool->main_manager()->originalTimeAdjust       = -1;
+    pool->main_manager()->tm.clear();
 }
 
 void* zfish_engine_states_reset(void* states_ptr) {
@@ -2111,6 +2208,34 @@ void zfish_engine_main_manager_set_ponder(void* threads_ptr, std::uint8_t ponder
     static_cast<ThreadPool*>(threads_ptr)->main_manager()->ponder = ponder != 0;
 }
 
+std::size_t zfish_tbprobe_max_cardinality() {
+    return static_cast<std::size_t>(Tablebases::MaxCardinality);
+}
+
+ZfishEngineTablebaseProbe zfish_tbprobe_probe_fen(const unsigned char* fen_ptr,
+                                                  std::size_t          fen_len,
+                                                  std::uint8_t         chess960) {
+    StateInfo probe_state;
+    Position  probe_pos;
+    if (probe_pos.set(std::string(reinterpret_cast<const char*>(fen_ptr), fen_len),
+                      chess960 != 0, &probe_state)
+          .has_value())
+        return {};
+
+    Tablebases::ProbeState wdl_state = Tablebases::FAIL;
+    Tablebases::ProbeState dtz_state = Tablebases::FAIL;
+    const auto             wdl       = Tablebases::probe_wdl(probe_pos, &wdl_state);
+    const auto             dtz       = Tablebases::probe_dtz(probe_pos, &dtz_state);
+
+    return {
+      .available = 1,
+      .wdl       = static_cast<int>(wdl),
+      .wdl_state = static_cast<int>(wdl_state),
+      .dtz       = dtz,
+      .dtz_state = static_cast<int>(dtz_state),
+    };
+}
+
 std::uint8_t zfish_tbprobe_has_wdl_file(const unsigned char* code_ptr, std::size_t code_len) {
     const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
     TBFile            file(code + ".rtbw");
@@ -2165,50 +2290,6 @@ void zfish_engine_tablebases_init(const unsigned char* path_ptr, std::size_t pat
     Tablebases::init(std::string(reinterpret_cast<const char*>(path_ptr), path_len));
 }
 
-void zfish_engine_position_summary(const void* pos_ptr, ZfishEnginePositionSummary* out) {
-    const auto& pos = *static_cast<const Position*>(pos_ptr);
-    *out            = {
-      .side_to_move_white = static_cast<std::uint8_t>(pos.side_to_move() == WHITE ? 1 : 0),
-      .checkers           = pos.checkers(),
-      .key                = pos.key(),
-      .material           = 534 * pos.count<PAWN>() + pos.non_pawn_material(),
-      .rule50_count       = pos.rule50_count(),
-    };
-}
-
-const char* zfish_engine_position_fen(const void* pos_ptr) {
-    const auto fen = static_cast<const Position*>(pos_ptr)->fen();
-    auto*      out = static_cast<char*>(std::malloc(fen.size() + 1));
-    if (!out)
-        return nullptr;
-
-    std::memcpy(out, fen.c_str(), fen.size() + 1);
-    return out;
-}
-
-ZfishEngineTablebaseProbe zfish_engine_position_probe_tablebases(const void* pos_ptr) {
-    const auto& pos = *static_cast<const Position*>(pos_ptr);
-    if (Tablebases::MaxCardinality < popcount(pos.pieces()) || pos.can_castle(ANY_CASTLING))
-        return {};
-
-    StateInfo p_state;
-    Position  probe_pos;
-    probe_pos.set(pos.fen(), pos.is_chess960(), &p_state);
-
-    Tablebases::ProbeState wdl_state = Tablebases::FAIL;
-    Tablebases::ProbeState dtz_state = Tablebases::FAIL;
-    const auto             wdl       = Tablebases::probe_wdl(probe_pos, &wdl_state);
-    const auto             dtz       = Tablebases::probe_dtz(probe_pos, &dtz_state);
-
-    return {
-      .available = 1,
-      .wdl       = static_cast<int>(wdl),
-      .wdl_state = static_cast<int>(wdl_state),
-      .dtz       = dtz,
-      .dtz_state = static_cast<int>(dtz_state),
-    };
-}
-
 void* zfish_engine_accumulator_stack_create() {
     return new (std::nothrow) Eval::NNUE::AccumulatorStack();
 }
@@ -2241,59 +2322,19 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
 }
 
 Thread* ThreadPool::get_best_thread() const {
-
-    ZfishThreadSummary summaries[1024]{};
-    const auto count = threads.size();
-
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        const auto& rootMove             = threads[i]->worker->rootMoves[0];
-        summaries[i].pv0_raw             = rootMove.pv[0].raw();
-        summaries[i].score_is_bound      = rootMove.score_is_bound();
-        summaries[i].pv_has_more_than_two = rootMove.pv.size() > 2;
-        summaries[i].score               = rootMove.score;
-        summaries[i].root_depth          = int(threads[i]->worker->rootDepth);
-    }
-
-    return threads[zfish_thread_pick_best_thread(summaries, count)].get();
+    return threads[zfish_threadpool_best_thread_index(const_cast<ThreadPool*>(this))].get();
 }
 
 void ThreadPool::start_searching() {
-
-    for (auto&& th : threads)
-        if (th != threads.front())
-            th->start_searching();
+    zfish_threadpool_start_searching(this);
 }
 
 void ThreadPool::wait_for_search_finished() const {
-
-    for (auto&& th : threads)
-        if (th != threads.front())
-            th->wait_for_search_finished();
-}
-
-std::vector<size_t> ThreadPool::get_bound_thread_count_by_numa_node() const {
-    std::vector<size_t> counts;
-
-    if (!boundThreadToNumaNode.empty())
-    {
-        NumaIndex highestNumaNode = 0;
-        for (NumaIndex n : boundThreadToNumaNode)
-            if (n > highestNumaNode)
-                highestNumaNode = n;
-
-        counts.resize(highestNumaNode + 1, 0);
-
-        for (NumaIndex n : boundThreadToNumaNode)
-            counts[n] += 1;
-    }
-
-    return counts;
+    zfish_threadpool_wait_for_search_finished(const_cast<ThreadPool*>(this));
 }
 
 void ThreadPool::ensure_network_replicated() {
-    for (auto&& th : threads)
-        th->ensure_network_replicated();
+    zfish_threadpool_ensure_network_replicated(this);
 }
 
 }  // namespace Stockfish
@@ -2459,19 +2500,6 @@ std::string compiler_info() {
     return compiler;
 }
 
-std::vector<std::pair<size_t, size_t>> Engine::get_bound_thread_count_by_numa_node() const {
-    auto                                   counts = threads.get_bound_thread_count_by_numa_node();
-    const NumaConfig&                      cfg    = numaContext.get_numa_config();
-    std::vector<std::pair<size_t, size_t>> ratios;
-    NumaIndex                              n = 0;
-    for (; n < counts.size(); ++n)
-        ratios.emplace_back(counts[n], cfg.num_cpus_in_numa_node(n));
-    if (!counts.empty())
-        for (; n < cfg.num_numa_nodes(); ++n)
-            ratios.emplace_back(0, cfg.num_cpus_in_numa_node(n));
-    return ratios;
-}
-
 std::string Engine::get_numa_config_as_string() const {
     return numaContext.get_numa_config().to_string();
 }
@@ -2488,16 +2516,7 @@ std::string Engine::numa_config_information_as_string() const {
 }
 
 std::string Engine::thread_binding_information_as_string() const {
-    auto boundThreadsByNode = get_bound_thread_count_by_numa_node();
-    if (boundThreadsByNode.empty())
-        return {};
-
-    std::vector<ZfishCountPair> pairs;
-    pairs.reserve(boundThreadsByNode.size());
-    for (auto&& [current, total] : boundThreadsByNode)
-        pairs.push_back(ZfishCountPair{current, total});
-
-    const char* rendered = zfish_engine_format_thread_binding(pairs.data(), pairs.size());
+    const char* rendered = zfish_engine_thread_binding_information(&numaContext, &threads);
     if (!rendered)
         std::abort();
     std::string result(rendered);
@@ -2506,10 +2525,7 @@ std::string Engine::thread_binding_information_as_string() const {
 }
 
 std::string Engine::thread_allocation_information_as_string() const {
-    const size_t threadsSize = threads.size();
-    const auto   binding = thread_binding_information_as_string();
-    const char*  rendered = zfish_engine_format_thread_allocation(
-      threadsSize, reinterpret_cast<const unsigned char*>(binding.data()), binding.size());
+    const char* rendered = zfish_engine_thread_allocation_information(&numaContext, &threads);
     if (!rendered)
         std::abort();
     std::string result(rendered);
@@ -3000,7 +3016,9 @@ void assign_magic_entries() {
 const OptionsMap& Engine::get_options() const { return options; }
 OptionsMap&       Engine::get_options() { return options; }
 
-std::string Engine::fen() const { return pos.fen(); }
+std::string Engine::fen() const {
+    return take_string_and_free_required(zfish_engine_fen(&pos));
+}
 
 void Engine::flip() { pos.flip(); }
 
