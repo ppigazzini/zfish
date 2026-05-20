@@ -35,6 +35,23 @@ pub fn build(b: *std.Build) void {
     ) orelse "native";
     const arch = resolveArch(b, requested_arch);
     const git_info = readGitInfo(b);
+    const build_options = b.addOptions();
+    build_options.addOption([]const u8, "arch_name", arch.name);
+    build_options.addOption([]const u8, "git_sha", git_info.sha orelse "");
+    build_options.addOption([]const u8, "git_date", git_info.date orelse "");
+    build_options.addOption(bool, "use_avx512icl", hasMacro(arch.macros, "USE_AVX512ICL"));
+    build_options.addOption(bool, "use_vnni", hasMacro(arch.macros, "USE_VNNI"));
+    build_options.addOption(bool, "use_avx512", hasMacro(arch.macros, "USE_AVX512"));
+    build_options.addOption(bool, "use_avx2", hasMacro(arch.macros, "USE_AVX2"));
+    build_options.addOption(bool, "use_sse41", hasMacro(arch.macros, "USE_SSE41"));
+    build_options.addOption(bool, "use_ssse3", hasMacro(arch.macros, "USE_SSSE3"));
+    build_options.addOption(bool, "use_sse2", hasMacro(arch.macros, "USE_SSE2"));
+    build_options.addOption(bool, "use_neon_dotprod", hasMacro(arch.macros, "USE_NEON_DOTPROD"));
+    build_options.addOption(bool, "use_neon", hasMacro(arch.macros, "USE_NEON"));
+    build_options.addOption(bool, "use_popcnt", hasMacro(arch.macros, "USE_POPCNT"));
+    build_options.addOption(bool, "use_pext", hasMacro(arch.macros, "USE_PEXT"));
+    build_options.addOption(bool, "has_ndebug", true);
+    const build_options_module = build_options.createModule();
 
     const target = b.resolveTargetQuery(.{
         .cpu_arch = .x86_64,
@@ -79,6 +96,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    misc_module.addImport("build_options", build_options_module);
     const engine_module = b.createModule(.{
         .root_source_file = b.path("zig_build/support/engine.zig"),
         .target = target,
@@ -161,6 +179,8 @@ pub fn build(b: *std.Build) void {
     });
     engine_module.addImport("position", position_module);
     movegen_module.addImport("bitboard", bitboard_module);
+    uci_module.addImport("benchmark", benchmark_module);
+    uci_module.addImport("misc", misc_module);
     exe.root_module.addImport("benchmark", benchmark_module);
     exe.root_module.addImport("bitboard", bitboard_module);
     exe.root_module.addImport("engine", engine_module);
@@ -653,6 +673,16 @@ fn archConfigFor(arch_name: []const u8) ArchConfig {
         "unsupported ARCH '{s}' for the current Linux x86_64 Zig parity slice",
         .{arch_name},
     );
+}
+
+fn hasMacro(macros: []const Macro, name: []const u8) bool {
+    for (macros) |macro| {
+        if (std.mem.eql(u8, macro.name, name)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn readGitInfo(b: *std.Build) GitInfo {

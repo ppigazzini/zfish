@@ -28,6 +28,24 @@ const value_tb: c_int = value_mate - max_ply - 1;
 const value_tb_win_in_max_ply: c_int = value_tb - max_ply;
 const value_tb_loss_in_max_ply: c_int = -value_tb_win_in_max_ply;
 
+const option_callback_none: u8 = 0;
+const option_callback_debug_log_file: u8 = 1;
+const option_callback_numa_policy: u8 = 2;
+const option_callback_threads: u8 = 3;
+const option_callback_hash: u8 = 4;
+const option_callback_clear_hash: u8 = 5;
+const option_callback_syzygy_path: u8 = 6;
+const option_callback_eval_file: u8 = 7;
+
+const option_kind_string: u8 = 0;
+const option_kind_check: u8 = 1;
+const option_kind_spin: u8 = 2;
+const option_kind_button: u8 = 3;
+
+const default_eval_file_name = "nn-83a0d6daf7e5.nnue";
+const default_skill_lowest_elo: c_int = 1320;
+const default_skill_highest_elo: c_int = 3190;
+
 pub const CountPair = extern struct {
     current: usize,
     total: usize,
@@ -198,6 +216,119 @@ extern fn zfish_eval_compute_value(input: EvalInput) c_int;
 extern fn zfish_eval_format_trace(input: EvalTraceInput) ?[*:0]u8;
 extern fn zfish_nnue_format_trace(input: NnueTraceInput) ?[*:0]u8;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
+extern fn zfish_engine_max_threads_value() c_int;
+extern fn zfish_engine_max_hash_mb_value() c_int;
+extern fn zfish_engine_skill_elo_bounds(low_ptr: *c_int, high_ptr: *c_int) void;
+extern fn zfish_engine_set_start_position(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_add_option(
+    engine_ptr: *anyopaque,
+    name_ptr: [*]const u8,
+    name_len: usize,
+    option_kind: u8,
+    default_ptr: [*]const u8,
+    default_len: usize,
+    default_value: c_int,
+    min_value: c_int,
+    max_value: c_int,
+    callback_kind: u8,
+) void;
+extern fn zfish_engine_start_logger(name_ptr: [*]const u8, name_len: usize) void;
+extern fn zfish_engine_resize_threads_method(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_set_tt_size_method(engine_ptr: *anyopaque, mb: usize) void;
+extern fn zfish_engine_search_clear_method(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_load_network_method(
+    engine_ptr: *anyopaque,
+    file_ptr: [*]const u8,
+    file_len: usize,
+) void;
+extern fn zfish_engine_set_numa_config_from_option_method(
+    engine_ptr: *anyopaque,
+    value_ptr: [*]const u8,
+    value_len: usize,
+) void;
+extern fn zfish_engine_numa_config_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_thread_allocation_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
+
+pub fn initBody(engine_ptr: *anyopaque) void {
+    const max_threads = zfish_engine_max_threads_value();
+    const max_hash_mb = zfish_engine_max_hash_mb_value();
+
+    var lowest_elo: c_int = default_skill_lowest_elo;
+    var highest_elo: c_int = default_skill_highest_elo;
+    zfish_engine_skill_elo_bounds(&lowest_elo, &highest_elo);
+
+    addStringOption(engine_ptr, "Debug Log File", "", option_callback_debug_log_file);
+    addStringOption(engine_ptr, "NumaPolicy", "auto", option_callback_numa_policy);
+    addSpinOption(engine_ptr, "Threads", 1, 1, max_threads, option_callback_threads);
+    addSpinOption(engine_ptr, "Hash", 16, 1, max_hash_mb, option_callback_hash);
+    addButtonOption(engine_ptr, "Clear Hash", option_callback_clear_hash);
+    addCheckOption(engine_ptr, "Ponder", 0);
+    addSpinOption(engine_ptr, "MultiPV", 1, 1, 256, option_callback_none);
+    addSpinOption(engine_ptr, "Skill Level", 20, 0, 20, option_callback_none);
+    addSpinOption(engine_ptr, "Move Overhead", 10, 0, 5000, option_callback_none);
+    addSpinOption(engine_ptr, "nodestime", 0, 0, 10000, option_callback_none);
+    addCheckOption(engine_ptr, "UCI_Chess960", 0);
+    addCheckOption(engine_ptr, "UCI_LimitStrength", 0);
+    addSpinOption(engine_ptr, "UCI_Elo", lowest_elo, lowest_elo, highest_elo, option_callback_none);
+    addCheckOption(engine_ptr, "UCI_ShowWDL", 0);
+    addStringOption(engine_ptr, "SyzygyPath", "", option_callback_syzygy_path);
+    addSpinOption(engine_ptr, "SyzygyProbeDepth", 1, 1, 100, option_callback_none);
+    addCheckOption(engine_ptr, "Syzygy50MoveRule", 1);
+    addSpinOption(engine_ptr, "SyzygyProbeLimit", 7, 0, 7, option_callback_none);
+    addStringOption(engine_ptr, "EvalFile", default_eval_file_name, option_callback_eval_file);
+
+    zfish_engine_set_start_position(engine_ptr);
+    zfish_engine_resize_threads_method(engine_ptr);
+}
+
+pub fn optionOnChange(
+    engine_ptr: *anyopaque,
+    callback_kind: u8,
+    value_ptr: [*]const u8,
+    value_len: usize,
+    int_value: c_int,
+) ?[*:0]u8 {
+    const value = value_ptr[0..value_len];
+
+    return switch (callback_kind) {
+        option_callback_debug_log_file => blk: {
+            zfish_engine_start_logger(value.ptr, value.len);
+            break :blk null;
+        },
+        option_callback_numa_policy => blk: {
+            zfish_engine_set_numa_config_from_option_method(engine_ptr, value.ptr, value.len);
+
+            const numa_info_ptr = zfish_engine_numa_config_info_text(engine_ptr) orelse break :blk null;
+            defer c.free(@ptrCast(numa_info_ptr));
+
+            const thread_info_ptr = zfish_engine_thread_allocation_info_text(engine_ptr) orelse break :blk null;
+            defer c.free(@ptrCast(thread_info_ptr));
+
+            break :blk allocMessage("{s}\n{s}", .{ std.mem.span(numa_info_ptr), std.mem.span(thread_info_ptr) });
+        },
+        option_callback_threads => blk: {
+            zfish_engine_resize_threads_method(engine_ptr);
+            break :blk zfish_engine_thread_allocation_info_text(engine_ptr);
+        },
+        option_callback_hash => blk: {
+            zfish_engine_set_tt_size_method(engine_ptr, @intCast(@max(int_value, 0)));
+            break :blk null;
+        },
+        option_callback_clear_hash => blk: {
+            zfish_engine_search_clear_method(engine_ptr);
+            break :blk null;
+        },
+        option_callback_syzygy_path => blk: {
+            zfish_engine_tablebases_init(value.ptr, value.len);
+            break :blk null;
+        },
+        option_callback_eval_file => blk: {
+            zfish_engine_load_network_method(engine_ptr, value.ptr, value.len);
+            break :blk null;
+        },
+        else => null,
+    };
+}
 
 pub fn setPosition(
     pos: *anyopaque,
@@ -605,6 +736,73 @@ pub fn formatNetworkStatus(
         return allocMessage("Network replica {d}: {s}", .{ replica_index, status_text });
 
     return allocMessage("Network replica {d}: {s} {s}", .{ replica_index, status_text, error_text });
+}
+
+fn addStringOption(engine_ptr: *anyopaque, name: []const u8, default_value: []const u8, callback_kind: u8) void {
+    zfish_engine_add_option(
+        engine_ptr,
+        name.ptr,
+        name.len,
+        option_kind_string,
+        default_value.ptr,
+        default_value.len,
+        0,
+        0,
+        0,
+        callback_kind,
+    );
+}
+
+fn addCheckOption(engine_ptr: *anyopaque, name: []const u8, default_value: u8) void {
+    zfish_engine_add_option(
+        engine_ptr,
+        name.ptr,
+        name.len,
+        option_kind_check,
+        "".ptr,
+        0,
+        default_value,
+        0,
+        0,
+        option_callback_none,
+    );
+}
+
+fn addSpinOption(
+    engine_ptr: *anyopaque,
+    name: []const u8,
+    default_value: c_int,
+    min_value: c_int,
+    max_value: c_int,
+    callback_kind: u8,
+) void {
+    zfish_engine_add_option(
+        engine_ptr,
+        name.ptr,
+        name.len,
+        option_kind_spin,
+        "".ptr,
+        0,
+        default_value,
+        min_value,
+        max_value,
+        callback_kind,
+    );
+}
+
+fn addButtonOption(engine_ptr: *anyopaque, name: []const u8, callback_kind: u8) void {
+    zfish_engine_add_option(
+        engine_ptr,
+        name.ptr,
+        name.len,
+        option_kind_button,
+        "".ptr,
+        0,
+        0,
+        0,
+        0,
+        callback_kind,
+    );
 }
 
 fn allocMessage(comptime fmt: []const u8, args: anytype) ?[*:0]u8 {

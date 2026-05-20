@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bitset>
 #include <cctype>
 #include <cstdlib>
@@ -245,7 +246,9 @@ void        zfish_engine_set_tt_size(void* threads, void* tt, std::size_t mb);
 void        zfish_engine_set_ponderhit(void* threads, std::uint8_t ponder);
 const char* zfish_tbprobe_build_code(const unsigned char* piece_types_ptr, std::size_t piece_count);
 int         zfish_tbprobe_dtz_before_zeroing(int wdl);
-const char*   zfish_misc_engine_info_text();
+const char* zfish_misc_engine_version_info_text();
+const char* zfish_misc_engine_info_mode(std::uint8_t to_uci);
+const char* zfish_misc_compiler_info_text();
 }
 
 namespace {
@@ -2534,48 +2537,28 @@ void ThreadPool::ensure_network_replicated() {
 
 namespace Stockfish {
 
-constexpr std::string_view version = "dev";
-
 std::string engine_version_info() {
-    std::stringstream ss;
-    ss << "Stockfish " << version << std::setfill('0');
-
-    if constexpr (version == "dev")
-    {
-        ss << "-";
-#ifdef GIT_DATE
-        ss << stringify(GIT_DATE);
-#else
-        constexpr std::string_view months("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec");
-
-        std::string       month, day, year;
-        std::stringstream date(__DATE__);
-
-        date >> month >> day >> year;
-        ss << year << std::setw(2) << std::setfill('0') << (1 + months.find(month) / 4)
-           << std::setw(2) << std::setfill('0') << day;
-#endif
-
-        ss << "-";
-
-#ifdef GIT_SHA
-        ss << stringify(GIT_SHA);
-#else
-        ss << "nogit";
-#endif
-    }
-
-    return ss.str();
+    const char* rendered = zfish_misc_engine_version_info_text();
+    if (!rendered)
+        std::abort();
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
 }
 
 std::string engine_info(bool to_uci) {
-    return engine_version_info() + (to_uci ? "\nid author " : " by ")
-         + "the Stockfish developers (see AUTHORS file)";
+    const char* rendered = zfish_misc_engine_info_mode(to_uci ? 1 : 0);
+    if (!rendered)
+        std::abort();
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
 }
 
-extern "C" const char* zfish_misc_engine_info_text() {
-    const auto value = engine_info();
-    auto*      buffer = static_cast<char*>(std::malloc(value.size() + 1));
+namespace {
+
+char* alloc_c_string(const std::string& value) {
+    auto* buffer = static_cast<char*>(std::malloc(value.size() + 1));
     if (!buffer)
         return nullptr;
 
@@ -2583,114 +2566,43 @@ extern "C" const char* zfish_misc_engine_info_text() {
     return buffer;
 }
 
+std::optional<std::string> take_optional_c_string(const char* rendered) {
+    if (!rendered)
+        return std::nullopt;
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+
+}  // namespace
+
+extern "C" {
+void        zfish_misc_dbg_hit_on(std::uint8_t cond, int slot);
+void        zfish_misc_dbg_mean_of(std::int64_t value, int slot);
+void        zfish_misc_dbg_stdev_of(std::int64_t value, int slot);
+void        zfish_misc_dbg_extremes_of(std::int64_t value, int slot);
+void        zfish_misc_dbg_correl_of(std::int64_t value1, std::int64_t value2, int slot);
+void        zfish_misc_dbg_print();
+void        zfish_misc_dbg_clear();
+
+std::uint8_t zfish_misc_has_large_pages_flag() {
+    return has_large_pages() ? 1 : 0;
+}
+
+int zfish_misc_hardware_concurrency_value() {
+    return int(get_hardware_concurrency());
+}
+}
+
 std::string compiler_info() {
+    const char* rendered = zfish_misc_compiler_info_text();
+    if (!rendered)
+        std::abort();
 
-#define make_version_string(major, minor, patch) \
-    stringify(major) "." stringify(minor) "." stringify(patch)
-
-    std::string compiler = "\nCompiled by                : ";
-
-#if defined(__INTEL_LLVM_COMPILER)
-    compiler += "ICX ";
-    compiler += stringify(__INTEL_LLVM_COMPILER);
-#elif defined(__clang__)
-    compiler += "clang++ ";
-    compiler += make_version_string(__clang_major__, __clang_minor__, __clang_patchlevel__);
-#elif _MSC_VER
-    compiler += "MSVC ";
-    compiler += "(version ";
-    compiler += stringify(_MSC_FULL_VER) "." stringify(_MSC_BUILD);
-    compiler += ")";
-#elif defined(__e2k__) && defined(__LCC__)
-    #define dot_ver2(n) \
-        compiler += char('.'); \
-        compiler += char('0' + (n) / 10); \
-        compiler += char('0' + (n) % 10);
-
-    compiler += "MCST LCC ";
-    compiler += "(version ";
-    compiler += std::to_string(__LCC__ / 100);
-    dot_ver2(__LCC__ % 100) dot_ver2(__LCC_MINOR__) compiler += ")";
-#elif __GNUC__
-    compiler += "g++ (GNUC) ";
-    compiler += make_version_string(__GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
-#else
-    compiler += "Unknown compiler ";
-    compiler += "(unknown version)";
-#endif
-
-#if defined(__APPLE__)
-    compiler += " on Apple";
-#elif defined(__CYGWIN__)
-    compiler += " on Cygwin";
-#elif defined(__MINGW64__)
-    compiler += " on MinGW64";
-#elif defined(__MINGW32__)
-    compiler += " on MinGW32";
-#elif defined(__ANDROID__)
-    compiler += " on Android";
-#elif defined(__linux__)
-    compiler += " on Linux";
-#elif defined(_WIN64)
-    compiler += " on Microsoft Windows 64-bit";
-#elif defined(_WIN32)
-    compiler += " on Microsoft Windows 32-bit";
-#else
-    compiler += " on unknown system";
-#endif
-
-    compiler += "\nCompilation architecture   : ";
-#if defined(ARCH)
-    compiler += stringify(ARCH);
-#else
-    compiler += "(undefined architecture)";
-#endif
-
-    compiler += "\nCompilation settings       : ";
-    compiler += (Is64Bit ? "64bit" : "32bit");
-#if defined(USE_AVX512ICL)
-    compiler += " AVX512ICL";
-#endif
-#if defined(USE_VNNI)
-    compiler += " VNNI";
-#endif
-#if defined(USE_AVX512)
-    compiler += " AVX512";
-#endif
-    compiler += (HasPext ? " BMI2" : "");
-#if defined(USE_AVX2)
-    compiler += " AVX2";
-#endif
-#if defined(USE_SSE41)
-    compiler += " SSE41";
-#endif
-#if defined(USE_SSSE3)
-    compiler += " SSSE3";
-#endif
-#if defined(USE_SSE2)
-    compiler += " SSE2";
-#endif
-#if defined(USE_NEON_DOTPROD)
-    compiler += " NEON_DOTPROD";
-#elif defined(USE_NEON)
-    compiler += " NEON";
-#endif
-    compiler += (HasPopCnt ? " POPCNT" : "");
-
-#if !defined(NDEBUG)
-    compiler += " DEBUG";
-#endif
-
-    compiler += "\nCompiler __VERSION__ macro : ";
-#ifdef __VERSION__
-    compiler += __VERSION__;
-#else
-    compiler += "(undefined macro)";
-#endif
-
-    compiler += "\n";
-
-    return compiler;
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
 }
 
 std::string Engine::get_numa_config_as_string() const {
@@ -2769,119 +2681,29 @@ void Engine::save_network(const std::pair<std::optional<std::string>, std::strin
                               filename.size());
 }
 
-constexpr int MaxDebugSlots = 32;
-
-template<size_t N>
-struct DebugInfo {
-    std::array<std::atomic<int64_t>, N> data = {0};
-
-    [[nodiscard]] constexpr std::atomic<int64_t>& operator[](size_t index) {
-        assert(index < N);
-        return data[index];
-    }
-
-    constexpr DebugInfo& operator=(const DebugInfo& other) {
-        for (size_t i = 0; i < N; i++)
-            data[i].store(other.data[i].load());
-        return *this;
-    }
-};
-
-struct DebugExtremes: public DebugInfo<3> {
-    DebugExtremes() {
-        data[1] = std::numeric_limits<int64_t>::min();
-        data[2] = std::numeric_limits<int64_t>::max();
-    }
-};
-
-std::array<DebugInfo<2>, MaxDebugSlots>  hit;
-std::array<DebugInfo<2>, MaxDebugSlots>  mean;
-std::array<DebugInfo<3>, MaxDebugSlots>  stdev;
-std::array<DebugInfo<6>, MaxDebugSlots>  correl;
-std::array<DebugExtremes, MaxDebugSlots> extremes;
-
 void dbg_hit_on(bool cond, int slot) {
-    ++hit.at(slot)[0];
-    if (cond)
-        ++hit.at(slot)[1];
+    zfish_misc_dbg_hit_on(static_cast<std::uint8_t>(cond ? 1 : 0), slot);
 }
 
 void dbg_mean_of(int64_t value, int slot) {
-    ++mean.at(slot)[0];
-    mean.at(slot)[1] += value;
+    zfish_misc_dbg_mean_of(value, slot);
 }
 
 void dbg_stdev_of(int64_t value, int slot) {
-    ++stdev.at(slot)[0];
-    stdev.at(slot)[1] += value;
-    stdev.at(slot)[2] += value * value;
+    zfish_misc_dbg_stdev_of(value, slot);
 }
 
 void dbg_extremes_of(int64_t value, int slot) {
-    ++extremes.at(slot)[0];
-
-    int64_t current_max = extremes.at(slot)[1].load();
-    while (current_max < value && !extremes.at(slot)[1].compare_exchange_weak(current_max, value))
-    {}
-
-    int64_t current_min = extremes.at(slot)[2].load();
-    while (current_min > value && !extremes.at(slot)[2].compare_exchange_weak(current_min, value))
-    {}
+    zfish_misc_dbg_extremes_of(value, slot);
 }
 
 void dbg_correl_of(int64_t value1, int64_t value2, int slot) {
-    ++correl.at(slot)[0];
-    correl.at(slot)[1] += value1;
-    correl.at(slot)[2] += value1 * value1;
-    correl.at(slot)[3] += value2;
-    correl.at(slot)[4] += value2 * value2;
-    correl.at(slot)[5] += value1 * value2;
+    zfish_misc_dbg_correl_of(value1, value2, slot);
 }
 
-void dbg_print() {
-    int64_t n;
-    auto    E   = [&n](int64_t x) { return double(x) / n; };
-    auto    sqr = [](double x) { return x * x; };
+void dbg_print() { zfish_misc_dbg_print(); }
 
-    for (int i = 0; i < MaxDebugSlots; ++i)
-        if ((n = hit[i][0]))
-            std::cerr << "Hit #" << i << ": Total " << n << " Hits " << hit[i][1]
-                      << " Hit Rate (%) " << 100.0 * E(hit[i][1]) << std::endl;
-
-    for (int i = 0; i < MaxDebugSlots; ++i)
-        if ((n = mean[i][0]))
-            std::cerr << "Mean #" << i << ": Total " << n << " Mean " << E(mean[i][1])
-                      << std::endl;
-
-    for (int i = 0; i < MaxDebugSlots; ++i)
-        if ((n = stdev[i][0]))
-        {
-            double r = sqrt(E(stdev[i][2]) - sqr(E(stdev[i][1])));
-            std::cerr << "Stdev #" << i << ": Total " << n << " Stdev " << r << std::endl;
-        }
-
-    for (int i = 0; i < MaxDebugSlots; ++i)
-        if ((n = extremes[i][0]))
-            std::cerr << "Extremity #" << i << ": Total " << n << " Min " << extremes[i][2]
-                      << " Max " << extremes[i][1] << std::endl;
-
-    for (int i = 0; i < MaxDebugSlots; ++i)
-        if ((n = correl[i][0]))
-        {
-            double r = (E(correl[i][5]) - E(correl[i][1]) * E(correl[i][3]))
-                     / (sqrt(E(correl[i][2]) - sqr(E(correl[i][1])))
-                        * sqrt(E(correl[i][4]) - sqr(E(correl[i][3]))));
-            std::cerr << "Correl. #" << i << ": Total " << n << " Coefficient " << r << std::endl;
-        }
-}
-
-void dbg_clear() {
-    hit.fill({});
-    mean.fill({});
-    stdev.fill({});
-    correl.fill({});
-    extremes.fill({});
-}
+void dbg_clear() { zfish_misc_dbg_clear(); }
 
 std::string take_string_and_free_engine_required_uci(const char* rendered) {
     if (!rendered)
@@ -3026,77 +2848,168 @@ void Engine::trace_eval() const {
     sync_cout << "\n" << Eval::trace(p, *network) << sync_endl;
 }
 
+extern "C" {
+const char* zfish_engine_option_on_change(void*                engine_ptr,
+                                          std::uint8_t         callback_kind,
+                                          const unsigned char* value_ptr,
+                                          std::size_t          value_len,
+                                          int                  int_value);
+}
+
+namespace {
+
+constexpr std::uint8_t kOptionCallbackNone          = 0;
+constexpr std::uint8_t kOptionCallbackDebugLogFile  = 1;
+constexpr std::uint8_t kOptionCallbackNumaPolicy    = 2;
+constexpr std::uint8_t kOptionCallbackThreads       = 3;
+constexpr std::uint8_t kOptionCallbackHash          = 4;
+constexpr std::uint8_t kOptionCallbackClearHash     = 5;
+constexpr std::uint8_t kOptionCallbackSyzygyPath    = 6;
+constexpr std::uint8_t kOptionCallbackEvalFile      = 7;
+
+constexpr std::uint8_t kOptionTypeString            = 0;
+constexpr std::uint8_t kOptionTypeCheck             = 1;
+constexpr std::uint8_t kOptionTypeSpin              = 2;
+constexpr std::uint8_t kOptionTypeButton            = 3;
+
+std::optional<std::string> relay_engine_option_callback(Engine*                 engine,
+                                                        std::uint8_t            callback_kind,
+                                                        std::string_view        value,
+                                                        int                     int_value) {
+    return take_optional_c_string(zfish_engine_option_on_change(
+      engine, callback_kind, reinterpret_cast<const unsigned char*>(value.data()), value.size(),
+      int_value));
+}
+
+Option::OnChange make_option_callback(
+  Engine* engine, std::uint8_t option_kind, std::uint8_t callback_kind) {
+    if (callback_kind == kOptionCallbackNone)
+        return nullptr;
+
+    return [engine, option_kind, callback_kind](const Option& option) -> std::optional<std::string> {
+        switch (option_kind)
+        {
+        case kOptionTypeString:
+            return relay_engine_option_callback(engine, callback_kind, std::string(option), 0);
+        case kOptionTypeCheck:
+        case kOptionTypeSpin: {
+            const auto value = int(option);
+            return relay_engine_option_callback(engine, callback_kind, std::to_string(value), value);
+        }
+        case kOptionTypeButton:
+            return relay_engine_option_callback(engine, callback_kind, std::string_view{}, 0);
+        default:
+            return std::nullopt;
+        }
+    };
+}
+
+}  // namespace
+
+extern "C" {
+void        zfish_engine_init_body(void* engine_ptr);
+
+int zfish_engine_max_threads_value() { return MaxThreads; }
+
+int zfish_engine_max_hash_mb_value() { return MaxHashMB; }
+
+void zfish_engine_skill_elo_bounds(int* low_ptr, int* high_ptr) {
+    if (low_ptr)
+        *low_ptr = Stockfish::Search::Skill::LowestElo;
+    if (high_ptr)
+        *high_ptr = Stockfish::Search::Skill::HighestElo;
+}
+
+void zfish_engine_set_start_position(void* engine_ptr) {
+    auto* engine = static_cast<Engine*>(engine_ptr);
+    const auto error = engine->set_position(StartFEN, {});
+    if (error)
+        std::abort();
+}
+
+void zfish_engine_add_option(void*                engine_ptr,
+                             const unsigned char* name_ptr,
+                             std::size_t          name_len,
+                             std::uint8_t         option_kind,
+                             const unsigned char* default_ptr,
+                             std::size_t          default_len,
+                             int                  default_value,
+                             int                  min_value,
+                             int                  max_value,
+                             std::uint8_t         callback_kind) {
+    auto* engine = static_cast<Engine*>(engine_ptr);
+    auto   name   = std::string(reinterpret_cast<const char*>(name_ptr), name_len);
+    auto   change = make_option_callback(engine, option_kind, callback_kind);
+
+    switch (option_kind)
+    {
+    case kOptionTypeString: {
+        auto default_text = std::string(reinterpret_cast<const char*>(default_ptr), default_len);
+        engine->get_options().add(name, Option(default_text.c_str(), std::move(change)));
+        return;
+    }
+    case kOptionTypeCheck:
+        engine->get_options().add(name, Option(default_value != 0, std::move(change)));
+        return;
+    case kOptionTypeSpin:
+        engine->get_options().add(
+          name, Option(default_value, min_value, max_value, std::move(change)));
+        return;
+    case kOptionTypeButton:
+        engine->get_options().add(name, Option(std::move(change)));
+        return;
+    default:
+        std::abort();
+    }
+}
+
+void zfish_engine_start_logger(const unsigned char* name_ptr, std::size_t name_len) {
+    start_logger(std::string(reinterpret_cast<const char*>(name_ptr), name_len));
+}
+
+void zfish_engine_resize_threads_method(void* engine_ptr) {
+    static_cast<Engine*>(engine_ptr)->resize_threads();
+}
+
+void zfish_engine_set_tt_size_method(void* engine_ptr, std::size_t mb) {
+    static_cast<Engine*>(engine_ptr)->set_tt_size(mb);
+}
+
+void zfish_engine_search_clear_method(void* engine_ptr) {
+    static_cast<Engine*>(engine_ptr)->search_clear();
+}
+
+void zfish_engine_load_network_method(void*                engine_ptr,
+                                      const unsigned char* file_ptr,
+                                      std::size_t          file_len) {
+    static_cast<Engine*>(engine_ptr)->load_network(
+      std::string(reinterpret_cast<const char*>(file_ptr), file_len));
+}
+
+void zfish_engine_set_numa_config_from_option_method(void*                engine_ptr,
+                                                     const unsigned char* value_ptr,
+                                                     std::size_t          value_len) {
+    static_cast<Engine*>(engine_ptr)->set_numa_config_from_option(
+      std::string(reinterpret_cast<const char*>(value_ptr), value_len));
+}
+
+const char* zfish_engine_numa_config_info_text(const void* engine_ptr) {
+    return alloc_c_string(static_cast<const Engine*>(engine_ptr)->numa_config_information_as_string());
+}
+
+const char* zfish_engine_thread_allocation_info_text(const void* engine_ptr) {
+    return alloc_c_string(
+      static_cast<const Engine*>(engine_ptr)->thread_allocation_information_as_string());
+}
+}
+
 Engine::Engine(std::optional<std::string> path) :
         binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
         numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
         states(new std::deque<StateInfo>(1)),
         threads(),
         network(numaContext, get_default_network()) {
-
-        pos.set(StartFEN, false, &states->back());
-
-        options.add(
-            "Debug Log File", Option("", [](const Option& o) {
-                    start_logger(o);
-                    return std::nullopt;
-            }));
-
-        options.add(
-            "NumaPolicy", Option("auto", [this](const Option& o) {
-                    set_numa_config_from_option(o);
-                    return numa_config_information_as_string() + "\n"
-                             + thread_allocation_information_as_string();
-            }));
-
-        options.add(
-            "Threads", Option(1, 1, MaxThreads, [this](const Option&) {
-                    resize_threads();
-                    return thread_allocation_information_as_string();
-            }));
-
-        options.add(
-            "Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {
-                    set_tt_size(o);
-                    return std::nullopt;
-            }));
-
-        options.add(
-            "Clear Hash", Option([this](const Option&) {
-                    search_clear();
-                    return std::nullopt;
-            }));
-
-        options.add("Ponder", Option(false));
-        options.add("MultiPV", Option(1, 1, MAX_MOVES));
-        options.add("Skill Level", Option(20, 0, 20));
-        options.add("Move Overhead", Option(10, 0, 5000));
-        options.add("nodestime", Option(0, 0, 10000));
-        options.add("UCI_Chess960", Option(false));
-        options.add("UCI_LimitStrength", Option(false));
-        options.add("UCI_Elo",
-                                Option(Stockfish::Search::Skill::LowestElo, Stockfish::Search::Skill::LowestElo,
-                                             Stockfish::Search::Skill::HighestElo));
-        options.add("UCI_ShowWDL", Option(false));
-
-        options.add(
-            "SyzygyPath", Option("", [](const Option& o) {
-                    Tablebases::init(o);
-                    return std::nullopt;
-            }));
-
-        options.add("SyzygyProbeDepth", Option(1, 1, 100));
-        options.add("Syzygy50MoveRule", Option(true));
-        options.add("SyzygyProbeLimit", Option(7, 0, 7));
-
-        options.add(
-            "EvalFile", Option(EvalFileDefaultName, [this](const Option& o) {
-                    load_network(o);
-                    return std::nullopt;
-            }));
-
-        threads.clear();
-        threads.ensure_network_replicated();
-        resize_threads();
+        zfish_engine_init_body(this);
 }
 
 constexpr auto BenchmarkCommand = "speedtest";
@@ -3283,6 +3196,20 @@ string Position::fen() const {
       static_cast<std::uint8_t>(ep_square()), st->rule50, gamePly));
 }
 
+namespace {
+
+std::atomic<std::uint64_t> zfish_last_nodes_searched = 0;
+
+}  // namespace
+
+extern "C" {
+void zfish_uci_loop_runtime(void* engine_ptr);
+void zfish_uci_bench_runtime(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len);
+void zfish_uci_benchmark_runtime(void* engine_ptr,
+                                                                 const unsigned char* args_ptr,
+                                                                 std::size_t          args_len);
+}
+
 UCIEngine::UCIEngine(int argc, char** argv) :
     engine(argv[0]),
     cli(argc, argv) {
@@ -3298,29 +3225,15 @@ UCIEngine::UCIEngine(int argc, char** argv) :
 void UCIEngine::init_search_update_listeners() {
     engine.set_on_iter([](const auto& i) { on_iter(i); });
     engine.set_on_update_no_moves([](const auto& i) { on_update_no_moves(i); });
-    engine.set_on_update_full(
-      [this](const auto& i) { on_update_full(i, engine.get_options()["UCI_ShowWDL"]); });
+    engine.set_on_update_full([this](const auto& i) {
+        zfish_last_nodes_searched.store(i.nodes, std::memory_order_relaxed);
+        on_update_full(i, engine.get_options()["UCI_ShowWDL"]);
+    });
     engine.set_on_bestmove([](const auto& bm, const auto& p) { on_bestmove(bm, p); });
     engine.set_on_verify_network([](const auto& s) { print_info_string(s); });
 }
 
-void UCIEngine::loop() {
-    std::string token, cmd;
-
-    for (int i = 1; i < cli.argc; ++i)
-        cmd += std::string(cli.argv[i]) + " ";
-
-    do
-    {
-        if (cli.argc == 1 && !getline(std::cin, cmd))
-            cmd = "quit";
-
-        const auto result = zfish_uci_dispatch_command(
-          this, reinterpret_cast<const unsigned char*>(cmd.data()), cmd.size());
-        token = result.should_quit != 0 ? "quit" : "";
-
-    } while (token != "quit" && cli.argc == 1);
-}
+void UCIEngine::loop() { zfish_uci_loop_runtime(this); }
 
 void UCIEngine::go(std::istringstream& is) {
 
@@ -3333,215 +3246,17 @@ void UCIEngine::go(std::istringstream& is) {
 }
 
 void UCIEngine::bench(std::istream& args) {
-    std::string token;
-    uint64_t    num, nodes = 0, cnt = 1;
-    uint64_t    nodesSearched = 0;
-    const auto& options       = engine.get_options();
-
-    engine.set_on_update_full([&](const auto& i) {
-        nodesSearched = i.nodes;
-        on_update_full(i, options["UCI_ShowWDL"]);
-    });
-
-    std::vector<std::string> list = Benchmark::setup_bench(engine.fen(), args);
-
-    num = count_if(list.begin(), list.end(),
-                   [](const std::string& s) { return s.find("go ") == 0 || s.find("eval") == 0; });
-
-    TimePoint elapsed = now();
-
-    for (const auto& cmd : list)
-    {
-        std::istringstream is(cmd);
-        is >> token;
-
-        if (token == "go" || token == "eval")
-        {
-            std::cerr << "\nPosition: " << cnt++ << '/' << num << " (" << engine.fen() << ")"
-                      << std::endl;
-            if (token == "go")
-            {
-                Search::LimitsType limits = parse_limits(is);
-
-                if (limits.perft)
-                    nodesSearched = perft(limits);
-                else
-                {
-                    engine.go(limits);
-                    engine.wait_for_search_finished();
-                }
-
-                nodes += nodesSearched;
-                nodesSearched = 0;
-            }
-            else
-                engine.trace_eval();
-        }
-        else if (token == "setoption")
-            setoption(is);
-        else if (token == "position")
-            position(is);
-        else if (token == "ucinewgame")
-        {
-            engine.search_clear();
-            elapsed = now();
-        }
-    }
-
-    elapsed = now() - elapsed + 1;
-
-    dbg_print();
-
-    std::cerr << "\n==========================="
-              << "\nTotal time (ms) : " << elapsed
-              << "\nNodes searched  : " << nodes
-              << "\nNodes/second    : " << 1000 * nodes / elapsed << std::endl;
-
-    engine.set_on_update_full([&](const auto& i) { on_update_full(i, options["UCI_ShowWDL"]); });
+    const std::string args_text((std::istreambuf_iterator<char>(args)),
+                                std::istreambuf_iterator<char>());
+    zfish_uci_bench_runtime(this, reinterpret_cast<const unsigned char*>(args_text.data()),
+                            args_text.size());
 }
 
 void UCIEngine::benchmark(std::istream& args) {
-    static constexpr int NUM_WARMUP_POSITIONS = 3;
-
-    std::string token;
-    uint64_t    nodes = 0, cnt = 1;
-    uint64_t    nodesSearched = 0;
-
-    engine.set_on_update_full([&](const Engine::InfoFull& i) { nodesSearched = i.nodes; });
-
-    engine.set_on_iter([](const auto&) {});
-    engine.set_on_update_no_moves([](const auto&) {});
-    engine.set_on_bestmove([](const auto&, const auto&) {});
-    engine.set_on_verify_network([](const auto&) {});
-
-    Benchmark::BenchmarkSetup setup = Benchmark::setup_benchmark(args);
-
-    const auto numGoCommands = count_if(setup.commands.begin(), setup.commands.end(),
-                                        [](const std::string& s) { return s.find("go ") == 0; });
-
-    TimePoint totalTime = 0;
-
-    auto ss = std::istringstream("name Threads value " + std::to_string(setup.threads));
-    setoption(ss);
-    ss = std::istringstream("name Hash value " + std::to_string(setup.ttSize));
-    setoption(ss);
-    ss = std::istringstream("name UCI_Chess960 value false");
-    setoption(ss);
-
-    for (const auto& cmd : setup.commands)
-    {
-        std::istringstream is(cmd);
-        is >> token;
-
-        if (token == "go")
-        {
-            std::cerr << "\rWarmup position " << cnt++ << '/' << NUM_WARMUP_POSITIONS;
-
-            Search::LimitsType limits = parse_limits(is);
-            engine.go(limits);
-            engine.wait_for_search_finished();
-        }
-        else if (token == "position")
-            position(is);
-        else if (token == "ucinewgame")
-        {
-            engine.search_clear();
-        }
-
-        if (cnt > NUM_WARMUP_POSITIONS)
-            break;
-    }
-
-    std::cerr << "\n";
-
-    cnt   = 1;
-    nodes = 0;
-
-    int           numHashfullReadings = 0;
-    constexpr int hashfullAges[]      = {0, 999};
-    constexpr int hashfullAgeCount    = std::size(hashfullAges);
-    int           totalHashfull[hashfullAgeCount] = {0};
-    int           maxHashfull[hashfullAgeCount]   = {0};
-
-    auto updateHashfullReadings = [&]() {
-        numHashfullReadings += 1;
-
-        for (int i = 0; i < hashfullAgeCount; ++i)
-        {
-            const int hashfull = engine.get_hashfull(hashfullAges[i]);
-            maxHashfull[i]     = std::max(maxHashfull[i], hashfull);
-            totalHashfull[i] += hashfull;
-        }
-    };
-
-    engine.search_clear();
-
-    for (const auto& cmd : setup.commands)
-    {
-        std::istringstream is(cmd);
-        is >> token;
-
-        if (token == "go")
-        {
-            std::cerr << "\rPosition " << cnt++ << '/' << numGoCommands;
-
-            Search::LimitsType limits = parse_limits(is);
-
-            nodesSearched     = 0;
-            TimePoint elapsed = now();
-
-            engine.go(limits);
-            engine.wait_for_search_finished();
-
-            totalTime += now() - elapsed;
-
-            updateHashfullReadings();
-
-            nodes += nodesSearched;
-        }
-        else if (token == "position")
-            position(is);
-        else if (token == "ucinewgame")
-        {
-            engine.search_clear();
-        }
-    }
-
-    totalTime = std::max<TimePoint>(totalTime, 1);
-
-    dbg_print();
-
-    std::cerr << "\n";
-
-    static_assert(
-      std::size(hashfullAges) == 2 && hashfullAges[0] == 0 && hashfullAges[1] == 999,
-      "Hardcoded for display. Would complicate the code needlessly in the current state.");
-
-    std::string threadBinding = engine.thread_binding_information_as_string();
-    if (threadBinding.empty())
-        threadBinding = "none";
-
-    std::cerr << "==========================="
-              << "\nVersion                    : "
-              << engine_version_info() << compiler_info()
-              << "Large pages                : " << (has_large_pages() ? "yes" : "no")
-              << "\nUser invocation            : " << BenchmarkCommand << " "
-              << setup.originalInvocation << "\nFilled invocation          : " << BenchmarkCommand
-              << " " << setup.filledInvocation
-              << "\nAvailable processors       : " << engine.get_numa_config_as_string()
-              << "\nThread count               : " << setup.threads
-              << "\nThread binding             : " << threadBinding
-              << "\nTT size [MiB]              : " << setup.ttSize
-              << "\nHash max, avg [per mille]  : "
-              << "\n    single search          : " << maxHashfull[0] << ", "
-              << totalHashfull[0] / numHashfullReadings
-              << "\n    single game            : " << maxHashfull[1] << ", "
-              << totalHashfull[1] / numHashfullReadings
-              << "\nTotal nodes searched       : " << nodes
-              << "\nTotal search time [s]      : " << totalTime / 1000.0
-              << "\nNodes/second               : " << 1000 * nodes / totalTime << std::endl;
-
-    init_search_update_listeners();
+    const std::string args_text((std::istreambuf_iterator<char>(args)),
+                                std::istreambuf_iterator<char>());
+    zfish_uci_benchmark_runtime(this, reinterpret_cast<const unsigned char*>(args_text.data()),
+                                args_text.size());
 }
 
 void UCIEngine::setoption(std::istringstream& is) {
@@ -3557,6 +3272,76 @@ std::uint64_t UCIEngine::perft(const Search::LimitsType& limits) {
 
 extern "C" {
 
+int zfish_uci_cli_argc(const void* uci_ptr) {
+    return static_cast<const UCIEngine*>(uci_ptr)->cli.argc;
+}
+
+const char* zfish_uci_cli_arg_at(const void* uci_ptr, int index) {
+    const auto* uci_engine = static_cast<const UCIEngine*>(uci_ptr);
+    if (index < 0 || index >= uci_engine->cli.argc)
+        return nullptr;
+
+    return uci_engine->cli.argv[index];
+}
+
+const char* zfish_uci_read_command_line() {
+    std::string command;
+    if (!std::getline(std::cin, command))
+        return nullptr;
+
+    return alloc_c_string(command);
+}
+
+std::uint64_t zfish_uci_engine_perft_depth(void* uci_ptr, int depth) {
+    Search::LimitsType limits;
+    limits.perft = depth;
+    return static_cast<UCIEngine*>(uci_ptr)->perft(limits);
+}
+
+void zfish_uci_engine_wait_finished(void* uci_ptr) {
+    static_cast<UCIEngine*>(uci_ptr)->engine.wait_for_search_finished();
+}
+
+std::uint64_t zfish_uci_engine_nodes_searched(const void*) {
+    return zfish_last_nodes_searched.load(std::memory_order_relaxed);
+}
+
+void zfish_uci_engine_reset_nodes_searched() {
+    zfish_last_nodes_searched.store(0, std::memory_order_relaxed);
+}
+
+int zfish_uci_engine_hashfull(const void* uci_ptr, int max_age) {
+    return static_cast<const UCIEngine*>(uci_ptr)->engine.get_hashfull(max_age);
+}
+
+const char* zfish_uci_engine_fen_text(const void* uci_ptr) {
+    return alloc_c_string(static_cast<const UCIEngine*>(uci_ptr)->engine.fen());
+}
+
+const char* zfish_uci_engine_numa_config_string(const void* uci_ptr) {
+    return alloc_c_string(static_cast<const UCIEngine*>(uci_ptr)->engine.get_numa_config_as_string());
+}
+
+const char* zfish_uci_engine_thread_binding_info_text(const void* uci_ptr) {
+    return alloc_c_string(
+      static_cast<const UCIEngine*>(uci_ptr)->engine.thread_binding_information_as_string());
+}
+
+void zfish_uci_set_quiet_listeners(void* uci_ptr) {
+    auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
+    uci_engine->engine.set_on_update_full([](const Engine::InfoFull& i) {
+        zfish_last_nodes_searched.store(i.nodes, std::memory_order_relaxed);
+    });
+    uci_engine->engine.set_on_iter([](const auto&) {});
+    uci_engine->engine.set_on_update_no_moves([](const auto&) {});
+    uci_engine->engine.set_on_bestmove([](const auto&, const auto&) {});
+    uci_engine->engine.set_on_verify_network([](const auto&) {});
+}
+
+void zfish_uci_set_default_listeners(void* uci_ptr) {
+    static_cast<UCIEngine*>(uci_ptr)->init_search_update_listeners();
+}
+
 void zfish_uci_command_stop(void* engine_ptr) {
     static_cast<UCIEngine*>(engine_ptr)->engine.stop();
 }
@@ -3571,87 +3356,29 @@ void zfish_uci_command_uci(void* engine_ptr) {
     sync_cout << "uciok" << sync_endl;
 }
 
-void zfish_uci_command_setoption(void*                engine_ptr,
-                                 const unsigned char* name_ptr,
-                                 std::size_t          name_len,
-                                 const unsigned char* value_ptr,
-                                 std::size_t          value_len) {
-    auto*       uci_engine = static_cast<UCIEngine*>(engine_ptr);
-    std::string command = "name ";
-    command.append(reinterpret_cast<const char*>(name_ptr), name_len);
-    if (value_len != 0)
-    {
-        command += " value ";
-        command.append(reinterpret_cast<const char*>(value_ptr), value_len);
-    }
-    std::istringstream is(command);
+void zfish_uci_command_setoption_text(void*                engine_ptr,
+                                      const unsigned char* args_ptr,
+                                      std::size_t          args_len) {
+    auto*             uci_engine = static_cast<UCIEngine*>(engine_ptr);
+    std::istringstream is(std::string(reinterpret_cast<const char*>(args_ptr), args_len));
     uci_engine->setoption(is);
 }
 
-void zfish_uci_command_go(void* engine_ptr, ZfishParsedLimits parsed) {
+void zfish_uci_command_go_text(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len) {
     auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
     UCIEngine::print_info_string(uci_engine->engine.numa_config_information_as_string());
     UCIEngine::print_info_string(uci_engine->engine.thread_allocation_information_as_string());
 
-    std::string command;
-    if (parsed.ponder_mode)
-        command += "ponder ";
-    if (parsed.searchmoves && *parsed.searchmoves)
-    {
-        command += "searchmoves ";
-        command += parsed.searchmoves;
-        command += ' ';
-    }
-    if (parsed.wtime)
-        command += "wtime " + std::to_string(parsed.wtime) + " ";
-    if (parsed.btime)
-        command += "btime " + std::to_string(parsed.btime) + " ";
-    if (parsed.winc)
-        command += "winc " + std::to_string(parsed.winc) + " ";
-    if (parsed.binc)
-        command += "binc " + std::to_string(parsed.binc) + " ";
-    if (parsed.movestogo)
-        command += "movestogo " + std::to_string(parsed.movestogo) + " ";
-    if (parsed.depth)
-        command += "depth " + std::to_string(parsed.depth) + " ";
-    if (parsed.mate)
-        command += "mate " + std::to_string(parsed.mate) + " ";
-    if (parsed.perft)
-        command += "perft " + std::to_string(parsed.perft) + " ";
-    if (parsed.infinite)
-        command += "infinite ";
-    if (parsed.movetime)
-        command += "movetime " + std::to_string(parsed.movetime) + " ";
-    if (parsed.nodes)
-        command += "nodes " + std::to_string(parsed.nodes) + " ";
-
-    std::istringstream is(command);
+    std::istringstream is(std::string(reinterpret_cast<const char*>(args_ptr), args_len));
     uci_engine->go(is);
 }
 
-void zfish_uci_command_position(void*                engine_ptr,
-                                const unsigned char* full_command_ptr,
-                                std::size_t          full_command_len,
-                                const unsigned char* fen_ptr,
-                                std::size_t          fen_len,
-                                const unsigned char* moves_ptr,
-                                std::size_t          moves_len) {
+void zfish_uci_command_position_text(void*                engine_ptr,
+                                     const unsigned char* full_command_ptr,
+                                     std::size_t          full_command_len) {
     auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
-    std::string fen(reinterpret_cast<const char*>(fen_ptr), fen_len);
-    std::vector<std::string> moves;
-    std::string              moves_text(reinterpret_cast<const char*>(moves_ptr), moves_len);
-    std::istringstream       moves_stream(moves_text);
-    std::string              token;
-    while (std::getline(moves_stream, token))
-        if (!token.empty())
-            moves.push_back(token);
-
-    auto err = uci_engine->engine.set_position(fen, moves);
-    if (err.has_value())
-    {
-        uci_engine->terminate_on_critical_error(
-          std::string(reinterpret_cast<const char*>(full_command_ptr), full_command_len), err->what());
-    }
+    std::istringstream is(std::string(reinterpret_cast<const char*>(full_command_ptr), full_command_len));
+    uci_engine->position(is);
 }
 
 void zfish_uci_command_search_clear(void* engine_ptr) {
@@ -3815,6 +3542,7 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& optionsMap) {
             if (it.second.idx == idx)
             {
                 const Option& option = it.second;
+
                 os << "\noption name " << it.first << " type " << option.type;
 
                 if (option.type == "check" || option.type == "combo")
