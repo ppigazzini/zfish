@@ -206,6 +206,9 @@ const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 const char* zfish_engine_eval_trace(void* pos, const void* network);
 const char* zfish_engine_visualize(const void* pos);
+void        zfish_tbprobe_add_tables(void* tables,
+                                     const unsigned char* piece_types_ptr,
+                                     std::size_t          piece_count);
 void        zfish_engine_set_numa_config_from_option(void*                numa_context,
                                                      const void*          options,
                                                      void*                threads,
@@ -302,16 +305,66 @@ std::string take_string_and_free_engine_required(const char* rendered) {
 
 int dtz_before_zeroing(WDLScore wdl) { return zfish_tbprobe_dtz_before_zeroing(int(wdl)); }
 
+struct ZfishTBTablesEntry {
+    Key           key;
+    TBTable<WDL>* wdl;
+    TBTable<DTZ>* dtz;
+
+    template<TBType Type>
+    TBTable<Type>* get() const {
+        return (TBTable<Type>*) (Type == WDL ? (void*) wdl : (void*) dtz);
+    }
+};
+
+struct ZfishTBTablesLayout {
+    static constexpr std::uint32_t Size = 1 << 12;
+    static constexpr std::uint32_t Overflow = 1;
+
+    ZfishTBTablesEntry       hashTable[Size + Overflow];
+    std::deque<TBTable<WDL>> wdlTable;
+    std::deque<TBTable<DTZ>> dtzTable;
+    std::size_t              foundDTZFiles;
+    std::size_t              foundWDLFiles;
+};
+
+static_assert(sizeof(ZfishTBTablesLayout) == sizeof(TBTables));
+static_assert(alignof(ZfishTBTablesLayout) == alignof(TBTables));
+
+void zfish_tbprobe_tables_insert(ZfishTBTablesLayout* tables,
+                                 Key                  key,
+                                 TBTable<WDL>*        wdl,
+                                 TBTable<DTZ>*        dtz) {
+    std::uint32_t      home_bucket = std::uint32_t(key) & (ZfishTBTablesLayout::Size - 1);
+    ZfishTBTablesEntry entry{key, wdl, dtz};
+
+    for (std::uint32_t bucket = home_bucket;
+         bucket < ZfishTBTablesLayout::Size + ZfishTBTablesLayout::Overflow - 1;
+         ++bucket)
+    {
+        Key other_key = tables->hashTable[bucket].key;
+        if (other_key == key || !tables->hashTable[bucket].get<WDL>())
+        {
+            tables->hashTable[bucket] = entry;
+            return;
+        }
+
+        const std::uint32_t other_home_bucket = std::uint32_t(other_key) & (ZfishTBTablesLayout::Size - 1);
+        if (other_home_bucket > home_bucket)
+        {
+            std::swap(entry, tables->hashTable[bucket]);
+            key         = other_key;
+            home_bucket = other_home_bucket;
+        }
+    }
+
+    std::cerr << "TB hash table size too low!" << std::endl;
+    exit(EXIT_FAILURE);
+}
+
 }  // namespace
 
 void TBTables::add(const std::vector<PieceType>& pieces) {
-#include "uci_bridge/tb_tables_add_code.inc"
-
-#include "uci_bridge/tb_tables_add_dtz_probe.inc"
-
-#include "uci_bridge/tb_tables_add_wdl_probe.inc"
-
-#include "uci_bridge/tb_tables_add_table_update.inc"
+    zfish_tbprobe_add_tables(this, reinterpret_cast<const unsigned char*>(pieces.data()), pieces.size());
 }
 
 
@@ -2058,6 +2111,48 @@ void zfish_engine_main_manager_set_ponder(void* threads_ptr, std::uint8_t ponder
     static_cast<ThreadPool*>(threads_ptr)->main_manager()->ponder = ponder != 0;
 }
 
+std::uint8_t zfish_tbprobe_has_wdl_file(const unsigned char* code_ptr, std::size_t code_len) {
+    const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
+    TBFile            file(code + ".rtbw");
+    const bool        is_open = file.is_open();
+    if (is_open)
+        file.close();
+    return static_cast<std::uint8_t>(is_open ? 1 : 0);
+}
+
+std::uint8_t zfish_tbprobe_has_dtz_file(const unsigned char* code_ptr, std::size_t code_len) {
+    const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
+    TBFile            file(code + ".rtbz");
+    const bool        is_open = file.is_open();
+    if (is_open)
+        file.close();
+    return static_cast<std::uint8_t>(is_open ? 1 : 0);
+}
+
+void zfish_tbprobe_note_dtz_found(void* tables_ptr) {
+    auto* tables = reinterpret_cast<ZfishTBTablesLayout*>(tables_ptr);
+    tables->foundDTZFiles++;
+}
+
+void zfish_tbprobe_register_wdl_table(void*                tables_ptr,
+                                      const unsigned char* code_ptr,
+                                      std::size_t          code_len,
+                                      std::size_t          piece_count) {
+    auto*             tables = reinterpret_cast<ZfishTBTablesLayout*>(tables_ptr);
+    const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
+
+    tables->foundWDLFiles++;
+    MaxCardinality = std::max(int(piece_count), MaxCardinality);
+
+    tables->wdlTable.emplace_back(code);
+    tables->dtzTable.emplace_back(tables->wdlTable.back());
+
+    zfish_tbprobe_tables_insert(
+      tables, tables->wdlTable.back().key, &tables->wdlTable.back(), &tables->dtzTable.back());
+    zfish_tbprobe_tables_insert(
+      tables, tables->wdlTable.back().key2, &tables->wdlTable.back(), &tables->dtzTable.back());
+}
+
 void zfish_engine_tt_clear(void* tt_ptr, void* threads_ptr) {
     static_cast<TranspositionTable*>(tt_ptr)->clear(*static_cast<ThreadPool*>(threads_ptr));
 }
@@ -2205,35 +2300,402 @@ void ThreadPool::ensure_network_replicated() {
 
 namespace Stockfish {
 
-#include "uci_bridge/misc_text.inc"
+constexpr std::string_view version = "dev";
 
-#include "uci_bridge/engine_numa_text.inc"
+std::string engine_version_info() {
+    std::stringstream ss;
+    ss << "Stockfish " << version << std::setfill('0');
 
-#include "uci_bridge/engine_network_helpers.inc"
+    if constexpr (version == "dev")
+    {
+        ss << "-";
+#ifdef GIT_DATE
+        ss << stringify(GIT_DATE);
+#else
+        constexpr std::string_view months("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec");
 
-#include "uci_bridge/debug_state.inc"
+        std::string       month, day, year;
+        std::stringstream date(__DATE__);
 
-#include "uci_bridge/debug_hit.inc"
+        date >> month >> day >> year;
+        ss << year << std::setw(2) << std::setfill('0') << (1 + months.find(month) / 4)
+           << std::setw(2) << std::setfill('0') << day;
+#endif
 
-#include "uci_bridge/debug_mean.inc"
+        ss << "-";
 
-#include "uci_bridge/debug_stdev.inc"
+#ifdef GIT_SHA
+        ss << stringify(GIT_SHA);
+#else
+        ss << "nogit";
+#endif
+    }
 
-#include "uci_bridge/debug_extremes.inc"
+    return ss.str();
+}
 
-#include "uci_bridge/debug_correl.inc"
+std::string engine_info(bool to_uci) {
+    return engine_version_info() + (to_uci ? "\nid author " : " by ")
+         + "the Stockfish developers (see AUTHORS file)";
+}
 
-#include "uci_bridge/debug_print.inc"
+extern "C" const char* zfish_misc_engine_info_text() {
+    const auto value = engine_info();
+    auto*      buffer = static_cast<char*>(std::malloc(value.size() + 1));
+    if (!buffer)
+        return nullptr;
 
-#include "uci_bridge/debug_clear.inc"
+    std::memcpy(buffer, value.c_str(), value.size() + 1);
+    return buffer;
+}
 
-#include "uci_bridge/take_string_and_free_required_uci.inc"
+std::string compiler_info() {
 
-#include "uci_bridge/start_logger.inc"
+#define make_version_string(major, minor, patch) \
+    stringify(major) "." stringify(minor) "." stringify(patch)
 
-#include "uci_bridge/sync_cout_operator.inc"
+    std::string compiler = "\nCompiled by                : ";
 
-#include "uci_bridge/sync_cout_helpers.inc"
+#if defined(__INTEL_LLVM_COMPILER)
+    compiler += "ICX ";
+    compiler += stringify(__INTEL_LLVM_COMPILER);
+#elif defined(__clang__)
+    compiler += "clang++ ";
+    compiler += make_version_string(__clang_major__, __clang_minor__, __clang_patchlevel__);
+#elif _MSC_VER
+    compiler += "MSVC ";
+    compiler += "(version ";
+    compiler += stringify(_MSC_FULL_VER) "." stringify(_MSC_BUILD);
+    compiler += ")";
+#elif defined(__e2k__) && defined(__LCC__)
+    #define dot_ver2(n) \
+        compiler += char('.'); \
+        compiler += char('0' + (n) / 10); \
+        compiler += char('0' + (n) % 10);
+
+    compiler += "MCST LCC ";
+    compiler += "(version ";
+    compiler += std::to_string(__LCC__ / 100);
+    dot_ver2(__LCC__ % 100) dot_ver2(__LCC_MINOR__) compiler += ")";
+#elif __GNUC__
+    compiler += "g++ (GNUC) ";
+    compiler += make_version_string(__GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+#else
+    compiler += "Unknown compiler ";
+    compiler += "(unknown version)";
+#endif
+
+#if defined(__APPLE__)
+    compiler += " on Apple";
+#elif defined(__CYGWIN__)
+    compiler += " on Cygwin";
+#elif defined(__MINGW64__)
+    compiler += " on MinGW64";
+#elif defined(__MINGW32__)
+    compiler += " on MinGW32";
+#elif defined(__ANDROID__)
+    compiler += " on Android";
+#elif defined(__linux__)
+    compiler += " on Linux";
+#elif defined(_WIN64)
+    compiler += " on Microsoft Windows 64-bit";
+#elif defined(_WIN32)
+    compiler += " on Microsoft Windows 32-bit";
+#else
+    compiler += " on unknown system";
+#endif
+
+    compiler += "\nCompilation architecture   : ";
+#if defined(ARCH)
+    compiler += stringify(ARCH);
+#else
+    compiler += "(undefined architecture)";
+#endif
+
+    compiler += "\nCompilation settings       : ";
+    compiler += (Is64Bit ? "64bit" : "32bit");
+#if defined(USE_AVX512ICL)
+    compiler += " AVX512ICL";
+#endif
+#if defined(USE_VNNI)
+    compiler += " VNNI";
+#endif
+#if defined(USE_AVX512)
+    compiler += " AVX512";
+#endif
+    compiler += (HasPext ? " BMI2" : "");
+#if defined(USE_AVX2)
+    compiler += " AVX2";
+#endif
+#if defined(USE_SSE41)
+    compiler += " SSE41";
+#endif
+#if defined(USE_SSSE3)
+    compiler += " SSSE3";
+#endif
+#if defined(USE_SSE2)
+    compiler += " SSE2";
+#endif
+#if defined(USE_NEON_DOTPROD)
+    compiler += " NEON_DOTPROD";
+#elif defined(USE_NEON)
+    compiler += " NEON";
+#endif
+    compiler += (HasPopCnt ? " POPCNT" : "");
+
+#if !defined(NDEBUG)
+    compiler += " DEBUG";
+#endif
+
+    compiler += "\nCompiler __VERSION__ macro : ";
+#ifdef __VERSION__
+    compiler += __VERSION__;
+#else
+    compiler += "(undefined macro)";
+#endif
+
+    compiler += "\n";
+
+    return compiler;
+}
+
+std::vector<std::pair<size_t, size_t>> Engine::get_bound_thread_count_by_numa_node() const {
+    auto                                   counts = threads.get_bound_thread_count_by_numa_node();
+    const NumaConfig&                      cfg    = numaContext.get_numa_config();
+    std::vector<std::pair<size_t, size_t>> ratios;
+    NumaIndex                              n = 0;
+    for (; n < counts.size(); ++n)
+        ratios.emplace_back(counts[n], cfg.num_cpus_in_numa_node(n));
+    if (!counts.empty())
+        for (; n < cfg.num_numa_nodes(); ++n)
+            ratios.emplace_back(0, cfg.num_cpus_in_numa_node(n));
+    return ratios;
+}
+
+std::string Engine::get_numa_config_as_string() const {
+    return numaContext.get_numa_config().to_string();
+}
+
+std::string Engine::numa_config_information_as_string() const {
+    auto cfgStr = get_numa_config_as_string();
+    const char* rendered = zfish_engine_format_numa_info(
+      reinterpret_cast<const unsigned char*>(cfgStr.data()), cfgStr.size());
+    if (!rendered)
+        std::abort();
+    std::string result(rendered);
+    std::free(const_cast<char*>(rendered));
+    return result;
+}
+
+std::string Engine::thread_binding_information_as_string() const {
+    auto boundThreadsByNode = get_bound_thread_count_by_numa_node();
+    if (boundThreadsByNode.empty())
+        return {};
+
+    std::vector<ZfishCountPair> pairs;
+    pairs.reserve(boundThreadsByNode.size());
+    for (auto&& [current, total] : boundThreadsByNode)
+        pairs.push_back(ZfishCountPair{current, total});
+
+    const char* rendered = zfish_engine_format_thread_binding(pairs.data(), pairs.size());
+    if (!rendered)
+        std::abort();
+    std::string result(rendered);
+    std::free(const_cast<char*>(rendered));
+    return result;
+}
+
+std::string Engine::thread_allocation_information_as_string() const {
+    const size_t threadsSize = threads.size();
+    const auto   binding = thread_binding_information_as_string();
+    const char*  rendered = zfish_engine_format_thread_allocation(
+      threadsSize, reinterpret_cast<const unsigned char*>(binding.data()), binding.size());
+    if (!rendered)
+        std::abort();
+    std::string result(rendered);
+    std::free(const_cast<char*>(rendered));
+    return result;
+}
+
+void Engine::verify_network() const {
+    network->verify(options["EvalFile"], onVerifyNetwork);
+
+    auto statuses = network.get_status_and_errors();
+    for (size_t i = 0; i < statuses.size(); ++i)
+    {
+        const auto [status, error] = statuses[i];
+        const std::string error_text = error.value_or(std::string{});
+        const char* message = zfish_engine_format_network_status(
+          i + 1,
+          static_cast<std::uint8_t>(status),
+          reinterpret_cast<const unsigned char*>(error_text.data()),
+          error_text.size());
+        if (!message)
+            std::abort();
+        onVerifyNetwork(message);
+        std::free(const_cast<char*>(message));
+    }
+}
+
+std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
+
+    auto network_ = std::make_unique<NN::Network>(NN::EvalFile{EvalFileDefaultName, "None", ""});
+
+    network_->load(binaryDirectory, "");
+
+    return network_;
+}
+
+void Engine::load_network(const std::string& file) {
+    network.modify_and_replicate(
+      [this, &file](NN::Network& network_) { network_.load(binaryDirectory, file); });
+    threads.clear();
+    threads.ensure_network_replicated();
+}
+
+void Engine::save_network(const std::pair<std::optional<std::string>, std::string> file) {
+    network.modify_and_replicate([&file](NN::Network& network_) { network_.save(file.first); });
+}
+
+constexpr int MaxDebugSlots = 32;
+
+template<size_t N>
+struct DebugInfo {
+    std::array<std::atomic<int64_t>, N> data = {0};
+
+    [[nodiscard]] constexpr std::atomic<int64_t>& operator[](size_t index) {
+        assert(index < N);
+        return data[index];
+    }
+
+    constexpr DebugInfo& operator=(const DebugInfo& other) {
+        for (size_t i = 0; i < N; i++)
+            data[i].store(other.data[i].load());
+        return *this;
+    }
+};
+
+struct DebugExtremes: public DebugInfo<3> {
+    DebugExtremes() {
+        data[1] = std::numeric_limits<int64_t>::min();
+        data[2] = std::numeric_limits<int64_t>::max();
+    }
+};
+
+std::array<DebugInfo<2>, MaxDebugSlots>  hit;
+std::array<DebugInfo<2>, MaxDebugSlots>  mean;
+std::array<DebugInfo<3>, MaxDebugSlots>  stdev;
+std::array<DebugInfo<6>, MaxDebugSlots>  correl;
+std::array<DebugExtremes, MaxDebugSlots> extremes;
+
+void dbg_hit_on(bool cond, int slot) {
+    ++hit.at(slot)[0];
+    if (cond)
+        ++hit.at(slot)[1];
+}
+
+void dbg_mean_of(int64_t value, int slot) {
+    ++mean.at(slot)[0];
+    mean.at(slot)[1] += value;
+}
+
+void dbg_stdev_of(int64_t value, int slot) {
+    ++stdev.at(slot)[0];
+    stdev.at(slot)[1] += value;
+    stdev.at(slot)[2] += value * value;
+}
+
+void dbg_extremes_of(int64_t value, int slot) {
+    ++extremes.at(slot)[0];
+
+    int64_t current_max = extremes.at(slot)[1].load();
+    while (current_max < value && !extremes.at(slot)[1].compare_exchange_weak(current_max, value))
+    {}
+
+    int64_t current_min = extremes.at(slot)[2].load();
+    while (current_min > value && !extremes.at(slot)[2].compare_exchange_weak(current_min, value))
+    {}
+}
+
+void dbg_correl_of(int64_t value1, int64_t value2, int slot) {
+    ++correl.at(slot)[0];
+    correl.at(slot)[1] += value1;
+    correl.at(slot)[2] += value1 * value1;
+    correl.at(slot)[3] += value2;
+    correl.at(slot)[4] += value2 * value2;
+    correl.at(slot)[5] += value1 * value2;
+}
+
+void dbg_print() {
+    int64_t n;
+    auto    E   = [&n](int64_t x) { return double(x) / n; };
+    auto    sqr = [](double x) { return x * x; };
+
+    for (int i = 0; i < MaxDebugSlots; ++i)
+        if ((n = hit[i][0]))
+            std::cerr << "Hit #" << i << ": Total " << n << " Hits " << hit[i][1]
+                      << " Hit Rate (%) " << 100.0 * E(hit[i][1]) << std::endl;
+
+    for (int i = 0; i < MaxDebugSlots; ++i)
+        if ((n = mean[i][0]))
+            std::cerr << "Mean #" << i << ": Total " << n << " Mean " << E(mean[i][1])
+                      << std::endl;
+
+    for (int i = 0; i < MaxDebugSlots; ++i)
+        if ((n = stdev[i][0]))
+        {
+            double r = sqrt(E(stdev[i][2]) - sqr(E(stdev[i][1])));
+            std::cerr << "Stdev #" << i << ": Total " << n << " Stdev " << r << std::endl;
+        }
+
+    for (int i = 0; i < MaxDebugSlots; ++i)
+        if ((n = extremes[i][0]))
+            std::cerr << "Extremity #" << i << ": Total " << n << " Min " << extremes[i][2]
+                      << " Max " << extremes[i][1] << std::endl;
+
+    for (int i = 0; i < MaxDebugSlots; ++i)
+        if ((n = correl[i][0]))
+        {
+            double r = (E(correl[i][5]) - E(correl[i][1]) * E(correl[i][3]))
+                     / (sqrt(E(correl[i][2]) - sqr(E(correl[i][1])))
+                        * sqrt(E(correl[i][4]) - sqr(E(correl[i][3]))));
+            std::cerr << "Correl. #" << i << ": Total " << n << " Coefficient " << r << std::endl;
+        }
+}
+
+void dbg_clear() {
+    hit.fill({});
+    mean.fill({});
+    stdev.fill({});
+    correl.fill({});
+    extremes.fill({});
+}
+
+std::string take_string_and_free_engine_required_uci(const char* rendered) {
+    if (!rendered)
+        std::abort();
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+
+void start_logger(const std::string& fname) { Logger::start(fname); }
+
+std::ostream& operator<<(std::ostream& os, SyncCout sc) {
+    static std::mutex m;
+
+    if (sc == IO_LOCK)
+        m.lock();
+
+    if (sc == IO_UNLOCK)
+        m.unlock();
+
+    return os;
+}
+
+void sync_cout_start() { std::cout << IO_LOCK; }
+void sync_cout_end() { std::cout << IO_UNLOCK; }
 
 struct EngineMoveView {
     const unsigned char* ptr;
@@ -2479,7 +2941,23 @@ void          zfish_bitboards_init();
 
 namespace {
 
-#include "uci_bridge/string_free_helpers.inc"
+std::string take_string_and_free(const char* rendered) {
+    if (!rendered)
+        return {};
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+
+std::string take_string_and_free_required(const char* rendered) {
+    if (!rendered)
+        std::abort();
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
 
 }  // namespace
 
@@ -2532,7 +3010,17 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
 
 extern "C" {
 
-#include "uci_bridge/position_runtime_exports.inc"
+std::uint64_t zfish_position_material_zobrist(std::uint8_t piece, std::size_t count_index) {
+    return Stockfish::Zobrist::psq[piece][8 + count_index];
+}
+
+void zfish_position_init_runtime() {
+    Stockfish::Position::init();
+}
+
+void zfish_bitboards_init() {
+    Stockfish::Bitboards::init();
+}
 
 }
 
@@ -2545,11 +3033,33 @@ void init() {
     zfish_bitboards_init_runtime(&PopCnt16, &SquareDistance, &LineBB, &BetweenBB, &RayPassBB);
 }
 
-#include "uci_bridge/bitboard_pretty.inc"
+std::string pretty(Bitboard b) { return take_string_and_free(zfish_bitboard_pretty(b)); }
 
 }  // namespace Bitboards
 
-#include "uci_bridge/position_format_helpers.inc"
+Key Position::compute_material_key() const {
+    return zfish_position_compute_material_key(pieceCount, PIECE_NB);
+}
+
+std::optional<PositionSetError> Position::set(const string& code, Color c, StateInfo* si) {
+    const auto fenStr = take_string_and_free_required(zfish_position_build_endgame_fen(
+      reinterpret_cast<const unsigned char*>(code.data()), code.size(), static_cast<std::uint8_t>(c)));
+    return set(fenStr, false, si);
+}
+
+string Position::fen() const {
+    const auto whiteOoRook = can_castle(WHITE_OO) ? castling_rook_square(WHITE_OO) : SQ_NONE;
+    const auto whiteOooRook = can_castle(WHITE_OOO) ? castling_rook_square(WHITE_OOO) : SQ_NONE;
+    const auto blackOoRook = can_castle(BLACK_OO) ? castling_rook_square(BLACK_OO) : SQ_NONE;
+    const auto blackOooRook = can_castle(BLACK_OOO) ? castling_rook_square(BLACK_OOO) : SQ_NONE;
+
+    return take_string_and_free_required(zfish_position_format_fen(
+      reinterpret_cast<const unsigned char*>(board.data()), static_cast<std::uint8_t>(sideToMove),
+      static_cast<std::uint8_t>(chess960), static_cast<std::uint8_t>(st->castlingRights),
+      static_cast<std::uint8_t>(whiteOoRook), static_cast<std::uint8_t>(whiteOooRook),
+      static_cast<std::uint8_t>(blackOoRook), static_cast<std::uint8_t>(blackOooRook),
+      static_cast<std::uint8_t>(ep_square()), st->rule50, gamePly));
+}
 
 UCIEngine::UCIEngine(int argc, char** argv) :
     engine(argv[0]),
