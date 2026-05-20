@@ -1,5 +1,14 @@
 const std = @import("std");
 
+pub const DispatchResult = extern struct {
+    should_quit: u8,
+};
+
+pub const ParsedSetOption = extern struct {
+    name: ?[*:0]u8,
+    value: ?[*:0]u8,
+};
+
 pub const ParsedLimits = extern struct {
     wtime: i64,
     btime: i64,
@@ -21,6 +30,44 @@ pub const ParsedPosition = extern struct {
     fen: ?[*:0]u8,
     moves: ?[*:0]u8,
 };
+
+extern fn zfish_uci_command_stop(engine: *anyopaque) void;
+extern fn zfish_uci_command_ponderhit(engine: *anyopaque) void;
+extern fn zfish_uci_command_uci(engine: *anyopaque) void;
+extern fn zfish_uci_command_setoption(
+    engine: *anyopaque,
+    name_ptr: [*]const u8,
+    name_len: usize,
+    value_ptr: [*]const u8,
+    value_len: usize,
+) void;
+extern fn zfish_uci_command_go(engine: *anyopaque, limits: ParsedLimits) void;
+extern fn zfish_uci_command_position(
+    engine: *anyopaque,
+    full_command_ptr: [*]const u8,
+    full_command_len: usize,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    moves_ptr: [*]const u8,
+    moves_len: usize,
+) void;
+extern fn zfish_uci_command_search_clear(engine: *anyopaque) void;
+extern fn zfish_uci_command_isready() void;
+extern fn zfish_uci_command_flip(engine: *anyopaque) void;
+extern fn zfish_uci_command_bench(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
+extern fn zfish_uci_command_benchmark(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
+extern fn zfish_uci_command_visualize(engine: *anyopaque) void;
+extern fn zfish_uci_command_eval(engine: *anyopaque) void;
+extern fn zfish_uci_command_compiler() void;
+extern fn zfish_uci_command_export_net(
+    engine: *anyopaque,
+    has_filename: u8,
+    filename_ptr: [*]const u8,
+    filename_len: usize,
+) void;
+extern fn zfish_uci_command_help() void;
+extern fn zfish_uci_command_unknown(command_ptr: [*]const u8, command_len: usize) void;
+extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize) ParsedSetOption;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -173,6 +220,121 @@ pub fn formatCriticalError(command: []const u8, message: []const u8) ?[*:0]u8 {
         "info string CRITICAL ERROR: Command `{s}` failed. Reason: {s}\n",
         .{ command, message },
     ) catch null;
+}
+
+pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
+    const trimmed = trimAsciiWhitespace(input);
+    if (trimmed.len == 0 or trimmed[0] == '#')
+        return .{ .should_quit = 0 };
+
+    var token_iter = std.mem.tokenizeAny(u8, trimmed, " \t\r\n");
+    const token = token_iter.next() orelse return .{ .should_quit = 0 };
+    const args = trimAsciiWhitespace(trimmed[token.len..]);
+
+    if (std.mem.eql(u8, token, "quit")) {
+        zfish_uci_command_stop(engine);
+        return .{ .should_quit = 1 };
+    }
+
+    if (std.mem.eql(u8, token, "stop")) {
+        zfish_uci_command_stop(engine);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "ponderhit")) {
+        zfish_uci_command_ponderhit(engine);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "uci")) {
+        zfish_uci_command_uci(engine);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "setoption")) {
+        const parsed = zfish_option_parse_setoption(args.ptr, args.len);
+        defer freeMaybeCString(parsed.name);
+        defer freeMaybeCString(parsed.value);
+
+        const name = if (parsed.name) |ptr| std.mem.span(ptr) else "";
+        const value = if (parsed.value) |ptr| std.mem.span(ptr) else "";
+        zfish_uci_command_setoption(engine, name.ptr, name.len, value.ptr, value.len);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "go")) {
+        const limits = parseLimits(trimmed);
+        defer freeMaybeCString(limits.searchmoves);
+        zfish_uci_command_go(engine, limits);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "position")) {
+        const parsed = parsePosition(trimmed);
+        defer freeMaybeCString(parsed.fen);
+        defer freeMaybeCString(parsed.moves);
+
+        if (parsed.ok != 0) {
+            const fen = std.mem.span(parsed.fen.?);
+            const moves = if (parsed.moves) |ptr| std.mem.span(ptr) else "";
+            zfish_uci_command_position(engine, trimmed.ptr, trimmed.len, fen.ptr, fen.len, moves.ptr, moves.len);
+        }
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "ucinewgame")) {
+        zfish_uci_command_search_clear(engine);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "isready")) {
+        zfish_uci_command_isready();
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "flip")) {
+        zfish_uci_command_flip(engine);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "bench")) {
+        zfish_uci_command_bench(engine, args.ptr, args.len);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "speedtest")) {
+        zfish_uci_command_benchmark(engine, args.ptr, args.len);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "d")) {
+        zfish_uci_command_visualize(engine);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "eval")) {
+        zfish_uci_command_eval(engine);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "compiler")) {
+        zfish_uci_command_compiler();
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "export_net")) {
+        const filename = trimAsciiWhitespace(args);
+        zfish_uci_command_export_net(engine, if (filename.len == 0) 0 else 1, filename.ptr, filename.len);
+        return .{ .should_quit = 0 };
+    }
+
+    if (std.mem.eql(u8, token, "--help") or std.mem.eql(u8, token, "help") or std.mem.eql(u8, token, "--license") or std.mem.eql(u8, token, "license")) {
+        zfish_uci_command_help();
+        return .{ .should_quit = 0 };
+    }
+
+    zfish_uci_command_unknown(trimmed.ptr, trimmed.len);
+    return .{ .should_quit = 0 };
 }
 
 fn parseLimitsAlloc(input: []const u8) !ParsedLimits {
@@ -369,6 +531,11 @@ fn allocCString(value: []const u8) !?[*:0]u8 {
     const result = try allocator.allocSentinel(u8, value.len, 0);
     @memcpy(result[0..value.len], value);
     return result.ptr;
+}
+
+fn freeMaybeCString(value: ?[*:0]u8) void {
+    if (value) |ptr|
+        std.heap.c_allocator.free(std.mem.span(ptr));
 }
 
 fn trimAsciiWhitespace(input: []const u8) []const u8 {
