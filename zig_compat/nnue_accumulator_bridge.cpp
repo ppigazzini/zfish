@@ -148,9 +148,14 @@ void AccumulatorStack::pop() noexcept {
 }
 
 extern "C" {
-#include "nnue_accumulator_bridge/dirty_threat_raw.inc"
+struct ZfishDirtyThreatRaw {
+    std::uint32_t data;
+};
 
-#include "nnue_accumulator_bridge/accumulator_evaluate_decl.inc"
+void zfish_accumulator_evaluate(void*                  stack,
+                                const void*            pos,
+                                const void*            feature_transformer,
+                                void*                  cache);
 
 std::uint8_t zfish_accumulator_king_square(const void* pos_ptr, std::uint8_t perspective) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
