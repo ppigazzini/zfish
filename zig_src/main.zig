@@ -662,6 +662,14 @@ pub export fn zfish_uci_parse_position(
     return uci_port.parsePosition(input_ptr[0..input_len]);
 }
 
+pub export fn zfish_uci_dispatch_command(
+    engine: *anyopaque,
+    input_ptr: [*]const u8,
+    input_len: usize,
+) uci_port.DispatchResult {
+    return uci_port.dispatchCommand(engine, input_ptr[0..input_len]);
+}
+
 pub export fn zfish_uci_format_info_string(
     input_ptr: [*]const u8,
     input_len: usize,
