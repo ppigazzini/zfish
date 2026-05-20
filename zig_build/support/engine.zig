@@ -108,16 +108,22 @@ extern fn zfish_engine_numa_set_from_string(
     text_ptr: [*]const u8,
     text_len: usize,
 ) void;
+extern fn zfish_numa_context_config(numa_context: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_threadpool_wait_finished(threads: *anyopaque) void;
-extern fn zfish_engine_threads_reconfigure(
-    threads: *anyopaque,
-    numa_context: *const anyopaque,
-    options: *const anyopaque,
-    tt: *anyopaque,
-    shared_hists: *anyopaque,
-    network: *anyopaque,
+extern fn zfish_threadpool_reconfigure(
+    pool: *anyopaque,
+    numa_config: *const anyopaque,
+    shared_state: *const anyopaque,
     update_context: *const anyopaque,
 ) void;
+extern fn zfish_search_shared_state_create(
+    options: *const anyopaque,
+    threads: *anyopaque,
+    tt: *anyopaque,
+    shared_hists: *anyopaque,
+    network: *const anyopaque,
+) ?*anyopaque;
+extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
 extern fn zfish_engine_option_hash_value(options: *const anyopaque) usize;
 extern fn zfish_engine_threads_ensure_network_replicated(threads: *anyopaque) void;
 extern fn zfish_engine_tt_resize(tt: *anyopaque, mb: usize, threads: *anyopaque) void;
@@ -250,7 +256,23 @@ pub fn resizeThreads(
     update_context: *const anyopaque,
 ) void {
     zfish_engine_threadpool_wait_finished(threads);
-    zfish_engine_threads_reconfigure(threads, numa_context, options, tt, shared_hists, network, update_context);
+
+    const shared_state = zfish_search_shared_state_create(
+        options,
+        threads,
+        tt,
+        shared_hists,
+        network,
+    ) orelse @panic("OOM");
+    defer zfish_search_shared_state_destroy(shared_state);
+
+    zfish_threadpool_reconfigure(
+        threads,
+        zfish_numa_context_config(numa_context),
+        shared_state,
+        update_context,
+    );
+
     setTtSize(threads, tt, zfish_engine_option_hash_value(options));
     zfish_engine_threads_ensure_network_replicated(threads);
 }
