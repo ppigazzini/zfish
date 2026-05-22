@@ -19,86 +19,69 @@
 #include "evaluate.h"
 
 #include <algorithm>
-#include <cassert>
-#include <cmath>
 #include <cstdlib>
-#include <iomanip>
-#include <iostream>
-#include <memory>
-#include <sstream>
+#include <string>
 
 #include "nnue/network.h"
-#include "nnue/nnue_misc.h"
-#include "position.h"
-#include "types.h"
-#include "uci.h"
 #include "nnue/nnue_accumulator.h"
+#include "position.h"
 
 namespace Stockfish {
 
-// Evaluate is the evaluator for the outer world. It returns a static evaluation
-// of the position from the point of view of the side to move.
-Value Eval::evaluate(const Eval::NNUE::Network&     network,
-                     const Position&                pos,
-                     Eval::NNUE::AccumulatorStack&  accumulators,
-                     Eval::NNUE::AccumulatorCaches& caches,
-                     int                            optimism) {
+extern "C" {
 
-    assert(!pos.checkers());
+struct ZfishEvalInput {
+    int psqt;
+    int positional;
+    int optimism;
+    int material;
+    int rule50_count;
+    int value_tb_loss_in_max_ply;
+    int value_tb_win_in_max_ply;
+};
 
-    auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
+int         zfish_eval_compute_value(ZfishEvalInput input);
+const char* zfish_engine_eval_trace(void* pos, const void* network);
 
-    Value nnue = (125 * psqt + 131 * positional) / 128;
+}  // extern "C"
 
-    // Blend optimism and eval with nnue complexity
-    int nnueComplexity = std::abs(psqt - positional);
-    optimism += optimism * nnueComplexity / 476;
-    nnue -= nnue * nnueComplexity / 18236;
+namespace {
 
-    int material = 534 * pos.count<PAWN>() + pos.non_pawn_material();
-    int v        = (nnue * (77871 + material) + optimism * (7191 + material)) / 77871;
+std::string take_string_and_free_required(const char* rendered) {
+    if (!rendered)
+        std::abort();
 
-    // Damp down the evaluation linearly when shuffling
-    v -= v * pos.rule50_count() / 199;
-
-    // Guarantee evaluation does not hit the tablebase range
-    v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
-
-    return v;
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
 }
 
-// Like evaluate(), but instead of returning a value, it returns
-// a string (suitable for outputting to stdout) that contains the detailed
-// descriptions and values of each evaluation term. Useful for debugging.
-// Trace scores are from white's point of view
+}  // namespace
+
+Value Eval::evaluate(const Eval::NNUE::Network&     network,
+                     const Position&                 pos,
+                     Eval::NNUE::AccumulatorStack&   accumulators,
+                     Eval::NNUE::AccumulatorCaches&  caches,
+                     int                             optimism) {
+    assert(!pos.checkers());
+
+    const auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
+
+    const ZfishEvalInput input = {
+      .psqt                     = psqt,
+      .positional               = positional,
+      .optimism                 = optimism,
+      .material                 = 534 * pos.count<PAWN>() + pos.non_pawn_material(),
+      .rule50_count             = pos.rule50_count(),
+      .value_tb_loss_in_max_ply = VALUE_TB_LOSS_IN_MAX_PLY,
+      .value_tb_win_in_max_ply  = VALUE_TB_WIN_IN_MAX_PLY,
+    };
+
+    return zfish_eval_compute_value(input);
+}
+
 std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
-
-    if (pos.checkers())
-        return "Final evaluation: none (in check)";
-
-    auto accumulators = std::make_unique<Eval::NNUE::AccumulatorStack>();
-    auto caches       = std::make_unique<Eval::NNUE::AccumulatorCaches>(network);
-
-    std::stringstream ss;
-    ss << std::showpoint << std::noshowpos << std::fixed << std::setprecision(2);
-    ss << '\n' << NNUE::trace(pos, network, *caches) << '\n';
-
-    ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
-
-    auto [psqt, positional] = network.evaluate(pos, *accumulators, *caches);
-    Value v                 = psqt + positional;
-    ss << "NNUE evaluation          " << v << " (side to move, internal units)\n";
-    v = pos.side_to_move() == WHITE ? v : -v;
-    ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)\n";
-
-    v = evaluate(network, pos, *accumulators, *caches, VALUE_ZERO);
-    v = pos.side_to_move() == WHITE ? v : -v;
-
-    ss << "Final evaluation      ";
-    ss << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)";
-    ss << " [with scaled NNUE, ...]\n";
-
-    return ss.str();
+    return take_string_and_free_required(zfish_engine_eval_trace(&pos, &network));
 }
 
 }  // namespace Stockfish
