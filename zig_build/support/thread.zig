@@ -136,9 +136,6 @@ extern fn zfish_limits_ponder_mode(limits: *const anyopaque) u8;
 extern fn zfish_limits_searchmove_count(limits: *const anyopaque) usize;
 extern fn zfish_limits_searchmove_text(limits: *const anyopaque, index: usize) ByteView;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
-extern fn zfish_position_rule50_count(pos: *const anyopaque) c_int;
-extern fn zfish_position_game_ply(pos: *const anyopaque) c_int;
-extern fn zfish_position_is_chess960(pos: *const anyopaque) u8;
 extern fn zfish_position_has_repeated(pos: *const anyopaque) u8;
 extern fn zfish_position_is_draw_ply_one(pos: *const anyopaque) u8;
 extern fn zfish_position_is_repetition_ply_one(pos: *const anyopaque) u8;
@@ -448,10 +445,11 @@ fn loadTbConfig(options: *const anyopaque, pos: *const anyopaque) TbConfig {
 }
 
 fn probePosition(pos: *const anyopaque) TablebaseProbe {
+    const snapshot = loadPositionSnapshot(pos);
     const fen_ptr = buildRootFen(pos) orelse @panic("OOM");
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
-    return zfish_tbprobe_probe_fen(fen_text.ptr, fen_text.len, zfish_position_is_chess960(pos));
+    return zfish_tbprobe_probe_fen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }
 
 fn dtzBeforeZeroing(wdl: c_int) c_int {
@@ -487,7 +485,7 @@ fn rankRootMovesDtz(
         scratch.doMove(ranked_move.raw_move);
 
         var dtz: c_int = 0;
-        if (zfish_position_rule50_count(scratch.pos) == 0) {
+        if (loadPositionSnapshot(scratch.pos).rule50_count == 0) {
             const probe = probePosition(scratch.pos);
             if (probe.wdl_state == probe_fail)
                 return .fallback_to_wdl;
@@ -628,11 +626,12 @@ fn buildRootMoves(
     var dtz_available = true;
 
     if (tb_config.cardinality != 0) {
+        const root_snapshot = loadPositionSnapshot(pos);
         const dtz_result = rankRootMovesDtz(
             root_fen,
             chess960,
             tb_config.use_rule50 != 0,
-            zfish_position_rule50_count(pos),
+            root_snapshot.rule50_count,
             zfish_position_has_repeated(pos) != 0,
             ranked_moves,
         );
@@ -860,7 +859,7 @@ pub fn startThinking(
     const root_fen = buildRootFen(pos) orelse @panic("OOM");
     defer c.free(@ptrCast(root_fen));
     const root_fen_text = std.mem.span(root_fen);
-    const chess960 = zfish_position_is_chess960(pos);
+    const chess960 = loadPositionSnapshot(pos).is_chess960;
     const root_setup = buildRootMoves(
         std.heap.c_allocator,
         options,

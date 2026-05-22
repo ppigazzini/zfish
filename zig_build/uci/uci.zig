@@ -1,6 +1,7 @@
 const std = @import("std");
 const c = @cImport({
     @cInclude("stdlib.h");
+    @cInclude("stdio.h");
     @cInclude("sys/time.h");
 });
 
@@ -9,6 +10,27 @@ const misc_port = @import("misc");
 
 pub const DispatchResult = extern struct {
     should_quit: u8,
+};
+
+const CommandKind = enum {
+    quit,
+    stop,
+    ponderhit,
+    uci,
+    setoption,
+    go,
+    position,
+    ucinewgame,
+    isready,
+    flip,
+    bench,
+    speedtest,
+    visualize,
+    eval,
+    compiler,
+    export_net,
+    help,
+    unknown,
 };
 
 pub const ParsedSetOption = extern struct {
@@ -38,12 +60,6 @@ pub const ParsedPosition = extern struct {
     moves: ?[*:0]u8,
 };
 
-extern fn zfish_uci_execute_command(
-    engine: *anyopaque,
-    command_kind: u8,
-    args_ptr: [*]const u8,
-    args_len: usize,
-) void;
 extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize) ParsedSetOption;
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
@@ -58,24 +74,17 @@ extern fn zfish_uci_engine_numa_config_string(uci_ptr: *const anyopaque) ?[*:0]u
 extern fn zfish_uci_engine_thread_binding_info_text(uci_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_uci_set_quiet_listeners(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_set_default_listeners(uci_ptr: *anyopaque) void;
-
-const command_stop: u8 = 0;
-const command_ponderhit: u8 = 1;
-const command_uci: u8 = 2;
-const command_setoption: u8 = 3;
-const command_go: u8 = 4;
-const command_position: u8 = 5;
-const command_search_clear: u8 = 6;
-const command_isready: u8 = 7;
-const command_flip: u8 = 8;
-const command_bench: u8 = 9;
-const command_benchmark: u8 = 10;
-const command_visualize: u8 = 11;
-const command_eval: u8 = 12;
-const command_compiler: u8 = 13;
-const command_export_net: u8 = 14;
-const command_help: u8 = 15;
-const command_unknown: u8 = 16;
+extern fn zfish_uci_cmd_stop(engine: *anyopaque) void;
+extern fn zfish_uci_cmd_ponderhit(engine: *anyopaque) void;
+extern fn zfish_uci_cmd_uci(engine: *anyopaque) void;
+extern fn zfish_uci_cmd_setoption(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
+extern fn zfish_uci_cmd_go(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
+extern fn zfish_uci_cmd_position(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
+extern fn zfish_uci_cmd_search_clear(engine: *anyopaque) void;
+extern fn zfish_uci_cmd_flip(engine: *anyopaque) void;
+extern fn zfish_uci_cmd_visualize(engine: *anyopaque) void;
+extern fn zfish_uci_cmd_eval(engine: *anyopaque) void;
+extern fn zfish_uci_cmd_export_net(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -239,94 +248,115 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
     const token = token_iter.next() orelse return .{ .should_quit = 0 };
     const args = trimAsciiWhitespace(trimmed[token.len..]);
 
-    if (std.mem.eql(u8, token, "quit")) {
-        zfish_uci_execute_command(engine, command_stop, "".ptr, 0);
-        return .{ .should_quit = 1 };
+    switch (classifyCommandToken(token)) {
+        .quit => {
+            zfish_uci_cmd_stop(engine);
+            return .{ .should_quit = 1 };
+        },
+        .stop => {
+            zfish_uci_cmd_stop(engine);
+            return .{ .should_quit = 0 };
+        },
+        .ponderhit => {
+            zfish_uci_cmd_ponderhit(engine);
+            return .{ .should_quit = 0 };
+        },
+        .uci => {
+            zfish_uci_cmd_uci(engine);
+            return .{ .should_quit = 0 };
+        },
+        .setoption => {
+            zfish_uci_cmd_setoption(engine, args.ptr, args.len);
+            return .{ .should_quit = 0 };
+        },
+        .go => {
+            zfish_uci_cmd_go(engine, args.ptr, args.len);
+            return .{ .should_quit = 0 };
+        },
+        .position => {
+            zfish_uci_cmd_position(engine, trimmed.ptr, trimmed.len);
+            return .{ .should_quit = 0 };
+        },
+        .ucinewgame => {
+            zfish_uci_cmd_search_clear(engine);
+            return .{ .should_quit = 0 };
+        },
+        .isready => {
+            _ = c.puts("readyok");
+            return .{ .should_quit = 0 };
+        },
+        .flip => {
+            zfish_uci_cmd_flip(engine);
+            return .{ .should_quit = 0 };
+        },
+        .bench => {
+            benchRuntime(engine, args);
+            return .{ .should_quit = 0 };
+        },
+        .speedtest => {
+            benchmarkRuntime(engine, args);
+            return .{ .should_quit = 0 };
+        },
+        .visualize => {
+            zfish_uci_cmd_visualize(engine);
+            return .{ .should_quit = 0 };
+        },
+        .eval => {
+            zfish_uci_cmd_eval(engine);
+            return .{ .should_quit = 0 };
+        },
+        .compiler => {
+            const compiler_ptr = misc_port.compilerInfoText() orelse return .{ .should_quit = 0 };
+            defer c.free(@ptrCast(compiler_ptr));
+            _ = c.puts(@ptrCast(compiler_ptr));
+            return .{ .should_quit = 0 };
+        },
+        .export_net => {
+            const filename = trimAsciiWhitespace(args);
+            zfish_uci_cmd_export_net(engine, filename.ptr, filename.len);
+            return .{ .should_quit = 0 };
+        },
+        .help => {
+            const help_ptr = helpText() orelse return .{ .should_quit = 0 };
+            defer c.free(@ptrCast(help_ptr));
+            _ = c.puts(@ptrCast(help_ptr));
+            return .{ .should_quit = 0 };
+        },
+        .unknown => {
+            const unknown_ptr = formatUnknownCommand(trimmed) orelse return .{ .should_quit = 0 };
+            defer c.free(@ptrCast(unknown_ptr));
+            _ = c.puts(@ptrCast(unknown_ptr));
+            return .{ .should_quit = 0 };
+        },
     }
+}
 
-    if (std.mem.eql(u8, token, "stop")) {
-        zfish_uci_execute_command(engine, command_stop, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
+fn classifyCommandToken(token: []const u8) CommandKind {
+    if (std.mem.eql(u8, token, "quit")) return .quit;
+    if (std.mem.eql(u8, token, "stop")) return .stop;
+    if (std.mem.eql(u8, token, "ponderhit")) return .ponderhit;
+    if (std.mem.eql(u8, token, "uci")) return .uci;
+    if (std.mem.eql(u8, token, "setoption")) return .setoption;
+    if (std.mem.eql(u8, token, "go")) return .go;
+    if (std.mem.eql(u8, token, "position")) return .position;
+    if (std.mem.eql(u8, token, "ucinewgame")) return .ucinewgame;
+    if (std.mem.eql(u8, token, "isready")) return .isready;
+    if (std.mem.eql(u8, token, "flip")) return .flip;
+    if (std.mem.eql(u8, token, "bench")) return .bench;
+    if (std.mem.eql(u8, token, "speedtest")) return .speedtest;
+    if (std.mem.eql(u8, token, "d")) return .visualize;
+    if (std.mem.eql(u8, token, "eval")) return .eval;
+    if (std.mem.eql(u8, token, "compiler")) return .compiler;
+    if (std.mem.eql(u8, token, "export_net")) return .export_net;
+    if (isHelpToken(token)) return .help;
+    return .unknown;
+}
 
-    if (std.mem.eql(u8, token, "ponderhit")) {
-        zfish_uci_execute_command(engine, command_ponderhit, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "uci")) {
-        zfish_uci_execute_command(engine, command_uci, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "setoption")) {
-        zfish_uci_execute_command(engine, command_setoption, args.ptr, args.len);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "go")) {
-        zfish_uci_execute_command(engine, command_go, args.ptr, args.len);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "position")) {
-        zfish_uci_execute_command(engine, command_position, trimmed.ptr, trimmed.len);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "ucinewgame")) {
-        zfish_uci_execute_command(engine, command_search_clear, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "isready")) {
-        zfish_uci_execute_command(engine, command_isready, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "flip")) {
-        zfish_uci_execute_command(engine, command_flip, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "bench")) {
-        zfish_uci_execute_command(engine, command_bench, args.ptr, args.len);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "speedtest")) {
-        zfish_uci_execute_command(engine, command_benchmark, args.ptr, args.len);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "d")) {
-        zfish_uci_execute_command(engine, command_visualize, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "eval")) {
-        zfish_uci_execute_command(engine, command_eval, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "compiler")) {
-        zfish_uci_execute_command(engine, command_compiler, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "export_net")) {
-        const filename = trimAsciiWhitespace(args);
-        zfish_uci_execute_command(engine, command_export_net, filename.ptr, filename.len);
-        return .{ .should_quit = 0 };
-    }
-
-    if (std.mem.eql(u8, token, "--help") or std.mem.eql(u8, token, "help") or std.mem.eql(u8, token, "--license") or std.mem.eql(u8, token, "license")) {
-        zfish_uci_execute_command(engine, command_help, "".ptr, 0);
-        return .{ .should_quit = 0 };
-    }
-
-    zfish_uci_execute_command(engine, command_unknown, trimmed.ptr, trimmed.len);
-    return .{ .should_quit = 0 };
+fn isHelpToken(token: []const u8) bool {
+    return std.mem.eql(u8, token, "--help") or
+        std.mem.eql(u8, token, "help") or
+        std.mem.eql(u8, token, "--license") or
+        std.mem.eql(u8, token, "license");
 }
 
 pub fn loopRuntime(uci_ptr: *anyopaque) void {
@@ -480,7 +510,7 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
 
     std.debug.print("\n", .{});
 
-    zfish_uci_execute_command(uci_ptr, command_search_clear, "".ptr, 0);
+    zfish_uci_cmd_search_clear(uci_ptr);
 
     var total_time: i64 = 0;
     var total_nodes: u64 = 0;
