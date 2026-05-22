@@ -254,6 +254,7 @@ extern fn zfish_engine_thread_allocation_info_text(engine_ptr: *const anyopaque)
 extern fn zfish_engine_evalfile_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_syzygy_path_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_binary_directory_text(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_numa_config_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_position_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_options_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_numa_context_ptr(engine_ptr: *anyopaque) *anyopaque;
@@ -451,6 +452,10 @@ pub fn stopEngine(engine_ptr: *anyopaque) void {
     stop(zfish_engine_threads_ptr(engine_ptr));
 }
 
+pub fn waitForSearchFinishedEngine(engine_ptr: *anyopaque) void {
+    zfish_engine_threads_wait_finished(zfish_engine_threads_ptr(engine_ptr));
+}
+
 pub fn goEngine(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
     std.debug.assert(zfish_limits_perft_value(limits_ptr) == 0);
     verifyNetwork(engine_ptr);
@@ -572,6 +577,33 @@ pub fn searchClearEngine(engine_ptr: *anyopaque) void {
     defer c.free(@ptrCast(syzygy_ptr));
     const syzygy_path = std.mem.span(syzygy_ptr);
     searchClear(zfish_engine_threads_ptr(engine_ptr), zfish_engine_tt_ptr(engine_ptr), syzygy_path);
+}
+
+pub fn numaConfigStringEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+    const config_ptr = zfish_engine_numa_config_text(engine_ptr) orelse return null;
+    defer c.free(@ptrCast(config_ptr));
+    return allocMessage("{s}", .{std.mem.span(config_ptr)});
+}
+
+pub fn numaConfigInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+    const config_ptr = zfish_engine_numa_config_text(engine_ptr) orelse return null;
+    defer c.free(@ptrCast(config_ptr));
+    const config = std.mem.span(config_ptr);
+    return formatNumaInfo(config.ptr, config.len);
+}
+
+pub fn threadBindingInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+    return threadBindingInformation(
+        zfish_engine_numa_context_ptr(@constCast(engine_ptr)),
+        zfish_engine_threads_ptr(@constCast(engine_ptr)),
+    );
+}
+
+pub fn threadAllocationInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+    return threadAllocationInformation(
+        zfish_engine_numa_context_ptr(@constCast(engine_ptr)),
+        zfish_engine_threads_ptr(@constCast(engine_ptr)),
+    );
 }
 
 pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
