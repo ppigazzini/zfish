@@ -141,10 +141,13 @@ extern fn zfish_engine_position_do_move(pos: *anyopaque, move_raw: u16, state: *
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_threadpool_set_stop_flag(pool: *anyopaque, stop: u8) void;
-extern fn zfish_engine_threads_wait_finished(threads: *anyopaque) void;
+extern fn zfish_threadpool_wait_for_search_finished(pool: *anyopaque) void;
+extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
+extern fn zfish_threadpool_ensure_network_replicated(pool: *anyopaque) void;
+extern fn zfish_threadpool_main_manager_set_ponder(pool: *anyopaque, ponder_mode: u8) void;
+extern fn zfish_threadpool_clear(pool: *anyopaque) void;
 extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
 extern fn zfish_engine_tt_hashfull(tt: *const anyopaque, max_age: c_int) c_int;
-extern fn zfish_engine_threads_clear(threads: *anyopaque) void;
 extern fn zfish_engine_tablebases_init(path_ptr: [*]const u8, path_len: usize) void;
 extern fn zfish_numa_context_set_system(numa_context: *anyopaque) void;
 extern fn zfish_numa_context_set_hardware(numa_context: *anyopaque) void;
@@ -155,7 +158,6 @@ extern fn zfish_engine_numa_set_from_string(
     text_len: usize,
 ) void;
 extern fn zfish_numa_context_config(numa_context: *const anyopaque) *const anyopaque;
-extern fn zfish_engine_threadpool_wait_finished(threads: *anyopaque) void;
 extern fn zfish_threadpool_reconfigure(
     pool: *anyopaque,
     numa_config: *const anyopaque,
@@ -171,9 +173,7 @@ extern fn zfish_search_shared_state_create(
 ) ?*anyopaque;
 extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
 extern fn zfish_engine_option_hash_value(options: *const anyopaque) usize;
-extern fn zfish_engine_threads_ensure_network_replicated(threads: *anyopaque) void;
 extern fn zfish_engine_tt_resize(tt: *anyopaque, mb: usize, threads: *anyopaque) void;
-extern fn zfish_engine_main_manager_set_ponder(threads: *anyopaque, ponder: u8) void;
 extern fn zfish_engine_network_load_replicated(
     network: *anyopaque,
     root_directory_ptr: [*]const u8,
@@ -455,7 +455,7 @@ pub fn stopEngine(engine_ptr: *anyopaque) void {
 }
 
 pub fn waitForSearchFinishedEngine(engine_ptr: *anyopaque) void {
-    zfish_engine_threads_wait_finished(zfish_engine_threads_ptr(engine_ptr));
+    zfish_threadpool_wait_thread(zfish_engine_threads_ptr(engine_ptr), 0);
 }
 
 pub fn goEngine(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
@@ -491,7 +491,7 @@ pub fn setNumaConfigFromOption(
     }
 
     resizeThreads(numa_context, options, threads, tt, shared_hists, network, update_context);
-    zfish_engine_threads_ensure_network_replicated(threads);
+    zfish_threadpool_ensure_network_replicated(threads);
 }
 
 pub fn setNumaConfigFromOptionEngine(engine_ptr: *anyopaque, option_text: []const u8) void {
@@ -516,7 +516,7 @@ pub fn resizeThreads(
     network: *anyopaque,
     update_context: *const anyopaque,
 ) void {
-    zfish_engine_threadpool_wait_finished(threads);
+    zfish_threadpool_wait_for_search_finished(threads);
 
     const shared_state = zfish_search_shared_state_create(
         options,
@@ -535,7 +535,7 @@ pub fn resizeThreads(
     );
 
     setTtSize(threads, tt, zfish_engine_option_hash_value(options));
-    zfish_engine_threads_ensure_network_replicated(threads);
+    zfish_threadpool_ensure_network_replicated(threads);
 }
 
 pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
@@ -551,7 +551,7 @@ pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
 }
 
 pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
-    zfish_engine_threads_wait_finished(threads);
+    zfish_threadpool_wait_thread(threads, 0);
     zfish_engine_tt_resize(tt, mb, threads);
 }
 
@@ -560,7 +560,7 @@ pub fn setTtSizeEngine(engine_ptr: *anyopaque, mb: usize) void {
 }
 
 pub fn setPonderhit(threads: *anyopaque, ponder: u8) void {
-    zfish_engine_main_manager_set_ponder(threads, ponder);
+    zfish_threadpool_main_manager_set_ponder(threads, ponder);
 }
 
 pub fn setPonderhitEngine(engine_ptr: *anyopaque, ponder: u8) void {
@@ -568,9 +568,9 @@ pub fn setPonderhitEngine(engine_ptr: *anyopaque, ponder: u8) void {
 }
 
 pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8) void {
-    zfish_engine_threads_wait_finished(threads);
+    zfish_threadpool_wait_thread(threads, 0);
     zfish_engine_tt_clear(tt, threads);
-    zfish_engine_threads_clear(threads);
+    zfish_threadpool_clear(threads);
     zfish_engine_tablebases_init(syzygy_path.ptr, syzygy_path.len);
 }
 
@@ -673,8 +673,8 @@ pub fn loadNetwork(
         evalfile_path.ptr,
         evalfile_path.len,
     );
-    zfish_engine_threads_clear(threads);
-    zfish_engine_threads_ensure_network_replicated(threads);
+    zfish_threadpool_clear(threads);
+    zfish_threadpool_ensure_network_replicated(threads);
 }
 
 pub fn loadNetworkEngine(engine_ptr: *anyopaque, evalfile_path: []const u8) void {
