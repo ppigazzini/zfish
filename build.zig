@@ -242,6 +242,7 @@ pub fn build(b: *std.Build) void {
     const zig_compat_sources = &.{
         "uci_bridge.cpp",
         "thread_methods_bridge.cpp",
+        "thread_state_bridge.cpp",
     };
 
     exe.root_module.addIncludePath(b.path("src"));
