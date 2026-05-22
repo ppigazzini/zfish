@@ -143,6 +143,7 @@ extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_engine_threads_set_stop(threads: *anyopaque) void;
 extern fn zfish_engine_threads_wait_finished(threads: *anyopaque) void;
 extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
+extern fn zfish_engine_tt_hashfull(tt: *const anyopaque, max_age: c_int) c_int;
 extern fn zfish_engine_threads_clear(threads: *anyopaque) void;
 extern fn zfish_engine_tablebases_init(path_ptr: [*]const u8, path_len: usize) void;
 extern fn zfish_engine_numa_set_system(numa_context: *anyopaque, hardware: u8) void;
@@ -787,6 +788,14 @@ pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
 
 pub fn fen(pos: *const anyopaque) ?[*:0]u8 {
     return positionFen(pos, null);
+}
+
+pub fn fenEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+    return fen(zfish_engine_position_ptr(@constCast(engine_ptr)));
+}
+
+pub fn hashfullEngine(engine_ptr: *const anyopaque, max_age: c_int) c_int {
+    return zfish_engine_tt_hashfull(zfish_engine_tt_ptr(@constCast(engine_ptr)), max_age);
 }
 
 pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
