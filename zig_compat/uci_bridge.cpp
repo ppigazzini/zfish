@@ -3205,41 +3205,6 @@ void UCIEngine::init_search_update_listeners() {
 
 void UCIEngine::loop() { zfish_uci_loop_runtime(this); }
 
-void UCIEngine::go(std::istringstream& is) {
-
-    Search::LimitsType limits = parse_limits(is);
-
-    if (limits.perft)
-        perft(limits);
-    else
-        engine.go(limits);
-}
-
-void UCIEngine::bench(std::istream& args) {
-    const std::string args_text((std::istreambuf_iterator<char>(args)),
-                                std::istreambuf_iterator<char>());
-    zfish_uci_bench_runtime(this, reinterpret_cast<const unsigned char*>(args_text.data()),
-                            args_text.size());
-}
-
-void UCIEngine::benchmark(std::istream& args) {
-    const std::string args_text((std::istreambuf_iterator<char>(args)),
-                                std::istreambuf_iterator<char>());
-    zfish_uci_benchmark_runtime(this, reinterpret_cast<const unsigned char*>(args_text.data()),
-                                args_text.size());
-}
-
-void UCIEngine::setoption(std::istringstream& is) {
-    engine.wait_for_search_finished();
-    engine.get_options().setoption(is);
-}
-
-std::uint64_t UCIEngine::perft(const Search::LimitsType& limits) {
-    auto nodes = engine.perft(engine.fen(), limits.perft, engine.get_options()["UCI_Chess960"]);
-    sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
-    return nodes;
-}
-
 extern "C" {
 
 int zfish_uci_cli_argc(const void* uci_ptr) {
@@ -3263,9 +3228,11 @@ const char* zfish_uci_read_command_line() {
 }
 
 std::uint64_t zfish_uci_engine_perft_depth(void* uci_ptr, int depth) {
-    Search::LimitsType limits;
-    limits.perft = depth;
-    return static_cast<UCIEngine*>(uci_ptr)->perft(limits);
+        auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
+        const auto nodes = uci_engine->engine.perft(
+            uci_engine->engine.fen(), depth, uci_engine->engine.get_options()["UCI_Chess960"]);
+        sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
+        return nodes;
 }
 
 void zfish_uci_engine_wait_finished(void* uci_ptr) {
@@ -3312,112 +3279,114 @@ void zfish_uci_set_default_listeners(void* uci_ptr) {
     static_cast<UCIEngine*>(uci_ptr)->init_search_update_listeners();
 }
 
-void zfish_uci_command_stop(void* engine_ptr) {
-    static_cast<UCIEngine*>(engine_ptr)->engine.stop();
-}
+void zfish_uci_execute_command(void*                engine_ptr,
+                               std::uint8_t         command_kind,
+                               const unsigned char* args_ptr,
+                               std::size_t          args_len) {
+    enum : std::uint8_t {
+        kStop = 0,
+        kPonderhit = 1,
+        kUci = 2,
+        kSetoption = 3,
+        kGo = 4,
+        kPosition = 5,
+        kSearchClear = 6,
+        kIsready = 7,
+        kFlip = 8,
+        kBench = 9,
+        kBenchmark = 10,
+        kVisualize = 11,
+        kEval = 12,
+        kCompiler = 13,
+        kExportNet = 14,
+        kHelp = 15,
+        kUnknown = 16,
+    };
 
-void zfish_uci_command_ponderhit(void* engine_ptr) {
-    static_cast<UCIEngine*>(engine_ptr)->engine.set_ponderhit(false);
-}
+    auto*      uci_engine = static_cast<UCIEngine*>(engine_ptr);
+    const auto args = std::string(reinterpret_cast<const char*>(args_ptr), args_len);
 
-void zfish_uci_command_uci(void* engine_ptr) {
-    auto& engine = static_cast<UCIEngine*>(engine_ptr)->engine;
-    sync_cout << "id name " << engine_info(true) << "\n" << engine.get_options() << sync_endl;
-    sync_cout << "uciok" << sync_endl;
-}
-
-void zfish_uci_command_setoption_text(void*                engine_ptr,
-                                      const unsigned char* args_ptr,
-                                      std::size_t          args_len) {
-    auto*             uci_engine = static_cast<UCIEngine*>(engine_ptr);
-    std::istringstream is(std::string(reinterpret_cast<const char*>(args_ptr), args_len));
-    uci_engine->setoption(is);
-}
-
-void zfish_uci_command_go_text(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len) {
-    auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
-    UCIEngine::print_info_string(uci_engine->engine.numa_config_information_as_string());
-    UCIEngine::print_info_string(uci_engine->engine.thread_allocation_information_as_string());
-
-    std::istringstream is(std::string(reinterpret_cast<const char*>(args_ptr), args_len));
-    uci_engine->go(is);
-}
-
-void zfish_uci_command_position_text(void*                engine_ptr,
-                                     const unsigned char* full_command_ptr,
-                                     std::size_t          full_command_len) {
-    auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
-    std::istringstream is(std::string(reinterpret_cast<const char*>(full_command_ptr), full_command_len));
-    uci_engine->position(is);
-}
-
-void zfish_uci_command_search_clear(void* engine_ptr) {
-    static_cast<UCIEngine*>(engine_ptr)->engine.search_clear();
-}
-
-void zfish_uci_command_isready() {
-    sync_cout << "readyok" << sync_endl;
-}
-
-void zfish_uci_command_flip(void* engine_ptr) {
-    static_cast<UCIEngine*>(engine_ptr)->engine.flip();
-}
-
-void zfish_uci_command_bench(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len) {
-    std::istringstream is(std::string(reinterpret_cast<const char*>(args_ptr), args_len));
-    static_cast<UCIEngine*>(engine_ptr)->bench(is);
-}
-
-void zfish_uci_command_benchmark(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len) {
-    std::istringstream is(std::string(reinterpret_cast<const char*>(args_ptr), args_len));
-    static_cast<UCIEngine*>(engine_ptr)->benchmark(is);
-}
-
-void zfish_uci_command_visualize(void* engine_ptr) {
-    sync_cout << static_cast<UCIEngine*>(engine_ptr)->engine.visualize() << sync_endl;
-}
-
-void zfish_uci_command_eval(void* engine_ptr) {
-    static_cast<UCIEngine*>(engine_ptr)->engine.trace_eval();
-}
-
-void zfish_uci_command_compiler() {
-    sync_cout << compiler_info() << sync_endl;
-}
-
-void zfish_uci_command_export_net(void*                engine_ptr,
-                                  std::uint8_t         has_filename,
-                                  const unsigned char* filename_ptr,
-                                  std::size_t          filename_len) {
-    std::pair<std::optional<std::string>, std::string> file;
-    if (has_filename != 0)
+    switch (command_kind)
     {
-        file.second.assign(reinterpret_cast<const char*>(filename_ptr), filename_len);
-        file.first = file.second;
+    case kStop:
+        uci_engine->engine.stop();
+        return;
+    case kPonderhit:
+        uci_engine->engine.set_ponderhit(false);
+        return;
+    case kUci:
+        sync_cout << "id name " << engine_info(true) << "\n" << uci_engine->engine.get_options()
+                  << sync_endl;
+        sync_cout << "uciok" << sync_endl;
+        return;
+    case kSetoption: {
+        std::istringstream is(args);
+        uci_engine->engine.wait_for_search_finished();
+        uci_engine->engine.get_options().setoption(is);
+        return;
     }
-    static_cast<UCIEngine*>(engine_ptr)->engine.save_network(file);
+    case kGo: {
+        UCIEngine::print_info_string(uci_engine->engine.numa_config_information_as_string());
+        UCIEngine::print_info_string(uci_engine->engine.thread_allocation_information_as_string());
+
+        std::istringstream is(args);
+        Search::LimitsType limits = UCIEngine::parse_limits(is);
+        if (limits.perft)
+            zfish_uci_engine_perft_depth(uci_engine, limits.perft);
+        else
+            uci_engine->engine.go(limits);
+        return;
+    }
+    case kPosition: {
+        std::istringstream is(args);
+        uci_engine->position(is);
+        return;
+    }
+    case kSearchClear:
+        uci_engine->engine.search_clear();
+        return;
+    case kIsready:
+        sync_cout << "readyok" << sync_endl;
+        return;
+    case kFlip:
+        uci_engine->engine.flip();
+        return;
+    case kBench:
+        zfish_uci_bench_runtime(uci_engine, args_ptr, args_len);
+        return;
+    case kBenchmark:
+        zfish_uci_benchmark_runtime(uci_engine, args_ptr, args_len);
+        return;
+    case kVisualize:
+        sync_cout << uci_engine->engine.visualize() << sync_endl;
+        return;
+    case kEval:
+        uci_engine->engine.trace_eval();
+        return;
+    case kCompiler:
+        sync_cout << compiler_info() << sync_endl;
+        return;
+    case kExportNet: {
+        std::pair<std::optional<std::string>, std::string> file;
+        if (!args.empty())
+        {
+            file.second = args;
+            file.first = file.second;
+        }
+        uci_engine->engine.save_network(file);
+        return;
+    }
+    case kHelp:
+        sync_cout << UCIEngine::help_text() << sync_endl;
+        return;
+    case kUnknown:
+        sync_cout << UCIEngine::format_unknown_command(args) << sync_endl;
+        return;
+    default:
+        std::abort();
+    }
 }
 
-void zfish_uci_command_help() {
-    sync_cout << UCIEngine::help_text() << sync_endl;
-}
-
-void zfish_uci_command_unknown(const unsigned char* command_ptr, std::size_t command_len) {
-    sync_cout << UCIEngine::format_unknown_command(
-      std::string(reinterpret_cast<const char*>(command_ptr), command_len))
-              << sync_endl;
-}
-
-}
-
-Move UCIEngine::to_move(const Position& pos, std::string str) {
-    str = to_lower(str);
-
-    for (const auto& m : MoveList<LEGAL>(pos))
-        if (str == move(m, pos.is_chess960()))
-            return m;
-
-    return Move::none();
 }
 
 bool Tune::update_on_last;
