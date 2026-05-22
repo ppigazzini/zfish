@@ -877,7 +877,7 @@ struct ZfishMovePickerState {
     std::size_t        end_bad_captures;
     std::size_t        end_captures;
     std::size_t        end_generated;
-    ZfishMoveSortEntry moves[Stockfish::MAX_MOVES];
+    ZfishMoveSortEntry* moves;
 };
 
 struct ZfishMovePickerContext {
@@ -1311,17 +1311,13 @@ ExtMove* MovePicker::score(const MoveList<Type>&) {
       .ply                  = ply,
     };
 
-    ZfishMoveSortEntry outputs[MAX_MOVES]{};
-    const std::size_t  count = zfish_movepick_score_list(kind, &context, outputs);
+        static_assert(sizeof(ExtMove) == sizeof(ZfishMoveSortEntry));
+        static_assert(alignof(ExtMove) == alignof(ZfishMoveSortEntry));
 
-    ExtMove* it = cur;
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        ExtMove& move = *it++;
-        move          = Move(outputs[i].raw_move);
-        move.value    = outputs[i].value;
-    }
-    return it;
+        const std::size_t count = zfish_movepick_score_list(
+            kind, &context, reinterpret_cast<ZfishMoveSortEntry*>(cur));
+
+        return cur + count;
 }
 
 Move MovePicker::next_move() {
@@ -1337,16 +1333,7 @@ Move MovePicker::next_move() {
     state.end_bad_captures = static_cast<std::size_t>(endBadCaptures - moves);
     state.end_captures     = static_cast<std::size_t>(endCaptures - moves);
     state.end_generated    = static_cast<std::size_t>(endGenerated - moves);
-
-    const auto usedBefore = std::max(
-      {state.cur, state.end_cur, state.end_bad_captures, state.end_captures, state.end_generated});
-
-    for (std::size_t i = 0; i < usedBefore; ++i)
-    {
-        state.moves[i].raw_move = moves[i].raw();
-        state.moves[i].reserved = 0;
-        state.moves[i].value    = moves[i].value;
-    }
+        state.moves            = reinterpret_cast<ZfishMoveSortEntry*>(moves);
 
     const ZfishMovePickerContext context = {
         .pos                  = &pos,
@@ -1370,15 +1357,6 @@ Move MovePicker::next_move() {
     endBadCaptures = moves + state.end_bad_captures;
     endCaptures    = moves + state.end_captures;
     endGenerated   = moves + state.end_generated;
-
-    const auto usedAfter = std::max(
-      {state.cur, state.end_cur, state.end_bad_captures, state.end_captures, state.end_generated});
-
-    for (std::size_t i = 0; i < usedAfter; ++i)
-    {
-        moves[i]       = Move(state.moves[i].raw_move);
-        moves[i].value = state.moves[i].value;
-    }
 
     return result;
 }
