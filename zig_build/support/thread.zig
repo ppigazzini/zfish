@@ -5,16 +5,43 @@ const c = @cImport({
 const position_port = @import("position");
 const uci_move = @import("uci_move");
 
+const value_draw: c_int = 0;
+const value_mate: c_int = 32000;
 const value_none: c_int = 32002;
 const value_infinite: c_int = 32001;
 const value_tb_win_in_max_ply: c_int = 31507;
 const value_tb_loss_in_max_ply: c_int = -31507;
+const max_ply: c_int = 246;
+const max_dtz: c_int = 1 << 18;
 const max_thread_summaries: usize = 1024;
 const square_count: usize = 64;
 const white_oo: u8 = 1;
 const white_ooo: u8 = 2;
 const black_oo: u8 = 4;
 const black_ooo: u8 = 8;
+const pawn_value: c_int = 208;
+const probe_fail: c_int = 0;
+const wdl_loss: c_int = -2;
+const wdl_blessed_loss: c_int = -1;
+const wdl_draw: c_int = 0;
+const wdl_cursed_win: c_int = 1;
+const wdl_win: c_int = 2;
+
+const wdl_to_rank = [_]c_int{
+    -max_dtz,
+    -max_dtz + 101,
+    0,
+    max_dtz - 101,
+    max_dtz,
+};
+
+const wdl_to_value = [_]c_int{
+    -value_mate + max_ply + 1,
+    value_draw - 2,
+    value_draw,
+    value_draw + 2,
+    value_mate - max_ply - 1,
+};
 
 pub const ThreadSummary = extern struct {
     pv0_raw: u16,
@@ -34,6 +61,21 @@ pub const TbConfig = extern struct {
     root_in_tb: u8,
     use_rule50: u8,
     probe_depth: c_int,
+};
+
+const TablebaseProbe = extern struct {
+    available: u8,
+    wdl: c_int,
+    wdl_state: c_int,
+    dtz: c_int,
+    dtz_state: c_int,
+};
+
+const RankedRootMove = extern struct {
+    raw_move: u16,
+    reserved: u16,
+    tb_rank: c_int,
+    tb_score: c_int,
 };
 
 const RootSetupInput = extern struct {
@@ -75,13 +117,35 @@ extern fn zfish_position_ep_square(pos: *const anyopaque) u8;
 extern fn zfish_position_rule50_count(pos: *const anyopaque) c_int;
 extern fn zfish_position_game_ply(pos: *const anyopaque) c_int;
 extern fn zfish_position_is_chess960(pos: *const anyopaque) u8;
-extern fn zfish_root_moves_create(move_raws: ?[*]const u16, count: usize) *anyopaque;
+extern fn zfish_position_checkers(pos: *const anyopaque) u64;
+extern fn zfish_position_has_repeated(pos: *const anyopaque) u8;
+extern fn zfish_position_is_draw_ply_one(pos: *const anyopaque) u8;
+extern fn zfish_position_is_repetition_ply_one(pos: *const anyopaque) u8;
+extern fn zfish_position_create() ?*anyopaque;
+extern fn zfish_position_destroy(pos: ?*anyopaque) void;
+extern fn zfish_root_moves_create_ranked(items: [*]const RankedRootMove, count: usize) *anyopaque;
 extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
-extern fn zfish_threadpool_rank_root_moves(
-    options: *const anyopaque,
+extern fn zfish_options_syzygy_50_move_rule(options: *const anyopaque) u8;
+extern fn zfish_options_syzygy_probe_depth(options: *const anyopaque) c_int;
+extern fn zfish_options_syzygy_probe_limit(options: *const anyopaque) c_int;
+extern fn zfish_tbprobe_max_cardinality() usize;
+extern fn zfish_tbprobe_probe_fen(
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    chess960: u8,
+) TablebaseProbe;
+extern fn zfish_engine_state_list_storage_create() ?*anyopaque;
+extern fn zfish_engine_state_list_storage_destroy(storage: ?*anyopaque) void;
+extern fn zfish_engine_state_list_storage_reset(storage: *anyopaque) *anyopaque;
+extern fn zfish_engine_state_list_storage_push(storage: *anyopaque) *anyopaque;
+extern fn zfish_engine_position_set(
     pos: *anyopaque,
-    root_moves: *anyopaque,
-) TbConfig;
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    chess960_enabled: u8,
+    state: *anyopaque,
+) ?[*:0]u8;
+extern fn zfish_engine_position_do_move(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
 extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_thread_at(pool: *anyopaque, index: usize) *anyopaque;
 extern fn zfish_threadpool_reset_clear_state(pool: *anyopaque) void;
@@ -196,6 +260,284 @@ fn buildRootFen(pos: *const anyopaque) ?[*:0]u8 {
         zfish_position_rule50_count(pos),
         zfish_position_game_ply(pos),
     );
+}
+
+const ScratchPosition = struct {
+    pos: *anyopaque,
+    storage: *anyopaque,
+
+    fn init(root_fen: []const u8, chess960: u8) ScratchPosition {
+        const pos = zfish_position_create() orelse @panic("OOM");
+        errdefer zfish_position_destroy(pos);
+
+        const storage = zfish_engine_state_list_storage_create() orelse @panic("OOM");
+        errdefer zfish_engine_state_list_storage_destroy(storage);
+
+        var scratch = ScratchPosition{ .pos = pos, .storage = storage };
+        scratch.reset(root_fen, chess960);
+        return scratch;
+    }
+
+    fn deinit(self: *ScratchPosition) void {
+        zfish_engine_state_list_storage_destroy(self.storage);
+        zfish_position_destroy(self.pos);
+    }
+
+    fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) void {
+        const root_state = zfish_engine_state_list_storage_reset(self.storage);
+        if (zfish_engine_position_set(self.pos, root_fen.ptr, root_fen.len, chess960, root_state)) |err| {
+            defer c.free(@ptrCast(err));
+            @panic("scratch position set failed");
+        }
+    }
+
+    fn doMove(self: *ScratchPosition, raw_move: u16) void {
+        const next_state = zfish_engine_state_list_storage_push(self.storage);
+        zfish_engine_position_do_move(self.pos, raw_move, next_state);
+    }
+};
+
+fn countPieces(pos: *const anyopaque) usize {
+    var pieces: [square_count]u8 = undefined;
+    zfish_accumulator_position_snapshot(pos, &pieces);
+
+    var count: usize = 0;
+    for (pieces) |piece| {
+        if (piece != 0)
+            count += 1;
+    }
+    return count;
+}
+
+fn loadTbConfig(options: *const anyopaque, pos: *const anyopaque) TbConfig {
+    var config = TbConfig{
+        .cardinality = zfish_options_syzygy_probe_limit(options),
+        .root_in_tb = 0,
+        .use_rule50 = zfish_options_syzygy_50_move_rule(options),
+        .probe_depth = zfish_options_syzygy_probe_depth(options),
+    };
+
+    const max_cardinality: c_int = @intCast(zfish_tbprobe_max_cardinality());
+    if (config.cardinality > max_cardinality) {
+        config.cardinality = max_cardinality;
+        config.probe_depth = 0;
+    }
+
+    if (config.cardinality < @as(c_int, @intCast(countPieces(pos))) or
+        zfish_position_castling_rights(pos) != 0)
+    {
+        config.cardinality = 0;
+    }
+
+    return config;
+}
+
+fn probePosition(pos: *const anyopaque) TablebaseProbe {
+    const fen_ptr = buildRootFen(pos) orelse @panic("OOM");
+    defer c.free(@ptrCast(fen_ptr));
+    const fen_text = std.mem.span(fen_ptr);
+    return zfish_tbprobe_probe_fen(fen_text.ptr, fen_text.len, zfish_position_is_chess960(pos));
+}
+
+fn dtzBeforeZeroing(wdl: c_int) c_int {
+    return switch (wdl) {
+        wdl_win => 1,
+        wdl_cursed_win => 101,
+        wdl_blessed_loss => -101,
+        wdl_loss => -1,
+        else => 0,
+    };
+}
+
+const DtzRankResult = enum {
+    success,
+    fallback_to_wdl,
+};
+
+fn rankRootMovesDtz(
+    root_fen: []const u8,
+    chess960: u8,
+    rule50: bool,
+    root_rule50: c_int,
+    root_has_repeated: bool,
+    ranked_moves: []RankedRootMove,
+) DtzRankResult {
+    var scratch = ScratchPosition.init(root_fen, chess960);
+    defer scratch.deinit();
+
+    const bound: c_int = if (rule50) @divTrunc(max_dtz, 2) - 100 else 1;
+
+    for (ranked_moves) |*ranked_move| {
+        scratch.reset(root_fen, chess960);
+        scratch.doMove(ranked_move.raw_move);
+
+        var dtz: c_int = 0;
+        if (zfish_position_rule50_count(scratch.pos) == 0) {
+            const probe = probePosition(scratch.pos);
+            if (probe.wdl_state == probe_fail)
+                return .fallback_to_wdl;
+            dtz = dtzBeforeZeroing(-probe.wdl);
+        } else if ((rule50 and zfish_position_is_draw_ply_one(scratch.pos) != 0) or
+            zfish_position_is_repetition_ply_one(scratch.pos) != 0)
+        {
+            dtz = 0;
+        } else {
+            const probe = probePosition(scratch.pos);
+            if (probe.dtz_state == probe_fail)
+                return .fallback_to_wdl;
+
+            dtz = -probe.dtz;
+            dtz = if (dtz > 0)
+                dtz + 1
+            else if (dtz < 0)
+                dtz - 1
+            else
+                0;
+        }
+
+        if (zfish_position_checkers(scratch.pos) != 0 and dtz == 2) {
+            var legal_moves: [256]u16 = undefined;
+            if (zfish_movegen_generate_legal(scratch.pos, legal_moves[0..].ptr) == 0)
+                dtz = 1;
+        }
+
+        const rank: c_int = if (dtz > 0)
+            if (dtz + root_rule50 <= 99 and !root_has_repeated)
+                max_dtz - dtz
+            else
+                @divTrunc(max_dtz, 2) - (dtz + root_rule50)
+        else if (dtz < 0)
+            if (-dtz * 2 + root_rule50 < 100)
+                -max_dtz - dtz
+            else
+                -@divTrunc(max_dtz, 2) + (-dtz + root_rule50)
+        else
+            0;
+
+        ranked_move.tb_rank = rank;
+        ranked_move.tb_score = if (rank >= bound)
+            value_mate - max_ply - 1
+        else if (rank > 0)
+            @divTrunc(@max(@as(c_int, 3), rank - (@divTrunc(max_dtz, 2) - 200)) * pawn_value, 200)
+        else if (rank == 0)
+            value_draw
+        else if (rank > -bound)
+            @divTrunc(@min(@as(c_int, -3), rank + (@divTrunc(max_dtz, 2) - 200)) * pawn_value, 200)
+        else
+            -value_mate + max_ply + 1;
+    }
+
+    return .success;
+}
+
+fn rankRootMovesWdl(
+    root_fen: []const u8,
+    chess960: u8,
+    rule50: bool,
+    ranked_moves: []RankedRootMove,
+) bool {
+    var scratch = ScratchPosition.init(root_fen, chess960);
+    defer scratch.deinit();
+
+    for (ranked_moves) |*ranked_move| {
+        scratch.reset(root_fen, chess960);
+        scratch.doMove(ranked_move.raw_move);
+
+        var wdl: c_int = undefined;
+        if (zfish_position_is_draw_ply_one(scratch.pos) != 0) {
+            wdl = wdl_draw;
+        } else {
+            const probe = probePosition(scratch.pos);
+            if (probe.wdl_state == probe_fail)
+                return false;
+            wdl = -probe.wdl;
+        }
+
+        ranked_move.tb_rank = wdl_to_rank[@intCast(wdl + 2)];
+
+        var score_wdl = wdl;
+        if (!rule50) {
+            score_wdl = if (wdl > 0)
+                wdl_win
+            else if (wdl < 0)
+                wdl_loss
+            else
+                wdl_draw;
+        }
+        ranked_move.tb_score = wdl_to_value[@intCast(score_wdl + 2)];
+    }
+
+    return true;
+}
+
+fn stableSortRankedMovesByTbRank(ranked_moves: []RankedRootMove) void {
+    var index: usize = 1;
+    while (index < ranked_moves.len) : (index += 1) {
+        const current = ranked_moves[index];
+        var insert_at = index;
+
+        while (insert_at > 0 and ranked_moves[insert_at - 1].tb_rank < current.tb_rank) : (insert_at -= 1) {
+            ranked_moves[insert_at] = ranked_moves[insert_at - 1];
+        }
+        ranked_moves[insert_at] = current;
+    }
+}
+
+fn buildRootMoves(
+    allocator: std.mem.Allocator,
+    options: *const anyopaque,
+    pos: *const anyopaque,
+    root_fen: []const u8,
+    chess960: u8,
+    move_raws: []const u16,
+) struct { root_moves: *anyopaque, tb_config: TbConfig } {
+    const ranked_moves = allocator.alloc(RankedRootMove, move_raws.len) catch @panic("OOM");
+    defer allocator.free(ranked_moves);
+
+    for (move_raws, 0..) |raw_move, index| {
+        ranked_moves[index] = .{
+            .raw_move = raw_move,
+            .reserved = 0,
+            .tb_rank = 0,
+            .tb_score = 0,
+        };
+    }
+
+    var tb_config = loadTbConfig(options, pos);
+    var dtz_available = true;
+
+    if (tb_config.cardinality != 0) {
+        const dtz_result = rankRootMovesDtz(
+            root_fen,
+            chess960,
+            tb_config.use_rule50 != 0,
+            zfish_position_rule50_count(pos),
+            zfish_position_has_repeated(pos) != 0,
+            ranked_moves,
+        );
+
+        switch (dtz_result) {
+            .success => tb_config.root_in_tb = 1,
+            .fallback_to_wdl => {
+                dtz_available = false;
+                if (rankRootMovesWdl(root_fen, chess960, tb_config.use_rule50 != 0, ranked_moves)) {
+                    tb_config.root_in_tb = 1;
+                }
+            },
+        }
+    }
+
+    if (tb_config.root_in_tb != 0) {
+        stableSortRankedMovesByTbRank(ranked_moves);
+        if (dtz_available or ranked_moves[0].tb_score <= value_draw)
+            tb_config.cardinality = 0;
+    }
+
+    const root_moves = zfish_root_moves_create_ranked(ranked_moves.ptr, ranked_moves.len);
+    return .{
+        .root_moves = root_moves,
+        .tb_config = tb_config,
+    };
 }
 
 pub fn nextPowerOfTwo(count: u64) usize {
@@ -389,18 +731,21 @@ pub fn startThinking(
         selected_moves.appendSlice(std.heap.c_allocator, legal_moves) catch @panic("OOM");
     }
 
-    const move_raws_ptr: ?[*]const u16 = if (selected_moves.items.len == 0)
-        null
-    else
-        selected_moves.items.ptr;
-    const root_moves = zfish_root_moves_create(move_raws_ptr, selected_moves.items.len);
-    defer zfish_root_moves_destroy(root_moves);
-
-    const tb_config = zfish_threadpool_rank_root_moves(options, pos, root_moves);
     const root_fen = buildRootFen(pos) orelse @panic("OOM");
     defer c.free(@ptrCast(root_fen));
     const root_fen_text = std.mem.span(root_fen);
     const chess960 = zfish_position_is_chess960(pos);
+    const root_setup = buildRootMoves(
+        std.heap.c_allocator,
+        options,
+        pos,
+        root_fen_text,
+        chess960,
+        selected_moves.items,
+    );
+    const root_moves = root_setup.root_moves;
+    defer zfish_root_moves_destroy(root_moves);
+    const tb_config = root_setup.tb_config;
     const thread_count = zfish_threadpool_thread_count(pool);
     const allocator = std.heap.c_allocator;
     const root_setup_contexts = allocator.alloc(RootSetupContext, thread_count) catch @panic("OOM");
