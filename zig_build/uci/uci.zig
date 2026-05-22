@@ -38,32 +38,12 @@ pub const ParsedPosition = extern struct {
     moves: ?[*:0]u8,
 };
 
-extern fn zfish_uci_command_stop(engine: *anyopaque) void;
-extern fn zfish_uci_command_ponderhit(engine: *anyopaque) void;
-extern fn zfish_uci_command_uci(engine: *anyopaque) void;
-extern fn zfish_uci_command_setoption_text(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
-extern fn zfish_uci_command_go_text(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
-extern fn zfish_uci_command_position_text(
+extern fn zfish_uci_execute_command(
     engine: *anyopaque,
-    full_command_ptr: [*]const u8,
-    full_command_len: usize,
+    command_kind: u8,
+    args_ptr: [*]const u8,
+    args_len: usize,
 ) void;
-extern fn zfish_uci_command_search_clear(engine: *anyopaque) void;
-extern fn zfish_uci_command_isready() void;
-extern fn zfish_uci_command_flip(engine: *anyopaque) void;
-extern fn zfish_uci_command_bench(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
-extern fn zfish_uci_command_benchmark(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
-extern fn zfish_uci_command_visualize(engine: *anyopaque) void;
-extern fn zfish_uci_command_eval(engine: *anyopaque) void;
-extern fn zfish_uci_command_compiler() void;
-extern fn zfish_uci_command_export_net(
-    engine: *anyopaque,
-    has_filename: u8,
-    filename_ptr: [*]const u8,
-    filename_len: usize,
-) void;
-extern fn zfish_uci_command_help() void;
-extern fn zfish_uci_command_unknown(command_ptr: [*]const u8, command_len: usize) void;
 extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize) ParsedSetOption;
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
@@ -78,6 +58,24 @@ extern fn zfish_uci_engine_numa_config_string(uci_ptr: *const anyopaque) ?[*:0]u
 extern fn zfish_uci_engine_thread_binding_info_text(uci_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_uci_set_quiet_listeners(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_set_default_listeners(uci_ptr: *anyopaque) void;
+
+const command_stop: u8 = 0;
+const command_ponderhit: u8 = 1;
+const command_uci: u8 = 2;
+const command_setoption: u8 = 3;
+const command_go: u8 = 4;
+const command_position: u8 = 5;
+const command_search_clear: u8 = 6;
+const command_isready: u8 = 7;
+const command_flip: u8 = 8;
+const command_bench: u8 = 9;
+const command_benchmark: u8 = 10;
+const command_visualize: u8 = 11;
+const command_eval: u8 = 12;
+const command_compiler: u8 = 13;
+const command_export_net: u8 = 14;
+const command_help: u8 = 15;
+const command_unknown: u8 = 16;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -242,92 +240,92 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
     const args = trimAsciiWhitespace(trimmed[token.len..]);
 
     if (std.mem.eql(u8, token, "quit")) {
-        zfish_uci_command_stop(engine);
+        zfish_uci_execute_command(engine, command_stop, "".ptr, 0);
         return .{ .should_quit = 1 };
     }
 
     if (std.mem.eql(u8, token, "stop")) {
-        zfish_uci_command_stop(engine);
+        zfish_uci_execute_command(engine, command_stop, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "ponderhit")) {
-        zfish_uci_command_ponderhit(engine);
+        zfish_uci_execute_command(engine, command_ponderhit, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "uci")) {
-        zfish_uci_command_uci(engine);
+        zfish_uci_execute_command(engine, command_uci, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "setoption")) {
-        zfish_uci_command_setoption_text(engine, args.ptr, args.len);
+        zfish_uci_execute_command(engine, command_setoption, args.ptr, args.len);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "go")) {
-        zfish_uci_command_go_text(engine, args.ptr, args.len);
+        zfish_uci_execute_command(engine, command_go, args.ptr, args.len);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "position")) {
-        zfish_uci_command_position_text(engine, trimmed.ptr, trimmed.len);
+        zfish_uci_execute_command(engine, command_position, trimmed.ptr, trimmed.len);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "ucinewgame")) {
-        zfish_uci_command_search_clear(engine);
+        zfish_uci_execute_command(engine, command_search_clear, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "isready")) {
-        zfish_uci_command_isready();
+        zfish_uci_execute_command(engine, command_isready, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "flip")) {
-        zfish_uci_command_flip(engine);
+        zfish_uci_execute_command(engine, command_flip, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "bench")) {
-        zfish_uci_command_bench(engine, args.ptr, args.len);
+        zfish_uci_execute_command(engine, command_bench, args.ptr, args.len);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "speedtest")) {
-        zfish_uci_command_benchmark(engine, args.ptr, args.len);
+        zfish_uci_execute_command(engine, command_benchmark, args.ptr, args.len);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "d")) {
-        zfish_uci_command_visualize(engine);
+        zfish_uci_execute_command(engine, command_visualize, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "eval")) {
-        zfish_uci_command_eval(engine);
+        zfish_uci_execute_command(engine, command_eval, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "compiler")) {
-        zfish_uci_command_compiler();
+        zfish_uci_execute_command(engine, command_compiler, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "export_net")) {
         const filename = trimAsciiWhitespace(args);
-        zfish_uci_command_export_net(engine, if (filename.len == 0) 0 else 1, filename.ptr, filename.len);
+        zfish_uci_execute_command(engine, command_export_net, filename.ptr, filename.len);
         return .{ .should_quit = 0 };
     }
 
     if (std.mem.eql(u8, token, "--help") or std.mem.eql(u8, token, "help") or std.mem.eql(u8, token, "--license") or std.mem.eql(u8, token, "license")) {
-        zfish_uci_command_help();
+        zfish_uci_execute_command(engine, command_help, "".ptr, 0);
         return .{ .should_quit = 0 };
     }
 
-    zfish_uci_command_unknown(trimmed.ptr, trimmed.len);
+    zfish_uci_execute_command(engine, command_unknown, trimmed.ptr, trimmed.len);
     return .{ .should_quit = 0 };
 }
 
@@ -482,7 +480,7 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
 
     std.debug.print("\n", .{});
 
-    zfish_uci_command_search_clear(uci_ptr);
+    zfish_uci_execute_command(uci_ptr, command_search_clear, "".ptr, 0);
 
     var total_time: i64 = 0;
     var total_nodes: u64 = 0;
