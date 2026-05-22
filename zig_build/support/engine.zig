@@ -53,6 +53,16 @@ pub const CountPair = extern struct {
     total: usize,
 };
 
+const NetworkVerifyResult = extern struct {
+    should_exit: u8,
+    message: ?[*:0]u8,
+};
+
+const NetworkStatusItem = extern struct {
+    status: u8,
+    error_ptr: ?[*:0]u8,
+};
+
 pub const ByteView = extern struct {
     ptr: ?[*]const u8,
     len: usize,
@@ -239,6 +249,19 @@ extern fn zfish_engine_set_numa_config_from_option_method(
 ) void;
 extern fn zfish_engine_numa_config_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_thread_allocation_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_evalfile_text(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_network_verify_current(
+    engine_ptr: *const anyopaque,
+    evalfile_ptr: [*]const u8,
+    evalfile_len: usize,
+) NetworkVerifyResult;
+extern fn zfish_engine_network_status_count(engine_ptr: *const anyopaque) usize;
+extern fn zfish_engine_network_status_at(engine_ptr: *const anyopaque, index: usize) NetworkStatusItem;
+extern fn zfish_engine_emit_verify_message(
+    engine_ptr: *const anyopaque,
+    message_ptr: [*]const u8,
+    message_len: usize,
+) void;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
     const max_threads = zfish_engine_max_threads_value();
@@ -448,6 +471,34 @@ pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8)
     zfish_engine_tt_clear(tt, threads);
     zfish_engine_threads_clear(threads);
     zfish_engine_tablebases_init(syzygy_path.ptr, syzygy_path.len);
+}
+
+pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
+    const evalfile_ptr = zfish_engine_evalfile_text(engine_ptr) orelse return;
+    defer c.free(@ptrCast(evalfile_ptr));
+    const evalfile = std.mem.span(evalfile_ptr);
+
+    const result = zfish_engine_network_verify_current(engine_ptr, evalfile.ptr, evalfile.len);
+    if (result.message) |message_ptr| {
+        defer c.free(@ptrCast(message_ptr));
+        zfish_engine_emit_verify_message(engine_ptr, message_ptr, std.mem.span(message_ptr).len);
+    }
+
+    if (result.should_exit != 0) {
+        c.exit(1);
+    }
+
+    const status_count = zfish_engine_network_status_count(engine_ptr);
+    var index: usize = 0;
+    while (index < status_count) : (index += 1) {
+        const item = zfish_engine_network_status_at(engine_ptr, index);
+        defer if (item.error_ptr) |error_ptr| c.free(@ptrCast(error_ptr));
+
+        const error_text = if (item.error_ptr) |error_ptr| std.mem.span(error_ptr) else "";
+        const message_ptr = formatNetworkStatus(index + 1, item.status, error_text.ptr, error_text.len) orelse continue;
+        defer c.free(@ptrCast(message_ptr));
+        zfish_engine_emit_verify_message(engine_ptr, message_ptr, std.mem.span(message_ptr).len);
+    }
 }
 
 pub fn loadNetwork(
