@@ -1956,11 +1956,25 @@ void zfish_threadpool_wait_main_thread(void* pool_ptr) {
     static_cast<ThreadPool*>(pool_ptr)->main_thread()->wait_for_search_finished();
 }
 
-void zfish_threadpool_reset_start_state(void* pool_ptr, std::uint8_t ponder_mode) {
+void zfish_threadpool_set_stop_flag(void* pool_ptr, std::uint8_t stop) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
-    pool->main_manager()->stopOnPonderhit = pool->stop = false;
-    pool->main_manager()->ponder          = ponder_mode != 0;
-    pool->increaseDepth                   = true;
+    pool->stop = stop != 0;
+}
+
+void zfish_threadpool_main_manager_set_stop_on_ponderhit(void* pool_ptr,
+                                                         std::uint8_t stop_on_ponderhit) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->stopOnPonderhit = stop_on_ponderhit != 0;
+}
+
+void zfish_threadpool_main_manager_set_ponder(void* pool_ptr, std::uint8_t ponder_mode) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->ponder = ponder_mode != 0;
+}
+
+void zfish_threadpool_set_increase_depth(void* pool_ptr, std::uint8_t increase_depth) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->increaseDepth = increase_depth != 0;
 }
 
 std::uint8_t zfish_options_syzygy_50_move_rule(const void* options_ptr) {
