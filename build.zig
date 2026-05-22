@@ -247,9 +247,9 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addCMacro("ARCH", arch.name);
     applyMacros(exe.root_module, arch.macros);
     if (git_info.sha) |sha|
-        exe.root_module.addCMacro("GIT_SHA", sha);
+        exe.root_module.addCMacro("GIT_SHA", b.fmt("\"{s}\"", .{sha}));
     if (git_info.date) |date|
-        exe.root_module.addCMacro("GIT_DATE", date);
+        exe.root_module.addCMacro("GIT_DATE", b.fmt("\"{s}\"", .{date}));
     if (stockfish_sources.len != 0) {
         exe.root_module.addCSourceFiles(.{
             .root = b.path("src"),

@@ -563,6 +563,10 @@ pub export fn zfish_engine_visualize(pos: *const anyopaque) ?[*:0]u8 {
     return engine_port.visualize(pos);
 }
 
+pub export fn zfish_engine_visualize_owner(engine_ptr: *const anyopaque) ?[*:0]u8 {
+    return engine_port.visualizeEngine(engine_ptr);
+}
+
 pub export fn zfish_engine_format_thread_binding(
     pairs_ptr: [*]const engine_port.CountPair,
     pair_count: usize,
