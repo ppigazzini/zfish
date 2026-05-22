@@ -1172,34 +1172,6 @@ std::size_t zfish_numa_config_distribute_threads_among_nodes(const void* numa_co
                                                              std::size_t requested,
                                                              std::size_t* out_nodes);
 std::size_t zfish_numa_config_node_count(const void* numa_config);
-void zfish_threadpool_add_main_thread_bound(void*       pool,
-                                            const void* numa_config,
-                                            const void* shared_state,
-                                            const void* update_context,
-                                            std::size_t thread_id,
-                                            std::size_t idx_in_numa,
-                                            std::size_t total_numa,
-                                            std::size_t numa_id);
-void zfish_threadpool_add_main_thread_unbound(void*       pool,
-                                              const void* shared_state,
-                                              const void* update_context,
-                                              std::size_t thread_id,
-                                              std::size_t idx_in_numa,
-                                              std::size_t total_numa,
-                                              std::size_t numa_id);
-void zfish_threadpool_add_worker_thread_bound(void*       pool,
-                                              const void* numa_config,
-                                              const void* shared_state,
-                                              std::size_t thread_id,
-                                              std::size_t idx_in_numa,
-                                              std::size_t total_numa,
-                                              std::size_t numa_id);
-void zfish_threadpool_add_worker_thread_unbound(void*       pool,
-                                                const void* shared_state,
-                                                std::size_t thread_id,
-                                                std::size_t idx_in_numa,
-                                                std::size_t total_numa,
-                                                std::size_t numa_id);
 void zfish_bitboards_init_runtime(std::uint8_t         (*popcnt16_ptr)[1 << 16],
                                   std::uint8_t         (*square_distance_ptr)[64][64],
                                   std::uint64_t        (*line_bb_ptr)[64][64],
@@ -1472,18 +1444,6 @@ extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thre
 extern "C" {
 
 
-
-void zfish_engine_numa_set_system(void* numa_context_ptr, std::uint8_t hardware) {
-    auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
-    if (hardware != 0)
-        numa_context.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy, false));
-    else
-        numa_context.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy));
-}
-
-void zfish_engine_numa_set_none(void* numa_context_ptr) {
-    static_cast<NumaReplicationContext*>(numa_context_ptr)->set_numa_config(NumaConfig{});
-}
 
 void zfish_engine_numa_set_from_string(void*                numa_context_ptr,
                                        const unsigned char* text_ptr,
