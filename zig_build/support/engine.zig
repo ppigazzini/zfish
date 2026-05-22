@@ -140,7 +140,7 @@ extern fn zfish_engine_position_set(
 extern fn zfish_engine_position_do_move(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
-extern fn zfish_engine_threads_set_stop(threads: *anyopaque) void;
+extern fn zfish_threadpool_set_stop_flag(pool: *anyopaque, stop: u8) void;
 extern fn zfish_engine_threads_wait_finished(threads: *anyopaque) void;
 extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
 extern fn zfish_engine_tt_hashfull(tt: *const anyopaque, max_age: c_int) c_int;
@@ -446,7 +446,7 @@ pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
 }
 
 pub fn stop(threads: *anyopaque) void {
-    zfish_engine_threads_set_stop(threads);
+    zfish_threadpool_set_stop_flag(threads, 1);
 }
 
 pub fn stopEngine(engine_ptr: *anyopaque) void {
