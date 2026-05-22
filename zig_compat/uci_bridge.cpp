@@ -1067,6 +1067,13 @@ struct ZfishTbConfig {
     int          probe_depth;
 };
 
+struct ZfishRankedRootMove {
+    std::uint16_t raw_move;
+    std::uint16_t reserved;
+    int           tb_rank;
+    int           tb_score;
+};
+
 using ZfishOpaqueCallback = void (*)(void*);
 
 struct ZfishThreadRootSetupInput {
@@ -1898,26 +1905,21 @@ ZfishSearchMoveView zfish_limits_searchmove_text(const void* limits_ptr, std::si
     return {reinterpret_cast<const unsigned char*>(text.data()), text.size()};
 }
 
-void* zfish_root_moves_create(const std::uint16_t* move_raws, std::size_t count) {
+void* zfish_root_moves_create_ranked(const ZfishRankedRootMove* items, std::size_t count) {
     auto root_moves = std::make_unique<Search::RootMoves>();
     root_moves->reserve(count);
     for (std::size_t index = 0; index < count; ++index)
-        root_moves->emplace_back(Move(move_raws[index]));
+    {
+        root_moves->emplace_back(Move(items[index].raw_move));
+        auto& root_move = root_moves->back();
+        root_move.tbRank = items[index].tb_rank;
+        root_move.tbScore = Value(items[index].tb_score);
+    }
     return root_moves.release();
 }
 
 void zfish_root_moves_destroy(void* root_moves_ptr) {
     delete static_cast<Search::RootMoves*>(root_moves_ptr);
-}
-
-ZfishTbConfig zfish_threadpool_rank_root_moves(const void* options_ptr,
-                                               void*       pos_ptr,
-                                               void*       root_moves_ptr) {
-    const auto config = Tablebases::rank_root_moves(*static_cast<const OptionsMap*>(options_ptr),
-                                                    *static_cast<Position*>(pos_ptr),
-                                                    *static_cast<Search::RootMoves*>(root_moves_ptr));
-    return {config.cardinality, static_cast<std::uint8_t>(config.rootInTB),
-            static_cast<std::uint8_t>(config.useRule50), config.probeDepth};
 }
 
 std::size_t zfish_threadpool_thread_count(const void* pool_ptr) {
@@ -1961,6 +1963,35 @@ void zfish_threadpool_reset_start_state(void* pool_ptr, std::uint8_t ponder_mode
     pool->main_manager()->stopOnPonderhit = pool->stop = false;
     pool->main_manager()->ponder          = ponder_mode != 0;
     pool->increaseDepth                   = true;
+}
+
+std::uint8_t zfish_options_syzygy_50_move_rule(const void* options_ptr) {
+    return static_cast<std::uint8_t>(
+      bool((*static_cast<const OptionsMap*>(options_ptr))["Syzygy50MoveRule"]));
+}
+
+int zfish_options_syzygy_probe_depth(const void* options_ptr) {
+    return int((*static_cast<const OptionsMap*>(options_ptr))["SyzygyProbeDepth"]);
+}
+
+int zfish_options_syzygy_probe_limit(const void* options_ptr) {
+    return int((*static_cast<const OptionsMap*>(options_ptr))["SyzygyProbeLimit"]);
+}
+
+void* zfish_position_create() { return new Position(); }
+
+void zfish_position_destroy(void* pos_ptr) { delete static_cast<Position*>(pos_ptr); }
+
+std::uint8_t zfish_position_has_repeated(const void* pos_ptr) {
+    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->has_repeated() ? 1 : 0);
+}
+
+std::uint8_t zfish_position_is_draw_ply_one(const void* pos_ptr) {
+    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->is_draw(1) ? 1 : 0);
+}
+
+std::uint8_t zfish_position_is_repetition_ply_one(const void* pos_ptr) {
+    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->is_repetition(1) ? 1 : 0);
 }
 
 void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context) {
