@@ -37,6 +37,12 @@ pub const TtProbeOutput = extern struct {
     data: TtReadOutput,
 };
 
+pub const TtProbeTableOutput = extern struct {
+    found: u8,
+    writer_ptr: ?*anyopaque,
+    data: TtReadOutput,
+};
+
 extern fn zfish_tt_alloc_clusters(byte_count: usize) ?*anyopaque;
 extern fn zfish_tt_free_clusters(ptr: ?*anyopaque) void;
 extern fn zfish_tt_report_alloc_failure(mb: usize) noreturn;
@@ -223,5 +229,41 @@ pub fn probe(
             .bound = 0,
             .is_pv = 0,
         },
+    };
+}
+
+pub fn probeTable(
+    table: ?*anyopaque,
+    cluster_count: usize,
+    key: u64,
+    generation: u8,
+    depth_none: c_int,
+) TtProbeTableOutput {
+    if (table == null or cluster_count == 0) {
+        return .{
+            .found = 0,
+            .writer_ptr = null,
+            .data = .{
+                .move16 = 0,
+                .value16 = 0,
+                .eval16 = 0,
+                .depth = depth_none,
+                .bound = 0,
+                .is_pv = 0,
+            },
+        };
+    }
+
+    const cluster_index = firstEntryIndex(key, cluster_count);
+    const clusters_const: [*]const TtCluster = @ptrCast(@alignCast(table.?));
+    const result = probe(&clusters_const[cluster_index], key, generation, depth_none);
+
+    const clusters_mut: [*]TtCluster = @ptrCast(@alignCast(table.?));
+    const writer_ptr: *TtEntry = &clusters_mut[cluster_index].entry[result.writer_index];
+
+    return .{
+        .found = result.found,
+        .writer_ptr = @ptrCast(writer_ptr),
+        .data = result.data,
     };
 }

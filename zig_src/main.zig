@@ -796,6 +796,16 @@ pub export fn zfish_tt_probe(
     return tt_port.probe(cluster, key, generation, depth_none);
 }
 
+pub export fn zfish_tt_probe_table(
+    table: ?*anyopaque,
+    cluster_count: usize,
+    key: u64,
+    generation: u8,
+    depth_none: c_int,
+) tt_port.TtProbeTableOutput {
+    return tt_port.probeTable(table, cluster_count, key, generation, depth_none);
+}
+
 pub export fn zfish_tt_resize_state(
     table_ptr: *?*anyopaque,
     cluster_count_ptr: *usize,
