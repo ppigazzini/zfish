@@ -138,6 +138,8 @@ extern fn zfish_engine_position_set(
     state: *anyopaque,
 ) ?[*:0]u8;
 extern fn zfish_engine_position_do_move(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
+extern fn zfish_position_create() ?*anyopaque;
+extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_engine_threads_set_stop(threads: *anyopaque) void;
 extern fn zfish_engine_threads_wait_finished(threads: *anyopaque) void;
 extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
@@ -250,6 +252,12 @@ extern fn zfish_engine_set_numa_config_from_option_method(
 extern fn zfish_engine_numa_config_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_thread_allocation_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_evalfile_text(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_syzygy_path_text(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_position_ptr(engine_ptr: *anyopaque) *anyopaque;
+extern fn zfish_engine_network_ptr(engine_ptr: *const anyopaque) *const anyopaque;
+extern fn zfish_engine_threads_ptr(engine_ptr: *anyopaque) *anyopaque;
+extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
+extern fn zfish_engine_chess960_enabled(engine_ptr: *const anyopaque) u8;
 extern fn zfish_engine_network_verify_current(
     engine_ptr: *const anyopaque,
     evalfile_ptr: [*]const u8,
@@ -473,6 +481,13 @@ pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8)
     zfish_engine_tablebases_init(syzygy_path.ptr, syzygy_path.len);
 }
 
+pub fn searchClearEngine(engine_ptr: *anyopaque) void {
+    const syzygy_ptr = zfish_engine_syzygy_path_text(engine_ptr) orelse return;
+    defer c.free(@ptrCast(syzygy_ptr));
+    const syzygy_path = std.mem.span(syzygy_ptr);
+    searchClear(zfish_engine_threads_ptr(engine_ptr), zfish_engine_tt_ptr(engine_ptr), syzygy_path);
+}
+
 pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
     const evalfile_ptr = zfish_engine_evalfile_text(engine_ptr) orelse return;
     defer c.free(@ptrCast(evalfile_ptr));
@@ -499,6 +514,30 @@ pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
         defer c.free(@ptrCast(message_ptr));
         zfish_engine_emit_verify_message(engine_ptr, message_ptr, std.mem.span(message_ptr).len);
     }
+}
+
+pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
+    verifyNetwork(engine_ptr);
+
+    const source_pos = zfish_engine_position_ptr(engine_ptr);
+    const network = zfish_engine_network_ptr(engine_ptr);
+    const fen_ptr = fen(source_pos) orelse return null;
+    defer c.free(@ptrCast(fen_ptr));
+    const fen_text = std.mem.span(fen_ptr);
+
+    const trace_pos = zfish_position_create() orelse return null;
+    defer zfish_position_destroy(trace_pos);
+
+    const state_storage = zfish_engine_state_list_storage_create() orelse return null;
+    defer zfish_engine_state_list_storage_destroy(state_storage);
+    const state = zfish_engine_state_list_storage_reset(state_storage);
+
+    if (zfish_engine_position_set(trace_pos, fen_text.ptr, fen_text.len, zfish_engine_chess960_enabled(engine_ptr), state)) |err| {
+        defer c.free(@ptrCast(err));
+        return null;
+    }
+
+    return evalTrace(trace_pos, network);
 }
 
 pub fn loadNetwork(
