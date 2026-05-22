@@ -568,10 +568,6 @@ void zfish_engine_position_do_move(void* pos_ptr, std::uint16_t move_raw, void* 
     static_cast<Position*>(pos_ptr)->do_move(Move(move_raw), *static_cast<StateInfo*>(state_ptr));
 }
 
-void zfish_engine_threads_set_stop(void* threads_ptr) {
-    static_cast<ThreadPool*>(threads_ptr)->stop = true;
-}
-
 }  // extern "C"
 
 }  // namespace Stockfish
