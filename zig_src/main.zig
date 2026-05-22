@@ -588,6 +588,14 @@ pub export fn zfish_engine_verify_network_method(engine_ptr: *const anyopaque) v
     return engine_port.verifyNetwork(engine_ptr);
 }
 
+pub export fn zfish_engine_search_clear_owner(engine_ptr: *anyopaque) void {
+    return engine_port.searchClearEngine(engine_ptr);
+}
+
+pub export fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8 {
+    return engine_port.traceEvalEngine(engine_ptr);
+}
+
 pub export fn zfish_engine_format_network_status(
     replica_index: usize,
     status: u8,
