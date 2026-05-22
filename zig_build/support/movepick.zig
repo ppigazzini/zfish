@@ -116,8 +116,27 @@ const PositionSnapshot = extern struct {
     blockers_for_king: [2]u64,
     pinners: [2]u64,
     king_square: [2]u8,
+    ep_square: u8,
+    castling_rights: u8,
+    castling_impeded: [16]u8,
+    castling_rook_square: [16]u8,
+    checkers: u64,
     board: [64]u8,
     pawn_key: u64,
+    key: u64,
+    material_value: c_int,
+    rule50_count: c_int,
+    game_ply: c_int,
+    is_chess960: u8,
+};
+
+const HistorySnapshot = extern struct {
+    main_base: ?*const anyopaque,
+    low_ply_base: ?*const anyopaque,
+    capture_base: ?*const anyopaque,
+    continuation_base: [6]?*const anyopaque,
+    pawn_table: ?*const anyopaque,
+    pawn_mask: u64,
 };
 
 const HistoryEntry = extern struct {
@@ -137,25 +156,22 @@ const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 extern fn zfish_movegen_generate_captures(pos: *const anyopaque, move_list: [*]u16) usize;
 extern fn zfish_movegen_generate_quiets(pos: *const anyopaque, move_list: [*]u16) usize;
 extern fn zfish_movegen_generate_evasions(pos: *const anyopaque, move_list: [*]u16) usize;
-extern fn zfish_history_main_base(main_history: *const anyopaque) ?*const anyopaque;
-extern fn zfish_history_low_ply_base(low_ply_history: *const anyopaque) ?*const anyopaque;
-extern fn zfish_history_capture_base(capture_history: *const anyopaque) ?*const anyopaque;
-extern fn zfish_history_continuation_slot_base(
-    continuation_history: *const anyopaque,
-    slot: usize,
-) ?*const anyopaque;
-extern fn zfish_history_pawn_table(shared_history: *const anyopaque) ?*const anyopaque;
-extern fn zfish_history_pawn_mask(shared_history: *const anyopaque) u64;
-extern fn zfish_history_atomic_i16_load(entry_ptr: *const anyopaque) c_int;
-extern fn zfish_position_side_to_move(pos: *const anyopaque) u8;
-extern fn zfish_position_pieces_all(pos: *const anyopaque) u64;
-extern fn zfish_position_pieces_by_color(pos: *const anyopaque, color: u8) u64;
-extern fn zfish_position_pieces_by_type(pos: *const anyopaque, piece_type: u8) u64;
-extern fn zfish_position_blockers_for_king(pos: *const anyopaque, color: u8) u64;
-extern fn zfish_position_pinners(pos: *const anyopaque, color: u8) u64;
-extern fn zfish_position_king_square(pos: *const anyopaque, color: u8) u8;
-extern fn zfish_position_pawn_key(pos: *const anyopaque) u64;
-extern fn zfish_position_piece_on(pos: *const anyopaque, square: u8) u8;
+extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
+extern fn zfish_movepick_fill_history_snapshot(
+    main_history: ?*const anyopaque,
+    low_ply_history: ?*const anyopaque,
+    capture_history: ?*const anyopaque,
+    continuation_history: ?*const anyopaque,
+    shared_history: ?*const anyopaque,
+    out: *HistorySnapshot,
+) void;
+extern fn zfish_movepick_pawn_history_value(
+    pawn_table: *const anyopaque,
+    pawn_mask: u64,
+    pawn_key: u64,
+    piece: u8,
+    square: u8,
+) c_int;
 
 pub fn initMainStage(has_checkers: bool, has_tt_move: bool, depth: c_int) c_int {
     const base_stage: c_int = if (has_checkers)
@@ -213,6 +229,7 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
 
     var inputs: [max_moves]ScoreInput = undefined;
     const snapshot = loadPositionSnapshot(context.pos);
+    const history = loadHistorySnapshot(context);
     const side_to_move = snapshot.side_to_move;
 
     var threat_by_lesser: [7]u64 = [_]u64{0} ** 7;
@@ -256,7 +273,7 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
         switch (kind) {
             captures => {
                 input.capture_history = captureHistoryScore(
-                    context.capture_history orelse unreachable,
+                    &history,
                     piece,
                     to,
                     typeOf(captured_piece),
@@ -264,25 +281,23 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
                 input.captured_piece_value = piece_values[@as(usize, captured_piece)];
             },
             quiets => {
-                const continuation_history = context.continuation_history orelse unreachable;
-
                 input.main_history = mainHistoryScore(
-                    context.main_history orelse unreachable,
+                    &history,
                     side_to_move,
                     raw_move,
                 );
                 input.pawn_history = pawnHistoryScore(
-                    context.shared_history orelse unreachable,
+                    &history,
                     &snapshot,
                     piece,
                     to,
                 );
                 input.continuation_sum =
-                    continuationHistoryScore(continuation_history, 0, piece, to) +
-                    continuationHistoryScore(continuation_history, 1, piece, to) +
-                    continuationHistoryScore(continuation_history, 2, piece, to) +
-                    continuationHistoryScore(continuation_history, 3, piece, to) +
-                    continuationHistoryScore(continuation_history, 5, piece, to);
+                    continuationHistoryScore(&history, 0, piece, to) +
+                    continuationHistoryScore(&history, 1, piece, to) +
+                    continuationHistoryScore(&history, 2, piece, to) +
+                    continuationHistoryScore(&history, 3, piece, to) +
+                    continuationHistoryScore(&history, 5, piece, to);
                 input.check_bonus = @intFromBool(
                     (checkSquares(&snapshot, piece_type) & squareMask(to)) != 0 and
                         seeGeWithSnapshot(&snapshot, raw_move, -75),
@@ -298,7 +313,7 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
                 if (context.ply < low_ply_history_size) {
                     input.low_ply_bonus = @divTrunc(
                         8 * lowPlyHistoryScore(
-                            context.low_ply_history orelse unreachable,
+                            &history,
                             context.ply,
                             raw_move,
                         ),
@@ -308,12 +323,12 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
             },
             evasions => {
                 input.main_history = mainHistoryScore(
-                    context.main_history orelse unreachable,
+                    &history,
                     side_to_move,
                     raw_move,
                 );
                 input.continuation_sum = continuationHistoryScore(
-                    context.continuation_history orelse unreachable,
+                    &history,
                     0,
                     piece,
                     to,
@@ -662,31 +677,22 @@ fn seeGeWithSnapshot(snapshot: *const PositionSnapshot, raw_move: u16, threshold
 
 fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
-
-    snapshot.side_to_move = zfish_position_side_to_move(pos);
-    snapshot.pieces_all = zfish_position_pieces_all(pos);
-    snapshot.pieces_by_color[white] = zfish_position_pieces_by_color(pos, white);
-    snapshot.pieces_by_color[black] = zfish_position_pieces_by_color(pos, black);
+    zfish_position_fill_snapshot(pos, &snapshot);
     snapshot.pieces_by_type[no_piece_type] = snapshot.pieces_all;
-    snapshot.pieces_by_type[pawn] = zfish_position_pieces_by_type(pos, pawn);
-    snapshot.pieces_by_type[knight] = zfish_position_pieces_by_type(pos, knight);
-    snapshot.pieces_by_type[bishop] = zfish_position_pieces_by_type(pos, bishop);
-    snapshot.pieces_by_type[rook] = zfish_position_pieces_by_type(pos, rook);
-    snapshot.pieces_by_type[queen] = zfish_position_pieces_by_type(pos, queen);
-    snapshot.pieces_by_type[king] = zfish_position_pieces_by_type(pos, king);
-    snapshot.blockers_for_king[white] = zfish_position_blockers_for_king(pos, white);
-    snapshot.blockers_for_king[black] = zfish_position_blockers_for_king(pos, black);
-    snapshot.pinners[white] = zfish_position_pinners(pos, white);
-    snapshot.pinners[black] = zfish_position_pinners(pos, black);
-    snapshot.king_square[white] = zfish_position_king_square(pos, white);
-    snapshot.king_square[black] = zfish_position_king_square(pos, black);
-    snapshot.pawn_key = zfish_position_pawn_key(pos);
 
-    var square: usize = 0;
-    while (square < square_nb) : (square += 1) {
-        snapshot.board[square] = zfish_position_piece_on(pos, @intCast(square));
-    }
+    return snapshot;
+}
 
+fn loadHistorySnapshot(context: *const MovePickerContext) HistorySnapshot {
+    var snapshot = std.mem.zeroes(HistorySnapshot);
+    zfish_movepick_fill_history_snapshot(
+        context.main_history,
+        context.low_ply_history,
+        context.capture_history,
+        context.continuation_history,
+        context.shared_history,
+        &snapshot,
+    );
     return snapshot;
 }
 
@@ -753,53 +759,56 @@ fn isCapture(snapshot: *const PositionSnapshot, raw_move: u16) bool {
         moveType(raw_move) == en_passant_move;
 }
 
-fn mainHistoryScore(main_history_ptr: *const anyopaque, side_to_move: u8, raw_move: u16) c_int {
-    const base_ptr = zfish_history_main_base(main_history_ptr) orelse unreachable;
+fn mainHistoryScore(history_snapshot: *const HistorySnapshot, side_to_move: u8, raw_move: u16) c_int {
+    const base_ptr = history_snapshot.main_base orelse unreachable;
     const history: [*]const MainHistoryRow = @ptrCast(@alignCast(base_ptr));
     return history[@as(usize, side_to_move)][@as(usize, raw_move)].value;
 }
 
-fn lowPlyHistoryScore(low_ply_history_ptr: *const anyopaque, ply: c_int, raw_move: u16) c_int {
-    const base_ptr = zfish_history_low_ply_base(low_ply_history_ptr) orelse unreachable;
+fn lowPlyHistoryScore(history_snapshot: *const HistorySnapshot, ply: c_int, raw_move: u16) c_int {
+    const base_ptr = history_snapshot.low_ply_base orelse unreachable;
     const history: [*]const LowPlyHistoryRow = @ptrCast(@alignCast(base_ptr));
     return history[@as(usize, @intCast(ply))][@as(usize, raw_move)].value;
 }
 
 fn captureHistoryScore(
-    capture_history_ptr: *const anyopaque,
+    history_snapshot: *const HistorySnapshot,
     piece: u8,
     square: u8,
     captured_piece_type: u8,
 ) c_int {
-    const base_ptr = zfish_history_capture_base(capture_history_ptr) orelse unreachable;
+    const base_ptr = history_snapshot.capture_base orelse unreachable;
     const history: [*]const CaptureHistoryRow = @ptrCast(@alignCast(base_ptr));
     return history[@as(usize, piece)][@as(usize, square)][@as(usize, captured_piece_type)].value;
 }
 
 fn continuationHistoryScore(
-    continuation_history_ptr: *const anyopaque,
+    history_snapshot: *const HistorySnapshot,
     slot: usize,
     piece: u8,
     square: u8,
 ) c_int {
-    const base_ptr = zfish_history_continuation_slot_base(continuation_history_ptr, slot) orelse
-        unreachable;
+    const base_ptr = history_snapshot.continuation_base[slot] orelse unreachable;
     const history: [*]const PieceToHistoryRow = @ptrCast(@alignCast(base_ptr));
     return history[@as(usize, piece)][@as(usize, square)].value;
 }
 
 fn pawnHistoryScore(
-    shared_history_ptr: *const anyopaque,
+    history_snapshot: *const HistorySnapshot,
     snapshot: *const PositionSnapshot,
     piece: u8,
     square: u8,
 ) c_int {
-    const table_ptr = zfish_history_pawn_table(shared_history_ptr) orelse return 0;
-    const entries: [*]const PawnHistoryRow = @ptrCast(@alignCast(table_ptr));
-    const mask = zfish_history_pawn_mask(shared_history_ptr);
-    const index: usize = @intCast(snapshot.pawn_key & mask);
-    const row_index = index * piece_nb + @as(usize, piece);
-    return zfish_history_atomic_i16_load(&entries[row_index][@as(usize, square)]);
+    _ = piece_nb;
+    _ = PawnHistoryRow;
+    const pawn_table = history_snapshot.pawn_table orelse return 0;
+    return zfish_movepick_pawn_history_value(
+        pawn_table,
+        history_snapshot.pawn_mask,
+        snapshot.pawn_key,
+        piece,
+        square,
+    );
 }
 
 fn pawnAttackersTo(square: u8, color: u8) u64 {
