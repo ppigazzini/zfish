@@ -95,7 +95,7 @@ pub const MovePickerState = extern struct {
     end_bad_captures: usize,
     end_captures: usize,
     end_generated: usize,
-    moves: [max_moves]SortEntry,
+    moves: [*]SortEntry,
 };
 
 pub const MovePickerContext = extern struct {
@@ -364,11 +364,11 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
                 state.cur = 0;
                 state.end_bad_captures = 0;
 
-                const count = scoreList(captures, context, state.moves[state.cur..].ptr);
+                const count = scoreList(captures, context, state.moves + state.cur);
 
                 state.end_cur = state.cur + count;
                 state.end_captures = state.end_cur;
-                partialInsertionSort(state.moves[state.cur..].ptr, count, min_sort_limit);
+                partialInsertionSort(state.moves + state.cur, count, min_sort_limit);
                 state.stage += 1;
                 continue;
             },
@@ -382,12 +382,12 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
             },
             quiet_init => {
                 if (!skipQuiets(state)) {
-                    const count = scoreList(quiets, context, state.moves[state.cur..].ptr);
+                    const count = scoreList(quiets, context, state.moves + state.cur);
 
                     state.end_cur = state.cur + count;
                     state.end_generated = state.end_cur;
                     partialInsertionSort(
-                        state.moves[state.cur..].ptr,
+                        state.moves + state.cur,
                         count,
                         -3560 * state.depth,
                     );
@@ -430,11 +430,11 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
             evasion_init => {
                 state.cur = 0;
 
-                const count = scoreList(evasions, context, state.moves[state.cur..].ptr);
+                const count = scoreList(evasions, context, state.moves + state.cur);
 
                 state.end_cur = state.cur + count;
                 state.end_generated = state.end_cur;
-                partialInsertionSort(state.moves[state.cur..].ptr, count, min_sort_limit);
+                partialInsertionSort(state.moves + state.cur, count, min_sort_limit);
                 state.stage += 1;
                 continue;
             },
