@@ -551,6 +551,14 @@ pub export fn zfish_engine_fen(pos: *const anyopaque) ?[*:0]u8 {
     return engine_port.fen(pos);
 }
 
+pub export fn zfish_engine_fen_owner(engine_ptr: *const anyopaque) ?[*:0]u8 {
+    return engine_port.fenEngine(engine_ptr);
+}
+
+pub export fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int {
+    return engine_port.hashfullEngine(engine_ptr, max_age);
+}
+
 pub export fn zfish_engine_visualize(pos: *const anyopaque) ?[*:0]u8 {
     return engine_port.visualize(pos);
 }

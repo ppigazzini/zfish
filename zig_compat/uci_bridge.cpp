@@ -2400,6 +2400,10 @@ void zfish_engine_threads_wait_finished(void* threads_ptr) {
     static_cast<ThreadPool*>(threads_ptr)->main_thread()->wait_for_search_finished();
 }
 
+int zfish_engine_tt_hashfull(const void* tt_ptr, int max_age) {
+    return static_cast<const TranspositionTable*>(tt_ptr)->hashfull(max_age);
+}
+
 void zfish_engine_tt_resize(void* tt_ptr, std::size_t mb, void* threads_ptr) {
     static_cast<TranspositionTable*>(tt_ptr)->resize(mb, *static_cast<ThreadPool*>(threads_ptr));
 }
@@ -3340,8 +3344,10 @@ std::uint64_t zfish_uci_engine_perft_depth(void* uci_ptr, int depth) {
         return nodes;
 }
 
-void zfish_uci_engine_wait_finished(void* uci_ptr) {
-    static_cast<UCIEngine*>(uci_ptr)->engine.wait_for_search_finished();
+void* zfish_uci_engine_ptr(void* uci_ptr) { return &static_cast<UCIEngine*>(uci_ptr)->engine; }
+
+const void* zfish_uci_engine_const_ptr(const void* uci_ptr) {
+    return &static_cast<const UCIEngine*>(uci_ptr)->engine;
 }
 
 std::uint64_t zfish_uci_engine_nodes_searched(const void*) {
@@ -3350,23 +3356,6 @@ std::uint64_t zfish_uci_engine_nodes_searched(const void*) {
 
 void zfish_uci_engine_reset_nodes_searched() {
     zfish_last_nodes_searched.store(0, std::memory_order_relaxed);
-}
-
-int zfish_uci_engine_hashfull(const void* uci_ptr, int max_age) {
-    return static_cast<const UCIEngine*>(uci_ptr)->engine.get_hashfull(max_age);
-}
-
-const char* zfish_uci_engine_fen_text(const void* uci_ptr) {
-    return alloc_c_string(static_cast<const UCIEngine*>(uci_ptr)->engine.fen());
-}
-
-const char* zfish_uci_engine_numa_config_string(const void* uci_ptr) {
-    return alloc_c_string(static_cast<const UCIEngine*>(uci_ptr)->engine.get_numa_config_as_string());
-}
-
-const char* zfish_uci_engine_thread_binding_info_text(const void* uci_ptr) {
-    return alloc_c_string(
-      static_cast<const UCIEngine*>(uci_ptr)->engine.thread_binding_information_as_string());
 }
 
 const char* zfish_uci_engine_options_text(const void* uci_ptr) {
