@@ -31,7 +31,28 @@ extern fn zfish_position_init_runtime() void;
 extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
 extern fn zfish_uci_loop_engine(engine: *anyopaque) void;
 extern fn zfish_uci_destroy_engine(engine: ?*anyopaque) void;
-extern fn zfish_position_piece_on(pos_ptr: *const anyopaque, square: u8) u8;
+const PositionSnapshot = extern struct {
+    side_to_move: u8,
+    pieces_all: u64,
+    pieces_by_color: [2]u64,
+    pieces_by_type: [8]u64,
+    blockers_for_king: [2]u64,
+    pinners: [2]u64,
+    king_square: [2]u8,
+    ep_square: u8,
+    castling_rights: u8,
+    castling_impeded: [16]u8,
+    castling_rook_square: [16]u8,
+    checkers: u64,
+    board: [64]u8,
+    pawn_key: u64,
+    key: u64,
+    material_value: c_int,
+    rule50_count: c_int,
+    game_ply: c_int,
+    is_chess960: u8,
+};
+extern fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *PositionSnapshot) void;
 
 pub fn main(init: std.process.Init) !void {
     var argc: usize = 0;
@@ -645,10 +666,9 @@ pub export fn zfish_accumulator_stack_pop(stack: *anyopaque) void {
 }
 
 pub export fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void {
-    var square: usize = 0;
-    while (square < 64) : (square += 1) {
-        pieces_out[square] = zfish_position_piece_on(pos, @intCast(square));
-    }
+    var snapshot = std.mem.zeroes(PositionSnapshot);
+    zfish_position_fill_snapshot(pos, &snapshot);
+    @memcpy(pieces_out[0..64], snapshot.board[0..]);
 }
 
 const AccumulatorStackPushPair = extern struct {

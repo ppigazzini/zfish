@@ -13,8 +13,30 @@ const file_g: u8 = 6;
 const none_raw: u16 = 0;
 const max_moves: usize = 256;
 
+const PositionSnapshot = extern struct {
+    side_to_move: u8,
+    pieces_all: u64,
+    pieces_by_color: [2]u64,
+    pieces_by_type: [8]u64,
+    blockers_for_king: [2]u64,
+    pinners: [2]u64,
+    king_square: [2]u8,
+    ep_square: u8,
+    castling_rights: u8,
+    castling_impeded: [16]u8,
+    castling_rook_square: [16]u8,
+    checkers: u64,
+    board: [64]u8,
+    pawn_key: u64,
+    key: u64,
+    material_value: c_int,
+    rule50_count: c_int,
+    game_ply: c_int,
+    is_chess960: u8,
+};
+
 extern fn zfish_movegen_generate_legal(pos: *const anyopaque, out_moves: [*]u16) usize;
-extern fn zfish_position_is_chess960(pos: *const anyopaque) u8;
+extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 
 pub fn noneRaw() u16 {
     return none_raw;
@@ -23,7 +45,9 @@ pub fn noneRaw() u16 {
 pub fn toMoveRaw(pos: *const anyopaque, text: []const u8) u16 {
     var move_buffer: [max_moves]u16 = undefined;
     const count = zfish_movegen_generate_legal(pos, move_buffer[0..].ptr);
-    const chess960 = zfish_position_is_chess960(pos) != 0;
+    var snapshot = std.mem.zeroes(PositionSnapshot);
+    zfish_position_fill_snapshot(pos, &snapshot);
+    const chess960 = snapshot.is_chess960 != 0;
     return toMoveRawFromLegalMoves(move_buffer[0..count], text, chess960);
 }
 
