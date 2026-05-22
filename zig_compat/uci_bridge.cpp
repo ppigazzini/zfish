@@ -3336,19 +3336,7 @@ const char* zfish_uci_read_command_line() {
     return alloc_c_string(command);
 }
 
-std::uint64_t zfish_uci_engine_perft_depth(void* uci_ptr, int depth) {
-        auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
-        const auto nodes = uci_engine->engine.perft(
-            uci_engine->engine.fen(), depth, uci_engine->engine.get_options()["UCI_Chess960"]);
-        sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
-        return nodes;
-}
-
 void* zfish_uci_engine_ptr(void* uci_ptr) { return &static_cast<UCIEngine*>(uci_ptr)->engine; }
-
-const void* zfish_uci_engine_const_ptr(const void* uci_ptr) {
-    return &static_cast<const UCIEngine*>(uci_ptr)->engine;
-}
 
 std::uint64_t zfish_uci_engine_nodes_searched(const void*) {
     return zfish_last_nodes_searched.load(std::memory_order_relaxed);
@@ -3358,9 +3346,9 @@ void zfish_uci_engine_reset_nodes_searched() {
     zfish_last_nodes_searched.store(0, std::memory_order_relaxed);
 }
 
-const char* zfish_uci_engine_options_text(const void* uci_ptr) {
+const char* zfish_engine_options_text_owner(const void* engine_ptr) {
     std::ostringstream options_stream;
-    options_stream << static_cast<const UCIEngine*>(uci_ptr)->engine.get_options();
+    options_stream << static_cast<const Engine*>(engine_ptr)->get_options();
     return alloc_c_string(options_stream.str());
 }
 
@@ -3434,8 +3422,8 @@ void zfish_engine_go_parsed_owner(void* engine_ptr, ZfishParsedLimits parsed) {
     zfish_engine_go_owner(engine, &limits);
 }
 
-void zfish_uci_engine_flip(void* uci_ptr) {
-    static_cast<UCIEngine*>(uci_ptr)->engine.flip();
+void zfish_engine_flip_owner(void* engine_ptr) {
+    static_cast<Engine*>(engine_ptr)->flip();
 }
 
 }
