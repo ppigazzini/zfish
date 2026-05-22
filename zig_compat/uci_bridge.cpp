@@ -3379,14 +3379,14 @@ void zfish_uci_set_default_listeners(void* uci_ptr) {
     static_cast<UCIEngine*>(uci_ptr)->init_search_update_listeners();
 }
 
-void zfish_uci_engine_apply_setoption(void*                uci_ptr,
-                                      const unsigned char* name_ptr,
-                                      std::size_t          name_len,
-                                      const unsigned char* value_ptr,
-                                      std::size_t          value_len,
-                                      std::uint8_t         has_value) {
-    auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
-    uci_engine->engine.wait_for_search_finished();
+void zfish_engine_apply_setoption_owner(void*                engine_ptr,
+                                        const unsigned char* name_ptr,
+                                        std::size_t          name_len,
+                                        const unsigned char* value_ptr,
+                                        std::size_t          value_len,
+                                        std::uint8_t         has_value) {
+    auto* engine = static_cast<Engine*>(engine_ptr);
+    engine->wait_for_search_finished();
 
     std::ostringstream command;
     command << "name " << std::string(reinterpret_cast<const char*>(name_ptr), name_len);
@@ -3394,36 +3394,7 @@ void zfish_uci_engine_apply_setoption(void*                uci_ptr,
         command << " value " << std::string(reinterpret_cast<const char*>(value_ptr), value_len);
 
     std::istringstream is(command.str());
-    uci_engine->engine.get_options().setoption(is);
-}
-
-const char* zfish_uci_engine_apply_position(void*                uci_ptr,
-                                            const unsigned char* fen_ptr,
-                                            std::size_t          fen_len,
-                                            const unsigned char* moves_ptr,
-                                            std::size_t          moves_len) {
-    auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
-
-    const auto fen = std::string(reinterpret_cast<const char*>(fen_ptr), fen_len);
-    const auto moves_text = std::string(reinterpret_cast<const char*>(moves_ptr), moves_len);
-
-    std::vector<std::string> moves;
-    if (!moves_text.empty())
-    {
-        std::istringstream moves_stream(moves_text);
-        std::string        move;
-        while (std::getline(moves_stream, move, '\n'))
-        {
-            if (!move.empty())
-                moves.push_back(move);
-        }
-    }
-
-    const auto error = uci_engine->engine.set_position(fen, moves);
-    if (!error)
-        return nullptr;
-
-    return alloc_c_string(error->what());
+    engine->get_options().setoption(is);
 }
 
 void zfish_uci_engine_go_parsed(void* uci_ptr, ZfishParsedLimits parsed) {

@@ -60,6 +60,11 @@ pub const ParsedPosition = extern struct {
     moves: ?[*:0]u8,
 };
 
+const ByteView = extern struct {
+    ptr: ?[*]const u8,
+    len: usize,
+};
+
 extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize) ParsedSetOption;
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
@@ -88,20 +93,20 @@ extern fn zfish_engine_save_network_owner(
     filename_ptr: [*]const u8,
     filename_len: usize,
 ) void;
-extern fn zfish_uci_engine_apply_setoption(
-    uci_ptr: *anyopaque,
+extern fn zfish_engine_apply_setoption_owner(
+    engine_ptr: *anyopaque,
     name_ptr: [*]const u8,
     name_len: usize,
     value_ptr: [*]const u8,
     value_len: usize,
     has_value: u8,
 ) void;
-extern fn zfish_uci_engine_apply_position(
-    uci_ptr: *anyopaque,
+extern fn zfish_engine_set_position_owner(
+    engine_ptr: *anyopaque,
     fen_ptr: [*]const u8,
     fen_len: usize,
-    moves_ptr: [*]const u8,
-    moves_len: usize,
+    moves_ptr: ?[*]const ByteView,
+    move_count: usize,
 ) ?[*:0]u8;
 extern fn zfish_uci_engine_go_parsed(uci_ptr: *anyopaque, limits: ParsedLimits) void;
 extern fn zfish_uci_engine_flip(uci_ptr: *anyopaque) void;
@@ -400,7 +405,14 @@ fn applySetoption(engine: *anyopaque, trimmed: []const u8) void {
     const value = if (parsed.value) |ptr| std.mem.span(ptr) else "";
     const has_value: u8 = if (parsed.value != null and value.len != 0) 1 else 0;
 
-    zfish_uci_engine_apply_setoption(engine, name.ptr, name.len, value.ptr, value.len, has_value);
+    zfish_engine_apply_setoption_owner(
+        zfish_uci_engine_ptr(engine),
+        name.ptr,
+        name.len,
+        value.ptr,
+        value.len,
+        has_value,
+    );
 }
 
 fn applyPosition(engine: *anyopaque, trimmed: []const u8) void {
@@ -414,9 +426,16 @@ fn applyPosition(engine: *anyopaque, trimmed: []const u8) void {
 
     const fen_ptr = parsed.fen orelse return;
     const fen = std.mem.span(fen_ptr);
-    const moves = if (parsed.moves) |ptr| std.mem.span(ptr) else "";
+    var move_views = parseMoveViews(if (parsed.moves) |ptr| std.mem.span(ptr) else "") catch return;
+    defer move_views.deinit(std.heap.c_allocator);
 
-    const err = zfish_uci_engine_apply_position(engine, fen.ptr, fen.len, moves.ptr, moves.len);
+    const err = zfish_engine_set_position_owner(
+        zfish_uci_engine_ptr(engine),
+        fen.ptr,
+        fen.len,
+        if (move_views.items.len == 0) null else move_views.items.ptr,
+        move_views.items.len,
+    );
     if (err) |err_ptr| {
         defer c.free(@ptrCast(err_ptr));
         const critical = formatCriticalError("position", std.mem.span(err_ptr)) orelse return;
@@ -829,6 +848,27 @@ fn parsePositionAlloc(input: []const u8) !ParsedPosition {
         .fen = try allocCString(fen.items),
         .moves = try allocCString(moves.items),
     };
+}
+
+fn parseMoveViews(moves_text: []const u8) !std.ArrayList(ByteView) {
+    var views = std.ArrayList(ByteView).empty;
+    errdefer views.deinit(std.heap.c_allocator);
+
+    if (moves_text.len == 0)
+        return views;
+
+    var iter = std.mem.splitScalar(u8, moves_text, '\n');
+    while (iter.next()) |move| {
+        if (move.len == 0)
+            continue;
+
+        try views.append(std.heap.c_allocator, .{
+            .ptr = move.ptr,
+            .len = move.len,
+        });
+    }
+
+    return views;
 }
 
 fn allocInfoString(input: []const u8) !?[*:0]u8 {
