@@ -890,6 +890,37 @@ struct ZfishMovePickerContext {
     int         ply;
 };
 
+struct ZfishPositionSnapshot {
+    std::uint8_t side_to_move;
+    std::uint64_t pieces_all;
+    std::uint64_t pieces_by_color[2];
+    std::uint64_t pieces_by_type[8];
+    std::uint64_t blockers_for_king[2];
+    std::uint64_t pinners[2];
+    std::uint8_t king_square[2];
+    std::uint8_t ep_square;
+    std::uint8_t castling_rights;
+    std::uint8_t castling_impeded[16];
+    std::uint8_t castling_rook_square[16];
+    std::uint64_t checkers;
+    std::uint8_t board[64];
+    std::uint64_t pawn_key;
+    std::uint64_t key;
+    int           material_value;
+    int           rule50_count;
+    int           game_ply;
+    std::uint8_t  is_chess960;
+};
+
+struct ZfishMovepickHistorySnapshot {
+    const void* main_base;
+    const void* low_ply_base;
+    const void* capture_base;
+    const void* continuation_base[6];
+    const void* pawn_table;
+    std::uint64_t pawn_mask;
+};
+
 struct ZfishEvalInput {
     int psqt;
     int positional;
@@ -971,12 +1002,8 @@ std::size_t zfish_movegen_generate_quiets(const void* pos, std::uint16_t* move_l
 std::size_t zfish_movegen_generate_evasions(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_non_evasions(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_legal(const void* pos, std::uint16_t* move_list);
-std::uint8_t  zfish_position_side_to_move(const void* pos_ptr);
-std::uint64_t zfish_position_pieces_all(const void* pos_ptr);
-std::uint64_t zfish_position_pieces_by_color(const void* pos_ptr, std::uint8_t color);
-std::uint64_t zfish_position_pieces_by_type(const void* pos_ptr, std::uint8_t piece_type);
-std::uint64_t zfish_position_blockers_for_king(const void* pos_ptr, std::uint8_t color);
-std::uint64_t zfish_position_pinners(const void* pos_ptr, std::uint8_t color);
+void zfish_position_fill_snapshot(const void* pos_ptr, ZfishPositionSnapshot* out);
+std::uint8_t zfish_position_side_to_move(const void* pos_ptr);
 std::uint8_t  zfish_position_king_square(const void* pos_ptr, std::uint8_t color);
 std::uint8_t  zfish_position_ep_square(const void* pos_ptr);
 std::uint64_t zfish_position_checkers(const void* pos_ptr);
@@ -984,7 +1011,6 @@ std::uint8_t  zfish_position_castling_rights(const void* pos_ptr);
 std::uint8_t  zfish_position_castling_impeded(const void* pos_ptr, std::uint8_t castling_right);
 std::uint8_t  zfish_position_castling_rook_square(const void* pos_ptr,
                                                   std::uint8_t castling_right);
-std::uint64_t zfish_position_pawn_key(const void* pos_ptr);
 std::uint64_t zfish_position_key(const void* pos_ptr);
 int           zfish_position_material_value(const void* pos_ptr);
 int           zfish_position_rule50_count(const void* pos_ptr);
@@ -992,14 +1018,17 @@ int           zfish_position_game_ply(const void* pos_ptr);
 std::uint8_t  zfish_position_is_chess960(const void* pos_ptr);
 std::uint8_t  zfish_position_piece_on(const void* pos_ptr, std::uint8_t square);
 std::uint8_t zfish_position_move_is_legal(const void* pos_ptr, std::uint16_t raw_move);
-const void* zfish_history_main_base(const void* main_history_ptr);
-const void* zfish_history_low_ply_base(const void* low_ply_history_ptr);
-const void* zfish_history_capture_base(const void* capture_history_ptr);
-const void* zfish_history_continuation_slot_base(const void* continuation_history_ptr,
-                                                 std::size_t slot);
-const void* zfish_history_pawn_table(const void* shared_history_ptr);
-std::uint64_t zfish_history_pawn_mask(const void* shared_history_ptr);
-int zfish_history_atomic_i16_load(const void* entry_ptr);
+void zfish_movepick_fill_history_snapshot(const void*                     main_history_ptr,
+                                          const void*                     low_ply_history_ptr,
+                                          const void*                     capture_history_ptr,
+                                          const void*                     continuation_history_ptr,
+                                          const void*                     shared_history_ptr,
+                                          ZfishMovepickHistorySnapshot* out);
+int zfish_movepick_pawn_history_value(const void* shared_history_ptr,
+                                      std::uint64_t pawn_mask,
+                                      std::uint64_t pawn_key,
+                                      std::uint8_t  piece,
+                                      std::uint8_t  square);
 void zfish_tt_entry_save(ZfishTtEntry* entry,
                          std::uint64_t key,
                          int           value,
@@ -1369,26 +1398,50 @@ extern "C" std::uint8_t zfish_position_side_to_move(const void* pos_ptr) {
     return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->side_to_move());
 }
 
-extern "C" std::uint64_t zfish_position_pieces_all(const void* pos_ptr) {
-    return static_cast<const Position*>(pos_ptr)->pieces();
-}
+extern "C" void zfish_position_fill_snapshot(const void* pos_ptr, ZfishPositionSnapshot* out) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
 
-extern "C" std::uint64_t zfish_position_pieces_by_color(const void* pos_ptr, std::uint8_t color) {
-    return static_cast<const Position*>(pos_ptr)->pieces(static_cast<Color>(color));
-}
+    out->side_to_move = static_cast<std::uint8_t>(pos.side_to_move());
+    out->pieces_all = pos.pieces();
+    out->pieces_by_color[WHITE] = pos.pieces(WHITE);
+    out->pieces_by_color[BLACK] = pos.pieces(BLACK);
+    out->pieces_by_type[NO_PIECE_TYPE] = out->pieces_all;
+    out->pieces_by_type[PAWN] = pos.pieces(PAWN);
+    out->pieces_by_type[KNIGHT] = pos.pieces(KNIGHT);
+    out->pieces_by_type[BISHOP] = pos.pieces(BISHOP);
+    out->pieces_by_type[ROOK] = pos.pieces(ROOK);
+    out->pieces_by_type[QUEEN] = pos.pieces(QUEEN);
+    out->pieces_by_type[KING] = pos.pieces(KING);
+    out->blockers_for_king[WHITE] = pos.blockers_for_king(WHITE);
+    out->blockers_for_king[BLACK] = pos.blockers_for_king(BLACK);
+    out->pinners[WHITE] = pos.pinners(WHITE);
+    out->pinners[BLACK] = pos.pinners(BLACK);
+    out->king_square[WHITE] = static_cast<std::uint8_t>(pos.square<KING>(WHITE));
+    out->king_square[BLACK] = static_cast<std::uint8_t>(pos.square<KING>(BLACK));
+    out->ep_square = static_cast<std::uint8_t>(pos.ep_square());
+    out->checkers = pos.checkers();
 
-extern "C" std::uint64_t zfish_position_pieces_by_type(const void* pos_ptr,
-                                                        std::uint8_t piece_type) {
-    return static_cast<const Position*>(pos_ptr)->pieces(static_cast<PieceType>(piece_type));
-}
+    std::uint8_t rights = 0;
+    for (const auto cr : {WHITE_OO, WHITE_OOO, BLACK_OO, BLACK_OOO})
+    {
+        const auto index = static_cast<std::size_t>(cr);
+        if (pos.can_castle(cr))
+            rights |= static_cast<std::uint8_t>(cr);
+        out->castling_impeded[index] = static_cast<std::uint8_t>(pos.castling_impeded(cr) ? 1 : 0);
+        out->castling_rook_square[index] =
+          static_cast<std::uint8_t>(pos.castling_rook_square(cr));
+    }
 
-extern "C" std::uint64_t zfish_position_blockers_for_king(const void* pos_ptr,
-                                                           std::uint8_t color) {
-    return static_cast<const Position*>(pos_ptr)->blockers_for_king(static_cast<Color>(color));
-}
+    out->castling_rights = rights;
+    out->pawn_key = pos.pawn_key();
+    out->key = pos.key();
+    out->material_value = 534 * pos.count<PAWN>() + pos.non_pawn_material();
+    out->rule50_count = pos.rule50_count();
+    out->game_ply = pos.game_ply();
+    out->is_chess960 = static_cast<std::uint8_t>(pos.is_chess960() ? 1 : 0);
 
-extern "C" std::uint64_t zfish_position_pinners(const void* pos_ptr, std::uint8_t color) {
-    return static_cast<const Position*>(pos_ptr)->pinners(static_cast<Color>(color));
+    for (std::size_t square = 0; square < 64; ++square)
+        out->board[square] = static_cast<std::uint8_t>(pos.piece_on(static_cast<Square>(square)));
 }
 
 extern "C" std::uint8_t zfish_position_king_square(const void* pos_ptr, std::uint8_t color) {
@@ -1432,10 +1485,6 @@ extern "C" std::uint64_t zfish_position_key(const void* pos_ptr) {
     return static_cast<const Position*>(pos_ptr)->key();
 }
 
-extern "C" std::uint64_t zfish_position_pawn_key(const void* pos_ptr) {
-    return static_cast<const Position*>(pos_ptr)->pawn_key();
-}
-
 extern "C" int zfish_position_material_value(const void* pos_ptr) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
     return 534 * pos.count<PAWN>() + pos.non_pawn_material();
@@ -1464,37 +1513,59 @@ extern "C" std::uint8_t zfish_position_move_is_legal(const void* pos_ptr,
     return std::uint8_t(pos.legal(Move(raw_move)) ? 1 : 0);
 }
 
-extern "C" const void* zfish_history_main_base(const void* main_history_ptr) {
-    return static_cast<const ButterflyHistory*>(main_history_ptr)->data();
+extern "C" void zfish_movepick_fill_history_snapshot(const void* main_history_ptr,
+                                                      const void* low_ply_history_ptr,
+                                                      const void* capture_history_ptr,
+                                                      const void* continuation_history_ptr,
+                                                      const void* shared_history_ptr,
+                                                      ZfishMovepickHistorySnapshot* out) {
+    out->main_base =
+      main_history_ptr ? static_cast<const ButterflyHistory*>(main_history_ptr)->data() : nullptr;
+    out->low_ply_base =
+      low_ply_history_ptr ? static_cast<const LowPlyHistory*>(low_ply_history_ptr)->data() : nullptr;
+    out->capture_base = capture_history_ptr
+                        ? static_cast<const CapturePieceToHistory*>(capture_history_ptr)->data()
+                        : nullptr;
+
+    for (std::size_t slot = 0; slot < 6; ++slot)
+        out->continuation_base[slot] = nullptr;
+
+    if (continuation_history_ptr)
+    {
+        const auto* continuation_history =
+          static_cast<const PieceToHistory* const*>(continuation_history_ptr);
+        for (std::size_t slot = 0; slot < 6; ++slot)
+            out->continuation_base[slot] = continuation_history[slot]->data();
+    }
+
+    if (shared_history_ptr)
+    {
+        const auto* shared_history = static_cast<const SharedHistories*>(shared_history_ptr);
+        out->pawn_table =
+          shared_history->pawnHistory.get_size() ? shared_history->pawnHistory[0].data() : nullptr;
+        out->pawn_mask = shared_history->pawnHistSizeMinus1;
+    }
+    else
+    {
+        out->pawn_table = nullptr;
+        out->pawn_mask = 0;
+    }
 }
 
-extern "C" const void* zfish_history_low_ply_base(const void* low_ply_history_ptr) {
-    return static_cast<const LowPlyHistory*>(low_ply_history_ptr)->data();
-}
+extern "C" int zfish_movepick_pawn_history_value(const void* pawn_table_ptr,
+                                                   std::uint64_t pawn_mask,
+                                                   std::uint64_t pawn_key,
+                                                   std::uint8_t piece,
+                                                   std::uint8_t square) {
+    if (!pawn_table_ptr)
+        return 0;
 
-extern "C" const void* zfish_history_capture_base(const void* capture_history_ptr) {
-    return static_cast<const CapturePieceToHistory*>(capture_history_ptr)->data();
-}
-
-extern "C" const void* zfish_history_continuation_slot_base(const void* continuation_history_ptr,
-                                                             std::size_t slot) {
-    const auto* continuationHistory =
-      static_cast<const PieceToHistory* const*>(continuation_history_ptr);
-    return continuationHistory[slot]->data();
-}
-
-extern "C" const void* zfish_history_pawn_table(const void* shared_history_ptr) {
-    const auto* sharedHistory = static_cast<const SharedHistories*>(shared_history_ptr);
-    return sharedHistory->pawnHistory.get_size() ? sharedHistory->pawnHistory[0].data() : nullptr;
-}
-
-extern "C" std::uint64_t zfish_history_pawn_mask(const void* shared_history_ptr) {
-    return static_cast<const SharedHistories*>(shared_history_ptr)->pawnHistSizeMinus1;
-}
-
-extern "C" int zfish_history_atomic_i16_load(const void* entry_ptr) {
-    const auto* entry = static_cast<const Stockfish::StatsEntry<std::int16_t, 8192, true>*>(entry_ptr);
-    return *entry;
+    using PawnHistoryRow = Stockfish::StatsEntry<std::int16_t, 8192, true>[64];
+    const auto* rows = static_cast<const PawnHistoryRow*>(pawn_table_ptr);
+    const std::size_t index = static_cast<std::size_t>(pawn_key & pawn_mask);
+    const std::size_t row_index = index * PIECE_NB + piece;
+    const auto& entry = rows[row_index][square];
+    return entry;
 }
 
 template<>

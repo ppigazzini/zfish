@@ -65,6 +65,28 @@ pub const PositionSummary = extern struct {
     rule50_count: c_int,
 };
 
+const PositionSnapshot = extern struct {
+    side_to_move: u8,
+    pieces_all: u64,
+    pieces_by_color: [2]u64,
+    pieces_by_type: [8]u64,
+    blockers_for_king: [2]u64,
+    pinners: [2]u64,
+    king_square: [2]u8,
+    ep_square: u8,
+    castling_rights: u8,
+    castling_impeded: [16]u8,
+    castling_rook_square: [16]u8,
+    checkers: u64,
+    board: [64]u8,
+    pawn_key: u64,
+    key: u64,
+    material_value: c_int,
+    rule50_count: c_int,
+    game_ply: c_int,
+    is_chess960: u8,
+};
+
 pub const TablebaseProbe = extern struct {
     available: u8,
     wdl: c_int,
@@ -181,16 +203,7 @@ extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*an
 extern fn zfish_engine_accumulator_caches_destroy(caches: ?*anyopaque) void;
 extern fn zfish_accumulator_stack_reset(stack: *anyopaque) void;
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
-extern fn zfish_position_side_to_move(pos: *const anyopaque) u8;
-extern fn zfish_position_checkers(pos: *const anyopaque) u64;
-extern fn zfish_position_key(pos: *const anyopaque) u64;
-extern fn zfish_position_material_value(pos: *const anyopaque) c_int;
-extern fn zfish_position_rule50_count(pos: *const anyopaque) c_int;
-extern fn zfish_position_castling_rights(pos: *const anyopaque) u8;
-extern fn zfish_position_castling_rook_square(pos: *const anyopaque, castling_right: u8) u8;
-extern fn zfish_position_ep_square(pos: *const anyopaque) u8;
-extern fn zfish_position_is_chess960(pos: *const anyopaque) u8;
-extern fn zfish_position_game_ply(pos: *const anyopaque) c_int;
+extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_tbprobe_max_cardinality() usize;
 extern fn zfish_tbprobe_probe_fen(
     fen_ptr: [*]const u8,
@@ -845,16 +858,18 @@ fn buildNnueTrace(
 }
 
 fn positionSummary(pos: *const anyopaque) PositionSummary {
+    const snapshot = loadPositionSnapshot(pos);
     return .{
-        .side_to_move_white = if (zfish_position_side_to_move(pos) == white) 1 else 0,
-        .checkers = zfish_position_checkers(pos),
-        .key = zfish_position_key(pos),
-        .material = zfish_position_material_value(pos),
-        .rule50_count = zfish_position_rule50_count(pos),
+        .side_to_move_white = if (snapshot.side_to_move == white) 1 else 0,
+        .checkers = snapshot.checkers,
+        .key = snapshot.key,
+        .material = snapshot.material_value,
+        .rule50_count = snapshot.rule50_count,
     };
 }
 
 fn positionFen(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) ?[*:0]u8 {
+    const snapshot = loadPositionSnapshot(pos);
     var pieces_storage: [square_count]u8 = undefined;
     const pieces: *const [square_count]u8 = if (pieces_opt) |provided|
         provided
@@ -865,21 +880,22 @@ fn positionFen(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) ?[*:
 
     return position_port.formatFen(
         @ptrCast(pieces),
-        zfish_position_side_to_move(pos),
-        zfish_position_is_chess960(pos),
-        zfish_position_castling_rights(pos),
-        zfish_position_castling_rook_square(pos, white_oo),
-        zfish_position_castling_rook_square(pos, white_ooo),
-        zfish_position_castling_rook_square(pos, black_oo),
-        zfish_position_castling_rook_square(pos, black_ooo),
-        zfish_position_ep_square(pos),
-        zfish_position_rule50_count(pos),
-        zfish_position_game_ply(pos),
+        snapshot.side_to_move,
+        snapshot.is_chess960,
+        snapshot.castling_rights,
+        snapshot.castling_rook_square[white_oo],
+        snapshot.castling_rook_square[white_ooo],
+        snapshot.castling_rook_square[black_oo],
+        snapshot.castling_rook_square[black_ooo],
+        snapshot.ep_square,
+        snapshot.rule50_count,
+        snapshot.game_ply,
     );
 }
 
 fn probeTablebases(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) TablebaseProbe {
-    if (zfish_position_castling_rights(pos) != 0) {
+    const snapshot = loadPositionSnapshot(pos);
+    if (snapshot.castling_rights != 0) {
         return emptyTablebaseProbe();
     }
 
@@ -898,7 +914,13 @@ fn probeTablebases(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) 
     const fen_ptr = positionFen(pos, pieces) orelse return emptyTablebaseProbe();
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
-    return zfish_tbprobe_probe_fen(fen_text.ptr, fen_text.len, zfish_position_is_chess960(pos));
+    return zfish_tbprobe_probe_fen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
+}
+
+fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
+    var snapshot = std.mem.zeroes(PositionSnapshot);
+    zfish_position_fill_snapshot(pos, &snapshot);
+    return snapshot;
 }
 
 fn countPieces(pieces: *const [square_count]u8) usize {

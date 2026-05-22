@@ -46,13 +46,21 @@ pub const PositionSnapshot = extern struct {
     pieces_all: u64,
     pieces_by_color: [2]u64,
     pieces_by_type: [8]u64,
+    blockers_for_king: [2]u64,
+    pinners: [2]u64,
     king_square: [2]u8,
     ep_square: u8,
     castling_rights: u8,
     castling_impeded: [16]u8,
     castling_rook_square: [16]u8,
     checkers: u64,
-    blockers_for_king: [2]u64,
+    board: [64]u8,
+    pawn_key: u64,
+    key: u64,
+    material_value: c_int,
+    rule50_count: c_int,
+    game_ply: c_int,
+    is_chess960: u8,
 };
 
 const GenType = enum {
@@ -72,17 +80,7 @@ const MoveWriter = struct {
     }
 };
 
-extern fn zfish_position_side_to_move(pos: *const anyopaque) u8;
-extern fn zfish_position_pieces_all(pos: *const anyopaque) u64;
-extern fn zfish_position_pieces_by_color(pos: *const anyopaque, color: u8) u64;
-extern fn zfish_position_pieces_by_type(pos: *const anyopaque, piece_type: u8) u64;
-extern fn zfish_position_king_square(pos: *const anyopaque, color: u8) u8;
-extern fn zfish_position_ep_square(pos: *const anyopaque) u8;
-extern fn zfish_position_checkers(pos: *const anyopaque) u64;
-extern fn zfish_position_castling_rights(pos: *const anyopaque) u8;
-extern fn zfish_position_castling_impeded(pos: *const anyopaque, castling_right: u8) u8;
-extern fn zfish_position_castling_rook_square(pos: *const anyopaque, castling_right: u8) u8;
-extern fn zfish_position_blockers_for_king(pos: *const anyopaque, color: u8) u64;
+extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_position_move_is_legal(pos: *const anyopaque, raw_move: u16) u8;
 
 pub fn generateCaptures(pos: *const anyopaque, move_list: [*]u16) usize {
@@ -120,31 +118,8 @@ fn generate(comptime kind: GenType, pos: *const anyopaque, move_list: [*]u16) us
 
 fn loadSnapshot(pos: *const anyopaque) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
-
-    snapshot.side_to_move = zfish_position_side_to_move(pos);
-    snapshot.pieces_all = zfish_position_pieces_all(pos);
-    snapshot.pieces_by_color[white] = zfish_position_pieces_by_color(pos, white);
-    snapshot.pieces_by_color[black] = zfish_position_pieces_by_color(pos, black);
+    zfish_position_fill_snapshot(pos, &snapshot);
     snapshot.pieces_by_type[0] = snapshot.pieces_all;
-    snapshot.pieces_by_type[pawn] = zfish_position_pieces_by_type(pos, pawn);
-    snapshot.pieces_by_type[knight] = zfish_position_pieces_by_type(pos, knight);
-    snapshot.pieces_by_type[bishop] = zfish_position_pieces_by_type(pos, bishop);
-    snapshot.pieces_by_type[rook] = zfish_position_pieces_by_type(pos, rook);
-    snapshot.pieces_by_type[queen] = zfish_position_pieces_by_type(pos, queen);
-    snapshot.pieces_by_type[king] = zfish_position_pieces_by_type(pos, king);
-    snapshot.king_square[white] = zfish_position_king_square(pos, white);
-    snapshot.king_square[black] = zfish_position_king_square(pos, black);
-    snapshot.ep_square = zfish_position_ep_square(pos);
-    snapshot.checkers = zfish_position_checkers(pos);
-    snapshot.blockers_for_king[white] = zfish_position_blockers_for_king(pos, white);
-    snapshot.blockers_for_king[black] = zfish_position_blockers_for_king(pos, black);
-    snapshot.castling_rights = zfish_position_castling_rights(pos);
-
-    for ([_]u8{ white_oo, white_ooo, black_oo, black_ooo }) |right| {
-        const index: usize = @intCast(right);
-        snapshot.castling_impeded[index] = zfish_position_castling_impeded(pos, right);
-        snapshot.castling_rook_square[index] = zfish_position_castling_rook_square(pos, right);
-    }
 
     return snapshot;
 }
