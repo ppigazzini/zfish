@@ -2085,13 +2085,33 @@ void zfish_thread_ensure_network_replicated(void* thread_ptr) {
     static_cast<Thread*>(thread_ptr)->ensure_network_replicated();
 }
 
-void zfish_threadpool_reset_clear_state(void* pool_ptr) {
+void zfish_threadpool_main_manager_reset_best_previous_average_score(void* pool_ptr) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->bestPreviousAverageScore = VALUE_INFINITE;
+}
+
+void zfish_threadpool_main_manager_reset_previous_time_reduction(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->previousTimeReduction    = 0.85;
+}
+
+void zfish_threadpool_main_manager_reset_calls_count(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->callsCnt                 = 0;
+}
+
+void zfish_threadpool_main_manager_reset_best_previous_score(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->bestPreviousScore        = VALUE_INFINITE;
+}
+
+void zfish_threadpool_main_manager_reset_original_time_adjust(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->originalTimeAdjust       = -1;
+}
+
+void zfish_threadpool_main_manager_clear_timeman(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->tm.clear();
 }
 
