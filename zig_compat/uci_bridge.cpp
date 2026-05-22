@@ -3369,6 +3369,12 @@ const char* zfish_uci_engine_thread_binding_info_text(const void* uci_ptr) {
       static_cast<const UCIEngine*>(uci_ptr)->engine.thread_binding_information_as_string());
 }
 
+const char* zfish_uci_engine_options_text(const void* uci_ptr) {
+    std::ostringstream options_stream;
+    options_stream << static_cast<const UCIEngine*>(uci_ptr)->engine.get_options();
+    return alloc_c_string(options_stream.str());
+}
+
 void zfish_uci_set_quiet_listeners(void* uci_ptr) {
     auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
     uci_engine->engine.set_on_update_full([](const Engine::InfoFull& i) {
@@ -3390,13 +3396,6 @@ void zfish_uci_engine_stop_search(void* uci_ptr) {
 
 void zfish_uci_engine_set_ponderhit(void* uci_ptr, std::uint8_t ponderhit) {
     static_cast<UCIEngine*>(uci_ptr)->engine.set_ponderhit(ponderhit != 0);
-}
-
-void zfish_uci_engine_print_uci(void* uci_ptr) {
-    auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
-    sync_cout << "id name " << engine_info(true) << "\n" << uci_engine->engine.get_options()
-              << sync_endl;
-    sync_cout << "uciok" << sync_endl;
 }
 
 void zfish_uci_engine_apply_setoption(void*                uci_ptr,

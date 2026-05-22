@@ -76,7 +76,7 @@ extern fn zfish_uci_set_quiet_listeners(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_set_default_listeners(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_engine_stop_search(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_engine_set_ponderhit(uci_ptr: *anyopaque, ponderhit: u8) void;
-extern fn zfish_uci_engine_print_uci(uci_ptr: *anyopaque) void;
+extern fn zfish_uci_engine_options_text(uci_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_uci_engine_apply_setoption(
     uci_ptr: *anyopaque,
     name_ptr: [*]const u8,
@@ -280,7 +280,15 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .uci => {
-            zfish_uci_engine_print_uci(engine);
+            const info_ptr = misc_port.engineInfoText(1) orelse return .{ .should_quit = 0 };
+            defer c.free(@ptrCast(info_ptr));
+            const options_ptr = zfish_uci_engine_options_text(engine) orelse return .{ .should_quit = 0 };
+            defer c.free(@ptrCast(options_ptr));
+
+            std.debug.print(
+                "id name {s}\n{s}\nuciok\n",
+                .{ std.mem.span(info_ptr), std.mem.span(options_ptr) },
+            );
             return .{ .should_quit = 0 };
         },
         .setoption => {
