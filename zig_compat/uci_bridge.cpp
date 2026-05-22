@@ -3379,14 +3379,6 @@ void zfish_uci_set_default_listeners(void* uci_ptr) {
     static_cast<UCIEngine*>(uci_ptr)->init_search_update_listeners();
 }
 
-void zfish_uci_engine_stop_search(void* uci_ptr) {
-    static_cast<UCIEngine*>(uci_ptr)->engine.stop();
-}
-
-void zfish_uci_engine_set_ponderhit(void* uci_ptr, std::uint8_t ponderhit) {
-    static_cast<UCIEngine*>(uci_ptr)->engine.set_ponderhit(ponderhit != 0);
-}
-
 void zfish_uci_engine_apply_setoption(void*                uci_ptr,
                                       const unsigned char* name_ptr,
                                       std::size_t          name_len,
@@ -3469,34 +3461,8 @@ void zfish_uci_engine_go_parsed(void* uci_ptr, ZfishParsedLimits parsed) {
         uci_engine->engine.go(limits);
 }
 
-void zfish_uci_engine_search_clear(void* uci_ptr) {
-    static_cast<UCIEngine*>(uci_ptr)->engine.search_clear();
-}
-
 void zfish_uci_engine_flip(void* uci_ptr) {
     static_cast<UCIEngine*>(uci_ptr)->engine.flip();
-}
-
-const char* zfish_uci_engine_visualize_text(const void* uci_ptr) {
-    return alloc_c_string(static_cast<const UCIEngine*>(uci_ptr)->engine.visualize());
-}
-
-void zfish_uci_engine_trace_eval(void* uci_ptr) {
-    static_cast<UCIEngine*>(uci_ptr)->engine.trace_eval();
-}
-
-void zfish_uci_engine_export_net(void*                uci_ptr,
-                                 const unsigned char* filename_ptr,
-                                 std::size_t          filename_len,
-                                 std::uint8_t         has_filename) {
-    auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
-    std::pair<std::optional<std::string>, std::string> file;
-    if (has_filename != 0)
-    {
-        file.second = std::string(reinterpret_cast<const char*>(filename_ptr), filename_len);
-        file.first = file.second;
-    }
-    uci_engine->engine.save_network(file);
 }
 
 }
