@@ -1,4 +1,5 @@
 const std = @import("std");
+const position_snapshot = @import("position_snapshot");
 
 const normal_move: u16 = 0;
 const promotion_move: u16 = 1 << 14;
@@ -13,27 +14,7 @@ const file_g: u8 = 6;
 const none_raw: u16 = 0;
 const max_moves: usize = 256;
 
-const PositionSnapshot = extern struct {
-    side_to_move: u8,
-    pieces_all: u64,
-    pieces_by_color: [2]u64,
-    pieces_by_type: [8]u64,
-    blockers_for_king: [2]u64,
-    pinners: [2]u64,
-    king_square: [2]u8,
-    ep_square: u8,
-    castling_rights: u8,
-    castling_impeded: [16]u8,
-    castling_rook_square: [16]u8,
-    checkers: u64,
-    board: [64]u8,
-    pawn_key: u64,
-    key: u64,
-    material_value: c_int,
-    rule50_count: c_int,
-    game_ply: c_int,
-    is_chess960: u8,
-};
+const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 extern fn zfish_movegen_generate_legal(pos: *const anyopaque, out_moves: [*]u16) usize;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;

@@ -1,5 +1,6 @@
 const std = @import("std");
 const bitboard = @import("bitboard");
+const position_snapshot = @import("position_snapshot");
 
 const white: u8 = 0;
 const black: u8 = 1;
@@ -41,27 +42,7 @@ const rank_3_bb: u64 = 0x0000000000ff0000;
 const rank_6_bb: u64 = 0x0000ff0000000000;
 const rank_7_bb: u64 = 0x00ff000000000000;
 
-pub const PositionSnapshot = extern struct {
-    side_to_move: u8,
-    pieces_all: u64,
-    pieces_by_color: [2]u64,
-    pieces_by_type: [8]u64,
-    blockers_for_king: [2]u64,
-    pinners: [2]u64,
-    king_square: [2]u8,
-    ep_square: u8,
-    castling_rights: u8,
-    castling_impeded: [16]u8,
-    castling_rook_square: [16]u8,
-    checkers: u64,
-    board: [64]u8,
-    pawn_key: u64,
-    key: u64,
-    material_value: c_int,
-    rule50_count: c_int,
-    game_ply: c_int,
-    is_chess960: u8,
-};
+pub const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 const GenType = enum {
     captures,
