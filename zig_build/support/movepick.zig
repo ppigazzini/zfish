@@ -147,7 +147,15 @@ extern fn zfish_history_continuation_slot_base(
 extern fn zfish_history_pawn_table(shared_history: *const anyopaque) ?*const anyopaque;
 extern fn zfish_history_pawn_mask(shared_history: *const anyopaque) u64;
 extern fn zfish_history_atomic_i16_load(entry_ptr: *const anyopaque) c_int;
-extern fn zfish_movepick_fill_see_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
+extern fn zfish_position_side_to_move(pos: *const anyopaque) u8;
+extern fn zfish_position_pieces_all(pos: *const anyopaque) u64;
+extern fn zfish_position_pieces_by_color(pos: *const anyopaque, color: u8) u64;
+extern fn zfish_position_pieces_by_type(pos: *const anyopaque, piece_type: u8) u64;
+extern fn zfish_position_blockers_for_king(pos: *const anyopaque, color: u8) u64;
+extern fn zfish_position_pinners(pos: *const anyopaque, color: u8) u64;
+extern fn zfish_position_king_square(pos: *const anyopaque, color: u8) u8;
+extern fn zfish_position_pawn_key(pos: *const anyopaque) u64;
+extern fn zfish_position_piece_on(pos: *const anyopaque, square: u8) u8;
 
 pub fn initMainStage(has_checkers: bool, has_tt_move: bool, depth: c_int) c_int {
     const base_stage: c_int = if (has_checkers)
@@ -654,7 +662,31 @@ fn seeGeWithSnapshot(snapshot: *const PositionSnapshot, raw_move: u16, threshold
 
 fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
-    zfish_movepick_fill_see_snapshot(pos, &snapshot);
+
+    snapshot.side_to_move = zfish_position_side_to_move(pos);
+    snapshot.pieces_all = zfish_position_pieces_all(pos);
+    snapshot.pieces_by_color[white] = zfish_position_pieces_by_color(pos, white);
+    snapshot.pieces_by_color[black] = zfish_position_pieces_by_color(pos, black);
+    snapshot.pieces_by_type[no_piece_type] = snapshot.pieces_all;
+    snapshot.pieces_by_type[pawn] = zfish_position_pieces_by_type(pos, pawn);
+    snapshot.pieces_by_type[knight] = zfish_position_pieces_by_type(pos, knight);
+    snapshot.pieces_by_type[bishop] = zfish_position_pieces_by_type(pos, bishop);
+    snapshot.pieces_by_type[rook] = zfish_position_pieces_by_type(pos, rook);
+    snapshot.pieces_by_type[queen] = zfish_position_pieces_by_type(pos, queen);
+    snapshot.pieces_by_type[king] = zfish_position_pieces_by_type(pos, king);
+    snapshot.blockers_for_king[white] = zfish_position_blockers_for_king(pos, white);
+    snapshot.blockers_for_king[black] = zfish_position_blockers_for_king(pos, black);
+    snapshot.pinners[white] = zfish_position_pinners(pos, white);
+    snapshot.pinners[black] = zfish_position_pinners(pos, black);
+    snapshot.king_square[white] = zfish_position_king_square(pos, white);
+    snapshot.king_square[black] = zfish_position_king_square(pos, black);
+    snapshot.pawn_key = zfish_position_pawn_key(pos);
+
+    var square: usize = 0;
+    while (square < square_nb) : (square += 1) {
+        snapshot.board[square] = zfish_position_piece_on(pos, @intCast(square));
+    }
+
     return snapshot;
 }
 
