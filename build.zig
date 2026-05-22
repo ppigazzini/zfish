@@ -147,6 +147,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const position_snapshot_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/board/position_snapshot.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const movegen_module = b.createModule(.{
         .root_source_file = b.path("zig_build/board/movegen.zig"),
         .target = target,
@@ -183,9 +188,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     engine_module.addImport("position", position_module);
+    engine_module.addImport("position_snapshot", position_snapshot_module);
     engine_module.addImport("uci_move", uci_move_module);
+    uci_move_module.addImport("position_snapshot", position_snapshot_module);
+    movepick_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("bitboard", bitboard_module);
+    movegen_module.addImport("position_snapshot", position_snapshot_module);
     movegen_module.addImport("bitboard", bitboard_module);
+    nnue_accumulator_module.addImport("position_snapshot", position_snapshot_module);
+    thread_module.addImport("position_snapshot", position_snapshot_module);
     thread_module.addImport("position", position_module);
     thread_module.addImport("uci_move", uci_move_module);
     uci_module.addImport("benchmark", benchmark_module);
@@ -203,6 +214,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("nnue_misc", nnue_misc_module);
     exe.root_module.addImport("option", option_module);
     exe.root_module.addImport("position", position_module);
+    exe.root_module.addImport("position_snapshot", position_snapshot_module);
     exe.root_module.addImport("search", search_module);
     exe.root_module.addImport("tbprobe", tbprobe_module);
     exe.root_module.addImport("timeman", timeman_module);

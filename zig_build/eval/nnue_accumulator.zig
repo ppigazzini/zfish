@@ -1,4 +1,5 @@
 const std = @import("std");
+const position_snapshot = @import("position_snapshot");
 
 const psq_feature: u8 = 0;
 const threat_feature: u8 = 1;
@@ -102,27 +103,7 @@ extern fn zfish_full_threats_append_active(
     piece_array: [*]const u8,
 ) FullAppendResult;
 
-const BridgePositionSnapshot = extern struct {
-    side_to_move: u8,
-    pieces_all: u64,
-    pieces_by_color: [2]u64,
-    pieces_by_type: [8]u64,
-    blockers_for_king: [2]u64,
-    pinners: [2]u64,
-    king_square: [2]u8,
-    ep_square: u8,
-    castling_rights: u8,
-    castling_impeded: [16]u8,
-    castling_rook_square: [16]u8,
-    checkers: u64,
-    board: [64]u8,
-    pawn_key: u64,
-    key: u64,
-    material_value: c_int,
-    rule50_count: c_int,
-    game_ply: c_int,
-    is_chess960: u8,
-};
+const BridgePositionSnapshot = position_snapshot.PositionSnapshot;
 
 extern fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *BridgePositionSnapshot) void;
 

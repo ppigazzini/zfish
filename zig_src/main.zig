@@ -25,33 +25,14 @@ const nnue_misc_port = @import("nnue_misc");
 const timeman_port = @import("timeman");
 const tt_port = @import("tt");
 const uci_port = @import("uci");
+const position_snapshot = @import("position_snapshot");
 
 extern fn zfish_bitboards_init() void;
 extern fn zfish_position_init_runtime() void;
 extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
 extern fn zfish_uci_loop_engine(engine: *anyopaque) void;
 extern fn zfish_uci_destroy_engine(engine: ?*anyopaque) void;
-const PositionSnapshot = extern struct {
-    side_to_move: u8,
-    pieces_all: u64,
-    pieces_by_color: [2]u64,
-    pieces_by_type: [8]u64,
-    blockers_for_king: [2]u64,
-    pinners: [2]u64,
-    king_square: [2]u8,
-    ep_square: u8,
-    castling_rights: u8,
-    castling_impeded: [16]u8,
-    castling_rook_square: [16]u8,
-    checkers: u64,
-    board: [64]u8,
-    pawn_key: u64,
-    key: u64,
-    material_value: c_int,
-    rule50_count: c_int,
-    game_ply: c_int,
-    is_chess960: u8,
-};
+const PositionSnapshot = position_snapshot.PositionSnapshot;
 extern fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *PositionSnapshot) void;
 
 pub fn main(init: std.process.Init) !void {
