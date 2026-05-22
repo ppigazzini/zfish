@@ -81,10 +81,13 @@ extern fn zfish_engine_wait_for_search_finished_owner(engine_ptr: *anyopaque) vo
 extern fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 extern fn zfish_engine_fen_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_numa_config_string_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_numa_config_information_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_thread_binding_information_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_thread_allocation_information_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_stop_owner(engine_ptr: *anyopaque) void;
 extern fn zfish_engine_set_ponderhit_owner(engine_ptr: *anyopaque, ponder: u8) void;
 extern fn zfish_engine_search_clear_owner(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
 extern fn zfish_engine_visualize_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8;
 extern fn zfish_engine_save_network_owner(
@@ -108,7 +111,7 @@ extern fn zfish_engine_set_position_owner(
     moves_ptr: ?[*]const ByteView,
     move_count: usize,
 ) ?[*:0]u8;
-extern fn zfish_uci_engine_go_parsed(uci_ptr: *anyopaque, limits: ParsedLimits) void;
+extern fn zfish_engine_go_parsed_owner(engine_ptr: *anyopaque, limits: ParsedLimits) void;
 extern fn zfish_uci_engine_flip(uci_ptr: *anyopaque) void;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
@@ -447,7 +450,31 @@ fn applyPosition(engine: *anyopaque, trimmed: []const u8) void {
 fn applyGo(engine: *anyopaque, trimmed: []const u8) void {
     const limits = parseLimits(trimmed);
     defer freeMaybeCString(limits.searchmoves);
-    zfish_uci_engine_go_parsed(engine, limits);
+
+    const engine_ptr = zfish_uci_engine_ptr(engine);
+
+    if (zfish_engine_numa_config_information_owner(engine_ptr)) |numa_info_ptr| {
+        defer c.free(@ptrCast(numa_info_ptr));
+        emitInfoString(std.mem.span(numa_info_ptr));
+    }
+
+    if (zfish_engine_thread_allocation_information_owner(engine_ptr)) |thread_info_ptr| {
+        defer c.free(@ptrCast(thread_info_ptr));
+        emitInfoString(std.mem.span(thread_info_ptr));
+    }
+
+    if (limits.perft != 0) {
+        _ = zfish_engine_perft_owner(engine_ptr, limits.perft);
+        return;
+    }
+
+    zfish_engine_go_parsed_owner(engine_ptr, limits);
+}
+
+fn emitInfoString(text: []const u8) void {
+    const rendered = formatInfoString(text) orelse return;
+    defer c.free(@ptrCast(rendered));
+    _ = c.puts(@ptrCast(rendered));
 }
 
 fn isHelpToken(token: []const u8) bool {

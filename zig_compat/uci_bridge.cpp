@@ -3397,11 +3397,16 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
     engine->get_options().setoption(is);
 }
 
-void zfish_uci_engine_go_parsed(void* uci_ptr, ZfishParsedLimits parsed) {
-    auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
+std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
+    auto* engine = static_cast<Engine*>(engine_ptr);
+    const auto nodes =
+      engine->perft(engine->fen(), depth, engine->get_options()["UCI_Chess960"]);
+    sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
+    return nodes;
+}
 
-    UCIEngine::print_info_string(uci_engine->engine.numa_config_information_as_string());
-    UCIEngine::print_info_string(uci_engine->engine.thread_allocation_information_as_string());
+void zfish_engine_go_parsed_owner(void* engine_ptr, ZfishParsedLimits parsed) {
+    auto* engine = static_cast<Engine*>(engine_ptr);
 
     Search::LimitsType limits;
     limits.time[WHITE] = parsed.wtime;
@@ -3426,10 +3431,7 @@ void zfish_uci_engine_go_parsed(void* uci_ptr, ZfishParsedLimits parsed) {
                 limits.searchmoves.push_back(move);
     }
 
-    if (limits.perft)
-        zfish_uci_engine_perft_depth(uci_engine, limits.perft);
-    else
-        uci_engine->engine.go(limits);
+    zfish_engine_go_owner(engine, &limits);
 }
 
 void zfish_uci_engine_flip(void* uci_ptr) {
