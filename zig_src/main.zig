@@ -606,6 +606,30 @@ pub export fn zfish_engine_go_owner(engine_ptr: *anyopaque, limits_ptr: *const a
     return engine_port.goEngine(engine_ptr, limits_ptr);
 }
 
+pub export fn zfish_engine_stop_owner(engine_ptr: *anyopaque) void {
+    return engine_port.stopEngine(engine_ptr);
+}
+
+pub export fn zfish_engine_set_numa_config_from_option_owner(
+    engine_ptr: *anyopaque,
+    value_ptr: [*]const u8,
+    value_len: usize,
+) void {
+    return engine_port.setNumaConfigFromOptionEngine(engine_ptr, value_ptr[0..value_len]);
+}
+
+pub export fn zfish_engine_resize_threads_owner(engine_ptr: *anyopaque) void {
+    return engine_port.resizeThreadsEngine(engine_ptr);
+}
+
+pub export fn zfish_engine_set_tt_size_owner(engine_ptr: *anyopaque, mb: usize) void {
+    return engine_port.setTtSizeEngine(engine_ptr, mb);
+}
+
+pub export fn zfish_engine_set_ponderhit_owner(engine_ptr: *anyopaque, ponder: u8) void {
+    return engine_port.setPonderhitEngine(engine_ptr, ponder);
+}
+
 pub export fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8 {
     return engine_port.traceEvalEngine(engine_ptr);
 }
