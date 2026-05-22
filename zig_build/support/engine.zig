@@ -255,6 +255,7 @@ extern fn zfish_engine_evalfile_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_syzygy_path_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_binary_directory_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_position_ptr(engine_ptr: *anyopaque) *anyopaque;
+extern fn zfish_engine_options_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_states_slot_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_states_slot_reset(states_slot: *anyopaque) void;
 extern fn zfish_engine_network_ptr(engine_ptr: *const anyopaque) *const anyopaque;
@@ -262,6 +263,14 @@ extern fn zfish_engine_network_replicated_ptr(engine_ptr: *anyopaque) *anyopaque
 extern fn zfish_engine_threads_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_chess960_enabled(engine_ptr: *const anyopaque) u8;
+extern fn zfish_limits_perft_value(limits_ptr: *const anyopaque) usize;
+extern fn zfish_thread_start_thinking(
+    pool: *anyopaque,
+    options: *const anyopaque,
+    pos: *anyopaque,
+    limits: *const anyopaque,
+    states_slot: *anyopaque,
+) void;
 extern fn zfish_engine_network_verify_current(
     engine_ptr: *const anyopaque,
     evalfile_ptr: [*]const u8,
@@ -433,6 +442,18 @@ pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
 
 pub fn stop(threads: *anyopaque) void {
     zfish_engine_threads_set_stop(threads);
+}
+
+pub fn goEngine(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
+    std.debug.assert(zfish_limits_perft_value(limits_ptr) == 0);
+    verifyNetwork(engine_ptr);
+    zfish_thread_start_thinking(
+        zfish_engine_threads_ptr(engine_ptr),
+        zfish_engine_options_ptr(engine_ptr),
+        zfish_engine_position_ptr(engine_ptr),
+        limits_ptr,
+        zfish_engine_states_slot_ptr(engine_ptr),
+    );
 }
 
 pub fn setNumaConfigFromOption(
