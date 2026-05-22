@@ -64,19 +64,21 @@ extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize)
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
 extern fn zfish_uci_read_command_line() ?[*:0]u8;
+extern fn zfish_uci_engine_ptr(uci_ptr: *anyopaque) *anyopaque;
+extern fn zfish_uci_engine_const_ptr(uci_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_uci_engine_perft_depth(uci_ptr: *anyopaque, depth: c_int) u64;
-extern fn zfish_uci_engine_wait_finished(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_engine_nodes_searched(uci_ptr: *const anyopaque) u64;
 extern fn zfish_uci_engine_reset_nodes_searched() void;
-extern fn zfish_uci_engine_hashfull(uci_ptr: *const anyopaque, max_age: c_int) c_int;
-extern fn zfish_uci_engine_fen_text(uci_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_uci_engine_numa_config_string(uci_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_uci_engine_thread_binding_info_text(uci_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_uci_set_quiet_listeners(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_set_default_listeners(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_engine_stop_search(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_engine_set_ponderhit(uci_ptr: *anyopaque, ponderhit: u8) void;
 extern fn zfish_uci_engine_options_text(uci_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_wait_for_search_finished_owner(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int;
+extern fn zfish_engine_fen_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_numa_config_string_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_thread_binding_information_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_uci_engine_apply_setoption(
     uci_ptr: *anyopaque,
     name_ptr: [*]const u8,
@@ -465,7 +467,7 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
 }
 
 pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
-    const current_fen_ptr = zfish_uci_engine_fen_text(uci_ptr) orelse return;
+    const current_fen_ptr = zfish_engine_fen_owner(zfish_uci_engine_const_ptr(uci_ptr)) orelse return;
     defer c.free(@ptrCast(current_fen_ptr));
 
     const commands_ptr = benchmark_port.setupBench(std.mem.span(current_fen_ptr), args) orelse return;
@@ -485,7 +487,7 @@ pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
         }
 
         if (std.mem.eql(u8, token, "go") or std.mem.eql(u8, token, "eval")) {
-            const fen_ptr = zfish_uci_engine_fen_text(uci_ptr) orelse return;
+            const fen_ptr = zfish_engine_fen_owner(zfish_uci_engine_const_ptr(uci_ptr)) orelse return;
             defer c.free(@ptrCast(fen_ptr));
             std.debug.print(
                 "\nPosition: {d}/{d} ({s})\n",
@@ -502,7 +504,7 @@ pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
                 } else {
                     zfish_uci_engine_reset_nodes_searched();
                     _ = dispatchCommand(uci_ptr, command);
-                    zfish_uci_engine_wait_finished(uci_ptr);
+                    zfish_engine_wait_for_search_finished_owner(zfish_uci_engine_ptr(uci_ptr));
                     nodes += zfish_uci_engine_nodes_searched(uci_ptr);
                 }
             } else {
@@ -566,7 +568,7 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
         if (std.mem.eql(u8, token, "go")) {
             std.debug.print("\rWarmup position {d}/{d}", .{ warmup_count, warmup_positions });
             _ = dispatchCommand(uci_ptr, command);
-            zfish_uci_engine_wait_finished(uci_ptr);
+            zfish_engine_wait_for_search_finished_owner(zfish_uci_engine_ptr(uci_ptr));
             warmup_count += 1;
         } else {
             _ = dispatchCommand(uci_ptr, command);
@@ -603,14 +605,14 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
 
             const started = nowMillis();
             _ = dispatchCommand(uci_ptr, command);
-            zfish_uci_engine_wait_finished(uci_ptr);
+            zfish_engine_wait_for_search_finished_owner(zfish_uci_engine_ptr(uci_ptr));
 
             total_time += nowMillis() - started;
             total_nodes += zfish_uci_engine_nodes_searched(uci_ptr);
 
             hashfull_reads += 1;
-            const hashfull_single = zfish_uci_engine_hashfull(uci_ptr, 0);
-            const hashfull_game = zfish_uci_engine_hashfull(uci_ptr, 999);
+            const hashfull_single = zfish_engine_hashfull_owner(zfish_uci_engine_const_ptr(uci_ptr), 0);
+            const hashfull_game = zfish_engine_hashfull_owner(zfish_uci_engine_const_ptr(uci_ptr), 999);
             max_hashfull_single = @max(max_hashfull_single, hashfull_single);
             max_hashfull_game = @max(max_hashfull_game, hashfull_game);
             total_hashfull_single += hashfull_single;
@@ -631,9 +633,9 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
     defer c.free(@ptrCast(version_ptr));
     const compiler_ptr = misc_port.compilerInfoText() orelse return;
     defer c.free(@ptrCast(compiler_ptr));
-    const numa_ptr = zfish_uci_engine_numa_config_string(uci_ptr) orelse return;
+    const numa_ptr = zfish_engine_numa_config_string_owner(zfish_uci_engine_const_ptr(uci_ptr)) orelse return;
     defer c.free(@ptrCast(numa_ptr));
-    const binding_ptr = zfish_uci_engine_thread_binding_info_text(uci_ptr) orelse return;
+    const binding_ptr = zfish_engine_thread_binding_information_owner(zfish_uci_engine_const_ptr(uci_ptr)) orelse return;
     defer c.free(@ptrCast(binding_ptr));
 
     const binding = if (std.mem.span(binding_ptr).len == 0) "none" else std.mem.span(binding_ptr);
