@@ -602,6 +602,10 @@ pub export fn zfish_engine_set_position_owner(
     return engine_port.setPositionEngine(engine_ptr, fen_ptr, fen_len, moves_ptr, move_count);
 }
 
+pub export fn zfish_engine_go_owner(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
+    return engine_port.goEngine(engine_ptr, limits_ptr);
+}
+
 pub export fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8 {
     return engine_port.traceEvalEngine(engine_ptr);
 }
