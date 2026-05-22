@@ -184,6 +184,12 @@ const char* zfish_engine_format_network_status(std::size_t          replica_inde
                                                const unsigned char* error_ptr,
                                                std::size_t          error_len);
 const char* zfish_engine_evalfile_text(const void* engine_ptr);
+const char* zfish_engine_syzygy_path_text(const void* engine_ptr);
+void*       zfish_engine_position_ptr(void* engine_ptr);
+const void* zfish_engine_network_ptr(const void* engine_ptr);
+void*       zfish_engine_threads_ptr(void* engine_ptr);
+void*       zfish_engine_tt_ptr(void* engine_ptr);
+std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr);
 ZfishEngineNetworkVerifyResult zfish_engine_network_verify_current(const void*          engine_ptr,
                                                                    const unsigned char* evalfile_ptr,
                                                                    std::size_t          evalfile_len);
@@ -194,6 +200,8 @@ void zfish_engine_emit_verify_message(const void*          engine_ptr,
                                       const unsigned char* message_ptr,
                                       std::size_t          message_len);
 void zfish_engine_verify_network_method(const void* engine_ptr);
+void zfish_engine_search_clear_owner(void* engine_ptr);
+const char* zfish_engine_trace_eval_owner(void* engine_ptr);
 struct ZfishEvalTraceInput {
     const unsigned char* inner_trace_ptr;
     std::size_t          inner_trace_len;
@@ -2800,20 +2808,16 @@ void Engine::set_ponderhit(bool b) {
 }
 
 void Engine::search_clear() {
-    const auto syzygy_path = std::string(options["SyzygyPath"]);
-    zfish_engine_search_clear(&threads, &tt,
-                              reinterpret_cast<const unsigned char*>(syzygy_path.data()),
-                              syzygy_path.size());
+    zfish_engine_search_clear_owner(this);
 }
 
 void Engine::trace_eval() const {
-    StateListPtr trace_states(new std::deque<StateInfo>(1));
-    Position     p;
-    p.set(pos.fen(), options["UCI_Chess960"], &trace_states->back());
+    const char* rendered = zfish_engine_trace_eval_owner(const_cast<Engine*>(this));
+    if (!rendered)
+        std::abort();
 
-    verify_network();
-
-    sync_cout << "\n" << Eval::trace(p, *network) << sync_endl;
+    sync_cout << "\n" << rendered << sync_endl;
+    std::free(const_cast<char*>(rendered));
 }
 
 extern "C" {
@@ -2972,6 +2976,30 @@ const char* zfish_engine_thread_allocation_info_text(const void* engine_ptr) {
 
 const char* zfish_engine_evalfile_text(const void* engine_ptr) {
     return alloc_c_string(std::string(static_cast<const Engine*>(engine_ptr)->get_options()["EvalFile"]));
+}
+
+const char* zfish_engine_syzygy_path_text(const void* engine_ptr) {
+    return alloc_c_string(std::string(static_cast<const Engine*>(engine_ptr)->get_options()["SyzygyPath"]));
+}
+
+void* zfish_engine_position_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->pos;
+}
+
+const void* zfish_engine_network_ptr(const void* engine_ptr) {
+    return static_cast<const Engine*>(engine_ptr)->network.operator->();
+}
+
+void* zfish_engine_threads_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->threads;
+}
+
+void* zfish_engine_tt_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->tt;
+}
+
+std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr) {
+    return static_cast<std::uint8_t>(static_cast<int>(static_cast<const Engine*>(engine_ptr)->get_options()["UCI_Chess960"]));
 }
 
 ZfishEngineNetworkVerifyResult zfish_engine_network_verify_current(const void*          engine_ptr,
