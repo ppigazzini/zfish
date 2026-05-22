@@ -101,8 +101,30 @@ extern fn zfish_full_threats_append_active(
     king_square: u8,
     piece_array: [*]const u8,
 ) FullAppendResult;
-extern fn zfish_position_king_square(pos_ptr: *const anyopaque, color: u8) u8;
-extern fn zfish_position_piece_on(pos_ptr: *const anyopaque, square: u8) u8;
+
+const BridgePositionSnapshot = extern struct {
+    side_to_move: u8,
+    pieces_all: u64,
+    pieces_by_color: [2]u64,
+    pieces_by_type: [8]u64,
+    blockers_for_king: [2]u64,
+    pinners: [2]u64,
+    king_square: [2]u8,
+    ep_square: u8,
+    castling_rights: u8,
+    castling_impeded: [16]u8,
+    castling_rook_square: [16]u8,
+    checkers: u64,
+    board: [64]u8,
+    pawn_key: u64,
+    key: u64,
+    material_value: c_int,
+    rule50_count: c_int,
+    game_ply: c_int,
+    is_chess960: u8,
+};
+
+extern fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *BridgePositionSnapshot) void;
 
 const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32) + color_count * @sizeOf(bool);
 const computed_offset = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32);
@@ -275,7 +297,7 @@ fn refreshLatest(
     feature_transformer: *const anyopaque,
     cache: *anyopaque,
 ) void {
-    const king_square = zfish_position_king_square(pos, perspective);
+    const king_square = loadBridgeSnapshot(pos).king_square[perspective];
 
     switch (feature_kind) {
         psq_feature => refreshLatestPsq(perspective, king_square, stack, pos, feature_transformer, cache),
@@ -390,7 +412,7 @@ fn incrementalStep(
     target_index: usize,
     computed_index: usize,
 ) void {
-    const king_square = zfish_position_king_square(pos, perspective);
+    const king_square = loadBridgeSnapshot(pos).king_square[perspective];
 
     switch (feature_kind) {
         psq_feature => incrementalStepPsq(
@@ -820,19 +842,21 @@ fn stateBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
 }
 
 fn positionSnapshot(pos: *const anyopaque) PositionSnapshot {
+    const bridge = loadBridgeSnapshot(pos);
     var snapshot = PositionSnapshot{
         .pieces = [_]u8{0} ** square_count,
         .occupied = 0,
     };
 
-    var square: usize = 0;
-    while (square < square_count) : (square += 1) {
-        snapshot.pieces[square] = zfish_position_piece_on(pos, @intCast(square));
-        if (snapshot.pieces[square] != no_piece) {
-            snapshot.occupied |= squareMask(square);
-        }
-    }
+    snapshot.occupied = bridge.pieces_all;
+    @memcpy(snapshot.pieces[0..], bridge.board[0..]);
 
+    return snapshot;
+}
+
+fn loadBridgeSnapshot(pos: *const anyopaque) BridgePositionSnapshot {
+    var snapshot = std.mem.zeroes(BridgePositionSnapshot);
+    zfish_position_fill_snapshot(pos, &snapshot);
     return snapshot;
 }
 

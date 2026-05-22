@@ -1003,20 +1003,6 @@ std::size_t zfish_movegen_generate_evasions(const void* pos, std::uint16_t* move
 std::size_t zfish_movegen_generate_non_evasions(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_legal(const void* pos, std::uint16_t* move_list);
 void zfish_position_fill_snapshot(const void* pos_ptr, ZfishPositionSnapshot* out);
-std::uint8_t zfish_position_side_to_move(const void* pos_ptr);
-std::uint8_t  zfish_position_king_square(const void* pos_ptr, std::uint8_t color);
-std::uint8_t  zfish_position_ep_square(const void* pos_ptr);
-std::uint64_t zfish_position_checkers(const void* pos_ptr);
-std::uint8_t  zfish_position_castling_rights(const void* pos_ptr);
-std::uint8_t  zfish_position_castling_impeded(const void* pos_ptr, std::uint8_t castling_right);
-std::uint8_t  zfish_position_castling_rook_square(const void* pos_ptr,
-                                                  std::uint8_t castling_right);
-std::uint64_t zfish_position_key(const void* pos_ptr);
-int           zfish_position_material_value(const void* pos_ptr);
-int           zfish_position_rule50_count(const void* pos_ptr);
-int           zfish_position_game_ply(const void* pos_ptr);
-std::uint8_t  zfish_position_is_chess960(const void* pos_ptr);
-std::uint8_t  zfish_position_piece_on(const void* pos_ptr, std::uint8_t square);
 std::uint8_t zfish_position_move_is_legal(const void* pos_ptr, std::uint16_t raw_move);
 void zfish_movepick_fill_history_snapshot(const void*                     main_history_ptr,
                                           const void*                     low_ply_history_ptr,
@@ -1394,10 +1380,6 @@ void MovePicker::skip_quiet_moves() { skipQuiets = true; }
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
 
-extern "C" std::uint8_t zfish_position_side_to_move(const void* pos_ptr) {
-    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->side_to_move());
-}
-
 extern "C" void zfish_position_fill_snapshot(const void* pos_ptr, ZfishPositionSnapshot* out) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
 
@@ -1444,67 +1426,19 @@ extern "C" void zfish_position_fill_snapshot(const void* pos_ptr, ZfishPositionS
         out->board[square] = static_cast<std::uint8_t>(pos.piece_on(static_cast<Square>(square)));
 }
 
-extern "C" std::uint8_t zfish_position_king_square(const void* pos_ptr, std::uint8_t color) {
-    return static_cast<std::uint8_t>(
-      static_cast<const Position*>(pos_ptr)->square<KING>(static_cast<Color>(color)));
-}
-
-extern "C" std::uint8_t zfish_position_ep_square(const void* pos_ptr) {
-    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->ep_square());
-}
-
-extern "C" std::uint64_t zfish_position_checkers(const void* pos_ptr) {
-    return static_cast<const Position*>(pos_ptr)->checkers();
-}
-
-extern "C" std::uint8_t zfish_position_castling_rights(const void* pos_ptr) {
+extern "C" std::uint8_t zfish_position_has_repeated(const void* pos_ptr) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
-    std::uint8_t rights = 0;
-    for (const auto cr : {WHITE_OO, WHITE_OOO, BLACK_OO, BLACK_OOO})
-        if (pos.can_castle(cr))
-            rights |= static_cast<std::uint8_t>(cr);
-    return rights;
+    return static_cast<std::uint8_t>(pos.has_repeated() ? 1 : 0);
 }
 
-extern "C" std::uint8_t zfish_position_castling_impeded(const void* pos_ptr,
-                                                                                                                 std::uint8_t castling_right) {
-        return static_cast<std::uint8_t>(
-            static_cast<const Position*>(pos_ptr)->castling_impeded(
-                static_cast<CastlingRights>(castling_right))
-                ? 1
-                : 0);
-}
-
-extern "C" std::uint8_t zfish_position_castling_rook_square(const void* pos_ptr,
-                                                             std::uint8_t castling_right) {
-    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->castling_rook_square(
-      static_cast<CastlingRights>(castling_right)));
-}
-
-extern "C" std::uint64_t zfish_position_key(const void* pos_ptr) {
-    return static_cast<const Position*>(pos_ptr)->key();
-}
-
-extern "C" int zfish_position_material_value(const void* pos_ptr) {
+extern "C" std::uint8_t zfish_position_is_draw_ply_one(const void* pos_ptr) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
-    return 534 * pos.count<PAWN>() + pos.non_pawn_material();
+    return static_cast<std::uint8_t>(pos.is_draw(1) ? 1 : 0);
 }
 
-extern "C" int zfish_position_rule50_count(const void* pos_ptr) {
-    return static_cast<const Position*>(pos_ptr)->rule50_count();
-}
-
-extern "C" int zfish_position_game_ply(const void* pos_ptr) {
-    return static_cast<const Position*>(pos_ptr)->game_ply();
-}
-
-extern "C" std::uint8_t zfish_position_is_chess960(const void* pos_ptr) {
-    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->is_chess960() ? 1 : 0);
-}
-
-extern "C" std::uint8_t zfish_position_piece_on(const void* pos_ptr, std::uint8_t square) {
-    return static_cast<std::uint8_t>(
-      static_cast<const Position*>(pos_ptr)->piece_on(static_cast<Square>(square)));
+extern "C" std::uint8_t zfish_position_is_repetition_ply_one(const void* pos_ptr) {
+    const auto& pos = *static_cast<const Position*>(pos_ptr);
+    return static_cast<std::uint8_t>(pos.is_repetition(1) ? 1 : 0);
 }
 
 extern "C" std::uint8_t zfish_position_move_is_legal(const void* pos_ptr,
@@ -1990,18 +1924,6 @@ int zfish_options_syzygy_probe_limit(const void* options_ptr) {
 void* zfish_position_create() { return new Position(); }
 
 void zfish_position_destroy(void* pos_ptr) { delete static_cast<Position*>(pos_ptr); }
-
-std::uint8_t zfish_position_has_repeated(const void* pos_ptr) {
-    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->has_repeated() ? 1 : 0);
-}
-
-std::uint8_t zfish_position_is_draw_ply_one(const void* pos_ptr) {
-    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->is_draw(1) ? 1 : 0);
-}
-
-std::uint8_t zfish_position_is_repetition_ply_one(const void* pos_ptr) {
-    return static_cast<std::uint8_t>(static_cast<const Position*>(pos_ptr)->is_repetition(1) ? 1 : 0);
-}
 
 void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context) {
     auto* thread = static_cast<Thread*>(thread_ptr);
@@ -3350,112 +3272,78 @@ void zfish_uci_set_default_listeners(void* uci_ptr) {
     static_cast<UCIEngine*>(uci_ptr)->init_search_update_listeners();
 }
 
-void zfish_uci_execute_command(void*                engine_ptr,
-                               std::uint8_t         command_kind,
-                               const unsigned char* args_ptr,
-                               std::size_t          args_len) {
-    enum : std::uint8_t {
-        kStop = 0,
-        kPonderhit = 1,
-        kUci = 2,
-        kSetoption = 3,
-        kGo = 4,
-        kPosition = 5,
-        kSearchClear = 6,
-        kIsready = 7,
-        kFlip = 8,
-        kBench = 9,
-        kBenchmark = 10,
-        kVisualize = 11,
-        kEval = 12,
-        kCompiler = 13,
-        kExportNet = 14,
-        kHelp = 15,
-        kUnknown = 16,
-    };
+void zfish_uci_cmd_stop(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.stop();
+}
 
-    auto*      uci_engine = static_cast<UCIEngine*>(engine_ptr);
+void zfish_uci_cmd_ponderhit(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.set_ponderhit(false);
+}
+
+void zfish_uci_cmd_uci(void* engine_ptr) {
+    auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
+    sync_cout << "id name " << engine_info(true) << "\n" << uci_engine->engine.get_options()
+              << sync_endl;
+    sync_cout << "uciok" << sync_endl;
+}
+
+void zfish_uci_cmd_setoption(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len) {
+    auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
     const auto args = std::string(reinterpret_cast<const char*>(args_ptr), args_len);
+    std::istringstream is(args);
+    uci_engine->engine.wait_for_search_finished();
+    uci_engine->engine.get_options().setoption(is);
+}
 
-    switch (command_kind)
+void zfish_uci_cmd_go(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len) {
+    auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
+    const auto args = std::string(reinterpret_cast<const char*>(args_ptr), args_len);
+    UCIEngine::print_info_string(uci_engine->engine.numa_config_information_as_string());
+    UCIEngine::print_info_string(uci_engine->engine.thread_allocation_information_as_string());
+
+    std::istringstream is(args);
+    Search::LimitsType limits = UCIEngine::parse_limits(is);
+    if (limits.perft)
+        zfish_uci_engine_perft_depth(uci_engine, limits.perft);
+    else
+        uci_engine->engine.go(limits);
+}
+
+void zfish_uci_cmd_position(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len) {
+    auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
+    const auto args = std::string(reinterpret_cast<const char*>(args_ptr), args_len);
+    std::istringstream is(args);
+    uci_engine->position(is);
+}
+
+void zfish_uci_cmd_search_clear(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.search_clear();
+}
+
+void zfish_uci_cmd_flip(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.flip();
+}
+
+void zfish_uci_cmd_visualize(void* engine_ptr) {
+    sync_cout << static_cast<UCIEngine*>(engine_ptr)->engine.visualize() << sync_endl;
+}
+
+void zfish_uci_cmd_eval(void* engine_ptr) {
+    static_cast<UCIEngine*>(engine_ptr)->engine.trace_eval();
+}
+
+void zfish_uci_cmd_export_net(void* engine_ptr,
+                              const unsigned char* args_ptr,
+                              std::size_t args_len) {
+    auto* uci_engine = static_cast<UCIEngine*>(engine_ptr);
+    const auto args = std::string(reinterpret_cast<const char*>(args_ptr), args_len);
+    std::pair<std::optional<std::string>, std::string> file;
+    if (!args.empty())
     {
-    case kStop:
-        uci_engine->engine.stop();
-        return;
-    case kPonderhit:
-        uci_engine->engine.set_ponderhit(false);
-        return;
-    case kUci:
-        sync_cout << "id name " << engine_info(true) << "\n" << uci_engine->engine.get_options()
-                  << sync_endl;
-        sync_cout << "uciok" << sync_endl;
-        return;
-    case kSetoption: {
-        std::istringstream is(args);
-        uci_engine->engine.wait_for_search_finished();
-        uci_engine->engine.get_options().setoption(is);
-        return;
+        file.second = args;
+        file.first = file.second;
     }
-    case kGo: {
-        UCIEngine::print_info_string(uci_engine->engine.numa_config_information_as_string());
-        UCIEngine::print_info_string(uci_engine->engine.thread_allocation_information_as_string());
-
-        std::istringstream is(args);
-        Search::LimitsType limits = UCIEngine::parse_limits(is);
-        if (limits.perft)
-            zfish_uci_engine_perft_depth(uci_engine, limits.perft);
-        else
-            uci_engine->engine.go(limits);
-        return;
-    }
-    case kPosition: {
-        std::istringstream is(args);
-        uci_engine->position(is);
-        return;
-    }
-    case kSearchClear:
-        uci_engine->engine.search_clear();
-        return;
-    case kIsready:
-        sync_cout << "readyok" << sync_endl;
-        return;
-    case kFlip:
-        uci_engine->engine.flip();
-        return;
-    case kBench:
-        zfish_uci_bench_runtime(uci_engine, args_ptr, args_len);
-        return;
-    case kBenchmark:
-        zfish_uci_benchmark_runtime(uci_engine, args_ptr, args_len);
-        return;
-    case kVisualize:
-        sync_cout << uci_engine->engine.visualize() << sync_endl;
-        return;
-    case kEval:
-        uci_engine->engine.trace_eval();
-        return;
-    case kCompiler:
-        sync_cout << compiler_info() << sync_endl;
-        return;
-    case kExportNet: {
-        std::pair<std::optional<std::string>, std::string> file;
-        if (!args.empty())
-        {
-            file.second = args;
-            file.first = file.second;
-        }
-        uci_engine->engine.save_network(file);
-        return;
-    }
-    case kHelp:
-        sync_cout << UCIEngine::help_text() << sync_endl;
-        return;
-    case kUnknown:
-        sync_cout << UCIEngine::format_unknown_command(args) << sync_endl;
-        return;
-    default:
-        std::abort();
-    }
+    uci_engine->engine.save_network(file);
 }
 
 }
