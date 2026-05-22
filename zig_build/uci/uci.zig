@@ -71,14 +71,23 @@ extern fn zfish_uci_engine_nodes_searched(uci_ptr: *const anyopaque) u64;
 extern fn zfish_uci_engine_reset_nodes_searched() void;
 extern fn zfish_uci_set_quiet_listeners(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_set_default_listeners(uci_ptr: *anyopaque) void;
-extern fn zfish_uci_engine_stop_search(uci_ptr: *anyopaque) void;
-extern fn zfish_uci_engine_set_ponderhit(uci_ptr: *anyopaque, ponderhit: u8) void;
 extern fn zfish_uci_engine_options_text(uci_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_wait_for_search_finished_owner(engine_ptr: *anyopaque) void;
 extern fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 extern fn zfish_engine_fen_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_numa_config_string_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_thread_binding_information_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_stop_owner(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_set_ponderhit_owner(engine_ptr: *anyopaque, ponder: u8) void;
+extern fn zfish_engine_search_clear_owner(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_visualize_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8;
+extern fn zfish_engine_save_network_owner(
+    engine_ptr: *anyopaque,
+    has_filename: u8,
+    filename_ptr: [*]const u8,
+    filename_len: usize,
+) void;
 extern fn zfish_uci_engine_apply_setoption(
     uci_ptr: *anyopaque,
     name_ptr: [*]const u8,
@@ -95,16 +104,7 @@ extern fn zfish_uci_engine_apply_position(
     moves_len: usize,
 ) ?[*:0]u8;
 extern fn zfish_uci_engine_go_parsed(uci_ptr: *anyopaque, limits: ParsedLimits) void;
-extern fn zfish_uci_engine_search_clear(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_engine_flip(uci_ptr: *anyopaque) void;
-extern fn zfish_uci_engine_visualize_text(uci_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_uci_engine_trace_eval(uci_ptr: *anyopaque) void;
-extern fn zfish_uci_engine_export_net(
-    uci_ptr: *anyopaque,
-    filename_ptr: [*]const u8,
-    filename_len: usize,
-    has_filename: u8,
-) void;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -270,15 +270,16 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
 
     switch (classifyCommandToken(token)) {
         .quit => {
-            zfish_uci_engine_stop_search(engine);
+            zfish_engine_stop_owner(zfish_uci_engine_ptr(engine));
             return .{ .should_quit = 1 };
         },
         .stop => {
-            zfish_uci_engine_stop_search(engine);
+            zfish_engine_stop_owner(zfish_uci_engine_ptr(engine));
+            zfish_engine_set_ponderhit_owner(zfish_uci_engine_ptr(engine), 1);
             return .{ .should_quit = 0 };
         },
         .ponderhit => {
-            zfish_uci_engine_set_ponderhit(engine, 0);
+            zfish_engine_set_ponderhit_owner(zfish_uci_engine_ptr(engine), 0);
             return .{ .should_quit = 0 };
         },
         .uci => {
@@ -306,7 +307,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .ucinewgame => {
-            zfish_uci_engine_search_clear(engine);
+            zfish_engine_search_clear_owner(zfish_uci_engine_ptr(engine));
             return .{ .should_quit = 0 };
         },
         .isready => {
@@ -326,13 +327,15 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .visualize => {
-            const text_ptr = zfish_uci_engine_visualize_text(engine) orelse return .{ .should_quit = 0 };
+            const text_ptr = zfish_engine_visualize_owner(zfish_uci_engine_const_ptr(engine)) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(text_ptr));
             _ = c.puts(@ptrCast(text_ptr));
             return .{ .should_quit = 0 };
         },
         .eval => {
-            zfish_uci_engine_trace_eval(engine);
+            const text_ptr = zfish_engine_trace_eval_owner(zfish_uci_engine_ptr(engine)) orelse return .{ .should_quit = 0 };
+            defer c.free(@ptrCast(text_ptr));
+            std.debug.print("\n{s}\n", .{std.mem.span(text_ptr)});
             return .{ .should_quit = 0 };
         },
         .compiler => {
@@ -343,7 +346,12 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
         },
         .export_net => {
             const filename = trimAsciiWhitespace(args);
-            zfish_uci_engine_export_net(engine, filename.ptr, filename.len, if (filename.len != 0) 1 else 0);
+            zfish_engine_save_network_owner(
+                zfish_uci_engine_ptr(engine),
+                if (filename.len != 0) 1 else 0,
+                filename.ptr,
+                filename.len,
+            );
             return .{ .should_quit = 0 };
         },
         .help => {
@@ -581,7 +589,7 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
 
     std.debug.print("\n", .{});
 
-    zfish_uci_engine_search_clear(uci_ptr);
+    zfish_engine_search_clear_owner(zfish_uci_engine_ptr(uci_ptr));
 
     var total_time: i64 = 0;
     var total_nodes: u64 = 0;

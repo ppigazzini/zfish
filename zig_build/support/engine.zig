@@ -852,6 +852,10 @@ pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
     return owned.ptr;
 }
 
+    pub fn visualizeEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+        return visualize(zfish_engine_position_ptr(@constCast(engine_ptr)));
+    }
+
 pub fn formatNumaInfo(config_ptr: [*]const u8, config_len: usize) ?[*:0]u8 {
     return allocMessage("Available processors: {s}", .{config_ptr[0..config_len]});
 }
