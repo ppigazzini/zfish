@@ -96,7 +96,6 @@ const RootSetupContext = struct {
 const numa_policy_none: u8 = 0;
 const numa_policy_auto: u8 = 1;
 
-extern fn zfish_threadpool_wait_main_thread(pool: *anyopaque) void;
 extern fn zfish_threadpool_set_stop_flag(pool: *anyopaque, stop: u8) void;
 extern fn zfish_threadpool_main_manager_set_stop_on_ponderhit(pool: *anyopaque, stop_on_ponderhit: u8) void;
 extern fn zfish_threadpool_main_manager_set_ponder(pool: *anyopaque, ponder: u8) void;
@@ -270,6 +269,13 @@ fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
     );
     zfish_thread_worker_set_root_state(context.thread, context.input.setup_state);
     zfish_thread_worker_set_tb_config(context.thread, context.input.tb_config);
+}
+
+fn waitMainThread(pool: *anyopaque) void {
+    if (zfish_threadpool_thread_count(pool) == 0)
+        return;
+
+    zfish_thread_wait_for_search_finished(zfish_threadpool_thread_at(pool, 0));
 }
 
 fn buildRootFen(pos: *const anyopaque) ?[*:0]u8 {
@@ -582,7 +588,7 @@ pub fn reconfigure(
     update_context: *const anyopaque,
 ) void {
     if (zfish_threadpool_thread_count(pool) > 0) {
-        zfish_threadpool_wait_main_thread(pool);
+        waitMainThread(pool);
         zfish_threadpool_reset_for_reconfigure(pool);
     }
 
@@ -678,7 +684,7 @@ pub fn reconfigure(
     }
 
     clear(pool);
-    zfish_threadpool_wait_main_thread(pool);
+    waitMainThread(pool);
 }
 
 pub fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
@@ -724,7 +730,7 @@ pub fn startThinking(
     limits: *const anyopaque,
     states_slot: *anyopaque,
 ) void {
-    zfish_threadpool_wait_main_thread(pool);
+    waitMainThread(pool);
     zfish_threadpool_main_manager_set_stop_on_ponderhit(pool, 0);
     zfish_threadpool_set_stop_flag(pool, 0);
     zfish_threadpool_main_manager_set_ponder(pool, zfish_limits_ponder_mode(limits));

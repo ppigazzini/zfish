@@ -1955,10 +1955,6 @@ void* zfish_threadpool_thread_at(void* pool_ptr, std::size_t index) {
     return (*(pool->begin() + static_cast<std::ptrdiff_t>(index))).get();
 }
 
-void zfish_threadpool_wait_main_thread(void* pool_ptr) {
-    static_cast<ThreadPool*>(pool_ptr)->main_thread()->wait_for_search_finished();
-}
-
 void zfish_threadpool_set_stop_flag(void* pool_ptr, std::uint8_t stop) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->stop = stop != 0;
