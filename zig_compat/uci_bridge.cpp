@@ -955,6 +955,12 @@ struct ZfishTtProbeOutput {
     ZfishTtReadOutput data;
 };
 
+struct ZfishTtProbeTableOutput {
+    std::uint8_t      found;
+    void*             writer_ptr;
+    ZfishTtReadOutput data;
+};
+
 struct ZfishBitboardMagicInitEntry {
     std::uint64_t mask;
     std::uint64_t magic;
@@ -1042,6 +1048,11 @@ ZfishTtProbeOutput zfish_tt_probe(const ZfishTtCluster* cluster,
                                   std::uint64_t         key,
                                   std::uint8_t          generation,
                                   int                   depth_none);
+ZfishTtProbeTableOutput zfish_tt_probe_table(void*         table,
+                                             std::size_t   cluster_count,
+                                             std::uint64_t key,
+                                             std::uint8_t  generation,
+                                             int           depth_none);
 void zfish_tt_resize_state(void**        table_ptr,
                            std::size_t*  cluster_count_ptr,
                            std::uint8_t* generation_ptr,
@@ -1600,7 +1611,6 @@ struct TTEntry {
     }
 
     bool is_occupied() const { return bool(depth8); }
-    void save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, std::uint8_t curr_generation);
     std::uint8_t relative_age(std::uint8_t curr_generation) const;
 
   private:
@@ -1614,13 +1624,6 @@ struct TTEntry {
     std::int16_t  eval16;
 };
 
-void TTEntry::save(
-  Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, std::uint8_t curr_generation) {
-    zfish_tt_entry_save(reinterpret_cast<ZfishTtEntry*>(this), k, v,
-                        static_cast<std::uint8_t>(pv ? 1 : 0), static_cast<std::uint8_t>(b), d,
-                        DEPTH_NONE, m.raw(), ev, curr_generation);
-}
-
 std::uint8_t TTEntry::relative_age(std::uint8_t curr_generation) const {
     return zfish_tt_entry_relative_age(reinterpret_cast<const ZfishTtEntry*>(this), curr_generation);
 }
@@ -1630,7 +1633,9 @@ TTWriter::TTWriter(TTEntry* tte) :
 
 void TTWriter::write(
   Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, std::uint8_t curr_generation) {
-    entry->save(k, v, pv, b, d, m, ev, curr_generation);
+        zfish_tt_entry_save(reinterpret_cast<ZfishTtEntry*>(entry), k, v,
+                                                static_cast<std::uint8_t>(pv ? 1 : 0), static_cast<std::uint8_t>(b), d,
+                                                DEPTH_NONE, m.raw(), ev, curr_generation);
 }
 
 struct Cluster {
@@ -1693,11 +1698,9 @@ void TranspositionTable::new_search() { generation8 = zfish_tt_generation_next(g
 std::uint8_t TranspositionTable::generation() const { return generation8; }
 
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
-    TTEntry* const tte = first_entry(key);
-
-    const auto output = zfish_tt_probe(reinterpret_cast<const ZfishTtCluster*>(
-                                         reinterpret_cast<const Cluster*>(tte)),
-                                       key, generation8, DEPTH_NONE);
+    const auto output = zfish_tt_probe_table(table, clusterCount, key, generation8, DEPTH_NONE);
+    auto* writer_entry = static_cast<TTEntry*>(output.writer_ptr);
+    assert(writer_entry != nullptr);
 
     if (output.found != 0)
     {
@@ -1705,11 +1708,11 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
         return {true,
                 TTData{Move(data.move16), Value(data.value16), Value(data.eval16), Depth(data.depth),
                        Bound(data.bound), data.is_pv != 0},
-                TTWriter(&tte[output.writer_index])};
+                TTWriter(writer_entry)};
     }
 
     return {false, TTData{Move::none(), VALUE_NONE, VALUE_NONE, DEPTH_NONE, BOUND_NONE, false},
-            TTWriter(&tte[output.writer_index])};
+            TTWriter(writer_entry)};
 }
 
 TTEntry* TranspositionTable::first_entry(const Key key) const {
