@@ -253,8 +253,10 @@ extern fn zfish_engine_numa_config_info_text(engine_ptr: *const anyopaque) ?[*:0
 extern fn zfish_engine_thread_allocation_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_evalfile_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_syzygy_path_text(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_binary_directory_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_position_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_network_ptr(engine_ptr: *const anyopaque) *const anyopaque;
+extern fn zfish_engine_network_replicated_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_threads_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_chess960_enabled(engine_ptr: *const anyopaque) u8;
@@ -557,10 +559,27 @@ pub fn loadNetwork(
     zfish_engine_threads_ensure_network_replicated(threads);
 }
 
+pub fn loadNetworkEngine(engine_ptr: *anyopaque, evalfile_path: []const u8) void {
+    const root_directory_ptr = zfish_engine_binary_directory_text(engine_ptr) orelse return;
+    defer c.free(@ptrCast(root_directory_ptr));
+    const root_directory = std.mem.span(root_directory_ptr);
+
+    loadNetwork(
+        zfish_engine_threads_ptr(engine_ptr),
+        zfish_engine_network_replicated_ptr(engine_ptr),
+        root_directory,
+        evalfile_path,
+    );
+}
+
 pub fn saveNetwork(network: *anyopaque, filename_opt: ?[]const u8) void {
     const has_filename: u8 = if (filename_opt != null) 1 else 0;
     const filename = filename_opt orelse "";
     zfish_engine_network_save_replicated(network, has_filename, filename.ptr, filename.len);
+}
+
+pub fn saveNetworkEngine(engine_ptr: *anyopaque, filename_opt: ?[]const u8) void {
+    saveNetwork(zfish_engine_network_replicated_ptr(engine_ptr), filename_opt);
 }
 
 fn ensurePendingStateStorage(states_slot: *anyopaque) *anyopaque {
