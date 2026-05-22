@@ -146,8 +146,9 @@ extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
 extern fn zfish_engine_tt_hashfull(tt: *const anyopaque, max_age: c_int) c_int;
 extern fn zfish_engine_threads_clear(threads: *anyopaque) void;
 extern fn zfish_engine_tablebases_init(path_ptr: [*]const u8, path_len: usize) void;
-extern fn zfish_engine_numa_set_system(numa_context: *anyopaque, hardware: u8) void;
-extern fn zfish_engine_numa_set_none(numa_context: *anyopaque) void;
+extern fn zfish_numa_context_set_system(numa_context: *anyopaque) void;
+extern fn zfish_numa_context_set_hardware(numa_context: *anyopaque) void;
+extern fn zfish_numa_context_set_none(numa_context: *anyopaque) void;
 extern fn zfish_engine_numa_set_from_string(
     numa_context: *anyopaque,
     text_ptr: [*]const u8,
@@ -480,11 +481,11 @@ pub fn setNumaConfigFromOption(
     option_text: []const u8,
 ) void {
     if (std.mem.eql(u8, option_text, "auto") or std.mem.eql(u8, option_text, "system")) {
-        zfish_engine_numa_set_system(numa_context, 0);
+        zfish_numa_context_set_system(numa_context);
     } else if (std.mem.eql(u8, option_text, "hardware")) {
-        zfish_engine_numa_set_system(numa_context, 1);
+        zfish_numa_context_set_hardware(numa_context);
     } else if (std.mem.eql(u8, option_text, "none")) {
-        zfish_engine_numa_set_none(numa_context);
+        zfish_numa_context_set_none(numa_context);
     } else {
         zfish_engine_numa_set_from_string(numa_context, option_text.ptr, option_text.len);
     }

@@ -212,7 +212,7 @@ extern fn zfish_numa_config_distribute_threads_among_nodes(
     out_nodes: [*]usize,
 ) usize;
 extern fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize;
-extern fn zfish_threadpool_add_main_thread_bound(
+extern fn zfish_threadpool_add_main_thread(
     pool: *anyopaque,
     numa_config: *const anyopaque,
     shared_state: *const anyopaque,
@@ -221,17 +221,9 @@ extern fn zfish_threadpool_add_main_thread_bound(
     idx_in_numa: usize,
     total_numa: usize,
     numa_id: usize,
+    do_bind: u8,
 ) void;
-extern fn zfish_threadpool_add_main_thread_unbound(
-    pool: *anyopaque,
-    shared_state: *const anyopaque,
-    update_context: *const anyopaque,
-    thread_id: usize,
-    idx_in_numa: usize,
-    total_numa: usize,
-    numa_id: usize,
-) void;
-extern fn zfish_threadpool_add_worker_thread_bound(
+extern fn zfish_threadpool_add_worker_thread(
     pool: *anyopaque,
     numa_config: *const anyopaque,
     shared_state: *const anyopaque,
@@ -239,14 +231,7 @@ extern fn zfish_threadpool_add_worker_thread_bound(
     idx_in_numa: usize,
     total_numa: usize,
     numa_id: usize,
-) void;
-extern fn zfish_threadpool_add_worker_thread_unbound(
-    pool: *anyopaque,
-    shared_state: *const anyopaque,
-    thread_id: usize,
-    idx_in_numa: usize,
-    total_numa: usize,
-    numa_id: usize,
+    do_bind: u8,
 ) void;
 
 const CreateThreadContext = struct {
@@ -264,52 +249,33 @@ const CreateThreadContext = struct {
 fn createThreadOnCurrentNode(context_ptr: ?*anyopaque) callconv(.c) void {
     const context: *const CreateThreadContext = @ptrCast(@alignCast(context_ptr.?));
 
-    if (context.thread_id == 0) {
-        if (context.do_bind) {
-            zfish_threadpool_add_main_thread_bound(
-                context.pool,
-                context.numa_config,
-                context.shared_state,
-                context.update_context,
-                context.thread_id,
-                context.idx_in_numa,
-                context.total_numa,
-                context.numa_id,
-            );
-        } else {
-            zfish_threadpool_add_main_thread_unbound(
-                context.pool,
-                context.shared_state,
-                context.update_context,
-                context.thread_id,
-                context.idx_in_numa,
-                context.total_numa,
-                context.numa_id,
-            );
-        }
-        return;
-    }
+    const bind_flag: u8 = @intFromBool(context.do_bind);
 
-    if (context.do_bind) {
-        zfish_threadpool_add_worker_thread_bound(
+    if (context.thread_id == 0) {
+        zfish_threadpool_add_main_thread(
             context.pool,
             context.numa_config,
             context.shared_state,
+            context.update_context,
             context.thread_id,
             context.idx_in_numa,
             context.total_numa,
             context.numa_id,
+            bind_flag,
         );
-    } else {
-        zfish_threadpool_add_worker_thread_unbound(
-            context.pool,
-            context.shared_state,
-            context.thread_id,
-            context.idx_in_numa,
-            context.total_numa,
-            context.numa_id,
-        );
+        return;
     }
+
+    zfish_threadpool_add_worker_thread(
+        context.pool,
+        context.numa_config,
+        context.shared_state,
+        context.thread_id,
+        context.idx_in_numa,
+        context.total_numa,
+        context.numa_id,
+        bind_flag,
+    );
 }
 
 fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {

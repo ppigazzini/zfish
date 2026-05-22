@@ -60,6 +60,8 @@ using ZfishOpaqueCallback = void (*)(void*);
 }
 
 namespace Stockfish {
+
+constexpr NumaAutoPolicy ZfishDefaultNumaPolicy = BundledL3Policy{32};
 namespace {
 
 struct ZfishSearchMoveView {
@@ -417,70 +419,55 @@ void zfish_numa_config_execute_on_numa_node(const void*       numa_config_ptr,
         numa_config.execute_on_numa_node(numa_index, [&]() { callback(context); });
 }
 
-void zfish_threadpool_add_main_thread_bound(void*       pool_ptr,
-                                                                                        const void* numa_config_ptr,
-                                                                                        const void* shared_state_ptr,
-                                                                                        const void* update_context_ptr,
-                                                                                        std::size_t  thread_id,
-                                                                                        std::size_t  idx_in_numa,
-                                                                                        std::size_t  total_numa,
-                                                                                        std::size_t  numa_id) {
-        auto& pool = *static_cast<ThreadPool*>(pool_ptr);
-        auto& shared_state =
-            *const_cast<Search::SharedState*>(static_cast<const Search::SharedState*>(shared_state_ptr));
-        const auto& numa_config = *static_cast<const NumaConfig*>(numa_config_ptr);
-        const auto& update_context =
-            *static_cast<const Search::SearchManager::UpdateContext*>(update_context_ptr);
-
-        pool.threads.emplace_back(std::make_unique<Thread>(
-            shared_state, std::make_unique<Search::SearchManager>(update_context), thread_id,
-            idx_in_numa, total_numa, OptionalThreadToNumaNodeBinder(numa_config, numa_id)));
-}
-
-void zfish_threadpool_add_main_thread_unbound(void*       pool_ptr,
-                                                                                            const void* shared_state_ptr,
-                                                                                            const void* update_context_ptr,
-                                                                                            std::size_t  thread_id,
-                                                                                            std::size_t  idx_in_numa,
-                                                                                            std::size_t  total_numa,
-                                                                                            std::size_t  numa_id) {
+void zfish_threadpool_add_main_thread(void*       pool_ptr,
+                                                                            const void* numa_config_ptr,
+                                                                            const void* shared_state_ptr,
+                                                                            const void* update_context_ptr,
+                                                                            std::size_t thread_id,
+                                                                            std::size_t idx_in_numa,
+                                                                            std::size_t total_numa,
+                                                                            std::size_t numa_id,
+                                                                            std::uint8_t do_bind) {
         auto& pool = *static_cast<ThreadPool*>(pool_ptr);
         auto& shared_state =
             *const_cast<Search::SharedState*>(static_cast<const Search::SharedState*>(shared_state_ptr));
         const auto& update_context =
             *static_cast<const Search::SearchManager::UpdateContext*>(update_context_ptr);
+
+        if (do_bind != 0)
+        {
+                const auto& numa_config = *static_cast<const NumaConfig*>(numa_config_ptr);
+                pool.threads.emplace_back(std::make_unique<Thread>(
+                    shared_state, std::make_unique<Search::SearchManager>(update_context), thread_id,
+                    idx_in_numa, total_numa, OptionalThreadToNumaNodeBinder(numa_config, numa_id)));
+                return;
+        }
 
         pool.threads.emplace_back(std::make_unique<Thread>(
             shared_state, std::make_unique<Search::SearchManager>(update_context), thread_id,
             idx_in_numa, total_numa, OptionalThreadToNumaNodeBinder(numa_id)));
 }
 
-void zfish_threadpool_add_worker_thread_bound(void*       pool_ptr,
-                                                                                            const void* numa_config_ptr,
-                                                                                            const void* shared_state_ptr,
-                                                                                            std::size_t  thread_id,
-                                                                                            std::size_t  idx_in_numa,
-                                                                                            std::size_t  total_numa,
-                                                                                            std::size_t  numa_id) {
+void zfish_threadpool_add_worker_thread(void*       pool_ptr,
+                                                                                const void* numa_config_ptr,
+                                                                                const void* shared_state_ptr,
+                                                                                std::size_t thread_id,
+                                                                                std::size_t idx_in_numa,
+                                                                                std::size_t total_numa,
+                                                                                std::size_t numa_id,
+                                                                                std::uint8_t do_bind) {
         auto& pool = *static_cast<ThreadPool*>(pool_ptr);
         auto& shared_state =
             *const_cast<Search::SharedState*>(static_cast<const Search::SharedState*>(shared_state_ptr));
-        const auto& numa_config = *static_cast<const NumaConfig*>(numa_config_ptr);
 
-        pool.threads.emplace_back(std::make_unique<Thread>(
-            shared_state, std::make_unique<Search::NullSearchManager>(), thread_id, idx_in_numa,
-            total_numa, OptionalThreadToNumaNodeBinder(numa_config, numa_id)));
-}
-
-void zfish_threadpool_add_worker_thread_unbound(void*       pool_ptr,
-                                                                                                const void* shared_state_ptr,
-                                                                                                std::size_t  thread_id,
-                                                                                                std::size_t  idx_in_numa,
-                                                                                                std::size_t  total_numa,
-                                                                                                std::size_t  numa_id) {
-        auto& pool = *static_cast<ThreadPool*>(pool_ptr);
-        auto& shared_state =
-            *const_cast<Search::SharedState*>(static_cast<const Search::SharedState*>(shared_state_ptr));
+        if (do_bind != 0)
+        {
+                const auto& numa_config = *static_cast<const NumaConfig*>(numa_config_ptr);
+                pool.threads.emplace_back(std::make_unique<Thread>(
+                    shared_state, std::make_unique<Search::NullSearchManager>(), thread_id, idx_in_numa,
+                    total_numa, OptionalThreadToNumaNodeBinder(numa_config, numa_id)));
+                return;
+        }
 
         pool.threads.emplace_back(std::make_unique<Thread>(
             shared_state, std::make_unique<Search::NullSearchManager>(), thread_id, idx_in_numa,
@@ -566,6 +553,20 @@ const char* zfish_engine_position_set(void*                pos_ptr,
 
 void zfish_engine_position_do_move(void* pos_ptr, std::uint16_t move_raw, void* state_ptr) {
     static_cast<Position*>(pos_ptr)->do_move(Move(move_raw), *static_cast<StateInfo*>(state_ptr));
+}
+
+void zfish_numa_context_set_system(void* numa_context_ptr) {
+    auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
+    numa_context.set_numa_config(NumaConfig::from_system(ZfishDefaultNumaPolicy));
+}
+
+void zfish_numa_context_set_hardware(void* numa_context_ptr) {
+    auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
+    numa_context.set_numa_config(NumaConfig::from_system(ZfishDefaultNumaPolicy, false));
+}
+
+void zfish_numa_context_set_none(void* numa_context_ptr) {
+    static_cast<NumaReplicationContext*>(numa_context_ptr)->set_numa_config(NumaConfig{});
 }
 
 }  // extern "C"
