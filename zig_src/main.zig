@@ -592,6 +592,16 @@ pub export fn zfish_engine_search_clear_owner(engine_ptr: *anyopaque) void {
     return engine_port.searchClearEngine(engine_ptr);
 }
 
+pub export fn zfish_engine_set_position_owner(
+    engine_ptr: *anyopaque,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    moves_ptr: ?[*]const engine_port.ByteView,
+    move_count: usize,
+) ?[*:0]u8 {
+    return engine_port.setPositionEngine(engine_ptr, fen_ptr, fen_len, moves_ptr, move_count);
+}
+
 pub export fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8 {
     return engine_port.traceEvalEngine(engine_ptr);
 }

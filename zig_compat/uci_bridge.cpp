@@ -187,6 +187,8 @@ const char* zfish_engine_evalfile_text(const void* engine_ptr);
 const char* zfish_engine_syzygy_path_text(const void* engine_ptr);
 const char* zfish_engine_binary_directory_text(const void* engine_ptr);
 void*       zfish_engine_position_ptr(void* engine_ptr);
+void*       zfish_engine_states_slot_ptr(void* engine_ptr);
+void        zfish_engine_states_slot_reset(void* states_slot_ptr);
 const void* zfish_engine_network_ptr(const void* engine_ptr);
 void*       zfish_engine_network_replicated_ptr(void* engine_ptr);
 void*       zfish_engine_threads_ptr(void* engine_ptr);
@@ -203,6 +205,12 @@ void zfish_engine_emit_verify_message(const void*          engine_ptr,
                                       std::size_t          message_len);
 void zfish_engine_verify_network_method(const void* engine_ptr);
 void zfish_engine_search_clear_owner(void* engine_ptr);
+struct EngineMoveView;
+const char* zfish_engine_set_position_owner(void*                engine_ptr,
+                                            const unsigned char* fen_ptr,
+                                            std::size_t          fen_len,
+                                            const EngineMoveView* moves_ptr,
+                                            std::size_t          move_count);
 const char* zfish_engine_trace_eval_owner(void* engine_ptr);
 void zfish_engine_load_network_owner(void* engine_ptr, const unsigned char* file_ptr, std::size_t file_len);
 void zfish_engine_save_network_owner(void*                engine_ptr,
@@ -2768,17 +2776,14 @@ void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search
 
 std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
                                                      const std::vector<std::string>& moves) {
-    states.reset();
-
     std::vector<EngineMoveView> move_views;
     move_views.reserve(moves.size());
     for (const auto& move : moves)
         move_views.push_back({reinterpret_cast<const unsigned char*>(move.data()), move.size()});
 
-    const char* error = zfish_engine_set_position(
-      &pos, &states, static_cast<std::uint8_t>(static_cast<int>(options["UCI_Chess960"])),
-      reinterpret_cast<const unsigned char*>(fen.data()), fen.size(),
-      move_views.empty() ? nullptr : move_views.data(), move_views.size());
+        const char* error = zfish_engine_set_position_owner(
+            this, reinterpret_cast<const unsigned char*>(fen.data()), fen.size(),
+            move_views.empty() ? nullptr : move_views.data(), move_views.size());
     if (!error)
         return std::nullopt;
 
@@ -2991,6 +2996,14 @@ const char* zfish_engine_binary_directory_text(const void* engine_ptr) {
 
 void* zfish_engine_position_ptr(void* engine_ptr) {
     return &static_cast<Engine*>(engine_ptr)->pos;
+}
+
+void* zfish_engine_states_slot_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->states;
+}
+
+void zfish_engine_states_slot_reset(void* states_slot_ptr) {
+    static_cast<StateListPtr*>(states_slot_ptr)->reset();
 }
 
 const void* zfish_engine_network_ptr(const void* engine_ptr) {

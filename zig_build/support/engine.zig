@@ -255,6 +255,8 @@ extern fn zfish_engine_evalfile_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_syzygy_path_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_binary_directory_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_position_ptr(engine_ptr: *anyopaque) *anyopaque;
+extern fn zfish_engine_states_slot_ptr(engine_ptr: *anyopaque) *anyopaque;
+extern fn zfish_engine_states_slot_reset(states_slot: *anyopaque) void;
 extern fn zfish_engine_network_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_network_replicated_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_threads_ptr(engine_ptr: *anyopaque) *anyopaque;
@@ -386,6 +388,27 @@ pub fn setPosition(
     }
 
     return null;
+}
+
+pub fn setPositionEngine(
+    engine_ptr: *anyopaque,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    moves_ptr: ?[*]const ByteView,
+    move_count: usize,
+) ?[*:0]u8 {
+    const states_slot = zfish_engine_states_slot_ptr(engine_ptr);
+    zfish_engine_states_slot_reset(states_slot);
+
+    return setPosition(
+        zfish_engine_position_ptr(engine_ptr),
+        states_slot,
+        zfish_engine_chess960_enabled(engine_ptr),
+        fen_ptr,
+        fen_len,
+        moves_ptr,
+        move_count,
+    );
 }
 
 pub fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
