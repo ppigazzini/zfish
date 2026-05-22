@@ -74,17 +74,35 @@ extern fn zfish_uci_engine_numa_config_string(uci_ptr: *const anyopaque) ?[*:0]u
 extern fn zfish_uci_engine_thread_binding_info_text(uci_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_uci_set_quiet_listeners(uci_ptr: *anyopaque) void;
 extern fn zfish_uci_set_default_listeners(uci_ptr: *anyopaque) void;
-extern fn zfish_uci_cmd_stop(engine: *anyopaque) void;
-extern fn zfish_uci_cmd_ponderhit(engine: *anyopaque) void;
-extern fn zfish_uci_cmd_uci(engine: *anyopaque) void;
-extern fn zfish_uci_cmd_setoption(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
-extern fn zfish_uci_cmd_go(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
-extern fn zfish_uci_cmd_position(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
-extern fn zfish_uci_cmd_search_clear(engine: *anyopaque) void;
-extern fn zfish_uci_cmd_flip(engine: *anyopaque) void;
-extern fn zfish_uci_cmd_visualize(engine: *anyopaque) void;
-extern fn zfish_uci_cmd_eval(engine: *anyopaque) void;
-extern fn zfish_uci_cmd_export_net(engine: *anyopaque, args_ptr: [*]const u8, args_len: usize) void;
+extern fn zfish_uci_engine_stop_search(uci_ptr: *anyopaque) void;
+extern fn zfish_uci_engine_set_ponderhit(uci_ptr: *anyopaque, ponderhit: u8) void;
+extern fn zfish_uci_engine_print_uci(uci_ptr: *anyopaque) void;
+extern fn zfish_uci_engine_apply_setoption(
+    uci_ptr: *anyopaque,
+    name_ptr: [*]const u8,
+    name_len: usize,
+    value_ptr: [*]const u8,
+    value_len: usize,
+    has_value: u8,
+) void;
+extern fn zfish_uci_engine_apply_position(
+    uci_ptr: *anyopaque,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    moves_ptr: [*]const u8,
+    moves_len: usize,
+) ?[*:0]u8;
+extern fn zfish_uci_engine_go_parsed(uci_ptr: *anyopaque, limits: ParsedLimits) void;
+extern fn zfish_uci_engine_search_clear(uci_ptr: *anyopaque) void;
+extern fn zfish_uci_engine_flip(uci_ptr: *anyopaque) void;
+extern fn zfish_uci_engine_visualize_text(uci_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_uci_engine_trace_eval(uci_ptr: *anyopaque) void;
+extern fn zfish_uci_engine_export_net(
+    uci_ptr: *anyopaque,
+    filename_ptr: [*]const u8,
+    filename_len: usize,
+    has_filename: u8,
+) void;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -250,35 +268,35 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
 
     switch (classifyCommandToken(token)) {
         .quit => {
-            zfish_uci_cmd_stop(engine);
+            zfish_uci_engine_stop_search(engine);
             return .{ .should_quit = 1 };
         },
         .stop => {
-            zfish_uci_cmd_stop(engine);
+            zfish_uci_engine_stop_search(engine);
             return .{ .should_quit = 0 };
         },
         .ponderhit => {
-            zfish_uci_cmd_ponderhit(engine);
+            zfish_uci_engine_set_ponderhit(engine, 0);
             return .{ .should_quit = 0 };
         },
         .uci => {
-            zfish_uci_cmd_uci(engine);
+            zfish_uci_engine_print_uci(engine);
             return .{ .should_quit = 0 };
         },
         .setoption => {
-            zfish_uci_cmd_setoption(engine, args.ptr, args.len);
+            applySetoption(engine, trimmed);
             return .{ .should_quit = 0 };
         },
         .go => {
-            zfish_uci_cmd_go(engine, args.ptr, args.len);
+            applyGo(engine, trimmed);
             return .{ .should_quit = 0 };
         },
         .position => {
-            zfish_uci_cmd_position(engine, trimmed.ptr, trimmed.len);
+            applyPosition(engine, trimmed);
             return .{ .should_quit = 0 };
         },
         .ucinewgame => {
-            zfish_uci_cmd_search_clear(engine);
+            zfish_uci_engine_search_clear(engine);
             return .{ .should_quit = 0 };
         },
         .isready => {
@@ -286,7 +304,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .flip => {
-            zfish_uci_cmd_flip(engine);
+            zfish_uci_engine_flip(engine);
             return .{ .should_quit = 0 };
         },
         .bench => {
@@ -298,11 +316,13 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .visualize => {
-            zfish_uci_cmd_visualize(engine);
+            const text_ptr = zfish_uci_engine_visualize_text(engine) orelse return .{ .should_quit = 0 };
+            defer c.free(@ptrCast(text_ptr));
+            _ = c.puts(@ptrCast(text_ptr));
             return .{ .should_quit = 0 };
         },
         .eval => {
-            zfish_uci_cmd_eval(engine);
+            zfish_uci_engine_trace_eval(engine);
             return .{ .should_quit = 0 };
         },
         .compiler => {
@@ -313,7 +333,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
         },
         .export_net => {
             const filename = trimAsciiWhitespace(args);
-            zfish_uci_cmd_export_net(engine, filename.ptr, filename.len);
+            zfish_uci_engine_export_net(engine, filename.ptr, filename.len, if (filename.len != 0) 1 else 0);
             return .{ .should_quit = 0 };
         },
         .help => {
@@ -350,6 +370,47 @@ fn classifyCommandToken(token: []const u8) CommandKind {
     if (std.mem.eql(u8, token, "export_net")) return .export_net;
     if (isHelpToken(token)) return .help;
     return .unknown;
+}
+
+fn applySetoption(engine: *anyopaque, trimmed: []const u8) void {
+    const parsed = zfish_option_parse_setoption(trimmed.ptr, trimmed.len);
+    defer freeMaybeCString(parsed.name);
+    defer freeMaybeCString(parsed.value);
+
+    const name_ptr = parsed.name orelse return;
+    const name = std.mem.span(name_ptr);
+    const value = if (parsed.value) |ptr| std.mem.span(ptr) else "";
+    const has_value: u8 = if (parsed.value != null and value.len != 0) 1 else 0;
+
+    zfish_uci_engine_apply_setoption(engine, name.ptr, name.len, value.ptr, value.len, has_value);
+}
+
+fn applyPosition(engine: *anyopaque, trimmed: []const u8) void {
+    const parsed = parsePosition(trimmed);
+    defer freeMaybeCString(parsed.fen);
+    defer freeMaybeCString(parsed.moves);
+
+    if (parsed.ok == 0) {
+        return;
+    }
+
+    const fen_ptr = parsed.fen orelse return;
+    const fen = std.mem.span(fen_ptr);
+    const moves = if (parsed.moves) |ptr| std.mem.span(ptr) else "";
+
+    const err = zfish_uci_engine_apply_position(engine, fen.ptr, fen.len, moves.ptr, moves.len);
+    if (err) |err_ptr| {
+        defer c.free(@ptrCast(err_ptr));
+        const critical = formatCriticalError("position", std.mem.span(err_ptr)) orelse return;
+        defer c.free(@ptrCast(critical));
+        _ = c.puts(@ptrCast(critical));
+    }
+}
+
+fn applyGo(engine: *anyopaque, trimmed: []const u8) void {
+    const limits = parseLimits(trimmed);
+    defer freeMaybeCString(limits.searchmoves);
+    zfish_uci_engine_go_parsed(engine, limits);
 }
 
 fn isHelpToken(token: []const u8) bool {
@@ -510,7 +571,7 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
 
     std.debug.print("\n", .{});
 
-    zfish_uci_cmd_search_clear(uci_ptr);
+    zfish_uci_engine_search_clear(uci_ptr);
 
     var total_time: i64 = 0;
     var total_nodes: u64 = 0;
