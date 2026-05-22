@@ -596,6 +596,26 @@ pub export fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8 {
     return engine_port.traceEvalEngine(engine_ptr);
 }
 
+pub export fn zfish_engine_load_network_owner(
+    engine_ptr: *anyopaque,
+    file_ptr: [*]const u8,
+    file_len: usize,
+) void {
+    return engine_port.loadNetworkEngine(engine_ptr, file_ptr[0..file_len]);
+}
+
+pub export fn zfish_engine_save_network_owner(
+    engine_ptr: *anyopaque,
+    has_filename: u8,
+    filename_ptr: [*]const u8,
+    filename_len: usize,
+) void {
+    return engine_port.saveNetworkEngine(
+        engine_ptr,
+        if (has_filename != 0) filename_ptr[0..filename_len] else null,
+    );
+}
+
 pub export fn zfish_engine_format_network_status(
     replica_index: usize,
     status: u8,

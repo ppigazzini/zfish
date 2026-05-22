@@ -185,8 +185,10 @@ const char* zfish_engine_format_network_status(std::size_t          replica_inde
                                                std::size_t          error_len);
 const char* zfish_engine_evalfile_text(const void* engine_ptr);
 const char* zfish_engine_syzygy_path_text(const void* engine_ptr);
+const char* zfish_engine_binary_directory_text(const void* engine_ptr);
 void*       zfish_engine_position_ptr(void* engine_ptr);
 const void* zfish_engine_network_ptr(const void* engine_ptr);
+void*       zfish_engine_network_replicated_ptr(void* engine_ptr);
 void*       zfish_engine_threads_ptr(void* engine_ptr);
 void*       zfish_engine_tt_ptr(void* engine_ptr);
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr);
@@ -202,6 +204,11 @@ void zfish_engine_emit_verify_message(const void*          engine_ptr,
 void zfish_engine_verify_network_method(const void* engine_ptr);
 void zfish_engine_search_clear_owner(void* engine_ptr);
 const char* zfish_engine_trace_eval_owner(void* engine_ptr);
+void zfish_engine_load_network_owner(void* engine_ptr, const unsigned char* file_ptr, std::size_t file_len);
+void zfish_engine_save_network_owner(void*                engine_ptr,
+                                     std::uint8_t         has_filename,
+                                     const unsigned char* filename_ptr,
+                                     std::size_t          filename_len);
 struct ZfishEvalTraceInput {
     const unsigned char* inner_trace_ptr;
     std::size_t          inner_trace_len;
@@ -2644,17 +2651,14 @@ std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
 }
 
 void Engine::load_network(const std::string& file) {
-    zfish_engine_load_network(&threads, &network,
-                              reinterpret_cast<const unsigned char*>(binaryDirectory.data()),
-                              binaryDirectory.size(),
-                              reinterpret_cast<const unsigned char*>(file.data()), file.size());
+    zfish_engine_load_network_owner(this, reinterpret_cast<const unsigned char*>(file.data()), file.size());
 }
 
 void Engine::save_network(const std::pair<std::optional<std::string>, std::string> file) {
     const std::string filename = file.first.value_or(std::string{});
-    zfish_engine_save_network(&network, static_cast<std::uint8_t>(file.first.has_value()),
-                              reinterpret_cast<const unsigned char*>(filename.data()),
-                              filename.size());
+    zfish_engine_save_network_owner(this, static_cast<std::uint8_t>(file.first.has_value()),
+                                    reinterpret_cast<const unsigned char*>(filename.data()),
+                                    filename.size());
 }
 
 void dbg_hit_on(bool cond, int slot) {
@@ -2954,8 +2958,7 @@ void zfish_engine_search_clear_method(void* engine_ptr) {
 void zfish_engine_load_network_method(void*                engine_ptr,
                                       const unsigned char* file_ptr,
                                       std::size_t          file_len) {
-    static_cast<Engine*>(engine_ptr)->load_network(
-      std::string(reinterpret_cast<const char*>(file_ptr), file_len));
+        zfish_engine_load_network_owner(engine_ptr, file_ptr, file_len);
 }
 
 void zfish_engine_set_numa_config_from_option_method(void*                engine_ptr,
@@ -2982,12 +2985,20 @@ const char* zfish_engine_syzygy_path_text(const void* engine_ptr) {
     return alloc_c_string(std::string(static_cast<const Engine*>(engine_ptr)->get_options()["SyzygyPath"]));
 }
 
+const char* zfish_engine_binary_directory_text(const void* engine_ptr) {
+    return alloc_c_string(static_cast<const Engine*>(engine_ptr)->binaryDirectory);
+}
+
 void* zfish_engine_position_ptr(void* engine_ptr) {
     return &static_cast<Engine*>(engine_ptr)->pos;
 }
 
 const void* zfish_engine_network_ptr(const void* engine_ptr) {
     return static_cast<const Engine*>(engine_ptr)->network.operator->();
+}
+
+void* zfish_engine_network_replicated_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->network;
 }
 
 void* zfish_engine_threads_ptr(void* engine_ptr) {
