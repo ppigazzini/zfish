@@ -151,7 +151,12 @@ extern fn zfish_engine_position_set(
 extern fn zfish_engine_position_do_move(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
 extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_thread_at(pool: *anyopaque, index: usize) *anyopaque;
-extern fn zfish_threadpool_reset_clear_state(pool: *anyopaque) void;
+extern fn zfish_threadpool_main_manager_reset_best_previous_average_score(pool: *anyopaque) void;
+extern fn zfish_threadpool_main_manager_reset_previous_time_reduction(pool: *anyopaque) void;
+extern fn zfish_threadpool_main_manager_reset_calls_count(pool: *anyopaque) void;
+extern fn zfish_threadpool_main_manager_reset_best_previous_score(pool: *anyopaque) void;
+extern fn zfish_threadpool_main_manager_reset_original_time_adjust(pool: *anyopaque) void;
+extern fn zfish_threadpool_main_manager_clear_timeman(pool: *anyopaque) void;
 extern fn zfish_threadpool_reset_for_reconfigure(pool: *anyopaque) void;
 extern fn zfish_threadpool_bound_nodes_assign(
     pool: *anyopaque,
@@ -821,7 +826,12 @@ pub fn clear(pool: *anyopaque) void {
         zfish_thread_wait_for_search_finished(zfish_threadpool_thread_at(pool, index));
     }
 
-    zfish_threadpool_reset_clear_state(pool);
+    zfish_threadpool_main_manager_reset_best_previous_average_score(pool);
+    zfish_threadpool_main_manager_reset_previous_time_reduction(pool);
+    zfish_threadpool_main_manager_reset_calls_count(pool);
+    zfish_threadpool_main_manager_reset_best_previous_score(pool);
+    zfish_threadpool_main_manager_reset_original_time_adjust(pool);
+    zfish_threadpool_main_manager_clear_timeman(pool);
 }
 
 pub fn nodesSearched(pool: *anyopaque) u64 {
