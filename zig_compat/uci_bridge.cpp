@@ -186,6 +186,7 @@ const char* zfish_engine_format_network_status(std::size_t          replica_inde
 const char* zfish_engine_evalfile_text(const void* engine_ptr);
 const char* zfish_engine_syzygy_path_text(const void* engine_ptr);
 const char* zfish_engine_binary_directory_text(const void* engine_ptr);
+const char* zfish_engine_numa_config_text(const void* engine_ptr);
 void*       zfish_engine_position_ptr(void* engine_ptr);
 const void* zfish_engine_options_ptr(const void* engine_ptr);
 void*       zfish_engine_numa_context_ptr(void* engine_ptr);
@@ -218,6 +219,7 @@ const char* zfish_engine_set_position_owner(void*                engine_ptr,
                                             std::size_t          move_count);
 void zfish_engine_go_owner(void* engine_ptr, const void* limits_ptr);
 void zfish_engine_stop_owner(void* engine_ptr);
+void zfish_engine_wait_for_search_finished_owner(void* engine_ptr);
 void zfish_engine_set_numa_config_from_option_owner(void*                engine_ptr,
                                                     const unsigned char* value_ptr,
                                                     std::size_t          value_len);
@@ -225,6 +227,10 @@ void zfish_engine_resize_threads_owner(void* engine_ptr);
 void zfish_engine_set_tt_size_owner(void* engine_ptr, std::size_t mb);
 void zfish_engine_set_ponderhit_owner(void* engine_ptr, std::uint8_t ponder);
 const char* zfish_engine_trace_eval_owner(void* engine_ptr);
+const char* zfish_engine_numa_config_string_owner(const void* engine_ptr);
+const char* zfish_engine_numa_config_information_owner(const void* engine_ptr);
+const char* zfish_engine_thread_binding_information_owner(const void* engine_ptr);
+const char* zfish_engine_thread_allocation_information_owner(const void* engine_ptr);
 void zfish_engine_load_network_owner(void* engine_ptr, const unsigned char* file_ptr, std::size_t file_len);
 void zfish_engine_save_network_owner(void*                engine_ptr,
                                      std::uint8_t         has_filename,
@@ -2630,36 +2636,20 @@ std::string compiler_info() {
 }
 
 std::string Engine::get_numa_config_as_string() const {
-    return numaContext.get_numa_config().to_string();
+    return take_string_and_free_engine_required(zfish_engine_numa_config_string_owner(this));
 }
 
 std::string Engine::numa_config_information_as_string() const {
-    auto cfgStr = get_numa_config_as_string();
-    const char* rendered = zfish_engine_format_numa_info(
-      reinterpret_cast<const unsigned char*>(cfgStr.data()), cfgStr.size());
-    if (!rendered)
-        std::abort();
-    std::string result(rendered);
-    std::free(const_cast<char*>(rendered));
-    return result;
+    return take_string_and_free_engine_required(zfish_engine_numa_config_information_owner(this));
 }
 
 std::string Engine::thread_binding_information_as_string() const {
-    const char* rendered = zfish_engine_thread_binding_information(&numaContext, &threads);
-    if (!rendered)
-        std::abort();
-    std::string result(rendered);
-    std::free(const_cast<char*>(rendered));
-    return result;
+    return take_string_and_free_engine_required(zfish_engine_thread_binding_information_owner(this));
 }
 
 std::string Engine::thread_allocation_information_as_string() const {
-    const char* rendered = zfish_engine_thread_allocation_information(&numaContext, &threads);
-    if (!rendered)
-        std::abort();
-    std::string result(rendered);
-    std::free(const_cast<char*>(rendered));
-    return result;
+    return take_string_and_free_engine_required(
+      zfish_engine_thread_allocation_information_owner(this));
 }
 
 void Engine::verify_network() const {
@@ -2786,7 +2776,7 @@ void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {
     onVerifyNetwork = std::move(f);
 }
 
-void Engine::wait_for_search_finished() { threads.main_thread()->wait_for_search_finished(); }
+void Engine::wait_for_search_finished() { zfish_engine_wait_for_search_finished_owner(this); }
 
 std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
                                                      const std::vector<std::string>& moves) {
@@ -2995,6 +2985,10 @@ const char* zfish_engine_syzygy_path_text(const void* engine_ptr) {
 
 const char* zfish_engine_binary_directory_text(const void* engine_ptr) {
     return alloc_c_string(static_cast<const Engine*>(engine_ptr)->binaryDirectory);
+}
+
+const char* zfish_engine_numa_config_text(const void* engine_ptr) {
+    return alloc_c_string(static_cast<const Engine*>(engine_ptr)->numaContext.get_numa_config().to_string());
 }
 
 void* zfish_engine_position_ptr(void* engine_ptr) {

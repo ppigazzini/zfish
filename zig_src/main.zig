@@ -610,6 +610,10 @@ pub export fn zfish_engine_stop_owner(engine_ptr: *anyopaque) void {
     return engine_port.stopEngine(engine_ptr);
 }
 
+pub export fn zfish_engine_wait_for_search_finished_owner(engine_ptr: *anyopaque) void {
+    return engine_port.waitForSearchFinishedEngine(engine_ptr);
+}
+
 pub export fn zfish_engine_set_numa_config_from_option_owner(
     engine_ptr: *anyopaque,
     value_ptr: [*]const u8,
@@ -632,6 +636,28 @@ pub export fn zfish_engine_set_ponderhit_owner(engine_ptr: *anyopaque, ponder: u
 
 pub export fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8 {
     return engine_port.traceEvalEngine(engine_ptr);
+}
+
+pub export fn zfish_engine_numa_config_string_owner(engine_ptr: *const anyopaque) ?[*:0]u8 {
+    return engine_port.numaConfigStringEngine(engine_ptr);
+}
+
+pub export fn zfish_engine_numa_config_information_owner(
+    engine_ptr: *const anyopaque,
+) ?[*:0]u8 {
+    return engine_port.numaConfigInformationEngine(engine_ptr);
+}
+
+pub export fn zfish_engine_thread_binding_information_owner(
+    engine_ptr: *const anyopaque,
+) ?[*:0]u8 {
+    return engine_port.threadBindingInformationEngine(engine_ptr);
+}
+
+pub export fn zfish_engine_thread_allocation_information_owner(
+    engine_ptr: *const anyopaque,
+) ?[*:0]u8 {
+    return engine_port.threadAllocationInformationEngine(engine_ptr);
 }
 
 pub export fn zfish_engine_load_network_owner(
