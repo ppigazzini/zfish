@@ -115,10 +115,8 @@ extern fn zfish_engine_state_list_storage_destroy(storage: ?*anyopaque) void;
 extern fn zfish_engine_state_list_storage_reset(storage: *anyopaque) *anyopaque;
 extern fn zfish_engine_state_list_storage_push(storage: *anyopaque) *anyopaque;
 extern fn zfish_engine_state_list_storage_has_states(storage: *const anyopaque) u8;
-extern fn zfish_threadpool_take_setup_states_from_storage(
-    pool: *anyopaque,
-    storage: *anyopaque,
-) u8;
+extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
+extern fn zfish_threadpool_has_setup_states(pool: *const anyopaque) u8;
 extern fn zfish_engine_position_set(
     pos: *anyopaque,
     fen_ptr: [*]const u8,
@@ -370,7 +368,11 @@ pub fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
 
 pub fn handoffPendingStates(pool: *anyopaque, states_slot: *anyopaque) u8 {
     const state_storage = lookupPendingStateStorage(@intFromPtr(states_slot)) orelse return 0;
-    return zfish_threadpool_take_setup_states_from_storage(pool, state_storage);
+    if (zfish_engine_state_list_storage_has_states(state_storage) == 0)
+        return 0;
+
+    zfish_threadpool_setup_states_adopt_from_storage(pool, state_storage);
+    return zfish_threadpool_has_setup_states(pool);
 }
 
 pub fn releasePendingStateSlot(states_slot: *anyopaque) void {

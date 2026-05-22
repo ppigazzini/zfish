@@ -2280,23 +2280,21 @@ std::uint8_t zfish_engine_state_list_storage_has_states(const void* storage_ptr)
                                                                                  : std::uint8_t{0};
 }
 
-std::uint8_t zfish_threadpool_take_setup_states_from_storage(void* pool_ptr, void* storage_ptr) {
+void zfish_threadpool_setup_states_adopt_from_storage(void* pool_ptr, void* storage_ptr) {
     auto& pool = *static_cast<ThreadPool*>(pool_ptr);
     auto& storage = *static_cast<ZfishPendingStateListStorage*>(storage_ptr);
-    if (!storage.states)
-        return std::uint8_t{0};
-
     pool.setupStates = std::move(storage.states);
-    return std::uint8_t{1};
 }
 
-std::uint8_t zfish_threadpool_take_setup_states_from_slot(void* pool_ptr, void* states_slot_ptr) {
+void zfish_threadpool_setup_states_adopt_from_slot(void* pool_ptr, void* states_slot_ptr) {
     auto& pool = *static_cast<ThreadPool*>(pool_ptr);
     auto& states = *static_cast<StateListPtr*>(states_slot_ptr);
 
-    if (states.get())
-        pool.setupStates = std::move(states);
+    pool.setupStates = std::move(states);
+}
 
+std::uint8_t zfish_threadpool_has_setup_states(const void* pool_ptr) {
+    const auto& pool = *static_cast<const ThreadPool*>(pool_ptr);
     return pool.setupStates ? std::uint8_t{1} : std::uint8_t{0};
 }
 

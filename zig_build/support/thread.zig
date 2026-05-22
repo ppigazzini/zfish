@@ -101,7 +101,8 @@ extern fn zfish_threadpool_set_stop_flag(pool: *anyopaque, stop: u8) void;
 extern fn zfish_threadpool_main_manager_set_stop_on_ponderhit(pool: *anyopaque, stop_on_ponderhit: u8) void;
 extern fn zfish_threadpool_main_manager_set_ponder(pool: *anyopaque, ponder: u8) void;
 extern fn zfish_threadpool_set_increase_depth(pool: *anyopaque, increase_depth: u8) void;
-extern fn zfish_threadpool_take_setup_states_from_slot(pool: *anyopaque, states_slot: *anyopaque) u8;
+extern fn zfish_threadpool_setup_states_adopt_from_slot(pool: *anyopaque, states_slot: *anyopaque) void;
+extern fn zfish_threadpool_has_setup_states(pool: *const anyopaque) u8;
 extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
 extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
 extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
@@ -732,8 +733,10 @@ pub fn startThinking(
     if (zfish_engine_pending_states_available(states_slot) != 0) {
         if (zfish_engine_handoff_pending_states(pool, states_slot) == 0)
             @panic("failed to hand off pending setup states");
-    } else if (zfish_threadpool_take_setup_states_from_slot(pool, states_slot) == 0) {
-        @panic("missing setup states");
+    } else {
+        zfish_threadpool_setup_states_adopt_from_slot(pool, states_slot);
+        if (zfish_threadpool_has_setup_states(pool) == 0)
+            @panic("missing setup states");
     }
 
     const setup_state = zfish_threadpool_setup_state_back(pool) orelse
