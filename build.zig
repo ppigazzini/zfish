@@ -232,7 +232,12 @@ pub fn build(b: *std.Build) void {
     }) catch @panic("OOM");
     compile_flags.appendSlice(b.allocator, arch.flags) catch @panic("OOM");
 
-    const stockfish_sources = &.{};
+    const stockfish_sources = &.{
+        "timeman.cpp",
+        "evaluate.cpp",
+        "movepick.cpp",
+        "tt.cpp",
+    };
 
     const zig_compat_sources = &.{
         "uci_bridge.cpp",
