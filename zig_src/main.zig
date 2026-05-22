@@ -584,6 +584,10 @@ pub export fn zfish_engine_thread_allocation_information(
     return engine_port.threadAllocationInformation(numa_context, threads);
 }
 
+pub export fn zfish_engine_verify_network_method(engine_ptr: *const anyopaque) void {
+    return engine_port.verifyNetwork(engine_ptr);
+}
+
 pub export fn zfish_engine_format_network_status(
     replica_index: usize,
     status: u8,
