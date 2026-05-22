@@ -165,7 +165,17 @@ extern fn zfish_thread_run_callback(
     callback: ThreadCallback,
     context: ?*anyopaque,
 ) void;
-extern fn zfish_thread_worker_apply_root_setup(thread: *anyopaque, input: *const RootSetupInput) void;
+extern fn zfish_thread_worker_set_limits(thread: *anyopaque, limits: *const anyopaque) void;
+extern fn zfish_thread_worker_reset_root_setup_state(thread: *anyopaque) void;
+extern fn zfish_thread_worker_set_root_moves(thread: *anyopaque, root_moves: *const anyopaque) void;
+extern fn zfish_thread_worker_set_root_position(
+    thread: *anyopaque,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    chess960: u8,
+) void;
+extern fn zfish_thread_worker_set_root_state(thread: *anyopaque, setup_state: *const anyopaque) void;
+extern fn zfish_thread_worker_set_tb_config(thread: *anyopaque, config: TbConfig) void;
 extern fn zfish_thread_clear_worker(thread: *anyopaque) void;
 extern fn zfish_thread_wait_for_search_finished(thread: *anyopaque) void;
 extern fn zfish_thread_start_searching(thread: *anyopaque) void;
@@ -240,7 +250,17 @@ fn createThreadOnCurrentNode(context_ptr: ?*anyopaque) callconv(.c) void {
 
 fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
-    zfish_thread_worker_apply_root_setup(context.thread, &context.input);
+    zfish_thread_worker_set_limits(context.thread, context.input.limits);
+    zfish_thread_worker_reset_root_setup_state(context.thread);
+    zfish_thread_worker_set_root_moves(context.thread, context.input.root_moves);
+    zfish_thread_worker_set_root_position(
+        context.thread,
+        context.input.fen_ptr,
+        context.input.fen_len,
+        context.input.chess960,
+    );
+    zfish_thread_worker_set_root_state(context.thread, context.input.setup_state);
+    zfish_thread_worker_set_tb_config(context.thread, context.input.tb_config);
 }
 
 fn buildRootFen(pos: *const anyopaque) ?[*:0]u8 {

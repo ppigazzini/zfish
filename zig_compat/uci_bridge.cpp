@@ -1099,8 +1099,6 @@ void zfish_threadpool_reconfigure(void*       pool,
                                   const void* shared_state,
                                   const void* update_context);
 void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context);
-void zfish_thread_worker_apply_root_setup(void* thread_ptr,
-                                          const ZfishThreadRootSetupInput* input);
 void zfish_threadpool_clear(void* pool);
 void zfish_threadpool_start_searching(void* pool);
 void zfish_threadpool_wait_for_search_finished(void* pool);
@@ -1999,29 +1997,44 @@ void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, v
     thread->run_custom_job([callback, context]() { callback(context); });
 }
 
-void zfish_thread_worker_apply_root_setup(void*                           thread_ptr,
-                                          const ZfishThreadRootSetupInput* input_ptr) {
-    auto* thread = static_cast<Thread*>(thread_ptr);
-    const auto& input = *input_ptr;
-    const auto limits = *static_cast<const Search::LimitsType*>(input.limits_ptr);
-    const auto root_moves = *static_cast<const Search::RootMoves*>(input.root_moves_ptr);
-    const auto setup_state = *static_cast<const StateInfo*>(input.setup_state_ptr);
-    const auto fen = std::string(reinterpret_cast<const char*>(input.fen_ptr), input.fen_len);
-    const Tablebases::Config config{input.tb_config.cardinality, input.tb_config.root_in_tb != 0,
-                                    input.tb_config.use_rule50 != 0,
-                                    Depth(input.tb_config.probe_depth)};
+void zfish_thread_worker_set_limits(void* thread_ptr, const void* limits_ptr) {
+    auto* worker = bridge_worker(static_cast<Thread*>(thread_ptr));
+    worker->limits = *static_cast<const Search::LimitsType*>(limits_ptr);
+}
 
-    auto* worker = bridge_worker(thread);
-    worker->limits          = limits;
+void zfish_thread_worker_reset_root_setup_state(void* thread_ptr) {
+    auto* worker = bridge_worker(static_cast<Thread*>(thread_ptr));
     worker->nodes           = 0;
     worker->tbHits          = 0;
     worker->bestMoveChanges = 0;
     worker->nmpMinPly       = 0;
     worker->rootDepth       = 0;
-    worker->rootMoves       = root_moves;
-    worker->rootPos.set(fen, input.chess960 != 0, &worker->rootState);
-    worker->rootState = setup_state;
-    worker->tbConfig  = config;
+}
+
+void zfish_thread_worker_set_root_moves(void* thread_ptr, const void* root_moves_ptr) {
+    auto* worker = bridge_worker(static_cast<Thread*>(thread_ptr));
+    worker->rootMoves = *static_cast<const Search::RootMoves*>(root_moves_ptr);
+}
+
+void zfish_thread_worker_set_root_position(void*                thread_ptr,
+                                           const unsigned char* fen_ptr,
+                                           std::size_t          fen_len,
+                                           std::uint8_t         chess960) {
+    auto* worker = bridge_worker(static_cast<Thread*>(thread_ptr));
+    const auto fen = std::string(reinterpret_cast<const char*>(fen_ptr), fen_len);
+    worker->rootPos.set(fen, chess960 != 0, &worker->rootState);
+}
+
+void zfish_thread_worker_set_root_state(void* thread_ptr, const void* setup_state_ptr) {
+    auto* worker = bridge_worker(static_cast<Thread*>(thread_ptr));
+    worker->rootState = *static_cast<const StateInfo*>(setup_state_ptr);
+}
+
+void zfish_thread_worker_set_tb_config(void* thread_ptr, ZfishTbConfig config) {
+    auto* worker = bridge_worker(static_cast<Thread*>(thread_ptr));
+    worker->tbConfig = Tablebases::Config{config.cardinality, config.root_in_tb != 0,
+                                          config.use_rule50 != 0,
+                                          Depth(config.probe_depth)};
 }
 
 void zfish_thread_wait_for_search_finished(void* thread_ptr) {
