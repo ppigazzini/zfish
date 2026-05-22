@@ -188,12 +188,15 @@ const char* zfish_engine_syzygy_path_text(const void* engine_ptr);
 const char* zfish_engine_binary_directory_text(const void* engine_ptr);
 void*       zfish_engine_position_ptr(void* engine_ptr);
 const void* zfish_engine_options_ptr(const void* engine_ptr);
+void*       zfish_engine_numa_context_ptr(void* engine_ptr);
 void*       zfish_engine_states_slot_ptr(void* engine_ptr);
 void        zfish_engine_states_slot_reset(void* states_slot_ptr);
 const void* zfish_engine_network_ptr(const void* engine_ptr);
 void*       zfish_engine_network_replicated_ptr(void* engine_ptr);
 void*       zfish_engine_threads_ptr(void* engine_ptr);
 void*       zfish_engine_tt_ptr(void* engine_ptr);
+void*       zfish_engine_shared_hists_ptr(void* engine_ptr);
+const void* zfish_engine_update_context_ptr(const void* engine_ptr);
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr);
 std::size_t  zfish_limits_perft_value(const void* limits_ptr);
 ZfishEngineNetworkVerifyResult zfish_engine_network_verify_current(const void*          engine_ptr,
@@ -214,6 +217,13 @@ const char* zfish_engine_set_position_owner(void*                engine_ptr,
                                             const EngineMoveView* moves_ptr,
                                             std::size_t          move_count);
 void zfish_engine_go_owner(void* engine_ptr, const void* limits_ptr);
+void zfish_engine_stop_owner(void* engine_ptr);
+void zfish_engine_set_numa_config_from_option_owner(void*                engine_ptr,
+                                                    const unsigned char* value_ptr,
+                                                    std::size_t          value_len);
+void zfish_engine_resize_threads_owner(void* engine_ptr);
+void zfish_engine_set_tt_size_owner(void* engine_ptr, std::size_t mb);
+void zfish_engine_set_ponderhit_owner(void* engine_ptr, std::uint8_t ponder);
 const char* zfish_engine_trace_eval_owner(void* engine_ptr);
 void zfish_engine_load_network_owner(void* engine_ptr, const unsigned char* file_ptr, std::size_t file_len);
 void zfish_engine_save_network_owner(void*                engine_ptr,
@@ -2794,30 +2804,19 @@ std::optional<PositionSetError> Engine::set_position(const std::string&         
     return PositionSetError(take_string_and_free_engine_required(error));
 }
 
-void Engine::stop() { zfish_engine_stop(&threads); }
+void Engine::stop() { zfish_engine_stop_owner(this); }
 
 void Engine::set_numa_config_from_option(const std::string& o) {
-    zfish_engine_set_numa_config_from_option(
-      &numaContext,
-      &options,
-      &threads,
-      &tt,
-      &sharedHists,
-      &network,
-      &updateContext,
-      reinterpret_cast<const unsigned char*>(o.data()),
-      o.size());
+    zfish_engine_set_numa_config_from_option_owner(
+      this, reinterpret_cast<const unsigned char*>(o.data()), o.size());
 }
 
-void Engine::resize_threads() {
-    zfish_engine_resize_threads(&numaContext, &options, &threads, &tt, &sharedHists, &network,
-                                &updateContext);
-}
+void Engine::resize_threads() { zfish_engine_resize_threads_owner(this); }
 
-void Engine::set_tt_size(size_t mb) { zfish_engine_set_tt_size(&threads, &tt, mb); }
+void Engine::set_tt_size(size_t mb) { zfish_engine_set_tt_size_owner(this, mb); }
 
 void Engine::set_ponderhit(bool b) {
-    zfish_engine_set_ponderhit(&threads, static_cast<std::uint8_t>(b ? 1 : 0));
+    zfish_engine_set_ponderhit_owner(this, static_cast<std::uint8_t>(b ? 1 : 0));
 }
 
 void Engine::search_clear() {
@@ -3006,6 +3005,10 @@ const void* zfish_engine_options_ptr(const void* engine_ptr) {
     return &static_cast<const Engine*>(engine_ptr)->options;
 }
 
+void* zfish_engine_numa_context_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->numaContext;
+}
+
 void* zfish_engine_states_slot_ptr(void* engine_ptr) {
     return &static_cast<Engine*>(engine_ptr)->states;
 }
@@ -3028,6 +3031,14 @@ void* zfish_engine_threads_ptr(void* engine_ptr) {
 
 void* zfish_engine_tt_ptr(void* engine_ptr) {
     return &static_cast<Engine*>(engine_ptr)->tt;
+}
+
+void* zfish_engine_shared_hists_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->sharedHists;
+}
+
+const void* zfish_engine_update_context_ptr(const void* engine_ptr) {
+    return &static_cast<const Engine*>(engine_ptr)->updateContext;
 }
 
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr) {
