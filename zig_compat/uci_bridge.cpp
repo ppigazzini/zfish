@@ -187,6 +187,7 @@ const char* zfish_engine_evalfile_text(const void* engine_ptr);
 const char* zfish_engine_syzygy_path_text(const void* engine_ptr);
 const char* zfish_engine_binary_directory_text(const void* engine_ptr);
 void*       zfish_engine_position_ptr(void* engine_ptr);
+const void* zfish_engine_options_ptr(const void* engine_ptr);
 void*       zfish_engine_states_slot_ptr(void* engine_ptr);
 void        zfish_engine_states_slot_reset(void* states_slot_ptr);
 const void* zfish_engine_network_ptr(const void* engine_ptr);
@@ -194,6 +195,7 @@ void*       zfish_engine_network_replicated_ptr(void* engine_ptr);
 void*       zfish_engine_threads_ptr(void* engine_ptr);
 void*       zfish_engine_tt_ptr(void* engine_ptr);
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr);
+std::size_t  zfish_limits_perft_value(const void* limits_ptr);
 ZfishEngineNetworkVerifyResult zfish_engine_network_verify_current(const void*          engine_ptr,
                                                                    const unsigned char* evalfile_ptr,
                                                                    std::size_t          evalfile_len);
@@ -211,6 +213,7 @@ const char* zfish_engine_set_position_owner(void*                engine_ptr,
                                             std::size_t          fen_len,
                                             const EngineMoveView* moves_ptr,
                                             std::size_t          move_count);
+void zfish_engine_go_owner(void* engine_ptr, const void* limits_ptr);
 const char* zfish_engine_trace_eval_owner(void* engine_ptr);
 void zfish_engine_load_network_owner(void* engine_ptr, const unsigned char* file_ptr, std::size_t file_len);
 void zfish_engine_save_network_owner(void*                engine_ptr,
@@ -1871,6 +1874,10 @@ std::uint8_t zfish_limits_ponder_mode(const void* limits_ptr) {
     return static_cast<const Search::LimitsType*>(limits_ptr)->ponderMode ? 1 : 0;
 }
 
+std::size_t zfish_limits_perft_value(const void* limits_ptr) {
+    return static_cast<std::size_t>(static_cast<const Search::LimitsType*>(limits_ptr)->perft);
+}
+
 std::size_t zfish_limits_searchmove_count(const void* limits_ptr) {
     return static_cast<const Search::LimitsType*>(limits_ptr)->searchmoves.size();
 }
@@ -2746,10 +2753,7 @@ std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960
 }
 
 void Engine::go(Search::LimitsType& limits) {
-    assert(limits.perft == 0);
-    verify_network();
-
-    threads.start_thinking(options, pos, states, limits);
+    zfish_engine_go_owner(this, &limits);
 }
 
 void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
@@ -2996,6 +3000,10 @@ const char* zfish_engine_binary_directory_text(const void* engine_ptr) {
 
 void* zfish_engine_position_ptr(void* engine_ptr) {
     return &static_cast<Engine*>(engine_ptr)->pos;
+}
+
+const void* zfish_engine_options_ptr(const void* engine_ptr) {
+    return &static_cast<const Engine*>(engine_ptr)->options;
 }
 
 void* zfish_engine_states_slot_ptr(void* engine_ptr) {
