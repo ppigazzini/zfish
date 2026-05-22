@@ -1249,198 +1249,6 @@ int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
     return zfish_search_reduction(reductions.data(), d, mn, delta, rootDelta, std::uint8_t(i));
 }
 
-TimePoint TimeManagement::optimum() const { return optimumTime; }
-TimePoint TimeManagement::maximum() const { return maximumTime; }
-
-void TimeManagement::clear() {
-    availableNodes = -1;
-}
-
-void TimeManagement::advance_nodes_time(std::int64_t nodes) {
-    assert(useNodesTime);
-    availableNodes = std::max(int64_t(0), availableNodes - nodes);
-}
-
-void TimeManagement::init(Search::LimitsType& limits,
-                          Color               us,
-                          int                 ply,
-                          const OptionsMap&   options,
-                          double&             originalTimeAdjust) {
-    const ZfishTimemanInput input = {
-        .time_us              = limits.time[us],
-        .inc_us               = limits.inc[us],
-        .start_time           = limits.startTime,
-        .npmsec               = options["nodestime"],
-        .move_overhead        = options["Move Overhead"],
-        .available_nodes      = availableNodes,
-        .current_optimum_time = optimumTime,
-        .current_maximum_time = maximumTime,
-        .movestogo            = limits.movestogo,
-        .ply                  = ply,
-        .original_time_adjust = originalTimeAdjust,
-        .ponder               = static_cast<std::uint8_t>(options["Ponder"] ? 1 : 0),
-    };
-
-    const auto output = zfish_timeman_init(input);
-
-    startTime          = output.start_time;
-    optimumTime        = output.optimum_time;
-    maximumTime        = output.maximum_time;
-    availableNodes     = output.available_nodes;
-    useNodesTime       = output.use_nodes_time != 0;
-    originalTimeAdjust = output.original_time_adjust;
-
-    limits.time[us] = output.time_us;
-    limits.inc[us]  = output.inc_us;
-    limits.npmsec   = output.npmsec;
-}
-
-Value Eval::evaluate(const Eval::NNUE::Network&     network,
-                     const Position&                 pos,
-                     Eval::NNUE::AccumulatorStack&   accumulators,
-                     Eval::NNUE::AccumulatorCaches&  caches,
-                     int                             optimism) {
-    assert(!pos.checkers());
-
-    const auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
-
-    const ZfishEvalInput input = {
-        .psqt                     = psqt,
-        .positional               = positional,
-        .optimism                 = optimism,
-        .material                 = 534 * pos.count<PAWN>() + pos.non_pawn_material(),
-        .rule50_count             = pos.rule50_count(),
-        .value_tb_loss_in_max_ply = VALUE_TB_LOSS_IN_MAX_PLY,
-        .value_tb_win_in_max_ply  = VALUE_TB_WIN_IN_MAX_PLY,
-    };
-
-    return zfish_eval_compute_value(input);
-}
-
-MovePicker::MovePicker(const Position&              p,
-                       Move                         ttm,
-                       Depth                        d,
-                       const ButterflyHistory*      mh,
-                       const LowPlyHistory*         lph,
-                       const CapturePieceToHistory* cph,
-                       const PieceToHistory**       ch,
-                       const SharedHistories*       sh,
-                       int                          pl) :
-    pos(p),
-    mainHistory(mh),
-    lowPlyHistory(lph),
-    captureHistory(cph),
-    continuationHistory(ch),
-    sharedHistory(sh),
-    ttMove(ttm),
-        cur(moves),
-        endCur(moves),
-        endBadCaptures(moves),
-        endCaptures(moves),
-        endGenerated(moves),
-        threshold(0),
-    depth(d),
-    ply(pl) {
-
-        stage = zfish_movepick_init_main_stage(
-            std::uint8_t(pos.checkers() ? 1 : 0),
-            std::uint8_t(ttm && pos.pseudo_legal(ttm) ? 1 : 0),
-            depth);
-}
-
-MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceToHistory* cph) :
-    pos(p),
-        mainHistory(nullptr),
-        lowPlyHistory(nullptr),
-    captureHistory(cph),
-        continuationHistory(nullptr),
-        sharedHistory(nullptr),
-    ttMove(ttm),
-        cur(moves),
-        endCur(moves),
-        endBadCaptures(moves),
-        endCaptures(moves),
-        endGenerated(moves),
-        threshold(th),
-        depth(0),
-        ply(0) {
-    assert(!pos.checkers());
-
-        stage = zfish_movepick_init_probcut_stage(
-            std::uint8_t(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm) ? 1 : 0));
-}
-
-template<GenType Type>
-ExtMove* MovePicker::score(const MoveList<Type>&) {
-
-    static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
-
-    const std::uint8_t kind = Type == CAPTURES ? std::uint8_t{0}
-                                : Type == QUIETS ? std::uint8_t{1}
-                                                 : std::uint8_t{2};
-
-    const ZfishMovePickerContext context = {
-      .pos                  = &pos,
-      .main_history         = mainHistory,
-      .low_ply_history      = lowPlyHistory,
-      .capture_history      = captureHistory,
-      .continuation_history = continuationHistory,
-      .shared_history       = sharedHistory,
-      .ply                  = ply,
-    };
-
-        static_assert(sizeof(ExtMove) == sizeof(ZfishMoveSortEntry));
-        static_assert(alignof(ExtMove) == alignof(ZfishMoveSortEntry));
-
-        const std::size_t count = zfish_movepick_score_list(
-            kind, &context, reinterpret_cast<ZfishMoveSortEntry*>(cur));
-
-        return cur + count;
-}
-
-Move MovePicker::next_move() {
-
-    ZfishMovePickerState state{};
-    state.tt_move_raw      = ttMove.raw();
-    state.stage            = stage;
-    state.threshold        = threshold;
-    state.depth            = depth;
-    state.skip_quiets      = std::uint8_t(skipQuiets ? 1 : 0);
-    state.cur              = static_cast<std::size_t>(cur - moves);
-    state.end_cur          = static_cast<std::size_t>(endCur - moves);
-    state.end_bad_captures = static_cast<std::size_t>(endBadCaptures - moves);
-    state.end_captures     = static_cast<std::size_t>(endCaptures - moves);
-    state.end_generated    = static_cast<std::size_t>(endGenerated - moves);
-        state.moves            = reinterpret_cast<ZfishMoveSortEntry*>(moves);
-
-    const ZfishMovePickerContext context = {
-        .pos                  = &pos,
-        .main_history         = mainHistory,
-        .low_ply_history      = lowPlyHistory,
-        .capture_history      = captureHistory,
-        .continuation_history = continuationHistory,
-        .shared_history       = sharedHistory,
-        .ply                  = ply,
-    };
-
-    const Move result = Move(zfish_movepick_next_move(&state, &context));
-
-    ttMove         = Move(state.tt_move_raw);
-    stage          = state.stage;
-    threshold      = state.threshold;
-    depth          = Depth(state.depth);
-    skipQuiets     = state.skip_quiets != 0;
-    cur            = moves + state.cur;
-    endCur         = moves + state.end_cur;
-    endBadCaptures = moves + state.end_bad_captures;
-    endCaptures    = moves + state.end_captures;
-    endGenerated   = moves + state.end_generated;
-
-    return result;
-}
-
-void MovePicker::skip_quiet_moves() { skipQuiets = true; }
-
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
 
 extern "C" void zfish_position_fill_snapshot(const void* pos_ptr, ZfishPositionSnapshot* out) {
@@ -1619,20 +1427,6 @@ struct TTEntry {
     std::int16_t  eval16;
 };
 
-std::uint8_t TTEntry::relative_age(std::uint8_t curr_generation) const {
-    return zfish_tt_entry_relative_age(reinterpret_cast<const ZfishTtEntry*>(this), curr_generation);
-}
-
-TTWriter::TTWriter(TTEntry* tte) :
-    entry(tte) {}
-
-void TTWriter::write(
-  Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, std::uint8_t curr_generation) {
-        zfish_tt_entry_save(reinterpret_cast<ZfishTtEntry*>(entry), k, v,
-                                                static_cast<std::uint8_t>(pv ? 1 : 0), static_cast<std::uint8_t>(b), d,
-                                                DEPTH_NONE, m.raw(), ev, curr_generation);
-}
-
 struct Cluster {
     TTEntry entry[ClusterSize];
     char    padding[2];
@@ -1672,47 +1466,6 @@ extern "C" void zfish_threadpool_zero_tt_slice(void*        threads_ptr,
 
 extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thread_id) {
     static_cast<ThreadPool*>(threads_ptr)->wait_on_thread(thread_id);
-}
-
-void TranspositionTable::resize(size_t mbSize, ThreadPool& threads) {
-    zfish_tt_resize_state(reinterpret_cast<void**>(&table), &clusterCount, &generation8, mbSize,
-                          &threads);
-}
-
-void TranspositionTable::clear(ThreadPool& threads) {
-    zfish_tt_clear_state(table, clusterCount, &generation8, &threads);
-}
-
-int TranspositionTable::hashfull(int maxAge) const {
-    return zfish_tt_hashfull(reinterpret_cast<const ZfishTtCluster*>(table), clusterCount,
-                             generation8, maxAge);
-}
-
-void TranspositionTable::new_search() { generation8 = zfish_tt_generation_next(generation8); }
-
-std::uint8_t TranspositionTable::generation() const { return generation8; }
-
-std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
-    const auto output = zfish_tt_probe_table(table, clusterCount, key, generation8, DEPTH_NONE);
-    auto* writer_entry = static_cast<TTEntry*>(output.writer_ptr);
-    assert(writer_entry != nullptr);
-
-    if (output.found != 0)
-    {
-        const auto& data = output.data;
-        return {true,
-                TTData{Move(data.move16), Value(data.value16), Value(data.eval16), Depth(data.depth),
-                       Bound(data.bound), data.is_pv != 0},
-                TTWriter(writer_entry)};
-    }
-
-    return {false, TTData{Move::none(), VALUE_NONE, VALUE_NONE, DEPTH_NONE, BOUND_NONE, false},
-            TTWriter(writer_entry)};
-}
-
-TTEntry* TranspositionTable::first_entry(const Key key) const {
-    const auto cluster_index = zfish_tt_first_entry_index(key, clusterCount);
-    return &table[cluster_index].entry[0];
 }
 
 Thread::Thread(Search::SharedState&                    sharedState,
@@ -3217,10 +2970,6 @@ std::string Engine::visualize() const {
 }
 
 int Engine::get_hashfull(int maxAge) const { return tt.hashfull(maxAge); }
-
-std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
-    return take_string_and_free_required(zfish_engine_eval_trace(&pos, &network));
-}
 
 extern "C" {
 
