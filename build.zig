@@ -237,11 +237,11 @@ pub fn build(b: *std.Build) void {
         "evaluate.cpp",
         "movepick.cpp",
         "tt.cpp",
+        "thread.cpp",
     };
 
     const zig_compat_sources = &.{
         "uci_bridge.cpp",
-        "thread_methods_bridge.cpp",
         "thread_state_bridge.cpp",
     };
 

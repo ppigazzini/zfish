@@ -285,6 +285,7 @@ size_t ThreadPool::num_threads() const { return threads.size(); }
 
 // Wakes up main thread waiting in idle_loop() and returns immediately.
 // Main thread will wake up other threads and start the search.
+#ifndef ZFISH_ZIG_BUILD
 void ThreadPool::start_thinking(const OptionsMap&  options,
                                 Position&          pos,
                                 StateListPtr&      states,
@@ -450,5 +451,6 @@ void ThreadPool::ensure_network_replicated() {
     for (auto&& th : threads)
         th->ensure_network_replicated();
 }
+#endif
 
 }  // namespace Stockfish
