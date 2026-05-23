@@ -162,16 +162,6 @@ struct ZfishCountPair {
     std::size_t total;
 };
 
-struct ZfishEngineNetworkVerifyResult {
-    std::uint8_t should_exit;
-    const char*  message;
-};
-
-struct ZfishEngineNetworkStatusItem {
-    std::uint8_t status;
-    const char*  error;
-};
-
 const char* zfish_engine_format_numa_info(const unsigned char* config_ptr, std::size_t config_len);
 const char* zfish_engine_format_thread_binding(const ZfishCountPair* pairs_ptr, std::size_t pair_count);
 const char* zfish_engine_format_thread_allocation(std::size_t          thread_count,
@@ -179,10 +169,6 @@ const char* zfish_engine_format_thread_allocation(std::size_t          thread_co
                                                   std::size_t          binding_len);
 const char* zfish_engine_thread_binding_information(const void* numa_context, const void* threads);
 const char* zfish_engine_thread_allocation_information(const void* numa_context, const void* threads);
-const char* zfish_engine_format_network_status(std::size_t          replica_index,
-                                               std::uint8_t        status,
-                                               const unsigned char* error_ptr,
-                                               std::size_t          error_len);
 const char* zfish_engine_evalfile_text(const void* engine_ptr);
 const char* zfish_engine_syzygy_path_text(const void* engine_ptr);
 const char* zfish_engine_binary_directory_text(const void* engine_ptr);
@@ -193,19 +179,12 @@ void*       zfish_engine_numa_context_ptr(void* engine_ptr);
 void*       zfish_engine_states_slot_ptr(void* engine_ptr);
 void        zfish_engine_states_slot_reset(void* states_slot_ptr);
 const void* zfish_engine_network_ptr(const void* engine_ptr);
-void*       zfish_engine_network_replicated_ptr(void* engine_ptr);
 void*       zfish_engine_threads_ptr(void* engine_ptr);
 void*       zfish_engine_tt_ptr(void* engine_ptr);
 void*       zfish_engine_shared_hists_ptr(void* engine_ptr);
 const void* zfish_engine_update_context_ptr(const void* engine_ptr);
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr);
 std::size_t  zfish_limits_perft_value(const void* limits_ptr);
-ZfishEngineNetworkVerifyResult zfish_engine_network_verify_current(const void*          engine_ptr,
-                                                                   const unsigned char* evalfile_ptr,
-                                                                   std::size_t          evalfile_len);
-std::size_t zfish_engine_network_status_count(const void* engine_ptr);
-ZfishEngineNetworkStatusItem zfish_engine_network_status_at(const void* engine_ptr,
-                                                            std::size_t index);
 void zfish_engine_emit_verify_message(const void*          engine_ptr,
                                       const unsigned char* message_ptr,
                                       std::size_t          message_len);
@@ -2008,10 +1987,6 @@ const void* zfish_engine_network_ptr(const void* engine_ptr) {
     return static_cast<const Engine*>(engine_ptr)->network.operator->();
 }
 
-void* zfish_engine_network_replicated_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->network;
-}
-
 void* zfish_engine_threads_ptr(void* engine_ptr) {
     return &static_cast<Engine*>(engine_ptr)->threads;
 }
@@ -2030,33 +2005,6 @@ const void* zfish_engine_update_context_ptr(const void* engine_ptr) {
 
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr) {
     return static_cast<std::uint8_t>(static_cast<int>(static_cast<const Engine*>(engine_ptr)->get_options()["UCI_Chess960"]));
-}
-
-ZfishEngineNetworkVerifyResult zfish_engine_network_verify_current(const void*          engine_ptr,
-                                                                   const unsigned char* evalfile_ptr,
-                                                                   std::size_t          evalfile_len) {
-    const auto* engine = static_cast<const Engine*>(engine_ptr);
-    const auto result = zfish_network_verify(engine->network.operator->(), evalfile_ptr, evalfile_len);
-    return {result.should_exit, result.message};
-}
-
-std::size_t zfish_engine_network_status_count(const void* engine_ptr) {
-    const auto* engine = static_cast<const Engine*>(engine_ptr);
-    return engine->network.get_status_and_errors().size();
-}
-
-ZfishEngineNetworkStatusItem zfish_engine_network_status_at(const void* engine_ptr,
-                                                            std::size_t index) {
-    const auto* engine = static_cast<const Engine*>(engine_ptr);
-    const auto  statuses = engine->network.get_status_and_errors();
-    assert(index < statuses.size());
-
-    const auto& [status, error] = statuses[index];
-    const std::string error_text = error.value_or(std::string{});
-    return {
-      static_cast<std::uint8_t>(status),
-      error_text.empty() ? nullptr : alloc_c_string(error_text),
-    };
 }
 
 void zfish_engine_emit_verify_message(const void*          engine_ptr,

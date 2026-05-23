@@ -612,15 +612,6 @@ pub export fn zfish_engine_save_network_owner(
     );
 }
 
-pub export fn zfish_engine_format_network_status(
-    replica_index: usize,
-    status: u8,
-    error_ptr: [*]const u8,
-    error_len: usize,
-) ?[*:0]u8 {
-    return engine_port.formatNetworkStatus(replica_index, status, error_ptr, error_len);
-}
-
 pub export fn zfish_accumulator_evaluate(
     stack: *anyopaque,
     pos: *const anyopaque,
