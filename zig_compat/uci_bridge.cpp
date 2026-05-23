@@ -272,38 +272,11 @@ const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 const char* zfish_engine_eval_trace(void* pos, const void* network);
 void         zfish_engine_release_pending_state_slot(void* states_slot);
-void zfish_engine_load_network(void*                threads,
-                               void*                network,
-                               const unsigned char* root_directory_ptr,
-                               std::size_t          root_directory_len,
-                               const unsigned char* evalfile_path_ptr,
-                               std::size_t          evalfile_path_len);
-void zfish_engine_save_network(void*                network,
-                               std::uint8_t         has_filename,
-                               const unsigned char* filename_ptr,
-                               std::size_t          filename_len);
 const char* zfish_engine_fen(const void* pos);
 const char* zfish_engine_visualize(const void* pos);
 void        zfish_tbprobe_add_tables(void* tables,
                                      const unsigned char* piece_types_ptr,
                                      std::size_t          piece_count);
-void        zfish_engine_set_numa_config_from_option(void*                numa_context,
-                                                     const void*          options,
-                                                     void*                threads,
-                                                     void*                tt,
-                                                     void*                shared_hists,
-                                                     void*                network,
-                                                     const void*          update_context,
-                                                     const unsigned char* option_ptr,
-                                                     std::size_t          option_len);
-void        zfish_engine_resize_threads(const void* numa_context,
-                                        const void* options,
-                                        void*       threads,
-                                        void*       tt,
-                                        void*       shared_hists,
-                                        void*       network,
-                                        const void* update_context);
-void        zfish_engine_set_tt_size(void* threads, void* tt, std::size_t mb);
 void        zfish_engine_set_ponderhit(void* threads, std::uint8_t ponder);
 const char* zfish_tbprobe_build_code(const unsigned char* piece_types_ptr, std::size_t piece_count);
 int         zfish_tbprobe_dtz_before_zeroing(int wdl);
@@ -1782,10 +1755,6 @@ const char* zfish_engine_set_position(void*                pos,
                                       const EngineMoveView* moves_ptr,
                                       std::size_t          move_count);
 void        zfish_engine_stop(void* threads);
-void        zfish_engine_search_clear(void*                threads,
-                                      void*                tt,
-                                      const unsigned char* syzygy_path_ptr,
-                                      std::size_t          syzygy_path_len);
 }
 
 std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
@@ -1981,24 +1950,6 @@ void zfish_engine_add_option(void*                engine_ptr,
 
 void zfish_engine_start_logger(const unsigned char* name_ptr, std::size_t name_len) {
     start_logger(std::string(reinterpret_cast<const char*>(name_ptr), name_len));
-}
-
-void zfish_engine_resize_threads_method(void* engine_ptr) {
-    static_cast<Engine*>(engine_ptr)->resize_threads();
-}
-
-void zfish_engine_set_tt_size_method(void* engine_ptr, std::size_t mb) {
-    static_cast<Engine*>(engine_ptr)->set_tt_size(mb);
-}
-
-void zfish_engine_search_clear_method(void* engine_ptr) {
-    static_cast<Engine*>(engine_ptr)->search_clear();
-}
-
-void zfish_engine_load_network_method(void*                engine_ptr,
-                                      const unsigned char* file_ptr,
-                                      std::size_t          file_len) {
-        zfish_engine_load_network_owner(engine_ptr, file_ptr, file_len);
 }
 
 void zfish_engine_set_numa_config_from_option_method(void*                engine_ptr,
