@@ -1480,43 +1480,9 @@ std::size_t zfish_engine_option_hash_value(const void* options_ptr) {
     return static_cast<std::size_t>((*static_cast<const OptionsMap*>(options_ptr))["Hash"]);
 }
 
-int zfish_engine_tt_hashfull(const void* tt_ptr, int max_age) {
-    return static_cast<const TranspositionTable*>(tt_ptr)->hashfull(max_age);
-}
 
 void zfish_engine_tt_resize(void* tt_ptr, std::size_t mb, void* threads_ptr) {
     static_cast<TranspositionTable*>(tt_ptr)->resize(mb, *static_cast<ThreadPool*>(threads_ptr));
-}
-
-void zfish_engine_network_load_replicated(void*                network_ptr,
-                                          const unsigned char* root_directory_ptr,
-                                          std::size_t          root_directory_len,
-                                          const unsigned char* evalfile_path_ptr,
-                                          std::size_t          evalfile_path_len) {
-    auto& network = *static_cast<LazyNumaReplicatedSystemWide<Eval::NNUE::Network>*>(network_ptr);
-    const std::string root_directory(reinterpret_cast<const char*>(root_directory_ptr),
-                                     root_directory_len);
-    const std::string evalfile_path(reinterpret_cast<const char*>(evalfile_path_ptr),
-                                    evalfile_path_len);
-
-    network.modify_and_replicate([&](Eval::NNUE::Network& network_) {
-        network_.load(root_directory, evalfile_path);
-    });
-}
-
-void zfish_engine_network_save_replicated(void*                network_ptr,
-                                          std::uint8_t         has_filename,
-                                          const unsigned char* filename_ptr,
-                                          std::size_t          filename_len) {
-    auto& network = *static_cast<LazyNumaReplicatedSystemWide<Eval::NNUE::Network>*>(network_ptr);
-    const std::optional<std::string> filename =
-      has_filename != 0
-        ? std::optional<std::string>(
-            std::string(reinterpret_cast<const char*>(filename_ptr), filename_len))
-        : std::nullopt;
-
-    network.modify_and_replicate(
-      [&](Eval::NNUE::Network& network_) { network_.save(filename); });
 }
 
 std::size_t zfish_tbprobe_max_cardinality() {
@@ -2743,7 +2709,7 @@ void* zfish_engine_state_list_storage_push(void* storage_ptr) {
 
 std::uint8_t zfish_engine_state_list_storage_has_states(const void* storage_ptr) {
     return static_cast<const ZfishPendingStateListStorage*>(storage_ptr)->states ? std::uint8_t{1}
-                                                                                  : std::uint8_t{0};
+                                                                                 : std::uint8_t{0};
 }
 
 void zfish_threadpool_setup_states_adopt_from_storage(void* pool_ptr, void* storage_ptr) {

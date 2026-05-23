@@ -520,10 +520,11 @@ pub export fn zfish_engine_load_network(
     evalfile_path_ptr: [*]const u8,
     evalfile_path_len: usize,
 ) void {
-    return engine_port.loadNetwork(
-        threads,
+    _ = threads;
+    _ = root_directory_ptr;
+    _ = root_directory_len;
+    return engine_port.loadNetworkEngine(
         network,
-        root_directory_ptr[0..root_directory_len],
         evalfile_path_ptr[0..evalfile_path_len],
     );
 }
@@ -534,7 +535,7 @@ pub export fn zfish_engine_save_network(
     filename_ptr: [*]const u8,
     filename_len: usize,
 ) void {
-    return engine_port.saveNetwork(
+    return engine_port.saveNetworkEngine(
         network,
         if (has_filename != 0) filename_ptr[0..filename_len] else null,
     );

@@ -147,7 +147,6 @@ extern fn zfish_threadpool_ensure_network_replicated(pool: *anyopaque) void;
 extern fn zfish_threadpool_main_manager_set_ponder(pool: *anyopaque, ponder_mode: u8) void;
 extern fn zfish_threadpool_clear(pool: *anyopaque) void;
 extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
-extern fn zfish_engine_tt_hashfull(tt: *const anyopaque, max_age: c_int) c_int;
 extern fn zfish_engine_tablebases_init(path_ptr: [*]const u8, path_len: usize) void;
 extern fn zfish_numa_context_set_system(numa_context: *anyopaque) void;
 extern fn zfish_numa_context_set_hardware(numa_context: *anyopaque) void;
@@ -174,19 +173,6 @@ extern fn zfish_search_shared_state_create(
 extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
 extern fn zfish_engine_option_hash_value(options: *const anyopaque) usize;
 extern fn zfish_engine_tt_resize(tt: *anyopaque, mb: usize, threads: *anyopaque) void;
-extern fn zfish_engine_network_load_replicated(
-    network: *anyopaque,
-    root_directory_ptr: [*]const u8,
-    root_directory_len: usize,
-    evalfile_path_ptr: [*]const u8,
-    evalfile_path_len: usize,
-) void;
-extern fn zfish_engine_network_save_replicated(
-    network: *anyopaque,
-    has_filename: u8,
-    filename_ptr: [*]const u8,
-    filename_len: usize,
-) void;
 extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_bound_node_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usize) usize;
@@ -289,6 +275,17 @@ extern fn zfish_engine_emit_verify_message(
     message_ptr: [*]const u8,
     message_len: usize,
 ) void;
+extern fn zfish_engine_resize_threads_owner(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_set_tt_size_owner(engine_ptr: *anyopaque, mb: usize) void;
+extern fn zfish_engine_search_clear_owner(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_load_network_owner(engine_ptr: *anyopaque, file_ptr: [*]const u8, file_len: usize) void;
+extern fn zfish_engine_save_network_owner(
+    engine_ptr: *anyopaque,
+    has_filename: u8,
+    filename_ptr: [*]const u8,
+    filename_len: usize,
+) void;
+extern fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
     const max_threads = zfish_engine_max_threads_value();
@@ -539,15 +536,7 @@ pub fn resizeThreads(
 }
 
 pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
-    resizeThreads(
-        zfish_engine_numa_context_ptr(engine_ptr),
-        zfish_engine_options_ptr(engine_ptr),
-        zfish_engine_threads_ptr(engine_ptr),
-        zfish_engine_tt_ptr(engine_ptr),
-        zfish_engine_shared_hists_ptr(engine_ptr),
-        zfish_engine_network_replicated_ptr(engine_ptr),
-        zfish_engine_update_context_ptr(engine_ptr),
-    );
+    zfish_engine_resize_threads_owner(engine_ptr);
 }
 
 pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
@@ -556,7 +545,7 @@ pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
 }
 
 pub fn setTtSizeEngine(engine_ptr: *anyopaque, mb: usize) void {
-    setTtSize(zfish_engine_threads_ptr(engine_ptr), zfish_engine_tt_ptr(engine_ptr), mb);
+    zfish_engine_set_tt_size_owner(engine_ptr, mb);
 }
 
 pub fn setPonderhit(threads: *anyopaque, ponder: u8) void {
@@ -575,10 +564,7 @@ pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8)
 }
 
 pub fn searchClearEngine(engine_ptr: *anyopaque) void {
-    const syzygy_ptr = zfish_engine_syzygy_path_text(engine_ptr) orelse return;
-    defer c.free(@ptrCast(syzygy_ptr));
-    const syzygy_path = std.mem.span(syzygy_ptr);
-    searchClear(zfish_engine_threads_ptr(engine_ptr), zfish_engine_tt_ptr(engine_ptr), syzygy_path);
+    zfish_engine_search_clear_owner(engine_ptr);
 }
 
 pub fn numaConfigStringEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
@@ -660,44 +646,14 @@ pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     return evalTrace(trace_pos, network);
 }
 
-pub fn loadNetwork(
-    threads: *anyopaque,
-    network: *anyopaque,
-    root_directory: []const u8,
-    evalfile_path: []const u8,
-) void {
-    zfish_engine_network_load_replicated(
-        network,
-        root_directory.ptr,
-        root_directory.len,
-        evalfile_path.ptr,
-        evalfile_path.len,
-    );
-    zfish_threadpool_clear(threads);
-    zfish_threadpool_ensure_network_replicated(threads);
-}
-
 pub fn loadNetworkEngine(engine_ptr: *anyopaque, evalfile_path: []const u8) void {
-    const root_directory_ptr = zfish_engine_binary_directory_text(engine_ptr) orelse return;
-    defer c.free(@ptrCast(root_directory_ptr));
-    const root_directory = std.mem.span(root_directory_ptr);
-
-    loadNetwork(
-        zfish_engine_threads_ptr(engine_ptr),
-        zfish_engine_network_replicated_ptr(engine_ptr),
-        root_directory,
-        evalfile_path,
-    );
-}
-
-pub fn saveNetwork(network: *anyopaque, filename_opt: ?[]const u8) void {
-    const has_filename: u8 = if (filename_opt != null) 1 else 0;
-    const filename = filename_opt orelse "";
-    zfish_engine_network_save_replicated(network, has_filename, filename.ptr, filename.len);
+    zfish_engine_load_network_owner(engine_ptr, evalfile_path.ptr, evalfile_path.len);
 }
 
 pub fn saveNetworkEngine(engine_ptr: *anyopaque, filename_opt: ?[]const u8) void {
-    saveNetwork(zfish_engine_network_replicated_ptr(engine_ptr), filename_opt);
+    const has_filename: u8 = if (filename_opt != null) 1 else 0;
+    const filename = filename_opt orelse "";
+    zfish_engine_save_network_owner(engine_ptr, has_filename, filename.ptr, filename.len);
 }
 
 fn ensurePendingStateStorage(states_slot: *anyopaque) *anyopaque {
@@ -796,7 +752,7 @@ pub fn fenEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
 }
 
 pub fn hashfullEngine(engine_ptr: *const anyopaque, max_age: c_int) c_int {
-    return zfish_engine_tt_hashfull(zfish_engine_tt_ptr(@constCast(engine_ptr)), max_age);
+    return zfish_engine_hashfull_owner(engine_ptr, max_age);
 }
 
 pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
