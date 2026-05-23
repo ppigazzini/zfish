@@ -68,7 +68,6 @@ const ByteView = extern struct {
 extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize) ParsedSetOption;
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
-extern fn zfish_uci_read_command_line() ?[*:0]u8;
 extern fn zfish_uci_engine_ptr(uci_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
 extern fn zfish_uci_engine_nodes_searched(uci_ptr: *const anyopaque) u64;
@@ -504,10 +503,13 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
     }
 
     while (true) {
-        const command_ptr = zfish_uci_read_command_line();
-        if (command_ptr) |ptr| {
-            defer c.free(@ptrCast(ptr));
-            const result = dispatchCommand(uci_ptr, std.mem.span(ptr));
+        const command = readCommandLineAlloc() catch {
+            _ = dispatchCommand(uci_ptr, "quit");
+            return;
+        };
+        if (command) |line| {
+            defer std.heap.c_allocator.free(line);
+            const result = dispatchCommand(uci_ptr, line);
             if (result.should_quit != 0) {
                 return;
             }
@@ -516,6 +518,23 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
             return;
         }
     }
+}
+
+fn readCommandLineAlloc() !?[]u8 {
+    var buffer: [4096]u8 = undefined;
+    const read_ptr = c.fgets(@ptrCast(&buffer), @intCast(buffer.len), c.stdin);
+    if (read_ptr == null) {
+        return null;
+    }
+
+    const line = std.mem.span(@as([*:0]u8, @ptrCast(&buffer)));
+    var end = line.len;
+    while (end > 0 and (line[end - 1] == '\n' or line[end - 1] == '\r')) {
+        end -= 1;
+    }
+
+    const owned = try std.heap.c_allocator.dupe(u8, line[0..end]);
+    return owned;
 }
 
 pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
