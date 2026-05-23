@@ -49,11 +49,6 @@
 #include "types.h"
 #include "ucioption.h"
 
-#define ZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY
-#define ZFISH_POSITION_BRIDGE_SKIP_ENDGAME_SET
-#define ZFISH_POSITION_BRIDGE_SKIP_FEN
-#include "../src/position.cpp"
-
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
   Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
@@ -150,6 +145,9 @@ const unsigned int  gEmbeddedNNUESize    = 1;
 namespace Stockfish {
 
 namespace NN = Eval::NNUE;
+namespace Zobrist {
+extern Key psq[PIECE_NB][SQUARE_NB];
+}
 
 constexpr int MaxHashMB  = Is64Bit ? 33554432 : 2048;
 int           MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
@@ -2146,13 +2144,13 @@ Key Position::compute_material_key() const {
     return zfish_position_compute_material_key(pieceCount, PIECE_NB);
 }
 
-std::optional<PositionSetError> Position::set(const string& code, Color c, StateInfo* si) {
+std::optional<PositionSetError> Position::set(const std::string& code, Color c, StateInfo* si) {
     const auto fenStr = take_string_and_free_required(zfish_position_build_endgame_fen(
       reinterpret_cast<const unsigned char*>(code.data()), code.size(), static_cast<std::uint8_t>(c)));
     return set(fenStr, false, si);
 }
 
-string Position::fen() const {
+std::string Position::fen() const {
     const auto whiteOoRook = can_castle(WHITE_OO) ? castling_rook_square(WHITE_OO) : SQ_NONE;
     const auto whiteOooRook = can_castle(WHITE_OOO) ? castling_rook_square(WHITE_OOO) : SQ_NONE;
     const auto blackOoRook = can_castle(BLACK_OO) ? castling_rook_square(BLACK_OO) : SQ_NONE;

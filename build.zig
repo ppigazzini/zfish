@@ -240,6 +240,10 @@ pub fn build(b: *std.Build) void {
         "thread.cpp",
     };
 
+    const stockfish_position_sources = &.{
+        "position.cpp",
+    };
+
     const zig_compat_sources = &.{
         "uci_bridge.cpp",
     };
@@ -261,6 +265,21 @@ pub fn build(b: *std.Build) void {
             .root = b.path("src"),
             .files = stockfish_sources,
             .flags = compile_flags.items,
+        });
+    }
+    if (stockfish_position_sources.len != 0) {
+        var position_compile_flags = std.ArrayList([]const u8).empty;
+        position_compile_flags.appendSlice(b.allocator, compile_flags.items) catch @panic("OOM");
+        position_compile_flags.appendSlice(b.allocator, &.{
+            "-DZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY",
+            "-DZFISH_POSITION_BRIDGE_SKIP_ENDGAME_SET",
+            "-DZFISH_POSITION_BRIDGE_SKIP_FEN",
+        }) catch @panic("OOM");
+
+        exe.root_module.addCSourceFiles(.{
+            .root = b.path("src"),
+            .files = stockfish_position_sources,
+            .flags = position_compile_flags.items,
         });
     }
     exe.root_module.addCSourceFiles(.{
