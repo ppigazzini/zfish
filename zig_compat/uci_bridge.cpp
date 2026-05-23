@@ -155,12 +155,6 @@ int           MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 constexpr NumaAutoPolicy DefaultNumaPolicy = BundledL3Policy{32};
 
 extern "C" {
-struct ZfishCountPair {
-    std::size_t current;
-    std::size_t total;
-};
-
-const char* zfish_engine_format_numa_info(const unsigned char* config_ptr, std::size_t config_len);
 const char* zfish_engine_evalfile_text(const void* engine_ptr);
 const char* zfish_engine_numa_config_text(const void* engine_ptr);
 void*       zfish_engine_position_ptr(void* engine_ptr);
@@ -1414,15 +1408,6 @@ void zfish_search_shared_state_destroy(void* shared_state_ptr) {
         delete static_cast<Search::SharedState*>(shared_state_ptr);
 }
 
-std::size_t zfish_engine_option_hash_value(const void* options_ptr) {
-    return static_cast<std::size_t>((*static_cast<const OptionsMap*>(options_ptr))["Hash"]);
-}
-
-
-void zfish_engine_tt_resize(void* tt_ptr, std::size_t mb, void* threads_ptr) {
-    static_cast<TranspositionTable*>(tt_ptr)->resize(mb, *static_cast<ThreadPool*>(threads_ptr));
-}
-
 std::size_t zfish_tbprobe_max_cardinality() {
     return static_cast<std::size_t>(Tablebases::MaxCardinality);
 }
@@ -1491,10 +1476,6 @@ void zfish_tbprobe_register_wdl_table(void*                tables_ptr,
       tables, tables->wdlTable.back().key, &tables->wdlTable.back(), &tables->dtzTable.back());
     zfish_tbprobe_tables_insert(
       tables, tables->wdlTable.back().key2, &tables->wdlTable.back(), &tables->dtzTable.back());
-}
-
-void zfish_engine_tt_clear(void* tt_ptr, void* threads_ptr) {
-    static_cast<TranspositionTable*>(tt_ptr)->clear(*static_cast<ThreadPool*>(threads_ptr));
 }
 
 void zfish_engine_tablebases_init(const unsigned char* path_ptr, std::size_t path_len) {
