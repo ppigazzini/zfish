@@ -26,6 +26,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string_view>
 #include <vector>
 
 #include "memory.h"
@@ -85,6 +86,19 @@ class Thread {
     void start_searching();
     void clear_worker();
     void run_custom_job(std::function<void()> f);
+    void worker_set_limits(const Search::LimitsType& limits);
+    void worker_reset_root_setup_state();
+    void worker_set_root_moves(const Search::RootMoves& rootMoves);
+    void worker_set_root_position(std::string_view fen, bool chess960);
+    void worker_set_root_state(const StateInfo& setupState);
+    void worker_set_tb_config(Tablebases::Config config);
+    uint64_t worker_nodes_searched() const;
+    uint64_t worker_tb_hits() const;
+    void worker_fill_summary(std::uint16_t& pv0Raw,
+                             bool&          scoreIsBound,
+                             bool&          pvHasMoreThanTwo,
+                             int&           score,
+                             int&           rootDepth) const;
 
     void ensure_network_replicated();
 

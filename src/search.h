@@ -329,6 +329,42 @@ class Worker {
 
     void ensure_network_replicated();
 
+    void set_limits(const LimitsType& value) { limits = value; }
+
+    void reset_root_setup_state() {
+        nodes           = 0;
+        tbHits          = 0;
+        bestMoveChanges = 0;
+        nmpMinPly       = 0;
+        rootDepth       = 0;
+    }
+
+    void set_root_moves(const RootMoves& value) { rootMoves = value; }
+
+    void set_root_position(std::string_view fen, bool chess960) {
+        rootPos.set(std::string(fen), chess960, &rootState);
+    }
+
+    void set_root_state(const StateInfo& value) { rootState = value; }
+
+    void set_tb_config(Tablebases::Config value) { tbConfig = value; }
+
+    uint64_t nodes_searched() const { return nodes.load(std::memory_order_relaxed); }
+    uint64_t tb_hits() const { return tbHits.load(std::memory_order_relaxed); }
+
+    void fill_thread_summary(std::uint16_t& pv0Raw,
+                             bool&          scoreIsBound,
+                             bool&          pvHasMoreThanTwo,
+                             int&           score,
+                             int&           rootDepthOut) const {
+        const auto& rootMove = rootMoves[0];
+        pv0Raw = rootMove.pv[0].raw();
+        scoreIsBound = rootMove.score_is_bound();
+        pvHasMoreThanTwo = rootMove.pv.size() > 2;
+        score = rootMove.score;
+        rootDepthOut = int(rootDepth);
+    }
+
     // Public because they need to be updatable by the stats
     ButterflyHistory mainHistory;
     LowPlyHistory    lowPlyHistory;
