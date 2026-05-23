@@ -439,10 +439,6 @@ pub export fn zfish_engine_release_pending_state_slot(states_slot: *anyopaque) v
     return engine_port.releasePendingStateSlot(states_slot);
 }
 
-pub export fn zfish_engine_set_ponderhit(threads: *anyopaque, ponder: u8) void {
-    return engine_port.setPonderhit(threads, ponder);
-}
-
 pub export fn zfish_engine_eval_trace(
     pos: *anyopaque,
     network: *const anyopaque,
@@ -468,35 +464,6 @@ pub export fn zfish_engine_visualize(pos: *const anyopaque) ?[*:0]u8 {
 
 pub export fn zfish_engine_visualize_owner(engine_ptr: *const anyopaque) ?[*:0]u8 {
     return engine_port.visualizeEngine(engine_ptr);
-}
-
-pub export fn zfish_engine_format_thread_binding(
-    pairs_ptr: [*]const engine_port.CountPair,
-    pair_count: usize,
-) ?[*:0]u8 {
-    return engine_port.formatThreadBinding(pairs_ptr, pair_count);
-}
-
-pub export fn zfish_engine_format_thread_allocation(
-    thread_count: usize,
-    binding_ptr: [*]const u8,
-    binding_len: usize,
-) ?[*:0]u8 {
-    return engine_port.formatThreadAllocation(thread_count, binding_ptr, binding_len);
-}
-
-pub export fn zfish_engine_thread_binding_information(
-    numa_context: *const anyopaque,
-    threads: *const anyopaque,
-) ?[*:0]u8 {
-    return engine_port.threadBindingInformation(numa_context, threads);
-}
-
-pub export fn zfish_engine_thread_allocation_information(
-    numa_context: *const anyopaque,
-    threads: *const anyopaque,
-) ?[*:0]u8 {
-    return engine_port.threadAllocationInformation(numa_context, threads);
 }
 
 pub export fn zfish_engine_verify_network_method(engine_ptr: *const anyopaque) void {

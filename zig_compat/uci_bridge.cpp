@@ -163,12 +163,6 @@ struct ZfishCountPair {
 };
 
 const char* zfish_engine_format_numa_info(const unsigned char* config_ptr, std::size_t config_len);
-const char* zfish_engine_format_thread_binding(const ZfishCountPair* pairs_ptr, std::size_t pair_count);
-const char* zfish_engine_format_thread_allocation(std::size_t          thread_count,
-                                                  const unsigned char* binding_ptr,
-                                                  std::size_t          binding_len);
-const char* zfish_engine_thread_binding_information(const void* numa_context, const void* threads);
-const char* zfish_engine_thread_allocation_information(const void* numa_context, const void* threads);
 const char* zfish_engine_evalfile_text(const void* engine_ptr);
 const char* zfish_engine_numa_config_text(const void* engine_ptr);
 void*       zfish_engine_position_ptr(void* engine_ptr);
@@ -251,7 +245,6 @@ const char* zfish_engine_visualize(const void* pos);
 void        zfish_tbprobe_add_tables(void* tables,
                                      const unsigned char* piece_types_ptr,
                                      std::size_t          piece_count);
-void        zfish_engine_set_ponderhit(void* threads, std::uint8_t ponder);
 const char* zfish_tbprobe_build_code(const unsigned char* piece_types_ptr, std::size_t piece_count);
 int         zfish_tbprobe_dtz_before_zeroing(int wdl);
 const char* zfish_misc_engine_version_info_text();
