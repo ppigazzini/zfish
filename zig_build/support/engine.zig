@@ -58,11 +58,6 @@ const NetworkVerifyResult = extern struct {
     message: ?[*:0]u8,
 };
 
-const NetworkStatusItem = extern struct {
-    status: u8,
-    error_ptr: ?[*:0]u8,
-};
-
 pub const ByteView = extern struct {
     ptr: ?[*]const u8,
     len: usize,
@@ -223,13 +218,17 @@ extern fn zfish_engine_numa_context_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_states_slot_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_states_slot_reset(states_slot: *anyopaque) void;
 extern fn zfish_engine_network_ptr(engine_ptr: *const anyopaque) *const anyopaque;
-extern fn zfish_engine_network_replicated_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_threads_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_shared_hists_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_update_context_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_chess960_enabled(engine_ptr: *const anyopaque) u8;
 extern fn zfish_limits_perft_value(limits_ptr: *const anyopaque) usize;
+extern fn zfish_network_verify(
+    network: *const anyopaque,
+    evalfile_path_ptr: [*]const u8,
+    evalfile_path_len: usize,
+) NetworkVerifyResult;
 extern fn zfish_thread_start_thinking(
     pool: *anyopaque,
     options: *const anyopaque,
@@ -237,13 +236,6 @@ extern fn zfish_thread_start_thinking(
     limits: *const anyopaque,
     states_slot: *anyopaque,
 ) void;
-extern fn zfish_engine_network_verify_current(
-    engine_ptr: *const anyopaque,
-    evalfile_ptr: [*]const u8,
-    evalfile_len: usize,
-) NetworkVerifyResult;
-extern fn zfish_engine_network_status_count(engine_ptr: *const anyopaque) usize;
-extern fn zfish_engine_network_status_at(engine_ptr: *const anyopaque, index: usize) NetworkStatusItem;
 extern fn zfish_engine_emit_verify_message(
     engine_ptr: *const anyopaque,
     message_ptr: [*]const u8,
@@ -509,7 +501,9 @@ pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
     defer c.free(@ptrCast(evalfile_ptr));
     const evalfile = std.mem.span(evalfile_ptr);
 
-    const result = zfish_engine_network_verify_current(engine_ptr, evalfile.ptr, evalfile.len);
+    const network_ptr = zfish_engine_network_ptr(engine_ptr);
+
+    const result = zfish_network_verify(network_ptr, evalfile.ptr, evalfile.len);
     if (result.message) |message_ptr| {
         defer c.free(@ptrCast(message_ptr));
         zfish_engine_emit_verify_message(engine_ptr, message_ptr, std.mem.span(message_ptr).len);
@@ -517,18 +511,6 @@ pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
 
     if (result.should_exit != 0) {
         c.exit(1);
-    }
-
-    const status_count = zfish_engine_network_status_count(engine_ptr);
-    var index: usize = 0;
-    while (index < status_count) : (index += 1) {
-        const item = zfish_engine_network_status_at(engine_ptr, index);
-        defer if (item.error_ptr) |error_ptr| c.free(@ptrCast(error_ptr));
-
-        const error_text = if (item.error_ptr) |error_ptr| std.mem.span(error_ptr) else "";
-        const message_ptr = formatNetworkStatus(index + 1, item.status, error_text.ptr, error_text.len) orelse continue;
-        defer c.free(@ptrCast(message_ptr));
-        zfish_engine_emit_verify_message(engine_ptr, message_ptr, std.mem.span(message_ptr).len);
     }
 }
 
@@ -816,26 +798,6 @@ pub fn threadAllocationInformation(
 
     const binding = std.mem.span(binding_ptr);
     return formatThreadAllocation(zfish_threadpool_thread_count(threads), binding.ptr, binding.len);
-}
-
-pub fn formatNetworkStatus(
-    replica_index: usize,
-    status: u8,
-    error_ptr: [*]const u8,
-    error_len: usize,
-) ?[*:0]u8 {
-    const error_text = error_ptr[0..error_len];
-    const status_text = switch (status) {
-        0 => "No allocation.",
-        1 => "Local memory.",
-        2 => "Shared memory.",
-        else => "Unknown status.",
-    };
-
-    if (error_text.len == 0)
-        return allocMessage("Network replica {d}: {s}", .{ replica_index, status_text });
-
-    return allocMessage("Network replica {d}: {s} {s}", .{ replica_index, status_text, error_text });
 }
 
 fn addStringOption(engine_ptr: *anyopaque, name: []const u8, default_value: []const u8, callback_kind: u8) void {
