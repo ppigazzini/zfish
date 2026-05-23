@@ -2084,8 +2084,6 @@ std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
-ZfishUciDispatchResult zfish_uci_dispatch_command(void* engine, const unsigned char* input_ptr,
-                                                  std::size_t input_len);
 }
 
 namespace {
@@ -2215,11 +2213,6 @@ std::atomic<std::uint64_t> zfish_last_nodes_searched = 0;
 }  // namespace
 
 extern "C" {
-void zfish_uci_loop_runtime(void* engine_ptr);
-void zfish_uci_bench_runtime(void* engine_ptr, const unsigned char* args_ptr, std::size_t args_len);
-void zfish_uci_benchmark_runtime(void* engine_ptr,
-                                                                 const unsigned char* args_ptr,
-                                                                 std::size_t          args_len);
 }
 
 UCIEngine::UCIEngine(int argc, char** argv) :
@@ -2244,8 +2237,6 @@ void UCIEngine::init_search_update_listeners() {
     engine.set_on_bestmove([](const auto& bm, const auto& p) { on_bestmove(bm, p); });
     engine.set_on_verify_network([](const auto& s) { print_info_string(s); });
 }
-
-void UCIEngine::loop() { zfish_uci_loop_runtime(this); }
 
 extern "C" {
 
@@ -2814,10 +2805,6 @@ void* zfish_uci_create_engine(int argc, char* const* argv) {
     auto uci = std::make_unique<Stockfish::UCIEngine>(argc, const_cast<char**>(argv));
     Stockfish::Tune::init(uci->engine_options());
     return uci.release();
-}
-
-void zfish_uci_loop_engine(void* engine_ptr) {
-    static_cast<Stockfish::UCIEngine*>(engine_ptr)->loop();
 }
 
 void zfish_uci_destroy_engine(void* engine_ptr) {
