@@ -456,89 +456,8 @@ pub export fn zfish_engine_stop(threads: *anyopaque) void {
     return engine_port.stop(threads);
 }
 
-pub export fn zfish_engine_set_numa_config_from_option(
-    numa_context: *anyopaque,
-    options: *const anyopaque,
-    threads: *anyopaque,
-    tt: *anyopaque,
-    shared_hists: *anyopaque,
-    network: *anyopaque,
-    update_context: *const anyopaque,
-    option_ptr: [*]const u8,
-    option_len: usize,
-) void {
-    return engine_port.setNumaConfigFromOption(
-        numa_context,
-        options,
-        threads,
-        tt,
-        shared_hists,
-        network,
-        update_context,
-        option_ptr[0..option_len],
-    );
-}
-
-pub export fn zfish_engine_resize_threads(
-    numa_context: *const anyopaque,
-    options: *const anyopaque,
-    threads: *anyopaque,
-    tt: *anyopaque,
-    shared_hists: *anyopaque,
-    network: *anyopaque,
-    update_context: *const anyopaque,
-) void {
-    return engine_port.resizeThreads(numa_context, options, threads, tt, shared_hists, network, update_context);
-}
-
-pub export fn zfish_engine_set_tt_size(
-    threads: *anyopaque,
-    tt: *anyopaque,
-    mb: usize,
-) void {
-    return engine_port.setTtSize(threads, tt, mb);
-}
-
 pub export fn zfish_engine_set_ponderhit(threads: *anyopaque, ponder: u8) void {
     return engine_port.setPonderhit(threads, ponder);
-}
-
-pub export fn zfish_engine_search_clear(
-    threads: *anyopaque,
-    tt: *anyopaque,
-    syzygy_path_ptr: [*]const u8,
-    syzygy_path_len: usize,
-) void {
-    return engine_port.searchClear(threads, tt, syzygy_path_ptr[0..syzygy_path_len]);
-}
-
-pub export fn zfish_engine_load_network(
-    threads: *anyopaque,
-    network: *anyopaque,
-    root_directory_ptr: [*]const u8,
-    root_directory_len: usize,
-    evalfile_path_ptr: [*]const u8,
-    evalfile_path_len: usize,
-) void {
-    _ = threads;
-    _ = root_directory_ptr;
-    _ = root_directory_len;
-    return engine_port.loadNetworkEngine(
-        network,
-        evalfile_path_ptr[0..evalfile_path_len],
-    );
-}
-
-pub export fn zfish_engine_save_network(
-    network: *anyopaque,
-    has_filename: u8,
-    filename_ptr: [*]const u8,
-    filename_len: usize,
-) void {
-    return engine_port.saveNetworkEngine(
-        network,
-        if (has_filename != 0) filename_ptr[0..filename_len] else null,
-    );
 }
 
 pub export fn zfish_engine_eval_trace(
