@@ -1385,29 +1385,6 @@ void zfish_engine_numa_set_from_string(void*                numa_context_ptr,
       NumaConfig::from_string(std::string(reinterpret_cast<const char*>(text_ptr), text_len)));
 }
 
-const void* zfish_numa_context_config(const void* numa_context_ptr) {
-        return &static_cast<const NumaReplicationContext*>(numa_context_ptr)->get_numa_config();
-}
-
-void* zfish_search_shared_state_create(const void* options_ptr,
-                                                                             void*       threads_ptr,
-                                                                             void*       tt_ptr,
-                                                                             void*       shared_hists_ptr,
-                                                                             const void* network_ptr) {
-        const auto& options = *static_cast<const OptionsMap*>(options_ptr);
-        auto&       threads = *static_cast<ThreadPool*>(threads_ptr);
-        auto&       tt = *static_cast<TranspositionTable*>(tt_ptr);
-        auto&       shared_hists = *static_cast<std::map<NumaIndex, SharedHistories>*>(shared_hists_ptr);
-        const auto& network =
-            *static_cast<const LazyNumaReplicatedSystemWide<Eval::NNUE::Network>*>(network_ptr);
-
-        return new Search::SharedState(options, threads, tt, shared_hists, network);
-}
-
-void zfish_search_shared_state_destroy(void* shared_state_ptr) {
-        delete static_cast<Search::SharedState*>(shared_state_ptr);
-}
-
 std::size_t zfish_tbprobe_max_cardinality() {
     return static_cast<std::size_t>(Tablebases::MaxCardinality);
 }
