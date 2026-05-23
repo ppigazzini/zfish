@@ -30,7 +30,6 @@ const position_snapshot = @import("position_snapshot");
 extern fn zfish_bitboards_init() void;
 extern fn zfish_position_init_runtime() void;
 extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
-extern fn zfish_uci_loop_engine(engine: *anyopaque) void;
 extern fn zfish_uci_destroy_engine(engine: ?*anyopaque) void;
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 extern fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *PositionSnapshot) void;
@@ -62,7 +61,7 @@ pub fn main(init: std.process.Init) !void {
     const engine = zfish_uci_create_engine(@intCast(argc), argv.ptr) orelse return error.OutOfMemory;
     defer zfish_uci_destroy_engine(engine);
 
-    zfish_uci_loop_engine(engine);
+    uci_port.loopRuntime(engine);
 }
 
 pub export fn zfish_std_aligned_alloc(alignment: usize, size: usize) ?*anyopaque {
@@ -913,34 +912,6 @@ pub export fn zfish_uci_parse_position(
     input_len: usize,
 ) uci_port.ParsedPosition {
     return uci_port.parsePosition(input_ptr[0..input_len]);
-}
-
-pub export fn zfish_uci_dispatch_command(
-    engine: *anyopaque,
-    input_ptr: [*]const u8,
-    input_len: usize,
-) uci_port.DispatchResult {
-    return uci_port.dispatchCommand(engine, input_ptr[0..input_len]);
-}
-
-pub export fn zfish_uci_loop_runtime(uci_ptr: *anyopaque) void {
-    return uci_port.loopRuntime(uci_ptr);
-}
-
-pub export fn zfish_uci_bench_runtime(
-    uci_ptr: *anyopaque,
-    args_ptr: [*]const u8,
-    args_len: usize,
-) void {
-    return uci_port.benchRuntime(uci_ptr, args_ptr[0..args_len]);
-}
-
-pub export fn zfish_uci_benchmark_runtime(
-    uci_ptr: *anyopaque,
-    args_ptr: [*]const u8,
-    args_len: usize,
-) void {
-    return uci_port.benchmarkRuntime(uci_ptr, args_ptr[0..args_len]);
 }
 
 pub export fn zfish_uci_format_info_string(
