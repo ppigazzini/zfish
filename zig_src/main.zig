@@ -435,24 +435,8 @@ pub export fn zfish_engine_option_on_change(
     return engine_port.optionOnChange(engine, callback_kind, value_ptr, value_len, int_value);
 }
 
-pub export fn zfish_engine_set_position(
-    pos: *anyopaque,
-    states: *anyopaque,
-    chess960_enabled: u8,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    moves_ptr: ?[*]const engine_port.ByteView,
-    move_count: usize,
-) ?[*:0]u8 {
-    return engine_port.setPosition(pos, states, chess960_enabled, fen_ptr, fen_len, moves_ptr, move_count);
-}
-
 pub export fn zfish_engine_release_pending_state_slot(states_slot: *anyopaque) void {
     return engine_port.releasePendingStateSlot(states_slot);
-}
-
-pub export fn zfish_engine_stop(threads: *anyopaque) void {
-    return engine_port.stop(threads);
 }
 
 pub export fn zfish_engine_set_ponderhit(threads: *anyopaque, ponder: u8) void {
