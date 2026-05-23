@@ -2212,14 +2212,6 @@ const char* zfish_uci_cli_arg_at(const void* uci_ptr, int index) {
     return uci_engine->cli.argv[index];
 }
 
-const char* zfish_uci_read_command_line() {
-    std::string command;
-    if (!std::getline(std::cin, command))
-        return nullptr;
-
-    return alloc_c_string(command);
-}
-
 void* zfish_uci_engine_ptr(void* uci_ptr) { return &static_cast<UCIEngine*>(uci_ptr)->engine; }
 
 std::uint64_t zfish_uci_engine_nodes_searched(const void*) {
