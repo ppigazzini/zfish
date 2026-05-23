@@ -170,8 +170,6 @@ const char* zfish_engine_format_thread_allocation(std::size_t          thread_co
 const char* zfish_engine_thread_binding_information(const void* numa_context, const void* threads);
 const char* zfish_engine_thread_allocation_information(const void* numa_context, const void* threads);
 const char* zfish_engine_evalfile_text(const void* engine_ptr);
-const char* zfish_engine_syzygy_path_text(const void* engine_ptr);
-const char* zfish_engine_binary_directory_text(const void* engine_ptr);
 const char* zfish_engine_numa_config_text(const void* engine_ptr);
 void*       zfish_engine_position_ptr(void* engine_ptr);
 const void* zfish_engine_options_ptr(const void* engine_ptr);
@@ -180,9 +178,6 @@ void*       zfish_engine_states_slot_ptr(void* engine_ptr);
 void        zfish_engine_states_slot_reset(void* states_slot_ptr);
 const void* zfish_engine_network_ptr(const void* engine_ptr);
 void*       zfish_engine_threads_ptr(void* engine_ptr);
-void*       zfish_engine_tt_ptr(void* engine_ptr);
-void*       zfish_engine_shared_hists_ptr(void* engine_ptr);
-const void* zfish_engine_update_context_ptr(const void* engine_ptr);
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr);
 std::size_t  zfish_limits_perft_value(const void* limits_ptr);
 void zfish_engine_emit_verify_message(const void*          engine_ptr,
@@ -1726,14 +1721,6 @@ struct EngineMoveView {
 };
 
 extern "C" {
-const char* zfish_engine_set_position(void*                pos,
-                                      void*                states,
-                                      std::uint8_t         chess960_enabled,
-                                      const unsigned char* fen_ptr,
-                                      std::size_t          fen_len,
-                                      const EngineMoveView* moves_ptr,
-                                      std::size_t          move_count);
-void        zfish_engine_stop(void* threads);
 }
 
 std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
@@ -1951,14 +1938,6 @@ const char* zfish_engine_evalfile_text(const void* engine_ptr) {
     return alloc_c_string(std::string(static_cast<const Engine*>(engine_ptr)->get_options()["EvalFile"]));
 }
 
-const char* zfish_engine_syzygy_path_text(const void* engine_ptr) {
-    return alloc_c_string(std::string(static_cast<const Engine*>(engine_ptr)->get_options()["SyzygyPath"]));
-}
-
-const char* zfish_engine_binary_directory_text(const void* engine_ptr) {
-    return alloc_c_string(static_cast<const Engine*>(engine_ptr)->binaryDirectory);
-}
-
 const char* zfish_engine_numa_config_text(const void* engine_ptr) {
     return alloc_c_string(static_cast<const Engine*>(engine_ptr)->numaContext.get_numa_config().to_string());
 }
@@ -1989,18 +1968,6 @@ const void* zfish_engine_network_ptr(const void* engine_ptr) {
 
 void* zfish_engine_threads_ptr(void* engine_ptr) {
     return &static_cast<Engine*>(engine_ptr)->threads;
-}
-
-void* zfish_engine_tt_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->tt;
-}
-
-void* zfish_engine_shared_hists_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->sharedHists;
-}
-
-const void* zfish_engine_update_context_ptr(const void* engine_ptr) {
-    return &static_cast<const Engine*>(engine_ptr)->updateContext;
 }
 
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr) {
