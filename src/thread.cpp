@@ -112,6 +112,55 @@ void Thread::run_custom_job(std::function<void()> f) {
     cv.notify_one();
 }
 
+void Thread::worker_set_limits(const Search::LimitsType& limits) {
+    assert(worker != nullptr);
+    worker->set_limits(limits);
+}
+
+void Thread::worker_reset_root_setup_state() {
+    assert(worker != nullptr);
+    worker->reset_root_setup_state();
+}
+
+void Thread::worker_set_root_moves(const Search::RootMoves& rootMoves) {
+    assert(worker != nullptr);
+    worker->set_root_moves(rootMoves);
+}
+
+void Thread::worker_set_root_position(std::string_view fen, bool chess960) {
+    assert(worker != nullptr);
+    worker->set_root_position(fen, chess960);
+}
+
+void Thread::worker_set_root_state(const StateInfo& setupState) {
+    assert(worker != nullptr);
+    worker->set_root_state(setupState);
+}
+
+void Thread::worker_set_tb_config(Tablebases::Config config) {
+    assert(worker != nullptr);
+    worker->set_tb_config(config);
+}
+
+uint64_t Thread::worker_nodes_searched() const {
+    assert(worker != nullptr);
+    return worker->nodes_searched();
+}
+
+uint64_t Thread::worker_tb_hits() const {
+    assert(worker != nullptr);
+    return worker->tb_hits();
+}
+
+void Thread::worker_fill_summary(std::uint16_t& pv0Raw,
+                                 bool&          scoreIsBound,
+                                 bool&          pvHasMoreThanTwo,
+                                 int&           score,
+                                 int&           rootDepth) const {
+    assert(worker != nullptr);
+    worker->fill_thread_summary(pv0Raw, scoreIsBound, pvHasMoreThanTwo, score, rootDepth);
+}
+
 void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); }
 
 // Thread gets parked here, blocked on the condition variable
@@ -451,6 +500,163 @@ void ThreadPool::ensure_network_replicated() {
     for (auto&& th : threads)
         th->ensure_network_replicated();
 }
+#endif
+
+#ifdef ZFISH_ZIG_BUILD
+extern "C" {
+
+struct ZfishThreadSummary {
+    std::uint16_t pv0_raw;
+    std::uint8_t  score_is_bound;
+    std::uint8_t  pv_has_more_than_two;
+    int           score;
+    int           root_depth;
+};
+
+struct ZfishTbConfig {
+    int          cardinality;
+    std::uint8_t root_in_tb;
+    std::uint8_t use_rule50;
+    int          probe_depth;
+};
+
+using ZfishOpaqueCallback = void (*)(void*);
+
+std::size_t zfish_threadpool_thread_count(const void* pool_ptr) {
+    return static_cast<const ThreadPool*>(pool_ptr)->size();
+}
+
+void* zfish_threadpool_thread_at(void* pool_ptr, std::size_t index) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    assert(index < pool->size());
+    return (*(pool->begin() + static_cast<std::ptrdiff_t>(index))).get();
+}
+
+void zfish_threadpool_set_stop_flag(void* pool_ptr, std::uint8_t stop) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->stop = stop != 0;
+}
+
+void zfish_threadpool_main_manager_set_stop_on_ponderhit(void*       pool_ptr,
+                                                         std::uint8_t stop_on_ponderhit) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->stopOnPonderhit = stop_on_ponderhit != 0;
+}
+
+void zfish_threadpool_main_manager_set_ponder(void* pool_ptr, std::uint8_t ponder_mode) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->ponder = ponder_mode != 0;
+}
+
+void zfish_threadpool_set_increase_depth(void* pool_ptr, std::uint8_t increase_depth) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->increaseDepth = increase_depth != 0;
+}
+
+void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->run_custom_job([callback, context]() { callback(context); });
+}
+
+void zfish_thread_wait_for_search_finished(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->wait_for_search_finished();
+}
+
+void zfish_thread_start_searching(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->start_searching();
+}
+
+void zfish_thread_clear_worker(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->clear_worker();
+}
+
+void zfish_thread_ensure_network_replicated(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->ensure_network_replicated();
+}
+
+void zfish_thread_worker_set_limits(void* thread_ptr, const void* limits_ptr) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->worker_set_limits(*static_cast<const Search::LimitsType*>(limits_ptr));
+}
+
+void zfish_thread_worker_reset_root_setup_state(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->worker_reset_root_setup_state();
+}
+
+void zfish_thread_worker_set_root_moves(void* thread_ptr, const void* root_moves_ptr) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->worker_set_root_moves(*static_cast<const Search::RootMoves*>(root_moves_ptr));
+}
+
+void zfish_thread_worker_set_root_position(void*                thread_ptr,
+                                           const unsigned char* fen_ptr,
+                                           std::size_t          fen_len,
+                                           std::uint8_t         chess960) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    const auto fen = std::string_view(reinterpret_cast<const char*>(fen_ptr), fen_len);
+    thread->worker_set_root_position(fen, chess960 != 0);
+}
+
+void zfish_thread_worker_set_root_state(void* thread_ptr, const void* setup_state_ptr) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->worker_set_root_state(*static_cast<const StateInfo*>(setup_state_ptr));
+}
+
+void zfish_thread_worker_set_tb_config(void* thread_ptr, ZfishTbConfig config) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->worker_set_tb_config(Tablebases::Config{config.cardinality, config.root_in_tb != 0,
+                                                     config.use_rule50 != 0,
+                                                     Depth(config.probe_depth)});
+}
+
+std::uint64_t zfish_thread_nodes_searched(const void* thread_ptr) {
+    return static_cast<const Thread*>(thread_ptr)->worker_nodes_searched();
+}
+
+std::uint64_t zfish_thread_tb_hits(const void* thread_ptr) {
+    return static_cast<const Thread*>(thread_ptr)->worker_tb_hits();
+}
+
+void zfish_thread_fill_summary(const void* thread_ptr, ZfishThreadSummary* out) {
+    auto score_is_bound = false;
+    auto pv_has_more_than_two = false;
+    static_cast<const Thread*>(thread_ptr)->worker_fill_summary(
+      out->pv0_raw, score_is_bound, pv_has_more_than_two, out->score, out->root_depth);
+    out->score_is_bound = score_is_bound ? std::uint8_t{1} : std::uint8_t{0};
+    out->pv_has_more_than_two = pv_has_more_than_two ? std::uint8_t{1} : std::uint8_t{0};
+}
+
+void zfish_threadpool_main_manager_reset_best_previous_average_score(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->bestPreviousAverageScore = VALUE_INFINITE;
+}
+
+void zfish_threadpool_main_manager_reset_previous_time_reduction(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->previousTimeReduction = 0.85;
+}
+
+void zfish_threadpool_main_manager_reset_calls_count(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->callsCnt = 0;
+}
+
+void zfish_threadpool_main_manager_reset_best_previous_score(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->bestPreviousScore = VALUE_INFINITE;
+}
+
+void zfish_threadpool_main_manager_reset_original_time_adjust(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->originalTimeAdjust = -1;
+}
+
+void zfish_threadpool_main_manager_clear_timeman(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->tm.clear();
+}
+
+}  // extern "C"
 #endif
 
 }  // namespace Stockfish
