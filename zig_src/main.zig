@@ -414,13 +414,6 @@ pub export fn zfish_threadpool_best_thread_index(pool: *anyopaque) usize {
     return thread_port.bestThreadIndex(pool);
 }
 
-pub export fn zfish_engine_format_numa_info(
-    config_ptr: [*]const u8,
-    config_len: usize,
-) ?[*:0]u8 {
-    return engine_port.formatNumaInfo(config_ptr, config_len);
-}
-
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {
     return engine_port.initBody(engine);
 }
