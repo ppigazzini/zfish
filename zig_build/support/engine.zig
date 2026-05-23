@@ -209,8 +209,6 @@ extern fn zfish_engine_set_numa_config_from_option_method(
 extern fn zfish_engine_numa_config_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_thread_allocation_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_evalfile_text(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_syzygy_path_text(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_binary_directory_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_numa_config_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_position_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_options_ptr(engine_ptr: *const anyopaque) *const anyopaque;
@@ -219,9 +217,6 @@ extern fn zfish_engine_states_slot_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_states_slot_reset(states_slot: *anyopaque) void;
 extern fn zfish_engine_network_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_threads_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_shared_hists_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_update_context_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_chess960_enabled(engine_ptr: *const anyopaque) u8;
 extern fn zfish_limits_perft_value(limits_ptr: *const anyopaque) usize;
 extern fn zfish_network_verify(
