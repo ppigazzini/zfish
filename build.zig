@@ -117,11 +117,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const tbprobe_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/tbprobe.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
     const thread_module = b.createModule(.{
         .root_source_file = b.path("zig_build/support/thread.zig"),
         .target = target,
@@ -216,7 +211,6 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("position", position_module);
     exe.root_module.addImport("position_snapshot", position_snapshot_module);
     exe.root_module.addImport("search", search_module);
-    exe.root_module.addImport("tbprobe", tbprobe_module);
     exe.root_module.addImport("timeman", timeman_module);
     exe.root_module.addImport("thread", thread_module);
     exe.root_module.addImport("tt", tt_module);
