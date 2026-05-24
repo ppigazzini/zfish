@@ -2056,6 +2056,13 @@ void zfish_uci_set_default_listeners(void* uci_ptr) {
     static_cast<UCIEngine*>(uci_ptr)->init_search_update_listeners();
 }
 
+void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
+    if (quiet_mode != 0)
+        zfish_uci_set_quiet_listeners(uci_ptr);
+    else
+        zfish_uci_set_default_listeners(uci_ptr);
+}
+
 void zfish_engine_apply_setoption_owner(void*                engine_ptr,
                                         const unsigned char* name_ptr,
                                         std::size_t          name_len,
