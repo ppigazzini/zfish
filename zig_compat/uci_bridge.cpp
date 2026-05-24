@@ -113,12 +113,6 @@
 #include "uci.h"
 #include "ucioption.h"
 
-#define PieceToChar engine_bridge_tbprobe_piece_to_char
-#define ZFISH_TBPROBE_BRIDGE_SKIP_DTZ_BEFORE_ZEROING
-#define ZFISH_TBPROBE_BRIDGE_SKIP_ADD
-#include "../src/syzygy/tbprobe.cpp"
-#undef PieceToChar
-
 #include "nnue/nnue_accumulator.h"
 #include "nnue/features/full_threats.h"
 #include "nnue/features/half_ka_v2_hm.h"
@@ -234,11 +228,6 @@ const char* zfish_engine_eval_trace(void* pos, const void* network);
 void         zfish_engine_release_pending_state_slot(void* states_slot);
 const char* zfish_engine_fen(const void* pos);
 const char* zfish_engine_visualize(const void* pos);
-void        zfish_tbprobe_add_tables(void* tables,
-                                     const unsigned char* piece_types_ptr,
-                                     std::size_t          piece_count);
-const char* zfish_tbprobe_build_code(const unsigned char* piece_types_ptr, std::size_t piece_count);
-int         zfish_tbprobe_dtz_before_zeroing(int wdl);
 const char* zfish_misc_engine_version_info_text();
 const char* zfish_misc_engine_info_mode(std::uint8_t to_uci);
 const char* zfish_misc_compiler_info_text();
@@ -315,69 +304,7 @@ std::string take_string_and_free_engine_required(const char* rendered) {
     return value;
 }
 
-int dtz_before_zeroing(WDLScore wdl) { return zfish_tbprobe_dtz_before_zeroing(int(wdl)); }
-
-struct ZfishTBTablesEntry {
-    Key           key;
-    TBTable<WDL>* wdl;
-    TBTable<DTZ>* dtz;
-
-    template<TBType Type>
-    TBTable<Type>* get() const {
-        return (TBTable<Type>*) (Type == WDL ? (void*) wdl : (void*) dtz);
-    }
-};
-
-struct ZfishTBTablesLayout {
-    static constexpr std::uint32_t Size = 1 << 12;
-    static constexpr std::uint32_t Overflow = 1;
-
-    ZfishTBTablesEntry       hashTable[Size + Overflow];
-    std::deque<TBTable<WDL>> wdlTable;
-    std::deque<TBTable<DTZ>> dtzTable;
-    std::size_t              foundDTZFiles;
-    std::size_t              foundWDLFiles;
-};
-
-static_assert(sizeof(ZfishTBTablesLayout) == sizeof(TBTables));
-static_assert(alignof(ZfishTBTablesLayout) == alignof(decltype(TBTables)));
-
-void zfish_tbprobe_tables_insert(ZfishTBTablesLayout* tables,
-                                 Key                  key,
-                                 TBTable<WDL>*        wdl,
-                                 TBTable<DTZ>*        dtz) {
-    std::uint32_t      home_bucket = std::uint32_t(key) & (ZfishTBTablesLayout::Size - 1);
-    ZfishTBTablesEntry entry{key, wdl, dtz};
-
-    for (std::uint32_t bucket = home_bucket;
-         bucket < ZfishTBTablesLayout::Size + ZfishTBTablesLayout::Overflow - 1;
-         ++bucket)
-    {
-        Key other_key = tables->hashTable[bucket].key;
-        if (other_key == key || !tables->hashTable[bucket].get<WDL>())
-        {
-            tables->hashTable[bucket] = entry;
-            return;
-        }
-
-        const std::uint32_t other_home_bucket = std::uint32_t(other_key) & (ZfishTBTablesLayout::Size - 1);
-        if (other_home_bucket > home_bucket)
-        {
-            std::swap(entry, tables->hashTable[bucket]);
-            key         = other_key;
-            home_bucket = other_home_bucket;
-        }
-    }
-
-    std::cerr << "TB hash table size too low!" << std::endl;
-    exit(EXIT_FAILURE);
-}
-
 }  // namespace
-
-void TBTables::add(const std::vector<PieceType>& pieces) {
-    zfish_tbprobe_add_tables(this, reinterpret_cast<const unsigned char*>(pieces.data()), pieces.size());
-}
 
 
 
@@ -1415,44 +1342,16 @@ ZfishEngineTablebaseProbe zfish_tbprobe_probe_fen(const unsigned char* fen_ptr,
 
 std::uint8_t zfish_tbprobe_has_wdl_file(const unsigned char* code_ptr, std::size_t code_len) {
     const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
-    TBFile            file(code + ".rtbw");
+    std::ifstream     file(code + ".rtbw");
     const bool        is_open = file.is_open();
-    if (is_open)
-        file.close();
     return static_cast<std::uint8_t>(is_open ? 1 : 0);
 }
 
 std::uint8_t zfish_tbprobe_has_dtz_file(const unsigned char* code_ptr, std::size_t code_len) {
     const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
-    TBFile            file(code + ".rtbz");
+    std::ifstream     file(code + ".rtbz");
     const bool        is_open = file.is_open();
-    if (is_open)
-        file.close();
     return static_cast<std::uint8_t>(is_open ? 1 : 0);
-}
-
-void zfish_tbprobe_note_dtz_found(void* tables_ptr) {
-    auto* tables = reinterpret_cast<ZfishTBTablesLayout*>(tables_ptr);
-    tables->foundDTZFiles++;
-}
-
-void zfish_tbprobe_register_wdl_table(void*                tables_ptr,
-                                      const unsigned char* code_ptr,
-                                      std::size_t          code_len,
-                                      std::size_t          piece_count) {
-    auto*             tables = reinterpret_cast<ZfishTBTablesLayout*>(tables_ptr);
-    const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
-
-    tables->foundWDLFiles++;
-    MaxCardinality = std::max(int(piece_count), MaxCardinality);
-
-    tables->wdlTable.emplace_back(code);
-    tables->dtzTable.emplace_back(tables->wdlTable.back());
-
-    zfish_tbprobe_tables_insert(
-      tables, tables->wdlTable.back().key, &tables->wdlTable.back(), &tables->dtzTable.back());
-    zfish_tbprobe_tables_insert(
-      tables, tables->wdlTable.back().key2, &tables->wdlTable.back(), &tables->dtzTable.back());
 }
 
 void zfish_engine_tablebases_init(const unsigned char* path_ptr, std::size_t path_len) {
