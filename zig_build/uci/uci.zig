@@ -72,8 +72,7 @@ extern fn zfish_uci_engine_ptr(uci_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
 extern fn zfish_uci_engine_nodes_searched(uci_ptr: *const anyopaque) u64;
 extern fn zfish_uci_engine_reset_nodes_searched() void;
-extern fn zfish_uci_set_quiet_listeners(uci_ptr: *anyopaque) void;
-extern fn zfish_uci_set_default_listeners(uci_ptr: *anyopaque) void;
+extern fn zfish_uci_set_listener_mode(uci_ptr: *anyopaque, quiet_mode: u8) void;
 extern fn zfish_engine_options_text_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_wait_for_search_finished_owner(engine_ptr: *anyopaque) void;
 extern fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int;
@@ -610,8 +609,8 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
     const warmup_positions: usize = 3;
     const engine_ptr = zfish_uci_engine_ptr(uci_ptr);
 
-    zfish_uci_set_quiet_listeners(uci_ptr);
-    defer zfish_uci_set_default_listeners(uci_ptr);
+    zfish_uci_set_listener_mode(uci_ptr, 1);
+    defer zfish_uci_set_listener_mode(uci_ptr, 0);
 
     const setup = benchmark_port.setupBenchmark(args, misc_port.hardwareConcurrency());
     defer freeMaybeCString(setup.commands_ptr);
