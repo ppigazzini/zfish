@@ -125,14 +125,14 @@ extern fn zfish_engine_state_list_storage_push(storage: *anyopaque) *anyopaque;
 extern fn zfish_engine_state_list_storage_has_states(storage: *const anyopaque) u8;
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
 extern fn zfish_threadpool_has_setup_states(pool: *const anyopaque) u8;
-extern fn zfish_engine_position_set(
+extern fn zfish_position_set_state(
     pos: *anyopaque,
     fen_ptr: [*]const u8,
     fen_len: usize,
     chess960_enabled: u8,
     state: *anyopaque,
 ) ?[*:0]u8;
-extern fn zfish_engine_position_do_move(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
+extern fn zfish_position_do_move_state(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_threadpool_set_stop_flag(pool: *anyopaque, stop: u8) void;
@@ -341,7 +341,7 @@ pub fn setPosition(
     const state_storage = ensurePendingStateStorage(states_slot);
     const root_state = zfish_engine_state_list_storage_reset(state_storage);
 
-    if (zfish_engine_position_set(pos, fen_ptr, fen_len, chess960_enabled, root_state)) |err| {
+    if (zfish_position_set_state(pos, fen_ptr, fen_len, chess960_enabled, root_state)) |err| {
         return err;
     }
 
@@ -357,7 +357,7 @@ pub fn setPosition(
         }
 
         const next_state = zfish_engine_state_list_storage_push(state_storage);
-        zfish_engine_position_do_move(pos, move_raw, next_state);
+        zfish_position_do_move_state(pos, move_raw, next_state);
     }
 
     return null;
@@ -525,7 +525,7 @@ pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     defer zfish_engine_state_list_storage_destroy(state_storage);
     const state = zfish_engine_state_list_storage_reset(state_storage);
 
-    if (zfish_engine_position_set(trace_pos, fen_text.ptr, fen_text.len, zfish_engine_chess960_enabled(engine_ptr), state)) |err| {
+    if (zfish_position_set_state(trace_pos, fen_text.ptr, fen_text.len, zfish_engine_chess960_enabled(engine_ptr), state)) |err| {
         defer c.free(@ptrCast(err));
         return null;
     }
