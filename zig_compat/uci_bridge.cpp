@@ -2041,26 +2041,22 @@ const char* zfish_engine_options_text_owner(const void* engine_ptr) {
     return alloc_c_string(options_stream.str());
 }
 
-void zfish_uci_set_quiet_listeners(void* uci_ptr) {
-    auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
-    uci_engine->engine.set_on_update_full([](const Engine::InfoFull& i) {
-        zfish_last_nodes_searched.store(i.nodes, std::memory_order_relaxed);
-    });
-    uci_engine->engine.set_on_iter([](const auto&) {});
-    uci_engine->engine.set_on_update_no_moves([](const auto&) {});
-    uci_engine->engine.set_on_bestmove([](const auto&, const auto&) {});
-    uci_engine->engine.set_on_verify_network([](const auto&) {});
-}
-
-void zfish_uci_set_default_listeners(void* uci_ptr) {
-    static_cast<UCIEngine*>(uci_ptr)->init_search_update_listeners();
-}
-
 void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
+    auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
     if (quiet_mode != 0)
-        zfish_uci_set_quiet_listeners(uci_ptr);
+    {
+        uci_engine->engine.set_on_update_full([](const Engine::InfoFull& i) {
+            zfish_last_nodes_searched.store(i.nodes, std::memory_order_relaxed);
+        });
+        uci_engine->engine.set_on_iter([](const auto&) {});
+        uci_engine->engine.set_on_update_no_moves([](const auto&) {});
+        uci_engine->engine.set_on_bestmove([](const auto&, const auto&) {});
+        uci_engine->engine.set_on_verify_network([](const auto&) {});
+    }
     else
-        zfish_uci_set_default_listeners(uci_ptr);
+    {
+        uci_engine->init_search_update_listeners();
+    }
 }
 
 void zfish_engine_apply_setoption_owner(void*                engine_ptr,
