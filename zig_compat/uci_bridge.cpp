@@ -1288,6 +1288,52 @@ extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thre
     static_cast<ThreadPool*>(threads_ptr)->wait_on_thread(thread_id);
 }
 
+TimePoint TimeManagement::optimum() const { return optimumTime; }
+TimePoint TimeManagement::maximum() const { return maximumTime; }
+
+void TimeManagement::clear() {
+    availableNodes = -1;
+}
+
+void TimeManagement::advance_nodes_time(std::int64_t nodes) {
+    assert(useNodesTime);
+    availableNodes = std::max(int64_t(0), availableNodes - nodes);
+}
+
+void TimeManagement::init(Search::LimitsType& limits,
+                          Color               us,
+                          int                 ply,
+                          const OptionsMap&   options,
+                          double&             originalTimeAdjust) {
+    const ZfishTimemanInput input = {
+      .time_us              = limits.time[us],
+      .inc_us               = limits.inc[us],
+      .start_time           = limits.startTime,
+      .npmsec               = options["nodestime"],
+      .move_overhead        = options["Move Overhead"],
+      .available_nodes      = availableNodes,
+      .current_optimum_time = optimumTime,
+      .current_maximum_time = maximumTime,
+      .movestogo            = limits.movestogo,
+      .ply                  = ply,
+      .original_time_adjust = originalTimeAdjust,
+      .ponder               = static_cast<std::uint8_t>(options["Ponder"] ? 1 : 0),
+    };
+
+    const auto output = zfish_timeman_init(input);
+
+    startTime          = output.start_time;
+    optimumTime        = output.optimum_time;
+    maximumTime        = output.maximum_time;
+    availableNodes     = output.available_nodes;
+    useNodesTime       = output.use_nodes_time != 0;
+    originalTimeAdjust = output.original_time_adjust;
+
+    limits.time[us] = output.time_us;
+    limits.inc[us]  = output.inc_us;
+    limits.npmsec   = output.npmsec;
+}
+
 
 extern "C" {
 
