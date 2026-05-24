@@ -238,6 +238,7 @@ pub fn build(b: *std.Build) void {
         "movepick.cpp",
         "tt.cpp",
         "thread.cpp",
+        "syzygy/tbprobe.cpp",
     };
 
     const stockfish_position_sources = &.{
