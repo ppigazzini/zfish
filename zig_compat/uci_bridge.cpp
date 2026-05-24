@@ -1366,6 +1366,129 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
     return value;
 }
 
+MovePicker::MovePicker(const Position&              p,
+                                             Move                         ttm,
+                                             Depth                        d,
+                                             const ButterflyHistory*      mh,
+                                             const LowPlyHistory*         lph,
+                                             const CapturePieceToHistory* cph,
+                                             const PieceToHistory**       ch,
+                                             const SharedHistories*       sh,
+                                             int                          pl) :
+        pos(p),
+        mainHistory(mh),
+        lowPlyHistory(lph),
+        captureHistory(cph),
+        continuationHistory(ch),
+        sharedHistory(sh),
+        ttMove(ttm),
+        cur(moves),
+        endCur(moves),
+        endBadCaptures(moves),
+        endCaptures(moves),
+        endGenerated(moves),
+        threshold(0),
+        depth(d),
+        ply(pl) {
+
+        stage = zfish_movepick_init_main_stage(std::uint8_t(pos.checkers() ? 1 : 0),
+                                                                                     std::uint8_t(ttm && pos.pseudo_legal(ttm) ? 1 : 0),
+                                                                                     depth);
+}
+
+MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceToHistory* cph) :
+        pos(p),
+        mainHistory(nullptr),
+        lowPlyHistory(nullptr),
+        captureHistory(cph),
+        continuationHistory(nullptr),
+        sharedHistory(nullptr),
+        ttMove(ttm),
+        cur(moves),
+        endCur(moves),
+        endBadCaptures(moves),
+        endCaptures(moves),
+        endGenerated(moves),
+        threshold(th),
+        depth(0),
+        ply(0) {
+        assert(!pos.checkers());
+
+        stage = zfish_movepick_init_probcut_stage(
+            std::uint8_t(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm) ? 1 : 0));
+}
+
+template<GenType Type>
+ExtMove* MovePicker::score(const MoveList<Type>&) {
+
+        static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
+
+        const std::uint8_t kind = Type == CAPTURES ? std::uint8_t{0}
+                                                                : Type == QUIETS ? std::uint8_t{1}
+                                                                                                 : std::uint8_t{2};
+
+        const ZfishMovePickerContext context = {
+            .pos                  = &pos,
+            .main_history         = mainHistory,
+            .low_ply_history      = lowPlyHistory,
+            .capture_history      = captureHistory,
+            .continuation_history = continuationHistory,
+            .shared_history       = sharedHistory,
+            .ply                  = ply,
+        };
+
+        static_assert(sizeof(ExtMove) == sizeof(ZfishMoveSortEntry));
+        static_assert(alignof(ExtMove) == alignof(ZfishMoveSortEntry));
+
+        const std::size_t count =
+            zfish_movepick_score_list(kind, &context, reinterpret_cast<ZfishMoveSortEntry*>(cur));
+
+        return cur + count;
+}
+
+Move MovePicker::next_move() {
+
+        ZfishMovePickerState state{};
+        state.tt_move_raw      = ttMove.raw();
+        state.stage            = stage;
+        state.threshold        = threshold;
+        state.depth            = depth;
+        state.skip_quiets      = std::uint8_t(skipQuiets ? 1 : 0);
+        state.cur              = static_cast<std::size_t>(cur - moves);
+        state.end_cur          = static_cast<std::size_t>(endCur - moves);
+        state.end_bad_captures = static_cast<std::size_t>(endBadCaptures - moves);
+        state.end_captures     = static_cast<std::size_t>(endCaptures - moves);
+        state.end_generated    = static_cast<std::size_t>(endGenerated - moves);
+        state.moves            = reinterpret_cast<ZfishMoveSortEntry*>(moves);
+
+        const ZfishMovePickerContext context = {
+            .pos                  = &pos,
+            .main_history         = mainHistory,
+            .low_ply_history      = lowPlyHistory,
+            .capture_history      = captureHistory,
+            .continuation_history = continuationHistory,
+            .shared_history       = sharedHistory,
+            .ply                  = ply,
+        };
+
+        const Move result = Move(zfish_movepick_next_move(&state, &context));
+
+        ttMove         = Move(state.tt_move_raw);
+        stage          = state.stage;
+        threshold      = state.threshold;
+        depth          = Depth(state.depth);
+        skipQuiets     = state.skip_quiets != 0;
+        cur            = moves + state.cur;
+        endCur         = moves + state.end_cur;
+        endBadCaptures = moves + state.end_bad_captures;
+        endCaptures    = moves + state.end_captures;
+        endGenerated   = moves + state.end_generated;
+
+        return result;
+}
+
+void MovePicker::skip_quiet_moves() { skipQuiets = true; }
+
 
 extern "C" {
 
