@@ -1334,6 +1334,38 @@ void TimeManagement::init(Search::LimitsType& limits,
     limits.npmsec   = output.npmsec;
 }
 
+Value Eval::evaluate(const Eval::NNUE::Network&     network,
+                     const Position&                 pos,
+                     Eval::NNUE::AccumulatorStack&   accumulators,
+                     Eval::NNUE::AccumulatorCaches&  caches,
+                     int                             optimism) {
+    assert(!pos.checkers());
+
+    const auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
+
+    const ZfishEvalInput input = {
+      .psqt                     = psqt,
+      .positional               = positional,
+      .optimism                 = optimism,
+      .material                 = 534 * pos.count<PAWN>() + pos.non_pawn_material(),
+      .rule50_count             = pos.rule50_count(),
+      .value_tb_loss_in_max_ply = VALUE_TB_LOSS_IN_MAX_PLY,
+      .value_tb_win_in_max_ply  = VALUE_TB_WIN_IN_MAX_PLY,
+    };
+
+    return zfish_eval_compute_value(input);
+}
+
+std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
+    const char* rendered = zfish_engine_eval_trace(&pos, &network);
+    if (!rendered)
+        std::abort();
+
+    std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return value;
+}
+
 
 extern "C" {
 
