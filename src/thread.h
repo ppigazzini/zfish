@@ -37,6 +37,20 @@
 
 namespace Stockfish {
 
+#ifdef ZFISH_ZIG_BUILD
+extern "C" {
+void        zfish_thread_start_thinking(void*        pool,
+                                        const void*  options,
+                                        void*        pos,
+                                        const void*  limits,
+                                        void*        states_slot);
+void        zfish_threadpool_start_searching(void* pool);
+void        zfish_threadpool_wait_for_search_finished(void* pool);
+std::size_t zfish_threadpool_best_thread_index(void* pool);
+void        zfish_threadpool_ensure_network_replicated(void* pool);
+}
+#endif
+
 
 class OptionsMap;
 using Value = int;
@@ -191,5 +205,30 @@ class ThreadPool {
 };
 
 }  // namespace Stockfish
+
+#ifdef ZFISH_ZIG_BUILD
+inline void Stockfish::ThreadPool::start_thinking(const OptionsMap&  options,
+                                                  Position&          pos,
+                                                  StateListPtr&      states,
+                                                  Search::LimitsType limits) {
+    zfish_thread_start_thinking(this, &options, &pos, &limits, &states);
+}
+
+inline Stockfish::Thread* Stockfish::ThreadPool::get_best_thread() const {
+    return threads[zfish_threadpool_best_thread_index(const_cast<ThreadPool*>(this))].get();
+}
+
+inline void Stockfish::ThreadPool::start_searching() {
+    zfish_threadpool_start_searching(this);
+}
+
+inline void Stockfish::ThreadPool::wait_for_search_finished() const {
+    zfish_threadpool_wait_for_search_finished(const_cast<ThreadPool*>(this));
+}
+
+inline void Stockfish::ThreadPool::ensure_network_replicated() {
+    zfish_threadpool_ensure_network_replicated(this);
+}
+#endif
 
 #endif  // #ifndef THREAD_H_INCLUDED
