@@ -42,6 +42,14 @@
 
 namespace Stockfish {
 
+#ifdef ZFISH_ZIG_BUILD
+extern "C" {
+void zfish_engine_go_owner(void* engine_ptr, const void* limits_ptr);
+void zfish_engine_stop_owner(void* engine_ptr);
+void zfish_engine_wait_for_search_finished_owner(void* engine_ptr);
+}
+#endif
+
 class Engine {
    public:
     using InfoShort = Search::InfoShort;
@@ -129,6 +137,20 @@ class Engine {
 };
 
 }  // namespace Stockfish
+
+#ifdef ZFISH_ZIG_BUILD
+inline void Stockfish::Engine::go(Search::LimitsType& limits) {
+  zfish_engine_go_owner(this, &limits);
+}
+
+inline void Stockfish::Engine::stop() {
+  zfish_engine_stop_owner(this);
+}
+
+inline void Stockfish::Engine::wait_for_search_finished() {
+  zfish_engine_wait_for_search_finished_owner(this);
+}
+#endif
 
 
 #endif  // #ifndef ENGINE_H_INCLUDED

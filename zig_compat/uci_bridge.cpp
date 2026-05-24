@@ -172,8 +172,6 @@ const char* zfish_engine_set_position_owner(void*                engine_ptr,
                                             const EngineMoveView* moves_ptr,
                                             std::size_t          move_count);
 void zfish_engine_go_owner(void* engine_ptr, const void* limits_ptr);
-void zfish_engine_stop_owner(void* engine_ptr);
-void zfish_engine_wait_for_search_finished_owner(void* engine_ptr);
 void zfish_engine_set_numa_config_from_option_owner(void*                engine_ptr,
                                                     const unsigned char* value_ptr,
                                                     std::size_t          value_len);
@@ -998,23 +996,15 @@ using ZfishOpaqueCallback = void (*)(void*);
 std::size_t zfish_thread_next_power_of_two(std::uint64_t count);
 std::size_t zfish_thread_pick_best_thread(const ZfishThreadSummary* summaries,
                                           std::size_t               count);
-void         zfish_thread_start_thinking(void*        pool,
-                                         const void*  options,
-                                         void*        pos,
-                                         const void*  limits,
-                                         void*        states_slot);
 void zfish_threadpool_reconfigure(void*       pool,
                                   const void* numa_config,
                                   const void* shared_state,
                                   const void* update_context);
 void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context);
 void zfish_threadpool_clear(void* pool);
-void zfish_threadpool_start_searching(void* pool);
-void zfish_threadpool_wait_for_search_finished(void* pool);
 void zfish_threadpool_ensure_network_replicated(void* pool);
 std::uint64_t zfish_threadpool_nodes_searched(void* pool);
 std::uint64_t zfish_threadpool_tb_hits(void* pool);
-std::size_t   zfish_threadpool_best_thread_index(void* pool);
 void zfish_threadpool_reset_for_reconfigure(void* pool);
 void zfish_threadpool_bound_nodes_assign(void* pool, const std::size_t* nodes, std::size_t count);
 std::size_t zfish_shared_state_threads_value(const void* shared_state);
@@ -1377,29 +1367,6 @@ void zfish_engine_accumulator_caches_destroy(void* caches_ptr) {
 
 }
 
-void ThreadPool::start_thinking(const OptionsMap&  options,
-                                Position&          pos,
-                                StateListPtr&      states,
-                                Search::LimitsType limits) {
-    zfish_thread_start_thinking(this, &options, &pos, &limits, &states);
-}
-
-Thread* ThreadPool::get_best_thread() const {
-    return threads[zfish_threadpool_best_thread_index(const_cast<ThreadPool*>(this))].get();
-}
-
-void ThreadPool::start_searching() {
-    zfish_threadpool_start_searching(this);
-}
-
-void ThreadPool::wait_for_search_finished() const {
-    zfish_threadpool_wait_for_search_finished(const_cast<ThreadPool*>(this));
-}
-
-void ThreadPool::ensure_network_replicated() {
-    zfish_threadpool_ensure_network_replicated(this);
-}
-
 }  // namespace Stockfish
 
 namespace Stockfish {
@@ -1577,10 +1544,6 @@ std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960
     return Benchmark::perft(fen, depth, isChess960);
 }
 
-void Engine::go(Search::LimitsType& limits) {
-    zfish_engine_go_owner(this, &limits);
-}
-
 void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
     updateContext.onUpdateNoMoves = std::move(f);
 }
@@ -1601,8 +1564,6 @@ void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {
     onVerifyNetwork = std::move(f);
 }
 
-void Engine::wait_for_search_finished() { zfish_engine_wait_for_search_finished_owner(this); }
-
 std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
                                                      const std::vector<std::string>& moves) {
     std::vector<EngineMoveView> move_views;
@@ -1618,8 +1579,6 @@ std::optional<PositionSetError> Engine::set_position(const std::string&         
 
     return PositionSetError(take_string_and_free_engine_required(error));
 }
-
-void Engine::stop() { zfish_engine_stop_owner(this); }
 
 void Engine::set_numa_config_from_option(const std::string& o) {
     zfish_engine_set_numa_config_from_option_owner(
