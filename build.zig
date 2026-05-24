@@ -227,7 +227,6 @@ pub fn build(b: *std.Build) void {
     compile_flags.appendSlice(b.allocator, arch.flags) catch @panic("OOM");
 
     const stockfish_sources = &.{
-        "timeman.cpp",
         "evaluate.cpp",
         "movepick.cpp",
         "tt.cpp",
