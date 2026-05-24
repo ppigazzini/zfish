@@ -171,7 +171,6 @@ const char* zfish_engine_set_position_owner(void*                engine_ptr,
                                             std::size_t          fen_len,
                                             const EngineMoveView* moves_ptr,
                                             std::size_t          move_count);
-void zfish_engine_go_owner(void* engine_ptr, const void* limits_ptr);
 void zfish_engine_set_numa_config_from_option_owner(void*                engine_ptr,
                                                     const unsigned char* value_ptr,
                                                     std::size_t          value_len);
@@ -2109,7 +2108,7 @@ void zfish_engine_go_parsed_owner(void* engine_ptr, ZfishParsedLimits parsed) {
                 limits.searchmoves.push_back(move);
     }
 
-    zfish_engine_go_owner(engine, &limits);
+    engine->go(limits);
 }
 
 void zfish_engine_flip_owner(void* engine_ptr) {
