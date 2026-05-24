@@ -2435,29 +2435,6 @@ const void* zfish_threadpool_setup_state_back(const void* pool_ptr) {
     return &pool.setupStates->back();
 }
 
-const char* zfish_engine_position_set(void*                pos_ptr,
-                                      const unsigned char* fen_ptr,
-                                      std::size_t          fen_len,
-                                      std::uint8_t         chess960_enabled,
-                                      void*                state_ptr) {
-    const std::string fen(reinterpret_cast<const char*>(fen_ptr), fen_len);
-    const auto        err = static_cast<Position*>(pos_ptr)->set(
-      fen, chess960_enabled != 0, static_cast<StateInfo*>(state_ptr));
-    if (!err.has_value())
-        return nullptr;
-
-    const auto message = std::string(err->what());
-    auto*      buffer  = static_cast<char*>(std::malloc(message.size() + 1));
-    if (!buffer)
-        std::abort();
-    std::memcpy(buffer, message.c_str(), message.size() + 1);
-    return buffer;
-}
-
-void zfish_engine_position_do_move(void* pos_ptr, std::uint16_t move_raw, void* state_ptr) {
-    static_cast<Position*>(pos_ptr)->do_move(Move(move_raw), *static_cast<StateInfo*>(state_ptr));
-}
-
 void zfish_numa_context_set_system(void* numa_context_ptr) {
     auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
     numa_context.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy));
