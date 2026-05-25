@@ -257,9 +257,7 @@ pub fn build(b: *std.Build) void {
     }) catch @panic("OOM");
     compile_flags.appendSlice(b.allocator, arch.flags) catch @panic("OOM");
 
-    const stockfish_sources = &.{
-        "syzygy/tbprobe.cpp",
-    };
+    const stockfish_sources = &.{};
 
     const stockfish_legacy_sources = &.{
         "timeman.cpp",

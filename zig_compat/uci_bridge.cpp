@@ -1561,6 +1561,53 @@ Move MovePicker::next_move() {
 
 void MovePicker::skip_quiet_moves() { skipQuiets = true; }
 
+namespace Tablebases {
+
+int MaxCardinality = 0;
+
+void init(const std::string&) {
+    MaxCardinality = 0;
+}
+
+WDLScore probe_wdl(Position&, ProbeState* result) {
+    if (result)
+        *result = FAIL;
+    return WDLDraw;
+}
+
+int probe_dtz(Position&, ProbeState* result) {
+    if (result)
+        *result = FAIL;
+    return 0;
+}
+
+bool root_probe(Position&,
+                Search::RootMoves&,
+                bool,
+                bool,
+                const std::function<bool()>&) {
+    return false;
+}
+
+bool root_probe_wdl(Position&, Search::RootMoves&, bool) {
+    return false;
+}
+
+Config rank_root_moves(const OptionsMap&            options,
+                       Position&,
+                       Search::RootMoves&,
+                       bool,
+                       const std::function<bool()>&) {
+    Config config;
+    config.cardinality = int(options["SyzygyProbeLimit"]);
+    config.rootInTB = false;
+    config.useRule50 = bool(options["Syzygy50MoveRule"]);
+    config.probeDepth = int(options["SyzygyProbeDepth"]);
+    return config;
+}
+
+}  // namespace Tablebases
+
 // Constructor launches the thread and waits until it goes to sleep in idle_loop().
 // Note that 'searching' and 'exit' should be already set.
 Thread::Thread(Search::SharedState&                    sharedState,
