@@ -1290,6 +1290,76 @@ extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thre
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
 
+std::uint8_t TTEntry::relative_age(std::uint8_t curr_generation) const {
+    return zfish_tt_entry_relative_age(reinterpret_cast<const ZfishTtEntry*>(this), curr_generation);
+}
+
+TTWriter::TTWriter(TTEntry* tte) :
+    entry(tte) {}
+
+void TTWriter::write(
+  Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, std::uint8_t curr_generation) {
+    zfish_tt_entry_save(reinterpret_cast<ZfishTtEntry*>(entry),
+                        static_cast<std::uint64_t>(k),
+                        static_cast<int>(v),
+                        pv ? 1 : 0,
+                        static_cast<std::uint8_t>(b),
+                        static_cast<int>(d),
+                        DEPTH_NONE,
+                        static_cast<std::uint16_t>(m.raw()),
+                        static_cast<int>(ev),
+                        curr_generation);
+}
+
+void TranspositionTable::resize(std::size_t mbSize, ThreadPool& threads) {
+    zfish_tt_resize_state(reinterpret_cast<void**>(&table),
+                          &clusterCount,
+                          &generation8,
+                          mbSize,
+                          &threads);
+}
+
+void TranspositionTable::clear(ThreadPool& threads) {
+    zfish_tt_clear_state(table, clusterCount, &generation8, &threads);
+}
+
+int TranspositionTable::hashfull(int maxAge) const {
+    return zfish_tt_hashfull(reinterpret_cast<const ZfishTtCluster*>(table),
+                             clusterCount,
+                             generation8,
+                             maxAge);
+}
+
+void TranspositionTable::new_search() {
+    generation8 = zfish_tt_generation_next(generation8);
+}
+
+std::uint8_t TranspositionTable::generation() const {
+    return generation8;
+}
+
+std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
+    const auto output = zfish_tt_probe_table(table,
+                                             clusterCount,
+                                             static_cast<std::uint64_t>(key),
+                                             generation8,
+                                             DEPTH_NONE);
+
+    TTData data{Move(output.data.move16),
+                Value(output.data.value16),
+                Value(output.data.eval16),
+                Depth(output.data.depth),
+                Bound(output.data.bound),
+                output.data.is_pv != 0};
+
+    return {output.found != 0, data, TTWriter(static_cast<TTEntry*>(output.writer_ptr))};
+}
+
+TTEntry* TranspositionTable::first_entry(const Key key) const {
+    const auto index = zfish_tt_first_entry_index(static_cast<std::uint64_t>(key), clusterCount);
+    return &table[index].entry[0];
+}
+
 TimePoint TimeManagement::optimum() const { return optimumTime; }
 TimePoint TimeManagement::maximum() const { return maximumTime; }
 
