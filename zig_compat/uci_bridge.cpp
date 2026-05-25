@@ -2432,17 +2432,6 @@ Option::OnChange make_option_callback(
 extern "C" {
 void        zfish_engine_init_body(void* engine_ptr);
 
-int zfish_engine_max_threads_value() { return MaxThreads; }
-
-int zfish_engine_max_hash_mb_value() { return MaxHashMB; }
-
-void zfish_engine_skill_elo_bounds(int* low_ptr, int* high_ptr) {
-    if (low_ptr)
-        *low_ptr = Stockfish::Search::Skill::LowestElo;
-    if (high_ptr)
-        *high_ptr = Stockfish::Search::Skill::HighestElo;
-}
-
 void zfish_engine_set_start_position(void* engine_ptr) {
     auto* engine = static_cast<Engine*>(engine_ptr);
     const auto error = engine->set_position(StartFEN, {});
