@@ -1561,6 +1561,450 @@ Move MovePicker::next_move() {
 
 void MovePicker::skip_quiet_moves() { skipQuiets = true; }
 
+// Constructor launches the thread and waits until it goes to sleep in idle_loop().
+// Note that 'searching' and 'exit' should be already set.
+Thread::Thread(Search::SharedState&                    sharedState,
+               std::unique_ptr<Search::ISearchManager> sm,
+               size_t                                  n,
+               size_t                                  numaN,
+               size_t                                  totalNumaCount,
+               OptionalThreadToNumaNodeBinder          binder) :
+    idx(n),
+    idxInNuma(numaN),
+    totalNuma(totalNumaCount),
+    nthreads(sharedState.options["Threads"]),
+    stdThread(&Thread::idle_loop, this) {
+
+    wait_for_search_finished();
+
+    run_custom_job([this, &binder, &sharedState, &sm, n]() {
+        // Use the binder to [maybe] bind the threads to a NUMA node before doing
+        // the Worker allocation. Ideally we would also allocate the SearchManager
+        // here, but that's minor.
+        this->numaAccessToken = binder();
+        this->worker          = make_unique_large_page<Search::Worker>(
+          sharedState, std::move(sm), n, idxInNuma, totalNuma, this->numaAccessToken);
+    });
+
+    wait_for_search_finished();
+}
+
+
+// Destructor wakes up the thread in idle_loop() and waits for its termination.
+// Thread should be already waiting.
+Thread::~Thread() {
+
+    assert(!searching);
+
+    exit = true;
+    start_searching();
+    stdThread.join();
+}
+
+// Wakes up the thread that will start the search.
+void Thread::start_searching() {
+    assert(worker != nullptr);
+    run_custom_job([this]() { worker->start_searching(); });
+}
+
+// Clears the histories for the thread worker (usually before a new game).
+void Thread::clear_worker() {
+    assert(worker != nullptr);
+    run_custom_job([this]() { worker->clear(); });
+}
+
+// Blocks on the condition variable until the thread has finished searching.
+void Thread::wait_for_search_finished() {
+
+    std::unique_lock<std::mutex> lk(mutex);
+    cv.wait(lk, [&] { return !searching; });
+}
+
+// Launching a function in the thread.
+void Thread::run_custom_job(std::function<void()> f) {
+    {
+        std::unique_lock<std::mutex> lk(mutex);
+        cv.wait(lk, [&] { return !searching; });
+        jobFunc   = std::move(f);
+        searching = true;
+    }
+    cv.notify_one();
+}
+
+void Thread::worker_set_limits(const Search::LimitsType& limits) {
+    assert(worker != nullptr);
+    worker->set_limits(limits);
+}
+
+void Thread::worker_reset_root_setup_state() {
+    assert(worker != nullptr);
+    worker->reset_root_setup_state();
+}
+
+void Thread::worker_set_root_moves(const Search::RootMoves& rootMoves) {
+    assert(worker != nullptr);
+    worker->set_root_moves(rootMoves);
+}
+
+void Thread::worker_set_root_position(std::string_view fen, bool chess960) {
+    assert(worker != nullptr);
+    worker->set_root_position(fen, chess960);
+}
+
+void Thread::worker_set_root_state(const StateInfo& setupState) {
+    assert(worker != nullptr);
+    worker->set_root_state(setupState);
+}
+
+void Thread::worker_set_tb_config(Tablebases::Config config) {
+    assert(worker != nullptr);
+    worker->set_tb_config(config);
+}
+
+uint64_t Thread::worker_nodes_searched() const {
+    assert(worker != nullptr);
+    return worker->nodes_searched();
+}
+
+uint64_t Thread::worker_tb_hits() const {
+    assert(worker != nullptr);
+    return worker->tb_hits();
+}
+
+void Thread::worker_fill_summary(std::uint16_t& pv0Raw,
+                                 bool&          scoreIsBound,
+                                 bool&          pvHasMoreThanTwo,
+                                 int&           score,
+                                 int&           rootDepth) const {
+    assert(worker != nullptr);
+    worker->fill_thread_summary(pv0Raw, scoreIsBound, pvHasMoreThanTwo, score, rootDepth);
+}
+
+void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); }
+
+// Thread gets parked here, blocked on the condition variable when the thread has no work to do.
+void Thread::idle_loop() {
+    while (true)
+    {
+        std::unique_lock<std::mutex> lk(mutex);
+        searching = false;
+        cv.notify_one();  // Wake up anyone waiting for search finished
+        cv.wait(lk, [&] { return searching; });
+
+        if (exit)
+            return;
+
+        std::function<void()> job = std::move(jobFunc);
+        jobFunc                   = nullptr;
+
+        lk.unlock();
+
+        if (job)
+            job();
+    }
+}
+
+Search::SearchManager* ThreadPool::main_manager() { return main_thread()->worker->main_manager(); }
+
+uint64_t ThreadPool::nodes_searched() const { return accumulate(&Search::Worker::nodes); }
+uint64_t ThreadPool::tb_hits() const { return accumulate(&Search::Worker::tbHits); }
+
+static size_t next_power_of_two(uint64_t count) { return count > 1 ? (2ULL << msb(count - 1)) : 1; }
+
+// Creates/destroys threads to match the requested number.
+// Created and launched threads will immediately go to sleep in idle_loop().
+// Upon resizing, threads are recreated to allow for binding if necessary.
+void ThreadPool::set(const NumaConfig&                           numaConfig,
+                     Search::SharedState                         sharedState,
+                     const Search::SearchManager::UpdateContext& updateContext) {
+
+    if (threads.size() > 0)  // destroy any existing thread(s)
+    {
+        main_thread()->wait_for_search_finished();
+
+        threads.clear();
+
+        boundThreadToNumaNode.clear();
+    }
+
+    const size_t requested = sharedState.options["Threads"];
+
+    if (requested > 0)  // create new thread(s)
+    {
+        // Binding threads may be problematic when there's multiple NUMA nodes and
+        // multiple Stockfish instances running. In particular, if each instance
+        // runs a single thread then they would all be mapped to the first NUMA node.
+        // This is undesirable, and so the default behaviour (i.e. when the user does not
+        // change the NumaConfig UCI setting) is to not bind the threads to processors
+        // unless we know for sure that we span NUMA nodes and replication is required.
+        const std::string numaPolicy(sharedState.options["NumaPolicy"]);
+        const bool        doBindThreads = [&]() {
+            if (numaPolicy == "none")
+                return false;
+
+            if (numaPolicy == "auto")
+                return numaConfig.suggests_binding_threads(requested);
+
+            // numaPolicy == "system", or explicitly set by the user
+            return true;
+        }();
+
+        std::map<NumaIndex, size_t> counts;
+        boundThreadToNumaNode = doBindThreads
+                                ? numaConfig.distribute_threads_among_numa_nodes(requested)
+                                : std::vector<NumaIndex>{};
+
+        if (boundThreadToNumaNode.empty())
+            counts[0] = requested;  // Pretend all threads are part of numa node 0
+        else
+        {
+            for (size_t i = 0; i < boundThreadToNumaNode.size(); ++i)
+                counts[boundThreadToNumaNode[i]]++;
+        }
+
+        sharedState.sharedHistories.clear();
+        for (auto pair : counts)
+        {
+            NumaIndex numaIndex = pair.first;
+            uint64_t  count     = pair.second;
+            auto      f         = [&]() {
+                sharedState.sharedHistories.try_emplace(numaIndex, next_power_of_two(count));
+            };
+            if (doBindThreads)
+                numaConfig.execute_on_numa_node(numaIndex, f);
+            else
+                f();
+        }
+
+        auto threadsPerNode = counts;
+        counts.clear();
+
+        while (threads.size() < requested)
+        {
+            const size_t    threadId      = threads.size();
+            const NumaIndex numaId        = doBindThreads ? boundThreadToNumaNode[threadId] : 0;
+            auto            create_thread = [&]() {
+                auto manager = threadId == 0
+                                          ? std::unique_ptr<Search::ISearchManager>(
+                                   std::make_unique<Search::SearchManager>(updateContext))
+                                          : std::make_unique<Search::NullSearchManager>();
+
+                // When not binding threads we want to force all access to happen
+                // from the same NUMA node, because in case of NUMA replicated memory
+                // accesses we don't want to trash cache in case the threads get scheduled
+                // on the same NUMA node.
+                auto binder = doBindThreads ? OptionalThreadToNumaNodeBinder(numaConfig, numaId)
+                                                       : OptionalThreadToNumaNodeBinder(numaId);
+
+                threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager),
+                                                                         threadId, counts[numaId]++,
+                                                                         threadsPerNode[numaId], binder));
+            };
+
+            // Ensure the worker thread inherits the intended NUMA affinity at creation.
+            if (doBindThreads)
+                numaConfig.execute_on_numa_node(numaId, create_thread);
+            else
+                create_thread();
+        }
+
+        clear();
+
+        main_thread()->wait_for_search_finished();
+    }
+}
+
+
+// Sets threadPool data to initial values.
+void ThreadPool::clear() {
+    if (threads.size() == 0)
+        return;
+
+    for (auto&& th : threads)
+        th->clear_worker();
+
+    for (auto&& th : threads)
+        th->wait_for_search_finished();
+
+    // These two affect the time taken on the first move of a game.
+    main_manager()->bestPreviousAverageScore = VALUE_INFINITE;
+    main_manager()->previousTimeReduction    = 0.85;
+
+    main_manager()->callsCnt           = 0;
+    main_manager()->bestPreviousScore  = VALUE_INFINITE;
+    main_manager()->originalTimeAdjust = -1;
+    main_manager()->tm.clear();
+}
+
+void ThreadPool::run_on_thread(size_t threadId, std::function<void()> f) {
+    assert(threads.size() > threadId);
+    threads[threadId]->run_custom_job(std::move(f));
+}
+
+void ThreadPool::wait_on_thread(size_t threadId) {
+    assert(threads.size() > threadId);
+    threads[threadId]->wait_for_search_finished();
+}
+
+size_t ThreadPool::num_threads() const { return threads.size(); }
+
+#ifdef ZFISH_ZIG_BUILD
+extern "C" {
+
+struct ZfishThreadSummary {
+    std::uint16_t pv0_raw;
+    std::uint8_t  score_is_bound;
+    std::uint8_t  pv_has_more_than_two;
+    int           score;
+    int           root_depth;
+};
+
+struct ZfishTbConfig {
+    int          cardinality;
+    std::uint8_t root_in_tb;
+    std::uint8_t use_rule50;
+    int          probe_depth;
+};
+
+using ZfishOpaqueCallback = void (*)(void*);
+
+std::size_t zfish_threadpool_thread_count(const void* pool_ptr) {
+    return static_cast<const ThreadPool*>(pool_ptr)->size();
+}
+
+void* zfish_threadpool_thread_at(void* pool_ptr, std::size_t index) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    assert(index < pool->size());
+    return (*(pool->begin() + static_cast<std::ptrdiff_t>(index))).get();
+}
+
+void zfish_threadpool_set_stop_flag(void* pool_ptr, std::uint8_t stop) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->stop = stop != 0;
+}
+
+void zfish_threadpool_main_manager_set_stop_on_ponderhit(void*       pool_ptr,
+                                                         std::uint8_t stop_on_ponderhit) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->stopOnPonderhit = stop_on_ponderhit != 0;
+}
+
+void zfish_threadpool_main_manager_set_ponder(void* pool_ptr, std::uint8_t ponder_mode) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->ponder = ponder_mode != 0;
+}
+
+void zfish_threadpool_set_increase_depth(void* pool_ptr, std::uint8_t increase_depth) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->increaseDepth = increase_depth != 0;
+}
+
+void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->run_custom_job([callback, context]() { callback(context); });
+}
+
+void zfish_thread_wait_for_search_finished(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->wait_for_search_finished();
+}
+
+void zfish_thread_start_searching(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->start_searching();
+}
+
+void zfish_thread_clear_worker(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->clear_worker();
+}
+
+void zfish_thread_ensure_network_replicated(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->ensure_network_replicated();
+}
+
+void zfish_thread_worker_set_limits(void* thread_ptr, const void* limits_ptr) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->worker_set_limits(*static_cast<const Search::LimitsType*>(limits_ptr));
+}
+
+void zfish_thread_worker_reset_root_setup_state(void* thread_ptr) {
+    static_cast<Thread*>(thread_ptr)->worker_reset_root_setup_state();
+}
+
+void zfish_thread_worker_set_root_moves(void* thread_ptr, const void* root_moves_ptr) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->worker_set_root_moves(*static_cast<const Search::RootMoves*>(root_moves_ptr));
+}
+
+void zfish_thread_worker_set_root_position(void*                thread_ptr,
+                                           const unsigned char* fen_ptr,
+                                           std::size_t          fen_len,
+                                           std::uint8_t         chess960) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    const auto fen = std::string_view(reinterpret_cast<const char*>(fen_ptr), fen_len);
+    thread->worker_set_root_position(fen, chess960 != 0);
+}
+
+void zfish_thread_worker_set_root_state(void* thread_ptr, const void* setup_state_ptr) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->worker_set_root_state(*static_cast<const StateInfo*>(setup_state_ptr));
+}
+
+void zfish_thread_worker_set_tb_config(void* thread_ptr, ZfishTbConfig config) {
+    auto* thread = static_cast<Thread*>(thread_ptr);
+    thread->worker_set_tb_config(Tablebases::Config{config.cardinality, config.root_in_tb != 0,
+                                                     config.use_rule50 != 0,
+                                                     Depth(config.probe_depth)});
+}
+
+std::uint64_t zfish_thread_nodes_searched(const void* thread_ptr) {
+    return static_cast<const Thread*>(thread_ptr)->worker_nodes_searched();
+}
+
+std::uint64_t zfish_thread_tb_hits(const void* thread_ptr) {
+    return static_cast<const Thread*>(thread_ptr)->worker_tb_hits();
+}
+
+void zfish_thread_fill_summary(const void* thread_ptr, ZfishThreadSummary* out) {
+    auto score_is_bound = false;
+    auto pv_has_more_than_two = false;
+    static_cast<const Thread*>(thread_ptr)->worker_fill_summary(
+      out->pv0_raw, score_is_bound, pv_has_more_than_two, out->score, out->root_depth);
+    out->score_is_bound = score_is_bound ? std::uint8_t{1} : std::uint8_t{0};
+    out->pv_has_more_than_two = pv_has_more_than_two ? std::uint8_t{1} : std::uint8_t{0};
+}
+
+void zfish_threadpool_main_manager_reset_best_previous_average_score(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->bestPreviousAverageScore = VALUE_INFINITE;
+}
+
+void zfish_threadpool_main_manager_reset_previous_time_reduction(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->previousTimeReduction = 0.85;
+}
+
+void zfish_threadpool_main_manager_reset_calls_count(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->callsCnt = 0;
+}
+
+void zfish_threadpool_main_manager_reset_best_previous_score(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->bestPreviousScore = VALUE_INFINITE;
+}
+
+void zfish_threadpool_main_manager_reset_original_time_adjust(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->originalTimeAdjust = -1;
+}
+
+void zfish_threadpool_main_manager_clear_timeman(void* pool_ptr) {
+    auto* pool = static_cast<ThreadPool*>(pool_ptr);
+    pool->main_manager()->tm.clear();
+}
+
+}  // extern "C"
+#endif
+
 #endif  // ZFISH_LEGACY_CPP_TARGET
 
 
