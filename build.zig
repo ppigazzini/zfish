@@ -72,6 +72,17 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const legacy_exe = b.addExecutable(.{
+        .name = "stockfish-legacy-cpp",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig_src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .link_libcpp = true,
+        }),
+    });
+
     const timeman_module = b.createModule(.{
         .root_source_file = b.path("zig_build/time/timeman.zig"),
         .target = target,
@@ -216,6 +227,26 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("tt", tt_module);
     exe.root_module.addImport("uci", uci_module);
 
+    legacy_exe.root_module.addImport("benchmark", benchmark_module);
+    legacy_exe.root_module.addImport("bitboard", bitboard_module);
+    legacy_exe.root_module.addImport("engine", engine_module);
+    legacy_exe.root_module.addImport("evaluate", evaluate_module);
+    legacy_exe.root_module.addImport("misc", misc_module);
+    legacy_exe.root_module.addImport("movegen", movegen_module);
+    legacy_exe.root_module.addImport("movepick", movepick_module);
+    legacy_exe.root_module.addImport("nnue_accumulator", nnue_accumulator_module);
+    legacy_exe.root_module.addImport("network", network_module);
+    legacy_exe.root_module.addImport("nnue_feature", nnue_feature_module);
+    legacy_exe.root_module.addImport("nnue_misc", nnue_misc_module);
+    legacy_exe.root_module.addImport("option", option_module);
+    legacy_exe.root_module.addImport("position", position_module);
+    legacy_exe.root_module.addImport("position_snapshot", position_snapshot_module);
+    legacy_exe.root_module.addImport("search", search_module);
+    legacy_exe.root_module.addImport("timeman", timeman_module);
+    legacy_exe.root_module.addImport("thread", thread_module);
+    legacy_exe.root_module.addImport("tt", tt_module);
+    legacy_exe.root_module.addImport("uci", uci_module);
+
     var compile_flags = std.ArrayList([]const u8).empty;
     compile_flags.appendSlice(b.allocator, &.{
         "-std=c++17",
@@ -232,7 +263,20 @@ pub fn build(b: *std.Build) void {
         "syzygy/tbprobe.cpp",
     };
 
+    const stockfish_legacy_sources = &.{
+        "timeman.cpp",
+        "evaluate.cpp",
+        "movepick.cpp",
+        "tt.cpp",
+        "thread.cpp",
+        "syzygy/tbprobe.cpp",
+    };
+
     const stockfish_position_sources = &.{
+        "position.cpp",
+    };
+
+    const stockfish_legacy_position_sources = &.{
         "position.cpp",
     };
 
@@ -247,11 +291,28 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addCMacro("NNUE_EMBEDDING_OFF", "1");
     exe.root_module.addCMacro("ZFISH_ZIG_BUILD", "1");
     exe.root_module.addCMacro("ARCH", arch.name);
+
+    legacy_exe.root_module.addIncludePath(b.path("src"));
+    legacy_exe.root_module.addCMacro("NDEBUG", "1");
+    legacy_exe.root_module.addCMacro("DIS_64BIT", "1");
+    legacy_exe.root_module.addCMacro("USE_PTHREADS", "1");
+    legacy_exe.root_module.addCMacro("NNUE_EMBEDDING_OFF", "1");
+    legacy_exe.root_module.addCMacro("ZFISH_ZIG_BUILD", "1");
+    legacy_exe.root_module.addCMacro("ZFISH_LEGACY_CPP_TARGET", "1");
+    legacy_exe.root_module.addCMacro("ARCH", arch.name);
+
     applyMacros(exe.root_module, arch.macros);
+    applyMacros(legacy_exe.root_module, arch.macros);
     if (git_info.sha) |sha|
         exe.root_module.addCMacro("GIT_SHA", b.fmt("\"{s}\"", .{sha}));
     if (git_info.date) |date|
         exe.root_module.addCMacro("GIT_DATE", b.fmt("\"{s}\"", .{date}));
+
+    if (git_info.sha) |sha|
+        legacy_exe.root_module.addCMacro("GIT_SHA", b.fmt("\"{s}\"", .{sha}));
+    if (git_info.date) |date|
+        legacy_exe.root_module.addCMacro("GIT_DATE", b.fmt("\"{s}\"", .{date}));
+
     if (stockfish_sources.len != 0) {
         exe.root_module.addCSourceFiles(.{
             .root = b.path("src"),
@@ -259,6 +320,15 @@ pub fn build(b: *std.Build) void {
             .flags = compile_flags.items,
         });
     }
+
+    if (stockfish_legacy_sources.len != 0) {
+        legacy_exe.root_module.addCSourceFiles(.{
+            .root = b.path("src"),
+            .files = stockfish_legacy_sources,
+            .flags = compile_flags.items,
+        });
+    }
+
     if (stockfish_position_sources.len != 0) {
         var position_compile_flags = std.ArrayList([]const u8).empty;
         position_compile_flags.appendSlice(b.allocator, compile_flags.items) catch @panic("OOM");
@@ -274,15 +344,43 @@ pub fn build(b: *std.Build) void {
             .flags = position_compile_flags.items,
         });
     }
+
+    if (stockfish_legacy_position_sources.len != 0) {
+        var legacy_position_compile_flags = std.ArrayList([]const u8).empty;
+        legacy_position_compile_flags.appendSlice(b.allocator, compile_flags.items) catch @panic("OOM");
+        legacy_position_compile_flags.appendSlice(b.allocator, &.{
+            "-DZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY",
+            "-DZFISH_POSITION_BRIDGE_SKIP_ENDGAME_SET",
+            "-DZFISH_POSITION_BRIDGE_SKIP_FEN",
+        }) catch @panic("OOM");
+
+        legacy_exe.root_module.addCSourceFiles(.{
+            .root = b.path("src"),
+            .files = stockfish_legacy_position_sources,
+            .flags = legacy_position_compile_flags.items,
+        });
+    }
+
     exe.root_module.addCSourceFiles(.{
         .root = b.path("zig_compat"),
         .files = zig_compat_sources,
         .flags = compile_flags.items,
     });
+
+    legacy_exe.root_module.addCSourceFiles(.{
+        .root = b.path("zig_compat"),
+        .files = zig_compat_sources,
+        .flags = compile_flags.items,
+    });
+
     exe.root_module.linkSystemLibrary("pthread", .{});
     exe.root_module.linkSystemLibrary("rt", .{});
 
+    legacy_exe.root_module.linkSystemLibrary("pthread", .{});
+    legacy_exe.root_module.linkSystemLibrary("rt", .{});
+
     b.installArtifact(exe);
+    b.installArtifact(legacy_exe);
 
     const install_step = b.getInstallStep();
 
@@ -359,6 +457,13 @@ pub fn build(b: *std.Build) void {
         "Build the imported Stockfish C++ engine for Linux x86_64",
     );
     stockfish_step.dependOn(install_step);
+
+    const legacy_install = b.addInstallArtifact(legacy_exe, .{});
+    const legacy_stockfish_step = b.step(
+        "stockfish-legacy-cpp",
+        "Build the optional legacy C++ fallback engine target",
+    );
+    legacy_stockfish_step.dependOn(&legacy_install.step);
 }
 
 fn applyMacros(module: *std.Build.Module, macros: []const Macro) void {
