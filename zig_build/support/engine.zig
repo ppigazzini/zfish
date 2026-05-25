@@ -6,6 +6,7 @@ const c = @cImport({
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
+const misc_port = @import("misc");
 
 const PendingStateEntry = struct {
     slot_key: usize,
@@ -184,9 +185,6 @@ extern fn zfish_eval_compute_value(input: EvalInput) c_int;
 extern fn zfish_eval_format_trace(input: EvalTraceInput) ?[*:0]u8;
 extern fn zfish_nnue_format_trace(input: NnueTraceInput) ?[*:0]u8;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
-extern fn zfish_engine_max_threads_value() c_int;
-extern fn zfish_engine_max_hash_mb_value() c_int;
-extern fn zfish_engine_skill_elo_bounds(low_ptr: *c_int, high_ptr: *c_int) void;
 extern fn zfish_engine_set_start_position(engine_ptr: *anyopaque) void;
 extern fn zfish_engine_add_option(
     engine_ptr: *anyopaque,
@@ -249,12 +247,11 @@ extern fn zfish_engine_save_network_owner(
 extern fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
-    const max_threads = zfish_engine_max_threads_value();
-    const max_hash_mb = zfish_engine_max_hash_mb_value();
+    const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
+    const max_hash_mb: c_int = if (@sizeOf(usize) >= 8) 33554432 else 2048;
 
-    var lowest_elo: c_int = default_skill_lowest_elo;
-    var highest_elo: c_int = default_skill_highest_elo;
-    zfish_engine_skill_elo_bounds(&lowest_elo, &highest_elo);
+    const lowest_elo: c_int = default_skill_lowest_elo;
+    const highest_elo: c_int = default_skill_highest_elo;
 
     addStringOption(engine_ptr, "Debug Log File", "", option_callback_debug_log_file);
     addStringOption(engine_ptr, "NumaPolicy", "auto", option_callback_numa_policy);
