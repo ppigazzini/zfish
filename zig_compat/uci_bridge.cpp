@@ -1288,6 +1288,8 @@ extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thre
     static_cast<ThreadPool*>(threads_ptr)->wait_on_thread(thread_id);
 }
 
+#ifndef ZFISH_LEGACY_CPP_TARGET
+
 TimePoint TimeManagement::optimum() const { return optimumTime; }
 TimePoint TimeManagement::maximum() const { return maximumTime; }
 
@@ -1488,6 +1490,8 @@ Move MovePicker::next_move() {
 }
 
 void MovePicker::skip_quiet_moves() { skipQuiets = true; }
+
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 
 extern "C" {
