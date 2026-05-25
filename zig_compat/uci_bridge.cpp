@@ -164,29 +164,16 @@ void zfish_engine_emit_verify_message(const void*          engine_ptr,
                                       const unsigned char* message_ptr,
                                       std::size_t          message_len);
 void zfish_engine_verify_network_method(const void* engine_ptr);
-void zfish_engine_search_clear_owner(void* engine_ptr);
-struct EngineMoveView;
 const char* zfish_engine_set_position_owner(void*                engine_ptr,
                                             const unsigned char* fen_ptr,
                                             std::size_t          fen_len,
-                                            const EngineMoveView* moves_ptr,
+                                            const void*          moves_ptr,
                                             std::size_t          move_count);
 void zfish_engine_set_numa_config_from_option_owner(void*                engine_ptr,
                                                     const unsigned char* value_ptr,
                                                     std::size_t          value_len);
-void zfish_engine_resize_threads_owner(void* engine_ptr);
-void zfish_engine_set_tt_size_owner(void* engine_ptr, std::size_t mb);
-void zfish_engine_set_ponderhit_owner(void* engine_ptr, std::uint8_t ponder);
-const char* zfish_engine_trace_eval_owner(void* engine_ptr);
-const char* zfish_engine_numa_config_string_owner(const void* engine_ptr);
 const char* zfish_engine_numa_config_information_owner(const void* engine_ptr);
-const char* zfish_engine_thread_binding_information_owner(const void* engine_ptr);
 const char* zfish_engine_thread_allocation_information_owner(const void* engine_ptr);
-void zfish_engine_load_network_owner(void* engine_ptr, const unsigned char* file_ptr, std::size_t file_len);
-void zfish_engine_save_network_owner(void*                engine_ptr,
-                                     std::uint8_t         has_filename,
-                                     const unsigned char* filename_ptr,
-                                     std::size_t          filename_len);
 struct ZfishEvalTraceInput {
     const unsigned char* inner_trace_ptr;
     std::size_t          inner_trace_len;
@@ -224,7 +211,6 @@ const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 const char* zfish_engine_eval_trace(void* pos, const void* network);
 void         zfish_engine_release_pending_state_slot(void* states_slot);
 const char* zfish_engine_fen(const void* pos);
-const char* zfish_engine_visualize(const void* pos);
 const char* zfish_misc_engine_version_info_text();
 const char* zfish_misc_engine_info_mode(std::uint8_t to_uci);
 const char* zfish_misc_compiler_info_text();
@@ -2204,27 +2190,6 @@ std::string compiler_info() {
     return value;
 }
 
-std::string Engine::get_numa_config_as_string() const {
-    return take_string_and_free_engine_required(zfish_engine_numa_config_string_owner(this));
-}
-
-std::string Engine::numa_config_information_as_string() const {
-    return take_string_and_free_engine_required(zfish_engine_numa_config_information_owner(this));
-}
-
-std::string Engine::thread_binding_information_as_string() const {
-    return take_string_and_free_engine_required(zfish_engine_thread_binding_information_owner(this));
-}
-
-std::string Engine::thread_allocation_information_as_string() const {
-    return take_string_and_free_engine_required(
-      zfish_engine_thread_allocation_information_owner(this));
-}
-
-void Engine::verify_network() const {
-    zfish_engine_verify_network_method(this);
-}
-
 std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
 
     auto network_ = std::make_unique<NN::Network>(NN::EvalFile{EvalFileDefaultName, "None", ""});
@@ -2232,17 +2197,6 @@ std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
     network_->load(binaryDirectory, "");
 
     return network_;
-}
-
-void Engine::load_network(const std::string& file) {
-    zfish_engine_load_network_owner(this, reinterpret_cast<const unsigned char*>(file.data()), file.size());
-}
-
-void Engine::save_network(const std::pair<std::optional<std::string>, std::string> file) {
-    const std::string filename = file.first.value_or(std::string{});
-    zfish_engine_save_network_owner(this, static_cast<std::uint8_t>(file.first.has_value()),
-                                    reinterpret_cast<const unsigned char*>(filename.data()),
-                                    filename.size());
 }
 
 void dbg_hit_on(bool cond, int slot) {
@@ -2269,15 +2223,6 @@ void dbg_print() { zfish_misc_dbg_print(); }
 
 void dbg_clear() { zfish_misc_dbg_clear(); }
 
-std::string take_string_and_free_engine_required_uci(const char* rendered) {
-    if (!rendered)
-        std::abort();
-
-    std::string value(rendered);
-    std::free(const_cast<char*>(rendered));
-    return value;
-}
-
 void start_logger(const std::string& fname) { Logger::start(fname); }
 
 std::ostream& operator<<(std::ostream& os, SyncCout sc) {
@@ -2295,18 +2240,7 @@ std::ostream& operator<<(std::ostream& os, SyncCout sc) {
 void sync_cout_start() { std::cout << IO_LOCK; }
 void sync_cout_end() { std::cout << IO_UNLOCK; }
 
-struct EngineMoveView {
-    const unsigned char* ptr;
-    std::size_t          len;
-};
-
 extern "C" {
-}
-
-std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
-    verify_network();
-
-    return Benchmark::perft(fen, depth, isChess960);
 }
 
 void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
@@ -2327,48 +2261,6 @@ void Engine::set_on_bestmove(std::function<void(std::string_view, std::string_vi
 
 void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {
     onVerifyNetwork = std::move(f);
-}
-
-std::optional<PositionSetError> Engine::set_position(const std::string&              fen,
-                                                     const std::vector<std::string>& moves) {
-    std::vector<EngineMoveView> move_views;
-    move_views.reserve(moves.size());
-    for (const auto& move : moves)
-        move_views.push_back({reinterpret_cast<const unsigned char*>(move.data()), move.size()});
-
-        const char* error = zfish_engine_set_position_owner(
-            this, reinterpret_cast<const unsigned char*>(fen.data()), fen.size(),
-            move_views.empty() ? nullptr : move_views.data(), move_views.size());
-    if (!error)
-        return std::nullopt;
-
-    return PositionSetError(take_string_and_free_engine_required(error));
-}
-
-void Engine::set_numa_config_from_option(const std::string& o) {
-    zfish_engine_set_numa_config_from_option_owner(
-      this, reinterpret_cast<const unsigned char*>(o.data()), o.size());
-}
-
-void Engine::resize_threads() { zfish_engine_resize_threads_owner(this); }
-
-void Engine::set_tt_size(size_t mb) { zfish_engine_set_tt_size_owner(this, mb); }
-
-void Engine::set_ponderhit(bool b) {
-    zfish_engine_set_ponderhit_owner(this, static_cast<std::uint8_t>(b ? 1 : 0));
-}
-
-void Engine::search_clear() {
-    zfish_engine_search_clear_owner(this);
-}
-
-void Engine::trace_eval() const {
-    const char* rendered = zfish_engine_trace_eval_owner(const_cast<Engine*>(this));
-    if (!rendered)
-        std::abort();
-
-    sync_cout << "\n" << rendered << sync_endl;
-    std::free(const_cast<char*>(rendered));
 }
 
 extern "C" {
@@ -2434,7 +2326,9 @@ void        zfish_engine_init_body(void* engine_ptr);
 
 void zfish_engine_set_start_position(void* engine_ptr) {
     auto* engine = static_cast<Engine*>(engine_ptr);
-    const auto error = engine->set_position(StartFEN, {});
+    const auto* start_fen = reinterpret_cast<const unsigned char*>(StartFEN);
+    const auto  error = zfish_engine_set_position_owner(
+      engine, start_fen, std::char_traits<char>::length(StartFEN), nullptr, 0);
     if (error)
         std::abort();
 }
@@ -2482,17 +2376,27 @@ void zfish_engine_start_logger(const unsigned char* name_ptr, std::size_t name_l
 void zfish_engine_set_numa_config_from_option_method(void*                engine_ptr,
                                                      const unsigned char* value_ptr,
                                                      std::size_t          value_len) {
-    static_cast<Engine*>(engine_ptr)->set_numa_config_from_option(
-      std::string(reinterpret_cast<const char*>(value_ptr), value_len));
+        zfish_engine_set_numa_config_from_option_owner(engine_ptr, value_ptr, value_len);
 }
 
 const char* zfish_engine_numa_config_info_text(const void* engine_ptr) {
-    return alloc_c_string(static_cast<const Engine*>(engine_ptr)->numa_config_information_as_string());
+    const char* rendered = zfish_engine_numa_config_information_owner(engine_ptr);
+    if (!rendered)
+        return nullptr;
+
+    const std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return alloc_c_string(value);
 }
 
 const char* zfish_engine_thread_allocation_info_text(const void* engine_ptr) {
-    return alloc_c_string(
-      static_cast<const Engine*>(engine_ptr)->thread_allocation_information_as_string());
+    const char* rendered = zfish_engine_thread_allocation_information_owner(engine_ptr);
+    if (!rendered)
+        return nullptr;
+
+    const std::string value(rendered);
+    std::free(const_cast<char*>(rendered));
+    return alloc_c_string(value);
 }
 
 const char* zfish_engine_evalfile_text(const void* engine_ptr) {
@@ -2669,17 +2573,7 @@ void assign_magic_entries() {
 const OptionsMap& Engine::get_options() const { return options; }
 OptionsMap&       Engine::get_options() { return options; }
 
-std::string Engine::fen() const {
-    return take_string_and_free_required(zfish_engine_fen(&pos));
-}
-
 void Engine::flip() { pos.flip(); }
-
-std::string Engine::visualize() const {
-    return take_string_and_free_required(zfish_engine_visualize(&pos));
-}
-
-int Engine::get_hashfull(int maxAge) const { return tt.hashfull(maxAge); }
 
 extern "C" {
 
@@ -2834,8 +2728,16 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
 
 std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
     auto* engine = static_cast<Engine*>(engine_ptr);
-    const auto nodes =
-      engine->perft(engine->fen(), depth, engine->get_options()["UCI_Chess960"]);
+    zfish_engine_verify_network_method(engine);
+
+    const char* rendered_fen = zfish_engine_fen(&engine->pos);
+    if (!rendered_fen)
+        std::abort();
+
+    const std::string fen(rendered_fen);
+    std::free(const_cast<char*>(rendered_fen));
+
+    const auto nodes = Benchmark::perft(fen, depth, engine->get_options()["UCI_Chess960"]);
     sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
     return nodes;
 }
