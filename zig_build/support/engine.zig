@@ -245,6 +245,30 @@ extern fn zfish_engine_save_network_owner(
     filename_len: usize,
 ) void;
 extern fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int;
+extern fn zfish_threadpool_reconfigure(
+    pool: *anyopaque,
+    numa_config: *const anyopaque,
+    shared_state: *const anyopaque,
+    update_context: *const anyopaque,
+) void;
+extern fn zfish_numa_context_config(numa_context: *const anyopaque) *const anyopaque;
+extern fn zfish_search_shared_state_create(
+    options: *const anyopaque,
+    threads: *anyopaque,
+    tt: *anyopaque,
+    shared_hists: *anyopaque,
+    network: *const anyopaque,
+) ?*anyopaque;
+extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
+extern fn zfish_engine_option_hash_value(options: *const anyopaque) usize;
+extern fn zfish_engine_tt_resize(tt: *anyopaque, mb: usize, threads: *anyopaque) void;
+extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
+extern fn zfish_engine_shared_hists_ptr(engine_ptr: *anyopaque) *anyopaque;
+extern fn zfish_engine_network_replicated_ptr(engine_ptr: *anyopaque) *anyopaque;
+extern fn zfish_engine_update_context_ptr(engine_ptr: *const anyopaque) *const anyopaque;
+extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
+extern fn zfish_engine_syzygy_path_text(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_tt_hashfull(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
     const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
@@ -441,12 +465,56 @@ pub fn setNumaConfigFromOptionEngine(engine_ptr: *anyopaque, option_text: []cons
     zfish_engine_resize_threads_owner(engine_ptr);
 }
 
+pub fn resizeThreads(
+    numa_context: *const anyopaque,
+    options: *const anyopaque,
+    threads: *anyopaque,
+    tt: *anyopaque,
+    shared_hists: *anyopaque,
+    network: *const anyopaque,
+    update_context: *const anyopaque,
+) void {
+    zfish_threadpool_wait_for_search_finished(threads);
+
+    const shared_state = zfish_search_shared_state_create(
+        options,
+        threads,
+        tt,
+        shared_hists,
+        network,
+    ) orelse @panic("OOM");
+    defer zfish_search_shared_state_destroy(shared_state);
+
+    zfish_threadpool_reconfigure(
+        threads,
+        zfish_numa_context_config(numa_context),
+        shared_state,
+        update_context,
+    );
+
+    setTtSize(threads, tt, zfish_engine_option_hash_value(options));
+    zfish_threadpool_ensure_network_replicated(threads);
+}
+
 pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
-    zfish_engine_resize_threads_owner(engine_ptr);
+    resizeThreads(
+        zfish_engine_numa_context_ptr(engine_ptr),
+        zfish_engine_options_ptr(engine_ptr),
+        zfish_engine_threads_ptr(engine_ptr),
+        zfish_engine_tt_ptr(engine_ptr),
+        zfish_engine_shared_hists_ptr(engine_ptr),
+        zfish_engine_network_replicated_ptr(engine_ptr),
+        zfish_engine_update_context_ptr(engine_ptr),
+    );
+}
+
+pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
+    zfish_threadpool_wait_thread(threads, 0);
+    zfish_engine_tt_resize(tt, mb, threads);
 }
 
 pub fn setTtSizeEngine(engine_ptr: *anyopaque, mb: usize) void {
-    zfish_engine_set_tt_size_owner(engine_ptr, mb);
+    setTtSize(zfish_engine_threads_ptr(engine_ptr), zfish_engine_tt_ptr(engine_ptr), mb);
 }
 
 pub fn setPonderhit(threads: *anyopaque, ponder: u8) void {
@@ -457,8 +525,21 @@ pub fn setPonderhitEngine(engine_ptr: *anyopaque, ponder: u8) void {
     setPonderhit(zfish_engine_threads_ptr(engine_ptr), ponder);
 }
 
+pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8) void {
+    zfish_threadpool_wait_for_search_finished(threads);
+    zfish_engine_tt_clear(tt, threads);
+    zfish_threadpool_clear(threads);
+    zfish_engine_tablebases_init(syzygy_path.ptr, syzygy_path.len);
+}
+
 pub fn searchClearEngine(engine_ptr: *anyopaque) void {
-    zfish_engine_search_clear_owner(engine_ptr);
+    const syzygy_ptr = zfish_engine_syzygy_path_text(engine_ptr) orelse return;
+    defer c.free(@ptrCast(syzygy_ptr));
+    searchClear(
+        zfish_engine_threads_ptr(engine_ptr),
+        zfish_engine_tt_ptr(engine_ptr),
+        std.mem.span(syzygy_ptr),
+    );
 }
 
 pub fn numaConfigStringEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
@@ -636,7 +717,7 @@ pub fn fenEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
 }
 
 pub fn hashfullEngine(engine_ptr: *const anyopaque, max_age: c_int) c_int {
-    return zfish_engine_hashfull_owner(engine_ptr, max_age);
+    return zfish_engine_tt_hashfull(engine_ptr, max_age);
 }
 
 pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {

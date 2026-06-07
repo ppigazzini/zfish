@@ -2435,6 +2435,66 @@ void* zfish_engine_threads_ptr(void* engine_ptr) {
     return &static_cast<Engine*>(engine_ptr)->threads;
 }
 
+void* zfish_engine_tt_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->tt;
+}
+
+void* zfish_engine_shared_hists_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->sharedHists;
+}
+
+void* zfish_engine_network_replicated_ptr(void* engine_ptr) {
+    return &static_cast<Engine*>(engine_ptr)->network;
+}
+
+const void* zfish_engine_update_context_ptr(const void* engine_ptr) {
+    return &static_cast<const Engine*>(engine_ptr)->updateContext;
+}
+
+const void* zfish_numa_context_config(const void* numa_context_ptr) {
+    return &static_cast<const NumaReplicationContext*>(numa_context_ptr)->get_numa_config();
+}
+
+void* zfish_search_shared_state_create(const void* options_ptr,
+                                       void*       threads_ptr,
+                                       void*       tt_ptr,
+                                       void*       shared_hists_ptr,
+                                       const void* network_ptr) {
+    const auto& options = *static_cast<const OptionsMap*>(options_ptr);
+    auto&       threads = *static_cast<ThreadPool*>(threads_ptr);
+    auto&       tt      = *static_cast<TranspositionTable*>(tt_ptr);
+    auto&       shared_hists =
+      *static_cast<std::map<NumaIndex, SharedHistories>*>(shared_hists_ptr);
+    const auto& network =
+      *static_cast<const LazyNumaReplicatedSystemWide<Eval::NNUE::Network>*>(network_ptr);
+
+    return new Search::SharedState(options, threads, tt, shared_hists, network);
+}
+
+void zfish_search_shared_state_destroy(void* shared_state_ptr) {
+    delete static_cast<Search::SharedState*>(shared_state_ptr);
+}
+
+std::size_t zfish_engine_option_hash_value(const void* options_ptr) {
+    return static_cast<std::size_t>((*static_cast<const OptionsMap*>(options_ptr))["Hash"]);
+}
+
+void zfish_engine_tt_resize(void* tt_ptr, std::size_t mb, void* threads_ptr) {
+    static_cast<TranspositionTable*>(tt_ptr)->resize(mb, *static_cast<ThreadPool*>(threads_ptr));
+}
+
+void zfish_engine_tt_clear(void* tt_ptr, void* threads_ptr) {
+    static_cast<TranspositionTable*>(tt_ptr)->clear(*static_cast<ThreadPool*>(threads_ptr));
+}
+
+char* zfish_engine_syzygy_path_text(const void* engine_ptr) {
+    return alloc_c_string(std::string(static_cast<const Engine*>(engine_ptr)->get_options()["SyzygyPath"]));
+}
+
+int zfish_engine_tt_hashfull(const void* engine_ptr, int max_age) {
+    return static_cast<const Engine*>(engine_ptr)->tt.hashfull(max_age);
+}
+
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr) {
     return static_cast<std::uint8_t>(static_cast<int>(static_cast<const Engine*>(engine_ptr)->get_options()["UCI_Chess960"]));
 }
