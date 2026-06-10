@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const cluster_size = 3;
+const value_none: i16 = 32002;
 const generation_bits: u8 = 5;
 const generation_mask: u8 = (1 << generation_bits) - 1;
 const bound_shift: u8 = generation_bits;
@@ -223,8 +224,8 @@ pub fn probe(
         .writer_index = @intCast(replace_index),
         .data = .{
             .move16 = 0,
-            .value16 = 0,
-            .eval16 = 0,
+            .value16 = value_none,
+            .eval16 = value_none,
             .depth = depth_none,
             .bound = 0,
             .is_pv = 0,
@@ -245,8 +246,8 @@ pub fn probeTable(
             .writer_ptr = null,
             .data = .{
                 .move16 = 0,
-                .value16 = 0,
-                .eval16 = 0,
+                .value16 = value_none,
+                .eval16 = value_none,
                 .depth = depth_none,
                 .bound = 0,
                 .is_pv = 0,
