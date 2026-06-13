@@ -675,6 +675,7 @@ bool Position::attackers_to_exist(Square s, Bitboard occupied, Color c) const {
 #endif
 
 // Tests whether a pseudo-legal move is legal
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_LEGAL
 bool Position::legal(Move m) const {
 
     assert(m.is_ok());
@@ -713,6 +714,7 @@ bool Position::legal(Move m) const {
     // is moving along the ray towards or away from the king.
     return !(blockers_for_king(us) & from) || line_bb(from, to) & pieces(us, KING);
 }
+#endif
 
 
 // Takes a random move and tests whether the move is

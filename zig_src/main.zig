@@ -232,6 +232,10 @@ pub export fn zfish_position_set_check_info_method(pos_ptr: *const anyopaque) vo
     position_port.setCheckInfo(pos_ptr);
 }
 
+pub export fn zfish_position_legal_method(pos_ptr: *const anyopaque, move: u16) u8 {
+    return @intFromBool(position_port.legal(pos_ptr, move));
+}
+
 pub export fn zfish_position_attackers_to_exist_method(
     pos_ptr: *const anyopaque,
     s: u8,
