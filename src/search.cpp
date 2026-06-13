@@ -931,7 +931,11 @@ Value Search::Worker::search(
     // Step 7. Razoring
     // If eval is really low, skip search entirely and return the qsearch value.
     // For PvNodes, we must have a guard against mates being returned.
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_RAZOR_MARGIN
+    if (!PvNode && eval < alpha - zfish_search_razor_margin(depth))
+#else
     if (!PvNode && eval < alpha - 465 - 300 * depth * depth)
+#endif
         return qsearch<NonPV>(pos, ss, alpha, beta);
 
     // Step 8. Futility pruning: child node
