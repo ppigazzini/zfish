@@ -85,6 +85,27 @@ inline fn statsUpdate(entry: *i16, bonus: c_int, comptime d: c_int) void {
 }
 
 extern fn zfish_search_conthist_delta(bonus: c_int, weight: c_int, positive_count: c_int, i: c_int) c_int;
+extern fn zfish_search_quiet_low_ply_scale(bonus: c_int) c_int;
+extern fn zfish_search_quiet_cont_scale(bonus: c_int) c_int;
+extern fn zfish_search_quiet_pawn_scale(bonus: c_int) c_int;
+
+// The bridge shim performs the C++ table lookups (mainHistory[us][move],
+// lowPlyHistory, sharedHistory.pawn_entry) and hands Zig the int16 entry
+// pointers; Zig owns the bonus scaling + gravity update sequence.
+pub fn updateQuietHistories(
+    main_entry: *i16,
+    lowply_entry: ?*i16,
+    pawn_entry: *i16,
+    ss_ptr: *anyopaque,
+    pc: u8,
+    to: u8,
+    bonus: c_int,
+) void {
+    statsUpdate(main_entry, bonus, 7183);
+    if (lowply_entry) |e| statsUpdate(e, zfish_search_quiet_low_ply_scale(bonus), 7183);
+    updateContinuationHistories(ss_ptr, pc, to, zfish_search_quiet_cont_scale(bonus));
+    statsUpdate(pawn_entry, zfish_search_quiet_pawn_scale(bonus), 8192);
+}
 
 const ConthistBonus = struct { i: u8, w: c_int };
 const conthist_bonuses = [6]ConthistBonus{
