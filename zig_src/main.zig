@@ -277,6 +277,23 @@ pub export fn zfish_search_capture_see_margin(depth: c_int, capt_hist: c_int) c_
     return search_port.captureSeeMargin(depth, capt_hist);
 }
 
+pub export fn zfish_search_history_prune_threshold(depth: c_int) c_int {
+    return search_port.historyPruneThreshold(depth);
+}
+
+pub export fn zfish_search_quiet_futility_value(
+    static_eval: c_int,
+    no_best_move: u8,
+    lmr_depth: c_int,
+    eval_gt_alpha: u8,
+) c_int {
+    return search_port.quietFutilityValue(static_eval, no_best_move != 0, lmr_depth, eval_gt_alpha != 0);
+}
+
+pub export fn zfish_search_quiet_see_margin(lmr_depth: c_int) c_int {
+    return search_port.quietSeeMargin(lmr_depth);
+}
+
 pub export fn zfish_search_probcut_beta(beta: c_int, improving: u8) c_int {
     return search_port.probCutBeta(beta, improving != 0);
 }
