@@ -732,11 +732,14 @@ std::size_t Network::get_content_hash() const {
 #include "tt.h"
 #include "thread.h"
 
+extern "C" void zfish_search_fill_reductions(int* reductions, std::size_t count);
+
 #define ZFISH_SEARCH_BRIDGE_SKIP_TO_CORRECTED_STATIC_EVAL
 #define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_DRAW
 #define ZFISH_SEARCH_BRIDGE_SKIP_REDUCTION
 #define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_TO_TT
 #define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_FROM_TT
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_REDUCTIONS_FILL
 #include "../src/search.cpp"
 
 extern "C" {
