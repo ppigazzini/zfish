@@ -298,6 +298,18 @@ pub export fn zfish_search_update_continuation_histories(ss_ptr: *anyopaque, pc:
     position_port.updateContinuationHistories(ss_ptr, pc, to, bonus);
 }
 
+pub export fn zfish_search_update_quiet_histories(
+    main_entry: *i16,
+    lowply_entry: ?*i16,
+    pawn_entry: *i16,
+    ss_ptr: *anyopaque,
+    pc: u8,
+    to: u8,
+    bonus: c_int,
+) void {
+    position_port.updateQuietHistories(main_entry, lowply_entry, pawn_entry, ss_ptr, pc, to, bonus);
+}
+
 pub export fn zfish_position_legal_method(pos_ptr: *const anyopaque, move: u16) u8 {
     return @intFromBool(position_port.legal(pos_ptr, move));
 }
