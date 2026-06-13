@@ -329,6 +329,18 @@ pub export fn zfish_search_update_all_stats(
     position_port.updateAllStats(pos_ptr, ss_ptr, main_base, lowply_base, pawn_row, capture_base, best_move, prev_sq, quiets, n_quiets, captures, n_captures, depth, tt_move);
 }
 
+pub export fn zfish_search_update_correction_history(
+    pos_ptr: *const anyopaque,
+    ss_ptr: *anyopaque,
+    pawn_entry: *i16,
+    minor_entry: *i16,
+    nonpawn_white_entry: *i16,
+    nonpawn_black_entry: *i16,
+    bonus: c_int,
+) void {
+    position_port.updateCorrectionHistory(pos_ptr, ss_ptr, pawn_entry, minor_entry, nonpawn_white_entry, nonpawn_black_entry, bonus);
+}
+
 pub export fn zfish_position_legal_method(pos_ptr: *const anyopaque, move: u16) u8 {
     return @intFromBool(position_port.legal(pos_ptr, move));
 }
