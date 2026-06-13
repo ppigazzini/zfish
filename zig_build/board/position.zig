@@ -11,6 +11,65 @@ const piece_to_char = " PNBRQK  pnbrqk";
 
 extern fn zfish_position_material_zobrist(piece: u8, count_index: usize) u64;
 
+// Memory mirror of upstream Stockfish StateInfo (src/position.h). Field order,
+// types, and C-ABI alignment match the C++ struct exactly so Zig can read the
+// live state stack that the C++ Position owns. Only used via pointer (never
+// allocated here), so it must stay byte-compatible with the C++ layout.
+pub const StateInfo = extern struct {
+    material_key: u64,
+    pawn_key: u64,
+    minor_piece_key: u64,
+    non_pawn_key: [2]u64,
+    non_pawn_material: [2]c_int,
+    castling_rights: c_int,
+    rule50: c_int,
+    plies_from_null: c_int,
+    ep_square: u8,
+    key: u64,
+    checkers_bb: u64,
+    previous: ?*StateInfo,
+    blockers_for_king: [2]u64,
+    pinners: [2]u64,
+    check_squares: [8]u64,
+    captured_piece: u8,
+    repetition: c_int,
+};
+
+// Memory mirror of the leading data members of upstream Position (src/position.h),
+// up to `chess960`. The trailing NNUE scratch members (DirtyPiece/DirtyThreats)
+// are intentionally omitted: this struct is only ever used through a pointer to
+// the live C++ object, so leading-field offsets are all that must match.
+pub const Position = extern struct {
+    board: [64]u8,
+    by_type_bb: [8]u64,
+    by_color_bb: [2]u64,
+    piece_count: [16]c_int,
+    castling_rights_mask: [64]c_int,
+    castling_rook_square: [16]u8,
+    castling_path: [16]u64,
+    st: *StateInfo,
+    game_ply: c_int,
+    side_to_move: u8,
+    chess960: bool,
+};
+
+pub fn isRepetition(pos_ptr: *const anyopaque, ply: c_int) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const rep = pos.st.repetition;
+    return rep != 0 and rep < ply;
+}
+
+pub fn hasRepeated(pos_ptr: *const anyopaque) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    var stc: *const StateInfo = pos.st;
+    var end = @min(pos.st.rule50, pos.st.plies_from_null);
+    while (end >= 4) : (end -= 1) {
+        if (stc.repetition != 0) return true;
+        stc = stc.previous.?;
+    }
+    return false;
+}
+
 pub fn buildEndgameFen(code_ptr: [*]const u8, code_len: usize, color: u8) ?[*:0]u8 {
     return buildEndgameFenAlloc(code_ptr[0..code_len], color) catch null;
 }

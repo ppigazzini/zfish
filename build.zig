@@ -333,6 +333,7 @@ pub fn build(b: *std.Build) void {
             "-DZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY",
             "-DZFISH_POSITION_BRIDGE_SKIP_ENDGAME_SET",
             "-DZFISH_POSITION_BRIDGE_SKIP_FEN",
+            "-DZFISH_POSITION_BRIDGE_SKIP_REPETITION",
         }) catch @panic("OOM");
 
         exe.root_module.addCSourceFiles(.{
@@ -349,6 +350,7 @@ pub fn build(b: *std.Build) void {
             "-DZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY",
             "-DZFISH_POSITION_BRIDGE_SKIP_ENDGAME_SET",
             "-DZFISH_POSITION_BRIDGE_SKIP_FEN",
+            "-DZFISH_POSITION_BRIDGE_SKIP_REPETITION",
         }) catch @panic("OOM");
 
         legacy_exe.root_module.addCSourceFiles(.{

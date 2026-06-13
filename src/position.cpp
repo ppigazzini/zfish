@@ -1519,6 +1519,7 @@ bool Position::is_draw(int ply) const {
 
 // Return a draw score if a position repeats once earlier but strictly
 // after the root, or repeats twice before or at the root.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_REPETITION
 bool Position::is_repetition(int ply) const { return st->repetition && st->repetition < ply; }
 
 // Tests whether there has been at least one repetition
@@ -1536,6 +1537,7 @@ bool Position::has_repeated() const {
     }
     return false;
 }
+#endif
 
 
 // Tests if the position has a move which draws by repetition.
