@@ -156,6 +156,23 @@ pub fn line(s1: u8, s2: u8) u64 {
     return 0;
 }
 
+// RayPassBB[s1][s2]: from s1's attacks along the s1-s2 line, the squares at or
+// beyond s2 (s1 removed from the occupancy). Mirrors the upstream init formula.
+pub fn rayPass(s1: u8, s2: u8) u64 {
+    const a: usize = @intCast(s1);
+    const b: usize = @intCast(s2);
+    const target = squareBb(b);
+    if ((slidingAttack(PieceType.bishop, a, 0) & target) != 0) {
+        return slidingAttack(PieceType.bishop, a, 0) &
+            (slidingAttack(PieceType.bishop, b, squareBb(a)) | target);
+    }
+    if ((slidingAttack(PieceType.rook, a, 0) & target) != 0) {
+        return slidingAttack(PieceType.rook, a, 0) &
+            (slidingAttack(PieceType.rook, b, squareBb(a)) | target);
+    }
+    return 0;
+}
+
 pub fn pretty(bitboard: u64) ?[*:0]u8 {
     return prettyAlloc(bitboard) catch null;
 }

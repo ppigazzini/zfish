@@ -852,6 +852,7 @@ bool Position::gives_check(Move m) const {
 // moves should be filtered out before this function is called.
 // If a pointer to the TT table is passed, the entry for the new position
 // will be prefetched, and likewise for shared history.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_DO_MOVE
 void Position::do_move(Move                      m,
                        StateInfo&                newSt,
                        bool                      givesCheck,
@@ -1112,6 +1113,7 @@ void Position::do_move(Move                      m,
     assert(dp.from != SQ_NONE);
     assert(!(dp.add_sq != SQ_NONE) ^ (m.type_of() == PROMOTION || m.type_of() == CASTLING));
 }
+#endif
 
 
 // Unmakes a move. When it returns, the position should
