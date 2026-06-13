@@ -1021,7 +1021,11 @@ Value Search::Worker::search(
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_PROBCUT
+    probCutBeta = zfish_search_probcut_beta(beta, improving);
+#else
     probCutBeta = beta + 214 - 59 * improving;
+#endif
     if (depth >= 3
         && !is_decisive(beta)
         // If value from transposition table is lower than probCutBeta, don't attempt
@@ -1069,7 +1073,11 @@ Value Search::Worker::search(
 moves_loop:  // When in check, search starts here
 
     // Step 12. A small Probcut idea
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_PROBCUT
+    probCutBeta = zfish_search_probcut_beta_deep(beta);
+#else
     probCutBeta = beta + 428;
+#endif
     if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta
         && !is_decisive(beta) && is_valid(ttData.value) && !is_decisive(ttData.value))
         return probCutBeta;
