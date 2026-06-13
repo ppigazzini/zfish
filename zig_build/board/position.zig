@@ -72,7 +72,6 @@ const sq_none: u8 = 64;
 
 const piece_to_char = " PNBRQK  pnbrqk";
 
-extern fn zfish_position_material_zobrist(piece: u8, count_index: usize) u64;
 
 // Memory mirror of upstream Stockfish StateInfo (src/position.h). Field order,
 // types, and C-ABI alignment match the C++ struct exactly so Zig can read the
@@ -118,7 +117,70 @@ pub const Position = extern struct {
 
 const sq_none_u8: u8 = 64;
 
-pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque, zob_side: u64, zob_ep: u64) void {
+// Zobrist + cuckoo tables, owned by Zig (built by initRuntime, mirroring
+// upstream Position::init and the xorshift64* PRNG seeded with 1070372).
+var zob_psq: [16 * 64]u64 = undefined;
+var zob_enpassant: [8]u64 = undefined;
+var zob_castling: [16]u64 = undefined;
+var zob_side_val: u64 = undefined;
+var zob_no_pawns: u64 = undefined;
+var cuckoo_tbl: [8192]u64 = undefined;
+var cuckoo_move_tbl: [8192]u16 = undefined;
+
+const Prng = struct {
+    s: u64,
+    fn rand64(self: *Prng) u64 {
+        self.s ^= self.s >> 12;
+        self.s ^= self.s << 25;
+        self.s ^= self.s >> 27;
+        return self.s *% 2685821657736338717;
+    }
+};
+
+const init_pieces = [_]u8{ 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14 };
+
+pub fn initRuntime() void {
+    var rng = Prng{ .s = 1070372 };
+    @memset(&zob_psq, 0);
+    for (init_pieces) |pc| {
+        for (0..64) |s| zob_psq[@as(usize, pc) * 64 + s] = rng.rand64();
+    }
+    for (56..64) |s| zob_psq[1 * 64 + s] = 0; // W_PAWN promotion rank
+    for (0..8) |s| zob_psq[9 * 64 + s] = 0; // B_PAWN promotion rank
+    for (0..8) |f| zob_enpassant[f] = rng.rand64();
+    for (0..16) |cr| zob_castling[cr] = rng.rand64();
+    zob_side_val = rng.rand64();
+    zob_no_pawns = rng.rand64();
+
+    @memset(&cuckoo_tbl, 0);
+    @memset(&cuckoo_move_tbl, 0);
+    for (init_pieces) |pc| {
+        const pt = pc & 7;
+        var s1: u8 = 0;
+        while (s1 < 64) : (s1 += 1) {
+            var s2: u8 = s1 + 1;
+            while (s2 < 64) : (s2 += 1) {
+                if ((bitboard.attacks(pt, s1, 0) & sqBb(s2)) != 0) {
+                    var move: u16 = (@as(u16, s1) << 6) | s2;
+                    var key = zob_psq[psqIdx(pc, s1)] ^ zob_psq[psqIdx(pc, s2)] ^ zob_side_val;
+                    var i = h1(key);
+                    while (true) {
+                        const tk = cuckoo_tbl[i];
+                        cuckoo_tbl[i] = key;
+                        key = tk;
+                        const tm = cuckoo_move_tbl[i];
+                        cuckoo_move_tbl[i] = move;
+                        move = tm;
+                        if (move == 0) break;
+                        i = if (i == h1(key)) h2(key) else h1(key);
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque) void {
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
     const new_st: *StateInfo = @ptrCast(@alignCast(new_st_ptr));
 
@@ -127,10 +189,10 @@ pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque, zob_side: u64, zo
     pos.st = new_st;
 
     if (pos.st.ep_square != sq_none_u8) {
-        pos.st.key ^= zob_ep;
+        pos.st.key ^= zob_enpassant[fileOf(pos.st.ep_square)];
         pos.st.ep_square = sq_none_u8;
     }
-    pos.st.key ^= zob_side;
+    pos.st.key ^= zob_side_val;
     pos.st.plies_from_null = 0;
     pos.side_to_move ^= 1;
     setCheckInfo(pos_ptr);
@@ -150,25 +212,21 @@ inline fn h2(key: u64) usize {
     return @intCast((key >> 16) & 0x1fff);
 }
 
-pub fn upcomingRepetition(
-    pos_ptr: *const anyopaque,
-    ply: c_int,
-    cuckoo: [*]const u64,
-    cuckoo_move: [*]const u16,
-    zob_side: u64,
-) bool {
+pub fn upcomingRepetition(pos_ptr: *const anyopaque, ply: c_int) bool {
+    const cuckoo: [*]const u64 = &cuckoo_tbl;
+    const cuckoo_move: [*]const u16 = &cuckoo_move_tbl;
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const end = @min(pos.st.rule50, pos.st.plies_from_null);
     if (end < 3) return false;
 
     const original_key = pos.st.key;
     var stp: *const StateInfo = pos.st.previous.?;
-    var other = original_key ^ stp.key ^ zob_side;
+    var other = original_key ^ stp.key ^ zob_side_val;
 
     var i: c_int = 3;
     while (i <= end) : (i += 2) {
         stp = stp.previous.?;
-        other ^= stp.key ^ stp.previous.?.key ^ zob_side;
+        other ^= stp.key ^ stp.previous.?.key ^ zob_side_val;
         stp = stp.previous.?;
         if (other != 0) continue;
 
@@ -552,11 +610,11 @@ pub fn doMove(
     gives_check: u8,
     dp_ptr: *anyopaque,
     dts_ptr: *anyopaque,
-    psq: [*]const u64,
-    enpassant: [*]const u64,
-    castling: [*]const u64,
-    zob_side: u64,
 ) void {
+    const psq: [*]const u64 = &zob_psq;
+    const enpassant: [*]const u64 = &zob_enpassant;
+    const castling: [*]const u64 = &zob_castling;
+    const zob_side = zob_side_val;
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
     const new_st: *StateInfo = @ptrCast(@alignCast(new_st_ptr));
     const dp: *DirtyPiece = @ptrCast(@alignCast(dp_ptr));
@@ -785,11 +843,6 @@ pub fn setPosition(
     st_ptr: *anyopaque,
     pos_size: usize,
     st_size: usize,
-    psq: [*]const u64,
-    enpassant: [*]const u64,
-    castling: [*]const u64,
-    zob_side: u64,
-    no_pawns: u64,
 ) ?[*:0]u8 {
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
     @memset(@as([*]u8, @ptrCast(pos))[0..pos_size], 0);
@@ -929,7 +982,7 @@ pub fn setPosition(
     pos.game_ply = game_ply;
 
     pos.chess960 = is_chess960 != 0;
-    setState(pos_ptr, psq, enpassant, castling, zob_side, no_pawns);
+    setState(pos_ptr);
 
     if (attackersToExist(pos_ptr, kingSquare(pos, them), pos.by_type_bb[0], stm))
         return setErr("Unsupported position. King can be captured.");
@@ -954,14 +1007,12 @@ fn parseInt(cur: *FenCursor) ?c_int {
     return if (neg) -val else val;
 }
 
-pub fn setState(
-    pos_ptr: *const anyopaque,
-    psq: [*]const u64,
-    enpassant: [*]const u64,
-    castling: [*]const u64,
-    zob_side: u64,
-    no_pawns: u64,
-) void {
+pub fn setState(pos_ptr: *const anyopaque) void {
+    const psq: [*]const u64 = &zob_psq;
+    const enpassant: [*]const u64 = &zob_enpassant;
+    const castling: [*]const u64 = &zob_castling;
+    const zob_side = zob_side_val;
+    const no_pawns = zob_no_pawns;
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const st = pos.st;
     st.key = 0;
@@ -1281,7 +1332,7 @@ pub fn computeMaterialKey(piece_counts_ptr: [*]const c_int, piece_count_len: usi
 
         var slot: usize = 0;
         while (slot < @as(usize, @intCast(count))) : (slot += 1) {
-            key ^= zfish_position_material_zobrist(@intCast(piece_index), slot);
+            key ^= zob_psq[@as(usize, @intCast(piece_index)) * 64 + 8 + slot];
         }
     }
 
