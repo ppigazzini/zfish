@@ -762,6 +762,7 @@ extern "C" int  zfish_search_corrhist_bonus(int eval_delta, int depth, unsigned 
 extern "C" int  zfish_search_aspiration_initial_delta(std::size_t thread_idx,
                                                       int mean_squared_score);
 extern "C" int  zfish_search_aspiration_delta_grow(int delta);
+extern "C" int  zfish_search_optimism(int avg);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
 extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
                                                     int piece_value, int capt_hist);
@@ -836,6 +837,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_STAT_SCORE
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_CORRHIST_BONUS
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_ASPIRATION
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_OPTIMISM
 #include "../src/search.cpp"
 
 extern "C" {
