@@ -242,38 +242,15 @@ const low_ply_history_size: c_int = 5;
 // Compute the three quiet-history entries for `move` from the table bases the
 // bridge passed and apply the shared quiet-history update. mainHistory is
 // [2][65536], lowPlyHistory [5][65536], pawn_row is one fixed [16][64] page.
-fn applyQuietMove(
-    pos: *const Position,
-    ss_ptr: *anyopaque,
-    main_base: [*]i16,
-    lowply_base: [*]i16,
-    pawn_row: [*]i16,
-    move: u16,
-    bonus: c_int,
-) void {
-    const raw: usize = move;
-    const main_entry = &main_base[@as(usize, pos.side_to_move) * 65536 + raw];
-    const ss: *const SearchStack = @ptrCast(@alignCast(ss_ptr));
-    var lowply_entry: ?*i16 = null;
-    if (ss.ply < low_ply_history_size)
-        lowply_entry = &lowply_base[@as(usize, @intCast(ss.ply)) * 65536 + raw];
-    const pc = pos.board[moveFrom(move)];
-    const to = moveTo(move);
-    const pawn_entry = &pawn_row[@as(usize, pc) * 64 + to];
-    updateQuietHistories(main_entry, lowply_entry, pawn_entry, ss_ptr, pc, to, bonus);
-}
-
 // update_all_stats (search.cpp): credit the best move and debit the searched-but-
-// rejected quiets/captures. The bridge shim hands Zig the Worker table bases and
-// the two move lists (ptr+len); Zig owns all bonus/malus scaling, the running
-// malus decay, and the capture-history gravity writes.
+// rejected quiets/captures. The bridge passes only the Worker, Position, and
+// Stack pointers and the two move lists (ptr+len); Zig resolves captureHistory
+// from the Worker mirror and the quiet entries via updateQuietHistoriesWorker,
+// and owns all bonus/malus scaling, the running malus decay, and the gravity.
 pub fn updateAllStats(
+    worker_ptr: *anyopaque,
     pos_ptr: *anyopaque,
     ss_ptr: *anyopaque,
-    main_base: [*]i16,
-    lowply_base: [*]i16,
-    pawn_row: [*]i16,
-    capture_base: [*]i16,
     best_move: u16,
     prev_sq: c_int,
     quiets: [*]const u16,
@@ -283,21 +260,23 @@ pub fn updateAllStats(
     depth: c_int,
     tt_move: u16,
 ) void {
+    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
     const ss_prev: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
+    const capture_base: [*]i16 = &w.capture_history;
 
     const is_tt: u8 = if (best_move == tt_move) 1 else 0;
     const bonus = zfish_search_stat_bonus(depth, is_tt, ss_prev.stat_score);
     const malus = zfish_search_stat_malus(depth);
 
     if (!captureStage(pos, best_move)) {
-        applyQuietMove(pos, ss_ptr, main_base, lowply_base, pawn_row, best_move, @divTrunc(bonus * 824, 1024));
+        updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, best_move, @divTrunc(bonus * 824, 1024));
         var actual_malus: c_int = @divTrunc(malus * 1136, 1024);
         var i: usize = 0;
         while (i < n_quiets) : (i += 1) {
             actual_malus = @divTrunc(actual_malus * 956, 1024);
-            applyQuietMove(pos, ss_ptr, main_base, lowply_base, pawn_row, quiets[i], -actual_malus);
+            updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, quiets[i], -actual_malus);
         }
     } else {
         const moved_pc = pos.board[moveFrom(best_move)];
