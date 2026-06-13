@@ -493,6 +493,7 @@ void Position::set_check_info() const {
 // Computes the hash keys of the position, and other
 // data that once computed is updated incrementally as moves are made.
 // The function is only used when a new position is set up
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_SET_STATE
 void Position::set_state() const {
 
     st->key               = 0;
@@ -536,6 +537,7 @@ void Position::set_state() const {
     st->key ^= Zobrist::castling[st->castlingRights];
     st->materialKey = compute_material_key();
 }
+#endif
 
 #ifndef ZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY
 Key Position::compute_material_key() const {
