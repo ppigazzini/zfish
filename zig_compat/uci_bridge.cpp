@@ -733,8 +733,7 @@ extern "C" void zfish_search_update_continuation_histories(void* ss_ptr, std::ui
 extern "C" void zfish_search_update_quiet_histories(void* worker_ptr, const void* pos_ptr,
                                                     void* ss_ptr, std::uint16_t move, int bonus);
 extern "C" void zfish_search_update_all_stats(
-  void* pos_ptr, void* ss_ptr, std::int16_t* main_base, std::int16_t* lowply_base,
-  std::int16_t* pawn_row, std::int16_t* capture_base, std::uint16_t best_move, int prev_sq,
+  void* worker_ptr, void* pos_ptr, void* ss_ptr, std::uint16_t best_move, int prev_sq,
   const std::uint16_t* quiets, std::size_t n_quiets, const std::uint16_t* captures,
   std::size_t n_captures, int depth, std::uint16_t tt_move);
 extern "C" void zfish_search_update_correction_history(
@@ -1198,14 +1197,10 @@ void update_all_stats(const Position& pos,
                       Depth           depth,
                       Move            ttMove) {
     zfish_search_update_all_stats(
-      const_cast<Position*>(&pos), ss,
-      reinterpret_cast<std::int16_t*>(&workerThread.mainHistory[0][0]),
-      reinterpret_cast<std::int16_t*>(&workerThread.lowPlyHistory[0][0]),
-      reinterpret_cast<std::int16_t*>(&workerThread.sharedHistory.pawn_entry(pos)[0][0]),
-      reinterpret_cast<std::int16_t*>(&workerThread.captureHistory[0][0][0]), bestMove.raw(),
-      static_cast<int>(prevSq), reinterpret_cast<const std::uint16_t*>(quietsSearched.begin()),
-      quietsSearched.size(), reinterpret_cast<const std::uint16_t*>(capturesSearched.begin()),
-      capturesSearched.size(), depth, ttMove.raw());
+      &workerThread, const_cast<Position*>(&pos), ss, bestMove.raw(), static_cast<int>(prevSq),
+      reinterpret_cast<const std::uint16_t*>(quietsSearched.begin()), quietsSearched.size(),
+      reinterpret_cast<const std::uint16_t*>(capturesSearched.begin()), capturesSearched.size(),
+      depth, ttMove.raw());
 }
 
 void update_correction_history(const Position& pos,
