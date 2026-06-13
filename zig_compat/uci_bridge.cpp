@@ -2633,6 +2633,7 @@ void          zfish_position_set_check_info_method(const void* pos_ptr);
 std::uint8_t  zfish_position_legal_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_gives_check_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_pseudo_legal_method(const void* pos_ptr, std::uint16_t move);
+std::uint8_t  zfish_position_see_ge_method(const void* pos_ptr, std::uint16_t move, int threshold);
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
@@ -2778,6 +2779,10 @@ bool Position::gives_check(Move m) const {
 
 bool Position::pseudo_legal(const Move m) const {
     return zfish_position_pseudo_legal_method(this, m.raw()) != 0;
+}
+
+bool Position::see_ge(Move m, int threshold) const {
+    return zfish_position_see_ge_method(this, m.raw(), threshold) != 0;
 }
 
 namespace {
