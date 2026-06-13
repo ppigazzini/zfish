@@ -2663,6 +2663,10 @@ void          zfish_position_do_null_move(void* pos_ptr, void* new_st_ptr, std::
                                           std::uint64_t zob_ep);
 void          zfish_position_undo_null_move(void* pos_ptr);
 void          zfish_position_undo_move_method(void* pos_ptr, std::uint16_t move);
+void          zfish_position_do_move(void* pos_ptr, std::uint16_t move, void* new_st_ptr,
+                                     std::uint8_t gives_check, void* dp_ptr, void* dts_ptr,
+                                     const std::uint64_t* psq, const std::uint64_t* enpassant,
+                                     const std::uint64_t* castling, std::uint64_t zob_side);
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
@@ -2865,6 +2869,20 @@ void Position::do_null_move(StateInfo& newSt) {
 void Position::undo_null_move() { zfish_position_undo_null_move(this); }
 
 void Position::undo_move(Move m) { zfish_position_undo_move_method(this, m.raw()); }
+
+void Position::do_move(Move                      m,
+                       StateInfo&                newSt,
+                       bool                      givesCheck,
+                       DirtyPiece&               dp,
+                       DirtyThreats&             dts,
+                       const TranspositionTable* tt,
+                       const SharedHistories*    worker) {
+    (void) tt;      // prefetch hint only
+    (void) worker;  // prefetch hint only
+    zfish_position_do_move(this, m.raw(), &newSt, static_cast<std::uint8_t>(givesCheck ? 1 : 0), &dp,
+                           &dts, &Zobrist::psq[0][0], Zobrist::enpassant, Zobrist::castling,
+                           Zobrist::side);
+}
 
 namespace {
 

@@ -237,6 +237,21 @@ pub export fn zfish_position_undo_move_method(pos_ptr: *anyopaque, move: u16) vo
     position_port.undoMove(pos_ptr, move);
 }
 
+pub export fn zfish_position_do_move(
+    pos_ptr: *anyopaque,
+    move: u16,
+    new_st_ptr: *anyopaque,
+    gives_check: u8,
+    dp_ptr: *anyopaque,
+    dts_ptr: *anyopaque,
+    psq: [*]const u64,
+    enpassant: [*]const u64,
+    castling: [*]const u64,
+    zob_side: u64,
+) void {
+    position_port.doMove(pos_ptr, move, new_st_ptr, gives_check, dp_ptr, dts_ptr, psq, enpassant, castling, zob_side);
+}
+
 pub export fn zfish_position_upcoming_repetition_method(
     pos_ptr: *const anyopaque,
     ply: c_int,
