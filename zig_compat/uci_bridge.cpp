@@ -2619,6 +2619,8 @@ const char*   zfish_position_format_fen(const unsigned char* board_ptr,
                                         int                  game_ply);
 std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
                                                   std::size_t piece_count_len);
+std::uint8_t  zfish_position_is_repetition_method(const void* pos_ptr, int ply);
+std::uint8_t  zfish_position_has_repeated_method(const void* pos_ptr);
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
@@ -2733,6 +2735,12 @@ std::string Position::fen() const {
       static_cast<std::uint8_t>(blackOoRook), static_cast<std::uint8_t>(blackOooRook),
       static_cast<std::uint8_t>(ep_square()), st->rule50, gamePly));
 }
+
+bool Position::is_repetition(int ply) const {
+    return zfish_position_is_repetition_method(this, ply) != 0;
+}
+
+bool Position::has_repeated() const { return zfish_position_has_repeated_method(this) != 0; }
 
 namespace {
 
