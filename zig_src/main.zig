@@ -294,6 +294,10 @@ pub export fn zfish_search_is_shuffling(pos_ptr: *const anyopaque, ss_ptr: *cons
     return @intFromBool(position_port.isShuffling(pos_ptr, ss_ptr, move));
 }
 
+pub export fn zfish_search_update_continuation_histories(ss_ptr: *anyopaque, pc: u8, to: u8, bonus: c_int) void {
+    position_port.updateContinuationHistories(ss_ptr, pc, to, bonus);
+}
+
 pub export fn zfish_position_legal_method(pos_ptr: *const anyopaque, move: u16) u8 {
     return @intFromBool(position_port.legal(pos_ptr, move));
 }

@@ -72,6 +72,42 @@ fn captureStage(pos: *const Position, m: u16) bool {
     return cap or movePromotionType(m) == queen_pt;
 }
 
+inline fn moveIsOk(m: u16) bool {
+    return m != 0 and m != 65; // != none() and != null()
+}
+
+// StatsEntry<int16, D>::operator<<(bonus): gravity update toward [-D, D].
+inline fn statsUpdate(entry: *i16, bonus: c_int, comptime d: c_int) void {
+    const clamped = @max(-d, @min(d, bonus));
+    const val: c_int = entry.*;
+    const abs_clamped = if (clamped < 0) -clamped else clamped;
+    entry.* = @intCast(val + clamped - @divTrunc(val * abs_clamped, d));
+}
+
+extern fn zfish_search_conthist_delta(bonus: c_int, weight: c_int, positive_count: c_int, i: c_int) c_int;
+
+const ConthistBonus = struct { i: u8, w: c_int };
+const conthist_bonuses = [6]ConthistBonus{
+    .{ .i = 1, .w = 1040 }, .{ .i = 2, .w = 780 }, .{ .i = 3, .w = 300 },
+    .{ .i = 4, .w = 537 },  .{ .i = 5, .w = 129 }, .{ .i = 6, .w = 423 },
+};
+
+pub fn updateContinuationHistories(ss_ptr: *anyopaque, pc: u8, to: u8, bonus: c_int) void {
+    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    var positive_count: c_int = 0;
+    for (conthist_bonuses) |b| {
+        if (ss.in_check and b.i > 2) break;
+        const ssi: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @as(usize, b.i) * @sizeOf(SearchStack));
+        if (moveIsOk(ssi.current_move)) {
+            const cont: [*]i16 = @ptrCast(@alignCast(ssi.continuation_history.?));
+            const entry = &cont[@as(usize, pc) * 64 + to]; // PieceToHistory[pc][to]
+            if (entry.* > 0) positive_count += 1;
+            const delta = zfish_search_conthist_delta(bonus, b.w, positive_count, @intCast(b.i));
+            statsUpdate(entry, delta, 30000);
+        }
+    }
+}
+
 pub fn isShuffling(pos_ptr: *const anyopaque, ss_ptr: *const anyopaque, move: u16) bool {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const ss: *const SearchStack = @ptrCast(@alignCast(ss_ptr));
