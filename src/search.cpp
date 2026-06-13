@@ -1194,7 +1194,11 @@ moves_loop:  // When in check, search starts here
                             + sharedHistory.pawn_entry(pos)[movedPiece][move.to_sq()];
 
                 // Continuation history based pruning
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_QUIET_PRUNE
+                if (history < zfish_search_history_prune_threshold(depth))
+#else
                 if (history < -4313 * depth)
+#endif
                     continue;
 
                 history += 64 * mainHistory[us][move.raw()] / 32;
@@ -1202,8 +1206,13 @@ moves_loop:  // When in check, search starts here
                 // (*Scaler): Generally, lower divisors scale well
                 lmrDepth += history / lmrDivisor[dIndex];
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_QUIET_PRUNE
+                Value futilityValue = zfish_search_quiet_futility_value(
+                  ss->staticEval, !bestMove, lmrDepth, ss->staticEval > alpha);
+#else
                 Value futilityValue = ss->staticEval + 40 + 138 * !bestMove + 117 * lmrDepth
                                     + 90 * (ss->staticEval > alpha);
+#endif
 
                 // Futility pruning: parent node
                 // (*Scaler): Generally, more frequent futility pruning
@@ -1219,7 +1228,11 @@ moves_loop:  // When in check, search starts here
                 lmrDepth = std::max(lmrDepth, 0);
 
                 // Prune moves with negative SEE
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_QUIET_PRUNE
+                if (!pos.see_ge(move, -zfish_search_quiet_see_margin(lmrDepth)))
+#else
                 if (!pos.see_ge(move, -25 * lmrDepth * lmrDepth))
+#endif
                     continue;
             }
         }
