@@ -1323,12 +1323,21 @@ moves_loop:  // When in check, search starts here
 
         // Decrease reduction for PvNodes (*Scaler)
         if (ss->ttPv)
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_LMR_ADJUST
+            r -= zfish_search_lmr_ttpv_reduction(PvNode, ttData.value > alpha, ttData.depth >= depth,
+                                                 cutNode);
+#else
             r -= 2766 + PvNode * 1017 + (ttData.value > alpha) * 838
                + (ttData.depth >= depth) * (923 + cutNode * 955);
+#endif
 
         r += 714;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 62;
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_LMR_ADJUST
+        r -= zfish_search_lmr_corr_reduction(correctionValue);
+#else
         r -= std::abs(correctionValue) / 26131;
+#endif
 
         // Increase reduction for cut nodes
         if (cutNode)
@@ -1355,11 +1364,19 @@ moves_loop:  // When in check, search starts here
                           + (*contHist[1])[movedPiece][move.to_sq()];
 
         // Decrease/increase reduction for moves with a good/bad history
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_LMR_ADJUST
+        r -= zfish_search_lmr_stat_score_reduction(ss->statScore);
+#else
         r -= ss->statScore * 445 / 4096;
+#endif
 
         // Scale up reductions for expected ALL nodes
         if (allNode)
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_LMR_ADJUST
+            r += zfish_search_lmr_all_node_scale(r, depth);
+#else
             r += r * 272 / (256 * depth + 285);
+#endif
 
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > 1)
