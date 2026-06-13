@@ -8,7 +8,6 @@ const c = @cImport({
 });
 
 extern fn zfish_has_large_pages() bool;
-extern fn zfish_misc_hardware_concurrency_value() c_int;
 
 const max_debug_slots: usize = 32;
 const version = "dev";
@@ -172,7 +171,13 @@ pub fn hasLargePages() bool {
 }
 
 pub fn hardwareConcurrency() c_int {
-    return zfish_misc_hardware_concurrency_value();
+    // Mirrors Stockfish get_hardware_concurrency() (numa.h), which on Linux is
+    // std::thread::hardware_concurrency(). libstdc++ implements that as
+    // _GLIBCXX_NPROCS == sysconf(_SC_NPROCESSORS_ONLN), clamping a negative
+    // (error) result to 0. Identical on the owned Linux x86_64 glibc target.
+    const n = c.sysconf(c._SC_NPROCESSORS_ONLN);
+    if (n < 0) return 0;
+    return @intCast(n);
 }
 
 pub fn dbgHitOn(cond: bool, slot: c_int) void {

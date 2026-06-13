@@ -2232,10 +2232,6 @@ void        zfish_misc_dbg_extremes_of(std::int64_t value, int slot);
 void        zfish_misc_dbg_correl_of(std::int64_t value1, std::int64_t value2, int slot);
 void        zfish_misc_dbg_print();
 void        zfish_misc_dbg_clear();
-
-int zfish_misc_hardware_concurrency_value() {
-    return int(get_hardware_concurrency());
-}
 }
 
 std::string compiler_info() {
