@@ -248,6 +248,14 @@ pub export fn zfish_search_fill_reductions(reductions_ptr: [*]c_int, count: usiz
     return search_port.fillReductions(reductions_ptr, count);
 }
 
+pub export fn zfish_search_stat_bonus(depth: c_int, is_tt_move: u8, prev_stat_score: c_int) c_int {
+    return search_port.statBonus(depth, is_tt_move != 0, prev_stat_score);
+}
+
+pub export fn zfish_search_stat_malus(depth: c_int) c_int {
+    return search_port.statMalus(depth);
+}
+
 pub export fn zfish_search_value_to_tt(v: c_int, ply: c_int) c_int {
     return search_port.valueToTt(v, ply);
 }
