@@ -139,6 +139,23 @@ pub fn between(from: u8, to: u8) u64 {
     return betweenSquares(@as(usize, @intCast(from)), @as(usize, @intCast(to)));
 }
 
+// Full line through two squares (both endpoints + the ray extended to the board
+// edges) if they are aligned, else 0. Mirrors upstream LineBB construction.
+pub fn line(s1: u8, s2: u8) u64 {
+    const a: usize = @intCast(s1);
+    const b: usize = @intCast(s2);
+    const target = squareBb(b);
+    if ((slidingAttack(PieceType.bishop, a, 0) & target) != 0) {
+        return (slidingAttack(PieceType.bishop, a, 0) & slidingAttack(PieceType.bishop, b, 0)) |
+            squareBb(a) | target;
+    }
+    if ((slidingAttack(PieceType.rook, a, 0) & target) != 0) {
+        return (slidingAttack(PieceType.rook, a, 0) & slidingAttack(PieceType.rook, b, 0)) |
+            squareBb(a) | target;
+    }
+    return 0;
+}
+
 pub fn pretty(bitboard: u64) ?[*:0]u8 {
     return prettyAlloc(bitboard) catch null;
 }
