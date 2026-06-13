@@ -139,15 +139,6 @@ const unsigned int  gEmbeddedNNUESize    = 1;
 namespace Stockfish {
 
 namespace NN = Eval::NNUE;
-namespace Zobrist {
-extern Key psq[PIECE_NB][SQUARE_NB];
-extern Key enpassant[FILE_NB];
-extern Key castling[CASTLING_RIGHT_NB];
-extern Key side, noPawns;
-}
-
-extern std::array<Key, 8192>  cuckoo;
-extern std::array<Move, 8192> cuckooMove;
 
 constexpr int MaxHashMB  = Is64Bit ? 33554432 : 2048;
 int           MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
@@ -2627,11 +2618,7 @@ std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
                                                   std::size_t piece_count_len);
 std::uint8_t  zfish_position_is_repetition_method(const void* pos_ptr, int ply);
 std::uint8_t  zfish_position_is_draw_method(const void* pos_ptr, int ply);
-std::uint8_t  zfish_position_upcoming_repetition_method(const void*          pos_ptr,
-                                                        int                  ply,
-                                                        const std::uint64_t* cuckoo,
-                                                        const std::uint16_t* cuckoo_move,
-                                                        std::uint64_t        zob_side);
+std::uint8_t  zfish_position_upcoming_repetition_method(const void* pos_ptr, int ply);
 std::uint8_t  zfish_position_has_repeated_method(const void* pos_ptr);
 std::uint64_t zfish_position_attackers_to_method(const void*  pos_ptr,
                                                  std::uint8_t  s,
@@ -2647,26 +2634,17 @@ void          zfish_position_set_castling_right_method(void* pos_ptr, std::uint8
 const char*   zfish_position_flip_fen(const unsigned char* fen_ptr, std::size_t fen_len);
 const char*   zfish_position_set_method(void* pos_ptr, const unsigned char* fen_ptr,
                                         std::size_t fen_len, std::uint8_t is_chess960, void* st_ptr,
-                                        std::size_t pos_size, std::size_t st_size,
-                                        const std::uint64_t* psq, const std::uint64_t* enpassant,
-                                        const std::uint64_t* castling, std::uint64_t zob_side,
-                                        std::uint64_t no_pawns);
-void          zfish_position_set_state_method(const void* pos_ptr, const std::uint64_t* psq,
-                                              const std::uint64_t* enpassant,
-                                              const std::uint64_t* castling, std::uint64_t zob_side,
-                                              std::uint64_t no_pawns);
+                                        std::size_t pos_size, std::size_t st_size);
+void          zfish_position_set_state_method(const void* pos_ptr);
 std::uint8_t  zfish_position_legal_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_gives_check_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_pseudo_legal_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_see_ge_method(const void* pos_ptr, std::uint16_t move, int threshold);
-void          zfish_position_do_null_move(void* pos_ptr, void* new_st_ptr, std::uint64_t zob_side,
-                                          std::uint64_t zob_ep);
+void          zfish_position_do_null_move(void* pos_ptr, void* new_st_ptr);
 void          zfish_position_undo_null_move(void* pos_ptr);
 void          zfish_position_undo_move_method(void* pos_ptr, std::uint16_t move);
 void          zfish_position_do_move(void* pos_ptr, std::uint16_t move, void* new_st_ptr,
-                                     std::uint8_t gives_check, void* dp_ptr, void* dts_ptr,
-                                     const std::uint64_t* psq, const std::uint64_t* enpassant,
-                                     const std::uint64_t* castling, std::uint64_t zob_side);
+                                     std::uint8_t gives_check, void* dp_ptr, void* dts_ptr);
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
@@ -2731,14 +2709,6 @@ void Engine::flip() { pos.flip(); }
 
 extern "C" {
 
-std::uint64_t zfish_position_material_zobrist(std::uint8_t piece, std::size_t count_index) {
-    return Stockfish::Zobrist::psq[piece][8 + count_index];
-}
-
-void zfish_position_init_runtime() {
-    Stockfish::Position::init();
-}
-
 void zfish_bitboards_init() {
     Stockfish::Bitboards::init();
 }
@@ -2789,10 +2759,7 @@ bool Position::is_repetition(int ply) const {
 bool Position::is_draw(int ply) const { return zfish_position_is_draw_method(this, ply) != 0; }
 
 bool Position::upcoming_repetition(int ply) const {
-    return zfish_position_upcoming_repetition_method(
-             this, ply, cuckoo.data(),
-             reinterpret_cast<const std::uint16_t*>(cuckooMove.data()), Zobrist::side)
-        != 0;
+    return zfish_position_upcoming_repetition_method(this, ply) != 0;
 }
 
 bool Position::has_repeated() const { return zfish_position_has_repeated_method(this) != 0; }
@@ -2818,10 +2785,7 @@ void Position::set_castling_right(Color c, Square rfrom) {
                                              static_cast<std::uint8_t>(rfrom));
 }
 
-void Position::set_state() const {
-    zfish_position_set_state_method(this, &Zobrist::psq[0][0], Zobrist::enpassant, Zobrist::castling,
-                                    Zobrist::side, Zobrist::noPawns);
-}
+void Position::set_state() const { zfish_position_set_state_method(this); }
 
 void Position::flip() {
     const std::string current = fen();
@@ -2834,8 +2798,7 @@ std::optional<PositionSetError>
 Position::set(const std::string& fenStr, bool isChess960, StateInfo* si) {
     const char* err = zfish_position_set_method(
       this, reinterpret_cast<const unsigned char*>(fenStr.data()), fenStr.size(),
-      static_cast<std::uint8_t>(isChess960 ? 1 : 0), si, sizeof(Position), sizeof(StateInfo),
-      &Zobrist::psq[0][0], Zobrist::enpassant, Zobrist::castling, Zobrist::side, Zobrist::noPawns);
+      static_cast<std::uint8_t>(isChess960 ? 1 : 0), si, sizeof(Position), sizeof(StateInfo));
     if (err)
     {
         std::string message(err);
@@ -2859,12 +2822,7 @@ bool Position::see_ge(Move m, int threshold) const {
     return zfish_position_see_ge_method(this, m.raw(), threshold) != 0;
 }
 
-void Position::do_null_move(StateInfo& newSt) {
-    const std::uint64_t zobSide = Zobrist::side;
-    const std::uint64_t zobEp =
-      (st->epSquare != SQ_NONE) ? Zobrist::enpassant[file_of(st->epSquare)] : std::uint64_t{0};
-    zfish_position_do_null_move(this, &newSt, zobSide, zobEp);
-}
+void Position::do_null_move(StateInfo& newSt) { zfish_position_do_null_move(this, &newSt); }
 
 void Position::undo_null_move() { zfish_position_undo_null_move(this); }
 
@@ -2880,8 +2838,7 @@ void Position::do_move(Move                      m,
     (void) tt;      // prefetch hint only
     (void) worker;  // prefetch hint only
     zfish_position_do_move(this, m.raw(), &newSt, static_cast<std::uint8_t>(givesCheck ? 1 : 0), &dp,
-                           &dts, &Zobrist::psq[0][0], Zobrist::enpassant, Zobrist::castling,
-                           Zobrist::side);
+                           &dts);
 }
 
 namespace {
