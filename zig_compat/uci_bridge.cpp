@@ -730,10 +730,8 @@ extern "C" std::uint8_t zfish_search_is_shuffling(const void* pos_ptr, const voi
                                                  std::uint16_t move);
 extern "C" void zfish_search_update_continuation_histories(void* ss_ptr, std::uint8_t pc,
                                                            std::uint8_t to, int bonus);
-extern "C" void zfish_search_update_quiet_histories(std::int16_t* main_entry,
-                                                    std::int16_t* lowply_entry,
-                                                    std::int16_t* pawn_entry, void* ss_ptr,
-                                                    std::uint8_t pc, std::uint8_t to, int bonus);
+extern "C" void zfish_search_update_quiet_histories(void* worker_ptr, const void* pos_ptr,
+                                                    void* ss_ptr, std::uint16_t move, int bonus);
 extern "C" void zfish_search_update_all_stats(
   void* pos_ptr, void* ss_ptr, std::int16_t* main_base, std::int16_t* lowply_base,
   std::int16_t* pawn_row, std::int16_t* capture_base, std::uint16_t best_move, int prev_sq,
@@ -858,6 +856,13 @@ static_assert(sizeof(Stockfish::ContinuationHistory[2][2]) == 2 * 2 * 16 * 64 * 
 static_assert(sizeof(Stockfish::CorrectionHistory<Stockfish::Continuation>)
               == 16 * 64 * 16 * 64 * 2);
 static_assert(sizeof(Stockfish::TTMoveHistory) == 2);
+
+// Layout proof for the SharedHistories mirror (reached via Worker.sharedHistory).
+// Each DynStats is { size_t size; T* data } = 16 bytes (the LargePagePtr deleter
+// is stateless, so the unique_ptr is one pointer), then the two index masks.
+static_assert(sizeof(Stockfish::SharedHistories) == 48);
+static_assert(sizeof(Stockfish::UnifiedCorrectionHistory) == 16);
+static_assert(sizeof(Stockfish::PawnHistory) == 16);
 
 extern "C" {
 struct ZfishTimemanInput {
@@ -1180,17 +1185,7 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
 
 void update_quiet_histories(
   const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus) {
-    Color         us       = pos.side_to_move();
-    std::int16_t* lowEntry = ss->ply < LOW_PLY_HISTORY_SIZE
-                             ? reinterpret_cast<std::int16_t*>(
-                                 &workerThread.lowPlyHistory[ss->ply][move.raw()])
-                             : nullptr;
-    zfish_search_update_quiet_histories(
-      reinterpret_cast<std::int16_t*>(&workerThread.mainHistory[us][move.raw()]), lowEntry,
-      reinterpret_cast<std::int16_t*>(
-        &workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()]),
-      ss, static_cast<std::uint8_t>(pos.moved_piece(move)),
-      static_cast<std::uint8_t>(move.to_sq()), bonus);
+    zfish_search_update_quiet_histories(&workerThread, &pos, ss, move.raw(), bonus);
 }
 
 void update_all_stats(const Position& pos,
