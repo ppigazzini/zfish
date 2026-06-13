@@ -735,6 +735,8 @@ std::size_t Network::get_content_hash() const {
 #define ZFISH_SEARCH_BRIDGE_SKIP_TO_CORRECTED_STATIC_EVAL
 #define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_DRAW
 #define ZFISH_SEARCH_BRIDGE_SKIP_REDUCTION
+#define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_TO_TT
+#define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_FROM_TT
 #include "../src/search.cpp"
 
 extern "C" {
@@ -882,6 +884,8 @@ static_assert(std::atomic<std::int16_t>::is_always_lock_free);
 
 int zfish_search_to_corrected_static_eval(int v, int cv);
 int zfish_search_value_draw(std::size_t nodes);
+int zfish_search_value_to_tt(int v, int ply);
+int zfish_search_value_from_tt(int v, int ply, int r50c);
 int zfish_search_reduction(const int* reductions,
                            int        depth,
                            int        move_number,
@@ -1048,6 +1052,12 @@ Value to_corrected_static_eval(const Value v, const int cv) {
 }
 
 Value value_draw(size_t nodes) { return Value(zfish_search_value_draw(nodes)); }
+
+Value value_to_tt(Value v, int ply) { return Value(zfish_search_value_to_tt(v, ply)); }
+
+Value value_from_tt(Value v, int ply, int r50c) {
+    return Value(zfish_search_value_from_tt(v, ply, r50c));
+}
 
 }  // namespace
 

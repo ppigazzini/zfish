@@ -1,12 +1,34 @@
 const std = @import("std");
 
 const value_draw: c_int = 0;
+const value_none: c_int = 32002;
 const max_ply: c_int = 246;
 const value_mate: c_int = 32000;
 const value_mate_in_max_ply: c_int = value_mate - max_ply;
+const value_mated_in_max_ply: c_int = -value_mate_in_max_ply;
 const value_tb: c_int = value_mate_in_max_ply - 1;
 const value_tb_win_in_max_ply: c_int = value_tb - max_ply;
 const value_tb_loss_in_max_ply: c_int = -value_tb_win_in_max_ply;
+
+fn isValid(v: c_int) bool {
+    return v != value_none;
+}
+
+fn isWin(v: c_int) bool {
+    return v >= value_tb_win_in_max_ply;
+}
+
+fn isLoss(v: c_int) bool {
+    return v <= value_tb_loss_in_max_ply;
+}
+
+fn isMate(v: c_int) bool {
+    return v >= value_mate_in_max_ply;
+}
+
+fn isMated(v: c_int) bool {
+    return v <= value_mated_in_max_ply;
+}
 
 pub fn toCorrectedStaticEval(v: c_int, cv: c_int) c_int {
     const adjusted = v + @divTrunc(cv, 131072);
@@ -15,6 +37,49 @@ pub fn toCorrectedStaticEval(v: c_int, cv: c_int) c_int {
 
 pub fn valueDraw(nodes: usize) c_int {
     return value_draw - 1 + @as(c_int, @intCast(nodes & 0x2));
+}
+
+// Adjusts a mate or TB score to "plies to mate from the current position"
+// before storing it in the transposition table. Standard scores are unchanged.
+pub fn valueToTt(v: c_int, ply: c_int) c_int {
+    if (isWin(v)) return v + ply;
+    if (isLoss(v)) return v - ply;
+    return v;
+}
+
+// Inverse of valueToTt(): adjusts a mate/TB score read from the transposition
+// table back to plies-from-root, downgrading potentially false mate/TB scores
+// related to the 50-move rule and graph-history interaction.
+pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
+    if (!isValid(v)) return value_none;
+
+    // handle TB win or better
+    if (isWin(v)) {
+        // Downgrade a potentially false mate score.
+        if (isMate(v) and value_mate - v > 100 - r50c)
+            return value_tb_win_in_max_ply - 1;
+
+        // Downgrade a potentially false TB score.
+        if (value_tb - v > 100 - r50c)
+            return value_tb_win_in_max_ply - 1;
+
+        return v - ply;
+    }
+
+    // handle TB loss or worse
+    if (isLoss(v)) {
+        // Downgrade a potentially false mate score.
+        if (isMated(v) and value_mate + v > 100 - r50c)
+            return value_tb_loss_in_max_ply + 1;
+
+        // Downgrade a potentially false TB score.
+        if (value_tb + v > 100 - r50c)
+            return value_tb_loss_in_max_ply + 1;
+
+        return v + ply;
+    }
+
+    return v;
 }
 
 pub fn reduction(
