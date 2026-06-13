@@ -256,6 +256,18 @@ pub export fn zfish_search_stat_malus(depth: c_int) c_int {
     return search_port.statMalus(depth);
 }
 
+pub export fn zfish_search_correction_value(
+    pcv: c_int,
+    micv: c_int,
+    wnpcv: c_int,
+    bnpcv: c_int,
+    cch2: c_int,
+    cch4: c_int,
+    m_ok: u8,
+) c_int {
+    return search_port.correctionValue(pcv, micv, wnpcv, bnpcv, cch2, cch4, m_ok != 0);
+}
+
 pub export fn zfish_search_value_to_tt(v: c_int, ply: c_int) c_int {
     return search_port.valueToTt(v, ply);
 }
