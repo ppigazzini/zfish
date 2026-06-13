@@ -1251,7 +1251,12 @@ moves_loop:  // When in check, search starts here
             && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
             && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos))
         {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_SINGULAR
+            Value singularBeta =
+              zfish_search_singular_beta(ttData.value, ss->ttPv && !PvNode, depth);
+#else
             Value singularBeta  = ttData.value - (60 + 70 * (ss->ttPv && !PvNode)) * depth / 59;
+#endif
             Depth singularDepth = newDepth / 2;
 
             ss->excludedMove = move;
@@ -1260,11 +1265,18 @@ moves_loop:  // When in check, search starts here
 
             if (value < singularBeta)
             {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_SINGULAR
+                int doubleMargin = zfish_search_singular_double_margin(
+                  PvNode, !ttCapture, correctionValue, ttMoveHistory, ss->ply > rootDepth);
+                int tripleMargin = zfish_search_singular_triple_margin(
+                  PvNode, !ttCapture, ss->ttPv, correctionValue, ss->ply > rootDepth);
+#else
                 int corrValAdj   = std::abs(correctionValue) / 194822;
                 int doubleMargin = -3 + 201 * PvNode - 157 * !ttCapture - corrValAdj
                                  - 1081 * ttMoveHistory / 117824 - (ss->ply > rootDepth) * 41;
                 int tripleMargin = 72 + 306 * PvNode - 188 * !ttCapture + 84 * ss->ttPv - corrValAdj
                                  - (ss->ply > rootDepth) * 45;
+#endif
 
                 extension =
                   1 + (value < singularBeta - doubleMargin) + (value < singularBeta - tripleMargin);
