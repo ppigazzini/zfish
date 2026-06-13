@@ -763,7 +763,7 @@ extern "C" int  zfish_search_aspiration_initial_delta(std::size_t thread_idx,
                                                       int mean_squared_score);
 extern "C" int  zfish_search_aspiration_delta_grow(int delta);
 extern "C" int  zfish_search_optimism(int avg);
-extern "C" void zfish_search_age_main_history(std::int16_t* main_base);
+extern "C" void zfish_search_age_main_history(void* worker_ptr);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
 extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
                                                     int piece_value, int capt_hist);
@@ -841,6 +841,23 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_OPTIMISM
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_AGE_MAIN_HISTORY
 #include "../src/search.cpp"
+
+// Layout proof for zig_build/board/position.zig's WorkerHistories mirror. The
+// per-Worker history tables form a contiguous int16-array prefix of the Worker
+// (no vtable; mainHistory at offset 0), so ported Zig search code can address
+// every table from a single Worker pointer. offsetof is not constexpr-valid on
+// the non-standard-layout Worker, so we pin each table's *footprint* here
+// instead: with no padding possible between int16 arrays, matching sizes plus
+// the proven mainHistory@0 origin fix every table offset, and the signature
+// gate confirms it end to end. A resized upstream table fails the build here.
+static_assert(sizeof(Stockfish::ButterflyHistory) == 2 * 65536 * 2);
+static_assert(sizeof(Stockfish::LowPlyHistory) == 5 * 65536 * 2);
+static_assert(sizeof(Stockfish::CapturePieceToHistory) == 16 * 64 * 8 * 2);
+static_assert(sizeof(Stockfish::ContinuationHistory) == 16 * 64 * 16 * 64 * 2);
+static_assert(sizeof(Stockfish::ContinuationHistory[2][2]) == 2 * 2 * 16 * 64 * 16 * 64 * 2);
+static_assert(sizeof(Stockfish::CorrectionHistory<Stockfish::Continuation>)
+              == 16 * 64 * 16 * 64 * 2);
+static_assert(sizeof(Stockfish::TTMoveHistory) == 2);
 
 extern "C" {
 struct ZfishTimemanInput {

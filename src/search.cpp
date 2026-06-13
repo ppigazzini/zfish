@@ -346,7 +346,7 @@ bool Search::Worker::iterative_deepening() {
     lowPlyHistory.fill(100);
 
 #ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_AGE_MAIN_HISTORY
-    zfish_search_age_main_history(reinterpret_cast<std::int16_t*>(&mainHistory[0][0]));
+    zfish_search_age_main_history(this);
 #else
     for (Color c : {WHITE, BLACK})
         for (int i = 0; i < UINT_16_HISTORY_SIZE; i++)

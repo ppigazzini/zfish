@@ -66,6 +66,42 @@ pub const SearchStack = extern struct {
     reduction: c_int,
 };
 
+// History-table dimensions (src/history.h, src/types.h).
+const hist_color_nb: usize = 2;
+const hist_uint16: usize = 65536;
+const hist_low_ply: usize = 5;
+const hist_piece_nb: usize = 16;
+const hist_square_nb: usize = 64;
+const hist_piece_type_nb: usize = 8;
+const hist_pieceto: usize = hist_piece_nb * hist_square_nb; // PieceToHistory page = [16][64]
+
+// Memory mirror of the leading data members of Search::Worker (src/search.h):
+// the per-Worker history tables, which form a contiguous int16-array prefix
+// (no vtable; mainHistory is at offset 0) followed by the shared-history
+// reference. Only ever used through a pointer to the live C++ Worker, so the
+// field order and sizes must byte-match the C++ class. The bridge proves the
+// layout with offsetof static_asserts; this mirror lets ported search code
+// address every table from one Worker pointer instead of per-call base passing.
+pub const WorkerHistories = extern struct {
+    main_history: [hist_color_nb * hist_uint16]i16, // ButterflyHistory [2][65536]
+    low_ply_history: [hist_low_ply * hist_uint16]i16, // LowPlyHistory [5][65536]
+    capture_history: [hist_piece_nb * hist_square_nb * hist_piece_type_nb]i16, // [16][64][8]
+    continuation_history: [2 * 2 * hist_pieceto * hist_pieceto]i16, // [2][2] of [16][64]->[16][64]
+    continuation_correction_history: [hist_pieceto * hist_pieceto]i16, // [16][64]->[16][64]
+    tt_move_history: i16,
+    shared_history: ?*anyopaque, // &SharedHistories (8-byte aligned; 6 bytes pad before)
+};
+
+// iterative_deepening() per-iteration main-history decay, now addressed through
+// the Worker mirror: (v + 5) * 789 / 1024 toward zero over the whole table.
+pub fn ageMainHistory(worker_ptr: *anyopaque) void {
+    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    for (&w.main_history) |*e| {
+        const v: c_int = e.*;
+        e.* = @intCast(@divTrunc((v + 5) * 789, 1024));
+    }
+}
+
 fn captureStage(pos: *const Position, m: u16) bool {
     const cap = (pos.board[moveTo(m)] != 0 and moveTypeOf(m) != mt_castling) or
         moveTypeOf(m) == mt_en_passant;
