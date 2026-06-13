@@ -2645,6 +2645,12 @@ void          zfish_position_set_check_info_method(const void* pos_ptr);
 void          zfish_position_set_castling_right_method(void* pos_ptr, std::uint8_t c,
                                                        std::uint8_t rfrom);
 const char*   zfish_position_flip_fen(const unsigned char* fen_ptr, std::size_t fen_len);
+const char*   zfish_position_set_method(void* pos_ptr, const unsigned char* fen_ptr,
+                                        std::size_t fen_len, std::uint8_t is_chess960, void* st_ptr,
+                                        std::size_t pos_size, std::size_t st_size,
+                                        const std::uint64_t* psq, const std::uint64_t* enpassant,
+                                        const std::uint64_t* castling, std::uint64_t zob_side,
+                                        std::uint64_t no_pawns);
 void          zfish_position_set_state_method(const void* pos_ptr, const std::uint64_t* psq,
                                               const std::uint64_t* enpassant,
                                               const std::uint64_t* castling, std::uint64_t zob_side,
@@ -2817,6 +2823,21 @@ void Position::flip() {
     const auto        flipped = take_string_and_free_required(zfish_position_flip_fen(
       reinterpret_cast<const unsigned char*>(current.data()), current.size()));
     set(flipped, is_chess960(), st);
+}
+
+std::optional<PositionSetError>
+Position::set(const std::string& fenStr, bool isChess960, StateInfo* si) {
+    const char* err = zfish_position_set_method(
+      this, reinterpret_cast<const unsigned char*>(fenStr.data()), fenStr.size(),
+      static_cast<std::uint8_t>(isChess960 ? 1 : 0), si, sizeof(Position), sizeof(StateInfo),
+      &Zobrist::psq[0][0], Zobrist::enpassant, Zobrist::castling, Zobrist::side, Zobrist::noPawns);
+    if (err)
+    {
+        std::string message(err);
+        std::free(const_cast<char*>(err));
+        return PositionSetError(message);
+    }
+    return std::nullopt;
 }
 
 bool Position::legal(Move m) const { return zfish_position_legal_method(this, m.raw()) != 0; }

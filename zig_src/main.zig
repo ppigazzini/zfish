@@ -267,6 +267,23 @@ pub export fn zfish_position_flip_fen(fen_ptr: [*]const u8, fen_len: usize) ?[*:
     return position_port.flipFen(fen_ptr, fen_len);
 }
 
+pub export fn zfish_position_set_method(
+    pos_ptr: *anyopaque,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    is_chess960: u8,
+    st_ptr: *anyopaque,
+    pos_size: usize,
+    st_size: usize,
+    psq: [*]const u64,
+    enpassant: [*]const u64,
+    castling: [*]const u64,
+    zob_side: u64,
+    no_pawns: u64,
+) ?[*:0]u8 {
+    return position_port.setPosition(pos_ptr, fen_ptr, fen_len, is_chess960, st_ptr, pos_size, st_size, psq, enpassant, castling, zob_side, no_pawns);
+}
+
 pub export fn zfish_position_set_state_method(
     pos_ptr: *const anyopaque,
     psq: [*]const u64,
