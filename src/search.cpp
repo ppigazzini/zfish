@@ -1145,7 +1145,11 @@ moves_loop:  // When in check, search starts here
         if (!rootNode && pos.non_pawn_material(us) && !is_loss(bestValue))
         {
             // Skip quiet moves if movecount exceeds our threshold
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_MOVECOUNT
+            if (moveCount >= zfish_search_move_count_limit(depth, improving))
+#else
             if (moveCount >= (3 + depth * depth) / (2 - improving))
+#endif
                 mp.skip_quiet_moves();
 
             // Reduced depth of the next LMR search
