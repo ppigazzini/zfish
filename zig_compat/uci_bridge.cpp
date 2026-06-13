@@ -145,6 +145,9 @@ extern Key enpassant[FILE_NB];
 extern Key side;
 }
 
+extern std::array<Key, 8192>  cuckoo;
+extern std::array<Move, 8192> cuckooMove;
+
 constexpr int MaxHashMB  = Is64Bit ? 33554432 : 2048;
 int           MaxThreads = std::max(1024, 4 * int(get_hardware_concurrency()));
 
@@ -2623,6 +2626,11 @@ std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
                                                   std::size_t piece_count_len);
 std::uint8_t  zfish_position_is_repetition_method(const void* pos_ptr, int ply);
 std::uint8_t  zfish_position_is_draw_method(const void* pos_ptr, int ply);
+std::uint8_t  zfish_position_upcoming_repetition_method(const void*          pos_ptr,
+                                                        int                  ply,
+                                                        const std::uint64_t* cuckoo,
+                                                        const std::uint16_t* cuckoo_move,
+                                                        std::uint64_t        zob_side);
 std::uint8_t  zfish_position_has_repeated_method(const void* pos_ptr);
 std::uint64_t zfish_position_attackers_to_method(const void*  pos_ptr,
                                                  std::uint8_t  s,
@@ -2760,6 +2768,13 @@ bool Position::is_repetition(int ply) const {
 }
 
 bool Position::is_draw(int ply) const { return zfish_position_is_draw_method(this, ply) != 0; }
+
+bool Position::upcoming_repetition(int ply) const {
+    return zfish_position_upcoming_repetition_method(
+             this, ply, cuckoo.data(),
+             reinterpret_cast<const std::uint16_t*>(cuckooMove.data()), Zobrist::side)
+        != 0;
+}
 
 bool Position::has_repeated() const { return zfish_position_has_repeated_method(this) != 0; }
 

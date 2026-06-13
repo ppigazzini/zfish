@@ -233,6 +233,16 @@ pub export fn zfish_position_undo_null_move(pos_ptr: *anyopaque) void {
     position_port.undoNullMove(pos_ptr);
 }
 
+pub export fn zfish_position_upcoming_repetition_method(
+    pos_ptr: *const anyopaque,
+    ply: c_int,
+    cuckoo: [*]const u64,
+    cuckoo_move: [*]const u16,
+    zob_side: u64,
+) u8 {
+    return @intFromBool(position_port.upcomingRepetition(pos_ptr, ply, cuckoo, cuckoo_move, zob_side));
+}
+
 pub export fn zfish_position_has_repeated_method(pos_ptr: *const anyopaque) u8 {
     return @intFromBool(position_port.hasRepeated(pos_ptr));
 }

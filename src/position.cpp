@@ -1562,6 +1562,7 @@ bool Position::has_repeated() const {
 
 // Tests if the position has a move which draws by repetition.
 // This function accurately matches the outcome of is_draw() over all legal moves.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_UPCOMING_REPETITION
 bool Position::upcoming_repetition(int ply) const {
 
     int j;
@@ -1605,6 +1606,7 @@ bool Position::upcoming_repetition(int ply) const {
     }
     return false;
 }
+#endif
 
 
 // Flips position with the white and black sides reversed. This
