@@ -2040,6 +2040,7 @@ void update_all_stats(const Position& pos,
 
 // Updates the continuation histories for the move pairs formed by
 // the current move and the moves played in previous plies.
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_CONTHIST
 void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
     static constexpr std::array<ConthistBonus, 6> conthist_bonuses = {
       {{1, 1040}, {2, 780}, {3, 300}, {4, 537}, {5, 129}, {6, 423}}};
@@ -2071,6 +2072,7 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
         }
     }
 }
+#endif
 
 // Updates move sorting heuristics
 
