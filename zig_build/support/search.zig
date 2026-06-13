@@ -249,6 +249,12 @@ pub fn evalDiff(prev_static_eval: c_int, static_eval: c_int) c_int {
     return @max(@as(c_int, -183), @min(@as(c_int, 180), -(prev_static_eval + static_eval))) + 62;
 }
 
+// Qsearch futility base = static eval plus a fixed margin (search.cpp qsearch
+// step 4). The move loop later adds the captured piece value to this base.
+pub fn qsearchFutilityBase(static_eval: c_int) c_int {
+    return static_eval + 335;
+}
+
 // Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {
