@@ -1116,6 +1116,7 @@ void Position::do_move(Move                      m,
 
 // Unmakes a move. When it returns, the position should
 // be restored to exactly the same state as before the move was made.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_UNDO_MOVE
 void Position::undo_move(Move m) {
 
     assert(m.is_ok());
@@ -1174,6 +1175,7 @@ void Position::undo_move(Move m) {
 
     assert(pos_is_ok());
 }
+#endif
 
 inline void add_dirty_threat(DirtyThreats* const dts,
                              bool                putPiece,

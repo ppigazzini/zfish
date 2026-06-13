@@ -233,6 +233,10 @@ pub export fn zfish_position_undo_null_move(pos_ptr: *anyopaque) void {
     position_port.undoNullMove(pos_ptr);
 }
 
+pub export fn zfish_position_undo_move_method(pos_ptr: *anyopaque, move: u16) void {
+    position_port.undoMove(pos_ptr, move);
+}
+
 pub export fn zfish_position_upcoming_repetition_method(
     pos_ptr: *const anyopaque,
     ply: c_int,
