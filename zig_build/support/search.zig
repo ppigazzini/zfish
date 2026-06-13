@@ -106,6 +106,21 @@ pub fn futilityReturn(beta: c_int, eval: c_int) c_int {
     return @divTrunc(716 * beta + 308 * eval, 1024);
 }
 
+// Quiet-move pruning in the move loop: continuation-history prune threshold,
+// parent-node futility value, and the negative-SEE margin.
+pub fn historyPruneThreshold(depth: c_int) c_int {
+    return -4313 * depth;
+}
+
+pub fn quietFutilityValue(static_eval: c_int, no_best_move: bool, lmr_depth: c_int, eval_gt_alpha: bool) c_int {
+    return static_eval + 40 + 138 * @as(c_int, @intFromBool(no_best_move)) +
+        117 * lmr_depth + 90 * @as(c_int, @intFromBool(eval_gt_alpha));
+}
+
+pub fn quietSeeMargin(lmr_depth: c_int) c_int {
+    return 25 * lmr_depth * lmr_depth;
+}
+
 // Capture pruning in the move loop: futility value (piece_value is the C++
 // PieceValue[] lookup, passed in) and the SEE pruning margin.
 pub fn captureFutilityValue(static_eval: c_int, lmr_depth: c_int, piece_value: c_int, capt_hist: c_int) c_int {
