@@ -121,6 +121,30 @@ pub fn quietSeeMargin(lmr_depth: c_int) c_int {
     return 25 * lmr_depth * lmr_depth;
 }
 
+// Post-search bonus formulas (ttMoveHistory updates and the prior-countermove
+// fail-low bonus).
+pub fn ttMoveHistoryDepthBonus(depth: c_int) c_int {
+    return -442 - 108 * depth;
+}
+
+pub fn ttMoveHistoryMatchBonus(best_is_tt: bool) c_int {
+    return if (best_is_tt) 792 else -779;
+}
+
+pub fn priorBonusScale(prev_stat_score: c_int, depth: c_int, prev_movecount_gt8: bool, cond_a: bool, cond_b: bool) c_int {
+    var s: c_int = -245;
+    s -= @divTrunc(prev_stat_score, 98);
+    s += @min(59 * depth, 430);
+    s += 191 * @as(c_int, @intFromBool(prev_movecount_gt8));
+    s += 143 * @as(c_int, @intFromBool(cond_a));
+    s += 151 * @as(c_int, @intFromBool(cond_b));
+    return @max(s, 0);
+}
+
+pub fn priorScaledBonusBase(depth: c_int) c_int {
+    return @min(141 * depth - 82, 1472);
+}
+
 // LMR reduction (r) adjustments before the reduced search.
 pub fn lmrTtpvReduction(pv_node: bool, value_gt_alpha: bool, depth_ge: bool, cut_node: bool) c_int {
     return 2766 + @as(c_int, @intFromBool(pv_node)) * 1017 +
