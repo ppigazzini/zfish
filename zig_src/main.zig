@@ -310,6 +310,25 @@ pub export fn zfish_search_update_quiet_histories(
     position_port.updateQuietHistories(main_entry, lowply_entry, pawn_entry, ss_ptr, pc, to, bonus);
 }
 
+pub export fn zfish_search_update_all_stats(
+    pos_ptr: *anyopaque,
+    ss_ptr: *anyopaque,
+    main_base: [*]i16,
+    lowply_base: [*]i16,
+    pawn_row: [*]i16,
+    capture_base: [*]i16,
+    best_move: u16,
+    prev_sq: c_int,
+    quiets: [*]const u16,
+    n_quiets: usize,
+    captures: [*]const u16,
+    n_captures: usize,
+    depth: c_int,
+    tt_move: u16,
+) void {
+    position_port.updateAllStats(pos_ptr, ss_ptr, main_base, lowply_base, pawn_row, capture_base, best_move, prev_sq, quiets, n_quiets, captures, n_captures, depth, tt_move);
+}
+
 pub export fn zfish_position_legal_method(pos_ptr: *const anyopaque, move: u16) u8 {
     return @intFromBool(position_port.legal(pos_ptr, move));
 }
