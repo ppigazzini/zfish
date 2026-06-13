@@ -1247,6 +1247,22 @@ pub export fn zfish_has_large_pages() bool {
     return memory_port.hasLargePages();
 }
 
+// Last-reported "nodes searched" counter for the UCI info path. Owned in Zig;
+// the C++ engine update listeners publish into it via zfish_set_last_nodes_searched.
+var last_nodes_searched = std.atomic.Value(u64).init(0);
+
+pub export fn zfish_set_last_nodes_searched(nodes: u64) void {
+    last_nodes_searched.store(nodes, .monotonic);
+}
+
+pub export fn zfish_uci_engine_nodes_searched(_: ?*const anyopaque) u64 {
+    return last_nodes_searched.load(.monotonic);
+}
+
+pub export fn zfish_uci_engine_reset_nodes_searched() void {
+    last_nodes_searched.store(0, .monotonic);
+}
+
 pub export fn _ZN9Stockfish15has_large_pagesEv() bool {
     return memory_port.hasLargePages();
 }
