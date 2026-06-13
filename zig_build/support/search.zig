@@ -270,6 +270,18 @@ pub fn priorPawnhistScale(scaled_bonus: c_int) c_int {
     return @divTrunc(scaled_bonus * 322, 8192);
 }
 
+// Step 17 LMR stat-score assembly (search()). The caller reads the relevant
+// history-table entries and passes their values; Zig owns the tuned weighting.
+// Capture: 809*pieceValue/128 plus capture history. Quiet: 2*main plus the two
+// continuation-history entries.
+pub fn captureStatScore(piece_value: c_int, capture_hist: c_int) c_int {
+    return @divTrunc(809 * piece_value, 128) + capture_hist;
+}
+
+pub fn quietStatScore(main_hist: c_int, cont0: c_int, cont1: c_int) c_int {
+    return 2 * main_hist + cont0 + cont1;
+}
+
 // Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {

@@ -756,6 +756,8 @@ extern "C" int  zfish_search_qsearch_futility_base(int static_eval);
 extern "C" int  zfish_search_prior_conthist_scale(int scaled_bonus);
 extern "C" int  zfish_search_prior_mainhist_scale(int scaled_bonus);
 extern "C" int  zfish_search_prior_pawnhist_scale(int scaled_bonus);
+extern "C" int  zfish_search_capture_stat_score(int piece_value, int capture_hist);
+extern "C" int  zfish_search_quiet_stat_score(int main_hist, int cont0, int cont1);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
 extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
                                                     int piece_value, int capt_hist);
@@ -827,6 +829,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_EVAL_DIFF
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH_FUTILITY_BASE
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_PRIOR_HIST_SCALE
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_STAT_SCORE
 #include "../src/search.cpp"
 
 extern "C" {

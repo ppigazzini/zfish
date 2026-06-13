@@ -1375,6 +1375,16 @@ moves_loop:  // When in check, search starts here
         else if (move == ttData.move)
             r = std::max(-10, r - 2016 + 150 * cutNode);
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_STAT_SCORE
+        if (capture)
+            ss->statScore = zfish_search_capture_stat_score(
+              int(PieceValue[pos.captured_piece()]),
+              captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())]);
+        else
+            ss->statScore = zfish_search_quiet_stat_score(mainHistory[us][move.raw()],
+                                                          (*contHist[0])[movedPiece][move.to_sq()],
+                                                          (*contHist[1])[movedPiece][move.to_sq()]);
+#else
         if (capture)
             ss->statScore = 809 * int(PieceValue[pos.captured_piece()]) / 128
                           + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
@@ -1382,6 +1392,7 @@ moves_loop:  // When in check, search starts here
             ss->statScore = 2 * mainHistory[us][move.raw()]
                           + (*contHist[0])[movedPiece][move.to_sq()]
                           + (*contHist[1])[movedPiece][move.to_sq()];
+#endif
 
         // Decrease/increase reduction for moves with a good/bad history
 #ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_LMR_ADJUST

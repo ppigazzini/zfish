@@ -442,6 +442,14 @@ pub export fn zfish_search_prior_pawnhist_scale(scaled_bonus: c_int) c_int {
     return search_port.priorPawnhistScale(scaled_bonus);
 }
 
+pub export fn zfish_search_capture_stat_score(piece_value: c_int, capture_hist: c_int) c_int {
+    return search_port.captureStatScore(piece_value, capture_hist);
+}
+
+pub export fn zfish_search_quiet_stat_score(main_hist: c_int, cont0: c_int, cont1: c_int) c_int {
+    return search_port.quietStatScore(main_hist, cont0, cont1);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }
