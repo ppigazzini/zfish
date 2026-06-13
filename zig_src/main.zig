@@ -450,6 +450,10 @@ pub export fn zfish_search_quiet_stat_score(main_hist: c_int, cont0: c_int, cont
     return search_port.quietStatScore(main_hist, cont0, cont1);
 }
 
+pub export fn zfish_search_corrhist_bonus(eval_delta: c_int, depth: c_int, has_best_move: u8) c_int {
+    return search_port.correctionHistoryBonus(eval_delta, depth, has_best_move != 0);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }
