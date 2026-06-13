@@ -1313,10 +1313,6 @@ struct Cluster {
 
 static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
 
-extern "C" void* zfish_tt_alloc_clusters(std::size_t byte_count) {
-    return aligned_large_pages_alloc(byte_count);
-}
-
 extern "C" void zfish_tt_free_clusters(void* ptr) { aligned_large_pages_free(ptr); }
 
 extern "C" void zfish_tt_report_alloc_failure(std::size_t mb_size) {
