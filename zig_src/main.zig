@@ -309,12 +309,9 @@ pub export fn zfish_search_update_quiet_histories(
 }
 
 pub export fn zfish_search_update_all_stats(
+    worker_ptr: *anyopaque,
     pos_ptr: *anyopaque,
     ss_ptr: *anyopaque,
-    main_base: [*]i16,
-    lowply_base: [*]i16,
-    pawn_row: [*]i16,
-    capture_base: [*]i16,
     best_move: u16,
     prev_sq: c_int,
     quiets: [*]const u16,
@@ -324,7 +321,7 @@ pub export fn zfish_search_update_all_stats(
     depth: c_int,
     tt_move: u16,
 ) void {
-    position_port.updateAllStats(pos_ptr, ss_ptr, main_base, lowply_base, pawn_row, capture_base, best_move, prev_sq, quiets, n_quiets, captures, n_captures, depth, tt_move);
+    position_port.updateAllStats(worker_ptr, pos_ptr, ss_ptr, best_move, prev_sq, quiets, n_quiets, captures, n_captures, depth, tt_move);
 }
 
 pub export fn zfish_search_update_correction_history(
