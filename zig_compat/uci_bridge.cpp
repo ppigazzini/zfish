@@ -2628,6 +2628,8 @@ std::uint8_t  zfish_position_attackers_to_exist_method(const void*   pos_ptr,
                                                        std::uint8_t  s,
                                                        std::uint64_t occupied,
                                                        std::uint8_t  c);
+void          zfish_position_update_slider_blockers_method(const void* pos_ptr, std::uint8_t c);
+void          zfish_position_set_check_info_method(const void* pos_ptr);
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
@@ -2758,6 +2760,12 @@ bool Position::attackers_to_exist(Square s, Bitboard occupied, Color c) const {
                                                     static_cast<std::uint8_t>(c))
         != 0;
 }
+
+void Position::update_slider_blockers(Color c) const {
+    zfish_position_update_slider_blockers_method(this, static_cast<std::uint8_t>(c));
+}
+
+void Position::set_check_info() const { zfish_position_set_check_info_method(this); }
 
 namespace {
 

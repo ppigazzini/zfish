@@ -224,6 +224,14 @@ pub export fn zfish_position_attackers_to_method(pos_ptr: *const anyopaque, s: u
     return position_port.attackersTo(pos_ptr, s, occupied);
 }
 
+pub export fn zfish_position_update_slider_blockers_method(pos_ptr: *const anyopaque, color: u8) void {
+    position_port.updateSliderBlockers(pos_ptr, color);
+}
+
+pub export fn zfish_position_set_check_info_method(pos_ptr: *const anyopaque) void {
+    position_port.setCheckInfo(pos_ptr);
+}
+
 pub export fn zfish_position_attackers_to_exist_method(
     pos_ptr: *const anyopaque,
     s: u8,

@@ -106,6 +106,52 @@ pub fn attackersTo(pos_ptr: *const anyopaque, s: u8, occupied: u64) u64 {
         (bitboard.attacks(king_pt, s, 0) & pos.by_type_bb[king_pt]);
 }
 
+fn kingSquare(pos: *const Position, c: u8) u8 {
+    return @intCast(@ctz(pos.by_color_bb[c] & pos.by_type_bb[king_pt]));
+}
+
+pub fn updateSliderBlockers(pos_ptr: *const anyopaque, c: u8) void {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const ksq = kingSquare(pos, c);
+    const nc = c ^ 1;
+    pos.st.blockers_for_king[c] = 0;
+    pos.st.pinners[nc] = 0;
+
+    const queen_rook = pos.by_type_bb[queen_pt] | pos.by_type_bb[rook_pt];
+    const queen_bishop = pos.by_type_bb[queen_pt] | pos.by_type_bb[bishop_pt];
+    var snipers = ((bitboard.attacks(rook_pt, ksq, 0) & queen_rook) |
+        (bitboard.attacks(bishop_pt, ksq, 0) & queen_bishop)) & pos.by_color_bb[nc];
+    const occupancy = pos.by_type_bb[0] ^ snipers;
+
+    while (snipers != 0) {
+        const sniper_sq: u8 = @intCast(@ctz(snipers));
+        snipers &= snipers - 1;
+        const b = bitboard.between(ksq, sniper_sq) & occupancy;
+        if (b != 0 and (b & (b -% 1)) == 0) {
+            pos.st.blockers_for_king[c] |= b;
+            if ((b & pos.by_color_bb[c]) != 0) {
+                pos.st.pinners[nc] |= (@as(u64, 1) << @intCast(sniper_sq));
+            }
+        }
+    }
+}
+
+pub fn setCheckInfo(pos_ptr: *const anyopaque) void {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    updateSliderBlockers(pos_ptr, color_white);
+    updateSliderBlockers(pos_ptr, color_black);
+
+    const them = pos.side_to_move ^ 1;
+    const ksq = kingSquare(pos, them);
+    const all = pos.by_type_bb[0];
+    pos.st.check_squares[pawn_pt] = pawnAttacks(them, ksq);
+    pos.st.check_squares[knight_pt] = bitboard.attacks(knight_pt, ksq, 0);
+    pos.st.check_squares[bishop_pt] = bitboard.attacks(bishop_pt, ksq, all);
+    pos.st.check_squares[rook_pt] = bitboard.attacks(rook_pt, ksq, all);
+    pos.st.check_squares[queen_pt] = pos.st.check_squares[bishop_pt] | pos.st.check_squares[rook_pt];
+    pos.st.check_squares[king_pt] = 0;
+}
+
 pub fn attackersToExist(pos_ptr: *const anyopaque, s: u8, occupied: u64, c: u8) bool {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const them = pos.by_color_bb[c];
