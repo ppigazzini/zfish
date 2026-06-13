@@ -1372,6 +1372,7 @@ void Position::do_castling(Color               us,
 
 // Used to do a "null move": it flips
 // the side to move without executing any move on the board.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_NULL_MOVE
 void Position::do_null_move(StateInfo& newSt) {
 
     assert(!checkers());
@@ -1400,9 +1401,11 @@ void Position::do_null_move(StateInfo& newSt) {
 
     assert(pos_is_ok());
 }
+#endif
 
 
 // Must be used to undo a "null move"
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_NULL_MOVE
 void Position::undo_null_move() {
 
     assert(!checkers());
@@ -1410,6 +1413,7 @@ void Position::undo_null_move() {
     st         = st->previous;
     sideToMove = ~sideToMove;
 }
+#endif
 
 
 // Tests if the SEE (Static Exchange Evaluation)

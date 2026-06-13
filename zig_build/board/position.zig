@@ -116,6 +116,33 @@ pub const Position = extern struct {
     chess960: bool,
 };
 
+const sq_none_u8: u8 = 64;
+
+pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque, zob_side: u64, zob_ep: u64) void {
+    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    const new_st: *StateInfo = @ptrCast(@alignCast(new_st_ptr));
+
+    new_st.* = pos.st.*; // memcpy(&newSt, st, sizeof(StateInfo))
+    new_st.previous = pos.st;
+    pos.st = new_st;
+
+    if (pos.st.ep_square != sq_none_u8) {
+        pos.st.key ^= zob_ep;
+        pos.st.ep_square = sq_none_u8;
+    }
+    pos.st.key ^= zob_side;
+    pos.st.plies_from_null = 0;
+    pos.side_to_move ^= 1;
+    setCheckInfo(pos_ptr);
+    pos.st.repetition = 0;
+}
+
+pub fn undoNullMove(pos_ptr: *anyopaque) void {
+    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    pos.st = pos.st.previous.?;
+    pos.side_to_move ^= 1;
+}
+
 pub fn isDraw(pos_ptr: *const anyopaque, ply: c_int) bool {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     if (pos.st.rule50 > 99) {
