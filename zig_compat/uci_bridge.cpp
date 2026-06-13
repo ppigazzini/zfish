@@ -2620,6 +2620,7 @@ const char*   zfish_position_format_fen(const unsigned char* board_ptr,
 std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
                                                   std::size_t piece_count_len);
 std::uint8_t  zfish_position_is_repetition_method(const void* pos_ptr, int ply);
+std::uint8_t  zfish_position_is_draw_method(const void* pos_ptr, int ply);
 std::uint8_t  zfish_position_has_repeated_method(const void* pos_ptr);
 std::uint64_t zfish_position_attackers_to_method(const void*  pos_ptr,
                                                  std::uint8_t  s,
@@ -2752,6 +2753,8 @@ std::string Position::fen() const {
 bool Position::is_repetition(int ply) const {
     return zfish_position_is_repetition_method(this, ply) != 0;
 }
+
+bool Position::is_draw(int ply) const { return zfish_position_is_draw_method(this, ply) != 0; }
 
 bool Position::has_repeated() const { return zfish_position_has_repeated_method(this) != 0; }
 

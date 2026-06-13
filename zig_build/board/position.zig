@@ -116,6 +116,16 @@ pub const Position = extern struct {
     chess960: bool,
 };
 
+pub fn isDraw(pos_ptr: *const anyopaque, ply: c_int) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    if (pos.st.rule50 > 99) {
+        if (pos.st.checkers_bb == 0) return true;
+        var buf: [256]u16 = undefined;
+        if (movegen.generateLegal(pos_ptr, &buf) != 0) return true;
+    }
+    return isRepetition(pos_ptr, ply);
+}
+
 pub fn isRepetition(pos_ptr: *const anyopaque, ply: c_int) bool {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const rep = pos.st.repetition;

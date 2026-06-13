@@ -1523,6 +1523,7 @@ bool Position::see_ge(Move m, int threshold) const {
 
 // Tests whether the position is drawn by 50-move rule
 // or by repetition. It does not detect stalemates.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_IS_DRAW
 bool Position::is_draw(int ply) const {
 
     if (st->rule50 > 99 && (!checkers() || MoveList<LEGAL>(*this).size()))
@@ -1530,6 +1531,7 @@ bool Position::is_draw(int ply) const {
 
     return is_repetition(ply);
 }
+#endif
 
 // Return a draw score if a position repeats once earlier but strictly
 // after the root, or repeats twice before or at the root.
