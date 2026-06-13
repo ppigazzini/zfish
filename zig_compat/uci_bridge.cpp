@@ -740,6 +740,9 @@ extern "C" int  zfish_search_correction_value(int pcv, int micv, int wnpcv, int 
 extern "C" int  zfish_search_conthist_delta(int bonus, int weight, int positive_count, int i);
 extern "C" int  zfish_search_razor_margin(int depth);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
+extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
+                                                    int piece_value, int capt_hist);
+extern "C" int  zfish_search_capture_see_margin(int depth, int capt_hist);
 extern "C" int  zfish_search_probcut_beta(int beta, unsigned char improving);
 extern "C" int  zfish_search_probcut_beta_deep(int beta);
 extern "C" int  zfish_search_null_move_threshold(int beta, int depth, unsigned char improving);
@@ -769,6 +772,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_NULLMOVE
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_PROBCUT
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_MOVECOUNT
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_CAPTURE_PRUNE
 #include "../src/search.cpp"
 
 extern "C" {
