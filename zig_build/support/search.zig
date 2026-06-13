@@ -121,6 +121,29 @@ pub fn quietSeeMargin(lmr_depth: c_int) c_int {
     return 25 * lmr_depth * lmr_depth;
 }
 
+// Singular extension margins. corrValAdj = abs(correctionValue)/194822 is
+// shared by both margins.
+fn corrValAdj(correction_value: c_int) c_int {
+    const a: c_int = if (correction_value < 0) -correction_value else correction_value;
+    return @divTrunc(a, 194822);
+}
+
+pub fn singularBeta(tt_value: c_int, ttpv_and_not_pv: bool, depth: c_int) c_int {
+    return tt_value - @divTrunc((60 + 70 * @as(c_int, @intFromBool(ttpv_and_not_pv))) * depth, 59);
+}
+
+pub fn singularDoubleMargin(pv_node: bool, not_tt_capture: bool, correction_value: c_int, tt_move_history: c_int, ply_gt_root: bool) c_int {
+    return -3 + 201 * @as(c_int, @intFromBool(pv_node)) - 157 * @as(c_int, @intFromBool(not_tt_capture)) -
+        corrValAdj(correction_value) - @divTrunc(1081 * tt_move_history, 117824) -
+        @as(c_int, @intFromBool(ply_gt_root)) * 41;
+}
+
+pub fn singularTripleMargin(pv_node: bool, not_tt_capture: bool, ttpv: bool, correction_value: c_int, ply_gt_root: bool) c_int {
+    return 72 + 306 * @as(c_int, @intFromBool(pv_node)) - 188 * @as(c_int, @intFromBool(not_tt_capture)) +
+        84 * @as(c_int, @intFromBool(ttpv)) - corrValAdj(correction_value) -
+        @as(c_int, @intFromBool(ply_gt_root)) * 45;
+}
+
 // Capture pruning in the move loop: futility value (piece_value is the C++
 // PieceValue[] lookup, passed in) and the SEE pruning margin.
 pub fn captureFutilityValue(static_eval: c_int, lmr_depth: c_int, piece_value: c_int, capt_hist: c_int) c_int {
