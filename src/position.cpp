@@ -470,6 +470,7 @@ void Position::set_castling_right(Color c, Square rfrom) {
 
 
 // Sets king attacks to detect if a move gives check
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_CHECK_INFO
 void Position::set_check_info() const {
 
     update_slider_blockers(WHITE);
@@ -484,6 +485,7 @@ void Position::set_check_info() const {
     st->checkSquares[QUEEN]  = st->checkSquares[BISHOP] | st->checkSquares[ROOK];
     st->checkSquares[KING]   = 0;
 }
+#endif
 
 
 // Computes the hash keys of the position, and other
@@ -621,6 +623,7 @@ string Position::fen() const {
 // Calculates st->blockersForKing[c] and st->pinners[~c],
 // which store respectively the pieces preventing king of color c from being in check
 // and the slider pieces of color ~c pinning pieces of color c to the king.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_CHECK_INFO
 void Position::update_slider_blockers(Color c) const {
 
     Square ksq = square<KING>(c);
@@ -647,6 +650,7 @@ void Position::update_slider_blockers(Color c) const {
         }
     }
 }
+#endif
 
 
 // Computes a bitboard of all pieces which attack a given square.
