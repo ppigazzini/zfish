@@ -2632,6 +2632,7 @@ void          zfish_position_update_slider_blockers_method(const void* pos_ptr, 
 void          zfish_position_set_check_info_method(const void* pos_ptr);
 std::uint8_t  zfish_position_legal_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_gives_check_method(const void* pos_ptr, std::uint16_t move);
+std::uint8_t  zfish_position_pseudo_legal_method(const void* pos_ptr, std::uint16_t move);
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
@@ -2773,6 +2774,10 @@ bool Position::legal(Move m) const { return zfish_position_legal_method(this, m.
 
 bool Position::gives_check(Move m) const {
     return zfish_position_gives_check_method(this, m.raw()) != 0;
+}
+
+bool Position::pseudo_legal(const Move m) const {
+    return zfish_position_pseudo_legal_method(this, m.raw()) != 0;
 }
 
 namespace {

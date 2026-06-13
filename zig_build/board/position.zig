@@ -1,5 +1,6 @@
 const std = @import("std");
 const bitboard = @import("bitboard");
+const movegen = @import("movegen");
 
 const pawn_pt: u8 = 1;
 const knight_pt: u8 = 2;
@@ -43,6 +44,15 @@ inline fn makeSquare(f: u8, r: u8) u8 {
 inline fn pieceTypeOn(pos: *const Position, s: u8) u8 {
     return pos.board[s] & 7;
 }
+inline fn colorOfPiece(pc: u8) u8 {
+    return pc >> 3;
+}
+inline fn isEmpty(pos: *const Position, s: u8) bool {
+    return pos.board[s] == 0;
+}
+
+const rank1_bb: u64 = 0xFF;
+const rank8_bb: u64 = 0xFF << 56;
 
 // attacks_bb<PAWN>(s, c): squares a color-c pawn on `s` attacks.
 fn pawnAttacks(color: u8, sq: u8) u64 {
@@ -209,6 +219,60 @@ pub fn legal(pos_ptr: *const anyopaque, m: u16) bool {
 
     return (pos.st.blockers_for_king[us] & sqBb(from)) == 0 or
         (bitboard.line(from, orig_to) & (pos.by_color_bb[us] & pos.by_type_bb[king_pt])) != 0;
+}
+
+pub fn pseudoLegal(pos_ptr: *const anyopaque, m: u16) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const us = pos.side_to_move;
+    const them = us ^ 1;
+    const from = moveFrom(m);
+    const to = moveTo(m);
+    const pc = pos.board[from];
+    const all = pos.by_type_bb[0];
+
+    // Slower but simpler path for non-NORMAL moves: membership in the generator.
+    if (moveTypeOf(m) != mt_normal) {
+        var buf: [256]u16 = undefined;
+        const n = if (pos.st.checkers_bb != 0)
+            movegen.generateEvasions(pos_ptr, &buf)
+        else
+            movegen.generateNonEvasions(pos_ptr, &buf);
+        for (buf[0..n]) |mv| {
+            if (mv == m) return true;
+        }
+        return false;
+    }
+
+    if (pc == 0 or colorOfPiece(pc) != us) return false;
+    if ((pos.by_color_bb[us] & sqBb(to)) != 0) return false;
+
+    if ((pc & 7) == pawn_pt) {
+        if (((rank8_bb | rank1_bb) & sqBb(to)) != 0) return false;
+
+        const push: i16 = if (us == color_white) 8 else -8;
+        const is_capture = (pawnAttacks(us, from) & pos.by_color_bb[them] & sqBb(to)) != 0;
+        const is_single_push = (@as(i16, from) + push == @as(i16, to)) and isEmpty(pos, to);
+        const rel_rank = rankOf(from) ^ (us * 7);
+        const is_double_push = (@as(i16, from) + 2 * push == @as(i16, to)) and rel_rank == 1 and
+            isEmpty(pos, to) and isEmpty(pos, @intCast(@as(i16, to) - push));
+        if (!(is_capture or is_single_push or is_double_push)) return false;
+    } else if ((bitboard.attacks(pc & 7, from, all) & sqBb(to)) == 0) {
+        return false;
+    }
+
+    const checkers = pos.st.checkers_bb;
+    if (checkers != 0) {
+        if ((pc & 7) != king_pt) {
+            if ((checkers & (checkers -% 1)) != 0) return false; // double check
+            const ksq = kingSquare(pos, us);
+            const checker_sq: u8 = @intCast(@ctz(checkers));
+            if ((bitboard.between(ksq, checker_sq) & sqBb(to)) == 0) return false;
+        } else if (attackersToExist(pos_ptr, to, all ^ sqBb(from), them)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 pub fn givesCheck(pos_ptr: *const anyopaque, m: u16) bool {

@@ -720,6 +720,7 @@ bool Position::legal(Move m) const {
 // Takes a random move and tests whether the move is
 // pseudo-legal. It is used to validate moves from TT that can be corrupted
 // due to SMP concurrent access or hash position key aliasing.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_PSEUDO_LEGAL
 bool Position::pseudo_legal(const Move m) const {
 
     Color  us   = sideToMove;
@@ -788,6 +789,7 @@ bool Position::pseudo_legal(const Move m) const {
 
     return true;
 }
+#endif
 
 
 // Tests whether a pseudo-legal move gives a check
