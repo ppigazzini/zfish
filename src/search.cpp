@@ -943,6 +943,13 @@ Value Search::Worker::search(
     if (!ss->ttPv && depth < 17 && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta)
         && !is_win(eval))
     {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_FUTILITY
+        Value futilityMargin = zfish_search_futility_margin(depth, ss->ttHit, improving,
+                                                            opponentWorsening, correctionValue);
+
+        if (eval - futilityMargin >= beta)
+            return zfish_search_futility_return(beta, eval);
+#else
         Value futilityMult = interpolate(std::min(int(depth), 10), 1, 10, 40, 80);
         futilityMult -= 20 * !ss->ttHit;
 
@@ -952,6 +959,7 @@ Value Search::Worker::search(
 
         if (eval - futilityMargin >= beta)
             return (716 * beta + 308 * eval) / 1024;
+#endif
     }
 
     // Step 9. Null move search with verification search
