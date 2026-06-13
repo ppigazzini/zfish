@@ -473,6 +473,46 @@ pub fn build(b: *std.Build) void {
     );
     signature_step.dependOn(&signature_cmd.step);
 
+    // Per-position search-fingerprint differential harness (M5). Localizes a
+    // bench-signature mismatch to a single position + drifted field, the
+    // granularity the search.cpp keystone port needs to validate safely.
+    const search_parity_golden = b.pathFromRoot("zig_build/tools/search_parity.golden");
+    const search_parity_script = b.pathFromRoot("zig_build/tools/search_parity.sh");
+
+    const search_parity_cmd = b.addSystemCommand(&.{
+        "bash",
+        search_parity_script,
+        b.getInstallPath(.bin, "stockfish"),
+        search_parity_golden,
+        "check",
+    });
+    search_parity_cmd.step.dependOn(install_step);
+    search_parity_cmd.step.dependOn(&net_cmd.step);
+    search_parity_cmd.setCwd(b.path("src"));
+
+    const search_parity_step = b.step(
+        "search-parity",
+        "Diff per-position bench search fingerprints against the committed golden",
+    );
+    search_parity_step.dependOn(&search_parity_cmd.step);
+
+    const search_parity_update_cmd = b.addSystemCommand(&.{
+        "bash",
+        search_parity_script,
+        b.getInstallPath(.bin, "stockfish"),
+        search_parity_golden,
+        "update",
+    });
+    search_parity_update_cmd.step.dependOn(install_step);
+    search_parity_update_cmd.step.dependOn(&net_cmd.step);
+    search_parity_update_cmd.setCwd(b.path("src"));
+
+    const search_parity_update_step = b.step(
+        "search-parity-update",
+        "Regenerate zig_build/tools/search_parity.golden from the current binary",
+    );
+    search_parity_update_step.dependOn(&search_parity_update_cmd.step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
@@ -480,6 +520,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&bench_run.step);
     parity_step.dependOn(&uci_run.step);
     parity_step.dependOn(&signature_cmd.step);
+    parity_step.dependOn(&search_parity_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
