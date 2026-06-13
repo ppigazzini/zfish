@@ -645,8 +645,12 @@ void Search::Worker::clear() {
                 for (auto& h : to)
                     h.fill(-552);
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_REDUCTIONS_FILL
+    zfish_search_fill_reductions(reductions.data(), reductions.size());
+#else
     for (size_t i = 1; i < reductions.size(); ++i)
         reductions[i] = int(2834 / 128.0 * std::log(i));
+#endif
 
     refreshTable.clear(network[numaAccessToken]);
 }

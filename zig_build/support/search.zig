@@ -82,6 +82,16 @@ pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
     return v;
 }
 
+// Populate the reductions[] lookup table: reductions[i] = int(2834/128.0 * ln i)
+// for i in [1, count). Index 0 is left untouched, matching upstream clear().
+pub fn fillReductions(reductions_ptr: [*]c_int, count: usize) void {
+    var i: usize = 1;
+    while (i < count) : (i += 1) {
+        const logv = @log(@as(f64, @floatFromInt(i)));
+        reductions_ptr[i] = @intFromFloat(2834.0 / 128.0 * logv);
+    }
+}
+
 pub fn reduction(
     reductions_ptr: [*]const c_int,
     depth: c_int,
