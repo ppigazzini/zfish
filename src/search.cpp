@@ -1249,7 +1249,12 @@ moves_loop:  // When in check, search starts here
         // and lower extension margins scale well.
         if (!rootNode && move == ttData.move && !excludedMove && depth >= 6 + ss->ttPv
             && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
-            && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos))
+            && ttData.depth >= depth - 3
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_IS_SHUFFLING
+            && !zfish_search_is_shuffling(&pos, ss, move.raw()))
+#else
+            && !is_shuffling(move, ss, pos))
+#endif
         {
 #ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_SINGULAR
             Value singularBeta =
