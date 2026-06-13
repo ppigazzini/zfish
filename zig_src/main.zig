@@ -299,15 +299,13 @@ pub export fn zfish_search_update_continuation_histories(ss_ptr: *anyopaque, pc:
 }
 
 pub export fn zfish_search_update_quiet_histories(
-    main_entry: *i16,
-    lowply_entry: ?*i16,
-    pawn_entry: *i16,
+    worker_ptr: *anyopaque,
+    pos_ptr: *const anyopaque,
     ss_ptr: *anyopaque,
-    pc: u8,
-    to: u8,
+    move: u16,
     bonus: c_int,
 ) void {
-    position_port.updateQuietHistories(main_entry, lowply_entry, pawn_entry, ss_ptr, pc, to, bonus);
+    position_port.updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, move, bonus);
 }
 
 pub export fn zfish_search_update_all_stats(

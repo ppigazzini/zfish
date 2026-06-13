@@ -92,6 +92,64 @@ pub const WorkerHistories = extern struct {
     shared_history: ?*anyopaque, // &SharedHistories (8-byte aligned; 6 bytes pad before)
 };
 
+// One CorrectionBundle (src/history.h): the four correction StatsEntry<int16>
+// fields, one [2] page per correctionHistory index (indexed by color).
+const CorrectionBundle = extern struct {
+    pawn: i16,
+    minor: i16,
+    nonpawn_white: i16,
+    nonpawn_black: i16,
+};
+
+// Memory mirror of SharedHistories (src/history.h), reached through the Worker
+// mirror's shared_history pointer. correctionHistory and pawnHistory are each a
+// DynStats { size_t size; T* data } (the LargePagePtr is a unique_ptr with a
+// stateless deleter, so just an 8-byte pointer), followed by the two index
+// masks. pawn page = [16][64] int16 (1024); correction page = [2]CorrectionBundle.
+pub const SharedHistories = extern struct {
+    corr_size: usize,
+    corr_data: [*][2]CorrectionBundle,
+    pawn_size: usize,
+    pawn_data: [*]i16,
+    size_minus1: usize,
+    pawn_hist_size_minus1: usize,
+};
+
+inline fn sharedOf(w: *const WorkerHistories) *SharedHistories {
+    return @ptrCast(@alignCast(w.shared_history.?));
+}
+
+// pawn_entry(pos) row base: pawnHistory[pawn_key & mask] is a [16][64] page.
+inline fn pawnEntryRow(shared: *SharedHistories, pos: *const Position) [*]i16 {
+    const idx: usize = @intCast(pos.st.pawn_key & @as(u64, shared.pawn_hist_size_minus1));
+    return shared.pawn_data + idx * hist_pieceto;
+}
+
+// update_quiet_histories addressed through the Worker + SharedHistories mirrors:
+// the bridge passes only the Worker and Position pointers and the move, and Zig
+// resolves mainHistory[us][move], lowPlyHistory[ply][move], and the pawn entry
+// itself (no per-call base pointers from C++).
+pub fn updateQuietHistoriesWorker(
+    worker_ptr: *anyopaque,
+    pos_ptr: *const anyopaque,
+    ss_ptr: *anyopaque,
+    move: u16,
+    bonus: c_int,
+) void {
+    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const ss: *const SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const raw: usize = move;
+    const main_entry = &w.main_history[@as(usize, pos.side_to_move) * hist_uint16 + raw];
+    var lowply_entry: ?*i16 = null;
+    if (ss.ply < 5) // LOW_PLY_HISTORY_SIZE
+        lowply_entry = &w.low_ply_history[@as(usize, @intCast(ss.ply)) * hist_uint16 + raw];
+    const pc = pos.board[moveFrom(move)];
+    const to = moveTo(move);
+    const pawn_entry = &pawnEntryRow(sharedOf(w), pos)[@as(usize, pc) * hist_square_nb + to];
+    updateQuietHistories(main_entry, lowply_entry, pawn_entry, ss_ptr, pc, to, bonus);
+}
+
 // iterative_deepening() per-iteration main-history decay, now addressed through
 // the Worker mirror: (v + 5) * 789 / 1024 toward zero over the whole table.
 pub fn ageMainHistory(worker_ptr: *anyopaque) void {
