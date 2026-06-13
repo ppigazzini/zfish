@@ -82,6 +82,30 @@ pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
     return v;
 }
 
+// Step 8 child-node futility pruning. futilityMult inlines
+// interpolate(min(depth,10), 1, 10, 40, 80) = 40 + 40*(d-1)/9.
+pub fn futilityMargin(
+    depth: c_int,
+    tt_hit: bool,
+    improving: bool,
+    opponent_worsening: bool,
+    correction_value: c_int,
+) c_int {
+    const d = @min(depth, 10);
+    var futility_mult: c_int = 40 + @divTrunc(40 * (d - 1), 9);
+    futility_mult -= 20 * @as(c_int, @intFromBool(!tt_hit));
+    const imp: c_int = @intFromBool(improving);
+    const opp: c_int = @intFromBool(opponent_worsening);
+    const abs_corr: c_int = if (correction_value < 0) -correction_value else correction_value;
+    return futility_mult * depth -
+        @divTrunc((2934 * imp + 343 * opp) * futility_mult, 1024) +
+        @divTrunc(abs_corr, 182069);
+}
+
+pub fn futilityReturn(beta: c_int, eval: c_int) c_int {
+    return @divTrunc(716 * beta + 308 * eval, 1024);
+}
+
 // Step 7 razoring threshold subtracted from alpha (search()).
 pub fn razorMargin(depth: c_int) c_int {
     return 465 + 300 * depth * depth;
