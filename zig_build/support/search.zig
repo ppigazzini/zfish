@@ -242,6 +242,13 @@ pub fn qsearchFailHighBlend(best_value: c_int, beta: c_int) c_int {
     return @divTrunc(481 * best_value + 543 * beta, 1024);
 }
 
+// Static-eval-difference quiet ordering (search(), after the moves_loop check
+// guard): clamp the negated sum of the previous and current static evals into
+// [-183, 180] and bias by 62. The caller scales it (*10, *13) into history.
+pub fn evalDiff(prev_static_eval: c_int, static_eval: c_int) c_int {
+    return @max(@as(c_int, -183), @min(@as(c_int, 180), -(prev_static_eval + static_eval))) + 62;
+}
+
 // Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {

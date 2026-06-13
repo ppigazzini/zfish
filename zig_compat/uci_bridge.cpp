@@ -751,6 +751,7 @@ extern "C" int  zfish_search_conthist_delta(int bonus, int weight, int positive_
 extern "C" int  zfish_search_razor_margin(int depth);
 extern "C" int  zfish_search_qsearch_stand_pat_blend(int best_value, int beta);
 extern "C" int  zfish_search_qsearch_fail_high_blend(int best_value, int beta);
+extern "C" int  zfish_search_eval_diff(int prev_static_eval, int static_eval);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
 extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
                                                     int piece_value, int capt_hist);
@@ -819,6 +820,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_CORRECTION_HISTORY
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH_STAND_PAT
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH_FAIL_HIGH
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_EVAL_DIFF
 #include "../src/search.cpp"
 
 extern "C" {
