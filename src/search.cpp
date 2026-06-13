@@ -1620,6 +1620,17 @@ moves_loop:  // When in check, search starts here
         const int scaledBonus = std::min(141 * depth - 82, 1472) * bonusScale;
 #endif
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_PRIOR_HIST_SCALE
+        update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
+                                      zfish_search_prior_conthist_scale(scaledBonus));
+
+        mainHistory[~us][((ss - 1)->currentMove).raw()] <<
+          zfish_search_prior_mainhist_scale(scaledBonus);
+
+        if (type_of(pos.piece_on(prevSq)) != PAWN && ((ss - 1)->currentMove).type_of() != PROMOTION)
+            sharedHistory.pawn_entry(pos)[pos.piece_on(prevSq)][prevSq] <<
+              zfish_search_prior_pawnhist_scale(scaledBonus);
+#else
         update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
                                       scaledBonus * 236 / 16384);
 
@@ -1627,6 +1638,7 @@ moves_loop:  // When in check, search starts here
 
         if (type_of(pos.piece_on(prevSq)) != PAWN && ((ss - 1)->currentMove).type_of() != PROMOTION)
             sharedHistory.pawn_entry(pos)[pos.piece_on(prevSq)][prevSq] << scaledBonus * 322 / 8192;
+#endif
     }
 
     // Bonus for prior capture countermove that caused the fail low
