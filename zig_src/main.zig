@@ -426,6 +426,10 @@ pub export fn zfish_search_eval_diff(prev_static_eval: c_int, static_eval: c_int
     return search_port.evalDiff(prev_static_eval, static_eval);
 }
 
+pub export fn zfish_search_qsearch_futility_base(static_eval: c_int) c_int {
+    return search_port.qsearchFutilityBase(static_eval);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }
