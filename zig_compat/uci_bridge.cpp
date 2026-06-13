@@ -2736,11 +2736,10 @@ std::string Position::fen() const {
 
 namespace {
 
-std::atomic<std::uint64_t> zfish_last_nodes_searched = 0;
-
 }  // namespace
 
 extern "C" {
+void zfish_set_last_nodes_searched(std::uint64_t nodes);
 }
 
 UCIEngine::UCIEngine(int argc, char** argv) :
@@ -2759,7 +2758,7 @@ void UCIEngine::init_search_update_listeners() {
     engine.set_on_iter([](const auto& i) { on_iter(i); });
     engine.set_on_update_no_moves([](const auto& i) { on_update_no_moves(i); });
     engine.set_on_update_full([this](const auto& i) {
-        zfish_last_nodes_searched.store(i.nodes, std::memory_order_relaxed);
+        zfish_set_last_nodes_searched(i.nodes);
         on_update_full(i, engine.get_options()["UCI_ShowWDL"]);
     });
     engine.set_on_bestmove([](const auto& bm, const auto& p) { on_bestmove(bm, p); });
@@ -2782,14 +2781,6 @@ const char* zfish_uci_cli_arg_at(const void* uci_ptr, int index) {
 
 void* zfish_uci_engine_ptr(void* uci_ptr) { return &static_cast<UCIEngine*>(uci_ptr)->engine; }
 
-std::uint64_t zfish_uci_engine_nodes_searched(const void*) {
-    return zfish_last_nodes_searched.load(std::memory_order_relaxed);
-}
-
-void zfish_uci_engine_reset_nodes_searched() {
-    zfish_last_nodes_searched.store(0, std::memory_order_relaxed);
-}
-
 const char* zfish_engine_options_text_owner(const void* engine_ptr) {
     std::ostringstream options_stream;
     options_stream << static_cast<const Engine*>(engine_ptr)->get_options();
@@ -2801,7 +2792,7 @@ void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
     if (quiet_mode != 0)
     {
         uci_engine->engine.set_on_update_full([](const Engine::InfoFull& i) {
-            zfish_last_nodes_searched.store(i.nodes, std::memory_order_relaxed);
+            zfish_set_last_nodes_searched(i.nodes);
         });
         uci_engine->engine.set_on_iter([](const auto&) {});
         uci_engine->engine.set_on_update_no_moves([](const auto&) {});
