@@ -1683,10 +1683,16 @@ moves_loop:  // When in check, search starts here
     if (!ss->inCheck && !(bestMove && pos.capture(bestMove))
         && (bestValue > ss->staticEval) == bool(bestMove))
     {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_CORRHIST_BONUS
+        update_correction_history(
+          pos, ss, *this,
+          zfish_search_corrhist_bonus(int(bestValue - ss->staticEval), depth, bool(bestMove)));
+#else
         auto bonus =
           std::clamp(int(bestValue - ss->staticEval) * depth * (bestMove ? 12 : 18) / 128,
                      -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
         update_correction_history(pos, ss, *this, 1114 * bonus / 1024);
+#endif
     }
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);

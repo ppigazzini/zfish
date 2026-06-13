@@ -282,6 +282,17 @@ pub fn quietStatScore(main_hist: c_int, cont0: c_int, cont1: c_int) c_int {
     return 2 * main_hist + cont0 + cont1;
 }
 
+// End-of-search correction-history bonus (search()): scale the static-eval
+// error by depth and a best-move-dependent weight (12 with a best move, 18
+// without), clamp into +/- CORRECTION_HISTORY_LIMIT/4 (=256), then apply the
+// final 1114/1024 scale passed to update_correction_history.
+pub fn correctionHistoryBonus(eval_delta: c_int, depth: c_int, has_best_move: bool) c_int {
+    const w: c_int = if (has_best_move) 12 else 18;
+    const raw = @divTrunc(eval_delta * depth * w, 128);
+    const clamped = @max(@as(c_int, -256), @min(@as(c_int, 256), raw));
+    return @divTrunc(1114 * clamped, 1024);
+}
+
 // Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {
