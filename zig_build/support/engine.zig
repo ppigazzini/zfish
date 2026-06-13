@@ -199,7 +199,7 @@ extern fn zfish_engine_add_option(
     callback_kind: u8,
 ) void;
 extern fn zfish_engine_start_logger(name_ptr: [*]const u8, name_len: usize) void;
-extern fn zfish_engine_set_numa_config_from_option_method(
+extern fn zfish_engine_set_numa_config_from_option_owner(
     engine_ptr: *anyopaque,
     value_ptr: [*]const u8,
     value_len: usize,
@@ -316,7 +316,7 @@ pub fn optionOnChange(
             break :blk null;
         },
         option_callback_numa_policy => blk: {
-            zfish_engine_set_numa_config_from_option_method(engine_ptr, value.ptr, value.len);
+            zfish_engine_set_numa_config_from_option_owner(engine_ptr, value.ptr, value.len);
 
             const numa_info_ptr = zfish_engine_numa_config_info_text(engine_ptr) orelse break :blk null;
             defer c.free(@ptrCast(numa_info_ptr));
