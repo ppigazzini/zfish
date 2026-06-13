@@ -260,6 +260,20 @@ pub export fn zfish_search_razor_margin(depth: c_int) c_int {
     return search_port.razorMargin(depth);
 }
 
+pub export fn zfish_search_futility_margin(
+    depth: c_int,
+    tt_hit: u8,
+    improving: u8,
+    opponent_worsening: u8,
+    correction_value: c_int,
+) c_int {
+    return search_port.futilityMargin(depth, tt_hit != 0, improving != 0, opponent_worsening != 0, correction_value);
+}
+
+pub export fn zfish_search_futility_return(beta: c_int, eval: c_int) c_int {
+    return search_port.futilityReturn(beta, eval);
+}
+
 pub export fn zfish_search_quiet_low_ply_scale(bonus: c_int) c_int {
     return search_port.quietLowPlyScale(bonus);
 }
