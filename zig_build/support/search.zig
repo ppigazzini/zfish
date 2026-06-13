@@ -293,6 +293,19 @@ pub fn correctionHistoryBonus(eval_delta: c_int, depth: c_int, has_best_move: bo
     return @divTrunc(1114 * clamped, 1024);
 }
 
+// Aspiration-window sizing in iterative_deepening(). The starting half-width
+// mixes a base, a per-thread stagger, and the root move's mean-squared score;
+// on each fail high/low it grows by 44/128.
+pub fn aspirationInitialDelta(thread_idx: usize, mean_squared_score: c_int) c_int {
+    const tmod: c_int = @intCast(thread_idx % 8);
+    const abs_mss = if (mean_squared_score < 0) -mean_squared_score else mean_squared_score;
+    return 5 + tmod + @divTrunc(abs_mss, 10588);
+}
+
+pub fn aspirationDeltaGrow(delta: c_int) c_int {
+    return delta + @divTrunc(44 * delta, 128);
+}
+
 // Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {
