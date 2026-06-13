@@ -244,6 +244,14 @@ pub export fn zfish_search_value_draw(nodes: usize) c_int {
     return search_port.valueDraw(nodes);
 }
 
+pub export fn zfish_search_value_to_tt(v: c_int, ply: c_int) c_int {
+    return search_port.valueToTt(v, ply);
+}
+
+pub export fn zfish_search_value_from_tt(v: c_int, ply: c_int, r50c: c_int) c_int {
+    return search_port.valueFromTt(v, ply, r50c);
+}
+
 pub export fn zfish_search_reduction(
     reductions_ptr: [*]const c_int,
     depth: c_int,

@@ -1805,7 +1805,9 @@ namespace {
 // Adjusts a mate or TB score from "plies to mate from the root" to
 // "plies to mate from the current position". Standard scores are unchanged.
 // The function is called before storing a value in the transposition table.
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_VALUE_TO_TT
 Value value_to_tt(Value v, int ply) { return is_win(v) ? v + ply : is_loss(v) ? v - ply : v; }
+#endif
 
 
 // Inverse of value_to_tt(): it adjusts a mate or TB score from the transposition
@@ -1813,6 +1815,7 @@ Value value_to_tt(Value v, int ply) { return is_win(v) ? v + ply : is_loss(v) ? 
 // "plies to mate/be mated (TB win/loss) from the root". However, to avoid
 // potentially false mate or TB scores related to the 50 moves rule and the
 // graph history interaction, we return the highest non-TB score instead.
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_VALUE_FROM_TT
 Value value_from_tt(Value v, int ply, int r50c) {
 
     if (!is_valid(v))
@@ -1848,6 +1851,7 @@ Value value_from_tt(Value v, int ply, int r50c) {
 
     return v;
 }
+#endif
 
 
 // Updates stats at the end of search() when a bestMove is found
