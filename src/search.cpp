@@ -311,10 +311,14 @@ bool Search::Worker::iterative_deepening() {
 
     for (int i = 7; i > 0; --i)
     {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_SET_CONT_HIST
+        zfish_search_set_cont_hist(this, ss - i, 0, 0, NO_PIECE, 0);  // sentinel
+#else
         (ss - i)->continuationHistory =
           &continuationHistory[0][0][NO_PIECE][0];  // Use as a sentinel
         (ss - i)->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
-        (ss - i)->staticEval                    = VALUE_NONE;
+#endif
+        (ss - i)->staticEval = VALUE_NONE;
     }
 
     for (int i = 0; i <= MAX_PLY + 2; ++i)
@@ -637,18 +641,29 @@ void Search::Worker::do_move(
     if (ss != nullptr)
     {
         ss->currentMove = move;
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_SET_CONT_HIST
+        zfish_search_set_cont_hist(this, ss, static_cast<std::uint8_t>(ss->inCheck),
+                                   static_cast<std::uint8_t>(capture),
+                                   static_cast<std::uint8_t>(dirtyPiece.pc),
+                                   static_cast<std::uint8_t>(move.to_sq()));
+#else
         ss->continuationHistory =
           &continuationHistory[ss->inCheck][capture][dirtyPiece.pc][move.to_sq()];
         ss->continuationCorrectionHistory =
           &continuationCorrectionHistory[dirtyPiece.pc][move.to_sq()];
+#endif
     }
 }
 
 void Search::Worker::do_null_move(Position& pos, StateInfo& st, Stack* const ss) {
     pos.do_null_move(st);
-    ss->currentMove                   = Move::null();
+    ss->currentMove = Move::null();
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_SET_CONT_HIST
+    zfish_search_set_cont_hist(this, ss, 0, 0, NO_PIECE, 0);
+#else
     ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
     ss->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
+#endif
 }
 
 void Search::Worker::undo_move(Position& pos, const Move move) {

@@ -462,6 +462,10 @@ pub export fn zfish_search_age_main_history(worker_ptr: *anyopaque) void {
     position_port.ageMainHistory(worker_ptr);
 }
 
+pub export fn zfish_search_set_cont_hist(worker_ptr: *anyopaque, ss_ptr: *anyopaque, in_check: u8, capture: u8, pc: u8, to: u8) void {
+    position_port.setContHist(worker_ptr, ss_ptr, in_check, capture, pc, to);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }

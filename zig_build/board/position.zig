@@ -150,6 +150,24 @@ pub fn updateQuietHistoriesWorker(
     updateQuietHistories(main_entry, lowply_entry, pawn_entry, ss_ptr, pc, to, bonus);
 }
 
+// do_move / do_null_move continuation-history pointer setup, via the Worker
+// mirror. Sets the Stack's continuation_history to &continuationHistory
+// [in_check][capture][pc][to] (a PieceToHistory page) and continuation_
+// correction_history to &continuationCorrectionHistory[pc][to]. The null move
+// and the iterative_deepening sentinels pass all-zero indices (NO_PIECE), which
+// resolve to the table bases. This moves the Worker-table address arithmetic
+// out of the C++ do_move wrappers and into Zig ownership.
+pub fn setContHist(worker_ptr: *anyopaque, ss_ptr: *anyopaque, in_check: u8, capture: u8, pc: u8, to: u8) void {
+    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const ch_block = (@as(usize, in_check) * 2 + capture) * hist_pieceto +
+        @as(usize, pc) * hist_square_nb + to;
+    ss.continuation_history = @ptrCast(&w.continuation_history[ch_block * hist_pieceto]);
+    const cc_block = @as(usize, pc) * hist_square_nb + to;
+    ss.continuation_correction_history =
+        @ptrCast(&w.continuation_correction_history[cc_block * hist_pieceto]);
+}
+
 // iterative_deepening() per-iteration main-history decay, now addressed through
 // the Worker mirror: (v + 5) * 789 / 1024 toward zero over the whole table.
 pub fn ageMainHistory(worker_ptr: *anyopaque) void {
