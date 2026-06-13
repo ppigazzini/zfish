@@ -306,6 +306,19 @@ pub fn aspirationDeltaGrow(delta: c_int) c_int {
     return delta + @divTrunc(44 * delta, 128);
 }
 
+// Per-iteration main-history decay (iterative_deepening() setup): nudge every
+// mainHistory[color][move] entry toward zero with (v + 5) * 789 / 1024 before
+// the new depth's root search. mainHistory is [2][65536] contiguous int16, so
+// the whole table is one flat sweep. Truncates toward zero, matching C++.
+pub fn ageMainHistory(main_base: [*]i16) void {
+    const total: usize = 2 * 65536;
+    var i: usize = 0;
+    while (i < total) : (i += 1) {
+        const v: c_int = main_base[i];
+        main_base[i] = @intCast(@divTrunc((v + 5) * 789, 1024));
+    }
+}
+
 // Eval optimism from the root move's average score (iterative_deepening()):
 // a saturating 137*avg/(|avg|+81). The caller mirrors it for the opponent.
 pub fn optimism(avg: c_int) c_int {

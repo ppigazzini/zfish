@@ -466,6 +466,10 @@ pub export fn zfish_search_optimism(avg: c_int) c_int {
     return search_port.optimism(avg);
 }
 
+pub export fn zfish_search_age_main_history(main_base: [*]i16) void {
+    search_port.ageMainHistory(main_base);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }

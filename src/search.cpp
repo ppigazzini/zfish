@@ -345,9 +345,13 @@ bool Search::Worker::iterative_deepening() {
 
     lowPlyHistory.fill(100);
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_AGE_MAIN_HISTORY
+    zfish_search_age_main_history(reinterpret_cast<std::int16_t*>(&mainHistory[0][0]));
+#else
     for (Color c : {WHITE, BLACK})
         for (int i = 0; i < UINT_16_HISTORY_SIZE; i++)
             mainHistory[c][i] = (mainHistory[c][i] + 5) * 789 / 1024;
+#endif
 
     // Iterative deepening loop until requested to stop or the target depth is reached
     while (rootDepth + 1 < MAX_PLY && !threads.stop
