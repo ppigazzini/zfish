@@ -277,6 +277,30 @@ pub export fn zfish_search_capture_see_margin(depth: c_int, capt_hist: c_int) c_
     return search_port.captureSeeMargin(depth, capt_hist);
 }
 
+pub export fn zfish_search_singular_beta(tt_value: c_int, ttpv_and_not_pv: u8, depth: c_int) c_int {
+    return search_port.singularBeta(tt_value, ttpv_and_not_pv != 0, depth);
+}
+
+pub export fn zfish_search_singular_double_margin(
+    pv_node: u8,
+    not_tt_capture: u8,
+    correction_value: c_int,
+    tt_move_history: c_int,
+    ply_gt_root: u8,
+) c_int {
+    return search_port.singularDoubleMargin(pv_node != 0, not_tt_capture != 0, correction_value, tt_move_history, ply_gt_root != 0);
+}
+
+pub export fn zfish_search_singular_triple_margin(
+    pv_node: u8,
+    not_tt_capture: u8,
+    ttpv: u8,
+    correction_value: c_int,
+    ply_gt_root: u8,
+) c_int {
+    return search_port.singularTripleMargin(pv_node != 0, not_tt_capture != 0, ttpv != 0, correction_value, ply_gt_root != 0);
+}
+
 pub export fn zfish_search_history_prune_threshold(depth: c_int) c_int {
     return search_port.historyPruneThreshold(depth);
 }
