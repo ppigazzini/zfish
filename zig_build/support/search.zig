@@ -82,6 +82,21 @@ pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
     return v;
 }
 
+// Continuation-history positive-consistency multipliers, indexed by the
+// running positiveCount in update_continuation_histories.
+const cmhc_multipliers = [_]c_int{ 96, 113, 101, 105, 127, 121, 126 };
+
+// Per-entry continuation-history update delta. The (i, weight) pairs and the
+// positiveCount accumulation stay C++-side (they drive Stack indexing); this
+// owns the multiplier table and the bonus*weight*multiplier/131072 formula.
+// bonus*weight*multiplier stays within i32 for the bonus magnitudes search
+// produces.
+pub fn conthistDelta(bonus: c_int, weight: c_int, positive_count: c_int, i: c_int) c_int {
+    const multiplier = cmhc_multipliers[@intCast(positive_count)];
+    return @divTrunc(bonus * weight * multiplier, 131072) +
+        71 * @as(c_int, @intFromBool(i < 2));
+}
+
 // Weighted correction-history blend (correction_value). Inputs are the raw
 // correction entries read C++-side; only the magic weights live here. All
 // terms stay well within i32 (entries clamped to +/-1024).

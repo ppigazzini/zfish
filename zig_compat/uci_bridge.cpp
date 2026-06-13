@@ -737,6 +737,7 @@ extern "C" int  zfish_search_stat_bonus(int depth, unsigned char is_tt_move, int
 extern "C" int  zfish_search_stat_malus(int depth);
 extern "C" int  zfish_search_correction_value(int pcv, int micv, int wnpcv, int bnpcv,
                                               int cch2, int cch4, unsigned char m_ok);
+extern "C" int  zfish_search_conthist_delta(int bonus, int weight, int positive_count, int i);
 
 #define ZFISH_SEARCH_BRIDGE_SKIP_TO_CORRECTED_STATIC_EVAL
 #define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_DRAW
@@ -746,6 +747,7 @@ extern "C" int  zfish_search_correction_value(int pcv, int micv, int wnpcv, int 
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_REDUCTIONS_FILL
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_STAT_BONUS_MALUS
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_CORRECTION_VALUE
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_CONTHIST_DELTA
 #include "../src/search.cpp"
 
 extern "C" {
