@@ -1615,6 +1615,7 @@ bool Position::upcoming_repetition(int ply) const {
 
 // Flips position with the white and black sides reversed. This
 // is only useful for debugging e.g. for finding evaluation symmetry bugs.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_FLIP
 void Position::flip() {
 
     string            f, token;
@@ -1648,6 +1649,7 @@ void Position::flip() {
 
     assert(pos_is_ok());
 }
+#endif
 
 
 bool Position::material_key_is_ok() const { return compute_material_key() == st->materialKey; }
