@@ -277,6 +277,22 @@ pub export fn zfish_search_capture_see_margin(depth: c_int, capt_hist: c_int) c_
     return search_port.captureSeeMargin(depth, capt_hist);
 }
 
+pub export fn zfish_search_lmr_ttpv_reduction(pv_node: u8, value_gt_alpha: u8, depth_ge: u8, cut_node: u8) c_int {
+    return search_port.lmrTtpvReduction(pv_node != 0, value_gt_alpha != 0, depth_ge != 0, cut_node != 0);
+}
+
+pub export fn zfish_search_lmr_corr_reduction(correction_value: c_int) c_int {
+    return search_port.lmrCorrReduction(correction_value);
+}
+
+pub export fn zfish_search_lmr_stat_score_reduction(stat_score: c_int) c_int {
+    return search_port.lmrStatScoreReduction(stat_score);
+}
+
+pub export fn zfish_search_lmr_all_node_scale(r: c_int, depth: c_int) c_int {
+    return search_port.lmrAllNodeScale(r, depth);
+}
+
 pub export fn zfish_search_singular_beta(tt_value: c_int, ttpv_and_not_pv: u8, depth: c_int) c_int {
     return search_port.singularBeta(tt_value, ttpv_and_not_pv != 0, depth);
 }
