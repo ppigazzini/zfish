@@ -45,7 +45,7 @@ pub const TtProbeTableOutput = extern struct {
 };
 
 extern fn zfish_aligned_large_pages_alloc(byte_count: usize) ?*anyopaque;
-extern fn zfish_tt_free_clusters(ptr: ?*anyopaque) void;
+extern fn zfish_aligned_large_pages_free(ptr: ?*anyopaque) void;
 extern fn zfish_tt_report_alloc_failure(mb: usize) noreturn;
 extern fn zfish_threadpool_num_threads(threads: *const anyopaque) usize;
 extern fn zfish_threadpool_zero_tt_slice(
@@ -64,7 +64,7 @@ pub fn resizeState(
     mb: usize,
     threads: *anyopaque,
 ) void {
-    zfish_tt_free_clusters(table_ptr.*);
+    zfish_aligned_large_pages_free(table_ptr.*);
 
     const cluster_count = mb * 1024 * 1024 / @sizeOf(TtCluster);
     cluster_count_ptr.* = cluster_count;
