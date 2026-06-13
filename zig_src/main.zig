@@ -290,6 +290,10 @@ pub export fn zfish_position_set_state_method(pos_ptr: *const anyopaque) void {
     position_port.setState(pos_ptr);
 }
 
+pub export fn zfish_search_is_shuffling(pos_ptr: *const anyopaque, ss_ptr: *const anyopaque, move: u16) u8 {
+    return @intFromBool(position_port.isShuffling(pos_ptr, ss_ptr, move));
+}
+
 pub export fn zfish_position_legal_method(pos_ptr: *const anyopaque, move: u16) u8 {
     return @intFromBool(position_port.legal(pos_ptr, move));
 }
