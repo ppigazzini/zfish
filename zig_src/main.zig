@@ -212,6 +212,14 @@ pub export fn zfish_position_compute_material_key(
     return position_port.computeMaterialKey(piece_counts_ptr, piece_count_len);
 }
 
+pub export fn zfish_position_is_repetition_method(pos_ptr: *const anyopaque, ply: c_int) u8 {
+    return @intFromBool(position_port.isRepetition(pos_ptr, ply));
+}
+
+pub export fn zfish_position_has_repeated_method(pos_ptr: *const anyopaque) u8 {
+    return @intFromBool(position_port.hasRepeated(pos_ptr));
+}
+
 pub export fn zfish_bitboards_init_runtime(
     popcnt16: *[1 << 16]u8,
     square_distance: *[64][64]u8,
