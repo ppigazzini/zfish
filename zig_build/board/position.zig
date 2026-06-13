@@ -331,6 +331,66 @@ pub fn updateSliderBlockers(pos_ptr: *const anyopaque, c: u8) void {
     }
 }
 
+fn removePiece(pos: *Position, s: u8) void {
+    const pc = pos.board[s];
+    const bb = sqBb(s);
+    pos.by_type_bb[0] ^= bb;
+    pos.by_type_bb[pc & 7] ^= bb;
+    pos.by_color_bb[pc >> 3] ^= bb;
+    pos.board[s] = 0;
+    pos.piece_count[pc] -= 1;
+    pos.piece_count[(pc >> 3) << 3] -= 1;
+}
+
+fn movePieceQuiet(pos: *Position, from: u8, to: u8) void {
+    const pc = pos.board[from];
+    const from_to = sqBb(from) | sqBb(to);
+    pos.by_type_bb[0] ^= from_to;
+    pos.by_type_bb[pc & 7] ^= from_to;
+    pos.by_color_bb[pc >> 3] ^= from_to;
+    pos.board[from] = 0;
+    pos.board[to] = pc;
+}
+
+fn swapPiece(pos: *Position, s: u8, pc: u8) void {
+    removePiece(pos, s);
+    putPiece(pos, pc, s);
+}
+
+pub fn undoMove(pos_ptr: *anyopaque, m: u16) void {
+    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    pos.side_to_move ^= 1;
+    const us = pos.side_to_move;
+    const from = moveFrom(m);
+    const to = moveTo(m);
+    const mt = moveTypeOf(m);
+
+    if (mt == mt_promotion) {
+        swapPiece(pos, to, (us << 3) | pawn_pt);
+    }
+
+    if (mt == mt_castling) {
+        const king_side = to > from;
+        const rfrom = to; // encoded as king-captures-rook
+        const rto = relativeSquare(us, if (king_side) 5 else 3); // SQ_F1 : SQ_D1
+        const king_dest = relativeSquare(us, if (king_side) 6 else 2); // SQ_G1 : SQ_C1
+        removePiece(pos, king_dest);
+        removePiece(pos, rto);
+        putPiece(pos, (us << 3) | king_pt, from);
+        putPiece(pos, (us << 3) | rook_pt, rfrom);
+    } else {
+        movePieceQuiet(pos, to, from);
+        if (pos.st.captured_piece != 0) {
+            var capsq = to;
+            if (mt == mt_en_passant) capsq = @intCast(@as(i16, to) - pawnPush(us));
+            putPiece(pos, pos.st.captured_piece, capsq);
+        }
+    }
+
+    pos.st = pos.st.previous.?;
+    pos.game_ply -= 1;
+}
+
 fn putPiece(pos: *Position, pc: u8, s: u8) void {
     const bb = sqBb(s);
     pos.board[s] = pc;
