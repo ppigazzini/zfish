@@ -280,6 +280,55 @@ pub fn updateSliderBlockers(pos_ptr: *const anyopaque, c: u8) void {
     }
 }
 
+pub fn setState(
+    pos_ptr: *const anyopaque,
+    psq: [*]const u64,
+    enpassant: [*]const u64,
+    castling: [*]const u64,
+    zob_side: u64,
+    no_pawns: u64,
+) void {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const st = pos.st;
+    st.key = 0;
+    st.minor_piece_key = 0;
+    st.non_pawn_key[0] = 0;
+    st.non_pawn_key[1] = 0;
+    st.pawn_key = no_pawns;
+    st.non_pawn_material[0] = 0;
+    st.non_pawn_material[1] = 0;
+
+    const stm = pos.side_to_move;
+    st.checkers_bb = attackersTo(pos_ptr, kingSquare(pos, stm), pos.by_type_bb[0]) &
+        pos.by_color_bb[stm ^ 1];
+    setCheckInfo(pos_ptr);
+
+    var b = pos.by_type_bb[0];
+    while (b != 0) {
+        const s: u8 = @intCast(@ctz(b));
+        b &= b - 1;
+        const pc = pos.board[s];
+        const idx = @as(usize, pc) * 64 + s;
+        st.key ^= psq[idx];
+        const pt = pc & 7;
+        if (pt == pawn_pt) {
+            st.pawn_key ^= psq[idx];
+        } else {
+            const col = pc >> 3;
+            st.non_pawn_key[col] ^= psq[idx];
+            if (pt != king_pt) {
+                st.non_pawn_material[col] += piece_value_by_type[pt];
+                if (pt <= bishop_pt) st.minor_piece_key ^= psq[idx];
+            }
+        }
+    }
+
+    if (st.ep_square != sq_none_u8) st.key ^= enpassant[fileOf(st.ep_square)];
+    if (stm == color_black) st.key ^= zob_side;
+    st.key ^= castling[@intCast(st.castling_rights)];
+    st.material_key = computeMaterialKey(&pos.piece_count, 16);
+}
+
 pub fn setCheckInfo(pos_ptr: *const anyopaque) void {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     updateSliderBlockers(pos_ptr, color_white);

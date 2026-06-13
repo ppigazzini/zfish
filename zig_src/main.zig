@@ -263,6 +263,17 @@ pub export fn zfish_position_set_castling_right_method(pos_ptr: *anyopaque, colo
     position_port.setCastlingRight(pos_ptr, color, rfrom);
 }
 
+pub export fn zfish_position_set_state_method(
+    pos_ptr: *const anyopaque,
+    psq: [*]const u64,
+    enpassant: [*]const u64,
+    castling: [*]const u64,
+    zob_side: u64,
+    no_pawns: u64,
+) void {
+    position_port.setState(pos_ptr, psq, enpassant, castling, zob_side, no_pawns);
+}
+
 pub export fn zfish_position_legal_method(pos_ptr: *const anyopaque, move: u16) u8 {
     return @intFromBool(position_port.legal(pos_ptr, move));
 }
