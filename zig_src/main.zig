@@ -27,7 +27,6 @@ const uci_port = @import("uci");
 const position_snapshot = @import("position_snapshot");
 
 extern fn zfish_bitboards_init() void;
-extern fn zfish_position_init_runtime() void;
 extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
 extern fn zfish_uci_destroy_engine(engine: ?*anyopaque) void;
 const PositionSnapshot = position_snapshot.PositionSnapshot;
@@ -55,7 +54,7 @@ pub fn main(init: std.process.Init) !void {
     _ = c.puts(@ptrCast(info));
 
     zfish_bitboards_init();
-    zfish_position_init_runtime();
+    position_port.initRuntime();
 
     const engine = zfish_uci_create_engine(@intCast(argc), argv.ptr) orelse return error.OutOfMemory;
     defer zfish_uci_destroy_engine(engine);
@@ -220,13 +219,8 @@ pub export fn zfish_position_is_draw_method(pos_ptr: *const anyopaque, ply: c_in
     return @intFromBool(position_port.isDraw(pos_ptr, ply));
 }
 
-pub export fn zfish_position_do_null_move(
-    pos_ptr: *anyopaque,
-    new_st_ptr: *anyopaque,
-    zob_side: u64,
-    zob_ep: u64,
-) void {
-    position_port.doNullMove(pos_ptr, new_st_ptr, zob_side, zob_ep);
+pub export fn zfish_position_do_null_move(pos_ptr: *anyopaque, new_st_ptr: *anyopaque) void {
+    position_port.doNullMove(pos_ptr, new_st_ptr);
 }
 
 pub export fn zfish_position_undo_null_move(pos_ptr: *anyopaque) void {
@@ -244,22 +238,16 @@ pub export fn zfish_position_do_move(
     gives_check: u8,
     dp_ptr: *anyopaque,
     dts_ptr: *anyopaque,
-    psq: [*]const u64,
-    enpassant: [*]const u64,
-    castling: [*]const u64,
-    zob_side: u64,
 ) void {
-    position_port.doMove(pos_ptr, move, new_st_ptr, gives_check, dp_ptr, dts_ptr, psq, enpassant, castling, zob_side);
+    position_port.doMove(pos_ptr, move, new_st_ptr, gives_check, dp_ptr, dts_ptr);
 }
 
-pub export fn zfish_position_upcoming_repetition_method(
-    pos_ptr: *const anyopaque,
-    ply: c_int,
-    cuckoo: [*]const u64,
-    cuckoo_move: [*]const u16,
-    zob_side: u64,
-) u8 {
-    return @intFromBool(position_port.upcomingRepetition(pos_ptr, ply, cuckoo, cuckoo_move, zob_side));
+pub export fn zfish_position_upcoming_repetition_method(pos_ptr: *const anyopaque, ply: c_int) u8 {
+    return @intFromBool(position_port.upcomingRepetition(pos_ptr, ply));
+}
+
+pub export fn zfish_position_init_runtime() void {
+    position_port.initRuntime();
 }
 
 pub export fn zfish_position_has_repeated_method(pos_ptr: *const anyopaque) u8 {
@@ -294,24 +282,12 @@ pub export fn zfish_position_set_method(
     st_ptr: *anyopaque,
     pos_size: usize,
     st_size: usize,
-    psq: [*]const u64,
-    enpassant: [*]const u64,
-    castling: [*]const u64,
-    zob_side: u64,
-    no_pawns: u64,
 ) ?[*:0]u8 {
-    return position_port.setPosition(pos_ptr, fen_ptr, fen_len, is_chess960, st_ptr, pos_size, st_size, psq, enpassant, castling, zob_side, no_pawns);
+    return position_port.setPosition(pos_ptr, fen_ptr, fen_len, is_chess960, st_ptr, pos_size, st_size);
 }
 
-pub export fn zfish_position_set_state_method(
-    pos_ptr: *const anyopaque,
-    psq: [*]const u64,
-    enpassant: [*]const u64,
-    castling: [*]const u64,
-    zob_side: u64,
-    no_pawns: u64,
-) void {
-    position_port.setState(pos_ptr, psq, enpassant, castling, zob_side, no_pawns);
+pub export fn zfish_position_set_state_method(pos_ptr: *const anyopaque) void {
+    position_port.setState(pos_ptr);
 }
 
 pub export fn zfish_position_legal_method(pos_ptr: *const anyopaque, move: u16) u8 {
