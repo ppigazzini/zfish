@@ -1313,11 +1313,6 @@ struct Cluster {
 
 static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
 
-extern "C" void zfish_tt_report_alloc_failure(std::size_t mb_size) {
-    std::cerr << "Failed to allocate " << mb_size << "MB for transposition table." << std::endl;
-    std::exit(EXIT_FAILURE);
-}
-
 extern "C" std::size_t zfish_threadpool_num_threads(const void* threads_ptr) {
     return static_cast<const ThreadPool*>(threads_ptr)->num_threads();
 }
