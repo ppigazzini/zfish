@@ -1292,7 +1292,11 @@ moves_loop:  // When in check, search starts here
             // subtree by returning a softbound.
             else if (value >= beta && !is_decisive(value))
             {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_POST_BONUS
+                ttMoveHistory << zfish_search_ttmh_depth_bonus(depth);
+#else
                 ttMoveHistory << -442 - 108 * depth;
+#endif
                 return value;
             }
 
@@ -1568,12 +1572,25 @@ moves_loop:  // When in check, search starts here
         update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth,
                          ttData.move);
         if (!PvNode)
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_POST_BONUS
+            ttMoveHistory << zfish_search_ttmh_match_bonus(bestMove == ttData.move);
+#else
             ttMoveHistory << (bestMove == ttData.move ? 792 : -779);
+#endif
     }
 
     // Bonus for prior quiet countermove that caused the fail low
     else if (!priorCapture && prevSq != SQ_NONE)
     {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_POST_BONUS
+        int bonusScale = zfish_search_prior_bonus_scale(
+          (ss - 1)->statScore, depth, (ss - 1)->moveCount > 8,
+          !ss->inCheck && bestValue <= ss->staticEval - 103,
+          !(ss - 1)->inCheck && bestValue <= -(ss - 1)->staticEval - 78);
+
+        // scaledBonus ranges from 0 to roughly 2.3M, overflows happen for multipliers larger than 900
+        const int scaledBonus = zfish_search_prior_scaled_bonus_base(depth) * bonusScale;
+#else
         int bonusScale = -245;
         bonusScale -= (ss - 1)->statScore / 98;
         bonusScale += std::min(59 * depth, 430);
@@ -1585,6 +1602,7 @@ moves_loop:  // When in check, search starts here
 
         // scaledBonus ranges from 0 to roughly 2.3M, overflows happen for multipliers larger than 900
         const int scaledBonus = std::min(141 * depth - 82, 1472) * bonusScale;
+#endif
 
         update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
                                       scaledBonus * 236 / 16384);
