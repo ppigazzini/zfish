@@ -927,7 +927,11 @@ Value Search::Worker::search(
     // Use static evaluation difference to improve quiet move ordering
     if (((ss - 1)->currentMove).is_ok() && !(ss - 1)->inCheck && !priorCapture)
     {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_EVAL_DIFF
+        int evalDiff = zfish_search_eval_diff((ss - 1)->staticEval, ss->staticEval);
+#else
         int evalDiff = std::clamp(-int((ss - 1)->staticEval + ss->staticEval), -183, 180) + 62;
+#endif
         mainHistory[~us][((ss - 1)->currentMove).raw()] << evalDiff * 10;
         if (!ttHit && type_of(pos.piece_on(prevSq)) != PAWN
             && ((ss - 1)->currentMove).type_of() != PROMOTION)
