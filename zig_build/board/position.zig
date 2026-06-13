@@ -221,6 +221,91 @@ pub fn legal(pos_ptr: *const anyopaque, m: u16) bool {
         (bitboard.line(from, orig_to) & (pos.by_color_bb[us] & pos.by_type_bb[king_pt])) != 0;
 }
 
+const piece_value_by_type = [8]c_int{ 0, 208, 781, 825, 1276, 2538, 0, 0 };
+
+inline fn lsbBb(bb: u64) u64 {
+    return bb & (~bb +% 1);
+}
+
+pub fn seeGe(pos_ptr: *const anyopaque, m: u16, threshold: c_int) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    if (moveTypeOf(m) != mt_normal) return 0 >= threshold;
+
+    const from = moveFrom(m);
+    const to = moveTo(m);
+
+    var swap: c_int = piece_value_by_type[pos.board[to] & 7] - threshold;
+    if (swap < 0) return false;
+    swap = piece_value_by_type[pos.board[from] & 7] - swap;
+    if (swap <= 0) return true;
+
+    var occupied = pos.by_type_bb[0] ^ sqBb(from) ^ sqBb(to);
+    var stm = pos.side_to_move;
+    var attackers = attackersTo(pos_ptr, to, occupied);
+    var res: c_int = 1;
+
+    const bishops_queens = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
+    const rooks_queens = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
+
+    while (true) {
+        stm ^= 1;
+        attackers &= occupied;
+
+        var stm_attackers = attackers & pos.by_color_bb[stm];
+        if (stm_attackers == 0) break;
+
+        if ((pos.st.pinners[stm ^ 1] & occupied) != 0) {
+            stm_attackers &= ~pos.st.blockers_for_king[stm];
+            if (stm_attackers == 0) break;
+        }
+
+        res ^= 1;
+        var bb = stm_attackers & pos.by_type_bb[pawn_pt];
+        if (bb != 0) {
+            swap = 208 - swap;
+            if (swap < res) break;
+            occupied ^= lsbBb(bb);
+            attackers |= bitboard.attacks(bishop_pt, to, occupied) & bishops_queens;
+        } else if (blk: {
+            bb = stm_attackers & pos.by_type_bb[knight_pt];
+            break :blk bb != 0;
+        }) {
+            swap = 781 - swap;
+            if (swap < res) break;
+            occupied ^= lsbBb(bb);
+        } else if (blk: {
+            bb = stm_attackers & pos.by_type_bb[bishop_pt];
+            break :blk bb != 0;
+        }) {
+            swap = 825 - swap;
+            if (swap < res) break;
+            occupied ^= lsbBb(bb);
+            attackers |= bitboard.attacks(bishop_pt, to, occupied) & bishops_queens;
+        } else if (blk: {
+            bb = stm_attackers & pos.by_type_bb[rook_pt];
+            break :blk bb != 0;
+        }) {
+            swap = 1276 - swap;
+            if (swap < res) break;
+            occupied ^= lsbBb(bb);
+            attackers |= bitboard.attacks(rook_pt, to, occupied) & rooks_queens;
+        } else if (blk: {
+            bb = stm_attackers & pos.by_type_bb[queen_pt];
+            break :blk bb != 0;
+        }) {
+            swap = 2538 - swap;
+            occupied ^= lsbBb(bb);
+            attackers |= (bitboard.attacks(bishop_pt, to, occupied) & bishops_queens) |
+                (bitboard.attacks(rook_pt, to, occupied) & rooks_queens);
+        } else {
+            // King capture: if the opponent still has attackers, reverse the result.
+            return if ((attackers & ~pos.by_color_bb[stm]) != 0) (res ^ 1) != 0 else res != 0;
+        }
+    }
+
+    return res != 0;
+}
+
 pub fn pseudoLegal(pos_ptr: *const anyopaque, m: u16) bool {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const us = pos.side_to_move;

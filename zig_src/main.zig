@@ -244,6 +244,10 @@ pub export fn zfish_position_pseudo_legal_method(pos_ptr: *const anyopaque, move
     return @intFromBool(position_port.pseudoLegal(pos_ptr, move));
 }
 
+pub export fn zfish_position_see_ge_method(pos_ptr: *const anyopaque, move: u16, threshold: c_int) u8 {
+    return @intFromBool(position_port.seeGe(pos_ptr, move, threshold));
+}
+
 pub export fn zfish_position_attackers_to_exist_method(
     pos_ptr: *const anyopaque,
     s: u8,
