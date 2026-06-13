@@ -13,6 +13,37 @@ const color_black: u8 = 1;
 const file_a_bb: u64 = 0x0101010101010101;
 const file_h_bb: u64 = 0x8080808080808080;
 
+// MoveType (top 2 bits of the 16-bit move).
+const mt_normal: u16 = 0;
+const mt_promotion: u16 = 1 << 14;
+const mt_en_passant: u16 = 2 << 14;
+const mt_castling: u16 = 3 << 14;
+
+inline fn sqBb(s: u8) u64 {
+    return @as(u64, 1) << @intCast(s);
+}
+inline fn moveFrom(m: u16) u8 {
+    return @intCast((m >> 6) & 0x3F);
+}
+inline fn moveTo(m: u16) u8 {
+    return @intCast(m & 0x3F);
+}
+inline fn moveTypeOf(m: u16) u16 {
+    return m & (3 << 14);
+}
+inline fn movePromotionType(m: u16) u8 {
+    return @intCast(((m >> 12) & 3) + 2); // + KNIGHT
+}
+inline fn relativeSquare(c: u8, s: u8) u8 {
+    return s ^ (c * 56);
+}
+inline fn makeSquare(f: u8, r: u8) u8 {
+    return (r << 3) + f;
+}
+inline fn pieceTypeOn(pos: *const Position, s: u8) u8 {
+    return pos.board[s] & 7;
+}
+
 // attacks_bb<PAWN>(s, c): squares a color-c pawn on `s` attacks.
 fn pawnAttacks(color: u8, sq: u8) u64 {
     const b: u64 = @as(u64, 1) << @intCast(sq);
@@ -150,6 +181,34 @@ pub fn setCheckInfo(pos_ptr: *const anyopaque) void {
     pos.st.check_squares[rook_pt] = bitboard.attacks(rook_pt, ksq, all);
     pos.st.check_squares[queen_pt] = pos.st.check_squares[bishop_pt] | pos.st.check_squares[rook_pt];
     pos.st.check_squares[king_pt] = 0;
+}
+
+pub fn legal(pos_ptr: *const anyopaque, m: u16) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const us = pos.side_to_move;
+    const them = us ^ 1;
+    const from = moveFrom(m);
+    const orig_to = moveTo(m);
+    const all = pos.by_type_bb[0];
+
+    if (moveTypeOf(m) == mt_castling) {
+        const king_dest_rel: u8 = if (orig_to > from) 6 else 2; // SQ_G1 : SQ_C1
+        const to = relativeSquare(us, king_dest_rel);
+        const step: i8 = if (to > from) -1 else 1; // WEST : EAST
+        var s: u8 = to;
+        while (s != from) : (s = @intCast(@as(i16, s) + step)) {
+            if (attackersToExist(pos_ptr, s, all, them)) return false;
+        }
+        if (!pos.chess960) return true;
+        return (pos.st.blockers_for_king[us] & sqBb(orig_to)) == 0;
+    }
+
+    if (pieceTypeOn(pos, from) == king_pt) {
+        return !attackersToExist(pos_ptr, orig_to, all ^ sqBb(from), them);
+    }
+
+    return (pos.st.blockers_for_king[us] & sqBb(from)) == 0 or
+        (bitboard.line(from, orig_to) & (pos.by_color_bb[us] & pos.by_type_bb[king_pt])) != 0;
 }
 
 pub fn attackersToExist(pos_ptr: *const anyopaque, s: u8, occupied: u64, c: u8) bool {
