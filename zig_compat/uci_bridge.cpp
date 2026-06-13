@@ -142,7 +142,8 @@ namespace NN = Eval::NNUE;
 namespace Zobrist {
 extern Key psq[PIECE_NB][SQUARE_NB];
 extern Key enpassant[FILE_NB];
-extern Key side;
+extern Key castling[CASTLING_RIGHT_NB];
+extern Key side, noPawns;
 }
 
 extern std::array<Key, 8192>  cuckoo;
@@ -2643,6 +2644,10 @@ void          zfish_position_update_slider_blockers_method(const void* pos_ptr, 
 void          zfish_position_set_check_info_method(const void* pos_ptr);
 void          zfish_position_set_castling_right_method(void* pos_ptr, std::uint8_t c,
                                                        std::uint8_t rfrom);
+void          zfish_position_set_state_method(const void* pos_ptr, const std::uint64_t* psq,
+                                              const std::uint64_t* enpassant,
+                                              const std::uint64_t* castling, std::uint64_t zob_side,
+                                              std::uint64_t no_pawns);
 std::uint8_t  zfish_position_legal_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_gives_check_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_pseudo_legal_method(const void* pos_ptr, std::uint16_t move);
@@ -2799,6 +2804,11 @@ void Position::set_check_info() const { zfish_position_set_check_info_method(thi
 void Position::set_castling_right(Color c, Square rfrom) {
     zfish_position_set_castling_right_method(this, static_cast<std::uint8_t>(c),
                                              static_cast<std::uint8_t>(rfrom));
+}
+
+void Position::set_state() const {
+    zfish_position_set_state_method(this, &Zobrist::psq[0][0], Zobrist::enpassant, Zobrist::castling,
+                                    Zobrist::side, Zobrist::noPawns);
 }
 
 bool Position::legal(Move m) const { return zfish_position_legal_method(this, m.raw()) != 0; }

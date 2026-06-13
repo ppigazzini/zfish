@@ -346,6 +346,7 @@ pub fn build(b: *std.Build) void {
             "-DZFISH_POSITION_BRIDGE_SKIP_NULL_MOVE",
             "-DZFISH_POSITION_BRIDGE_SKIP_UPCOMING_REPETITION",
             "-DZFISH_POSITION_BRIDGE_SKIP_SET_CASTLING_RIGHT",
+            "-DZFISH_POSITION_BRIDGE_SKIP_SET_STATE",
         }) catch @panic("OOM");
 
         exe.root_module.addCSourceFiles(.{
@@ -373,6 +374,7 @@ pub fn build(b: *std.Build) void {
             "-DZFISH_POSITION_BRIDGE_SKIP_NULL_MOVE",
             "-DZFISH_POSITION_BRIDGE_SKIP_UPCOMING_REPETITION",
             "-DZFISH_POSITION_BRIDGE_SKIP_SET_CASTLING_RIGHT",
+            "-DZFISH_POSITION_BRIDGE_SKIP_SET_STATE",
         }) catch @panic("OOM");
 
         legacy_exe.root_module.addCSourceFiles(.{
