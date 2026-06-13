@@ -106,6 +106,16 @@ pub fn futilityReturn(beta: c_int, eval: c_int) c_int {
     return @divTrunc(716 * beta + 308 * eval, 1024);
 }
 
+// Capture pruning in the move loop: futility value (piece_value is the C++
+// PieceValue[] lookup, passed in) and the SEE pruning margin.
+pub fn captureFutilityValue(static_eval: c_int, lmr_depth: c_int, piece_value: c_int, capt_hist: c_int) c_int {
+    return static_eval + 231 + 232 * lmr_depth + piece_value + @divTrunc(131 * capt_hist, 1024);
+}
+
+pub fn captureSeeMargin(depth: c_int, capt_hist: c_int) c_int {
+    return @max(175 * depth + @divTrunc(capt_hist * 34, 1024), 0);
+}
+
 // Late-move-count pruning: skip quiets once moveCount reaches this limit.
 pub fn moveCountLimit(depth: c_int, improving: bool) c_int {
     return @divTrunc(3 + depth * depth, 2 - @as(c_int, @intFromBool(improving)));

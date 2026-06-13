@@ -264,6 +264,19 @@ pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }
 
+pub export fn zfish_search_capture_futility_value(
+    static_eval: c_int,
+    lmr_depth: c_int,
+    piece_value: c_int,
+    capt_hist: c_int,
+) c_int {
+    return search_port.captureFutilityValue(static_eval, lmr_depth, piece_value, capt_hist);
+}
+
+pub export fn zfish_search_capture_see_margin(depth: c_int, capt_hist: c_int) c_int {
+    return search_port.captureSeeMargin(depth, capt_hist);
+}
+
 pub export fn zfish_search_probcut_beta(beta: c_int, improving: u8) c_int {
     return search_port.probCutBeta(beta, improving != 0);
 }
