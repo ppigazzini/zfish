@@ -169,9 +169,6 @@ const char* zfish_engine_set_position_owner(void*                engine_ptr,
                                             std::size_t          fen_len,
                                             const void*          moves_ptr,
                                             std::size_t          move_count);
-void zfish_engine_set_numa_config_from_option_owner(void*                engine_ptr,
-                                                    const unsigned char* value_ptr,
-                                                    std::size_t          value_len);
 const char* zfish_engine_numa_config_information_owner(const void* engine_ptr);
 const char* zfish_engine_thread_allocation_information_owner(const void* engine_ptr);
 struct ZfishEvalTraceInput {
@@ -2427,11 +2424,6 @@ void zfish_engine_start_logger(const unsigned char* name_ptr, std::size_t name_l
     start_logger(std::string(reinterpret_cast<const char*>(name_ptr), name_len));
 }
 
-void zfish_engine_set_numa_config_from_option_method(void*                engine_ptr,
-                                                     const unsigned char* value_ptr,
-                                                     std::size_t          value_len) {
-        zfish_engine_set_numa_config_from_option_owner(engine_ptr, value_ptr, value_len);
-}
 
 const char* zfish_engine_numa_config_info_text(const void* engine_ptr) {
     const char* rendered = zfish_engine_numa_config_information_owner(engine_ptr);
