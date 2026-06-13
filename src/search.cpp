@@ -1981,6 +1981,7 @@ Value value_from_tt(Value v, int ply, int r50c) {
 
 
 // Updates stats at the end of search() when a bestMove is found
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_ALL_STATS
 void update_all_stats(const Position& pos,
                       Stack*          ss,
                       Search::Worker& workerThread,
@@ -2036,6 +2037,7 @@ void update_all_stats(const Position& pos,
         captureHistory[movedPiece][move.to_sq()][capturedPiece] << -malus * 1518 / 1024;
     }
 }
+#endif
 
 
 // Updates the continuation histories for the move pairs formed by

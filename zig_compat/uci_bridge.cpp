@@ -734,6 +734,11 @@ extern "C" void zfish_search_update_quiet_histories(std::int16_t* main_entry,
                                                     std::int16_t* lowply_entry,
                                                     std::int16_t* pawn_entry, void* ss_ptr,
                                                     std::uint8_t pc, std::uint8_t to, int bonus);
+extern "C" void zfish_search_update_all_stats(
+  void* pos_ptr, void* ss_ptr, std::int16_t* main_base, std::int16_t* lowply_base,
+  std::int16_t* pawn_row, std::int16_t* capture_base, std::uint16_t best_move, int prev_sq,
+  const std::uint16_t* quiets, std::size_t n_quiets, const std::uint16_t* captures,
+  std::size_t n_captures, int depth, std::uint16_t tt_move);
 extern "C" void zfish_search_fill_reductions(int* reductions, std::size_t count);
 extern "C" int  zfish_search_stat_bonus(int depth, unsigned char is_tt_move, int prev_stat_score);
 extern "C" int  zfish_search_stat_malus(int depth);
@@ -805,6 +810,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_IS_SHUFFLING
 #define ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_CONTHIST
 #define ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_QUIET
+#define ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_ALL_STATS
 #include "../src/search.cpp"
 
 extern "C" {
@@ -1139,6 +1145,26 @@ void update_quiet_histories(
         &workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()]),
       ss, static_cast<std::uint8_t>(pos.moved_piece(move)),
       static_cast<std::uint8_t>(move.to_sq()), bonus);
+}
+
+void update_all_stats(const Position& pos,
+                      Stack*          ss,
+                      Search::Worker& workerThread,
+                      Move            bestMove,
+                      Square          prevSq,
+                      SearchedList&   quietsSearched,
+                      SearchedList&   capturesSearched,
+                      Depth           depth,
+                      Move            ttMove) {
+    zfish_search_update_all_stats(
+      const_cast<Position*>(&pos), ss,
+      reinterpret_cast<std::int16_t*>(&workerThread.mainHistory[0][0]),
+      reinterpret_cast<std::int16_t*>(&workerThread.lowPlyHistory[0][0]),
+      reinterpret_cast<std::int16_t*>(&workerThread.sharedHistory.pawn_entry(pos)[0][0]),
+      reinterpret_cast<std::int16_t*>(&workerThread.captureHistory[0][0][0]), bestMove.raw(),
+      static_cast<int>(prevSq), reinterpret_cast<const std::uint16_t*>(quietsSearched.begin()),
+      quietsSearched.size(), reinterpret_cast<const std::uint16_t*>(capturesSearched.begin()),
+      capturesSearched.size(), depth, ttMove.raw());
 }
 
 Value value_to_tt(Value v, int ply) { return Value(zfish_search_value_to_tt(v, ply)); }

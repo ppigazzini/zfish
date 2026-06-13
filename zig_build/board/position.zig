@@ -139,6 +139,99 @@ pub fn isShuffling(pos_ptr: *const anyopaque, ss_ptr: *const anyopaque, move: u1
     return moveFrom(move) == moveTo(ss2.current_move) and
         moveFrom(ss2.current_move) == moveTo(ss4.current_move);
 }
+
+extern fn zfish_search_stat_bonus(depth: c_int, is_tt_move: u8, prev_stat_score: c_int) c_int;
+extern fn zfish_search_stat_malus(depth: c_int) c_int;
+
+const low_ply_history_size: c_int = 5;
+
+// Compute the three quiet-history entries for `move` from the table bases the
+// bridge passed and apply the shared quiet-history update. mainHistory is
+// [2][65536], lowPlyHistory [5][65536], pawn_row is one fixed [16][64] page.
+fn applyQuietMove(
+    pos: *const Position,
+    ss_ptr: *anyopaque,
+    main_base: [*]i16,
+    lowply_base: [*]i16,
+    pawn_row: [*]i16,
+    move: u16,
+    bonus: c_int,
+) void {
+    const raw: usize = move;
+    const main_entry = &main_base[@as(usize, pos.side_to_move) * 65536 + raw];
+    const ss: *const SearchStack = @ptrCast(@alignCast(ss_ptr));
+    var lowply_entry: ?*i16 = null;
+    if (ss.ply < low_ply_history_size)
+        lowply_entry = &lowply_base[@as(usize, @intCast(ss.ply)) * 65536 + raw];
+    const pc = pos.board[moveFrom(move)];
+    const to = moveTo(move);
+    const pawn_entry = &pawn_row[@as(usize, pc) * 64 + to];
+    updateQuietHistories(main_entry, lowply_entry, pawn_entry, ss_ptr, pc, to, bonus);
+}
+
+// update_all_stats (search.cpp): credit the best move and debit the searched-but-
+// rejected quiets/captures. The bridge shim hands Zig the Worker table bases and
+// the two move lists (ptr+len); Zig owns all bonus/malus scaling, the running
+// malus decay, and the capture-history gravity writes.
+pub fn updateAllStats(
+    pos_ptr: *anyopaque,
+    ss_ptr: *anyopaque,
+    main_base: [*]i16,
+    lowply_base: [*]i16,
+    pawn_row: [*]i16,
+    capture_base: [*]i16,
+    best_move: u16,
+    prev_sq: c_int,
+    quiets: [*]const u16,
+    n_quiets: usize,
+    captures: [*]const u16,
+    n_captures: usize,
+    depth: c_int,
+    tt_move: u16,
+) void {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const ss_prev: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
+
+    const is_tt: u8 = if (best_move == tt_move) 1 else 0;
+    const bonus = zfish_search_stat_bonus(depth, is_tt, ss_prev.stat_score);
+    const malus = zfish_search_stat_malus(depth);
+
+    if (!captureStage(pos, best_move)) {
+        applyQuietMove(pos, ss_ptr, main_base, lowply_base, pawn_row, best_move, @divTrunc(bonus * 824, 1024));
+        var actual_malus: c_int = @divTrunc(malus * 1136, 1024);
+        var i: usize = 0;
+        while (i < n_quiets) : (i += 1) {
+            actual_malus = @divTrunc(actual_malus * 956, 1024);
+            applyQuietMove(pos, ss_ptr, main_base, lowply_base, pawn_row, quiets[i], -actual_malus);
+        }
+    } else {
+        const moved_pc = pos.board[moveFrom(best_move)];
+        const to = moveTo(best_move);
+        const captured_pt = pieceTypeOn(pos, to);
+        const ce = &capture_base[@as(usize, moved_pc) * 512 + @as(usize, to) * 8 + captured_pt];
+        statsUpdate(ce, @divTrunc(bonus * 1366, 1024), 10692);
+    }
+
+    if (prev_sq != @as(c_int, sq_none) and
+        ss_prev.move_count == 1 + @as(c_int, @intFromBool(ss_prev.tt_hit)) and
+        pos.st.captured_piece == 0)
+    {
+        const psq: u8 = @intCast(prev_sq);
+        updateContinuationHistories(ss_prev, pos.board[psq], psq, @divTrunc(-malus * 683, 1024));
+    }
+
+    var j: usize = 0;
+    while (j < n_captures) : (j += 1) {
+        const move = captures[j];
+        const moved_pc = pos.board[moveFrom(move)];
+        const to = moveTo(move);
+        const captured_pt = pieceTypeOn(pos, to);
+        const ce = &capture_base[@as(usize, moved_pc) * 512 + @as(usize, to) * 8 + captured_pt];
+        statsUpdate(ce, @divTrunc(-malus * 1518, 1024), 10692);
+    }
+}
+
 inline fn colorOfPiece(pc: u8) u8 {
     return pc >> 3;
 }
