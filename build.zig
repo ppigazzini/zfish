@@ -204,6 +204,7 @@ pub fn build(b: *std.Build) void {
     movegen_module.addImport("bitboard", bitboard_module);
     nnue_accumulator_module.addImport("position_snapshot", position_snapshot_module);
     position_module.addImport("bitboard", bitboard_module);
+    position_module.addImport("movegen", movegen_module);
     thread_module.addImport("position_snapshot", position_snapshot_module);
     thread_module.addImport("position", position_module);
     thread_module.addImport("uci_move", uci_move_module);
@@ -339,6 +340,7 @@ pub fn build(b: *std.Build) void {
             "-DZFISH_POSITION_BRIDGE_SKIP_CHECK_INFO",
             "-DZFISH_POSITION_BRIDGE_SKIP_LEGAL",
             "-DZFISH_POSITION_BRIDGE_SKIP_GIVES_CHECK",
+            "-DZFISH_POSITION_BRIDGE_SKIP_PSEUDO_LEGAL",
         }) catch @panic("OOM");
 
         exe.root_module.addCSourceFiles(.{
@@ -360,6 +362,7 @@ pub fn build(b: *std.Build) void {
             "-DZFISH_POSITION_BRIDGE_SKIP_CHECK_INFO",
             "-DZFISH_POSITION_BRIDGE_SKIP_LEGAL",
             "-DZFISH_POSITION_BRIDGE_SKIP_GIVES_CHECK",
+            "-DZFISH_POSITION_BRIDGE_SKIP_PSEUDO_LEGAL",
         }) catch @panic("OOM");
 
         legacy_exe.root_module.addCSourceFiles(.{
