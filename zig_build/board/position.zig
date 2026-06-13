@@ -235,6 +235,57 @@ fn kingSquare(pos: *const Position, c: u8) u8 {
     return @intCast(@ctz(pos.by_color_bb[c] & pos.by_type_bb[king_pt]));
 }
 
+pub fn flipFen(fen_ptr: [*]const u8, fen_len: usize) ?[*:0]u8 {
+    return flipFenAlloc(fen_ptr[0..fen_len]) catch null;
+}
+
+fn flipFenAlloc(fen: []const u8) ![*:0]u8 {
+    const alloc = std.heap.c_allocator;
+    var it = std.mem.tokenizeScalar(u8, fen, ' ');
+    const placement = it.next() orelse return error.BadFen;
+    const active = it.next() orelse return error.BadFen;
+    const castling = it.next() orelse return error.BadFen;
+    const ep = it.next() orelse return error.BadFen;
+    const rest = it.rest(); // half/full move counters
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(alloc);
+
+    // Piece placement with the rank order reversed (vertical mirror).
+    var ranks: [8][]const u8 = undefined;
+    var nr: usize = 0;
+    var rank_it = std.mem.splitScalar(u8, placement, '/');
+    while (rank_it.next()) |r| : (nr += 1) ranks[nr] = r;
+    var ri: usize = nr;
+    while (ri > 0) {
+        ri -= 1;
+        try out.appendSlice(alloc, ranks[ri]);
+        if (ri > 0) try out.append(alloc, '/');
+    }
+    try out.append(alloc, ' ');
+    try out.append(alloc, if (active[0] == 'w') 'B' else 'W');
+    try out.append(alloc, ' ');
+    try out.appendSlice(alloc, castling);
+
+    // Swap the case of everything so far: flips piece colors, the active color,
+    // and castling-rights case in one pass (matches upstream flip()).
+    for (out.items) |*ch| {
+        ch.* = if (std.ascii.isLower(ch.*)) std.ascii.toUpper(ch.*) else std.ascii.toLower(ch.*);
+    }
+
+    try out.append(alloc, ' ');
+    if (std.mem.eql(u8, ep, "-")) {
+        try out.append(alloc, '-');
+    } else {
+        try out.append(alloc, ep[0]);
+        try out.append(alloc, if (ep[1] == '3') @as(u8, '6') else @as(u8, '3'));
+    }
+    try out.append(alloc, ' ');
+    try out.appendSlice(alloc, rest);
+
+    return try allocCString(out.items);
+}
+
 pub fn setCastlingRight(pos_ptr: *anyopaque, c: u8, rfrom: u8) void {
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
     const kfrom = kingSquare(pos, c);

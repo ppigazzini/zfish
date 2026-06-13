@@ -263,6 +263,10 @@ pub export fn zfish_position_set_castling_right_method(pos_ptr: *anyopaque, colo
     position_port.setCastlingRight(pos_ptr, color, rfrom);
 }
 
+pub export fn zfish_position_flip_fen(fen_ptr: [*]const u8, fen_len: usize) ?[*:0]u8 {
+    return position_port.flipFen(fen_ptr, fen_len);
+}
+
 pub export fn zfish_position_set_state_method(
     pos_ptr: *const anyopaque,
     psq: [*]const u64,

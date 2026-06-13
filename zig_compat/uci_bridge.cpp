@@ -2644,6 +2644,7 @@ void          zfish_position_update_slider_blockers_method(const void* pos_ptr, 
 void          zfish_position_set_check_info_method(const void* pos_ptr);
 void          zfish_position_set_castling_right_method(void* pos_ptr, std::uint8_t c,
                                                        std::uint8_t rfrom);
+const char*   zfish_position_flip_fen(const unsigned char* fen_ptr, std::size_t fen_len);
 void          zfish_position_set_state_method(const void* pos_ptr, const std::uint64_t* psq,
                                               const std::uint64_t* enpassant,
                                               const std::uint64_t* castling, std::uint64_t zob_side,
@@ -2809,6 +2810,13 @@ void Position::set_castling_right(Color c, Square rfrom) {
 void Position::set_state() const {
     zfish_position_set_state_method(this, &Zobrist::psq[0][0], Zobrist::enpassant, Zobrist::castling,
                                     Zobrist::side, Zobrist::noPawns);
+}
+
+void Position::flip() {
+    const std::string current = fen();
+    const auto        flipped = take_string_and_free_required(zfish_position_flip_fen(
+      reinterpret_cast<const unsigned char*>(current.data()), current.size()));
+    set(flipped, is_chess960(), st);
 }
 
 bool Position::legal(Move m) const { return zfish_position_legal_method(this, m.raw()) != 0; }
