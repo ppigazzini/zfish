@@ -116,6 +116,7 @@ std::array<Key, 8192>  cuckoo;
 std::array<Move, 8192> cuckooMove;
 
 // Initializes at startup the various arrays used to compute hash keys
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_INIT
 void Position::init() {
 
     PRNG rng(1070372);
@@ -160,6 +161,7 @@ void Position::init() {
                 }
     assert(count == 3668);
 }
+#endif
 
 
 // Initializes the position object with the given FEN string.
