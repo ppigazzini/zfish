@@ -82,6 +82,21 @@ pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
     return v;
 }
 
+// Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
+// with toward-zero division; the pawn-history scale picks its weight by sign.
+pub fn quietLowPlyScale(bonus: c_int) c_int {
+    return @divTrunc(bonus * 663, 1024);
+}
+
+pub fn quietContScale(bonus: c_int) c_int {
+    return @divTrunc(bonus * 820, 1024);
+}
+
+pub fn quietPawnScale(bonus: c_int) c_int {
+    const weight: c_int = if (bonus > -7) 1038 else 525;
+    return @divTrunc(bonus * weight, 1024);
+}
+
 // Continuation-history positive-consistency multipliers, indexed by the
 // running positiveCount in update_continuation_histories.
 const cmhc_multipliers = [_]c_int{ 96, 113, 101, 105, 127, 121, 126 };

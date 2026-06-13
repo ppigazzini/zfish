@@ -1969,13 +1969,22 @@ void update_quiet_histories(
     Color us = pos.side_to_move();
     workerThread.mainHistory[us][move.raw()] << bonus;  // Untuned to prevent duplicate effort
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_QUIET_SCALES
+    const int lowPlyBonus = zfish_search_quiet_low_ply_scale(bonus);
+    const int contBonus   = zfish_search_quiet_cont_scale(bonus);
+    const int pawnBonus   = zfish_search_quiet_pawn_scale(bonus);
+#else
+    const int lowPlyBonus = bonus * 663 / 1024;
+    const int contBonus   = bonus * 820 / 1024;
+    const int pawnBonus   = bonus * (bonus > -7 ? 1038 : 525) / 1024;
+#endif
+
     if (ss->ply < LOW_PLY_HISTORY_SIZE)
-        workerThread.lowPlyHistory[ss->ply][move.raw()] << bonus * 663 / 1024;
+        workerThread.lowPlyHistory[ss->ply][move.raw()] << lowPlyBonus;
 
-    update_continuation_histories(ss, pos.moved_piece(move), move.to_sq(), bonus * 820 / 1024);
+    update_continuation_histories(ss, pos.moved_piece(move), move.to_sq(), contBonus);
 
-    workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()]
-      << bonus * (bonus > -7 ? 1038 : 525) / 1024;
+    workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()] << pawnBonus;
 }
 }
 
