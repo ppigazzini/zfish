@@ -256,6 +256,15 @@ pub export fn zfish_search_stat_malus(depth: c_int) c_int {
     return search_port.statMalus(depth);
 }
 
+pub export fn zfish_search_conthist_delta(
+    bonus: c_int,
+    weight: c_int,
+    positive_count: c_int,
+    i: c_int,
+) c_int {
+    return search_port.conthistDelta(bonus, weight, positive_count, i);
+}
+
 pub export fn zfish_search_correction_value(
     pcv: c_int,
     micv: c_int,

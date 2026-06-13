@@ -1934,7 +1934,9 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
       {{1, 1040}, {2, 780}, {3, 300}, {4, 537}, {5, 129}, {6, 423}}};
 
     // Multipliers for positive history consistency
+#ifndef ZFISH_SEARCH_BRIDGE_USE_ZIG_CONTHIST_DELTA
     constexpr int CMHCMultipliers[] = {96, 113, 101, 105, 127, 121, 126};
+#endif
     int           positiveCount     = 0;
 
     for (const auto [i, weight] : conthist_bonuses)
@@ -1949,8 +1951,12 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
             if (historyEntry > 0)
                 positiveCount++;
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_CONTHIST_DELTA
+            historyEntry << zfish_search_conthist_delta(bonus, weight, positiveCount, int(i));
+#else
             int multiplier = CMHCMultipliers[positiveCount];
             historyEntry << (bonus * weight * multiplier / 131072) + 71 * (i < 2);
+#endif
         }
     }
 }
