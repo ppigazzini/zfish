@@ -141,6 +141,8 @@ namespace Stockfish {
 namespace NN = Eval::NNUE;
 namespace Zobrist {
 extern Key psq[PIECE_NB][SQUARE_NB];
+extern Key enpassant[FILE_NB];
+extern Key side;
 }
 
 constexpr int MaxHashMB  = Is64Bit ? 33554432 : 2048;
@@ -2635,6 +2637,9 @@ std::uint8_t  zfish_position_legal_method(const void* pos_ptr, std::uint16_t mov
 std::uint8_t  zfish_position_gives_check_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_pseudo_legal_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_see_ge_method(const void* pos_ptr, std::uint16_t move, int threshold);
+void          zfish_position_do_null_move(void* pos_ptr, void* new_st_ptr, std::uint64_t zob_side,
+                                          std::uint64_t zob_ep);
+void          zfish_position_undo_null_move(void* pos_ptr);
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
@@ -2787,6 +2792,15 @@ bool Position::pseudo_legal(const Move m) const {
 bool Position::see_ge(Move m, int threshold) const {
     return zfish_position_see_ge_method(this, m.raw(), threshold) != 0;
 }
+
+void Position::do_null_move(StateInfo& newSt) {
+    const std::uint64_t zobSide = Zobrist::side;
+    const std::uint64_t zobEp =
+      (st->epSquare != SQ_NONE) ? Zobrist::enpassant[file_of(st->epSquare)] : std::uint64_t{0};
+    zfish_position_do_null_move(this, &newSt, zobSide, zobEp);
+}
+
+void Position::undo_null_move() { zfish_position_undo_null_move(this); }
 
 namespace {
 

@@ -220,6 +220,19 @@ pub export fn zfish_position_is_draw_method(pos_ptr: *const anyopaque, ply: c_in
     return @intFromBool(position_port.isDraw(pos_ptr, ply));
 }
 
+pub export fn zfish_position_do_null_move(
+    pos_ptr: *anyopaque,
+    new_st_ptr: *anyopaque,
+    zob_side: u64,
+    zob_ep: u64,
+) void {
+    position_port.doNullMove(pos_ptr, new_st_ptr, zob_side, zob_ep);
+}
+
+pub export fn zfish_position_undo_null_move(pos_ptr: *anyopaque) void {
+    position_port.undoNullMove(pos_ptr);
+}
+
 pub export fn zfish_position_has_repeated_method(pos_ptr: *const anyopaque) u8 {
     return @intFromBool(position_port.hasRepeated(pos_ptr));
 }
