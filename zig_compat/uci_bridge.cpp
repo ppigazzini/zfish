@@ -764,6 +764,8 @@ extern "C" void zfish_search_set_cont_hist(void* worker_ptr, void* ss_ptr, std::
                                            std::uint8_t capture, std::uint8_t pc, std::uint8_t to);
 extern "C" int  zfish_search_qsearch(void* worker, void* pos, void* ss, int alpha, int beta,
                                      std::uint8_t pv_node);
+extern "C" int  zfish_search_search(void* worker, void* pos, void* ss, int alpha, int beta,
+                                    int depth, std::uint8_t cut_node, std::uint8_t pv_node);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
 extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
                                                     int piece_value, int capt_hist);
@@ -842,6 +844,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_AGE_MAIN_HISTORY
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SET_CONT_HIST
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_SEARCH
 #include "../src/search.cpp"
 
 // Layout proof for zig_build/board/position.zig's WorkerHistories mirror. The
@@ -910,6 +913,69 @@ extern "C" void zfish_search_cb_update_seldepth(void* worker, int ply) {
     auto* w = static_cast<Stockfish::Search::Worker*>(worker);
     if (w->selDepth < ply + 1)
         w->selDepth = ply + 1;
+}
+
+// Additional callbacks for the ported Zig search() (non-root). do_null_move /
+// undo_null_move manage the accumulator; pos_do_move/pos_undo_move are the
+// Position-level (no-accumulator) make/unmake used for the TT-move cutoff
+// verification; reduction reads the Worker reductions table + rootDelta; the
+// rest expose Worker/threads state the non-root search reads.
+extern "C" void zfish_search_cb_do_null_move(void* worker, void* pos, void* st, void* ss) {
+    static_cast<Stockfish::Search::Worker*>(worker)->do_null_move(
+      *static_cast<Stockfish::Position*>(pos), *static_cast<Stockfish::StateInfo*>(st),
+      static_cast<Stockfish::Search::Stack*>(ss));
+}
+
+extern "C" void zfish_search_cb_undo_null_move(void* worker, void* pos) {
+    static_cast<Stockfish::Search::Worker*>(worker)->undo_null_move(
+      *static_cast<Stockfish::Position*>(pos));
+}
+
+extern "C" void zfish_search_cb_pos_do_move(void* pos, std::uint16_t move, void* st) {
+    static_cast<Stockfish::Position*>(pos)->do_move(Stockfish::Move(move),
+                                                    *static_cast<Stockfish::StateInfo*>(st));
+}
+
+extern "C" void zfish_search_cb_pos_undo_move(void* pos, std::uint16_t move) {
+    static_cast<Stockfish::Position*>(pos)->undo_move(Stockfish::Move(move));
+}
+
+extern "C" int zfish_search_cb_reduction(void* worker, std::uint8_t i, int d, int mn, int delta) {
+    return static_cast<Stockfish::Search::Worker*>(worker)->reduction(i != 0, d, mn, delta);
+}
+
+extern "C" void zfish_search_cb_check_time(void* worker) {
+    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
+    if (w->is_mainthread())
+        w->main_manager()->check_time(*w);
+}
+
+extern "C" std::uint8_t zfish_search_cb_in_last_iter_pv(void* worker, int ply_minus_1,
+                                                        std::uint16_t move) {
+    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
+    return (static_cast<std::size_t>(ply_minus_1) < w->lastIterationPV.size()
+            && w->lastIterationPV[ply_minus_1].raw() == move)
+           ? 1
+           : 0;
+}
+
+extern "C" int  zfish_search_cb_get_nmp_min_ply(void* worker) {
+    return static_cast<Stockfish::Search::Worker*>(worker)->nmpMinPly;
+}
+
+extern "C" void zfish_search_cb_set_nmp_min_ply(void* worker, int v) {
+    static_cast<Stockfish::Search::Worker*>(worker)->nmpMinPly = v;
+}
+
+extern "C" int  zfish_search_cb_root_depth(void* worker) {
+    return static_cast<Stockfish::Search::Worker*>(worker)->rootDepth;
+}
+
+extern "C" std::uint8_t zfish_search_cb_stop(void* worker) {
+    return static_cast<Stockfish::Search::Worker*>(worker)
+             ->threads.stop.load(std::memory_order_relaxed)
+           ? 1
+           : 0;
 }
 
 extern "C" {

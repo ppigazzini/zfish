@@ -715,6 +715,13 @@ Value Search::Worker::search(
     constexpr bool rootNode = nodeType == Root;
     const bool     allNode  = !(PvNode || cutNode);
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_SEARCH
+    if constexpr (!rootNode)
+        return Value(zfish_search_search(this, &pos, ss, alpha, beta, depth,
+                                         std::uint8_t(cutNode ? 1 : 0),
+                                         std::uint8_t(PvNode ? 1 : 0)));
+#endif
+
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
         return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
