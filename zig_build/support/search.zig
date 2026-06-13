@@ -106,6 +106,15 @@ pub fn futilityReturn(beta: c_int, eval: c_int) c_int {
     return @divTrunc(716 * beta + 308 * eval, 1024);
 }
 
+// Step 11 ProbCut beta thresholds (shallow probcut and the deep TT cutoff).
+pub fn probCutBeta(beta: c_int, improving: bool) c_int {
+    return beta + 214 - 59 * @as(c_int, @intFromBool(improving));
+}
+
+pub fn probCutBetaDeep(beta: c_int) c_int {
+    return beta + 428;
+}
+
 // Step 9 null-move pruning: static-eval cutoff threshold, dynamic reduction R,
 // and the verification-search nmpMinPly.
 pub fn nullMoveThreshold(beta: c_int, depth: c_int, improving: bool) c_int {
