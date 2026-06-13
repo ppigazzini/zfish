@@ -143,6 +143,53 @@ pub fn undoNullMove(pos_ptr: *anyopaque) void {
     pos.side_to_move ^= 1;
 }
 
+inline fn h1(key: u64) usize {
+    return @intCast(key & 0x1fff);
+}
+inline fn h2(key: u64) usize {
+    return @intCast((key >> 16) & 0x1fff);
+}
+
+pub fn upcomingRepetition(
+    pos_ptr: *const anyopaque,
+    ply: c_int,
+    cuckoo: [*]const u64,
+    cuckoo_move: [*]const u16,
+    zob_side: u64,
+) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const end = @min(pos.st.rule50, pos.st.plies_from_null);
+    if (end < 3) return false;
+
+    const original_key = pos.st.key;
+    var stp: *const StateInfo = pos.st.previous.?;
+    var other = original_key ^ stp.key ^ zob_side;
+
+    var i: c_int = 3;
+    while (i <= end) : (i += 2) {
+        stp = stp.previous.?;
+        other ^= stp.key ^ stp.previous.?.key ^ zob_side;
+        stp = stp.previous.?;
+        if (other != 0) continue;
+
+        const move_key = original_key ^ stp.key;
+        var j = h1(move_key);
+        if (cuckoo[j] != move_key) {
+            j = h2(move_key);
+            if (cuckoo[j] != move_key) continue;
+        }
+
+        const mv = cuckoo_move[j];
+        const s1 = moveFrom(mv);
+        const s2 = moveTo(mv);
+        if (((bitboard.between(s1, s2) ^ sqBb(s2)) & pos.by_type_bb[0]) == 0) {
+            if (ply > i) return true;
+            if (stp.repetition != 0) return true;
+        }
+    }
+    return false;
+}
+
 pub fn isDraw(pos_ptr: *const anyopaque, ply: c_int) bool {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     if (pos.st.rule50 > 99) {
