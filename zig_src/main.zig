@@ -216,6 +216,10 @@ pub export fn zfish_position_is_repetition_method(pos_ptr: *const anyopaque, ply
     return @intFromBool(position_port.isRepetition(pos_ptr, ply));
 }
 
+pub export fn zfish_position_is_draw_method(pos_ptr: *const anyopaque, ply: c_int) u8 {
+    return @intFromBool(position_port.isDraw(pos_ptr, ply));
+}
+
 pub export fn zfish_position_has_repeated_method(pos_ptr: *const anyopaque) u8 {
     return @intFromBool(position_port.hasRepeated(pos_ptr));
 }
