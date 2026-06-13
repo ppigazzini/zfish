@@ -121,6 +121,26 @@ pub fn quietSeeMargin(lmr_depth: c_int) c_int {
     return 25 * lmr_depth * lmr_depth;
 }
 
+// LMR reduction (r) adjustments before the reduced search.
+pub fn lmrTtpvReduction(pv_node: bool, value_gt_alpha: bool, depth_ge: bool, cut_node: bool) c_int {
+    return 2766 + @as(c_int, @intFromBool(pv_node)) * 1017 +
+        @as(c_int, @intFromBool(value_gt_alpha)) * 838 +
+        @as(c_int, @intFromBool(depth_ge)) * (923 + @as(c_int, @intFromBool(cut_node)) * 955);
+}
+
+pub fn lmrCorrReduction(correction_value: c_int) c_int {
+    const a: c_int = if (correction_value < 0) -correction_value else correction_value;
+    return @divTrunc(a, 26131);
+}
+
+pub fn lmrStatScoreReduction(stat_score: c_int) c_int {
+    return @divTrunc(stat_score * 445, 4096);
+}
+
+pub fn lmrAllNodeScale(r: c_int, depth: c_int) c_int {
+    return @divTrunc(r * 272, 256 * depth + 285);
+}
+
 // Singular extension margins. corrValAdj = abs(correctionValue)/194822 is
 // shared by both margins.
 fn corrValAdj(correction_value: c_int) c_int {
