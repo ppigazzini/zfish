@@ -120,6 +120,7 @@ Value to_corrected_static_eval(const Value v, const int cv) {
 Value to_corrected_static_eval(const Value v, const int cv);
 #endif
 
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_CORRECTION_HISTORY
 void update_correction_history(const Position& pos,
                                Stack* const    ss,
                                Search::Worker& workerThread,
@@ -143,6 +144,12 @@ void update_correction_history(const Position& pos,
         (*(ss - 4)->continuationCorrectionHistory)[pc][to] << bonus * 68 / 128;
     }
 }
+#else
+void update_correction_history(const Position& pos,
+                               Stack* const    ss,
+                               Search::Worker& workerThread,
+                               const int       bonus);
+#endif
 
 // Add a small random component to draw evaluations to avoid 3-fold blindness
 #ifndef ZFISH_SEARCH_BRIDGE_SKIP_VALUE_DRAW

@@ -232,6 +232,45 @@ pub fn updateAllStats(
     }
 }
 
+const correction_history_limit: c_int = 1024;
+
+// update_correction_history (search.cpp): nudge the four shared correction
+// tables plus the (ss-2)/(ss-4) continuation correction entries toward the
+// search/static-eval delta. The bridge resolves the four key-masked, color-
+// indexed correction StatsEntry pointers (the masking + DynStats sizing must
+// stay C++); Zig owns the bonus weighting, gravity, and the stack-relative
+// continuation correction writes.
+pub fn updateCorrectionHistory(
+    pos_ptr: *const anyopaque,
+    ss_ptr: *anyopaque,
+    pawn_entry: *i16,
+    minor_entry: *i16,
+    nonpawn_white_entry: *i16,
+    nonpawn_black_entry: *i16,
+    bonus: c_int,
+) void {
+    statsUpdate(pawn_entry, bonus, correction_history_limit);
+    statsUpdate(minor_entry, @divTrunc(bonus * 152, 128), correction_history_limit);
+    statsUpdate(nonpawn_white_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
+    statsUpdate(nonpawn_black_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
+
+    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const ss_prev: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
+    const m = ss_prev.current_move;
+    if (moveIsOk(m)) {
+        const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+        const to = moveTo(m);
+        const pc = pos.board[to];
+        const idx = @as(usize, pc) * 64 + to;
+        const ss2: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 2 * @sizeOf(SearchStack));
+        const ss4: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 4 * @sizeOf(SearchStack));
+        const cc2: [*]i16 = @ptrCast(@alignCast(ss2.continuation_correction_history.?));
+        const cc4: [*]i16 = @ptrCast(@alignCast(ss4.continuation_correction_history.?));
+        statsUpdate(&cc2[idx], @divTrunc(bonus * 136, 128), correction_history_limit);
+        statsUpdate(&cc4[idx], @divTrunc(bonus * 68, 128), correction_history_limit);
+    }
+}
+
 inline fn colorOfPiece(pc: u8) u8 {
     return pc >> 3;
 }
