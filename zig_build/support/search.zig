@@ -82,6 +82,22 @@ pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
     return v;
 }
 
+// Weighted correction-history blend (correction_value). Inputs are the raw
+// correction entries read C++-side; only the magic weights live here. All
+// terms stay well within i32 (entries clamped to +/-1024).
+pub fn correctionValue(
+    pcv: c_int,
+    micv: c_int,
+    wnpcv: c_int,
+    bnpcv: c_int,
+    cch2: c_int,
+    cch4: c_int,
+    m_ok: bool,
+) c_int {
+    const cntcv: c_int = if (m_ok) 8363 * (cch2 + cch4) else 64549;
+    return 13345 * pcv + 9280 * micv + 11840 * (wnpcv + bnpcv) + cntcv;
+}
+
 // Base stat bonus/malus formulas applied at the end of search() when a
 // bestMove is found (update_all_stats).
 pub fn statBonus(depth: c_int, is_tt_move: bool, prev_stat_score: c_int) c_int {

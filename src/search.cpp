@@ -89,6 +89,16 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
     const int   micv   = shared.minor_piece_correction_entry(pos)[us].minor;
     const int   wnpcv  = shared.nonpawn_correction_entry<WHITE>(pos)[us].nonPawnWhite;
     const int   bnpcv  = shared.nonpawn_correction_entry<BLACK>(pos)[us].nonPawnBlack;
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_CORRECTION_VALUE
+    int        cch2 = 0, cch4 = 0;
+    const bool m_ok = m.is_ok();
+    if (m_ok)
+    {
+        cch2 = (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()];
+        cch4 = (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()];
+    }
+    return zfish_search_correction_value(pcv, micv, wnpcv, bnpcv, cch2, cch4, m_ok);
+#else
     const int   cntcv =
       m.is_ok()
           ? 8363
@@ -97,6 +107,7 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
           : 64549;
 
     return 13345 * pcv + 9280 * micv + 11840 * (wnpcv + bnpcv) + cntcv;
+#endif
 }
 
 // Add correctionHistory value to raw staticEval and guarantee evaluation
