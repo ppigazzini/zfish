@@ -271,13 +271,9 @@ pub fn build(b: *std.Build) void {
         "syzygy/tbprobe.cpp",
     };
 
-    const stockfish_position_sources = &.{
-        "position.cpp",
-    };
+    const stockfish_position_sources = &[_][]const u8{};
 
-    const stockfish_legacy_position_sources = &.{
-        "position.cpp",
-    };
+    const stockfish_legacy_position_sources = &[_][]const u8{};
 
     const zig_compat_sources = &.{
         "uci_bridge.cpp",

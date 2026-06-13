@@ -2841,6 +2841,29 @@ void Position::do_move(Move                      m,
                            &dts);
 }
 
+extern "C" const char* zfish_position_set_state(void*                pos_ptr,
+                                                const unsigned char* fen_ptr,
+                                                std::size_t          fen_len,
+                                                std::uint8_t         chess960_enabled,
+                                                void*                state_ptr) {
+    const std::string fen(reinterpret_cast<const char*>(fen_ptr), fen_len);
+    const auto        err = static_cast<Position*>(pos_ptr)->set(
+      fen, chess960_enabled != 0, static_cast<StateInfo*>(state_ptr));
+    if (!err.has_value())
+        return nullptr;
+
+    const auto message = std::string(err->what());
+    auto*      buffer  = static_cast<char*>(std::malloc(message.size() + 1));
+    if (!buffer)
+        std::abort();
+    std::memcpy(buffer, message.c_str(), message.size() + 1);
+    return buffer;
+}
+
+extern "C" void zfish_position_do_move_state(void* pos_ptr, std::uint16_t move_raw, void* state_ptr) {
+    static_cast<Position*>(pos_ptr)->do_move(Move(move_raw), *static_cast<StateInfo*>(state_ptr));
+}
+
 namespace {
 
 }  // namespace
