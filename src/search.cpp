@@ -2076,6 +2076,7 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
 
 // Updates move sorting heuristics
 
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_QUIET
 void update_quiet_histories(
   const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus) {
 
@@ -2099,6 +2100,7 @@ void update_quiet_histories(
 
     workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()] << pawnBonus;
 }
+#endif
 }
 
 // When playing with strength handicap, choose the best move among a set of
