@@ -726,6 +726,8 @@ std::size_t Network::get_content_hash() const {
 #include "tt.h"
 #include "thread.h"
 
+extern "C" std::uint8_t zfish_search_is_shuffling(const void* pos_ptr, const void* ss_ptr,
+                                                 std::uint16_t move);
 extern "C" void zfish_search_fill_reductions(int* reductions, std::size_t count);
 extern "C" int  zfish_search_stat_bonus(int depth, unsigned char is_tt_move, int prev_stat_score);
 extern "C" int  zfish_search_stat_malus(int depth);
@@ -794,6 +796,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SINGULAR
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_LMR_ADJUST
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_POST_BONUS
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_IS_SHUFFLING
 #include "../src/search.cpp"
 
 extern "C" {

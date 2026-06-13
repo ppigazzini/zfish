@@ -44,6 +44,44 @@ inline fn makeSquare(f: u8, r: u8) u8 {
 inline fn pieceTypeOn(pos: *const Position, s: u8) u8 {
     return pos.board[s] & 7;
 }
+
+// Memory mirror of the search Stack (src/search.h). Only the scalar fields used
+// by ported search helpers are read; the layout/size must match for ss-N stack
+// arithmetic.
+pub const SearchStack = extern struct {
+    pv: ?*anyopaque,
+    continuation_history: ?*anyopaque,
+    continuation_correction_history: ?*anyopaque,
+    ply: c_int,
+    current_move: u16,
+    excluded_move: u16,
+    static_eval: c_int,
+    stat_score: c_int,
+    move_count: c_int,
+    in_check: bool,
+    tt_pv: bool,
+    tt_hit: bool,
+    follow_pv: bool,
+    cutoff_cnt: c_int,
+    reduction: c_int,
+};
+
+fn captureStage(pos: *const Position, m: u16) bool {
+    const cap = (pos.board[moveTo(m)] != 0 and moveTypeOf(m) != mt_castling) or
+        moveTypeOf(m) == mt_en_passant;
+    return cap or movePromotionType(m) == queen_pt;
+}
+
+pub fn isShuffling(pos_ptr: *const anyopaque, ss_ptr: *const anyopaque, move: u16) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const ss: *const SearchStack = @ptrCast(@alignCast(ss_ptr));
+    if (captureStage(pos, move) or pos.st.rule50 < 10) return false;
+    if (pos.st.plies_from_null < 6 or ss.ply < 20) return false;
+    const ss2: *const SearchStack = @ptrFromInt(@intFromPtr(ss) - 2 * @sizeOf(SearchStack));
+    const ss4: *const SearchStack = @ptrFromInt(@intFromPtr(ss) - 4 * @sizeOf(SearchStack));
+    return moveFrom(move) == moveTo(ss2.current_move) and
+        moveFrom(ss2.current_move) == moveTo(ss4.current_move);
+}
 inline fn colorOfPiece(pc: u8) u8 {
     return pc >> 3;
 }
