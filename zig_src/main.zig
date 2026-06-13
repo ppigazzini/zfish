@@ -414,6 +414,14 @@ pub export fn zfish_search_razor_margin(depth: c_int) c_int {
     return search_port.razorMargin(depth);
 }
 
+pub export fn zfish_search_qsearch_stand_pat_blend(best_value: c_int, beta: c_int) c_int {
+    return search_port.qsearchStandPatBlend(best_value, beta);
+}
+
+pub export fn zfish_search_qsearch_fail_high_blend(best_value: c_int, beta: c_int) c_int {
+    return search_port.qsearchFailHighBlend(best_value, beta);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }
