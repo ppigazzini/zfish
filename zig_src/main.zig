@@ -470,8 +470,8 @@ pub export fn zfish_search_qsearch(worker: *anyopaque, pos_ptr: *anyopaque, ss_p
     return position_port.qsearchEntry(worker, pos_ptr, ss_ptr, alpha, beta, pv_node);
 }
 
-pub export fn zfish_search_search(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, depth: c_int, cut_node: u8, pv_node: u8) c_int {
-    return position_port.searchEntry(worker, pos_ptr, ss_ptr, alpha, beta, depth, cut_node, pv_node);
+pub export fn zfish_search_search(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, depth: c_int, cut_node: u8, pv_node: u8, root_node: u8) c_int {
+    return position_port.searchEntry(worker, pos_ptr, ss_ptr, alpha, beta, depth, cut_node, pv_node, root_node);
 }
 
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
