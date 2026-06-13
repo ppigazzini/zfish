@@ -388,7 +388,12 @@ bool Search::Worker::iterative_deepening() {
             selDepth = 0;
 
             // Reset aspiration window starting size
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_ASPIRATION
+            delta = zfish_search_aspiration_initial_delta(threadIdx,
+                                                          rootMoves[pvIdx].meanSquaredScore);
+#else
             delta     = 5 + threadIdx % 8 + std::abs(rootMoves[pvIdx].meanSquaredScore) / 10588;
+#endif
             Value avg = rootMoves[pvIdx].averageScore;
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
@@ -451,7 +456,11 @@ bool Search::Worker::iterative_deepening() {
                 else
                     break;
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_ASPIRATION
+                delta = zfish_search_aspiration_delta_grow(delta);
+#else
                 delta += 44 * delta / 128;
+#endif
 
                 assert(alpha >= -VALUE_INFINITE && beta <= VALUE_INFINITE);
             }
