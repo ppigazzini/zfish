@@ -1873,9 +1873,14 @@ void update_all_stats(const Position& pos,
     Piece                  movedPiece     = pos.moved_piece(bestMove);
     PieceType              capturedPiece;
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_STAT_BONUS_MALUS
+    int bonus = zfish_search_stat_bonus(depth, bestMove == ttMove, (ss - 1)->statScore);
+    int malus = zfish_search_stat_malus(depth);
+#else
     int bonus =
       std::min(134 * depth - 79, 1572) + 382 * (bestMove == ttMove) + (ss - 1)->statScore / 30;
     int malus = std::min(1005 * depth - 205, 2218);
+#endif
 
     if (!pos.capture_stage(bestMove))
     {

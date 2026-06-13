@@ -82,6 +82,18 @@ pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
     return v;
 }
 
+// Base stat bonus/malus formulas applied at the end of search() when a
+// bestMove is found (update_all_stats).
+pub fn statBonus(depth: c_int, is_tt_move: bool, prev_stat_score: c_int) c_int {
+    return @min(134 * depth - 79, 1572) +
+        382 * @as(c_int, @intFromBool(is_tt_move)) +
+        @divTrunc(prev_stat_score, 30);
+}
+
+pub fn statMalus(depth: c_int) c_int {
+    return @min(1005 * depth - 205, 2218);
+}
+
 // Populate the reductions[] lookup table: reductions[i] = int(2834/128.0 * ln i)
 // for i in [1, count). Index 0 is left untouched, matching upstream clear().
 pub fn fillReductions(reductions_ptr: [*]c_int, count: usize) void {
