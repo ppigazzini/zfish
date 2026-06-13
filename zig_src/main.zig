@@ -220,6 +220,19 @@ pub export fn zfish_position_has_repeated_method(pos_ptr: *const anyopaque) u8 {
     return @intFromBool(position_port.hasRepeated(pos_ptr));
 }
 
+pub export fn zfish_position_attackers_to_method(pos_ptr: *const anyopaque, s: u8, occupied: u64) u64 {
+    return position_port.attackersTo(pos_ptr, s, occupied);
+}
+
+pub export fn zfish_position_attackers_to_exist_method(
+    pos_ptr: *const anyopaque,
+    s: u8,
+    occupied: u64,
+    color: u8,
+) u8 {
+    return @intFromBool(position_port.attackersToExist(pos_ptr, s, occupied, color));
+}
+
 pub export fn zfish_bitboards_init_runtime(
     popcnt16: *[1 << 16]u8,
     square_distance: *[64][64]u8,

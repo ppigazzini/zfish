@@ -1,4 +1,26 @@
 const std = @import("std");
+const bitboard = @import("bitboard");
+
+const pawn_pt: u8 = 1;
+const knight_pt: u8 = 2;
+const bishop_pt: u8 = 3;
+const rook_pt: u8 = 4;
+const queen_pt: u8 = 5;
+const king_pt: u8 = 6;
+const color_white: u8 = 0;
+const color_black: u8 = 1;
+
+const file_a_bb: u64 = 0x0101010101010101;
+const file_h_bb: u64 = 0x8080808080808080;
+
+// attacks_bb<PAWN>(s, c): squares a color-c pawn on `s` attacks.
+fn pawnAttacks(color: u8, sq: u8) u64 {
+    const b: u64 = @as(u64, 1) << @intCast(sq);
+    if (color == color_white) {
+        return ((b & ~file_h_bb) << 9) | ((b & ~file_a_bb) << 7);
+    }
+    return ((b & ~file_h_bb) >> 7) | ((b & ~file_a_bb) >> 9);
+}
 
 const white_oo: u8 = 1;
 const white_ooo: u8 = 2;
@@ -67,6 +89,33 @@ pub fn hasRepeated(pos_ptr: *const anyopaque) bool {
         if (stc.repetition != 0) return true;
         stc = stc.previous.?;
     }
+    return false;
+}
+
+pub fn attackersTo(pos_ptr: *const anyopaque, s: u8, occupied: u64) u64 {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const rook_queen = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
+    const bishop_queen = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
+    const white_pawns = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
+    const black_pawns = pos.by_color_bb[color_black] & pos.by_type_bb[pawn_pt];
+    return (bitboard.attacks(rook_pt, s, occupied) & rook_queen) |
+        (bitboard.attacks(bishop_pt, s, occupied) & bishop_queen) |
+        (pawnAttacks(color_black, s) & white_pawns) |
+        (pawnAttacks(color_white, s) & black_pawns) |
+        (bitboard.attacks(knight_pt, s, 0) & pos.by_type_bb[knight_pt]) |
+        (bitboard.attacks(king_pt, s, 0) & pos.by_type_bb[king_pt]);
+}
+
+pub fn attackersToExist(pos_ptr: *const anyopaque, s: u8, occupied: u64, c: u8) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const them = pos.by_color_bb[c];
+    const rook_queen = them & (pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt]);
+    const bishop_queen = them & (pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt]);
+    if ((bitboard.attacks(rook_pt, s, occupied) & rook_queen) != 0) return true;
+    if ((bitboard.attacks(bishop_pt, s, occupied) & bishop_queen) != 0) return true;
+    if ((pawnAttacks(c ^ 1, s) & (them & pos.by_type_bb[pawn_pt])) != 0) return true;
+    if ((bitboard.attacks(knight_pt, s, 0) & (them & pos.by_type_bb[knight_pt])) != 0) return true;
+    if ((bitboard.attacks(king_pt, s, 0) & (them & pos.by_type_bb[king_pt])) != 0) return true;
     return false;
 }
 
