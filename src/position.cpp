@@ -791,6 +791,7 @@ bool Position::pseudo_legal(const Move m) const {
 
 
 // Tests whether a pseudo-legal move gives a check
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_GIVES_CHECK
 bool Position::gives_check(Move m) const {
 
     assert(m.is_ok());
@@ -835,6 +836,7 @@ bool Position::gives_check(Move m) const {
     }
     }
 }
+#endif
 
 
 // Makes a move, and saves all information necessary
