@@ -762,6 +762,8 @@ extern "C" int  zfish_search_optimism(int avg);
 extern "C" void zfish_search_age_main_history(void* worker_ptr);
 extern "C" void zfish_search_set_cont_hist(void* worker_ptr, void* ss_ptr, std::uint8_t in_check,
                                            std::uint8_t capture, std::uint8_t pc, std::uint8_t to);
+extern "C" int  zfish_search_qsearch(void* worker, void* pos, void* ss, int alpha, int beta,
+                                     std::uint8_t pv_node);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
 extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
                                                     int piece_value, int capt_hist);
@@ -839,6 +841,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_OPTIMISM
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_AGE_MAIN_HISTORY
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SET_CONT_HIST
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH
 #include "../src/search.cpp"
 
 // Layout proof for zig_build/board/position.zig's WorkerHistories mirror. The
@@ -864,6 +867,50 @@ static_assert(sizeof(Stockfish::TTMoveHistory) == 2);
 static_assert(sizeof(Stockfish::SharedHistories) == 48);
 static_assert(sizeof(Stockfish::UnifiedCorrectionHistory) == 16);
 static_assert(sizeof(Stockfish::PawnHistory) == 16);
+static_assert(sizeof(Stockfish::StateInfo) == 192);
+static_assert(sizeof(Stockfish::Search::PVMoves) == 504);  // [247]Move padded + size_t
+
+// Accumulator-coupled callbacks for the ported Zig qsearch(). do_move/undo_move
+// manage the NNUE accumulator stack (which must stay C++), and evaluate runs the
+// network forward pass; the Zig search calls these by Worker pointer. tt_context
+// hands Zig the live TT cluster array, cluster count, and generation so it can
+// call the Zig-native tt.probe/save directly.
+extern "C" void zfish_search_cb_do_move(void* worker, void* pos, std::uint16_t move, void* st,
+                                        std::uint8_t gives_check, void* ss) {
+    static_cast<Stockfish::Search::Worker*>(worker)->do_move(
+      *static_cast<Stockfish::Position*>(pos), Stockfish::Move(move),
+      *static_cast<Stockfish::StateInfo*>(st), gives_check != 0,
+      static_cast<Stockfish::Search::Stack*>(ss));
+}
+
+extern "C" void zfish_search_cb_undo_move(void* worker, void* pos, std::uint16_t move) {
+    static_cast<Stockfish::Search::Worker*>(worker)->undo_move(
+      *static_cast<Stockfish::Position*>(pos), Stockfish::Move(move));
+}
+
+extern "C" int zfish_search_cb_evaluate(void* worker, const void* pos) {
+    return static_cast<Stockfish::Search::Worker*>(worker)->evaluate(
+      *static_cast<const Stockfish::Position*>(pos));
+}
+
+extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
+                                           std::size_t* out_cluster_count,
+                                           std::uint8_t* out_generation) {
+    auto& tt          = static_cast<Stockfish::Search::Worker*>(worker)->tt;
+    *out_table        = tt.table;
+    *out_cluster_count = tt.clusterCount;
+    *out_generation   = tt.generation8;
+}
+
+extern "C" std::uint64_t zfish_search_cb_nodes(void* worker) {
+    return static_cast<Stockfish::Search::Worker*>(worker)->nodes.load(std::memory_order_relaxed);
+}
+
+extern "C" void zfish_search_cb_update_seldepth(void* worker, int ply) {
+    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
+    if (w->selDepth < ply + 1)
+        w->selDepth = ply + 1;
+}
 
 extern "C" {
 struct ZfishTimemanInput {

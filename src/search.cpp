@@ -1745,6 +1745,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     static_assert(nodeType != Root);
     constexpr bool PvNode = nodeType == PV;
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH
+    return Value(zfish_search_qsearch(this, &pos, ss, alpha, beta, std::uint8_t(PvNode ? 1 : 0)));
+#else
     assert(alpha >= -VALUE_INFINITE && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
 
@@ -1983,6 +1986,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 
     return bestValue;
+#endif
 }
 
 #ifndef ZFISH_SEARCH_BRIDGE_SKIP_REDUCTION
