@@ -1163,8 +1163,13 @@ moves_loop:  // When in check, search starts here
                 // Futility pruning for captures
                 if (!givesCheck && lmrDepth < 7)
                 {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_CAPTURE_PRUNE
+                    Value futilityValue = zfish_search_capture_futility_value(
+                      ss->staticEval, lmrDepth, PieceValue[capturedPiece], captHist);
+#else
                     Value futilityValue = ss->staticEval + 231 + 232 * lmrDepth
                                         + PieceValue[capturedPiece] + 131 * captHist / 1024;
+#endif
 
                     if (futilityValue <= alpha)
                         continue;
@@ -1172,7 +1177,11 @@ moves_loop:  // When in check, search starts here
 
                 // SEE based pruning for captures and checks
                 // Avoid pruning sacrifices of our last piece for stalemate
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_CAPTURE_PRUNE
+                int margin = zfish_search_capture_see_margin(depth, captHist);
+#else
                 int margin = std::max(175 * depth + captHist * 34 / 1024, 0);
+#endif
                 if ((alpha >= VALUE_DRAW || pos.non_pawn_material(us) != PieceValue[movedPiece])
                     && !pos.see_ge(move, -margin))
                     continue;
