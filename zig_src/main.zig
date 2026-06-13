@@ -260,6 +260,18 @@ pub export fn zfish_search_razor_margin(depth: c_int) c_int {
     return search_port.razorMargin(depth);
 }
 
+pub export fn zfish_search_null_move_threshold(beta: c_int, depth: c_int, improving: u8) c_int {
+    return search_port.nullMoveThreshold(beta, depth, improving != 0);
+}
+
+pub export fn zfish_search_null_move_reduction(depth: c_int) c_int {
+    return search_port.nullMoveReduction(depth);
+}
+
+pub export fn zfish_search_nmp_min_ply(ply: c_int, depth: c_int, r: c_int) c_int {
+    return search_port.nmpMinPly(ply, depth, r);
+}
+
 pub export fn zfish_search_futility_margin(
     depth: c_int,
     tt_hit: u8,

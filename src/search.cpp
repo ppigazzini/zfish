@@ -963,13 +963,22 @@ Value Search::Worker::search(
     }
 
     // Step 9. Null move search with verification search
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_NULLMOVE
+    if (cutNode && ss->staticEval >= zfish_search_null_move_threshold(beta, depth, improving)
+        && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
+#else
     if (cutNode && ss->staticEval >= beta - 14 * depth - 45 * improving + 374 && !excludedMove
         && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
+#endif
     {
         assert((ss - 1)->currentMove != Move::null());
 
         // Null move dynamic reduction based on depth
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_NULLMOVE
+        Depth R = zfish_search_null_move_reduction(depth);
+#else
         Depth R = 7 + depth / 3;
+#endif
         do_null_move(pos, st, ss);
 
         Value nullValue = -search<NonPV>(pos, ss + 1, -beta, -beta + 1, depth - R, false);
@@ -986,7 +995,11 @@ Value Search::Worker::search(
 
             // Do verification search at high depths, with null move pruning disabled
             // until ply exceeds nmpMinPly.
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_NULLMOVE
+            nmpMinPly = zfish_search_nmp_min_ply(ss->ply, depth, R);
+#else
             nmpMinPly = ss->ply + 3 * (depth - R) / 4;
+#endif
 
             Value v = search<NonPV>(pos, ss, beta - 1, beta, depth - R, false);
 
