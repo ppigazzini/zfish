@@ -7,7 +7,7 @@ const c = @cImport({
     @cInclude("unistd.h");
 });
 
-extern fn zfish_misc_has_large_pages_flag() u8;
+extern fn zfish_has_large_pages() bool;
 extern fn zfish_misc_hardware_concurrency_value() c_int;
 
 const max_debug_slots: usize = 32;
@@ -168,7 +168,7 @@ pub fn compilerInfoText() ?[*:0]u8 {
 }
 
 pub fn hasLargePages() bool {
-    return zfish_misc_has_large_pages_flag() != 0;
+    return zfish_has_large_pages();
 }
 
 pub fn hardwareConcurrency() c_int {

@@ -2233,10 +2233,6 @@ void        zfish_misc_dbg_correl_of(std::int64_t value1, std::int64_t value2, i
 void        zfish_misc_dbg_print();
 void        zfish_misc_dbg_clear();
 
-std::uint8_t zfish_misc_has_large_pages_flag() {
-    return has_large_pages() ? 1 : 0;
-}
-
 int zfish_misc_hardware_concurrency_value() {
     return int(get_hardware_concurrency());
 }
