@@ -82,6 +82,11 @@ pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
     return v;
 }
 
+// Step 7 razoring threshold subtracted from alpha (search()).
+pub fn razorMargin(depth: c_int) c_int {
+    return 465 + 300 * depth * depth;
+}
+
 // Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {

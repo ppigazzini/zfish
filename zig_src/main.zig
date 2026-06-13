@@ -256,6 +256,10 @@ pub export fn zfish_search_stat_malus(depth: c_int) c_int {
     return search_port.statMalus(depth);
 }
 
+pub export fn zfish_search_razor_margin(depth: c_int) c_int {
+    return search_port.razorMargin(depth);
+}
+
 pub export fn zfish_search_quiet_low_ply_scale(bonus: c_int) c_int {
     return search_port.quietLowPlyScale(bonus);
 }
