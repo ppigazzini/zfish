@@ -211,6 +211,45 @@ pub fn legal(pos_ptr: *const anyopaque, m: u16) bool {
         (bitboard.line(from, orig_to) & (pos.by_color_bb[us] & pos.by_type_bb[king_pt])) != 0;
 }
 
+pub fn givesCheck(pos_ptr: *const anyopaque, m: u16) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const stm = pos.side_to_move;
+    const them = stm ^ 1;
+    const from = moveFrom(m);
+    const to = moveTo(m);
+    const mt = moveTypeOf(m);
+    const all = pos.by_type_bb[0];
+    const their_king_bb = pos.by_color_bb[them] & pos.by_type_bb[king_pt];
+
+    // Direct check.
+    if ((pos.st.check_squares[pieceTypeOn(pos, from)] & sqBb(to)) != 0) return true;
+
+    // Discovered check.
+    if ((pos.st.blockers_for_king[them] & sqBb(from)) != 0) {
+        return (bitboard.line(from, to) & their_king_bb) == 0 or mt == mt_castling;
+    }
+
+    switch (mt) {
+        mt_normal => return false,
+        mt_promotion => return (bitboard.attacks(movePromotionType(m), to, all ^ sqBb(from)) &
+            their_king_bb) != 0,
+        mt_en_passant => {
+            const capsq = makeSquare(fileOf(to), rankOf(from));
+            const b = (all ^ sqBb(from) ^ sqBb(capsq)) | sqBb(to);
+            const ksq = kingSquare(pos, them);
+            const our = pos.by_color_bb[stm];
+            const our_qr = our & (pos.by_type_bb[queen_pt] | pos.by_type_bb[rook_pt]);
+            const our_qb = our & (pos.by_type_bb[queen_pt] | pos.by_type_bb[bishop_pt]);
+            return ((bitboard.attacks(rook_pt, ksq, b) & our_qr) |
+                (bitboard.attacks(bishop_pt, ksq, b) & our_qb)) != 0;
+        },
+        else => { // castling
+            const rto = relativeSquare(stm, if (to > from) 5 else 3); // SQ_F1 : SQ_D1
+            return (pos.st.check_squares[rook_pt] & sqBb(rto)) != 0;
+        },
+    }
+}
+
 pub fn attackersToExist(pos_ptr: *const anyopaque, s: u8, occupied: u64, c: u8) bool {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const them = pos.by_color_bb[c];
