@@ -739,6 +739,9 @@ extern "C" void zfish_search_update_all_stats(
   std::int16_t* pawn_row, std::int16_t* capture_base, std::uint16_t best_move, int prev_sq,
   const std::uint16_t* quiets, std::size_t n_quiets, const std::uint16_t* captures,
   std::size_t n_captures, int depth, std::uint16_t tt_move);
+extern "C" void zfish_search_update_correction_history(
+  const void* pos_ptr, void* ss_ptr, std::int16_t* pawn_entry, std::int16_t* minor_entry,
+  std::int16_t* nonpawn_white_entry, std::int16_t* nonpawn_black_entry, int bonus);
 extern "C" void zfish_search_fill_reductions(int* reductions, std::size_t count);
 extern "C" int  zfish_search_stat_bonus(int depth, unsigned char is_tt_move, int prev_stat_score);
 extern "C" int  zfish_search_stat_malus(int depth);
@@ -811,6 +814,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_CONTHIST
 #define ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_QUIET
 #define ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_ALL_STATS
+#define ZFISH_SEARCH_BRIDGE_SKIP_UPDATE_CORRECTION_HISTORY
 #include "../src/search.cpp"
 
 extern "C" {
@@ -1165,6 +1169,20 @@ void update_all_stats(const Position& pos,
       static_cast<int>(prevSq), reinterpret_cast<const std::uint16_t*>(quietsSearched.begin()),
       quietsSearched.size(), reinterpret_cast<const std::uint16_t*>(capturesSearched.begin()),
       capturesSearched.size(), depth, ttMove.raw());
+}
+
+void update_correction_history(const Position& pos,
+                               Stack* const    ss,
+                               Search::Worker& workerThread,
+                               const int       bonus) {
+    const Color us     = pos.side_to_move();
+    auto&       shared = workerThread.sharedHistory;
+    zfish_search_update_correction_history(
+      &pos, ss, reinterpret_cast<std::int16_t*>(&shared.pawn_correction_entry(pos)[us].pawn),
+      reinterpret_cast<std::int16_t*>(&shared.minor_piece_correction_entry(pos)[us].minor),
+      reinterpret_cast<std::int16_t*>(&shared.nonpawn_correction_entry<WHITE>(pos)[us].nonPawnWhite),
+      reinterpret_cast<std::int16_t*>(&shared.nonpawn_correction_entry<BLACK>(pos)[us].nonPawnBlack),
+      bonus);
 }
 
 Value value_to_tt(Value v, int ply) { return Value(zfish_search_value_to_tt(v, ply)); }
