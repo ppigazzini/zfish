@@ -307,31 +307,43 @@ pub fn updateAllStats(
 
 const correction_history_limit: c_int = 1024;
 
+// correctionHistory[key & sizeMinus1][us] bundle, via the SharedHistories mirror.
+inline fn corrBundle(shared: *SharedHistories, key: u64) *[2]CorrectionBundle {
+    const idx: usize = @intCast(key & @as(u64, shared.size_minus1));
+    return &shared.corr_data[idx];
+}
+
 // update_correction_history (search.cpp): nudge the four shared correction
 // tables plus the (ss-2)/(ss-4) continuation correction entries toward the
-// search/static-eval delta. The bridge resolves the four key-masked, color-
-// indexed correction StatsEntry pointers (the masking + DynStats sizing must
-// stay C++); Zig owns the bonus weighting, gravity, and the stack-relative
-// continuation correction writes.
+// search/static-eval delta. Zig resolves all four key-masked, color-indexed
+// correction entries from the SharedHistories mirror (the Worker pointer gives
+// the shared block) and owns the bonus weighting, gravity, and the stack-
+// relative continuation correction writes.
 pub fn updateCorrectionHistory(
+    worker_ptr: *anyopaque,
     pos_ptr: *const anyopaque,
     ss_ptr: *anyopaque,
-    pawn_entry: *i16,
-    minor_entry: *i16,
-    nonpawn_white_entry: *i16,
-    nonpawn_black_entry: *i16,
     bonus: c_int,
 ) void {
+    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const shared = sharedOf(w);
+    const us = pos.side_to_move;
+
+    const pawn_entry = &corrBundle(shared, pos.st.pawn_key)[us].pawn;
+    const minor_entry = &corrBundle(shared, pos.st.minor_piece_key)[us].minor;
+    const npw_entry = &corrBundle(shared, pos.st.non_pawn_key[0])[us].nonpawn_white;
+    const npb_entry = &corrBundle(shared, pos.st.non_pawn_key[1])[us].nonpawn_black;
+
     statsUpdate(pawn_entry, bonus, correction_history_limit);
     statsUpdate(minor_entry, @divTrunc(bonus * 152, 128), correction_history_limit);
-    statsUpdate(nonpawn_white_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
-    statsUpdate(nonpawn_black_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
+    statsUpdate(npw_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
+    statsUpdate(npb_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
 
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
     const ss_prev: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
     const m = ss_prev.current_move;
     if (moveIsOk(m)) {
-        const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
         const to = moveTo(m);
         const pc = pos.board[to];
         const idx = @as(usize, pc) * 64 + to;

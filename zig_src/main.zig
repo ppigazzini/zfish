@@ -325,15 +325,12 @@ pub export fn zfish_search_update_all_stats(
 }
 
 pub export fn zfish_search_update_correction_history(
+    worker_ptr: *anyopaque,
     pos_ptr: *const anyopaque,
     ss_ptr: *anyopaque,
-    pawn_entry: *i16,
-    minor_entry: *i16,
-    nonpawn_white_entry: *i16,
-    nonpawn_black_entry: *i16,
     bonus: c_int,
 ) void {
-    position_port.updateCorrectionHistory(pos_ptr, ss_ptr, pawn_entry, minor_entry, nonpawn_white_entry, nonpawn_black_entry, bonus);
+    position_port.updateCorrectionHistory(worker_ptr, pos_ptr, ss_ptr, bonus);
 }
 
 pub export fn zfish_position_legal_method(pos_ptr: *const anyopaque, move: u16) u8 {
