@@ -399,7 +399,11 @@ bool Search::Worker::iterative_deepening() {
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
             // Adjust optimism based on root move's averageScore
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_OPTIMISM
+            optimism[us] = zfish_search_optimism(avg);
+#else
             optimism[us]  = 137 * avg / (std::abs(avg) + 81);
+#endif
             optimism[~us] = -optimism[us];
 
             // Start with a small aspiration window and, in the case of a fail
