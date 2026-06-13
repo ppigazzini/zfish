@@ -1,6 +1,9 @@
 const std = @import("std");
 const bitboard = @import("bitboard");
 const movegen = @import("movegen");
+const tt = @import("tt");
+const movepick = @import("movepick");
+const search = @import("search");
 
 const pawn_pt: u8 = 1;
 const knight_pt: u8 = 2;
@@ -250,6 +253,309 @@ pub fn isShuffling(pos_ptr: *const anyopaque, ss_ptr: *const anyopaque, move: u1
     const ss4: *const SearchStack = @ptrFromInt(@intFromPtr(ss) - 4 * @sizeOf(SearchStack));
     return moveFrom(move) == moveTo(ss2.current_move) and
         moveFrom(ss2.current_move) == moveTo(ss4.current_move);
+}
+
+// ======================= qsearch() (ported to Zig) =======================
+// Mirrors Search::Worker::qsearch (src/search.cpp). Calls Zig-native TT
+// (tt.probeTable/entrySave), MovePicker (movepick.nextMove), position
+// predicates, and search-formula helpers directly; the accumulator-coupled
+// do_move/undo_move/evaluate and the Worker-private nodes/selDepth go through
+// C++ callbacks (zfish_search_cb_*). All history/correction tables are read
+// from the Worker + SharedHistories mirrors.
+const q_value_draw: c_int = 0;
+const q_value_none: c_int = 32002;
+const q_value_inf: c_int = 32001;
+const q_value_mate: c_int = 32000;
+const q_max_ply: c_int = 246;
+const q_value_mate_in_max: c_int = q_value_mate - q_max_ply; // 31754
+const q_value_tb: c_int = q_value_mate_in_max - 1; // 31753
+const q_value_tb_win: c_int = q_value_tb - q_max_ply; // 31507
+const q_depth_qs: c_int = 0;
+const q_depth_unsearched: c_int = -2;
+const q_depth_none: c_int = -3;
+const q_bound_upper: u8 = 1;
+const q_bound_lower: u8 = 2;
+const q_mt_promotion: u16 = 1 << 14;
+
+const q_piece_value = [16]c_int{ 0, 208, 781, 825, 1276, 2538, 0, 0, 0, 208, 781, 825, 1276, 2538, 0, 0 };
+
+inline fn qIsValid(v: c_int) bool {
+    return v != q_value_none;
+}
+inline fn qIsWin(v: c_int) bool {
+    return v >= q_value_tb_win;
+}
+inline fn qIsLoss(v: c_int) bool {
+    return v <= -q_value_tb_win;
+}
+inline fn qIsDecisive(v: c_int) bool {
+    return qIsWin(v) or qIsLoss(v);
+}
+inline fn qMatedIn(ply: c_int) c_int {
+    return -q_value_mate + ply;
+}
+
+// Memory mirror of Search::PVMoves (src/search.h): a Move array + length.
+pub const PVMoves = extern struct {
+    moves: [247]u16,
+    length: usize,
+};
+inline fn pvClear(pv: *PVMoves) void {
+    pv.length = 0;
+}
+fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
+    const n: usize = if (child) |c| c.length else 0;
+    if (child) |c| {
+        var i: usize = 0;
+        while (i < n) : (i += 1) pv.moves[i + 1] = c.moves[i];
+    }
+    pv.moves[0] = move;
+    pv.length = n + 1;
+}
+
+extern fn zfish_search_cb_do_move(worker: *anyopaque, pos: *anyopaque, move: u16, st: *anyopaque, gives_check: u8, ss: *anyopaque) void;
+extern fn zfish_search_cb_undo_move(worker: *anyopaque, pos: *anyopaque, move: u16) void;
+extern fn zfish_search_cb_evaluate(worker: *anyopaque, pos: *const anyopaque) c_int;
+extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque, out_cc: *usize, out_gen: *u8) void;
+extern fn zfish_search_cb_nodes(worker: *anyopaque) u64;
+extern fn zfish_search_cb_update_seldepth(worker: *anyopaque, ply: c_int) void;
+
+const QCtx = struct {
+    worker: *anyopaque,
+    table: ?*anyopaque,
+    cluster_count: usize,
+    generation: u8,
+};
+
+// correction_value(*this, pos, ss): gather the four shared correction values and
+// the (ss-2)/(ss-4) continuation-correction values, then apply the Zig formula.
+fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchStack) c_int {
+    const shared = sharedOf(w);
+    const us = pos.side_to_move;
+    const pcv: c_int = corrBundle(shared, pos.st.pawn_key)[us].pawn;
+    const micv: c_int = corrBundle(shared, pos.st.minor_piece_key)[us].minor;
+    const wnpcv: c_int = corrBundle(shared, pos.st.non_pawn_key[0])[us].nonpawn_white;
+    const bnpcv: c_int = corrBundle(shared, pos.st.non_pawn_key[1])[us].nonpawn_black;
+    const ss1: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
+    const m = ss1.current_move;
+    var cch2: c_int = 0;
+    var cch4: c_int = 0;
+    const m_ok = moveIsOk(m);
+    if (m_ok) {
+        const to = moveTo(m);
+        const idx = @as(usize, pos.board[to]) * 64 + to;
+        const ss2: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 2 * @sizeOf(SearchStack));
+        const ss4: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 4 * @sizeOf(SearchStack));
+        const cc2: [*]i16 = @ptrCast(@alignCast(ss2.continuation_correction_history.?));
+        const cc4: [*]i16 = @ptrCast(@alignCast(ss4.continuation_correction_history.?));
+        cch2 = cc2[idx];
+        cch4 = cc4[idx];
+    }
+    return search.correctionValue(pcv, micv, wnpcv, bnpcv, cch2, cch4, m_ok);
+}
+
+// pos.key() == adjust_key50(st->key): the rule50-adjusted Zobrist key the TT
+// is indexed by (src/position.h). Near the 50-move boundary it perturbs the key
+// so positions differing only in rule50 hash apart.
+inline fn adjustKey50(pos: *const Position) u64 {
+    const k = pos.st.key;
+    if (pos.st.rule50 < 14) return k;
+    const seed: u64 = @intCast(@divTrunc(pos.st.rule50 - 14, 8));
+    return k ^ (seed *% 6364136223846793005 +% 1442695040888963407);
+}
+
+fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_in: c_int, beta: c_int, pv_node: bool) c_int {
+    const w: *WorkerHistories = @ptrCast(@alignCast(ctx.worker));
+    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const ss1: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
+    const ss_next: *SearchStack = @ptrFromInt(@intFromPtr(ss) + @sizeOf(SearchStack));
+    var alpha = alpha_in;
+
+    // Upcoming-repetition draw.
+    if (alpha < q_value_draw and upcomingRepetition(pos_ptr, ss.ply)) {
+        alpha = search.valueDraw(zfish_search_cb_nodes(ctx.worker));
+        if (alpha >= beta) return alpha;
+    }
+
+    var pv: PVMoves = undefined;
+    var st: StateInfo = undefined;
+
+    var best_move: u16 = 0;
+    ss.in_check = pos.st.checkers_bb != 0;
+    var move_count: c_int = 0;
+
+    // Step 1. Initialize node (PV).
+    if (pv_node) {
+        ss_next.pv = @ptrCast(&pv);
+        pvClear(@ptrCast(@alignCast(ss.pv.?)));
+        zfish_search_cb_update_seldepth(ctx.worker, ss.ply);
+    }
+
+    // Step 2. Immediate draw or max ply.
+    if (isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
+        if (ss.ply >= q_max_ply and !ss.in_check) return zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+        return q_value_draw;
+    }
+
+    // Step 3. Transposition-table lookup.
+    const pos_key = adjustKey50(pos);
+    const probe = tt.probeTable(ctx.table, ctx.cluster_count, pos_key, ctx.generation, q_depth_none);
+    const tt_hit = probe.found != 0;
+    ss.tt_hit = tt_hit;
+    const tt_move: u16 = if (tt_hit) probe.data.move16 else 0;
+    const tt_value: c_int = if (tt_hit) search.valueFromTt(probe.data.value16, ss.ply, pos.st.rule50) else q_value_none;
+    const tt_depth: c_int = probe.data.depth;
+    const tt_bound: u8 = probe.data.bound;
+    const tt_eval: c_int = probe.data.eval16;
+    const pv_hit = tt_hit and probe.data.is_pv != 0;
+    const writer: *tt.TtEntry = @ptrCast(@alignCast(probe.writer_ptr.?));
+
+    if (!pv_node and tt_depth >= q_depth_qs and qIsValid(tt_value) and
+        (tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0)
+        return tt_value;
+
+    // Step 4. Static evaluation.
+    var unadjusted_static_eval: c_int = q_value_none;
+    var best_value: c_int = undefined;
+    var futility_base: c_int = -q_value_inf;
+    if (ss.in_check) {
+        best_value = -q_value_inf;
+    } else {
+        const correction_value = qCorrectionValue(w, pos, ss);
+        if (ss.tt_hit) {
+            unadjusted_static_eval = tt_eval;
+            if (!qIsValid(unadjusted_static_eval))
+                unadjusted_static_eval = zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+            ss.static_eval = search.toCorrectedStaticEval(unadjusted_static_eval, correction_value);
+            best_value = ss.static_eval;
+            if (qIsValid(tt_value) and !qIsDecisive(tt_value) and
+                (tt_bound & (if (tt_value > best_value) q_bound_lower else q_bound_upper)) != 0)
+                best_value = tt_value;
+        } else {
+            unadjusted_static_eval = zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+            ss.static_eval = search.toCorrectedStaticEval(unadjusted_static_eval, correction_value);
+            best_value = ss.static_eval;
+        }
+
+        // Stand pat.
+        if (best_value >= beta) {
+            if (!qIsDecisive(best_value)) best_value = search.qsearchStandPatBlend(best_value, beta);
+            if (!ss.tt_hit)
+                tt.entrySave(writer, pos_key, q_value_none, 0, q_bound_lower, q_depth_unsearched, q_depth_none, 0, unadjusted_static_eval, ctx.generation);
+            return best_value;
+        }
+        if (best_value > alpha) alpha = best_value;
+        futility_base = search.qsearchFutilityBase(ss.static_eval);
+    }
+
+    var cont_hist = [1]?*const anyopaque{ss1.continuation_history};
+    const prev_sq: c_int = if (moveIsOk(ss1.current_move)) @intCast(moveTo(ss1.current_move)) else @as(c_int, sq_none);
+
+    // Step 5. MovePicker (captures, or evasions when in check).
+    var mp_moves: [256]movepick.SortEntry = undefined;
+    const has_checkers = pos.st.checkers_bb != 0;
+    const tt_pseudo = tt_move != 0 and pseudoLegal(pos_ptr, tt_move);
+    var mp_state = movepick.MovePickerState{
+        .tt_move_raw = tt_move,
+        .stage = movepick.initMainStage(has_checkers, tt_pseudo, q_depth_qs),
+        .threshold = 0,
+        .depth = q_depth_qs,
+        .skip_quiets = 0,
+        .cur = 0,
+        .end_cur = 0,
+        .end_bad_captures = 0,
+        .end_captures = 0,
+        .end_generated = 0,
+        .moves = &mp_moves,
+    };
+    const mp_ctx = movepick.MovePickerContext{
+        .pos = pos_ptr,
+        .main_history = @ptrCast(&w.main_history),
+        .low_ply_history = @ptrCast(&w.low_ply_history),
+        .capture_history = @ptrCast(&w.capture_history),
+        .continuation_history = @ptrCast(&cont_hist),
+        .shared_history = w.shared_history,
+        .ply = ss.ply,
+    };
+
+    while (true) {
+        const move = movepick.nextMove(&mp_state, &mp_ctx);
+        if (move == 0) break;
+
+        if (!legal(pos_ptr, move)) continue;
+
+        const gc = givesCheck(pos_ptr, move);
+        const capture = captureStage(pos, move);
+        move_count += 1;
+
+        // Step 6. Pruning.
+        if (!qIsLoss(best_value)) {
+            if (!gc and @as(c_int, moveTo(move)) != prev_sq and !qIsLoss(futility_base) and
+                moveTypeOf(move) != q_mt_promotion)
+            {
+                if (move_count > 2) continue;
+                const futility_value = futility_base + q_piece_value[pos.board[moveTo(move)]];
+                if (futility_value <= alpha) {
+                    if (futility_value > best_value) best_value = futility_value;
+                    continue;
+                }
+                if (!seeGe(pos_ptr, move, alpha - futility_base)) {
+                    const cap = if (alpha < futility_base) alpha else futility_base;
+                    if (cap > best_value) best_value = cap;
+                    continue;
+                }
+            }
+            if (!capture) continue;
+            if (!seeGe(pos_ptr, move, -74)) continue;
+        }
+
+        // Step 7. Make and search the move.
+        zfish_search_cb_do_move(ctx.worker, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
+        const value = -qsearchImpl(ctx, pos_ptr, @ptrCast(ss_next), -beta, -alpha, pv_node);
+        zfish_search_cb_undo_move(ctx.worker, pos_ptr, move);
+
+        // Step 8. New best move.
+        if (value > best_value) {
+            best_value = value;
+            if (value > alpha) {
+                best_move = move;
+                if (pv_node) pvUpdate(@ptrCast(@alignCast(ss.pv.?)), move, @ptrCast(@alignCast(ss_next.pv.?)));
+                if (value < beta) alpha = value else break;
+            }
+        }
+    }
+
+    // Step 9. Mate / stalemate.
+    if (move_count == 0) {
+        if (ss.in_check) return qMatedIn(ss.ply);
+        const us = pos.side_to_move;
+        const pawns = pos.by_color_bb[us] & pos.by_type_bb[pawn_pt];
+        const pushed = if (us == color_white) pawns << 8 else pawns >> 8;
+        if ((pushed & ~pos.by_type_bb[0]) == 0 and pos.st.non_pawn_material[us] == 0 and
+            (pos.st.captured_piece & 7) >= knight_pt)
+        {
+            var lbuf: [256]u16 = undefined;
+            if (movegen.generateLegal(pos_ptr, &lbuf) == 0) best_value = q_value_draw;
+        }
+    }
+
+    if (!qIsDecisive(best_value) and best_value > beta)
+        best_value = search.qsearchFailHighBlend(best_value, beta);
+
+    // Save to the transposition table.
+    tt.entrySave(writer, pos_key, search.valueToTt(best_value, ss.ply), @intFromBool(pv_hit), if (best_value >= beta) q_bound_lower else q_bound_upper, q_depth_qs, q_depth_none, best_move, unadjusted_static_eval, ctx.generation);
+
+    return best_value;
+}
+
+pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, pv_node: u8) c_int {
+    var table: ?*anyopaque = null;
+    var cc: usize = 0;
+    var gen: u8 = 0;
+    zfish_search_cb_tt_context(worker, &table, &cc, &gen);
+    const ctx = QCtx{ .worker = worker, .table = table, .cluster_count = cc, .generation = gen };
+    return qsearchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, pv_node != 0);
 }
 
 extern fn zfish_search_stat_bonus(depth: c_int, is_tt_move: u8, prev_stat_score: c_int) c_int;
