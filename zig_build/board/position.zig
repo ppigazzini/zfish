@@ -235,6 +235,25 @@ fn kingSquare(pos: *const Position, c: u8) u8 {
     return @intCast(@ctz(pos.by_color_bb[c] & pos.by_type_bb[king_pt]));
 }
 
+pub fn setCastlingRight(pos_ptr: *anyopaque, c: u8, rfrom: u8) void {
+    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    const kfrom = kingSquare(pos, c);
+    const side_mask: u8 = if (kfrom < rfrom) 5 else 10; // KING_SIDE : QUEEN_SIDE
+    const color_castling: u8 = if (c == color_white) 3 else 12; // WHITE_CASTLING : BLACK_CASTLING
+    const cr: u8 = color_castling & side_mask;
+
+    pos.st.castling_rights |= @as(c_int, cr);
+    pos.castling_rights_mask[kfrom] |= @as(c_int, cr);
+    pos.castling_rights_mask[rfrom] |= @as(c_int, cr);
+    pos.castling_rook_square[cr] = rfrom;
+
+    const king_side = (cr & 5) != 0;
+    const kto = relativeSquare(c, if (king_side) 6 else 2); // SQ_G1 : SQ_C1
+    const rto = relativeSquare(c, if (king_side) 5 else 3); // SQ_F1 : SQ_D1
+    pos.castling_path[cr] = (bitboard.between(rfrom, rto) | bitboard.between(kfrom, kto)) &
+        ~(sqBb(kfrom) | sqBb(rfrom));
+}
+
 pub fn updateSliderBlockers(pos_ptr: *const anyopaque, c: u8) void {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const ksq = kingSquare(pos, c);
