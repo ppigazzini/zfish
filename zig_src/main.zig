@@ -454,6 +454,14 @@ pub export fn zfish_search_corrhist_bonus(eval_delta: c_int, depth: c_int, has_b
     return search_port.correctionHistoryBonus(eval_delta, depth, has_best_move != 0);
 }
 
+pub export fn zfish_search_aspiration_initial_delta(thread_idx: usize, mean_squared_score: c_int) c_int {
+    return search_port.aspirationInitialDelta(thread_idx, mean_squared_score);
+}
+
+pub export fn zfish_search_aspiration_delta_grow(delta: c_int) c_int {
+    return search_port.aspirationDeltaGrow(delta);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }
