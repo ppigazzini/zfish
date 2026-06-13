@@ -256,6 +256,18 @@ pub export fn zfish_search_stat_malus(depth: c_int) c_int {
     return search_port.statMalus(depth);
 }
 
+pub export fn zfish_search_quiet_low_ply_scale(bonus: c_int) c_int {
+    return search_port.quietLowPlyScale(bonus);
+}
+
+pub export fn zfish_search_quiet_cont_scale(bonus: c_int) c_int {
+    return search_port.quietContScale(bonus);
+}
+
+pub export fn zfish_search_quiet_pawn_scale(bonus: c_int) c_int {
+    return search_port.quietPawnScale(bonus);
+}
+
 pub export fn zfish_search_conthist_delta(
     bonus: c_int,
     weight: c_int,
