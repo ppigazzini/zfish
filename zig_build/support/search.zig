@@ -231,6 +231,17 @@ pub fn razorMargin(depth: c_int) c_int {
     return 465 + 300 * depth * depth;
 }
 
+// Qsearch beta-trend blends: when a non-decisive bestValue clears beta it is
+// pulled partway toward beta. Step 4 stand-pat uses 467/557; the pre-TT-store
+// fail-high path uses 481/543. Both divide by 1024 with toward-zero truncation.
+pub fn qsearchStandPatBlend(best_value: c_int, beta: c_int) c_int {
+    return @divTrunc(467 * best_value + 557 * beta, 1024);
+}
+
+pub fn qsearchFailHighBlend(best_value: c_int, beta: c_int) c_int {
+    return @divTrunc(481 * best_value + 543 * beta, 1024);
+}
+
 // Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {

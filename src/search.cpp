@@ -1771,7 +1771,11 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         if (bestValue >= beta)
         {
             if (!is_decisive(bestValue))
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH_STAND_PAT
+                bestValue = zfish_search_qsearch_stand_pat_blend(bestValue, beta);
+#else
                 bestValue = (467 * bestValue + 557 * beta) / 1024;
+#endif
 
             if (!ss->ttHit)
                 ttWriter.write(posKey, VALUE_NONE, false, BOUND_LOWER, DEPTH_UNSEARCHED,
@@ -1895,7 +1899,11 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     }
 
     if (!is_decisive(bestValue) && bestValue > beta)
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH_FAIL_HIGH
+        bestValue = zfish_search_qsearch_fail_high_blend(bestValue, beta);
+#else
         bestValue = (481 * bestValue + 543 * beta) / 1024;
+#endif
 
     // Save gathered info in transposition table. The static evaluation
     // is saved as it was before adjustment by correction history.
