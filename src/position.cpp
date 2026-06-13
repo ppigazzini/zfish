@@ -165,6 +165,7 @@ void Position::init() {
 // Initializes the position object with the given FEN string.
 // The FEN string is strictly validated; if it is invalid or inconsistent,
 // a PositionSetError describing the problem is returned, otherwise std::nullopt.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_SET
 std::optional<PositionSetError>
 Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
     /*
@@ -448,6 +449,7 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 
     return std::nullopt;
 }
+#endif
 
 
 // Helper function used to set castling
