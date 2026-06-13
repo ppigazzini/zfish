@@ -1790,7 +1790,11 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         if (bestValue > alpha)
             alpha = bestValue;
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH_FUTILITY_BASE
+        futilityBase = zfish_search_qsearch_futility_base(ss->staticEval);
+#else
         futilityBase = ss->staticEval + 335;
+#endif
     }
 
     const PieceToHistory* contHist[] = {(ss - 1)->continuationHistory};
