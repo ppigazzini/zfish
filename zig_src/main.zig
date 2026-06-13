@@ -430,6 +430,18 @@ pub export fn zfish_search_qsearch_futility_base(static_eval: c_int) c_int {
     return search_port.qsearchFutilityBase(static_eval);
 }
 
+pub export fn zfish_search_prior_conthist_scale(scaled_bonus: c_int) c_int {
+    return search_port.priorConthistScale(scaled_bonus);
+}
+
+pub export fn zfish_search_prior_mainhist_scale(scaled_bonus: c_int) c_int {
+    return search_port.priorMainhistScale(scaled_bonus);
+}
+
+pub export fn zfish_search_prior_pawnhist_scale(scaled_bonus: c_int) c_int {
+    return search_port.priorPawnhistScale(scaled_bonus);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }

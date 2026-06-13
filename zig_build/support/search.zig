@@ -255,6 +255,21 @@ pub fn qsearchFutilityBase(static_eval: c_int) c_int {
     return static_eval + 335;
 }
 
+// Prior-countermove fail-low bonus scalings (search() POST_BONUS block): the
+// scaledBonus is fanned out into the continuation, main, and pawn history
+// tables with distinct tuned divisors, each truncated toward zero.
+pub fn priorConthistScale(scaled_bonus: c_int) c_int {
+    return @divTrunc(scaled_bonus * 236, 16384);
+}
+
+pub fn priorMainhistScale(scaled_bonus: c_int) c_int {
+    return @divTrunc(scaled_bonus * 234, 32768);
+}
+
+pub fn priorPawnhistScale(scaled_bonus: c_int) c_int {
+    return @divTrunc(scaled_bonus * 322, 8192);
+}
+
 // Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {
