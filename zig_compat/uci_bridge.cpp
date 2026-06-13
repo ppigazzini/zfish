@@ -2641,6 +2641,8 @@ std::uint8_t  zfish_position_attackers_to_exist_method(const void*   pos_ptr,
                                                        std::uint8_t  c);
 void          zfish_position_update_slider_blockers_method(const void* pos_ptr, std::uint8_t c);
 void          zfish_position_set_check_info_method(const void* pos_ptr);
+void          zfish_position_set_castling_right_method(void* pos_ptr, std::uint8_t c,
+                                                       std::uint8_t rfrom);
 std::uint8_t  zfish_position_legal_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_gives_check_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_pseudo_legal_method(const void* pos_ptr, std::uint16_t move);
@@ -2793,6 +2795,11 @@ void Position::update_slider_blockers(Color c) const {
 }
 
 void Position::set_check_info() const { zfish_position_set_check_info_method(this); }
+
+void Position::set_castling_right(Color c, Square rfrom) {
+    zfish_position_set_castling_right_method(this, static_cast<std::uint8_t>(c),
+                                             static_cast<std::uint8_t>(rfrom));
+}
 
 bool Position::legal(Move m) const { return zfish_position_legal_method(this, m.raw()) != 0; }
 

@@ -452,6 +452,7 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 
 // Helper function used to set castling
 // rights given the corresponding color and the rook starting square.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_SET_CASTLING_RIGHT
 void Position::set_castling_right(Color c, Square rfrom) {
 
     Square         kfrom = square<KING>(c);
@@ -467,6 +468,7 @@ void Position::set_castling_right(Color c, Square rfrom) {
 
     castlingPath[cr] = (between_bb(rfrom, rto) | between_bb(kfrom, kto)) & ~(kfrom | rfrom);
 }
+#endif
 
 
 // Sets king attacks to detect if a move gives check
