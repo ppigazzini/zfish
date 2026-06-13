@@ -306,6 +306,13 @@ pub fn aspirationDeltaGrow(delta: c_int) c_int {
     return delta + @divTrunc(44 * delta, 128);
 }
 
+// Eval optimism from the root move's average score (iterative_deepening()):
+// a saturating 137*avg/(|avg|+81). The caller mirrors it for the opponent.
+pub fn optimism(avg: c_int) c_int {
+    const abs_avg = if (avg < 0) -avg else avg;
+    return @divTrunc(137 * avg, abs_avg + 81);
+}
+
 // Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {

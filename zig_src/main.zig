@@ -462,6 +462,10 @@ pub export fn zfish_search_aspiration_delta_grow(delta: c_int) c_int {
     return search_port.aspirationDeltaGrow(delta);
 }
 
+pub export fn zfish_search_optimism(avg: c_int) c_int {
+    return search_port.optimism(avg);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }
