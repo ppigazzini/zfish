@@ -651,6 +651,7 @@ void Position::update_slider_blockers(Color c) const {
 
 // Computes a bitboard of all pieces which attack a given square.
 // Slider attacks use the occupied bitboard to indicate occupancy.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_ATTACKERS_TO
 Bitboard Position::attackers_to(Square s, Bitboard occupied) const {
 
     return (attacks_bb<ROOK>(s, occupied) & pieces(ROOK, QUEEN))
@@ -667,6 +668,7 @@ bool Position::attackers_to_exist(Square s, Bitboard occupied, Color c) const {
         || (attacks_bb<PAWN>(s, ~c) & pieces(c, PAWN))
         || (attacks_bb<KNIGHT>(s) & pieces(c, KNIGHT)) || (attacks_bb<KING>(s) & pieces(c, KING));
 }
+#endif
 
 // Tests whether a pseudo-legal move is legal
 bool Position::legal(Move m) const {
