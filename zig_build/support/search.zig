@@ -106,6 +106,11 @@ pub fn futilityReturn(beta: c_int, eval: c_int) c_int {
     return @divTrunc(716 * beta + 308 * eval, 1024);
 }
 
+// Late-move-count pruning: skip quiets once moveCount reaches this limit.
+pub fn moveCountLimit(depth: c_int, improving: bool) c_int {
+    return @divTrunc(3 + depth * depth, 2 - @as(c_int, @intFromBool(improving)));
+}
+
 // Step 11 ProbCut beta thresholds (shallow probcut and the deep TT cutoff).
 pub fn probCutBeta(beta: c_int, improving: bool) c_int {
     return beta + 214 - 59 * @as(c_int, @intFromBool(improving));

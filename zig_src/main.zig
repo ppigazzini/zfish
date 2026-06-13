@@ -260,6 +260,10 @@ pub export fn zfish_search_razor_margin(depth: c_int) c_int {
     return search_port.razorMargin(depth);
 }
 
+pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
+    return search_port.moveCountLimit(depth, improving != 0);
+}
+
 pub export fn zfish_search_probcut_beta(beta: c_int, improving: u8) c_int {
     return search_port.probCutBeta(beta, improving != 0);
 }
