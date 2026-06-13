@@ -574,6 +574,11 @@ extern fn zfish_search_cb_get_nmp_min_ply(worker: *anyopaque) c_int;
 extern fn zfish_search_cb_set_nmp_min_ply(worker: *anyopaque, v: c_int) void;
 extern fn zfish_search_cb_root_depth(worker: *anyopaque) c_int;
 extern fn zfish_search_cb_stop(worker: *anyopaque) u8;
+extern fn zfish_search_cb_root_tt_move(worker: *anyopaque) u16;
+extern fn zfish_search_cb_root_in_list(worker: *anyopaque, move: u16) u8;
+extern fn zfish_search_cb_root_pvidx_nonzero(worker: *anyopaque) u8;
+extern fn zfish_search_cb_root_on_iter(worker: *anyopaque, depth: c_int, move: u16, move_count: c_int) void;
+extern fn zfish_search_cb_root_update(worker: *anyopaque, move: u16, value: c_int, nodes_delta: u64, move_count: c_int, alpha: c_int, beta: c_int, child_pv: [*]const u16, child_pv_len: usize) void;
 
 const q_bound_none: u8 = 0;
 const q_bound_exact: u8 = 3;
@@ -601,7 +606,7 @@ inline fn contVal(ss_ch: ?*const anyopaque, pc: u8, to: u8) c_int {
     return p[@as(usize, pc) * 64 + to];
 }
 
-fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_in: c_int, beta_in: c_int, depth_in: c_int, cut_node: bool, pv_node: bool) c_int {
+fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_in: c_int, beta_in: c_int, depth_in: c_int, cut_node: bool, pv_node: bool, root_node: bool) c_int {
     const all_node = !(pv_node or cut_node);
 
     // Dive into qsearch at depth 0.
@@ -618,7 +623,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     var depth = @min(depth_in, q_max_ply - 1);
 
     // Upcoming-repetition draw (non-root).
-    if (alpha < q_value_draw and upcomingRepetition(pos_ptr, ss.ply)) {
+    if (!root_node and alpha < q_value_draw and upcomingRepetition(pos_ptr, ss.ply)) {
         alpha = search.valueDraw(zfish_search_cb_nodes(ctx.worker));
         if (alpha >= beta) return alpha;
     }
@@ -634,23 +639,24 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     var best_value: c_int = -q_value_inf;
     const max_value: c_int = q_value_inf;
 
-    ss.follow_pv = ss1.follow_pv and zfish_search_cb_in_last_iter_pv(ctx.worker, ss.ply - 1, ss1.current_move) != 0;
+    ss.follow_pv = root_node or (ss1.follow_pv and zfish_search_cb_in_last_iter_pv(ctx.worker, ss.ply - 1, ss1.current_move) != 0);
 
-    if (zfish_search_cb_stop(ctx.worker) != 0) {} // mainthread check_time below; stop handled per-move
     zfish_search_cb_check_time(ctx.worker);
 
     if (pv_node) zfish_search_cb_update_seldepth(ctx.worker, ss.ply);
 
-    // Step 2. Aborted search / immediate draw / max ply.
-    if (zfish_search_cb_stop(ctx.worker) != 0 or isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
-        if (ss.ply >= q_max_ply and !ss.in_check) return zfish_search_cb_evaluate(ctx.worker, pos_ptr);
-        return search.valueDraw(zfish_search_cb_nodes(ctx.worker));
-    }
+    if (!root_node) {
+        // Step 2. Aborted search / immediate draw / max ply.
+        if (zfish_search_cb_stop(ctx.worker) != 0 or isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
+            if (ss.ply >= q_max_ply and !ss.in_check) return zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+            return search.valueDraw(zfish_search_cb_nodes(ctx.worker));
+        }
 
-    // Step 3. Mate distance pruning.
-    alpha = @max(qMatedIn(ss.ply), alpha);
-    beta = @min(qMateIn(ss.ply + 1), beta);
-    if (alpha >= beta) return alpha;
+        // Step 3. Mate distance pruning.
+        alpha = @max(qMatedIn(ss.ply), alpha);
+        beta = @min(qMateIn(ss.ply + 1), beta);
+        if (alpha >= beta) return alpha;
+    }
 
     const prev_sq: c_int = if (moveIsOk(ss1.current_move)) @intCast(moveTo(ss1.current_move)) else @as(c_int, sq_none);
     var best_move: u16 = 0;
@@ -665,7 +671,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     const probe = tt.probeTable(ctx.table, ctx.cluster_count, pos_key, ctx.generation, q_depth_none);
     const tt_hit = probe.found != 0;
     ss.tt_hit = tt_hit;
-    const tt_move: u16 = if (tt_hit) probe.data.move16 else 0;
+    const tt_move: u16 = if (root_node) zfish_search_cb_root_tt_move(ctx.worker) else if (tt_hit) probe.data.move16 else 0;
     const tt_value: c_int = if (tt_hit) search.valueFromTt(probe.data.value16, ss.ply, pos.st.rule50) else q_value_none;
     const tt_depth: c_int = probe.data.depth;
     const tt_bound: u8 = probe.data.bound;
@@ -760,12 +766,12 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         {
             const r = search.nullMoveReduction(depth);
             zfish_search_cb_do_null_move(ctx.worker, pos_ptr, @ptrCast(&st), ss_ptr);
-            const null_value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -beta, -beta + 1, depth - r, false, false);
+            const null_value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -beta, -beta + 1, depth - r, false, false, false);
             zfish_search_cb_undo_null_move(ctx.worker, pos_ptr);
             if (null_value >= beta and !qIsWin(null_value)) {
                 if (zfish_search_cb_get_nmp_min_ply(ctx.worker) != 0 or depth < 16) return null_value;
                 zfish_search_cb_set_nmp_min_ply(ctx.worker, search.nmpMinPly(ss.ply, depth, r));
-                const v = searchImpl(ctx, pos_ptr, ss_ptr, beta - 1, beta, depth - r, false, false);
+                const v = searchImpl(ctx, pos_ptr, ss_ptr, beta - 1, beta, depth - r, false, false, false);
                 zfish_search_cb_set_nmp_min_ply(ctx.worker, 0);
                 if (v >= beta) return null_value;
             }
@@ -810,7 +816,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
                 zfish_search_cb_do_move(ctx.worker, pos_ptr, move, @ptrCast(&st), @intFromBool(givesCheck(pos_ptr, move)), ss_ptr);
                 var value = -qsearchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -probcut_beta, -probcut_beta + 1, false);
                 if (value >= probcut_beta and probcut_depth > 0)
-                    value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -probcut_beta, -probcut_beta + 1, probcut_depth, !cut_node, false);
+                    value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -probcut_beta, -probcut_beta + 1, probcut_depth, !cut_node, false, false);
                 zfish_search_cb_undo_move(ctx.worker, pos_ptr, move);
                 if (value >= probcut_beta) {
                     tt.entrySave(writer, pos_key, search.valueToTt(value, ss.ply), @intFromBool(ss.tt_pv), q_bound_lower, probcut_depth + 1, q_depth_none, move, unadjusted_static_eval, ctx.generation);
@@ -870,9 +876,13 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         if (move == 0) break;
         if (move == excluded_move) continue;
         if (!legal(pos_ptr, move)) continue;
+        if (root_node and zfish_search_cb_root_in_list(ctx.worker, move) == 0) continue;
 
         move_count += 1;
         ss.move_count = move_count;
+
+        if (root_node and zfish_search_cb_nodes(ctx.worker) > 10_000_000)
+            zfish_search_cb_root_on_iter(ctx.worker, depth, move, move_count);
 
         if (pv_node) ssAdd(ss, 1).pv = null;
 
@@ -888,7 +898,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         if (ss.tt_pv) r += 1006;
 
         // Step 14. Shallow-depth pruning.
-        if (pos.st.non_pawn_material[us] != 0 and !qIsLoss(best_value)) {
+        if (!root_node and pos.st.non_pawn_material[us] != 0 and !qIsLoss(best_value)) {
             if (move_count >= search.moveCountLimit(depth, improving)) mp_state.skip_quiets = 1;
             var lmr_depth = new_depth - @divTrunc(r, 1024);
             if (capture or gc) {
@@ -918,14 +928,14 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         }
 
         // Step 15. Extensions (singular).
-        if (move == tt_move and excluded_move == 0 and depth >= 6 + @as(c_int, @intFromBool(ss.tt_pv)) and
+        if (!root_node and move == tt_move and excluded_move == 0 and depth >= 6 + @as(c_int, @intFromBool(ss.tt_pv)) and
             qIsValid(tt_value) and !qIsDecisive(tt_value) and (tt_bound & q_bound_lower) != 0 and
             tt_depth >= depth - 3 and !isShuffling(pos_ptr, ss_ptr, move))
         {
             const singular_beta = search.singularBeta(tt_value, ss.tt_pv and !pv_node, depth);
             const singular_depth = @divTrunc(new_depth, 2);
             ss.excluded_move = move;
-            value = searchImpl(ctx, pos_ptr, ss_ptr, singular_beta - 1, singular_beta, singular_depth, cut_node, false);
+            value = searchImpl(ctx, pos_ptr, ss_ptr, singular_beta - 1, singular_beta, singular_depth, cut_node, false, false);
             ss.excluded_move = 0;
             if (value < singular_beta) {
                 const ply_gt_root = ss.ply > zfish_search_cb_root_depth(ctx.worker);
@@ -942,6 +952,8 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
                 extension = -2;
             }
         }
+
+        const node_count: u64 = if (root_node) zfish_search_cb_nodes(ctx.worker) else 0;
 
         // Step 16. Make the move.
         zfish_search_cb_do_move(ctx.worker, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
@@ -972,19 +984,19 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         if (depth >= 2 and move_count > 1) {
             const d = @max(@as(c_int, 1), @min(new_depth - @divTrunc(r, 1024), new_depth + 2)) + @as(c_int, @intFromBool(pv_node));
             ss.reduction = new_depth - d;
-            value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -(alpha + 1), -alpha, d, true, false);
+            value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -(alpha + 1), -alpha, d, true, false, false);
             ss.reduction = 0;
             if (value > alpha) {
                 const do_deeper = d < new_depth and value > best_value + 52;
                 const do_shallower = value < best_value + 9;
                 new_depth += @as(c_int, @intFromBool(do_deeper)) - @as(c_int, @intFromBool(do_shallower));
                 if (new_depth > d)
-                    value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -(alpha + 1), -alpha, new_depth, !cut_node, false);
+                    value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -(alpha + 1), -alpha, new_depth, !cut_node, false, false);
                 updateContinuationHistories(ss, moved_piece, to, 1415);
             }
         } else if (!pv_node or move_count > 1) {
             if (tt_move == 0) r += 1085;
-            value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -(alpha + 1), -alpha, new_depth - @as(c_int, @intFromBool(r > 5039)) - @as(c_int, @intFromBool(r > 5223 and new_depth > 2)), !cut_node, false);
+            value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -(alpha + 1), -alpha, new_depth - @as(c_int, @intFromBool(r > 5039)) - @as(c_int, @intFromBool(r > 5223 and new_depth > 2)), !cut_node, false, false);
         }
 
         if (pv_node and (move_count == 1 or value > alpha)) {
@@ -992,7 +1004,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
             pvClear(&pv);
             if (move == tt_move and ((qIsValid(tt_value) and qIsDecisive(tt_value) and tt_depth > 0) or tt_depth > 1))
                 new_depth = @max(new_depth, 1);
-            value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -beta, -alpha, new_depth, false, true);
+            value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -beta, -alpha, new_depth, false, true, false);
         }
 
         // Step 19. Undo move.
@@ -1001,13 +1013,23 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         // Step 20. Check for a new best move.
         if (zfish_search_cb_stop(ctx.worker) != 0) return q_value_draw;
 
+        if (root_node) {
+            // (ss+1)->pv is only valid (non-null) when this move ran a PV search,
+            // i.e. move_count == 1 or value > alpha; otherwise the C++ ignores it.
+            const cpv: ?*PVMoves = if (move_count == 1 or value > alpha) @ptrCast(@alignCast(ssAdd(ss, 1).pv.?)) else null;
+            var dummy: [1]u16 = undefined;
+            const pv_ptr: [*]const u16 = if (cpv) |c| &c.moves else &dummy;
+            const pv_len: usize = if (cpv) |c| c.length else 0;
+            zfish_search_cb_root_update(ctx.worker, move, value, zfish_search_cb_nodes(ctx.worker) - node_count, move_count, alpha, beta, pv_ptr, pv_len);
+        }
+
         const av = if (value < 0) -value else value;
         const inc: c_int = @intFromBool(value == best_value and ss.ply + 2 >= zfish_search_cb_root_depth(ctx.worker) and (@as(c_int, @intCast(zfish_search_cb_nodes(ctx.worker) & 14)) == 0) and !qIsWin(av + 1));
         if (value + inc > best_value) {
             best_value = value;
             if (value + inc > alpha) {
                 best_move = move;
-                if (pv_node) pvUpdate(@ptrCast(@alignCast(ss.pv.?)), move, @ptrCast(@alignCast(ssAdd(ss, 1).pv.?)));
+                if (pv_node and !root_node) pvUpdate(@ptrCast(@alignCast(ss.pv.?)), move, @ptrCast(@alignCast(ssAdd(ss, 1).pv.?)));
                 if (value >= beta) {
                     ss.cutoff_cnt += @intFromBool(extension < 2 or pv_node);
                     break;
@@ -1056,7 +1078,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
 
     if (best_value <= alpha) ss.tt_pv = ss.tt_pv or ss1.tt_pv;
 
-    if (excluded_move == 0) {
+    if (excluded_move == 0 and !(root_node and zfish_search_cb_root_pvidx_nonzero(ctx.worker) != 0)) {
         const bound: u8 = if (best_value >= beta) q_bound_lower else if (pv_node and best_move != 0) q_bound_exact else q_bound_upper;
         const wdepth: c_int = if (move_count != 0) depth else @min(q_max_ply - 1, depth + 6);
         tt.entrySave(writer, pos_key, search.valueToTt(best_value, ss.ply), @intFromBool(ss.tt_pv), bound, wdepth, q_depth_none, best_move, unadjusted_static_eval, ctx.generation);
@@ -1077,13 +1099,13 @@ inline fn captEntry(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) *i16
     return &w.capture_history[@as(usize, pc) * 512 + @as(usize, to) * 8 + captured_type];
 }
 
-pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, depth: c_int, cut_node: u8, pv_node: u8) c_int {
+pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, depth: c_int, cut_node: u8, pv_node: u8, root_node: u8) c_int {
     var table: ?*anyopaque = null;
     var cc: usize = 0;
     var gen: u8 = 0;
     zfish_search_cb_tt_context(worker, &table, &cc, &gen);
     const ctx = QCtx{ .worker = worker, .table = table, .cluster_count = cc, .generation = gen };
-    return searchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, depth, cut_node != 0, pv_node != 0);
+    return searchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, depth, cut_node != 0, pv_node != 0, root_node != 0);
 }
 
 extern fn zfish_search_stat_bonus(depth: c_int, is_tt_move: u8, prev_stat_score: c_int) c_int;

@@ -765,7 +765,8 @@ extern "C" void zfish_search_set_cont_hist(void* worker_ptr, void* ss_ptr, std::
 extern "C" int  zfish_search_qsearch(void* worker, void* pos, void* ss, int alpha, int beta,
                                      std::uint8_t pv_node);
 extern "C" int  zfish_search_search(void* worker, void* pos, void* ss, int alpha, int beta,
-                                    int depth, std::uint8_t cut_node, std::uint8_t pv_node);
+                                    int depth, std::uint8_t cut_node, std::uint8_t pv_node,
+                                    std::uint8_t root_node);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
 extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
                                                     int piece_value, int capt_hist);
@@ -976,6 +977,79 @@ extern "C" std::uint8_t zfish_search_cb_stop(void* worker) {
              ->threads.stop.load(std::memory_order_relaxed)
            ? 1
            : 0;
+}
+
+// Root-node callbacks for the ported Zig search<Root>. rootMoves is a
+// std::vector<RootMove> (each with its own std::vector<Move> pv), so it stays a
+// C++-owned structure the Zig search reaches only through these.
+extern "C" std::uint16_t zfish_search_cb_root_tt_move(void* worker) {
+    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
+    return w->rootMoves[w->pvIdx].pv[0].raw();
+}
+
+extern "C" std::uint8_t zfish_search_cb_root_in_list(void* worker, std::uint16_t move) {
+    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
+    return std::count(w->rootMoves.begin() + w->pvIdx, w->rootMoves.begin() + w->pvLast,
+                      Stockfish::Move(move))
+           ? 1
+           : 0;
+}
+
+extern "C" std::uint8_t zfish_search_cb_root_pvidx_nonzero(void* worker) {
+    return static_cast<Stockfish::Search::Worker*>(worker)->pvIdx != 0 ? 1 : 0;
+}
+
+extern "C" void zfish_search_cb_root_on_iter(void* worker, int depth, std::uint16_t move,
+                                             int move_count) {
+    using namespace Stockfish;
+    auto* w = static_cast<Search::Worker*>(worker);
+    if (w->is_mainthread())
+        w->main_manager()->updates.onIter(
+          {depth, UCIEngine::move(Move(move), w->rootPos.is_chess960()),
+           static_cast<std::size_t>(move_count) + w->pvIdx});
+}
+
+extern "C" void zfish_search_cb_root_update(void* worker, std::uint16_t move, int value,
+                                            std::uint64_t nodes_delta, int move_count, int alpha,
+                                            int beta, const std::uint16_t* child_pv,
+                                            std::size_t child_pv_len) {
+    using namespace Stockfish;
+    auto*     w  = static_cast<Search::Worker*>(worker);
+    RootMove& rm = *std::find(w->rootMoves.begin(), w->rootMoves.end(), Move(move));
+
+    rm.effort += nodes_delta;
+    rm.averageScore =
+      rm.averageScore != -VALUE_INFINITE ? (value + rm.averageScore) / 2 : value;
+    rm.meanSquaredScore = rm.meanSquaredScore != -VALUE_INFINITE * VALUE_INFINITE
+                          ? (value * std::abs(value) + rm.meanSquaredScore) / 2
+                          : value * std::abs(value);
+
+    if (move_count == 1 || value > alpha)
+    {
+        rm.score = rm.uciScore = value;
+        rm.selDepth            = w->selDepth;
+        rm.unset_bound_flags();
+
+        if (value >= beta)
+        {
+            rm.scoreLowerbound = true;
+            rm.uciScore        = beta;
+        }
+        else if (value <= alpha)
+        {
+            rm.scoreUpperbound = true;
+            rm.uciScore        = alpha;
+        }
+
+        rm.pv.resize(1);
+        for (std::size_t i = 0; i < child_pv_len; ++i)
+            rm.pv.push_back(Move(child_pv[i]));
+
+        if (move_count > 1 && !w->pvIdx)
+            ++w->bestMoveChanges;
+    }
+    else
+        rm.score = -VALUE_INFINITE;
 }
 
 extern "C" {
