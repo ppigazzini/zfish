@@ -205,6 +205,9 @@ pub fn build(b: *std.Build) void {
     nnue_accumulator_module.addImport("position_snapshot", position_snapshot_module);
     position_module.addImport("bitboard", bitboard_module);
     position_module.addImport("movegen", movegen_module);
+    position_module.addImport("tt", tt_module);
+    position_module.addImport("movepick", movepick_module);
+    position_module.addImport("search", search_module);
     thread_module.addImport("position_snapshot", position_snapshot_module);
     thread_module.addImport("position", position_module);
     thread_module.addImport("uci_move", uci_move_module);
