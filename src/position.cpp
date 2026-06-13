@@ -1415,6 +1415,7 @@ void Position::undo_null_move() {
 // Tests if the SEE (Static Exchange Evaluation)
 // value of the move is greater or equal to the given threshold. We'll use an
 // algorithm similar to alpha-beta pruning with a null window.
+#ifndef ZFISH_POSITION_BRIDGE_SKIP_SEE_GE
 bool Position::see_ge(Move m, int threshold) const {
 
     assert(m.is_ok());
@@ -1518,6 +1519,7 @@ bool Position::see_ge(Move m, int threshold) const {
 
     return bool(res);
 }
+#endif
 
 // Tests whether the position is drawn by 50-move rule
 // or by repetition. It does not detect stalemates.
