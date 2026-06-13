@@ -2662,6 +2662,7 @@ std::uint8_t  zfish_position_see_ge_method(const void* pos_ptr, std::uint16_t mo
 void          zfish_position_do_null_move(void* pos_ptr, void* new_st_ptr, std::uint64_t zob_side,
                                           std::uint64_t zob_ep);
 void          zfish_position_undo_null_move(void* pos_ptr);
+void          zfish_position_undo_move_method(void* pos_ptr, std::uint16_t move);
 void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
@@ -2862,6 +2863,8 @@ void Position::do_null_move(StateInfo& newSt) {
 }
 
 void Position::undo_null_move() { zfish_position_undo_null_move(this); }
+
+void Position::undo_move(Move m) { zfish_position_undo_move_method(this, m.raw()); }
 
 namespace {
 
