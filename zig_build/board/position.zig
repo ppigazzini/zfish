@@ -583,8 +583,6 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
 // so rootMoves never crosses the boundary). Reuses the qsearch infrastructure
 // (mirrors, TT, MovePicker, callbacks) plus do_null_move / pos_do_move (2-arg) /
 // reduction / followPV / nmpMinPly callbacks.
-extern fn zfish_search_cb_do_null_move(worker: *anyopaque, pos: *anyopaque, st: *anyopaque, ss: *anyopaque) void;
-extern fn zfish_search_cb_undo_null_move(worker: *anyopaque, pos: *anyopaque) void;
 extern fn zfish_search_cb_pos_do_move(pos: *anyopaque, move: u16, st: *anyopaque) void;
 extern fn zfish_search_cb_pos_undo_move(pos: *anyopaque, move: u16) void;
 extern fn zfish_search_cb_reduction(worker: *anyopaque, i: u8, d: c_int, mn: c_int, delta: c_int) c_int;
@@ -785,9 +783,15 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
             excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= zfish_search_cb_get_nmp_min_ply(ctx.worker) and !qIsLoss(beta))
         {
             const r = search.nullMoveReduction(depth);
-            zfish_search_cb_do_null_move(ctx.worker, pos_ptr, @ptrCast(&st), ss_ptr);
+            // Worker::do_null_move, inlined: null moves touch no accumulator, so
+            // call the Zig-owned pos.do_null_move, mark the stack move as null
+            // (Move::null() == 65), and set the all-NO_PIECE continuation-history
+            // pointer -- the work the removed cb_do_null_move callback did.
+            doNullMove(pos_ptr, @ptrCast(&st));
+            ss.current_move = 65;
+            setContHist(ctx.worker, ss_ptr, 0, 0, 0, 0);
             const null_value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -beta, -beta + 1, depth - r, false, false, false);
-            zfish_search_cb_undo_null_move(ctx.worker, pos_ptr);
+            undoNullMove(pos_ptr);
             if (null_value >= beta and !qIsWin(null_value)) {
                 if (zfish_search_cb_get_nmp_min_ply(ctx.worker) != 0 or depth < 16) return null_value;
                 zfish_search_cb_set_nmp_min_ply(ctx.worker, search.nmpMinPly(ss.ply, depth, r));

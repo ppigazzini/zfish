@@ -920,22 +920,13 @@ extern "C" void zfish_search_cb_update_seldepth(void* worker, int ply) {
         w->selDepth = ply + 1;
 }
 
-// Additional callbacks for the ported Zig search() (non-root). do_null_move /
-// undo_null_move manage the accumulator; pos_do_move/pos_undo_move are the
-// Position-level (no-accumulator) make/unmake used for the TT-move cutoff
-// verification; reduction reads the Worker reductions table + rootDelta; the
-// rest expose Worker/threads state the non-root search reads.
-extern "C" void zfish_search_cb_do_null_move(void* worker, void* pos, void* st, void* ss) {
-    static_cast<Stockfish::Search::Worker*>(worker)->do_null_move(
-      *static_cast<Stockfish::Position*>(pos), *static_cast<Stockfish::StateInfo*>(st),
-      static_cast<Stockfish::Search::Stack*>(ss));
-}
-
-extern "C" void zfish_search_cb_undo_null_move(void* worker, void* pos) {
-    static_cast<Stockfish::Search::Worker*>(worker)->undo_null_move(
-      *static_cast<Stockfish::Position*>(pos));
-}
-
+// Additional callbacks for the ported Zig search() (non-root). pos_do_move/
+// pos_undo_move are the Position-level (no-accumulator) make/unmake used for the
+// TT-move cutoff verification; reduction reads the Worker reductions table +
+// rootDelta; the rest expose Worker/threads state the non-root search reads.
+// (do_null_move/undo_null_move are now inlined in the Zig search: null moves
+// touch no accumulator, so the Zig search calls the Zig-owned pos.do_null_move /
+// undo_null_move and sets the continuation-history pointer directly.)
 extern "C" void zfish_search_cb_pos_do_move(void* pos, std::uint16_t move, void* st) {
     static_cast<Stockfish::Position*>(pos)->do_move(Stockfish::Move(move),
                                                     *static_cast<Stockfish::StateInfo*>(st));
