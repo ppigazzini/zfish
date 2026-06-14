@@ -466,6 +466,10 @@ pub export fn zfish_search_fill_low_ply_history(worker_ptr: *anyopaque) void {
     position_port.fillLowPlyHistory(worker_ptr);
 }
 
+pub export fn zfish_search_clear_worker_histories(worker_ptr: *anyopaque) void {
+    position_port.clearWorkerHistories(worker_ptr);
+}
+
 pub export fn zfish_search_set_cont_hist(worker_ptr: *anyopaque, ss_ptr: *anyopaque, in_check: u8, capture: u8, pc: u8, to: u8) void {
     position_port.setContHist(worker_ptr, ss_ptr, in_check, capture, pc, to);
 }
