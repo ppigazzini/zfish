@@ -516,6 +516,37 @@ pub fn build(b: *std.Build) void {
     );
     search_parity_update_step.dependOn(&search_parity_update_cmd.step);
 
+    // Deterministic non-bench search-mode harness (node-limit / MultiPV /
+    // searchmoves) -- validates iterative_deepening control flow beyond bench.
+    const search_modes_golden = b.pathFromRoot("zig_build/tools/search_modes.golden");
+    const search_modes_script = b.pathFromRoot("zig_build/tools/search_modes.sh");
+
+    const search_modes_cmd = b.addSystemCommand(&.{
+        "bash", search_modes_script, b.getInstallPath(.bin, "stockfish"), search_modes_golden, "check",
+    });
+    search_modes_cmd.step.dependOn(install_step);
+    search_modes_cmd.step.dependOn(&net_cmd.step);
+    search_modes_cmd.setCwd(b.path("src"));
+
+    const search_modes_step = b.step(
+        "search-modes",
+        "Diff deterministic non-bench search modes against the committed golden",
+    );
+    search_modes_step.dependOn(&search_modes_cmd.step);
+
+    const search_modes_update_cmd = b.addSystemCommand(&.{
+        "bash", search_modes_script, b.getInstallPath(.bin, "stockfish"), search_modes_golden, "update",
+    });
+    search_modes_update_cmd.step.dependOn(install_step);
+    search_modes_update_cmd.step.dependOn(&net_cmd.step);
+    search_modes_update_cmd.setCwd(b.path("src"));
+
+    const search_modes_update_step = b.step(
+        "search-modes-update",
+        "Regenerate zig_build/tools/search_modes.golden from the current binary",
+    );
+    search_modes_update_step.dependOn(&search_modes_update_cmd.step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
@@ -524,6 +555,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&uci_run.step);
     parity_step.dependOn(&signature_cmd.step);
     parity_step.dependOn(&search_parity_cmd.step);
+    parity_step.dependOn(&search_modes_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
