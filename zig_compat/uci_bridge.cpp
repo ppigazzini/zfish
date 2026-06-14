@@ -554,15 +554,22 @@ const void* zfish_network_feature_transformer_ptr(const void* network_ptr) {
         return &NetworkBridgeAccess::featureTransformer(network);
 }
 
-int zfish_network_propagate_bucket(const void*         network_ptr,
-                                                                     std::size_t        bucket,
-                                                                     const unsigned char* transformed_ptr) {
-        const auto& network = *static_cast<const Network*>(network_ptr);
-        const auto* transformed_features = reinterpret_cast<const TransformedFeatureType*>(transformed_ptr);
-
-        return static_cast<int>(NetworkBridgeAccess::layer(network, bucket).propagate(
-            transformed_features));
+// Per-bucket affine-layer weight/bias pointers for the Zig propagate
+// (zfish_network_propagate_bucket in network.zig). idx 0=fc_0, 1=fc_1, 2=fc_2.
+// Biases are stored linearly (int32); weights are int8 in the SSSE3-scrambled
+// layout, which the Zig side un-scrambles with get_weight_index_scrambled.
+const std::int32_t* zfish_layer_biases(const void* network_ptr, std::size_t bucket, int idx) {
+        const auto& l = NetworkBridgeAccess::layer(*static_cast<const Network*>(network_ptr), bucket);
+        return idx == 0 ? l.fc_0.biases : idx == 1 ? l.fc_1.biases : l.fc_2.biases;
 }
+
+const std::int8_t* zfish_layer_weights(const void* network_ptr, std::size_t bucket, int idx) {
+        const auto& l = NetworkBridgeAccess::layer(*static_cast<const Network*>(network_ptr), bucket);
+        return idx == 0 ? l.fc_0.weights : idx == 1 ? l.fc_1.weights : l.fc_2.weights;
+}
+
+// zfish_network_propagate_bucket is now Zig-owned (network.zig). The bridge only
+// exposes the per-layer weight/bias pointers above.
 
 ZfishNetworkVerifyInfo zfish_network_verify_info(const void* network_ptr) {
     const auto& network = *static_cast<const Network*>(network_ptr);
