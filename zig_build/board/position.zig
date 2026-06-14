@@ -342,7 +342,7 @@ extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque
 // rootDepth. Cached in QCtx at entry so do_move/undo_move/evaluate and these scalar
 // accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
 // forward pass + eval scaling are all Zig-owned).
-extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int) void;
+extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int) void;
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -386,12 +386,23 @@ const QCtx = struct {
     nmp_min_ply: *c_int,
     sel_depth: *c_int,
     root_depth: *c_int,
+    reductions: [*]const c_int,
+    root_delta: *const c_int,
 };
 
 // Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
 // only for UCI reporting. Bumps the cached field when this ply is deeper.
 inline fn updateSelDepth(ctx: *const QCtx, ply: c_int) void {
     if (ctx.sel_depth.* < ply + 1) ctx.sel_depth.* = ply + 1;
+}
+
+// Worker::reduction inlined: the LMR base reduction from the per-thread reductions
+// table, the root delta, and the improving flag. Mirrors search.cpp exactly with
+// C truncating integer division.
+inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta: c_int) c_int {
+    const reduction_scale = ctx.reductions[@intCast(d)] * ctx.reductions[@intCast(mn)];
+    return reduction_scale - @divTrunc(delta * 617, ctx.root_delta.*) +
+        @divTrunc(@as(c_int, @intFromBool(!i)) * reduction_scale * 194, 512) + 1027;
 }
 
 // Worker::evaluate inlined: run the NNUE forward pass on the current position,
@@ -669,7 +680,9 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var nmp_min_ply: ?*c_int = null;
     var sel_depth: ?*c_int = null;
     var root_depth: ?*c_int = null;
-    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth);
+    var reductions: ?[*]const c_int = null;
+    var root_delta: ?*const c_int = null;
+    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta);
     return .{
         .worker = worker,
         .table = table,
@@ -683,6 +696,8 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
         .nmp_min_ply = nmp_min_ply.?,
         .sel_depth = sel_depth.?,
         .root_depth = root_depth.?,
+        .reductions = reductions.?,
+        .root_delta = root_delta.?,
     };
 }
 
@@ -698,11 +713,13 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
 // ======================= search() (ported to Zig, non-root) =======================
 // Mirrors Search::Worker::search for PV/NonPV nodes (Root stays C++ in search.cpp,
 // so rootMoves never crosses the boundary). Reuses the qsearch infrastructure
-// (mirrors, TT, MovePicker, callbacks) plus do_null_move / pos_do_move (2-arg) /
-// reduction / followPV / nmpMinPly callbacks.
+// (mirrors, TT, MovePicker, the worker_state pointers) plus the pos_do_move
+// (2-arg) / followPV / root-bookkeeping callbacks. (do_null_move, reduction,
+// nmpMinPly, and seldepth are now inlined: null make/unmake is Zig-owned, and the
+// reductions table / rootDelta / nmpMinPly / selDepth are read through the stable
+// pointers worker_state hands the search.)
 extern fn zfish_search_cb_pos_do_move(pos: *anyopaque, move: u16, st: *anyopaque) void;
 extern fn zfish_search_cb_pos_undo_move(pos: *anyopaque, move: u16) void;
-extern fn zfish_search_cb_reduction(worker: *anyopaque, i: u8, d: c_int, mn: c_int, delta: c_int) c_int;
 extern fn zfish_search_cb_check_time(worker: *anyopaque) void;
 extern fn zfish_search_cb_in_last_iter_pv(worker: *anyopaque, ply_minus_1: c_int, move: u16) u8;
 extern fn zfish_search_cb_stop(worker: *anyopaque) u8;
@@ -1032,7 +1049,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
 
         var new_depth = depth - 1;
         const delta = beta - alpha;
-        var r = zfish_search_cb_reduction(ctx.worker, @intFromBool(improving), depth, move_count, delta);
+        var r = reductionAcc(ctx, improving, depth, move_count, delta);
         if (ss.tt_pv) r += 1006;
 
         // Step 14. Shallow-depth pruning.
