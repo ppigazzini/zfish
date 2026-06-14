@@ -92,12 +92,77 @@ extern fn zfish_network_transform_bucket(
     bucket: usize,
     transformed_ptr: [*]u8,
 ) c_int;
-extern fn zfish_network_propagate_bucket(
-    network: *const anyopaque,
-    bucket: usize,
-    transformed_ptr: [*]const u8,
-) c_int;
+extern fn zfish_layer_biases(network: *const anyopaque, bucket: usize, idx: c_int) [*]const i32;
+extern fn zfish_layer_weights(network: *const anyopaque, bucket: usize, idx: c_int) [*]const i8;
 extern fn zfish_network_verify_info(network: *const anyopaque) VerifyInfo;
+
+// NNUE network layer forward pass (NetworkArchitecture::propagate), ported to
+// Zig. Layers: fc_0 (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 62->32)
+// -> ac_1 -> fc_2 (affine 32->1), plus the fwdOut bias term. Bit-exact with the
+// C++ SSSE3 path (integer math). Weights are int8 in the SSSE3-scrambled layout;
+// biases int32 linear. WeightScaleBits=6.
+inline fn weightIndexScrambled(i: usize, padded_input: usize, output_dim: usize) usize {
+    return (i / 4) % (padded_input / 4) * output_dim * 4 + (i / padded_input) * 4 + i % 4;
+}
+
+fn affineLayer(
+    out: []i32,
+    biases: [*]const i32,
+    weights: [*]const i8,
+    input: []const u8,
+    padded_input: usize,
+) void {
+    const out_dim = out.len;
+    var j: usize = 0;
+    while (j < out_dim) : (j += 1) {
+        var sum: i32 = biases[j];
+        var i: usize = 0;
+        while (i < input.len) : (i += 1) {
+            const phys = weightIndexScrambled(j * padded_input + i, padded_input, out_dim);
+            sum += @as(i32, weights[phys]) * @as(i32, input[i]);
+        }
+        out[j] = sum;
+    }
+}
+
+fn propagateBucket(network: *const anyopaque, bucket: usize, transformed: [*]const u8) c_int {
+    const fc0_b = zfish_layer_biases(network, bucket, 0);
+    const fc0_w = zfish_layer_weights(network, bucket, 0);
+    const fc1_b = zfish_layer_biases(network, bucket, 1);
+    const fc1_w = zfish_layer_weights(network, bucket, 1);
+    const fc2_b = zfish_layer_biases(network, bucket, 2);
+    const fc2_w = zfish_layer_weights(network, bucket, 2);
+
+    // fc_0: affine 1024 -> 32 (PaddedInputDimensions = 1024).
+    var fc0_out: [32]i32 = undefined;
+    affineLayer(&fc0_out, fc0_b, fc0_w, transformed[0..1024], 1024);
+
+    // ac_sqr_0 / ac_0 on the first FC_0_OUTPUTS=31 outputs, concatenated into 62.
+    var combined: [64]u8 = [_]u8{0} ** 64;
+    var i: usize = 0;
+    while (i < 31) : (i += 1) {
+        const sq: i64 = @as(i64, fc0_out[i]) * @as(i64, fc0_out[i]);
+        combined[i] = @intCast(@min(@as(i64, 127), sq >> 19)); // SqrClippedReLU: >> (2*6+7)
+        combined[31 + i] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc0_out[i] >> 6))); // ClippedReLU
+    }
+
+    // fc_1: affine 62 -> 32 (PaddedInputDimensions = 64).
+    var fc1_out: [32]i32 = undefined;
+    affineLayer(&fc1_out, fc1_b, fc1_w, combined[0..62], 64);
+
+    // ac_1: ClippedReLU 32.
+    var ac1: [32]u8 = undefined;
+    var k: usize = 0;
+    while (k < 32) : (k += 1) ac1[k] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc1_out[k] >> 6)));
+
+    // fc_2: affine 32 -> 1 (PaddedInputDimensions = 32).
+    var fc2_out: [1]i32 = undefined;
+    affineLayer(&fc2_out, fc2_b, fc2_w, ac1[0..32], 32);
+
+    // fwdOut = fc_0_out[FC_0_OUTPUTS] * (600*OutputScale) / (127 * (1<<WeightScaleBits)).
+    const fwd_out: c_int = @intCast(@divTrunc(@as(i64, fc0_out[31]) * (600 * 16), 127 * 64));
+    return fc2_out[0] + fwd_out;
+}
 
 pub fn load(
     network: *anyopaque,
@@ -280,7 +345,7 @@ fn evaluateBucketRaw(
             bucket,
             @ptrCast(&transformed),
         ),
-        .positional = zfish_network_propagate_bucket(network, bucket, @ptrCast(&transformed)),
+        .positional = propagateBucket(network, bucket, @ptrCast(&transformed)),
     };
 }
 
