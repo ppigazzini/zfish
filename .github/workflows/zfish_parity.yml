@@ -9,6 +9,12 @@ on:
     branches: [main, github_ci]
   workflow_dispatch:
 
+# One in-flight run per branch; a newer push cancels the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: the gate only needs to read the repository.
 permissions:
   contents: read
 
@@ -17,15 +23,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Install Zig 0.16.0
-        run: |
-          set -euo pipefail
-          ZIG=zig-x86_64-linux-0.16.0
-          curl -fsSL "https://ziglang.org/download/0.16.0/${ZIG}.tar.xz" -o /tmp/zig.tar.xz
-          tar -C /tmp -xf /tmp/zig.tar.xz
-          echo "/tmp/${ZIG}" >> "$GITHUB_PATH"
+      # Installs Zig 0.16.0 and caches the global + local Zig build cache
+      # (use-cache defaults to true), so reruns skip recompilation.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      # Cache the downloaded NNUE network (~50 MB) keyed on its pinned name in
+      # evaluate.h, so reruns skip the fetch from tests.stockfishchess.org.
+      - name: Cache NNUE network
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: src/nn-*.nnue
+          key: nnue-${{ hashFiles('src/evaluate.h') }}
 
       # Pin the ARCH instead of `native`: GitHub runners have modern CPUs whose
       # `native` resolves to a PEXT/AVX512 arch, but the C++ oracle bridge still
