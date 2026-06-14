@@ -27,4 +27,9 @@ jobs:
           tar -C /tmp -xf /tmp/zig.tar.xz
           echo "/tmp/${ZIG}" >> "$GITHUB_PATH"
 
-      - run: zig build parity
+      # Pin the ARCH instead of `native`: GitHub runners have modern CPUs whose
+      # `native` resolves to a PEXT/AVX512 arch, but the C++ oracle bridge still
+      # mirrors the fancy-magic (non-PEXT) `struct Magic` layout. Pin the exact
+      # baseline the bench signature / parity goldens were validated against so
+      # the gate is reproducible and CPU-independent (sse41 runs on any runner).
+      - run: zig build parity -Darch=x86-64-sse41-popcnt
