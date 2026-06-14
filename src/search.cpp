@@ -347,7 +347,11 @@ bool Search::Worker::iterative_deepening() {
     int  searchAgainCounter = 0;
     bool uciPvSent          = false;
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_FILL_LOW_PLY
+    zfish_search_fill_low_ply_history(this);
+#else
     lowPlyHistory.fill(100);
+#endif
 
 #ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_AGE_MAIN_HISTORY
     zfish_search_age_main_history(this);

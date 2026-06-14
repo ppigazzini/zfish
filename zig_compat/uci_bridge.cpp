@@ -760,6 +760,7 @@ extern "C" int  zfish_search_aspiration_initial_delta(std::size_t thread_idx,
 extern "C" int  zfish_search_aspiration_delta_grow(int delta);
 extern "C" int  zfish_search_optimism(int avg);
 extern "C" void zfish_search_age_main_history(void* worker_ptr);
+extern "C" void zfish_search_fill_low_ply_history(void* worker_ptr);
 extern "C" void zfish_search_set_cont_hist(void* worker_ptr, void* ss_ptr, std::uint8_t in_check,
                                            std::uint8_t capture, std::uint8_t pc, std::uint8_t to);
 extern "C" int  zfish_search_qsearch(void* worker, void* pos, void* ss, int alpha, int beta,
@@ -843,6 +844,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_ASPIRATION
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_OPTIMISM
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_AGE_MAIN_HISTORY
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_FILL_LOW_PLY
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SET_CONT_HIST
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SEARCH
