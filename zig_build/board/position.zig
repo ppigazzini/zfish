@@ -334,15 +334,15 @@ fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
 }
 
 extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque, out_cc: *usize, out_gen: *u8) void;
-extern fn zfish_search_cb_update_seldepth(worker: *anyopaque, ply: c_int) void;
 
-// One-shot fetch of the Worker state the inlined make/unmake and evaluate need,
-// all stable for the whole search: the NNUE accumulator stack, the node counter,
-// the (numa-resolved) Network, the accumulator-refresh cache, and the optimism[2]
-// array. Cached in QCtx at entry so do_move/undo_move/evaluate (below) touch no
-// C++ — the accumulator push/pop, pos.do_move, and the network forward pass +
-// eval scaling are all Zig-owned.
-extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int) void;
+// One-shot fetch of the Worker state the inlined search needs, all stable for the
+// whole search: the NNUE accumulator stack, the node counter, the (numa-resolved)
+// Network, the accumulator-refresh cache, the optimism[2] array, and the three
+// scalar Worker fields the search reads/writes directly — nmpMinPly, selDepth, and
+// rootDepth. Cached in QCtx at entry so do_move/undo_move/evaluate and these scalar
+// accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
+// forward pass + eval scaling are all Zig-owned).
+extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int) void;
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -383,7 +383,16 @@ const QCtx = struct {
     network: *const anyopaque,
     cache: *anyopaque,
     optimism: *const [2]c_int,
+    nmp_min_ply: *c_int,
+    sel_depth: *c_int,
+    root_depth: *c_int,
 };
+
+// Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
+// only for UCI reporting. Bumps the cached field when this ply is deeper.
+inline fn updateSelDepth(ctx: *const QCtx, ply: c_int) void {
+    if (ctx.sel_depth.* < ply + 1) ctx.sel_depth.* = ply + 1;
+}
 
 // Worker::evaluate inlined: run the NNUE forward pass on the current position,
 // then apply the eval scaling. Mirrors Eval::evaluate exactly — material is
@@ -489,7 +498,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_
     if (pv_node) {
         ss_next.pv = @ptrCast(&pv);
         pvClear(@ptrCast(@alignCast(ss.pv.?)));
-        zfish_search_cb_update_seldepth(ctx.worker, ss.ply);
+        updateSelDepth(ctx, ss.ply);
     }
 
     // Step 2. Immediate draw or max ply.
@@ -657,7 +666,10 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var network: ?*const anyopaque = null;
     var cache: ?*anyopaque = null;
     var optimism: ?*const [2]c_int = null;
-    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism);
+    var nmp_min_ply: ?*c_int = null;
+    var sel_depth: ?*c_int = null;
+    var root_depth: ?*c_int = null;
+    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth);
     return .{
         .worker = worker,
         .table = table,
@@ -668,6 +680,9 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
         .network = network.?,
         .cache = cache.?,
         .optimism = optimism.?,
+        .nmp_min_ply = nmp_min_ply.?,
+        .sel_depth = sel_depth.?,
+        .root_depth = root_depth.?,
     };
 }
 
@@ -690,9 +705,6 @@ extern fn zfish_search_cb_pos_undo_move(pos: *anyopaque, move: u16) void;
 extern fn zfish_search_cb_reduction(worker: *anyopaque, i: u8, d: c_int, mn: c_int, delta: c_int) c_int;
 extern fn zfish_search_cb_check_time(worker: *anyopaque) void;
 extern fn zfish_search_cb_in_last_iter_pv(worker: *anyopaque, ply_minus_1: c_int, move: u16) u8;
-extern fn zfish_search_cb_get_nmp_min_ply(worker: *anyopaque) c_int;
-extern fn zfish_search_cb_set_nmp_min_ply(worker: *anyopaque, v: c_int) void;
-extern fn zfish_search_cb_root_depth(worker: *anyopaque) c_int;
 extern fn zfish_search_cb_stop(worker: *anyopaque) u8;
 extern fn zfish_search_cb_root_tt_move(worker: *anyopaque) u16;
 extern fn zfish_search_cb_root_in_list(worker: *anyopaque, move: u16) u8;
@@ -763,7 +775,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
 
     zfish_search_cb_check_time(ctx.worker);
 
-    if (pv_node) zfish_search_cb_update_seldepth(ctx.worker, ss.ply);
+    if (pv_node) updateSelDepth(ctx, ss.ply);
 
     if (!root_node) {
         // Step 2. Aborted search / immediate draw / max ply.
@@ -882,7 +894,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
 
         // Step 9. Null-move search.
         if (cut_node and ss.static_eval >= search.nullMoveThreshold(beta, depth, improving) and
-            excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= zfish_search_cb_get_nmp_min_ply(ctx.worker) and !qIsLoss(beta))
+            excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= ctx.nmp_min_ply.* and !qIsLoss(beta))
         {
             const r = search.nullMoveReduction(depth);
             // Worker::do_null_move, inlined: null moves touch no accumulator, so
@@ -895,10 +907,10 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
             const null_value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -beta, -beta + 1, depth - r, false, false, false);
             undoNullMove(pos_ptr);
             if (null_value >= beta and !qIsWin(null_value)) {
-                if (zfish_search_cb_get_nmp_min_ply(ctx.worker) != 0 or depth < 16) return null_value;
-                zfish_search_cb_set_nmp_min_ply(ctx.worker, search.nmpMinPly(ss.ply, depth, r));
+                if (ctx.nmp_min_ply.* != 0 or depth < 16) return null_value;
+                ctx.nmp_min_ply.* = search.nmpMinPly(ss.ply, depth, r);
                 const v = searchImpl(ctx, pos_ptr, ss_ptr, beta - 1, beta, depth - r, false, false, false);
-                zfish_search_cb_set_nmp_min_ply(ctx.worker, 0);
+                ctx.nmp_min_ply.* = 0;
                 if (v >= beta) return null_value;
             }
         }
@@ -1064,7 +1076,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
             value = searchImpl(ctx, pos_ptr, ss_ptr, singular_beta - 1, singular_beta, singular_depth, cut_node, false, false);
             ss.excluded_move = 0;
             if (value < singular_beta) {
-                const ply_gt_root = ss.ply > zfish_search_cb_root_depth(ctx.worker);
+                const ply_gt_root = ss.ply > ctx.root_depth.*;
                 const double_margin = search.singularDoubleMargin(pv_node, !tt_capture, correction_value, w.tt_move_history, ply_gt_root);
                 const triple_margin = search.singularTripleMargin(pv_node, !tt_capture, ss.tt_pv, correction_value, ply_gt_root);
                 extension = 1 + @as(c_int, @intFromBool(value < singular_beta - double_margin)) + @as(c_int, @intFromBool(value < singular_beta - triple_margin));
@@ -1150,7 +1162,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         }
 
         const av = if (value < 0) -value else value;
-        const inc: c_int = @intFromBool(value == best_value and ss.ply + 2 >= zfish_search_cb_root_depth(ctx.worker) and (@as(c_int, @intCast(ctx.nodes.* & 14)) == 0) and !qIsWin(av + 1));
+        const inc: c_int = @intFromBool(value == best_value and ss.ply + 2 >= ctx.root_depth.* and (@as(c_int, @intCast(ctx.nodes.* & 14)) == 0) and !qIsWin(av + 1));
         if (value + inc > best_value) {
             best_value = value;
             if (value + inc > alpha) {

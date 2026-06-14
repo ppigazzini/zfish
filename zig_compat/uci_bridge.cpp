@@ -889,13 +889,18 @@ static_assert(sizeof(Stockfish::Search::PVMoves) == 504);  // [247]Move padded +
 // Network, the accumulator-refresh cache, and the optimism[COLOR_NB] array.)
 extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              std::uint64_t** out_nodes, const void** out_network,
-                                             void** out_cache, const void** out_optimism) {
-    auto* w        = static_cast<Stockfish::Search::Worker*>(worker);
-    *out_acc_stack = &w->accumulatorStack;
-    *out_nodes     = reinterpret_cast<std::uint64_t*>(&w->nodes);
-    *out_network   = &w->network[w->numaAccessToken];
-    *out_cache     = &w->refreshTable;
-    *out_optimism  = &w->optimism[0];
+                                             void** out_cache, const void** out_optimism,
+                                             int** out_nmp_min_ply, int** out_sel_depth,
+                                             int** out_root_depth) {
+    auto* w          = static_cast<Stockfish::Search::Worker*>(worker);
+    *out_acc_stack   = &w->accumulatorStack;
+    *out_nodes       = reinterpret_cast<std::uint64_t*>(&w->nodes);
+    *out_network     = &w->network[w->numaAccessToken];
+    *out_cache       = &w->refreshTable;
+    *out_optimism    = &w->optimism[0];
+    *out_nmp_min_ply = &w->nmpMinPly;
+    *out_sel_depth   = &w->selDepth;
+    *out_root_depth  = &w->rootDepth;
 }
 
 extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
@@ -910,12 +915,6 @@ extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
 // (zfish_search_cb_nodes retired: the Zig search reads the node counter through
 // the stable pointer worker_state hands it, the same address this relaxed load
 // targeted -- bit-identical in the single-threaded bench/parity runs.)
-
-extern "C" void zfish_search_cb_update_seldepth(void* worker, int ply) {
-    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
-    if (w->selDepth < ply + 1)
-        w->selDepth = ply + 1;
-}
 
 // Additional callbacks for the ported Zig search() (non-root). pos_do_move/
 // pos_undo_move are the Position-level (no-accumulator) make/unmake used for the
@@ -952,17 +951,9 @@ extern "C" std::uint8_t zfish_search_cb_in_last_iter_pv(void* worker, int ply_mi
            : 0;
 }
 
-extern "C" int  zfish_search_cb_get_nmp_min_ply(void* worker) {
-    return static_cast<Stockfish::Search::Worker*>(worker)->nmpMinPly;
-}
-
-extern "C" void zfish_search_cb_set_nmp_min_ply(void* worker, int v) {
-    static_cast<Stockfish::Search::Worker*>(worker)->nmpMinPly = v;
-}
-
-extern "C" int  zfish_search_cb_root_depth(void* worker) {
-    return static_cast<Stockfish::Search::Worker*>(worker)->rootDepth;
-}
+// (nmpMinPly get/set, selDepth update, and rootDepth read are now done in Zig
+// through the stable scalar pointers worker_state hands it -- single-threaded
+// bench/parity, so the same-address reads/writes are bit-identical.)
 
 extern "C" std::uint8_t zfish_search_cb_stop(void* worker) {
     return static_cast<Stockfish::Search::Worker*>(worker)
