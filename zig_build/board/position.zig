@@ -334,7 +334,6 @@ fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
 }
 
 extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque, out_cc: *usize, out_gen: *u8) void;
-extern fn zfish_search_cb_nodes(worker: *anyopaque) u64;
 extern fn zfish_search_cb_update_seldepth(worker: *anyopaque, ply: c_int) void;
 
 // One-shot fetch of the Worker state the inlined make/unmake and evaluate need,
@@ -475,7 +474,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_
 
     // Upcoming-repetition draw.
     if (alpha < q_value_draw and upcomingRepetition(pos_ptr, ss.ply)) {
-        alpha = search.valueDraw(zfish_search_cb_nodes(ctx.worker));
+        alpha = search.valueDraw(ctx.nodes.*);
         if (alpha >= beta) return alpha;
     }
 
@@ -745,7 +744,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
 
     // Upcoming-repetition draw (non-root).
     if (!root_node and alpha < q_value_draw and upcomingRepetition(pos_ptr, ss.ply)) {
-        alpha = search.valueDraw(zfish_search_cb_nodes(ctx.worker));
+        alpha = search.valueDraw(ctx.nodes.*);
         if (alpha >= beta) return alpha;
     }
 
@@ -770,7 +769,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         // Step 2. Aborted search / immediate draw / max ply.
         if (zfish_search_cb_stop(ctx.worker) != 0 or isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
             if (ss.ply >= q_max_ply and !ss.in_check) return evaluateAcc(ctx, pos_ptr);
-            return search.valueDraw(zfish_search_cb_nodes(ctx.worker));
+            return search.valueDraw(ctx.nodes.*);
         }
 
         // Step 3. Mate distance pruning.
@@ -1008,7 +1007,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         move_count += 1;
         ss.move_count = move_count;
 
-        if (root_node and zfish_search_cb_nodes(ctx.worker) > 10_000_000)
+        if (root_node and ctx.nodes.* > 10_000_000)
             zfish_search_cb_root_on_iter(ctx.worker, depth, move, move_count);
 
         if (pv_node) ssAdd(ss, 1).pv = null;
@@ -1080,7 +1079,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
             }
         }
 
-        const node_count: u64 = if (root_node) zfish_search_cb_nodes(ctx.worker) else 0;
+        const node_count: u64 = if (root_node) ctx.nodes.* else 0;
 
         // Step 16. Make the move.
         doMoveAcc(ctx, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
@@ -1147,11 +1146,11 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
             var dummy: [1]u16 = undefined;
             const pv_ptr: [*]const u16 = if (cpv) |c| &c.moves else &dummy;
             const pv_len: usize = if (cpv) |c| c.length else 0;
-            zfish_search_cb_root_update(ctx.worker, move, value, zfish_search_cb_nodes(ctx.worker) - node_count, move_count, alpha, beta, pv_ptr, pv_len);
+            zfish_search_cb_root_update(ctx.worker, move, value, ctx.nodes.* - node_count, move_count, alpha, beta, pv_ptr, pv_len);
         }
 
         const av = if (value < 0) -value else value;
-        const inc: c_int = @intFromBool(value == best_value and ss.ply + 2 >= zfish_search_cb_root_depth(ctx.worker) and (@as(c_int, @intCast(zfish_search_cb_nodes(ctx.worker) & 14)) == 0) and !qIsWin(av + 1));
+        const inc: c_int = @intFromBool(value == best_value and ss.ply + 2 >= zfish_search_cb_root_depth(ctx.worker) and (@as(c_int, @intCast(ctx.nodes.* & 14)) == 0) and !qIsWin(av + 1));
         if (value + inc > best_value) {
             best_value = value;
             if (value + inc > alpha) {
