@@ -1080,6 +1080,25 @@ pub export fn zfish_network_evaluate(
     return network_port.evaluate(network, pos, accumulator_stack, cache);
 }
 
+// NNUE feature-transformer forward pass, ported to Zig. Replaces the C++
+// FeatureTransformer::transform shim: gets the FeatureTransformer pointer from
+// the network (bridge helper) and the side to move from the Position mirror,
+// then runs the Zig transform. Same symbol the network.zig forward path calls.
+extern fn zfish_network_feature_transformer_ptr(network: *const anyopaque) *const anyopaque;
+
+pub export fn zfish_network_transform_bucket(
+    network: *const anyopaque,
+    pos: *const anyopaque,
+    accumulator_stack: *anyopaque,
+    cache: *anyopaque,
+    bucket: usize,
+    transformed_ptr: [*]u8,
+) c_int {
+    const ft = zfish_network_feature_transformer_ptr(network);
+    const stm = position_port.sideToMove(pos);
+    return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
+}
+
 pub export fn zfish_network_trace_evaluate(
     network: *const anyopaque,
     pos: *const anyopaque,
