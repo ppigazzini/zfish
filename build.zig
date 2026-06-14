@@ -547,6 +547,24 @@ pub fn build(b: *std.Build) void {
     );
     search_modes_update_step.dependOn(&search_modes_update_cmd.step);
 
+    // Differential oracle gate (M5): assert the Zig-owned default binary and the
+    // C++ legacy oracle produce identical bench signatures.
+    const oracle_parity_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/oracle_parity.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        b.getInstallPath(.bin, "stockfish-legacy-cpp"),
+    });
+    oracle_parity_cmd.step.dependOn(install_step);
+    oracle_parity_cmd.step.dependOn(&net_cmd.step);
+    oracle_parity_cmd.setCwd(b.path("src"));
+
+    const oracle_parity_step = b.step(
+        "oracle-parity",
+        "Assert the default (Zig) and legacy (C++) bench signatures are identical",
+    );
+    oracle_parity_step.dependOn(&oracle_parity_cmd.step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
@@ -556,6 +574,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&signature_cmd.step);
     parity_step.dependOn(&search_parity_cmd.step);
     parity_step.dependOn(&search_modes_cmd.step);
+    parity_step.dependOn(&oracle_parity_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
