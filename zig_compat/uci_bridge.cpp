@@ -878,24 +878,24 @@ static_assert(sizeof(Stockfish::PawnHistory) == 16);
 static_assert(sizeof(Stockfish::StateInfo) == 192);
 static_assert(sizeof(Stockfish::Search::PVMoves) == 504);  // [247]Move padded + size_t
 
-// evaluate runs the network forward pass; the Zig search calls it by Worker
-// pointer. tt_context hands Zig the live TT cluster array, cluster count, and
-// generation so it can call the Zig-native tt.probe/save directly.
-// (do_move/undo_move are now inlined in the Zig search: the accumulator stack
-// push/pop are Zig-owned and pos.do_move routes to the Zig make-move, so the Zig
-// search counts the node, pushes/pops the accumulator slot, and sets the
-// continuation history itself. worker_make_state hands it the two stable pointers
-// it needs -- the accumulator stack and the node counter -- once per entry.)
-extern "C" void zfish_search_cb_worker_make_state(void* worker, void** out_acc_stack,
-                                                  std::uint64_t** out_nodes) {
+// tt_context hands Zig the live TT cluster array, cluster count, and generation so
+// it can call the Zig-native tt.probe/save directly.
+// (do_move/undo_move/evaluate are now inlined in the Zig search: the accumulator
+// stack push/pop are Zig-owned, pos.do_move routes to the Zig make-move, and the
+// NNUE forward pass + eval scaling are Zig too. So the Zig search counts the node,
+// pushes/pops the accumulator slot, sets the continuation history, and runs the
+// network eval itself. worker_state hands it the stable per-search pointers it
+// needs once per entry: the accumulator stack, the node counter, the numa-resolved
+// Network, the accumulator-refresh cache, and the optimism[COLOR_NB] array.)
+extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
+                                             std::uint64_t** out_nodes, const void** out_network,
+                                             void** out_cache, const void** out_optimism) {
     auto* w        = static_cast<Stockfish::Search::Worker*>(worker);
     *out_acc_stack = &w->accumulatorStack;
     *out_nodes     = reinterpret_cast<std::uint64_t*>(&w->nodes);
-}
-
-extern "C" int zfish_search_cb_evaluate(void* worker, const void* pos) {
-    return static_cast<Stockfish::Search::Worker*>(worker)->evaluate(
-      *static_cast<const Stockfish::Position*>(pos));
+    *out_network   = &w->network[w->numaAccessToken];
+    *out_cache     = &w->refreshTable;
+    *out_optimism  = &w->optimism[0];
 }
 
 extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
