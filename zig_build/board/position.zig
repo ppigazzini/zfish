@@ -333,19 +333,57 @@ fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
     pv.length = n + 1;
 }
 
-extern fn zfish_search_cb_do_move(worker: *anyopaque, pos: *anyopaque, move: u16, st: *anyopaque, gives_check: u8, ss: *anyopaque) void;
-extern fn zfish_search_cb_undo_move(worker: *anyopaque, pos: *anyopaque, move: u16) void;
 extern fn zfish_search_cb_evaluate(worker: *anyopaque, pos: *const anyopaque) c_int;
 extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque, out_cc: *usize, out_gen: *u8) void;
 extern fn zfish_search_cb_nodes(worker: *anyopaque) u64;
 extern fn zfish_search_cb_update_seldepth(worker: *anyopaque, ply: c_int) void;
+
+// One-shot fetch of the Worker make/unmake state: the NNUE accumulator stack and
+// the node counter, both stable for the whole search. Cached in QCtx at entry so
+// the inlined do_move/undo_move (below) touch no C++ — the accumulator push/pop
+// are Zig-owned and pos.do_move routes to the Zig make-move directly.
+extern fn zfish_search_cb_worker_make_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64) void;
+
+// Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
+// the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
+// scratch that pos.do_move fills in; pop() drops the top entry.
+const StackPushOutput = extern struct {
+    dirty_piece: *anyopaque,
+    dirty_threats: *anyopaque,
+};
+extern fn zfish_accumulator_stack_push(stack: *anyopaque) StackPushOutput;
+extern fn zfish_accumulator_stack_pop(stack: *anyopaque) void;
 
 const QCtx = struct {
     worker: *anyopaque,
     table: ?*anyopaque,
     cluster_count: usize,
     generation: u8,
+    acc_stack: *anyopaque,
+    nodes: *u64,
 };
+
+// Worker::do_move inlined: count the node, push a fresh accumulator slot, make the
+// move (the Zig make-move records the dirty piece/threats into that slot), then set
+// the Stack's current move and continuation-history pointer. Mirrors search.cpp
+// do_move exactly; capture_stage is read pre-move, dirtyPiece.pc post-move.
+inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque, gives_check: u8, ss_ptr: *anyopaque) void {
+    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const capture = captureStage(pos, move);
+    ctx.nodes.* +%= 1;
+    const out = zfish_accumulator_stack_push(ctx.acc_stack);
+    doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats);
+    const dp: *const DirtyPiece = @ptrCast(@alignCast(out.dirty_piece));
+    ss.current_move = move;
+    setContHist(ctx.worker, ss_ptr, @intFromBool(ss.in_check), @intFromBool(capture), dp.pc, moveTo(move));
+}
+
+// Worker::undo_move inlined: unmake the move, then drop the accumulator slot.
+inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *anyopaque, move: u16) void {
+    undoMove(pos_ptr, move);
+    zfish_accumulator_stack_pop(ctx.acc_stack);
+}
 
 // correction_value(*this, pos, ss): gather the four shared correction values and
 // the (ss-2)/(ss-4) continuation-correction values, then apply the Zig formula.
@@ -531,9 +569,9 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_
         }
 
         // Step 7. Make and search the move.
-        zfish_search_cb_do_move(ctx.worker, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
+        doMoveAcc(ctx, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
         const value = -qsearchImpl(ctx, pos_ptr, @ptrCast(ss_next), -beta, -alpha, pv_node);
-        zfish_search_cb_undo_move(ctx.worker, pos_ptr, move);
+        undoMoveAcc(ctx, pos_ptr, move);
 
         // Step 8. New best move.
         if (value > best_value) {
@@ -574,7 +612,10 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
     var cc: usize = 0;
     var gen: u8 = 0;
     zfish_search_cb_tt_context(worker, &table, &cc, &gen);
-    const ctx = QCtx{ .worker = worker, .table = table, .cluster_count = cc, .generation = gen };
+    var acc_stack: ?*anyopaque = null;
+    var nodes: ?*u64 = null;
+    zfish_search_cb_worker_make_state(worker, &acc_stack, &nodes);
+    const ctx = QCtx{ .worker = worker, .table = table, .cluster_count = cc, .generation = gen, .acc_stack = acc_stack.?, .nodes = nodes.? };
     return qsearchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, pv_node != 0);
 }
 
@@ -837,11 +878,11 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
                 const move = movepick.nextMove(&pc_state, &pc_ctx);
                 if (move == 0) break;
                 if (move == excluded_move or !legal(pos_ptr, move)) continue;
-                zfish_search_cb_do_move(ctx.worker, pos_ptr, move, @ptrCast(&st), @intFromBool(givesCheck(pos_ptr, move)), ss_ptr);
+                doMoveAcc(ctx, pos_ptr, move, @ptrCast(&st), @intFromBool(givesCheck(pos_ptr, move)), ss_ptr);
                 var value = -qsearchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -probcut_beta, -probcut_beta + 1, false);
                 if (value >= probcut_beta and probcut_depth > 0)
                     value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -probcut_beta, -probcut_beta + 1, probcut_depth, !cut_node, false, false);
-                zfish_search_cb_undo_move(ctx.worker, pos_ptr, move);
+                undoMoveAcc(ctx, pos_ptr, move);
                 if (value >= probcut_beta) {
                     tt.entrySave(writer, pos_key, search.valueToTt(value, ss.ply), @intFromBool(ss.tt_pv), q_bound_lower, probcut_depth + 1, q_depth_none, move, unadjusted_static_eval, ctx.generation);
                     if (!qIsDecisive(value)) return value - (probcut_beta - beta);
@@ -980,7 +1021,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         const node_count: u64 = if (root_node) zfish_search_cb_nodes(ctx.worker) else 0;
 
         // Step 16. Make the move.
-        zfish_search_cb_do_move(ctx.worker, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
+        doMoveAcc(ctx, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
         new_depth += extension;
 
         if (ss.tt_pv)
@@ -1032,7 +1073,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         }
 
         // Step 19. Undo move.
-        zfish_search_cb_undo_move(ctx.worker, pos_ptr, move);
+        undoMoveAcc(ctx, pos_ptr, move);
 
         // Step 20. Check for a new best move.
         if (zfish_search_cb_stop(ctx.worker) != 0) return q_value_draw;
@@ -1133,7 +1174,10 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
     var cc: usize = 0;
     var gen: u8 = 0;
     zfish_search_cb_tt_context(worker, &table, &cc, &gen);
-    const ctx = QCtx{ .worker = worker, .table = table, .cluster_count = cc, .generation = gen };
+    var acc_stack: ?*anyopaque = null;
+    var nodes: ?*u64 = null;
+    zfish_search_cb_worker_make_state(worker, &acc_stack, &nodes);
+    const ctx = QCtx{ .worker = worker, .table = table, .cluster_count = cc, .generation = gen, .acc_stack = acc_stack.?, .nodes = nodes.? };
     return searchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, depth, cut_node != 0, pv_node != 0, root_node != 0);
 }
 
