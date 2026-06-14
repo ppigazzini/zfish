@@ -181,6 +181,56 @@ pub fn stackMutThreatArray(stack: *anyopaque) *anyopaque {
     return @ptrCast(stackBytesMut(stack) + threat_array_offset);
 }
 
+// FeatureTransformer::transform (src/nnue/nnue_feature_transformer.h scalar path),
+// ported to Zig. After the (Zig) accumulator evaluate, read the latest PSQ +
+// Threat accumulator states and produce the int8 transformed output plus the
+// perspective-differenced psqt. BiasType is int16, so the accumulation sum wraps
+// in int16 before the [0,255] clamp; the pairwise product is /512.
+const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
+
+pub fn transformBucket(
+    stack: *anyopaque,
+    pos: *const anyopaque,
+    feature_transformer: *const anyopaque,
+    cache: *anyopaque,
+    bucket: usize,
+    stm: u8,
+    output: [*]u8,
+) c_int {
+    evaluate(stack, pos, feature_transformer, cache);
+
+    const psq_bytes: [*]const u8 = @ptrCast(stackLatestPsq(stack));
+    const thr_bytes: [*]const u8 = @ptrCast(stackLatestThreat(stack));
+    const psq_acc: [*]const i16 = @ptrCast(@alignCast(psq_bytes));
+    const thr_acc: [*]const i16 = @ptrCast(@alignCast(thr_bytes));
+    const psq_psqt: [*]const i32 = @ptrCast(@alignCast(psq_bytes + state_psqt_offset));
+    const thr_psqt: [*]const i32 = @ptrCast(@alignCast(thr_bytes + state_psqt_offset));
+
+    const p0: usize = stm;
+    const p1: usize = stm ^ 1;
+
+    var psqt: c_int = psq_psqt[p0 * psqt_buckets + bucket] - psq_psqt[p1 * psqt_buckets + bucket];
+    psqt = @divTrunc(psqt + thr_psqt[p0 * psqt_buckets + bucket] - thr_psqt[p1 * psqt_buckets + bucket], 2);
+
+    const half = half_dimensions / 2;
+    var p: usize = 0;
+    while (p < 2) : (p += 1) {
+        const pp: usize = if (p == 0) p0 else p1;
+        const offset = half * p;
+        var j: usize = 0;
+        while (j < half) : (j += 1) {
+            var sum0: i16 = psq_acc[pp * half_dimensions + j];
+            sum0 +%= thr_acc[pp * half_dimensions + j];
+            var sum1: i16 = psq_acc[pp * half_dimensions + j + half];
+            sum1 +%= thr_acc[pp * half_dimensions + j + half];
+            const c0: c_int = @max(0, @min(255, @as(c_int, sum0)));
+            const c1: c_int = @max(0, @min(255, @as(c_int, sum1)));
+            output[offset + j] = @intCast(@divTrunc(@as(u32, @intCast(c0 * c1)), 512));
+        }
+    }
+    return psqt;
+}
+
 pub fn stackReset(stack: *anyopaque) void {
     const bytes = stackBytesMut(stack);
 

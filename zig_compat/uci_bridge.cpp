@@ -545,20 +545,13 @@ std::size_t zfish_network_eval_file_content_hash(const void* network_ptr) {
     return std::hash<EvalFile>{}(NetworkBridgeAccess::evalFile(network));
 }
 
-int zfish_network_transform_bucket(const void* network_ptr,
-                                                                     const void* pos_ptr,
-                                                                     void*       accumulator_stack_ptr,
-                                                                     void*       cache_ptr,
-                                                                     std::size_t bucket,
-                                                                     unsigned char* transformed_ptr) {
+// The NNUE feature-transformer forward pass (transform) is now Zig-owned
+// (zfish_network_transform_bucket in zig_src/main.zig). The bridge only exposes
+// the FeatureTransformer pointer so the Zig accumulator evaluate can read its
+// weights -- the same pointer the C++ AccumulatorStack::evaluate passed.
+const void* zfish_network_feature_transformer_ptr(const void* network_ptr) {
         const auto& network = *static_cast<const Network*>(network_ptr);
-        const auto& pos = *static_cast<const Position*>(pos_ptr);
-        auto&       accumulator_stack = *static_cast<AccumulatorStack*>(accumulator_stack_ptr);
-        auto&       cache = *static_cast<AccumulatorCaches*>(cache_ptr);
-        auto*       transformed_features = reinterpret_cast<TransformedFeatureType*>(transformed_ptr);
-
-        return static_cast<int>(NetworkBridgeAccess::featureTransformer(network).transform(
-            pos, accumulator_stack, cache, transformed_features, bucket));
+        return &NetworkBridgeAccess::featureTransformer(network);
 }
 
 int zfish_network_propagate_bucket(const void*         network_ptr,
