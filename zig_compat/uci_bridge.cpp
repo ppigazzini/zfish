@@ -891,7 +891,8 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              std::uint64_t** out_nodes, const void** out_network,
                                              void** out_cache, const void** out_optimism,
                                              int** out_nmp_min_ply, int** out_sel_depth,
-                                             int** out_root_depth) {
+                                             int** out_root_depth, const int** out_reductions,
+                                             const int** out_root_delta) {
     auto* w          = static_cast<Stockfish::Search::Worker*>(worker);
     *out_acc_stack   = &w->accumulatorStack;
     *out_nodes       = reinterpret_cast<std::uint64_t*>(&w->nodes);
@@ -901,6 +902,8 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
     *out_nmp_min_ply = &w->nmpMinPly;
     *out_sel_depth   = &w->selDepth;
     *out_root_depth  = &w->rootDepth;
+    *out_reductions  = w->reductions.data();
+    *out_root_delta  = &w->rootDelta;
 }
 
 extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
@@ -932,9 +935,9 @@ extern "C" void zfish_search_cb_pos_undo_move(void* pos, std::uint16_t move) {
     static_cast<Stockfish::Position*>(pos)->undo_move(Stockfish::Move(move));
 }
 
-extern "C" int zfish_search_cb_reduction(void* worker, std::uint8_t i, int d, int mn, int delta) {
-    return static_cast<Stockfish::Search::Worker*>(worker)->reduction(i != 0, d, mn, delta);
-}
+// (Worker::reduction is now inlined in the Zig search: the formula reads the
+// per-thread reductions[] table and rootDelta, both handed to Zig as stable
+// pointers by worker_state.)
 
 extern "C" void zfish_search_cb_check_time(void* worker) {
     auto* w = static_cast<Stockfish::Search::Worker*>(worker);
