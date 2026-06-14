@@ -181,6 +181,13 @@ pub fn ageMainHistory(worker_ptr: *anyopaque) void {
     }
 }
 
+// iterative_deepening() per-search lowPlyHistory reset: lowPlyHistory.fill(100)
+// over the whole [5][65536] table, via the Worker mirror.
+pub fn fillLowPlyHistory(worker_ptr: *anyopaque) void {
+    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    for (&w.low_ply_history) |*e| e.* = 100;
+}
+
 fn captureStage(pos: *const Position, m: u16) bool {
     const cap = (pos.board[moveTo(m)] != 0 and moveTypeOf(m) != mt_castling) or
         moveTypeOf(m) == mt_en_passant;
