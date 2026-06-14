@@ -188,6 +188,19 @@ pub fn fillLowPlyHistory(worker_ptr: *anyopaque) void {
     for (&w.low_ply_history) |*e| e.* = 100;
 }
 
+// Worker::clear() per-Worker history resets (the shared correction/pawn
+// clear_range stays C++ for its numa partitioning, and the NNUE refreshTable is
+// untouched). mainHistory=-5, captureHistory=-699, ttMoveHistory=0,
+// continuationCorrectionHistory=5, continuationHistory=-552.
+pub fn clearWorkerHistories(worker_ptr: *anyopaque) void {
+    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    for (&w.main_history) |*e| e.* = -5;
+    for (&w.capture_history) |*e| e.* = -699;
+    w.tt_move_history = 0;
+    for (&w.continuation_correction_history) |*e| e.* = 5;
+    for (&w.continuation_history) |*e| e.* = -552;
+}
+
 fn captureStage(pos: *const Position, m: u16) bool {
     const cap = (pos.board[moveTo(m)] != 0 and moveTypeOf(m) != mt_castling) or
         moveTypeOf(m) == mt_en_passant;
