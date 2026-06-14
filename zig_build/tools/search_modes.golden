@@ -1,0 +1,6 @@
+nodes-startpos     bestmove a2a3
+nodes-kiwipete     bestmove a2a3
+nodes-endgame      bestmove e2e3
+depth-searchmoves  bestmove d2d4
+multipv3-startpos  bestmove a2a3
+multipv4-kiwipete  bestmove a2a3
