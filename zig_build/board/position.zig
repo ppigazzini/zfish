@@ -333,16 +333,17 @@ fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
     pv.length = n + 1;
 }
 
-extern fn zfish_search_cb_evaluate(worker: *anyopaque, pos: *const anyopaque) c_int;
 extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque, out_cc: *usize, out_gen: *u8) void;
 extern fn zfish_search_cb_nodes(worker: *anyopaque) u64;
 extern fn zfish_search_cb_update_seldepth(worker: *anyopaque, ply: c_int) void;
 
-// One-shot fetch of the Worker make/unmake state: the NNUE accumulator stack and
-// the node counter, both stable for the whole search. Cached in QCtx at entry so
-// the inlined do_move/undo_move (below) touch no C++ — the accumulator push/pop
-// are Zig-owned and pos.do_move routes to the Zig make-move directly.
-extern fn zfish_search_cb_worker_make_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64) void;
+// One-shot fetch of the Worker state the inlined make/unmake and evaluate need,
+// all stable for the whole search: the NNUE accumulator stack, the node counter,
+// the (numa-resolved) Network, the accumulator-refresh cache, and the optimism[2]
+// array. Cached in QCtx at entry so do_move/undo_move/evaluate (below) touch no
+// C++ — the accumulator push/pop, pos.do_move, and the network forward pass +
+// eval scaling are all Zig-owned.
+extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int) void;
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -354,6 +355,25 @@ const StackPushOutput = extern struct {
 extern fn zfish_accumulator_stack_push(stack: *anyopaque) StackPushOutput;
 extern fn zfish_accumulator_stack_pop(stack: *anyopaque) void;
 
+// Zig-owned NNUE forward pass + final eval scaling (defined in stockfish_zcu.o).
+// network_evaluate runs the bucketed network and returns the scaled psqt/positional
+// halves; eval_compute_value applies the optimism/material/rule50 blend.
+const EvalOutput = extern struct {
+    psqt: c_int,
+    positional: c_int,
+};
+const EvalInput = extern struct {
+    psqt: c_int,
+    positional: c_int,
+    optimism: c_int,
+    material: c_int,
+    rule50_count: c_int,
+    value_tb_loss_in_max_ply: c_int,
+    value_tb_win_in_max_ply: c_int,
+};
+extern fn zfish_network_evaluate(network: *const anyopaque, pos: *const anyopaque, acc_stack: *anyopaque, cache: *anyopaque) EvalOutput;
+extern fn zfish_eval_compute_value(input: EvalInput) c_int;
+
 const QCtx = struct {
     worker: *anyopaque,
     table: ?*anyopaque,
@@ -361,7 +381,30 @@ const QCtx = struct {
     generation: u8,
     acc_stack: *anyopaque,
     nodes: *u64,
+    network: *const anyopaque,
+    cache: *anyopaque,
+    optimism: *const [2]c_int,
 };
+
+// Worker::evaluate inlined: run the NNUE forward pass on the current position,
+// then apply the eval scaling. Mirrors Eval::evaluate exactly — material is
+// 534 * pawn count (both colours) + non-pawn material, optimism is indexed by the
+// side to move, and the TB clamp bounds are ±VALUE_TB_WIN_IN_MAX_PLY.
+inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *anyopaque) c_int {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const out = zfish_network_evaluate(ctx.network, pos_ptr, ctx.acc_stack, ctx.cache);
+    const pawns = pos.piece_count[1] + pos.piece_count[9];
+    const material = 534 * pawns + pos.st.non_pawn_material[0] + pos.st.non_pawn_material[1];
+    return zfish_eval_compute_value(.{
+        .psqt = out.psqt,
+        .positional = out.positional,
+        .optimism = ctx.optimism[pos.side_to_move],
+        .material = material,
+        .rule50_count = pos.st.rule50,
+        .value_tb_loss_in_max_ply = -q_value_tb_win,
+        .value_tb_win_in_max_ply = q_value_tb_win,
+    });
+}
 
 // Worker::do_move inlined: count the node, push a fresh accumulator slot, make the
 // move (the Zig make-move records the dirty piece/threats into that slot), then set
@@ -452,7 +495,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_
 
     // Step 2. Immediate draw or max ply.
     if (isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
-        if (ss.ply >= q_max_ply and !ss.in_check) return zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+        if (ss.ply >= q_max_ply and !ss.in_check) return evaluateAcc(ctx, pos_ptr);
         return q_value_draw;
     }
 
@@ -484,14 +527,14 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_
         if (ss.tt_hit) {
             unadjusted_static_eval = tt_eval;
             if (!qIsValid(unadjusted_static_eval))
-                unadjusted_static_eval = zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+                unadjusted_static_eval = evaluateAcc(ctx, pos_ptr);
             ss.static_eval = search.toCorrectedStaticEval(unadjusted_static_eval, correction_value);
             best_value = ss.static_eval;
             if (qIsValid(tt_value) and !qIsDecisive(tt_value) and
                 (tt_bound & (if (tt_value > best_value) q_bound_lower else q_bound_upper)) != 0)
                 best_value = tt_value;
         } else {
-            unadjusted_static_eval = zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+            unadjusted_static_eval = evaluateAcc(ctx, pos_ptr);
             ss.static_eval = search.toCorrectedStaticEval(unadjusted_static_eval, correction_value);
             best_value = ss.static_eval;
         }
@@ -607,15 +650,34 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_
     return best_value;
 }
 
+// Fetch the stable per-search Worker state once and assemble the QCtx threaded
+// through the whole (q)search recursion.
+fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
+    var acc_stack: ?*anyopaque = null;
+    var nodes: ?*u64 = null;
+    var network: ?*const anyopaque = null;
+    var cache: ?*anyopaque = null;
+    var optimism: ?*const [2]c_int = null;
+    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism);
+    return .{
+        .worker = worker,
+        .table = table,
+        .cluster_count = cc,
+        .generation = gen,
+        .acc_stack = acc_stack.?,
+        .nodes = nodes.?,
+        .network = network.?,
+        .cache = cache.?,
+        .optimism = optimism.?,
+    };
+}
+
 pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, pv_node: u8) c_int {
     var table: ?*anyopaque = null;
     var cc: usize = 0;
     var gen: u8 = 0;
     zfish_search_cb_tt_context(worker, &table, &cc, &gen);
-    var acc_stack: ?*anyopaque = null;
-    var nodes: ?*u64 = null;
-    zfish_search_cb_worker_make_state(worker, &acc_stack, &nodes);
-    const ctx = QCtx{ .worker = worker, .table = table, .cluster_count = cc, .generation = gen, .acc_stack = acc_stack.?, .nodes = nodes.? };
+    const ctx = buildCtx(worker, table, cc, gen);
     return qsearchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, pv_node != 0);
 }
 
@@ -707,7 +769,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     if (!root_node) {
         // Step 2. Aborted search / immediate draw / max ply.
         if (zfish_search_cb_stop(ctx.worker) != 0 or isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
-            if (ss.ply >= q_max_ply and !ss.in_check) return zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+            if (ss.ply >= q_max_ply and !ss.in_check) return evaluateAcc(ctx, pos_ptr);
             return search.valueDraw(zfish_search_cb_nodes(ctx.worker));
         }
 
@@ -752,13 +814,13 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         eval = ss.static_eval;
     } else if (ss.tt_hit) {
         unadjusted_static_eval = tt_eval;
-        if (!qIsValid(unadjusted_static_eval)) unadjusted_static_eval = zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+        if (!qIsValid(unadjusted_static_eval)) unadjusted_static_eval = evaluateAcc(ctx, pos_ptr);
         ss.static_eval = search.toCorrectedStaticEval(unadjusted_static_eval, correction_value);
         eval = ss.static_eval;
         if (qIsValid(tt_value) and (tt_bound & (if (tt_value > eval) q_bound_lower else q_bound_upper)) != 0)
             eval = tt_value;
     } else {
-        unadjusted_static_eval = zfish_search_cb_evaluate(ctx.worker, pos_ptr);
+        unadjusted_static_eval = evaluateAcc(ctx, pos_ptr);
         ss.static_eval = search.toCorrectedStaticEval(unadjusted_static_eval, correction_value);
         eval = ss.static_eval;
         tt.entrySave(writer, pos_key, q_value_none, @intFromBool(ss.tt_pv), q_bound_none, q_depth_unsearched, q_depth_none, 0, unadjusted_static_eval, ctx.generation);
@@ -1174,10 +1236,7 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
     var cc: usize = 0;
     var gen: u8 = 0;
     zfish_search_cb_tt_context(worker, &table, &cc, &gen);
-    var acc_stack: ?*anyopaque = null;
-    var nodes: ?*u64 = null;
-    zfish_search_cb_worker_make_state(worker, &acc_stack, &nodes);
-    const ctx = QCtx{ .worker = worker, .table = table, .cluster_count = cc, .generation = gen, .acc_stack = acc_stack.?, .nodes = nodes.? };
+    const ctx = buildCtx(worker, table, cc, gen);
     return searchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, depth, cut_node != 0, pv_node != 0, root_node != 0);
 }
 
