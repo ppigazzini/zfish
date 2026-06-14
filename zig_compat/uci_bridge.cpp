@@ -907,9 +907,9 @@ extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
     *out_generation   = tt.generation8;
 }
 
-extern "C" std::uint64_t zfish_search_cb_nodes(void* worker) {
-    return static_cast<Stockfish::Search::Worker*>(worker)->nodes.load(std::memory_order_relaxed);
-}
+// (zfish_search_cb_nodes retired: the Zig search reads the node counter through
+// the stable pointer worker_state hands it, the same address this relaxed load
+// targeted -- bit-identical in the single-threaded bench/parity runs.)
 
 extern "C" void zfish_search_cb_update_seldepth(void* worker, int ply) {
     auto* w = static_cast<Stockfish::Search::Worker*>(worker);
