@@ -1,0 +1,31 @@
+# CI for the C++ -> Zig conversion: build the Zig-owned binary and the legacy
+# C++ oracle, then run `zig build parity` (bench signature, the default-vs-legacy
+# oracle gate, and the per-position / non-bench micro-parity harnesses).
+# Linux x86_64 only.
+name: zfish parity
+
+on:
+  push:
+    branches: [refactor]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Zig 0.16.0
+        run: |
+          set -euo pipefail
+          ZIG=zig-x86_64-linux-0.16.0
+          curl -fsSL "https://ziglang.org/download/0.16.0/${ZIG}.tar.xz" -o /tmp/zig.tar.xz
+          tar -C /tmp -xf /tmp/zig.tar.xz
+          echo "/tmp/${ZIG}" >> "$GITHUB_PATH"
+
+      - run: zig build parity
