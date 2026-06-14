@@ -446,8 +446,10 @@ pub fn build(b: *std.Build) void {
     uci_run.step.dependOn(&net_cmd.step);
     uci_run.setCwd(b.path("src"));
     uci_run.setStdIn(.{ .bytes = "uci\nquit\n" });
-    uci_run.expectStdOutMatch("id name Stockfish");
-    uci_run.expectStdOutMatch("uciok");
+    // The engine routes UCI output to stderr (same convention as the bench
+    // signature), so the handshake must be checked on stderr, not stdout.
+    uci_run.expectStdErrMatch("id name Stockfish");
+    uci_run.expectStdErrMatch("uciok");
 
     const uci_step = b.step(
         "uci",
