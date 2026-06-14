@@ -1112,6 +1112,11 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     return best_value;
 }
 
+pub fn sideToMove(pos_ptr: *const anyopaque) u8 {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    return pos.side_to_move;
+}
+
 inline fn captVal(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) c_int {
     return w.capture_history[@as(usize, pc) * 512 + @as(usize, to) * 8 + captured_type];
 }
