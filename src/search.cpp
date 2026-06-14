@@ -680,13 +680,18 @@ void Search::Worker::undo_null_move(Position& pos) { pos.undo_null_move(); }
 
 // Reset histories, usually before a new game
 void Search::Worker::clear() {
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_CLEAR_HIST
+    zfish_search_clear_worker_histories(this);
+#else
     mainHistory.fill(-5);
     captureHistory.fill(-699);
+#endif
 
     // Each thread is responsible for clearing their part of shared history
     sharedHistory.correctionHistory.clear_range(-6, numaThreadIdx, numaTotal);
     sharedHistory.pawnHistory.clear_range(-1262, numaThreadIdx, numaTotal);
 
+#ifndef ZFISH_SEARCH_BRIDGE_USE_ZIG_CLEAR_HIST
     ttMoveHistory = 0;
 
     for (auto& to : continuationCorrectionHistory)
@@ -698,6 +703,7 @@ void Search::Worker::clear() {
             for (auto& to : continuationHistory[inCheck][c])
                 for (auto& h : to)
                     h.fill(-552);
+#endif
 
 #ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_REDUCTIONS_FILL
     zfish_search_fill_reductions(reductions.data(), reductions.size());
