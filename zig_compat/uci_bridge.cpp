@@ -894,7 +894,8 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              int** out_root_depth, const int** out_reductions,
                                              const int** out_root_delta,
                                              const void** out_last_iter_pv,
-                                             const std::uint8_t** out_stop) {
+                                             const std::uint8_t** out_stop,
+                                             const std::size_t** out_pv_idx) {
     auto* w           = static_cast<Stockfish::Search::Worker*>(worker);
     *out_acc_stack    = &w->accumulatorStack;
     *out_nodes        = reinterpret_cast<std::uint64_t*>(&w->nodes);
@@ -908,6 +909,7 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
     *out_root_delta   = &w->rootDelta;
     *out_last_iter_pv = &w->lastIterationPV;
     *out_stop         = reinterpret_cast<const std::uint8_t*>(&w->threads.stop);
+    *out_pv_idx       = &w->pvIdx;
 }
 
 extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
@@ -971,9 +973,8 @@ extern "C" std::uint8_t zfish_search_cb_root_in_list(void* worker, std::uint16_t
            : 0;
 }
 
-extern "C" std::uint8_t zfish_search_cb_root_pvidx_nonzero(void* worker) {
-    return static_cast<Stockfish::Search::Worker*>(worker)->pvIdx != 0 ? 1 : 0;
-}
+// (zfish_search_cb_root_pvidx_nonzero retired: worker_state hands Zig a pointer
+// to Worker::pvIdx and the singular-extension guard compares it directly.)
 
 extern "C" void zfish_search_cb_root_on_iter(void* worker, int depth, std::uint16_t move,
                                              int move_count) {
