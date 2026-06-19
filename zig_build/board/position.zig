@@ -411,6 +411,43 @@ const SearchTimeState = extern struct {
     use_time_management: u8,
 };
 
+// iterative_deepening state, snapshotted once at entry (skill-off path only; the
+// C++ keeps the skill-enabled handicap path and remains the rebase body). Live
+// fields are pointers into Worker/SearchManager/ThreadPool; the rest are values
+// read once. Layout matches the bridge ZfishIdState exactly.
+const ZfishIdState = extern struct {
+    root_pos: *anyopaque,
+    root_moves: [*]RootMove,
+    pv_idx: *usize,
+    pv_last: *usize,
+    sel_depth: *c_int,
+    root_depth: *c_int,
+    root_delta: *c_int,
+    optimism: *[2]c_int,
+    nodes: *const u64,
+    stop: *u8,
+    increase_depth: *u8,
+    stop_on_ponderhit: *u8,
+    ponder: *const u8,
+    iter_value: *[4]c_int,
+    previous_time_reduction: *f64,
+    last_iter_pv: *PVMoves,
+    root_moves_count: usize,
+    thread_idx: usize,
+    threads_size: usize,
+    multipv_option: usize,
+    tm_optimum: i64,
+    tm_maximum: i64,
+    tm_start_time: i64,
+    limits_depth: c_int,
+    limits_mate: c_int,
+    best_previous_score: c_int,
+    best_previous_average_score: c_int,
+    is_main: u8,
+    use_time_management: u8,
+    tm_use_nodes_time: u8,
+};
+
 const QCtx = struct {
     worker: *anyopaque,
     table: ?*anyopaque,
@@ -1434,6 +1471,276 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
     zfish_search_cb_tt_context(worker, &table, &cc, &gen);
     const ctx = buildCtx(worker, table, cc, gen);
     return searchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, depth, cut_node != 0, pv_node != 0, root_node != 0);
+}
+
+// ==================== iterative_deepening() (ported to Zig) ====================
+// Compatibility-surface externs: the UCI pv() sink, and the cross-thread
+// bestMoveChanges collection (sum + reset, returned as a double) so multi-thread
+// stays correct. The skill-enabled handicap path stays in C++ (the seam only
+// redirects here when skill is off), so no skill/RNG logic is needed in Zig.
+extern fn zfish_search_id_state(worker: *anyopaque, out: *ZfishIdState) void;
+extern fn zfish_search_id_pv(worker: *anyopaque, depth: c_int) void;
+extern fn zfish_search_id_collect_bmc(worker: *anyopaque) f64;
+
+const id_nodes_limit_output: u64 = 10_000_000;
+
+inline fn idIsLoss(v: c_int) bool {
+    return v <= -q_value_tb_win;
+}
+inline fn idIsMate(v: c_int) bool {
+    return v >= q_value_mate_in_max;
+}
+inline fn idIsMated(v: c_int) bool {
+    return v <= -q_value_mate_in_max;
+}
+// RootMove::operator<: descending by (score, previousScore).
+inline fn rootLess(a: *const RootMove, b: *const RootMove) bool {
+    return if (a.score != b.score) a.score > b.score else a.previous_score > b.previous_score;
+}
+// Stable insertion sort over root_moves[lo, hi): matches std::stable_sort with
+// RootMove::operator< (equal elements keep their relative order).
+fn stableSortRoot(rm: [*]RootMove, lo: usize, hi: usize) void {
+    if (hi <= lo) return;
+    var i: usize = lo + 1;
+    while (i < hi) : (i += 1) {
+        const key = rm[i];
+        var j: usize = i;
+        while (j > lo and rootLess(&key, &rm[j - 1])) : (j -= 1) rm[j] = rm[j - 1];
+        rm[j] = key;
+    }
+}
+// Utility::move_to_front: rotate the first RootMove whose pv[0]==target to front.
+fn moveToFront(rm: [*]RootMove, count: usize, target: u16) void {
+    var fi: usize = 0;
+    while (fi < count and rm[fi].pv.moves[0] != target) : (fi += 1) {}
+    if (fi >= count) return;
+    const tmp = rm[fi];
+    var z: usize = fi;
+    while (z > 0) : (z -= 1) rm[z] = rm[z - 1];
+    rm[0] = tmp;
+}
+inline fn idElapsed(id: *const ZfishIdState) i64 {
+    return if (id.tm_use_nodes_time != 0) @intCast(id.nodes.*) else zfish_now() - id.tm_start_time;
+}
+inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
+    return @max(lo, @min(v, hi));
+}
+
+pub fn iterativeDeepening(worker: *anyopaque) u8 {
+    var id: ZfishIdState = undefined;
+    zfish_search_id_state(worker, &id);
+    const main_thread = id.is_main != 0;
+
+    var table: ?*anyopaque = null;
+    var cc: usize = 0;
+    var gen: u8 = 0;
+    zfish_search_cb_tt_context(worker, &table, &cc, &gen);
+    const ctx = buildCtx(worker, table, cc, gen);
+
+    var pv: PVMoves = undefined;
+    pv.length = 0;
+
+    var last_best_move_depth: c_int = 0;
+    var best_value: c_int = -q_value_inf;
+    const us: usize = @intCast(sideToMove(id.root_pos));
+    var time_reduction: f64 = 1;
+    var tot_best_move_changes: f64 = 0;
+    var iter_idx: usize = 0;
+
+    // Stack[MAX_PLY+10] = {} with (ss-7..ss-1) sentinels and ss[i].ply = i.
+    const stack_n: usize = @intCast(q_max_ply + 10);
+    var stack: [stack_n]SearchStack = std.mem.zeroes([stack_n]SearchStack);
+    {
+        var k: usize = 0;
+        while (k < 7) : (k += 1) {
+            setContHist(worker, &stack[k], 0, 0, 0, 0); // sentinel (NO_PIECE)
+            stack[k].static_eval = q_value_none;
+        }
+        const ply_hi: usize = @intCast(q_max_ply + 2);
+        var p: usize = 0;
+        while (p <= ply_hi) : (p += 1) stack[7 + p].ply = @intCast(p);
+        stack[7].pv = &pv;
+    }
+
+    if (main_thread) {
+        const fv: c_int = if (id.best_previous_score == q_value_inf) 0 else id.best_previous_score;
+        id.iter_value[0] = fv;
+        id.iter_value[1] = fv;
+        id.iter_value[2] = fv;
+        id.iter_value[3] = fv;
+    }
+
+    var multi_pv: usize = id.multipv_option;
+    if (multi_pv > id.root_moves_count) multi_pv = id.root_moves_count;
+
+    fillLowPlyHistory(worker);
+    ageMainHistory(worker);
+
+    var search_again_counter: c_int = 0;
+    var uci_pv_sent = false;
+
+    // Iterative deepening loop.
+    while (id.root_depth.* + 1 < q_max_ply and @atomicLoad(u8, id.stop, .monotonic) == 0 and
+        !(id.limits_depth != 0 and main_thread and id.root_depth.* >= id.limits_depth))
+    {
+        id.root_depth.* += 1;
+
+        if (main_thread) {
+            tot_best_move_changes /= 2;
+            uci_pv_sent = false;
+        }
+
+        // Save last iteration scores.
+        var ri: usize = 0;
+        while (ri < id.root_moves_count) : (ri += 1)
+            id.root_moves[ri].previous_score = id.root_moves[ri].score;
+
+        var pv_first: usize = 0;
+        id.pv_last.* = 0;
+
+        if (@atomicLoad(u8, id.increase_depth, .monotonic) == 0) search_again_counter += 1;
+
+        // MultiPV loop.
+        id.pv_idx.* = 0;
+        while (id.pv_idx.* < multi_pv) : (id.pv_idx.* += 1) {
+            if (id.pv_idx.* == id.pv_last.*) {
+                pv_first = id.pv_last.*;
+                id.pv_last.* += 1;
+                while (id.pv_last.* < id.root_moves_count) : (id.pv_last.* += 1) {
+                    if (id.root_moves[id.pv_last.*].tb_rank != id.root_moves[pv_first].tb_rank) break;
+                }
+            }
+
+            id.sel_depth.* = 0;
+
+            var delta = search.aspirationInitialDelta(id.thread_idx, id.root_moves[id.pv_idx.*].mean_squared_score);
+            const avg = id.root_moves[id.pv_idx.*].average_score;
+            var alpha = @max(avg - delta, -q_value_inf);
+            var beta = @min(avg + delta, q_value_inf);
+            id.optimism[us] = search.optimism(avg);
+            id.optimism[us ^ 1] = -id.optimism[us];
+
+            var failed_high_cnt: c_int = 0;
+            while (true) {
+                const adjusted_depth = @max(@as(c_int, 1), id.root_depth.* - failed_high_cnt - @divTrunc(3 * (search_again_counter + 1), 4));
+                id.root_delta.* = beta - alpha;
+                best_value = searchImpl(&ctx, id.root_pos, &stack[7], alpha, beta, adjusted_depth, false, true, true);
+
+                stableSortRoot(id.root_moves, id.pv_idx.*, id.pv_last.*);
+
+                if (@atomicLoad(u8, id.stop, .monotonic) != 0) break;
+
+                if (main_thread and multi_pv == 1 and (best_value <= alpha or best_value >= beta) and id.nodes.* > id_nodes_limit_output)
+                    zfish_search_id_pv(worker, id.root_depth.*);
+
+                if (best_value <= alpha) {
+                    beta = alpha;
+                    alpha = @max(best_value - delta, -q_value_inf);
+                    failed_high_cnt = 0;
+                    if (main_thread) id.stop_on_ponderhit.* = 0;
+                } else if (best_value >= beta) {
+                    alpha = @max(beta - delta, alpha);
+                    beta = @min(best_value + delta, q_value_inf);
+                    failed_high_cnt += 1;
+                } else break;
+
+                delta = search.aspirationDeltaGrow(delta);
+            }
+
+            // MultiPV mated-in/TB-loss protection for aborted later PV lines.
+            if (@atomicLoad(u8, id.stop, .monotonic) != 0 and id.pv_idx.* != 0 and
+                idIsLoss(id.root_moves[id.pv_idx.* - 1].score) and
+                rootLess(&id.root_moves[id.pv_idx.*], &id.root_moves[id.pv_idx.* - 1]))
+            {
+                const prev = id.root_moves[id.pv_idx.* - 1].score;
+                const cur_prev = id.root_moves[id.pv_idx.*].previous_score;
+                id.root_moves[id.pv_idx.*].score = if (cur_prev != -q_value_inf and cur_prev < prev) cur_prev else prev;
+                id.root_moves[id.pv_idx.*].uci_score = id.root_moves[id.pv_idx.*].score;
+                id.root_moves[id.pv_idx.*].previous_score = -q_value_inf;
+                id.root_moves[id.pv_idx.*].score_lowerbound = false;
+                id.root_moves[id.pv_idx.*].score_upperbound = false;
+                id.root_moves[id.pv_idx.*].pv.length = 1;
+            }
+
+            stableSortRoot(id.root_moves, pv_first, id.pv_idx.* + 1);
+
+            if (main_thread and @atomicLoad(u8, id.stop, .monotonic) == 0 and
+                (id.pv_idx.* + 1 == multi_pv or id.nodes.* > id_nodes_limit_output))
+            {
+                zfish_search_id_pv(worker, id.root_depth.*);
+                uci_pv_sent = (id.pv_idx.* + 1 == multi_pv);
+            }
+
+            if (@atomicLoad(u8, id.stop, .monotonic) != 0) break;
+        }
+
+        if (@atomicLoad(u8, id.stop, .monotonic) == 0) {
+            if (id.last_iter_pv.length == 0 or id.root_moves[0].pv.moves[0] != id.last_iter_pv.moves[0])
+                last_best_move_depth = id.root_depth.*;
+            id.last_iter_pv.* = id.root_moves[0].pv;
+        } else if (id.pv_idx.* == 0 and id.root_moves[0].score != -q_value_inf and
+            idIsLoss(id.root_moves[0].score) and
+            !(id.root_moves[0].score_lowerbound or id.root_moves[0].score_upperbound))
+        {
+            if (id.last_iter_pv.length != 0) {
+                moveToFront(id.root_moves, id.root_moves_count, id.last_iter_pv.moves[0]);
+                id.root_moves[0].pv = id.last_iter_pv.*;
+                id.root_moves[0].score = id.root_moves[0].previous_score;
+                id.root_moves[0].uci_score = id.root_moves[0].previous_score;
+                if (main_thread) uci_pv_sent = false;
+            } else id.root_moves[0].score_lowerbound = true;
+        }
+
+        // Mate in x found?
+        if (id.limits_mate != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and
+            ((idIsMate(id.root_moves[0].score) and q_value_mate - id.root_moves[0].score <= 2 * id.limits_mate) or
+                (idIsMated(id.root_moves[0].score) and q_value_mate + id.root_moves[0].score <= 2 * id.limits_mate)))
+            @atomicStore(u8, id.stop, 1, .monotonic);
+
+        if (!main_thread) continue;
+
+        // (skill is off on this path: the seam keeps the handicap path in C++.)
+
+        tot_best_move_changes += zfish_search_id_collect_bmc(worker);
+
+        // Time management: do we have time for the next iteration / can we stop?
+        if (id.use_time_management != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and id.stop_on_ponderhit.* == 0) {
+            const nodes_effort: u64 = @divTrunc(id.root_moves[0].effort * 100000, @max(@as(u64, 1), id.nodes.*));
+
+            var falling_eval = (11.87 + 2.21 * @as(f64, @floatFromInt(id.best_previous_average_score - best_value)) +
+                1.0 * @as(f64, @floatFromInt(id.iter_value[iter_idx] - best_value))) / 100.0;
+            falling_eval = fclamp(falling_eval, 0.572, 1.708);
+
+            const tr_x = @as(f64, @floatFromInt(id.root_depth.* - last_best_move_depth));
+            time_reduction = fclamp(0.65 + (1.55 - 0.65) * (tr_x - 5.0) / (18.0 - 5.0), 0.65, 1.55);
+
+            const reduction = (1.48 + id.previous_time_reduction.*) / (2.157 * time_reduction);
+            const best_move_instability = 1.096 + 2.29 * tot_best_move_changes / @as(f64, @floatFromInt(id.threads_size));
+
+            const hbme_x = @as(f64, @floatFromInt(@as(i64, @intCast(nodes_effort))));
+            const high_best_move_effort = fclamp(0.924 + (0.71 - 0.924) * (hbme_x - 79219.0) / (101822.0 - 79219.0), 0.71, 0.924);
+
+            var total_time = @as(f64, @floatFromInt(id.tm_optimum)) * falling_eval * reduction * best_move_instability * high_best_move_effort;
+            if (id.root_moves_count == 1) total_time = @min(561.7, total_time);
+
+            const elapsed_time = @as(f64, @floatFromInt(idElapsed(&id)));
+            if (elapsed_time > @min(total_time, @as(f64, @floatFromInt(id.tm_maximum)))) {
+                if (@atomicLoad(u8, id.ponder, .monotonic) != 0) id.stop_on_ponderhit.* = 1 else @atomicStore(u8, id.stop, 1, .monotonic);
+            } else {
+                const inc: u8 = if (@atomicLoad(u8, id.ponder, .monotonic) != 0 or elapsed_time <= total_time * 0.50) 1 else 0;
+                @atomicStore(u8, id.increase_depth, inc, .monotonic);
+            }
+        }
+
+        id.iter_value[iter_idx] = best_value;
+        iter_idx = (iter_idx + 1) & 3;
+    }
+
+    if (!main_thread) return 0;
+
+    id.previous_time_reduction.* = time_reduction;
+    // (skill swap is off on this path.)
+    return if (uci_pv_sent) 1 else 0;
 }
 
 extern fn zfish_search_stat_bonus(depth: c_int, is_tt_move: u8, prev_stat_score: c_int) c_int;
