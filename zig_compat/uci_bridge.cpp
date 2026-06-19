@@ -919,21 +919,15 @@ extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
 // the stable pointer worker_state hands it, the same address this relaxed load
 // targeted -- bit-identical in the single-threaded bench/parity runs.)
 
-// Additional callbacks for the ported Zig search() (non-root). pos_do_move/
-// pos_undo_move are the Position-level (no-accumulator) make/unmake used for the
-// TT-move cutoff verification; reduction reads the Worker reductions table +
-// rootDelta; the rest expose Worker/threads state the non-root search reads.
+// Additional callbacks for the ported Zig search() (non-root). The rest expose
+// Worker/threads state the non-root search reads.
+// (pos_do_move/pos_undo_move retired: the qsearch TT-move cutoff verification
+// now calls the Zig-owned Position make/unmake directly -- it computes
+// gives_check in Zig and passes throwaway DirtyPiece/DirtyThreats scratch, since
+// no accumulator slot is pushed for the verification peek.)
 // (do_null_move/undo_null_move are now inlined in the Zig search: null moves
 // touch no accumulator, so the Zig search calls the Zig-owned pos.do_null_move /
 // undo_null_move and sets the continuation-history pointer directly.)
-extern "C" void zfish_search_cb_pos_do_move(void* pos, std::uint16_t move, void* st) {
-    static_cast<Stockfish::Position*>(pos)->do_move(Stockfish::Move(move),
-                                                    *static_cast<Stockfish::StateInfo*>(st));
-}
-
-extern "C" void zfish_search_cb_pos_undo_move(void* pos, std::uint16_t move) {
-    static_cast<Stockfish::Position*>(pos)->undo_move(Stockfish::Move(move));
-}
 
 // (Worker::reduction is now inlined in the Zig search: the formula reads the
 // per-thread reductions[] table and rootDelta, both handed to Zig as stable

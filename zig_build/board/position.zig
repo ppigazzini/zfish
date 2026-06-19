@@ -447,6 +447,22 @@ inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *anyopaque, move: u16) void {
     zfish_accumulator_stack_pop(ctx.acc_stack);
 }
 
+// Position-level verification make/unmake used by the qsearch TT-move cutoff.
+// Mirrors Position::do_move(Move, StateInfo&): gives_check is computed here, a
+// fresh DirtyThreats list and a throwaway DirtyPiece are passed as scratch (no
+// accumulator slot is pushed, so the dirty state doMove writes is never
+// consumed). undo is the plain Position-level unmake.
+inline fn verifyDoMove(pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque) void {
+    var dp: DirtyPiece = undefined;
+    var dts: DirtyThreats = undefined;
+    dts.list_size = 0;
+    doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
+}
+
+inline fn verifyUndoMove(pos_ptr: *anyopaque, move: u16) void {
+    undoMove(pos_ptr, move);
+}
+
 // correction_value(*this, pos, ss): gather the four shared correction values and
 // the (ss-2)/(ss-4) continuation-correction values, then apply the Zig formula.
 fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchStack) c_int {
@@ -718,8 +734,6 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
 // nmpMinPly, and seldepth are now inlined: null make/unmake is Zig-owned, and the
 // reductions table / rootDelta / nmpMinPly / selDepth are read through the stable
 // pointers worker_state hands the search.)
-extern fn zfish_search_cb_pos_do_move(pos: *anyopaque, move: u16, st: *anyopaque) void;
-extern fn zfish_search_cb_pos_undo_move(pos: *anyopaque, move: u16) void;
 extern fn zfish_search_cb_check_time(worker: *anyopaque) void;
 extern fn zfish_search_cb_in_last_iter_pv(worker: *anyopaque, ply_minus_1: c_int, move: u16) u8;
 extern fn zfish_search_cb_stop(worker: *anyopaque) u8;
@@ -874,10 +888,10 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         }
         if (pos.st.rule50 < 96) {
             if (depth >= 7 and tt_move != 0 and pseudoLegal(pos_ptr, tt_move) and legal(pos_ptr, tt_move) and !qIsDecisive(tt_value)) {
-                zfish_search_cb_pos_do_move(pos_ptr, tt_move, @ptrCast(&st));
+                verifyDoMove(pos_ptr, tt_move, @ptrCast(&st));
                 const next_key = adjustKey50(pos);
                 const probe_next = tt.probeTable(ctx.table, ctx.cluster_count, next_key, ctx.generation, q_depth_none);
-                zfish_search_cb_pos_undo_move(pos_ptr, tt_move);
+                verifyUndoMove(pos_ptr, tt_move);
                 const next_value: c_int = probe_next.data.value16;
                 if (!qIsValid(next_value)) return tt_value;
                 if ((tt_value >= beta) == (-next_value >= beta)) return tt_value;
