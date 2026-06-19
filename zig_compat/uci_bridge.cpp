@@ -893,7 +893,8 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              int** out_nmp_min_ply, int** out_sel_depth,
                                              int** out_root_depth, const int** out_reductions,
                                              const int** out_root_delta,
-                                             const void** out_last_iter_pv) {
+                                             const void** out_last_iter_pv,
+                                             const std::uint8_t** out_stop) {
     auto* w           = static_cast<Stockfish::Search::Worker*>(worker);
     *out_acc_stack    = &w->accumulatorStack;
     *out_nodes        = reinterpret_cast<std::uint64_t*>(&w->nodes);
@@ -906,6 +907,7 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
     *out_reductions   = w->reductions.data();
     *out_root_delta   = &w->rootDelta;
     *out_last_iter_pv = &w->lastIterationPV;
+    *out_stop         = reinterpret_cast<const std::uint8_t*>(&w->threads.stop);
 }
 
 extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
@@ -949,12 +951,9 @@ extern "C" void zfish_search_cb_check_time(void* worker) {
 // through the stable scalar pointers worker_state hands it -- single-threaded
 // bench/parity, so the same-address reads/writes are bit-identical.)
 
-extern "C" std::uint8_t zfish_search_cb_stop(void* worker) {
-    return static_cast<Stockfish::Search::Worker*>(worker)
-             ->threads.stop.load(std::memory_order_relaxed)
-           ? 1
-           : 0;
-}
+// (zfish_search_cb_stop retired: worker_state hands Zig a pointer to the shared
+// threads.stop std::atomic_bool, and the Zig search runs the relaxed load
+// itself -- bit-identical to this load(memory_order_relaxed).)
 
 // Root-node callbacks for the ported Zig search<Root>. rootMoves is a
 // std::vector<RootMove> (each with its own std::vector<Move> pv), so it stays a

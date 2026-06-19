@@ -342,7 +342,7 @@ extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque
 // rootDepth. Cached in QCtx at entry so do_move/undo_move/evaluate and these scalar
 // accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
 // forward pass + eval scaling are all Zig-owned).
-extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves) void;
+extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8) void;
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -389,6 +389,7 @@ const QCtx = struct {
     reductions: [*]const c_int,
     root_delta: *const c_int,
     last_iter_pv: *const PVMoves,
+    stop: *const u8,
 };
 
 // Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
@@ -700,7 +701,8 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var reductions: ?[*]const c_int = null;
     var root_delta: ?*const c_int = null;
     var last_iter_pv: ?*const PVMoves = null;
-    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv);
+    var stop: ?*const u8 = null;
+    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop);
     return .{
         .worker = worker,
         .table = table,
@@ -717,7 +719,15 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
         .reductions = reductions.?,
         .root_delta = root_delta.?,
         .last_iter_pv = last_iter_pv.?,
+        .stop = stop.?,
     };
+}
+
+// Worker::threads.stop inlined: the search aborts when the shared stop flag is
+// set. worker_state hands Zig a pointer to the std::atomic_bool; this mirrors
+// the C++ load(memory_order_relaxed) with a monotonic atomic byte load.
+inline fn searchStopped(ctx: *const QCtx) bool {
+    return @atomicLoad(u8, ctx.stop, .monotonic) != 0;
 }
 
 // Worker::is_in_last_iteration_pv inlined: lastIterationPV is an inline PVMoves
@@ -747,7 +757,6 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
 // reductions table / rootDelta / nmpMinPly / selDepth are read through the stable
 // pointers worker_state hands the search.)
 extern fn zfish_search_cb_check_time(worker: *anyopaque) void;
-extern fn zfish_search_cb_stop(worker: *anyopaque) u8;
 extern fn zfish_search_cb_root_tt_move(worker: *anyopaque) u16;
 extern fn zfish_search_cb_root_in_list(worker: *anyopaque, move: u16) u8;
 extern fn zfish_search_cb_root_pvidx_nonzero(worker: *anyopaque) u8;
@@ -821,7 +830,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
 
     if (!root_node) {
         // Step 2. Aborted search / immediate draw / max ply.
-        if (zfish_search_cb_stop(ctx.worker) != 0 or isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
+        if (searchStopped(ctx) or isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
             if (ss.ply >= q_max_ply and !ss.in_check) return evaluateAcc(ctx, pos_ptr);
             return search.valueDraw(ctx.nodes.*);
         }
@@ -1191,7 +1200,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         undoMoveAcc(ctx, pos_ptr, move);
 
         // Step 20. Check for a new best move.
-        if (zfish_search_cb_stop(ctx.worker) != 0) return q_value_draw;
+        if (searchStopped(ctx)) return q_value_draw;
 
         if (root_node) {
             // (ss+1)->pv is only valid (non-null) when this move ran a PV search,
