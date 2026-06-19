@@ -362,7 +362,8 @@ extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque
 // rootDepth. Cached in QCtx at entry so do_move/undo_move/evaluate and these scalar
 // accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
 // forward pass + eval scaling are all Zig-owned).
-extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64) void;
+extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void;
+extern fn zfish_now() i64;
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -393,6 +394,23 @@ const EvalInput = extern struct {
 extern fn zfish_network_evaluate(network: *const anyopaque, pos: *const anyopaque, acc_stack: *anyopaque, cache: *anyopaque) EvalOutput;
 extern fn zfish_eval_compute_value(input: EvalInput) c_int;
 
+// SearchManager::check_time inputs, fetched once per search tree by worker_state.
+// Live (mutable) fields are pointers; fixed-per-search fields are snapshot values.
+// calls_cnt is null when this worker is not the main thread (check_time is a
+// main-thread-only operation), matching the C++ is_mainthread() gate.
+const SearchTimeState = extern struct {
+    calls_cnt: ?*c_int,
+    stop_write: ?*u8,
+    ponder: ?*const u8,
+    stop_on_ponderhit: ?*const u8,
+    tm_start_time: i64,
+    tm_maximum_time: i64,
+    lim_nodes: u64,
+    lim_movetime: i64,
+    tm_use_nodes_time: u8,
+    use_time_management: u8,
+};
+
 const QCtx = struct {
     worker: *anyopaque,
     table: ?*anyopaque,
@@ -414,6 +432,7 @@ const QCtx = struct {
     root_moves: [*]RootMove,
     pv_last: *const usize,
     best_move_changes: *u64,
+    time_state: SearchTimeState,
 };
 
 // Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
@@ -730,7 +749,8 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var root_moves: ?*anyopaque = null;
     var pv_last: ?*const usize = null;
     var best_move_changes: ?*u64 = null;
-    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes);
+    var time_state: SearchTimeState = undefined;
+    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes, &time_state);
     return .{
         .worker = worker,
         .table = table,
@@ -752,7 +772,37 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
         .root_moves = @ptrCast(@alignCast(root_moves.?)),
         .pv_last = pv_last.?,
         .best_move_changes = best_move_changes.?,
+        .time_state = time_state,
     };
+}
+
+// SearchManager::check_time inlined (main thread only). Decrements the call
+// counter; when it reaches zero, resets it and applies the stop conditions.
+// nodes_searched() is the single-thread node counter (ctx.nodes, the owned
+// runtime target). The dbg_print / lastInfoTime block is dropped: dbg_print is
+// provably dead (no dbg_hit/dbg_mean registrations exist in the tree). now() is
+// the C++ steady_clock so elapsed shares the epoch in which startTime was taken.
+fn checkTime(ctx: *const QCtx) void {
+    const ts = &ctx.time_state;
+    const cc = ts.calls_cnt orelse return; // not the main thread => no-op
+    cc.* -= 1;
+    if (cc.* > 0) return;
+    cc.* = if (ts.lim_nodes != 0) @intCast(@min(@as(u64, 512), ts.lim_nodes / 1024)) else 512;
+
+    const elapsed: i64 = if (ts.tm_use_nodes_time != 0)
+        @intCast(ctx.nodes.*)
+    else
+        zfish_now() - ts.tm_start_time;
+
+    if (ts.ponder.?.* != 0) return;
+
+    const ns: u64 = ctx.nodes.*;
+    if ((ts.use_time_management != 0 and (elapsed > ts.tm_maximum_time or ts.stop_on_ponderhit.?.* != 0)) or
+        (ts.lim_movetime != 0 and elapsed >= ts.lim_movetime) or
+        (ts.lim_nodes != 0 and ns >= ts.lim_nodes))
+    {
+        @atomicStore(u8, ts.stop_write.?, 1, .monotonic);
+    }
 }
 
 // search<Root> per-move bookkeeping (Worker root_update, inlined). Finds the
@@ -848,7 +898,6 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
 // nmpMinPly, and seldepth are now inlined: null make/unmake is Zig-owned, and the
 // reductions table / rootDelta / nmpMinPly / selDepth are read through the stable
 // pointers worker_state hands the search.)
-extern fn zfish_search_cb_check_time(worker: *anyopaque) void;
 extern fn zfish_search_cb_root_on_iter(worker: *anyopaque, depth: c_int, move: u16, move_count: c_int) void;
 
 const q_bound_none: u8 = 0;
@@ -912,7 +961,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
 
     ss.follow_pv = root_node or (ss1.follow_pv and inLastIterPv(ctx, ss.ply - 1, ss1.current_move));
 
-    zfish_search_cb_check_time(ctx.worker);
+    checkTime(ctx);
 
     if (pv_node) updateSelDepth(ctx, ss.ply);
 

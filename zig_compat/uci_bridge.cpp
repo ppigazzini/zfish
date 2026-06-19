@@ -887,6 +887,25 @@ static_assert(sizeof(Stockfish::Search::PVMoves) == 504);  // [247]Move padded +
 // network eval itself. worker_state hands it the stable per-search pointers it
 // needs once per entry: the accumulator stack, the node counter, the numa-resolved
 // Network, the accumulator-refresh cache, and the optimism[COLOR_NB] array.)
+// check_time inputs handed to the Zig search once per search tree. Layout matches
+// the Zig SearchTimeState extern struct exactly.
+struct ZfishSearchTimeState {
+    int*                 calls_cnt;            // null => not the main thread
+    std::uint8_t*        stop_write;
+    const std::uint8_t*  ponder;
+    const std::uint8_t*  stop_on_ponderhit;
+    std::int64_t         tm_start_time;
+    std::int64_t         tm_maximum_time;
+    std::uint64_t        lim_nodes;
+    std::int64_t         lim_movetime;
+    std::uint8_t         tm_use_nodes_time;
+    std::uint8_t         use_time_management;
+};
+
+// C++ steady_clock now() in milliseconds, so the Zig check_time computes elapsed
+// in the same epoch as the C++-sampled startTime.
+extern "C" std::int64_t zfish_now() { return Stockfish::now(); }
+
 extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              std::uint64_t** out_nodes, const void** out_network,
                                              void** out_cache, const void** out_optimism,
@@ -898,7 +917,8 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              const std::size_t** out_pv_idx,
                                              void** out_root_moves,
                                              const std::size_t** out_pv_last,
-                                             std::uint64_t** out_best_move_changes) {
+                                             std::uint64_t** out_best_move_changes,
+                                             ZfishSearchTimeState* out_time) {
     auto* w           = static_cast<Stockfish::Search::Worker*>(worker);
     *out_acc_stack    = &w->accumulatorStack;
     *out_nodes        = reinterpret_cast<std::uint64_t*>(&w->nodes);
@@ -916,6 +936,23 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
     *out_root_moves   = w->rootMoves.data();
     *out_pv_last      = &w->pvLast;
     *out_best_move_changes = reinterpret_cast<std::uint64_t*>(&w->bestMoveChanges);
+
+    if (w->is_mainthread())
+    {
+        auto* m                      = w->main_manager();
+        out_time->calls_cnt          = &m->callsCnt;
+        out_time->stop_write         = reinterpret_cast<std::uint8_t*>(&w->threads.stop);
+        out_time->ponder             = reinterpret_cast<const std::uint8_t*>(&m->ponder);
+        out_time->stop_on_ponderhit  = reinterpret_cast<const std::uint8_t*>(&m->stopOnPonderhit);
+        out_time->tm_start_time      = m->tm.startTime;
+        out_time->tm_maximum_time    = m->tm.maximumTime;
+        out_time->lim_nodes          = w->limits.nodes;
+        out_time->lim_movetime       = w->limits.movetime;
+        out_time->tm_use_nodes_time  = m->tm.useNodesTime ? 1 : 0;
+        out_time->use_time_management = w->limits.use_time_management() ? 1 : 0;
+    }
+    else
+        out_time->calls_cnt = nullptr;
 }
 
 extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
@@ -945,11 +982,11 @@ extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
 // per-thread reductions[] table and rootDelta, both handed to Zig as stable
 // pointers by worker_state.)
 
-extern "C" void zfish_search_cb_check_time(void* worker) {
-    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
-    if (w->is_mainthread())
-        w->main_manager()->check_time(*w);
-}
+// (zfish_search_cb_check_time retired: worker_state snapshots the SearchManager
+// time state (callsCnt, tm fields, limits, ponder, stopOnPonderhit, writable
+// stop) into SearchTimeState on the main thread, and the Zig search runs the
+// decision itself -- only zfish_now() (a steady_clock syscall) stays in C++.
+// The dead dbg_print / lastInfoTime block is dropped.)
 
 // (zfish_search_cb_in_last_iter_pv retired: lastIterationPV is an inline PVMoves
 // member, so worker_state hands Zig a stable pointer to it and the follow-pv
