@@ -769,6 +769,7 @@ extern "C" int  zfish_search_qsearch(void* worker, void* pos, void* ss, int alph
 extern "C" int  zfish_search_search(void* worker, void* pos, void* ss, int alpha, int beta,
                                     int depth, std::uint8_t cut_node, std::uint8_t pv_node,
                                     std::uint8_t root_node);
+extern "C" std::uint8_t zfish_search_iterative_deepening(void* worker);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
 extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
                                                     int piece_value, int capt_hist);
@@ -850,6 +851,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SET_CONT_HIST
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SEARCH
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_ITERDEEP
 #include "../src/search.cpp"
 
 // Layout proof for zig_build/board/position.zig's WorkerHistories mirror. The
@@ -905,6 +907,117 @@ struct ZfishSearchTimeState {
 // C++ steady_clock now() in milliseconds, so the Zig check_time computes elapsed
 // in the same epoch as the C++-sampled startTime.
 extern "C" std::int64_t zfish_now() { return Stockfish::now(); }
+
+// iterative_deepening() state snapshot. Layout matches the Zig ZfishIdState
+// extern struct exactly. Filled once at entry on the skill-off path.
+struct ZfishIdState {
+    void*               root_pos;
+    void*               root_moves;
+    std::size_t*        pv_idx;
+    std::size_t*        pv_last;
+    int*                sel_depth;
+    int*                root_depth;
+    int*                root_delta;
+    int*                optimism;
+    const std::uint64_t* nodes;
+    std::uint8_t*       stop;
+    std::uint8_t*       increase_depth;
+    std::uint8_t*       stop_on_ponderhit;
+    const std::uint8_t* ponder;
+    int*                iter_value;
+    double*             previous_time_reduction;
+    void*               last_iter_pv;
+    std::size_t         root_moves_count;
+    std::size_t         thread_idx;
+    std::size_t         threads_size;
+    std::size_t         multipv_option;
+    std::int64_t        tm_optimum;
+    std::int64_t        tm_maximum;
+    std::int64_t        tm_start_time;
+    int                 limits_depth;
+    int                 limits_mate;
+    int                 best_previous_score;
+    int                 best_previous_average_score;
+    std::uint8_t        is_main;
+    std::uint8_t        use_time_management;
+    std::uint8_t        tm_use_nodes_time;
+};
+
+extern "C" void zfish_search_id_state(void* worker, ZfishIdState* out) {
+    using namespace Stockfish;
+    auto* w           = static_cast<Search::Worker*>(worker);
+    const bool isMain = w->is_mainthread();
+
+    out->root_pos                = &w->rootPos;
+    out->root_moves              = w->rootMoves.data();
+    out->pv_idx                  = &w->pvIdx;
+    out->pv_last                 = &w->pvLast;
+    out->sel_depth               = &w->selDepth;
+    out->root_depth              = &w->rootDepth;
+    out->root_delta              = &w->rootDelta;
+    out->optimism                = &w->optimism[0];
+    out->nodes                   = reinterpret_cast<const std::uint64_t*>(&w->nodes);
+    out->stop                    = reinterpret_cast<std::uint8_t*>(&w->threads.stop);
+    out->increase_depth          = reinterpret_cast<std::uint8_t*>(&w->threads.increaseDepth);
+    out->ponder                  = nullptr;
+    out->last_iter_pv            = &w->lastIterationPV;
+    out->root_moves_count        = w->rootMoves.size();
+    out->thread_idx              = w->threadIdx;
+    out->threads_size            = w->threads.size();
+    out->limits_depth            = w->limits.depth;
+    out->limits_mate             = w->limits.mate;
+    out->use_time_management     = w->limits.use_time_management() ? 1 : 0;
+    out->is_main                 = isMain ? 1 : 0;
+
+    if (isMain)
+    {
+        auto* m                       = w->main_manager();
+        out->stop_on_ponderhit        = reinterpret_cast<std::uint8_t*>(&m->stopOnPonderhit);
+        out->ponder                   = reinterpret_cast<const std::uint8_t*>(&m->ponder);
+        out->iter_value               = reinterpret_cast<int*>(m->iterValue.data());
+        out->previous_time_reduction  = &m->previousTimeReduction;
+        out->tm_optimum               = m->tm.optimum();
+        out->tm_maximum               = m->tm.maximum();
+        out->tm_start_time            = m->tm.startTime;
+        out->tm_use_nodes_time        = m->tm.useNodesTime ? 1 : 0;
+        out->best_previous_score      = m->bestPreviousScore;
+        out->best_previous_average_score = m->bestPreviousAverageScore;
+        out->multipv_option           = std::size_t(w->options["MultiPV"]);
+    }
+    else
+    {
+        out->stop_on_ponderhit       = nullptr;
+        out->ponder                  = nullptr;
+        out->iter_value              = nullptr;
+        out->previous_time_reduction = nullptr;
+        out->tm_optimum              = 0;
+        out->tm_maximum              = 0;
+        out->tm_start_time           = 0;
+        out->tm_use_nodes_time       = 0;
+        out->best_previous_score     = 0;
+        out->best_previous_average_score = 0;
+        out->multipv_option          = std::size_t(w->options["MultiPV"]);
+    }
+}
+
+// UCI pv() sink (output only -- not parity-observable).
+extern "C" void zfish_search_id_pv(void* worker, int depth) {
+    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
+    w->main_manager()->pv(*w, w->threads, w->tt, depth);
+}
+
+// Cross-thread bestMoveChanges collection: sum and reset, returned as a double
+// (keeps the multi-thread result correct from one extern).
+extern "C" double zfish_search_id_collect_bmc(void* worker) {
+    auto*  w   = static_cast<Stockfish::Search::Worker*>(worker);
+    double tot = 0;
+    for (auto&& th : w->threads)
+    {
+        tot += th->worker->bestMoveChanges;
+        th->worker->bestMoveChanges = 0;
+    }
+    return tot;
+}
 
 extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              std::uint64_t** out_nodes, const void** out_network,
