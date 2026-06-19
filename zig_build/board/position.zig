@@ -362,7 +362,7 @@ extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque
 // rootDepth. Cached in QCtx at entry so do_move/undo_move/evaluate and these scalar
 // accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
 // forward pass + eval scaling are all Zig-owned).
-extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize) void;
+extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64) void;
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -413,6 +413,7 @@ const QCtx = struct {
     pv_idx: *const usize,
     root_moves: [*]RootMove,
     pv_last: *const usize,
+    best_move_changes: *u64,
 };
 
 // Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
@@ -728,7 +729,8 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var pv_idx: ?*const usize = null;
     var root_moves: ?*anyopaque = null;
     var pv_last: ?*const usize = null;
-    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last);
+    var best_move_changes: ?*u64 = null;
+    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes);
     return .{
         .worker = worker,
         .table = table,
@@ -749,7 +751,52 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
         .pv_idx = pv_idx.?,
         .root_moves = @ptrCast(@alignCast(root_moves.?)),
         .pv_last = pv_last.?,
+        .best_move_changes = best_move_changes.?,
     };
+}
+
+// search<Root> per-move bookkeeping (Worker root_update, inlined). Finds the
+// RootMove for `move` in [pvIdx, pvLast) (unique, guaranteed present by the
+// rootInList filter), updates its effort / averageScore / meanSquaredScore, and
+// on a PV move stores the score/bound flags/PV. C truncating division (@divTrunc)
+// and i32 arithmetic match the C++ exactly (no overflow: both squared terms are
+// < VALUE_INFINITE^2, sum < INT_MAX).
+const root_mean_sq_sentinel: c_int = -(q_value_inf * q_value_inf);
+fn rootUpdate(ctx: *const QCtx, move: u16, value: c_int, nodes_delta: u64, move_count: c_int, alpha: c_int, beta: c_int, child_pv: ?*const PVMoves) void {
+    var idx: usize = ctx.pv_idx.*;
+    const last = ctx.pv_last.*;
+    while (idx < last and ctx.root_moves[idx].pv.moves[0] != move) : (idx += 1) {}
+    const rm = &ctx.root_moves[idx];
+
+    rm.effort += nodes_delta;
+    rm.average_score = if (rm.average_score != -q_value_inf) @divTrunc(value + rm.average_score, 2) else value;
+    const av = if (value < 0) -value else value;
+    const v_sq = value * av;
+    rm.mean_squared_score = if (rm.mean_squared_score != root_mean_sq_sentinel) @divTrunc(v_sq + rm.mean_squared_score, 2) else v_sq;
+
+    if (move_count == 1 or value > alpha) {
+        rm.score = value;
+        rm.uci_score = value;
+        rm.sel_depth = ctx.sel_depth.*;
+        rm.score_lowerbound = false;
+        rm.score_upperbound = false;
+        if (value >= beta) {
+            rm.score_lowerbound = true;
+            rm.uci_score = beta;
+        } else if (value <= alpha) {
+            rm.score_upperbound = true;
+            rm.uci_score = alpha;
+        }
+        // pv.resize(1) keeps pv[0] (== move), then append the child PV.
+        rm.pv.length = 1;
+        if (child_pv) |c| {
+            var j: usize = 0;
+            while (j < c.length) : (j += 1) rm.pv.moves[1 + j] = c.moves[j];
+            rm.pv.length = 1 + c.length;
+        }
+        if (move_count > 1 and ctx.pv_idx.* == 0)
+            _ = @atomicRmw(u64, ctx.best_move_changes, .Add, 1, .monotonic);
+    } else rm.score = -q_value_inf;
 }
 
 // search<Root> reads the TT move and the legal-root filter from the rootMoves
@@ -803,7 +850,6 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
 // pointers worker_state hands the search.)
 extern fn zfish_search_cb_check_time(worker: *anyopaque) void;
 extern fn zfish_search_cb_root_on_iter(worker: *anyopaque, depth: c_int, move: u16, move_count: c_int) void;
-extern fn zfish_search_cb_root_update(worker: *anyopaque, move: u16, value: c_int, nodes_delta: u64, move_count: c_int, alpha: c_int, beta: c_int, child_pv: [*]const u16, child_pv_len: usize) void;
 
 const q_bound_none: u8 = 0;
 const q_bound_exact: u8 = 3;
@@ -1247,11 +1293,8 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         if (root_node) {
             // (ss+1)->pv is only valid (non-null) when this move ran a PV search,
             // i.e. move_count == 1 or value > alpha; otherwise the C++ ignores it.
-            const cpv: ?*PVMoves = if (move_count == 1 or value > alpha) @ptrCast(@alignCast(ssAdd(ss, 1).pv.?)) else null;
-            var dummy: [1]u16 = undefined;
-            const pv_ptr: [*]const u16 = if (cpv) |c| &c.moves else &dummy;
-            const pv_len: usize = if (cpv) |c| c.length else 0;
-            zfish_search_cb_root_update(ctx.worker, move, value, ctx.nodes.* - node_count, move_count, alpha, beta, pv_ptr, pv_len);
+            const cpv: ?*const PVMoves = if (move_count == 1 or value > alpha) @ptrCast(@alignCast(ssAdd(ss, 1).pv.?)) else null;
+            rootUpdate(ctx, move, value, ctx.nodes.* - node_count, move_count, alpha, beta, cpv);
         }
 
         const av = if (value < 0) -value else value;

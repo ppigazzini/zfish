@@ -897,7 +897,8 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              const std::uint8_t** out_stop,
                                              const std::size_t** out_pv_idx,
                                              void** out_root_moves,
-                                             const std::size_t** out_pv_last) {
+                                             const std::size_t** out_pv_last,
+                                             std::uint64_t** out_best_move_changes) {
     auto* w           = static_cast<Stockfish::Search::Worker*>(worker);
     *out_acc_stack    = &w->accumulatorStack;
     *out_nodes        = reinterpret_cast<std::uint64_t*>(&w->nodes);
@@ -914,6 +915,7 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
     *out_pv_idx       = &w->pvIdx;
     *out_root_moves   = w->rootMoves.data();
     *out_pv_last      = &w->pvLast;
+    *out_best_move_changes = reinterpret_cast<std::uint64_t*>(&w->bestMoveChanges);
 }
 
 extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
@@ -982,48 +984,10 @@ extern "C" void zfish_search_cb_root_on_iter(void* worker, int depth, std::uint1
            static_cast<std::size_t>(move_count) + w->pvIdx});
 }
 
-extern "C" void zfish_search_cb_root_update(void* worker, std::uint16_t move, int value,
-                                            std::uint64_t nodes_delta, int move_count, int alpha,
-                                            int beta, const std::uint16_t* child_pv,
-                                            std::size_t child_pv_len) {
-    using namespace Stockfish;
-    auto*     w  = static_cast<Search::Worker*>(worker);
-    RootMove& rm = *std::find(w->rootMoves.begin(), w->rootMoves.end(), Move(move));
-
-    rm.effort += nodes_delta;
-    rm.averageScore =
-      rm.averageScore != -VALUE_INFINITE ? (value + rm.averageScore) / 2 : value;
-    rm.meanSquaredScore = rm.meanSquaredScore != -VALUE_INFINITE * VALUE_INFINITE
-                          ? (value * std::abs(value) + rm.meanSquaredScore) / 2
-                          : value * std::abs(value);
-
-    if (move_count == 1 || value > alpha)
-    {
-        rm.score = rm.uciScore = value;
-        rm.selDepth            = w->selDepth;
-        rm.unset_bound_flags();
-
-        if (value >= beta)
-        {
-            rm.scoreLowerbound = true;
-            rm.uciScore        = beta;
-        }
-        else if (value <= alpha)
-        {
-            rm.scoreUpperbound = true;
-            rm.uciScore        = alpha;
-        }
-
-        rm.pv.resize(1);
-        for (std::size_t i = 0; i < child_pv_len; ++i)
-            rm.pv.push_back(Move(child_pv[i]));
-
-        if (move_count > 1 && !w->pvIdx)
-            ++w->bestMoveChanges;
-    }
-    else
-        rm.score = -VALUE_INFINITE;
-}
+// (zfish_search_cb_root_update retired: the Zig search<Root> updates the RootMove
+// entry directly through the rootMoves array base -- effort/averageScore/
+// meanSquaredScore, the score/bound-flag/PV store on a PV move, and the
+// bestMoveChanges atomic increment, all handed over by worker_state.)
 
 extern "C" {
 struct ZfishTimemanInput {
