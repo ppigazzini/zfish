@@ -892,18 +892,20 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              void** out_cache, const void** out_optimism,
                                              int** out_nmp_min_ply, int** out_sel_depth,
                                              int** out_root_depth, const int** out_reductions,
-                                             const int** out_root_delta) {
-    auto* w          = static_cast<Stockfish::Search::Worker*>(worker);
-    *out_acc_stack   = &w->accumulatorStack;
-    *out_nodes       = reinterpret_cast<std::uint64_t*>(&w->nodes);
-    *out_network     = &w->network[w->numaAccessToken];
-    *out_cache       = &w->refreshTable;
-    *out_optimism    = &w->optimism[0];
-    *out_nmp_min_ply = &w->nmpMinPly;
-    *out_sel_depth   = &w->selDepth;
-    *out_root_depth  = &w->rootDepth;
-    *out_reductions  = w->reductions.data();
-    *out_root_delta  = &w->rootDelta;
+                                             const int** out_root_delta,
+                                             const void** out_last_iter_pv) {
+    auto* w           = static_cast<Stockfish::Search::Worker*>(worker);
+    *out_acc_stack    = &w->accumulatorStack;
+    *out_nodes        = reinterpret_cast<std::uint64_t*>(&w->nodes);
+    *out_network      = &w->network[w->numaAccessToken];
+    *out_cache        = &w->refreshTable;
+    *out_optimism     = &w->optimism[0];
+    *out_nmp_min_ply  = &w->nmpMinPly;
+    *out_sel_depth    = &w->selDepth;
+    *out_root_depth   = &w->rootDepth;
+    *out_reductions   = w->reductions.data();
+    *out_root_delta   = &w->rootDelta;
+    *out_last_iter_pv = &w->lastIterationPV;
 }
 
 extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
@@ -939,14 +941,9 @@ extern "C" void zfish_search_cb_check_time(void* worker) {
         w->main_manager()->check_time(*w);
 }
 
-extern "C" std::uint8_t zfish_search_cb_in_last_iter_pv(void* worker, int ply_minus_1,
-                                                        std::uint16_t move) {
-    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
-    return (static_cast<std::size_t>(ply_minus_1) < w->lastIterationPV.size()
-            && w->lastIterationPV[ply_minus_1].raw() == move)
-           ? 1
-           : 0;
-}
+// (zfish_search_cb_in_last_iter_pv retired: lastIterationPV is an inline PVMoves
+// member, so worker_state hands Zig a stable pointer to it and the follow-pv
+// test compares against it directly.)
 
 // (nmpMinPly get/set, selDepth update, and rootDepth read are now done in Zig
 // through the stable scalar pointers worker_state hands it -- single-threaded

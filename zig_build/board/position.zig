@@ -342,7 +342,7 @@ extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque
 // rootDepth. Cached in QCtx at entry so do_move/undo_move/evaluate and these scalar
 // accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
 // forward pass + eval scaling are all Zig-owned).
-extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int) void;
+extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves) void;
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -388,6 +388,7 @@ const QCtx = struct {
     root_depth: *c_int,
     reductions: [*]const c_int,
     root_delta: *const c_int,
+    last_iter_pv: *const PVMoves,
 };
 
 // Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
@@ -698,7 +699,8 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var root_depth: ?*c_int = null;
     var reductions: ?[*]const c_int = null;
     var root_delta: ?*const c_int = null;
-    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta);
+    var last_iter_pv: ?*const PVMoves = null;
+    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv);
     return .{
         .worker = worker,
         .table = table,
@@ -714,7 +716,17 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
         .root_depth = root_depth.?,
         .reductions = reductions.?,
         .root_delta = root_delta.?,
+        .last_iter_pv = last_iter_pv.?,
     };
+}
+
+// Worker::is_in_last_iteration_pv inlined: lastIterationPV is an inline PVMoves
+// member (fixed Move array + length), so worker_state hands Zig a stable pointer
+// and the follow-pv test compares directly against it.
+inline fn inLastIterPv(ctx: *const QCtx, ply_minus_1: c_int, move: u16) bool {
+    const pv = ctx.last_iter_pv;
+    const idx: usize = @intCast(ply_minus_1);
+    return idx < pv.length and pv.moves[idx] == move;
 }
 
 pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, pv_node: u8) c_int {
@@ -735,7 +747,6 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
 // reductions table / rootDelta / nmpMinPly / selDepth are read through the stable
 // pointers worker_state hands the search.)
 extern fn zfish_search_cb_check_time(worker: *anyopaque) void;
-extern fn zfish_search_cb_in_last_iter_pv(worker: *anyopaque, ply_minus_1: c_int, move: u16) u8;
 extern fn zfish_search_cb_stop(worker: *anyopaque) u8;
 extern fn zfish_search_cb_root_tt_move(worker: *anyopaque) u16;
 extern fn zfish_search_cb_root_in_list(worker: *anyopaque, move: u16) u8;
@@ -802,7 +813,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     var best_value: c_int = -q_value_inf;
     const max_value: c_int = q_value_inf;
 
-    ss.follow_pv = root_node or (ss1.follow_pv and zfish_search_cb_in_last_iter_pv(ctx.worker, ss.ply - 1, ss1.current_move) != 0);
+    ss.follow_pv = root_node or (ss1.follow_pv and inLastIterPv(ctx, ss.ply - 1, ss1.current_move));
 
     zfish_search_cb_check_time(ctx.worker);
 
