@@ -895,7 +895,9 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              const int** out_root_delta,
                                              const void** out_last_iter_pv,
                                              const std::uint8_t** out_stop,
-                                             const std::size_t** out_pv_idx) {
+                                             const std::size_t** out_pv_idx,
+                                             void** out_root_moves,
+                                             const std::size_t** out_pv_last) {
     auto* w           = static_cast<Stockfish::Search::Worker*>(worker);
     *out_acc_stack    = &w->accumulatorStack;
     *out_nodes        = reinterpret_cast<std::uint64_t*>(&w->nodes);
@@ -910,6 +912,8 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
     *out_last_iter_pv = &w->lastIterationPV;
     *out_stop         = reinterpret_cast<const std::uint8_t*>(&w->threads.stop);
     *out_pv_idx       = &w->pvIdx;
+    *out_root_moves   = w->rootMoves.data();
+    *out_pv_last      = &w->pvLast;
 }
 
 extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
@@ -960,18 +964,10 @@ extern "C" void zfish_search_cb_check_time(void* worker) {
 // Root-node callbacks for the ported Zig search<Root>. rootMoves is a
 // std::vector<RootMove> (each with its own std::vector<Move> pv), so it stays a
 // C++-owned structure the Zig search reaches only through these.
-extern "C" std::uint16_t zfish_search_cb_root_tt_move(void* worker) {
-    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
-    return w->rootMoves[w->pvIdx].pv[0].raw();
-}
-
-extern "C" std::uint8_t zfish_search_cb_root_in_list(void* worker, std::uint16_t move) {
-    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
-    return std::count(w->rootMoves.begin() + w->pvIdx, w->rootMoves.begin() + w->pvLast,
-                      Stockfish::Move(move))
-           ? 1
-           : 0;
-}
+// (zfish_search_cb_root_tt_move / zfish_search_cb_root_in_list retired: RootMove
+// is a standard-layout POD, so worker_state hands Zig the rootMoves array base
+// and pvLast, and the Zig search<Root> reads pv[0] / scans [pvIdx, pvLast)
+// directly.)
 
 // (zfish_search_cb_root_pvidx_nonzero retired: worker_state hands Zig a pointer
 // to Worker::pvIdx and the singular-extension guard compares it directly.)

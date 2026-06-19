@@ -320,6 +320,26 @@ pub const PVMoves = extern struct {
     moves: [247]u16,
     length: usize,
 };
+
+// Memory mirror of Search::RootMove (src/search.h). RootMove is a standard-layout
+// POD (its pv is the inline PVMoves, not a heap vector), so std::vector<RootMove>
+// rootMoves is a contiguous array the Zig search indexes through a base pointer
+// handed over by worker_state. Field order/types match the C++ declaration; the
+// C ABI extern struct reproduces the same offsets.
+pub const RootMove = extern struct {
+    effort: u64,
+    score: i32,
+    previous_score: i32,
+    average_score: i32,
+    mean_squared_score: i32,
+    uci_score: i32,
+    score_lowerbound: bool,
+    score_upperbound: bool,
+    sel_depth: i32,
+    tb_rank: i32,
+    tb_score: i32,
+    pv: PVMoves,
+};
 inline fn pvClear(pv: *PVMoves) void {
     pv.length = 0;
 }
@@ -342,7 +362,7 @@ extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque
 // rootDepth. Cached in QCtx at entry so do_move/undo_move/evaluate and these scalar
 // accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
 // forward pass + eval scaling are all Zig-owned).
-extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize) void;
+extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize) void;
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -391,6 +411,8 @@ const QCtx = struct {
     last_iter_pv: *const PVMoves,
     stop: *const u8,
     pv_idx: *const usize,
+    root_moves: [*]RootMove,
+    pv_last: *const usize,
 };
 
 // Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
@@ -704,7 +726,9 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var last_iter_pv: ?*const PVMoves = null;
     var stop: ?*const u8 = null;
     var pv_idx: ?*const usize = null;
-    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx);
+    var root_moves: ?*anyopaque = null;
+    var pv_last: ?*const usize = null;
+    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last);
     return .{
         .worker = worker,
         .table = table,
@@ -723,7 +747,25 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
         .last_iter_pv = last_iter_pv.?,
         .stop = stop.?,
         .pv_idx = pv_idx.?,
+        .root_moves = @ptrCast(@alignCast(root_moves.?)),
+        .pv_last = pv_last.?,
     };
+}
+
+// search<Root> reads the TT move and the legal-root filter from the rootMoves
+// array (a contiguous std::vector<RootMove>) handed over by worker_state.
+inline fn rootTtMove(ctx: *const QCtx) u16 {
+    return ctx.root_moves[ctx.pv_idx.*].pv.moves[0];
+}
+
+// RootMove::operator==(Move) compares pv[0]; std::count over [pvIdx, pvLast).
+inline fn rootInList(ctx: *const QCtx, move: u16) bool {
+    var i: usize = ctx.pv_idx.*;
+    const last = ctx.pv_last.*;
+    while (i < last) : (i += 1) {
+        if (ctx.root_moves[i].pv.moves[0] == move) return true;
+    }
+    return false;
 }
 
 // Worker::threads.stop inlined: the search aborts when the shared stop flag is
@@ -760,8 +802,6 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
 // reductions table / rootDelta / nmpMinPly / selDepth are read through the stable
 // pointers worker_state hands the search.)
 extern fn zfish_search_cb_check_time(worker: *anyopaque) void;
-extern fn zfish_search_cb_root_tt_move(worker: *anyopaque) u16;
-extern fn zfish_search_cb_root_in_list(worker: *anyopaque, move: u16) u8;
 extern fn zfish_search_cb_root_on_iter(worker: *anyopaque, depth: c_int, move: u16, move_count: c_int) void;
 extern fn zfish_search_cb_root_update(worker: *anyopaque, move: u16, value: c_int, nodes_delta: u64, move_count: c_int, alpha: c_int, beta: c_int, child_pv: [*]const u16, child_pv_len: usize) void;
 
@@ -856,7 +896,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     const probe = tt.probeTable(ctx.table, ctx.cluster_count, pos_key, ctx.generation, q_depth_none);
     const tt_hit = probe.found != 0;
     ss.tt_hit = tt_hit;
-    const tt_move: u16 = if (root_node) zfish_search_cb_root_tt_move(ctx.worker) else if (tt_hit) probe.data.move16 else 0;
+    const tt_move: u16 = if (root_node) rootTtMove(ctx) else if (tt_hit) probe.data.move16 else 0;
     const tt_value: c_int = if (tt_hit) search.valueFromTt(probe.data.value16, ss.ply, pos.st.rule50) else q_value_none;
     const tt_depth: c_int = probe.data.depth;
     const tt_bound: u8 = probe.data.bound;
@@ -1067,7 +1107,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         if (move == 0) break;
         if (move == excluded_move) continue;
         if (!legal(pos_ptr, move)) continue;
-        if (root_node and zfish_search_cb_root_in_list(ctx.worker, move) == 0) continue;
+        if (root_node and !rootInList(ctx, move)) continue;
 
         move_count += 1;
         ss.move_count = move_count;
