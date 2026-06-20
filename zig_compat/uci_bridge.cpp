@@ -185,7 +185,6 @@ struct ZfishEngineTablebaseProbe {
 
 const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
 const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
-const char* zfish_engine_eval_trace(void* pos, const void* network);
 void         zfish_engine_release_pending_state_slot(void* states_slot);
 const char* zfish_engine_fen(const void* pos);
 const char* zfish_misc_engine_version_info_text();
@@ -361,16 +360,6 @@ struct ZfishOwnedByteView {
     std::size_t          len;
 };
 
-struct ZfishNetworkSaveResult {
-    std::uint8_t saved;
-    const char*  message;
-};
-
-struct ZfishNetworkVerifyResult {
-    std::uint8_t should_exit;
-    const char*  message;
-};
-
 struct ZfishNetworkEvalOutput {
     int psqt;
     int positional;
@@ -384,32 +373,15 @@ struct ZfishNetworkVerifyInfo {
     int         fc1_outputs;
 };
 
-struct ZfishNetworkTraceOutput {
-    int         psqt[LayerStacks];
-    int         positional[LayerStacks];
-    std::size_t correct_bucket;
-};
-
 void zfish_network_load(void*                network,
                         const unsigned char* root_directory_ptr,
                         std::size_t          root_directory_len,
                         const unsigned char* evalfile_path_ptr,
                         std::size_t          evalfile_path_len);
-ZfishNetworkSaveResult zfish_network_save(const void*          network,
-                                          std::uint8_t         has_filename,
-                                          const unsigned char* filename_ptr,
-                                          std::size_t          filename_len);
-ZfishNetworkVerifyResult zfish_network_verify(const void*          network,
-                                              const unsigned char* evalfile_path_ptr,
-                                              std::size_t          evalfile_path_len);
 ZfishNetworkEvalOutput zfish_network_evaluate(const void* network,
                                               const void* pos,
                                               void*       accumulator_stack,
                                               void*       cache);
-ZfishNetworkTraceOutput zfish_network_trace_evaluate(const void* network,
-                                                     const void* pos,
-                                                     void*       accumulator_stack,
-                                                     void*       cache);
 
 std::size_t zfish_network_content_hash(const void* network);
 
@@ -562,59 +534,11 @@ void Network::load(const std::string& rootDirectory, std::string evalfilePath) {
                        evalfilePath.size());
 }
 
-bool Network::save(const std::optional<std::string>& filename) const {
-    const std::string filenameText = filename.value_or(std::string{});
-    const auto        result = zfish_network_save(this,
-                                           static_cast<std::uint8_t>(filename.has_value()),
-                                           reinterpret_cast<const unsigned char*>(filenameText.data()),
-                                           filenameText.size());
-
-    if (result.message)
-    {
-        sync_cout << result.message << sync_endl;
-        std::free(const_cast<char*>(result.message));
-    }
-
-    return result.saved != 0;
-}
-
 NetworkOutput Network::evaluate(const Position&    pos,
                                 AccumulatorStack&  accumulatorStack,
                                 AccumulatorCaches& cache) const {
     const auto output = zfish_network_evaluate(this, &pos, &accumulatorStack, &cache);
     return {static_cast<Value>(output.psqt), static_cast<Value>(output.positional)};
-}
-
-void Network::verify(std::string                                  evalfilePath,
-                     const std::function<void(std::string_view)>& f) const {
-    const auto result = zfish_network_verify(this,
-                                             reinterpret_cast<const unsigned char*>(evalfilePath.data()),
-                                             evalfilePath.size());
-
-    if (f && result.message)
-        f(result.message);
-
-    if (result.message)
-        std::free(const_cast<char*>(result.message));
-
-    if (result.should_exit)
-        exit(EXIT_FAILURE);
-}
-
-NnueEvalTrace Network::trace_evaluate(const Position&    pos,
-                                      AccumulatorStack&  accumulatorStack,
-                                      AccumulatorCaches& cache) const {
-    const auto output = zfish_network_trace_evaluate(this, &pos, &accumulatorStack, &cache);
-
-    NnueEvalTrace trace{};
-    trace.correctBucket = output.correct_bucket;
-    for (IndexType bucket = 0; bucket < LayerStacks; ++bucket)
-    {
-        trace.psqt[bucket] = output.psqt[bucket];
-        trace.positional[bucket] = output.positional[bucket];
-    }
-
-    return trace;
 }
 
 std::size_t Network::get_content_hash() const {
@@ -1204,12 +1128,6 @@ static_assert(alignof(Stockfish::StatsEntry<std::int16_t, 8192, true>)
             == alignof(std::int16_t));
 static_assert(std::atomic<std::int16_t>::is_always_lock_free);
 
-int zfish_search_reduction(const int* reductions,
-                           int        depth,
-                           int        move_number,
-                           int        delta,
-                           int        root_delta,
-                           std::uint8_t improving);
 ZfishTimemanOutput zfish_timeman_init(ZfishTimemanInput input);
 void zfish_movepick_partial_insertion_sort(ZfishMoveSortEntry* entries,
                                            std::size_t         count,
@@ -1339,10 +1257,6 @@ void zfish_bitboards_init_magics_runtime(
 }
 
 namespace Stockfish {
-
-int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
-    return zfish_search_reduction(reductions.data(), d, mn, delta, rootDelta, std::uint8_t(i));
-}
 
 // Worker::clear runs the four Zig-owned resets: per-worker histories, the shared
 // correction/pawn history, the reductions table, and the NNUE refresh cache.
@@ -1850,16 +1764,6 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     };
 
     return zfish_eval_compute_value(input);
-}
-
-std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
-    const char* rendered = zfish_engine_eval_trace(&pos, &network);
-    if (!rendered)
-        std::abort();
-
-    std::string value(rendered);
-    std::free(const_cast<char*>(rendered));
-    return value;
 }
 
 namespace Tablebases {
