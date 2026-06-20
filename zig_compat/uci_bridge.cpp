@@ -3201,6 +3201,9 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
 #endif
 }
 
+// Recursive perft subtree counter, exported from zig_src/main.zig.
+extern "C" std::uint64_t zfish_perft_subtree(void* pos, int depth);
+
 std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
     auto* engine = static_cast<Engine*>(engine_ptr);
     zfish_engine_verify_network_method(engine);
@@ -3212,7 +3215,39 @@ std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
     const std::string fen(rendered_fen);
     std::free(const_cast<char*>(rendered_fen));
 
-    const auto nodes = Benchmark::perft(fen, depth, engine->get_options()["UCI_Chess960"]);
+    const bool chess960 = engine->get_options()["UCI_Chess960"];
+
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // The recursive subtree count runs in Zig (zfish_perft_subtree); the root
+    // divide loop stays here so the per-move output and MoveList<LEGAL> ordering
+    // are byte-identical to the original. This mirrors Benchmark::perft<true>.
+    Position  p;
+    StateInfo st;
+    p.set(fen, chess960, &st);
+
+    std::uint64_t nodes = 0;
+    for (const auto& m : MoveList<LEGAL>(p))
+    {
+        std::uint64_t cnt;
+        if (depth <= 1)
+        {
+            cnt = 1;
+            nodes += 1;
+        }
+        else
+        {
+            StateInfo si;
+            p.do_move(m, si);
+            cnt = zfish_perft_subtree(&p, depth - 1);
+            nodes += cnt;
+            p.undo_move(m);
+        }
+        sync_cout << UCIEngine::move(m, p.is_chess960()) << ": " << cnt << sync_endl;
+    }
+#else
+    const auto nodes = Benchmark::perft(fen, depth, chess960);
+#endif
+
     sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
     return nodes;
 }
