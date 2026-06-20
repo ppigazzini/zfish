@@ -11,6 +11,7 @@ const memory_port = @import("memory.zig");
 const graph_layout = @import("graph_layout.zig");
 const worker_layout = @import("worker_layout.zig");
 const accumulator_layout = @import("accumulator_layout.zig");
+const worker_construct = @import("worker_construct.zig");
 const misc_port = @import("misc");
 const movegen_port = @import("movegen");
 const movepick_port = @import("movepick");
@@ -33,6 +34,7 @@ comptime {
     _ = graph_layout;
     _ = worker_layout;
     _ = accumulator_layout;
+    _ = worker_construct;
 }
 
 extern fn zfish_bitboards_init() void;
