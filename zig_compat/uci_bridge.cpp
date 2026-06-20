@@ -827,6 +827,8 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_SKIP_EXTRACT_PONDER
 #define ZFISH_SEARCH_BRIDGE_SKIP_WORKER_CTOR
 #define ZFISH_SEARCH_BRIDGE_SKIP_PV
+#define ZFISH_SEARCH_BRIDGE_SKIP_START_SEARCHING
+#define ZFISH_SEARCH_BRIDGE_SKIP_ITERDEEP_FN
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_REDUCTIONS_FILL
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_STAT_BONUS_MALUS
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_CORRECTION_VALUE
@@ -1622,6 +1624,73 @@ void Search::SearchManager::pv(Search::Worker&           worker,
 
         updates.onUpdateFull(info);
     }
+}
+
+bool Search::Worker::iterative_deepening() { return bool(zfish_search_iterative_deepening(this)); }
+
+// Worker::start_searching relocated verbatim from search.cpp: the search entry
+// (history/accumulator reset, time-management init, the iterative-deepening
+// driver, the ponder wait, best-thread selection, and the bestmove output).
+void Search::Worker::start_searching() {
+
+    accumulatorStack.reset();
+    lastIterationPV.clear();
+
+    if (!is_mainthread())
+    {
+        iterative_deepening();
+        return;
+    }
+
+    main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
+                            main_manager()->originalTimeAdjust);
+    tt.new_search();
+
+    if (rootMoves.empty())
+    {
+        main_manager()->updates.onUpdateNoMoves(
+          {0, {rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW, rootPos}});
+        main_manager()->updates.onBestmove(UCIEngine::move(Move::none()), "");
+        return;
+    }
+
+    threads.start_searching();
+    bool uciPvSent = iterative_deepening();
+
+    while (!threads.stop && (main_manager()->ponder || limits.infinite))
+    {}  // Busy wait for a stop or a ponder reset
+
+    threads.stop = true;
+
+    threads.wait_for_search_finished();
+
+    if (limits.npmsec)
+        main_manager()->tm.advance_nodes_time(threads.nodes_searched()
+                                              - limits.inc[rootPos.side_to_move()]);
+
+    Worker* bestThread = this;
+    Skill   skill =
+      Skill(options["Skill Level"], options["UCI_LimitStrength"] ? int(options["UCI_Elo"]) : 0);
+
+    if (!limits.depth && !skill.enabled())
+        bestThread = threads.get_best_thread()->worker.get();
+
+    main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
+    main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
+
+    if (bestThread->rootMoves[0].pv.size() == 1
+        && bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos))
+        uciPvSent = false;
+
+    if (!uciPvSent || bestThread != this)
+        main_manager()->pv(*bestThread, threads, tt, bestThread->rootDepth);
+
+    std::string ponder;
+    if (bestThread->rootMoves[0].pv.size() > 1)
+        ponder = UCIEngine::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
+
+    auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
+    main_manager()->updates.onBestmove(bestmove, ponder);
 }
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
