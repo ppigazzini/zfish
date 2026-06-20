@@ -2427,6 +2427,7 @@ void syzygy_extend_pv(const OptionsMap&         options,
           << sync_endl;
 }
 
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_PV
 void SearchManager::pv(Search::Worker&           worker,
                        const ThreadPool&         threads,
                        const TranspositionTable& tt,
@@ -2495,6 +2496,7 @@ void SearchManager::pv(Search::Worker&           worker,
         updates.onUpdateFull(info);
     }
 }
+#endif  // ZFISH_SEARCH_BRIDGE_SKIP_PV
 
 // Called in case we have no ponder move before exiting the search,
 // for instance, in case we stop the search during a fail high at root.
