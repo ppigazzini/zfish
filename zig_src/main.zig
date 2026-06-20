@@ -1114,8 +1114,9 @@ pub export fn zfish_network_load(
         evalfile_path_ptr,
         evalfile_path_len,
     );
-    // Adopt the freshly parsed feature-transformer weights into Zig-owned memory.
+    // Adopt the freshly parsed weights into Zig-owned memory.
     adoptFeatureTransformer(network);
+    adoptLayers(network);
 }
 
 pub export fn zfish_network_save(
@@ -1173,6 +1174,57 @@ fn adoptFeatureTransformer(network: *const anyopaque) void {
     }
     const dst: [*]u8 = @ptrCast(native_ft_ptr.?);
     @memcpy(dst[0..n], src[0..n]);
+}
+
+// Native-owned per-bucket affine-layer storage. Same approach as the feature
+// transformer: copy the already-permuted weights/biases out of the C++ network
+// into Zig memory and serve inference from the native copy.
+const layer_stacks_n = 8;
+const layers_per_stack = 3;
+
+extern fn zfish_layer_weights(network: *const anyopaque, bucket: usize, idx: c_int) [*]const i8;
+extern fn zfish_layer_biases(network: *const anyopaque, bucket: usize, idx: c_int) [*]const i32;
+extern fn zfish_layer_weights_bytes(network: *const anyopaque, bucket: usize, idx: c_int) usize;
+extern fn zfish_layer_biases_bytes(network: *const anyopaque, bucket: usize, idx: c_int) usize;
+
+var native_layer_w: [layer_stacks_n][layers_per_stack]?*anyopaque =
+    .{.{ null, null, null }} ** layer_stacks_n;
+var native_layer_b: [layer_stacks_n][layers_per_stack]?*anyopaque =
+    .{.{ null, null, null }} ** layer_stacks_n;
+
+fn adoptLayer(slot: *?*anyopaque, src: [*]const u8, n: usize) void {
+    if (n == 0) return;
+    if (slot.* == null) slot.* = memory_port.alignedLargePagesAlloc(n) orelse return;
+    const dst: [*]u8 = @ptrCast(slot.*.?);
+    @memcpy(dst[0..n], src[0..n]);
+}
+
+fn adoptLayers(network: *const anyopaque) void {
+    var bucket: usize = 0;
+    while (bucket < layer_stacks_n) : (bucket += 1) {
+        var idx: c_int = 0;
+        while (idx < layers_per_stack) : (idx += 1) {
+            const ui: usize = @intCast(idx);
+            // Native slot is still null here, so the bridge accessors return the
+            // C++ source we copy from.
+            adoptLayer(
+                &native_layer_w[bucket][ui],
+                @ptrCast(zfish_layer_weights(network, bucket, idx)),
+                zfish_layer_weights_bytes(network, bucket, idx),
+            );
+            adoptLayer(
+                &native_layer_b[bucket][ui],
+                @ptrCast(zfish_layer_biases(network, bucket, idx)),
+                zfish_layer_biases_bytes(network, bucket, idx),
+            );
+        }
+    }
+}
+
+pub export fn zfish_native_layer_ptr(bucket: usize, idx: c_int, is_weights: c_int) ?*const anyopaque {
+    if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack) return null;
+    const ui: usize = @intCast(idx);
+    return if (is_weights != 0) native_layer_w[bucket][ui] else native_layer_b[bucket][ui];
 }
 
 pub export fn zfish_network_transform_bucket(
