@@ -825,6 +825,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_SKIP_CLEAR
 #define ZFISH_SEARCH_BRIDGE_SKIP_ENSURE_NET
 #define ZFISH_SEARCH_BRIDGE_SKIP_EXTRACT_PONDER
+#define ZFISH_SEARCH_BRIDGE_SKIP_WORKER_CTOR
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_REDUCTIONS_FILL
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_STAT_BONUS_MALUS
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_CORRECTION_VALUE
@@ -1531,6 +1532,28 @@ void Search::Worker::ensure_network_replicated() {
 bool Search::RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& pos) {
     return bool(zfish_search_extract_ponder_from_tt(&pv, tt.table, tt.clusterCount,
                                                     tt.generation8, &pos));
+}
+
+// Worker constructor relocated verbatim from search.cpp: unpack the SharedState
+// into members and run the initial clear().
+Search::Worker::Worker(Search::SharedState&            sharedState,
+                       std::unique_ptr<Search::ISearchManager> sm,
+                       std::size_t                     threadId,
+                       std::size_t                     numaThreadId,
+                       std::size_t                     numaTotalThreads,
+                       NumaReplicatedAccessToken       token) :
+    sharedHistory(sharedState.sharedHistories.at(token.get_numa_index())),
+    threadIdx(threadId),
+    numaThreadIdx(numaThreadId),
+    numaTotal(numaTotalThreads),
+    numaAccessToken(token),
+    manager(std::move(sm)),
+    options(sharedState.options),
+    threads(sharedState.threads),
+    tt(sharedState.tt),
+    network(sharedState.network),
+    refreshTable(network[token]) {
+    clear();
 }
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
