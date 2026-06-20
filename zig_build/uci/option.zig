@@ -56,6 +56,17 @@ pub export fn zfish_optmodel_current_ptr(idx: usize) ?[*]const u8 {
     return if (current.len == 0) null else current.ptr;
 }
 
+// Render the UCI option listing (the C++ OptionsMap operator<< output) from the
+// Zig model, as a malloc-backed C string the caller frees.
+pub export fn zfish_optmodel_render() ?[*:0]u8 {
+    const model = ensureModel();
+    const listing = model.renderAlloc() catch return null;
+    defer std.heap.c_allocator.free(listing);
+    const buf = std.heap.c_allocator.allocSentinel(u8, listing.len, 0) catch return null;
+    @memcpy(buf[0..listing.len], listing);
+    return buf.ptr;
+}
+
 // Overwrite the current value at an index without re-validating (the C++ side
 // has already validated); used to resync the model after a setoption applies.
 pub export fn zfish_optmodel_publish_by_index(idx: usize, value_ptr: [*]const u8, value_len: usize) void {
