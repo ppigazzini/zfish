@@ -427,6 +427,76 @@ pub export fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads
     }
 }
 
+const SsCtx = extern struct {
+    is_mainthread: u8,
+    root_moves_empty: u8,
+    npmsec: u8,
+    limits_depth: i32,
+    skill_enabled: u8,
+};
+
+extern fn zfish_search_iterative_deepening(worker: ?*anyopaque) u8;
+extern fn zfish_ss_prologue(worker: ?*anyopaque) void;
+extern fn zfish_ss_context(worker: ?*anyopaque, out: *SsCtx) void;
+extern fn zfish_ss_tm_init(worker: ?*anyopaque) void;
+extern fn zfish_ss_emit_no_moves(worker: ?*anyopaque) void;
+extern fn zfish_ss_threads_start(worker: ?*anyopaque) void;
+extern fn zfish_ss_should_busywait(worker: ?*anyopaque) u8;
+extern fn zfish_ss_set_stop(worker: ?*anyopaque) void;
+extern fn zfish_ss_wait_finished(worker: ?*anyopaque) void;
+extern fn zfish_ss_npmsec_advance(worker: ?*anyopaque) void;
+extern fn zfish_ss_get_best_thread(worker: ?*anyopaque) ?*anyopaque;
+extern fn zfish_ss_set_prev_scores(worker: ?*anyopaque, best: ?*anyopaque) void;
+extern fn zfish_ss_pv_one_and_ponder(worker: ?*anyopaque, best: ?*anyopaque) u8;
+extern fn zfish_ss_emit_pv(worker: ?*anyopaque, best: ?*anyopaque) void;
+extern fn zfish_ss_emit_bestmove(worker: ?*anyopaque, best: ?*anyopaque) void;
+
+// Worker::start_searching control flow, ported from the bridge. Zig owns every
+// branch and the sequencing; the C++ leaf helpers run the individual time-
+// management, thread-pool, skill, and UCI-output operations.
+pub export fn zfish_worker_start_searching(worker: ?*anyopaque) void {
+    zfish_ss_prologue(worker);
+
+    var ctx: SsCtx = undefined;
+    zfish_ss_context(worker, &ctx);
+
+    if (ctx.is_mainthread == 0) {
+        _ = zfish_search_iterative_deepening(worker);
+        return;
+    }
+
+    zfish_ss_tm_init(worker);
+
+    if (ctx.root_moves_empty != 0) {
+        zfish_ss_emit_no_moves(worker);
+        return;
+    }
+
+    zfish_ss_threads_start(worker);
+    var uci_pv_sent = zfish_search_iterative_deepening(worker) != 0;
+
+    while (zfish_ss_should_busywait(worker) != 0) {}
+
+    zfish_ss_set_stop(worker);
+    zfish_ss_wait_finished(worker);
+
+    if (ctx.npmsec != 0) zfish_ss_npmsec_advance(worker);
+
+    var best = worker;
+    if (ctx.limits_depth == 0 and ctx.skill_enabled == 0)
+        best = zfish_ss_get_best_thread(worker);
+
+    zfish_ss_set_prev_scores(worker, best);
+
+    if (zfish_ss_pv_one_and_ponder(worker, best) != 0)
+        uci_pv_sent = false;
+
+    if (!uci_pv_sent or best != worker)
+        zfish_ss_emit_pv(worker, best);
+
+    zfish_ss_emit_bestmove(worker, best);
+}
+
 extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque, out_cc: *usize, out_gen: *u8) void;
 
 // One-shot fetch of the Worker state the inlined search needs, all stable for the
