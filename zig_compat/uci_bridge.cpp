@@ -822,6 +822,9 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_SKIP_REDUCTION
 #define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_TO_TT
 #define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_FROM_TT
+#define ZFISH_SEARCH_BRIDGE_SKIP_CLEAR
+#define ZFISH_SEARCH_BRIDGE_SKIP_ENSURE_NET
+#define ZFISH_SEARCH_BRIDGE_SKIP_EXTRACT_PONDER
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_REDUCTIONS_FILL
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_STAT_BONUS_MALUS
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_CORRECTION_VALUE
@@ -858,9 +861,6 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SEARCH
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_ITERDEEP
-#define ZFISH_SEARCH_BRIDGE_USE_ZIG_EXTRACT_PONDER
-#define ZFISH_SEARCH_BRIDGE_USE_ZIG_CLEAR_SHARED
-#define ZFISH_SEARCH_BRIDGE_USE_ZIG_CLEAR_REFRESH
 #include "../src/search.cpp"
 
 // Layout proof for zig_build/board/position.zig's WorkerHistories mirror. The
@@ -1512,6 +1512,25 @@ Value value_from_tt(Value v, int ply, int r50c) {
 
 int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
     return zfish_search_reduction(reductions.data(), d, mn, delta, rootDelta, std::uint8_t(i));
+}
+
+// Worker::clear runs the four Zig-owned resets: per-worker histories, the shared
+// correction/pawn history, the reductions table, and the NNUE refresh cache.
+void Search::Worker::clear() {
+    zfish_search_clear_worker_histories(this);
+    zfish_search_clear_shared_history(&sharedHistory, numaThreadIdx, numaTotal);
+    zfish_search_fill_reductions(reductions.data(), reductions.size());
+    zfish_search_clear_refresh_cache(&refreshTable,
+                                     network[numaAccessToken].featureTransformer.biases.data());
+}
+
+void Search::Worker::ensure_network_replicated() {
+    (void) (network[numaAccessToken]);  // force lazy numa initialization off the search path
+}
+
+bool Search::RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& pos) {
+    return bool(zfish_search_extract_ponder_from_tt(&pv, tt.table, tt.clusterCount,
+                                                    tt.generation8, &pos));
 }
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
