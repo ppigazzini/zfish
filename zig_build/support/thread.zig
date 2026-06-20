@@ -14,6 +14,11 @@ comptime {
     _ = &thread_runtime.ThreadRuntime.runCustomJob;
     _ = &thread_runtime.ThreadRuntime.waitForSearchFinished;
     _ = &thread_runtime.ThreadRuntime.deinit;
+    _ = &thread_runtime.ThreadPool.set;
+    _ = &thread_runtime.ThreadPool.clear;
+    _ = &thread_runtime.ThreadPool.runOnThread;
+    _ = &thread_runtime.ThreadPool.waitForSearchFinished;
+    _ = &thread_runtime.ThreadPool.setStop;
 }
 
 const value_draw: c_int = 0;

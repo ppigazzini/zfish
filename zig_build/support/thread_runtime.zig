@@ -141,6 +141,69 @@ pub const ThreadRuntime = struct {
     }
 };
 
+// A pool of Zig-owned worker threads. Mirrors the C++ ThreadPool job-dispatch
+// surface (run_on_thread / wait_on_thread / per-thread start + wait), plus the
+// shared `stop` flag the search polls. Thread 0 is the main thread. The pool
+// owns the ThreadRuntime array; the per-thread search payload is attached by
+// the caller through the job context, exactly as the C++ pool attaches Workers.
+pub const ThreadPool = struct {
+    threads: []ThreadRuntime = &.{},
+    allocator: std.mem.Allocator,
+    stop: Atomic = Atomic.init(0),
+
+    pub fn init(allocator: std.mem.Allocator) ThreadPool {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn set(self: *ThreadPool, count: usize) !void {
+        self.clear();
+        if (count == 0) return;
+        self.threads = try self.allocator.alloc(ThreadRuntime, count);
+        var started: usize = 0;
+        errdefer {
+            var i: usize = 0;
+            while (i < started) : (i += 1) self.threads[i].deinit();
+            self.allocator.free(self.threads);
+            self.threads = &.{};
+        }
+        for (self.threads) |*t| {
+            t.* = ThreadRuntime{};
+            try t.start();
+            started += 1;
+        }
+    }
+
+    pub fn clear(self: *ThreadPool) void {
+        for (self.threads) |*t| t.deinit();
+        if (self.threads.len != 0) self.allocator.free(self.threads);
+        self.threads = &.{};
+    }
+
+    pub fn numThreads(self: *const ThreadPool) usize {
+        return self.threads.len;
+    }
+
+    pub fn runOnThread(self: *ThreadPool, thread_id: usize, job_fn: ThreadJobFn, job_ctx: ?*anyopaque) void {
+        self.threads[thread_id].runCustomJob(job_fn, job_ctx);
+    }
+
+    pub fn waitOnThread(self: *ThreadPool, thread_id: usize) void {
+        self.threads[thread_id].waitForSearchFinished();
+    }
+
+    pub fn waitForSearchFinished(self: *ThreadPool) void {
+        for (self.threads) |*t| t.waitForSearchFinished();
+    }
+
+    pub fn setStop(self: *ThreadPool, value: bool) void {
+        self.stop.store(@intFromBool(value), .monotonic);
+    }
+
+    pub fn stopped(self: *const ThreadPool) bool {
+        return self.stop.load(.monotonic) != 0;
+    }
+};
+
 const TestCtx = struct {
     counter: Atomic = Atomic.init(0),
 
@@ -193,4 +256,44 @@ test "thread runtime exits cleanly when idle" {
     // No jobs submitted; deinit must wake the parked thread and join it.
     runtime.deinit();
     try std.testing.expect(runtime.handle == null);
+}
+
+test "thread pool fans jobs across all threads" {
+    var pool = ThreadPool.init(std.testing.allocator);
+    defer pool.clear();
+    try pool.set(4);
+    try std.testing.expectEqual(@as(usize, 4), pool.numThreads());
+
+    var ctx = TestCtx{};
+    var thread_id: usize = 0;
+    while (thread_id < pool.numThreads()) : (thread_id += 1) {
+        var rep: usize = 0;
+        while (rep < 250) : (rep += 1) {
+            pool.runOnThread(thread_id, TestCtx.job, &ctx);
+            pool.waitOnThread(thread_id);
+        }
+    }
+    try std.testing.expectEqual(@as(u32, 1000), ctx.counter.load(.monotonic));
+}
+
+test "thread pool stop flag round-trips" {
+    var pool = ThreadPool.init(std.testing.allocator);
+    defer pool.clear();
+    try pool.set(2);
+    try std.testing.expect(!pool.stopped());
+    pool.setStop(true);
+    try std.testing.expect(pool.stopped());
+    pool.setStop(false);
+    try std.testing.expect(!pool.stopped());
+}
+
+test "thread pool set resizes and re-spawns" {
+    var pool = ThreadPool.init(std.testing.allocator);
+    defer pool.clear();
+    try pool.set(1);
+    try std.testing.expectEqual(@as(usize, 1), pool.numThreads());
+    try pool.set(8);
+    try std.testing.expectEqual(@as(usize, 8), pool.numThreads());
+    try pool.set(0);
+    try std.testing.expectEqual(@as(usize, 0), pool.numThreads());
 }
