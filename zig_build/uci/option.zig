@@ -56,6 +56,45 @@ pub export fn zfish_optmodel_current_ptr(idx: usize) ?[*]const u8 {
     return if (current.len == 0) null else current.ptr;
 }
 
+pub const ModelSetResult = extern struct {
+    found: u8,
+    accepted: u8,
+    changed: u8,
+    callback_kind: u8,
+    kind: u8,
+    idx: usize,
+};
+
+// Apply a setoption assignment to the model: validate, normalize, and store.
+// Reports whether the option exists, whether the value was accepted/changed,
+// the change-callback kind, the option kind, and the index, so the bridge can
+// fire the on_change callback exactly as the C++ Option operator= would.
+pub export fn zfish_optmodel_set_by_name(
+    name_ptr: [*]const u8,
+    name_len: usize,
+    value_ptr: [*]const u8,
+    value_len: usize,
+    out: *ModelSetResult,
+) void {
+    out.* = .{ .found = 0, .accepted = 0, .changed = 0, .callback_kind = 0, .kind = 0, .idx = 0 };
+    const model = ensureModel();
+    const name = name_ptr[0..name_len];
+    const idx = model.indexOf(name) orelse return;
+    const kind_val: u8 = @intFromEnum(model.entries.items[idx].kind);
+    const outcome = model.setValue(name, value_ptr[0..value_len]) catch {
+        out.* = .{ .found = 1, .accepted = 0, .changed = 0, .callback_kind = 0, .kind = kind_val, .idx = idx };
+        return;
+    };
+    out.* = .{
+        .found = 1,
+        .accepted = @intFromBool(outcome.accepted),
+        .changed = @intFromBool(outcome.changed),
+        .callback_kind = outcome.callback_kind,
+        .kind = kind_val,
+        .idx = idx,
+    };
+}
+
 // Render the UCI option listing (the C++ OptionsMap operator<< output) from the
 // Zig model, as a malloc-backed C string the caller frees.
 pub export fn zfish_optmodel_render() ?[*:0]u8 {
@@ -403,6 +442,15 @@ pub const OptionsModel = struct {
         for (self.entries.items, 0..) |entry, i| {
             if (nameEquals(entry.name, name)) return i;
         }
+        return null;
+    }
+
+    pub fn indexOf(self: *const OptionsModel, name: []const u8) ?usize {
+        return self.findIndex(name);
+    }
+
+    pub fn kindByIndex(self: *const OptionsModel, idx: usize) ?OptionKind {
+        if (idx < self.entries.items.len) return self.entries.items[idx].kind;
         return null;
     }
 

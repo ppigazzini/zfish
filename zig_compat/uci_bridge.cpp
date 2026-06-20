@@ -2520,6 +2520,17 @@ const unsigned char* zfish_optmodel_current_ptr(std::size_t idx);
 char*                zfish_optmodel_render();
 void                 zfish_optmodel_publish_by_index(std::size_t idx, const unsigned char* value_ptr,
                                                      std::size_t value_len);
+struct ZfishModelSetResult {
+    std::uint8_t found;
+    std::uint8_t accepted;
+    std::uint8_t changed;
+    std::uint8_t callback_kind;
+    std::uint8_t kind;
+    std::size_t  idx;
+};
+void zfish_optmodel_set_by_name(const unsigned char* name_ptr, std::size_t name_len,
+                                const unsigned char* value_ptr, std::size_t value_len,
+                                ZfishModelSetResult* out);
 }
 
 namespace {
@@ -3116,6 +3127,51 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
     auto* engine = static_cast<Engine*>(engine_ptr);
     engine->wait_for_search_finished();
 
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // Default build: the Zig option model is the write authority. Apply the
+    // assignment to the model, then fire the on_change callback exactly as the
+    // C++ Option operator= would -- spin/check relay to_string(int(option)) and
+    // the int, string relays the current value, button relays nothing -- and
+    // route any returned message through the OptionsMap info listener.
+    const std::string name(reinterpret_cast<const char*>(name_ptr), name_len);
+    const std::string value = has_value != 0
+                                ? std::string(reinterpret_cast<const char*>(value_ptr), value_len)
+                                : std::string{};
+
+    ZfishModelSetResult res;
+    zfish_optmodel_set_by_name(reinterpret_cast<const unsigned char*>(name.data()), name.size(),
+                               reinterpret_cast<const unsigned char*>(value.data()), value.size(),
+                               &res);
+
+    if (!res.found)
+    {
+        sync_cout << "No such option: " << name << sync_endl;
+        return;
+    }
+
+    if (res.accepted && res.callback_kind != kOptionCallbackNone)
+    {
+        std::string relay_value;
+        int         relay_int = 0;
+        if (res.kind == kOptionTypeCheck || res.kind == kOptionTypeSpin)
+        {
+            relay_int   = zfish_optmodel_int_by_index(res.idx);
+            relay_value = std::to_string(relay_int);
+        }
+        else if (res.kind == kOptionTypeString)
+        {
+            relay_value = zfish_optstore_read(res.idx);
+        }
+
+        auto ret = take_optional_c_string(zfish_engine_option_on_change(
+          engine, res.callback_kind, reinterpret_cast<const unsigned char*>(relay_value.data()),
+          relay_value.size(), relay_int));
+
+        auto& options = engine->get_options();
+        if (ret && options.info != nullptr)
+            options.info(ret);
+    }
+#else
     std::ostringstream command;
     command << "name " << std::string(reinterpret_cast<const char*>(name_ptr), name_len);
     if (has_value != 0)
@@ -3123,13 +3179,6 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
 
     std::istringstream is(command.str());
     engine->get_options().setoption(is);
-
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // Resync the Zig store from the authoritative C++ currentValue for every
-    // option, covering options without an on_change callback (whose value the
-    // callback publish path above does not reach).
-    for (const auto& entry : engine->get_options().options_map)
-        zfish_optstore_publish(entry.second.idx, entry.second.currentValue);
 #endif
 }
 
