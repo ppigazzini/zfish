@@ -1015,11 +1015,6 @@ void zfish_movepick_fill_history_snapshot(const void*                     main_h
                                           const void*                     continuation_history_ptr,
                                           const void*                     shared_history_ptr,
                                           ZfishMovepickHistorySnapshot* out);
-int zfish_movepick_pawn_history_value(const void* shared_history_ptr,
-                                      std::uint64_t pawn_mask,
-                                      std::uint64_t pawn_key,
-                                      std::uint8_t  piece,
-                                      std::uint8_t  square);
 void zfish_tt_entry_save(ZfishTtEntry* entry,
                          std::uint64_t key,
                          int           value,
@@ -1374,22 +1369,6 @@ extern "C" void zfish_movepick_fill_history_snapshot(const void* main_history_pt
         out->pawn_table = nullptr;
         out->pawn_mask = 0;
     }
-}
-
-extern "C" int zfish_movepick_pawn_history_value(const void* pawn_table_ptr,
-                                                   std::uint64_t pawn_mask,
-                                                   std::uint64_t pawn_key,
-                                                   std::uint8_t piece,
-                                                   std::uint8_t square) {
-    if (!pawn_table_ptr)
-        return 0;
-
-    using PawnHistoryRow = Stockfish::StatsEntry<std::int16_t, 8192, true>[64];
-    const auto* rows = static_cast<const PawnHistoryRow*>(pawn_table_ptr);
-    const std::size_t index = static_cast<std::size_t>(pawn_key & pawn_mask);
-    const std::size_t row_index = index * PIECE_NB + piece;
-    const auto& entry = rows[row_index][square];
-    return entry;
 }
 
 template<>
