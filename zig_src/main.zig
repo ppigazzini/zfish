@@ -8,6 +8,7 @@ const benchmark_port = @import("benchmark");
 const bitboard_port = @import("bitboard");
 const engine_port = @import("engine");
 const memory_port = @import("memory.zig");
+const graph_layout = @import("graph_layout.zig");
 const misc_port = @import("misc");
 const movegen_port = @import("movegen");
 const movepick_port = @import("movepick");
@@ -25,6 +26,10 @@ const timeman_port = @import("timeman");
 const tt_port = @import("tt");
 const uci_port = @import("uci");
 const position_snapshot = @import("position_snapshot");
+
+comptime {
+    _ = graph_layout;
+}
 
 extern fn zfish_bitboards_init() void;
 extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
