@@ -471,6 +471,13 @@ const void* zfish_network_feature_transformer_ptr(const void* network_ptr) {
         return &NetworkBridgeAccess::featureTransformer(network);
 }
 
+// Exact in-memory size of the FeatureTransformer (contiguous inline arrays), so
+// Zig can adopt the permuted weights into its own storage with one memcpy.
+std::size_t zfish_network_ft_bytes(const void* network_ptr) {
+        const auto& network = *static_cast<const Network*>(network_ptr);
+        return sizeof(NetworkBridgeAccess::featureTransformer(network));
+}
+
 // Per-bucket affine-layer weight/bias pointers for the Zig propagate
 // (zfish_network_propagate_bucket in network.zig). idx 0=fc_0, 1=fc_1, 2=fc_2.
 // Biases are stored linearly (int32); weights are int8 in the SSSE3-scrambled
