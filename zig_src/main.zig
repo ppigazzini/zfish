@@ -486,6 +486,10 @@ pub export fn zfish_search_iterative_deepening(worker: *anyopaque) u8 {
     return position_port.iterativeDeepening(worker);
 }
 
+pub export fn zfish_search_extract_ponder_from_tt(pv: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8, pos: *anyopaque) u8 {
+    return position_port.extractPonderFromTt(pv, table, cc, gen, pos);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }

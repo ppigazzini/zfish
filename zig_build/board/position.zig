@@ -545,6 +545,40 @@ inline fn verifyUndoMove(pos_ptr: *anyopaque, move: u16) void {
     undoMove(pos_ptr, move);
 }
 
+// Is `move` in the legal move list of the current position?
+fn legalContains(pos_ptr: *const anyopaque, move: u16) bool {
+    var buf: [256]u16 = undefined;
+    const n = movegen.generateLegal(pos_ptr, &buf);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        if (buf[i] == move) return true;
+    }
+    return false;
+}
+
+// RootMove::extract_ponder_from_tt: make the best move, probe the TT for a reply
+// stored there, append it to the PV if it is a legal move, unmake. Returns
+// whether a ponder move was found (pv length > 1). The tt context (table base,
+// cluster count, generation) is handed over by the bridge.
+pub fn extractPonderFromTt(pv_ptr: *anyopaque, table: ?*anyopaque, cluster_count: usize, generation: u8, pos_ptr: *anyopaque) u8 {
+    const pv: *PVMoves = @ptrCast(@alignCast(pv_ptr));
+    const move = pv.moves[0];
+    var st: StateInfo = undefined;
+    verifyDoMove(pos_ptr, move, &st);
+    if (!isDraw(pos_ptr, 1)) {
+        const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+        const key = adjustKey50(pos);
+        const probe = tt.probeTable(table, cluster_count, key, generation, q_depth_none);
+        const ttm = probe.data.move16;
+        if (probe.found != 0 and ttm != 0 and legalContains(pos_ptr, ttm)) {
+            pv.moves[pv.length] = ttm;
+            pv.length += 1;
+        }
+    }
+    verifyUndoMove(pos_ptr, move);
+    return if (pv.length > 1) 1 else 0;
+}
+
 // correction_value(*this, pos, ss): gather the four shared correction values and
 // the (ss-2)/(ss-4) continuation-correction values, then apply the Zig formula.
 fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchStack) c_int {
