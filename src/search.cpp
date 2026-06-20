@@ -214,6 +214,7 @@ void Search::Worker::ensure_network_replicated() {
 }
 #endif
 
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_START_SEARCHING
 void Search::Worker::start_searching() {
 
     accumulatorStack.reset();
@@ -289,10 +290,12 @@ void Search::Worker::start_searching() {
     auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
     main_manager()->updates.onBestmove(bestmove, ponder);
 }
+#endif  // ZFISH_SEARCH_BRIDGE_SKIP_START_SEARCHING
 
 // Main iterative deepening loop. It calls search()
 // repeatedly with increasing depth until the allocated thinking time has been
 // consumed, the user stops the search, or the maximum search depth is reached.
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_ITERDEEP_FN
 bool Search::Worker::iterative_deepening() {
 
 #ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_ITERDEEP
@@ -637,6 +640,7 @@ bool Search::Worker::iterative_deepening() {
 
     return uciPvSent;
 }
+#endif  // ZFISH_SEARCH_BRIDGE_SKIP_ITERDEEP_FN
 
 
 void Search::Worker::do_move(Position& pos, const Move move, StateInfo& st, Stack* const ss) {
