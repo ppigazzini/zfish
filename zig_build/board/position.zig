@@ -2216,10 +2216,11 @@ pub const StateInfo = extern struct {
     repetition: c_int,
 };
 
-// Memory mirror of the leading data members of upstream Position (src/position.h),
-// up to `chess960`. The trailing NNUE scratch members (DirtyPiece/DirtyThreats)
-// are intentionally omitted: this struct is only ever used through a pointer to
-// the live C++ object, so leading-field offsets are all that must match.
+// Full memory image of upstream Position (src/position.h): the leading data
+// members the ported code reaches through a pointer, plus the trailing NNUE
+// scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
+// members the struct is the whole 1032-byte object, so the native graph can own
+// and allocate a Position outright rather than only borrowing the C++ one.
 pub const Position = extern struct {
     board: [64]u8,
     by_type_bb: [8]u64,
@@ -2232,7 +2233,19 @@ pub const Position = extern struct {
     game_ply: c_int,
     side_to_move: u8,
     chess960: bool,
+    scratch_dp: DirtyPiece,
+    scratch_dts: DirtyThreats,
 };
+
+comptime {
+    // Must reproduce the locked 1032-byte C++ Position, with the leading-field
+    // offsets the ported code depends on unchanged by the added scratch tail.
+    std.debug.assert(@sizeOf(Position) == 1032);
+    std.debug.assert(@offsetOf(Position, "st") == 608);
+    std.debug.assert(@offsetOf(Position, "side_to_move") == 620);
+    std.debug.assert(@offsetOf(Position, "scratch_dp") == 622);
+    std.debug.assert(@offsetOf(Position, "scratch_dts") == 632);
+}
 
 const sq_none_u8: u8 = 64;
 
