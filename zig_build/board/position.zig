@@ -1521,6 +1521,68 @@ pub fn sideToMove(pos_ptr: *const anyopaque) u8 {
     return pos.side_to_move;
 }
 
+// Layout matches position_snapshot.PositionSnapshot / the bridge
+// ZfishPositionSnapshot. Read straight from the Position memory mirror.
+const FillSnapshot = extern struct {
+    side_to_move: u8,
+    pieces_all: u64,
+    pieces_by_color: [2]u64,
+    pieces_by_type: [8]u64,
+    blockers_for_king: [2]u64,
+    pinners: [2]u64,
+    king_square: [2]u8,
+    ep_square: u8,
+    castling_rights: u8,
+    castling_impeded: [16]u8,
+    castling_rook_square: [16]u8,
+    checkers: u64,
+    board: [64]u8,
+    pawn_key: u64,
+    key: u64,
+    material_value: c_int,
+    rule50_count: c_int,
+    game_ply: c_int,
+    is_chess960: u8,
+};
+
+// Position::fill_snapshot, ported from the C++ bridge: derive the NNUE/board
+// snapshot from the live Position. Reads the memory mirror directly, no C++.
+pub fn fillSnapshot(pos_ptr: *const anyopaque, out_ptr: *anyopaque) void {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const st = pos.st;
+    const out: *FillSnapshot = @ptrCast(@alignCast(out_ptr));
+
+    out.side_to_move = pos.side_to_move;
+    out.pieces_all = pos.by_type_bb[0];
+    out.pieces_by_color[0] = pos.by_color_bb[0];
+    out.pieces_by_color[1] = pos.by_color_bb[1];
+    var t: usize = 0;
+    while (t < 8) : (t += 1) out.pieces_by_type[t] = pos.by_type_bb[t];
+    out.blockers_for_king = st.blockers_for_king;
+    out.pinners = st.pinners;
+    out.king_square[0] = @intCast(@ctz(pos.by_color_bb[0] & pos.by_type_bb[king_pt]));
+    out.king_square[1] = @intCast(@ctz(pos.by_color_bb[1] & pos.by_type_bb[king_pt]));
+    out.ep_square = st.ep_square;
+    out.checkers = st.checkers_bb;
+
+    out.castling_rights = @intCast(st.castling_rights);
+    for ([_]u8{ 1, 2, 4, 8 }) |cr| {
+        out.castling_impeded[cr] = if ((pos.by_type_bb[0] & pos.castling_path[cr]) != 0) 1 else 0;
+        out.castling_rook_square[cr] = pos.castling_rook_square[cr];
+    }
+
+    out.pawn_key = st.pawn_key;
+    out.key = st.key;
+    const pawns = pos.piece_count[1] + pos.piece_count[9];
+    out.material_value = 534 * pawns + st.non_pawn_material[0] + st.non_pawn_material[1];
+    out.rule50_count = st.rule50;
+    out.game_ply = pos.game_ply;
+    out.is_chess960 = @intFromBool(pos.chess960);
+
+    var s: usize = 0;
+    while (s < 64) : (s += 1) out.board[s] = pos.board[s];
+}
+
 inline fn captVal(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) c_int {
     return w.capture_history[@as(usize, pc) * 512 + @as(usize, to) * 8 + captured_type];
 }

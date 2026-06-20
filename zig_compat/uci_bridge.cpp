@@ -1348,7 +1348,6 @@ std::size_t zfish_movegen_generate_quiets(const void* pos, std::uint16_t* move_l
 std::size_t zfish_movegen_generate_evasions(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_non_evasions(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_legal(const void* pos, std::uint16_t* move_list);
-void zfish_position_fill_snapshot(const void* pos_ptr, ZfishPositionSnapshot* out);
 std::uint8_t zfish_position_move_is_legal(const void* pos_ptr, std::uint16_t raw_move);
 void zfish_movepick_fill_history_snapshot(const void*                     main_history_ptr,
                                           const void*                     low_ply_history_ptr,
@@ -1742,51 +1741,6 @@ void Search::Worker::start_searching() {
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
 
-extern "C" void zfish_position_fill_snapshot(const void* pos_ptr, ZfishPositionSnapshot* out) {
-    const auto& pos = *static_cast<const Position*>(pos_ptr);
-
-    out->side_to_move = static_cast<std::uint8_t>(pos.side_to_move());
-    out->pieces_all = pos.pieces();
-    out->pieces_by_color[WHITE] = pos.pieces(WHITE);
-    out->pieces_by_color[BLACK] = pos.pieces(BLACK);
-    out->pieces_by_type[NO_PIECE_TYPE] = out->pieces_all;
-    out->pieces_by_type[PAWN] = pos.pieces(PAWN);
-    out->pieces_by_type[KNIGHT] = pos.pieces(KNIGHT);
-    out->pieces_by_type[BISHOP] = pos.pieces(BISHOP);
-    out->pieces_by_type[ROOK] = pos.pieces(ROOK);
-    out->pieces_by_type[QUEEN] = pos.pieces(QUEEN);
-    out->pieces_by_type[KING] = pos.pieces(KING);
-    out->blockers_for_king[WHITE] = pos.blockers_for_king(WHITE);
-    out->blockers_for_king[BLACK] = pos.blockers_for_king(BLACK);
-    out->pinners[WHITE] = pos.pinners(WHITE);
-    out->pinners[BLACK] = pos.pinners(BLACK);
-    out->king_square[WHITE] = static_cast<std::uint8_t>(pos.square<KING>(WHITE));
-    out->king_square[BLACK] = static_cast<std::uint8_t>(pos.square<KING>(BLACK));
-    out->ep_square = static_cast<std::uint8_t>(pos.ep_square());
-    out->checkers = pos.checkers();
-
-    std::uint8_t rights = 0;
-    for (const auto cr : {WHITE_OO, WHITE_OOO, BLACK_OO, BLACK_OOO})
-    {
-        const auto index = static_cast<std::size_t>(cr);
-        if (pos.can_castle(cr))
-            rights |= static_cast<std::uint8_t>(cr);
-        out->castling_impeded[index] = static_cast<std::uint8_t>(pos.castling_impeded(cr) ? 1 : 0);
-        out->castling_rook_square[index] =
-          static_cast<std::uint8_t>(pos.castling_rook_square(cr));
-    }
-
-    out->castling_rights = rights;
-    out->pawn_key = pos.pawn_key();
-    out->key = pos.key();
-    out->material_value = 534 * pos.count<PAWN>() + pos.non_pawn_material();
-    out->rule50_count = pos.rule50_count();
-    out->game_ply = pos.game_ply();
-    out->is_chess960 = static_cast<std::uint8_t>(pos.is_chess960() ? 1 : 0);
-
-    for (std::size_t square = 0; square < 64; ++square)
-        out->board[square] = static_cast<std::uint8_t>(pos.piece_on(static_cast<Square>(square)));
-}
 
 extern "C" std::uint8_t zfish_position_has_repeated(const void* pos_ptr) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
