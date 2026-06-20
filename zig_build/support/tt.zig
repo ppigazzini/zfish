@@ -271,3 +271,39 @@ pub fn probeTable(
         .data = result.data,
     };
 }
+
+// Native TranspositionTable handle (the post-src/ object). Byte-compatible with
+// the 24-byte C++ TranspositionTable: a TtCluster* table, the cluster count and
+// the 8-bit generation. The heavy logic lives in the functions above; this is
+// the owning object the native Engine graph holds, delegating to them.
+pub const TranspositionTable = extern struct {
+    table: ?[*]TtCluster = null,
+    cluster_count: usize = 0,
+    generation8: u8 = 0,
+
+    pub fn newSearch(self: *TranspositionTable) void {
+        self.generation8 = generationNext(self.generation8);
+    }
+    pub fn generation(self: *const TranspositionTable) u8 {
+        return self.generation8;
+    }
+    pub fn firstEntry(self: *const TranspositionTable, key: u64) usize {
+        return firstEntryIndex(key, self.cluster_count);
+    }
+    pub fn hashfullPermille(self: *const TranspositionTable, max_age: c_int) c_int {
+        return hashfull(self.table.?, self.cluster_count, self.generation8, max_age);
+    }
+};
+
+comptime {
+    std.debug.assert(@sizeOf(TranspositionTable) == 24);
+}
+
+test "TranspositionTable native handle: layout and generation cycling" {
+    try std.testing.expectEqual(@as(usize, 24), @sizeOf(TranspositionTable));
+    var tt = TranspositionTable{ .cluster_count = 1000, .generation8 = 0 };
+    try std.testing.expectEqual(@as(usize, 0), tt.firstEntry(0));
+    const g0 = tt.generation();
+    tt.newSearch();
+    try std.testing.expect(tt.generation() != g0); // generation advanced by GENERATION_DELTA
+}
