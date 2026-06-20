@@ -56,8 +56,11 @@ pub const worker_off = struct {
     pub const thread_idx: usize = 11421600;
     pub const reductions: usize = 11421632;
     pub const manager: usize = 11422656;
-    pub const tt: usize = 11422664; // reference (derived)
-    pub const network: usize = 11422672; // reference (derived)
+    // tt/network are references stored after manager, tbConfig (24B), options
+    // and threads refs; offsets reconstructed from the full member chain that
+    // sums exactly to worker_size (see worker_layout.zig).
+    pub const tt: usize = 11422704; // reference (derived)
+    pub const network: usize = 11422712; // reference (derived)
     pub const accumulator_stack: usize = 11422720;
     pub const refresh_table: usize = 13604288;
 };
