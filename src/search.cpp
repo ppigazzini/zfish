@@ -183,6 +183,7 @@ bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
 
 }  // namespace
 
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_WORKER_CTOR
 Search::Worker::Worker(SharedState&                    sharedState,
                        std::unique_ptr<ISearchManager> sm,
                        size_t                          threadId,
@@ -203,6 +204,7 @@ Search::Worker::Worker(SharedState&                    sharedState,
     refreshTable(network[token]) {
     clear();
 }
+#endif  // ZFISH_SEARCH_BRIDGE_SKIP_WORKER_CTOR
 
 #ifndef ZFISH_SEARCH_BRIDGE_SKIP_ENSURE_NET
 void Search::Worker::ensure_network_replicated() {
