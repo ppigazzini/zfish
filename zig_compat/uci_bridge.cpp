@@ -2517,6 +2517,7 @@ std::uint8_t         zfish_optmodel_has_index(std::size_t idx);
 int                  zfish_optmodel_int_by_index(std::size_t idx);
 std::size_t          zfish_optmodel_current_len(std::size_t idx);
 const unsigned char* zfish_optmodel_current_ptr(std::size_t idx);
+char*                zfish_optmodel_render();
 void                 zfish_optmodel_publish_by_index(std::size_t idx, const unsigned char* value_ptr,
                                                      std::size_t value_len);
 }
@@ -3077,6 +3078,12 @@ const char* zfish_uci_cli_arg_at(const void* uci_ptr, int index) {
 void* zfish_uci_engine_ptr(void* uci_ptr) { return &static_cast<UCIEngine*>(uci_ptr)->engine; }
 
 const char* zfish_engine_options_text_owner(const void* engine_ptr) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // Default build renders the listing from the Zig option model; the legacy
+    // oracle renders from the C++ OptionsMap via operator<<.
+    if (char* rendered = zfish_optmodel_render())
+        return rendered;
+#endif
     std::ostringstream options_stream;
     options_stream << static_cast<const Engine*>(engine_ptr)->get_options();
     return alloc_c_string(options_stream.str());
