@@ -728,16 +728,6 @@ std::size_t Network::get_content_hash() const {
 
 extern "C" std::uint8_t zfish_search_is_shuffling(const void* pos_ptr, const void* ss_ptr,
                                                  std::uint16_t move);
-extern "C" void zfish_search_update_continuation_histories(void* ss_ptr, std::uint8_t pc,
-                                                           std::uint8_t to, int bonus);
-extern "C" void zfish_search_update_quiet_histories(void* worker_ptr, const void* pos_ptr,
-                                                    void* ss_ptr, std::uint16_t move, int bonus);
-extern "C" void zfish_search_update_all_stats(
-  void* worker_ptr, void* pos_ptr, void* ss_ptr, std::uint16_t best_move, int prev_sq,
-  const std::uint16_t* quiets, std::size_t n_quiets, const std::uint16_t* captures,
-  std::size_t n_captures, int depth, std::uint16_t tt_move);
-extern "C" void zfish_search_update_correction_history(void* worker_ptr, const void* pos_ptr,
-                                                       void* ss_ptr, int bonus);
 extern "C" void zfish_search_fill_reductions(int* reductions, std::size_t count);
 extern "C" int  zfish_search_stat_bonus(int depth, unsigned char is_tt_move, int prev_stat_score);
 extern "C" int  zfish_search_stat_malus(int depth);
@@ -1297,10 +1287,6 @@ static_assert(alignof(Stockfish::StatsEntry<std::int16_t, 8192, true>)
             == alignof(std::int16_t));
 static_assert(std::atomic<std::int16_t>::is_always_lock_free);
 
-int zfish_search_to_corrected_static_eval(int v, int cv);
-int zfish_search_value_draw(std::size_t nodes);
-int zfish_search_value_to_tt(int v, int ply);
-int zfish_search_value_from_tt(int v, int ply, int r50c);
 int zfish_search_reduction(const int* reductions,
                            int        depth,
                            int        move_number,
@@ -1436,77 +1422,6 @@ void zfish_bitboards_init_magics_runtime(
 }
 
 namespace Stockfish {
-
-namespace {
-
-enum Stages {
-    MAIN_TT,
-    CAPTURE_INIT,
-    GOOD_CAPTURE,
-    QUIET_INIT,
-    GOOD_QUIET,
-    BAD_CAPTURE,
-    BAD_QUIET,
-
-    EVASION_TT,
-    EVASION_INIT,
-    EVASION,
-
-    PROBCUT_TT,
-    PROBCUT_INIT,
-    PROBCUT,
-
-    QSEARCH_TT,
-    QCAPTURE_INIT,
-    QCAPTURE
-};
-
-Value to_corrected_static_eval(const Value v, const int cv) {
-    return Value(zfish_search_to_corrected_static_eval(v, cv));
-}
-
-Value value_draw(size_t nodes) { return Value(zfish_search_value_draw(nodes)); }
-
-void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
-    zfish_search_update_continuation_histories(ss, static_cast<std::uint8_t>(pc),
-                                               static_cast<std::uint8_t>(to), bonus);
-}
-
-void update_quiet_histories(
-  const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus) {
-    zfish_search_update_quiet_histories(&workerThread, &pos, ss, move.raw(), bonus);
-}
-
-void update_all_stats(const Position& pos,
-                      Stack*          ss,
-                      Search::Worker& workerThread,
-                      Move            bestMove,
-                      Square          prevSq,
-                      SearchedList&   quietsSearched,
-                      SearchedList&   capturesSearched,
-                      Depth           depth,
-                      Move            ttMove) {
-    zfish_search_update_all_stats(
-      &workerThread, const_cast<Position*>(&pos), ss, bestMove.raw(), static_cast<int>(prevSq),
-      reinterpret_cast<const std::uint16_t*>(quietsSearched.begin()), quietsSearched.size(),
-      reinterpret_cast<const std::uint16_t*>(capturesSearched.begin()), capturesSearched.size(),
-      depth, ttMove.raw());
-}
-
-void update_correction_history(const Position& pos,
-                               Stack* const    ss,
-                               Search::Worker& workerThread,
-                               const int       bonus) {
-    zfish_search_update_correction_history(&workerThread, &pos, ss, bonus);
-}
-
-Value value_to_tt(Value v, int ply) { return Value(zfish_search_value_to_tt(v, ply)); }
-
-Value value_from_tt(Value v, int ply, int r50c) {
-    return Value(zfish_search_value_from_tt(v, ply, r50c));
-}
-
-}  // namespace
 
 int Search::Worker::reduction(bool i, Depth d, int mn, int delta) const {
     return zfish_search_reduction(reductions.data(), d, mn, delta, rootDelta, std::uint8_t(i));
