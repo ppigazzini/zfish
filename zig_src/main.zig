@@ -241,6 +241,38 @@ pub export fn zfish_position_undo_move_method(pos_ptr: *anyopaque, move: u16) vo
     position_port.undoMove(pos_ptr, move);
 }
 
+// do_move that links a fresh StateInfo and computes givesCheck internally
+// (Position::do_move(Move, StateInfo&)); exported from the bridge.
+extern fn zfish_position_do_move_state(pos_ptr: *anyopaque, move_raw: u16, state_ptr: *anyopaque) void;
+
+// Recursive perft node counter. Replaces the C++ Benchmark::perft recursion:
+// the bridge keeps the root divide loop (for byte-identical per-move output and
+// MoveList ordering) and calls this for each root move's subtree. Reuses the
+// Zig legal movegen and the do_move/undo_move seam the search already drives.
+const perft_max_depth = 64;
+const PerftStateBuf = [graph_layout.state_info_size]u8;
+
+fn perftCount(pos_ptr: *anyopaque, depth: c_int, states: *[perft_max_depth]PerftStateBuf, ply: usize) u64 {
+    if (depth <= 0) return 1;
+    var moves: [256]u16 = undefined;
+    const n = movegen_port.generateLegal(pos_ptr, &moves);
+    if (depth == 1) return n; // leaf: legal-move count
+    var nodes: u64 = 0;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        zfish_position_do_move_state(pos_ptr, moves[i], &states[ply]);
+        nodes += perftCount(pos_ptr, depth - 1, states, ply + 1);
+        zfish_position_undo_move_method(pos_ptr, moves[i]);
+    }
+    return nodes;
+}
+
+pub export fn zfish_perft_subtree(pos_ptr: *anyopaque, depth: c_int) u64 {
+    const capped = if (depth > perft_max_depth) perft_max_depth else depth;
+    var states: [perft_max_depth]PerftStateBuf align(64) = undefined;
+    return perftCount(pos_ptr, capped, &states, 0);
+}
+
 pub export fn zfish_position_do_move(
     pos_ptr: *anyopaque,
     move: u16,
