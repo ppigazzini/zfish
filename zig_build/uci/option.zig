@@ -471,6 +471,54 @@ pub const OptionsModel = struct {
     }
 };
 
+// Change-callback kinds, matching the bridge's kOptionCallback* constants and
+// engine.zig's option_callback_* values.
+pub const callback_none: u8 = 0;
+pub const callback_debug_log_file: u8 = 1;
+pub const callback_numa_policy: u8 = 2;
+pub const callback_threads: u8 = 3;
+pub const callback_hash: u8 = 4;
+pub const callback_clear_hash: u8 = 5;
+pub const callback_syzygy_path: u8 = 6;
+pub const callback_eval_file: u8 = 7;
+
+pub const StandardOptionParams = struct {
+    max_threads: c_int,
+    max_hash_mb: c_int,
+    skill_lowest_elo: c_int,
+    skill_highest_elo: c_int,
+    eval_file: []const u8,
+};
+
+// Register the standard UCI option set into a fresh model, in the same order
+// and with the same defaults, bounds, and callback kinds as engine.zig initBody.
+// The machine-dependent Threads/Hash maxima and the eval-file name are supplied
+// by the caller, so the Zig engine and the C++ initBody stay in lockstep.
+pub fn registerStandardOptions(model: *OptionsModel, params: StandardOptionParams) !void {
+    var elo_buf: [16]u8 = undefined;
+    const elo_default = std.fmt.bufPrint(&elo_buf, "{d}", .{params.skill_lowest_elo}) catch unreachable;
+
+    _ = try model.add("Debug Log File", .string, "", 0, 0, callback_debug_log_file);
+    _ = try model.add("NumaPolicy", .string, "auto", 0, 0, callback_numa_policy);
+    _ = try model.add("Threads", .spin, "1", 1, params.max_threads, callback_threads);
+    _ = try model.add("Hash", .spin, "16", 1, params.max_hash_mb, callback_hash);
+    _ = try model.add("Clear Hash", .button, "", 0, 0, callback_clear_hash);
+    _ = try model.add("Ponder", .check, "false", 0, 0, callback_none);
+    _ = try model.add("MultiPV", .spin, "1", 1, 256, callback_none);
+    _ = try model.add("Skill Level", .spin, "20", 0, 20, callback_none);
+    _ = try model.add("Move Overhead", .spin, "10", 0, 5000, callback_none);
+    _ = try model.add("nodestime", .spin, "0", 0, 10000, callback_none);
+    _ = try model.add("UCI_Chess960", .check, "false", 0, 0, callback_none);
+    _ = try model.add("UCI_LimitStrength", .check, "false", 0, 0, callback_none);
+    _ = try model.add("UCI_Elo", .spin, elo_default, params.skill_lowest_elo, params.skill_highest_elo, callback_none);
+    _ = try model.add("UCI_ShowWDL", .check, "false", 0, 0, callback_none);
+    _ = try model.add("SyzygyPath", .string, "", 0, 0, callback_syzygy_path);
+    _ = try model.add("SyzygyProbeDepth", .spin, "1", 1, 100, callback_none);
+    _ = try model.add("Syzygy50MoveRule", .check, "true", 0, 0, callback_none);
+    _ = try model.add("SyzygyProbeLimit", .spin, "7", 0, 7, callback_none);
+    _ = try model.add("EvalFile", .string, params.eval_file, 0, 0, callback_eval_file);
+}
+
 test "options model stores defaults and reads typed values" {
     var model = OptionsModel.init(std.testing.allocator);
     defer model.deinit();
@@ -511,6 +559,42 @@ test "options model validates and applies setValue" {
     // Unknown option.
     const missing = try model.setValue("Nope", "1");
     try std.testing.expect(!missing.found);
+}
+
+test "standard option set matches engine init" {
+    var model = OptionsModel.init(std.testing.allocator);
+    defer model.deinit();
+    try registerStandardOptions(&model, .{
+        .max_threads = 1024,
+        .max_hash_mb = 33554432,
+        .skill_lowest_elo = 1320,
+        .skill_highest_elo = 3190,
+        .eval_file = "nn-83a0d6daf7e5.nnue",
+    });
+
+    try std.testing.expectEqual(@as(usize, 19), model.count());
+    try std.testing.expectEqual(@as(c_int, 1), model.getInt("Threads"));
+    try std.testing.expectEqual(@as(c_int, 16), model.getInt("Hash"));
+    try std.testing.expectEqual(@as(c_int, 1), model.getInt("MultiPV"));
+    try std.testing.expectEqual(@as(c_int, 20), model.getInt("Skill Level"));
+    try std.testing.expectEqual(@as(c_int, 1320), model.getInt("UCI_Elo"));
+    try std.testing.expectEqual(@as(c_int, 0), model.getInt("Ponder"));
+    try std.testing.expectEqual(@as(c_int, 1), model.getInt("Syzygy50MoveRule"));
+    try std.testing.expectEqualStrings("nn-83a0d6daf7e5.nnue", model.getString("EvalFile"));
+    try std.testing.expectEqualStrings("auto", model.getString("NumaPolicy"));
+
+    // Callback wiring survives registration.
+    const threads_change = try model.setValue("Threads", "4");
+    try std.testing.expectEqual(callback_threads, threads_change.callback_kind);
+    const hash_change = try model.setValue("Hash", "256");
+    try std.testing.expectEqual(callback_hash, hash_change.callback_kind);
+
+    // The listing leads with Debug Log File and ends with EvalFile.
+    const listing = try model.renderAlloc();
+    defer std.testing.allocator.free(listing);
+    try std.testing.expect(std.mem.startsWith(u8, listing, "\noption name Debug Log File type string default <empty>"));
+    try std.testing.expect(std.mem.indexOf(u8, listing, "\noption name Threads type spin default 1 min 1 max 1024") != null);
+    try std.testing.expect(std.mem.endsWith(u8, listing, "\noption name EvalFile type string default nn-83a0d6daf7e5.nnue"));
 }
 
 test "options model renders the UCI listing in order" {
