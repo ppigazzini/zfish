@@ -381,6 +381,52 @@ fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
     pv.length = n + 1;
 }
 
+// SearchManager::pv driver (default target). The C++ pv() delegates the multiPV
+// info-line loop here; Zig derives each line's fields from the RootMove memory
+// mirror and calls zfish_search_emit_info_full, which rebuilds InfoFull and
+// routes it through the unchanged updates.onUpdateFull listener for byte-exact
+// output. No tablebases in this build, so the upstream TB/syzygy branches never
+// apply (rootInTB is always false).
+const PvContext = extern struct {
+    manager: ?*anyopaque,
+    worker: ?*anyopaque,
+    root_moves: [*]const RootMove,
+    root_moves_count: usize,
+    multipv: usize,
+    show_wdl: u8,
+    chess960: u8,
+    nodes: u64,
+    tb_hits: u64,
+    hashfull: c_int,
+    elapsed_ms: u64,
+};
+extern fn zfish_search_cb_pv_context(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, out: *PvContext) void;
+extern fn zfish_search_emit_info_full(manager: ?*anyopaque, worker: ?*anyopaque, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void;
+
+pub export fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void {
+    const value_infinite: i32 = 32001;
+    var ctx: PvContext = undefined;
+    zfish_search_cb_pv_context(manager, worker, threads, tt_ptr, &ctx);
+    var i: usize = 0;
+    while (i < ctx.multipv) : (i += 1) {
+        const rm = &ctx.root_moves[i];
+        const use_prev = rm.score == -value_infinite;
+        if (depth == 1 and use_prev and i > 0) continue;
+        const d: c_int = if (use_prev) @max(@as(c_int, 1), depth - 1) else depth;
+        var v: i32 = if (use_prev) rm.previous_score else rm.uci_score;
+        if (v == -value_infinite) v = 0;
+        var bound_kind: u8 = 0;
+        if (!use_prev) {
+            if (rm.score_lowerbound) {
+                bound_kind = 1;
+            } else if (rm.score_upperbound) {
+                bound_kind = 2;
+            }
+        }
+        zfish_search_emit_info_full(ctx.manager, ctx.worker, i, d, @intCast(rm.sel_depth), i + 1, @intCast(v), ctx.show_wdl, bound_kind, ctx.nodes, ctx.tb_hits, ctx.hashfull, ctx.elapsed_ms);
+    }
+}
+
 extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque, out_cc: *usize, out_gen: *u8) void;
 
 // One-shot fetch of the Worker state the inlined search needs, all stable for the
