@@ -204,11 +204,13 @@ Search::Worker::Worker(SharedState&                    sharedState,
     clear();
 }
 
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_ENSURE_NET
 void Search::Worker::ensure_network_replicated() {
     // Access once to force lazy initialization.
     // We do this because we want to avoid initialization during search.
     (void) (network[numaAccessToken]);
 }
+#endif
 
 void Search::Worker::start_searching() {
 
@@ -685,6 +687,7 @@ void Search::Worker::undo_null_move(Position& pos) { pos.undo_null_move(); }
 
 
 // Reset histories, usually before a new game
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_CLEAR
 void Search::Worker::clear() {
 #ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_CLEAR_HIST
     zfish_search_clear_worker_histories(this);
@@ -729,6 +732,7 @@ void Search::Worker::clear() {
     refreshTable.clear(network[numaAccessToken]);
 #endif
 }
+#endif  // ZFISH_SEARCH_BRIDGE_SKIP_CLEAR
 
 
 // Main search function for both PV and non-PV nodes
@@ -2494,12 +2498,8 @@ void SearchManager::pv(Search::Worker&           worker,
 // for instance, in case we stop the search during a fail high at root.
 // We try hard to have a ponder move to return to the GUI,
 // otherwise in case of 'ponder on' we have nothing to think about.
+#ifndef ZFISH_SEARCH_BRIDGE_SKIP_EXTRACT_PONDER
 bool RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& pos) {
-
-#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_EXTRACT_PONDER
-    return bool(zfish_search_extract_ponder_from_tt(&pv, tt.table, tt.clusterCount,
-                                                    tt.generation8, &pos));
-#endif
 
     assert(pv.size() == 1 && pv[0] != Move::none());
 
@@ -2516,6 +2516,7 @@ bool RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& po
     pos.undo_move(pv[0]);
     return pv.size() > 1;
 }
+#endif  // ZFISH_SEARCH_BRIDGE_SKIP_EXTRACT_PONDER
 
 
 }  // namespace Stockfish
