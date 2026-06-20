@@ -2507,28 +2507,53 @@ const char* zfish_engine_option_on_change(void*                engine_ptr,
                                           std::size_t          value_len,
                                           int                  int_value);
 
-// Zig-owned option value store (default target only). Reads of an option's
-// current value are sourced from here; the C++ currentValue stays the legacy
-// oracle. Populated at add() and resynced after every setoption.
-void                 zfish_optstore_reset();
-void                 zfish_optstore_set(std::size_t idx, const unsigned char* value_ptr,
-                                        std::size_t value_len);
-std::uint8_t         zfish_optstore_has(std::size_t idx);
-std::size_t          zfish_optstore_len(std::size_t idx);
-const unsigned char* zfish_optstore_ptr(std::size_t idx);
+// Zig-owned option model (default target only). The bridge registers every
+// option here at OptionsMap::add and reads current values back by index; the C++
+// currentValue stays the legacy oracle, so oracle-parity cross-checks the two.
+std::size_t          zfish_optmodel_add(const unsigned char* name_ptr, std::size_t name_len,
+                                        std::uint8_t kind, const unsigned char* default_ptr,
+                                        std::size_t default_len, int min, int max);
+std::uint8_t         zfish_optmodel_has_index(std::size_t idx);
+int                  zfish_optmodel_int_by_index(std::size_t idx);
+std::size_t          zfish_optmodel_current_len(std::size_t idx);
+const unsigned char* zfish_optmodel_current_ptr(std::size_t idx);
+void                 zfish_optmodel_publish_by_index(std::size_t idx, const unsigned char* value_ptr,
+                                                     std::size_t value_len);
 }
 
 namespace {
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
+std::uint8_t zfish_optmodel_kind(const std::string& type) {
+    if (type == "check")
+        return 1;
+    if (type == "spin")
+        return 2;
+    if (type == "button")
+        return 3;
+    return 0;  // string / combo
+}
+
+void zfish_optmodel_register(const std::string& name, const Option& option) {
+    zfish_optmodel_add(reinterpret_cast<const unsigned char*>(name.data()), name.size(),
+                       zfish_optmodel_kind(option.type),
+                       reinterpret_cast<const unsigned char*>(option.defaultValue.data()),
+                       option.defaultValue.size(), option.min, option.max);
+}
+
 void zfish_optstore_publish(std::size_t idx, const std::string& value) {
-    zfish_optstore_set(idx, reinterpret_cast<const unsigned char*>(value.data()), value.size());
+    zfish_optmodel_publish_by_index(idx, reinterpret_cast<const unsigned char*>(value.data()),
+                                    value.size());
 }
 
 std::string zfish_optstore_read(std::size_t idx) {
-    const std::size_t len = zfish_optstore_len(idx);
-    return std::string(reinterpret_cast<const char*>(zfish_optstore_ptr(idx)), len);
+    const std::size_t len = zfish_optmodel_current_len(idx);
+    if (len == 0)
+        return std::string{};
+    return std::string(reinterpret_cast<const char*>(zfish_optmodel_current_ptr(idx)), len);
 }
+
+bool zfish_optstore_has(std::size_t idx) { return zfish_optmodel_has_index(idx) != 0; }
 #endif
 
 constexpr std::uint8_t kOptionCallbackNone          = 0;
@@ -3467,7 +3492,9 @@ void OptionsMap::add(const std::string& name, const Option& option) {
         options_map[name].parent = this;
         options_map[name].idx    = insert_order++;
 #ifndef ZFISH_LEGACY_CPP_TARGET
-        zfish_optstore_publish(options_map[name].idx, options_map[name].currentValue);
+        // Register into the Zig model in lockstep with insert_order, so the
+        // model's registration index matches this option's idx.
+        zfish_optmodel_register(name, options_map[name]);
 #endif
     }
     else

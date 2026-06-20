@@ -7,46 +7,65 @@ const std = @import("std");
 // store in the default target. This moves option-read authority out of the C++
 // object as the first slice of retiring OptionsMap; the legacy oracle keeps
 // reading the C++ currentValue, so oracle-parity cross-checks the two.
-const max_options = 128;
-var opt_values: [max_options]?[:0]u8 = .{null} ** max_options;
+// Process-global Zig OptionsModel, the live option store for the default build.
+// The bridge registers every option here at OptionsMap::add (in lockstep with
+// the C++ insert order, so indices match) and reads current values back through
+// the index-keyed accessors. The C++ currentValue remains the legacy oracle, so
+// oracle-parity cross-checks the two.
+var global_model: ?OptionsModel = null;
 
-pub export fn zfish_optstore_reset() void {
-    const allocator = std.heap.c_allocator;
-    for (&opt_values) |*slot| {
-        if (slot.*) |owned| allocator.free(owned);
-        slot.* = null;
-    }
+fn ensureModel() *OptionsModel {
+    if (global_model == null) global_model = OptionsModel.init(std.heap.c_allocator);
+    return &(global_model.?);
 }
 
-pub export fn zfish_optstore_set(idx: usize, value_ptr: [*]const u8, value_len: usize) void {
-    if (idx >= max_options) return;
-    const allocator = std.heap.c_allocator;
-    const buf = allocator.allocSentinel(u8, value_len, 0) catch {
-        if (opt_values[idx]) |owned| allocator.free(owned);
-        opt_values[idx] = null;
-        return;
-    };
-    @memcpy(buf[0..value_len], value_ptr[0..value_len]);
-    if (opt_values[idx]) |owned| allocator.free(owned);
-    opt_values[idx] = buf;
+pub export fn zfish_optmodel_reset() void {
+    if (global_model) |*existing| existing.deinit();
+    global_model = OptionsModel.init(std.heap.c_allocator);
 }
 
-pub export fn zfish_optstore_has(idx: usize) u8 {
-    return if (idx < max_options and opt_values[idx] != null) 1 else 0;
+pub export fn zfish_optmodel_add(
+    name_ptr: [*]const u8,
+    name_len: usize,
+    kind: u8,
+    default_ptr: [*]const u8,
+    default_len: usize,
+    min: c_int,
+    max: c_int,
+) usize {
+    const model = ensureModel();
+    const resolved: OptionKind = @enumFromInt(if (kind > 3) @as(u8, 0) else kind);
+    return model.add(name_ptr[0..name_len], resolved, default_ptr[0..default_len], min, max, 0) catch
+        std.math.maxInt(usize);
 }
 
-pub export fn zfish_optstore_len(idx: usize) usize {
-    if (idx < max_options) {
-        if (opt_values[idx]) |owned| return owned.len;
-    }
-    return 0;
+pub export fn zfish_optmodel_has_index(idx: usize) u8 {
+    return @intFromBool(ensureModel().hasIndex(idx));
 }
 
-pub export fn zfish_optstore_ptr(idx: usize) ?[*]const u8 {
-    if (idx < max_options) {
-        if (opt_values[idx]) |owned| return owned.ptr;
-    }
-    return null;
+pub export fn zfish_optmodel_int_by_index(idx: usize) c_int {
+    return ensureModel().intByIndex(idx);
+}
+
+pub export fn zfish_optmodel_current_len(idx: usize) usize {
+    return ensureModel().currentByIndex(idx).len;
+}
+
+pub export fn zfish_optmodel_current_ptr(idx: usize) ?[*]const u8 {
+    const current = ensureModel().currentByIndex(idx);
+    return if (current.len == 0) null else current.ptr;
+}
+
+// Overwrite the current value at an index without re-validating (the C++ side
+// has already validated); used to resync the model after a setoption applies.
+pub export fn zfish_optmodel_publish_by_index(idx: usize, value_ptr: [*]const u8, value_len: usize) void {
+    const model = ensureModel();
+    if (idx >= model.entries.items.len) return;
+    const entry = &model.entries.items[idx];
+    const buf = std.heap.c_allocator.alloc(u8, value_len) catch return;
+    @memcpy(buf, value_ptr[0..value_len]);
+    model.allocator.free(entry.current_value);
+    entry.current_value = buf;
 }
 
 pub const ParsedSetOption = extern struct {
