@@ -947,9 +947,11 @@ struct ZfishIdState {
     int                 limits_mate;
     int                 best_previous_score;
     int                 best_previous_average_score;
+    double              skill_level;
     std::uint8_t        is_main;
     std::uint8_t        use_time_management;
     std::uint8_t        tm_use_nodes_time;
+    std::uint8_t        skill_enabled;
 };
 
 extern "C" void zfish_search_id_state(void* worker, ZfishIdState* out) {
@@ -977,6 +979,11 @@ extern "C" void zfish_search_id_state(void* worker, ZfishIdState* out) {
     out->limits_mate             = w->limits.mate;
     out->use_time_management     = w->limits.use_time_management() ? 1 : 0;
     out->is_main                 = isMain ? 1 : 0;
+
+    Skill skill(w->options["Skill Level"],
+                w->options["UCI_LimitStrength"] ? int(w->options["UCI_Elo"]) : 0);
+    out->skill_enabled = skill.enabled() ? 1 : 0;
+    out->skill_level   = skill.level;
 
     if (isMain)
     {

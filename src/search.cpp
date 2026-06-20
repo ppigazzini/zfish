@@ -292,14 +292,9 @@ void Search::Worker::start_searching() {
 bool Search::Worker::iterative_deepening() {
 
 #ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_ITERDEEP
-    // The Zig port owns the skill-off path; the C++ body below stays for the
-    // skill-enabled handicap path (and as the upstream rebase body).
-    {
-        const bool zfishSkillOn =
-          bool(options["UCI_LimitStrength"]) || int(options["Skill Level"]) < 20;
-        if (!zfishSkillOn)
-            return bool(zfish_search_iterative_deepening(this));
-    }
+    // The Zig port owns the whole loop, skill-off and skill-on alike. The C++
+    // body below stays as the upstream rebase reference.
+    return bool(zfish_search_iterative_deepening(this));
 #endif
 
     SearchManager* mainThread = (is_mainthread() ? main_manager() : nullptr);
