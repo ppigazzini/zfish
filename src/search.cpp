@@ -2492,6 +2492,11 @@ void SearchManager::pv(Search::Worker&           worker,
 // otherwise in case of 'ponder on' we have nothing to think about.
 bool RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& pos) {
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_EXTRACT_PONDER
+    return bool(zfish_search_extract_ponder_from_tt(&pv, tt.table, tt.clusterCount,
+                                                    tt.generation8, &pos));
+#endif
+
     assert(pv.size() == 1 && pv[0] != Move::none());
 
     StateInfo st;

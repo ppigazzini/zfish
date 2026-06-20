@@ -770,6 +770,9 @@ extern "C" int  zfish_search_search(void* worker, void* pos, void* ss, int alpha
                                     int depth, std::uint8_t cut_node, std::uint8_t pv_node,
                                     std::uint8_t root_node);
 extern "C" std::uint8_t zfish_search_iterative_deepening(void* worker);
+extern "C" std::uint8_t zfish_search_extract_ponder_from_tt(void* pv, void* table,
+                                                           std::size_t cc, std::uint8_t gen,
+                                                           void* pos);
 extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
 extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
                                                     int piece_value, int capt_hist);
@@ -852,6 +855,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SEARCH
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_ITERDEEP
+#define ZFISH_SEARCH_BRIDGE_USE_ZIG_EXTRACT_PONDER
 #include "../src/search.cpp"
 
 // Layout proof for zig_build/board/position.zig's WorkerHistories mirror. The
