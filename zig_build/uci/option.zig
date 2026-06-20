@@ -390,8 +390,24 @@ pub const OptionsModel = struct {
     }
 
     pub fn getInt(self: *const OptionsModel, name: []const u8) c_int {
-        if (self.findIndex(name)) |i| {
-            const entry = self.entries.items[i];
+        if (self.findIndex(name)) |i| return self.intByIndex(i);
+        return 0;
+    }
+
+    // Index-keyed reads, used by the bridge Option read operators which carry a
+    // registration index rather than a name.
+    pub fn hasIndex(self: *const OptionsModel, idx: usize) bool {
+        return idx < self.entries.items.len;
+    }
+
+    pub fn currentByIndex(self: *const OptionsModel, idx: usize) []const u8 {
+        if (idx < self.entries.items.len) return self.entries.items[idx].current_value;
+        return "";
+    }
+
+    pub fn intByIndex(self: *const OptionsModel, idx: usize) c_int {
+        if (idx < self.entries.items.len) {
+            const entry = self.entries.items[idx];
             if (entry.kind == .spin) return parseSignedInt(entry.current_value) orelse 0;
             if (entry.kind == .check) return if (std.mem.eql(u8, entry.current_value, "true")) 1 else 0;
         }
@@ -595,6 +611,24 @@ test "standard option set matches engine init" {
     try std.testing.expect(std.mem.startsWith(u8, listing, "\noption name Debug Log File type string default <empty>"));
     try std.testing.expect(std.mem.indexOf(u8, listing, "\noption name Threads type spin default 1 min 1 max 1024") != null);
     try std.testing.expect(std.mem.endsWith(u8, listing, "\noption name EvalFile type string default nn-83a0d6daf7e5.nnue"));
+}
+
+test "options model index-keyed reads track current values" {
+    var model = OptionsModel.init(std.testing.allocator);
+    defer model.deinit();
+    const threads_idx = try model.add("Threads", .spin, "1", 1, 1024, 3);
+    const eval_idx = try model.add("EvalFile", .string, "nn-x.nnue", 0, 0, 7);
+
+    try std.testing.expect(model.hasIndex(threads_idx));
+    try std.testing.expect(model.hasIndex(eval_idx));
+    try std.testing.expect(!model.hasIndex(2));
+
+    try std.testing.expectEqual(@as(c_int, 1), model.intByIndex(threads_idx));
+    try std.testing.expectEqualStrings("nn-x.nnue", model.currentByIndex(eval_idx));
+
+    _ = try model.setValue("Threads", "12");
+    try std.testing.expectEqual(@as(c_int, 12), model.intByIndex(threads_idx));
+    try std.testing.expectEqualStrings("12", model.currentByIndex(threads_idx));
 }
 
 test "options model renders the UCI listing in order" {
