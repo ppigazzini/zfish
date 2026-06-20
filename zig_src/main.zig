@@ -1107,13 +1107,15 @@ pub export fn zfish_network_load(
     evalfile_path_ptr: [*]const u8,
     evalfile_path_len: usize,
 ) void {
-    return network_port.load(
+    network_port.load(
         network,
         root_directory_ptr,
         root_directory_len,
         evalfile_path_ptr,
         evalfile_path_len,
     );
+    // Adopt the freshly parsed feature-transformer weights into Zig-owned memory.
+    adoptFeatureTransformer(network);
 }
 
 pub export fn zfish_network_save(
@@ -1147,6 +1149,31 @@ pub export fn zfish_network_evaluate(
 // the network (bridge helper) and the side to move from the Position mirror,
 // then runs the Zig transform. Same symbol the network.zig forward path calls.
 extern fn zfish_network_feature_transformer_ptr(network: *const anyopaque) *const anyopaque;
+extern fn zfish_network_ft_bytes(network: *const anyopaque) usize;
+
+// Native-owned feature-transformer storage. The C++ network parses the .nnue
+// blob into its FeatureTransformer (the SIMD-permuted ~46 MB of weights); after
+// load we copy those exact bytes into Zig-owned memory and read inference from
+// the native copy. Bit-exact by construction (a memcpy of already-correct
+// weights), and the step that moves the bulk of the NNUE storage off C++.
+var native_ft_ptr: ?*anyopaque = null;
+var native_ft_len: usize = 0;
+
+fn adoptFeatureTransformer(network: *const anyopaque) void {
+    const n = zfish_network_ft_bytes(network);
+    if (n == 0) return;
+    const src: [*]const u8 = @ptrCast(zfish_network_feature_transformer_ptr(network));
+    if (native_ft_ptr != null and native_ft_len != n) {
+        memory_port.alignedLargePagesFree(native_ft_ptr);
+        native_ft_ptr = null;
+    }
+    if (native_ft_ptr == null) {
+        native_ft_ptr = memory_port.alignedLargePagesAlloc(n) orelse return;
+        native_ft_len = n;
+    }
+    const dst: [*]u8 = @ptrCast(native_ft_ptr.?);
+    @memcpy(dst[0..n], src[0..n]);
+}
 
 pub export fn zfish_network_transform_bucket(
     network: *const anyopaque,
@@ -1156,7 +1183,7 @@ pub export fn zfish_network_transform_bucket(
     bucket: usize,
     transformed_ptr: [*]u8,
 ) c_int {
-    const ft = zfish_network_feature_transformer_ptr(network);
+    const ft = native_ft_ptr orelse zfish_network_feature_transformer_ptr(network);
     const stm = position_port.sideToMove(pos);
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
 }
