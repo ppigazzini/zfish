@@ -2506,9 +2506,30 @@ const char* zfish_engine_option_on_change(void*                engine_ptr,
                                           const unsigned char* value_ptr,
                                           std::size_t          value_len,
                                           int                  int_value);
+
+// Zig-owned option value store (default target only). Reads of an option's
+// current value are sourced from here; the C++ currentValue stays the legacy
+// oracle. Populated at add() and resynced after every setoption.
+void                 zfish_optstore_reset();
+void                 zfish_optstore_set(std::size_t idx, const unsigned char* value_ptr,
+                                        std::size_t value_len);
+std::uint8_t         zfish_optstore_has(std::size_t idx);
+std::size_t          zfish_optstore_len(std::size_t idx);
+const unsigned char* zfish_optstore_ptr(std::size_t idx);
 }
 
 namespace {
+
+#ifndef ZFISH_LEGACY_CPP_TARGET
+void zfish_optstore_publish(std::size_t idx, const std::string& value) {
+    zfish_optstore_set(idx, reinterpret_cast<const unsigned char*>(value.data()), value.size());
+}
+
+std::string zfish_optstore_read(std::size_t idx) {
+    const std::size_t len = zfish_optstore_len(idx);
+    return std::string(reinterpret_cast<const char*>(zfish_optstore_ptr(idx)), len);
+}
+#endif
 
 constexpr std::uint8_t kOptionCallbackNone          = 0;
 constexpr std::uint8_t kOptionCallbackDebugLogFile  = 1;
@@ -2539,6 +2560,12 @@ Option::OnChange make_option_callback(
         return nullptr;
 
     return [engine, option_kind, callback_kind](const Option& option) -> std::optional<std::string> {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+        // operator= has already written the new currentValue; publish it to the
+        // Zig store before the relay reads int(option)/string(option) so the
+        // callback observes the fresh value.
+        zfish_optstore_publish(option.idx, option.currentValue);
+#endif
         switch (option_kind)
         {
         case kOptionTypeString:
@@ -3064,6 +3091,14 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
 
     std::istringstream is(command.str());
     engine->get_options().setoption(is);
+
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // Resync the Zig store from the authoritative C++ currentValue for every
+    // option, covering options without an on_change callback (whose value the
+    // callback publish path above does not reach).
+    for (const auto& entry : engine->get_options().options_map)
+        zfish_optstore_publish(entry.second.idx, entry.second.currentValue);
+#endif
 }
 
 std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
@@ -3431,6 +3466,9 @@ void OptionsMap::add(const std::string& name, const Option& option) {
 
         options_map[name].parent = this;
         options_map[name].idx    = insert_order++;
+#ifndef ZFISH_LEGACY_CPP_TARGET
+        zfish_optstore_publish(options_map[name].idx, options_map[name].currentValue);
+#endif
     }
     else
     {
@@ -3485,12 +3523,21 @@ Option::Option(const char* value, const char* current, OnChange onChange) :
 
 Option::operator int() const {
     assert(type == "check" || type == "spin");
-    return type == "spin" ? std::stoi(currentValue) : currentValue == "true";
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    const std::string val = zfish_optstore_has(idx) ? zfish_optstore_read(idx) : currentValue;
+#else
+    const std::string& val = currentValue;
+#endif
+    return type == "spin" ? std::stoi(val) : val == "true";
 }
 
 Option::operator std::string() const {
     assert(type == "string");
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    return zfish_optstore_has(idx) ? zfish_optstore_read(idx) : currentValue;
+#else
     return currentValue;
+#endif
 }
 
 bool Option::operator!=(const char* value) const { return !(*this == value); }
