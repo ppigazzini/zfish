@@ -482,14 +482,34 @@ std::size_t zfish_network_ft_bytes(const void* network_ptr) {
 // (zfish_network_propagate_bucket in network.zig). idx 0=fc_0, 1=fc_1, 2=fc_2.
 // Biases are stored linearly (int32); weights are int8 in the SSSE3-scrambled
 // layout, which the Zig side un-scrambles with get_weight_index_scrambled.
+// Zig queries: native-owned layer storage if adopted, else nullptr. Defined in
+// zig_src/main.zig. is_weights selects weights (1) vs biases (0).
+extern "C" const void* zfish_native_layer_ptr(std::size_t bucket, int idx, int is_weights);
+
 const std::int32_t* zfish_layer_biases(const void* network_ptr, std::size_t bucket, int idx) {
+        if (auto* p = zfish_native_layer_ptr(bucket, idx, 0))
+            return static_cast<const std::int32_t*>(p);
         const auto& l = NetworkBridgeAccess::layer(*static_cast<const Network*>(network_ptr), bucket);
         return idx == 0 ? l.fc_0.biases : idx == 1 ? l.fc_1.biases : l.fc_2.biases;
 }
 
 const std::int8_t* zfish_layer_weights(const void* network_ptr, std::size_t bucket, int idx) {
+        if (auto* p = zfish_native_layer_ptr(bucket, idx, 1))
+            return static_cast<const std::int8_t*>(p);
         const auto& l = NetworkBridgeAccess::layer(*static_cast<const Network*>(network_ptr), bucket);
         return idx == 0 ? l.fc_0.weights : idx == 1 ? l.fc_1.weights : l.fc_2.weights;
+}
+
+// Exact in-memory sizes of each affine layer's weight / bias arrays, so Zig can
+// adopt them into native storage.
+std::size_t zfish_layer_weights_bytes(const void* network_ptr, std::size_t bucket, int idx) {
+        const auto& l = NetworkBridgeAccess::layer(*static_cast<const Network*>(network_ptr), bucket);
+        return idx == 0 ? sizeof(l.fc_0.weights) : idx == 1 ? sizeof(l.fc_1.weights) : sizeof(l.fc_2.weights);
+}
+
+std::size_t zfish_layer_biases_bytes(const void* network_ptr, std::size_t bucket, int idx) {
+        const auto& l = NetworkBridgeAccess::layer(*static_cast<const Network*>(network_ptr), bucket);
+        return idx == 0 ? sizeof(l.fc_0.biases) : idx == 1 ? sizeof(l.fc_1.biases) : sizeof(l.fc_2.biases);
 }
 
 // zfish_network_propagate_bucket is now Zig-owned (network.zig). The bridge only
