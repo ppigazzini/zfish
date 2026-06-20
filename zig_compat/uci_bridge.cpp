@@ -3673,7 +3673,38 @@ void Tune::read_results() { /* ...insert your values here... */ }
 }  // namespace Stockfish
 
 extern "C" {
+// Memory-footprint probe for the C++ object graph, the layout reference the Zig
+// reimplementation allocates against. Reported per object so the Zig side can
+// pin and assert each size.
+std::size_t zfish_graph_layout_size(int which) {
+    using namespace Stockfish;
+    switch (which)
+    {
+    case 0:  return sizeof(Search::Worker);
+    case 1:  return alignof(Search::Worker);
+    case 2:  return sizeof(Thread);
+    case 3:  return sizeof(ThreadPool);
+    case 4:  return sizeof(Engine);
+    case 5:  return sizeof(UCIEngine);
+    case 6:  return sizeof(Search::SharedState);
+    case 7:  return sizeof(Search::SearchManager);
+    case 8:  return sizeof(Position);
+    case 9:  return sizeof(StateInfo);
+    case 10: return sizeof(TranspositionTable);
+    case 11: return sizeof(Eval::NNUE::AccumulatorStack);
+    case 12: return sizeof(Eval::NNUE::AccumulatorCaches);
+    case 13: return sizeof(Search::RootMove);
+    case 14: return alignof(Stockfish::Search::Worker);
+    default: return 0;
+    }
+}
+
+void zfish_graph_verify_layouts();
+
 void* zfish_uci_create_engine(int argc, char* const* argv) {
+    // Verify the Zig-side object-graph footprint still matches this C++ build
+    // before anything is constructed, so any upstream layout drift fails loudly.
+    zfish_graph_verify_layouts();
     auto uci = std::make_unique<Stockfish::UCIEngine>(argc, const_cast<char**>(argv));
     Stockfish::Tune::init(uci->engine_options());
     return uci.release();
