@@ -1842,8 +1842,12 @@ Config rank_root_moves(const OptionsMap&            options,
 }  // namespace Tablebases
 
 // Constructor launches the thread and waits until it goes to sleep in idle_loop().
-// Read-only verifier exported from zig_src/accumulator_layout.zig.
+// Read-only verifiers exported from zig_src/ (accumulator_layout.zig,
+// worker_construct.zig).
 extern "C" void zfish_verify_accumulator_caches(const void*);
+extern "C" void zfish_verify_worker_construction(
+  const void* worker, size_t thread_idx, const void* options_ref, const void* threads_ref,
+  const void* tt_ref, const void* network_ref);
 
 // Note that 'searching' and 'exit' should be already set.
 Thread::Thread(Search::SharedState&                    sharedState,
@@ -1876,6 +1880,11 @@ Thread::Thread(Search::SharedState&                    sharedState,
     // tail, repeated per entry) matches the freshly constructed C++ object.
     // Read-only cross-check; panics on any mismatch.
     zfish_verify_accumulator_caches(&this->worker->refreshTable);
+    // Prove the Zig model of the constructed Worker is exact: the reference
+    // members are bound to the SharedState referents, the manager is minted,
+    // rootMoves is an empty vector and the AccumulatorStack reports size 1.
+    zfish_verify_worker_construction(this->worker.get(), n, &sharedState.options,
+                                     &sharedState.threads, &sharedState.tt, &sharedState.network);
 #endif
 }
 

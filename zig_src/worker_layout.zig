@@ -37,7 +37,9 @@ const root_moves_bytes = off.root_depth - off.root_moves; // std::vector<RootMov
 const last_iteration_pv_bytes = off.thread_idx - (off.root_delta + 4); // PVMoves, 504
 const numa_access_token_bytes = off.reductions - (off.thread_idx + 24); // 8
 // manager(8) + tbConfig + options-ref(8) + threads-ref(8) precede tt.
-const tb_config_bytes = off.tt - off.manager - 24; // Tablebases::Config, 24
+const tb_config_bytes = off.tt - off.manager - 24; // Tablebases::Config, 16
+// AccumulatorStack is over-aligned, so padding follows the network reference.
+const pre_accumulator_pad = off.accumulator_stack - (off.network + 8); // 8
 const max_moves = (off.manager - off.reductions) / @sizeOf(i32); // std::array<int, MAX_MOVES> -> 256
 const accumulator_stack_bytes = off.refresh_table - off.accumulator_stack; // 2181568
 const refresh_table_bytes = graph_layout.worker_size - off.refresh_table; // 278528
@@ -82,6 +84,7 @@ pub const Worker = extern struct {
     threads: ?*anyopaque, // ThreadPool& reference slot
     tt: ?*anyopaque, // TranspositionTable& reference slot
     network: ?*anyopaque, // network reference slot
+    accumulator_pad: [pre_accumulator_pad]u8, // AccumulatorStack alignment padding
 
     accumulator_stack: [accumulator_stack_bytes]u8, // Eval::NNUE::AccumulatorStack
     refresh_table: [refresh_table_bytes]u8, // Eval::NNUE::AccumulatorCaches
@@ -116,6 +119,8 @@ comptime {
     std.debug.assert(@offsetOf(Worker, "thread_idx") == off.thread_idx);
     std.debug.assert(@offsetOf(Worker, "reductions") == off.reductions);
     std.debug.assert(@offsetOf(Worker, "manager") == off.manager);
+    std.debug.assert(@offsetOf(Worker, "options") == off.options);
+    std.debug.assert(@offsetOf(Worker, "threads") == off.threads);
     std.debug.assert(@offsetOf(Worker, "tt") == off.tt);
     std.debug.assert(@offsetOf(Worker, "network") == off.network);
     std.debug.assert(@offsetOf(Worker, "accumulator_stack") == off.accumulator_stack);
