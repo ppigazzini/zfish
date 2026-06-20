@@ -865,7 +865,24 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_QSEARCH
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_SEARCH
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_ITERDEEP
-#include "../src/search.cpp"
+// The Zig runtime owns the engine; src/search.cpp is no longer compiled into the
+// default build. Supply the headers, namespace visibility, the SearchedList
+// alias, and the dead (no-tablebase) syzygy_extend_pv stub that the bridge code
+// below previously got from the included translation unit.
+#include "search.h"
+#include "movepick.h"
+using namespace Stockfish;
+using namespace Stockfish::Search;
+
+namespace Stockfish {
+inline constexpr int SEARCHEDLIST_CAPACITY = 32;
+using SearchedList                         = ValueList<Move, SEARCHEDLIST_CAPACITY>;
+namespace {
+// rootInTB is always false in this no-tablebase build, so pv() never calls this.
+void syzygy_extend_pv(const OptionsMap&, const Search::LimitsType&, Position&, Search::RootMove&,
+                      Value&) {}
+}  // namespace
+}  // namespace Stockfish
 
 // Layout proof for zig_build/board/position.zig's WorkerHistories mirror. The
 // per-Worker history tables form a contiguous int16-array prefix of the Worker
@@ -1627,6 +1644,36 @@ void Search::SearchManager::pv(Search::Worker&           worker,
 }
 
 bool Search::Worker::iterative_deepening() { return bool(zfish_search_iterative_deepening(this)); }
+
+// SearchManager::check_time relocated verbatim from search.cpp. The Zig search
+// runs the per-node time check itself, so this is unused on the search path, but
+// it is SearchManager's only virtual override and therefore anchors the class
+// vtable in this translation unit.
+void Search::SearchManager::check_time(Search::Worker& worker) {
+    if (--callsCnt > 0)
+        return;
+
+    callsCnt = worker.limits.nodes ? std::min(512, int(worker.limits.nodes / 1024)) : 512;
+
+    static TimePoint lastInfoTime = now();
+
+    TimePoint elapsed = tm.elapsed([&worker]() { return worker.threads.nodes_searched(); });
+    TimePoint tick    = worker.limits.startTime + elapsed;
+
+    if (tick - lastInfoTime >= 1000)
+    {
+        lastInfoTime = tick;
+        dbg_print();
+    }
+
+    if (ponder)
+        return;
+
+    if ((worker.limits.use_time_management() && (elapsed > tm.maximum() || stopOnPonderhit))
+        || (worker.limits.movetime && elapsed >= worker.limits.movetime)
+        || (worker.limits.nodes && worker.threads.nodes_searched() >= worker.limits.nodes))
+        worker.threads.stop = true;
+}
 
 // Worker::start_searching relocated verbatim from search.cpp: the search entry
 // (history/accumulator reset, time-management init, the iterative-deepening
