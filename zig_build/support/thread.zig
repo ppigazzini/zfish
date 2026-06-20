@@ -6,6 +6,16 @@ const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
 
+// Zig-owned thread job runner (engine-graph reimplementation). Verified by its
+// own concurrency tests; compile-checked here until wired into construction.
+pub const thread_runtime = @import("thread_runtime.zig");
+comptime {
+    _ = &thread_runtime.ThreadRuntime.start;
+    _ = &thread_runtime.ThreadRuntime.runCustomJob;
+    _ = &thread_runtime.ThreadRuntime.waitForSearchFinished;
+    _ = &thread_runtime.ThreadRuntime.deinit;
+}
+
 const value_draw: c_int = 0;
 const value_mate: c_int = 32000;
 const value_none: c_int = 32002;
