@@ -896,6 +896,24 @@ fn cacheEntry(cache: *anyopaque, king_square: u8, perspective: u8) *anyopaque {
         ((@as(usize, king_square) * color_count + @as(usize, perspective)) * cache_entry_bytes));
 }
 
+// AccumulatorRefreshTable::clear: initialize every (king_square, perspective)
+// refresh entry to the empty board -- accumulation = the feature-transformer
+// biases, and the rest of the entry (psqt, pieces, pieceBB) zeroed. Mirrors the
+// C++ Entry::clear (accumulation = biases; memset from psqtAccumulation to end).
+// The biases pointer is handed over by the bridge.
+pub fn clearRefreshCache(cache: *anyopaque, biases: [*]const i16) void {
+    const biases_bytes: [*]const u8 = @ptrCast(biases);
+    var ks: usize = 0;
+    while (ks < square_count) : (ks += 1) {
+        var p: usize = 0;
+        while (p < color_count) : (p += 1) {
+            const bytes = cacheEntryBytesMut(cacheEntry(cache, @intCast(ks), @intCast(p)));
+            @memcpy(bytes[0..feature_transformer_biases_bytes], biases_bytes[0..feature_transformer_biases_bytes]);
+            @memset(bytes[cache_entry_psqt_offset..cache_entry_bytes], 0);
+        }
+    }
+}
+
 fn cacheBytesMut(cache: *anyopaque) [*]u8 {
     return @ptrCast(cache);
 }
