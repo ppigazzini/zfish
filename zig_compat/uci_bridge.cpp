@@ -826,6 +826,7 @@ extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 #define ZFISH_SEARCH_BRIDGE_SKIP_ENSURE_NET
 #define ZFISH_SEARCH_BRIDGE_SKIP_EXTRACT_PONDER
 #define ZFISH_SEARCH_BRIDGE_SKIP_WORKER_CTOR
+#define ZFISH_SEARCH_BRIDGE_SKIP_PV
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_REDUCTIONS_FILL
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_STAT_BONUS_MALUS
 #define ZFISH_SEARCH_BRIDGE_USE_ZIG_CORRECTION_VALUE
@@ -1554,6 +1555,73 @@ Search::Worker::Worker(Search::SharedState&            sharedState,
     network(sharedState.network),
     refreshTable(network[token]) {
     clear();
+}
+
+// SearchManager::pv (UCI info output) relocated verbatim from search.cpp. The
+// syzygy_extend_pv call is dead in this no-tablebase build (rootInTB is always
+// false, so v never lands in the decisive-non-mate TB range that triggers it);
+// the symbol is provided once the search.cpp include is dropped.
+void Search::SearchManager::pv(Search::Worker&           worker,
+                               const ThreadPool&         threads,
+                               const TranspositionTable& tt,
+                               Depth                     depth) {
+    const auto nodes     = threads.nodes_searched();
+    auto&      rootMoves = worker.rootMoves;
+    auto&      pos       = worker.rootPos;
+    std::size_t multiPV  = std::min(std::size_t(worker.options["MultiPV"]), rootMoves.size());
+    std::uint64_t tbHits = threads.tb_hits() + (worker.tbConfig.rootInTB ? rootMoves.size() : 0);
+
+    for (std::size_t i = 0; i < multiPV; ++i)
+    {
+        bool usePreviousScore = rootMoves[i].score == -VALUE_INFINITE;
+
+        if (depth == 1 && usePreviousScore && i > 0)
+            continue;
+
+        Depth d = usePreviousScore ? std::max(1, depth - 1) : depth;
+        Value v = usePreviousScore ? rootMoves[i].previousScore : rootMoves[i].uciScore;
+
+        if (v == -VALUE_INFINITE)
+            v = VALUE_ZERO;
+
+        bool isTBScore = worker.tbConfig.rootInTB && !is_mate_or_mated(v);
+        v              = isTBScore ? rootMoves[i].tbScore : v;
+
+        if (is_decisive(v) && !is_mate_or_mated(v) && (!rootMoves[i].score_is_bound() || isTBScore))
+            syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v);
+
+        std::string pv;
+        for (Move m : rootMoves[i].pv)
+            pv += UCIEngine::move(m, pos.is_chess960()) + " ";
+
+        if (!pv.empty())
+            pv.pop_back();
+
+        auto wdl   = worker.options["UCI_ShowWDL"] ? UCIEngine::wdl(v, pos) : "";
+        auto bound = rootMoves[i].scoreLowerbound
+                     ? "lowerbound"
+                     : (rootMoves[i].scoreUpperbound ? "upperbound" : "");
+
+        InfoFull info;
+        info.depth    = d;
+        info.selDepth = rootMoves[i].selDepth;
+        info.multiPV  = i + 1;
+        info.score    = {v, pos};
+        info.wdl      = wdl;
+
+        if (!(isTBScore || usePreviousScore))
+            info.bound = bound;
+
+        TimePoint time = std::max(TimePoint(1), tm.elapsed_time());
+        info.timeMs    = time;
+        info.nodes     = nodes;
+        info.nps       = nodes * 1000 / time;
+        info.tbHits    = tbHits;
+        info.pv        = pv;
+        info.hashfull  = tt.hashfull();
+
+        updates.onUpdateFull(info);
+    }
 }
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
