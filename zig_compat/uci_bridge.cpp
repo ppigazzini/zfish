@@ -49,23 +49,6 @@
 #include "types.h"
 #include "ucioption.h"
 
-/*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
-
-  Stockfish is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  Stockfish is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
 
 #include "engine.h"
 
@@ -283,10 +266,6 @@ std::string take_string_and_free_engine_required(const char* rendered) {
 
 }  // namespace
 
-
-
-
-
 namespace Eval::NNUE {
 
 struct NetworkBridgeAccess {
@@ -315,12 +294,6 @@ struct NetworkBridgeAccess {
 
     static std::uint32_t hashValue() { return Network::hash; }
 };
-
-
-
-
-
-
 
 namespace Detail {
 
@@ -376,8 +349,6 @@ std::optional<std::string> write_parameters_blob(const T& reference) {
 }
 
 }  // namespace
-
-
 
 extern "C" {
 struct ZfishByteView {
@@ -583,16 +554,6 @@ ZfishNetworkVerifyInfo zfish_network_verify_info(const void* network_ptr) {
 }
 }
 
-
-
-
-
-
-
-
-
-
-
 void Network::load(const std::string& rootDirectory, std::string evalfilePath) {
     zfish_network_load(this,
                        reinterpret_cast<const unsigned char*>(rootDirectory.data()),
@@ -663,50 +624,6 @@ std::size_t Network::get_content_hash() const {
 }  // namespace Eval::NNUE
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
-
-  Stockfish is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  Stockfish is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
 
 #include <algorithm>
 #include <cassert>
@@ -2441,8 +2358,6 @@ void zfish_threadpool_main_manager_clear_timeman(void* pool_ptr) {
 
 extern "C" {
 
-
-
 void zfish_engine_numa_set_from_string(void*                numa_context_ptr,
                                        const unsigned char* text_ptr,
                                        std::size_t          text_len) {
@@ -2956,34 +2871,16 @@ const char*   zfish_position_format_fen(const unsigned char* board_ptr,
                                         std::uint8_t         ep_square,
                                         int                  rule50,
                                         int                  game_ply);
-std::uint64_t zfish_position_compute_material_key(const int* piece_counts_ptr,
-                                                  std::size_t piece_count_len);
 std::uint8_t  zfish_position_is_repetition_method(const void* pos_ptr, int ply);
 std::uint8_t  zfish_position_is_draw_method(const void* pos_ptr, int ply);
-std::uint8_t  zfish_position_upcoming_repetition_method(const void* pos_ptr, int ply);
 std::uint8_t  zfish_position_has_repeated_method(const void* pos_ptr);
-std::uint64_t zfish_position_attackers_to_method(const void*  pos_ptr,
-                                                 std::uint8_t  s,
-                                                 std::uint64_t occupied);
-std::uint8_t  zfish_position_attackers_to_exist_method(const void*   pos_ptr,
-                                                       std::uint8_t  s,
-                                                       std::uint64_t occupied,
-                                                       std::uint8_t  c);
-void          zfish_position_update_slider_blockers_method(const void* pos_ptr, std::uint8_t c);
-void          zfish_position_set_check_info_method(const void* pos_ptr);
-void          zfish_position_set_castling_right_method(void* pos_ptr, std::uint8_t c,
-                                                       std::uint8_t rfrom);
 const char*   zfish_position_flip_fen(const unsigned char* fen_ptr, std::size_t fen_len);
 const char*   zfish_position_set_method(void* pos_ptr, const unsigned char* fen_ptr,
                                         std::size_t fen_len, std::uint8_t is_chess960, void* st_ptr,
                                         std::size_t pos_size, std::size_t st_size);
-void          zfish_position_set_state_method(const void* pos_ptr);
 std::uint8_t  zfish_position_legal_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_gives_check_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_pseudo_legal_method(const void* pos_ptr, std::uint16_t move);
-std::uint8_t  zfish_position_see_ge_method(const void* pos_ptr, std::uint16_t move, int threshold);
-void          zfish_position_do_null_move(void* pos_ptr, void* new_st_ptr);
-void          zfish_position_undo_null_move(void* pos_ptr);
 void          zfish_position_undo_move_method(void* pos_ptr, std::uint16_t move);
 void          zfish_position_do_move(void* pos_ptr, std::uint16_t move, void* new_st_ptr,
                                      std::uint8_t gives_check, void* dp_ptr, void* dts_ptr);
@@ -3070,10 +2967,6 @@ std::string pretty(Bitboard b) { return take_string_and_free(zfish_bitboard_pret
 
 }  // namespace Bitboards
 
-Key Position::compute_material_key() const {
-    return zfish_position_compute_material_key(pieceCount, PIECE_NB);
-}
-
 std::optional<PositionSetError> Position::set(const std::string& code, Color c, StateInfo* si) {
     const auto fenStr = take_string_and_free_required(zfish_position_build_endgame_fen(
       reinterpret_cast<const unsigned char*>(code.data()), code.size(), static_cast<std::uint8_t>(c)));
@@ -3100,34 +2993,7 @@ bool Position::is_repetition(int ply) const {
 
 bool Position::is_draw(int ply) const { return zfish_position_is_draw_method(this, ply) != 0; }
 
-bool Position::upcoming_repetition(int ply) const {
-    return zfish_position_upcoming_repetition_method(this, ply) != 0;
-}
-
 bool Position::has_repeated() const { return zfish_position_has_repeated_method(this) != 0; }
-
-Bitboard Position::attackers_to(Square s, Bitboard occupied) const {
-    return zfish_position_attackers_to_method(this, static_cast<std::uint8_t>(s), occupied);
-}
-
-bool Position::attackers_to_exist(Square s, Bitboard occupied, Color c) const {
-    return zfish_position_attackers_to_exist_method(this, static_cast<std::uint8_t>(s), occupied,
-                                                    static_cast<std::uint8_t>(c))
-        != 0;
-}
-
-void Position::update_slider_blockers(Color c) const {
-    zfish_position_update_slider_blockers_method(this, static_cast<std::uint8_t>(c));
-}
-
-void Position::set_check_info() const { zfish_position_set_check_info_method(this); }
-
-void Position::set_castling_right(Color c, Square rfrom) {
-    zfish_position_set_castling_right_method(this, static_cast<std::uint8_t>(c),
-                                             static_cast<std::uint8_t>(rfrom));
-}
-
-void Position::set_state() const { zfish_position_set_state_method(this); }
 
 void Position::flip() {
     const std::string current = fen();
@@ -3159,14 +3025,6 @@ bool Position::gives_check(Move m) const {
 bool Position::pseudo_legal(const Move m) const {
     return zfish_position_pseudo_legal_method(this, m.raw()) != 0;
 }
-
-bool Position::see_ge(Move m, int threshold) const {
-    return zfish_position_see_ge_method(this, m.raw(), threshold) != 0;
-}
-
-void Position::do_null_move(StateInfo& newSt) { zfish_position_do_null_move(this, &newSt); }
-
-void Position::undo_null_move() { zfish_position_undo_null_move(this); }
 
 void Position::undo_move(Move m) { zfish_position_undo_move_method(this, m.raw()); }
 
