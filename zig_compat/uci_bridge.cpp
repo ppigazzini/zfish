@@ -1842,6 +1842,9 @@ Config rank_root_moves(const OptionsMap&            options,
 }  // namespace Tablebases
 
 // Constructor launches the thread and waits until it goes to sleep in idle_loop().
+// Read-only verifier exported from zig_src/accumulator_layout.zig.
+extern "C" void zfish_verify_accumulator_caches(const void*);
+
 // Note that 'searching' and 'exit' should be already set.
 Thread::Thread(Search::SharedState&                    sharedState,
                std::unique_ptr<Search::ISearchManager> sm,
@@ -1867,6 +1870,13 @@ Thread::Thread(Search::SharedState&                    sharedState,
     });
 
     wait_for_search_finished();
+
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // Prove the Zig AccumulatorCaches construction model (bias prefix + zero
+    // tail, repeated per entry) matches the freshly constructed C++ object.
+    // Read-only cross-check; panics on any mismatch.
+    zfish_verify_accumulator_caches(&this->worker->refreshTable);
+#endif
 }
 
 
