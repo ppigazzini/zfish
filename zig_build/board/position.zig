@@ -471,9 +471,11 @@ const ZfishIdState = extern struct {
     limits_mate: c_int,
     best_previous_score: c_int,
     best_previous_average_score: c_int,
+    skill_level: f64,
     is_main: u8,
     use_time_management: u8,
     tm_use_nodes_time: u8,
+    skill_enabled: u8,
 };
 
 const QCtx = struct {
@@ -1588,6 +1590,54 @@ inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
     return @max(lo, @min(v, hi));
 }
 
+// Skill (strength handicap). Move::none() == 0. The PRNG matches misc.h's
+// xorshift*, seeded once from now() on first use (non-deterministic by design).
+const skill_pawn_value: c_int = 208;
+var skill_rng_state: u64 = 0;
+fn skillRand64() u64 {
+    if (skill_rng_state == 0) skill_rng_state = @bitCast(zfish_now());
+    var s = skill_rng_state;
+    s ^= s >> 12;
+    s ^= s << 25;
+    s ^= s >> 27;
+    skill_rng_state = s;
+    return s *% 2685821657736338717;
+}
+inline fn skillTimeToPick(level: f64, depth: c_int) bool {
+    return depth == 1 + @as(c_int, @intFromFloat(level));
+}
+// Skill::pick_best: a statistical rule over the (descending-sorted) rootMoves.
+fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
+    const top_score = id.root_moves[0].score;
+    const span = top_score - id.root_moves[multi_pv - 1].score;
+    const delta: c_int = if (span < skill_pawn_value) span else skill_pawn_value;
+    const weakness: f64 = 120.0 - 2.0 * id.skill_level;
+    const modw: u32 = @intFromFloat(weakness);
+    var max_score: c_int = -q_value_inf;
+    var best: u16 = 0;
+    var i: usize = 0;
+    while (i < multi_pv) : (i += 1) {
+        const r: u32 = @truncate(skillRand64());
+        const term1 = weakness * @as(f64, @floatFromInt(top_score - id.root_moves[i].score));
+        const term2: c_int = delta * @as(c_int, @intCast(r % modw));
+        const push = @divTrunc(@as(c_int, @intFromFloat(term1 + @as(f64, @floatFromInt(term2)))), 128);
+        if (id.root_moves[i].score + push >= max_score) {
+            max_score = id.root_moves[i].score + push;
+            best = id.root_moves[i].pv.moves[0];
+        }
+    }
+    return best;
+}
+// std::swap(rootMoves[0], *find(rootMoves, move)).
+fn skillSwapBest(id: *const ZfishIdState, move: u16) void {
+    var i: usize = 0;
+    while (i < id.root_moves_count and id.root_moves[i].pv.moves[0] != move) : (i += 1) {}
+    if (i >= id.root_moves_count or i == 0) return;
+    const tmp = id.root_moves[0];
+    id.root_moves[0] = id.root_moves[i];
+    id.root_moves[i] = tmp;
+}
+
 pub fn iterativeDeepening(worker: *anyopaque) u8 {
     var id: ZfishIdState = undefined;
     zfish_search_id_state(worker, &id);
@@ -1633,7 +1683,9 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
     }
 
     var multi_pv: usize = id.multipv_option;
+    if (id.skill_enabled != 0 and multi_pv < 4) multi_pv = 4;
     if (multi_pv > id.root_moves_count) multi_pv = id.root_moves_count;
+    var skill_best: u16 = 0;
 
     fillLowPlyHistory(worker);
     ageMainHistory(worker);
@@ -1761,7 +1813,9 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
 
         if (!main_thread) continue;
 
-        // (skill is off on this path: the seam keeps the handicap path in C++.)
+        // If the skill level is enabled and time is up, pick a sub-optimal move.
+        if (id.skill_enabled != 0 and skillTimeToPick(id.skill_level, id.root_depth.*))
+            skill_best = skillPickBest(&id, multi_pv);
 
         tot_best_move_changes += zfish_search_id_collect_bmc(worker);
 
@@ -1801,7 +1855,11 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
     if (!main_thread) return 0;
 
     id.previous_time_reduction.* = time_reduction;
-    // (skill swap is off on this path.)
+    // If the skill level is enabled, swap the best PV line with the sub-optimal one.
+    if (id.skill_enabled != 0) {
+        const sel = if (skill_best != 0) skill_best else skillPickBest(&id, multi_pv);
+        skillSwapBest(&id, sel);
+    }
     return if (uci_pv_sent) 1 else 0;
 }
 
