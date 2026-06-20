@@ -151,30 +151,6 @@ const char* zfish_engine_set_position_owner(void*                engine_ptr,
                                             std::size_t          move_count);
 const char* zfish_engine_numa_config_information_owner(const void* engine_ptr);
 const char* zfish_engine_thread_allocation_information_owner(const void* engine_ptr);
-struct ZfishEvalTraceInput {
-    const unsigned char* inner_trace_ptr;
-    std::size_t          inner_trace_len;
-    int                  nnue_internal_value;
-    int                  nnue_white_cp;
-    int                  final_white_cp;
-};
-
-struct ZfishNnueTraceInput {
-    std::uint8_t side_to_move_white;
-    std::size_t  bucket_count;
-    std::size_t  correct_bucket;
-    const int*   psqt_cp;
-    const int*   positional_cp;
-};
-
-struct ZfishEnginePositionSummary {
-    std::uint8_t  side_to_move_white;
-    std::uint64_t checkers;
-    std::uint64_t key;
-    int           material;
-    int           rule50_count;
-};
-
 struct ZfishEngineTablebaseProbe {
     std::uint8_t available;
     int          wdl;
@@ -183,8 +159,6 @@ struct ZfishEngineTablebaseProbe {
     int          dtz_state;
 };
 
-const char* zfish_eval_format_trace(ZfishEvalTraceInput input);
-const char* zfish_nnue_format_trace(ZfishNnueTraceInput input);
 void         zfish_engine_release_pending_state_slot(void* states_slot);
 const char* zfish_engine_fen(const void* pos);
 const char* zfish_misc_engine_version_info_text();
@@ -567,39 +541,8 @@ std::size_t Network::get_content_hash() const {
 #include "tt.h"
 #include "thread.h"
 
-extern "C" std::uint8_t zfish_search_is_shuffling(const void* pos_ptr, const void* ss_ptr,
-                                                 std::uint16_t move);
 extern "C" void zfish_search_fill_reductions(int* reductions, std::size_t count);
-extern "C" int  zfish_search_stat_bonus(int depth, unsigned char is_tt_move, int prev_stat_score);
-extern "C" int  zfish_search_stat_malus(int depth);
-extern "C" int  zfish_search_correction_value(int pcv, int micv, int wnpcv, int bnpcv,
-                                              int cch2, int cch4, unsigned char m_ok);
-extern "C" int  zfish_search_conthist_delta(int bonus, int weight, int positive_count, int i);
-extern "C" int  zfish_search_razor_margin(int depth);
-extern "C" int  zfish_search_qsearch_stand_pat_blend(int best_value, int beta);
-extern "C" int  zfish_search_qsearch_fail_high_blend(int best_value, int beta);
-extern "C" int  zfish_search_eval_diff(int prev_static_eval, int static_eval);
-extern "C" int  zfish_search_qsearch_futility_base(int static_eval);
-extern "C" int  zfish_search_prior_conthist_scale(int scaled_bonus);
-extern "C" int  zfish_search_prior_mainhist_scale(int scaled_bonus);
-extern "C" int  zfish_search_prior_pawnhist_scale(int scaled_bonus);
-extern "C" int  zfish_search_capture_stat_score(int piece_value, int capture_hist);
-extern "C" int  zfish_search_quiet_stat_score(int main_hist, int cont0, int cont1);
-extern "C" int  zfish_search_corrhist_bonus(int eval_delta, int depth, unsigned char has_best_move);
-extern "C" int  zfish_search_aspiration_initial_delta(std::size_t thread_idx,
-                                                      int mean_squared_score);
-extern "C" int  zfish_search_aspiration_delta_grow(int delta);
-extern "C" int  zfish_search_optimism(int avg);
-extern "C" void zfish_search_age_main_history(void* worker_ptr);
-extern "C" void zfish_search_fill_low_ply_history(void* worker_ptr);
 extern "C" void zfish_search_clear_worker_histories(void* worker_ptr);
-extern "C" void zfish_search_set_cont_hist(void* worker_ptr, void* ss_ptr, std::uint8_t in_check,
-                                           std::uint8_t capture, std::uint8_t pc, std::uint8_t to);
-extern "C" int  zfish_search_qsearch(void* worker, void* pos, void* ss, int alpha, int beta,
-                                     std::uint8_t pv_node);
-extern "C" int  zfish_search_search(void* worker, void* pos, void* ss, int alpha, int beta,
-                                    int depth, std::uint8_t cut_node, std::uint8_t pv_node,
-                                    std::uint8_t root_node);
 extern "C" std::uint8_t zfish_search_iterative_deepening(void* worker);
 extern "C" std::uint8_t zfish_search_extract_ponder_from_tt(void* pv, void* table,
                                                            std::size_t cc, std::uint8_t gen,
@@ -607,46 +550,6 @@ extern "C" std::uint8_t zfish_search_extract_ponder_from_tt(void* pv, void* tabl
 extern "C" void zfish_search_clear_shared_history(void* shared, std::size_t thread_idx,
                                                   std::size_t numa_total);
 extern "C" void zfish_search_clear_refresh_cache(void* cache, const std::int16_t* biases);
-extern "C" int  zfish_search_move_count_limit(int depth, unsigned char improving);
-extern "C" int  zfish_search_capture_futility_value(int static_eval, int lmr_depth,
-                                                    int piece_value, int capt_hist);
-extern "C" int  zfish_search_capture_see_margin(int depth, int capt_hist);
-extern "C" int  zfish_search_ttmh_depth_bonus(int depth);
-extern "C" int  zfish_search_ttmh_match_bonus(unsigned char best_is_tt);
-extern "C" int  zfish_search_prior_bonus_scale(int prev_stat_score, int depth,
-                                               unsigned char prev_movecount_gt8,
-                                               unsigned char cond_a, unsigned char cond_b);
-extern "C" int  zfish_search_prior_scaled_bonus_base(int depth);
-extern "C" int  zfish_search_lmr_ttpv_reduction(unsigned char pv_node, unsigned char value_gt_alpha,
-                                                unsigned char depth_ge, unsigned char cut_node);
-extern "C" int  zfish_search_lmr_corr_reduction(int correction_value);
-extern "C" int  zfish_search_lmr_stat_score_reduction(int stat_score);
-extern "C" int  zfish_search_lmr_all_node_scale(int r, int depth);
-extern "C" int  zfish_search_singular_beta(int tt_value, unsigned char ttpv_and_not_pv, int depth);
-extern "C" int  zfish_search_singular_double_margin(unsigned char pv_node,
-                                                    unsigned char not_tt_capture,
-                                                    int correction_value, int tt_move_history,
-                                                    unsigned char ply_gt_root);
-extern "C" int  zfish_search_singular_triple_margin(unsigned char pv_node,
-                                                    unsigned char not_tt_capture, unsigned char ttpv,
-                                                    int correction_value, unsigned char ply_gt_root);
-extern "C" int  zfish_search_history_prune_threshold(int depth);
-extern "C" int  zfish_search_quiet_futility_value(int static_eval, unsigned char no_best_move,
-                                                  int lmr_depth, unsigned char eval_gt_alpha);
-extern "C" int  zfish_search_quiet_see_margin(int lmr_depth);
-extern "C" int  zfish_search_probcut_beta(int beta, unsigned char improving);
-extern "C" int  zfish_search_probcut_beta_deep(int beta);
-extern "C" int  zfish_search_null_move_threshold(int beta, int depth, unsigned char improving);
-extern "C" int  zfish_search_null_move_reduction(int depth);
-extern "C" int  zfish_search_nmp_min_ply(int ply, int depth, int r);
-extern "C" int  zfish_search_futility_margin(int depth, unsigned char tt_hit,
-                                             unsigned char improving,
-                                             unsigned char opponent_worsening,
-                                             int correction_value);
-extern "C" int  zfish_search_futility_return(int beta, int eval);
-extern "C" int  zfish_search_quiet_low_ply_scale(int bonus);
-extern "C" int  zfish_search_quiet_cont_scale(int bonus);
-extern "C" int  zfish_search_quiet_pawn_scale(int bonus);
 
 #define ZFISH_SEARCH_BRIDGE_SKIP_TO_CORRECTED_STATIC_EVAL
 #define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_DRAW
@@ -1035,36 +938,6 @@ struct ZfishTimemanOutput {
     std::uint8_t use_nodes_time;
 };
 
-struct ZfishMoveSortEntry {
-    std::uint16_t raw_move;
-    std::uint16_t reserved;
-    int           value;
-};
-
-struct ZfishMovePickerState {
-    std::uint16_t      tt_move_raw;
-    int                stage;
-    int                threshold;
-    int                depth;
-    std::uint8_t       skip_quiets;
-    std::size_t        cur;
-    std::size_t        end_cur;
-    std::size_t        end_bad_captures;
-    std::size_t        end_captures;
-    std::size_t        end_generated;
-    ZfishMoveSortEntry* moves;
-};
-
-struct ZfishMovePickerContext {
-    const void* pos;
-    const void* main_history;
-    const void* low_ply_history;
-    const void* capture_history;
-    const void* continuation_history;
-    const void* shared_history;
-    int         ply;
-};
-
 struct ZfishMovepickHistorySnapshot {
     const void* main_base;
     const void* low_ply_base;
@@ -1129,18 +1002,6 @@ static_assert(alignof(Stockfish::StatsEntry<std::int16_t, 8192, true>)
 static_assert(std::atomic<std::int16_t>::is_always_lock_free);
 
 ZfishTimemanOutput zfish_timeman_init(ZfishTimemanInput input);
-void zfish_movepick_partial_insertion_sort(ZfishMoveSortEntry* entries,
-                                           std::size_t         count,
-                                           int                 limit);
-int zfish_movepick_init_main_stage(std::uint8_t has_checkers,
-                                   std::uint8_t has_tt_move,
-                                   int          depth);
-int zfish_movepick_init_probcut_stage(std::uint8_t has_tt_move);
-std::size_t zfish_movepick_score_list(std::uint8_t                 kind,
-                                      const ZfishMovePickerContext* context,
-                                      ZfishMoveSortEntry*           outputs);
-std::uint16_t zfish_movepick_next_move(ZfishMovePickerState*         state,
-                                       const ZfishMovePickerContext* context);
 int zfish_eval_compute_value(ZfishEvalInput input);
 std::size_t zfish_movegen_generate_captures(const void* pos, std::uint16_t* move_list);
 std::size_t zfish_movegen_generate_quiets(const void* pos, std::uint16_t* move_list);
@@ -1217,18 +1078,7 @@ struct ZfishRankedRootMove {
 
 using ZfishOpaqueCallback = void (*)(void*);
 
-std::size_t zfish_thread_next_power_of_two(std::uint64_t count);
-std::size_t zfish_thread_pick_best_thread(const ZfishThreadSummary* summaries,
-                                          std::size_t               count);
-void zfish_threadpool_reconfigure(void*       pool,
-                                  const void* numa_config,
-                                  const void* shared_state,
-                                  const void* update_context);
 void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context);
-void zfish_threadpool_clear(void* pool);
-void zfish_threadpool_ensure_network_replicated(void* pool);
-std::uint64_t zfish_threadpool_nodes_searched(void* pool);
-std::uint64_t zfish_threadpool_tb_hits(void* pool);
 void zfish_threadpool_reset_for_reconfigure(void* pool);
 void zfish_threadpool_bound_nodes_assign(void* pool, const std::size_t* nodes, std::size_t count);
 std::size_t zfish_shared_state_threads_value(const void* shared_state);
@@ -2743,24 +2593,6 @@ struct ZfishParsedLimits {
     const char*   searchmoves;
 };
 
-struct ZfishParsedPosition {
-    std::uint8_t ok;
-    const char*  fen;
-    const char*  moves;
-};
-
-struct ZfishUciDispatchResult {
-    std::uint8_t should_quit;
-};
-
-struct ZfishBenchmarkSetupOutput {
-    int         tt_size;
-    int         threads;
-    const char* commands_ptr;
-    const char* original_invocation_ptr;
-    const char* filled_invocation_ptr;
-};
-
 const char*   zfish_position_build_endgame_fen(const unsigned char* code_ptr,
                                                std::size_t          code_len,
                                                std::uint8_t         color);
@@ -2788,7 +2620,6 @@ std::uint8_t  zfish_position_pseudo_legal_method(const void* pos_ptr, std::uint1
 void          zfish_position_undo_move_method(void* pos_ptr, std::uint16_t move);
 void          zfish_position_do_move(void* pos_ptr, std::uint16_t move, void* new_st_ptr,
                                      std::uint8_t gives_check, void* dp_ptr, void* dts_ptr);
-void          zfish_position_init_runtime();
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
 void          zfish_bitboards_init();
 }
