@@ -30,7 +30,6 @@ extern fn zfish_bitboards_init() void;
 extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
 extern fn zfish_uci_destroy_engine(engine: ?*anyopaque) void;
 const PositionSnapshot = position_snapshot.PositionSnapshot;
-extern fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *PositionSnapshot) void;
 
 pub fn main(init: std.process.Init) !void {
     var argc: usize = 0;
@@ -488,6 +487,10 @@ pub export fn zfish_search_iterative_deepening(worker: *anyopaque) u8 {
 
 pub export fn zfish_search_extract_ponder_from_tt(pv: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8, pos: *anyopaque) u8 {
     return position_port.extractPonderFromTt(pv, table, cc, gen, pos);
+}
+
+pub export fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *anyopaque) void {
+    position_port.fillSnapshot(pos_ptr, out);
 }
 
 pub export fn zfish_search_clear_shared_history(shared: *anyopaque, thread_idx: usize, numa_total: usize) void {
@@ -1015,7 +1018,7 @@ pub export fn zfish_accumulator_stack_pop(stack: *anyopaque) void {
 
 pub export fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void {
     var snapshot = std.mem.zeroes(PositionSnapshot);
-    zfish_position_fill_snapshot(pos, &snapshot);
+    position_port.fillSnapshot(pos, &snapshot);
     @memcpy(pieces_out[0..64], snapshot.board[0..]);
 }
 
