@@ -146,13 +146,6 @@ extern fn zfish_movepick_fill_history_snapshot(
     shared_history: ?*const anyopaque,
     out: *HistorySnapshot,
 ) void;
-extern fn zfish_movepick_pawn_history_value(
-    pawn_table: *const anyopaque,
-    pawn_mask: u64,
-    pawn_key: u64,
-    piece: u8,
-    square: u8,
-) c_int;
 
 pub fn initMainStage(has_checkers: bool, has_tt_move: bool, depth: c_int) c_int {
     const base_stage: c_int = if (has_checkers)
@@ -780,16 +773,12 @@ fn pawnHistoryScore(
     piece: u8,
     square: u8,
 ) c_int {
-    _ = piece_nb;
-    _ = PawnHistoryRow;
-    const pawn_table = history_snapshot.pawn_table orelse return 0;
-    return zfish_movepick_pawn_history_value(
-        pawn_table,
-        history_snapshot.pawn_mask,
-        snapshot.pawn_key,
-        piece,
-        square,
-    );
+    const base_ptr = history_snapshot.pawn_table orelse return 0;
+    const history: [*]const PawnHistoryRow = @ptrCast(@alignCast(base_ptr));
+    // pawn history is indexed [(pawn_key & mask) * PIECE_NB + piece][square]
+    const index: usize = @intCast(snapshot.pawn_key & history_snapshot.pawn_mask);
+    const row_index = index * piece_nb + @as(usize, piece);
+    return history[row_index][@as(usize, square)].value;
 }
 
 fn pawnAttackersTo(square: u8, color: u8) u64 {
