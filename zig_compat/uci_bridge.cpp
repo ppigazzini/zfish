@@ -1330,11 +1330,18 @@ void Search::SearchManager::check_time(Search::Worker& worker) {
         worker.threads.stop = true;
 }
 
-// Worker::start_searching relocated verbatim from search.cpp: the search entry
-// (history/accumulator reset, time-management init, the iterative-deepening
-// driver, the ponder wait, best-thread selection, and the bestmove output).
+// Worker::start_searching. The default target delegates the entire control flow
+// to the Zig-owned driver (zfish_worker_start_searching, below): Zig owns every
+// branch -- the non-main early return, the empty-rootmoves emit, the ponder/
+// infinite busy wait, the npmsec advance, the best-thread selection, the
+// ponder-extraction decision, and the pv-emit decision -- calling back into the
+// leaf operations the C++ helpers expose. The C++ body below is retained for the
+// legacy oracle, so the output-parity gate cross-checks the Zig port end to end.
+extern "C" void zfish_worker_start_searching(void* worker);
 void Search::Worker::start_searching() {
-
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    zfish_worker_start_searching(this);
+#else
     accumulatorStack.reset();
     lastIterationPV.clear();
 
@@ -1393,6 +1400,111 @@ void Search::Worker::start_searching() {
 
     auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
     main_manager()->updates.onBestmove(bestmove, ponder);
+#endif
+}
+
+// Leaf seams for the Zig-owned start_searching driver (default target only). Zig
+// owns the sequencing and every branch; these helpers perform the individual
+// C++ operations the driver decides to run, keeping the time-management,
+// thread-pool, skill, and UCI-output subsystems on their existing C++ surfaces
+// until they are themselves ported.
+namespace {
+struct ZfishSsCtx {
+    std::uint8_t is_mainthread;
+    std::uint8_t root_moves_empty;
+    std::uint8_t npmsec;
+    std::int32_t limits_depth;
+    std::uint8_t skill_enabled;
+};
+}  // namespace
+
+extern "C" void zfish_ss_prologue(void* worker) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    w->accumulatorStack.reset();
+    w->lastIterationPV.clear();
+}
+
+extern "C" void zfish_ss_context(void* worker, ZfishSsCtx* out) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    Skill skill(w->options["Skill Level"],
+                w->options["UCI_LimitStrength"] ? int(w->options["UCI_Elo"]) : 0);
+    out->is_mainthread    = w->is_mainthread() ? 1 : 0;
+    out->root_moves_empty = w->rootMoves.empty() ? 1 : 0;
+    out->npmsec           = w->limits.npmsec ? 1 : 0;
+    out->limits_depth     = w->limits.depth;
+    out->skill_enabled    = skill.enabled() ? 1 : 0;
+}
+
+extern "C" void zfish_ss_tm_init(void* worker) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    w->main_manager()->tm.init(w->limits, w->rootPos.side_to_move(), w->rootPos.game_ply(),
+                               w->options, w->main_manager()->originalTimeAdjust);
+    w->tt.new_search();
+}
+
+extern "C" void zfish_ss_emit_no_moves(void* worker) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    w->main_manager()->updates.onUpdateNoMoves(
+      {0, {w->rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW, w->rootPos}});
+    w->main_manager()->updates.onBestmove(UCIEngine::move(Move::none()), "");
+}
+
+extern "C" void zfish_ss_threads_start(void* worker) {
+    static_cast<Search::Worker*>(worker)->threads.start_searching();
+}
+
+extern "C" std::uint8_t zfish_ss_should_busywait(void* worker) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    return (!w->threads.stop && (w->main_manager()->ponder || w->limits.infinite)) ? 1 : 0;
+}
+
+extern "C" void zfish_ss_set_stop(void* worker) {
+    static_cast<Search::Worker*>(worker)->threads.stop = true;
+}
+
+extern "C" void zfish_ss_wait_finished(void* worker) {
+    static_cast<Search::Worker*>(worker)->threads.wait_for_search_finished();
+}
+
+extern "C" void zfish_ss_npmsec_advance(void* worker) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    w->main_manager()->tm.advance_nodes_time(w->threads.nodes_searched()
+                                             - w->limits.inc[w->rootPos.side_to_move()]);
+}
+
+extern "C" void* zfish_ss_get_best_thread(void* worker) {
+    return static_cast<Search::Worker*>(worker)->threads.get_best_thread()->worker.get();
+}
+
+extern "C" void zfish_ss_set_prev_scores(void* worker, void* best) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    auto* b = static_cast<Search::Worker*>(best);
+    w->main_manager()->bestPreviousScore        = b->rootMoves[0].score;
+    w->main_manager()->bestPreviousAverageScore = b->rootMoves[0].averageScore;
+}
+
+extern "C" std::uint8_t zfish_ss_pv_one_and_ponder(void* worker, void* best) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    auto* b = static_cast<Search::Worker*>(best);
+    return (b->rootMoves[0].pv.size() == 1 && b->rootMoves[0].extract_ponder_from_tt(w->tt, w->rootPos))
+             ? 1
+             : 0;
+}
+
+extern "C" void zfish_ss_emit_pv(void* worker, void* best) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    auto* b = static_cast<Search::Worker*>(best);
+    w->main_manager()->pv(*b, w->threads, w->tt, b->rootDepth);
+}
+
+extern "C" void zfish_ss_emit_bestmove(void* worker, void* best) {
+    auto* w = static_cast<Search::Worker*>(worker);
+    auto* b = static_cast<Search::Worker*>(best);
+    std::string ponder;
+    if (b->rootMoves[0].pv.size() > 1)
+        ponder = UCIEngine::move(b->rootMoves[0].pv[1], w->rootPos.is_chess960());
+    auto bestmove = UCIEngine::move(b->rootMoves[0].pv[0], w->rootPos.is_chess960());
+    w->main_manager()->updates.onBestmove(bestmove, ponder);
 }
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
