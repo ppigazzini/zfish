@@ -26,6 +26,42 @@ pub const accumulator_stack_size: usize = 2181568;
 pub const accumulator_caches_size: usize = 278528;
 pub const root_move_size: usize = 552;
 
+// Worker member offsets (bytes from the Worker base), captured from a live
+// Worker via pointer arithmetic. Non-reference members are probed directly;
+// the three reference members (sharedHistory, tt, network) are stored as
+// pointers but &ref yields the referent, so their slots are derived from the
+// gaps between neighbours and cross-checked against alignment. This is the
+// address map the Zig Worker struct (HARD-3) must reproduce.
+pub const worker_off = struct {
+    pub const main_history: usize = 0;
+    pub const low_ply_history: usize = 262144;
+    pub const capture_history: usize = 917504;
+    pub const continuation_history: usize = 933888;
+    pub const continuation_correction_history: usize = 9322496;
+    pub const tt_move_history: usize = 11419648;
+    pub const shared_history: usize = 11419656; // reference (derived)
+    pub const limits: usize = 11419664;
+    pub const pv_idx: usize = 11419784;
+    pub const pv_last: usize = 11419792;
+    pub const nodes: usize = 11419800;
+    pub const tb_hits: usize = 11419808;
+    pub const best_move_changes: usize = 11419816;
+    pub const sel_depth: usize = 11419824;
+    pub const nmp_min_ply: usize = 11419828;
+    pub const optimism: usize = 11419832;
+    pub const root_pos: usize = 11419840;
+    pub const root_moves: usize = 11421064;
+    pub const root_depth: usize = 11421088;
+    pub const root_delta: usize = 11421092;
+    pub const thread_idx: usize = 11421600;
+    pub const reductions: usize = 11421632;
+    pub const manager: usize = 11422656;
+    pub const tt: usize = 11422664; // reference (derived)
+    pub const network: usize = 11422672; // reference (derived)
+    pub const accumulator_stack: usize = 11422720;
+    pub const refresh_table: usize = 13604288;
+};
+
 extern fn zfish_graph_layout_size(which: c_int) usize;
 
 const Pinned = struct { which: c_int, value: usize, name: []const u8 };
