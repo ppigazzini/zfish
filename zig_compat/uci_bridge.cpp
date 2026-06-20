@@ -1144,14 +1144,25 @@ Search::Worker::Worker(Search::SharedState&            sharedState,
     clear();
 }
 
-// SearchManager::pv (UCI info output) relocated verbatim from search.cpp. The
-// syzygy_extend_pv call is dead in this no-tablebase build (rootInTB is always
-// false, so v never lands in the decisive-non-mate TB range that triggers it);
-// the symbol is provided once the search.cpp include is dropped.
+// SearchManager::pv (UCI info output). The default target delegates to the
+// Zig-owned driver (zfish_search_pv, below); the C++ body is retained for the
+// legacy oracle. syzygy_extend_pv is dead in this no-tablebase build (rootInTB
+// is always false, so v never lands in the decisive-non-mate TB range).
+extern "C" void zfish_search_pv(void* manager, void* worker, void* threads, void* tt, int depth);
 void Search::SearchManager::pv(Search::Worker&           worker,
                                const ThreadPool&         threads,
                                const TranspositionTable& tt,
                                Depth                     depth) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // Default (Zig-owned) info-line driver. Zig owns the multiPV loop and the
+    // per-move field derivation over the RootMove memory mirror; the C++ emit
+    // callback rebuilds InfoFull and reuses updates.onUpdateFull, so the
+    // score/wdl formatting, quiet-mode handling, and print path stay byte
+    // identical. The C++ body below is kept for the legacy oracle, so the
+    // output-parity gate cross-checks the Zig port line-for-line.
+    zfish_search_pv(this, &worker, const_cast<ThreadPool*>(&threads),
+                    const_cast<TranspositionTable*>(&tt), static_cast<int>(depth));
+#else
     const auto nodes     = threads.nodes_searched();
     auto&      rootMoves = worker.rootMoves;
     auto&      pos       = worker.rootPos;
@@ -1209,6 +1220,82 @@ void Search::SearchManager::pv(Search::Worker&           worker,
 
         updates.onUpdateFull(info);
     }
+#endif
+}
+
+// Context + emit seams for the Zig-owned pv() driver (default target only). The
+// context fetch hands Zig every value the multiPV loop needs; the emit callback
+// rebuilds InfoFull for one line and routes it through the unchanged
+// updates.onUpdateFull listener (this build has no tablebases, so rootInTB is
+// always false and the TB/syzygy branches of the C++ pv never apply).
+namespace {
+struct ZfishPvContext {
+    void*         manager;
+    void*         worker;
+    const void*   root_moves;
+    std::size_t   root_moves_count;
+    std::size_t   multipv;
+    std::uint8_t  show_wdl;
+    std::uint8_t  chess960;
+    std::uint64_t nodes;
+    std::uint64_t tb_hits;
+    int           hashfull;
+    std::uint64_t elapsed_ms;
+};
+}  // namespace
+
+extern "C" void zfish_search_cb_pv_context(void* manager, void* worker, void* threads, void* tt,
+                                           ZfishPvContext* out) {
+    auto* w  = static_cast<Search::Worker*>(worker);
+    auto* th = static_cast<ThreadPool*>(threads);
+    auto* mgr = static_cast<Search::SearchManager*>(manager);
+    out->manager          = manager;
+    out->worker           = worker;
+    out->root_moves       = w->rootMoves.data();
+    out->root_moves_count = w->rootMoves.size();
+    out->multipv          = std::min(std::size_t(w->options["MultiPV"]), w->rootMoves.size());
+    out->show_wdl         = w->options["UCI_ShowWDL"] ? 1 : 0;
+    out->chess960         = w->rootPos.is_chess960() ? 1 : 0;
+    out->nodes            = th->nodes_searched();
+    out->tb_hits          = th->tb_hits();
+    out->hashfull         = static_cast<TranspositionTable*>(tt)->hashfull();
+    out->elapsed_ms       = static_cast<std::uint64_t>(std::max<TimePoint>(1, mgr->tm.elapsed_time()));
+}
+
+extern "C" void zfish_search_emit_info_full(void* manager, void* worker, std::size_t move_index,
+                                            int depth, int sel_depth, std::size_t multipv, int v,
+                                            std::uint8_t show_wdl, std::uint8_t bound_kind,
+                                            std::uint64_t nodes, std::uint64_t tb_hits,
+                                            int hashfull, std::uint64_t time_ms) {
+    auto* mgr = static_cast<Search::SearchManager*>(manager);
+    auto* w   = static_cast<Search::Worker*>(worker);
+    auto& pos = w->rootPos;
+
+    std::string pvStr;
+    for (Move m : w->rootMoves[move_index].pv)
+        pvStr += UCIEngine::move(m, pos.is_chess960()) + " ";
+    if (!pvStr.empty())
+        pvStr.pop_back();
+
+    const std::string wdlStr = show_wdl ? UCIEngine::wdl(Value(v), pos) : std::string{};
+
+    InfoFull info;
+    info.depth    = depth;
+    info.selDepth = sel_depth;
+    info.multiPV  = multipv;
+    info.score    = {Value(v), pos};
+    info.wdl      = wdlStr;
+    info.bound    = bound_kind == 1 ? std::string_view("lowerbound")
+                  : bound_kind == 2 ? std::string_view("upperbound")
+                                    : std::string_view();
+    info.timeMs   = static_cast<std::size_t>(time_ms);
+    info.nodes    = static_cast<std::size_t>(nodes);
+    info.nps      = static_cast<std::size_t>(nodes * 1000 / time_ms);
+    info.tbHits   = static_cast<std::size_t>(tb_hits);
+    info.pv       = pvStr;
+    info.hashfull = hashfull;
+
+    mgr->updates.onUpdateFull(info);
 }
 
 bool Search::Worker::iterative_deepening() { return bool(zfish_search_iterative_deepening(this)); }
