@@ -699,8 +699,12 @@ void Search::Worker::clear() {
 #endif
 
     // Each thread is responsible for clearing their part of shared history
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_CLEAR_SHARED
+    zfish_search_clear_shared_history(&sharedHistory, numaThreadIdx, numaTotal);
+#else
     sharedHistory.correctionHistory.clear_range(-6, numaThreadIdx, numaTotal);
     sharedHistory.pawnHistory.clear_range(-1262, numaThreadIdx, numaTotal);
+#endif
 
 #ifndef ZFISH_SEARCH_BRIDGE_USE_ZIG_CLEAR_HIST
     ttMoveHistory = 0;
@@ -723,7 +727,12 @@ void Search::Worker::clear() {
         reductions[i] = int(2834 / 128.0 * std::log(i));
 #endif
 
+#ifdef ZFISH_SEARCH_BRIDGE_USE_ZIG_CLEAR_REFRESH
+    zfish_search_clear_refresh_cache(&refreshTable,
+                                     network[numaAccessToken].featureTransformer.biases.data());
+#else
     refreshTable.clear(network[numaAccessToken]);
+#endif
 }
 
 

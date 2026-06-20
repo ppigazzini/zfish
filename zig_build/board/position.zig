@@ -122,6 +122,34 @@ inline fn sharedOf(w: *const WorkerHistories) *SharedHistories {
     return @ptrCast(@alignCast(w.shared_history.?));
 }
 
+// DynStats::clear_range numa partition of `size` entries: [start, end).
+inline fn dynRange(size: usize, thread_idx: usize, numa_total: usize) struct { start: usize, end: usize } {
+    const start = thread_idx * size / numa_total;
+    const end = if (thread_idx + 1 == numa_total) size else (thread_idx + 1) * size / numa_total;
+    return .{ .start = start, .end = end };
+}
+
+// SharedHistories clear_range pair from Worker::clear: correctionHistory entries
+// (each [2]CorrectionBundle, 8 int16) filled to -6, pawnHistory pages (each a
+// [16][64] int16 page) filled to -1262, over this thread's numa partition.
+pub fn clearSharedHistory(shared_ptr: *anyopaque, thread_idx: usize, numa_total: usize) void {
+    const shared: *SharedHistories = @ptrCast(@alignCast(shared_ptr));
+    const corr_entry_i16: usize = @sizeOf([2]CorrectionBundle) / @sizeOf(i16);
+    {
+        const r = dynRange(shared.corr_size, thread_idx, numa_total);
+        const base: [*]i16 = @ptrCast(@alignCast(shared.corr_data));
+        var i = r.start * corr_entry_i16;
+        const stop = r.end * corr_entry_i16;
+        while (i < stop) : (i += 1) base[i] = -6;
+    }
+    {
+        const r = dynRange(shared.pawn_size, thread_idx, numa_total);
+        var i = r.start * hist_pieceto;
+        const stop = r.end * hist_pieceto;
+        while (i < stop) : (i += 1) shared.pawn_data[i] = -1262;
+    }
+}
+
 // pawn_entry(pos) row base: pawnHistory[pawn_key & mask] is a [16][64] page.
 inline fn pawnEntryRow(shared: *SharedHistories, pos: *const Position) [*]i16 {
     const idx: usize = @intCast(pos.st.pawn_key & @as(u64, shared.pawn_hist_size_minus1));

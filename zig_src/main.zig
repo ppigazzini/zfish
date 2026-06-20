@@ -490,6 +490,14 @@ pub export fn zfish_search_extract_ponder_from_tt(pv: *anyopaque, table: ?*anyop
     return position_port.extractPonderFromTt(pv, table, cc, gen, pos);
 }
 
+pub export fn zfish_search_clear_shared_history(shared: *anyopaque, thread_idx: usize, numa_total: usize) void {
+    position_port.clearSharedHistory(shared, thread_idx, numa_total);
+}
+
+pub export fn zfish_search_clear_refresh_cache(cache: *anyopaque, biases: [*]const i16) void {
+    nnue_accumulator_port.clearRefreshCache(cache, biases);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }
