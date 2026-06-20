@@ -1,5 +1,54 @@
 const std = @import("std");
 
+// Zig-owned option value store. The C++ OptionsMap still owns option metadata
+// (type/min/max/default) and the setoption write path, but the live current
+// value of every option is mirrored here, keyed by the Option's registration
+// index, and the bridge's Option read operators source their value from this
+// store in the default target. This moves option-read authority out of the C++
+// object as the first slice of retiring OptionsMap; the legacy oracle keeps
+// reading the C++ currentValue, so oracle-parity cross-checks the two.
+const max_options = 128;
+var opt_values: [max_options]?[:0]u8 = .{null} ** max_options;
+
+pub export fn zfish_optstore_reset() void {
+    const allocator = std.heap.c_allocator;
+    for (&opt_values) |*slot| {
+        if (slot.*) |owned| allocator.free(owned);
+        slot.* = null;
+    }
+}
+
+pub export fn zfish_optstore_set(idx: usize, value_ptr: [*]const u8, value_len: usize) void {
+    if (idx >= max_options) return;
+    const allocator = std.heap.c_allocator;
+    const buf = allocator.allocSentinel(u8, value_len, 0) catch {
+        if (opt_values[idx]) |owned| allocator.free(owned);
+        opt_values[idx] = null;
+        return;
+    };
+    @memcpy(buf[0..value_len], value_ptr[0..value_len]);
+    if (opt_values[idx]) |owned| allocator.free(owned);
+    opt_values[idx] = buf;
+}
+
+pub export fn zfish_optstore_has(idx: usize) u8 {
+    return if (idx < max_options and opt_values[idx] != null) 1 else 0;
+}
+
+pub export fn zfish_optstore_len(idx: usize) usize {
+    if (idx < max_options) {
+        if (opt_values[idx]) |owned| return owned.len;
+    }
+    return 0;
+}
+
+pub export fn zfish_optstore_ptr(idx: usize) ?[*]const u8 {
+    if (idx < max_options) {
+        if (opt_values[idx]) |owned| return owned.ptr;
+    }
+    return null;
+}
+
 pub const ParsedSetOption = extern struct {
     name: ?[*:0]u8,
     value: ?[*:0]u8,
