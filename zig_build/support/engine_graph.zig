@@ -19,8 +19,8 @@
 
 const std = @import("std");
 
-const ThreadPool = @import("thread_runtime.zig").ThreadPool;
-const tt_mod = @import("tt.zig");
+const ThreadPool = @import("thread").thread_runtime.ThreadPool;
+const tt_mod = @import("tt");
 const TranspositionTable = tt_mod.TranspositionTable;
 const sm = @import("search_manager.zig");
 const UpdateContext = sm.UpdateContext;
