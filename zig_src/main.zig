@@ -30,6 +30,7 @@ const timeman_port = @import("timeman");
 const tt_port = @import("tt");
 const uci_port = @import("uci");
 const position_snapshot = @import("position_snapshot");
+const target_flags = @import("target_flags");
 
 comptime {
     _ = graph_layout;
@@ -865,6 +866,56 @@ pub export fn zfish_threadpool_tb_hits(pool: *anyopaque) u64 {
 
 pub export fn zfish_threadpool_best_thread_index(pool: *anyopaque) usize {
     return thread_port.bestThreadIndex(pool);
+}
+
+// Native SearchManager data-field shims. The main manager's data members are
+// written through the C++ navigation helper (which returns the manager pointer)
+// plus the search_manager_off offset map, so these resets no longer use the C++
+// SearchManager type -- they replace the former C++ main_manager()-> field shims.
+// Exported only in the default build: the legacy oracle keeps src/thread.cpp's
+// definitions, so gating the @export avoids a duplicate-symbol link error.
+extern fn zfish_threadpool_main_manager_ptr(pool: *anyopaque) ?*anyopaque;
+
+const sm_off = graph_layout.search_manager_off;
+
+fn smFieldPtr(comptime T: type, pool: *anyopaque, offset: usize) ?*T {
+    const mgr = zfish_threadpool_main_manager_ptr(pool) orelse return null;
+    const base: [*]u8 = @ptrCast(mgr);
+    return @ptrCast(@alignCast(base + offset));
+}
+
+fn smResetCallsCount(pool: *anyopaque) callconv(.c) void {
+    if (smFieldPtr(i32, pool, sm_off.calls_cnt)) |p| p.* = 0;
+}
+fn smResetBestPreviousScore(pool: *anyopaque) callconv(.c) void {
+    if (smFieldPtr(i32, pool, sm_off.best_previous_score)) |p| p.* = 32001; // VALUE_INFINITE
+}
+fn smResetBestPreviousAverageScore(pool: *anyopaque) callconv(.c) void {
+    if (smFieldPtr(i32, pool, sm_off.best_previous_average_score)) |p| p.* = 32001;
+}
+fn smResetOriginalTimeAdjust(pool: *anyopaque) callconv(.c) void {
+    if (smFieldPtr(f64, pool, sm_off.original_time_adjust)) |p| p.* = -1;
+}
+fn smResetPreviousTimeReduction(pool: *anyopaque) callconv(.c) void {
+    if (smFieldPtr(f64, pool, sm_off.previous_time_reduction)) |p| p.* = 0.85;
+}
+fn smSetPonder(pool: *anyopaque, ponder_mode: u8) callconv(.c) void {
+    if (smFieldPtr(u8, pool, sm_off.ponder)) |p| p.* = if (ponder_mode != 0) 1 else 0;
+}
+fn smSetStopOnPonderhit(pool: *anyopaque, stop_on_ponderhit: u8) callconv(.c) void {
+    if (smFieldPtr(u8, pool, sm_off.stop_on_ponderhit)) |p| p.* = if (stop_on_ponderhit != 0) 1 else 0;
+}
+
+comptime {
+    if (!target_flags.legacy_target) {
+        @export(&smResetCallsCount, .{ .name = "zfish_threadpool_main_manager_reset_calls_count" });
+        @export(&smResetBestPreviousScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_score" });
+        @export(&smResetBestPreviousAverageScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_average_score" });
+        @export(&smResetOriginalTimeAdjust, .{ .name = "zfish_threadpool_main_manager_reset_original_time_adjust" });
+        @export(&smResetPreviousTimeReduction, .{ .name = "zfish_threadpool_main_manager_reset_previous_time_reduction" });
+        @export(&smSetPonder, .{ .name = "zfish_threadpool_main_manager_set_ponder" });
+        @export(&smSetStopOnPonderhit, .{ .name = "zfish_threadpool_main_manager_set_stop_on_ponderhit" });
+    }
 }
 
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {

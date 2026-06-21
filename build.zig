@@ -83,6 +83,18 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // Per-build comptime flag so the Zig root can gate @export of symbols that the
+    // legacy oracle still defines in src/ (e.g. the SearchManager field shims in
+    // src/thread.cpp). In the default build legacy_target is false and Zig owns
+    // the symbol; in the legacy build it is true and Zig stays silent, letting the
+    // src/ definition win -- avoiding a duplicate-symbol link error.
+    const default_flags = b.addOptions();
+    default_flags.addOption(bool, "legacy_target", false);
+    exe.root_module.addImport("target_flags", default_flags.createModule());
+    const legacy_flags = b.addOptions();
+    legacy_flags.addOption(bool, "legacy_target", true);
+    legacy_exe.root_module.addImport("target_flags", legacy_flags.createModule());
+
     const timeman_module = b.createModule(.{
         .root_source_file = b.path("zig_build/time/timeman.zig"),
         .target = target,
