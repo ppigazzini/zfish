@@ -359,24 +359,6 @@ ZfishNetworkEvalOutput zfish_network_evaluate(const void* network,
 
 std::size_t zfish_network_content_hash(const void* network);
 
-ZfishByteView zfish_network_default_name(const void* network_ptr) {
-    const auto& network = *static_cast<const Network*>(network_ptr);
-    return {reinterpret_cast<const unsigned char*>(NetworkBridgeAccess::evalFile(network).defaultName.data()),
-            NetworkBridgeAccess::evalFile(network).defaultName.size()};
-}
-
-ZfishByteView zfish_network_current_name(const void* network_ptr) {
-    const auto& network = *static_cast<const Network*>(network_ptr);
-    return {reinterpret_cast<const unsigned char*>(NetworkBridgeAccess::evalFile(network).current.data()),
-            NetworkBridgeAccess::evalFile(network).current.size()};
-}
-
-ZfishByteView zfish_network_description(const void* network_ptr) {
-    const auto& network = *static_cast<const Network*>(network_ptr);
-    return {reinterpret_cast<const unsigned char*>(NetworkBridgeAccess::evalFile(network).netDescription.data()),
-            NetworkBridgeAccess::evalFile(network).netDescription.size()};
-}
-
 ZfishByteView zfish_network_embedded_bytes() {
     return {reinterpret_cast<const unsigned char*>(gEmbeddedNNUEData), std::size_t(gEmbeddedNNUESize)};
 }
@@ -395,11 +377,6 @@ void zfish_network_set_loaded_state(void*                network_ptr,
     eval_file.current = std::string(reinterpret_cast<const char*>(current_name_ptr), current_name_len);
     eval_file.netDescription =
       std::string(reinterpret_cast<const char*>(description_ptr), description_len);
-}
-
-bool zfish_network_is_initialized(const void* network_ptr) {
-    const auto& network = *static_cast<const Network*>(network_ptr);
-    return NetworkBridgeAccess::isInitialized(network);
 }
 
 std::uint32_t zfish_network_hash_value() { return NetworkBridgeAccess::hashValue(); }
