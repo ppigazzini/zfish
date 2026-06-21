@@ -135,6 +135,16 @@ pub const thread_off = struct {
     pub const worker: usize = 8;
 };
 
+// LimitsType field offsets (bytes from the limits sub-object base). searchmoves
+// is a 24-byte std::vector at 0, then seven 8-byte TimePoints
+// (time[2]/inc[2]/npmsec/movetime/startTime) ending at 80, then the five ints
+// movestogo/depth/mate/perft/infinite. The bridge's zfish_ss_context reads depth
+// at +84, which cross-checks this map.
+pub const limits_off = struct {
+    pub const depth: usize = 84;
+    pub const infinite: usize = 96;
+};
+
 // NumaConfig member offsets. `nodes` (std::vector<std::set<CpuIndex>>) is the
 // first member at offset 0; the vector is {begin, end, cap} 8-byte pointers, and
 // each std::set<CpuIndex> element is 48 bytes (libstdc++ _Rb_tree). So
