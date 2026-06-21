@@ -1,5 +1,6 @@
 const std = @import("std");
 const nnue_parse = @import("nnue_parse.zig");
+const nnue_hash = @import("nnue_hash.zig");
 const c = @cImport({
     @cInclude("stdlib.h");
 });
@@ -311,21 +312,67 @@ pub fn traceEvaluate(
     return output;
 }
 
+extern fn zfish_native_ft_ptr() ?*const anyopaque;
+extern fn zfish_native_layer_ptr(bucket: usize, idx: c_int, is_weights: c_int) ?*const anyopaque;
+
+// Content hash of the natively-parsed feature transformer (read from the
+// Zig-owned storage). Equivalent to FeatureTransformer::get_content_hash.
+fn nativeFeatureTransformerContentHash() usize {
+    const ft: [*]const u8 = @ptrCast(zfish_native_ft_ptr() orelse return 0);
+    return nnue_hash.featureTransformerContentHash(ft);
+}
+
+// Content hash of one natively-parsed layer stack. Equivalent to
+// NetworkArchitecture::get_content_hash.
+fn nativeLayerContentHash(network: *const anyopaque, bucket: usize) usize {
+    var b: [3][*]const u8 = undefined;
+    var w: [3][*]const u8 = undefined;
+    var bn: [3]usize = undefined;
+    var wn: [3]usize = undefined;
+    var idx: c_int = 0;
+    while (idx < 3) : (idx += 1) {
+        const ui: usize = @intCast(idx);
+        b[ui] = @ptrCast(zfish_native_layer_ptr(bucket, idx, 0) orelse return 0);
+        w[ui] = @ptrCast(zfish_native_layer_ptr(bucket, idx, 1) orelse return 0);
+        bn[ui] = zfish_layer_biases_bytes(network, bucket, idx);
+        wn[ui] = zfish_layer_weights_bytes(network, bucket, idx);
+    }
+    return nnue_hash.layerStackContentHash(
+        b[0][0..bn[0]], w[0][0..wn[0]],
+        b[1][0..bn[1]], w[1][0..wn[1]],
+        b[2][0..bn[2]], w[2][0..wn[2]],
+    );
+}
+
 pub fn contentHash(network: *const anyopaque) usize {
     if (!zfish_network_is_initialized(network)) {
         return 0;
     }
 
     var hash: usize = 0;
-    hashCombine(&hash, zfish_network_feature_transformer_content_hash(network));
+    hashCombine(&hash, nativeFeatureTransformerContentHash());
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
-        hashCombine(&hash, zfish_network_layer_content_hash(network, bucket));
+        hashCombine(&hash, nativeLayerContentHash(network, bucket));
     }
 
     hashCombine(&hash, zfish_network_eval_file_content_hash(network));
     return hash;
+}
+
+// Load-time self-check: the native component hashes must equal the C++ ones,
+// proving the native content hash before it replaces them.
+fn verifyNativeContentHashes(network: *const anyopaque) void {
+    if (nativeFeatureTransformerContentHash() != zfish_network_feature_transformer_content_hash(network)) {
+        @panic("native feature-transformer content hash does not match the C++ hash");
+    }
+    var bucket: usize = 0;
+    while (bucket < layer_stacks) : (bucket += 1) {
+        if (nativeLayerContentHash(network, bucket) != zfish_network_layer_content_hash(network, bucket)) {
+            @panic("native layer-stack content hash does not match the C++ hash");
+        }
+    }
 }
 
 fn evaluateBucketRaw(
@@ -453,6 +500,7 @@ fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []cons
         header.description.ptr,
         header.description.len,
     );
+    verifyNativeContentHashes(network);
     return true;
 }
 

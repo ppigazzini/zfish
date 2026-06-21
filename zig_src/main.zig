@@ -1171,6 +1171,10 @@ pub export fn zfish_native_ft_storage(n: usize) ?[*]u8 {
     return @ptrCast(native_ft_ptr.?);
 }
 
+pub export fn zfish_native_ft_ptr() ?*const anyopaque {
+    return native_ft_ptr;
+}
+
 // Native-owned per-bucket affine-layer storage. Same model as the feature
 // transformer: the native layer parse writes weights/biases directly here and
 // inference serves from it. zfish_native_layer_storage allocates the slot.
