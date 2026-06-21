@@ -444,6 +444,69 @@ fn loadInternal(network: *anyopaque) void {
     _ = loadNetworkBytes(network, viewToSlice(zfish_network_embedded_bytes()), default_name);
 }
 
+// Gather one layer stack's native biases/weights slices (fc_0/fc_1/fc_2).
+fn nativeLayerArrays(network: *const anyopaque, bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
+    var b: [3][]const u8 = undefined;
+    var w: [3][]const u8 = undefined;
+    var idx: c_int = 0;
+    while (idx < 3) : (idx += 1) {
+        const ui: usize = @intCast(idx);
+        const bp: [*]const u8 = @ptrCast(zfish_native_layer_ptr(bucket, idx, 0) orelse return null);
+        const wp: [*]const u8 = @ptrCast(zfish_native_layer_ptr(bucket, idx, 1) orelse return null);
+        b[ui] = bp[0..zfish_layer_biases_bytes(network, bucket, idx)];
+        w[ui] = wp[0..zfish_layer_weights_bytes(network, bucket, idx)];
+    }
+    return .{ .b = b, .w = w };
+}
+
+// Serialize the native feature transformer into `out` (write_parameters blob,
+// including the leading component hash).
+fn serializeFtNative(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
+    const ft: [*]const u8 = @ptrCast(zfish_native_ft_ptr() orelse return error.NoNetwork);
+    try nnue_parse.serializeFeatureTransformer(
+        ft[0..nnue_parse.ft_total_bytes],
+        nnue_hash.featureTransformerHashValue(),
+        out,
+        a,
+    );
+}
+
+// Serialize one native layer stack into `out`.
+fn serializeLayerNative(network: *const anyopaque, bucket: usize, out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
+    const arr = nativeLayerArrays(network, bucket) orelse return error.NoNetwork;
+    try nnue_parse.serializeLayer(nnue_hash.architectureHashValue(), arr.b, arr.w, out, a);
+}
+
+// Load-time self-check: the native serialization must reproduce the C++
+// write_parameters blob byte-for-byte, for the feature transformer and every
+// layer stack. Proves native save before it replaces the C++ path.
+fn verifyNativeSerialize(network: *const anyopaque) void {
+    const a = std.heap.c_allocator;
+    var buf = std.ArrayList(u8).empty;
+    defer buf.deinit(a);
+
+    buf.clearRetainingCapacity();
+    serializeFtNative(&buf, a) catch return;
+    const ft_ref = zfish_network_feature_transformer_write_blob(network);
+    defer freeOwnedBlob(ft_ref);
+    const ft_ref_slice = ownedViewToSlice(ft_ref) orelse return;
+    if (!std.mem.eql(u8, buf.items, ft_ref_slice)) {
+        @panic("native feature-transformer serialization does not match the C++ write");
+    }
+
+    var bucket: usize = 0;
+    while (bucket < layer_stacks) : (bucket += 1) {
+        buf.clearRetainingCapacity();
+        serializeLayerNative(network, bucket, &buf, a) catch return;
+        const ref = zfish_network_layer_write_blob(network, bucket);
+        defer freeOwnedBlob(ref);
+        const ref_slice = ownedViewToSlice(ref) orelse return;
+        if (!std.mem.eql(u8, buf.items, ref_slice)) {
+            @panic("native layer-stack serialization does not match the C++ write");
+        }
+    }
+}
+
 fn saveNamed(network: *const anyopaque, filename: []const u8) bool {
     const current_name = viewToSlice(zfish_network_current_name(network));
     if (current_name.len == 0 or std.mem.eql(u8, current_name, none_name)) {
@@ -458,12 +521,20 @@ fn saveNamed(network: *const anyopaque, filename: []const u8) bool {
     var writer_buffer: [4096]u8 = undefined;
     var writer = file.writer(io, &writer_buffer);
 
+    const a = std.heap.c_allocator;
+    var blob = std.ArrayList(u8).empty;
+    defer blob.deinit(a);
+
     writeHeader(&writer.interface, zfish_network_hash_value(), description) catch return false;
-    writeOwnedBlob(&writer.interface, zfish_network_feature_transformer_write_blob(network)) catch return false;
+
+    serializeFtNative(&blob, a) catch return false;
+    writer.interface.writeAll(blob.items) catch return false;
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
-        writeOwnedBlob(&writer.interface, zfish_network_layer_write_blob(network, bucket)) catch return false;
+        blob.clearRetainingCapacity();
+        serializeLayerNative(network, bucket, &blob, a) catch return false;
+        writer.interface.writeAll(blob.items) catch return false;
     }
 
     writer.interface.flush() catch return false;
@@ -501,6 +572,7 @@ fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []cons
         header.description.len,
     );
     verifyNativeContentHashes(network);
+    verifyNativeSerialize(network);
     return true;
 }
 
@@ -619,12 +691,6 @@ fn writeHeader(writer: *std.Io.Writer, hash_value: u32, description: []const u8)
     writeU32LeInto(header[8..12], @intCast(description.len));
     try writer.writeAll(&header);
     try writer.writeAll(description);
-}
-
-fn writeOwnedBlob(writer: *std.Io.Writer, blob: OwnedByteView) !void {
-    defer freeOwnedBlob(blob);
-    const bytes = ownedViewToSlice(blob) orelse return error.OutOfMemory;
-    try writer.writeAll(bytes);
 }
 
 fn freeOwnedBlob(blob: OwnedByteView) void {
