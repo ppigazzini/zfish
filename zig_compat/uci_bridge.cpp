@@ -2332,10 +2332,12 @@ void zfish_threadpool_main_manager_reset_original_time_adjust(void* pool_ptr) {
 }
 #endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_main_manager_clear_timeman(void* pool_ptr) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->tm.clear();
 }
+#endif
 
 }  // extern "C"
 #endif

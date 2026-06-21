@@ -905,6 +905,10 @@ fn smSetPonder(pool: *anyopaque, ponder_mode: u8) callconv(.c) void {
 fn smSetStopOnPonderhit(pool: *anyopaque, stop_on_ponderhit: u8) callconv(.c) void {
     if (smFieldPtr(u8, pool, sm_off.stop_on_ponderhit)) |p| p.* = if (stop_on_ponderhit != 0) 1 else 0;
 }
+fn smClearTimeman(pool: *anyopaque) callconv(.c) void {
+    // TimeManagement::clear() sets availableNodes = -1; nothing else.
+    if (smFieldPtr(i64, pool, sm_off.tm_available_nodes)) |p| p.* = -1;
+}
 
 comptime {
     if (!target_flags.legacy_target) {
@@ -915,6 +919,7 @@ comptime {
         @export(&smResetPreviousTimeReduction, .{ .name = "zfish_threadpool_main_manager_reset_previous_time_reduction" });
         @export(&smSetPonder, .{ .name = "zfish_threadpool_main_manager_set_ponder" });
         @export(&smSetStopOnPonderhit, .{ .name = "zfish_threadpool_main_manager_set_stop_on_ponderhit" });
+        @export(&smClearTimeman, .{ .name = "zfish_threadpool_main_manager_clear_timeman" });
     }
 }
 
