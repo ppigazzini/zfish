@@ -921,6 +921,25 @@ fn tpSetIncreaseDepth(pool: *anyopaque, increase_depth: u8) callconv(.c) void {
     const p: *u8 = @ptrCast(@as([*]u8, @ptrCast(pool)) + graph_layout.thread_pool_off.increase_depth);
     p.* = if (increase_depth != 0) 1 else 0;
 }
+// Native Thread->worker field reads. thread+8 holds the Worker pointer; read the
+// relaxed-atomic u64 counters at the worker's nodes/tbHits offsets. Match
+// Thread::worker_nodes_searched()/worker_tb_hits(). Gated to the default build.
+fn threadWorker(thread: *const anyopaque) ?[*]const u8 {
+    const wp: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(thread)) + graph_layout.thread_off.worker));
+    if (wp.* == 0) return null;
+    return @ptrFromInt(wp.*);
+}
+fn thNodesSearched(thread: *const anyopaque) callconv(.c) u64 {
+    const w = threadWorker(thread) orelse return 0;
+    const p: *const u64 = @ptrCast(@alignCast(w + graph_layout.worker_off.nodes));
+    return p.*;
+}
+fn thTbHits(thread: *const anyopaque) callconv(.c) u64 {
+    const w = threadWorker(thread) orelse return 0;
+    const p: *const u64 = @ptrCast(@alignCast(w + graph_layout.worker_off.tb_hits));
+    return p.*;
+}
+
 fn tpThreadCount(pool: *anyopaque) callconv(.c) usize {
     const base: [*]const u8 = @ptrCast(pool);
     const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
@@ -941,6 +960,8 @@ comptime {
         @export(&tpSetStopFlag, .{ .name = "zfish_threadpool_set_stop_flag" });
         @export(&tpSetIncreaseDepth, .{ .name = "zfish_threadpool_set_increase_depth" });
         @export(&tpThreadCount, .{ .name = "zfish_threadpool_thread_count" });
+        @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
+        @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
     }
 }
 
