@@ -1,4 +1,5 @@
 const std = @import("std");
+const nnue_parse = @import("nnue_parse.zig");
 const c = @cImport({
     @cInclude("stdlib.h");
 });
@@ -473,12 +474,28 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
     return .{ .hash_value = hash_value, .description = description };
 }
 
+extern fn zfish_network_feature_transformer_ptr(network: *const anyopaque) *const anyopaque;
+
+// Self-check: parse the same FT blob natively and confirm it reproduces the
+// C++-parsed feature-transformer byte-for-byte (per weight region, skipping
+// alignment padding). Proves the native parse before it replaces the C++ one.
+fn verifyNativeFtParse(network: *anyopaque, blob: []const u8) void {
+    const ref_ptr: [*]const u8 = @ptrCast(zfish_network_feature_transformer_ptr(network));
+    const reference = ref_ptr[0..nnue_parse.ft_total_bytes];
+    const scratch = std.heap.page_allocator.alloc(u8, nnue_parse.ft_total_bytes) catch return;
+    defer std.heap.page_allocator.free(scratch);
+    if (!nnue_parse.verifyFeatureTransformer(blob, reference, scratch)) {
+        @panic("native feature-transformer parse does not match the C++ parse");
+    }
+}
+
 fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize) bool {
     const remaining = bytes[offset.*..];
     const consumed = zfish_network_feature_transformer_read_blob(network, remaining.ptr, remaining.len);
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
+    verifyNativeFtParse(network, remaining[0..consumed]);
     offset.* += consumed;
     return true;
 }

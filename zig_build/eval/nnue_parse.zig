@@ -74,6 +74,113 @@ pub fn weightIndexScrambled(i: usize, padded_input: usize, output_dims: usize) u
     return (i / 4) % (padded_input / 4) * output_dims * 4 + i / padded_input * 4 + i % 4;
 }
 
+// ---- feature transformer parse ---------------------------------------------
+
+const leb_magic = "COMPRESSED_LEB128";
+const cache_line = 64;
+
+pub const half_dimensions: usize = 1024;
+pub const psq_feature_dimensions: usize = 22528;
+pub const threat_dimensions: usize = 60720;
+pub const psqt_buckets: usize = 8;
+
+fn roundUp(x: usize, a: usize) usize {
+    return (x + a - 1) / a * a;
+}
+
+// Element counts of the five feature-transformer arrays.
+pub const biases_count = half_dimensions; // i16
+pub const psq_weights_count = half_dimensions * psq_feature_dimensions; // i16
+pub const threat_weights_count = half_dimensions * threat_dimensions; // i8
+pub const psqt_weights_count = psq_feature_dimensions * psqt_buckets; // i32
+pub const threat_psqt_weights_count = threat_dimensions * psqt_buckets; // i32
+
+// In-memory byte offsets (member order, each alignas(64)): biases, weights(psq),
+// threatWeights, psqtWeights, threatPsqtWeights.
+pub const biases_off = 0;
+pub const weights_off = roundUp(biases_count * 2, cache_line);
+pub const threat_weights_off = roundUp(weights_off + psq_weights_count * 2, cache_line);
+pub const psqt_weights_off = roundUp(threat_weights_off + threat_weights_count * 1, cache_line);
+pub const threat_psqt_weights_off = roundUp(psqt_weights_off + psqt_weights_count * 4, cache_line);
+pub const ft_total_bytes = roundUp(threat_psqt_weights_off + threat_psqt_weights_count * 4, cache_line);
+
+fn dstSlice(comptime T: type, dst: []u8, off: usize, count: usize) []T {
+    const bytes: []align(@alignOf(T)) u8 = @alignCast(dst[off .. off + count * @sizeOf(T)]);
+    return std.mem.bytesAsSlice(T, bytes);
+}
+
+// Parse one COMPRESSED_LEB128 section ([magic][u32 count][data]) of `out.len`
+// values into `out`; return total section bytes consumed, or null if malformed.
+fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
+    if (blob.len < leb_magic.len + 4) return null;
+    if (!std.mem.eql(u8, blob[0..leb_magic.len], leb_magic)) return null;
+    const count = std.mem.readInt(u32, blob[leb_magic.len..][0..4], .little);
+    const data = blob[leb_magic.len + 4 ..];
+    if (data.len < count) return null;
+    if (decodeLeb(T, data, out, out.len) != count) return null;
+    return leb_magic.len + 4 + count;
+}
+
+// Two arrays packed in one LEB section (read_leb_128(a, b)).
+fn readLebSection2(comptime T: type, blob: []const u8, out1: []T, out2: []T) ?usize {
+    if (blob.len < leb_magic.len + 4) return null;
+    if (!std.mem.eql(u8, blob[0..leb_magic.len], leb_magic)) return null;
+    const count = std.mem.readInt(u32, blob[leb_magic.len..][0..4], .little);
+    const data = blob[leb_magic.len + 4 ..];
+    if (data.len < count) return null;
+    const used1 = decodeLeb(T, data, out1, out1.len);
+    const used2 = decodeLeb(T, data[used1..], out2, out2.len);
+    if (used1 + used2 != count) return null;
+    return leb_magic.len + 4 + count;
+}
+
+// Parse the feature-transformer blob into `dst` (native FeatureTransformer memory
+// layout). No permute -- PackusEpi16Order is the identity on the SSE4.1 target.
+// Returns the number of blob bytes consumed, or null on malformed input.
+pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
+    // Leading u32 component hash (Detail::read_parameters), verified by C++; skip.
+    var pos: usize = 4;
+    // 1. biases (LEB i16)
+    pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, biases_off, biases_count)) orelse return null;
+    // 2. threatWeights (raw little-endian i8)
+    if (blob.len < pos + threat_weights_count) return null;
+    @memcpy(dst[threat_weights_off .. threat_weights_off + threat_weights_count], blob[pos .. pos + threat_weights_count]);
+    pos += threat_weights_count;
+    // 3. weights / psq weights (LEB i16)
+    pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, weights_off, psq_weights_count)) orelse return null;
+    // 4. threatPsqtWeights then psqtWeights (one LEB i32 section)
+    pos += readLebSection2(
+        i32,
+        blob[pos..],
+        dstSlice(i32, dst, threat_psqt_weights_off, threat_psqt_weights_count),
+        dstSlice(i32, dst, psqt_weights_off, psqt_weights_count),
+    ) orelse return null;
+    return pos;
+}
+
+// The five written weight regions (offset, byte length), used to compare a native
+// parse against a reference while skipping the alignment padding between them.
+const FtRegion = struct { off: usize, len: usize };
+pub const ft_regions = [_]FtRegion{
+    .{ .off = biases_off, .len = biases_count * 2 },
+    .{ .off = weights_off, .len = psq_weights_count * 2 },
+    .{ .off = threat_weights_off, .len = threat_weights_count * 1 },
+    .{ .off = psqt_weights_off, .len = psqt_weights_count * 4 },
+    .{ .off = threat_psqt_weights_off, .len = threat_psqt_weights_count * 4 },
+};
+
+// Parse `blob` into `scratch` and confirm each weight region matches `reference`
+// (the C++-parsed FeatureTransformer memory). Returns true iff bit-identical.
+pub fn verifyFeatureTransformer(blob: []const u8, reference: []const u8, scratch: []u8) bool {
+    if (reference.len < ft_total_bytes or scratch.len < ft_total_bytes) return false;
+    if (parseFeatureTransformer(blob, scratch) == null) return false;
+    for (ft_regions) |r| {
+        if (!std.mem.eql(u8, scratch[r.off .. r.off + r.len], reference[r.off .. r.off + r.len]))
+            return false;
+    }
+    return true;
+}
+
 // ---- tests ------------------------------------------------------------------
 
 const testing = std.testing;
@@ -141,4 +248,13 @@ test "weightIndexScrambled matches the C++ formula" {
     try testing.expectEqual(@as(usize, 128), weightIndexScrambled(4, 1024, 32));
     // i=1024 -> (256)%256*128 + 4 + 0 = 0 + 4 = 4
     try testing.expectEqual(@as(usize, 4), weightIndexScrambled(1024, 1024, 32));
+}
+
+test "feature transformer layout offsets match the C++ FeatureTransformer" {
+    try testing.expectEqual(@as(usize, 0), biases_off);
+    try testing.expectEqual(@as(usize, 2048), weights_off);
+    try testing.expectEqual(@as(usize, 46139392), threat_weights_off);
+    try testing.expectEqual(@as(usize, 108316672), psqt_weights_off);
+    try testing.expectEqual(@as(usize, 109037568), threat_psqt_weights_off);
+    try testing.expectEqual(@as(usize, 110980608), ft_total_bytes);
 }
