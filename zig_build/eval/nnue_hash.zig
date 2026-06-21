@@ -154,6 +154,16 @@ pub fn layerStackContentHash(
     return h;
 }
 
+// std::hash<EvalFile>: combine hash_bytes of defaultName, current, netDescription
+// (each a FixedString hashed over its .data()/.size()).
+pub fn evalFileContentHash(default_name: []const u8, current: []const u8, description: []const u8) usize {
+    var h: usize = 0;
+    hashCombine(&h, @intCast(hashBytes(default_name)));
+    hashCombine(&h, @intCast(hashBytes(current)));
+    hashCombine(&h, @intCast(hashBytes(description)));
+    return h;
+}
+
 const testing = std.testing;
 
 test "hashBytes matches a known MurmurHash2-64A vector" {
