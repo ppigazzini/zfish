@@ -1004,6 +1004,31 @@ fn thWorkerSetRootState(thread: *anyopaque, setup_state: *const anyopaque) callc
     @memcpy(dst[0..graph_layout.state_info_size], src[0..graph_layout.state_info_size]);
 }
 
+// Worker::set_root_position runs rootPos.set(fen, chess960, &rootState). Position
+// set is already native (position_port.setPosition, also exported as
+// zfish_position_set_method); the dispatcher resolves the in-Worker rootPos and
+// rootState by offset and runs it, discarding the error string exactly as the
+// C++ set_root_position discards the returned Position&.
+fn thWorkerSetRootPosition(
+    thread: *anyopaque,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    chess960: u8,
+) callconv(.c) void {
+    const w = threadWorkerMut(thread) orelse return;
+    const pos: *anyopaque = @ptrCast(w + graph_layout.worker_off.root_pos);
+    const st: *anyopaque = @ptrCast(w + graph_layout.worker_off.root_state);
+    _ = position_port.setPosition(
+        pos,
+        fen_ptr,
+        fen_len,
+        chess960,
+        st,
+        graph_layout.position_size,
+        graph_layout.state_info_size,
+    );
+}
+
 fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
     const base: [*]const u8 = @ptrCast(pool);
     const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
@@ -1028,6 +1053,7 @@ comptime {
         @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
         @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
         @export(&thWorkerSetRootState, .{ .name = "zfish_thread_worker_set_root_state" });
+        @export(&thWorkerSetRootPosition, .{ .name = "zfish_thread_worker_set_root_position" });
         @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
         @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
     }
