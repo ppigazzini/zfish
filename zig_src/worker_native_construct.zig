@@ -118,6 +118,42 @@ fn constructWorkerInto(
     zfish_search_clear_refresh_cache(@ptrCast(buf + off.refresh_table), biases);
 }
 
+// Production entry: construct a complete native Worker into `buf` (a large-page
+// block of at least worker_size bytes). Zeroes the block, writes the constructor
+// field set, and runs the native Worker::clear pieces -- the full replacement for
+// the C++ Worker placement-new that the engine-graph cut calls instead of
+// make_unique_large_page<Worker>. `manager` is the moved ISearchManager pointer;
+// the feature-transformer biases are sourced from the native network.
+export fn zfish_worker_construct_full(
+    buf: ?*anyopaque,
+    shared_history: usize,
+    options: usize,
+    threads: usize,
+    tt: usize,
+    network: usize,
+    manager: usize,
+    thread_idx: usize,
+    numa_thread_idx: usize,
+    numa_total: usize,
+    numa_access_token: usize,
+) void {
+    const base: [*]u8 = @ptrCast(buf orelse return);
+    @memset(base[0..graph_layout.worker_size], 0);
+    const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse return));
+    constructWorkerInto(base, .{
+        .shared_history = shared_history,
+        .options = options,
+        .threads = threads,
+        .tt = tt,
+        .network = network,
+        .manager = manager,
+        .thread_idx = thread_idx,
+        .numa_thread_idx = numa_thread_idx,
+        .numa_total = numa_total,
+        .numa_access_token = numa_access_token,
+    }, @ptrFromInt(shared_history), biases);
+}
+
 // Self-check: build a COMPLETE native Worker with the live worker's own inputs
 // and assert all 13.8 MB are byte-identical to the live C++-constructed worker.
 // This proves the native constructor (field write + native Worker::clear)
