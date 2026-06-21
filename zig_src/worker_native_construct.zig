@@ -16,7 +16,6 @@
 
 const std = @import("std");
 const graph_layout = @import("graph_layout.zig");
-const memory_port = @import("memory.zig");
 
 const off = graph_layout.worker_off;
 
