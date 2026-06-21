@@ -3462,9 +3462,10 @@ std::size_t zfish_numa_config_distribute_threads_among_nodes(const void* numa_co
     return distribution.size();
 }
 
-std::size_t zfish_numa_config_node_count(const void* numa_config_ptr) {
-    return static_cast<const NumaConfig*>(numa_config_ptr)->num_numa_nodes();
-}
+// num_numa_nodes() == nodes.size(): now native in both builds via the Zig export
+// zfish_numa_config_node_count (main.zig), which reads the nodes vector span by
+// offset. The NumaConfig layout is identical in the default and legacy targets,
+// so no C++ body is needed here.
 
 void zfish_numa_config_execute_on_numa_node(const void*       numa_config_ptr,
                                             std::size_t       numa_index,
