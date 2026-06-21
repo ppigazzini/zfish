@@ -984,6 +984,10 @@ pub export fn zfish_engine_network_replicated_ptr(engine: *anyopaque) *anyopaque
 pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const anyopaque {
     return engMemberConst(engine, eng_off.update_context);
 }
+// UCIEngine::engine is the first member (offset 0): the accessor is the identity.
+pub export fn zfish_uci_engine_ptr(uci: *anyopaque) *anyopaque {
+    return uci;
+}
 
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {
     return engine_port.initBody(engine);
