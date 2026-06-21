@@ -386,6 +386,9 @@ fn verifyNativeContentHashes(network: *const anyopaque) void {
     if (nativeEvalFileContentHash(network) != zfish_network_eval_file_content_hash(network)) {
         @panic("native eval-file content hash does not match the C++ hash");
     }
+    if (nnue_hash.networkHashValue() != zfish_network_hash_value()) {
+        @panic("native network hash value does not match the C++ hash");
+    }
 }
 
 fn evaluateBucketRaw(
@@ -538,7 +541,7 @@ fn saveNamed(network: *const anyopaque, filename: []const u8) bool {
     var blob = std.ArrayList(u8).empty;
     defer blob.deinit(a);
 
-    writeHeader(&writer.interface, zfish_network_hash_value(), description) catch return false;
+    writeHeader(&writer.interface, nnue_hash.networkHashValue(), description) catch return false;
 
     serializeFtNative(&blob, a) catch return false;
     writer.interface.writeAll(blob.items) catch return false;
@@ -558,7 +561,7 @@ fn saveNamed(network: *const anyopaque, filename: []const u8) bool {
 fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []const u8) bool {
     var offset: usize = 0;
     const header = readHeader(bytes, &offset) orelse return false;
-    if (header.hash_value != zfish_network_hash_value()) {
+    if (header.hash_value != nnue_hash.networkHashValue()) {
         return false;
     }
 
