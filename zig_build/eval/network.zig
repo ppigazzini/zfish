@@ -56,9 +56,9 @@ pub const TraceOutput = extern struct {
 };
 
 extern fn zfish_network_default_name(network: *const anyopaque) ByteView;
-extern fn zfish_network_current_name(network: *const anyopaque) ByteView;
-extern fn zfish_network_description(network: *const anyopaque) ByteView;
 extern fn zfish_network_embedded_bytes() ByteView;
+// Kept only to dual-write the C++ EvalFile so the content-hash oracle self-check
+// stays valid; the native path reads its own EvalFile state (nn_* below).
 extern fn zfish_network_mark_initialized(network: *anyopaque) void;
 extern fn zfish_network_set_loaded_state(
     network: *anyopaque,
@@ -67,7 +67,6 @@ extern fn zfish_network_set_loaded_state(
     description_ptr: [*]const u8,
     description_len: usize,
 ) void;
-extern fn zfish_network_is_initialized(network: *const anyopaque) bool;
 extern fn zfish_network_hash_value() u32;
 extern fn zfish_network_feature_transformer_read_blob(
     network: *anyopaque,
@@ -201,7 +200,7 @@ pub fn save(
     filename_len: usize,
 ) SaveResult {
     const default_name = viewToSlice(zfish_network_default_name(network));
-    const current_name = viewToSlice(zfish_network_current_name(network));
+    const current_name = nnCurrent();
 
     var actual_filename: []const u8 = undefined;
     if (has_filename != 0) {
@@ -236,7 +235,7 @@ pub fn verify(
     evalfile_path_len: usize,
 ) VerifyResult {
     const default_name = viewToSlice(zfish_network_default_name(network));
-    const current_name = viewToSlice(zfish_network_current_name(network));
+    const current_name = nnCurrent();
     const evalfile_path = if (evalfile_path_len == 0)
         default_name
     else
@@ -344,8 +343,42 @@ fn nativeLayerContentHash(network: *const anyopaque, bucket: usize) usize {
     );
 }
 
+// Zig-owned EvalFile dynamic state: the current eval-file name, the net
+// description, and the initialized flag. The native load path owns these (the
+// only consumers were here in network.zig). The C++ EvalFile is kept dual-written
+// so the content-hash oracle self-check stays valid until the big-bang removes
+// it. The default name stays sourced from the C++ EvalFile (a build constant).
+var nn_initialized: bool = false;
+var nn_current: [256]u8 = undefined;
+var nn_current_len: usize = 0;
+var nn_description: [256]u8 = undefined;
+var nn_description_len: usize = 0;
+
+fn nnCurrent() []const u8 {
+    return nn_current[0..nn_current_len];
+}
+
+fn nnDescription() []const u8 {
+    return nn_description[0..nn_description_len];
+}
+
+fn markInitializedNative(network: *anyopaque) void {
+    nn_initialized = true;
+    zfish_network_mark_initialized(network); // keep the C++ oracle in sync
+}
+
+fn setLoadedStateNative(network: *anyopaque, current: []const u8, description: []const u8) void {
+    const cl = @min(current.len, nn_current.len);
+    @memcpy(nn_current[0..cl], current[0..cl]);
+    nn_current_len = cl;
+    const dl = @min(description.len, nn_description.len);
+    @memcpy(nn_description[0..dl], description[0..dl]);
+    nn_description_len = dl;
+    zfish_network_set_loaded_state(network, current.ptr, current.len, description.ptr, description.len);
+}
+
 pub fn contentHash(network: *const anyopaque) usize {
-    if (!zfish_network_is_initialized(network)) {
+    if (!nn_initialized) {
         return 0;
     }
 
@@ -366,8 +399,8 @@ pub fn contentHash(network: *const anyopaque) usize {
 fn nativeEvalFileContentHash(network: *const anyopaque) usize {
     return nnue_hash.evalFileContentHash(
         viewToSlice(zfish_network_default_name(network)),
-        viewToSlice(zfish_network_current_name(network)),
-        viewToSlice(zfish_network_description(network)),
+        nnCurrent(),
+        nnDescription(),
     );
 }
 
@@ -433,7 +466,7 @@ const Header = struct {
 };
 
 fn loadUserNet(network: *anyopaque, dir: []const u8, evalfile_path: []const u8) void {
-    zfish_network_mark_initialized(network);
+    markInitializedNative(network);
 
     var arena_state = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena_state.deinit();
@@ -454,7 +487,7 @@ fn loadUserNet(network: *anyopaque, dir: []const u8, evalfile_path: []const u8) 
 }
 
 fn loadInternal(network: *anyopaque) void {
-    zfish_network_mark_initialized(network);
+    markInitializedNative(network);
 
     const default_name = viewToSlice(zfish_network_default_name(network));
     _ = loadNetworkBytes(network, viewToSlice(zfish_network_embedded_bytes()), default_name);
@@ -524,12 +557,12 @@ fn verifyNativeSerialize(network: *const anyopaque) void {
 }
 
 fn saveNamed(network: *const anyopaque, filename: []const u8) bool {
-    const current_name = viewToSlice(zfish_network_current_name(network));
+    const current_name = nnCurrent();
     if (current_name.len == 0 or std.mem.eql(u8, current_name, none_name)) {
         return false;
     }
 
-    const description = viewToSlice(zfish_network_description(network));
+    const description = nnDescription();
     var threaded = std.Io.Threaded.init(std.heap.c_allocator, .{});
     const io = threaded.io();
     const file = openFileForWrite(io, filename) catch return false;
@@ -580,13 +613,7 @@ fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []cons
         return false;
     }
 
-    zfish_network_set_loaded_state(
-        network,
-        current_name.ptr,
-        current_name.len,
-        header.description.ptr,
-        header.description.len,
-    );
+    setLoadedStateNative(network, current_name, header.description);
     verifyNativeContentHashes(network);
     verifyNativeSerialize(network);
     return true;
@@ -749,7 +776,8 @@ fn viewToSlice(view: ByteView) []const u8 {
 }
 
 fn equalCurrentName(network: *const anyopaque, target: []const u8) bool {
-    return std.mem.eql(u8, viewToSlice(zfish_network_current_name(network)), target);
+    _ = network;
+    return std.mem.eql(u8, nnCurrent(), target);
 }
 
 fn boolToU8(value: bool) u8 {
