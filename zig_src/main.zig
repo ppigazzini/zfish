@@ -970,6 +970,29 @@ fn thWorkerResetRootSetupState(thread: *anyopaque) callconv(.c) void {
     @as(*i32, @ptrCast(@alignCast(w + graph_layout.worker_off.root_depth))).* = 0;
 }
 
+// Matches the bridge ZfishTbConfig / thread.zig TbConfig C-ABI struct passed by
+// value: {int cardinality; u8 root_in_tb; u8 use_rule50; int probe_depth}.
+const WorkerTbConfig = extern struct {
+    cardinality: c_int,
+    root_in_tb: u8,
+    use_rule50: u8,
+    probe_depth: c_int,
+};
+
+// Worker::set_tb_config assigns worker.tbConfig = Tablebases::Config{...}. The
+// Config is POD {int cardinality; bool rootInTB; bool useRule50; Depth(int)
+// probeDepth} laid out as cardinality@0, rootInTB@4, useRule50@5, probeDepth@8.
+// The bridge normalized the two flags with `!= 0`, so booleans are written 0/1.
+// Padding bytes (+6,+7) are never read by the search, so they are left alone.
+fn thWorkerSetTbConfig(thread: *anyopaque, config: WorkerTbConfig) callconv(.c) void {
+    const w = threadWorkerMut(thread) orelse return;
+    const base = w + graph_layout.worker_off.tb_config;
+    @as(*c_int, @ptrCast(@alignCast(base + 0))).* = config.cardinality;
+    base[4] = @intFromBool(config.root_in_tb != 0);
+    base[5] = @intFromBool(config.use_rule50 != 0);
+    @as(*c_int, @ptrCast(@alignCast(base + 8))).* = config.probe_depth;
+}
+
 fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
     const base: [*]const u8 = @ptrCast(pool);
     const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
@@ -992,6 +1015,7 @@ comptime {
         @export(&tpThreadCount, .{ .name = "zfish_threadpool_thread_count" });
         @export(&tpThreadAt, .{ .name = "zfish_threadpool_thread_at" });
         @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
+        @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
         @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
         @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
     }
