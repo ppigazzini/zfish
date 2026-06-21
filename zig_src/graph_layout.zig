@@ -184,6 +184,9 @@ pub const numa_config_off = struct {
     pub const nodes_begin: usize = 0;
     pub const nodes_end: usize = 8;
     pub const node_set_size: usize = 48;
+    // libstdc++ std::set<CpuIndex> stores its element count (_Rb_tree _M_node_count)
+    // at offset 40 within the 48-byte set; num_cpus_in_numa_node(n) == nodes[n].size().
+    pub const node_set_count_off: usize = 40;
 };
 
 extern fn zfish_graph_layout_size(which: c_int) usize;
