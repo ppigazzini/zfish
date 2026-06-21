@@ -2187,9 +2187,11 @@ struct ZfishTbConfig {
 
 using ZfishOpaqueCallback = void (*)(void*);
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_threadpool_thread_count(const void* pool_ptr) {
     return static_cast<const ThreadPool*>(pool_ptr)->size();
 }
+#endif
 
 void* zfish_threadpool_thread_at(void* pool_ptr, std::size_t index) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
