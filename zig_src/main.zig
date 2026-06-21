@@ -993,6 +993,17 @@ fn thWorkerSetTbConfig(thread: *anyopaque, config: WorkerTbConfig) callconv(.c) 
     @as(*c_int, @ptrCast(@alignCast(base + 8))).* = config.probe_depth;
 }
 
+// Worker::set_root_state assigns worker.rootState = value. StateInfo is fully POD
+// (scalars plus one raw `previous` pointer), so the C++ member-wise copy is a
+// byte copy; the native version memcpy's the 192-byte StateInfo into the Worker
+// rootState slot.
+fn thWorkerSetRootState(thread: *anyopaque, setup_state: *const anyopaque) callconv(.c) void {
+    const w = threadWorkerMut(thread) orelse return;
+    const dst = w + graph_layout.worker_off.root_state;
+    const src: [*]const u8 = @ptrCast(setup_state);
+    @memcpy(dst[0..graph_layout.state_info_size], src[0..graph_layout.state_info_size]);
+}
+
 fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
     const base: [*]const u8 = @ptrCast(pool);
     const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
@@ -1016,6 +1027,7 @@ comptime {
         @export(&tpThreadAt, .{ .name = "zfish_threadpool_thread_at" });
         @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
         @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
+        @export(&thWorkerSetRootState, .{ .name = "zfish_thread_worker_set_root_state" });
         @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
         @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
     }
