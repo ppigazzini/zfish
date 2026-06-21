@@ -16,8 +16,20 @@
 
 const std = @import("std");
 const graph_layout = @import("graph_layout.zig");
+const memory_port = @import("memory.zig");
 
 const off = graph_layout.worker_off;
+
+// Native Worker::clear pieces (exported from main.zig) and the native FT pointer,
+// so the full native constructor can fill the histories exactly as Worker::clear.
+extern fn zfish_search_clear_worker_histories(worker: *anyopaque) void;
+extern fn zfish_search_clear_shared_history(shared: *anyopaque, thread_idx: usize, numa_total: usize) void;
+extern fn zfish_search_fill_reductions(reductions: [*]c_int, count: usize) void;
+extern fn zfish_search_clear_refresh_cache(cache: *anyopaque, biases: [*]const i16) void;
+extern fn zfish_native_ft_ptr() ?*const anyopaque;
+
+// reductions is the 1024-byte (256 x int) array between `reductions` and `manager`.
+const reductions_count: usize = (off.manager - off.reductions) / @sizeOf(c_int);
 
 // The NUMA scalars follow threadIdx in constructor order (threadIdx,
 // numaThreadIdx, numaTotal, numaAccessToken), each a size_t-wide slot, filling
@@ -86,6 +98,70 @@ export fn zfish_worker_write_constructor_fields(worker: ?*anyopaque, inputs: *co
 fn readField(base: [*]const u8, offset: usize) usize {
     const p: *const usize = @ptrCast(@alignCast(base + offset));
     return p.*;
+}
+
+// Full native Worker construction into a caller-owned, zeroed buffer: write the
+// constructor field set, then run the native Worker::clear pieces (histories,
+// shared history, reductions, refresh cache) exactly as the C++ ctor's clear()
+// call. `shared_obj` is the SharedHistories the thread clears its range of, and
+// `biases` is the network feature-transformer bias array.
+fn constructWorkerInto(
+    buf: [*]u8,
+    in: WorkerCtorInputs,
+    shared_obj: *anyopaque,
+    biases: [*]const i16,
+) void {
+    writeConstructorFields(buf, in);
+    zfish_search_clear_worker_histories(buf);
+    zfish_search_clear_shared_history(shared_obj, in.numa_thread_idx, in.numa_total);
+    zfish_search_fill_reductions(@ptrCast(@alignCast(buf + off.reductions)), reductions_count);
+    zfish_search_clear_refresh_cache(@ptrCast(buf + off.refresh_table), biases);
+}
+
+// Self-check: build a COMPLETE native Worker with the live worker's own inputs
+// and assert all 13.8 MB are byte-identical to the live C++-constructed worker.
+// This proves the native constructor (field write + native Worker::clear)
+// reproduces the C++ ctor exactly, so the engine-graph cut can build a Worker
+// without C++. Read-only on the live worker; large-page allocs are zero-filled so
+// it is deterministic. The moved manager pointer and the opaque NUMA token are
+// copied from the live worker (their identity is not what we are proving here).
+export fn zfish_verify_worker_native_full(
+    live_worker: ?*const anyopaque,
+    shared_history: usize,
+    options: usize,
+    threads: usize,
+    tt: usize,
+    network: usize,
+    thread_idx: usize,
+    numa_thread_idx: usize,
+    numa_total: usize,
+) void {
+    const live: [*]const u8 = @ptrCast(live_worker orelse return);
+    const scratch_raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse return;
+    defer memory_port.alignedLargePagesFree(scratch_raw);
+    const scratch: [*]u8 = @ptrCast(scratch_raw);
+
+    const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse return));
+    constructWorkerInto(scratch, .{
+        .shared_history = shared_history,
+        .options = options,
+        .threads = threads,
+        .tt = tt,
+        .network = network,
+        .manager = readField(live, off.manager),
+        .thread_idx = thread_idx,
+        .numa_thread_idx = numa_thread_idx,
+        .numa_total = numa_total,
+        .numa_access_token = readField(live, numa_access_token_off),
+    }, @ptrFromInt(shared_history), biases);
+
+    var i: usize = 0;
+    while (i < graph_layout.worker_size) : (i += 1) {
+        if (scratch[i] != live[i]) {
+            std.debug.print("native worker full ctor: byte {d} differs (native {d} vs live {d})\n", .{ i, scratch[i], live[i] });
+            @panic("native Worker construction is not byte-identical to the C++ worker");
+        }
+    }
 }
 
 // Self-check: confirm the live C++-constructed worker carries, at each
