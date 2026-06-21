@@ -2197,10 +2197,12 @@ void* zfish_threadpool_thread_at(void* pool_ptr, std::size_t index) {
     return (*(pool->begin() + static_cast<std::ptrdiff_t>(index))).get();
 }
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_set_stop_flag(void* pool_ptr, std::uint8_t stop) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->stop = stop != 0;
 }
+#endif
 
 // Navigation helper: the main thread's SearchManager pointer. The native field
 // shims (main.zig, default build only) write the manager's data members through
@@ -2224,10 +2226,12 @@ void zfish_threadpool_main_manager_set_ponder(void* pool_ptr, std::uint8_t ponde
 }
 #endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_set_increase_depth(void* pool_ptr, std::uint8_t increase_depth) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->increaseDepth = increase_depth != 0;
 }
+#endif
 
 void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context) {
     auto* thread = static_cast<Thread*>(thread_ptr);

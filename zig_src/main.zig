@@ -910,6 +910,18 @@ fn smClearTimeman(pool: *anyopaque) callconv(.c) void {
     if (smFieldPtr(i64, pool, sm_off.tm_available_nodes)) |p| p.* = -1;
 }
 
+// Native ThreadPool flag shims: stop and increaseDepth are the leading
+// std::atomic_bool pair at pool+0 / pool+1. Written directly (single-threaded
+// setup context), gated to the default build alongside the manager shims.
+fn tpSetStopFlag(pool: *anyopaque, stop: u8) callconv(.c) void {
+    const p: *u8 = @ptrCast(@as([*]u8, @ptrCast(pool)) + graph_layout.thread_pool_off.stop);
+    p.* = if (stop != 0) 1 else 0;
+}
+fn tpSetIncreaseDepth(pool: *anyopaque, increase_depth: u8) callconv(.c) void {
+    const p: *u8 = @ptrCast(@as([*]u8, @ptrCast(pool)) + graph_layout.thread_pool_off.increase_depth);
+    p.* = if (increase_depth != 0) 1 else 0;
+}
+
 comptime {
     if (!target_flags.legacy_target) {
         @export(&smResetCallsCount, .{ .name = "zfish_threadpool_main_manager_reset_calls_count" });
@@ -920,6 +932,8 @@ comptime {
         @export(&smSetPonder, .{ .name = "zfish_threadpool_main_manager_set_ponder" });
         @export(&smSetStopOnPonderhit, .{ .name = "zfish_threadpool_main_manager_set_stop_on_ponderhit" });
         @export(&smClearTimeman, .{ .name = "zfish_threadpool_main_manager_clear_timeman" });
+        @export(&tpSetStopFlag, .{ .name = "zfish_threadpool_set_stop_flag" });
+        @export(&tpSetIncreaseDepth, .{ .name = "zfish_threadpool_set_increase_depth" });
     }
 }
 
