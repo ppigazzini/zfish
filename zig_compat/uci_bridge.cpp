@@ -1852,9 +1852,6 @@ extern "C" void zfish_worker_construct_full(
   void* buf, size_t shared_history, size_t options, size_t threads, size_t tt, size_t network,
   size_t manager, size_t thread_idx, size_t numa_thread_idx, size_t numa_total,
   size_t numa_access_token);
-extern "C" void zfish_verify_worker_native_full(
-  const void* worker, size_t shared_history, size_t options, size_t threads, size_t tt,
-  size_t network, size_t thread_idx, size_t numa_thread_idx, size_t numa_total);
 
 // Note that 'searching' and 'exit' should be already set.
 Thread::Thread(Search::SharedState&                    sharedState,
@@ -1914,15 +1911,6 @@ Thread::Thread(Search::SharedState&                    sharedState,
     // Prove the native Worker field constructor (worker_native_construct.zig)
     // reproduces the C++ placement-new field-for-field on this live worker.
     zfish_verify_worker_native_construct(
-      this->worker.get(),
-      reinterpret_cast<size_t>(&sharedState.sharedHistories.at(this->numaAccessToken.get_numa_index())),
-      reinterpret_cast<size_t>(&sharedState.options),
-      reinterpret_cast<size_t>(&sharedState.threads),
-      reinterpret_cast<size_t>(&sharedState.tt),
-      reinterpret_cast<size_t>(&sharedState.network),
-      n, idxInNuma, totalNuma);
-    // Diagnostic: how close is a full native Worker construction to the live one.
-    zfish_verify_worker_native_full(
       this->worker.get(),
       reinterpret_cast<size_t>(&sharedState.sharedHistories.at(this->numaAccessToken.get_numa_index())),
       reinterpret_cast<size_t>(&sharedState.options),
