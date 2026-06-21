@@ -88,6 +88,9 @@ pub const search_manager_off = struct {
     pub const stop_on_ponderhit: usize = 96; // bool
     pub const id: usize = 104; // usize
     pub const updates: usize = 112; // const UpdateContext& (pointer)
+    // tm.availableNodes: TimeManagement is {startTime, optimumTime, maximumTime,
+    // availableNodes, useNodesTime}; availableNodes is the 4th i64 at tm+24.
+    pub const tm_available_nodes: usize = tm + 24; // i64; TimeManagement::clear sets it -1
 };
 
 extern fn zfish_graph_layout_size(which: c_int) usize;
