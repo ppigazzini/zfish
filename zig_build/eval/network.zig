@@ -476,16 +476,27 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
 
 extern fn zfish_network_feature_transformer_ptr(network: *const anyopaque) *const anyopaque;
 
-// Self-check: parse the same FT blob natively and confirm it reproduces the
-// C++-parsed feature-transformer byte-for-byte (per weight region, skipping
-// alignment padding). Proves the native parse before it replaces the C++ one.
-fn verifyNativeFtParse(network: *anyopaque, blob: []const u8) void {
+// Native-owned inference storage, allocated by main.zig. The native parse writes
+// the weights straight here; inference reads from the same memory.
+extern fn zfish_native_ft_storage(n: usize) ?[*]u8;
+extern fn zfish_native_layer_storage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8;
+
+// Parse the FT blob natively into the Zig-owned inference storage, then confirm
+// it matches the C++-parsed feature-transformer byte-for-byte (per weight region,
+// skipping alignment padding). The native parse is the inference source; the C++
+// parse remains only as a load-time cross-check.
+fn parseFeatureTransformerNative(network: *anyopaque, blob: []const u8) void {
+    const dst_ptr = zfish_native_ft_storage(nnue_parse.ft_total_bytes) orelse
+        @panic("native feature-transformer storage allocation failed");
+    const dst = dst_ptr[0..nnue_parse.ft_total_bytes];
+    if (nnue_parse.parseFeatureTransformer(blob, dst) == null) {
+        @panic("native feature-transformer parse failed");
+    }
     const ref_ptr: [*]const u8 = @ptrCast(zfish_network_feature_transformer_ptr(network));
-    const reference = ref_ptr[0..nnue_parse.ft_total_bytes];
-    const scratch = std.heap.page_allocator.alloc(u8, nnue_parse.ft_total_bytes) catch return;
-    defer std.heap.page_allocator.free(scratch);
-    if (!nnue_parse.verifyFeatureTransformer(blob, reference, scratch)) {
-        @panic("native feature-transformer parse does not match the C++ parse");
+    for (nnue_parse.ft_regions) |r| {
+        if (!std.mem.eql(u8, dst[r.off .. r.off + r.len], ref_ptr[r.off .. r.off + r.len])) {
+            @panic("native feature-transformer parse does not match the C++ parse");
+        }
     }
 }
 
@@ -495,7 +506,7 @@ fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
-    verifyNativeFtParse(network, remaining[0..consumed]);
+    parseFeatureTransformerNative(network, remaining[0..consumed]);
     offset.* += consumed;
     return true;
 }
@@ -503,25 +514,24 @@ fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize
 extern fn zfish_layer_weights_bytes(network: *const anyopaque, bucket: usize, idx: c_int) usize;
 extern fn zfish_layer_biases_bytes(network: *const anyopaque, bucket: usize, idx: c_int) usize;
 
-// Self-check: parse this bucket's affine layers natively (skip the architecture
-// hash, then fc_0/fc_1/fc_2 biases+scrambled weights) and confirm each matches
-// the C++-parsed layer memory byte-for-byte.
-fn verifyNativeLayerParse(network: *anyopaque, bucket: usize, blob: []const u8) void {
-    const a = std.heap.page_allocator;
+// Parse this bucket's affine layers natively into the Zig-owned inference storage
+// (skip the architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights), then
+// confirm each matches the C++-parsed layer memory byte-for-byte.
+fn parseLayerNative(network: *anyopaque, bucket: usize, blob: []const u8) void {
     var pos: usize = 4; // architecture component hash
     var idx: c_int = 0;
     while (idx < 3) : (idx += 1) {
         const wb = zfish_layer_weights_bytes(network, bucket, idx);
         const bb = zfish_layer_biases_bytes(network, bucket, idx);
-        const sb = a.alloc(u8, bb) catch return;
-        defer a.free(sb);
-        const sw = a.alloc(u8, wb) catch return;
-        defer a.free(sw);
-        const used = nnue_parse.parseLayer(blob[pos..], sb, sw) orelse
+        const bdst = zfish_native_layer_storage(bucket, idx, 0, bb) orelse
+            @panic("native affine-layer storage allocation failed");
+        const wdst = zfish_native_layer_storage(bucket, idx, 1, wb) orelse
+            @panic("native affine-layer storage allocation failed");
+        const used = nnue_parse.parseLayer(blob[pos..], bdst[0..bb], wdst[0..wb]) orelse
             @panic("native affine-layer parse failed");
         const ref_b: [*]const u8 = @ptrCast(zfish_layer_biases(network, bucket, idx));
         const ref_w: [*]const u8 = @ptrCast(zfish_layer_weights(network, bucket, idx));
-        if (!std.mem.eql(u8, sb, ref_b[0..bb]) or !std.mem.eql(u8, sw, ref_w[0..wb]))
+        if (!std.mem.eql(u8, bdst[0..bb], ref_b[0..bb]) or !std.mem.eql(u8, wdst[0..wb], ref_w[0..wb]))
             @panic("native affine-layer parse does not match the C++ parse");
         pos += used;
     }
@@ -533,7 +543,7 @@ fn readLayer(network: *anyopaque, bucket: usize, bytes: []const u8, offset: *usi
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
-    verifyNativeLayerParse(network, bucket, remaining[0..consumed]);
+    parseLayerNative(network, bucket, remaining[0..consumed]);
     offset.* += consumed;
     return true;
 }
