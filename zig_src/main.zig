@@ -1221,6 +1221,14 @@ pub export fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize 
     return (end.* - begin.*) / graph_layout.numa_config_off.node_set_size;
 }
 
+// NumaReplicationContext::get_numa_config().num_numa_nodes(). config is the first
+// member of NumaReplicationContext (the class has no virtual functions, so no
+// vtable), so the context pointer is the NumaConfig pointer and this delegates to
+// the node-count logic above (bridge-only symbol, no gating).
+pub export fn zfish_numa_context_node_count(numa_context: *const anyopaque) usize {
+    return zfish_numa_config_node_count(numa_context);
+}
+
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {
     return engine_port.initBody(engine);
 }

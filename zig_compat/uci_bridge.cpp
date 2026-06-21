@@ -3335,11 +3335,9 @@ void zfish_root_moves_destroy(void* root_moves_ptr) {
 // (main.zig): they read the boundThreadToNumaNode vector span / element by offset.
 // Bridge-only symbols, no legacy gating needed.
 
-std::size_t zfish_numa_context_node_count(const void* numa_context_ptr) {
-    return static_cast<const NumaReplicationContext*>(numa_context_ptr)
-      ->get_numa_config()
-      .num_numa_nodes();
-}
+// zfish_numa_context_node_count is native (main.zig): NumaReplicationContext has
+// config as its first member (no vtable), so the context pointer is the
+// NumaConfig and it delegates to the native node-count. Bridge-only, no gating.
 
 std::size_t zfish_numa_context_cpus_in_node(const void* numa_context_ptr, std::size_t node) {
     const auto& cfg = static_cast<const NumaReplicationContext*>(numa_context_ptr)->get_numa_config();
