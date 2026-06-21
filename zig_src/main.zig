@@ -947,6 +947,17 @@ fn tpThreadCount(pool: *anyopaque) callconv(.c) usize {
     return (end.* - begin.*) / @sizeOf(usize);
 }
 
+// ThreadPool::thread_at(i) == threads[i].get(): the i-th unique_ptr<Thread> in
+// the threads vector is a single pointer, so .get() is the loaded slot value.
+// begin() is the vector's begin pointer at threads_begin; element stride is the
+// 8-byte unique_ptr.
+fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
+    const base: [*]const u8 = @ptrCast(pool);
+    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
+    const slot: *const usize = @ptrFromInt(begin.* + index * @sizeOf(usize));
+    return @ptrFromInt(slot.*);
+}
+
 comptime {
     if (!target_flags.legacy_target) {
         @export(&smResetCallsCount, .{ .name = "zfish_threadpool_main_manager_reset_calls_count" });
@@ -960,6 +971,7 @@ comptime {
         @export(&tpSetStopFlag, .{ .name = "zfish_threadpool_set_stop_flag" });
         @export(&tpSetIncreaseDepth, .{ .name = "zfish_threadpool_set_increase_depth" });
         @export(&tpThreadCount, .{ .name = "zfish_threadpool_thread_count" });
+        @export(&tpThreadAt, .{ .name = "zfish_threadpool_thread_at" });
         @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
         @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
     }

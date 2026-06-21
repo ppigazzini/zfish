@@ -2192,11 +2192,9 @@ std::size_t zfish_threadpool_thread_count(const void* pool_ptr) {
 }
 #endif
 
-void* zfish_threadpool_thread_at(void* pool_ptr, std::size_t index) {
-    auto* pool = static_cast<ThreadPool*>(pool_ptr);
-    assert(index < pool->size());
-    return (*(pool->begin() + static_cast<std::ptrdiff_t>(index))).get();
-}
+// thread_at(i) == threads[i].get(): native in the default build via the Zig
+// export zfish_threadpool_thread_at (main.zig), which loads the i-th unique_ptr
+// slot from the threads vector by offset. The legacy oracle uses src/thread.cpp.
 
 #ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_set_stop_flag(void* pool_ptr, std::uint8_t stop) {
