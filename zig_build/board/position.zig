@@ -5,6 +5,12 @@ const tt = @import("tt");
 const movepick = @import("movepick");
 const search = @import("search");
 
+// Force-compile the native StateInfo leaf node so its 192-byte layout assert is
+// build-verified rather than dead source (part of the post-src/ object graph).
+comptime {
+    _ = @import("state_info.zig");
+}
+
 const pawn_pt: u8 = 1;
 const knight_pt: u8 = 2;
 const bishop_pt: u8 = 3;

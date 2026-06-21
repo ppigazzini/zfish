@@ -8,6 +8,16 @@ const position_port = @import("position");
 const uci_move = @import("uci_move");
 const misc_port = @import("misc");
 
+// Force-compile the self-contained native engine-graph leaf nodes so their
+// layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
+// are build-verified rather than dead source. These are the vtable-free,
+// std::function-free post-src/ graph nodes the atomic Engine cut switches to.
+comptime {
+    _ = @import("search_manager.zig");
+    _ = @import("shared_state.zig");
+    _ = @import("root_move.zig");
+}
+
 const PendingStateEntry = struct {
     slot_key: usize,
     storage: *anyopaque,
