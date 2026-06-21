@@ -105,6 +105,22 @@ pub const thread_pool_off = struct {
     pub const threads_end: usize = 24;
 };
 
+// Engine member offsets (probed). The accessor shims return &engine->member; the
+// native versions add these offsets to the engine pointer. network (the
+// LazyNumaReplicatedSystemWide wrapper) sits at `network`; network.operator->()
+// (the resolved Network*) stays a C++ shim.
+pub const engine_off = struct {
+    pub const numa_context: usize = 24;
+    pub const pos: usize = 112;
+    pub const states: usize = 1144;
+    pub const options: usize = 1152;
+    pub const threads: usize = 1232;
+    pub const tt: usize = 1296;
+    pub const network: usize = 1320;
+    pub const update_context: usize = 1408;
+    pub const shared_hists: usize = 1648;
+};
+
 extern fn zfish_graph_layout_size(which: c_int) usize;
 
 const Pinned = struct { which: c_int, value: usize, name: []const u8 };

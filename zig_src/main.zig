@@ -944,6 +944,47 @@ comptime {
     }
 }
 
+// Native Engine member accessors. These return &engine->member; natively they add
+// the probed engine_off offset to the engine pointer. Bridge-only symbols (not in
+// src/engine.cpp), so they need no per-build gating. network.operator->() (the
+// resolved Network*) stays a C++ shim.
+const eng_off = graph_layout.engine_off;
+
+fn engMember(engine: *anyopaque, offset: usize) *anyopaque {
+    return @ptrCast(@as([*]u8, @ptrCast(engine)) + offset);
+}
+fn engMemberConst(engine: *const anyopaque, offset: usize) *const anyopaque {
+    return @ptrCast(@as([*]const u8, @ptrCast(engine)) + offset);
+}
+
+pub export fn zfish_engine_position_ptr(engine: *anyopaque) *anyopaque {
+    return engMember(engine, eng_off.pos);
+}
+pub export fn zfish_engine_options_ptr(engine: *const anyopaque) *const anyopaque {
+    return engMemberConst(engine, eng_off.options);
+}
+pub export fn zfish_engine_numa_context_ptr(engine: *anyopaque) *anyopaque {
+    return engMember(engine, eng_off.numa_context);
+}
+pub export fn zfish_engine_states_slot_ptr(engine: *anyopaque) *anyopaque {
+    return engMember(engine, eng_off.states);
+}
+pub export fn zfish_engine_threads_ptr(engine: *anyopaque) *anyopaque {
+    return engMember(engine, eng_off.threads);
+}
+pub export fn zfish_engine_tt_ptr(engine: *anyopaque) *anyopaque {
+    return engMember(engine, eng_off.tt);
+}
+pub export fn zfish_engine_shared_hists_ptr(engine: *anyopaque) *anyopaque {
+    return engMember(engine, eng_off.shared_hists);
+}
+pub export fn zfish_engine_network_replicated_ptr(engine: *anyopaque) *anyopaque {
+    return engMember(engine, eng_off.network);
+}
+pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const anyopaque {
+    return engMemberConst(engine, eng_off.update_context);
+}
+
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {
     return engine_port.initBody(engine);
 }

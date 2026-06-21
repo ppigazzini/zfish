@@ -2766,21 +2766,8 @@ const char* zfish_engine_numa_config_text(const void* engine_ptr) {
     return alloc_c_string(static_cast<const Engine*>(engine_ptr)->numaContext.get_numa_config().to_string());
 }
 
-void* zfish_engine_position_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->pos;
-}
-
-const void* zfish_engine_options_ptr(const void* engine_ptr) {
-    return &static_cast<const Engine*>(engine_ptr)->options;
-}
-
-void* zfish_engine_numa_context_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->numaContext;
-}
-
-void* zfish_engine_states_slot_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->states;
-}
+// zfish_engine_position_ptr, _options_ptr, _numa_context_ptr, _states_slot_ptr
+// are native (main.zig), offset into the engine pointer via graph_layout.engine_off.
 
 void zfish_engine_states_slot_reset(void* states_slot_ptr) {
     static_cast<StateListPtr*>(states_slot_ptr)->reset();
@@ -2790,25 +2777,8 @@ const void* zfish_engine_network_ptr(const void* engine_ptr) {
     return static_cast<const Engine*>(engine_ptr)->network.operator->();
 }
 
-void* zfish_engine_threads_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->threads;
-}
-
-void* zfish_engine_tt_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->tt;
-}
-
-void* zfish_engine_shared_hists_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->sharedHists;
-}
-
-void* zfish_engine_network_replicated_ptr(void* engine_ptr) {
-    return &static_cast<Engine*>(engine_ptr)->network;
-}
-
-const void* zfish_engine_update_context_ptr(const void* engine_ptr) {
-    return &static_cast<const Engine*>(engine_ptr)->updateContext;
-}
+// zfish_engine_threads_ptr, _tt_ptr, _shared_hists_ptr, _network_replicated_ptr,
+// _update_context_ptr are native (main.zig), offsetting into the engine pointer.
 
 const void* zfish_numa_context_config(const void* numa_context_ptr) {
     return &static_cast<const NumaReplicationContext*>(numa_context_ptr)->get_numa_config();
