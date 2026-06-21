@@ -37,6 +37,31 @@ comptime {
     std.debug.assert(@sizeOf(SharedState) == 40);
 }
 
+// Self-check: build a native SharedState from the same five referents the C++
+// SharedState was constructed with and assert all 40 bytes match. Proves the
+// native field order/layout reproduces the C++ SharedState the bridge constructs.
+export fn zfish_verify_shared_state_native(
+    cpp: ?*const anyopaque,
+    options: ?*anyopaque,
+    threads: ?*anyopaque,
+    tt: ?*anyopaque,
+    shared_histories: ?*anyopaque,
+    network: ?*anyopaque,
+) void {
+    const cpp_bytes: [*]const u8 = @ptrCast(cpp orelse return);
+    const ss = SharedState.init(
+        options orelse return,
+        threads orelse return,
+        tt orelse return,
+        shared_histories orelse return,
+        network orelse return,
+    );
+    const native_bytes = std.mem.asBytes(&ss);
+    for (native_bytes, 0..) |b, i| {
+        if (b != cpp_bytes[i]) @panic("native SharedState does not match the C++ SharedState");
+    }
+}
+
 // ---- tests ------------------------------------------------------------------
 
 const testing = std.testing;

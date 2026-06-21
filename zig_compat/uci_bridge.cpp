@@ -2792,6 +2792,8 @@ const void* zfish_numa_context_config(const void* numa_context_ptr) {
     return &static_cast<const NumaReplicationContext*>(numa_context_ptr)->get_numa_config();
 }
 
+extern "C" void zfish_verify_shared_state_native(const void*, void*, void*, void*, void*, void*);
+
 void* zfish_search_shared_state_create(const void* options_ptr,
                                        void*       threads_ptr,
                                        void*       tt_ptr,
@@ -2805,7 +2807,13 @@ void* zfish_search_shared_state_create(const void* options_ptr,
     const auto& network =
       *static_cast<const LazyNumaReplicatedSystemWide<Eval::NNUE::Network>*>(network_ptr);
 
-    return new Search::SharedState(options, threads, tt, shared_hists, network);
+    auto* shared_state = new Search::SharedState(options, threads, tt, shared_hists, network);
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // Prove the native SharedState reproduces this C++ SharedState byte-for-byte.
+    zfish_verify_shared_state_native(shared_state, const_cast<OptionsMap*>(&options), &threads, &tt,
+                                     &shared_hists, const_cast<void*>(network_ptr));
+#endif
+    return shared_state;
 }
 
 void zfish_search_shared_state_destroy(void* shared_state_ptr) {
