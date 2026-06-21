@@ -99,6 +99,10 @@ pub const search_manager_off = struct {
 pub const thread_pool_off = struct {
     pub const stop: usize = 0; // std::atomic_bool
     pub const increase_depth: usize = 1; // std::atomic_bool
+    // threads: std::vector<unique_ptr<Thread>> {begin, end, cap} at 16/24/32.
+    // size() == (end - begin) / sizeof(unique_ptr) (8 bytes).
+    pub const threads_begin: usize = 16;
+    pub const threads_end: usize = 24;
 };
 
 extern fn zfish_graph_layout_size(which: c_int) usize;
