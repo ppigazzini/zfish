@@ -127,6 +127,16 @@ pub const thread_off = struct {
     pub const worker: usize = 8;
 };
 
+// NumaConfig member offsets. `nodes` (std::vector<std::set<CpuIndex>>) is the
+// first member at offset 0; the vector is {begin, end, cap} 8-byte pointers, and
+// each std::set<CpuIndex> element is 48 bytes (libstdc++ _Rb_tree). So
+// num_numa_nodes() == nodes.size() == (end - begin) / 48.
+pub const numa_config_off = struct {
+    pub const nodes_begin: usize = 0;
+    pub const nodes_end: usize = 8;
+    pub const node_set_size: usize = 48;
+};
+
 extern fn zfish_graph_layout_size(which: c_int) usize;
 
 const Pinned = struct { which: c_int, value: usize, name: []const u8 };

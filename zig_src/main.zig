@@ -1017,6 +1017,16 @@ pub export fn zfish_threadpool_num_threads(pool: *const anyopaque) usize {
     return (end.* - begin.*) / @sizeOf(usize);
 }
 
+// NumaConfig::num_numa_nodes() == nodes.size() (bridge-only symbol, no gating).
+// nodes is a std::vector<std::set<CpuIndex>> at offset 0; size is the byte span
+// divided by the 48-byte std::set element.
+pub export fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize {
+    const base: [*]const u8 = @ptrCast(numa_config);
+    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.numa_config_off.nodes_begin));
+    const end: *const usize = @ptrCast(@alignCast(base + graph_layout.numa_config_off.nodes_end));
+    return (end.* - begin.*) / graph_layout.numa_config_off.node_set_size;
+}
+
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {
     return engine_port.initBody(engine);
 }
