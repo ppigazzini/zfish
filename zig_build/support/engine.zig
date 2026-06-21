@@ -13,6 +13,7 @@ const misc_port = @import("misc");
 // are build-verified rather than dead source. These are the vtable-free,
 // std::function-free post-src/ graph nodes the atomic Engine cut switches to.
 comptime {
+    _ = @import("engine_graph.zig");
     _ = @import("search_manager.zig");
     _ = @import("shared_state.zig");
     _ = @import("root_move.zig");
