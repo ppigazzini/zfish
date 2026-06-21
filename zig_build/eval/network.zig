@@ -357,8 +357,18 @@ pub fn contentHash(network: *const anyopaque) usize {
         hashCombine(&hash, nativeLayerContentHash(network, bucket));
     }
 
-    hashCombine(&hash, zfish_network_eval_file_content_hash(network));
+    hashCombine(&hash, nativeEvalFileContentHash(network));
     return hash;
+}
+
+// Content hash of the eval-file names (std::hash<EvalFile>), computed natively
+// from the bridge-exposed FixedString views.
+fn nativeEvalFileContentHash(network: *const anyopaque) usize {
+    return nnue_hash.evalFileContentHash(
+        viewToSlice(zfish_network_default_name(network)),
+        viewToSlice(zfish_network_current_name(network)),
+        viewToSlice(zfish_network_description(network)),
+    );
 }
 
 // Load-time self-check: the native component hashes must equal the C++ ones,
@@ -372,6 +382,9 @@ fn verifyNativeContentHashes(network: *const anyopaque) void {
         if (nativeLayerContentHash(network, bucket) != zfish_network_layer_content_hash(network, bucket)) {
             @panic("native layer-stack content hash does not match the C++ hash");
         }
+    }
+    if (nativeEvalFileContentHash(network) != zfish_network_eval_file_content_hash(network)) {
+        @panic("native eval-file content hash does not match the C++ hash");
     }
 }
 
