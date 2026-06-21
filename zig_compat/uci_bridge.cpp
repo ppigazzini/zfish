@@ -2268,14 +2268,10 @@ void zfish_thread_worker_set_root_moves(void* thread_ptr, const void* root_moves
     thread->worker_set_root_moves(*static_cast<const Search::RootMoves*>(root_moves_ptr));
 }
 
-void zfish_thread_worker_set_root_position(void*                thread_ptr,
-                                           const unsigned char* fen_ptr,
-                                           std::size_t          fen_len,
-                                           std::uint8_t         chess960) {
-    auto* thread = static_cast<Thread*>(thread_ptr);
-    const auto fen = std::string_view(reinterpret_cast<const char*>(fen_ptr), fen_len);
-    thread->worker_set_root_position(fen, chess960 != 0);
-}
+// set_root_position runs rootPos.set(fen, chess960, &rootState): native in the
+// default build via zfish_thread_worker_set_root_position (main.zig), which
+// dispatches to the native position set over the in-Worker rootPos/rootState.
+// The legacy oracle uses src/thread.cpp.
 
 // set_root_state assigns worker.rootState = value (POD StateInfo): native in the
 // default build via zfish_thread_worker_set_root_state (main.zig), which memcpy's
