@@ -154,6 +154,13 @@ pub fn layerStackContentHash(
     return h;
 }
 
+// Network::hash (network.h): the evaluation-function structure hash embedded in
+// the file header, FeatureTransformer::get_hash_value xor
+// NetworkArchitecture::get_hash_value.
+pub fn networkHashValue() u32 {
+    return featureTransformerHashValue() ^ architectureHashValue();
+}
+
 // std::hash<EvalFile>: combine hash_bytes of defaultName, current, netDescription
 // (each a FixedString hashed over its .data()/.size()).
 pub fn evalFileContentHash(default_name: []const u8, current: []const u8, description: []const u8) usize {
