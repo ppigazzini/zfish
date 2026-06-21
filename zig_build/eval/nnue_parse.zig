@@ -76,7 +76,7 @@ pub fn weightIndexScrambled(i: usize, padded_input: usize, output_dims: usize) u
 
 // ---- feature transformer parse ---------------------------------------------
 
-const leb_magic = "COMPRESSED_LEB128";
+pub const leb_magic = "COMPRESSED_LEB128";
 const cache_line = 64;
 
 pub const half_dimensions: usize = 1024;
@@ -203,6 +203,107 @@ pub fn parseLayer(blob: []const u8, biases_dst: []u8, weights_dst: []u8) ?usize 
     }
     pos += n;
     return pos;
+}
+
+// ---- serialization (write_parameters) ---------------------------------------
+
+const Bytes = std.ArrayList(u8);
+
+fn constSlice(comptime T: type, src: []const u8, off: usize, count: usize) []const T {
+    const bytes: []align(@alignOf(T)) const u8 = @alignCast(src[off .. off + count * @sizeOf(T)]);
+    return std.mem.bytesAsSlice(T, bytes);
+}
+
+// Append one canonical signed-LEB128 value (write_leb_128, nnue_common.h).
+fn encodeLebValue(comptime T: type, v: T, out: *Bytes, a: std.mem.Allocator) !void {
+    var value: i64 = v;
+    while (true) {
+        const byte: u8 = @intCast(value & 0x7f);
+        value >>= 7;
+        const done = if (byte & 0x40 == 0) value == 0 else value == -1;
+        if (done) {
+            try out.append(a, byte);
+            return;
+        }
+        try out.append(a, byte | 0x80);
+    }
+}
+
+// Append a COMPRESSED_LEB128 section: magic, u32 byte-count, then the encoded
+// values. `extra` (if non-empty) is encoded into the same section after `values`
+// (the two-array write_leb_128(threatPsqt, psqt) overload).
+fn encodeLebSection(
+    comptime T: type,
+    values: []const T,
+    extra: []const T,
+    out: *Bytes,
+    a: std.mem.Allocator,
+) !void {
+    try out.appendSlice(a, leb_magic);
+    const count_pos = out.items.len;
+    try out.appendSlice(a, &[_]u8{ 0, 0, 0, 0 });
+    const data_start = out.items.len;
+    for (values) |v| try encodeLebValue(T, v, out, a);
+    for (extra) |v| try encodeLebValue(T, v, out, a);
+    const count: u32 = @intCast(out.items.len - data_start);
+    std.mem.writeInt(u32, out.items[count_pos..][0..4], count, .little);
+}
+
+// FeatureTransformer::write_parameters preceded by Detail::write_parameters'
+// u32 hash. PackusEpi16Order is the identity, so unpermute is a no-op. Member
+// write order: biases (LEB i16), threatWeights (raw i8), weights (LEB i16),
+// combined threatPsqtWeights++psqtWeights (LEB i32).
+pub fn serializeFeatureTransformer(
+    ft: []const u8,
+    hash_value: u32,
+    out: *Bytes,
+    a: std.mem.Allocator,
+) !void {
+    var hdr: [4]u8 = undefined;
+    std.mem.writeInt(u32, &hdr, hash_value, .little);
+    try out.appendSlice(a, &hdr);
+
+    try encodeLebSection(i16, constSlice(i16, ft, biases_off, biases_count), &.{}, out, a);
+    try out.appendSlice(a, ft[threat_weights_off .. threat_weights_off + threat_weights_count]);
+    try encodeLebSection(i16, constSlice(i16, ft, weights_off, psq_weights_count), &.{}, out, a);
+    try encodeLebSection(
+        i32,
+        constSlice(i32, ft, threat_psqt_weights_off, threat_psqt_weights_count),
+        constSlice(i32, ft, psqt_weights_off, psqt_weights_count),
+        out,
+        a,
+    );
+}
+
+// AffineTransform::write_parameters: biases (int32 LE) then weights in the file's
+// linear order, recovered from the scrambled storage via get_weight_index.
+fn serializeLayerOne(biases: []const u8, weights: []const u8, out: *Bytes, a: std.mem.Allocator) !void {
+    try out.appendSlice(a, biases);
+    const output_dims = biases.len / @sizeOf(i32);
+    const n = weights.len;
+    const padded_input = n / output_dims;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        try out.append(a, weights[weightIndexScrambled(i, padded_input, output_dims)]);
+    }
+}
+
+// NetworkArchitecture::write_parameters preceded by Detail's u32 hash. The
+// activations carry no parameters, so only fc_0/fc_1/fc_2 are written.
+pub fn serializeLayer(
+    hash_value: u32,
+    biases: [3][]const u8,
+    weights: [3][]const u8,
+    out: *Bytes,
+    a: std.mem.Allocator,
+) !void {
+    var hdr: [4]u8 = undefined;
+    std.mem.writeInt(u32, &hdr, hash_value, .little);
+    try out.appendSlice(a, &hdr);
+    var idx: usize = 0;
+    while (idx < 3) : (idx += 1) {
+        try serializeLayerOne(biases[idx], weights[idx], out, a);
+    }
 }
 
 // ---- tests ------------------------------------------------------------------
