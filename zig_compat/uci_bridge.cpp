@@ -2282,12 +2282,10 @@ void zfish_thread_worker_set_root_state(void* thread_ptr, const void* setup_stat
     thread->worker_set_root_state(*static_cast<const StateInfo*>(setup_state_ptr));
 }
 
-void zfish_thread_worker_set_tb_config(void* thread_ptr, ZfishTbConfig config) {
-    auto* thread = static_cast<Thread*>(thread_ptr);
-    thread->worker_set_tb_config(Tablebases::Config{config.cardinality, config.root_in_tb != 0,
-                                                     config.use_rule50 != 0,
-                                                     Depth(config.probe_depth)});
-}
+// set_tb_config assigns worker.tbConfig = Tablebases::Config{...}: native in the
+// default build via zfish_thread_worker_set_tb_config (main.zig), which writes
+// the four Config fields through the probed tbConfig offset. The legacy oracle
+// uses src/thread.cpp.
 
 #ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint64_t zfish_thread_nodes_searched(const void* thread_ptr) {
@@ -3773,6 +3771,10 @@ std::size_t zfish_graph_layout_size(int which) {
     case 12: return sizeof(Eval::NNUE::AccumulatorCaches);
     case 13: return sizeof(Search::RootMove);
     case 14: return alignof(Stockfish::Search::Worker);
+    // Member offset probe (not a size): offsetof(Worker, tbConfig). Worker is not
+    // standard-layout (it has reference members), so this is computed at runtime;
+    // the native set_tb_config flip writes the Config fields through this offset.
+    case 15: return offsetof(Search::Worker, tbConfig);
     default: return 0;
     }
 }
