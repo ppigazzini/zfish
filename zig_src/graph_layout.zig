@@ -56,6 +56,10 @@ pub const worker_off = struct {
     pub const thread_idx: usize = 11421600;
     pub const reductions: usize = 11421632;
     pub const manager: usize = 11422656;
+    // tbConfig (Tablebases::Config, 12 used bytes + 4 pad) sits immediately after
+    // the 8-byte manager unique_ptr, before the options reference slot. Verified
+    // at engine creation via the offsetof probe (which == 15) below.
+    pub const tb_config: usize = 11422664;
     // After manager come tbConfig (16B), then the options/threads/tt/network
     // reference slots; 8 bytes of AccumulatorStack-alignment padding follow
     // network before accumulator_stack. These offsets were confirmed by dumping
@@ -156,6 +160,7 @@ const pinned = [_]Pinned{
     .{ .which = 11, .value = accumulator_stack_size, .name = "AccumulatorStack" },
     .{ .which = 12, .value = accumulator_caches_size, .name = "AccumulatorCaches" },
     .{ .which = 13, .value = root_move_size, .name = "RootMove" },
+    .{ .which = 15, .value = worker_off.tb_config, .name = "offsetof(Worker, tbConfig)" },
 };
 
 pub export fn zfish_graph_verify_layouts() void {
