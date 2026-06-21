@@ -1124,6 +1124,26 @@ fn workerManager(worker: *const anyopaque) usize {
     return p.*;
 }
 
+// worker->rootMoves[0]: rootMoves is a std::vector<RootMove> whose begin pointer
+// is the first element's address.
+fn workerRootMove0(worker: *const anyopaque) usize {
+    const begin: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.root_moves));
+    return begin.*;
+}
+
+// zfish_ss_set_prev_scores: w->main_manager()->bestPreviousScore =
+// b->rootMoves[0].score, and likewise bestPreviousAverageScore. Reads the two
+// Value ints from best's first RootMove and stores them in worker's manager
+// (bridge-only symbol, no gating).
+pub export fn zfish_ss_set_prev_scores(worker: *anyopaque, best: *const anyopaque) void {
+    const rm0 = workerRootMove0(best);
+    const score: *const i32 = @ptrFromInt(rm0 + graph_layout.root_move_off.score);
+    const avg: *const i32 = @ptrFromInt(rm0 + graph_layout.root_move_off.average_score);
+    const mgr = workerManager(worker);
+    @as(*i32, @ptrFromInt(mgr + graph_layout.search_manager_off.best_previous_score)).* = score.*;
+    @as(*i32, @ptrFromInt(mgr + graph_layout.search_manager_off.best_previous_average_score)).* = avg.*;
+}
+
 // zfish_ss_set_stop: worker->threads.stop = true. Plain byte store, matching the
 // gate-verified native tpSetStopFlag (bridge-only symbol, no gating).
 pub export fn zfish_ss_set_stop(worker: *anyopaque) void {

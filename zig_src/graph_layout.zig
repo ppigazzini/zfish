@@ -135,6 +135,15 @@ pub const thread_off = struct {
     pub const worker: usize = 8;
 };
 
+// RootMove field offsets (bytes from a RootMove base). Layout: effort(u64)@0,
+// then the Value(int) scores score@8, previousScore@12, averageScore@16,
+// meanSquaredScore@20, uciScore@24, the two bound bools@28/29, selDepth@32,
+// tbRank@36, tbScore@40, then PVMoves pv@48 (8-aligned). Total 552 bytes pins it.
+pub const root_move_off = struct {
+    pub const score: usize = 8;
+    pub const average_score: usize = 16;
+};
+
 // LimitsType field offsets (bytes from the limits sub-object base). searchmoves
 // is a 24-byte std::vector at 0, then seven 8-byte TimePoints
 // (time[2]/inc[2]/npmsec/movetime/startTime) ending at 80, then the five ints
