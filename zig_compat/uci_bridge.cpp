@@ -1450,14 +1450,9 @@ extern "C" void zfish_ss_threads_start(void* worker) {
     static_cast<Search::Worker*>(worker)->threads.start_searching();
 }
 
-extern "C" std::uint8_t zfish_ss_should_busywait(void* worker) {
-    auto* w = static_cast<Search::Worker*>(worker);
-    return (!w->threads.stop && (w->main_manager()->ponder || w->limits.infinite)) ? 1 : 0;
-}
-
-extern "C" void zfish_ss_set_stop(void* worker) {
-    static_cast<Search::Worker*>(worker)->threads.stop = true;
-}
+// zfish_ss_should_busywait and zfish_ss_set_stop are native (main.zig): they
+// resolve worker->threads.stop, the worker manager's ponder flag, and
+// limits.infinite by offset. Bridge-only symbols, so no legacy gating is needed.
 
 extern "C" void zfish_ss_wait_finished(void* worker) {
     static_cast<Search::Worker*>(worker)->threads.wait_for_search_finished();
