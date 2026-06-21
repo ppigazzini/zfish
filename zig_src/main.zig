@@ -1195,6 +1195,22 @@ pub export fn zfish_ss_should_busywait(worker: *const anyopaque) u8 {
     return if (ponder.* != 0 or infinite.* != 0) 1 else 0;
 }
 
+// ThreadPool::boundThreadToNumaNode accessors (bridge-only). The member is a
+// std::vector<size_t> at bound_nodes_begin; count is the byte span / 8 and
+// at(i) loads the i-th element from the begin pointer.
+pub export fn zfish_threadpool_bound_node_count(pool: *const anyopaque) usize {
+    const base: [*]const u8 = @ptrCast(pool);
+    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.bound_nodes_begin));
+    const end: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.bound_nodes_end));
+    return (end.* - begin.*) / @sizeOf(usize);
+}
+pub export fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usize) usize {
+    const base: [*]const u8 = @ptrCast(pool);
+    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.bound_nodes_begin));
+    const slot: *const usize = @ptrFromInt(begin.* + index * @sizeOf(usize));
+    return slot.*;
+}
+
 // NumaConfig::num_numa_nodes() == nodes.size() (bridge-only symbol, no gating).
 // nodes is a std::vector<std::set<CpuIndex>> at offset 0; size is the byte span
 // divided by the 48-byte std::set element.
