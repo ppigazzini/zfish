@@ -1628,9 +1628,8 @@ struct Cluster {
 
 static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
 
-extern "C" std::size_t zfish_threadpool_num_threads(const void* threads_ptr) {
-    return static_cast<const ThreadPool*>(threads_ptr)->num_threads();
-}
+// zfish_threadpool_num_threads is native (main.zig): threads.size() via the
+// threads-vector begin/end offsets.
 
 extern "C" void zfish_threadpool_zero_tt_slice(void*        threads_ptr,
                                                  std::size_t thread_id,
