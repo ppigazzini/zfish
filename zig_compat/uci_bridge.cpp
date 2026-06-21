@@ -3331,15 +3331,9 @@ void zfish_root_moves_destroy(void* root_moves_ptr) {
     delete static_cast<Search::RootMoves*>(root_moves_ptr);
 }
 
-std::size_t zfish_threadpool_bound_node_count(const void* pool_ptr) {
-    return static_cast<const ThreadPool*>(pool_ptr)->boundThreadToNumaNode.size();
-}
-
-std::size_t zfish_threadpool_bound_node_at(const void* pool_ptr, std::size_t index) {
-    const auto* pool = static_cast<const ThreadPool*>(pool_ptr);
-    assert(index < pool->boundThreadToNumaNode.size());
-    return pool->boundThreadToNumaNode[index];
-}
+// zfish_threadpool_bound_node_count and zfish_threadpool_bound_node_at are native
+// (main.zig): they read the boundThreadToNumaNode vector span / element by offset.
+// Bridge-only symbols, no legacy gating needed.
 
 std::size_t zfish_numa_context_node_count(const void* numa_context_ptr) {
     return static_cast<const NumaReplicationContext*>(numa_context_ptr)

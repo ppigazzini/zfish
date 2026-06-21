@@ -111,6 +111,11 @@ pub const thread_pool_off = struct {
     // size() == (end - begin) / sizeof(unique_ptr) (8 bytes).
     pub const threads_begin: usize = 16;
     pub const threads_end: usize = 24;
+    // boundThreadToNumaNode (std::vector<NumaIndex/size_t>) follows the threads
+    // vector at offset 40; size() == (end - begin) / 8. ThreadPool is 64 bytes
+    // (40 + the 24-byte vector), which pins this.
+    pub const bound_nodes_begin: usize = 40;
+    pub const bound_nodes_end: usize = 48;
 };
 
 // Engine member offsets (probed). The accessor shims return &engine->member; the
