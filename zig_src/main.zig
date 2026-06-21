@@ -1111,6 +1111,41 @@ pub export fn zfish_threadpool_num_threads(pool: *const anyopaque) usize {
     return (end.* - begin.*) / @sizeOf(usize);
 }
 
+// Worker -> threads (ThreadPool&) and Worker -> manager (the worker's own
+// SearchManager via the unique_ptr) resolvers. Both slots hold a pointer (the
+// reference is stored as a pointer; main_manager() is manager.get()), so the
+// resolver loads the slot value.
+fn workerThreadsPool(worker: *const anyopaque) usize {
+    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.threads));
+    return p.*;
+}
+fn workerManager(worker: *const anyopaque) usize {
+    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.manager));
+    return p.*;
+}
+
+// zfish_ss_set_stop: worker->threads.stop = true. Plain byte store, matching the
+// gate-verified native tpSetStopFlag (bridge-only symbol, no gating).
+pub export fn zfish_ss_set_stop(worker: *anyopaque) void {
+    const pool = workerThreadsPool(worker);
+    const stop: *u8 = @ptrFromInt(pool + graph_layout.thread_pool_off.stop);
+    stop.* = 1;
+}
+
+// zfish_ss_should_busywait: !threads.stop && (manager->ponder || limits.infinite).
+// Resolves the pool stop byte, the worker's manager ponder flag, and the limits
+// infinite int by offset (bridge-only symbol, no gating).
+pub export fn zfish_ss_should_busywait(worker: *const anyopaque) u8 {
+    const pool = workerThreadsPool(worker);
+    const stop: *const u8 = @ptrFromInt(pool + graph_layout.thread_pool_off.stop);
+    if (stop.* != 0) return 0;
+    const mgr = workerManager(worker);
+    const ponder: *const u8 = @ptrFromInt(mgr + graph_layout.search_manager_off.ponder);
+    const base: [*]const u8 = @ptrCast(worker);
+    const infinite: *const c_int = @ptrCast(@alignCast(base + graph_layout.worker_off.limits + graph_layout.limits_off.infinite));
+    return if (ponder.* != 0 or infinite.* != 0) 1 else 0;
+}
+
 // NumaConfig::num_numa_nodes() == nodes.size() (bridge-only symbol, no gating).
 // nodes is a std::vector<std::set<CpuIndex>> at offset 0; size is the byte span
 // divided by the 48-byte std::set element.
