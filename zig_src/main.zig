@@ -951,6 +951,25 @@ fn tpThreadCount(pool: *anyopaque) callconv(.c) usize {
 // the threads vector is a single pointer, so .get() is the loaded slot value.
 // begin() is the vector's begin pointer at threads_begin; element stride is the
 // 8-byte unique_ptr.
+// Mutable Thread -> Worker resolution (LargePagePtr<Worker> at Thread+8).
+fn threadWorkerMut(thread: *anyopaque) ?[*]u8 {
+    const wp: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(thread)) + graph_layout.thread_off.worker));
+    if (wp.* == 0) return null;
+    return @ptrFromInt(wp.*);
+}
+
+// Worker::reset_root_setup_state zeros the five per-search counters. They are POD
+// (the two node counters are atomics, but a relaxed store of 0 is a plain zero
+// write), so each is set through the worker offset map.
+fn thWorkerResetRootSetupState(thread: *anyopaque) callconv(.c) void {
+    const w = threadWorkerMut(thread) orelse return;
+    @as(*u64, @ptrCast(@alignCast(w + graph_layout.worker_off.nodes))).* = 0;
+    @as(*u64, @ptrCast(@alignCast(w + graph_layout.worker_off.tb_hits))).* = 0;
+    @as(*u64, @ptrCast(@alignCast(w + graph_layout.worker_off.best_move_changes))).* = 0;
+    @as(*i32, @ptrCast(@alignCast(w + graph_layout.worker_off.nmp_min_ply))).* = 0;
+    @as(*i32, @ptrCast(@alignCast(w + graph_layout.worker_off.root_depth))).* = 0;
+}
+
 fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
     const base: [*]const u8 = @ptrCast(pool);
     const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
@@ -972,6 +991,7 @@ comptime {
         @export(&tpSetIncreaseDepth, .{ .name = "zfish_threadpool_set_increase_depth" });
         @export(&tpThreadCount, .{ .name = "zfish_threadpool_thread_count" });
         @export(&tpThreadAt, .{ .name = "zfish_threadpool_thread_at" });
+        @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
         @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
         @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
     }

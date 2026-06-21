@@ -2258,9 +2258,10 @@ void zfish_thread_worker_set_limits(void* thread_ptr, const void* limits_ptr) {
     thread->worker_set_limits(*static_cast<const Search::LimitsType*>(limits_ptr));
 }
 
-void zfish_thread_worker_reset_root_setup_state(void* thread_ptr) {
-    static_cast<Thread*>(thread_ptr)->worker_reset_root_setup_state();
-}
+// reset_root_setup_state zeros five POD per-search counters: native in the
+// default build via zfish_thread_worker_reset_root_setup_state (main.zig), which
+// writes them through the Worker offset map. The legacy oracle uses
+// src/thread.cpp.
 
 void zfish_thread_worker_set_root_moves(void* thread_ptr, const void* root_moves_ptr) {
     auto* thread = static_cast<Thread*>(thread_ptr);
