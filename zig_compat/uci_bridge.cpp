@@ -1468,12 +1468,9 @@ extern "C" void* zfish_ss_get_best_thread(void* worker) {
     return static_cast<Search::Worker*>(worker)->threads.get_best_thread()->worker.get();
 }
 
-extern "C" void zfish_ss_set_prev_scores(void* worker, void* best) {
-    auto* w = static_cast<Search::Worker*>(worker);
-    auto* b = static_cast<Search::Worker*>(best);
-    w->main_manager()->bestPreviousScore        = b->rootMoves[0].score;
-    w->main_manager()->bestPreviousAverageScore = b->rootMoves[0].averageScore;
-}
+// zfish_ss_set_prev_scores is native (main.zig): it reads best->rootMoves[0]
+// score/averageScore and stores them in worker's manager by offset. Bridge-only
+// symbol, so no legacy gating is needed.
 
 extern "C" std::uint8_t zfish_ss_pv_one_and_ponder(void* worker, void* best) {
     auto* w = static_cast<Search::Worker*>(worker);
