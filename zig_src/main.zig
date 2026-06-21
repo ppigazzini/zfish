@@ -1009,6 +1009,13 @@ pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const a
 pub export fn zfish_uci_engine_ptr(uci: *anyopaque) *anyopaque {
     return uci;
 }
+// ThreadPool::num_threads() == threads.size() (bridge-only symbol, no gating).
+pub export fn zfish_threadpool_num_threads(pool: *const anyopaque) usize {
+    const base: [*]const u8 = @ptrCast(pool);
+    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
+    const end: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_end));
+    return (end.* - begin.*) / @sizeOf(usize);
+}
 
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {
     return engine_port.initBody(engine);
