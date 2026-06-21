@@ -15,6 +15,10 @@ const no_piece: u8 = 0;
 const network_version: u32 = 0x7AF32F20;
 const hash_combine_magic: usize = 0x9e3779b9;
 const none_name = "None";
+// EvalFileDefaultName (evaluate.h): the embedded net's default name. A build
+// constant, so the native path no longer reads it from the C++ Network's
+// EvalFile.defaultName.
+const default_eval_file_name = "nn-83a0d6daf7e5.nnue";
 
 pub const ByteView = extern struct {
     ptr: [*]const u8,
@@ -55,7 +59,6 @@ pub const TraceOutput = extern struct {
     correct_bucket: usize,
 };
 
-extern fn zfish_network_default_name(network: *const anyopaque) ByteView;
 extern fn zfish_network_embedded_bytes() ByteView;
 // Kept only to dual-write the C++ EvalFile so the content-hash oracle self-check
 // stays valid; the native path reads its own EvalFile state (nn_* below).
@@ -173,7 +176,7 @@ pub fn load(
     evalfile_path_len: usize,
 ) void {
     const root_directory = root_directory_ptr[0..root_directory_len];
-    const default_name = viewToSlice(zfish_network_default_name(network));
+    const default_name = default_eval_file_name;
     const evalfile_path = if (evalfile_path_len == 0)
         default_name
     else
@@ -199,7 +202,7 @@ pub fn save(
     filename_ptr: [*]const u8,
     filename_len: usize,
 ) SaveResult {
-    const default_name = viewToSlice(zfish_network_default_name(network));
+    const default_name = default_eval_file_name;
     const current_name = nnCurrent();
 
     var actual_filename: []const u8 = undefined;
@@ -234,7 +237,7 @@ pub fn verify(
     evalfile_path_ptr: [*]const u8,
     evalfile_path_len: usize,
 ) VerifyResult {
-    const default_name = viewToSlice(zfish_network_default_name(network));
+    const default_name = default_eval_file_name;
     const current_name = nnCurrent();
     const evalfile_path = if (evalfile_path_len == 0)
         default_name
@@ -390,15 +393,15 @@ pub fn contentHash(network: *const anyopaque) usize {
         hashCombine(&hash, nativeLayerContentHash(network, bucket));
     }
 
-    hashCombine(&hash, nativeEvalFileContentHash(network));
+    hashCombine(&hash, nativeEvalFileContentHash());
     return hash;
 }
 
 // Content hash of the eval-file names (std::hash<EvalFile>), computed natively
-// from the bridge-exposed FixedString views.
-fn nativeEvalFileContentHash(network: *const anyopaque) usize {
+// from the Zig-owned EvalFile state.
+fn nativeEvalFileContentHash() usize {
     return nnue_hash.evalFileContentHash(
-        viewToSlice(zfish_network_default_name(network)),
+        default_eval_file_name,
         nnCurrent(),
         nnDescription(),
     );
@@ -416,7 +419,7 @@ fn verifyNativeContentHashes(network: *const anyopaque) void {
             @panic("native layer-stack content hash does not match the C++ hash");
         }
     }
-    if (nativeEvalFileContentHash(network) != zfish_network_eval_file_content_hash(network)) {
+    if (nativeEvalFileContentHash() != zfish_network_eval_file_content_hash(network)) {
         @panic("native eval-file content hash does not match the C++ hash");
     }
     if (nnue_hash.networkHashValue() != zfish_network_hash_value()) {
@@ -489,7 +492,7 @@ fn loadUserNet(network: *anyopaque, dir: []const u8, evalfile_path: []const u8) 
 fn loadInternal(network: *anyopaque) void {
     markInitializedNative(network);
 
-    const default_name = viewToSlice(zfish_network_default_name(network));
+    const default_name = default_eval_file_name;
     _ = loadNetworkBytes(network, viewToSlice(zfish_network_embedded_bytes()), default_name);
 }
 
