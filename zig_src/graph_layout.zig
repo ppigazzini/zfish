@@ -121,6 +121,12 @@ pub const engine_off = struct {
     pub const shared_hists: usize = 1648;
 };
 
+// Thread member offset (probed): the LargePagePtr<Worker> worker is at Thread+8.
+// Dereferenced (the unique_ptr is a single pointer) it yields the Worker base.
+pub const thread_off = struct {
+    pub const worker: usize = 8;
+};
+
 extern fn zfish_graph_layout_size(which: c_int) usize;
 
 const Pinned = struct { which: c_int, value: usize, name: []const u8 };

@@ -2291,6 +2291,7 @@ void zfish_thread_worker_set_tb_config(void* thread_ptr, ZfishTbConfig config) {
                                                      Depth(config.probe_depth)});
 }
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint64_t zfish_thread_nodes_searched(const void* thread_ptr) {
     return static_cast<const Thread*>(thread_ptr)->worker_nodes_searched();
 }
@@ -2298,6 +2299,7 @@ std::uint64_t zfish_thread_nodes_searched(const void* thread_ptr) {
 std::uint64_t zfish_thread_tb_hits(const void* thread_ptr) {
     return static_cast<const Thread*>(thread_ptr)->worker_tb_hits();
 }
+#endif
 
 void zfish_thread_fill_summary(const void* thread_ptr, ZfishThreadSummary* out) {
     auto score_is_bound = false;
