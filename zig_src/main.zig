@@ -921,6 +921,12 @@ fn tpSetIncreaseDepth(pool: *anyopaque, increase_depth: u8) callconv(.c) void {
     const p: *u8 = @ptrCast(@as([*]u8, @ptrCast(pool)) + graph_layout.thread_pool_off.increase_depth);
     p.* = if (increase_depth != 0) 1 else 0;
 }
+fn tpThreadCount(pool: *anyopaque) callconv(.c) usize {
+    const base: [*]const u8 = @ptrCast(pool);
+    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
+    const end: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_end));
+    return (end.* - begin.*) / @sizeOf(usize);
+}
 
 comptime {
     if (!target_flags.legacy_target) {
@@ -934,6 +940,7 @@ comptime {
         @export(&smClearTimeman, .{ .name = "zfish_threadpool_main_manager_clear_timeman" });
         @export(&tpSetStopFlag, .{ .name = "zfish_threadpool_set_stop_flag" });
         @export(&tpSetIncreaseDepth, .{ .name = "zfish_threadpool_set_increase_depth" });
+        @export(&tpThreadCount, .{ .name = "zfish_threadpool_thread_count" });
     }
 }
 
