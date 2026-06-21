@@ -142,6 +142,23 @@ pub const thread_off = struct {
 pub const root_move_off = struct {
     pub const score: usize = 8;
     pub const average_score: usize = 16;
+    // pv (PVMoves, 504 bytes, 8-aligned) follows tbScore@40; padded start is 48.
+    pub const pv: usize = 48;
+};
+
+// PVMoves field offsets. moves[MAX_PLY+1] = Move[247] = 494 bytes at 0, then the
+// std::size_t length at +496 (2 bytes of alignment padding precede it). Total 504
+// bytes pins it (sizeof(PVMoves) static_assert in the bridge).
+pub const pvmoves_off = struct {
+    pub const length: usize = 496;
+};
+
+// TranspositionTable member offsets (size 24). Declaration order is clusterCount,
+// table, generation8.
+pub const tt_off = struct {
+    pub const cluster_count: usize = 0;
+    pub const table: usize = 8;
+    pub const generation8: usize = 16;
 };
 
 // LimitsType field offsets (bytes from the limits sub-object base). searchmoves

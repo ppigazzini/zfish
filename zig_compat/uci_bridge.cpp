@@ -1472,13 +1472,9 @@ extern "C" void* zfish_ss_get_best_thread(void* worker) {
 // score/averageScore and stores them in worker's manager by offset. Bridge-only
 // symbol, so no legacy gating is needed.
 
-extern "C" std::uint8_t zfish_ss_pv_one_and_ponder(void* worker, void* best) {
-    auto* w = static_cast<Search::Worker*>(worker);
-    auto* b = static_cast<Search::Worker*>(best);
-    return (b->rootMoves[0].pv.size() == 1 && b->rootMoves[0].extract_ponder_from_tt(w->tt, w->rootPos))
-             ? 1
-             : 0;
-}
+// zfish_ss_pv_one_and_ponder is native (main.zig): it tests best->rootMoves[0]
+// pv.length == 1 by offset and, if so, runs the native extract_ponder_from_tt
+// over best's pv with worker's tt/rootPos. Bridge-only symbol, no gating.
 
 extern "C" void zfish_ss_emit_pv(void* worker, void* best) {
     auto* w = static_cast<Search::Worker*>(worker);

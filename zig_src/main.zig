@@ -1144,6 +1144,35 @@ pub export fn zfish_ss_set_prev_scores(worker: *anyopaque, best: *const anyopaqu
     @as(*i32, @ptrFromInt(mgr + graph_layout.search_manager_off.best_previous_average_score)).* = avg.*;
 }
 
+fn workerTT(worker: *const anyopaque) usize {
+    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.tt));
+    return p.*;
+}
+
+// zfish_ss_pv_one_and_ponder: best->rootMoves[0].pv.size() == 1 &&
+// best->rootMoves[0].extract_ponder_from_tt(worker->tt, worker->rootPos). The pv
+// and length come from best's first RootMove; the TT (table/clusterCount/
+// generation8) and rootPos come from worker. extract_ponder mutates pv exactly as
+// the C++ does. Bridge-only symbol, no gating.
+pub export fn zfish_ss_pv_one_and_ponder(worker: *anyopaque, best: *anyopaque) u8 {
+    const rm0 = workerRootMove0(best);
+    const pv_addr = rm0 + graph_layout.root_move_off.pv;
+    const length: *const usize = @ptrFromInt(pv_addr + graph_layout.pvmoves_off.length);
+    if (length.* != 1) return 0;
+    const tt = workerTT(worker);
+    const cc: *const usize = @ptrFromInt(tt + graph_layout.tt_off.cluster_count);
+    const table: *const usize = @ptrFromInt(tt + graph_layout.tt_off.table);
+    const gen: *const u8 = @ptrFromInt(tt + graph_layout.tt_off.generation8);
+    const pos: usize = @intFromPtr(worker) + graph_layout.worker_off.root_pos;
+    return zfish_search_extract_ponder_from_tt(
+        @ptrFromInt(pv_addr),
+        @ptrFromInt(table.*),
+        cc.*,
+        gen.*,
+        @ptrFromInt(pos),
+    );
+}
+
 // zfish_ss_set_stop: worker->threads.stop = true. Plain byte store, matching the
 // gate-verified native tpSetStopFlag (bridge-only symbol, no gating).
 pub export fn zfish_ss_set_stop(worker: *anyopaque) void {
