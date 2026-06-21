@@ -154,53 +154,7 @@ export fn zfish_worker_construct_full(
     }, @ptrFromInt(shared_history), biases);
 }
 
-// Self-check: build a COMPLETE native Worker with the live worker's own inputs
-// and assert all 13.8 MB are byte-identical to the live C++-constructed worker.
-// This proves the native constructor (field write + native Worker::clear)
-// reproduces the C++ ctor exactly, so the engine-graph cut can build a Worker
-// without C++. Read-only on the live worker; large-page allocs are zero-filled so
-// it is deterministic. The moved manager pointer and the opaque NUMA token are
-// copied from the live worker (their identity is not what we are proving here).
-export fn zfish_verify_worker_native_full(
-    live_worker: ?*const anyopaque,
-    shared_history: usize,
-    options: usize,
-    threads: usize,
-    tt: usize,
-    network: usize,
-    thread_idx: usize,
-    numa_thread_idx: usize,
-    numa_total: usize,
-) void {
-    const live: [*]const u8 = @ptrCast(live_worker orelse return);
-    const scratch_raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse return;
-    defer memory_port.alignedLargePagesFree(scratch_raw);
-    const scratch: [*]u8 = @ptrCast(scratch_raw);
-
-    const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse return));
-    constructWorkerInto(scratch, .{
-        .shared_history = shared_history,
-        .options = options,
-        .threads = threads,
-        .tt = tt,
-        .network = network,
-        .manager = readField(live, off.manager),
-        .thread_idx = thread_idx,
-        .numa_thread_idx = numa_thread_idx,
-        .numa_total = numa_total,
-        .numa_access_token = readField(live, numa_access_token_off),
-    }, @ptrFromInt(shared_history), biases);
-
-    var i: usize = 0;
-    while (i < graph_layout.worker_size) : (i += 1) {
-        if (scratch[i] != live[i]) {
-            std.debug.print("native worker full ctor: byte {d} differs (native {d} vs live {d})\n", .{ i, scratch[i], live[i] });
-            @panic("native Worker construction is not byte-identical to the C++ worker");
-        }
-    }
-}
-
-// Self-check: confirm the live C++-constructed worker carries, at each
+// Self-check: confirm the live worker carries, at each
 // constructor-set offset, exactly the value the native constructor
 // (writeConstructorFields) would write from the same inputs -- proving the two
 // agree field-for-field. This reads only the live worker (no scratch alloc, so it
