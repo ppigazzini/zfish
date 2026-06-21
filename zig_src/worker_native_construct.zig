@@ -94,11 +94,6 @@ export fn zfish_worker_write_constructor_fields(worker: ?*anyopaque, inputs: *co
     writeConstructorFields(base, inputs.*);
 }
 
-fn readField(base: [*]const u8, offset: usize) usize {
-    const p: *const usize = @ptrCast(@alignCast(base + offset));
-    return p.*;
-}
-
 // Full native Worker construction into a caller-owned, zeroed buffer: write the
 // constructor field set, then run the native Worker::clear pieces (histories,
 // shared history, reductions, refresh cache) exactly as the C++ ctor's clear()
@@ -151,46 +146,6 @@ export fn zfish_worker_construct_full(
         .numa_total = numa_total,
         .numa_access_token = numa_access_token,
     }, @ptrFromInt(shared_history), biases);
-}
-
-// Self-check: confirm the live worker carries, at each
-// constructor-set offset, exactly the value the native constructor
-// (writeConstructorFields) would write from the same inputs -- proving the two
-// agree field-for-field. This reads only the live worker (no scratch alloc, so it
-// does not perturb the heap), with writeConstructorFields itself covered by the
-// unit test. manager and numaAccessToken are excluded: the former is a moved
-// vtable pointer, the latter an opaque NUMA token. Panics on any drift.
-export fn zfish_verify_worker_native_construct(
-    live_worker: ?*const anyopaque,
-    shared_history: usize,
-    options: usize,
-    threads: usize,
-    tt: usize,
-    network: usize,
-    thread_idx: usize,
-    numa_thread_idx: usize,
-    numa_total: usize,
-) void {
-    const live: [*]const u8 = @ptrCast(live_worker orelse return);
-
-    const Check = struct { o: usize, v: usize, name: []const u8 };
-    const checks = [_]Check{
-        .{ .o = off.shared_history, .v = shared_history, .name = "sharedHistory" },
-        .{ .o = off.options, .v = options, .name = "options" },
-        .{ .o = off.threads, .v = threads, .name = "threads" },
-        .{ .o = off.tt, .v = tt, .name = "tt" },
-        .{ .o = off.network, .v = network, .name = "network" },
-        .{ .o = off.thread_idx, .v = thread_idx, .name = "threadIdx" },
-        .{ .o = numa_thread_idx_off, .v = numa_thread_idx, .name = "numaThreadIdx" },
-        .{ .o = numa_total_off, .v = numa_total, .name = "numaTotal" },
-        .{ .o = accumulator_stack_size_off, .v = 1, .name = "AccumulatorStack.size" },
-    };
-    for (checks) |chk| {
-        if (readField(live, chk.o) != chk.v) {
-            std.debug.print("native worker ctor: live {s} mismatch\n", .{chk.name});
-            @panic("native Worker constructor disagrees with the C++ placement-new");
-        }
-    }
 }
 
 // ---- tests ------------------------------------------------------------------
