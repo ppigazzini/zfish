@@ -93,6 +93,14 @@ pub const search_manager_off = struct {
     pub const tm_available_nodes: usize = tm + 24; // i64; TimeManagement::clear sets it -1
 };
 
+// ThreadPool member offsets (probed). `stop` and `increaseDepth` are the leading
+// std::atomic_bool pair; the rest of the 64-byte pool is the threads vector and
+// bookkeeping. Used by the native ThreadPool flag shims.
+pub const thread_pool_off = struct {
+    pub const stop: usize = 0; // std::atomic_bool
+    pub const increase_depth: usize = 1; // std::atomic_bool
+};
+
 extern fn zfish_graph_layout_size(which: c_int) usize;
 
 const Pinned = struct { which: c_int, value: usize, name: []const u8 };
