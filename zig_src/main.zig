@@ -1229,6 +1229,18 @@ pub export fn zfish_numa_context_node_count(numa_context: *const anyopaque) usiz
     return zfish_numa_config_node_count(numa_context);
 }
 
+// NumaReplicationContext::get_numa_config().num_cpus_in_numa_node(node) ==
+// nodes[node].size(). config is at context offset 0, so nodes begins at the
+// context pointer; the node-th std::set is at begin + node*48, and its element
+// count is stored at +40 within the set (bridge-only symbol, no gating).
+pub export fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize {
+    const base: [*]const u8 = @ptrCast(numa_context);
+    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.numa_config_off.nodes_begin));
+    const set_addr = begin.* + node * graph_layout.numa_config_off.node_set_size;
+    const count: *const usize = @ptrFromInt(set_addr + graph_layout.numa_config_off.node_set_count_off);
+    return count.*;
+}
+
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {
     return engine_port.initBody(engine);
 }

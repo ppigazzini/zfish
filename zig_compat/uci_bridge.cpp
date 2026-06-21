@@ -3339,11 +3339,9 @@ void zfish_root_moves_destroy(void* root_moves_ptr) {
 // config as its first member (no vtable), so the context pointer is the
 // NumaConfig and it delegates to the native node-count. Bridge-only, no gating.
 
-std::size_t zfish_numa_context_cpus_in_node(const void* numa_context_ptr, std::size_t node) {
-    const auto& cfg = static_cast<const NumaReplicationContext*>(numa_context_ptr)->get_numa_config();
-    assert(node < cfg.num_numa_nodes());
-    return cfg.num_cpus_in_numa_node(node);
-}
+// zfish_numa_context_cpus_in_node is native (main.zig): it reads nodes[node].size()
+// (the std::set element count at +40) from config (at context offset 0).
+// Bridge-only symbol, no gating.
 
 std::uint8_t zfish_options_syzygy_50_move_rule(const void* options_ptr) {
     return static_cast<std::uint8_t>(
