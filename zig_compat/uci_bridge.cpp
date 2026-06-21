@@ -2277,10 +2277,10 @@ void zfish_thread_worker_set_root_position(void*                thread_ptr,
     thread->worker_set_root_position(fen, chess960 != 0);
 }
 
-void zfish_thread_worker_set_root_state(void* thread_ptr, const void* setup_state_ptr) {
-    auto* thread = static_cast<Thread*>(thread_ptr);
-    thread->worker_set_root_state(*static_cast<const StateInfo*>(setup_state_ptr));
-}
+// set_root_state assigns worker.rootState = value (POD StateInfo): native in the
+// default build via zfish_thread_worker_set_root_state (main.zig), which memcpy's
+// the 192-byte StateInfo through the probed rootState offset. The legacy oracle
+// uses src/thread.cpp.
 
 // set_tb_config assigns worker.tbConfig = Tablebases::Config{...}: native in the
 // default build via zfish_thread_worker_set_tb_config (main.zig), which writes
@@ -3775,6 +3775,7 @@ std::size_t zfish_graph_layout_size(int which) {
     // standard-layout (it has reference members), so this is computed at runtime;
     // the native set_tb_config flip writes the Config fields through this offset.
     case 15: return offsetof(Search::Worker, tbConfig);
+    case 16: return offsetof(Search::Worker, rootState);
     default: return 0;
     }
 }

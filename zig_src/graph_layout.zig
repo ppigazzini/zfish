@@ -50,6 +50,10 @@ pub const worker_off = struct {
     pub const nmp_min_ply: usize = 11419828;
     pub const optimism: usize = 11419832;
     pub const root_pos: usize = 11419840;
+    // rootState (StateInfo, 192 bytes) sits between rootPos (Position, 1032 bytes)
+    // and rootMoves. Verified at engine creation via the offsetof probe
+    // (which == 16) below.
+    pub const root_state: usize = 11420872;
     pub const root_moves: usize = 11421064;
     pub const root_depth: usize = 11421088;
     pub const root_delta: usize = 11421092;
@@ -161,6 +165,7 @@ const pinned = [_]Pinned{
     .{ .which = 12, .value = accumulator_caches_size, .name = "AccumulatorCaches" },
     .{ .which = 13, .value = root_move_size, .name = "RootMove" },
     .{ .which = 15, .value = worker_off.tb_config, .name = "offsetof(Worker, tbConfig)" },
+    .{ .which = 16, .value = worker_off.root_state, .name = "offsetof(Worker, rootState)" },
 };
 
 pub export fn zfish_graph_verify_layouts() void {
