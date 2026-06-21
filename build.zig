@@ -197,6 +197,10 @@ pub fn build(b: *std.Build) void {
     engine_module.addImport("position_snapshot", position_snapshot_module);
     engine_module.addImport("uci_move", uci_move_module);
     engine_module.addImport("misc", misc_module);
+    // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
+    // engine module: it binds the native ThreadPool and TranspositionTable.
+    engine_module.addImport("thread", thread_module);
+    engine_module.addImport("tt", tt_module);
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("bitboard", bitboard_module);
