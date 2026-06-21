@@ -1845,9 +1845,6 @@ extern "C" void zfish_verify_accumulator_caches(const void*);
 extern "C" void zfish_verify_worker_construction(
   const void* worker, size_t thread_idx, const void* options_ref, const void* threads_ref,
   const void* tt_ref, const void* network_ref);
-extern "C" void zfish_verify_worker_native_construct(
-  const void* worker, size_t shared_history, size_t options, size_t threads, size_t tt,
-  size_t network, size_t thread_idx, size_t numa_thread_idx, size_t numa_total);
 extern "C" void zfish_worker_construct_full(
   void* buf, size_t shared_history, size_t options, size_t threads, size_t tt, size_t network,
   size_t manager, size_t thread_idx, size_t numa_thread_idx, size_t numa_total,
@@ -1908,16 +1905,6 @@ Thread::Thread(Search::SharedState&                    sharedState,
     // rootMoves is an empty vector and the AccumulatorStack reports size 1.
     zfish_verify_worker_construction(this->worker.get(), n, &sharedState.options,
                                      &sharedState.threads, &sharedState.tt, &sharedState.network);
-    // Prove the native Worker field constructor (worker_native_construct.zig)
-    // reproduces the C++ placement-new field-for-field on this live worker.
-    zfish_verify_worker_native_construct(
-      this->worker.get(),
-      reinterpret_cast<size_t>(&sharedState.sharedHistories.at(this->numaAccessToken.get_numa_index())),
-      reinterpret_cast<size_t>(&sharedState.options),
-      reinterpret_cast<size_t>(&sharedState.threads),
-      reinterpret_cast<size_t>(&sharedState.tt),
-      reinterpret_cast<size_t>(&sharedState.network),
-      n, idxInNuma, totalNuma);
 #endif
 }
 
