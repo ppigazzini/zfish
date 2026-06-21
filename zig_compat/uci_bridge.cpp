@@ -2202,6 +2202,16 @@ void zfish_threadpool_set_stop_flag(void* pool_ptr, std::uint8_t stop) {
     pool->stop = stop != 0;
 }
 
+// Navigation helper: the main thread's SearchManager pointer. The native field
+// shims (main.zig, default build only) write the manager's data members through
+// this pointer using the search_manager_off offset map. Defined for both builds
+// (legacy keeps the C++ field shims below). The native shims gate themselves to
+// the default build to avoid clashing with the legacy definitions.
+void* zfish_threadpool_main_manager_ptr(void* pool_ptr) {
+    return static_cast<ThreadPool*>(pool_ptr)->main_manager();
+}
+
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_main_manager_set_stop_on_ponderhit(void*       pool_ptr,
                                                          std::uint8_t stop_on_ponderhit) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
@@ -2212,6 +2222,7 @@ void zfish_threadpool_main_manager_set_ponder(void* pool_ptr, std::uint8_t ponde
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->ponder = ponder_mode != 0;
 }
+#endif
 
 void zfish_threadpool_set_increase_depth(void* pool_ptr, std::uint8_t increase_depth) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
@@ -2291,6 +2302,10 @@ void zfish_thread_fill_summary(const void* thread_ptr, ZfishThreadSummary* out) 
     out->pv_has_more_than_two = pv_has_more_than_two ? std::uint8_t{1} : std::uint8_t{0};
 }
 
+// These five field resets are native (main.zig) in the default build; the legacy
+// oracle keeps the C++ versions here, gated to the legacy target so the default
+// link uses the Zig definitions without a duplicate symbol.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_main_manager_reset_best_previous_average_score(void* pool_ptr) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->bestPreviousAverageScore = VALUE_INFINITE;
@@ -2315,6 +2330,7 @@ void zfish_threadpool_main_manager_reset_original_time_adjust(void* pool_ptr) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->main_manager()->originalTimeAdjust = -1;
 }
+#endif
 
 void zfish_threadpool_main_manager_clear_timeman(void* pool_ptr) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
