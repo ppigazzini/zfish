@@ -1848,6 +1848,10 @@ extern "C" void zfish_verify_worker_construction(
 extern "C" void zfish_verify_worker_native_construct(
   const void* worker, size_t shared_history, size_t options, size_t threads, size_t tt,
   size_t network, size_t thread_idx, size_t numa_thread_idx, size_t numa_total);
+extern "C" void zfish_worker_construct_full(
+  void* buf, size_t shared_history, size_t options, size_t threads, size_t tt, size_t network,
+  size_t manager, size_t thread_idx, size_t numa_thread_idx, size_t numa_total,
+  size_t numa_access_token);
 extern "C" void zfish_verify_worker_native_full(
   const void* worker, size_t shared_history, size_t options, size_t threads, size_t tt,
   size_t network, size_t thread_idx, size_t numa_thread_idx, size_t numa_total);
@@ -1869,11 +1873,30 @@ Thread::Thread(Search::SharedState&                    sharedState,
 
     run_custom_job([this, &binder, &sharedState, &sm, n]() {
         // Use the binder to [maybe] bind the threads to a NUMA node before doing
-        // the Worker allocation. Ideally we would also allocate the SearchManager
-        // here, but that's minor.
+        // the Worker allocation.
         this->numaAccessToken = binder();
-        this->worker          = make_unique_large_page<Search::Worker>(
+#ifndef ZFISH_LEGACY_CPP_TARGET
+        // Construct the Worker natively: aligned_large_pages_alloc (Zig, zeroed)
+        // for the storage, then the native constructor (zfish_worker_construct_full)
+        // for the field init and Worker::clear -- no C++ placement-new. Proven
+        // byte-identical to the C++ ctor by the full-construction self-check. The
+        // LargePagePtr deleter still runs ~Worker on the (valid) bytes.
+        void* raw = aligned_large_pages_alloc(sizeof(Search::Worker));
+        zfish_worker_construct_full(
+          raw,
+          reinterpret_cast<size_t>(
+            &sharedState.sharedHistories.at(this->numaAccessToken.get_numa_index())),
+          reinterpret_cast<size_t>(&sharedState.options),
+          reinterpret_cast<size_t>(&sharedState.threads),
+          reinterpret_cast<size_t>(&sharedState.tt),
+          reinterpret_cast<size_t>(&sharedState.network),
+          reinterpret_cast<size_t>(sm.release()),
+          n, idxInNuma, totalNuma, this->numaAccessToken.get_numa_index());
+        this->worker = LargePagePtr<Search::Worker>(reinterpret_cast<Search::Worker*>(raw));
+#else
+        this->worker = make_unique_large_page<Search::Worker>(
           sharedState, std::move(sm), n, idxInNuma, totalNuma, this->numaAccessToken);
+#endif
     });
 
     wait_for_search_finished();
