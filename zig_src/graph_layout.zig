@@ -68,6 +68,28 @@ pub const worker_off = struct {
     pub const refresh_table: usize = 13604288;
 };
 
+// SearchManager member offsets (bytes from the manager base), probed from the
+// live C++ Search::SearchManager (offsetof). The vtable pointer occupies [0,8);
+// `tm` is a 40-byte TimeManagement. This is the address map the native
+// SearchManager flip uses to read/write the manager's data fields, which the
+// search reaches today through the C++ main_manager() shims. See the
+// [[searchmanager-flip-plan]] memory: the vtable is functionally dead, so only
+// these data fields plus `updates` are live.
+pub const search_manager_off = struct {
+    pub const vtable: usize = 0;
+    pub const tm: usize = 8; // TimeManagement (40 bytes)
+    pub const original_time_adjust: usize = 48; // f64
+    pub const calls_cnt: usize = 56; // i32
+    pub const ponder: usize = 60; // atomic_bool (4-byte slot)
+    pub const iter_value: usize = 64; // [4]i32
+    pub const previous_time_reduction: usize = 80; // f64
+    pub const best_previous_score: usize = 88; // i32
+    pub const best_previous_average_score: usize = 92; // i32
+    pub const stop_on_ponderhit: usize = 96; // bool
+    pub const id: usize = 104; // usize
+    pub const updates: usize = 112; // const UpdateContext& (pointer)
+};
+
 extern fn zfish_graph_layout_size(which: c_int) usize;
 
 const Pinned = struct { which: c_int, value: usize, name: []const u8 };
