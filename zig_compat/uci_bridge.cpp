@@ -3127,7 +3127,8 @@ const char* zfish_uci_cli_arg_at(const void* uci_ptr, int index) {
     return uci_engine->cli.argv[index];
 }
 
-void* zfish_uci_engine_ptr(void* uci_ptr) { return &static_cast<UCIEngine*>(uci_ptr)->engine; }
+// zfish_uci_engine_ptr is native (main.zig): UCIEngine::engine is the first
+// member (offset 0), so it returns the same pointer.
 
 const char* zfish_engine_options_text_owner(const void* engine_ptr) {
 #ifndef ZFISH_LEGACY_CPP_TARGET
