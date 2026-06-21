@@ -181,6 +181,30 @@ pub fn verifyFeatureTransformer(blob: []const u8, reference: []const u8, scratch
     return true;
 }
 
+// ---- affine layer parse -----------------------------------------------------
+
+// Parse one affine layer's parameters at the start of `blob`: biases
+// (OutputDimensions int32, little-endian, linear) then weights (int8, written
+// through the SSSE3 scramble). OutputDimensions and PaddedInputDimensions are
+// derived from the destination sizes (biases_dst.len/4 and weights_dst.len /
+// OutputDimensions). Returns the bytes consumed.
+pub fn parseLayer(blob: []const u8, biases_dst: []u8, weights_dst: []u8) ?usize {
+    const output_dims = biases_dst.len / @sizeOf(i32);
+    if (output_dims == 0) return null;
+    if (blob.len < biases_dst.len + weights_dst.len) return null;
+    // biases: int32 little-endian == native bytes on x86.
+    @memcpy(biases_dst, blob[0..biases_dst.len]);
+    var pos = biases_dst.len;
+    const n = weights_dst.len; // int8 weights
+    const padded_input = n / output_dims;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        weights_dst[weightIndexScrambled(i, padded_input, output_dims)] = blob[pos + i];
+    }
+    pos += n;
+    return pos;
+}
+
 // ---- tests ------------------------------------------------------------------
 
 const testing = std.testing;
