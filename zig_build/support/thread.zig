@@ -729,7 +729,17 @@ pub fn reconfigure(
 
     clear(pool);
     waitMainThread(pool);
+
+    // Harness H4: prove the freshly (re)configured pool matches the Zig model of
+    // the ThreadPool/Thread graph -- stop/increaseDepth zeroed, threads vector
+    // sized == requested, boundThreadToNumaNode sized as bound, each Thread's
+    // Worker slot bound. This anchors the offsets the native stage-4 construction
+    // must reproduce, verified here against the live C++ Thread objects. Read-only;
+    // panics on drift.
+    zfish_verify_thread_graph(pool, requested, if (do_bind) requested else 0);
 }
+
+extern fn zfish_verify_thread_graph(pool: *const anyopaque, requested: usize, bound: usize) void;
 
 pub fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
     var best_index: usize = 0;
