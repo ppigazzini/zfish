@@ -1371,9 +1371,10 @@ extern "C" void zfish_ss_npmsec_advance(void* worker) {
                                              - w->limits.inc[w->rootPos.side_to_move()]);
 }
 
-extern "C" void* zfish_ss_get_best_thread(void* worker) {
-    return static_cast<Search::Worker*>(worker)->threads.get_best_thread()->worker.get();
-}
+// zfish_ss_get_best_thread is native (main.zig): it calls the native voting
+// (thread_port.bestThreadIndex, which ThreadPool::get_best_thread already bounced
+// to in both builds) and resolves threads[idx]->worker by offset. Bridge-only
+// symbol, no gating.
 
 // zfish_ss_set_prev_scores is native (main.zig): it reads best->rootMoves[0]
 // score/averageScore and stores them in worker's manager by offset. Bridge-only

@@ -1475,6 +1475,22 @@ fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
     gen.* = zfish_tt_generation_next(gen.*);
 }
 
+// zfish_ss_get_best_thread: return the worker of the vote-winning thread. The
+// voting itself is already native (thread_port.bestThreadIndex, the same routine
+// the C++ ThreadPool::get_best_thread inline bounces to in both builds), so this
+// just calls it directly and resolves threads[idx]->worker by offset -- a pure
+// forwarding-hop removal, identical to the previous threads.get_best_thread()->
+// worker.get(). Only reached with Threads>1 (bench is single-thread, so not
+// gate-exercised) but behaviourally unchanged. Plain export, no gating.
+pub export fn zfish_ss_get_best_thread(worker: *anyopaque) ?*anyopaque {
+    const wb = @intFromPtr(worker);
+    const pool = @as(*const usize, @ptrFromInt(wb + graph_layout.worker_off.threads)).*;
+    const idx = thread_port.bestThreadIndex(@ptrFromInt(pool));
+    const tbegin = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_begin)).*;
+    const thread = @as(*const usize, @ptrFromInt(tbegin + idx * @sizeOf(usize))).*;
+    return @ptrFromInt(@as(*const usize, @ptrFromInt(thread + graph_layout.thread_off.worker)).*);
+}
+
 // zfish_search_id_collect_bmc: sum and reset each thread's worker bestMoveChanges
 // (atomic u64), returned as a double (matching the C++ accumulation).
 pub export fn zfish_search_id_collect_bmc(worker: *anyopaque) f64 {
