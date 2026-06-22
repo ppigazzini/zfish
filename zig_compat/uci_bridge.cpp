@@ -838,14 +838,8 @@ extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
         out_time->calls_cnt = nullptr;
 }
 
-extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
-                                           std::size_t* out_cluster_count,
-                                           std::uint8_t* out_generation) {
-    auto& tt          = static_cast<Stockfish::Search::Worker*>(worker)->tt;
-    *out_table        = tt.table;
-    *out_cluster_count = tt.clusterCount;
-    *out_generation   = tt.generation8;
-}
+// zfish_search_cb_tt_context is native (main.zig): it resolves the worker TT
+// reference and reads table/clusterCount/generation8 by offset. Bridge-only.
 
 // (zfish_search_cb_nodes retired: the Zig search reads the node counter through
 // the stable pointer worker_state hands it, the same address this relaxed load
