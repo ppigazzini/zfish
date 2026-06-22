@@ -1299,6 +1299,15 @@ fn optInt(name: []const u8) c_int {
     return zfish_optmodel_int_by_name(name.ptr, name.len);
 }
 
+// zfish_search_cb_tt_context: hand the native search the worker TT's cluster
+// array, cluster count, and generation, resolved by offset. Bridge-only symbol.
+pub export fn zfish_search_cb_tt_context(worker: *const anyopaque, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
+    const tt = @as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.tt)).*;
+    out_table.* = @ptrFromInt(@as(*const usize, @ptrFromInt(tt + graph_layout.tt_off.table)).*);
+    out_cluster_count.* = @as(*const usize, @ptrFromInt(tt + graph_layout.tt_off.cluster_count)).*;
+    out_generation.* = @as(*const u8, @ptrFromInt(tt + graph_layout.tt_off.generation8)).*;
+}
+
 // zfish_search_id_collect_bmc: sum and reset each thread's worker bestMoveChanges
 // (atomic u64), returned as a double (matching the C++ accumulation).
 pub export fn zfish_search_id_collect_bmc(worker: *anyopaque) f64 {
