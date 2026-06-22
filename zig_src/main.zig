@@ -1299,6 +1299,25 @@ fn optInt(name: []const u8) c_int {
     return zfish_optmodel_int_by_name(name.ptr, name.len);
 }
 
+// zfish_search_id_collect_bmc: sum and reset each thread's worker bestMoveChanges
+// (atomic u64), returned as a double (matching the C++ accumulation).
+pub export fn zfish_search_id_collect_bmc(worker: *anyopaque) f64 {
+    const pool = @as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.threads)).*;
+    const tbegin = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_begin)).*;
+    const tend = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_end)).*;
+    const count = (tend - tbegin) / @sizeOf(usize);
+    var tot: f64 = 0;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const thread = @as(*const usize, @ptrFromInt(tbegin + i * @sizeOf(usize))).*;
+        const wkr = @as(*const usize, @ptrFromInt(thread + graph_layout.thread_off.worker)).*;
+        const bmc: *u64 = @ptrFromInt(wkr + graph_layout.worker_off.best_move_changes);
+        tot += @floatFromInt(bmc.*);
+        bmc.* = 0;
+    }
+    return tot;
+}
+
 // Matches the bridge ZfishIdState struct (iterative-deepening snapshot).
 const ZfishIdState = extern struct {
     root_pos: ?*anyopaque,
