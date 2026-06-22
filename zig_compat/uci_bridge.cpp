@@ -1398,20 +1398,10 @@ extern "C" void zfish_ss_emit_pv(void* worker, void* best) {
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
 
 
-extern "C" std::uint8_t zfish_position_has_repeated(const void* pos_ptr) {
-    const auto& pos = *static_cast<const Position*>(pos_ptr);
-    return static_cast<std::uint8_t>(pos.has_repeated() ? 1 : 0);
-}
-
-extern "C" std::uint8_t zfish_position_is_draw_ply_one(const void* pos_ptr) {
-    const auto& pos = *static_cast<const Position*>(pos_ptr);
-    return static_cast<std::uint8_t>(pos.is_draw(1) ? 1 : 0);
-}
-
-extern "C" std::uint8_t zfish_position_is_repetition_ply_one(const void* pos_ptr) {
-    const auto& pos = *static_cast<const Position*>(pos_ptr);
-    return static_cast<std::uint8_t>(pos.is_repetition(1) ? 1 : 0);
-}
+// zfish_position_has_repeated / is_draw_ply_one / is_repetition_ply_one retired:
+// they forwarded to pos.has_repeated()/is_draw(1)/is_repetition(1), which already
+// bounce to the native position_port methods in both builds, so the native
+// rank_root_moves path now calls position_port directly (one fewer C++ hop).
 
 extern "C" std::uint8_t zfish_position_move_is_legal(const void* pos_ptr,
                                                       std::uint16_t raw_move) {
