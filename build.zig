@@ -605,6 +605,28 @@ pub fn build(b: *std.Build) void {
     );
     output_parity_step.dependOn(&output_parity_cmd.step);
 
+    // Thread-runtime stress / liveness harness (H2, REPORT-9 big-bang plan).
+    // Hammers (ucinewgame -> setoption Threads -> go/stop) cycles across thread
+    // counts + a construct/destroy churn, under a wall-clock watchdog. A liveness
+    // gate (no hang / crash / lost search), not a determinism gate -- the
+    // regression net the native stage-4 thread runtime must still pass. Kept out
+    // of the core `parity` aggregate (slower, wall-clock-timed); run explicitly
+    // for any thread-runtime slice.
+    const stress_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/stress.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+    });
+    stress_cmd.step.dependOn(install_step);
+    stress_cmd.step.dependOn(&net_cmd.step);
+    stress_cmd.setCwd(b.path("src"));
+
+    const stress_step = b.step(
+        "parity-stress",
+        "Thread-runtime stress/liveness: go/stop storms + construct/destroy churn",
+    );
+    stress_step.dependOn(&stress_cmd.step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
