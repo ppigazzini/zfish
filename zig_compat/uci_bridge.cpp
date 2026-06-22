@@ -1482,15 +1482,9 @@ extern "C" void zfish_ss_emit_pv(void* worker, void* best) {
     w->main_manager()->pv(*b, w->threads, w->tt, b->rootDepth);
 }
 
-extern "C" void zfish_ss_emit_bestmove(void* worker, void* best) {
-    auto* w = static_cast<Search::Worker*>(worker);
-    auto* b = static_cast<Search::Worker*>(best);
-    std::string ponder;
-    if (b->rootMoves[0].pv.size() > 1)
-        ponder = UCIEngine::move(b->rootMoves[0].pv[1], w->rootPos.is_chess960());
-    auto bestmove = UCIEngine::move(b->rootMoves[0].pv[0], w->rootPos.is_chess960());
-    w->main_manager()->updates.onBestmove(bestmove, ponder);
-}
+// zfish_ss_emit_bestmove is native (main.zig): it renders pv[0]/pv[1] with the
+// native move formatter and prints "bestmove .." through zfish_uci_print_line,
+// no-op in quiet mode. Bridge-only symbol, no gating.
 
 static_assert(sizeof(Move) == sizeof(std::uint16_t));
 
@@ -2523,6 +2517,12 @@ void sync_cout_start() { std::cout << IO_LOCK; }
 void sync_cout_end() { std::cout << IO_UNLOCK; }
 
 extern "C" {
+// Thin print primitive for native emit code: one mutex-guarded, flushed line
+// through the same sync_cout/std::cout buffer the rest of the UCI output uses, so
+// native and remaining-C++ output never interleave out of order.
+void zfish_uci_print_line(const char* str, std::size_t len) {
+    sync_cout << std::string_view(str, len) << sync_endl;
+}
 }
 
 void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
@@ -3115,7 +3115,11 @@ const char* zfish_engine_options_text_owner(const void* engine_ptr) {
     return alloc_c_string(options_stream.str());
 }
 
+extern "C" void zfish_uci_set_quiet_mode(std::uint8_t quiet);
+
 void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
+    // Mirror the mode into the native flag the native emit functions read.
+    zfish_uci_set_quiet_mode(quiet_mode);
     auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
     if (quiet_mode != 0)
     {

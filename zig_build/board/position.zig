@@ -1643,6 +1643,11 @@ pub fn sideToMove(pos_ptr: *const anyopaque) u8 {
     return pos.side_to_move;
 }
 
+pub fn isChess960(pos_ptr: *const anyopaque) bool {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    return pos.chess960;
+}
+
 // Layout matches position_snapshot.PositionSnapshot / the bridge
 // ZfishPositionSnapshot. Read straight from the Position memory mirror.
 const FillSnapshot = extern struct {

@@ -61,7 +61,7 @@ fn matchesUciText(raw_move: u16, text: []const u8, chess960: bool) bool {
     return true;
 }
 
-fn renderMoveText(buffer: *[5]u8, raw_move: u16, chess960: bool) []const u8 {
+pub fn renderMoveText(buffer: *[5]u8, raw_move: u16, chess960: bool) []const u8 {
     const from = moveFrom(raw_move);
     const target_to = uciToSquare(raw_move, chess960);
 
