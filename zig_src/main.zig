@@ -1292,6 +1292,42 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
 extern fn zfish_now() callconv(.c) i64;
 extern fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) callconv(.c) c_int;
 
+fn optInt(name: []const u8) c_int {
+    return zfish_optmodel_int_by_name(name.ptr, name.len);
+}
+
+// Matches the bridge ZfishSsCtx struct.
+const ZfishSsCtx = extern struct {
+    is_mainthread: u8,
+    root_moves_empty: u8,
+    npmsec: u8,
+    limits_depth: i32,
+    skill_enabled: u8,
+};
+
+// zfish_ss_context: snapshot the search-start flags. skill_enabled mirrors
+// Skill(level, elo).enabled() == level < 20: a set UCI_Elo (via UCI_LimitStrength)
+// always clamps level to <= 19 (enabled), otherwise Skill Level < 20. Bridge-only.
+pub export fn zfish_ss_context(worker: *anyopaque, out: *ZfishSsCtx) void {
+    const wbase = @intFromPtr(worker);
+    const thread_idx = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.thread_idx)).*;
+    const rm_begin = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves)).*;
+    const rm_end = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves + 8)).*;
+    const limits = wbase + graph_layout.worker_off.limits;
+    const npmsec = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.npmsec)).*;
+
+    const limit_strength = optInt("UCI_LimitStrength") != 0;
+    const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
+    const skill_level = optInt("Skill Level");
+    const skill_enabled = uci_elo != 0 or skill_level < 20;
+
+    out.is_mainthread = @intFromBool(thread_idx == 0);
+    out.root_moves_empty = @intFromBool(rm_begin == rm_end);
+    out.npmsec = @intFromBool(npmsec != 0);
+    out.limits_depth = @as(*const i32, @ptrFromInt(limits + graph_layout.limits_off.depth)).*;
+    out.skill_enabled = @intFromBool(skill_enabled);
+}
+
 // Matches the bridge ZfishPvContext struct filled for the native pv driver.
 const ZfishPvContext = extern struct {
     manager: ?*anyopaque,
