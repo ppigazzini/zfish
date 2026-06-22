@@ -172,6 +172,7 @@ pub const tt_off = struct {
 // movestogo/depth/mate/perft/infinite. The bridge's zfish_ss_context reads depth
 // at +84, which cross-checks this map.
 pub const limits_off = struct {
+    pub const npmsec: usize = 56; // 5th TimePoint (after time[2]/inc[2])
     pub const depth: usize = 84;
     pub const infinite: usize = 96;
 };
