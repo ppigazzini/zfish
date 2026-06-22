@@ -1259,41 +1259,11 @@ extern "C" void zfish_search_cb_pv_context(void* manager, void* worker, void* th
     out->elapsed_ms       = static_cast<std::uint64_t>(std::max<TimePoint>(1, mgr->tm.elapsed_time()));
 }
 
-extern "C" void zfish_search_emit_info_full(void* manager, void* worker, std::size_t move_index,
-                                            int depth, int sel_depth, std::size_t multipv, int v,
-                                            std::uint8_t show_wdl, std::uint8_t bound_kind,
-                                            std::uint64_t nodes, std::uint64_t tb_hits,
-                                            int hashfull, std::uint64_t time_ms) {
-    auto* mgr = static_cast<Search::SearchManager*>(manager);
-    auto* w   = static_cast<Search::Worker*>(worker);
-    auto& pos = w->rootPos;
-
-    std::string pvStr;
-    for (Move m : w->rootMoves[move_index].pv)
-        pvStr += UCIEngine::move(m, pos.is_chess960()) + " ";
-    if (!pvStr.empty())
-        pvStr.pop_back();
-
-    const std::string wdlStr = show_wdl ? UCIEngine::wdl(Value(v), pos) : std::string{};
-
-    InfoFull info;
-    info.depth    = depth;
-    info.selDepth = sel_depth;
-    info.multiPV  = multipv;
-    info.score    = {Value(v), pos};
-    info.wdl      = wdlStr;
-    info.bound    = bound_kind == 1 ? std::string_view("lowerbound")
-                  : bound_kind == 2 ? std::string_view("upperbound")
-                                    : std::string_view();
-    info.timeMs   = static_cast<std::size_t>(time_ms);
-    info.nodes    = static_cast<std::size_t>(nodes);
-    info.nps      = static_cast<std::size_t>(nodes * 1000 / time_ms);
-    info.tbHits   = static_cast<std::size_t>(tb_hits);
-    info.pv       = pvStr;
-    info.hashfull = hashfull;
-
-    mgr->updates.onUpdateFull(info);
-}
+// zfish_search_emit_info_full is native (main.zig): it records the node count
+// (always, as the C++ onUpdateFull lambda did in both modes), and in interactive
+// mode classifies the score, formats cp/mate/WDL, renders the PV, assembles the
+// "info .." line, and prints it through zfish_uci_print_line. Bridge-only symbol,
+// no gating.
 
 bool Search::Worker::iterative_deepening() { return bool(zfish_search_iterative_deepening(this)); }
 
