@@ -789,53 +789,17 @@ extern "C" void zfish_search_id_pv(void* worker, int depth) {
 // zfish_search_id_collect_bmc is native (main.zig): sums and resets each thread's
 // worker bestMoveChanges by offset. Bridge-only symbol.
 
-extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
-                                             std::uint64_t** out_nodes, const void** out_network,
-                                             void** out_cache, const void** out_optimism,
-                                             int** out_nmp_min_ply, int** out_sel_depth,
-                                             int** out_root_depth, const int** out_reductions,
-                                             const int** out_root_delta,
-                                             const void** out_last_iter_pv,
-                                             const std::uint8_t** out_stop,
-                                             const std::size_t** out_pv_idx,
-                                             void** out_root_moves,
-                                             const std::size_t** out_pv_last,
-                                             std::uint64_t** out_best_move_changes,
-                                             ZfishSearchTimeState* out_time) {
-    auto* w           = static_cast<Stockfish::Search::Worker*>(worker);
-    *out_acc_stack    = &w->accumulatorStack;
-    *out_nodes        = reinterpret_cast<std::uint64_t*>(&w->nodes);
-    *out_network      = &w->network[w->numaAccessToken];
-    *out_cache        = &w->refreshTable;
-    *out_optimism     = &w->optimism[0];
-    *out_nmp_min_ply  = &w->nmpMinPly;
-    *out_sel_depth    = &w->selDepth;
-    *out_root_depth   = &w->rootDepth;
-    *out_reductions   = w->reductions.data();
-    *out_root_delta   = &w->rootDelta;
-    *out_last_iter_pv = &w->lastIterationPV;
-    *out_stop         = reinterpret_cast<const std::uint8_t*>(&w->threads.stop);
-    *out_pv_idx       = &w->pvIdx;
-    *out_root_moves   = w->rootMoves.data();
-    *out_pv_last      = &w->pvLast;
-    *out_best_move_changes = reinterpret_cast<std::uint64_t*>(&w->bestMoveChanges);
-
-    if (w->is_mainthread())
-    {
-        auto* m                      = w->main_manager();
-        out_time->calls_cnt          = &m->callsCnt;
-        out_time->stop_write         = reinterpret_cast<std::uint8_t*>(&w->threads.stop);
-        out_time->ponder             = reinterpret_cast<const std::uint8_t*>(&m->ponder);
-        out_time->stop_on_ponderhit  = reinterpret_cast<const std::uint8_t*>(&m->stopOnPonderhit);
-        out_time->tm_start_time      = m->tm.startTime;
-        out_time->tm_maximum_time    = m->tm.maximumTime;
-        out_time->lim_nodes          = w->limits.nodes;
-        out_time->lim_movetime       = w->limits.movetime;
-        out_time->tm_use_nodes_time  = m->tm.useNodesTime ? 1 : 0;
-        out_time->use_time_management = w->limits.use_time_management() ? 1 : 0;
-    }
-    else
-        out_time->calls_cnt = nullptr;
+// zfish_search_cb_worker_state is native (main.zig): it snapshots the Worker /
+// SearchManager / ThreadPool / LimitsType state the ported search reads, resolving
+// every field by offset. The one piece that needs C++ is the network instance --
+// &w->network[token] indexes a LazyNumaReplicated (vtable + private instances
+// vector + mutex), so the native snapshot calls this thin resolver. The returned
+// pointer is a stable handle held for the search tree; in the default build it is
+// never dereferenced (NNUE weights are served from native storage), but the legacy
+// oracle's C++ inference may deref it, so it must be the exact replicated instance.
+extern "C" const void* zfish_worker_resolve_network(void* worker) {
+    auto* w = static_cast<Stockfish::Search::Worker*>(worker);
+    return &w->network[w->numaAccessToken];
 }
 
 // zfish_search_cb_tt_context is native (main.zig): it resolves the worker TT

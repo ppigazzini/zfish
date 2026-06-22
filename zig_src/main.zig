@@ -1308,6 +1308,98 @@ pub export fn zfish_search_cb_tt_context(worker: *const anyopaque, out_table: *?
     out_generation.* = @as(*const u8, @ptrFromInt(tt + graph_layout.tt_off.generation8)).*;
 }
 
+// SearchManager::check_time inputs, snapshotted once per search tree. Mirrors the
+// position.zig SearchTimeState exactly: live (mutable) fields are pointers; the
+// fixed-per-search fields are values; calls_cnt is null off the main thread.
+const ZfishSearchTimeState = extern struct {
+    calls_cnt: ?*c_int,
+    stop_write: ?*u8,
+    ponder: ?*const u8,
+    stop_on_ponderhit: ?*const u8,
+    tm_start_time: i64,
+    tm_maximum_time: i64,
+    lim_nodes: u64,
+    lim_movetime: i64,
+    tm_use_nodes_time: u8,
+    use_time_management: u8,
+};
+
+// The network instance (&w->network[token]) is resolved by a thin C++ helper: the
+// LazyNumaReplicated wrapper is a vtable object with a private instances vector, so
+// the indexing stays in C++ (the rest of the snapshot is pure offset arithmetic).
+extern fn zfish_worker_resolve_network(worker: *anyopaque) ?*const anyopaque;
+
+// zfish_search_cb_worker_state: the once-per-search snapshot the ported search
+// runs on. Hands the search stable pointers to the Worker's live members (nodes,
+// optimism, nmpMinPly/selDepth/rootDepth/rootDelta, lastIterationPV, pvIdx/pvLast,
+// bestMoveChanges, the accumulator stack + refresh cache), the reductions table
+// and rootMoves array bases, the shared threads.stop flag, and -- on the main
+// thread -- the SearchManager/TimeManagement/LimitsType time-control inputs. All
+// reads are by offset and identical across builds, so this is a plain export.
+pub export fn zfish_search_cb_worker_state(
+    worker: *anyopaque,
+    out_acc_stack: *?*anyopaque,
+    out_nodes: *?*anyopaque,
+    out_network: *?*const anyopaque,
+    out_cache: *?*anyopaque,
+    out_optimism: *?*anyopaque,
+    out_nmp_min_ply: *?*anyopaque,
+    out_sel_depth: *?*anyopaque,
+    out_root_depth: *?*anyopaque,
+    out_reductions: *?*anyopaque,
+    out_root_delta: *?*anyopaque,
+    out_last_iter_pv: *?*anyopaque,
+    out_stop: *?*anyopaque,
+    out_pv_idx: *?*anyopaque,
+    out_root_moves: *?*anyopaque,
+    out_pv_last: *?*anyopaque,
+    out_best_move_changes: *?*anyopaque,
+    out_time: *ZfishSearchTimeState,
+) void {
+    const wb = @intFromPtr(worker);
+    const off = graph_layout.worker_off;
+    const pool = @as(*const usize, @ptrFromInt(wb + off.threads)).*;
+    const stop_addr = pool + graph_layout.thread_pool_off.stop;
+
+    out_acc_stack.* = @ptrFromInt(wb + off.accumulator_stack);
+    out_nodes.* = @ptrFromInt(wb + off.nodes);
+    out_network.* = zfish_worker_resolve_network(worker);
+    out_cache.* = @ptrFromInt(wb + off.refresh_table);
+    out_optimism.* = @ptrFromInt(wb + off.optimism);
+    out_nmp_min_ply.* = @ptrFromInt(wb + off.nmp_min_ply);
+    out_sel_depth.* = @ptrFromInt(wb + off.sel_depth);
+    out_root_depth.* = @ptrFromInt(wb + off.root_depth);
+    out_reductions.* = @ptrFromInt(wb + off.reductions);
+    out_root_delta.* = @ptrFromInt(wb + off.root_delta);
+    out_last_iter_pv.* = @ptrFromInt(wb + off.last_iteration_pv);
+    out_stop.* = @ptrFromInt(stop_addr);
+    out_pv_idx.* = @ptrFromInt(wb + off.pv_idx);
+    out_root_moves.* = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + off.root_moves)).*);
+    out_pv_last.* = @ptrFromInt(wb + off.pv_last);
+    out_best_move_changes.* = @ptrFromInt(wb + off.best_move_changes);
+
+    const thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx)).*;
+    if (thread_idx == 0) {
+        const m = @as(*const usize, @ptrFromInt(wb + off.manager)).*;
+        const sm = graph_layout.search_manager_off;
+        const limits = wb + off.limits;
+        out_time.calls_cnt = @ptrFromInt(m + sm.calls_cnt);
+        out_time.stop_write = @ptrFromInt(stop_addr);
+        out_time.ponder = @ptrFromInt(m + sm.ponder);
+        out_time.stop_on_ponderhit = @ptrFromInt(m + sm.stop_on_ponderhit);
+        out_time.tm_start_time = @as(*const i64, @ptrFromInt(m + sm.tm)).*;
+        out_time.tm_maximum_time = @as(*const i64, @ptrFromInt(m + sm.tm + 16)).*;
+        out_time.lim_nodes = @as(*const u64, @ptrFromInt(limits + graph_layout.limits_off.nodes)).*;
+        out_time.lim_movetime = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.movetime)).*;
+        out_time.tm_use_nodes_time = @as(*const u8, @ptrFromInt(m + sm.tm + 32)).*;
+        const time_w = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.time_w)).*;
+        const time_b = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.time_b)).*;
+        out_time.use_time_management = @intFromBool(time_w != 0 or time_b != 0);
+    } else {
+        out_time.calls_cnt = null;
+    }
+}
+
 // zfish_search_id_collect_bmc: sum and reset each thread's worker bestMoveChanges
 // (atomic u64), returned as a double (matching the C++ accumulation).
 pub export fn zfish_search_id_collect_bmc(worker: *anyopaque) f64 {
