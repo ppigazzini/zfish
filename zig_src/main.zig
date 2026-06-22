@@ -1289,6 +1289,63 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
     };
 }
 
+extern fn zfish_now() callconv(.c) i64;
+extern fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) callconv(.c) c_int;
+
+// Matches the bridge ZfishPvContext struct filled for the native pv driver.
+const ZfishPvContext = extern struct {
+    manager: ?*anyopaque,
+    worker: ?*anyopaque,
+    root_moves: ?*const anyopaque,
+    root_moves_count: usize,
+    multipv: usize,
+    show_wdl: u8,
+    chess960: u8,
+    nodes: u64,
+    tb_hits: u64,
+    hashfull: c_int,
+    elapsed_ms: u64,
+};
+
+// zfish_search_cb_pv_context: snapshot the per-pv() values the native info driver
+// needs. rootMoves data()/size() from the worker's vector, MultiPV/UCI_ShowWDL
+// from the native option model, chess960 from rootPos, the node/tb-hit aggregates
+// from the pool, TT hashfull natively, and elapsed = max(1, now - tm.startTime)
+// (which only feeds the gate-stripped time/nps fields). Bridge-only, no gating.
+pub export fn zfish_search_cb_pv_context(manager: *anyopaque, worker: *anyopaque, threads: *anyopaque, tt: *anyopaque, out: *ZfishPvContext) void {
+    const wbase = @intFromPtr(worker);
+    const rm_vec = wbase + graph_layout.worker_off.root_moves;
+    const rm_begin = @as(*const usize, @ptrFromInt(rm_vec)).*;
+    const rm_end = @as(*const usize, @ptrFromInt(rm_vec + 8)).*;
+    const rm_count = (rm_end - rm_begin) / graph_layout.root_move_size;
+
+    const mp_name: []const u8 = "MultiPV";
+    const wdl_name: []const u8 = "UCI_ShowWDL";
+    const multipv_opt: usize = @intCast(@max(zfish_optmodel_int_by_name(mp_name.ptr, mp_name.len), 0));
+
+    out.manager = manager;
+    out.worker = worker;
+    out.root_moves = @ptrFromInt(rm_begin);
+    out.root_moves_count = rm_count;
+    out.multipv = @min(multipv_opt, rm_count);
+    out.show_wdl = if (zfish_optmodel_int_by_name(wdl_name.ptr, wdl_name.len) != 0) 1 else 0;
+
+    const root_pos: *const anyopaque = @ptrFromInt(wbase + graph_layout.worker_off.root_pos);
+    out.chess960 = if (position_port.isChess960(root_pos)) 1 else 0;
+    out.nodes = thread_port.nodesSearched(threads);
+    out.tb_hits = thread_port.tbHits(threads);
+
+    const ttbase = @intFromPtr(tt);
+    const cc = @as(*const usize, @ptrFromInt(ttbase + graph_layout.tt_off.cluster_count)).*;
+    const table = @as(*const usize, @ptrFromInt(ttbase + graph_layout.tt_off.table)).*;
+    const gen = @as(*const u8, @ptrFromInt(ttbase + graph_layout.tt_off.generation8)).*;
+    out.hashfull = zfish_tt_hashfull(@ptrFromInt(table), cc, gen, 0);
+
+    const start_time = @as(*const i64, @ptrFromInt(@intFromPtr(manager) + graph_layout.search_manager_off.tm)).*;
+    const elapsed = zfish_now() - start_time;
+    out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
+}
+
 // zfish_search_cb_root_on_iter: on the main thread, print "info depth D currmove
 // X currmovenumber N" (N = move_count + pvIdx). The native search only calls this
 // past 10M nodes; quiet mode is a no-op. Bridge-only symbol, no gating.
