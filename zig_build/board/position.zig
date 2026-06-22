@@ -1648,6 +1648,16 @@ pub fn isChess960(pos_ptr: *const anyopaque) bool {
     return pos.chess960;
 }
 
+// WDL-model material count (src/uci.cpp): pawns + 3*(knights+bishops) +
+// 5*rooks + 9*queens, both colours. piece_count is indexed by piece
+// (white type at 1..5, black type at 9..13).
+pub fn wdlMaterial(pos_ptr: *const anyopaque) c_int {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const pc = pos.piece_count;
+    return (pc[1] + pc[9]) + 3 * (pc[2] + pc[10]) + 3 * (pc[3] + pc[11]) +
+        5 * (pc[4] + pc[12]) + 9 * (pc[5] + pc[13]);
+}
+
 // Layout matches position_snapshot.PositionSnapshot / the bridge
 // ZfishPositionSnapshot. Read straight from the Position memory mirror.
 const FillSnapshot = extern struct {
