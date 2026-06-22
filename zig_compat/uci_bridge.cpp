@@ -1372,16 +1372,9 @@ extern "C" void zfish_ss_prologue(void* worker) {
     w->lastIterationPV.clear();
 }
 
-extern "C" void zfish_ss_context(void* worker, ZfishSsCtx* out) {
-    auto* w = static_cast<Search::Worker*>(worker);
-    Skill skill(w->options["Skill Level"],
-                w->options["UCI_LimitStrength"] ? int(w->options["UCI_Elo"]) : 0);
-    out->is_mainthread    = w->is_mainthread() ? 1 : 0;
-    out->root_moves_empty = w->rootMoves.empty() ? 1 : 0;
-    out->npmsec           = w->limits.npmsec ? 1 : 0;
-    out->limits_depth     = w->limits.depth;
-    out->skill_enabled    = skill.enabled() ? 1 : 0;
-}
+// zfish_ss_context is native (main.zig): it snapshots is_mainthread / rootMoves
+// empty / limits npmsec+depth by offset and skill_enabled from the native option
+// model (Skill::enabled == level < 20). Bridge-only symbol, no gating.
 
 extern "C" void zfish_ss_tm_init(void* worker) {
     auto* w = static_cast<Search::Worker*>(worker);
