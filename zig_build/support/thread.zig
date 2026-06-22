@@ -132,9 +132,6 @@ extern fn zfish_limits_ponder_mode(limits: *const anyopaque) u8;
 extern fn zfish_limits_searchmove_count(limits: *const anyopaque) usize;
 extern fn zfish_limits_searchmove_text(limits: *const anyopaque, index: usize) ByteView;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
-extern fn zfish_position_has_repeated(pos: *const anyopaque) u8;
-extern fn zfish_position_is_draw_ply_one(pos: *const anyopaque) u8;
-extern fn zfish_position_is_repetition_ply_one(pos: *const anyopaque) u8;
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_root_moves_create_ranked(items: [*]const RankedRootMove, count: usize) *anyopaque;
@@ -452,8 +449,8 @@ fn rankRootMovesDtz(
             if (probe.wdl_state == probe_fail)
                 return .fallback_to_wdl;
             dtz = dtzBeforeZeroing(-probe.wdl);
-        } else if ((rule50 and zfish_position_is_draw_ply_one(scratch.pos) != 0) or
-            zfish_position_is_repetition_ply_one(scratch.pos) != 0)
+        } else if ((rule50 and position_port.isDraw(scratch.pos, 1)) or
+            position_port.isRepetition(scratch.pos, 1))
         {
             dtz = 0;
         } else {
@@ -525,7 +522,7 @@ fn rankRootMovesWdl(
         scratch.doMove(ranked_move.raw_move);
 
         var wdl: c_int = undefined;
-        if (zfish_position_is_draw_ply_one(scratch.pos) != 0) {
+        if (position_port.isDraw(scratch.pos, 1)) {
             wdl = wdl_draw;
         } else {
             const probe = probePosition(scratch.pos);
@@ -594,7 +591,7 @@ fn buildRootMoves(
             chess960,
             tb_config.use_rule50 != 0,
             root_snapshot.rule50_count,
-            zfish_position_has_repeated(pos) != 0,
+            position_port.hasRepeated(pos),
             ranked_moves,
         );
 
