@@ -47,6 +47,12 @@ pub export fn zfish_optmodel_int_by_index(idx: usize) c_int {
     return ensureModel().intByIndex(idx);
 }
 
+// Read an option's integer value by name (0 if absent). Used by native callers
+// that carry an option name (e.g. the search driver's MultiPV / UCI_ShowWDL).
+pub export fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) c_int {
+    return ensureModel().getInt(name_ptr[0..name_len]);
+}
+
 pub export fn zfish_optmodel_current_len(idx: usize) usize {
     return ensureModel().currentByIndex(idx).len;
 }

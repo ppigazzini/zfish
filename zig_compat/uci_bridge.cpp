@@ -1235,23 +1235,10 @@ struct ZfishPvContext {
 };
 }  // namespace
 
-extern "C" void zfish_search_cb_pv_context(void* manager, void* worker, void* threads, void* tt,
-                                           ZfishPvContext* out) {
-    auto* w  = static_cast<Search::Worker*>(worker);
-    auto* th = static_cast<ThreadPool*>(threads);
-    auto* mgr = static_cast<Search::SearchManager*>(manager);
-    out->manager          = manager;
-    out->worker           = worker;
-    out->root_moves       = w->rootMoves.data();
-    out->root_moves_count = w->rootMoves.size();
-    out->multipv          = std::min(std::size_t(w->options["MultiPV"]), w->rootMoves.size());
-    out->show_wdl         = w->options["UCI_ShowWDL"] ? 1 : 0;
-    out->chess960         = w->rootPos.is_chess960() ? 1 : 0;
-    out->nodes            = th->nodes_searched();
-    out->tb_hits          = th->tb_hits();
-    out->hashfull         = static_cast<TranspositionTable*>(tt)->hashfull();
-    out->elapsed_ms       = static_cast<std::uint64_t>(std::max<TimePoint>(1, mgr->tm.elapsed_time()));
-}
+// zfish_search_cb_pv_context is native (main.zig): it fills ZfishPvContext from
+// the worker rootMoves vector, the native option model (MultiPV/UCI_ShowWDL),
+// the pool node/tb-hit aggregates, native TT hashfull, and elapsed = max(1, now -
+// tm.startTime). Bridge-only symbol, no gating.
 
 // zfish_search_emit_info_full is native (main.zig): it records the node count
 // (always, as the C++ onUpdateFull lambda did in both modes), and in interactive
