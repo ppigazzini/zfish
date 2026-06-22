@@ -1132,6 +1132,106 @@ fn workerRootMove0(worker: *const anyopaque) usize {
     return begin.*;
 }
 
+fn workerRootMoveAt(worker: *const anyopaque, index: usize) usize {
+    const begin: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.root_moves));
+    return begin.* + index * graph_layout.root_move_size;
+}
+
+// zfish_search_emit_info_full: build one "info ..." line natively and print it.
+// Always records the node count (as the C++ onUpdateFull lambda did in both
+// modes); prints only in interactive mode. The score classification, cp/mate
+// formatting, WDL, and PV rendering are all native; the line assembly reuses
+// uci_port.formatInfoFull. Bridge-only symbol, no gating.
+pub export fn zfish_search_emit_info_full(
+    manager: *const anyopaque,
+    worker: *const anyopaque,
+    move_index: usize,
+    depth: c_int,
+    sel_depth: c_int,
+    multipv: usize,
+    v: c_int,
+    show_wdl: u8,
+    bound_kind: u8,
+    nodes: u64,
+    tb_hits: u64,
+    hashfull: c_int,
+    time_ms: u64,
+) void {
+    _ = manager;
+    zfish_set_last_nodes_searched(nodes);
+    if (uci_quiet_mode) return;
+
+    const ca = std.heap.c_allocator;
+    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
+    const material = position_port.wdlMaterial(root_pos);
+    const chess960 = position_port.isChess960(root_pos);
+
+    // Score text: classify the value (VALUE_TB_WIN_IN_MAX_PLY=31507, VALUE_TB=
+    // 31753, VALUE_MATE=32000), then map to the cp/tb/mate formatter exactly as
+    // the C++ Score visit does.
+    const sc = score_port.classify(v, 31507, 31753, 32000);
+    const score_c = (switch (sc.kind) {
+        2 => uci_port.formatScore(0, sc.plies, 0),
+        1 => uci_port.formatScore(1, sc.plies, sc.win),
+        else => uci_port.formatScore(2, uci_port.toCp(v, material), 0),
+    }) orelse return;
+    defer ca.free(std.mem.span(score_c));
+    const score_text = std.mem.span(score_c);
+
+    const bound_text: []const u8 = switch (bound_kind) {
+        1 => "lowerbound",
+        2 => "upperbound",
+        else => "",
+    };
+
+    var wdl_c: ?[*:0]u8 = null;
+    var wdl_text: []const u8 = "";
+    if (show_wdl != 0) {
+        wdl_c = uci_port.wdl(v, material);
+        if (wdl_c) |wc| wdl_text = std.mem.span(wc);
+    }
+    defer if (wdl_c) |wc| ca.free(std.mem.span(wc));
+
+    // PV string: space-separated UCI moves over rootMoves[move_index].pv.
+    const rm = workerRootMoveAt(worker, move_index);
+    const pv_addr = rm + graph_layout.root_move_off.pv;
+    const pv_len = @as(*const usize, @ptrFromInt(pv_addr + graph_layout.pvmoves_off.length)).*;
+    var pv_buf: [4096]u8 = undefined;
+    var pv_n: usize = 0;
+    var i: usize = 0;
+    while (i < pv_len) : (i += 1) {
+        if (i != 0) {
+            pv_buf[pv_n] = ' ';
+            pv_n += 1;
+        }
+        const m = @as(*const u16, @ptrFromInt(pv_addr + i * 2)).*;
+        var mbuf: [5]u8 = undefined;
+        const txt = uci_move_port.renderMoveText(&mbuf, m, chess960);
+        @memcpy(pv_buf[pv_n..][0..txt.len], txt);
+        pv_n += txt.len;
+    }
+
+    const nps: usize = if (time_ms != 0) @intCast(nodes * 1000 / time_ms) else 0;
+    const line_c = uci_port.formatInfoFull(
+        depth,
+        sel_depth,
+        multipv,
+        score_text,
+        bound_text,
+        wdl_text,
+        show_wdl,
+        @intCast(nodes),
+        nps,
+        hashfull,
+        @intCast(tb_hits),
+        @intCast(time_ms),
+        pv_buf[0..pv_n],
+    ) orelse return;
+    defer ca.free(std.mem.span(line_c));
+    const line = std.mem.span(line_c);
+    zfish_uci_print_line(line.ptr, line.len);
+}
+
 // zfish_ss_set_prev_scores: w->main_manager()->bestPreviousScore =
 // b->rootMoves[0].score, and likewise bestPreviousAverageScore. Reads the two
 // Value ints from best's first RootMove and stores them in worker's manager
