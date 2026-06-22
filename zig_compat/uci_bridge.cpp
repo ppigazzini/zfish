@@ -1326,11 +1326,9 @@ struct ZfishSsCtx {
 };
 }  // namespace
 
-extern "C" void zfish_ss_prologue(void* worker) {
-    auto* w = static_cast<Search::Worker*>(worker);
-    w->accumulatorStack.reset();
-    w->lastIterationPV.clear();
-}
+// zfish_ss_prologue is native (main.zig): it resets the worker's AccumulatorStack
+// (native stackReset) and clears lastIterationPV (length = 0) by offset. Touches
+// no options, so it is a plain export with no legacy gating.
 
 // zfish_ss_context is native (main.zig): it snapshots is_mainthread / rootMoves
 // empty / limits npmsec+depth by offset and skill_enabled from the native option

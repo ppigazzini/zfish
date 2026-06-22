@@ -1400,6 +1400,19 @@ pub export fn zfish_search_cb_worker_state(
     }
 }
 
+// zfish_ss_prologue: the per-search reset the ported search runs before iterative
+// deepening. Resets the worker's AccumulatorStack to one cleared slot (the native
+// stackReset -- the same clearComputed/zeroDiff/size primitives the push/pop path
+// already proves byte-exact) and clears lastIterationPV (PVMoves::clear == length
+// 0). Touches no options, so it is identical across builds: plain export.
+pub export fn zfish_ss_prologue(worker: *anyopaque) void {
+    const wb = @intFromPtr(worker);
+    const acc_stack: *anyopaque = @ptrFromInt(wb + graph_layout.worker_off.accumulator_stack);
+    nnue_accumulator_port.stackReset(acc_stack);
+    const pv_len: *usize = @ptrFromInt(wb + graph_layout.worker_off.last_iteration_pv + graph_layout.pvmoves_off.length);
+    pv_len.* = 0;
+}
+
 // zfish_search_id_collect_bmc: sum and reset each thread's worker bestMoveChanges
 // (atomic u64), returned as a double (matching the C++ accumulation).
 pub export fn zfish_search_id_collect_bmc(worker: *anyopaque) f64 {
