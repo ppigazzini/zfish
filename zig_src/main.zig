@@ -1166,15 +1166,7 @@ pub export fn zfish_search_emit_info_full(
     const material = position_port.wdlMaterial(root_pos);
     const chess960 = position_port.isChess960(root_pos);
 
-    // Score text: classify the value (VALUE_TB_WIN_IN_MAX_PLY=31507, VALUE_TB=
-    // 31753, VALUE_MATE=32000), then map to the cp/tb/mate formatter exactly as
-    // the C++ Score visit does.
-    const sc = score_port.classify(v, 31507, 31753, 32000);
-    const score_c = (switch (sc.kind) {
-        2 => uci_port.formatScore(0, sc.plies, 0),
-        1 => uci_port.formatScore(1, sc.plies, sc.win),
-        else => uci_port.formatScore(2, uci_port.toCp(v, material), 0),
-    }) orelse return;
+    const score_c = scoreTextAlloc(v, material) orelse return;
     defer ca.free(std.mem.span(score_c));
     const score_text = std.mem.span(score_c);
 
@@ -1284,6 +1276,39 @@ pub export fn zfish_uci_set_quiet_mode(quiet: u8) void {
 }
 
 extern fn zfish_uci_print_line(str: [*]const u8, len: usize) callconv(.c) void;
+
+// Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
+// 31507, VALUE_TB=31753, VALUE_MATE=32000), then map to the cp/tb/mate formatter
+// exactly as the C++ Score visit. Caller frees via c_allocator.
+fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
+    const sc = score_port.classify(v, 31507, 31753, 32000);
+    return switch (sc.kind) {
+        2 => uci_port.formatScore(0, sc.plies, 0),
+        1 => uci_port.formatScore(1, sc.plies, sc.win),
+        else => uci_port.formatScore(2, uci_port.toCp(v, material), 0),
+    };
+}
+
+// zfish_ss_emit_no_moves: at a checkmated/stalemated root, print "info depth 0
+// score <fmt>" (mate 0 when in check, else cp 0) followed by "bestmove (none)".
+// Quiet mode is a no-op. Bridge-only symbol, no gating.
+pub export fn zfish_ss_emit_no_moves(worker: *const anyopaque) void {
+    if (uci_quiet_mode) return;
+    const ca = std.heap.c_allocator;
+    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
+    const v: c_int = if (position_port.hasCheckers(root_pos)) -32000 else 0;
+    const material = position_port.wdlMaterial(root_pos);
+
+    const score_c = scoreTextAlloc(v, material) orelse return;
+    defer ca.free(std.mem.span(score_c));
+    const line_c = uci_port.formatInfoNoMoves(0, std.mem.span(score_c)) orelse return;
+    defer ca.free(std.mem.span(line_c));
+    const line = std.mem.span(line_c);
+    zfish_uci_print_line(line.ptr, line.len);
+
+    const bm = "bestmove (none)";
+    zfish_uci_print_line(bm.ptr, bm.len);
+}
 
 // zfish_ss_emit_bestmove: in interactive mode prints "bestmove X[ ponder Y]"
 // where X = best->rootMoves[0].pv[0] and Y = pv[1] (when pv length > 1), both
