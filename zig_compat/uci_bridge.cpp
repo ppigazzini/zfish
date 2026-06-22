@@ -1409,12 +1409,9 @@ extern "C" void zfish_ss_tm_init(void* worker) {
     w->tt.new_search();
 }
 
-extern "C" void zfish_ss_emit_no_moves(void* worker) {
-    auto* w = static_cast<Search::Worker*>(worker);
-    w->main_manager()->updates.onUpdateNoMoves(
-      {0, {w->rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW, w->rootPos}});
-    w->main_manager()->updates.onBestmove(UCIEngine::move(Move::none()), "");
-}
+// zfish_ss_emit_no_moves is native (main.zig): prints "info depth 0 score <fmt>"
+// (mate 0 in check, else cp 0) and "bestmove (none)" in interactive mode.
+// Bridge-only symbol, no gating.
 
 extern "C" void zfish_ss_threads_start(void* worker) {
     static_cast<Search::Worker*>(worker)->threads.start_searching();
