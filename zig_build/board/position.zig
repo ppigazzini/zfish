@@ -1648,6 +1648,11 @@ pub fn isChess960(pos_ptr: *const anyopaque) bool {
     return pos.chess960;
 }
 
+pub fn gamePly(pos_ptr: *const anyopaque) c_int {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    return pos.game_ply;
+}
+
 // WDL-model material count (src/uci.cpp): pawns + 3*(knights+bishops) +
 // 5*rooks + 9*queens, both colours. piece_count is indexed by piece
 // (white type at 1..5, black type at 9..13).
