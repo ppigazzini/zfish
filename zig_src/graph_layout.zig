@@ -175,9 +175,16 @@ pub const tt_off = struct {
 // movestogo/depth/mate/perft/infinite. The bridge's zfish_ss_context reads depth
 // at +84, which cross-checks this map.
 pub const limits_off = struct {
+    pub const time_w: usize = 24; // time[WHITE] (1st TimePoint)
+    pub const time_b: usize = 32; // time[BLACK]
     pub const npmsec: usize = 56; // 5th TimePoint (after time[2]/inc[2])
+    pub const movetime: usize = 64; // 6th TimePoint
     pub const depth: usize = 84;
+    pub const mate: usize = 88;
     pub const infinite: usize = 96;
+    // uint64_t nodes follows the five ints (movestogo/depth/mate/perft/infinite@80..100)
+    // after 4 bytes of alignment padding; ponderMode (bool) follows at 112.
+    pub const nodes: usize = 104;
 };
 
 // UCIEngine member offsets. engine (Engine, 1680 bytes) is at 0; cli
