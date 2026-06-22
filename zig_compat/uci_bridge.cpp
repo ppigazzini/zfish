@@ -1334,12 +1334,20 @@ struct ZfishSsCtx {
 // empty / limits npmsec+depth by offset and skill_enabled from the native option
 // model (Skill::enabled == level < 20). Bridge-only symbol, no gating.
 
+// zfish_ss_tm_init is native (main.zig) in the default build: it builds the
+// TimeManagement::init input from the worker's limits/rootPos + manager tm, runs
+// the native timeman math, writes the outputs back, and bumps the TT generation.
+// It reads the nodestime/Move Overhead/Ponder options, which are empty in the
+// native model under the legacy oracle, so the legacy build keeps this C++ body
+// (reading the C++ OptionsMap). See [[native-optionsmodel-default-only]].
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_ss_tm_init(void* worker) {
     auto* w = static_cast<Search::Worker*>(worker);
     w->main_manager()->tm.init(w->limits, w->rootPos.side_to_move(), w->rootPos.game_ply(),
                                w->options, w->main_manager()->originalTimeAdjust);
     w->tt.new_search();
 }
+#endif
 
 // zfish_ss_emit_no_moves is native (main.zig): prints "info depth 0 score <fmt>"
 // (mate 0 in check, else cp 0) and "bestmove (none)" in interactive mode.
