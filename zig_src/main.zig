@@ -1060,6 +1060,7 @@ comptime {
         // id_state reads the native option model (default-only populated), so the
         // native version is default-only; legacy keeps the bridge C++ body.
         @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });
+        @export(&zfish_ss_tm_init, .{ .name = "zfish_ss_tm_init" });
     }
 }
 
@@ -1411,6 +1412,67 @@ pub export fn zfish_ss_prologue(worker: *anyopaque) void {
     nnue_accumulator_port.stackReset(acc_stack);
     const pv_len: *usize = @ptrFromInt(wb + graph_layout.worker_off.last_iteration_pv + graph_layout.pvmoves_off.length);
     pv_len.* = 0;
+}
+
+// zfish_ss_tm_init: the per-search TimeManagement::init + TT::new_search the main
+// thread runs at search start. The time-control math is already native
+// (timeman_port.init); this reproduces the C++ wrapper: build the input from the
+// worker's limits/rootPos and the manager's tm + originalTimeAdjust, read the
+// nodestime/Move Overhead/Ponder options, then write the outputs back into tm,
+// the manager, and limits, and bump the TT generation (new_search).
+//
+// The option reads hit the native model, which is empty in the legacy oracle, so
+// this is gated default-only: the legacy build keeps the C++ tm.init that reads
+// the C++ OptionsMap. See [[native-optionsmodel-default-only]]. Bench has no time
+// control (time[us] == 0), so the path is gate-exercised every search but the
+// timeman output is inert; correctness of the writeback is still proven because
+// the native and C++ inputs match field-for-field in the default build.
+fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
+    const wb = @intFromPtr(worker);
+    const off = graph_layout.worker_off;
+    const lo = graph_layout.limits_off;
+    const sm = graph_layout.search_manager_off;
+    const limits = wb + off.limits;
+    const m = @as(*const usize, @ptrFromInt(wb + off.manager)).*;
+    const tm = m + sm.tm;
+    const root_pos: *const anyopaque = @ptrFromInt(wb + off.root_pos);
+
+    const us: usize = position_port.sideToMove(root_pos);
+    const time_off = lo.time_w + us * 8;
+    const inc_off = lo.inc_w + us * 8;
+
+    const orig_adjust: *f64 = @ptrFromInt(m + sm.original_time_adjust);
+    const input = timeman_port.TimemanInput{
+        .time_us = @as(*const i64, @ptrFromInt(limits + time_off)).*,
+        .inc_us = @as(*const i64, @ptrFromInt(limits + inc_off)).*,
+        .start_time = @as(*const i64, @ptrFromInt(limits + lo.start_time)).*,
+        .npmsec = optInt("nodestime"),
+        .move_overhead = optInt("Move Overhead"),
+        .available_nodes = @as(*const i64, @ptrFromInt(tm + 24)).*,
+        .current_optimum_time = @as(*const i64, @ptrFromInt(tm + 8)).*,
+        .current_maximum_time = @as(*const i64, @ptrFromInt(tm + 16)).*,
+        .movestogo = @as(*const c_int, @ptrFromInt(limits + lo.movestogo)).*,
+        .ply = position_port.gamePly(root_pos),
+        .original_time_adjust = orig_adjust.*,
+        .ponder = @intFromBool(optInt("Ponder") != 0),
+    };
+
+    const out = timeman_port.init(input);
+
+    @as(*i64, @ptrFromInt(tm)).* = out.start_time;
+    @as(*i64, @ptrFromInt(tm + 8)).* = out.optimum_time;
+    @as(*i64, @ptrFromInt(tm + 16)).* = out.maximum_time;
+    @as(*i64, @ptrFromInt(tm + 24)).* = out.available_nodes;
+    @as(*u8, @ptrFromInt(tm + 32)).* = out.use_nodes_time;
+    orig_adjust.* = out.original_time_adjust;
+    @as(*i64, @ptrFromInt(limits + time_off)).* = out.time_us;
+    @as(*i64, @ptrFromInt(limits + inc_off)).* = out.inc_us;
+    @as(*i64, @ptrFromInt(limits + lo.npmsec)).* = out.npmsec;
+
+    // TranspositionTable::new_search(): bump generation8 on the worker's TT.
+    const tt = @as(*const usize, @ptrFromInt(wb + off.tt)).*;
+    const gen: *u8 = @ptrFromInt(tt + graph_layout.tt_off.generation8);
+    gen.* = zfish_tt_generation_next(gen.*);
 }
 
 // zfish_search_id_collect_bmc: sum and reset each thread's worker bestMoveChanges
