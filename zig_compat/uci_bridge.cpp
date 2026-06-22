@@ -775,6 +775,10 @@ extern "C" void zfish_search_id_state(void* worker, ZfishIdState* out) {
 #endif
 
 // UCI pv() sink (output only -- not parity-observable).
+// SearchManager::pv dispatches to the native pv driver in the default build and
+// the C++ pv() in the legacy oracle, so this stays a C++ method call (a native
+// direct call to zfish_search_pv would force the native driver in legacy too,
+// defeating the oracle).
 extern "C" void zfish_search_id_pv(void* worker, int depth) {
     auto* w = static_cast<Stockfish::Search::Worker*>(worker);
     w->main_manager()->pv(*w, w->threads, w->tt, depth);
@@ -782,16 +786,8 @@ extern "C" void zfish_search_id_pv(void* worker, int depth) {
 
 // Cross-thread bestMoveChanges collection: sum and reset, returned as a double
 // (keeps the multi-thread result correct from one extern).
-extern "C" double zfish_search_id_collect_bmc(void* worker) {
-    auto*  w   = static_cast<Stockfish::Search::Worker*>(worker);
-    double tot = 0;
-    for (auto&& th : w->threads)
-    {
-        tot += th->worker->bestMoveChanges;
-        th->worker->bestMoveChanges = 0;
-    }
-    return tot;
-}
+// zfish_search_id_collect_bmc is native (main.zig): sums and resets each thread's
+// worker bestMoveChanges by offset. Bridge-only symbol.
 
 extern "C" void zfish_search_cb_worker_state(void* worker, void** out_acc_stack,
                                              std::uint64_t** out_nodes, const void** out_network,
@@ -1423,6 +1419,8 @@ extern "C" void* zfish_ss_get_best_thread(void* worker) {
 // pv.length == 1 by offset and, if so, runs the native extract_ponder_from_tt
 // over best's pv with worker's tt/rootPos. Bridge-only symbol, no gating.
 
+// Like zfish_search_id_pv, stays a C++ method call so the legacy oracle uses its
+// C++ pv() while the default build routes to the native driver.
 extern "C" void zfish_ss_emit_pv(void* worker, void* best) {
     auto* w = static_cast<Search::Worker*>(worker);
     auto* b = static_cast<Search::Worker*>(best);
