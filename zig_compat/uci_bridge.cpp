@@ -892,15 +892,9 @@ extern "C" void zfish_search_cb_tt_context(void* worker, void** out_table,
 // (zfish_search_cb_root_pvidx_nonzero retired: worker_state hands Zig a pointer
 // to Worker::pvIdx and the singular-extension guard compares it directly.)
 
-extern "C" void zfish_search_cb_root_on_iter(void* worker, int depth, std::uint16_t move,
-                                             int move_count) {
-    using namespace Stockfish;
-    auto* w = static_cast<Search::Worker*>(worker);
-    if (w->is_mainthread())
-        w->main_manager()->updates.onIter(
-          {depth, UCIEngine::move(Move(move), w->rootPos.is_chess960()),
-           static_cast<std::size_t>(move_count) + w->pvIdx});
-}
+// zfish_search_cb_root_on_iter is native (main.zig): on the main thread it prints
+// "info depth D currmove X currmovenumber N" via the native move formatter and
+// formatInfoIter. Bridge-only symbol, no gating.
 
 // (zfish_search_cb_root_update retired: the Zig search<Root> updates the RootMove
 // entry directly through the rootMoves array base -- effort/averageScore/
