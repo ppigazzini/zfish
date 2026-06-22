@@ -2175,14 +2175,8 @@ std::uint64_t zfish_thread_tb_hits(const void* thread_ptr) {
 }
 #endif
 
-void zfish_thread_fill_summary(const void* thread_ptr, ZfishThreadSummary* out) {
-    auto score_is_bound = false;
-    auto pv_has_more_than_two = false;
-    static_cast<const Thread*>(thread_ptr)->worker_fill_summary(
-      out->pv0_raw, score_is_bound, pv_has_more_than_two, out->score, out->root_depth);
-    out->score_is_bound = score_is_bound ? std::uint8_t{1} : std::uint8_t{0};
-    out->pv_has_more_than_two = pv_has_more_than_two ? std::uint8_t{1} : std::uint8_t{0};
-}
+// zfish_thread_fill_summary is native (main.zig): reads rootMoves[0]
+// pv[0]/score/bound-flags/pv-size and rootDepth by offset. Bridge-only symbol.
 
 // These five field resets are native (main.zig) in the default build; the legacy
 // oracle keeps the C++ versions here, gated to the legacy target so the default
