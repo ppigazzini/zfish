@@ -150,6 +150,10 @@ pub const thread_off = struct {
 pub const root_move_off = struct {
     pub const score: usize = 8;
     pub const average_score: usize = 16;
+    // scoreLowerbound/scoreUpperbound (bools) follow uciScore@24; score_is_bound()
+    // == lowerbound || upperbound.
+    pub const score_lowerbound: usize = 28;
+    pub const score_upperbound: usize = 29;
     // pv (PVMoves, 504 bytes, 8-aligned) follows tbScore@40; padded start is 48.
     pub const pv: usize = 48;
 };

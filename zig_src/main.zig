@@ -1061,6 +1061,7 @@ comptime {
         // native version is default-only; legacy keeps the bridge C++ body.
         @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });
         @export(&zfish_ss_tm_init, .{ .name = "zfish_ss_tm_init" });
+        @export(&thFillSummary, .{ .name = "zfish_thread_fill_summary" });
     }
 }
 
@@ -1473,6 +1474,26 @@ fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
     const tt = @as(*const usize, @ptrFromInt(wb + off.tt)).*;
     const gen: *u8 = @ptrFromInt(tt + graph_layout.tt_off.generation8);
     gen.* = zfish_tt_generation_next(gen.*);
+}
+
+// zfish_thread_fill_summary: snapshot the per-thread voting inputs natively
+// (replacing the C++ forwarder to fill_thread_summary). worker = the Thread's
+// LargePagePtr at thread_off.worker; the fields are rootMoves[0].pv[0]/score/
+// bound-flags/pv-size and rootDepth -- the same values the native search<Root>
+// already reads. Gated default-only: src/thread.cpp also defines this symbol, so
+// the legacy oracle uses that (see [[legacy-seam-blocks-zig-export-flips]]).
+fn thFillSummary(thread: *const anyopaque, out: *thread_port.ThreadSummary) callconv(.c) void {
+    const w = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + graph_layout.thread_off.worker)).*;
+    const rm = @as(*const usize, @ptrFromInt(w + graph_layout.worker_off.root_moves)).*; // &rootMoves[0]
+    const rmo = graph_layout.root_move_off;
+    out.pv0_raw = @as(*const u16, @ptrFromInt(rm + rmo.pv)).*;
+    const lb = @as(*const u8, @ptrFromInt(rm + rmo.score_lowerbound)).*;
+    const ub = @as(*const u8, @ptrFromInt(rm + rmo.score_upperbound)).*;
+    out.score_is_bound = @intFromBool(lb != 0 or ub != 0);
+    const pv_len = @as(*const usize, @ptrFromInt(rm + rmo.pv + graph_layout.pvmoves_off.length)).*;
+    out.pv_has_more_than_two = @intFromBool(pv_len > 2);
+    out.score = @as(*const c_int, @ptrFromInt(rm + rmo.score)).*;
+    out.root_depth = @as(*const c_int, @ptrFromInt(w + graph_layout.worker_off.root_depth)).*;
 }
 
 // zfish_ss_get_best_thread: return the worker of the vote-winning thread. The
