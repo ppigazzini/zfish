@@ -1057,6 +1057,9 @@ comptime {
         @export(&thWorkerSetRootPosition, .{ .name = "zfish_thread_worker_set_root_position" });
         @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
         @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
+        // id_state reads the native option model (default-only populated), so the
+        // native version is default-only; legacy keeps the bridge C++ body.
+        @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });
     }
 }
 
@@ -1294,6 +1297,129 @@ extern fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) cal
 
 fn optInt(name: []const u8) c_int {
     return zfish_optmodel_int_by_name(name.ptr, name.len);
+}
+
+// Matches the bridge ZfishIdState struct (iterative-deepening snapshot).
+const ZfishIdState = extern struct {
+    root_pos: ?*anyopaque,
+    root_moves: ?*anyopaque,
+    pv_idx: ?*anyopaque,
+    pv_last: ?*anyopaque,
+    sel_depth: ?*anyopaque,
+    root_depth: ?*anyopaque,
+    root_delta: ?*anyopaque,
+    optimism: ?*anyopaque,
+    nodes: ?*const anyopaque,
+    stop: ?*anyopaque,
+    increase_depth: ?*anyopaque,
+    stop_on_ponderhit: ?*anyopaque,
+    ponder: ?*const anyopaque,
+    iter_value: ?*anyopaque,
+    previous_time_reduction: ?*anyopaque,
+    last_iter_pv: ?*anyopaque,
+    root_moves_count: usize,
+    thread_idx: usize,
+    threads_size: usize,
+    multipv_option: usize,
+    tm_optimum: i64,
+    tm_maximum: i64,
+    tm_start_time: i64,
+    limits_depth: c_int,
+    limits_mate: c_int,
+    best_previous_score: c_int,
+    best_previous_average_score: c_int,
+    skill_level: f64,
+    is_main: u8,
+    use_time_management: u8,
+    tm_use_nodes_time: u8,
+    skill_enabled: u8,
+};
+
+// Skill(level, elo) from the C++ ctor: a set UCI_Elo maps to a clamped [0,19]
+// level; otherwise the level is the Skill Level option. enabled() == level < 20.
+fn skillLevel() f64 {
+    const limit_strength = optInt("UCI_LimitStrength") != 0;
+    const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
+    if (uci_elo != 0) {
+        const e = @as(f64, @floatFromInt(uci_elo - 1320)) / @as(f64, 3190 - 1320);
+        const raw = (((37.2473 * e - 40.8525) * e + 22.2943) * e - 0.311438);
+        return std.math.clamp(raw, 0.0, 19.0);
+    }
+    return @floatFromInt(optInt("Skill Level"));
+}
+
+// zfish_search_id_state: snapshot the iterative-deepening state for the native
+// search. Worker/pool member pointers and scalars are taken by offset; the main
+// thread also exposes its SearchManager fields and TimeManagement optimum/maximum/
+// startTime/useNodesTime (simple getters). skill_level/enabled and multipv read
+// the native option model, which is only populated in the default build, so this
+// is gated default-only (the legacy oracle keeps the C++ body that reads the C++
+// OptionsMap). See the gated @export below.
+fn zfish_search_id_state(worker: *anyopaque, out: *ZfishIdState) callconv(.c) void {
+    const wb = @intFromPtr(worker);
+    const off = graph_layout.worker_off;
+    const thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx)).*;
+    const is_main = thread_idx == 0;
+    const pool = @as(*const usize, @ptrFromInt(wb + off.threads)).*;
+    const limits = wb + off.limits;
+
+    const rm_begin = @as(*const usize, @ptrFromInt(wb + off.root_moves)).*;
+    const rm_end = @as(*const usize, @ptrFromInt(wb + off.root_moves + 8)).*;
+    const tbegin = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_begin)).*;
+    const tend = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_end)).*;
+
+    out.root_pos = @ptrFromInt(wb + off.root_pos);
+    out.root_moves = @ptrFromInt(rm_begin);
+    out.pv_idx = @ptrFromInt(wb + off.pv_idx);
+    out.pv_last = @ptrFromInt(wb + off.pv_last);
+    out.sel_depth = @ptrFromInt(wb + off.sel_depth);
+    out.root_depth = @ptrFromInt(wb + off.root_depth);
+    out.root_delta = @ptrFromInt(wb + off.root_delta);
+    out.optimism = @ptrFromInt(wb + off.optimism);
+    out.nodes = @ptrFromInt(wb + off.nodes);
+    out.stop = @ptrFromInt(pool + graph_layout.thread_pool_off.stop);
+    out.increase_depth = @ptrFromInt(pool + graph_layout.thread_pool_off.increase_depth);
+    out.last_iter_pv = @ptrFromInt(wb + off.last_iteration_pv);
+    out.root_moves_count = (rm_end - rm_begin) / graph_layout.root_move_size;
+    out.thread_idx = thread_idx;
+    out.threads_size = (tend - tbegin) / @sizeOf(usize);
+    out.multipv_option = @intCast(@max(optInt("MultiPV"), 0));
+    out.limits_depth = @as(*const c_int, @ptrFromInt(limits + graph_layout.limits_off.depth)).*;
+    out.limits_mate = @as(*const c_int, @ptrFromInt(limits + 88)).*;
+    const time_w = @as(*const i64, @ptrFromInt(limits + 24)).*;
+    const time_b = @as(*const i64, @ptrFromInt(limits + 32)).*;
+    out.use_time_management = @intFromBool(time_w != 0 or time_b != 0);
+    out.is_main = @intFromBool(is_main);
+
+    const sl = skillLevel();
+    out.skill_level = sl;
+    out.skill_enabled = @intFromBool(sl < 20.0);
+
+    if (is_main) {
+        const m = @as(*const usize, @ptrFromInt(wb + off.manager)).*;
+        const sm = graph_layout.search_manager_off;
+        out.stop_on_ponderhit = @ptrFromInt(m + sm.stop_on_ponderhit);
+        out.ponder = @ptrFromInt(m + sm.ponder);
+        out.iter_value = @ptrFromInt(m + sm.iter_value);
+        out.previous_time_reduction = @ptrFromInt(m + sm.previous_time_reduction);
+        out.tm_optimum = @as(*const i64, @ptrFromInt(m + sm.tm + 8)).*;
+        out.tm_maximum = @as(*const i64, @ptrFromInt(m + sm.tm + 16)).*;
+        out.tm_start_time = @as(*const i64, @ptrFromInt(m + sm.tm)).*;
+        out.tm_use_nodes_time = @as(*const u8, @ptrFromInt(m + sm.tm + 32)).*;
+        out.best_previous_score = @as(*const c_int, @ptrFromInt(m + sm.best_previous_score)).*;
+        out.best_previous_average_score = @as(*const c_int, @ptrFromInt(m + sm.best_previous_average_score)).*;
+    } else {
+        out.stop_on_ponderhit = null;
+        out.ponder = null;
+        out.iter_value = null;
+        out.previous_time_reduction = null;
+        out.tm_optimum = 0;
+        out.tm_maximum = 0;
+        out.tm_start_time = 0;
+        out.tm_use_nodes_time = 0;
+        out.best_previous_score = 0;
+        out.best_previous_average_score = 0;
+    }
 }
 
 // Matches the bridge ZfishSsCtx struct.
