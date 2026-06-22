@@ -3097,17 +3097,8 @@ void UCIEngine::init_search_update_listeners() {
 
 extern "C" {
 
-int zfish_uci_cli_argc(const void* uci_ptr) {
-    return static_cast<const UCIEngine*>(uci_ptr)->cli.argc;
-}
-
-const char* zfish_uci_cli_arg_at(const void* uci_ptr, int index) {
-    const auto* uci_engine = static_cast<const UCIEngine*>(uci_ptr);
-    if (index < 0 || index >= uci_engine->cli.argc)
-        return nullptr;
-
-    return uci_engine->cli.argv[index];
-}
+// zfish_uci_cli_argc and zfish_uci_cli_arg_at are native (main.zig): they read
+// cli.argc/argv by offset and bounds-check. Bridge-only symbols, no gating.
 
 // zfish_uci_engine_ptr is native (main.zig): UCIEngine::engine is the first
 // member (offset 0), so it returns the same pointer.

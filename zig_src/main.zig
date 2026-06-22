@@ -1195,6 +1195,21 @@ pub export fn zfish_ss_should_busywait(worker: *const anyopaque) u8 {
     return if (ponder.* != 0 or infinite.* != 0) 1 else 0;
 }
 
+// UCIEngine::cli accessors (bridge-only). cli is a CommandLine {int argc;
+// char** argv} at uci_engine_off.cli_argc; arg_at bounds-checks against argc and
+// loads the i-th argv pointer, returning null out of range (as the C++ did).
+pub export fn zfish_uci_cli_argc(uci: *const anyopaque) c_int {
+    const p: *const c_int = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argc));
+    return p.*;
+}
+pub export fn zfish_uci_cli_arg_at(uci: *const anyopaque, index: c_int) ?[*:0]const u8 {
+    const argc_p: *const c_int = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argc));
+    if (index < 0 or index >= argc_p.*) return null;
+    const argv_p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argv));
+    const argv: [*]const usize = @ptrFromInt(argv_p.*);
+    return @ptrFromInt(argv[@intCast(index)]);
+}
+
 // ThreadPool::boundThreadToNumaNode accessors (bridge-only). The member is a
 // std::vector<size_t> at bound_nodes_begin; count is the byte span / 8 and
 // at(i) loads the i-th element from the begin pointer.

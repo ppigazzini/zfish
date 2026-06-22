@@ -176,6 +176,14 @@ pub const limits_off = struct {
     pub const infinite: usize = 96;
 };
 
+// UCIEngine member offsets. engine (Engine, 1680 bytes) is at 0; cli
+// (CommandLine {int argc; char** argv}) follows at 1680. UCIEngine is 1696 bytes
+// (1680 + 16), which pins this.
+pub const uci_engine_off = struct {
+    pub const cli_argc: usize = 1680;
+    pub const cli_argv: usize = 1688;
+};
+
 // NumaConfig member offsets. `nodes` (std::vector<std::set<CpuIndex>>) is the
 // first member at offset 0; the vector is {begin, end, cap} 8-byte pointers, and
 // each std::set<CpuIndex> element is 48 bytes (libstdc++ _Rb_tree). So
