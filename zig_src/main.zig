@@ -1289,6 +1289,25 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
     };
 }
 
+// zfish_search_cb_root_on_iter: on the main thread, print "info depth D currmove
+// X currmovenumber N" (N = move_count + pvIdx). The native search only calls this
+// past 10M nodes; quiet mode is a no-op. Bridge-only symbol, no gating.
+pub export fn zfish_search_cb_root_on_iter(worker: *const anyopaque, depth: c_int, move: u16, move_count: c_int) void {
+    const thread_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.thread_idx);
+    if (thread_idx.* != 0) return;
+    if (uci_quiet_mode) return;
+    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
+    const chess960 = position_port.isChess960(root_pos);
+    const pv_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.pv_idx);
+    var mbuf: [5]u8 = undefined;
+    const currmove = uci_move_port.renderMoveText(&mbuf, move, chess960);
+    const currmovenumber: c_int = move_count + @as(c_int, @intCast(pv_idx.*));
+    const line_c = uci_port.formatInfoIter(depth, currmove, currmovenumber) orelse return;
+    defer std.heap.c_allocator.free(std.mem.span(line_c));
+    const line = std.mem.span(line_c);
+    zfish_uci_print_line(line.ptr, line.len);
+}
+
 // zfish_ss_emit_no_moves: at a checkmated/stalemated root, print "info depth 0
 // score <fmt>" (mate 0 when in check, else cp 0) followed by "bestmove (none)".
 // Quiet mode is a no-op. Bridge-only symbol, no gating.
