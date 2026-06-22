@@ -706,6 +706,11 @@ struct ZfishIdState {
     std::uint8_t        skill_enabled;
 };
 
+// zfish_search_id_state is native (main.zig) in the default build. It reads the
+// native option model (MultiPV / Skill Level), which is only populated in the
+// default build, so the legacy oracle keeps this C++ body (gated) that reads the
+// C++ OptionsMap instead. The native @export is default-only via target_flags.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_search_id_state(void* worker, ZfishIdState* out) {
     using namespace Stockfish;
     auto* w           = static_cast<Search::Worker*>(worker);
@@ -767,6 +772,7 @@ extern "C" void zfish_search_id_state(void* worker, ZfishIdState* out) {
         out->multipv_option          = std::size_t(w->options["MultiPV"]);
     }
 }
+#endif
 
 // UCI pv() sink (output only -- not parity-observable).
 extern "C" void zfish_search_id_pv(void* worker, int depth) {
@@ -3686,6 +3692,7 @@ std::size_t zfish_graph_layout_size(int which) {
     // the native set_tb_config flip writes the Config fields through this offset.
     case 15: return offsetof(Search::Worker, tbConfig);
     case 16: return offsetof(Search::Worker, rootState);
+    case 17: return offsetof(Search::Worker, lastIterationPV);
     default: return 0;
     }
 }
