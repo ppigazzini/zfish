@@ -627,6 +627,28 @@ pub fn build(b: *std.Build) void {
     );
     stress_step.dependOn(&stress_cmd.step);
 
+    // Memory-error / leak gate (H3, REPORT-9 big-bang plan): Valgrind memcheck
+    // over short multi-thread sessions, asserting no invalid access / bad free /
+    // definite leak (uninit-value checking off -- NNUE SIMD makes it false-noisy).
+    // The ASan/LSan-equivalent net for the native Worker/large-page lifecycle and
+    // the stage-4 cut. (TSan/race detection is deferred to stage 4: meaningful
+    // only for the native futex runtime; the current C++ runtime has benign TT
+    // data races by design.) Out of the core `parity` aggregate (slow).
+    const valgrind_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/valgrind.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+    });
+    valgrind_cmd.step.dependOn(install_step);
+    valgrind_cmd.step.dependOn(&net_cmd.step);
+    valgrind_cmd.setCwd(b.path("src"));
+
+    const valgrind_step = b.step(
+        "parity-valgrind",
+        "Valgrind memcheck (leak / invalid-access / bad-free) across thread counts",
+    );
+    valgrind_step.dependOn(&valgrind_cmd.step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
