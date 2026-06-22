@@ -30,6 +30,7 @@ const timeman_port = @import("timeman");
 const tt_port = @import("tt");
 const uci_port = @import("uci");
 const position_snapshot = @import("position_snapshot");
+const uci_move_port = @import("uci_move");
 const target_flags = @import("target_flags");
 
 comptime {
@@ -1171,6 +1172,51 @@ pub export fn zfish_ss_pv_one_and_ponder(worker: *anyopaque, best: *anyopaque) u
         gen.*,
         @ptrFromInt(pos),
     );
+}
+
+// Native quiet-mode flag, mirrored from the C++ zfish_uci_set_listener_mode. In
+// quiet mode (bench/speedtest) the search-driver emit functions are no-ops; in
+// interactive mode they format natively and print through the shared sync_cout
+// wrapper.
+var uci_quiet_mode: bool = false;
+pub export fn zfish_uci_set_quiet_mode(quiet: u8) void {
+    uci_quiet_mode = quiet != 0;
+}
+
+extern fn zfish_uci_print_line(str: [*]const u8, len: usize) callconv(.c) void;
+
+// zfish_ss_emit_bestmove: in interactive mode prints "bestmove X[ ponder Y]"
+// where X = best->rootMoves[0].pv[0] and Y = pv[1] (when pv length > 1), both
+// rendered with worker->rootPos chess960. Quiet mode is a no-op, matching the
+// C++ no-op onBestmove listener. Bridge-only symbol, no gating.
+pub export fn zfish_ss_emit_bestmove(worker: *const anyopaque, best: *const anyopaque) void {
+    if (uci_quiet_mode) return;
+    const rm0 = workerRootMove0(best);
+    const pv_addr = rm0 + graph_layout.root_move_off.pv;
+    const length: *const usize = @ptrFromInt(pv_addr + graph_layout.pvmoves_off.length);
+    const pv0: *const u16 = @ptrFromInt(pv_addr);
+    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
+    const chess960 = position_port.isChess960(root_pos);
+
+    var buf0: [5]u8 = undefined;
+    const bestmove = uci_move_port.renderMoveText(&buf0, pv0.*, chess960);
+
+    var line: [40]u8 = undefined;
+    var n: usize = 0;
+    @memcpy(line[n..][0..9], "bestmove ");
+    n += 9;
+    @memcpy(line[n..][0..bestmove.len], bestmove);
+    n += bestmove.len;
+    if (length.* > 1) {
+        const pv1: *const u16 = @ptrFromInt(pv_addr + 2);
+        var buf1: [5]u8 = undefined;
+        const ponder = uci_move_port.renderMoveText(&buf1, pv1.*, chess960);
+        @memcpy(line[n..][0..8], " ponder ");
+        n += 8;
+        @memcpy(line[n..][0..ponder.len], ponder);
+        n += ponder.len;
+    }
+    zfish_uci_print_line(line[0..n].ptr, n);
 }
 
 // zfish_ss_set_stop: worker->threads.stop = true. Plain byte store, matching the

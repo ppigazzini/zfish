@@ -248,6 +248,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("thread", thread_module);
     exe.root_module.addImport("tt", tt_module);
     exe.root_module.addImport("uci", uci_module);
+    exe.root_module.addImport("uci_move", uci_move_module);
 
     legacy_exe.root_module.addImport("benchmark", benchmark_module);
     legacy_exe.root_module.addImport("bitboard", bitboard_module);
@@ -268,6 +269,7 @@ pub fn build(b: *std.Build) void {
     legacy_exe.root_module.addImport("thread", thread_module);
     legacy_exe.root_module.addImport("tt", tt_module);
     legacy_exe.root_module.addImport("uci", uci_module);
+    legacy_exe.root_module.addImport("uci_move", uci_move_module);
 
     var compile_flags = std.ArrayList([]const u8).empty;
     compile_flags.appendSlice(b.allocator, &.{
