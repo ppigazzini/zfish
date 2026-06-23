@@ -574,6 +574,56 @@ pub export fn zfish_worker_clear(worker: *anyopaque) void {
     zfish_search_clear_refresh_cache(refresh, biases);
 }
 
+// Stage 5: native Worker::set_root_moves -- the C++ `rootMoves = value` copy-assign
+// of a std::vector<RootMove>, reproduced by offset. RootMove is standard-layout
+// POD (PVMoves is a fixed Move[] array), so a non-empty assign is one memcpy of
+// count*sizeof(RootMove). The dest buffer lives in the C++ Worker and is freed by
+// ~Worker -> ~vector -> ::operator delete, so any (re)allocation here must use
+// ::operator new (zfish_operator_new), matching libc++'s allocator. Mirrors
+// std::vector copy-assign: reuse the buffer when capacity suffices, else realloc.
+extern fn zfish_operator_new(n: usize) ?*anyopaque;
+extern fn zfish_operator_delete(p: ?*anyopaque) void;
+
+pub export fn zfish_worker_set_root_moves(thread: *anyopaque, src_rm: *const anyopaque) void {
+    // worker@8, then the rootMoves vector object {begin@0,end@8,cap@16}.
+    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + 8)).*;
+    const vbase = worker + graph_layout.worker_off.root_moves;
+    const dst_begin: *usize = @ptrFromInt(vbase + 0);
+    const dst_end: *usize = @ptrFromInt(vbase + 8);
+    const dst_cap: *usize = @ptrFromInt(vbase + 16);
+
+    const sb = @intFromPtr(src_rm);
+    const src_begin = @as(*const usize, @ptrFromInt(sb + 0)).*;
+    const src_end = @as(*const usize, @ptrFromInt(sb + 8)).*;
+    const byte_count = src_end - src_begin;
+
+    if (byte_count == 0) {
+        // Empty source: size 0, keep the existing buffer/null (no alloc), exactly
+        // like libc++ assigning an empty range.
+        dst_end.* = dst_begin.*;
+        return;
+    }
+
+    const cap_bytes = if (dst_begin.* != 0) dst_cap.* - dst_begin.* else 0;
+    if (dst_begin.* != 0 and cap_bytes >= byte_count) {
+        @memcpy(
+            @as([*]u8, @ptrFromInt(dst_begin.*))[0..byte_count],
+            @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
+        );
+        dst_end.* = dst_begin.* + byte_count;
+    } else {
+        const new_buf = @intFromPtr(zfish_operator_new(byte_count) orelse @panic("set_root_moves: OOM"));
+        @memcpy(
+            @as([*]u8, @ptrFromInt(new_buf))[0..byte_count],
+            @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
+        );
+        if (dst_begin.* != 0) zfish_operator_delete(@ptrFromInt(dst_begin.*));
+        dst_begin.* = new_buf;
+        dst_end.* = new_buf + byte_count;
+        dst_cap.* = new_buf + byte_count;
+    }
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }

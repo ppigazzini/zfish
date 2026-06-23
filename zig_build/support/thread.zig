@@ -217,6 +217,8 @@ extern fn zfish_thread_run_callback(
 extern fn zfish_thread_worker_set_limits(thread: *anyopaque, limits: *const anyopaque) void;
 extern fn zfish_thread_worker_reset_root_setup_state(thread: *anyopaque) void;
 extern fn zfish_thread_worker_set_root_moves(thread: *anyopaque, root_moves: *const anyopaque) void;
+// Stage 5: native vector<RootMove> copy-assign (default build); see main.zig.
+extern fn zfish_worker_set_root_moves(thread: *anyopaque, root_moves: *const anyopaque) void;
 extern fn zfish_thread_worker_set_root_position(
     thread: *anyopaque,
     fen_ptr: [*]const u8,
@@ -327,7 +329,12 @@ fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
     zfish_thread_worker_set_limits(context.thread, context.input.limits);
     zfish_thread_worker_reset_root_setup_state(context.thread);
-    zfish_thread_worker_set_root_moves(context.thread, context.input.root_moves);
+    // Stage 5: native vector<RootMove> copy-assign in the default build; the legacy
+    // oracle keeps the C++ worker->set_root_moves so it stays the pure reference.
+    if (legacyBuild())
+        zfish_thread_worker_set_root_moves(context.thread, context.input.root_moves)
+    else
+        zfish_worker_set_root_moves(context.thread, context.input.root_moves);
     zfish_thread_worker_set_root_position(
         context.thread,
         context.input.fen_ptr,
