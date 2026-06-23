@@ -13,6 +13,7 @@ const worker_layout = @import("worker_layout.zig");
 const accumulator_layout = @import("accumulator_layout.zig");
 const worker_construct = @import("worker_construct.zig");
 const thread_construct = @import("thread_construct.zig");
+const engine_construct = @import("engine_construct.zig");
 const worker_native_construct = @import("worker_native_construct.zig");
 const misc_port = @import("misc");
 const movegen_port = @import("movegen");
@@ -40,6 +41,7 @@ comptime {
     _ = accumulator_layout;
     _ = worker_construct;
     _ = thread_construct;
+    _ = engine_construct;
     _ = worker_native_construct;
 }
 
