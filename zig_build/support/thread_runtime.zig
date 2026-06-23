@@ -19,7 +19,14 @@ const linux = std.os.linux;
 const Atomic = std.atomic.Value(u32);
 
 fn futexWait(ptr: *const Atomic, expect: u32) void {
-    _ = linux.futex_3arg(&ptr.raw, .{ .cmd = .WAIT, .private = true }, expect);
+    // FUTEX_WAIT reads the 4th (timeout) syscall argument, so it MUST be passed
+    // explicitly as NULL (wait indefinitely). futex_3arg leaves the timeout
+    // register undefined -> the kernel dereferences garbage -> EFAULT, so the wait
+    // returns immediately and the predicate loop busy-spins (and valgrind flags
+    // "futex(timeout) points to unaddressable byte(s)"). futex_4arg(..., null)
+    // makes the thread actually block. (WAKE genuinely ignores the extra args, so
+    // futexWake keeps using futex_3arg.)
+    _ = linux.futex_4arg(&ptr.raw, .{ .cmd = .WAIT, .private = true }, expect, null);
 }
 
 fn futexWake(ptr: *const Atomic, count: u32) void {
@@ -98,7 +105,13 @@ pub const ThreadRuntime = struct {
             self.mutex.lock();
             self.searching = false;
             self.cond.broadcast(); // wake anyone waiting for search-finished
-            while (!self.searching) self.cond.wait(&self.mutex);
+            // The predicate must include `exit`: deinit may set exit+searching and
+            // broadcast while this loop is between iterations (just past a job). If
+            // we then re-enter here, set searching=false, and waited on `searching`
+            // alone, we would re-park and never observe the exit -- nothing sets
+            // searching=true again after deinit's single broadcast. Waiting on
+            // `!searching and !exit` makes the exit signal impossible to miss.
+            while (!self.searching and !self.exit) self.cond.wait(&self.mutex);
 
             if (self.exit) {
                 self.mutex.unlock();

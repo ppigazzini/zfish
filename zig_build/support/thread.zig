@@ -9,6 +9,39 @@ const uci_move = @import("uci_move");
 // Zig-owned thread job runner (engine-graph reimplementation). Verified by its
 // own concurrency tests; compile-checked here until wired into construction.
 pub const thread_runtime = @import("thread_runtime.zig");
+// Stage-4 native thread runtime (the live vehicle): native Threads + ThreadPool
+// replacing the C++ Thread/std::thread idle_loop. The C++ pool/Engine stay, but
+// their threads vector now holds native Threads (contents-swap).
+const native_thread = @import("native_thread.zig");
+const native_threadpool = @import("native_threadpool.zig");
+
+// Reinterpret a pool thread slot (NativeThread*) for the sync handshake.
+inline fn nt(thread: *anyopaque) *native_thread.NativeThread {
+    return @ptrCast(@alignCast(thread));
+}
+
+// Stage-4 per-build vehicle gate. The legacy oracle build keeps the C++ Thread
+// vehicle (so the thread.cpp oracle stays comparable); the default build uses the
+// native runtime. The `thread` module is shared by both exes, so a comptime flag
+// can't distinguish them -- branch at runtime on a symbol the C++ bridge defines
+// per target (1 under ZFISH_LEGACY_CPP_TARGET, 0 otherwise). Both code paths are
+// compiled + linked into both builds; only the live one runs.
+extern fn zfish_is_legacy_build() callconv(.c) c_int;
+inline fn legacyBuild() bool {
+    return zfish_is_legacy_build() != 0;
+}
+inline fn threadWaitFinished(thread: *anyopaque) void {
+    if (legacyBuild()) zfish_thread_wait_for_search_finished(thread) else nt(thread).waitForSearchFinished();
+}
+inline fn threadStartSearching(thread: *anyopaque) void {
+    if (legacyBuild()) zfish_thread_start_searching(thread) else native_thread.startSearching(nt(thread));
+}
+inline fn threadClearWorker(thread: *anyopaque) void {
+    if (legacyBuild()) zfish_thread_clear_worker(thread) else native_thread.clearWorker(nt(thread));
+}
+inline fn threadRunJob(thread: *anyopaque, job: ThreadCallback, ctx: ?*anyopaque) void {
+    if (legacyBuild()) zfish_thread_run_callback(thread, job, ctx) else nt(thread).startJob(job, ctx);
+}
 comptime {
     _ = &thread_runtime.ThreadRuntime.start;
     _ = &thread_runtime.ThreadRuntime.runCustomJob;
@@ -309,7 +342,7 @@ fn waitMainThread(pool: *anyopaque) void {
     if (zfish_threadpool_thread_count(pool) == 0)
         return;
 
-    zfish_thread_wait_for_search_finished(zfish_threadpool_thread_at(pool, 0));
+    threadWaitFinished(zfish_threadpool_thread_at(pool, 0));
 }
 
 fn buildRootFen(pos: *const anyopaque) ?[*:0]u8 {
@@ -633,7 +666,7 @@ pub fn reconfigure(
 ) void {
     if (zfish_threadpool_thread_count(pool) > 0) {
         waitMainThread(pool);
-        zfish_threadpool_reset_for_reconfigure(pool);
+        if (legacyBuild()) zfish_threadpool_reset_for_reconfigure(pool) else native_threadpool.zfish_native_threadpool_clear(pool);
     }
 
     const requested = zfish_shared_state_threads_value(shared_state);
@@ -693,38 +726,53 @@ pub fn reconfigure(
         }
     }
 
-    const created_per_node = allocator.alloc(usize, node_count) catch @panic("OOM");
-    defer allocator.free(created_per_node);
-    @memset(created_per_node, 0);
+    if (legacyBuild()) {
+        // Legacy oracle: the original C++ Thread ctor loop (createThreadOnCurrentNode
+        // per requested thread, NUMA-dispatched when binding).
+        const created_per_node = allocator.alloc(usize, node_count) catch @panic("OOM");
+        defer allocator.free(created_per_node);
+        @memset(created_per_node, 0);
 
-    var thread_id: usize = 0;
-    while (thread_id < requested) : (thread_id += 1) {
-        const numa_id: usize = if (do_bind) bound_nodes[thread_id] else 0;
-        const idx_in_numa = created_per_node[numa_id];
-        created_per_node[numa_id] += 1;
+        var thread_id: usize = 0;
+        while (thread_id < requested) : (thread_id += 1) {
+            const numa_id: usize = if (do_bind) bound_nodes[thread_id] else 0;
+            const idx_in_numa = created_per_node[numa_id];
+            created_per_node[numa_id] += 1;
 
-        var create_context = CreateThreadContext{
-            .pool = pool,
-            .numa_config = numa_config,
-            .shared_state = shared_state,
-            .update_context = update_context,
-            .thread_id = thread_id,
-            .idx_in_numa = idx_in_numa,
-            .total_numa = threads_per_node[numa_id],
-            .numa_id = numa_id,
-            .do_bind = do_bind,
-        };
+            var create_context = CreateThreadContext{
+                .pool = pool,
+                .numa_config = numa_config,
+                .shared_state = shared_state,
+                .update_context = update_context,
+                .thread_id = thread_id,
+                .idx_in_numa = idx_in_numa,
+                .total_numa = threads_per_node[numa_id],
+                .numa_id = numa_id,
+                .do_bind = do_bind,
+            };
 
-        if (do_bind) {
-            zfish_numa_config_execute_on_numa_node(
-                numa_config,
-                numa_id,
-                createThreadOnCurrentNode,
-                &create_context,
-            );
-        } else {
-            createThreadOnCurrentNode(&create_context);
+            if (do_bind) {
+                zfish_numa_config_execute_on_numa_node(
+                    numa_config,
+                    numa_id,
+                    createThreadOnCurrentNode,
+                    &create_context,
+                );
+            } else {
+                createThreadOnCurrentNode(&create_context);
+            }
         }
+    } else {
+        // Stage-4 contents-swap: build native Threads (idle loop + Worker) into the
+        // C++ pool's threads vector via the native ThreadPool, replacing the per-thread
+        // C++ Thread ctor loop. Single-node host (do_bind == false): the C++ worker-
+        // builder uses numaIndex 0, idxInNuma == idx, totalNuma == requested.
+        native_threadpool.zfish_native_threadpool_set(
+            pool,
+            @constCast(shared_state),
+            update_context,
+            requested,
+        );
     }
 
     clear(pool);
@@ -860,17 +908,17 @@ pub fn startThinking(
                 .tb_config = tb_config,
             },
         };
-        zfish_thread_run_callback(thread, applyRootSetup, &root_setup_contexts[index]);
+        threadRunJob(thread, applyRootSetup, &root_setup_contexts[index]);
     }
 
     index = 0;
     while (index < thread_count) : (index += 1) {
         const thread = zfish_threadpool_thread_at(pool, index);
-        zfish_thread_wait_for_search_finished(thread);
+        threadWaitFinished(thread);
     }
 
     const main_thread = zfish_threadpool_thread_at(pool, 0);
-    zfish_thread_start_searching(main_thread);
+    threadStartSearching(main_thread);
 }
 
 pub fn clear(pool: *anyopaque) void {
@@ -881,12 +929,12 @@ pub fn clear(pool: *anyopaque) void {
 
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        zfish_thread_clear_worker(zfish_threadpool_thread_at(pool, index));
+        threadClearWorker(zfish_threadpool_thread_at(pool, index));
     }
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        zfish_thread_wait_for_search_finished(zfish_threadpool_thread_at(pool, index));
+        threadWaitFinished(zfish_threadpool_thread_at(pool, index));
     }
 
     zfish_threadpool_main_manager_reset_best_previous_average_score(pool);
@@ -939,7 +987,7 @@ pub fn startSearching(pool: *anyopaque) void {
     const thread_count = zfish_threadpool_thread_count(pool);
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
-        zfish_thread_start_searching(zfish_threadpool_thread_at(pool, index));
+        threadStartSearching(zfish_threadpool_thread_at(pool, index));
     }
 }
 
@@ -947,7 +995,7 @@ pub fn waitForSearchFinished(pool: *anyopaque) void {
     const thread_count = zfish_threadpool_thread_count(pool);
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
-        zfish_thread_wait_for_search_finished(zfish_threadpool_thread_at(pool, index));
+        threadWaitFinished(zfish_threadpool_thread_at(pool, index));
     }
 }
 

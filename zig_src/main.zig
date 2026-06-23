@@ -552,6 +552,28 @@ pub export fn zfish_search_clear_refresh_cache(cache: *anyopaque, biases: [*]con
     nnue_accumulator_port.clearRefreshCache(cache, biases);
 }
 
+// Native Worker::clear (stage-4 layer 5): the per-search worker reset the native
+// clear_worker job runs on its thread. Reproduces Search::Worker::clear() by
+// offset -- the four native clear helpers in declaration order: histories, the
+// shared-history page (sharedHistory ref + numaThreadIdx@thread_idx+8 /
+// numaTotal@+16), the reductions table (int[256], the 1024-byte slot before
+// manager), and the refresh cache (native feature-transformer biases). All four
+// callees are gate-verified; only this orchestration is new.
+pub export fn zfish_worker_clear(worker: *anyopaque) void {
+    const wb = @intFromPtr(worker);
+    const off = graph_layout.worker_off;
+    zfish_search_clear_worker_histories(worker);
+    const shared_history: *anyopaque = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + off.shared_history)).*);
+    const numa_thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx + 8)).*;
+    const numa_total = @as(*const usize, @ptrFromInt(wb + off.thread_idx + 16)).*;
+    zfish_search_clear_shared_history(shared_history, numa_thread_idx, numa_total);
+    const reductions: [*]c_int = @ptrFromInt(wb + off.reductions);
+    zfish_search_fill_reductions(reductions, 256);
+    const refresh: *anyopaque = @ptrFromInt(wb + off.refresh_table);
+    const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse return));
+    zfish_search_clear_refresh_cache(refresh, biases);
+}
+
 pub export fn zfish_search_move_count_limit(depth: c_int, improving: u8) c_int {
     return search_port.moveCountLimit(depth, improving != 0);
 }
