@@ -1,0 +1,4 @@
+startpos   score cp 32|bestmove e2e4
+open       score cp 39|bestmove b5a4
+endgame    score cp 0|bestmove f4g5
+queens     score cp 31|bestmove c1g5
