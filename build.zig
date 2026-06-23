@@ -605,6 +605,45 @@ pub fn build(b: *std.Build) void {
     );
     output_parity_step.dependOn(&output_parity_cmd.step);
 
+    // Full-output GOLDEN gate (Stage-7 7.0a, H8): same stripped bench info+bestmove
+    // text as output-parity, but pinned against a committed golden instead of the
+    // legacy oracle, so it survives oracle deletion (Annex B B.4). The golden is
+    // captured while the oracle still exists; output-parity proves golden == oracle.
+    const output_golden = b.pathFromRoot("zig_build/tools/output_parity.golden");
+    const output_golden_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/output_parity_golden.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        output_golden,
+        "check",
+    });
+    output_golden_cmd.step.dependOn(install_step);
+    output_golden_cmd.step.dependOn(&net_cmd.step);
+    output_golden_cmd.setCwd(b.path("src"));
+
+    const output_golden_step = b.step(
+        "output-golden",
+        "Assert the default (Zig) bench info-line output matches the committed golden",
+    );
+    output_golden_step.dependOn(&output_golden_cmd.step);
+
+    const output_golden_update_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/output_parity_golden.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        output_golden,
+        "update",
+    });
+    output_golden_update_cmd.step.dependOn(install_step);
+    output_golden_update_cmd.step.dependOn(&net_cmd.step);
+    output_golden_update_cmd.setCwd(b.path("src"));
+
+    const output_golden_update_step = b.step(
+        "output-golden-update",
+        "Regenerate zig_build/tools/output_parity.golden from the current binary",
+    );
+    output_golden_update_step.dependOn(&output_golden_update_cmd.step);
+
     // Thread-runtime stress / liveness harness (H2, REPORT-9 big-bang plan).
     // Hammers (ucinewgame -> setoption Threads -> go/stop) cycles across thread
     // counts + a construct/destroy churn, under a wall-clock watchdog. A liveness
@@ -718,6 +757,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&search_modes_cmd.step);
     parity_step.dependOn(&oracle_parity_cmd.step);
     parity_step.dependOn(&output_parity_cmd.step);
+    parity_step.dependOn(&output_golden_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
