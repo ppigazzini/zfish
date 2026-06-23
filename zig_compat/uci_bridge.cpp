@@ -2563,6 +2563,8 @@ Option::OnChange make_option_callback(
 
 extern "C" {
 void        zfish_engine_init_body(void* engine_ptr);
+// Harness H6 (engine_construct.zig): verify the constructed Engine graph.
+void        zfish_verify_engine_graph(const void* engine_ptr);
 
 void zfish_engine_set_start_position(void* engine_ptr) {
     auto* engine = static_cast<Engine*>(engine_ptr);
@@ -2731,6 +2733,12 @@ Engine::Engine(std::optional<std::string> path) :
         threads(),
         network(numaContext, get_default_network()) {
         zfish_engine_init_body(this);
+#ifndef ZFISH_LEGACY_CPP_TARGET
+        // Harness H6: prove the constructed Engine graph matches the Zig model the
+        // native stage-6 ctor must reproduce -- from_system NUMA topology sanity,
+        // a resolved network instance, and a populated embedded ThreadPool.
+        zfish_verify_engine_graph(this);
+#endif
 }
 
 constexpr auto BenchmarkCommand = "speedtest";
