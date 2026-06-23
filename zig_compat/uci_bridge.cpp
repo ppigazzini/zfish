@@ -1521,15 +1521,34 @@ extern "C" void zfish_threadpool_zero_tt_slice(void*        threads_ptr,
     if (cluster_len == 0 || !table_ptr)
         return;
 
-    auto* threads = static_cast<ThreadPool*>(threads_ptr);
     auto* table = static_cast<Cluster*>(table_ptr);
+#ifdef ZFISH_LEGACY_CPP_TARGET
+    auto* threads = static_cast<ThreadPool*>(threads_ptr);
     threads->run_on_thread(thread_id, [table, start_cluster, cluster_len]() {
         std::memset(&table[start_cluster], 0, cluster_len * sizeof(Cluster));
     });
+#else
+    // Stage-4: the pool holds native Threads (no C++ run_custom_job vehicle). The
+    // TT clear is a deterministic memset whose result is independent of which
+    // thread runs it, so zero the slice synchronously on the caller. The paired
+    // zfish_threadpool_wait_thread then no-ops on the idle native thread.
+    (void) threads_ptr;
+    (void) thread_id;
+    std::memset(&table[start_cluster], 0, cluster_len * sizeof(Cluster));
+#endif
 }
 
+#ifndef ZFISH_LEGACY_CPP_TARGET
+extern "C" void zfish_native_threadpool_wait_thread(void* pool, std::size_t thread_id);
+#endif
 extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thread_id) {
+#ifdef ZFISH_LEGACY_CPP_TARGET
     static_cast<ThreadPool*>(threads_ptr)->wait_on_thread(thread_id);
+#else
+    // Stage-4: the pool holds native Threads; route to the native single-thread
+    // wait (the C++ wait_on_thread would lock the native thread as a C++ Thread).
+    zfish_native_threadpool_wait_thread(threads_ptr, thread_id);
+#endif
 }
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
@@ -3343,6 +3362,88 @@ void zfish_numa_config_execute_on_numa_node(const void*       numa_config_ptr,
     numa_config.execute_on_numa_node(numa_index, [&]() { callback(context); });
 }
 
+// Layer 2 (stage-4 native thread runtime): mint an ISearchManager for a native
+// Thread -- a SearchManager for the main thread (id 0), a NullSearchManager for
+// workers -- returned as a raw owning pointer the way std::make_unique<>().release()
+// does in the C++ add_main_thread/add_worker_thread. The native ThreadBuilder
+// (layer 4) hands this to zfish_worker_construct_full as the worker's `manager`.
+// This is the thin C++ residue (Option A): SearchManager keeps its vtable + tm +
+// UpdateContext; its data fields are already read/written natively by offset.
+extern "C" void* zfish_make_search_manager(const void* update_context_ptr,
+                                           std::uint8_t is_main) {
+    if (is_main != 0)
+    {
+        const auto& uc =
+          *static_cast<const Search::SearchManager::UpdateContext*>(update_context_ptr);
+        return std::make_unique<Search::SearchManager>(uc).release();
+    }
+    return std::make_unique<Search::NullSearchManager>().release();
+}
+
+// Layer 4 (stage-4 native thread runtime): the native_threadpool.set ThreadBuilder
+// callback. Resolves the SharedState members for thread `idx`, large-page-allocs +
+// natively constructs the Worker (the same zfish_worker_construct_full the C++
+// Thread ctor uses), mints the SearchManager, and writes the Worker at thread+8
+// (the worker@8 layout contract). Single-node host: numaIndex 0, idxInNuma == idx,
+// totalNuma passed in via ctx.total. Replaces the per-thread C++ Thread ctor.
+#ifndef ZFISH_LEGACY_CPP_TARGET
+extern "C" {
+struct ZfishWorkerBuildCtx {
+    void*       shared_state;
+    const void* update_context;
+    std::size_t total;
+};
+void zfish_native_worker_build(void* ctx_ptr, std::size_t idx, void* thread) {
+    auto* ctx = static_cast<ZfishWorkerBuildCtx*>(ctx_ptr);
+    auto& ss  = *static_cast<Search::SharedState*>(ctx->shared_state);
+    void* manager = zfish_make_search_manager(ctx->update_context, idx == 0 ? 1 : 0);
+    void* raw = aligned_large_pages_alloc(sizeof(Search::Worker));
+    zfish_worker_construct_full(
+      raw,
+      reinterpret_cast<std::size_t>(&ss.sharedHistories.at(0)),
+      reinterpret_cast<std::size_t>(&ss.options),
+      reinterpret_cast<std::size_t>(&ss.threads),
+      reinterpret_cast<std::size_t>(&ss.tt),
+      reinterpret_cast<std::size_t>(&ss.network),
+      reinterpret_cast<std::size_t>(manager),
+      idx, idx, ctx->total, 0);
+    *reinterpret_cast<void**>(static_cast<char*>(thread) + 8) = raw; // worker@8
+}
+// Tear down a native Worker (worker@8). Mirrors the C++ LargePagePtr<Worker>
+// deleter the C++ Thread used: run ~Worker (frees the SearchManager unique_ptr,
+// accumulator stack, etc.) then return the large-page block. Called by
+// NativeThread.deinit AFTER the idle loop is joined, so nothing is using it.
+void zfish_native_worker_destroy(void* worker) {
+    if (!worker)
+        return;
+    auto* w = static_cast<Search::Worker*>(worker);
+    w->~Worker();
+    aligned_large_pages_free(w);
+}
+}
+#else  // ZFISH_LEGACY_CPP_TARGET
+// The legacy oracle build keeps the C++ Thread vehicle, so the native worker
+// build/destroy are never invoked at runtime (thread.zig branches on
+// zfish_is_legacy_build()). They must still LINK because the shared native
+// ThreadPool references them -- provide abort stubs.
+extern "C" void zfish_native_worker_build(void*, std::size_t, void*) {
+    std::abort();
+}
+extern "C" void zfish_native_worker_destroy(void*) {
+    std::abort();
+}
+#endif // ZFISH_LEGACY_CPP_TARGET
+
+// Per-build vehicle gate, read by the shared `thread` Zig module to pick the
+// native runtime (default) vs the C++ Thread oracle (legacy). 1 == legacy.
+extern "C" int zfish_is_legacy_build(void) {
+#ifdef ZFISH_LEGACY_CPP_TARGET
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 void zfish_threadpool_add_main_thread(void*       pool_ptr,
                                       const void* numa_config_ptr,
                                       const void* shared_state_ptr,
@@ -3663,9 +3764,19 @@ void* zfish_uci_create_engine(int argc, char* const* argv) {
     return uci.release();
 }
 
+#ifndef ZFISH_LEGACY_CPP_TARGET
+extern "C" void zfish_native_threadpool_clear(void* pool);
+#endif
 void zfish_uci_destroy_engine(void* engine_ptr) {
     auto* uci_engine = static_cast<Stockfish::UCIEngine*>(engine_ptr);
     zfish_engine_release_pending_state_slot(&uci_engine->engine.states);
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // Stage-4 teardown hook: join + free the native Threads and null the pool's
+    // threads vector BEFORE ~Engine/~ThreadPool runs, so the C++ ThreadPool dtor
+    // sees an empty vector (size()==0) and never deletes a native Thread as a C++
+    // Thread*. Contents-swap lifecycle (see [[stage4-6-atomic-cut-design]]).
+    zfish_native_threadpool_clear(&uci_engine->engine.threads);
+#endif
     delete uci_engine;
 }
 }
