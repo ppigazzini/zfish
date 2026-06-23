@@ -3247,6 +3247,14 @@ void zfish_root_moves_destroy(void* root_moves_ptr) {
     delete static_cast<Search::RootMoves*>(root_moves_ptr);
 }
 
+// Stage 5 support: the native std::vector<RootMove> copy-assign (set_root_moves)
+// must (re)allocate its element buffer with ::operator new so the C++ ~vector
+// frees it with the matching ::operator delete. RootMove is standard-layout POD
+// (PVMoves is a fixed Move[] array), so the assign is one memcpy of count*stride.
+extern "C" std::size_t zfish_root_move_sizeof(void) { return sizeof(Search::RootMove); }
+extern "C" void* zfish_operator_new(std::size_t n) { return ::operator new(n); }
+extern "C" void  zfish_operator_delete(void* p) { ::operator delete(p); }
+
 // zfish_threadpool_bound_node_count and zfish_threadpool_bound_node_at are native
 // (main.zig): they read the boundThreadToNumaNode vector span / element by offset.
 // Bridge-only symbols, no legacy gating needed.
