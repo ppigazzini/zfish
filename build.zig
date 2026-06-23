@@ -649,6 +649,43 @@ pub fn build(b: *std.Build) void {
     );
     valgrind_step.dependOn(&valgrind_cmd.step);
 
+    // Multi-thread search sanity (H1, REPORT-9 big-bang plan). Multi-threaded
+    // search is non-deterministic (Lazy SMP), so this is a tolerance gate, not a
+    // bit-exact golden: at fixed depth on calm positions, Threads {2,4} must emit
+    // a well-formed bestmove and a score of the same kind/sign within a generous
+    // cp band of the deterministic single-thread reference. Anchors gross
+    // multi-thread behaviour against the live C++ runtime before stage 4 swaps it;
+    // catches a native runtime that runs but corrupts result aggregation. Out of
+    // the core `parity` aggregate (non-deterministic, sleep-paced).
+    const mt_golden = b.pathFromRoot("zig_build/tools/mt_sanity.golden");
+    const mt_script = b.pathFromRoot("zig_build/tools/mt_sanity.sh");
+
+    const mt_cmd = b.addSystemCommand(&.{
+        "bash", mt_script, b.getInstallPath(.bin, "stockfish"), mt_golden, "check",
+    });
+    mt_cmd.step.dependOn(install_step);
+    mt_cmd.step.dependOn(&net_cmd.step);
+    mt_cmd.setCwd(b.path("src"));
+
+    const mt_step = b.step(
+        "parity-mt",
+        "Multi-thread search sanity: Threads {2,4} score-band vs single-thread golden",
+    );
+    mt_step.dependOn(&mt_cmd.step);
+
+    const mt_update_cmd = b.addSystemCommand(&.{
+        "bash", mt_script, b.getInstallPath(.bin, "stockfish"), mt_golden, "update",
+    });
+    mt_update_cmd.step.dependOn(install_step);
+    mt_update_cmd.step.dependOn(&net_cmd.step);
+    mt_update_cmd.setCwd(b.path("src"));
+
+    const mt_update_step = b.step(
+        "parity-mt-update",
+        "Regenerate zig_build/tools/mt_sanity.golden (single-thread reference)",
+    );
+    mt_update_step.dependOn(&mt_update_cmd.step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
