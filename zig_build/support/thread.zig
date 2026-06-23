@@ -215,6 +215,8 @@ extern fn zfish_thread_run_callback(
     context: ?*anyopaque,
 ) void;
 extern fn zfish_thread_worker_set_limits(thread: *anyopaque, limits: *const anyopaque) void;
+// Stage 5: native LimitsType POD-tail copy (default build); see main.zig.
+extern fn zfish_worker_set_limits(thread: *anyopaque, limits: *const anyopaque) void;
 extern fn zfish_thread_worker_reset_root_setup_state(thread: *anyopaque) void;
 extern fn zfish_thread_worker_set_root_moves(thread: *anyopaque, root_moves: *const anyopaque) void;
 // Stage 5: native vector<RootMove> copy-assign (default build); see main.zig.
@@ -327,7 +329,12 @@ fn createThreadOnCurrentNode(context_ptr: ?*anyopaque) callconv(.c) void {
 
 fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
-    zfish_thread_worker_set_limits(context.thread, context.input.limits);
+    // Stage 5: native LimitsType POD-tail copy in the default build; legacy keeps
+    // the C++ worker->set_limits as the pure reference.
+    if (legacyBuild())
+        zfish_thread_worker_set_limits(context.thread, context.input.limits)
+    else
+        zfish_worker_set_limits(context.thread, context.input.limits);
     zfish_thread_worker_reset_root_setup_state(context.thread);
     // Stage 5: native vector<RootMove> copy-assign in the default build; the legacy
     // oracle keeps the C++ worker->set_root_moves so it stays the pure reference.

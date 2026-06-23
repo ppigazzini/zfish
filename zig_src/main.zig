@@ -583,6 +583,26 @@ pub export fn zfish_worker_clear(worker: *anyopaque) void {
 // std::vector copy-assign: reuse the buffer when capacity suffices, else realloc.
 extern fn zfish_operator_new(n: usize) ?*anyopaque;
 extern fn zfish_operator_delete(p: ?*anyopaque) void;
+extern fn zfish_limits_sizeof() usize;
+extern fn zfish_limits_searchmoves_bytes() usize;
+
+// Stage 5: native Worker::set_limits -- the C++ `limits = value` copy of LimitsType.
+// Copies only the POD tail (everything after the leading std::vector<std::string>
+// searchmoves). The Worker's searchmoves copy is vestigial (the search filters root
+// moves from the source limits at root setup, never from worker.limits), so we
+// leave it at the zeroed-empty state worker construction set -- valid for ~vector,
+// no string-ABI deep copy, no leak. POD tail starts right after searchmoves.
+pub export fn zfish_worker_set_limits(thread: *anyopaque, src_limits: *const anyopaque) void {
+    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + 8)).*;
+    const dst = worker + graph_layout.worker_off.limits;
+    const head = zfish_limits_searchmoves_bytes(); // skip the searchmoves vector
+    const total = zfish_limits_sizeof();
+    const n = total - head;
+    @memcpy(
+        @as([*]u8, @ptrFromInt(dst + head))[0..n],
+        @as([*]const u8, @ptrFromInt(@intFromPtr(src_limits) + head))[0..n],
+    );
+}
 
 pub export fn zfish_worker_set_root_moves(thread: *anyopaque, src_rm: *const anyopaque) void {
     // worker@8, then the rootMoves vector object {begin@0,end@8,cap@16}.

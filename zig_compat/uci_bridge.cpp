@@ -3255,6 +3255,17 @@ extern "C" std::size_t zfish_root_move_sizeof(void) { return sizeof(Search::Root
 extern "C" void* zfish_operator_new(std::size_t n) { return ::operator new(n); }
 extern "C" void  zfish_operator_delete(void* p) { ::operator delete(p); }
 
+// Stage 5: native set_limits copies only the POD tail of LimitsType (everything
+// after the leading std::vector<std::string> searchmoves member). searchmoves is
+// vestigial in the Worker copy -- the search filters root moves from the SOURCE
+// limits at root setup, never from worker.limits -- so the native copy leaves the
+// Worker's searchmoves vector empty (valid for ~vector). sizeof + the searchmoves
+// member span come from C++ so the offsets can't drift.
+extern "C" std::size_t zfish_limits_sizeof(void) { return sizeof(Search::LimitsType); }
+extern "C" std::size_t zfish_limits_searchmoves_bytes(void) {
+    return sizeof(std::vector<std::string>);
+}
+
 // zfish_threadpool_bound_node_count and zfish_threadpool_bound_node_at are native
 // (main.zig): they read the boundThreadToNumaNode vector span / element by offset.
 // Bridge-only symbols, no legacy gating needed.
