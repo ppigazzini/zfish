@@ -2243,19 +2243,10 @@ ZfishEngineTablebaseProbe zfish_tbprobe_probe_fen(const unsigned char* fen_ptr,
 }
 #endif  // ZFISH_LEGACY_CPP_TARGET
 
-std::uint8_t zfish_tbprobe_has_wdl_file(const unsigned char* code_ptr, std::size_t code_len) {
-    const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
-    std::ifstream     file(code + ".rtbw");
-    const bool        is_open = file.is_open();
-    return static_cast<std::uint8_t>(is_open ? 1 : 0);
-}
-
-std::uint8_t zfish_tbprobe_has_dtz_file(const unsigned char* code_ptr, std::size_t code_len) {
-    const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
-    std::ifstream     file(code + ".rtbz");
-    const bool        is_open = file.is_open();
-    return static_cast<std::uint8_t>(is_open ? 1 : 0);
-}
+// Stage-7 7.1c: zfish_tbprobe_has_wdl_file / has_dtz_file deleted -- they were
+// referenced only by the now-deleted dead zig_build/support/tbprobe.zig
+// (never imported by either build) and by no src/ caller, so they were dead in
+// both the default and legacy builds.
 
 // Stage-7 7.1: legacy oracle only -- default build uses the native no-op from
 // zig_src/main.zig (!legacy_target).
