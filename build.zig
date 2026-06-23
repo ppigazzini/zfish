@@ -686,6 +686,27 @@ pub fn build(b: *std.Build) void {
     );
     mt_update_step.dependOn(&mt_update_cmd.step);
 
+    // Leak gate for the std::vector lifecycle stage 5 ports (H5, REPORT-9 plan):
+    // Valgrind memcheck over a `go searchmoves` + ucinewgame churn, asserting no
+    // definite leak / bad free of limits.searchmoves and worker.rootMoves -- the
+    // path bench never exercises. Reads the verdict from valgrind's summary and
+    // tolerates the known post-exit thread-join hang under memcheck. Out of the
+    // core `parity` aggregate (slow).
+    const teardown_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/teardown.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+    });
+    teardown_cmd.step.dependOn(install_step);
+    teardown_cmd.step.dependOn(&net_cmd.step);
+    teardown_cmd.setCwd(b.path("src"));
+
+    const teardown_step = b.step(
+        "parity-teardown",
+        "Valgrind leak gate for searchmoves/rootMoves vector lifecycle + Worker clear",
+    );
+    teardown_step.dependOn(&teardown_cmd.step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
