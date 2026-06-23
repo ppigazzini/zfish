@@ -2745,20 +2745,10 @@ void zfish_engine_emit_verify_message(const void*          engine_ptr,
 }
 }
 
-Engine::Engine(std::optional<std::string> path) :
-        binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
-        numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
-        states(new std::deque<StateInfo>(1)),
-        threads(),
-        network(numaContext, get_default_network()) {
-        zfish_engine_init_body(this);
-#ifndef ZFISH_LEGACY_CPP_TARGET
-        // Harness H6: prove the constructed Engine graph matches the Zig model the
-        // native stage-6 ctor must reproduce -- from_system NUMA topology sanity,
-        // a resolved network instance, and a populated embedded ThreadPool.
-        zfish_verify_engine_graph(this);
-#endif
-}
+// Stage-6 6c: the Engine constructor is retired -- construction is now orchestrated
+// natively by zfish_engine_construct_members (explicit per-member placement + the
+// native init_body + the H6 verifier). The implicit Engine::Engine is no longer
+// called in either build.
 
 constexpr auto BenchmarkCommand = "speedtest";
 
@@ -2993,18 +2983,9 @@ extern "C" {
 void zfish_set_last_nodes_searched(std::uint64_t nodes);
 }
 
-UCIEngine::UCIEngine(int argc, char** argv) :
-    engine(argv[0]),
-    cli(argc, argv) {
-
-    engine.get_options().add_info_listener([](const std::optional<std::string>& str) {
-        if (str.has_value())
-            print_info_string(*str);
-    });
-
-    init_search_update_listeners();
-}
-
+// Stage-6 6c: the UCIEngine constructor is retired -- zfish_uci_engine_construct_at
+// builds the engine + cli members directly and runs the listener registration
+// below. init_search_update_listeners stays (called from construct_at).
 void UCIEngine::init_search_update_listeners() {
     engine.set_on_iter([](const auto& i) { on_iter(i); });
     engine.set_on_update_no_moves([](const auto& i) { on_update_no_moves(i); });
