@@ -1146,8 +1146,42 @@ fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
     return @ptrFromInt(slot.*);
 }
 
+// Stage-7 7.1: native-inert tablebase probe entry points for the default build.
+// The Zig runtime ships no Syzygy tablebases (max cardinality 0 -> the native
+// probe path short-circuits before ever probing), so these report "unavailable"
+// and init is a no-op. The legacy oracle keeps the real bridge versions (which
+// call src/syzygy/tbprobe.cpp) behind ZFISH_LEGACY_CPP_TARGET; routing the
+// default build through these lets the default-only C++ Tablebases stub block in
+// the bridge be deleted (no default reference to Tablebases:: remains).
+const TbProbeResult = extern struct {
+    available: u8,
+    wdl: c_int,
+    wdl_state: c_int,
+    dtz: c_int,
+    dtz_state: c_int,
+};
+
+fn tbMaxCardinality() callconv(.c) usize {
+    return 0;
+}
+
+fn tbProbeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) callconv(.c) TbProbeResult {
+    _ = fen_ptr;
+    _ = fen_len;
+    _ = chess960;
+    return .{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 };
+}
+
+fn tbInit(path_ptr: [*]const u8, path_len: usize) callconv(.c) void {
+    _ = path_ptr;
+    _ = path_len;
+}
+
 comptime {
     if (!target_flags.legacy_target) {
+        @export(&tbMaxCardinality, .{ .name = "zfish_tbprobe_max_cardinality" });
+        @export(&tbProbeFen, .{ .name = "zfish_tbprobe_probe_fen" });
+        @export(&tbInit, .{ .name = "zfish_engine_tablebases_init" });
         @export(&smResetCallsCount, .{ .name = "zfish_threadpool_main_manager_reset_calls_count" });
         @export(&smResetBestPreviousScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_score" });
         @export(&smResetBestPreviousAverageScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_average_score" });

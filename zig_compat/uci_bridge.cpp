@@ -1691,52 +1691,12 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
     return zfish_eval_compute_value(input);
 }
 
-namespace Tablebases {
-
-int MaxCardinality = 0;
-
-void init(const std::string&) {
-    MaxCardinality = 0;
-}
-
-WDLScore probe_wdl(Position&, ProbeState* result) {
-    if (result)
-        *result = FAIL;
-    return WDLDraw;
-}
-
-int probe_dtz(Position&, ProbeState* result) {
-    if (result)
-        *result = FAIL;
-    return 0;
-}
-
-bool root_probe(Position&,
-                Search::RootMoves&,
-                bool,
-                bool,
-                const std::function<bool()>&) {
-    return false;
-}
-
-bool root_probe_wdl(Position&, Search::RootMoves&, bool) {
-    return false;
-}
-
-Config rank_root_moves(const OptionsMap&            options,
-                       Position&,
-                       Search::RootMoves&,
-                       bool,
-                       const std::function<bool()>&) {
-    Config config;
-    config.cardinality = int(options["SyzygyProbeLimit"]);
-    config.rootInTB = false;
-    config.useRule50 = bool(options["Syzygy50MoveRule"]);
-    config.probeDepth = int(options["SyzygyProbeDepth"]);
-    return config;
-}
-
-}  // namespace Tablebases
+// Stage-7 7.1: the default-only inert Tablebases:: stub block was deleted. The
+// Zig runtime ships no Syzygy tablebases, so the default build now routes the
+// three tablebase entry points (max_cardinality / probe_fen / init) through
+// native-inert Zig exports (zig_src/main.zig, !legacy_target); no default
+// reference to Tablebases:: remains. The legacy oracle keeps the real
+// implementations from src/syzygy/tbprobe.cpp.
 
 // Constructor launches the thread and waits until it goes to sleep in idle_loop().
 // Read-only verifiers exported from zig_src/ (accumulator_layout.zig,
@@ -2250,6 +2210,10 @@ void zfish_engine_numa_set_from_string(void*                numa_context_ptr,
       NumaConfig::from_string(std::string(reinterpret_cast<const char*>(text_ptr), text_len)));
 }
 
+// Stage-7 7.1: legacy oracle only -- the default build provides native-inert
+// versions of these two from zig_src/main.zig (!legacy_target). Legacy keeps the
+// real Tablebases:: probe from src/syzygy/tbprobe.cpp.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_tbprobe_max_cardinality() {
     return static_cast<std::size_t>(Tablebases::MaxCardinality);
 }
@@ -2277,6 +2241,7 @@ ZfishEngineTablebaseProbe zfish_tbprobe_probe_fen(const unsigned char* fen_ptr,
       .dtz_state = static_cast<int>(dtz_state),
     };
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 std::uint8_t zfish_tbprobe_has_wdl_file(const unsigned char* code_ptr, std::size_t code_len) {
     const std::string code(reinterpret_cast<const char*>(code_ptr), code_len);
@@ -2292,9 +2257,13 @@ std::uint8_t zfish_tbprobe_has_dtz_file(const unsigned char* code_ptr, std::size
     return static_cast<std::uint8_t>(is_open ? 1 : 0);
 }
 
+// Stage-7 7.1: legacy oracle only -- default build uses the native no-op from
+// zig_src/main.zig (!legacy_target).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_tablebases_init(const unsigned char* path_ptr, std::size_t path_len) {
     Tablebases::init(std::string(reinterpret_cast<const char*>(path_ptr), path_len));
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 void* zfish_engine_accumulator_stack_create() {
     return new (std::nothrow) Eval::NNUE::AccumulatorStack();
