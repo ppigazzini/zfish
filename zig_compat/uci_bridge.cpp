@@ -3739,6 +3739,47 @@ void Tune::read_results() { /* ...insert your values here... */ }
 
 }  // namespace Stockfish
 
+// --- Stage-6 (Annex A) milestone 6c: native-orchestrated Engine construction -----
+// Type-deducing placement-construct helper: builds an object of the slot's own
+// declared type in place, so the C++ compiler computes every member offset (no
+// raw-offset arithmetic). Handles const members (binaryDirectory) via remove_const.
+namespace {
+template <class T, class... A>
+inline void zfish_place(T& slot, A&&... args) {
+    using U = std::remove_const_t<T>;
+    ::new (const_cast<U*>(&slot)) U(std::forward<A>(args)...);
+}
+}  // namespace
+
+// Explicit per-member construction of the Engine sub-object, replacing the implicit
+// bridge Engine::Engine member-init list. Members are placement-constructed in
+// DECLARATION order via named member access (#define private public, top of file,
+// grants access). This reproduces the original init list (binaryDirectory,
+// numaContext, states, network) plus the default-constructed members (pos, options,
+// threads, tt, updateContext, onVerifyNetwork, sharedHists), then runs the native
+// init_body (options + start position + thread sizing) and the H6 graph verifier --
+// exactly the work the C++ ctor body did. Ordering matches the C++ object model:
+// numaContext before network (network captures it by ref), binaryDirectory before
+// network (get_default_network reads it), options/init_body after the members.
+static void zfish_engine_construct_members(Stockfish::Engine* e, const char* argv0) {
+    using namespace Stockfish;
+    zfish_place(e->binaryDirectory, CommandLine::get_binary_directory(argv0));
+    zfish_place(e->numaContext, NumaConfig::from_system(DefaultNumaPolicy));
+    zfish_place(e->pos);
+    zfish_place(e->states, new std::deque<StateInfo>(1));
+    zfish_place(e->options);
+    zfish_place(e->threads);
+    zfish_place(e->tt);
+    zfish_place(e->network, e->numaContext, e->get_default_network());
+    zfish_place(e->updateContext);
+    zfish_place(e->onVerifyNetwork);
+    zfish_place(e->sharedHists);
+    zfish_engine_init_body(e);
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    zfish_verify_engine_graph(e);
+#endif
+}
+
 extern "C" {
 // Memory-footprint probe for the C++ object graph, the layout reference the Zig
 // reimplementation allocates against. Reported per object so the Zig side can
@@ -3789,7 +3830,24 @@ void zfish_uci_engine_construct_at(void* storage, int argc, char* const* argv) {
     // Verify the Zig-side object-graph footprint still matches this C++ build
     // before anything is constructed, so any upstream layout drift fails loudly.
     zfish_graph_verify_layouts();
-    auto* uci = new (storage) Stockfish::UCIEngine(argc, const_cast<char**>(argv));
+
+    // Stage-6 6c: construct the UCIEngine by explicit member placement instead of
+    // calling the implicit UCIEngine/Engine constructors. The UCIEngine has exactly
+    // two members -- engine (offset 0) and cli -- so constructing both members plus
+    // running the ctor body (listener registration) fully reproduces the object.
+    auto* uci = static_cast<Stockfish::UCIEngine*>(storage);
+
+    // engine sub-object: explicit per-member construction (replaces Engine::Engine).
+    zfish_engine_construct_members(&uci->engine, argv[0]);
+
+    // cli + the UCIEngine ctor body (info listener + search update listeners).
+    ::new (&uci->cli) Stockfish::CommandLine(argc, const_cast<char**>(argv));
+    uci->engine.get_options().add_info_listener([](const std::optional<std::string>& str) {
+        if (str.has_value())
+            Stockfish::UCIEngine::print_info_string(*str);
+    });
+    uci->init_search_update_listeners();
+
     Stockfish::Tune::init(uci->engine_options());
 }
 
