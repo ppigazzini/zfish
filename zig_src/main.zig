@@ -46,8 +46,14 @@ comptime {
 }
 
 extern fn zfish_bitboards_init() void;
-extern fn zfish_uci_create_engine(argc: c_int, argv: [*]const [*:0]u8) ?*anyopaque;
-extern fn zfish_uci_destroy_engine(engine: ?*anyopaque) void;
+// Stage-6 (Annex A) ownership beachhead: Zig owns the UCIEngine footprint and
+// drives its lifetime as alloc -> construct -> use -> destruct -> free. The C++
+// UCIEngine ctor/dtor still run (placement), so the graph is byte-identical; the
+// storage and lifetime are now Zig's.
+extern fn zfish_uci_engine_sizeof() usize;
+extern fn zfish_uci_engine_alignof() usize;
+extern fn zfish_uci_engine_construct_at(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void;
+extern fn zfish_uci_engine_destruct_at(storage: *anyopaque) void;
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 pub fn main(init: std.process.Init) !void {
@@ -74,8 +80,15 @@ pub fn main(init: std.process.Init) !void {
     zfish_bitboards_init();
     position_port.initRuntime();
 
-    const engine = zfish_uci_create_engine(@intCast(argc), argv.ptr) orelse return error.OutOfMemory;
-    defer zfish_uci_destroy_engine(engine);
+    // Zig-owned engine footprint: allocate aligned storage, placement-construct the
+    // UCIEngine into it, and on teardown destruct-in-place then free (defers run
+    // LIFO, so destruct precedes free).
+    const engine = memory_port.stdAlignedAlloc(zfish_uci_engine_alignof(), zfish_uci_engine_sizeof()) orelse
+        return error.OutOfMemory;
+    defer memory_port.stdAlignedFree(engine);
+
+    zfish_uci_engine_construct_at(engine, @intCast(argc), argv.ptr);
+    defer zfish_uci_engine_destruct_at(engine);
 
     uci_port.loopRuntime(engine);
 }
