@@ -3774,20 +3774,30 @@ std::size_t zfish_graph_layout_size(int which) {
 
 void zfish_graph_verify_layouts();
 
-void* zfish_uci_create_engine(int argc, char* const* argv) {
+// Stage-6 (Annex A) ownership beachhead: the UCIEngine footprint is now allocated
+// and owned by Zig (main.zig: memory_port.stdAlignedAlloc/Free), and its lifetime
+// is driven as four distinct Zig-orchestrated phases -- size/align probe, alloc,
+// placement-construct, placement-destruct, free -- instead of one C++
+// make_unique/delete. The C++ UCIEngine constructor still runs in full here (via
+// placement new), so the constructed graph is byte-identical and parity is
+// preserved; what moved to Zig is the storage, the lifetime, and the seam that
+// later milestones (6b+) use to peel member construction out of the C++ ctor.
+std::size_t zfish_uci_engine_sizeof() { return sizeof(Stockfish::UCIEngine); }
+std::size_t zfish_uci_engine_alignof() { return alignof(Stockfish::UCIEngine); }
+
+void zfish_uci_engine_construct_at(void* storage, int argc, char* const* argv) {
     // Verify the Zig-side object-graph footprint still matches this C++ build
     // before anything is constructed, so any upstream layout drift fails loudly.
     zfish_graph_verify_layouts();
-    auto uci = std::make_unique<Stockfish::UCIEngine>(argc, const_cast<char**>(argv));
+    auto* uci = new (storage) Stockfish::UCIEngine(argc, const_cast<char**>(argv));
     Stockfish::Tune::init(uci->engine_options());
-    return uci.release();
 }
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_native_threadpool_clear(void* pool);
 #endif
-void zfish_uci_destroy_engine(void* engine_ptr) {
-    auto* uci_engine = static_cast<Stockfish::UCIEngine*>(engine_ptr);
+void zfish_uci_engine_destruct_at(void* storage) {
+    auto* uci_engine = static_cast<Stockfish::UCIEngine*>(storage);
     zfish_engine_release_pending_state_slot(&uci_engine->engine.states);
 #ifndef ZFISH_LEGACY_CPP_TARGET
     // Stage-4 teardown hook: join + free the native Threads and null the pool's
@@ -3796,6 +3806,8 @@ void zfish_uci_destroy_engine(void* engine_ptr) {
     // Thread*. Contents-swap lifecycle (see [[stage4-6-atomic-cut-design]]).
     zfish_native_threadpool_clear(&uci_engine->engine.threads);
 #endif
-    delete uci_engine;
+    // Run ~UCIEngine in place (members destruct in reverse declaration order,
+    // matching the C++ object model); Zig frees the footprint afterwards.
+    uci_engine->~UCIEngine();
 }
 }
