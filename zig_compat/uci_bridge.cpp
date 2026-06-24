@@ -1888,111 +1888,13 @@ Search::SearchManager* ThreadPool::main_manager() { return main_thread()->worker
 uint64_t ThreadPool::nodes_searched() const { return accumulate(&Search::Worker::nodes); }
 uint64_t ThreadPool::tb_hits() const { return accumulate(&Search::Worker::tbHits); }
 
-static size_t next_power_of_two(uint64_t count) { return count > 1 ? (2ULL << msb(count - 1)) : 1; }
-
-// Creates/destroys threads to match the requested number.
-// Created and launched threads will immediately go to sleep in idle_loop().
-// Upon resizing, threads are recreated to allow for binding if necessary.
-void ThreadPool::set(const NumaConfig&                           numaConfig,
-                     Search::SharedState                         sharedState,
-                     const Search::SearchManager::UpdateContext& updateContext) {
-
-    if (threads.size() > 0)  // destroy any existing thread(s)
-    {
-        main_thread()->wait_for_search_finished();
-
-        threads.clear();
-
-        boundThreadToNumaNode.clear();
-    }
-
-    const size_t requested = sharedState.options["Threads"];
-
-    if (requested > 0)  // create new thread(s)
-    {
-        // Binding threads may be problematic when there's multiple NUMA nodes and
-        // multiple Stockfish instances running. In particular, if each instance
-        // runs a single thread then they would all be mapped to the first NUMA node.
-        // This is undesirable, and so the default behaviour (i.e. when the user does not
-        // change the NumaConfig UCI setting) is to not bind the threads to processors
-        // unless we know for sure that we span NUMA nodes and replication is required.
-        const std::string numaPolicy(sharedState.options["NumaPolicy"]);
-        const bool        doBindThreads = [&]() {
-            if (numaPolicy == "none")
-                return false;
-
-            if (numaPolicy == "auto")
-                return numaConfig.suggests_binding_threads(requested);
-
-            // numaPolicy == "system", or explicitly set by the user
-            return true;
-        }();
-
-        std::map<NumaIndex, size_t> counts;
-        boundThreadToNumaNode = doBindThreads
-                                ? numaConfig.distribute_threads_among_numa_nodes(requested)
-                                : std::vector<NumaIndex>{};
-
-        if (boundThreadToNumaNode.empty())
-            counts[0] = requested;  // Pretend all threads are part of numa node 0
-        else
-        {
-            for (size_t i = 0; i < boundThreadToNumaNode.size(); ++i)
-                counts[boundThreadToNumaNode[i]]++;
-        }
-
-        sharedState.sharedHistories.clear();
-        for (auto pair : counts)
-        {
-            NumaIndex numaIndex = pair.first;
-            uint64_t  count     = pair.second;
-            auto      f         = [&]() {
-                sharedState.sharedHistories.try_emplace(numaIndex, next_power_of_two(count));
-            };
-            if (doBindThreads)
-                numaConfig.execute_on_numa_node(numaIndex, f);
-            else
-                f();
-        }
-
-        auto threadsPerNode = counts;
-        counts.clear();
-
-        while (threads.size() < requested)
-        {
-            const size_t    threadId      = threads.size();
-            const NumaIndex numaId        = doBindThreads ? boundThreadToNumaNode[threadId] : 0;
-            auto            create_thread = [&]() {
-                auto manager = threadId == 0
-                                          ? std::unique_ptr<Search::ISearchManager>(
-                                   std::make_unique<Search::SearchManager>(updateContext))
-                                          : std::make_unique<Search::NullSearchManager>();
-
-                // When not binding threads we want to force all access to happen
-                // from the same NUMA node, because in case of NUMA replicated memory
-                // accesses we don't want to trash cache in case the threads get scheduled
-                // on the same NUMA node.
-                auto binder = doBindThreads ? OptionalThreadToNumaNodeBinder(numaConfig, numaId)
-                                                       : OptionalThreadToNumaNodeBinder(numaId);
-
-                threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager),
-                                                                         threadId, counts[numaId]++,
-                                                                         threadsPerNode[numaId], binder));
-            };
-
-            // Ensure the worker thread inherits the intended NUMA affinity at creation.
-            if (doBindThreads)
-                numaConfig.execute_on_numa_node(numaId, create_thread);
-            else
-                create_thread();
-        }
-
-        clear();
-
-        main_thread()->wait_for_search_finished();
-    }
-}
-
+// Stage-7 7.2a: ThreadPool::set (+ its next_power_of_two helper) retired. The
+// Stage-4 native thread runtime replaced it with native_threadpool.zig
+// (zfish_native_threadpool_set, "mirrors ThreadPool::set's thread-creation loop");
+// the only caller of the C++ method was src/engine.cpp:241, compiled in neither
+// build (default builds only uci_bridge.cpp; legacy omits engine.cpp), so it was
+// dead in both builds -- along with the two stale options["Threads"]/["NumaPolicy"]
+// reads it carried.
 
 // Sets threadPool data to initial values.
 void ThreadPool::clear() {
