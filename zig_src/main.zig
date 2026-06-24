@@ -561,6 +561,22 @@ pub export fn zfish_search_clear_shared_history(shared: *anyopaque, thread_idx: 
     position_port.clearSharedHistory(shared, thread_idx, numa_total);
 }
 
+// Native-graph cut flip fire 2: shadow verifier. The bridge calls this right after the
+// C++ try_emplace builds a node's SharedHistories, so the native sizing logic (the
+// builder the flip will use) is diffed against the live oracle every engine
+// construction. Returns false (and logs) on any mismatch; the bridge aborts loudly.
+pub export fn zfish_shadow_verify_shared_histories(shared: *const anyopaque, thread_count: usize) bool {
+    const ok = position_port.verifySharedHistories(shared, thread_count);
+    if (!ok) {
+        std.debug.print(
+            "zfish: shadow_verify_shared_histories MISMATCH (thread_count={d}) -- " ++
+                "native SharedHistories sizing diverged from the C++ try_emplace\n",
+            .{thread_count},
+        );
+    }
+    return ok;
+}
+
 pub export fn zfish_search_clear_refresh_cache(cache: *anyopaque, biases: [*]const i16) void {
     nnue_accumulator_port.clearRefreshCache(cache, biases);
 }
