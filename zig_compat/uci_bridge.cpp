@@ -3664,6 +3664,8 @@ inline void zfish_place(T& slot, A&&... args) {
 extern "C" bool zfish_shadow_verify_network_holder(const void* network,
                                                    std::size_t expected_nodes,
                                                    std::size_t elem_size);
+// Flip fire 4: whole-graph native owned-member construction exercise (zig_src/main.zig).
+extern "C" bool zfish_shadow_construct_engine_graph();
 
 static void zfish_engine_construct_members(Stockfish::Engine* e, const char* argv0) {
     using namespace Stockfish;
@@ -3687,6 +3689,14 @@ static void zfish_engine_construct_members(Stockfish::Engine* e, const char* arg
     zfish_place(e->onVerifyNetwork);
     zfish_place(e->sharedHists);
     zfish_engine_init_body(e);
+    // Native-graph cut flip fire 4: exercise the native EngineGraph owned-member
+    // construction in-process (real allocator + real from_system) and assert its
+    // host-independent invariants. Loud abort on divergence. Pure native, runs in
+    // both builds; frees what it builds.
+    if (!zfish_shadow_construct_engine_graph()) {
+        std::fprintf(stderr, "zfish: native engine-graph construction shadow failed\n");
+        std::abort();
+    }
 #ifndef ZFISH_LEGACY_CPP_TARGET
     zfish_verify_engine_graph(e);
 #endif

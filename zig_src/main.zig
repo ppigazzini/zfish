@@ -21,6 +21,9 @@ const movepick_port = @import("movepick");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const network_port = @import("network");
 const network_holder = @import("network_holder"); // native `network` holder (cut)
+const state_list_port = @import("state_list"); // native `states` member (cut)
+const numa_config_port = @import("numa_config"); // native `numaContext` member (cut)
+const position_storage_port = @import("position_storage"); // native `position` member (cut)
 const nnue_feature_port = @import("nnue_feature");
 const option_port = @import("option");
 const position_port = @import("position");
@@ -596,6 +599,43 @@ pub export fn zfish_shadow_verify_network_holder(
         );
     }
     return ok;
+}
+
+// Native-graph cut flip fire 4 (final phase-A): whole-graph construction exercise. At
+// every engine construction the bridge calls this, which builds the native EngineGraph's
+// OWNED members (the post-src/ member-init list) IN-PROCESS with the real allocator and
+// real NumaConfig.from_system -- a live cross-check that the construction the flip will
+// run actually works in the running process, not just under testing.allocator in
+// test-graph. Asserts the host-independent invariants the flip's graph must satisfy:
+//   states  : StateList.init -> exactly one root StateInfo (mirrors `new deque(1)`)
+//   numa    : from_system -> >= 1 node and every node has >= 1 CPU (the same sanity
+//             invariant H6 requires of the C++ from_system, applied to the NATIVE one)
+//   position: PositionStorage.zeroed -> 8-aligned, fully zeroed (value-initialized pos)
+// Returns false on any divergence; the bridge aborts loudly. The owned members are
+// freed before returning (leak-free), so this is pure verification, not wiring.
+pub export fn zfish_shadow_construct_engine_graph() bool {
+    const alloc = std.heap.c_allocator;
+
+    var states = state_list_port.StateList.init(alloc) catch return false;
+    defer states.deinit();
+    if (!states.hasStates() or states.len() != 1) return false;
+
+    var numa = numa_config_port.NumaConfig.fromSystem(alloc) catch return false;
+    defer numa.deinit();
+    const nodes = numa.numNodes();
+    if (nodes < 1) return false;
+    var n: usize = 0;
+    while (n < nodes) : (n += 1) {
+        if (numa.numCpusInNode(n) < 1) return false; // an empty node => from_system mis-parsed
+    }
+
+    var pos = position_storage_port.PositionStorage.zeroed();
+    if (@intFromPtr(pos.ptr()) % 8 != 0) return false;
+    for (pos.bytes) |b| {
+        if (b != 0) return false;
+    }
+
+    return true;
 }
 
 pub export fn zfish_search_clear_refresh_cache(cache: *anyopaque, biases: [*]const i16) void {

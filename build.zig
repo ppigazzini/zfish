@@ -324,6 +324,9 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("nnue_feature", nnue_feature_module);
     exe.root_module.addImport("nnue_misc", nnue_misc_module);
     exe.root_module.addImport("network_holder", network_holder_module);
+    exe.root_module.addImport("state_list", state_list_module);
+    exe.root_module.addImport("numa_config", numa_config_module);
+    exe.root_module.addImport("position_storage", position_storage_module);
     exe.root_module.addImport("option", option_module);
     exe.root_module.addImport("position", position_module);
     exe.root_module.addImport("position_snapshot", position_snapshot_module);
@@ -346,6 +349,9 @@ pub fn build(b: *std.Build) void {
     legacy_exe.root_module.addImport("nnue_feature", nnue_feature_module);
     legacy_exe.root_module.addImport("nnue_misc", nnue_misc_module);
     legacy_exe.root_module.addImport("network_holder", network_holder_module);
+    legacy_exe.root_module.addImport("state_list", state_list_module);
+    legacy_exe.root_module.addImport("numa_config", numa_config_module);
+    legacy_exe.root_module.addImport("position_storage", position_storage_module);
     legacy_exe.root_module.addImport("option", option_module);
     legacy_exe.root_module.addImport("position", position_module);
     legacy_exe.root_module.addImport("position_snapshot", position_snapshot_module);
