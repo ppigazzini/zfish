@@ -1995,6 +1995,11 @@ void zfish_threadpool_set_increase_depth(void* pool_ptr, std::uint8_t increase_d
 }
 #endif
 
+// Stage-7 7.2c: the legacy thread-sync wrappers are legacy-oracle-only. thread.zig
+// gates these at comptime now (target_flags.legacy_target), so the default build
+// prunes the legacy branch and never references them -- only the legacy C++ Thread
+// vehicle uses them.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_thread_run_callback(void* thread_ptr, ZfishOpaqueCallback callback, void* context) {
     auto* thread = static_cast<Thread*>(thread_ptr);
     thread->run_custom_job([callback, context]() { callback(context); });
@@ -2011,6 +2016,7 @@ void zfish_thread_start_searching(void* thread_ptr) {
 void zfish_thread_clear_worker(void* thread_ptr) {
     static_cast<Thread*>(thread_ptr)->clear_worker();
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 void zfish_thread_ensure_network_replicated(void* thread_ptr) {
     static_cast<Thread*>(thread_ptr)->ensure_network_replicated();
