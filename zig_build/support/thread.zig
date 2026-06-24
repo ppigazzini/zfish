@@ -23,12 +23,15 @@ inline fn nt(thread: *anyopaque) *native_thread.NativeThread {
 // Stage-4 per-build vehicle gate. The legacy oracle build keeps the C++ Thread
 // vehicle (so the thread.cpp oracle stays comparable); the default build uses the
 // native runtime. The `thread` module is shared by both exes, so a comptime flag
-// can't distinguish them -- branch at runtime on a symbol the C++ bridge defines
-// per target (1 under ZFISH_LEGACY_CPP_TARGET, 0 otherwise). Both code paths are
-// compiled + linked into both builds; only the live one runs.
-extern fn zfish_is_legacy_build() callconv(.c) c_int;
+// Stage-7: the legacy/default split is now COMPTIME. thread.zig is built per-exe
+// (build.zig: thread_module_default/_legacy each import the matching target_flags),
+// so legacyBuild() is a compile-time constant and Zig prunes the dead branch -- the
+// default exe stops referencing the legacy C++ zfish_thread_* sync wrappers and the
+// C++ Thread vehicle (they become #ifdef ZFISH_LEGACY_CPP_TARGET in the bridge). Was
+// a runtime extern (zfish_is_legacy_build) only because the module was shared.
+const target_flags = @import("target_flags");
 inline fn legacyBuild() bool {
-    return zfish_is_legacy_build() != 0;
+    return target_flags.legacy_target;
 }
 inline fn threadWaitFinished(thread: *anyopaque) void {
     if (legacyBuild()) zfish_thread_wait_for_search_finished(thread) else nt(thread).waitForSearchFinished();
