@@ -1710,6 +1710,13 @@ extern "C" void zfish_worker_construct_full(
   size_t manager, size_t thread_idx, size_t numa_thread_idx, size_t numa_total,
   size_t numa_access_token);
 
+// Stage-7 7.2d: the entire C++ Thread vehicle (ctor/dtor/idle_loop + sync +
+// worker_* methods) is legacy-oracle-only. The default build runs the native
+// futex thread runtime (native_thread.zig / native_threadpool.zig); thread.zig
+// comptime-prunes the legacy branch. Because the bridge TU is not built with
+// --gc-sections, these retained-but-unreferenced methods must be #ifdef'd out as
+// one atomic cluster (they reference each other + ThreadPool::clear).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 // Note that 'searching' and 'exit' should be already set.
 Thread::Thread(Search::SharedState&                    sharedState,
                std::unique_ptr<Search::ISearchManager> sm,
@@ -1792,12 +1799,16 @@ void Thread::clear_worker() {
     run_custom_job([this]() { worker->clear(); });
 }
 
+#endif  // ZFISH_LEGACY_CPP_TARGET (pause: wait_for_search_finished is default-live)
 // Blocks on the condition variable until the thread has finished searching.
+// Default-live: referenced by ~ThreadPool() (thread.h inline) even though the
+// Stage-4 teardown empties the threads vector so it never runs in the default exe.
 void Thread::wait_for_search_finished() {
 
     std::unique_lock<std::mutex> lk(mutex);
     cv.wait(lk, [&] { return !searching; });
 }
+#ifdef ZFISH_LEGACY_CPP_TARGET  // resume the Thread vehicle gate
 
 // Launching a function in the thread.
 void Thread::run_custom_job(std::function<void()> f) {
@@ -1859,7 +1870,11 @@ void Thread::worker_fill_summary(std::uint16_t& pv0Raw,
     worker->fill_thread_summary(pv0Raw, scoreIsBound, pvHasMoreThanTwo, score, rootDepth);
 }
 
+#endif  // ZFISH_LEGACY_CPP_TARGET (pause: ensure_network_replicated is default-live)
+// Default-live: native thread.zig ensureNetworkReplicated → zfish_thread_ensure_
+// network_replicated → here, once per thread in the default build.
 void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); }
+#ifdef ZFISH_LEGACY_CPP_TARGET  // resume the Thread vehicle gate
 
 // Thread gets parked here, blocked on the condition variable when the thread has no work to do.
 void Thread::idle_loop() {
@@ -1883,6 +1898,8 @@ void Thread::idle_loop() {
     }
 }
 
+#endif  // ZFISH_LEGACY_CPP_TARGET (C++ Thread vehicle)
+
 Search::SearchManager* ThreadPool::main_manager() { return main_thread()->worker->main_manager(); }
 
 uint64_t ThreadPool::nodes_searched() const { return accumulate(&Search::Worker::nodes); }
@@ -1896,6 +1913,10 @@ uint64_t ThreadPool::tb_hits() const { return accumulate(&Search::Worker::tbHits
 // dead in both builds -- along with the two stale options["Threads"]/["NumaPolicy"]
 // reads it carried.
 
+// Stage-7 7.2d: legacy-only. The default build clears the pool via the native
+// zfish_threadpool_clear export and waits/dispatches via the native runtime;
+// these C++ methods call the (now legacy-gated) Thread vehicle.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 // Sets threadPool data to initial values.
 void ThreadPool::clear() {
     if (threads.size() == 0)
@@ -1928,6 +1949,7 @@ void ThreadPool::wait_on_thread(size_t threadId) {
 }
 
 size_t ThreadPool::num_threads() const { return threads.size(); }
+#endif  // ZFISH_LEGACY_CPP_TARGET (dead ThreadPool methods)
 
 #ifdef ZFISH_ZIG_BUILD
 extern "C" {
@@ -2018,10 +2040,15 @@ void zfish_thread_clear_worker(void* thread_ptr) {
 }
 #endif  // ZFISH_LEGACY_CPP_TARGET
 
+// Default-live: native thread.zig ensureNetworkReplicated calls this per thread.
 void zfish_thread_ensure_network_replicated(void* thread_ptr) {
     static_cast<Thread*>(thread_ptr)->ensure_network_replicated();
 }
 
+// Stage-7 7.2d: legacy-only thread-level worker-op wrappers. The default build
+// uses the native zfish_worker_* / zfish_thread_worker_* exports (main.zig) for
+// these; these forward to the legacy-gated C++ Thread::worker_* methods.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_thread_worker_set_limits(void* thread_ptr, const void* limits_ptr) {
     auto* thread = static_cast<Thread*>(thread_ptr);
     thread->worker_set_limits(*static_cast<const Search::LimitsType*>(limits_ptr));
@@ -2036,6 +2063,7 @@ void zfish_thread_worker_set_root_moves(void* thread_ptr, const void* root_moves
     auto* thread = static_cast<Thread*>(thread_ptr);
     thread->worker_set_root_moves(*static_cast<const Search::RootMoves*>(root_moves_ptr));
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET (legacy thread worker-op wrappers)
 
 // set_root_position runs rootPos.set(fen, chess960, &rootState): native in the
 // default build via zfish_thread_worker_set_root_position (main.zig), which
@@ -3144,11 +3172,16 @@ void* zfish_position_create() { return new Position(); }
 
 void zfish_position_destroy(void* pos_ptr) { delete static_cast<Position*>(pos_ptr); }
 
+// Stage-7 7.2d: legacy-only. The default build resets the pool for reconfigure via
+// the native zfish_native_threadpool_clear (thread.zig comptime-prunes the legacy
+// branch that called this).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_reset_for_reconfigure(void* pool_ptr) {
     auto* pool = static_cast<ThreadPool*>(pool_ptr);
     pool->threads.clear();
     pool->boundThreadToNumaNode.clear();
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 void zfish_threadpool_bound_nodes_assign(void* pool_ptr,
                                          const std::size_t* nodes_ptr,
@@ -3312,6 +3345,10 @@ extern "C" int zfish_is_legacy_build(void) {
 #endif
 }
 
+// Stage-7 7.2d: legacy-only thread-creation wrappers (build C++ Thread objects via
+// make_unique<Thread>). The default build creates native Threads through
+// native_threadpool.zig (zfish_native_threadpool_set / zfish_native_worker_build).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_add_main_thread(void*       pool_ptr,
                                       const void* numa_config_ptr,
                                       const void* shared_state_ptr,
@@ -3366,6 +3403,7 @@ void zfish_threadpool_add_worker_thread(void*       pool_ptr,
       shared_state, std::make_unique<Search::NullSearchManager>(), thread_id, idx_in_numa,
       total_numa, OptionalThreadToNumaNodeBinder(numa_id)));
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET (legacy thread-creation wrappers)
 
 struct ZfishPendingStateListStorage {
     StateListPtr states;
