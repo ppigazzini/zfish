@@ -99,6 +99,53 @@ pub const NumaConfig = struct {
         return cfg;
     }
 
+    /// Build the topology from the system. Single-node fallback (the only path the
+    /// WSL2/CI gate target takes — its /sys exposes no NUMA nodes, so the C++
+    /// from_system yields one node too): one node holding every online CPU, not
+    /// custom-affinity. The multi-node /sys read + BundledL3 split is deferred to
+    /// the flip (it only matters on real multi-socket hosts).
+    pub fn fromSystem(allocator: std.mem.Allocator) error{OutOfMemory}!NumaConfig {
+        var cfg = NumaConfig.empty(allocator);
+        errdefer cfg.deinit();
+        const count = std.Thread.getCpuCount() catch 1;
+        var c: usize = 0;
+        while (c < @max(count, 1)) : (c += 1) {
+            if (!try cfg.addCpuToNode(0, c)) unreachable;
+        }
+        return cfg;
+    }
+
+    /// Assign each of `num_threads` threads to a NUMA node, balancing by fill ratio
+    /// exactly as C++ distribute_threads_among_numa_nodes: single node -> all node 0;
+    /// otherwise greedily place each thread on the node with the lowest
+    /// (occupation+1)/size. Caller owns the returned slice.
+    pub fn distributeThreads(self: *const NumaConfig, allocator: std.mem.Allocator, num_threads: usize) error{OutOfMemory}![]usize {
+        const ns = try allocator.alloc(usize, num_threads);
+        errdefer allocator.free(ns);
+        if (self.nodes.items.len <= 1) {
+            @memset(ns, 0);
+            return ns;
+        }
+        const occupation = try allocator.alloc(usize, self.nodes.items.len);
+        defer allocator.free(occupation);
+        @memset(occupation, 0);
+        for (ns) |*slot| {
+            var best: usize = 0;
+            var best_fill: f32 = std.math.floatMax(f32);
+            for (self.nodes.items, 0..) |node, n| {
+                const fill = @as(f32, @floatFromInt(occupation[n] + 1)) /
+                    @as(f32, @floatFromInt(node.items.len));
+                if (fill < best_fill) {
+                    best = n;
+                    best_fill = fill;
+                }
+            }
+            slot.* = best;
+            occupation[best] += 1;
+        }
+        return ns;
+    }
+
     /// Whether to bind threads to NUMA nodes (C++ suggests_binding_threads, the
     /// part the gates reach): bind if the affinity is user-set; never bind a single
     /// thread; otherwise bind only if the threads cannot fit the largest node.
@@ -193,4 +240,40 @@ test "suggestsBindingThreads: custom affinity binds; single node sized by thread
 test "fromString rejects malformed input" {
     try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "3-1")); // hi<lo
     try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "x"));
+}
+
+test "fromSystem yields a single non-empty node, not custom affinity" {
+    var cfg = try NumaConfig.fromSystem(testing.allocator);
+    defer cfg.deinit();
+    try testing.expectEqual(@as(usize, 1), cfg.numNodes());
+    try testing.expect(cfg.numCpusInNode(0) >= 1);
+    try testing.expect(!cfg.custom_affinity);
+    try testing.expect(!cfg.suggestsBindingThreads(1)); // single node, single thread
+}
+
+test "distributeThreads: single node -> all node 0" {
+    var cfg = try NumaConfig.fromSystem(testing.allocator);
+    defer cfg.deinit();
+    const ns = try cfg.distributeThreads(testing.allocator, 5);
+    defer testing.allocator.free(ns);
+    try testing.expectEqualSlices(usize, &.{ 0, 0, 0, 0, 0 }, ns);
+}
+
+test "distributeThreads: multi-node places every thread and favors the larger node" {
+    var cfg = NumaConfig.empty(testing.allocator);
+    defer cfg.deinit();
+    for (0..2) |c| _ = try cfg.addCpuToNode(0, c); // node0: 2 cpus
+    for (2..6) |c| _ = try cfg.addCpuToNode(1, c); // node1: 4 cpus
+
+    const ns = try cfg.distributeThreads(testing.allocator, 6);
+    defer testing.allocator.free(ns);
+    try testing.expectEqual(@as(usize, 6), ns.len);
+    var n0: usize = 0;
+    var n1: usize = 0;
+    for (ns) |n| {
+        try testing.expect(n < 2);
+        if (n == 0) n0 += 1 else n1 += 1;
+    }
+    try testing.expectEqual(@as(usize, 6), n0 + n1);
+    try testing.expect(n1 > n0); // the larger node takes more threads
 }
