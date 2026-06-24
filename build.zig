@@ -247,6 +247,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     position_module.addImport("shared_histories", shared_histories_module);
+    // Native network holder (the `network` member: LazyNumaReplicated<Network> shape +
+    // replica-count shadow verifier).
+    const network_holder_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/network_holder.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
     // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
     // engine module: it binds the native ThreadPool and TranspositionTable. Each
@@ -316,6 +323,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("network", network_module);
     exe.root_module.addImport("nnue_feature", nnue_feature_module);
     exe.root_module.addImport("nnue_misc", nnue_misc_module);
+    exe.root_module.addImport("network_holder", network_holder_module);
     exe.root_module.addImport("option", option_module);
     exe.root_module.addImport("position", position_module);
     exe.root_module.addImport("position_snapshot", position_snapshot_module);
@@ -337,6 +345,7 @@ pub fn build(b: *std.Build) void {
     legacy_exe.root_module.addImport("network", network_module);
     legacy_exe.root_module.addImport("nnue_feature", nnue_feature_module);
     legacy_exe.root_module.addImport("nnue_misc", nnue_misc_module);
+    legacy_exe.root_module.addImport("network_holder", network_holder_module);
     legacy_exe.root_module.addImport("option", option_module);
     legacy_exe.root_module.addImport("position", position_module);
     legacy_exe.root_module.addImport("position_snapshot", position_snapshot_module);

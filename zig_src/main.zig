@@ -20,6 +20,7 @@ const movegen_port = @import("movegen");
 const movepick_port = @import("movepick");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const network_port = @import("network");
+const network_holder = @import("network_holder"); // native `network` holder (cut)
 const nnue_feature_port = @import("nnue_feature");
 const option_port = @import("option");
 const position_port = @import("position");
@@ -572,6 +573,26 @@ pub export fn zfish_shadow_verify_shared_histories(shared: *const anyopaque, thr
             "zfish: shadow_verify_shared_histories MISMATCH (thread_count={d}) -- " ++
                 "native SharedHistories sizing diverged from the C++ try_emplace\n",
             .{thread_count},
+        );
+    }
+    return ok;
+}
+
+// Native-graph cut flip fire 3: network-holder shadow verifier. The bridge calls this
+// right after the C++ LazyNumaReplicated<Network> is constructed, passing the holder's
+// own configured node count; the native model reads the live holder's replica count
+// (instances.size()) through the documented member offset and asserts they agree.
+pub export fn zfish_shadow_verify_network_holder(
+    network_ptr: *const anyopaque,
+    expected_nodes: usize,
+    elem_size: usize,
+) bool {
+    const ok = network_holder.verifyReplicaCount(network_ptr, elem_size, expected_nodes);
+    if (!ok) {
+        std.debug.print(
+            "zfish: shadow_verify_network_holder MISMATCH -- native replica count {d} != " ++
+                "expected {d} (SystemWide instances/stride={d} vs num_numa_nodes)\n",
+            .{ network_holder.replicaCountOf(network_ptr, elem_size), expected_nodes, elem_size },
         );
     }
     return ok;
