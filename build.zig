@@ -234,6 +234,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // Native PositionStorage (post-src/ owner of the `pos` member's 1032B block).
+    const position_storage_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/board/position_storage.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
     // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
     // engine module: it binds the native ThreadPool and TranspositionTable. Each
@@ -250,6 +256,7 @@ pub fn build(b: *std.Build) void {
         pair[0].addImport("tt", tt_module);
         pair[0].addImport("state_list", state_list_module);
         pair[0].addImport("numa_config", numa_config_module);
+        pair[0].addImport("position_storage", position_storage_module);
     }
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);

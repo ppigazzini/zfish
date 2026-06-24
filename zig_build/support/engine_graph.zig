@@ -28,13 +28,14 @@ const SearchManager = sm.SearchManager;
 const SharedState = @import("shared_state.zig").SharedState;
 pub const StateList = @import("state_list").StateList;
 pub const NumaConfig = @import("numa_config").NumaConfig;
+pub const PositionStorage = @import("position_storage").PositionStorage;
 
 // Full native member map of the C++ Engine, in declaration order, with each
 // member's native-ownership status for the cut (REPORT-9 Annex B, ITERATION-157):
 //
 //   binary_directory  const std::string                    -> []const u8         [trivial slot]
 //   numa_context      NumaReplicationContext (std::set)     -> *NumaConfig        [native type DONE, iter 3]
-//   position          Position (1032B)                      -> *anyopaque         [logic native; STORAGE pending]
+//   position          Position (1032B)                      -> *PositionStorage   [native storage DONE, iter 5]
 //   states            unique_ptr<deque<StateInfo>>          -> *StateList         [native type DONE, iter 1]
 //   options           OptionsMap (std::map)                 -> *anyopaque (Model) [native store exists]
 //   threads           ThreadPool                            -> *ThreadPool        [native runtime exists]
@@ -51,7 +52,7 @@ pub const NumaConfig = @import("numa_config").NumaConfig;
 pub const EngineGraph = struct {
     binary_directory: []const u8,
     numa_context: *NumaConfig, // native NUMA topology (iter 3)
-    position: *anyopaque, // Position (logic ported; native ownership pending)
+    position: *PositionStorage, // native owner of the 1032B Position block (iter 5)
     states: *StateList, // native deque<StateInfo> replacement (iter 1)
     options: *anyopaque, // OptionsModel
     threads: *ThreadPool,
@@ -104,7 +105,7 @@ fn testUpdateContext() UpdateContext {
 test "EngineGraph hands a SharedState bound to its own subsystems" {
     var options: u32 = 0xAA;
     var network: u32 = 0xBB;
-    var position: u32 = 0xCC;
+    var position = PositionStorage.zeroed();
     var hists: u32 = 0xDD;
     var pool: ThreadPool = undefined;
     var states = try StateList.init(testing.allocator);
@@ -142,10 +143,11 @@ test "EngineGraph mints main and null managers without a vtable" {
     defer states.deinit();
     var numa = NumaConfig.empty(testing.allocator);
     defer numa.deinit();
+    var position = PositionStorage.zeroed();
     var graph = EngineGraph{
         .binary_directory = "",
         .numa_context = &numa,
-        .position = &dummy,
+        .position = &position,
         .states = &states,
         .options = &dummy,
         .threads = &pool,
