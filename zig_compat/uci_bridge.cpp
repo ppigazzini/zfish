@@ -3324,9 +3324,9 @@ void zfish_native_worker_destroy(void* worker) {
 }
 #else  // ZFISH_LEGACY_CPP_TARGET
 // The legacy oracle build keeps the C++ Thread vehicle, so the native worker
-// build/destroy are never invoked at runtime (thread.zig branches on
-// zfish_is_legacy_build()). They must still LINK because the shared native
-// ThreadPool references them -- provide abort stubs.
+// build/destroy are never invoked at runtime (thread.zig selects the vehicle at
+// COMPTIME via target_flags.legacy_target). They must still LINK because the
+// shared native ThreadPool references them -- provide abort stubs.
 extern "C" void zfish_native_worker_build(void*, std::size_t, void*) {
     std::abort();
 }
@@ -3335,15 +3335,10 @@ extern "C" void zfish_native_worker_destroy(void*) {
 }
 #endif // ZFISH_LEGACY_CPP_TARGET
 
-// Per-build vehicle gate, read by the shared `thread` Zig module to pick the
-// native runtime (default) vs the C++ Thread oracle (legacy). 1 == legacy.
-extern "C" int zfish_is_legacy_build(void) {
-#ifdef ZFISH_LEGACY_CPP_TARGET
-    return 1;
-#else
-    return 0;
-#endif
-}
+// Stage-7 7.2e: zfish_is_legacy_build() retired. The shared thread module used to
+// branch on it at RUNTIME; since 7.2b thread.zig is built per-exe and gates on the
+// comptime target_flags.legacy_target, so this runtime probe has no callers in
+// either build.
 
 // Stage-7 7.2d: legacy-only thread-creation wrappers (build C++ Thread objects via
 // make_unique<Thread>). The default build creates native Threads through
