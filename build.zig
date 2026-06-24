@@ -90,10 +90,12 @@ pub fn build(b: *std.Build) void {
     // src/ definition win -- avoiding a duplicate-symbol link error.
     const default_flags = b.addOptions();
     default_flags.addOption(bool, "legacy_target", false);
-    exe.root_module.addImport("target_flags", default_flags.createModule());
+    const default_flags_mod = default_flags.createModule();
+    exe.root_module.addImport("target_flags", default_flags_mod);
     const legacy_flags = b.addOptions();
     legacy_flags.addOption(bool, "legacy_target", true);
-    legacy_exe.root_module.addImport("target_flags", legacy_flags.createModule());
+    const legacy_flags_mod = legacy_flags.createModule();
+    legacy_exe.root_module.addImport("target_flags", legacy_flags_mod);
 
     const timeman_module = b.createModule(.{
         .root_source_file = b.path("zig_build/time/timeman.zig"),
@@ -120,7 +122,16 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     misc_module.addImport("build_options", build_options_module);
-    const engine_module = b.createModule(.{
+    // Stage-7: engine + thread modules are built per-exe (default vs legacy) so
+    // thread.zig can read target_flags.legacy_target at COMPTIME (it was shared and
+    // runtime-gated before). engine.zig pulls thread in via engine_graph.zig, so it
+    // must match the exe's thread instance (same @export symbols), hence duplicated.
+    const engine_module_default = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/engine.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const engine_module_legacy = b.createModule(.{
         .root_source_file = b.path("zig_build/support/engine.zig"),
         .target = target,
         .optimize = optimize,
@@ -140,7 +151,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const thread_module = b.createModule(.{
+    const thread_module_default = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/thread.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const thread_module_legacy = b.createModule(.{
         .root_source_file = b.path("zig_build/support/thread.zig"),
         .target = target,
         .optimize = optimize,
@@ -205,14 +221,20 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    engine_module.addImport("position", position_module);
-    engine_module.addImport("position_snapshot", position_snapshot_module);
-    engine_module.addImport("uci_move", uci_move_module);
-    engine_module.addImport("misc", misc_module);
     // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
-    // engine module: it binds the native ThreadPool and TranspositionTable.
-    engine_module.addImport("thread", thread_module);
-    engine_module.addImport("tt", tt_module);
+    // engine module: it binds the native ThreadPool and TranspositionTable. Each
+    // engine variant pulls its matching (default/legacy) thread instance.
+    inline for (.{
+        .{ engine_module_default, thread_module_default },
+        .{ engine_module_legacy, thread_module_legacy },
+    }) |pair| {
+        pair[0].addImport("position", position_module);
+        pair[0].addImport("position_snapshot", position_snapshot_module);
+        pair[0].addImport("uci_move", uci_move_module);
+        pair[0].addImport("misc", misc_module);
+        pair[0].addImport("thread", pair[1]);
+        pair[0].addImport("tt", tt_module);
+    }
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("bitboard", bitboard_module);
@@ -224,14 +246,20 @@ pub fn build(b: *std.Build) void {
     position_module.addImport("tt", tt_module);
     position_module.addImport("movepick", movepick_module);
     position_module.addImport("search", search_module);
-    thread_module.addImport("position_snapshot", position_snapshot_module);
-    thread_module.addImport("position", position_module);
-    thread_module.addImport("uci_move", uci_move_module);
+    inline for (.{
+        .{ thread_module_default, default_flags_mod },
+        .{ thread_module_legacy, legacy_flags_mod },
+    }) |pair| {
+        pair[0].addImport("position_snapshot", position_snapshot_module);
+        pair[0].addImport("position", position_module);
+        pair[0].addImport("uci_move", uci_move_module);
+        pair[0].addImport("target_flags", pair[1]);
+    }
     uci_module.addImport("benchmark", benchmark_module);
     uci_module.addImport("misc", misc_module);
     exe.root_module.addImport("benchmark", benchmark_module);
     exe.root_module.addImport("bitboard", bitboard_module);
-    exe.root_module.addImport("engine", engine_module);
+    exe.root_module.addImport("engine", engine_module_default);
     exe.root_module.addImport("evaluate", evaluate_module);
     exe.root_module.addImport("misc", misc_module);
     exe.root_module.addImport("movegen", movegen_module);
@@ -245,14 +273,14 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("position_snapshot", position_snapshot_module);
     exe.root_module.addImport("search", search_module);
     exe.root_module.addImport("timeman", timeman_module);
-    exe.root_module.addImport("thread", thread_module);
+    exe.root_module.addImport("thread", thread_module_default);
     exe.root_module.addImport("tt", tt_module);
     exe.root_module.addImport("uci", uci_module);
     exe.root_module.addImport("uci_move", uci_move_module);
 
     legacy_exe.root_module.addImport("benchmark", benchmark_module);
     legacy_exe.root_module.addImport("bitboard", bitboard_module);
-    legacy_exe.root_module.addImport("engine", engine_module);
+    legacy_exe.root_module.addImport("engine", engine_module_legacy);
     legacy_exe.root_module.addImport("evaluate", evaluate_module);
     legacy_exe.root_module.addImport("misc", misc_module);
     legacy_exe.root_module.addImport("movegen", movegen_module);
@@ -266,7 +294,7 @@ pub fn build(b: *std.Build) void {
     legacy_exe.root_module.addImport("position_snapshot", position_snapshot_module);
     legacy_exe.root_module.addImport("search", search_module);
     legacy_exe.root_module.addImport("timeman", timeman_module);
-    legacy_exe.root_module.addImport("thread", thread_module);
+    legacy_exe.root_module.addImport("thread", thread_module_legacy);
     legacy_exe.root_module.addImport("tt", tt_module);
     legacy_exe.root_module.addImport("uci", uci_module);
     legacy_exe.root_module.addImport("uci_move", uci_move_module);
