@@ -4,6 +4,11 @@ const movegen = @import("movegen");
 const tt = @import("tt");
 const movepick = @import("movepick");
 const search = @import("search");
+const shared_hist = @import("shared_histories"); // native SharedHistories sizing (cut)
+
+// Large-page allocator export used by the native SharedHistories construction
+// (mirrors C++ make_unique_large_page<T[]> over aligned_large_pages_alloc).
+extern fn zfish_aligned_large_pages_alloc(byte_count: usize) ?*anyopaque;
 
 // Force-compile the native StateInfo leaf node so its 192-byte layout assert is
 // build-verified rather than dead source (part of the post-src/ object graph).
@@ -157,6 +162,49 @@ pub fn clearSharedHistory(shared_ptr: *anyopaque, thread_idx: usize, numa_total:
         const stop = r.end * hist_pieceto;
         while (i < stop) : (i += 1) shared.pawn_data[i] = -1262;
     }
+}
+
+// Native construction of one node's SharedHistories — the post-src/ replacement for
+// the C++ ctor SharedHistories(threadCount) reached via try_emplace. Allocates the
+// two DynStats arrays from large pages (corr: [2]CorrectionBundle elements; pawn:
+// [16][64] int16 pages, exposed as a flat int16 array) and fills in the size fields +
+// index masks. `thread_count` is nextPowerOfTwo(threads on the node), so the counts
+// are powers of two and the masks are (count - 1). Element strides come from the same
+// types the native search already reads C++-built histories through, so they match the
+// C++ layout; the COUNT logic is shared with the shadow verifier (shared_histories.zig).
+// UNWIRED: the live path still builds histories via the C++ try_emplace; this is the
+// native builder the flip will call. Native-graph cut flip fire 2.
+pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHistories {
+    const sizes = shared_hist.sharedHistoriesSizes(thread_count);
+    const corr_bytes = sizes.corr * @sizeOf([2]CorrectionBundle);
+    const pawn_bytes = sizes.pawn * hist_pieceto * @sizeOf(i16);
+
+    const corr_ptr = zfish_aligned_large_pages_alloc(corr_bytes) orelse return error.OutOfMemory;
+    const pawn_ptr = zfish_aligned_large_pages_alloc(pawn_bytes) orelse return error.OutOfMemory;
+
+    return .{
+        .corr_size = sizes.corr,
+        .corr_data = @ptrCast(@alignCast(corr_ptr)),
+        .pawn_size = sizes.pawn,
+        .pawn_data = @ptrCast(@alignCast(pawn_ptr)),
+        .size_minus1 = sizes.corr - 1,
+        .pawn_hist_size_minus1 = sizes.pawn - 1,
+    };
+}
+
+// Shadow verifier: read a constructed (C++ try_emplace) SharedHistories through the
+// native mirror and confirm its four size fields match the native sizing for
+// `thread_count`. Called at the live insert to diff the native logic against the
+// oracle without changing behavior.
+pub fn verifySharedHistories(shared_ptr: *const anyopaque, thread_count: usize) bool {
+    const shared: *const SharedHistories = @ptrCast(@alignCast(shared_ptr));
+    return shared_hist.verifySizes(
+        shared.corr_size,
+        shared.pawn_size,
+        shared.size_minus1,
+        shared.pawn_hist_size_minus1,
+        thread_count,
+    );
 }
 
 // pawn_entry(pos) row base: pawnHistory[pawn_key & mask] is a [16][64] page.

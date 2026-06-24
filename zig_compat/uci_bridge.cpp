@@ -3217,6 +3217,10 @@ void zfish_shared_state_clear_histories(const void* shared_state_ptr) {
     shared_state.sharedHistories.clear();
 }
 
+// Native-graph cut flip fire 2: shadow verifier (zig_src/main.zig). Diffs the native
+// SharedHistories sizing against this C++ try_emplace result; false = mismatch.
+extern "C" bool zfish_shadow_verify_shared_histories(const void* shared, std::size_t thread_count);
+
 void zfish_shared_state_insert_history(const void*  shared_state_ptr,
                                        const void*  numa_config_ptr,
                                        std::size_t  numa_index,
@@ -3230,6 +3234,16 @@ void zfish_shared_state_insert_history(const void*  shared_state_ptr,
         numa_config.execute_on_numa_node(numa_index, insert);
     else
         insert();
+
+    // Shadow-verify the native sizing logic against the freshly built C++ node. The
+    // native builder (constructSharedHistories) is unwired; this proves its sizing
+    // tracks the oracle at every engine construction. Loud abort on divergence.
+    if (!zfish_shadow_verify_shared_histories(&shared_state.sharedHistories.at(numa_index), size)) {
+        std::fprintf(stderr,
+                     "zfish: shared_histories shadow verify failed (numa=%zu size=%zu)\n",
+                     numa_index, size);
+        std::abort();
+    }
 }
 
 std::uint8_t zfish_numa_config_suggests_binding_threads(const void* numa_config_ptr,

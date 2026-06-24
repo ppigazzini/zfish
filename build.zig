@@ -240,6 +240,13 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // Native SharedHistories sizing (the `shared_histories` member, pure count logic).
+    const shared_histories_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/shared_histories.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    position_module.addImport("shared_histories", shared_histories_module);
 
     // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
     // engine module: it binds the native ThreadPool and TranspositionTable. Each
