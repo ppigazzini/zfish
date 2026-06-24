@@ -3657,6 +3657,14 @@ inline void zfish_place(T& slot, A&&... args) {
 // exactly the work the C++ ctor body did. Ordering matches the C++ object model:
 // numaContext before network (network captures it by ref), binaryDirectory before
 // network (get_default_network reads it), options/init_body after the members.
+// Native-graph cut flip fire 3: network-holder shadow verifier (zig_src/main.zig).
+// Diffs the native model of the LazyNumaReplicatedSystemWide replica count against the
+// live one. elem_size = sizeof(SystemWideSharedConstant<Network>) (the fat vector
+// element stride), taken from this build so the native size() math is pinned to it.
+extern "C" bool zfish_shadow_verify_network_holder(const void* network,
+                                                   std::size_t expected_nodes,
+                                                   std::size_t elem_size);
+
 static void zfish_engine_construct_members(Stockfish::Engine* e, const char* argv0) {
     using namespace Stockfish;
     zfish_place(e->binaryDirectory, CommandLine::get_binary_directory(argv0));
@@ -3667,6 +3675,14 @@ static void zfish_engine_construct_members(Stockfish::Engine* e, const char* arg
     zfish_place(e->threads);
     zfish_place(e->tt);
     zfish_place(e->network, e->numaContext, e->get_default_network());
+    // Shadow-verify the native holder model against the freshly built C++ holder: its
+    // replica count must equal its own configured node count. Loud abort on divergence.
+    if (!zfish_shadow_verify_network_holder(
+            &e->network, e->network.get_numa_config().num_numa_nodes(),
+            sizeof(SystemWideSharedConstant<Eval::NNUE::Network>))) {
+        std::fprintf(stderr, "zfish: network holder shadow verify failed\n");
+        std::abort();
+    }
     zfish_place(e->updateContext);
     zfish_place(e->onVerifyNetwork);
     zfish_place(e->sharedHists);
