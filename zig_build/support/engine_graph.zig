@@ -81,6 +81,61 @@ pub const EngineGraph = struct {
         else
             SearchManager.initNull(&self.update_context);
     }
+
+    // Native construction of the graph's OWNED members (states, numaContext,
+    // position storage) — the post-src/ replacement for the C++ Engine member-init
+    // list (binaryDirectory/numaContext/states + pos default-construct). The other
+    // members are subsystems the graph references, not owns: options (the global
+    // OptionsModel), threads (the native ThreadPool), network, shared_histories,
+    // update_context are passed in; tt starts empty (sized later by resize). The
+    // flip calls this where the bridge today runs zfish_engine_construct_members.
+    pub fn init(
+        allocator: std.mem.Allocator,
+        binary_directory: []const u8,
+        options: *anyopaque,
+        threads: *ThreadPool,
+        network: *anyopaque,
+        shared_histories: *anyopaque,
+        update_context: UpdateContext,
+    ) error{OutOfMemory}!EngineGraph {
+        const states = try allocator.create(StateList);
+        errdefer allocator.destroy(states);
+        states.* = try StateList.init(allocator); // one root StateInfo (deque(1))
+        errdefer states.deinit();
+
+        const numa = try allocator.create(NumaConfig);
+        errdefer allocator.destroy(numa);
+        numa.* = try NumaConfig.fromSystem(allocator); // single-node on the target
+        errdefer numa.deinit();
+
+        const position = try allocator.create(PositionStorage);
+        errdefer allocator.destroy(position);
+        position.* = PositionStorage.zeroed(); // value-initialized Position (pre pos.set)
+
+        return .{
+            .binary_directory = binary_directory,
+            .numa_context = numa,
+            .position = position,
+            .states = states,
+            .options = options,
+            .threads = threads,
+            .tt = .{}, // empty TT; the option-driven resize allocates the table
+            .network = network,
+            .shared_histories = shared_histories,
+            .update_context = update_context,
+        };
+    }
+
+    // Destroy the owned members in reverse construction order (the referenced
+    // subsystems are not owned here). Mirrors ~Engine for the native-owned slots.
+    pub fn deinit(self: *EngineGraph, allocator: std.mem.Allocator) void {
+        allocator.destroy(self.position);
+        self.numa_context.deinit();
+        allocator.destroy(self.numa_context);
+        self.states.deinit();
+        allocator.destroy(self.states);
+        self.* = undefined;
+    }
 };
 
 // ---- tests ------------------------------------------------------------------
@@ -162,4 +217,35 @@ test "EngineGraph mints main and null managers without a vtable" {
     try testing.expect(main_mgr.is_main);
     try testing.expect(!null_mgr.is_main);
     try testing.expectEqual(&graph.update_context, main_mgr.updates);
+}
+
+test "EngineGraph.init builds+owns states/numa/position; deinit frees them" {
+    var pool: ThreadPool = undefined;
+    var options: u32 = 0;
+    var network: u32 = 0;
+    var hists: u32 = 0;
+
+    // testing.allocator fails the test on any leak, so a clean deinit proves the
+    // owned members are all freed.
+    var graph = try EngineGraph.init(
+        testing.allocator,
+        "/usr/bin",
+        &options,
+        &pool,
+        &network,
+        &hists,
+        testUpdateContext(),
+    );
+    defer graph.deinit(testing.allocator);
+
+    // owned members were natively constructed
+    try testing.expect(graph.states.hasStates());
+    try testing.expectEqual(@as(usize, 1), graph.states.len()); // deque(1) root
+    try testing.expectEqual(@as(usize, 1), graph.numa_context.numNodes()); // single node
+    try testing.expectEqual(@as(usize, 0), @intFromPtr(graph.position.ptr()) % 8); // aligned
+    try testing.expectEqual(@as(usize, 0), graph.tt.cluster_count); // empty until resize
+    // referenced subsystems are bound, not owned
+    try testing.expectEqual(@as(*anyopaque, &options), graph.options);
+    try testing.expectEqual(@as(*ThreadPool, &pool), graph.threads);
+    try testing.expectEqualStrings("/usr/bin", graph.binary_directory);
 }

@@ -258,6 +258,24 @@ pub fn build(b: *std.Build) void {
         pair[0].addImport("numa_config", numa_config_module);
         pair[0].addImport("position_storage", position_storage_module);
     }
+
+    // Native-graph cut: run the EngineGraph + member-module unit tests (construction,
+    // lifetime, SharedState binding) with their module deps. `zig build test-graph`.
+    const graph_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig_build/support/engine_graph.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    graph_test.root_module.addImport("thread", thread_module_default);
+    graph_test.root_module.addImport("tt", tt_module);
+    graph_test.root_module.addImport("state_list", state_list_module);
+    graph_test.root_module.addImport("numa_config", numa_config_module);
+    graph_test.root_module.addImport("position_storage", position_storage_module);
+    const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
+    graph_test_step.dependOn(&b.addRunArtifact(graph_test).step);
+
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("bitboard", bitboard_module);
