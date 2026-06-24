@@ -26,13 +26,36 @@ const sm = @import("search_manager.zig");
 const UpdateContext = sm.UpdateContext;
 const SearchManager = sm.SearchManager;
 const SharedState = @import("shared_state.zig").SharedState;
+pub const StateList = @import("state_list").StateList;
 
+// Full native member map of the C++ Engine, in declaration order, with each
+// member's native-ownership status for the cut (REPORT-9 Annex B, ITERATION-157):
+//
+//   binary_directory  const std::string                    -> []const u8         [trivial slot]
+//   numa_context      NumaReplicationContext (std::set)     -> *anyopaque         [PENDING: native NumaConfig]
+//   position          Position (1032B)                      -> *anyopaque         [logic native; STORAGE pending]
+//   states            unique_ptr<deque<StateInfo>>          -> *StateList         [native type DONE, iter 1]
+//   options           OptionsMap (std::map)                 -> *anyopaque (Model) [native store exists]
+//   threads           ThreadPool                            -> *ThreadPool        [native runtime exists]
+//   tt                TranspositionTable                    -> TranspositionTable  [native]
+//   network           LazyNumaReplicated<Network>           -> *anyopaque         [logic native; HOLDER pending]
+//   update_context    SearchManager::UpdateContext          -> UpdateContext      [native]
+//   onVerifyNetwork   std::function                         -> retired at flip (emit is native)
+//   shared_histories  std::map<NumaIndex, SharedHistories>  -> *anyopaque         [PENDING: native table]
+//
+// *anyopaque slots are the remaining ports; concrete-typed members are done. This
+// is now a complete definition of the post-src/ Engine; later iterations replace
+// the *anyopaque slots with native types, then the atomic flip constructs this and
+// rewires the ~226 bridge accessors to it.
 pub const EngineGraph = struct {
+    binary_directory: []const u8,
+    numa_context: *anyopaque, // NumaReplicationContext (native NumaConfig pending)
+    position: *anyopaque, // Position (logic ported; native ownership pending)
+    states: *StateList, // native deque<StateInfo> replacement (iter 1)
     options: *anyopaque, // OptionsModel
     threads: *ThreadPool,
     tt: TranspositionTable,
     network: *anyopaque, // NNUE network (logic ported; native ownership pending)
-    position: *anyopaque, // Position (logic ported; native ownership pending)
     shared_histories: *anyopaque,
     update_context: UpdateContext,
 
@@ -82,14 +105,20 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
     var network: u32 = 0xBB;
     var position: u32 = 0xCC;
     var hists: u32 = 0xDD;
+    var numa: u32 = 0xEE;
     var pool: ThreadPool = undefined;
+    var states = try StateList.init(testing.allocator);
+    defer states.deinit();
 
     var graph = EngineGraph{
+        .binary_directory = "/bin",
+        .numa_context = &numa,
+        .position = &position,
+        .states = &states,
         .options = &options,
         .threads = &pool,
         .tt = .{ .cluster_count = 4096 },
         .network = &network,
-        .position = &position,
         .shared_histories = &hists,
         .update_context = testUpdateContext(),
     };
@@ -99,17 +128,25 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
     try testing.expectEqual(@as(*anyopaque, &pool), ss.threads);
     try testing.expectEqual(@as(*anyopaque, &graph.tt), ss.tt); // bound to the graph's own TT
     try testing.expectEqual(@as(*anyopaque, &network), ss.network);
+    // states member is the native StateList (iter 1), non-empty at construction
+    try testing.expect(graph.states.hasStates());
+    try testing.expectEqual(@as(usize, 1), graph.states.len());
 }
 
 test "EngineGraph mints main and null managers without a vtable" {
     var pool: ThreadPool = undefined;
     var dummy: u32 = 0;
+    var states = try StateList.init(testing.allocator);
+    defer states.deinit();
     var graph = EngineGraph{
+        .binary_directory = "",
+        .numa_context = &dummy,
+        .position = &dummy,
+        .states = &states,
         .options = &dummy,
         .threads = &pool,
         .tt = .{},
         .network = &dummy,
-        .position = &dummy,
         .shared_histories = &dummy,
         .update_context = testUpdateContext(),
     };
