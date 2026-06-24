@@ -221,6 +221,14 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // Native StateList (the post-src/ `states` deque replacement, native-graph cut);
+    // its own module so engine_graph.zig can hold it as a typed member.
+    const state_list_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/board/state_list.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
     // engine module: it binds the native ThreadPool and TranspositionTable. Each
     // engine variant pulls its matching (default/legacy) thread instance.
@@ -234,6 +242,7 @@ pub fn build(b: *std.Build) void {
         pair[0].addImport("misc", misc_module);
         pair[0].addImport("thread", pair[1]);
         pair[0].addImport("tt", tt_module);
+        pair[0].addImport("state_list", state_list_module);
     }
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);
