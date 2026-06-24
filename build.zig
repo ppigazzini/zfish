@@ -228,6 +228,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // Native NumaConfig (the post-src/ numaContext member, native-graph cut).
+    const numa_config_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/numa_config.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
     // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
     // engine module: it binds the native ThreadPool and TranspositionTable. Each
@@ -243,6 +249,7 @@ pub fn build(b: *std.Build) void {
         pair[0].addImport("thread", pair[1]);
         pair[0].addImport("tt", tt_module);
         pair[0].addImport("state_list", state_list_module);
+        pair[0].addImport("numa_config", numa_config_module);
     }
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);
