@@ -9,6 +9,9 @@ const search = @import("search");
 // build-verified rather than dead source (part of the post-src/ object graph).
 comptime {
     _ = @import("state_info.zig");
+    // Native StateList (the post-src/ `states` deque replacement) — force-compiled
+    // so it is build-verified alongside its unit tests (native-graph cut, iter 1).
+    _ = @import("state_list.zig");
 }
 
 const pawn_pt: u8 = 1;
