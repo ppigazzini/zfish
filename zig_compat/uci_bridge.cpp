@@ -3085,6 +3085,10 @@ void zfish_engine_flip_owner(void* engine_ptr) {
     static_cast<Engine*>(engine_ptr)->flip();
 }
 
+// M-FINAL (limits readers): ported to native Zig offset reads (zig_src/main.zig) in the
+// default build; these C++ defs are now legacy-oracle-only (else duplicate symbols vs the
+// Zig exports). Pure reads, no allocation — valgrind-clean across the boundary.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint8_t zfish_limits_ponder_mode(const void* limits_ptr) {
     return static_cast<const Search::LimitsType*>(limits_ptr)->ponderMode ? 1 : 0;
 }
@@ -3096,6 +3100,7 @@ std::size_t zfish_limits_perft_value(const void* limits_ptr) {
 std::size_t zfish_limits_searchmove_count(const void* limits_ptr) {
     return static_cast<const Search::LimitsType*>(limits_ptr)->searchmoves.size();
 }
+#endif
 
 struct ZfishSearchMoveView {
     const unsigned char* ptr;

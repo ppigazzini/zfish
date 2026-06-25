@@ -678,6 +678,28 @@ extern fn zfish_operator_delete(p: ?*anyopaque) void;
 extern fn zfish_limits_sizeof() usize;
 extern fn zfish_limits_searchmoves_bytes() usize;
 
+// M-FINAL (limits readers): pure LimitsType offset reads — no allocation, so no Zig<->C++
+// allocator-boundary mismatch (the trap that blocks porting operator new/delete). Offsets
+// from graph_layout.limits_off (verified vs src/search.h LimitsType field order). Exported
+// default-only (comptime block below); the legacy oracle keeps the C++ defs under #ifdef.
+fn zfishLimitsPonderMode(limits: *const anyopaque) callconv(.c) u8 {
+    const base: [*]const u8 = @ptrCast(limits);
+    return if (base[graph_layout.limits_off.ponder_mode] != 0) 1 else 0;
+}
+fn zfishLimitsPerftValue(limits: *const anyopaque) callconv(.c) usize {
+    const base: [*]const u8 = @ptrCast(limits);
+    const perft = @as(*const i32, @ptrCast(@alignCast(base + graph_layout.limits_off.perft))).*;
+    return @intCast(perft);
+}
+fn zfishLimitsSearchmoveCount(limits: *const anyopaque) callconv(.c) usize {
+    // searchmoves is std::vector<std::string> at LimitsType +0: {begin@0, end@8}; the
+    // element std::string is 32 bytes (libstdc++), so size == (end-begin)/32.
+    const base: [*]const u8 = @ptrCast(limits);
+    const begin = @as(*const usize, @ptrCast(@alignCast(base))).*;
+    const end = @as(*const usize, @ptrCast(@alignCast(base + 8))).*;
+    return (end - begin) / 32;
+}
+
 // Stage 5: native Worker::set_limits -- the C++ `limits = value` copy of LimitsType.
 // Copies only the POD tail (everything after the leading std::vector<std::string>
 // searchmoves). The Worker's searchmoves copy is vestigial (the search filters root
@@ -1284,6 +1306,10 @@ comptime {
         @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });
         @export(&zfish_ss_tm_init, .{ .name = "zfish_ss_tm_init" });
         @export(&thFillSummary, .{ .name = "zfish_thread_fill_summary" });
+        // M-FINAL (limits readers): pure LimitsType offset reads (legacy keeps the C++ defs).
+        @export(&zfishLimitsPonderMode, .{ .name = "zfish_limits_ponder_mode" });
+        @export(&zfishLimitsPerftValue, .{ .name = "zfish_limits_perft_value" });
+        @export(&zfishLimitsSearchmoveCount, .{ .name = "zfish_limits_searchmove_count" });
     }
 }
 
