@@ -1320,6 +1320,9 @@ comptime {
         @export(&zfishSharedStateNumaPolicyMode, .{ .name = "zfish_shared_state_numa_policy_mode" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
+        // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
+        @export(&zfishNow, .{ .name = "zfish_now" });
+        @export(&zfishEngineChess960Enabled, .{ .name = "zfish_engine_chess960_enabled" });
     }
 }
 
@@ -1634,7 +1637,14 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
     };
 }
 
-extern fn zfish_now() callconv(.c) i64;
+// M-FINAL: zfish_now ported native (default-only). Stockfish::now() = steady_clock ms;
+// CLOCK_MONOTONIC is the Linux steady_clock. now() is used only for elapsed-time (the
+// goldens are fixed depth/nodes, so the absolute value isn't gated — only monotonicity).
+fn zfishNow() callconv(.c) i64 {
+    var ts: std.os.linux.timespec = undefined;
+    _ = std.os.linux.clock_gettime(.MONOTONIC, &ts);
+    return @as(i64, @intCast(ts.sec)) * 1000 + @divTrunc(@as(i64, @intCast(ts.nsec)), 1_000_000);
+}
 extern fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) callconv(.c) c_int;
 
 fn optInt(name: []const u8) c_int {
@@ -1701,6 +1711,10 @@ fn zfishEngineSyzygyPathText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8
 fn zfishEngineEvalfileText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
     _ = engine_ptr;
     return dupOptCString("EvalFile");
+}
+fn zfishEngineChess960Enabled(engine_ptr: *const anyopaque) callconv(.c) u8 {
+    _ = engine_ptr;
+    return if (optInt("UCI_Chess960") != 0) 1 else 0;
 }
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster
@@ -2138,7 +2152,7 @@ pub export fn zfish_search_cb_pv_context(manager: *anyopaque, worker: *anyopaque
     out.hashfull = zfish_tt_hashfull(@ptrFromInt(table), cc, gen, 0);
 
     const start_time = @as(*const i64, @ptrFromInt(@intFromPtr(manager) + graph_layout.search_manager_off.tm)).*;
-    const elapsed = zfish_now() - start_time;
+    const elapsed = zfishNow() - start_time;
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
 

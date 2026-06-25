@@ -667,7 +667,10 @@ struct ZfishSearchTimeState {
 
 // C++ steady_clock now() in milliseconds, so the Zig check_time computes elapsed
 // in the same epoch as the C++-sampled startTime.
+// M-FINAL: zfish_now ported to native CLOCK_MONOTONIC (default build); legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" std::int64_t zfish_now() { return Stockfish::now(); }
+#endif
 
 // iterative_deepening() state snapshot. Layout matches the Zig ZfishIdState
 // extern struct exactly. Filled once at entry on the skill-off path.
@@ -2636,9 +2639,12 @@ int zfish_engine_tt_hashfull(const void* engine_ptr, int max_age) {
       ->hashfull(max_age);
 }
 
+// M-FINAL: ported to native OptionsModel read (default build); legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr) {
     return static_cast<std::uint8_t>(static_cast<int>(static_cast<const Engine*>(engine_ptr)->get_options()["UCI_Chess960"]));
 }
+#endif
 
 void zfish_engine_emit_verify_message(const void*          engine_ptr,
                                       const unsigned char* message_ptr,
