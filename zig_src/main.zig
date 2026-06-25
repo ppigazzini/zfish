@@ -1350,6 +1350,9 @@ comptime {
         // M-FINAL: native AccumulatorCaches construct/destroy (legacy keeps new/delete).
         @export(&zfishEngineAccumulatorCachesCreate, .{ .name = "zfish_engine_accumulator_caches_create" });
         @export(&zfishEngineAccumulatorCachesDestroy, .{ .name = "zfish_engine_accumulator_caches_destroy" });
+        // M-FINAL: native AccumulatorStack construct/destroy (legacy keeps new/delete).
+        @export(&zfishEngineAccumulatorStackCreate, .{ .name = "zfish_engine_accumulator_stack_create" });
+        @export(&zfishEngineAccumulatorStackDestroy, .{ .name = "zfish_engine_accumulator_stack_destroy" });
     }
 }
 
@@ -1838,6 +1841,21 @@ fn zfishEngineAccumulatorCachesCreate(network: *const anyopaque) callconv(.c) ?*
 }
 fn zfishEngineAccumulatorCachesDestroy(caches: ?*anyopaque) callconv(.c) void {
     if (caches) |buf| zfish_operator_delete(buf);
+}
+
+// M-FINAL (construction-crack + init): `new AccumulatorStack()` / `delete` ported native.
+// AccumulatorStack is POD (std::array members + a `size = 1` default member init), so value-init
+// == a zeroed accumulator_stack_size block with size set to 1. zfish_accumulator_stack_reset on
+// a zeroed buffer is exactly that (it sets size=1 and clears state-0's already-zero computed/diff
+// fields), so it reproduces the ctor state. operator new/delete keeps the family matched.
+fn zfishEngineAccumulatorStackCreate() callconv(.c) ?*anyopaque {
+    const buf = zfish_operator_new(graph_layout.accumulator_stack_size) orelse return null;
+    @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.accumulator_stack_size], 0);
+    zfish_accumulator_stack_reset(buf);
+    return buf;
+}
+fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) callconv(.c) void {
+    if (stack) |buf| zfish_operator_delete(buf);
 }
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster

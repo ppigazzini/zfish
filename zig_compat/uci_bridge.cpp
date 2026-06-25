@@ -2199,6 +2199,9 @@ void zfish_engine_tablebases_init(const unsigned char* path_ptr, std::size_t pat
 }
 #endif  // ZFISH_LEGACY_CPP_TARGET
 
+// M-FINAL: ported to native operator new + zfish_accumulator_stack_reset (the AccumulatorStack
+// ctor == zeroed + size 1) / operator delete (zig_src/main.zig). Legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void* zfish_engine_accumulator_stack_create() {
     return new (std::nothrow) Eval::NNUE::AccumulatorStack();
 }
@@ -2206,6 +2209,7 @@ void* zfish_engine_accumulator_stack_create() {
 void zfish_engine_accumulator_stack_destroy(void* stack_ptr) {
     delete static_cast<Eval::NNUE::AccumulatorStack*>(stack_ptr);
 }
+#endif
 
 // M-FINAL: ported to native operator new + zfish_search_clear_refresh_cache (the AccumulatorCaches
 // ctor == clear(network)) / operator delete (zig_src/main.zig). Legacy-oracle-only.
