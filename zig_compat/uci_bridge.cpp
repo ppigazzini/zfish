@@ -2551,9 +2551,13 @@ const char* zfish_engine_thread_allocation_info_text(const void* engine_ptr) {
     return alloc_c_string(value);
 }
 
+// M-FINAL (string-option readers): ported to native OptionsModel string reads (default
+// build); these C++ OptionsMap[] reads are now legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const char* zfish_engine_evalfile_text(const void* engine_ptr) {
     return alloc_c_string(std::string(static_cast<const Engine*>(engine_ptr)->get_options()["EvalFile"]));
 }
+#endif
 
 const char* zfish_engine_numa_config_text(const void* engine_ptr) {
     return alloc_c_string(static_cast<const Engine*>(engine_ptr)->numaContext.get_numa_config().to_string());
@@ -2616,9 +2620,12 @@ void zfish_engine_tt_clear(void* tt_ptr, void* threads_ptr) {
     static_cast<TranspositionTable*>(tt_ptr)->clear(*static_cast<ThreadPool*>(threads_ptr));
 }
 
+// M-FINAL: ported to native OptionsModel string read (default build); legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 char* zfish_engine_syzygy_path_text(const void* engine_ptr) {
     return alloc_c_string(std::string(static_cast<const Engine*>(engine_ptr)->get_options()["SyzygyPath"]));
 }
+#endif
 
 // REPORT-10 M1: the live tt is the native side-allocated one (zfish_engine_tt_ptr),
 // not the C++ Engine's dead `tt` member — read hashfull through the accessor.
@@ -3219,6 +3226,8 @@ std::size_t zfish_shared_state_threads_value(const void* shared_state_ptr) {
 }
 #endif
 
+// M-FINAL: ported to native OptionsModel string read + compare (default build); legacy only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint8_t zfish_shared_state_numa_policy_mode(const void* shared_state_ptr) {
     const auto&       shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
     const std::string numa_policy(shared_state.options["NumaPolicy"]);
@@ -3229,6 +3238,7 @@ std::uint8_t zfish_shared_state_numa_policy_mode(const void* shared_state_ptr) {
         return 1;
     return 2;
 }
+#endif
 
 // Native SharedHistoriesMap ops (zig_src/main.zig). REPORT-10 sharedHists migration: in
 // the default build the engine `sharedHists` member is a native SharedHistoriesMap (not a
