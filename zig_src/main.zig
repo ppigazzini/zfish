@@ -1323,6 +1323,10 @@ comptime {
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
         @export(&zfishNow, .{ .name = "zfish_now" });
         @export(&zfishEngineChess960Enabled, .{ .name = "zfish_engine_chess960_enabled" });
+        // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
+        @export(&zfishEngineTtResize, .{ .name = "zfish_engine_tt_resize" });
+        @export(&zfishEngineTtClear, .{ .name = "zfish_engine_tt_clear" });
+        @export(&zfishEngineTtHashfull, .{ .name = "zfish_engine_tt_hashfull" });
     }
 }
 
@@ -1715,6 +1719,32 @@ fn zfishEngineEvalfileText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
 fn zfishEngineChess960Enabled(engine_ptr: *const anyopaque) callconv(.c) u8 {
     _ = engine_ptr;
     return if (optInt("UCI_Chess960") != 0) 1 else 0;
+}
+
+// M-FINAL: tt clear/resize/hashfull ported to the native tt ops (tt.zig). The engine tt is the
+// native side-allocated buffer (M1; tt_off: cluster_count@0, table@8, generation8@16); the
+// native resize/clear (threaded parallel zero) + hashfull already exist and are the same code
+// the live search uses. Default-only; the legacy oracle keeps the C++ TranspositionTable methods.
+fn zfishEngineTtResize(tt_ptr: *anyopaque, mb: usize, threads: *anyopaque) callconv(.c) void {
+    const base: [*]u8 = @ptrCast(tt_ptr);
+    const table_ptr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.tt_off.table));
+    const count_ptr: *usize = @ptrCast(@alignCast(base + graph_layout.tt_off.cluster_count));
+    const gen_ptr: *u8 = @ptrCast(@alignCast(base + graph_layout.tt_off.generation8));
+    tt_port.resizeState(table_ptr, count_ptr, gen_ptr, mb, threads);
+}
+fn zfishEngineTtClear(tt_ptr: *anyopaque, threads: *anyopaque) callconv(.c) void {
+    const base: [*]u8 = @ptrCast(tt_ptr);
+    const table_ptr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.tt_off.table));
+    const count_ptr: *usize = @ptrCast(@alignCast(base + graph_layout.tt_off.cluster_count));
+    const gen_ptr: *u8 = @ptrCast(@alignCast(base + graph_layout.tt_off.generation8));
+    tt_port.clearState(table_ptr.*, count_ptr.*, gen_ptr, threads);
+}
+fn zfishEngineTtHashfull(engine_ptr: *const anyopaque, max_age: c_int) callconv(.c) c_int {
+    const base: [*]u8 = @ptrCast(zfish_engine_tt_ptr(@constCast(engine_ptr)));
+    const table = @as(*?*anyopaque, @ptrCast(@alignCast(base + graph_layout.tt_off.table))).* orelse return 0;
+    const count = @as(*usize, @ptrCast(@alignCast(base + graph_layout.tt_off.cluster_count))).*;
+    const gen = @as(*u8, @ptrCast(@alignCast(base + graph_layout.tt_off.generation8))).*;
+    return tt_port.hashfull(@ptrCast(@alignCast(table)), count, gen, max_age);
 }
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster

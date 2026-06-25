@@ -2615,6 +2615,9 @@ std::size_t zfish_engine_option_hash_value(const void* options_ptr) {
 }
 #endif
 
+// M-FINAL: tt resize/clear ported to the native tt ops (zig_src/main.zig -> tt.zig) in the
+// default build; these C++ TranspositionTable methods are now legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_tt_resize(void* tt_ptr, std::size_t mb, void* threads_ptr) {
     static_cast<TranspositionTable*>(tt_ptr)->resize(mb, *static_cast<ThreadPool*>(threads_ptr));
 }
@@ -2622,6 +2625,7 @@ void zfish_engine_tt_resize(void* tt_ptr, std::size_t mb, void* threads_ptr) {
 void zfish_engine_tt_clear(void* tt_ptr, void* threads_ptr) {
     static_cast<TranspositionTable*>(tt_ptr)->clear(*static_cast<ThreadPool*>(threads_ptr));
 }
+#endif
 
 // M-FINAL: ported to native OptionsModel string read (default build); legacy-oracle-only.
 #ifdef ZFISH_LEGACY_CPP_TARGET
@@ -2630,14 +2634,16 @@ char* zfish_engine_syzygy_path_text(const void* engine_ptr) {
 }
 #endif
 
-// REPORT-10 M1: the live tt is the native side-allocated one (zfish_engine_tt_ptr),
-// not the C++ Engine's dead `tt` member — read hashfull through the accessor.
+// REPORT-10 M1: the live tt is the native side-allocated one (zfish_engine_tt_ptr).
+// M-FINAL: hashfull ported to the native tt op (tt.zig) in the default build; legacy-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void* zfish_engine_tt_ptr(void* engine_ptr);
 int zfish_engine_tt_hashfull(const void* engine_ptr, int max_age) {
     return static_cast<const TranspositionTable*>(
              zfish_engine_tt_ptr(const_cast<void*>(engine_ptr)))
       ->hashfull(max_age);
 }
+#endif
 
 // M-FINAL: ported to native OptionsModel read (default build); legacy-oracle-only.
 #ifdef ZFISH_LEGACY_CPP_TARGET
