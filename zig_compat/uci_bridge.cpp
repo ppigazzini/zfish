@@ -3214,13 +3214,31 @@ std::uint8_t zfish_shared_state_numa_policy_mode(const void* shared_state_ptr) {
     return 2;
 }
 
+// Native SharedHistoriesMap ops (zig_src/main.zig). REPORT-10 sharedHists migration: in
+// the default build the engine `sharedHists` member is a native SharedHistoriesMap (not a
+// std::map), reached via SharedState.sharedHistories; the C++ std::map clear/try_emplace/
+// at flip to these native calls. The legacy oracle keeps the real std::map (its C++ Worker
+// ctor calls std::map::at), so these are referenced in the default branch only.
+extern "C" void  zfish_native_shared_histories_clear(void* map);
+extern "C" void  zfish_native_shared_histories_insert(void* map, std::size_t numa_index,
+                                                      std::size_t size);
+extern "C" void* zfish_native_shared_histories_at(void* map, std::size_t numa_index);
+
 void zfish_shared_state_clear_histories(const void* shared_state_ptr) {
     const auto& shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
+#ifdef ZFISH_LEGACY_CPP_TARGET
     shared_state.sharedHistories.clear();
+#else
+    // SharedState.sharedHistories points at the native SharedHistoriesMap; &ref yields
+    // that native map pointer (the stored reference value).
+    zfish_native_shared_histories_clear(
+      const_cast<void*>(reinterpret_cast<const void*>(&shared_state.sharedHistories)));
+#endif
 }
 
 // Native-graph cut flip fire 2: shadow verifier (zig_src/main.zig). Diffs the native
-// SharedHistories sizing against this C++ try_emplace result; false = mismatch.
+// SharedHistories sizing against the C++ try_emplace result; false = mismatch. Legacy
+// oracle only (the default build's node IS the native one — nothing to diff against).
 extern "C" bool zfish_shadow_verify_shared_histories(const void* shared, std::size_t thread_count);
 
 void zfish_shared_state_insert_history(const void*  shared_state_ptr,
@@ -3231,6 +3249,7 @@ void zfish_shared_state_insert_history(const void*  shared_state_ptr,
     const auto& shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
     const auto& numa_config  = *static_cast<const NumaConfig*>(numa_config_ptr);
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
     auto insert = [&]() { shared_state.sharedHistories.try_emplace(numa_index, size); };
     if (do_bind != 0)
         numa_config.execute_on_numa_node(numa_index, insert);
@@ -3238,14 +3257,26 @@ void zfish_shared_state_insert_history(const void*  shared_state_ptr,
         insert();
 
     // Shadow-verify the native sizing logic against the freshly built C++ node. The
-    // native builder (constructSharedHistories) is unwired; this proves its sizing
-    // tracks the oracle at every engine construction. Loud abort on divergence.
+    // native builder (constructSharedHistories) is unwired in legacy; this proves its
+    // sizing tracks the oracle at every engine construction. Loud abort on divergence.
     if (!zfish_shadow_verify_shared_histories(&shared_state.sharedHistories.at(numa_index), size)) {
         std::fprintf(stderr,
                      "zfish: shared_histories shadow verify failed (numa=%zu size=%zu)\n",
                      numa_index, size);
         std::abort();
     }
+#else
+    // Default build: insert into the native SharedHistoriesMap, preserving the NUMA-node
+    // binding so each node's large-page DynStats arrays are allocated node-local (the same
+    // execute_on_numa_node wrapper the C++ try_emplace used).
+    void* native_map =
+      const_cast<void*>(reinterpret_cast<const void*>(&shared_state.sharedHistories));
+    auto insert = [&]() { zfish_native_shared_histories_insert(native_map, numa_index, size); };
+    if (do_bind != 0)
+        numa_config.execute_on_numa_node(numa_index, insert);
+    else
+        insert();
+#endif
 }
 
 std::uint8_t zfish_numa_config_suggests_binding_threads(const void* numa_config_ptr,
@@ -3317,7 +3348,10 @@ void zfish_native_worker_build(void* ctx_ptr, std::size_t idx, void* thread) {
     void* raw = aligned_large_pages_alloc(sizeof(Search::Worker));
     zfish_worker_construct_full(
       raw,
-      reinterpret_cast<std::size_t>(&ss.sharedHistories.at(0)),
+      // Native SharedHistoriesMap.at(0): SharedState.sharedHistories is the native map in
+      // the default build (REPORT-10 sharedHists migration). &ref yields the map pointer.
+      reinterpret_cast<std::size_t>(
+        zfish_native_shared_histories_at(reinterpret_cast<void*>(&ss.sharedHistories), 0)),
       reinterpret_cast<std::size_t>(&ss.options),
       reinterpret_cast<std::size_t>(&ss.threads),
       reinterpret_cast<std::size_t>(&ss.tt),
