@@ -92,6 +92,7 @@ pub fn main(init: std.process.Init) !void {
     defer memory_port.stdAlignedFree(engine);
 
     zfish_uci_engine_construct_at(engine, @intCast(argc), argv.ptr);
+    defer freeSideTt(); // M1: free the side tt AFTER the engine destruct (LIFO)
     defer zfish_uci_engine_destruct_at(engine);
 
     uci_port.loopRuntime(engine);
@@ -1313,8 +1314,28 @@ pub export fn zfish_engine_states_slot_ptr(engine: *anyopaque) *anyopaque {
 pub export fn zfish_engine_threads_ptr(engine: *anyopaque) *anyopaque {
     return engMember(engine, eng_off.threads);
 }
+// REPORT-10 M1 (tt migration, side-allocation): the engine's tt is now a NATIVE
+// side-allocated TranspositionTable, not the C++ Engine's embedded `tt` member. The
+// engine is a singleton on the gate, so a freed-and-rezeroed global suffices. Layout
+// matches the C++ TT (tt_off: cluster_count@0, table@8, generation@16) since the C++
+// SharedState binds this pointer; 64 bytes generously covers sizeof(TranspositionTable).
+// init_body resizes it through this accessor; the C++ Engine's tt stays dead until
+// M-FINAL. Native ops (resizeState/clearState/probe) operate via tt_off; sizing is the
+// SAME native code, so the side tt is bit-identical (bench 2336177 gates it).
+var side_tt_storage: [64]u8 align(64) = [_]u8{0} ** 64;
+
 pub export fn zfish_engine_tt_ptr(engine: *anyopaque) *anyopaque {
-    return engMember(engine, eng_off.tt);
+    _ = engine; // the side tt replaces the C++ engine tt member
+    return @ptrCast(&side_tt_storage);
+}
+
+// Free the side tt's large-page table at engine teardown + rezero for any re-construct
+// (H5/valgrind). The table pointer lives at tt_off.table within the side storage.
+fn freeSideTt() void {
+    const table_ptr: *?*anyopaque =
+        @ptrCast(@alignCast(side_tt_storage[graph_layout.tt_off.table..][0..8]));
+    if (table_ptr.*) |tbl| zfish_aligned_large_pages_free(tbl);
+    @memset(&side_tt_storage, 0);
 }
 pub export fn zfish_engine_shared_hists_ptr(engine: *anyopaque) *anyopaque {
     return engMember(engine, eng_off.shared_hists);
