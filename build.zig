@@ -234,6 +234,13 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // Native NumaReplicationContext (the `numa_context` member; B2 switch).
+    const numa_replication_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/numa_replication.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    numa_replication_module.addImport("numa_config", numa_config_module);
     // Native PositionStorage (post-src/ owner of the `pos` member's 1032B block).
     const position_storage_module = b.createModule(.{
         .root_source_file = b.path("zig_build/board/position_storage.zig"),
@@ -278,6 +285,7 @@ pub fn build(b: *std.Build) void {
         pair[0].addImport("tt", tt_module);
         pair[0].addImport("state_list", state_list_module);
         pair[0].addImport("numa_config", numa_config_module);
+        pair[0].addImport("numa_replication", numa_replication_module);
         pair[0].addImport("position_storage", position_storage_module);
     }
 
@@ -294,6 +302,7 @@ pub fn build(b: *std.Build) void {
     graph_test.root_module.addImport("tt", tt_module);
     graph_test.root_module.addImport("state_list", state_list_module);
     graph_test.root_module.addImport("numa_config", numa_config_module);
+    graph_test.root_module.addImport("numa_replication", numa_replication_module);
     graph_test.root_module.addImport("position_storage", position_storage_module);
     const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
     graph_test_step.dependOn(&b.addRunArtifact(graph_test).step);
