@@ -1316,6 +1316,10 @@ comptime {
         @export(&zfishOptionsSyzygyProbeDepth, .{ .name = "zfish_options_syzygy_probe_depth" });
         @export(&zfishOptionsSyzygyProbeLimit, .{ .name = "zfish_options_syzygy_probe_limit" });
         @export(&zfishOptionsSyzygy50MoveRule, .{ .name = "zfish_options_syzygy_50_move_rule" });
+        // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
+        @export(&zfishSharedStateNumaPolicyMode, .{ .name = "zfish_shared_state_numa_policy_mode" });
+        @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
+        @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
     }
 }
 
@@ -1663,6 +1667,40 @@ fn zfishOptionsSyzygyProbeLimit(options_ptr: *const anyopaque) callconv(.c) c_in
 fn zfishOptionsSyzygy50MoveRule(options_ptr: *const anyopaque) callconv(.c) u8 {
     _ = options_ptr;
     return if (optInt("Syzygy50MoveRule") != 0) 1 else 0;
+}
+
+// M-FINAL (string-option readers): the OptionsMap[] string reads via the native model.
+extern fn zfish_optmodel_string_by_name(name_ptr: [*]const u8, name_len: usize, out_len: *usize) callconv(.c) [*]const u8;
+fn optStr(name: []const u8) []const u8 {
+    var len: usize = 0;
+    const p = zfish_optmodel_string_by_name(name.ptr, name.len, &len);
+    return p[0..len];
+}
+// Duplicate the model's string value into a malloc'd C string the Zig caller frees with
+// std.c.free — identical to the C++ alloc_c_string (std::malloc) the callers expected, so
+// the malloc/free pairing is preserved (no valgrind allocator-boundary mismatch).
+fn dupOptCString(name: []const u8) ?[*:0]u8 {
+    const s = optStr(name);
+    const buf = std.c.malloc(s.len + 1) orelse return null;
+    const dst: [*]u8 = @ptrCast(buf);
+    @memcpy(dst[0..s.len], s);
+    dst[s.len] = 0;
+    return @ptrCast(dst);
+}
+fn zfishSharedStateNumaPolicyMode(shared_state_ptr: *const anyopaque) callconv(.c) u8 {
+    _ = shared_state_ptr;
+    const policy = optStr("NumaPolicy");
+    if (std.mem.eql(u8, policy, "none")) return 0;
+    if (std.mem.eql(u8, policy, "auto")) return 1;
+    return 2;
+}
+fn zfishEngineSyzygyPathText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
+    _ = engine_ptr;
+    return dupOptCString("SyzygyPath");
+}
+fn zfishEngineEvalfileText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
+    _ = engine_ptr;
+    return dupOptCString("EvalFile");
 }
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster

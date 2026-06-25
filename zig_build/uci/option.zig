@@ -53,6 +53,15 @@ pub export fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize)
     return ensureModel().getInt(name_ptr[0..name_len]);
 }
 
+// Read an option's current string value by name (M-FINAL: the native replacement for the
+// OptionsMap[] string reads — NumaPolicy / SyzygyPath / EvalFile). Returns the model's own
+// slice (no allocation); writes the length to out_len. Empty/absent → len 0.
+pub export fn zfish_optmodel_string_by_name(name_ptr: [*]const u8, name_len: usize, out_len: *usize) [*]const u8 {
+    const s = ensureModel().getString(name_ptr[0..name_len]);
+    out_len.* = s.len;
+    return s.ptr;
+}
+
 pub export fn zfish_optmodel_current_len(idx: usize) usize {
     return ensureModel().currentByIndex(idx).len;
 }
