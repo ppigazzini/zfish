@@ -300,6 +300,16 @@ pub fn build(b: *std.Build) void {
     });
     numa_repl_test.root_module.addImport("numa_config", numa_config_module);
     graph_test_step.dependOn(&b.addRunArtifact(numa_repl_test).step);
+    // B2 switch: native sharedHists map container (std-only generic; tested with a mock
+    // entry). board/position.zig instantiates it with the real SharedHistories.
+    const sh_map_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig_build/support/shared_histories_map.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    graph_test_step.dependOn(&b.addRunArtifact(sh_map_test).step);
 
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);
