@@ -28,13 +28,14 @@ const SearchManager = sm.SearchManager;
 const SharedState = @import("shared_state.zig").SharedState;
 pub const StateList = @import("state_list").StateList;
 pub const NumaConfig = @import("numa_config").NumaConfig;
+pub const NumaReplicationContext = @import("numa_replication").NumaReplicationContext;
 pub const PositionStorage = @import("position_storage").PositionStorage;
 
 // Full native member map of the C++ Engine, in declaration order, with each
 // member's native-ownership status for the cut (REPORT-9 Annex B, ITERATION-157):
 //
 //   binary_directory  const std::string                    -> []const u8         [trivial slot]
-//   numa_context      NumaReplicationContext (std::set)     -> *NumaConfig        [native type DONE, iter 3]
+//   numa_context      NumaReplicationContext (std::set)     -> *NumaReplicationContext [native, B2 step 1]
 //   position          Position (1032B)                      -> *PositionStorage   [native storage DONE, iter 5]
 //   states            unique_ptr<deque<StateInfo>>          -> *StateList         [native type DONE, iter 1]
 //   options           OptionsMap (std::map)                 -> *anyopaque (Model) [native store exists]
@@ -51,7 +52,7 @@ pub const PositionStorage = @import("position_storage").PositionStorage;
 // rewires the ~226 bridge accessors to it.
 pub const EngineGraph = struct {
     binary_directory: []const u8,
-    numa_context: *NumaConfig, // native NUMA topology (iter 3)
+    numa_context: *NumaReplicationContext, // native NUMA context: config + replica registry
     position: *PositionStorage, // native owner of the 1032B Position block (iter 5)
     states: *StateList, // native deque<StateInfo> replacement (iter 1)
     options: *anyopaque, // OptionsModel
@@ -103,9 +104,9 @@ pub const EngineGraph = struct {
         states.* = try StateList.init(allocator); // one root StateInfo (deque(1))
         errdefer states.deinit();
 
-        const numa = try allocator.create(NumaConfig);
+        const numa = try allocator.create(NumaReplicationContext);
         errdefer allocator.destroy(numa);
-        numa.* = try NumaConfig.fromSystem(allocator); // single-node on the target
+        numa.* = NumaReplicationContext.init(allocator, try NumaConfig.fromSystem(allocator));
         errdefer numa.deinit();
 
         const position = try allocator.create(PositionStorage);
@@ -165,7 +166,7 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
     var pool: ThreadPool = undefined;
     var states = try StateList.init(testing.allocator);
     defer states.deinit();
-    var numa = NumaConfig.empty(testing.allocator);
+    var numa = NumaReplicationContext.init(testing.allocator, NumaConfig.empty(testing.allocator));
     defer numa.deinit();
 
     var graph = EngineGraph{
@@ -196,7 +197,7 @@ test "EngineGraph mints main and null managers without a vtable" {
     var dummy: u32 = 0;
     var states = try StateList.init(testing.allocator);
     defer states.deinit();
-    var numa = NumaConfig.empty(testing.allocator);
+    var numa = NumaReplicationContext.init(testing.allocator, NumaConfig.empty(testing.allocator));
     defer numa.deinit();
     var position = PositionStorage.zeroed();
     var graph = EngineGraph{
@@ -241,7 +242,7 @@ test "EngineGraph.init builds+owns states/numa/position; deinit frees them" {
     // owned members were natively constructed
     try testing.expect(graph.states.hasStates());
     try testing.expectEqual(@as(usize, 1), graph.states.len()); // deque(1) root
-    try testing.expectEqual(@as(usize, 1), graph.numa_context.numNodes()); // single node
+    try testing.expectEqual(@as(usize, 1), graph.numa_context.getNumaConfig().numNodes()); // single node
     try testing.expectEqual(@as(usize, 0), @intFromPtr(graph.position.ptr()) % 8); // aligned
     try testing.expectEqual(@as(usize, 0), graph.tt.cluster_count); // empty until resize
     // referenced subsystems are bound, not owned
