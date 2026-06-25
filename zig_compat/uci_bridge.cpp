@@ -2621,8 +2621,13 @@ char* zfish_engine_syzygy_path_text(const void* engine_ptr) {
     return alloc_c_string(std::string(static_cast<const Engine*>(engine_ptr)->get_options()["SyzygyPath"]));
 }
 
+// REPORT-10 M1: the live tt is the native side-allocated one (zfish_engine_tt_ptr),
+// not the C++ Engine's dead `tt` member — read hashfull through the accessor.
+extern "C" void* zfish_engine_tt_ptr(void* engine_ptr);
 int zfish_engine_tt_hashfull(const void* engine_ptr, int max_age) {
-    return static_cast<const Engine*>(engine_ptr)->tt.hashfull(max_age);
+    return static_cast<const TranspositionTable*>(
+             zfish_engine_tt_ptr(const_cast<void*>(engine_ptr)))
+      ->hashfull(max_age);
 }
 
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr) {
