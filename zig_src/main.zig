@@ -1347,6 +1347,9 @@ comptime {
         // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
         @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
         @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
+        // M-FINAL: native AccumulatorCaches construct/destroy (legacy keeps new/delete).
+        @export(&zfishEngineAccumulatorCachesCreate, .{ .name = "zfish_engine_accumulator_caches_create" });
+        @export(&zfishEngineAccumulatorCachesDestroy, .{ .name = "zfish_engine_accumulator_caches_destroy" });
     }
 }
 
@@ -1816,6 +1819,25 @@ fn zfishPositionCreate() callconv(.c) ?*anyopaque {
 }
 fn zfishPositionDestroy(pos: ?*anyopaque) callconv(.c) void {
     if (pos) |p| zfish_operator_delete(p);
+}
+
+// M-FINAL (construction-crack): `new AccumulatorCaches(network)` / `delete` ported native. The
+// C++ ctor just clears every cache entry from the network FT biases (clear(network)); the
+// native zfish_search_clear_refresh_cache (the same fill the Worker's refreshTable uses) does
+// exactly that over the accumulator_caches_size block from the native FT biases (the loaded net
+// == network). operator new/delete keeps the alloc/free family matched. Default-only.
+fn zfishEngineAccumulatorCachesCreate(network: *const anyopaque) callconv(.c) ?*anyopaque {
+    _ = network; // the native fill uses the native FT biases (same loaded net)
+    const buf = zfish_operator_new(graph_layout.accumulator_caches_size) orelse return null;
+    const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse {
+        zfish_operator_delete(buf);
+        return null;
+    }));
+    zfish_search_clear_refresh_cache(buf, biases);
+    return buf;
+}
+fn zfishEngineAccumulatorCachesDestroy(caches: ?*anyopaque) callconv(.c) void {
+    if (caches) |buf| zfish_operator_delete(buf);
 }
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster

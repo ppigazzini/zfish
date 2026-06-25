@@ -2207,6 +2207,9 @@ void zfish_engine_accumulator_stack_destroy(void* stack_ptr) {
     delete static_cast<Eval::NNUE::AccumulatorStack*>(stack_ptr);
 }
 
+// M-FINAL: ported to native operator new + zfish_search_clear_refresh_cache (the AccumulatorCaches
+// ctor == clear(network)) / operator delete (zig_src/main.zig). Legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void* zfish_engine_accumulator_caches_create(const void* network_ptr) {
     return new (std::nothrow)
       Eval::NNUE::AccumulatorCaches(*static_cast<const Eval::NNUE::Network*>(network_ptr));
@@ -2215,6 +2218,7 @@ void* zfish_engine_accumulator_caches_create(const void* network_ptr) {
 void zfish_engine_accumulator_caches_destroy(void* caches_ptr) {
     delete static_cast<Eval::NNUE::AccumulatorCaches*>(caches_ptr);
 }
+#endif
 
 }
 
