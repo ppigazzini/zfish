@@ -289,6 +289,16 @@ pub fn build(b: *std.Build) void {
     graph_test.root_module.addImport("position_storage", position_storage_module);
     const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
     graph_test_step.dependOn(&b.addRunArtifact(graph_test).step);
+    // Phase B: the native NNUE loader (standalone, std-only) — its tests join the cut
+    // runner so the deserializer can't bitrot before the FT/layer parse fires wire it.
+    const nnue_load_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig_build/eval/nnue_load.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    graph_test_step.dependOn(&b.addRunArtifact(nnue_load_test).step);
 
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);
