@@ -3841,7 +3841,11 @@ void zfish_graph_verify_layouts();
 // placement new), so the constructed graph is byte-identical and parity is
 // preserved; what moved to Zig is the storage, the lifetime, and the seam that
 // later milestones (6b+) use to peel member construction out of the C++ ctor.
+// M-FINAL: sizeof(UCIEngine) is now the native graph_layout.uci_engine_size constant
+// (zig_src/main.zig); this C++ source-of-truth def is kept legacy-only. alignof stays C++.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_uci_engine_sizeof() { return sizeof(Stockfish::UCIEngine); }
+#endif
 std::size_t zfish_uci_engine_alignof() { return alignof(Stockfish::UCIEngine); }
 
 void zfish_uci_engine_construct_at(void* storage, int argc, char* const* argv) {
