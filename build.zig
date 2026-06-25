@@ -289,6 +289,17 @@ pub fn build(b: *std.Build) void {
     graph_test.root_module.addImport("position_storage", position_storage_module);
     const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
     graph_test_step.dependOn(&b.addRunArtifact(graph_test).step);
+    // B2 switch: native NumaReplicationContext (numaContext member) — tests need the
+    // numa_config dep, so they run via test-graph rather than standalone.
+    const numa_repl_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig_build/support/numa_replication.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    numa_repl_test.root_module.addImport("numa_config", numa_config_module);
+    graph_test_step.dependOn(&b.addRunArtifact(numa_repl_test).step);
 
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);
