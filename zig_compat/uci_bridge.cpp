@@ -1996,9 +1996,13 @@ void zfish_threadpool_set_stop_flag(void* pool_ptr, std::uint8_t stop) {
 // this pointer using the search_manager_off offset map. Defined for both builds
 // (legacy keeps the C++ field shims below). The native shims gate themselves to
 // the default build to avoid clashing with the legacy definitions.
+// M-FINAL: ported to native offset navigation (zig_src/main.zig) in the default build;
+// this C++ wrapper is now legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void* zfish_threadpool_main_manager_ptr(void* pool_ptr) {
     return static_cast<ThreadPool*>(pool_ptr)->main_manager();
 }
+#endif
 
 #ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_main_manager_set_stop_on_ponderhit(void*       pool_ptr,
