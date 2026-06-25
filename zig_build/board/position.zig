@@ -5,10 +5,12 @@ const tt = @import("tt");
 const movepick = @import("movepick");
 const search = @import("search");
 const shared_hist = @import("shared_histories"); // native SharedHistories sizing (cut)
+const shared_histories_map = @import("shared_histories_map"); // native sharedHists map (cut)
 
-// Large-page allocator export used by the native SharedHistories construction
-// (mirrors C++ make_unique_large_page<T[]> over aligned_large_pages_alloc).
+// Large-page allocator exports used by the native SharedHistories construction
+// (mirrors C++ make_unique_large_page<T[]> over aligned_large_pages_alloc/free).
 extern fn zfish_aligned_large_pages_alloc(byte_count: usize) ?*anyopaque;
+extern fn zfish_aligned_large_pages_free(ptr: ?*anyopaque) void;
 
 // Force-compile the native StateInfo leaf node so its 192-byte layout assert is
 // build-verified rather than dead source (part of the post-src/ object graph).
@@ -180,7 +182,10 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
     const pawn_bytes = sizes.pawn * hist_pieceto * @sizeOf(i16);
 
     const corr_ptr = zfish_aligned_large_pages_alloc(corr_bytes) orelse return error.OutOfMemory;
-    const pawn_ptr = zfish_aligned_large_pages_alloc(pawn_bytes) orelse return error.OutOfMemory;
+    const pawn_ptr = zfish_aligned_large_pages_alloc(pawn_bytes) orelse {
+        zfish_aligned_large_pages_free(corr_ptr); // don't leak corr if pawn alloc fails
+        return error.OutOfMemory;
+    };
 
     return .{
         .corr_size = sizes.corr,
@@ -191,6 +196,18 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
         .pawn_hist_size_minus1 = sizes.pawn - 1,
     };
 }
+
+// Release a SharedHistories' two large-page arrays — the free hook the native
+// sharedHists map (SharedHistoriesMap) calls per element on erase/clear (~map<>).
+pub fn deinitSharedHistories(sh: *SharedHistories) void {
+    zfish_aligned_large_pages_free(@ptrCast(sh.corr_data));
+    zfish_aligned_large_pages_free(@ptrCast(sh.pawn_data));
+    sh.* = undefined;
+}
+
+// The native engine `sharedHists` member: NumaIndex -> SharedHistories, built with the
+// large-page-backed construct/free hooks. UNWIRED until the atomic repoint.
+pub const SharedHistoriesMap = shared_histories_map.SharedHistoriesMapOf(SharedHistories);
 
 // Shadow verifier: read a constructed (C++ try_emplace) SharedHistories through the
 // native mirror and confirm its four size fields match the native sizing for

@@ -247,6 +247,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     position_module.addImport("shared_histories", shared_histories_module);
+    // Native sharedHists map container (the `sharedHists` member type), instantiated in
+    // position.zig with the real SharedHistories.
+    const shared_histories_map_module = b.createModule(.{
+        .root_source_file = b.path("zig_build/support/shared_histories_map.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    position_module.addImport("shared_histories_map", shared_histories_map_module);
     // Native network holder (the `network` member: LazyNumaReplicated<Network> shape +
     // replica-count shadow verifier).
     const network_holder_module = b.createModule(.{
