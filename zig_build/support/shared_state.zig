@@ -37,6 +37,33 @@ comptime {
     std.debug.assert(@sizeOf(SharedState) == 40);
 }
 
+// REPORT-10 M-HUB: the LIVE SharedState handed to the workers is now this native
+// 40-byte struct, not the C++ Search::SharedState (which was just 5 references, no
+// methods — byte-identical, proven by zfish_verify_shared_state_native). The bridge's
+// zfish_search_shared_state_create routes here; the workers bind it by reference and
+// read the same 5 pointers. This makes the SharedState a type-AGNOSTIC pointer bundle,
+// so its member subsystems can become native types pointed-to (the dependency unblock).
+// One engine, one search at a time (sequential go commands; the workers only READ the
+// SharedState during a search), so a single static instance reproduces the C++
+// new/delete lifetime without an allocator (keeps shared_state.zig libc-free for the
+// test-graph artifact). The SharedState is rebuilt per search and never aliased.
+var live_shared_state: SharedState = undefined;
+
+export fn zfish_shared_state_native_create(
+    options: *anyopaque,
+    threads: *anyopaque,
+    tt: *anyopaque,
+    shared_histories: *anyopaque,
+    network: *anyopaque,
+) ?*anyopaque {
+    live_shared_state = SharedState.init(options, threads, tt, shared_histories, network);
+    return @ptrCast(&live_shared_state);
+}
+
+export fn zfish_shared_state_native_destroy(ss: ?*anyopaque) void {
+    _ = ss; // static storage — nothing to free (lifetime is the static itself)
+}
+
 // Self-check: build a native SharedState from the same five referents the C++
 // SharedState was constructed with and assert all 40 bytes match. Proves the
 // native field order/layout reproduces the C++ SharedState the bridge constructs.
