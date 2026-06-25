@@ -54,7 +54,13 @@ extern fn zfish_bitboards_init() void;
 // drives its lifetime as alloc -> construct -> use -> destruct -> free. The C++
 // UCIEngine ctor/dtor still run (placement), so the graph is byte-identical; the
 // storage and lifetime are now Zig's.
-extern fn zfish_uci_engine_sizeof() usize;
+// M-FINAL: sizeof(UCIEngine) ported to the native graph_layout constant (default-only; legacy
+// keeps the C++ sizeof as source-of-truth, cross-checked via oracle-parity). The engine storage
+// alloc below uses it, so a wrong size corrupts/crashes the engine -- fully gate-verified. alignof
+// stays the C++ value (its exact magnitude isn't pinned by a constant; keep the source of truth).
+fn zfish_uci_engine_sizeof() usize {
+    return graph_layout.uci_engine_size;
+}
 extern fn zfish_uci_engine_alignof() usize;
 extern fn zfish_uci_engine_construct_at(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void;
 extern fn zfish_uci_engine_destruct_at(storage: *anyopaque) void;
