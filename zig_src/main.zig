@@ -1247,6 +1247,17 @@ fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
     return @ptrFromInt(slot.*);
 }
 
+// M-FINAL: pool->main_manager() = main_thread()->worker->main_manager() as native offset
+// navigation: thread[0] -> worker@thread_off.worker -> manager@worker_off.manager (the
+// unique_ptr<ISearchManager>'s stored pointer == the SearchManager* for the main thread).
+// Default-only; the legacy oracle keeps the C++ ThreadPool::main_manager() method.
+fn zfishThreadpoolMainManagerPtr(pool: *anyopaque) callconv(.c) ?*anyopaque {
+    const thread0 = tpThreadAt(pool, 0);
+    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread0) + graph_layout.thread_off.worker)).*;
+    if (worker == 0) return null;
+    return @ptrFromInt(@as(*const usize, @ptrFromInt(worker + graph_layout.worker_off.manager)).*);
+}
+
 // Stage-7 7.1: native-inert tablebase probe entry points for the default build.
 // The Zig runtime ships no Syzygy tablebases (max cardinality 0 -> the native
 // probe path short-circuits before ever probing), so these report "unavailable"
@@ -1327,6 +1338,8 @@ comptime {
         @export(&zfishEngineTtResize, .{ .name = "zfish_engine_tt_resize" });
         @export(&zfishEngineTtClear, .{ .name = "zfish_engine_tt_clear" });
         @export(&zfishEngineTtHashfull, .{ .name = "zfish_engine_tt_hashfull" });
+        // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
+        @export(&zfishThreadpoolMainManagerPtr, .{ .name = "zfish_threadpool_main_manager_ptr" });
     }
 }
 
