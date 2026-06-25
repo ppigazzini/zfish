@@ -3206,9 +3206,13 @@ int zfish_options_syzygy_probe_limit(const void* options_ptr) {
 }
 #endif
 
+// M-FINAL: ported to native operator new/delete of a zeroed position_size block
+// (zig_src/main.zig); Position is POD with a trivial defaulted ctor. Legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void* zfish_position_create() { return new Position(); }
 
 void zfish_position_destroy(void* pos_ptr) { delete static_cast<Position*>(pos_ptr); }
+#endif
 
 // Stage-7 7.2d: legacy-only. The default build resets the pool for reconfigure via
 // the native zfish_native_threadpool_clear (thread.zig comptime-prunes the legacy

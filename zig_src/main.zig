@@ -1344,6 +1344,9 @@ comptime {
         // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
         @export(&zfishMakeSearchManager, .{ .name = "zfish_make_search_manager" });
         @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
+        // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
+        @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
+        @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
     }
 }
 
@@ -1799,6 +1802,20 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
     const mgr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.manager));
     if (mgr.*) |m| zfish_operator_delete(m);
     zfish_aligned_large_pages_free(w);
+}
+
+// M-FINAL (construction-crack pattern): `new Position()` / `delete` ported native. Position
+// has a defaulted trivial ctor and owns no heap (board arrays + pointers; StateListPtr is a
+// type alias, not a member), so value-init == a zeroed position_size (1032B) block. operator
+// new/delete keeps the alloc/free family matched (the trace_pos / pool throwaway Position is
+// destroyed via zfish_position_destroy). Default-only; legacy keeps new/delete Position.
+fn zfishPositionCreate() callconv(.c) ?*anyopaque {
+    const buf = zfish_operator_new(graph_layout.position_size) orelse return null;
+    @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.position_size], 0);
+    return buf;
+}
+fn zfishPositionDestroy(pos: ?*anyopaque) callconv(.c) void {
+    if (pos) |p| zfish_operator_delete(p);
 }
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster
