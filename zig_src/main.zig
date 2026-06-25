@@ -1299,8 +1299,17 @@ fn engMemberConst(engine: *const anyopaque, offset: usize) *const anyopaque {
     return @ptrCast(@as([*]const u8, @ptrCast(engine)) + offset);
 }
 
+// REPORT-10 (pos migration): the engine `pos` is now a NATIVE side-allocated Position
+// block, not the C++ Engine's embedded `pos` member. sizeof(Position)==1032; Position is
+// POD-ish (its `st` points to the separate states list — no owned heap), so a zeroed
+// static block needs no teardown free, and init_body's pos.set(StartFEN) fills it through
+// this accessor. The native position ops (position.zig) operate on it; setPosition /
+// start_thinking / fen all reach it via this accessor. The C++ Engine pos stays dead.
+var side_pos_storage: [1032]u8 align(64) = [_]u8{0} ** 1032;
+
 pub export fn zfish_engine_position_ptr(engine: *anyopaque) *anyopaque {
-    return engMember(engine, eng_off.pos);
+    _ = engine; // the side Position block replaces the C++ engine pos member
+    return @ptrCast(&side_pos_storage);
 }
 pub export fn zfish_engine_options_ptr(engine: *const anyopaque) *const anyopaque {
     return engMemberConst(engine, eng_off.options);

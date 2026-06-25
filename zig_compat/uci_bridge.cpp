@@ -3006,7 +3006,9 @@ std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
     auto* engine = static_cast<Engine*>(engine_ptr);
     zfish_engine_verify_network_method(engine);
 
-    const char* rendered_fen = zfish_engine_fen(&engine->pos);
+    // REPORT-10 pos migration: read the live (native side-allocated) pos via the
+    // accessor, not the dead C++ engine->pos member.
+    const char* rendered_fen = zfish_engine_fen(zfish_engine_position_ptr(engine_ptr));
     if (!rendered_fen)
         std::abort();
 
