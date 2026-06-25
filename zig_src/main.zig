@@ -1310,6 +1310,12 @@ comptime {
         @export(&zfishLimitsPonderMode, .{ .name = "zfish_limits_ponder_mode" });
         @export(&zfishLimitsPerftValue, .{ .name = "zfish_limits_perft_value" });
         @export(&zfishLimitsSearchmoveCount, .{ .name = "zfish_limits_searchmove_count" });
+        // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
+        @export(&zfishEngineOptionHashValue, .{ .name = "zfish_engine_option_hash_value" });
+        @export(&zfishSharedStateThreadsValue, .{ .name = "zfish_shared_state_threads_value" });
+        @export(&zfishOptionsSyzygyProbeDepth, .{ .name = "zfish_options_syzygy_probe_depth" });
+        @export(&zfishOptionsSyzygyProbeLimit, .{ .name = "zfish_options_syzygy_probe_limit" });
+        @export(&zfishOptionsSyzygy50MoveRule, .{ .name = "zfish_options_syzygy_50_move_rule" });
     }
 }
 
@@ -1629,6 +1635,34 @@ extern fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) cal
 
 fn optInt(name: []const u8) c_int {
     return zfish_optmodel_int_by_name(name.ptr, name.len);
+}
+
+// M-FINAL (option readers): the OptionsMap["..."] readers ported to native-model reads.
+// The native OptionsModel (option.zig) is the default-build write-authority shadow —
+// every option is registered at OptionsMap::add and re-published on setoption — so reading
+// it by name is equivalent to the C++ OptionsMap operator[] (oracle-parity default==legacy
+// guards this; bench gates Hash/Threads since they size the TT / thread pool). Default-only
+// exports (comptime block below); the legacy oracle keeps the C++ OptionsMap reads. The
+// `options`/`shared_state` pointer args are unused (the model is a process-global).
+fn zfishEngineOptionHashValue(options_ptr: *const anyopaque) callconv(.c) usize {
+    _ = options_ptr;
+    return @intCast(optInt("Hash"));
+}
+fn zfishSharedStateThreadsValue(shared_state_ptr: *const anyopaque) callconv(.c) usize {
+    _ = shared_state_ptr;
+    return @intCast(optInt("Threads"));
+}
+fn zfishOptionsSyzygyProbeDepth(options_ptr: *const anyopaque) callconv(.c) c_int {
+    _ = options_ptr;
+    return optInt("SyzygyProbeDepth");
+}
+fn zfishOptionsSyzygyProbeLimit(options_ptr: *const anyopaque) callconv(.c) c_int {
+    _ = options_ptr;
+    return optInt("SyzygyProbeLimit");
+}
+fn zfishOptionsSyzygy50MoveRule(options_ptr: *const anyopaque) callconv(.c) u8 {
+    _ = options_ptr;
+    return if (optInt("Syzygy50MoveRule") != 0) 1 else 0;
 }
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster

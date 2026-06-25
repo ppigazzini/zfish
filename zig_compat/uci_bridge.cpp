@@ -2600,9 +2600,13 @@ void zfish_search_shared_state_destroy(void* shared_state_ptr) {
     zfish_shared_state_native_destroy(shared_state_ptr);
 }
 
+// M-FINAL (option readers): ported to native OptionsModel reads (zig_src/main.zig) in the
+// default build; the C++ OptionsMap[] reads below are now legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_engine_option_hash_value(const void* options_ptr) {
     return static_cast<std::size_t>((*static_cast<const OptionsMap*>(options_ptr))["Hash"]);
 }
+#endif
 
 void zfish_engine_tt_resize(void* tt_ptr, std::size_t mb, void* threads_ptr) {
     static_cast<TranspositionTable*>(tt_ptr)->resize(mb, *static_cast<ThreadPool*>(threads_ptr));
@@ -3162,6 +3166,9 @@ extern "C" std::size_t zfish_limits_searchmoves_bytes(void) {
 // (the std::set element count at +40) from config (at context offset 0).
 // Bridge-only symbol, no gating.
 
+// M-FINAL (option readers): ported to native OptionsModel reads (default build); these C++
+// OptionsMap[] reads are now legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint8_t zfish_options_syzygy_50_move_rule(const void* options_ptr) {
     return static_cast<std::uint8_t>(
       bool((*static_cast<const OptionsMap*>(options_ptr))["Syzygy50MoveRule"]));
@@ -3174,6 +3181,7 @@ int zfish_options_syzygy_probe_depth(const void* options_ptr) {
 int zfish_options_syzygy_probe_limit(const void* options_ptr) {
     return int((*static_cast<const OptionsMap*>(options_ptr))["SyzygyProbeLimit"]);
 }
+#endif
 
 void* zfish_position_create() { return new Position(); }
 
@@ -3203,10 +3211,13 @@ void zfish_threadpool_bound_nodes_assign(void* pool_ptr,
     pool->boundThreadToNumaNode.assign(nodes_ptr, nodes_ptr + count);
 }
 
+// M-FINAL (option reader): ported to native OptionsModel read (default build); legacy only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_shared_state_threads_value(const void* shared_state_ptr) {
     const auto& shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
     return static_cast<std::size_t>(shared_state.options["Threads"]);
 }
+#endif
 
 std::uint8_t zfish_shared_state_numa_policy_mode(const void* shared_state_ptr) {
     const auto&       shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
