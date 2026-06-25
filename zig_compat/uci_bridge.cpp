@@ -2579,30 +2579,25 @@ const void* zfish_numa_context_config(const void* numa_context_ptr) {
 
 extern "C" void zfish_verify_shared_state_native(const void*, void*, void*, void*, void*, void*);
 
+// REPORT-10 M-HUB: the live SharedState is now the NATIVE 40-byte struct
+// (shared_state.zig), not the C++ Search::SharedState. C++ Search::SharedState was just
+// 5 references with no methods, byte-identical to the native struct (long proven by the
+// shadow verifier), so the workers bind the native one by reference unchanged. The
+// member pointers stay the same objects until each member migrates to a native type.
+extern "C" void* zfish_shared_state_native_create(void*, void*, void*, void*, void*);
+extern "C" void  zfish_shared_state_native_destroy(void*);
+
 void* zfish_search_shared_state_create(const void* options_ptr,
                                        void*       threads_ptr,
                                        void*       tt_ptr,
                                        void*       shared_hists_ptr,
                                        const void* network_ptr) {
-    const auto& options = *static_cast<const OptionsMap*>(options_ptr);
-    auto&       threads = *static_cast<ThreadPool*>(threads_ptr);
-    auto&       tt      = *static_cast<TranspositionTable*>(tt_ptr);
-    auto&       shared_hists =
-      *static_cast<std::map<NumaIndex, SharedHistories>*>(shared_hists_ptr);
-    const auto& network =
-      *static_cast<const LazyNumaReplicatedSystemWide<Eval::NNUE::Network>*>(network_ptr);
-
-    auto* shared_state = new Search::SharedState(options, threads, tt, shared_hists, network);
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // Prove the native SharedState reproduces this C++ SharedState byte-for-byte.
-    zfish_verify_shared_state_native(shared_state, const_cast<OptionsMap*>(&options), &threads, &tt,
-                                     &shared_hists, const_cast<void*>(network_ptr));
-#endif
-    return shared_state;
+    return zfish_shared_state_native_create(const_cast<void*>(options_ptr), threads_ptr, tt_ptr,
+                                            shared_hists_ptr, const_cast<void*>(network_ptr));
 }
 
 void zfish_search_shared_state_destroy(void* shared_state_ptr) {
-    delete static_cast<Search::SharedState*>(shared_state_ptr);
+    zfish_shared_state_native_destroy(shared_state_ptr);
 }
 
 std::size_t zfish_engine_option_hash_value(const void* options_ptr) {
