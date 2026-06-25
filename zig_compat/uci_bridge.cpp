@@ -3180,10 +3180,14 @@ extern "C" void  zfish_operator_delete(void* p) { ::operator delete(p); }
 // limits at root setup, never from worker.limits -- so the native copy leaves the
 // Worker's searchmoves vector empty (valid for ~vector). sizeof + the searchmoves
 // member span come from C++ so the offsets can't drift.
+// M-FINAL: the LimitsType layout anchors are now native constants (zig_src/main.zig +
+// graph_layout.limits_off); these C++ sizeof(...) source-of-truth defs are kept legacy-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" std::size_t zfish_limits_sizeof(void) { return sizeof(Search::LimitsType); }
 extern "C" std::size_t zfish_limits_searchmoves_bytes(void) {
     return sizeof(std::vector<std::string>);
 }
+#endif
 
 // zfish_threadpool_bound_node_count and zfish_threadpool_bound_node_at are native
 // (main.zig): they read the boundThreadToNumaNode vector span / element by offset.

@@ -195,6 +195,11 @@ pub const limits_off = struct {
     pub const perft: usize = 92; // int perft (4th of movestogo/depth/mate/perft/infinite)
     pub const nodes: usize = 104;
     pub const ponder_mode: usize = 112; // bool ponderMode (after uint64 nodes)
+    // sizeof(LimitsType) == 120 (ponderMode@112 + 7 alignment padding); searchmoves is the
+    // leading 24-byte std::vector<std::string>. The POD tail copied by zfish_worker_set_limits
+    // is [searchmoves_bytes .. total), so any error here breaks bench (gate-verified).
+    pub const total_size: usize = 120;
+    pub const searchmoves_bytes: usize = 24;
 };
 
 // UCIEngine member offsets. engine (Engine, 1680 bytes) is at 0; cli

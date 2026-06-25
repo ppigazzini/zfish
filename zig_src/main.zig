@@ -675,8 +675,16 @@ pub export fn zfish_worker_clear(worker: *anyopaque) void {
 // std::vector copy-assign: reuse the buffer when capacity suffices, else realloc.
 extern fn zfish_operator_new(n: usize) ?*anyopaque;
 extern fn zfish_operator_delete(p: ?*anyopaque) void;
-extern fn zfish_limits_sizeof() usize;
-extern fn zfish_limits_searchmoves_bytes() usize;
+
+// M-FINAL: the LimitsType layout anchors ported native (default-only; legacy keeps sizeof(...)
+// as the C++ source of truth, cross-checked via oracle-parity). These feed zfish_worker_set_limits
+// (the POD-tail copy), so a wrong value breaks bench — fully gate-verified.
+fn zfish_limits_sizeof() usize {
+    return graph_layout.limits_off.total_size;
+}
+fn zfish_limits_searchmoves_bytes() usize {
+    return graph_layout.limits_off.searchmoves_bytes;
+}
 
 // M-FINAL (limits readers): pure LimitsType offset reads — no allocation, so no Zig<->C++
 // allocator-boundary mismatch (the trap that blocks porting operator new/delete). Offsets
