@@ -3359,6 +3359,11 @@ void zfish_numa_config_execute_on_numa_node(const void*       numa_config_ptr,
 // (layer 4) hands this to zfish_worker_construct_full as the worker's `manager`.
 // This is the thin C++ residue (Option A): SearchManager keeps its vtable + tm +
 // UpdateContext; its data fields are already read/written natively by offset.
+// M-FINAL / M-SM: the default build mints the manager natively (zig_src/main.zig
+// zfishMakeSearchManager: a raw operator-new'd buffer, no C++ SearchManager type / vtable),
+// and tears down the Worker natively (no virtual `delete manager`). This C++ version --
+// std::make_unique<Search::SearchManager> with its vtable -- is now legacy-oracle-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void* zfish_make_search_manager(const void* update_context_ptr,
                                            std::uint8_t is_main) {
     if (is_main != 0)
@@ -3369,6 +3374,10 @@ extern "C" void* zfish_make_search_manager(const void* update_context_ptr,
     }
     return std::make_unique<Search::NullSearchManager>().release();
 }
+#endif
+// Forward decl: in the default build this resolves to the native Zig export (above);
+// the C++ native_worker_build (below) calls it to mint the worker's manager.
+extern "C" void* zfish_make_search_manager(const void* update_context_ptr, std::uint8_t is_main);
 
 // Layer 4 (stage-4 native thread runtime): the native_threadpool.set ThreadBuilder
 // callback. Resolves the SharedState members for thread `idx`, large-page-allocs +
@@ -3402,17 +3411,10 @@ void zfish_native_worker_build(void* ctx_ptr, std::size_t idx, void* thread) {
       idx, idx, ctx->total, 0);
     *reinterpret_cast<void**>(static_cast<char*>(thread) + 8) = raw; // worker@8
 }
-// Tear down a native Worker (worker@8). Mirrors the C++ LargePagePtr<Worker>
-// deleter the C++ Thread used: run ~Worker (frees the SearchManager unique_ptr,
-// accumulator stack, etc.) then return the large-page block. Called by
-// NativeThread.deinit AFTER the idle loop is joined, so nothing is using it.
-void zfish_native_worker_destroy(void* worker) {
-    if (!worker)
-        return;
-    auto* w = static_cast<Search::Worker*>(worker);
-    w->~Worker();
-    aligned_large_pages_free(w);
-}
+// M-FINAL / M-SM: zfish_native_worker_destroy is now native (zig_src/main.zig) -- it frees
+// the rootMoves buffer + the manager by offset + returns the large-page block, reproducing
+// ~Worker WITHOUT the virtual `delete manager` (the SearchManager vtable wall). So the
+// default build no longer runs ~Worker here; only the C++ worker_build remains C++.
 }
 #else  // ZFISH_LEGACY_CPP_TARGET
 // The legacy oracle build keeps the C++ Thread vehicle, so the native worker

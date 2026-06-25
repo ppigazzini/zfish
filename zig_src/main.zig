@@ -1340,6 +1340,10 @@ comptime {
         @export(&zfishEngineTtHashfull, .{ .name = "zfish_engine_tt_hashfull" });
         // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
         @export(&zfishThreadpoolMainManagerPtr, .{ .name = "zfish_threadpool_main_manager_ptr" });
+        // M-FINAL / M-SM: native SearchManager construct + native Worker teardown (cracks the
+        // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
+        @export(&zfishMakeSearchManager, .{ .name = "zfish_make_search_manager" });
+        @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
     }
 }
 
@@ -1758,6 +1762,43 @@ fn zfishEngineTtHashfull(engine_ptr: *const anyopaque, max_age: c_int) callconv(
     const count = @as(*usize, @ptrCast(@alignCast(base + graph_layout.tt_off.cluster_count))).*;
     const gen = @as(*u8, @ptrCast(@alignCast(base + graph_layout.tt_off.generation8))).*;
     return tt_port.hashfull(@ptrCast(@alignCast(table)), count, gen, max_age);
+}
+
+// M-FINAL / M-SM: native SearchManager construction + native Worker teardown — cracks the
+// SearchManager virtual-dtor wall. The C++ make_unique<Search::SearchManager>() and ~Worker's
+// `delete manager` (virtual dispatch through the SearchManager vtable) are the ONLY things
+// forcing that vtable to stay. Replace them natively:
+//   * make: a raw search_manager_size buffer (operator new, so a matching operator delete frees
+//     it valgrind-clean), zeroed — the manager's data fields are written by the native reset
+//     shims (smReset*) + tm_init before every search (the C++ ctor left them uninitialized
+//     too), and updates@112 is set to the engine UpdateContext for the main thread. No vtable,
+//     no ctor; check_time is dead and pv() is native, so the vtable is never dispatched.
+//   * destroy: free the rootMoves vector buffer + the manager by offset, then return the
+//     large-page block. accumulatorStack/refreshTable are POD std::array members (trivial
+//     dtors), so manager + rootMoves are the ONLY heap ~Worker freed — this reproduces it
+//     without the virtual `delete manager`. Default-only; the legacy oracle keeps the real
+//     C++ SearchManager + ~Worker. See [[frozen-header-wall-blocks-member-cuts]].
+fn zfishMakeSearchManager(update_context: ?*const anyopaque, is_main: u8) callconv(.c) ?*anyopaque {
+    const buf = zfish_operator_new(graph_layout.search_manager_size) orelse return null;
+    const bytes: [*]u8 = @ptrCast(buf);
+    @memset(bytes[0..graph_layout.search_manager_size], 0);
+    if (is_main != 0) {
+        const updates_slot: *?*const anyopaque =
+            @ptrCast(@alignCast(bytes + graph_layout.search_manager_off.updates));
+        updates_slot.* = update_context;
+    }
+    return buf;
+}
+fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
+    const w = worker orelse return;
+    const base: [*]u8 = @ptrCast(w);
+    // rootMoves vector buffer (begin @ root_moves+0); operator new'd by zfish_worker_set_root_moves.
+    const rm_begin: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.root_moves));
+    if (rm_begin.*) |b| zfish_operator_delete(b);
+    // SearchManager buffer (operator new'd by zfishMakeSearchManager above).
+    const mgr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.manager));
+    if (mgr.*) |m| zfish_operator_delete(m);
+    zfish_aligned_large_pages_free(w);
 }
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster
