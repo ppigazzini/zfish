@@ -174,6 +174,31 @@ pieces. Key facts mapped:
 This is a focused multi-step RED-tolerant effort with valgrind verification at each step — NOT a
 quick leaf. Best done as a dedicated push (the lifecycle/valgrind sensitivity rewards focus).
 
+### STATES MECHANISM — fully mapped (2026-06-26), the de-risk for the StateList port
+Three deques are in play, all of which must become native StateList together:
+- SLOT = NativeEngine.states (a StateListPtr, currently the flip's member_states_new deque(1)).
+  It is the FALLBACK root-state list. states_slot_reset resets it.
+- STORAGE = a ZfishPendingStateListStorage (wraps a StateListPtr), mapped to the slot ADDRESS via
+  a side-table (engine.zig pending_state_entries). setPosition builds the position's state chain
+  here (storage_reset → root; storage_push per move). lookup/ensure/remove by slot_key.
+- setupStates = ThreadPool@8 (StateListPtr). Gets EITHER deque at search start (thread.zig:859):
+  handoffPendingStates → if storage has states, adopt_from_storage(pool, storage); ELSE
+  adopt_from_slot(pool, slot). Then setup_state_back(pool) = setupStates->back() (the root).
+LIFECYCLE (valgrind-critical, mirrors std::unique_ptr move):
+- adopt_* does `pool.setupStates = std::move(src)` → MOVES the deque ptr, NULLS the source. So
+  after adopt the storage/slot no longer owns it; setupStates does.
+- releasePendingStateSlot → removePendingStateStorage + storage_destroy. If the storage was
+  adopted (moved-out, now null) it frees nothing; else it frees the unused position chain.
+- ~ThreadPool frees setupStates (the adopted deque). release runs BEFORE the pool delete.
+NATIVE PORT (all-or-nothing): storage + slot hold a *StateList (state_list.zig: init/reset/push/
+back/hasStates/deinit — exact match). A wrapper that adopt MOVES out + nulls preserves the move
+semantics. CRITICAL ORDERING (native destruct): free the setupStates *StateList + null @8 BEFORE
+deleting the heap ThreadPool (else ~ThreadPool delete-as-deque* corrupts the StateList). Every
+adopt must free the prior setupStates *StateList (non-null between searches). state_info_size=192;
+the block is opaque (Position fills it). Gate = valgrind Threads {1,2} (the only catch for a leak/
+double-free). ~10 fns: storage_create/destroy/reset/push/has, states_slot_reset, adopt_from_storage/
+slot, setup_state_back, release_pending_state_slot + the native_engine construct(slot)/destruct.
+
 ### CORRECTION (2026-06-26): updateContext is LIVE, not dead
 The prior memory said updateContext was dead. WRONG. The native search emit calls
 main_manager()->updates.onUpdateFull(...) / onBestmove / onUpdateNoMoves / onIter — the C++

@@ -94,9 +94,113 @@ pub const StateList = struct {
     }
 };
 
+// Native replacement for the bridge's ZfishPendingStateListStorage (M-FINAL states cutover).
+// It owns a StateList and supports the std::unique_ptr MOVE semantics the C++ setupStates
+// adopt relies on: moveOut() hands the StateList to the pool and NULLS the wrapper, so a
+// later destroy() frees nothing (mirroring `pool.setupStates = std::move(storage.states)`
+// followed by storage destruction). The position-setup flow (engine.zig) builds the chain
+// here via reset()/push(); at search start the pool adopts it (moveOut) or the slot's list.
+pub const PendingStateStorage = struct {
+    allocator: std.mem.Allocator,
+    list: ?*StateList,
+
+    pub fn create(allocator: std.mem.Allocator) error{OutOfMemory}!*PendingStateStorage {
+        const self = try allocator.create(PendingStateStorage);
+        errdefer allocator.destroy(self);
+        const list = try allocator.create(StateList);
+        errdefer allocator.destroy(list);
+        list.* = try StateList.init(allocator);
+        self.* = .{ .allocator = allocator, .list = list };
+        return self;
+    }
+
+    pub fn destroy(self: *PendingStateStorage) void {
+        if (self.list) |l| {
+            l.deinit();
+            self.allocator.destroy(l);
+        }
+        self.allocator.destroy(self);
+    }
+
+    /// Drop to a single fresh root and return its address (storage_reset). Re-creates the
+    /// list if it was moved out (mirrors `storage.states = StateListPtr(new deque(1))`).
+    pub fn reset(self: *PendingStateStorage) error{OutOfMemory}!*anyopaque {
+        if (self.list == null) {
+            const list = try self.allocator.create(StateList);
+            errdefer self.allocator.destroy(list);
+            list.* = try StateList.init(self.allocator);
+            self.list = list;
+            return list.back();
+        }
+        return self.list.?.reset();
+    }
+
+    pub fn push(self: *PendingStateStorage) error{OutOfMemory}!*anyopaque {
+        return self.list.?.push();
+    }
+
+    pub fn hasStates(self: *const PendingStateStorage) bool {
+        return self.list != null and self.list.?.hasStates();
+    }
+
+    /// MOVE the owned StateList out (mirrors std::move of the unique_ptr): returns it and
+    /// nulls the wrapper so a later destroy() frees nothing. The caller (the pool's
+    /// setupStates slot) becomes the owner.
+    pub fn moveOut(self: *PendingStateStorage) ?*StateList {
+        const l = self.list;
+        self.list = null;
+        return l;
+    }
+};
+
+/// Free a StateList by pointer (the pool's setupStates owner at teardown / before re-adopt).
+pub fn destroyStateList(allocator: std.mem.Allocator, list: *StateList) void {
+    list.deinit();
+    allocator.destroy(list);
+}
+
 // ---- tests ------------------------------------------------------------------
 
 const testing = std.testing;
+
+test "PendingStateStorage builds a chain, moves it out leak-free, destroy frees nothing after move" {
+    var storage = try PendingStateStorage.create(testing.allocator);
+    // build a 3-deep chain (root + 2 moves), like position setup
+    _ = try storage.reset();
+    _ = try storage.push();
+    _ = try storage.push();
+    try testing.expect(storage.hasStates());
+
+    // adopt: move the list out to a "pool" owner; the wrapper is now empty
+    const adopted = storage.moveOut().?;
+    try testing.expect(storage.list == null);
+    try testing.expect(!storage.hasStates());
+    try testing.expectEqual(@as(usize, 3), adopted.len());
+
+    // storage destroy frees nothing (already moved out) — no double free
+    storage.destroy();
+    // the pool owner frees the adopted list
+    destroyStateList(testing.allocator, adopted);
+}
+
+test "PendingStateStorage destroy frees its list when NOT moved out" {
+    var storage = try PendingStateStorage.create(testing.allocator);
+    _ = try storage.reset();
+    _ = try storage.push();
+    try testing.expect(storage.hasStates());
+    storage.destroy(); // testing.allocator fails on leak → proves the unused chain is freed
+}
+
+test "PendingStateStorage reset after moveOut re-creates the list" {
+    var storage = try PendingStateStorage.create(testing.allocator);
+    const moved = storage.moveOut().?;
+    destroyStateList(testing.allocator, moved);
+    try testing.expect(storage.list == null);
+    _ = try storage.reset(); // re-creates
+    try testing.expect(storage.hasStates());
+    try testing.expectEqual(@as(usize, 1), storage.list.?.len());
+    storage.destroy();
+}
 
 test "StateList starts with one zeroed root, like deque<StateInfo>(1)" {
     var list = try StateList.init(testing.allocator);
