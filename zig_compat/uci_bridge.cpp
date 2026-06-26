@@ -3498,9 +3498,9 @@ void zfish_shared_state_insert_history(const void*  shared_state_ptr,
                                        std::size_t  size,
                                        std::uint8_t do_bind) {
     const auto& shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
-    const auto& numa_config  = *static_cast<const NumaConfig*>(numa_config_ptr);
 
 #ifdef ZFISH_LEGACY_CPP_TARGET
+    const auto& numa_config = *static_cast<const NumaConfig*>(numa_config_ptr);
     auto insert = [&]() { shared_state.sharedHistories.try_emplace(numa_index, size); };
     if (do_bind != 0)
         numa_config.execute_on_numa_node(numa_index, insert);
@@ -3517,35 +3517,51 @@ void zfish_shared_state_insert_history(const void*  shared_state_ptr,
         std::abort();
     }
 #else
-    // Default build: insert into the native SharedHistoriesMap, preserving the NUMA-node
-    // binding so each node's large-page DynStats arrays are allocated node-local (the same
-    // execute_on_numa_node wrapper the C++ try_emplace used).
+    // M-FINAL cutover: the default build is single-node, so threads are never bound (do_bind is
+    // always 0) and no NumaConfig / execute_on_numa_node is needed — insert directly into the
+    // native SharedHistoriesMap. Removes the C++ NumaConfig reference from the default build.
+    (void) numa_config_ptr;
+    (void) do_bind;
     void* native_map =
       const_cast<void*>(reinterpret_cast<const void*>(&shared_state.sharedHistories));
-    auto insert = [&]() { zfish_native_shared_histories_insert(native_map, numa_index, size); };
-    if (do_bind != 0)
-        numa_config.execute_on_numa_node(numa_index, insert);
-    else
-        insert();
+    zfish_native_shared_histories_insert(native_map, numa_index, size);
 #endif
 }
 
 std::uint8_t zfish_numa_config_suggests_binding_threads(const void* numa_config_ptr,
                                                         std::size_t requested) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: single-node default build never binds threads (one numa node), so this is
+    // a native constant 0 — no C++ NumaConfig read. Legacy keeps the real topology query.
+    (void) numa_config_ptr;
+    (void) requested;
+    return 0;
+#else
     return static_cast<const NumaConfig*>(numa_config_ptr)->suggests_binding_threads(requested)
              ? std::uint8_t{1}
              : std::uint8_t{0};
+#endif
 }
 
 std::size_t zfish_numa_config_distribute_threads_among_nodes(const void* numa_config_ptr,
                                                              std::size_t requested,
                                                              std::size_t* out_nodes) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: single-node default build — all requested threads map to node 0 (one numa
+    // node). Dead on this path anyway (binding is never suggested), but kept NumaConfig-free.
+    (void) numa_config_ptr;
+    if (out_nodes)
+        for (std::size_t i = 0; i < requested; ++i)
+            out_nodes[i] = 0;
+    return 1;
+#else
     const auto distribution =
       static_cast<const NumaConfig*>(numa_config_ptr)->distribute_threads_among_numa_nodes(
         requested);
     if (out_nodes)
         std::copy(distribution.begin(), distribution.end(), out_nodes);
     return distribution.size();
+#endif
 }
 
 // num_numa_nodes() == nodes.size(): now native in both builds via the Zig export
@@ -3557,8 +3573,16 @@ void zfish_numa_config_execute_on_numa_node(const void*       numa_config_ptr,
                                             std::size_t       numa_index,
                                             ZfishOpaqueCallback callback,
                                             void*             context) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: single-node default build — no NUMA pinning, just run the callback on the
+    // current (only) node. Dead on the live path (binding never suggested); kept NumaConfig-free.
+    (void) numa_config_ptr;
+    (void) numa_index;
+    callback(context);
+#else
     const auto& numa_config = *static_cast<const NumaConfig*>(numa_config_ptr);
     numa_config.execute_on_numa_node(numa_index, [&]() { callback(context); });
+#endif
 }
 
 // Layer 2 (stage-4 native thread runtime): mint an ISearchManager for a native

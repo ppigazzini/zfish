@@ -2619,6 +2619,10 @@ pub export fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usiz
 // nodes is a std::vector<std::set<CpuIndex>> at offset 0; size is the byte span
 // divided by the 48-byte std::set element.
 pub export fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize {
+    // M-FINAL cutover: the default build is single-node (multi-node numa support dropped per the
+    // single-node decision) and constructs no C++ NumaConfig — so the node count is the native
+    // constant 1, no layout read. Legacy reads the live C++ NumaConfig's nodes vector by offset.
+    if (!target_flags.legacy_target) return 1;
     const base: [*]const u8 = @ptrCast(numa_config);
     const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.numa_config_off.nodes_begin));
     const end: *const usize = @ptrCast(@alignCast(base + graph_layout.numa_config_off.nodes_end));
