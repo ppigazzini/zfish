@@ -2769,6 +2769,49 @@ pub export fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8 {
     return engine_port.traceEvalEngine(engine_ptr);
 }
 
+// M-FINAL cutover: native NumaConfig::to_string() for the single-node default build. Enumerates
+// the process CPU affinity (sched_getaffinity — the same STARTUP_PROCESSOR_AFFINITY from_system
+// reads) and formats it as the comma-separated CPU ranges to_string emits for ONE node (e.g.
+// "0-7"). Multi-node numa support was dropped (single-node decision), so there is no ":" node
+// separator. Replaces the C++ NumaReplicationContext::get_numa_config().to_string() in default.
+pub export fn zfish_native_numa_config_string() ?[*:0]u8 {
+    const linux = std.os.linux;
+    var set: linux.cpu_set_t = undefined;
+    @memset(std.mem.asBytes(&set), 0);
+    _ = linux.sched_getaffinity(0, @sizeOf(linux.cpu_set_t), &set);
+
+    const a = std.heap.c_allocator;
+    var buf = std.ArrayList(u8).empty;
+    defer buf.deinit(a);
+
+    const bits = @bitSizeOf(usize);
+    const total = set.len * bits;
+    var i: usize = 0;
+    var first = true;
+    while (i < total) {
+        if ((set[i / bits] >> @as(u6, @intCast(i % bits))) & 1 == 0) {
+            i += 1;
+            continue;
+        }
+        const start = i;
+        var j = i;
+        while (j + 1 < total and (set[(j + 1) / bits] >> @as(u6, @intCast((j + 1) % bits))) & 1 != 0) : (j += 1) {}
+        if (!first) buf.append(a, ',') catch return null;
+        first = false;
+        var nb: [40]u8 = undefined;
+        const seg = if (j == start)
+            std.fmt.bufPrint(&nb, "{d}", .{start}) catch return null
+        else
+            std.fmt.bufPrint(&nb, "{d}-{d}", .{ start, j }) catch return null;
+        buf.appendSlice(a, seg) catch return null;
+        i = j + 1;
+    }
+
+    const owned = a.allocSentinel(u8, buf.items.len, 0) catch return null;
+    @memcpy(owned[0..buf.items.len], buf.items);
+    return owned.ptr;
+}
+
 pub export fn zfish_engine_numa_config_string_owner(engine_ptr: *const anyopaque) ?[*:0]u8 {
     return engine_port.numaConfigStringEngine(engine_ptr);
 }
