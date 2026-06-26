@@ -323,6 +323,31 @@ pub export fn zfish_position_do_move(
     position_port.doMove(pos_ptr, move, new_st_ptr, gives_check, dp_ptr, dts_ptr);
 }
 
+// M-FINAL cutover (position-set port): native Position::set (FEN parse) + legality, replacing
+// the C++ Position::set / Position::legal in the bridge. The live pos is the Zig side block, so
+// these operate on the same byte-compatible storage the native search reads. Default-only
+// (legacy keeps the C++ Position methods); gate-verified by search-parity (51 FENs) + bench.
+fn zfishPositionSetState(
+    pos_ptr: *anyopaque,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    chess960_enabled: u8,
+    state_ptr: *anyopaque,
+) callconv(.c) ?[*:0]u8 {
+    return position_port.setPosition(
+        pos_ptr,
+        fen_ptr,
+        fen_len,
+        chess960_enabled,
+        state_ptr,
+        graph_layout.position_size,
+        graph_layout.state_info_size,
+    );
+}
+fn zfishPositionMoveIsLegal(pos_ptr: *const anyopaque, raw_move: u16) callconv(.c) u8 {
+    return @intFromBool(position_port.legal(pos_ptr, raw_move));
+}
+
 pub export fn zfish_position_upcoming_repetition_method(pos_ptr: *const anyopaque, ply: c_int) u8 {
     return @intFromBool(position_port.upcomingRepetition(pos_ptr, ply));
 }
@@ -1381,6 +1406,9 @@ comptime {
         @export(&zfishNativeEngineSizeof, .{ .name = "zfish_native_engine_sizeof" });
         @export(&zfishNativeEngineAlignof, .{ .name = "zfish_native_engine_alignof" });
         @export(&zfishEngineOnVerifyNetworkPtr, .{ .name = "zfish_engine_onverifynetwork_ptr" });
+        // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
+        @export(&zfishPositionSetState, .{ .name = "zfish_position_set_state" });
+        @export(&zfishPositionMoveIsLegal, .{ .name = "zfish_position_move_is_legal" });
     }
 }
 

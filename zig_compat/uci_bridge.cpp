@@ -1410,11 +1410,15 @@ static_assert(sizeof(Move) == sizeof(std::uint16_t));
 // bounce to the native position_port methods in both builds, so the native
 // rank_root_moves path now calls position_port directly (one fewer C++ hop).
 
+// M-FINAL cutover (position-set port): native in the default build (zig_src/main.zig);
+// legacy oracle keeps the C++ Position::legal.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" std::uint8_t zfish_position_move_is_legal(const void* pos_ptr,
                                                       std::uint16_t raw_move) {
     const auto& pos = *static_cast<const Position*>(pos_ptr);
     return std::uint8_t(pos.legal(Move(raw_move)) ? 1 : 0);
 }
+#endif
 
 extern "C" void zfish_movepick_fill_history_snapshot(const void* main_history_ptr,
                                                       const void* low_ply_history_ptr,
@@ -2926,6 +2930,9 @@ void Position::do_move(Move                      m,
                            &dts);
 }
 
+// M-FINAL cutover (position-set port): native Position::set in the default build
+// (zig_src/main.zig, position.zig FEN parser); legacy oracle keeps the C++ Position::set.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" const char* zfish_position_set_state(void*                pos_ptr,
                                                 const unsigned char* fen_ptr,
                                                 std::size_t          fen_len,
@@ -2944,6 +2951,7 @@ extern "C" const char* zfish_position_set_state(void*                pos_ptr,
     std::memcpy(buffer, message.c_str(), message.size() + 1);
     return buffer;
 }
+#endif
 
 extern "C" void zfish_position_do_move_state(void* pos_ptr, std::uint16_t move_raw, void* state_ptr) {
     static_cast<Position*>(pos_ptr)->do_move(Move(move_raw), *static_cast<StateInfo*>(state_ptr));
