@@ -347,6 +347,9 @@ fn zfishPositionSetState(
 fn zfishPositionMoveIsLegal(pos_ptr: *const anyopaque, raw_move: u16) callconv(.c) u8 {
     return @intFromBool(position_port.legal(pos_ptr, raw_move));
 }
+fn zfishPositionDoMoveState(pos_ptr: *anyopaque, move_raw: u16, state_ptr: *anyopaque) callconv(.c) void {
+    position_port.doMoveState(pos_ptr, move_raw, state_ptr);
+}
 
 pub export fn zfish_position_upcoming_repetition_method(pos_ptr: *const anyopaque, ply: c_int) u8 {
     return @intFromBool(position_port.upcomingRepetition(pos_ptr, ply));
@@ -1409,6 +1412,7 @@ comptime {
         // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
         @export(&zfishPositionSetState, .{ .name = "zfish_position_set_state" });
         @export(&zfishPositionMoveIsLegal, .{ .name = "zfish_position_move_is_legal" });
+        @export(&zfishPositionDoMoveState, .{ .name = "zfish_position_do_move_state" });
     }
 }
 

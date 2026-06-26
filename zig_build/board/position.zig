@@ -765,6 +765,18 @@ inline fn verifyUndoMove(pos_ptr: *anyopaque, move: u16) void {
     undoMove(pos_ptr, move);
 }
 
+// M-FINAL cutover: native Position::do_move(Move, StateInfo&) for UCI move application
+// (the bridge's zfish_position_do_move_state, used to apply `position ... moves`). Mirrors
+// verifyDoMove: gives_check is computed here and scratch DirtyPiece/DirtyThreats are passed
+// (during setup no accumulator slot consumes the dirty state). Replaces the C++
+// Position::do_move in the default build.
+pub fn doMoveState(pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque) void {
+    var dp: DirtyPiece = undefined;
+    var dts: DirtyThreats = undefined;
+    dts.list_size = 0;
+    doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
+}
+
 // Is `move` in the legal move list of the current position?
 fn legalContains(pos_ptr: *const anyopaque, move: u16) bool {
     var buf: [256]u16 = undefined;
