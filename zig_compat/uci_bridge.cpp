@@ -1316,7 +1316,9 @@ struct ZfishPvContext {
 // "info .." line, and prints it through zfish_uci_print_line. Bridge-only symbol,
 // no gating.
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 bool Search::Worker::iterative_deepening() { return bool(zfish_search_iterative_deepening(this)); }
+#endif
 
 // SearchManager::check_time relocated verbatim from search.cpp. The Zig search
 // runs the per-node time check itself, so this is unused on the search path, but
