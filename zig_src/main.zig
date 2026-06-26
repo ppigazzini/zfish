@@ -94,7 +94,12 @@ pub fn main(init: std.process.Init) !void {
     // Zig-owned engine footprint: allocate aligned storage, placement-construct the
     // UCIEngine into it, and on teardown destruct-in-place then free (defers run
     // LIFO, so destruct precedes free).
-    const engine = memory_port.stdAlignedAlloc(zfish_uci_engine_alignof(), zfish_uci_engine_sizeof()) orelse
+    // M-FINAL cutover: the default build's buffer holds a NativeEngine (an ownership
+    // container of heap members), not a C++ UCIEngine — size it accordingly. The legacy
+    // oracle keeps the full C++ UCIEngine footprint.
+    const eng_align = if (target_flags.legacy_target) zfish_uci_engine_alignof() else native_engine.alignofEngine();
+    const eng_size = if (target_flags.legacy_target) zfish_uci_engine_sizeof() else native_engine.sizeofEngine();
+    const engine = memory_port.stdAlignedAlloc(eng_align, eng_size) orelse
         return error.OutOfMemory;
     defer memory_port.stdAlignedFree(engine);
 
@@ -1375,6 +1380,7 @@ comptime {
         @export(&zfishNativeEngineDestructMembers, .{ .name = "zfish_native_engine_destruct_members" });
         @export(&zfishNativeEngineSizeof, .{ .name = "zfish_native_engine_sizeof" });
         @export(&zfishNativeEngineAlignof, .{ .name = "zfish_native_engine_alignof" });
+        @export(&zfishEngineOnVerifyNetworkPtr, .{ .name = "zfish_engine_onverifynetwork_ptr" });
     }
 }
 
@@ -1403,17 +1409,28 @@ pub export fn zfish_engine_position_ptr(engine: *anyopaque) *anyopaque {
     _ = engine; // the side Position block replaces the C++ engine pos member
     return @ptrCast(&side_pos_storage);
 }
+// M-FINAL cutover: in the default build the engine buffer is a NativeEngine, so the
+// member accessors return its fields (the heap member pointer for pointer-members; the
+// field address for the inline states slot / update_context). The legacy oracle keeps
+// the inline-into-C++-Engine offset reads.
+fn nativeEng(engine: *anyopaque) *native_engine.NativeEngine {
+    return native_engine.NativeEngine.fromBuffer(engine);
+}
 pub export fn zfish_engine_options_ptr(engine: *const anyopaque) *const anyopaque {
-    return engMemberConst(engine, eng_off.options);
+    if (target_flags.legacy_target) return engMemberConst(engine, eng_off.options);
+    return nativeEng(@constCast(engine)).options.?;
 }
 pub export fn zfish_engine_numa_context_ptr(engine: *anyopaque) *anyopaque {
-    return engMember(engine, eng_off.numa_context);
+    if (target_flags.legacy_target) return engMember(engine, eng_off.numa_context);
+    return nativeEng(engine).numa_context.?;
 }
 pub export fn zfish_engine_states_slot_ptr(engine: *anyopaque) *anyopaque {
-    return engMember(engine, eng_off.states);
+    if (target_flags.legacy_target) return engMember(engine, eng_off.states);
+    return @ptrCast(&nativeEng(engine).states);
 }
 pub export fn zfish_engine_threads_ptr(engine: *anyopaque) *anyopaque {
-    return engMember(engine, eng_off.threads);
+    if (target_flags.legacy_target) return engMember(engine, eng_off.threads);
+    return nativeEng(engine).threads.?;
 }
 // REPORT-10 M1 (tt migration, side-allocation): the engine's tt is now a NATIVE
 // side-allocated TranspositionTable, not the C++ Engine's embedded `tt` member. The
@@ -1495,10 +1512,18 @@ fn freeSideSharedHistories() void {
     }
 }
 pub export fn zfish_engine_network_replicated_ptr(engine: *anyopaque) *anyopaque {
-    return engMember(engine, eng_off.network);
+    if (target_flags.legacy_target) return engMember(engine, eng_off.network);
+    return nativeEng(engine).network.?;
 }
 pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const anyopaque {
-    return engMemberConst(engine, eng_off.update_context);
+    if (target_flags.legacy_target) return engMemberConst(engine, eng_off.update_context);
+    return @ptrCast(&nativeEng(@constCast(engine)).update_context);
+}
+// M-FINAL cutover: onVerifyNetwork std::function slot accessor — default-only (the native
+// engine's inline field). The legacy oracle reads its inline engine->onVerifyNetwork member
+// directly (no accessor), so this is exported default-only via the comptime block below.
+fn zfishEngineOnVerifyNetworkPtr(engine: *anyopaque) callconv(.c) *anyopaque {
+    return @ptrCast(&nativeEng(engine).on_verify_network);
 }
 // UCIEngine::engine is the first member (offset 0): the accessor is the identity.
 pub export fn zfish_uci_engine_ptr(uci: *anyopaque) *anyopaque {
@@ -2419,15 +2444,26 @@ pub export fn zfish_ss_should_busywait(worker: *const anyopaque) u8 {
 // char** argv} at uci_engine_off.cli_argc; arg_at bounds-checks against argc and
 // loads the i-th argv pointer, returning null out of range (as the C++ did).
 pub export fn zfish_uci_cli_argc(uci: *const anyopaque) c_int {
-    const p: *const c_int = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argc));
-    return p.*;
+    // M-FINAL cutover: default build reads the NativeEngine cli_argc field; legacy reads
+    // the inline CommandLine member.
+    if (target_flags.legacy_target) {
+        const p: *const c_int = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argc));
+        return p.*;
+    }
+    return nativeEng(@constCast(uci)).cli_argc;
 }
 pub export fn zfish_uci_cli_arg_at(uci: *const anyopaque, index: c_int) ?[*:0]const u8 {
-    const argc_p: *const c_int = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argc));
-    if (index < 0 or index >= argc_p.*) return null;
-    const argv_p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argv));
-    const argv: [*]const usize = @ptrFromInt(argv_p.*);
-    return @ptrFromInt(argv[@intCast(index)]);
+    if (target_flags.legacy_target) {
+        const argc_p: *const c_int = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argc));
+        if (index < 0 or index >= argc_p.*) return null;
+        const argv_p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argv));
+        const argv: [*]const usize = @ptrFromInt(argv_p.*);
+        return @ptrFromInt(argv[@intCast(index)]);
+    }
+    const e = nativeEng(@constCast(uci));
+    if (index < 0 or index >= e.cli_argc) return null;
+    const argv = e.cli_argv orelse return null;
+    return argv[@intCast(index)];
 }
 
 // ThreadPool::boundThreadToNumaNode accessors (bridge-only). The member is a

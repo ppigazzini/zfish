@@ -37,12 +37,23 @@ extern fn zfish_member_states_new() ?*anyopaque;
 extern fn zfish_member_states_delete(p: ?*anyopaque) void;
 extern fn zfish_member_network_new(numa_context: ?*anyopaque, binary_dir: [*]const u8, binary_dir_len: usize) ?*anyopaque;
 extern fn zfish_member_network_delete(p: ?*anyopaque) void;
+// updateContext + onVerifyNetwork are held INLINE in the native engine (stable address
+// for the worker managers / verify emit to bind via accessor) and placement-constructed.
+extern fn zfish_member_update_context_construct(p: *anyopaque) void;
+extern fn zfish_member_update_context_destruct(p: *anyopaque) void;
+extern fn zfish_member_verify_network_fn_construct(p: *anyopaque) void;
+extern fn zfish_member_verify_network_fn_destruct(p: *anyopaque) void;
 
-// sizeof(Search::SearchManager::UpdateContext): 4 std::function (32B each) + a void*
-// ctx, padded. Dead in the default build (every read of it is legacy-#ifdef-only; the
-// native emit is the authority), so the native engine holds a zeroed block of the
-// right footprint purely so the bound pointer is valid + the layout total is sane.
+// sizeof(Search::SearchManager::UpdateContext): 4 std::function (libc++ 48B each) + a
+// void* ctx, padded. LIVE: the native search emit calls its onUpdateFull/onBestmove
+// (set by init_search_update_listeners) — so this slot is placement-constructed as a
+// real C++ UpdateContext and bound by the worker managers via the accessor. 240 is a
+// generous upper bound on sizeof(UpdateContext).
 pub const update_context_size: usize = 240;
+// sizeof(std::function<void(std::string_view)>) — libc++ is 48B; 64 is a safe bound.
+// onVerifyNetwork: set to print_info_string (interactive) or a no-op (quiet) and called
+// by zfish_engine_emit_verify_message on a network verify message.
+pub const verify_network_fn_size: usize = 64;
 
 /// The buffer-resident native engine. `extern struct` so the field offsets are stable
 /// and the member accessors (main.zig) can read them by the documented native offset.
@@ -56,6 +67,7 @@ pub const NativeEngine = extern struct {
     cli_argc: c_int = 0,
     cli_argv: ?[*]const [*:0]u8 = null,
     update_context: [update_context_size]u8 align(8) = [_]u8{0} ** update_context_size,
+    on_verify_network: [verify_network_fn_size]u8 align(8) = [_]u8{0} ** verify_network_fn_size,
 
     /// Native field offsets the member accessors read (replacing graph_layout.engine_off
     /// inline-into-C++-Engine offsets). @offsetOf keeps these pinned to the struct.
@@ -68,6 +80,7 @@ pub const NativeEngine = extern struct {
         pub const cli_argc = @offsetOf(NativeEngine, "cli_argc");
         pub const cli_argv = @offsetOf(NativeEngine, "cli_argv");
         pub const update_context = @offsetOf(NativeEngine, "update_context");
+        pub const on_verify_network = @offsetOf(NativeEngine, "on_verify_network");
     };
 
     pub fn fromBuffer(buf: *anyopaque) *NativeEngine {
@@ -99,6 +112,11 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
     e.network = zfish_member_network_new(e.numa_context, bdir, std.mem.span(bdir).len) orelse return false;
 
+    // Placement-construct the inline live C++ sub-objects (real UpdateContext / empty
+    // std::function) so the accessors hand out valid, properly-constructed objects.
+    zfish_member_update_context_construct(@ptrCast(&e.update_context));
+    zfish_member_verify_network_fn_construct(@ptrCast(&e.on_verify_network));
+
     return true;
 }
 
@@ -123,6 +141,10 @@ pub fn setCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
 /// both — matching the std::move handoff lifecycle.
 pub fn destructMembers(buf: *anyopaque) void {
     const e = NativeEngine.fromBuffer(buf);
+
+    // Destruct the inline live C++ sub-objects (the std::functions they hold) first.
+    zfish_member_verify_network_fn_destruct(@ptrCast(&e.on_verify_network));
+    zfish_member_update_context_destruct(@ptrCast(&e.update_context));
 
     zfish_member_network_delete(e.network);
     e.network = null;
