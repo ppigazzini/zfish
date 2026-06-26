@@ -129,13 +129,25 @@ fn affineLayer(
     }
 }
 
+fn layerBiases(bucket: usize, idx: c_int) [*]const i32 {
+    return @ptrCast(@alignCast(zfish_native_layer_ptr(bucket, idx, 0) orelse unreachable));
+}
+fn layerWeights(bucket: usize, idx: c_int) [*]const i8 {
+    return @ptrCast(@alignCast(zfish_native_layer_ptr(bucket, idx, 1) orelse unreachable));
+}
 fn propagateBucket(network: *const anyopaque, bucket: usize, transformed: [*]const u8) c_int {
-    const fc0_b = zfish_layer_biases(network, bucket, 0);
-    const fc0_w = zfish_layer_weights(network, bucket, 0);
-    const fc1_b = zfish_layer_biases(network, bucket, 1);
-    const fc1_w = zfish_layer_weights(network, bucket, 1);
-    const fc2_b = zfish_layer_biases(network, bucket, 2);
-    const fc2_w = zfish_layer_weights(network, bucket, 2);
+    // M-FINAL cutover (network layers): read the affine-layer weights from the Zig-owned
+    // native storage (zfish_native_layer_ptr) instead of the C++ Network (zfish_layer_biases/
+    // weights). The native parse writes this storage and the load-time cross-check proves it
+    // bit-identical to the C++ Network, so the eval is unchanged (bench-verified). Removes the
+    // C++ Network from the eval hot path.
+    _ = network;
+    const fc0_b = layerBiases(bucket, 0);
+    const fc0_w = layerWeights(bucket, 0);
+    const fc1_b = layerBiases(bucket, 1);
+    const fc1_w = layerWeights(bucket, 1);
+    const fc2_b = layerBiases(bucket, 2);
+    const fc2_w = layerWeights(bucket, 2);
 
     // fc_0: affine 1024 -> 32 (PaddedInputDimensions = 1024).
     var fc0_out: [32]i32 = undefined;
