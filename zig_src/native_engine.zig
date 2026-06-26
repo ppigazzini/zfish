@@ -25,6 +25,7 @@
 const std = @import("std");
 const graph_layout = @import("graph_layout.zig");
 const misc_port = @import("misc");
+const state_list_port = @import("state_list"); // native StateList (states crack)
 
 // ---- the interim-C++ member heap allocators (uci_bridge.cpp, default build) -------
 extern fn zfish_member_numa_context_new() ?*anyopaque;
@@ -105,7 +106,13 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     e.binary_directory = misc_port.getBinaryDirectory(argv0_slice);
 
     e.numa_context = zfish_member_numa_context_new() orelse return false;
-    e.states = zfish_member_states_new() orelse return false;
+    // states slot: a native StateList (the fallback root list); replaces the C++ deque(1).
+    const states_list = std.heap.c_allocator.create(state_list_port.StateList) catch return false;
+    states_list.* = state_list_port.StateList.init(std.heap.c_allocator) catch {
+        std.heap.c_allocator.destroy(states_list);
+        return false;
+    };
+    e.states = states_list;
     e.options = zfish_member_options_new() orelse return false;
     e.threads = zfish_member_threadpool_new() orelse return false;
 
@@ -145,6 +152,25 @@ pub fn destructMembers(buf: *anyopaque) void {
     // Destruct the inline live C++ sub-objects (the std::functions they hold) first.
     zfish_member_verify_network_fn_destruct(@ptrCast(&e.on_verify_network));
     zfish_member_update_context_destruct(@ptrCast(&e.update_context));
+
+    // states crack: free the pool's setupStates StateList @8 + the engine `states` slot's
+    // StateList, and NULL setupStates@8, BEFORE deleting the C++ ThreadPool — else
+    // ~ThreadPool would delete setupStates as a deque* and corrupt the native StateList.
+    // Each list is owned by exactly one of {slot, setupStates} (adopt MOVEs + nulls source),
+    // and the side-table storage was already freed by release_pending_state_slot, so this
+    // frees each surviving list exactly once.
+    if (e.threads) |pool| {
+        const setup: *?*state_list_port.StateList =
+            @ptrFromInt(@intFromPtr(pool) + graph_layout.thread_pool_off.setup_states);
+        if (setup.*) |list| {
+            state_list_port.destroyStateList(std.heap.c_allocator, list);
+            setup.* = null;
+        }
+    }
+    if (e.states) |s| {
+        state_list_port.destroyStateList(std.heap.c_allocator, @ptrCast(@alignCast(s)));
+        e.states = null;
+    }
 
     zfish_member_network_delete(e.network);
     e.network = null;
