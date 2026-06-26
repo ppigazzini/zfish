@@ -125,6 +125,18 @@ fn affineLayer(
     }
 }
 
+// M-FINAL cutover: native affine-layer byte sizes — fixed by the NNUE architecture
+// (fc_0 1024->32, fc_1 64->32, fc_2 32->1; biases int32 linear, weights int8 SSSE3-scrambled).
+// sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,32}. Replaces the C++
+// zfish_layer_*_bytes (sizeof the C++ Network's AffineTransform arrays), self-sufficient native.
+const layer_biases_bytes = [3]usize{ 128, 128, 4 };
+const layer_weights_bytes = [3]usize{ 32768, 2048, 32 };
+fn layerBiasesBytes(idx: c_int) usize {
+    return layer_biases_bytes[@intCast(idx)];
+}
+fn layerWeightsBytes(idx: c_int) usize {
+    return layer_weights_bytes[@intCast(idx)];
+}
 fn layerBiases(bucket: usize, idx: c_int) [*]const i32 {
     return @ptrCast(@alignCast(zfish_native_layer_ptr(bucket, idx, 0) orelse unreachable));
 }
@@ -335,6 +347,7 @@ fn nativeFeatureTransformerContentHash() usize {
 // Content hash of one natively-parsed layer stack. Equivalent to
 // NetworkArchitecture::get_content_hash.
 fn nativeLayerContentHash(network: *const anyopaque, bucket: usize) usize {
+    _ = network;
     var b: [3][*]const u8 = undefined;
     var w: [3][*]const u8 = undefined;
     var bn: [3]usize = undefined;
@@ -344,8 +357,8 @@ fn nativeLayerContentHash(network: *const anyopaque, bucket: usize) usize {
         const ui: usize = @intCast(idx);
         b[ui] = @ptrCast(zfish_native_layer_ptr(bucket, idx, 0) orelse return 0);
         w[ui] = @ptrCast(zfish_native_layer_ptr(bucket, idx, 1) orelse return 0);
-        bn[ui] = zfish_layer_biases_bytes(network, bucket, idx);
-        wn[ui] = zfish_layer_weights_bytes(network, bucket, idx);
+        bn[ui] = layerBiasesBytes(idx);
+        wn[ui] = layerWeightsBytes(idx);
     }
     return nnue_hash.layerStackContentHash(
         b[0][0..bn[0]], w[0][0..wn[0]],
@@ -506,6 +519,7 @@ fn loadInternal(network: *anyopaque) void {
 
 // Gather one layer stack's native biases/weights slices (fc_0/fc_1/fc_2).
 fn nativeLayerArrays(network: *const anyopaque, bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
+    _ = network;
     var b: [3][]const u8 = undefined;
     var w: [3][]const u8 = undefined;
     var idx: c_int = 0;
@@ -513,8 +527,8 @@ fn nativeLayerArrays(network: *const anyopaque, bucket: usize) ?struct { b: [3][
         const ui: usize = @intCast(idx);
         const bp: [*]const u8 = @ptrCast(zfish_native_layer_ptr(bucket, idx, 0) orelse return null);
         const wp: [*]const u8 = @ptrCast(zfish_native_layer_ptr(bucket, idx, 1) orelse return null);
-        b[ui] = bp[0..zfish_layer_biases_bytes(network, bucket, idx)];
-        w[ui] = wp[0..zfish_layer_weights_bytes(network, bucket, idx)];
+        b[ui] = bp[0..layerBiasesBytes(idx)];
+        w[ui] = wp[0..layerWeightsBytes(idx)];
     }
     return .{ .b = b, .w = w };
 }
@@ -654,18 +668,17 @@ fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize
     return true;
 }
 
-extern fn zfish_layer_weights_bytes(network: *const anyopaque, bucket: usize, idx: c_int) usize;
-extern fn zfish_layer_biases_bytes(network: *const anyopaque, bucket: usize, idx: c_int) usize;
 
 // Parse this bucket's affine layers natively into the Zig-owned inference storage
 // (skip the architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights), then
 // confirm each matches the C++-parsed layer memory byte-for-byte.
 fn parseLayerNative(network: *anyopaque, bucket: usize, blob: []const u8) void {
+    _ = network;
     var pos: usize = 4; // architecture component hash
     var idx: c_int = 0;
     while (idx < 3) : (idx += 1) {
-        const wb = zfish_layer_weights_bytes(network, bucket, idx);
-        const bb = zfish_layer_biases_bytes(network, bucket, idx);
+        const wb = layerWeightsBytes(idx);
+        const bb = layerBiasesBytes(idx);
         const bdst = zfish_native_layer_storage(bucket, idx, 0, bb) orelse
             @panic("native affine-layer storage allocation failed");
         const wdst = zfish_native_layer_storage(bucket, idx, 1, wb) orelse
