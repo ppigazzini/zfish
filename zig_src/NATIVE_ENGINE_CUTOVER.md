@@ -102,13 +102,20 @@ one-at-a-time, incrementally green, until uci_bridge.cpp + src delete (TU=0).
       The pre-flip accessor-routing made the RED flip land green immediately.
 - [~] tail ports (network/numa/options/position/listeners) — each interim C++ member is an
       independently-owned side-allocation → ports INCREMENTALLY GREEN. Progress:
-      - [x] position-set — e70283ef: Position::set (native FEN parser) + Position::legal →
-            native (position.zig setPosition/legal). Fully gated green. Remaining Position
-            bridge fn: zfish_position_do_move_state (needs native gives_check + dirty-piece
-            wrapper) — then the C++ Position type drops from the bridge.
-      - [ ] do_move_state, numa (native NumaConfig/NumaReplicationContext exist; coupled to
-            network via LazyNumaReplicated), options (native OptionsModel is read authority),
-            network (106MB storage giant), listeners, the thread cluster (ThreadPool+states).
+      - [x] position-set entry points — e70283ef + b6ea6121: Position::set (native FEN parser),
+            Position::do_move (doMoveState), Position::legal → native (position.zig). Fully
+            gated green. NOTE: this removed the C++ Position *method bodies* from those bridge
+            ENTRY points, but the C++ Position *TYPE* is still threaded through many bridge
+            signatures (Network::evaluate(const Position&), generate<>(const Position&),
+            RootMove::extract_ponder_from_tt, syzygy_extend_pv, perft's local Position, the
+            Position:: method shims at 2865-2920). Those methods are already native-shimmed;
+            removing the TYPE means switching those signatures to void*/native — a larger grind.
+      - [ ] REVISED SCOPE: the tail isn't "5 member ports" — it's removing pervasive C++ TYPE
+            usage (Position/Network/OptionsMap/ThreadPool/NumaReplicationContext) threaded
+            through the 4000-line bridge. Most leaf ops are already native-shimmed; the work is
+            the glue + the type-parameterized eval/movegen/search C++ entry points. Mechanical
+            but extensive. Candidates next: numa, options (model is read authority), then the
+            big types. The flip (breakthrough) is done; this is the long mechanical grind.
 - [ ] delete uci_bridge.cpp + src + oracle; H9 gate
 
 ### CORRECTION (2026-06-26): updateContext is LIVE, not dead
