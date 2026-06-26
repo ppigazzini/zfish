@@ -1917,7 +1917,13 @@ void Thread::idle_loop() {
 
 #endif  // ZFISH_LEGACY_CPP_TARGET (C++ Thread vehicle)
 
+// M-FINAL cutover (thread cluster): dead in the default build — every caller of
+// ThreadPool::main_manager() is legacy-only (the legacy Worker::start_searching body, the
+// legacy ThreadPool::clear, the legacy main_manager bridge fns); the default build navigates
+// to the manager via the native zfish_threadpool_main_manager_ptr (zig_src/main.zig).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 Search::SearchManager* ThreadPool::main_manager() { return main_thread()->worker->main_manager(); }
+#endif
 
 // M-FINAL cutover (thread cluster): native in the default build (zfish_pool_nodes/tbhits ->
 // zig_src/main.zig offset-iteration). Legacy oracle keeps these C++ accumulate methods.
