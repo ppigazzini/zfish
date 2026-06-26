@@ -70,21 +70,12 @@ extern fn zfish_network_set_loaded_state(
     description_ptr: [*]const u8,
     description_len: usize,
 ) void;
-extern fn zfish_network_hash_value() u32;
-extern fn zfish_network_feature_transformer_read_blob(
-    network: *anyopaque,
-    data_ptr: [*]const u8,
-    data_len: usize,
-) usize;
-extern fn zfish_network_layer_read_blob(
-    network: *anyopaque,
-    bucket: usize,
-    data_ptr: [*]const u8,
-    data_len: usize,
-) usize;
-extern fn zfish_network_feature_transformer_content_hash(network: *const anyopaque) usize;
-extern fn zfish_network_layer_content_hash(network: *const anyopaque, bucket: usize) usize;
-extern fn zfish_network_eval_file_content_hash(network: *const anyopaque) usize;
+// Legacy oracle only: parse the blob into the C++ Network so the legacy C++ eval reads its
+// weights. In the DEFAULT build these are Network-free no-op stubs (uci_bridge.cpp) — the native
+// parse (parse*Native) populates the Zig-owned inference storage and is the sole source. The
+// return is ignored; the load offset advances by the native parse's consumed-byte count.
+extern fn zfish_network_feature_transformer_read_blob(network: *anyopaque, data_ptr: [*]const u8, data_len: usize) usize;
+extern fn zfish_network_layer_read_blob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) usize;
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_network_transform_bucket(
     network: *const anyopaque,
@@ -428,25 +419,6 @@ fn nativeEvalFileContentHash() usize {
     );
 }
 
-// Load-time self-check: the native component hashes must equal the C++ ones,
-// proving the native content hash before it replaces them.
-fn verifyNativeContentHashes(network: *const anyopaque) void {
-    if (nativeFeatureTransformerContentHash() != zfish_network_feature_transformer_content_hash(network)) {
-        @panic("native feature-transformer content hash does not match the C++ hash");
-    }
-    var bucket: usize = 0;
-    while (bucket < layer_stacks) : (bucket += 1) {
-        if (nativeLayerContentHash(network, bucket) != zfish_network_layer_content_hash(network, bucket)) {
-            @panic("native layer-stack content hash does not match the C++ hash");
-        }
-    }
-    if (nativeEvalFileContentHash() != zfish_network_eval_file_content_hash(network)) {
-        @panic("native eval-file content hash does not match the C++ hash");
-    }
-    if (nnue_hash.networkHashValue() != zfish_network_hash_value()) {
-        @panic("native network hash value does not match the C++ hash");
-    }
-}
 
 fn evaluateBucketRaw(
     network: *const anyopaque,
@@ -609,10 +581,10 @@ fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []cons
     }
 
     setLoadedStateNative(network, current_name, header.description);
-    verifyNativeContentHashes(network);
-    // M-FINAL cutover: the native-vs-C++ serialization round-trip self-check is retired —
-    // redundant with the content-hash cross-check (above) + the eval gates, and the native
-    // save path is exercised by the save tests. Retires the C++ write_blob accessors.
+    // M-FINAL cutover: the C++ Network is no longer parsed (no read_blob), so the load-time
+    // native-vs-C++ content-hash + serialization self-checks are retired. The native parse is
+    // the sole source; correctness is verified end-to-end by the eval gates (bench 2336177 /
+    // search-parity), and the offset==bytes.len check above verifies the consumed-byte count.
     return true;
 }
 
@@ -644,26 +616,26 @@ extern fn zfish_native_layer_storage(bucket: usize, idx: c_int, is_weights: c_in
 // it matches the C++-parsed feature-transformer byte-for-byte (per weight region,
 // skipping alignment padding). The native parse is the inference source; the C++
 // parse remains only as a load-time cross-check.
-fn parseFeatureTransformerNative(network: *anyopaque, blob: []const u8) void {
+// Parse the feature transformer natively into the Zig-owned storage and return the bytes
+// consumed (leading component hash + the LEB-coded params). The native parse is the sole
+// source — the C++ Network is no longer parsed (the eval gates verify the weights end-to-end,
+// and the offset==bytes.len check at the end of loadNetworkBytes verifies the consumed count).
+fn parseFeatureTransformerNative(blob: []const u8) usize {
     const dst_ptr = zfish_native_ft_storage(nnue_parse.ft_total_bytes) orelse
         @panic("native feature-transformer storage allocation failed");
     const dst = dst_ptr[0..nnue_parse.ft_total_bytes];
-    if (nnue_parse.parseFeatureTransformer(blob, dst) == null) {
+    return nnue_parse.parseFeatureTransformer(blob, dst) orelse
         @panic("native feature-transformer parse failed");
-    }
-    // M-FINAL cutover: the byte-for-byte native-vs-C++ FT parse compare is retired — it is
-    // redundant with the FT content-hash cross-check (above) and the end-to-end eval gates
-    // (bench 2336177 / search-parity). Removing it retires the C++ FT data accessor.
-    _ = network;
 }
 
 fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize) bool {
     const remaining = bytes[offset.*..];
-    const consumed = zfish_network_feature_transformer_read_blob(network, remaining.ptr, remaining.len);
+    const consumed = parseFeatureTransformerNative(remaining);
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
-    parseFeatureTransformerNative(network, remaining[0..consumed]);
+    // Legacy oracle populates the C++ Network here; default build no-op. Return ignored.
+    _ = zfish_network_feature_transformer_read_blob(network, remaining.ptr, remaining.len);
     offset.* += consumed;
     return true;
 }
@@ -672,8 +644,10 @@ fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize
 // Parse this bucket's affine layers natively into the Zig-owned inference storage
 // (skip the architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights), then
 // confirm each matches the C++-parsed layer memory byte-for-byte.
-fn parseLayerNative(network: *anyopaque, bucket: usize, blob: []const u8) void {
-    _ = network;
+// Parse this bucket's affine layers natively into the Zig-owned storage (skip the leading
+// architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights) and return the bytes
+// consumed. Native is the sole source — no C++ Network parse.
+fn parseLayerNative(bucket: usize, blob: []const u8) usize {
     var pos: usize = 4; // architecture component hash
     var idx: c_int = 0;
     while (idx < 3) : (idx += 1) {
@@ -685,20 +659,19 @@ fn parseLayerNative(network: *anyopaque, bucket: usize, blob: []const u8) void {
             @panic("native affine-layer storage allocation failed");
         const used = nnue_parse.parseLayer(blob[pos..], bdst[0..bb], wdst[0..wb]) orelse
             @panic("native affine-layer parse failed");
-        // M-FINAL cutover: the byte-for-byte native-vs-C++ layer parse compare is retired —
-        // redundant with the layer content-hash cross-check + the eval gates. Removing it
-        // retires the C++ layer data accessors (zfish_layer_biases/weights).
         pos += used;
     }
+    return pos;
 }
 
 fn readLayer(network: *anyopaque, bucket: usize, bytes: []const u8, offset: *usize) bool {
     const remaining = bytes[offset.*..];
-    const consumed = zfish_network_layer_read_blob(network, bucket, remaining.ptr, remaining.len);
+    const consumed = parseLayerNative(bucket, remaining);
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
-    parseLayerNative(network, bucket, remaining[0..consumed]);
+    // Legacy oracle populates the C++ Network here; default build no-op. Return ignored.
+    _ = zfish_network_layer_read_blob(network, bucket, remaining.ptr, remaining.len);
     offset.* += consumed;
     return true;
 }
