@@ -35,7 +35,8 @@ pub export fn zfish_optmodel_add(
 ) usize {
     const model = ensureModel();
     const resolved: OptionKind = @enumFromInt(if (kind > 3) @as(u8, 0) else kind);
-    return model.add(name_ptr[0..name_len], resolved, default_ptr[0..default_len], min, max, 0) catch
+    const name = name_ptr[0..name_len];
+    return model.add(name, resolved, default_ptr[0..default_len], min, max, callbackKindForName(name)) catch
         std.math.maxInt(usize);
 }
 
@@ -205,6 +206,13 @@ fn parseSetOptionAlloc(input: []const u8) !ParsedSetOption {
     while (token_iter.next()) |token| {
         if (!in_value and std.mem.eql(u8, token, "value")) {
             in_value = true;
+            continue;
+        }
+
+        // UCI grammar: `setoption name <id…> value <val…>`. The first token ("setoption") was
+        // skipped above; skip the leading "name" keyword too, else it is captured as part of the
+        // option id and every lookup fails with "No such option: name <id>".
+        if (!in_value and name.items.len == 0 and std.mem.eql(u8, token, "name")) {
             continue;
         }
 
@@ -590,6 +598,22 @@ pub const callback_hash: u8 = 4;
 pub const callback_clear_hash: u8 = 5;
 pub const callback_syzygy_path: u8 = 6;
 pub const callback_eval_file: u8 = 7;
+
+// The on-change callback kind for an option, keyed by its (canonical) name — the same
+// mapping registerStandardOptions uses. The runtime registration path (C++ OptionsMap::add →
+// zfish_optmodel_register → zfish_optmodel_add) does not carry the kind, so derive it here;
+// otherwise every option registers with callback_none and setoption never fires the engine
+// callbacks (resize threads / TT / reload net / numa), i.e. options take no effect.
+pub fn callbackKindForName(name: []const u8) u8 {
+    if (nameEquals(name, "Debug Log File")) return callback_debug_log_file;
+    if (nameEquals(name, "NumaPolicy")) return callback_numa_policy;
+    if (nameEquals(name, "Threads")) return callback_threads;
+    if (nameEquals(name, "Hash")) return callback_hash;
+    if (nameEquals(name, "Clear Hash")) return callback_clear_hash;
+    if (nameEquals(name, "SyzygyPath")) return callback_syzygy_path;
+    if (nameEquals(name, "EvalFile")) return callback_eval_file;
+    return callback_none;
+}
 
 pub const StandardOptionParams = struct {
     max_threads: c_int,
