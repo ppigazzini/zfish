@@ -4090,10 +4090,15 @@ void zfish_member_numa_context_delete(void* p) { std::free(p); }
 
 // threads: a default-constructed ThreadPool (its vector is populated later by
 // zfish_native_threadpool_set; setupStates is adopted at search start).
-void* zfish_member_threadpool_new() { return new Stockfish::ThreadPool(); }
-void  zfish_member_threadpool_delete(void* p) {
-    delete static_cast<Stockfish::ThreadPool*>(p);
-}
+// M-FINAL cutover: native allocation of the ThreadPool storage — no C++ ctor/dtor. ThreadPool's
+// ctor is `ThreadPool(){}` and its members (atomic_bool stop/increaseDepth, unique_ptr setupStates,
+// vector threads/boundThreadToNumaNode) are all zero-init-valid with no vtable/mutex, so a calloc'd
+// buffer equals a value-initialized ThreadPool. The threads vector is native-managed
+// (native_threadpool.zig writes begin/end by offset); teardown runs zfish_native_threadpool_clear
+// first (drains, joins, destroys threads, nulls the vector), so ~ThreadPool would be a no-op —
+// free() is equivalent. (sizeof stays until the frozen-type forward-decl endgame swaps it native.)
+void* zfish_member_threadpool_new() { return std::calloc(1, sizeof(Stockfish::ThreadPool)); }
+void  zfish_member_threadpool_delete(void* p) { std::free(p); }
 
 // options: a default-constructed OptionsMap. Stays the interim registration vehicle
 // (OptionsMap::add populates the native OptionsModel + the setoption relay), so it is
