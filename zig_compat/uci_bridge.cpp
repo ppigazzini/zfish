@@ -2535,6 +2535,7 @@ std::size_t          zfish_optmodel_add(const unsigned char* name_ptr, std::size
                                         std::size_t default_len, int min, int max);
 std::uint8_t         zfish_optmodel_has_index(std::size_t idx);
 int                  zfish_optmodel_int_by_index(std::size_t idx);
+int                  zfish_optmodel_int_by_name(const unsigned char* name_ptr, std::size_t name_len);
 std::size_t          zfish_optmodel_current_len(std::size_t idx);
 const unsigned char* zfish_optmodel_current_ptr(std::size_t idx);
 char*                zfish_optmodel_render();
@@ -2576,6 +2577,13 @@ void zfish_optmodel_register(const std::string& name, const Option& option) {
 void zfish_optstore_publish(std::size_t idx, const std::string& value) {
     zfish_optmodel_publish_by_index(idx, reinterpret_cast<const unsigned char*>(value.data()),
                                     value.size());
+}
+
+// M-FINAL cutover: a boolean option read sourced from the Zig model (default-build authority),
+// so the remaining default get_options()[...] bool reads no longer touch the C++ OptionsMap.
+bool zfish_opt_bool_native(const char* name) {
+    const std::size_t len = std::char_traits<char>::length(name);
+    return zfish_optmodel_int_by_name(reinterpret_cast<const unsigned char*>(name), len) != 0;
 }
 
 std::string zfish_optstore_read(std::size_t idx) {
@@ -3136,7 +3144,12 @@ void UCIEngine::init_search_update_listeners() {
     engine.set_on_update_no_moves([](const auto& i) { on_update_no_moves(i); });
     engine.set_on_update_full([this](const auto& i) {
         zfish_set_last_nodes_searched(i.nodes);
-        on_update_full(i, engine.get_options()["UCI_ShowWDL"]);
+#ifndef ZFISH_LEGACY_CPP_TARGET
+        const bool show_wdl = zfish_opt_bool_native("UCI_ShowWDL");
+#else
+        const bool show_wdl = engine.get_options()["UCI_ShowWDL"];
+#endif
+        on_update_full(i, show_wdl);
     });
     engine.set_on_bestmove([](const auto& bm, const auto& p) { on_bestmove(bm, p); });
     engine.set_on_verify_network([](const auto& s) { print_info_string(s); });
@@ -3264,7 +3277,11 @@ std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
     const std::string fen(rendered_fen);
     std::free(const_cast<char*>(rendered_fen));
 
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    const bool chess960 = zfish_opt_bool_native("UCI_Chess960");
+#else
     const bool chess960 = engine->get_options()["UCI_Chess960"];
+#endif
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
     // The recursive subtree count runs in Zig (zfish_perft_subtree); the root
