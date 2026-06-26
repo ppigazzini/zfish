@@ -110,6 +110,9 @@ pub const search_manager_off = struct {
 pub const thread_pool_off = struct {
     pub const stop: usize = 0; // std::atomic_bool
     pub const increase_depth: usize = 1; // std::atomic_bool
+    // setupStates: StateListPtr (unique_ptr<deque<StateInfo>>, single pointer) at 8
+    // (after increaseDepth@1, padded to the pointer's 8-byte alignment).
+    pub const setup_states: usize = 8;
     // threads: std::vector<unique_ptr<Thread>> {begin, end, cap} at 16/24/32.
     // size() == (end - begin) / sizeof(unique_ptr) (8 bytes).
     pub const threads_begin: usize = 16;

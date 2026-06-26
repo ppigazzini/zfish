@@ -3627,10 +3627,14 @@ void zfish_threadpool_setup_states_adopt_from_slot(void* pool_ptr, void* states_
     pool.setupStates = std::move(states);
 }
 
+// M-FINAL cutover (thread cluster): native in the default build (zig_src/main.zig, setupStates
+// null-check by offset). Legacy oracle keeps the C++ ThreadPool::setupStates access.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint8_t zfish_threadpool_has_setup_states(const void* pool_ptr) {
     const auto& pool = *static_cast<const ThreadPool*>(pool_ptr);
     return pool.setupStates ? std::uint8_t{1} : std::uint8_t{0};
 }
+#endif
 
 const void* zfish_threadpool_setup_state_back(const void* pool_ptr) {
     const auto& pool = *static_cast<const ThreadPool*>(pool_ptr);

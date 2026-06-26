@@ -355,6 +355,14 @@ fn zfishPositionDoMoveState(pos_ptr: *anyopaque, move_raw: u16, state_ptr: *anyo
 // memset whose result is thread-independent, so zero the slice synchronously on the caller
 // (the paired wait_thread no-ops). Matches the C++ #else branch byte-for-byte. Legacy keeps
 // the C++ ThreadPool::run_on_thread path.
+// M-FINAL cutover (thread cluster): native ThreadPool::setupStates null-check. setupStates is
+// a StateListPtr (single pointer) at thread_pool_off.setup_states; has-states == ptr != null.
+// Pure offset read (no deque internals). Default-only (legacy keeps the C++ method).
+fn zfishThreadpoolHasSetupStates(pool: *const anyopaque) callconv(.c) u8 {
+    const slot = @as(*const usize, @ptrFromInt(@intFromPtr(pool) + graph_layout.thread_pool_off.setup_states)).*;
+    return if (slot != 0) 1 else 0;
+}
+
 fn zfishThreadpoolZeroTtSlice(
     threads_ptr: *anyopaque,
     thread_id: usize,
@@ -1435,6 +1443,7 @@ comptime {
         @export(&zfishPositionDoMoveState, .{ .name = "zfish_position_do_move_state" });
         // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
         @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
+        @export(&zfishThreadpoolHasSetupStates, .{ .name = "zfish_threadpool_has_setup_states" });
     }
 }
 
