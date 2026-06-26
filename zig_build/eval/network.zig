@@ -82,8 +82,6 @@ extern fn zfish_network_layer_read_blob(
     data_ptr: [*]const u8,
     data_len: usize,
 ) usize;
-extern fn zfish_network_feature_transformer_write_blob(network: *const anyopaque) OwnedByteView;
-extern fn zfish_network_layer_write_blob(network: *const anyopaque, bucket: usize) OwnedByteView;
 extern fn zfish_network_feature_transformer_content_hash(network: *const anyopaque) usize;
 extern fn zfish_network_layer_content_hash(network: *const anyopaque, bucket: usize) usize;
 extern fn zfish_network_eval_file_content_hash(network: *const anyopaque) usize;
@@ -539,36 +537,6 @@ fn serializeLayerNative(network: *const anyopaque, bucket: usize, out: *std.Arra
     try nnue_parse.serializeLayer(nnue_hash.architectureHashValue(), arr.b, arr.w, out, a);
 }
 
-// Load-time self-check: the native serialization must reproduce the C++
-// write_parameters blob byte-for-byte, for the feature transformer and every
-// layer stack. Proves native save before it replaces the C++ path.
-fn verifyNativeSerialize(network: *const anyopaque) void {
-    const a = std.heap.c_allocator;
-    var buf = std.ArrayList(u8).empty;
-    defer buf.deinit(a);
-
-    buf.clearRetainingCapacity();
-    serializeFtNative(&buf, a) catch return;
-    const ft_ref = zfish_network_feature_transformer_write_blob(network);
-    defer freeOwnedBlob(ft_ref);
-    const ft_ref_slice = ownedViewToSlice(ft_ref) orelse return;
-    if (!std.mem.eql(u8, buf.items, ft_ref_slice)) {
-        @panic("native feature-transformer serialization does not match the C++ write");
-    }
-
-    var bucket: usize = 0;
-    while (bucket < layer_stacks) : (bucket += 1) {
-        buf.clearRetainingCapacity();
-        serializeLayerNative(network, bucket, &buf, a) catch return;
-        const ref = zfish_network_layer_write_blob(network, bucket);
-        defer freeOwnedBlob(ref);
-        const ref_slice = ownedViewToSlice(ref) orelse return;
-        if (!std.mem.eql(u8, buf.items, ref_slice)) {
-            @panic("native layer-stack serialization does not match the C++ write");
-        }
-    }
-}
-
 fn saveNamed(network: *const anyopaque, filename: []const u8) bool {
     const current_name = nnCurrent();
     if (current_name.len == 0 or std.mem.eql(u8, current_name, none_name)) {
@@ -628,7 +596,9 @@ fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []cons
 
     setLoadedStateNative(network, current_name, header.description);
     verifyNativeContentHashes(network);
-    verifyNativeSerialize(network);
+    // M-FINAL cutover: the native-vs-C++ serialization round-trip self-check is retired —
+    // redundant with the content-hash cross-check (above) + the eval gates, and the native
+    // save path is exercised by the save tests. Retires the C++ write_blob accessors.
     return true;
 }
 

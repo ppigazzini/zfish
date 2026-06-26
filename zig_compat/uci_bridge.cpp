@@ -399,6 +399,10 @@ std::size_t zfish_network_layer_read_blob(void*                network_ptr,
     return read_parameters_blob(data_ptr, data_len, NetworkBridgeAccess::layer(network, bucket));
 }
 
+// M-FINAL cutover: dead in the default build — the native serialization round-trip
+// self-check that read these was retired (redundant). The native save path serializes from
+// native storage. Legacy oracle keeps them.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 ZfishOwnedByteView zfish_network_feature_transformer_write_blob(const void* network_ptr) {
     const auto& network = *static_cast<const Network*>(network_ptr);
     const auto  bytes = write_parameters_blob(NetworkBridgeAccess::featureTransformer(network));
@@ -426,6 +430,7 @@ ZfishOwnedByteView zfish_network_layer_write_blob(const void* network_ptr, std::
     std::memcpy(copy, bytes->data(), bytes->size());
     return {copy, bytes->size()};
 }
+#endif
 
 std::size_t zfish_network_feature_transformer_content_hash(const void* network_ptr) {
     const auto& network = *static_cast<const Network*>(network_ptr);
