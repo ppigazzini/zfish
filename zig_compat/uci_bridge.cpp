@@ -3763,6 +3763,68 @@ extern "C" bool zfish_shadow_verify_network_holder(const void* network,
 // Flip fire 4: whole-graph native owned-member construction exercise (zig_src/main.zig).
 extern "C" bool zfish_shadow_construct_engine_graph();
 
+// ---------------------------------------------------------------------------
+// M-FINAL cutover (NATIVE_ENGINE_CUTOVER.md): standalone heap allocators for the
+// engine's interim-C++ members. The native engine (zig_src) owns each member as an
+// explicitly-freed heap object that it points at, instead of an inline sub-object of
+// a C++ Engine -- so no C++ ~Engine/~UCIEngine ever runs and the ~Engine/~ThreadPool
+// coupling dissolves. These mint/destroy the individual C++ member objects the native
+// container references; each member later ports to a native type incrementally green.
+// Default build only (the legacy oracle keeps the inline C++ Engine + its ctor/dtor).
+// Unused until the construct/destruct flip wires them; additive + behaviour-neutral.
+#ifndef ZFISH_LEGACY_CPP_TARGET
+extern "C" {
+
+// numaContext: NumaReplicationContext(NumaConfig::from_system(DefaultNumaPolicy)).
+void* zfish_member_numa_context_new() {
+    using namespace Stockfish;
+    return new NumaReplicationContext(NumaConfig::from_system(DefaultNumaPolicy));
+}
+void zfish_member_numa_context_delete(void* p) {
+    delete static_cast<Stockfish::NumaReplicationContext*>(p);
+}
+
+// threads: a default-constructed ThreadPool (its vector is populated later by
+// zfish_native_threadpool_set; setupStates is adopted at search start).
+void* zfish_member_threadpool_new() { return new Stockfish::ThreadPool(); }
+void  zfish_member_threadpool_delete(void* p) {
+    delete static_cast<Stockfish::ThreadPool*>(p);
+}
+
+// states: StateListPtr(new std::deque<StateInfo>(1)) on the heap. Returned as the
+// raw deque pointer; the native engine holds it in its `states` slot (a unique_ptr
+// equivalent) and it is std::move'd into pool.setupStates at search start.
+void* zfish_member_states_new() {
+    return new std::deque<Stockfish::StateInfo>(1);
+}
+void zfish_member_states_delete(void* p) {
+    delete static_cast<std::deque<Stockfish::StateInfo>*>(p);
+}
+void* zfish_member_states_back(void* p) {
+    return &static_cast<std::deque<Stockfish::StateInfo>*>(p)->back();
+}
+
+// network: LazyNumaReplicatedSystemWide<Network>(numaContext, get_default_network()).
+// get_default_network() == make_unique<Network>(EvalFile{default}) + load(binaryDir).
+void* zfish_member_network_new(void* numa_context, const char* binary_dir,
+                               std::size_t binary_dir_len) {
+    using namespace Stockfish;
+    namespace NN = Eval::NNUE;
+    auto&       numa = *static_cast<NumaReplicationContext*>(numa_context);
+    std::string bdir(binary_dir, binary_dir_len);
+    auto        net = std::make_unique<NN::Network>(NN::EvalFile{EvalFileDefaultName, "None", ""});
+    net->load(bdir, "");
+    return new LazyNumaReplicatedSystemWide<NN::Network>(numa, std::move(net));
+}
+void zfish_member_network_delete(void* p) {
+    using namespace Stockfish;
+    namespace NN = Eval::NNUE;
+    delete static_cast<LazyNumaReplicatedSystemWide<NN::Network>*>(p);
+}
+
+}  // extern "C"
+#endif  // !ZFISH_LEGACY_CPP_TARGET
+
 static void zfish_engine_construct_members(Stockfish::Engine* e, const char* argv0) {
     using namespace Stockfish;
     zfish_place(e->binaryDirectory, CommandLine::get_binary_directory(argv0));
