@@ -138,6 +138,7 @@ void*       zfish_engine_states_slot_ptr(void* engine_ptr);
 void        zfish_engine_states_slot_reset(void* states_slot_ptr);
 const void* zfish_engine_network_ptr(const void* engine_ptr);
 void*       zfish_engine_threads_ptr(void* engine_ptr);
+void*       zfish_engine_network_replicated_ptr(void* engine_ptr);
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr);
 std::size_t  zfish_limits_perft_value(const void* limits_ptr);
 void zfish_engine_emit_verify_message(const void*          engine_ptr,
@@ -2575,7 +2576,11 @@ const char* zfish_engine_evalfile_text(const void* engine_ptr) {
 #endif
 
 const char* zfish_engine_numa_config_text(const void* engine_ptr) {
-    return alloc_c_string(static_cast<const Engine*>(engine_ptr)->numaContext.get_numa_config().to_string());
+    // M-FINAL cutover: read numaContext via the accessor (returns &engine->numaContext
+    // inline now, the heap NumaReplicationContext after the flip) — behaviour-identical.
+    auto* numa = static_cast<const NumaReplicationContext*>(
+      zfish_engine_numa_context_ptr(const_cast<void*>(engine_ptr)));
+    return alloc_c_string(numa->get_numa_config().to_string());
 }
 
 // zfish_engine_position_ptr, _options_ptr, _numa_context_ptr, _states_slot_ptr
@@ -2586,7 +2591,12 @@ void zfish_engine_states_slot_reset(void* states_slot_ptr) {
 }
 
 const void* zfish_engine_network_ptr(const void* engine_ptr) {
-    return static_cast<const Engine*>(engine_ptr)->network.operator->();
+    // M-FINAL cutover: resolve the network wrapper via the accessor (returns
+    // &engine->network inline now, the heap LazyNumaReplicated after the flip), then
+    // operator->() to the live Network* — behaviour-identical.
+    auto* wrapper = static_cast<LazyNumaReplicatedSystemWide<NN::Network>*>(
+      zfish_engine_network_replicated_ptr(const_cast<void*>(engine_ptr)));
+    return wrapper->operator->();
 }
 
 // zfish_engine_threads_ptr, _tt_ptr, _shared_hists_ptr, _network_replicated_ptr,
@@ -2783,10 +2793,20 @@ void assign_magic_entries() {
 
 }  // namespace
 
-const OptionsMap& Engine::get_options() const { return options; }
-OptionsMap&       Engine::get_options() { return options; }
+// M-FINAL cutover: get_options() resolves the OptionsMap via the accessor — &this->options
+// (inline) now, the heap OptionsMap after the flip. Every options[...] / setoption caller
+// funnels through here, so this one rewire covers them all. `this` is used only as the
+// opaque engine pointer the accessor offsets/reads.
+const OptionsMap& Engine::get_options() const {
+    return *static_cast<const OptionsMap*>(zfish_engine_options_ptr(this));
+}
+OptionsMap& Engine::get_options() {
+    return *static_cast<OptionsMap*>(const_cast<void*>(zfish_engine_options_ptr(this)));
+}
 
-void Engine::flip() { pos.flip(); }
+// flip() flips the LIVE position (the native side block via the accessor), not the dead
+// inline engine->pos. Untested on the gate (no flip command), so behaviour-neutral there.
+void Engine::flip() { static_cast<Position*>(zfish_engine_position_ptr(this))->flip(); }
 
 extern "C" {
 
