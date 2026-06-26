@@ -355,6 +355,66 @@ fn zfishPositionDoMoveState(pos_ptr: *anyopaque, move_raw: u16, state_ptr: *anyo
 // memset whose result is thread-independent, so zero the slice synchronously on the caller
 // (the paired wait_thread no-ops). Matches the C++ #else branch byte-for-byte. Legacy keeps
 // the C++ ThreadPool::run_on_thread path.
+// M-FINAL cutover (states crack): native StateList replaces the C++ deque<StateInfo> across the
+// storage (position-setup chain), the engine `states` slot (fallback root), and the pool's
+// setupStates@8. PendingStateStorage carries the unique_ptr MOVE semantics (state_list.zig).
+// The slot + setupStates@8 hold a `?*StateList`; adopt MOVEs the pointer + nulls the source.
+const StateList = state_list_port.StateList;
+const PendingStateStorage = state_list_port.PendingStateStorage;
+
+fn poolSetupStatesSlot(pool: *anyopaque) *?*StateList {
+    return @ptrFromInt(@intFromPtr(pool) + graph_layout.thread_pool_off.setup_states);
+}
+fn freeSetupStatesIfAny(pool: *anyopaque) void {
+    const slot = poolSetupStatesSlot(pool);
+    if (slot.*) |old| {
+        state_list_port.destroyStateList(std.heap.c_allocator, old);
+        slot.* = null;
+    }
+}
+
+fn zfishStateListStorageCreate() callconv(.c) ?*anyopaque {
+    return PendingStateStorage.create(std.heap.c_allocator) catch null;
+}
+fn zfishStateListStorageDestroy(storage: ?*anyopaque) callconv(.c) void {
+    if (storage) |s| @as(*PendingStateStorage, @ptrCast(@alignCast(s))).destroy();
+}
+fn zfishStateListStorageReset(storage: *anyopaque) callconv(.c) *anyopaque {
+    return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).reset() catch @panic("OOM: state reset");
+}
+fn zfishStateListStoragePush(storage: *anyopaque) callconv(.c) *anyopaque {
+    return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).push() catch @panic("OOM: state push");
+}
+fn zfishStateListStorageHasStates(storage: *const anyopaque) callconv(.c) u8 {
+    return if (@as(*const PendingStateStorage, @ptrCast(@alignCast(storage))).hasStates()) 1 else 0;
+}
+// engine `states` slot: a ?*StateList. reset() mirrors unique_ptr::reset() — free + null
+// (the slot is the rarely-used fallback; the storage chain is what searches normally adopt).
+fn zfishEngineStatesSlotReset(slot_ptr: *anyopaque) callconv(.c) void {
+    const slot: *?*StateList = @ptrCast(@alignCast(slot_ptr));
+    if (slot.*) |list| {
+        state_list_port.destroyStateList(std.heap.c_allocator, list);
+        slot.* = null;
+    }
+}
+// adopt: MOVE the StateList into the pool's setupStates@8, freeing any prior one (between
+// searches setupStates still owns the previous list; ~ThreadPool no longer frees it).
+fn zfishThreadpoolSetupStatesAdoptFromStorage(pool: *anyopaque, storage: *anyopaque) callconv(.c) void {
+    freeSetupStatesIfAny(pool);
+    poolSetupStatesSlot(pool).* = @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).moveOut();
+}
+fn zfishThreadpoolSetupStatesAdoptFromSlot(pool: *anyopaque, slot_ptr: *anyopaque) callconv(.c) void {
+    freeSetupStatesIfAny(pool);
+    const src: *?*StateList = @ptrCast(@alignCast(slot_ptr));
+    poolSetupStatesSlot(pool).* = src.*;
+    src.* = null;
+}
+fn zfishThreadpoolSetupStateBack(pool: *const anyopaque) callconv(.c) ?*anyopaque {
+    const slot = @as(*const ?*StateList, @ptrFromInt(@intFromPtr(@constCast(pool)) + graph_layout.thread_pool_off.setup_states)).*;
+    if (slot) |list| return list.back();
+    return null;
+}
+
 // M-FINAL cutover (thread cluster): native ThreadPool::setupStates null-check. setupStates is
 // a StateListPtr (single pointer) at thread_pool_off.setup_states; has-states == ptr != null.
 // Pure offset read (no deque internals). Default-only (legacy keeps the C++ method).
@@ -1444,6 +1504,16 @@ comptime {
         // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
         @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
         @export(&zfishThreadpoolHasSetupStates, .{ .name = "zfish_threadpool_has_setup_states" });
+        // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
+        @export(&zfishStateListStorageCreate, .{ .name = "zfish_engine_state_list_storage_create" });
+        @export(&zfishStateListStorageDestroy, .{ .name = "zfish_engine_state_list_storage_destroy" });
+        @export(&zfishStateListStorageReset, .{ .name = "zfish_engine_state_list_storage_reset" });
+        @export(&zfishStateListStoragePush, .{ .name = "zfish_engine_state_list_storage_push" });
+        @export(&zfishStateListStorageHasStates, .{ .name = "zfish_engine_state_list_storage_has_states" });
+        @export(&zfishEngineStatesSlotReset, .{ .name = "zfish_engine_states_slot_reset" });
+        @export(&zfishThreadpoolSetupStatesAdoptFromStorage, .{ .name = "zfish_threadpool_setup_states_adopt_from_storage" });
+        @export(&zfishThreadpoolSetupStatesAdoptFromSlot, .{ .name = "zfish_threadpool_setup_states_adopt_from_slot" });
+        @export(&zfishThreadpoolSetupStateBack, .{ .name = "zfish_threadpool_setup_state_back" });
     }
 }
 

@@ -2625,9 +2625,13 @@ const char* zfish_engine_numa_config_text(const void* engine_ptr) {
 // zfish_engine_position_ptr, _options_ptr, _numa_context_ptr, _states_slot_ptr
 // are native (main.zig), offset into the engine pointer via graph_layout.engine_off.
 
+// M-FINAL cutover (states crack): native in the default build (zig_src/main.zig, StateList
+// free+null). Legacy keeps the C++ unique_ptr::reset().
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_states_slot_reset(void* states_slot_ptr) {
     static_cast<StateListPtr*>(states_slot_ptr)->reset();
 }
+#endif
 
 const void* zfish_engine_network_ptr(const void* engine_ptr) {
     // M-FINAL cutover: resolve the network wrapper via the accessor (returns
@@ -3589,6 +3593,9 @@ struct ZfishPendingStateListStorage {
         states(new std::deque<StateInfo>(1)) {}
 };
 
+// M-FINAL cutover (states crack): native StateList storage/adopt in the default build
+// (zig_src/main.zig + state_list.zig). Legacy oracle keeps the C++ deque<StateInfo> storage.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void* zfish_engine_state_list_storage_create() {
     return new (std::nothrow) ZfishPendingStateListStorage();
 }
@@ -3626,6 +3633,7 @@ void zfish_threadpool_setup_states_adopt_from_slot(void* pool_ptr, void* states_
 
     pool.setupStates = std::move(states);
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET (states crack)
 
 // M-FINAL cutover (thread cluster): native in the default build (zig_src/main.zig, setupStates
 // null-check by offset). Legacy oracle keeps the C++ ThreadPool::setupStates access.
@@ -3636,6 +3644,9 @@ std::uint8_t zfish_threadpool_has_setup_states(const void* pool_ptr) {
 }
 #endif
 
+// M-FINAL cutover (states crack): native in the default build (zig_src/main.zig, StateList.back()
+// by offset). Legacy keeps the C++ deque back().
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const void* zfish_threadpool_setup_state_back(const void* pool_ptr) {
     const auto& pool = *static_cast<const ThreadPool*>(pool_ptr);
     if (!pool.setupStates)
@@ -3643,6 +3654,7 @@ const void* zfish_threadpool_setup_state_back(const void* pool_ptr) {
 
     return &pool.setupStates->back();
 }
+#endif
 
 void zfish_numa_context_set_system(void* numa_context_ptr) {
     auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
