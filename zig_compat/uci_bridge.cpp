@@ -2716,12 +2716,18 @@ const char* zfish_engine_evalfile_text(const void* engine_ptr) {
 }
 #endif
 
+extern "C" char* zfish_native_numa_config_string();  // native NumaConfig::to_string (main.zig)
 const char* zfish_engine_numa_config_text(const void* engine_ptr) {
-    // M-FINAL cutover: read numaContext via the accessor (returns &engine->numaContext
-    // inline now, the heap NumaReplicationContext after the flip) — behaviour-identical.
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: the default build has no C++ NumaReplicationContext — the single-node CPU
+    // topology string is produced natively from the process affinity (main.zig).
+    (void) engine_ptr;
+    return zfish_native_numa_config_string();
+#else
     auto* numa = static_cast<const NumaReplicationContext*>(
       zfish_engine_numa_context_ptr(const_cast<void*>(engine_ptr)));
     return alloc_c_string(numa->get_numa_config().to_string());
+#endif
 }
 
 // zfish_engine_position_ptr, _options_ptr, _numa_context_ptr, _states_slot_ptr
