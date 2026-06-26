@@ -366,6 +366,11 @@ ZfishByteView zfish_network_embedded_bytes() {
     return {reinterpret_cast<const unsigned char*>(gEmbeddedNNUEData), std::size_t(gEmbeddedNNUESize)};
 }
 
+// M-FINAL cutover: these dual-write the C++ Network's EvalFile state (initialized flag,
+// current name, description). In the DEFAULT build the native load owns that state (network.zig
+// nn_* globals) and nothing reads the C++ Network's EvalFile — so these are no-ops. The LEGACY
+// oracle keeps the real writes: the C++ eval / verify reads the C++ EvalFile.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_network_mark_initialized(void* network_ptr) {
     auto& network = *static_cast<Network*>(network_ptr);
     NetworkBridgeAccess::markInitialized(network);
@@ -381,6 +386,11 @@ void zfish_network_set_loaded_state(void*                network_ptr,
     eval_file.netDescription =
       std::string(reinterpret_cast<const char*>(description_ptr), description_len);
 }
+#else
+void zfish_network_mark_initialized(void*) {}
+void zfish_network_set_loaded_state(void*, const unsigned char*, std::size_t,
+                                    const unsigned char*, std::size_t) {}
+#endif
 
 // M-FINAL cutover: in the DEFAULT build the native NNUE parse (network.zig) is the SOLE parse —
 // it writes the Zig-owned inference storage and advances the load offset from its own consumed
@@ -526,6 +536,10 @@ std::size_t zfish_layer_biases_bytes(const void* network_ptr, std::size_t bucket
 // zfish_network_propagate_bucket is now Zig-owned (network.zig). The bridge only
 // exposes the per-layer weight/bias pointers above.
 
+// M-FINAL cutover: dead in the default build — the native verify (network.zig) emits the
+// architecture dims as native constants (they are sizeof/static-constexpr, data-independent).
+// Legacy oracle keeps the C++ Network query.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 ZfishNetworkVerifyInfo zfish_network_verify_info(const void* network_ptr) {
     const auto& network = *static_cast<const Network*>(network_ptr);
     const auto& feature_transformer = NetworkBridgeAccess::featureTransformer(network);
@@ -536,6 +550,7 @@ ZfishNetworkVerifyInfo zfish_network_verify_info(const void* network_ptr) {
             layer.FC_0_OUTPUTS,
             layer.FC_1_OUTPUTS};
 }
+#endif
 }
 
 void Network::load(const std::string& rootDirectory, std::string evalfilePath) {
