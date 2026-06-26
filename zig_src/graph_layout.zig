@@ -9,6 +9,7 @@
 // caught immediately rather than corrupting a mirror silently.
 
 const std = @import("std");
+const target_flags = @import("target_flags");
 
 // Canonical C++ footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = 13882816;
@@ -251,6 +252,13 @@ const pinned = [_]Pinned{
 };
 
 pub export fn zfish_graph_verify_layouts() void {
+    // M-FINAL cutover: the cross-check against the C++ sizeof/offsetof (zfish_graph_layout_size)
+    // runs ONLY in the legacy oracle build, which compiles the real src/ types on the same
+    // machine/compiler and verifies every pinned constant each gate run. The default build (no
+    // src/ types — the frozen-type forward-decl endgame) trusts those legacy-verified constants
+    // and skips the check, so it carries no sizeof(frozen-type) dependency. comptime so the
+    // zfish_graph_layout_size references are eliminated in the default build (no undefined symbol).
+    if (comptime !target_flags.legacy_target) return;
     for (pinned) |entry| {
         const actual = zfish_graph_layout_size(entry.which);
         if (actual != entry.value) {
