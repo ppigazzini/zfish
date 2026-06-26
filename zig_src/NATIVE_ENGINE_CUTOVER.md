@@ -100,8 +100,15 @@ one-at-a-time, incrementally green, until uci_bridge.cpp + src delete (TU=0).
       teardown (H5) + valgrind (H3, Threads {1,2}: no leak / bad access). The default
       build runs the NativeEngine container; no C++ ~Engine/~UCIEngine/~ThreadPool runs.
       The pre-flip accessor-routing made the RED flip land green immediately.
-- [ ] tail ports (network/numa/options/position/listeners) — now each interim C++ member
-      is an independently-owned side-allocation, so these port INCREMENTALLY GREEN.
+- [~] tail ports (network/numa/options/position/listeners) — each interim C++ member is an
+      independently-owned side-allocation → ports INCREMENTALLY GREEN. Progress:
+      - [x] position-set — e70283ef: Position::set (native FEN parser) + Position::legal →
+            native (position.zig setPosition/legal). Fully gated green. Remaining Position
+            bridge fn: zfish_position_do_move_state (needs native gives_check + dirty-piece
+            wrapper) — then the C++ Position type drops from the bridge.
+      - [ ] do_move_state, numa (native NumaConfig/NumaReplicationContext exist; coupled to
+            network via LazyNumaReplicated), options (native OptionsModel is read authority),
+            network (106MB storage giant), listeners, the thread cluster (ThreadPool+states).
 - [ ] delete uci_bridge.cpp + src + oracle; H9 gate
 
 ### CORRECTION (2026-06-26): updateContext is LIVE, not dead
