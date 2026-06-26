@@ -1749,24 +1749,32 @@ void TimeManagement::advance_nodes_time(std::int64_t nodes) {
     availableNodes = std::max(int64_t(0), availableNodes - nodes);
 }
 
+// M-FINAL cutover: native model int read (default-build option authority), so TimeManagement::init
+// reads nodestime / Move Overhead / Ponder from the Zig model instead of the C++ OptionsMap operator[].
+extern "C" int zfish_optmodel_int_by_name(const unsigned char* name_ptr, std::size_t name_len);
+static inline int zfish_opt_int_native(const char* n) {
+    return zfish_optmodel_int_by_name(reinterpret_cast<const unsigned char*>(n),
+                                      std::char_traits<char>::length(n));
+}
 void TimeManagement::init(Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
                           const OptionsMap&   options,
                           double&             originalTimeAdjust) {
+    (void) options;  // option values now sourced from the Zig model (default build)
     const ZfishTimemanInput input = {
       .time_us              = limits.time[us],
       .inc_us               = limits.inc[us],
       .start_time           = limits.startTime,
-      .npmsec               = options["nodestime"],
-      .move_overhead        = options["Move Overhead"],
+      .npmsec               = zfish_opt_int_native("nodestime"),
+      .move_overhead        = zfish_opt_int_native("Move Overhead"),
       .available_nodes      = availableNodes,
       .current_optimum_time = optimumTime,
       .current_maximum_time = maximumTime,
       .movestogo            = limits.movestogo,
       .ply                  = ply,
       .original_time_adjust = originalTimeAdjust,
-      .ponder               = static_cast<std::uint8_t>(options["Ponder"] ? 1 : 0),
+      .ponder               = static_cast<std::uint8_t>(zfish_opt_int_native("Ponder") ? 1 : 0),
     };
 
     const auto output = zfish_timeman_init(input);
@@ -2557,22 +2565,9 @@ void zfish_optmodel_set_by_name(const unsigned char* name_ptr, std::size_t name_
 namespace {
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
-std::uint8_t zfish_optmodel_kind(const std::string& type) {
-    if (type == "check")
-        return 1;
-    if (type == "spin")
-        return 2;
-    if (type == "button")
-        return 3;
-    return 0;  // string / combo
-}
-
-void zfish_optmodel_register(const std::string& name, const Option& option) {
-    zfish_optmodel_add(reinterpret_cast<const unsigned char*>(name.data()), name.size(),
-                       zfish_optmodel_kind(option.type),
-                       reinterpret_cast<const unsigned char*>(option.defaultValue.data()),
-                       option.defaultValue.size(), option.min, option.max);
-}
+// M-FINAL cutover: zfish_optmodel_kind/register are retired — registration now goes straight to the
+// Zig model via zfish_engine_add_option (no C++ Option/OptionsMap::add path), so they had no callers
+// and referenced the C++ Option type. Removed (frozen-type forward-decl prerequisite).
 
 void zfish_optstore_publish(std::size_t idx, const std::string& value) {
     zfish_optmodel_publish_by_index(idx, reinterpret_cast<const unsigned char*>(value.data()),
@@ -3890,6 +3885,12 @@ void zfish_numa_context_set_none(void* numa_context_ptr) {
 bool Tune::update_on_last;
 OptionsMap* Tune::options;
 
+// M-FINAL cutover: the C++ OptionsMap methods are dead in the default build — registration goes
+// straight to the Zig model (zfish_engine_add_option), reads are model-routed, the info listener was
+// retired, Tune is inert, and the OptionsMap member is a malloc(1) stub. Legacy-only; the default
+// build never calls them (verified by the link). Removes the C++ OptionsMap member access from the
+// default build (a frozen-type forward-decl prerequisite).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void OptionsMap::add_info_listener(InfoListener&& message_func) {
     info = std::move(message_func);
 }
@@ -3909,11 +3910,6 @@ void OptionsMap::add(const std::string& name, const Option& option) {
 
         options_map[name].parent = this;
         options_map[name].idx    = insert_order++;
-#ifndef ZFISH_LEGACY_CPP_TARGET
-        // Register into the Zig model in lockstep with insert_order, so the
-        // model's registration index matches this option's idx.
-        zfish_optmodel_register(name, options_map[name]);
-#endif
     }
     else
     {
@@ -3923,6 +3919,7 @@ void OptionsMap::add(const std::string& name, const Option& option) {
 }
 
 std::size_t OptionsMap::count(const std::string& name) const { return options_map.count(name); }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 Option::Option(const OptionsMap* map) :
     parent(map) {}
@@ -4011,15 +4008,24 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& optionsMap) {
     return os;
 }
 
+// M-FINAL cutover: Tune (SPSA) is inactive in a release build — no live TUNE() macros, so the tune
+// list is empty and these Entry<int> methods are never called. In the default build they are inert,
+// so they do not reference the C++ OptionsMap (add/count/operator[]) or Option — breaking the
+// OptionsMap↔Tune↔Option coupling so the OptionsMap methods can be retired. Legacy keeps the SPSA
+// bridge to the real C++ OptionsMap.
 template<>
 void Tune::Entry<int>::init_option() {
+#ifdef ZFISH_LEGACY_CPP_TARGET
     make_option(options, name, value, range);
+#endif
 }
 
 template<>
 void Tune::Entry<int>::read_option() {
+#ifdef ZFISH_LEGACY_CPP_TARGET
     if (options->count(name))
         value = int((*options)[name]);
+#endif
 }
 
 template<>
