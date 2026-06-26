@@ -96,8 +96,6 @@ extern fn zfish_network_transform_bucket(
     bucket: usize,
     transformed_ptr: [*]u8,
 ) c_int;
-extern fn zfish_layer_biases(network: *const anyopaque, bucket: usize, idx: c_int) [*]const i32;
-extern fn zfish_layer_weights(network: *const anyopaque, bucket: usize, idx: c_int) [*]const i8;
 extern fn zfish_network_verify_info(network: *const anyopaque) VerifyInfo;
 
 // NNUE network layer forward pass (NetworkArchitecture::propagate), ported to
@@ -652,7 +650,6 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
     return .{ .hash_value = hash_value, .description = description };
 }
 
-extern fn zfish_network_feature_transformer_ptr(network: *const anyopaque) *const anyopaque;
 
 // Native-owned inference storage, allocated by main.zig. The native parse writes
 // the weights straight here; inference reads from the same memory.
@@ -670,12 +667,10 @@ fn parseFeatureTransformerNative(network: *anyopaque, blob: []const u8) void {
     if (nnue_parse.parseFeatureTransformer(blob, dst) == null) {
         @panic("native feature-transformer parse failed");
     }
-    const ref_ptr: [*]const u8 = @ptrCast(zfish_network_feature_transformer_ptr(network));
-    for (nnue_parse.ft_regions) |r| {
-        if (!std.mem.eql(u8, dst[r.off .. r.off + r.len], ref_ptr[r.off .. r.off + r.len])) {
-            @panic("native feature-transformer parse does not match the C++ parse");
-        }
-    }
+    // M-FINAL cutover: the byte-for-byte native-vs-C++ FT parse compare is retired — it is
+    // redundant with the FT content-hash cross-check (above) and the end-to-end eval gates
+    // (bench 2336177 / search-parity). Removing it retires the C++ FT data accessor.
+    _ = network;
 }
 
 fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize) bool {
@@ -707,10 +702,9 @@ fn parseLayerNative(network: *anyopaque, bucket: usize, blob: []const u8) void {
             @panic("native affine-layer storage allocation failed");
         const used = nnue_parse.parseLayer(blob[pos..], bdst[0..bb], wdst[0..wb]) orelse
             @panic("native affine-layer parse failed");
-        const ref_b: [*]const u8 = @ptrCast(zfish_layer_biases(network, bucket, idx));
-        const ref_w: [*]const u8 = @ptrCast(zfish_layer_weights(network, bucket, idx));
-        if (!std.mem.eql(u8, bdst[0..bb], ref_b[0..bb]) or !std.mem.eql(u8, wdst[0..wb], ref_w[0..wb]))
-            @panic("native affine-layer parse does not match the C++ parse");
+        // M-FINAL cutover: the byte-for-byte native-vs-C++ layer parse compare is retired —
+        // redundant with the layer content-hash cross-check + the eval gates. Removing it
+        // retires the C++ layer data accessors (zfish_layer_biases/weights).
         pos += used;
     }
 }

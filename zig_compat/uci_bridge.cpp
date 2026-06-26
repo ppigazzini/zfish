@@ -446,10 +446,15 @@ std::size_t zfish_network_eval_file_content_hash(const void* network_ptr) {
 // (zfish_network_transform_bucket in zig_src/main.zig). The bridge only exposes
 // the FeatureTransformer pointer so the Zig accumulator evaluate can read its
 // weights -- the same pointer the C++ AccumulatorStack::evaluate passed.
+// M-FINAL cutover: dead in the default build — the native parse cross-check byte-compare
+// that read this was retired (redundant with the FT content-hash cross-check + the eval
+// gates). Legacy oracle keeps it.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const void* zfish_network_feature_transformer_ptr(const void* network_ptr) {
         const auto& network = *static_cast<const Network*>(network_ptr);
         return &NetworkBridgeAccess::featureTransformer(network);
 }
+#endif
 
 // Per-bucket affine-layer weight/bias pointers for the Zig propagate
 // (zfish_network_propagate_bucket in network.zig). idx 0=fc_0, 1=fc_1, 2=fc_2.
@@ -459,6 +464,10 @@ const void* zfish_network_feature_transformer_ptr(const void* network_ptr) {
 // zig_src/main.zig. is_weights selects weights (1) vs biases (0).
 extern "C" const void* zfish_native_layer_ptr(std::size_t bucket, int idx, int is_weights);
 
+// M-FINAL cutover: dead in the default build — the eval reads layer weights from native
+// storage (zfish_native_layer_ptr) and the parse cross-check byte-compare was retired.
+// Legacy oracle keeps these C++ layer data accessors.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const std::int32_t* zfish_layer_biases(const void* network_ptr, std::size_t bucket, int idx) {
         if (auto* p = zfish_native_layer_ptr(bucket, idx, 0))
             return static_cast<const std::int32_t*>(p);
@@ -472,6 +481,7 @@ const std::int8_t* zfish_layer_weights(const void* network_ptr, std::size_t buck
         const auto& l = NetworkBridgeAccess::layer(*static_cast<const Network*>(network_ptr), bucket);
         return idx == 0 ? l.fc_0.weights : idx == 1 ? l.fc_1.weights : l.fc_2.weights;
 }
+#endif
 
 // Exact in-memory sizes of each affine layer's weight / bias arrays, so Zig can
 // adopt them into native storage.

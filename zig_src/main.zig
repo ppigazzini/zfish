@@ -2949,7 +2949,6 @@ pub export fn zfish_network_evaluate(
 // FeatureTransformer::transform shim: gets the FeatureTransformer pointer from
 // the network (bridge helper) and the side to move from the Position mirror,
 // then runs the Zig transform. Same symbol the network.zig forward path calls.
-extern fn zfish_network_feature_transformer_ptr(network: *const anyopaque) *const anyopaque;
 
 // Native-owned feature-transformer storage. The native .nnue parse (network.zig)
 // writes the SIMD-permuted ~106 MB of weights straight into this Zig-owned buffer
@@ -3009,7 +3008,11 @@ pub export fn zfish_network_transform_bucket(
     bucket: usize,
     transformed_ptr: [*]u8,
 ) c_int {
-    const ft = native_ft_ptr orelse zfish_network_feature_transformer_ptr(network);
+    // M-FINAL cutover: the FT transform reads weights from native storage. The former C++
+    // Network fallback (zfish_network_feature_transformer_ptr) is removed — native_ft_ptr is
+    // always resident after the network load, so the fallback was never reached at runtime.
+    _ = network;
+    const ft = native_ft_ptr orelse @panic("native feature-transformer storage not initialized");
     const stm = position_port.sideToMove(pos);
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
 }
