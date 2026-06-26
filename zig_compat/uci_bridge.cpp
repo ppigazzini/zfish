@@ -3791,6 +3791,14 @@ void  zfish_member_threadpool_delete(void* p) {
     delete static_cast<Stockfish::ThreadPool*>(p);
 }
 
+// options: a default-constructed OptionsMap. Stays the interim registration vehicle
+// (OptionsMap::add populates the native OptionsModel + the setoption relay), so it is
+// still the path that feeds the native store until options ports fully native.
+void* zfish_member_options_new() { return new Stockfish::OptionsMap(); }
+void  zfish_member_options_delete(void* p) {
+    delete static_cast<Stockfish::OptionsMap*>(p);
+}
+
 // states: StateListPtr(new std::deque<StateInfo>(1)) on the heap. Returned as the
 // raw deque pointer; the native engine holds it in its `states` slot (a unique_ptr
 // equivalent) and it is std::move'd into pool.setupStates at search start.
