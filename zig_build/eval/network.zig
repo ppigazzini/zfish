@@ -85,7 +85,6 @@ extern fn zfish_network_transform_bucket(
     bucket: usize,
     transformed_ptr: [*]u8,
 ) c_int;
-extern fn zfish_network_verify_info(network: *const anyopaque) VerifyInfo;
 
 // NNUE network layer forward pass (NetworkArchitecture::propagate), ported to
 // Zig. Layers: fc_0 (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 62->32)
@@ -269,7 +268,18 @@ pub fn verify(
         };
     }
 
-    const info = zfish_network_verify_info(network);
+    // M-FINAL cutover: the verification dims are fixed by the NNUE architecture (sizeof the C++
+    // FeatureTransformer + NetworkArchitecture*LayerStacks; the static InputDimensions /
+    // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS). Native constants replace
+    // zfish_network_verify_info, so the verify message needs no C++ Network.
+    _ = network;
+    const info = VerifyInfo{
+        .size_bytes = 111263232,
+        .input_dimensions = 83248,
+        .transformed_dimensions = 1024,
+        .fc0_outputs = 31,
+        .fc1_outputs = 32,
+    };
     return .{
         .should_exit = 0,
         .message = allocMessage(
