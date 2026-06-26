@@ -1358,10 +1358,11 @@ void Search::SearchManager::check_time(Search::Worker& worker) {
 // leaf operations the C++ helpers expose. The C++ body below is retained for the
 // legacy oracle, so the output-parity gate cross-checks the Zig port end to end.
 extern "C" void zfish_worker_start_searching(void* worker);
+// M-FINAL cutover: legacy-only. The native thread runtime runs the Zig search body
+// (zfish_worker_start_searching) directly (native_thread.zig / thread.zig), never this C++ method —
+// dead in the default build. Removes the C++ Worker/SearchManager member access in its driver body.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void Search::Worker::start_searching() {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    zfish_worker_start_searching(this);
-#else
     accumulatorStack.reset();
     lastIterationPV.clear();
 
@@ -1420,8 +1421,8 @@ void Search::Worker::start_searching() {
 
     auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
     main_manager()->updates.onBestmove(bestmove, ponder);
-#endif
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 // Leaf seams for the Zig-owned start_searching driver (default target only). Zig
 // owns the sequencing and every branch; these helpers perform the individual
