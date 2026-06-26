@@ -1111,6 +1111,13 @@ bool Search::RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Posi
 
 // Worker constructor relocated verbatim from search.cpp: unpack the SharedState
 // into members and run the initial clear().
+// M-FINAL cutover (decouple step 4): dead in the default build — the native
+// zfish_worker_construct_full (worker_native_construct.zig) writes the field set + runs
+// the clear pieces, sourcing the FT biases from native_ft_ptr, so no C++ placement-new of
+// Worker via this ctor happens. This ctor's refreshTable(network[token]) was the LAST
+// default-build C++ Network[token] access; guarding it legacy-only makes the C++ Network
+// fully runtime-vestigial in the default build.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 Search::Worker::Worker(Search::SharedState&            sharedState,
                        std::unique_ptr<Search::ISearchManager> sm,
                        std::size_t                     threadId,
@@ -1130,6 +1137,7 @@ Search::Worker::Worker(Search::SharedState&            sharedState,
     refreshTable(network[token]) {
     clear();
 }
+#endif
 
 // M-FINAL cutover (thread cluster): ThreadPool::nodes_searched()/tb_hits() accumulate. The
 // default build uses the native offset-iteration over the threads vector (zig_src/main.zig);
