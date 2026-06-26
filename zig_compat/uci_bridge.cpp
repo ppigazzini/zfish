@@ -1101,6 +1101,19 @@ Search::Worker::Worker(Search::SharedState&            sharedState,
     clear();
 }
 
+// M-FINAL cutover (thread cluster): ThreadPool::nodes_searched()/tb_hits() accumulate. The
+// default build uses the native offset-iteration over the threads vector (zig_src/main.zig);
+// the legacy oracle keeps the C++ methods. All call sites go through these helpers.
+#ifndef ZFISH_LEGACY_CPP_TARGET
+extern "C" std::uint64_t zfish_threadpool_nodes_searched(const void* pool);
+extern "C" std::uint64_t zfish_threadpool_tb_hits(const void* pool);
+static inline std::uint64_t zfish_pool_nodes(const ThreadPool& t) { return zfish_threadpool_nodes_searched(&t); }
+static inline std::uint64_t zfish_pool_tbhits(const ThreadPool& t) { return zfish_threadpool_tb_hits(&t); }
+#else
+static inline std::uint64_t zfish_pool_nodes(const ThreadPool& t) { return t.nodes_searched(); }
+static inline std::uint64_t zfish_pool_tbhits(const ThreadPool& t) { return t.tb_hits(); }
+#endif
+
 // SearchManager::pv (UCI info output). The default target delegates to the
 // Zig-owned driver (zfish_search_pv, below); the C++ body is retained for the
 // legacy oracle. syzygy_extend_pv is dead in this no-tablebase build (rootInTB
@@ -1120,11 +1133,11 @@ void Search::SearchManager::pv(Search::Worker&           worker,
     zfish_search_pv(this, &worker, const_cast<ThreadPool*>(&threads),
                     const_cast<TranspositionTable*>(&tt), static_cast<int>(depth));
 #else
-    const auto nodes     = threads.nodes_searched();
+    const auto nodes     = zfish_pool_nodes(threads);
     auto&      rootMoves = worker.rootMoves;
     auto&      pos       = worker.rootPos;
     std::size_t multiPV  = std::min(std::size_t(worker.options["MultiPV"]), rootMoves.size());
-    std::uint64_t tbHits = threads.tb_hits() + (worker.tbConfig.rootInTB ? rootMoves.size() : 0);
+    std::uint64_t tbHits = zfish_pool_tbhits(threads) + (worker.tbConfig.rootInTB ? rootMoves.size() : 0);
 
     for (std::size_t i = 0; i < multiPV; ++i)
     {
@@ -1226,7 +1239,7 @@ void Search::SearchManager::check_time(Search::Worker& worker) {
 
     static TimePoint lastInfoTime = now();
 
-    TimePoint elapsed = tm.elapsed([&worker]() { return worker.threads.nodes_searched(); });
+    TimePoint elapsed = tm.elapsed([&worker]() { return zfish_pool_nodes(worker.threads); });
     TimePoint tick    = worker.limits.startTime + elapsed;
 
     if (tick - lastInfoTime >= 1000)
@@ -1240,7 +1253,7 @@ void Search::SearchManager::check_time(Search::Worker& worker) {
 
     if ((worker.limits.use_time_management() && (elapsed > tm.maximum() || stopOnPonderhit))
         || (worker.limits.movetime && elapsed >= worker.limits.movetime)
-        || (worker.limits.nodes && worker.threads.nodes_searched() >= worker.limits.nodes))
+        || (worker.limits.nodes && zfish_pool_nodes(worker.threads) >= worker.limits.nodes))
         worker.threads.stop = true;
 }
 
@@ -1288,7 +1301,7 @@ void Search::Worker::start_searching() {
     threads.wait_for_search_finished();
 
     if (limits.npmsec)
-        main_manager()->tm.advance_nodes_time(threads.nodes_searched()
+        main_manager()->tm.advance_nodes_time(zfish_pool_nodes(threads)
                                               - limits.inc[rootPos.side_to_move()]);
 
     Worker* bestThread = this;
@@ -1373,7 +1386,7 @@ extern "C" void zfish_ss_wait_finished(void* worker) {
 
 extern "C" void zfish_ss_npmsec_advance(void* worker) {
     auto* w = static_cast<Search::Worker*>(worker);
-    w->main_manager()->tm.advance_nodes_time(w->threads.nodes_searched()
+    w->main_manager()->tm.advance_nodes_time(zfish_pool_nodes(w->threads)
                                              - w->limits.inc[w->rootPos.side_to_move()]);
 }
 
@@ -1906,8 +1919,12 @@ void Thread::idle_loop() {
 
 Search::SearchManager* ThreadPool::main_manager() { return main_thread()->worker->main_manager(); }
 
+// M-FINAL cutover (thread cluster): native in the default build (zfish_pool_nodes/tbhits ->
+// zig_src/main.zig offset-iteration). Legacy oracle keeps these C++ accumulate methods.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 uint64_t ThreadPool::nodes_searched() const { return accumulate(&Search::Worker::nodes); }
 uint64_t ThreadPool::tb_hits() const { return accumulate(&Search::Worker::tbHits); }
+#endif
 
 // Stage-7 7.2a: ThreadPool::set (+ its next_power_of_two helper) retired. The
 // Stage-4 native thread runtime replaced it with native_threadpool.zig
