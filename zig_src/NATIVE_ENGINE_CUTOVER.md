@@ -118,6 +118,22 @@ one-at-a-time, incrementally green, until uci_bridge.cpp + src delete (TU=0).
             big types. The flip (breakthrough) is done; this is the long mechanical grind.
 - [ ] delete uci_bridge.cpp + src + oracle; H9 gate
 
+### NETWORK type-removal plan + the MULTI-NODE caveat (2026-06-26, latest)
+DONE (merged or on-branch): the C++ Network is runtime-vestigial (decouple steps 1-4) + the parse
+byte-compare + serialization self-check cross-checks are retired (5 C++ fns gone). REMAINING to
+delete the C++ Network TYPE: (a) drop the load-time content-hash check (the LAST load verification —
+keep it; its removal is marginal + the type stays blocked regardless); (b) make the native parse
+self-sufficient for SIZES (native layer/FT byte constants instead of zfish_layer_*_bytes — padding
+makes these error-prone; derive + verify); (c) drop the C++ parse (zfish_network_*_read_blob); (d)
+THE BLOCKER — the engine `network` member is LazyNumaReplicatedSystemWide<Network> (frozen src/numa.h),
+numa-coupled. To delete the C++ Network type, this holder must become a NATIVE single-node holder.
+That is SINGLE-NODE GATE-VERIFIABLE (the gate is single-node) BUT makes MULTI-NODE NUMA UNSUPPORTED —
+a real limitation the single-node gate CANNOT detect. So removing the C++ Network type = a product
+decision to drop multi-node numa support, not a pure refactor. Same caveat blocks the NUMA type
+(NumaReplicationContext) — it's mutually coupled with the holder. CONCLUSION: the network RUNTIME
+decoupling (the verifiable architectural win) is DONE + merged; the network/numa TYPE removal is a
+large coordinated single-node-only effort gated on the multi-node-support decision.
+
 ### NETWORK reframing (2026-06-26) — the eval is ALREADY fully native; only load/holder remain
 The "106MB giant" is mostly done. BOTH the feature transformer AND the affine layers are native-
 stored (main.zig native_ft_ptr/native_ft_storage + native_layer_ptr/native_layer_storage), the
