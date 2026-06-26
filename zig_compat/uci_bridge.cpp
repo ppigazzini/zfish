@@ -140,6 +140,7 @@ const void* zfish_engine_network_ptr(const void* engine_ptr);
 void*       zfish_engine_threads_ptr(void* engine_ptr);
 void*       zfish_engine_network_replicated_ptr(void* engine_ptr);
 const void* zfish_engine_update_context_ptr(const void* engine_ptr);
+void*       zfish_engine_onverifynetwork_ptr(void* engine_ptr);
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr);
 std::size_t  zfish_limits_perft_value(const void* limits_ptr);
 void zfish_engine_emit_verify_message(const void*          engine_ptr,
@@ -2378,7 +2379,13 @@ void Engine::set_on_bestmove(std::function<void(std::string_view, std::string_vi
 }
 
 void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: write the NativeEngine's onVerifyNetwork std::function via the accessor.
+    *static_cast<std::function<void(std::string_view)>*>(
+      zfish_engine_onverifynetwork_ptr(this)) = std::move(f);
+#else
     onVerifyNetwork = std::move(f);
+#endif
 }
 
 extern "C" {
@@ -2688,12 +2695,17 @@ std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr) {
 void zfish_engine_emit_verify_message(const void*          engine_ptr,
                                       const unsigned char* message_ptr,
                                       std::size_t          message_len) {
-    const auto* engine = static_cast<const Engine*>(engine_ptr);
-    if (!engine->onVerifyNetwork)
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: read the NativeEngine's onVerifyNetwork via the accessor.
+    const auto& on_verify = *static_cast<const std::function<void(std::string_view)>*>(
+      zfish_engine_onverifynetwork_ptr(const_cast<void*>(engine_ptr)));
+#else
+    const auto& on_verify = static_cast<const Engine*>(engine_ptr)->onVerifyNetwork;
+#endif
+    if (!on_verify)
         return;
 
-    engine->onVerifyNetwork(
-      std::string_view(reinterpret_cast<const char*>(message_ptr), message_len));
+    on_verify(std::string_view(reinterpret_cast<const char*>(message_ptr), message_len));
 }
 }
 
@@ -3843,6 +3855,16 @@ void zfish_member_update_context_destruct(void* p) {
     static_cast<UC*>(p)->~UC();
 }
 
+// onVerifyNetwork: an empty std::function<void(std::string_view)>, placement-constructed
+// in the native engine's inline slot. set_on_verify_network assigns it (print_info_string
+// interactive / no-op quiet); zfish_engine_emit_verify_message invokes it. Held inline so
+// the accessor address is stable.
+using ZfishVerifyNetworkFn = std::function<void(std::string_view)>;
+void zfish_member_verify_network_fn_construct(void* p) { ::new (p) ZfishVerifyNetworkFn(); }
+void zfish_member_verify_network_fn_destruct(void* p) {
+    static_cast<ZfishVerifyNetworkFn*>(p)->~ZfishVerifyNetworkFn();
+}
+
 // states: StateListPtr(new std::deque<StateInfo>(1)) on the heap. Returned as the
 // raw deque pointer; the native engine holds it in its `states` slot (a unique_ptr
 // equivalent) and it is std::move'd into pool.setupStates at search start.
@@ -3877,6 +3899,9 @@ void zfish_member_network_delete(void* p) {
 }  // extern "C"
 #endif  // !ZFISH_LEGACY_CPP_TARGET
 
+// M-FINAL cutover: legacy-oracle-only — the default build constructs a NativeEngine via
+// zfish_native_engine_construct_members instead of placement-constructing this C++ Engine.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 static void zfish_engine_construct_members(Stockfish::Engine* e, const char* argv0) {
     using namespace Stockfish;
     zfish_place(e->binaryDirectory, CommandLine::get_binary_directory(argv0));
@@ -3907,10 +3932,8 @@ static void zfish_engine_construct_members(Stockfish::Engine* e, const char* arg
         std::fprintf(stderr, "zfish: native engine-graph construction shadow failed\n");
         std::abort();
     }
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    zfish_verify_engine_graph(e);
-#endif
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 extern "C" {
 // Memory-footprint probe for the C++ object graph, the layout reference the Zig
@@ -3962,46 +3985,70 @@ std::size_t zfish_uci_engine_sizeof() { return sizeof(Stockfish::UCIEngine); }
 #endif
 std::size_t zfish_uci_engine_alignof() { return alignof(Stockfish::UCIEngine); }
 
+#ifndef ZFISH_LEGACY_CPP_TARGET
+// M-FINAL cutover: the native engine container (zig_src/native_engine.zig). The buffer
+// holds a NativeEngine, not a C++ UCIEngine — these build/teardown its heap members.
+extern "C" bool zfish_native_engine_construct_members(void* buf, const char* argv0);
+extern "C" void zfish_native_engine_set_cli(void* buf, int argc, char* const* argv);
+extern "C" void zfish_native_engine_destruct_members(void* buf);
+extern "C" void zfish_native_threadpool_clear(void* pool);
+#endif
+
 void zfish_uci_engine_construct_at(void* storage, int argc, char* const* argv) {
-    // Verify the Zig-side object-graph footprint still matches this C++ build
-    // before anything is constructed, so any upstream layout drift fails loudly.
+    // Verify the Zig-side object-graph footprint still matches this C++ build before
+    // anything is constructed, so any upstream layout drift fails loudly.
     zfish_graph_verify_layouts();
 
-    // Stage-6 6c: construct the UCIEngine by explicit member placement instead of
-    // calling the implicit UCIEngine/Engine constructors. The UCIEngine has exactly
-    // two members -- engine (offset 0) and cli -- so constructing both members plus
-    // running the ctor body (listener registration) fully reproduces the object.
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: the buffer holds a NativeEngine (an ownership container of heap
+    // members), NOT a C++ UCIEngine. Build the heap members + the inline live sub-objects
+    // (updateContext / onVerifyNetwork), store argc/argv, then run the same post-member
+    // work the UCIEngine ctor body did. UCIEngine::engine is at offset 0 (== storage) and
+    // every member access routes through the accessors, so init_body / add_info_listener /
+    // init_search_update_listeners / engine_options operate on the native storage unchanged.
+    if (!zfish_native_engine_construct_members(storage, argv[0]))
+        std::abort();
+    zfish_native_engine_set_cli(storage, argc, argv);
+    zfish_engine_init_body(storage);  // register options, set start position, size threads
+
     auto* uci = static_cast<Stockfish::UCIEngine*>(storage);
-
-    // engine sub-object: explicit per-member construction (replaces Engine::Engine).
+    uci->engine.get_options().add_info_listener([](const std::optional<std::string>& str) {
+        if (str.has_value())
+            Stockfish::UCIEngine::print_info_string(*str);
+    });
+    uci->init_search_update_listeners();  // sets the LIVE updateContext callbacks
+    Stockfish::Tune::init(uci->engine_options());
+    return;
+#else
+    // Legacy oracle: explicit per-member construction of a real C++ UCIEngine.
+    auto* uci = static_cast<Stockfish::UCIEngine*>(storage);
     zfish_engine_construct_members(&uci->engine, argv[0]);
-
-    // cli + the UCIEngine ctor body (info listener + search update listeners).
     ::new (&uci->cli) Stockfish::CommandLine(argc, const_cast<char**>(argv));
     uci->engine.get_options().add_info_listener([](const std::optional<std::string>& str) {
         if (str.has_value())
             Stockfish::UCIEngine::print_info_string(*str);
     });
     uci->init_search_update_listeners();
-
     Stockfish::Tune::init(uci->engine_options());
+#endif
 }
 
-#ifndef ZFISH_LEGACY_CPP_TARGET
-extern "C" void zfish_native_threadpool_clear(void* pool);
-#endif
 void zfish_uci_engine_destruct_at(void* storage) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: native teardown, no C++ ~UCIEngine. Free the states slot (if it was
+    // never handed off to pool.setupStates), join+free the native Threads and null the
+    // pool's threads vector, then free the heap members (delete threads runs ~ThreadPool,
+    // which frees setupStates; delete network/options/numa; free binary_dir; destruct the
+    // inline updateContext / onVerifyNetwork). states is freed by exactly one of
+    // release_pending_state_slot / ~ThreadPool.
+    zfish_engine_release_pending_state_slot(zfish_engine_states_slot_ptr(storage));
+    zfish_native_threadpool_clear(zfish_engine_threads_ptr(storage));
+    zfish_native_engine_destruct_members(storage);
+#else
     auto* uci_engine = static_cast<Stockfish::UCIEngine*>(storage);
     zfish_engine_release_pending_state_slot(&uci_engine->engine.states);
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // Stage-4 teardown hook: join + free the native Threads and null the pool's
-    // threads vector BEFORE ~Engine/~ThreadPool runs, so the C++ ThreadPool dtor
-    // sees an empty vector (size()==0) and never deletes a native Thread as a C++
-    // Thread*. Contents-swap lifecycle (see [[stage4-6-atomic-cut-design]]).
-    zfish_native_threadpool_clear(&uci_engine->engine.threads);
-#endif
-    // Run ~UCIEngine in place (members destruct in reverse declaration order,
-    // matching the C++ object model); Zig frees the footprint afterwards.
+    // Run ~UCIEngine in place; Zig frees the footprint afterwards.
     uci_engine->~UCIEngine();
+#endif
 }
 }
