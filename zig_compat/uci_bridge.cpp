@@ -488,8 +488,11 @@ const std::int8_t* zfish_layer_weights(const void* network_ptr, std::size_t buck
 }
 #endif
 
-// Exact in-memory sizes of each affine layer's weight / bias arrays, so Zig can
-// adopt them into native storage.
+// Exact in-memory sizes of each affine layer's weight / bias arrays.
+// M-FINAL cutover: dead in the default build — the native parse uses native size constants
+// (network.zig layer_biases_bytes/layer_weights_bytes = {128,128,4}/{32768,2048,32}). Legacy
+// oracle keeps these sizeof-the-C++-AffineTransform queries.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_layer_weights_bytes(const void* network_ptr, std::size_t bucket, int idx) {
         const auto& l = NetworkBridgeAccess::layer(*static_cast<const Network*>(network_ptr), bucket);
         return idx == 0 ? sizeof(l.fc_0.weights) : idx == 1 ? sizeof(l.fc_1.weights) : sizeof(l.fc_2.weights);
@@ -499,6 +502,7 @@ std::size_t zfish_layer_biases_bytes(const void* network_ptr, std::size_t bucket
         const auto& l = NetworkBridgeAccess::layer(*static_cast<const Network*>(network_ptr), bucket);
         return idx == 0 ? sizeof(l.fc_0.biases) : idx == 1 ? sizeof(l.fc_1.biases) : sizeof(l.fc_2.biases);
 }
+#endif
 
 // zfish_network_propagate_bucket is now Zig-owned (network.zig). The bridge only
 // exposes the per-layer weight/bias pointers above.
