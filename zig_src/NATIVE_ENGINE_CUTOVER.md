@@ -134,6 +134,34 @@ verified) → the C++ Network parse fns go dead/legacy → then the holder is th
 or keep the cross-check and port the holder. The cross-check removal is the higher-reward lever (kills
 the most C++ Network usage). Map-first per the proven de-risk-then-wire template (states crack).
 
+### NETWORK — post-eval-native blocking analysis (2026-06-26)
+After the eval-layers-native port (5937ec61), the C++ Network's remaining default-build uses are:
+(a) the LOAD-TIME CROSS-CHECK byte-compares (parseLayerNative @710-711 via zfish_layer_biases/
+weights; parseFeatureTransformerNative @673 via zfish_network_feature_transformer_ptr) — these 3
+data-accessor fns are now used ONLY by the compares; removing the compares makes them dead/guardable,
+BUT the cross-check is a VALUABLE working safety net (it has caught real parse bugs) and the reward is
+only ~3 fns, so NOT worth removing the net; (b) the C++ PARSE (zfish_network_*_read_blob into the C++
+Network) — still needed for the layer/FT byte SIZES (zfish_layer_*_bytes, architecture constants
+queried off the parsed Network) + offset advancement + the holder's Network content; (c) the HOLDER
+(LazyNumaReplicatedSystemWide<Network>, the engine `network` member) — numa-coupled; the workers
+resolve network through it. So the C++ Network can't be removed without (b→native sizes) AND (c→holder
+port, which is numa-coupled). NET: the network is BLOCKED on the holder→numa coupling for further
+removal. numa's multi-node paths are NOT gate-verifiable on single-node WSL2. The clean high-value,
+gate-verifiable network work (eval fully native) is DONE.
+
+### STATUS SUMMARY (2026-06-26): clean gate-verifiable ports largely exhausted
+MERGED to refactor (all gate-verified, incl valgrind where teardown-relevant): native-engine flip,
+Position set/do_move/legal, thread-cluster methods (zero_tt_slice/nodes_searched/tb_hits/main_manager/
+has_setup_states), states deque->StateList crack. ON BRANCH (gate-verified): network eval fully native.
+REMAINING = the hard tail, each blocked/intricate/risky-on-single-node: network (blocked on holder->
+numa), numa (multi-node un-gate-verifiable), options (setoption works but callback_kind plumbing
+unresolved — model registers kind=0 yet setoption Threads resizes, contradiction needs resolving
+before a safe port), ThreadPool construction (low reward, bound-vec single-node-untested). TU=0 (delete
+uci_bridge.cpp+src) needs ALL of these (the frozen src/ types are mutually-referential). This is the
+"rest of the conversion" — a large effort, partly un-verifiable on this host; suits focused/supervised
+work over autonomous loop ticks. The architectural CORE (native engine + native runtime: eval/search/
+states/thread-methods/Position) is done + merged.
+
 ### DEFINITIVE remaining-work map (2026-06-26, after position ports)
 The easy independent leaf ports are EXHAUSTED. Every remaining live default-build bridge fn
 is coupled to a hard C++ subsystem/type (even zfish_uci_print_line shares the C++ sync_cout
