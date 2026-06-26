@@ -118,6 +118,33 @@ one-at-a-time, incrementally green, until uci_bridge.cpp + src delete (TU=0).
             big types. The flip (breakthrough) is done; this is the long mechanical grind.
 - [ ] delete uci_bridge.cpp + src + oracle; H9 gate
 
+### DEFINITIVE remaining-work map (2026-06-26, after position ports)
+The easy independent leaf ports are EXHAUSTED. Every remaining live default-build bridge fn
+is coupled to a hard C++ subsystem/type (even zfish_uci_print_line shares the C++ sync_cout
+output mutex). The ~90 live C-ABI fns group into these deep subsystems — each a LARGE
+coordinated port (native type + rewire all its bridge fns + the woven signatures), not a
+quick leaf:
+  1. NETWORK (the giant): zfish_network_* (~13), zfish_layer_* (~4), worker_resolve_network,
+     member_network_*, thread_ensure_network_replicated. Needs native ownership of the 106MB
+     parsed Network (eval logic already native; STORAGE/parse is the giant). Coupled to numa
+     (LazyNumaReplicated holds the NumaReplicationContext&).
+  2. THREAD CLUSTER: zfish_threadpool_* (~8), zfish_engine_state_list_storage_* (~5),
+     states_slot_reset, native_worker_build, search_shared_state_*, ss_* (~4). Native
+     thread_runtime.ThreadPool + StateList EXIST. This is the original "RED core" but now
+     tractable (engine is native). Highest-value next subsystem.
+  3. NUMA: zfish_numa_context_* (~4), zfish_numa_config_* (~3), engine_numa_*. Native
+     NumaConfig/NumaReplicationContext exist; coupled to network (#1).
+  4. OPTIONS: add_option, apply_setoption_owner, options_text_owner, member_options_*. Native
+     OptionsModel is the read authority; the C++ OptionsMap is the registration vehicle +
+     info listener. Threaded into workers + syzygy.
+  5. ENGINE-OWNER + MISC: go_parsed/flip/perft/start_logger/emit_verify/numa-text renderers;
+     bitboards_init, operator_new/delete, uci_print_line, root_move_*, movepick snapshot,
+     limits_searchmove_text, search_id_pv. Mostly thin but type-coupled or output-coupled.
+HONEST SCOPE: the FLIP (breakthrough) is done + fully gated. TU=0 from here = these deep
+subsystem ports (esp. NETWORK 106MB storage), a substantial multi-session grind. Recommend
+merging the flip + position ports to refactor to lock in the breakthrough. Next subsystem:
+the THREAD CLUSTER (#2) — native types exist, highest value, now decoupled by the flip.
+
 ### CORRECTION (2026-06-26): updateContext is LIVE, not dead
 The prior memory said updateContext was dead. WRONG. The native search emit calls
 main_manager()->updates.onUpdateFull(...) / onBestmove / onUpdateNoMoves / onIter — the C++
