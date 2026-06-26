@@ -15,6 +15,7 @@ const worker_construct = @import("worker_construct.zig");
 const thread_construct = @import("thread_construct.zig");
 const engine_construct = @import("engine_construct.zig");
 const worker_native_construct = @import("worker_native_construct.zig");
+const native_engine = @import("native_engine.zig"); // M-FINAL native engine container (cutover)
 const misc_port = @import("misc");
 const movegen_port = @import("movegen");
 const movepick_port = @import("movepick");
@@ -1367,6 +1368,13 @@ comptime {
         // M-FINAL: native AccumulatorStack construct/destroy (legacy keeps new/delete).
         @export(&zfishEngineAccumulatorStackCreate, .{ .name = "zfish_engine_accumulator_stack_create" });
         @export(&zfishEngineAccumulatorStackDestroy, .{ .name = "zfish_engine_accumulator_stack_destroy" });
+        // M-FINAL cutover: native engine container construct/destruct (not yet on the live
+        // path; the flip commit wires these). Default-only — legacy keeps the C++ UCIEngine.
+        @export(&zfishNativeEngineConstructMembers, .{ .name = "zfish_native_engine_construct_members" });
+        @export(&zfishNativeEngineSetCli, .{ .name = "zfish_native_engine_set_cli" });
+        @export(&zfishNativeEngineDestructMembers, .{ .name = "zfish_native_engine_destruct_members" });
+        @export(&zfishNativeEngineSizeof, .{ .name = "zfish_native_engine_sizeof" });
+        @export(&zfishNativeEngineAlignof, .{ .name = "zfish_native_engine_alignof" });
     }
 }
 
@@ -2470,6 +2478,27 @@ pub export fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, no
 
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {
     return engine_port.initBody(engine);
+}
+
+// M-FINAL cutover (NATIVE_ENGINE_CUTOVER.md): native engine container construct/destruct.
+// Default-only (the legacy oracle keeps the inline C++ UCIEngine + its ctor/dtor; these
+// reference the default-only zfish_member_* heap helpers). Exported + compiled now but
+// NOT yet on the live path (zfish_uci_engine_construct_at still builds the C++ UCIEngine);
+// the flip commit swaps main()'s allocation + the member accessors to these.
+fn zfishNativeEngineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) callconv(.c) bool {
+    return native_engine.constructMembers(buf, argv0);
+}
+fn zfishNativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) callconv(.c) void {
+    native_engine.setCli(buf, argc, argv);
+}
+fn zfishNativeEngineDestructMembers(buf: *anyopaque) callconv(.c) void {
+    native_engine.destructMembers(buf);
+}
+fn zfishNativeEngineSizeof() callconv(.c) usize {
+    return native_engine.sizeofEngine();
+}
+fn zfishNativeEngineAlignof() callconv(.c) usize {
+    return native_engine.alignofEngine();
 }
 
 pub export fn zfish_engine_option_on_change(
