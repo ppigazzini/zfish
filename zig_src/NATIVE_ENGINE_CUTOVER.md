@@ -118,6 +118,22 @@ one-at-a-time, incrementally green, until uci_bridge.cpp + src delete (TU=0).
             big types. The flip (breakthrough) is done; this is the long mechanical grind.
 - [ ] delete uci_bridge.cpp + src + oracle; H9 gate
 
+### NETWORK reframing (2026-06-26) — the eval is ALREADY fully native; only load/holder remain
+The "106MB giant" is mostly done. BOTH the feature transformer AND the affine layers are native-
+stored (main.zig native_ft_ptr/native_ft_storage + native_layer_ptr/native_layer_storage), the
+native parse (nnue_parse.zig parseFeatureTransformer/parseLayer/serializeLayer) writes weights
+straight into that native storage, and the native eval (network.zig) reads ONLY native storage
+(zfish_native_ft_ptr + zfish_native_layer_ptr). So the entire EVAL HOT PATH is native — the bulk of
+the network's value. What remains C++ (uci_bridge): (1) the LOAD-TIME CROSS-CHECK — zfish_network_
+feature_transformer_read_blob / layer_read_blob parse the .nnue into a C++ Network (via
+NetworkBridgeAccess + read_parameters_blob) and zfish_*_content_hash / zfish_layer_biases/weights
+compare it against the native parse to catch drift; (2) the HOLDER — LazyNumaReplicatedSystemWide<
+Network> (the engine `network` member), numa-coupled, whose operator-> / [token] the workers resolve
+(zfish_worker_resolve_network). NEXT: either drop the C++ cross-check (trust the native parse, gate-
+verified) → the C++ Network parse fns go dead/legacy → then the holder is the last C++ network piece;
+or keep the cross-check and port the holder. The cross-check removal is the higher-reward lever (kills
+the most C++ Network usage). Map-first per the proven de-risk-then-wire template (states crack).
+
 ### DEFINITIVE remaining-work map (2026-06-26, after position ports)
 The easy independent leaf ports are EXHAUSTED. Every remaining live default-build bridge fn
 is coupled to a hard C++ subsystem/type (even zfish_uci_print_line shares the C++ sync_cout
