@@ -382,6 +382,12 @@ void zfish_network_set_loaded_state(void*                network_ptr,
       std::string(reinterpret_cast<const char*>(description_ptr), description_len);
 }
 
+// M-FINAL cutover: in the DEFAULT build the native NNUE parse (network.zig) is the SOLE parse —
+// it writes the Zig-owned inference storage and advances the load offset from its own consumed
+// count, and the eval gates + the offset==bytes.len check verify correctness end-to-end. So the
+// default read_blob stubs are Network-free no-ops (the C++ Network is not parsed/used at runtime).
+// The LEGACY oracle keeps the real parse: it populates the C++ Network the legacy C++ eval reads.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint32_t zfish_network_hash_value() { return NetworkBridgeAccess::hashValue(); }
 
 std::size_t zfish_network_feature_transformer_read_blob(void*                network_ptr,
@@ -398,6 +404,15 @@ std::size_t zfish_network_layer_read_blob(void*                network_ptr,
     auto& network = *static_cast<Network*>(network_ptr);
     return read_parameters_blob(data_ptr, data_len, NetworkBridgeAccess::layer(network, bucket));
 }
+#else
+// Default build: the C++ Network is not parsed (native storage is the source). No-op.
+std::size_t zfish_network_feature_transformer_read_blob(void*, const unsigned char*, std::size_t) {
+    return 0;
+}
+std::size_t zfish_network_layer_read_blob(void*, std::size_t, const unsigned char*, std::size_t) {
+    return 0;
+}
+#endif
 
 // M-FINAL cutover: dead in the default build — the native serialization round-trip
 // self-check that read these was retired (redundant). The native save path serializes from
@@ -432,6 +447,9 @@ ZfishOwnedByteView zfish_network_layer_write_blob(const void* network_ptr, std::
 }
 #endif
 
+// M-FINAL cutover: dead in the default build — the load-time native-vs-C++ content-hash
+// cross-check was retired with the C++ parse (the native parse is the sole source). Legacy keeps these.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_network_feature_transformer_content_hash(const void* network_ptr) {
     const auto& network = *static_cast<const Network*>(network_ptr);
     return NetworkBridgeAccess::featureTransformer(network).get_content_hash();
@@ -446,6 +464,7 @@ std::size_t zfish_network_eval_file_content_hash(const void* network_ptr) {
     const auto& network = *static_cast<const Network*>(network_ptr);
     return std::hash<EvalFile>{}(NetworkBridgeAccess::evalFile(network));
 }
+#endif
 
 // The NNUE feature-transformer forward pass (transform) is now Zig-owned
 // (zfish_network_transform_bucket in zig_src/main.zig). The bridge only exposes
