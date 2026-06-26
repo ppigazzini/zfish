@@ -2674,6 +2674,29 @@ void zfish_engine_add_option(void*                engine_ptr,
                              int                  min_value,
                              int                  max_value,
                              std::uint8_t         callback_kind) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: register straight into the Zig option model (the default-build authority) —
+    // NO C++ Option / OptionsMap is built. option_kind already equals the model kind (string=0,
+    // check=1, spin=2, button=3); the default string is formatted exactly as the C++ Option ctor
+    // would (bool→"true"/"false", spin→to_string, string→text, button→empty). The model derives
+    // the on_change callback_kind from the option name (callbackKindForName), and the native
+    // callback dispatch (zfish_engine_option_on_change) replaces the C++ Option's on_change — so
+    // make_option_callback / the engine pointer / the passed callback_kind are unused here.
+    (void) engine_ptr;
+    (void) callback_kind;
+    std::string default_str;
+    switch (option_kind)
+    {
+    case kOptionTypeCheck:  default_str = (default_value != 0) ? "true" : "false"; break;
+    case kOptionTypeSpin:   default_str = std::to_string(default_value); break;
+    case kOptionTypeButton: default_str = ""; break;
+    case kOptionTypeString: default_str.assign(reinterpret_cast<const char*>(default_ptr), default_len); break;
+    default:                std::abort();
+    }
+    zfish_optmodel_add(name_ptr, name_len, option_kind,
+                       reinterpret_cast<const unsigned char*>(default_str.data()), default_str.size(),
+                       min_value, max_value);
+#else
     auto* engine = static_cast<Engine*>(engine_ptr);
     auto   name   = std::string(reinterpret_cast<const char*>(name_ptr), name_len);
     auto   change = make_option_callback(engine, option_kind, callback_kind);
@@ -2698,6 +2721,7 @@ void zfish_engine_add_option(void*                engine_ptr,
     default:
         std::abort();
     }
+#endif
 }
 
 void zfish_engine_start_logger(const unsigned char* name_ptr, std::size_t name_len) {
