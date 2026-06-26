@@ -3270,9 +3270,11 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
           engine, res.callback_kind, reinterpret_cast<const unsigned char*>(relay_value.data()),
           relay_value.size(), relay_int));
 
-        auto& options = engine->get_options();
-        if (ret && options.info != nullptr)
-            options.info(ret);
+        // M-FINAL cutover: emit the callback's info message directly (what the C++ OptionsMap info
+        // listener did), so apply_setoption no longer touches the C++ OptionsMap. The native model
+        // is the option authority; the OptionsMap is now an empty stub in the default build.
+        if (ret)
+            UCIEngine::print_info_string(*ret);
     }
 #else
     std::ostringstream command;
@@ -4096,10 +4098,13 @@ void  zfish_member_threadpool_delete(void* p) {
 // options: a default-constructed OptionsMap. Stays the interim registration vehicle
 // (OptionsMap::add populates the native OptionsModel + the setoption relay), so it is
 // still the path that feeds the native store until options ports fully native.
-void* zfish_member_options_new() { return new Stockfish::OptionsMap(); }
-void  zfish_member_options_delete(void* p) {
-    delete static_cast<Stockfish::OptionsMap*>(p);
-}
+// M-FINAL cutover: native single-option-store stub. The default build's option authority is the
+// Zig OptionsModel (option.zig) for registration, reads, writes, render, and callbacks; the C++
+// OptionsMap is never populated, read, or rendered, and its info listener was retired. So NO C++
+// OptionsMap is constructed — a minimal heap handle suffices (get_options() returns it but nothing
+// dereferences it; Tune::init only stores the pointer, its tune list is empty in a release build).
+void* zfish_member_options_new() { return std::malloc(1); }
+void  zfish_member_options_delete(void* p) { std::free(p); }
 
 // updateContext: placement-construct/destruct a Search::SearchManager::UpdateContext in
 // the native engine's inline 240B slot. LIVE — the native search emit calls its
@@ -4275,10 +4280,9 @@ void zfish_uci_engine_construct_at(void* storage, int argc, char* const* argv) {
     zfish_engine_init_body(storage);  // register options, set start position, size threads
 
     auto* uci = static_cast<Stockfish::UCIEngine*>(storage);
-    uci->engine.get_options().add_info_listener([](const std::optional<std::string>& str) {
-        if (str.has_value())
-            Stockfish::UCIEngine::print_info_string(*str);
-    });
+    // M-FINAL cutover: no add_info_listener — the default build's option callback messages are
+    // emitted directly by apply_setoption (UCIEngine::print_info_string), so the C++ OptionsMap
+    // info listener is unused and the OptionsMap is an empty stub.
     uci->init_search_update_listeners();  // sets the LIVE updateContext callbacks
     Stockfish::Tune::init(uci->engine_options());
     return;
