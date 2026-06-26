@@ -4212,6 +4212,11 @@ extern "C" {
 // Memory-footprint probe for the C++ object graph, the layout reference the Zig
 // reimplementation allocates against. Reported per object so the Zig side can
 // pin and assert each size.
+// M-FINAL cutover: legacy-oracle-only — this is sizeof/offsetof of the frozen src/ types, so the
+// default build cannot define it once those types are forward-declared. The Zig cross-check
+// (zfish_graph_verify_layouts) is comptime-gated to the legacy build, which verifies the pinned
+// native constants against these real sizes every gate run; the default build trusts them.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_graph_layout_size(int which) {
     using namespace Stockfish;
     switch (which)
@@ -4240,6 +4245,7 @@ std::size_t zfish_graph_layout_size(int which) {
     default: return 0;
     }
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 void zfish_graph_verify_layouts();
 
