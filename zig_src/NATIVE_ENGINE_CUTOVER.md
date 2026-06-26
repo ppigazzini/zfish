@@ -89,10 +89,24 @@ not in the 30 method rewrites. After the flip each interim-C++ member ports to n
 one-at-a-time, incrementally green, until uci_bridge.cpp + src delete (TU=0).
 
 ## Status
-- [ ] native engine struct + offsets
-- [ ] native construct (thread cluster native, giants interim side-alloc)
-- [ ] native destruct
-- [ ] accessor rewire
-- [ ] bench green
+- [x] heap-alloc bridge helpers (zfish_member_*) — 5a900e4a
+- [x] native engine struct + offsets + construct/destruct — ec7272ad (green, unused)
+- [ ] THE FLIP (RED): wire main() alloc + zfish_uci_engine_construct_at/destruct_at +
+      the 6 inline member accessors (numa/states/options/threads/network/update_context)
+      + the 2 cli accessors to NativeEngine; route init_body through it. Drive bench green.
 - [ ] tail ports (network/numa/options/position/listeners)
 - [ ] delete uci_bridge.cpp + src + oracle; H9 gate
+
+### The flip's concrete edit set (next iteration)
+- main.zig zfish_main: size buffer with zfish_native_engine_sizeof/alignof (was uci_engine_*).
+- zfish_uci_engine_construct_at (uci_bridge): call zfish_native_engine_construct_members +
+  init_body(native_engine) + native_engine_set_cli + add_info_listener/init listeners + Tune::init,
+  instead of placement-new C++ UCIEngine. zfish_engine_construct_members C++ retires (legacy-only).
+- zfish_uci_engine_destruct_at: native_threadpool_clear + release_pending_state_slot +
+  zfish_native_engine_destruct_members (no ~UCIEngine).
+- main.zig accessors: numa_context/states/options/threads/network/update_context read the
+  NativeEngine fields (NativeEngine.off) not engMember(engine, eng_off.*); cli argc/argv too.
+- add_option (uci_bridge): use the heap OptionsMap pointer from the native engine, not
+  static_cast<Engine*>->get_options().
+- the ~30 static_cast<Engine*>(engine_ptr)->member.method() sites: take the member pointer
+  from the native engine instead (rewire incrementally as bench failures surface them).
