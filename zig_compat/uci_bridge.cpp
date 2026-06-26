@@ -2953,9 +2953,13 @@ extern "C" const char* zfish_position_set_state(void*                pos_ptr,
 }
 #endif
 
+// M-FINAL cutover (position-set port): native in the default build (position.zig doMoveState);
+// legacy oracle keeps the C++ Position::do_move.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_position_do_move_state(void* pos_ptr, std::uint16_t move_raw, void* state_ptr) {
     static_cast<Position*>(pos_ptr)->do_move(Move(move_raw), *static_cast<StateInfo*>(state_ptr));
 }
+#endif
 
 namespace {
 
