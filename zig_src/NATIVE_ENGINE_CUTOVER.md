@@ -91,22 +91,42 @@ one-at-a-time, incrementally green, until uci_bridge.cpp + src delete (TU=0).
 ## Status
 - [x] heap-alloc bridge helpers (zfish_member_*) — 5a900e4a
 - [x] native engine struct + offsets + construct/destruct — ec7272ad (green, unused)
-- [ ] THE FLIP (RED): wire main() alloc + zfish_uci_engine_construct_at/destruct_at +
-      the 6 inline member accessors (numa/states/options/threads/network/update_context)
-      + the 2 cli accessors to NativeEngine; route init_body through it. Drive bench green.
+- [x] PRE-FLIP green refactors — ccc0b804 + 2c3fe125: every direct C++ member-access site
+      now routes through an accessor (get_options/flip/numaContext/network/the 4 set_on_*),
+      so each returns &engine->member inline today and the heap/native member after the flip.
+      bench 2336177 preserved. The flip is now isolated to alloc+construct+destruct+offsets.
+- [ ] THE FLIP (RED): see edit set below. Drive bench green.
 - [ ] tail ports (network/numa/options/position/listeners)
 - [ ] delete uci_bridge.cpp + src + oracle; H9 gate
 
-### The flip's concrete edit set (next iteration)
+### CORRECTION (2026-06-26): updateContext is LIVE, not dead
+The prior memory said updateContext was dead. WRONG. The native search emit calls
+main_manager()->updates.onUpdateFull(...) / onBestmove / onUpdateNoMoves / onIter — the C++
+std::functions — to record the node count (zfish_set_last_nodes_searched) and emit output.
+The worker managers bind &updateContext via zfish_engine_update_context_ptr (engine.zig:518).
+So NativeEngine.update_context MUST be a real placement-constructed C++ UpdateContext (helpers
+zfish_member_update_context_construct/destruct added 2c3fe125), and set_on_* must write it via
+the accessor (done). onVerifyNetwork (set_on_verify_network) is a separate engine member still
+written inline — the flip needs a NativeEngine slot for it (or a native sink; check whether
+verify_network() reads it or uses native emit).
+
+### The flip's concrete edit set (next iteration) — now isolated (pre-flip refactors done)
 - main.zig zfish_main: size buffer with zfish_native_engine_sizeof/alignof (was uci_engine_*).
+- native_engine.zig constructMembers: also placement-construct update_context (call
+  zfish_member_update_context_construct(&e.update_context)); add an onVerifyNetwork slot +
+  construct it. destructMembers: destruct update_context + onVerifyNetwork before freeing.
 - zfish_uci_engine_construct_at (uci_bridge): call zfish_native_engine_construct_members +
-  init_body(native_engine) + native_engine_set_cli + add_info_listener/init listeners + Tune::init,
+  zfish_engine_init_body(storage) + zfish_native_engine_set_cli + add_info_listener on the heap
+  OptionsMap + init_search_update_listeners (sets the live updateContext) + Tune::init(heap opts),
   instead of placement-new C++ UCIEngine. zfish_engine_construct_members C++ retires (legacy-only).
 - zfish_uci_engine_destruct_at: native_threadpool_clear + release_pending_state_slot +
   zfish_native_engine_destruct_members (no ~UCIEngine).
-- main.zig accessors: numa_context/states/options/threads/network/update_context read the
-  NativeEngine fields (NativeEngine.off) not engMember(engine, eng_off.*); cli argc/argv too.
-- add_option (uci_bridge): use the heap OptionsMap pointer from the native engine, not
-  static_cast<Engine*>->get_options().
-- the ~30 static_cast<Engine*>(engine_ptr)->member.method() sites: take the member pointer
-  from the native engine instead (rewire incrementally as bench failures surface them).
+- main.zig accessors (the 6): numa_context/states/options/threads/network/update_context read
+  NativeEngine.off fields, not engMember(engine, eng_off.*). cli argc/argv (2) → NativeEngine.off.
+- add_option (uci_bridge): engine->get_options() already routes via the accessor (covered by
+  ccc0b804) → no further change; it resolves the heap OptionsMap post-flip automatically.
+- zfish_uci_engine_sizeof: already native-anchored (graph_layout.uci_engine_size); the buffer
+  switches to zfish_native_engine_sizeof so the old constant is irrelevant on the live path.
+- NOTE: init_search_update_listeners is a UCIEngine method (uci_bridge:2940). Post-flip there is
+  no UCIEngine; call its body directly on the engine (set_on_* now go via the accessor, so it
+  works) — or inline the equivalent engine.set_on_* calls in construct_at.
