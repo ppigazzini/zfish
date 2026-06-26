@@ -2569,10 +2569,6 @@ namespace {
 // Zig model via zfish_engine_add_option (no C++ Option/OptionsMap::add path), so they had no callers
 // and referenced the C++ Option type. Removed (frozen-type forward-decl prerequisite).
 
-void zfish_optstore_publish(std::size_t idx, const std::string& value) {
-    zfish_optmodel_publish_by_index(idx, reinterpret_cast<const unsigned char*>(value.data()),
-                                    value.size());
-}
 
 // M-FINAL cutover: a boolean option read sourced from the Zig model (default-build authority),
 // so the remaining default get_options()[...] bool reads no longer touch the C++ OptionsMap.
@@ -2614,18 +2610,18 @@ std::optional<std::string> relay_engine_option_callback(Engine*                 
       int_value));
 }
 
+// M-FINAL cutover: legacy-only. The C++ Option on_change is only used by the legacy registration
+// path (zfish_engine_add_option's #else builds a C++ Option with this callback). The default build
+// registers straight into the Zig model and dispatches callbacks natively (zfish_engine_option_on_change
+// via apply_setoption), so this — and its Option member access (idx/currentValue/int/string) — is
+// dead in the default build. Removes the C++ Option access from the default build.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 Option::OnChange make_option_callback(
   Engine* engine, std::uint8_t option_kind, std::uint8_t callback_kind) {
     if (callback_kind == kOptionCallbackNone)
         return nullptr;
 
     return [engine, option_kind, callback_kind](const Option& option) -> std::optional<std::string> {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-        // operator= has already written the new currentValue; publish it to the
-        // Zig store before the relay reads int(option)/string(option) so the
-        // callback observes the fresh value.
-        zfish_optstore_publish(option.idx, option.currentValue);
-#endif
         switch (option_kind)
         {
         case kOptionTypeString:
@@ -2642,6 +2638,7 @@ Option::OnChange make_option_callback(
         }
     };
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 }  // namespace
 
