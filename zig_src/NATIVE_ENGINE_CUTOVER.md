@@ -95,8 +95,13 @@ one-at-a-time, incrementally green, until uci_bridge.cpp + src delete (TU=0).
       now routes through an accessor (get_options/flip/numaContext/network/the 4 set_on_*),
       so each returns &engine->member inline today and the heap/native member after the flip.
       bench 2336177 preserved. The flip is now isolated to alloc+construct+destruct+offsets.
-- [ ] THE FLIP (RED): see edit set below. Drive bench green.
-- [ ] tail ports (network/numa/options/position/listeners)
+- [x] THE FLIP — cd81852b. FULLY GATED GREEN on the first full-gate run: parity
+      (oracle 2336177 / output 690 / search 51 / search-modes / golden) + test-graph +
+      teardown (H5) + valgrind (H3, Threads {1,2}: no leak / bad access). The default
+      build runs the NativeEngine container; no C++ ~Engine/~UCIEngine/~ThreadPool runs.
+      The pre-flip accessor-routing made the RED flip land green immediately.
+- [ ] tail ports (network/numa/options/position/listeners) — now each interim C++ member
+      is an independently-owned side-allocation, so these port INCREMENTALLY GREEN.
 - [ ] delete uci_bridge.cpp + src + oracle; H9 gate
 
 ### CORRECTION (2026-06-26): updateContext is LIVE, not dead
