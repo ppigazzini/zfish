@@ -2642,6 +2642,11 @@ pub export fn zfish_numa_context_node_count(numa_context: *const anyopaque) usiz
 // context pointer; the node-th std::set is at begin + node*48, and its element
 // count is stored at +40 within the set (bridge-only symbol, no gating).
 pub export fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize {
+    // M-FINAL cutover: the default build's numa context is a native stub (no C++ NumaConfig to
+    // read). This is dead on the single-node path anyway — binding never happens, so the
+    // thread-allocation display returns early before reaching here — but stub-safe (>=1, never
+    // dereferences the stub). Legacy reads the live C++ NumaConfig's node-set size by offset.
+    if (!target_flags.legacy_target) return 1;
     const base: [*]const u8 = @ptrCast(numa_context);
     const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.numa_config_off.nodes_begin));
     const set_addr = begin.* + node * graph_layout.numa_config_off.node_set_size;

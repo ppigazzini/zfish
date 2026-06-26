@@ -2274,9 +2274,18 @@ extern "C" {
 void zfish_engine_numa_set_from_string(void*                numa_context_ptr,
                                        const unsigned char* text_ptr,
                                        std::size_t          text_len) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: single-node default build — the numa topology is fixed (one node from the
+    // process affinity) and the display is native, so reconfiguring NumaPolicy is a no-op and
+    // there is no C++ NumaReplicationContext to set.
+    (void) numa_context_ptr;
+    (void) text_ptr;
+    (void) text_len;
+#else
     auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
     numa_context.set_numa_config(
       NumaConfig::from_string(std::string(reinterpret_cast<const char*>(text_ptr), text_len)));
+#endif
 }
 
 // Stage-7 7.1: legacy oracle only -- the default build provides native-inert
@@ -2759,7 +2768,13 @@ const void* zfish_engine_network_ptr(const void* engine_ptr) {
 // _update_context_ptr are native (main.zig), offsetting into the engine pointer.
 
 const void* zfish_numa_context_config(const void* numa_context_ptr) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: native stub context — the config handle is opaque (the single-node native
+    // numa functions ignore it). Return it directly without referencing the C++ NumaConfig.
+    return numa_context_ptr;
+#else
     return &static_cast<const NumaReplicationContext*>(numa_context_ptr)->get_numa_config();
+#endif
 }
 
 extern "C" void zfish_verify_shared_state_native(const void*, void*, void*, void*, void*, void*);
@@ -3803,6 +3818,15 @@ const void* zfish_threadpool_setup_state_back(const void* pool_ptr) {
 }
 #endif
 
+// M-FINAL cutover: the NumaPolicy option handlers. In the default build the numa context is a
+// native stub (no C++ NumaConfig) and the topology is fixed single-node (display is native), so
+// reconfiguring it is a no-op — and they MUST NOT cast/write the stub (heap corruption). Legacy
+// keeps the real set_numa_config (its C++ NumaReplicationContext drives the oracle's threads).
+#ifndef ZFISH_LEGACY_CPP_TARGET
+void zfish_numa_context_set_system(void*) {}
+void zfish_numa_context_set_hardware(void*) {}
+void zfish_numa_context_set_none(void*) {}
+#else
 void zfish_numa_context_set_system(void* numa_context_ptr) {
     auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
     numa_context.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy));
@@ -3816,6 +3840,7 @@ void zfish_numa_context_set_hardware(void* numa_context_ptr) {
 void zfish_numa_context_set_none(void* numa_context_ptr) {
     static_cast<NumaReplicationContext*>(numa_context_ptr)->set_numa_config(NumaConfig{});
 }
+#endif
 
 }
 
@@ -4012,12 +4037,13 @@ extern "C" {
 
 // numaContext: NumaReplicationContext(NumaConfig::from_system(DefaultNumaPolicy)).
 void* zfish_member_numa_context_new() {
-    using namespace Stockfish;
-    return new NumaReplicationContext(NumaConfig::from_system(DefaultNumaPolicy));
+    // M-FINAL cutover: native single-node numa context stub. The default build is single-node
+    // (multi-node dropped) and never reads a C++ NumaConfig — node_count/suggests/to_string are
+    // native, the thread-distribution functions are NumaConfig-free, and binding never happens.
+    // So NO C++ NumaReplicationContext is constructed; a minimal heap handle suffices.
+    return std::malloc(1);
 }
-void zfish_member_numa_context_delete(void* p) {
-    delete static_cast<Stockfish::NumaReplicationContext*>(p);
-}
+void zfish_member_numa_context_delete(void* p) { std::free(p); }
 
 // threads: a default-constructed ThreadPool (its vector is populated later by
 // zfish_native_threadpool_set; setupStates is adopted at search start).
