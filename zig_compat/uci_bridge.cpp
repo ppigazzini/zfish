@@ -810,8 +810,17 @@ extern "C" void zfish_search_id_pv(void* worker, int depth) {
 // never dereferenced (NNUE weights are served from native storage), but the legacy
 // oracle's C++ inference may deref it, so it must be the exact replicated instance.
 extern "C" const void* zfish_worker_resolve_network(void* worker) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover (decouple step 2): the handle is never dereferenced in the default build
+    // (weights served from native storage), so return a stable non-null handle WITHOUT
+    // evaluating network[token] — which would trigger the lazy 106 MB numa replication of the
+    // C++ Network. native_ft_ptr is a stable, always-resident handle.
+    (void) worker;
+    return zfish_native_ft_ptr();
+#else
     auto* w = static_cast<Stockfish::Search::Worker*>(worker);
     return &w->network[w->numaAccessToken];
+#endif
 }
 
 // zfish_search_cb_tt_context is native (main.zig): it resolves the worker TT
@@ -1088,7 +1097,11 @@ void Search::Worker::clear() {
 }
 
 void Search::Worker::ensure_network_replicated() {
+#ifdef ZFISH_LEGACY_CPP_TARGET
     (void) (network[numaAccessToken]);  // force lazy numa initialization off the search path
+#endif
+    // M-FINAL cutover (decouple step 3): default build serves weights from native storage
+    // (always resident), so no C++ Network numa replica is needed — no-op.
 }
 
 bool Search::RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& pos) {
