@@ -145,6 +145,35 @@ subsystem ports (esp. NETWORK 106MB storage), a substantial multi-session grind.
 merging the flip + position ports to refactor to lock in the breakthrough. Next subsystem:
 the THREAD CLUSTER (#2) — native types exist, highest value, now decoupled by the flip.
 
+### MERGED 2026-06-26: flip + position ports + zero_tt_slice leaf are on refactor (166d92b1+).
+
+### THREAD-CLUSTER port plan (the construction-crack on ThreadPool) — investigated, de-risked
+The C++ ThreadPool is woven and valgrind-sensitive; it is ONE coupled port, not small green
+pieces. Key facts mapped:
+- The frozen Worker (src/search.h) holds `ThreadPool& threads` at the C++ layout, so the pool
+  buffer must stay sizeof(ThreadPool) with the C++ field offsets (thread_pool_off): stop@0,
+  increaseDepth@1, setupStates@8 (StateListPtr = unique_ptr<deque<StateInfo>>), threads vec@16,
+  boundThreadToNumaNode vec@40, main-manager via main_thread()->worker.
+- The threads VECTOR is ALREADY native-managed by offset (native_threadpool.zig set/clear write
+  begin/end/cap). boundThreadToNumaNode vec + setupStates deque are still C++.
+- STATES lifecycle has TWO mechanisms: (a) ZfishPendingStateListStorage (a heap struct wrapping
+  StateListPtr) built in the engine `states` slot via engine.zig ensurePendingStateStorage —
+  used by setPositionEngine to build the root state chain (reset/push); (b) the raw deque from
+  the flip's zfish_member_states_new in NativeEngine.states. setup_states_adopt moves the slot
+  pointer into pool.setupStates@8; ~ThreadPool frees setupStates as delete(deque*). To go native
+  StateList: the slot holds *StateList; adopt = pointer-move (StateListPtr is layout-compatible);
+  CRITICAL: native destruct must free the StateList natively + NULL setupStates@8 BEFORE deleting
+  the pool, else ~ThreadPool delete-as-deque* corrupts. Valgrind (Threads {1,2}) is the gate.
+- ThreadPool METHODS still C++ (uci_bridge 1907-1955): main_manager/nodes_searched/tb_hits/clear/
+  run_on_thread/wait_on_thread/num_threads. main_manager nav already ported native earlier; the
+  rest are offset-iterations over workers (nodes_searched/tb_hits sum a Worker field) or native-
+  routed (wait_on_thread). Port each to native offset-based, then the C++ method defs go legacy.
+- CONSTRUCTION: zfish_member_threadpool_new = new ThreadPool() → raw operator-new(sizeof)+memset0
+  (empty vectors/null setupStates = same as default ctor); destruct = native free of the three
+  heaps (threads vec already via native_threadpool_clear; + bound vec + StateList) then free buf.
+This is a focused multi-step RED-tolerant effort with valgrind verification at each step — NOT a
+quick leaf. Best done as a dedicated push (the lifecycle/valgrind sensitivity rewards focus).
+
 ### CORRECTION (2026-06-26): updateContext is LIVE, not dead
 The prior memory said updateContext was dead. WRONG. The native search emit calls
 main_manager()->updates.onUpdateFull(...) / onBestmove / onUpdateNoMoves / onIter — the C++
