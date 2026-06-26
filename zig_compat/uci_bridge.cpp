@@ -1523,6 +1523,9 @@ static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
 // zfish_threadpool_num_threads is native (main.zig): threads.size() via the
 // threads-vector begin/end offsets.
 
+// M-FINAL cutover (thread-cluster leaf): native in the default build (zig_src/main.zig
+// zfishThreadpoolZeroTtSlice). Legacy oracle keeps the C++ ThreadPool::run_on_thread path.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_threadpool_zero_tt_slice(void*        threads_ptr,
                                                  std::size_t thread_id,
                                                  void*       table_ptr,
@@ -1532,21 +1535,12 @@ extern "C" void zfish_threadpool_zero_tt_slice(void*        threads_ptr,
         return;
 
     auto* table = static_cast<Cluster*>(table_ptr);
-#ifdef ZFISH_LEGACY_CPP_TARGET
     auto* threads = static_cast<ThreadPool*>(threads_ptr);
     threads->run_on_thread(thread_id, [table, start_cluster, cluster_len]() {
         std::memset(&table[start_cluster], 0, cluster_len * sizeof(Cluster));
     });
-#else
-    // Stage-4: the pool holds native Threads (no C++ run_custom_job vehicle). The
-    // TT clear is a deterministic memset whose result is independent of which
-    // thread runs it, so zero the slice synchronously on the caller. The paired
-    // zfish_threadpool_wait_thread then no-ops on the idle native thread.
-    (void) threads_ptr;
-    (void) thread_id;
-    std::memset(&table[start_cluster], 0, cluster_len * sizeof(Cluster));
-#endif
 }
+#endif
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_native_threadpool_wait_thread(void* pool, std::size_t thread_id);

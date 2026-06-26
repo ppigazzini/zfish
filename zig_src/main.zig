@@ -350,6 +350,26 @@ fn zfishPositionMoveIsLegal(pos_ptr: *const anyopaque, raw_move: u16) callconv(.
 fn zfishPositionDoMoveState(pos_ptr: *anyopaque, move_raw: u16, state_ptr: *anyopaque) callconv(.c) void {
     position_port.doMoveState(pos_ptr, move_raw, state_ptr);
 }
+// M-FINAL cutover (thread-cluster leaf): native TT-slice zero. In the default build the
+// pool holds native Threads (no C++ run_custom_job vehicle); the TT clear is a deterministic
+// memset whose result is thread-independent, so zero the slice synchronously on the caller
+// (the paired wait_thread no-ops). Matches the C++ #else branch byte-for-byte. Legacy keeps
+// the C++ ThreadPool::run_on_thread path.
+fn zfishThreadpoolZeroTtSlice(
+    threads_ptr: *anyopaque,
+    thread_id: usize,
+    table_ptr: ?*anyopaque,
+    start_cluster: usize,
+    cluster_len: usize,
+) callconv(.c) void {
+    _ = threads_ptr;
+    _ = thread_id;
+    if (cluster_len == 0) return;
+    const table = table_ptr orelse return;
+    const cs = @sizeOf(tt_port.TtCluster);
+    const base: [*]u8 = @ptrCast(table);
+    @memset(base[start_cluster * cs .. (start_cluster + cluster_len) * cs], 0);
+}
 
 pub export fn zfish_position_upcoming_repetition_method(pos_ptr: *const anyopaque, ply: c_int) u8 {
     return @intFromBool(position_port.upcomingRepetition(pos_ptr, ply));
@@ -1413,6 +1433,8 @@ comptime {
         @export(&zfishPositionSetState, .{ .name = "zfish_position_set_state" });
         @export(&zfishPositionMoveIsLegal, .{ .name = "zfish_position_move_is_legal" });
         @export(&zfishPositionDoMoveState, .{ .name = "zfish_position_do_move_state" });
+        // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
+        @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
     }
 }
 
