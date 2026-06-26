@@ -139,6 +139,7 @@ void        zfish_engine_states_slot_reset(void* states_slot_ptr);
 const void* zfish_engine_network_ptr(const void* engine_ptr);
 void*       zfish_engine_threads_ptr(void* engine_ptr);
 void*       zfish_engine_network_replicated_ptr(void* engine_ptr);
+const void* zfish_engine_update_context_ptr(const void* engine_ptr);
 std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr);
 std::size_t  zfish_limits_perft_value(const void* limits_ptr);
 void zfish_engine_emit_verify_message(const void*          engine_ptr,
@@ -2350,20 +2351,30 @@ void zfish_uci_print_line(const char* str, std::size_t len) {
 }
 }
 
+// M-FINAL cutover: the four search-update listeners write the LIVE updateContext via the
+// accessor — &this->updateContext (inline) now, the heap-adjacent NativeEngine.update_context
+// after the flip. updateContext IS live: the native search emit calls
+// main_manager()->updates.onUpdateFull(...) (these std::functions) to record nodes / emit
+// output, so they must land in the same UpdateContext the worker managers bind via the
+// accessor. Behaviour-identical today.
+static Search::SearchManager::UpdateContext& zfish_engine_update_context_ref(Engine* e) {
+    return *static_cast<Search::SearchManager::UpdateContext*>(
+      const_cast<void*>(zfish_engine_update_context_ptr(e)));
+}
 void Engine::set_on_update_no_moves(std::function<void(const Engine::InfoShort&)>&& f) {
-    updateContext.onUpdateNoMoves = std::move(f);
+    zfish_engine_update_context_ref(this).onUpdateNoMoves = std::move(f);
 }
 
 void Engine::set_on_update_full(std::function<void(const Engine::InfoFull&)>&& f) {
-    updateContext.onUpdateFull = std::move(f);
+    zfish_engine_update_context_ref(this).onUpdateFull = std::move(f);
 }
 
 void Engine::set_on_iter(std::function<void(const Engine::InfoIter&)>&& f) {
-    updateContext.onIter = std::move(f);
+    zfish_engine_update_context_ref(this).onIter = std::move(f);
 }
 
 void Engine::set_on_bestmove(std::function<void(std::string_view, std::string_view)>&& f) {
-    updateContext.onBestmove = std::move(f);
+    zfish_engine_update_context_ref(this).onBestmove = std::move(f);
 }
 
 void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {
@@ -3817,6 +3828,19 @@ void  zfish_member_threadpool_delete(void* p) {
 void* zfish_member_options_new() { return new Stockfish::OptionsMap(); }
 void  zfish_member_options_delete(void* p) {
     delete static_cast<Stockfish::OptionsMap*>(p);
+}
+
+// updateContext: placement-construct/destruct a Search::SearchManager::UpdateContext in
+// the native engine's inline 240B slot. LIVE — the native search emit calls its
+// onUpdateFull/onBestmove/etc (set by init_search_update_listeners), and the worker
+// managers bind &update_context via zfish_engine_update_context_ptr. Held inline (not
+// a separate heap alloc) so the accessor address is stable for the engine's lifetime.
+void zfish_member_update_context_construct(void* p) {
+    ::new (p) Stockfish::Search::SearchManager::UpdateContext();
+}
+void zfish_member_update_context_destruct(void* p) {
+    using UC = Stockfish::Search::SearchManager::UpdateContext;
+    static_cast<UC*>(p)->~UC();
 }
 
 // states: StateListPtr(new std::deque<StateInfo>(1)) on the heap. Returned as the
