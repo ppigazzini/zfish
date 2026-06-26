@@ -2913,13 +2913,20 @@ std::string Position::fen() const {
       static_cast<std::uint8_t>(ep_square()), st->rule50, gamePly));
 }
 
+// M-FINAL cutover: dead in default (native search uses zfish_position_*_method directly).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 bool Position::is_repetition(int ply) const {
     return zfish_position_is_repetition_method(this, ply) != 0;
 }
+#endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 bool Position::is_draw(int ply) const { return zfish_position_is_draw_method(this, ply) != 0; }
+#endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 bool Position::has_repeated() const { return zfish_position_has_repeated_method(this) != 0; }
+#endif
 
 void Position::flip() {
     const std::string current = fen();
@@ -2944,13 +2951,16 @@ Position::set(const std::string& fenStr, bool isChess960, StateInfo* si) {
 
 bool Position::legal(Move m) const { return zfish_position_legal_method(this, m.raw()) != 0; }
 
+// gives_check is default-live (a C++ Position user computes it).
 bool Position::gives_check(Move m) const {
     return zfish_position_gives_check_method(this, m.raw()) != 0;
 }
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 bool Position::pseudo_legal(const Move m) const {
     return zfish_position_pseudo_legal_method(this, m.raw()) != 0;
 }
+#endif
 
 void Position::undo_move(Move m) { zfish_position_undo_move_method(this, m.raw()); }
 
