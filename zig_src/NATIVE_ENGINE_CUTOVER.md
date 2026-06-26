@@ -60,6 +60,34 @@ Misc/init: bitboards_init, now, operator_{new,delete}, graph_layout_size, uci_pr
   root_moves_{create_ranked,destroy}, limits_{sizeof,searchmoves_bytes,searchmove_text},
   shared_state_{clear_histories,insert_history,numa_policy_mode}.
 
+## Validated design refinement (2026-06-26) — the flip is largely GREEN-able
+
+Validation grep found ~30 bridge fns that cast `engine_ptr` to C++ `Engine*` and call
+methods/members directly (`engine->get_options()["EvalFile"]`, `engine->numaContext.
+get_numa_config().to_string()`, `engine->network.operator->()`, `engine->flip()`,
+`engine->go/set_position/...`), and Workers hold direct refs `w->threads/network/tt`.
+So a native engine struct is NOT transparent via the controllable accessors alone.
+
+BUT it works as an **ownership container of heap-allocated members**:
+- The native engine (Zig struct in the buffer) holds POINTERS to each member. Members
+  stay INTERIM C++ heap objects (`new ThreadPool`, `new NumaReplicationContext`,
+  `new LazyNumaReplicated(...)`, `StateListPtr(new deque<StateInfo>(1))`) for the flip;
+  tt/pos/sharedHists/options-model/update_context are already native side-allocs.
+- SharedState + Workers bind member ADDRESSES (they already take pointers/refs), so
+  `w->threads.start_searching()` etc. are unchanged — a worker doesn't care whether
+  `threads` is inline-in-Engine or a heap object bound by reference.
+- The ~30 `static_cast<Engine*>(engine_ptr)->member.method()` call sites rewire to take
+  the member pointer from the native engine and call the SAME C++ method on the heap
+  object. Behavior-preserving → each is green-able.
+- destruct: free each member explicitly (null the threads vector via native_threadpool_clear
+  first, then `delete` the heap ThreadPool so ~ThreadPool frees setupStates; `delete` the
+  heap numa/network; free native tt/pos/sharedHists). No C++ ~Engine/~UCIEngine runs.
+- buffer sizeof shrinks from 1696 to the native struct (pointers + argc/argv for cli).
+
+RED risk concentrates in the threads/setupStates/worker lifecycle + destruct ordering,
+not in the 30 method rewrites. After the flip each interim-C++ member ports to native
+one-at-a-time, incrementally green, until uci_bridge.cpp + src delete (TU=0).
+
 ## Status
 - [ ] native engine struct + offsets
 - [ ] native construct (thread cluster native, giants interim side-alloc)
