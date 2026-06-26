@@ -2736,12 +2736,17 @@ void zfish_engine_states_slot_reset(void* states_slot_ptr) {
 #endif
 
 const void* zfish_engine_network_ptr(const void* engine_ptr) {
-    // M-FINAL cutover: resolve the network wrapper via the accessor (returns
-    // &engine->network inline now, the heap LazyNumaReplicated after the flip), then
-    // operator->() to the live Network* — behaviour-identical.
+    // M-FINAL cutover: the native verify/eval/trace (network.zig) IGNORE this pointer — they emit
+    // native architecture dims and serve weights from native storage. In the default build the
+    // holder is a native stub (not a LazyNumaReplicated), so return the handle directly without
+    // dereferencing (and without referencing the C++ Network type). Legacy keeps the real deref.
+#ifdef ZFISH_LEGACY_CPP_TARGET
     auto* wrapper = static_cast<LazyNumaReplicatedSystemWide<NN::Network>*>(
       zfish_engine_network_replicated_ptr(const_cast<void*>(engine_ptr)));
     return wrapper->operator->();
+#else
+    return zfish_engine_network_replicated_ptr(const_cast<void*>(engine_ptr));
+#endif
 }
 
 // zfish_engine_threads_ptr, _tt_ptr, _shared_hists_ptr, _network_replicated_ptr,
@@ -4037,21 +4042,25 @@ void* zfish_member_states_back(void* p) {
 
 // network: LazyNumaReplicatedSystemWide<Network>(numaContext, get_default_network()).
 // get_default_network() == make_unique<Network>(EvalFile{default}) + load(binaryDir).
+// The native NNUE load entry (Zig-owned, main.zig). Declared here for the native holder below.
+void zfish_network_load(void*, const unsigned char*, std::size_t, const unsigned char*, std::size_t);
 void* zfish_member_network_new(void* numa_context, const char* binary_dir,
                                std::size_t binary_dir_len) {
-    using namespace Stockfish;
-    namespace NN = Eval::NNUE;
-    auto&       numa = *static_cast<NumaReplicationContext*>(numa_context);
-    std::string bdir(binary_dir, binary_dir_len);
-    auto        net = std::make_unique<NN::Network>(NN::EvalFile{EvalFileDefaultName, "None", ""});
-    net->load(bdir, "");
-    return new LazyNumaReplicatedSystemWide<NN::Network>(numa, std::move(net));
+    // M-FINAL cutover: native single-node network holder. The default build serves all NNUE
+    // weights from native storage (network.zig) and NEVER dereferences this handle — the worker
+    // network resolver returns native_ft_ptr, the eval/verify read native state, and nothing
+    // indexes network[token]. So the holder is a minimal heap handle: NO C++ Network and NO
+    // LazyNumaReplicatedSystemWide<Network> is constructed (removes the C++ Network type + the
+    // 106 MB master from the default build). The native NNUE load (populates the Zig-owned
+    // storage) is triggered here, as the old net->load() did. numa_context is unused (single node).
+    (void) numa_context;
+    void* holder = std::malloc(1);
+    zfish_network_load(holder,
+                       reinterpret_cast<const unsigned char*>(binary_dir), binary_dir_len,
+                       reinterpret_cast<const unsigned char*>(""), 0);
+    return holder;
 }
-void zfish_member_network_delete(void* p) {
-    using namespace Stockfish;
-    namespace NN = Eval::NNUE;
-    delete static_cast<LazyNumaReplicatedSystemWide<NN::Network>*>(p);
-}
+void zfish_member_network_delete(void* p) { std::free(p); }
 
 }  // extern "C"
 #endif  // !ZFISH_LEGACY_CPP_TARGET
