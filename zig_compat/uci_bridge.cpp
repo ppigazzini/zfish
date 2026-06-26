@@ -555,6 +555,7 @@ extern "C" std::uint8_t zfish_search_extract_ponder_from_tt(void* pv, void* tabl
 extern "C" void zfish_search_clear_shared_history(void* shared, std::size_t thread_idx,
                                                   std::size_t numa_total);
 extern "C" void zfish_search_clear_refresh_cache(void* cache, const std::int16_t* biases);
+extern "C" const void* zfish_native_ft_ptr();  // native FT storage (biases start)
 
 #define ZFISH_SEARCH_BRIDGE_SKIP_TO_CORRECTED_STATIC_EVAL
 #define ZFISH_SEARCH_BRIDGE_SKIP_VALUE_DRAW
@@ -1067,12 +1068,23 @@ namespace Stockfish {
 
 // Worker::clear runs the four Zig-owned resets: per-worker histories, the shared
 // correction/pawn history, the reductions table, and the NNUE refresh cache.
+// NOTE (M-FINAL): default-LIVE — the worker ctor's clear() reads the FT biases from the
+// C++ Network here, so the C++ Network is NOT vestigial at runtime (the refresh cache +
+// lazy replication keep it live). Porting it native is part of the network+numa giant.
 void Search::Worker::clear() {
     zfish_search_clear_worker_histories(this);
     zfish_search_clear_shared_history(&sharedHistory, numaThreadIdx, numaTotal);
     zfish_search_fill_reductions(reductions.data(), reductions.size());
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: read the FT biases from the native FT storage (bit-identical to the
+    // C++ Network FT, cross-checked at load) — decouples the worker refresh cache from the
+    // C++ Network. Step 1 of decoupling the runtime from the C++ Network.
+    zfish_search_clear_refresh_cache(
+      &refreshTable, reinterpret_cast<const std::int16_t*>(zfish_native_ft_ptr()));
+#else
     zfish_search_clear_refresh_cache(&refreshTable,
                                      network[numaAccessToken].featureTransformer.biases.data());
+#endif
 }
 
 void Search::Worker::ensure_network_replicated() {
