@@ -508,12 +508,17 @@ void Network::load(const std::string& rootDirectory, std::string evalfilePath) {
                        evalfilePath.size());
 }
 
+// M-FINAL cutover: dead in the default build (the native search evaluates via
+// zfish_network_evaluate / zfish_eval_compute_value directly; this C++ Network::evaluate
+// shim's only caller is the dead Eval::evaluate below). Legacy oracle keeps it.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 NetworkOutput Network::evaluate(const Position&    pos,
                                 AccumulatorStack&  accumulatorStack,
                                 AccumulatorCaches& cache) const {
     const auto output = zfish_network_evaluate(this, &pos, &accumulatorStack, &cache);
     return {static_cast<Value>(output.psqt), static_cast<Value>(output.positional)};
 }
+#endif
 
 std::size_t Network::get_content_hash() const {
     return zfish_network_content_hash(this);
@@ -1472,6 +1477,11 @@ extern "C" void zfish_movepick_fill_history_snapshot(const void* main_history_pt
     }
 }
 
+// M-FINAL cutover: dead in the default build — the native movepick/search generate moves
+// via the zfish_movegen_* exports directly; only MoveList<LEGAL> (perft) instantiates a C++
+// generate<> here. The CAPTURES/QUIETS/EVASIONS/NON_EVASIONS specializations have no default
+// caller. Legacy oracle keeps them. generate<LEGAL> stays (perft uses it).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 template<>
 Move* generate<CAPTURES>(const Position& pos, Move* moveList) {
     const auto count = zfish_movegen_generate_captures(&pos, reinterpret_cast<std::uint16_t*>(moveList));
@@ -1496,6 +1506,7 @@ Move* generate<NON_EVASIONS>(const Position& pos, Move* moveList) {
       zfish_movegen_generate_non_evasions(&pos, reinterpret_cast<std::uint16_t*>(moveList));
     return moveList + count;
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET (dead C++ movegen specializations)
 
 template<>
 Move* generate<LEGAL>(const Position& pos, Move* moveList) {
@@ -1686,6 +1697,10 @@ void TimeManagement::init(Search::LimitsType& limits,
     limits.npmsec   = output.npmsec;
 }
 
+// M-FINAL cutover: dead in the default build — the native search computes eval via
+// zfish_eval_compute_value (zig_src) directly; this C++ Eval::evaluate has no default caller.
+// Legacy oracle keeps it (its evaluate.cpp search calls it).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 Value Eval::evaluate(const Eval::NNUE::Network&     network,
                      const Position&                 pos,
                      Eval::NNUE::AccumulatorStack&   accumulators,
@@ -1707,6 +1722,7 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
 
     return zfish_eval_compute_value(input);
 }
+#endif
 
 // Stage-7 7.1: the default-only inert Tablebases:: stub block was deleted. The
 // Zig runtime ships no Syzygy tablebases, so the default build now routes the
