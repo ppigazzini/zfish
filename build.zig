@@ -930,6 +930,25 @@ pub fn build(b: *std.Build) void {
     );
     perft_parity_step.dependOn(&perft_parity_cmd.step);
 
+    // H9 src-free / TU=0 structural gate (REPORT-11 E1.4): asserts the default binary contains zero
+    // C++ TUs (no Stockfish:: / libc++ runtime symbols; src/ + uci_bridge.cpp gone) and still benches
+    // 2336177. FAILS ON PURPOSE until the cut (E3/E4) removes the last C++ TU; deliberately NOT in the
+    // `parity` aggregate until E4.3 so `parity` stays green through E1-E3.
+    const h9_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/h9_src_free.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+    });
+    h9_cmd.step.dependOn(install_step);
+    h9_cmd.step.dependOn(&net_cmd.step);
+    h9_cmd.setCwd(b.path("src"));
+
+    const h9_step = b.step(
+        "h9",
+        "TU=0 src-free structural gate (REPORT-11 E1.4; fails until the cut lands)",
+    );
+    h9_step.dependOn(&h9_cmd.step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
