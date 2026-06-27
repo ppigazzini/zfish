@@ -3450,12 +3450,16 @@ struct ZfishSearchMoveView {
     std::size_t          len;
 };
 
+// M-FINAL cutover: legacy-only — the default build reads LimitsType::searchmoves[index]
+// natively (zig_build/support/thread.zig limitsSearchmoveText, libc++ std::string offset read).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 ZfishSearchMoveView zfish_limits_searchmove_text(const void* limits_ptr, std::size_t index) {
     const auto& searchmoves = static_cast<const Search::LimitsType*>(limits_ptr)->searchmoves;
     assert(index < searchmoves.size());
     const auto& text = searchmoves[index];
     return {reinterpret_cast<const unsigned char*>(text.data()), text.size()};
 }
+#endif
 
 void* zfish_root_moves_create_ranked(const ZfishRankedRootMove* items, std::size_t count) {
     auto root_moves = std::make_unique<Search::RootMoves>();
