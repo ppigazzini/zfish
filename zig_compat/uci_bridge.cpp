@@ -1329,6 +1329,11 @@ bool Search::Worker::iterative_deepening() { return bool(zfish_search_iterative_
 // runs the per-node time check itself, so this is unused on the search path, but
 // it is SearchManager's only virtual override and therefore anchors the class
 // vtable in this translation unit.
+// M-FINAL cutover TEST: try legacy-only — the Zig search runs the per-node time check itself, and
+// the SearchManager construction-crack (raw buffer, no C++ ctor/vtable setup) means the default
+// build may not reference the vtable that this virtual override anchors. If the link succeeds, the
+// C++ SearchManager vtable is truly unreferenced in default (a step toward forward-declaring it).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void Search::SearchManager::check_time(Search::Worker& worker) {
     if (--callsCnt > 0)
         return;
@@ -1354,6 +1359,7 @@ void Search::SearchManager::check_time(Search::Worker& worker) {
         || (worker.limits.nodes && zfish_pool_nodes(worker.threads) >= worker.limits.nodes))
         worker.threads.stop = true;
 }
+#endif
 
 // Worker::start_searching. The default target delegates the entire control flow
 // to the Zig-owned driver (zfish_worker_start_searching, below): Zig owns every
