@@ -1719,6 +1719,11 @@ void TTWriter::write(
                         curr_generation);
 }
 
+// M-FINAL cutover: legacy-only. The default build's TT resize/clear go through the native
+// zfish_engine_tt_resize/_clear (main.zig → tt.zig); the only callers of these C++ methods were
+// the legacy-only zfish_engine_tt_resize/_clear bridges, so they are dead in default. Removes the
+// TT/ThreadPool member access (table/clusterCount/generation8/threads) from the default build.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void TranspositionTable::resize(std::size_t mbSize, ThreadPool& threads) {
     zfish_tt_resize_state(reinterpret_cast<void**>(&table),
                           &clusterCount,
@@ -1730,6 +1735,7 @@ void TranspositionTable::resize(std::size_t mbSize, ThreadPool& threads) {
 void TranspositionTable::clear(ThreadPool& threads) {
     zfish_tt_clear_state(table, clusterCount, &generation8, &threads);
 }
+#endif
 
 int TranspositionTable::hashfull(int maxAge) const {
     return zfish_tt_hashfull(reinterpret_cast<const ZfishTtCluster*>(table),
