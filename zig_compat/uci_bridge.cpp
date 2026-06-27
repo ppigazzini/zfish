@@ -3072,7 +3072,9 @@ OptionsMap& Engine::get_options() {
 
 // flip() flips the LIVE position (the native side block via the accessor), not the dead
 // inline engine->pos. Untested on the gate (no flip command), so behaviour-neutral there.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void Engine::flip() { static_cast<Position*>(zfish_engine_position_ptr(this))->flip(); }
+#endif
 
 extern "C" {
 
@@ -3101,6 +3103,7 @@ std::optional<PositionSetError> Position::set(const std::string& code, Color c, 
     return set(fenStr, false, si);
 }
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::string Position::fen() const {
     const auto whiteOoRook = can_castle(WHITE_OO) ? castling_rook_square(WHITE_OO) : SQ_NONE;
     const auto whiteOooRook = can_castle(WHITE_OOO) ? castling_rook_square(WHITE_OOO) : SQ_NONE;
@@ -3114,6 +3117,7 @@ std::string Position::fen() const {
       static_cast<std::uint8_t>(blackOoRook), static_cast<std::uint8_t>(blackOooRook),
       static_cast<std::uint8_t>(ep_square()), st->rule50, gamePly));
 }
+#endif
 
 // M-FINAL cutover: dead in default (native search uses zfish_position_*_method directly).
 #ifdef ZFISH_LEGACY_CPP_TARGET
@@ -3130,12 +3134,14 @@ bool Position::is_draw(int ply) const { return zfish_position_is_draw_method(thi
 bool Position::has_repeated() const { return zfish_position_has_repeated_method(this) != 0; }
 #endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void Position::flip() {
     const std::string current = fen();
     const auto        flipped = take_string_and_free_required(zfish_position_flip_fen(
       reinterpret_cast<const unsigned char*>(current.data()), current.size()));
     set(flipped, is_chess960(), st);
 }
+#endif
 
 std::optional<PositionSetError>
 Position::set(const std::string& fenStr, bool isChess960, StateInfo* si) {
@@ -3453,7 +3459,22 @@ void zfish_engine_go_parsed_owner(void* engine_ptr, ZfishParsedLimits parsed) {
 }
 
 void zfish_engine_flip_owner(void* engine_ptr) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover (REPORT-11 E3-prep): native flip — read the live position FEN, flip it, and
+    // re-set the engine position via the native set-position machinery (which owns the state chain),
+    // replacing Engine::flip -> Position::flip (fen() + flip_fen + set). Lets Engine::flip,
+    // Position::flip, and Position::fen be guarded legacy-only. Gate-verified by misc (flip + d).
+    const std::string current = take_string_and_free_required(
+      zfish_engine_fen(zfish_engine_position_ptr(engine_ptr)));
+    const std::string flipped = take_string_and_free_required(zfish_position_flip_fen(
+      reinterpret_cast<const unsigned char*>(current.data()), current.size()));
+    const char* err = zfish_engine_set_position_owner(
+      engine_ptr, reinterpret_cast<const unsigned char*>(flipped.data()), flipped.size(), nullptr, 0);
+    if (err)
+        std::free(const_cast<char*>(err));
+#else
     static_cast<Engine*>(engine_ptr)->flip();
+#endif
 }
 
 // M-FINAL (limits readers): ported to native Zig offset reads (zig_src/main.zig) in the
