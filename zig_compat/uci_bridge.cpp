@@ -4177,42 +4177,12 @@ void zfish_member_verify_network_fn_destruct(void* p) {
     static_cast<ZfishVerifyNetworkFn*>(p)->~ZfishVerifyNetworkFn();
 }
 
-// states: StateListPtr(new std::deque<StateInfo>(1)) on the heap. Returned as the
-// raw deque pointer; the native engine holds it in its `states` slot (a unique_ptr
-// equivalent) and it is std::move'd into pool.setupStates at search start.
-void* zfish_member_states_new() {
-    return new std::deque<Stockfish::StateInfo>(1);
-}
-void zfish_member_states_delete(void* p) {
-    delete static_cast<std::deque<Stockfish::StateInfo>*>(p);
-}
-#ifdef ZFISH_LEGACY_CPP_TARGET
-void* zfish_member_states_back(void* p) {
-    return &static_cast<std::deque<Stockfish::StateInfo>*>(p)->back();
-}
-#endif
-
-// network: LazyNumaReplicatedSystemWide<Network>(numaContext, get_default_network()).
-// get_default_network() == make_unique<Network>(EvalFile{default}) + load(binaryDir).
-// The native NNUE load entry (Zig-owned, main.zig). Declared here for the native holder below.
-void zfish_network_load(void*, const unsigned char*, std::size_t, const unsigned char*, std::size_t);
-void* zfish_member_network_new(void* numa_context, const char* binary_dir,
-                               std::size_t binary_dir_len) {
-    // M-FINAL cutover: native single-node network holder. The default build serves all NNUE
-    // weights from native storage (network.zig) and NEVER dereferences this handle — the worker
-    // network resolver returns native_ft_ptr, the eval/verify read native state, and nothing
-    // indexes network[token]. So the holder is a minimal heap handle: NO C++ Network and NO
-    // LazyNumaReplicatedSystemWide<Network> is constructed (removes the C++ Network type + the
-    // 106 MB master from the default build). The native NNUE load (populates the Zig-owned
-    // storage) is triggered here, as the old net->load() did. numa_context is unused (single node).
-    (void) numa_context;
-    void* holder = std::malloc(1);
-    zfish_network_load(holder,
-                       reinterpret_cast<const unsigned char*>(binary_dir), binary_dir_len,
-                       reinterpret_cast<const unsigned char*>(""), 0);
-    return holder;
-}
-void zfish_member_network_delete(void* p) { std::free(p); }
+// M-FINAL cutover: states + network member allocation moved to NATIVE (zig_src/native_engine.zig).
+// states is a native StateList (state_list.zig) built directly in constructMembers — the old C++
+// deque<StateInfo>(1) member_states_* fns are gone (member_states_back was dead — #ifdef LEGACY
+// nested in #ifndef LEGACY, never compiled). network is a native single-node holder
+// (native_engine.zig memberNetworkNew): std.c.malloc(1) handle + zfish_network_load into the
+// Zig-owned NNUE storage, freed via memberHandleFree — no C++ Network / LazyNumaReplicated.
 
 }  // extern "C"
 #endif  // !ZFISH_LEGACY_CPP_TARGET
