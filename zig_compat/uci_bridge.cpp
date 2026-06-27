@@ -3478,7 +3478,9 @@ void zfish_root_moves_destroy(void* root_moves_ptr) {
 // must (re)allocate its element buffer with ::operator new so the C++ ~vector
 // frees it with the matching ::operator delete. RootMove is standard-layout POD
 // (PVMoves is a fixed Move[] array), so the assign is one memcpy of count*stride.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" std::size_t zfish_root_move_sizeof(void) { return sizeof(Search::RootMove); }
+#endif
 extern "C" void* zfish_operator_new(std::size_t n) { return ::operator new(n); }
 extern "C" void  zfish_operator_delete(void* p) { ::operator delete(p); }
 
@@ -4205,9 +4207,11 @@ void* zfish_member_states_new() {
 void zfish_member_states_delete(void* p) {
     delete static_cast<std::deque<Stockfish::StateInfo>*>(p);
 }
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void* zfish_member_states_back(void* p) {
     return &static_cast<std::deque<Stockfish::StateInfo>*>(p)->back();
 }
+#endif
 
 // network: LazyNumaReplicatedSystemWide<Network>(numaContext, get_default_network()).
 // get_default_network() == make_unique<Network>(EvalFile{default}) + load(binaryDir).
