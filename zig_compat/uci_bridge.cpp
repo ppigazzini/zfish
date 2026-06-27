@@ -3157,10 +3157,15 @@ Position::set(const std::string& fenStr, bool isChess960, StateInfo* si) {
 bool Position::legal(Move m) const { return zfish_position_legal_method(this, m.raw()) != 0; }
 #endif
 
-// gives_check is default-live (a C++ Position user computes it).
+// M-FINAL cutover (REPORT-11 E2): legacy-only. Its only caller was the position.h inline 2-arg
+// do_move (which calls gives_check(m) then the 6-arg do_move) — and that 6-arg do_move + its sole
+// perft caller are now native/guarded, so the 2-arg inline is never instantiated in the default
+// build and gives_check is uncallable. Native gives_check is zfish_position_gives_check_method.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 bool Position::gives_check(Move m) const {
     return zfish_position_gives_check_method(this, m.raw()) != 0;
 }
+#endif
 
 #ifdef ZFISH_LEGACY_CPP_TARGET
 bool Position::pseudo_legal(const Move m) const {
