@@ -4146,38 +4146,13 @@ extern "C" bool zfish_shadow_construct_engine_graph();
 #ifndef ZFISH_LEGACY_CPP_TARGET
 extern "C" {
 
-// numaContext: NumaReplicationContext(NumaConfig::from_system(DefaultNumaPolicy)).
-void* zfish_member_numa_context_new() {
-    // M-FINAL cutover: native single-node numa context stub. The default build is single-node
-    // (multi-node dropped) and never reads a C++ NumaConfig — node_count/suggests/to_string are
-    // native, the thread-distribution functions are NumaConfig-free, and binding never happens.
-    // So NO C++ NumaReplicationContext is constructed; a minimal heap handle suffices.
-    return std::malloc(1);
-}
-void zfish_member_numa_context_delete(void* p) { std::free(p); }
-
-// threads: a default-constructed ThreadPool (its vector is populated later by
-// zfish_native_threadpool_set; setupStates is adopted at search start).
-// M-FINAL cutover: native allocation of the ThreadPool storage — no C++ ctor/dtor. ThreadPool's
-// ctor is `ThreadPool(){}` and its members (atomic_bool stop/increaseDepth, unique_ptr setupStates,
-// vector threads/boundThreadToNumaNode) are all zero-init-valid with no vtable/mutex, so a calloc'd
-// buffer equals a value-initialized ThreadPool. The threads vector is native-managed
-// (native_threadpool.zig writes begin/end by offset); teardown runs zfish_native_threadpool_clear
-// first (drains, joins, destroys threads, nulls the vector), so ~ThreadPool would be a no-op —
-// free() is equivalent. (sizeof stays until the frozen-type forward-decl endgame swaps it native.)
-void* zfish_member_threadpool_new() { return std::calloc(1, sizeof(Stockfish::ThreadPool)); }
-void  zfish_member_threadpool_delete(void* p) { std::free(p); }
-
-// options: a default-constructed OptionsMap. Stays the interim registration vehicle
-// (OptionsMap::add populates the native OptionsModel + the setoption relay), so it is
-// still the path that feeds the native store until options ports fully native.
-// M-FINAL cutover: native single-option-store stub. The default build's option authority is the
-// Zig OptionsModel (option.zig) for registration, reads, writes, render, and callbacks; the C++
-// OptionsMap is never populated, read, or rendered, and its info listener was retired. So NO C++
-// OptionsMap is constructed — a minimal heap handle suffices (get_options() returns it but nothing
-// dereferences it; Tune::init only stores the pointer, its tune list is empty in a release build).
-void* zfish_member_options_new() { return std::malloc(1); }
-void  zfish_member_options_delete(void* p) { std::free(p); }
+// M-FINAL cutover: numaContext / threads / options member allocation moved to NATIVE
+// (zig_src/native_engine.zig memberNumaContextNew/OptionsNew/ThreadpoolNew + memberHandleFree).
+// numa_context + options are 1-byte handles never dereferenced; threads is a value-initialized
+// ThreadPool buffer (graph_layout.thread_pool_size, native-managed threads vector, no-op
+// ~ThreadPool after native teardown). std.c.malloc/calloc is the same libc allocator the C++
+// std::malloc used, so the alloc/free pairing is preserved. This also removes the last
+// sizeof(Stockfish::ThreadPool) from the default build.
 
 // updateContext: placement-construct/destruct a Search::SearchManager::UpdateContext in
 // the native engine's inline 240B slot. LIVE — the native search emit calls its
