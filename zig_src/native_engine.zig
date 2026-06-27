@@ -28,12 +28,25 @@ const misc_port = @import("misc");
 const state_list_port = @import("state_list"); // native StateList (states crack)
 
 // ---- the interim-C++ member heap allocators (uci_bridge.cpp, default build) -------
-extern fn zfish_member_numa_context_new() ?*anyopaque;
-extern fn zfish_member_numa_context_delete(p: ?*anyopaque) void;
-extern fn zfish_member_threadpool_new() ?*anyopaque;
-extern fn zfish_member_threadpool_delete(p: ?*anyopaque) void;
-extern fn zfish_member_options_new() ?*anyopaque;
-extern fn zfish_member_options_delete(p: ?*anyopaque) void;
+// M-FINAL cutover: the trivial raw-heap members (numa_context + options are 1-byte handles never
+// dereferenced; threads is a value-initialized ThreadPool buffer whose threads vector is native-
+// managed and whose ~ThreadPool is a no-op after native teardown) are allocated natively here —
+// std.c.malloc/calloc is the SAME libc allocator the C++ std::malloc used, so the alloc/free
+// pairing is preserved (valgrind-clean) and the C++ member_{numa_context,threadpool,options}_*
+// fns + the sizeof(ThreadPool) drop out of the default build. graph_layout.thread_pool_size (64)
+// replaces sizeof(Stockfish::ThreadPool). Verified by teardown (H5) + valgrind (H3).
+fn memberNumaContextNew() ?*anyopaque {
+    return std.c.malloc(1);
+}
+fn memberOptionsNew() ?*anyopaque {
+    return std.c.malloc(1);
+}
+fn memberThreadpoolNew() ?*anyopaque {
+    return std.c.calloc(1, graph_layout.thread_pool_size);
+}
+fn memberHandleFree(p: ?*anyopaque) void {
+    std.c.free(p);
+}
 extern fn zfish_member_states_new() ?*anyopaque;
 extern fn zfish_member_states_delete(p: ?*anyopaque) void;
 extern fn zfish_member_network_new(numa_context: ?*anyopaque, binary_dir: [*]const u8, binary_dir_len: usize) ?*anyopaque;
@@ -105,7 +118,7 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     const argv0_slice = std.mem.span(argv0);
     e.binary_directory = misc_port.getBinaryDirectory(argv0_slice);
 
-    e.numa_context = zfish_member_numa_context_new() orelse return false;
+    e.numa_context = memberNumaContextNew() orelse return false;
     // states slot: a native StateList (the fallback root list); replaces the C++ deque(1).
     const states_list = std.heap.c_allocator.create(state_list_port.StateList) catch return false;
     states_list.* = state_list_port.StateList.init(std.heap.c_allocator) catch {
@@ -113,8 +126,8 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
         return false;
     };
     e.states = states_list;
-    e.options = zfish_member_options_new() orelse return false;
-    e.threads = zfish_member_threadpool_new() orelse return false;
+    e.options = memberOptionsNew() orelse return false;
+    e.threads = memberThreadpoolNew() orelse return false;
 
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
     e.network = zfish_member_network_new(e.numa_context, bdir, std.mem.span(bdir).len) orelse return false;
@@ -174,11 +187,11 @@ pub fn destructMembers(buf: *anyopaque) void {
 
     zfish_member_network_delete(e.network);
     e.network = null;
-    zfish_member_threadpool_delete(e.threads);
+    memberHandleFree(e.threads);
     e.threads = null;
-    zfish_member_options_delete(e.options);
+    memberHandleFree(e.options);
     e.options = null;
-    zfish_member_numa_context_delete(e.numa_context);
+    memberHandleFree(e.numa_context);
     e.numa_context = null;
     if (e.binary_directory) |bd| std.c.free(bd);
     e.binary_directory = null;
