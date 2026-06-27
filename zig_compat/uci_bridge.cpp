@@ -1478,8 +1478,16 @@ extern "C" void zfish_ss_tm_init(void* worker) {
 // (mate 0 in check, else cp 0) and "bestmove (none)" in interactive mode.
 // Bridge-only symbol, no gating.
 
+extern "C" void zfish_threadpool_start_searching(void* pool);
+extern "C" void zfish_threadpool_wait_for_search_finished(void* pool);
 extern "C" void zfish_ss_threads_start(void* worker) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: call the native ThreadPool start-searching directly, dropping the C++
+    // ThreadPool::start_searching method from the default build.
+    zfish_threadpool_start_searching(&static_cast<Search::Worker*>(worker)->threads);
+#else
     static_cast<Search::Worker*>(worker)->threads.start_searching();
+#endif
 }
 
 // zfish_ss_should_busywait and zfish_ss_set_stop are native (main.zig): they
@@ -1487,7 +1495,11 @@ extern "C" void zfish_ss_threads_start(void* worker) {
 // limits.infinite by offset. Bridge-only symbols, so no legacy gating is needed.
 
 extern "C" void zfish_ss_wait_finished(void* worker) {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    zfish_threadpool_wait_for_search_finished(&static_cast<Search::Worker*>(worker)->threads);
+#else
     static_cast<Search::Worker*>(worker)->threads.wait_for_search_finished();
+#endif
 }
 
 extern "C" void zfish_ss_npmsec_advance(void* worker) {
