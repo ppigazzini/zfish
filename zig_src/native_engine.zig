@@ -47,10 +47,17 @@ fn memberThreadpoolNew() ?*anyopaque {
 fn memberHandleFree(p: ?*anyopaque) void {
     std.c.free(p);
 }
-extern fn zfish_member_states_new() ?*anyopaque;
-extern fn zfish_member_states_delete(p: ?*anyopaque) void;
-extern fn zfish_member_network_new(numa_context: ?*anyopaque, binary_dir: [*]const u8, binary_dir_len: usize) ?*anyopaque;
-extern fn zfish_member_network_delete(p: ?*anyopaque) void;
+// network: native single-node holder. malloc(1) handle (never dereferenced — the worker network
+// resolver / eval / verify read native storage; nothing indexes network[token]) + trigger the
+// native NNUE load into the Zig-owned storage, exactly as the old C++ net->load() did. numa_context
+// is unused (single node). (states_new/delete dropped: states is a native StateList — state_list.zig
+// — and member_states_* had no caller.)
+extern fn zfish_network_load(network: *anyopaque, dir_ptr: [*]const u8, dir_len: usize, name_ptr: [*]const u8, name_len: usize) void;
+fn memberNetworkNew(binary_dir: [*:0]const u8, binary_dir_len: usize) ?*anyopaque {
+    const holder = std.c.malloc(1) orelse return null;
+    zfish_network_load(holder, binary_dir, binary_dir_len, binary_dir, 0);
+    return holder;
+}
 // updateContext + onVerifyNetwork are held INLINE in the native engine (stable address
 // for the worker managers / verify emit to bind via accessor) and placement-constructed.
 extern fn zfish_member_update_context_construct(p: *anyopaque) void;
@@ -130,7 +137,7 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     e.threads = memberThreadpoolNew() orelse return false;
 
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
-    e.network = zfish_member_network_new(e.numa_context, bdir, std.mem.span(bdir).len) orelse return false;
+    e.network = memberNetworkNew(bdir, std.mem.span(bdir).len) orelse return false;
 
     // Placement-construct the inline live C++ sub-objects (real UpdateContext / empty
     // std::function) so the accessors hand out valid, properly-constructed objects.
@@ -185,7 +192,7 @@ pub fn destructMembers(buf: *anyopaque) void {
         e.states = null;
     }
 
-    zfish_member_network_delete(e.network);
+    memberHandleFree(e.network);
     e.network = null;
     memberHandleFree(e.threads);
     e.threads = null;
