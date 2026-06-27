@@ -828,12 +828,15 @@ fn zfishLimitsPerftValue(limits: *const anyopaque) callconv(.c) usize {
     return @intCast(perft);
 }
 fn zfishLimitsSearchmoveCount(limits: *const anyopaque) callconv(.c) usize {
-    // searchmoves is std::vector<std::string> at LimitsType +0: {begin@0, end@8}; the
-    // element std::string is 32 bytes (libstdc++), so size == (end-begin)/32.
+    // searchmoves is std::vector<std::string> at LimitsType +0: {begin@0, end@8}; the default
+    // exe is built by Zig (bundled libc++), so the element std::string is 24 bytes (NOT the
+    // libstdc++ 32) — size == (end-begin)/24. The old /32 under-counted (a 2-move span 48 → 1,
+    // a 1-move span 24 → 0); it was masked in the gate because the search-modes test
+    // (searchmoves d2d4 g1f3 → d2d4) still resolves to d2d4 with only the first move processed.
     const base: [*]const u8 = @ptrCast(limits);
     const begin = @as(*const usize, @ptrCast(@alignCast(base))).*;
     const end = @as(*const usize, @ptrCast(@alignCast(base + 8))).*;
-    return (end - begin) / 32;
+    return (end - begin) / 24;
 }
 
 // Stage 5: native Worker::set_limits -- the C++ `limits = value` copy of LimitsType.

@@ -45,6 +45,22 @@ inline fn threadClearWorker(thread: *anyopaque) void {
 inline fn threadRunJob(thread: *anyopaque, job: ThreadCallback, ctx: ?*anyopaque) void {
     if (legacyBuild()) zfish_thread_run_callback(thread, job, ctx) else nt(thread).startJob(job, ctx);
 }
+// M-FINAL cutover: native read of LimitsType::searchmoves[index] in the default build, dropping the
+// C++ zfish_limits_searchmove_text bridge. The default exe is built by Zig (bundled libc++), so
+// std::string is the LIBC++ layout: sizeof 24; short/SSO has byte0 = (size<<1) (low bit 0) with the
+// chars inline at +1; long has byte0 low bit 1, size@+8, data ptr@+16. searchmoves is the leading
+// std::vector<std::string> (limits+0, {_M_start@0}); element stride is sizeof(std::string)=24.
+// Read-only (no allocation). Gate-verified by search-modes (exercises `go ... searchmoves`).
+inline fn limitsSearchmoveText(limits: *const anyopaque, index: usize) ByteView {
+    if (legacyBuild()) return zfish_limits_searchmove_text(limits, index);
+    const vec_begin = @as(*const usize, @ptrFromInt(@intFromPtr(limits))).*;
+    const str_ptr = vec_begin + index * 24;
+    const b0 = @as(*const u8, @ptrFromInt(str_ptr)).*;
+    if (b0 & 1 == 0) return .{ .ptr = @ptrFromInt(str_ptr + 1), .len = b0 >> 1 };
+    const size = @as(*const usize, @ptrFromInt(str_ptr + 8)).*;
+    const data = @as(*const usize, @ptrFromInt(str_ptr + 16)).*;
+    return .{ .ptr = @ptrFromInt(data), .len = size };
+}
 comptime {
     _ = &thread_runtime.ThreadRuntime.start;
     _ = &thread_runtime.ThreadRuntime.runCustomJob;
@@ -878,7 +894,7 @@ pub fn startThinking(
     const searchmove_count = zfish_limits_searchmove_count(limits);
     var index: usize = 0;
     while (index < searchmove_count) : (index += 1) {
-        const move_text = zfish_limits_searchmove_text(limits, index);
+        const move_text = limitsSearchmoveText(limits, index);
         const text_ptr = move_text.ptr orelse continue;
         const move_raw = uci_move.toMoveRaw(pos, text_ptr[0..move_text.len]);
         if (move_raw != none_raw and containsMove(legal_moves, move_raw)) {
