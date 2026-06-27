@@ -52,8 +52,11 @@ def default_code_lines(lines):
             if state:
                 state.pop()
             continue
-        if "L" in state and "D" not in state:
-            continue  # legacy-only -> excluded
+        # Exclude if ANY active guard is legacy (matches the nested-aware oracle build):
+        # a #ifdef LEGACY nested inside a #ifndef LEGACY block (state [D, L]) is still
+        # legacy-only, so the earlier "L and not D" test under-excluded nested guards.
+        if "L" in state:
+            continue  # any active legacy guard -> excluded
         yield i + 1, ln.split("//")[0]
 
 
