@@ -930,6 +930,61 @@ pub fn build(b: *std.Build) void {
     );
     perft_parity_step.dependOn(&perft_parity_cmd.step);
 
+    // Eval-trace differential + golden gate (REPORT-11 E1.2): pins the NNUE `eval` trace block
+    // (buildNnueTrace + the network-ptr / accumulator-cache trace path) — bench covers the eval
+    // value but not this formatting path. eval-parity certifies default == legacy while the oracle
+    // lives; the golden survives oracle deletion.
+    const eval_golden = b.pathFromRoot("zig_build/tools/eval.golden");
+    const eval_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/eval.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        eval_golden,
+        "check",
+    });
+    eval_cmd.step.dependOn(install_step);
+    eval_cmd.step.dependOn(&net_cmd.step);
+    eval_cmd.setCwd(b.path("src"));
+
+    const eval_step = b.step(
+        "eval-trace",
+        "Diff the NNUE eval trace block against the committed golden (buildNnueTrace path)",
+    );
+    eval_step.dependOn(&eval_cmd.step);
+
+    const eval_update_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/eval.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        eval_golden,
+        "update",
+    });
+    eval_update_cmd.step.dependOn(install_step);
+    eval_update_cmd.step.dependOn(&net_cmd.step);
+    eval_update_cmd.setCwd(b.path("src"));
+
+    const eval_update_step = b.step(
+        "eval-trace-update",
+        "Regenerate zig_build/tools/eval.golden from the current binary",
+    );
+    eval_update_step.dependOn(&eval_update_cmd.step);
+
+    const eval_parity_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/eval_parity.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        b.getInstallPath(.bin, "stockfish-legacy-cpp"),
+    });
+    eval_parity_cmd.step.dependOn(install_step);
+    eval_parity_cmd.step.dependOn(&net_cmd.step);
+    eval_parity_cmd.setCwd(b.path("src"));
+
+    const eval_parity_step = b.step(
+        "eval-trace-parity",
+        "Assert the default (Zig) and legacy (C++) NNUE eval trace blocks are identical",
+    );
+    eval_parity_step.dependOn(&eval_parity_cmd.step);
+
     // H9 src-free / TU=0 structural gate (REPORT-11 E1.4): asserts the default binary contains zero
     // C++ TUs (no Stockfish:: / libc++ runtime symbols; src/ + uci_bridge.cpp gone) and still benches
     // 2336177. FAILS ON PURPOSE until the cut (E3/E4) removes the last C++ TU; deliberately NOT in the
@@ -963,6 +1018,8 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&output_golden_cmd.step);
     parity_step.dependOn(&perft_cmd.step);
     parity_step.dependOn(&perft_parity_cmd.step);
+    parity_step.dependOn(&eval_cmd.step);
+    parity_step.dependOn(&eval_parity_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
