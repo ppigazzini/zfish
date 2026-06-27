@@ -1140,21 +1140,17 @@ namespace Stockfish {
 // NOTE (M-FINAL): default-LIVE — the worker ctor's clear() reads the FT biases from the
 // C++ Network here, so the C++ Network is NOT vestigial at runtime (the refresh cache +
 // lazy replication keep it live). Porting it native is part of the network+numa giant.
+// M-FINAL cutover: legacy-only test — its only caller (Thread::clear_worker) is legacy-guarded;
+// the default build clears worker state via the native clear path (zfish_search_clear_*).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void Search::Worker::clear() {
     zfish_search_clear_worker_histories(this);
     zfish_search_clear_shared_history(&sharedHistory, numaThreadIdx, numaTotal);
     zfish_search_fill_reductions(reductions.data(), reductions.size());
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: read the FT biases from the native FT storage (bit-identical to the
-    // C++ Network FT, cross-checked at load) — decouples the worker refresh cache from the
-    // C++ Network. Step 1 of decoupling the runtime from the C++ Network.
-    zfish_search_clear_refresh_cache(
-      &refreshTable, reinterpret_cast<const std::int16_t*>(zfish_native_ft_ptr()));
-#else
     zfish_search_clear_refresh_cache(&refreshTable,
                                      network[numaAccessToken].featureTransformer.biases.data());
-#endif
 }
+#endif
 
 void Search::Worker::ensure_network_replicated() {
 #ifdef ZFISH_LEGACY_CPP_TARGET
