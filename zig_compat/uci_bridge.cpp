@@ -1157,10 +1157,15 @@ void Search::Worker::ensure_network_replicated() {
     // (always resident), so no C++ Network numa replica is needed — no-op.
 }
 
+// M-FINAL cutover: legacy-only. Its only caller was the C++ Worker::start_searching driver (now
+// legacy-only); the native pv driver runs zfish_search_extract_ponder_from_tt (main.zig) directly.
+// Dead in the default build — removes RootMove/TT/Position member access (pv/table/clusterCount).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 bool Search::RootMove::extract_ponder_from_tt(const TranspositionTable& tt, Position& pos) {
     return bool(zfish_search_extract_ponder_from_tt(&pv, tt.table, tt.clusterCount,
                                                     tt.generation8, &pos));
 }
+#endif
 
 // Worker constructor relocated verbatim from search.cpp: unpack the SharedState
 // into members and run the initial clear().
