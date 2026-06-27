@@ -844,9 +844,16 @@ extern "C" void zfish_search_id_state(void* worker, ZfishIdState* out) {
 // the C++ pv() in the legacy oracle, so this stays a C++ method call (a native
 // direct call to zfish_search_pv would force the native driver in legacy too,
 // defeating the oracle).
+extern "C" void zfish_search_pv(void* manager, void* worker, void* threads, void* tt, int depth);
 extern "C" void zfish_search_id_pv(void* worker, int depth) {
     auto* w = static_cast<Stockfish::Search::Worker*>(worker);
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // M-FINAL cutover: call the native pv driver directly (the default's SearchManager::pv only
+    // forwarded here anyway), so the C++ SearchManager::pv goes legacy-only.
+    zfish_search_pv(w->main_manager(), w, &w->threads, &w->tt, depth);
+#else
     w->main_manager()->pv(*w, w->threads, w->tt, depth);
+#endif
 }
 
 // Cross-thread bestMoveChanges collection: sum and reset, returned as a double
@@ -1215,20 +1222,14 @@ static inline std::uint64_t zfish_pool_tbhits(const ThreadPool& t) { return t.tb
 // legacy oracle. syzygy_extend_pv is dead in this no-tablebase build (rootInTB
 // is always false, so v never lands in the decisive-non-mate TB range).
 extern "C" void zfish_search_pv(void* manager, void* worker, void* threads, void* tt, int depth);
+// M-FINAL cutover: legacy-only. The default build's pv callers (zfish_search_id_pv / zfish_ss_emit_pv)
+// now call the native pv driver (zfish_search_pv) directly, so this C++ SearchManager::pv is dead in
+// the default build (and the vtable it once shared concerns is already unreferenced — 91a7e6af).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void Search::SearchManager::pv(Search::Worker&           worker,
                                const ThreadPool&         threads,
                                const TranspositionTable& tt,
                                Depth                     depth) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // Default (Zig-owned) info-line driver. Zig owns the multiPV loop and the
-    // per-move field derivation over the RootMove memory mirror; the C++ emit
-    // callback rebuilds InfoFull and reuses updates.onUpdateFull, so the
-    // score/wdl formatting, quiet-mode handling, and print path stay byte
-    // identical. The C++ body below is kept for the legacy oracle, so the
-    // output-parity gate cross-checks the Zig port line-for-line.
-    zfish_search_pv(this, &worker, const_cast<ThreadPool*>(&threads),
-                    const_cast<TranspositionTable*>(&tt), static_cast<int>(depth));
-#else
     const auto nodes     = zfish_pool_nodes(threads);
     auto&      rootMoves = worker.rootMoves;
     auto&      pos       = worker.rootPos;
@@ -1286,8 +1287,8 @@ void Search::SearchManager::pv(Search::Worker&           worker,
 
         updates.onUpdateFull(info);
     }
-#endif
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET
 
 // Context + emit seams for the Zig-owned pv() driver (default target only). The
 // context fetch hands Zig every value the multiPV loop needs; the emit callback
@@ -1513,7 +1514,11 @@ extern "C" void zfish_ss_npmsec_advance(void* worker) {
 extern "C" void zfish_ss_emit_pv(void* worker, void* best) {
     auto* w = static_cast<Search::Worker*>(worker);
     auto* b = static_cast<Search::Worker*>(best);
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    zfish_search_pv(w->main_manager(), b, &w->threads, &w->tt, b->rootDepth);
+#else
     w->main_manager()->pv(*b, w->threads, w->tt, b->rootDepth);
+#endif
 }
 
 // zfish_ss_emit_bestmove is native (main.zig): it renders pv[0]/pv[1] with the
