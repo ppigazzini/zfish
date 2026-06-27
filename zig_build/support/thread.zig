@@ -1033,10 +1033,16 @@ pub fn waitForSearchFinished(pool: *anyopaque) void {
 }
 
 pub fn ensureNetworkReplicated(pool: *anyopaque) void {
-    const thread_count = zfish_threadpool_thread_count(pool);
-    var index: usize = 0;
-    while (index < thread_count) : (index += 1) {
-        zfish_thread_ensure_network_replicated(zfish_threadpool_thread_at(pool, index));
+    // M-FINAL cutover: in the default build the NNUE weights are always resident in native storage
+    // (no C++ Network numa replica), so Worker::ensure_network_replicated is a no-op. Wrapping the
+    // per-thread loop in the comptime legacyBuild() branch makes Zig prune it (and the now legacy-only
+    // zfish_thread_ensure_network_replicated bridge reference) from the default exe entirely.
+    if (legacyBuild()) {
+        const thread_count = zfish_threadpool_thread_count(pool);
+        var index: usize = 0;
+        while (index < thread_count) : (index += 1) {
+            zfish_thread_ensure_network_replicated(zfish_threadpool_thread_at(pool, index));
+        }
     }
 }
 

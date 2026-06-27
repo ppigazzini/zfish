@@ -1152,13 +1152,15 @@ void Search::Worker::clear() {
 }
 #endif
 
-void Search::Worker::ensure_network_replicated() {
+// M-FINAL cutover: legacy-only. In the default build the weights are always native-resident, so
+// this is a no-op and the native ensureNetworkReplicated (thread.zig) skips the whole per-thread
+// loop — so neither this nor the Thread:: wrapper nor the zfish_thread_ensure_network_replicated
+// bridge is reached in default. Only the legacy oracle forces the lazy numa replica off the path.
 #ifdef ZFISH_LEGACY_CPP_TARGET
+void Search::Worker::ensure_network_replicated() {
     (void) (network[numaAccessToken]);  // force lazy numa initialization off the search path
-#endif
-    // M-FINAL cutover (decouple step 3): default build serves weights from native storage
-    // (always resident), so no C++ Network numa replica is needed — no-op.
 }
+#endif
 
 // M-FINAL cutover: legacy-only. Its only caller was the C++ Worker::start_searching driver (now
 // legacy-only); the native pv driver runs zfish_search_extract_ponder_from_tt (main.zig) directly.
@@ -2053,9 +2055,11 @@ void Thread::worker_fill_summary(std::uint16_t& pv0Raw,
 }
 
 #endif  // ZFISH_LEGACY_CPP_TARGET (pause: ensure_network_replicated is default-live)
-// Default-live: native thread.zig ensureNetworkReplicated → zfish_thread_ensure_
-// network_replicated → here, once per thread in the default build.
+// M-FINAL cutover: legacy-only — the default ensureNetworkReplicated (thread.zig) early-returns
+// (weights always native-resident), so this wrapper is never reached in the default build.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void Thread::ensure_network_replicated() { worker->ensure_network_replicated(); }
+#endif
 #ifdef ZFISH_LEGACY_CPP_TARGET  // resume the Thread vehicle gate
 
 // Thread gets parked here, blocked on the condition variable when the thread has no work to do.
@@ -2237,9 +2241,13 @@ void zfish_thread_clear_worker(void* thread_ptr) {
 #endif  // ZFISH_LEGACY_CPP_TARGET
 
 // Default-live: native thread.zig ensureNetworkReplicated calls this per thread.
+// M-FINAL cutover: legacy-only — the default ensureNetworkReplicated (thread.zig) early-returns,
+// so this bridge is never called in the default build.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_thread_ensure_network_replicated(void* thread_ptr) {
     static_cast<Thread*>(thread_ptr)->ensure_network_replicated();
 }
+#endif
 
 // Stage-7 7.2d: legacy-only thread-level worker-op wrappers. The default build
 // uses the native zfish_worker_* / zfish_thread_worker_* exports (main.zig) for
