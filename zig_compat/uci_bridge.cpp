@@ -2998,6 +2998,9 @@ std::uint8_t  zfish_position_legal_method(const void* pos_ptr, std::uint16_t mov
 std::uint8_t  zfish_position_gives_check_method(const void* pos_ptr, std::uint16_t move);
 std::uint8_t  zfish_position_pseudo_legal_method(const void* pos_ptr, std::uint16_t move);
 void          zfish_position_undo_move_method(void* pos_ptr, std::uint16_t move);
+// Native 2-arg do_move (computes gives_check + applies); default = zig_src/main.zig export,
+// legacy = the C++ def below. Declared here so the default perft root loop (REPORT-11 E2) can call it.
+void          zfish_position_do_move_state(void* pos_ptr, std::uint16_t move_raw, void* state_ptr);
 void          zfish_position_do_move(void* pos_ptr, std::uint16_t move, void* new_st_ptr,
                                      std::uint8_t gives_check, void* dp_ptr, void* dts_ptr);
 const char*   zfish_bitboard_pretty(Stockfish::Bitboard bitboard);
@@ -3165,8 +3168,11 @@ bool Position::pseudo_legal(const Move m) const {
 }
 #endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void Position::undo_move(Move m) { zfish_position_undo_move_method(this, m.raw()); }
+#endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void Position::do_move(Move                      m,
                        StateInfo&                newSt,
                        bool                      givesCheck,
@@ -3179,6 +3185,7 @@ void Position::do_move(Move                      m,
     zfish_position_do_move(this, m.raw(), &newSt, static_cast<std::uint8_t>(givesCheck ? 1 : 0), &dp,
                            &dts);
 }
+#endif
 
 // M-FINAL cutover (position-set port): native Position::set in the default build
 // (zig_src/main.zig, position.zig FEN parser); legacy oracle keeps the C++ Position::set.
@@ -3392,10 +3399,14 @@ std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
         else
         {
             StateInfo si;
-            p.do_move(m, si);
+            // M-FINAL cutover (REPORT-11 E2): apply/undo via the native do_move/undo_move
+            // (zig_src/main.zig) so the default build's perft root loop no longer calls the C++
+            // Position::do_move/undo_move methods — letting them be guarded legacy-only. &p is the
+            // native-compatible frozen Position the native zfish_perft_subtree already operates on.
+            zfish_position_do_move_state(&p, m.raw(), &si);
             cnt = zfish_perft_subtree(&p, depth - 1);
             nodes += cnt;
-            p.undo_move(m);
+            zfish_position_undo_move_method(&p, m.raw());
         }
         sync_cout << UCIEngine::move(m, p.is_chess960()) << ": " << cnt << sync_endl;
     }
