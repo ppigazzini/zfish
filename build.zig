@@ -985,6 +985,59 @@ pub fn build(b: *std.Build) void {
     );
     eval_parity_step.dependOn(&eval_parity_cmd.step);
 
+    // UCI misc-command gate (REPORT-11 E1.2 coverage tail): d/flip Fen+Key+Checkers — the
+    // frozen-Position fen/flip/zobrist/gives_check read paths no other gate touches.
+    const misc_golden = b.pathFromRoot("zig_build/tools/misc.golden");
+    const misc_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/misc.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        misc_golden,
+        "check",
+    });
+    misc_cmd.step.dependOn(install_step);
+    misc_cmd.step.dependOn(&net_cmd.step);
+    misc_cmd.setCwd(b.path("src"));
+
+    const misc_step = b.step(
+        "misc",
+        "Diff d/flip (Fen/Key/Checkers) against the committed golden (fen/flip/zobrist/gives_check)",
+    );
+    misc_step.dependOn(&misc_cmd.step);
+
+    const misc_update_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/misc.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        misc_golden,
+        "update",
+    });
+    misc_update_cmd.step.dependOn(install_step);
+    misc_update_cmd.step.dependOn(&net_cmd.step);
+    misc_update_cmd.setCwd(b.path("src"));
+
+    const misc_update_step = b.step(
+        "misc-update",
+        "Regenerate zig_build/tools/misc.golden from the current binary",
+    );
+    misc_update_step.dependOn(&misc_update_cmd.step);
+
+    const misc_parity_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/misc_parity.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        b.getInstallPath(.bin, "stockfish-legacy-cpp"),
+    });
+    misc_parity_cmd.step.dependOn(install_step);
+    misc_parity_cmd.step.dependOn(&net_cmd.step);
+    misc_parity_cmd.setCwd(b.path("src"));
+
+    const misc_parity_step = b.step(
+        "misc-parity",
+        "Assert the default (Zig) and legacy (C++) d/flip Fen+Key+Checkers are identical",
+    );
+    misc_parity_step.dependOn(&misc_parity_cmd.step);
+
     // H9 src-free / TU=0 structural gate (REPORT-11 E1.4): asserts the default binary contains zero
     // C++ TUs (no Stockfish:: / libc++ runtime symbols; src/ + uci_bridge.cpp gone) and still benches
     // 2336177. FAILS ON PURPOSE until the cut (E3/E4) removes the last C++ TU; deliberately NOT in the
@@ -1020,6 +1073,8 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&perft_parity_cmd.step);
     parity_step.dependOn(&eval_cmd.step);
     parity_step.dependOn(&eval_parity_cmd.step);
+    parity_step.dependOn(&misc_cmd.step);
+    parity_step.dependOn(&misc_parity_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
