@@ -875,6 +875,61 @@ pub fn build(b: *std.Build) void {
     );
     teardown_step.dependOn(&teardown_cmd.step);
 
+    // Perft differential + golden gate (REPORT-11 E1.1): the ONLY gate over
+    // Position::do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
+    // perft; search-modes only checks bestmoves). perft-parity certifies default == legacy while the
+    // oracle still exists; the perft golden survives oracle deletion at TU=0 (REPORT-11 §2.2).
+    const perft_golden = b.pathFromRoot("zig_build/tools/perft.golden");
+    const perft_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/perft.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        perft_golden,
+        "check",
+    });
+    perft_cmd.step.dependOn(install_step);
+    perft_cmd.step.dependOn(&net_cmd.step);
+    perft_cmd.setCwd(b.path("src"));
+
+    const perft_step = b.step(
+        "perft",
+        "Diff perft divide counts + totals against the committed golden (do_move/undo_move/movegen)",
+    );
+    perft_step.dependOn(&perft_cmd.step);
+
+    const perft_update_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/perft.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        perft_golden,
+        "update",
+    });
+    perft_update_cmd.step.dependOn(install_step);
+    perft_update_cmd.step.dependOn(&net_cmd.step);
+    perft_update_cmd.setCwd(b.path("src"));
+
+    const perft_update_step = b.step(
+        "perft-update",
+        "Regenerate zig_build/tools/perft.golden from the current binary",
+    );
+    perft_update_step.dependOn(&perft_update_cmd.step);
+
+    const perft_parity_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/perft_parity.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        b.getInstallPath(.bin, "stockfish-legacy-cpp"),
+    });
+    perft_parity_cmd.step.dependOn(install_step);
+    perft_parity_cmd.step.dependOn(&net_cmd.step);
+    perft_parity_cmd.setCwd(b.path("src"));
+
+    const perft_parity_step = b.step(
+        "perft-parity",
+        "Assert the default (Zig) and legacy (C++) perft divide counts + totals are identical",
+    );
+    perft_parity_step.dependOn(&perft_parity_cmd.step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
@@ -887,6 +942,8 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&oracle_parity_cmd.step);
     parity_step.dependOn(&output_parity_cmd.step);
     parity_step.dependOn(&output_golden_cmd.step);
+    parity_step.dependOn(&perft_cmd.step);
+    parity_step.dependOn(&perft_parity_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
