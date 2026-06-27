@@ -1698,13 +1698,16 @@ extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thre
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint8_t TTEntry::relative_age(std::uint8_t curr_generation) const {
     return zfish_tt_entry_relative_age(reinterpret_cast<const ZfishTtEntry*>(this), curr_generation);
 }
+#endif
 
 TTWriter::TTWriter(TTEntry* tte) :
     entry(tte) {}
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void TTWriter::write(
   Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, std::uint8_t curr_generation) {
     zfish_tt_entry_save(reinterpret_cast<ZfishTtEntry*>(entry),
@@ -1718,6 +1721,7 @@ void TTWriter::write(
                         static_cast<int>(ev),
                         curr_generation);
 }
+#endif
 
 // M-FINAL cutover: legacy-only. The default build's TT resize/clear go through the native
 // zfish_engine_tt_resize/_clear (main.zig → tt.zig); the only callers of these C++ methods were
@@ -1737,12 +1741,14 @@ void TranspositionTable::clear(ThreadPool& threads) {
 }
 #endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 int TranspositionTable::hashfull(int maxAge) const {
     return zfish_tt_hashfull(reinterpret_cast<const ZfishTtCluster*>(table),
                              clusterCount,
                              generation8,
                              maxAge);
 }
+#endif
 
 // M-FINAL cutover: legacy-only — callers (start_searching / ss_npmsec legacy paths) are all
 // legacy-guarded; the default build advances the TT generation natively.
@@ -1758,6 +1764,7 @@ std::uint8_t TranspositionTable::generation() const {
 }
 #endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
     const auto output = zfish_tt_probe_table(table,
                                              clusterCount,
@@ -1774,11 +1781,14 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
 
     return {output.found != 0, data, TTWriter(static_cast<TTEntry*>(output.writer_ptr))};
 }
+#endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 TTEntry* TranspositionTable::first_entry(const Key key) const {
     const auto index = zfish_tt_first_entry_index(static_cast<std::uint64_t>(key), clusterCount);
     return &table[index].entry[0];
 }
+#endif
 
 #ifdef ZFISH_LEGACY_CPP_TARGET
 TimePoint TimeManagement::optimum() const { return optimumTime; }
