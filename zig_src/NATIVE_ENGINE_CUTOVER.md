@@ -270,6 +270,30 @@ the accessor (done). onVerifyNetwork (set_on_verify_network) is a separate engin
 written inline — the flip needs a NativeEngine slot for it (or a native sink; check whether
 verify_network() reads it or uses native emit).
 
+### THREADPOOL forward-decl endgame map (2026-06-27, @ 9f657a11) — autonomous RED push begun
+Accurate guard-checked audit (the python state-machine over-counts; use the awk depth-tracker):
+the DEFAULT build's ONLY ThreadPool complete-type usages are exactly THREE:
+  (1) inline helpers `zfish_pool_nodes/tbhits(const ThreadPool& t)` @1209-1210 — REFERENCE params,
+      forward-decl suffices (a ref to an incomplete type is legal; `&t` → void* to the native fn).
+      Reached in default ONLY via zfish_ss_npmsec_advance @1503 (the DEFERRED nodestime fn). The
+      legacy pv/check_time callers (1229/1233/1342/1356/1406) are all legacy-guarded.
+  (2) `zfish_threadpool_bound_nodes_assign` @3548-3559 — `static_cast<ThreadPool*>(pool_ptr)->
+      boundThreadToNumaNode.clear()/.assign(...)`. NEEDS complete type (vector member access).
+      THIS is the boundThreadToNumaNode vec — VALGRIND-SENSITIVE + UN-VERIFIABLE on single-node
+      (the bound-vec is never populated on single-node WSL2, so the gate can't catch a bug here).
+  (3) `sizeof(Stockfish::ThreadPool)` @4162 (the calloc) — needs complete type, BUT only matters at
+      the FINAL include-removal step; converting it now (→ native size const) loses the compile-time
+      safety for zero current gain while thread.h is still included.
+ALL ThreadPool METHOD defs (main_manager/nodes_searched/tb_hits/clear/run_on_thread/wait_on_thread/
+num_threads @2090-2143) are LEGACY-ONLY. CONCLUSION: ThreadPool forward-decl is blocked on (2) the
+un-verifiable bound-vec port + (3) the final include-removal — NOT a clean autonomous win. This
+matches the roadmap's "ThreadPool construction (low reward, bound-vec single-node-untested)".
+REFRAME: TU=0's real grind is porting the ~180 default C++ bridge fns INTO Zig (then uci_bridge.cpp
+has no default content → delete). Forward-decl is moot once a fn is in Zig (Zig already passes opaque
+ptrs + reads frozen layouts via graph_layout offsets). NEXT-TARGET for the autonomous push: port the
+most-tractable GATE-VERIFIABLE default bridge fns to Zig offset-access, cluster by cluster, skipping
+the un-verifiable paths (bound-vec, numa multi-node). Avoid zfish_ss_npmsec_advance (nodestime hang).
+
 ### The flip's concrete edit set (next iteration) — now isolated (pre-flip refactors done)
 - main.zig zfish_main: size buffer with zfish_native_engine_sizeof/alignof (was uci_engine_*).
 - native_engine.zig constructMembers: also placement-construct update_context (call
