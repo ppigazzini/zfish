@@ -311,6 +311,21 @@ even a "clean read-only" coupled port has subtle integration bugs that the gate 
 focused debugging, not 2-min loop ticks — reinforces that the remaining ~90-fn grind suits supervised
 focus. The gate (search-modes) working = the real win (no silent corruption shipped).
 
+### searchmove_text DEBUG DATA (2026-06-27, 2nd attempt) — the limits repr is NOT plain LimitsType
+Runtime printf in limitsSearchmoveText (default exe, `go searchmoves d2d4 g1f3`):
+  `idx=0 limits=0x7fff..9b0(stack) vec_begin=*(limits+0)=0xb4da790 data=*(vec_begin)=0x3464326408
+   size=*(vec_begin+8)=0 | cref(C++ LimitsType*) ptr=0xb4da791 len=4`
+0x3464326408 == ASCII "\x08d2d4" little-endian — i.e. *(limits+0) points AT move-text bytes, NOT at a
+std::vector<std::string> _M_start (would be a std::string obj: _M_p ptr@0). cref reads the SAME limits
+ptr correctly (0xb4da791,len4). So the default build's `limits` does NOT lay out searchmoves as the C++
+std::vector<std::string>@0 — almost certainly it is the NATIVE uci.zig limits (searchmoves: ?[*:0]u8,
+newline-joined; uci.zig:54) and the C++ cref works only because zfish_limits_searchmove_text was reading
+a DIFFERENT (C++ source) limits in the gate, OR there are two limits reps. NEXT (focused): read uci.zig's
+limits struct + trace what `limits` ptr startThinking(@863) actually receives in the default build (native
+struct vs C++ source) before any further port. LESSON CONFIRMED (2 reverts): the "easiest" read-only port
+hid a representation mismatch needing runtime dumps — the remaining ~90-fn grind is focused-debug work,
+not autonomous loop ticks. The gate caught both; nothing broken shipped.
+
 ### The flip's concrete edit set (next iteration) — now isolated (pre-flip refactors done)
 - main.zig zfish_main: size buffer with zfish_native_engine_sizeof/alignof (was uci_engine_*).
 - native_engine.zig constructMembers: also placement-construct update_context (call
