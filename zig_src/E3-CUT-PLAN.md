@@ -5,6 +5,26 @@ zig_build/tools/frozen_refs.py zig_compat/uci_bridge.cpp -v` as the live checkli
 Baseline at plan time (refactor `b5b9baae`): **28 live default frozen-type derefs**. Bench `2336177`
 + the E1 golden suite are the gate; `oracle-parity` is alive for one last cross-check before E4.
 
+## PROGRESS (autonomous Group A burndown COMPLETE): 30 -> 21 derefs
+
+The route-to-native Group A items are done + merged (gate-verified by the E1 suite), shrinking the
+cut surface from 30 to 21:
+- perft root loop -> native do_move/undo_move; guard Position::do_move/undo_move (b5b9baae).
+- Position::gives_check guarded — transitively dead once the position.h inline 2-arg do_move went
+  uninstantiated (837b09d7).
+- native flip route (zfish_engine_fen -> flip_fen -> set_position) -> guard Engine::flip /
+  Position::flip / Position::fen (ed11ff86).
+- Engine::get_default_network guarded — legacy-only construction (b336aec8).
+
+**The remaining 21 are ALL cut-time (group B/C/D below) — confirmed by frozen_refs.py:**
+Engine 8 (get_options ×2 [B], set_on_* ×5 [C], listener-install ×1 [B/C]), SearchManager 4
+(UpdateContext [C]), UCIEngine 3 (move [the chess960-risky one], init/print [B]), Position 3
+(set [B, header-inline], sizeof ×1 [D]), StateInfo 2 (sizeof/static_assert [D]), Thread 1
+(wait_for_search_finished [B/E]). NB Position::set is group B not A — a src/ header inline keeps it
+live (guarding it pre-cut fails to link), so it self-resolves at the include-drop. So Step 1 is now:
+drop includes → B self-resolves, C stays as the opaque UpdateContext/std::function shim, D → the
+graph_layout constants + legacy-confined static_asserts. NOTHING more is autonomously routable.
+
 ## The mechanism (why this is smaller than 28 edits)
 
 Most derefs are method DEFS in uci_bridge.cpp that are kept live ONLY by `src/` header inlines which
