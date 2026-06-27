@@ -3144,7 +3144,11 @@ Position::set(const std::string& fenStr, bool isChess960, StateInfo* si) {
     return std::nullopt;
 }
 
+// M-FINAL cutover: legacy-only — the native movegen (zfish_movegen_generate_legal) filters legal
+// moves itself, so the default build never calls this C++ Position::legal (confirmed by the link).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 bool Position::legal(Move m) const { return zfish_position_legal_method(this, m.raw()) != 0; }
+#endif
 
 // gives_check is default-live (a C++ Position user computes it).
 bool Position::gives_check(Move m) const {
