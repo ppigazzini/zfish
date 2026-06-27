@@ -2496,6 +2496,7 @@ std::string compiler_info() {
     return value;
 }
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
 
     auto network_ = std::make_unique<NN::Network>(NN::EvalFile{EvalFileDefaultName, "None", ""});
@@ -2504,6 +2505,7 @@ std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
 
     return network_;
 }
+#endif
 
 void dbg_hit_on(bool cond, int slot) {
     zfish_misc_dbg_hit_on(static_cast<std::uint8_t>(cond ? 1 : 0), slot);
