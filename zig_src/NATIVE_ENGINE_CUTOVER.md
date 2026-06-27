@@ -326,6 +326,42 @@ struct vs C++ source) before any further port. LESSON CONFIRMED (2 reverts): the
 hid a representation mismatch needing runtime dumps — the remaining ~90-fn grind is focused-debug work,
 not autonomous loop ticks. The gate caught both; nothing broken shipped.
 
+### ===== ENDGAME ENTRY POINT (2026-06-27, refactor @ 4a2de417) — incremental floor reached =====
+The autonomous /loop drove the coupled-port phase to its FLOOR. This session's merges (all gated
+green incl valgrind/teardown where alloc-relevant): libc++ ABI crack + searchmove_text + count fix
+(50acf769); construction crack — member allocators native numa/threads/options/network/states,
+removed sizeof(ThreadPool) blocker (6b7c3f13, d74e9702); ensure_network_replicated no-op chain
+legacy-only (2d0a5bce); options listing native-only / dead OptionsMap operator<< dropped (4a2de417).
+KEY REUSABLE ASSET: [[zfish-default-build-uses-libcxx]] — the default TU is Zig+libc++ (24-byte
+std::string, SSO byte0=size<<1 @ +1), NOT libstdc++; governs every native container offset-read.
+
+DEFAULT C++ FN COUNT: ~73. WHY THEY CAN'T BE REMOVED INCREMENTALLY (verified this session):
+  1. FROZEN-HEADER INLINES keep bridge fns live invisibly — e.g. Engine::get_options() looked dead
+     (every uci_bridge caller legacy-guarded) but src/uci.h:136 `engine_options(){return engine.
+     get_options();}` + engine.h inlines reference it → guarding it = undefined symbol (linker caught).
+     LESSON: grep src/*.h too, not just uci_bridge.cpp, before believing a fn dead.
+  2. NATIVE-SHIM ENGINE OPS — flip/go_parsed/perft/set_position/apply_setoption cast
+     static_cast<Engine*>(engine_ptr)->method(); the methods are native-shimmed (engine.h inlines →
+     native owners) so they WORK in default but keep the Engine type. Removing = forward-decl.
+  3. LIVE std::function — update_context/onVerifyNetwork (search emit calls them) + the
+     set_on_*/init_search_update_listeners install (zfish_uci_set_listener_mode). Stay C++ until a
+     native callback mechanism replaces the std::function emit path.
+  4. MEMBER-ACCESS SHIMS — SharedState.sharedHistories (3611/3628), NumaConfig (legacy branches),
+     etc. read frozen members by the C++ type; offset-portable but each tedious + coupled.
+  5. UN-VERIFIABLE on single-node — bound_nodes_assign (boundThreadToNumaNode vec, never populated),
+     numa multi-node. SKIP autonomously.
+
+THE ENDGAME (the one remaining dedicated effort, USER CHOSE SUPERVISED): forward-declare the 9
+mutually-referential frozen types (Engine/UCIEngine/ThreadPool/Position/Thread/Search::Worker/
+StateInfo/Search::SearchManager/Search::SharedState) together → remove the src/ header includes from
+uci_bridge.cpp → port/forward-decl the remaining ~73 fns' type usage to void*/native → delete
+uci_bridge.cpp + src/ + the legacy oracle → add the H9 src-free gate. CRITICAL: deleting src/ LOSES
+the differential oracle (oracle-parity), so output_parity.golden (regen-able now while the oracle
+lives) becomes the sole reference. Bench 2336177 is the only end gate; expect RED-until-green (no
+parity-green intermediate). Best as a focused non-resetting push with supervision (threading/numa
+paths the single-node gate can't fully verify). Per-type forward-decl is technically incremental but
+each loses that type's size cross-check and the headers cross-include, so it converges on one big cut.
+
 ### The flip's concrete edit set (next iteration) — now isolated (pre-flip refactors done)
 - main.zig zfish_main: size buffer with zfish_native_engine_sizeof/alignof (was uci_engine_*).
 - native_engine.zig constructMembers: also placement-construct update_context (call
