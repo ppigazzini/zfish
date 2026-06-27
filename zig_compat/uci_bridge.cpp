@@ -1744,13 +1744,19 @@ int TranspositionTable::hashfull(int maxAge) const {
                              maxAge);
 }
 
+// M-FINAL cutover: legacy-only — callers (start_searching / ss_npmsec legacy paths) are all
+// legacy-guarded; the default build advances the TT generation natively.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void TranspositionTable::new_search() {
     generation8 = zfish_tt_generation_next(generation8);
 }
+#endif
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint8_t TranspositionTable::generation() const {
     return generation8;
 }
+#endif
 
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
     const auto output = zfish_tt_probe_table(table,
@@ -1774,12 +1780,18 @@ TTEntry* TranspositionTable::first_entry(const Key key) const {
     return &table[index].entry[0];
 }
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 TimePoint TimeManagement::optimum() const { return optimumTime; }
 TimePoint TimeManagement::maximum() const { return maximumTime; }
+#endif
 
+// M-FINAL cutover: legacy-only — its callers (main_manager()->tm.clear() at engine teardown/
+// reconfigure) are all legacy-guarded; the default build clears time state natively.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void TimeManagement::clear() {
     availableNodes = -1;
 }
+#endif
 
 void TimeManagement::advance_nodes_time(std::int64_t nodes) {
     assert(useNodesTime);
