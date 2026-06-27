@@ -294,6 +294,23 @@ ptrs + reads frozen layouts via graph_layout offsets). NEXT-TARGET for the auton
 most-tractable GATE-VERIFIABLE default bridge fns to Zig offset-access, cluster by cluster, skipping
 the un-verifiable paths (bound-vec, numa multi-node). Avoid zfish_ss_npmsec_advance (nodestime hang).
 
+### ATTEMPTED + REVERTED (2026-06-27): zfish_limits_searchmove_text native port — search-modes RED
+Tried porting zfish_limits_searchmove_text to a native Zig read (thread.zig limitsSearchmoveText:
+comptime legacyBuild() switch; default reads LimitsType::searchmoves[index] by offset). CONFIRMED
+CORRECT by empirical g++ probe: searchmoves IS LimitsType offset 0 (leading member, search.h:157);
+std::vector{begin@0}; libstdc++ std::string sizeof 32, _M_p(data)@0, size@8 (new ABI, _M_p valid for
+SSO+heap). YET search-modes FAILED (golden `depth-searchmoves bestmove d2d4` → live `a2a3`, i.e. the
+searchmoves filter selected nothing → fell back to all moves). So the std::string read is right but
+the INTEGRATION is off — unresolved. SUSPECTS for the focused retry (needs runtime pointer printf, NOT
+loop-tick speculation): (a) zfish_limits_searchmove_count is legacy-only @3443 yet the default build
+links — find the native count, confirm it reads the SAME limits+0 the text path does; (b) whether
+`limits` at thread.zig startThinking(@863) is the source LimitsType or a worker copy (graph_layout
+warns searchmoves is VESTIGIAL in the Worker copy — if the text path and count path see different
+`limits`, that's the bug); (c) the ByteView inline-return path. REVERTED to green @ cc5a4ced. LESSON:
+even a "clean read-only" coupled port has subtle integration bugs that the gate catches but that need
+focused debugging, not 2-min loop ticks — reinforces that the remaining ~90-fn grind suits supervised
+focus. The gate (search-modes) working = the real win (no silent corruption shipped).
+
 ### The flip's concrete edit set (next iteration) — now isolated (pre-flip refactors done)
 - main.zig zfish_main: size buffer with zfish_native_engine_sizeof/alignof (was uci_engine_*).
 - native_engine.zig constructMembers: also placement-construct update_context (call
