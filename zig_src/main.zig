@@ -1435,6 +1435,11 @@ fn tbInit(path_ptr: [*]const u8, path_len: usize) callconv(.c) void {
     _ = path_len;
 }
 
+// REPORT-12 TU=0 grind: the NumaPolicy setters are no-ops in the default build — the numa context is
+// a fixed single-node native stub, so reconfiguring it does nothing (and must not touch the stub).
+// Native no-op replaces the C++ default stubs; the legacy oracle keeps the real C++ set_numa_config.
+fn numaContextSetNoop(_: *anyopaque) callconv(.c) void {}
+
 comptime {
     if (!target_flags.legacy_target) {
         @export(&tbMaxCardinality, .{ .name = "zfish_tbprobe_max_cardinality" });
@@ -1475,6 +1480,10 @@ comptime {
         @export(&zfishOptionsSyzygy50MoveRule, .{ .name = "zfish_options_syzygy_50_move_rule" });
         // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
         @export(&zfishSharedStateNumaPolicyMode, .{ .name = "zfish_shared_state_numa_policy_mode" });
+        // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
+        @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_system" });
+        @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_hardware" });
+        @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_none" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).

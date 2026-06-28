@@ -4048,11 +4048,9 @@ const void* zfish_threadpool_setup_state_back(const void* pool_ptr) {
 // native stub (no C++ NumaConfig) and the topology is fixed single-node (display is native), so
 // reconfiguring it is a no-op — and they MUST NOT cast/write the stub (heap corruption). Legacy
 // keeps the real set_numa_config (its C++ NumaReplicationContext drives the oracle's threads).
-#ifndef ZFISH_LEGACY_CPP_TARGET
-void zfish_numa_context_set_system(void*) {}
-void zfish_numa_context_set_hardware(void*) {}
-void zfish_numa_context_set_none(void*) {}
-#else
+// REPORT-12 TU=0 grind: the default-build no-op setters moved to native (main.zig numaContextSetNoop,
+// default-only @export). Only the legacy oracle's real set_numa_config remains here.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_numa_context_set_system(void* numa_context_ptr) {
     auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
     numa_context.set_numa_config(NumaConfig::from_system(DefaultNumaPolicy));
