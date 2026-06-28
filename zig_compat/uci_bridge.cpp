@@ -4269,21 +4269,17 @@ extern "C" {
 // invokes its std::functions (the native SearchManager binds engine_graph's native UpdateContext). A
 // zeroed slot is byte-equivalent to a default-constructed empty UpdateContext, so construct/destruct
 // are no-ops in default — removing the frozen SearchManager::UpdateContext placement-new. Legacy keeps it.
-void zfish_member_update_context_construct(void* p) {
+// REPORT-12 TU=0: fully legacy-only now — the native engine (native_engine.zig) no longer calls these
+// (the zeroed slot is a valid empty UpdateContext), so the default TU has no member_* construct at all.
 #ifdef ZFISH_LEGACY_CPP_TARGET
+void zfish_member_update_context_construct(void* p) {
     ::new (p) Stockfish::Search::SearchManager::UpdateContext();
-#else
-    (void) p;
-#endif
 }
 void zfish_member_update_context_destruct(void* p) {
-#ifdef ZFISH_LEGACY_CPP_TARGET
     using UC = Stockfish::Search::SearchManager::UpdateContext;
     static_cast<UC*>(p)->~UC();
-#else
-    (void) p;
-#endif
 }
+#endif
 
 // onVerifyNetwork: an empty std::function<void(std::string_view)>, placement-constructed
 // in the native engine's inline slot. set_on_verify_network assigns it (print_info_string
@@ -4293,20 +4289,14 @@ using ZfishVerifyNetworkFn = std::function<void(std::string_view)>;
 // Step C: same as the UpdateContext slot — the onVerifyNetwork std::function is never assigned in
 // default (set_on_verify_network is legacy-only) and emit_verify_message reads the zeroed slot as an
 // empty function (returns early). No-op construct/destruct; the zeroed slot is a valid empty std::function.
-void zfish_member_verify_network_fn_construct(void* p) {
 #ifdef ZFISH_LEGACY_CPP_TARGET
+void zfish_member_verify_network_fn_construct(void* p) {
     ::new (p) ZfishVerifyNetworkFn();
-#else
-    (void) p;
-#endif
 }
 void zfish_member_verify_network_fn_destruct(void* p) {
-#ifdef ZFISH_LEGACY_CPP_TARGET
     static_cast<ZfishVerifyNetworkFn*>(p)->~ZfishVerifyNetworkFn();
-#else
-    (void) p;
-#endif
 }
+#endif
 
 // M-FINAL cutover: states + network member allocation moved to NATIVE (zig_src/native_engine.zig).
 // states is a native StateList (state_list.zig) built directly in constructMembers — the old C++
