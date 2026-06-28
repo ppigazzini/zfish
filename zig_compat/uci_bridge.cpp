@@ -17,7 +17,17 @@
 */
 
 #define private public
+// REPORT-12 TU=0 HEADER-DROP: the default build no longer pulls the 7 frozen src/ headers —
+// it sees only forward-declarations (frozen_fwd.h) of Engine/UCIEngine/ThreadPool/Position/
+// Thread/StateInfo/Worker/SearchManager/SharedState. Every dereference of these is now native
+// or guarded legacy-only. The legacy oracle still includes the real headers.
+#ifndef ZFISH_LEGACY_CPP_TARGET
+#include "frozen_fwd.h"
+#include "timeman.h"
+#endif
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "uci.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -36,21 +46,31 @@
 #include <vector>
 
 #include "benchmark.h"
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "search.h"
+#endif
 #undef private
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "engine.h"
+#endif
 #include "memory.h"
 #include "misc.h"
 #include "movegen.h"
 #include "numa.h"
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "position.h"
+#endif
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "score.h"
+#endif
 #include "tune.h"
 #include "types.h"
 #include "ucioption.h"
 
 
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "engine.h"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -87,13 +107,21 @@
 #include "nnue/nnue_common.h"
 #include "nnue/nnue_misc.h"
 #include "numa.h"
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "perft.h"
+#endif
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "position.h"
+#endif
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "search.h"
+#endif
 #include "shm.h"
 #include "syzygy/tbprobe.h"
 #include "types.h"
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "uci.h"
+#endif
 #include "ucioption.h"
 
 #include "nnue/nnue_accumulator.h"
@@ -599,7 +627,9 @@ std::size_t Network::get_content_hash() const {
 #include <utility>
 
 #include "tt.h"
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "thread.h"
+#endif
 
 extern "C" void zfish_search_fill_reductions(int* reductions, std::size_t count);
 extern "C" void zfish_search_clear_worker_histories(void* worker_ptr);
@@ -664,7 +694,9 @@ extern "C" const void* zfish_native_ft_ptr();  // native FT storage (biases star
 // default build. Supply the headers, namespace visibility, the SearchedList
 // alias, and the dead (no-tablebase) syzygy_extend_pv stub that the bridge code
 // below previously got from the included translation unit.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 #include "search.h"
+#endif
 #include "movepick.h"
 using namespace Stockfish;
 using namespace Stockfish::Search;
@@ -2024,16 +2056,15 @@ void Thread::clear_worker() {
     run_custom_job([this]() { worker->clear(); });
 }
 
-#endif  // ZFISH_LEGACY_CPP_TARGET (pause: wait_for_search_finished is default-live)
-// Blocks on the condition variable until the thread has finished searching.
-// Default-live: referenced by ~ThreadPool() (thread.h inline) even though the
-// Stage-4 teardown empties the threads vector so it never runs in the default exe.
+// Blocks on the condition variable until the thread has finished searching. REPORT-12 TU=0 (header-drop):
+// folded into the legacy-only Thread vehicle block. It was kept default-live only because the ~ThreadPool()
+// inline (thread.h) referenced it; at the header-drop thread.h is forward-declared in the default build, so
+// ~ThreadPool is not instantiated and this has no default caller.
 void Thread::wait_for_search_finished() {
 
     std::unique_lock<std::mutex> lk(mutex);
     cv.wait(lk, [&] { return !searching; });
 }
-#ifdef ZFISH_LEGACY_CPP_TARGET  // resume the Thread vehicle gate
 
 // Launching a function in the thread.
 void Thread::run_custom_job(std::function<void()> f) {
