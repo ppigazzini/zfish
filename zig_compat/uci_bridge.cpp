@@ -3532,24 +3532,13 @@ void zfish_engine_go_parsed_owner(void* engine_ptr, ZfishParsedLimits parsed) {
     engine->go(limits);
 }
 
+// REPORT-12 TU=0 grind: native flip (main.zig engineFlipOwner) for the default build. Legacy keeps
+// the C++ Engine::flip path.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_flip_owner(void* engine_ptr) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover (REPORT-11 E3-prep): native flip — read the live position FEN, flip it, and
-    // re-set the engine position via the native set-position machinery (which owns the state chain),
-    // replacing Engine::flip -> Position::flip (fen() + flip_fen + set). Lets Engine::flip,
-    // Position::flip, and Position::fen be guarded legacy-only. Gate-verified by misc (flip + d).
-    const std::string current = take_string_and_free_required(
-      zfish_engine_fen(zfish_engine_position_ptr(engine_ptr)));
-    const std::string flipped = take_string_and_free_required(zfish_position_flip_fen(
-      reinterpret_cast<const unsigned char*>(current.data()), current.size()));
-    const char* err = zfish_engine_set_position_owner(
-      engine_ptr, reinterpret_cast<const unsigned char*>(flipped.data()), flipped.size(), nullptr, 0);
-    if (err)
-        std::free(const_cast<char*>(err));
-#else
     static_cast<Engine*>(engine_ptr)->flip();
-#endif
 }
+#endif
 
 // M-FINAL (limits readers): ported to native Zig offset reads (zig_src/main.zig) in the
 // default build; these C++ defs are now legacy-oracle-only (else duplicate symbols vs the

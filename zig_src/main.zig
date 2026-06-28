@@ -1515,6 +1515,7 @@ comptime {
         @export(&engineNumaConfigInfoText, .{ .name = "zfish_engine_numa_config_info_text" });
         @export(&engineThreadAllocationInfoText, .{ .name = "zfish_engine_thread_allocation_info_text" });
         @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
+        @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1737,6 +1738,19 @@ extern fn zfish_optmodel_render() ?[*:0]u8;
 fn engineOptionsTextOwner(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
     _ = engine_ptr;
     return zfish_optmodel_render();
+}
+// REPORT-12 TU=0 grind: native flip — read the live position FEN, flip it, re-set via the native
+// set-position machinery (replacing Engine::flip -> Position::flip). All four calls are native;
+// the C strings are malloc'd and freed with c.free. Gate-verified by misc (flip + d). Legacy keeps C++.
+fn engineFlipOwner(engine_ptr: *anyopaque) callconv(.c) void {
+    const fen_c = zfish_engine_fen(zfish_engine_position_ptr(engine_ptr)) orelse return;
+    defer c.free(@ptrCast(fen_c));
+    const fen = std.mem.span(fen_c);
+    const flipped_c = zfish_position_flip_fen(fen.ptr, fen.len) orelse return;
+    defer c.free(@ptrCast(flipped_c));
+    const flipped = std.mem.span(flipped_c);
+    if (zfish_engine_set_position_owner(engine_ptr, flipped.ptr, flipped.len, null, 0)) |err|
+        c.free(@ptrCast(err));
 }
 // M-FINAL cutover: onVerifyNetwork std::function slot accessor — default-only (the native
 // engine's inline field). The legacy oracle reads its inline engine->onVerifyNetwork member
