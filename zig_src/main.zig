@@ -1511,6 +1511,7 @@ comptime {
         @export(&engineNetworkPtr, .{ .name = "zfish_engine_network_ptr" });
         @export(&engineNumaConfigText, .{ .name = "zfish_engine_numa_config_text" });
         @export(&searchSharedStateDestroy, .{ .name = "zfish_search_shared_state_destroy" });
+        @export(&searchSharedStateCreate, .{ .name = "zfish_search_shared_state_create" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1713,6 +1714,10 @@ fn engineNumaConfigText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
 }
 fn searchSharedStateDestroy(shared_state: ?*anyopaque) callconv(.c) void {
     zfish_shared_state_native_destroy(shared_state);
+}
+extern fn zfish_shared_state_native_create(options: *anyopaque, threads: *anyopaque, tt: *anyopaque, shared_histories: *anyopaque, network: *anyopaque) ?*anyopaque;
+fn searchSharedStateCreate(options: *const anyopaque, threads: *anyopaque, tt: *anyopaque, shared_hists: *anyopaque, network: *const anyopaque) callconv(.c) ?*anyopaque {
+    return zfish_shared_state_native_create(@constCast(options), threads, tt, shared_hists, @constCast(network));
 }
 // M-FINAL cutover: onVerifyNetwork std::function slot accessor — default-only (the native
 // engine's inline field). The legacy oracle reads its inline engine->onVerifyNetwork member
