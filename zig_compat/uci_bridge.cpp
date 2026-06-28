@@ -4302,33 +4302,15 @@ extern "C" void zfish_native_engine_destruct_members(void* buf);
 extern "C" void zfish_native_threadpool_clear(void* pool);
 #endif
 
+// REPORT-12 TU=0: native default-only (main.zig nativeUciEngineConstructAt — verify_layouts +
+// construct_members + set_cli + init_body; Tune::init dropped as inert in release). Legacy keeps the
+// explicit per-member C++ UCIEngine construction.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_uci_engine_construct_at(void* storage, int argc, char* const* argv) {
     // Verify the Zig-side object-graph footprint still matches this C++ build before
     // anything is constructed, so any upstream layout drift fails loudly.
     zfish_graph_verify_layouts();
 
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: the buffer holds a NativeEngine (an ownership container of heap
-    // members), NOT a C++ UCIEngine. Build the heap members + the inline live sub-objects
-    // (updateContext / onVerifyNetwork), store argc/argv, then run the same post-member
-    // work the UCIEngine ctor body did. UCIEngine::engine is at offset 0 (== storage) and
-    // every member access routes through the accessors, so init_body / add_info_listener /
-    // init_search_update_listeners / engine_options operate on the native storage unchanged.
-    if (!zfish_native_engine_construct_members(storage, argv[0]))
-        std::abort();
-    zfish_native_engine_set_cli(storage, argc, argv);
-    zfish_engine_init_body(storage);  // register options, set start position, size threads
-
-    auto* uci = static_cast<Stockfish::UCIEngine*>(storage);
-    // M-FINAL cutover: no add_info_listener — the default build's option callback messages are
-    // emitted directly by apply_setoption (UCIEngine::print_info_string), so the C++ OptionsMap
-    // info listener is unused and the OptionsMap is an empty stub.
-    // REPORT-12 TU=0 std::function cluster: init_search_update_listeners is a no-op in default now
-    // (the native search emits directly), so its call is dropped here and the method def goes
-    // legacy-only — removing one frozen UCIEngine member-fn def from the default TU.
-    Stockfish::Tune::init(uci->engine_options());
-    return;
-#else
     // Legacy oracle: explicit per-member construction of a real C++ UCIEngine.
     auto* uci = static_cast<Stockfish::UCIEngine*>(storage);
     zfish_engine_construct_members(&uci->engine, argv[0]);
@@ -4339,8 +4321,8 @@ void zfish_uci_engine_construct_at(void* storage, int argc, char* const* argv) {
     });
     uci->init_search_update_listeners();
     Stockfish::Tune::init(uci->engine_options());
-#endif
 }
+#endif
 
 // REPORT-12 TU=0: native default teardown (main.zig uciEngineDestructAt — 3 native calls, called
 // directly by the caller in default). Legacy keeps the in-place C++ ~UCIEngine.
