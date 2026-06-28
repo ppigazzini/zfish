@@ -1559,6 +1559,7 @@ comptime {
         @export(&rootMovesCreateRanked, .{ .name = "zfish_root_moves_create_ranked" });
         @export(&rootMovesDestroy, .{ .name = "zfish_root_moves_destroy" });
         @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
+        @export(&perftOwner, .{ .name = "zfish_engine_perft_owner" });
         // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
         @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
         @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
@@ -2450,6 +2451,59 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
     // start_thinking deep-copied limits into the workers, so free our searchmoves buffer now (the moves
     // are SSO, so no per-string heap to free — just the element buffer).
     if (sm_elems) |e| zfish_operator_delete(e);
+}
+
+// REPORT-12 TU=0: `go perft N` root divide. Reads the engine FEN, builds a scratch Position + StateInfo
+// (operator_new'd, max-aligned; the C++ used stack p/st), set()s it, generates the legal root moves
+// natively, and per move runs the native perft subtree (do_move_state / perft_subtree / undo_move),
+// printing "<move>: <count>" then the "Nodes searched: N" total — byte-exact (perft.sh diffs the divide
+// output). Output routes through zfish_uci_print_line (the coordinated sync_cout wrapper). Gate-covered
+// by perft.sh (CPW positions + a chess960 castling position).
+fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
+    zfish_engine_verify_network_method(engine_ptr);
+    const fen_ptr = zfish_engine_fen(zfish_engine_position_ptr(engine_ptr)) orelse @panic("perft: null fen");
+    const fen = std.mem.span(fen_ptr);
+    const c960_name: []const u8 = "UCI_Chess960";
+    const chess960 = zfish_optmodel_int_by_name(c960_name.ptr, c960_name.len) != 0;
+
+    const p = zfish_operator_new(graph_layout.position_size) orelse @panic("perft: position alloc");
+    const st = zfish_operator_new(graph_layout.state_info_size) orelse @panic("perft: state alloc");
+    @memset(@as([*]u8, @ptrCast(p))[0..graph_layout.position_size], 0);
+    @memset(@as([*]u8, @ptrCast(st))[0..graph_layout.state_info_size], 0);
+    if (zfish_position_set_method(p, fen.ptr, fen.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.c.free(msg);
+
+    var moves: [256]u16 = undefined;
+    const count = zfish_movegen_generate_legal(p, &moves);
+    var nodes: u64 = 0;
+    var mbuf: [5]u8 = undefined;
+    var line: [64]u8 = undefined;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const m = moves[i];
+        var cnt: u64 = undefined;
+        if (depth <= 1) {
+            cnt = 1;
+            nodes += 1;
+        } else {
+            var si: [graph_layout.state_info_size]u8 align(16) = undefined;
+            zfish_position_do_move_state(p, m, @ptrCast(&si));
+            cnt = zfish_perft_subtree(p, depth - 1);
+            nodes += cnt;
+            zfish_position_undo_move_method(p, m);
+        }
+        const txt = uci_move_port.renderMoveText(&mbuf, m, chess960);
+        const out = std.fmt.bufPrint(&line, "{s}: {d}", .{ txt, cnt }) catch unreachable;
+        zfish_uci_print_line(out.ptr, out.len);
+    }
+
+    zfish_operator_delete(p);
+    zfish_operator_delete(st);
+    std.c.free(@ptrCast(fen_ptr));
+
+    var nbuf: [48]u8 = undefined;
+    const nout = std.fmt.bufPrint(&nbuf, "\nNodes searched: {d}\n", .{nodes}) catch unreachable;
+    zfish_uci_print_line(nout.ptr, nout.len);
+    return nodes;
 }
 
 // REPORT-12 TU=0: the native ThreadBuilder callback — the LAST C++ piece of the construction cluster

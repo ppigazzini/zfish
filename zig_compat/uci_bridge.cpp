@@ -3391,6 +3391,9 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
 // Recursive perft subtree counter, exported from zig_src/main.zig.
 extern "C" std::uint64_t zfish_perft_subtree(void* pos, int depth);
 
+// REPORT-12 TU=0: native default-only (main.zig perftOwner builds a scratch Position + native root
+// divide). Legacy keeps the C++ Position/MoveList<LEGAL> + Benchmark::perft path.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
     auto* engine = static_cast<Engine*>(engine_ptr);
     zfish_engine_verify_network_method(engine);
@@ -3404,50 +3407,14 @@ std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
     const std::string fen(rendered_fen);
     std::free(const_cast<char*>(rendered_fen));
 
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    const bool chess960 = zfish_opt_bool_native("UCI_Chess960");
-#else
     const bool chess960 = engine->get_options()["UCI_Chess960"];
-#endif
 
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // The recursive subtree count runs in Zig (zfish_perft_subtree); the root
-    // divide loop stays here so the per-move output and MoveList<LEGAL> ordering
-    // are byte-identical to the original. This mirrors Benchmark::perft<true>.
-    Position  p;
-    StateInfo st;
-    p.set(fen, chess960, &st);
-
-    std::uint64_t nodes = 0;
-    for (const auto& m : MoveList<LEGAL>(p))
-    {
-        std::uint64_t cnt;
-        if (depth <= 1)
-        {
-            cnt = 1;
-            nodes += 1;
-        }
-        else
-        {
-            StateInfo si;
-            // M-FINAL cutover (REPORT-11 E2): apply/undo via the native do_move/undo_move
-            // (zig_src/main.zig) so the default build's perft root loop no longer calls the C++
-            // Position::do_move/undo_move methods — letting them be guarded legacy-only. &p is the
-            // native-compatible frozen Position the native zfish_perft_subtree already operates on.
-            zfish_position_do_move_state(&p, m.raw(), &si);
-            cnt = zfish_perft_subtree(&p, depth - 1);
-            nodes += cnt;
-            zfish_position_undo_move_method(&p, m.raw());
-        }
-        sync_cout << UCIEngine::move(m, p.is_chess960()) << ": " << cnt << sync_endl;
-    }
-#else
     const auto nodes = Benchmark::perft(fen, depth, chess960);
-#endif
 
     sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
     return nodes;
 }
+#endif
 
 // REPORT-12 TU=0: native default-only (main.zig goParsedOwner builds the LimitsType by layout + calls
 // the native go path). Legacy keeps the C++ LimitsType construction + Engine::go.
