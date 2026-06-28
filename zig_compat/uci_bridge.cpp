@@ -3529,8 +3529,11 @@ void zfish_root_moves_destroy(void* root_moves_ptr) {
 #ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" std::size_t zfish_root_move_sizeof(void) { return sizeof(Search::RootMove); }
 #endif
+// REPORT-12 TU=0: native default-only (main.zig zfishOperatorNew/Delete = malloc/free). Legacy keeps these.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void* zfish_operator_new(std::size_t n) { return ::operator new(n); }
 extern "C" void  zfish_operator_delete(void* p) { ::operator delete(p); }
+#endif
 
 // Stage 5: native set_limits copies only the POD tail of LimitsType (everything
 // after the leading std::vector<std::string> searchmoves member). searchmoves is
