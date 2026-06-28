@@ -3311,13 +3311,11 @@ void zfish_set_last_nodes_searched(std::uint64_t nodes);
 // Stage-6 6c: the UCIEngine constructor is retired -- zfish_uci_engine_construct_at
 // builds the engine + cli members directly and runs the listener registration
 // below. init_search_update_listeners stays (called from construct_at).
-void UCIEngine::init_search_update_listeners() {
-    // REPORT-12 TU=0 std::function cluster: the default build's native search emits info directly
-    // (uci_port.formatInfoFull) and records the node count natively (main.zig zfish_set_last_nodes_searched),
-    // and its native SearchManager binds a native UpdateContext (engine_graph.zig, no-op callbacks).
-    // So the C++ std::function listeners installed here are vestigial in default — install nothing.
-    // Step A of eliminating the std::function cluster (setters + UpdateContext construct/destruct next).
+// REPORT-12 TU=0 std::function cluster: init_search_update_listeners is a no-op in the default build
+// (the native search emits info directly), and its only default caller (construct_at) no longer calls
+// it. So the whole UCIEngine method def is legacy-only now — one fewer frozen UCIEngine member-fn def.
 #ifdef ZFISH_LEGACY_CPP_TARGET
+void UCIEngine::init_search_update_listeners() {
     engine.set_on_iter([](const auto& i) { on_iter(i); });
     engine.set_on_update_no_moves([](const auto& i) { on_update_no_moves(i); });
     engine.set_on_update_full([this](const auto& i) {
@@ -3327,8 +3325,8 @@ void UCIEngine::init_search_update_listeners() {
     });
     engine.set_on_bestmove([](const auto& bm, const auto& p) { on_bestmove(bm, p); });
     engine.set_on_verify_network([](const auto& s) { print_info_string(s); });
-#endif
 }
+#endif
 
 extern "C" {
 
@@ -4408,7 +4406,9 @@ void zfish_uci_engine_construct_at(void* storage, int argc, char* const* argv) {
     // M-FINAL cutover: no add_info_listener — the default build's option callback messages are
     // emitted directly by apply_setoption (UCIEngine::print_info_string), so the C++ OptionsMap
     // info listener is unused and the OptionsMap is an empty stub.
-    uci->init_search_update_listeners();  // sets the LIVE updateContext callbacks
+    // REPORT-12 TU=0 std::function cluster: init_search_update_listeners is a no-op in default now
+    // (the native search emits directly), so its call is dropped here and the method def goes
+    // legacy-only — removing one frozen UCIEngine member-fn def from the default TU.
     Stockfish::Tune::init(uci->engine_options());
     return;
 #else
