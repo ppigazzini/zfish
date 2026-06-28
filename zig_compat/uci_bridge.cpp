@@ -3139,6 +3139,10 @@ OptionsMap& Engine::get_options() {
 void Engine::flip() { static_cast<Position*>(zfish_engine_position_ptr(this))->flip(); }
 #endif
 
+// REPORT-12 TU=0: native-only build computes attacks/rays on the fly (bitboard.zig), so the C++
+// Bitboards globals + their init are read only by the legacy C++ movegen. Caller is comptime-branched
+// to call this in legacy only; guard the def legacy-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" {
 
 void zfish_bitboards_init() {
@@ -3146,6 +3150,7 @@ void zfish_bitboards_init() {
 }
 
 }
+#endif
 
 namespace Bitboards {
 
