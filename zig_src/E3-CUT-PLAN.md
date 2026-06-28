@@ -5,6 +5,60 @@ zig_build/tools/frozen_refs.py zig_compat/uci_bridge.cpp -v` as the live checkli
 Baseline at plan time (refactor `b5b9baae`): **28 live default frozen-type derefs**. Bench `2336177`
 + the E1 golden suite are the gate; `oracle-parity` is alive for one last cross-check before E4.
 
+## TURNKEY EXECUTION (2026-06-28) — every fix, ready to apply
+
+Apply in one focused push (RED until the end; revert if not green by session end so refactor stays
+clean). All Worker/ThreadPool offsets exist in graph_layout (worker_off / thread_pool_off).
+
+**Step A — includes (default branch only):** guard legacy-only these 7: engine.h, uci.h, thread.h,
+search.h, position.h, score.h, perft.h. ADD (default) `#include "frozen_fwd.h"` + `#include
+"timeman.h"` (timeman.h is clean — it forward-declares Search::LimitsType itself, giving
+TimeManagement complete + LimitsType + fixes the TimeManagement::init/advance_nodes_time defs).
+
+**Step B — frozen_fwd.h additions:** the Worker member-offset readers (mirror graph_layout):
+```cpp
+namespace zfish_wk {  // Worker member access by offset (Worker is forward-declared)
+inline constexpr std::size_t kLimits=11419664, kRootPos=11419840, kManager=11422656,
+                             kThreads=11422688, kTt=11422696;
+inline char* base(void* w){ return reinterpret_cast<char*>(w); }
+inline void* threads(void* w){ return *reinterpret_cast<void**>(base(w)+kThreads); } // ThreadPool*
+inline void* tt(void* w){ return *reinterpret_cast<void**>(base(w)+kTt); }            // TT*
+inline void* limits(void* w){ return base(w)+kLimits; }    // LimitsType* (value member)
+inline void* root_pos(void* w){ return base(w)+kRootPos; } // Position*  (value member)
+inline void* manager(void* w){ return *reinterpret_cast<void**>(base(w)+kManager); } // ISearchManager*
+}
+```
+For nested ThreadPool members (w->threads.stop @793, .increaseDepth @794, .size() @799): use
+thread_pool_off (stop@0, increaseDepth@1, threads-vec@16) on zfish_wk::threads(w) — there are already
+native helpers zfish_threadpool_size / set_stop_flag etc.; prefer routing to those. For w->limits.X
+(depth@84, mate@88, movestogo@80 etc.) use graph_layout.limits_off on zfish_wk::limits(w). For
+w->main_manager() on the MAIN worker (the pv/setup path runs on it) use zfish_wk::manager(w), OR the
+native main-manager nav on threads(w).
+
+**Step C — the access sites (clean-file line numbers @541b8468):**
+- 784-812 worker-setup / ZfishSearchTimeState builder: root_pos(784), threads.stop/increaseDepth
+  (793-4), threads.size()(799), limits.depth/mate/use_time_management(800-2), main_manager()(812) ->
+  zfish_wk + thread_pool_off/limits_off. (~10 sites — the bulk.)
+- 853 zfish_search_id_pv: `zfish_search_pv(zfish_wk::manager(w), w, zfish_wk::threads(w),
+  zfish_wk::tt(w), depth);`
+- 1469-1471 tm.init path: `...tm.init(*(LimitsType*)zfish_wk::limits(w), ...)` — but tm is on the
+  manager; route to the native time-init or read manager(w)->tm by offset. 1471 w->tt.new_search()
+  -> native zfish_tt_* on zfish_wk::tt(w). NB this whole fn may be guard-able if the native search
+  has its own init path — CHECK first.
+- 1485/1497 ss_threads_start/wait: `zfish_threadpool_start_searching(zfish_wk::threads(w));` etc.
+- 1505 ss_npmsec_advance: zfish_pool_nodes(zfish_wk::threads(w)) + limits via offset (this one is the
+  deferred nodestime path — may stay legacy-guarded).
+
+**Step D — static_asserts (700-704 + any sizeof(History/StateInfo/SharedHistories/PVMoves)):** wrap
+the contiguous block `#ifdef ZFISH_LEGACY_CPP_TARGET ... #endif` (group D). The syzygy_extend_pv stub
+@675 (takes Search::LimitsType&) is satisfied by timeman.h's LimitsType fwd-decl.
+
+**Step E — iterate:** build, fix residual (the 20-error cap hides some; re-run until 0), then bench
+2336177 + perft + eval-trace + misc + search-modes + valgrind + the oracle parities (last time).
+
+REALITY: ~30-40 mechanical offset-substitution edits, concentrated in the worker-setup fn + ss_
+bridges. Intricate (nested offsets) but bounded. A focused 1-session push; not 2-min-tick-sized.
+
 ## MEASURED CUT SCOPE (2026-06-28) — it is ~20-40 errors, NOT a full-src-surface big-bang
 
 Test-dropped the 7 frozen-pulling headers in the default build (guard legacy-only + frozen_fwd.h) and
