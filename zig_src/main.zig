@@ -1550,6 +1550,7 @@ comptime {
         // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
         @export(&zfishMakeSearchManager, .{ .name = "zfish_make_search_manager" });
         @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
+        @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
         // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
         @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
         @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
@@ -2291,6 +2292,48 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
     const mgr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.manager));
     if (mgr.*) |m| zfish_operator_delete(m);
     zfish_aligned_large_pages_free(w);
+}
+
+// REPORT-12 TU=0: the native ThreadBuilder callback — the LAST C++ piece of the construction cluster
+// (make_search_manager, worker_construct_full, shared_histories_at are all already native). Reads the
+// native SharedState's five reference referents by offset (options@0, threads@8, tt@16, sharedHistories@24,
+// network@32 — shared_state.zig's 40-byte bundle), mints the SearchManager, large-page-allocs + natively
+// constructs the Worker, and writes the Worker at thread+8 (the worker@8 layout contract). Single-node
+// host: numaIndex 0, idxInNuma == idx, totalNuma == ctx.total. The C++ &ss.<member> (a reference member's
+// referent address) equals the native field VALUE, so the field values are passed straight through.
+const WorkerBuildCtx = extern struct {
+    shared_state: ?*anyopaque,
+    update_context: ?*const anyopaque,
+    total: usize,
+};
+extern fn zfish_worker_construct_full(buf: ?*anyopaque, shared_history: usize, options: usize, threads: usize, tt: usize, network: usize, manager: usize, thread_idx: usize, numa_thread_idx: usize, numa_total: usize, numa_access_token: usize) void;
+fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) callconv(.c) void {
+    const ctx: *WorkerBuildCtx = @ptrCast(@alignCast(ctx_ptr.?));
+    const ss: [*]u8 = @ptrCast(ctx.shared_state.?);
+    const ss_options = @as(*usize, @ptrCast(@alignCast(ss + 0))).*;
+    const ss_threads = @as(*usize, @ptrCast(@alignCast(ss + 8))).*;
+    const ss_tt = @as(*usize, @ptrCast(@alignCast(ss + 16))).*;
+    const ss_shared_hist = @as(*usize, @ptrCast(@alignCast(ss + 24))).*;
+    const ss_network = @as(*usize, @ptrCast(@alignCast(ss + 32))).*;
+    const manager = zfishMakeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
+        @panic("native worker build: SearchManager OOM");
+    const raw = zfish_aligned_large_pages_alloc(graph_layout.worker_size) orelse
+        @panic("native worker build: large-page OOM");
+    const shared_history = zfish_native_shared_histories_at(@ptrFromInt(ss_shared_hist), 0);
+    zfish_worker_construct_full(
+        raw,
+        @intFromPtr(shared_history),
+        ss_options,
+        ss_threads,
+        ss_tt,
+        ss_network,
+        @intFromPtr(manager),
+        idx,
+        idx,
+        ctx.total,
+        0,
+    );
+    @as(*usize, @ptrFromInt(@intFromPtr(thread) + 8)).* = @intFromPtr(raw);
 }
 
 // M-FINAL (construction-crack pattern): `new Position()` / `delete` ported native. Position
