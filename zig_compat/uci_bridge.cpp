@@ -685,6 +685,11 @@ void syzygy_extend_pv(const OptionsMap&, const Search::LimitsType&, Position&, S
 // instead: with no padding possible between int16 arrays, matching sizes plus
 // the proven mainHistory@0 origin fix every table offset, and the signature
 // gate confirms it end to end. A resized upstream table fails the build here.
+// REPORT-12 B5: these layout proofs need the complete history/StateInfo/PVMoves types from the
+// frozen src/ headers, so they are legacy-only ahead of the TU=0 cut. The default build's
+// equivalent guarantee is graph_layout + bench 2336177 (any size drift moves the signature) +
+// oracle-parity (proves them equal while the oracle still lives). Pure compile-time, no runtime change.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 static_assert(sizeof(Stockfish::ButterflyHistory) == 2 * 65536 * 2);
 static_assert(sizeof(Stockfish::LowPlyHistory) == 5 * 65536 * 2);
 static_assert(sizeof(Stockfish::CapturePieceToHistory) == 16 * 64 * 8 * 2);
@@ -702,6 +707,7 @@ static_assert(sizeof(Stockfish::UnifiedCorrectionHistory) == 16);
 static_assert(sizeof(Stockfish::PawnHistory) == 16);
 static_assert(sizeof(Stockfish::StateInfo) == 192);
 static_assert(sizeof(Stockfish::Search::PVMoves) == 504);  // [247]Move padded + size_t
+#endif  // ZFISH_LEGACY_CPP_TARGET (REPORT-12 B5 layout proofs)
 
 // tt_context hands Zig the live TT cluster array, cluster count, and generation so
 // it can call the Zig-native tt.probe/save directly.
