@@ -1523,6 +1523,7 @@ comptime {
         @export(&ssEmitPv, .{ .name = "zfish_ss_emit_pv" });
         @export(&ssSearchIdPv, .{ .name = "zfish_search_id_pv" });
         @export(&threadpoolWaitThread, .{ .name = "zfish_threadpool_wait_thread" });
+        @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -2005,6 +2006,14 @@ fn ssSearchIdPv(worker: *anyopaque, depth: c_int) callconv(.c) void {
 extern fn zfish_native_threadpool_wait_thread(pool: *anyopaque, thread_id: usize) void;
 fn threadpoolWaitThread(threads: *anyopaque, thread_id: usize) callconv(.c) void {
     zfish_native_threadpool_wait_thread(threads, thread_id);
+}
+// REPORT-12 TU=0: SharedState.sharedHistories (a reference) is the 4th pointer field of the native
+// SharedState struct (shared_state.zig: options/threads/tt/shared_histories/network), i.e. offset 24.
+// &ref in C++ yielded that stored pointer; read it directly and clear the native SharedHistoriesMap.
+fn sharedStateClearHistories(shared_state: *const anyopaque) callconv(.c) void {
+    const shared_histories_off: usize = 3 * @sizeOf(usize);
+    const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + shared_histories_off));
+    zfish_native_shared_histories_clear(slot.*);
 }
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=

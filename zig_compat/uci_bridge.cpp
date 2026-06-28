@@ -3709,17 +3709,14 @@ extern "C" void  zfish_native_shared_histories_insert(void* map, std::size_t num
                                                       std::size_t size);
 extern "C" void* zfish_native_shared_histories_at(void* map, std::size_t numa_index);
 
+// REPORT-12 TU=0: native default-only (main.zig sharedStateClearHistories reads the shared_histories
+// pointer by offset). Legacy keeps the C++ Search::SharedState::sharedHistories.clear().
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_shared_state_clear_histories(const void* shared_state_ptr) {
     const auto& shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
-#ifdef ZFISH_LEGACY_CPP_TARGET
     shared_state.sharedHistories.clear();
-#else
-    // SharedState.sharedHistories points at the native SharedHistoriesMap; &ref yields
-    // that native map pointer (the stored reference value).
-    zfish_native_shared_histories_clear(
-      const_cast<void*>(reinterpret_cast<const void*>(&shared_state.sharedHistories)));
-#endif
 }
+#endif
 
 // Native-graph cut flip fire 2: shadow verifier (zig_src/main.zig). Diffs the native
 // SharedHistories sizing against the C++ try_emplace result; false = mismatch. Legacy
