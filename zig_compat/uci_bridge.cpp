@@ -3015,21 +3015,20 @@ std::uint8_t zfish_engine_chess960_enabled(const void* engine_ptr) {
 }
 #endif
 
+// REPORT-12 TU=0 std::function cluster Step D: native default-only (main.zig engineEmitVerifyMessage
+// reproduces the onVerifyNetwork behaviour: quiet -> no-op, else "info string" + print). The C++
+// std::function path is legacy-only — completes removing the std::function cluster from the default TU.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_emit_verify_message(const void*          engine_ptr,
                                       const unsigned char* message_ptr,
                                       std::size_t          message_len) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: read the NativeEngine's onVerifyNetwork via the accessor.
-    const auto& on_verify = *static_cast<const std::function<void(std::string_view)>*>(
-      zfish_engine_onverifynetwork_ptr(const_cast<void*>(engine_ptr)));
-#else
     const auto& on_verify = static_cast<const Engine*>(engine_ptr)->onVerifyNetwork;
-#endif
     if (!on_verify)
         return;
 
     on_verify(std::string_view(reinterpret_cast<const char*>(message_ptr), message_len));
 }
+#endif
 }
 
 // Stage-6 6c: the Engine constructor is retired -- construction is now orchestrated
