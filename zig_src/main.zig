@@ -1524,6 +1524,7 @@ comptime {
         @export(&ssSearchIdPv, .{ .name = "zfish_search_id_pv" });
         @export(&threadpoolWaitThread, .{ .name = "zfish_threadpool_wait_thread" });
         @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
+        @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -2014,6 +2015,14 @@ fn sharedStateClearHistories(shared_state: *const anyopaque) callconv(.c) void {
     const shared_histories_off: usize = 3 * @sizeOf(usize);
     const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + shared_histories_off));
     zfish_native_shared_histories_clear(slot.*);
+}
+// insert_history: single-node default never binds (do_bind always 0, numa_config unused) — insert
+// directly into the native SharedHistoriesMap reached via the offset-24 shared_histories pointer.
+fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) callconv(.c) void {
+    _ = numa_config;
+    _ = do_bind;
+    const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + 3 * @sizeOf(usize)));
+    zfish_native_shared_histories_insert(slot.*, numa_index, size);
 }
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
