@@ -2702,12 +2702,15 @@ namespace {
 // and referenced the C++ Option type. Removed (frozen-type forward-decl prerequisite).
 
 
-// M-FINAL cutover: a boolean option read sourced from the Zig model (default-build authority),
-// so the remaining default get_options()[...] bool reads no longer touch the C++ OptionsMap.
+// REPORT-12 TU=0: zfish_opt_bool_native had no remaining caller (its former users — perft's chess960 read
+// + the get_options bool reads — are native / legacy-only now). Guard legacy-only so the default TU drops
+// one more body on the path to deleting uci_bridge.cpp.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 bool zfish_opt_bool_native(const char* name) {
     const std::size_t len = std::char_traits<char>::length(name);
     return zfish_optmodel_int_by_name(reinterpret_cast<const unsigned char*>(name), len) != 0;
 }
+#endif
 
 std::string zfish_optstore_read(std::size_t idx) {
     const std::size_t len = zfish_optmodel_current_len(idx);
