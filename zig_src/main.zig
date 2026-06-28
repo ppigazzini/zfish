@@ -1516,6 +1516,7 @@ comptime {
         @export(&engineThreadAllocationInfoText, .{ .name = "zfish_engine_thread_allocation_info_text" });
         @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
         @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
+        @export(&engineSetStartPosition, .{ .name = "zfish_engine_set_start_position" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1751,6 +1752,13 @@ fn engineFlipOwner(engine_ptr: *anyopaque) callconv(.c) void {
     const flipped = std.mem.span(flipped_c);
     if (zfish_engine_set_position_owner(engine_ptr, flipped.ptr, flipped.len, null, 0)) |err|
         c.free(@ptrCast(err));
+}
+// REPORT-12 TU=0 grind: set the start position via the native set-position machinery (StartFEN is a
+// constexpr literal; the value is gate-verified by misc + bench, which start from this position).
+fn engineSetStartPosition(engine_ptr: *anyopaque) callconv(.c) void {
+    const start_fen: []const u8 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    if (zfish_engine_set_position_owner(engine_ptr, start_fen.ptr, start_fen.len, null, 0)) |_|
+        @panic("set start position failed");
 }
 // M-FINAL cutover: onVerifyNetwork std::function slot accessor — default-only (the native
 // engine's inline field). The legacy oracle reads its inline engine->onVerifyNetwork member

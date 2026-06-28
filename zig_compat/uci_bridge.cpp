@@ -2787,6 +2787,8 @@ void        zfish_engine_init_body(void* engine_ptr);
 // Harness H6 (engine_construct.zig): verify the constructed Engine graph.
 void        zfish_verify_engine_graph(const void* engine_ptr);
 
+// REPORT-12 TU=0 grind: default native (main.zig engineSetStartPosition). Legacy keeps the C++ path.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_set_start_position(void* engine_ptr) {
     auto* engine = static_cast<Engine*>(engine_ptr);
     const auto* start_fen = reinterpret_cast<const unsigned char*>(StartFEN);
@@ -2795,6 +2797,7 @@ void zfish_engine_set_start_position(void* engine_ptr) {
     if (error)
         std::abort();
 }
+#endif
 
 void zfish_engine_add_option(void*                engine_ptr,
                              const unsigned char* name_ptr,
