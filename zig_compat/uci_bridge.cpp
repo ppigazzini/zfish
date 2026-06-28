@@ -1604,10 +1604,10 @@ extern "C" void zfish_movepick_fill_history_snapshot(const void* main_history_pt
 }
 #endif
 
-// M-FINAL cutover: dead in the default build — the native movepick/search generate moves
-// via the zfish_movegen_* exports directly; only MoveList<LEGAL> (perft) instantiates a C++
-// generate<> here. The CAPTURES/QUIETS/EVASIONS/NON_EVASIONS specializations have no default
-// caller. Legacy oracle keeps them. generate<LEGAL> stays (perft uses it).
+// M-FINAL / REPORT-12 TU=0: dead in the default build — the native movepick/search generate moves via
+// the zfish_movegen_* exports directly, and perft_owner is now native too (main.zig perftOwner calls
+// zfish_movegen_generate_legal), so NO default caller instantiates a C++ generate<> here. All five
+// specializations (CAPTURES/QUIETS/EVASIONS/NON_EVASIONS/LEGAL) are legacy-oracle-only.
 #ifdef ZFISH_LEGACY_CPP_TARGET
 template<>
 Move* generate<CAPTURES>(const Position& pos, Move* moveList) {
@@ -1633,13 +1633,13 @@ Move* generate<NON_EVASIONS>(const Position& pos, Move* moveList) {
       zfish_movegen_generate_non_evasions(&pos, reinterpret_cast<std::uint16_t*>(moveList));
     return moveList + count;
 }
-#endif  // ZFISH_LEGACY_CPP_TARGET (dead C++ movegen specializations)
 
 template<>
 Move* generate<LEGAL>(const Position& pos, Move* moveList) {
     const auto count = zfish_movegen_generate_legal(&pos, reinterpret_cast<std::uint16_t*>(moveList));
     return moveList + count;
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET (dead C++ movegen specializations — incl LEGAL, native perft replaced it)
 
 static constexpr int ClusterSize = 3;
 
