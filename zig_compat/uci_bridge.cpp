@@ -1719,15 +1719,12 @@ extern "C" void zfish_threadpool_zero_tt_slice(void*        threads_ptr,
 #ifndef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_native_threadpool_wait_thread(void* pool, std::size_t thread_id);
 #endif
-extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thread_id) {
+// REPORT-12 TU=0: native default-only (main.zig threadpoolWaitThread). Legacy keeps the C++ method.
 #ifdef ZFISH_LEGACY_CPP_TARGET
+extern "C" void zfish_threadpool_wait_thread(void* threads_ptr, std::size_t thread_id) {
     static_cast<ThreadPool*>(threads_ptr)->wait_on_thread(thread_id);
-#else
-    // Stage-4: the pool holds native Threads; route to the native single-thread
-    // wait (the C++ wait_on_thread would lock the native thread as a C++ Thread).
-    zfish_native_threadpool_wait_thread(threads_ptr, thread_id);
-#endif
 }
+#endif
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
 
