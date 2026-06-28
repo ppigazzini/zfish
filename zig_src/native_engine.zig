@@ -60,10 +60,6 @@ fn memberNetworkNew(binary_dir: [*:0]const u8, binary_dir_len: usize) ?*anyopaqu
 }
 // updateContext + onVerifyNetwork are held INLINE in the native engine (stable address
 // for the worker managers / verify emit to bind via accessor) and placement-constructed.
-extern fn zfish_member_update_context_construct(p: *anyopaque) void;
-extern fn zfish_member_update_context_destruct(p: *anyopaque) void;
-extern fn zfish_member_verify_network_fn_construct(p: *anyopaque) void;
-extern fn zfish_member_verify_network_fn_destruct(p: *anyopaque) void;
 
 // sizeof(Search::SearchManager::UpdateContext): 4 std::function (libc++ 48B each) + a
 // void* ctx, padded. LIVE: the native search emit calls its onUpdateFull/onBestmove
@@ -139,10 +135,10 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
     e.network = memberNetworkNew(bdir, std.mem.span(bdir).len) orelse return false;
 
-    // Placement-construct the inline live C++ sub-objects (real UpdateContext / empty
-    // std::function) so the accessors hand out valid, properly-constructed objects.
-    zfish_member_update_context_construct(@ptrCast(&e.update_context));
-    zfish_member_verify_network_fn_construct(@ptrCast(&e.on_verify_network));
+    // REPORT-12 TU=0 std::function cluster: the update_context / on_verify_network slots are zeroed
+    // by the field initializers above, which is byte-equivalent to a default-constructed empty
+    // std::function/UpdateContext. The native search binds engine_graph's native UpdateContext and the
+    // verify emitter reads the empty slot, so no C++ placement-construct is needed (it was a no-op).
 
     return true;
 }
@@ -170,8 +166,7 @@ pub fn destructMembers(buf: *anyopaque) void {
     const e = NativeEngine.fromBuffer(buf);
 
     // Destruct the inline live C++ sub-objects (the std::functions they hold) first.
-    zfish_member_verify_network_fn_destruct(@ptrCast(&e.on_verify_network));
-    zfish_member_update_context_destruct(@ptrCast(&e.update_context));
+    // (update_context / on_verify_network are plain zeroed buffers in default — no C++ dtor needed)
 
     // states crack: free the pool's setupStates StateList @8 + the engine `states` slot's
     // StateList, and NULL setupStates@8, BEFORE deleting the C++ ThreadPool — else
