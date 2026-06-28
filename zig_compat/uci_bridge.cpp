@@ -2638,6 +2638,11 @@ void zfish_uci_print_line(const char* str, std::size_t len) {
 // main_manager()->updates.onUpdateFull(...) (these std::functions) to record nodes / emit
 // output, so they must land in the same UpdateContext the worker managers bind via the
 // accessor. Behaviour-identical today.
+// REPORT-12 TU=0 std::function cluster, Step B: the Engine std::function setters have no default
+// caller after Step A (init_search_update_listeners installs nothing in default), so they are
+// legacy-only now. Removes the frozen Engine::InfoShort/InfoFull/InfoIter std::function setter defs
+// (and their update_context_ref helper) from the default TU. Legacy oracle keeps them.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 static Search::SearchManager::UpdateContext& zfish_engine_update_context_ref(Engine* e) {
     return *static_cast<Search::SearchManager::UpdateContext*>(
       const_cast<void*>(zfish_engine_update_context_ptr(e)));
@@ -2659,14 +2664,9 @@ void Engine::set_on_bestmove(std::function<void(std::string_view, std::string_vi
 }
 
 void Engine::set_on_verify_network(std::function<void(std::string_view)>&& f) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: write the NativeEngine's onVerifyNetwork std::function via the accessor.
-    *static_cast<std::function<void(std::string_view)>*>(
-      zfish_engine_onverifynetwork_ptr(this)) = std::move(f);
-#else
     onVerifyNetwork = std::move(f);
-#endif
 }
+#endif
 
 extern "C" {
 const char* zfish_engine_option_on_change(void*                engine_ptr,
@@ -3363,8 +3363,12 @@ const char* zfish_engine_options_text_owner(const void* engine_ptr) {
 extern "C" void zfish_uci_set_quiet_mode(std::uint8_t quiet);
 
 void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
-    // Mirror the mode into the native flag the native emit functions read.
+    // Mirror the mode into the native flag the native emit functions read. This is the live control
+    // in the default build — the native emit (uci_port.formatInfoFull) checks the quiet flag directly.
     zfish_uci_set_quiet_mode(quiet_mode);
+    // REPORT-12 TU=0 std::function cluster Step A(2): the C++ std::function listener installs below are
+    // vestigial in default (the native emit reads the quiet flag, records nodes natively). Legacy only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
     auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
     if (quiet_mode != 0)
     {
@@ -3380,6 +3384,9 @@ void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
     {
         uci_engine->init_search_update_listeners();
     }
+#else
+    (void) uci_ptr;
+#endif
 }
 
 void zfish_engine_apply_setoption_owner(void*                engine_ptr,
