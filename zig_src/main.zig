@@ -1531,6 +1531,7 @@ comptime {
         @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
         @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
         @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
+        @export(&movepickFillHistorySnapshot, .{ .name = "zfish_movepick_fill_history_snapshot" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -2076,6 +2077,39 @@ fn ssNpmsecAdvance(worker: *anyopaque) callconv(.c) void {
     const inc_ptr: *const i64 = @ptrCast(@alignCast(wbase + off.limits + graph_layout.limits_off.inc_w + us * 8));
     const nodes: i64 = @intCast(zfish_threadpool_nodes_searched(workerRefPtr(worker, off.threads).?));
     avail.* = @max(@as(i64, 0), avail.* - (nodes - inc_ptr.*));
+}
+// REPORT-12 TU=0: the movepick history snapshot. Stats::data() returns the object's flat storage,
+// which is the object's own address — so each history pointer IS its .data() (identity). The snapshot
+// is just: copy the table pointers + the 6 continuation pointers + the shared-history pawn table/mask
+// (SharedHistories pawnHistory@16 {size@0,data@8}, pawnHistSizeMinus1@40 — pinned in B4c). Bench/movepick
+// exercises this every node, so search-parity + oracle-parity certify the offsets.
+const MovepickHistorySnapshot = extern struct {
+    main_base: ?*const anyopaque,
+    low_ply_base: ?*const anyopaque,
+    capture_base: ?*const anyopaque,
+    continuation_base: [6]?*const anyopaque,
+    pawn_table: ?*const anyopaque,
+    pawn_mask: u64,
+};
+fn movepickFillHistorySnapshot(main_history: ?*const anyopaque, low_ply_history: ?*const anyopaque, capture_history: ?*const anyopaque, continuation_history: ?*const anyopaque, shared_history: ?*const anyopaque, out: *MovepickHistorySnapshot) callconv(.c) void {
+    out.main_base = main_history;
+    out.low_ply_base = low_ply_history;
+    out.capture_base = capture_history;
+    out.continuation_base = .{ null, null, null, null, null, null };
+    if (continuation_history) |ch_ptr| {
+        const ch: [*]const ?*const anyopaque = @ptrCast(@alignCast(ch_ptr));
+        var slot: usize = 0;
+        while (slot < 6) : (slot += 1) out.continuation_base[slot] = ch[slot];
+    }
+    if (shared_history) |sh_ptr| {
+        const sh: [*]const u8 = @ptrCast(sh_ptr);
+        const pawn_size = @as(*const usize, @ptrCast(@alignCast(sh + 16))).*;
+        out.pawn_table = if (pawn_size != 0) @as(*const ?*const anyopaque, @ptrCast(@alignCast(sh + 24))).* else null;
+        out.pawn_mask = @as(*const u64, @ptrCast(@alignCast(sh + 40))).*;
+    } else {
+        out.pawn_table = null;
+        out.pawn_mask = 0;
+    }
 }
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
