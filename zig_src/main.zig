@@ -1561,6 +1561,7 @@ comptime {
         @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
         @export(&perftOwner, .{ .name = "zfish_engine_perft_owner" });
         @export(&applySetoptionOwner, .{ .name = "zfish_engine_apply_setoption_owner" });
+        @export(&threadpoolBoundNodesAssign, .{ .name = "zfish_threadpool_bound_nodes_assign" });
         // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
         @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
         @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
@@ -2541,6 +2542,30 @@ fn printInfoStringNative(str: []const u8) void {
         const out = std.fmt.bufPrint(&buf, "info string {s}", .{line}) catch continue;
         zfish_uci_print_line(out.ptr, out.len);
     }
+}
+// REPORT-12 TU=0: ThreadPool::boundThreadToNumaNode (std::vector<NumaIndex/size_t>) assign, reproduced on
+// the native ThreadPool footprint vector {begin@40,end@48,cap@56}. count==0 (single-node — the only gated
+// path) clears (end=begin). count>0 (multi-node) frees the old element buffer and operator_new's a fresh
+// count*8 one (matched alloc/free family). Single-node never allocs, so valgrind/teardown stay clean.
+fn threadpoolBoundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, count: usize) callconv(.c) void {
+    const base: [*]u8 = @ptrCast(pool_ptr);
+    const begin_p: *usize = @ptrCast(@alignCast(base + 40));
+    const end_p: *usize = @ptrCast(@alignCast(base + 48));
+    const cap_p: *usize = @ptrCast(@alignCast(base + 56));
+    if (nodes == null or count == 0) {
+        end_p.* = begin_p.*; // clear (keep capacity)
+        return;
+    }
+    if (begin_p.* != 0) zfish_operator_delete(@ptrFromInt(begin_p.*));
+    const nbytes = count * 8;
+    const buf = zfish_operator_new(nbytes) orelse @panic("bound_nodes_assign: operator new failed");
+    const dst: [*]usize = @ptrCast(@alignCast(buf));
+    const src = nodes.?;
+    var i: usize = 0;
+    while (i < count) : (i += 1) dst[i] = src[i];
+    begin_p.* = @intFromPtr(buf);
+    end_p.* = @intFromPtr(buf) + nbytes;
+    cap_p.* = @intFromPtr(buf) + nbytes;
 }
 fn applySetoptionOwner(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) callconv(.c) void {
     zfish_engine_wait_for_search_finished_owner(engine_ptr);

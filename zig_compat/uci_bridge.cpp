@@ -3547,6 +3547,9 @@ void zfish_threadpool_reset_for_reconfigure(void* pool_ptr) {
 }
 #endif  // ZFISH_LEGACY_CPP_TARGET
 
+// REPORT-12 TU=0: native default-only (main.zig threadpoolBoundNodesAssign reproduces the
+// boundThreadToNumaNode vector op on the footprint @40-56). Legacy keeps the C++ std::vector access.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_threadpool_bound_nodes_assign(void* pool_ptr,
                                          const std::size_t* nodes_ptr,
                                          std::size_t        count) {
@@ -3559,6 +3562,7 @@ void zfish_threadpool_bound_nodes_assign(void* pool_ptr,
 
     pool->boundThreadToNumaNode.assign(nodes_ptr, nodes_ptr + count);
 }
+#endif
 
 // M-FINAL (option reader): ported to native OptionsModel read (default build); legacy only.
 #ifdef ZFISH_LEGACY_CPP_TARGET
