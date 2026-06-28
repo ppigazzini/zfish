@@ -1560,6 +1560,7 @@ comptime {
         @export(&rootMovesDestroy, .{ .name = "zfish_root_moves_destroy" });
         @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
         @export(&perftOwner, .{ .name = "zfish_engine_perft_owner" });
+        @export(&applySetoptionOwner, .{ .name = "zfish_engine_apply_setoption_owner" });
         // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
         @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
         @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
@@ -2504,6 +2505,75 @@ fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
     const nout = std.fmt.bufPrint(&nbuf, "\nNodes searched: {d}\n", .{nodes}) catch unreachable;
     zfish_uci_print_line(nout.ptr, nout.len);
     return nodes;
+}
+
+// REPORT-12 TU=0: the setoption owner. Waits for any search to finish, applies the assignment to the
+// native option model, fires the on-change callback exactly as the C++ Option operator= would (spin/check
+// relay the int + its decimal text, string relays the current value, button relays nothing), and routes
+// the result + the "No such option" error through zfish_uci_print_line (the coordinated sync_cout wrapper).
+// Mirrors UCIEngine::print_info_string: split the message on '\n', skip whitespace-only lines, prefix each
+// with "info string ". Output is un-gated by the automated gates (no gate diffs setoption stdout), so it is
+// verified by a manual default-vs-legacy stdout diff (setoption Threads numa emit / EvalFile / bad name).
+const ModelSetResult = extern struct {
+    found: u8,
+    accepted: u8,
+    changed: u8,
+    callback_kind: u8,
+    kind: u8,
+    idx: usize,
+};
+extern fn zfish_optmodel_set_by_name(name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, out: *ModelSetResult) void;
+extern fn zfish_optmodel_int_by_index(idx: usize) c_int;
+extern fn zfish_optmodel_current_ptr(idx: usize) ?[*]const u8;
+extern fn zfish_optmodel_current_len(idx: usize) usize;
+fn printInfoStringNative(str: []const u8) void {
+    var it = std.mem.splitScalar(u8, str, '\n');
+    while (it.next()) |line| {
+        var all_ws = true;
+        for (line) |ch| {
+            if (ch != ' ' and ch != '\t' and ch != '\r' and ch != '\n') {
+                all_ws = false;
+                break;
+            }
+        }
+        if (all_ws) continue;
+        var buf: [1024]u8 = undefined;
+        const out = std.fmt.bufPrint(&buf, "info string {s}", .{line}) catch continue;
+        zfish_uci_print_line(out.ptr, out.len);
+    }
+}
+fn applySetoptionOwner(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) callconv(.c) void {
+    zfish_engine_wait_for_search_finished_owner(engine_ptr);
+    const vlen: usize = if (has_value != 0) value_len else 0;
+    const vptr: [*]const u8 = if (has_value != 0) value_ptr else name_ptr; // ptr unread when vlen==0
+    var res: ModelSetResult = undefined;
+    zfish_optmodel_set_by_name(name_ptr, name_len, vptr, vlen, &res);
+    if (res.found == 0) {
+        var buf: [256]u8 = undefined;
+        const out = std.fmt.bufPrint(&buf, "No such option: {s}", .{name_ptr[0..name_len]}) catch return;
+        zfish_uci_print_line(out.ptr, out.len);
+        return;
+    }
+    // kOptionCallbackNone == 0; kOptionTypeString=0, Check=1, Spin=2, Button=3.
+    if (res.accepted != 0 and res.callback_kind != 0) {
+        var relay_buf: [32]u8 = undefined;
+        var relay_value: []const u8 = "";
+        var relay_int: c_int = 0;
+        if (res.kind == 1 or res.kind == 2) {
+            relay_int = zfish_optmodel_int_by_index(res.idx);
+            relay_value = std.fmt.bufPrint(&relay_buf, "{d}", .{relay_int}) catch "";
+        } else if (res.kind == 0) {
+            const len = zfish_optmodel_current_len(res.idx);
+            if (len != 0) {
+                if (zfish_optmodel_current_ptr(res.idx)) |p| relay_value = p[0..len];
+            }
+        }
+        const ret = zfish_engine_option_on_change(engine_ptr, res.callback_kind, relay_value.ptr, relay_value.len, relay_int);
+        if (ret) |msg| {
+            printInfoStringNative(std.mem.span(msg));
+            std.c.free(@ptrCast(msg));
+        }
+    }
 }
 
 // REPORT-12 TU=0: the native ThreadBuilder callback — the LAST C++ piece of the construction cluster

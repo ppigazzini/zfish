@@ -3329,6 +3329,9 @@ void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
 }
 #endif
 
+// REPORT-12 TU=0: native default-only (main.zig applySetoptionOwner — native option model + on-change,
+// output via uci_print_line). Legacy keeps the C++ OptionsMap setoption path.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_apply_setoption_owner(void*                engine_ptr,
                                         const unsigned char* name_ptr,
                                         std::size_t          name_len,
@@ -3338,53 +3341,6 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
     auto* engine = static_cast<Engine*>(engine_ptr);
     engine->wait_for_search_finished();
 
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // Default build: the Zig option model is the write authority. Apply the
-    // assignment to the model, then fire the on_change callback exactly as the
-    // C++ Option operator= would -- spin/check relay to_string(int(option)) and
-    // the int, string relays the current value, button relays nothing -- and
-    // route any returned message through the OptionsMap info listener.
-    const std::string name(reinterpret_cast<const char*>(name_ptr), name_len);
-    const std::string value = has_value != 0
-                                ? std::string(reinterpret_cast<const char*>(value_ptr), value_len)
-                                : std::string{};
-
-    ZfishModelSetResult res;
-    zfish_optmodel_set_by_name(reinterpret_cast<const unsigned char*>(name.data()), name.size(),
-                               reinterpret_cast<const unsigned char*>(value.data()), value.size(),
-                               &res);
-
-    if (!res.found)
-    {
-        sync_cout << "No such option: " << name << sync_endl;
-        return;
-    }
-
-    if (res.accepted && res.callback_kind != kOptionCallbackNone)
-    {
-        std::string relay_value;
-        int         relay_int = 0;
-        if (res.kind == kOptionTypeCheck || res.kind == kOptionTypeSpin)
-        {
-            relay_int   = zfish_optmodel_int_by_index(res.idx);
-            relay_value = std::to_string(relay_int);
-        }
-        else if (res.kind == kOptionTypeString)
-        {
-            relay_value = zfish_optstore_read(res.idx);
-        }
-
-        auto ret = take_optional_c_string(zfish_engine_option_on_change(
-          engine, res.callback_kind, reinterpret_cast<const unsigned char*>(relay_value.data()),
-          relay_value.size(), relay_int));
-
-        // M-FINAL cutover: emit the callback's info message directly (what the C++ OptionsMap info
-        // listener did), so apply_setoption no longer touches the C++ OptionsMap. The native model
-        // is the option authority; the OptionsMap is now an empty stub in the default build.
-        if (ret)
-            UCIEngine::print_info_string(*ret);
-    }
-#else
     std::ostringstream command;
     command << "name " << std::string(reinterpret_cast<const char*>(name_ptr), name_len);
     if (has_value != 0)
@@ -3392,8 +3348,8 @@ void zfish_engine_apply_setoption_owner(void*                engine_ptr,
 
     std::istringstream is(command.str());
     engine->get_options().setoption(is);
-#endif
 }
+#endif
 
 // Recursive perft subtree counter, exported from zig_src/main.zig.
 extern "C" std::uint64_t zfish_perft_subtree(void* pos, int depth);
