@@ -1508,6 +1508,7 @@ comptime {
         @export(&numaSuggestsBindingThreads, .{ .name = "zfish_numa_config_suggests_binding_threads" });
         @export(&numaDistributeThreadsAmongNodes, .{ .name = "zfish_numa_config_distribute_threads_among_nodes" });
         @export(&numaExecuteOnNode, .{ .name = "zfish_numa_config_execute_on_numa_node" });
+        @export(&engineNetworkPtr, .{ .name = "zfish_engine_network_ptr" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1694,6 +1695,11 @@ pub export fn zfish_engine_network_replicated_ptr(engine: *anyopaque) *anyopaque
 pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const anyopaque {
     if (target_flags.legacy_target) return engMemberConst(engine, eng_off.update_context);
     return @ptrCast(&nativeEng(@constCast(engine)).update_context);
+}
+// REPORT-12 TU=0 grind: default build's network_ptr is a pass-through to network_replicated_ptr
+// (the native verify/eval ignore the value). Default-only @export; legacy keeps the C++ wrapper deref.
+fn engineNetworkPtr(engine_ptr: *const anyopaque) callconv(.c) *const anyopaque {
+    return zfish_engine_network_replicated_ptr(@constCast(engine_ptr));
 }
 // M-FINAL cutover: onVerifyNetwork std::function slot accessor — default-only (the native
 // engine's inline field). The legacy oracle reads its inline engine->onVerifyNetwork member
