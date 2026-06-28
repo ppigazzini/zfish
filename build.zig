@@ -103,7 +103,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const benchmark_source_files = b.addWriteFiles();
-    _ = benchmark_source_files.addCopyFile(b.path("src/benchmark.cpp"), "benchmark.cpp");
+    // REPORT-12 TU=0: the bench positions are embedded from an in-repo copy (zig_build/bench), not src/,
+    // so the default native build depends on NOTHING from src/ at build time (only the NNUE net is read
+    // from src/ at runtime).
+    _ = benchmark_source_files.addCopyFile(b.path("zig_build/bench/benchmark.cpp"), "benchmark.cpp");
     const benchmark_source_module = benchmark_source_files.add(
         "benchmark_source_data.zig",
         "pub const source = @embedFile(\"benchmark.cpp\");\n",
@@ -429,7 +432,8 @@ pub fn build(b: *std.Build) void {
         "uci_bridge.cpp",
     };
 
-    exe.root_module.addIncludePath(b.path("src"));
+    // REPORT-12 TU=0: the default exe compiles no C++ TU, so it needs no src/ include path. (The legacy
+    // oracle still includes src/ for the frozen headers.)
     exe.root_module.addCMacro("NDEBUG", "1");
     exe.root_module.addCMacro("DIS_64BIT", "1");
     exe.root_module.addCMacro("USE_PTHREADS", "1");
