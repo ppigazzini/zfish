@@ -2914,19 +2914,15 @@ void zfish_engine_states_slot_reset(void* states_slot_ptr) {
 }
 #endif
 
-const void* zfish_engine_network_ptr(const void* engine_ptr) {
-    // M-FINAL cutover: the native verify/eval/trace (network.zig) IGNORE this pointer — they emit
-    // native architecture dims and serve weights from native storage. In the default build the
-    // holder is a native stub (not a LazyNumaReplicated), so return the handle directly without
-    // dereferencing (and without referencing the C++ Network type). Legacy keeps the real deref.
+// REPORT-12 TU=0 grind: default pass-through moved to native (main.zig engineNetworkPtr).
+// Legacy keeps the real LazyNumaReplicated wrapper deref.
 #ifdef ZFISH_LEGACY_CPP_TARGET
+const void* zfish_engine_network_ptr(const void* engine_ptr) {
     auto* wrapper = static_cast<LazyNumaReplicatedSystemWide<NN::Network>*>(
       zfish_engine_network_replicated_ptr(const_cast<void*>(engine_ptr)));
     return wrapper->operator->();
-#else
-    return zfish_engine_network_replicated_ptr(const_cast<void*>(engine_ptr));
-#endif
 }
+#endif
 
 // zfish_engine_threads_ptr, _tt_ptr, _shared_hists_ptr, _network_replicated_ptr,
 // _update_context_ptr are native (main.zig), offsetting into the engine pointer.
