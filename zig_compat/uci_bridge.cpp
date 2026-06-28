@@ -2861,6 +2861,8 @@ void zfish_engine_start_logger(const unsigned char* name_ptr, std::size_t name_l
 }
 
 
+// REPORT-12 TU=0 grind: default native (main.zig engineNumaConfigInfoText pass-through).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const char* zfish_engine_numa_config_info_text(const void* engine_ptr) {
     const char* rendered = zfish_engine_numa_config_information_owner(engine_ptr);
     if (!rendered)
@@ -2870,7 +2872,10 @@ const char* zfish_engine_numa_config_info_text(const void* engine_ptr) {
     std::free(const_cast<char*>(rendered));
     return alloc_c_string(value);
 }
+#endif
 
+// REPORT-12 TU=0 grind: default native (main.zig engineThreadAllocationInfoText pass-through).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const char* zfish_engine_thread_allocation_info_text(const void* engine_ptr) {
     const char* rendered = zfish_engine_thread_allocation_information_owner(engine_ptr);
     if (!rendered)
@@ -2880,6 +2885,7 @@ const char* zfish_engine_thread_allocation_info_text(const void* engine_ptr) {
     std::free(const_cast<char*>(rendered));
     return alloc_c_string(value);
 }
+#endif
 
 // M-FINAL (string-option readers): ported to native OptionsModel string reads (default
 // build); these C++ OptionsMap[] reads are now legacy-oracle-only.

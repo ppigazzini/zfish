@@ -1512,6 +1512,8 @@ comptime {
         @export(&engineNumaConfigText, .{ .name = "zfish_engine_numa_config_text" });
         @export(&searchSharedStateDestroy, .{ .name = "zfish_search_shared_state_destroy" });
         @export(&searchSharedStateCreate, .{ .name = "zfish_search_shared_state_create" });
+        @export(&engineNumaConfigInfoText, .{ .name = "zfish_engine_numa_config_info_text" });
+        @export(&engineThreadAllocationInfoText, .{ .name = "zfish_engine_thread_allocation_info_text" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1718,6 +1720,15 @@ fn searchSharedStateDestroy(shared_state: ?*anyopaque) callconv(.c) void {
 extern fn zfish_shared_state_native_create(options: *anyopaque, threads: *anyopaque, tt: *anyopaque, shared_histories: *anyopaque, network: *anyopaque) ?*anyopaque;
 fn searchSharedStateCreate(options: *const anyopaque, threads: *anyopaque, tt: *anyopaque, shared_hists: *anyopaque, network: *const anyopaque) callconv(.c) ?*anyopaque {
     return zfish_shared_state_native_create(@constCast(options), threads, tt, shared_hists, @constCast(network));
+}
+// REPORT-12 TU=0 grind: the _info_text display fns are pure pass-throughs to the already-native
+// *_information_owner fns — the owner already returns a malloc'd C string the caller frees with
+// c.free, so the C++ wrappers' std::string re-copy was redundant. Default-only; legacy keeps C++.
+fn engineNumaConfigInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
+    return zfish_engine_numa_config_information_owner(engine_ptr);
+}
+fn engineThreadAllocationInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
+    return zfish_engine_thread_allocation_information_owner(engine_ptr);
 }
 // M-FINAL cutover: onVerifyNetwork std::function slot accessor — default-only (the native
 // engine's inline field). The legacy oracle reads its inline engine->onVerifyNetwork member
