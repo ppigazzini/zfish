@@ -1514,6 +1514,7 @@ comptime {
         @export(&searchSharedStateCreate, .{ .name = "zfish_search_shared_state_create" });
         @export(&engineNumaConfigInfoText, .{ .name = "zfish_engine_numa_config_info_text" });
         @export(&engineThreadAllocationInfoText, .{ .name = "zfish_engine_thread_allocation_info_text" });
+        @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1729,6 +1730,13 @@ fn engineNumaConfigInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 
 }
 fn engineThreadAllocationInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
     return zfish_engine_thread_allocation_information_owner(engine_ptr);
+}
+// REPORT-12 TU=0 grind: the "uci" option listing is rendered from the native Zig option model;
+// the default options_text_owner already just returned zfish_optmodel_render(). Pure pass-through.
+extern fn zfish_optmodel_render() ?[*:0]u8;
+fn engineOptionsTextOwner(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
+    _ = engine_ptr;
+    return zfish_optmodel_render();
 }
 // M-FINAL cutover: onVerifyNetwork std::function slot accessor — default-only (the native
 // engine's inline field). The legacy oracle reads its inline engine->onVerifyNetwork member
