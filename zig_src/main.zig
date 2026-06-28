@@ -1517,6 +1517,7 @@ comptime {
         @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
         @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
         @export(&engineSetStartPosition, .{ .name = "zfish_engine_set_start_position" });
+        @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1942,6 +1943,19 @@ pub export fn zfish_uci_set_quiet_mode(quiet: u8) void {
 }
 
 extern fn zfish_uci_print_line(str: [*]const u8, len: usize) callconv(.c) void;
+
+// REPORT-12 TU=0 std::function cluster Step D: the network-verify message emitter. The C++ version
+// invoked the onVerifyNetwork std::function (print_info_string interactive / no-op quiet); that
+// std::function is now legacy-only, so this native default-only version reproduces it exactly —
+// no-op in quiet mode, else format as an "info string" and print through the shared sync_cout wrapper.
+fn engineEmitVerifyMessage(engine_ptr: *const anyopaque, message_ptr: [*]const u8, message_len: usize) callconv(.c) void {
+    _ = engine_ptr;
+    if (uci_quiet_mode) return;
+    const formatted = zfish_uci_format_info_string(message_ptr, message_len) orelse return;
+    defer c.free(@ptrCast(formatted));
+    const line = std.mem.span(formatted);
+    zfish_uci_print_line(line.ptr, line.len);
+}
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
 // 31507, VALUE_TB=31753, VALUE_MATE=32000), then map to the cp/tb/mate formatter
