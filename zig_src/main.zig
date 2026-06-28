@@ -1551,6 +1551,7 @@ comptime {
         @export(&zfishMakeSearchManager, .{ .name = "zfish_make_search_manager" });
         @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
         @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
+        @export(&engineAddOption, .{ .name = "zfish_engine_add_option" });
         // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
         @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
         @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
@@ -2292,6 +2293,26 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
     const mgr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.manager));
     if (mgr.*) |m| zfish_operator_delete(m);
     zfish_aligned_large_pages_free(w);
+}
+
+// REPORT-12 TU=0: option registration — format the default string per kind (check→"true"/"false",
+// spin→decimal, button→"", string→bytes), exactly as the C++ Option ctor / default_str would, then
+// register into the native option model (zfish_optmodel_add). No C++ Option / OptionsMap is built in
+// the default build; the engine pointer + callback_kind are unused (the model derives the on-change
+// callback from the option name). Legacy keeps the C++ OptionsMap registration.
+extern fn zfish_optmodel_add(name_ptr: [*]const u8, name_len: usize, kind: u8, default_ptr: [*]const u8, default_len: usize, min: c_int, max: c_int) usize;
+fn engineAddOption(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, option_kind: u8, default_ptr: [*]const u8, default_len: usize, default_value: c_int, min_value: c_int, max_value: c_int, callback_kind: u8) callconv(.c) void {
+    _ = engine_ptr;
+    _ = callback_kind;
+    var buf: [16]u8 = undefined;
+    const default_slice: []const u8 = switch (option_kind) {
+        1 => if (default_value != 0) "true" else "false", // check
+        2 => std.fmt.bufPrint(&buf, "{d}", .{default_value}) catch unreachable, // spin
+        3 => "", // button
+        0 => default_ptr[0..default_len], // string
+        else => @panic("zfish_engine_add_option: bad option kind"),
+    };
+    _ = zfish_optmodel_add(name_ptr, name_len, option_kind, default_slice.ptr, default_slice.len, min_value, max_value);
 }
 
 // REPORT-12 TU=0: the native ThreadBuilder callback — the LAST C++ piece of the construction cluster
