@@ -1530,6 +1530,7 @@ comptime {
         @export(&networkSetLoadedState, .{ .name = "zfish_network_set_loaded_state" });
         @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
         @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
+        @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -2062,6 +2063,19 @@ fn engineNumaSetFromString(numa_context_ptr: *anyopaque, text_ptr: [*]const u8, 
     _ = numa_context_ptr;
     _ = text_ptr;
     _ = text_len;
+}
+// REPORT-12 TU=0: ss_npmsec_advance (nodestime path). The only C++ bit was tm->advance_nodes_time(x),
+// which is just `availableNodes = max(0, availableNodes - x)`. Inlined natively via pinned offsets
+// (manager->tm@8, tm.availableNodes@+24; limits.inc pinned in B4a; side via the native helper).
+fn ssNpmsecAdvance(worker: *anyopaque) callconv(.c) void {
+    const wbase: [*]u8 = @ptrCast(worker);
+    const off = graph_layout.worker_off;
+    const manager = workerRefPtr(worker, off.manager).?;
+    const avail: *i64 = @ptrCast(@alignCast(@as([*]u8, @ptrCast(manager)) + graph_layout.search_manager_off.tm_available_nodes));
+    const us: usize = zfish_ss_side_to_move(@ptrCast(wbase + off.root_pos));
+    const inc_ptr: *const i64 = @ptrCast(@alignCast(wbase + off.limits + graph_layout.limits_off.inc_w + us * 8));
+    const nodes: i64 = @intCast(zfish_threadpool_nodes_searched(workerRefPtr(worker, off.threads).?));
+    avail.* = @max(@as(i64, 0), avail.* - (nodes - inc_ptr.*));
 }
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
