@@ -5,6 +5,33 @@ zig_build/tools/frozen_refs.py zig_compat/uci_bridge.cpp -v` as the live checkli
 Baseline at plan time (refactor `b5b9baae`): **28 live default frozen-type derefs**. Bench `2336177`
 + the E1 golden suite are the gate; `oracle-parity` is alive for one last cross-check before E4.
 
+## MEASURED CUT SCOPE (2026-06-28) — it is ~20-40 errors, NOT a full-src-surface big-bang
+
+Test-dropped the 7 frozen-pulling headers in the default build (guard legacy-only + frozen_fwd.h) and
+captured the real error set. KEY: the cut is SMALL + bounded because the include graph cooperates:
+- Only 7 headers reference frozen types: engine.h/uci.h/thread.h/search.h/position.h (the frozen
+  headers) + score.h (->position.h) + perft.h (->position/uci). DROP these 7.
+- ALL other bridge headers are clean and STAY: types.h (Move/Square/Value/enums), movegen.h
+  (already forward-declares Position! uses const Position&), bitboard.h, memory.h, misc.h,
+  numa.h, tune.h, ucioption.h, evaluate.h, benchmark.h, shm.h, tt.h, movepick.h. So the feared
+  "replace every src type" does NOT happen — the primitives come from the clean headers.
+
+**The ~20 errors (clang caps at 20; a few more likely behind it), by category:**
+- ~13 `member access into incomplete type Search::Worker` — the search-bridge pv/emit/glue reads
+  Worker members directly (uci_bridge.cpp @880, 1512, 1524, 1532-1533, 1555, 1613, 1831, 1843, ...).
+  CRUX: route each `w->member` to a native offset read (add graph_layout.worker_off entries) or
+  guard the access legacy-only if it is dead in default. This is the bulk of the work.
+- `SharedHistories` private member (`pawnHistSizeMinus1`) @702/731 — a sizeof/layout cross-check;
+  guard legacy-only (group D) — it is in the static_assert region.
+- missing forward-decls: `TimeManagement`, `Search::LimitsType`, `Search::PVMoves` — add to
+  frozen_fwd.h. NB PVMoves is `ValueList<Move,N>` (template) — forward-decl as needed or the
+  accessing code routes to offset; LimitsType/TimeManagement are plain forward-declarable.
+
+So Step 1 is: drop the 7 headers + frozen_fwd.h (extended with TimeManagement/LimitsType), then work
+the ~13 Worker member-access sites (offset-route or legacy-guard) + confine the SharedHistories
+static_assert. Bounded + concrete — a focused 1-3 session push, RED-until-green, gate-verified by the
+E1 suite + bench 2336177. NOT the catastrophic full-src rewrite. `refactor` stays green throughout.
+
 ## PROGRESS (autonomous Group A burndown COMPLETE): 30 -> 21 derefs
 
 The route-to-native Group A items are done + merged (gate-verified by the E1 suite), shrinking the
