@@ -859,16 +859,13 @@ extern "C" void zfish_search_id_state(void* worker, ZfishIdState* out) {
 // direct call to zfish_search_pv would force the native driver in legacy too,
 // defeating the oracle).
 extern "C" void zfish_search_pv(void* manager, void* worker, void* threads, void* tt, int depth);
+// REPORT-12 TU=0: native default-only (main.zig ssSearchIdPv). Legacy keeps the C++ SearchManager::pv.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_search_id_pv(void* worker, int depth) {
     auto* w = static_cast<Stockfish::Search::Worker*>(worker);
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: call the native pv driver directly (the default's SearchManager::pv only
-    // forwarded here anyway), so the C++ SearchManager::pv goes legacy-only.
-    zfish_search_pv(zfish_wk::manager(w), w, zfish_wk::threads(w), zfish_wk::tt(w), depth);
-#else
     w->main_manager()->pv(*w, w->threads, w->tt, depth);
-#endif
 }
+#endif
 
 // Cross-thread bestMoveChanges collection: sum and reset, returned as a double
 // (keeps the multi-thread result correct from one extern).
@@ -1492,27 +1489,23 @@ extern "C" void zfish_ss_tm_init(void* worker) {
 
 extern "C" void zfish_threadpool_start_searching(void* pool);
 extern "C" void zfish_threadpool_wait_for_search_finished(void* pool);
+// REPORT-12 TU=0: native default-only (main.zig ssThreadsStart). Legacy keeps the C++ Worker method.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_ss_threads_start(void* worker) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: call the native ThreadPool start-searching directly, dropping the C++
-    // ThreadPool::start_searching method from the default build.
-    zfish_threadpool_start_searching(zfish_wk::threads(worker));
-#else
     static_cast<Search::Worker*>(worker)->threads.start_searching();
-#endif
 }
+#endif
 
 // zfish_ss_should_busywait and zfish_ss_set_stop are native (main.zig): they
 // resolve worker->threads.stop, the worker manager's ponder flag, and
 // limits.infinite by offset. Bridge-only symbols, so no legacy gating is needed.
 
+// REPORT-12 TU=0: native default-only (main.zig ssWaitFinished). Legacy keeps the C++ Worker method.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_ss_wait_finished(void* worker) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    zfish_threadpool_wait_for_search_finished(zfish_wk::threads(worker));
-#else
     static_cast<Search::Worker*>(worker)->threads.wait_for_search_finished();
-#endif
 }
+#endif
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
 extern "C" std::uint8_t zfish_ss_side_to_move(const void* pos);
@@ -1551,15 +1544,14 @@ extern "C" void zfish_ss_npmsec_advance(void* worker) {
 
 // Like zfish_search_id_pv, stays a C++ method call so the legacy oracle uses its
 // C++ pv() while the default build routes to the native driver.
+// REPORT-12 TU=0: native default-only (main.zig ssEmitPv). Legacy keeps the C++ SearchManager::pv.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_ss_emit_pv(void* worker, void* best) {
     auto* w = static_cast<Search::Worker*>(worker);
     auto* b = static_cast<Search::Worker*>(best);
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    zfish_search_pv(zfish_wk::manager(w), b, zfish_wk::threads(w), zfish_wk::tt(w), zfish_wk::root_depth(b));
-#else
     w->main_manager()->pv(*b, w->threads, w->tt, b->rootDepth);
-#endif
 }
+#endif
 
 // zfish_ss_emit_bestmove is native (main.zig): it renders pv[0]/pv[1] with the
 // native move formatter and prints "bestmove .." through zfish_uci_print_line,
