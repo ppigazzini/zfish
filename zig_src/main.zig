@@ -103,7 +103,11 @@ pub fn main(init: std.process.Init) !void {
         return error.OutOfMemory;
     defer memory_port.stdAlignedFree(engine);
 
-    zfish_uci_engine_construct_at(engine, @intCast(argc), argv.ptr);
+    // REPORT-12 TU=0: native engine construction directly in default; legacy runs the C++ UCIEngine ctor path.
+    if (target_flags.legacy_target)
+        zfish_uci_engine_construct_at(engine, @intCast(argc), argv.ptr)
+    else
+        nativeUciEngineConstructAt(engine, @intCast(argc), argv.ptr);
     defer freeSideTt(); // M1: free the side tt AFTER the engine destruct (LIFO)
     defer freeSideSharedHistories(); // M-SH: free the side sharedHistories map (after destruct)
     // REPORT-12 TU=0: native teardown directly in default (3 native calls); legacy runs ~UCIEngine.
@@ -3038,6 +3042,19 @@ fn zfishNativeEngineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) call
 }
 fn zfishNativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) callconv(.c) void {
     native_engine.setCli(buf, argc, argv);
+}
+// REPORT-12 TU=0: native engine construction (no C++ UCIEngine ctor). Verify the object-graph
+// footprint, build the heap members + inline sub-objects, store argc/argv, then run init_body
+// (register options, set start position, size threads) — the same post-member work the UCIEngine ctor
+// body did. The C++ default also ran Tune::init(engine_options()), but Tune (SPSA) is INERT in a release
+// build (no live TUNE() macros → instance().list is empty → init/read are empty loops; only the unused
+// static Tune::options is set), so it is dropped here. oracle-parity proves dropping it is behavior-neutral.
+fn nativeUciEngineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) callconv(.c) void {
+    graph_layout.zfish_graph_verify_layouts();
+    if (!zfishNativeEngineConstructMembers(storage, argv[0]))
+        @panic("native engine construct: member allocation failed");
+    zfishNativeEngineSetCli(storage, argc, argv);
+    zfish_engine_init_body(storage);
 }
 fn zfishNativeEngineDestructMembers(buf: *anyopaque) callconv(.c) void {
     native_engine.destructMembers(buf);
