@@ -2712,6 +2712,9 @@ bool zfish_opt_bool_native(const char* name) {
 }
 #endif
 
+// REPORT-12 TU=0: the native-store readers had their only default callers in the C++ Option operators
+// (now legacy-only below), so guard them legacy-only too.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::string zfish_optstore_read(std::size_t idx) {
     const std::size_t len = zfish_optmodel_current_len(idx);
     if (len == 0)
@@ -2720,6 +2723,7 @@ std::string zfish_optstore_read(std::size_t idx) {
 }
 
 bool zfish_optstore_has(std::size_t idx) { return zfish_optmodel_has_index(idx) != 0; }
+#endif
 #endif
 
 constexpr std::uint8_t kOptionCallbackNone          = 0;
@@ -3960,6 +3964,10 @@ void OptionsMap::add(const std::string& name, const Option& option) {
 std::size_t OptionsMap::count(const std::string& name) const { return options_map.count(name); }
 #endif  // ZFISH_LEGACY_CPP_TARGET
 
+// REPORT-12 TU=0: the C++ Option / OptionsMap class (ctors, operator int/string/!=, operator<<) is dead
+// in the default build — option registration/reads/setoption/listing all go through the native Zig model
+// (zfish_optmodel_*). Guard the whole class legacy-only (the nested #ifndef branches resolve to legacy).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 Option::Option(const OptionsMap* map) :
     parent(map) {}
 
@@ -4046,6 +4054,7 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& optionsMap) {
 
     return os;
 }
+#endif  // ZFISH_LEGACY_CPP_TARGET (C++ Option/OptionsMap class — dead in default)
 
 // M-FINAL cutover: Tune (SPSA) is inactive in a release build — no live TUNE() macros, so the tune
 // list is empty and these Entry<int> methods are never called. In the default build they are inert,
