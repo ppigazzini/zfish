@@ -1827,22 +1827,48 @@ static inline int zfish_opt_int_native(const char* n) {
     return zfish_optmodel_int_by_name(reinterpret_cast<const unsigned char*>(n),
                                       std::char_traits<char>::length(n));
 }
+// REPORT-12 B4: the limits field offsets the default build reads via zfish_lim:: are pinned here
+// at compile time in the legacy build (LimitsType is complete there). A reorder upstream fails the
+// build. This is the verification harness for TimeManagement::init's de-typing — bench does not
+// exercise time management, so these pins (not oracle-parity) are what certify the offsets.
+#ifdef ZFISH_LEGACY_CPP_TARGET
+static_assert(sizeof(TimePoint) == 8, "TimePoint stride for time[]/inc[]");
+static_assert(offsetof(Search::LimitsType, time) == 24, "limits.time");
+static_assert(offsetof(Search::LimitsType, inc) == 40, "limits.inc");
+static_assert(offsetof(Search::LimitsType, npmsec) == 56, "limits.npmsec");
+static_assert(offsetof(Search::LimitsType, startTime) == 72, "limits.startTime");
+static_assert(offsetof(Search::LimitsType, movestogo) == 80, "limits.movestogo");
+#endif
 void TimeManagement::init(Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
                           const OptionsMap&   options,
                           double&             originalTimeAdjust) {
     (void) options;  // option values now sourced from the Zig model (default build)
+    // Read the four input limits fields. Default build: by offset (LimitsType forward-declared at
+    // the cut). Legacy oracle: typed member access (the offsets are pinned equal above).
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    void* const       lb       = &limits;
+    const std::int64_t in_time = zfish_lim::time(lb, us);
+    const std::int64_t in_inc  = zfish_lim::inc(lb, us);
+    const std::int64_t in_start = zfish_lim::start_time(lb);
+    const int          in_mtg  = zfish_lim::movestogo(lb);
+#else
+    const std::int64_t in_time = limits.time[us];
+    const std::int64_t in_inc  = limits.inc[us];
+    const std::int64_t in_start = limits.startTime;
+    const int          in_mtg  = limits.movestogo;
+#endif
     const ZfishTimemanInput input = {
-      .time_us              = limits.time[us],
-      .inc_us               = limits.inc[us],
-      .start_time           = limits.startTime,
+      .time_us              = in_time,
+      .inc_us               = in_inc,
+      .start_time           = in_start,
       .npmsec               = zfish_opt_int_native("nodestime"),
       .move_overhead        = zfish_opt_int_native("Move Overhead"),
       .available_nodes      = availableNodes,
       .current_optimum_time = optimumTime,
       .current_maximum_time = maximumTime,
-      .movestogo            = limits.movestogo,
+      .movestogo            = in_mtg,
       .ply                  = ply,
       .original_time_adjust = originalTimeAdjust,
       .ponder               = static_cast<std::uint8_t>(zfish_opt_int_native("Ponder") ? 1 : 0),
@@ -1857,9 +1883,15 @@ void TimeManagement::init(Search::LimitsType& limits,
     useNodesTime       = output.use_nodes_time != 0;
     originalTimeAdjust = output.original_time_adjust;
 
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    zfish_lim::time(lb, us) = output.time_us;
+    zfish_lim::inc(lb, us)  = output.inc_us;
+    zfish_lim::npmsec(lb)   = output.npmsec;
+#else
     limits.time[us] = output.time_us;
     limits.inc[us]  = output.inc_us;
     limits.npmsec   = output.npmsec;
+#endif
 }
 
 // M-FINAL cutover: dead in the default build — the native search computes eval via

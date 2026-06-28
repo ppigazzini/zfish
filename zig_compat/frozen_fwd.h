@@ -16,6 +16,7 @@
 // NB this header is intentionally NOT included anywhere yet — it is the prepared Step 0 artifact.
 
 #include <cstddef>
+#include <cstdint>
 
 namespace Stockfish {
 
@@ -60,3 +61,18 @@ inline void* manager(void* w) { return *reinterpret_cast<void**>(base(w) + kMana
 inline constexpr std::size_t kRootDepth = 11421088;  // worker_off.root_depth (int rootDepth)
 inline int root_depth(void* w) { return *reinterpret_cast<int*>(base(w) + kRootDepth); }
 }  // namespace zfish_wk
+
+// Search::LimitsType field access by offset (LimitsType is forward-declared in the default build).
+// Offsets mirror graph_layout.limits_off and are PINNED at compile time in the legacy build via
+// offsetof static_asserts (see uci_bridge.cpp, ahead of TimeManagement::init). TimePoint is int64;
+// the time[]/inc[] arrays are indexed by Color (us) with stride 8. Returns references so the same
+// helper serves both the read and the write-back in TimeManagement::init.
+namespace zfish_lim {
+inline constexpr std::size_t kTime = 24, kInc = 40, kNpmsec = 56, kStartTime = 72, kMovestogo = 80;
+inline char* lb(void* b) { return reinterpret_cast<char*>(b); }
+inline std::int64_t& time(void* b, int us) { return *reinterpret_cast<std::int64_t*>(lb(b) + kTime + us * 8); }
+inline std::int64_t& inc(void* b, int us) { return *reinterpret_cast<std::int64_t*>(lb(b) + kInc + us * 8); }
+inline std::int64_t& npmsec(void* b) { return *reinterpret_cast<std::int64_t*>(lb(b) + kNpmsec); }
+inline std::int64_t& start_time(void* b) { return *reinterpret_cast<std::int64_t*>(lb(b) + kStartTime); }
+inline int& movestogo(void* b) { return *reinterpret_cast<int*>(lb(b) + kMovestogo); }
+}  // namespace zfish_lim
