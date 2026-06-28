@@ -2574,6 +2574,9 @@ std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
 }
 #endif
 
+// REPORT-12 TU=0: the C++ Debugging dbg_* forwarders are called only by the C++ search (the native search
+// calls the zfish_misc_dbg_* exports directly), so they are dead in the default build — guard legacy-only.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void dbg_hit_on(bool cond, int slot) {
     zfish_misc_dbg_hit_on(static_cast<std::uint8_t>(cond ? 1 : 0), slot);
 }
@@ -2597,6 +2600,7 @@ void dbg_correl_of(int64_t value1, int64_t value2, int slot) {
 void dbg_print() { zfish_misc_dbg_print(); }
 
 void dbg_clear() { zfish_misc_dbg_clear(); }
+#endif
 
 void start_logger(const std::string& fname) { Logger::start(fname); }
 
