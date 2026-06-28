@@ -1440,6 +1440,26 @@ fn tbInit(path_ptr: [*]const u8, path_len: usize) callconv(.c) void {
 // Native no-op replaces the C++ default stubs; the legacy oracle keeps the real C++ set_numa_config.
 fn numaContextSetNoop(_: *anyopaque) callconv(.c) void {}
 
+// Remaining NumaPolicy bridge fns, all trivial in the fixed single-node default build:
+//   context_config  -> the config handle is opaque (native fns ignore it); return it unchanged
+//   suggests_binding -> never bind threads with one numa node (constant 0)
+//   distribute       -> all requested threads map to node 0, one node used
+//   execute_on_node  -> no pinning; just run the callback on the only node
+fn numaContextConfig(numa_context: *const anyopaque) callconv(.c) *const anyopaque {
+    return numa_context;
+}
+fn numaSuggestsBindingThreads(_: *const anyopaque, _: usize) callconv(.c) u8 {
+    return 0;
+}
+fn numaDistributeThreadsAmongNodes(_: *const anyopaque, requested: usize, out_nodes: [*]usize) callconv(.c) usize {
+    var i: usize = 0;
+    while (i < requested) : (i += 1) out_nodes[i] = 0;
+    return 1;
+}
+fn numaExecuteOnNode(_: *const anyopaque, _: usize, callback: *const fn (?*anyopaque) callconv(.c) void, context: ?*anyopaque) callconv(.c) void {
+    callback(context);
+}
+
 comptime {
     if (!target_flags.legacy_target) {
         @export(&tbMaxCardinality, .{ .name = "zfish_tbprobe_max_cardinality" });
@@ -1484,6 +1504,10 @@ comptime {
         @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_system" });
         @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_hardware" });
         @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_none" });
+        @export(&numaContextConfig, .{ .name = "zfish_numa_context_config" });
+        @export(&numaSuggestsBindingThreads, .{ .name = "zfish_numa_config_suggests_binding_threads" });
+        @export(&numaDistributeThreadsAmongNodes, .{ .name = "zfish_numa_config_distribute_threads_among_nodes" });
+        @export(&numaExecuteOnNode, .{ .name = "zfish_numa_config_execute_on_numa_node" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
