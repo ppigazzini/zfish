@@ -2931,15 +2931,12 @@ const void* zfish_engine_network_ptr(const void* engine_ptr) {
 // zfish_engine_threads_ptr, _tt_ptr, _shared_hists_ptr, _network_replicated_ptr,
 // _update_context_ptr are native (main.zig), offsetting into the engine pointer.
 
+// REPORT-12 TU=0 grind: default build's pass-through moved to native (main.zig numaContextConfig).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const void* zfish_numa_context_config(const void* numa_context_ptr) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: native stub context — the config handle is opaque (the single-node native
-    // numa functions ignore it). Return it directly without referencing the C++ NumaConfig.
-    return numa_context_ptr;
-#else
     return &static_cast<const NumaReplicationContext*>(numa_context_ptr)->get_numa_config();
-#endif
 }
+#endif
 
 extern "C" void zfish_verify_shared_state_native(const void*, void*, void*, void*, void*, void*);
 
@@ -3775,62 +3772,45 @@ void zfish_shared_state_insert_history(const void*  shared_state_ptr,
 #endif
 }
 
+// REPORT-12 TU=0 grind: default native (main.zig numaSuggestsBindingThreads -> 0).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::uint8_t zfish_numa_config_suggests_binding_threads(const void* numa_config_ptr,
                                                         std::size_t requested) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: single-node default build never binds threads (one numa node), so this is
-    // a native constant 0 — no C++ NumaConfig read. Legacy keeps the real topology query.
-    (void) numa_config_ptr;
-    (void) requested;
-    return 0;
-#else
     return static_cast<const NumaConfig*>(numa_config_ptr)->suggests_binding_threads(requested)
              ? std::uint8_t{1}
              : std::uint8_t{0};
-#endif
 }
+#endif
 
+// REPORT-12 TU=0 grind: default native (main.zig numaDistributeThreadsAmongNodes -> all node 0).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_numa_config_distribute_threads_among_nodes(const void* numa_config_ptr,
                                                              std::size_t requested,
                                                              std::size_t* out_nodes) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: single-node default build — all requested threads map to node 0 (one numa
-    // node). Dead on this path anyway (binding is never suggested), but kept NumaConfig-free.
-    (void) numa_config_ptr;
-    if (out_nodes)
-        for (std::size_t i = 0; i < requested; ++i)
-            out_nodes[i] = 0;
-    return 1;
-#else
     const auto distribution =
       static_cast<const NumaConfig*>(numa_config_ptr)->distribute_threads_among_numa_nodes(
         requested);
     if (out_nodes)
         std::copy(distribution.begin(), distribution.end(), out_nodes);
     return distribution.size();
-#endif
 }
+#endif
 
 // num_numa_nodes() == nodes.size(): now native in both builds via the Zig export
 // zfish_numa_config_node_count (main.zig), which reads the nodes vector span by
 // offset. The NumaConfig layout is identical in the default and legacy targets,
 // so no C++ body is needed here.
 
+// REPORT-12 TU=0 grind: default native (main.zig numaExecuteOnNode -> run callback, no pinning).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_numa_config_execute_on_numa_node(const void*       numa_config_ptr,
                                             std::size_t       numa_index,
                                             ZfishOpaqueCallback callback,
                                             void*             context) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: single-node default build — no NUMA pinning, just run the callback on the
-    // current (only) node. Dead on the live path (binding never suggested); kept NumaConfig-free.
-    (void) numa_config_ptr;
-    (void) numa_index;
-    callback(context);
-#else
     const auto& numa_config = *static_cast<const NumaConfig*>(numa_config_ptr);
     numa_config.execute_on_numa_node(numa_index, [&]() { callback(context); });
-#endif
 }
+#endif
 
 // Layer 2 (stage-4 native thread runtime): mint an ISearchManager for a native
 // Thread -- a SearchManager for the main thread (id 0), a NullSearchManager for
