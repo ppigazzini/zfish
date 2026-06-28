@@ -3519,6 +3519,9 @@ ZfishSearchMoveView zfish_limits_searchmove_text(const void* limits_ptr, std::si
 }
 #endif
 
+// REPORT-12 TU=0: native default-only (main.zig rootMovesCreateRanked / rootMovesDestroy reproduce the
+// libc++ std::vector<RootMove> by layout). Legacy keeps the C++ std::vector construction.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void* zfish_root_moves_create_ranked(const ZfishRankedRootMove* items, std::size_t count) {
     auto root_moves = std::make_unique<Search::RootMoves>();
     root_moves->reserve(count);
@@ -3535,6 +3538,7 @@ void* zfish_root_moves_create_ranked(const ZfishRankedRootMove* items, std::size
 void zfish_root_moves_destroy(void* root_moves_ptr) {
     delete static_cast<Search::RootMoves*>(root_moves_ptr);
 }
+#endif
 
 // Stage 5 support: the native std::vector<RootMove> copy-assign (set_root_moves)
 // must (re)allocate its element buffer with ::operator new so the C++ ~vector

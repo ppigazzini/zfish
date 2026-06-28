@@ -1556,6 +1556,8 @@ comptime {
         @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
         @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
         @export(&engineAddOption, .{ .name = "zfish_engine_add_option" });
+        @export(&rootMovesCreateRanked, .{ .name = "zfish_root_moves_create_ranked" });
+        @export(&rootMovesDestroy, .{ .name = "zfish_root_moves_destroy" });
         // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
         @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
         @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
@@ -2317,6 +2319,60 @@ fn engineAddOption(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usiz
         else => @panic("zfish_engine_add_option: bad option kind"),
     };
     _ = zfish_optmodel_add(name_ptr, name_len, option_kind, default_slice.ptr, default_slice.len, min_value, max_value);
+}
+
+// REPORT-12 TU=0: native Search::RootMoves (= libc++ std::vector<RootMove>) builder/destroyer. The C++
+// build a heap std::vector<RootMove> via make_unique + reserve + emplace_back. Reproduced natively: the
+// 24-byte libc++ vector header {begin@0, end@8, cap@16} (operator_new'd, matching make_unique's new) wraps
+// an operator_new'd element buffer of count*root_move_size (552) RootMoves (matching the vector's reserve).
+// Each element is the RootMove(Move) ctor (pv={raw_move}, member-init defaults: scores=-VALUE_INFINITE,
+// mean²=-VALUE_INFINITE², the rest 0/false) plus tbRank/tbScore. destroy mirrors `delete vec`:
+// operator_delete the element buffer (~vector) then the header. All allocs route through zfish_operator_new
+// /_delete, so the alloc/free family stays matched (valgrind-clean). count==0 (mate/stalemate root) → {0,0,0}.
+const RankedRootMove = extern struct {
+    raw_move: u16,
+    reserved: u16,
+    tb_rank: c_int,
+    tb_score: c_int,
+};
+fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) callconv(.c) ?*anyopaque {
+    const value_infinite: i32 = 32001;
+    const header = zfish_operator_new(24) orelse return null;
+    const hdr: [*]usize = @ptrCast(@alignCast(header));
+    if (count == 0) {
+        hdr[0] = 0;
+        hdr[1] = 0;
+        hdr[2] = 0;
+        return header;
+    }
+    const stride = graph_layout.root_move_size; // 552
+    const bytes = count * stride;
+    const elems = zfish_operator_new(bytes) orelse return null;
+    const base: [*]u8 = @ptrCast(elems);
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const rm: *position_port.RootMove = @ptrCast(@alignCast(base + i * stride));
+        @memset(@as([*]u8, @ptrCast(rm))[0..stride], 0);
+        rm.score = -value_infinite;
+        rm.previous_score = -value_infinite;
+        rm.average_score = -value_infinite;
+        rm.mean_squared_score = -(value_infinite * value_infinite);
+        rm.uci_score = -value_infinite;
+        rm.tb_rank = items[i].tb_rank;
+        rm.tb_score = items[i].tb_score;
+        rm.pv.moves[0] = items[i].raw_move;
+        rm.pv.length = 1;
+    }
+    hdr[0] = @intFromPtr(elems);
+    hdr[1] = @intFromPtr(elems) + bytes;
+    hdr[2] = @intFromPtr(elems) + bytes;
+    return header;
+}
+fn rootMovesDestroy(ptr: ?*anyopaque) callconv(.c) void {
+    const p = ptr orelse return;
+    const hdr: [*]usize = @ptrCast(@alignCast(p));
+    if (hdr[0] != 0) zfish_operator_delete(@ptrFromInt(hdr[0]));
+    zfish_operator_delete(p);
 }
 
 // REPORT-12 TU=0: the native ThreadBuilder callback — the LAST C++ piece of the construction cluster
