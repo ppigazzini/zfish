@@ -1610,10 +1610,23 @@ extern "C" void zfish_movepick_fill_history_snapshot(const void* main_history_pt
 
     if (shared_history_ptr)
     {
+#ifndef ZFISH_LEGACY_CPP_TARGET
+        // REPORT-12 B4c: SharedHistories is forward-declared at the cut. Layout: UnifiedCorrectionHistory
+        // (16B) @0, then pawnHistory (a DynStats {size_t size @0; LargePagePtr data @8}) @16, then the
+        // trailing size_t pawnHistSizeMinus1 @40 (sizeof(SharedHistories)==48). pawnHistory[0].data()
+        // is the DynStats array base — Stats::data() returns the flat storage, i.e. the [0] entry's
+        // address == data.get(). Pinned below (legacy); bench-exercised, so oracle-parity certifies it.
+        const char* const sh        = static_cast<const char*>(shared_history_ptr);
+        const std::size_t pawn_size = *reinterpret_cast<const std::size_t*>(sh + 16);  // pawnHistory.size
+        out->pawn_table = pawn_size ? *reinterpret_cast<void* const*>(sh + 24) : nullptr;  // .data @8
+        out->pawn_mask  = *reinterpret_cast<const std::size_t*>(sh + 40);  // pawnHistSizeMinus1
+#else
+        static_assert(offsetof(SharedHistories, pawnHistory) == 16, "pawnHistory offset");
         const auto* shared_history = static_cast<const SharedHistories*>(shared_history_ptr);
         out->pawn_table =
           shared_history->pawnHistory.get_size() ? shared_history->pawnHistory[0].data() : nullptr;
         out->pawn_mask = shared_history->pawnHistSizeMinus1;
+#endif
     }
     else
     {
