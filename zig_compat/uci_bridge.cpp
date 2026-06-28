@@ -2940,6 +2940,9 @@ extern "C" void zfish_verify_shared_state_native(const void*, void*, void*, void
 extern "C" void* zfish_shared_state_native_create(void*, void*, void*, void*, void*);
 extern "C" void  zfish_shared_state_native_destroy(void*);
 
+// REPORT-12 TU=0 grind: default native (main.zig searchSharedStateCreate forwards to the same
+// native create). Legacy keeps the C++ symbol (main.zig export comptime-pruned there).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void* zfish_search_shared_state_create(const void* options_ptr,
                                        void*       threads_ptr,
                                        void*       tt_ptr,
@@ -2948,6 +2951,7 @@ void* zfish_search_shared_state_create(const void* options_ptr,
     return zfish_shared_state_native_create(const_cast<void*>(options_ptr), threads_ptr, tt_ptr,
                                             shared_hists_ptr, const_cast<void*>(network_ptr));
 }
+#endif
 
 // REPORT-12 TU=0 grind: default native (main.zig searchSharedStateDestroy forwards to the same
 // native destructor). Legacy keeps the C++ symbol (main.zig export is comptime-pruned there).
