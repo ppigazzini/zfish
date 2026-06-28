@@ -3788,42 +3788,12 @@ extern "C" void* zfish_make_search_manager(const void* update_context_ptr, std::
 // Thread ctor uses), mints the SearchManager, and writes the Worker at thread+8
 // (the worker@8 layout contract). Single-node host: numaIndex 0, idxInNuma == idx,
 // totalNuma passed in via ctx.total. Replaces the per-thread C++ Thread ctor.
-#ifndef ZFISH_LEGACY_CPP_TARGET
-extern "C" {
-struct ZfishWorkerBuildCtx {
-    void*       shared_state;
-    const void* update_context;
-    std::size_t total;
-};
-void zfish_native_worker_build(void* ctx_ptr, std::size_t idx, void* thread) {
-    auto* ctx = static_cast<ZfishWorkerBuildCtx*>(ctx_ptr);
-    auto& ss  = *static_cast<Search::SharedState*>(ctx->shared_state);
-    void* manager = zfish_make_search_manager(ctx->update_context, idx == 0 ? 1 : 0);
-    void* raw = aligned_large_pages_alloc(sizeof(Search::Worker));
-    zfish_worker_construct_full(
-      raw,
-      // Native SharedHistoriesMap.at(0): SharedState.sharedHistories is the native map in
-      // the default build (REPORT-10 sharedHists migration). &ref yields the map pointer.
-      reinterpret_cast<std::size_t>(
-        zfish_native_shared_histories_at(reinterpret_cast<void*>(&ss.sharedHistories), 0)),
-      reinterpret_cast<std::size_t>(&ss.options),
-      reinterpret_cast<std::size_t>(&ss.threads),
-      reinterpret_cast<std::size_t>(&ss.tt),
-      reinterpret_cast<std::size_t>(&ss.network),
-      reinterpret_cast<std::size_t>(manager),
-      idx, idx, ctx->total, 0);
-    *reinterpret_cast<void**>(static_cast<char*>(thread) + 8) = raw; // worker@8
-}
-// M-FINAL / M-SM: zfish_native_worker_destroy is now native (zig_src/main.zig) -- it frees
-// the rootMoves buffer + the manager by offset + returns the large-page block, reproducing
-// ~Worker WITHOUT the virtual `delete manager` (the SearchManager vtable wall). So the
-// default build no longer runs ~Worker here; only the C++ worker_build remains C++.
-}
-#else  // ZFISH_LEGACY_CPP_TARGET
-// The legacy oracle build keeps the C++ Thread vehicle, so the native worker
-// build/destroy are never invoked at runtime (thread.zig selects the vehicle at
-// COMPTIME via target_flags.legacy_target). They must still LINK because the
-// shared native ThreadPool references them -- provide abort stubs.
+// REPORT-12 TU=0: zfish_native_worker_build is now native (main.zig nativeWorkerBuild) — the LAST C++
+// piece of the construction cluster (make_search_manager / worker_construct_full / shared_histories_at
+// were already native). The legacy oracle build keeps the C++ Thread vehicle, so the native worker
+// build/destroy are never invoked at runtime, but they must still LINK because the shared native
+// ThreadPool module references them — provide abort stubs (legacy-only).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" void zfish_native_worker_build(void*, std::size_t, void*) {
     std::abort();
 }
