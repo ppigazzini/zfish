@@ -809,8 +809,16 @@ pub export fn zfish_worker_clear(worker: *anyopaque) void {
 // ~Worker -> ~vector -> ::operator delete, so any (re)allocation here must use
 // ::operator new (zfish_operator_new), matching libc++'s allocator. Mirrors
 // std::vector copy-assign: reuse the buffer when capacity suffices, else realloc.
-extern fn zfish_operator_new(n: usize) ?*anyopaque;
-extern fn zfish_operator_delete(p: ?*anyopaque) void;
+// REPORT-12 TU=0: native default-only allocator (the last default C++ bodies in uci_bridge.cpp).
+// ::operator new/delete bottom out in malloc/free, so they are an interchangeable matched alloc/free
+// family for the native containers (RootMoves/searchmoves/bound_nodes/Position/caches) — verified by
+// parity-valgrind + parity-teardown. The legacy oracle keeps its own libc++ ::operator new/delete.
+fn zfishOperatorNew(n: usize) callconv(.c) ?*anyopaque {
+    return std.c.malloc(n);
+}
+fn zfishOperatorDelete(p: ?*anyopaque) callconv(.c) void {
+    std.c.free(p);
+}
 
 // M-FINAL: the LimitsType layout anchors ported native (default-only; legacy keeps sizeof(...)
 // as the C++ source of truth, cross-checked via oracle-parity). These feed zfish_worker_set_limits
@@ -893,12 +901,12 @@ pub export fn zfish_worker_set_root_moves(thread: *anyopaque, src_rm: *const any
         );
         dst_end.* = dst_begin.* + byte_count;
     } else {
-        const new_buf = @intFromPtr(zfish_operator_new(byte_count) orelse @panic("set_root_moves: OOM"));
+        const new_buf = @intFromPtr(zfishOperatorNew(byte_count) orelse @panic("set_root_moves: OOM"));
         @memcpy(
             @as([*]u8, @ptrFromInt(new_buf))[0..byte_count],
             @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
         );
-        if (dst_begin.* != 0) zfish_operator_delete(@ptrFromInt(dst_begin.*));
+        if (dst_begin.* != 0) zfishOperatorDelete(@ptrFromInt(dst_begin.*));
         dst_begin.* = new_buf;
         dst_end.* = new_buf + byte_count;
         dst_cap.* = new_buf + byte_count;
@@ -2316,7 +2324,7 @@ fn zfishEngineTtHashfull(engine_ptr: *const anyopaque, max_age: c_int) callconv(
 //     without the virtual `delete manager`. Default-only; the legacy oracle keeps the real
 //     C++ SearchManager + ~Worker. See [[frozen-header-wall-blocks-member-cuts]].
 fn zfishMakeSearchManager(update_context: ?*const anyopaque, is_main: u8) callconv(.c) ?*anyopaque {
-    const buf = zfish_operator_new(graph_layout.search_manager_size) orelse return null;
+    const buf = zfishOperatorNew(graph_layout.search_manager_size) orelse return null;
     const bytes: [*]u8 = @ptrCast(buf);
     @memset(bytes[0..graph_layout.search_manager_size], 0);
     if (is_main != 0) {
@@ -2331,10 +2339,10 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
     const base: [*]u8 = @ptrCast(w);
     // rootMoves vector buffer (begin @ root_moves+0); operator new'd by zfish_worker_set_root_moves.
     const rm_begin: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.root_moves));
-    if (rm_begin.*) |b| zfish_operator_delete(b);
+    if (rm_begin.*) |b| zfishOperatorDelete(b);
     // SearchManager buffer (operator new'd by zfishMakeSearchManager above).
     const mgr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.manager));
-    if (mgr.*) |m| zfish_operator_delete(m);
+    if (mgr.*) |m| zfishOperatorDelete(m);
     zfish_aligned_large_pages_free(w);
 }
 
@@ -2374,7 +2382,7 @@ const RankedRootMove = extern struct {
 };
 fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) callconv(.c) ?*anyopaque {
     const value_infinite: i32 = 32001;
-    const header = zfish_operator_new(24) orelse return null;
+    const header = zfishOperatorNew(24) orelse return null;
     const hdr: [*]usize = @ptrCast(@alignCast(header));
     if (count == 0) {
         hdr[0] = 0;
@@ -2384,7 +2392,7 @@ fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) callconv(
     }
     const stride = graph_layout.root_move_size; // 552
     const bytes = count * stride;
-    const elems = zfish_operator_new(bytes) orelse return null;
+    const elems = zfishOperatorNew(bytes) orelse return null;
     const base: [*]u8 = @ptrCast(elems);
     var i: usize = 0;
     while (i < count) : (i += 1) {
@@ -2408,8 +2416,8 @@ fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) callconv(
 fn rootMovesDestroy(ptr: ?*anyopaque) callconv(.c) void {
     const p = ptr orelse return;
     const hdr: [*]usize = @ptrCast(@alignCast(p));
-    if (hdr[0] != 0) zfish_operator_delete(@ptrFromInt(hdr[0]));
-    zfish_operator_delete(p);
+    if (hdr[0] != 0) zfishOperatorDelete(@ptrFromInt(hdr[0]));
+    zfishOperatorDelete(p);
 }
 
 // REPORT-12 TU=0: the `go` command owner. Builds a Search::LimitsType (120-byte POD; layout per
@@ -2463,7 +2471,7 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
         }
         if (count != 0) {
             const nbytes = count * lo.searchmoves_bytes; // count * 24
-            const elems = zfish_operator_new(nbytes) orelse @panic("searchmoves: operator new failed");
+            const elems = zfishOperatorNew(nbytes) orelse @panic("searchmoves: operator new failed");
             const ebase: [*]u8 = @ptrCast(elems);
             @memset(ebase[0..nbytes], 0);
             var i: usize = 0;
@@ -2485,7 +2493,7 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
     zfish_engine_go_owner(engine_ptr, @ptrCast(base));
     // start_thinking deep-copied limits into the workers, so free our searchmoves buffer now (the moves
     // are SSO, so no per-string heap to free — just the element buffer).
-    if (sm_elems) |e| zfish_operator_delete(e);
+    if (sm_elems) |e| zfishOperatorDelete(e);
 }
 
 // REPORT-12 TU=0: `go perft N` root divide. Reads the engine FEN, builds a scratch Position + StateInfo
@@ -2501,8 +2509,8 @@ fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
     const c960_name: []const u8 = "UCI_Chess960";
     const chess960 = zfish_optmodel_int_by_name(c960_name.ptr, c960_name.len) != 0;
 
-    const p = zfish_operator_new(graph_layout.position_size) orelse @panic("perft: position alloc");
-    const st = zfish_operator_new(graph_layout.state_info_size) orelse @panic("perft: state alloc");
+    const p = zfishOperatorNew(graph_layout.position_size) orelse @panic("perft: position alloc");
+    const st = zfishOperatorNew(graph_layout.state_info_size) orelse @panic("perft: state alloc");
     @memset(@as([*]u8, @ptrCast(p))[0..graph_layout.position_size], 0);
     @memset(@as([*]u8, @ptrCast(st))[0..graph_layout.state_info_size], 0);
     if (zfish_position_set_method(p, fen.ptr, fen.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.c.free(msg);
@@ -2531,8 +2539,8 @@ fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
         uciPrintLine(out.ptr, out.len);
     }
 
-    zfish_operator_delete(p);
-    zfish_operator_delete(st);
+    zfishOperatorDelete(p);
+    zfishOperatorDelete(st);
     std.c.free(@ptrCast(fen_ptr));
 
     var nbuf: [48]u8 = undefined;
@@ -2589,9 +2597,9 @@ fn threadpoolBoundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, coun
         end_p.* = begin_p.*; // clear (keep capacity)
         return;
     }
-    if (begin_p.* != 0) zfish_operator_delete(@ptrFromInt(begin_p.*));
+    if (begin_p.* != 0) zfishOperatorDelete(@ptrFromInt(begin_p.*));
     const nbytes = count * 8;
-    const buf = zfish_operator_new(nbytes) orelse @panic("bound_nodes_assign: operator new failed");
+    const buf = zfishOperatorNew(nbytes) orelse @panic("bound_nodes_assign: operator new failed");
     const dst: [*]usize = @ptrCast(@alignCast(buf));
     const src = nodes.?;
     var i: usize = 0;
@@ -2682,12 +2690,12 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) callc
 // new/delete keeps the alloc/free family matched (the trace_pos / pool throwaway Position is
 // destroyed via zfish_position_destroy). Default-only; legacy keeps new/delete Position.
 fn zfishPositionCreate() callconv(.c) ?*anyopaque {
-    const buf = zfish_operator_new(graph_layout.position_size) orelse return null;
+    const buf = zfishOperatorNew(graph_layout.position_size) orelse return null;
     @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.position_size], 0);
     return buf;
 }
 fn zfishPositionDestroy(pos: ?*anyopaque) callconv(.c) void {
-    if (pos) |p| zfish_operator_delete(p);
+    if (pos) |p| zfishOperatorDelete(p);
 }
 
 // M-FINAL (construction-crack): `new AccumulatorCaches(network)` / `delete` ported native. The
@@ -2697,16 +2705,16 @@ fn zfishPositionDestroy(pos: ?*anyopaque) callconv(.c) void {
 // == network). operator new/delete keeps the alloc/free family matched. Default-only.
 fn zfishEngineAccumulatorCachesCreate(network: *const anyopaque) callconv(.c) ?*anyopaque {
     _ = network; // the native fill uses the native FT biases (same loaded net)
-    const buf = zfish_operator_new(graph_layout.accumulator_caches_size) orelse return null;
+    const buf = zfishOperatorNew(graph_layout.accumulator_caches_size) orelse return null;
     const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse {
-        zfish_operator_delete(buf);
+        zfishOperatorDelete(buf);
         return null;
     }));
     zfish_search_clear_refresh_cache(buf, biases);
     return buf;
 }
 fn zfishEngineAccumulatorCachesDestroy(caches: ?*anyopaque) callconv(.c) void {
-    if (caches) |buf| zfish_operator_delete(buf);
+    if (caches) |buf| zfishOperatorDelete(buf);
 }
 
 // M-FINAL (construction-crack + init): `new AccumulatorStack()` / `delete` ported native.
@@ -2715,13 +2723,13 @@ fn zfishEngineAccumulatorCachesDestroy(caches: ?*anyopaque) callconv(.c) void {
 // a zeroed buffer is exactly that (it sets size=1 and clears state-0's already-zero computed/diff
 // fields), so it reproduces the ctor state. operator new/delete keeps the family matched.
 fn zfishEngineAccumulatorStackCreate() callconv(.c) ?*anyopaque {
-    const buf = zfish_operator_new(graph_layout.accumulator_stack_size) orelse return null;
+    const buf = zfishOperatorNew(graph_layout.accumulator_stack_size) orelse return null;
     @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.accumulator_stack_size], 0);
     zfish_accumulator_stack_reset(buf);
     return buf;
 }
 fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) callconv(.c) void {
-    if (stack) |buf| zfish_operator_delete(buf);
+    if (stack) |buf| zfishOperatorDelete(buf);
 }
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster
