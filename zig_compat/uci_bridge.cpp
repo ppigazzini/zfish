@@ -4265,12 +4265,25 @@ extern "C" {
 // onUpdateFull/onBestmove/etc (set by init_search_update_listeners), and the worker
 // managers bind &update_context via zfish_engine_update_context_ptr. Held inline (not
 // a separate heap alloc) so the accessor address is stable for the engine's lifetime.
+// REPORT-12 TU=0 std::function cluster Step C: in the default build the engine's update_context slot
+// is a zeroed [240]u8 (native_engine.zig) and nothing assigns it (setters legacy-only after Step B) or
+// invokes its std::functions (the native SearchManager binds engine_graph's native UpdateContext). A
+// zeroed slot is byte-equivalent to a default-constructed empty UpdateContext, so construct/destruct
+// are no-ops in default — removing the frozen SearchManager::UpdateContext placement-new. Legacy keeps it.
 void zfish_member_update_context_construct(void* p) {
+#ifdef ZFISH_LEGACY_CPP_TARGET
     ::new (p) Stockfish::Search::SearchManager::UpdateContext();
+#else
+    (void) p;
+#endif
 }
 void zfish_member_update_context_destruct(void* p) {
+#ifdef ZFISH_LEGACY_CPP_TARGET
     using UC = Stockfish::Search::SearchManager::UpdateContext;
     static_cast<UC*>(p)->~UC();
+#else
+    (void) p;
+#endif
 }
 
 // onVerifyNetwork: an empty std::function<void(std::string_view)>, placement-constructed
@@ -4278,9 +4291,22 @@ void zfish_member_update_context_destruct(void* p) {
 // interactive / no-op quiet); zfish_engine_emit_verify_message invokes it. Held inline so
 // the accessor address is stable.
 using ZfishVerifyNetworkFn = std::function<void(std::string_view)>;
-void zfish_member_verify_network_fn_construct(void* p) { ::new (p) ZfishVerifyNetworkFn(); }
+// Step C: same as the UpdateContext slot — the onVerifyNetwork std::function is never assigned in
+// default (set_on_verify_network is legacy-only) and emit_verify_message reads the zeroed slot as an
+// empty function (returns early). No-op construct/destruct; the zeroed slot is a valid empty std::function.
+void zfish_member_verify_network_fn_construct(void* p) {
+#ifdef ZFISH_LEGACY_CPP_TARGET
+    ::new (p) ZfishVerifyNetworkFn();
+#else
+    (void) p;
+#endif
+}
 void zfish_member_verify_network_fn_destruct(void* p) {
+#ifdef ZFISH_LEGACY_CPP_TARGET
     static_cast<ZfishVerifyNetworkFn*>(p)->~ZfishVerifyNetworkFn();
+#else
+    (void) p;
+#endif
 }
 
 // M-FINAL cutover: states + network member allocation moved to NATIVE (zig_src/native_engine.zig).
