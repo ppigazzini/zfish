@@ -1526,6 +1526,8 @@ comptime {
         @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
         @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
         @export(&networkEmbeddedBytes, .{ .name = "zfish_network_embedded_bytes" });
+        @export(&networkMarkInitialized, .{ .name = "zfish_network_mark_initialized" });
+        @export(&networkSetLoadedState, .{ .name = "zfish_network_set_loaded_state" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -2032,6 +2034,20 @@ const NetByteView = extern struct { ptr: [*]const u8, len: usize };
 const embedded_nnue_stub = [_]u8{0};
 fn networkEmbeddedBytes() callconv(.c) NetByteView {
     return .{ .ptr = &embedded_nnue_stub, .len = 1 };
+}
+// REPORT-12 TU=0: mark_initialized / set_loaded_state dual-wrote the C++ Network's EvalFile state only
+// "to keep the C++ oracle in sync" (network.zig). In the default build there is no C++ eval reading
+// it — the native load owns the state (nn_current/nn_description, set just before these calls) — so
+// they are no-ops, avoiding the frozen Network cast. Legacy keeps the real NetworkBridgeAccess writes.
+fn networkMarkInitialized(network: *anyopaque) callconv(.c) void {
+    _ = network;
+}
+fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, current_name_len: usize, description_ptr: [*]const u8, description_len: usize) callconv(.c) void {
+    _ = network;
+    _ = current_name_ptr;
+    _ = current_name_len;
+    _ = description_ptr;
+    _ = description_len;
 }
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
