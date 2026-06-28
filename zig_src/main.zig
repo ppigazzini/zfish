@@ -123,7 +123,7 @@ pub export fn zfish_std_aligned_alloc(alignment: usize, size: usize) ?*anyopaque
     return memory_port.stdAlignedAlloc(alignment, size);
 }
 
-pub export fn _ZN9Stockfish17std_aligned_allocEmm(alignment: usize, size: usize) ?*anyopaque {
+fn _ZN9Stockfish17std_aligned_allocEmm(alignment: usize, size: usize) callconv(.c) ?*anyopaque {
     return memory_port.stdAlignedAlloc(alignment, size);
 }
 
@@ -131,7 +131,7 @@ pub export fn zfish_std_aligned_free(ptr: ?*anyopaque) void {
     memory_port.stdAlignedFree(ptr);
 }
 
-pub export fn _ZN9Stockfish16std_aligned_freeEPv(ptr: ?*anyopaque) void {
+fn _ZN9Stockfish16std_aligned_freeEPv(ptr: ?*anyopaque) callconv(.c) void {
     memory_port.stdAlignedFree(ptr);
 }
 
@@ -1474,6 +1474,24 @@ fn numaDistributeThreadsAmongNodes(_: *const anyopaque, requested: usize, out_no
 }
 fn numaExecuteOnNode(_: *const anyopaque, _: usize, callback: *const fn (?*anyopaque) callconv(.c) void, context: ?*anyopaque) callconv(.c) void {
     callback(context);
+}
+
+comptime {
+    // REPORT-12 TU=0: the C++-mangled interop aliases (Stockfish:: std_aligned / aligned_large_pages /
+    // AccumulatorStack) are called only by the legacy oracle's C++ TUs. Export them legacy-only so the
+    // default native binary carries ZERO Stockfish:: symbols (the native code uses the zfish_* fns directly).
+    if (target_flags.legacy_target) {
+        @export(&_ZN9Stockfish17std_aligned_allocEmm, .{ .name = "_ZN9Stockfish17std_aligned_allocEmm" });
+        @export(&_ZN9Stockfish16std_aligned_freeEPv, .{ .name = "_ZN9Stockfish16std_aligned_freeEPv" });
+        @export(&_ZN9Stockfish4Eval4NNUE16AccumulatorStack5resetEv, .{ .name = "_ZN9Stockfish4Eval4NNUE16AccumulatorStack5resetEv" });
+        @export(&_ZN9Stockfish4Eval4NNUE16AccumulatorStack4pushEv, .{ .name = "_ZN9Stockfish4Eval4NNUE16AccumulatorStack4pushEv" });
+        @export(&_ZN9Stockfish4Eval4NNUE16AccumulatorStack3popEv, .{ .name = "_ZN9Stockfish4Eval4NNUE16AccumulatorStack3popEv" });
+        @export(&_ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11HalfKAv2_hmEEERKNS1_16AccumulatorStateIT_EEv, .{ .name = "_ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11HalfKAv2_hmEEERKNS1_16AccumulatorStateIT_EEv" });
+        @export(&_ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11FullThreatsEEERKNS1_16AccumulatorStateIT_EEv, .{ .name = "_ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11FullThreatsEEERKNS1_16AccumulatorStateIT_EEv" });
+        @export(&_ZN9Stockfish25aligned_large_pages_allocEm, .{ .name = "_ZN9Stockfish25aligned_large_pages_allocEm" });
+        @export(&_ZN9Stockfish24aligned_large_pages_freeEPv, .{ .name = "_ZN9Stockfish24aligned_large_pages_freeEPv" });
+        @export(&_ZN9Stockfish15has_large_pagesEv, .{ .name = "_ZN9Stockfish15has_large_pagesEv" });
+    }
 }
 
 comptime {
@@ -3633,13 +3651,13 @@ const AccumulatorStackPushPair = extern struct {
     second: *anyopaque,
 };
 
-pub export fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack5resetEv(stack: *anyopaque) void {
+fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack5resetEv(stack: *anyopaque) callconv(.c) void {
     return nnue_accumulator_port.stackReset(stack);
 }
 
-pub export fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack4pushEv(
+fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack4pushEv(
     stack: *anyopaque,
-) AccumulatorStackPushPair {
+) callconv(.c) AccumulatorStackPushPair {
     const pushed = nnue_accumulator_port.stackPush(stack);
     return .{
         .first = pushed.dirty_piece,
@@ -3647,19 +3665,19 @@ pub export fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack4pushEv(
     };
 }
 
-pub export fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack3popEv(stack: *anyopaque) void {
+fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack3popEv(stack: *anyopaque) callconv(.c) void {
     return nnue_accumulator_port.stackPop(stack);
 }
 
-pub export fn _ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11HalfKAv2_hmEEERKNS1_16AccumulatorStateIT_EEv(
+fn _ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11HalfKAv2_hmEEERKNS1_16AccumulatorStateIT_EEv(
     stack: *const anyopaque,
-) *const anyopaque {
+) callconv(.c) *const anyopaque {
     return nnue_accumulator_port.stackLatestPsq(stack);
 }
 
-pub export fn _ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11FullThreatsEEERKNS1_16AccumulatorStateIT_EEv(
+fn _ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11FullThreatsEEERKNS1_16AccumulatorStateIT_EEv(
     stack: *const anyopaque,
-) *const anyopaque {
+) callconv(.c) *const anyopaque {
     return nnue_accumulator_port.stackLatestThreat(stack);
 }
 
@@ -4152,7 +4170,7 @@ pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
     return memory_port.alignedLargePagesAlloc(alloc_size);
 }
 
-pub export fn _ZN9Stockfish25aligned_large_pages_allocEm(alloc_size: usize) ?*anyopaque {
+fn _ZN9Stockfish25aligned_large_pages_allocEm(alloc_size: usize) callconv(.c) ?*anyopaque {
     return memory_port.alignedLargePagesAlloc(alloc_size);
 }
 
@@ -4160,7 +4178,7 @@ pub export fn zfish_aligned_large_pages_free(ptr: ?*anyopaque) void {
     memory_port.alignedLargePagesFree(ptr);
 }
 
-pub export fn _ZN9Stockfish24aligned_large_pages_freeEPv(ptr: ?*anyopaque) void {
+fn _ZN9Stockfish24aligned_large_pages_freeEPv(ptr: ?*anyopaque) callconv(.c) void {
     memory_port.alignedLargePagesFree(ptr);
 }
 
@@ -4184,7 +4202,7 @@ pub export fn zfish_uci_engine_reset_nodes_searched() void {
     last_nodes_searched.store(0, .monotonic);
 }
 
-pub export fn _ZN9Stockfish15has_large_pagesEv() bool {
+fn _ZN9Stockfish15has_large_pagesEv() callconv(.c) bool {
     return memory_port.hasLargePages();
 }
 
