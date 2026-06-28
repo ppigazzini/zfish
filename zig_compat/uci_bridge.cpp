@@ -3324,19 +3324,22 @@ void zfish_set_last_nodes_searched(std::uint64_t nodes);
 // builds the engine + cli members directly and runs the listener registration
 // below. init_search_update_listeners stays (called from construct_at).
 void UCIEngine::init_search_update_listeners() {
+    // REPORT-12 TU=0 std::function cluster: the default build's native search emits info directly
+    // (uci_port.formatInfoFull) and records the node count natively (main.zig zfish_set_last_nodes_searched),
+    // and its native SearchManager binds a native UpdateContext (engine_graph.zig, no-op callbacks).
+    // So the C++ std::function listeners installed here are vestigial in default — install nothing.
+    // Step A of eliminating the std::function cluster (setters + UpdateContext construct/destruct next).
+#ifdef ZFISH_LEGACY_CPP_TARGET
     engine.set_on_iter([](const auto& i) { on_iter(i); });
     engine.set_on_update_no_moves([](const auto& i) { on_update_no_moves(i); });
     engine.set_on_update_full([this](const auto& i) {
         zfish_set_last_nodes_searched(i.nodes);
-#ifndef ZFISH_LEGACY_CPP_TARGET
-        const bool show_wdl = zfish_opt_bool_native("UCI_ShowWDL");
-#else
         const bool show_wdl = engine.get_options()["UCI_ShowWDL"];
-#endif
         on_update_full(i, show_wdl);
     });
     engine.set_on_bestmove([](const auto& bm, const auto& p) { on_bestmove(bm, p); });
     engine.set_on_verify_network([](const auto& s) { print_info_string(s); });
+#endif
 }
 
 extern "C" {
