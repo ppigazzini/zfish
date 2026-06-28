@@ -880,19 +880,15 @@ extern "C" void zfish_search_id_pv(void* worker, int depth) {
 // pointer is a stable handle held for the search tree; in the default build it is
 // never dereferenced (NNUE weights are served from native storage), but the legacy
 // oracle's C++ inference may deref it, so it must be the exact replicated instance.
+// REPORT-12 TU=0: native default-only — the caller (main.zig) calls zfish_native_ft_ptr() directly in
+// default (the handle is never dereferenced; weights served from native storage). Legacy keeps the
+// real C++ Network deref (which the legacy C++ eval needs).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" const void* zfish_worker_resolve_network(void* worker) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover (decouple step 2): the handle is never dereferenced in the default build
-    // (weights served from native storage), so return a stable non-null handle WITHOUT
-    // evaluating network[token] — which would trigger the lazy 106 MB numa replication of the
-    // C++ Network. native_ft_ptr is a stable, always-resident handle.
-    (void) worker;
-    return zfish_native_ft_ptr();
-#else
     auto* w = static_cast<Stockfish::Search::Worker*>(worker);
     return &w->network[w->numaAccessToken];
-#endif
 }
+#endif
 
 // zfish_search_cb_tt_context is native (main.zig): it resolves the worker TT
 // reference and reads table/clusterCount/generation8 by offset. Bridge-only.

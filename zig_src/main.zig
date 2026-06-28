@@ -2345,7 +2345,10 @@ pub export fn zfish_search_cb_worker_state(
 
     out_acc_stack.* = @ptrFromInt(wb + off.accumulator_stack);
     out_nodes.* = @ptrFromInt(wb + off.nodes);
-    out_network.* = zfish_worker_resolve_network(worker);
+    // REPORT-12 TU=0: default build's worker_resolve_network just returned zfish_native_ft_ptr()
+    // (the handle is never dereferenced — weights served from native storage). Call it directly,
+    // dropping the C++ zfish_worker_resolve_network from the default build. Legacy keeps the C++ deref.
+    out_network.* = if (target_flags.legacy_target) zfish_worker_resolve_network(worker) else zfish_native_ft_ptr();
     out_cache.* = @ptrFromInt(wb + off.refresh_table);
     out_optimism.* = @ptrFromInt(wb + off.optimism);
     out_nmp_min_ply.* = @ptrFromInt(wb + off.nmp_min_ply);
