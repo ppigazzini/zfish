@@ -88,7 +88,10 @@ pub fn main(init: std.process.Init) !void {
 
     _ = c.puts(@ptrCast(info));
 
-    zfish_bitboards_init();
+    // REPORT-12 TU=0: zfish_bitboards_init only fills the C++ Bitboards globals (RookTable/PopCnt16/...),
+    // which only the legacy C++ movegen reads — the native movegen computes attacks/rays on the fly
+    // (bitboard.zig slidingAttack etc.). The native tables come from position_port.initRuntime() below.
+    if (target_flags.legacy_target) zfish_bitboards_init();
     position_port.initRuntime();
 
     // Zig-owned engine footprint: allocate aligned storage, placement-construct the
