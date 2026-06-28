@@ -422,14 +422,8 @@ std::size_t zfish_network_layer_read_blob(void*                network_ptr,
     auto& network = *static_cast<Network*>(network_ptr);
     return read_parameters_blob(data_ptr, data_len, NetworkBridgeAccess::layer(network, bucket));
 }
-#else
-// Default build: the C++ Network is not parsed (native storage is the source). No-op.
-std::size_t zfish_network_feature_transformer_read_blob(void*, const unsigned char*, std::size_t) {
-    return 0;
-}
-std::size_t zfish_network_layer_read_blob(void*, std::size_t, const unsigned char*, std::size_t) {
-    return 0;
-}
+// REPORT-12 TU=0: the default-build no-ops moved to native (main.zig networkFeatureTransformerReadBlob
+// / networkLayerReadBlob). The C++ Network is parsed only in the legacy oracle.
 #endif
 
 // M-FINAL cutover: dead in the default build — the native serialization round-trip
