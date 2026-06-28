@@ -1518,6 +1518,10 @@ comptime {
         @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
         @export(&engineSetStartPosition, .{ .name = "zfish_engine_set_start_position" });
         @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
+        @export(&ssThreadsStart, .{ .name = "zfish_ss_threads_start" });
+        @export(&ssWaitFinished, .{ .name = "zfish_ss_wait_finished" });
+        @export(&ssEmitPv, .{ .name = "zfish_ss_emit_pv" });
+        @export(&ssSearchIdPv, .{ .name = "zfish_search_id_pv" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1955,6 +1959,45 @@ fn engineEmitVerifyMessage(engine_ptr: *const anyopaque, message_ptr: [*]const u
     defer c.free(@ptrCast(formatted));
     const line = std.mem.span(formatted);
     zfish_uci_print_line(line.ptr, line.len);
+}
+
+// REPORT-12 TU=0: the ss_ search-emit/thread bridges. Their default bodies read a Worker reference
+// slot (threads/tt/manager are pointers stored at worker+offset) and call a native target. Ported
+// native — reusing graph_layout.worker_off (the same offsets the native search already reads) and
+// the native pv driver / threadpool fns. Legacy keeps the C++ Worker-method versions.
+extern fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void;
+fn workerRefPtr(worker: *anyopaque, offset: usize) ?*anyopaque {
+    const slot: *const ?*anyopaque = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + offset));
+    return slot.*;
+}
+fn workerRootDepth(worker: *anyopaque) c_int {
+    const p: *const c_int = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + graph_layout.worker_off.root_depth));
+    return p.*;
+}
+fn ssThreadsStart(worker: ?*anyopaque) callconv(.c) void {
+    zfish_threadpool_start_searching(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
+}
+fn ssWaitFinished(worker: ?*anyopaque) callconv(.c) void {
+    zfish_threadpool_wait_for_search_finished(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
+}
+fn ssEmitPv(worker: ?*anyopaque, best: ?*anyopaque) callconv(.c) void {
+    const w = worker.?;
+    zfish_search_pv(
+        workerRefPtr(w, graph_layout.worker_off.manager),
+        best,
+        workerRefPtr(w, graph_layout.worker_off.threads),
+        workerRefPtr(w, graph_layout.worker_off.tt),
+        workerRootDepth(best.?),
+    );
+}
+fn ssSearchIdPv(worker: *anyopaque, depth: c_int) callconv(.c) void {
+    zfish_search_pv(
+        workerRefPtr(worker, graph_layout.worker_off.manager),
+        worker,
+        workerRefPtr(worker, graph_layout.worker_off.threads),
+        workerRefPtr(worker, graph_layout.worker_off.tt),
+        depth,
+    );
 }
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
