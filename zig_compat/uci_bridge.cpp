@@ -4373,11 +4373,13 @@ void zfish_graph_verify_layouts();
 // preserved; what moved to Zig is the storage, the lifetime, and the seam that
 // later milestones (6b+) use to peel member construction out of the C++ ctor.
 // M-FINAL: sizeof(UCIEngine) is now the native graph_layout.uci_engine_size constant
-// (zig_src/main.zig); this C++ source-of-truth def is kept legacy-only. alignof stays C++.
+// (zig_src/main.zig). REPORT-12 TU=0 grind: alignof is also legacy-only now — the default build uses
+// native_engine.alignofEngine() (main.zig:100, the C++ call is comptime-pruned), so this frozen
+// alignof(UCIEngine) deref no longer compiles into the default TU.
 #ifdef ZFISH_LEGACY_CPP_TARGET
 std::size_t zfish_uci_engine_sizeof() { return sizeof(Stockfish::UCIEngine); }
-#endif
 std::size_t zfish_uci_engine_alignof() { return alignof(Stockfish::UCIEngine); }
+#endif
 
 #ifndef ZFISH_LEGACY_CPP_TARGET
 // M-FINAL cutover: the native engine container (zig_src/native_engine.zig). The buffer
