@@ -1528,6 +1528,8 @@ comptime {
         @export(&networkEmbeddedBytes, .{ .name = "zfish_network_embedded_bytes" });
         @export(&networkMarkInitialized, .{ .name = "zfish_network_mark_initialized" });
         @export(&networkSetLoadedState, .{ .name = "zfish_network_set_loaded_state" });
+        @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
+        @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -2048,6 +2050,18 @@ fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, cur
     _ = current_name_len;
     _ = description_ptr;
     _ = description_len;
+}
+// REPORT-12 TU=0: set_listener_mode's default body just mirrors the quiet flag into the native flag
+// the native emit reads (the C++ listener installs are legacy-only after Step A). Pure forward.
+fn uciSetListenerMode(uci_ptr: *anyopaque, quiet_mode: u8) callconv(.c) void {
+    _ = uci_ptr;
+    zfish_uci_set_quiet_mode(quiet_mode);
+}
+// numa_set_from_string: single-node default build — reconfiguring NumaPolicy is a no-op.
+fn engineNumaSetFromString(numa_context_ptr: *anyopaque, text_ptr: [*]const u8, text_len: usize) callconv(.c) void {
+    _ = numa_context_ptr;
+    _ = text_ptr;
+    _ = text_len;
 }
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
