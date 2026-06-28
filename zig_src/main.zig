@@ -1509,6 +1509,8 @@ comptime {
         @export(&numaDistributeThreadsAmongNodes, .{ .name = "zfish_numa_config_distribute_threads_among_nodes" });
         @export(&numaExecuteOnNode, .{ .name = "zfish_numa_config_execute_on_numa_node" });
         @export(&engineNetworkPtr, .{ .name = "zfish_engine_network_ptr" });
+        @export(&engineNumaConfigText, .{ .name = "zfish_engine_numa_config_text" });
+        @export(&searchSharedStateDestroy, .{ .name = "zfish_search_shared_state_destroy" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1700,6 +1702,17 @@ pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const a
 // (the native verify/eval ignore the value). Default-only @export; legacy keeps the C++ wrapper deref.
 fn engineNetworkPtr(engine_ptr: *const anyopaque) callconv(.c) *const anyopaque {
     return zfish_engine_network_replicated_ptr(@constCast(engine_ptr));
+}
+// REPORT-12 TU=0 grind: two more default-build pass-throughs to existing native fns.
+// numa_config_text -> the native single-node CPU-topology string; legacy keeps the C++ NumaConfig.
+// shared_state_destroy -> the native shared-state destructor (already used in both builds).
+extern fn zfish_shared_state_native_destroy(ss: ?*anyopaque) void;
+fn engineNumaConfigText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
+    _ = engine_ptr;
+    return zfish_native_numa_config_string();
+}
+fn searchSharedStateDestroy(shared_state: ?*anyopaque) callconv(.c) void {
+    zfish_shared_state_native_destroy(shared_state);
 }
 // M-FINAL cutover: onVerifyNetwork std::function slot accessor — default-only (the native
 // engine's inline field). The legacy oracle reads its inline engine->onVerifyNetwork member

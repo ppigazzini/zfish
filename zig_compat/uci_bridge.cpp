@@ -2890,18 +2890,14 @@ const char* zfish_engine_evalfile_text(const void* engine_ptr) {
 #endif
 
 extern "C" char* zfish_native_numa_config_string();  // native NumaConfig::to_string (main.zig)
+// REPORT-12 TU=0 grind: default native (main.zig engineNumaConfigText -> native topology string).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const char* zfish_engine_numa_config_text(const void* engine_ptr) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: the default build has no C++ NumaReplicationContext — the single-node CPU
-    // topology string is produced natively from the process affinity (main.zig).
-    (void) engine_ptr;
-    return zfish_native_numa_config_string();
-#else
     auto* numa = static_cast<const NumaReplicationContext*>(
       zfish_engine_numa_context_ptr(const_cast<void*>(engine_ptr)));
     return alloc_c_string(numa->get_numa_config().to_string());
-#endif
 }
+#endif
 
 // zfish_engine_position_ptr, _options_ptr, _numa_context_ptr, _states_slot_ptr
 // are native (main.zig), offset into the engine pointer via graph_layout.engine_off.
@@ -2953,9 +2949,13 @@ void* zfish_search_shared_state_create(const void* options_ptr,
                                             shared_hists_ptr, const_cast<void*>(network_ptr));
 }
 
+// REPORT-12 TU=0 grind: default native (main.zig searchSharedStateDestroy forwards to the same
+// native destructor). Legacy keeps the C++ symbol (main.zig export is comptime-pruned there).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_search_shared_state_destroy(void* shared_state_ptr) {
     zfish_shared_state_native_destroy(shared_state_ptr);
 }
+#endif
 
 // M-FINAL (option readers): ported to native OptionsModel reads (zig_src/main.zig) in the
 // default build; the C++ OptionsMap[] reads below are now legacy-oracle-only.
