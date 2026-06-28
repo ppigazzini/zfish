@@ -3723,14 +3723,16 @@ void zfish_shared_state_clear_histories(const void* shared_state_ptr) {
 // oracle only (the default build's node IS the native one — nothing to diff against).
 extern "C" bool zfish_shadow_verify_shared_histories(const void* shared, std::size_t thread_count);
 
+// REPORT-12 TU=0: native default-only (main.zig sharedStateInsertHistory: single-node, inserts into
+// the native SharedHistoriesMap via the offset-24 shared_histories pointer). Legacy keeps the C++
+// NumaConfig::execute_on_numa_node + std::map::try_emplace + shadow verify.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_shared_state_insert_history(const void*  shared_state_ptr,
                                        const void*  numa_config_ptr,
                                        std::size_t  numa_index,
                                        std::size_t  size,
                                        std::uint8_t do_bind) {
     const auto& shared_state = *static_cast<const Search::SharedState*>(shared_state_ptr);
-
-#ifdef ZFISH_LEGACY_CPP_TARGET
     const auto& numa_config = *static_cast<const NumaConfig*>(numa_config_ptr);
     auto insert = [&]() { shared_state.sharedHistories.try_emplace(numa_index, size); };
     if (do_bind != 0)
@@ -3738,26 +3740,14 @@ void zfish_shared_state_insert_history(const void*  shared_state_ptr,
     else
         insert();
 
-    // Shadow-verify the native sizing logic against the freshly built C++ node. The
-    // native builder (constructSharedHistories) is unwired in legacy; this proves its
-    // sizing tracks the oracle at every engine construction. Loud abort on divergence.
     if (!zfish_shadow_verify_shared_histories(&shared_state.sharedHistories.at(numa_index), size)) {
         std::fprintf(stderr,
                      "zfish: shared_histories shadow verify failed (numa=%zu size=%zu)\n",
                      numa_index, size);
         std::abort();
     }
-#else
-    // M-FINAL cutover: the default build is single-node, so threads are never bound (do_bind is
-    // always 0) and no NumaConfig / execute_on_numa_node is needed — insert directly into the
-    // native SharedHistoriesMap. Removes the C++ NumaConfig reference from the default build.
-    (void) numa_config_ptr;
-    (void) do_bind;
-    void* native_map =
-      const_cast<void*>(reinterpret_cast<const void*>(&shared_state.sharedHistories));
-    zfish_native_shared_histories_insert(native_map, numa_index, size);
-#endif
 }
+#endif
 
 // REPORT-12 TU=0 grind: default native (main.zig numaSuggestsBindingThreads -> 0).
 #ifdef ZFISH_LEGACY_CPP_TARGET
