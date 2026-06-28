@@ -540,12 +540,8 @@ pub fn build(b: *std.Build) void {
         });
     }
 
-    exe.root_module.addCSourceFiles(.{
-        .root = b.path("zig_compat"),
-        .files = zig_compat_sources,
-        .flags = compile_flags.items,
-    });
-
+    // REPORT-12 TU=0: the default build is fully native — it no longer compiles any C++ TU
+    // (uci_bridge.cpp). The legacy oracle still compiles it (with the frozen src/ headers).
     legacy_exe.root_module.addCSourceFiles(.{
         .root = b.path("zig_compat"),
         .files = zig_compat_sources,
