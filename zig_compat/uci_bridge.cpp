@@ -370,9 +370,12 @@ ZfishNetworkEvalOutput zfish_network_evaluate(const void* network,
 
 std::size_t zfish_network_content_hash(const void* network);
 
+// REPORT-12 TU=0: native default-only (main.zig networkEmbeddedBytes returns the same 1-byte stub).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 ZfishByteView zfish_network_embedded_bytes() {
     return {reinterpret_cast<const unsigned char*>(gEmbeddedNNUEData), std::size_t(gEmbeddedNNUESize)};
 }
+#endif
 
 // M-FINAL cutover: these dual-write the C++ Network's EvalFile state (initialized flag,
 // current name, description). In the DEFAULT build the native load owns that state (network.zig
