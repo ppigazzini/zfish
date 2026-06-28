@@ -1558,6 +1558,7 @@ comptime {
         @export(&engineAddOption, .{ .name = "zfish_engine_add_option" });
         @export(&rootMovesCreateRanked, .{ .name = "zfish_root_moves_create_ranked" });
         @export(&rootMovesDestroy, .{ .name = "zfish_root_moves_destroy" });
+        @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
         // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
         @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
         @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
@@ -2373,6 +2374,82 @@ fn rootMovesDestroy(ptr: ?*anyopaque) callconv(.c) void {
     const hdr: [*]usize = @ptrCast(@alignCast(p));
     if (hdr[0] != 0) zfish_operator_delete(@ptrFromInt(hdr[0]));
     zfish_operator_delete(p);
+}
+
+// REPORT-12 TU=0: the `go` command owner. Builds a Search::LimitsType (120-byte POD; layout per
+// graph_layout.limits_off — searchmoves std::vector<std::string>@0, then the TimePoints/ints/nodes/
+// ponderMode) and hands it to the native go path (zfish_engine_go_owner → goEngine → start_thinking,
+// which deep-copies it into each worker). The searchmoves vector is the libc++ {begin@0,end@8,cap@16}
+// header over an operator_new'd buffer of count 24-byte SSO std::strings (UCI moves are short, always
+// SSO: byte0=size<<1, chars@+1). start_thinking copies limits synchronously, so the local searchmoves
+// buffer is freed right after (matching the C++ stack LimitsType destruction). Gate-covered by
+// search-modes (searchmoves filtering) + teardown (the searchmoves vector alloc/free under valgrind).
+const ParsedLimits = extern struct {
+    wtime: i64,
+    btime: i64,
+    winc: i64,
+    binc: i64,
+    movestogo: c_int,
+    depth: c_int,
+    mate: c_int,
+    perft: c_int,
+    infinite: c_int,
+    movetime: i64,
+    nodes: u64,
+    ponder_mode: u8,
+    searchmoves: ?[*:0]u8,
+};
+fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void {
+    const lo = graph_layout.limits_off;
+    var limits: [lo.total_size]u8 align(8) = [_]u8{0} ** lo.total_size;
+    const base: [*]u8 = &limits;
+    @as(*i64, @ptrCast(@alignCast(base + lo.time_w))).* = parsed.wtime;
+    @as(*i64, @ptrCast(@alignCast(base + lo.time_b))).* = parsed.btime;
+    @as(*i64, @ptrCast(@alignCast(base + lo.inc_w))).* = parsed.winc;
+    @as(*i64, @ptrCast(@alignCast(base + lo.inc_b))).* = parsed.binc;
+    @as(*i32, @ptrCast(@alignCast(base + lo.movestogo))).* = parsed.movestogo;
+    @as(*i32, @ptrCast(@alignCast(base + lo.depth))).* = parsed.depth;
+    @as(*i32, @ptrCast(@alignCast(base + lo.mate))).* = parsed.mate;
+    @as(*i32, @ptrCast(@alignCast(base + lo.perft))).* = parsed.perft;
+    @as(*i32, @ptrCast(@alignCast(base + lo.infinite))).* = if (parsed.infinite != 0) 1 else 0;
+    @as(*i64, @ptrCast(@alignCast(base + lo.movetime))).* = parsed.movetime;
+    @as(*u64, @ptrCast(@alignCast(base + lo.nodes))).* = parsed.nodes;
+    base[lo.ponder_mode] = parsed.ponder_mode;
+
+    // searchmoves std::vector<std::string> @ offset 0.
+    var sm_elems: ?*anyopaque = null;
+    if (parsed.searchmoves) |sm_ptr| {
+        const sm = std.mem.span(sm_ptr);
+        var count: usize = 0;
+        var it = std.mem.splitScalar(u8, sm, '\n');
+        while (it.next()) |tok| {
+            if (tok.len != 0) count += 1;
+        }
+        if (count != 0) {
+            const nbytes = count * lo.searchmoves_bytes; // count * 24
+            const elems = zfish_operator_new(nbytes) orelse @panic("searchmoves: operator new failed");
+            const ebase: [*]u8 = @ptrCast(elems);
+            @memset(ebase[0..nbytes], 0);
+            var i: usize = 0;
+            it = std.mem.splitScalar(u8, sm, '\n');
+            while (it.next()) |tok| {
+                if (tok.len == 0) continue;
+                const slot = ebase + i * lo.searchmoves_bytes;
+                slot[0] = @intCast(tok.len << 1); // libc++ SSO size byte
+                @memcpy(slot[1 .. 1 + tok.len], tok);
+                i += 1;
+            }
+            @as(*usize, @ptrCast(@alignCast(base))).* = @intFromPtr(elems); // begin
+            @as(*usize, @ptrCast(@alignCast(base + 8))).* = @intFromPtr(elems) + nbytes; // end
+            @as(*usize, @ptrCast(@alignCast(base + 16))).* = @intFromPtr(elems) + nbytes; // cap
+            sm_elems = elems;
+        }
+    }
+
+    zfish_engine_go_owner(engine_ptr, @ptrCast(base));
+    // start_thinking deep-copied limits into the workers, so free our searchmoves buffer now (the moves
+    // are SSO, so no per-string heap to free — just the element buffer).
+    if (sm_elems) |e| zfish_operator_delete(e);
 }
 
 // REPORT-12 TU=0: the native ThreadBuilder callback — the LAST C++ piece of the construction cluster

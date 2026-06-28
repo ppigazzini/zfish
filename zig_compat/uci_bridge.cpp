@@ -3449,6 +3449,9 @@ std::uint64_t zfish_engine_perft_owner(void* engine_ptr, int depth) {
     return nodes;
 }
 
+// REPORT-12 TU=0: native default-only (main.zig goParsedOwner builds the LimitsType by layout + calls
+// the native go path). Legacy keeps the C++ LimitsType construction + Engine::go.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_go_parsed_owner(void* engine_ptr, ZfishParsedLimits parsed) {
     auto* engine = static_cast<Engine*>(engine_ptr);
 
@@ -3477,6 +3480,7 @@ void zfish_engine_go_parsed_owner(void* engine_ptr, ZfishParsedLimits parsed) {
 
     engine->go(limits);
 }
+#endif
 
 // REPORT-12 TU=0 grind: native flip (main.zig engineFlipOwner) for the default build. Legacy keeps
 // the C++ Engine::flip path.
