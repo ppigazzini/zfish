@@ -3344,21 +3344,15 @@ extern "C" {
 // zfish_uci_engine_ptr is native (main.zig): UCIEngine::engine is the first
 // member (offset 0), so it returns the same pointer.
 
+// REPORT-12 TU=0 grind: default native (main.zig engineOptionsTextOwner -> zfish_optmodel_render()).
+// Legacy keeps the C++ OptionsMap operator<< rendering.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const char* zfish_engine_options_text_owner(const void* engine_ptr) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: the default build renders the "uci" option listing from the native Zig option
-    // model (the registration + read authority). The old C++ OptionsMap fallthrough was already dead
-    // here — the stub OptionsMap is empty, so it would render an empty list; the gate stayed green
-    // only because zfish_optmodel_render() is always non-null at runtime. Guarded legacy-only,
-    // removing the OptionsMap operator<< + std::ostringstream from the default build.
-    (void) engine_ptr;
-    return zfish_optmodel_render();
-#else
     std::ostringstream options_stream;
     options_stream << static_cast<const Engine*>(engine_ptr)->get_options();
     return alloc_c_string(options_stream.str());
-#endif
 }
+#endif
 
 extern "C" void zfish_uci_set_quiet_mode(std::uint8_t quiet);
 
