@@ -106,7 +106,8 @@ pub fn main(init: std.process.Init) !void {
     zfish_uci_engine_construct_at(engine, @intCast(argc), argv.ptr);
     defer freeSideTt(); // M1: free the side tt AFTER the engine destruct (LIFO)
     defer freeSideSharedHistories(); // M-SH: free the side sharedHistories map (after destruct)
-    defer zfish_uci_engine_destruct_at(engine);
+    // REPORT-12 TU=0: native teardown directly in default (3 native calls); legacy runs ~UCIEngine.
+    defer if (target_flags.legacy_target) zfish_uci_engine_destruct_at(engine) else uciEngineDestructAt(engine);
 
     uci_port.loopRuntime(engine);
 }
@@ -2107,6 +2108,14 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
     _ = data_ptr;
     _ = data_len;
     return 0;
+}
+// REPORT-12 TU=0: native engine teardown (no C++ ~UCIEngine). Free the states slot, join+free the
+// native Threads + null the pool's threads vector, then free the heap members. All three are native.
+extern fn zfish_native_threadpool_clear(pool: *anyopaque) void;
+fn uciEngineDestructAt(storage: *anyopaque) callconv(.c) void {
+    zfish_engine_release_pending_state_slot(zfish_engine_states_slot_ptr(storage));
+    zfish_native_threadpool_clear(zfish_engine_threads_ptr(storage));
+    zfishNativeEngineDestructMembers(storage);
 }
 fn movepickFillHistorySnapshot(main_history: ?*const anyopaque, low_ply_history: ?*const anyopaque, capture_history: ?*const anyopaque, continuation_history: ?*const anyopaque, shared_history: ?*const anyopaque, out: *MovepickHistorySnapshot) callconv(.c) void {
     out.main_base = main_history;

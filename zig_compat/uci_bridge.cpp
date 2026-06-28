@@ -4393,22 +4393,14 @@ void zfish_uci_engine_construct_at(void* storage, int argc, char* const* argv) {
 #endif
 }
 
+// REPORT-12 TU=0: native default teardown (main.zig uciEngineDestructAt — 3 native calls, called
+// directly by the caller in default). Legacy keeps the in-place C++ ~UCIEngine.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_uci_engine_destruct_at(void* storage) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: native teardown, no C++ ~UCIEngine. Free the states slot (if it was
-    // never handed off to pool.setupStates), join+free the native Threads and null the
-    // pool's threads vector, then free the heap members (delete threads runs ~ThreadPool,
-    // which frees setupStates; delete network/options/numa; free binary_dir; destruct the
-    // inline updateContext / onVerifyNetwork). states is freed by exactly one of
-    // release_pending_state_slot / ~ThreadPool.
-    zfish_engine_release_pending_state_slot(zfish_engine_states_slot_ptr(storage));
-    zfish_native_threadpool_clear(zfish_engine_threads_ptr(storage));
-    zfish_native_engine_destruct_members(storage);
-#else
     auto* uci_engine = static_cast<Stockfish::UCIEngine*>(storage);
     zfish_engine_release_pending_state_slot(&uci_engine->engine.states);
     // Run ~UCIEngine in place; Zig frees the footprint afterwards.
     uci_engine->~UCIEngine();
-#endif
 }
+#endif
 }
