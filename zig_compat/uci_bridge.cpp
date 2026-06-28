@@ -2615,14 +2615,15 @@ std::ostream& operator<<(std::ostream& os, SyncCout sc) {
 void sync_cout_start() { std::cout << IO_LOCK; }
 void sync_cout_end() { std::cout << IO_UNLOCK; }
 
+// REPORT-12 TU=0: native default-only (main.zig uciPrintLine writes the line to libc stdout + tees to the
+// Log File). Legacy keeps the C++ sync_cout wrapper.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 extern "C" {
-// Thin print primitive for native emit code: one mutex-guarded, flushed line
-// through the same sync_cout/std::cout buffer the rest of the UCI output uses, so
-// native and remaining-C++ output never interleave out of order.
 void zfish_uci_print_line(const char* str, std::size_t len) {
     sync_cout << std::string_view(str, len) << sync_endl;
 }
 }
+#endif
 
 // M-FINAL cutover: the four search-update listeners write the LIVE updateContext via the
 // accessor — &this->updateContext (inline) now, the heap-adjacent NativeEngine.update_context
@@ -2837,9 +2838,13 @@ void zfish_engine_add_option(void*                engine_ptr,
 }
 #endif
 
+// REPORT-12 TU=0: native default-only (main.zig engineStartLogger opens/closes the Log File; uci_print_line
+// tees output to it). Legacy keeps the C++ Tie logger (start_logger).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_start_logger(const unsigned char* name_ptr, std::size_t name_len) {
     start_logger(std::string(reinterpret_cast<const char*>(name_ptr), name_len));
 }
+#endif
 
 
 // REPORT-12 TU=0 grind: default native (main.zig engineNumaConfigInfoText pass-through).
