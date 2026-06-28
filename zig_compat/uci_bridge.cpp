@@ -377,10 +377,11 @@ ZfishByteView zfish_network_embedded_bytes() {
 }
 #endif
 
-// M-FINAL cutover: these dual-write the C++ Network's EvalFile state (initialized flag,
-// current name, description). In the DEFAULT build the native load owns that state (network.zig
-// nn_* globals) and nothing reads the C++ Network's EvalFile — so these are no-ops. The LEGACY
-// oracle keeps the real writes: the C++ eval / verify reads the C++ EvalFile.
+// M-FINAL cutover: these dual-write the C++ Network's EvalFile state (initialized flag, current name,
+// description) only to keep the C++ oracle in sync. REPORT-12 TU=0: the default-build no-ops moved to
+// native (main.zig networkMarkInitialized/networkSetLoadedState) — the native load owns the state
+// (network.zig nn_* globals) and nothing reads the C++ Network's EvalFile in default. Legacy keeps the
+// real NetworkBridgeAccess writes (the C++ eval / verify reads the C++ EvalFile).
 #ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_network_mark_initialized(void* network_ptr) {
     auto& network = *static_cast<Network*>(network_ptr);
@@ -397,10 +398,6 @@ void zfish_network_set_loaded_state(void*                network_ptr,
     eval_file.netDescription =
       std::string(reinterpret_cast<const char*>(description_ptr), description_len);
 }
-#else
-void zfish_network_mark_initialized(void*) {}
-void zfish_network_set_loaded_state(void*, const unsigned char*, std::size_t,
-                                    const unsigned char*, std::size_t) {}
 #endif
 
 // M-FINAL cutover: in the DEFAULT build the native NNUE parse (network.zig) is the SOLE parse —
