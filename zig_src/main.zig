@@ -1532,6 +1532,8 @@ comptime {
         @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
         @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
         @export(&movepickFillHistorySnapshot, .{ .name = "zfish_movepick_fill_history_snapshot" });
+        @export(&networkFeatureTransformerReadBlob, .{ .name = "zfish_network_feature_transformer_read_blob" });
+        @export(&networkLayerReadBlob, .{ .name = "zfish_network_layer_read_blob" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -2091,6 +2093,21 @@ const MovepickHistorySnapshot = extern struct {
     pawn_table: ?*const anyopaque,
     pawn_mask: u64,
 };
+// REPORT-12 TU=0: the read-blob fns parse weights into the C++ Network only in the legacy oracle; the
+// default build serves weights from native storage and discards these results, so they are no-ops.
+fn networkFeatureTransformerReadBlob(network: *anyopaque, data_ptr: [*]const u8, data_len: usize) callconv(.c) usize {
+    _ = network;
+    _ = data_ptr;
+    _ = data_len;
+    return 0;
+}
+fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) callconv(.c) usize {
+    _ = network;
+    _ = bucket;
+    _ = data_ptr;
+    _ = data_len;
+    return 0;
+}
 fn movepickFillHistorySnapshot(main_history: ?*const anyopaque, low_ply_history: ?*const anyopaque, capture_history: ?*const anyopaque, continuation_history: ?*const anyopaque, shared_history: ?*const anyopaque, out: *MovepickHistorySnapshot) callconv(.c) void {
     out.main_base = main_history;
     out.low_ply_base = low_ply_history;
