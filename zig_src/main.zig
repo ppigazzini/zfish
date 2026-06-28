@@ -1525,6 +1525,7 @@ comptime {
         @export(&threadpoolWaitThread, .{ .name = "zfish_threadpool_wait_thread" });
         @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
         @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
+        @export(&networkEmbeddedBytes, .{ .name = "zfish_network_embedded_bytes" });
         @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
         @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
         // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -2023,6 +2024,14 @@ fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const 
     _ = do_bind;
     const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + 3 * @sizeOf(usize)));
     zfish_native_shared_histories_insert(slot.*, numa_index, size);
+}
+// REPORT-12 TU=0: with NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub (network.cpp);
+// loadNetworkBytes fails on it and falls back to the on-disk EvalFile (bench validates the file net).
+// Native default-only stub matching that — ByteView{ptr,len} matches the network.zig extern struct ABI.
+const NetByteView = extern struct { ptr: [*]const u8, len: usize };
+const embedded_nnue_stub = [_]u8{0};
+fn networkEmbeddedBytes() callconv(.c) NetByteView {
+    return .{ .ptr = &embedded_nnue_stub, .len = 1 };
 }
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
