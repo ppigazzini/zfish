@@ -57,4 +57,6 @@ inline void* tt(void* w) { return *reinterpret_cast<void**>(base(w) + kTt); }
 inline void* limits(void* w) { return base(w) + kLimits; }
 inline void* root_pos(void* w) { return base(w) + kRootPos; }
 inline void* manager(void* w) { return *reinterpret_cast<void**>(base(w) + kManager); }
+inline constexpr std::size_t kRootDepth = 11421088;  // worker_off.root_depth (int rootDepth)
+inline int root_depth(void* w) { return *reinterpret_cast<int*>(base(w) + kRootDepth); }
 }  // namespace zfish_wk

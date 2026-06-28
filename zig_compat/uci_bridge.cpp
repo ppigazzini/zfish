@@ -106,6 +106,14 @@
 #include "nnue/nnue_feature_transformer.h"  // IWYU pragma: keep
 #include "nnue/simd.h"
 
+// REPORT-12 B-conversion: the forward-decls + zfish_wk:: Worker-offset readers. Co-included with the
+// real frozen headers today (the forward-decls are compatible with the full definitions); at the
+// TU=0 cut this header REPLACES engine.h/uci.h/thread.h/search.h/position.h/score.h/perft.h in the
+// default build. Default-only — the legacy oracle keeps the typed member access.
+#ifndef ZFISH_LEGACY_CPP_TARGET
+#include "frozen_fwd.h"
+#endif
+
 #if !defined(UNIVERSAL_BINARY) && !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
 INCBIN(EmbeddedNNUE, EvalFileDefaultName);
 #elif defined(UNIVERSAL_BINARY)
@@ -856,7 +864,7 @@ extern "C" void zfish_search_id_pv(void* worker, int depth) {
 #ifndef ZFISH_LEGACY_CPP_TARGET
     // M-FINAL cutover: call the native pv driver directly (the default's SearchManager::pv only
     // forwarded here anyway), so the C++ SearchManager::pv goes legacy-only.
-    zfish_search_pv(w->main_manager(), w, &w->threads, &w->tt, depth);
+    zfish_search_pv(zfish_wk::manager(w), w, zfish_wk::threads(w), zfish_wk::tt(w), depth);
 #else
     w->main_manager()->pv(*w, w->threads, w->tt, depth);
 #endif
@@ -1488,7 +1496,7 @@ extern "C" void zfish_ss_threads_start(void* worker) {
 #ifndef ZFISH_LEGACY_CPP_TARGET
     // M-FINAL cutover: call the native ThreadPool start-searching directly, dropping the C++
     // ThreadPool::start_searching method from the default build.
-    zfish_threadpool_start_searching(&static_cast<Search::Worker*>(worker)->threads);
+    zfish_threadpool_start_searching(zfish_wk::threads(worker));
 #else
     static_cast<Search::Worker*>(worker)->threads.start_searching();
 #endif
@@ -1500,7 +1508,7 @@ extern "C" void zfish_ss_threads_start(void* worker) {
 
 extern "C" void zfish_ss_wait_finished(void* worker) {
 #ifndef ZFISH_LEGACY_CPP_TARGET
-    zfish_threadpool_wait_for_search_finished(&static_cast<Search::Worker*>(worker)->threads);
+    zfish_threadpool_wait_for_search_finished(zfish_wk::threads(worker));
 #else
     static_cast<Search::Worker*>(worker)->threads.wait_for_search_finished();
 #endif
@@ -1531,7 +1539,7 @@ extern "C" void zfish_ss_emit_pv(void* worker, void* best) {
     auto* w = static_cast<Search::Worker*>(worker);
     auto* b = static_cast<Search::Worker*>(best);
 #ifndef ZFISH_LEGACY_CPP_TARGET
-    zfish_search_pv(w->main_manager(), b, &w->threads, &w->tt, b->rootDepth);
+    zfish_search_pv(zfish_wk::manager(w), b, zfish_wk::threads(w), zfish_wk::tt(w), zfish_wk::root_depth(b));
 #else
     w->main_manager()->pv(*b, w->threads, w->tt, b->rootDepth);
 #endif
