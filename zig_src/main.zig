@@ -1210,6 +1210,13 @@ pub export fn zfish_threadpool_nodes_searched(pool: *anyopaque) u64 {
     return thread_port.nodesSearched(pool);
 }
 
+// REPORT-12 B4b: side-to-move of a Position by pointer, for the bridge's de-typed
+// zfish_ss_npmsec_advance (rootPos.side_to_move() once Position is forward-declared). Reuses the
+// native layout authority (position_port.sideToMove), so no C++ offset needs pinning.
+pub export fn zfish_ss_side_to_move(pos: *const anyopaque) u8 {
+    return position_port.sideToMove(pos);
+}
+
 pub export fn zfish_threadpool_tb_hits(pool: *anyopaque) u64 {
     return thread_port.tbHits(pool);
 }
