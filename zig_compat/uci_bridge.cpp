@@ -2406,22 +2406,17 @@ void zfish_threadpool_main_manager_clear_timeman(void* pool_ptr) {
 
 extern "C" {
 
+// REPORT-12 TU=0: native default-only no-op (main.zig engineNumaSetFromString) — single-node default.
+// Legacy keeps the real NumaConfig::from_string write.
+#ifdef ZFISH_LEGACY_CPP_TARGET
 void zfish_engine_numa_set_from_string(void*                numa_context_ptr,
                                        const unsigned char* text_ptr,
                                        std::size_t          text_len) {
-#ifndef ZFISH_LEGACY_CPP_TARGET
-    // M-FINAL cutover: single-node default build — the numa topology is fixed (one node from the
-    // process affinity) and the display is native, so reconfiguring NumaPolicy is a no-op and
-    // there is no C++ NumaReplicationContext to set.
-    (void) numa_context_ptr;
-    (void) text_ptr;
-    (void) text_len;
-#else
     auto& numa_context = *static_cast<NumaReplicationContext*>(numa_context_ptr);
     numa_context.set_numa_config(
       NumaConfig::from_string(std::string(reinterpret_cast<const char*>(text_ptr), text_len)));
-#endif
 }
+#endif
 
 // Stage-7 7.1: legacy oracle only -- the default build provides native-inert
 // versions of these two from zig_src/main.zig (!legacy_target). Legacy keeps the
@@ -3348,13 +3343,11 @@ const char* zfish_engine_options_text_owner(const void* engine_ptr) {
 
 extern "C" void zfish_uci_set_quiet_mode(std::uint8_t quiet);
 
-void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
-    // Mirror the mode into the native flag the native emit functions read. This is the live control
-    // in the default build — the native emit (uci_port.formatInfoFull) checks the quiet flag directly.
-    zfish_uci_set_quiet_mode(quiet_mode);
-    // REPORT-12 TU=0 std::function cluster Step A(2): the C++ std::function listener installs below are
-    // vestigial in default (the native emit reads the quiet flag, records nodes natively). Legacy only.
+// REPORT-12 TU=0: native default-only (main.zig uciSetListenerMode forwards the quiet flag). Legacy
+// keeps the C++ listener installs (which it needs — the legacy search emits via the std::functions).
 #ifdef ZFISH_LEGACY_CPP_TARGET
+void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
+    zfish_uci_set_quiet_mode(quiet_mode);
     auto* uci_engine = static_cast<UCIEngine*>(uci_ptr);
     if (quiet_mode != 0)
     {
@@ -3370,10 +3363,8 @@ void zfish_uci_set_listener_mode(void* uci_ptr, std::uint8_t quiet_mode) {
     {
         uci_engine->init_search_update_listeners();
     }
-#else
-    (void) uci_ptr;
-#endif
 }
+#endif
 
 void zfish_engine_apply_setoption_owner(void*                engine_ptr,
                                         const unsigned char* name_ptr,
