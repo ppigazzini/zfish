@@ -1514,10 +1514,26 @@ extern "C" void zfish_ss_wait_finished(void* worker) {
 #endif
 }
 
+#ifndef ZFISH_LEGACY_CPP_TARGET
+extern "C" std::uint8_t zfish_ss_side_to_move(const void* pos);
+#else
+// REPORT-12 B4b: pin the SearchManager::tm offset the default build's zfish_ss_npmsec_advance adds
+// to the manager pointer (graph_layout.search_manager_off.tm). Reorder upstream fails the legacy build.
+static_assert(offsetof(Search::SearchManager, tm) == 8, "SearchManager.tm");
+#endif
 extern "C" void zfish_ss_npmsec_advance(void* worker) {
     auto* w = static_cast<Search::Worker*>(worker);
+#ifndef ZFISH_LEGACY_CPP_TARGET
+    // default: Worker forward-declared at the cut — reach manager->tm by offset, limits.inc by
+    // offset, side-to-move via the native helper, nodes via the existing threadpool shim.
+    auto* tm = reinterpret_cast<TimeManagement*>(static_cast<char*>(zfish_wk::manager(w)) + 8);
+    const int us = static_cast<int>(zfish_ss_side_to_move(zfish_wk::root_pos(w)));
+    tm->advance_nodes_time(zfish_threadpool_nodes_searched(zfish_wk::threads(w))
+                           - zfish_lim::inc(zfish_wk::limits(w), us));
+#else
     w->main_manager()->tm.advance_nodes_time(zfish_pool_nodes(w->threads)
                                              - w->limits.inc[w->rootPos.side_to_move()]);
+#endif
 }
 
 // zfish_ss_get_best_thread is native (main.zig): it calls the native voting
