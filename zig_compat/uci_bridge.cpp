@@ -3085,12 +3085,19 @@ void assign_magic_entries() {
 // (inline) now, the heap OptionsMap after the flip. Every options[...] / setoption caller
 // funnels through here, so this one rewire covers them all. `this` is used only as the
 // opaque engine pointer the accessor offsets/reads.
+// REPORT-12 TU=0: every default-build option read/setoption goes through the native option model now,
+// so the only callers of Engine::get_options() (EvalFile/SyzygyPath/UCI_Chess960 text reads + the C++
+// add/setoption path) are all legacy-only, and the C++ OptionsMap is a 1-byte stub in default. These
+// methods are dead in default — guard the definitions legacy-only (they return OptionsMap& and are
+// Engine:: members, so they block the frozen-header drop).
+#ifdef ZFISH_LEGACY_CPP_TARGET
 const OptionsMap& Engine::get_options() const {
     return *static_cast<const OptionsMap*>(zfish_engine_options_ptr(this));
 }
 OptionsMap& Engine::get_options() {
     return *static_cast<OptionsMap*>(const_cast<void*>(zfish_engine_options_ptr(this)));
 }
+#endif
 
 // flip() flips the LIVE position (the native side block via the accessor), not the dead
 // inline engine->pos. Untested on the gate (no flip command), so behaviour-neutral there.
