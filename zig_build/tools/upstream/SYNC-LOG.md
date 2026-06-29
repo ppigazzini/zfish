@@ -42,8 +42,21 @@ yet ported, so `UPSTREAM_BASE` stays at dd321af5d until the contiguous prefix th
 
 ---
 
-## Phase C — position correctness  ⏳ (next)
-86f1df713 material-key fix FIRST, then do_move/do_null_move reorders, FEN validation, evasion simplify.
+## Phase C — position correctness  ✅
+6 candidates audited; our reimplementation already avoided 5 of them. **Exactly one real fix ported.**
+
+| commit | subject | outcome |
+|---|---|---|
+| **782852b26** | Clear capturedPiece in do_null_move | **PORTED** — our `doNullMove` copied the prior StateInfo (stale `captured_piece`) and never cleared it; added `pos.st.captured_piece = 0`. Affects prior_capture detection after null moves. |
+| 86f1df713 | Fix material key computation error | **no change** — our do_move moves the piece *first* (post-move pieceCount) and uses `[8+count-1]`(prom)/`[8+count]`(pawn), yielding the same correct slots (8+M, 8+N−1) as upstream's fixed pre-move formula. Already correct. |
+| 278a755fb | Reorder operations in do_move | **no change** — pure prefetch-timing/ordering perf; our piece-first ordering is valid and result-identical. |
+| 5595cb20e | FEN validation pawns on rank 1/8 | **no change** — upstream bug was `RANK_1\|RANK_8` (enum values 0\|7) vs bitboards; our Zig already uses `rank1_bb\|rank8_bb`. Never had the bug. |
+| 47575ebd8 | Dedup color-specific piece validation | **no change** — pure refactor (loop over colors), identical validation. |
+| 1ece3c030 | Simplify evasion logic | **no change** — upstream delegates `pseudo_legal` under check to `MoveList<EVASIONS>.contains(m)`; our manual block/capture/king-safety checks are behavior-equivalent **and faster** (O(1) vs generating all evasions). Kept the equivalent. |
+
+**Verification:** the one ported fix is bench-invariant — signature stayed 2336177; perft, perft-parity,
+oracle-parity, output-golden, eval-trace all OK (regression guard intact). Marker not advanced (functional
+commits still interleaved ahead).
 
 ## Phase D — NNUE accumulator-merge arch port  ⏳ (hardest)
 7c7fe322e + fff35786b + nnz_helper.h into nnue_accumulator/nnue_feature/network.zig, then drop new net.
