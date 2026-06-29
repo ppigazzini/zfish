@@ -1,0 +1,52 @@
+# Blast-radius manifest (REPORT-13 §5.3) — routes an upstream src/ change to the Zig file(s) that must
+# absorb it, plus a risk tier. Used by upstream_router.py to classify each upstream commit mechanically.
+# Format:  <src-glob>\t<zig-owner(s)>\t<risk>     risk ∈ {SKIP,LOW,MED,HIGH}.  First matching rule wins,
+# so order most-specific first. fnmatch globs (use * ).
+#
+# src-glob	zig-owner	risk
+src/nnue/*	zig_build/eval/nnue_accumulator.zig,nnue_feature.zig,nnue_hash.zig,nnue_misc.zig,nnue_parse.zig,network.zig	HIGH
+src/evaluate.cpp	zig_build/eval/evaluate.zig	HIGH
+src/evaluate.h	zig_build/eval/evaluate.zig,network.zig	HIGH
+src/search.cpp	zig_build/support/search.zig,search_manager.zig	HIGH
+src/search.h	zig_build/support/search.zig,search_manager.zig	HIGH
+src/movepick.cpp	zig_build/support/movepick.zig	MED
+src/movepick.h	zig_build/support/movepick.zig	MED
+src/history.h	zig_build/support/shared_histories.zig,search.zig	MED
+src/position.cpp	zig_build/board/position.zig	MED
+src/position.h	zig_build/board/position.zig,state_info.zig	MED
+src/movegen.cpp	zig_build/board/movegen.zig	MED
+src/movegen.h	zig_build/board/movegen.zig	MED
+src/tt.cpp	zig_build/support/tt.zig	MED
+src/tt.h	zig_build/support/tt.zig	MED
+src/thread.cpp	zig_build/support/thread.zig,thread_runtime.zig,native_thread.zig	MED
+src/thread.h	zig_build/support/thread.zig	MED
+src/timeman.cpp	zig_build/time/timeman.zig	LOW
+src/timeman.h	zig_build/time/timeman.zig	LOW
+src/bitboard.cpp	zig_build/board/bitboard.zig	LOW
+src/bitboard.h	zig_build/board/bitboard.zig	LOW
+src/types.h	zig_src/score.zig	MED
+src/uci.cpp	zig_build/uci/uci.zig	LOW
+src/uci.h	zig_build/uci/uci.zig	LOW
+src/ucioption.cpp	zig_build/uci/option.zig	LOW
+src/ucioption.h	zig_build/uci/option.zig	LOW
+src/misc.cpp	zig_build/support/misc.zig	LOW
+src/misc.h	zig_build/support/misc.zig	LOW
+src/engine.cpp	zig_build/support/engine.zig,engine_graph.zig	MED
+src/engine.h	zig_build/support/engine.zig	MED
+src/score.cpp	zig_src/score.zig	LOW
+src/score.h	zig_src/score.zig	LOW
+src/memory.cpp	zig_src/memory.zig	LOW
+src/memory.h	zig_src/memory.zig	LOW
+src/benchmark.cpp	zig_build/bench/benchmark.cpp,benchmark.zig	LOW
+src/tune.*	zig_build/uci/option.zig	LOW
+src/*.nnue	(net file — swap + bump EvalFileDefaultName)	LOW
+src/syzygy/*	(tbprobe — still legacy C++; not yet ported)	MED
+# --- platform / build / CI: not needed for the x86-64-sse41-popcnt native target -> SKIP ---
+src/Makefile	(make — SKIP, build.zig is independent)	SKIP
+src/arm/*	(arch — SKIP for sse41 target)	SKIP
+src/incbin/*	(net embedding — SKIP, we load net at runtime)	SKIP
+.github/*	(CI — SKIP)	SKIP
+*.yml	(CI/config — SKIP)	SKIP
+*.md	(docs — SKIP)	SKIP
+AUTHORS	(metadata — SKIP)	SKIP
+Top*	(metadata — SKIP)	SKIP
