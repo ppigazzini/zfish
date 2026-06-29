@@ -152,12 +152,13 @@ fn propagateBucket(network: *const anyopaque, bucket: usize, transformed: [*]con
     affineLayer(&fc0_out, fc0_b, fc0_w, transformed[0..1024], 1024);
 
     // ac_sqr_0 / ac_0 on the first FC_0_OUTPUTS=31 outputs, concatenated into 62.
+    // upstream 7c7fe322e: ac_sqr_0/ac_0 use WeightScaleBitsLocal = WeightScaleBits+1 = 7.
     var combined: [64]u8 = [_]u8{0} ** 64;
     var i: usize = 0;
     while (i < 31) : (i += 1) {
         const sq: i64 = @as(i64, fc0_out[i]) * @as(i64, fc0_out[i]);
-        combined[i] = @intCast(@min(@as(i64, 127), sq >> 19)); // SqrClippedReLU: >> (2*6+7)
-        combined[31 + i] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc0_out[i] >> 6))); // ClippedReLU
+        combined[i] = @intCast(@min(@as(i64, 127), sq >> 21)); // SqrClippedReLU: >> (2*7+7)
+        combined[31 + i] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc0_out[i] >> 7))); // ClippedReLU (WSB+1)
     }
 
     // fc_1: affine 62 -> 32 (PaddedInputDimensions = 64).
@@ -173,9 +174,10 @@ fn propagateBucket(network: *const anyopaque, bucket: usize, transformed: [*]con
     var fc2_out: [1]i32 = undefined;
     affineLayer(&fc2_out, fc2_b, fc2_w, ac1[0..32], 32);
 
-    // fwdOut = fc_0_out[FC_0_OUTPUTS] * (600*OutputScale) / (127 * (1<<WeightScaleBits)).
-    const fwd_out: c_int = @intCast(@divTrunc(@as(i64, fc0_out[31]) * (600 * 16), 127 * 64));
-    return fc2_out[0] + fwd_out;
+    // upstream 7c7fe322e: fwdOut = fc_2_out[0] + fc_0_out[FC_0_OUTPUTS], then scale the sum by
+    // 600*OutputScale / (HiddenOneVal*(1<<WeightScaleBits)*2) = 9600/16384, via i64.
+    const fwd_sum: i64 = @as(i64, fc2_out[0]) + @as(i64, fc0_out[31]);
+    return @intCast(@divTrunc(fwd_sum * (600 * 16), 128 * 64 * 2));
 }
 
 pub fn load(

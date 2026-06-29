@@ -80,11 +80,19 @@ mathematically identical to the merged accumulator (associativity). So the merge
 - Startpos eval: ours **−22** vs oracle **+10** (side-to-move, internal) — close, confirming D2+ is only
   the fine integer math, not the structure.
 
-### D2 — propagate output scaling + activation shifts  ⏳ (next)
-nnue_architecture.h changes: `fwdOut = fc2_out[0] + fc0_out[L2]` THEN scale by `600·OutputScale /
-(HiddenOneVal·(1<<WSB)·2)` = `9600/16384` via i64 (ours: scales fc0_out[31] alone by `9600/8128`, then
-adds fc2_out). Activation layers gained a shift param: ac_sqr_0/ac_0 use WSB+1, ac_1 uses WSB (ours uses
-WSB throughout). Verify with eval-trace layer-by-layer vs the pristine oracle, then bench → 2102535.
+### D2 — propagate output scaling + activation shifts  ✅ (NNUE eval BIT-EXACT)
+Three edits in network.zig `propagateBucket`:
+- ac_sqr_0 shift `>>19` → `>>21` (WSB+1=7 → 2·7+7); ac_0 shift `>>7` (was 6); ac_1 stays `>>6`.
+- output: `fwd_sum = fc2_out[0] + fc0_out[31]`, then `fwd_sum·9600 / 16384` (i64), replacing
+  `fc2_out[0] + fc0_out[31]·9600/8128`. (9600 = 600·OutputScale; 16384 = HiddenOneVal·(1<<WSB)·2.)
+- **Verified: 10/10 diverse positions (startpos, midgame, tactical, pawn endgame, KvR, …) eval
+  BIT-EXACT vs the pristine oracle.** NNUE architecture port complete.
+
+**Phase D DONE.** Bench now 2466979 (= HEAD-net eval + base search). Remaining gap to 2102535 is purely
+the Phase E search/TT tweaks (eval is bit-exact; only the search tree differs). Branch still RED vs the
+base-net golden gates (goldens re-captured at the new net in Phase F); NOT merged until bench == 2102535.
+
+NB: our `eval` command writes to stderr (the oracle uses stdout) — matters only for comparison harnesses.
 
 ## Phase E/F — search+TT tweaks, UCI/misc, reharden  ⏳
 End bit-exact at 2102535; then advance UPSTREAM_BASE → 4488343cf.
