@@ -2437,6 +2437,11 @@ pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque) void {
     }
     pos.st.key ^= zob_side_val;
     pos.st.plies_from_null = 0;
+
+    // Upstream 782852b26: the StateInfo was copied from the previous ply (incl. its capturedPiece);
+    // a null move captures nothing, so clear it or prior_capture detection reads a stale value.
+    pos.st.captured_piece = 0; // NO_PIECE
+
     pos.side_to_move ^= 1;
     setCheckInfo(pos_ptr);
     pos.st.repetition = 0;
