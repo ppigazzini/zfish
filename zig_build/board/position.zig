@@ -279,7 +279,7 @@ pub fn ageMainHistory(worker_ptr: *anyopaque) void {
     const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
     for (&w.main_history) |*e| {
         const v: c_int = e.*;
-        e.* = @intCast(@divTrunc((v + 5) * 789, 1024));
+        e.* = @intCast(@divTrunc(v * 789, 1024)); // upstream 3c858c19e: drop the +5
     }
 }
 
@@ -1342,7 +1342,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     {
         if (tt_move != 0 and tt_value >= beta) {
             if (!tt_capture)
-                updateQuietHistoriesWorker(ctx.worker, pos_ptr, ss_ptr, tt_move, @min(114 * depth - 73, 797));
+                updateQuietHistoriesWorker(ctx.worker, pos_ptr, ss_ptr, tt_move, @min(114 * depth, 724)); // upstream 73826352d
             if (prev_sq != @as(c_int, sq_none) and ss1.move_count < 4 and !prior_capture)
                 updateContinuationHistories(ss1, pos.board[@intCast(prev_sq)], @intCast(prev_sq), -2187);
         }
@@ -1357,6 +1357,15 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
                 if ((tt_value >= beta) == (-next_value >= beta)) return tt_value;
             } else return tt_value;
         }
+    }
+    // upstream 319d61eff: no cutoff, but if a window-bound mismatch is the only reason, penalize the
+    // now-useless tte (decrement its stored depth).
+    else if (!pv_node and excluded_move == 0 and
+        tt_depth > depth - @as(c_int, @intFromBool(tt_value <= beta)) and
+        qIsValid(tt_value) and tt_bound != (q_bound_lower | q_bound_upper) and
+        (tt_bound & (if (tt_value >= beta) q_bound_upper else q_bound_lower)) != 0 and depth > 5)
+    {
+        tt.entryPenalize(writer, 1);
     }
 
     // Step 6. Tablebases: cardinality is 0 in this build; skipped.
@@ -1409,7 +1418,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         if (ss.static_eval >= beta) improving = true;
 
         // Step 10. Internal iterative reductions.
-        if (!ss.follow_pv and !all_node and depth >= 6 and tt_move == 0 and prior_reduction <= 3) depth -= 1;
+        if (!ss.follow_pv and !all_node and depth >= 6 and tt_move == 0) depth -= 1; // upstream b1053e60b: drop priorReduction<=3
 
         // Step 11. ProbCut.
         const probcut_beta = search.probCutBeta(beta, improving);
@@ -1437,7 +1446,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
                 .shared_history = null,
                 .ply = 0,
             };
-            const probcut_depth = depth - 4;
+            const probcut_depth = depth - 4 - @as(c_int, @intFromBool(improving)); // upstream d64835051
             while (true) {
                 const move = movepick.nextMove(&pc_state, &pc_ctx);
                 if (move == 0) break;
@@ -1597,7 +1606,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         if (ssAdd(ss, 1).cutoff_cnt > 1) {
             r += 236 + 1079 * @as(c_int, @intFromBool(ssAdd(ss, 1).cutoff_cnt > 2)) + 1143 * @as(c_int, @intFromBool(all_node));
         } else if (move == tt_move) {
-            r = @max(@as(c_int, -10), r - 2016 + 150 * @as(c_int, @intFromBool(cut_node)));
+            r = @max(@as(c_int, 0), r - 2016); // upstream 3c858c19e: simplify ttMove reduction
         }
         if (tt_capture) r += 1039;
 
@@ -1683,7 +1692,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     if (move_count == 0) {
         best_value = if (excluded_move != 0) alpha else if (ss.in_check) qMatedIn(ss.ply) else q_value_draw;
     } else if (best_move != 0) {
-        updateAllStats(ctx.worker, pos_ptr, ss_ptr, best_move, prev_sq, &quiets_searched, n_quiets, &captures_searched, n_captures, depth, tt_move);
+        updateAllStats(ctx.worker, pos_ptr, ss_ptr, best_move, prev_sq, &quiets_searched, n_quiets, &captures_searched, n_captures, depth, tt_move, @intFromBool(pv_node));
         if (!pv_node) ttMoveHistoryUpdate(w, search.ttMoveHistoryMatchBonus(best_move == tt_move));
     } else if (!prior_capture and prev_sq != @as(c_int, sq_none)) {
         const psq: u8 = @intCast(prev_sq);
@@ -2177,6 +2186,7 @@ pub fn updateAllStats(
     n_captures: usize,
     depth: c_int,
     tt_move: u16,
+    pv_node: u8,
 ) void {
     const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
@@ -2185,8 +2195,13 @@ pub fn updateAllStats(
     const capture_base: [*]i16 = &w.capture_history;
 
     const is_tt: u8 = if (best_move == tt_move) 1 else 0;
-    const bonus = zfish_search_stat_bonus(depth, is_tt, ss_prev.stat_score);
+    var bonus = zfish_search_stat_bonus(depth, is_tt, ss_prev.stat_score);
     const malus = zfish_search_stat_malus(depth);
+
+    // upstream 645b636df: at non-PV nodes, scale the best-move bonus by the number of searched
+    // moves. i64 cast matches upstream's uint64_t (avoid 32-bit overflow changing bench).
+    if (pv_node == 0)
+        bonus += @intCast(@divTrunc(@as(i64, bonus) * @as(i64, @intCast(n_quiets + n_captures)), 256));
 
     if (!captureStage(pos, best_move)) {
         updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, best_move, @divTrunc(bonus * 824, 1024));

@@ -195,7 +195,8 @@ pub fn captureFutilityValue(static_eval: c_int, lmr_depth: c_int, piece_value: c
 }
 
 pub fn captureSeeMargin(depth: c_int, capt_hist: c_int) c_int {
-    return @max(175 * depth + @divTrunc(capt_hist * 34, 1024), 0);
+    // upstream e4a635486: drop the max(..,0) clamp.
+    return 175 * depth + @divTrunc(capt_hist * 34, 1024);
 }
 
 // Late-move-count pruning: skip quiets once moveCount reaches this limit.
