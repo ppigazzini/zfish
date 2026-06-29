@@ -1,0 +1,52 @@
+# Upstream sync log
+
+Per-phase progress resyncing the native Zig port to upstream Stockfish. Plan: `../../../__DEV/reports/REPORT-13-FETCH-UPSTREAM.md`.
+Delta: `UPSTREAM_BASE` (dd321af5d, net nn-83a0d6daf7e5, Bench 2336177) → `UPSTREAM_TARGET` (4488343cf, net nn-af1339a6dea3, Bench 2102535).
+
+**Bit-exactness baseline (verified 2026-06-29):** upstream@base `dd321af5d` carries `Bench: 2336177`,
+identical to our native default bench → the Zig port is bit-exact to upstream at the base. Every later
+commit is a delta from this known-good point.
+
+---
+
+## Phase A — tooling + pristine oracle  ✅ (commit 26f73e697)
+Stood up upstream_oracle.sh / upstream_benchmap.sh / upstream_router.py / upstream_parity.sh + tracked
+state. Pristine oracle verified: HEAD benches 2102535. Backlog: HIGH=31 MED=13 LOW=2 SKIP=25.
+
+## Phase B — mechanical / no-bench-move commits  ✅ (audit, no Zig change required)
+All 10 candidates carry **no `Bench:` line** (non-functional by SF convention) and were verified to
+require **zero native-port changes** — our reimplementation does not mirror C++ type decls, and the
+result of every touched computation is unchanged (bench-invariant). Absorbed for free; the port remains
+bit-exact at 2336177.
+
+| commit | subject | why no-op for the native build |
+|---|---|---|
+| dd3e1c4a5 | Consistent Integer Types | u8/u16/usize renames + std::array on the **magic** tables; our bitboard.zig has no magics (computes attacks on the fly) — same attack results |
+| 6e4e03fd2 | Replace Remaining Types | size_t→usize renames; pure C++ typing |
+| 718a001e6 | Fixup RelaxedAtomic operator Types | atomic-wrapper typing; Zig atomics are separate |
+| 0111d11e2 | Disable perf-sensitive relaxed atomics at compile time | adds an opt-out macro; default path (relaxed) unchanged |
+| 133731f33 | Simplify away unused CorrHistType variants | removes an **unused** corrhist variant — no behavioral effect |
+| 24d639849 | Move Attacks out of Bitboard File | pure file split (new src/attacks.cpp/.h); our attacks live in bitboard.zig |
+| 92fe6b6f4 | Simplify RankAttacks initialization | init-time refactor, identical table |
+| 9eb836b3b | Compute simplified HQ r/rr at runtime | Hyperbola-Quintessence micro-opt, identical attack sets |
+| f9beec5fa | Reuse computed ray bitboard in update_piece_threats | micro-opt, identical threats |
+| 57f3a2bfb | Replace directory == "<internal>" with else | UCI-internal control-flow tidy, same branches |
+
+**Manifest upkeep:** added `src/attacks.cpp/.h` → `bitboard.zig` (24d639849 introduced the file split) so
+future commits touching attacks route correctly.
+
+**Gates (mfinal worktree):** signature 2336177, perft, perft-parity, oracle-parity, output-golden — all OK.
+
+**Marker NOT advanced:** these commits interleave chronologically with functional ones (Phase C/D/E) not
+yet ported, so `UPSTREAM_BASE` stays at dd321af5d until the contiguous prefix through TARGET is bit-exact.
+
+---
+
+## Phase C — position correctness  ⏳ (next)
+86f1df713 material-key fix FIRST, then do_move/do_null_move reorders, FEN validation, evasion simplify.
+
+## Phase D — NNUE accumulator-merge arch port  ⏳ (hardest)
+7c7fe322e + fff35786b + nnz_helper.h into nnue_accumulator/nnue_feature/network.zig, then drop new net.
+
+## Phase E/F — search+TT tweaks, UCI/misc, reharden  ⏳
+End bit-exact at 2102535; then advance UPSTREAM_BASE → 4488343cf.

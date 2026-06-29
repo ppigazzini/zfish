@@ -24,6 +24,8 @@ src/timeman.cpp	zig_build/time/timeman.zig	LOW
 src/timeman.h	zig_build/time/timeman.zig	LOW
 src/bitboard.cpp	zig_build/board/bitboard.zig	LOW
 src/bitboard.h	zig_build/board/bitboard.zig	LOW
+src/attacks.cpp	zig_build/board/bitboard.zig	LOW
+src/attacks.h	zig_build/board/bitboard.zig	LOW
 src/types.h	zig_src/score.zig	MED
 src/uci.cpp	zig_build/uci/uci.zig	LOW
 src/uci.h	zig_build/uci/uci.zig	LOW
