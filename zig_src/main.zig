@@ -525,8 +525,9 @@ pub export fn zfish_search_update_all_stats(
     n_captures: usize,
     depth: c_int,
     tt_move: u16,
+    pv_node: u8,
 ) void {
-    position_port.updateAllStats(worker_ptr, pos_ptr, ss_ptr, best_move, prev_sq, quiets, n_quiets, captures, n_captures, depth, tt_move);
+    position_port.updateAllStats(worker_ptr, pos_ptr, ss_ptr, best_move, prev_sq, quiets, n_quiets, captures, n_captures, depth, tt_move, pv_node);
 }
 
 pub export fn zfish_search_update_correction_history(

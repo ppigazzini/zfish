@@ -94,5 +94,26 @@ base-net golden gates (goldens re-captured at the new net in Phase F); NOT merge
 
 NB: our `eval` command writes to stderr (the oracle uses stdout) — matters only for comparison harnesses.
 
-## Phase E/F — search+TT tweaks, UCI/misc, reharden  ⏳
-End bit-exact at 2102535; then advance UPSTREAM_BASE → 4488343cf.
+## Phase E — search+TT tweaks  🚧 (88% of the gap closed; bench 2146285 vs 2102535)
+Only the **bench-moving** commits are needed (no-bench-line ones are functional no-ops by SF CI rule).
+Ported the 8 bench-movers (skipping the f8aa78e0a/78d8f09bc revert pair):
+
+| commit | change | where |
+|---|---|---|
+| b1053e60b | IIR: drop `priorReduction<=3` | position.zig:1412 |
+| d64835051 | probCut: `depth-4` -> `depth-4-improving` | position.zig:1440 |
+| 73826352d | quiet ttMove bonus `min(114d-73,797)`->`min(114d,724)` | position.zig:1345 |
+| e4a635486 | SEE margin: drop `max(..,0)` | search.zig:captureSeeMargin |
+| 3c858c19e | mainHistory drop `+5`; ttMove reduction `max(0,r-2016)` | position.zig:282,1600 |
+| 645b636df | best-move bonus `+= bonus*(quiets+captures)/256` at !PV | position.zig:updateAllStats |
+| 94beadffb | secondary TT aging (decisive non-exact deep entry) | tt.zig:entrySave |
+| 319d61eff | penalize tte on window-bound mismatch | tt.zig:entryPenalize + position.zig:1360 |
+
+**Bench progression:** 2466979 (D done) -> 2264232 (6 search edits) -> 2146285 (+TT aging neutral +penalize).
+Gap to target now **43750** (was 364444 -- 88% closed). All 8 ports are faithful 1:1; the residual means
+ONE port has a subtle deviation OR a no-bench commit is functional in our partial state. **Next:** localize
+via `go depth N` node-count compare vs the pristine oracle, position-by-position. Branch RED; not merged
+until bench == 2102535.
+
+## Phase F — reharden + merge  ⏳
+Re-capture goldens at the new net, full suite + valgrind/mt; merge to refactor; advance UPSTREAM_BASE -> 4488343cf.

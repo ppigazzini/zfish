@@ -8,6 +8,8 @@ const bound_shift: u8 = generation_bits;
 const bound_mask: u8 = 0b11 << bound_shift;
 const pv_shift: u8 = bound_shift + 2;
 const pv_mask: u8 = 1 << pv_shift;
+// is_decisive threshold (VALUE_TB_WIN_IN_MAX_PLY); used by secondary TT aging.
+const value_tb_win_in_max_ply: c_int = 31507;
 
 pub const TtEntry = extern struct {
     key16: u16,
@@ -138,6 +140,19 @@ pub fn entrySave(
         entry.value16 = @intCast(value);
         entry.eval16 = @intCast(eval);
     }
+    // upstream 94beadffb: secondary aging. Important for elementary mate finding. Age a deep,
+    // decisive, non-exact entry that we are NOT overwriting. (depth8 + DEPTH_NONE >= 5; DEPTH_NONE = depth_none = -3.)
+    else if (@as(c_int, entry.depth8) + depth_none >= 5 and
+        (@as(c_int, entry.value16) >= value_tb_win_in_max_ply or @as(c_int, entry.value16) <= -value_tb_win_in_max_ply) and
+        ((entry.gen_bound8 & bound_mask) >> bound_shift) != 3)
+    {
+        entry.depth8 -%= 1;
+    }
+}
+
+// upstream 319d61eff: decrement a stored entry's depth as a penalty.
+pub fn entryPenalize(entry: *TtEntry, penalty: u8) void {
+    entry.depth8 -%= penalty;
 }
 
 pub fn entryRead(entry: *const TtEntry, depth_none: c_int) TtReadOutput {
