@@ -56,7 +56,7 @@ const option_kind_check: u8 = 1;
 const option_kind_spin: u8 = 2;
 const option_kind_button: u8 = 3;
 
-const default_eval_file_name = "nn-83a0d6daf7e5.nnue";
+const default_eval_file_name = "nn-af1339a6dea3.nnue";
 const default_skill_lowest_elo: c_int = 1320;
 const default_skill_highest_elo: c_int = 3190;
 
