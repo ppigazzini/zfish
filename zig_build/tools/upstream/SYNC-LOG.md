@@ -94,7 +94,14 @@ base-net golden gates (goldens re-captured at the new net in Phase F); NOT merge
 
 NB: our `eval` command writes to stderr (the oracle uses stdout) — matters only for comparison harnesses.
 
-## Phase E — search+TT tweaks  🚧 (88% of the gap closed; bench 2146285 vs 2102535)
+## Phase E — search+TT tweaks  ✅ (BIT-EXACT: bench 2102535 == upstream HEAD)
+Residual gap was exactly the prime suspect: `645b636df` best-move bonus uses C++ **unsigned**
+`bonus * uint64_t(N) / 256` (int promoted to uint64_t); our signed i64 version diverged when bonus<0.
+Replicating the unsigned mul/div + i32-narrow closed the last 43750 nodes. `upstream-parity: OK
+(native == upstream@4488343cf: 2102535)`; go-depth-18 bestmoves match the oracle. **Phase D+E complete:
+the native build equals upstream HEAD bit-for-bit (eval + search).**
+
+### (historical) the 88%-of-gap interim state
 Only the **bench-moving** commits are needed (no-bench-line ones are functional no-ops by SF CI rule).
 Ported the 8 bench-movers (skipping the f8aa78e0a/78d8f09bc revert pair):
 

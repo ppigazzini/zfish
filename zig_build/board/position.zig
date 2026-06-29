@@ -2198,10 +2198,14 @@ pub fn updateAllStats(
     var bonus = zfish_search_stat_bonus(depth, is_tt, ss_prev.stat_score);
     const malus = zfish_search_stat_malus(depth);
 
-    // upstream 645b636df: at non-PV nodes, scale the best-move bonus by the number of searched
-    // moves. i64 cast matches upstream's uint64_t (avoid 32-bit overflow changing bench).
-    if (pv_node == 0)
-        bonus += @intCast(@divTrunc(@as(i64, bonus) * @as(i64, @intCast(n_quiets + n_captures)), 256));
+    // upstream 645b636df: at non-PV nodes, scale the best-move bonus by the number of searched moves.
+    // Replicate C++ `bonus += bonus * uint64_t(N) / 256` EXACTLY: the mul/div are UNSIGNED (int promoted
+    // to uint64_t), which differs from signed when bonus < 0; the u64 sum narrows back to i32.
+    if (pv_node == 0) {
+        const n: u64 = @intCast(n_quiets + n_captures);
+        const bu: u64 = @bitCast(@as(i64, bonus));
+        bonus = @bitCast(@as(u32, @truncate(bu +% ((bu *% n) / 256))));
+    }
 
     if (!captureStage(pos, best_move)) {
         updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, best_move, @divTrunc(bonus * 824, 1024));
