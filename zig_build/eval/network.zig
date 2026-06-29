@@ -12,13 +12,13 @@ const cache_line_size: usize = 64;
 const transformed_feature_bytes: usize = 1024;
 const square_count: usize = 64;
 const no_piece: u8 = 0;
-const network_version: u32 = 0x7AF32F20;
+const network_version: u32 = 0x6A448AFA; // upstream nnue_common.h Version (post-merge format)
 const hash_combine_magic: usize = 0x9e3779b9;
 const none_name = "None";
 // EvalFileDefaultName (evaluate.h): the embedded net's default name. A build
 // constant, so the native path no longer reads it from the C++ Network's
 // EvalFile.defaultName.
-const default_eval_file_name = "nn-83a0d6daf7e5.nnue";
+const default_eval_file_name = "nn-af1339a6dea3.nnue";
 
 pub const ByteView = extern struct {
     ptr: [*]const u8,

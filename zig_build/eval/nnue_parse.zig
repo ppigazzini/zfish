@@ -140,21 +140,21 @@ fn readLebSection2(comptime T: type, blob: []const u8, out1: []T, out2: []T) ?us
 pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
     // Leading u32 component hash (Detail::read_parameters), verified by C++; skip.
     var pos: usize = 4;
+    // Read order (upstream 7c7fe322e merge): biases, threatWeights, threatPsqtWeights, weights,
+    // psqtWeights -- each i32 PSQT array is now its OWN leb section (base packed both into one,
+    // after weights). Storage offsets are unchanged; only the stream order/framing moved.
     // 1. biases (LEB i16)
     pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, biases_off, biases_count)) orelse return null;
     // 2. threatWeights (raw little-endian i8)
     if (blob.len < pos + threat_weights_count) return null;
     @memcpy(dst[threat_weights_off .. threat_weights_off + threat_weights_count], blob[pos .. pos + threat_weights_count]);
     pos += threat_weights_count;
-    // 3. weights / psq weights (LEB i16)
+    // 3. threatPsqtWeights (LEB i32, own section)
+    pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, threat_psqt_weights_off, threat_psqt_weights_count)) orelse return null;
+    // 4. weights / psq weights (LEB i16)
     pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, weights_off, psq_weights_count)) orelse return null;
-    // 4. threatPsqtWeights then psqtWeights (one LEB i32 section)
-    pos += readLebSection2(
-        i32,
-        blob[pos..],
-        dstSlice(i32, dst, threat_psqt_weights_off, threat_psqt_weights_count),
-        dstSlice(i32, dst, psqt_weights_off, psqt_weights_count),
-    ) orelse return null;
+    // 5. psqtWeights (LEB i32, own section)
+    pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, psqt_weights_off, psqt_weights_count)) orelse return null;
     return pos;
 }
 

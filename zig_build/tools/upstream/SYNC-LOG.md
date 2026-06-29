@@ -58,8 +58,33 @@ yet ported, so `UPSTREAM_BASE` stays at dd321af5d until the contiguous prefix th
 oracle-parity, output-golden, eval-trace all OK (regression guard intact). Marker not advanced (functional
 commits still interleaved ahead).
 
-## Phase D — NNUE accumulator-merge arch port  ⏳ (hardest)
-7c7fe322e + fff35786b + nnz_helper.h into nnue_accumulator/nnue_feature/network.zig, then drop new net.
+## Phase D — NNUE accumulator-merge arch port  🚧 (in progress, branch RED vs base gates)
+The hard one (7c7fe322e merge + fff35786b nnz + new net). Driven in sub-phases; **branch sits RED vs the
+base-net gates until D completes bit-exact at the new net.** SIMD/nnz machinery is out of scope (perf only;
+scalar dense compute is result-identical).
+
+Useful finding from the Zig map: our reimplementation **already** does the "merged" transform math
+(folds threat into the sum at transform time, clamps [0,255], pairwise-multiplies ÷512, halves PSQT) —
+mathematically identical to the merged accumulator (associativity). So the merge is largely net-format.
+
+### D1 — net format / parsing  ✅ (new net LOADS)
+- `network_version` 0x7AF32F20 → **0x6A448AFA** (network.zig).
+- FT read order (7c7fe322e): base packed the two i32 PSQT arrays into one leb section after `weights`;
+  HEAD reads each as its OWN section, order `biases → threatWeights → threatPsqtWeights → weights →
+  psqtWeights`. Reordered `parseFeatureTransformer` (nnue_parse.zig); storage offsets unchanged.
+- Default net name → **nn-af1339a6dea3.nnue** in BOTH `engine.zig:59` (drives the EvalFile option /
+  actual load) and `network.zig:21` (+ option.zig cosmetic/test). Net copied into src/.
+- **Verified:** engine loads + parses the new net (`NNUE evaluation using nn-af1339a6dea3.nnue (106MiB,
+  (83248,1024,31,32,1))`), runs eval + search without crashing. Successful parse proves version +
+  read-order + LEB framing are correct (a wrong order desyncs the magic/count checks → rejection).
+- Startpos eval: ours **−22** vs oracle **+10** (side-to-move, internal) — close, confirming D2+ is only
+  the fine integer math, not the structure.
+
+### D2 — propagate output scaling + activation shifts  ⏳ (next)
+nnue_architecture.h changes: `fwdOut = fc2_out[0] + fc0_out[L2]` THEN scale by `600·OutputScale /
+(HiddenOneVal·(1<<WSB)·2)` = `9600/16384` via i64 (ours: scales fc0_out[31] alone by `9600/8128`, then
+adds fc2_out). Activation layers gained a shift param: ac_sqr_0/ac_0 use WSB+1, ac_1 uses WSB (ours uses
+WSB throughout). Verify with eval-trace layer-by-layer vs the pristine oracle, then bench → 2102535.
 
 ## Phase E/F — search+TT tweaks, UCI/misc, reharden  ⏳
 End bit-exact at 2102535; then advance UPSTREAM_BASE → 4488343cf.
