@@ -132,3 +132,9 @@ net-independent perft/misc/search_modes goldens unchanged. **ALL GATES GREEN:**
 
 UPSTREAM_BASE advanced dd321af5d -> **4488343cf** (the port is now fully in sync with upstream HEAD,
 net nn-af1339a6dea3, bench 2102535). The whole REPORT-13 resync (A-F) is done with zero reverts.
+
+## Incremental sync — 6088838 "Yeet psqt weights" ✅ (2026-06-30)
+1 upstream commit. 1-line eval blend change: `(125*psqt + 131*positional)/128` → `psqt + positional`
+(evaluate.zig:26). Bench 2102535 → **2067208** == upstream@6088838 (upstream-parity OK). Re-captured
+eval-dependent goldens; full suite + legacy parity all green. UPSTREAM_BASE → 6088838. Demonstrates the
+steady-state loop: fetch → router (→evaluate.zig) → 1-line port → upstream_parity → reharden → merge.

@@ -23,7 +23,7 @@ pub const EvalTraceInput = extern struct {
 };
 
 pub fn computeValue(input: EvalInput) c_int {
-    var nnue = @divTrunc(125 * @as(i64, input.psqt) + 131 * @as(i64, input.positional), 128);
+    var nnue = @as(i64, input.psqt) + @as(i64, input.positional); // upstream 6088838: yeet psqt weights
 
     const nnue_complexity = absInt(@as(i64, input.psqt) - @as(i64, input.positional));
     var optimism = @as(i64, input.optimism);
