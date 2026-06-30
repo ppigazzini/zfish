@@ -75,32 +75,101 @@ def bench_of(sha):
     return m.group(1) if m else "—"
 
 
+# A4: commits that change arithmetic in these files need a C++<->Zig integer-semantics review
+# (unsigned promotion like `int * uint64_t`, shift signedness, `/` truncation direction, overflow/wrap).
+FORMULA_FILES = ("src/search.cpp", "src/evaluate.cpp", "src/movepick.cpp", "src/history.h", "src/tt.cpp")
+
+
+def touches_formula(files):
+    return any(f in FORMULA_FILES for f in files)
+
+
+# A real NNUE *architecture* change touches one of these core files (not just an incidental nnue source
+# like network.cpp, and not a plain net bump). These are the deep, bit-exact-quantization ports.
+NNUE_ARCH_FILES = (
+    "src/nnue/nnue_architecture.h", "src/nnue/nnue_feature_transformer.h",
+    "src/nnue/nnue_accumulator.h", "src/nnue/nnue_accumulator.cpp",
+    "src/nnue/nnue_common.h", "src/nnue/nnz_helper.h",
+)
+NET_BUMP_RE = _re.compile(r"^updated? main network to nn-", _re.I)
+
+
+def touches_nnue_arch(files):
+    return any(f in NNUE_ARCH_FILES for f in files)
+
+
+def base_target():
+    # UPSTREAM_BASE_OVERRIDE lets upstream_sync.sh pass the live base it just computed.
+    base = os.environ.get("UPSTREAM_BASE_OVERRIDE") \
+        or open(os.path.join(REPO, "zig_build/tools/upstream/UPSTREAM_BASE")).read().strip()
+    target = open(os.path.join(REPO, "zig_build/tools/upstream/UPSTREAM_TARGET")).read().strip()
+    return base, target
+
+
+def build_rows(base, target, rules):
+    rows = []
+    for sha in git("log", "--reverse", "--no-merges", "--format=%H", f"{base}..{target}").split():
+        files = files_of(sha)
+        subj = git("log", "-1", "--format=%s", sha).strip()
+        risk, owners, _ = classify(files, rules)
+        plat = bool(PLATFORM_RE.search(subj))
+        disp = "SKIP*" if (plat and risk != "SKIP") else risk
+        eff = "SKIP" if disp == "SKIP*" else risk
+        bench = bench_of(sha)
+        rows.append({
+            "disp": disp, "eff": eff, "short": git("rev-parse", "--short", sha).strip(),
+            "bench": bench, "subj": subj, "owners": owners if eff != "SKIP" else set(),
+            "bench_mover": bench != "—", "formula": eff != "SKIP" and touches_formula(files),
+            "nnue_arch": eff != "SKIP" and touches_nnue_arch(files),
+            "net_bump": bool(NET_BUMP_RE.match(subj)),
+        })
+    return rows
+
+
+def fmt_flags(r):
+    f = []
+    if r["formula"]:
+        f.append("FORMULA")
+    if r["nnue_arch"]:
+        f.append("NNUE-ARCH")
+    return ("  [" + ",".join(f) + "]") if f else ""
+
+
 def main():
     rules = load_rules()
     args = sys.argv[1:]
-    if args and args[0] == "--backlog":
-        base = open(os.path.join(REPO, "zig_build/tools/upstream/UPSTREAM_BASE")).read().strip()
-        target = open(os.path.join(REPO, "zig_build/tools/upstream/UPSTREAM_TARGET")).read().strip()
-        rows = []
-        for sha in git("log", "--reverse", "--no-merges", "--format=%H", f"{base}..{target}").split():
-            short = git("rev-parse", "--short", sha).strip()
-            subj = git("log", "-1", "--format=%s", sha).strip()
-            risk, owners, unmapped = classify(files_of(sha), rules)
-            plat = bool(PLATFORM_RE.search(subj))
-            disp = "SKIP*" if (plat and risk != "SKIP") else risk
-            eff = "SKIP" if disp == "SKIP*" else risk  # tier used for the tally
-            rows.append((disp, eff, short, bench_of(sha), subj, owners if eff != "SKIP" else set()))
+
+    if args and args[0] in ("--backlog", "--worklist"):
+        base, target = base_target()
+        rows = build_rows(base, target, rules)
+        worklist_only = args[0] == "--worklist"
+        if worklist_only:
+            # A7: the worklist is exactly the commits that need action -- bench-movers, NNUE-arch ports,
+            # and net bumps (trivial swap). Everything else is no-op / audit-only.
+            shown = [r for r in rows if r["eff"] != "SKIP"
+                     and (r["bench_mover"] or r["nnue_arch"] or r["net_bump"])]
+            print(f"# worklist: {len(shown)} of {len(rows)} commits need action "
+                  f"(NNUE-arch ports + bench-movers + net swaps); the rest are no-ops/audit-only.")
+            for r in shown:
+                tag = "NNUE" if r["nnue_arch"] else ("NET" if r["net_bump"] else "bench")
+                print(f"{tag:5}  {r['short']:10}  bench={r['bench']:9}  {r['subj']}{fmt_flags(r)}")
+                if r["owners"] and not r["net_bump"]:
+                    print(f"          -> {','.join(sorted(r['owners']))}")
+            return
         from collections import Counter
-        tally = Counter(r[1] for r in rows)
-        for disp, eff, short, bench, subj, owners in rows:
-            print(f"{disp:5}  {short:10}  bench={bench:9}  {subj}")
-            if owners:
-                print(f"          -> {','.join(sorted(owners))}")
+        tally = Counter(r["eff"] for r in rows)
+        for r in rows:
+            print(f"{r['disp']:5}  {r['short']:10}  bench={r['bench']:9}  {r['subj']}{fmt_flags(r)}")
+            if r["owners"]:
+                print(f"          -> {','.join(sorted(r['owners']))}")
         print("\nbacklog:", "  ".join(f"{k}={tally.get(k,0)}" for k in ("HIGH", "MED", "LOW", "SKIP")),
-              f"  total={len(rows)}   (SKIP* = arch/platform subject, skippable for sse41)", file=sys.stderr)
+              f"  total={len(rows)}   (SKIP* = arch/platform subject; FORMULA = integer-semantics review)",
+              file=sys.stderr)
         return
+
     ref = args[0] if args else "upstream/master"
-    risk, owners, unmapped = classify(files_of(ref), rules)
+    files = files_of(ref)
+    risk, owners, unmapped = classify(files, rules)
     plat = False
     if ".." not in ref:
         subj = git("log", "-1", "--format=%s", ref).strip()
@@ -109,6 +178,10 @@ def main():
     if not (plat and risk != "SKIP"):
         for o in sorted(owners):
             print(f"  zig: {o}")
+        if ".." not in ref and touches_formula(files):
+            print("  note: FORMULA commit -> review C++/Zig integer semantics (unsigned mul, shifts, /trunc)")
+        if ".." not in ref and touches_nnue_arch(files):
+            print("  note: NNUE-ARCH commit -> may change net format / accumulator / quantization")
     if unmapped:
         print("  unmapped:", ", ".join(unmapped))
 
