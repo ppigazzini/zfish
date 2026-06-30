@@ -122,5 +122,13 @@ ONE port has a subtle deviation OR a no-bench commit is functional in our partia
 via `go depth N` node-count compare vs the pristine oracle, position-by-position. Branch RED; not merged
 until bench == 2102535.
 
-## Phase F — reharden + merge  ⏳
-Re-capture goldens at the new net, full suite + valgrind/mt; merge to refactor; advance UPSTREAM_BASE -> 4488343cf.
+## Phase F — reharden + merge  ✅ SYNC COMPLETE
+Re-captured net/search-dependent goldens at nn-af1339a6dea3 (eval/output_parity/search_parity/mt_sanity);
+net-independent perft/misc/search_modes goldens unchanged. **ALL GATES GREEN:**
+- standalone: signature, output-golden, eval-trace, search-parity, search-modes, perft, misc, parity-mt,
+  parity-teardown, parity-valgrind, parity-stress.
+- legacy parity (the kept in-tree oracle still agrees): oracle/output/perft/misc/eval-trace -parity.
+- pristine upstream-parity: OK (native == upstream@4488343cf: 2102535).
+
+UPSTREAM_BASE advanced dd321af5d -> **4488343cf** (the port is now fully in sync with upstream HEAD,
+net nn-af1339a6dea3, bench 2102535). The whole REPORT-13 resync (A-F) is done with zero reverts.
