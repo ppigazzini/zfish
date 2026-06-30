@@ -563,9 +563,13 @@ pub fn build(b: *std.Build) void {
 
     const install_step = b.getInstallStep();
 
+    // Fetch the net the Zig binary actually loads (engine.zig's default_eval_file_name), not the net
+    // named in the stale upstream src/evaluate.h. After an upstream net bump the two diverge, and the
+    // upstream scripts/net.sh would fetch the wrong file -> the binary can't load its net and crashes.
     const net_cmd = b.addSystemCommand(&.{
         "sh",
-        b.pathFromRoot("scripts/net.sh"),
+        b.pathFromRoot("zig_build/tools/fetch_net.sh"),
+        b.pathFromRoot("zig_build/support/engine.zig"),
     });
     net_cmd.setCwd(b.path("src"));
 
