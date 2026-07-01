@@ -1,0 +1,55 @@
+# Scheduled upstream-sync DETECTION (REPORT-13 A2 / REPORT-14 M14.C(b)).
+#
+# Judgment-free: fetch official-stockfish/master and print how many commits the
+# port is behind its UPSTREAM_BASE marker, so a net-format / bench change can't
+# silently bundle up between sessions. Porting stays a deliberate, human-gated
+# session -- this job only DETECTS, it never attempts a port.
+name: zfish upstream check
+
+on:
+  schedule:
+    # Weekly, Monday 06:00 UTC. Upstream master moves a few commits a week; the
+    # rule (A2) is "sync at least at every net bump", and weekly detection is
+    # cheap insurance against one slipping through.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+# Least privilege: detection only reads the repository and upstream history.
+permissions:
+  contents: read
+
+jobs:
+  upstream-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Full history so `git rev-list BASE..upstream/master` can count the gap
+      # (a shallow checkout may not contain UPSTREAM_BASE).
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      # The sync driver fetches from a remote named `upstream`; add it here (the
+      # local dev clone adds it per 00-CONTRACT.md, CI adds its own).
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/official-stockfish/Stockfish.git
+
+      # upstream_sync.sh --check fetches upstream/master, computes the behind-
+      # count from UPSTREAM_BASE, and prints one terse line. Always exits 0 --
+      # this is informational, not a gate. Surface the line in the job summary.
+      - name: Detect upstream drift
+        run: |
+          line="$(bash zig_build/tools/upstream_sync.sh --check)"
+          echo "$line"
+          {
+            echo "## Upstream drift"
+            echo ""
+            echo "\`$line\`"
+            echo ""
+            echo "Porting is human-gated: run \`zig_build/tools/upstream_sync.sh\` locally for the worklist."
+          } >> "$GITHUB_STEP_SUMMARY"
