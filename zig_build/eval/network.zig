@@ -17,8 +17,9 @@ const hash_combine_magic: usize = 0x9e3779b9;
 const none_name = "None";
 // EvalFileDefaultName (evaluate.h): the embedded net's default name. A build
 // constant, so the native path no longer reads it from the C++ Network's
-// EvalFile.defaultName.
-const default_eval_file_name = "nn-af1339a6dea3.nnue";
+// EvalFile.defaultName. Single source of truth: engine.zig imports this via the
+// "network" module rather than re-declaring it (a net bump edits one line).
+pub const default_eval_file_name = "nn-af1339a6dea3.nnue";
 
 pub const ByteView = extern struct {
     ptr: [*]const u8,

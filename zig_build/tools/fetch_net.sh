@@ -1,17 +1,18 @@
 #!/bin/sh
 # zfish net fetcher. Downloads the NNUE net the Zig binary ACTUALLY loads -- read from the authoritative
-# Zig constant `default_eval_file_name` in zig_build/support/engine.zig -- NOT the stale upstream
-# src/evaluate.h that scripts/net.sh keys on. After an upstream net bump the Zig binary's net diverges
-# from src/evaluate.h, so the upstream downloader fetches the wrong file and the binary crashes; this
-# tracks the binary instead. Same download sources + sha256 validation as scripts/net.sh.
+# Zig constant `default_eval_file_name` in zig_build/eval/network.zig (the single source of truth that
+# engine.zig imports) -- NOT the stale upstream src/evaluate.h that scripts/net.sh keys on. After an
+# upstream net bump the Zig binary's net diverges from src/evaluate.h, so the upstream downloader fetches
+# the wrong file and the binary crashes; this tracks the binary instead. Same download sources + sha256
+# validation as scripts/net.sh.
 #
-# Run with cwd = the net's runtime dir (src/).  $1 = path to zig_build/support/engine.zig
+# Run with cwd = the net's runtime dir (src/).  $1 = path to zig_build/eval/network.zig
 set -e
 
-ENGINE="$1"
-[ -f "$ENGINE" ] || { >&2 echo "fetch_net: engine.zig not found at '$ENGINE'"; exit 1; }
-_filename=$(sed -n 's/.*default_eval_file_name = "\(nn-[0-9a-f]\{12\}\.nnue\)".*/\1/p' "$ENGINE" | head -1)
-[ -n "$_filename" ] || { >&2 echo "fetch_net: no default_eval_file_name in $ENGINE"; exit 1; }
+NET_SRC="$1"
+[ -f "$NET_SRC" ] || { >&2 echo "fetch_net: net-name source not found at '$NET_SRC'"; exit 1; }
+_filename=$(sed -n 's/.*default_eval_file_name = "\(nn-[0-9a-f]\{12\}\.nnue\)".*/\1/p' "$NET_SRC" | head -1)
+[ -n "$_filename" ] || { >&2 echo "fetch_net: no default_eval_file_name in $NET_SRC"; exit 1; }
 
 wget_or_curl=$( (command -v wget >/dev/null 2>&1 && echo "wget -qO- --timeout=300 --tries=1") ||
   (command -v curl >/dev/null 2>&1 && echo "curl -skL --max-time 300"))

@@ -290,6 +290,9 @@ pub fn build(b: *std.Build) void {
         pair[0].addImport("numa_config", numa_config_module);
         pair[0].addImport("numa_replication", numa_replication_module);
         pair[0].addImport("position_storage", position_storage_module);
+        // engine.zig single-sources default_eval_file_name from network.zig
+        // (network has no engine dep, so this edge is acyclic).
+        pair[0].addImport("network", network_module);
     }
 
     // Native-graph cut: run the EngineGraph + member-module unit tests (construction,
@@ -563,13 +566,14 @@ pub fn build(b: *std.Build) void {
 
     const install_step = b.getInstallStep();
 
-    // Fetch the net the Zig binary actually loads (engine.zig's default_eval_file_name), not the net
-    // named in the stale upstream src/evaluate.h. After an upstream net bump the two diverge, and the
-    // upstream scripts/net.sh would fetch the wrong file -> the binary can't load its net and crashes.
+    // Fetch the net the Zig binary actually loads (network.zig's default_eval_file_name -- the single
+    // source of truth engine.zig imports), not the net named in the stale upstream src/evaluate.h. After
+    // an upstream net bump the two diverge, and the upstream scripts/net.sh would fetch the wrong file ->
+    // the binary can't load its net and crashes.
     const net_cmd = b.addSystemCommand(&.{
         "sh",
         b.pathFromRoot("zig_build/tools/fetch_net.sh"),
-        b.pathFromRoot("zig_build/support/engine.zig"),
+        b.pathFromRoot("zig_build/eval/network.zig"),
     });
     net_cmd.setCwd(b.path("src"));
 
