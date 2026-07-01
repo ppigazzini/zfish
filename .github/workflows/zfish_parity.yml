@@ -31,13 +31,15 @@ jobs:
         with:
           version: 0.16.0
 
-      # Cache the downloaded NNUE network (~50 MB) keyed on its pinned name in
-      # evaluate.h, so reruns skip the fetch from tests.stockfishchess.org.
+      # Cache the downloaded NNUE network (~50 MB) keyed on the net name the Zig
+      # binary actually loads -- the `default_eval_file_name` constant in
+      # zig_build/eval/network.zig -- so a Zig-only net bump busts the cache. The
+      # stale src/evaluate.h names the old net and the binary never reads it.
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: src/nn-*.nnue
-          key: nnue-${{ hashFiles('src/evaluate.h') }}
+          key: nnue-${{ hashFiles('zig_build/eval/network.zig') }}
 
       # Pin the ARCH instead of `native`: GitHub runners have modern CPUs whose
       # `native` resolves to a PEXT/AVX512 arch, but the C++ oracle bridge still
