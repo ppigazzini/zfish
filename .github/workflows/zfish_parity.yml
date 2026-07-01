@@ -47,3 +47,10 @@ jobs:
       # baseline the bench signature / parity goldens were validated against so
       # the gate is reproducible and CPU-independent (sse41 runs on any runner).
       - run: zig build parity -Darch=x86-64-sse41-popcnt
+
+      # Arch-variant determinism (REPORT-14 M14.D): the pure-Zig port must yield
+      # the SAME bench on every arch -- a SIMD width or codegen change must not
+      # perturb the eval. Build the avx2 variant and assert its bench equals the
+      # sse41 golden (-Dsignature-ref makes tests/signature.sh fail on mismatch).
+      # A cheap regression net; avx2 here stays non-PEXT so no oracle is needed.
+      - run: zig build signature -Darch=x86-64-avx2 -Dsignature-ref=2067208
