@@ -33,7 +33,15 @@ namespace Eval {
 // for the build process (profile-build and fishtest) to work. Do not change the
 // name of the macro or the location where this macro is defined, as it is used
 // in the Makefile/Fishtest.
-#define EvalFileDefaultName "nn-83a0d6daf7e5.nnue"
+//
+// zfish: this src/ tree is a FROZEN differential oracle, not a live upstream
+// mirror (see ZFISH-ORACLE-FROZEN.md). The net that actually loads is owned by
+// Zig (zig_build/eval/network.zig default_eval_file_name, surfaced as the
+// EvalFile UCI-option default in zig_build/uci/option.zig); this macro is
+// overridden by that option in both the default and legacy-oracle binaries.
+// It is PINNED to the same value only so this file stops advertising a stale
+// net -- a net bump updates the Zig constant, and this pin follows it.
+#define EvalFileDefaultName "nn-af1339a6dea3.nnue"
 
 namespace NNUE {
 class Network;
