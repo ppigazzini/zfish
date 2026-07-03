@@ -1,5 +1,13 @@
 const std = @import("std");
 const position_snapshot = @import("position_snapshot");
+// Call the pure-Zig feature-index helpers directly instead of round-tripping
+// through the C-ABI exports in main.zig. Passing a small `extern struct` BY VALUE
+// across callconv(.c) is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
+// HalfThreatParams / 7-byte HalfDiff arrive scrambled), which silently corrupted
+// the psq feature indices off-x86 (bench diverged: 6860970 vs 2067208). A direct
+// Zig call has no C-ABI marshaling, so it is correct on every target and bit-
+// identical on x86. The main.zig exports stay for the x86-only C++ oracle.
+const nnue_feature = @import("nnue_feature");
 
 const psq_feature: u8 = 0;
 const threat_feature: u8 = 1;
@@ -85,12 +93,10 @@ const FullAppendResult = extern struct {
     indices: [threat_index_capacity]u32,
 };
 
-extern fn zfish_half_ka_append_changed(
-    perspective: u8,
-    king_square: u8,
-    diff: HalfAppendDiff,
-) HalfAppendResult;
-extern fn zfish_half_ka_make_index(params: HalfMakeIndexParams) u32;
+// zfish_half_ka_make_index / zfish_half_ka_append_changed are now called directly
+// as nnue_feature.halfMakeIndex / halfAppendChanged (see the import note above); the
+// C-ABI extern decls were removed because the by-value struct passing they used is
+// mis-marshaled on aarch64.
 extern fn zfish_full_threats_append_changed(
     perspective: u8,
     king_square: u8,
@@ -369,7 +375,7 @@ fn refreshLatestPsq(
         const old_piece = entry_pieces[square];
         const new_piece = snapshot.pieces[square];
         if (old_piece != new_piece and old_piece != no_piece) {
-            removed[removed_len] = zfish_half_ka_make_index(.{
+            removed[removed_len] = nnue_feature.halfMakeIndex(.{
                 .perspective = perspective,
                 .square = @intCast(square),
                 .piece = old_piece,
@@ -384,7 +390,7 @@ fn refreshLatestPsq(
         const old_piece = entry_pieces[square];
         const new_piece = snapshot.pieces[square];
         if (old_piece != new_piece and new_piece != no_piece) {
-            added[added_len] = zfish_half_ka_make_index(.{
+            added[added_len] = nnue_feature.halfMakeIndex(.{
                 .perspective = perspective,
                 .square = @intCast(square),
                 .piece = new_piece,
@@ -494,7 +500,7 @@ fn incrementalStepPsq(
     else
         psqDiff(stateBytesConst(psq_feature, computed_index, stack));
 
-    const append = zfish_half_ka_append_changed(perspective, king_square, .{
+    const append = nnue_feature.halfAppendChanged(perspective, king_square, .{
         .from = diff.from,
         .to = diff.to,
         .pc = diff.pc,

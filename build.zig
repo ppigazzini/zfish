@@ -344,6 +344,7 @@ pub fn build(b: *std.Build) void {
     movegen_module.addImport("position_snapshot", position_snapshot_module);
     movegen_module.addImport("bitboard", bitboard_module);
     nnue_accumulator_module.addImport("position_snapshot", position_snapshot_module);
+    nnue_accumulator_module.addImport("nnue_feature", nnue_feature_module);
     position_module.addImport("bitboard", bitboard_module);
     position_module.addImport("movegen", movegen_module);
     position_module.addImport("tt", tt_module);
