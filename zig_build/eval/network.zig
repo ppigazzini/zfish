@@ -92,28 +92,64 @@ extern fn zfish_network_transform_bucket(
 // -> ac_1 -> fc_2 (affine 32->1), plus the fwdOut bias term. Bit-exact with the
 // C++ SSSE3 path (integer math). Weights are int8 in the SSSE3-scrambled layout;
 // biases int32 linear. WeightScaleBits=6.
-inline fn weightIndexScrambled(i: usize, padded_input: usize, output_dim: usize) usize {
-    return (i / 4) % (padded_input / 4) * output_dim * 4 + (i / padded_input) * 4 + i % 4;
-}
-
-fn affineLayer(
-    out: []i32,
+// Affine layer over the int8 weights' dpbusd (SSSE3/AVX2/AVX-512-VNNI) tiling.
+// The scrambled physical index weightIndexScrambled(j*padded+i,padded,OUT) reduces,
+// for padded%4==0, to  phys = (i/4)*OUT*4 + j*4 + (i%4)  -- i.e. for input group
+// g=i/4 and sublane m=i%4 the weight of output j lives at g*OUT*4 + j*4 + m, so each
+// group's OUT*4 weight bytes are CONTIGUOUS. Load that block, broadcast the group's
+// 4 input bytes across it, multiply (input<=127, weight in [-128,127] -> product fits
+// i16), then sum each group of 4 sublanes into the i32 accumulator.
+//
+// Integer sums are order-independent and no partial ever leaves i32's range, so this
+// is BIT-EXACT with the prior scalar loop (signature stays 2067208 on every arch);
+// it just lets LLVM emit vector multiplies/shuffles (and dpbusd-class ops) instead of
+// a scalar MAC. `input.len` must be the padded input dim (a multiple of 4); zero tail
+// lanes contribute nothing.
+inline fn affineDpbusd(
+    comptime OUT: usize,
+    out: *[OUT]i32,
     biases: [*]const i32,
     weights: [*]const i8,
     input: []const u8,
-    padded_input: usize,
 ) void {
-    const out_dim = out.len;
-    var j: usize = 0;
-    while (j < out_dim) : (j += 1) {
-        var sum: i32 = biases[j];
-        var i: usize = 0;
-        while (i < input.len) : (i += 1) {
-            const phys = weightIndexScrambled(j * padded_input + i, padded_input, out_dim);
-            sum += @as(i32, weights[phys]) * @as(i32, input[i]);
+    const N = OUT * 4;
+    const Vi16 = @Vector(N, i16);
+    const Vo = @Vector(OUT, i32);
+    // broadcast mask: lane k takes input sublane k%4 (repeats the 4 input bytes OUT×).
+    const rep_mask: @Vector(N, i32) = comptime blk: {
+        var m: [N]i32 = undefined;
+        for (0..N) |k| m[k] = @intCast(k % 4);
+        break :blk m;
+    };
+    // deinterleave masks: mask[sub] gathers lanes {j*4+sub : j in 0..OUT}.
+    const deint: [4]@Vector(OUT, i32) = comptime blk: {
+        var d: [4]@Vector(OUT, i32) = undefined;
+        for (0..4) |sub| {
+            var col: [OUT]i32 = undefined;
+            for (0..OUT) |j| col[j] = @intCast(j * 4 + sub);
+            d[sub] = col;
         }
-        out[j] = sum;
+        break :blk d;
+    };
+    var acc: Vo = biases[0..OUT].*;
+    const groups = input.len / 4;
+    var g: usize = 0;
+    while (g < groups) : (g += 1) {
+        const in4: @Vector(4, i16) = .{
+            @intCast(input[g * 4]),     @intCast(input[g * 4 + 1]),
+            @intCast(input[g * 4 + 2]), @intCast(input[g * 4 + 3]),
+        };
+        const inpat: Vi16 = @shuffle(i16, in4, @as(@Vector(4, i16), undefined), rep_mask);
+        const wq: @Vector(N, i8) = weights[g * N ..][0..N].*;
+        const w16: Vi16 = wq; // widen i8 -> i16
+        const prod: Vi16 = inpat * w16; // exact: |input|<=127, |weight|<=128
+        inline for (0..4) |sub| {
+            const s: @Vector(OUT, i16) = @shuffle(i16, prod, @as(Vi16, undefined), deint[sub]);
+            const s32: Vo = s; // widen i16 -> i32 before summing (4 partials can exceed i16)
+            acc += s32;
+        }
     }
+    out.* = acc;
 }
 
 // M-FINAL cutover: native affine-layer byte sizes — fixed by the NNUE architecture
@@ -150,7 +186,7 @@ fn propagateBucket(network: *const anyopaque, bucket: usize, transformed: [*]con
 
     // fc_0: affine 1024 -> 32 (PaddedInputDimensions = 1024).
     var fc0_out: [32]i32 = undefined;
-    affineLayer(&fc0_out, fc0_b, fc0_w, transformed[0..1024], 1024);
+    affineDpbusd(32, &fc0_out, fc0_b, fc0_w, transformed[0..1024]);
 
     // ac_sqr_0 / ac_0 on the first FC_0_OUTPUTS=31 outputs, concatenated into 62.
     // upstream 7c7fe322e: ac_sqr_0/ac_0 use WeightScaleBitsLocal = WeightScaleBits+1 = 7.
@@ -162,18 +198,20 @@ fn propagateBucket(network: *const anyopaque, bucket: usize, transformed: [*]con
         combined[31 + i] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc0_out[i] >> 7))); // ClippedReLU (WSB+1)
     }
 
-    // fc_1: affine 62 -> 32 (PaddedInputDimensions = 64).
+    // fc_1: affine 62 -> 32 (PaddedInputDimensions = 64). Pass the full padded 64:
+    // combined[62..64] are the zero-init pad, so the extra lanes add nothing.
     var fc1_out: [32]i32 = undefined;
-    affineLayer(&fc1_out, fc1_b, fc1_w, combined[0..62], 64);
+    affineDpbusd(32, &fc1_out, fc1_b, fc1_w, combined[0..64]);
 
     // ac_1: ClippedReLU 32.
     var ac1: [32]u8 = undefined;
     var k: usize = 0;
     while (k < 32) : (k += 1) ac1[k] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc1_out[k] >> 6)));
 
-    // fc_2: affine 32 -> 1 (PaddedInputDimensions = 32).
+    // fc_2: affine 32 -> 1 (PaddedInputDimensions = 32). OUT=1 makes the scramble the
+    // identity (phys == i); the dpbusd path handles it uniformly.
     var fc2_out: [1]i32 = undefined;
-    affineLayer(&fc2_out, fc2_b, fc2_w, ac1[0..32], 32);
+    affineDpbusd(1, &fc2_out, fc2_b, fc2_w, ac1[0..32]);
 
     // upstream 7c7fe322e: fwdOut = fc_2_out[0] + fc_0_out[FC_0_OUTPUTS], then scale the sum by
     // 600*OutputScale / (HiddenOneVal*(1<<WeightScaleBits)*2) = 9600/16384, via i64.
