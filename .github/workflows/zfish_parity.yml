@@ -48,12 +48,14 @@ jobs:
       # the gate is reproducible and CPU-independent (sse41 runs on any runner).
       - run: zig build parity -Darch=x86-64-sse41-popcnt
 
-      # Arch-variant determinism (REPORT-14 M14.D): the pure-Zig port must yield
-      # the SAME bench on every arch -- a SIMD width or codegen change must not
-      # perturb the eval. Build the avx2 variant and assert its bench equals the
-      # sse41 golden (-Dsignature-ref makes tests/signature.sh fail on mismatch).
-      # A cheap regression net; avx2 here stays non-PEXT so no oracle is needed.
-      - run: zig build signature -Darch=x86-64-avx2 -Dsignature-ref=2067208
+      # Arch-variant determinism (REPORT-14 M14.D, widened in REPORT-15 M15.1): the
+      # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
+      # codegen change must not perturb the integer-exact eval. This sweep asserts
+      # signature == 2067208 on every tier THIS runner can execute (avx2, bmi2/PEXT,
+      # and its best AVX-512 tier), not just avx2 -- the wider tiers are where the
+      # upcoming @Vector NNUE kernels (M15.2+) could break bit-exactness while
+      # sse41/avx2 stay green. Runs the real bench per tier, so it is not hollow.
+      - run: bash zig_build/tools/arch_determinism.sh 2067208
 
       # Wall-clock time management (REPORT-15 §9): the deterministic `parity`
       # aggregate above is entirely depth/node-limited and never consults the
