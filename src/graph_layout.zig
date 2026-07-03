@@ -177,13 +177,28 @@ pub const pvmoves_off = struct {
     pub const length: usize = 496;
 };
 
-// TranspositionTable member offsets (size 24). Declaration order is clusterCount,
-// table, generation8.
-pub const tt_off = struct {
-    pub const cluster_count: usize = 0;
-    pub const table: usize = 8;
-    pub const generation8: usize = 16;
+// The TranspositionTable object (24 bytes). Typed replacement for the tt_off offset
+// map: clusterCount, table (Cluster*), generation8, in declaration order. The side
+// TT the native engine allocates uses this layout.
+pub const TranspositionTable = extern struct {
+    cluster_count: usize, // @0
+    table: ?*anyopaque, // @8 (Cluster*)
+    generation8: u8, // @16
+    _pad: [7]u8,
+
+    pub inline fn fromPtr(p: *anyopaque) *TranspositionTable {
+        return @ptrCast(@alignCast(p));
+    }
+    pub inline fn fromAddr(addr: usize) *TranspositionTable {
+        return @ptrFromInt(addr);
+    }
 };
+
+comptime {
+    std.debug.assert(@sizeOf(TranspositionTable) == transposition_table_size);
+    std.debug.assert(@offsetOf(TranspositionTable, "table") == 8);
+    std.debug.assert(@offsetOf(TranspositionTable, "generation8") == 16);
+}
 
 // LimitsType field offsets (bytes from the limits sub-object base). searchmoves
 // is a 24-byte std::vector at 0, then seven 8-byte TimePoints

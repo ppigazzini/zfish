@@ -951,8 +951,7 @@ pub export fn zfish_engine_tt_ptr(engine: *anyopaque) *anyopaque {
 // Free the side tt's large-page table at engine teardown + rezero for any re-construct
 // (H5/valgrind). The table pointer lives at tt_off.table within the side storage.
 fn freeSideTt() void {
-    const table_ptr: *?*anyopaque =
-        @ptrCast(@alignCast(side_tt_storage[graph_layout.tt_off.table..][0..8]));
+    const table_ptr: *?*anyopaque = &graph_layout.TranspositionTable.fromPtr(&side_tt_storage).table;
     if (table_ptr.*) |tbl| zfish_aligned_large_pages_free(tbl);
     @memset(&side_tt_storage, 0);
 }
@@ -1223,16 +1222,13 @@ pub export fn zfish_ss_pv_one_and_ponder(worker: *anyopaque, best: *anyopaque) u
     const pv_addr = rm0 + graph_layout.root_move_off.pv;
     const length: *const usize = @ptrFromInt(pv_addr + graph_layout.pvmoves_off.length);
     if (length.* != 1) return 0;
-    const tt = workerTT(worker);
-    const cc: *const usize = @ptrFromInt(tt + graph_layout.tt_off.cluster_count);
-    const table: *const usize = @ptrFromInt(tt + graph_layout.tt_off.table);
-    const gen: *const u8 = @ptrFromInt(tt + graph_layout.tt_off.generation8);
+    const tp = graph_layout.TranspositionTable.fromAddr(workerTT(worker));
     const pos: usize = @intFromPtr(worker) + graph_layout.worker_off.root_pos;
     return zfish_search_extract_ponder_from_tt(
         @ptrFromInt(pv_addr),
-        @ptrFromInt(table.*),
-        cc.*,
-        gen.*,
+        tp.table,
+        tp.cluster_count,
+        tp.generation8,
         @ptrFromInt(pos),
     );
 }
@@ -1551,25 +1547,17 @@ fn zfishEngineChess960Enabled(engine_ptr: *const anyopaque) callconv(.c) u8 {
 // native resize/clear (threaded parallel zero) + hashfull already exist and are the same code
 // the live search uses. Default-only; the legacy oracle keeps the C++ TranspositionTable methods.
 fn zfishEngineTtResize(tt_ptr: *anyopaque, mb: usize, threads: *anyopaque) callconv(.c) void {
-    const base: [*]u8 = @ptrCast(tt_ptr);
-    const table_ptr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.tt_off.table));
-    const count_ptr: *usize = @ptrCast(@alignCast(base + graph_layout.tt_off.cluster_count));
-    const gen_ptr: *u8 = @ptrCast(@alignCast(base + graph_layout.tt_off.generation8));
-    tt_port.resizeState(table_ptr, count_ptr, gen_ptr, mb, threads);
+    const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
+    tt_port.resizeState(&tp.table, &tp.cluster_count, &tp.generation8, mb, threads);
 }
 fn zfishEngineTtClear(tt_ptr: *anyopaque, threads: *anyopaque) callconv(.c) void {
-    const base: [*]u8 = @ptrCast(tt_ptr);
-    const table_ptr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.tt_off.table));
-    const count_ptr: *usize = @ptrCast(@alignCast(base + graph_layout.tt_off.cluster_count));
-    const gen_ptr: *u8 = @ptrCast(@alignCast(base + graph_layout.tt_off.generation8));
-    tt_port.clearState(table_ptr.*, count_ptr.*, gen_ptr, threads);
+    const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
+    tt_port.clearState(tp.table, tp.cluster_count, &tp.generation8, threads);
 }
 fn zfishEngineTtHashfull(engine_ptr: *const anyopaque, max_age: c_int) callconv(.c) c_int {
-    const base: [*]u8 = @ptrCast(zfish_engine_tt_ptr(@constCast(engine_ptr)));
-    const table = @as(*?*anyopaque, @ptrCast(@alignCast(base + graph_layout.tt_off.table))).* orelse return 0;
-    const count = @as(*usize, @ptrCast(@alignCast(base + graph_layout.tt_off.cluster_count))).*;
-    const gen = @as(*u8, @ptrCast(@alignCast(base + graph_layout.tt_off.generation8))).*;
-    return tt_port.hashfull(@ptrCast(@alignCast(table)), count, gen, max_age);
+    const tp = graph_layout.TranspositionTable.fromPtr(zfish_engine_tt_ptr(@constCast(engine_ptr)));
+    const table = tp.table orelse return 0;
+    return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);
 }
 
 // M-FINAL / M-SM: native SearchManager construction + native Worker teardown — cracks the
@@ -2006,10 +1994,10 @@ fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) callconv(.c) void {
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster
 // array, cluster count, and generation, resolved by offset. Bridge-only symbol.
 pub export fn zfish_search_cb_tt_context(worker: *const anyopaque, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
-    const tt = @as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.tt)).*;
-    out_table.* = @ptrFromInt(@as(*const usize, @ptrFromInt(tt + graph_layout.tt_off.table)).*);
-    out_cluster_count.* = @as(*const usize, @ptrFromInt(tt + graph_layout.tt_off.cluster_count)).*;
-    out_generation.* = @as(*const u8, @ptrFromInt(tt + graph_layout.tt_off.generation8)).*;
+    const tp = graph_layout.TranspositionTable.fromAddr(@as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.tt)).*);
+    out_table.* = tp.table;
+    out_cluster_count.* = tp.cluster_count;
+    out_generation.* = tp.generation8;
 }
 
 // SearchManager::check_time inputs, snapshotted once per search tree. Mirrors the
@@ -2170,8 +2158,7 @@ fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
     @as(*i64, @ptrFromInt(limits + lo.npmsec)).* = out.npmsec;
 
     // TranspositionTable::new_search(): bump generation8 on the worker's TT.
-    const tt = @as(*const usize, @ptrFromInt(wb + off.tt)).*;
-    const gen: *u8 = @ptrFromInt(tt + graph_layout.tt_off.generation8);
+    const gen = &graph_layout.TranspositionTable.fromAddr(@as(*const usize, @ptrFromInt(wb + off.tt)).*).generation8;
     gen.* = zfish_tt_generation_next(gen.*);
 }
 
@@ -2424,11 +2411,8 @@ pub export fn zfish_search_cb_pv_context(manager: *anyopaque, worker: *anyopaque
     out.nodes = thread_port.nodesSearched(threads);
     out.tb_hits = thread_port.tbHits(threads);
 
-    const ttbase = @intFromPtr(tt);
-    const cc = @as(*const usize, @ptrFromInt(ttbase + graph_layout.tt_off.cluster_count)).*;
-    const table = @as(*const usize, @ptrFromInt(ttbase + graph_layout.tt_off.table)).*;
-    const gen = @as(*const u8, @ptrFromInt(ttbase + graph_layout.tt_off.generation8)).*;
-    out.hashfull = zfish_tt_hashfull(@ptrFromInt(table), cc, gen, 0);
+    const tp = graph_layout.TranspositionTable.fromPtr(tt);
+    out.hashfull = zfish_tt_hashfull(@ptrFromInt(@intFromPtr(tp.table)), tp.cluster_count, tp.generation8, 0);
 
     const start_time = @as(*const i64, @ptrFromInt(@intFromPtr(manager) + graph_layout.search_manager_off.tm)).*;
     const elapsed = zfishNow() - start_time;
