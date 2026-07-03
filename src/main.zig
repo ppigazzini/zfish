@@ -354,10 +354,10 @@ fn zfishOperatorDelete(p: ?*anyopaque) callconv(.c) void {
 // as the C++ source of truth, cross-checked via oracle-parity). These feed zfish_worker_set_limits
 // (the POD-tail copy), so a wrong value breaks bench — fully gate-verified.
 fn zfish_limits_sizeof() usize {
-    return graph_layout.limits_off.total_size;
+    return @sizeOf(graph_layout.LimitsType);
 }
 fn zfish_limits_searchmoves_bytes() usize {
-    return graph_layout.limits_off.searchmoves_bytes;
+    return @offsetOf(graph_layout.LimitsType, "time");
 }
 
 // M-FINAL (limits readers): pure LimitsType offset reads — no allocation, so no Zig<->C++
@@ -365,13 +365,10 @@ fn zfish_limits_searchmoves_bytes() usize {
 // from graph_layout.limits_off (verified vs src/search.h LimitsType field order). Exported
 // default-only (comptime block below); the legacy oracle keeps the C++ defs under #ifdef.
 fn zfishLimitsPonderMode(limits: *const anyopaque) callconv(.c) u8 {
-    const base: [*]const u8 = @ptrCast(limits);
-    return if (base[graph_layout.limits_off.ponder_mode] != 0) 1 else 0;
+    return if (graph_layout.LimitsType.fromPtr(@constCast(limits)).ponder_mode != 0) 1 else 0;
 }
 fn zfishLimitsPerftValue(limits: *const anyopaque) callconv(.c) usize {
-    const base: [*]const u8 = @ptrCast(limits);
-    const perft = @as(*const i32, @ptrCast(@alignCast(base + graph_layout.limits_off.perft))).*;
-    return @intCast(perft);
+    return @intCast(graph_layout.LimitsType.fromPtr(@constCast(limits)).perft);
 }
 fn zfishLimitsSearchmoveCount(limits: *const anyopaque) callconv(.c) usize {
     // searchmoves is std::vector<std::string> at LimitsType +0: {begin@0, end@8}; the default
@@ -1385,9 +1382,9 @@ fn ssNpmsecAdvance(worker: *anyopaque) callconv(.c) void {
     const manager = workerRefPtr(worker, off.manager).?;
     const avail = &graph_layout.SearchManager.fromPtr(manager).tm.available_nodes;
     const us: usize = zfish_ss_side_to_move(@ptrCast(wbase + off.root_pos));
-    const inc_ptr: *const i64 = @ptrCast(@alignCast(wbase + off.limits + graph_layout.limits_off.inc_w + us * 8));
+    const inc = graph_layout.LimitsType.fromAddr(@intFromPtr(wbase) + off.limits).inc[us];
     const nodes: i64 = @intCast(zfish_threadpool_nodes_searched(workerRefPtr(worker, off.threads).?));
-    avail.* = @max(@as(i64, 0), avail.* - (nodes - inc_ptr.*));
+    avail.* = @max(@as(i64, 0), avail.* - (nodes - inc));
 }
 // REPORT-12 TU=0: the movepick history snapshot. Stats::data() returns the object's flat storage,
 // which is the object's own address — so each history pointer IS its .data() (identity). The snapshot
@@ -1689,9 +1686,8 @@ const ParsedLimits = extern struct {
     searchmoves: ?[*:0]u8,
 };
 fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void {
-    const lo = graph_layout.limits_off;
-    var limits: [lo.total_size]u8 align(8) = [_]u8{0} ** lo.total_size;
-    const base: [*]u8 = &limits;
+    var limits: graph_layout.LimitsType = std.mem.zeroes(graph_layout.LimitsType);
+    const base: [*]u8 = @ptrCast(&limits);
     // Capture the search start as early as possible -- upstream UCIEngine::parse_limits
     // sets `limits.startTime = now()` first thing. TimeManagement::init copies it into
     // tm.startTime, and the info-line elapsed is `now() - tm.startTime`. Left unset (0),
@@ -1699,19 +1695,19 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
     // /`nps` fields were bogus while the bench's own Total-time summary was correct.
     // Depth/node-limited searches never consult startTime for stopping, so bench node
     // count / signature is unaffected; only the reported time/nps become correct.
-    @as(*i64, @ptrCast(@alignCast(base + lo.start_time))).* = zfishNow();
-    @as(*i64, @ptrCast(@alignCast(base + lo.time_w))).* = parsed.wtime;
-    @as(*i64, @ptrCast(@alignCast(base + lo.time_b))).* = parsed.btime;
-    @as(*i64, @ptrCast(@alignCast(base + lo.inc_w))).* = parsed.winc;
-    @as(*i64, @ptrCast(@alignCast(base + lo.inc_b))).* = parsed.binc;
-    @as(*i32, @ptrCast(@alignCast(base + lo.movestogo))).* = parsed.movestogo;
-    @as(*i32, @ptrCast(@alignCast(base + lo.depth))).* = parsed.depth;
-    @as(*i32, @ptrCast(@alignCast(base + lo.mate))).* = parsed.mate;
-    @as(*i32, @ptrCast(@alignCast(base + lo.perft))).* = parsed.perft;
-    @as(*i32, @ptrCast(@alignCast(base + lo.infinite))).* = if (parsed.infinite != 0) 1 else 0;
-    @as(*i64, @ptrCast(@alignCast(base + lo.movetime))).* = parsed.movetime;
-    @as(*u64, @ptrCast(@alignCast(base + lo.nodes))).* = parsed.nodes;
-    base[lo.ponder_mode] = parsed.ponder_mode;
+    limits.start_time = zfishNow();
+    limits.time[0] = parsed.wtime;
+    limits.time[1] = parsed.btime;
+    limits.inc[0] = parsed.winc;
+    limits.inc[1] = parsed.binc;
+    limits.movestogo = parsed.movestogo;
+    limits.depth = parsed.depth;
+    limits.mate = parsed.mate;
+    limits.perft = parsed.perft;
+    limits.infinite = if (parsed.infinite != 0) 1 else 0;
+    limits.movetime = parsed.movetime;
+    limits.nodes = parsed.nodes;
+    limits.ponder_mode = parsed.ponder_mode;
 
     // searchmoves std::vector<std::string> @ offset 0.
     var sm_elems: ?*anyopaque = null;
@@ -1723,7 +1719,7 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
             if (tok.len != 0) count += 1;
         }
         if (count != 0) {
-            const nbytes = count * lo.searchmoves_bytes; // count * 24
+            const nbytes = count * 24; // count * sizeof(std::string)
             const elems = zfishOperatorNew(nbytes) orelse @panic("searchmoves: operator new failed");
             const ebase: [*]u8 = @ptrCast(elems);
             @memset(ebase[0..nbytes], 0);
@@ -1731,7 +1727,7 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
             it = std.mem.splitScalar(u8, sm, '\n');
             while (it.next()) |tok| {
                 if (tok.len == 0) continue;
-                const slot = ebase + i * lo.searchmoves_bytes;
+                const slot = ebase + i * 24;
                 slot[0] = @intCast(tok.len << 1); // libc++ SSO size byte
                 @memcpy(slot[1 .. 1 + tok.len], tok);
                 i += 1;
@@ -2071,12 +2067,11 @@ pub export fn zfish_search_cb_worker_state(
         out_time.stop_on_ponderhit = &smgr.stop_on_ponderhit;
         out_time.tm_start_time = smgr.tm.start_time;
         out_time.tm_maximum_time = smgr.tm.maximum_time;
-        out_time.lim_nodes = @as(*const u64, @ptrFromInt(limits + graph_layout.limits_off.nodes)).*;
-        out_time.lim_movetime = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.movetime)).*;
+        const lim = graph_layout.LimitsType.fromAddr(limits);
+        out_time.lim_nodes = lim.nodes;
+        out_time.lim_movetime = lim.movetime;
         out_time.tm_use_nodes_time = smgr.tm.use_nodes_time;
-        const time_w = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.time_w)).*;
-        const time_b = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.time_b)).*;
-        out_time.use_time_management = @intFromBool(time_w != 0 or time_b != 0);
+        out_time.use_time_management = @intFromBool(lim.time[0] != 0 or lim.time[1] != 0);
     } else {
         out_time.calls_cnt = null;
     }
@@ -2111,26 +2106,23 @@ pub export fn zfish_ss_prologue(worker: *anyopaque) void {
 fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
     const wb = @intFromPtr(worker);
     const off = graph_layout.worker_off;
-    const lo = graph_layout.limits_off;
-    const limits = wb + off.limits;
+    const lim = graph_layout.LimitsType.fromAddr(wb + off.limits);
     const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
     const tm = &smgr.tm;
     const root_pos: *const anyopaque = @ptrFromInt(wb + off.root_pos);
 
     const us: usize = position_port.sideToMove(root_pos);
-    const time_off = lo.time_w + us * 8;
-    const inc_off = lo.inc_w + us * 8;
 
     const input = timeman_port.TimemanInput{
-        .time_us = @as(*const i64, @ptrFromInt(limits + time_off)).*,
-        .inc_us = @as(*const i64, @ptrFromInt(limits + inc_off)).*,
-        .start_time = @as(*const i64, @ptrFromInt(limits + lo.start_time)).*,
+        .time_us = lim.time[us],
+        .inc_us = lim.inc[us],
+        .start_time = lim.start_time,
         .npmsec = optInt("nodestime"),
         .move_overhead = optInt("Move Overhead"),
         .available_nodes = tm.available_nodes,
         .current_optimum_time = tm.optimum_time,
         .current_maximum_time = tm.maximum_time,
-        .movestogo = @as(*const c_int, @ptrFromInt(limits + lo.movestogo)).*,
+        .movestogo = lim.movestogo,
         .ply = position_port.gamePly(root_pos),
         .original_time_adjust = smgr.original_time_adjust,
         .ponder = @intFromBool(optInt("Ponder") != 0),
@@ -2144,9 +2136,9 @@ fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
     tm.available_nodes = out.available_nodes;
     tm.use_nodes_time = out.use_nodes_time;
     smgr.original_time_adjust = out.original_time_adjust;
-    @as(*i64, @ptrFromInt(limits + time_off)).* = out.time_us;
-    @as(*i64, @ptrFromInt(limits + inc_off)).* = out.inc_us;
-    @as(*i64, @ptrFromInt(limits + lo.npmsec)).* = out.npmsec;
+    lim.time[us] = out.time_us;
+    lim.inc[us] = out.inc_us;
+    lim.npmsec = out.npmsec;
 
     // TranspositionTable::new_search(): bump generation8 on the worker's TT.
     const gen = &graph_layout.TranspositionTable.fromAddr(@as(*const usize, @ptrFromInt(wb + off.tt)).*).generation8;
@@ -2289,8 +2281,8 @@ fn zfish_search_id_state(worker: *anyopaque, out: *ZfishIdState) callconv(.c) vo
     out.thread_idx = thread_idx;
     out.threads_size = tp.numThreads();
     out.multipv_option = @intCast(@max(optInt("MultiPV"), 0));
-    out.limits_depth = @as(*const c_int, @ptrFromInt(limits + graph_layout.limits_off.depth)).*;
-    out.limits_mate = @as(*const c_int, @ptrFromInt(limits + 88)).*;
+    out.limits_depth = graph_layout.LimitsType.fromAddr(limits).depth;
+    out.limits_mate = graph_layout.LimitsType.fromAddr(limits).mate;
     const time_w = @as(*const i64, @ptrFromInt(limits + 24)).*;
     const time_b = @as(*const i64, @ptrFromInt(limits + 32)).*;
     out.use_time_management = @intFromBool(time_w != 0 or time_b != 0);
@@ -2344,7 +2336,7 @@ pub export fn zfish_ss_context(worker: *anyopaque, out: *ZfishSsCtx) void {
     const rm_begin = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves)).*;
     const rm_end = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves + 8)).*;
     const limits = wbase + graph_layout.worker_off.limits;
-    const npmsec = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.npmsec)).*;
+    const npmsec = graph_layout.LimitsType.fromAddr(limits).npmsec;
 
     const limit_strength = optInt("UCI_LimitStrength") != 0;
     const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
@@ -2354,7 +2346,7 @@ pub export fn zfish_ss_context(worker: *anyopaque, out: *ZfishSsCtx) void {
     out.is_mainthread = @intFromBool(thread_idx == 0);
     out.root_moves_empty = @intFromBool(rm_begin == rm_end);
     out.npmsec = @intFromBool(npmsec != 0);
-    out.limits_depth = @as(*const i32, @ptrFromInt(limits + graph_layout.limits_off.depth)).*;
+    out.limits_depth = graph_layout.LimitsType.fromAddr(limits).depth;
     out.skill_enabled = @intFromBool(skill_enabled);
 }
 
@@ -2497,9 +2489,8 @@ pub export fn zfish_ss_should_busywait(worker: *const anyopaque) u8 {
     const pool = workerThreadsPool(worker);
     if (graph_layout.ThreadPool.fromAddr(pool).stop != 0) return 0;
     const ponder = graph_layout.SearchManager.fromAddr(workerManager(worker)).ponder;
-    const base: [*]const u8 = @ptrCast(worker);
-    const infinite: *const c_int = @ptrCast(@alignCast(base + graph_layout.worker_off.limits + graph_layout.limits_off.infinite));
-    return if (ponder != 0 or infinite.* != 0) 1 else 0;
+    const infinite = graph_layout.LimitsType.fromAddr(@intFromPtr(worker) + graph_layout.worker_off.limits).infinite;
+    return if (ponder != 0 or infinite != 0) 1 else 0;
 }
 
 // UCIEngine::cli accessors (bridge-only). cli is a CommandLine {int argc;

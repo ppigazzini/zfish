@@ -236,29 +236,44 @@ comptime {
 // (time[2]/inc[2]/npmsec/movetime/startTime) ending at 80, then the five ints
 // movestogo/depth/mate/perft/infinite. The bridge's zfish_ss_context reads depth
 // at +84, which cross-checks this map.
-pub const limits_off = struct {
-    pub const time_w: usize = 24; // time[WHITE] (1st TimePoint)
-    pub const time_b: usize = 32; // time[BLACK]
-    pub const inc_w: usize = 40; // inc[WHITE] (3rd TimePoint)
-    pub const inc_b: usize = 48; // inc[BLACK]
-    pub const npmsec: usize = 56; // 5th TimePoint (after time[2]/inc[2])
-    pub const movetime: usize = 64; // 6th TimePoint
-    pub const start_time: usize = 72; // 7th TimePoint
-    pub const movestogo: usize = 80; // first int after the TimePoints
-    pub const depth: usize = 84;
-    pub const mate: usize = 88;
-    pub const infinite: usize = 96;
-    // uint64_t nodes follows the five ints (movestogo/depth/mate/perft/infinite@80..100)
-    // after 4 bytes of alignment padding; ponderMode (bool) follows at 112.
-    pub const perft: usize = 92; // int perft (4th of movestogo/depth/mate/perft/infinite)
-    pub const nodes: usize = 104;
-    pub const ponder_mode: usize = 112; // bool ponderMode (after uint64 nodes)
-    // sizeof(LimitsType) == 120 (ponderMode@112 + 7 alignment padding); searchmoves is the
-    // leading 24-byte std::vector<std::string>. The POD tail copied by zfish_worker_set_limits
-    // is [searchmoves_bytes .. total), so any error here breaks bench (gate-verified).
-    pub const total_size: usize = 120;
-    pub const searchmoves_bytes: usize = 24;
+// The LimitsType object (120 bytes). Typed replacement for limits_off: a leading
+// 24-byte std::vector<std::string> `searchmoves` (POD-opaque here), then the
+// TimePoints, the search-mode ints, nodes, and ponderMode. The POD tail copied by
+// zfish_worker_set_limits is [@offsetOf(.,"time") .. @sizeOf), so any layout error
+// here breaks bench (gate-verified).
+pub const LimitsType = extern struct {
+    searchmoves: [24]u8, // std::vector<std::string> @0
+    time: [2]i64, // @24 time[WHITE], time[BLACK]
+    inc: [2]i64, // @40 inc[WHITE], inc[BLACK]
+    npmsec: i64, // @56
+    movetime: i64, // @64
+    start_time: i64, // @72
+    movestogo: i32, // @80
+    depth: i32, // @84
+    mate: i32, // @88
+    perft: i32, // @92
+    infinite: i32, // @96
+    _pad: [4]u8,
+    nodes: u64, // @104
+    ponder_mode: u8, // @112
+    _pad2: [7]u8,
+
+    pub inline fn fromPtr(p: *anyopaque) *LimitsType {
+        return @ptrCast(@alignCast(p));
+    }
+    pub inline fn fromAddr(addr: usize) *LimitsType {
+        return @ptrFromInt(addr);
+    }
 };
+
+comptime {
+    std.debug.assert(@sizeOf(LimitsType) == 120);
+    std.debug.assert(@offsetOf(LimitsType, "time") == 24);
+    std.debug.assert(@offsetOf(LimitsType, "inc") == 40);
+    std.debug.assert(@offsetOf(LimitsType, "movestogo") == 80);
+    std.debug.assert(@offsetOf(LimitsType, "nodes") == 104);
+    std.debug.assert(@offsetOf(LimitsType, "ponder_mode") == 112);
+}
 
 pub fn zfish_graph_verify_layouts() void {
     // The pinned layout constants were cross-checked against the in-tree C++ oracle
