@@ -54,3 +54,12 @@ jobs:
       # sse41 golden (-Dsignature-ref makes tests/signature.sh fail on mismatch).
       # A cheap regression net; avx2 here stays non-PEXT so no oracle is needed.
       - run: zig build signature -Darch=x86-64-avx2 -Dsignature-ref=2067208
+
+      # Wall-clock time management (REPORT-15 §9): the deterministic `parity`
+      # aggregate above is entirely depth/node-limited and never consults the
+      # clock, so a time-management regression (e.g. the startTime=0 bug that made
+      # `go movetime` return instantly) is invisible to it. This invariant gate
+      # drives `go movetime`/`go wtime` and asserts the reported elapsed tracks and
+      # scales with the budget. Non-deterministic, so it is its own step outside the
+      # aggregate; sse41 keeps it CPU-independent.
+      - run: zig build parity-time -Darch=x86-64-sse41-popcnt

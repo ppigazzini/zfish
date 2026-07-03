@@ -894,6 +894,28 @@ pub fn build(b: *std.Build) void {
     );
     teardown_step.dependOn(&teardown_cmd.step);
 
+    // Wall-clock time-management sanity (REPORT-15 §9): the ONLY gate over `go
+    // movetime` / `go wtime` / TimeManagement.startTime -- the whole rest of the
+    // battery is depth/node-limited and never consults the clock, which is how the
+    // startTime=0 bug (fbcefd0d6) shipped. Invariant-based (no golden): reported
+    // elapsed must track the movetime budget and scale with it. Non-deterministic
+    // and sleep-paced, so it is its own step (like parity-mt), outside the core
+    // deterministic `parity` aggregate; the CI workflow runs it explicitly.
+    const time_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/time_mgmt.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+    });
+    time_cmd.step.dependOn(install_step);
+    time_cmd.step.dependOn(&net_cmd.step);
+    time_cmd.setCwd(b.path("src"));
+
+    const time_step = b.step(
+        "parity-time",
+        "Wall-clock time management: go movetime/wtime budget + clock-scaling invariants",
+    );
+    time_step.dependOn(&time_cmd.step);
+
     // Perft differential + golden gate (REPORT-11 E1.1): the ONLY gate over
     // Position::do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
     // perft; search-modes only checks bestmoves). perft-parity certifies default == legacy while the
