@@ -557,38 +557,34 @@ pub fn zfish_ss_side_to_move(pos: *const anyopaque) u8 {
 // definitions, so gating the @export avoids a duplicate-symbol link error.
 extern fn zfish_threadpool_main_manager_ptr(pool: *anyopaque) ?*anyopaque;
 
-const sm_off = graph_layout.search_manager_off;
-
-fn smFieldPtr(comptime T: type, pool: *anyopaque, offset: usize) ?*T {
-    const mgr = zfish_threadpool_main_manager_ptr(pool) orelse return null;
-    const base: [*]u8 = @ptrCast(mgr);
-    return @ptrCast(@alignCast(base + offset));
+fn smMgr(pool: *anyopaque) ?*graph_layout.SearchManager {
+    return graph_layout.SearchManager.fromPtr(zfish_threadpool_main_manager_ptr(pool) orelse return null);
 }
 
 fn smResetCallsCount(pool: *anyopaque) callconv(.c) void {
-    if (smFieldPtr(i32, pool, sm_off.calls_cnt)) |p| p.* = 0;
+    if (smMgr(pool)) |m| m.calls_cnt = 0;
 }
 fn smResetBestPreviousScore(pool: *anyopaque) callconv(.c) void {
-    if (smFieldPtr(i32, pool, sm_off.best_previous_score)) |p| p.* = 32001; // VALUE_INFINITE
+    if (smMgr(pool)) |m| m.best_previous_score = 32001; // VALUE_INFINITE
 }
 fn smResetBestPreviousAverageScore(pool: *anyopaque) callconv(.c) void {
-    if (smFieldPtr(i32, pool, sm_off.best_previous_average_score)) |p| p.* = 32001;
+    if (smMgr(pool)) |m| m.best_previous_average_score = 32001;
 }
 fn smResetOriginalTimeAdjust(pool: *anyopaque) callconv(.c) void {
-    if (smFieldPtr(f64, pool, sm_off.original_time_adjust)) |p| p.* = -1;
+    if (smMgr(pool)) |m| m.original_time_adjust = -1;
 }
 fn smResetPreviousTimeReduction(pool: *anyopaque) callconv(.c) void {
-    if (smFieldPtr(f64, pool, sm_off.previous_time_reduction)) |p| p.* = 0.85;
+    if (smMgr(pool)) |m| m.previous_time_reduction = 0.85;
 }
 fn smSetPonder(pool: *anyopaque, ponder_mode: u8) callconv(.c) void {
-    if (smFieldPtr(u8, pool, sm_off.ponder)) |p| p.* = if (ponder_mode != 0) 1 else 0;
+    if (smMgr(pool)) |m| m.ponder = if (ponder_mode != 0) 1 else 0;
 }
 fn smSetStopOnPonderhit(pool: *anyopaque, stop_on_ponderhit: u8) callconv(.c) void {
-    if (smFieldPtr(u8, pool, sm_off.stop_on_ponderhit)) |p| p.* = if (stop_on_ponderhit != 0) 1 else 0;
+    if (smMgr(pool)) |m| m.stop_on_ponderhit = if (stop_on_ponderhit != 0) 1 else 0;
 }
 fn smClearTimeman(pool: *anyopaque) callconv(.c) void {
     // TimeManagement::clear() sets availableNodes = -1; nothing else.
-    if (smFieldPtr(i64, pool, sm_off.tm_available_nodes)) |p| p.* = -1;
+    if (smMgr(pool)) |m| m.tm.available_nodes = -1;
 }
 
 // Native ThreadPool flag shims: stop and increaseDepth are the leading
@@ -1202,9 +1198,9 @@ pub export fn zfish_ss_set_prev_scores(worker: *anyopaque, best: *const anyopaqu
     const rm0 = workerRootMove0(best);
     const score: *const i32 = @ptrFromInt(rm0 + graph_layout.root_move_off.score);
     const avg: *const i32 = @ptrFromInt(rm0 + graph_layout.root_move_off.average_score);
-    const mgr = workerManager(worker);
-    @as(*i32, @ptrFromInt(mgr + graph_layout.search_manager_off.best_previous_score)).* = score.*;
-    @as(*i32, @ptrFromInt(mgr + graph_layout.search_manager_off.best_previous_average_score)).* = avg.*;
+    const sm = graph_layout.SearchManager.fromAddr(workerManager(worker));
+    sm.best_previous_score = score.*;
+    sm.best_previous_average_score = avg.*;
 }
 
 fn workerTT(worker: *const anyopaque) usize {
@@ -1387,7 +1383,7 @@ fn ssNpmsecAdvance(worker: *anyopaque) callconv(.c) void {
     const wbase: [*]u8 = @ptrCast(worker);
     const off = graph_layout.worker_off;
     const manager = workerRefPtr(worker, off.manager).?;
-    const avail: *i64 = @ptrCast(@alignCast(@as([*]u8, @ptrCast(manager)) + graph_layout.search_manager_off.tm_available_nodes));
+    const avail = &graph_layout.SearchManager.fromPtr(manager).tm.available_nodes;
     const us: usize = zfish_ss_side_to_move(@ptrCast(wbase + off.root_pos));
     const inc_ptr: *const i64 = @ptrCast(@alignCast(wbase + off.limits + graph_layout.limits_off.inc_w + us * 8));
     const nodes: i64 = @intCast(zfish_threadpool_nodes_searched(workerRefPtr(worker, off.threads).?));
@@ -1579,9 +1575,7 @@ fn zfishMakeSearchManager(update_context: ?*const anyopaque, is_main: u8) callco
     const bytes: [*]u8 = @ptrCast(buf);
     @memset(bytes[0..graph_layout.search_manager_size], 0);
     if (is_main != 0) {
-        const updates_slot: *?*const anyopaque =
-            @ptrCast(@alignCast(bytes + graph_layout.search_manager_off.updates));
-        updates_slot.* = update_context;
+        graph_layout.SearchManager.fromPtr(@ptrCast(bytes)).updates = update_context;
     }
     return buf;
 }
@@ -2069,18 +2063,17 @@ pub export fn zfish_search_cb_worker_state(
 
     const thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx)).*;
     if (thread_idx == 0) {
-        const m = @as(*const usize, @ptrFromInt(wb + off.manager)).*;
-        const sm = graph_layout.search_manager_off;
+        const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
         const limits = wb + off.limits;
-        out_time.calls_cnt = @ptrFromInt(m + sm.calls_cnt);
+        out_time.calls_cnt = &smgr.calls_cnt;
         out_time.stop_write = @ptrFromInt(stop_addr);
-        out_time.ponder = @ptrFromInt(m + sm.ponder);
-        out_time.stop_on_ponderhit = @ptrFromInt(m + sm.stop_on_ponderhit);
-        out_time.tm_start_time = @as(*const i64, @ptrFromInt(m + sm.tm)).*;
-        out_time.tm_maximum_time = @as(*const i64, @ptrFromInt(m + sm.tm + 16)).*;
+        out_time.ponder = &smgr.ponder;
+        out_time.stop_on_ponderhit = &smgr.stop_on_ponderhit;
+        out_time.tm_start_time = smgr.tm.start_time;
+        out_time.tm_maximum_time = smgr.tm.maximum_time;
         out_time.lim_nodes = @as(*const u64, @ptrFromInt(limits + graph_layout.limits_off.nodes)).*;
         out_time.lim_movetime = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.movetime)).*;
-        out_time.tm_use_nodes_time = @as(*const u8, @ptrFromInt(m + sm.tm + 32)).*;
+        out_time.tm_use_nodes_time = smgr.tm.use_nodes_time;
         const time_w = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.time_w)).*;
         const time_b = @as(*const i64, @ptrFromInt(limits + graph_layout.limits_off.time_b)).*;
         out_time.use_time_management = @intFromBool(time_w != 0 or time_b != 0);
@@ -2119,40 +2112,38 @@ fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
     const wb = @intFromPtr(worker);
     const off = graph_layout.worker_off;
     const lo = graph_layout.limits_off;
-    const sm = graph_layout.search_manager_off;
     const limits = wb + off.limits;
-    const m = @as(*const usize, @ptrFromInt(wb + off.manager)).*;
-    const tm = m + sm.tm;
+    const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
+    const tm = &smgr.tm;
     const root_pos: *const anyopaque = @ptrFromInt(wb + off.root_pos);
 
     const us: usize = position_port.sideToMove(root_pos);
     const time_off = lo.time_w + us * 8;
     const inc_off = lo.inc_w + us * 8;
 
-    const orig_adjust: *f64 = @ptrFromInt(m + sm.original_time_adjust);
     const input = timeman_port.TimemanInput{
         .time_us = @as(*const i64, @ptrFromInt(limits + time_off)).*,
         .inc_us = @as(*const i64, @ptrFromInt(limits + inc_off)).*,
         .start_time = @as(*const i64, @ptrFromInt(limits + lo.start_time)).*,
         .npmsec = optInt("nodestime"),
         .move_overhead = optInt("Move Overhead"),
-        .available_nodes = @as(*const i64, @ptrFromInt(tm + 24)).*,
-        .current_optimum_time = @as(*const i64, @ptrFromInt(tm + 8)).*,
-        .current_maximum_time = @as(*const i64, @ptrFromInt(tm + 16)).*,
+        .available_nodes = tm.available_nodes,
+        .current_optimum_time = tm.optimum_time,
+        .current_maximum_time = tm.maximum_time,
         .movestogo = @as(*const c_int, @ptrFromInt(limits + lo.movestogo)).*,
         .ply = position_port.gamePly(root_pos),
-        .original_time_adjust = orig_adjust.*,
+        .original_time_adjust = smgr.original_time_adjust,
         .ponder = @intFromBool(optInt("Ponder") != 0),
     };
 
     const out = timeman_port.init(input);
 
-    @as(*i64, @ptrFromInt(tm)).* = out.start_time;
-    @as(*i64, @ptrFromInt(tm + 8)).* = out.optimum_time;
-    @as(*i64, @ptrFromInt(tm + 16)).* = out.maximum_time;
-    @as(*i64, @ptrFromInt(tm + 24)).* = out.available_nodes;
-    @as(*u8, @ptrFromInt(tm + 32)).* = out.use_nodes_time;
-    orig_adjust.* = out.original_time_adjust;
+    tm.start_time = out.start_time;
+    tm.optimum_time = out.optimum_time;
+    tm.maximum_time = out.maximum_time;
+    tm.available_nodes = out.available_nodes;
+    tm.use_nodes_time = out.use_nodes_time;
+    smgr.original_time_adjust = out.original_time_adjust;
     @as(*i64, @ptrFromInt(limits + time_off)).* = out.time_us;
     @as(*i64, @ptrFromInt(limits + inc_off)).* = out.inc_us;
     @as(*i64, @ptrFromInt(limits + lo.npmsec)).* = out.npmsec;
@@ -2310,18 +2301,17 @@ fn zfish_search_id_state(worker: *anyopaque, out: *ZfishIdState) callconv(.c) vo
     out.skill_enabled = @intFromBool(sl < 20.0);
 
     if (is_main) {
-        const m = @as(*const usize, @ptrFromInt(wb + off.manager)).*;
-        const sm = graph_layout.search_manager_off;
-        out.stop_on_ponderhit = @ptrFromInt(m + sm.stop_on_ponderhit);
-        out.ponder = @ptrFromInt(m + sm.ponder);
-        out.iter_value = @ptrFromInt(m + sm.iter_value);
-        out.previous_time_reduction = @ptrFromInt(m + sm.previous_time_reduction);
-        out.tm_optimum = @as(*const i64, @ptrFromInt(m + sm.tm + 8)).*;
-        out.tm_maximum = @as(*const i64, @ptrFromInt(m + sm.tm + 16)).*;
-        out.tm_start_time = @as(*const i64, @ptrFromInt(m + sm.tm)).*;
-        out.tm_use_nodes_time = @as(*const u8, @ptrFromInt(m + sm.tm + 32)).*;
-        out.best_previous_score = @as(*const c_int, @ptrFromInt(m + sm.best_previous_score)).*;
-        out.best_previous_average_score = @as(*const c_int, @ptrFromInt(m + sm.best_previous_average_score)).*;
+        const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
+        out.stop_on_ponderhit = @ptrCast(&smgr.stop_on_ponderhit);
+        out.ponder = @ptrCast(&smgr.ponder);
+        out.iter_value = @ptrCast(&smgr.iter_value);
+        out.previous_time_reduction = @ptrCast(&smgr.previous_time_reduction);
+        out.tm_optimum = smgr.tm.optimum_time;
+        out.tm_maximum = smgr.tm.maximum_time;
+        out.tm_start_time = smgr.tm.start_time;
+        out.tm_use_nodes_time = smgr.tm.use_nodes_time;
+        out.best_previous_score = smgr.best_previous_score;
+        out.best_previous_average_score = smgr.best_previous_average_score;
     } else {
         out.stop_on_ponderhit = null;
         out.ponder = null;
@@ -2414,7 +2404,7 @@ pub export fn zfish_search_cb_pv_context(manager: *anyopaque, worker: *anyopaque
     const tp = graph_layout.TranspositionTable.fromPtr(tt);
     out.hashfull = zfish_tt_hashfull(@ptrFromInt(@intFromPtr(tp.table)), tp.cluster_count, tp.generation8, 0);
 
-    const start_time = @as(*const i64, @ptrFromInt(@intFromPtr(manager) + graph_layout.search_manager_off.tm)).*;
+    const start_time = graph_layout.SearchManager.fromPtr(manager).tm.start_time;
     const elapsed = zfishNow() - start_time;
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
@@ -2506,11 +2496,10 @@ pub export fn zfish_ss_set_stop(worker: *anyopaque) void {
 pub export fn zfish_ss_should_busywait(worker: *const anyopaque) u8 {
     const pool = workerThreadsPool(worker);
     if (graph_layout.ThreadPool.fromAddr(pool).stop != 0) return 0;
-    const mgr = workerManager(worker);
-    const ponder: *const u8 = @ptrFromInt(mgr + graph_layout.search_manager_off.ponder);
+    const ponder = graph_layout.SearchManager.fromAddr(workerManager(worker)).ponder;
     const base: [*]const u8 = @ptrCast(worker);
     const infinite: *const c_int = @ptrCast(@alignCast(base + graph_layout.worker_off.limits + graph_layout.limits_off.infinite));
-    return if (ponder.* != 0 or infinite.* != 0) 1 else 0;
+    return if (ponder != 0 or infinite.* != 0) 1 else 0;
 }
 
 // UCIEngine::cli accessors (bridge-only). cli is a CommandLine {int argc;

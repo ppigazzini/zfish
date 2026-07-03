@@ -86,23 +86,54 @@ pub const worker_off = struct {
 // search reaches today through the C++ main_manager() shims. See the
 // [[searchmanager-flip-plan]] memory: the vtable is functionally dead, so only
 // these data fields plus `updates` are live.
-pub const search_manager_off = struct {
-    pub const vtable: usize = 0;
-    pub const tm: usize = 8; // TimeManagement (40 bytes)
-    pub const original_time_adjust: usize = 48; // f64
-    pub const calls_cnt: usize = 56; // i32
-    pub const ponder: usize = 60; // atomic_bool (4-byte slot)
-    pub const iter_value: usize = 64; // [4]i32
-    pub const previous_time_reduction: usize = 80; // f64
-    pub const best_previous_score: usize = 88; // i32
-    pub const best_previous_average_score: usize = 92; // i32
-    pub const stop_on_ponderhit: usize = 96; // bool
-    pub const id: usize = 104; // usize
-    pub const updates: usize = 112; // const UpdateContext& (pointer)
-    // tm.availableNodes: TimeManagement is {startTime, optimumTime, maximumTime,
-    // availableNodes, useNodesTime}; availableNodes is the 4th i64 at tm+24.
-    pub const tm_available_nodes: usize = tm + 24; // i64; TimeManagement::clear sets it -1
+// TimeManagement (40 bytes): the clock sub-object embedded in SearchManager at
+// offset 8. availableNodes (4th i64) is set to -1 by TimeManagement::clear.
+pub const TimeManagement = extern struct {
+    start_time: i64, // @0
+    optimum_time: i64, // @8
+    maximum_time: i64, // @16
+    available_nodes: i64, // @24
+    use_nodes_time: u8, // @32 (bool)
+    _pad: [7]u8,
 };
+
+// The SearchManager object (120 bytes). Typed replacement for search_manager_off:
+// a vtable slot, the embedded TimeManagement, and the per-search bookkeeping the
+// time-management + PV code reads. `ponder` is a std::atomic_bool in a 4-byte slot.
+pub const SearchManager = extern struct {
+    vtable: usize, // @0
+    tm: TimeManagement, // @8 (40 bytes)
+    original_time_adjust: f64, // @48
+    calls_cnt: i32, // @56
+    ponder: u8, // @60 (atomic_bool, 4-byte slot)
+    _pad0: [3]u8,
+    iter_value: [4]i32, // @64
+    previous_time_reduction: f64, // @80
+    best_previous_score: i32, // @88
+    best_previous_average_score: i32, // @92
+    stop_on_ponderhit: u8, // @96 (bool)
+    _pad1: [7]u8,
+    id: usize, // @104
+    updates: ?*const anyopaque, // @112 (const UpdateContext&)
+
+    pub inline fn fromPtr(p: *anyopaque) *SearchManager {
+        return @ptrCast(@alignCast(p));
+    }
+    pub inline fn fromAddr(addr: usize) *SearchManager {
+        return @ptrFromInt(addr);
+    }
+};
+
+comptime {
+    std.debug.assert(@sizeOf(TimeManagement) == 40);
+    std.debug.assert(@sizeOf(SearchManager) == search_manager_size);
+    std.debug.assert(@offsetOf(SearchManager, "tm") == 8);
+    std.debug.assert(@offsetOf(SearchManager, "ponder") == 60);
+    std.debug.assert(@offsetOf(SearchManager, "best_previous_score") == 88);
+    std.debug.assert(@offsetOf(SearchManager, "id") == 104);
+    std.debug.assert(@offsetOf(SearchManager, "updates") == 112);
+    std.debug.assert(@offsetOf(TimeManagement, "available_nodes") == 24);
+}
 
 // The ThreadPool object (64 bytes). Typed replacement for the old thread_pool_off
 // offset map: the runtime constructs and reads the pool through these fields. The
