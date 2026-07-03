@@ -739,6 +739,33 @@ pub fn build(b: *std.Build) void {
     );
     oracle_parity_step.dependOn(&oracle_parity_cmd.step);
 
+    // Worktree-based upstream oracle gate (REPORT-16 M16.1): assert the default (Zig)
+    // bench == the PRISTINE upstream Stockfish at UPSTREAM_BASE, built in a persistent
+    // git worktree with ZERO vendored C++. This is the drift-proof replacement for
+    // oracle-parity: it pins to the exact upstream sha we claim to be at (so it can
+    // never become a stale/broken test the way frozen src/ does), and the oracle build
+    // is a cached no-op in steady state (upstream_oracle.sh only rebuilds when BASE
+    // moves), so it is actually faster than rebuilding the in-tree legacy exe. Kept
+    // standalone for now; the parity aggregate + CI switch land with the oracle
+    // deletion so CI can add the upstream fetch atomically.
+    const upstream_base_sha = runAndTrimOrNull(b, &.{
+        "cat",
+        b.pathFromRoot("zig_build/tools/upstream/UPSTREAM_BASE"),
+    }) orelse "";
+    const upstream_parity_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("zig_build/tools/upstream_parity.sh"),
+        b.getInstallPath(.bin, "stockfish"),
+        upstream_base_sha,
+    });
+    upstream_parity_cmd.step.dependOn(install_step);
+    upstream_parity_cmd.step.dependOn(&net_cmd.step);
+    const upstream_parity_step = b.step(
+        "upstream-parity",
+        "Assert default (Zig) bench == pristine upstream@UPSTREAM_BASE (git worktree, no vendored C++)",
+    );
+    upstream_parity_step.dependOn(&upstream_parity_cmd.step);
+
     // Full-output differential gate (M5): diff the bench UCI info+bestmove text
     // (time/nps stripped) between the default (Zig) binary and the legacy (C++)
     // oracle. Catches info-line drift the signature/bestmove gates miss -- the

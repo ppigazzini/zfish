@@ -30,8 +30,14 @@ SHA_REF="${SHA_ARG:-$(cat "$REPO/zig_build/tools/upstream/UPSTREAM_TARGET")}"
 SHA="$(git -C "$REPO" rev-parse "$SHA_REF")"
 
 # (re)point the worktree at SHA -- reuse it if it exists (avoids re-downloading the 90MB net needlessly).
+# Only check out when the worktree is not already at SHA: a force-checkout rewrites the source files
+# (bumping their mtimes) and defeats make's incremental build, turning the steady-state fast check into a
+# full ~11s rebuild. Skipping it when already at SHA leaves mtimes intact, so `make build` is a no-op and
+# the gate costs only the bench (~2s) -- the fast in-repo check, with zero vendored C++.
 if git -C "$REPO" worktree list --porcelain | grep -qx "worktree $ORACLE_DIR"; then
-    git -C "$ORACLE_DIR" checkout --detach -f "$SHA" >/dev/null 2>&1
+    if [ "$(git -C "$ORACLE_DIR" rev-parse HEAD 2>/dev/null || echo none)" != "$SHA" ]; then
+        git -C "$ORACLE_DIR" checkout --detach -f "$SHA" >/dev/null 2>&1
+    fi
 else
     rm -rf "$ORACLE_DIR"
     git -C "$REPO" worktree add --detach "$ORACLE_DIR" "$SHA" >/dev/null
