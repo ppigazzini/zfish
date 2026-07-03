@@ -24,6 +24,7 @@ permissions:
 
 jobs:
   upstream-check:
+    name: Detect upstream drift
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
