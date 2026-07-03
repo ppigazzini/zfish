@@ -562,7 +562,18 @@ pub fn build(b: *std.Build) void {
     legacy_exe.root_module.linkSystemLibrary("rt", .{});
 
     b.installArtifact(exe);
-    b.installArtifact(legacy_exe);
+    // The differential C++ oracle only compiles under upstream's non-PEXT bitboard
+    // layout. USE_PEXT / USE_COMPTIME_ATTACKS (the bmi2/avx512/vnni512/avx512icl tiers)
+    // change `struct Magic` (no .magic/.shift; uint16_t* attacks) so the bridge's
+    // magic-table init breaks, and they flip Worker/SearchManager to non-standard-layout
+    // so the bridge's offsetof static_asserts stop being constant expressions -- 7 C++
+    // errors. The oracle is a parity test artifact exercised only at the pinned
+    // sse41-popcnt arch (see zfish_parity.yml), never at a PEXT tier, so skip building it
+    // there rather than fail the whole default `zig build` on a modern host (whose
+    // `native` arch resolves to a PEXT tier). The default Zig engine still builds on
+    // every tier; only the optional legacy oracle is gated.
+    if (!hasMacro(arch.macros, "USE_PEXT"))
+        b.installArtifact(legacy_exe);
 
     const install_step = b.getInstallStep();
 
