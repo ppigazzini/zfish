@@ -93,14 +93,6 @@ pub fn main(init: std.process.Init) !void {
     uci_port.loopRuntime(engine);
 }
 
-fn _ZN9Stockfish17std_aligned_allocEmm(alignment: usize, size: usize) callconv(.c) ?*anyopaque {
-    return memory_port.stdAlignedAlloc(alignment, size);
-}
-
-fn _ZN9Stockfish16std_aligned_freeEPv(ptr: ?*anyopaque) callconv(.c) void {
-    memory_port.stdAlignedFree(ptr);
-}
-
 pub fn zfish_misc_engine_info_text() ?[*:0]u8 {
     return misc_port.engineInfoText(0);
 }
@@ -885,7 +877,6 @@ comptime {
     @export(&zfishThreadpoolMainManagerPtr, .{ .name = "zfish_threadpool_main_manager_ptr" });
     // M-FINAL / M-SM: native SearchManager construct + native Worker teardown (cracks the
     // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
-    @export(&zfishMakeSearchManager, .{ .name = "zfish_make_search_manager" });
     @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
     @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
     @export(&engineAddOption, .{ .name = "zfish_engine_add_option" });
@@ -907,12 +898,6 @@ comptime {
     @export(&zfishEngineAccumulatorStackDestroy, .{ .name = "zfish_engine_accumulator_stack_destroy" });
     // M-FINAL cutover: native engine container construct/destruct (not yet on the live
     // path; the flip commit wires these). Default-only — legacy keeps the C++ UCIEngine.
-    @export(&zfishNativeEngineConstructMembers, .{ .name = "zfish_native_engine_construct_members" });
-    @export(&zfishNativeEngineSetCli, .{ .name = "zfish_native_engine_set_cli" });
-    @export(&zfishNativeEngineDestructMembers, .{ .name = "zfish_native_engine_destruct_members" });
-    @export(&zfishNativeEngineSizeof, .{ .name = "zfish_native_engine_sizeof" });
-    @export(&zfishNativeEngineAlignof, .{ .name = "zfish_native_engine_alignof" });
-    @export(&zfishEngineOnVerifyNetworkPtr, .{ .name = "zfish_engine_onverifynetwork_ptr" });
     // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
     @export(&zfishPositionSetState, .{ .name = "zfish_position_set_state" });
     @export(&zfishPositionMoveIsLegal, .{ .name = "zfish_position_move_is_legal" });
@@ -1103,12 +1088,6 @@ fn engineSetStartPosition(engine_ptr: *anyopaque) callconv(.c) void {
     const start_fen: []const u8 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     if (zfish_engine_set_position_owner(engine_ptr, start_fen.ptr, start_fen.len, null, 0)) |_|
         @panic("set start position failed");
-}
-// M-FINAL cutover: onVerifyNetwork std::function slot accessor — default-only (the native
-// engine's inline field). The legacy oracle reads its inline engine->onVerifyNetwork member
-// directly (no accessor), so this is exported default-only via the comptime block below.
-fn zfishEngineOnVerifyNetworkPtr(engine: *anyopaque) callconv(.c) *anyopaque {
-    return @ptrCast(&nativeEng(engine).on_verify_network);
 }
 // UCIEngine::engine is the first member (offset 0): the accessor is the identity.
 pub export fn zfish_uci_engine_ptr(uci: *anyopaque) *anyopaque {
@@ -2663,12 +2642,6 @@ fn nativeUciEngineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [
 fn zfishNativeEngineDestructMembers(buf: *anyopaque) callconv(.c) void {
     native_engine.destructMembers(buf);
 }
-fn zfishNativeEngineSizeof() callconv(.c) usize {
-    return native_engine.sizeofEngine();
-}
-fn zfishNativeEngineAlignof() callconv(.c) usize {
-    return native_engine.alignofEngine();
-}
 
 pub fn zfish_engine_option_on_change(
     engine: *anyopaque,
@@ -2862,36 +2835,6 @@ const AccumulatorStackPushPair = extern struct {
     second: *anyopaque,
 };
 
-fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack5resetEv(stack: *anyopaque) callconv(.c) void {
-    return nnue_accumulator_port.stackReset(stack);
-}
-
-fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack4pushEv(
-    stack: *anyopaque,
-) callconv(.c) AccumulatorStackPushPair {
-    const pushed = nnue_accumulator_port.stackPush(stack);
-    return .{
-        .first = pushed.dirty_piece,
-        .second = pushed.dirty_threats,
-    };
-}
-
-fn _ZN9Stockfish4Eval4NNUE16AccumulatorStack3popEv(stack: *anyopaque) callconv(.c) void {
-    return nnue_accumulator_port.stackPop(stack);
-}
-
-fn _ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11HalfKAv2_hmEEERKNS1_16AccumulatorStateIT_EEv(
-    stack: *const anyopaque,
-) callconv(.c) *const anyopaque {
-    return nnue_accumulator_port.stackLatestPsq(stack);
-}
-
-fn _ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11FullThreatsEEERKNS1_16AccumulatorStateIT_EEv(
-    stack: *const anyopaque,
-) callconv(.c) *const anyopaque {
-    return nnue_accumulator_port.stackLatestThreat(stack);
-}
-
 pub export fn zfish_network_load(
     network: *anyopaque,
     root_directory_ptr: [*]const u8,
@@ -3074,15 +3017,7 @@ pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
     return memory_port.alignedLargePagesAlloc(alloc_size);
 }
 
-fn _ZN9Stockfish25aligned_large_pages_allocEm(alloc_size: usize) callconv(.c) ?*anyopaque {
-    return memory_port.alignedLargePagesAlloc(alloc_size);
-}
-
 pub export fn zfish_aligned_large_pages_free(ptr: ?*anyopaque) void {
-    memory_port.alignedLargePagesFree(ptr);
-}
-
-fn _ZN9Stockfish24aligned_large_pages_freeEPv(ptr: ?*anyopaque) callconv(.c) void {
     memory_port.alignedLargePagesFree(ptr);
 }
 
@@ -3104,10 +3039,6 @@ pub export fn zfish_uci_engine_nodes_searched(_: ?*const anyopaque) u64 {
 
 pub export fn zfish_uci_engine_reset_nodes_searched() void {
     last_nodes_searched.store(0, .monotonic);
-}
-
-fn _ZN9Stockfish15has_large_pagesEv() callconv(.c) bool {
-    return memory_port.hasLargePages();
 }
 
 pub export fn zfish_eval_compute_value(
