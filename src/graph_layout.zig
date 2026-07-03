@@ -149,22 +149,6 @@ comptime {
     std.debug.assert(@offsetOf(ThreadPool, "bound_begin") == 40);
 }
 
-// Engine member offsets (probed). The accessor shims return &engine->member; the
-// native versions add these offsets to the engine pointer. network (the
-// LazyNumaReplicatedSystemWide wrapper) sits at `network`; network.operator->()
-// (the resolved Network*) stays a C++ shim.
-pub const engine_off = struct {
-    pub const numa_context: usize = 24;
-    pub const pos: usize = 112;
-    pub const states: usize = 1144;
-    pub const options: usize = 1152;
-    pub const threads: usize = 1232;
-    pub const tt: usize = 1296;
-    pub const network: usize = 1320;
-    pub const update_context: usize = 1408;
-    pub const shared_hists: usize = 1648;
-};
-
 // Thread member offset (probed): the LargePagePtr<Worker> worker is at Thread+8.
 // Dereferenced (the unique_ptr is a single pointer) it yields the Worker base.
 pub const thread_off = struct {
@@ -228,27 +212,6 @@ pub const limits_off = struct {
     // is [searchmoves_bytes .. total), so any error here breaks bench (gate-verified).
     pub const total_size: usize = 120;
     pub const searchmoves_bytes: usize = 24;
-};
-
-// UCIEngine member offsets. engine (Engine, 1680 bytes) is at 0; cli
-// (CommandLine {int argc; char** argv}) follows at 1680. UCIEngine is 1696 bytes
-// (1680 + 16), which pins this.
-pub const uci_engine_off = struct {
-    pub const cli_argc: usize = 1680;
-    pub const cli_argv: usize = 1688;
-};
-
-// NumaConfig member offsets. `nodes` (std::vector<std::set<CpuIndex>>) is the
-// first member at offset 0; the vector is {begin, end, cap} 8-byte pointers, and
-// each std::set<CpuIndex> element is 48 bytes (libstdc++ _Rb_tree). So
-// num_numa_nodes() == nodes.size() == (end - begin) / 48.
-pub const numa_config_off = struct {
-    pub const nodes_begin: usize = 0;
-    pub const nodes_end: usize = 8;
-    pub const node_set_size: usize = 48;
-    // libstdc++ std::set<CpuIndex> stores its element count (_Rb_tree _M_node_count)
-    // at offset 40 within the 48-byte set; num_cpus_in_numa_node(n) == nodes[n].size().
-    pub const node_set_count_off: usize = 40;
 };
 
 pub fn zfish_graph_verify_layouts() void {

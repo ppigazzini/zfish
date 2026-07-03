@@ -11,7 +11,6 @@ const memory_port = @import("memory.zig");
 const graph_layout = @import("graph_layout.zig");
 const worker_construct = @import("worker_construct.zig");
 const thread_construct = @import("thread_construct.zig");
-const engine_construct = @import("engine_construct.zig");
 const worker_native_construct = @import("worker_native_construct.zig");
 const native_engine = @import("native_engine.zig"); // M-FINAL native engine container (cutover)
 const misc_port = @import("misc");
@@ -41,7 +40,6 @@ comptime {
     _ = graph_layout;
     _ = worker_construct;
     _ = thread_construct;
-    _ = engine_construct;
     _ = worker_native_construct;
 }
 
