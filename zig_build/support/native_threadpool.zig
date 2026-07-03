@@ -164,7 +164,7 @@ const WorkerBuildCtx = extern struct {
 
 // Build `count` native Threads (idle loops + Workers) into the Engine's embedded
 // ThreadPool footprint `pool`. Replaces the C++ per-thread add_main_thread loop.
-pub export fn zfish_native_threadpool_set(
+pub fn zfish_native_threadpool_set(
     pool: *anyopaque,
     shared_state: *anyopaque,
     update_context: *const anyopaque,

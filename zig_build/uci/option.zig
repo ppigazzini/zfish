@@ -19,11 +19,6 @@ fn ensureModel() *OptionsModel {
     return &(global_model.?);
 }
 
-pub export fn zfish_optmodel_reset() void {
-    if (global_model) |*existing| existing.deinit();
-    global_model = OptionsModel.init(std.heap.c_allocator);
-}
-
 pub export fn zfish_optmodel_add(
     name_ptr: [*]const u8,
     name_len: usize,
@@ -38,10 +33,6 @@ pub export fn zfish_optmodel_add(
     const name = name_ptr[0..name_len];
     return model.add(name, resolved, default_ptr[0..default_len], min, max, callbackKindForName(name)) catch
         std.math.maxInt(usize);
-}
-
-pub export fn zfish_optmodel_has_index(idx: usize) u8 {
-    return @intFromBool(ensureModel().hasIndex(idx));
 }
 
 pub export fn zfish_optmodel_int_by_index(idx: usize) c_int {
@@ -120,18 +111,6 @@ pub export fn zfish_optmodel_render() ?[*:0]u8 {
     const buf = std.heap.c_allocator.allocSentinel(u8, listing.len, 0) catch return null;
     @memcpy(buf[0..listing.len], listing);
     return buf.ptr;
-}
-
-// Overwrite the current value at an index without re-validating (the C++ side
-// has already validated); used to resync the model after a setoption applies.
-pub export fn zfish_optmodel_publish_by_index(idx: usize, value_ptr: [*]const u8, value_len: usize) void {
-    const model = ensureModel();
-    if (idx >= model.entries.items.len) return;
-    const entry = &model.entries.items[idx];
-    const buf = std.heap.c_allocator.alloc(u8, value_len) catch return;
-    @memcpy(buf, value_ptr[0..value_len]);
-    model.allocator.free(entry.current_value);
-    entry.current_value = buf;
 }
 
 pub const ParsedSetOption = extern struct {
@@ -228,7 +207,6 @@ fn parseSetOptionAlloc(input: []const u8) !ParsedSetOption {
         .value = try allocCString(value.items),
     };
 }
-
 
 fn validateAssignmentAlloc(
     type_name: []const u8,

@@ -87,13 +87,6 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     writePtr(worker, accumulator_stack_size_off, 1);
 }
 
-// C-ABI entry for the bridge / native engine construction. Writes the
-// constructor field set into `worker`, which the caller has zeroed.
-export fn zfish_worker_write_constructor_fields(worker: ?*anyopaque, inputs: *const WorkerCtorInputs) void {
-    const base: [*]u8 = @ptrCast(worker orelse return);
-    writeConstructorFields(base, inputs.*);
-}
-
 // Full native Worker construction into a caller-owned, zeroed buffer: write the
 // constructor field set, then run the native Worker::clear pieces (histories,
 // shared history, reductions, refresh cache) exactly as the C++ ctor's clear()

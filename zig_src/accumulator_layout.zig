@@ -61,26 +61,3 @@ pub fn build(dst: []u8, biases: []const BiasType) void {
         @memset(dst[base + bias_prefix_bytes .. base + entry_size], 0);
     }
 }
-
-// Read-only verifier: assert a live C++ AccumulatorCaches obeys the construction
-// rule (every entry shares entry 0's bias prefix; every tail is zero). Proves the
-// `build` model above matches what C++ produced, without re-sourcing the biases.
-export fn zfish_verify_accumulator_caches(ptr: ?*const anyopaque) void {
-    const base: [*]const u8 = @ptrCast(ptr orelse return);
-    const image = base[0..graph_layout.accumulator_caches_size];
-    const prefix0 = image[0..bias_prefix_bytes];
-    var i: usize = 0;
-    while (i < entry_count) : (i += 1) {
-        const off = i * entry_size;
-        if (!std.mem.eql(u8, image[off .. off + bias_prefix_bytes], prefix0)) {
-            std.debug.print("accumulator caches: entry {d} bias prefix differs from entry 0\n", .{i});
-            @panic("AccumulatorCaches construction model mismatch (bias prefix)");
-        }
-        for (image[off + bias_prefix_bytes .. off + entry_size]) |b| {
-            if (b != 0) {
-                std.debug.print("accumulator caches: entry {d} tail is non-zero\n", .{i});
-                @panic("AccumulatorCaches construction model mismatch (non-zero tail)");
-            }
-        }
-    }
-}

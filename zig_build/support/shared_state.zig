@@ -67,7 +67,7 @@ export fn zfish_shared_state_native_destroy(ss: ?*anyopaque) void {
 // Self-check: build a native SharedState from the same five referents the C++
 // SharedState was constructed with and assert all 40 bytes match. Proves the
 // native field order/layout reproduces the C++ SharedState the bridge constructs.
-export fn zfish_verify_shared_state_native(
+fn zfish_verify_shared_state_native(
     cpp: ?*const anyopaque,
     options: ?*anyopaque,
     threads: ?*anyopaque,

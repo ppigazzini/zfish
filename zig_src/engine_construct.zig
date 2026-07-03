@@ -27,37 +27,3 @@ fn fail(comptime msg: []const u8) noreturn {
     std.debug.print("engine-graph construction: {s}\n", .{msg});
     @panic("Engine construction model mismatch");
 }
-
-export fn zfish_verify_engine_graph(engine: ?*const anyopaque) void {
-    const base = @intFromPtr(engine orelse return);
-
-    // (NUMA from_system topology is intentionally NOT asserted here: the node
-    // COUNT is host-dependent -- on a non-NUMA host (WSL2) from_system yields an
-    // empty nodes vector that the engine treats as a single implied node via
-    // @max(node_count,1) -- and the std::set internals are fragile to pin. The
-    // node count is already exercised by reconfigure. H6 anchors the construction
-    // pieces that ARE host-independent: a resolved network instance and a
-    // populated ThreadPool.)
-
-    // --- network wrapper resolves an instances vector --------------------------
-    // LazyNumaReplicated layout: [vtable:8][context:8][instances vector @16]...
-    // We assert the wrapper is structurally constructed (instances vector
-    // allocated). We deliberately do NOT deref instance[0]: the per-NUMA instance
-    // fill is LAZY/environment-dependent -- under valgrind (different from_system
-    // NUMA topology + timing) instance[0] can legitimately be null at construction
-    // even though eval replicates it on first access. Requiring it here aborts the
-    // whole engine under valgrind before any search. The instance actually
-    // resolving + producing correct eval is already proven end-to-end by
-    // search-parity (51 positions) and oracle-parity, so this stays structural.
-    const wrapper = base + eoff.network;
-    const instances_begin = readUsize(wrapper + 16);
-    if (instances_begin == 0) fail("network instances vector is null after construction");
-
-    // --- embedded ThreadPool is populated --------------------------------------
-    const pool = base + eoff.threads;
-    const tbegin = readUsize(pool + graph_layout.thread_pool_off.threads_begin);
-    const tend = readUsize(pool + graph_layout.thread_pool_off.threads_end);
-    if (tbegin == 0) fail("engine ThreadPool threads vector is null");
-    const tcount = (tend - tbegin) / @sizeOf(usize);
-    if (tcount == 0) fail("engine ThreadPool has 0 threads after init_body");
-}
