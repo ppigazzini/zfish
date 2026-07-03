@@ -11,7 +11,7 @@
 set -euo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-TOOLS="$REPO/zig_build/tools"
+TOOLS="$REPO/tools"
 CHECK=0
 FETCH=1
 for a in "$@"; do
@@ -56,4 +56,4 @@ UPSTREAM_BASE_OVERRIDE="$BASE" python3 "$TOOLS/upstream_router.py" --backlog || 
 
 echo ""
 echo "Next: port each worklist commit into its owner .zig, then  zig build signature  must equal its Bench."
-echo "Verify the end state with  zig_build/tools/upstream_parity.sh  (build the pristine oracle @ HEAD)."
+echo "Verify the end state with  tools/upstream_parity.sh  (build the pristine oracle @ HEAD)."

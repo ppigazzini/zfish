@@ -9,7 +9,7 @@
 # is exactly what upstream ships at <sha> -- so "track upstream" is a one-line checkout, not a rebase of
 # fork edits.
 #
-# Usage:  upstream_oracle.sh [<sha>]        # sha defaults to zig_build/tools/upstream/UPSTREAM_TARGET
+# Usage:  upstream_oracle.sh [<sha>]        # sha defaults to tools/upstream/UPSTREAM_TARGET
 #         ARCH=... ZFISH_ORACLE_DIR=...     # overridable
 #   --verify   after building, run bench and assert it equals the commit's own "Bench: NNNN" line
 set -euo pipefail
@@ -26,7 +26,7 @@ for a in "$@"; do
         *) SHA_ARG="$a" ;;
     esac
 done
-SHA_REF="${SHA_ARG:-$(cat "$REPO/zig_build/tools/upstream/UPSTREAM_TARGET")}"
+SHA_REF="${SHA_ARG:-$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")}"
 SHA="$(git -C "$REPO" rev-parse "$SHA_REF")"
 
 # (re)point the worktree at SHA -- reuse it if it exists (avoids re-downloading the 90MB net needlessly).

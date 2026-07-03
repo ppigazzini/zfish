@@ -10,7 +10,7 @@
 set -euo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-TOOLS="$REPO/zig_build/tools"
+TOOLS="$REPO/tools"
 ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
 SHA="${1:-$(cat "$TOOLS/upstream/UPSTREAM_TARGET")}"
 

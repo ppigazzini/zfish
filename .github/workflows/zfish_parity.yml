@@ -36,13 +36,13 @@ jobs:
 
       # Cache the downloaded NNUE network (~50 MB) keyed on the net name the Zig
       # binary actually loads -- the `default_eval_file_name` constant in
-      # zig_build/eval/network.zig -- so a Zig-only net bump busts the cache. The
+      # src/eval/network.zig -- so a Zig-only net bump busts the cache. The
       # net is fetched into and read from net/ (the runtime cwd; src/ is gone).
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: net/nn-*.nnue
-          key: nnue-${{ hashFiles('zig_build/eval/network.zig') }}
+          key: nnue-${{ hashFiles('src/eval/network.zig') }}
 
       # Pin the ARCH instead of `native`: GitHub runners have modern CPUs whose
       # `native` resolves to a PEXT/AVX512 arch. Pin the exact baseline the bench
@@ -57,7 +57,7 @@ jobs:
       # and its best AVX-512 tier), not just avx2 -- the wider tiers are where the
       # upcoming @Vector NNUE kernels (M15.2+) could break bit-exactness while
       # sse41/avx2 stay green. Runs the real bench per tier, so it is not hollow.
-      - run: bash zig_build/tools/arch_determinism.sh 2067208
+      - run: bash tools/arch_determinism.sh 2067208
 
       # Wall-clock time management (REPORT-15 §9): the deterministic `parity`
       # aggregate above is entirely depth/node-limited and never consults the
@@ -91,7 +91,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: net/nn-*.nnue
-          key: nnue-${{ hashFiles('zig_build/eval/network.zig') }}
+          key: nnue-${{ hashFiles('src/eval/network.zig') }}
 
       - name: Fetch the NNUE net
         run: zig build net

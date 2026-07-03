@@ -10,18 +10,18 @@
 #
 # Usage:  upstream_parity.sh [<our-default-bin>] [<sha>]
 #   our-default-bin defaults to <repo>/zig-out/bin/stockfish (build it with `zig build -Darch=...`)
-#   sha             defaults to zig_build/tools/upstream/UPSTREAM_TARGET
+#   sha             defaults to tools/upstream/UPSTREAM_TARGET
 set -uo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 OUR_BIN="${1:-$REPO/zig-out/bin/stockfish}"
-SHA="${2:-$(cat "$REPO/zig_build/tools/upstream/UPSTREAM_TARGET")}"
+SHA="${2:-$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")}"
 ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
 
 sig() { ( cd "$2" && "$1" bench ) 2>&1 | sed -n 's/^Nodes searched  *: *\([0-9][0-9]*\).*/\1/p' | head -1; }
 
 # Build/locate the pristine oracle at SHA.
-ORACLE_BIN="$("$REPO/zig_build/tools/upstream_oracle.sh" "$SHA")" || { echo "upstream-parity: oracle build failed" >&2; exit 2; }
+ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" "$SHA")" || { echo "upstream-parity: oracle build failed" >&2; exit 2; }
 
 ours="$(sig "$OUR_BIN" "$REPO/net")"
 theirs="$(sig "$ORACLE_BIN" "$ORACLE_DIR/src")"

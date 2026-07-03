@@ -45,12 +45,12 @@ jobs:
       # this is informational, not a gate. Surface the line in the job summary.
       - name: Detect upstream drift
         run: |
-          line="$(bash zig_build/tools/upstream_sync.sh --check)"
+          line="$(bash tools/upstream_sync.sh --check)"
           echo "$line"
           {
             echo "## Upstream drift"
             echo ""
             echo "\`$line\`"
             echo ""
-            echo "Porting is human-gated: run \`zig_build/tools/upstream_sync.sh\` locally for the worklist."
+            echo "Porting is human-gated: run \`tools/upstream_sync.sh\` locally for the worklist."
           } >> "$GITHUB_STEP_SUMMARY"

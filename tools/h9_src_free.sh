@@ -32,7 +32,7 @@ cpp_std="$(nm "$BIN" 2>/dev/null | grep -cE '_ZNSt|_ZSt|__cxa_|__cxx')"  # libc+
 
 # Informational file-level cross-check, resolved from the script's own location (the gate runs with
 # cwd=net/, so relative paths would be wrong). NOT part of the pass condition — the symbol table is.
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 src_cpp="$(ls "$ROOT"/src/*.cpp 2>/dev/null | wc -l)"
 bridge="$( [ -f "$ROOT/zig_compat/uci_bridge.cpp" ] && echo present || echo absent )"
 

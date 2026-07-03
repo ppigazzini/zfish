@@ -68,7 +68,7 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "stockfish",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig_src/main.zig"),
+            .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,
@@ -79,21 +79,21 @@ pub fn build(b: *std.Build) void {
     });
 
     const timeman_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/time/timeman.zig"),
+        .root_source_file = b.path("src/time/timeman.zig"),
         .target = target,
         .optimize = optimize,
     });
     const benchmark_source_files = b.addWriteFiles();
-    // REPORT-12 TU=0: the bench positions are embedded from an in-repo copy (zig_build/bench),
+    // REPORT-12 TU=0: the bench positions are embedded from an in-repo copy (src/bench),
     // so the native build depends on NOTHING from the old src/ tree at build time. The only
     // external artifact is the NNUE net, fetched into net/ and read from cwd at runtime.
-    _ = benchmark_source_files.addCopyFile(b.path("zig_build/bench/benchmark.cpp"), "benchmark.cpp");
+    _ = benchmark_source_files.addCopyFile(b.path("src/bench/benchmark.cpp"), "benchmark.cpp");
     const benchmark_source_module = benchmark_source_files.add(
         "benchmark_source_data.zig",
         "pub const source = @embedFile(\"benchmark.cpp\");\n",
     );
     const benchmark_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/bench/benchmark.zig"),
+        .root_source_file = b.path("src/bench/benchmark.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -101,125 +101,125 @@ pub fn build(b: *std.Build) void {
         .root_source_file = benchmark_source_module,
     });
     const misc_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/misc.zig"),
+        .root_source_file = b.path("src/support/misc.zig"),
         .target = target,
         .optimize = optimize,
     });
     misc_module.addImport("build_options", build_options_module);
     const engine_module_default = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/engine.zig"),
+        .root_source_file = b.path("src/support/engine.zig"),
         .target = target,
         .optimize = optimize,
     });
     const uci_move_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/uci_move.zig"),
+        .root_source_file = b.path("src/support/uci_move.zig"),
         .target = target,
         .optimize = optimize,
     });
     const movepick_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/movepick.zig"),
+        .root_source_file = b.path("src/support/movepick.zig"),
         .target = target,
         .optimize = optimize,
     });
     const search_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/search.zig"),
+        .root_source_file = b.path("src/support/search.zig"),
         .target = target,
         .optimize = optimize,
     });
     const thread_module_default = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/thread.zig"),
+        .root_source_file = b.path("src/support/thread.zig"),
         .target = target,
         .optimize = optimize,
     });
     const tt_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/tt.zig"),
+        .root_source_file = b.path("src/support/tt.zig"),
         .target = target,
         .optimize = optimize,
     });
     const option_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/uci/option.zig"),
+        .root_source_file = b.path("src/uci/option.zig"),
         .target = target,
         .optimize = optimize,
     });
     const bitboard_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/board/bitboard.zig"),
+        .root_source_file = b.path("src/board/bitboard.zig"),
         .target = target,
         .optimize = optimize,
     });
     const position_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/board/position.zig"),
+        .root_source_file = b.path("src/board/position.zig"),
         .target = target,
         .optimize = optimize,
     });
     const position_snapshot_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/board/position_snapshot.zig"),
+        .root_source_file = b.path("src/board/position_snapshot.zig"),
         .target = target,
         .optimize = optimize,
     });
     const movegen_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/board/movegen.zig"),
+        .root_source_file = b.path("src/board/movegen.zig"),
         .target = target,
         .optimize = optimize,
     });
     const nnue_feature_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/nnue_feature.zig"),
+        .root_source_file = b.path("src/eval/nnue_feature.zig"),
         .target = target,
         .optimize = optimize,
     });
     const uci_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/uci/uci.zig"),
+        .root_source_file = b.path("src/uci/uci.zig"),
         .target = target,
         .optimize = optimize,
     });
     const evaluate_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/evaluate.zig"),
+        .root_source_file = b.path("src/eval/evaluate.zig"),
         .target = target,
         .optimize = optimize,
     });
     const nnue_accumulator_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/nnue_accumulator.zig"),
+        .root_source_file = b.path("src/eval/nnue_accumulator.zig"),
         .target = target,
         .optimize = optimize,
     });
     const network_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/network.zig"),
+        .root_source_file = b.path("src/eval/network.zig"),
         .target = target,
         .optimize = optimize,
     });
     const nnue_misc_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/eval/nnue_misc.zig"),
+        .root_source_file = b.path("src/eval/nnue_misc.zig"),
         .target = target,
         .optimize = optimize,
     });
     // Native StateList (the post-src/ `states` deque replacement, native-graph cut);
     // its own module so engine_graph.zig can hold it as a typed member.
     const state_list_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/board/state_list.zig"),
+        .root_source_file = b.path("src/board/state_list.zig"),
         .target = target,
         .optimize = optimize,
     });
     // Native NumaConfig (the post-src/ numaContext member, native-graph cut).
     const numa_config_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/numa_config.zig"),
+        .root_source_file = b.path("src/support/numa_config.zig"),
         .target = target,
         .optimize = optimize,
     });
     // Native NumaReplicationContext (the `numa_context` member; B2 switch).
     const numa_replication_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/numa_replication.zig"),
+        .root_source_file = b.path("src/support/numa_replication.zig"),
         .target = target,
         .optimize = optimize,
     });
     numa_replication_module.addImport("numa_config", numa_config_module);
     // Native PositionStorage (post-src/ owner of the `pos` member's 1032B block).
     const position_storage_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/board/position_storage.zig"),
+        .root_source_file = b.path("src/board/position_storage.zig"),
         .target = target,
         .optimize = optimize,
     });
     // Native SharedHistories sizing (the `shared_histories` member, pure count logic).
     const shared_histories_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/shared_histories.zig"),
+        .root_source_file = b.path("src/support/shared_histories.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -227,7 +227,7 @@ pub fn build(b: *std.Build) void {
     // Native sharedHists map container (the `sharedHists` member type), instantiated in
     // position.zig with the real SharedHistories.
     const shared_histories_map_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/shared_histories_map.zig"),
+        .root_source_file = b.path("src/support/shared_histories_map.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -235,7 +235,7 @@ pub fn build(b: *std.Build) void {
     // Native network holder (the `network` member: LazyNumaReplicated<Network> shape +
     // replica-count shadow verifier).
     const network_holder_module = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/network_holder.zig"),
+        .root_source_file = b.path("src/support/network_holder.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -260,7 +260,7 @@ pub fn build(b: *std.Build) void {
     // lifetime, SharedState binding) with their module deps. `zig build test-graph`.
     const graph_test = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig_build/support/engine_graph.zig"),
+            .root_source_file = b.path("src/support/engine_graph.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -277,7 +277,7 @@ pub fn build(b: *std.Build) void {
     // numa_config dep, so they run via test-graph rather than standalone.
     const numa_repl_test = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig_build/support/numa_replication.zig"),
+            .root_source_file = b.path("src/support/numa_replication.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -288,7 +288,7 @@ pub fn build(b: *std.Build) void {
     // entry). board/position.zig instantiates it with the real SharedHistories.
     const sh_map_test = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig_build/support/shared_histories_map.zig"),
+            .root_source_file = b.path("src/support/shared_histories_map.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -368,8 +368,8 @@ pub fn build(b: *std.Build) void {
     // the binary can't load its net and crashes.
     const net_cmd = b.addSystemCommand(&.{
         "sh",
-        b.pathFromRoot("zig_build/tools/fetch_net.sh"),
-        b.pathFromRoot("zig_build/eval/network.zig"),
+        b.pathFromRoot("tools/fetch_net.sh"),
+        b.pathFromRoot("src/eval/network.zig"),
     });
     net_cmd.setCwd(b.path("net"));
 
@@ -432,8 +432,8 @@ pub fn build(b: *std.Build) void {
     // Per-position search-fingerprint differential harness (M5). Localizes a
     // bench-signature mismatch to a single position + drifted field, the
     // granularity the search.cpp keystone port needs to validate safely.
-    const search_parity_golden = b.pathFromRoot("zig_build/tools/search_parity.golden");
-    const search_parity_script = b.pathFromRoot("zig_build/tools/search_parity.sh");
+    const search_parity_golden = b.pathFromRoot("tools/search_parity.golden");
+    const search_parity_script = b.pathFromRoot("tools/search_parity.sh");
 
     const search_parity_cmd = b.addSystemCommand(&.{
         "bash",
@@ -465,14 +465,14 @@ pub fn build(b: *std.Build) void {
 
     const search_parity_update_step = b.step(
         "search-parity-update",
-        "Regenerate zig_build/tools/search_parity.golden from the current binary",
+        "Regenerate tools/search_parity.golden from the current binary",
     );
     search_parity_update_step.dependOn(&search_parity_update_cmd.step);
 
     // Deterministic non-bench search-mode harness (node-limit / MultiPV /
     // searchmoves) -- validates iterative_deepening control flow beyond bench.
-    const search_modes_golden = b.pathFromRoot("zig_build/tools/search_modes.golden");
-    const search_modes_script = b.pathFromRoot("zig_build/tools/search_modes.sh");
+    const search_modes_golden = b.pathFromRoot("tools/search_modes.golden");
+    const search_modes_script = b.pathFromRoot("tools/search_modes.sh");
 
     const search_modes_cmd = b.addSystemCommand(&.{
         "bash", search_modes_script, b.getInstallPath(.bin, "stockfish"), search_modes_golden, "check",
@@ -496,7 +496,7 @@ pub fn build(b: *std.Build) void {
 
     const search_modes_update_step = b.step(
         "search-modes-update",
-        "Regenerate zig_build/tools/search_modes.golden from the current binary",
+        "Regenerate tools/search_modes.golden from the current binary",
     );
     search_modes_update_step.dependOn(&search_modes_update_cmd.step);
 
@@ -511,11 +511,11 @@ pub fn build(b: *std.Build) void {
     // deletion so CI can add the upstream fetch atomically.
     const upstream_base_sha = runAndTrimOrNull(b, &.{
         "cat",
-        b.pathFromRoot("zig_build/tools/upstream/UPSTREAM_BASE"),
+        b.pathFromRoot("tools/upstream/UPSTREAM_BASE"),
     }) orelse "";
     const upstream_parity_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/upstream_parity.sh"),
+        b.pathFromRoot("tools/upstream_parity.sh"),
         b.getInstallPath(.bin, "stockfish"),
         upstream_base_sha,
     });
@@ -531,10 +531,10 @@ pub fn build(b: *std.Build) void {
     // text as output-parity, but pinned against a committed golden instead of the
     // legacy oracle, so it survives oracle deletion (Annex B B.4). The golden is
     // captured while the oracle still exists; output-parity proves golden == oracle.
-    const output_golden = b.pathFromRoot("zig_build/tools/output_parity.golden");
+    const output_golden = b.pathFromRoot("tools/output_parity.golden");
     const output_golden_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/output_parity_golden.sh"),
+        b.pathFromRoot("tools/output_parity_golden.sh"),
         b.getInstallPath(.bin, "stockfish"),
         output_golden,
         "check",
@@ -551,7 +551,7 @@ pub fn build(b: *std.Build) void {
 
     const output_golden_update_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/output_parity_golden.sh"),
+        b.pathFromRoot("tools/output_parity_golden.sh"),
         b.getInstallPath(.bin, "stockfish"),
         output_golden,
         "update",
@@ -562,7 +562,7 @@ pub fn build(b: *std.Build) void {
 
     const output_golden_update_step = b.step(
         "output-golden-update",
-        "Regenerate zig_build/tools/output_parity.golden from the current binary",
+        "Regenerate tools/output_parity.golden from the current binary",
     );
     output_golden_update_step.dependOn(&output_golden_update_cmd.step);
 
@@ -575,7 +575,7 @@ pub fn build(b: *std.Build) void {
     // for any thread-runtime slice.
     const stress_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/stress.sh"),
+        b.pathFromRoot("tools/stress.sh"),
         b.getInstallPath(.bin, "stockfish"),
     });
     stress_cmd.step.dependOn(install_step);
@@ -597,7 +597,7 @@ pub fn build(b: *std.Build) void {
     // data races by design.) Out of the core `parity` aggregate (slow).
     const valgrind_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/valgrind.sh"),
+        b.pathFromRoot("tools/valgrind.sh"),
         b.getInstallPath(.bin, "stockfish"),
     });
     valgrind_cmd.step.dependOn(install_step);
@@ -618,8 +618,8 @@ pub fn build(b: *std.Build) void {
     // multi-thread behaviour against the live C++ runtime before stage 4 swaps it;
     // catches a native runtime that runs but corrupts result aggregation. Out of
     // the core `parity` aggregate (non-deterministic, sleep-paced).
-    const mt_golden = b.pathFromRoot("zig_build/tools/mt_sanity.golden");
-    const mt_script = b.pathFromRoot("zig_build/tools/mt_sanity.sh");
+    const mt_golden = b.pathFromRoot("tools/mt_sanity.golden");
+    const mt_script = b.pathFromRoot("tools/mt_sanity.sh");
 
     const mt_cmd = b.addSystemCommand(&.{
         "bash", mt_script, b.getInstallPath(.bin, "stockfish"), mt_golden, "check",
@@ -643,7 +643,7 @@ pub fn build(b: *std.Build) void {
 
     const mt_update_step = b.step(
         "parity-mt-update",
-        "Regenerate zig_build/tools/mt_sanity.golden (single-thread reference)",
+        "Regenerate tools/mt_sanity.golden (single-thread reference)",
     );
     mt_update_step.dependOn(&mt_update_cmd.step);
 
@@ -655,7 +655,7 @@ pub fn build(b: *std.Build) void {
     // core `parity` aggregate (slow).
     const teardown_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/teardown.sh"),
+        b.pathFromRoot("tools/teardown.sh"),
         b.getInstallPath(.bin, "stockfish"),
     });
     teardown_cmd.step.dependOn(install_step);
@@ -677,7 +677,7 @@ pub fn build(b: *std.Build) void {
     // deterministic `parity` aggregate; the CI workflow runs it explicitly.
     const time_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/time_mgmt.sh"),
+        b.pathFromRoot("tools/time_mgmt.sh"),
         b.getInstallPath(.bin, "stockfish"),
     });
     time_cmd.step.dependOn(install_step);
@@ -694,10 +694,10 @@ pub fn build(b: *std.Build) void {
     // Position::do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
     // perft; search-modes only checks bestmoves). perft-parity certifies default == legacy while the
     // oracle still exists; the perft golden survives oracle deletion at TU=0 (REPORT-11 §2.2).
-    const perft_golden = b.pathFromRoot("zig_build/tools/perft.golden");
+    const perft_golden = b.pathFromRoot("tools/perft.golden");
     const perft_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/perft.sh"),
+        b.pathFromRoot("tools/perft.sh"),
         b.getInstallPath(.bin, "stockfish"),
         perft_golden,
         "check",
@@ -714,7 +714,7 @@ pub fn build(b: *std.Build) void {
 
     const perft_update_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/perft.sh"),
+        b.pathFromRoot("tools/perft.sh"),
         b.getInstallPath(.bin, "stockfish"),
         perft_golden,
         "update",
@@ -725,7 +725,7 @@ pub fn build(b: *std.Build) void {
 
     const perft_update_step = b.step(
         "perft-update",
-        "Regenerate zig_build/tools/perft.golden from the current binary",
+        "Regenerate tools/perft.golden from the current binary",
     );
     perft_update_step.dependOn(&perft_update_cmd.step);
 
@@ -733,10 +733,10 @@ pub fn build(b: *std.Build) void {
     // (buildNnueTrace + the network-ptr / accumulator-cache trace path) — bench covers the eval
     // value but not this formatting path. eval-parity certifies default == legacy while the oracle
     // lives; the golden survives oracle deletion.
-    const eval_golden = b.pathFromRoot("zig_build/tools/eval.golden");
+    const eval_golden = b.pathFromRoot("tools/eval.golden");
     const eval_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/eval.sh"),
+        b.pathFromRoot("tools/eval.sh"),
         b.getInstallPath(.bin, "stockfish"),
         eval_golden,
         "check",
@@ -753,7 +753,7 @@ pub fn build(b: *std.Build) void {
 
     const eval_update_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/eval.sh"),
+        b.pathFromRoot("tools/eval.sh"),
         b.getInstallPath(.bin, "stockfish"),
         eval_golden,
         "update",
@@ -764,16 +764,16 @@ pub fn build(b: *std.Build) void {
 
     const eval_update_step = b.step(
         "eval-trace-update",
-        "Regenerate zig_build/tools/eval.golden from the current binary",
+        "Regenerate tools/eval.golden from the current binary",
     );
     eval_update_step.dependOn(&eval_update_cmd.step);
 
     // UCI misc-command gate (REPORT-11 E1.2 coverage tail): d/flip Fen+Key+Checkers — the
     // frozen-Position fen/flip/zobrist/gives_check read paths no other gate touches.
-    const misc_golden = b.pathFromRoot("zig_build/tools/misc.golden");
+    const misc_golden = b.pathFromRoot("tools/misc.golden");
     const misc_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/misc.sh"),
+        b.pathFromRoot("tools/misc.sh"),
         b.getInstallPath(.bin, "stockfish"),
         misc_golden,
         "check",
@@ -790,7 +790,7 @@ pub fn build(b: *std.Build) void {
 
     const misc_update_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/misc.sh"),
+        b.pathFromRoot("tools/misc.sh"),
         b.getInstallPath(.bin, "stockfish"),
         misc_golden,
         "update",
@@ -801,7 +801,7 @@ pub fn build(b: *std.Build) void {
 
     const misc_update_step = b.step(
         "misc-update",
-        "Regenerate zig_build/tools/misc.golden from the current binary",
+        "Regenerate tools/misc.golden from the current binary",
     );
     misc_update_step.dependOn(&misc_update_cmd.step);
 
@@ -812,7 +812,7 @@ pub fn build(b: *std.Build) void {
     // being reintroduced into the default binary).
     const h9_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("zig_build/tools/h9_src_free.sh"),
+        b.pathFromRoot("tools/h9_src_free.sh"),
         b.getInstallPath(.bin, "stockfish"),
     });
     h9_cmd.step.dependOn(install_step);
@@ -847,7 +847,7 @@ pub fn build(b: *std.Build) void {
     // (in the exe the libc linkage comes from the root module). It has no module deps.
     const option_test = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("zig_build/uci/option.zig"),
+            .root_source_file = b.path("src/uci/option.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,

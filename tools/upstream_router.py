@@ -2,7 +2,7 @@
 """Blast-radius router (REPORT-13 §5.3).
 
 Classify an upstream commit (or range) by which Zig file(s) it forces us to touch and at what risk tier,
-reading the manifest at zig_build/tools/upstream/upstream_map.tsv. Turns "what does this commit cost us" into a
+reading the manifest at tools/upstream/upstream_map.tsv. Turns "what does this commit cost us" into a
 mechanical lookup instead of archaeology.
 
 Usage:
@@ -13,7 +13,7 @@ Usage:
 import subprocess, sys, fnmatch, os
 
 REPO = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
-MAP = os.path.join(REPO, "zig_build/tools/upstream/upstream_map.tsv")
+MAP = os.path.join(REPO, "tools/upstream/upstream_map.tsv")
 RANK = {"SKIP": 0, "LOW": 1, "MED": 2, "HIGH": 3}
 
 # A commit whose SUBJECT matches one of these is arch/platform/CI-only and is SKIP for the
@@ -101,8 +101,8 @@ def touches_nnue_arch(files):
 def base_target():
     # UPSTREAM_BASE_OVERRIDE lets upstream_sync.sh pass the live base it just computed.
     base = os.environ.get("UPSTREAM_BASE_OVERRIDE") \
-        or open(os.path.join(REPO, "zig_build/tools/upstream/UPSTREAM_BASE")).read().strip()
-    target = open(os.path.join(REPO, "zig_build/tools/upstream/UPSTREAM_TARGET")).read().strip()
+        or open(os.path.join(REPO, "tools/upstream/UPSTREAM_BASE")).read().strip()
+    target = open(os.path.join(REPO, "tools/upstream/UPSTREAM_TARGET")).read().strip()
     return base, target
 
 

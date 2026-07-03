@@ -14,7 +14,7 @@ the phased port history, findings, and the recommendations these tools implement
 - **`UPSTREAM_TARGET`** — sha currently porting toward (kept == HEAD once synced).
 - **`upstream_map.tsv`** — blast-radius manifest: `src/`-glob → Zig owner → risk tier.
 
-## Tools (in `zig_build/tools/`)
+## Tools (in `tools/`)
 | script | what it does |
 |---|---|
 | **`upstream_sync.sh`** | one-command driver: fetch → behind-count → worklist + tiered backlog. `--check` = terse one-line poll (for cron/`/loop`). `--no-fetch` to skip the fetch. **Start here.** |
@@ -27,14 +27,14 @@ the phased port history, findings, and the recommendations these tools implement
 
 ## Steady-state workflow
 ```
-zig_build/tools/upstream_sync.sh                    # fetch + worklist + bench targets (the whole TODO)
+tools/upstream_sync.sh                    # fetch + worklist + bench targets (the whole TODO)
 # for each WORKLIST commit (NNUE / bench / NET), oldest-first:
 git show <sha> -- <owner src files>                 # the diff; router already named the .zig owner
 #   ...port into the .zig owner. FORMULA commits: check C++/Zig integer semantics (see below).
 zig build signature -Darch=x86-64-sse41-popcnt      # must equal <sha>'s Bench (from upstream_benchmap.sh)
 # net bump?  cp the new .nnue + bump default_eval_file_name (engine.zig + network.zig), then upstream_net.sh
 # stuck on a multi-commit gap?  upstream_nodes.sh <sha> to localize which position/commit diverges
-zig_build/tools/upstream_parity.sh                  # whole-engine gate; expect OK at HEAD
+tools/upstream_parity.sh                  # whole-engine gate; expect OK at HEAD
 # then reharden + merge:
 zig build output-golden-update eval-trace-update search-parity-update search-modes-update parity-mt-update
 zig build signature output-golden eval-trace perft misc parity-mt parity-valgrind parity-teardown  # all OK

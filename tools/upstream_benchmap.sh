@@ -6,12 +6,12 @@
 # first, so the resync can replay commits one at a time and assert our `signature` == that commit's Bench.
 #
 # Usage:  upstream_benchmap.sh [<base>] [<target>]
-#   defaults: zig_build/tools/upstream/UPSTREAM_BASE .. zig_build/tools/upstream/UPSTREAM_TARGET
+#   defaults: tools/upstream/UPSTREAM_BASE .. tools/upstream/UPSTREAM_TARGET
 set -euo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-BASE="${1:-$(cat "$REPO/zig_build/tools/upstream/UPSTREAM_BASE")}"
-TARGET="${2:-$(cat "$REPO/zig_build/tools/upstream/UPSTREAM_TARGET")}"
+BASE="${1:-$(cat "$REPO/tools/upstream/UPSTREAM_BASE")}"
+TARGET="${2:-$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")}"
 
 printf '%-10s  %-9s  %s\n' "SHA" "BENCH" "SUBJECT"
 n=0

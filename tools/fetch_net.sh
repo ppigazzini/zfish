@@ -1,12 +1,12 @@
 #!/bin/sh
 # zfish net fetcher. Downloads the NNUE net the Zig binary ACTUALLY loads -- read from the authoritative
-# Zig constant `default_eval_file_name` in zig_build/eval/network.zig (the single source of truth that
+# Zig constant `default_eval_file_name` in src/eval/network.zig (the single source of truth that
 # engine.zig imports) -- NOT the stale upstream src/evaluate.h that scripts/net.sh keys on. After an
 # upstream net bump the Zig binary's net diverges from src/evaluate.h, so the upstream downloader fetches
 # the wrong file and the binary crashes; this tracks the binary instead. Same download sources + sha256
 # validation as scripts/net.sh.
 #
-# Run with cwd = the net's runtime dir (net/).  $1 = path to zig_build/eval/network.zig
+# Run with cwd = the net's runtime dir (net/).  $1 = path to src/eval/network.zig
 set -e
 
 NET_SRC="$1"
