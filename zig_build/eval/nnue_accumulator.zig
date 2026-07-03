@@ -212,20 +212,29 @@ pub fn transformBucket(
     var psqt: c_int = psq_psqt[p0 * psqt_buckets + bucket] - psq_psqt[p1 * psqt_buckets + bucket];
     psqt = @divTrunc(psqt + thr_psqt[p0 * psqt_buckets + bucket] - thr_psqt[p1 * psqt_buckets + bucket], 2);
 
+    // Pairwise clipped-ReLU output (M15.3), vectorized. Per element: sum psq+threat
+    // accumulators (i16 wrap), clamp to [0,255], multiply the two halves, /512 -> u8.
+    // Same element-wise ops as the scalar loop, so bit-exact (signature 2067208).
     const half = half_dimensions / 2;
+    const V = acc_vec_width;
+    const Vi16 = @Vector(V, i16);
+    const Vi32 = @Vector(V, i32);
+    const zero: Vi32 = @splat(0);
+    const c255: Vi32 = @splat(255);
+    const d512: @Vector(V, u32) = @splat(512);
     var p: usize = 0;
     while (p < 2) : (p += 1) {
         const pp: usize = if (p == 0) p0 else p1;
         const offset = half * p;
+        const base = pp * half_dimensions;
         var j: usize = 0;
-        while (j < half) : (j += 1) {
-            var sum0: i16 = psq_acc[pp * half_dimensions + j];
-            sum0 +%= thr_acc[pp * half_dimensions + j];
-            var sum1: i16 = psq_acc[pp * half_dimensions + j + half];
-            sum1 +%= thr_acc[pp * half_dimensions + j + half];
-            const c0: c_int = @max(0, @min(255, @as(c_int, sum0)));
-            const c1: c_int = @max(0, @min(255, @as(c_int, sum1)));
-            output[offset + j] = @intCast(@divTrunc(@as(u32, @intCast(c0 * c1)), 512));
+        while (j < half) : (j += V) {
+            const s0i: Vi16 = @as(Vi16, psq_acc[base + j ..][0..V].*) +% @as(Vi16, thr_acc[base + j ..][0..V].*);
+            const s1i: Vi16 = @as(Vi16, psq_acc[base + j + half ..][0..V].*) +% @as(Vi16, thr_acc[base + j + half ..][0..V].*);
+            const c0: Vi32 = @max(zero, @min(c255, @as(Vi32, s0i)));
+            const c1: Vi32 = @max(zero, @min(c255, @as(Vi32, s1i)));
+            const q: @Vector(V, u32) = @as(@Vector(V, u32), @intCast(c0 * c1)) / d512;
+            output[offset + j ..][0..V].* = @as(@Vector(V, u8), @intCast(q));
         }
     }
     return psqt;
@@ -650,6 +659,30 @@ fn applyThreatDelta(
     stateBytesMut(threat_feature, target_index, stack)[computed_offset + perspective] = 1;
 }
 
+// Accumulator delta/refresh row op, vectorized (M15.3). Adds or subtracts one
+// half_dimensions-wide feature-transformer weight row to the i16 accumulator. Vector
+// +/- is the same element-wise i16 op as the scalar loop it replaces (identical wrap
+// behaviour), so it is bit-exact -- signature/oracle-parity hold at 2067208. Width 32
+// i16 = one AVX-512 register; LLVM splits it for narrower targets. i8 weight rows
+// widen to i16 (as the scalar `@as(i16, ...)` did).
+const acc_vec_width: usize = 32;
+comptime {
+    if (half_dimensions % acc_vec_width != 0)
+        @compileError("half_dimensions must be a multiple of acc_vec_width");
+}
+
+inline fn accRow(comptime WT: type, comptime add: bool, target: []i16, weights_row: [*]const WT) void {
+    const V = acc_vec_width;
+    const Vi16 = @Vector(V, i16);
+    var d: usize = 0;
+    while (d < half_dimensions) : (d += V) {
+        const t: Vi16 = target.ptr[d..][0..V].*;
+        const wraw: @Vector(V, WT) = weights_row[d..][0..V].*;
+        const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
+        target.ptr[d..][0..V].* = if (add) t + w else t - w;
+    }
+}
+
 fn applyAccumulatorDeltaI16(
     target: []i16,
     source: []const i16,
@@ -658,22 +691,8 @@ fn applyAccumulatorDeltaI16(
     weights: [*]const i16,
 ) void {
     @memcpy(target, source);
-
-    for (removed) |index| {
-        const row_offset = @as(usize, index) * half_dimensions;
-        var dim: usize = 0;
-        while (dim < half_dimensions) : (dim += 1) {
-            target[dim] -= weights[row_offset + dim];
-        }
-    }
-
-    for (added) |index| {
-        const row_offset = @as(usize, index) * half_dimensions;
-        var dim: usize = 0;
-        while (dim < half_dimensions) : (dim += 1) {
-            target[dim] += weights[row_offset + dim];
-        }
-    }
+    for (removed) |index| accRow(i16, false, target, weights + @as(usize, index) * half_dimensions);
+    for (added) |index| accRow(i16, true, target, weights + @as(usize, index) * half_dimensions);
 }
 
 fn applyAccumulatorDeltaInPlaceI16(
@@ -682,21 +701,8 @@ fn applyAccumulatorDeltaInPlaceI16(
     added: []const u32,
     weights: [*]const i16,
 ) void {
-    for (removed) |index| {
-        const row_offset = @as(usize, index) * half_dimensions;
-        var dim: usize = 0;
-        while (dim < half_dimensions) : (dim += 1) {
-            target[dim] -= weights[row_offset + dim];
-        }
-    }
-
-    for (added) |index| {
-        const row_offset = @as(usize, index) * half_dimensions;
-        var dim: usize = 0;
-        while (dim < half_dimensions) : (dim += 1) {
-            target[dim] += weights[row_offset + dim];
-        }
-    }
+    for (removed) |index| accRow(i16, false, target, weights + @as(usize, index) * half_dimensions);
+    for (added) |index| accRow(i16, true, target, weights + @as(usize, index) * half_dimensions);
 }
 
 fn applyAccumulatorDeltaI8(
@@ -707,32 +713,12 @@ fn applyAccumulatorDeltaI8(
     weights: [*]const i8,
 ) void {
     @memcpy(target, source);
-
-    for (removed) |index| {
-        const row_offset = @as(usize, index) * half_dimensions;
-        var dim: usize = 0;
-        while (dim < half_dimensions) : (dim += 1) {
-            target[dim] -= @as(i16, weights[row_offset + dim]);
-        }
-    }
-
-    for (added) |index| {
-        const row_offset = @as(usize, index) * half_dimensions;
-        var dim: usize = 0;
-        while (dim < half_dimensions) : (dim += 1) {
-            target[dim] += @as(i16, weights[row_offset + dim]);
-        }
-    }
+    for (removed) |index| accRow(i8, false, target, weights + @as(usize, index) * half_dimensions);
+    for (added) |index| accRow(i8, true, target, weights + @as(usize, index) * half_dimensions);
 }
 
 fn accumulateRowsI8(target: []i16, rows: []const u32, weights: [*]const i8) void {
-    for (rows) |index| {
-        const row_offset = @as(usize, index) * half_dimensions;
-        var dim: usize = 0;
-        while (dim < half_dimensions) : (dim += 1) {
-            target[dim] += @as(i16, weights[row_offset + dim]);
-        }
-    }
+    for (rows) |index| accRow(i8, true, target, weights + @as(usize, index) * half_dimensions);
 }
 
 fn applyPsqtDelta(
