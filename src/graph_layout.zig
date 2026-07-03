@@ -180,33 +180,66 @@ comptime {
     std.debug.assert(@offsetOf(ThreadPool, "bound_begin") == 40);
 }
 
-// Thread member offset (probed): the LargePagePtr<Worker> worker is at Thread+8.
-// Dereferenced (the unique_ptr is a single pointer) it yields the Worker base.
-pub const thread_off = struct {
-    pub const worker: usize = 8;
+// A Thread (view). The full C++ Thread is 208 bytes; the search-driver code only
+// needs the LargePagePtr<Worker> `worker` at offset 8 (a single pointer, dereferenced
+// to the Worker base), so this partial extern struct reinterprets a Thread pointer to
+// read that one slot. `worker` is kept as a raw address (the loaded pointer value).
+pub const Thread = extern struct {
+    _lo: usize, // @0 (idle-loop / vtable region; unused here)
+    worker: usize, // @8 (LargePagePtr<Worker>, as a raw address)
+
+    pub inline fn fromAddr(addr: usize) *Thread {
+        return @ptrFromInt(addr);
+    }
+    pub inline fn fromPtr(p: *anyopaque) *Thread {
+        return @ptrCast(@alignCast(p));
+    }
 };
 
-// RootMove field offsets (bytes from a RootMove base). Layout: effort(u64)@0,
-// then the Value(int) scores score@8, previousScore@12, averageScore@16,
-// meanSquaredScore@20, uciScore@24, the two bound bools@28/29, selDepth@32,
-// tbRank@36, tbScore@40, then PVMoves pv@48 (8-aligned). Total 552 bytes pins it.
-pub const root_move_off = struct {
-    pub const score: usize = 8;
-    pub const average_score: usize = 16;
-    // scoreLowerbound/scoreUpperbound (bools) follow uciScore@24; score_is_bound()
-    // == lowerbound || upperbound.
-    pub const score_lowerbound: usize = 28;
-    pub const score_upperbound: usize = 29;
-    // pv (PVMoves, 504 bytes, 8-aligned) follows tbScore@40; padded start is 48.
-    pub const pv: usize = 48;
+// PVMoves (504 bytes): moves[MAX_PLY+1] = Move[247] at 0, then a std::size_t length
+// at +496 (2 bytes of alignment padding precede it).
+pub const PVMoves = extern struct {
+    moves: [247]u16, // @0 (494 bytes)
+    _pad: [2]u8,
+    length: usize, // @496
+
+    pub inline fn fromAddr(addr: usize) *PVMoves {
+        return @ptrFromInt(addr);
+    }
 };
 
-// PVMoves field offsets. moves[MAX_PLY+1] = Move[247] = 494 bytes at 0, then the
-// std::size_t length at +496 (2 bytes of alignment padding precede it). Total 504
-// bytes pins it (sizeof(PVMoves) static_assert in the bridge).
-pub const pvmoves_off = struct {
-    pub const length: usize = 496;
+// A RootMove (552 bytes): effort, the Value(int) scores, the two bound bools, the
+// depth/tb ranks, then the embedded PVMoves at offset 48.
+pub const RootMove = extern struct {
+    effort: u64, // @0
+    score: i32, // @8
+    previous_score: i32, // @12
+    average_score: i32, // @16
+    mean_squared_score: i32, // @20
+    uci_score: i32, // @24
+    score_lowerbound: u8, // @28
+    score_upperbound: u8, // @29
+    _pad0: [2]u8,
+    sel_depth: i32, // @32
+    tb_rank: i32, // @36
+    tb_score: i32, // @40
+    _pad1: [4]u8,
+    pv: PVMoves, // @48 (504 bytes)
+
+    pub inline fn fromAddr(addr: usize) *RootMove {
+        return @ptrFromInt(addr);
+    }
 };
+
+comptime {
+    std.debug.assert(@offsetOf(Thread, "worker") == 8);
+    std.debug.assert(@sizeOf(PVMoves) == 504);
+    std.debug.assert(@offsetOf(PVMoves, "length") == 496);
+    std.debug.assert(@sizeOf(RootMove) == root_move_size);
+    std.debug.assert(@offsetOf(RootMove, "average_score") == 16);
+    std.debug.assert(@offsetOf(RootMove, "score_lowerbound") == 28);
+    std.debug.assert(@offsetOf(RootMove, "pv") == 48);
+}
 
 // The TranspositionTable object (24 bytes). Typed replacement for the tt_off offset
 // map: clusterCount, table (Cluster*), generation8, in declaration order. The side

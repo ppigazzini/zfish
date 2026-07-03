@@ -53,7 +53,7 @@ export fn zfish_verify_thread_graph(pool: ?*const anyopaque, requested: usize, b
     while (i < count) : (i += 1) {
         const thread = tp.threadAt(i);
         if (thread == 0) fail("ThreadPool.threads[i] is null");
-        const worker = readUsize(@ptrFromInt(thread), thread_off.worker);
+        const worker = graph_layout.Thread.fromAddr(thread).worker;
         if (worker == 0) fail("Thread[i].worker (LargePagePtr) is null");
     }
 }

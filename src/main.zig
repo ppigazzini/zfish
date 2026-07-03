@@ -597,9 +597,9 @@ fn tpSetIncreaseDepth(pool: *anyopaque, increase_depth: u8) callconv(.c) void {
 // relaxed-atomic u64 counters at the worker's nodes/tbHits offsets. Match
 // Thread::worker_nodes_searched()/worker_tb_hits(). Gated to the default build.
 fn threadWorker(thread: *const anyopaque) ?[*]const u8 {
-    const wp: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(thread)) + graph_layout.thread_off.worker));
-    if (wp.* == 0) return null;
-    return @ptrFromInt(wp.*);
+    const w = graph_layout.Thread.fromPtr(@constCast(thread)).worker;
+    if (w == 0) return null;
+    return @ptrFromInt(w);
 }
 fn thNodesSearched(thread: *const anyopaque) callconv(.c) u64 {
     const w = threadWorker(thread) orelse return 0;
@@ -622,9 +622,9 @@ fn tpThreadCount(pool: *anyopaque) callconv(.c) usize {
 // 8-byte unique_ptr.
 // Mutable Thread -> Worker resolution (LargePagePtr<Worker> at Thread+8).
 fn threadWorkerMut(thread: *anyopaque) ?[*]u8 {
-    const wp: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(thread)) + graph_layout.thread_off.worker));
-    if (wp.* == 0) return null;
-    return @ptrFromInt(wp.*);
+    const w = graph_layout.Thread.fromPtr(thread).worker;
+    if (w == 0) return null;
+    return @ptrFromInt(w);
 }
 
 // Worker::reset_root_setup_state zeros the five per-search counters. They are POD
@@ -708,7 +708,7 @@ fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
 // Default-only; the legacy oracle keeps the C++ ThreadPool::main_manager() method.
 fn zfishThreadpoolMainManagerPtr(pool: *anyopaque) callconv(.c) ?*anyopaque {
     const thread0 = tpThreadAt(pool, 0);
-    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread0) + graph_layout.thread_off.worker)).*;
+    const worker = graph_layout.Thread.fromPtr(thread0).worker;
     if (worker == 0) return null;
     return @ptrFromInt(@as(*const usize, @ptrFromInt(worker + graph_layout.worker_off.manager)).*);
 }
@@ -1149,8 +1149,8 @@ pub export fn zfish_search_emit_info_full(
 
     // PV string: space-separated UCI moves over rootMoves[move_index].pv.
     const rm = workerRootMoveAt(worker, move_index);
-    const pv_addr = rm + graph_layout.root_move_off.pv;
-    const pv_len = @as(*const usize, @ptrFromInt(pv_addr + graph_layout.pvmoves_off.length)).*;
+    const pv = &graph_layout.RootMove.fromAddr(rm).pv;
+    const pv_len = pv.length;
     var pv_buf: [4096]u8 = undefined;
     var pv_n: usize = 0;
     var i: usize = 0;
@@ -1159,7 +1159,7 @@ pub export fn zfish_search_emit_info_full(
             pv_buf[pv_n] = ' ';
             pv_n += 1;
         }
-        const m = @as(*const u16, @ptrFromInt(pv_addr + i * 2)).*;
+        const m = pv.moves[i];
         var mbuf: [5]u8 = undefined;
         const txt = uci_move_port.renderMoveText(&mbuf, m, chess960);
         @memcpy(pv_buf[pv_n..][0..txt.len], txt);
@@ -1193,11 +1193,10 @@ pub export fn zfish_search_emit_info_full(
 // (bridge-only symbol, no gating).
 pub export fn zfish_ss_set_prev_scores(worker: *anyopaque, best: *const anyopaque) void {
     const rm0 = workerRootMove0(best);
-    const score: *const i32 = @ptrFromInt(rm0 + graph_layout.root_move_off.score);
-    const avg: *const i32 = @ptrFromInt(rm0 + graph_layout.root_move_off.average_score);
+    const rmv = graph_layout.RootMove.fromAddr(rm0);
     const sm = graph_layout.SearchManager.fromAddr(workerManager(worker));
-    sm.best_previous_score = score.*;
-    sm.best_previous_average_score = avg.*;
+    sm.best_previous_score = rmv.score;
+    sm.best_previous_average_score = rmv.average_score;
 }
 
 fn workerTT(worker: *const anyopaque) usize {
@@ -1212,13 +1211,12 @@ fn workerTT(worker: *const anyopaque) usize {
 // the C++ does. Bridge-only symbol, no gating.
 pub export fn zfish_ss_pv_one_and_ponder(worker: *anyopaque, best: *anyopaque) u8 {
     const rm0 = workerRootMove0(best);
-    const pv_addr = rm0 + graph_layout.root_move_off.pv;
-    const length: *const usize = @ptrFromInt(pv_addr + graph_layout.pvmoves_off.length);
-    if (length.* != 1) return 0;
+    const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
+    if (pv.length != 1) return 0;
     const tp = graph_layout.TranspositionTable.fromAddr(workerTT(worker));
     const pos: usize = @intFromPtr(worker) + graph_layout.worker_off.root_pos;
     return zfish_search_extract_ponder_from_tt(
-        @ptrFromInt(pv_addr),
+        @ptrCast(pv),
         tp.table,
         tp.cluster_count,
         tp.generation8,
@@ -2086,8 +2084,7 @@ pub export fn zfish_ss_prologue(worker: *anyopaque) void {
     const wb = @intFromPtr(worker);
     const acc_stack: *anyopaque = @ptrFromInt(wb + graph_layout.worker_off.accumulator_stack);
     nnue_accumulator_port.stackReset(acc_stack);
-    const pv_len: *usize = @ptrFromInt(wb + graph_layout.worker_off.last_iteration_pv + graph_layout.pvmoves_off.length);
-    pv_len.* = 0;
+    graph_layout.PVMoves.fromAddr(wb + graph_layout.worker_off.last_iteration_pv).length = 0;
 }
 
 // zfish_ss_tm_init: the per-search TimeManagement::init + TT::new_search the main
@@ -2152,16 +2149,13 @@ fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
 // already reads. Gated default-only: src/thread.cpp also defines this symbol, so
 // the legacy oracle uses that (see [[legacy-seam-blocks-zig-export-flips]]).
 fn thFillSummary(thread: *const anyopaque, out: *thread_port.ThreadSummary) callconv(.c) void {
-    const w = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + graph_layout.thread_off.worker)).*;
+    const w = graph_layout.Thread.fromPtr(@constCast(thread)).worker;
     const rm = @as(*const usize, @ptrFromInt(w + graph_layout.worker_off.root_moves)).*; // &rootMoves[0]
-    const rmo = graph_layout.root_move_off;
-    out.pv0_raw = @as(*const u16, @ptrFromInt(rm + rmo.pv)).*;
-    const lb = @as(*const u8, @ptrFromInt(rm + rmo.score_lowerbound)).*;
-    const ub = @as(*const u8, @ptrFromInt(rm + rmo.score_upperbound)).*;
-    out.score_is_bound = @intFromBool(lb != 0 or ub != 0);
-    const pv_len = @as(*const usize, @ptrFromInt(rm + rmo.pv + graph_layout.pvmoves_off.length)).*;
-    out.pv_has_more_than_two = @intFromBool(pv_len > 2);
-    out.score = @as(*const c_int, @ptrFromInt(rm + rmo.score)).*;
+    const rmv = graph_layout.RootMove.fromAddr(rm);
+    out.pv0_raw = rmv.pv.moves[0];
+    out.score_is_bound = @intFromBool(rmv.score_lowerbound != 0 or rmv.score_upperbound != 0);
+    out.pv_has_more_than_two = @intFromBool(rmv.pv.length > 2);
+    out.score = rmv.score;
     out.root_depth = @as(*const c_int, @ptrFromInt(w + graph_layout.worker_off.root_depth)).*;
 }
 
@@ -2177,7 +2171,7 @@ pub export fn zfish_ss_get_best_thread(worker: *anyopaque) ?*anyopaque {
     const pool = @as(*const usize, @ptrFromInt(wb + graph_layout.worker_off.threads)).*;
     const idx = thread_port.bestThreadIndex(@ptrFromInt(pool));
     const thread = graph_layout.ThreadPool.fromAddr(pool).threadAt(idx);
-    return @ptrFromInt(@as(*const usize, @ptrFromInt(thread + graph_layout.thread_off.worker)).*);
+    return @ptrFromInt(graph_layout.Thread.fromAddr(thread).worker);
 }
 
 // zfish_search_id_collect_bmc: sum and reset each thread's worker bestMoveChanges
@@ -2189,7 +2183,7 @@ pub export fn zfish_search_id_collect_bmc(worker: *anyopaque) f64 {
     var i: usize = 0;
     while (i < count) : (i += 1) {
         const thread = tp.threadAt(i);
-        const wkr = @as(*const usize, @ptrFromInt(thread + graph_layout.thread_off.worker)).*;
+        const wkr = graph_layout.Thread.fromAddr(thread).worker;
         const bmc: *u64 = @ptrFromInt(wkr + graph_layout.worker_off.best_move_changes);
         tot += @floatFromInt(bmc.*);
         bmc.* = 0;
@@ -2448,14 +2442,12 @@ pub export fn zfish_ss_emit_no_moves(worker: *const anyopaque) void {
 pub export fn zfish_ss_emit_bestmove(worker: *const anyopaque, best: *const anyopaque) void {
     if (uci_quiet_mode) return;
     const rm0 = workerRootMove0(best);
-    const pv_addr = rm0 + graph_layout.root_move_off.pv;
-    const length: *const usize = @ptrFromInt(pv_addr + graph_layout.pvmoves_off.length);
-    const pv0: *const u16 = @ptrFromInt(pv_addr);
+    const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
     const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
     const chess960 = position_port.isChess960(root_pos);
 
     var buf0: [5]u8 = undefined;
-    const bestmove = uci_move_port.renderMoveText(&buf0, pv0.*, chess960);
+    const bestmove = uci_move_port.renderMoveText(&buf0, pv.moves[0], chess960);
 
     var line: [40]u8 = undefined;
     var n: usize = 0;
@@ -2463,10 +2455,9 @@ pub export fn zfish_ss_emit_bestmove(worker: *const anyopaque, best: *const anyo
     n += 9;
     @memcpy(line[n..][0..bestmove.len], bestmove);
     n += bestmove.len;
-    if (length.* > 1) {
-        const pv1: *const u16 = @ptrFromInt(pv_addr + 2);
+    if (pv.length > 1) {
         var buf1: [5]u8 = undefined;
-        const ponder = uci_move_port.renderMoveText(&buf1, pv1.*, chess960);
+        const ponder = uci_move_port.renderMoveText(&buf1, pv.moves[1], chess960);
         @memcpy(line[n..][0..8], " ponder ");
         n += 8;
         @memcpy(line[n..][0..ponder.len], ponder);
