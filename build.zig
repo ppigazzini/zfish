@@ -1104,6 +1104,36 @@ pub fn build(b: *std.Build) void {
     );
     h9_step.dependOn(&h9_cmd.step);
 
+    // Aggregate unit-test step (REPORT-16 M16.0b): run the in-tree `test {}` blocks of
+    // every named module that has them, reusing the already-wired modules so their
+    // imports resolve, plus the pre-existing native-graph (cut) tests. Reachability
+    // caveat: tests in a path-imported sub-file run only when a module built here
+    // imports it; a file with no test-reachable importer is not yet covered.
+    const test_step = b.step("test", "Run the Zig unit tests");
+    test_step.dependOn(graph_test_step);
+    inline for (.{
+        position_storage_module,
+        state_list_module,
+        numa_config_module,
+        tt_module,
+        network_holder_module,
+        shared_histories_module,
+    }) |unit_module| {
+        const unit_test = b.addTest(.{ .root_module = unit_module });
+        test_step.dependOn(&b.addRunArtifact(unit_test).step);
+    }
+    // option.zig uses std.heap.c_allocator, so its standalone test build needs libc
+    // (in the exe the libc linkage comes from the root module). It has no module deps.
+    const option_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("zig_build/uci/option.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(option_test).step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
