@@ -18,8 +18,9 @@ zfish, like Stockfish, is **not** a graphical interface; use it with any UCI GUI
 - The whole runtime (~22.8k lines of Zig) is Zig-owned. The NNUE hot path is
   portable `@Vector` SIMD, lowered by LLVM to AVX-512/AVX2/SSE on x86 and NEON on
   aarch64 with no per-arch source.
-- The imported `src/` C++ tree and `zig_compat/` compile only into an optional
-  differential test oracle (`stockfish-legacy-cpp`) — never the shipped binary.
+- The imported `src/` C++ tree is a frozen upstream reference compiled by nothing
+  in this repo. The differential check against real upstream is the pristine
+  worktree oracle (`zig build upstream-parity`), not an in-tree C++ build.
 
 ## Building
 
@@ -44,13 +45,15 @@ zfish keeps a battery of parity and determinism gates. The essentials:
 
 ```
 zig build signature -Dsignature-ref=2067208   # bench signature == reference
-zig build parity                               # signature + C++-oracle + micro-parity
+zig build parity                               # signature + in-repo golden gates
 zig build test                                 # Zig unit tests
 ```
 
-`zig build parity` cross-checks the Zig engine against the optional C++ oracle
-(`stockfish-legacy-cpp`) at the whole-engine level. Run `zig build --help` for the
-full set (perft, eval-trace, search modes, time management, multi-thread sanity).
+`zig build parity` runs the in-repo golden + signature gates (no oracle build). The
+differential check against pristine upstream Stockfish is `zig build upstream-parity`
+— a git-worktree build of vanilla upstream at the pinned sha, with zero vendored C++.
+Run `zig build --help` for the full set (perft, eval-trace, search modes, time
+management, multi-thread sanity).
 
 ## Tracking upstream
 
@@ -67,7 +70,7 @@ zig_build/tools/upstream_sync.sh --check
 zfish is an independent Zig reimplementation that follows upstream
 [Stockfish][stockfish] and reproduces its exact search and evaluation behavior.
 The shipped binary contains no first-party Stockfish C++; the remaining C++ under
-`src/` is a frozen behavioral oracle used only for differential testing. All chess
+`src/` is a frozen upstream reference, compiled by nothing in this repo. All chess
 strength and the NNUE networks come from the Stockfish project and its
 contributors — see [AUTHORS](AUTHORS).
 

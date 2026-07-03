@@ -41,12 +41,13 @@ zig build signature output-golden eval-trace perft misc parity-mt parity-valgrin
 cp UPSTREAM_TARGET UPSTREAM_BASE ; git commit ; git merge --ff-only <branch> ; git tag -f synced-upstream-<sha>
 ```
 
-## Two oracles (keep both — A5)
+## The oracle (REPORT-16 M16.1)
 - **Pristine** (`upstream_oracle.sh`): vanilla upstream at any sha; the source of truth for `upstream_parity`
-  and `upstream_nodes`. This is how we *follow* upstream.
-- **In-tree legacy** (`stockfish-legacy-cpp`, the `*-parity` gates): a second cross-check that stays green
-  because it shares the ported Zig hot-path. Zero maintenance; **if it ever goes red after a sync, that is
-  itself a useful signal**. Retire neither.
+  and `upstream_nodes`. This is how we *follow* upstream, and it is now the **only** oracle.
+- The former **in-tree legacy** oracle (`stockfish-legacy-cpp`, the `*-parity` gates) is **retired**:
+  it shared this fork's ported Zig hot-path, so it was a self-consistency check rather than a true
+  vs-upstream check, and it carried the whole vendored-C++ / `zig_compat/` build. The pristine worktree
+  oracle is a strict superset (real upstream, drift-proof, cached no-op in steady state), so it replaces it.
 
 ## Integer-semantics watch (FORMULA commits — A4)
 When porting an arithmetic expression in search/eval, the algorithm is rarely the trap — the **integer

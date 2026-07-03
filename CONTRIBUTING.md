@@ -16,8 +16,9 @@ that signature, proven by the gates:
 
 ```
 zig build signature -Dsignature-ref=2067208
-zig build parity        # signature + C++-oracle cross-check + micro-parity
-zig build test          # Zig unit tests
+zig build parity          # signature + in-repo golden gates
+zig build upstream-parity # differential vs pristine upstream (worktree oracle)
+zig build test            # Zig unit tests
 ```
 
 A byte-changing engine edit that cannot show a green `signature`/`parity` is not
@@ -37,7 +38,7 @@ aarch64 (see the CI parity workflow).
 ## Code style
 
 Zig code is formatted with `zig fmt`. The imported C++ under `src/` is a frozen
-differential oracle — do not edit it except for sanctioned oracle-scoped changes.
+upstream reference compiled by nothing in this repo — do not edit it.
 
 For git blame, ignore the formatting-only revisions:
 

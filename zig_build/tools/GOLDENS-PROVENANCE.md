@@ -1,5 +1,13 @@
 # Golden provenance & certification manifest (REPORT-11 E1.3)
 
+> **Status — the cut has happened (REPORT-16 M16.1).** The in-tree C++ oracle and its differential
+> gates (`oracle-parity` / `output-parity` / `perft-parity` / `eval-trace-parity` / `misc-parity`)
+> are **retired**: `stockfish-legacy-cpp`, `zig_compat/`, and the six legacy `src/*.cpp` no longer
+> build. The goldens below are now the sole in-repo reference, exactly as this manifest anticipated.
+> The live differential-vs-real-upstream check is `zig build upstream-parity` (a pristine git-worktree
+> build of vanilla upstream at the pinned sha — zero vendored C++). The certification log below is the
+> historical record proving each golden was certified `default == legacy` **before** the cut.
+
 The committed goldens are the **sole reference of record after TU=0** — deleting `src/` deletes the
 differential oracle (`oracle-parity` / `output-parity` / `*-parity`), so the goldens can never again
 be regenerated against the C++ oracle. This manifest records, while the oracle still exists, that

@@ -72,35 +72,20 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .link_libc = true,
-            // No .link_libcpp: the default target compiles zero C++ TUs (TU=0), so
-            // the C++ stdlib is dead weight here. Only the legacy oracle links it.
+            // No .link_libcpp: the engine compiles zero C++ TUs (TU=0), so the C++
+            // stdlib is dead weight. (The retired in-tree oracle was the only linker
+            // of it; REPORT-16 M16.1.)
         }),
     });
 
-    const legacy_exe = b.addExecutable(.{
-        .name = "stockfish-legacy-cpp",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("zig_src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-            .link_libcpp = true,
-        }),
-    });
-
-    // Per-build comptime flag so the Zig root can gate @export of symbols that the
-    // legacy oracle still defines in src/ (e.g. the SearchManager field shims in
-    // src/thread.cpp). In the default build legacy_target is false and Zig owns
-    // the symbol; in the legacy build it is true and Zig stays silent, letting the
-    // src/ definition win -- avoiding a duplicate-symbol link error.
+    // Comptime flag consumed by the Zig root's now-dead legacy-oracle branches
+    // (zig_src/main.zig). The in-tree C++ oracle is retired (REPORT-16 M16.1), so
+    // this is always false; the dead branches are removed in M16.1e. Kept here so
+    // the default build still compiles until that cleanup lands.
     const default_flags = b.addOptions();
     default_flags.addOption(bool, "legacy_target", false);
     const default_flags_mod = default_flags.createModule();
     exe.root_module.addImport("target_flags", default_flags_mod);
-    const legacy_flags = b.addOptions();
-    legacy_flags.addOption(bool, "legacy_target", true);
-    const legacy_flags_mod = legacy_flags.createModule();
-    legacy_exe.root_module.addImport("target_flags", legacy_flags_mod);
 
     const timeman_module = b.createModule(.{
         .root_source_file = b.path("zig_build/time/timeman.zig"),
@@ -130,16 +115,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     misc_module.addImport("build_options", build_options_module);
-    // Stage-7: engine + thread modules are built per-exe (default vs legacy) so
-    // thread.zig can read target_flags.legacy_target at COMPTIME (it was shared and
-    // runtime-gated before). engine.zig pulls thread in via engine_graph.zig, so it
-    // must match the exe's thread instance (same @export symbols), hence duplicated.
     const engine_module_default = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/engine.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const engine_module_legacy = b.createModule(.{
         .root_source_file = b.path("zig_build/support/engine.zig"),
         .target = target,
         .optimize = optimize,
@@ -160,11 +136,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const thread_module_default = b.createModule(.{
-        .root_source_file = b.path("zig_build/support/thread.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const thread_module_legacy = b.createModule(.{
         .root_source_file = b.path("zig_build/support/thread.zig"),
         .target = target,
         .optimize = optimize,
@@ -279,26 +250,20 @@ pub fn build(b: *std.Build) void {
     });
 
     // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
-    // engine module: it binds the native ThreadPool and TranspositionTable. Each
-    // engine variant pulls its matching (default/legacy) thread instance.
-    inline for (.{
-        .{ engine_module_default, thread_module_default },
-        .{ engine_module_legacy, thread_module_legacy },
-    }) |pair| {
-        pair[0].addImport("position", position_module);
-        pair[0].addImport("position_snapshot", position_snapshot_module);
-        pair[0].addImport("uci_move", uci_move_module);
-        pair[0].addImport("misc", misc_module);
-        pair[0].addImport("thread", pair[1]);
-        pair[0].addImport("tt", tt_module);
-        pair[0].addImport("state_list", state_list_module);
-        pair[0].addImport("numa_config", numa_config_module);
-        pair[0].addImport("numa_replication", numa_replication_module);
-        pair[0].addImport("position_storage", position_storage_module);
-        // engine.zig single-sources default_eval_file_name from network.zig
-        // (network has no engine dep, so this edge is acyclic).
-        pair[0].addImport("network", network_module);
-    }
+    // engine module: it binds the native ThreadPool and TranspositionTable.
+    engine_module_default.addImport("position", position_module);
+    engine_module_default.addImport("position_snapshot", position_snapshot_module);
+    engine_module_default.addImport("uci_move", uci_move_module);
+    engine_module_default.addImport("misc", misc_module);
+    engine_module_default.addImport("thread", thread_module_default);
+    engine_module_default.addImport("tt", tt_module);
+    engine_module_default.addImport("state_list", state_list_module);
+    engine_module_default.addImport("numa_config", numa_config_module);
+    engine_module_default.addImport("numa_replication", numa_replication_module);
+    engine_module_default.addImport("position_storage", position_storage_module);
+    // engine.zig single-sources default_eval_file_name from network.zig
+    // (network has no engine dep, so this edge is acyclic).
+    engine_module_default.addImport("network", network_module);
 
     // Native-graph cut: run the EngineGraph + member-module unit tests (construction,
     // lifetime, SharedState binding) with their module deps. `zig build test-graph`.
@@ -351,15 +316,10 @@ pub fn build(b: *std.Build) void {
     position_module.addImport("tt", tt_module);
     position_module.addImport("movepick", movepick_module);
     position_module.addImport("search", search_module);
-    inline for (.{
-        .{ thread_module_default, default_flags_mod },
-        .{ thread_module_legacy, legacy_flags_mod },
-    }) |pair| {
-        pair[0].addImport("position_snapshot", position_snapshot_module);
-        pair[0].addImport("position", position_module);
-        pair[0].addImport("uci_move", uci_move_module);
-        pair[0].addImport("target_flags", pair[1]);
-    }
+    thread_module_default.addImport("position_snapshot", position_snapshot_module);
+    thread_module_default.addImport("position", position_module);
+    thread_module_default.addImport("uci_move", uci_move_module);
+    thread_module_default.addImport("target_flags", default_flags_mod);
     uci_module.addImport("benchmark", benchmark_module);
     uci_module.addImport("misc", misc_module);
     exe.root_module.addImport("benchmark", benchmark_module);
@@ -387,62 +347,11 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("uci", uci_module);
     exe.root_module.addImport("uci_move", uci_move_module);
 
-    legacy_exe.root_module.addImport("benchmark", benchmark_module);
-    legacy_exe.root_module.addImport("bitboard", bitboard_module);
-    legacy_exe.root_module.addImport("engine", engine_module_legacy);
-    legacy_exe.root_module.addImport("evaluate", evaluate_module);
-    legacy_exe.root_module.addImport("misc", misc_module);
-    legacy_exe.root_module.addImport("movegen", movegen_module);
-    legacy_exe.root_module.addImport("movepick", movepick_module);
-    legacy_exe.root_module.addImport("nnue_accumulator", nnue_accumulator_module);
-    legacy_exe.root_module.addImport("network", network_module);
-    legacy_exe.root_module.addImport("nnue_feature", nnue_feature_module);
-    legacy_exe.root_module.addImport("nnue_misc", nnue_misc_module);
-    legacy_exe.root_module.addImport("network_holder", network_holder_module);
-    legacy_exe.root_module.addImport("state_list", state_list_module);
-    legacy_exe.root_module.addImport("numa_config", numa_config_module);
-    legacy_exe.root_module.addImport("position_storage", position_storage_module);
-    legacy_exe.root_module.addImport("option", option_module);
-    legacy_exe.root_module.addImport("position", position_module);
-    legacy_exe.root_module.addImport("position_snapshot", position_snapshot_module);
-    legacy_exe.root_module.addImport("search", search_module);
-    legacy_exe.root_module.addImport("timeman", timeman_module);
-    legacy_exe.root_module.addImport("thread", thread_module_legacy);
-    legacy_exe.root_module.addImport("tt", tt_module);
-    legacy_exe.root_module.addImport("uci", uci_module);
-    legacy_exe.root_module.addImport("uci_move", uci_move_module);
-
-    var compile_flags = std.ArrayList([]const u8).empty;
-    compile_flags.appendSlice(b.allocator, &.{
-        "-std=c++17",
-        "-O3",
-        "-funroll-loops",
-        "-fno-exceptions",
-        "-Wno-date-time",
-    }) catch @panic("OOM");
-    compile_flags.appendSlice(b.allocator, arch.flags) catch @panic("OOM");
-
-    const stockfish_sources = &.{};
-
-    const stockfish_legacy_sources = &.{
-        "timeman.cpp",
-        "evaluate.cpp",
-        "movepick.cpp",
-        "tt.cpp",
-        "thread.cpp",
-        "syzygy/tbprobe.cpp",
-    };
-
-    const stockfish_position_sources = &[_][]const u8{};
-
-    const stockfish_legacy_position_sources = &[_][]const u8{};
-
-    const zig_compat_sources = &.{
-        "uci_bridge.cpp",
-    };
-
-    // REPORT-12 TU=0: the default exe compiles no C++ TU, so it needs no src/ include path. (The legacy
-    // oracle still includes src/ for the frozen headers.)
+    // REPORT-12 TU=0 / REPORT-16 M16.1: the shipped engine compiles zero C++ TUs and
+    // the in-tree C++ oracle is retired, so the whole C++ toolchain (compile flags,
+    // src/ + zig_compat/ sources, include paths, C macros) is gone. These addCMacro
+    // calls are dead now (no C TU consumes them) but harmless; dropped with the last
+    // interop in a later milestone.
     exe.root_module.addCMacro("NDEBUG", "1");
     exe.root_module.addCMacro("DIS_64BIT", "1");
     exe.root_module.addCMacro("USE_PTHREADS", "1");
@@ -450,136 +359,16 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addCMacro("ZFISH_ZIG_BUILD", "1");
     exe.root_module.addCMacro("ARCH", arch.name);
 
-    legacy_exe.root_module.addIncludePath(b.path("src"));
-    legacy_exe.root_module.addCMacro("NDEBUG", "1");
-    legacy_exe.root_module.addCMacro("DIS_64BIT", "1");
-    legacy_exe.root_module.addCMacro("USE_PTHREADS", "1");
-    legacy_exe.root_module.addCMacro("NNUE_EMBEDDING_OFF", "1");
-    legacy_exe.root_module.addCMacro("ZFISH_ZIG_BUILD", "1");
-    legacy_exe.root_module.addCMacro("ZFISH_LEGACY_CPP_TARGET", "1");
-    legacy_exe.root_module.addCMacro("ARCH", arch.name);
-
     applyMacros(exe.root_module, arch.macros);
-    applyMacros(legacy_exe.root_module, arch.macros);
     if (git_info.sha) |sha|
         exe.root_module.addCMacro("GIT_SHA", b.fmt("\"{s}\"", .{sha}));
     if (git_info.date) |date|
         exe.root_module.addCMacro("GIT_DATE", b.fmt("\"{s}\"", .{date}));
 
-    if (git_info.sha) |sha|
-        legacy_exe.root_module.addCMacro("GIT_SHA", b.fmt("\"{s}\"", .{sha}));
-    if (git_info.date) |date|
-        legacy_exe.root_module.addCMacro("GIT_DATE", b.fmt("\"{s}\"", .{date}));
-
-    if (stockfish_sources.len != 0) {
-        exe.root_module.addCSourceFiles(.{
-            .root = b.path("src"),
-            .files = stockfish_sources,
-            .flags = compile_flags.items,
-        });
-    }
-
-    if (stockfish_legacy_sources.len != 0) {
-        legacy_exe.root_module.addCSourceFiles(.{
-            .root = b.path("src"),
-            .files = stockfish_legacy_sources,
-            .flags = compile_flags.items,
-        });
-    }
-
-    if (stockfish_position_sources.len != 0) {
-        var position_compile_flags = std.ArrayList([]const u8).empty;
-        position_compile_flags.appendSlice(b.allocator, compile_flags.items) catch @panic("OOM");
-        position_compile_flags.appendSlice(b.allocator, &.{
-            "-DZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY",
-            "-DZFISH_POSITION_BRIDGE_SKIP_ENDGAME_SET",
-            "-DZFISH_POSITION_BRIDGE_SKIP_FEN",
-            "-DZFISH_POSITION_BRIDGE_SKIP_REPETITION",
-            "-DZFISH_POSITION_BRIDGE_SKIP_ATTACKERS_TO",
-            "-DZFISH_POSITION_BRIDGE_SKIP_CHECK_INFO",
-            "-DZFISH_POSITION_BRIDGE_SKIP_LEGAL",
-            "-DZFISH_POSITION_BRIDGE_SKIP_GIVES_CHECK",
-            "-DZFISH_POSITION_BRIDGE_SKIP_PSEUDO_LEGAL",
-            "-DZFISH_POSITION_BRIDGE_SKIP_SEE_GE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_IS_DRAW",
-            "-DZFISH_POSITION_BRIDGE_SKIP_NULL_MOVE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_UPCOMING_REPETITION",
-            "-DZFISH_POSITION_BRIDGE_SKIP_SET_CASTLING_RIGHT",
-            "-DZFISH_POSITION_BRIDGE_SKIP_SET_STATE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_FLIP",
-            "-DZFISH_POSITION_BRIDGE_SKIP_SET",
-            "-DZFISH_POSITION_BRIDGE_SKIP_UNDO_MOVE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_DO_MOVE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_INIT",
-        }) catch @panic("OOM");
-
-        exe.root_module.addCSourceFiles(.{
-            .root = b.path("src"),
-            .files = stockfish_position_sources,
-            .flags = position_compile_flags.items,
-        });
-    }
-
-    if (stockfish_legacy_position_sources.len != 0) {
-        var legacy_position_compile_flags = std.ArrayList([]const u8).empty;
-        legacy_position_compile_flags.appendSlice(b.allocator, compile_flags.items) catch @panic("OOM");
-        legacy_position_compile_flags.appendSlice(b.allocator, &.{
-            "-DZFISH_POSITION_BRIDGE_SKIP_COMPUTE_MATERIAL_KEY",
-            "-DZFISH_POSITION_BRIDGE_SKIP_ENDGAME_SET",
-            "-DZFISH_POSITION_BRIDGE_SKIP_FEN",
-            "-DZFISH_POSITION_BRIDGE_SKIP_REPETITION",
-            "-DZFISH_POSITION_BRIDGE_SKIP_ATTACKERS_TO",
-            "-DZFISH_POSITION_BRIDGE_SKIP_CHECK_INFO",
-            "-DZFISH_POSITION_BRIDGE_SKIP_LEGAL",
-            "-DZFISH_POSITION_BRIDGE_SKIP_GIVES_CHECK",
-            "-DZFISH_POSITION_BRIDGE_SKIP_PSEUDO_LEGAL",
-            "-DZFISH_POSITION_BRIDGE_SKIP_SEE_GE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_IS_DRAW",
-            "-DZFISH_POSITION_BRIDGE_SKIP_NULL_MOVE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_UPCOMING_REPETITION",
-            "-DZFISH_POSITION_BRIDGE_SKIP_SET_CASTLING_RIGHT",
-            "-DZFISH_POSITION_BRIDGE_SKIP_SET_STATE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_FLIP",
-            "-DZFISH_POSITION_BRIDGE_SKIP_SET",
-            "-DZFISH_POSITION_BRIDGE_SKIP_UNDO_MOVE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_DO_MOVE",
-            "-DZFISH_POSITION_BRIDGE_SKIP_INIT",
-        }) catch @panic("OOM");
-
-        legacy_exe.root_module.addCSourceFiles(.{
-            .root = b.path("src"),
-            .files = stockfish_legacy_position_sources,
-            .flags = legacy_position_compile_flags.items,
-        });
-    }
-
-    // REPORT-12 TU=0: the default build is fully native — it no longer compiles any C++ TU
-    // (uci_bridge.cpp). The legacy oracle still compiles it (with the frozen src/ headers).
-    legacy_exe.root_module.addCSourceFiles(.{
-        .root = b.path("zig_compat"),
-        .files = zig_compat_sources,
-        .flags = compile_flags.items,
-    });
-
     exe.root_module.linkSystemLibrary("pthread", .{});
     exe.root_module.linkSystemLibrary("rt", .{});
 
-    legacy_exe.root_module.linkSystemLibrary("pthread", .{});
-    legacy_exe.root_module.linkSystemLibrary("rt", .{});
-
     b.installArtifact(exe);
-    // The differential C++ oracle only compiles under upstream's non-PEXT bitboard
-    // layout. USE_PEXT / USE_COMPTIME_ATTACKS (the bmi2/avx512/vnni512/avx512icl tiers)
-    // change `struct Magic` (no .magic/.shift; uint16_t* attacks) so the bridge's
-    // magic-table init breaks, and they flip Worker/SearchManager to non-standard-layout
-    // so the bridge's offsetof static_asserts stop being constant expressions -- 7 C++
-    // errors. The oracle is a parity test artifact exercised only at the pinned
-    // sse41-popcnt arch (see zfish_parity.yml), never at a PEXT tier, so skip building it
-    // there rather than fail the whole default `zig build` on a modern host (whose
-    // `native` arch resolves to a PEXT tier). The default Zig engine still builds on
-    // every tier; only the optional legacy oracle is gated.
-    if (arch.cpu_arch == .x86_64 and !hasMacro(arch.macros, "USE_PEXT"))
-        b.installArtifact(legacy_exe);
 
     const install_step = b.getInstallStep();
 
@@ -721,24 +510,6 @@ pub fn build(b: *std.Build) void {
     );
     search_modes_update_step.dependOn(&search_modes_update_cmd.step);
 
-    // Differential oracle gate (M5): assert the Zig-owned default binary and the
-    // C++ legacy oracle produce identical bench signatures.
-    const oracle_parity_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("zig_build/tools/oracle_parity.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        b.getInstallPath(.bin, "stockfish-legacy-cpp"),
-    });
-    oracle_parity_cmd.step.dependOn(install_step);
-    oracle_parity_cmd.step.dependOn(&net_cmd.step);
-    oracle_parity_cmd.setCwd(b.path("src"));
-
-    const oracle_parity_step = b.step(
-        "oracle-parity",
-        "Assert the default (Zig) and legacy (C++) bench signatures are identical",
-    );
-    oracle_parity_step.dependOn(&oracle_parity_cmd.step);
-
     // Worktree-based upstream oracle gate (REPORT-16 M16.1): assert the default (Zig)
     // bench == the PRISTINE upstream Stockfish at UPSTREAM_BASE, built in a persistent
     // git worktree with ZERO vendored C++. This is the drift-proof replacement for
@@ -765,26 +536,6 @@ pub fn build(b: *std.Build) void {
         "Assert default (Zig) bench == pristine upstream@UPSTREAM_BASE (git worktree, no vendored C++)",
     );
     upstream_parity_step.dependOn(&upstream_parity_cmd.step);
-
-    // Full-output differential gate (M5): diff the bench UCI info+bestmove text
-    // (time/nps stripped) between the default (Zig) binary and the legacy (C++)
-    // oracle. Catches info-line drift the signature/bestmove gates miss -- the
-    // regression catcher for porting SearchManager::pv and the driver output.
-    const output_parity_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("zig_build/tools/output_parity.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        b.getInstallPath(.bin, "stockfish-legacy-cpp"),
-    });
-    output_parity_cmd.step.dependOn(install_step);
-    output_parity_cmd.step.dependOn(&net_cmd.step);
-    output_parity_cmd.setCwd(b.path("src"));
-
-    const output_parity_step = b.step(
-        "output-parity",
-        "Assert the default (Zig) and legacy (C++) bench info-line output is identical",
-    );
-    output_parity_step.dependOn(&output_parity_cmd.step);
 
     // Full-output GOLDEN gate (Stage-7 7.0a, H8): same stripped bench info+bestmove
     // text as output-parity, but pinned against a committed golden instead of the
@@ -988,22 +739,6 @@ pub fn build(b: *std.Build) void {
     );
     perft_update_step.dependOn(&perft_update_cmd.step);
 
-    const perft_parity_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("zig_build/tools/perft_parity.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        b.getInstallPath(.bin, "stockfish-legacy-cpp"),
-    });
-    perft_parity_cmd.step.dependOn(install_step);
-    perft_parity_cmd.step.dependOn(&net_cmd.step);
-    perft_parity_cmd.setCwd(b.path("src"));
-
-    const perft_parity_step = b.step(
-        "perft-parity",
-        "Assert the default (Zig) and legacy (C++) perft divide counts + totals are identical",
-    );
-    perft_parity_step.dependOn(&perft_parity_cmd.step);
-
     // Eval-trace differential + golden gate (REPORT-11 E1.2): pins the NNUE `eval` trace block
     // (buildNnueTrace + the network-ptr / accumulator-cache trace path) — bench covers the eval
     // value but not this formatting path. eval-parity certifies default == legacy while the oracle
@@ -1043,22 +778,6 @@ pub fn build(b: *std.Build) void {
     );
     eval_update_step.dependOn(&eval_update_cmd.step);
 
-    const eval_parity_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("zig_build/tools/eval_parity.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        b.getInstallPath(.bin, "stockfish-legacy-cpp"),
-    });
-    eval_parity_cmd.step.dependOn(install_step);
-    eval_parity_cmd.step.dependOn(&net_cmd.step);
-    eval_parity_cmd.setCwd(b.path("src"));
-
-    const eval_parity_step = b.step(
-        "eval-trace-parity",
-        "Assert the default (Zig) and legacy (C++) NNUE eval trace blocks are identical",
-    );
-    eval_parity_step.dependOn(&eval_parity_cmd.step);
-
     // UCI misc-command gate (REPORT-11 E1.2 coverage tail): d/flip Fen+Key+Checkers — the
     // frozen-Position fen/flip/zobrist/gives_check read paths no other gate touches.
     const misc_golden = b.pathFromRoot("zig_build/tools/misc.golden");
@@ -1095,22 +814,6 @@ pub fn build(b: *std.Build) void {
         "Regenerate zig_build/tools/misc.golden from the current binary",
     );
     misc_update_step.dependOn(&misc_update_cmd.step);
-
-    const misc_parity_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("zig_build/tools/misc_parity.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        b.getInstallPath(.bin, "stockfish-legacy-cpp"),
-    });
-    misc_parity_cmd.step.dependOn(install_step);
-    misc_parity_cmd.step.dependOn(&net_cmd.step);
-    misc_parity_cmd.setCwd(b.path("src"));
-
-    const misc_parity_step = b.step(
-        "misc-parity",
-        "Assert the default (Zig) and legacy (C++) d/flip Fen+Key+Checkers are identical",
-    );
-    misc_parity_step.dependOn(&misc_parity_cmd.step);
 
     // H9 src-free / TU=0 structural gate (REPORT-11 E1.4): asserts the default binary contains zero
     // C++ TUs (no Stockfish:: / libc++ runtime symbols; src/ + uci_bridge.cpp gone) and still benches
@@ -1185,16 +888,9 @@ pub fn build(b: *std.Build) void {
 
     const stockfish_step = b.step(
         "stockfish",
-        "Build the imported Stockfish C++ engine for Linux x86_64",
+        "Build the Zig-owned Stockfish engine for Linux x86_64 / aarch64",
     );
     stockfish_step.dependOn(install_step);
-
-    const legacy_install = b.addInstallArtifact(legacy_exe, .{});
-    const legacy_stockfish_step = b.step(
-        "stockfish-legacy-cpp",
-        "Build the optional legacy C++ fallback engine target",
-    );
-    legacy_stockfish_step.dependOn(&legacy_install.step);
 }
 
 fn applyMacros(module: *std.Build.Module, macros: []const Macro) void {
