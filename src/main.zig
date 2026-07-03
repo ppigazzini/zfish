@@ -169,7 +169,7 @@ const StateList = state_list_port.StateList;
 const PendingStateStorage = state_list_port.PendingStateStorage;
 
 fn poolSetupStatesSlot(pool: *anyopaque) *?*StateList {
-    return @ptrFromInt(@intFromPtr(pool) + graph_layout.thread_pool_off.setup_states);
+    return @ptrCast(&graph_layout.ThreadPool.fromPtr(pool).setup_states);
 }
 fn freeSetupStatesIfAny(pool: *anyopaque) void {
     const slot = poolSetupStatesSlot(pool);
@@ -216,17 +216,16 @@ fn zfishThreadpoolSetupStatesAdoptFromSlot(pool: *anyopaque, slot_ptr: *anyopaqu
     src.* = null;
 }
 fn zfishThreadpoolSetupStateBack(pool: *const anyopaque) callconv(.c) ?*anyopaque {
-    const slot = @as(*const ?*StateList, @ptrFromInt(@intFromPtr(@constCast(pool)) + graph_layout.thread_pool_off.setup_states)).*;
+    const slot: ?*StateList = @ptrCast(@alignCast(graph_layout.ThreadPool.fromPtr(@constCast(pool)).setup_states));
     if (slot) |list| return list.back();
     return null;
 }
 
 // M-FINAL cutover (thread cluster): native ThreadPool::setupStates null-check. setupStates is
-// a StateListPtr (single pointer) at thread_pool_off.setup_states; has-states == ptr != null.
+// a StateListPtr (single pointer) at ThreadPool.setup_states; has-states == ptr != null.
 // Pure offset read (no deque internals). Default-only (legacy keeps the C++ method).
 fn zfishThreadpoolHasSetupStates(pool: *const anyopaque) callconv(.c) u8 {
-    const slot = @as(*const usize, @ptrFromInt(@intFromPtr(pool) + graph_layout.thread_pool_off.setup_states)).*;
-    return if (slot != 0) 1 else 0;
+    return if (graph_layout.ThreadPool.fromPtr(@constCast(pool)).setup_states != null) 1 else 0;
 }
 
 fn zfishThreadpoolZeroTtSlice(
@@ -598,12 +597,10 @@ fn smClearTimeman(pool: *anyopaque) callconv(.c) void {
 // std::atomic_bool pair at pool+0 / pool+1. Written directly (single-threaded
 // setup context), gated to the default build alongside the manager shims.
 fn tpSetStopFlag(pool: *anyopaque, stop: u8) callconv(.c) void {
-    const p: *u8 = @ptrCast(@as([*]u8, @ptrCast(pool)) + graph_layout.thread_pool_off.stop);
-    p.* = if (stop != 0) 1 else 0;
+    graph_layout.ThreadPool.fromPtr(pool).stop = if (stop != 0) 1 else 0;
 }
 fn tpSetIncreaseDepth(pool: *anyopaque, increase_depth: u8) callconv(.c) void {
-    const p: *u8 = @ptrCast(@as([*]u8, @ptrCast(pool)) + graph_layout.thread_pool_off.increase_depth);
-    p.* = if (increase_depth != 0) 1 else 0;
+    graph_layout.ThreadPool.fromPtr(pool).increase_depth = if (increase_depth != 0) 1 else 0;
 }
 // Native Thread->worker field reads. thread+8 holds the Worker pointer; read the
 // relaxed-atomic u64 counters at the worker's nodes/tbHits offsets. Match
@@ -625,10 +622,7 @@ fn thTbHits(thread: *const anyopaque) callconv(.c) u64 {
 }
 
 fn tpThreadCount(pool: *anyopaque) callconv(.c) usize {
-    const base: [*]const u8 = @ptrCast(pool);
-    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
-    const end: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_end));
-    return (end.* - begin.*) / @sizeOf(usize);
+    return graph_layout.ThreadPool.fromPtr(pool).numThreads();
 }
 
 // ThreadPool::thread_at(i) == threads[i].get(): the i-th unique_ptr<Thread> in
@@ -714,10 +708,7 @@ fn thWorkerSetRootPosition(
 }
 
 fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
-    const base: [*]const u8 = @ptrCast(pool);
-    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
-    const slot: *const usize = @ptrFromInt(begin.* + index * @sizeOf(usize));
-    return @ptrFromInt(slot.*);
+    return @ptrFromInt(graph_layout.ThreadPool.fromPtr(pool).threadAt(index));
 }
 
 // M-FINAL: pool->main_manager() = main_thread()->worker->main_manager() as native offset
@@ -1091,10 +1082,7 @@ pub export fn zfish_uci_engine_ptr(uci: *anyopaque) *anyopaque {
 }
 // ThreadPool::num_threads() == threads.size() (bridge-only symbol, no gating).
 pub export fn zfish_threadpool_num_threads(pool: *const anyopaque) usize {
-    const base: [*]const u8 = @ptrCast(pool);
-    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_begin));
-    const end: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.threads_end));
-    return (end.* - begin.*) / @sizeOf(usize);
+    return graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
 }
 
 // Worker -> threads (ThreadPool&) and Worker -> manager (the worker's own
@@ -2072,7 +2060,7 @@ pub export fn zfish_search_cb_worker_state(
     const wb = @intFromPtr(worker);
     const off = graph_layout.worker_off;
     const pool = @as(*const usize, @ptrFromInt(wb + off.threads)).*;
-    const stop_addr = pool + graph_layout.thread_pool_off.stop;
+    const stop_addr = @intFromPtr(&graph_layout.ThreadPool.fromAddr(pool).stop);
 
     out_acc_stack.* = @ptrFromInt(wb + off.accumulator_stack);
     out_nodes.* = @ptrFromInt(wb + off.nodes);
@@ -2220,22 +2208,19 @@ pub export fn zfish_ss_get_best_thread(worker: *anyopaque) ?*anyopaque {
     const wb = @intFromPtr(worker);
     const pool = @as(*const usize, @ptrFromInt(wb + graph_layout.worker_off.threads)).*;
     const idx = thread_port.bestThreadIndex(@ptrFromInt(pool));
-    const tbegin = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_begin)).*;
-    const thread = @as(*const usize, @ptrFromInt(tbegin + idx * @sizeOf(usize))).*;
+    const thread = graph_layout.ThreadPool.fromAddr(pool).threadAt(idx);
     return @ptrFromInt(@as(*const usize, @ptrFromInt(thread + graph_layout.thread_off.worker)).*);
 }
 
 // zfish_search_id_collect_bmc: sum and reset each thread's worker bestMoveChanges
 // (atomic u64), returned as a double (matching the C++ accumulation).
 pub export fn zfish_search_id_collect_bmc(worker: *anyopaque) f64 {
-    const pool = @as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.threads)).*;
-    const tbegin = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_begin)).*;
-    const tend = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_end)).*;
-    const count = (tend - tbegin) / @sizeOf(usize);
+    const tp = graph_layout.ThreadPool.fromAddr(@as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.threads)).*);
+    const count = tp.numThreads();
     var tot: f64 = 0;
     var i: usize = 0;
     while (i < count) : (i += 1) {
-        const thread = @as(*const usize, @ptrFromInt(tbegin + i * @sizeOf(usize))).*;
+        const thread = tp.threadAt(i);
         const wkr = @as(*const usize, @ptrFromInt(thread + graph_layout.thread_off.worker)).*;
         const bmc: *u64 = @ptrFromInt(wkr + graph_layout.worker_off.best_move_changes);
         tot += @floatFromInt(bmc.*);
@@ -2310,8 +2295,7 @@ fn zfish_search_id_state(worker: *anyopaque, out: *ZfishIdState) callconv(.c) vo
 
     const rm_begin = @as(*const usize, @ptrFromInt(wb + off.root_moves)).*;
     const rm_end = @as(*const usize, @ptrFromInt(wb + off.root_moves + 8)).*;
-    const tbegin = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_begin)).*;
-    const tend = @as(*const usize, @ptrFromInt(pool + graph_layout.thread_pool_off.threads_end)).*;
+    const tp = graph_layout.ThreadPool.fromAddr(pool);
 
     out.root_pos = @ptrFromInt(wb + off.root_pos);
     out.root_moves = @ptrFromInt(rm_begin);
@@ -2322,12 +2306,12 @@ fn zfish_search_id_state(worker: *anyopaque, out: *ZfishIdState) callconv(.c) vo
     out.root_delta = @ptrFromInt(wb + off.root_delta);
     out.optimism = @ptrFromInt(wb + off.optimism);
     out.nodes = @ptrFromInt(wb + off.nodes);
-    out.stop = @ptrFromInt(pool + graph_layout.thread_pool_off.stop);
-    out.increase_depth = @ptrFromInt(pool + graph_layout.thread_pool_off.increase_depth);
+    out.stop = @ptrFromInt(@intFromPtr(&tp.stop));
+    out.increase_depth = @ptrFromInt(@intFromPtr(&tp.increase_depth));
     out.last_iter_pv = @ptrFromInt(wb + off.last_iteration_pv);
     out.root_moves_count = (rm_end - rm_begin) / graph_layout.root_move_size;
     out.thread_idx = thread_idx;
-    out.threads_size = (tend - tbegin) / @sizeOf(usize);
+    out.threads_size = tp.numThreads();
     out.multipv_option = @intCast(@max(optInt("MultiPV"), 0));
     out.limits_depth = @as(*const c_int, @ptrFromInt(limits + graph_layout.limits_off.depth)).*;
     out.limits_mate = @as(*const c_int, @ptrFromInt(limits + 88)).*;
@@ -2531,8 +2515,7 @@ pub export fn zfish_ss_emit_bestmove(worker: *const anyopaque, best: *const anyo
 // gate-verified native tpSetStopFlag (bridge-only symbol, no gating).
 pub export fn zfish_ss_set_stop(worker: *anyopaque) void {
     const pool = workerThreadsPool(worker);
-    const stop: *u8 = @ptrFromInt(pool + graph_layout.thread_pool_off.stop);
-    stop.* = 1;
+    graph_layout.ThreadPool.fromAddr(pool).stop = 1;
 }
 
 // zfish_ss_should_busywait: !threads.stop && (manager->ponder || limits.infinite).
@@ -2540,8 +2523,7 @@ pub export fn zfish_ss_set_stop(worker: *anyopaque) void {
 // infinite int by offset (bridge-only symbol, no gating).
 pub export fn zfish_ss_should_busywait(worker: *const anyopaque) u8 {
     const pool = workerThreadsPool(worker);
-    const stop: *const u8 = @ptrFromInt(pool + graph_layout.thread_pool_off.stop);
-    if (stop.* != 0) return 0;
+    if (graph_layout.ThreadPool.fromAddr(pool).stop != 0) return 0;
     const mgr = workerManager(worker);
     const ponder: *const u8 = @ptrFromInt(mgr + graph_layout.search_manager_off.ponder);
     const base: [*]const u8 = @ptrCast(worker);
@@ -2566,16 +2548,11 @@ pub export fn zfish_uci_cli_arg_at(uci: *const anyopaque, index: c_int) ?[*:0]co
 // std::vector<size_t> at bound_nodes_begin; count is the byte span / 8 and
 // at(i) loads the i-th element from the begin pointer.
 pub export fn zfish_threadpool_bound_node_count(pool: *const anyopaque) usize {
-    const base: [*]const u8 = @ptrCast(pool);
-    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.bound_nodes_begin));
-    const end: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.bound_nodes_end));
-    return (end.* - begin.*) / @sizeOf(usize);
+    return graph_layout.ThreadPool.fromPtr(@constCast(pool)).boundCount();
 }
 pub export fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usize) usize {
-    const base: [*]const u8 = @ptrCast(pool);
-    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.thread_pool_off.bound_nodes_begin));
-    const slot: *const usize = @ptrFromInt(begin.* + index * @sizeOf(usize));
-    return slot.*;
+    const begin = graph_layout.ThreadPool.fromPtr(@constCast(pool)).bound_begin;
+    return @as(*const usize, @ptrFromInt(begin + index * @sizeOf(usize))).*;
 }
 
 // NumaConfig::num_numa_nodes() == nodes.size() (bridge-only symbol, no gating).

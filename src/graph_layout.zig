@@ -104,25 +104,50 @@ pub const search_manager_off = struct {
     pub const tm_available_nodes: usize = tm + 24; // i64; TimeManagement::clear sets it -1
 };
 
-// ThreadPool member offsets (probed). `stop` and `increaseDepth` are the leading
-// std::atomic_bool pair; the rest of the 64-byte pool is the threads vector and
-// bookkeeping. Used by the native ThreadPool flag shims.
-pub const thread_pool_off = struct {
-    pub const stop: usize = 0; // std::atomic_bool
-    pub const increase_depth: usize = 1; // std::atomic_bool
-    // setupStates: StateListPtr (unique_ptr<deque<StateInfo>>, single pointer) at 8
-    // (after increaseDepth@1, padded to the pointer's 8-byte alignment).
-    pub const setup_states: usize = 8;
-    // threads: std::vector<unique_ptr<Thread>> {begin, end, cap} at 16/24/32.
-    // size() == (end - begin) / sizeof(unique_ptr) (8 bytes).
-    pub const threads_begin: usize = 16;
-    pub const threads_end: usize = 24;
-    // boundThreadToNumaNode (std::vector<NumaIndex/size_t>) follows the threads
-    // vector at offset 40; size() == (end - begin) / 8. ThreadPool is 64 bytes
-    // (40 + the 24-byte vector), which pins this.
-    pub const bound_nodes_begin: usize = 40;
-    pub const bound_nodes_end: usize = 48;
+// The ThreadPool object (64 bytes). Typed replacement for the old thread_pool_off
+// offset map: the runtime constructs and reads the pool through these fields. The
+// `threads`/`bound` members are still C++-`std::vector` `{begin,end,cap}` pointer
+// triples (native_threadpool lays *NativeThread into a contiguous buffer that
+// begin/end point into); the extern layout is byte-identical to the probed offsets,
+// so this is a pure offset-arithmetic → field-access change.
+pub const ThreadPool = extern struct {
+    stop: u8, // std::atomic_bool @0
+    increase_depth: u8, // std::atomic_bool @1
+    _pad: [6]u8,
+    setup_states: ?*anyopaque, // StateListPtr (?*StateList) @8
+    threads_begin: usize, // std::vector<Thread*> {begin,end,cap} @16/24/32
+    threads_end: usize,
+    threads_cap: usize,
+    bound_begin: usize, // std::vector<size_t> {begin,end,cap} @40/48/56
+    bound_end: usize,
+    bound_cap: usize,
+
+    pub inline fn fromPtr(p: *anyopaque) *ThreadPool {
+        return @ptrCast(@alignCast(p));
+    }
+    pub inline fn fromAddr(addr: usize) *ThreadPool {
+        return @ptrFromInt(addr);
+    }
+    pub inline fn numThreads(self: *const ThreadPool) usize {
+        return (self.threads_end - self.threads_begin) / @sizeOf(usize);
+    }
+    /// The i-th `Thread*` (loaded slot value) in the threads vector.
+    pub inline fn threadAt(self: *const ThreadPool, i: usize) usize {
+        return @as(*const usize, @ptrFromInt(self.threads_begin + i * @sizeOf(usize))).*;
+    }
+    pub inline fn boundCount(self: *const ThreadPool) usize {
+        return (self.bound_end - self.bound_begin) / @sizeOf(usize);
+    }
 };
+
+comptime {
+    // The extern layout must reproduce the 64-byte C++ ThreadPool the native
+    // constructor writes (native_threadpool.zig), or reads and writes disagree.
+    std.debug.assert(@sizeOf(ThreadPool) == thread_pool_size);
+    std.debug.assert(@offsetOf(ThreadPool, "setup_states") == 8);
+    std.debug.assert(@offsetOf(ThreadPool, "threads_begin") == 16);
+    std.debug.assert(@offsetOf(ThreadPool, "bound_begin") == 40);
+}
 
 // Engine member offsets (probed). The accessor shims return &engine->member; the
 // native versions add these offsets to the engine pointer. network (the

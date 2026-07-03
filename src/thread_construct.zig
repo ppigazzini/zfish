@@ -18,7 +18,6 @@
 const std = @import("std");
 const graph_layout = @import("graph_layout.zig");
 
-const pool_off = graph_layout.thread_pool_off;
 const thread_off = graph_layout.thread_off;
 
 fn readUsize(base: [*]const u8, offset: usize) usize {
@@ -35,30 +34,24 @@ fn fail(comptime msg: []const u8) noreturn {
 // the Thread count ThreadPool::set was asked to build; `bound` is the expected
 // boundThreadToNumaNode size (0 when threads are not NUMA-bound, else == requested).
 export fn zfish_verify_thread_graph(pool: ?*const anyopaque, requested: usize, bound: usize) void {
-    const base: [*]const u8 = @ptrCast(pool orelse return);
+    const tp = graph_layout.ThreadPool.fromPtr(@constCast(pool orelse return));
 
-    // The leading atomic pair is zeroed right after construction (no search has
-    // started): a load through the byte offsets must read 0/0.
-    if (base[pool_off.stop] != 0) fail("ThreadPool.stop not zero at construction");
-    if (base[pool_off.increase_depth] != 0) fail("ThreadPool.increaseDepth not zero at construction");
+    // The leading atomic pair is zeroed right after construction (no search has started).
+    if (tp.stop != 0) fail("ThreadPool.stop not zero at construction");
+    if (tp.increase_depth != 0) fail("ThreadPool.increaseDepth not zero at construction");
 
     // threads is std::vector<unique_ptr<Thread>> {begin,end,cap}; size == requested.
-    const tbegin = readUsize(base, pool_off.threads_begin);
-    const tend = readUsize(base, pool_off.threads_end);
-    if (tbegin == 0) fail("ThreadPool.threads vector is null after construction");
-    const count = (tend - tbegin) / @sizeOf(usize);
+    if (tp.threads_begin == 0) fail("ThreadPool.threads vector is null after construction");
+    const count = tp.numThreads();
     if (count != requested) fail("ThreadPool.threads size != requested");
 
     // boundThreadToNumaNode is std::vector<NumaIndex> {begin,end}; size == bound.
-    const bbegin = readUsize(base, pool_off.bound_nodes_begin);
-    const bend = readUsize(base, pool_off.bound_nodes_end);
-    const bcount = if (bbegin == 0) 0 else (bend - bbegin) / @sizeOf(usize);
-    if (bcount != bound) fail("ThreadPool.boundThreadToNumaNode size != expected");
+    if (tp.boundCount() != bound) fail("ThreadPool.boundThreadToNumaNode size != expected");
 
     // Each threads[i] is a live unique_ptr<Thread> whose Worker slot is bound.
     var i: usize = 0;
     while (i < count) : (i += 1) {
-        const thread = readUsize(@ptrFromInt(tbegin), i * @sizeOf(usize));
+        const thread = tp.threadAt(i);
         if (thread == 0) fail("ThreadPool.threads[i] is null");
         const worker = readUsize(@ptrFromInt(thread), thread_off.worker);
         if (worker == 0) fail("Thread[i].worker (LargePagePtr) is null");
