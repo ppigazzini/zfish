@@ -6,7 +6,7 @@
 # the wrong file and the binary crashes; this tracks the binary instead. Same download sources + sha256
 # validation as scripts/net.sh.
 #
-# Run with cwd = the net's runtime dir (src/).  $1 = path to zig_build/eval/network.zig
+# Run with cwd = the net's runtime dir (net/).  $1 = path to zig_build/eval/network.zig
 set -e
 
 NET_SRC="$1"

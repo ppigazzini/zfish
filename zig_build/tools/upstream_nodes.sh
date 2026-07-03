@@ -51,7 +51,7 @@ printf "go depth %s (sleep %ss) : ours vs oracle@%s\n" "$DEPTH" "$SLEEP" "$short
 printf "%14s %14s  %-6s %-7s %s\n" "OURS(nodes)" "ORACLE(nodes)" "bm-ok" "n-ok" "FEN"
 bad=0
 for f in "${FENS[@]}"; do
-    oo="$(run_go "$REPO/src" "$OUR_BIN" "$f")"
+    oo="$(run_go "$REPO/net" "$OUR_BIN" "$f")"
     ro="$(run_go "$ORACLE_DIR/src" "$ORACLE_BIN" "$f")"
     on="$(nodes_of "$oo")"; rn="$(nodes_of "$ro")"
     ob="$(bm_of "$oo")"; rb="$(bm_of "$ro")"

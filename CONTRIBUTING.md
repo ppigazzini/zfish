@@ -37,8 +37,8 @@ aarch64 (see the CI parity workflow).
 
 ## Code style
 
-Zig code is formatted with `zig fmt`. The imported C++ under `src/` is a frozen
-upstream reference compiled by nothing in this repo — do not edit it.
+Zig code is formatted with `zig fmt`. The repo vendors no Stockfish C++; parity
+against upstream is a pristine git-worktree build (`zig build upstream-parity`).
 
 For git blame, ignore the formatting-only revisions:
 

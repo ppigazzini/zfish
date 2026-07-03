@@ -1,7 +1,9 @@
-# CI for the C++ -> Zig conversion: build the Zig-owned binary and the legacy
-# C++ oracle, then run `zig build parity` (bench signature, the default-vs-legacy
-# oracle gate, and the per-position / non-bench micro-parity harnesses).
-# Linux x86_64 (parity job) + aarch64 on a native arm64 runner (arm-native job, M15.5).
+# CI for the Zig-owned Stockfish port: build the (pure-Zig, zero-C++) binary and run
+# `zig build parity` -- the bench signature, the src-free structural gate, and the
+# in-repo golden / per-position / non-bench micro-parity harnesses. No C++ is vendored
+# or compiled; the differential-vs-upstream check is the worktree oracle (upstream-parity),
+# exercised at sync time. Linux x86_64 (parity job) + aarch64 on a native arm64 runner
+# (arm-native job, M15.5).
 name: zfish parity
 
 on:
@@ -35,18 +37,17 @@ jobs:
       # Cache the downloaded NNUE network (~50 MB) keyed on the net name the Zig
       # binary actually loads -- the `default_eval_file_name` constant in
       # zig_build/eval/network.zig -- so a Zig-only net bump busts the cache. The
-      # stale src/evaluate.h names the old net and the binary never reads it.
+      # net is fetched into and read from net/ (the runtime cwd; src/ is gone).
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: src/nn-*.nnue
+          path: net/nn-*.nnue
           key: nnue-${{ hashFiles('zig_build/eval/network.zig') }}
 
       # Pin the ARCH instead of `native`: GitHub runners have modern CPUs whose
-      # `native` resolves to a PEXT/AVX512 arch, but the C++ oracle bridge still
-      # mirrors the fancy-magic (non-PEXT) `struct Magic` layout. Pin the exact
-      # baseline the bench signature / parity goldens were validated against so
-      # the gate is reproducible and CPU-independent (sse41 runs on any runner).
+      # `native` resolves to a PEXT/AVX512 arch. Pin the exact baseline the bench
+      # signature / parity goldens were validated against so the gate is
+      # reproducible and CPU-independent (sse41 runs on any runner).
       - run: zig build parity -Darch=x86-64-sse41-popcnt
 
       # Arch-variant determinism (REPORT-14 M14.D, widened in REPORT-15 M15.1): the
@@ -69,7 +70,7 @@ jobs:
 
   # M15.5 cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
   # with no source changes -- where upstream needs hand-written NEON intrinsics per
-  # src/nnue/**. The integer-exact eval is arch-invariant, so the ARM bench must be
+  # its own src/nnue/**. The integer-exact eval is arch-invariant, so the ARM bench must be
   # exactly 2067208; x86 CI cannot see an ARM-only codegen or C-ABI regression. We run
   # on a NATIVE GitHub arm64 runner (free for public repos) instead of qemu-user: it
   # exercises real NEON hardware and native codegen, is far faster than emulation, and
@@ -89,7 +90,7 @@ jobs:
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: src/nn-*.nnue
+          path: net/nn-*.nnue
           key: nnue-${{ hashFiles('zig_build/eval/network.zig') }}
 
       - name: Fetch the NNUE net
@@ -98,7 +99,7 @@ jobs:
       - name: Build aarch64 (armv8-dotprod) + bench (native)
         run: |
           zig build -Darch=armv8-dotprod
-          cd src
+          cd net
           out="$(../zig-out/bin/stockfish bench 2>&1)"
           printf '%s\n' "$out" | tail -6
           printf '%s\n' "$out" | grep -qE 'Nodes searched[[:space:]]*:[[:space:]]*2067208([^0-9]|$)' \

@@ -18,9 +18,10 @@ zfish, like Stockfish, is **not** a graphical interface; use it with any UCI GUI
 - The whole runtime (~22.8k lines of Zig) is Zig-owned. The NNUE hot path is
   portable `@Vector` SIMD, lowered by LLVM to AVX-512/AVX2/SSE on x86 and NEON on
   aarch64 with no per-arch source.
-- The imported `src/` C++ tree is a frozen upstream reference compiled by nothing
-  in this repo. The differential check against real upstream is the pristine
-  worktree oracle (`zig build upstream-parity`), not an in-tree C++ build.
+- The repo contains **zero first-party Stockfish C++** — nothing is vendored. The
+  differential check against real upstream is the pristine worktree oracle
+  (`zig build upstream-parity`), which builds vanilla upstream at the pinned sha in
+  a throwaway git worktree.
 
 ## Building
 
@@ -69,8 +70,8 @@ zig_build/tools/upstream_sync.sh --check
 
 zfish is an independent Zig reimplementation that follows upstream
 [Stockfish][stockfish] and reproduces its exact search and evaluation behavior.
-The shipped binary contains no first-party Stockfish C++; the remaining C++ under
-`src/` is a frozen upstream reference, compiled by nothing in this repo. All chess
+The repo contains no first-party Stockfish C++ at all; parity is verified by building
+vanilla upstream in a throwaway git worktree (`zig build upstream-parity`). All chess
 strength and the NNUE networks come from the Stockfish project and its
 contributors — see [AUTHORS](AUTHORS).
 

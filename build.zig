@@ -93,9 +93,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const benchmark_source_files = b.addWriteFiles();
-    // REPORT-12 TU=0: the bench positions are embedded from an in-repo copy (zig_build/bench), not src/,
-    // so the default native build depends on NOTHING from src/ at build time (only the NNUE net is read
-    // from src/ at runtime).
+    // REPORT-12 TU=0: the bench positions are embedded from an in-repo copy (zig_build/bench),
+    // so the native build depends on NOTHING from the old src/ tree at build time. The only
+    // external artifact is the NNUE net, fetched into net/ and read from cwd at runtime.
     _ = benchmark_source_files.addCopyFile(b.path("zig_build/bench/benchmark.cpp"), "benchmark.cpp");
     const benchmark_source_module = benchmark_source_files.add(
         "benchmark_source_data.zig",
@@ -381,31 +381,31 @@ pub fn build(b: *std.Build) void {
         b.pathFromRoot("zig_build/tools/fetch_net.sh"),
         b.pathFromRoot("zig_build/eval/network.zig"),
     });
-    net_cmd.setCwd(b.path("src"));
+    net_cmd.setCwd(b.path("net"));
 
     const net_step = b.step(
         "net",
-        "Download the default NNUE net into src for external-net Zig parity",
+        "Download the default NNUE net into net/ for external-net Zig parity",
     );
     net_step.dependOn(&net_cmd.step);
 
     const bench_run = b.addRunArtifact(exe);
     bench_run.step.dependOn(install_step);
     bench_run.step.dependOn(&net_cmd.step);
-    bench_run.setCwd(b.path("src"));
+    bench_run.setCwd(b.path("net"));
     bench_run.addArg("bench");
     bench_run.expectStdErrMatch("Nodes searched  : ");
 
     const bench_step = b.step(
         "bench",
-        "Run stockfish bench from src after fetching the default external NNUE net",
+        "Run stockfish bench from net/ after fetching the default external NNUE net",
     );
     bench_step.dependOn(&bench_run.step);
 
     const uci_run = b.addRunArtifact(exe);
     uci_run.step.dependOn(install_step);
     uci_run.step.dependOn(&net_cmd.step);
-    uci_run.setCwd(b.path("src"));
+    uci_run.setCwd(b.path("net"));
     uci_run.setStdIn(.{ .bytes = "uci\nquit\n" });
     // The engine routes UCI output to stderr (same convention as the bench
     // signature), so the handshake must be checked on stderr, not stdout.
@@ -426,7 +426,7 @@ pub fn build(b: *std.Build) void {
     });
     signature_cmd.step.dependOn(install_step);
     signature_cmd.step.dependOn(&net_cmd.step);
-    signature_cmd.setCwd(b.path("src"));
+    signature_cmd.setCwd(b.path("net"));
     if (signature_ref) |reference|
         signature_cmd.addArg(reference);
 
@@ -454,7 +454,7 @@ pub fn build(b: *std.Build) void {
     });
     search_parity_cmd.step.dependOn(install_step);
     search_parity_cmd.step.dependOn(&net_cmd.step);
-    search_parity_cmd.setCwd(b.path("src"));
+    search_parity_cmd.setCwd(b.path("net"));
 
     const search_parity_step = b.step(
         "search-parity",
@@ -471,7 +471,7 @@ pub fn build(b: *std.Build) void {
     });
     search_parity_update_cmd.step.dependOn(install_step);
     search_parity_update_cmd.step.dependOn(&net_cmd.step);
-    search_parity_update_cmd.setCwd(b.path("src"));
+    search_parity_update_cmd.setCwd(b.path("net"));
 
     const search_parity_update_step = b.step(
         "search-parity-update",
@@ -489,7 +489,7 @@ pub fn build(b: *std.Build) void {
     });
     search_modes_cmd.step.dependOn(install_step);
     search_modes_cmd.step.dependOn(&net_cmd.step);
-    search_modes_cmd.setCwd(b.path("src"));
+    search_modes_cmd.setCwd(b.path("net"));
 
     const search_modes_step = b.step(
         "search-modes",
@@ -502,7 +502,7 @@ pub fn build(b: *std.Build) void {
     });
     search_modes_update_cmd.step.dependOn(install_step);
     search_modes_update_cmd.step.dependOn(&net_cmd.step);
-    search_modes_update_cmd.setCwd(b.path("src"));
+    search_modes_update_cmd.setCwd(b.path("net"));
 
     const search_modes_update_step = b.step(
         "search-modes-update",
@@ -551,7 +551,7 @@ pub fn build(b: *std.Build) void {
     });
     output_golden_cmd.step.dependOn(install_step);
     output_golden_cmd.step.dependOn(&net_cmd.step);
-    output_golden_cmd.setCwd(b.path("src"));
+    output_golden_cmd.setCwd(b.path("net"));
 
     const output_golden_step = b.step(
         "output-golden",
@@ -568,7 +568,7 @@ pub fn build(b: *std.Build) void {
     });
     output_golden_update_cmd.step.dependOn(install_step);
     output_golden_update_cmd.step.dependOn(&net_cmd.step);
-    output_golden_update_cmd.setCwd(b.path("src"));
+    output_golden_update_cmd.setCwd(b.path("net"));
 
     const output_golden_update_step = b.step(
         "output-golden-update",
@@ -590,7 +590,7 @@ pub fn build(b: *std.Build) void {
     });
     stress_cmd.step.dependOn(install_step);
     stress_cmd.step.dependOn(&net_cmd.step);
-    stress_cmd.setCwd(b.path("src"));
+    stress_cmd.setCwd(b.path("net"));
 
     const stress_step = b.step(
         "parity-stress",
@@ -612,7 +612,7 @@ pub fn build(b: *std.Build) void {
     });
     valgrind_cmd.step.dependOn(install_step);
     valgrind_cmd.step.dependOn(&net_cmd.step);
-    valgrind_cmd.setCwd(b.path("src"));
+    valgrind_cmd.setCwd(b.path("net"));
 
     const valgrind_step = b.step(
         "parity-valgrind",
@@ -636,7 +636,7 @@ pub fn build(b: *std.Build) void {
     });
     mt_cmd.step.dependOn(install_step);
     mt_cmd.step.dependOn(&net_cmd.step);
-    mt_cmd.setCwd(b.path("src"));
+    mt_cmd.setCwd(b.path("net"));
 
     const mt_step = b.step(
         "parity-mt",
@@ -649,7 +649,7 @@ pub fn build(b: *std.Build) void {
     });
     mt_update_cmd.step.dependOn(install_step);
     mt_update_cmd.step.dependOn(&net_cmd.step);
-    mt_update_cmd.setCwd(b.path("src"));
+    mt_update_cmd.setCwd(b.path("net"));
 
     const mt_update_step = b.step(
         "parity-mt-update",
@@ -670,7 +670,7 @@ pub fn build(b: *std.Build) void {
     });
     teardown_cmd.step.dependOn(install_step);
     teardown_cmd.step.dependOn(&net_cmd.step);
-    teardown_cmd.setCwd(b.path("src"));
+    teardown_cmd.setCwd(b.path("net"));
 
     const teardown_step = b.step(
         "parity-teardown",
@@ -692,7 +692,7 @@ pub fn build(b: *std.Build) void {
     });
     time_cmd.step.dependOn(install_step);
     time_cmd.step.dependOn(&net_cmd.step);
-    time_cmd.setCwd(b.path("src"));
+    time_cmd.setCwd(b.path("net"));
 
     const time_step = b.step(
         "parity-time",
@@ -714,7 +714,7 @@ pub fn build(b: *std.Build) void {
     });
     perft_cmd.step.dependOn(install_step);
     perft_cmd.step.dependOn(&net_cmd.step);
-    perft_cmd.setCwd(b.path("src"));
+    perft_cmd.setCwd(b.path("net"));
 
     const perft_step = b.step(
         "perft",
@@ -731,7 +731,7 @@ pub fn build(b: *std.Build) void {
     });
     perft_update_cmd.step.dependOn(install_step);
     perft_update_cmd.step.dependOn(&net_cmd.step);
-    perft_update_cmd.setCwd(b.path("src"));
+    perft_update_cmd.setCwd(b.path("net"));
 
     const perft_update_step = b.step(
         "perft-update",
@@ -753,7 +753,7 @@ pub fn build(b: *std.Build) void {
     });
     eval_cmd.step.dependOn(install_step);
     eval_cmd.step.dependOn(&net_cmd.step);
-    eval_cmd.setCwd(b.path("src"));
+    eval_cmd.setCwd(b.path("net"));
 
     const eval_step = b.step(
         "eval-trace",
@@ -770,7 +770,7 @@ pub fn build(b: *std.Build) void {
     });
     eval_update_cmd.step.dependOn(install_step);
     eval_update_cmd.step.dependOn(&net_cmd.step);
-    eval_update_cmd.setCwd(b.path("src"));
+    eval_update_cmd.setCwd(b.path("net"));
 
     const eval_update_step = b.step(
         "eval-trace-update",
@@ -790,7 +790,7 @@ pub fn build(b: *std.Build) void {
     });
     misc_cmd.step.dependOn(install_step);
     misc_cmd.step.dependOn(&net_cmd.step);
-    misc_cmd.setCwd(b.path("src"));
+    misc_cmd.setCwd(b.path("net"));
 
     const misc_step = b.step(
         "misc",
@@ -807,7 +807,7 @@ pub fn build(b: *std.Build) void {
     });
     misc_update_cmd.step.dependOn(install_step);
     misc_update_cmd.step.dependOn(&net_cmd.step);
-    misc_update_cmd.setCwd(b.path("src"));
+    misc_update_cmd.setCwd(b.path("net"));
 
     const misc_update_step = b.step(
         "misc-update",
@@ -815,10 +815,11 @@ pub fn build(b: *std.Build) void {
     );
     misc_update_step.dependOn(&misc_update_cmd.step);
 
-    // H9 src-free / TU=0 structural gate (REPORT-11 E1.4): asserts the default binary contains zero
-    // C++ TUs (no Stockfish:: / libc++ runtime symbols; src/ + uci_bridge.cpp gone) and still benches
-    // 2336177. FAILS ON PURPOSE until the cut (E3/E4) removes the last C++ TU; deliberately NOT in the
-    // `parity` aggregate until E4.3 so `parity` stays green through E1-E3.
+    // H9 src-free / TU=0 structural gate (REPORT-11 E1.4; achieved REPORT-16 M16.1): asserts the
+    // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
+    // benches 2067208. Now that the in-tree oracle is retired and src/ is deleted, this is GREEN and
+    // a permanent invariant, so it joins the `parity` aggregate below (guards against any C++ TU
+    // being reintroduced into the default binary).
     const h9_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("zig_build/tools/h9_src_free.sh"),
@@ -826,11 +827,11 @@ pub fn build(b: *std.Build) void {
     });
     h9_cmd.step.dependOn(install_step);
     h9_cmd.step.dependOn(&net_cmd.step);
-    h9_cmd.setCwd(b.path("src"));
+    h9_cmd.setCwd(b.path("net"));
 
     const h9_step = b.step(
         "h9",
-        "TU=0 src-free structural gate (REPORT-11 E1.4; fails until the cut lands)",
+        "src-free structural gate: zero C++ Stockfish/libc++ symbols in the shipped binary",
     );
     h9_step.dependOn(&h9_cmd.step);
 
@@ -885,6 +886,8 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&perft_cmd.step);
     parity_step.dependOn(&eval_cmd.step);
     parity_step.dependOn(&misc_cmd.step);
+    // M16.1d: the src-free structural invariant is now permanent, so it gates every push.
+    parity_step.dependOn(&h9_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
