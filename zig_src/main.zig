@@ -2466,6 +2466,14 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
     const lo = graph_layout.limits_off;
     var limits: [lo.total_size]u8 align(8) = [_]u8{0} ** lo.total_size;
     const base: [*]u8 = &limits;
+    // Capture the search start as early as possible -- upstream UCIEngine::parse_limits
+    // sets `limits.startTime = now()` first thing. TimeManagement::init copies it into
+    // tm.startTime, and the info-line elapsed is `now() - tm.startTime`. Left unset (0),
+    // that elapsed reads as now()-0 (~machine uptime), which is why the `info ... time`
+    // /`nps` fields were bogus while the bench's own Total-time summary was correct.
+    // Depth/node-limited searches never consult startTime for stopping, so bench node
+    // count / signature is unaffected; only the reported time/nps become correct.
+    @as(*i64, @ptrCast(@alignCast(base + lo.start_time))).* = zfishNow();
     @as(*i64, @ptrCast(@alignCast(base + lo.time_w))).* = parsed.wtime;
     @as(*i64, @ptrCast(@alignCast(base + lo.time_b))).* = parsed.btime;
     @as(*i64, @ptrCast(@alignCast(base + lo.inc_w))).* = parsed.winc;
