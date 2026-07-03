@@ -9,7 +9,6 @@
 // caught immediately rather than corrupting a mirror silently.
 
 const std = @import("std");
-const target_flags = @import("target_flags");
 
 // Canonical C++ footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = 13882816;
@@ -227,46 +226,10 @@ pub const numa_config_off = struct {
     pub const node_set_count_off: usize = 40;
 };
 
-extern fn zfish_graph_layout_size(which: c_int) usize;
-
-const Pinned = struct { which: c_int, value: usize, name: []const u8 };
-
-const pinned = [_]Pinned{
-    .{ .which = 0, .value = worker_size, .name = "Worker" },
-    .{ .which = 1, .value = worker_align, .name = "alignof(Worker)" },
-    .{ .which = 2, .value = thread_size, .name = "Thread" },
-    .{ .which = 3, .value = thread_pool_size, .name = "ThreadPool" },
-    .{ .which = 4, .value = engine_size, .name = "Engine" },
-    .{ .which = 5, .value = uci_engine_size, .name = "UCIEngine" },
-    .{ .which = 6, .value = shared_state_size, .name = "SharedState" },
-    .{ .which = 7, .value = search_manager_size, .name = "SearchManager" },
-    .{ .which = 8, .value = position_size, .name = "Position" },
-    .{ .which = 9, .value = state_info_size, .name = "StateInfo" },
-    .{ .which = 10, .value = transposition_table_size, .name = "TranspositionTable" },
-    .{ .which = 11, .value = accumulator_stack_size, .name = "AccumulatorStack" },
-    .{ .which = 12, .value = accumulator_caches_size, .name = "AccumulatorCaches" },
-    .{ .which = 13, .value = root_move_size, .name = "RootMove" },
-    .{ .which = 15, .value = worker_off.tb_config, .name = "offsetof(Worker, tbConfig)" },
-    .{ .which = 16, .value = worker_off.root_state, .name = "offsetof(Worker, rootState)" },
-    .{ .which = 17, .value = worker_off.last_iteration_pv, .name = "offsetof(Worker, lastIterationPV)" },
-};
-
 pub export fn zfish_graph_verify_layouts() void {
-    // M-FINAL cutover: the cross-check against the C++ sizeof/offsetof (zfish_graph_layout_size)
-    // runs ONLY in the legacy oracle build, which compiles the real src/ types on the same
-    // machine/compiler and verifies every pinned constant each gate run. The default build (no
-    // src/ types — the frozen-type forward-decl endgame) trusts those legacy-verified constants
-    // and skips the check, so it carries no sizeof(frozen-type) dependency. comptime so the
-    // zfish_graph_layout_size references are eliminated in the default build (no undefined symbol).
-    if (comptime !target_flags.legacy_target) return;
-    for (pinned) |entry| {
-        const actual = zfish_graph_layout_size(entry.which);
-        if (actual != entry.value) {
-            std.debug.print(
-                "graph layout drift: {s} pinned {d} but C++ reports {d}\n",
-                .{ entry.name, entry.value, actual },
-            );
-            @panic("object-graph layout changed; update graph_layout.zig before allocating in Zig");
-        }
-    }
+    // The pinned layout constants were cross-checked against the in-tree C++ oracle
+    // (sizeof/offsetof of the real src/ types) until it was retired (REPORT-16 M16.1).
+    // With no C++ types left to compare against, the constants are trusted directly;
+    // any drift now surfaces as a bench/parity failure, and upstream-parity re-pins
+    // them against pristine upstream on a resync.
 }

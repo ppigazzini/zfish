@@ -20,30 +20,19 @@ inline fn nt(thread: *anyopaque) *native_thread.NativeThread {
     return @ptrCast(@alignCast(thread));
 }
 
-// Stage-4 per-build vehicle gate. The legacy oracle build keeps the C++ Thread
-// vehicle (so the thread.cpp oracle stays comparable); the default build uses the
-// native runtime. The `thread` module is shared by both exes, so a comptime flag
-// Stage-7: the legacy/default split is now COMPTIME. thread.zig is built per-exe
-// (build.zig: thread_module_default/_legacy each import the matching target_flags),
-// so legacyBuild() is a compile-time constant and Zig prunes the dead branch -- the
-// default exe stops referencing the legacy C++ zfish_thread_* sync wrappers and the
-// C++ Thread vehicle (they become #ifdef ZFISH_LEGACY_CPP_TARGET in the bridge). Was
-// a runtime extern (zfish_is_legacy_build) only because the module was shared.
-const target_flags = @import("target_flags");
-inline fn legacyBuild() bool {
-    return target_flags.legacy_target;
-}
+// Thread sync handshake -> the native runtime (the in-tree C++ Thread vehicle was
+// retired with the oracle, REPORT-16 M16.1).
 inline fn threadWaitFinished(thread: *anyopaque) void {
-    if (legacyBuild()) zfish_thread_wait_for_search_finished(thread) else nt(thread).waitForSearchFinished();
+    nt(thread).waitForSearchFinished();
 }
 inline fn threadStartSearching(thread: *anyopaque) void {
-    if (legacyBuild()) zfish_thread_start_searching(thread) else native_thread.startSearching(nt(thread));
+    native_thread.startSearching(nt(thread));
 }
 inline fn threadClearWorker(thread: *anyopaque) void {
-    if (legacyBuild()) zfish_thread_clear_worker(thread) else native_thread.clearWorker(nt(thread));
+    native_thread.clearWorker(nt(thread));
 }
 inline fn threadRunJob(thread: *anyopaque, job: ThreadCallback, ctx: ?*anyopaque) void {
-    if (legacyBuild()) zfish_thread_run_callback(thread, job, ctx) else nt(thread).startJob(job, ctx);
+    nt(thread).startJob(job, ctx);
 }
 // M-FINAL cutover: native read of LimitsType::searchmoves[index] in the default build, dropping the
 // C++ zfish_limits_searchmove_text bridge. The default exe is built by Zig (bundled libc++), so
@@ -52,7 +41,6 @@ inline fn threadRunJob(thread: *anyopaque, job: ThreadCallback, ctx: ?*anyopaque
 // std::vector<std::string> (limits+0, {_M_start@0}); element stride is sizeof(std::string)=24.
 // Read-only (no allocation). Gate-verified by search-modes (exercises `go ... searchmoves`).
 inline fn limitsSearchmoveText(limits: *const anyopaque, index: usize) ByteView {
-    if (legacyBuild()) return zfish_limits_searchmove_text(limits, index);
     const vec_begin = @as(*const usize, @ptrFromInt(@intFromPtr(limits))).*;
     const str_ptr = vec_begin + index * 24;
     const b0 = @as(*const u8, @ptrFromInt(str_ptr)).*;
@@ -182,7 +170,6 @@ extern fn zfish_movegen_generate_legal(
 ) usize;
 extern fn zfish_limits_ponder_mode(limits: *const anyopaque) u8;
 extern fn zfish_limits_searchmove_count(limits: *const anyopaque) usize;
-extern fn zfish_limits_searchmove_text(limits: *const anyopaque, index: usize) ByteView;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
@@ -217,7 +204,6 @@ extern fn zfish_threadpool_main_manager_reset_calls_count(pool: *anyopaque) void
 extern fn zfish_threadpool_main_manager_reset_best_previous_score(pool: *anyopaque) void;
 extern fn zfish_threadpool_main_manager_reset_original_time_adjust(pool: *anyopaque) void;
 extern fn zfish_threadpool_main_manager_clear_timeman(pool: *anyopaque) void;
-extern fn zfish_threadpool_reset_for_reconfigure(pool: *anyopaque) void;
 extern fn zfish_threadpool_bound_nodes_assign(
     pool: *anyopaque,
     nodes: ?[*]const usize,
@@ -228,16 +214,9 @@ extern fn zfish_thread_tb_hits(thread: *const anyopaque) u64;
 extern fn zfish_thread_fill_summary(thread: *const anyopaque, out: *ThreadSummary) void;
 const ThreadCallback = *const fn (?*anyopaque) callconv(.c) void;
 
-extern fn zfish_thread_run_callback(
-    thread: *anyopaque,
-    callback: ThreadCallback,
-    context: ?*anyopaque,
-) void;
-extern fn zfish_thread_worker_set_limits(thread: *anyopaque, limits: *const anyopaque) void;
 // Stage 5: native LimitsType POD-tail copy (default build); see main.zig.
 extern fn zfish_worker_set_limits(thread: *anyopaque, limits: *const anyopaque) void;
 extern fn zfish_thread_worker_reset_root_setup_state(thread: *anyopaque) void;
-extern fn zfish_thread_worker_set_root_moves(thread: *anyopaque, root_moves: *const anyopaque) void;
 // Stage 5: native vector<RootMove> copy-assign (default build); see main.zig.
 extern fn zfish_worker_set_root_moves(thread: *anyopaque, root_moves: *const anyopaque) void;
 extern fn zfish_thread_worker_set_root_position(
@@ -248,10 +227,6 @@ extern fn zfish_thread_worker_set_root_position(
 ) void;
 extern fn zfish_thread_worker_set_root_state(thread: *anyopaque, setup_state: *const anyopaque) void;
 extern fn zfish_thread_worker_set_tb_config(thread: *anyopaque, config: TbConfig) void;
-extern fn zfish_thread_clear_worker(thread: *anyopaque) void;
-extern fn zfish_thread_wait_for_search_finished(thread: *anyopaque) void;
-extern fn zfish_thread_start_searching(thread: *anyopaque) void;
-extern fn zfish_thread_ensure_network_replicated(thread: *anyopaque) void;
 extern fn zfish_shared_state_threads_value(shared_state: *const anyopaque) usize;
 extern fn zfish_shared_state_numa_policy_mode(shared_state: *const anyopaque) u8;
 extern fn zfish_shared_state_clear_histories(shared_state: *const anyopaque) void;
@@ -348,19 +323,11 @@ fn createThreadOnCurrentNode(context_ptr: ?*anyopaque) callconv(.c) void {
 
 fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
-    // Stage 5: native LimitsType POD-tail copy in the default build; legacy keeps
-    // the C++ worker->set_limits as the pure reference.
-    if (legacyBuild())
-        zfish_thread_worker_set_limits(context.thread, context.input.limits)
-    else
-        zfish_worker_set_limits(context.thread, context.input.limits);
+    // Stage 5: native LimitsType POD-tail copy.
+    zfish_worker_set_limits(context.thread, context.input.limits);
     zfish_thread_worker_reset_root_setup_state(context.thread);
-    // Stage 5: native vector<RootMove> copy-assign in the default build; the legacy
-    // oracle keeps the C++ worker->set_root_moves so it stays the pure reference.
-    if (legacyBuild())
-        zfish_thread_worker_set_root_moves(context.thread, context.input.root_moves)
-    else
-        zfish_worker_set_root_moves(context.thread, context.input.root_moves);
+    // Stage 5: native vector<RootMove> copy-assign.
+    zfish_worker_set_root_moves(context.thread, context.input.root_moves);
     zfish_thread_worker_set_root_position(
         context.thread,
         context.input.fen_ptr,
@@ -699,7 +666,7 @@ pub fn reconfigure(
 ) void {
     if (zfish_threadpool_thread_count(pool) > 0) {
         waitMainThread(pool);
-        if (legacyBuild()) zfish_threadpool_reset_for_reconfigure(pool) else native_threadpool.zfish_native_threadpool_clear(pool);
+        native_threadpool.zfish_native_threadpool_clear(pool);
     }
 
     const requested = zfish_shared_state_threads_value(shared_state);
@@ -759,54 +726,15 @@ pub fn reconfigure(
         }
     }
 
-    if (legacyBuild()) {
-        // Legacy oracle: the original C++ Thread ctor loop (createThreadOnCurrentNode
-        // per requested thread, NUMA-dispatched when binding).
-        const created_per_node = allocator.alloc(usize, node_count) catch @panic("OOM");
-        defer allocator.free(created_per_node);
-        @memset(created_per_node, 0);
-
-        var thread_id: usize = 0;
-        while (thread_id < requested) : (thread_id += 1) {
-            const numa_id: usize = if (do_bind) bound_nodes[thread_id] else 0;
-            const idx_in_numa = created_per_node[numa_id];
-            created_per_node[numa_id] += 1;
-
-            var create_context = CreateThreadContext{
-                .pool = pool,
-                .numa_config = numa_config,
-                .shared_state = shared_state,
-                .update_context = update_context,
-                .thread_id = thread_id,
-                .idx_in_numa = idx_in_numa,
-                .total_numa = threads_per_node[numa_id],
-                .numa_id = numa_id,
-                .do_bind = do_bind,
-            };
-
-            if (do_bind) {
-                zfish_numa_config_execute_on_numa_node(
-                    numa_config,
-                    numa_id,
-                    createThreadOnCurrentNode,
-                    &create_context,
-                );
-            } else {
-                createThreadOnCurrentNode(&create_context);
-            }
-        }
-    } else {
-        // Stage-4 contents-swap: build native Threads (idle loop + Worker) into the
-        // C++ pool's threads vector via the native ThreadPool, replacing the per-thread
-        // C++ Thread ctor loop. Single-node host (do_bind == false): the C++ worker-
-        // builder uses numaIndex 0, idxInNuma == idx, totalNuma == requested.
-        native_threadpool.zfish_native_threadpool_set(
-            pool,
-            @constCast(shared_state),
-            update_context,
-            requested,
-        );
-    }
+    // Build native Threads (idle loop + Worker) into the pool's threads vector via
+    // the native ThreadPool. Single-node host (do_bind == false): numaIndex 0,
+    // idxInNuma == idx, totalNuma == requested.
+    native_threadpool.zfish_native_threadpool_set(
+        pool,
+        @constCast(shared_state),
+        update_context,
+        requested,
+    );
 
     clear(pool);
     waitMainThread(pool);
@@ -1033,17 +961,9 @@ pub fn waitForSearchFinished(pool: *anyopaque) void {
 }
 
 pub fn ensureNetworkReplicated(pool: *anyopaque) void {
-    // M-FINAL cutover: in the default build the NNUE weights are always resident in native storage
-    // (no C++ Network numa replica), so Worker::ensure_network_replicated is a no-op. Wrapping the
-    // per-thread loop in the comptime legacyBuild() branch makes Zig prune it (and the now legacy-only
-    // zfish_thread_ensure_network_replicated bridge reference) from the default exe entirely.
-    if (legacyBuild()) {
-        const thread_count = zfish_threadpool_thread_count(pool);
-        var index: usize = 0;
-        while (index < thread_count) : (index += 1) {
-            zfish_thread_ensure_network_replicated(zfish_threadpool_thread_at(pool, index));
-        }
-    }
+    // The NNUE weights are always resident in native storage (no C++ Network numa
+    // replica), so Worker::ensure_network_replicated is a no-op.
+    _ = pool;
 }
 
 fn voteForMove(

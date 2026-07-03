@@ -78,15 +78,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // Comptime flag consumed by the Zig root's now-dead legacy-oracle branches
-    // (zig_src/main.zig). The in-tree C++ oracle is retired (REPORT-16 M16.1), so
-    // this is always false; the dead branches are removed in M16.1e. Kept here so
-    // the default build still compiles until that cleanup lands.
-    const default_flags = b.addOptions();
-    default_flags.addOption(bool, "legacy_target", false);
-    const default_flags_mod = default_flags.createModule();
-    exe.root_module.addImport("target_flags", default_flags_mod);
-
     const timeman_module = b.createModule(.{
         .root_source_file = b.path("zig_build/time/timeman.zig"),
         .target = target,
@@ -319,7 +310,6 @@ pub fn build(b: *std.Build) void {
     thread_module_default.addImport("position_snapshot", position_snapshot_module);
     thread_module_default.addImport("position", position_module);
     thread_module_default.addImport("uci_move", uci_move_module);
-    thread_module_default.addImport("target_flags", default_flags_mod);
     uci_module.addImport("benchmark", benchmark_module);
     uci_module.addImport("misc", misc_module);
     exe.root_module.addImport("benchmark", benchmark_module);

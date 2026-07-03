@@ -38,7 +38,6 @@ const tt_port = @import("tt");
 const uci_port = @import("uci");
 const position_snapshot = @import("position_snapshot");
 const uci_move_port = @import("uci_move");
-const target_flags = @import("target_flags");
 
 comptime {
     _ = graph_layout;
@@ -50,21 +49,6 @@ comptime {
     _ = worker_native_construct;
 }
 
-extern fn zfish_bitboards_init() void;
-// Stage-6 (Annex A) ownership beachhead: Zig owns the UCIEngine footprint and
-// drives its lifetime as alloc -> construct -> use -> destruct -> free. The C++
-// UCIEngine ctor/dtor still run (placement), so the graph is byte-identical; the
-// storage and lifetime are now Zig's.
-// M-FINAL: sizeof(UCIEngine) ported to the native graph_layout constant (default-only; legacy
-// keeps the C++ sizeof as source-of-truth, cross-checked via oracle-parity). The engine storage
-// alloc below uses it, so a wrong size corrupts/crashes the engine -- fully gate-verified. alignof
-// stays the C++ value (its exact magnitude isn't pinned by a constant; keep the source of truth).
-fn zfish_uci_engine_sizeof() usize {
-    return graph_layout.uci_engine_size;
-}
-extern fn zfish_uci_engine_alignof() usize;
-extern fn zfish_uci_engine_construct_at(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void;
-extern fn zfish_uci_engine_destruct_at(storage: *anyopaque) void;
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 pub fn main(init: std.process.Init) !void {
@@ -88,33 +72,23 @@ pub fn main(init: std.process.Init) !void {
 
     _ = c.puts(@ptrCast(info));
 
-    // REPORT-12 TU=0: zfish_bitboards_init only fills the C++ Bitboards globals (RookTable/PopCnt16/...),
-    // which only the legacy C++ movegen reads — the native movegen computes attacks/rays on the fly
-    // (bitboard.zig slidingAttack etc.). The native tables come from position_port.initRuntime() below.
-    if (target_flags.legacy_target) zfish_bitboards_init();
+    // The native movegen computes attacks/rays on the fly (bitboard.zig slidingAttack
+    // etc.); the runtime tables come from position_port.initRuntime().
     position_port.initRuntime();
 
     // Zig-owned engine footprint: allocate aligned storage, placement-construct the
-    // UCIEngine into it, and on teardown destruct-in-place then free (defers run
-    // LIFO, so destruct precedes free).
-    // M-FINAL cutover: the default build's buffer holds a NativeEngine (an ownership
-    // container of heap members), not a C++ UCIEngine — size it accordingly. The legacy
-    // oracle keeps the full C++ UCIEngine footprint.
-    const eng_align = if (target_flags.legacy_target) zfish_uci_engine_alignof() else native_engine.alignofEngine();
-    const eng_size = if (target_flags.legacy_target) zfish_uci_engine_sizeof() else native_engine.sizeofEngine();
+    // NativeEngine (an ownership container of heap members) into it, and on teardown
+    // destruct-in-place then free (defers run LIFO, so destruct precedes free).
+    const eng_align = native_engine.alignofEngine();
+    const eng_size = native_engine.sizeofEngine();
     const engine = memory_port.stdAlignedAlloc(eng_align, eng_size) orelse
         return error.OutOfMemory;
     defer memory_port.stdAlignedFree(engine);
 
-    // REPORT-12 TU=0: native engine construction directly in default; legacy runs the C++ UCIEngine ctor path.
-    if (target_flags.legacy_target)
-        zfish_uci_engine_construct_at(engine, @intCast(argc), argv.ptr)
-    else
-        nativeUciEngineConstructAt(engine, @intCast(argc), argv.ptr);
+    nativeUciEngineConstructAt(engine, @intCast(argc), argv.ptr);
     defer freeSideTt(); // M1: free the side tt AFTER the engine destruct (LIFO)
     defer freeSideSharedHistories(); // M-SH: free the side sharedHistories map (after destruct)
-    // REPORT-12 TU=0: native teardown directly in default (3 native calls); legacy runs ~UCIEngine.
-    defer if (target_flags.legacy_target) zfish_uci_engine_destruct_at(engine) else uciEngineDestructAt(engine);
+    defer uciEngineDestructAt(engine);
 
     uci_port.loopRuntime(engine);
 }
@@ -1478,169 +1452,136 @@ fn numaExecuteOnNode(_: *const anyopaque, _: usize, callback: *const fn (?*anyop
 }
 
 comptime {
-    // REPORT-12 TU=0: the C++-mangled interop aliases (Stockfish:: std_aligned / aligned_large_pages /
-    // AccumulatorStack) are called only by the legacy oracle's C++ TUs. Export them legacy-only so the
-    // default native binary carries ZERO Stockfish:: symbols (the native code uses the zfish_* fns directly).
-    if (target_flags.legacy_target) {
-        @export(&_ZN9Stockfish17std_aligned_allocEmm, .{ .name = "_ZN9Stockfish17std_aligned_allocEmm" });
-        @export(&_ZN9Stockfish16std_aligned_freeEPv, .{ .name = "_ZN9Stockfish16std_aligned_freeEPv" });
-        @export(&_ZN9Stockfish4Eval4NNUE16AccumulatorStack5resetEv, .{ .name = "_ZN9Stockfish4Eval4NNUE16AccumulatorStack5resetEv" });
-        @export(&_ZN9Stockfish4Eval4NNUE16AccumulatorStack4pushEv, .{ .name = "_ZN9Stockfish4Eval4NNUE16AccumulatorStack4pushEv" });
-        @export(&_ZN9Stockfish4Eval4NNUE16AccumulatorStack3popEv, .{ .name = "_ZN9Stockfish4Eval4NNUE16AccumulatorStack3popEv" });
-        @export(&_ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11HalfKAv2_hmEEERKNS1_16AccumulatorStateIT_EEv, .{ .name = "_ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11HalfKAv2_hmEEERKNS1_16AccumulatorStateIT_EEv" });
-        @export(&_ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11FullThreatsEEERKNS1_16AccumulatorStateIT_EEv, .{ .name = "_ZNK9Stockfish4Eval4NNUE16AccumulatorStack6latestINS1_8Features11FullThreatsEEERKNS1_16AccumulatorStateIT_EEv" });
-        @export(&_ZN9Stockfish25aligned_large_pages_allocEm, .{ .name = "_ZN9Stockfish25aligned_large_pages_allocEm" });
-        @export(&_ZN9Stockfish24aligned_large_pages_freeEPv, .{ .name = "_ZN9Stockfish24aligned_large_pages_freeEPv" });
-        @export(&_ZN9Stockfish15has_large_pagesEv, .{ .name = "_ZN9Stockfish15has_large_pagesEv" });
-    }
-}
-
-comptime {
-    if (!target_flags.legacy_target) {
-        @export(&tbMaxCardinality, .{ .name = "zfish_tbprobe_max_cardinality" });
-        @export(&tbProbeFen, .{ .name = "zfish_tbprobe_probe_fen" });
-        @export(&tbInit, .{ .name = "zfish_engine_tablebases_init" });
-        @export(&smResetCallsCount, .{ .name = "zfish_threadpool_main_manager_reset_calls_count" });
-        @export(&smResetBestPreviousScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_score" });
-        @export(&smResetBestPreviousAverageScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_average_score" });
-        @export(&smResetOriginalTimeAdjust, .{ .name = "zfish_threadpool_main_manager_reset_original_time_adjust" });
-        @export(&smResetPreviousTimeReduction, .{ .name = "zfish_threadpool_main_manager_reset_previous_time_reduction" });
-        @export(&smSetPonder, .{ .name = "zfish_threadpool_main_manager_set_ponder" });
-        @export(&smSetStopOnPonderhit, .{ .name = "zfish_threadpool_main_manager_set_stop_on_ponderhit" });
-        @export(&smClearTimeman, .{ .name = "zfish_threadpool_main_manager_clear_timeman" });
-        @export(&tpSetStopFlag, .{ .name = "zfish_threadpool_set_stop_flag" });
-        @export(&tpSetIncreaseDepth, .{ .name = "zfish_threadpool_set_increase_depth" });
-        @export(&tpThreadCount, .{ .name = "zfish_threadpool_thread_count" });
-        @export(&tpThreadAt, .{ .name = "zfish_threadpool_thread_at" });
-        @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
-        @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
-        @export(&thWorkerSetRootState, .{ .name = "zfish_thread_worker_set_root_state" });
-        @export(&thWorkerSetRootPosition, .{ .name = "zfish_thread_worker_set_root_position" });
-        @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
-        @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
-        // id_state reads the native option model (default-only populated), so the
-        // native version is default-only; legacy keeps the bridge C++ body.
-        @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });
-        @export(&zfish_ss_tm_init, .{ .name = "zfish_ss_tm_init" });
-        @export(&thFillSummary, .{ .name = "zfish_thread_fill_summary" });
-        // M-FINAL (limits readers): pure LimitsType offset reads (legacy keeps the C++ defs).
-        @export(&zfishLimitsPonderMode, .{ .name = "zfish_limits_ponder_mode" });
-        @export(&zfishLimitsPerftValue, .{ .name = "zfish_limits_perft_value" });
-        @export(&zfishLimitsSearchmoveCount, .{ .name = "zfish_limits_searchmove_count" });
-        // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
-        @export(&zfishEngineOptionHashValue, .{ .name = "zfish_engine_option_hash_value" });
-        @export(&zfishSharedStateThreadsValue, .{ .name = "zfish_shared_state_threads_value" });
-        @export(&zfishOptionsSyzygyProbeDepth, .{ .name = "zfish_options_syzygy_probe_depth" });
-        @export(&zfishOptionsSyzygyProbeLimit, .{ .name = "zfish_options_syzygy_probe_limit" });
-        @export(&zfishOptionsSyzygy50MoveRule, .{ .name = "zfish_options_syzygy_50_move_rule" });
-        // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
-        @export(&zfishSharedStateNumaPolicyMode, .{ .name = "zfish_shared_state_numa_policy_mode" });
-        // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
-        @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_system" });
-        @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_hardware" });
-        @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_none" });
-        @export(&numaContextConfig, .{ .name = "zfish_numa_context_config" });
-        @export(&numaSuggestsBindingThreads, .{ .name = "zfish_numa_config_suggests_binding_threads" });
-        @export(&numaDistributeThreadsAmongNodes, .{ .name = "zfish_numa_config_distribute_threads_among_nodes" });
-        @export(&numaExecuteOnNode, .{ .name = "zfish_numa_config_execute_on_numa_node" });
-        @export(&engineNetworkPtr, .{ .name = "zfish_engine_network_ptr" });
-        @export(&engineNumaConfigText, .{ .name = "zfish_engine_numa_config_text" });
-        @export(&searchSharedStateDestroy, .{ .name = "zfish_search_shared_state_destroy" });
-        @export(&searchSharedStateCreate, .{ .name = "zfish_search_shared_state_create" });
-        @export(&engineNumaConfigInfoText, .{ .name = "zfish_engine_numa_config_info_text" });
-        @export(&engineThreadAllocationInfoText, .{ .name = "zfish_engine_thread_allocation_info_text" });
-        @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
-        @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
-        @export(&engineSetStartPosition, .{ .name = "zfish_engine_set_start_position" });
-        @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
-        @export(&ssThreadsStart, .{ .name = "zfish_ss_threads_start" });
-        @export(&ssWaitFinished, .{ .name = "zfish_ss_wait_finished" });
-        @export(&ssEmitPv, .{ .name = "zfish_ss_emit_pv" });
-        @export(&ssSearchIdPv, .{ .name = "zfish_search_id_pv" });
-        @export(&threadpoolWaitThread, .{ .name = "zfish_threadpool_wait_thread" });
-        @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
-        @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
-        @export(&networkEmbeddedBytes, .{ .name = "zfish_network_embedded_bytes" });
-        @export(&networkMarkInitialized, .{ .name = "zfish_network_mark_initialized" });
-        @export(&networkSetLoadedState, .{ .name = "zfish_network_set_loaded_state" });
-        @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
-        @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
-        @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
-        @export(&movepickFillHistorySnapshot, .{ .name = "zfish_movepick_fill_history_snapshot" });
-        @export(&networkFeatureTransformerReadBlob, .{ .name = "zfish_network_feature_transformer_read_blob" });
-        @export(&networkLayerReadBlob, .{ .name = "zfish_network_layer_read_blob" });
-        @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
-        @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
-        // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
-        @export(&zfishNow, .{ .name = "zfish_now" });
-        @export(&zfishEngineChess960Enabled, .{ .name = "zfish_engine_chess960_enabled" });
-        // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
-        @export(&zfishEngineTtResize, .{ .name = "zfish_engine_tt_resize" });
-        @export(&zfishEngineTtClear, .{ .name = "zfish_engine_tt_clear" });
-        @export(&zfishEngineTtHashfull, .{ .name = "zfish_engine_tt_hashfull" });
-        // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
-        @export(&zfishThreadpoolMainManagerPtr, .{ .name = "zfish_threadpool_main_manager_ptr" });
-        // M-FINAL / M-SM: native SearchManager construct + native Worker teardown (cracks the
-        // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
-        @export(&zfishMakeSearchManager, .{ .name = "zfish_make_search_manager" });
-        @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
-        @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
-        @export(&engineAddOption, .{ .name = "zfish_engine_add_option" });
-        @export(&rootMovesCreateRanked, .{ .name = "zfish_root_moves_create_ranked" });
-        @export(&rootMovesDestroy, .{ .name = "zfish_root_moves_destroy" });
-        @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
-        @export(&perftOwner, .{ .name = "zfish_engine_perft_owner" });
-        @export(&applySetoptionOwner, .{ .name = "zfish_engine_apply_setoption_owner" });
-        @export(&engineStartLogger, .{ .name = "zfish_engine_start_logger" });
-        @export(&threadpoolBoundNodesAssign, .{ .name = "zfish_threadpool_bound_nodes_assign" });
-        // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
-        @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
-        @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
-        // M-FINAL: native AccumulatorCaches construct/destroy (legacy keeps new/delete).
-        @export(&zfishEngineAccumulatorCachesCreate, .{ .name = "zfish_engine_accumulator_caches_create" });
-        @export(&zfishEngineAccumulatorCachesDestroy, .{ .name = "zfish_engine_accumulator_caches_destroy" });
-        // M-FINAL: native AccumulatorStack construct/destroy (legacy keeps new/delete).
-        @export(&zfishEngineAccumulatorStackCreate, .{ .name = "zfish_engine_accumulator_stack_create" });
-        @export(&zfishEngineAccumulatorStackDestroy, .{ .name = "zfish_engine_accumulator_stack_destroy" });
-        // M-FINAL cutover: native engine container construct/destruct (not yet on the live
-        // path; the flip commit wires these). Default-only — legacy keeps the C++ UCIEngine.
-        @export(&zfishNativeEngineConstructMembers, .{ .name = "zfish_native_engine_construct_members" });
-        @export(&zfishNativeEngineSetCli, .{ .name = "zfish_native_engine_set_cli" });
-        @export(&zfishNativeEngineDestructMembers, .{ .name = "zfish_native_engine_destruct_members" });
-        @export(&zfishNativeEngineSizeof, .{ .name = "zfish_native_engine_sizeof" });
-        @export(&zfishNativeEngineAlignof, .{ .name = "zfish_native_engine_alignof" });
-        @export(&zfishEngineOnVerifyNetworkPtr, .{ .name = "zfish_engine_onverifynetwork_ptr" });
-        // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
-        @export(&zfishPositionSetState, .{ .name = "zfish_position_set_state" });
-        @export(&zfishPositionMoveIsLegal, .{ .name = "zfish_position_move_is_legal" });
-        @export(&zfishPositionDoMoveState, .{ .name = "zfish_position_do_move_state" });
-        // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
-        @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
-        @export(&zfishThreadpoolHasSetupStates, .{ .name = "zfish_threadpool_has_setup_states" });
-        // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
-        @export(&zfishStateListStorageCreate, .{ .name = "zfish_engine_state_list_storage_create" });
-        @export(&zfishStateListStorageDestroy, .{ .name = "zfish_engine_state_list_storage_destroy" });
-        @export(&zfishStateListStorageReset, .{ .name = "zfish_engine_state_list_storage_reset" });
-        @export(&zfishStateListStoragePush, .{ .name = "zfish_engine_state_list_storage_push" });
-        @export(&zfishStateListStorageHasStates, .{ .name = "zfish_engine_state_list_storage_has_states" });
-        @export(&zfishEngineStatesSlotReset, .{ .name = "zfish_engine_states_slot_reset" });
-        @export(&zfishThreadpoolSetupStatesAdoptFromStorage, .{ .name = "zfish_threadpool_setup_states_adopt_from_storage" });
-        @export(&zfishThreadpoolSetupStatesAdoptFromSlot, .{ .name = "zfish_threadpool_setup_states_adopt_from_slot" });
-        @export(&zfishThreadpoolSetupStateBack, .{ .name = "zfish_threadpool_setup_state_back" });
-    }
-}
-
-// Native Engine member accessors. These return &engine->member; natively they add
-// the probed engine_off offset to the engine pointer. Bridge-only symbols (not in
-// src/engine.cpp), so they need no per-build gating. network.operator->() (the
-// resolved Network*) stays a C++ shim.
-const eng_off = graph_layout.engine_off;
-
-fn engMember(engine: *anyopaque, offset: usize) *anyopaque {
-    return @ptrCast(@as([*]u8, @ptrCast(engine)) + offset);
-}
-fn engMemberConst(engine: *const anyopaque, offset: usize) *const anyopaque {
-    return @ptrCast(@as([*]const u8, @ptrCast(engine)) + offset);
+    @export(&tbMaxCardinality, .{ .name = "zfish_tbprobe_max_cardinality" });
+    @export(&tbProbeFen, .{ .name = "zfish_tbprobe_probe_fen" });
+    @export(&tbInit, .{ .name = "zfish_engine_tablebases_init" });
+    @export(&smResetCallsCount, .{ .name = "zfish_threadpool_main_manager_reset_calls_count" });
+    @export(&smResetBestPreviousScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_score" });
+    @export(&smResetBestPreviousAverageScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_average_score" });
+    @export(&smResetOriginalTimeAdjust, .{ .name = "zfish_threadpool_main_manager_reset_original_time_adjust" });
+    @export(&smResetPreviousTimeReduction, .{ .name = "zfish_threadpool_main_manager_reset_previous_time_reduction" });
+    @export(&smSetPonder, .{ .name = "zfish_threadpool_main_manager_set_ponder" });
+    @export(&smSetStopOnPonderhit, .{ .name = "zfish_threadpool_main_manager_set_stop_on_ponderhit" });
+    @export(&smClearTimeman, .{ .name = "zfish_threadpool_main_manager_clear_timeman" });
+    @export(&tpSetStopFlag, .{ .name = "zfish_threadpool_set_stop_flag" });
+    @export(&tpSetIncreaseDepth, .{ .name = "zfish_threadpool_set_increase_depth" });
+    @export(&tpThreadCount, .{ .name = "zfish_threadpool_thread_count" });
+    @export(&tpThreadAt, .{ .name = "zfish_threadpool_thread_at" });
+    @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
+    @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
+    @export(&thWorkerSetRootState, .{ .name = "zfish_thread_worker_set_root_state" });
+    @export(&thWorkerSetRootPosition, .{ .name = "zfish_thread_worker_set_root_position" });
+    @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
+    @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
+    // id_state reads the native option model (default-only populated), so the
+    // native version is default-only; legacy keeps the bridge C++ body.
+    @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });
+    @export(&zfish_ss_tm_init, .{ .name = "zfish_ss_tm_init" });
+    @export(&thFillSummary, .{ .name = "zfish_thread_fill_summary" });
+    // M-FINAL (limits readers): pure LimitsType offset reads (legacy keeps the C++ defs).
+    @export(&zfishLimitsPonderMode, .{ .name = "zfish_limits_ponder_mode" });
+    @export(&zfishLimitsPerftValue, .{ .name = "zfish_limits_perft_value" });
+    @export(&zfishLimitsSearchmoveCount, .{ .name = "zfish_limits_searchmove_count" });
+    // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
+    @export(&zfishEngineOptionHashValue, .{ .name = "zfish_engine_option_hash_value" });
+    @export(&zfishSharedStateThreadsValue, .{ .name = "zfish_shared_state_threads_value" });
+    @export(&zfishOptionsSyzygyProbeDepth, .{ .name = "zfish_options_syzygy_probe_depth" });
+    @export(&zfishOptionsSyzygyProbeLimit, .{ .name = "zfish_options_syzygy_probe_limit" });
+    @export(&zfishOptionsSyzygy50MoveRule, .{ .name = "zfish_options_syzygy_50_move_rule" });
+    // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
+    @export(&zfishSharedStateNumaPolicyMode, .{ .name = "zfish_shared_state_numa_policy_mode" });
+    // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
+    @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_system" });
+    @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_hardware" });
+    @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_none" });
+    @export(&numaContextConfig, .{ .name = "zfish_numa_context_config" });
+    @export(&numaSuggestsBindingThreads, .{ .name = "zfish_numa_config_suggests_binding_threads" });
+    @export(&numaDistributeThreadsAmongNodes, .{ .name = "zfish_numa_config_distribute_threads_among_nodes" });
+    @export(&numaExecuteOnNode, .{ .name = "zfish_numa_config_execute_on_numa_node" });
+    @export(&engineNetworkPtr, .{ .name = "zfish_engine_network_ptr" });
+    @export(&engineNumaConfigText, .{ .name = "zfish_engine_numa_config_text" });
+    @export(&searchSharedStateDestroy, .{ .name = "zfish_search_shared_state_destroy" });
+    @export(&searchSharedStateCreate, .{ .name = "zfish_search_shared_state_create" });
+    @export(&engineNumaConfigInfoText, .{ .name = "zfish_engine_numa_config_info_text" });
+    @export(&engineThreadAllocationInfoText, .{ .name = "zfish_engine_thread_allocation_info_text" });
+    @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
+    @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
+    @export(&engineSetStartPosition, .{ .name = "zfish_engine_set_start_position" });
+    @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
+    @export(&ssThreadsStart, .{ .name = "zfish_ss_threads_start" });
+    @export(&ssWaitFinished, .{ .name = "zfish_ss_wait_finished" });
+    @export(&ssEmitPv, .{ .name = "zfish_ss_emit_pv" });
+    @export(&ssSearchIdPv, .{ .name = "zfish_search_id_pv" });
+    @export(&threadpoolWaitThread, .{ .name = "zfish_threadpool_wait_thread" });
+    @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
+    @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
+    @export(&networkEmbeddedBytes, .{ .name = "zfish_network_embedded_bytes" });
+    @export(&networkMarkInitialized, .{ .name = "zfish_network_mark_initialized" });
+    @export(&networkSetLoadedState, .{ .name = "zfish_network_set_loaded_state" });
+    @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
+    @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
+    @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
+    @export(&movepickFillHistorySnapshot, .{ .name = "zfish_movepick_fill_history_snapshot" });
+    @export(&networkFeatureTransformerReadBlob, .{ .name = "zfish_network_feature_transformer_read_blob" });
+    @export(&networkLayerReadBlob, .{ .name = "zfish_network_layer_read_blob" });
+    @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
+    @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
+    // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
+    @export(&zfishNow, .{ .name = "zfish_now" });
+    @export(&zfishEngineChess960Enabled, .{ .name = "zfish_engine_chess960_enabled" });
+    // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
+    @export(&zfishEngineTtResize, .{ .name = "zfish_engine_tt_resize" });
+    @export(&zfishEngineTtClear, .{ .name = "zfish_engine_tt_clear" });
+    @export(&zfishEngineTtHashfull, .{ .name = "zfish_engine_tt_hashfull" });
+    // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
+    @export(&zfishThreadpoolMainManagerPtr, .{ .name = "zfish_threadpool_main_manager_ptr" });
+    // M-FINAL / M-SM: native SearchManager construct + native Worker teardown (cracks the
+    // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
+    @export(&zfishMakeSearchManager, .{ .name = "zfish_make_search_manager" });
+    @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
+    @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
+    @export(&engineAddOption, .{ .name = "zfish_engine_add_option" });
+    @export(&rootMovesCreateRanked, .{ .name = "zfish_root_moves_create_ranked" });
+    @export(&rootMovesDestroy, .{ .name = "zfish_root_moves_destroy" });
+    @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
+    @export(&perftOwner, .{ .name = "zfish_engine_perft_owner" });
+    @export(&applySetoptionOwner, .{ .name = "zfish_engine_apply_setoption_owner" });
+    @export(&engineStartLogger, .{ .name = "zfish_engine_start_logger" });
+    @export(&threadpoolBoundNodesAssign, .{ .name = "zfish_threadpool_bound_nodes_assign" });
+    // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
+    @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
+    @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
+    // M-FINAL: native AccumulatorCaches construct/destroy (legacy keeps new/delete).
+    @export(&zfishEngineAccumulatorCachesCreate, .{ .name = "zfish_engine_accumulator_caches_create" });
+    @export(&zfishEngineAccumulatorCachesDestroy, .{ .name = "zfish_engine_accumulator_caches_destroy" });
+    // M-FINAL: native AccumulatorStack construct/destroy (legacy keeps new/delete).
+    @export(&zfishEngineAccumulatorStackCreate, .{ .name = "zfish_engine_accumulator_stack_create" });
+    @export(&zfishEngineAccumulatorStackDestroy, .{ .name = "zfish_engine_accumulator_stack_destroy" });
+    // M-FINAL cutover: native engine container construct/destruct (not yet on the live
+    // path; the flip commit wires these). Default-only — legacy keeps the C++ UCIEngine.
+    @export(&zfishNativeEngineConstructMembers, .{ .name = "zfish_native_engine_construct_members" });
+    @export(&zfishNativeEngineSetCli, .{ .name = "zfish_native_engine_set_cli" });
+    @export(&zfishNativeEngineDestructMembers, .{ .name = "zfish_native_engine_destruct_members" });
+    @export(&zfishNativeEngineSizeof, .{ .name = "zfish_native_engine_sizeof" });
+    @export(&zfishNativeEngineAlignof, .{ .name = "zfish_native_engine_alignof" });
+    @export(&zfishEngineOnVerifyNetworkPtr, .{ .name = "zfish_engine_onverifynetwork_ptr" });
+    // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
+    @export(&zfishPositionSetState, .{ .name = "zfish_position_set_state" });
+    @export(&zfishPositionMoveIsLegal, .{ .name = "zfish_position_move_is_legal" });
+    @export(&zfishPositionDoMoveState, .{ .name = "zfish_position_do_move_state" });
+    // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
+    @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
+    @export(&zfishThreadpoolHasSetupStates, .{ .name = "zfish_threadpool_has_setup_states" });
+    // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
+    @export(&zfishStateListStorageCreate, .{ .name = "zfish_engine_state_list_storage_create" });
+    @export(&zfishStateListStorageDestroy, .{ .name = "zfish_engine_state_list_storage_destroy" });
+    @export(&zfishStateListStorageReset, .{ .name = "zfish_engine_state_list_storage_reset" });
+    @export(&zfishStateListStoragePush, .{ .name = "zfish_engine_state_list_storage_push" });
+    @export(&zfishStateListStorageHasStates, .{ .name = "zfish_engine_state_list_storage_has_states" });
+    @export(&zfishEngineStatesSlotReset, .{ .name = "zfish_engine_states_slot_reset" });
+    @export(&zfishThreadpoolSetupStatesAdoptFromStorage, .{ .name = "zfish_threadpool_setup_states_adopt_from_storage" });
+    @export(&zfishThreadpoolSetupStatesAdoptFromSlot, .{ .name = "zfish_threadpool_setup_states_adopt_from_slot" });
+    @export(&zfishThreadpoolSetupStateBack, .{ .name = "zfish_threadpool_setup_state_back" });
 }
 
 // REPORT-10 (pos migration): the engine `pos` is now a NATIVE side-allocated Position
@@ -1663,19 +1604,15 @@ fn nativeEng(engine: *anyopaque) *native_engine.NativeEngine {
     return native_engine.NativeEngine.fromBuffer(engine);
 }
 pub export fn zfish_engine_options_ptr(engine: *const anyopaque) *const anyopaque {
-    if (target_flags.legacy_target) return engMemberConst(engine, eng_off.options);
     return nativeEng(@constCast(engine)).options.?;
 }
 pub export fn zfish_engine_numa_context_ptr(engine: *anyopaque) *anyopaque {
-    if (target_flags.legacy_target) return engMember(engine, eng_off.numa_context);
     return nativeEng(engine).numa_context.?;
 }
 pub export fn zfish_engine_states_slot_ptr(engine: *anyopaque) *anyopaque {
-    if (target_flags.legacy_target) return engMember(engine, eng_off.states);
     return @ptrCast(&nativeEng(engine).states);
 }
 pub export fn zfish_engine_threads_ptr(engine: *anyopaque) *anyopaque {
-    if (target_flags.legacy_target) return engMember(engine, eng_off.threads);
     return nativeEng(engine).threads.?;
 }
 // REPORT-10 M1 (tt migration, side-allocation): the engine's tt is now a NATIVE
@@ -1727,7 +1664,7 @@ fn sideSharedHistories() *position_port.SharedHistoriesMap {
 }
 
 pub export fn zfish_engine_shared_hists_ptr(engine: *anyopaque) *anyopaque {
-    if (target_flags.legacy_target) return engMember(engine, eng_off.shared_hists);
+    _ = engine; // the side sharedHistories map replaces the C++ engine member
     return @ptrCast(sideSharedHistories());
 }
 
@@ -1758,11 +1695,9 @@ fn freeSideSharedHistories() void {
     }
 }
 pub export fn zfish_engine_network_replicated_ptr(engine: *anyopaque) *anyopaque {
-    if (target_flags.legacy_target) return engMember(engine, eng_off.network);
     return nativeEng(engine).network.?;
 }
 pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const anyopaque {
-    if (target_flags.legacy_target) return engMemberConst(engine, eng_off.update_context);
     return @ptrCast(&nativeEng(@constCast(engine)).update_context);
 }
 // REPORT-12 TU=0 grind: default build's network_ptr is a pass-through to network_replicated_ptr
@@ -2784,11 +2719,6 @@ const ZfishSearchTimeState = extern struct {
     use_time_management: u8,
 };
 
-// The network instance (&w->network[token]) is resolved by a thin C++ helper: the
-// LazyNumaReplicated wrapper is a vtable object with a private instances vector, so
-// the indexing stays in C++ (the rest of the snapshot is pure offset arithmetic).
-extern fn zfish_worker_resolve_network(worker: *anyopaque) ?*const anyopaque;
-
 // zfish_search_cb_worker_state: the once-per-search snapshot the ported search
 // runs on. Hands the search stable pointers to the Worker's live members (nodes,
 // optimism, nmpMinPly/selDepth/rootDepth/rootDelta, lastIterationPV, pvIdx/pvLast,
@@ -2823,10 +2753,9 @@ pub export fn zfish_search_cb_worker_state(
 
     out_acc_stack.* = @ptrFromInt(wb + off.accumulator_stack);
     out_nodes.* = @ptrFromInt(wb + off.nodes);
-    // REPORT-12 TU=0: default build's worker_resolve_network just returned zfish_native_ft_ptr()
-    // (the handle is never dereferenced — weights served from native storage). Call it directly,
-    // dropping the C++ zfish_worker_resolve_network from the default build. Legacy keeps the C++ deref.
-    out_network.* = if (target_flags.legacy_target) zfish_worker_resolve_network(worker) else zfish_native_ft_ptr();
+    // The network handle is never dereferenced (weights are served from native
+    // storage), so it is just the native feature-transformer pointer.
+    out_network.* = zfish_native_ft_ptr();
     out_cache.* = @ptrFromInt(wb + off.refresh_table);
     out_optimism.* = @ptrFromInt(wb + off.optimism);
     out_nmp_min_ply.* = @ptrFromInt(wb + off.nmp_min_ply);
@@ -3301,22 +3230,9 @@ pub export fn zfish_ss_should_busywait(worker: *const anyopaque) u8 {
 // char** argv} at uci_engine_off.cli_argc; arg_at bounds-checks against argc and
 // loads the i-th argv pointer, returning null out of range (as the C++ did).
 pub export fn zfish_uci_cli_argc(uci: *const anyopaque) c_int {
-    // M-FINAL cutover: default build reads the NativeEngine cli_argc field; legacy reads
-    // the inline CommandLine member.
-    if (target_flags.legacy_target) {
-        const p: *const c_int = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argc));
-        return p.*;
-    }
     return nativeEng(@constCast(uci)).cli_argc;
 }
 pub export fn zfish_uci_cli_arg_at(uci: *const anyopaque, index: c_int) ?[*:0]const u8 {
-    if (target_flags.legacy_target) {
-        const argc_p: *const c_int = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argc));
-        if (index < 0 or index >= argc_p.*) return null;
-        const argv_p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(uci)) + graph_layout.uci_engine_off.cli_argv));
-        const argv: [*]const usize = @ptrFromInt(argv_p.*);
-        return @ptrFromInt(argv[@intCast(index)]);
-    }
     const e = nativeEng(@constCast(uci));
     if (index < 0 or index >= e.cli_argc) return null;
     const argv = e.cli_argv orelse return null;
@@ -3343,14 +3259,9 @@ pub export fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usiz
 // nodes is a std::vector<std::set<CpuIndex>> at offset 0; size is the byte span
 // divided by the 48-byte std::set element.
 pub export fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize {
-    // M-FINAL cutover: the default build is single-node (multi-node numa support dropped per the
-    // single-node decision) and constructs no C++ NumaConfig — so the node count is the native
-    // constant 1, no layout read. Legacy reads the live C++ NumaConfig's nodes vector by offset.
-    if (!target_flags.legacy_target) return 1;
-    const base: [*]const u8 = @ptrCast(numa_config);
-    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.numa_config_off.nodes_begin));
-    const end: *const usize = @ptrCast(@alignCast(base + graph_layout.numa_config_off.nodes_end));
-    return (end.* - begin.*) / graph_layout.numa_config_off.node_set_size;
+    // Single-node: the runtime constructs no multi-node NumaConfig, so the count is 1.
+    _ = numa_config;
+    return 1;
 }
 
 // NumaReplicationContext::get_numa_config().num_numa_nodes(). config is the first
@@ -3366,16 +3277,11 @@ pub export fn zfish_numa_context_node_count(numa_context: *const anyopaque) usiz
 // context pointer; the node-th std::set is at begin + node*48, and its element
 // count is stored at +40 within the set (bridge-only symbol, no gating).
 pub export fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize {
-    // M-FINAL cutover: the default build's numa context is a native stub (no C++ NumaConfig to
-    // read). This is dead on the single-node path anyway — binding never happens, so the
-    // thread-allocation display returns early before reaching here — but stub-safe (>=1, never
-    // dereferences the stub). Legacy reads the live C++ NumaConfig's node-set size by offset.
-    if (!target_flags.legacy_target) return 1;
-    const base: [*]const u8 = @ptrCast(numa_context);
-    const begin: *const usize = @ptrCast(@alignCast(base + graph_layout.numa_config_off.nodes_begin));
-    const set_addr = begin.* + node * graph_layout.numa_config_off.node_set_size;
-    const count: *const usize = @ptrFromInt(set_addr + graph_layout.numa_config_off.node_set_count_off);
-    return count.*;
+    // Single-node native numa stub: binding never happens, so this is >=1 and never
+    // dereferences the stub.
+    _ = numa_context;
+    _ = node;
+    return 1;
 }
 
 pub export fn zfish_engine_init_body(engine: *anyopaque) void {
