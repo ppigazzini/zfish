@@ -1165,20 +1165,23 @@ pub fn build(b: *std.Build) void {
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
     );
+    // M16.1b: the per-push `parity` aggregate no longer depends on the in-tree C++
+    // oracle. Whole-engine regression is caught by `signature` (== 2067208) and the
+    // GOLDEN gates (output-golden / perft / eval-trace / misc / search-parity /
+    // search-modes), all in-repo with no oracle. The `*-parity`-vs-legacy-C++ variants
+    // they replace were redundant with those goldens and were the only thing exercising
+    // the legacy exe in this gate. The authoritative differential-vs-real-upstream check
+    // is `upstream-parity` (worktree oracle), run at sync time where upstream is already
+    // fetched -- per push it would only re-assert the same 2067208 the signature checks.
     parity_step.dependOn(&bench_run.step);
     parity_step.dependOn(&uci_run.step);
     parity_step.dependOn(&signature_cmd.step);
     parity_step.dependOn(&search_parity_cmd.step);
     parity_step.dependOn(&search_modes_cmd.step);
-    parity_step.dependOn(&oracle_parity_cmd.step);
-    parity_step.dependOn(&output_parity_cmd.step);
     parity_step.dependOn(&output_golden_cmd.step);
     parity_step.dependOn(&perft_cmd.step);
-    parity_step.dependOn(&perft_parity_cmd.step);
     parity_step.dependOn(&eval_cmd.step);
-    parity_step.dependOn(&eval_parity_cmd.step);
     parity_step.dependOn(&misc_cmd.step);
-    parity_step.dependOn(&misc_parity_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
