@@ -72,7 +72,8 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .link_libc = true,
-            .link_libcpp = true,
+            // No .link_libcpp: the default target compiles zero C++ TUs (TU=0), so
+            // the C++ stdlib is dead weight here. Only the legacy oracle links it.
         }),
     });
 
