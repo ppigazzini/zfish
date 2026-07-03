@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Harness H3 (REPORT-9 big-bang plan): memory-error / leak gate (the ASan+LSan
+# Harness H3 (REPORT-09 big-bang plan): memory-error / leak gate (the ASan+LSan
 # half). Runs the engine under Valgrind memcheck across thread counts and asserts
 # no invalid read/write, no invalid/double free, and no DEFINITE leak.
 #

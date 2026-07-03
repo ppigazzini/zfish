@@ -32,7 +32,7 @@ pub const NumaReplicationContext = @import("numa_replication").NumaReplicationCo
 pub const PositionStorage = @import("position_storage").PositionStorage;
 
 // Full native member map of the C++ Engine, in declaration order, with each
-// member's native-ownership status for the cut (REPORT-9 Annex B, ITERATION-157):
+// member's native-ownership status for the cut (REPORT-09 Annex B, ITERATION-157):
 //
 //   binary_directory  const std::string                    -> []const u8         [trivial slot]
 //   numa_context      NumaReplicationContext (std::set)     -> *NumaReplicationContext [native, B2 step 1]

@@ -1,4 +1,4 @@
-// Construction verifier for the Engine graph (harness H6, REPORT-9 big-bang plan).
+// Construction verifier for the Engine graph (harness H6, REPORT-09 big-bang plan).
 //
 // Stage 6 reconstructs Engine::Engine in Zig: numaContext(NumaConfig::from_system),
 // the states deque, the LazyNumaReplicated network wrapper, the embedded

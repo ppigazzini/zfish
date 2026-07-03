@@ -6,7 +6,7 @@
 // hands to the position ops as the live Position.
 //
 // Treated as opaque bytes (Position internals are written/read by position.zig).
-// Native-graph cut iteration 5 (REPORT-9 Annex B, ITERATION-157); ready-to-wire.
+// Native-graph cut iteration 5 (REPORT-09 Annex B, ITERATION-157); ready-to-wire.
 //
 // ALIGNMENT NOTE: sizeof(Position) == 1032 is pinned by graph_layout.zig against the
 // C++ build (zfish_graph_layout_size(8)). alignof(Position) is not separately

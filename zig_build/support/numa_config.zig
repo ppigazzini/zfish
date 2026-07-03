@@ -11,7 +11,7 @@
 // NUMA binding syscalls). On the gate target from_system yields a single node, so
 // the engine builds one node holding every online CPU; suggests_binding is false.
 //
-// Native-graph cut, iteration 3 (REPORT-9 Annex B, ITERATION-157). Ready-to-wire:
+// Native-graph cut, iteration 3 (REPORT-09 Annex B, ITERATION-157). Ready-to-wire:
 // the live runtime still uses the C++ NumaConfig until the atomic flip.
 
 const std = @import("std");

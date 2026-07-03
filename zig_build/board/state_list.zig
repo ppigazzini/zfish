@@ -17,7 +17,7 @@
 // / zfish_graph_layout_size(9)); the native runtime memsets/fills it via Position,
 // so this module owns lifetime + ordering only, not StateInfo's internals.
 //
-// This is iteration 1 of the native-graph cut (REPORT-9 Annex B 7.3+). It is a
+// This is iteration 1 of the native-graph cut (REPORT-09 Annex B 7.3+). It is a
 // ready-to-wire native type: the live runtime still uses the C++ storage until the
 // atomic flip moves `states` (and the pool's setupStates it is std::move'd into)
 // native together — wiring it alone is impossible while the pool is C++.

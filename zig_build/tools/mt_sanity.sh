@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Harness H1 (REPORT-9 big-bang plan): multi-thread search SANITY.
+# Harness H1 (REPORT-09 big-bang plan): multi-thread search SANITY.
 #
 # Multi-threaded search is non-deterministic (Lazy SMP: helper threads race on the
 # shared TT), so there is NO bit-exact signature to gate -- unlike the

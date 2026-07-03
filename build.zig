@@ -781,7 +781,7 @@ pub fn build(b: *std.Build) void {
     );
     output_golden_update_step.dependOn(&output_golden_update_cmd.step);
 
-    // Thread-runtime stress / liveness harness (H2, REPORT-9 big-bang plan).
+    // Thread-runtime stress / liveness harness (H2, REPORT-09 big-bang plan).
     // Hammers (ucinewgame -> setoption Threads -> go/stop) cycles across thread
     // counts + a construct/destroy churn, under a wall-clock watchdog. A liveness
     // gate (no hang / crash / lost search), not a determinism gate -- the
@@ -803,7 +803,7 @@ pub fn build(b: *std.Build) void {
     );
     stress_step.dependOn(&stress_cmd.step);
 
-    // Memory-error / leak gate (H3, REPORT-9 big-bang plan): Valgrind memcheck
+    // Memory-error / leak gate (H3, REPORT-09 big-bang plan): Valgrind memcheck
     // over short multi-thread sessions, asserting no invalid access / bad free /
     // definite leak (uninit-value checking off -- NNUE SIMD makes it false-noisy).
     // The ASan/LSan-equivalent net for the native Worker/large-page lifecycle and
@@ -825,7 +825,7 @@ pub fn build(b: *std.Build) void {
     );
     valgrind_step.dependOn(&valgrind_cmd.step);
 
-    // Multi-thread search sanity (H1, REPORT-9 big-bang plan). Multi-threaded
+    // Multi-thread search sanity (H1, REPORT-09 big-bang plan). Multi-threaded
     // search is non-deterministic (Lazy SMP), so this is a tolerance gate, not a
     // bit-exact golden: at fixed depth on calm positions, Threads {2,4} must emit
     // a well-formed bestmove and a score of the same kind/sign within a generous
@@ -862,7 +862,7 @@ pub fn build(b: *std.Build) void {
     );
     mt_update_step.dependOn(&mt_update_cmd.step);
 
-    // Leak gate for the std::vector lifecycle stage 5 ports (H5, REPORT-9 plan):
+    // Leak gate for the std::vector lifecycle stage 5 ports (H5, REPORT-09 plan):
     // Valgrind memcheck over a `go searchmoves` + ucinewgame churn, asserting no
     // definite leak / bad free of limits.searchmoves and worker.rootMoves -- the
     // path bench never exercises. Reads the verdict from valgrind's summary and

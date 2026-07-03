@@ -13,7 +13,7 @@
 // VERIFIER that reads the live C++ holder's replica count through the documented
 // member offset and asserts it equals the holder's own configured node count — run at
 // every engine construction so the native model of the holder's shape is diffed
-// against the oracle. Native-graph cut flip fire 3 (REPORT-9 Annex B, ITERATION-157).
+// against the oracle. Native-graph cut flip fire 3 (REPORT-09 Annex B, ITERATION-157).
 
 const std = @import("std");
 

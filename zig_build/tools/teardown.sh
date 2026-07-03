@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Harness H5 (REPORT-9 big-bang plan): leak gate for the std::vector lifecycle
+# Harness H5 (REPORT-09 big-bang plan): leak gate for the std::vector lifecycle
 # stage 5 ports -- Worker::set_limits (limits.searchmoves, a std::vector<string>)
 # and set_root_moves (worker.rootMoves) -- plus Worker::clear churn.
 #

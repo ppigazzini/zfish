@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Harness H2 (REPORT-9 big-bang plan): thread-runtime stress / liveness.
+# Harness H2 (REPORT-09 big-bang plan): thread-runtime stress / liveness.
 #
 # The stage-4 cut replaces the C++ std::thread / idle_loop / condition-variable
 # runtime with a native futex runtime. The existing parity gate is single-shot

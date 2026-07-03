@@ -18,7 +18,7 @@
 // already validated independently: the native search reads C++-allocated histories
 // through board/position.zig today, so its element strides match the C++ layout.
 //
-// Native-graph cut flip fire 2 (REPORT-9 Annex B, ITERATION-157).
+// Native-graph cut flip fire 2 (REPORT-09 Annex B, ITERATION-157).
 
 const std = @import("std");
 
