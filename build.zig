@@ -10,6 +10,10 @@ const ArchConfig = struct {
     flags: []const []const u8,
     macros: []const Macro,
     target_features: std.Target.Cpu.Feature.Set,
+    // Owned runtime is x86_64 by default; non-x86 tiers (M15.5) set this so the pure
+    // Zig @Vector NNUE cross-compiles to that ISA (LLVM lowers to NEON/etc). The C++
+    // differential oracle is x86-only and is skipped off x86_64.
+    cpu_arch: std.Target.Cpu.Arch = .x86_64,
 };
 
 const GitInfo = struct {
@@ -54,7 +58,7 @@ pub fn build(b: *std.Build) void {
     const build_options_module = build_options.createModule();
 
     const target = b.resolveTargetQuery(.{
-        .cpu_arch = .x86_64,
+        .cpu_arch = arch.cpu_arch,
         .cpu_model = .baseline,
         .cpu_features_add = arch.target_features,
         .os_tag = .linux,
@@ -572,7 +576,7 @@ pub fn build(b: *std.Build) void {
     // there rather than fail the whole default `zig build` on a modern host (whose
     // `native` arch resolves to a PEXT tier). The default Zig engine still builds on
     // every tier; only the optional legacy oracle is gated.
-    if (!hasMacro(arch.macros, "USE_PEXT"))
+    if (arch.cpu_arch == .x86_64 and !hasMacro(arch.macros, "USE_PEXT"))
         b.installArtifact(legacy_exe);
 
     const install_step = b.getInstallStep();
@@ -1477,8 +1481,36 @@ fn archConfigFor(arch_name: []const u8) ArchConfig {
             }),
         };
 
+    // Non-x86 tiers (M15.5). The pure-Zig @Vector NNUE lowers to NEON with no source
+    // changes, so these just map get_native_properties.sh's aarch64 outputs to a Zig
+    // aarch64 target. NEON is mandatory in AArch64 (baseline has it); dotprod (sdot) is
+    // added where present. The C++ differential oracle is x86-only, so `-Darch=<arm>`
+    // builds the pure Zig engine only (legacy is skipped off x86_64). Runtime-validated
+    // under qemu-user in CI (bench == 2067208), matching upstream's arm_compilation.yml.
+    if (std.mem.eql(u8, arch_name, "armv8"))
+        return .{
+            .name = "armv8",
+            .flags = &.{},
+            .macros = &.{.{ .name = "USE_NEON", .value = "8" }},
+            .target_features = std.Target.aarch64.featureSet(&.{.neon}),
+            .cpu_arch = .aarch64,
+        };
+
+    if (std.mem.eql(u8, arch_name, "armv8-dotprod") or
+        std.mem.eql(u8, arch_name, "apple-silicon"))
+        return .{
+            .name = arch_name,
+            .flags = &.{},
+            .macros = &.{
+                .{ .name = "USE_NEON", .value = "8" },
+                .{ .name = "USE_NEON_DOTPROD", .value = "1" },
+            },
+            .target_features = std.Target.aarch64.featureSet(&.{ .neon, .dotprod }),
+            .cpu_arch = .aarch64,
+        };
+
     std.process.fatal(
-        "unsupported ARCH '{s}' for the current Linux x86_64 Zig parity slice",
+        "unsupported ARCH '{s}' (x86_64 tiers + aarch64 armv8/armv8-dotprod/apple-silicon)",
         .{arch_name},
     );
 }
