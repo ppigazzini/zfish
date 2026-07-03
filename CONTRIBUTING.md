@@ -1,96 +1,61 @@
-# Contributing to Stockfish
+# Contributing to zfish
 
-Welcome to the Stockfish project! We are excited that you are interested in
-contributing. This document outlines the guidelines and steps to follow when
-making contributions to Stockfish.
+zfish is a [Zig][zig] port of [Stockfish][stockfish] that stays **bit-exact** to
+upstream. This guide covers the essentials.
 
-## Table of Contents
+## Building
 
-- [Building Stockfish](#building-stockfish)
-- [Making Contributions](#making-contributions)
-  - [Reporting Issues](#reporting-issues)
-  - [Submitting Pull Requests](#submitting-pull-requests)
-- [Code Style](#code-style)
-- [Community and Communication](#community-and-communication)
-- [License](#license)
+See the [README](README.md#building): install **Zig 0.16.0** and run `zig build`
+(then `zig build net` for the NNUE network). There are no other dependencies.
 
-## Building Stockfish
+## The golden rule: preserve the bench signature
 
-In case you do not have a C++ compiler installed, you can follow the
-instructions from our wiki.
+The shipped engine must reproduce upstream Stockfish's exact `bench` node count
+(`2067208` at the current sync). Any change that touches engine behavior must hold
+that signature, proven by the gates:
 
-- [Ubuntu][ubuntu-compiling-link]
-- [Windows][windows-compiling-link]
-- [macOS][macos-compiling-link]
+```
+zig build signature -Dsignature-ref=2067208
+zig build parity        # signature + C++-oracle cross-check + micro-parity
+zig build test          # Zig unit tests
+```
 
-## Making Contributions
+A byte-changing engine edit that cannot show a green `signature`/`parity` is not
+complete. Behavior drift in UCI, bench, NNUE, or Syzygy is not accepted. An
+architecture change must hold the signature on **every** tier — the x86 tiers and
+aarch64 (see the CI parity workflow).
 
-### Reporting Issues
+## What counts as a change
 
-If you find a bug, please open an issue on the
-[issue tracker][issue-tracker-link]. Be sure to include relevant information
-like your operating system, build environment, and a detailed description of the
-problem.
+- **Upstream sync** — port a real upstream change (a bench-mover or NNUE-arch
+  change) and land bit-exact at that commit's `Bench:`. See
+  `zig_build/tools/upstream/`.
+- **Zig debt** — improve reviewability or maintainability with the bench signature
+  unchanged.
+- **CI / tooling** — strengthen a gate without weakening an existing one.
 
-_Please note that Stockfish's development is not focused on adding new features.
-Thus any issue regarding missing features will potentially be closed without
-further discussion._
+## Code style
 
-### Submitting Pull Requests
+Zig code is formatted with `zig fmt`. The imported C++ under `src/` is a frozen
+differential oracle — do not edit it except for sanctioned oracle-scoped changes.
 
-- Functional changes need to be tested on fishtest. See
-  [Creating my First Test][creating-my-first-test] for more details.
-  The accompanying pull request should include a link to the test results and
-  the new bench.
+For git blame, ignore the formatting-only revisions:
 
-- Non-functional changes (e.g. refactoring, code style, documentation) do not
-  need to be tested on fishtest, unless they might impact performance.
-
-- Provide a clear and concise description of the changes in the pull request
-  description.
-
-_First time contributors should add their name to [AUTHORS](./AUTHORS)._
-
-_Stockfish's development is not focused on adding new features. Thus any pull
-request introducing new features will potentially be closed without further
-discussion._
-
-## Code Style
-
-Changes to Stockfish C++ code should respect our coding style defined by
-[.clang-format](.clang-format). You can format your changes by running
-`make format`. This requires clang-format version 20 to be installed on your system.
-
-## Navigate
-
-For experienced Git users who frequently use git blame, it is recommended to
-configure the blame.ignoreRevsFile setting.
-This setting is useful for excluding noisy formatting commits.
-
-```bash
+```
 git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
-## Community and Communication
+## Scope
 
-- Join the [Stockfish discord][discord-link] to discuss ideas, issues, and
-  development.
-- Participate in the [Stockfish GitHub discussions][discussions-link] for
-  broader conversations.
+The owned runtime target is Linux x86-64 and aarch64. zfish does not add chess
+features; it reproduces Stockfish's behavior. Engine strength and the NNUE
+networks come from the [Stockfish project][stockfish].
 
 ## License
 
-By contributing to Stockfish, you agree that your contributions will be licensed
-under the GNU General Public License v3.0. See [Copying.txt][copying-link] for
-more details.
+By contributing you agree that your contributions are licensed under the **GNU
+General Public License v3** — see [Copying.txt](Copying.txt) — the same license as
+Stockfish, of which zfish is a derivative.
 
-Thank you for contributing to Stockfish and helping us make it even better!
-
-[copying-link]:           https://github.com/official-stockfish/Stockfish/blob/master/Copying.txt
-[discord-link]:           https://discord.gg/GWDRS3kU6R
-[discussions-link]:       https://github.com/official-stockfish/Stockfish/discussions/new
-[creating-my-first-test]: https://github.com/official-stockfish/fishtest/wiki/Creating-my-first-test#create-your-test
-[issue-tracker-link]:     https://github.com/official-stockfish/Stockfish/issues
-[ubuntu-compiling-link]:  https://github.com/official-stockfish/Stockfish/wiki/Developers#user-content-installing-a-compiler-1
-[windows-compiling-link]: https://github.com/official-stockfish/Stockfish/wiki/Developers#user-content-installing-a-compiler
-[macos-compiling-link]:   https://github.com/official-stockfish/Stockfish/wiki/Developers#user-content-installing-a-compiler-2
+[zig]:       https://ziglang.org
+[stockfish]: https://github.com/official-stockfish/Stockfish
