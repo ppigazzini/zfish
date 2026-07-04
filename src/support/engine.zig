@@ -189,7 +189,6 @@ extern fn zfish_engine_set_numa_config_from_option_owner(
 ) void;
 extern fn zfish_engine_numa_config_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_thread_allocation_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_evalfile_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_numa_config_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_network_verify(
     network: *const anyopaque,
@@ -233,7 +232,6 @@ extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_shared_hists_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_network_replicated_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_update_context_ptr(engine_ptr: *const anyopaque) *const anyopaque;
-extern fn zfish_engine_syzygy_path_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_tt_hashfull(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
@@ -522,7 +520,7 @@ pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8)
 }
 
 pub fn searchClearEngine(engine_ptr: *anyopaque) void {
-    const syzygy_ptr = zfish_engine_syzygy_path_text(engine_ptr) orelse return;
+    const syzygy_ptr = option_port.dupSyzygyPath() orelse return;
     defer c.free(@ptrCast(syzygy_ptr));
     searchClear(
         ne(engine_ptr).threadsPtr(),
@@ -559,7 +557,7 @@ pub fn threadAllocationInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 
 }
 
 pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
-    const evalfile_ptr = zfish_engine_evalfile_text(engine_ptr) orelse return;
+    const evalfile_ptr = option_port.dupEvalFile() orelse return;
     defer c.free(@ptrCast(evalfile_ptr));
     const evalfile = std.mem.span(evalfile_ptr);
 

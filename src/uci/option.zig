@@ -68,6 +68,21 @@ pub fn optionThreads() usize {
 pub fn uciChess960() bool {
     return intByName("UCI_Chess960") != 0;
 }
+/// A malloc'd NUL-terminated copy of a string option (caller frees), or null on OOM.
+pub fn dupCString(name: []const u8) ?[*:0]u8 {
+    const s = strByName(name);
+    const buf = std.c.malloc(s.len + 1) orelse return null;
+    const dst: [*]u8 = @ptrCast(buf);
+    @memcpy(dst[0..s.len], s);
+    dst[s.len] = 0;
+    return @ptrCast(dst);
+}
+pub fn dupEvalFile() ?[*:0]u8 {
+    return dupCString("EvalFile");
+}
+pub fn dupSyzygyPath() ?[*:0]u8 {
+    return dupCString("SyzygyPath");
+}
 pub fn numaPolicyMode() u8 {
     const policy = strByName("NumaPolicy");
     if (std.mem.eql(u8, policy, "none")) return 0;

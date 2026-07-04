@@ -594,8 +594,6 @@ comptime {
     @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
     @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
     @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
-    @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
-    @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
     // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
     @export(&zfishEngineTtHashfull, .{ .name = "zfish_engine_tt_hashfull" });
@@ -1192,10 +1190,6 @@ fn dupOptCString(name: []const u8) ?[*:0]u8 {
     @memcpy(dst[0..s.len], s);
     dst[s.len] = 0;
     return @ptrCast(dst);
-}
-fn zfishEngineSyzygyPathText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
-    _ = engine_ptr;
-    return dupOptCString("SyzygyPath");
 }
 fn zfishEngineEvalfileText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
     _ = engine_ptr;
