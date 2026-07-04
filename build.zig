@@ -418,6 +418,7 @@ pub fn build(b: *std.Build) void {
     thread_module_default.addImport("tablebase", tablebase_module);
     thread_module_default.addImport("option", option_module);
     engine_module_default.addImport("tablebase", tablebase_module);
+    engine_module_default.addImport("option", option_module);
     network_module.addImport("libc", libc_module);
     nnue_misc_module.addImport("libc", libc_module);
     evaluate_module.addImport("libc", libc_module);

@@ -194,8 +194,6 @@ const ThreadCallback = *const fn (?*anyopaque) callconv(.c) void;
 extern fn zfish_worker_set_limits(thread: *anyopaque, limits: *const anyopaque) void;
 // Stage 5: native vector<RootMove> copy-assign (default build); see main.zig.
 extern fn zfish_worker_set_root_moves(thread: *anyopaque, root_moves: *const anyopaque) void;
-extern fn zfish_shared_state_threads_value(shared_state: *const anyopaque) usize;
-extern fn zfish_shared_state_numa_policy_mode(shared_state: *const anyopaque) u8;
 extern fn zfish_shared_state_clear_histories(shared_state: *const anyopaque) void;
 extern fn zfish_shared_state_insert_history(
     shared_state: *const anyopaque,
@@ -643,13 +641,13 @@ pub fn reconfigure(
         native_threadpool.zfish_native_threadpool_clear(pool);
     }
 
-    const requested = zfish_shared_state_threads_value(shared_state);
+    const requested = option_port.optionThreads();
     if (requested == 0) {
         return;
     }
 
     var do_bind = false;
-    switch (zfish_shared_state_numa_policy_mode(shared_state)) {
+    switch (option_port.numaPolicyMode()) {
         numa_policy_none => do_bind = false,
         numa_policy_auto => do_bind = zfish_numa_config_suggests_binding_threads(numa_config, requested) != 0,
         else => do_bind = true,

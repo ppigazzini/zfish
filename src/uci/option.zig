@@ -54,6 +54,23 @@ pub fn syzygyProbeLimit() c_int {
 pub fn syzygy50MoveRule() bool {
     return intByName("Syzygy50MoveRule") != 0;
 }
+pub fn strByName(name: []const u8) []const u8 {
+    var len: usize = 0;
+    const ptr = zfish_optmodel_string_by_name(name.ptr, name.len, &len);
+    return ptr[0..len];
+}
+pub fn optionHash() usize {
+    return @intCast(intByName("Hash"));
+}
+pub fn optionThreads() usize {
+    return @intCast(intByName("Threads"));
+}
+pub fn numaPolicyMode() u8 {
+    const policy = strByName("NumaPolicy");
+    if (std.mem.eql(u8, policy, "none")) return 0;
+    if (std.mem.eql(u8, policy, "auto")) return 1;
+    return 2;
+}
 
 pub fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) c_int {
     return ensureModel().getInt(name_ptr[0..name_len]);

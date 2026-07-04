@@ -9,6 +9,7 @@ const nnue_acc = @import("nnue_accumulator");
 const evaluate_mod = @import("evaluate");
 const graph_layout = @import("graph_layout");
 const tablebase = @import("tablebase");
+const option_port = @import("option");
 const nnue_misc_mod = @import("nnue_misc");
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
@@ -245,7 +246,6 @@ extern fn zfish_search_shared_state_create(
     network: *const anyopaque,
 ) ?*anyopaque;
 extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
-extern fn zfish_engine_option_hash_value(options: *const anyopaque) usize;
 extern fn zfish_engine_tt_resize(tt: *anyopaque, mb: usize, threads: *anyopaque) void;
 extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_shared_hists_ptr(engine_ptr: *anyopaque) *anyopaque;
@@ -477,7 +477,7 @@ pub fn resizeThreads(
         update_context,
     );
 
-    setTtSize(threads, tt, zfish_engine_option_hash_value(options));
+    setTtSize(threads, tt, option_port.optionHash());
     thread_port.ensureNetworkReplicated(threads);
 }
 

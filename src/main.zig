@@ -625,10 +625,7 @@ comptime {
     @export(&zfish_ss_tm_init, .{ .name = "zfish_ss_tm_init" });
     // M-FINAL (limits readers): pure LimitsType offset reads (legacy keeps the C++ defs).
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
-    @export(&zfishEngineOptionHashValue, .{ .name = "zfish_engine_option_hash_value" });
-    @export(&zfishSharedStateThreadsValue, .{ .name = "zfish_shared_state_threads_value" });
     // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
-    @export(&zfishSharedStateNumaPolicyMode, .{ .name = "zfish_shared_state_numa_policy_mode" });
     // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
     @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_system" });
     @export(&numaContextSetNoop, .{ .name = "zfish_numa_context_set_hardware" });
@@ -1333,10 +1330,6 @@ fn optInt(name: []const u8) c_int {
 // guards this; bench gates Hash/Threads since they size the TT / thread pool). Default-only
 // exports (comptime block below); the legacy oracle keeps the C++ OptionsMap reads. The
 // `options`/`shared_state` pointer args are unused (the model is a process-global).
-fn zfishEngineOptionHashValue(options_ptr: *const anyopaque) callconv(.c) usize {
-    _ = options_ptr;
-    return @intCast(optInt("Hash"));
-}
 fn zfishSharedStateThreadsValue(shared_state_ptr: *const anyopaque) callconv(.c) usize {
     _ = shared_state_ptr;
     return @intCast(optInt("Threads"));
@@ -1362,13 +1355,6 @@ fn dupOptCString(name: []const u8) ?[*:0]u8 {
     @memcpy(dst[0..s.len], s);
     dst[s.len] = 0;
     return @ptrCast(dst);
-}
-fn zfishSharedStateNumaPolicyMode(shared_state_ptr: *const anyopaque) callconv(.c) u8 {
-    _ = shared_state_ptr;
-    const policy = optStr("NumaPolicy");
-    if (std.mem.eql(u8, policy, "none")) return 0;
-    if (std.mem.eql(u8, policy, "auto")) return 1;
-    return 2;
 }
 fn zfishEngineSyzygyPathText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
     _ = engine_ptr;
