@@ -517,26 +517,14 @@ fn smMgr(pool: *anyopaque) ?*graph_layout.SearchManager {
     return graph_layout.SearchManager.fromPtr(zfish_threadpool_main_manager_ptr(pool) orelse return null);
 }
 
-fn smResetCallsCount(pool: *anyopaque) callconv(.c) void {
-    if (smMgr(pool)) |m| m.calls_cnt = 0;
-}
 fn smResetBestPreviousScore(pool: *anyopaque) callconv(.c) void {
     if (smMgr(pool)) |m| m.best_previous_score = 32001; // VALUE_INFINITE
-}
-fn smResetBestPreviousAverageScore(pool: *anyopaque) callconv(.c) void {
-    if (smMgr(pool)) |m| m.best_previous_average_score = 32001;
 }
 fn smResetOriginalTimeAdjust(pool: *anyopaque) callconv(.c) void {
     if (smMgr(pool)) |m| m.original_time_adjust = -1;
 }
-fn smResetPreviousTimeReduction(pool: *anyopaque) callconv(.c) void {
-    if (smMgr(pool)) |m| m.previous_time_reduction = 0.85;
-}
 fn smSetPonder(pool: *anyopaque, ponder_mode: u8) callconv(.c) void {
     if (smMgr(pool)) |m| m.ponder = if (ponder_mode != 0) 1 else 0;
-}
-fn smSetStopOnPonderhit(pool: *anyopaque, stop_on_ponderhit: u8) callconv(.c) void {
-    if (smMgr(pool)) |m| m.stop_on_ponderhit = if (stop_on_ponderhit != 0) 1 else 0;
 }
 fn smClearTimeman(pool: *anyopaque) callconv(.c) void {
     // TimeManagement::clear() sets availableNodes = -1; nothing else.
@@ -723,14 +711,6 @@ comptime {
     @export(&tbMaxCardinality, .{ .name = "zfish_tbprobe_max_cardinality" });
     @export(&tbProbeFen, .{ .name = "zfish_tbprobe_probe_fen" });
     @export(&tbInit, .{ .name = "zfish_engine_tablebases_init" });
-    @export(&smResetCallsCount, .{ .name = "zfish_threadpool_main_manager_reset_calls_count" });
-    @export(&smResetBestPreviousScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_score" });
-    @export(&smResetBestPreviousAverageScore, .{ .name = "zfish_threadpool_main_manager_reset_best_previous_average_score" });
-    @export(&smResetOriginalTimeAdjust, .{ .name = "zfish_threadpool_main_manager_reset_original_time_adjust" });
-    @export(&smResetPreviousTimeReduction, .{ .name = "zfish_threadpool_main_manager_reset_previous_time_reduction" });
-    @export(&smSetPonder, .{ .name = "zfish_threadpool_main_manager_set_ponder" });
-    @export(&smSetStopOnPonderhit, .{ .name = "zfish_threadpool_main_manager_set_stop_on_ponderhit" });
-    @export(&smClearTimeman, .{ .name = "zfish_threadpool_main_manager_clear_timeman" });
     @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
     @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
     @export(&thWorkerSetRootState, .{ .name = "zfish_thread_worker_set_root_state" });

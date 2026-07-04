@@ -122,6 +122,33 @@ pub const SearchManager = extern struct {
     pub inline fn fromAddr(addr: usize) *SearchManager {
         return @ptrFromInt(addr);
     }
+
+    // Typed replacements for the zfish_threadpool_main_manager_* C-ABI glue: reset the
+    // per-search MainSearchManager state the ThreadPool::start_searching path re-inits.
+    pub inline fn resetCallsCount(self: *SearchManager) void {
+        self.calls_cnt = 0;
+    }
+    pub inline fn resetBestPreviousScore(self: *SearchManager) void {
+        self.best_previous_score = 32001; // VALUE_INFINITE
+    }
+    pub inline fn resetBestPreviousAverageScore(self: *SearchManager) void {
+        self.best_previous_average_score = 32001;
+    }
+    pub inline fn resetOriginalTimeAdjust(self: *SearchManager) void {
+        self.original_time_adjust = -1;
+    }
+    pub inline fn resetPreviousTimeReduction(self: *SearchManager) void {
+        self.previous_time_reduction = 0.85;
+    }
+    pub inline fn setPonder(self: *SearchManager, v: bool) void {
+        self.ponder = @intFromBool(v);
+    }
+    pub inline fn setStopOnPonderhit(self: *SearchManager, v: bool) void {
+        self.stop_on_ponderhit = @intFromBool(v);
+    }
+    pub inline fn clearTimeman(self: *SearchManager) void {
+        self.tm.available_nodes = -1;
+    }
 };
 
 comptime {
@@ -182,6 +209,13 @@ pub const ThreadPool = extern struct {
     }
     pub inline fn setIncreaseDepth(self: *ThreadPool, v: bool) void {
         self.increase_depth = @intFromBool(v);
+    }
+    /// The main thread's SearchManager (thread 0's Worker's manager), or null if not built
+    /// yet. Replaces zfish_threadpool_main_manager_ptr.
+    pub inline fn mainManager(self: *ThreadPool) ?*SearchManager {
+        const worker = Thread.fromPtr(self.threadAtPtr(0)).worker;
+        if (worker == 0) return null;
+        return SearchManager.fromAddr(@as(*const usize, @ptrFromInt(worker + worker_off.manager)).*);
     }
 };
 

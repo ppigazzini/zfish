@@ -152,7 +152,6 @@ extern fn zfish_position_do_move_state(pos: *anyopaque, move_raw: u16, state: *a
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
-extern fn zfish_threadpool_main_manager_set_ponder(pool: *anyopaque, ponder_mode: u8) void;
 extern fn zfish_engine_tablebases_init(path_ptr: [*]const u8, path_len: usize) void;
 extern fn zfish_numa_context_set_system(numa_context: *anyopaque) void;
 extern fn zfish_numa_context_set_hardware(numa_context: *anyopaque) void;
@@ -518,7 +517,7 @@ pub fn setTtSizeEngine(engine_ptr: *anyopaque, mb: usize) void {
 }
 
 pub fn setPonderhit(threads: *anyopaque, ponder: u8) void {
-    zfish_threadpool_main_manager_set_ponder(threads, ponder);
+    if (graph_layout.ThreadPool.fromPtr(threads).mainManager()) |m| m.setPonder(ponder != 0);
 }
 
 pub fn setPonderhitEngine(engine_ptr: *anyopaque, ponder: u8) void {

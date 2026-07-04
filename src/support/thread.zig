@@ -153,8 +153,6 @@ const PositionSnapshot = position_snapshot.PositionSnapshot;
 const numa_policy_none: u8 = 0;
 const numa_policy_auto: u8 = 1;
 
-extern fn zfish_threadpool_main_manager_set_stop_on_ponderhit(pool: *anyopaque, stop_on_ponderhit: u8) void;
-extern fn zfish_threadpool_main_manager_set_ponder(pool: *anyopaque, ponder: u8) void;
 extern fn zfish_threadpool_setup_states_adopt_from_slot(pool: *anyopaque, states_slot: *anyopaque) void;
 extern fn zfish_threadpool_has_setup_states(pool: *const anyopaque) u8;
 extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
@@ -193,12 +191,6 @@ extern fn zfish_position_set_state(
     state: *anyopaque,
 ) ?[*:0]u8;
 extern fn zfish_position_do_move_state(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
-extern fn zfish_threadpool_main_manager_reset_best_previous_average_score(pool: *anyopaque) void;
-extern fn zfish_threadpool_main_manager_reset_previous_time_reduction(pool: *anyopaque) void;
-extern fn zfish_threadpool_main_manager_reset_calls_count(pool: *anyopaque) void;
-extern fn zfish_threadpool_main_manager_reset_best_previous_score(pool: *anyopaque) void;
-extern fn zfish_threadpool_main_manager_reset_original_time_adjust(pool: *anyopaque) void;
-extern fn zfish_threadpool_main_manager_clear_timeman(pool: *anyopaque) void;
 extern fn zfish_threadpool_bound_nodes_assign(
     pool: *anyopaque,
     nodes: ?[*]const usize,
@@ -789,10 +781,13 @@ pub fn startThinking(
     states_slot: *anyopaque,
 ) void {
     waitMainThread(pool);
-    zfish_threadpool_main_manager_set_stop_on_ponderhit(pool, 0);
-    graph_layout.ThreadPool.fromPtr(pool).setStop(false);
-    zfish_threadpool_main_manager_set_ponder(pool, zfish_limits_ponder_mode(limits));
-    graph_layout.ThreadPool.fromPtr(pool).setIncreaseDepth(true);
+    const tp = graph_layout.ThreadPool.fromPtr(pool);
+    if (tp.mainManager()) |m| {
+        m.setStopOnPonderhit(false);
+        m.setPonder(zfish_limits_ponder_mode(limits) != 0);
+    }
+    tp.setStop(false);
+    tp.setIncreaseDepth(true);
 
     if (zfish_engine_pending_states_available(states_slot) != 0) {
         if (zfish_engine_handoff_pending_states(pool, states_slot) == 0)
@@ -893,12 +888,14 @@ pub fn clear(pool: *anyopaque) void {
         threadWaitFinished(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
     }
 
-    zfish_threadpool_main_manager_reset_best_previous_average_score(pool);
-    zfish_threadpool_main_manager_reset_previous_time_reduction(pool);
-    zfish_threadpool_main_manager_reset_calls_count(pool);
-    zfish_threadpool_main_manager_reset_best_previous_score(pool);
-    zfish_threadpool_main_manager_reset_original_time_adjust(pool);
-    zfish_threadpool_main_manager_clear_timeman(pool);
+    if (graph_layout.ThreadPool.fromPtr(pool).mainManager()) |m| {
+        m.resetBestPreviousAverageScore();
+        m.resetPreviousTimeReduction();
+        m.resetCallsCount();
+        m.resetBestPreviousScore();
+        m.resetOriginalTimeAdjust();
+        m.clearTimeman();
+    }
 }
 
 pub fn nodesSearched(pool: *anyopaque) u64 {
