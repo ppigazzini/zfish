@@ -7,6 +7,7 @@ const bitboard_port = @import("bitboard");
 const engine_port = @import("engine");
 const memory_port = @import("memory");
 const graph_layout = @import("graph_layout");
+const clock = @import("clock");
 const worker_construct = @import("worker_construct.zig");
 const thread_construct = @import("thread_construct.zig");
 const worker_native_construct = @import("worker_native_construct.zig");
@@ -657,13 +658,11 @@ comptime {
     @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
     @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
     @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
-    @export(&movepickFillHistorySnapshot, .{ .name = "zfish_movepick_fill_history_snapshot" });
     @export(&networkFeatureTransformerReadBlob, .{ .name = "zfish_network_feature_transformer_read_blob" });
     @export(&networkLayerReadBlob, .{ .name = "zfish_network_layer_read_blob" });
     @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
     @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
-    @export(&zfishNow, .{ .name = "zfish_now" });
     @export(&zfishEngineChess960Enabled, .{ .name = "zfish_engine_chess960_enabled" });
     // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
     @export(&zfishEngineTtResize, .{ .name = "zfish_engine_tt_resize" });
@@ -1221,14 +1220,6 @@ fn ssNpmsecAdvance(worker: *anyopaque) callconv(.c) void {
 // is just: copy the table pointers + the 6 continuation pointers + the shared-history pawn table/mask
 // (SharedHistories pawnHistory@16 {size@0,data@8}, pawnHistSizeMinus1@40 — pinned in B4c). Bench/movepick
 // exercises this every node, so search-parity + oracle-parity certify the offsets.
-const MovepickHistorySnapshot = extern struct {
-    main_base: ?*const anyopaque,
-    low_ply_base: ?*const anyopaque,
-    capture_base: ?*const anyopaque,
-    continuation_base: [6]?*const anyopaque,
-    pawn_table: ?*const anyopaque,
-    pawn_mask: u64,
-};
 // REPORT-12 TU=0: the read-blob fns parse weights into the C++ Network only in the legacy oracle; the
 // default build serves weights from native storage and discards these results, so they are no-ops.
 fn networkFeatureTransformerReadBlob(network: *anyopaque, data_ptr: [*]const u8, data_len: usize) callconv(.c) usize {
@@ -1252,26 +1243,6 @@ fn uciEngineDestructAt(storage: *anyopaque) callconv(.c) void {
     zfish_native_threadpool_clear(zfish_engine_threads_ptr(storage));
     zfishNativeEngineDestructMembers(storage);
 }
-fn movepickFillHistorySnapshot(main_history: ?*const anyopaque, low_ply_history: ?*const anyopaque, capture_history: ?*const anyopaque, continuation_history: ?*const anyopaque, shared_history: ?*const anyopaque, out: *MovepickHistorySnapshot) callconv(.c) void {
-    out.main_base = main_history;
-    out.low_ply_base = low_ply_history;
-    out.capture_base = capture_history;
-    out.continuation_base = .{ null, null, null, null, null, null };
-    if (continuation_history) |ch_ptr| {
-        const ch: [*]const ?*const anyopaque = @ptrCast(@alignCast(ch_ptr));
-        var slot: usize = 0;
-        while (slot < 6) : (slot += 1) out.continuation_base[slot] = ch[slot];
-    }
-    if (shared_history) |sh_ptr| {
-        const sh: [*]const u8 = @ptrCast(sh_ptr);
-        const pawn_size = @as(*const usize, @ptrCast(@alignCast(sh + 16))).*;
-        out.pawn_table = if (pawn_size != 0) @as(*const ?*const anyopaque, @ptrCast(@alignCast(sh + 24))).* else null;
-        out.pawn_mask = @as(*const u64, @ptrCast(@alignCast(sh + 40))).*;
-    } else {
-        out.pawn_table = null;
-        out.pawn_mask = 0;
-    }
-}
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
 // 31507, VALUE_TB=31753, VALUE_MATE=32000), then map to the cp/tb/mate formatter
@@ -1288,36 +1259,11 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
 // Windows steady clock (M-PORT): QueryPerformanceCounter is the monotonic high-res
 // counter; ticks/QueryPerformanceFrequency gives seconds. Declared here (not in
 // std.os.windows) and only referenced on the Windows branch of zfishNow.
-extern "kernel32" fn QueryPerformanceCounter(count: *i64) callconv(.winapi) i32;
-extern "kernel32" fn QueryPerformanceFrequency(freq: *i64) callconv(.winapi) i32;
 
 // M-FINAL: zfish_now ported native (default-only). Stockfish::now() = steady_clock ms;
 // CLOCK_MONOTONIC is the POSIX steady_clock (QPC on Windows). now() is used only for
 // elapsed-time (the goldens are fixed depth/nodes, so the absolute value isn't gated —
 // only monotonicity). Ported across the owned OSes (M-PORT).
-fn zfishNow() callconv(.c) i64 {
-    switch (builtin.os.tag) {
-        .windows => {
-            var freq: i64 = 0;
-            var count: i64 = 0;
-            _ = QueryPerformanceFrequency(&freq);
-            _ = QueryPerformanceCounter(&count);
-            if (freq == 0) return 0;
-            return @intCast(@divTrunc(@as(i128, count) * 1000, @as(i128, freq)));
-        },
-        .linux => {
-            var ts: std.os.linux.timespec = undefined;
-            _ = std.os.linux.clock_gettime(.MONOTONIC, &ts);
-            return @as(i64, @intCast(ts.sec)) * 1000 + @divTrunc(@as(i64, @intCast(ts.nsec)), 1_000_000);
-        },
-        else => {
-            // macOS and other POSIX: CLOCK_MONOTONIC via libc clock_gettime.
-            var ts: std.c.timespec = undefined;
-            _ = std.c.clock_gettime(.MONOTONIC, &ts);
-            return @as(i64, @intCast(ts.sec)) * 1000 + @divTrunc(@as(i64, @intCast(ts.nsec)), 1_000_000);
-        },
-    }
-}
 
 fn optInt(name: []const u8) c_int {
     return option_port.zfish_optmodel_int_by_name(name.ptr, name.len);
@@ -1528,7 +1474,7 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
     // /`nps` fields were bogus while the bench's own Total-time summary was correct.
     // Depth/node-limited searches never consult startTime for stopping, so bench node
     // count / signature is unaffected; only the reported time/nps become correct.
-    limits.start_time = zfishNow();
+    limits.start_time = clock.now();
     limits.time[0] = parsed.wtime;
     limits.time[1] = parsed.btime;
     limits.inc[0] = parsed.winc;
@@ -2205,7 +2151,7 @@ pub export fn zfish_search_cb_pv_context(manager: *anyopaque, worker: *anyopaque
     out.hashfull = zfish_tt_hashfull(@ptrFromInt(@intFromPtr(tp.table)), tp.cluster_count, tp.generation8, 0);
 
     const start_time = graph_layout.SearchManager.fromPtr(manager).tm.start_time;
-    const elapsed = zfishNow() - start_time;
+    const elapsed = clock.now() - start_time;
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const clock = @import("clock");
 const bitboard = @import("bitboard");
 const movegen = @import("movegen");
 const tt = @import("tt");
@@ -578,7 +579,6 @@ extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque
 // accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
 // forward pass + eval scaling are all Zig-owned).
 extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void;
-extern fn zfish_now() i64;
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -1086,7 +1086,7 @@ fn checkTime(ctx: *const QCtx) void {
     const elapsed: i64 = if (ts.tm_use_nodes_time != 0)
         @intCast(ctx.nodes.*)
     else
-        zfish_now() - ts.tm_start_time;
+        clock.now() - ts.tm_start_time;
 
     if (ts.ponder.?.* != 0) return;
 
@@ -1873,7 +1873,7 @@ fn moveToFront(rm: [*]RootMove, count: usize, target: u16) void {
     rm[0] = tmp;
 }
 inline fn idElapsed(id: *const ZfishIdState) i64 {
-    return if (id.tm_use_nodes_time != 0) @intCast(id.nodes.*) else zfish_now() - id.tm_start_time;
+    return if (id.tm_use_nodes_time != 0) @intCast(id.nodes.*) else clock.now() - id.tm_start_time;
 }
 inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
     return @max(lo, @min(v, hi));
@@ -1884,7 +1884,7 @@ inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
 const skill_pawn_value: c_int = 208;
 var skill_rng_state: u64 = 0;
 fn skillRand64() u64 {
-    if (skill_rng_state == 0) skill_rng_state = @bitCast(zfish_now());
+    if (skill_rng_state == 0) skill_rng_state = @bitCast(clock.now());
     var s = skill_rng_state;
     s ^= s >> 12;
     s ^= s << 25;

@@ -138,14 +138,34 @@ extern fn zfish_movegen_generate_captures(pos: *const anyopaque, move_list: [*]u
 extern fn zfish_movegen_generate_quiets(pos: *const anyopaque, move_list: [*]u16) usize;
 extern fn zfish_movegen_generate_evasions(pos: *const anyopaque, move_list: [*]u16) usize;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
-extern fn zfish_movepick_fill_history_snapshot(
+// History-table base pointers packed into a HistorySnapshot (M16.7 — relocated from main.zig).
+fn fillHistorySnapshot(
     main_history: ?*const anyopaque,
     low_ply_history: ?*const anyopaque,
     capture_history: ?*const anyopaque,
     continuation_history: ?*const anyopaque,
     shared_history: ?*const anyopaque,
     out: *HistorySnapshot,
-) void;
+) void {
+    out.main_base = main_history;
+    out.low_ply_base = low_ply_history;
+    out.capture_base = capture_history;
+    out.continuation_base = .{ null, null, null, null, null, null };
+    if (continuation_history) |ch_ptr| {
+        const ch: [*]const ?*const anyopaque = @ptrCast(@alignCast(ch_ptr));
+        var slot: usize = 0;
+        while (slot < 6) : (slot += 1) out.continuation_base[slot] = ch[slot];
+    }
+    if (shared_history) |sh_ptr| {
+        const sh: [*]const u8 = @ptrCast(sh_ptr);
+        const pawn_size = @as(*const usize, @ptrCast(@alignCast(sh + 16))).*;
+        out.pawn_table = if (pawn_size != 0) @as(*const ?*const anyopaque, @ptrCast(@alignCast(sh + 24))).* else null;
+        out.pawn_mask = @as(*const u64, @ptrCast(@alignCast(sh + 40))).*;
+    } else {
+        out.pawn_table = null;
+        out.pawn_mask = 0;
+    }
+}
 
 pub fn initMainStage(has_checkers: bool, has_tt_move: bool, depth: c_int) c_int {
     const base_stage: c_int = if (has_checkers)
@@ -659,7 +679,7 @@ fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
 
 fn loadHistorySnapshot(context: *const MovePickerContext) HistorySnapshot {
     var snapshot = std.mem.zeroes(HistorySnapshot);
-    zfish_movepick_fill_history_snapshot(
+    fillHistorySnapshot(
         context.main_history,
         context.low_ply_history,
         context.capture_history,
