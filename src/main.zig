@@ -545,11 +545,6 @@ fn threadWorker(thread: *const anyopaque) ?[*]const u8 {
     if (w == 0) return null;
     return @ptrFromInt(w);
 }
-fn thNodesSearched(thread: *const anyopaque) callconv(.c) u64 {
-    const w = threadWorker(thread) orelse return 0;
-    const p: *const u64 = @ptrCast(@alignCast(w + graph_layout.worker_off.nodes));
-    return p.*;
-}
 fn thTbHits(thread: *const anyopaque) callconv(.c) u64 {
     const w = threadWorker(thread) orelse return 0;
     const p: *const u64 = @ptrCast(@alignCast(w + graph_layout.worker_off.tb_hits));
@@ -715,8 +710,6 @@ comptime {
     @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
     @export(&thWorkerSetRootState, .{ .name = "zfish_thread_worker_set_root_state" });
     @export(&thWorkerSetRootPosition, .{ .name = "zfish_thread_worker_set_root_position" });
-    @export(&thNodesSearched, .{ .name = "zfish_thread_nodes_searched" });
-    @export(&thTbHits, .{ .name = "zfish_thread_tb_hits" });
     // id_state reads the native option model (default-only populated), so the
     // native version is default-only; legacy keeps the bridge C++ body.
     @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });

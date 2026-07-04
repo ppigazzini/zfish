@@ -196,8 +196,6 @@ extern fn zfish_threadpool_bound_nodes_assign(
     nodes: ?[*]const usize,
     count: usize,
 ) void;
-extern fn zfish_thread_nodes_searched(thread: *const anyopaque) u64;
-extern fn zfish_thread_tb_hits(thread: *const anyopaque) u64;
 extern fn zfish_thread_fill_summary(thread: *const anyopaque, out: *ThreadSummary) void;
 const ThreadCallback = *const fn (?*anyopaque) callconv(.c) void;
 
@@ -903,7 +901,7 @@ pub fn nodesSearched(pool: *anyopaque) u64 {
     var total: u64 = 0;
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        total += zfish_thread_nodes_searched(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
+        total += graph_layout.Thread.fromPtr(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index)).nodesSearched();
     }
     return total;
 }
@@ -913,7 +911,7 @@ pub fn tbHits(pool: *anyopaque) u64 {
     var total: u64 = 0;
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        total += zfish_thread_tb_hits(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
+        total += graph_layout.Thread.fromPtr(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index)).tbHits();
     }
     return total;
 }

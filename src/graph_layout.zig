@@ -242,6 +242,16 @@ pub const Thread = extern struct {
     pub inline fn fromPtr(p: *anyopaque) *Thread {
         return @ptrCast(@alignCast(p));
     }
+    /// This thread's Worker cumulative node count (0 if no worker attached).
+    pub inline fn nodesSearched(self: *const Thread) u64 {
+        if (self.worker == 0) return 0;
+        return @as(*const u64, @ptrFromInt(self.worker + worker_off.nodes)).*;
+    }
+    /// This thread's Worker cumulative tablebase-hit count.
+    pub inline fn tbHits(self: *const Thread) u64 {
+        if (self.worker == 0) return 0;
+        return @as(*const u64, @ptrFromInt(self.worker + worker_off.tb_hits)).*;
+    }
 };
 
 // PVMoves (504 bytes): moves[MAX_PLY+1] = Move[247] at 0, then a std::size_t length
