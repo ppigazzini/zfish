@@ -552,14 +552,6 @@ fn threadWorkerMut(thread: *anyopaque) ?[*]u8 {
 // Worker::reset_root_setup_state zeros the five per-search counters. They are POD
 // (the two node counters are atomics, but a relaxed store of 0 is a plain zero
 // write), so each is set through the worker offset map.
-fn thWorkerResetRootSetupState(thread: *anyopaque) callconv(.c) void {
-    const w = threadWorkerMut(thread) orelse return;
-    @as(*u64, @ptrCast(@alignCast(w + graph_layout.worker_off.nodes))).* = 0;
-    @as(*u64, @ptrCast(@alignCast(w + graph_layout.worker_off.tb_hits))).* = 0;
-    @as(*u64, @ptrCast(@alignCast(w + graph_layout.worker_off.best_move_changes))).* = 0;
-    @as(*i32, @ptrCast(@alignCast(w + graph_layout.worker_off.nmp_min_ply))).* = 0;
-    @as(*i32, @ptrCast(@alignCast(w + graph_layout.worker_off.root_depth))).* = 0;
-}
 
 // Matches the bridge ZfishTbConfig / thread.zig TbConfig C-ABI struct passed by
 // value: {int cardinality; u8 root_in_tb; u8 use_rule50; int probe_depth}.
@@ -575,50 +567,17 @@ const WorkerTbConfig = extern struct {
 // probeDepth} laid out as cardinality@0, rootInTB@4, useRule50@5, probeDepth@8.
 // The bridge normalized the two flags with `!= 0`, so booleans are written 0/1.
 // Padding bytes (+6,+7) are never read by the search, so they are left alone.
-fn thWorkerSetTbConfig(thread: *anyopaque, config: WorkerTbConfig) callconv(.c) void {
-    const w = threadWorkerMut(thread) orelse return;
-    const base = w + graph_layout.worker_off.tb_config;
-    @as(*c_int, @ptrCast(@alignCast(base + 0))).* = config.cardinality;
-    base[4] = @intFromBool(config.root_in_tb != 0);
-    base[5] = @intFromBool(config.use_rule50 != 0);
-    @as(*c_int, @ptrCast(@alignCast(base + 8))).* = config.probe_depth;
-}
 
 // Worker::set_root_state assigns worker.rootState = value. StateInfo is fully POD
 // (scalars plus one raw `previous` pointer), so the C++ member-wise copy is a
 // byte copy; the native version memcpy's the 192-byte StateInfo into the Worker
 // rootState slot.
-fn thWorkerSetRootState(thread: *anyopaque, setup_state: *const anyopaque) callconv(.c) void {
-    const w = threadWorkerMut(thread) orelse return;
-    const dst = w + graph_layout.worker_off.root_state;
-    const src: [*]const u8 = @ptrCast(setup_state);
-    @memcpy(dst[0..graph_layout.state_info_size], src[0..graph_layout.state_info_size]);
-}
 
 // Worker::set_root_position runs rootPos.set(fen, chess960, &rootState). Position
 // set is already native (position_port.setPosition, also exported as
 // zfish_position_set_method); the dispatcher resolves the in-Worker rootPos and
 // rootState by offset and runs it, discarding the error string exactly as the
 // C++ set_root_position discards the returned Position&.
-fn thWorkerSetRootPosition(
-    thread: *anyopaque,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    chess960: u8,
-) callconv(.c) void {
-    const w = threadWorkerMut(thread) orelse return;
-    const pos: *anyopaque = @ptrCast(w + graph_layout.worker_off.root_pos);
-    const st: *anyopaque = @ptrCast(w + graph_layout.worker_off.root_state);
-    _ = position_port.setPosition(
-        pos,
-        fen_ptr,
-        fen_len,
-        chess960,
-        st,
-        graph_layout.position_size,
-        graph_layout.state_info_size,
-    );
-}
 
 
 // M-FINAL: pool->main_manager() = main_thread()->worker->main_manager() as native offset
@@ -692,15 +651,10 @@ comptime {
     @export(&tbMaxCardinality, .{ .name = "zfish_tbprobe_max_cardinality" });
     @export(&tbProbeFen, .{ .name = "zfish_tbprobe_probe_fen" });
     @export(&tbInit, .{ .name = "zfish_engine_tablebases_init" });
-    @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
-    @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
-    @export(&thWorkerSetRootState, .{ .name = "zfish_thread_worker_set_root_state" });
-    @export(&thWorkerSetRootPosition, .{ .name = "zfish_thread_worker_set_root_position" });
     // id_state reads the native option model (default-only populated), so the
     // native version is default-only; legacy keeps the bridge C++ body.
     @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });
     @export(&zfish_ss_tm_init, .{ .name = "zfish_ss_tm_init" });
-    @export(&thFillSummary, .{ .name = "zfish_thread_fill_summary" });
     // M-FINAL (limits readers): pure LimitsType offset reads (legacy keeps the C++ defs).
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     @export(&zfishEngineOptionHashValue, .{ .name = "zfish_engine_option_hash_value" });
@@ -2076,16 +2030,6 @@ fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
 // bound-flags/pv-size and rootDepth -- the same values the native search<Root>
 // already reads. Gated default-only: src/thread.cpp also defines this symbol, so
 // the legacy oracle uses that (see [[legacy-seam-blocks-zig-export-flips]]).
-fn thFillSummary(thread: *const anyopaque, out: *thread_port.ThreadSummary) callconv(.c) void {
-    const w = graph_layout.Thread.fromPtr(@constCast(thread)).worker;
-    const rm = @as(*const usize, @ptrFromInt(w + graph_layout.worker_off.root_moves)).*; // &rootMoves[0]
-    const rmv = graph_layout.RootMove.fromAddr(rm);
-    out.pv0_raw = rmv.pv.moves[0];
-    out.score_is_bound = @intFromBool(rmv.score_lowerbound != 0 or rmv.score_upperbound != 0);
-    out.pv_has_more_than_two = @intFromBool(rmv.pv.length > 2);
-    out.score = rmv.score;
-    out.root_depth = @as(*const c_int, @ptrFromInt(w + graph_layout.worker_off.root_depth)).*;
-}
 
 // zfish_ss_get_best_thread: return the worker of the vote-winning thread. The
 // voting itself is already native (thread_port.bestThreadIndex, the same routine

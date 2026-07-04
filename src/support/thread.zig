@@ -106,6 +106,17 @@ pub const ThreadSummary = extern struct {
     root_depth: c_int,
 };
 
+// Read a thread's Worker root-move summary through the typed graph views (M16.6a).
+fn fillThreadSummary(thread: *anyopaque, out: *ThreadSummary) void {
+    const w = graph_layout.Worker.fromThread(thread) orelse return;
+    const rmv = w.rootMovesFirst();
+    out.pv0_raw = rmv.pv.moves[0];
+    out.score_is_bound = @intFromBool(rmv.score_lowerbound != 0 or rmv.score_upperbound != 0);
+    out.pv_has_more_than_two = @intFromBool(rmv.pv.length > 2);
+    out.score = rmv.score;
+    out.root_depth = w.rootDepth();
+}
+
 pub const ByteView = extern struct {
     ptr: ?[*]const u8,
     len: usize,
@@ -194,22 +205,12 @@ extern fn zfish_threadpool_bound_nodes_assign(
     nodes: ?[*]const usize,
     count: usize,
 ) void;
-extern fn zfish_thread_fill_summary(thread: *const anyopaque, out: *ThreadSummary) void;
 const ThreadCallback = *const fn (?*anyopaque) callconv(.c) void;
 
 // Stage 5: native LimitsType POD-tail copy (default build); see main.zig.
 extern fn zfish_worker_set_limits(thread: *anyopaque, limits: *const anyopaque) void;
-extern fn zfish_thread_worker_reset_root_setup_state(thread: *anyopaque) void;
 // Stage 5: native vector<RootMove> copy-assign (default build); see main.zig.
 extern fn zfish_worker_set_root_moves(thread: *anyopaque, root_moves: *const anyopaque) void;
-extern fn zfish_thread_worker_set_root_position(
-    thread: *anyopaque,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    chess960: u8,
-) void;
-extern fn zfish_thread_worker_set_root_state(thread: *anyopaque, setup_state: *const anyopaque) void;
-extern fn zfish_thread_worker_set_tb_config(thread: *anyopaque, config: TbConfig) void;
 extern fn zfish_shared_state_threads_value(shared_state: *const anyopaque) usize;
 extern fn zfish_shared_state_numa_policy_mode(shared_state: *const anyopaque) u8;
 extern fn zfish_shared_state_clear_histories(shared_state: *const anyopaque) void;
@@ -308,17 +309,23 @@ fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
     // Stage 5: native LimitsType POD-tail copy.
     zfish_worker_set_limits(context.thread, context.input.limits);
-    zfish_thread_worker_reset_root_setup_state(context.thread);
     // Stage 5: native vector<RootMove> copy-assign.
     zfish_worker_set_root_moves(context.thread, context.input.root_moves);
-    zfish_thread_worker_set_root_position(
-        context.thread,
-        context.input.fen_ptr,
-        context.input.fen_len,
-        context.input.chess960,
-    );
-    zfish_thread_worker_set_root_state(context.thread, context.input.setup_state);
-    zfish_thread_worker_set_tb_config(context.thread, context.input.tb_config);
+    if (graph_layout.Worker.fromThread(context.thread)) |w| {
+        w.resetRootSetupState();
+        const cfg = context.input.tb_config;
+        _ = position_port.setPosition(
+            w.rootPosPtr(),
+            context.input.fen_ptr,
+            context.input.fen_len,
+            context.input.chess960,
+            w.rootStatePtr(),
+            graph_layout.position_size,
+            graph_layout.state_info_size,
+        );
+        w.setRootState(context.input.setup_state);
+        w.setTbConfig(cfg.cardinality, cfg.root_in_tb != 0, cfg.use_rule50 != 0, cfg.probe_depth);
+    }
 }
 
 fn waitMainThread(pool: *anyopaque) void {
@@ -926,7 +933,7 @@ pub fn bestThreadIndex(pool: *anyopaque) usize {
     var summaries: [max_thread_summaries]ThreadSummary = undefined;
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        zfish_thread_fill_summary(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index), &summaries[index]);
+        fillThreadSummary(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index), &summaries[index]);
     }
 
     return pickBestThread(&summaries, thread_count);

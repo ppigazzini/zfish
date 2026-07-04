@@ -254,6 +254,53 @@ pub const Thread = extern struct {
     }
 };
 
+// A cursor over the 13 MB opaque Worker: the base address plus typed accessors for the few
+// fields the search-driver reads/writes at `worker_off`. (The full Worker stays opaque until
+// it is natively constructed -- the M16.8 layout phase; this just types the *access*.)
+pub const Worker = struct {
+    base: usize,
+
+    pub inline fn fromThread(thread: *anyopaque) ?Worker {
+        const w = Thread.fromPtr(thread).worker;
+        return if (w == 0) null else Worker{ .base = w };
+    }
+    inline fn ptr(self: Worker, comptime T: type, off: usize) *T {
+        return @ptrFromInt(self.base + off);
+    }
+    /// ThreadPool::start_searching re-inits: zero the per-search Worker counters.
+    pub inline fn resetRootSetupState(self: Worker) void {
+        self.ptr(u64, worker_off.nodes).* = 0;
+        self.ptr(u64, worker_off.tb_hits).* = 0;
+        self.ptr(u64, worker_off.best_move_changes).* = 0;
+        self.ptr(i32, worker_off.nmp_min_ply).* = 0;
+        self.ptr(i32, worker_off.root_depth).* = 0;
+    }
+    pub inline fn setTbConfig(self: Worker, cardinality: c_int, root_in_tb: bool, use_rule50: bool, probe_depth: c_int) void {
+        const b = self.base + worker_off.tb_config;
+        @as(*c_int, @ptrFromInt(b)).* = cardinality;
+        @as(*u8, @ptrFromInt(b + 4)).* = @intFromBool(root_in_tb);
+        @as(*u8, @ptrFromInt(b + 5)).* = @intFromBool(use_rule50);
+        @as(*c_int, @ptrFromInt(b + 8)).* = probe_depth;
+    }
+    pub inline fn setRootState(self: Worker, src: *const anyopaque) void {
+        const dst: [*]u8 = @ptrFromInt(self.base + worker_off.root_state);
+        @memcpy(dst[0..state_info_size], @as([*]const u8, @ptrCast(src))[0..state_info_size]);
+    }
+    pub inline fn rootPosPtr(self: Worker) *anyopaque {
+        return @ptrFromInt(self.base + worker_off.root_pos);
+    }
+    pub inline fn rootStatePtr(self: Worker) *anyopaque {
+        return @ptrFromInt(self.base + worker_off.root_state);
+    }
+    pub inline fn rootDepth(self: Worker) c_int {
+        return self.ptr(c_int, worker_off.root_depth).*;
+    }
+    /// &rootMoves[0] as a typed RootMove.
+    pub inline fn rootMovesFirst(self: Worker) *RootMove {
+        return RootMove.fromAddr(self.ptr(usize, worker_off.root_moves).*);
+    }
+};
+
 // PVMoves (504 bytes): moves[MAX_PLY+1] = Move[247] at 0, then a std::size_t length
 // at +496 (2 bytes of alignment padding precede it).
 pub const PVMoves = extern struct {
