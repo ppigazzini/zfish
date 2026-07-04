@@ -128,11 +128,28 @@ pub const NativeEngine = extern struct {
         _ = self;
         return @ptrCast(&side_pos_storage);
     }
+    /// The side TranspositionTable block (replaces the C++ Engine's tt member).
+    pub fn ttPtr(self: *NativeEngine) *anyopaque {
+        _ = self;
+        return @ptrCast(&side_tt_storage);
+    }
+    pub fn updateContextPtr(self: *const NativeEngine) *const anyopaque {
+        return @ptrCast(&self.update_context);
+    }
 };
 
-// The side Position storage (1032 bytes, 64-aligned) the native engine uses instead of a C++
-// Engine pos member. File-scoped here so positionPtr owns it (was a main.zig global).
+// The side Position/TT storage the native engine uses instead of C++ Engine members. File-scoped
+// here so the accessors own them (were main.zig globals).
 var side_pos_storage: [1032]u8 align(64) = [_]u8{0} ** 1032;
+var side_tt_storage: [64]u8 align(64) = [_]u8{0} ** 64;
+
+/// The side TT storage as a raw pointer (for main.zig's construction-time direct access).
+pub fn sideTtPtr() *anyopaque {
+    return @ptrCast(&side_tt_storage);
+}
+pub fn sideTtReset() void {
+    @memset(&side_tt_storage, 0);
+}
 
 /// Allocate + assemble the engine's heap members into the buffer. Mirrors the member-
 /// init list of the C++ Engine ctor (binaryDirectory, numaContext, states, options,

@@ -220,10 +220,7 @@ extern fn zfish_search_shared_state_create(
     network: *const anyopaque,
 ) ?*anyopaque;
 extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
-extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_shared_hists_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_network_replicated_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_update_context_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_tt_hashfull(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
@@ -457,10 +454,10 @@ pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
         ne(engine_ptr).numaContextPtr(),
         ne(engine_ptr).optionsPtr(),
         ne(engine_ptr).threadsPtr(),
-        zfish_engine_tt_ptr(engine_ptr),
+        ne(engine_ptr).ttPtr(),
         zfish_engine_shared_hists_ptr(engine_ptr),
-        zfish_engine_network_replicated_ptr(engine_ptr),
-        zfish_engine_update_context_ptr(engine_ptr),
+        ne(engine_ptr).networkPtr(),
+        ne(engine_ptr).updateContextPtr(),
     );
 }
 
@@ -508,7 +505,7 @@ pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
 }
 
 pub fn setTtSizeEngine(engine_ptr: *anyopaque, mb: usize) void {
-    setTtSize(ne(engine_ptr).threadsPtr(), zfish_engine_tt_ptr(engine_ptr), mb);
+    setTtSize(ne(engine_ptr).threadsPtr(), ne(engine_ptr).ttPtr(), mb);
 }
 
 pub fn setPonderhit(threads: *anyopaque, ponder: u8) void {
@@ -531,7 +528,7 @@ pub fn searchClearEngine(engine_ptr: *anyopaque) void {
     defer c.free(@ptrCast(syzygy_ptr));
     searchClear(
         ne(engine_ptr).threadsPtr(),
-        zfish_engine_tt_ptr(engine_ptr),
+        ne(engine_ptr).ttPtr(),
         std.mem.span(syzygy_ptr),
     );
 }

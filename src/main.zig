@@ -651,19 +651,13 @@ pub export fn zfish_engine_threads_ptr(engine: *anyopaque) *anyopaque {
 // init_body resizes it through this accessor; the C++ Engine's tt stays dead until
 // M-FINAL. Native ops (resizeState/clearState/probe) operate via tt_off; sizing is the
 // SAME native code, so the side tt is bit-identical (bench 2336177 gates it).
-var side_tt_storage: [64]u8 align(64) = [_]u8{0} ** 64;
-
-pub export fn zfish_engine_tt_ptr(engine: *anyopaque) *anyopaque {
-    _ = engine; // the side tt replaces the C++ engine tt member
-    return @ptrCast(&side_tt_storage);
-}
 
 // Free the side tt's large-page table at engine teardown + rezero for any re-construct
 // (H5/valgrind). The table pointer lives at tt_off.table within the side storage.
 fn freeSideTt() void {
-    const table_ptr: *?*anyopaque = &graph_layout.TranspositionTable.fromPtr(&side_tt_storage).table;
+    const table_ptr: *?*anyopaque = &graph_layout.TranspositionTable.fromPtr(native_engine.sideTtPtr()).table;
     if (table_ptr.*) |tbl| memory_port.alignedLargePagesFree(tbl);
-    @memset(&side_tt_storage, 0);
+    native_engine.sideTtReset();
 }
 // REPORT-10 (sharedHists migration, DEFAULT-ONLY): the engine `sharedHists` is now a
 // NATIVE SharedHistoriesMap (the post-src/ replacement for std::map<NumaIndex,
@@ -720,9 +714,6 @@ fn freeSideSharedHistories() void {
         m.deinit();
         side_shared_histories = null;
     }
-}
-pub export fn zfish_engine_network_replicated_ptr(engine: *anyopaque) *anyopaque {
-    return nativeEng(engine).network.?;
 }
 pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const anyopaque {
     return @ptrCast(&nativeEng(@constCast(engine)).update_context);
@@ -1190,7 +1181,7 @@ fn zfishEngineTtClear(tt_ptr: *anyopaque, threads: *anyopaque) callconv(.c) void
     tt_port.clearState(tp.table, tp.cluster_count, &tp.generation8, threads);
 }
 fn zfishEngineTtHashfull(engine_ptr: *const anyopaque, max_age: c_int) callconv(.c) c_int {
-    const tp = graph_layout.TranspositionTable.fromPtr(zfish_engine_tt_ptr(@constCast(engine_ptr)));
+    const tp = graph_layout.TranspositionTable.fromPtr(native_engine.NativeEngine.fromPtr(@constCast(engine_ptr)).ttPtr());
     const table = tp.table orelse return 0;
     return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);
 }
