@@ -2895,20 +2895,5 @@ pub export fn zfish_uci_engine_reset_nodes_searched() void {
     last_nodes_searched.store(0, .monotonic);
 }
 
-pub export fn zfish_eval_compute_value(
-    input: evaluate_port.EvalInput,
-) c_int {
-    return evaluate_port.computeValue(input);
-}
 
-pub export fn zfish_eval_format_trace(
-    input: evaluate_port.EvalTraceInput,
-) ?[*:0]u8 {
-    return evaluate_port.formatTrace(input);
-}
 
-pub export fn zfish_nnue_format_trace(
-    input: nnue_misc_port.NnueTraceInput,
-) ?[*:0]u8 {
-    return nnue_misc_port.formatTrace(input);
-}

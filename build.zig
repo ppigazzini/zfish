@@ -262,6 +262,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     position_module.addImport("nnue_accumulator", nnue_accumulator_module);
+    position_module.addImport("evaluate", evaluate_module);
     position_module.addImport("shared_histories", shared_histories_module);
     // Native sharedHists map container (the `sharedHists` member type), instantiated in
     // position.zig with the real SharedHistories.
@@ -295,6 +296,8 @@ pub fn build(b: *std.Build) void {
     // (network has no engine dep, so this edge is acyclic).
     engine_module_default.addImport("network", network_module);
     engine_module_default.addImport("nnue_accumulator", nnue_accumulator_module);
+    engine_module_default.addImport("evaluate", evaluate_module);
+    engine_module_default.addImport("nnue_misc", nnue_misc_module);
 
     // Native-graph cut: run the EngineGraph + member-module unit tests (construction,
     // lifetime, SharedState binding) with their module deps. `zig build test-graph`.

@@ -6,6 +6,8 @@ const uci_move = @import("uci_move");
 const misc_port = @import("misc");
 const thread_port = @import("thread");
 const nnue_acc = @import("nnue_accumulator");
+const evaluate_mod = @import("evaluate");
+const nnue_misc_mod = @import("nnue_misc");
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
 // layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
@@ -189,9 +191,6 @@ extern fn zfish_network_trace_evaluate(
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
 ) TraceOutput;
-extern fn zfish_eval_compute_value(input: EvalInput) c_int;
-extern fn zfish_eval_format_trace(input: EvalTraceInput) ?[*:0]u8;
-extern fn zfish_nnue_format_trace(input: NnueTraceInput) ?[*:0]u8;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 extern fn zfish_engine_set_start_position(engine_ptr: *anyopaque) void;
 extern fn zfish_engine_add_option(
@@ -692,7 +691,7 @@ pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
     const nnue_value = nnue_output.psqt + nnue_output.positional;
     const nnue_white_side = if (summary.side_to_move_white != 0) nnue_value else -nnue_value;
 
-    const final_value = zfish_eval_compute_value(.{
+    const final_value = evaluate_mod.computeValue(.{
         .psqt = nnue_output.psqt,
         .positional = nnue_output.positional,
         .optimism = 0,
@@ -703,7 +702,7 @@ pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
     });
     const final_white_side = if (summary.side_to_move_white != 0) final_value else -final_value;
 
-    return zfish_eval_format_trace(.{
+    return evaluate_mod.formatTrace(.{
         .inner_trace_ptr = inner_trace.ptr,
         .inner_trace_len = inner_trace.len,
         .nnue_internal_value = nnue_value,
@@ -973,7 +972,7 @@ fn buildNnueTrace(
         positional_cp[bucket] = zfish_uci_to_cp(trace.positional[bucket], summary.material);
     }
 
-    return zfish_nnue_format_trace(.{
+    return nnue_misc_mod.formatTrace(.{
         .side_to_move_white = summary.side_to_move_white,
         .bucket_count = layer_stacks,
         .correct_bucket = trace.correct_bucket,

@@ -5,6 +5,7 @@ const tt = @import("tt");
 const movepick = @import("movepick");
 const search = @import("search");
 const nnue_acc = @import("nnue_accumulator");
+const evaluate_mod = @import("evaluate");
 const shared_hist = @import("shared_histories"); // native SharedHistories sizing (cut)
 const shared_histories_map = @import("shared_histories_map"); // native sharedHists map (cut)
 
@@ -601,7 +602,6 @@ const EvalInput = extern struct {
     value_tb_win_in_max_ply: c_int,
 };
 extern fn zfish_network_evaluate(network: *const anyopaque, pos: *const anyopaque, acc_stack: *anyopaque, cache: *anyopaque) EvalOutput;
-extern fn zfish_eval_compute_value(input: EvalInput) c_int;
 
 // SearchManager::check_time inputs, fetched once per search tree by worker_state.
 // Live (mutable) fields are pointers; fixed-per-search fields are snapshot values.
@@ -707,7 +707,7 @@ inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *anyopaque) c_int {
     const out = zfish_network_evaluate(ctx.network, pos_ptr, ctx.acc_stack, ctx.cache);
     const pawns = pos.piece_count[1] + pos.piece_count[9];
     const material = 534 * pawns + pos.st.non_pawn_material[0] + pos.st.non_pawn_material[1];
-    return zfish_eval_compute_value(.{
+    return evaluate_mod.computeValue(.{
         .psqt = out.psqt,
         .positional = out.positional,
         .optimism = ctx.optimism[pos.side_to_move],
