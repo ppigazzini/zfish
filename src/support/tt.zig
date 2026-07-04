@@ -46,8 +46,7 @@ pub const TtProbeTableOutput = extern struct {
     data: TtReadOutput,
 };
 
-extern fn zfish_aligned_large_pages_alloc(byte_count: usize) ?*anyopaque;
-extern fn zfish_aligned_large_pages_free(ptr: ?*anyopaque) void;
+const memory = @import("memory");
 fn reportAllocFailure(mb: usize) noreturn {
     std.debug.print("Failed to allocate {d}MB for transposition table.\n", .{mb});
     std.process.exit(1);
@@ -69,12 +68,12 @@ pub fn resizeState(
     mb: usize,
     threads: *anyopaque,
 ) void {
-    zfish_aligned_large_pages_free(table_ptr.*);
+    memory.alignedLargePagesFree(table_ptr.*);
 
     const cluster_count = mb * 1024 * 1024 / @sizeOf(TtCluster);
     cluster_count_ptr.* = cluster_count;
 
-    const table = zfish_aligned_large_pages_alloc(cluster_count * @sizeOf(TtCluster)) orelse
+    const table = memory.alignedLargePagesAlloc(cluster_count * @sizeOf(TtCluster)) orelse
         reportAllocFailure(mb);
     table_ptr.* = table;
 

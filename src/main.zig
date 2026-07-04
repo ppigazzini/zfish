@@ -5,7 +5,7 @@ const c = @import("libc");
 const benchmark_port = @import("benchmark");
 const bitboard_port = @import("bitboard");
 const engine_port = @import("engine");
-const memory_port = @import("memory.zig");
+const memory_port = @import("memory");
 const graph_layout = @import("graph_layout.zig");
 const worker_construct = @import("worker_construct.zig");
 const thread_construct = @import("thread_construct.zig");
@@ -944,7 +944,7 @@ pub export fn zfish_engine_tt_ptr(engine: *anyopaque) *anyopaque {
 // (H5/valgrind). The table pointer lives at tt_off.table within the side storage.
 fn freeSideTt() void {
     const table_ptr: *?*anyopaque = &graph_layout.TranspositionTable.fromPtr(&side_tt_storage).table;
-    if (table_ptr.*) |tbl| zfish_aligned_large_pages_free(tbl);
+    if (table_ptr.*) |tbl| memory_port.alignedLargePagesFree(tbl);
     @memset(&side_tt_storage, 0);
 }
 // REPORT-10 (sharedHists migration, DEFAULT-ONLY): the engine `sharedHists` is now a
@@ -1626,7 +1626,7 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
     // SearchManager buffer (operator new'd by zfishMakeSearchManager above).
     const mgr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.manager));
     if (mgr.*) |m| zfishOperatorDelete(m);
-    zfish_aligned_large_pages_free(w);
+    memory_port.alignedLargePagesFree(w);
 }
 
 // REPORT-12 TU=0: option registration — format the default string per kind (check→"true"/"false",
@@ -1955,7 +1955,7 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) callc
     const ss_network = @as(*usize, @ptrCast(@alignCast(ss + 32))).*;
     const manager = zfishMakeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
         @panic("native worker build: SearchManager OOM");
-    const raw = zfish_aligned_large_pages_alloc(graph_layout.worker_size) orelse
+    const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse
         @panic("native worker build: large-page OOM");
     const shared_history = zfish_native_shared_histories_at(@ptrFromInt(ss_shared_hist), 0);
     zfish_worker_construct_full(
@@ -2997,17 +2997,8 @@ pub export fn zfish_full_threats_append_active(
     return nnue_feature_port.fullAppendActive(perspective, king_square, piece_array);
 }
 
-pub export fn zfish_aligned_large_pages_alloc(alloc_size: usize) ?*anyopaque {
-    return memory_port.alignedLargePagesAlloc(alloc_size);
-}
-
-pub export fn zfish_aligned_large_pages_free(ptr: ?*anyopaque) void {
-    memory_port.alignedLargePagesFree(ptr);
-}
-
-pub export fn zfish_has_large_pages() bool {
-    return memory_port.hasLargePages();
-}
+// (zfish_aligned_large_pages_alloc/free and zfish_has_large_pages retired -- M16.5:
+// tt/position/misc now call the `memory` module directly instead of via these C-ABI exports.)
 
 // Last-reported "nodes searched" counter for the UCI info path. Owned in Zig;
 // the C++ engine update listeners publish into it via zfish_set_last_nodes_searched.

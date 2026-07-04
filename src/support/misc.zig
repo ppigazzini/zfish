@@ -2,8 +2,7 @@ const builtin = @import("builtin");
 const build_options = @import("build_options");
 const std = @import("std");
 const c = @import("libc");
-
-extern fn zfish_has_large_pages() bool;
+const memory = @import("memory");
 
 const max_debug_slots: usize = 32;
 const version = "dev";
@@ -163,7 +162,7 @@ pub fn compilerInfoText() ?[*:0]u8 {
 }
 
 pub fn hasLargePages() bool {
-    return zfish_has_large_pages();
+    return memory.hasLargePages();
 }
 
 pub fn hardwareConcurrency() c_int {

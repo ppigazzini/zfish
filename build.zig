@@ -107,6 +107,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Aligned/large-page allocator as a shared module (REPORT-16 M16.5): consumers call it
+    // directly instead of round-tripping through main.zig's C-ABI `zfish_aligned_large_pages_*`
+    // exports (dead scaffolding now the C++ oracle is retired).
+    const memory_module = b.createModule(.{
+        .root_source_file = b.path("src/memory.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const timeman_module = b.createModule(.{
         .root_source_file = b.path("src/time/timeman.zig"),
         .target = target,
@@ -375,6 +384,12 @@ pub fn build(b: *std.Build) void {
     misc_module.addImport("libc", libc_module);
     engine_module_default.addImport("libc", libc_module);
     thread_module_default.addImport("libc", libc_module);
+
+    // M16.5: direct callers of the aligned/large-page allocator.
+    exe.root_module.addImport("memory", memory_module);
+    tt_module.addImport("memory", memory_module);
+    position_module.addImport("memory", memory_module);
+    misc_module.addImport("memory", memory_module);
     network_module.addImport("libc", libc_module);
     nnue_misc_module.addImport("libc", libc_module);
     evaluate_module.addImport("libc", libc_module);
