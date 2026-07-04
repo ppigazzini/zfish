@@ -58,23 +58,42 @@ pub const TraceOutput = extern struct {
     correct_bucket: usize,
 };
 
-extern fn zfish_network_embedded_bytes() ByteView;
-// Kept only to dual-write the C++ EvalFile so the content-hash oracle self-check
-// stays valid; the native path reads its own EvalFile state (nn_* below).
-extern fn zfish_network_mark_initialized(network: *anyopaque) void;
-extern fn zfish_network_set_loaded_state(
+// M16.7: the native NNUE parse (parse*Native) populates the Zig-owned inference storage and is
+// the sole source of weights. These were C++-oracle dual-write hooks; with the oracle retired
+// (M16.1) they are no-op stubs, now local to this module instead of main.zig C-ABI glue.
+const embedded_nnue_stub = [_]u8{0};
+fn networkEmbeddedBytes() ByteView {
+    return .{ .ptr = &embedded_nnue_stub, .len = 1 };
+}
+fn networkMarkInitialized(network: *anyopaque) void {
+    _ = network;
+}
+fn networkSetLoadedState(
     network: *anyopaque,
     current_name_ptr: [*]const u8,
     current_name_len: usize,
     description_ptr: [*]const u8,
     description_len: usize,
-) void;
-// Legacy oracle only: parse the blob into the C++ Network so the legacy C++ eval reads its
-// weights. In the DEFAULT build these are Network-free no-op stubs (uci_bridge.cpp) — the native
-// parse (parse*Native) populates the Zig-owned inference storage and is the sole source. The
-// return is ignored; the load offset advances by the native parse's consumed-byte count.
-extern fn zfish_network_feature_transformer_read_blob(network: *anyopaque, data_ptr: [*]const u8, data_len: usize) usize;
-extern fn zfish_network_layer_read_blob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) usize;
+) void {
+    _ = network;
+    _ = current_name_ptr;
+    _ = current_name_len;
+    _ = description_ptr;
+    _ = description_len;
+}
+fn networkFeatureTransformerReadBlob(network: *anyopaque, data_ptr: [*]const u8, data_len: usize) usize {
+    _ = network;
+    _ = data_ptr;
+    _ = data_len;
+    return 0;
+}
+fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) usize {
+    _ = network;
+    _ = bucket;
+    _ = data_ptr;
+    _ = data_len;
+    return 0;
+}
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_network_transform_bucket(
     network: *const anyopaque,
@@ -428,7 +447,7 @@ fn nnDescription() []const u8 {
 
 fn markInitializedNative(network: *anyopaque) void {
     nn_initialized = true;
-    zfish_network_mark_initialized(network); // keep the C++ oracle in sync
+    networkMarkInitialized(network); // keep the C++ oracle in sync
 }
 
 fn setLoadedStateNative(network: *anyopaque, current: []const u8, description: []const u8) void {
@@ -438,7 +457,7 @@ fn setLoadedStateNative(network: *anyopaque, current: []const u8, description: [
     const dl = @min(description.len, nn_description.len);
     @memcpy(nn_description[0..dl], description[0..dl]);
     nn_description_len = dl;
-    zfish_network_set_loaded_state(network, current.ptr, current.len, description.ptr, description.len);
+    networkSetLoadedState(network, current.ptr, current.len, description.ptr, description.len);
 }
 
 pub fn contentHash(network: *const anyopaque) usize {
@@ -535,7 +554,7 @@ fn loadInternal(network: *anyopaque) void {
     markInitializedNative(network);
 
     const default_name = default_eval_file_name;
-    _ = loadNetworkBytes(network, viewToSlice(zfish_network_embedded_bytes()), default_name);
+    _ = loadNetworkBytes(network, viewToSlice(networkEmbeddedBytes()), default_name);
 }
 
 // Gather one layer stack's native biases/weights slices (fc_0/fc_1/fc_2).
@@ -684,7 +703,7 @@ fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize
         return false;
     }
     // Legacy oracle populates the C++ Network here; default build no-op. Return ignored.
-    _ = zfish_network_feature_transformer_read_blob(network, remaining.ptr, remaining.len);
+    _ = networkFeatureTransformerReadBlob(network, remaining.ptr, remaining.len);
     offset.* += consumed;
     return true;
 }
@@ -720,7 +739,7 @@ fn readLayer(network: *anyopaque, bucket: usize, bytes: []const u8, offset: *usi
         return false;
     }
     // Legacy oracle populates the C++ Network here; default build no-op. Return ignored.
-    _ = zfish_network_layer_read_blob(network, bucket, remaining.ptr, remaining.len);
+    _ = networkLayerReadBlob(network, bucket, remaining.ptr, remaining.len);
     offset.* += consumed;
     return true;
 }

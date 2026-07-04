@@ -652,14 +652,9 @@ comptime {
     @export(&threadpoolWaitThread, .{ .name = "zfish_threadpool_wait_thread" });
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
-    @export(&networkEmbeddedBytes, .{ .name = "zfish_network_embedded_bytes" });
-    @export(&networkMarkInitialized, .{ .name = "zfish_network_mark_initialized" });
-    @export(&networkSetLoadedState, .{ .name = "zfish_network_set_loaded_state" });
     @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
     @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
     @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
-    @export(&networkFeatureTransformerReadBlob, .{ .name = "zfish_network_feature_transformer_read_blob" });
-    @export(&networkLayerReadBlob, .{ .name = "zfish_network_layer_read_blob" });
     @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
     @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -1173,16 +1168,10 @@ fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const 
 // Native default-only stub matching that — ByteView{ptr,len} matches the network.zig extern struct ABI.
 const NetByteView = extern struct { ptr: [*]const u8, len: usize };
 const embedded_nnue_stub = [_]u8{0};
-fn networkEmbeddedBytes() callconv(.c) NetByteView {
-    return .{ .ptr = &embedded_nnue_stub, .len = 1 };
-}
 // REPORT-12 TU=0: mark_initialized / set_loaded_state dual-wrote the C++ Network's EvalFile state only
 // "to keep the C++ oracle in sync" (network.zig). In the default build there is no C++ eval reading
 // it — the native load owns the state (nn_current/nn_description, set just before these calls) — so
 // they are no-ops, avoiding the frozen Network cast. Legacy keeps the real NetworkBridgeAccess writes.
-fn networkMarkInitialized(network: *anyopaque) callconv(.c) void {
-    _ = network;
-}
 fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, current_name_len: usize, description_ptr: [*]const u8, description_len: usize) callconv(.c) void {
     _ = network;
     _ = current_name_ptr;
@@ -1222,12 +1211,6 @@ fn ssNpmsecAdvance(worker: *anyopaque) callconv(.c) void {
 // exercises this every node, so search-parity + oracle-parity certify the offsets.
 // REPORT-12 TU=0: the read-blob fns parse weights into the C++ Network only in the legacy oracle; the
 // default build serves weights from native storage and discards these results, so they are no-ops.
-fn networkFeatureTransformerReadBlob(network: *anyopaque, data_ptr: [*]const u8, data_len: usize) callconv(.c) usize {
-    _ = network;
-    _ = data_ptr;
-    _ = data_len;
-    return 0;
-}
 fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) callconv(.c) usize {
     _ = network;
     _ = bucket;
