@@ -36,6 +36,9 @@ pub extern "c" fn ferror(stream: ?*FILE) c_int;
 pub const SEEK_SET: c_int = 0;
 pub const SEEK_END: c_int = 2;
 
+// <unistd.h>
+pub extern "c" fn getcwd(buf: [*c]u8, size: usize) [*c]u8;
+
 // <sys/time.h>. Field names match the translate-C `struct_timeval` the call sites read.
 pub const struct_timeval = extern struct {
     tv_sec: c_long,

@@ -372,6 +372,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("libc", libc_module);
     benchmark_module.addImport("libc", libc_module);
     uci_module.addImport("libc", libc_module);
+    misc_module.addImport("libc", libc_module);
     engine_module_default.addImport("libc", libc_module);
     thread_module_default.addImport("libc", libc_module);
     network_module.addImport("libc", libc_module);

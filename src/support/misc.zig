@@ -1,11 +1,7 @@
 const builtin = @import("builtin");
 const build_options = @import("build_options");
 const std = @import("std");
-const c = @cImport({
-    @cInclude("stdio.h");
-    @cInclude("stdlib.h");
-    @cInclude("unistd.h");
-});
+const c = @import("libc");
 
 extern fn zfish_has_large_pages() bool;
 
@@ -171,19 +167,12 @@ pub fn hasLargePages() bool {
 }
 
 pub fn hardwareConcurrency() c_int {
-    // Mirrors Stockfish get_hardware_concurrency() (numa.h), which on Linux is
-    // std::thread::hardware_concurrency(). libstdc++ implements that as
-    // _GLIBCXX_NPROCS == sysconf(_SC_NPROCESSORS_ONLN), clamping a negative
-    // (error) result to 0. Identical on the owned Linux x86_64 glibc target.
-    // M-PORT: sysconf is POSIX (Linux/macOS); Windows has no _SC_NPROCESSORS_ONLN, so
-    // there std.Thread.getCpuCount() (GetSystemInfo) supplies the online count.
-    if (builtin.os.tag == .windows) {
-        const n = std.Thread.getCpuCount() catch return 0;
-        return std.math.cast(c_int, n) orelse 0;
-    }
-    const n = c.sysconf(c._SC_NPROCESSORS_ONLN);
-    if (n < 0) return 0;
-    return @intCast(n);
+    // Mirrors Stockfish get_hardware_concurrency() == std::thread::hardware_concurrency().
+    // std.Thread.getCpuCount() is its cross-platform equivalent -- sysconf(_SC_NPROCESSORS_ONLN)
+    // on POSIX, GetSystemInfo on Windows -- so it matches the prior Linux glibc behavior while
+    // also working on the owned Windows/macOS tiers. Clamp an error to 0 as libstdc++ does.
+    const n = std.Thread.getCpuCount() catch return 0;
+    return std.math.cast(c_int, n) orelse 0;
 }
 
 pub fn dbgHitOn(cond: bool, slot: c_int) void {
@@ -438,49 +427,10 @@ fn gitShaText() []const u8 {
 }
 
 fn compilerNameOwned(allocator: std.mem.Allocator) ![]u8 {
-    if (@hasDecl(c, "__INTEL_LLVM_COMPILER")) {
-        return std.fmt.allocPrint(allocator, "ICX {d}", .{c.__INTEL_LLVM_COMPILER});
-    }
-
-    if (@hasDecl(c, "__clang__")) {
-        return std.fmt.allocPrint(
-            allocator,
-            "clang++ {d}.{d}.{d}",
-            .{ c.__clang_major__, c.__clang_minor__, c.__clang_patchlevel__ },
-        );
-    }
-
-    if (@hasDecl(c, "_MSC_VER")) {
-        return std.fmt.allocPrint(
-            allocator,
-            "MSVC (version {d}.{d})",
-            .{ c._MSC_FULL_VER, c._MSC_BUILD },
-        );
-    }
-
-    if (@hasDecl(c, "__e2k__") and @hasDecl(c, "__LCC__")) {
-        return std.fmt.allocPrint(
-            allocator,
-            "MCST LCC (version {d}.{d}{d}.{d}{d})",
-            .{
-                @divTrunc(c.__LCC__, 100),
-                @divTrunc(@mod(c.__LCC__, 100), 10),
-                @mod(c.__LCC__, 10),
-                @divTrunc(c.__LCC_MINOR__, 10),
-                @mod(c.__LCC_MINOR__, 10),
-            },
-        );
-    }
-
-    if (@hasDecl(c, "__GNUC__")) {
-        return std.fmt.allocPrint(
-            allocator,
-            "g++ (GNUC) {d}.{d}.{d}",
-            .{ c.__GNUC__, c.__GNUC_MINOR__, c.__GNUC_PATCHLEVEL__ },
-        );
-    }
-
-    return allocator.dupe(u8, "Unknown compiler (unknown version)");
+    // Stockfish detects the C++ compiler through preprocessor macros (__clang__ / __GNUC__ /
+    // _MSC_VER / ...). The zfish port compiles zero C++ and is built by Zig (LLVM backend),
+    // so report that honestly instead of the macros that @cImport used to surface.
+    return std.fmt.allocPrint(allocator, "Zig {s} (LLVM)", .{builtin.zig_version_string});
 }
 
 fn compilerOsText() []const u8 {
@@ -525,37 +475,16 @@ fn compilationSettingsOwned(allocator: std.mem.Allocator) ![]u8 {
 }
 
 fn compilerVersionMacroText() []const u8 {
-    if (@hasDecl(c, "__VERSION__")) {
-        return std.mem.sliceTo(@as([*:0]const u8, @ptrCast(c.__VERSION__)), 0);
-    }
-
-    return "(undefined macro)";
+    // Was the C `__VERSION__` macro (the C++ compiler's version banner); the Zig build has no
+    // such macro, so report the Zig toolchain version.
+    return "Zig " ++ builtin.zig_version_string;
 }
 
 fn computeFallbackBuildDate() [8]u8 {
-    if (!@hasDecl(c, "__DATE__")) {
-        return .{ '0', '0', '0', '0', '0', '0', '0', '0' };
-    }
-
-    const date = std.mem.span(c.__DATE__);
-    const month = switch (date[0]) {
-        'A' => if (date[1] == 'p') "04" else "08",
-        'D' => "12",
-        'F' => "02",
-        'J' => switch (date[1]) {
-            'a' => "01",
-            'u' => if (date[2] == 'n') "06" else "07",
-            else => "00",
-        },
-        'M' => if (date[2] == 'r') "03" else "05",
-        'N' => "11",
-        'O' => "10",
-        'S' => "09",
-        else => "00",
-    };
-    const day_tens = if (date[4] == ' ') '0' else date[4];
-
-    return .{ date[7], date[8], date[9], date[10], month[0], month[1], day_tens, date[5] };
+    // Was derived from the C `__DATE__` macro. The authoritative build date is
+    // build_options.git_date (injected by build.zig); Zig exposes no compile-time date, so
+    // this fallback -- used only when git metadata is absent -- is a fixed placeholder.
+    return .{ '0', '0', '0', '0', '0', '0', '0', '0' };
 }
 
 fn allocCString(value: []const u8) ![*:0]u8 {
