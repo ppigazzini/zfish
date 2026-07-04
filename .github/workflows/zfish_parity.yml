@@ -109,13 +109,16 @@ jobs:
   # M-PORT cross-OS gate. The same pure-Zig source builds for the other two owned runtime
   # OSes -- Windows and macOS -- across their x86_64 and aarch64 tiers, behind the platform
   # seam (sync/alloc/clock/argv/stdio). Each lane builds NATIVELY on a GitHub-hosted runner
-  # (free for public repos) and asserts the bench is exactly 2067208: the integer-exact NNUE
-  # eval is arch/OS-invariant, so any per-OS regression (a mis-marshaled sync primitive, a
-  # bad aligned allocation, an argv/stdio mistake) that perturbs the search shows up here.
+  # (free for public repos) and runs `zig build parity-portable`: the bench signature plus all
+  # six golden gates (output / search-parity / search-modes / perft / eval / misc), driven by
+  # the pure-Zig parity harness -- the same coverage the Linux lanes get, now that the harness
+  # replaced the POSIX-only bash scripts. The integer-exact NNUE eval is arch/OS-invariant, so
+  # any per-OS regression (a mis-marshaled sync primitive, a bad aligned allocation, an
+  # argv/stdio mistake) that perturbs the search shows up here. Only the Linux-specific
+  # structural gates (h9 src-free via `nm`, arch-determinism) stay exclusive to `parity`.
   # July-2026 standard runner labels: windows-2025 (x64), windows-11-arm (arm64),
   # macos-26 (Apple silicon arm64), macos-26-intel (x64). fail-fast off so one OS failing
-  # still reports the others. The exhaustive golden/perft/src-free harness stays on the
-  # Linux jobs (its bash tooling is POSIX); the bench signature is the cross-OS invariant.
+  # still reports the others.
   native-os:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -128,28 +131,24 @@ jobs:
             runner: windows-2025
             os: windows
             arch: x86-64-sse41-popcnt
-            exe: .exe
           - name: Windows aarch64 parity
             runner: windows-11-arm
             os: windows
             arch: armv8-dotprod
-            exe: .exe
             # The native aarch64-windows Zig 0.16.0 segfaults on startup on this runner
             # (a toolchain bug -- the engine itself cross-compiles to a valid aarch64
             # PE). Run the x86_64 Zig under Windows-on-ARM x64 emulation instead and
-            # cross-compile to aarch64-windows; the produced .exe still runs natively for
-            # the bench, so the signature is still validated on real arm64 hardware.
+            # cross-compile to aarch64-windows; the produced binaries still run natively,
+            # so the harness validates the signature on real arm64 hardware.
             zig_x64_emu: true
           - name: macOS aarch64 parity
             runner: macos-26
             os: macos
             arch: apple-silicon
-            exe: ""
           - name: macOS x86-64 parity
             runner: macos-26-intel
             os: macos
             arch: x86-64-sse41-popcnt
-            exe: ""
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -177,21 +176,17 @@ jobs:
           path: net/nn-*.nnue
           key: nnue-${{ hashFiles('src/eval/network.zig') }}
 
-      # Fetch through `bash` (git-bash on Windows) so the POSIX fetch_net.sh runs without
-      # depending on `sh` being on PATH -- which `zig build net` would require.
+      # Pre-fetch the net through `bash` (git-bash on Windows) so it is cached before the
+      # build; `zig build` also fetches it via net_cmd, which now early-exits when present.
       - name: Fetch the NNUE net
         shell: bash
         run: |
           cd net
           bash ../tools/fetch_net.sh ../src/eval/network.zig
 
-      - name: Build ${{ matrix.os }} (${{ matrix.arch }}) + bench (native)
+      # Full cross-OS parity: bench signature (2067208) + the six golden gates, all via the
+      # pure-Zig harness. `shell: bash` only supplies bash on PATH for the net fetch that
+      # `zig build` shells out to; the harness itself needs no shell.
+      - name: Build + parity-portable (native, ${{ matrix.arch }})
         shell: bash
-        run: |
-          zig build -Dos=${{ matrix.os }} -Darch=${{ matrix.arch }}
-          cd net
-          out="$(../zig-out/bin/stockfish${{ matrix.exe }} bench 2>&1)"
-          printf '%s\n' "$out" | tail -6
-          printf '%s\n' "$out" | grep -qE 'Nodes searched[[:space:]]*:[[:space:]]*2067208([^0-9]|$)' \
-            || { echo 'native-os: FAIL -- ${{ matrix.name }} bench != 2067208'; exit 1; }
-          echo 'native-os: OK -- ${{ matrix.name }} bench == 2067208 (native)'
+        run: zig build parity-portable -Dos=${{ matrix.os }} -Darch=${{ matrix.arch }}
