@@ -8,6 +8,7 @@ const thread_port = @import("thread");
 const nnue_acc = @import("nnue_accumulator");
 const evaluate_mod = @import("evaluate");
 const graph_layout = @import("graph_layout");
+const tablebase = @import("tablebase");
 const nnue_misc_mod = @import("nnue_misc");
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
@@ -89,13 +90,7 @@ pub const PositionSummary = extern struct {
 
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
-pub const TablebaseProbe = extern struct {
-    available: u8,
-    wdl: c_int,
-    wdl_state: c_int,
-    dtz: c_int,
-    dtz_state: c_int,
-};
+pub const TablebaseProbe = tablebase.ProbeResult;
 
 pub const EvalInput = extern struct {
     psqt: c_int,
@@ -151,7 +146,6 @@ extern fn zfish_position_do_move_state(pos: *anyopaque, move_raw: u16, state: *a
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
-extern fn zfish_engine_tablebases_init(path_ptr: [*]const u8, path_len: usize) void;
 extern fn zfish_numa_context_set_system(numa_context: *anyopaque) void;
 extern fn zfish_numa_context_set_hardware(numa_context: *anyopaque) void;
 extern fn zfish_numa_context_set_none(numa_context: *anyopaque) void;
@@ -168,12 +162,6 @@ extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*an
 extern fn zfish_engine_accumulator_caches_destroy(caches: ?*anyopaque) void;
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
-extern fn zfish_tbprobe_max_cardinality() usize;
-extern fn zfish_tbprobe_probe_fen(
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    chess960: u8,
-) TablebaseProbe;
 extern fn zfish_network_evaluate(
     network: *const anyopaque,
     pos: *const anyopaque,
@@ -336,7 +324,7 @@ pub fn optionOnChange(
             break :blk null;
         },
         option_callback_syzygy_path => blk: {
-            zfish_engine_tablebases_init(value.ptr, value.len);
+            tablebase.init(value.ptr, value.len);
             break :blk null;
         },
         option_callback_eval_file => blk: {
@@ -526,7 +514,7 @@ pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8)
     thread_port.waitForSearchFinished(threads);
     zfish_engine_tt_clear(tt, threads);
     thread_port.clear(threads);
-    zfish_engine_tablebases_init(syzygy_path.ptr, syzygy_path.len);
+    tablebase.init(syzygy_path.ptr, syzygy_path.len);
 }
 
 pub fn searchClearEngine(engine_ptr: *anyopaque) void {
@@ -1025,14 +1013,14 @@ fn probeTablebases(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) 
         break :blk &pieces_storage;
     };
 
-    if (countPieces(pieces) > zfish_tbprobe_max_cardinality()) {
+    if (countPieces(pieces) > tablebase.maxCardinality()) {
         return emptyTablebaseProbe();
     }
 
     const fen_ptr = positionFen(pos, pieces) orelse return emptyTablebaseProbe();
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
-    return zfish_tbprobe_probe_fen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
+    return tablebase.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }
 
 fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {

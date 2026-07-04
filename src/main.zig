@@ -589,29 +589,9 @@ fn zfishThreadpoolMainManagerPtr(pool: *anyopaque) callconv(.c) ?*anyopaque {
 // call src/syzygy/tbprobe.cpp) behind ZFISH_LEGACY_CPP_TARGET; routing the
 // default build through these lets the default-only C++ Tablebases stub block in
 // the bridge be deleted (no default reference to Tablebases:: remains).
-const TbProbeResult = extern struct {
-    available: u8,
-    wdl: c_int,
-    wdl_state: c_int,
-    dtz: c_int,
-    dtz_state: c_int,
-};
 
-fn tbMaxCardinality() callconv(.c) usize {
-    return 0;
-}
 
-fn tbProbeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) callconv(.c) TbProbeResult {
-    _ = fen_ptr;
-    _ = fen_len;
-    _ = chess960;
-    return .{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 };
-}
 
-fn tbInit(path_ptr: [*]const u8, path_len: usize) callconv(.c) void {
-    _ = path_ptr;
-    _ = path_len;
-}
 
 // REPORT-12 TU=0 grind: the NumaPolicy setters are no-ops in the default build — the numa context is
 // a fixed single-node native stub, so reconfiguring it does nothing (and must not touch the stub).
@@ -639,9 +619,6 @@ fn numaExecuteOnNode(_: *const anyopaque, _: usize, callback: *const fn (?*anyop
 }
 
 comptime {
-    @export(&tbMaxCardinality, .{ .name = "zfish_tbprobe_max_cardinality" });
-    @export(&tbProbeFen, .{ .name = "zfish_tbprobe_probe_fen" });
-    @export(&tbInit, .{ .name = "zfish_engine_tablebases_init" });
     // id_state reads the native option model (default-only populated), so the
     // native version is default-only; legacy keeps the bridge C++ body.
     @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });

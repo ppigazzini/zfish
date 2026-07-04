@@ -5,6 +5,7 @@ const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
 const movegen_port = @import("movegen");
+const tablebase = @import("tablebase");
 
 // Zig-owned thread job runner (engine-graph reimplementation). Verified by its
 // own concurrency tests; compile-checked here until wired into construction.
@@ -130,13 +131,7 @@ pub const TbConfig = extern struct {
     probe_depth: c_int,
 };
 
-const TablebaseProbe = extern struct {
-    available: u8,
-    wdl: c_int,
-    wdl_state: c_int,
-    dtz: c_int,
-    dtz_state: c_int,
-};
+const TablebaseProbe = tablebase.ProbeResult;
 
 const RankedRootMove = extern struct {
     raw_move: u16,
@@ -178,12 +173,6 @@ extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
 extern fn zfish_options_syzygy_50_move_rule(options: *const anyopaque) u8;
 extern fn zfish_options_syzygy_probe_depth(options: *const anyopaque) c_int;
 extern fn zfish_options_syzygy_probe_limit(options: *const anyopaque) c_int;
-extern fn zfish_tbprobe_max_cardinality() usize;
-extern fn zfish_tbprobe_probe_fen(
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    chess960: u8,
-) TablebaseProbe;
 extern fn zfish_engine_state_list_storage_create() ?*anyopaque;
 extern fn zfish_engine_state_list_storage_destroy(storage: ?*anyopaque) void;
 extern fn zfish_engine_state_list_storage_reset(storage: *anyopaque) *anyopaque;
@@ -407,7 +396,7 @@ fn loadTbConfig(options: *const anyopaque, pos: *const anyopaque) TbConfig {
         .probe_depth = zfish_options_syzygy_probe_depth(options),
     };
 
-    const max_cardinality: c_int = @intCast(zfish_tbprobe_max_cardinality());
+    const max_cardinality: c_int = @intCast(tablebase.maxCardinality());
     if (config.cardinality > max_cardinality) {
         config.cardinality = max_cardinality;
         config.probe_depth = 0;
@@ -427,7 +416,7 @@ fn probePosition(pos: *const anyopaque) TablebaseProbe {
     const fen_ptr = buildRootFen(pos) orelse @panic("OOM");
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
-    return zfish_tbprobe_probe_fen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
+    return tablebase.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }
 
 fn dtzBeforeZeroing(wdl: c_int) c_int {

@@ -118,6 +118,11 @@ pub fn build(b: *std.Build) void {
 
     // M16.2b/M16.5: typed engine-graph views (ThreadPool/Worker/... offset structs), imported
     // by the modules that used to reach the graph through main.zig C-ABI glue.
+    const tablebase_module = b.createModule(.{
+        .root_source_file = b.path("src/support/tablebase.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const graph_layout_module = b.createModule(.{
         .root_source_file = b.path("src/graph_layout.zig"),
         .target = target,
@@ -410,6 +415,8 @@ pub fn build(b: *std.Build) void {
     engine_module_default.addImport("graph_layout", graph_layout_module);
     thread_module_default.addImport("movegen", movegen_module);
     uci_move_module.addImport("movegen", movegen_module);
+    thread_module_default.addImport("tablebase", tablebase_module);
+    engine_module_default.addImport("tablebase", tablebase_module);
     network_module.addImport("libc", libc_module);
     nnue_misc_module.addImport("libc", libc_module);
     evaluate_module.addImport("libc", libc_module);
