@@ -570,14 +570,7 @@ pub fn build(b: *std.Build) void {
     // regression net the native stage-4 thread runtime must still pass. Kept out
     // of the core `parity` aggregate (slower, wall-clock-timed); run explicitly
     // for any thread-runtime slice.
-    const stress_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/stress.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-    });
-    stress_cmd.step.dependOn(install_step);
-    stress_cmd.step.dependOn(&net_cmd.step);
-    stress_cmd.setCwd(b.path("net"));
+    const stress_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "stress", "-", "check");
 
     const stress_step = b.step(
         "parity-stress",
@@ -616,14 +609,8 @@ pub fn build(b: *std.Build) void {
     // catches a native runtime that runs but corrupts result aggregation. Out of
     // the core `parity` aggregate (non-deterministic, sleep-paced).
     const mt_golden = b.pathFromRoot("tools/mt_sanity.golden");
-    const mt_script = b.pathFromRoot("tools/mt_sanity.sh");
 
-    const mt_cmd = b.addSystemCommand(&.{
-        "bash", mt_script, b.getInstallPath(.bin, "stockfish"), mt_golden, "check",
-    });
-    mt_cmd.step.dependOn(install_step);
-    mt_cmd.step.dependOn(&net_cmd.step);
-    mt_cmd.setCwd(b.path("net"));
+    const mt_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "mt-sanity", mt_golden, "check");
 
     const mt_step = b.step(
         "parity-mt",
@@ -631,12 +618,7 @@ pub fn build(b: *std.Build) void {
     );
     mt_step.dependOn(&mt_cmd.step);
 
-    const mt_update_cmd = b.addSystemCommand(&.{
-        "bash", mt_script, b.getInstallPath(.bin, "stockfish"), mt_golden, "update",
-    });
-    mt_update_cmd.step.dependOn(install_step);
-    mt_update_cmd.step.dependOn(&net_cmd.step);
-    mt_update_cmd.setCwd(b.path("net"));
+    const mt_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "mt-sanity", mt_golden, "update");
 
     const mt_update_step = b.step(
         "parity-mt-update",
@@ -672,14 +654,7 @@ pub fn build(b: *std.Build) void {
     // elapsed must track the movetime budget and scale with it. Non-deterministic
     // and sleep-paced, so it is its own step (like parity-mt), outside the core
     // deterministic `parity` aggregate; the CI workflow runs it explicitly.
-    const time_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/time_mgmt.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-    });
-    time_cmd.step.dependOn(install_step);
-    time_cmd.step.dependOn(&net_cmd.step);
-    time_cmd.setCwd(b.path("net"));
+    const time_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "time-mgmt", "-", "check");
 
     const time_step = b.step(
         "parity-time",
@@ -819,6 +794,11 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&perft_cmd.step);
     parity_step.dependOn(&eval_cmd.step);
     parity_step.dependOn(&misc_cmd.step);
+    // M-PORT.2: the interactive concurrency/timing gates now run in the pure-Zig harness, so
+    // they join the core aggregate (previously CI ran them as separate ad-hoc steps).
+    parity_step.dependOn(&mt_cmd.step);
+    parity_step.dependOn(&stress_cmd.step);
+    parity_step.dependOn(&time_cmd.step);
     // M16.1d: the src-free structural invariant is now permanent, so it gates every push.
     parity_step.dependOn(&h9_cmd.step);
 
@@ -831,7 +811,7 @@ pub fn build(b: *std.Build) void {
     const harness_sig_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "signature", "2067208", "check");
     const parity_portable_step = b.step(
         "parity-portable",
-        "Cross-OS parity subset (bench signature + six golden gates) via the pure-Zig harness",
+        "Cross-OS parity via the pure-Zig harness: signature + six golden gates + mt/stress/time",
     );
     parity_portable_step.dependOn(&bench_run.step);
     parity_portable_step.dependOn(&uci_run.step);
@@ -842,6 +822,12 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&perft_cmd.step);
     parity_portable_step.dependOn(&eval_cmd.step);
     parity_portable_step.dependOn(&misc_cmd.step);
+    // The concurrency + timing gates -- the cross-OS payoff of M-PORT: these exercise the
+    // ported sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
+    // ported steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.
+    parity_portable_step.dependOn(&mt_cmd.step);
+    parity_portable_step.dependOn(&stress_cmd.step);
+    parity_portable_step.dependOn(&time_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",

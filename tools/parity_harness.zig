@@ -441,6 +441,317 @@ fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []con
     fail("signature: no 'Nodes searched' line (crash?)", .{});
 }
 
+// ---- interactive gates (concurrency + timing) -------------------------------
+//
+// mt-sanity / stress / time-mgmt drive a *live* search and must not truncate it: this
+// engine's UCI loop treats a `quit` (or stdin EOF) arriving during `go` as a stop, so the
+// bash gates held stdin open with a sleep. Here we instead read stdout to the `bestmove`
+// line BEFORE sending quit -- the search runs to its real depth/time limit. stderr is sent
+// to null (the target info/bestmove lines are on stdout) so a single-stream read can't
+// deadlock. This is what exercises the M-PORT sync primitives (futex / RtlWaitOnAddress /
+// __ulock) and the ported steady clock (QueryPerformanceCounter on Windows) under real
+// concurrency and wall-clock timing -- coverage the single-threaded goldens can't give.
+
+const ScoreKind = enum { none, cp, mate };
+
+const Outcome = struct {
+    got_bestmove: bool = false,
+    kind: ScoreKind = .none,
+    val: i64 = 0,
+    time_ms: ?i64 = null,
+    bm_buf: [8]u8 = undefined,
+    bm_len: usize = 0,
+    exited_clean: bool = false,
+    fn bestmove(self: *const Outcome) []const u8 {
+        return self.bm_buf[0..self.bm_len];
+    }
+};
+
+fn trimCR(line: []const u8) []const u8 {
+    return if (line.len > 0 and line[line.len - 1] == '\r') line[0 .. line.len - 1] else line;
+}
+
+fn wellFormedMove(m: []const u8) bool {
+    if (std.mem.eql(u8, m, "(none)")) return true;
+    if (m.len < 4 or m.len > 5) return false;
+    if (m[0] < 'a' or m[0] > 'h' or m[2] < 'a' or m[2] > 'h') return false;
+    if (m[1] < '1' or m[1] > '8' or m[3] < '1' or m[3] > '8') return false;
+    if (m.len == 5 and std.mem.indexOfScalar(u8, "qrbn", m[4]) == null) return false;
+    return true;
+}
+
+// Parse "score cp N" / "score mate N" (last one wins) and "time N" into `out`.
+fn scanInfo(out: *Outcome, line: []const u8) void {
+    var t = std.mem.tokenizeScalar(u8, line, ' ');
+    var prev: []const u8 = "";
+    while (t.next()) |tok| {
+        if (std.mem.eql(u8, prev, "score")) {
+            const vtok = t.next() orelse "";
+            if (std.mem.eql(u8, tok, "cp")) {
+                out.kind = .cp;
+                out.val = std.fmt.parseInt(i64, vtok, 10) catch out.val;
+            } else if (std.mem.eql(u8, tok, "mate")) {
+                out.kind = .mate;
+                out.val = std.fmt.parseInt(i64, vtok, 10) catch out.val;
+            }
+        } else if (std.mem.eql(u8, prev, "time")) {
+            out.time_ms = std.fmt.parseInt(i64, tok, 10) catch out.time_ms;
+        }
+        prev = tok;
+    }
+}
+
+// Interactive UCI session. The child's stdout pipe is non-blocking (the Io sets it so), so a
+// raw File.Reader busy-spins; MultiReader.fill is the Io-aware await that std.process.run
+// uses, so this drives the search through it -- accumulate stdout, scan the buffer for a
+// marker, keep the search alive (no early quit) until it emits its real bestmove. stderr ->
+// null so a single-stream read can't deadlock. Init in place (self-referential buffers).
+const Interactive = struct {
+    io: Io,
+    gpa: std.mem.Allocator,
+    child: std.process.Child,
+    wbuf: [2048]u8,
+    fw: Io.File.Writer,
+    mrbuf: Io.File.MultiReader.Buffer(1),
+    mr: Io.File.MultiReader,
+    // Offset in the accumulated buffer past the last marker matched by fillUntil, so each call
+    // waits for the NEXT (new) occurrence rather than re-finding markers from earlier commands.
+    scanned: usize,
+
+    fn init(self: *Interactive, io: Io, gpa: std.mem.Allocator, bin: []const u8) !void {
+        self.io = io;
+        self.gpa = gpa;
+        self.scanned = 0;
+        self.child = try std.process.spawn(io, .{ .argv = &.{bin}, .stdin = .pipe, .stdout = .pipe, .stderr = .ignore });
+        self.fw = self.child.stdin.?.writer(io, &self.wbuf);
+        self.mr.init(gpa, io, self.mrbuf.toStreams(), &.{self.child.stdout.?});
+    }
+
+    fn send(self: *Interactive, bytes: []const u8) void {
+        self.fw.interface.writeAll(bytes) catch {};
+        self.fw.interface.flush() catch {};
+    }
+
+    fn buffered(self: *Interactive) []const u8 {
+        return self.mr.reader(0).buffered();
+    }
+
+    // Read more stdout until the NEXT `needle` appears (past prior matches); false at EOF.
+    fn fillUntil(self: *Interactive, needle: []const u8) bool {
+        while (true) {
+            if (std.mem.indexOfPos(u8, self.buffered(), self.scanned, needle)) |pos| {
+                self.scanned = pos + needle.len;
+                return true;
+            }
+            self.mr.fill(4096, .none) catch {
+                if (std.mem.indexOfPos(u8, self.buffered(), self.scanned, needle)) |pos| {
+                    self.scanned = pos + needle.len;
+                    return true;
+                }
+                return false;
+            };
+        }
+    }
+
+    // Send quit, drain to EOF, reap. Returns whether the process exited with code 0.
+    fn finish(self: *Interactive) bool {
+        self.send("quit\n");
+        self.child.stdin.?.close(self.io);
+        self.child.stdin = null;
+        while (self.mr.fill(4096, .none)) |_| {} else |_| {}
+        const term = self.child.wait(self.io) catch std.process.Child.Term{ .unknown = 0 };
+        self.mr.deinit();
+        self.child.kill(self.io);
+        return switch (term) {
+            .exited => |c| c == 0,
+            else => false,
+        };
+    }
+};
+
+// Scan a captured transcript for the last score/time before the first bestmove, and the move.
+fn parseOutcome(text: []const u8) Outcome {
+    var out = Outcome{};
+    var li = lines(text);
+    while (li.next()) |raw| {
+        const line = trimCR(raw);
+        scanInfo(&out, line);
+        if (startsWith(line, "bestmove")) {
+            var bt = std.mem.tokenizeScalar(u8, line, ' ');
+            _ = bt.next();
+            if (bt.next()) |m| {
+                const n = @min(m.len, out.bm_buf.len);
+                @memcpy(out.bm_buf[0..n], m[0..n]);
+                out.bm_len = n;
+            }
+            out.got_bestmove = true;
+            break;
+        }
+    }
+    return out;
+}
+
+// One interactive search: send `cmds`, read to the real bestmove (no early-quit truncation).
+fn runSearch(io: Io, gpa: std.mem.Allocator, bin: []const u8, cmds: []const u8) !Outcome {
+    var s: Interactive = undefined;
+    try s.init(io, gpa, bin);
+    s.send(cmds);
+    _ = s.fillUntil("\nbestmove");
+    var out = parseOutcome(s.buffered());
+    out.exited_clean = s.finish();
+    return out;
+}
+
+const MtPos = struct { name: []const u8, cmds: []const u8 };
+const mt_positions = [_]MtPos{
+    .{ .name = "startpos", .cmds = "position startpos" },
+    .{ .name = "open", .cmds = "position startpos moves e2e4 e7e5 g1f3 b8c6 f1b5 a7a6" },
+    .{ .name = "endgame", .cmds = "position fen 8/5k2/4p3/4P3/5K2/8/8/8 w - - 0 1" },
+    .{ .name = "queens", .cmds = "position startpos moves d2d4 d7d5 c2c4 e7e6 b1c3 g8f6" },
+};
+const mt_depth = 12;
+const mt_band = 150;
+
+// mt-sanity: multi-threaded search must complete with a well-formed bestmove and a score of
+// the same kind/sign and within BAND cp of the deterministic single-thread golden. Non-
+// deterministic (Lazy SMP), so a band, not a bit-exact gate -- it catches garbled result
+// aggregation (wrong voting, dropped PV, sign flips) that the single-thread goldens can't.
+fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []const u8, mode: []const u8) noreturn {
+    if (std.mem.eql(u8, mode, "update")) {
+        var out: std.ArrayList(u8) = .empty;
+        for (mt_positions) |p| {
+            const cmds = std.fmt.allocPrint(gpa, "setoption name Threads value 1\n{s}\ngo depth {d}\n", .{ p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
+            defer gpa.free(cmds);
+            const o = runSearch(io, gpa, bin, cmds) catch fail("mt-sanity: engine run failed", .{});
+            if (!o.got_bestmove) fail("mt-sanity: {s} single-thread produced no bestmove", .{p.name});
+            const kind = if (o.kind == .mate) "mate" else "cp";
+            out.print(gpa, "{s:<10} score {s} {d}|bestmove {s}\n", .{ p.name, kind, o.val, o.bestmove() }) catch fail("mt-sanity: oom", .{});
+        }
+        Io.Dir.cwd().writeFile(io, .{ .sub_path = golden, .data = out.items }) catch fail("mt-sanity: cannot write {s}", .{golden});
+        std.debug.print("mt-sanity: wrote golden ({d} positions, depth {d})\n", .{ mt_positions.len, mt_depth });
+        std.process.exit(0);
+    }
+
+    const raw_golden = Io.Dir.cwd().readFileAlloc(io, golden, gpa, .unlimited) catch
+        fail("mt-sanity: golden missing: {s} (run update first)", .{golden});
+    defer gpa.free(raw_golden);
+
+    for (mt_positions) |p| {
+        // Find this position's single-thread reference score in the golden.
+        var ref = Outcome{};
+        var found = false;
+        var gl = lines(raw_golden);
+        while (gl.next()) |line_raw| {
+            const line = trimCR(line_raw);
+            var toks = std.mem.tokenizeScalar(u8, line, ' ');
+            const name = toks.next() orelse continue;
+            if (!std.mem.eql(u8, name, p.name)) continue;
+            scanInfo(&ref, line);
+            found = true;
+            break;
+        }
+        if (!found or ref.kind == .none) fail("mt-sanity: golden has no score for {s} (regenerate)", .{p.name});
+
+        for ([_]u8{ 2, 4 }) |tc| {
+            const cmds = std.fmt.allocPrint(gpa, "setoption name Threads value {d}\n{s}\ngo depth {d}\n", .{ tc, p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
+            defer gpa.free(cmds);
+            const o = runSearch(io, gpa, bin, cmds) catch fail("mt-sanity: engine run failed", .{});
+            if (!o.got_bestmove or !wellFormedMove(o.bestmove())) fail("mt-sanity: {s} Threads={d}: no/garbled bestmove", .{ p.name, tc });
+            if (o.kind == .none) fail("mt-sanity: {s} Threads={d}: no score emitted", .{ p.name, tc });
+            if (o.kind != ref.kind) fail("mt-sanity: {s} Threads={d}: score kind differs from single-thread", .{ p.name, tc });
+            if (ref.kind == .mate) {
+                if ((ref.val < 0) != (o.val < 0)) fail("mt-sanity: {s} Threads={d}: mate sign flipped ({d} vs {d})", .{ p.name, tc, o.val, ref.val });
+            } else {
+                const diff = if (o.val > ref.val) o.val - ref.val else ref.val - o.val;
+                if (diff > mt_band) fail("mt-sanity: {s} Threads={d}: cp {d} vs st {d} exceeds band {d}", .{ p.name, tc, o.val, ref.val, mt_band });
+            }
+        }
+    }
+    std.debug.print("mt-sanity: OK ({d} positions, Threads {{2,4}} within band {d} of single-thread, depth {d})\n", .{ mt_positions.len, mt_band, mt_depth });
+    std.process.exit(0);
+}
+
+const stress_cycles = 24;
+const stress_churn = 12;
+
+// stress: liveness for the M-PORT thread runtime. Phase A hammers ONE process with go/stop
+// cycles across thread counts {1,2,4,8} (a third use the go-infinite -> stop handshake, which
+// exercises the futex/RtlWaitOnAddress/__ulock wakeup); Phase B churns fresh engine graphs.
+// A hang trips the CI job timeout; every search must yield a well-formed bestmove and every
+// process must exit cleanly. Not a determinism gate.
+fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    const threads = [_]u8{ 1, 2, 4, 8 };
+    std.debug.print("stress: phase A -- {d} go/stop cycles across threads {{1,2,4,8}}\n", .{stress_cycles});
+
+    var s: Interactive = undefined;
+    s.init(io, gpa, bin) catch fail("stress: spawn failed", .{});
+    // No uciok/readyok barriers: those protocol replies go to stderr (discarded here), and
+    // the engine processes commands in order regardless. Synchronize on the stdout markers
+    // the search itself emits -- `info depth` (spun up) and `bestmove` (done).
+    s.send("setoption name Hash value 16\n");
+    var buf: [128]u8 = undefined;
+    for (0..stress_cycles) |i| {
+        const tc = threads[i % threads.len];
+        s.send(std.fmt.bufPrint(&buf, "setoption name Threads value {d}\nucinewgame\n", .{tc}) catch unreachable);
+        if (i % 3 == 0) {
+            // stop-handshake path: start an unbounded search, wait for it to actually spin up,
+            // then stop -- this is what exercises the sync-primitive wakeup under contention.
+            s.send("position startpos\ngo infinite\n");
+            if (!s.fillUntil("\ninfo depth")) fail("stress: phase A cycle {d} -- infinite search never started", .{i});
+            s.send("stop\n");
+        } else {
+            s.send("position startpos moves e2e4 e7e5\ngo depth 10\n");
+        }
+        // The cursor makes this wait for THIS cycle's bestmove (not an earlier one).
+        if (!s.fillUntil("\nbestmove")) fail("stress: phase A cycle {d} -- no bestmove (lost search?)", .{i});
+    }
+    const got = std.mem.count(u8, s.buffered(), "\nbestmove");
+    const clean = s.finish();
+    if (!clean) fail("stress: phase A process did not exit cleanly (crash/abort)", .{});
+    if (got != stress_cycles) fail("stress: phase A produced {d} bestmoves, expected {d}", .{ got, stress_cycles });
+
+    std.debug.print("stress: phase B -- {d} construct/destroy iterations\n", .{stress_churn});
+    for (0..stress_churn) |j| {
+        const tc = threads[j % threads.len];
+        const cmds = std.fmt.bufPrint(&buf, "setoption name Threads value {d}\nucinewgame\nposition startpos\ngo depth 8\n", .{tc}) catch unreachable;
+        const o = runSearch(io, gpa, bin, cmds) catch fail("stress: phase B iter {d} spawn/run failed", .{j});
+        if (!o.got_bestmove) fail("stress: phase B iter {d} (Threads={d}) produced no bestmove", .{ j, tc });
+        if (!o.exited_clean) fail("stress: phase B iter {d} (Threads={d}) did not exit cleanly", .{ j, tc });
+    }
+    std.debug.print("stress: OK (phase A {d} cycles + phase B {d} churns, no hang/crash)\n", .{ stress_cycles, stress_churn });
+    std.process.exit(0);
+}
+
+// time-mgmt: wall-clock invariants no depth/node gate covers (the startTime=0 class of bug).
+// BAND: `go movetime T` reports elapsed within [T/3, 3T+1500]. SCALE: it grows with the
+// budget. ALLOC: `go wtime/btime` picks a sane sub-budget. Directly exercises the ported
+// steady clock (QueryPerformanceCounter on Windows, CLOCK_MONOTONIC on POSIX).
+fn runTimeMgmt(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    var reported: [2]i64 = .{ 0, 0 };
+    const budgets = [_]i64{ 300, 900 };
+    for (budgets, 0..) |t, idx| {
+        var cmdbuf: [64]u8 = undefined;
+        const cmds = std.fmt.bufPrint(&cmdbuf, "position startpos\ngo movetime {d}\n", .{t}) catch unreachable;
+        const o = runSearch(io, gpa, bin, cmds) catch fail("time-mgmt: engine run failed", .{});
+        if (!o.got_bestmove or !wellFormedMove(o.bestmove())) fail("time-mgmt: movetime {d}: no legal bestmove", .{t});
+        const n = o.time_ms orelse fail("time-mgmt: movetime {d}: engine reported no 'time' field", .{t});
+        const lo = @divTrunc(t, 3);
+        const hi = 3 * t + 1500;
+        if (n < lo or n > hi) fail("time-mgmt: movetime {d}: reported {d}ms outside [{d},{d}] -- startTime/clock regression", .{ t, n, lo, hi });
+        reported[idx] = n;
+        std.debug.print("time-mgmt: movetime {d} -> reported {d}ms, bestmove ok\n", .{ t, n });
+    }
+    if (reported[1] - reported[0] < 200) fail("time-mgmt: reported time does not scale with budget (300->{d}, 900->{d}) -- frozen clock", .{ reported[0], reported[1] });
+
+    const o = runSearch(io, gpa, bin, "position startpos\ngo wtime 3000 btime 3000\n") catch fail("time-mgmt: engine run failed", .{});
+    if (!o.got_bestmove or !wellFormedMove(o.bestmove())) fail("time-mgmt: wtime/btime: no legal bestmove", .{});
+    const w = o.time_ms orelse fail("time-mgmt: wtime/btime: engine reported no 'time' field", .{});
+    if (w < 1 or w > 3000) fail("time-mgmt: wtime/btime: allocated {d}ms outside (0,3000] -- allocation regression", .{w});
+    std.debug.print("time-mgmt: wtime/btime 3000 -> allocated {d}ms, bestmove ok\n", .{w});
+    std.debug.print("time-mgmt: OK (movetime band+scale, wtime allocation)\n", .{});
+    std.process.exit(0);
+}
+
 // ---- driver -----------------------------------------------------------------
 
 fn fail(comptime fmt: []const u8, args: anytype) noreturn {
@@ -467,6 +778,9 @@ pub fn main(init: std.process.Init) !void {
     const mode = if (args.items.len >= 5) args.items[4] else "check";
 
     if (std.mem.eql(u8, check_name, "signature")) runSignature(gpa, io, bin, golden);
+    if (std.mem.eql(u8, check_name, "mt-sanity")) runMtSanity(gpa, io, bin, golden, mode);
+    if (std.mem.eql(u8, check_name, "stress")) runStress(gpa, io, bin);
+    if (std.mem.eql(u8, check_name, "time-mgmt")) runTimeMgmt(gpa, io, bin);
 
     const check = std.meta.stringToEnum(Check, check_name) orelse
         fail("parity_harness: unknown check '{s}'", .{check_name});
