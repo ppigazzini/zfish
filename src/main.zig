@@ -611,10 +611,7 @@ comptime {
     // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
     // M-FINAL: native AccumulatorCaches construct/destroy (legacy keeps new/delete).
     @export(&zfishEngineAccumulatorCachesCreate, .{ .name = "zfish_engine_accumulator_caches_create" });
-    @export(&zfishEngineAccumulatorCachesDestroy, .{ .name = "zfish_engine_accumulator_caches_destroy" });
     // M-FINAL: native AccumulatorStack construct/destroy (legacy keeps new/delete).
-    @export(&zfishEngineAccumulatorStackCreate, .{ .name = "zfish_engine_accumulator_stack_create" });
-    @export(&zfishEngineAccumulatorStackDestroy, .{ .name = "zfish_engine_accumulator_stack_destroy" });
     // M-FINAL cutover: native engine container construct/destruct (not yet on the live
     // path; the flip commit wires these). Default-only — legacy keeps the C++ UCIEngine.
     // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
@@ -1590,21 +1587,12 @@ fn zfishEngineAccumulatorCachesCreate(network: *const anyopaque) callconv(.c) ?*
     nnue_accumulator_port.clearRefreshCache(buf, biases);
     return buf;
 }
-fn zfishEngineAccumulatorCachesDestroy(caches: ?*anyopaque) callconv(.c) void {
-    if (caches) |buf| zfishOperatorDelete(buf);
-}
 
 // M-FINAL (construction-crack + init): `new AccumulatorStack()` / `delete` ported native.
 // AccumulatorStack is POD (std::array members + a `size = 1` default member init), so value-init
 // == a zeroed accumulator_stack_size block with size set to 1. zfish_accumulator_stack_reset on
 // a zeroed buffer is exactly that (it sets size=1 and clears state-0's already-zero computed/diff
 // fields), so it reproduces the ctor state. operator new/delete keeps the family matched.
-fn zfishEngineAccumulatorStackCreate() callconv(.c) ?*anyopaque {
-    const buf = zfishOperatorNew(graph_layout.accumulator_stack_size) orelse return null;
-    @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.accumulator_stack_size], 0);
-    nnue_accumulator_port.stackReset(buf);
-    return buf;
-}
 fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) callconv(.c) void {
     if (stack) |buf| zfishOperatorDelete(buf);
 }

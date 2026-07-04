@@ -148,10 +148,7 @@ extern fn zfish_engine_numa_set_from_string(
 ) void;
 extern fn zfish_numa_context_node_count(numa_context: *const anyopaque) usize;
 extern fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize;
-extern fn zfish_engine_accumulator_stack_create() ?*anyopaque;
-extern fn zfish_engine_accumulator_stack_destroy(stack: ?*anyopaque) void;
 extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*anyopaque;
-extern fn zfish_engine_accumulator_caches_destroy(caches: ?*anyopaque) void;
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_network_evaluate(
@@ -490,6 +487,21 @@ fn setStartPosition(engine_ptr: *anyopaque) void {
         @panic("set start position failed");
 }
 
+// Accumulator stack/caches lifecycle (M16.7 -- malloc'd engine-graph buffers). The refresh-cache
+// create path still needs the native FT biases pointer (main-local) and stays a bridge for now.
+fn accumulatorStackCreate() ?*anyopaque {
+    const buf = std.c.malloc(graph_layout.accumulator_stack_size) orelse return null;
+    @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.accumulator_stack_size], 0);
+    nnue_acc.stackReset(buf);
+    return buf;
+}
+fn accumulatorStackDestroy(stack: ?*anyopaque) void {
+    if (stack) |buf| std.c.free(buf);
+}
+fn accumulatorCachesDestroy(caches: ?*anyopaque) void {
+    if (caches) |buf| std.c.free(buf);
+}
+
 pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
     zfish_threadpool_wait_thread(threads, 0);
     ttResize(tt, mb, threads);
@@ -659,14 +671,14 @@ pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
         return allocMessage("Final evaluation: none (in check)", .{});
 
     const caches = zfish_engine_accumulator_caches_create(network) orelse return null;
-    defer zfish_engine_accumulator_caches_destroy(caches);
+    defer accumulatorCachesDestroy(caches);
 
     const inner_trace_ptr = buildNnueTrace(pos, network, summary, caches) orelse return null;
     defer c.free(@ptrCast(inner_trace_ptr));
     const inner_trace = std.mem.span(inner_trace_ptr);
 
-    const accumulators = zfish_engine_accumulator_stack_create() orelse return null;
-    defer zfish_engine_accumulator_stack_destroy(accumulators);
+    const accumulators = accumulatorStackCreate() orelse return null;
+    defer accumulatorStackDestroy(accumulators);
 
     const nnue_output = zfish_network_evaluate(network, pos, accumulators, caches);
     const nnue_value = nnue_output.psqt + nnue_output.positional;
@@ -939,8 +951,8 @@ fn buildNnueTrace(
     summary: PositionSummary,
     caches: *anyopaque,
 ) ?[*:0]u8 {
-    const accumulators = zfish_engine_accumulator_stack_create() orelse return null;
-    defer zfish_engine_accumulator_stack_destroy(accumulators);
+    const accumulators = accumulatorStackCreate() orelse return null;
+    defer accumulatorStackDestroy(accumulators);
     nnue_acc.stackReset(accumulators);
 
     const trace = zfish_network_trace_evaluate(network, pos, accumulators, caches);
