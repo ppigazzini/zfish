@@ -177,20 +177,11 @@ fn freeSetupStatesIfAny(pool: *anyopaque) void {
     }
 }
 
-fn zfishStateListStorageCreate() callconv(.c) ?*anyopaque {
-    return PendingStateStorage.create(std.heap.c_allocator) catch null;
-}
 fn zfishStateListStorageDestroy(storage: ?*anyopaque) callconv(.c) void {
     if (storage) |s| @as(*PendingStateStorage, @ptrCast(@alignCast(s))).destroy();
 }
-fn zfishStateListStorageReset(storage: *anyopaque) callconv(.c) *anyopaque {
-    return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).reset() catch @panic("OOM: state reset");
-}
 fn zfishStateListStoragePush(storage: *anyopaque) callconv(.c) *anyopaque {
     return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).push() catch @panic("OOM: state push");
-}
-fn zfishStateListStorageHasStates(storage: *const anyopaque) callconv(.c) u8 {
-    return if (@as(*const PendingStateStorage, @ptrCast(@alignCast(storage))).hasStates()) 1 else 0;
 }
 // engine `states` slot: a ?*StateList. reset() mirrors unique_ptr::reset() — free + null
 // (the slot is the rarely-used fallback; the storage chain is what searches normally adopt).
@@ -695,11 +686,6 @@ comptime {
     // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
     @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
     // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
-    @export(&zfishStateListStorageCreate, .{ .name = "zfish_engine_state_list_storage_create" });
-    @export(&zfishStateListStorageDestroy, .{ .name = "zfish_engine_state_list_storage_destroy" });
-    @export(&zfishStateListStorageReset, .{ .name = "zfish_engine_state_list_storage_reset" });
-    @export(&zfishStateListStoragePush, .{ .name = "zfish_engine_state_list_storage_push" });
-    @export(&zfishStateListStorageHasStates, .{ .name = "zfish_engine_state_list_storage_has_states" });
     @export(&zfishEngineStatesSlotReset, .{ .name = "zfish_engine_states_slot_reset" });
     @export(&zfishThreadpoolSetupStatesAdoptFromStorage, .{ .name = "zfish_threadpool_setup_states_adopt_from_storage" });
     @export(&zfishThreadpoolSetupStatesAdoptFromSlot, .{ .name = "zfish_threadpool_setup_states_adopt_from_slot" });

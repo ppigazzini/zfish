@@ -423,6 +423,7 @@ pub fn build(b: *std.Build) void {
     uci_move_module.addImport("movegen", movegen_module);
     thread_module_default.addImport("tablebase", tablebase_module);
     thread_module_default.addImport("option", option_module);
+    thread_module_default.addImport("state_list", state_list_module);
     engine_module_default.addImport("tablebase", tablebase_module);
     engine_module_default.addImport("option", option_module);
     position_module.addImport("clock", clock_module);

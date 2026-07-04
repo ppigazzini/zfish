@@ -7,6 +7,7 @@ const uci_move = @import("uci_move");
 const movegen_port = @import("movegen");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
+const state_list = @import("state_list");
 
 // Zig-owned thread job runner (engine-graph reimplementation). Verified by its
 // own concurrency tests; compile-checked here until wired into construction.
@@ -171,10 +172,6 @@ extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_root_moves_create_ranked(items: [*]const RankedRootMove, count: usize) *anyopaque;
 extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
-extern fn zfish_engine_state_list_storage_create() ?*anyopaque;
-extern fn zfish_engine_state_list_storage_destroy(storage: ?*anyopaque) void;
-extern fn zfish_engine_state_list_storage_reset(storage: *anyopaque) *anyopaque;
-extern fn zfish_engine_state_list_storage_push(storage: *anyopaque) *anyopaque;
 extern fn zfish_position_set_state(
     pos: *anyopaque,
     fen_ptr: [*]const u8,
@@ -344,8 +341,8 @@ const ScratchPosition = struct {
         const pos = zfish_position_create() orelse @panic("OOM");
         errdefer zfish_position_destroy(pos);
 
-        const storage = zfish_engine_state_list_storage_create() orelse @panic("OOM");
-        errdefer zfish_engine_state_list_storage_destroy(storage);
+        const storage = state_list.storageCreate() orelse @panic("OOM");
+        errdefer state_list.storageDestroy(storage);
 
         var scratch = ScratchPosition{ .pos = pos, .storage = storage };
         scratch.reset(root_fen, chess960);
@@ -353,12 +350,12 @@ const ScratchPosition = struct {
     }
 
     fn deinit(self: *ScratchPosition) void {
-        zfish_engine_state_list_storage_destroy(self.storage);
+        state_list.storageDestroy(self.storage);
         zfish_position_destroy(self.pos);
     }
 
     fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) void {
-        const root_state = zfish_engine_state_list_storage_reset(self.storage);
+        const root_state = state_list.storageReset(self.storage);
         if (zfish_position_set_state(self.pos, root_fen.ptr, root_fen.len, chess960, root_state)) |err| {
             defer c.free(@ptrCast(err));
             @panic("scratch position set failed");
@@ -366,7 +363,7 @@ const ScratchPosition = struct {
     }
 
     fn doMove(self: *ScratchPosition, raw_move: u16) void {
-        const next_state = zfish_engine_state_list_storage_push(self.storage);
+        const next_state = state_list.storagePush(self.storage);
         zfish_position_do_move_state(self.pos, raw_move, next_state);
     }
 };

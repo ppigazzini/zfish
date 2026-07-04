@@ -159,6 +159,25 @@ pub fn destroyStateList(allocator: std.mem.Allocator, list: *StateList) void {
     allocator.destroy(list);
 }
 
+// Opaque-handle wrappers over PendingStateStorage for the engine/thread setup paths (M16.7 --
+// relocated from main.zig's zfish_engine_state_list_storage_* C-ABI exports). The handle stays
+// *anyopaque across the module boundary; the cast is confined here.
+pub fn storageCreate() ?*anyopaque {
+    return PendingStateStorage.create(std.heap.c_allocator) catch null;
+}
+pub fn storageDestroy(storage: ?*anyopaque) void {
+    if (storage) |s| @as(*PendingStateStorage, @ptrCast(@alignCast(s))).destroy();
+}
+pub fn storageReset(storage: *anyopaque) *anyopaque {
+    return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).reset() catch @panic("OOM: state reset");
+}
+pub fn storagePush(storage: *anyopaque) *anyopaque {
+    return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).push() catch @panic("OOM: state push");
+}
+pub fn storageHasStates(storage: *const anyopaque) bool {
+    return @as(*const PendingStateStorage, @ptrCast(@alignCast(storage))).hasStates();
+}
+
 // ---- tests ------------------------------------------------------------------
 
 const testing = std.testing;

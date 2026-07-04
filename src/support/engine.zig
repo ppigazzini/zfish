@@ -10,6 +10,7 @@ const evaluate_mod = @import("evaluate");
 const graph_layout = @import("graph_layout");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
+const state_list = @import("state_list");
 const nnue_misc_mod = @import("nnue_misc");
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
@@ -130,11 +131,6 @@ pub const NnueTraceInput = extern struct {
     positional_cp: [*]const c_int,
 };
 
-extern fn zfish_engine_state_list_storage_create() ?*anyopaque;
-extern fn zfish_engine_state_list_storage_destroy(storage: ?*anyopaque) void;
-extern fn zfish_engine_state_list_storage_reset(storage: *anyopaque) *anyopaque;
-extern fn zfish_engine_state_list_storage_push(storage: *anyopaque) *anyopaque;
-extern fn zfish_engine_state_list_storage_has_states(storage: *const anyopaque) u8;
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
 extern fn zfish_position_set_state(
     pos: *anyopaque,
@@ -345,7 +341,7 @@ pub fn setPosition(
     move_count: usize,
 ) ?[*:0]u8 {
     const state_storage = ensurePendingStateStorage(states_slot);
-    const root_state = zfish_engine_state_list_storage_reset(state_storage);
+    const root_state = state_list.storageReset(state_storage);
 
     if (zfish_position_set_state(pos, fen_ptr, fen_len, chess960_enabled, root_state)) |err| {
         return err;
@@ -362,7 +358,7 @@ pub fn setPosition(
             return allocMessage("Illegal move: {s}", .{move_text});
         }
 
-        const next_state = zfish_engine_state_list_storage_push(state_storage);
+        const next_state = state_list.storagePush(state_storage);
         zfish_position_do_move_state(pos, move_raw, next_state);
     }
 
@@ -392,12 +388,12 @@ pub fn setPositionEngine(
 
 pub fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
     const state_storage = lookupPendingStateStorage(@intFromPtr(states_slot)) orelse return 0;
-    return zfish_engine_state_list_storage_has_states(state_storage);
+    return @intFromBool(state_list.storageHasStates(state_storage));
 }
 
 pub fn handoffPendingStates(pool: *anyopaque, states_slot: *anyopaque) u8 {
     const state_storage = lookupPendingStateStorage(@intFromPtr(states_slot)) orelse return 0;
-    if (zfish_engine_state_list_storage_has_states(state_storage) == 0)
+    if (!state_list.storageHasStates(state_storage))
         return 0;
 
     zfish_threadpool_setup_states_adopt_from_storage(pool, state_storage);
@@ -406,7 +402,7 @@ pub fn handoffPendingStates(pool: *anyopaque, states_slot: *anyopaque) u8 {
 
 pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
     if (removePendingStateStorage(@intFromPtr(states_slot))) |state_storage| {
-        zfish_engine_state_list_storage_destroy(state_storage);
+        state_list.storageDestroy(state_storage);
     }
 }
 
@@ -584,9 +580,9 @@ pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     const trace_pos = zfish_position_create() orelse return null;
     defer zfish_position_destroy(trace_pos);
 
-    const state_storage = zfish_engine_state_list_storage_create() orelse return null;
-    defer zfish_engine_state_list_storage_destroy(state_storage);
-    const state = zfish_engine_state_list_storage_reset(state_storage);
+    const state_storage = state_list.storageCreate() orelse return null;
+    defer state_list.storageDestroy(state_storage);
+    const state = state_list.storageReset(state_storage);
 
     if (zfish_position_set_state(trace_pos, fen_text.ptr, fen_text.len, zfish_engine_chess960_enabled(engine_ptr), state)) |err| {
         defer c.free(@ptrCast(err));
@@ -613,12 +609,12 @@ fn ensurePendingStateStorage(states_slot: *anyopaque) *anyopaque {
         return pending_state_entries.items[index].storage;
     }
 
-    const state_storage = zfish_engine_state_list_storage_create() orelse @panic("OOM");
+    const state_storage = state_list.storageCreate() orelse @panic("OOM");
     pending_state_entries.append(std.heap.c_allocator, .{
         .slot_key = slot_key,
         .storage = state_storage,
     }) catch {
-        zfish_engine_state_list_storage_destroy(state_storage);
+        state_list.storageDestroy(state_storage);
         @panic("OOM");
     };
 
