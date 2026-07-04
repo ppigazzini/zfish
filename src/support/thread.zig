@@ -8,6 +8,7 @@ const movegen_port = @import("movegen");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
 const state_list = @import("state_list");
+const numa = @import("numa");
 
 // Zig-owned thread job runner (engine-graph reimplementation). Verified by its
 // own concurrency tests; compile-checked here until wired into construction.
@@ -193,21 +194,6 @@ extern fn zfish_shared_state_insert_history(
 ) void;
 const NumaNodeCallback = *const fn (?*anyopaque) callconv(.c) void;
 
-extern fn zfish_numa_config_execute_on_numa_node(
-    numa_config: *const anyopaque,
-    numa_index: usize,
-    callback: NumaNodeCallback,
-    context: ?*anyopaque,
-) void;
-extern fn zfish_numa_config_suggests_binding_threads(
-    numa_config: *const anyopaque,
-    requested: usize,
-) u8;
-extern fn zfish_numa_config_distribute_threads_among_nodes(
-    numa_config: *const anyopaque,
-    requested: usize,
-    out_nodes: [*]usize,
-) usize;
 extern fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize;
 extern fn zfish_threadpool_add_main_thread(
     pool: *anyopaque,
@@ -638,7 +624,7 @@ pub fn reconfigure(
     var do_bind = false;
     switch (option_port.numaPolicyMode()) {
         numa_policy_none => do_bind = false,
-        numa_policy_auto => do_bind = zfish_numa_config_suggests_binding_threads(numa_config, requested) != 0,
+        numa_policy_auto => do_bind = numa.suggestsBindingThreads(numa_config, requested),
         else => do_bind = true,
     }
 
@@ -647,7 +633,7 @@ pub fn reconfigure(
     defer allocator.free(bound_nodes);
 
     if (do_bind) {
-        _ = zfish_numa_config_distribute_threads_among_nodes(
+        _ = numa.distributeThreadsAmongNodes(
             numa_config,
             requested,
             bound_nodes.ptr,

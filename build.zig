@@ -128,6 +128,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const numa_module = b.createModule(.{
+        .root_source_file = b.path("src/support/numa.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const graph_layout_module = b.createModule(.{
         .root_source_file = b.path("src/graph_layout.zig"),
         .target = target,
@@ -315,6 +320,8 @@ pub fn build(b: *std.Build) void {
     native_engine_module.addImport("misc", misc_module);
     native_engine_module.addImport("state_list", state_list_module);
     engine_module_default.addImport("native_engine", native_engine_module);
+    engine_module_default.addImport("numa", numa_module);
+    thread_module_default.addImport("numa", numa_module);
     exe.root_module.addImport("native_engine", native_engine_module);
     engine_module_default.addImport("tt", tt_module);
     engine_module_default.addImport("state_list", state_list_module);

@@ -13,6 +13,7 @@ const option_port = @import("option");
 const state_list = @import("state_list");
 const nnue_misc_mod = @import("nnue_misc");
 const tt_port = @import("tt");
+const numa = @import("numa");
 const native_engine = @import("native_engine");
 
 // Cast an engine handle to the native container (M16.7).
@@ -142,9 +143,6 @@ extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, sto
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
-extern fn zfish_numa_context_set_system(numa_context: *anyopaque) void;
-extern fn zfish_numa_context_set_hardware(numa_context: *anyopaque) void;
-extern fn zfish_numa_context_set_none(numa_context: *anyopaque) void;
 extern fn zfish_engine_numa_set_from_string(
     numa_context: *anyopaque,
     text_ptr: [*]const u8,
@@ -223,7 +221,6 @@ extern fn zfish_threadpool_reconfigure(
     shared_state: *const anyopaque,
     update_context: *const anyopaque,
 ) void;
-extern fn zfish_numa_context_config(numa_context: *const anyopaque) *const anyopaque;
 extern fn zfish_search_shared_state_create(
     options: *const anyopaque,
     threads: *anyopaque,
@@ -422,11 +419,11 @@ pub fn setNumaConfigFromOptionEngine(engine_ptr: *anyopaque, option_text: []cons
     const numa_context = ne(engine_ptr).numaContextPtr();
 
     if (std.mem.eql(u8, option_text, "auto") or std.mem.eql(u8, option_text, "system")) {
-        zfish_numa_context_set_system(numa_context);
+        numa.contextSetSystem(numa_context);
     } else if (std.mem.eql(u8, option_text, "hardware")) {
-        zfish_numa_context_set_hardware(numa_context);
+        numa.contextSetHardware(numa_context);
     } else if (std.mem.eql(u8, option_text, "none")) {
-        zfish_numa_context_set_none(numa_context);
+        numa.contextSetNone(numa_context);
     } else {
         zfish_engine_numa_set_from_string(numa_context, option_text.ptr, option_text.len);
     }
@@ -456,7 +453,7 @@ pub fn resizeThreads(
 
     zfish_threadpool_reconfigure(
         threads,
-        zfish_numa_context_config(numa_context),
+        numa.contextConfig(numa_context),
         shared_state,
         update_context,
     );
