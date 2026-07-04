@@ -4,6 +4,7 @@ const c = @import("libc");
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
+const movegen_port = @import("movegen");
 
 // Zig-owned thread job runner (engine-graph reimplementation). Verified by its
 // own concurrency tests; compile-checked here until wired into construction.
@@ -169,10 +170,6 @@ extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyo
 extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
 extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
-extern fn zfish_movegen_generate_legal(
-    pos: *const anyopaque,
-    out_moves: [*]u16,
-) usize;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
@@ -491,7 +488,7 @@ fn rankRootMovesDtz(
 
         if (loadPositionSnapshot(scratch.pos).checkers != 0 and dtz == 2) {
             var legal_moves: [256]u16 = undefined;
-            if (zfish_movegen_generate_legal(scratch.pos, legal_moves[0..].ptr) == 0)
+            if (movegen_port.generateLegal(scratch.pos, legal_moves[0..].ptr) == 0)
                 dtz = 1;
         }
 
@@ -804,7 +801,7 @@ pub fn startThinking(
         @panic("missing setup state");
 
     var legal_move_buffer: [256]u16 = undefined;
-    const legal_move_count = zfish_movegen_generate_legal(pos, legal_move_buffer[0..].ptr);
+    const legal_move_count = movegen_port.generateLegal(pos, legal_move_buffer[0..].ptr);
     const legal_moves = legal_move_buffer[0..legal_move_count];
     const none_raw = uci_move.noneRaw();
 

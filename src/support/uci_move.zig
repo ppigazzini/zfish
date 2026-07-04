@@ -1,4 +1,5 @@
 const std = @import("std");
+const movegen_port = @import("movegen");
 const position_snapshot = @import("position_snapshot");
 
 const normal_move: u16 = 0;
@@ -16,7 +17,6 @@ const max_moves: usize = 256;
 
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
-extern fn zfish_movegen_generate_legal(pos: *const anyopaque, out_moves: [*]u16) usize;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 
 pub fn noneRaw() u16 {
@@ -25,7 +25,7 @@ pub fn noneRaw() u16 {
 
 pub fn toMoveRaw(pos: *const anyopaque, text: []const u8) u16 {
     var move_buffer: [max_moves]u16 = undefined;
-    const count = zfish_movegen_generate_legal(pos, move_buffer[0..].ptr);
+    const count = movegen_port.generateLegal(pos, move_buffer[0..].ptr);
     var snapshot = std.mem.zeroes(PositionSnapshot);
     zfish_position_fill_snapshot(pos, &snapshot);
     const chess960 = snapshot.is_chess960 != 0;

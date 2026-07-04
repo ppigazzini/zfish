@@ -408,6 +408,8 @@ pub fn build(b: *std.Build) void {
     tt_module.addImport("graph_layout", graph_layout_module);
     thread_module_default.addImport("graph_layout", graph_layout_module);
     engine_module_default.addImport("graph_layout", graph_layout_module);
+    thread_module_default.addImport("movegen", movegen_module);
+    uci_move_module.addImport("movegen", movegen_module);
     network_module.addImport("libc", libc_module);
     nnue_misc_module.addImport("libc", libc_module);
     evaluate_module.addImport("libc", libc_module);

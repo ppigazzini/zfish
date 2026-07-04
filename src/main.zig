@@ -433,12 +433,6 @@ pub export fn zfish_movegen_generate_evasions(
     return movegen_port.generateEvasions(pos, move_list);
 }
 
-pub export fn zfish_movegen_generate_legal(
-    pos: *const anyopaque,
-    move_list: [*]u16,
-) usize {
-    return movegen_port.generateLegal(pos, move_list);
-}
 
 pub export fn zfish_thread_start_thinking(
     pool: *anyopaque,
@@ -1652,7 +1646,7 @@ fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
     if (zfish_position_set_method(p, fen.ptr, fen.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.c.free(msg);
 
     var moves: [256]u16 = undefined;
-    const count = zfish_movegen_generate_legal(p, &moves);
+    const count = movegen_port.generateLegal(p, &moves);
     var nodes: u64 = 0;
     var mbuf: [5]u8 = undefined;
     var line: [64]u8 = undefined;
