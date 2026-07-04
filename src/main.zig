@@ -1039,11 +1039,10 @@ fn engineThreadAllocationInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*
     return zfish_engine_thread_allocation_information_owner(engine_ptr);
 }
 // REPORT-12 TU=0 grind: the "uci" option listing is rendered from the native Zig option model;
-// the default options_text_owner already just returned zfish_optmodel_render(). Pure pass-through.
-extern fn zfish_optmodel_render() ?[*:0]u8;
+// the default options_text_owner already just returned option_port.zfish_optmodel_render(). Pure pass-through.
 fn engineOptionsTextOwner(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
     _ = engine_ptr;
-    return zfish_optmodel_render();
+    return option_port.zfish_optmodel_render();
 }
 // REPORT-12 TU=0 grind: native flip — read the live position FEN, flip it, re-set via the native
 // set-position machinery (replacing Engine::flip -> Position::flip). All four calls are native;
@@ -1504,10 +1503,9 @@ fn zfishNow() callconv(.c) i64 {
         },
     }
 }
-extern fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) callconv(.c) c_int;
 
 fn optInt(name: []const u8) c_int {
-    return zfish_optmodel_int_by_name(name.ptr, name.len);
+    return option_port.zfish_optmodel_int_by_name(name.ptr, name.len);
 }
 
 // M-FINAL (option readers): the OptionsMap["..."] readers ported to native-model reads.
@@ -1539,10 +1537,9 @@ fn zfishOptionsSyzygy50MoveRule(options_ptr: *const anyopaque) callconv(.c) u8 {
 }
 
 // M-FINAL (string-option readers): the OptionsMap[] string reads via the native model.
-extern fn zfish_optmodel_string_by_name(name_ptr: [*]const u8, name_len: usize, out_len: *usize) callconv(.c) [*]const u8;
 fn optStr(name: []const u8) []const u8 {
     var len: usize = 0;
-    const p = zfish_optmodel_string_by_name(name.ptr, name.len, &len);
+    const p = option_port.zfish_optmodel_string_by_name(name.ptr, name.len, &len);
     return p[0..len];
 }
 // Duplicate the model's string value into a malloc'd C string the Zig caller frees with
@@ -1631,10 +1628,9 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
 
 // REPORT-12 TU=0: option registration — format the default string per kind (check→"true"/"false",
 // spin→decimal, button→"", string→bytes), exactly as the C++ Option ctor / default_str would, then
-// register into the native option model (zfish_optmodel_add). No C++ Option / OptionsMap is built in
+// register into the native option model (option_port.zfish_optmodel_add). No C++ Option / OptionsMap is built in
 // the default build; the engine pointer + callback_kind are unused (the model derives the on-change
 // callback from the option name). Legacy keeps the C++ OptionsMap registration.
-extern fn zfish_optmodel_add(name_ptr: [*]const u8, name_len: usize, kind: u8, default_ptr: [*]const u8, default_len: usize, min: c_int, max: c_int) usize;
 fn engineAddOption(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, option_kind: u8, default_ptr: [*]const u8, default_len: usize, default_value: c_int, min_value: c_int, max_value: c_int, callback_kind: u8) callconv(.c) void {
     _ = engine_ptr;
     _ = callback_kind;
@@ -1646,7 +1642,7 @@ fn engineAddOption(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usiz
         0 => default_ptr[0..default_len], // string
         else => @panic("zfish_engine_add_option: bad option kind"),
     };
-    _ = zfish_optmodel_add(name_ptr, name_len, option_kind, default_slice.ptr, default_slice.len, min_value, max_value);
+    _ = option_port.zfish_optmodel_add(name_ptr, name_len, option_kind, default_slice.ptr, default_slice.len, min_value, max_value);
 }
 
 // REPORT-12 TU=0: native Search::RootMoves (= libc++ std::vector<RootMove>) builder/destroyer. The C++
@@ -1797,7 +1793,7 @@ fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
     const fen_ptr = zfish_engine_fen(zfish_engine_position_ptr(engine_ptr)) orelse @panic("perft: null fen");
     const fen = std.mem.span(fen_ptr);
     const c960_name: []const u8 = "UCI_Chess960";
-    const chess960 = zfish_optmodel_int_by_name(c960_name.ptr, c960_name.len) != 0;
+    const chess960 = option_port.zfish_optmodel_int_by_name(c960_name.ptr, c960_name.len) != 0;
 
     const p = zfishOperatorNew(graph_layout.position_size) orelse @panic("perft: position alloc");
     const st = zfishOperatorNew(graph_layout.state_info_size) orelse @panic("perft: state alloc");
@@ -1846,18 +1842,7 @@ fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
 // Mirrors UCIEngine::print_info_string: split the message on '\n', skip whitespace-only lines, prefix each
 // with "info string ". Output is un-gated by the automated gates (no gate diffs setoption stdout), so it is
 // verified by a manual default-vs-legacy stdout diff (setoption Threads numa emit / EvalFile / bad name).
-const ModelSetResult = extern struct {
-    found: u8,
-    accepted: u8,
-    changed: u8,
-    callback_kind: u8,
-    kind: u8,
-    idx: usize,
-};
-extern fn zfish_optmodel_set_by_name(name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, out: *ModelSetResult) void;
-extern fn zfish_optmodel_int_by_index(idx: usize) c_int;
-extern fn zfish_optmodel_current_ptr(idx: usize) ?[*]const u8;
-extern fn zfish_optmodel_current_len(idx: usize) usize;
+// ModelSetResult lives in the option module now (option_port.ModelSetResult) -- M16.5.
 fn printInfoStringNative(str: []const u8) void {
     var it = std.mem.splitScalar(u8, str, '\n');
     while (it.next()) |line| {
@@ -1902,8 +1887,8 @@ fn applySetoptionOwner(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: 
     zfish_engine_wait_for_search_finished_owner(engine_ptr);
     const vlen: usize = if (has_value != 0) value_len else 0;
     const vptr: [*]const u8 = if (has_value != 0) value_ptr else name_ptr; // ptr unread when vlen==0
-    var res: ModelSetResult = undefined;
-    zfish_optmodel_set_by_name(name_ptr, name_len, vptr, vlen, &res);
+    var res: option_port.ModelSetResult = undefined;
+    option_port.zfish_optmodel_set_by_name(name_ptr, name_len, vptr, vlen, &res);
     if (res.found == 0) {
         var buf: [256]u8 = undefined;
         const out = std.fmt.bufPrint(&buf, "No such option: {s}", .{name_ptr[0..name_len]}) catch return;
@@ -1916,12 +1901,12 @@ fn applySetoptionOwner(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: 
         var relay_value: []const u8 = "";
         var relay_int: c_int = 0;
         if (res.kind == 1 or res.kind == 2) {
-            relay_int = zfish_optmodel_int_by_index(res.idx);
+            relay_int = option_port.zfish_optmodel_int_by_index(res.idx);
             relay_value = std.fmt.bufPrint(&relay_buf, "{d}", .{relay_int}) catch "";
         } else if (res.kind == 0) {
-            const len = zfish_optmodel_current_len(res.idx);
+            const len = option_port.zfish_optmodel_current_len(res.idx);
             if (len != 0) {
-                if (zfish_optmodel_current_ptr(res.idx)) |p| relay_value = p[0..len];
+                if (option_port.zfish_optmodel_current_ptr(res.idx)) |p| relay_value = p[0..len];
             }
         }
         const ret = zfish_engine_option_on_change(engine_ptr, res.callback_kind, relay_value.ptr, relay_value.len, relay_int);
@@ -2416,14 +2401,14 @@ pub export fn zfish_search_cb_pv_context(manager: *anyopaque, worker: *anyopaque
 
     const mp_name: []const u8 = "MultiPV";
     const wdl_name: []const u8 = "UCI_ShowWDL";
-    const multipv_opt: usize = @intCast(@max(zfish_optmodel_int_by_name(mp_name.ptr, mp_name.len), 0));
+    const multipv_opt: usize = @intCast(@max(option_port.zfish_optmodel_int_by_name(mp_name.ptr, mp_name.len), 0));
 
     out.manager = manager;
     out.worker = worker;
     out.root_moves = @ptrFromInt(rm_begin);
     out.root_moves_count = rm_count;
     out.multipv = @min(multipv_opt, rm_count);
-    out.show_wdl = if (zfish_optmodel_int_by_name(wdl_name.ptr, wdl_name.len) != 0) 1 else 0;
+    out.show_wdl = if (option_port.zfish_optmodel_int_by_name(wdl_name.ptr, wdl_name.len) != 0) 1 else 0;
 
     const root_pos: *const anyopaque = @ptrFromInt(wbase + graph_layout.worker_off.root_pos);
     out.chess960 = if (position_port.isChess960(root_pos)) 1 else 0;

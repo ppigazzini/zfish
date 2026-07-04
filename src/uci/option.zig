@@ -19,7 +19,7 @@ fn ensureModel() *OptionsModel {
     return &(global_model.?);
 }
 
-pub export fn zfish_optmodel_add(
+pub fn zfish_optmodel_add(
     name_ptr: [*]const u8,
     name_len: usize,
     kind: u8,
@@ -35,30 +35,30 @@ pub export fn zfish_optmodel_add(
         std.math.maxInt(usize);
 }
 
-pub export fn zfish_optmodel_int_by_index(idx: usize) c_int {
+pub fn zfish_optmodel_int_by_index(idx: usize) c_int {
     return ensureModel().intByIndex(idx);
 }
 
 // Read an option's integer value by name (0 if absent). Used by native callers
 // that carry an option name (e.g. the search driver's MultiPV / UCI_ShowWDL).
-pub export fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) c_int {
+pub fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) c_int {
     return ensureModel().getInt(name_ptr[0..name_len]);
 }
 
 // Read an option's current string value by name (M-FINAL: the native replacement for the
 // OptionsMap[] string reads — NumaPolicy / SyzygyPath / EvalFile). Returns the model's own
 // slice (no allocation); writes the length to out_len. Empty/absent → len 0.
-pub export fn zfish_optmodel_string_by_name(name_ptr: [*]const u8, name_len: usize, out_len: *usize) [*]const u8 {
+pub fn zfish_optmodel_string_by_name(name_ptr: [*]const u8, name_len: usize, out_len: *usize) [*]const u8 {
     const s = ensureModel().getString(name_ptr[0..name_len]);
     out_len.* = s.len;
     return s.ptr;
 }
 
-pub export fn zfish_optmodel_current_len(idx: usize) usize {
+pub fn zfish_optmodel_current_len(idx: usize) usize {
     return ensureModel().currentByIndex(idx).len;
 }
 
-pub export fn zfish_optmodel_current_ptr(idx: usize) ?[*]const u8 {
+pub fn zfish_optmodel_current_ptr(idx: usize) ?[*]const u8 {
     const current = ensureModel().currentByIndex(idx);
     return if (current.len == 0) null else current.ptr;
 }
@@ -76,7 +76,7 @@ pub const ModelSetResult = extern struct {
 // Reports whether the option exists, whether the value was accepted/changed,
 // the change-callback kind, the option kind, and the index, so the bridge can
 // fire the on_change callback exactly as the C++ Option operator= would.
-pub export fn zfish_optmodel_set_by_name(
+pub fn zfish_optmodel_set_by_name(
     name_ptr: [*]const u8,
     name_len: usize,
     value_ptr: [*]const u8,
@@ -104,7 +104,7 @@ pub export fn zfish_optmodel_set_by_name(
 
 // Render the UCI option listing (the C++ OptionsMap operator<< output) from the
 // Zig model, as a malloc-backed C string the caller frees.
-pub export fn zfish_optmodel_render() ?[*:0]u8 {
+pub fn zfish_optmodel_render() ?[*:0]u8 {
     const model = ensureModel();
     const listing = model.renderAlloc() catch return null;
     defer std.heap.c_allocator.free(listing);
