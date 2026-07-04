@@ -627,9 +627,6 @@ comptime {
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     @export(&zfishEngineOptionHashValue, .{ .name = "zfish_engine_option_hash_value" });
     @export(&zfishSharedStateThreadsValue, .{ .name = "zfish_shared_state_threads_value" });
-    @export(&zfishOptionsSyzygyProbeDepth, .{ .name = "zfish_options_syzygy_probe_depth" });
-    @export(&zfishOptionsSyzygyProbeLimit, .{ .name = "zfish_options_syzygy_probe_limit" });
-    @export(&zfishOptionsSyzygy50MoveRule, .{ .name = "zfish_options_syzygy_50_move_rule" });
     // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
     @export(&zfishSharedStateNumaPolicyMode, .{ .name = "zfish_shared_state_numa_policy_mode" });
     // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
@@ -1344,17 +1341,9 @@ fn zfishSharedStateThreadsValue(shared_state_ptr: *const anyopaque) callconv(.c)
     _ = shared_state_ptr;
     return @intCast(optInt("Threads"));
 }
-fn zfishOptionsSyzygyProbeDepth(options_ptr: *const anyopaque) callconv(.c) c_int {
-    _ = options_ptr;
-    return optInt("SyzygyProbeDepth");
-}
 fn zfishOptionsSyzygyProbeLimit(options_ptr: *const anyopaque) callconv(.c) c_int {
     _ = options_ptr;
     return optInt("SyzygyProbeLimit");
-}
-fn zfishOptionsSyzygy50MoveRule(options_ptr: *const anyopaque) callconv(.c) u8 {
-    _ = options_ptr;
-    return if (optInt("Syzygy50MoveRule") != 0) 1 else 0;
 }
 
 // M-FINAL (string-option readers): the OptionsMap[] string reads via the native model.

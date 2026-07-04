@@ -6,6 +6,7 @@ const position_port = @import("position");
 const uci_move = @import("uci_move");
 const movegen_port = @import("movegen");
 const tablebase = @import("tablebase");
+const option_port = @import("option");
 
 // Zig-owned thread job runner (engine-graph reimplementation). Verified by its
 // own concurrency tests; compile-checked here until wired into construction.
@@ -170,9 +171,6 @@ extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_root_moves_create_ranked(items: [*]const RankedRootMove, count: usize) *anyopaque;
 extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
-extern fn zfish_options_syzygy_50_move_rule(options: *const anyopaque) u8;
-extern fn zfish_options_syzygy_probe_depth(options: *const anyopaque) c_int;
-extern fn zfish_options_syzygy_probe_limit(options: *const anyopaque) c_int;
 extern fn zfish_engine_state_list_storage_create() ?*anyopaque;
 extern fn zfish_engine_state_list_storage_destroy(storage: ?*anyopaque) void;
 extern fn zfish_engine_state_list_storage_reset(storage: *anyopaque) *anyopaque;
@@ -388,12 +386,13 @@ fn countPieces(pos: *const anyopaque) usize {
 }
 
 fn loadTbConfig(options: *const anyopaque, pos: *const anyopaque) TbConfig {
+    _ = options; // syzygy options now read from the native option model, not this pointer
     const snapshot = loadPositionSnapshot(pos);
     var config = TbConfig{
-        .cardinality = zfish_options_syzygy_probe_limit(options),
+        .cardinality = option_port.syzygyProbeLimit(),
         .root_in_tb = 0,
-        .use_rule50 = zfish_options_syzygy_50_move_rule(options),
-        .probe_depth = zfish_options_syzygy_probe_depth(options),
+        .use_rule50 = @intFromBool(option_port.syzygy50MoveRule()),
+        .probe_depth = option_port.syzygyProbeDepth(),
     };
 
     const max_cardinality: c_int = @intCast(tablebase.maxCardinality());

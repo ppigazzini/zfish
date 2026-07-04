@@ -41,6 +41,20 @@ pub fn zfish_optmodel_int_by_index(idx: usize) c_int {
 
 // Read an option's integer value by name (0 if absent). Used by native callers
 // that carry an option name (e.g. the search driver's MultiPV / UCI_ShowWDL).
+/// Read an integer option by name from the native option model (M16.7).
+pub fn intByName(name: []const u8) c_int {
+    return zfish_optmodel_int_by_name(name.ptr, name.len);
+}
+pub fn syzygyProbeDepth() c_int {
+    return intByName("SyzygyProbeDepth");
+}
+pub fn syzygyProbeLimit() c_int {
+    return intByName("SyzygyProbeLimit");
+}
+pub fn syzygy50MoveRule() bool {
+    return intByName("Syzygy50MoveRule") != 0;
+}
+
 pub fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) c_int {
     return ensureModel().getInt(name_ptr[0..name_len]);
 }
