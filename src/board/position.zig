@@ -1,5 +1,6 @@
 const std = @import("std");
 const clock = @import("clock");
+const graph_layout = @import("graph_layout");
 const bitboard = @import("bitboard");
 const movegen = @import("movegen");
 const tt = @import("tt");
@@ -766,6 +767,12 @@ pub fn doMoveState(pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque) void {
     var dts: DirtyThreats = undefined;
     dts.list_size = 0;
     doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
+}
+
+/// setPosition with the engine-graph Position/StateInfo sizes filled in (M16.7 — lets callers
+/// keep the old 5-arg zfish_position_set_state shape without threading graph sizes through).
+pub fn setPositionState(pos_ptr: *anyopaque, fen_ptr: [*]const u8, fen_len: usize, chess960_enabled: u8, state_ptr: *anyopaque) ?[*:0]u8 {
+    return setPosition(pos_ptr, fen_ptr, fen_len, chess960_enabled, state_ptr, graph_layout.position_size, graph_layout.state_info_size);
 }
 
 // Is `move` in the legal move list of the current position?

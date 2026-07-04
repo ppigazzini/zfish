@@ -97,7 +97,6 @@ pub fn zfish_position_undo_move_method(pos_ptr: *anyopaque, move: u16) void {
 
 // do_move that links a fresh StateInfo and computes givesCheck internally
 // (Position::do_move(Move, StateInfo&)); exported from the bridge.
-extern fn zfish_position_do_move_state(pos_ptr: *anyopaque, move_raw: u16, state_ptr: *anyopaque) void;
 
 // Recursive perft node counter. Replaces the C++ Benchmark::perft recursion:
 // the bridge keeps the root divide loop (for byte-identical per-move output and
@@ -114,7 +113,7 @@ fn perftCount(pos_ptr: *anyopaque, depth: c_int, states: *[perft_max_depth]Perft
     var nodes: u64 = 0;
     var i: usize = 0;
     while (i < n) : (i += 1) {
-        zfish_position_do_move_state(pos_ptr, moves[i], &states[ply]);
+        position_port.doMoveState(pos_ptr, moves[i], &states[ply]);
         nodes += perftCount(pos_ptr, depth - 1, states, ply + 1);
         zfish_position_undo_move_method(pos_ptr, moves[i]);
     }
@@ -131,28 +130,8 @@ pub fn zfish_perft_subtree(pos_ptr: *anyopaque, depth: c_int) u64 {
 // the C++ Position::set / Position::legal in the bridge. The live pos is the Zig side block, so
 // these operate on the same byte-compatible storage the native search reads. Default-only
 // (legacy keeps the C++ Position methods); gate-verified by search-parity (51 FENs) + bench.
-fn zfishPositionSetState(
-    pos_ptr: *anyopaque,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    chess960_enabled: u8,
-    state_ptr: *anyopaque,
-) callconv(.c) ?[*:0]u8 {
-    return position_port.setPosition(
-        pos_ptr,
-        fen_ptr,
-        fen_len,
-        chess960_enabled,
-        state_ptr,
-        graph_layout.position_size,
-        graph_layout.state_info_size,
-    );
-}
 fn zfishPositionMoveIsLegal(pos_ptr: *const anyopaque, raw_move: u16) callconv(.c) u8 {
     return @intFromBool(position_port.legal(pos_ptr, raw_move));
-}
-fn zfishPositionDoMoveState(pos_ptr: *anyopaque, move_raw: u16, state_ptr: *anyopaque) callconv(.c) void {
-    position_port.doMoveState(pos_ptr, move_raw, state_ptr);
 }
 // M-FINAL cutover (thread-cluster leaf): native TT-slice zero. In the default build the
 // pool holds native Threads (no C++ run_custom_job vehicle); the TT clear is a deterministic
@@ -680,9 +659,7 @@ comptime {
     // M-FINAL cutover: native engine container construct/destruct (not yet on the live
     // path; the flip commit wires these). Default-only — legacy keeps the C++ UCIEngine.
     // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
-    @export(&zfishPositionSetState, .{ .name = "zfish_position_set_state" });
     @export(&zfishPositionMoveIsLegal, .{ .name = "zfish_position_move_is_legal" });
-    @export(&zfishPositionDoMoveState, .{ .name = "zfish_position_do_move_state" });
     // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
     @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
     // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
@@ -1526,7 +1503,7 @@ fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
             nodes += 1;
         } else {
             var si: [graph_layout.state_info_size]u8 align(16) = undefined;
-            zfish_position_do_move_state(p, m, @ptrCast(&si));
+            position_port.doMoveState(p, m, @ptrCast(&si));
             cnt = zfish_perft_subtree(p, depth - 1);
             nodes += cnt;
             zfish_position_undo_move_method(p, m);

@@ -427,6 +427,7 @@ pub fn build(b: *std.Build) void {
     engine_module_default.addImport("tablebase", tablebase_module);
     engine_module_default.addImport("option", option_module);
     position_module.addImport("clock", clock_module);
+    position_module.addImport("graph_layout", graph_layout_module);
     network_module.addImport("libc", libc_module);
     nnue_misc_module.addImport("libc", libc_module);
     evaluate_module.addImport("libc", libc_module);

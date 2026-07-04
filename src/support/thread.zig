@@ -172,14 +172,6 @@ extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_root_moves_create_ranked(items: [*]const RankedRootMove, count: usize) *anyopaque;
 extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
-extern fn zfish_position_set_state(
-    pos: *anyopaque,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    chess960_enabled: u8,
-    state: *anyopaque,
-) ?[*:0]u8;
-extern fn zfish_position_do_move_state(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
 extern fn zfish_threadpool_bound_nodes_assign(
     pool: *anyopaque,
     nodes: ?[*]const usize,
@@ -356,7 +348,7 @@ const ScratchPosition = struct {
 
     fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) void {
         const root_state = state_list.storageReset(self.storage);
-        if (zfish_position_set_state(self.pos, root_fen.ptr, root_fen.len, chess960, root_state)) |err| {
+        if (position_port.setPositionState(self.pos, root_fen.ptr, root_fen.len, chess960, root_state)) |err| {
             defer c.free(@ptrCast(err));
             @panic("scratch position set failed");
         }
@@ -364,7 +356,7 @@ const ScratchPosition = struct {
 
     fn doMove(self: *ScratchPosition, raw_move: u16) void {
         const next_state = state_list.storagePush(self.storage);
-        zfish_position_do_move_state(self.pos, raw_move, next_state);
+        position_port.doMoveState(self.pos, raw_move, next_state);
     }
 };
 

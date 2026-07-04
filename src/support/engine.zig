@@ -132,14 +132,6 @@ pub const NnueTraceInput = extern struct {
 };
 
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
-extern fn zfish_position_set_state(
-    pos: *anyopaque,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    chess960_enabled: u8,
-    state: *anyopaque,
-) ?[*:0]u8;
-extern fn zfish_position_do_move_state(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
@@ -343,7 +335,7 @@ pub fn setPosition(
     const state_storage = ensurePendingStateStorage(states_slot);
     const root_state = state_list.storageReset(state_storage);
 
-    if (zfish_position_set_state(pos, fen_ptr, fen_len, chess960_enabled, root_state)) |err| {
+    if (position_port.setPositionState(pos, fen_ptr, fen_len, chess960_enabled, root_state)) |err| {
         return err;
     }
 
@@ -359,7 +351,7 @@ pub fn setPosition(
         }
 
         const next_state = state_list.storagePush(state_storage);
-        zfish_position_do_move_state(pos, move_raw, next_state);
+        position_port.doMoveState(pos, move_raw, next_state);
     }
 
     return null;
@@ -584,7 +576,7 @@ pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     defer state_list.storageDestroy(state_storage);
     const state = state_list.storageReset(state_storage);
 
-    if (zfish_position_set_state(trace_pos, fen_text.ptr, fen_text.len, zfish_engine_chess960_enabled(engine_ptr), state)) |err| {
+    if (position_port.setPositionState(trace_pos, fen_text.ptr, fen_text.len, zfish_engine_chess960_enabled(engine_ptr), state)) |err| {
         defer c.free(@ptrCast(err));
         return null;
     }
