@@ -17,7 +17,7 @@
 // understanding of Worker construction is locked against upstream drift.
 
 const std = @import("std");
-const graph_layout = @import("graph_layout.zig");
+const graph_layout = @import("graph_layout");
 
 const off = graph_layout.worker_off;
 

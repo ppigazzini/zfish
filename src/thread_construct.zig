@@ -16,7 +16,7 @@
 // drift.
 
 const std = @import("std");
-const graph_layout = @import("graph_layout.zig");
+const graph_layout = @import("graph_layout");
 
 const thread_off = graph_layout.thread_off;
 

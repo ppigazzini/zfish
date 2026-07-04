@@ -23,7 +23,7 @@
 // green, after the flip — until uci_bridge.cpp + src delete (TU=0).
 
 const std = @import("std");
-const graph_layout = @import("graph_layout.zig");
+const graph_layout = @import("graph_layout");
 const misc_port = @import("misc");
 const state_list_port = @import("state_list"); // native StateList (states crack)
 

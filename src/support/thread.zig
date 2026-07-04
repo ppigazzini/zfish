@@ -1,4 +1,5 @@
 const std = @import("std");
+const graph_layout = @import("graph_layout");
 const c = @import("libc");
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
@@ -194,8 +195,6 @@ extern fn zfish_position_set_state(
     state: *anyopaque,
 ) ?[*:0]u8;
 extern fn zfish_position_do_move_state(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
-extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
-extern fn zfish_threadpool_thread_at(pool: *anyopaque, index: usize) *anyopaque;
 extern fn zfish_threadpool_main_manager_reset_best_previous_average_score(pool: *anyopaque) void;
 extern fn zfish_threadpool_main_manager_reset_previous_time_reduction(pool: *anyopaque) void;
 extern fn zfish_threadpool_main_manager_reset_calls_count(pool: *anyopaque) void;
@@ -337,10 +336,10 @@ fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
 }
 
 fn waitMainThread(pool: *anyopaque) void {
-    if (zfish_threadpool_thread_count(pool) == 0)
+    if (graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads() == 0)
         return;
 
-    threadWaitFinished(zfish_threadpool_thread_at(pool, 0));
+    threadWaitFinished(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(0));
 }
 
 fn buildRootFen(pos: *const anyopaque) ?[*:0]u8 {
@@ -662,7 +661,7 @@ pub fn reconfigure(
     shared_state: *const anyopaque,
     update_context: *const anyopaque,
 ) void {
-    if (zfish_threadpool_thread_count(pool) > 0) {
+    if (graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads() > 0) {
         waitMainThread(pool);
         native_threadpool.zfish_native_threadpool_clear(pool);
     }
@@ -847,14 +846,14 @@ pub fn startThinking(
     const root_moves = root_setup.root_moves;
     defer zfish_root_moves_destroy(root_moves);
     const tb_config = root_setup.tb_config;
-    const thread_count = zfish_threadpool_thread_count(pool);
+    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     const allocator = std.heap.c_allocator;
     const root_setup_contexts = allocator.alloc(RootSetupContext, thread_count) catch @panic("OOM");
     defer allocator.free(root_setup_contexts);
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        const thread = zfish_threadpool_thread_at(pool, index);
+        const thread = graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index);
         root_setup_contexts[index] = .{
             .thread = thread,
             .input = .{
@@ -872,28 +871,28 @@ pub fn startThinking(
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        const thread = zfish_threadpool_thread_at(pool, index);
+        const thread = graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index);
         threadWaitFinished(thread);
     }
 
-    const main_thread = zfish_threadpool_thread_at(pool, 0);
+    const main_thread = graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(0);
     threadStartSearching(main_thread);
 }
 
 pub fn clear(pool: *anyopaque) void {
-    const thread_count = zfish_threadpool_thread_count(pool);
+    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     if (thread_count == 0) {
         return;
     }
 
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        threadClearWorker(zfish_threadpool_thread_at(pool, index));
+        threadClearWorker(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
     }
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        threadWaitFinished(zfish_threadpool_thread_at(pool, index));
+        threadWaitFinished(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
     }
 
     zfish_threadpool_main_manager_reset_best_previous_average_score(pool);
@@ -905,27 +904,27 @@ pub fn clear(pool: *anyopaque) void {
 }
 
 pub fn nodesSearched(pool: *anyopaque) u64 {
-    const thread_count = zfish_threadpool_thread_count(pool);
+    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     var total: u64 = 0;
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        total += zfish_thread_nodes_searched(zfish_threadpool_thread_at(pool, index));
+        total += zfish_thread_nodes_searched(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
     }
     return total;
 }
 
 pub fn tbHits(pool: *anyopaque) u64 {
-    const thread_count = zfish_threadpool_thread_count(pool);
+    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     var total: u64 = 0;
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        total += zfish_thread_tb_hits(zfish_threadpool_thread_at(pool, index));
+        total += zfish_thread_tb_hits(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
     }
     return total;
 }
 
 pub fn bestThreadIndex(pool: *anyopaque) usize {
-    const thread_count = zfish_threadpool_thread_count(pool);
+    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     if (thread_count == 0) {
         return 0;
     }
@@ -936,25 +935,25 @@ pub fn bestThreadIndex(pool: *anyopaque) usize {
     var summaries: [max_thread_summaries]ThreadSummary = undefined;
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        zfish_thread_fill_summary(zfish_threadpool_thread_at(pool, index), &summaries[index]);
+        zfish_thread_fill_summary(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index), &summaries[index]);
     }
 
     return pickBestThread(&summaries, thread_count);
 }
 
 pub fn startSearching(pool: *anyopaque) void {
-    const thread_count = zfish_threadpool_thread_count(pool);
+    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
-        threadStartSearching(zfish_threadpool_thread_at(pool, index));
+        threadStartSearching(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
     }
 }
 
 pub fn waitForSearchFinished(pool: *anyopaque) void {
-    const thread_count = zfish_threadpool_thread_count(pool);
+    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
-        threadWaitFinished(zfish_threadpool_thread_at(pool, index));
+        threadWaitFinished(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
     }
 }
 

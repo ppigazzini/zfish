@@ -7,6 +7,7 @@ const misc_port = @import("misc");
 const thread_port = @import("thread");
 const nnue_acc = @import("nnue_accumulator");
 const evaluate_mod = @import("evaluate");
+const graph_layout = @import("graph_layout");
 const nnue_misc_mod = @import("nnue_misc");
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
@@ -162,7 +163,6 @@ extern fn zfish_engine_numa_set_from_string(
     text_ptr: [*]const u8,
     text_len: usize,
 ) void;
-extern fn zfish_threadpool_thread_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_bound_node_count(pool: *const anyopaque) usize;
 extern fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usize) usize;
 extern fn zfish_numa_context_node_count(numa_context: *const anyopaque) usize;
@@ -873,7 +873,7 @@ pub fn threadAllocationInformation(
     defer c.free(@ptrCast(binding_ptr));
 
     const binding = std.mem.span(binding_ptr);
-    return formatThreadAllocation(zfish_threadpool_thread_count(threads), binding.ptr, binding.len);
+    return formatThreadAllocation(graph_layout.ThreadPool.fromPtr(@constCast(threads)).numThreads(), binding.ptr, binding.len);
 }
 
 fn addStringOption(engine_ptr: *anyopaque, name: []const u8, default_value: []const u8, callback_kind: u8) void {

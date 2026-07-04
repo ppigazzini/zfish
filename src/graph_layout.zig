@@ -166,6 +166,10 @@ pub const ThreadPool = extern struct {
     pub inline fn threadAt(self: *const ThreadPool, i: usize) usize {
         return @as(*const usize, @ptrFromInt(self.threads_begin + i * @sizeOf(usize))).*;
     }
+    /// The i-th `Thread*` as an opaque pointer (for the search-driver call sites).
+    pub inline fn threadAtPtr(self: *const ThreadPool, i: usize) *anyopaque {
+        return @ptrFromInt(self.threadAt(i));
+    }
     pub inline fn boundCount(self: *const ThreadPool) usize {
         return (self.bound_end - self.bound_begin) / @sizeOf(usize);
     }

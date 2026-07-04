@@ -6,7 +6,7 @@ const benchmark_port = @import("benchmark");
 const bitboard_port = @import("bitboard");
 const engine_port = @import("engine");
 const memory_port = @import("memory");
-const graph_layout = @import("graph_layout.zig");
+const graph_layout = @import("graph_layout");
 const worker_construct = @import("worker_construct.zig");
 const thread_construct = @import("thread_construct.zig");
 const worker_native_construct = @import("worker_native_construct.zig");
@@ -571,9 +571,6 @@ fn thTbHits(thread: *const anyopaque) callconv(.c) u64 {
     return p.*;
 }
 
-fn tpThreadCount(pool: *anyopaque) callconv(.c) usize {
-    return graph_layout.ThreadPool.fromPtr(pool).numThreads();
-}
 
 // ThreadPool::thread_at(i) == threads[i].get(): the i-th unique_ptr<Thread> in
 // the threads vector is a single pointer, so .get() is the loaded slot value.
@@ -657,16 +654,13 @@ fn thWorkerSetRootPosition(
     );
 }
 
-fn tpThreadAt(pool: *anyopaque, index: usize) callconv(.c) *anyopaque {
-    return @ptrFromInt(graph_layout.ThreadPool.fromPtr(pool).threadAt(index));
-}
 
 // M-FINAL: pool->main_manager() = main_thread()->worker->main_manager() as native offset
 // navigation: thread[0] -> worker@thread_off.worker -> manager@worker_off.manager (the
 // unique_ptr<ISearchManager>'s stored pointer == the SearchManager* for the main thread).
 // Default-only; the legacy oracle keeps the C++ ThreadPool::main_manager() method.
 fn zfishThreadpoolMainManagerPtr(pool: *anyopaque) callconv(.c) ?*anyopaque {
-    const thread0 = tpThreadAt(pool, 0);
+    const thread0 = graph_layout.ThreadPool.fromPtr(pool).threadAtPtr(0);
     const worker = graph_layout.Thread.fromPtr(thread0).worker;
     if (worker == 0) return null;
     return @ptrFromInt(@as(*const usize, @ptrFromInt(worker + graph_layout.worker_off.manager)).*);
@@ -742,8 +736,6 @@ comptime {
     @export(&smClearTimeman, .{ .name = "zfish_threadpool_main_manager_clear_timeman" });
     @export(&tpSetStopFlag, .{ .name = "zfish_threadpool_set_stop_flag" });
     @export(&tpSetIncreaseDepth, .{ .name = "zfish_threadpool_set_increase_depth" });
-    @export(&tpThreadCount, .{ .name = "zfish_threadpool_thread_count" });
-    @export(&tpThreadAt, .{ .name = "zfish_threadpool_thread_at" });
     @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
     @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
     @export(&thWorkerSetRootState, .{ .name = "zfish_thread_worker_set_root_state" });
@@ -1029,9 +1021,6 @@ pub export fn zfish_uci_engine_ptr(uci: *anyopaque) *anyopaque {
     return uci;
 }
 // ThreadPool::num_threads() == threads.size() (bridge-only symbol, no gating).
-pub export fn zfish_threadpool_num_threads(pool: *const anyopaque) usize {
-    return graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
-}
 
 // Worker -> threads (ThreadPool&) and Worker -> manager (the worker's own
 // SearchManager via the unique_ptr) resolvers. Both slots hold a pointer (the

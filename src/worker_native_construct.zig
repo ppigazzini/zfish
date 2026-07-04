@@ -15,7 +15,7 @@
 // address map that worker_construct.zig verifies on every C++ Worker.
 
 const std = @import("std");
-const graph_layout = @import("graph_layout.zig");
+const graph_layout = @import("graph_layout");
 const position_port = @import("position");
 const search_port = @import("search");
 const nnue_acc = @import("nnue_accumulator");

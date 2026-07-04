@@ -47,11 +47,11 @@ pub const TtProbeTableOutput = extern struct {
 };
 
 const memory = @import("memory");
+const graph_layout = @import("graph_layout");
 fn reportAllocFailure(mb: usize) noreturn {
     std.debug.print("Failed to allocate {d}MB for transposition table.\n", .{mb});
     std.process.exit(1);
 }
-extern fn zfish_threadpool_num_threads(threads: *const anyopaque) usize;
 extern fn zfish_threadpool_zero_tt_slice(
     threads: *anyopaque,
     thread_id: usize,
@@ -88,7 +88,7 @@ pub fn clearState(
 ) void {
     generation_ptr.* = 0;
 
-    const thread_count = zfish_threadpool_num_threads(threads);
+    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(threads)).numThreads();
     if (table == null or cluster_count == 0 or thread_count == 0) {
         return;
     }

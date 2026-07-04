@@ -116,6 +116,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // M16.2b/M16.5: typed engine-graph views (ThreadPool/Worker/... offset structs), imported
+    // by the modules that used to reach the graph through main.zig C-ABI glue.
+    const graph_layout_module = b.createModule(.{
+        .root_source_file = b.path("src/graph_layout.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const timeman_module = b.createModule(.{
         .root_source_file = b.path("src/time/timeman.zig"),
         .target = target,
@@ -393,9 +401,13 @@ pub fn build(b: *std.Build) void {
 
     // M16.5: direct callers of the aligned/large-page allocator.
     exe.root_module.addImport("memory", memory_module);
+    exe.root_module.addImport("graph_layout", graph_layout_module);
     tt_module.addImport("memory", memory_module);
     position_module.addImport("memory", memory_module);
     misc_module.addImport("memory", memory_module);
+    tt_module.addImport("graph_layout", graph_layout_module);
+    thread_module_default.addImport("graph_layout", graph_layout_module);
+    engine_module_default.addImport("graph_layout", graph_layout_module);
     network_module.addImport("libc", libc_module);
     nnue_misc_module.addImport("libc", libc_module);
     evaluate_module.addImport("libc", libc_module);
