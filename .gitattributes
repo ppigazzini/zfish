@@ -1,0 +1,5 @@
+# Parity goldens are compared byte-for-byte by tools/parity_harness.zig against the
+# engine's LF output. Pin them to LF so a Windows checkout (core.autocrlf) can't rewrite
+# them to CRLF and break the cross-OS parity lanes. The harness also CR-normalizes on read,
+# so this is defense in depth (and keeps local diffs clean).
+tools/*.golden text eol=lf

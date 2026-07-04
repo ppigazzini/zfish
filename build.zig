@@ -393,8 +393,11 @@ pub fn build(b: *std.Build) void {
     // source of truth engine.zig imports), not the net named in the stale upstream src/evaluate.h. After
     // an upstream net bump the two diverge, and the upstream scripts/net.sh would fetch the wrong file ->
     // the binary can't load its net and crashes.
+    // `bash` (not `sh`): on Windows runners git-bash's bash.exe is on PATH while a bare
+    // `sh` is not, so this keeps `zig build net`/`parity-portable` working there. The script
+    // is POSIX and runs the same under bash on Linux/macOS.
     const net_cmd = b.addSystemCommand(&.{
-        "sh",
+        "bash",
         b.pathFromRoot("tools/fetch_net.sh"),
         b.pathFromRoot("src/eval/network.zig"),
     });
@@ -405,6 +408,21 @@ pub fn build(b: *std.Build) void {
         "Download the default NNUE net into net/ for external-net Zig parity",
     );
     net_step.dependOn(&net_cmd.step);
+
+    // Pure-Zig parity harness (M-PORT.2): drives the built engine over UCI and diffs the
+    // deterministic fingerprints against the committed goldens -- the cross-platform
+    // replacement for the bash golden scripts (output_parity/search_parity/search_modes/
+    // perft/eval/misc), so `zig build parity` runs identically on Linux/Windows/macOS with
+    // no shell/coreutils dependency. Built for the HOST (it spawns the engine as a
+    // subprocess): in CI each lane builds natively so host == the engine's target.
+    const harness_exe = b.addExecutable(.{
+        .name = "parity_harness",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/parity_harness.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseFast,
+        }),
+    });
 
     const bench_run = b.addRunArtifact(exe);
     bench_run.step.dependOn(install_step);
@@ -460,18 +478,8 @@ pub fn build(b: *std.Build) void {
     // bench-signature mismatch to a single position + drifted field, the
     // granularity the search.cpp keystone port needs to validate safely.
     const search_parity_golden = b.pathFromRoot("tools/search_parity.golden");
-    const search_parity_script = b.pathFromRoot("tools/search_parity.sh");
 
-    const search_parity_cmd = b.addSystemCommand(&.{
-        "bash",
-        search_parity_script,
-        b.getInstallPath(.bin, "stockfish"),
-        search_parity_golden,
-        "check",
-    });
-    search_parity_cmd.step.dependOn(install_step);
-    search_parity_cmd.step.dependOn(&net_cmd.step);
-    search_parity_cmd.setCwd(b.path("net"));
+    const search_parity_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "search-parity", search_parity_golden, "check");
 
     const search_parity_step = b.step(
         "search-parity",
@@ -479,16 +487,7 @@ pub fn build(b: *std.Build) void {
     );
     search_parity_step.dependOn(&search_parity_cmd.step);
 
-    const search_parity_update_cmd = b.addSystemCommand(&.{
-        "bash",
-        search_parity_script,
-        b.getInstallPath(.bin, "stockfish"),
-        search_parity_golden,
-        "update",
-    });
-    search_parity_update_cmd.step.dependOn(install_step);
-    search_parity_update_cmd.step.dependOn(&net_cmd.step);
-    search_parity_update_cmd.setCwd(b.path("net"));
+    const search_parity_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "search-parity", search_parity_golden, "update");
 
     const search_parity_update_step = b.step(
         "search-parity-update",
@@ -499,14 +498,8 @@ pub fn build(b: *std.Build) void {
     // Deterministic non-bench search-mode harness (node-limit / MultiPV /
     // searchmoves) -- validates iterative_deepening control flow beyond bench.
     const search_modes_golden = b.pathFromRoot("tools/search_modes.golden");
-    const search_modes_script = b.pathFromRoot("tools/search_modes.sh");
 
-    const search_modes_cmd = b.addSystemCommand(&.{
-        "bash", search_modes_script, b.getInstallPath(.bin, "stockfish"), search_modes_golden, "check",
-    });
-    search_modes_cmd.step.dependOn(install_step);
-    search_modes_cmd.step.dependOn(&net_cmd.step);
-    search_modes_cmd.setCwd(b.path("net"));
+    const search_modes_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "search-modes", search_modes_golden, "check");
 
     const search_modes_step = b.step(
         "search-modes",
@@ -514,12 +507,7 @@ pub fn build(b: *std.Build) void {
     );
     search_modes_step.dependOn(&search_modes_cmd.step);
 
-    const search_modes_update_cmd = b.addSystemCommand(&.{
-        "bash", search_modes_script, b.getInstallPath(.bin, "stockfish"), search_modes_golden, "update",
-    });
-    search_modes_update_cmd.step.dependOn(install_step);
-    search_modes_update_cmd.step.dependOn(&net_cmd.step);
-    search_modes_update_cmd.setCwd(b.path("net"));
+    const search_modes_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "search-modes", search_modes_golden, "update");
 
     const search_modes_update_step = b.step(
         "search-modes-update",
@@ -559,16 +547,7 @@ pub fn build(b: *std.Build) void {
     // legacy oracle, so it survives oracle deletion (Annex B B.4). The golden is
     // captured while the oracle still exists; output-parity proves golden == oracle.
     const output_golden = b.pathFromRoot("tools/output_parity.golden");
-    const output_golden_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/output_parity_golden.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        output_golden,
-        "check",
-    });
-    output_golden_cmd.step.dependOn(install_step);
-    output_golden_cmd.step.dependOn(&net_cmd.step);
-    output_golden_cmd.setCwd(b.path("net"));
+    const output_golden_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "output-golden", output_golden, "check");
 
     const output_golden_step = b.step(
         "output-golden",
@@ -576,16 +555,7 @@ pub fn build(b: *std.Build) void {
     );
     output_golden_step.dependOn(&output_golden_cmd.step);
 
-    const output_golden_update_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/output_parity_golden.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        output_golden,
-        "update",
-    });
-    output_golden_update_cmd.step.dependOn(install_step);
-    output_golden_update_cmd.step.dependOn(&net_cmd.step);
-    output_golden_update_cmd.setCwd(b.path("net"));
+    const output_golden_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "output-golden", output_golden, "update");
 
     const output_golden_update_step = b.step(
         "output-golden-update",
@@ -722,16 +692,7 @@ pub fn build(b: *std.Build) void {
     // perft; search-modes only checks bestmoves). perft-parity certifies default == legacy while the
     // oracle still exists; the perft golden survives oracle deletion at TU=0 (REPORT-11 §2.2).
     const perft_golden = b.pathFromRoot("tools/perft.golden");
-    const perft_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/perft.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        perft_golden,
-        "check",
-    });
-    perft_cmd.step.dependOn(install_step);
-    perft_cmd.step.dependOn(&net_cmd.step);
-    perft_cmd.setCwd(b.path("net"));
+    const perft_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "perft", perft_golden, "check");
 
     const perft_step = b.step(
         "perft",
@@ -739,16 +700,7 @@ pub fn build(b: *std.Build) void {
     );
     perft_step.dependOn(&perft_cmd.step);
 
-    const perft_update_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/perft.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        perft_golden,
-        "update",
-    });
-    perft_update_cmd.step.dependOn(install_step);
-    perft_update_cmd.step.dependOn(&net_cmd.step);
-    perft_update_cmd.setCwd(b.path("net"));
+    const perft_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "perft", perft_golden, "update");
 
     const perft_update_step = b.step(
         "perft-update",
@@ -761,16 +713,7 @@ pub fn build(b: *std.Build) void {
     // value but not this formatting path. eval-parity certifies default == legacy while the oracle
     // lives; the golden survives oracle deletion.
     const eval_golden = b.pathFromRoot("tools/eval.golden");
-    const eval_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/eval.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        eval_golden,
-        "check",
-    });
-    eval_cmd.step.dependOn(install_step);
-    eval_cmd.step.dependOn(&net_cmd.step);
-    eval_cmd.setCwd(b.path("net"));
+    const eval_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "eval", eval_golden, "check");
 
     const eval_step = b.step(
         "eval-trace",
@@ -778,16 +721,7 @@ pub fn build(b: *std.Build) void {
     );
     eval_step.dependOn(&eval_cmd.step);
 
-    const eval_update_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/eval.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        eval_golden,
-        "update",
-    });
-    eval_update_cmd.step.dependOn(install_step);
-    eval_update_cmd.step.dependOn(&net_cmd.step);
-    eval_update_cmd.setCwd(b.path("net"));
+    const eval_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "eval", eval_golden, "update");
 
     const eval_update_step = b.step(
         "eval-trace-update",
@@ -798,16 +732,7 @@ pub fn build(b: *std.Build) void {
     // UCI misc-command gate (REPORT-11 E1.2 coverage tail): d/flip Fen+Key+Checkers — the
     // frozen-Position fen/flip/zobrist/gives_check read paths no other gate touches.
     const misc_golden = b.pathFromRoot("tools/misc.golden");
-    const misc_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/misc.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        misc_golden,
-        "check",
-    });
-    misc_cmd.step.dependOn(install_step);
-    misc_cmd.step.dependOn(&net_cmd.step);
-    misc_cmd.setCwd(b.path("net"));
+    const misc_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "misc", misc_golden, "check");
 
     const misc_step = b.step(
         "misc",
@@ -815,16 +740,7 @@ pub fn build(b: *std.Build) void {
     );
     misc_step.dependOn(&misc_cmd.step);
 
-    const misc_update_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/misc.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        misc_golden,
-        "update",
-    });
-    misc_update_cmd.step.dependOn(install_step);
-    misc_update_cmd.step.dependOn(&net_cmd.step);
-    misc_update_cmd.setCwd(b.path("net"));
+    const misc_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "misc", misc_golden, "update");
 
     const misc_update_step = b.step(
         "misc-update",
@@ -906,11 +822,51 @@ pub fn build(b: *std.Build) void {
     // M16.1d: the src-free structural invariant is now permanent, so it gates every push.
     parity_step.dependOn(&h9_cmd.step);
 
+    // Cross-OS aggregate (M-PORT.2): the platform-independent subset of `parity` -- bench,
+    // the UCI handshake, the bench signature, and all six golden checks, every one driven by
+    // the pure-Zig harness (no bash / no nm). This is what the Windows and macOS lanes run;
+    // the Linux-only structural gates (h9 src-free via `nm`, signature.sh, arch-determinism)
+    // stay in `parity`. The bench signature is asserted in-harness against the 2067208
+    // arch/OS invariant.
+    const harness_sig_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "signature", "2067208", "check");
+    const parity_portable_step = b.step(
+        "parity-portable",
+        "Cross-OS parity subset (bench signature + six golden gates) via the pure-Zig harness",
+    );
+    parity_portable_step.dependOn(&bench_run.step);
+    parity_portable_step.dependOn(&uci_run.step);
+    parity_portable_step.dependOn(&harness_sig_cmd.step);
+    parity_portable_step.dependOn(&search_parity_cmd.step);
+    parity_portable_step.dependOn(&search_modes_cmd.step);
+    parity_portable_step.dependOn(&output_golden_cmd.step);
+    parity_portable_step.dependOn(&perft_cmd.step);
+    parity_portable_step.dependOn(&eval_cmd.step);
+    parity_portable_step.dependOn(&misc_cmd.step);
+
     const stockfish_step = b.step(
         "stockfish",
         "Build the Zig-owned Stockfish engine for Linux x86_64 / aarch64",
     );
     stockfish_step.dependOn(install_step);
+}
+
+// Wire one pure-Zig parity-harness invocation (M-PORT.2): run the harness (host) with the
+// engine binary, golden path, and mode, from net/ so the spawned engine finds the net.
+fn addHarnessRun(
+    b: *std.Build,
+    harness: *std.Build.Step.Compile,
+    install_step: *std.Build.Step,
+    net_step: *std.Build.Step,
+    check_name: []const u8,
+    golden_or_expected: []const u8,
+    mode: []const u8,
+) *std.Build.Step.Run {
+    const run = b.addRunArtifact(harness);
+    run.addArgs(&.{ check_name, b.getInstallPath(.bin, "stockfish"), golden_or_expected, mode });
+    run.setCwd(b.path("net"));
+    run.step.dependOn(install_step);
+    run.step.dependOn(net_step);
+    return run;
 }
 
 fn applyMacros(module: *std.Build.Module, macros: []const Macro) void {

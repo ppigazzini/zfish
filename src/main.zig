@@ -1792,9 +1792,9 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
 // REPORT-12 TU=0: `go perft N` root divide. Reads the engine FEN, builds a scratch Position + StateInfo
 // (operator_new'd, max-aligned; the C++ used stack p/st), set()s it, generates the legal root moves
 // natively, and per move runs the native perft subtree (do_move_state / perft_subtree / undo_move),
-// printing "<move>: <count>" then the "Nodes searched: N" total — byte-exact (perft.sh diffs the divide
-// output). Output routes through zfish_uci_print_line (the coordinated sync_cout wrapper). Gate-covered
-// by perft.sh (CPW positions + a chess960 castling position).
+// printing "<move>: <count>" then the "Nodes searched: N" total — byte-exact (the `perft` parity
+// harness diffs the divide output). Output routes through zfish_uci_print_line (the coordinated
+// sync_cout wrapper). Gate-covered by the `perft` check (CPW positions + a chess960 castling position).
 fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
     zfish_engine_verify_network_method(engine_ptr);
     const fen_ptr = zfish_engine_fen(zfish_engine_position_ptr(engine_ptr)) orelse @panic("perft: null fen");
