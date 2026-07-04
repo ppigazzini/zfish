@@ -355,6 +355,18 @@ pub const LimitsType = extern struct {
     pub inline fn fromAddr(addr: usize) *LimitsType {
         return @ptrFromInt(addr);
     }
+    pub inline fn ponderMode(self: *const LimitsType) bool {
+        return self.ponder_mode != 0;
+    }
+    pub inline fn perftValue(self: *const LimitsType) usize {
+        return @intCast(self.perft);
+    }
+    /// Number of entries in the searchmoves std::vector<std::string> at offset 0.
+    pub inline fn searchmoveCount(self: *const LimitsType) usize {
+        const begin = @as(*const usize, @ptrCast(@alignCast(&self.searchmoves[0]))).*;
+        const end = @as(*const usize, @ptrCast(@alignCast(&self.searchmoves[8]))).*;
+        return (end - begin) / 24;
+    }
 };
 
 comptime {

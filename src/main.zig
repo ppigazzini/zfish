@@ -342,22 +342,8 @@ fn zfish_limits_searchmoves_bytes() usize {
 // allocator-boundary mismatch (the trap that blocks porting operator new/delete). Offsets
 // from graph_layout.limits_off (verified vs src/search.h LimitsType field order). Exported
 // default-only (comptime block below); the legacy oracle keeps the C++ defs under #ifdef.
-fn zfishLimitsPonderMode(limits: *const anyopaque) callconv(.c) u8 {
-    return if (graph_layout.LimitsType.fromPtr(@constCast(limits)).ponder_mode != 0) 1 else 0;
-}
 fn zfishLimitsPerftValue(limits: *const anyopaque) callconv(.c) usize {
     return @intCast(graph_layout.LimitsType.fromPtr(@constCast(limits)).perft);
-}
-fn zfishLimitsSearchmoveCount(limits: *const anyopaque) callconv(.c) usize {
-    // searchmoves is std::vector<std::string> at LimitsType +0: {begin@0, end@8}; the default
-    // exe is built by Zig (bundled libc++), so the element std::string is 24 bytes (NOT the
-    // libstdc++ 32) — size == (end-begin)/24. The old /32 under-counted (a 2-move span 48 → 1,
-    // a 1-move span 24 → 0); it was masked in the gate because the search-modes test
-    // (searchmoves d2d4 g1f3 → d2d4) still resolves to d2d4 with only the first move processed.
-    const base: [*]const u8 = @ptrCast(limits);
-    const begin = @as(*const usize, @ptrCast(@alignCast(base))).*;
-    const end = @as(*const usize, @ptrCast(@alignCast(base + 8))).*;
-    return (end - begin) / 24;
 }
 
 // Stage 5: native Worker::set_limits -- the C++ `limits = value` copy of LimitsType.
@@ -716,9 +702,6 @@ comptime {
     @export(&zfish_ss_tm_init, .{ .name = "zfish_ss_tm_init" });
     @export(&thFillSummary, .{ .name = "zfish_thread_fill_summary" });
     // M-FINAL (limits readers): pure LimitsType offset reads (legacy keeps the C++ defs).
-    @export(&zfishLimitsPonderMode, .{ .name = "zfish_limits_ponder_mode" });
-    @export(&zfishLimitsPerftValue, .{ .name = "zfish_limits_perft_value" });
-    @export(&zfishLimitsSearchmoveCount, .{ .name = "zfish_limits_searchmove_count" });
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     @export(&zfishEngineOptionHashValue, .{ .name = "zfish_engine_option_hash_value" });
     @export(&zfishSharedStateThreadsValue, .{ .name = "zfish_shared_state_threads_value" });

@@ -163,8 +163,6 @@ extern fn zfish_movegen_generate_legal(
     pos: *const anyopaque,
     out_moves: [*]u16,
 ) usize;
-extern fn zfish_limits_ponder_mode(limits: *const anyopaque) u8;
-extern fn zfish_limits_searchmove_count(limits: *const anyopaque) usize;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
@@ -782,7 +780,7 @@ pub fn startThinking(
     const tp = graph_layout.ThreadPool.fromPtr(pool);
     if (tp.mainManager()) |m| {
         m.setStopOnPonderhit(false);
-        m.setPonder(zfish_limits_ponder_mode(limits) != 0);
+        m.setPonder(graph_layout.LimitsType.fromPtr(@constCast(limits)).ponderMode());
     }
     tp.setStop(false);
     tp.setIncreaseDepth(true);
@@ -807,7 +805,7 @@ pub fn startThinking(
     var selected_moves = std.ArrayList(u16).empty;
     defer selected_moves.deinit(std.heap.c_allocator);
 
-    const searchmove_count = zfish_limits_searchmove_count(limits);
+    const searchmove_count = graph_layout.LimitsType.fromPtr(@constCast(limits)).searchmoveCount();
     var index: usize = 0;
     while (index < searchmove_count) : (index += 1) {
         const move_text = limitsSearchmoveText(limits, index);

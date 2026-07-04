@@ -219,7 +219,6 @@ extern fn zfish_engine_states_slot_reset(states_slot: *anyopaque) void;
 extern fn zfish_engine_network_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_threads_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_chess960_enabled(engine_ptr: *const anyopaque) u8;
-extern fn zfish_limits_perft_value(limits_ptr: *const anyopaque) usize;
 extern fn zfish_network_verify(
     network: *const anyopaque,
     evalfile_path_ptr: [*]const u8,
@@ -437,7 +436,7 @@ pub fn waitForSearchFinishedEngine(engine_ptr: *anyopaque) void {
 }
 
 pub fn goEngine(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
-    std.debug.assert(zfish_limits_perft_value(limits_ptr) == 0);
+    std.debug.assert(graph_layout.LimitsType.fromPtr(@constCast(limits_ptr)).perftValue() == 0);
     verifyNetwork(engine_ptr);
     zfish_thread_start_thinking(
         zfish_engine_threads_ptr(engine_ptr),
