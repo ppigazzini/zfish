@@ -546,9 +546,6 @@ fn smClearTimeman(pool: *anyopaque) callconv(.c) void {
 // Native ThreadPool flag shims: stop and increaseDepth are the leading
 // std::atomic_bool pair at pool+0 / pool+1. Written directly (single-threaded
 // setup context), gated to the default build alongside the manager shims.
-fn tpSetStopFlag(pool: *anyopaque, stop: u8) callconv(.c) void {
-    graph_layout.ThreadPool.fromPtr(pool).stop = if (stop != 0) 1 else 0;
-}
 fn tpSetIncreaseDepth(pool: *anyopaque, increase_depth: u8) callconv(.c) void {
     graph_layout.ThreadPool.fromPtr(pool).increase_depth = if (increase_depth != 0) 1 else 0;
 }
@@ -734,8 +731,6 @@ comptime {
     @export(&smSetPonder, .{ .name = "zfish_threadpool_main_manager_set_ponder" });
     @export(&smSetStopOnPonderhit, .{ .name = "zfish_threadpool_main_manager_set_stop_on_ponderhit" });
     @export(&smClearTimeman, .{ .name = "zfish_threadpool_main_manager_clear_timeman" });
-    @export(&tpSetStopFlag, .{ .name = "zfish_threadpool_set_stop_flag" });
-    @export(&tpSetIncreaseDepth, .{ .name = "zfish_threadpool_set_increase_depth" });
     @export(&thWorkerResetRootSetupState, .{ .name = "zfish_thread_worker_reset_root_setup_state" });
     @export(&thWorkerSetTbConfig, .{ .name = "zfish_thread_worker_set_tb_config" });
     @export(&thWorkerSetRootState, .{ .name = "zfish_thread_worker_set_root_state" });
@@ -2477,9 +2472,6 @@ pub export fn zfish_uci_cli_arg_at(uci: *const anyopaque, index: c_int) ?[*:0]co
 // ThreadPool::boundThreadToNumaNode accessors (bridge-only). The member is a
 // std::vector<size_t> at bound_nodes_begin; count is the byte span / 8 and
 // at(i) loads the i-th element from the begin pointer.
-pub export fn zfish_threadpool_bound_node_count(pool: *const anyopaque) usize {
-    return graph_layout.ThreadPool.fromPtr(@constCast(pool)).boundCount();
-}
 pub export fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usize) usize {
     const begin = graph_layout.ThreadPool.fromPtr(@constCast(pool)).bound_begin;
     return @as(*const usize, @ptrFromInt(begin + index * @sizeOf(usize))).*;

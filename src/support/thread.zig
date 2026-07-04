@@ -153,10 +153,8 @@ const PositionSnapshot = position_snapshot.PositionSnapshot;
 const numa_policy_none: u8 = 0;
 const numa_policy_auto: u8 = 1;
 
-extern fn zfish_threadpool_set_stop_flag(pool: *anyopaque, stop: u8) void;
 extern fn zfish_threadpool_main_manager_set_stop_on_ponderhit(pool: *anyopaque, stop_on_ponderhit: u8) void;
 extern fn zfish_threadpool_main_manager_set_ponder(pool: *anyopaque, ponder: u8) void;
-extern fn zfish_threadpool_set_increase_depth(pool: *anyopaque, increase_depth: u8) void;
 extern fn zfish_threadpool_setup_states_adopt_from_slot(pool: *anyopaque, states_slot: *anyopaque) void;
 extern fn zfish_threadpool_has_setup_states(pool: *const anyopaque) u8;
 extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
@@ -792,9 +790,9 @@ pub fn startThinking(
 ) void {
     waitMainThread(pool);
     zfish_threadpool_main_manager_set_stop_on_ponderhit(pool, 0);
-    zfish_threadpool_set_stop_flag(pool, 0);
+    graph_layout.ThreadPool.fromPtr(pool).setStop(false);
     zfish_threadpool_main_manager_set_ponder(pool, zfish_limits_ponder_mode(limits));
-    zfish_threadpool_set_increase_depth(pool, 1);
+    graph_layout.ThreadPool.fromPtr(pool).setIncreaseDepth(true);
 
     if (zfish_engine_pending_states_available(states_slot) != 0) {
         if (zfish_engine_handoff_pending_states(pool, states_slot) == 0)

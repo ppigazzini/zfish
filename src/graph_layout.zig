@@ -173,6 +173,16 @@ pub const ThreadPool = extern struct {
     pub inline fn boundCount(self: *const ThreadPool) usize {
         return (self.bound_end - self.bound_begin) / @sizeOf(usize);
     }
+    /// The i-th entry of the bound-nodes vector.
+    pub inline fn boundAt(self: *const ThreadPool, i: usize) usize {
+        return @as(*const usize, @ptrFromInt(self.bound_begin + i * @sizeOf(usize))).*;
+    }
+    pub inline fn setStop(self: *ThreadPool, v: bool) void {
+        self.stop = @intFromBool(v);
+    }
+    pub inline fn setIncreaseDepth(self: *ThreadPool, v: bool) void {
+        self.increase_depth = @intFromBool(v);
+    }
 };
 
 comptime {

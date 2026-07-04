@@ -151,7 +151,6 @@ extern fn zfish_position_set_state(
 extern fn zfish_position_do_move_state(pos: *anyopaque, move_raw: u16, state: *anyopaque) void;
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
-extern fn zfish_threadpool_set_stop_flag(pool: *anyopaque, stop: u8) void;
 extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
 extern fn zfish_threadpool_main_manager_set_ponder(pool: *anyopaque, ponder_mode: u8) void;
 extern fn zfish_engine_tablebases_init(path_ptr: [*]const u8, path_len: usize) void;
@@ -163,8 +162,6 @@ extern fn zfish_engine_numa_set_from_string(
     text_ptr: [*]const u8,
     text_len: usize,
 ) void;
-extern fn zfish_threadpool_bound_node_count(pool: *const anyopaque) usize;
-extern fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usize) usize;
 extern fn zfish_numa_context_node_count(numa_context: *const anyopaque) usize;
 extern fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize;
 extern fn zfish_engine_accumulator_stack_create() ?*anyopaque;
@@ -429,7 +426,7 @@ pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
 }
 
 pub fn stop(threads: *anyopaque) void {
-    zfish_threadpool_set_stop_flag(threads, 1);
+    graph_layout.ThreadPool.fromPtr(threads).setStop(true);
 }
 
 pub fn stopEngine(engine_ptr: *anyopaque) void {
@@ -833,7 +830,7 @@ pub fn threadBindingInformation(
     numa_context: *const anyopaque,
     threads: *const anyopaque,
 ) ?[*:0]u8 {
-    const bound_count = zfish_threadpool_bound_node_count(threads);
+    const bound_count = graph_layout.ThreadPool.fromPtr(@constCast(threads)).boundCount();
     if (bound_count == 0)
         return allocMessage("", .{});
 
@@ -846,7 +843,7 @@ pub fn threadBindingInformation(
 
     var index: usize = 0;
     while (index < bound_count) : (index += 1) {
-        const node = zfish_threadpool_bound_node_at(threads, index);
+        const node = graph_layout.ThreadPool.fromPtr(@constCast(threads)).boundAt(index);
         if (node < node_count)
             counts[node] += 1;
     }
