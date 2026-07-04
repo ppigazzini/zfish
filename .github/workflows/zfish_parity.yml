@@ -59,14 +59,9 @@ jobs:
       # sse41/avx2 stay green. Runs the real bench per tier, so it is not hollow.
       - run: bash tools/arch_determinism.sh 2067208
 
-      # Wall-clock time management (REPORT-15 §9): the deterministic `parity`
-      # aggregate above is entirely depth/node-limited and never consults the
-      # clock, so a time-management regression (e.g. the startTime=0 bug that made
-      # `go movetime` return instantly) is invisible to it. This invariant gate
-      # drives `go movetime`/`go wtime` and asserts the reported elapsed tracks and
-      # scales with the budget. Non-deterministic, so it is its own step outside the
-      # aggregate; sse41 keeps it CPU-independent.
-      - run: zig build parity-time -Darch=x86-64-sse41-popcnt
+      # (Wall-clock time management, multi-thread sanity, and the go/stop stress gate now run
+      # INSIDE `zig build parity` above -- M-PORT.2 moved them into the pure-Zig harness -- so
+      # they no longer need separate steps here and also run on the Windows/macOS lanes.)
 
   # M15.5 cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
   # with no source changes -- where upstream needs hand-written NEON intrinsics per
