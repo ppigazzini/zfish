@@ -4,6 +4,7 @@ const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
 const misc_port = @import("misc");
+const thread_port = @import("thread");
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
 // layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
@@ -147,11 +148,8 @@ extern fn zfish_position_do_move_state(pos: *anyopaque, move_raw: u16, state: *a
 extern fn zfish_position_create() ?*anyopaque;
 extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_threadpool_set_stop_flag(pool: *anyopaque, stop: u8) void;
-extern fn zfish_threadpool_wait_for_search_finished(pool: *anyopaque) void;
 extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
-extern fn zfish_threadpool_ensure_network_replicated(pool: *anyopaque) void;
 extern fn zfish_threadpool_main_manager_set_ponder(pool: *anyopaque, ponder_mode: u8) void;
-extern fn zfish_threadpool_clear(pool: *anyopaque) void;
 extern fn zfish_engine_tablebases_init(path_ptr: [*]const u8, path_len: usize) void;
 extern fn zfish_numa_context_set_system(numa_context: *anyopaque) void;
 extern fn zfish_numa_context_set_hardware(numa_context: *anyopaque) void;
@@ -244,9 +242,6 @@ extern fn zfish_engine_emit_verify_message(
     message_ptr: [*]const u8,
     message_len: usize,
 ) void;
-extern fn zfish_engine_resize_threads_owner(engine_ptr: *anyopaque) void;
-extern fn zfish_engine_set_tt_size_owner(engine_ptr: *anyopaque, mb: usize) void;
-extern fn zfish_engine_search_clear_owner(engine_ptr: *anyopaque) void;
 extern fn zfish_engine_load_network_owner(engine_ptr: *anyopaque, file_ptr: [*]const u8, file_len: usize) void;
 extern fn zfish_engine_save_network_owner(
     engine_ptr: *anyopaque,
@@ -254,7 +249,6 @@ extern fn zfish_engine_save_network_owner(
     filename_ptr: [*]const u8,
     filename_len: usize,
 ) void;
-extern fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 extern fn zfish_threadpool_reconfigure(
     pool: *anyopaque,
     numa_config: *const anyopaque,
@@ -308,7 +302,7 @@ pub fn initBody(engine_ptr: *anyopaque) void {
     addStringOption(engine_ptr, "EvalFile", default_eval_file_name, option_callback_eval_file);
 
     zfish_engine_set_start_position(engine_ptr);
-    zfish_engine_resize_threads_owner(engine_ptr);
+    resizeThreadsEngine(engine_ptr);
 }
 
 pub fn optionOnChange(
@@ -337,15 +331,15 @@ pub fn optionOnChange(
             break :blk allocMessage("{s}\n{s}", .{ std.mem.span(numa_info_ptr), std.mem.span(thread_info_ptr) });
         },
         option_callback_threads => blk: {
-            zfish_engine_resize_threads_owner(engine_ptr);
+            resizeThreadsEngine(engine_ptr);
             break :blk zfish_engine_thread_allocation_info_text(engine_ptr);
         },
         option_callback_hash => blk: {
-            zfish_engine_set_tt_size_owner(engine_ptr, @intCast(@max(int_value, 0)));
+            setTtSizeEngine(engine_ptr, @intCast(@max(int_value, 0)));
             break :blk null;
         },
         option_callback_clear_hash => blk: {
-            zfish_engine_search_clear_owner(engine_ptr);
+            searchClearEngine(engine_ptr);
             break :blk null;
         },
         option_callback_syzygy_path => blk: {
@@ -472,7 +466,7 @@ pub fn setNumaConfigFromOptionEngine(engine_ptr: *anyopaque, option_text: []cons
         zfish_engine_numa_set_from_string(numa_context, option_text.ptr, option_text.len);
     }
 
-    zfish_engine_resize_threads_owner(engine_ptr);
+    resizeThreadsEngine(engine_ptr);
 }
 
 pub fn resizeThreads(
@@ -484,7 +478,7 @@ pub fn resizeThreads(
     network: *const anyopaque,
     update_context: *const anyopaque,
 ) void {
-    zfish_threadpool_wait_for_search_finished(threads);
+    thread_port.waitForSearchFinished(threads);
 
     const shared_state = zfish_search_shared_state_create(
         options,
@@ -503,7 +497,7 @@ pub fn resizeThreads(
     );
 
     setTtSize(threads, tt, zfish_engine_option_hash_value(options));
-    zfish_threadpool_ensure_network_replicated(threads);
+    thread_port.ensureNetworkReplicated(threads);
 }
 
 pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
@@ -536,9 +530,9 @@ pub fn setPonderhitEngine(engine_ptr: *anyopaque, ponder: u8) void {
 }
 
 pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8) void {
-    zfish_threadpool_wait_for_search_finished(threads);
+    thread_port.waitForSearchFinished(threads);
     zfish_engine_tt_clear(tt, threads);
-    zfish_threadpool_clear(threads);
+    thread_port.clear(threads);
     zfish_engine_tablebases_init(syzygy_path.ptr, syzygy_path.len);
 }
 

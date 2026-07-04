@@ -505,7 +505,6 @@ const SsCtx = extern struct {
     skill_enabled: u8,
 };
 
-extern fn zfish_search_iterative_deepening(worker: ?*anyopaque) u8;
 extern fn zfish_ss_prologue(worker: ?*anyopaque) void;
 extern fn zfish_ss_context(worker: ?*anyopaque, out: *SsCtx) void;
 extern fn zfish_ss_tm_init(worker: ?*anyopaque) void;
@@ -531,7 +530,7 @@ pub export fn zfish_worker_start_searching(worker: ?*anyopaque) void {
     zfish_ss_context(worker, &ctx);
 
     if (ctx.is_mainthread == 0) {
-        _ = zfish_search_iterative_deepening(worker);
+        _ = iterativeDeepening(worker.?);
         return;
     }
 
@@ -543,7 +542,7 @@ pub export fn zfish_worker_start_searching(worker: ?*anyopaque) void {
     }
 
     zfish_ss_threads_start(worker);
-    var uci_pv_sent = zfish_search_iterative_deepening(worker) != 0;
+    var uci_pv_sent = iterativeDeepening(worker.?) != 0;
 
     while (zfish_ss_should_busywait(worker) != 0) {}
 

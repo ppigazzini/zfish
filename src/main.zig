@@ -267,9 +267,6 @@ pub export fn zfish_search_clear_worker_histories(worker_ptr: *anyopaque) void {
     position_port.clearWorkerHistories(worker_ptr);
 }
 
-pub export fn zfish_search_iterative_deepening(worker: *anyopaque) u8 {
-    return position_port.iterativeDeepening(worker);
-}
 
 pub fn zfish_search_extract_ponder_from_tt(pv: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8, pos: *anyopaque) u8 {
     return position_port.extractPonderFromTt(pv, table, cc, gen, pos);
@@ -502,21 +499,12 @@ pub export fn zfish_threadpool_reconfigure(
     return thread_port.reconfigure(pool, numa_config, shared_state, update_context);
 }
 
-pub export fn zfish_threadpool_clear(pool: *anyopaque) void {
-    return thread_port.clear(pool);
-}
 
 pub fn zfish_threadpool_start_searching(pool: *anyopaque) void {
     return thread_port.startSearching(pool);
 }
 
-pub export fn zfish_threadpool_wait_for_search_finished(pool: *anyopaque) void {
-    return thread_port.waitForSearchFinished(pool);
-}
 
-pub export fn zfish_threadpool_ensure_network_replicated(pool: *anyopaque) void {
-    return thread_port.ensureNetworkReplicated(pool);
-}
 
 pub fn zfish_threadpool_nodes_searched(pool: *anyopaque) u64 {
     return thread_port.nodesSearched(pool);
@@ -1295,7 +1283,7 @@ fn ssThreadsStart(worker: ?*anyopaque) callconv(.c) void {
     zfish_threadpool_start_searching(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
 }
 fn ssWaitFinished(worker: ?*anyopaque) callconv(.c) void {
-    zfish_threadpool_wait_for_search_finished(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
+    thread_port.waitForSearchFinished(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
 }
 fn ssEmitPv(worker: ?*anyopaque, best: ?*anyopaque) callconv(.c) void {
     const w = worker.?;
@@ -2600,18 +2588,12 @@ pub fn zfish_engine_fen(pos: *const anyopaque) ?[*:0]u8 {
 }
 
 
-pub export fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int {
-    return engine_port.hashfullEngine(engine_ptr, max_age);
-}
 
 
 pub fn zfish_engine_verify_network_method(engine_ptr: *const anyopaque) void {
     return engine_port.verifyNetwork(engine_ptr);
 }
 
-pub export fn zfish_engine_search_clear_owner(engine_ptr: *anyopaque) void {
-    return engine_port.searchClearEngine(engine_ptr);
-}
 
 
 pub fn zfish_engine_go_owner(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
@@ -2628,13 +2610,7 @@ pub export fn zfish_engine_set_numa_config_from_option_owner(
     return engine_port.setNumaConfigFromOptionEngine(engine_ptr, value_ptr[0..value_len]);
 }
 
-pub export fn zfish_engine_resize_threads_owner(engine_ptr: *anyopaque) void {
-    return engine_port.resizeThreadsEngine(engine_ptr);
-}
 
-pub export fn zfish_engine_set_tt_size_owner(engine_ptr: *anyopaque, mb: usize) void {
-    return engine_port.setTtSizeEngine(engine_ptr, mb);
-}
 
 
 
