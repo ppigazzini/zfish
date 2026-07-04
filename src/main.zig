@@ -261,13 +261,7 @@ pub export fn zfish_search_fill_reductions(reductions_ptr: [*]c_int, count: usiz
     return search_port.fillReductions(reductions_ptr, count);
 }
 
-pub export fn zfish_search_stat_bonus(depth: c_int, is_tt_move: u8, prev_stat_score: c_int) c_int {
-    return search_port.statBonus(depth, is_tt_move != 0, prev_stat_score);
-}
-
-pub export fn zfish_search_stat_malus(depth: c_int) c_int {
-    return search_port.statMalus(depth);
-}
+// zfish_search_stat_bonus/stat_malus retired -- position.zig calls search directly (M16.5).
 
 pub export fn zfish_search_clear_worker_histories(worker_ptr: *anyopaque) void {
     position_port.clearWorkerHistories(worker_ptr);
@@ -439,17 +433,7 @@ pub export fn zfish_worker_set_root_moves(thread: *anyopaque, src_rm: *const any
     }
 }
 
-pub export fn zfish_search_quiet_low_ply_scale(bonus: c_int) c_int {
-    return search_port.quietLowPlyScale(bonus);
-}
-
-pub export fn zfish_search_quiet_cont_scale(bonus: c_int) c_int {
-    return search_port.quietContScale(bonus);
-}
-
-pub export fn zfish_search_quiet_pawn_scale(bonus: c_int) c_int {
-    return search_port.quietPawnScale(bonus);
-}
+// zfish_search_quiet_{low_ply,cont,pawn}_scale retired -- position.zig calls search directly (M16.5).
 
 pub export fn zfish_search_conthist_delta(
     bonus: c_int,
