@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @cImport({
     @cInclude("stdlib.h");
     @cInclude("stdio.h");
@@ -7,6 +8,24 @@ const c = @cImport({
 
 const benchmark_port = @import("benchmark");
 const misc_port = @import("misc");
+
+// C stdio stdin, obtained portably (M-PORT). @cImport's translation of the stream macros
+// is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on
+// Windows, an inline getter on macOS), so the underlying entry point is declared directly:
+// glibc's global FILE* symbol, macOS's __stdinp global, or the Windows CRT accessor. Each
+// arm is comptime-selected, so only the target's symbol is referenced/linked.
+const std_streams = struct {
+    extern "c" fn __acrt_iob_func(index: c_uint) callconv(.c) *c.FILE;
+    extern "c" var __stdinp: *c.FILE;
+    extern "c" var stdin: *c.FILE;
+};
+fn cStdin() *c.FILE {
+    return switch (builtin.os.tag) {
+        .windows => std_streams.__acrt_iob_func(0),
+        .macos, .ios, .tvos, .watchos, .visionos => std_streams.__stdinp,
+        else => std_streams.stdin,
+    };
+}
 
 pub const DispatchResult = extern struct {
     should_quit: u8,
@@ -521,7 +540,7 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
 
 fn readCommandLineAlloc() !?[]u8 {
     var buffer: [4096]u8 = undefined;
-    const read_ptr = c.fgets(@ptrCast(&buffer), @intCast(buffer.len), c.stdin);
+    const read_ptr = c.fgets(@ptrCast(&buffer), @intCast(buffer.len), cStdin());
     if (read_ptr == null) {
         return null;
     }

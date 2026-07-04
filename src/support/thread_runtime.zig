@@ -7,30 +7,69 @@
 // C++ runner executes std::function<void()>.
 //
 // Zig 0.16 removed std.Thread.Mutex / Condition / Futex, so the blocking
-// primitives are built directly on the Linux futex syscall: a canonical
+// primitives are built directly on a wait/wake-on-address seam: a canonical
 // three-state (Drepper) mutex and a sequence-counter condition variable. Both
 // are exercised by the tests at the bottom, which spawn the thread and
 // round-trip jobs, so the concurrency handshake is verified here rather than
 // deferred to the wiring step.
+//
+// The seam (futexWait/futexWakeOne/futexWakeAll) is the ONLY OS-specific code
+// here; the Mutex/Condition logic on top is platform-independent (M-PORT). It is
+// implemented per owned OS: Linux futex(2), Windows RtlWaitOnAddress/RtlWakeAddress
+// (ntdll), macOS __ulock_wait/__ulock_wake. Spurious wakeups are harmless -- every
+// caller re-checks a predicate.
 
 const std = @import("std");
-const linux = std.os.linux;
+const builtin = @import("builtin");
 
 const Atomic = std.atomic.Value(u32);
 
+// Block while *ptr == expect. Returns on wake, on a value mismatch, or spuriously.
 fn futexWait(ptr: *const Atomic, expect: u32) void {
-    // FUTEX_WAIT reads the 4th (timeout) syscall argument, so it MUST be passed
-    // explicitly as NULL (wait indefinitely). futex_3arg leaves the timeout
-    // register undefined -> the kernel dereferences garbage -> EFAULT, so the wait
-    // returns immediately and the predicate loop busy-spins (and valgrind flags
-    // "futex(timeout) points to unaddressable byte(s)"). futex_4arg(..., null)
-    // makes the thread actually block. (WAKE genuinely ignores the extra args, so
-    // futexWake keeps using futex_3arg.)
-    _ = linux.futex_4arg(&ptr.raw, .{ .cmd = .WAIT, .private = true }, expect, null);
+    switch (builtin.os.tag) {
+        .linux => {
+            // FUTEX_WAIT reads the 4th (timeout) syscall argument, so it MUST be
+            // passed explicitly as NULL (wait indefinitely). futex_3arg leaves the
+            // timeout register undefined -> the kernel dereferences garbage -> EFAULT,
+            // so the wait returns immediately and the predicate loop busy-spins (and
+            // valgrind flags "futex(timeout) points to unaddressable byte(s)").
+            _ = std.os.linux.futex_4arg(&ptr.raw, .{ .cmd = .WAIT, .private = true }, expect, null);
+        },
+        .windows => {
+            // Timeout = null -> wait indefinitely. STATUS_SUCCESS on wake or if the
+            // value already differs from CompareAddress.
+            var compare: u32 = expect;
+            _ = std.os.windows.ntdll.RtlWaitOnAddress(&ptr.raw, &compare, @sizeOf(u32), null);
+        },
+        .macos, .ios, .tvos, .watchos, .visionos => {
+            // UL_COMPARE_AND_WAIT: block while the u32 at addr == val. timeout 0 =
+            // forever. NO_ERRNO returns -errno instead of setting errno; ignored.
+            _ = std.c.__ulock_wait(.{ .op = .COMPARE_AND_WAIT, .NO_ERRNO = true }, &ptr.raw, expect, 0);
+        },
+        else => @compileError("thread_runtime: unsupported OS (owned: linux, windows, macos)"),
+    }
 }
 
-fn futexWake(ptr: *const Atomic, count: u32) void {
-    _ = linux.futex_3arg(&ptr.raw, .{ .cmd = .WAKE, .private = true }, count);
+fn futexWakeOne(ptr: *const Atomic) void {
+    switch (builtin.os.tag) {
+        .linux => _ = std.os.linux.futex_3arg(&ptr.raw, .{ .cmd = .WAKE, .private = true }, 1),
+        .windows => std.os.windows.ntdll.RtlWakeAddressSingle(&ptr.raw),
+        .macos, .ios, .tvos, .watchos, .visionos => {
+            _ = std.c.__ulock_wake(.{ .op = .COMPARE_AND_WAIT }, &ptr.raw, 0);
+        },
+        else => @compileError("thread_runtime: unsupported OS (owned: linux, windows, macos)"),
+    }
+}
+
+fn futexWakeAll(ptr: *const Atomic) void {
+    switch (builtin.os.tag) {
+        .linux => _ = std.os.linux.futex_3arg(&ptr.raw, .{ .cmd = .WAKE, .private = true }, std.math.maxInt(u32)),
+        .windows => std.os.windows.ntdll.RtlWakeAddressAll(&ptr.raw),
+        .macos, .ios, .tvos, .watchos, .visionos => {
+            _ = std.c.__ulock_wake(.{ .op = .COMPARE_AND_WAIT, .WAKE_ALL = true }, &ptr.raw, 0);
+        },
+        else => @compileError("thread_runtime: unsupported OS (owned: linux, windows, macos)"),
+    }
 }
 
 // Three-state futex mutex (0 = unlocked, 1 = locked, 2 = locked with waiters).
@@ -54,7 +93,7 @@ pub const Mutex = struct {
         // If there were waiters (state was 2), wake exactly one.
         if (m.state.fetchSub(1, .release) != 1) {
             m.state.store(0, .release);
-            futexWake(&m.state, 1);
+            futexWakeOne(&m.state);
         }
     }
 };
@@ -73,12 +112,12 @@ pub const Condition = struct {
 
     pub fn signal(cv: *Condition) void {
         _ = cv.seq.fetchAdd(1, .monotonic);
-        futexWake(&cv.seq, 1);
+        futexWakeOne(&cv.seq);
     }
 
     pub fn broadcast(cv: *Condition) void {
         _ = cv.seq.fetchAdd(1, .monotonic);
-        futexWake(&cv.seq, std.math.maxInt(u32));
+        futexWakeAll(&cv.seq);
     }
 };
 

@@ -175,6 +175,12 @@ pub fn hardwareConcurrency() c_int {
     // std::thread::hardware_concurrency(). libstdc++ implements that as
     // _GLIBCXX_NPROCS == sysconf(_SC_NPROCESSORS_ONLN), clamping a negative
     // (error) result to 0. Identical on the owned Linux x86_64 glibc target.
+    // M-PORT: sysconf is POSIX (Linux/macOS); Windows has no _SC_NPROCESSORS_ONLN, so
+    // there std.Thread.getCpuCount() (GetSystemInfo) supplies the online count.
+    if (builtin.os.tag == .windows) {
+        const n = std.Thread.getCpuCount() catch return 0;
+        return std.math.cast(c_int, n) orelse 0;
+    }
     const n = c.sysconf(c._SC_NPROCESSORS_ONLN);
     if (n < 0) return 0;
     return @intCast(n);

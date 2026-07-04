@@ -1,8 +1,27 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @cImport({
     @cInclude("stdio.h");
     @cInclude("stdlib.h");
 });
+
+// C stdio stderr, obtained portably (M-PORT). @cImport's translation of the stream macros
+// is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on
+// Windows, an inline getter on macOS), so the underlying entry point is declared directly:
+// glibc's global FILE* symbol, macOS's __stderrp global, or the Windows CRT accessor. Each
+// arm is comptime-selected, so only the target's symbol is referenced/linked.
+const std_streams = struct {
+    extern "c" fn __acrt_iob_func(index: c_uint) callconv(.c) *c.FILE;
+    extern "c" var __stderrp: *c.FILE;
+    extern "c" var stderr: *c.FILE;
+};
+fn cStderr() *c.FILE {
+    return switch (builtin.os.tag) {
+        .windows => std_streams.__acrt_iob_func(2),
+        .macos, .ios, .tvos, .watchos, .visionos => std_streams.__stderrp,
+        else => std_streams.stderr,
+    };
+}
 
 const benchmark_cpp_source = @import("benchmark_source_data").source;
 const defaults_marker = "const std::vector<std::string> Defaults = {";
@@ -70,7 +89,7 @@ fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![*:0]u8 {
     } else {
         const file_data = readFileAlloc(allocator, fen_file) catch {
             _ = c.fprintf(
-                c.stderr,
+                cStderr(),
                 "Unable to open file %.*s\n",
                 @as(c_int, @intCast(fen_file.len)),
                 fen_file.ptr,

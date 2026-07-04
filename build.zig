@@ -5,6 +5,10 @@ const Macro = struct {
     value: []const u8,
 };
 
+// Owned runtime OSes (M-PORT). Selected with -Dos=; each maps to an (os_tag, abi) pair
+// in build(). Orthogonal to -Darch= (the ISA tier), so any arch tier can target any OS.
+const TargetOs = enum { linux, windows, macos };
+
 const ArchConfig = struct {
     name: []const u8,
     flags: []const []const u8,
@@ -38,6 +42,23 @@ pub fn build(b: *std.Build) void {
         "Stockfish ARCH value for Linux x86_64, or 'native' to use scripts/get_native_properties.sh",
     ) orelse "native";
     const arch = resolveArch(b, requested_arch);
+    // Owned runtime targets (M-PORT): Linux (default), Windows, and macOS. The pure-Zig
+    // engine is OS-portable behind a thin platform seam -- sync (thread_runtime.zig futex
+    // seam), aligned/large-page allocation (memory.zig), the steady clock and CPU-affinity
+    // string (main.zig). Windows uses the self-contained mingw (gnu) ABI so no MSVC/SDK is
+    // needed; macOS uses its native ABI. The integer-exact NNUE eval is arch/OS-invariant,
+    // so bench must be 2067208 on every (arch, os) tier -- the parity lanes assert it.
+    const os_choice = b.option(TargetOs, "os", "Target OS: linux (default), windows, or macos") orelse .linux;
+    const os_tag: std.Target.Os.Tag = switch (os_choice) {
+        .linux => .linux,
+        .windows => .windows,
+        .macos => .macos,
+    };
+    const abi: std.Target.Abi = switch (os_choice) {
+        .linux => .gnu,
+        .windows => .gnu, // mingw: self-contained, ships with Zig (no Visual Studio / Windows SDK)
+        .macos => .none, // macOS has a single system ABI (libSystem); no gnu/musl split
+    };
     const git_info = readGitInfo(b);
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "arch_name", arch.name);
@@ -61,8 +82,8 @@ pub fn build(b: *std.Build) void {
         .cpu_arch = arch.cpu_arch,
         .cpu_model = .baseline,
         .cpu_features_add = arch.target_features,
-        .os_tag = .linux,
-        .abi = .gnu,
+        .os_tag = os_tag,
+        .abi = abi,
     });
 
     const exe = b.addExecutable(.{
@@ -355,8 +376,14 @@ pub fn build(b: *std.Build) void {
     if (git_info.date) |date|
         exe.root_module.addCMacro("GIT_DATE", b.fmt("\"{s}\"", .{date}));
 
-    exe.root_module.linkSystemLibrary("pthread", .{});
-    exe.root_module.linkSystemLibrary("rt", .{});
+    // pthread + librt are Linux-only: on macOS the pthread + realtime-clock symbols live
+    // in libSystem (pulled in by link_libc), and on Windows threading/sync is Win32 and
+    // there is no librt. link_libc already provides the C runtime (ucrt via mingw) the
+    // aligned allocator needs on Windows.
+    if (os_tag == .linux) {
+        exe.root_module.linkSystemLibrary("pthread", .{});
+        exe.root_module.linkSystemLibrary("rt", .{});
+    }
 
     b.installArtifact(exe);
 

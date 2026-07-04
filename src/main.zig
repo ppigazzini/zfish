@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @cImport({
     @cInclude("stdlib.h");
     @cInclude("stdio.h");
@@ -46,20 +47,21 @@ comptime {
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 pub fn main(init: std.process.Init) !void {
-    var argc: usize = 0;
-    var count_iter = std.process.Args.Iterator.init(init.minimal.args);
-    while (count_iter.next()) |_| {
-        argc += 1;
-    }
+    // Cross-platform argv (M-PORT): initAllocator handles Windows/WASI, where argv must be
+    // decoded from the raw command line into an owned buffer (on POSIX it is a no-op view of
+    // the kernel-provided vector). The iterator owns the arg strings, so it stays alive
+    // (deinit deferred) for all of main -- argv points into its buffer. Collected once into a
+    // C-style [*:0]u8 vector for the engine constructor.
+    var arg_iter = try std.process.Args.Iterator.initAllocator(init.minimal.args, init.gpa);
+    defer arg_iter.deinit();
 
-    const argv = try init.gpa.alloc([*:0]u8, argc);
-    defer init.gpa.free(argv);
-
-    var fill_iter = std.process.Args.Iterator.init(init.minimal.args);
-    var index: usize = 0;
-    while (fill_iter.next()) |arg| : (index += 1) {
-        argv[index] = @constCast(arg.ptr);
+    var argv_list = std.ArrayList([*:0]u8).empty;
+    defer argv_list.deinit(init.gpa);
+    while (arg_iter.next()) |arg| {
+        try argv_list.append(init.gpa, @constCast(arg.ptr));
     }
+    const argv = argv_list.items;
+    const argc = argv.len;
 
     const info = zfish_misc_engine_info_text() orelse return error.OutOfMemory;
     defer c.free(@ptrCast(info));
@@ -1241,10 +1243,29 @@ pub fn zfish_uci_set_quiet_mode(quiet: u8) void {
 // The UCI info/bestmove emit is main-thread-only (the on_update_full path), so no IO lock is needed —
 // matching the single output stream. fflush mirrors the C++ sync_endl flush.
 var log_file: ?*c.FILE = null;
+// C stdio standard streams, obtained portably (M-PORT). @cImport's translation of the
+// stdout/stderr/stdin macros is not uniform across the owned OSes -- a comptime-uncallable
+// __acrt_iob_func() macro on Windows, an inline getter on macOS -- so the underlying entry
+// points are declared directly: glibc's global FILE* symbol, macOS's __std*p global, or the
+// Windows CRT __acrt_iob_func(n) accessor. Each arm is comptime-selected, so only the target's
+// symbol is referenced/linked.
+const std_streams = struct {
+    extern "c" fn __acrt_iob_func(index: c_uint) callconv(.c) *c.FILE;
+    extern "c" var __stdoutp: *c.FILE;
+    extern "c" var stdout: *c.FILE;
+};
+fn cStdout() *c.FILE {
+    return switch (builtin.os.tag) {
+        .windows => std_streams.__acrt_iob_func(1),
+        .macos, .ios, .tvos, .watchos, .visionos => std_streams.__stdoutp,
+        else => std_streams.stdout,
+    };
+}
 fn uciPrintLine(str: [*]const u8, len: usize) callconv(.c) void {
-    _ = c.fwrite(str, 1, len, c.stdout);
-    _ = c.fputc('\n', c.stdout);
-    _ = c.fflush(c.stdout);
+    const out = cStdout();
+    _ = c.fwrite(str, 1, len, out);
+    _ = c.fputc('\n', out);
+    _ = c.fflush(out);
     if (log_file) |f| {
         _ = c.fwrite(str, 1, len, f);
         _ = c.fputc('\n', f);
@@ -1453,13 +1474,38 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
     };
 }
 
+// Windows steady clock (M-PORT): QueryPerformanceCounter is the monotonic high-res
+// counter; ticks/QueryPerformanceFrequency gives seconds. Declared here (not in
+// std.os.windows) and only referenced on the Windows branch of zfishNow.
+extern "kernel32" fn QueryPerformanceCounter(count: *i64) callconv(.winapi) i32;
+extern "kernel32" fn QueryPerformanceFrequency(freq: *i64) callconv(.winapi) i32;
+
 // M-FINAL: zfish_now ported native (default-only). Stockfish::now() = steady_clock ms;
-// CLOCK_MONOTONIC is the Linux steady_clock. now() is used only for elapsed-time (the
-// goldens are fixed depth/nodes, so the absolute value isn't gated — only monotonicity).
+// CLOCK_MONOTONIC is the POSIX steady_clock (QPC on Windows). now() is used only for
+// elapsed-time (the goldens are fixed depth/nodes, so the absolute value isn't gated —
+// only monotonicity). Ported across the owned OSes (M-PORT).
 fn zfishNow() callconv(.c) i64 {
-    var ts: std.os.linux.timespec = undefined;
-    _ = std.os.linux.clock_gettime(.MONOTONIC, &ts);
-    return @as(i64, @intCast(ts.sec)) * 1000 + @divTrunc(@as(i64, @intCast(ts.nsec)), 1_000_000);
+    switch (builtin.os.tag) {
+        .windows => {
+            var freq: i64 = 0;
+            var count: i64 = 0;
+            _ = QueryPerformanceFrequency(&freq);
+            _ = QueryPerformanceCounter(&count);
+            if (freq == 0) return 0;
+            return @intCast(@divTrunc(@as(i128, count) * 1000, @as(i128, freq)));
+        },
+        .linux => {
+            var ts: std.os.linux.timespec = undefined;
+            _ = std.os.linux.clock_gettime(.MONOTONIC, &ts);
+            return @as(i64, @intCast(ts.sec)) * 1000 + @divTrunc(@as(i64, @intCast(ts.nsec)), 1_000_000);
+        },
+        else => {
+            // macOS and other POSIX: CLOCK_MONOTONIC via libc clock_gettime.
+            var ts: std.c.timespec = undefined;
+            _ = std.c.clock_gettime(.MONOTONIC, &ts);
+            return @as(i64, @intCast(ts.sec)) * 1000 + @divTrunc(@as(i64, @intCast(ts.nsec)), 1_000_000);
+        },
+    }
 }
 extern fn zfish_optmodel_int_by_name(name_ptr: [*]const u8, name_len: usize) callconv(.c) c_int;
 
@@ -2658,13 +2704,28 @@ pub export fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8 {
 // reads) and formats it as the comma-separated CPU ranges to_string emits for ONE node (e.g.
 // "0-7"). Multi-node numa support was dropped (single-node decision), so there is no ":" node
 // separator. Replaces the C++ NumaReplicationContext::get_numa_config().to_string() in default.
+//
+// M-PORT: sched_getaffinity/cpu_set_t are Linux-only. macOS/Windows have no per-thread affinity
+// mask in the same shape, and the single-node default engine only needs "which CPUs may I run
+// on"; there std.Thread.getCpuCount() gives the online count and the set is the contiguous range
+// 0..n-1, formatted identically ("0-7", or "0" for one CPU).
 pub fn zfish_native_numa_config_string() ?[*:0]u8 {
+    const a = std.heap.c_allocator;
+
+    if (builtin.os.tag != .linux) {
+        const n = std.Thread.getCpuCount() catch 1;
+        const owned = if (n <= 1)
+            std.fmt.allocPrintSentinel(a, "0", .{}, 0) catch return null
+        else
+            std.fmt.allocPrintSentinel(a, "0-{d}", .{n - 1}, 0) catch return null;
+        return owned.ptr;
+    }
+
     const linux = std.os.linux;
     var set: linux.cpu_set_t = undefined;
     @memset(std.mem.asBytes(&set), 0);
     _ = linux.sched_getaffinity(0, @sizeOf(linux.cpu_set_t), &set);
 
-    const a = std.heap.c_allocator;
     var buf = std.ArrayList(u8).empty;
     defer buf.deinit(a);
 
