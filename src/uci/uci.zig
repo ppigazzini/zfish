@@ -4,6 +4,23 @@ const c = @import("libc");
 
 const benchmark_port = @import("benchmark");
 const misc_port = @import("misc");
+const engine_mod = @import("engine");
+
+// These engine_owner entry points are @export'd main.zig-local orchestrators (not thin
+// engine-module wrappers), so they stay C-ABI for now -- a later slice moves that logic out
+// of main.zig. The other zfish_engine_*_owner calls became engine_mod.* direct calls (M16.5).
+extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
+extern fn zfish_engine_options_text_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
+extern fn zfish_engine_go_parsed_owner(engine_ptr: *anyopaque, limits: ParsedLimits) void;
+extern fn zfish_engine_flip_owner(engine_ptr: *anyopaque) void;
+extern fn zfish_engine_apply_setoption_owner(
+    engine_ptr: *anyopaque,
+    name_ptr: [*]const u8,
+    name_len: usize,
+    value_ptr: [*]const u8,
+    value_len: usize,
+    has_value: u8,
+) void;
 
 // C stdio stdin, obtained portably (M-PORT). @cImport's translation of the stream macros
 // is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on
@@ -75,55 +92,17 @@ pub const ParsedPosition = extern struct {
     moves: ?[*:0]u8,
 };
 
-const ByteView = extern struct {
-    ptr: ?[*]const u8,
-    len: usize,
-};
+// Same layout as the engine module's ByteView; alias it so setPositionEngine takes our
+// move views directly (M16.5) rather than through a duplicate C-ABI-mirror struct.
+const ByteView = engine_mod.ByteView;
 
 extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize) ParsedSetOption;
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
 extern fn zfish_uci_engine_ptr(uci_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
 extern fn zfish_uci_engine_nodes_searched(uci_ptr: *const anyopaque) u64;
 extern fn zfish_uci_engine_reset_nodes_searched() void;
 extern fn zfish_uci_set_listener_mode(uci_ptr: *anyopaque, quiet_mode: u8) void;
-extern fn zfish_engine_options_text_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_wait_for_search_finished_owner(engine_ptr: *anyopaque) void;
-extern fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int;
-extern fn zfish_engine_fen_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_numa_config_string_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_numa_config_information_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_thread_binding_information_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_thread_allocation_information_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_stop_owner(engine_ptr: *anyopaque) void;
-extern fn zfish_engine_set_ponderhit_owner(engine_ptr: *anyopaque, ponder: u8) void;
-extern fn zfish_engine_search_clear_owner(engine_ptr: *anyopaque) void;
-extern fn zfish_engine_visualize_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8;
-extern fn zfish_engine_save_network_owner(
-    engine_ptr: *anyopaque,
-    has_filename: u8,
-    filename_ptr: [*]const u8,
-    filename_len: usize,
-) void;
-extern fn zfish_engine_apply_setoption_owner(
-    engine_ptr: *anyopaque,
-    name_ptr: [*]const u8,
-    name_len: usize,
-    value_ptr: [*]const u8,
-    value_len: usize,
-    has_value: u8,
-) void;
-extern fn zfish_engine_set_position_owner(
-    engine_ptr: *anyopaque,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    moves_ptr: ?[*]const ByteView,
-    move_count: usize,
-) ?[*:0]u8;
-extern fn zfish_engine_go_parsed_owner(engine_ptr: *anyopaque, limits: ParsedLimits) void;
-extern fn zfish_engine_flip_owner(engine_ptr: *anyopaque) void;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -289,16 +268,16 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
 
     switch (classifyCommandToken(token)) {
         .quit => {
-            zfish_engine_stop_owner(zfish_uci_engine_ptr(engine));
+            engine_mod.stopEngine(zfish_uci_engine_ptr(engine));
             return .{ .should_quit = 1 };
         },
         .stop => {
-            zfish_engine_stop_owner(zfish_uci_engine_ptr(engine));
-            zfish_engine_set_ponderhit_owner(zfish_uci_engine_ptr(engine), 1);
+            engine_mod.stopEngine(zfish_uci_engine_ptr(engine));
+            engine_mod.setPonderhitEngine(zfish_uci_engine_ptr(engine), 1);
             return .{ .should_quit = 0 };
         },
         .ponderhit => {
-            zfish_engine_set_ponderhit_owner(zfish_uci_engine_ptr(engine), 0);
+            engine_mod.setPonderhitEngine(zfish_uci_engine_ptr(engine), 0);
             return .{ .should_quit = 0 };
         },
         .uci => {
@@ -326,7 +305,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .ucinewgame => {
-            zfish_engine_search_clear_owner(zfish_uci_engine_ptr(engine));
+            engine_mod.searchClearEngine(zfish_uci_engine_ptr(engine));
             return .{ .should_quit = 0 };
         },
         .isready => {
@@ -346,13 +325,13 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .visualize => {
-            const text_ptr = zfish_engine_visualize_owner(zfish_uci_engine_ptr(engine)) orelse return .{ .should_quit = 0 };
+            const text_ptr = engine_mod.visualizeEngine(zfish_uci_engine_ptr(engine)) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(text_ptr));
             _ = c.puts(@ptrCast(text_ptr));
             return .{ .should_quit = 0 };
         },
         .eval => {
-            const text_ptr = zfish_engine_trace_eval_owner(zfish_uci_engine_ptr(engine)) orelse return .{ .should_quit = 0 };
+            const text_ptr = engine_mod.traceEvalEngine(zfish_uci_engine_ptr(engine)) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(text_ptr));
             std.debug.print("\n{s}\n", .{std.mem.span(text_ptr)});
             return .{ .should_quit = 0 };
@@ -365,11 +344,9 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
         },
         .export_net => {
             const filename = trimAsciiWhitespace(args);
-            zfish_engine_save_network_owner(
+            engine_mod.saveNetworkEngine(
                 zfish_uci_engine_ptr(engine),
-                if (filename.len != 0) 1 else 0,
-                filename.ptr,
-                filename.len,
+                if (filename.len != 0) filename else null,
             );
             return .{ .should_quit = 0 };
         },
@@ -443,7 +420,7 @@ fn applyPosition(engine: *anyopaque, trimmed: []const u8) void {
     var move_views = parseMoveViews(if (parsed.moves) |ptr| std.mem.span(ptr) else "") catch return;
     defer move_views.deinit(std.heap.c_allocator);
 
-    const err = zfish_engine_set_position_owner(
+    const err = engine_mod.setPositionEngine(
         zfish_uci_engine_ptr(engine),
         fen.ptr,
         fen.len,
@@ -464,12 +441,12 @@ fn applyGo(engine: *anyopaque, trimmed: []const u8) void {
 
     const engine_ptr = zfish_uci_engine_ptr(engine);
 
-    if (zfish_engine_numa_config_information_owner(engine_ptr)) |numa_info_ptr| {
+    if (engine_mod.numaConfigInformationEngine(engine_ptr)) |numa_info_ptr| {
         defer c.free(@ptrCast(numa_info_ptr));
         emitInfoString(std.mem.span(numa_info_ptr));
     }
 
-    if (zfish_engine_thread_allocation_information_owner(engine_ptr)) |thread_info_ptr| {
+    if (engine_mod.threadAllocationInformationEngine(engine_ptr)) |thread_info_ptr| {
         defer c.free(@ptrCast(thread_info_ptr));
         emitInfoString(std.mem.span(thread_info_ptr));
     }
@@ -554,7 +531,7 @@ fn readCommandLineAlloc() !?[]u8 {
 pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
     const engine_ptr = zfish_uci_engine_ptr(uci_ptr);
 
-    const current_fen_ptr = zfish_engine_fen_owner(engine_ptr) orelse return;
+    const current_fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
     defer c.free(@ptrCast(current_fen_ptr));
 
     const commands_ptr = benchmark_port.setupBench(std.mem.span(current_fen_ptr), args) orelse return;
@@ -574,7 +551,7 @@ pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
         }
 
         if (std.mem.eql(u8, token, "go") or std.mem.eql(u8, token, "eval")) {
-            const fen_ptr = zfish_engine_fen_owner(engine_ptr) orelse return;
+            const fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
             defer c.free(@ptrCast(fen_ptr));
             std.debug.print(
                 "\nPosition: {d}/{d} ({s})\n",
@@ -591,7 +568,7 @@ pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
                 } else {
                     zfish_uci_engine_reset_nodes_searched();
                     _ = dispatchCommand(uci_ptr, command);
-                    zfish_engine_wait_for_search_finished_owner(engine_ptr);
+                    engine_mod.waitForSearchFinishedEngine(engine_ptr);
                     nodes += zfish_uci_engine_nodes_searched(uci_ptr);
                 }
             } else {
@@ -657,7 +634,7 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
         if (std.mem.eql(u8, token, "go")) {
             std.debug.print("\rWarmup position {d}/{d}", .{ warmup_count, warmup_positions });
             _ = dispatchCommand(uci_ptr, command);
-            zfish_engine_wait_for_search_finished_owner(engine_ptr);
+            engine_mod.waitForSearchFinishedEngine(engine_ptr);
             warmup_count += 1;
         } else {
             _ = dispatchCommand(uci_ptr, command);
@@ -670,7 +647,7 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
 
     std.debug.print("\n", .{});
 
-    zfish_engine_search_clear_owner(engine_ptr);
+    engine_mod.searchClearEngine(engine_ptr);
 
     var total_time: i64 = 0;
     var total_nodes: u64 = 0;
@@ -694,14 +671,14 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
 
             const started = nowMillis();
             _ = dispatchCommand(uci_ptr, command);
-            zfish_engine_wait_for_search_finished_owner(engine_ptr);
+            engine_mod.waitForSearchFinishedEngine(engine_ptr);
 
             total_time += nowMillis() - started;
             total_nodes += zfish_uci_engine_nodes_searched(uci_ptr);
 
             hashfull_reads += 1;
-            const hashfull_single = zfish_engine_hashfull_owner(engine_ptr, 0);
-            const hashfull_game = zfish_engine_hashfull_owner(engine_ptr, 999);
+            const hashfull_single = engine_mod.hashfullEngine(engine_ptr, 0);
+            const hashfull_game = engine_mod.hashfullEngine(engine_ptr, 999);
             max_hashfull_single = @max(max_hashfull_single, hashfull_single);
             max_hashfull_game = @max(max_hashfull_game, hashfull_game);
             total_hashfull_single += hashfull_single;
@@ -722,9 +699,9 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
     defer c.free(@ptrCast(version_ptr));
     const compiler_ptr = misc_port.compilerInfoText() orelse return;
     defer c.free(@ptrCast(compiler_ptr));
-    const numa_ptr = zfish_engine_numa_config_string_owner(engine_ptr) orelse return;
+    const numa_ptr = engine_mod.numaConfigStringEngine(engine_ptr) orelse return;
     defer c.free(@ptrCast(numa_ptr));
-    const binding_ptr = zfish_engine_thread_binding_information_owner(engine_ptr) orelse return;
+    const binding_ptr = engine_mod.threadBindingInformationEngine(engine_ptr) orelse return;
     defer c.free(@ptrCast(binding_ptr));
 
     const binding = if (std.mem.span(binding_ptr).len == 0) "none" else std.mem.span(binding_ptr);

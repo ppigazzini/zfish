@@ -1017,10 +1017,10 @@ fn searchSharedStateCreate(options: *const anyopaque, threads: *anyopaque, tt: *
 // *_information_owner fns — the owner already returns a malloc'd C string the caller frees with
 // c.free, so the C++ wrappers' std::string re-copy was redundant. Default-only; legacy keeps C++.
 fn engineNumaConfigInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
-    return zfish_engine_numa_config_information_owner(engine_ptr);
+    return engine_port.numaConfigInformationEngine(engine_ptr);
 }
 fn engineThreadAllocationInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
-    return zfish_engine_thread_allocation_information_owner(engine_ptr);
+    return engine_port.threadAllocationInformationEngine(engine_ptr);
 }
 // REPORT-12 TU=0 grind: the "uci" option listing is rendered from the native Zig option model;
 // the default options_text_owner already just returned option_port.zfish_optmodel_render(). Pure pass-through.
@@ -1038,14 +1038,14 @@ fn engineFlipOwner(engine_ptr: *anyopaque) callconv(.c) void {
     const flipped_c = zfish_position_flip_fen(fen.ptr, fen.len) orelse return;
     defer c.free(@ptrCast(flipped_c));
     const flipped = std.mem.span(flipped_c);
-    if (zfish_engine_set_position_owner(engine_ptr, flipped.ptr, flipped.len, null, 0)) |err|
+    if (engine_port.setPositionEngine(engine_ptr, flipped.ptr, flipped.len, null, 0)) |err|
         c.free(@ptrCast(err));
 }
 // REPORT-12 TU=0 grind: set the start position via the native set-position machinery (StartFEN is a
 // constexpr literal; the value is gate-verified by misc + bench, which start from this position).
 fn engineSetStartPosition(engine_ptr: *anyopaque) callconv(.c) void {
     const start_fen: []const u8 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    if (zfish_engine_set_position_owner(engine_ptr, start_fen.ptr, start_fen.len, null, 0)) |_|
+    if (engine_port.setPositionEngine(engine_ptr, start_fen.ptr, start_fen.len, null, 0)) |_|
         @panic("set start position failed");
 }
 // UCIEngine::engine is the first member (offset 0): the accessor is the identity.
@@ -1868,7 +1868,7 @@ fn threadpoolBoundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, coun
     cap_p.* = @intFromPtr(buf) + nbytes;
 }
 fn applySetoptionOwner(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) callconv(.c) void {
-    zfish_engine_wait_for_search_finished_owner(engine_ptr);
+    engine_port.waitForSearchFinishedEngine(engine_ptr);
     const vlen: usize = if (has_value != 0) value_len else 0;
     const vptr: [*]const u8 = if (has_value != 0) value_ptr else name_ptr; // ptr unread when vlen==0
     var res: option_port.ModelSetResult = undefined;
@@ -2599,17 +2599,11 @@ pub fn zfish_engine_fen(pos: *const anyopaque) ?[*:0]u8 {
     return engine_port.fen(pos);
 }
 
-pub export fn zfish_engine_fen_owner(engine_ptr: *const anyopaque) ?[*:0]u8 {
-    return engine_port.fenEngine(engine_ptr);
-}
 
 pub export fn zfish_engine_hashfull_owner(engine_ptr: *const anyopaque, max_age: c_int) c_int {
     return engine_port.hashfullEngine(engine_ptr, max_age);
 }
 
-pub export fn zfish_engine_visualize_owner(engine_ptr: *const anyopaque) ?[*:0]u8 {
-    return engine_port.visualizeEngine(engine_ptr);
-}
 
 pub fn zfish_engine_verify_network_method(engine_ptr: *const anyopaque) void {
     return engine_port.verifyNetwork(engine_ptr);
@@ -2619,27 +2613,12 @@ pub export fn zfish_engine_search_clear_owner(engine_ptr: *anyopaque) void {
     return engine_port.searchClearEngine(engine_ptr);
 }
 
-pub export fn zfish_engine_set_position_owner(
-    engine_ptr: *anyopaque,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    moves_ptr: ?[*]const engine_port.ByteView,
-    move_count: usize,
-) ?[*:0]u8 {
-    return engine_port.setPositionEngine(engine_ptr, fen_ptr, fen_len, moves_ptr, move_count);
-}
 
 pub fn zfish_engine_go_owner(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
     return engine_port.goEngine(engine_ptr, limits_ptr);
 }
 
-pub export fn zfish_engine_stop_owner(engine_ptr: *anyopaque) void {
-    return engine_port.stopEngine(engine_ptr);
-}
 
-pub export fn zfish_engine_wait_for_search_finished_owner(engine_ptr: *anyopaque) void {
-    return engine_port.waitForSearchFinishedEngine(engine_ptr);
-}
 
 pub export fn zfish_engine_set_numa_config_from_option_owner(
     engine_ptr: *anyopaque,
@@ -2657,13 +2636,7 @@ pub export fn zfish_engine_set_tt_size_owner(engine_ptr: *anyopaque, mb: usize) 
     return engine_port.setTtSizeEngine(engine_ptr, mb);
 }
 
-pub export fn zfish_engine_set_ponderhit_owner(engine_ptr: *anyopaque, ponder: u8) void {
-    return engine_port.setPonderhitEngine(engine_ptr, ponder);
-}
 
-pub export fn zfish_engine_trace_eval_owner(engine_ptr: *anyopaque) ?[*:0]u8 {
-    return engine_port.traceEvalEngine(engine_ptr);
-}
 
 // M-FINAL cutover: native NumaConfig::to_string() for the single-node default build. Enumerates
 // the process CPU affinity (sched_getaffinity — the same STARTUP_PROCESSOR_AFFINITY from_system
@@ -2723,27 +2696,9 @@ pub fn zfish_native_numa_config_string() ?[*:0]u8 {
     return owned.ptr;
 }
 
-pub export fn zfish_engine_numa_config_string_owner(engine_ptr: *const anyopaque) ?[*:0]u8 {
-    return engine_port.numaConfigStringEngine(engine_ptr);
-}
 
-pub export fn zfish_engine_numa_config_information_owner(
-    engine_ptr: *const anyopaque,
-) ?[*:0]u8 {
-    return engine_port.numaConfigInformationEngine(engine_ptr);
-}
 
-pub export fn zfish_engine_thread_binding_information_owner(
-    engine_ptr: *const anyopaque,
-) ?[*:0]u8 {
-    return engine_port.threadBindingInformationEngine(engine_ptr);
-}
 
-pub export fn zfish_engine_thread_allocation_information_owner(
-    engine_ptr: *const anyopaque,
-) ?[*:0]u8 {
-    return engine_port.threadAllocationInformationEngine(engine_ptr);
-}
 
 pub export fn zfish_engine_load_network_owner(
     engine_ptr: *anyopaque,

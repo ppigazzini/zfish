@@ -350,6 +350,7 @@ pub fn build(b: *std.Build) void {
     thread_module_default.addImport("uci_move", uci_move_module);
     uci_module.addImport("benchmark", benchmark_module);
     uci_module.addImport("misc", misc_module);
+    uci_module.addImport("engine", engine_module_default); // M16.5: direct engine calls
     exe.root_module.addImport("benchmark", benchmark_module);
     exe.root_module.addImport("bitboard", bitboard_module);
     exe.root_module.addImport("engine", engine_module_default);
