@@ -200,6 +200,9 @@ pub const ThreadPool = extern struct {
     pub inline fn boundCount(self: *const ThreadPool) usize {
         return (self.bound_end - self.bound_begin) / @sizeOf(usize);
     }
+    pub inline fn hasSetupStates(self: *const ThreadPool) bool {
+        return self.setup_states != null;
+    }
     /// The i-th entry of the bound-nodes vector.
     pub inline fn boundAt(self: *const ThreadPool, i: usize) usize {
         return @as(*const usize, @ptrFromInt(self.bound_begin + i * @sizeOf(usize))).*;

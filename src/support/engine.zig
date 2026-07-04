@@ -140,7 +140,6 @@ extern fn zfish_engine_state_list_storage_reset(storage: *anyopaque) *anyopaque;
 extern fn zfish_engine_state_list_storage_push(storage: *anyopaque) *anyopaque;
 extern fn zfish_engine_state_list_storage_has_states(storage: *const anyopaque) u8;
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
-extern fn zfish_threadpool_has_setup_states(pool: *const anyopaque) u8;
 extern fn zfish_position_set_state(
     pos: *anyopaque,
     fen_ptr: [*]const u8,
@@ -414,7 +413,7 @@ pub fn handoffPendingStates(pool: *anyopaque, states_slot: *anyopaque) u8 {
         return 0;
 
     zfish_threadpool_setup_states_adopt_from_storage(pool, state_storage);
-    return zfish_threadpool_has_setup_states(pool);
+    return @intFromBool(graph_layout.ThreadPool.fromPtr(@constCast(pool)).hasSetupStates());
 }
 
 pub fn releasePendingStateSlot(states_slot: *anyopaque) void {

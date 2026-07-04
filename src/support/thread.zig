@@ -165,7 +165,6 @@ const numa_policy_none: u8 = 0;
 const numa_policy_auto: u8 = 1;
 
 extern fn zfish_threadpool_setup_states_adopt_from_slot(pool: *anyopaque, states_slot: *anyopaque) void;
-extern fn zfish_threadpool_has_setup_states(pool: *const anyopaque) u8;
 extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
 extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
 extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
@@ -797,7 +796,7 @@ pub fn startThinking(
             @panic("failed to hand off pending setup states");
     } else {
         zfish_threadpool_setup_states_adopt_from_slot(pool, states_slot);
-        if (zfish_threadpool_has_setup_states(pool) == 0)
+        if (!graph_layout.ThreadPool.fromPtr(@constCast(pool)).hasSetupStates())
             @panic("missing setup states");
     }
 

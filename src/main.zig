@@ -221,9 +221,6 @@ fn zfishThreadpoolSetupStateBack(pool: *const anyopaque) callconv(.c) ?*anyopaqu
 // M-FINAL cutover (thread cluster): native ThreadPool::setupStates null-check. setupStates is
 // a StateListPtr (single pointer) at ThreadPool.setup_states; has-states == ptr != null.
 // Pure offset read (no deque internals). Default-only (legacy keeps the C++ method).
-fn zfishThreadpoolHasSetupStates(pool: *const anyopaque) callconv(.c) u8 {
-    return if (graph_layout.ThreadPool.fromPtr(@constCast(pool)).setup_states != null) 1 else 0;
-}
 
 fn zfishThreadpoolZeroTtSlice(
     threads_ptr: *anyopaque,
@@ -738,7 +735,6 @@ comptime {
     @export(&zfishPositionDoMoveState, .{ .name = "zfish_position_do_move_state" });
     // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
     @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
-    @export(&zfishThreadpoolHasSetupStates, .{ .name = "zfish_threadpool_has_setup_states" });
     // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
     @export(&zfishStateListStorageCreate, .{ .name = "zfish_engine_state_list_storage_create" });
     @export(&zfishStateListStorageDestroy, .{ .name = "zfish_engine_state_list_storage_destroy" });
