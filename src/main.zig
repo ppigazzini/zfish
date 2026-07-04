@@ -576,11 +576,8 @@ comptime {
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
     // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
-    @export(&engineNumaConfigText, .{ .name = "zfish_engine_numa_config_text" });
     @export(&searchSharedStateDestroy, .{ .name = "zfish_search_shared_state_destroy" });
     @export(&searchSharedStateCreate, .{ .name = "zfish_search_shared_state_create" });
-    @export(&engineNumaConfigInfoText, .{ .name = "zfish_engine_numa_config_info_text" });
-    @export(&engineThreadAllocationInfoText, .{ .name = "zfish_engine_thread_allocation_info_text" });
     @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
     @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
     @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
@@ -741,10 +738,6 @@ pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const a
 // numa_config_text -> the native single-node CPU-topology string; legacy keeps the C++ NumaConfig.
 // shared_state_destroy -> the native shared-state destructor (already used in both builds).
 extern fn zfish_shared_state_native_destroy(ss: ?*anyopaque) void;
-fn engineNumaConfigText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
-    _ = engine_ptr;
-    return zfish_native_numa_config_string();
-}
 fn searchSharedStateDestroy(shared_state: ?*anyopaque) callconv(.c) void {
     zfish_shared_state_native_destroy(shared_state);
 }
@@ -755,9 +748,6 @@ fn searchSharedStateCreate(options: *const anyopaque, threads: *anyopaque, tt: *
 // REPORT-12 TU=0 grind: the _info_text display fns are pure pass-throughs to the already-native
 // *_information_owner fns — the owner already returns a malloc'd C string the caller frees with
 // c.free, so the C++ wrappers' std::string re-copy was redundant. Default-only; legacy keeps C++.
-fn engineNumaConfigInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
-    return engine_port.numaConfigInformationEngine(engine_ptr);
-}
 fn engineThreadAllocationInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
     return engine_port.threadAllocationInformationEngine(engine_ptr);
 }
@@ -2258,53 +2248,6 @@ pub export fn zfish_engine_set_numa_config_from_option_owner(
 // mask in the same shape, and the single-node default engine only needs "which CPUs may I run
 // on"; there std.Thread.getCpuCount() gives the online count and the set is the contiguous range
 // 0..n-1, formatted identically ("0-7", or "0" for one CPU).
-pub fn zfish_native_numa_config_string() ?[*:0]u8 {
-    const a = std.heap.c_allocator;
-
-    if (builtin.os.tag != .linux) {
-        const n = std.Thread.getCpuCount() catch 1;
-        const owned = if (n <= 1)
-            std.fmt.allocPrintSentinel(a, "0", .{}, 0) catch return null
-        else
-            std.fmt.allocPrintSentinel(a, "0-{d}", .{n - 1}, 0) catch return null;
-        return owned.ptr;
-    }
-
-    const linux = std.os.linux;
-    var set: linux.cpu_set_t = undefined;
-    @memset(std.mem.asBytes(&set), 0);
-    _ = linux.sched_getaffinity(0, @sizeOf(linux.cpu_set_t), &set);
-
-    var buf = std.ArrayList(u8).empty;
-    defer buf.deinit(a);
-
-    const bits = @bitSizeOf(usize);
-    const total = set.len * bits;
-    var i: usize = 0;
-    var first = true;
-    while (i < total) {
-        if ((set[i / bits] >> @as(u6, @intCast(i % bits))) & 1 == 0) {
-            i += 1;
-            continue;
-        }
-        const start = i;
-        var j = i;
-        while (j + 1 < total and (set[(j + 1) / bits] >> @as(u6, @intCast((j + 1) % bits))) & 1 != 0) : (j += 1) {}
-        if (!first) buf.append(a, ',') catch return null;
-        first = false;
-        var nb: [40]u8 = undefined;
-        const seg = if (j == start)
-            std.fmt.bufPrint(&nb, "{d}", .{start}) catch return null
-        else
-            std.fmt.bufPrint(&nb, "{d}-{d}", .{ start, j }) catch return null;
-        buf.appendSlice(a, seg) catch return null;
-        i = j + 1;
-    }
-
-    const owned = a.allocSentinel(u8, buf.items.len, 0) catch return null;
-    @memcpy(owned[0..buf.items.len], buf.items);
-    return owned.ptr;
-}
 
 
 

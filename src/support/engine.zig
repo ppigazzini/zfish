@@ -187,9 +187,6 @@ extern fn zfish_engine_set_numa_config_from_option_owner(
     value_ptr: [*]const u8,
     value_len: usize,
 ) void;
-extern fn zfish_engine_numa_config_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_thread_allocation_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_numa_config_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_network_verify(
     network: *const anyopaque,
     evalfile_path_ptr: [*]const u8,
@@ -282,17 +279,17 @@ pub fn optionOnChange(
         option_callback_numa_policy => blk: {
             zfish_engine_set_numa_config_from_option_owner(engine_ptr, value.ptr, value.len);
 
-            const numa_info_ptr = zfish_engine_numa_config_info_text(engine_ptr) orelse break :blk null;
+            const numa_info_ptr = numaConfigInformationEngine(engine_ptr) orelse break :blk null;
             defer c.free(@ptrCast(numa_info_ptr));
 
-            const thread_info_ptr = zfish_engine_thread_allocation_info_text(engine_ptr) orelse break :blk null;
+            const thread_info_ptr = threadAllocationInformationEngine(engine_ptr) orelse break :blk null;
             defer c.free(@ptrCast(thread_info_ptr));
 
             break :blk allocMessage("{s}\n{s}", .{ std.mem.span(numa_info_ptr), std.mem.span(thread_info_ptr) });
         },
         option_callback_threads => blk: {
             resizeThreadsEngine(engine_ptr);
-            break :blk zfish_engine_thread_allocation_info_text(engine_ptr);
+            break :blk threadAllocationInformationEngine(engine_ptr);
         },
         option_callback_hash => blk: {
             setTtSizeEngine(engine_ptr, @intCast(@max(int_value, 0)));
@@ -530,13 +527,15 @@ pub fn searchClearEngine(engine_ptr: *anyopaque) void {
 }
 
 pub fn numaConfigStringEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
-    const config_ptr = zfish_engine_numa_config_text(engine_ptr) orelse return null;
+    _ = engine_ptr;
+    const config_ptr = numa.configString() orelse return null;
     defer c.free(@ptrCast(config_ptr));
     return allocMessage("{s}", .{std.mem.span(config_ptr)});
 }
 
 pub fn numaConfigInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
-    const config_ptr = zfish_engine_numa_config_text(engine_ptr) orelse return null;
+    _ = engine_ptr;
+    const config_ptr = numa.configString() orelse return null;
     defer c.free(@ptrCast(config_ptr));
     const config = std.mem.span(config_ptr);
     return formatNumaInfo(config.ptr, config.len);
