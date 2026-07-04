@@ -1,9 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const c = @cImport({
-    @cInclude("stdio.h");
-    @cInclude("stdlib.h");
-});
+const c = @import("libc");
 
 // C stdio stderr, obtained portably (M-PORT). @cImport's translation of the stream macros
 // is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on

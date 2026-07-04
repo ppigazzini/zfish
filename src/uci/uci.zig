@@ -1,10 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const c = @cImport({
-    @cInclude("stdlib.h");
-    @cInclude("stdio.h");
-    @cInclude("sys/time.h");
-});
+const c = @import("libc");
 
 const benchmark_port = @import("benchmark");
 const misc_port = @import("misc");

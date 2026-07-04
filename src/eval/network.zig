@@ -1,9 +1,7 @@
 const std = @import("std");
 const nnue_parse = @import("nnue_parse.zig");
 const nnue_hash = @import("nnue_hash.zig");
-const c = @cImport({
-    @cInclude("stdlib.h");
-});
+const c = @import("libc");
 
 const output_scale: c_int = 16;
 const layer_stacks: usize = 8;

@@ -1,8 +1,5 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("stdlib.h");
-    @cInclude("stdio.h");
-});
+const c = @import("libc");
 
 pub const EvalInput = extern struct {
     psqt: c_int,

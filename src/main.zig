@@ -1,9 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const c = @cImport({
-    @cInclude("stdlib.h");
-    @cInclude("stdio.h");
-});
+const c = @import("libc");
 
 const benchmark_port = @import("benchmark");
 const bitboard_port = @import("bitboard");

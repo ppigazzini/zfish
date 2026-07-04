@@ -1,8 +1,5 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("stdlib.h");
-    @cInclude("stdio.h");
-});
+const c = @import("libc");
 
 pub const NnueTraceInput = extern struct {
     side_to_move_white: u8,

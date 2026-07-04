@@ -99,6 +99,14 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // Thin libc binding shared by the files that used to each @cImport <stdio.h> etc.
+    // (REPORT-16). Imported as `libc` wherever a module says `const c = @import("libc")`.
+    const libc_module = b.createModule(.{
+        .root_source_file = b.path("src/libc.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const timeman_module = b.createModule(.{
         .root_source_file = b.path("src/time/timeman.zig"),
         .target = target,
@@ -357,6 +365,18 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("tt", tt_module);
     exe.root_module.addImport("uci", uci_module);
     exe.root_module.addImport("uci_move", uci_move_module);
+
+    // REPORT-16: the thin libc binding, for every module that replaced an @cImport with
+    // `const c = @import("libc")` (main + the 8 files below; misc keeps its own @cImport
+    // until its compiler-macro reads are ported to Zig build info).
+    exe.root_module.addImport("libc", libc_module);
+    benchmark_module.addImport("libc", libc_module);
+    uci_module.addImport("libc", libc_module);
+    engine_module_default.addImport("libc", libc_module);
+    thread_module_default.addImport("libc", libc_module);
+    network_module.addImport("libc", libc_module);
+    nnue_misc_module.addImport("libc", libc_module);
+    evaluate_module.addImport("libc", libc_module);
 
     // REPORT-12 TU=0 / REPORT-16 M16.1: the shipped engine compiles zero C++ TUs and
     // the in-tree C++ oracle is retired, so the whole C++ toolchain (compile flags,
