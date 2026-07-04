@@ -257,15 +257,9 @@ pub fn zfish_position_set_method(
     return position_port.setPosition(pos_ptr, fen_ptr, fen_len, is_chess960, st_ptr, pos_size, st_size);
 }
 
-pub export fn zfish_search_fill_reductions(reductions_ptr: [*]c_int, count: usize) void {
-    return search_port.fillReductions(reductions_ptr, count);
-}
 
 // zfish_search_stat_bonus/stat_malus retired -- position.zig calls search directly (M16.5).
 
-pub export fn zfish_search_clear_worker_histories(worker_ptr: *anyopaque) void {
-    position_port.clearWorkerHistories(worker_ptr);
-}
 
 
 pub fn zfish_search_extract_ponder_from_tt(pv: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8, pos: *anyopaque) u8 {
@@ -276,9 +270,6 @@ pub export fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *anyo
     position_port.fillSnapshot(pos_ptr, out);
 }
 
-pub export fn zfish_search_clear_shared_history(shared: *anyopaque, thread_idx: usize, numa_total: usize) void {
-    position_port.clearSharedHistory(shared, thread_idx, numa_total);
-}
 
 // Native-graph cut flip fire 2: shadow verifier. The bridge calls this right after the
 // C++ try_emplace builds a node's SharedHistories, so the native sizing logic (the
@@ -296,9 +287,6 @@ pub fn zfish_shadow_verify_shared_histories(shared: *const anyopaque, thread_cou
     return ok;
 }
 
-pub export fn zfish_search_clear_refresh_cache(cache: *anyopaque, biases: [*]const i16) void {
-    nnue_accumulator_port.clearRefreshCache(cache, biases);
-}
 
 // Native Worker::clear (stage-4 layer 5): the per-search worker reset the native
 // clear_worker job runs on its thread. Reproduces Search::Worker::clear() by
@@ -310,16 +298,16 @@ pub export fn zfish_search_clear_refresh_cache(cache: *anyopaque, biases: [*]con
 pub export fn zfish_worker_clear(worker: *anyopaque) void {
     const wb = @intFromPtr(worker);
     const off = graph_layout.worker_off;
-    zfish_search_clear_worker_histories(worker);
+    position_port.clearWorkerHistories(worker);
     const shared_history: *anyopaque = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + off.shared_history)).*);
     const numa_thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx + 8)).*;
     const numa_total = @as(*const usize, @ptrFromInt(wb + off.thread_idx + 16)).*;
-    zfish_search_clear_shared_history(shared_history, numa_thread_idx, numa_total);
+    position_port.clearSharedHistory(shared_history, numa_thread_idx, numa_total);
     const reductions: [*]c_int = @ptrFromInt(wb + off.reductions);
-    zfish_search_fill_reductions(reductions, 256);
+    search_port.fillReductions(reductions, 256);
     const refresh: *anyopaque = @ptrFromInt(wb + off.refresh_table);
     const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse return));
-    zfish_search_clear_refresh_cache(refresh, biases);
+    nnue_accumulator_port.clearRefreshCache(refresh, biases);
 }
 
 // Stage 5: native Worker::set_root_moves -- the C++ `rootMoves = value` copy-assign
@@ -1957,7 +1945,7 @@ fn zfishEngineAccumulatorCachesCreate(network: *const anyopaque) callconv(.c) ?*
         zfishOperatorDelete(buf);
         return null;
     }));
-    zfish_search_clear_refresh_cache(buf, biases);
+    nnue_accumulator_port.clearRefreshCache(buf, biases);
     return buf;
 }
 fn zfishEngineAccumulatorCachesDestroy(caches: ?*anyopaque) callconv(.c) void {
@@ -1972,7 +1960,7 @@ fn zfishEngineAccumulatorCachesDestroy(caches: ?*anyopaque) callconv(.c) void {
 fn zfishEngineAccumulatorStackCreate() callconv(.c) ?*anyopaque {
     const buf = zfishOperatorNew(graph_layout.accumulator_stack_size) orelse return null;
     @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.accumulator_stack_size], 0);
-    zfish_accumulator_stack_reset(buf);
+    nnue_accumulator_port.stackReset(buf);
     return buf;
 }
 fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) callconv(.c) void {
@@ -2696,17 +2684,8 @@ pub export fn zfish_engine_save_network_owner(
     );
 }
 
-pub export fn zfish_accumulator_stack_reset(stack: *anyopaque) void {
-    return nnue_accumulator_port.stackReset(stack);
-}
 
-pub export fn zfish_accumulator_stack_push(stack: *anyopaque) nnue_accumulator_port.StackPushOutput {
-    return nnue_accumulator_port.stackPush(stack);
-}
 
-pub export fn zfish_accumulator_stack_pop(stack: *anyopaque) void {
-    return nnue_accumulator_port.stackPop(stack);
-}
 
 pub export fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void {
     var snapshot = std.mem.zeroes(PositionSnapshot);

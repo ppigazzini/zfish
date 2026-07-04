@@ -16,15 +16,14 @@
 
 const std = @import("std");
 const graph_layout = @import("graph_layout.zig");
+const position_port = @import("position");
+const search_port = @import("search");
+const nnue_acc = @import("nnue_accumulator");
 
 const off = graph_layout.worker_off;
 
 // Native Worker::clear pieces (exported from main.zig) and the native FT pointer,
 // so the full native constructor can fill the histories exactly as Worker::clear.
-extern fn zfish_search_clear_worker_histories(worker: *anyopaque) void;
-extern fn zfish_search_clear_shared_history(shared: *anyopaque, thread_idx: usize, numa_total: usize) void;
-extern fn zfish_search_fill_reductions(reductions: [*]c_int, count: usize) void;
-extern fn zfish_search_clear_refresh_cache(cache: *anyopaque, biases: [*]const i16) void;
 extern fn zfish_native_ft_ptr() ?*const anyopaque;
 
 // reductions is the 1024-byte (256 x int) array between `reductions` and `manager`.
@@ -99,10 +98,10 @@ fn constructWorkerInto(
     biases: [*]const i16,
 ) void {
     writeConstructorFields(buf, in);
-    zfish_search_clear_worker_histories(buf);
-    zfish_search_clear_shared_history(shared_obj, in.numa_thread_idx, in.numa_total);
-    zfish_search_fill_reductions(@ptrCast(@alignCast(buf + off.reductions)), reductions_count);
-    zfish_search_clear_refresh_cache(@ptrCast(buf + off.refresh_table), biases);
+    position_port.clearWorkerHistories(buf);
+    position_port.clearSharedHistory(shared_obj, in.numa_thread_idx, in.numa_total);
+    search_port.fillReductions(@ptrCast(@alignCast(buf + off.reductions)), reductions_count);
+    nnue_acc.clearRefreshCache(@ptrCast(buf + off.refresh_table), biases);
 }
 
 // Production entry: construct a complete native Worker into `buf` (a large-page

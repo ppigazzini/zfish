@@ -4,6 +4,7 @@ const movegen = @import("movegen");
 const tt = @import("tt");
 const movepick = @import("movepick");
 const search = @import("search");
+const nnue_acc = @import("nnue_accumulator");
 const shared_hist = @import("shared_histories"); // native SharedHistories sizing (cut)
 const shared_histories_map = @import("shared_histories_map"); // native sharedHists map (cut)
 
@@ -581,12 +582,7 @@ extern fn zfish_now() i64;
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
 // scratch that pos.do_move fills in; pop() drops the top entry.
-const StackPushOutput = extern struct {
-    dirty_piece: *anyopaque,
-    dirty_threats: *anyopaque,
-};
-extern fn zfish_accumulator_stack_push(stack: *anyopaque) StackPushOutput;
-extern fn zfish_accumulator_stack_pop(stack: *anyopaque) void;
+const StackPushOutput = nnue_acc.StackPushOutput;
 
 // Zig-owned NNUE forward pass + final eval scaling (defined in stockfish_zcu.o).
 // network_evaluate runs the bucketed network and returns the scaled psqt/positional
@@ -731,7 +727,7 @@ inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *anyopaque, move: u16, st_ptr: *a
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
     const capture = captureStage(pos, move);
     ctx.nodes.* +%= 1;
-    const out = zfish_accumulator_stack_push(ctx.acc_stack);
+    const out = nnue_acc.stackPush(ctx.acc_stack);
     doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats);
     const dp: *const DirtyPiece = @ptrCast(@alignCast(out.dirty_piece));
     ss.current_move = move;
@@ -741,7 +737,7 @@ inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *anyopaque, move: u16, st_ptr: *a
 // Worker::undo_move inlined: unmake the move, then drop the accumulator slot.
 inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *anyopaque, move: u16) void {
     undoMove(pos_ptr, move);
-    zfish_accumulator_stack_pop(ctx.acc_stack);
+    nnue_acc.stackPop(ctx.acc_stack);
 }
 
 // Position-level verification make/unmake used by the qsearch TT-move cutoff.

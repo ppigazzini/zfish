@@ -5,6 +5,7 @@ const position_port = @import("position");
 const uci_move = @import("uci_move");
 const misc_port = @import("misc");
 const thread_port = @import("thread");
+const nnue_acc = @import("nnue_accumulator");
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
 // layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
@@ -168,7 +169,6 @@ extern fn zfish_engine_accumulator_stack_create() ?*anyopaque;
 extern fn zfish_engine_accumulator_stack_destroy(stack: ?*anyopaque) void;
 extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*anyopaque;
 extern fn zfish_engine_accumulator_caches_destroy(caches: ?*anyopaque) void;
-extern fn zfish_accumulator_stack_reset(stack: *anyopaque) void;
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_tbprobe_max_cardinality() usize;
@@ -961,7 +961,7 @@ fn buildNnueTrace(
 ) ?[*:0]u8 {
     const accumulators = zfish_engine_accumulator_stack_create() orelse return null;
     defer zfish_engine_accumulator_stack_destroy(accumulators);
-    zfish_accumulator_stack_reset(accumulators);
+    nnue_acc.stackReset(accumulators);
 
     const trace = zfish_network_trace_evaluate(network, pos, accumulators, caches);
     var psqt_cp: [layer_stacks]c_int = undefined;
