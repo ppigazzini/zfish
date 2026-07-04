@@ -609,8 +609,6 @@ comptime {
     @export(&engineStartLogger, .{ .name = "zfish_engine_start_logger" });
     @export(&threadpoolBoundNodesAssign, .{ .name = "zfish_threadpool_bound_nodes_assign" });
     // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
-    @export(&zfishPositionCreate, .{ .name = "zfish_position_create" });
-    @export(&zfishPositionDestroy, .{ .name = "zfish_position_destroy" });
     // M-FINAL: native AccumulatorCaches construct/destroy (legacy keeps new/delete).
     @export(&zfishEngineAccumulatorCachesCreate, .{ .name = "zfish_engine_accumulator_caches_create" });
     @export(&zfishEngineAccumulatorCachesDestroy, .{ .name = "zfish_engine_accumulator_caches_destroy" });
@@ -1573,11 +1571,6 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) callc
 // type alias, not a member), so value-init == a zeroed position_size (1032B) block. operator
 // new/delete keeps the alloc/free family matched (the trace_pos / pool throwaway Position is
 // destroyed via zfish_position_destroy). Default-only; legacy keeps new/delete Position.
-fn zfishPositionCreate() callconv(.c) ?*anyopaque {
-    const buf = zfishOperatorNew(graph_layout.position_size) orelse return null;
-    @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.position_size], 0);
-    return buf;
-}
 fn zfishPositionDestroy(pos: ?*anyopaque) callconv(.c) void {
     if (pos) |p| zfishOperatorDelete(p);
 }

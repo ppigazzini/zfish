@@ -140,8 +140,6 @@ pub const NnueTraceInput = extern struct {
 };
 
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
-extern fn zfish_position_create() ?*anyopaque;
-extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
 extern fn zfish_engine_numa_set_from_string(
     numa_context: *anyopaque,
@@ -582,8 +580,8 @@ pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
 
-    const trace_pos = zfish_position_create() orelse return null;
-    defer zfish_position_destroy(trace_pos);
+    const trace_pos = position_port.create() orelse return null;
+    defer position_port.destroy(trace_pos);
 
     const state_storage = state_list.storageCreate() orelse return null;
     defer state_list.storageDestroy(state_storage);

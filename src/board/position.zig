@@ -769,6 +769,16 @@ pub fn doMoveState(pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque) void {
     doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
 }
 
+/// Allocate a zeroed Position block (M16.7 — was main.zig's zfish_position_create).
+pub fn create() ?*anyopaque {
+    const buf = std.c.malloc(graph_layout.position_size) orelse return null;
+    @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.position_size], 0);
+    return buf;
+}
+pub fn destroy(pos: ?*anyopaque) void {
+    if (pos) |p| std.c.free(p);
+}
+
 /// setPosition with the engine-graph Position/StateInfo sizes filled in (M16.7 — lets callers
 /// keep the old 5-arg zfish_position_set_state shape without threading graph sizes through).
 pub fn setPositionState(pos_ptr: *anyopaque, fen_ptr: [*]const u8, fen_len: usize, chess960_enabled: u8, state_ptr: *anyopaque) ?[*:0]u8 {

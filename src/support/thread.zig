@@ -169,8 +169,6 @@ extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
 extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
-extern fn zfish_position_create() ?*anyopaque;
-extern fn zfish_position_destroy(pos: ?*anyopaque) void;
 extern fn zfish_root_moves_create_ranked(items: [*]const RankedRootMove, count: usize) *anyopaque;
 extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
 extern fn zfish_threadpool_bound_nodes_assign(
@@ -316,8 +314,8 @@ const ScratchPosition = struct {
     storage: *anyopaque,
 
     fn init(root_fen: []const u8, chess960: u8) ScratchPosition {
-        const pos = zfish_position_create() orelse @panic("OOM");
-        errdefer zfish_position_destroy(pos);
+        const pos = position_port.create() orelse @panic("OOM");
+        errdefer position_port.destroy(pos);
 
         const storage = state_list.storageCreate() orelse @panic("OOM");
         errdefer state_list.storageDestroy(storage);
@@ -329,7 +327,7 @@ const ScratchPosition = struct {
 
     fn deinit(self: *ScratchPosition) void {
         state_list.storageDestroy(self.storage);
-        zfish_position_destroy(self.pos);
+        position_port.destroy(self.pos);
     }
 
     fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) void {
