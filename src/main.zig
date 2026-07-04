@@ -164,13 +164,6 @@ fn zfishStateListStoragePush(storage: *anyopaque) callconv(.c) *anyopaque {
 }
 // engine `states` slot: a ?*StateList. reset() mirrors unique_ptr::reset() — free + null
 // (the slot is the rarely-used fallback; the storage chain is what searches normally adopt).
-fn zfishEngineStatesSlotReset(slot_ptr: *anyopaque) callconv(.c) void {
-    const slot: *?*StateList = @ptrCast(@alignCast(slot_ptr));
-    if (slot.*) |list| {
-        state_list_port.destroyStateList(std.heap.c_allocator, list);
-        slot.* = null;
-    }
-}
 // adopt: MOVE the StateList into the pool's setupStates@8, freeing any prior one (between
 // searches setupStates still owns the previous list; ~ThreadPool no longer frees it).
 fn zfishThreadpoolSetupStatesAdoptFromStorage(pool: *anyopaque, storage: *anyopaque) callconv(.c) void {
@@ -613,7 +606,6 @@ comptime {
     @export(&engineThreadAllocationInfoText, .{ .name = "zfish_engine_thread_allocation_info_text" });
     @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
     @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
-    @export(&engineSetStartPosition, .{ .name = "zfish_engine_set_start_position" });
     @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
     @export(&ssThreadsStart, .{ .name = "zfish_ss_threads_start" });
     @export(&ssWaitFinished, .{ .name = "zfish_ss_wait_finished" });
@@ -630,8 +622,6 @@ comptime {
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
     @export(&zfishEngineChess960Enabled, .{ .name = "zfish_engine_chess960_enabled" });
     // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
-    @export(&zfishEngineTtResize, .{ .name = "zfish_engine_tt_resize" });
-    @export(&zfishEngineTtClear, .{ .name = "zfish_engine_tt_clear" });
     @export(&zfishEngineTtHashfull, .{ .name = "zfish_engine_tt_hashfull" });
     // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
     @export(&zfishThreadpoolMainManagerPtr, .{ .name = "zfish_threadpool_main_manager_ptr" });
@@ -663,7 +653,6 @@ comptime {
     // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
     @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
     // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
-    @export(&zfishEngineStatesSlotReset, .{ .name = "zfish_engine_states_slot_reset" });
     @export(&zfishThreadpoolSetupStatesAdoptFromStorage, .{ .name = "zfish_threadpool_setup_states_adopt_from_storage" });
     @export(&zfishThreadpoolSetupStatesAdoptFromSlot, .{ .name = "zfish_threadpool_setup_states_adopt_from_slot" });
     @export(&zfishThreadpoolSetupStateBack, .{ .name = "zfish_threadpool_setup_state_back" });
@@ -834,11 +823,6 @@ fn engineFlipOwner(engine_ptr: *anyopaque) callconv(.c) void {
 }
 // REPORT-12 TU=0 grind: set the start position via the native set-position machinery (StartFEN is a
 // constexpr literal; the value is gate-verified by misc + bench, which start from this position).
-fn engineSetStartPosition(engine_ptr: *anyopaque) callconv(.c) void {
-    const start_fen: []const u8 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    if (engine_port.setPositionEngine(engine_ptr, start_fen.ptr, start_fen.len, null, 0)) |_|
-        @panic("set start position failed");
-}
 // UCIEngine::engine is the first member (offset 0): the accessor is the identity.
 pub export fn zfish_uci_engine_ptr(uci: *anyopaque) *anyopaque {
     return uci;
@@ -1265,10 +1249,6 @@ fn zfishEngineChess960Enabled(engine_ptr: *const anyopaque) callconv(.c) u8 {
 // native side-allocated buffer (M1; tt_off: cluster_count@0, table@8, generation8@16); the
 // native resize/clear (threaded parallel zero) + hashfull already exist and are the same code
 // the live search uses. Default-only; the legacy oracle keeps the C++ TranspositionTable methods.
-fn zfishEngineTtResize(tt_ptr: *anyopaque, mb: usize, threads: *anyopaque) callconv(.c) void {
-    const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
-    tt_port.resizeState(&tp.table, &tp.cluster_count, &tp.generation8, mb, threads);
-}
 fn zfishEngineTtClear(tt_ptr: *anyopaque, threads: *anyopaque) callconv(.c) void {
     const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
     tt_port.clearState(tp.table, tp.cluster_count, &tp.generation8, threads);

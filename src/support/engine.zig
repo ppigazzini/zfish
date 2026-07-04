@@ -12,6 +12,7 @@ const tablebase = @import("tablebase");
 const option_port = @import("option");
 const state_list = @import("state_list");
 const nnue_misc_mod = @import("nnue_misc");
+const tt_port = @import("tt");
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
 // layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
@@ -164,7 +165,6 @@ extern fn zfish_network_trace_evaluate(
     cache: *anyopaque,
 ) TraceOutput;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
-extern fn zfish_engine_set_start_position(engine_ptr: *anyopaque) void;
 extern fn zfish_engine_add_option(
     engine_ptr: *anyopaque,
     name_ptr: [*]const u8,
@@ -191,7 +191,6 @@ extern fn zfish_engine_position_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_options_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_numa_context_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_states_slot_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_states_slot_reset(states_slot: *anyopaque) void;
 extern fn zfish_engine_network_ptr(engine_ptr: *const anyopaque) *const anyopaque;
 extern fn zfish_engine_threads_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_chess960_enabled(engine_ptr: *const anyopaque) u8;
@@ -234,12 +233,10 @@ extern fn zfish_search_shared_state_create(
     network: *const anyopaque,
 ) ?*anyopaque;
 extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
-extern fn zfish_engine_tt_resize(tt: *anyopaque, mb: usize, threads: *anyopaque) void;
 extern fn zfish_engine_tt_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_shared_hists_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_network_replicated_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_update_context_ptr(engine_ptr: *const anyopaque) *const anyopaque;
-extern fn zfish_engine_tt_clear(tt: *anyopaque, threads: *anyopaque) void;
 extern fn zfish_engine_syzygy_path_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_tt_hashfull(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 
@@ -270,7 +267,7 @@ pub fn initBody(engine_ptr: *anyopaque) void {
     addSpinOption(engine_ptr, "SyzygyProbeLimit", 7, 0, 7, option_callback_none);
     addStringOption(engine_ptr, "EvalFile", default_eval_file_name, option_callback_eval_file);
 
-    zfish_engine_set_start_position(engine_ptr);
+    setStartPosition(engine_ptr);
     resizeThreadsEngine(engine_ptr);
 }
 
@@ -365,7 +362,7 @@ pub fn setPositionEngine(
     move_count: usize,
 ) ?[*:0]u8 {
     const states_slot = zfish_engine_states_slot_ptr(engine_ptr);
-    zfish_engine_states_slot_reset(states_slot);
+    statesSlotReset(states_slot);
 
     return setPosition(
         zfish_engine_position_ptr(engine_ptr),
@@ -481,9 +478,32 @@ pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
     );
 }
 
+// TT lifecycle + engine setup helpers relocated from main.zig (M16.7), reached through the typed
+// TranspositionTable view + the tt/state_list modules this module already imports.
+fn ttResize(tt_ptr: *anyopaque, mb: usize, threads: *anyopaque) void {
+    const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
+    tt_port.resizeState(&tp.table, &tp.cluster_count, &tp.generation8, mb, threads);
+}
+fn ttClear(tt_ptr: *anyopaque, threads: *anyopaque) void {
+    const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
+    tt_port.clearState(tp.table, tp.cluster_count, &tp.generation8, threads);
+}
+fn statesSlotReset(slot_ptr: *anyopaque) void {
+    const slot: *?*state_list.StateList = @ptrCast(@alignCast(slot_ptr));
+    if (slot.*) |list| {
+        state_list.destroyStateList(std.heap.c_allocator, list);
+        slot.* = null;
+    }
+}
+fn setStartPosition(engine_ptr: *anyopaque) void {
+    const start_fen: []const u8 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    if (setPositionEngine(engine_ptr, start_fen.ptr, start_fen.len, null, 0)) |_|
+        @panic("set start position failed");
+}
+
 pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
     zfish_threadpool_wait_thread(threads, 0);
-    zfish_engine_tt_resize(tt, mb, threads);
+    ttResize(tt, mb, threads);
 }
 
 pub fn setTtSizeEngine(engine_ptr: *anyopaque, mb: usize) void {
@@ -500,7 +520,7 @@ pub fn setPonderhitEngine(engine_ptr: *anyopaque, ponder: u8) void {
 
 pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8) void {
     thread_port.waitForSearchFinished(threads);
-    zfish_engine_tt_clear(tt, threads);
+    ttClear(tt, threads);
     thread_port.clear(threads);
     tablebase.init(syzygy_path.ptr, syzygy_path.len);
 }
