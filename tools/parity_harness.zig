@@ -245,7 +245,7 @@ fn buildSearchModes(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
     for (rows) |r| {
-        const bm = try firstLineWithPrefix(gpa, io, bin, r.seq, "bestmove", .stdout);
+        const bm = try searchBestmoveLine(gpa, io, bin, r.seq);
         defer gpa.free(bm);
         if (bm.len == 0) fail("search-modes: a test produced no bestmove (engine crashed?)", .{});
         try out.print(gpa, "{s}{s}\n", .{ r.label, bm });
@@ -253,20 +253,27 @@ fn buildSearchModes(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-const Stream = enum { stdout, stderr };
-
-// Run one UCI sequence (quit appended) and return the first line with `prefix` (owned).
-fn firstLineWithPrefix(gpa: std.mem.Allocator, io: Io, bin: []const u8, seq: []const u8, prefix: []const u8, stream: Stream) ![]u8 {
-    const input = try std.fmt.allocPrint(gpa, "{s}\nquit\n", .{seq});
-    defer gpa.free(input);
-    var cap = try runEngine(gpa, io, bin, &.{}, input);
-    defer cap.deinit(gpa);
-    const buf = if (stream == .stdout) cap.stdout else cap.stderr;
-    var li = lines(buf);
-    while (li.next()) |line| {
-        if (startsWith(line, prefix)) return gpa.dupe(u8, line);
+// Run a search to its REAL bestmove (interactive; no early-quit truncation) and return the
+// full `bestmove ...` line (owned). The old approach piped `go\nquit`, which stops the search
+// mid-flight -- the resulting move is timing-dependent (a hollow, cross-platform-flaky gate).
+// These node/depth-limited single-thread modes are deterministic, so the completed bestmove
+// is a stable golden on every OS/arch.
+fn searchBestmoveLine(gpa: std.mem.Allocator, io: Io, bin: []const u8, seq: []const u8) ![]u8 {
+    var s: Interactive = undefined;
+    try s.init(io, gpa, bin);
+    s.send(seq);
+    s.send("\n");
+    _ = s.fillUntil("\nbestmove");
+    const buf = s.buffered();
+    var result: []const u8 = "";
+    if (std.mem.lastIndexOf(u8, buf, "\nbestmove")) |pos| {
+        const start = pos + 1;
+        const nl = std.mem.indexOfScalarPos(u8, buf, start, '\n') orelse buf.len;
+        result = trimCR(buf[start..nl]);
     }
-    return gpa.dupe(u8, "");
+    const owned = try gpa.dupe(u8, result);
+    _ = s.finish();
+    return owned;
 }
 
 // perft: `== label ==` header, then SORTED divide lines (byte order == C locale), then the
