@@ -13,6 +13,12 @@ const option_port = @import("option");
 const state_list = @import("state_list");
 const nnue_misc_mod = @import("nnue_misc");
 const tt_port = @import("tt");
+const native_engine = @import("native_engine");
+
+// Cast an engine handle to the native container (M16.7).
+inline fn ne(p: *const anyopaque) *native_engine.NativeEngine {
+    return native_engine.NativeEngine.fromPtr(@constCast(p));
+}
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
 // layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
@@ -187,13 +193,6 @@ extern fn zfish_engine_numa_config_info_text(engine_ptr: *const anyopaque) ?[*:0
 extern fn zfish_engine_thread_allocation_info_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_evalfile_text(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_numa_config_text(engine_ptr: *const anyopaque) ?[*:0]u8;
-extern fn zfish_engine_position_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_options_ptr(engine_ptr: *const anyopaque) *const anyopaque;
-extern fn zfish_engine_numa_context_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_states_slot_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_network_ptr(engine_ptr: *const anyopaque) *const anyopaque;
-extern fn zfish_engine_threads_ptr(engine_ptr: *anyopaque) *anyopaque;
-extern fn zfish_engine_chess960_enabled(engine_ptr: *const anyopaque) u8;
 extern fn zfish_network_verify(
     network: *const anyopaque,
     evalfile_path_ptr: [*]const u8,
@@ -361,13 +360,13 @@ pub fn setPositionEngine(
     moves_ptr: ?[*]const ByteView,
     move_count: usize,
 ) ?[*:0]u8 {
-    const states_slot = zfish_engine_states_slot_ptr(engine_ptr);
+    const states_slot = ne(engine_ptr).statesSlotPtr();
     statesSlotReset(states_slot);
 
     return setPosition(
-        zfish_engine_position_ptr(engine_ptr),
+        ne(engine_ptr).positionPtr(),
         states_slot,
-        zfish_engine_chess960_enabled(engine_ptr),
+        @intFromBool(option_port.uciChess960()),
         fen_ptr,
         fen_len,
         moves_ptr,
@@ -400,27 +399,27 @@ pub fn stop(threads: *anyopaque) void {
 }
 
 pub fn stopEngine(engine_ptr: *anyopaque) void {
-    stop(zfish_engine_threads_ptr(engine_ptr));
+    stop(ne(engine_ptr).threadsPtr());
 }
 
 pub fn waitForSearchFinishedEngine(engine_ptr: *anyopaque) void {
-    zfish_threadpool_wait_thread(zfish_engine_threads_ptr(engine_ptr), 0);
+    zfish_threadpool_wait_thread(ne(engine_ptr).threadsPtr(), 0);
 }
 
 pub fn goEngine(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
     std.debug.assert(graph_layout.LimitsType.fromPtr(@constCast(limits_ptr)).perftValue() == 0);
     verifyNetwork(engine_ptr);
     zfish_thread_start_thinking(
-        zfish_engine_threads_ptr(engine_ptr),
-        zfish_engine_options_ptr(engine_ptr),
-        zfish_engine_position_ptr(engine_ptr),
+        ne(engine_ptr).threadsPtr(),
+        ne(engine_ptr).optionsPtr(),
+        ne(engine_ptr).positionPtr(),
         limits_ptr,
-        zfish_engine_states_slot_ptr(engine_ptr),
+        ne(engine_ptr).statesSlotPtr(),
     );
 }
 
 pub fn setNumaConfigFromOptionEngine(engine_ptr: *anyopaque, option_text: []const u8) void {
-    const numa_context = zfish_engine_numa_context_ptr(engine_ptr);
+    const numa_context = ne(engine_ptr).numaContextPtr();
 
     if (std.mem.eql(u8, option_text, "auto") or std.mem.eql(u8, option_text, "system")) {
         zfish_numa_context_set_system(numa_context);
@@ -468,9 +467,9 @@ pub fn resizeThreads(
 
 pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
     resizeThreads(
-        zfish_engine_numa_context_ptr(engine_ptr),
-        zfish_engine_options_ptr(engine_ptr),
-        zfish_engine_threads_ptr(engine_ptr),
+        ne(engine_ptr).numaContextPtr(),
+        ne(engine_ptr).optionsPtr(),
+        ne(engine_ptr).threadsPtr(),
         zfish_engine_tt_ptr(engine_ptr),
         zfish_engine_shared_hists_ptr(engine_ptr),
         zfish_engine_network_replicated_ptr(engine_ptr),
@@ -507,7 +506,7 @@ pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
 }
 
 pub fn setTtSizeEngine(engine_ptr: *anyopaque, mb: usize) void {
-    setTtSize(zfish_engine_threads_ptr(engine_ptr), zfish_engine_tt_ptr(engine_ptr), mb);
+    setTtSize(ne(engine_ptr).threadsPtr(), zfish_engine_tt_ptr(engine_ptr), mb);
 }
 
 pub fn setPonderhit(threads: *anyopaque, ponder: u8) void {
@@ -515,7 +514,7 @@ pub fn setPonderhit(threads: *anyopaque, ponder: u8) void {
 }
 
 pub fn setPonderhitEngine(engine_ptr: *anyopaque, ponder: u8) void {
-    setPonderhit(zfish_engine_threads_ptr(engine_ptr), ponder);
+    setPonderhit(ne(engine_ptr).threadsPtr(), ponder);
 }
 
 pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8) void {
@@ -529,7 +528,7 @@ pub fn searchClearEngine(engine_ptr: *anyopaque) void {
     const syzygy_ptr = zfish_engine_syzygy_path_text(engine_ptr) orelse return;
     defer c.free(@ptrCast(syzygy_ptr));
     searchClear(
-        zfish_engine_threads_ptr(engine_ptr),
+        ne(engine_ptr).threadsPtr(),
         zfish_engine_tt_ptr(engine_ptr),
         std.mem.span(syzygy_ptr),
     );
@@ -550,15 +549,15 @@ pub fn numaConfigInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
 
 pub fn threadBindingInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
     return threadBindingInformation(
-        zfish_engine_numa_context_ptr(@constCast(engine_ptr)),
-        zfish_engine_threads_ptr(@constCast(engine_ptr)),
+        ne(engine_ptr).numaContextPtr(),
+        ne(engine_ptr).threadsPtr(),
     );
 }
 
 pub fn threadAllocationInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
     return threadAllocationInformation(
-        zfish_engine_numa_context_ptr(@constCast(engine_ptr)),
-        zfish_engine_threads_ptr(@constCast(engine_ptr)),
+        ne(engine_ptr).numaContextPtr(),
+        ne(engine_ptr).threadsPtr(),
     );
 }
 
@@ -567,7 +566,7 @@ pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
     defer c.free(@ptrCast(evalfile_ptr));
     const evalfile = std.mem.span(evalfile_ptr);
 
-    const network_ptr = zfish_engine_network_ptr(engine_ptr);
+    const network_ptr = ne(engine_ptr).networkPtr();
 
     const result = zfish_network_verify(network_ptr, evalfile.ptr, evalfile.len);
     if (result.message) |message_ptr| {
@@ -583,8 +582,8 @@ pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
 pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     verifyNetwork(engine_ptr);
 
-    const source_pos = zfish_engine_position_ptr(engine_ptr);
-    const network = zfish_engine_network_ptr(engine_ptr);
+    const source_pos = ne(engine_ptr).positionPtr();
+    const network = ne(engine_ptr).networkPtr();
     const fen_ptr = fen(source_pos) orelse return null;
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
@@ -596,7 +595,7 @@ pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     defer state_list.storageDestroy(state_storage);
     const state = state_list.storageReset(state_storage);
 
-    if (position_port.setPositionState(trace_pos, fen_text.ptr, fen_text.len, zfish_engine_chess960_enabled(engine_ptr), state)) |err| {
+    if (position_port.setPositionState(trace_pos, fen_text.ptr, fen_text.len, @intFromBool(option_port.uciChess960()), state)) |err| {
         defer c.free(@ptrCast(err));
         return null;
     }
@@ -706,7 +705,7 @@ pub fn fen(pos: *const anyopaque) ?[*:0]u8 {
 }
 
 pub fn fenEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
-    return fen(zfish_engine_position_ptr(@constCast(engine_ptr)));
+    return fen(ne(engine_ptr).positionPtr());
 }
 
 pub fn hashfullEngine(engine_ptr: *const anyopaque, max_age: c_int) c_int {
@@ -768,7 +767,7 @@ pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
 }
 
     pub fn visualizeEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
-        return visualize(zfish_engine_position_ptr(@constCast(engine_ptr)));
+        return visualize(ne(engine_ptr).positionPtr());
     }
 
 pub fn formatNumaInfo(config_ptr: [*]const u8, config_len: usize) ?[*:0]u8 {

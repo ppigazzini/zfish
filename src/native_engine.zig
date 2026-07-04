@@ -103,7 +103,36 @@ pub const NativeEngine = extern struct {
     pub fn fromBuffer(buf: *anyopaque) *NativeEngine {
         return @ptrCast(@alignCast(buf));
     }
+    pub fn fromPtr(p: *anyopaque) *NativeEngine {
+        return @ptrCast(@alignCast(p));
+    }
+
+    // Member accessors (M16.7 -- relocated from main.zig's zfish_engine_*_ptr C-ABI exports).
+    pub fn optionsPtr(self: *const NativeEngine) *const anyopaque {
+        return self.options.?;
+    }
+    pub fn numaContextPtr(self: *NativeEngine) *anyopaque {
+        return self.numa_context.?;
+    }
+    pub fn statesSlotPtr(self: *NativeEngine) *anyopaque {
+        return @ptrCast(&self.states);
+    }
+    pub fn networkPtr(self: *const NativeEngine) *const anyopaque {
+        return self.network.?;
+    }
+    pub fn threadsPtr(self: *NativeEngine) *anyopaque {
+        return self.threads.?;
+    }
+    /// The side Position block (replaces the C++ Engine's pos member); engine-independent.
+    pub fn positionPtr(self: *NativeEngine) *anyopaque {
+        _ = self;
+        return @ptrCast(&side_pos_storage);
+    }
 };
+
+// The side Position storage (1032 bytes, 64-aligned) the native engine uses instead of a C++
+// Engine pos member. File-scoped here so positionPtr owns it (was a main.zig global).
+var side_pos_storage: [1032]u8 align(64) = [_]u8{0} ** 1032;
 
 /// Allocate + assemble the engine's heap members into the buffer. Mirrors the member-
 /// init list of the C++ Engine ctor (binaryDirectory, numaContext, states, options,

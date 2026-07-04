@@ -65,6 +65,9 @@ pub fn optionHash() usize {
 pub fn optionThreads() usize {
     return @intCast(intByName("Threads"));
 }
+pub fn uciChess960() bool {
+    return intByName("UCI_Chess960") != 0;
+}
 pub fn numaPolicyMode() u8 {
     const policy = strByName("NumaPolicy");
     if (std.mem.eql(u8, policy, "none")) return 0;

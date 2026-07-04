@@ -11,7 +11,7 @@ const clock = @import("clock");
 const worker_construct = @import("worker_construct.zig");
 const thread_construct = @import("thread_construct.zig");
 const worker_native_construct = @import("worker_native_construct.zig");
-const native_engine = @import("native_engine.zig"); // M-FINAL native engine container (cutover)
+const native_engine = @import("native_engine"); // M-FINAL native engine container (cutover)
 const misc_port = @import("misc");
 const movegen_port = @import("movegen");
 const movepick_port = @import("movepick");
@@ -598,7 +598,6 @@ comptime {
     @export(&numaSuggestsBindingThreads, .{ .name = "zfish_numa_config_suggests_binding_threads" });
     @export(&numaDistributeThreadsAmongNodes, .{ .name = "zfish_numa_config_distribute_threads_among_nodes" });
     @export(&numaExecuteOnNode, .{ .name = "zfish_numa_config_execute_on_numa_node" });
-    @export(&engineNetworkPtr, .{ .name = "zfish_engine_network_ptr" });
     @export(&engineNumaConfigText, .{ .name = "zfish_engine_numa_config_text" });
     @export(&searchSharedStateDestroy, .{ .name = "zfish_search_shared_state_destroy" });
     @export(&searchSharedStateCreate, .{ .name = "zfish_search_shared_state_create" });
@@ -620,7 +619,6 @@ comptime {
     @export(&zfishEngineSyzygyPathText, .{ .name = "zfish_engine_syzygy_path_text" });
     @export(&zfishEngineEvalfileText, .{ .name = "zfish_engine_evalfile_text" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
-    @export(&zfishEngineChess960Enabled, .{ .name = "zfish_engine_chess960_enabled" });
     // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
     @export(&zfishEngineTtHashfull, .{ .name = "zfish_engine_tt_hashfull" });
     // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
@@ -664,12 +662,6 @@ comptime {
 // static block needs no teardown free, and init_body's pos.set(StartFEN) fills it through
 // this accessor. The native position ops (position.zig) operate on it; setPosition /
 // start_thinking / fen all reach it via this accessor. The C++ Engine pos stays dead.
-var side_pos_storage: [1032]u8 align(64) = [_]u8{0} ** 1032;
-
-pub export fn zfish_engine_position_ptr(engine: *anyopaque) *anyopaque {
-    _ = engine; // the side Position block replaces the C++ engine pos member
-    return @ptrCast(&side_pos_storage);
-}
 // M-FINAL cutover: in the default build the engine buffer is a NativeEngine, so the
 // member accessors return its fields (the heap member pointer for pointer-members; the
 // field address for the inline states slot / update_context). The legacy oracle keeps
@@ -677,14 +669,8 @@ pub export fn zfish_engine_position_ptr(engine: *anyopaque) *anyopaque {
 fn nativeEng(engine: *anyopaque) *native_engine.NativeEngine {
     return native_engine.NativeEngine.fromBuffer(engine);
 }
-pub export fn zfish_engine_options_ptr(engine: *const anyopaque) *const anyopaque {
-    return nativeEng(@constCast(engine)).options.?;
-}
 pub export fn zfish_engine_numa_context_ptr(engine: *anyopaque) *anyopaque {
     return nativeEng(engine).numa_context.?;
-}
-pub export fn zfish_engine_states_slot_ptr(engine: *anyopaque) *anyopaque {
-    return @ptrCast(&nativeEng(engine).states);
 }
 pub export fn zfish_engine_threads_ptr(engine: *anyopaque) *anyopaque {
     return nativeEng(engine).threads.?;
@@ -775,9 +761,6 @@ pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const a
 }
 // REPORT-12 TU=0 grind: default build's network_ptr is a pass-through to network_replicated_ptr
 // (the native verify/eval ignore the value). Default-only @export; legacy keeps the C++ wrapper deref.
-fn engineNetworkPtr(engine_ptr: *const anyopaque) callconv(.c) *const anyopaque {
-    return zfish_engine_network_replicated_ptr(@constCast(engine_ptr));
-}
 // REPORT-12 TU=0 grind: two more default-build pass-throughs to existing native fns.
 // numa_config_text -> the native single-node CPU-topology string; legacy keeps the C++ NumaConfig.
 // shared_state_destroy -> the native shared-state destructor (already used in both builds).
@@ -812,7 +795,7 @@ fn engineOptionsTextOwner(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
 // set-position machinery (replacing Engine::flip -> Position::flip). All four calls are native;
 // the C strings are malloc'd and freed with c.free. Gate-verified by misc (flip + d). Legacy keeps C++.
 fn engineFlipOwner(engine_ptr: *anyopaque) callconv(.c) void {
-    const fen_c = zfish_engine_fen(zfish_engine_position_ptr(engine_ptr)) orelse return;
+    const fen_c = zfish_engine_fen(native_engine.NativeEngine.fromPtr(@constCast(engine_ptr)).positionPtr()) orelse return;
     defer c.free(@ptrCast(fen_c));
     const fen = std.mem.span(fen_c);
     const flipped_c = zfish_position_flip_fen(fen.ptr, fen.len) orelse return;
@@ -1169,7 +1152,7 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
 // native Threads + null the pool's threads vector, then free the heap members. All three are native.
 extern fn zfish_native_threadpool_clear(pool: *anyopaque) void;
 fn uciEngineDestructAt(storage: *anyopaque) callconv(.c) void {
-    zfish_engine_release_pending_state_slot(zfish_engine_states_slot_ptr(storage));
+    zfish_engine_release_pending_state_slot(native_engine.NativeEngine.fromPtr(storage).statesSlotPtr());
     zfish_native_threadpool_clear(zfish_engine_threads_ptr(storage));
     zfishNativeEngineDestructMembers(storage);
 }
@@ -1239,10 +1222,6 @@ fn zfishEngineSyzygyPathText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8
 fn zfishEngineEvalfileText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
     _ = engine_ptr;
     return dupOptCString("EvalFile");
-}
-fn zfishEngineChess960Enabled(engine_ptr: *const anyopaque) callconv(.c) u8 {
-    _ = engine_ptr;
-    return if (optInt("UCI_Chess960") != 0) 1 else 0;
 }
 
 // M-FINAL: tt clear/resize/hashfull ported to the native tt ops (tt.zig). The engine tt is the
@@ -1458,7 +1437,7 @@ fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void
 // sync_cout wrapper). Gate-covered by the `perft` check (CPW positions + a chess960 castling position).
 fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
     zfish_engine_verify_network_method(engine_ptr);
-    const fen_ptr = zfish_engine_fen(zfish_engine_position_ptr(engine_ptr)) orelse @panic("perft: null fen");
+    const fen_ptr = zfish_engine_fen(native_engine.NativeEngine.fromPtr(@constCast(engine_ptr)).positionPtr()) orelse @panic("perft: null fen");
     const fen = std.mem.span(fen_ptr);
     const c960_name: []const u8 = "UCI_Chess960";
     const chess960 = option_port.zfish_optmodel_int_by_name(c960_name.ptr, c960_name.len) != 0;

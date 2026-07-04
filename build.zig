@@ -134,6 +134,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const native_engine_module = b.createModule(.{
+        .root_source_file = b.path("src/native_engine.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const timeman_module = b.createModule(.{
         .root_source_file = b.path("src/time/timeman.zig"),
         .target = target,
@@ -305,6 +311,11 @@ pub fn build(b: *std.Build) void {
     engine_module_default.addImport("uci_move", uci_move_module);
     engine_module_default.addImport("misc", misc_module);
     engine_module_default.addImport("thread", thread_module_default);
+    native_engine_module.addImport("graph_layout", graph_layout_module);
+    native_engine_module.addImport("misc", misc_module);
+    native_engine_module.addImport("state_list", state_list_module);
+    engine_module_default.addImport("native_engine", native_engine_module);
+    exe.root_module.addImport("native_engine", native_engine_module);
     engine_module_default.addImport("tt", tt_module);
     engine_module_default.addImport("state_list", state_list_module);
     engine_module_default.addImport("numa_config", numa_config_module);
