@@ -20,6 +20,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const rt = @import("thread_runtime");
 const graph_layout = @import("graph_layout");
+const native_hooks = @import("native_hooks");
 
 // Marker at offset 0 (the C++ Thread had its vtable pointer here; no native reader
 // touches thread@0, so this just makes a NativeThread identifiable in a dump and
@@ -67,7 +68,7 @@ pub const NativeThread = struct {
         // (~Worker + aligned_large_pages_free); without this the ~14 MB Worker
         // leaks on every reconfigure/teardown. Done after the join above.
         if (self.worker) |w| {
-            zfish_native_worker_destroy(w);
+            native_hooks.native_worker_destroy.?(w);
             self.worker = null;
         }
     }
@@ -76,17 +77,15 @@ pub const NativeThread = struct {
 // C++ teardown for the native Worker (uci_bridge): ~Worker + large-page free,
 // mirroring the C++ LargePagePtr deleter. Resolved natively only; the legacy
 // build provides an abort stub it never calls.
-extern fn zfish_native_worker_destroy(worker: *anyopaque) callconv(.c) void;
 
-// In test builds the C++ destroyer is absent; provide a no-op stub so the module
-// links standalone (the tests attach a dummy worker, never a real Worker block).
-comptime {
-    if (builtin.is_test) {
-        @export(&testWorkerDestroyStub, .{ .name = "zfish_native_worker_destroy" });
-    }
-}
-fn testWorkerDestroyStub(worker: *anyopaque) callconv(.c) void {
+// In test builds the real destroyer (main.zig) is absent; the tests install this
+// no-op stub into the native_hooks registry (they attach a dummy worker, never a
+// real Worker block).
+fn testWorkerDestroyStub(worker: *anyopaque) void {
     _ = worker;
+}
+pub fn installTestHooks() void {
+    native_hooks.native_worker_destroy = &testWorkerDestroyStub;
 }
 
 // The search driver entry, injected by the thread module at search start (M16.7).
@@ -131,10 +130,9 @@ pub fn waitPoolSiblings(pool: *anyopaque) void {
 
 // Per-thread Worker::clear job (the C++ Thread::clear_worker == run_custom_job([
 // worker->clear()])). Submitted to the idle loop; caller waits separately.
-extern fn zfish_worker_clear(worker: *anyopaque) void;
 
 fn clearWorkerJob(ctx: ?*anyopaque) callconv(.c) void {
-    zfish_worker_clear(ctx.?);
+    native_hooks.worker_clear.?(ctx.?);
 }
 
 pub fn clearWorker(self: *NativeThread) void {

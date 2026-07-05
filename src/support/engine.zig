@@ -8,6 +8,7 @@ const thread_port = @import("thread");
 const nnue_acc = @import("nnue_accumulator");
 const evaluate_mod = @import("evaluate");
 const graph_layout = @import("graph_layout");
+const native_hooks = @import("native_hooks");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
 const state_list = @import("state_list");
@@ -145,7 +146,6 @@ pub const NnueTraceInput = struct {
     positional_cp: [*]const c_int,
 };
 
-extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
 extern fn zfish_engine_load_network_owner(engine_ptr: *anyopaque, file_ptr: [*]const u8, file_len: usize) void;
 extern fn zfish_engine_save_network_owner(
     engine_ptr: *anyopaque,
@@ -299,7 +299,7 @@ pub fn handoffPendingStates(pool: *anyopaque, states_slot: *anyopaque) u8 {
     if (!state_list.storageHasStates(state_storage))
         return 0;
 
-    zfish_threadpool_setup_states_adopt_from_storage(pool, state_storage);
+    native_hooks.setup_states_adopt_from_storage.?(pool, state_storage);
     return @intFromBool(graph_layout.ThreadPool.fromPtr(@constCast(pool)).hasSetupStates());
 }
 

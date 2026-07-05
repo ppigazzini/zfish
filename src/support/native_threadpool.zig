@@ -22,6 +22,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const NativeThread = @import("native_thread").NativeThread;
 const graph_layout = @import("graph_layout");
+const native_hooks = @import("native_hooks");
 const ThreadPool = graph_layout.ThreadPool;
 
 // The 64-byte pool footprint is now a native graph_layout.ThreadPool (M16.8 de-mirror):
@@ -37,7 +38,7 @@ inline fn poolOf(slot: [*]u8) *ThreadPool {
 pub const ThreadBuilder = struct {
     ctx: ?*anyopaque = null,
     // thread is passed opaque so the C++ worker-builder can write worker@8 directly.
-    build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) callconv(.c) void,
+    build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) void,
 };
 
 // A native ThreadPool. `slot` points at the 64-byte C++ ThreadPool footprint
@@ -144,7 +145,6 @@ pub const NativePool = struct {
 // The C++ worker-builder (uci_bridge): resolves the SharedState members + numa
 // params for thread `idx`, large-page-allocs + constructs the Worker, mints the
 // SearchManager, and writes the Worker at thread+8 (worker@8). Single-node host.
-extern fn zfish_native_worker_build(ctx: ?*anyopaque, idx: usize, thread: *anyopaque) callconv(.c) void;
 
 const WorkerBuildCtx = struct {
     shared_state: ?*anyopaque,
@@ -162,7 +162,7 @@ pub fn zfish_native_threadpool_set(
 ) void {
     var bctx = WorkerBuildCtx{ .shared_state = shared_state, .update_context = update_context, .total = count };
     var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
-    p.set(count, .{ .ctx = &bctx, .build = zfish_native_worker_build }) catch @panic("native thread pool set: OOM");
+    p.set(count, .{ .ctx = &bctx, .build = native_hooks.native_worker_build.? }) catch @panic("native thread pool set: OOM");
 }
 
 // Join + free every native Thread and null the footprint vector. Called by the
@@ -188,16 +188,6 @@ pub fn zfish_native_threadpool_wait_thread(pool: *anyopaque, thread_id: usize) v
 
 // In test builds the real C++ builder is absent; provide a stub so the module
 // links standalone. The tests drive set() with MockBuild, not this symbol.
-comptime {
-    if (builtin.is_test) {
-        @export(&testWorkerBuildStub, .{ .name = "zfish_native_worker_build" });
-    }
-}
-fn testWorkerBuildStub(ctx: ?*anyopaque, idx: usize, thread: *anyopaque) callconv(.c) void {
-    _ = ctx;
-    _ = idx;
-    _ = thread;
-}
 
 // ---- tests (isolated; mock builder, standalone footprint) -------------------
 
@@ -206,7 +196,7 @@ const testing = std.testing;
 // Mock builder: count Worker attachments, leave worker null (no graph here).
 const MockBuild = struct {
     attached: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-    fn build(ctx: ?*anyopaque, idx: usize, thread_ptr: *anyopaque) callconv(.c) void {
+    fn build(ctx: ?*anyopaque, idx: usize, thread_ptr: *anyopaque) void {
         _ = idx;
         const self: *MockBuild = @ptrCast(@alignCast(ctx.?));
         _ = self.attached.fetchAdd(1, .monotonic);

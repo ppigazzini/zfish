@@ -253,6 +253,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const native_hooks_module = b.createModule(.{
+        .root_source_file = b.path("src/support/native_hooks.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const movegen_module = b.createModule(.{
         .root_source_file = b.path("src/board/movegen.zig"),
         .target = target,
@@ -344,6 +349,10 @@ pub fn build(b: *std.Build) void {
     engine_module_default.addImport("position", position_module);
     engine_module_default.addImport("position_snapshot", position_snapshot_module);
     position_module.addImport("position_snapshot", position_snapshot_module);
+    thread_module_default.addImport("native_hooks", native_hooks_module);
+    engine_module_default.addImport("native_hooks", native_hooks_module);
+    native_thread_module.addImport("native_hooks", native_hooks_module);
+    exe.root_module.addImport("native_hooks", native_hooks_module);
     engine_module_default.addImport("uci_move", uci_move_module);
     engine_module_default.addImport("misc", misc_module);
     engine_module_default.addImport("thread", thread_module_default);

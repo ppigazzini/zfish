@@ -8,6 +8,7 @@ const engine_port = @import("engine");
 const memory_port = @import("memory");
 const uci_output = @import("uci_output");
 const graph_layout = @import("graph_layout");
+const native_hooks = @import("native_hooks");
 const clock = @import("clock");
 const worker_construct = @import("worker_construct.zig");
 const thread_construct = @import("thread_construct.zig");
@@ -70,6 +71,7 @@ pub fn main(init: std.process.Init) !void {
     // The native movegen computes attacks/rays on the fly (bitboard.zig slidingAttack
     // etc.); the runtime tables come from position_port.initRuntime().
     position_port.initRuntime();
+    installNativeHooks();
 
     // Zig-owned engine footprint: allocate aligned storage, placement-construct the
     // NativeEngine (an ownership container of heap members) into it, and on teardown
@@ -143,17 +145,17 @@ fn zfishStateListStoragePush(storage: *anyopaque) callconv(.c) *anyopaque {
 // (the slot is the rarely-used fallback; the storage chain is what searches normally adopt).
 // adopt: MOVE the StateList into the pool's setupStates@8, freeing any prior one (between
 // searches setupStates still owns the previous list; ~ThreadPool no longer frees it).
-fn zfishThreadpoolSetupStatesAdoptFromStorage(pool: *anyopaque, storage: *anyopaque) callconv(.c) void {
+fn zfishThreadpoolSetupStatesAdoptFromStorage(pool: *anyopaque, storage: *anyopaque) void {
     freeSetupStatesIfAny(pool);
     poolSetupStatesSlot(pool).* = @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).moveOut();
 }
-fn zfishThreadpoolSetupStatesAdoptFromSlot(pool: *anyopaque, slot_ptr: *anyopaque) callconv(.c) void {
+fn zfishThreadpoolSetupStatesAdoptFromSlot(pool: *anyopaque, slot_ptr: *anyopaque) void {
     freeSetupStatesIfAny(pool);
     const src: *?*StateList = @ptrCast(@alignCast(slot_ptr));
     poolSetupStatesSlot(pool).* = src.*;
     src.* = null;
 }
-fn zfishThreadpoolSetupStateBack(pool: *const anyopaque) callconv(.c) ?*anyopaque {
+fn zfishThreadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
     const slot: ?*StateList = @ptrCast(@alignCast(graph_layout.ThreadPool.fromPtr(@constCast(pool)).setup_states));
     if (slot) |list| return list.back();
     return null;
@@ -214,7 +216,7 @@ pub fn zfish_shadow_verify_shared_histories(shared: *const anyopaque, thread_cou
 // numaTotal@+16), the reductions table (int[256], the 1024-byte slot before
 // manager), and the refresh cache (native feature-transformer biases). All four
 // callees are gate-verified; only this orchestration is new.
-pub export fn zfish_worker_clear(worker: *anyopaque) void {
+fn workerClearNative(worker: *anyopaque) void {
     const wb = @intFromPtr(worker);
     const off = graph_layout.worker_off;
     position_port.clearWorkerHistories(worker);
@@ -274,11 +276,11 @@ fn zfishLimitsPerftValue(limits: *const anyopaque) callconv(.c) usize {
 
 // thread start-thinking: engine calls thread.startThinking directly (M16.7).
 
-pub export fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8 {
+fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
     return engine_port.pendingStatesAvailable(states_slot);
 }
 
-pub export fn zfish_engine_handoff_pending_states(
+fn handoffPendingStates(
     pool: *anyopaque,
     states_slot: *anyopaque,
 ) u8 {
@@ -412,32 +414,21 @@ fn numaExecuteOnNode(_: *const anyopaque, _: usize, callback: *const fn (?*anyop
     callback(context);
 }
 
-comptime {
-    // id_state reads the native option model (default-only populated), so the
-    // native version is default-only; legacy keeps the bridge C++ body.
-    // M-FINAL (limits readers): pure LimitsType offset reads (legacy keeps the C++ defs).
-    // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
-    // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
-    // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
-    @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
-    @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
-    // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
-    // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
-    // M-FINAL / M-SM: native SearchManager construct + native Worker teardown (cracks the
-    // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
-    @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
-    @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
-    // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
-    // AccumulatorCaches create moved into engine.zig (M16.7).
-    // M-FINAL: native AccumulatorStack construct/destroy (legacy keeps new/delete).
-    // M-FINAL cutover: native engine container construct/destruct (not yet on the live
-    // path; the flip commit wires these). Default-only — legacy keeps the C++ UCIEngine.
-    // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
-    // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
-    // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
-    @export(&zfishThreadpoolSetupStatesAdoptFromStorage, .{ .name = "zfish_threadpool_setup_states_adopt_from_storage" });
-    @export(&zfishThreadpoolSetupStatesAdoptFromSlot, .{ .name = "zfish_threadpool_setup_states_adopt_from_slot" });
-    @export(&zfishThreadpoolSetupStateBack, .{ .name = "zfish_threadpool_setup_state_back" });
+// Install the native runtime hooks (M16.9): these impls live here because they need
+// position/engine/network/search/state modules that already import their callers
+// (thread/engine/native_thread), so the callers reach them through the native_hooks
+// fn-pointer registry instead of the retired C++ oracle's zfish_* C-ABI exports.
+fn installNativeHooks() void {
+    native_hooks.shared_state_clear_histories = &sharedStateClearHistories;
+    native_hooks.shared_state_insert_history = &sharedStateInsertHistory;
+    native_hooks.native_worker_destroy = &zfishNativeWorkerDestroy;
+    native_hooks.native_worker_build = &nativeWorkerBuild;
+    native_hooks.worker_clear = &workerClearNative;
+    native_hooks.setup_states_adopt_from_storage = &zfishThreadpoolSetupStatesAdoptFromStorage;
+    native_hooks.setup_states_adopt_from_slot = &zfishThreadpoolSetupStatesAdoptFromSlot;
+    native_hooks.setup_state_back = &zfishThreadpoolSetupStateBack;
+    native_hooks.pending_states_available = &pendingStatesAvailable;
+    native_hooks.handoff_pending_states = &handoffPendingStates;
 }
 
 // REPORT-10 (pos migration): the engine `pos` is now a NATIVE side-allocated Position
@@ -588,14 +579,14 @@ fn workerRootDepth(worker: *anyopaque) c_int {
 // REPORT-12 TU=0: SharedState.sharedHistories (a reference) is the 4th pointer field of the native
 // SharedState struct (shared_state.zig: options/threads/tt/shared_histories/network), i.e. offset 24.
 // &ref in C++ yielded that stored pointer; read it directly and clear the native SharedHistoriesMap.
-fn sharedStateClearHistories(shared_state: *const anyopaque) callconv(.c) void {
+fn sharedStateClearHistories(shared_state: *const anyopaque) void {
     const shared_histories_off: usize = 3 * @sizeOf(usize);
     const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + shared_histories_off));
     engine_port.sharedHistoriesClear(slot.*);
 }
 // insert_history: single-node default never binds (do_bind always 0, numa_config unused) — insert
 // directly into the native SharedHistoriesMap reached via the offset-24 shared_histories pointer.
-fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) callconv(.c) void {
+fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) void {
     _ = numa_config;
     _ = do_bind;
     const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + 3 * @sizeOf(usize)));
@@ -734,7 +725,7 @@ fn zfishMakeSearchManager(update_context: ?*const anyopaque, is_main: u8) callco
     }
     return buf;
 }
-fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
+fn zfishNativeWorkerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
     const base: [*]u8 = @ptrCast(w);
     // rootMoves vector buffer (begin @ root_moves+0); operator new'd by zfish_worker_set_root_moves.
@@ -805,7 +796,7 @@ const WorkerBuildCtx = struct {
     update_context: ?*const anyopaque,
     total: usize,
 };
-fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) callconv(.c) void {
+fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
     const ctx: *WorkerBuildCtx = @ptrCast(@alignCast(ctx_ptr.?));
     const ss: [*]u8 = @ptrCast(ctx.shared_state.?);
     const ss_options = @as(*usize, @ptrCast(@alignCast(ss + 0))).*;

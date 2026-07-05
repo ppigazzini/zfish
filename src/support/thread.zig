@@ -1,5 +1,6 @@
 const std = @import("std");
 const graph_layout = @import("graph_layout");
+const native_hooks = @import("native_hooks");
 const c = @import("libc");
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
@@ -146,10 +147,6 @@ const PositionSnapshot = position_snapshot.PositionSnapshot;
 const numa_policy_none: u8 = 0;
 const numa_policy_auto: u8 = 1;
 
-extern fn zfish_threadpool_setup_states_adopt_from_slot(pool: *anyopaque, states_slot: *anyopaque) void;
-extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
-extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
-extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
 
 // Native Search::RootMoves (= the C++ std::vector<RootMove>) builder/destroyer, relocated
 // from main.zig (M16.7). Lays out a 24-byte {begin,end,cap} header over a `count`-element
@@ -278,81 +275,8 @@ fn boundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, count: usize) 
 }
 const ThreadCallback = *const fn (?*anyopaque) callconv(.c) void;
 
-extern fn zfish_shared_state_clear_histories(shared_state: *const anyopaque) void;
-extern fn zfish_shared_state_insert_history(
-    shared_state: *const anyopaque,
-    numa_config: *const anyopaque,
-    numa_index: usize,
-    size: usize,
-    do_bind: u8,
-) void;
 const NumaNodeCallback = *const fn (?*anyopaque) callconv(.c) void;
 
-extern fn zfish_threadpool_add_main_thread(
-    pool: *anyopaque,
-    numa_config: *const anyopaque,
-    shared_state: *const anyopaque,
-    update_context: *const anyopaque,
-    thread_id: usize,
-    idx_in_numa: usize,
-    total_numa: usize,
-    numa_id: usize,
-    do_bind: u8,
-) void;
-extern fn zfish_threadpool_add_worker_thread(
-    pool: *anyopaque,
-    numa_config: *const anyopaque,
-    shared_state: *const anyopaque,
-    thread_id: usize,
-    idx_in_numa: usize,
-    total_numa: usize,
-    numa_id: usize,
-    do_bind: u8,
-) void;
-
-const CreateThreadContext = struct {
-    pool: *anyopaque,
-    numa_config: *const anyopaque,
-    shared_state: *const anyopaque,
-    update_context: *const anyopaque,
-    thread_id: usize,
-    idx_in_numa: usize,
-    total_numa: usize,
-    numa_id: usize,
-    do_bind: bool,
-};
-
-fn createThreadOnCurrentNode(context_ptr: ?*anyopaque) callconv(.c) void {
-    const context: *const CreateThreadContext = @ptrCast(@alignCast(context_ptr.?));
-
-    const bind_flag: u8 = @intFromBool(context.do_bind);
-
-    if (context.thread_id == 0) {
-        zfish_threadpool_add_main_thread(
-            context.pool,
-            context.numa_config,
-            context.shared_state,
-            context.update_context,
-            context.thread_id,
-            context.idx_in_numa,
-            context.total_numa,
-            context.numa_id,
-            bind_flag,
-        );
-        return;
-    }
-
-    zfish_threadpool_add_worker_thread(
-        context.pool,
-        context.numa_config,
-        context.shared_state,
-        context.thread_id,
-        context.idx_in_numa,
-        context.total_numa,
-        context.numa_id,
-        bind_flag,
-    );
-}
 
 fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
@@ -751,13 +675,13 @@ pub fn reconfigure(
         threads_per_node[0] = requested;
     }
 
-    zfish_shared_state_clear_histories(shared_state);
+    native_hooks.shared_state_clear_histories.?(shared_state);
 
     var node_index: usize = 0;
     while (node_index < node_count) : (node_index += 1) {
         const count = threads_per_node[node_index];
         if (count != 0) {
-            zfish_shared_state_insert_history(
+            native_hooks.shared_state_insert_history.?(
                 shared_state,
                 numa_config,
                 node_index,
@@ -815,16 +739,16 @@ pub fn startThinking(
     tp.setStop(false);
     tp.setIncreaseDepth(true);
 
-    if (zfish_engine_pending_states_available(states_slot) != 0) {
-        if (zfish_engine_handoff_pending_states(pool, states_slot) == 0)
+    if (native_hooks.pending_states_available.?(states_slot) != 0) {
+        if (native_hooks.handoff_pending_states.?(pool, states_slot) == 0)
             @panic("failed to hand off pending setup states");
     } else {
-        zfish_threadpool_setup_states_adopt_from_slot(pool, states_slot);
+        native_hooks.setup_states_adopt_from_slot.?(pool, states_slot);
         if (!graph_layout.ThreadPool.fromPtr(@constCast(pool)).hasSetupStates())
             @panic("missing setup states");
     }
 
-    const setup_state = zfish_threadpool_setup_state_back(pool) orelse
+    const setup_state = native_hooks.setup_state_back.?(pool) orelse
         @panic("missing setup state");
 
     var legal_move_buffer: [256]u16 = undefined;
