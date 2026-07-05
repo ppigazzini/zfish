@@ -391,12 +391,6 @@ fn threadWorkerMut(thread: *anyopaque) ?[*]u8 {
 
 // Matches the bridge ZfishTbConfig / thread.zig TbConfig C-ABI struct passed by
 // value: {int cardinality; u8 root_in_tb; u8 use_rule50; int probe_depth}.
-const WorkerTbConfig = extern struct {
-    cardinality: c_int,
-    root_in_tb: u8,
-    use_rule50: u8,
-    probe_depth: c_int,
-};
 
 // Worker::set_tb_config assigns worker.tbConfig = Tablebases::Config{...}. The
 // Config is POD {int cardinality; bool rootInTB; bool useRule50; Depth(int)
@@ -644,8 +638,6 @@ fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const 
 }
 // REPORT-12 TU=0: with NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub (network.cpp);
 // loadNetworkBytes fails on it and falls back to the on-disk EvalFile (bench validates the file net).
-// Native default-only stub matching that — ByteView{ptr,len} matches the network.zig extern struct ABI.
-const NetByteView = extern struct { ptr: [*]const u8, len: usize };
 const embedded_nnue_stub = [_]u8{0};
 // REPORT-12 TU=0: mark_initialized / set_loaded_state dual-wrote the C++ Network's EvalFile state only
 // "to keep the C++ oracle in sync" (network.zig). In the default build there is no C++ eval reading
@@ -805,12 +797,6 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
 // mean²=-VALUE_INFINITE², the rest 0/false) plus tbRank/tbScore. destroy mirrors `delete vec`:
 // operator_delete the element buffer (~vector) then the header. All allocs route through zfish_operator_new
 // /_delete, so the alloc/free family stays matched (valgrind-clean). count==0 (mate/stalemate root) → {0,0,0}.
-const RankedRootMove = extern struct {
-    raw_move: u16,
-    reserved: u16,
-    tb_rank: c_int,
-    tb_score: c_int,
-};
 // RootMoves ranked builder/destroyer relocated into thread.zig (M16.7).
 
 // REPORT-12 TU=0: the `go` command owner. Builds a Search::LimitsType (120-byte POD; layout per
@@ -821,21 +807,6 @@ const RankedRootMove = extern struct {
 // SSO: byte0=size<<1, chars@+1). start_thinking copies limits synchronously, so the local searchmoves
 // buffer is freed right after (matching the C++ stack LimitsType destruction). Gate-covered by
 // search-modes (searchmoves filtering) + teardown (the searchmoves vector alloc/free under valgrind).
-const ParsedLimits = extern struct {
-    wtime: i64,
-    btime: i64,
-    winc: i64,
-    binc: i64,
-    movestogo: c_int,
-    depth: c_int,
-    mate: c_int,
-    perft: c_int,
-    infinite: c_int,
-    movetime: i64,
-    nodes: u64,
-    ponder_mode: u8,
-    searchmoves: ?[*:0]u8,
-};
 
 // REPORT-12 TU=0: `go perft N` root divide. Reads the engine FEN, builds a scratch Position + StateInfo
 // (operator_new'd, max-aligned; the C++ used stack p/st), set()s it, generates the legal root moves
@@ -947,18 +918,6 @@ fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) callconv(.c) void {
 // SearchManager::check_time inputs, snapshotted once per search tree. Mirrors the
 // position.zig SearchTimeState exactly: live (mutable) fields are pointers; the
 // fixed-per-search fields are values; calls_cnt is null off the main thread.
-const ZfishSearchTimeState = extern struct {
-    calls_cnt: ?*c_int,
-    stop_write: ?*u8,
-    ponder: ?*const u8,
-    stop_on_ponderhit: ?*const u8,
-    tm_start_time: i64,
-    tm_maximum_time: i64,
-    lim_nodes: u64,
-    lim_movetime: i64,
-    tm_use_nodes_time: u8,
-    use_time_management: u8,
-};
 
 // zfish_search_cb_worker_state: the once-per-search snapshot the ported search
 // runs on. Hands the search stable pointers to the Worker's live members (nodes,
@@ -1009,41 +968,6 @@ const ZfishSearchTimeState = extern struct {
 
 // zfish_search_id_collect_bmc: relocated into position.zig (M16.7).
 
-// Matches the bridge ZfishIdState struct (iterative-deepening snapshot).
-const ZfishIdState = extern struct {
-    root_pos: ?*anyopaque,
-    root_moves: ?*anyopaque,
-    pv_idx: ?*anyopaque,
-    pv_last: ?*anyopaque,
-    sel_depth: ?*anyopaque,
-    root_depth: ?*anyopaque,
-    root_delta: ?*anyopaque,
-    optimism: ?*anyopaque,
-    nodes: ?*const anyopaque,
-    stop: ?*anyopaque,
-    increase_depth: ?*anyopaque,
-    stop_on_ponderhit: ?*anyopaque,
-    ponder: ?*const anyopaque,
-    iter_value: ?*anyopaque,
-    previous_time_reduction: ?*anyopaque,
-    last_iter_pv: ?*anyopaque,
-    root_moves_count: usize,
-    thread_idx: usize,
-    threads_size: usize,
-    multipv_option: usize,
-    tm_optimum: i64,
-    tm_maximum: i64,
-    tm_start_time: i64,
-    limits_depth: c_int,
-    limits_mate: c_int,
-    best_previous_score: c_int,
-    best_previous_average_score: c_int,
-    skill_level: f64,
-    is_main: u8,
-    use_time_management: u8,
-    tm_use_nodes_time: u8,
-    skill_enabled: u8,
-};
 
 // Skill(level, elo) from the C++ ctor: a set UCI_Elo maps to a clamped [0,19]
 // level; otherwise the level is the Skill Level option. enabled() == level < 20.
@@ -1057,34 +981,12 @@ const ZfishIdState = extern struct {
 // OptionsMap). See the gated @export below.
 // zfish_search_id_state + skillLevel: relocated into position.zig (M16.7).
 
-// Matches the bridge ZfishSsCtx struct.
-const ZfishSsCtx = extern struct {
-    is_mainthread: u8,
-    root_moves_empty: u8,
-    npmsec: u8,
-    limits_depth: i32,
-    skill_enabled: u8,
-};
 
 // zfish_ss_context: snapshot the search-start flags. skill_enabled mirrors
 // Skill(level, elo).enabled() == level < 20: a set UCI_Elo (via UCI_LimitStrength)
 // always clamps level to <= 19 (enabled), otherwise Skill Level < 20. Bridge-only.
 // zfish_ss_context: relocated into position.zig (M16.7).
 
-// Matches the bridge ZfishPvContext struct filled for the native pv driver.
-const ZfishPvContext = extern struct {
-    manager: ?*anyopaque,
-    worker: ?*anyopaque,
-    root_moves: ?*const anyopaque,
-    root_moves_count: usize,
-    multipv: usize,
-    show_wdl: u8,
-    chess960: u8,
-    nodes: u64,
-    tb_hits: u64,
-    hashfull: c_int,
-    elapsed_ms: u64,
-};
 
 // zfish_search_cb_pv_context: snapshot the per-pv() values the native info driver
 // needs. rootMoves data()/size() from the worker's vector, MultiPV/UCI_ShowWDL
@@ -1242,10 +1144,6 @@ pub export fn zfish_engine_save_network_owner(
 
 
 
-const AccumulatorStackPushPair = extern struct {
-    first: *anyopaque,
-    second: *anyopaque,
-};
 
 // network load/verify/trace-evaluate/evaluate + the FT/layer weight storage and
 // transform all live in network.zig (M16.7). The network->position cycle is now
