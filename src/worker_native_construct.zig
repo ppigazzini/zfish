@@ -26,20 +26,21 @@ const off = graph_layout.worker_off;
 // The native FT pointer (network.zig-owned inference storage) lets the full native
 // constructor fill the histories exactly as Worker::clear.
 
-// reductions is the 1024-byte (256 x int) array between `reductions` and `manager`.
-const reductions_count: usize = (off.manager - off.reductions) / @sizeOf(c_int);
+// reductions is the [256]c_int table in WorkerLayout (the native layout no longer
+// puts it immediately before `manager`, so take the fixed element count directly).
+const reductions_count: usize = 256;
 
 // The NUMA scalars follow threadIdx in constructor order (threadIdx,
 // numaThreadIdx, numaTotal, numaAccessToken), each a size_t-wide slot, filling
 // the 32-byte gap to `reductions`.
-const numa_thread_idx_off = off.thread_idx + 8;
-const numa_total_off = off.thread_idx + 16;
-const numa_access_token_off = off.thread_idx + 24;
+const numa_thread_idx_off = off.numa_thread_idx;
+const numa_total_off = off.numa_total;
+const numa_access_token_off = off.numa_access_token;
 
 // AccumulatorStack::size (size_t == 1 at construction) sits 64 bytes before the
 // refresh table -- its last real member plus trailing alignment padding. Matches
 // accumulator_stack_size_off in worker_construct.zig.
-const accumulator_stack_size_off = off.refresh_table - 64;
+const accumulator_stack_size_off = off.accumulator_stack_size_field;
 
 fn writePtr(base: [*]u8, offset: usize, value: usize) void {
     const p: *usize = @ptrCast(@alignCast(base + offset));
@@ -67,7 +68,7 @@ pub const WorkerCtorInputs = struct {
 // run the native Worker::clear afterwards, exactly as the C++ path does.
 pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     // Five SharedState reference members.
-    writePtr(worker, position_port.worker_shared_history_off, in.shared_history);
+    writePtr(worker, off.histories + position_port.worker_shared_history_off, in.shared_history);
     writePtr(worker, off.options, in.options);
     writePtr(worker, off.threads, in.threads);
     writePtr(worker, off.tt, in.tt);
@@ -170,7 +171,7 @@ test "writeConstructorFields lands every member at its worker_off slot" {
         }
     }.read;
 
-    try testing.expectEqual(@as(usize, 0x1111), readPtr(buf.ptr, position_port.worker_shared_history_off));
+    try testing.expectEqual(@as(usize, 0x1111), readPtr(buf.ptr, off.histories + position_port.worker_shared_history_off));
     try testing.expectEqual(@as(usize, 0x2222), readPtr(buf.ptr, off.options));
     try testing.expectEqual(@as(usize, 0x3333), readPtr(buf.ptr, off.threads));
     try testing.expectEqual(@as(usize, 0x4444), readPtr(buf.ptr, off.tt));

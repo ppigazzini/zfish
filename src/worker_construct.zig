@@ -24,7 +24,7 @@ const off = graph_layout.worker_off;
 // AccumulatorStack::size (a size_t initialised to 1) is its last real member,
 // followed by 56 bytes of trailing padding to the struct's 64-byte alignment,
 // so it sits 64 bytes before refresh_table.
-const accumulator_stack_size_off = off.refresh_table - 64;
+const accumulator_stack_size_off = off.accumulator_stack_size_field;
 
 fn readPtr(base: [*]const u8, offset: usize) usize {
     const p: *const usize = @ptrCast(@alignCast(base + offset));

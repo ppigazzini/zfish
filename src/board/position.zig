@@ -124,10 +124,25 @@ pub const WorkerHistories = struct {
     shared_history: ?*anyopaque, // &SharedHistories
 };
 
-// Native offset of the Worker's shared_history reference (last WorkerHistories field).
-// WorkerHistories is a native struct now, so the worker builder/reader use this rather
-// than the old graph_layout.worker_off.shared_history C++ offset.
+// Offset of the shared_history reference WITHIN WorkerHistories (a native struct, so
+// Zig's choice). The worker builder/reader add graph_layout.worker_off.histories to
+// get the absolute Worker offset.
 pub const worker_shared_history_off = @offsetOf(WorkerHistories, "shared_history");
+
+// The Worker's WorkerHistories sub-block lives at graph_layout.worker_off.histories
+// (no longer offset 0 — the native WorkerLayout floats the 64-aligned NNUE arenas to
+// the front). Cast a Worker base pointer to its histories view through this helper.
+inline fn workerHistories(worker_ptr: *anyopaque) *WorkerHistories {
+    return @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker_ptr)) + graph_layout.worker_off.histories));
+}
+
+comptime {
+    // graph_layout.WorkerLayout uses opaque byte regions for these position-module
+    // sub-blocks; assert its sizes match the real structs so worker_off stays correct.
+    std.debug.assert(graph_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
+    std.debug.assert(graph_layout.position_size == @sizeOf(Position));
+    std.debug.assert(graph_layout.state_info_size == @sizeOf(StateInfo));
+}
 
 // One CorrectionBundle (src/history.h): the four correction StatsEntry<int16>
 // fields, one [2] page per correctionHistory index (indexed by color).
@@ -259,7 +274,7 @@ pub fn updateQuietHistoriesWorker(
     move: u16,
     bonus: c_int,
 ) void {
-    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const w: *WorkerHistories = workerHistories(worker_ptr);
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const ss: *const SearchStack = @ptrCast(@alignCast(ss_ptr));
     const raw: usize = move;
@@ -281,7 +296,7 @@ pub fn updateQuietHistoriesWorker(
 // resolve to the table bases. This moves the Worker-table address arithmetic
 // out of the C++ do_move wrappers and into Zig ownership.
 pub fn setContHist(worker_ptr: *anyopaque, ss_ptr: *anyopaque, in_check: u8, capture: u8, pc: u8, to: u8) void {
-    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const w: *WorkerHistories = workerHistories(worker_ptr);
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
     const ch_block = (@as(usize, in_check) * 2 + capture) * hist_pieceto +
         @as(usize, pc) * hist_square_nb + to;
@@ -294,7 +309,7 @@ pub fn setContHist(worker_ptr: *anyopaque, ss_ptr: *anyopaque, in_check: u8, cap
 // iterative_deepening() per-iteration main-history decay, now addressed through
 // the Worker mirror: (v + 5) * 789 / 1024 toward zero over the whole table.
 pub fn ageMainHistory(worker_ptr: *anyopaque) void {
-    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const w: *WorkerHistories = workerHistories(worker_ptr);
     for (&w.main_history) |*e| {
         const v: c_int = e.*;
         e.* = @intCast(@divTrunc(v * 789, 1024)); // upstream 3c858c19e: drop the +5
@@ -304,7 +319,7 @@ pub fn ageMainHistory(worker_ptr: *anyopaque) void {
 // iterative_deepening() per-search lowPlyHistory reset: lowPlyHistory.fill(100)
 // over the whole [5][65536] table, via the Worker mirror.
 pub fn fillLowPlyHistory(worker_ptr: *anyopaque) void {
-    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const w: *WorkerHistories = workerHistories(worker_ptr);
     for (&w.low_ply_history) |*e| e.* = 100;
 }
 
@@ -313,7 +328,7 @@ pub fn fillLowPlyHistory(worker_ptr: *anyopaque) void {
 // untouched). mainHistory=-5, captureHistory=-699, ttMoveHistory=0,
 // continuationCorrectionHistory=5, continuationHistory=-552.
 pub fn clearWorkerHistories(worker_ptr: *anyopaque) void {
-    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const w: *WorkerHistories = workerHistories(worker_ptr);
     for (&w.main_history) |*e| e.* = -5;
     for (&w.capture_history) |*e| e.* = -699;
     w.tt_move_history = 0;
@@ -1366,7 +1381,7 @@ inline fn adjustKey50(pos: *const Position) u64 {
 }
 
 fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_in: c_int, beta: c_int, pv_node: bool) c_int {
-    const w: *WorkerHistories = @ptrCast(@alignCast(ctx.worker));
+    const w: *WorkerHistories = workerHistories(ctx.worker);
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
     const ss1: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
@@ -1751,7 +1766,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     // Dive into qsearch at depth 0.
     if (depth_in <= 0) return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha_in, beta_in, pv_node);
 
-    const w: *WorkerHistories = @ptrCast(@alignCast(ctx.worker));
+    const w: *WorkerHistories = workerHistories(ctx.worker);
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
     const ss1 = ssSub(ss, 1);
@@ -2707,7 +2722,7 @@ pub fn updateAllStats(
     tt_move: u16,
     pv_node: u8,
 ) void {
-    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const w: *WorkerHistories = workerHistories(worker_ptr);
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
     const ss_prev: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
@@ -2781,7 +2796,7 @@ pub fn updateCorrectionHistory(
     ss_ptr: *anyopaque,
     bonus: c_int,
 ) void {
-    const w: *WorkerHistories = @ptrCast(@alignCast(worker_ptr));
+    const w: *WorkerHistories = workerHistories(worker_ptr);
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const shared = sharedOf(w);
     const us = pos.side_to_move;

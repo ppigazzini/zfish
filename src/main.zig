@@ -220,9 +220,9 @@ fn workerClearNative(worker: *anyopaque) void {
     const wb = @intFromPtr(worker);
     const off = graph_layout.worker_off;
     position_port.clearWorkerHistories(worker);
-    const shared_history: *anyopaque = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + position_port.worker_shared_history_off)).*);
-    const numa_thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx + 8)).*;
-    const numa_total = @as(*const usize, @ptrFromInt(wb + off.thread_idx + 16)).*;
+    const shared_history: *anyopaque = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + graph_layout.worker_off.histories + position_port.worker_shared_history_off)).*);
+    const numa_thread_idx = @as(*const usize, @ptrFromInt(wb + off.numa_thread_idx)).*;
+    const numa_total = @as(*const usize, @ptrFromInt(wb + off.numa_total)).*;
     position_port.clearSharedHistory(shared_history, numa_thread_idx, numa_total);
     const reductions: [*]c_int = @ptrFromInt(wb + off.reductions);
     search_port.fillReductions(reductions, 256);

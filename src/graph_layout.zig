@@ -11,7 +11,7 @@
 const std = @import("std");
 
 // Canonical C++ footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
-pub const worker_size: usize = 13882816;
+pub const worker_size: usize = @sizeOf(WorkerLayout);
 pub const worker_align: usize = 64;
 pub const thread_size: usize = 208;
 pub const thread_pool_size: usize = 64;
@@ -72,51 +72,82 @@ pub inline fn positionBoard(pos: *const anyopaque) [*]const u8 {
     return @as([*]const u8, @ptrCast(pos)) + position_board_off;
 }
 
+// Byte sizes of the position-module sub-blocks embedded in the Worker (asserted
+// against @sizeOf of the real structs in position.zig, which can't be imported here).
+pub const worker_histories_bytes: usize = 11419664; // == @sizeOf(position.WorkerHistories)
+pub const refresh_table_bytes: usize = 278528; // native FT refresh cache
+
+// The full Search::Worker block as a native Zig layout (M16.9): worker_off is now
+// @offsetOf of this struct, not a hand-probed C++ offset map. graph_layout owns it
+// using its own LimitsType/PVMoves + opaque byte regions for the position-module types
+// (histories/Position/StateInfo). Zig picks the field order (the 64-aligned NNUE arenas
+// float to the front), so every consumer must read via worker_off/@offsetOf, never a
+// raw absolute offset.
+pub const WorkerLayout = struct {
+    histories: [worker_histories_bytes]u8 align(8), // position.WorkerHistories
+    limits: LimitsType,
+    pv_idx: usize,
+    pv_last: usize,
+    nodes: u64,
+    tb_hits: u64,
+    best_move_changes: u64,
+    sel_depth: c_int,
+    nmp_min_ply: c_int,
+    optimism: [2]c_int,
+    root_pos: [position_size]u8 align(8), // position.Position
+    root_state: [state_info_size]u8 align(8), // position.StateInfo
+    root_moves: [3]usize, // libc++ vector header {begin,end,cap}
+    root_depth: c_int,
+    root_delta: c_int,
+    last_iteration_pv: PVMoves,
+    thread_idx: usize,
+    numa_thread_idx: usize,
+    numa_total: usize,
+    numa_access_token: usize,
+    reductions: [256]c_int,
+    manager: usize, // ?*SearchManager as a raw address
+    tb_config: [16]u8 align(8), // {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32} — read as i32, keep aligned
+    options: usize, // SharedState reference slots
+    threads: usize,
+    tt: usize,
+    network: usize,
+    accumulator_stack: [accumulator_stack_size]u8 align(64),
+    refresh_table: [refresh_table_bytes]u8 align(64),
+};
+
 pub const worker_off = struct {
-    pub const main_history: usize = 0;
-    pub const low_ply_history: usize = 262144;
-    pub const capture_history: usize = 917504;
-    pub const continuation_history: usize = 933888;
-    pub const continuation_correction_history: usize = 9322496;
-    pub const tt_move_history: usize = 11419648;
-    pub const shared_history: usize = 11419656; // reference (derived)
-    pub const limits: usize = 11419664;
-    pub const pv_idx: usize = 11419784;
-    pub const pv_last: usize = 11419792;
-    pub const nodes: usize = 11419800;
-    pub const tb_hits: usize = 11419808;
-    pub const best_move_changes: usize = 11419816;
-    pub const sel_depth: usize = 11419824;
-    pub const nmp_min_ply: usize = 11419828;
-    pub const optimism: usize = 11419832;
-    pub const root_pos: usize = 11419840;
-    // rootState (StateInfo, 192 bytes) sits between rootPos (Position, 1032 bytes)
-    // and rootMoves. Verified at engine creation via the offsetof probe
-    // (which == 16) below.
-    pub const root_state: usize = 11420872;
-    pub const root_moves: usize = 11421064;
-    pub const root_depth: usize = 11421088;
-    pub const root_delta: usize = 11421092;
-    // lastIterationPV (PVMoves, 504 bytes) sits between rootDelta and threadIdx.
-    // Verified at engine creation via the offsetof probe (which == 17).
-    pub const last_iteration_pv: usize = 11421096;
-    pub const thread_idx: usize = 11421600;
-    pub const reductions: usize = 11421632;
-    pub const manager: usize = 11422656;
-    // tbConfig (Tablebases::Config, 12 used bytes + 4 pad) sits immediately after
-    // the 8-byte manager unique_ptr, before the options reference slot. Verified
-    // at engine creation via the offsetof probe (which == 15) below.
-    pub const tb_config: usize = 11422664;
-    // After manager come tbConfig (16B), then the options/threads/tt/network
-    // reference slots; 8 bytes of AccumulatorStack-alignment padding follow
-    // network before accumulator_stack. These offsets were confirmed by dumping
-    // the live pointer region (the SharedState referents land here exactly).
-    pub const options: usize = 11422680; // reference
-    pub const threads: usize = 11422688; // reference
-    pub const tt: usize = 11422696; // reference
-    pub const network: usize = 11422704; // reference
-    pub const accumulator_stack: usize = 11422720;
-    pub const refresh_table: usize = 13604288;
+    pub const histories = @offsetOf(WorkerLayout, "histories");
+    // shared_history is inside WorkerHistories at position.worker_shared_history_off
+    // (a native struct, so not a fixed sub-offset); users add histories + that.
+    pub const limits = @offsetOf(WorkerLayout, "limits");
+    pub const pv_idx = @offsetOf(WorkerLayout, "pv_idx");
+    pub const pv_last = @offsetOf(WorkerLayout, "pv_last");
+    pub const nodes = @offsetOf(WorkerLayout, "nodes");
+    pub const tb_hits = @offsetOf(WorkerLayout, "tb_hits");
+    pub const best_move_changes = @offsetOf(WorkerLayout, "best_move_changes");
+    pub const sel_depth = @offsetOf(WorkerLayout, "sel_depth");
+    pub const nmp_min_ply = @offsetOf(WorkerLayout, "nmp_min_ply");
+    pub const optimism = @offsetOf(WorkerLayout, "optimism");
+    pub const root_pos = @offsetOf(WorkerLayout, "root_pos");
+    pub const root_state = @offsetOf(WorkerLayout, "root_state");
+    pub const root_moves = @offsetOf(WorkerLayout, "root_moves");
+    pub const root_depth = @offsetOf(WorkerLayout, "root_depth");
+    pub const root_delta = @offsetOf(WorkerLayout, "root_delta");
+    pub const last_iteration_pv = @offsetOf(WorkerLayout, "last_iteration_pv");
+    pub const thread_idx = @offsetOf(WorkerLayout, "thread_idx");
+    pub const numa_thread_idx = @offsetOf(WorkerLayout, "numa_thread_idx");
+    pub const numa_total = @offsetOf(WorkerLayout, "numa_total");
+    pub const numa_access_token = @offsetOf(WorkerLayout, "numa_access_token");
+    pub const reductions = @offsetOf(WorkerLayout, "reductions");
+    pub const manager = @offsetOf(WorkerLayout, "manager");
+    pub const tb_config = @offsetOf(WorkerLayout, "tb_config");
+    pub const options = @offsetOf(WorkerLayout, "options");
+    pub const threads = @offsetOf(WorkerLayout, "threads");
+    pub const tt = @offsetOf(WorkerLayout, "tt");
+    pub const network = @offsetOf(WorkerLayout, "network");
+    pub const accumulator_stack = @offsetOf(WorkerLayout, "accumulator_stack");
+    pub const accumulator_stack_size_field = accumulator_stack + accumulator_stack_size - 64;
+    pub const refresh_table = @offsetOf(WorkerLayout, "refresh_table");
 };
 
 // SearchManager member offsets (bytes from the manager base), probed from the
