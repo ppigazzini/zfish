@@ -29,7 +29,7 @@ const threat_index_capacity: usize = 128;
 const threat_dimensions: u32 = 60720;
 const psq_feature_dimensions: usize = 22528;
 
-const HalfDiff = extern struct {
+const HalfDiff = struct {
     pc: u8,
     from: u8,
     to: u8,
@@ -60,7 +60,7 @@ pub const StackPushOutput = struct {
     dirty_threats: *anyopaque,
 };
 
-const HalfAppendDiff = extern struct {
+const HalfAppendDiff = struct {
     from: u8,
     to: u8,
     pc: u8,
@@ -70,7 +70,7 @@ const HalfAppendDiff = extern struct {
     add_pc: u8,
 };
 
-const FullAppendDiff = extern struct {
+const FullAppendDiff = struct {
     us: u8,
     prev_ksq: u8,
     ksq: u8,

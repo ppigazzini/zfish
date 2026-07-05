@@ -4,7 +4,7 @@ comptime {
     @setEvalBranchQuota(200000);
 }
 
-pub const HalfDiff = extern struct {
+pub const HalfDiff = struct {
     from: u8,
     to: u8,
     pc: u8,
@@ -18,7 +18,7 @@ pub const DirtyThreatRaw = extern struct {
     data: u32,
 };
 
-pub const FullDiff = extern struct {
+pub const FullDiff = struct {
     us: u8,
     prev_ksq: u8,
     ksq: u8,
