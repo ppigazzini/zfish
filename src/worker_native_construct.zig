@@ -110,7 +110,7 @@ fn constructWorkerInto(
 // the C++ Worker placement-new that the engine-graph cut calls instead of
 // make_unique_large_page<Worker>. `manager` is the moved ISearchManager pointer;
 // the feature-transformer biases are sourced from the native network.
-export fn zfish_worker_construct_full(
+pub fn zfish_worker_construct_full(
     buf: ?*anyopaque,
     shared_history: usize,
     options: usize,

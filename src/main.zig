@@ -826,7 +826,6 @@ const WorkerBuildCtx = struct {
     update_context: ?*const anyopaque,
     total: usize,
 };
-extern fn zfish_worker_construct_full(buf: ?*anyopaque, shared_history: usize, options: usize, threads: usize, tt: usize, network: usize, manager: usize, thread_idx: usize, numa_thread_idx: usize, numa_total: usize, numa_access_token: usize) void;
 fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) callconv(.c) void {
     const ctx: *WorkerBuildCtx = @ptrCast(@alignCast(ctx_ptr.?));
     const ss: [*]u8 = @ptrCast(ctx.shared_state.?);
@@ -840,7 +839,7 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) callc
     const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse
         @panic("native worker build: large-page OOM");
     const shared_history = engine_port.sharedHistoriesAt(@ptrFromInt(ss_shared_hist), 0);
-    zfish_worker_construct_full(
+    worker_native_construct.zfish_worker_construct_full(
         raw,
         @intFromPtr(shared_history),
         ss_options,
