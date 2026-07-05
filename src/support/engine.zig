@@ -200,7 +200,6 @@ extern fn zfish_search_shared_state_create(
     network: *const anyopaque,
 ) ?*anyopaque;
 extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
-extern fn zfish_engine_shared_hists_ptr(engine_ptr: *anyopaque) *anyopaque;
 extern fn zfish_engine_tt_hashfull(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
@@ -435,10 +434,58 @@ pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
         ne(engine_ptr).optionsPtr(),
         ne(engine_ptr).threadsPtr(),
         ne(engine_ptr).ttPtr(),
-        zfish_engine_shared_hists_ptr(engine_ptr),
+        sharedHistoriesPtr(),
         ne(engine_ptr).networkPtr(),
         ne(engine_ptr).updateContextPtr(),
     );
+}
+
+// Native SharedHistoriesMap (the post-src/ replacement for std::map<NumaIndex,
+// SharedHistories>), engine-owned side storage relocated from main.zig (M16.7).
+// The engine is a gate singleton, so a lazily-built module global suffices; the
+// map pointer flows into SharedState.sharedHistories, and the clear/insert/at
+// bridge sites operate on that same pointer. Each element (SharedHistories: two
+// large-page DynStats arrays) is built by constructSharedHistories / freed by
+// deinitSharedHistories; the bucket storage uses the c allocator.
+var side_shared_histories: ?position_port.SharedHistoriesMap = null;
+
+fn sideSharedHistories() *position_port.SharedHistoriesMap {
+    if (side_shared_histories == null) {
+        side_shared_histories = position_port.SharedHistoriesMap.init(
+            std.heap.c_allocator,
+            position_port.constructSharedHistories,
+            position_port.deinitSharedHistories,
+        );
+    }
+    return &side_shared_histories.?;
+}
+
+pub fn sharedHistoriesPtr() *anyopaque {
+    return @ptrCast(sideSharedHistories());
+}
+
+pub fn sharedHistoriesClear(map_ptr: *anyopaque) void {
+    const map: *position_port.SharedHistoriesMap = @ptrCast(@alignCast(map_ptr));
+    map.clear();
+}
+
+pub fn sharedHistoriesInsert(map_ptr: *anyopaque, numa_index: usize, size: usize) void {
+    const map: *position_port.SharedHistoriesMap = @ptrCast(@alignCast(map_ptr));
+    map.tryEmplace(numa_index, size) catch @panic("OOM: native sharedHistories insert");
+}
+
+pub fn sharedHistoriesAt(map_ptr: *anyopaque, numa_index: usize) *anyopaque {
+    const map: *position_port.SharedHistoriesMap = @ptrCast(@alignCast(map_ptr));
+    return @ptrCast(map.at(numa_index));
+}
+
+// Free the side map (each element's large-page DynStats arrays + the bucket
+// storage) at engine teardown + reset for any re-construct (H5/valgrind).
+pub fn freeSharedHistories() void {
+    if (side_shared_histories) |*m| {
+        m.deinit();
+        side_shared_histories = null;
+    }
 }
 
 // TT lifecycle + engine setup helpers relocated from main.zig (M16.7), reached through the typed

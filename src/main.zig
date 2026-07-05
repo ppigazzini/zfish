@@ -81,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
 
     nativeUciEngineConstructAt(engine, @intCast(argc), argv.ptr);
     defer freeSideTt(); // M1: free the side tt AFTER the engine destruct (LIFO)
-    defer freeSideSharedHistories(); // M-SH: free the side sharedHistories map (after destruct)
+    defer engine_port.freeSharedHistories(); // M-SH: free the side sharedHistories map (after destruct)
     defer uciEngineDestructAt(engine);
 
     uci_port.loopRuntime(engine);
@@ -659,62 +659,9 @@ fn freeSideTt() void {
     if (table_ptr.*) |tbl| memory_port.alignedLargePagesFree(tbl);
     native_engine.sideTtReset();
 }
-// REPORT-10 (sharedHists migration, DEFAULT-ONLY): the engine `sharedHists` is now a
-// NATIVE SharedHistoriesMap (the post-src/ replacement for std::map<NumaIndex,
-// SharedHistories>) in the default build. Now that the native SharedState is live
-// (M-HUB), this pointer flows into SharedState.sharedHistories, and the default build's
-// clear/insert/at sites (uci_bridge, #ifdef-gated) operate on this native map. Unlike
-// the layout-compatible tt/pos side buffers, the native map is NOT std::map-compatible,
-// so the legacy oracle MUST keep its real C++ std::map (the legacy C++ Worker ctor calls
-// std::map::at on it) — hence the comptime legacy branch returns the C++ engine member.
-// The element (SharedHistories: two large-page DynStats arrays) is built by
-// constructSharedHistories / freed by deinitSharedHistories; the map's bucket storage
-// uses the c allocator (both exes link libc; main.zig is not in the libc-free test-graph
-// artifact). The C++ Engine sharedHists stays dead (default) until M-FINAL.
-var side_shared_histories: ?position_port.SharedHistoriesMap = null;
-
-fn sideSharedHistories() *position_port.SharedHistoriesMap {
-    if (side_shared_histories == null) {
-        side_shared_histories = position_port.SharedHistoriesMap.init(
-            std.heap.c_allocator,
-            position_port.constructSharedHistories,
-            position_port.deinitSharedHistories,
-        );
-    }
-    return &side_shared_histories.?;
-}
-
-pub export fn zfish_engine_shared_hists_ptr(engine: *anyopaque) *anyopaque {
-    _ = engine; // the side sharedHistories map replaces the C++ engine member
-    return @ptrCast(sideSharedHistories());
-}
-
-// Native SharedHistoriesMap operations the default-build bridge routes through (the C++
-// std::map clear / try_emplace / at sites flip to these in the default build only). The
-// map pointer passed in is SharedState.sharedHistories (== this side map).
-fn zfish_native_shared_histories_clear(map_ptr: *anyopaque) void {
-    const map: *position_port.SharedHistoriesMap = @ptrCast(@alignCast(map_ptr));
-    map.clear();
-}
-fn zfish_native_shared_histories_insert(map_ptr: *anyopaque, numa_index: usize, size: usize) void {
-    const map: *position_port.SharedHistoriesMap = @ptrCast(@alignCast(map_ptr));
-    map.tryEmplace(numa_index, size) catch @panic("OOM: native sharedHistories insert");
-}
-fn zfish_native_shared_histories_at(map_ptr: *anyopaque, numa_index: usize) *anyopaque {
-    const map: *position_port.SharedHistoriesMap = @ptrCast(@alignCast(map_ptr));
-    return @ptrCast(map.at(numa_index));
-}
-
-// Free the side map (each element's large-page DynStats arrays + the bucket storage) at
-// engine teardown + reset for any re-construct (H5/valgrind). Mirrors freeSideTt's LIFO
-// placement (runs after the engine destruct). Default build only; a no-op when the side
-// map was never built (legacy).
-fn freeSideSharedHistories() void {
-    if (side_shared_histories) |*m| {
-        m.deinit();
-        side_shared_histories = null;
-    }
-}
+// The engine's native SharedHistoriesMap side storage + its clear/insert/at/free
+// operations moved into engine.zig (M16.7): the map is engine-owned, so the bridge
+// sites below reach it through the engine module (engine_port.sharedHistories*).
 // REPORT-12 TU=0 grind: default build's network_ptr is a pass-through to network_replicated_ptr
 // (the native verify/eval ignore the value). Default-only @export; legacy keeps the C++ wrapper deref.
 // REPORT-12 TU=0 grind: two more default-build pass-throughs to existing native fns.
@@ -1031,7 +978,7 @@ fn threadpoolWaitThread(threads: *anyopaque, thread_id: usize) callconv(.c) void
 fn sharedStateClearHistories(shared_state: *const anyopaque) callconv(.c) void {
     const shared_histories_off: usize = 3 * @sizeOf(usize);
     const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + shared_histories_off));
-    zfish_native_shared_histories_clear(slot.*);
+    engine_port.sharedHistoriesClear(slot.*);
 }
 // insert_history: single-node default never binds (do_bind always 0, numa_config unused) — insert
 // directly into the native SharedHistoriesMap reached via the offset-24 shared_histories pointer.
@@ -1039,7 +986,7 @@ fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const 
     _ = numa_config;
     _ = do_bind;
     const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + 3 * @sizeOf(usize)));
-    zfish_native_shared_histories_insert(slot.*, numa_index, size);
+    engine_port.sharedHistoriesInsert(slot.*, numa_index, size);
 }
 // REPORT-12 TU=0: with NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub (network.cpp);
 // loadNetworkBytes fails on it and falls back to the on-disk EvalFile (bench validates the file net).
@@ -1533,7 +1480,7 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) callc
         @panic("native worker build: SearchManager OOM");
     const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse
         @panic("native worker build: large-page OOM");
-    const shared_history = zfish_native_shared_histories_at(@ptrFromInt(ss_shared_hist), 0);
+    const shared_history = engine_port.sharedHistoriesAt(@ptrFromInt(ss_shared_hist), 0);
     zfish_worker_construct_full(
         raw,
         @intFromPtr(shared_history),
