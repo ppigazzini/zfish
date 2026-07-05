@@ -440,6 +440,7 @@ pub fn build(b: *std.Build) void {
     engine_module_default.addImport("graph_layout", graph_layout_module);
     thread_module_default.addImport("movegen", movegen_module);
     uci_move_module.addImport("movegen", movegen_module);
+    uci_move_module.addImport("position", position_module);
     thread_module_default.addImport("tablebase", tablebase_module);
     thread_module_default.addImport("option", option_module);
     thread_module_default.addImport("state_list", state_list_module);

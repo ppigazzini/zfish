@@ -148,7 +148,6 @@ extern fn zfish_engine_numa_set_from_string(
     text_len: usize,
 ) void;
 extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*anyopaque;
-extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 extern fn zfish_engine_add_option(
     engine_ptr: *anyopaque,
@@ -1014,7 +1013,7 @@ fn probeTablebases(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) 
 
 fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
-    zfish_position_fill_snapshot(pos, &snapshot);
+    position_port.fillSnapshot(pos, &snapshot);
     return snapshot;
 }
 
