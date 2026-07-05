@@ -2864,7 +2864,7 @@ pub const StateInfo = extern struct {
 // scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
 // members the struct is the whole 1032-byte object, so the native graph can own
 // and allocate a Position outright rather than only borrowing the C++ one.
-pub const Position = extern struct {
+pub const Position = struct {
     board: [64]u8,
     by_type_bb: [8]u64,
     by_color_bb: [2]u64,
@@ -2881,16 +2881,13 @@ pub const Position = extern struct {
 };
 
 comptime {
-    // Must reproduce the locked 1032-byte C++ Position, with the leading-field
-    // offsets the ported code depends on unchanged by the added scratch tail.
-    std.debug.assert(@sizeOf(Position) == 1032);
-    std.debug.assert(@offsetOf(Position, "st") == 608);
-    std.debug.assert(@offsetOf(Position, "side_to_move") == 620);
-    // Keep the leaf readers network.zig uses (graph_layout.positionSideToMove/Board) in sync.
+    // Native struct (M16.8 de-mirror): Zig owns the field order. The only external
+    // layout pin is the network's board/side reads (graph_layout.positionBoard/
+    // positionSideToMove); assert they stay in sync, and that Position still fits the
+    // 1032-byte slot the Worker (worker_off.root_pos) and side storage reserve for it.
+    std.debug.assert(@sizeOf(Position) <= graph_layout.position_size);
     std.debug.assert(@offsetOf(Position, "side_to_move") == graph_layout.position_side_to_move_off);
     std.debug.assert(@offsetOf(Position, "board") == graph_layout.position_board_off);
-    std.debug.assert(@offsetOf(Position, "scratch_dp") == 622);
-    std.debug.assert(@offsetOf(Position, "scratch_dts") == 632);
 }
 
 const sq_none_u8: u8 = 64;
@@ -3175,7 +3172,7 @@ pub fn updateSliderBlockers(pos_ptr: *const anyopaque, c: u8) void {
 const max_u64: u64 = 0xFFFFFFFFFFFFFFFF;
 
 // Mirrors of the NNUE dirty-state structs (src/types.h) the accumulator consumes.
-const DirtyPiece = extern struct {
+const DirtyPiece = struct {
     pc: u8,
     from: u8,
     to: u8,
@@ -3184,7 +3181,7 @@ const DirtyPiece = extern struct {
     remove_pc: u8,
     add_pc: u8,
 };
-const DirtyThreats = extern struct {
+const DirtyThreats = struct {
     list_values: [96]u32, // ValueList<DirtyThreat,96>::values_
     list_size: usize, // ValueList<...>::size_
     us: u8,

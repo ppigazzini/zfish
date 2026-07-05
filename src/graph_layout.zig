@@ -36,8 +36,11 @@ pub const root_move_size: usize = 552;
 // import the (heavy, cycle-prone) position module for two scalar reads. Pinned
 // here in the leaf layout authority; position.zig comptime-asserts them against
 // its real Position struct, so a layout change is caught at build time.
-pub const position_board_off: usize = 0; // Position.board [64]u8 is the first field
-pub const position_side_to_move_off: usize = 620; // Position.side_to_move (u8)
+// Position is now a native Zig struct (M16.8): Zig chose these field offsets; the
+// network reads board/side through them and position.zig comptime-asserts they match
+// @offsetOf(Position, ...), so a layout change fails the build instead of corrupting.
+pub const position_board_off: usize = 940; // Position.board [64]u8
+pub const position_side_to_move_off: usize = 1020; // Position.side_to_move (u8)
 
 // Side to move of a Position by pointer (== Position.side_to_move).
 pub inline fn positionSideToMove(pos: *const anyopaque) u8 {

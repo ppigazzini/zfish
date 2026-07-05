@@ -39,16 +39,16 @@ const HalfDiff = struct {
     add_pc: u8,
 };
 
-const DirtyThreatRaw = extern struct {
+const DirtyThreatRaw = struct {
     data: u32,
 };
 
-const DirtyThreatListView = extern struct {
+const DirtyThreatListView = struct {
     values: [dirty_threat_capacity]DirtyThreatRaw,
     size_: usize,
 };
 
-const ThreatDiffView = extern struct {
+const ThreatDiffView = struct {
     list: DirtyThreatListView,
     us: u8,
     prev_ksq: u8,
