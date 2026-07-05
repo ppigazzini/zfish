@@ -30,6 +30,30 @@ fn cStdout() *c.FILE {
 
 var log_file: ?*c.FILE = null;
 
+// Latest whole-search node count, published by the search-driver info emit and read
+// by the uci layer's `nodes` accessor. A shared leaf home so both sides reach it
+// without a cycle (M16.7).
+var last_nodes_searched = std.atomic.Value(u64).init(0);
+pub fn setLastNodesSearched(nodes: u64) void {
+    last_nodes_searched.store(nodes, .monotonic);
+}
+pub fn lastNodesSearched() u64 {
+    return last_nodes_searched.load(.monotonic);
+}
+pub fn resetLastNodesSearched() void {
+    last_nodes_searched.store(0, .monotonic);
+}
+
+// Quiet mode (bench/speedtest): the search-driver emit functions are no-ops. Set by
+// the uci listener-mode command, read by the emit path.
+var quiet_mode: bool = false;
+pub fn setQuietMode(quiet: bool) void {
+    quiet_mode = quiet;
+}
+pub fn isQuiet() bool {
+    return quiet_mode;
+}
+
 // Write one line to stdout (and, if open, tee it to the log file), flushing both.
 pub fn printLine(str: [*]const u8, len: usize) void {
     const out = cStdout();

@@ -7,6 +7,7 @@ const misc_port = @import("misc");
 const engine_mod = @import("engine");
 const option_port = @import("option");
 const uci_wdl = @import("uci_wdl");
+const uci_output = @import("uci_output");
 
 // These engine_owner entry points are @export'd main.zig-local orchestrators (not thin
 // engine-module wrappers), so they stay C-ABI for now -- a later slice moves that logic out
@@ -100,8 +101,6 @@ const ByteView = engine_mod.ByteView;
 
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
-extern fn zfish_uci_engine_nodes_searched(uci_ptr: *const anyopaque) u64;
-extern fn zfish_uci_engine_reset_nodes_searched() void;
 extern fn zfish_uci_set_listener_mode(uci_ptr: *anyopaque, quiet_mode: u8) void;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
@@ -565,10 +564,10 @@ pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
                 if (limits.perft != 0) {
                     nodes += zfish_engine_perft_owner(engine_ptr, limits.perft);
                 } else {
-                    zfish_uci_engine_reset_nodes_searched();
+                    uci_output.resetLastNodesSearched();
                     _ = dispatchCommand(uci_ptr, command);
                     engine_mod.waitForSearchFinishedEngine(engine_ptr);
-                    nodes += zfish_uci_engine_nodes_searched(uci_ptr);
+                    nodes += uci_output.lastNodesSearched();
                 }
             } else {
                 _ = dispatchCommand(uci_ptr, command);
@@ -673,7 +672,7 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
             engine_mod.waitForSearchFinishedEngine(engine_ptr);
 
             total_time += nowMillis() - started;
-            total_nodes += zfish_uci_engine_nodes_searched(uci_ptr);
+            total_nodes += uci_output.lastNodesSearched();
 
             hashfull_reads += 1;
             const hashfull_single = engine_mod.hashfullEngine(engine_ptr, 0);

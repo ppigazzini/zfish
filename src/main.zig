@@ -630,8 +630,8 @@ pub export fn zfish_search_emit_info_full(
     time_ms: u64,
 ) void {
     _ = manager;
-    zfish_set_last_nodes_searched(nodes);
-    if (uci_quiet_mode) return;
+    uci_output.setLastNodesSearched(nodes);
+    if (uci_output.isQuiet()) return;
 
     const ca = std.heap.c_allocator;
     const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
@@ -718,9 +718,8 @@ fn workerTT(worker: *const anyopaque) usize {
 // quiet mode (bench/speedtest) the search-driver emit functions are no-ops; in
 // interactive mode they format natively and print through the shared sync_cout
 // wrapper.
-var uci_quiet_mode: bool = false;
 pub fn zfish_uci_set_quiet_mode(quiet: u8) void {
-    uci_quiet_mode = quiet != 0;
+    uci_output.setQuietMode(quiet != 0);
 }
 
 // REPORT-12 TU=0: the native output primitive (replacing the C++ sync_cout wrapper zfish_uci_print_line +
@@ -739,7 +738,7 @@ pub fn zfish_uci_set_quiet_mode(quiet: u8) void {
 // no-op in quiet mode, else format as an "info string" and print through the shared sync_cout wrapper.
 fn engineEmitVerifyMessage(engine_ptr: *const anyopaque, message_ptr: [*]const u8, message_len: usize) callconv(.c) void {
     _ = engine_ptr;
-    if (uci_quiet_mode) return;
+    if (uci_output.isQuiet()) return;
     const formatted = zfish_uci_format_info_string(message_ptr, message_len) orelse return;
     defer c.free(@ptrCast(formatted));
     const line = std.mem.span(formatted);
@@ -1412,7 +1411,7 @@ const ZfishPvContext = extern struct {
 pub export fn zfish_search_cb_root_on_iter(worker: *const anyopaque, depth: c_int, move: u16, move_count: c_int) void {
     const thread_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.thread_idx);
     if (thread_idx.* != 0) return;
-    if (uci_quiet_mode) return;
+    if (uci_output.isQuiet()) return;
     const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
     const chess960 = position_port.isChess960(root_pos);
     const pv_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.pv_idx);
@@ -1429,7 +1428,7 @@ pub export fn zfish_search_cb_root_on_iter(worker: *const anyopaque, depth: c_in
 // score <fmt>" (mate 0 when in check, else cp 0) followed by "bestmove (none)".
 // Quiet mode is a no-op. Bridge-only symbol, no gating.
 pub export fn zfish_ss_emit_no_moves(worker: *const anyopaque) void {
-    if (uci_quiet_mode) return;
+    if (uci_output.isQuiet()) return;
     const ca = std.heap.c_allocator;
     const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
     const v: c_int = if (position_port.hasCheckers(root_pos)) -32000 else 0;
@@ -1451,7 +1450,7 @@ pub export fn zfish_ss_emit_no_moves(worker: *const anyopaque) void {
 // rendered with worker->rootPos chess960. Quiet mode is a no-op, matching the
 // C++ no-op onBestmove listener. Bridge-only symbol, no gating.
 pub export fn zfish_ss_emit_bestmove(worker: *const anyopaque, best: *const anyopaque) void {
-    if (uci_quiet_mode) return;
+    if (uci_output.isQuiet()) return;
     const rm0 = workerRootMove0(best);
     const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
     const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
@@ -1677,19 +1676,9 @@ pub fn zfish_half_ka_append_changed(
 
 // Last-reported "nodes searched" counter for the UCI info path. Owned in Zig;
 // the C++ engine update listeners publish into it via zfish_set_last_nodes_searched.
-var last_nodes_searched = std.atomic.Value(u64).init(0);
+// last-nodes-searched atomic + accessors moved into the uci_output leaf (M16.7);
+// uci.zig reads it directly.
 
-pub fn zfish_set_last_nodes_searched(nodes: u64) void {
-    last_nodes_searched.store(nodes, .monotonic);
-}
-
-pub export fn zfish_uci_engine_nodes_searched(_: ?*const anyopaque) u64 {
-    return last_nodes_searched.load(.monotonic);
-}
-
-pub export fn zfish_uci_engine_reset_nodes_searched() void {
-    last_nodes_searched.store(0, .monotonic);
-}
 
 
 

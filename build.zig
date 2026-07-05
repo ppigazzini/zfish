@@ -449,6 +449,7 @@ pub fn build(b: *std.Build) void {
     engine_module_default.addImport("uci_output", uci_output_module);
     exe.root_module.addImport("uci_wdl", uci_wdl_module);
     uci_module.addImport("uci_wdl", uci_wdl_module);
+    uci_module.addImport("uci_output", uci_output_module);
     engine_module_default.addImport("uci_wdl", uci_wdl_module);
     position_module.addImport("uci_wdl", uci_wdl_module);
     tt_module.addImport("memory", memory_module);
