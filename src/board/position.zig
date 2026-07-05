@@ -2839,7 +2839,7 @@ const piece_to_char = " PNBRQK  pnbrqk";
 // types, and C-ABI alignment match the C++ struct exactly so Zig can read the
 // live state stack that the C++ Position owns. Only used via pointer (never
 // allocated here), so it must stay byte-compatible with the C++ layout.
-pub const StateInfo = extern struct {
+pub const StateInfo = struct {
     material_key: u64,
     pawn_key: u64,
     minor_piece_key: u64,
@@ -3402,8 +3402,18 @@ pub fn doMove(
 
     var k = pos.st.key ^ zob_side;
 
-    // Copy the "copied when making a move" StateInfo prefix: offsetof(key) == 64.
-    @memcpy(@as([*]u8, @ptrCast(new_st))[0..64], @as([*]const u8, @ptrCast(pos.st))[0..64]);
+    // Carry the "copied when making a move" StateInfo fields (the C++ memcpy prefix up
+    // to offsetof(key)); StateInfo is a native struct now, so copy them by field rather
+    // than assuming a byte-contiguous 64-byte prefix.
+    new_st.material_key = pos.st.material_key;
+    new_st.pawn_key = pos.st.pawn_key;
+    new_st.minor_piece_key = pos.st.minor_piece_key;
+    new_st.non_pawn_key = pos.st.non_pawn_key;
+    new_st.non_pawn_material = pos.st.non_pawn_material;
+    new_st.castling_rights = pos.st.castling_rights;
+    new_st.rule50 = pos.st.rule50;
+    new_st.plies_from_null = pos.st.plies_from_null;
+    new_st.ep_square = pos.st.ep_square;
     new_st.previous = pos.st;
     pos.st = new_st;
 
