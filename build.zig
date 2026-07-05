@@ -673,6 +673,23 @@ pub fn build(b: *std.Build) void {
     );
     output_golden_update_step.dependOn(&output_golden_update_cmd.step);
 
+    // driver-golden (M16.7): pins the search-manager driver + its emit callbacks
+    // (multipv/wdl/ponder/currmove/no-moves) bit-exact, to de-risk relocating them.
+    const driver_golden = b.pathFromRoot("tools/driver.golden");
+    const driver_golden_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "check");
+    const driver_golden_step = b.step(
+        "driver-golden",
+        "Assert the search-driver + emit-callback UCI output matches the committed golden",
+    );
+    driver_golden_step.dependOn(&driver_golden_cmd.step);
+
+    const driver_golden_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "update");
+    const driver_golden_update_step = b.step(
+        "driver-golden-update",
+        "Regenerate tools/driver.golden from the current binary",
+    );
+    driver_golden_update_step.dependOn(&driver_golden_update_cmd.step);
+
     // Thread-runtime stress / liveness harness (H2, REPORT-09 big-bang plan).
     // Hammers (ucinewgame -> setoption Threads -> go/stop) cycles across thread
     // counts + a construct/destroy churn, under a wall-clock watchdog. A liveness
@@ -901,6 +918,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&search_parity_cmd.step);
     parity_step.dependOn(&search_modes_cmd.step);
     parity_step.dependOn(&output_golden_cmd.step);
+    parity_step.dependOn(&driver_golden_cmd.step);
     parity_step.dependOn(&perft_cmd.step);
     parity_step.dependOn(&eval_cmd.step);
     parity_step.dependOn(&misc_cmd.step);

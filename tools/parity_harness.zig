@@ -154,6 +154,53 @@ fn buildOutputGolden(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// driver-golden: pins the observable behaviour of the search-manager DRIVER + its emit
+// callbacks (ss_emit_pv / emit_bestmove / emit_no_moves / search_emit_info_full /
+// search_cb_pv_context / search_cb_root_on_iter / search_id_pv / ss_pv_one_and_ponder).
+// A single-thread (deterministic) battery that exercises MultiPV (multi-line info +
+// pv_context), UCI_ShowWDL (wdl formatting), a deep endgame (currmove / currmovenumber),
+// a mate score, and a checkmated side-to-move ("bestmove (none)"). Every emitted info/
+// bestmove line is captured (volatile `time`/`nps` stripped). Purpose: de-risk relocating
+// those callbacks off main.zig -- a driver refactor that changes ANY emitted line is caught
+// bit-exact, so the moves need not be "trusted", they are gate-proven.
+const driver_battery =
+    "uci\n" ++
+    "setoption name Threads value 1\n" ++
+    "setoption name MultiPV value 3\n" ++
+    "setoption name UCI_ShowWDL value true\n" ++
+    "position startpos\n" ++
+    "go depth 12\n" ++
+    "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1\n" ++
+    "go depth 11\n" ++
+    "setoption name MultiPV value 1\n" ++
+    "setoption name UCI_ShowWDL value false\n" ++
+    "position fen 8/8/8/8/8/6k1/6p1/6K1 w - - 0 1\n" ++
+    "go depth 24\n" ++
+    "position fen rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3\n" ++
+    "go depth 5\n" ++
+    "quit\n";
+
+fn buildDriverGolden(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    var cap = try runEngine(gpa, io, bin, &.{}, driver_battery);
+    defer cap.deinit(gpa);
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    var li = lines(cap.stdout);
+    while (li.next()) |line| {
+        if (!(startsWith(line, "info depth") or startsWith(line, "info currmove") or
+            startsWith(line, "bestmove"))) continue;
+        const no_time = try removeField(gpa, line, " time ");
+        defer gpa.free(no_time);
+        const no_nps = try removeField(gpa, no_time, " nps ");
+        defer gpa.free(no_nps);
+        try out.appendSlice(gpa, no_nps);
+        try out.append(gpa, '\n');
+    }
+    if (out.items.len == 0) fail("driver-golden: binary produced no info output (crash?)", .{});
+    return out.toOwnedSlice(gpa);
+}
+
 // search-parity: per-position (depth, score, nodes, bestmove) fingerprint + TOTAL. bench
 // info/bestmove are on stdout (51 blocks ending in `bestmove`); `Position:` + `Nodes
 // searched` are on stderr. Pair the K-th Position with the K-th stdout block by index.
@@ -766,7 +813,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"search-parity", @"search-modes", perft, eval, misc };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -794,6 +841,7 @@ pub fn main(init: std.process.Init) !void {
 
     const live = switch (check) {
         .@"output-golden" => try buildOutputGolden(gpa, io, bin),
+        .@"driver-golden" => try buildDriverGolden(gpa, io, bin),
         .@"search-parity" => try buildSearchParity(gpa, io, bin),
         .@"search-modes" => try buildSearchModes(gpa, io, bin),
         .perft => try buildPerft(gpa, io, bin),
