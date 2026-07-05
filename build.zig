@@ -143,6 +143,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const thread_vote_module = b.createModule(.{
+        .root_source_file = b.path("src/support/thread_vote.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const numa_module = b.createModule(.{
         .root_source_file = b.path("src/support/numa.zig"),
         .target = target,
@@ -465,6 +470,9 @@ pub fn build(b: *std.Build) void {
     position_module.addImport("uci_output", uci_output_module);
     position_module.addImport("score", score_module);
     exe.root_module.addImport("score", score_module);
+    position_module.addImport("thread_vote", thread_vote_module);
+    thread_module_default.addImport("thread_vote", thread_vote_module);
+    thread_vote_module.addImport("graph_layout", graph_layout_module);
     misc_module.addImport("memory", memory_module);
     tt_module.addImport("graph_layout", graph_layout_module);
     tt_module.addImport("thread", thread_module_default);

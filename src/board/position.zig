@@ -19,6 +19,7 @@ const uci_output = @import("uci_output");
 const uci_wdl = @import("uci_wdl");
 const uci_move_port = @import("uci_move");
 const score_port = @import("score");
+const thread_vote = @import("thread_vote");
 const option_port = @import("option");
 const timeman_port = @import("timeman");
 
@@ -921,7 +922,14 @@ fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
 
 extern fn zfish_ss_threads_start(worker: ?*anyopaque) void;
 extern fn zfish_ss_wait_finished(worker: ?*anyopaque) void;
-extern fn zfish_ss_get_best_thread(worker: ?*anyopaque) ?*anyopaque;
+
+// Worker of the vote-winning thread (Lazy-SMP best-thread selection via the leaf
+// thread_vote model). Relocated from main.zig (M16.7).
+fn ssGetBestThread(worker: ?*anyopaque) ?*anyopaque {
+    const wb = @intFromPtr(worker.?);
+    const pool = @as(*const usize, @ptrFromInt(wb + graph_layout.worker_off.threads)).*;
+    return @ptrFromInt(thread_vote.bestThreadWorker(@ptrFromInt(pool)));
+}
 
 // Read a Worker reference slot (a pointer stored at worker+offset).
 fn workerRefPtr(worker: *anyopaque, offset: usize) ?*anyopaque {
@@ -1001,7 +1009,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 
     var best = worker;
     if (ctx.limits_depth == 0 and ctx.skill_enabled == 0)
-        best = zfish_ss_get_best_thread(worker);
+        best = ssGetBestThread(worker);
 
     ssSetPrevScores(worker.?, best.?);
 

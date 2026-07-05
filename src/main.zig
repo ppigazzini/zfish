@@ -1218,13 +1218,7 @@ const ZfishSearchTimeState = extern struct {
 // forwarding-hop removal, identical to the previous threads.get_best_thread()->
 // worker.get(). Only reached with Threads>1 (bench is single-thread, so not
 // gate-exercised) but behaviourally unchanged. Plain export, no gating.
-pub export fn zfish_ss_get_best_thread(worker: *anyopaque) ?*anyopaque {
-    const wb = @intFromPtr(worker);
-    const pool = @as(*const usize, @ptrFromInt(wb + graph_layout.worker_off.threads)).*;
-    const idx = thread_port.bestThreadIndex(@ptrFromInt(pool));
-    const thread = graph_layout.ThreadPool.fromAddr(pool).threadAt(idx);
-    return @ptrFromInt(graph_layout.Thread.fromAddr(thread).worker);
-}
+// zfish_ss_get_best_thread: relocated into position.zig via the thread_vote leaf (M16.7).
 
 // zfish_search_id_collect_bmc: relocated into position.zig (M16.7).
 
