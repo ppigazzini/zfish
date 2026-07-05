@@ -133,6 +133,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const uci_wdl_module = b.createModule(.{
+        .root_source_file = b.path("src/support/uci_wdl.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const numa_module = b.createModule(.{
         .root_source_file = b.path("src/support/numa.zig"),
         .target = target,
@@ -442,6 +447,10 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("uci_output", uci_output_module);
     uci_output_module.addImport("libc", libc_module);
     engine_module_default.addImport("uci_output", uci_output_module);
+    exe.root_module.addImport("uci_wdl", uci_wdl_module);
+    uci_module.addImport("uci_wdl", uci_wdl_module);
+    engine_module_default.addImport("uci_wdl", uci_wdl_module);
+    position_module.addImport("uci_wdl", uci_wdl_module);
     tt_module.addImport("memory", memory_module);
     position_module.addImport("memory", memory_module);
     position_module.addImport("option", option_module);

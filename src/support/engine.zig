@@ -14,6 +14,7 @@ const state_list = @import("state_list");
 const nnue_misc_mod = @import("nnue_misc");
 const tt_port = @import("tt");
 const numa = @import("numa");
+const uci_wdl = @import("uci_wdl");
 const uci_output = @import("uci_output");
 const native_engine = @import("native_engine");
 
@@ -144,7 +145,6 @@ pub const NnueTraceInput = extern struct {
 };
 
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
-extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 extern fn zfish_engine_emit_verify_message(
     engine_ptr: *const anyopaque,
     message_ptr: [*]const u8,
@@ -692,8 +692,8 @@ pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
         .inner_trace_ptr = inner_trace.ptr,
         .inner_trace_len = inner_trace.len,
         .nnue_internal_value = nnue_value,
-        .nnue_white_cp = zfish_uci_to_cp(nnue_white_side, summary.material),
-        .final_white_cp = zfish_uci_to_cp(final_white_side, summary.material),
+        .nnue_white_cp = uci_wdl.toCp(nnue_white_side, summary.material),
+        .final_white_cp = uci_wdl.toCp(final_white_side, summary.material),
     });
 }
 
@@ -984,8 +984,8 @@ fn buildNnueTrace(
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
-        psqt_cp[bucket] = zfish_uci_to_cp(trace.psqt[bucket], summary.material);
-        positional_cp[bucket] = zfish_uci_to_cp(trace.positional[bucket], summary.material);
+        psqt_cp[bucket] = uci_wdl.toCp(trace.psqt[bucket], summary.material);
+        positional_cp[bucket] = uci_wdl.toCp(trace.positional[bucket], summary.material);
     }
 
     return nnue_misc_mod.formatTrace(.{

@@ -1654,9 +1654,7 @@ pub fn zfish_uci_format_info_string(
     return uci_port.formatInfoString(input_ptr[0..input_len]);
 }
 
-pub export fn zfish_uci_to_cp(value: c_int, material: c_int) c_int {
-    return uci_port.toCp(value, material);
-}
+// uci_to_cp: engine calls the leaf uci_wdl.toCp directly (M16.7).
 
 pub fn zfish_half_ka_make_index(
     params: nnue_feature_port.HalfThreatParams,
