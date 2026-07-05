@@ -290,7 +290,7 @@ pub fn probeTable(
 // the 24-byte C++ TranspositionTable: a TtCluster* table, the cluster count and
 // the 8-bit generation. The heavy logic lives in the functions above; this is
 // the owning object the native Engine graph holds, delegating to them.
-pub const TranspositionTable = extern struct {
+pub const TranspositionTable = struct {
     table: ?[*]TtCluster = null,
     cluster_count: usize = 0,
     generation8: u8 = 0,
@@ -310,7 +310,7 @@ pub const TranspositionTable = extern struct {
 };
 
 comptime {
-    std.debug.assert(@sizeOf(TranspositionTable) == 24);
+    // native handle; layout is Zig's (M16.8 de-mirror)
 }
 
 test "TranspositionTable native handle: layout and generation cycling" {

@@ -381,11 +381,10 @@ comptime {
 // The TranspositionTable object (24 bytes). Typed replacement for the tt_off offset
 // map: clusterCount, table (Cluster*), generation8, in declaration order. The side
 // TT the native engine allocates uses this layout.
-pub const TranspositionTable = extern struct {
-    cluster_count: usize, // @0
-    table: ?*anyopaque, // @8 (Cluster*)
-    generation8: u8, // @16
-    _pad: [7]u8,
+pub const TranspositionTable = struct {
+    cluster_count: usize = 0,
+    table: ?*anyopaque = null, // Cluster*
+    generation8: u8 = 0,
 
     pub inline fn fromPtr(p: *anyopaque) *TranspositionTable {
         return @ptrCast(@alignCast(p));
@@ -395,11 +394,9 @@ pub const TranspositionTable = extern struct {
     }
 };
 
-comptime {
-    std.debug.assert(@sizeOf(TranspositionTable) == transposition_table_size);
-    std.debug.assert(@offsetOf(TranspositionTable, "table") == 8);
-    std.debug.assert(@offsetOf(TranspositionTable, "generation8") == 16);
-}
+// TranspositionTable is now a native struct (M16.8 de-mirror): the side-TT handle in
+// native_engine.side_tt_storage is written+read only through these typed accessors, so
+// Zig owns the (naturally-ordered) layout; the C++ offset mirror is retired.
 
 // LimitsType field offsets (bytes from the limits sub-object base). searchmoves
 // is a 24-byte std::vector at 0, then seven 8-byte TimePoints
