@@ -476,7 +476,6 @@ comptime {
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
     // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
-    @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
     @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
@@ -557,19 +556,7 @@ fn engineThreadAllocationInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*
 // REPORT-12 TU=0 grind: the "uci" option listing is rendered from the native Zig option model;
 // the default options_text_owner already just returned option_port.zfish_optmodel_render(). Pure pass-through.
 // options-text: uci.zig calls option.render directly (M16.7).
-// REPORT-12 TU=0 grind: native flip — read the live position FEN, flip it, re-set via the native
-// set-position machinery (replacing Engine::flip -> Position::flip). All four calls are native;
-// the C strings are malloc'd and freed with c.free. Gate-verified by misc (flip + d). Legacy keeps C++.
-fn engineFlipOwner(engine_ptr: *anyopaque) callconv(.c) void {
-    const fen_c = zfish_engine_fen(native_engine.NativeEngine.fromPtr(@constCast(engine_ptr)).positionPtr()) orelse return;
-    defer c.free(@ptrCast(fen_c));
-    const fen = std.mem.span(fen_c);
-    const flipped_c = zfish_position_flip_fen(fen.ptr, fen.len) orelse return;
-    defer c.free(@ptrCast(flipped_c));
-    const flipped = std.mem.span(flipped_c);
-    if (engine_port.setPositionEngine(engine_ptr, flipped.ptr, flipped.len, null, 0)) |err|
-        c.free(@ptrCast(err));
-}
+// engine flip: uci.zig calls engine.flipEngine directly (M16.7).
 // REPORT-12 TU=0 grind: set the start position via the native set-position machinery (StartFEN is a
 // constexpr literal; the value is gate-verified by misc + bench, which start from this position).
 // UCIEngine::engine is the first member (offset 0): the accessor is the identity.

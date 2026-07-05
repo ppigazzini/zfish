@@ -14,7 +14,6 @@ const uci_output = @import("uci_output");
 // of main.zig. The other zfish_engine_*_owner calls became engine_mod.* direct calls (M16.5).
 extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
 extern fn zfish_engine_go_parsed_owner(engine_ptr: *anyopaque, limits: ParsedLimits) void;
-extern fn zfish_engine_flip_owner(engine_ptr: *anyopaque) void;
 extern fn zfish_engine_apply_setoption_owner(
     engine_ptr: *anyopaque,
     name_ptr: [*]const u8,
@@ -309,7 +308,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .flip => {
-            zfish_engine_flip_owner(engine);
+            engine_mod.flipEngine(engine);
             return .{ .should_quit = 0 };
         },
         .bench => {

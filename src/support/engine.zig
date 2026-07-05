@@ -705,6 +705,19 @@ pub fn fenEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
     return fen(ne(engine_ptr).positionPtr());
 }
 
+// Engine::flip -> read the live FEN, flip it, re-set the position. Relocated from
+// main.zig (M16.7); all native (engine fen + position flipFen + setPosition).
+pub fn flipEngine(engine_ptr: *anyopaque) void {
+    const fen_c = fen(ne(engine_ptr).positionPtr()) orelse return;
+    defer c.free(@ptrCast(fen_c));
+    const fen_text = std.mem.span(fen_c);
+    const flipped_c = position_port.flipFen(fen_text.ptr, fen_text.len) orelse return;
+    defer c.free(@ptrCast(flipped_c));
+    const flipped = std.mem.span(flipped_c);
+    if (setPositionEngine(engine_ptr, flipped.ptr, flipped.len, null, 0)) |err|
+        c.free(@ptrCast(err));
+}
+
 pub fn hashfullEngine(engine_ptr: *const anyopaque, max_age: c_int) c_int {
     const tp = graph_layout.TranspositionTable.fromPtr(ne(engine_ptr).ttPtr());
     const table = tp.table orelse return 0;
