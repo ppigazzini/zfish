@@ -147,7 +147,6 @@ extern fn zfish_engine_numa_set_from_string(
     text_ptr: [*]const u8,
     text_len: usize,
 ) void;
-extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*anyopaque;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 extern fn zfish_engine_add_option(
     engine_ptr: *anyopaque,
@@ -512,7 +511,7 @@ fn setStartPosition(engine_ptr: *anyopaque) void {
 }
 
 // Accumulator stack/caches lifecycle (M16.7 -- malloc'd engine-graph buffers). The refresh-cache
-// create path still needs the native FT biases pointer (main-local) and stays a bridge for now.
+// biases come from the native FT storage (network.zig), so the create path is fully engine-local.
 fn accumulatorStackCreate() ?*anyopaque {
     const buf = std.c.malloc(graph_layout.accumulator_stack_size) orelse return null;
     @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.accumulator_stack_size], 0);
@@ -521,6 +520,19 @@ fn accumulatorStackCreate() ?*anyopaque {
 }
 fn accumulatorStackDestroy(stack: ?*anyopaque) void {
     if (stack) |buf| std.c.free(buf);
+}
+// `new AccumulatorCaches(network)` / delete, ported native: the C++ ctor clears every cache
+// entry from the network FT biases; clearRefreshCache does exactly that over the caches block
+// from the native FT biases (the loaded net). Relocated from main.zig (M16.7).
+pub fn accumulatorCachesCreate(network: *const anyopaque) ?*anyopaque {
+    _ = network; // the native fill uses the native FT biases (same loaded net)
+    const buf = std.c.malloc(graph_layout.accumulator_caches_size) orelse return null;
+    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse {
+        std.c.free(buf);
+        return null;
+    }));
+    nnue_acc.clearRefreshCache(buf, biases);
+    return buf;
 }
 fn accumulatorCachesDestroy(caches: ?*anyopaque) void {
     if (caches) |buf| std.c.free(buf);
@@ -694,7 +706,7 @@ pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
     if (summary.checkers != 0)
         return allocMessage("Final evaluation: none (in check)", .{});
 
-    const caches = zfish_engine_accumulator_caches_create(network) orelse return null;
+    const caches = accumulatorCachesCreate(network) orelse return null;
     defer accumulatorCachesDestroy(caches);
 
     const inner_trace_ptr = buildNnueTrace(pos, network, summary, caches) orelse return null;

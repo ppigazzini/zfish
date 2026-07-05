@@ -609,8 +609,7 @@ comptime {
     @export(&engineStartLogger, .{ .name = "zfish_engine_start_logger" });
     @export(&threadpoolBoundNodesAssign, .{ .name = "zfish_threadpool_bound_nodes_assign" });
     // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
-    // M-FINAL: native AccumulatorCaches construct/destroy (legacy keeps new/delete).
-    @export(&zfishEngineAccumulatorCachesCreate, .{ .name = "zfish_engine_accumulator_caches_create" });
+    // AccumulatorCaches create moved into engine.zig (M16.7).
     // M-FINAL: native AccumulatorStack construct/destroy (legacy keeps new/delete).
     // M-FINAL cutover: native engine container construct/destruct (not yet on the live
     // path; the flip commit wires these). Default-only — legacy keeps the C++ UCIEngine.
@@ -1506,21 +1505,8 @@ fn zfishPositionDestroy(pos: ?*anyopaque) callconv(.c) void {
     if (pos) |p| zfishOperatorDelete(p);
 }
 
-// M-FINAL (construction-crack): `new AccumulatorCaches(network)` / `delete` ported native. The
-// C++ ctor just clears every cache entry from the network FT biases (clear(network)); the
-// native zfish_search_clear_refresh_cache (the same fill the Worker's refreshTable uses) does
-// exactly that over the accumulator_caches_size block from the native FT biases (the loaded net
-// == network). operator new/delete keeps the alloc/free family matched. Default-only.
-fn zfishEngineAccumulatorCachesCreate(network: *const anyopaque) callconv(.c) ?*anyopaque {
-    _ = network; // the native fill uses the native FT biases (same loaded net)
-    const buf = zfishOperatorNew(graph_layout.accumulator_caches_size) orelse return null;
-    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse {
-        zfishOperatorDelete(buf);
-        return null;
-    }));
-    nnue_accumulator_port.clearRefreshCache(buf, biases);
-    return buf;
-}
+// AccumulatorCaches create (`new AccumulatorCaches(network)`) moved into engine.zig (M16.7),
+// now that the native FT biases pointer lives in the network module.
 
 // M-FINAL (construction-crack + init): `new AccumulatorStack()` / `delete` ported native.
 // AccumulatorStack is POD (std::array members + a `size = 1` default member init), so value-init
