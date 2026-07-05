@@ -144,11 +144,6 @@ extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, sto
 extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 extern fn zfish_engine_start_logger(name_ptr: [*]const u8, name_len: usize) void;
-extern fn zfish_engine_set_numa_config_from_option_owner(
-    engine_ptr: *anyopaque,
-    value_ptr: [*]const u8,
-    value_len: usize,
-) void;
 extern fn zfish_thread_start_thinking(
     pool: *anyopaque,
     options: *const anyopaque,
@@ -229,7 +224,7 @@ pub fn optionOnChange(
             break :blk null;
         },
         option_callback_numa_policy => blk: {
-            zfish_engine_set_numa_config_from_option_owner(engine_ptr, value.ptr, value.len);
+            setNumaConfigFromOptionEngine(engine_ptr, value);
 
             const numa_info_ptr = numaConfigInformationEngine(engine_ptr) orelse break :blk null;
             defer c.free(@ptrCast(numa_info_ptr));

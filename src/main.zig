@@ -2081,13 +2081,7 @@ pub fn zfish_engine_go_owner(engine_ptr: *anyopaque, limits_ptr: *const anyopaqu
 
 
 
-pub export fn zfish_engine_set_numa_config_from_option_owner(
-    engine_ptr: *anyopaque,
-    value_ptr: [*]const u8,
-    value_len: usize,
-) void {
-    return engine_port.setNumaConfigFromOptionEngine(engine_ptr, value_ptr[0..value_len]);
-}
+// numa-config-from-option is applied inside engine.zig directly (M16.7).
 
 
 
