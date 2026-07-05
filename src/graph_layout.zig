@@ -408,22 +408,20 @@ pub const TranspositionTable = struct {
 // TimePoints, the search-mode ints, nodes, and ponderMode. The POD tail copied by
 // zfish_worker_set_limits is [@offsetOf(.,"time") .. @sizeOf), so any layout error
 // here breaks bench (gate-verified).
-pub const LimitsType = extern struct {
-    searchmoves: [24]u8, // std::vector<std::string> @0
-    time: [2]i64, // @24 time[WHITE], time[BLACK]
-    inc: [2]i64, // @40 inc[WHITE], inc[BLACK]
-    npmsec: i64, // @56
-    movetime: i64, // @64
-    start_time: i64, // @72
-    movestogo: i32, // @80
-    depth: i32, // @84
-    mate: i32, // @88
-    perft: i32, // @92
-    infinite: i32, // @96
-    _pad: [4]u8,
-    nodes: u64, // @104
-    ponder_mode: u8, // @112
-    _pad2: [7]u8,
+pub const LimitsType = struct {
+    searchmoves: [24]u8, // std::vector<std::string> mirror {begin,end,cap}
+    time: [2]i64, // time[WHITE], time[BLACK]
+    inc: [2]i64, // inc[WHITE], inc[BLACK]
+    npmsec: i64,
+    movetime: i64,
+    start_time: i64,
+    movestogo: i32,
+    depth: i32,
+    mate: i32,
+    perft: i32,
+    infinite: i32,
+    nodes: u64,
+    ponder_mode: u8,
 
     pub inline fn fromPtr(p: *anyopaque) *LimitsType {
         return @ptrCast(@alignCast(p));
@@ -446,12 +444,10 @@ pub const LimitsType = extern struct {
 };
 
 comptime {
-    std.debug.assert(@sizeOf(LimitsType) == 120);
-    std.debug.assert(@offsetOf(LimitsType, "time") == 24);
-    std.debug.assert(@offsetOf(LimitsType, "inc") == 40);
-    std.debug.assert(@offsetOf(LimitsType, "movestogo") == 80);
-    std.debug.assert(@offsetOf(LimitsType, "nodes") == 104);
-    std.debug.assert(@offsetOf(LimitsType, "ponder_mode") == 112);
+    // Native struct (M16.8 de-mirror): Zig owns the field order; workerSetLimits copies
+    // the POD fields explicitly (not a byte range), so only the fit in the Worker's
+    // 120-byte limits slot (worker_off.limits..pv_idx) is contractual.
+    std.debug.assert(@sizeOf(LimitsType) <= 120);
 }
 
 pub fn zfish_graph_verify_layouts() void {

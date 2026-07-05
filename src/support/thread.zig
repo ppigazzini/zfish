@@ -45,7 +45,10 @@ inline fn threadRunJob(thread: *anyopaque, job: ThreadCallback, ctx: ?*anyopaque
 // std::vector<std::string> (limits+0, {_M_start@0}); element stride is sizeof(std::string)=24.
 // Read-only (no allocation). Gate-verified by search-modes (exercises `go ... searchmoves`).
 inline fn limitsSearchmoveText(limits: *const anyopaque, index: usize) ByteView {
-    const vec_begin = @as(*const usize, @ptrFromInt(@intFromPtr(limits))).*;
+    // searchmoves is no longer at LimitsType offset 0 (native struct); read its
+    // libc++ vector begin pointer through the typed field.
+    const lt = graph_layout.LimitsType.fromPtr(@constCast(limits));
+    const vec_begin = @as(*const usize, @ptrCast(@alignCast(&lt.searchmoves[0]))).*;
     const str_ptr = vec_begin + index * 24;
     const b0 = @as(*const u8, @ptrFromInt(str_ptr)).*;
     if (b0 & 1 == 0) return .{ .ptr = @ptrFromInt(str_ptr + 1), .len = b0 >> 1 };
@@ -192,19 +195,26 @@ fn rootMovesDestroy(ptr: ?*anyopaque) void {
     std.c.free(p);
 }
 
-// Copy the LimitsType POD tail (everything after the leading searchmoves vector) into the
-// worker's limits member. Relocated from main.zig (M16.7); the [@offsetOf("time") .. @sizeOf)
-// span is the layout authority (graph_layout.LimitsType), gate-verified by bench.
+// Copy the LimitsType POD fields (everything but the leading searchmoves vector) into
+// the worker's limits member. LimitsType is a native struct now, so copy by field rather
+// than a byte range; searchmoves is deliberately left as the worker's own (the search
+// reads the worker's, always empty on the gated single-node path).
 fn workerSetLimits(thread: *anyopaque, src_limits: *const anyopaque) void {
     const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + 8)).*;
-    const dst = worker + graph_layout.worker_off.limits;
-    const head = @offsetOf(graph_layout.LimitsType, "time"); // skip the searchmoves vector
-    const total = @sizeOf(graph_layout.LimitsType);
-    const n = total - head;
-    @memcpy(
-        @as([*]u8, @ptrFromInt(dst + head))[0..n],
-        @as([*]const u8, @ptrFromInt(@intFromPtr(src_limits) + head))[0..n],
-    );
+    const dst = graph_layout.LimitsType.fromAddr(worker + graph_layout.worker_off.limits);
+    const src = graph_layout.LimitsType.fromPtr(@constCast(src_limits));
+    dst.time = src.time;
+    dst.inc = src.inc;
+    dst.npmsec = src.npmsec;
+    dst.movetime = src.movetime;
+    dst.start_time = src.start_time;
+    dst.movestogo = src.movestogo;
+    dst.depth = src.depth;
+    dst.mate = src.mate;
+    dst.perft = src.perft;
+    dst.infinite = src.infinite;
+    dst.nodes = src.nodes;
+    dst.ponder_mode = src.ponder_mode;
 }
 
 // libc++ vector<RootMove> copy-assign into the worker's rootMoves member (relocated from
