@@ -19,7 +19,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const rt = @import("thread_runtime.zig");
-const position_port = @import("position");
+const graph_layout = @import("graph_layout");
 
 // Marker at offset 0 (the C++ Thread had its vtable pointer here; no native reader
 // touches thread@0, so this just makes a NativeThread identifiable in a dump and
@@ -89,16 +89,44 @@ fn testWorkerDestroyStub(worker: *anyopaque) callconv(.c) void {
     _ = worker;
 }
 
-// Production search job: run the Zig search driver on this thread, with the
-// Worker pointer as context. Calls the position-module search driver directly
-// (M16.7); native_thread compiles inside the thread module, which wires position.
+// The search driver entry, injected by the thread module at search start (M16.7).
+// native_thread must not import position (position imports the thread stack for its
+// pool ops, so the reverse would cycle), so the driver is registered as a function
+// pointer rather than called by name.
+pub var searchEntry: ?*const fn (?*anyopaque) callconv(.c) void = null;
+
+// Production search job: run the registered Zig search driver on this thread, with
+// the Worker pointer as context.
 pub fn searchJob(ctx: ?*anyopaque) callconv(.c) void {
-    position_port.workerStartSearching(ctx.?);
+    if (searchEntry) |f| f(ctx);
 }
 
 // Start this thread's search: run searchJob with the attached Worker as context.
 pub fn startSearching(self: *NativeThread) void {
     self.startJob(searchJob, self.worker);
+}
+
+// Reinterpret a pool thread slot (a *NativeThread) for the pool-level sibling ops.
+inline fn asNativeThread(thread: *anyopaque) *NativeThread {
+    return @ptrCast(@alignCast(thread));
+}
+
+// Start the sibling threads (index 1..) searching. The pool-level entry the search
+// driver (position.zig) calls -- pure graph iteration + the per-thread start, so it
+// needs no position import.
+pub fn startPoolSiblings(pool: *anyopaque) void {
+    const tp = graph_layout.ThreadPool.fromPtr(@constCast(pool));
+    const n = tp.numThreads();
+    var i: usize = 1;
+    while (i < n) : (i += 1) startSearching(asNativeThread(tp.threadAtPtr(i)));
+}
+
+// Wait for the sibling threads (index 1..) to finish their current search.
+pub fn waitPoolSiblings(pool: *anyopaque) void {
+    const tp = graph_layout.ThreadPool.fromPtr(@constCast(pool));
+    const n = tp.numThreads();
+    var i: usize = 1;
+    while (i < n) : (i += 1) asNativeThread(tp.threadAtPtr(i)).waitForSearchFinished();
 }
 
 // Per-thread Worker::clear job (the C++ Thread::clear_worker == run_custom_job([

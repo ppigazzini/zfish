@@ -768,6 +768,12 @@ pub fn reconfigure(
 extern fn zfish_verify_thread_graph(pool: *const anyopaque, requested: usize, bound: usize) void;
 
 
+// The search-driver entry native_thread invokes as each thread's search job. Set
+// as a function pointer (M16.7) so native_thread need not import position.
+fn workerSearchEntry(ctx: ?*anyopaque) callconv(.c) void {
+    position_port.workerStartSearching(ctx);
+}
+
 pub fn startThinking(
     pool: *anyopaque,
     options: *const anyopaque,
@@ -775,6 +781,7 @@ pub fn startThinking(
     limits: *const anyopaque,
     states_slot: *anyopaque,
 ) void {
+    native_thread.searchEntry = &workerSearchEntry;
     waitMainThread(pool);
     const tp = graph_layout.ThreadPool.fromPtr(pool);
     if (tp.mainManager()) |m| {
