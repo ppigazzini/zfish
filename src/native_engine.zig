@@ -108,6 +108,14 @@ pub const NativeEngine = extern struct {
     }
 
     // Member accessors (M16.7 -- relocated from main.zig's zfish_engine_*_ptr C-ABI exports).
+    pub fn cliArgc(self: *const NativeEngine) c_int {
+        return self.cli_argc;
+    }
+    pub fn cliArgAt(self: *const NativeEngine, index: c_int) ?[*:0]const u8 {
+        if (index < 0 or index >= self.cli_argc) return null;
+        const argv = self.cli_argv orelse return null;
+        return argv[@intCast(index)];
+    }
     pub fn optionsPtr(self: *const NativeEngine) *const anyopaque {
         return self.options.?;
     }

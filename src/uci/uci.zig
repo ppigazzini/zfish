@@ -8,6 +8,7 @@ const engine_mod = @import("engine");
 const option_port = @import("option");
 const uci_wdl = @import("uci_wdl");
 const uci_output = @import("uci_output");
+const native_engine = @import("native_engine");
 
 // These engine_owner entry points are @export'd main.zig-local orchestrators (not thin
 // engine-module wrappers), so they stay C-ABI for now -- a later slice moves that logic out
@@ -89,8 +90,6 @@ pub const ParsedPosition = extern struct {
 // move views directly (M16.5) rather than through a duplicate C-ABI-mirror struct.
 const ByteView = engine_mod.ByteView;
 
-extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
-extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -461,7 +460,7 @@ fn isHelpToken(token: []const u8) bool {
 
 pub fn loopRuntime(uci_ptr: *anyopaque) void {
     const allocator = std.heap.c_allocator;
-    const argc = zfish_uci_cli_argc(uci_ptr);
+    const argc = native_engine.NativeEngine.fromPtr(@constCast(uci_ptr)).cliArgc();
 
     if (argc != 1) {
         var command = std.ArrayList(u8).empty;
@@ -469,7 +468,7 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
 
         var index: c_int = 1;
         while (index < argc) : (index += 1) {
-            const arg_ptr = zfish_uci_cli_arg_at(uci_ptr, index) orelse continue;
+            const arg_ptr = native_engine.NativeEngine.fromPtr(@constCast(uci_ptr)).cliArgAt(index) orelse continue;
             if (command.items.len != 0) {
                 command.append(allocator, ' ') catch return;
             }
