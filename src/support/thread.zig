@@ -900,6 +900,12 @@ pub fn startSearching(pool: *anyopaque) void {
     }
 }
 
+// Wait until one thread's worker finishes its current search (native ThreadPool op).
+// Relocated the main.zig C-ABI bridge (M16.7): consumers call this thread-module fn.
+pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
+    native_threadpool.zfish_native_threadpool_wait_thread(pool, thread_id);
+}
+
 pub fn waitForSearchFinished(pool: *anyopaque) void {
     const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     var index: usize = 1;

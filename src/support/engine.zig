@@ -143,7 +143,6 @@ pub const NnueTraceInput = extern struct {
 };
 
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
-extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 extern fn zfish_engine_start_logger(name_ptr: [*]const u8, name_len: usize) void;
 extern fn zfish_thread_start_thinking(
@@ -336,7 +335,7 @@ pub fn stopEngine(engine_ptr: *anyopaque) void {
 }
 
 pub fn waitForSearchFinishedEngine(engine_ptr: *anyopaque) void {
-    zfish_threadpool_wait_thread(ne(engine_ptr).threadsPtr(), 0);
+    thread_port.waitThread(ne(engine_ptr).threadsPtr(), 0);
 }
 
 pub fn goEngine(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
@@ -510,7 +509,7 @@ fn accumulatorCachesDestroy(caches: ?*anyopaque) void {
 }
 
 pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
-    zfish_threadpool_wait_thread(threads, 0);
+    thread_port.waitThread(threads, 0);
     ttResize(tt, mb, threads);
 }
 

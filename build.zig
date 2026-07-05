@@ -436,6 +436,7 @@ pub fn build(b: *std.Build) void {
     position_module.addImport("memory", memory_module);
     misc_module.addImport("memory", memory_module);
     tt_module.addImport("graph_layout", graph_layout_module);
+    tt_module.addImport("thread", thread_module_default);
     thread_module_default.addImport("graph_layout", graph_layout_module);
     engine_module_default.addImport("graph_layout", graph_layout_module);
     thread_module_default.addImport("movegen", movegen_module);

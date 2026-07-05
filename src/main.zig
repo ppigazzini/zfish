@@ -583,7 +583,6 @@ comptime {
     @export(&ssWaitFinished, .{ .name = "zfish_ss_wait_finished" });
     @export(&ssEmitPv, .{ .name = "zfish_ss_emit_pv" });
     @export(&ssSearchIdPv, .{ .name = "zfish_search_id_pv" });
-    @export(&threadpoolWaitThread, .{ .name = "zfish_threadpool_wait_thread" });
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
     @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
@@ -952,10 +951,7 @@ fn ssSearchIdPv(worker: *anyopaque, depth: c_int) callconv(.c) void {
 }
 // REPORT-12 TU=0: threadpool_wait_thread forwards to the native single-thread wait (the pool holds
 // native Threads, so the C++ wait_on_thread would lock them as C++ Threads). Pure native forward.
-extern fn zfish_native_threadpool_wait_thread(pool: *anyopaque, thread_id: usize) void;
-fn threadpoolWaitThread(threads: *anyopaque, thread_id: usize) callconv(.c) void {
-    zfish_native_threadpool_wait_thread(threads, thread_id);
-}
+// threadpool wait-thread bridge removed (M16.7): consumers call thread.waitThread directly.
 // REPORT-12 TU=0: SharedState.sharedHistories (a reference) is the 4th pointer field of the native
 // SharedState struct (shared_state.zig: options/threads/tt/shared_histories/network), i.e. offset 24.
 // &ref in C++ yielded that stored pointer; read it directly and clear the native SharedHistoriesMap.
