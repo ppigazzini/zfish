@@ -22,32 +22,32 @@ const none_name = "None";
 // "network" module rather than re-declaring it (a net bump edits one line).
 pub const default_eval_file_name = "nn-af1339a6dea3.nnue";
 
-pub const ByteView = extern struct {
+pub const ByteView = struct {
     ptr: [*]const u8,
     len: usize,
 };
 
-pub const OwnedByteView = extern struct {
+pub const OwnedByteView = struct {
     ptr: ?[*]const u8,
     len: usize,
 };
 
-pub const SaveResult = extern struct {
+pub const SaveResult = struct {
     saved: u8,
     message: ?[*:0]u8,
 };
 
-pub const VerifyResult = extern struct {
+pub const VerifyResult = struct {
     should_exit: u8,
     message: ?[*:0]u8,
 };
 
-pub const EvalOutput = extern struct {
+pub const EvalOutput = struct {
     psqt: c_int,
     positional: c_int,
 };
 
-pub const VerifyInfo = extern struct {
+pub const VerifyInfo = struct {
     size_bytes: usize,
     input_dimensions: usize,
     transformed_dimensions: usize,
@@ -55,7 +55,7 @@ pub const VerifyInfo = extern struct {
     fc1_outputs: c_int,
 };
 
-pub const TraceOutput = extern struct {
+pub const TraceOutput = struct {
     psqt: [layer_stacks]c_int,
     positional: [layer_stacks]c_int,
     correct_bucket: usize,
