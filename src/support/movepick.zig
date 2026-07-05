@@ -65,7 +65,7 @@ const piece_values = [_]c_int{
     0, 208, 781, 825, 1276, 2538, 0, 0,
 };
 
-pub const ScoreInput = extern struct {
+pub const ScoreInput = struct {
     raw_move: u16,
     check_bonus: u8,
     from_threatened: u8,
@@ -80,13 +80,13 @@ pub const ScoreInput = extern struct {
     low_ply_bonus: c_int,
 };
 
-pub const SortEntry = extern struct {
+pub const SortEntry = struct {
     raw_move: u16,
     reserved: u16,
     value: c_int,
 };
 
-pub const MovePickerState = extern struct {
+pub const MovePickerState = struct {
     tt_move_raw: u16,
     stage: c_int,
     threshold: c_int,
@@ -100,7 +100,7 @@ pub const MovePickerState = extern struct {
     moves: [*]SortEntry,
 };
 
-pub const MovePickerContext = extern struct {
+pub const MovePickerContext = struct {
     pos: *const anyopaque,
     main_history: ?*const anyopaque,
     low_ply_history: ?*const anyopaque,
@@ -112,7 +112,7 @@ pub const MovePickerContext = extern struct {
 
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
-const HistorySnapshot = extern struct {
+const HistorySnapshot = struct {
     main_base: ?*const anyopaque,
     low_ply_base: ?*const anyopaque,
     capture_base: ?*const anyopaque,
@@ -121,11 +121,11 @@ const HistorySnapshot = extern struct {
     pawn_mask: u64,
 };
 
-const HistoryEntry = extern struct {
+const HistoryEntry = struct {
     value: i16,
 };
 
-const AtomicHistoryEntry = extern struct {
+const AtomicHistoryEntry = struct {
     value: i16,
 };
 
