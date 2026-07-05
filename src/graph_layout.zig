@@ -331,35 +331,35 @@ pub const Worker = struct {
     }
 };
 
-// PVMoves (504 bytes): moves[MAX_PLY+1] = Move[247] at 0, then a std::size_t length
-// at +496 (2 bytes of alignment padding precede it).
-pub const PVMoves = extern struct {
-    moves: [247]u16, // @0 (494 bytes)
-    _pad: [2]u8,
-    length: usize, // @496
+// PVMoves: a Move[MAX_PLY+1] buffer plus a length. Now a native struct (M16.8
+// de-mirror): the _pad is gone and Zig owns the field order (length lands first),
+// so every reader/writer goes through the typed fields, not the old C++ offsets.
+pub const PVMoves = struct {
+    moves: [247]u16,
+    length: usize,
 
     pub inline fn fromAddr(addr: usize) *PVMoves {
         return @ptrFromInt(addr);
     }
 };
 
-// A RootMove (552 bytes): effort, the Value(int) scores, the two bound bools, the
-// depth/tb ranks, then the embedded PVMoves at offset 48.
-pub const RootMove = extern struct {
-    effort: u64, // @0
-    score: i32, // @8
-    previous_score: i32, // @12
-    average_score: i32, // @16
-    mean_squared_score: i32, // @20
-    uci_score: i32, // @24
-    score_lowerbound: u8, // @28
-    score_upperbound: u8, // @29
-    _pad0: [2]u8,
-    sel_depth: i32, // @32
-    tb_rank: i32, // @36
-    tb_score: i32, // @40
-    _pad1: [4]u8,
-    pv: PVMoves, // @48 (504 bytes)
+// A RootMove: effort, the Value(int) scores, the two bound bools, the depth/tb
+// ranks, and the embedded PVMoves. Native struct (M16.8) with the same field list
+// as position.RootMove / root_move.RootMove, so all three share one Zig layout and
+// alias the rootMoves vector element (stride @sizeOf(RootMove) == root_move_size).
+pub const RootMove = struct {
+    effort: u64,
+    score: i32,
+    previous_score: i32,
+    average_score: i32,
+    mean_squared_score: i32,
+    uci_score: i32,
+    score_lowerbound: u8,
+    score_upperbound: u8,
+    sel_depth: i32,
+    tb_rank: i32,
+    tb_score: i32,
+    pv: PVMoves,
 
     pub inline fn fromAddr(addr: usize) *RootMove {
         return @ptrFromInt(addr);
@@ -368,12 +368,11 @@ pub const RootMove = extern struct {
 
 comptime {
     std.debug.assert(@offsetOf(Thread, "worker") == 8);
+    // Native layouts, but the sizes must still equal the C++ footprint the rootMoves
+    // vector is strided/allocated by (root_move_size) and the Worker's embedded
+    // lastIterationPV slot -- Zig's reorder happens to keep both (504 / 552).
     std.debug.assert(@sizeOf(PVMoves) == 504);
-    std.debug.assert(@offsetOf(PVMoves, "length") == 496);
     std.debug.assert(@sizeOf(RootMove) == root_move_size);
-    std.debug.assert(@offsetOf(RootMove, "average_score") == 16);
-    std.debug.assert(@offsetOf(RootMove, "score_lowerbound") == 28);
-    std.debug.assert(@offsetOf(RootMove, "pv") == 48);
 }
 
 // The TranspositionTable object (24 bytes). Typed replacement for the tt_off offset

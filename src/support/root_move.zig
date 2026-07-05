@@ -14,7 +14,7 @@ pub const Move = u16; // Move::raw()
 pub const move_none: Move = 0;
 
 // PVMoves: a fixed Move[MAX_PLY+1] buffer plus a length, matching the C++ POD.
-pub const PVMoves = extern struct {
+pub const PVMoves = struct {
     moves: [max_ply + 1]Move,
     length: usize,
 
@@ -40,7 +40,7 @@ comptime {
     std.debug.assert(@sizeOf(PVMoves) == 504);
 }
 
-pub const RootMove = extern struct {
+pub const RootMove = struct {
     effort: u64 = 0,
     score: i32 = -value_infinite,
     previous_score: i32 = -value_infinite,
@@ -78,18 +78,18 @@ pub const RootMove = extern struct {
 };
 
 comptime {
+    // Native struct (M16.8 de-mirror): Zig owns the field order (pv no longer @48),
+    // but the element size must still equal the strided rootMoves vector element.
     std.debug.assert(@sizeOf(RootMove) == 552);
-    std.debug.assert(@offsetOf(RootMove, "pv") == 48);
 }
 
 // ---- tests ------------------------------------------------------------------
 
 const testing = std.testing;
 
-test "PVMoves and RootMove reproduce the C++ footprint" {
+test "PVMoves and RootMove keep the strided element size" {
     try testing.expectEqual(@as(usize, 504), @sizeOf(PVMoves));
     try testing.expectEqual(@as(usize, 552), @sizeOf(RootMove));
-    try testing.expectEqual(@as(usize, 48), @offsetOf(RootMove, "pv"));
 }
 
 test "RootMove(Move) seeds the pv and defaults" {

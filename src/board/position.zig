@@ -426,7 +426,7 @@ inline fn qMatedIn(ply: c_int) c_int {
 }
 
 // Memory mirror of Search::PVMoves (src/search.h): a Move array + length.
-pub const PVMoves = extern struct {
+pub const PVMoves = struct {
     moves: [247]u16,
     length: usize,
 };
@@ -436,7 +436,7 @@ pub const PVMoves = extern struct {
 // rootMoves is a contiguous array the Zig search indexes through a base pointer
 // handed over by worker_state. Field order/types match the C++ declaration; the
 // C ABI extern struct reproduces the same offsets.
-pub const RootMove = extern struct {
+pub const RootMove = struct {
     effort: u64,
     score: i32,
     previous_score: i32,
