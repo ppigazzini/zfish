@@ -324,7 +324,6 @@ inline fn statsUpdate(entry: *i16, bonus: c_int, comptime d: c_int) void {
     entry.* = @intCast(val + clamped - @divTrunc(val * abs_clamped, d));
 }
 
-extern fn zfish_search_conthist_delta(bonus: c_int, weight: c_int, positive_count: c_int, i: c_int) c_int;
 
 // The bridge shim performs the C++ table lookups (mainHistory[us][move],
 // lowPlyHistory, sharedHistory.pawn_entry) and hands Zig the int16 entry
@@ -360,7 +359,7 @@ pub fn updateContinuationHistories(ss_ptr: *anyopaque, pc: u8, to: u8, bonus: c_
             const cont: [*]i16 = @ptrCast(@alignCast(ssi.continuation_history.?));
             const entry = &cont[@as(usize, pc) * 64 + to]; // PieceToHistory[pc][to]
             if (entry.* > 0) positive_count += 1;
-            const delta = zfish_search_conthist_delta(bonus, b.w, positive_count, @intCast(b.i));
+            const delta = search.conthistDelta(bonus, b.w, positive_count, @intCast(b.i));
             statsUpdate(entry, delta, 30000);
         }
     }

@@ -367,14 +367,7 @@ pub export fn zfish_worker_set_root_moves(thread: *anyopaque, src_rm: *const any
 
 // zfish_search_quiet_{low_ply,cont,pawn}_scale retired -- position.zig calls search directly (M16.5).
 
-pub export fn zfish_search_conthist_delta(
-    bonus: c_int,
-    weight: c_int,
-    positive_count: c_int,
-    i: c_int,
-) c_int {
-    return search_port.conthistDelta(bonus, weight, positive_count, i);
-}
+// conthist-delta: position.zig calls search.conthistDelta directly (M16.7).
 
 pub export fn zfish_movegen_generate_captures(
     pos: *const anyopaque,
@@ -2158,22 +2151,7 @@ pub fn zfish_half_ka_append_changed(
     return nnue_feature_port.halfAppendChanged(perspective, king_square, diff);
 }
 
-pub export fn zfish_full_threats_append_changed(
-    perspective: u8,
-    king_square: u8,
-    list_ptr: [*]const nnue_feature_port.DirtyThreatRaw,
-    list_len: usize,
-) nnue_feature_port.FullAppendResult {
-    return nnue_feature_port.fullAppendChanged(perspective, king_square, list_ptr, list_len);
-}
-
-pub export fn zfish_full_threats_append_active(
-    perspective: u8,
-    king_square: u8,
-    piece_array: [*]const u8,
-) nnue_feature_port.FullAppendResult {
-    return nnue_feature_port.fullAppendActive(perspective, king_square, piece_array);
-}
+// full-threats append (changed/active): nnue_accumulator.zig calls nnue_feature directly (M16.7).
 
 // (zfish_aligned_large_pages_alloc/free and zfish_has_large_pages retired -- M16.5:
 // tt/position/misc now call the `memory` module directly instead of via these C-ABI exports.)

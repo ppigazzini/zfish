@@ -97,17 +97,7 @@ const FullAppendResult = extern struct {
 // as nnue_feature.halfMakeIndex / halfAppendChanged (see the import note above); the
 // C-ABI extern decls were removed because the by-value struct passing they used is
 // mis-marshaled on aarch64.
-extern fn zfish_full_threats_append_changed(
-    perspective: u8,
-    king_square: u8,
-    list_ptr: [*]const DirtyThreatRaw,
-    list_len: usize,
-) FullAppendResult;
-extern fn zfish_full_threats_append_active(
-    perspective: u8,
-    king_square: u8,
-    piece_array: [*]const u8,
-) FullAppendResult;
+// full-threats append (changed/active) call nnue_feature directly (M16.7).
 
 const BridgePositionSnapshot = position_snapshot.PositionSnapshot;
 
@@ -436,7 +426,7 @@ fn refreshLatestThreat(
 ) void {
     const latest_index = stackSize(stack) - 1;
     const snapshot = positionSnapshot(pos);
-    const active = zfish_full_threats_append_active(perspective, king_square, @ptrCast(&snapshot.pieces));
+    const active = nnue_feature.fullAppendActive(perspective, king_square, @ptrCast(&snapshot.pieces));
     const accumulation = stateAccumulationMut(threat_feature, latest_index, stack, perspective);
     const psqt = statePsqtMut(threat_feature, latest_index, stack, perspective);
 
@@ -559,7 +549,7 @@ fn incrementalStepThreat(
     else
         threatDiff(stateBytesConst(threat_feature, computed_index, stack));
 
-    const append = zfish_full_threats_append_changed(
+    const append = nnue_feature.fullAppendChanged(
         perspective,
         king_square,
         @ptrCast(&diff.list.values),
