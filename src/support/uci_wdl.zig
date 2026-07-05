@@ -36,6 +36,25 @@ pub fn wdl(value: c_int, material: c_int) ?[*:0]u8 {
     return allocWdl(value, material) catch null;
 }
 
+// Allocated UCI score text: kind 0 -> "mate N", kind 1 -> TB "cp N", else "cp N".
+pub fn formatScore(kind: u8, value: c_int, extra: c_int) ?[*:0]u8 {
+    return allocScore(kind, value, extra) catch null;
+}
+fn allocScore(kind: u8, value: c_int, extra: c_int) !?[*:0]u8 {
+    return switch (kind) {
+        0 => blk: {
+            const mate = @divTrunc(if (value > 0) value + 1 else value, 2);
+            break :blk try allocFormatted("mate {d}", .{mate});
+        },
+        1 => blk: {
+            const tb_cp: c_int = 20000;
+            const score = (if (extra != 0) tb_cp else -tb_cp) - value;
+            break :blk try allocFormatted("cp {d}", .{score});
+        },
+        else => try allocFormatted("cp {d}", .{value}),
+    };
+}
+
 fn allocWdl(value: c_int, material: c_int) !?[*:0]u8 {
     const win = winRateModel(value, material);
     const loss = winRateModel(-value, material);

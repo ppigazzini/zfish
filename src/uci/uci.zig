@@ -131,7 +131,7 @@ pub fn formatInfoString(input: []const u8) ?[*:0]u8 {
 }
 
 pub fn formatScore(kind: u8, value: c_int, extra: c_int) ?[*:0]u8 {
-    return allocScore(kind, value, extra) catch null;
+    return uci_wdl.formatScore(kind, value, extra);
 }
 
 pub fn toCp(value: c_int, material: c_int) c_int {
@@ -927,20 +927,6 @@ fn allocInfoString(input: []const u8) !?[*:0]u8 {
     return try allocCString(builder.items);
 }
 
-fn allocScore(kind: u8, value: c_int, extra: c_int) !?[*:0]u8 {
-    return switch (kind) {
-        0 => blk: {
-            const mate = @divTrunc(if (value > 0) value + 1 else value, 2);
-            break :blk try allocFormatted("mate {d}", .{mate});
-        },
-        1 => blk: {
-            const tb_cp: c_int = 20000;
-            const score = (if (extra != 0) tb_cp else -tb_cp) - value;
-            break :blk try allocFormatted("cp {d}", .{score});
-        },
-        else => try allocFormatted("cp {d}", .{value}),
-    };
-}
 
 
 
