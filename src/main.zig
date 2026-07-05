@@ -484,7 +484,6 @@ comptime {
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
     @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
-    @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
     // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
     // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
@@ -811,16 +810,7 @@ fn uciSetListenerMode(uci_ptr: *anyopaque, quiet_mode: u8) callconv(.c) void {
 // REPORT-12 TU=0: ss_npmsec_advance (nodestime path). The only C++ bit was tm->advance_nodes_time(x),
 // which is just `availableNodes = max(0, availableNodes - x)`. Inlined natively via pinned offsets
 // (manager->tm@8, tm.availableNodes@+24; limits.inc pinned in B4a; side via the native helper).
-fn ssNpmsecAdvance(worker: *anyopaque) callconv(.c) void {
-    const wbase: [*]u8 = @ptrCast(worker);
-    const off = graph_layout.worker_off;
-    const manager = workerRefPtr(worker, off.manager).?;
-    const avail = &graph_layout.SearchManager.fromPtr(manager).tm.available_nodes;
-    const us: usize = zfish_ss_side_to_move(@ptrCast(wbase + off.root_pos));
-    const inc = graph_layout.LimitsType.fromAddr(@intFromPtr(wbase) + off.limits).inc[us];
-    const nodes: i64 = @intCast(zfish_threadpool_nodes_searched(workerRefPtr(worker, off.threads).?));
-    avail.* = @max(@as(i64, 0), avail.* - (nodes - inc));
-}
+// ssNpmsecAdvance: relocated into position.zig (M16.7).
 // REPORT-12 TU=0: the movepick history snapshot. Stats::data() returns the object's flat storage,
 // which is the object's own address — so each history pointer IS its .data() (identity). The snapshot
 // is just: copy the table pointers + the 6 continuation pointers + the shared-history pawn table/mask
@@ -1414,36 +1404,7 @@ const ZfishPvContext = extern struct {
 // from the native option model, chess960 from rootPos, the node/tb-hit aggregates
 // from the pool, TT hashfull natively, and elapsed = max(1, now - tm.startTime)
 // (which only feeds the gate-stripped time/nps fields). Bridge-only, no gating.
-pub export fn zfish_search_cb_pv_context(manager: *anyopaque, worker: *anyopaque, threads: *anyopaque, tt: *anyopaque, out: *ZfishPvContext) void {
-    const wbase = @intFromPtr(worker);
-    const rm_vec = wbase + graph_layout.worker_off.root_moves;
-    const rm_begin = @as(*const usize, @ptrFromInt(rm_vec)).*;
-    const rm_end = @as(*const usize, @ptrFromInt(rm_vec + 8)).*;
-    const rm_count = (rm_end - rm_begin) / graph_layout.root_move_size;
-
-    const mp_name: []const u8 = "MultiPV";
-    const wdl_name: []const u8 = "UCI_ShowWDL";
-    const multipv_opt: usize = @intCast(@max(option_port.zfish_optmodel_int_by_name(mp_name.ptr, mp_name.len), 0));
-
-    out.manager = manager;
-    out.worker = worker;
-    out.root_moves = @ptrFromInt(rm_begin);
-    out.root_moves_count = rm_count;
-    out.multipv = @min(multipv_opt, rm_count);
-    out.show_wdl = if (option_port.zfish_optmodel_int_by_name(wdl_name.ptr, wdl_name.len) != 0) 1 else 0;
-
-    const root_pos: *const anyopaque = @ptrFromInt(wbase + graph_layout.worker_off.root_pos);
-    out.chess960 = if (position_port.isChess960(root_pos)) 1 else 0;
-    out.nodes = thread_port.nodesSearched(threads);
-    out.tb_hits = thread_port.tbHits(threads);
-
-    const tp = graph_layout.TranspositionTable.fromPtr(tt);
-    out.hashfull = zfish_tt_hashfull(@ptrFromInt(@intFromPtr(tp.table)), tp.cluster_count, tp.generation8, 0);
-
-    const start_time = graph_layout.SearchManager.fromPtr(manager).tm.start_time;
-    const elapsed = clock.now() - start_time;
-    out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
-}
+// zfish_search_cb_pv_context: relocated into position.zig (M16.7).
 
 // zfish_search_cb_root_on_iter: on the main thread, print "info depth D currmove
 // X currmovenumber N" (N = move_count + pvIdx). The native search only calls this

@@ -476,13 +476,43 @@ const PvContext = extern struct {
     hashfull: c_int,
     elapsed_ms: u64,
 };
-extern fn zfish_search_cb_pv_context(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, out: *PvContext) void;
+// Per-PV-emit context: root-move span, MultiPV/WDL options, chess960, pool nodes/tbhits,
+// TT hashfull and elapsed ms. Relocated from main.zig (M16.7); graph_layout + option +
+// the leaf pool aggregates, so no thread-module import (which would cycle).
+fn searchCbPvContext(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, out: *PvContext) void {
+    const w = @intFromPtr(worker.?);
+    const rm_vec = w + graph_layout.worker_off.root_moves;
+    const rm_begin = @as(*const usize, @ptrFromInt(rm_vec)).*;
+    const rm_end = @as(*const usize, @ptrFromInt(rm_vec + 8)).*;
+    const rm_count = (rm_end - rm_begin) / graph_layout.root_move_size;
+
+    const multipv_opt: usize = @intCast(@max(optInt("MultiPV"), 0));
+
+    out.manager = manager;
+    out.worker = worker;
+    out.root_moves = @ptrFromInt(rm_begin);
+    out.root_moves_count = rm_count;
+    out.multipv = @min(multipv_opt, rm_count);
+    out.show_wdl = if (optInt("UCI_ShowWDL") != 0) 1 else 0;
+
+    const root_pos: *const anyopaque = @ptrFromInt(w + graph_layout.worker_off.root_pos);
+    out.chess960 = if (isChess960(root_pos)) 1 else 0;
+    out.nodes = graph_layout.poolNodesSearched(threads.?);
+    out.tb_hits = graph_layout.poolTbHits(threads.?);
+
+    const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr.?);
+    out.hashfull = tt.hashfull(@ptrFromInt(@intFromPtr(tp.table)), tp.cluster_count, tp.generation8, 0);
+
+    const start_time = graph_layout.SearchManager.fromPtr(manager.?).tm.start_time;
+    const elapsed = clock.now() - start_time;
+    out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
+}
 extern fn zfish_search_emit_info_full(manager: ?*anyopaque, worker: ?*anyopaque, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void;
 
 fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void {
     const value_infinite: i32 = 32001;
     var ctx: PvContext = undefined;
-    zfish_search_cb_pv_context(manager, worker, threads, tt_ptr, &ctx);
+    searchCbPvContext(manager, worker, threads, tt_ptr, &ctx);
     var i: usize = 0;
     while (i < ctx.multipv) : (i += 1) {
         const rm = &ctx.root_moves[i];
@@ -754,7 +784,6 @@ fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
 extern fn zfish_ss_emit_no_moves(worker: ?*anyopaque) void;
 extern fn zfish_ss_threads_start(worker: ?*anyopaque) void;
 extern fn zfish_ss_wait_finished(worker: ?*anyopaque) void;
-extern fn zfish_ss_npmsec_advance(worker: ?*anyopaque) void;
 extern fn zfish_ss_get_best_thread(worker: ?*anyopaque) ?*anyopaque;
 extern fn zfish_ss_emit_bestmove(worker: ?*anyopaque, best: ?*anyopaque) void;
 
@@ -791,6 +820,18 @@ fn searchIdPv(worker: *anyopaque, depth: c_int) void {
     );
 }
 
+// nodestime available-nodes advance (tm.advance_nodes_time). Relocated from main.zig (M16.7).
+fn ssNpmsecAdvance(worker: *anyopaque) void {
+    const wbase: [*]u8 = @ptrCast(worker);
+    const off = graph_layout.worker_off;
+    const manager = workerRefPtr(worker, off.manager).?;
+    const avail = &graph_layout.SearchManager.fromPtr(manager).tm.available_nodes;
+    const us: usize = sideToMove(@ptrCast(wbase + off.root_pos));
+    const inc = graph_layout.LimitsType.fromAddr(@intFromPtr(wbase) + off.limits).inc[us];
+    const nodes: i64 = @intCast(graph_layout.poolNodesSearched(workerRefPtr(worker, off.threads).?));
+    avail.* = @max(@as(i64, 0), avail.* - (nodes - inc));
+}
+
 // Worker::start_searching control flow, ported from the bridge. Zig owns every
 // branch and the sequencing; the C++ leaf helpers run the individual time-
 // management, thread-pool, skill, and UCI-output operations.
@@ -820,7 +861,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     ssSetStop(worker.?);
     zfish_ss_wait_finished(worker);
 
-    if (ctx.npmsec != 0) zfish_ss_npmsec_advance(worker);
+    if (ctx.npmsec != 0) ssNpmsecAdvance(worker.?);
 
     var best = worker;
     if (ctx.limits_depth == 0 and ctx.skill_enabled == 0)
