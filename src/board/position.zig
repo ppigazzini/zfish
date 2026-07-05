@@ -20,6 +20,7 @@ const uci_wdl = @import("uci_wdl");
 const uci_move_port = @import("uci_move");
 const score_port = @import("score");
 const thread_vote = @import("thread_vote");
+const native_thread = @import("native_thread");
 const option_port = @import("option");
 const timeman_port = @import("timeman");
 
@@ -920,8 +921,15 @@ fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
     }
 }
 
-extern fn zfish_ss_threads_start(worker: ?*anyopaque) void;
-extern fn zfish_ss_wait_finished(worker: ?*anyopaque) void;
+// Start / wait the sibling search threads. The driver reaches the native thread
+// runtime directly now (M16.7): native_thread no longer imports position (its search
+// job is a registered fn-pointer), so position can drive the pool without a cycle.
+fn ssThreadsStart(worker: ?*anyopaque) void {
+    native_thread.startPoolSiblings(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
+}
+fn ssWaitFinished(worker: ?*anyopaque) void {
+    native_thread.waitPoolSiblings(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
+}
 
 // Worker of the vote-winning thread (Lazy-SMP best-thread selection via the leaf
 // thread_vote model). Relocated from main.zig (M16.7).
@@ -997,13 +1005,13 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
         return;
     }
 
-    zfish_ss_threads_start(worker);
+    ssThreadsStart(worker);
     var uci_pv_sent = iterativeDeepening(worker.?) != 0;
 
     while (ssShouldBusywait(worker.?) != 0) {}
 
     ssSetStop(worker.?);
-    zfish_ss_wait_finished(worker);
+    ssWaitFinished(worker);
 
     if (ctx.npmsec != 0) ssNpmsecAdvance(worker.?);
 

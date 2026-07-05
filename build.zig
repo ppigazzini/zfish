@@ -148,6 +148,16 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const thread_runtime_module = b.createModule(.{
+        .root_source_file = b.path("src/support/thread_runtime.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const native_thread_module = b.createModule(.{
+        .root_source_file = b.path("src/support/native_thread.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const numa_module = b.createModule(.{
         .root_source_file = b.path("src/support/numa.zig"),
         .target = target,
@@ -473,6 +483,11 @@ pub fn build(b: *std.Build) void {
     position_module.addImport("thread_vote", thread_vote_module);
     thread_module_default.addImport("thread_vote", thread_vote_module);
     thread_vote_module.addImport("graph_layout", graph_layout_module);
+    native_thread_module.addImport("graph_layout", graph_layout_module);
+    native_thread_module.addImport("thread_runtime", thread_runtime_module);
+    thread_module_default.addImport("native_thread", native_thread_module);
+    thread_module_default.addImport("thread_runtime", thread_runtime_module);
+    position_module.addImport("native_thread", native_thread_module);
     misc_module.addImport("memory", memory_module);
     tt_module.addImport("graph_layout", graph_layout_module);
     tt_module.addImport("thread", thread_module_default);

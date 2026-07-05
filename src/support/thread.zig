@@ -12,11 +12,11 @@ const numa = @import("numa");
 
 // Zig-owned thread job runner (engine-graph reimplementation). Verified by its
 // own concurrency tests; compile-checked here until wired into construction.
-pub const thread_runtime = @import("thread_runtime.zig");
+pub const thread_runtime = @import("thread_runtime");
 // Stage-4 native thread runtime (the live vehicle): native Threads + ThreadPool
 // replacing the C++ Thread/std::thread idle_loop. The C++ pool/Engine stay, but
 // their threads vector now holds native Threads (contents-swap).
-const native_thread = @import("native_thread.zig");
+const native_thread = @import("native_thread");
 const native_threadpool = @import("native_threadpool.zig");
 
 // Reinterpret a pool thread slot (NativeThread*) for the sync handshake.

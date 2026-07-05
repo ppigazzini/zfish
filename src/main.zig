@@ -479,8 +479,6 @@ comptime {
     @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
     @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
     @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
-    @export(&ssThreadsStart, .{ .name = "zfish_ss_threads_start" });
-    @export(&ssWaitFinished, .{ .name = "zfish_ss_wait_finished" });
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
     @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
@@ -672,12 +670,8 @@ fn workerRootDepth(worker: *anyopaque) c_int {
     const p: *const c_int = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + graph_layout.worker_off.root_depth));
     return p.*;
 }
-fn ssThreadsStart(worker: ?*anyopaque) callconv(.c) void {
-    zfish_threadpool_start_searching(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
-}
-fn ssWaitFinished(worker: ?*anyopaque) callconv(.c) void {
-    thread_port.waitForSearchFinished(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
-}
+// ss_threads_start / ss_wait_finished relocated into position.zig (M16.7): the driver
+// drives the native thread pool directly (native_thread search job is a fn-pointer).
 // emit_pv / search_id_pv PV-emit wrappers relocated into position.zig (M16.7).
 // REPORT-12 TU=0: threadpool_wait_thread forwards to the native single-thread wait (the pool holds
 // native Threads, so the C++ wait_on_thread would lock them as C++ Threads). Pure native forward.

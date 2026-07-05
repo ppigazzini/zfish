@@ -20,7 +20,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const NativeThread = @import("native_thread.zig").NativeThread;
+const NativeThread = @import("native_thread").NativeThread;
 
 pub const pool_off = struct {
     pub const stop: usize = 0;

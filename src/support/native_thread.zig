@@ -18,7 +18,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const rt = @import("thread_runtime.zig");
+const rt = @import("thread_runtime");
 const graph_layout = @import("graph_layout");
 
 // Marker at offset 0 (the C++ Thread had its vtable pointer here; no native reader
