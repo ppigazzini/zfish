@@ -481,7 +481,6 @@ comptime {
     @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
-    @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
     // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
     // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
@@ -710,10 +709,7 @@ fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, cur
 }
 // REPORT-12 TU=0: set_listener_mode's default body just mirrors the quiet flag into the native flag
 // the native emit reads (the C++ listener installs are legacy-only after Step A). Pure forward.
-fn uciSetListenerMode(uci_ptr: *anyopaque, quiet_mode: u8) callconv(.c) void {
-    _ = uci_ptr;
-    zfish_uci_set_quiet_mode(quiet_mode);
-}
+// uci listener/quiet mode: uci.zig calls uci_output.setQuietMode directly (M16.7).
 // numa_set_from_string no-op stub moved into numa.zig (M16.7).
 // REPORT-12 TU=0: ss_npmsec_advance (nodestime path). The only C++ bit was tm->advance_nodes_time(x),
 // which is just `availableNodes = max(0, availableNodes - x)`. Inlined natively via pinned offsets

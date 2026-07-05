@@ -101,7 +101,6 @@ const ByteView = engine_mod.ByteView;
 
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
-extern fn zfish_uci_set_listener_mode(uci_ptr: *anyopaque, quiet_mode: u8) void;
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -599,8 +598,8 @@ pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
     const warmup_positions: usize = 3;
     const engine_ptr = uci_ptr;
 
-    zfish_uci_set_listener_mode(uci_ptr, 1);
-    defer zfish_uci_set_listener_mode(uci_ptr, 0);
+    uci_output.setQuietMode(true);
+    defer uci_output.setQuietMode(false);
 
     const setup = benchmark_port.setupBenchmark(args, misc_port.hardwareConcurrency());
     defer freeMaybeCString(setup.commands_ptr);
