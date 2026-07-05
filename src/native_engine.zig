@@ -74,7 +74,7 @@ pub const verify_network_fn_size: usize = 64;
 
 /// The buffer-resident native engine. `extern struct` so the field offsets are stable
 /// and the member accessors (main.zig) can read them by the documented native offset.
-pub const NativeEngine = extern struct {
+pub const NativeEngine = struct {
     numa_context: ?*anyopaque = null,
     states: ?*anyopaque = null,
     options: ?*anyopaque = null,
