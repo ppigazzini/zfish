@@ -1749,19 +1749,10 @@ const AccumulatorStackPushPair = extern struct {
     second: *anyopaque,
 };
 
-// network load/verify/trace-evaluate + the FT/layer weight storage and transform
-// all moved into network.zig (M16.7); their consumers (engine, native_engine)
-// call the network module directly. zfish_network_evaluate stays as the one
-// bridge position.zig still needs (position cannot import network -- network
-// imports position for side-to-move, so the reverse edge would cycle).
-pub export fn zfish_network_evaluate(
-    network: *const anyopaque,
-    pos: *const anyopaque,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
-) network_port.EvalOutput {
-    return network_port.evaluate(network, pos, accumulator_stack, cache);
-}
+// network load/verify/trace-evaluate/evaluate + the FT/layer weight storage and
+// transform all live in network.zig (M16.7). The network->position cycle is now
+// broken (network reads Position's side-to-move/board via the leaf graph_layout),
+// so position calls network.evaluate directly -- no main bridge remains.
 
 pub fn zfish_tt_generation_next(curr_generation: u8) u8 {
     return tt_port.generationNext(curr_generation);

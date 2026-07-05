@@ -463,8 +463,12 @@ pub fn build(b: *std.Build) void {
     position_module.addImport("graph_layout", graph_layout_module);
     network_module.addImport("libc", libc_module);
     network_module.addImport("memory", memory_module);
-    network_module.addImport("position", position_module);
+    network_module.addImport("graph_layout", graph_layout_module);
     network_module.addImport("nnue_accumulator", nnue_accumulator_module);
+    // network no longer imports position (broke the network->position cycle, M16.7):
+    // its two Position field reads go through the leaf graph_layout. That frees
+    // position -> network for the direct eval call below.
+    position_module.addImport("network", network_module);
     nnue_misc_module.addImport("libc", libc_module);
     evaluate_module.addImport("libc", libc_module);
 

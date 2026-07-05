@@ -14,6 +14,7 @@ const shared_histories_map = @import("shared_histories_map"); // native sharedHi
 // Large-page allocator used by the native SharedHistories construction
 // (mirrors C++ make_unique_large_page<T[]> over aligned_large_pages_alloc/free).
 const memory = @import("memory");
+const network_port = @import("network");
 const option_port = @import("option");
 const timeman_port = @import("timeman");
 
@@ -835,7 +836,6 @@ const EvalInput = extern struct {
     value_tb_loss_in_max_ply: c_int,
     value_tb_win_in_max_ply: c_int,
 };
-extern fn zfish_network_evaluate(network: *const anyopaque, pos: *const anyopaque, acc_stack: *anyopaque, cache: *anyopaque) EvalOutput;
 
 // SearchManager::check_time inputs, fetched once per search tree by worker_state.
 // Live (mutable) fields are pointers; fixed-per-search fields are snapshot values.
@@ -938,7 +938,7 @@ inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta: c_
 // side to move, and the TB clamp bounds are ±VALUE_TB_WIN_IN_MAX_PLY.
 inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *anyopaque) c_int {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const out = zfish_network_evaluate(ctx.network, pos_ptr, ctx.acc_stack, ctx.cache);
+    const out = network_port.evaluate(ctx.network, pos_ptr, ctx.acc_stack, ctx.cache);
     const pawns = pos.piece_count[1] + pos.piece_count[9];
     const material = 534 * pawns + pos.st.non_pawn_material[0] + pos.st.non_pawn_material[1];
     return evaluate_mod.computeValue(.{
@@ -2618,6 +2618,9 @@ comptime {
     std.debug.assert(@sizeOf(Position) == 1032);
     std.debug.assert(@offsetOf(Position, "st") == 608);
     std.debug.assert(@offsetOf(Position, "side_to_move") == 620);
+    // Keep the leaf readers network.zig uses (graph_layout.positionSideToMove/Board) in sync.
+    std.debug.assert(@offsetOf(Position, "side_to_move") == graph_layout.position_side_to_move_off);
+    std.debug.assert(@offsetOf(Position, "board") == graph_layout.position_board_off);
     std.debug.assert(@offsetOf(Position, "scratch_dp") == 622);
     std.debug.assert(@offsetOf(Position, "scratch_dts") == 632);
 }

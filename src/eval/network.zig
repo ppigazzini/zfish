@@ -3,7 +3,7 @@ const nnue_parse = @import("nnue_parse.zig");
 const nnue_hash = @import("nnue_hash.zig");
 const c = @import("libc");
 const memory_port = @import("memory");
-const position_port = @import("position");
+const graph_layout = @import("graph_layout");
 const nnue_accumulator_port = @import("nnue_accumulator");
 
 const output_scale: c_int = 16;
@@ -502,16 +502,12 @@ fn evaluateBucketRaw(
 }
 
 fn pieceCount(pos: *const anyopaque) usize {
-    var pieces = [_]u8{0} ** square_count;
-    position_port.accumulatorSnapshot(pos, @ptrCast(&pieces));
-
+    const board = graph_layout.positionBoard(pos); // Position.board [64]u8 (offset 0)
     var count: usize = 0;
-    for (pieces) |piece| {
-        if (piece != no_piece) {
-            count += 1;
-        }
+    var sq: usize = 0;
+    while (sq < square_count) : (sq += 1) {
+        if (board[sq] != no_piece) count += 1;
     }
-
     return count;
 }
 
@@ -725,7 +721,7 @@ fn networkTransformBucket(
 ) c_int {
     _ = network;
     const ft = native_ft_ptr_storage orelse @panic("native feature-transformer storage not initialized");
-    const stm = position_port.sideToMove(pos);
+    const stm = graph_layout.positionSideToMove(pos);
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
 }
 

@@ -32,6 +32,22 @@ pub const root_move_size: usize = 552;
 // pointers but &ref yields the referent, so their slots are derived from the
 // gaps between neighbours and cross-checked against alignment. This is the
 // address map the Zig Worker struct (HARD-3) must reproduce.
+// Position field offsets the NNUE eval reads directly, so network.zig need not
+// import the (heavy, cycle-prone) position module for two scalar reads. Pinned
+// here in the leaf layout authority; position.zig comptime-asserts them against
+// its real Position struct, so a layout change is caught at build time.
+pub const position_board_off: usize = 0; // Position.board [64]u8 is the first field
+pub const position_side_to_move_off: usize = 620; // Position.side_to_move (u8)
+
+// Side to move of a Position by pointer (== Position.side_to_move).
+pub inline fn positionSideToMove(pos: *const anyopaque) u8 {
+    return @as([*]const u8, @ptrCast(pos))[position_side_to_move_off];
+}
+// The 64-square piece board of a Position by pointer (Position.board, offset 0).
+pub inline fn positionBoard(pos: *const anyopaque) [*]const u8 {
+    return @as([*]const u8, @ptrCast(pos)) + position_board_off;
+}
+
 pub const worker_off = struct {
     pub const main_history: usize = 0;
     pub const low_ply_history: usize = 262144;
