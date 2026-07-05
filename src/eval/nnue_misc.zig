@@ -1,7 +1,7 @@
 const std = @import("std");
 const c = @import("libc");
 
-pub const NnueTraceInput = extern struct {
+pub const NnueTraceInput = struct {
     side_to_move_white: u8,
     bucket_count: usize,
     correct_bucket: usize,

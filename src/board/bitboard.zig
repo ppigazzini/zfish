@@ -1,13 +1,13 @@
 const std = @import("std");
 
-pub const Magic = extern struct {
+pub const Magic = struct {
     mask: u64,
     attacks: [*]u64,
     magic: u64,
     shift: c_uint,
 };
 
-pub const MagicInitEntry = extern struct {
+pub const MagicInitEntry = struct {
     mask: u64,
     magic: u64,
     shift: c_uint,
