@@ -78,15 +78,8 @@ pub const NativeThread = struct {
 // mirroring the C++ LargePagePtr deleter. Resolved natively only; the legacy
 // build provides an abort stub it never calls.
 
-// In test builds the real destroyer (main.zig) is absent; the tests install this
-// no-op stub into the native_hooks registry (they attach a dummy worker, never a
-// real Worker block).
-fn testWorkerDestroyStub(worker: *anyopaque) void {
-    _ = worker;
-}
-pub fn installTestHooks() void {
-    native_hooks.native_worker_destroy = &testWorkerDestroyStub;
-}
+// The native_thread tests attach only dummy workers (worker == 0), so deinit's
+// native_hooks.native_worker_destroy call is never reached — no test stub needed.
 
 // The search driver entry, injected by the thread module at search start (M16.7).
 // native_thread must not import position (position imports the thread stack for its

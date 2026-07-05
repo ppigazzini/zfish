@@ -18,5 +18,3 @@ pub var handoff_pending_states: ?*const fn (pool: *anyopaque, states_slot: *anyo
 pub var shared_state_clear_histories: ?*const fn (shared_state: *const anyopaque) void = null;
 pub var shared_state_insert_history: ?*const fn (shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) void = null;
 pub var verify_thread_graph: ?*const fn (pool: *const anyopaque, requested: usize, bound: usize) void = null;
-pub var load_network_owner: ?*const fn (engine_ptr: *anyopaque, file_ptr: [*]const u8, file_len: usize) void = null;
-pub var save_network_owner: ?*const fn (engine_ptr: *anyopaque, has_filename: u8, filename_ptr: [*]const u8, filename_len: usize) void = null;
