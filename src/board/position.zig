@@ -14,6 +14,8 @@ const shared_histories_map = @import("shared_histories_map"); // native sharedHi
 // Large-page allocator used by the native SharedHistories construction
 // (mirrors C++ make_unique_large_page<T[]> over aligned_large_pages_alloc/free).
 const memory = @import("memory");
+const option_port = @import("option");
+const timeman_port = @import("timeman");
 
 // Force-compile the native StateInfo leaf node so its 192-byte layout assert is
 // build-verified rather than dead source (part of the post-src/ object graph).
@@ -593,8 +595,76 @@ fn searchCbTtContext(worker: *const anyopaque, out_table: *?*anyopaque, out_clus
     out_generation.* = tp.generation8;
 }
 
-extern fn zfish_ss_context(worker: ?*anyopaque, out: *SsCtx) void;
-extern fn zfish_ss_tm_init(worker: ?*anyopaque) void;
+fn optInt(name: []const u8) c_int {
+    return option_port.zfish_optmodel_int_by_name(name.ptr, name.len);
+}
+
+// Per-search context flags read off the worker graph + the native OptionsModel.
+fn ssContext(worker: *anyopaque, out: *SsCtx) void {
+    const wbase = @intFromPtr(worker);
+    const thread_idx = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.thread_idx)).*;
+    const rm_begin = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves)).*;
+    const rm_end = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves + 8)).*;
+    const limits = wbase + graph_layout.worker_off.limits;
+    const npmsec = graph_layout.LimitsType.fromAddr(limits).npmsec;
+
+    const limit_strength = optInt("UCI_LimitStrength") != 0;
+    const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
+    const skill_level = optInt("Skill Level");
+    const skill_enabled = uci_elo != 0 or skill_level < 20;
+
+    out.is_mainthread = @intFromBool(thread_idx == 0);
+    out.root_moves_empty = @intFromBool(rm_begin == rm_end);
+    out.npmsec = @intFromBool(npmsec != 0);
+    out.limits_depth = graph_layout.LimitsType.fromAddr(limits).depth;
+    out.skill_enabled = @intFromBool(skill_enabled);
+}
+
+// Per-search TimeManagement::init + TT::new_search (main thread). Builds the timeman
+// input from the worker's limits/rootPos + the manager's tm, reads nodestime/Move
+// Overhead/Ponder from the native model, writes the outputs back, and bumps the TT
+// generation. Relocated from main.zig (M16.7).
+fn ssTmInit(worker: *anyopaque) void {
+    const wb = @intFromPtr(worker);
+    const off = graph_layout.worker_off;
+    const lim = graph_layout.LimitsType.fromAddr(wb + off.limits);
+    const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
+    const tm = &smgr.tm;
+    const root_pos: *const anyopaque = @ptrFromInt(wb + off.root_pos);
+
+    const us: usize = sideToMove(root_pos);
+
+    const input = timeman_port.TimemanInput{
+        .time_us = lim.time[us],
+        .inc_us = lim.inc[us],
+        .start_time = lim.start_time,
+        .npmsec = optInt("nodestime"),
+        .move_overhead = optInt("Move Overhead"),
+        .available_nodes = tm.available_nodes,
+        .current_optimum_time = tm.optimum_time,
+        .current_maximum_time = tm.maximum_time,
+        .movestogo = lim.movestogo,
+        .ply = gamePly(root_pos),
+        .original_time_adjust = smgr.original_time_adjust,
+        .ponder = @intFromBool(optInt("Ponder") != 0),
+    };
+
+    const out = timeman_port.init(input);
+
+    tm.start_time = out.start_time;
+    tm.optimum_time = out.optimum_time;
+    tm.maximum_time = out.maximum_time;
+    tm.available_nodes = out.available_nodes;
+    tm.use_nodes_time = out.use_nodes_time;
+    smgr.original_time_adjust = out.original_time_adjust;
+    lim.time[us] = out.time_us;
+    lim.inc[us] = out.inc_us;
+    lim.npmsec = out.npmsec;
+
+    const gen = &graph_layout.TranspositionTable.fromAddr(@as(*const usize, @ptrFromInt(wb + off.tt)).*).generation8;
+    gen.* = tt.generationNext(gen.*);
+}
+
 extern fn zfish_ss_emit_no_moves(worker: ?*anyopaque) void;
 extern fn zfish_ss_threads_start(worker: ?*anyopaque) void;
 extern fn zfish_ss_wait_finished(worker: ?*anyopaque) void;
@@ -610,14 +680,14 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     ssPrologue(worker.?);
 
     var ctx: SsCtx = undefined;
-    zfish_ss_context(worker, &ctx);
+    ssContext(worker.?, &ctx);
 
     if (ctx.is_mainthread == 0) {
         _ = iterativeDeepening(worker.?);
         return;
     }
 
-    zfish_ss_tm_init(worker);
+    ssTmInit(worker.?);
 
     if (ctx.root_moves_empty != 0) {
         zfish_ss_emit_no_moves(worker);

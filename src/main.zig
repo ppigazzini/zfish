@@ -472,7 +472,6 @@ comptime {
     // id_state reads the native option model (default-only populated), so the
     // native version is default-only; legacy keeps the bridge C++ body.
     @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });
-    @export(&zfish_ss_tm_init, .{ .name = "zfish_ss_tm_init" });
     // M-FINAL (limits readers): pure LimitsType offset reads (legacy keeps the C++ defs).
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
@@ -1431,47 +1430,7 @@ pub export fn zfish_search_cb_worker_state(
 // control (time[us] == 0), so the path is gate-exercised every search but the
 // timeman output is inert; correctness of the writeback is still proven because
 // the native and C++ inputs match field-for-field in the default build.
-fn zfish_ss_tm_init(worker: *anyopaque) callconv(.c) void {
-    const wb = @intFromPtr(worker);
-    const off = graph_layout.worker_off;
-    const lim = graph_layout.LimitsType.fromAddr(wb + off.limits);
-    const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
-    const tm = &smgr.tm;
-    const root_pos: *const anyopaque = @ptrFromInt(wb + off.root_pos);
-
-    const us: usize = position_port.sideToMove(root_pos);
-
-    const input = timeman_port.TimemanInput{
-        .time_us = lim.time[us],
-        .inc_us = lim.inc[us],
-        .start_time = lim.start_time,
-        .npmsec = optInt("nodestime"),
-        .move_overhead = optInt("Move Overhead"),
-        .available_nodes = tm.available_nodes,
-        .current_optimum_time = tm.optimum_time,
-        .current_maximum_time = tm.maximum_time,
-        .movestogo = lim.movestogo,
-        .ply = position_port.gamePly(root_pos),
-        .original_time_adjust = smgr.original_time_adjust,
-        .ponder = @intFromBool(optInt("Ponder") != 0),
-    };
-
-    const out = timeman_port.init(input);
-
-    tm.start_time = out.start_time;
-    tm.optimum_time = out.optimum_time;
-    tm.maximum_time = out.maximum_time;
-    tm.available_nodes = out.available_nodes;
-    tm.use_nodes_time = out.use_nodes_time;
-    smgr.original_time_adjust = out.original_time_adjust;
-    lim.time[us] = out.time_us;
-    lim.inc[us] = out.inc_us;
-    lim.npmsec = out.npmsec;
-
-    // TranspositionTable::new_search(): bump generation8 on the worker's TT.
-    const gen = &graph_layout.TranspositionTable.fromAddr(@as(*const usize, @ptrFromInt(wb + off.tt)).*).generation8;
-    gen.* = zfish_tt_generation_next(gen.*);
-}
+// zfish_ss_tm_init: relocated into position.zig (M16.7).
 
 // zfish_thread_fill_summary: snapshot the per-thread voting inputs natively
 // (replacing the C++ forwarder to fill_thread_summary). worker = the Thread's
@@ -1630,25 +1589,7 @@ const ZfishSsCtx = extern struct {
 // zfish_ss_context: snapshot the search-start flags. skill_enabled mirrors
 // Skill(level, elo).enabled() == level < 20: a set UCI_Elo (via UCI_LimitStrength)
 // always clamps level to <= 19 (enabled), otherwise Skill Level < 20. Bridge-only.
-pub export fn zfish_ss_context(worker: *anyopaque, out: *ZfishSsCtx) void {
-    const wbase = @intFromPtr(worker);
-    const thread_idx = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.thread_idx)).*;
-    const rm_begin = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves)).*;
-    const rm_end = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves + 8)).*;
-    const limits = wbase + graph_layout.worker_off.limits;
-    const npmsec = graph_layout.LimitsType.fromAddr(limits).npmsec;
-
-    const limit_strength = optInt("UCI_LimitStrength") != 0;
-    const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
-    const skill_level = optInt("Skill Level");
-    const skill_enabled = uci_elo != 0 or skill_level < 20;
-
-    out.is_mainthread = @intFromBool(thread_idx == 0);
-    out.root_moves_empty = @intFromBool(rm_begin == rm_end);
-    out.npmsec = @intFromBool(npmsec != 0);
-    out.limits_depth = graph_layout.LimitsType.fromAddr(limits).depth;
-    out.skill_enabled = @intFromBool(skill_enabled);
-}
+// zfish_ss_context: relocated into position.zig (M16.7).
 
 // Matches the bridge ZfishPvContext struct filled for the native pv driver.
 const ZfishPvContext = extern struct {

@@ -436,6 +436,8 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("clock", clock_module);
     tt_module.addImport("memory", memory_module);
     position_module.addImport("memory", memory_module);
+    position_module.addImport("option", option_module);
+    position_module.addImport("timeman", timeman_module);
     misc_module.addImport("memory", memory_module);
     tt_module.addImport("graph_layout", graph_layout_module);
     tt_module.addImport("thread", thread_module_default);
