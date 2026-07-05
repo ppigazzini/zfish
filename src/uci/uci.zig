@@ -99,7 +99,6 @@ const ByteView = engine_mod.ByteView;
 extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize) ParsedSetOption;
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
-extern fn zfish_uci_engine_ptr(uci_ptr: *anyopaque) *anyopaque;
 extern fn zfish_uci_engine_nodes_searched(uci_ptr: *const anyopaque) u64;
 extern fn zfish_uci_engine_reset_nodes_searched() void;
 extern fn zfish_uci_set_listener_mode(uci_ptr: *anyopaque, quiet_mode: u8) void;
@@ -268,22 +267,22 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
 
     switch (classifyCommandToken(token)) {
         .quit => {
-            engine_mod.stopEngine(zfish_uci_engine_ptr(engine));
+            engine_mod.stopEngine(engine);
             return .{ .should_quit = 1 };
         },
         .stop => {
-            engine_mod.stopEngine(zfish_uci_engine_ptr(engine));
-            engine_mod.setPonderhitEngine(zfish_uci_engine_ptr(engine), 1);
+            engine_mod.stopEngine(engine);
+            engine_mod.setPonderhitEngine(engine, 1);
             return .{ .should_quit = 0 };
         },
         .ponderhit => {
-            engine_mod.setPonderhitEngine(zfish_uci_engine_ptr(engine), 0);
+            engine_mod.setPonderhitEngine(engine, 0);
             return .{ .should_quit = 0 };
         },
         .uci => {
             const info_ptr = misc_port.engineInfoText(1) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(info_ptr));
-            const options_ptr = zfish_engine_options_text_owner(zfish_uci_engine_ptr(engine)) orelse return .{ .should_quit = 0 };
+            const options_ptr = zfish_engine_options_text_owner(engine) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(options_ptr));
 
             std.debug.print(
@@ -305,7 +304,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .ucinewgame => {
-            engine_mod.searchClearEngine(zfish_uci_engine_ptr(engine));
+            engine_mod.searchClearEngine(engine);
             return .{ .should_quit = 0 };
         },
         .isready => {
@@ -313,7 +312,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .flip => {
-            zfish_engine_flip_owner(zfish_uci_engine_ptr(engine));
+            zfish_engine_flip_owner(engine);
             return .{ .should_quit = 0 };
         },
         .bench => {
@@ -325,13 +324,13 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
             return .{ .should_quit = 0 };
         },
         .visualize => {
-            const text_ptr = engine_mod.visualizeEngine(zfish_uci_engine_ptr(engine)) orelse return .{ .should_quit = 0 };
+            const text_ptr = engine_mod.visualizeEngine(engine) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(text_ptr));
             _ = c.puts(@ptrCast(text_ptr));
             return .{ .should_quit = 0 };
         },
         .eval => {
-            const text_ptr = engine_mod.traceEvalEngine(zfish_uci_engine_ptr(engine)) orelse return .{ .should_quit = 0 };
+            const text_ptr = engine_mod.traceEvalEngine(engine) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(text_ptr));
             std.debug.print("\n{s}\n", .{std.mem.span(text_ptr)});
             return .{ .should_quit = 0 };
@@ -345,7 +344,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
         .export_net => {
             const filename = trimAsciiWhitespace(args);
             engine_mod.saveNetworkEngine(
-                zfish_uci_engine_ptr(engine),
+                engine,
                 if (filename.len != 0) filename else null,
             );
             return .{ .should_quit = 0 };
@@ -397,7 +396,7 @@ fn applySetoption(engine: *anyopaque, trimmed: []const u8) void {
     const has_value: u8 = if (parsed.value != null and value.len != 0) 1 else 0;
 
     zfish_engine_apply_setoption_owner(
-        zfish_uci_engine_ptr(engine),
+        engine,
         name.ptr,
         name.len,
         value.ptr,
@@ -421,7 +420,7 @@ fn applyPosition(engine: *anyopaque, trimmed: []const u8) void {
     defer move_views.deinit(std.heap.c_allocator);
 
     const err = engine_mod.setPositionEngine(
-        zfish_uci_engine_ptr(engine),
+        engine,
         fen.ptr,
         fen.len,
         if (move_views.items.len == 0) null else move_views.items.ptr,
@@ -439,7 +438,7 @@ fn applyGo(engine: *anyopaque, trimmed: []const u8) void {
     const limits = parseLimits(trimmed);
     defer freeMaybeCString(limits.searchmoves);
 
-    const engine_ptr = zfish_uci_engine_ptr(engine);
+    const engine_ptr = engine;
 
     if (engine_mod.numaConfigInformationEngine(engine_ptr)) |numa_info_ptr| {
         defer c.free(@ptrCast(numa_info_ptr));
@@ -529,7 +528,7 @@ fn readCommandLineAlloc() !?[]u8 {
 }
 
 pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
-    const engine_ptr = zfish_uci_engine_ptr(uci_ptr);
+    const engine_ptr = uci_ptr;
 
     const current_fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
     defer c.free(@ptrCast(current_fen_ptr));
@@ -599,7 +598,7 @@ pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
 
 pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
     const warmup_positions: usize = 3;
-    const engine_ptr = zfish_uci_engine_ptr(uci_ptr);
+    const engine_ptr = uci_ptr;
 
     zfish_uci_set_listener_mode(uci_ptr, 1);
     defer zfish_uci_set_listener_mode(uci_ptr, 0);

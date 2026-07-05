@@ -637,10 +637,10 @@ comptime {
 fn nativeEng(engine: *anyopaque) *native_engine.NativeEngine {
     return native_engine.NativeEngine.fromBuffer(engine);
 }
-pub export fn zfish_engine_numa_context_ptr(engine: *anyopaque) *anyopaque {
-    return nativeEng(engine).numa_context.?;
-}
-pub export fn zfish_engine_threads_ptr(engine: *anyopaque) *anyopaque {
+// Engine graph pointer accessors (numa_context / update_context) were unused C-ABI
+// exports -- engine.zig reaches those slots through native_engine.zig accessors --
+// so they are dropped (M16.7). threads_ptr is main-internal only, kept un-exported.
+fn engineThreadsPtr(engine: *anyopaque) *anyopaque {
     return nativeEng(engine).threads.?;
 }
 // REPORT-10 M1 (tt migration, side-allocation): the engine's tt is now a NATIVE
@@ -715,9 +715,6 @@ fn freeSideSharedHistories() void {
         side_shared_histories = null;
     }
 }
-pub export fn zfish_engine_update_context_ptr(engine: *const anyopaque) *const anyopaque {
-    return @ptrCast(&nativeEng(@constCast(engine)).update_context);
-}
 // REPORT-12 TU=0 grind: default build's network_ptr is a pass-through to network_replicated_ptr
 // (the native verify/eval ignore the value). Default-only @export; legacy keeps the C++ wrapper deref.
 // REPORT-12 TU=0 grind: two more default-build pass-throughs to existing native fns.
@@ -759,9 +756,8 @@ fn engineFlipOwner(engine_ptr: *anyopaque) callconv(.c) void {
 // REPORT-12 TU=0 grind: set the start position via the native set-position machinery (StartFEN is a
 // constexpr literal; the value is gate-verified by misc + bench, which start from this position).
 // UCIEngine::engine is the first member (offset 0): the accessor is the identity.
-pub export fn zfish_uci_engine_ptr(uci: *anyopaque) *anyopaque {
-    return uci;
-}
+// UCIEngine::engine is the first member (offset 0), so the accessor was the
+// identity: uci.zig now uses the engine pointer directly (M16.7).
 // ThreadPool::num_threads() == threads.size() (bridge-only symbol, no gating).
 
 // Worker -> threads (ThreadPool&) and Worker -> manager (the worker's own
@@ -1105,7 +1101,7 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
 extern fn zfish_native_threadpool_clear(pool: *anyopaque) void;
 fn uciEngineDestructAt(storage: *anyopaque) callconv(.c) void {
     zfish_engine_release_pending_state_slot(native_engine.NativeEngine.fromPtr(storage).statesSlotPtr());
-    zfish_native_threadpool_clear(zfish_engine_threads_ptr(storage));
+    zfish_native_threadpool_clear(engineThreadsPtr(storage));
     zfishNativeEngineDestructMembers(storage);
 }
 
