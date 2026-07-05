@@ -2269,7 +2269,7 @@ pub fn wdlMaterial(pos_ptr: *const anyopaque) c_int {
 
 // Layout matches position_snapshot.PositionSnapshot / the bridge
 // ZfishPositionSnapshot. Read straight from the Position memory mirror.
-const FillSnapshot = extern struct {
+const FillSnapshot = struct {
     side_to_move: u8,
     pieces_all: u64,
     pieces_by_color: [2]u64,

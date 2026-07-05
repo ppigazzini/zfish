@@ -1,4 +1,4 @@
-pub const PositionSnapshot = extern struct {
+pub const PositionSnapshot = struct {
     side_to_move: u8,
     pieces_all: u64,
     pieces_by_color: [2]u64,
