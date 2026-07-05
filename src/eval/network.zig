@@ -2,6 +2,9 @@ const std = @import("std");
 const nnue_parse = @import("nnue_parse.zig");
 const nnue_hash = @import("nnue_hash.zig");
 const c = @import("libc");
+const memory_port = @import("memory");
+const position_port = @import("position");
+const nnue_accumulator_port = @import("nnue_accumulator");
 
 const output_scale: c_int = 16;
 const layer_stacks: usize = 8;
@@ -95,14 +98,6 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
     return 0;
 }
 extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
-extern fn zfish_network_transform_bucket(
-    network: *const anyopaque,
-    pos: *const anyopaque,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
-    bucket: usize,
-    transformed_ptr: [*]u8,
-) c_int;
 
 // NNUE network layer forward pass (NetworkArchitecture::propagate), ported to
 // Zig. Layers: fc_0 (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 62->32)
@@ -182,10 +177,10 @@ fn layerWeightsBytes(idx: c_int) usize {
     return layer_weights_bytes[@intCast(idx)];
 }
 fn layerBiases(bucket: usize, idx: c_int) [*]const i32 {
-    return @ptrCast(@alignCast(zfish_native_layer_ptr(bucket, idx, 0) orelse unreachable));
+    return @ptrCast(@alignCast(nativeLayerPtr(bucket, idx, 0) orelse unreachable));
 }
 fn layerWeights(bucket: usize, idx: c_int) [*]const i8 {
-    return @ptrCast(@alignCast(zfish_native_layer_ptr(bucket, idx, 1) orelse unreachable));
+    return @ptrCast(@alignCast(nativeLayerPtr(bucket, idx, 1) orelse unreachable));
 }
 fn propagateBucket(network: *const anyopaque, bucket: usize, transformed: [*]const u8) c_int {
     // M-FINAL cutover (network layers): read the affine-layer weights from the Zig-owned
@@ -393,13 +388,10 @@ pub fn traceEvaluate(
     return output;
 }
 
-extern fn zfish_native_ft_ptr() ?*const anyopaque;
-extern fn zfish_native_layer_ptr(bucket: usize, idx: c_int, is_weights: c_int) ?*const anyopaque;
-
 // Content hash of the natively-parsed feature transformer (read from the
 // Zig-owned storage). Equivalent to FeatureTransformer::get_content_hash.
 fn nativeFeatureTransformerContentHash() usize {
-    const ft: [*]const u8 = @ptrCast(zfish_native_ft_ptr() orelse return 0);
+    const ft: [*]const u8 = @ptrCast(nativeFtPtr() orelse return 0);
     return nnue_hash.featureTransformerContentHash(ft);
 }
 
@@ -414,8 +406,8 @@ fn nativeLayerContentHash(network: *const anyopaque, bucket: usize) usize {
     var idx: c_int = 0;
     while (idx < 3) : (idx += 1) {
         const ui: usize = @intCast(idx);
-        b[ui] = @ptrCast(zfish_native_layer_ptr(bucket, idx, 0) orelse return 0);
-        w[ui] = @ptrCast(zfish_native_layer_ptr(bucket, idx, 1) orelse return 0);
+        b[ui] = @ptrCast(nativeLayerPtr(bucket, idx, 0) orelse return 0);
+        w[ui] = @ptrCast(nativeLayerPtr(bucket, idx, 1) orelse return 0);
         bn[ui] = layerBiasesBytes(idx);
         wn[ui] = layerWeightsBytes(idx);
     }
@@ -498,7 +490,7 @@ fn evaluateBucketRaw(
     var transformed: [transformed_feature_bytes]u8 align(cache_line_size) = undefined;
 
     return .{
-        .psqt = zfish_network_transform_bucket(
+        .psqt = networkTransformBucket(
             network,
             pos,
             accumulator_stack,
@@ -565,8 +557,8 @@ fn nativeLayerArrays(network: *const anyopaque, bucket: usize) ?struct { b: [3][
     var idx: c_int = 0;
     while (idx < 3) : (idx += 1) {
         const ui: usize = @intCast(idx);
-        const bp: [*]const u8 = @ptrCast(zfish_native_layer_ptr(bucket, idx, 0) orelse return null);
-        const wp: [*]const u8 = @ptrCast(zfish_native_layer_ptr(bucket, idx, 1) orelse return null);
+        const bp: [*]const u8 = @ptrCast(nativeLayerPtr(bucket, idx, 0) orelse return null);
+        const wp: [*]const u8 = @ptrCast(nativeLayerPtr(bucket, idx, 1) orelse return null);
         b[ui] = bp[0..layerBiasesBytes(idx)];
         w[ui] = wp[0..layerWeightsBytes(idx)];
     }
@@ -576,7 +568,7 @@ fn nativeLayerArrays(network: *const anyopaque, bucket: usize) ?struct { b: [3][
 // Serialize the native feature transformer into `out` (write_parameters blob,
 // including the leading component hash).
 fn serializeFtNative(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
-    const ft: [*]const u8 = @ptrCast(zfish_native_ft_ptr() orelse return error.NoNetwork);
+    const ft: [*]const u8 = @ptrCast(nativeFtPtr() orelse return error.NoNetwork);
     try nnue_parse.serializeFeatureTransformer(
         ft[0..nnue_parse.ft_total_bytes],
         nnue_hash.featureTransformerHashValue(),
@@ -675,10 +667,68 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
 }
 
 
-// Native-owned inference storage, allocated by main.zig. The native parse writes
-// the weights straight here; inference reads from the same memory.
-extern fn zfish_native_ft_storage(n: usize) ?[*]u8;
-extern fn zfish_native_layer_storage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8;
+// Native-owned inference storage. The native parse writes the weights straight
+// here; inference reads from the same memory. Owned by this module (M16.7): the
+// feature transformer is ~106 MB of SIMD-permuted weights, and each per-bucket
+// affine layer stack has fc_0/fc_1/fc_2 biases+weights.
+var native_ft_ptr_storage: ?*anyopaque = null;
+var native_ft_len: usize = 0;
+
+fn nativeFtStorage(n: usize) ?[*]u8 {
+    if (n == 0) return null;
+    if (native_ft_ptr_storage != null and native_ft_len != n) {
+        memory_port.alignedLargePagesFree(native_ft_ptr_storage);
+        native_ft_ptr_storage = null;
+    }
+    if (native_ft_ptr_storage == null) {
+        native_ft_ptr_storage = memory_port.alignedLargePagesAlloc(n) orelse return null;
+        native_ft_len = n;
+    }
+    return @ptrCast(native_ft_ptr_storage.?);
+}
+
+pub fn nativeFtPtr() ?*const anyopaque {
+    return native_ft_ptr_storage;
+}
+
+const layer_stacks_n = 8;
+const layers_per_stack = 3;
+
+var native_layer_w: [layer_stacks_n][layers_per_stack]?*anyopaque =
+    .{.{ null, null, null }} ** layer_stacks_n;
+var native_layer_b: [layer_stacks_n][layers_per_stack]?*anyopaque =
+    .{.{ null, null, null }} ** layer_stacks_n;
+
+fn nativeLayerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8 {
+    if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack or n == 0) return null;
+    const ui: usize = @intCast(idx);
+    const slot = if (is_weights != 0) &native_layer_w[bucket][ui] else &native_layer_b[bucket][ui];
+    if (slot.* == null) slot.* = memory_port.alignedLargePagesAlloc(n) orelse return null;
+    return @ptrCast(slot.*.?);
+}
+
+fn nativeLayerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?*const anyopaque {
+    if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack) return null;
+    const ui: usize = @intCast(idx);
+    return if (is_weights != 0) native_layer_w[bucket][ui] else native_layer_b[bucket][ui];
+}
+
+// FT transform for one output bucket. Reads weights from the native feature-transformer
+// storage above (always resident after a network load) and runs the Zig accumulator
+// transform. Relocated from main.zig (M16.7).
+fn networkTransformBucket(
+    network: *const anyopaque,
+    pos: *const anyopaque,
+    accumulator_stack: *anyopaque,
+    cache: *anyopaque,
+    bucket: usize,
+    transformed_ptr: [*]u8,
+) c_int {
+    _ = network;
+    const ft = native_ft_ptr_storage orelse @panic("native feature-transformer storage not initialized");
+    const stm = position_port.sideToMove(pos);
+    return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
+}
 
 // Parse the FT blob natively into the Zig-owned inference storage, then confirm
 // it matches the C++-parsed feature-transformer byte-for-byte (per weight region,
@@ -689,7 +739,7 @@ extern fn zfish_native_layer_storage(bucket: usize, idx: c_int, is_weights: c_in
 // source — the C++ Network is no longer parsed (the eval gates verify the weights end-to-end,
 // and the offset==bytes.len check at the end of loadNetworkBytes verifies the consumed count).
 fn parseFeatureTransformerNative(blob: []const u8) usize {
-    const dst_ptr = zfish_native_ft_storage(nnue_parse.ft_total_bytes) orelse
+    const dst_ptr = nativeFtStorage(nnue_parse.ft_total_bytes) orelse
         @panic("native feature-transformer storage allocation failed");
     const dst = dst_ptr[0..nnue_parse.ft_total_bytes];
     return nnue_parse.parseFeatureTransformer(blob, dst) orelse
@@ -721,9 +771,9 @@ fn parseLayerNative(bucket: usize, blob: []const u8) usize {
     while (idx < 3) : (idx += 1) {
         const wb = layerWeightsBytes(idx);
         const bb = layerBiasesBytes(idx);
-        const bdst = zfish_native_layer_storage(bucket, idx, 0, bb) orelse
+        const bdst = nativeLayerStorage(bucket, idx, 0, bb) orelse
             @panic("native affine-layer storage allocation failed");
-        const wdst = zfish_native_layer_storage(bucket, idx, 1, wb) orelse
+        const wdst = nativeLayerStorage(bucket, idx, 1, wb) orelse
             @panic("native affine-layer storage allocation failed");
         const used = nnue_parse.parseLayer(blob[pos..], bdst[0..bb], wdst[0..wb]) orelse
             @panic("native affine-layer parse failed");

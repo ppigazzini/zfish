@@ -19,12 +19,12 @@ const graph_layout = @import("graph_layout");
 const position_port = @import("position");
 const search_port = @import("search");
 const nnue_acc = @import("nnue_accumulator");
+const network_port = @import("network");
 
 const off = graph_layout.worker_off;
 
-// Native Worker::clear pieces (exported from main.zig) and the native FT pointer,
-// so the full native constructor can fill the histories exactly as Worker::clear.
-extern fn zfish_native_ft_ptr() ?*const anyopaque;
+// The native FT pointer (network.zig-owned inference storage) lets the full native
+// constructor fill the histories exactly as Worker::clear.
 
 // reductions is the 1024-byte (256 x int) array between `reductions` and `manager`.
 const reductions_count: usize = (off.manager - off.reductions) / @sizeOf(c_int);
@@ -125,7 +125,7 @@ export fn zfish_worker_construct_full(
 ) void {
     const base: [*]u8 = @ptrCast(buf orelse return);
     @memset(base[0..graph_layout.worker_size], 0);
-    const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse return));
+    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));
     constructWorkerInto(base, .{
         .shared_history = shared_history,
         .options = options,

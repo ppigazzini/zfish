@@ -267,7 +267,7 @@ pub export fn zfish_worker_clear(worker: *anyopaque) void {
     const reductions: [*]c_int = @ptrFromInt(wb + off.reductions);
     search_port.fillReductions(reductions, 256);
     const refresh: *anyopaque = @ptrFromInt(wb + off.refresh_table);
-    const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse return));
+    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));
     nnue_accumulator_port.clearRefreshCache(refresh, biases);
 }
 
@@ -1571,7 +1571,7 @@ fn zfishPositionDestroy(pos: ?*anyopaque) callconv(.c) void {
 fn zfishEngineAccumulatorCachesCreate(network: *const anyopaque) callconv(.c) ?*anyopaque {
     _ = network; // the native fill uses the native FT biases (same loaded net)
     const buf = zfishOperatorNew(graph_layout.accumulator_caches_size) orelse return null;
-    const biases: [*]const i16 = @ptrCast(@alignCast(zfish_native_ft_ptr() orelse {
+    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse {
         zfishOperatorDelete(buf);
         return null;
     }));
@@ -1649,7 +1649,7 @@ pub export fn zfish_search_cb_worker_state(
     out_nodes.* = @ptrFromInt(wb + off.nodes);
     // The network handle is never dereferenced (weights are served from native
     // storage), so it is just the native feature-transformer pointer.
-    out_network.* = zfish_native_ft_ptr();
+    out_network.* = network_port.nativeFtPtr();
     out_cache.* = @ptrFromInt(wb + off.refresh_table);
     out_optimism.* = @ptrFromInt(wb + off.optimism);
     out_nmp_min_ply.* = @ptrFromInt(wb + off.nmp_min_ply);
@@ -2294,77 +2294,10 @@ pub export fn zfish_network_evaluate(
     return network_port.evaluate(network, pos, accumulator_stack, cache);
 }
 
-// NNUE feature-transformer forward pass, ported to Zig. Replaces the C++
-// FeatureTransformer::transform shim: gets the FeatureTransformer pointer from
-// the network (bridge helper) and the side to move from the Position mirror,
-// then runs the Zig transform. Same symbol the network.zig forward path calls.
-
-// Native-owned feature-transformer storage. The native .nnue parse (network.zig)
-// writes the SIMD-permuted ~106 MB of weights straight into this Zig-owned buffer
-// as it reads the file, and inference reads from here -- the C++ FeatureTransformer
-// is no longer the source, only a load-time cross-check. zfish_native_ft_storage
-// hands network.zig the (re)allocated destination on demand.
-var native_ft_ptr: ?*anyopaque = null;
-var native_ft_len: usize = 0;
-
-pub export fn zfish_native_ft_storage(n: usize) ?[*]u8 {
-    if (n == 0) return null;
-    if (native_ft_ptr != null and native_ft_len != n) {
-        memory_port.alignedLargePagesFree(native_ft_ptr);
-        native_ft_ptr = null;
-    }
-    if (native_ft_ptr == null) {
-        native_ft_ptr = memory_port.alignedLargePagesAlloc(n) orelse return null;
-        native_ft_len = n;
-    }
-    return @ptrCast(native_ft_ptr.?);
-}
-
-pub export fn zfish_native_ft_ptr() ?*const anyopaque {
-    return native_ft_ptr;
-}
-
-// Native-owned per-bucket affine-layer storage. Same model as the feature
-// transformer: the native layer parse writes weights/biases directly here and
-// inference serves from it. zfish_native_layer_storage allocates the slot.
-const layer_stacks_n = 8;
-const layers_per_stack = 3;
-
-var native_layer_w: [layer_stacks_n][layers_per_stack]?*anyopaque =
-    .{.{ null, null, null }} ** layer_stacks_n;
-var native_layer_b: [layer_stacks_n][layers_per_stack]?*anyopaque =
-    .{.{ null, null, null }} ** layer_stacks_n;
-
-pub export fn zfish_native_layer_storage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8 {
-    if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack or n == 0) return null;
-    const ui: usize = @intCast(idx);
-    const slot = if (is_weights != 0) &native_layer_w[bucket][ui] else &native_layer_b[bucket][ui];
-    if (slot.* == null) slot.* = memory_port.alignedLargePagesAlloc(n) orelse return null;
-    return @ptrCast(slot.*.?);
-}
-
-pub export fn zfish_native_layer_ptr(bucket: usize, idx: c_int, is_weights: c_int) ?*const anyopaque {
-    if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack) return null;
-    const ui: usize = @intCast(idx);
-    return if (is_weights != 0) native_layer_w[bucket][ui] else native_layer_b[bucket][ui];
-}
-
-pub export fn zfish_network_transform_bucket(
-    network: *const anyopaque,
-    pos: *const anyopaque,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
-    bucket: usize,
-    transformed_ptr: [*]u8,
-) c_int {
-    // M-FINAL cutover: the FT transform reads weights from native storage. The former C++
-    // Network fallback (zfish_network_feature_transformer_ptr) is removed — native_ft_ptr is
-    // always resident after the network load, so the fallback was never reached at runtime.
-    _ = network;
-    const ft = native_ft_ptr orelse @panic("native feature-transformer storage not initialized");
-    const stm = position_port.sideToMove(pos);
-    return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
-}
+// NNUE feature-transformer forward pass and its weight storage moved into
+// network.zig (M16.7): the native .nnue parse writes the SIMD-permuted weights
+// straight into that module's Zig-owned buffers and inference reads from there,
+// so main.zig no longer brokers the FT/layer storage or the transform.
 
 pub export fn zfish_network_trace_evaluate(
     network: *const anyopaque,

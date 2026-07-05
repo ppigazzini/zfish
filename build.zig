@@ -447,6 +447,9 @@ pub fn build(b: *std.Build) void {
     position_module.addImport("clock", clock_module);
     position_module.addImport("graph_layout", graph_layout_module);
     network_module.addImport("libc", libc_module);
+    network_module.addImport("memory", memory_module);
+    network_module.addImport("position", position_module);
+    network_module.addImport("nnue_accumulator", nnue_accumulator_module);
     nnue_misc_module.addImport("libc", libc_module);
     evaluate_module.addImport("libc", libc_module);
 
