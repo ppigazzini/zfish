@@ -828,24 +828,24 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
 // path) clears (end=begin). count>0 (multi-node) frees the old element buffer and operator_new's a fresh
 // count*8 one (matched alloc/free family). Single-node never allocs, so valgrind/teardown stay clean.
 fn threadpoolBoundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, count: usize) callconv(.c) void {
-    const base: [*]u8 = @ptrCast(pool_ptr);
-    const begin_p: *usize = @ptrCast(@alignCast(base + 40));
-    const end_p: *usize = @ptrCast(@alignCast(base + 48));
-    const cap_p: *usize = @ptrCast(@alignCast(base + 56));
+    // The boundThreadToNumaNode vector {begin,end,cap} lives in the now-native
+    // graph_layout.ThreadPool (M16.8) -- accessed by field, not the old raw
+    // {@40,@48,@56} offsets (which native layout no longer honours).
+    const tp = graph_layout.ThreadPool.fromPtr(pool_ptr);
     if (nodes == null or count == 0) {
-        end_p.* = begin_p.*; // clear (keep capacity)
+        tp.bound_end = tp.bound_begin; // clear (keep capacity)
         return;
     }
-    if (begin_p.* != 0) zfishOperatorDelete(@ptrFromInt(begin_p.*));
+    if (tp.bound_begin != 0) zfishOperatorDelete(@ptrFromInt(tp.bound_begin));
     const nbytes = count * 8;
     const buf = zfishOperatorNew(nbytes) orelse @panic("bound_nodes_assign: operator new failed");
     const dst: [*]usize = @ptrCast(@alignCast(buf));
     const src = nodes.?;
     var i: usize = 0;
     while (i < count) : (i += 1) dst[i] = src[i];
-    begin_p.* = @intFromPtr(buf);
-    end_p.* = @intFromPtr(buf) + nbytes;
-    cap_p.* = @intFromPtr(buf) + nbytes;
+    tp.bound_begin = @intFromPtr(buf);
+    tp.bound_end = @intFromPtr(buf) + nbytes;
+    tp.bound_cap = @intFromPtr(buf) + nbytes;
 }
 
 // REPORT-12 TU=0: the native ThreadBuilder callback — the LAST C++ piece of the construction cluster
