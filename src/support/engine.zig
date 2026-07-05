@@ -81,22 +81,22 @@ const default_eval_file_name = network_port.default_eval_file_name;
 const default_skill_lowest_elo: c_int = 1320;
 const default_skill_highest_elo: c_int = 3190;
 
-pub const CountPair = extern struct {
+pub const CountPair = struct {
     current: usize,
     total: usize,
 };
 
-const NetworkVerifyResult = extern struct {
+const NetworkVerifyResult = struct {
     should_exit: u8,
     message: ?[*:0]u8,
 };
 
-pub const ByteView = extern struct {
+pub const ByteView = struct {
     ptr: ?[*]const u8,
     len: usize,
 };
 
-pub const PositionSummary = extern struct {
+pub const PositionSummary = struct {
     side_to_move_white: u8,
     checkers: u64,
     key: u64,
@@ -108,7 +108,7 @@ const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 pub const TablebaseProbe = tablebase.ProbeResult;
 
-pub const EvalInput = extern struct {
+pub const EvalInput = struct {
     psqt: c_int,
     positional: c_int,
     optimism: c_int,
@@ -118,18 +118,18 @@ pub const EvalInput = extern struct {
     value_tb_win_in_max_ply: c_int,
 };
 
-pub const EvalOutput = extern struct {
+pub const EvalOutput = struct {
     psqt: c_int,
     positional: c_int,
 };
 
-pub const TraceOutput = extern struct {
+pub const TraceOutput = struct {
     psqt: [layer_stacks]c_int,
     positional: [layer_stacks]c_int,
     correct_bucket: usize,
 };
 
-pub const EvalTraceInput = extern struct {
+pub const EvalTraceInput = struct {
     inner_trace_ptr: [*]const u8,
     inner_trace_len: usize,
     nnue_internal_value: c_int,
@@ -137,7 +137,7 @@ pub const EvalTraceInput = extern struct {
     final_white_cp: c_int,
 };
 
-pub const NnueTraceInput = extern struct {
+pub const NnueTraceInput = struct {
     side_to_move_white: u8,
     bucket_count: usize,
     correct_bucket: usize,
