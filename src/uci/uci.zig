@@ -14,14 +14,6 @@ const uci_output = @import("uci_output");
 // of main.zig. The other zfish_engine_*_owner calls became engine_mod.* direct calls (M16.5).
 extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
 extern fn zfish_engine_go_parsed_owner(engine_ptr: *anyopaque, limits: ParsedLimits) void;
-extern fn zfish_engine_apply_setoption_owner(
-    engine_ptr: *anyopaque,
-    name_ptr: [*]const u8,
-    name_len: usize,
-    value_ptr: [*]const u8,
-    value_len: usize,
-    has_value: u8,
-) void;
 
 // C stdio stdin, obtained portably (M-PORT). @cImport's translation of the stream macros
 // is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on
@@ -391,7 +383,7 @@ fn applySetoption(engine: *anyopaque, trimmed: []const u8) void {
     const value = if (parsed.value) |ptr| std.mem.span(ptr) else "";
     const has_value: u8 = if (parsed.value != null and value.len != 0) 1 else 0;
 
-    zfish_engine_apply_setoption_owner(
+    engine_mod.applySetOptionEngine(
         engine,
         name.ptr,
         name.len,

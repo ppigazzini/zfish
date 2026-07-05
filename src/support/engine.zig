@@ -325,6 +325,59 @@ pub fn waitForSearchFinishedEngine(engine_ptr: *anyopaque) void {
     thread_port.waitThread(ne(engine_ptr).threadsPtr(), 0);
 }
 
+// Print each non-blank line as "info string ...". Relocated from main.zig (M16.7).
+fn printInfoStringNative(str: []const u8) void {
+    var it = std.mem.splitScalar(u8, str, '\n');
+    while (it.next()) |line| {
+        var all_ws = true;
+        for (line) |ch| {
+            if (ch != ' ' and ch != '\t' and ch != '\r' and ch != '\n') {
+                all_ws = false;
+                break;
+            }
+        }
+        if (all_ws) continue;
+        var buf: [1024]u8 = undefined;
+        const out = std.fmt.bufPrint(&buf, "info string {s}", .{line}) catch continue;
+        uci_output.printLine(out.ptr, out.len);
+    }
+}
+
+// setoption apply: wait for the search, set into the native OptionsModel, and run the
+// on-change callback (relaying string/spin/check values). Relocated from main.zig (M16.7).
+pub fn applySetOptionEngine(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
+    waitForSearchFinishedEngine(engine_ptr);
+    const vlen: usize = if (has_value != 0) value_len else 0;
+    const vptr: [*]const u8 = if (has_value != 0) value_ptr else name_ptr;
+    var res: option_port.ModelSetResult = undefined;
+    option_port.zfish_optmodel_set_by_name(name_ptr, name_len, vptr, vlen, &res);
+    if (res.found == 0) {
+        var buf: [256]u8 = undefined;
+        const out = std.fmt.bufPrint(&buf, "No such option: {s}", .{name_ptr[0..name_len]}) catch return;
+        uci_output.printLine(out.ptr, out.len);
+        return;
+    }
+    if (res.accepted != 0 and res.callback_kind != 0) {
+        var relay_buf: [32]u8 = undefined;
+        var relay_value: []const u8 = "";
+        var relay_int: c_int = 0;
+        if (res.kind == 1 or res.kind == 2) {
+            relay_int = option_port.zfish_optmodel_int_by_index(res.idx);
+            relay_value = std.fmt.bufPrint(&relay_buf, "{d}", .{relay_int}) catch "";
+        } else if (res.kind == 0) {
+            const len = option_port.zfish_optmodel_current_len(res.idx);
+            if (len != 0) {
+                if (option_port.zfish_optmodel_current_ptr(res.idx)) |p| relay_value = p[0..len];
+            }
+        }
+        const ret = optionOnChange(engine_ptr, res.callback_kind, relay_value.ptr, relay_value.len, relay_int);
+        if (ret) |msg| {
+            printInfoStringNative(std.mem.span(msg));
+            std.c.free(@ptrCast(msg));
+        }
+    }
+}
+
 pub fn goEngine(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
     std.debug.assert(graph_layout.LimitsType.fromPtr(@constCast(limits_ptr)).perftValue() == 0);
     verifyNetwork(engine_ptr);
