@@ -53,13 +53,16 @@ fn reportAllocFailure(mb: usize) noreturn {
     std.debug.print("Failed to allocate {d}MB for transposition table.\n", .{mb});
     std.process.exit(1);
 }
-extern fn zfish_threadpool_zero_tt_slice(
-    threads: *anyopaque,
-    thread_id: usize,
-    table: ?*anyopaque,
-    start_cluster: usize,
-    cluster_len: usize,
-) void;
+// Zero a [start_cluster, start_cluster+cluster_len) span of the TT (single-node: the
+// per-thread parallel-clear NUMA split is a no-op here). Native Zig, was the
+// zfish_threadpool_zero_tt_slice C-ABI export in main.zig.
+fn zeroTtSlice(table_ptr: ?*anyopaque, start_cluster: usize, cluster_len: usize) void {
+    if (cluster_len == 0) return;
+    const table = table_ptr orelse return;
+    const cs = @sizeOf(TtCluster);
+    const base: [*]u8 = @ptrCast(table);
+    @memset(base[start_cluster * cs .. (start_cluster + cluster_len) * cs], 0);
+}
 
 pub fn resizeState(
     table_ptr: *?*anyopaque,
@@ -102,7 +105,7 @@ pub fn clearState(
         else
             cluster_count - start;
 
-        zfish_threadpool_zero_tt_slice(threads, thread_index, table, start, len);
+        zeroTtSlice(table, start, len);
     }
 
     thread_index = 0;

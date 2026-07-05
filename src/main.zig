@@ -166,21 +166,6 @@ fn zfishThreadpoolSetupStateBack(pool: *const anyopaque) callconv(.c) ?*anyopaqu
 // a StateListPtr (single pointer) at ThreadPool.setup_states; has-states == ptr != null.
 // Pure offset read (no deque internals). Default-only (legacy keeps the C++ method).
 
-fn zfishThreadpoolZeroTtSlice(
-    threads_ptr: *anyopaque,
-    thread_id: usize,
-    table_ptr: ?*anyopaque,
-    start_cluster: usize,
-    cluster_len: usize,
-) callconv(.c) void {
-    _ = threads_ptr;
-    _ = thread_id;
-    if (cluster_len == 0) return;
-    const table = table_ptr orelse return;
-    const cs = @sizeOf(tt_port.TtCluster);
-    const base: [*]u8 = @ptrCast(table);
-    @memset(base[start_cluster * cs .. (start_cluster + cluster_len) * cs], 0);
-}
 
 pub fn zfish_position_flip_fen(fen_ptr: [*]const u8, fen_len: usize) ?[*:0]u8 {
     return position_port.flipFen(fen_ptr, fen_len);
@@ -458,7 +443,6 @@ comptime {
     // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
     @export(&zfishPositionMoveIsLegal, .{ .name = "zfish_position_move_is_legal" });
     // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
-    @export(&zfishThreadpoolZeroTtSlice, .{ .name = "zfish_threadpool_zero_tt_slice" });
     // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
     @export(&zfishThreadpoolSetupStatesAdoptFromStorage, .{ .name = "zfish_threadpool_setup_states_adopt_from_storage" });
     @export(&zfishThreadpoolSetupStatesAdoptFromSlot, .{ .name = "zfish_threadpool_setup_states_adopt_from_slot" });
