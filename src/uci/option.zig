@@ -112,7 +112,7 @@ pub fn zfish_optmodel_current_ptr(idx: usize) ?[*]const u8 {
     return if (current.len == 0) null else current.ptr;
 }
 
-pub const ModelSetResult = extern struct {
+pub const ModelSetResult = struct {
     found: u8,
     accepted: u8,
     changed: u8,
@@ -162,17 +162,17 @@ pub fn zfish_optmodel_render() ?[*:0]u8 {
     return buf.ptr;
 }
 
-pub const ParsedSetOption = extern struct {
+pub const ParsedSetOption = struct {
     name: ?[*:0]u8,
     value: ?[*:0]u8,
 };
 
-pub const AssignmentResult = extern struct {
+pub const AssignmentResult = struct {
     accepted: u8,
     normalized_value: ?[*:0]u8,
 };
 
-pub const TuneNextResult = extern struct {
+pub const TuneNextResult = struct {
     token: ?[*:0]u8,
     remaining: ?[*:0]u8,
 };
