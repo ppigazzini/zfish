@@ -167,8 +167,50 @@ extern fn zfish_threadpool_setup_states_adopt_from_slot(pool: *anyopaque, states
 extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
 extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
 extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
-extern fn zfish_root_moves_create_ranked(items: [*]const RankedRootMove, count: usize) *anyopaque;
-extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
+
+// Native Search::RootMoves (= the C++ std::vector<RootMove>) builder/destroyer, relocated
+// from main.zig (M16.7). Lays out a 24-byte {begin,end,cap} header over a `count`-element
+// RootMove array (stride graph_layout.root_move_size == 552), each element zeroed then
+// initialised to the RootMove default (scores at -VALUE_INFINITE) with the ranked tb fields
+// and the single-move PV. Matches the vector the worker binds by reference.
+fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?*anyopaque {
+    const header = std.c.malloc(24) orelse return null;
+    const hdr: [*]usize = @ptrCast(@alignCast(header));
+    if (count == 0) {
+        hdr[0] = 0;
+        hdr[1] = 0;
+        hdr[2] = 0;
+        return header;
+    }
+    const stride = graph_layout.root_move_size; // 552
+    const bytes = count * stride;
+    const elems = std.c.malloc(bytes) orelse return null;
+    const base: [*]u8 = @ptrCast(elems);
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const rm: *position_port.RootMove = @ptrCast(@alignCast(base + i * stride));
+        @memset(@as([*]u8, @ptrCast(rm))[0..stride], 0);
+        rm.score = -value_infinite;
+        rm.previous_score = -value_infinite;
+        rm.average_score = -value_infinite;
+        rm.mean_squared_score = -(value_infinite * value_infinite);
+        rm.uci_score = -value_infinite;
+        rm.tb_rank = items[i].tb_rank;
+        rm.tb_score = items[i].tb_score;
+        rm.pv.moves[0] = items[i].raw_move;
+        rm.pv.length = 1;
+    }
+    hdr[0] = @intFromPtr(elems);
+    hdr[1] = @intFromPtr(elems) + bytes;
+    hdr[2] = @intFromPtr(elems) + bytes;
+    return header;
+}
+fn rootMovesDestroy(ptr: ?*anyopaque) void {
+    const p = ptr orelse return;
+    const hdr: [*]usize = @ptrCast(@alignCast(p));
+    if (hdr[0] != 0) std.c.free(@ptrFromInt(hdr[0]));
+    std.c.free(p);
+}
 extern fn zfish_threadpool_bound_nodes_assign(
     pool: *anyopaque,
     nodes: ?[*]const usize,
@@ -587,7 +629,8 @@ fn buildRootMoves(
             tb_config.cardinality = 0;
     }
 
-    const root_moves = zfish_root_moves_create_ranked(ranked_moves.ptr, ranked_moves.len);
+    const root_moves = rootMovesCreateRanked(ranked_moves.ptr, ranked_moves.len) orelse
+        @panic("OOM: native RootMoves allocation");
     return .{
         .root_moves = root_moves,
         .tb_config = tb_config,
@@ -792,7 +835,7 @@ pub fn startThinking(
         selected_moves.items,
     );
     const root_moves = root_setup.root_moves;
-    defer zfish_root_moves_destroy(root_moves);
+    defer rootMovesDestroy(root_moves);
     const tb_config = root_setup.tb_config;
     const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     const allocator = std.heap.c_allocator;

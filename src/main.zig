@@ -555,8 +555,6 @@ comptime {
     // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
     @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
     @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
-    @export(&rootMovesCreateRanked, .{ .name = "zfish_root_moves_create_ranked" });
-    @export(&rootMovesDestroy, .{ .name = "zfish_root_moves_destroy" });
     @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
     @export(&perftOwner, .{ .name = "zfish_engine_perft_owner" });
     @export(&applySetoptionOwner, .{ .name = "zfish_engine_apply_setoption_owner" });
@@ -1117,45 +1115,7 @@ const RankedRootMove = extern struct {
     tb_rank: c_int,
     tb_score: c_int,
 };
-fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) callconv(.c) ?*anyopaque {
-    const value_infinite: i32 = 32001;
-    const header = zfishOperatorNew(24) orelse return null;
-    const hdr: [*]usize = @ptrCast(@alignCast(header));
-    if (count == 0) {
-        hdr[0] = 0;
-        hdr[1] = 0;
-        hdr[2] = 0;
-        return header;
-    }
-    const stride = graph_layout.root_move_size; // 552
-    const bytes = count * stride;
-    const elems = zfishOperatorNew(bytes) orelse return null;
-    const base: [*]u8 = @ptrCast(elems);
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
-        const rm: *position_port.RootMove = @ptrCast(@alignCast(base + i * stride));
-        @memset(@as([*]u8, @ptrCast(rm))[0..stride], 0);
-        rm.score = -value_infinite;
-        rm.previous_score = -value_infinite;
-        rm.average_score = -value_infinite;
-        rm.mean_squared_score = -(value_infinite * value_infinite);
-        rm.uci_score = -value_infinite;
-        rm.tb_rank = items[i].tb_rank;
-        rm.tb_score = items[i].tb_score;
-        rm.pv.moves[0] = items[i].raw_move;
-        rm.pv.length = 1;
-    }
-    hdr[0] = @intFromPtr(elems);
-    hdr[1] = @intFromPtr(elems) + bytes;
-    hdr[2] = @intFromPtr(elems) + bytes;
-    return header;
-}
-fn rootMovesDestroy(ptr: ?*anyopaque) callconv(.c) void {
-    const p = ptr orelse return;
-    const hdr: [*]usize = @ptrCast(@alignCast(p));
-    if (hdr[0] != 0) zfishOperatorDelete(@ptrFromInt(hdr[0]));
-    zfishOperatorDelete(p);
-}
+// RootMoves ranked builder/destroyer relocated into thread.zig (M16.7).
 
 // REPORT-12 TU=0: the `go` command owner. Builds a Search::LimitsType (120-byte POD; layout per
 // graph_layout.limits_off — searchmoves std::vector<std::string>@0, then the TimePoints/ints/nodes/
