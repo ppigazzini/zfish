@@ -49,7 +49,7 @@ fn writePtr(base: [*]u8, offset: usize, value: usize) void {
 // Inputs the C++ Worker constructor receives, unpacked from the SharedState plus
 // the thread parameters. Pointers are the exact referents the reference members
 // must bind to (the SharedState members), matching the C++ initializer list.
-pub const WorkerCtorInputs = extern struct {
+pub const WorkerCtorInputs = struct {
     shared_history: usize, // &sharedState.sharedHistories.at(numa)
     options: usize, // &sharedState.options
     threads: usize, // &sharedState.threads

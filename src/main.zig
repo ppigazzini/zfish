@@ -855,7 +855,7 @@ fn threadpoolBoundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, coun
 // constructs the Worker, and writes the Worker at thread+8 (the worker@8 layout contract). Single-node
 // host: numaIndex 0, idxInNuma == idx, totalNuma == ctx.total. The C++ &ss.<member> (a reference member's
 // referent address) equals the native field VALUE, so the field values are passed straight through.
-const WorkerBuildCtx = extern struct {
+const WorkerBuildCtx = struct {
     shared_state: ?*anyopaque,
     update_context: ?*const anyopaque,
     total: usize,

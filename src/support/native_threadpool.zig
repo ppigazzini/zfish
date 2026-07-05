@@ -156,7 +156,7 @@ pub const NativePool = struct {
 // SearchManager, and writes the Worker at thread+8 (worker@8). Single-node host.
 extern fn zfish_native_worker_build(ctx: ?*anyopaque, idx: usize, thread: *anyopaque) callconv(.c) void;
 
-const WorkerBuildCtx = extern struct {
+const WorkerBuildCtx = struct {
     shared_state: ?*anyopaque,
     update_context: ?*const anyopaque,
     total: usize,
