@@ -142,11 +142,6 @@ pub const NnueTraceInput = extern struct {
 
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
 extern fn zfish_threadpool_wait_thread(threads: *anyopaque, thread_id: usize) void;
-extern fn zfish_engine_numa_set_from_string(
-    numa_context: *anyopaque,
-    text_ptr: [*]const u8,
-    text_len: usize,
-) void;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 extern fn zfish_engine_start_logger(name_ptr: [*]const u8, name_len: usize) void;
 extern fn zfish_engine_set_numa_config_from_option_owner(
@@ -377,7 +372,7 @@ pub fn setNumaConfigFromOptionEngine(engine_ptr: *anyopaque, option_text: []cons
     } else if (std.mem.eql(u8, option_text, "none")) {
         numa.contextSetNone(numa_context);
     } else {
-        zfish_engine_numa_set_from_string(numa_context, option_text.ptr, option_text.len);
+        numa.setFromString(numa_context, option_text.ptr, option_text.len);
     }
 
     resizeThreadsEngine(engine_ptr);

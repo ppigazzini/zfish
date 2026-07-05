@@ -589,7 +589,6 @@ comptime {
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
     @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
-    @export(&engineNumaSetFromString, .{ .name = "zfish_engine_numa_set_from_string" });
     @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
     // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
@@ -1007,12 +1006,7 @@ fn uciSetListenerMode(uci_ptr: *anyopaque, quiet_mode: u8) callconv(.c) void {
     _ = uci_ptr;
     zfish_uci_set_quiet_mode(quiet_mode);
 }
-// numa_set_from_string: single-node default build — reconfiguring NumaPolicy is a no-op.
-fn engineNumaSetFromString(numa_context_ptr: *anyopaque, text_ptr: [*]const u8, text_len: usize) callconv(.c) void {
-    _ = numa_context_ptr;
-    _ = text_ptr;
-    _ = text_len;
-}
+// numa_set_from_string no-op stub moved into numa.zig (M16.7).
 // REPORT-12 TU=0: ss_npmsec_advance (nodestime path). The only C++ bit was tm->advance_nodes_time(x),
 // which is just `availableNodes = max(0, availableNodes - x)`. Inlined natively via pinned offsets
 // (manager->tm@8, tm.availableNodes@+24; limits.inc pinned in B4a; side via the native helper).
