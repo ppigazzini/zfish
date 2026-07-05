@@ -79,7 +79,7 @@ inline fn pieceTypeOn(pos: *const Position, s: u8) u8 {
 // Memory mirror of the search Stack (src/search.h). Only the scalar fields used
 // by ported search helpers are read; the layout/size must match for ss-N stack
 // arithmetic.
-pub const SearchStack = extern struct {
+pub const SearchStack = struct {
     pv: ?*anyopaque,
     continuation_history: ?*anyopaque,
     continuation_correction_history: ?*anyopaque,
