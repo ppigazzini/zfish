@@ -289,15 +289,7 @@ fn zfishOperatorDelete(p: ?*anyopaque) callconv(.c) void {
     std.c.free(p);
 }
 
-// M-FINAL: the LimitsType layout anchors ported native (default-only; legacy keeps sizeof(...)
-// as the C++ source of truth, cross-checked via oracle-parity). These feed zfish_worker_set_limits
-// (the POD-tail copy), so a wrong value breaks bench — fully gate-verified.
-fn zfish_limits_sizeof() usize {
-    return @sizeOf(graph_layout.LimitsType);
-}
-fn zfish_limits_searchmoves_bytes() usize {
-    return @offsetOf(graph_layout.LimitsType, "time");
-}
+// LimitsType layout anchors + worker limits/root-moves setters relocated to thread.zig (M16.7).
 
 // M-FINAL (limits readers): pure LimitsType offset reads — no allocation, so no Zig<->C++
 // allocator-boundary mismatch (the trap that blocks porting operator new/delete). Offsets
@@ -313,57 +305,6 @@ fn zfishLimitsPerftValue(limits: *const anyopaque) callconv(.c) usize {
 // moves from the source limits at root setup, never from worker.limits), so we
 // leave it at the zeroed-empty state worker construction set -- valid for ~vector,
 // no string-ABI deep copy, no leak. POD tail starts right after searchmoves.
-pub export fn zfish_worker_set_limits(thread: *anyopaque, src_limits: *const anyopaque) void {
-    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + 8)).*;
-    const dst = worker + graph_layout.worker_off.limits;
-    const head = zfish_limits_searchmoves_bytes(); // skip the searchmoves vector
-    const total = zfish_limits_sizeof();
-    const n = total - head;
-    @memcpy(
-        @as([*]u8, @ptrFromInt(dst + head))[0..n],
-        @as([*]const u8, @ptrFromInt(@intFromPtr(src_limits) + head))[0..n],
-    );
-}
-
-pub export fn zfish_worker_set_root_moves(thread: *anyopaque, src_rm: *const anyopaque) void {
-    // worker@8, then the rootMoves vector object {begin@0,end@8,cap@16}.
-    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + 8)).*;
-    const vbase = worker + graph_layout.worker_off.root_moves;
-    const dst_begin: *usize = @ptrFromInt(vbase + 0);
-    const dst_end: *usize = @ptrFromInt(vbase + 8);
-    const dst_cap: *usize = @ptrFromInt(vbase + 16);
-
-    const sb = @intFromPtr(src_rm);
-    const src_begin = @as(*const usize, @ptrFromInt(sb + 0)).*;
-    const src_end = @as(*const usize, @ptrFromInt(sb + 8)).*;
-    const byte_count = src_end - src_begin;
-
-    if (byte_count == 0) {
-        // Empty source: size 0, keep the existing buffer/null (no alloc), exactly
-        // like libc++ assigning an empty range.
-        dst_end.* = dst_begin.*;
-        return;
-    }
-
-    const cap_bytes = if (dst_begin.* != 0) dst_cap.* - dst_begin.* else 0;
-    if (dst_begin.* != 0 and cap_bytes >= byte_count) {
-        @memcpy(
-            @as([*]u8, @ptrFromInt(dst_begin.*))[0..byte_count],
-            @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
-        );
-        dst_end.* = dst_begin.* + byte_count;
-    } else {
-        const new_buf = @intFromPtr(zfishOperatorNew(byte_count) orelse @panic("set_root_moves: OOM"));
-        @memcpy(
-            @as([*]u8, @ptrFromInt(new_buf))[0..byte_count],
-            @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
-        );
-        if (dst_begin.* != 0) zfishOperatorDelete(@ptrFromInt(dst_begin.*));
-        dst_begin.* = new_buf;
-        dst_end.* = new_buf + byte_count;
-        dst_cap.* = new_buf + byte_count;
-    }
-}
 
 // zfish_search_quiet_{low_ply,cont,pawn}_scale retired -- position.zig calls search directly (M16.5).
 

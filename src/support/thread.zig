@@ -211,6 +211,62 @@ fn rootMovesDestroy(ptr: ?*anyopaque) void {
     if (hdr[0] != 0) std.c.free(@ptrFromInt(hdr[0]));
     std.c.free(p);
 }
+
+// Copy the LimitsType POD tail (everything after the leading searchmoves vector) into the
+// worker's limits member. Relocated from main.zig (M16.7); the [@offsetOf("time") .. @sizeOf)
+// span is the layout authority (graph_layout.LimitsType), gate-verified by bench.
+fn workerSetLimits(thread: *anyopaque, src_limits: *const anyopaque) void {
+    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + 8)).*;
+    const dst = worker + graph_layout.worker_off.limits;
+    const head = @offsetOf(graph_layout.LimitsType, "time"); // skip the searchmoves vector
+    const total = @sizeOf(graph_layout.LimitsType);
+    const n = total - head;
+    @memcpy(
+        @as([*]u8, @ptrFromInt(dst + head))[0..n],
+        @as([*]const u8, @ptrFromInt(@intFromPtr(src_limits) + head))[0..n],
+    );
+}
+
+// libc++ vector<RootMove> copy-assign into the worker's rootMoves member (relocated from
+// main.zig, M16.7): reuse the existing buffer when its capacity fits, else operator-new a
+// fresh one and free the old — exactly like assigning an element range.
+fn workerSetRootMoves(thread: *anyopaque, src_rm: *const anyopaque) void {
+    // worker@8, then the rootMoves vector object {begin@0,end@8,cap@16}.
+    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + 8)).*;
+    const vbase = worker + graph_layout.worker_off.root_moves;
+    const dst_begin: *usize = @ptrFromInt(vbase + 0);
+    const dst_end: *usize = @ptrFromInt(vbase + 8);
+    const dst_cap: *usize = @ptrFromInt(vbase + 16);
+
+    const sb = @intFromPtr(src_rm);
+    const src_begin = @as(*const usize, @ptrFromInt(sb + 0)).*;
+    const src_end = @as(*const usize, @ptrFromInt(sb + 8)).*;
+    const byte_count = src_end - src_begin;
+
+    if (byte_count == 0) {
+        dst_end.* = dst_begin.*;
+        return;
+    }
+
+    const cap_bytes = if (dst_begin.* != 0) dst_cap.* - dst_begin.* else 0;
+    if (dst_begin.* != 0 and cap_bytes >= byte_count) {
+        @memcpy(
+            @as([*]u8, @ptrFromInt(dst_begin.*))[0..byte_count],
+            @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
+        );
+        dst_end.* = dst_begin.* + byte_count;
+    } else {
+        const new_buf = @intFromPtr(std.c.malloc(byte_count) orelse @panic("set_root_moves: OOM"));
+        @memcpy(
+            @as([*]u8, @ptrFromInt(new_buf))[0..byte_count],
+            @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
+        );
+        if (dst_begin.* != 0) std.c.free(@ptrFromInt(dst_begin.*));
+        dst_begin.* = new_buf;
+        dst_end.* = new_buf + byte_count;
+        dst_cap.* = new_buf + byte_count;
+    }
+}
 extern fn zfish_threadpool_bound_nodes_assign(
     pool: *anyopaque,
     nodes: ?[*]const usize,
@@ -218,10 +274,6 @@ extern fn zfish_threadpool_bound_nodes_assign(
 ) void;
 const ThreadCallback = *const fn (?*anyopaque) callconv(.c) void;
 
-// Stage 5: native LimitsType POD-tail copy (default build); see main.zig.
-extern fn zfish_worker_set_limits(thread: *anyopaque, limits: *const anyopaque) void;
-// Stage 5: native vector<RootMove> copy-assign (default build); see main.zig.
-extern fn zfish_worker_set_root_moves(thread: *anyopaque, root_moves: *const anyopaque) void;
 extern fn zfish_shared_state_clear_histories(shared_state: *const anyopaque) void;
 extern fn zfish_shared_state_insert_history(
     shared_state: *const anyopaque,
@@ -301,9 +353,9 @@ fn createThreadOnCurrentNode(context_ptr: ?*anyopaque) callconv(.c) void {
 fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
     // Stage 5: native LimitsType POD-tail copy.
-    zfish_worker_set_limits(context.thread, context.input.limits);
+    workerSetLimits(context.thread, context.input.limits);
     // Stage 5: native vector<RootMove> copy-assign.
-    zfish_worker_set_root_moves(context.thread, context.input.root_moves);
+    workerSetRootMoves(context.thread, context.input.root_moves);
     if (graph_layout.Worker.fromThread(context.thread)) |w| {
         w.resetRootSetupState();
         const cfg = context.input.tb_config;
