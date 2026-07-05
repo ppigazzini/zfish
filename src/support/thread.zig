@@ -949,23 +949,11 @@ pub fn clear(pool: *anyopaque) void {
 }
 
 pub fn nodesSearched(pool: *anyopaque) u64 {
-    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
-    var total: u64 = 0;
-    var index: usize = 0;
-    while (index < thread_count) : (index += 1) {
-        total += graph_layout.Thread.fromPtr(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index)).nodesSearched();
-    }
-    return total;
+    return graph_layout.poolNodesSearched(pool);
 }
 
 pub fn tbHits(pool: *anyopaque) u64 {
-    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
-    var total: u64 = 0;
-    var index: usize = 0;
-    while (index < thread_count) : (index += 1) {
-        total += graph_layout.Thread.fromPtr(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index)).tbHits();
-    }
-    return total;
+    return graph_layout.poolTbHits(pool);
 }
 
 pub fn bestThreadIndex(pool: *anyopaque) usize {
