@@ -429,6 +429,7 @@ fn installNativeHooks() void {
     native_hooks.setup_state_back = &zfishThreadpoolSetupStateBack;
     native_hooks.pending_states_available = &pendingStatesAvailable;
     native_hooks.handoff_pending_states = &handoffPendingStates;
+    native_hooks.verify_thread_graph = &thread_construct.verifyThreadGraph;
 }
 
 // REPORT-10 (pos migration): the engine `pos` is now a NATIVE side-allocated Position
@@ -630,10 +631,9 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
 }
 // REPORT-12 TU=0: native engine teardown (no C++ ~UCIEngine). Free the states slot, join+free the
 // native Threads + null the pool's threads vector, then free the heap members. All three are native.
-extern fn zfish_native_threadpool_clear(pool: *anyopaque) void;
 fn uciEngineDestructAt(storage: *anyopaque) callconv(.c) void {
     zfish_engine_release_pending_state_slot(native_engine.NativeEngine.fromPtr(storage).statesSlotPtr());
-    zfish_native_threadpool_clear(engineThreadsPtr(storage));
+    thread_port.nativeThreadpoolClear(engineThreadsPtr(storage));
     zfishNativeEngineDestructMembers(storage);
 }
 
@@ -1052,25 +1052,7 @@ pub fn zfish_engine_go_owner(engine_ptr: *anyopaque, limits_ptr: *const anyopaqu
 
 
 
-pub export fn zfish_engine_load_network_owner(
-    engine_ptr: *anyopaque,
-    file_ptr: [*]const u8,
-    file_len: usize,
-) void {
-    return engine_port.loadNetworkEngine(engine_ptr, file_ptr[0..file_len]);
-}
 
-pub export fn zfish_engine_save_network_owner(
-    engine_ptr: *anyopaque,
-    has_filename: u8,
-    filename_ptr: [*]const u8,
-    filename_len: usize,
-) void {
-    return engine_port.saveNetworkEngine(
-        engine_ptr,
-        if (has_filename != 0) filename_ptr[0..filename_len] else null,
-    );
-}
 
 
 

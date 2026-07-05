@@ -168,7 +168,7 @@ pub fn zfish_native_threadpool_set(
 // Join + free every native Thread and null the footprint vector. Called by the
 // native reset_for_reconfigure and the zfish_uci_engine_destruct_at teardown hook,
 // BEFORE any C++ ThreadPool dtor (which then sees an empty vector and no-ops).
-pub export fn zfish_native_threadpool_clear(pool: *anyopaque) void {
+pub fn zfish_native_threadpool_clear(pool: *anyopaque) void {
     var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
     p.clear();
 }

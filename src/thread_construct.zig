@@ -33,8 +33,8 @@ fn fail(comptime msg: []const u8) noreturn {
 // Verify a freshly constructed ThreadPool against the Zig model. `requested` is
 // the Thread count ThreadPool::set was asked to build; `bound` is the expected
 // boundThreadToNumaNode size (0 when threads are not NUMA-bound, else == requested).
-export fn zfish_verify_thread_graph(pool: ?*const anyopaque, requested: usize, bound: usize) void {
-    const tp = graph_layout.ThreadPool.fromPtr(@constCast(pool orelse return));
+pub fn verifyThreadGraph(pool: *const anyopaque, requested: usize, bound: usize) void {
+    const tp = graph_layout.ThreadPool.fromPtr(@constCast(pool));
 
     // The leading atomic pair is zeroed right after construction (no search has started).
     if (tp.stop != 0) fail("ThreadPool.stop not zero at construction");

@@ -710,10 +710,9 @@ pub fn reconfigure(
     // Worker slot bound. This anchors the offsets the native stage-4 construction
     // must reproduce, verified here against the live C++ Thread objects. Read-only;
     // panics on drift.
-    zfish_verify_thread_graph(pool, requested, if (do_bind) requested else 0);
+    native_hooks.verify_thread_graph.?(pool, requested, if (do_bind) requested else 0);
 }
 
-extern fn zfish_verify_thread_graph(pool: *const anyopaque, requested: usize, bound: usize) void;
 
 
 // The search-driver entry native_thread invokes as each thread's search job. Set
@@ -869,6 +868,12 @@ pub fn startSearching(pool: *anyopaque) void {
 // Relocated the main.zig C-ABI bridge (M16.7): consumers call this thread-module fn.
 pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
     native_threadpool.zfish_native_threadpool_wait_thread(pool, thread_id);
+}
+
+// Join+free the native Threads and null the pool's threads vector (engine teardown).
+// Wraps native_threadpool for main.zig, which doesn't import it directly.
+pub fn nativeThreadpoolClear(pool: *anyopaque) void {
+    native_threadpool.zfish_native_threadpool_clear(pool);
 }
 
 pub fn waitForSearchFinished(pool: *anyopaque) void {

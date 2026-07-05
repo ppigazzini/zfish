@@ -146,13 +146,6 @@ pub const NnueTraceInput = struct {
     positional_cp: [*]const c_int,
 };
 
-extern fn zfish_engine_load_network_owner(engine_ptr: *anyopaque, file_ptr: [*]const u8, file_len: usize) void;
-extern fn zfish_engine_save_network_owner(
-    engine_ptr: *anyopaque,
-    has_filename: u8,
-    filename_ptr: [*]const u8,
-    filename_len: usize,
-) void;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
     const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
@@ -227,7 +220,7 @@ pub fn optionOnChange(
             break :blk null;
         },
         option_callback_eval_file => blk: {
-            zfish_engine_load_network_owner(engine_ptr, value.ptr, value.len);
+            loadNetworkEngine(engine_ptr, value.ptr[0..value.len]);
             break :blk null;
         },
         else => null,
@@ -650,14 +643,20 @@ pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     return evalTrace(trace_pos, network);
 }
 
+// Load a network from the given EvalFile path directly through the network module
+// (M16.9): the engine owns the network pointer + binary directory, so no C-ABI round
+// trip to main is needed. Mirrors the startup load in native_engine.constructMembers.
 pub fn loadNetworkEngine(engine_ptr: *anyopaque, evalfile_path: []const u8) void {
-    zfish_engine_load_network_owner(engine_ptr, evalfile_path.ptr, evalfile_path.len);
+    const e = ne(engine_ptr);
+    const bdir: [*:0]const u8 = e.binary_directory orelse "";
+    const bdir_slice = std.mem.span(bdir);
+    network_port.load(@constCast(e.networkPtr()), bdir_slice.ptr, bdir_slice.len, evalfile_path.ptr, evalfile_path.len);
 }
 
 pub fn saveNetworkEngine(engine_ptr: *anyopaque, filename_opt: ?[]const u8) void {
     const has_filename: u8 = if (filename_opt != null) 1 else 0;
     const filename = filename_opt orelse "";
-    zfish_engine_save_network_owner(engine_ptr, has_filename, filename.ptr, filename.len);
+    _ = network_port.save(ne(engine_ptr).networkPtr(), has_filename, filename.ptr, filename.len);
 }
 
 fn ensurePendingStateStorage(states_slot: *anyopaque) *anyopaque {
