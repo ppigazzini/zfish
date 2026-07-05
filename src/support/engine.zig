@@ -145,13 +145,6 @@ pub const NnueTraceInput = extern struct {
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 extern fn zfish_engine_start_logger(name_ptr: [*]const u8, name_len: usize) void;
-extern fn zfish_thread_start_thinking(
-    pool: *anyopaque,
-    options: *const anyopaque,
-    pos: *anyopaque,
-    limits: *const anyopaque,
-    states_slot: *anyopaque,
-) void;
 extern fn zfish_engine_emit_verify_message(
     engine_ptr: *const anyopaque,
     message_ptr: [*]const u8,
@@ -335,7 +328,7 @@ pub fn waitForSearchFinishedEngine(engine_ptr: *anyopaque) void {
 pub fn goEngine(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
     std.debug.assert(graph_layout.LimitsType.fromPtr(@constCast(limits_ptr)).perftValue() == 0);
     verifyNetwork(engine_ptr);
-    zfish_thread_start_thinking(
+    thread_port.startThinking(
         ne(engine_ptr).threadsPtr(),
         ne(engine_ptr).optionsPtr(),
         ne(engine_ptr).positionPtr(),

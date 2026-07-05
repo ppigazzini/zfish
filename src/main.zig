@@ -398,15 +398,7 @@ pub export fn zfish_movegen_generate_evasions(
 }
 
 
-pub export fn zfish_thread_start_thinking(
-    pool: *anyopaque,
-    options: *const anyopaque,
-    pos: *anyopaque,
-    limits: *const anyopaque,
-    states_slot: *anyopaque,
-) void {
-    return thread_port.startThinking(pool, options, pos, limits, states_slot);
-}
+// thread start-thinking: engine calls thread.startThinking directly (M16.7).
 
 pub export fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8 {
     return engine_port.pendingStatesAvailable(states_slot);
