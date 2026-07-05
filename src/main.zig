@@ -476,7 +476,6 @@ comptime {
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
     // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
-    @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
@@ -630,14 +629,7 @@ pub fn zfish_uci_set_quiet_mode(quiet: u8) void {
 // invoked the onVerifyNetwork std::function (print_info_string interactive / no-op quiet); that
 // std::function is now legacy-only, so this native default-only version reproduces it exactly —
 // no-op in quiet mode, else format as an "info string" and print through the shared sync_cout wrapper.
-fn engineEmitVerifyMessage(engine_ptr: *const anyopaque, message_ptr: [*]const u8, message_len: usize) callconv(.c) void {
-    _ = engine_ptr;
-    if (uci_output.isQuiet()) return;
-    const formatted = zfish_uci_format_info_string(message_ptr, message_len) orelse return;
-    defer c.free(@ptrCast(formatted));
-    const line = std.mem.span(formatted);
-    uci_output.printLine(line.ptr, line.len);
-}
+// emit-verify-message relocated into engine.zig (M16.7).
 
 // REPORT-12 TU=0: the ss_ search-emit/thread bridges. Their default bodies read a Worker reference
 // slot (threads/tt/manager are pointers stored at worker+offset) and call a native target. Ported

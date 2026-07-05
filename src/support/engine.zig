@@ -145,11 +145,6 @@ pub const NnueTraceInput = extern struct {
 };
 
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
-extern fn zfish_engine_emit_verify_message(
-    engine_ptr: *const anyopaque,
-    message_ptr: [*]const u8,
-    message_len: usize,
-) void;
 extern fn zfish_engine_load_network_owner(engine_ptr: *anyopaque, file_ptr: [*]const u8, file_len: usize) void;
 extern fn zfish_engine_save_network_owner(
     engine_ptr: *anyopaque,
@@ -621,7 +616,8 @@ pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
     const result = network_port.verify(network_ptr, evalfile.ptr, evalfile.len);
     if (result.message) |message_ptr| {
         defer c.free(@ptrCast(message_ptr));
-        zfish_engine_emit_verify_message(engine_ptr, message_ptr, std.mem.span(message_ptr).len);
+        // onVerifyNetwork: interactive -> print as "info string ..."; quiet -> no-op.
+        if (!uci_output.isQuiet()) printInfoStringNative(std.mem.span(message_ptr));
     }
 
     if (result.should_exit != 0) {
