@@ -576,8 +576,6 @@ comptime {
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
     // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
-    @export(&searchSharedStateDestroy, .{ .name = "zfish_search_shared_state_destroy" });
-    @export(&searchSharedStateCreate, .{ .name = "zfish_search_shared_state_create" });
     @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
     @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
     @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
@@ -660,17 +658,7 @@ fn freeSideTt() void {
 // sites below reach it through the engine module (engine_port.sharedHistories*).
 // REPORT-12 TU=0 grind: default build's network_ptr is a pass-through to network_replicated_ptr
 // (the native verify/eval ignore the value). Default-only @export; legacy keeps the C++ wrapper deref.
-// REPORT-12 TU=0 grind: two more default-build pass-throughs to existing native fns.
-// numa_config_text -> the native single-node CPU-topology string; legacy keeps the C++ NumaConfig.
-// shared_state_destroy -> the native shared-state destructor (already used in both builds).
-extern fn zfish_shared_state_native_destroy(ss: ?*anyopaque) void;
-fn searchSharedStateDestroy(shared_state: ?*anyopaque) callconv(.c) void {
-    zfish_shared_state_native_destroy(shared_state);
-}
-extern fn zfish_shared_state_native_create(options: *anyopaque, threads: *anyopaque, tt: *anyopaque, shared_histories: *anyopaque, network: *anyopaque) ?*anyopaque;
-fn searchSharedStateCreate(options: *const anyopaque, threads: *anyopaque, tt: *anyopaque, shared_hists: *anyopaque, network: *const anyopaque) callconv(.c) ?*anyopaque {
-    return zfish_shared_state_native_create(@constCast(options), threads, tt, shared_hists, @constCast(network));
-}
+// SharedState create/destroy: engine.zig now calls shared_state.zig directly (M16.7).
 // REPORT-12 TU=0 grind: the _info_text display fns are pure pass-throughs to the already-native
 // *_information_owner fns — the owner already returns a malloc'd C string the caller frees with
 // c.free, so the C++ wrappers' std::string re-copy was redundant. Default-only; legacy keeps C++.

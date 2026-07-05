@@ -49,7 +49,9 @@ comptime {
 // test-graph artifact). The SharedState is rebuilt per search and never aliased.
 var live_shared_state: SharedState = undefined;
 
-export fn zfish_shared_state_native_create(
+// Build the live SharedState from the five referents and return it (M16.7: engine.zig
+// calls this directly instead of the former main.zig C-ABI wrapper). Rebuilt per search.
+pub fn create(
     options: *anyopaque,
     threads: *anyopaque,
     tt: *anyopaque,
@@ -60,7 +62,7 @@ export fn zfish_shared_state_native_create(
     return @ptrCast(&live_shared_state);
 }
 
-export fn zfish_shared_state_native_destroy(ss: ?*anyopaque) void {
+pub fn destroy(ss: ?*anyopaque) void {
     _ = ss; // static storage — nothing to free (lifetime is the static itself)
 }
 

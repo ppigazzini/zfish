@@ -25,10 +25,12 @@ inline fn ne(p: *const anyopaque) *native_engine.NativeEngine {
 // layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
 // are build-verified rather than dead source. These are the vtable-free,
 // std::function-free post-src/ graph nodes the atomic Engine cut switches to.
+const shared_state_mod = @import("shared_state.zig");
+
 comptime {
     _ = @import("engine_graph.zig");
     _ = @import("search_manager.zig");
-    _ = @import("shared_state.zig");
+    _ = shared_state_mod;
     _ = @import("root_move.zig");
 }
 
@@ -169,14 +171,6 @@ extern fn zfish_threadpool_reconfigure(
     shared_state: *const anyopaque,
     update_context: *const anyopaque,
 ) void;
-extern fn zfish_search_shared_state_create(
-    options: *const anyopaque,
-    threads: *anyopaque,
-    tt: *anyopaque,
-    shared_hists: *anyopaque,
-    network: *const anyopaque,
-) ?*anyopaque;
-extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
     const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
@@ -384,14 +378,14 @@ pub fn resizeThreads(
 ) void {
     thread_port.waitForSearchFinished(threads);
 
-    const shared_state = zfish_search_shared_state_create(
-        options,
+    const shared_state = shared_state_mod.create(
+        @constCast(options),
         threads,
         tt,
         shared_hists,
-        network,
+        @constCast(network),
     ) orelse @panic("OOM");
-    defer zfish_search_shared_state_destroy(shared_state);
+    defer shared_state_mod.destroy(shared_state);
 
     zfish_threadpool_reconfigure(
         threads,
