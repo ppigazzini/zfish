@@ -148,18 +148,6 @@ extern fn zfish_engine_numa_set_from_string(
     text_len: usize,
 ) void;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
-extern fn zfish_engine_add_option(
-    engine_ptr: *anyopaque,
-    name_ptr: [*]const u8,
-    name_len: usize,
-    option_kind: u8,
-    default_ptr: [*]const u8,
-    default_len: usize,
-    default_value: c_int,
-    min_value: c_int,
-    max_value: c_int,
-    callback_kind: u8,
-) void;
 extern fn zfish_engine_start_logger(name_ptr: [*]const u8, name_len: usize) void;
 extern fn zfish_engine_set_numa_config_from_option_owner(
     engine_ptr: *anyopaque,
@@ -906,8 +894,36 @@ pub fn threadAllocationInformation(
     return formatThreadAllocation(graph_layout.ThreadPool.fromPtr(@constCast(threads)).numThreads(), binding.ptr, binding.len);
 }
 
+// Register one option into the native OptionsModel (relocated from main.zig, M16.7).
+// The engine handle + callback kind are unused (the model holds no per-option callback);
+// spin/check defaults are rendered to the model's string form.
+fn engineAddOption(
+    engine_ptr: *anyopaque,
+    name_ptr: [*]const u8,
+    name_len: usize,
+    option_kind: u8,
+    default_ptr: [*]const u8,
+    default_len: usize,
+    default_value: c_int,
+    min_value: c_int,
+    max_value: c_int,
+    callback_kind: u8,
+) void {
+    _ = engine_ptr;
+    _ = callback_kind;
+    var buf: [16]u8 = undefined;
+    const default_slice: []const u8 = switch (option_kind) {
+        1 => if (default_value != 0) "true" else "false", // check
+        2 => std.fmt.bufPrint(&buf, "{d}", .{default_value}) catch unreachable, // spin
+        3 => "", // button
+        0 => default_ptr[0..default_len], // string
+        else => @panic("engineAddOption: bad option kind"),
+    };
+    _ = option_port.zfish_optmodel_add(name_ptr, name_len, option_kind, default_slice.ptr, default_slice.len, min_value, max_value);
+}
+
 fn addStringOption(engine_ptr: *anyopaque, name: []const u8, default_value: []const u8, callback_kind: u8) void {
-    zfish_engine_add_option(
+    engineAddOption(
         engine_ptr,
         name.ptr,
         name.len,
@@ -922,7 +938,7 @@ fn addStringOption(engine_ptr: *anyopaque, name: []const u8, default_value: []co
 }
 
 fn addCheckOption(engine_ptr: *anyopaque, name: []const u8, default_value: u8) void {
-    zfish_engine_add_option(
+    engineAddOption(
         engine_ptr,
         name.ptr,
         name.len,
@@ -944,7 +960,7 @@ fn addSpinOption(
     max_value: c_int,
     callback_kind: u8,
 ) void {
-    zfish_engine_add_option(
+    engineAddOption(
         engine_ptr,
         name.ptr,
         name.len,
@@ -959,7 +975,7 @@ fn addSpinOption(
 }
 
 fn addButtonOption(engine_ptr: *anyopaque, name: []const u8, callback_kind: u8) void {
-    zfish_engine_add_option(
+    engineAddOption(
         engine_ptr,
         name.ptr,
         name.len,

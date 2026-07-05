@@ -599,7 +599,6 @@ comptime {
     // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
     @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
     @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
-    @export(&engineAddOption, .{ .name = "zfish_engine_add_option" });
     @export(&rootMovesCreateRanked, .{ .name = "zfish_root_moves_create_ranked" });
     @export(&rootMovesDestroy, .{ .name = "zfish_root_moves_destroy" });
     @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
@@ -1163,19 +1162,8 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
 // register into the native option model (option_port.zfish_optmodel_add). No C++ Option / OptionsMap is built in
 // the default build; the engine pointer + callback_kind are unused (the model derives the on-change
 // callback from the option name). Legacy keeps the C++ OptionsMap registration.
-fn engineAddOption(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, option_kind: u8, default_ptr: [*]const u8, default_len: usize, default_value: c_int, min_value: c_int, max_value: c_int, callback_kind: u8) callconv(.c) void {
-    _ = engine_ptr;
-    _ = callback_kind;
-    var buf: [16]u8 = undefined;
-    const default_slice: []const u8 = switch (option_kind) {
-        1 => if (default_value != 0) "true" else "false", // check
-        2 => std.fmt.bufPrint(&buf, "{d}", .{default_value}) catch unreachable, // spin
-        3 => "", // button
-        0 => default_ptr[0..default_len], // string
-        else => @panic("zfish_engine_add_option: bad option kind"),
-    };
-    _ = option_port.zfish_optmodel_add(name_ptr, name_len, option_kind, default_slice.ptr, default_slice.len, min_value, max_value);
-}
+// engine option registration moved into engine.zig (M16.7); initBody builds the
+// native OptionsModel there via the option module directly.
 
 // REPORT-12 TU=0: native Search::RootMoves (= libc++ std::vector<RootMove>) builder/destroyer. The C++
 // build a heap std::vector<RootMove> via make_unique + reserve + emplace_back. Reproduced natively: the
