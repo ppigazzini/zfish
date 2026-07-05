@@ -761,9 +761,9 @@ fn zfishEngineTtClear(tt_ptr: *anyopaque, threads: *anyopaque) callconv(.c) void
 //     without the virtual `delete manager`. Default-only; the legacy oracle keeps the real
 //     C++ SearchManager + ~Worker. See [[frozen-header-wall-blocks-member-cuts]].
 fn zfishMakeSearchManager(update_context: ?*const anyopaque, is_main: u8) callconv(.c) ?*anyopaque {
-    const buf = zfishOperatorNew(graph_layout.search_manager_size) orelse return null;
+    const buf = zfishOperatorNew(@sizeOf(graph_layout.SearchManager)) orelse return null;
     const bytes: [*]u8 = @ptrCast(buf);
-    @memset(bytes[0..graph_layout.search_manager_size], 0);
+    @memset(bytes[0..@sizeOf(graph_layout.SearchManager)], 0);
     if (is_main != 0) {
         graph_layout.SearchManager.fromPtr(@ptrCast(bytes)).updates = update_context;
     }

@@ -125,33 +125,30 @@ pub const worker_off = struct {
 // these data fields plus `updates` are live.
 // TimeManagement (40 bytes): the clock sub-object embedded in SearchManager at
 // offset 8. availableNodes (4th i64) is set to -1 by TimeManagement::clear.
-pub const TimeManagement = extern struct {
-    start_time: i64, // @0
-    optimum_time: i64, // @8
-    maximum_time: i64, // @16
-    available_nodes: i64, // @24
-    use_nodes_time: u8, // @32 (bool)
-    _pad: [7]u8,
+pub const TimeManagement = struct {
+    start_time: i64 = 0,
+    optimum_time: i64 = 0,
+    maximum_time: i64 = 0,
+    available_nodes: i64 = 0,
+    use_nodes_time: u8 = 0, // bool
 };
 
 // The SearchManager object (120 bytes). Typed replacement for search_manager_off:
 // a vtable slot, the embedded TimeManagement, and the per-search bookkeeping the
 // time-management + PV code reads. `ponder` is a std::atomic_bool in a 4-byte slot.
-pub const SearchManager = extern struct {
-    vtable: usize, // @0
-    tm: TimeManagement, // @8 (40 bytes)
-    original_time_adjust: f64, // @48
-    calls_cnt: i32, // @56
-    ponder: u8, // @60 (atomic_bool, 4-byte slot)
-    _pad0: [3]u8,
-    iter_value: [4]i32, // @64
-    previous_time_reduction: f64, // @80
-    best_previous_score: i32, // @88
-    best_previous_average_score: i32, // @92
-    stop_on_ponderhit: u8, // @96 (bool)
-    _pad1: [7]u8,
-    id: usize, // @104
-    updates: ?*const anyopaque, // @112 (const UpdateContext&)
+pub const SearchManager = struct {
+    vtable: usize = 0, // functionally dead (no virtual dispatch); kept as a zero slot
+    tm: TimeManagement = .{},
+    original_time_adjust: f64 = 0,
+    calls_cnt: i32 = 0,
+    ponder: u8 = 0, // atomic_bool
+    iter_value: [4]i32 = .{ 0, 0, 0, 0 },
+    previous_time_reduction: f64 = 0,
+    best_previous_score: i32 = 0,
+    best_previous_average_score: i32 = 0,
+    stop_on_ponderhit: u8 = 0, // bool
+    id: usize = 0,
+    updates: ?*const anyopaque = null, // const UpdateContext&
 
     pub inline fn fromPtr(p: *anyopaque) *SearchManager {
         return @ptrCast(@alignCast(p));
@@ -188,16 +185,11 @@ pub const SearchManager = extern struct {
     }
 };
 
-comptime {
-    std.debug.assert(@sizeOf(TimeManagement) == 40);
-    std.debug.assert(@sizeOf(SearchManager) == search_manager_size);
-    std.debug.assert(@offsetOf(SearchManager, "tm") == 8);
-    std.debug.assert(@offsetOf(SearchManager, "ponder") == 60);
-    std.debug.assert(@offsetOf(SearchManager, "best_previous_score") == 88);
-    std.debug.assert(@offsetOf(SearchManager, "id") == 104);
-    std.debug.assert(@offsetOf(SearchManager, "updates") == 112);
-    std.debug.assert(@offsetOf(TimeManagement, "available_nodes") == 24);
-}
+// SearchManager + TimeManagement are now native Zig structs (M16.8 de-mirror): the
+// manager is a standalone heap object reached only through these typed accessors and
+// pointed to by worker_off.manager, so its internal layout is Zig's to choose -- the
+// C++ offset mirror (@offsetOf == 8/60/88/... asserts) is retired. The allocation in
+// zfishMakeSearchManager now sizes to @sizeOf(SearchManager).
 
 // The ThreadPool object (64 bytes). Typed replacement for the old thread_pool_off
 // offset map: the runtime constructs and reads the pool through these fields. The
