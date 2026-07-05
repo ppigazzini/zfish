@@ -481,8 +481,6 @@ comptime {
     @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
     @export(&ssThreadsStart, .{ .name = "zfish_ss_threads_start" });
     @export(&ssWaitFinished, .{ .name = "zfish_ss_wait_finished" });
-    @export(&ssEmitPv, .{ .name = "zfish_ss_emit_pv" });
-    @export(&ssSearchIdPv, .{ .name = "zfish_search_id_pv" });
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
     @export(&uciSetListenerMode, .{ .name = "zfish_uci_set_listener_mode" });
@@ -753,7 +751,6 @@ fn engineEmitVerifyMessage(engine_ptr: *const anyopaque, message_ptr: [*]const u
 // slot (threads/tt/manager are pointers stored at worker+offset) and call a native target. Ported
 // native — reusing graph_layout.worker_off (the same offsets the native search already reads) and
 // the native pv driver / threadpool fns. Legacy keeps the C++ Worker-method versions.
-extern fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void;
 fn workerRefPtr(worker: *anyopaque, offset: usize) ?*anyopaque {
     const slot: *const ?*anyopaque = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + offset));
     return slot.*;
@@ -768,25 +765,7 @@ fn ssThreadsStart(worker: ?*anyopaque) callconv(.c) void {
 fn ssWaitFinished(worker: ?*anyopaque) callconv(.c) void {
     thread_port.waitForSearchFinished(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
 }
-fn ssEmitPv(worker: ?*anyopaque, best: ?*anyopaque) callconv(.c) void {
-    const w = worker.?;
-    zfish_search_pv(
-        workerRefPtr(w, graph_layout.worker_off.manager),
-        best,
-        workerRefPtr(w, graph_layout.worker_off.threads),
-        workerRefPtr(w, graph_layout.worker_off.tt),
-        workerRootDepth(best.?),
-    );
-}
-fn ssSearchIdPv(worker: *anyopaque, depth: c_int) callconv(.c) void {
-    zfish_search_pv(
-        workerRefPtr(worker, graph_layout.worker_off.manager),
-        worker,
-        workerRefPtr(worker, graph_layout.worker_off.threads),
-        workerRefPtr(worker, graph_layout.worker_off.tt),
-        depth,
-    );
-}
+// emit_pv / search_id_pv PV-emit wrappers relocated into position.zig (M16.7).
 // REPORT-12 TU=0: threadpool_wait_thread forwards to the native single-thread wait (the pool holds
 // native Threads, so the C++ wait_on_thread would lock them as C++ Threads). Pure native forward.
 // threadpool wait-thread bridge removed (M16.7): consumers call thread.waitThread directly.

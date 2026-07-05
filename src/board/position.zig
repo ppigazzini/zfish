@@ -479,7 +479,7 @@ const PvContext = extern struct {
 extern fn zfish_search_cb_pv_context(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, out: *PvContext) void;
 extern fn zfish_search_emit_info_full(manager: ?*anyopaque, worker: ?*anyopaque, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void;
 
-pub export fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void {
+fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void {
     const value_infinite: i32 = 32001;
     var ctx: PvContext = undefined;
     zfish_search_cb_pv_context(manager, worker, threads, tt_ptr, &ctx);
@@ -756,8 +756,40 @@ extern fn zfish_ss_threads_start(worker: ?*anyopaque) void;
 extern fn zfish_ss_wait_finished(worker: ?*anyopaque) void;
 extern fn zfish_ss_npmsec_advance(worker: ?*anyopaque) void;
 extern fn zfish_ss_get_best_thread(worker: ?*anyopaque) ?*anyopaque;
-extern fn zfish_ss_emit_pv(worker: ?*anyopaque, best: ?*anyopaque) void;
 extern fn zfish_ss_emit_bestmove(worker: ?*anyopaque, best: ?*anyopaque) void;
+
+// Read a Worker reference slot (a pointer stored at worker+offset).
+fn workerRefPtr(worker: *anyopaque, offset: usize) ?*anyopaque {
+    const slot: *const ?*anyopaque = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + offset));
+    return slot.*;
+}
+fn workerRootDepthOf(worker: *anyopaque) c_int {
+    const p: *const c_int = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + graph_layout.worker_off.root_depth));
+    return p.*;
+}
+
+// emit_pv / search_id_pv: thin graph-only wrappers that resolve the worker's
+// manager/threads/tt reference slots and drive the local PV emitter (searchPv).
+// Relocated from main.zig (M16.7).
+fn ssEmitPv(worker: ?*anyopaque, best: ?*anyopaque) void {
+    const w = worker.?;
+    zfish_search_pv(
+        workerRefPtr(w, graph_layout.worker_off.manager),
+        best,
+        workerRefPtr(w, graph_layout.worker_off.threads),
+        workerRefPtr(w, graph_layout.worker_off.tt),
+        workerRootDepthOf(best.?),
+    );
+}
+fn searchIdPv(worker: *anyopaque, depth: c_int) void {
+    zfish_search_pv(
+        workerRefPtr(worker, graph_layout.worker_off.manager),
+        worker,
+        workerRefPtr(worker, graph_layout.worker_off.threads),
+        workerRefPtr(worker, graph_layout.worker_off.tt),
+        depth,
+    );
+}
 
 // Worker::start_searching control flow, ported from the bridge. Zig owns every
 // branch and the sequencing; the C++ leaf helpers run the individual time-
@@ -800,7 +832,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
         uci_pv_sent = false;
 
     if (!uci_pv_sent or best != worker)
-        zfish_ss_emit_pv(worker, best);
+        ssEmitPv(worker, best);
 
     zfish_ss_emit_bestmove(worker, best);
 }
@@ -2134,7 +2166,6 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
 // bestMoveChanges collection (sum + reset, returned as a double) so multi-thread
 // stays correct. The skill-enabled handicap path stays in C++ (the seam only
 // redirects here when skill is off), so no skill/RNG logic is needed in Zig.
-extern fn zfish_search_id_pv(worker: *anyopaque, depth: c_int) void;
 
 const id_nodes_limit_output: u64 = 10_000_000;
 
@@ -2335,7 +2366,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
                 if (@atomicLoad(u8, id.stop, .monotonic) != 0) break;
 
                 if (main_thread and multi_pv == 1 and (best_value <= alpha or best_value >= beta) and id.nodes.* > id_nodes_limit_output)
-                    zfish_search_id_pv(worker, id.root_depth.*);
+                    searchIdPv(worker, id.root_depth.*);
 
                 if (best_value <= alpha) {
                     beta = alpha;
@@ -2371,7 +2402,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
             if (main_thread and @atomicLoad(u8, id.stop, .monotonic) == 0 and
                 (id.pv_idx.* + 1 == multi_pv or id.nodes.* > id_nodes_limit_output))
             {
-                zfish_search_id_pv(worker, id.root_depth.*);
+                searchIdPv(worker, id.root_depth.*);
                 uci_pv_sent = (id.pv_idx.* + 1 == multi_pv);
             }
 
