@@ -813,7 +813,52 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 // rootDepth. Cached in QCtx at entry so do_move/undo_move/evaluate and these scalar
 // accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
 // forward pass + eval scaling are all Zig-owned).
-extern fn zfish_search_cb_worker_state(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void;
+// Once-per-search snapshot of the Worker's live member pointers + shared stop flag,
+// and -- on the main thread -- the SearchManager/TimeManagement/LimitsType time inputs.
+// Relocated from main.zig (M16.7): graph_layout offset reads + the native FT pointer
+// (the network handle is never dereferenced -- weights serve from native storage).
+fn searchCbWorkerState(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
+    const wb = @intFromPtr(worker);
+    const off = graph_layout.worker_off;
+    const pool = @as(*const usize, @ptrFromInt(wb + off.threads)).*;
+    const stop_addr = @intFromPtr(&graph_layout.ThreadPool.fromAddr(pool).stop);
+
+    out_acc_stack.* = @ptrFromInt(wb + off.accumulator_stack);
+    out_nodes.* = @ptrFromInt(wb + off.nodes);
+    out_network.* = network_port.nativeFtPtr();
+    out_cache.* = @ptrFromInt(wb + off.refresh_table);
+    out_optimism.* = @ptrFromInt(wb + off.optimism);
+    out_nmp_min_ply.* = @ptrFromInt(wb + off.nmp_min_ply);
+    out_sel_depth.* = @ptrFromInt(wb + off.sel_depth);
+    out_root_depth.* = @ptrFromInt(wb + off.root_depth);
+    out_reductions.* = @ptrFromInt(wb + off.reductions);
+    out_root_delta.* = @ptrFromInt(wb + off.root_delta);
+    out_last_iter_pv.* = @ptrFromInt(wb + off.last_iteration_pv);
+    out_stop.* = @ptrFromInt(stop_addr);
+    out_pv_idx.* = @ptrFromInt(wb + off.pv_idx);
+    out_root_moves.* = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + off.root_moves)).*);
+    out_pv_last.* = @ptrFromInt(wb + off.pv_last);
+    out_best_move_changes.* = @ptrFromInt(wb + off.best_move_changes);
+
+    const thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx)).*;
+    if (thread_idx == 0) {
+        const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
+        const limits = wb + off.limits;
+        out_time.calls_cnt = &smgr.calls_cnt;
+        out_time.stop_write = @ptrFromInt(stop_addr);
+        out_time.ponder = &smgr.ponder;
+        out_time.stop_on_ponderhit = &smgr.stop_on_ponderhit;
+        out_time.tm_start_time = smgr.tm.start_time;
+        out_time.tm_maximum_time = smgr.tm.maximum_time;
+        const lim = graph_layout.LimitsType.fromAddr(limits);
+        out_time.lim_nodes = lim.nodes;
+        out_time.lim_movetime = lim.movetime;
+        out_time.tm_use_nodes_time = smgr.tm.use_nodes_time;
+        out_time.use_time_management = @intFromBool(lim.time[0] != 0 or lim.time[1] != 0);
+    } else {
+        out_time.calls_cnt = null;
+    }
+}
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -1294,7 +1339,7 @@ fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var pv_last: ?*const usize = null;
     var best_move_changes: ?*u64 = null;
     var time_state: SearchTimeState = undefined;
-    zfish_search_cb_worker_state(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes, &time_state);
+    searchCbWorkerState(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes, &time_state);
     return .{
         .worker = worker,
         .table = table,

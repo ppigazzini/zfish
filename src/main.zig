@@ -1305,69 +1305,7 @@ const ZfishSearchTimeState = extern struct {
 // and rootMoves array bases, the shared threads.stop flag, and -- on the main
 // thread -- the SearchManager/TimeManagement/LimitsType time-control inputs. All
 // reads are by offset and identical across builds, so this is a plain export.
-pub export fn zfish_search_cb_worker_state(
-    worker: *anyopaque,
-    out_acc_stack: *?*anyopaque,
-    out_nodes: *?*anyopaque,
-    out_network: *?*const anyopaque,
-    out_cache: *?*anyopaque,
-    out_optimism: *?*anyopaque,
-    out_nmp_min_ply: *?*anyopaque,
-    out_sel_depth: *?*anyopaque,
-    out_root_depth: *?*anyopaque,
-    out_reductions: *?*anyopaque,
-    out_root_delta: *?*anyopaque,
-    out_last_iter_pv: *?*anyopaque,
-    out_stop: *?*anyopaque,
-    out_pv_idx: *?*anyopaque,
-    out_root_moves: *?*anyopaque,
-    out_pv_last: *?*anyopaque,
-    out_best_move_changes: *?*anyopaque,
-    out_time: *ZfishSearchTimeState,
-) void {
-    const wb = @intFromPtr(worker);
-    const off = graph_layout.worker_off;
-    const pool = @as(*const usize, @ptrFromInt(wb + off.threads)).*;
-    const stop_addr = @intFromPtr(&graph_layout.ThreadPool.fromAddr(pool).stop);
-
-    out_acc_stack.* = @ptrFromInt(wb + off.accumulator_stack);
-    out_nodes.* = @ptrFromInt(wb + off.nodes);
-    // The network handle is never dereferenced (weights are served from native
-    // storage), so it is just the native feature-transformer pointer.
-    out_network.* = network_port.nativeFtPtr();
-    out_cache.* = @ptrFromInt(wb + off.refresh_table);
-    out_optimism.* = @ptrFromInt(wb + off.optimism);
-    out_nmp_min_ply.* = @ptrFromInt(wb + off.nmp_min_ply);
-    out_sel_depth.* = @ptrFromInt(wb + off.sel_depth);
-    out_root_depth.* = @ptrFromInt(wb + off.root_depth);
-    out_reductions.* = @ptrFromInt(wb + off.reductions);
-    out_root_delta.* = @ptrFromInt(wb + off.root_delta);
-    out_last_iter_pv.* = @ptrFromInt(wb + off.last_iteration_pv);
-    out_stop.* = @ptrFromInt(stop_addr);
-    out_pv_idx.* = @ptrFromInt(wb + off.pv_idx);
-    out_root_moves.* = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + off.root_moves)).*);
-    out_pv_last.* = @ptrFromInt(wb + off.pv_last);
-    out_best_move_changes.* = @ptrFromInt(wb + off.best_move_changes);
-
-    const thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx)).*;
-    if (thread_idx == 0) {
-        const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
-        const limits = wb + off.limits;
-        out_time.calls_cnt = &smgr.calls_cnt;
-        out_time.stop_write = @ptrFromInt(stop_addr);
-        out_time.ponder = &smgr.ponder;
-        out_time.stop_on_ponderhit = &smgr.stop_on_ponderhit;
-        out_time.tm_start_time = smgr.tm.start_time;
-        out_time.tm_maximum_time = smgr.tm.maximum_time;
-        const lim = graph_layout.LimitsType.fromAddr(limits);
-        out_time.lim_nodes = lim.nodes;
-        out_time.lim_movetime = lim.movetime;
-        out_time.tm_use_nodes_time = smgr.tm.use_nodes_time;
-        out_time.use_time_management = @intFromBool(lim.time[0] != 0 or lim.time[1] != 0);
-    } else {
-        out_time.calls_cnt = null;
-    }
-}
+// zfish_search_cb_worker_state: relocated into position.zig (M16.7, network cycle broken).
 
 // zfish_ss_prologue: the per-search reset the ported search runs before iterative
 // deepening. Resets the worker's AccumulatorStack to one cleared slot (the native
