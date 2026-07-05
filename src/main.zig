@@ -240,7 +240,7 @@ pub export fn zfish_worker_clear(worker: *anyopaque) void {
     const wb = @intFromPtr(worker);
     const off = graph_layout.worker_off;
     position_port.clearWorkerHistories(worker);
-    const shared_history: *anyopaque = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + off.shared_history)).*);
+    const shared_history: *anyopaque = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + position_port.worker_shared_history_off)).*);
     const numa_thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx + 8)).*;
     const numa_total = @as(*const usize, @ptrFromInt(wb + off.thread_idx + 16)).*;
     position_port.clearSharedHistory(shared_history, numa_thread_idx, numa_total);

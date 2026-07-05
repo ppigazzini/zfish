@@ -113,15 +113,20 @@ const hist_pieceto: usize = hist_piece_nb * hist_square_nb; // PieceToHistory pa
 // field order and sizes must byte-match the C++ class. The bridge proves the
 // layout with offsetof static_asserts; this mirror lets ported search code
 // address every table from one Worker pointer instead of per-call base passing.
-pub const WorkerHistories = extern struct {
+pub const WorkerHistories = struct {
     main_history: [hist_color_nb * hist_uint16]i16, // ButterflyHistory [2][65536]
     low_ply_history: [hist_low_ply * hist_uint16]i16, // LowPlyHistory [5][65536]
     capture_history: [hist_piece_nb * hist_square_nb * hist_piece_type_nb]i16, // [16][64][8]
     continuation_history: [2 * 2 * hist_pieceto * hist_pieceto]i16, // [2][2] of [16][64]->[16][64]
     continuation_correction_history: [hist_pieceto * hist_pieceto]i16, // [16][64]->[16][64]
     tt_move_history: i16,
-    shared_history: ?*anyopaque, // &SharedHistories (8-byte aligned; 6 bytes pad before)
+    shared_history: ?*anyopaque, // &SharedHistories
 };
+
+// Native offset of the Worker's shared_history reference (last WorkerHistories field).
+// WorkerHistories is a native struct now, so the worker builder/reader use this rather
+// than the old graph_layout.worker_off.shared_history C++ offset.
+pub const worker_shared_history_off = @offsetOf(WorkerHistories, "shared_history");
 
 // One CorrectionBundle (src/history.h): the four correction StatsEntry<int16>
 // fields, one [2] page per correctionHistory index (indexed by color).

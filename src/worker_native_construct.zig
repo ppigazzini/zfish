@@ -67,7 +67,7 @@ pub const WorkerCtorInputs = struct {
 // run the native Worker::clear afterwards, exactly as the C++ path does.
 pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     // Five SharedState reference members.
-    writePtr(worker, off.shared_history, in.shared_history);
+    writePtr(worker, position_port.worker_shared_history_off, in.shared_history);
     writePtr(worker, off.options, in.options);
     writePtr(worker, off.threads, in.threads);
     writePtr(worker, off.tt, in.tt);
@@ -170,7 +170,7 @@ test "writeConstructorFields lands every member at its worker_off slot" {
         }
     }.read;
 
-    try testing.expectEqual(@as(usize, 0x1111), readPtr(buf.ptr, off.shared_history));
+    try testing.expectEqual(@as(usize, 0x1111), readPtr(buf.ptr, position_port.worker_shared_history_off));
     try testing.expectEqual(@as(usize, 0x2222), readPtr(buf.ptr, off.options));
     try testing.expectEqual(@as(usize, 0x3333), readPtr(buf.ptr, off.threads));
     try testing.expectEqual(@as(usize, 0x4444), readPtr(buf.ptr, off.tt));
