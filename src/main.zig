@@ -110,9 +110,6 @@ pub fn zfish_position_undo_move_method(pos_ptr: *anyopaque, move: u16) void {
 // the C++ Position::set / Position::legal in the bridge. The live pos is the Zig side block, so
 // these operate on the same byte-compatible storage the native search reads. Default-only
 // (legacy keeps the C++ Position methods); gate-verified by search-parity (51 FENs) + bench.
-fn zfishPositionMoveIsLegal(pos_ptr: *const anyopaque, raw_move: u16) callconv(.c) u8 {
-    return @intFromBool(position_port.legal(pos_ptr, raw_move));
-}
 // M-FINAL cutover (thread-cluster leaf): native TT-slice zero. In the default build the
 // pool holds native Threads (no C++ run_custom_job vehicle); the TT clear is a deterministic
 // memset whose result is thread-independent, so zero the slice synchronously on the caller
@@ -190,10 +187,6 @@ pub fn zfish_position_set_method(
 
 pub fn zfish_search_extract_ponder_from_tt(pv: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8, pos: *anyopaque) u8 {
     return position_port.extractPonderFromTt(pv, table, cc, gen, pos);
-}
-
-pub export fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *anyopaque) void {
-    position_port.fillSnapshot(pos_ptr, out);
 }
 
 
@@ -441,7 +434,6 @@ comptime {
     // M-FINAL cutover: native engine container construct/destruct (not yet on the live
     // path; the flip commit wires these). Default-only — legacy keeps the C++ UCIEngine.
     // M-FINAL cutover (position-set port): native Position::set + legality (legacy keeps C++).
-    @export(&zfishPositionMoveIsLegal, .{ .name = "zfish_position_move_is_legal" });
     // M-FINAL cutover (thread-cluster leaf): native TT-slice zero (legacy keeps C++ run_on_thread).
     // M-FINAL cutover (states crack): native StateList storage/slot/adopt/back (legacy keeps C++ deque).
     @export(&zfishThreadpoolSetupStatesAdoptFromStorage, .{ .name = "zfish_threadpool_setup_states_adopt_from_storage" });

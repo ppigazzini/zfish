@@ -101,7 +101,6 @@ const FullAppendResult = struct {
 
 const BridgePositionSnapshot = position_snapshot.PositionSnapshot;
 
-extern fn zfish_position_fill_snapshot(pos_ptr: *const anyopaque, out: *BridgePositionSnapshot) void;
 
 const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32) + color_count * @sizeOf(bool);
 const computed_offset = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32);
@@ -869,7 +868,7 @@ fn positionSnapshot(pos: *const anyopaque) PositionSnapshot {
 
 fn loadBridgeSnapshot(pos: *const anyopaque) BridgePositionSnapshot {
     var snapshot = std.mem.zeroes(BridgePositionSnapshot);
-    zfish_position_fill_snapshot(pos, &snapshot);
+    position_snapshot.fill(pos, &snapshot);
     return snapshot;
 }
 

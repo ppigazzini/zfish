@@ -135,7 +135,6 @@ const CaptureHistoryRow = [square_nb][piece_type_nb]HistoryEntry;
 const PieceToHistoryRow = [square_nb]HistoryEntry;
 const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 
-extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 // History-table base pointers packed into a HistorySnapshot (M16.7 — relocated from main.zig).
 fn fillHistorySnapshot(
     main_history: ?*const anyopaque,
@@ -669,7 +668,7 @@ fn seeGeWithSnapshot(snapshot: *const PositionSnapshot, raw_move: u16, threshold
 
 fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
-    zfish_position_fill_snapshot(pos, &snapshot);
+    position_snapshot.fill(pos, &snapshot);
     snapshot.pieces_by_type[no_piece_type] = snapshot.pieces_all;
 
     return snapshot;

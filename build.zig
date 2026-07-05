@@ -343,6 +343,7 @@ pub fn build(b: *std.Build) void {
     // engine module: it binds the native ThreadPool and TranspositionTable.
     engine_module_default.addImport("position", position_module);
     engine_module_default.addImport("position_snapshot", position_snapshot_module);
+    position_module.addImport("position_snapshot", position_snapshot_module);
     engine_module_default.addImport("uci_move", uci_move_module);
     engine_module_default.addImport("misc", misc_module);
     engine_module_default.addImport("thread", thread_module_default);

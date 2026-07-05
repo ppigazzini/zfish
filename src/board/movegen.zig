@@ -61,9 +61,6 @@ const MoveWriter = struct {
     }
 };
 
-extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
-extern fn zfish_position_move_is_legal(pos: *const anyopaque, raw_move: u16) u8;
-
 pub fn generateCaptures(pos: *const anyopaque, move_list: [*]u16) usize {
     return generate(.captures, pos, move_list);
 }
@@ -99,7 +96,7 @@ fn generate(comptime kind: GenType, pos: *const anyopaque, move_list: [*]u16) us
 
 fn loadSnapshot(pos: *const anyopaque) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
-    zfish_position_fill_snapshot(pos, &snapshot);
+    position_snapshot.fill(pos, &snapshot);
     snapshot.pieces_by_type[0] = snapshot.pieces_all;
 
     return snapshot;
@@ -370,7 +367,7 @@ fn filterLegalMoves(
     while (index < count) : (index += 1) {
         const raw_move = move_list[index];
         if (!requiresLegalCheck(raw_move, pinned, king_square) or
-            zfish_position_move_is_legal(pos, raw_move) != 0)
+            position_snapshot.moveIsLegal(pos, raw_move))
         {
             move_list[keep_count] = raw_move;
             keep_count += 1;

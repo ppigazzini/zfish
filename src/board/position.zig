@@ -15,6 +15,7 @@ const shared_histories_map = @import("shared_histories_map"); // native sharedHi
 // (mirrors C++ make_unique_large_page<T[]> over aligned_large_pages_alloc/free).
 const memory = @import("memory");
 const network_port = @import("network");
+const position_snapshot_port = @import("position_snapshot");
 const uci_output = @import("uci_output");
 const uci_wdl = @import("uci_wdl");
 const uci_move_port = @import("uci_move");
@@ -2920,6 +2921,12 @@ const Prng = struct {
 const init_pieces = [_]u8{ 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14 };
 
 pub fn initRuntime() void {
+    // Register the cycle-break hooks movegen/movepick/nnue/uci_move call (they can't
+    // import position). Replaces the zfish_position_fill_snapshot / _move_is_legal
+    // C-ABI exports.
+    position_snapshot_port.fill_fn = &fillSnapshot;
+    position_snapshot_port.move_is_legal_fn = &legal;
+
     var rng = Prng{ .s = 1070372 };
     @memset(&zob_psq, 0);
     for (init_pieces) |pc| {

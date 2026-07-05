@@ -5,7 +5,6 @@ const position_snapshot = @import("position_snapshot");
 // M16.7: uci_move reads the position snapshot through the main-exported bridge rather
 // than importing position -- position (the search driver) imports uci_move to format
 // its emit output, so uci_move must not import position back (would cycle).
-extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 
 const normal_move: u16 = 0;
 const promotion_move: u16 = 1 << 14;
@@ -31,7 +30,7 @@ pub fn toMoveRaw(pos: *const anyopaque, text: []const u8) u16 {
     var move_buffer: [max_moves]u16 = undefined;
     const count = movegen_port.generateLegal(pos, move_buffer[0..].ptr);
     var snapshot = std.mem.zeroes(PositionSnapshot);
-    zfish_position_fill_snapshot(pos, &snapshot);
+    position_snapshot.fill(pos, &snapshot);
     const chess960 = snapshot.is_chess960 != 0;
     return toMoveRawFromLegalMoves(move_buffer[0..count], text, chess960);
 }
