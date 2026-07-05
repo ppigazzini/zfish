@@ -102,12 +102,12 @@ const wdl_to_value = [_]c_int{
     value_mate - max_ply - 1,
 };
 
-pub const ByteView = extern struct {
+pub const ByteView = struct {
     ptr: ?[*]const u8,
     len: usize,
 };
 
-pub const TbConfig = extern struct {
+pub const TbConfig = struct {
     cardinality: c_int,
     root_in_tb: u8,
     use_rule50: u8,
@@ -116,14 +116,14 @@ pub const TbConfig = extern struct {
 
 const TablebaseProbe = tablebase.ProbeResult;
 
-const RankedRootMove = extern struct {
+const RankedRootMove = struct {
     raw_move: u16,
     reserved: u16,
     tb_rank: c_int,
     tb_score: c_int,
 };
 
-const RootSetupInput = extern struct {
+const RootSetupInput = struct {
     limits: *const anyopaque,
     root_moves: *const anyopaque,
     fen_ptr: [*]const u8,
