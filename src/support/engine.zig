@@ -14,6 +14,7 @@ const state_list = @import("state_list");
 const nnue_misc_mod = @import("nnue_misc");
 const tt_port = @import("tt");
 const numa = @import("numa");
+const uci_output = @import("uci_output");
 const native_engine = @import("native_engine");
 
 // Cast an engine handle to the native container (M16.7).
@@ -144,7 +145,6 @@ pub const NnueTraceInput = extern struct {
 
 extern fn zfish_threadpool_setup_states_adopt_from_storage(pool: *anyopaque, storage: *anyopaque) void;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
-extern fn zfish_engine_start_logger(name_ptr: [*]const u8, name_len: usize) void;
 extern fn zfish_engine_emit_verify_message(
     engine_ptr: *const anyopaque,
     message_ptr: [*]const u8,
@@ -200,7 +200,7 @@ pub fn optionOnChange(
 
     return switch (callback_kind) {
         option_callback_debug_log_file => blk: {
-            zfish_engine_start_logger(value.ptr, value.len);
+            uci_output.startLogger(value.ptr, value.len);
             break :blk null;
         },
         option_callback_numa_policy => blk: {

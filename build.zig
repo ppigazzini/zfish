@@ -128,6 +128,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const uci_output_module = b.createModule(.{
+        .root_source_file = b.path("src/support/uci_output.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const numa_module = b.createModule(.{
         .root_source_file = b.path("src/support/numa.zig"),
         .target = target,
@@ -434,6 +439,9 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("memory", memory_module);
     exe.root_module.addImport("graph_layout", graph_layout_module);
     exe.root_module.addImport("clock", clock_module);
+    exe.root_module.addImport("uci_output", uci_output_module);
+    uci_output_module.addImport("libc", libc_module);
+    engine_module_default.addImport("uci_output", uci_output_module);
     tt_module.addImport("memory", memory_module);
     position_module.addImport("memory", memory_module);
     position_module.addImport("option", option_module);

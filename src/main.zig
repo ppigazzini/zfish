@@ -6,6 +6,7 @@ const benchmark_port = @import("benchmark");
 const bitboard_port = @import("bitboard");
 const engine_port = @import("engine");
 const memory_port = @import("memory");
+const uci_output = @import("uci_output");
 const graph_layout = @import("graph_layout");
 const clock = @import("clock");
 const worker_construct = @import("worker_construct.zig");
@@ -498,7 +499,6 @@ comptime {
     @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
     @export(&perftOwner, .{ .name = "zfish_engine_perft_owner" });
     @export(&applySetoptionOwner, .{ .name = "zfish_engine_apply_setoption_owner" });
-    @export(&engineStartLogger, .{ .name = "zfish_engine_start_logger" });
     @export(&threadpoolBoundNodesAssign, .{ .name = "zfish_threadpool_bound_nodes_assign" });
     // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
     // AccumulatorCaches create moved into engine.zig (M16.7).
@@ -697,7 +697,7 @@ pub export fn zfish_search_emit_info_full(
     ) orelse return;
     defer ca.free(std.mem.span(line_c));
     const line = std.mem.span(line_c);
-    uciPrintLine(line.ptr, line.len);
+    uci_output.printLine(line.ptr, line.len);
 }
 
 // zfish_ss_set_prev_scores: w->main_manager()->bestPreviousScore =
@@ -734,48 +734,8 @@ pub fn zfish_uci_set_quiet_mode(quiet: u8) void {
 // native loop reads stdin + writes via libc, bypassing the C++ cin/cout streams.)
 // The UCI info/bestmove emit is main-thread-only (the on_update_full path), so no IO lock is needed —
 // matching the single output stream. fflush mirrors the C++ sync_endl flush.
-var log_file: ?*c.FILE = null;
-// C stdio standard streams, obtained portably (M-PORT). @cImport's translation of the
-// stdout/stderr/stdin macros is not uniform across the owned OSes -- a comptime-uncallable
-// __acrt_iob_func() macro on Windows, an inline getter on macOS -- so the underlying entry
-// points are declared directly: glibc's global FILE* symbol, macOS's __std*p global, or the
-// Windows CRT __acrt_iob_func(n) accessor. Each arm is comptime-selected, so only the target's
-// symbol is referenced/linked.
-const std_streams = struct {
-    extern "c" fn __acrt_iob_func(index: c_uint) callconv(.c) *c.FILE;
-    extern "c" var __stdoutp: *c.FILE;
-    extern "c" var stdout: *c.FILE;
-};
-fn cStdout() *c.FILE {
-    return switch (builtin.os.tag) {
-        .windows => std_streams.__acrt_iob_func(1),
-        .macos, .ios, .tvos, .watchos, .visionos => std_streams.__stdoutp,
-        else => std_streams.stdout,
-    };
-}
-fn uciPrintLine(str: [*]const u8, len: usize) callconv(.c) void {
-    const out = cStdout();
-    _ = c.fwrite(str, 1, len, out);
-    _ = c.fputc('\n', out);
-    _ = c.fflush(out);
-    if (log_file) |f| {
-        _ = c.fwrite(str, 1, len, f);
-        _ = c.fputc('\n', f);
-        _ = c.fflush(f);
-    }
-}
-// Native Log File: open/close the log destination (the native uci_print_line tees output to it).
-fn engineStartLogger(name_ptr: [*]const u8, name_len: usize) callconv(.c) void {
-    if (log_file) |f| {
-        _ = c.fclose(f);
-        log_file = null;
-    }
-    if (name_len == 0 or name_len >= 4095) return;
-    var buf: [4096]u8 = undefined;
-    @memcpy(buf[0..name_len], name_ptr[0..name_len]);
-    buf[name_len] = 0;
-    log_file = c.fopen(@ptrCast(&buf), "w");
-}
+// The native UCI output primitive (printLine) + log-file sink + portable cStdout
+// moved into the uci_output leaf module (M16.7); main and engine call it directly.
 
 // REPORT-12 TU=0 std::function cluster Step D: the network-verify message emitter. The C++ version
 // invoked the onVerifyNetwork std::function (print_info_string interactive / no-op quiet); that
@@ -787,7 +747,7 @@ fn engineEmitVerifyMessage(engine_ptr: *const anyopaque, message_ptr: [*]const u
     const formatted = zfish_uci_format_info_string(message_ptr, message_len) orelse return;
     defer c.free(@ptrCast(formatted));
     const line = std.mem.span(formatted);
-    uciPrintLine(line.ptr, line.len);
+    uci_output.printLine(line.ptr, line.len);
 }
 
 // REPORT-12 TU=0: the ss_ search-emit/thread bridges. Their default bodies read a Worker reference
@@ -1161,7 +1121,7 @@ fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
         }
         const txt = uci_move_port.renderMoveText(&mbuf, m, chess960);
         const out = std.fmt.bufPrint(&line, "{s}: {d}", .{ txt, cnt }) catch unreachable;
-        uciPrintLine(out.ptr, out.len);
+        uci_output.printLine(out.ptr, out.len);
     }
 
     zfishOperatorDelete(p);
@@ -1170,7 +1130,7 @@ fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
 
     var nbuf: [48]u8 = undefined;
     const nout = std.fmt.bufPrint(&nbuf, "\nNodes searched: {d}\n", .{nodes}) catch unreachable;
-    uciPrintLine(nout.ptr, nout.len);
+    uci_output.printLine(nout.ptr, nout.len);
     return nodes;
 }
 
@@ -1195,7 +1155,7 @@ fn printInfoStringNative(str: []const u8) void {
         if (all_ws) continue;
         var buf: [1024]u8 = undefined;
         const out = std.fmt.bufPrint(&buf, "info string {s}", .{line}) catch continue;
-        uciPrintLine(out.ptr, out.len);
+        uci_output.printLine(out.ptr, out.len);
     }
 }
 // REPORT-12 TU=0: ThreadPool::boundThreadToNumaNode (std::vector<NumaIndex/size_t>) assign, reproduced on
@@ -1231,7 +1191,7 @@ fn applySetoptionOwner(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: 
     if (res.found == 0) {
         var buf: [256]u8 = undefined;
         const out = std.fmt.bufPrint(&buf, "No such option: {s}", .{name_ptr[0..name_len]}) catch return;
-        uciPrintLine(out.ptr, out.len);
+        uci_output.printLine(out.ptr, out.len);
         return;
     }
     // kOptionCallbackNone == 0; kOptionTypeString=0, Check=1, Spin=2, Button=3.
@@ -1658,7 +1618,7 @@ pub export fn zfish_search_cb_root_on_iter(worker: *const anyopaque, depth: c_in
     const line_c = uci_port.formatInfoIter(depth, currmove, currmovenumber) orelse return;
     defer std.heap.c_allocator.free(std.mem.span(line_c));
     const line = std.mem.span(line_c);
-    uciPrintLine(line.ptr, line.len);
+    uci_output.printLine(line.ptr, line.len);
 }
 
 // zfish_ss_emit_no_moves: at a checkmated/stalemated root, print "info depth 0
@@ -1676,10 +1636,10 @@ pub export fn zfish_ss_emit_no_moves(worker: *const anyopaque) void {
     const line_c = uci_port.formatInfoNoMoves(0, std.mem.span(score_c)) orelse return;
     defer ca.free(std.mem.span(line_c));
     const line = std.mem.span(line_c);
-    uciPrintLine(line.ptr, line.len);
+    uci_output.printLine(line.ptr, line.len);
 
     const bm = "bestmove (none)";
-    uciPrintLine(bm.ptr, bm.len);
+    uci_output.printLine(bm.ptr, bm.len);
 }
 
 // zfish_ss_emit_bestmove: in interactive mode prints "bestmove X[ ponder Y]"
@@ -1710,7 +1670,7 @@ pub export fn zfish_ss_emit_bestmove(worker: *const anyopaque, best: *const anyo
         @memcpy(line[n..][0..ponder.len], ponder);
         n += ponder.len;
     }
-    uciPrintLine(line[0..n].ptr, n);
+    uci_output.printLine(line[0..n].ptr, n);
 }
 
 // zfish_ss_set_stop: worker->threads.stop = true. Plain byte store, matching the
