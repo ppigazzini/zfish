@@ -526,7 +526,7 @@ extern fn zfish_ss_emit_bestmove(worker: ?*anyopaque, best: ?*anyopaque) void;
 // Worker::start_searching control flow, ported from the bridge. Zig owns every
 // branch and the sequencing; the C++ leaf helpers run the individual time-
 // management, thread-pool, skill, and UCI-output operations.
-pub export fn zfish_worker_start_searching(worker: ?*anyopaque) void {
+pub fn workerStartSearching(worker: ?*anyopaque) void {
     zfish_ss_prologue(worker);
 
     var ctx: SsCtx = undefined;

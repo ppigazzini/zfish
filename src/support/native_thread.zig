@@ -19,6 +19,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const rt = @import("thread_runtime.zig");
+const position_port = @import("position");
 
 // Marker at offset 0 (the C++ Thread had its vtable pointer here; no native reader
 // touches thread@0, so this just makes a NativeThread identifiable in a dump and
@@ -89,12 +90,10 @@ fn testWorkerDestroyStub(worker: *anyopaque) callconv(.c) void {
 }
 
 // Production search job: run the Zig search driver on this thread, with the
-// Worker pointer as context. Kept in its own function (not referenced by the
-// tests) so `zig test` does not need to link the bridge symbol.
-extern fn zfish_worker_start_searching(worker: *anyopaque) void;
-
+// Worker pointer as context. Calls the position-module search driver directly
+// (M16.7); native_thread compiles inside the thread module, which wires position.
 pub fn searchJob(ctx: ?*anyopaque) callconv(.c) void {
-    zfish_worker_start_searching(ctx.?);
+    position_port.workerStartSearching(ctx.?);
 }
 
 // Start this thread's search: run searchJob with the attached Worker as context.
