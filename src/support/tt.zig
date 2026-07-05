@@ -11,7 +11,7 @@ const pv_mask: u8 = 1 << pv_shift;
 // is_decisive threshold (VALUE_TB_WIN_IN_MAX_PLY); used by secondary TT aging.
 const value_tb_win_in_max_ply: c_int = 31507;
 
-pub const TtEntry = extern struct {
+pub const TtEntry = struct {
     key16: u16,
     depth8: u8,
     gen_bound8: u8,
@@ -20,7 +20,7 @@ pub const TtEntry = extern struct {
     eval16: i16,
 };
 
-pub const TtCluster = extern struct {
+pub const TtCluster = struct {
     entry: [cluster_size]TtEntry,
     padding: [2]u8,
 };

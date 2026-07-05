@@ -14,7 +14,7 @@ pub const HalfDiff = struct {
     add_pc: u8,
 };
 
-pub const DirtyThreatRaw = extern struct {
+pub const DirtyThreatRaw = struct {
     data: u32,
 };
 
