@@ -199,7 +199,6 @@ extern fn zfish_search_shared_state_create(
     network: *const anyopaque,
 ) ?*anyopaque;
 extern fn zfish_search_shared_state_destroy(shared_state: ?*anyopaque) void;
-extern fn zfish_engine_tt_hashfull(engine_ptr: *const anyopaque, max_age: c_int) c_int;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
     const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
@@ -749,7 +748,9 @@ pub fn fenEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
 }
 
 pub fn hashfullEngine(engine_ptr: *const anyopaque, max_age: c_int) c_int {
-    return zfish_engine_tt_hashfull(engine_ptr, max_age);
+    const tp = graph_layout.TranspositionTable.fromPtr(ne(engine_ptr).ttPtr());
+    const table = tp.table orelse return 0;
+    return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);
 }
 
 pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {

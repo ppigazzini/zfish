@@ -593,7 +593,6 @@ comptime {
     @export(&ssNpmsecAdvance, .{ .name = "zfish_ss_npmsec_advance" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
     // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
-    @export(&zfishEngineTtHashfull, .{ .name = "zfish_engine_tt_hashfull" });
     // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
     @export(&zfishThreadpoolMainManagerPtr, .{ .name = "zfish_threadpool_main_manager_ptr" });
     // M-FINAL / M-SM: native SearchManager construct + native Worker teardown (cracks the
@@ -1122,11 +1121,7 @@ fn zfishEngineTtClear(tt_ptr: *anyopaque, threads: *anyopaque) callconv(.c) void
     const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
     tt_port.clearState(tp.table, tp.cluster_count, &tp.generation8, threads);
 }
-fn zfishEngineTtHashfull(engine_ptr: *const anyopaque, max_age: c_int) callconv(.c) c_int {
-    const tp = graph_layout.TranspositionTable.fromPtr(native_engine.NativeEngine.fromPtr(@constCast(engine_ptr)).ttPtr());
-    const table = tp.table orelse return 0;
-    return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);
-}
+// tt-hashfull engine reader moved into engine.zig (M16.7).
 
 // M-FINAL / M-SM: native SearchManager construction + native Worker teardown — cracks the
 // SearchManager virtual-dtor wall. The C++ make_unique<Search::SearchManager>() and ~Worker's
