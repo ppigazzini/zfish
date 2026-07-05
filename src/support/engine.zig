@@ -147,8 +147,6 @@ extern fn zfish_engine_numa_set_from_string(
     text_ptr: [*]const u8,
     text_len: usize,
 ) void;
-extern fn zfish_numa_context_node_count(numa_context: *const anyopaque) usize;
-extern fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize;
 extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*anyopaque;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
@@ -811,7 +809,7 @@ pub fn threadBindingInformation(
         return allocMessage("", .{});
 
     const allocator = std.heap.c_allocator;
-    const node_count = zfish_numa_context_node_count(numa_context);
+    const node_count = numa.contextNodeCount(numa_context);
 
     const counts = allocator.alloc(usize, node_count) catch return null;
     defer allocator.free(counts);
@@ -831,7 +829,7 @@ pub fn threadBindingInformation(
     while (index < node_count) : (index += 1) {
         pairs[index] = .{
             .current = counts[index],
-            .total = zfish_numa_context_cpus_in_node(numa_context, index),
+            .total = numa.contextCpusInNode(numa_context, index),
         };
     }
 

@@ -191,7 +191,6 @@ extern fn zfish_shared_state_insert_history(
 ) void;
 const NumaNodeCallback = *const fn (?*anyopaque) callconv(.c) void;
 
-extern fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize;
 extern fn zfish_threadpool_add_main_thread(
     pool: *anyopaque,
     numa_config: *const anyopaque,
@@ -640,7 +639,7 @@ pub fn reconfigure(
         zfish_threadpool_bound_nodes_assign(pool, null, 0);
     }
 
-    const node_count = @max(zfish_numa_config_node_count(numa_config), @as(usize, 1));
+    const node_count = @max(numa.configNodeCount(numa_config), @as(usize, 1));
     const threads_per_node = allocator.alloc(usize, node_count) catch @panic("OOM");
     defer allocator.free(threads_per_node);
     @memset(threads_per_node, 0);

@@ -84,3 +84,21 @@ pub fn executeOnNode(
 ) void {
     callback(context);
 }
+
+// NumaConfig::num_numa_nodes() — single-node runtime, always 1. Relocated from
+// main.zig (M16.7); the config/context pointers are the native single-node stubs.
+pub fn configNodeCount(_: *const anyopaque) usize {
+    return 1;
+}
+
+// NumaReplicationContext::get_numa_config().num_numa_nodes() — config is the
+// context's first member, so it delegates to configNodeCount.
+pub fn contextNodeCount(numa_context: *const anyopaque) usize {
+    return configNodeCount(numa_context);
+}
+
+// num_cpus_in_numa_node(node): single-node stub never binds, so this is >=1 and
+// never dereferences the context.
+pub fn contextCpusInNode(_: *const anyopaque, _: usize) usize {
+    return 1;
+}

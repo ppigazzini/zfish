@@ -2107,31 +2107,8 @@ pub export fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usiz
 // NumaConfig::num_numa_nodes() == nodes.size() (bridge-only symbol, no gating).
 // nodes is a std::vector<std::set<CpuIndex>> at offset 0; size is the byte span
 // divided by the 48-byte std::set element.
-pub export fn zfish_numa_config_node_count(numa_config: *const anyopaque) usize {
-    // Single-node: the runtime constructs no multi-node NumaConfig, so the count is 1.
-    _ = numa_config;
-    return 1;
-}
-
-// NumaReplicationContext::get_numa_config().num_numa_nodes(). config is the first
-// member of NumaReplicationContext (the class has no virtual functions, so no
-// vtable), so the context pointer is the NumaConfig pointer and this delegates to
-// the node-count logic above (bridge-only symbol, no gating).
-pub export fn zfish_numa_context_node_count(numa_context: *const anyopaque) usize {
-    return zfish_numa_config_node_count(numa_context);
-}
-
-// NumaReplicationContext::get_numa_config().num_cpus_in_numa_node(node) ==
-// nodes[node].size(). config is at context offset 0, so nodes begins at the
-// context pointer; the node-th std::set is at begin + node*48, and its element
-// count is stored at +40 within the set (bridge-only symbol, no gating).
-pub export fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize {
-    // Single-node native numa stub: binding never happens, so this is >=1 and never
-    // dereferences the stub.
-    _ = numa_context;
-    _ = node;
-    return 1;
-}
+// numa node-count / cpus-in-node single-node stubs moved into numa.zig (M16.7);
+// engine.zig and thread.zig call the numa module directly.
 
 pub fn zfish_engine_init_body(engine: *anyopaque) void {
     return engine_port.initBody(engine);
