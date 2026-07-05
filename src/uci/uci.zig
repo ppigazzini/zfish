@@ -13,7 +13,6 @@ const uci_output = @import("uci_output");
 // engine-module wrappers), so they stay C-ABI for now -- a later slice moves that logic out
 // of main.zig. The other zfish_engine_*_owner calls became engine_mod.* direct calls (M16.5).
 extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
-extern fn zfish_engine_options_text_owner(engine_ptr: *const anyopaque) ?[*:0]u8;
 extern fn zfish_engine_go_parsed_owner(engine_ptr: *anyopaque, limits: ParsedLimits) void;
 extern fn zfish_engine_flip_owner(engine_ptr: *anyopaque) void;
 extern fn zfish_engine_apply_setoption_owner(
@@ -280,7 +279,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
         .uci => {
             const info_ptr = misc_port.engineInfoText(1) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(info_ptr));
-            const options_ptr = zfish_engine_options_text_owner(engine) orelse return .{ .should_quit = 0 };
+            const options_ptr = option_port.zfish_optmodel_render() orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(options_ptr));
 
             std.debug.print(

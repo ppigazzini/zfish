@@ -476,7 +476,6 @@ comptime {
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
     // NumaPolicy setters: native no-op in default (single-node stub); legacy keeps the C++ defs.
-    @export(&engineOptionsTextOwner, .{ .name = "zfish_engine_options_text_owner" });
     @export(&engineFlipOwner, .{ .name = "zfish_engine_flip_owner" });
     @export(&engineEmitVerifyMessage, .{ .name = "zfish_engine_emit_verify_message" });
     @export(&sharedStateClearHistories, .{ .name = "zfish_shared_state_clear_histories" });
@@ -557,10 +556,7 @@ fn engineThreadAllocationInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*
 }
 // REPORT-12 TU=0 grind: the "uci" option listing is rendered from the native Zig option model;
 // the default options_text_owner already just returned option_port.zfish_optmodel_render(). Pure pass-through.
-fn engineOptionsTextOwner(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
-    _ = engine_ptr;
-    return option_port.zfish_optmodel_render();
-}
+// options-text: uci.zig calls option.render directly (M16.7).
 // REPORT-12 TU=0 grind: native flip — read the live position FEN, flip it, re-set via the native
 // set-position machinery (replacing Engine::flip -> Position::flip). All four calls are native;
 // the C strings are malloc'd and freed with c.free. Gate-verified by misc (flip + d). Legacy keeps C++.
