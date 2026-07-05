@@ -9,12 +9,12 @@
 
 const std = @import("std");
 
-pub const SharedState = extern struct {
-    options: *anyopaque, // OptionsModel
-    threads: *anyopaque, // ThreadPool
-    tt: *anyopaque, // TranspositionTable
-    shared_histories: *anyopaque, // per-NUMA SharedHistories
-    network: *anyopaque,
+pub const SharedState = struct {
+    options: *anyopaque, // OptionsModel   @0
+    threads: *anyopaque, // ThreadPool     @8
+    tt: *anyopaque, // TranspositionTable  @16
+    shared_histories: *anyopaque, // per-NUMA SharedHistories @24
+    network: *anyopaque, //                @32
 
     pub fn init(
         options: *anyopaque,
@@ -34,7 +34,17 @@ pub const SharedState = extern struct {
 };
 
 comptime {
+    // Native struct (M16.8 de-mirror). The worker-build path (main.zig
+    // nativeWorkerBuild / sharedStateClearHistories / sharedStateInsertHistory)
+    // reads this bundle by raw offset across the *anyopaque worker-build boundary,
+    // so guard the pointer layout: five equal-alignment pointers keep source order,
+    // and this asserts it loudly rather than corrupting silently if that changes.
     std.debug.assert(@sizeOf(SharedState) == 40);
+    std.debug.assert(@offsetOf(SharedState, "options") == 0);
+    std.debug.assert(@offsetOf(SharedState, "threads") == 8);
+    std.debug.assert(@offsetOf(SharedState, "tt") == 16);
+    std.debug.assert(@offsetOf(SharedState, "shared_histories") == 24);
+    std.debug.assert(@offsetOf(SharedState, "network") == 32);
 }
 
 // REPORT-10 M-HUB: the LIVE SharedState handed to the workers is now this native
