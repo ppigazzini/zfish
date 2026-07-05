@@ -469,7 +469,7 @@ fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
 // routes it through the unchanged updates.onUpdateFull listener for byte-exact
 // output. No tablebases in this build, so the upstream TB/syzygy branches never
 // apply (rootInTB is always false).
-const PvContext = extern struct {
+const PvContext = struct {
     manager: ?*anyopaque,
     worker: ?*anyopaque,
     root_moves: [*]const RootMove,
@@ -673,7 +673,7 @@ fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaq
     }
 }
 
-const SsCtx = extern struct {
+const SsCtx = struct {
     is_mainthread: u8,
     root_moves_empty: u8,
     npmsec: u8,
@@ -1093,11 +1093,11 @@ const StackPushOutput = nnue_acc.StackPushOutput;
 // Zig-owned NNUE forward pass + final eval scaling (defined in stockfish_zcu.o).
 // network_evaluate runs the bucketed network and returns the scaled psqt/positional
 // halves; eval_compute_value applies the optimism/material/rule50 blend.
-const EvalOutput = extern struct {
+const EvalOutput = struct {
     psqt: c_int,
     positional: c_int,
 };
-const EvalInput = extern struct {
+const EvalInput = struct {
     psqt: c_int,
     positional: c_int,
     optimism: c_int,
@@ -1111,7 +1111,7 @@ const EvalInput = extern struct {
 // Live (mutable) fields are pointers; fixed-per-search fields are snapshot values.
 // calls_cnt is null when this worker is not the main thread (check_time is a
 // main-thread-only operation), matching the C++ is_mainthread() gate.
-const SearchTimeState = extern struct {
+const SearchTimeState = struct {
     calls_cnt: ?*c_int,
     stop_write: ?*u8,
     ponder: ?*const u8,
@@ -1128,7 +1128,7 @@ const SearchTimeState = extern struct {
 // C++ keeps the skill-enabled handicap path and remains the rebase body). Live
 // fields are pointers into Worker/SearchManager/ThreadPool; the rest are values
 // read once. Layout matches the bridge ZfishIdState exactly.
-const ZfishIdState = extern struct {
+const ZfishIdState = struct {
     root_pos: *anyopaque,
     root_moves: [*]RootMove,
     pv_idx: *usize,
