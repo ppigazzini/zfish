@@ -13,7 +13,7 @@ const value_tb_win_in_max_ply: c_int = 31507;
 const value_tb_loss_in_max_ply: c_int = -31507;
 const max_thread_summaries: usize = 1024;
 
-pub const ThreadSummary = extern struct {
+pub const ThreadSummary = struct {
     pv0_raw: u16,
     score_is_bound: u8,
     pv_has_more_than_two: u8,

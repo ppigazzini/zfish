@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const TimemanInput = extern struct {
+pub const TimemanInput = struct {
     time_us: i64,
     inc_us: i64,
     start_time: i64,
@@ -15,7 +15,7 @@ pub const TimemanInput = extern struct {
     ponder: u8,
 };
 
-pub const TimemanOutput = extern struct {
+pub const TimemanOutput = struct {
     time_us: i64,
     inc_us: i64,
     start_time: i64,

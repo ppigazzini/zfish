@@ -1,7 +1,7 @@
 const std = @import("std");
 const c = @import("libc");
 
-pub const EvalInput = extern struct {
+pub const EvalInput = struct {
     psqt: c_int,
     positional: c_int,
     optimism: c_int,
@@ -11,7 +11,7 @@ pub const EvalInput = extern struct {
     value_tb_win_in_max_ply: c_int,
 };
 
-pub const EvalTraceInput = extern struct {
+pub const EvalTraceInput = struct {
     inner_trace_ptr: [*]const u8,
     inner_trace_len: usize,
     nnue_internal_value: c_int,

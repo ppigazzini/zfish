@@ -1,4 +1,4 @@
-pub const ScoreClass = extern struct {
+pub const ScoreClass = struct {
     kind: c_int,
     plies: c_int,
     win: c_int,

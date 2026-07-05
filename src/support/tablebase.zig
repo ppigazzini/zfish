@@ -3,7 +3,7 @@
 //! "unavailable", and init is a no-op. Kept as a real module (not main.zig C-ABI glue) so the
 //! search/engine paths call it as ordinary Zig.
 
-pub const ProbeResult = extern struct {
+pub const ProbeResult = struct {
     available: u8,
     wdl: c_int,
     wdl_state: c_int,
