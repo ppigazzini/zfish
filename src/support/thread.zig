@@ -167,7 +167,6 @@ extern fn zfish_threadpool_setup_states_adopt_from_slot(pool: *anyopaque, states
 extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
 extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
 extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
-extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_root_moves_create_ranked(items: [*]const RankedRootMove, count: usize) *anyopaque;
 extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
 extern fn zfish_threadpool_bound_nodes_assign(
@@ -480,7 +479,7 @@ fn rankRootMovesDtz(
 
 fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
-    zfish_position_fill_snapshot(pos, &snapshot);
+    position_port.fillSnapshot(pos, &snapshot);
     return snapshot;
 }
 
