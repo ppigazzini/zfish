@@ -125,7 +125,7 @@ pub const WorkerHistories = extern struct {
 
 // One CorrectionBundle (src/history.h): the four correction StatsEntry<int16>
 // fields, one [2] page per correctionHistory index (indexed by color).
-const CorrectionBundle = extern struct {
+const CorrectionBundle = struct {
     pawn: i16,
     minor: i16,
     nonpawn_white: i16,
