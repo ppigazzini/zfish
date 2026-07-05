@@ -264,7 +264,7 @@ comptime {
 // needs the LargePagePtr<Worker> `worker` at offset 8 (a single pointer, dereferenced
 // to the Worker base), so this partial extern struct reinterprets a Thread pointer to
 // read that one slot. `worker` is kept as a raw address (the loaded pointer value).
-pub const Thread = extern struct {
+pub const Thread = struct {
     _lo: usize, // @0 (idle-loop / vtable region; unused here)
     worker: usize, // @8 (LargePagePtr<Worker>, as a raw address)
 
