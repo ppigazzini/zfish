@@ -34,7 +34,7 @@ fn cStdin() *c.FILE {
     };
 }
 
-pub const DispatchResult = extern struct {
+pub const DispatchResult = struct {
     should_quit: u8,
 };
 
@@ -59,12 +59,12 @@ const CommandKind = enum {
     unknown,
 };
 
-pub const ParsedSetOption = extern struct {
+pub const ParsedSetOption = struct {
     name: ?[*:0]u8,
     value: ?[*:0]u8,
 };
 
-pub const ParsedLimits = extern struct {
+pub const ParsedLimits = struct {
     wtime: i64,
     btime: i64,
     winc: i64,
@@ -80,7 +80,7 @@ pub const ParsedLimits = extern struct {
     searchmoves: ?[*:0]u8,
 };
 
-pub const ParsedPosition = extern struct {
+pub const ParsedPosition = struct {
     ok: u8,
     fen: ?[*:0]u8,
     moves: ?[*:0]u8,
