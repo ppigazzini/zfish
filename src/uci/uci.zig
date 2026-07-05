@@ -15,7 +15,6 @@ const clock = @import("clock");
 // These engine_owner entry points are @export'd main.zig-local orchestrators (not thin
 // engine-module wrappers), so they stay C-ABI for now -- a later slice moves that logic out
 // of main.zig. The other zfish_engine_*_owner calls became engine_mod.* direct calls (M16.5).
-extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
 
 // C stdio stdin, obtained portably (M-PORT). @cImport's translation of the stream macros
 // is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on
@@ -494,7 +493,7 @@ fn applyGo(engine: *anyopaque, trimmed: []const u8) void {
     }
 
     if (limits.perft != 0) {
-        _ = zfish_engine_perft_owner(engine_ptr, limits.perft);
+        _ = engine_mod.perftEngine(engine_ptr, limits.perft);
         return;
     }
 
@@ -606,7 +605,7 @@ pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
                 defer freeMaybeCString(limits.searchmoves);
 
                 if (limits.perft != 0) {
-                    nodes += zfish_engine_perft_owner(engine_ptr, limits.perft);
+                    nodes += engine_mod.perftEngine(engine_ptr, limits.perft);
                 } else {
                     uci_output.resetLastNodesSearched();
                     _ = dispatchCommand(uci_ptr, command);

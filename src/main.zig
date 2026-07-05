@@ -103,29 +103,8 @@ pub fn zfish_position_undo_move_method(pos_ptr: *anyopaque, move: u16) void {
 // the bridge keeps the root divide loop (for byte-identical per-move output and
 // MoveList ordering) and calls this for each root move's subtree. Reuses the
 // Zig legal movegen and the do_move/undo_move seam the search already drives.
-const perft_max_depth = 64;
-const PerftStateBuf = [graph_layout.state_info_size]u8;
 
-fn perftCount(pos_ptr: *anyopaque, depth: c_int, states: *[perft_max_depth]PerftStateBuf, ply: usize) u64 {
-    if (depth <= 0) return 1;
-    var moves: [256]u16 = undefined;
-    const n = movegen_port.generateLegal(pos_ptr, &moves);
-    if (depth == 1) return n; // leaf: legal-move count
-    var nodes: u64 = 0;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
-        position_port.doMoveState(pos_ptr, moves[i], &states[ply]);
-        nodes += perftCount(pos_ptr, depth - 1, states, ply + 1);
-        zfish_position_undo_move_method(pos_ptr, moves[i]);
-    }
-    return nodes;
-}
 
-pub fn zfish_perft_subtree(pos_ptr: *anyopaque, depth: c_int) u64 {
-    const capped = if (depth > perft_max_depth) perft_max_depth else depth;
-    var states: [perft_max_depth]PerftStateBuf align(64) = undefined;
-    return perftCount(pos_ptr, capped, &states, 0);
-}
 
 // M-FINAL cutover (position-set port): native Position::set (FEN parse) + legality, replacing
 // the C++ Position::set / Position::legal in the bridge. The live pos is the Zig side block, so
@@ -486,7 +465,6 @@ comptime {
     // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
     @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
     @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
-    @export(&perftOwner, .{ .name = "zfish_engine_perft_owner" });
     @export(&threadpoolBoundNodesAssign, .{ .name = "zfish_threadpool_bound_nodes_assign" });
     // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
     // AccumulatorCaches create moved into engine.zig (M16.7).
@@ -865,52 +843,6 @@ const ParsedLimits = extern struct {
 // printing "<move>: <count>" then the "Nodes searched: N" total — byte-exact (the `perft` parity
 // harness diffs the divide output). Output routes through zfish_uci_print_line (the coordinated
 // sync_cout wrapper). Gate-covered by the `perft` check (CPW positions + a chess960 castling position).
-fn perftOwner(engine_ptr: *anyopaque, depth: c_int) callconv(.c) u64 {
-    zfish_engine_verify_network_method(engine_ptr);
-    const fen_ptr = zfish_engine_fen(native_engine.NativeEngine.fromPtr(@constCast(engine_ptr)).positionPtr()) orelse @panic("perft: null fen");
-    const fen = std.mem.span(fen_ptr);
-    const c960_name: []const u8 = "UCI_Chess960";
-    const chess960 = option_port.zfish_optmodel_int_by_name(c960_name.ptr, c960_name.len) != 0;
-
-    const p = zfishOperatorNew(graph_layout.position_size) orelse @panic("perft: position alloc");
-    const st = zfishOperatorNew(graph_layout.state_info_size) orelse @panic("perft: state alloc");
-    @memset(@as([*]u8, @ptrCast(p))[0..graph_layout.position_size], 0);
-    @memset(@as([*]u8, @ptrCast(st))[0..graph_layout.state_info_size], 0);
-    if (zfish_position_set_method(p, fen.ptr, fen.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.c.free(msg);
-
-    var moves: [256]u16 = undefined;
-    const count = movegen_port.generateLegal(p, &moves);
-    var nodes: u64 = 0;
-    var mbuf: [5]u8 = undefined;
-    var line: [64]u8 = undefined;
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
-        const m = moves[i];
-        var cnt: u64 = undefined;
-        if (depth <= 1) {
-            cnt = 1;
-            nodes += 1;
-        } else {
-            var si: [graph_layout.state_info_size]u8 align(16) = undefined;
-            position_port.doMoveState(p, m, @ptrCast(&si));
-            cnt = zfish_perft_subtree(p, depth - 1);
-            nodes += cnt;
-            zfish_position_undo_move_method(p, m);
-        }
-        const txt = uci_move_port.renderMoveText(&mbuf, m, chess960);
-        const out = std.fmt.bufPrint(&line, "{s}: {d}", .{ txt, cnt }) catch unreachable;
-        uci_output.printLine(out.ptr, out.len);
-    }
-
-    zfishOperatorDelete(p);
-    zfishOperatorDelete(st);
-    std.c.free(@ptrCast(fen_ptr));
-
-    var nbuf: [48]u8 = undefined;
-    const nout = std.fmt.bufPrint(&nbuf, "\nNodes searched: {d}\n", .{nodes}) catch unreachable;
-    uci_output.printLine(nout.ptr, nout.len);
-    return nodes;
-}
 
 // REPORT-12 TU=0: the setoption owner. Waits for any search to finish, applies the assignment to the
 // native option model, fires the on-change callback exactly as the C++ Option operator= would (spin/check
