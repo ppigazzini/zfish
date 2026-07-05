@@ -378,6 +378,7 @@ pub fn build(b: *std.Build) void {
     uci_move_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("position_snapshot", position_snapshot_module);
     movepick_module.addImport("bitboard", bitboard_module);
+    movepick_module.addImport("movegen", movegen_module);
     movegen_module.addImport("position_snapshot", position_snapshot_module);
     movegen_module.addImport("bitboard", bitboard_module);
     nnue_accumulator_module.addImport("position_snapshot", position_snapshot_module);

@@ -1,6 +1,7 @@
 const std = @import("std");
 const bitboard = @import("bitboard");
 const position_snapshot = @import("position_snapshot");
+const movegen = @import("movegen");
 
 const captures: u8 = 0;
 const quiets: u8 = 1;
@@ -134,9 +135,6 @@ const CaptureHistoryRow = [square_nb][piece_type_nb]HistoryEntry;
 const PieceToHistoryRow = [square_nb]HistoryEntry;
 const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 
-extern fn zfish_movegen_generate_captures(pos: *const anyopaque, move_list: [*]u16) usize;
-extern fn zfish_movegen_generate_quiets(pos: *const anyopaque, move_list: [*]u16) usize;
-extern fn zfish_movegen_generate_evasions(pos: *const anyopaque, move_list: [*]u16) usize;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 // History-table base pointers packed into a HistorySnapshot (M16.7 — relocated from main.zig).
 fn fillHistorySnapshot(
@@ -215,9 +213,9 @@ pub fn scoreMoves(
 pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEntry) usize {
     var move_list: [max_moves]u16 = undefined;
     const count = switch (kind) {
-        captures => zfish_movegen_generate_captures(context.pos, move_list[0..].ptr),
-        quiets => zfish_movegen_generate_quiets(context.pos, move_list[0..].ptr),
-        evasions => zfish_movegen_generate_evasions(context.pos, move_list[0..].ptr),
+        captures => movegen.generateCaptures(context.pos, move_list[0..].ptr),
+        quiets => movegen.generateQuiets(context.pos, move_list[0..].ptr),
+        evasions => movegen.generateEvasions(context.pos, move_list[0..].ptr),
         else => unreachable,
     };
 

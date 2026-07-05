@@ -369,26 +369,8 @@ pub export fn zfish_worker_set_root_moves(thread: *anyopaque, src_rm: *const any
 
 // conthist-delta: position.zig calls search.conthistDelta directly (M16.7).
 
-pub export fn zfish_movegen_generate_captures(
-    pos: *const anyopaque,
-    move_list: [*]u16,
-) usize {
-    return movegen_port.generateCaptures(pos, move_list);
-}
-
-pub export fn zfish_movegen_generate_quiets(
-    pos: *const anyopaque,
-    move_list: [*]u16,
-) usize {
-    return movegen_port.generateQuiets(pos, move_list);
-}
-
-pub export fn zfish_movegen_generate_evasions(
-    pos: *const anyopaque,
-    move_list: [*]u16,
-) usize {
-    return movegen_port.generateEvasions(pos, move_list);
-}
+// movegen capture/quiet/evasion generation: movepick.zig calls the movegen module
+// directly (M16.7).
 
 
 // thread start-thinking: engine calls thread.startThinking directly (M16.7).
