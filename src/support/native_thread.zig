@@ -26,7 +26,7 @@ const graph_layout = @import("graph_layout");
 // pads `worker` to offset 8).
 pub const thread_tag: u64 = 0x5a_46_49_53_48_54_48_31; // "ZFISHTH1"
 
-pub const NativeThread = extern struct {
+pub const NativeThread = struct {
     tag: u64 = thread_tag, // @0
     worker: ?*anyopaque = null, // @8  -- offset-read by thread_off.worker
     runtime: ?*rt.ThreadRuntime = null, // @16
