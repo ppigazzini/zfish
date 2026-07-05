@@ -55,7 +55,7 @@ const ThreatDiffView = extern struct {
     ksq: u8,
 };
 
-pub const StackPushOutput = extern struct {
+pub const StackPushOutput = struct {
     dirty_piece: *anyopaque,
     dirty_threats: *anyopaque,
 };
@@ -76,19 +76,19 @@ const FullAppendDiff = extern struct {
     ksq: u8,
 };
 
-const HalfMakeIndexParams = extern struct {
+const HalfMakeIndexParams = struct {
     perspective: u8,
     square: u8,
     piece: u8,
     king_square: u8,
 };
 
-const HalfAppendResult = extern struct {
+const HalfAppendResult = struct {
     len: usize,
     indices: [psq_index_capacity]u32,
 };
 
-const FullAppendResult = extern struct {
+const FullAppendResult = struct {
     len: usize,
     indices: [threat_index_capacity]u32,
 };

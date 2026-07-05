@@ -25,7 +25,7 @@ const defaults_marker = "const std::vector<std::string> Defaults = {";
 const benchmark_positions_marker =
     "const std::vector<std::vector<std::string>> BenchmarkPositions = {";
 
-pub const BenchmarkSetupOutput = extern struct {
+pub const BenchmarkSetupOutput = struct {
     tt_size: c_int,
     threads: c_int,
     commands_ptr: ?[*:0]u8,

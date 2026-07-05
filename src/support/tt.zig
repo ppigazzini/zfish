@@ -25,7 +25,7 @@ pub const TtCluster = extern struct {
     padding: [2]u8,
 };
 
-pub const TtReadOutput = extern struct {
+pub const TtReadOutput = struct {
     move16: u16,
     value16: i16,
     eval16: i16,
@@ -34,13 +34,13 @@ pub const TtReadOutput = extern struct {
     is_pv: u8,
 };
 
-pub const TtProbeOutput = extern struct {
+pub const TtProbeOutput = struct {
     found: u8,
     writer_index: u8,
     data: TtReadOutput,
 };
 
-pub const TtProbeTableOutput = extern struct {
+pub const TtProbeTableOutput = struct {
     found: u8,
     writer_ptr: ?*anyopaque,
     data: TtReadOutput,

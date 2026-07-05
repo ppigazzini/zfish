@@ -24,24 +24,24 @@ pub const FullDiff = extern struct {
     ksq: u8,
 };
 
-pub const HalfAppendResult = extern struct {
+pub const HalfAppendResult = struct {
     len: usize,
     indices: [32]u32,
 };
 
-pub const FullAppendResult = extern struct {
+pub const FullAppendResult = struct {
     len: usize,
     indices: [128]u32,
 };
 
-pub const HalfThreatParams = extern struct {
+pub const HalfThreatParams = struct {
     perspective: u8,
     square: u8,
     piece: u8,
     king_square: u8,
 };
 
-pub const FullThreatParams = extern struct {
+pub const FullThreatParams = struct {
     perspective: u8,
     attacker: u8,
     from_sq: u8,
