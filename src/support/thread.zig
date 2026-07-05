@@ -257,11 +257,25 @@ fn workerSetRootMoves(thread: *anyopaque, src_rm: *const anyopaque) void {
         dst_cap.* = new_buf + byte_count;
     }
 }
-extern fn zfish_threadpool_bound_nodes_assign(
-    pool: *anyopaque,
-    nodes: ?[*]const usize,
-    count: usize,
-) void;
+// Assign the pool's boundThreadToNumaNode vector (native graph_layout.ThreadPool field).
+// Native Zig, was the zfish_threadpool_bound_nodes_assign C-ABI export in main.zig.
+fn boundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, count: usize) void {
+    const tp = graph_layout.ThreadPool.fromPtr(pool_ptr);
+    if (nodes == null or count == 0) {
+        tp.bound_end = tp.bound_begin; // clear (keep capacity)
+        return;
+    }
+    if (tp.bound_begin != 0) c.free(@ptrFromInt(tp.bound_begin));
+    const nbytes = count * 8;
+    const buf = c.malloc(nbytes) orelse @panic("bound_nodes_assign: malloc failed");
+    const dst: [*]usize = @ptrCast(@alignCast(buf));
+    const src = nodes.?;
+    var i: usize = 0;
+    while (i < count) : (i += 1) dst[i] = src[i];
+    tp.bound_begin = @intFromPtr(buf);
+    tp.bound_end = @intFromPtr(buf) + nbytes;
+    tp.bound_cap = @intFromPtr(buf) + nbytes;
+}
 const ThreadCallback = *const fn (?*anyopaque) callconv(.c) void;
 
 extern fn zfish_shared_state_clear_histories(shared_state: *const anyopaque) void;
@@ -718,9 +732,9 @@ pub fn reconfigure(
             requested,
             bound_nodes.ptr,
         );
-        zfish_threadpool_bound_nodes_assign(pool, bound_nodes.ptr, requested);
+        boundNodesAssign(pool, bound_nodes.ptr, requested);
     } else {
-        zfish_threadpool_bound_nodes_assign(pool, null, 0);
+        boundNodesAssign(pool, null, 0);
     }
 
     const node_count = @max(numa.configNodeCount(numa_config), @as(usize, 1));

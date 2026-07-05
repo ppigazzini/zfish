@@ -427,7 +427,6 @@ comptime {
     // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
     @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
     @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
-    @export(&threadpoolBoundNodesAssign, .{ .name = "zfish_threadpool_bound_nodes_assign" });
     // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
     // AccumulatorCaches create moved into engine.zig (M16.7).
     // M-FINAL: native AccumulatorStack construct/destroy (legacy keeps new/delete).
@@ -793,26 +792,6 @@ fn zfishNativeWorkerDestroy(worker: ?*anyopaque) callconv(.c) void {
 // the native ThreadPool footprint vector {begin@40,end@48,cap@56}. count==0 (single-node — the only gated
 // path) clears (end=begin). count>0 (multi-node) frees the old element buffer and operator_new's a fresh
 // count*8 one (matched alloc/free family). Single-node never allocs, so valgrind/teardown stay clean.
-fn threadpoolBoundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, count: usize) callconv(.c) void {
-    // The boundThreadToNumaNode vector {begin,end,cap} lives in the now-native
-    // graph_layout.ThreadPool (M16.8) -- accessed by field, not the old raw
-    // {@40,@48,@56} offsets (which native layout no longer honours).
-    const tp = graph_layout.ThreadPool.fromPtr(pool_ptr);
-    if (nodes == null or count == 0) {
-        tp.bound_end = tp.bound_begin; // clear (keep capacity)
-        return;
-    }
-    if (tp.bound_begin != 0) zfishOperatorDelete(@ptrFromInt(tp.bound_begin));
-    const nbytes = count * 8;
-    const buf = zfishOperatorNew(nbytes) orelse @panic("bound_nodes_assign: operator new failed");
-    const dst: [*]usize = @ptrCast(@alignCast(buf));
-    const src = nodes.?;
-    var i: usize = 0;
-    while (i < count) : (i += 1) dst[i] = src[i];
-    tp.bound_begin = @intFromPtr(buf);
-    tp.bound_end = @intFromPtr(buf) + nbytes;
-    tp.bound_cap = @intFromPtr(buf) + nbytes;
-}
 
 // REPORT-12 TU=0: the native ThreadBuilder callback — the LAST C++ piece of the construction cluster
 // (make_search_manager, worker_construct_full, shared_histories_at are all already native). Reads the
