@@ -333,10 +333,8 @@ pub fn zfish_ss_side_to_move(pos: *const anyopaque) u8 {
 // SearchManager type -- they replace the former C++ main_manager()-> field shims.
 // Exported only in the default build: the legacy oracle keeps src/thread.cpp's
 // definitions, so gating the @export avoids a duplicate-symbol link error.
-extern fn zfish_threadpool_main_manager_ptr(pool: *anyopaque) ?*anyopaque;
-
 fn smMgr(pool: *anyopaque) ?*graph_layout.SearchManager {
-    return graph_layout.SearchManager.fromPtr(zfish_threadpool_main_manager_ptr(pool) orelse return null);
+    return graph_layout.ThreadPool.fromPtr(pool).mainManager();
 }
 
 fn smResetBestPreviousScore(pool: *anyopaque) callconv(.c) void {
@@ -414,12 +412,6 @@ fn threadWorkerMut(thread: *anyopaque) ?[*]u8 {
 // navigation: thread[0] -> worker@thread_off.worker -> manager@worker_off.manager (the
 // unique_ptr<ISearchManager>'s stored pointer == the SearchManager* for the main thread).
 // Default-only; the legacy oracle keeps the C++ ThreadPool::main_manager() method.
-fn zfishThreadpoolMainManagerPtr(pool: *anyopaque) callconv(.c) ?*anyopaque {
-    const thread0 = graph_layout.ThreadPool.fromPtr(pool).threadAtPtr(0);
-    const worker = graph_layout.Thread.fromPtr(thread0).worker;
-    if (worker == 0) return null;
-    return @ptrFromInt(@as(*const usize, @ptrFromInt(worker + graph_layout.worker_off.manager)).*);
-}
 
 // Stage-7 7.1: native-inert tablebase probe entry points for the default build.
 // The Zig runtime ships no Syzygy tablebases (max cardinality 0 -> the native
@@ -453,8 +445,6 @@ comptime {
     @export(&sharedStateInsertHistory, .{ .name = "zfish_shared_state_insert_history" });
     // M-FINAL: clock + chess960 flag + searchmoves[i] text (legacy keeps the C++ defs).
     // M-FINAL: tt ops via native tt.zig (legacy keeps the C++ TranspositionTable methods).
-    // M-FINAL: main_manager navigation (legacy keeps the C++ ThreadPool::main_manager()).
-    @export(&zfishThreadpoolMainManagerPtr, .{ .name = "zfish_threadpool_main_manager_ptr" });
     // M-FINAL / M-SM: native SearchManager construct + native Worker teardown (cracks the
     // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
     @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
