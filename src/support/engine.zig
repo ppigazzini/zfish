@@ -164,12 +164,6 @@ extern fn zfish_engine_save_network_owner(
     filename_ptr: [*]const u8,
     filename_len: usize,
 ) void;
-extern fn zfish_threadpool_reconfigure(
-    pool: *anyopaque,
-    numa_config: *const anyopaque,
-    shared_state: *const anyopaque,
-    update_context: *const anyopaque,
-) void;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
     const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
@@ -386,7 +380,7 @@ pub fn resizeThreads(
     ) orelse @panic("OOM");
     defer shared_state_mod.destroy(shared_state);
 
-    zfish_threadpool_reconfigure(
+    thread_port.reconfigure(
         threads,
         numa.contextConfig(numa_context),
         shared_state,

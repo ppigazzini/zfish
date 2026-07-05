@@ -419,14 +419,7 @@ pub export fn zfish_engine_handoff_pending_states(
     return engine_port.handoffPendingStates(pool, states_slot);
 }
 
-pub export fn zfish_threadpool_reconfigure(
-    pool: *anyopaque,
-    numa_config: *const anyopaque,
-    shared_state: *const anyopaque,
-    update_context: *const anyopaque,
-) void {
-    return thread_port.reconfigure(pool, numa_config, shared_state, update_context);
-}
+// threadpool reconfigure: engine calls thread.reconfigure directly (M16.7).
 
 
 pub fn zfish_threadpool_start_searching(pool: *anyopaque) void {
