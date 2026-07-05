@@ -6,11 +6,11 @@
 // (thread_runtime.zig) + the per-thread search job.
 //
 // LAYOUT CONTRACT: the only field any other code reads off a live Thread by offset
-// is `worker` at thread_off.worker == 8 (id_collect_bmc / get_best_thread /
-// nodesSearched all do `*(thread + 8)`). So `worker` MUST stay at offset 8; the
-// rest is native-private. The struct is `extern` to pin that. The ThreadRuntime
-// (which holds a std.Thread handle + futex atomics, not extern-friendly) lives on
-// the heap behind a pointer so this footprint stays POD.
+// is `worker` at offset 8 (graph_layout.Thread / the sibling ops all read `*(thread
+// + 8)`). `worker` stays at offset 8 because the four fields are equal-size (u64/
+// pointer) and Zig keeps their declaration order; the `@offsetOf(worker) == 8` test
+// below guards it. The ThreadRuntime (std.Thread handle + futex atomics) lives on
+// the heap behind a pointer so this footprint stays small.
 //
 // This layer is wired to NOTHING yet: it is unit-tested in isolation against
 // thread_runtime.zig with a mock job, so the search-launch handshake is proven
