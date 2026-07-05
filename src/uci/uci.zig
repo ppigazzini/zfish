@@ -5,6 +5,7 @@ const c = @import("libc");
 const benchmark_port = @import("benchmark");
 const misc_port = @import("misc");
 const engine_mod = @import("engine");
+const option_port = @import("option");
 
 // These engine_owner entry points are @export'd main.zig-local orchestrators (not thin
 // engine-module wrappers), so they stay C-ABI for now -- a later slice moves that logic out
@@ -96,7 +97,6 @@ pub const ParsedPosition = extern struct {
 // move views directly (M16.5) rather than through a duplicate C-ABI-mirror struct.
 const ByteView = engine_mod.ByteView;
 
-extern fn zfish_option_parse_setoption(input_ptr: [*]const u8, input_len: usize) ParsedSetOption;
 extern fn zfish_uci_cli_argc(uci_ptr: *const anyopaque) c_int;
 extern fn zfish_uci_cli_arg_at(uci_ptr: *const anyopaque, index: c_int) ?[*:0]const u8;
 extern fn zfish_uci_engine_nodes_searched(uci_ptr: *const anyopaque) u64;
@@ -386,7 +386,7 @@ fn classifyCommandToken(token: []const u8) CommandKind {
 }
 
 fn applySetoption(engine: *anyopaque, trimmed: []const u8) void {
-    const parsed = zfish_option_parse_setoption(trimmed.ptr, trimmed.len);
+    const parsed = option_port.parseSetOption(trimmed);
     defer freeMaybeCString(parsed.name);
     defer freeMaybeCString(parsed.value);
 

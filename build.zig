@@ -394,6 +394,7 @@ pub fn build(b: *std.Build) void {
     uci_module.addImport("benchmark", benchmark_module);
     uci_module.addImport("misc", misc_module);
     uci_module.addImport("engine", engine_module_default); // M16.5: direct engine calls
+    uci_module.addImport("option", option_module);
     exe.root_module.addImport("benchmark", benchmark_module);
     exe.root_module.addImport("bitboard", bitboard_module);
     exe.root_module.addImport("engine", engine_module_default);

@@ -2101,12 +2101,7 @@ pub fn zfish_tt_hashfull(
     return tt_port.hashfull(clusters, cluster_count, generation, max_age);
 }
 
-pub export fn zfish_option_parse_setoption(
-    input_ptr: [*]const u8,
-    input_len: usize,
-) option_port.ParsedSetOption {
-    return option_port.parseSetOption(input_ptr[0..input_len]);
-}
+// setoption parsing: uci.zig calls option.parseSetOption directly (M16.7).
 
 pub fn zfish_uci_format_info_string(
     input_ptr: [*]const u8,
