@@ -38,10 +38,3 @@ pub const SEEK_END: c_int = 2;
 
 // <unistd.h>
 pub extern "c" fn getcwd(buf: [*c]u8, size: usize) [*c]u8;
-
-// <sys/time.h>. Field names match the translate-C `struct_timeval` the call sites read.
-pub const struct_timeval = extern struct {
-    tv_sec: c_long,
-    tv_usec: c_long,
-};
-pub extern "c" fn gettimeofday(tv: *struct_timeval, tz: ?*anyopaque) c_int;

@@ -821,9 +821,9 @@ fn firstToken(command: []const u8) []const u8 {
 }
 
 fn nowMillis() i64 {
-    var tv: c.struct_timeval = undefined;
-    _ = c.gettimeofday(&tv, null);
-    return @as(i64, @intCast(tv.tv_sec)) * 1000 + @divTrunc(@as(i64, @intCast(tv.tv_usec)), 1000);
+    // Monotonic millis (the shared clock module) -- correct for elapsed timing and free
+    // of the libc struct_timeval / gettimeofday C-ABI dependency.
+    return clock.now();
 }
 
 fn parseLimitsAlloc(input: []const u8) !ParsedLimits {
