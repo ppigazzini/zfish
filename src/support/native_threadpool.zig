@@ -178,7 +178,7 @@ pub export fn zfish_native_threadpool_clear(pool: *anyopaque) void {
 // by index and calls the native wait -- the C++ wait_on_thread would lock the C++
 // Thread's std::mutex, which is garbage on a NativeThread. Routed here by the
 // gated zfish_threadpool_wait_thread bridge shim in the default build.
-pub export fn zfish_native_threadpool_wait_thread(pool: *anyopaque, thread_id: usize) void {
+pub fn zfish_native_threadpool_wait_thread(pool: *anyopaque, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads_begin == 0) return;
     const vec: [*]const usize = @ptrFromInt(tp.threads_begin);

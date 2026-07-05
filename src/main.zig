@@ -998,10 +998,6 @@ fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) callconv(.c) void {
 // ThreadPool::boundThreadToNumaNode accessors (bridge-only). The member is a
 // std::vector<size_t> at bound_nodes_begin; count is the byte span / 8 and
 // at(i) loads the i-th element from the begin pointer.
-pub export fn zfish_threadpool_bound_node_at(pool: *const anyopaque, index: usize) usize {
-    const begin = graph_layout.ThreadPool.fromPtr(@constCast(pool)).bound_begin;
-    return @as(*const usize, @ptrFromInt(begin + index * @sizeOf(usize))).*;
-}
 
 // NumaConfig::num_numa_nodes() == nodes.size() (bridge-only symbol, no gating).
 // nodes is a std::vector<std::set<CpuIndex>> at offset 0; size is the byte span
