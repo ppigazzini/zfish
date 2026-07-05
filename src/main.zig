@@ -2253,32 +2253,11 @@ const AccumulatorStackPushPair = extern struct {
     second: *anyopaque,
 };
 
-pub export fn zfish_network_load(
-    network: *anyopaque,
-    root_directory_ptr: [*]const u8,
-    root_directory_len: usize,
-    evalfile_path_ptr: [*]const u8,
-    evalfile_path_len: usize,
-) void {
-    network_port.load(
-        network,
-        root_directory_ptr,
-        root_directory_len,
-        evalfile_path_ptr,
-        evalfile_path_len,
-    );
-    // The native parse (network.zig) writes the weights straight into the
-    // Zig-owned storage below as it reads the file -- no copy-out step.
-}
-
-pub export fn zfish_network_verify(
-    network: *const anyopaque,
-    evalfile_path_ptr: [*]const u8,
-    evalfile_path_len: usize,
-) network_port.VerifyResult {
-    return network_port.verify(network, evalfile_path_ptr, evalfile_path_len);
-}
-
+// network load/verify/trace-evaluate + the FT/layer weight storage and transform
+// all moved into network.zig (M16.7); their consumers (engine, native_engine)
+// call the network module directly. zfish_network_evaluate stays as the one
+// bridge position.zig still needs (position cannot import network -- network
+// imports position for side-to-move, so the reverse edge would cycle).
 pub export fn zfish_network_evaluate(
     network: *const anyopaque,
     pos: *const anyopaque,
@@ -2286,20 +2265,6 @@ pub export fn zfish_network_evaluate(
     cache: *anyopaque,
 ) network_port.EvalOutput {
     return network_port.evaluate(network, pos, accumulator_stack, cache);
-}
-
-// NNUE feature-transformer forward pass and its weight storage moved into
-// network.zig (M16.7): the native .nnue parse writes the SIMD-permuted weights
-// straight into that module's Zig-owned buffers and inference reads from there,
-// so main.zig no longer brokers the FT/layer storage or the transform.
-
-pub export fn zfish_network_trace_evaluate(
-    network: *const anyopaque,
-    pos: *const anyopaque,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
-) network_port.TraceOutput {
-    return network_port.traceEvaluate(network, pos, accumulator_stack, cache);
 }
 
 pub fn zfish_tt_generation_next(curr_generation: u8) u8 {

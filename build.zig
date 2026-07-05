@@ -319,6 +319,7 @@ pub fn build(b: *std.Build) void {
     native_engine_module.addImport("graph_layout", graph_layout_module);
     native_engine_module.addImport("misc", misc_module);
     native_engine_module.addImport("state_list", state_list_module);
+    native_engine_module.addImport("network", network_module);
     engine_module_default.addImport("native_engine", native_engine_module);
     engine_module_default.addImport("numa", numa_module);
     thread_module_default.addImport("numa", numa_module);

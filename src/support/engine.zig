@@ -71,7 +71,8 @@ const option_kind_button: u8 = 3;
 
 // Single-sourced from network.zig via the "network" module (build.zig wires the
 // engine->network edge). Avoids the net-name-drift bug of two copies.
-const default_eval_file_name = @import("network").default_eval_file_name;
+const network_port = @import("network");
+const default_eval_file_name = network_port.default_eval_file_name;
 const default_skill_lowest_elo: c_int = 1320;
 const default_skill_highest_elo: c_int = 3190;
 
@@ -150,18 +151,6 @@ extern fn zfish_numa_context_node_count(numa_context: *const anyopaque) usize;
 extern fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize;
 extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*anyopaque;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
-extern fn zfish_network_evaluate(
-    network: *const anyopaque,
-    pos: *const anyopaque,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
-) EvalOutput;
-extern fn zfish_network_trace_evaluate(
-    network: *const anyopaque,
-    pos: *const anyopaque,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
-) TraceOutput;
 extern fn zfish_uci_to_cp(value: c_int, material: c_int) c_int;
 extern fn zfish_engine_add_option(
     engine_ptr: *anyopaque,
@@ -181,11 +170,6 @@ extern fn zfish_engine_set_numa_config_from_option_owner(
     value_ptr: [*]const u8,
     value_len: usize,
 ) void;
-extern fn zfish_network_verify(
-    network: *const anyopaque,
-    evalfile_path_ptr: [*]const u8,
-    evalfile_path_len: usize,
-) NetworkVerifyResult;
 extern fn zfish_thread_start_thinking(
     pool: *anyopaque,
     options: *const anyopaque,
@@ -568,7 +552,7 @@ pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
 
     const network_ptr = ne(engine_ptr).networkPtr();
 
-    const result = zfish_network_verify(network_ptr, evalfile.ptr, evalfile.len);
+    const result = network_port.verify(network_ptr, evalfile.ptr, evalfile.len);
     if (result.message) |message_ptr| {
         defer c.free(@ptrCast(message_ptr));
         zfish_engine_emit_verify_message(engine_ptr, message_ptr, std.mem.span(message_ptr).len);
@@ -676,7 +660,7 @@ pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
     const accumulators = accumulatorStackCreate() orelse return null;
     defer accumulatorStackDestroy(accumulators);
 
-    const nnue_output = zfish_network_evaluate(network, pos, accumulators, caches);
+    const nnue_output = network_port.evaluate(network, pos, accumulators, caches);
     const nnue_value = nnue_output.psqt + nnue_output.positional;
     const nnue_white_side = if (summary.side_to_move_white != 0) nnue_value else -nnue_value;
 
@@ -951,7 +935,7 @@ fn buildNnueTrace(
     defer accumulatorStackDestroy(accumulators);
     nnue_acc.stackReset(accumulators);
 
-    const trace = zfish_network_trace_evaluate(network, pos, accumulators, caches);
+    const trace = network_port.traceEvaluate(network, pos, accumulators, caches);
     var psqt_cp: [layer_stacks]c_int = undefined;
     var positional_cp: [layer_stacks]c_int = undefined;
 

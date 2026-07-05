@@ -26,6 +26,7 @@ const std = @import("std");
 const graph_layout = @import("graph_layout");
 const misc_port = @import("misc");
 const state_list_port = @import("state_list"); // native StateList (states crack)
+const network_port = @import("network");
 
 // ---- the interim-C++ member heap allocators (uci_bridge.cpp, default build) -------
 // M-FINAL cutover: the trivial raw-heap members (numa_context + options are 1-byte handles never
@@ -52,10 +53,9 @@ fn memberHandleFree(p: ?*anyopaque) void {
 // native NNUE load into the Zig-owned storage, exactly as the old C++ net->load() did. numa_context
 // is unused (single node). (states_new/delete dropped: states is a native StateList — state_list.zig
 // — and member_states_* had no caller.)
-extern fn zfish_network_load(network: *anyopaque, dir_ptr: [*]const u8, dir_len: usize, name_ptr: [*]const u8, name_len: usize) void;
 fn memberNetworkNew(binary_dir: [*:0]const u8, binary_dir_len: usize) ?*anyopaque {
     const holder = std.c.malloc(1) orelse return null;
-    zfish_network_load(holder, binary_dir, binary_dir_len, binary_dir, 0);
+    network_port.load(holder, binary_dir, binary_dir_len, binary_dir, 0);
     return holder;
 }
 // updateContext + onVerifyNetwork are held INLINE in the native engine (stable address
