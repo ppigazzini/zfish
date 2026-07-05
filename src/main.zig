@@ -2248,12 +2248,6 @@ pub export fn zfish_engine_save_network_owner(
 
 
 
-pub export fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void {
-    var snapshot = std.mem.zeroes(PositionSnapshot);
-    position_port.fillSnapshot(pos, &snapshot);
-    @memcpy(pieces_out[0..64], snapshot.board[0..]);
-}
-
 const AccumulatorStackPushPair = extern struct {
     first: *anyopaque,
     second: *anyopaque,

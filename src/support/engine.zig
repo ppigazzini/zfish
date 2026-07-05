@@ -149,7 +149,6 @@ extern fn zfish_engine_numa_set_from_string(
 extern fn zfish_numa_context_node_count(numa_context: *const anyopaque) usize;
 extern fn zfish_numa_context_cpus_in_node(numa_context: *const anyopaque, node: usize) usize;
 extern fn zfish_engine_accumulator_caches_create(network: *const anyopaque) ?*anyopaque;
-extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_network_evaluate(
     network: *const anyopaque,
@@ -716,7 +715,7 @@ pub fn hashfullEngine(engine_ptr: *const anyopaque, max_age: c_int) c_int {
 pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
     const allocator = std.heap.c_allocator;
     var pieces: [square_count]u8 = [_]u8{0} ** square_count;
-    zfish_accumulator_position_snapshot(pos, &pieces);
+    position_port.accumulatorSnapshot(pos, &pieces);
 
     const summary = positionSummary(pos);
     const fen_ptr = positionFen(pos, &pieces) orelse return null;
@@ -988,7 +987,7 @@ fn positionFen(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) ?[*:
     const pieces: *const [square_count]u8 = if (pieces_opt) |provided|
         provided
     else blk: {
-        zfish_accumulator_position_snapshot(pos, &pieces_storage);
+        position_port.accumulatorSnapshot(pos, &pieces_storage);
         break :blk &pieces_storage;
     };
 
@@ -1017,7 +1016,7 @@ fn probeTablebases(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) 
     const pieces: *const [square_count]u8 = if (pieces_opt) |provided|
         provided
     else blk: {
-        zfish_accumulator_position_snapshot(pos, &pieces_storage);
+        position_port.accumulatorSnapshot(pos, &pieces_storage);
         break :blk &pieces_storage;
     };
 

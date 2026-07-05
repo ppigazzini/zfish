@@ -97,7 +97,6 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
     _ = data_len;
     return 0;
 }
-extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 
 // NNUE network layer forward pass (NetworkArchitecture::propagate), ported to
 // Zig. Layers: fc_0 (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 62->32)
@@ -504,7 +503,7 @@ fn evaluateBucketRaw(
 
 fn pieceCount(pos: *const anyopaque) usize {
     var pieces = [_]u8{0} ** square_count;
-    zfish_accumulator_position_snapshot(pos, @ptrCast(&pieces));
+    position_port.accumulatorSnapshot(pos, @ptrCast(&pieces));
 
     var count: usize = 0;
     for (pieces) |piece| {

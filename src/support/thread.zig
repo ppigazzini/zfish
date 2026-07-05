@@ -167,7 +167,6 @@ extern fn zfish_threadpool_setup_states_adopt_from_slot(pool: *anyopaque, states
 extern fn zfish_threadpool_setup_state_back(pool: *const anyopaque) ?*const anyopaque;
 extern fn zfish_engine_pending_states_available(states_slot: *anyopaque) u8;
 extern fn zfish_engine_handoff_pending_states(pool: *anyopaque, states_slot: *anyopaque) u8;
-extern fn zfish_accumulator_position_snapshot(pos: *const anyopaque, pieces_out: [*]u8) void;
 extern fn zfish_position_fill_snapshot(pos: *const anyopaque, out: *PositionSnapshot) void;
 extern fn zfish_root_moves_create_ranked(items: [*]const RankedRootMove, count: usize) *anyopaque;
 extern fn zfish_root_moves_destroy(root_moves: *anyopaque) void;
@@ -291,7 +290,7 @@ fn waitMainThread(pool: *anyopaque) void {
 
 fn buildRootFen(pos: *const anyopaque) ?[*:0]u8 {
     var pieces: [square_count]u8 = undefined;
-    zfish_accumulator_position_snapshot(pos, &pieces);
+    position_port.accumulatorSnapshot(pos, &pieces);
     const snapshot = loadPositionSnapshot(pos);
 
     return position_port.formatFen(
@@ -346,7 +345,7 @@ const ScratchPosition = struct {
 
 fn countPieces(pos: *const anyopaque) usize {
     var pieces: [square_count]u8 = undefined;
-    zfish_accumulator_position_snapshot(pos, &pieces);
+    position_port.accumulatorSnapshot(pos, &pieces);
 
     var count: usize = 0;
     for (pieces) |piece| {

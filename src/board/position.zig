@@ -1827,6 +1827,14 @@ pub fn fillSnapshot(pos_ptr: *const anyopaque, out_ptr: *anyopaque) void {
     while (s < 64) : (s += 1) out.board[s] = pos.board[s];
 }
 
+// The 64-square piece board only, for NNUE piece-count/accumulator callers that
+// need just the board (not the full snapshot). Relocated from main.zig (M16.7).
+pub fn accumulatorSnapshot(pos_ptr: *const anyopaque, pieces_out: [*]u8) void {
+    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    var s: usize = 0;
+    while (s < 64) : (s += 1) pieces_out[s] = pos.board[s];
+}
+
 inline fn captVal(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) c_int {
     return w.capture_history[@as(usize, pc) * 512 + @as(usize, to) * 8 + captured_type];
 }
