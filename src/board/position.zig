@@ -15,6 +15,10 @@ const shared_histories_map = @import("shared_histories_map"); // native sharedHi
 // (mirrors C++ make_unique_large_page<T[]> over aligned_large_pages_alloc/free).
 const memory = @import("memory");
 const network_port = @import("network");
+const uci_output = @import("uci_output");
+const uci_wdl = @import("uci_wdl");
+const uci_move_port = @import("uci_move");
+const score_port = @import("score");
 const option_port = @import("option");
 const timeman_port = @import("timeman");
 
@@ -507,7 +511,141 @@ fn searchCbPvContext(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyop
     const elapsed = clock.now() - start_time;
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
-extern fn zfish_search_emit_info_full(manager: ?*anyopaque, worker: ?*anyopaque, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void;
+fn workerRootMoveAt(worker: *const anyopaque, index: usize) usize {
+    const begin: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.root_moves));
+    return begin.* + index * graph_layout.root_move_size;
+}
+
+// Score text (mate/tb-cp/cp) via the score classifier + the leaf uci_wdl formatters.
+// Relocated from main.zig (M16.7).
+fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
+    const sc = score_port.classify(v, 31507, 31753, 32000);
+    return switch (sc.kind) {
+        2 => uci_wdl.formatScore(0, sc.plies, 0),
+        1 => uci_wdl.formatScore(1, sc.plies, sc.win),
+        else => uci_wdl.formatScore(2, uci_wdl.toCp(v, material), 0),
+    };
+}
+
+// Build + print one "info depth ... pv ..." line (relocated from main.zig, M16.7).
+// Publishes the whole-search node count to the shared leaf; no-op in quiet mode.
+fn searchEmitInfoFull(manager: ?*anyopaque, worker: ?*anyopaque, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void {
+    _ = manager;
+    uci_output.setLastNodesSearched(nodes);
+    if (uci_output.isQuiet()) return;
+
+    const w = worker.?;
+    const ca = std.heap.c_allocator;
+    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(w) + graph_layout.worker_off.root_pos);
+    const material = wdlMaterial(root_pos);
+    const chess960 = isChess960(root_pos);
+
+    const score_c = scoreTextAlloc(v, material) orelse return;
+    defer ca.free(std.mem.span(score_c));
+    const score_text = std.mem.span(score_c);
+
+    const bound_text: []const u8 = switch (bound_kind) {
+        1 => "lowerbound",
+        2 => "upperbound",
+        else => "",
+    };
+
+    var wdl_c: ?[*:0]u8 = null;
+    var wdl_text: []const u8 = "";
+    if (show_wdl != 0) {
+        wdl_c = uci_wdl.wdl(v, material);
+        if (wdl_c) |wc| wdl_text = std.mem.span(wc);
+    }
+    defer if (wdl_c) |wc| ca.free(std.mem.span(wc));
+
+    const rm = workerRootMoveAt(w, move_index);
+    const pv = &graph_layout.RootMove.fromAddr(rm).pv;
+    const pv_len = pv.length;
+    var pv_buf: [4096]u8 = undefined;
+    var pv_n: usize = 0;
+    var i: usize = 0;
+    while (i < pv_len) : (i += 1) {
+        if (i != 0) {
+            pv_buf[pv_n] = ' ';
+            pv_n += 1;
+        }
+        var mbuf: [5]u8 = undefined;
+        const txt = uci_move_port.renderMoveText(&mbuf, pv.moves[i], chess960);
+        @memcpy(pv_buf[pv_n..][0..txt.len], txt);
+        pv_n += txt.len;
+    }
+
+    const nps: usize = if (time_ms != 0) @intCast(nodes * 1000 / time_ms) else 0;
+    const line_c = uci_wdl.formatInfoFull(depth, sel_depth, multipv, score_text, bound_text, wdl_text, show_wdl, @intCast(nodes), nps, hashfull, @intCast(tb_hits), @intCast(time_ms), pv_buf[0..pv_n]) orelse return;
+    defer ca.free(std.mem.span(line_c));
+    const line = std.mem.span(line_c);
+    uci_output.printLine(line.ptr, line.len);
+}
+
+// Checkmated/stalemated root: "info depth 0 score ..." + "bestmove (none)".
+fn ssEmitNoMoves(worker: ?*anyopaque) void {
+    if (uci_output.isQuiet()) return;
+    const w = worker.?;
+    const ca = std.heap.c_allocator;
+    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(w) + graph_layout.worker_off.root_pos);
+    const v: c_int = if (hasCheckers(root_pos)) -32000 else 0;
+    const material = wdlMaterial(root_pos);
+
+    const score_c = scoreTextAlloc(v, material) orelse return;
+    defer ca.free(std.mem.span(score_c));
+    const line_c = uci_wdl.formatInfoNoMoves(0, std.mem.span(score_c)) orelse return;
+    defer ca.free(std.mem.span(line_c));
+    const line = std.mem.span(line_c);
+    uci_output.printLine(line.ptr, line.len);
+
+    const bm = "bestmove (none)";
+    uci_output.printLine(bm.ptr, bm.len);
+}
+
+// "bestmove X[ ponder Y]" from best's first RootMove PV. No-op in quiet mode.
+fn ssEmitBestmove(worker: ?*anyopaque, best: ?*anyopaque) void {
+    if (uci_output.isQuiet()) return;
+    const rm0 = workerRootMove0(best.?);
+    const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
+    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker.?) + graph_layout.worker_off.root_pos);
+    const chess960 = isChess960(root_pos);
+
+    var buf0: [5]u8 = undefined;
+    const bestmove = uci_move_port.renderMoveText(&buf0, pv.moves[0], chess960);
+
+    var line: [40]u8 = undefined;
+    var n: usize = 0;
+    @memcpy(line[n..][0..9], "bestmove ");
+    n += 9;
+    @memcpy(line[n..][0..bestmove.len], bestmove);
+    n += bestmove.len;
+    if (pv.length > 1) {
+        var buf1: [5]u8 = undefined;
+        const ponder = uci_move_port.renderMoveText(&buf1, pv.moves[1], chess960);
+        @memcpy(line[n..][0..8], " ponder ");
+        n += 8;
+        @memcpy(line[n..][0..ponder.len], ponder);
+        n += ponder.len;
+    }
+    uci_output.printLine(line[0..n].ptr, n);
+}
+
+// "info depth D currmove M currmovenumber N" (main thread, past the node threshold).
+fn searchCbRootOnIter(worker: *const anyopaque, depth: c_int, move: u16, move_count: c_int) void {
+    const thread_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.thread_idx);
+    if (thread_idx.* != 0) return;
+    if (uci_output.isQuiet()) return;
+    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
+    const chess960 = isChess960(root_pos);
+    const pv_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.pv_idx);
+    var mbuf: [5]u8 = undefined;
+    const currmove = uci_move_port.renderMoveText(&mbuf, move, chess960);
+    const currmovenumber: c_int = move_count + @as(c_int, @intCast(pv_idx.*));
+    const line_c = uci_wdl.formatInfoIter(depth, currmove, currmovenumber) orelse return;
+    defer std.heap.c_allocator.free(std.mem.span(line_c));
+    const line = std.mem.span(line_c);
+    uci_output.printLine(line.ptr, line.len);
+}
 
 fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void {
     const value_infinite: i32 = 32001;
@@ -529,7 +667,7 @@ fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaq
                 bound_kind = 2;
             }
         }
-        zfish_search_emit_info_full(ctx.manager, ctx.worker, i, d, @intCast(rm.sel_depth), i + 1, @intCast(v), ctx.show_wdl, bound_kind, ctx.nodes, ctx.tb_hits, ctx.hashfull, ctx.elapsed_ms);
+        searchEmitInfoFull(ctx.manager, ctx.worker, i, d, @intCast(rm.sel_depth), i + 1, @intCast(v), ctx.show_wdl, bound_kind, ctx.nodes, ctx.tb_hits, ctx.hashfull, ctx.elapsed_ms);
     }
 }
 
@@ -781,11 +919,9 @@ fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
     }
 }
 
-extern fn zfish_ss_emit_no_moves(worker: ?*anyopaque) void;
 extern fn zfish_ss_threads_start(worker: ?*anyopaque) void;
 extern fn zfish_ss_wait_finished(worker: ?*anyopaque) void;
 extern fn zfish_ss_get_best_thread(worker: ?*anyopaque) ?*anyopaque;
-extern fn zfish_ss_emit_bestmove(worker: ?*anyopaque, best: ?*anyopaque) void;
 
 // Read a Worker reference slot (a pointer stored at worker+offset).
 fn workerRefPtr(worker: *anyopaque, offset: usize) ?*anyopaque {
@@ -849,7 +985,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     ssTmInit(worker.?);
 
     if (ctx.root_moves_empty != 0) {
-        zfish_ss_emit_no_moves(worker);
+        ssEmitNoMoves(worker);
         return;
     }
 
@@ -875,7 +1011,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     if (!uci_pv_sent or best != worker)
         ssEmitPv(worker, best);
 
-    zfish_ss_emit_bestmove(worker, best);
+    ssEmitBestmove(worker, best);
 }
 
 
@@ -1560,7 +1696,6 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
 // nmpMinPly, and seldepth are now inlined: null make/unmake is Zig-owned, and the
 // reductions table / rootDelta / nmpMinPly / selDepth are read through the stable
 // pointers worker_state hands the search.)
-extern fn zfish_search_cb_root_on_iter(worker: *anyopaque, depth: c_int, move: u16, move_count: c_int) void;
 
 const q_bound_none: u8 = 0;
 const q_bound_exact: u8 = 3;
@@ -1879,7 +2014,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         ss.move_count = move_count;
 
         if (root_node and ctx.nodes.* > 10_000_000)
-            zfish_search_cb_root_on_iter(ctx.worker, depth, move, move_count);
+            searchCbRootOnIter(ctx.worker, depth, move, move_count);
 
         if (pv_node) ssAdd(ss, 1).pv = null;
 

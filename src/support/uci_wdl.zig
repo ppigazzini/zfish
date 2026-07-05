@@ -75,3 +75,79 @@ pub fn allocCString(value: []const u8) !?[*:0]u8 {
     @memcpy(result[0..value.len], value);
     return result.ptr;
 }
+
+fn appendFormatted(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
+    const allocator = std.heap.c_allocator;
+    const formatted = try std.fmt.allocPrint(allocator, fmt, args);
+    defer allocator.free(formatted);
+    try buffer.appendSlice(allocator, formatted);
+}
+
+// "info depth D score S" for the no-legal-moves (mate/stalemate) case.
+pub fn formatInfoNoMoves(depth: c_int, score_text: []const u8) ?[*:0]u8 {
+    return allocFormatted("info depth {d} score {s}", .{ depth, score_text }) catch null;
+}
+
+// The full per-PV info line (depth/seldepth/multipv/score/[bound]/[wdl]/nodes/nps/
+// hashfull/tbhits/time/pv). Relocated from uci.zig (M16.7).
+pub fn formatInfoFull(
+    depth: c_int,
+    sel_depth: c_int,
+    multi_pv: usize,
+    score_text: []const u8,
+    bound_text: []const u8,
+    wdl_text: []const u8,
+    show_wdl: u8,
+    nodes: usize,
+    nps: usize,
+    hashfull: c_int,
+    tb_hits: usize,
+    time_ms: usize,
+    pv: []const u8,
+) ?[*:0]u8 {
+    const ca = std.heap.c_allocator;
+    var builder = std.ArrayList(u8).empty;
+    defer builder.deinit(ca);
+
+    builder.appendSlice(ca, "info depth ") catch return null;
+    appendFormatted(&builder, "{d}", .{depth}) catch return null;
+    builder.appendSlice(ca, " seldepth ") catch return null;
+    appendFormatted(&builder, "{d}", .{sel_depth}) catch return null;
+    builder.appendSlice(ca, " multipv ") catch return null;
+    appendFormatted(&builder, "{d}", .{multi_pv}) catch return null;
+    builder.appendSlice(ca, " score ") catch return null;
+    builder.appendSlice(ca, score_text) catch return null;
+    if (bound_text.len != 0) {
+        builder.append(ca, ' ') catch return null;
+        builder.appendSlice(ca, bound_text) catch return null;
+    }
+    if (show_wdl != 0) {
+        builder.appendSlice(ca, " wdl ") catch return null;
+        builder.appendSlice(ca, wdl_text) catch return null;
+    }
+    builder.appendSlice(ca, " nodes ") catch return null;
+    appendFormatted(&builder, "{d}", .{nodes}) catch return null;
+    builder.appendSlice(ca, " nps ") catch return null;
+    appendFormatted(&builder, "{d}", .{nps}) catch return null;
+    builder.appendSlice(ca, " hashfull ") catch return null;
+    appendFormatted(&builder, "{d}", .{hashfull}) catch return null;
+    builder.appendSlice(ca, " tbhits ") catch return null;
+    appendFormatted(&builder, "{d}", .{tb_hits}) catch return null;
+    builder.appendSlice(ca, " time ") catch return null;
+    appendFormatted(&builder, "{d}", .{time_ms}) catch return null;
+    builder.appendSlice(ca, " pv ") catch return null;
+    builder.appendSlice(ca, pv) catch return null;
+
+    return allocCString(builder.items) catch null;
+}
+
+// "info depth D currmove M currmovenumber N".
+pub fn formatInfoIter(depth: c_int, currmove: []const u8, currmove_number: c_int) ?[*:0]u8 {
+    return allocFormatted("info depth {d} currmove {s} currmovenumber {d}", .{ depth, currmove, currmove_number }) catch null;
+}
+
+// "bestmove M [ponder P]".
+pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[*:0]u8 {
+    if (ponder.len == 0) return allocFormatted("bestmove {s}", .{bestmove}) catch null;
+    return allocFormatted("bestmove {s} ponder {s}", .{ bestmove, ponder }) catch null;
+}

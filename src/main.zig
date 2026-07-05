@@ -26,7 +26,7 @@ const nnue_feature_port = @import("nnue_feature");
 const option_port = @import("option");
 const position_port = @import("position");
 const search_port = @import("search");
-const score_port = @import("score.zig");
+const score_port = @import("score");
 const thread_port = @import("thread");
 const evaluate_port = @import("evaluate");
 const nnue_misc_port = @import("nnue_misc");
@@ -604,97 +604,12 @@ fn workerRootMove0(worker: *const anyopaque) usize {
     return begin.*;
 }
 
-fn workerRootMoveAt(worker: *const anyopaque, index: usize) usize {
-    const begin: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.root_moves));
-    return begin.* + index * graph_layout.root_move_size;
-}
 
 // zfish_search_emit_info_full: build one "info ..." line natively and print it.
 // Always records the node count (as the C++ onUpdateFull lambda did in both
 // modes); prints only in interactive mode. The score classification, cp/mate
 // formatting, WDL, and PV rendering are all native; the line assembly reuses
 // uci_port.formatInfoFull. Bridge-only symbol, no gating.
-pub export fn zfish_search_emit_info_full(
-    manager: *const anyopaque,
-    worker: *const anyopaque,
-    move_index: usize,
-    depth: c_int,
-    sel_depth: c_int,
-    multipv: usize,
-    v: c_int,
-    show_wdl: u8,
-    bound_kind: u8,
-    nodes: u64,
-    tb_hits: u64,
-    hashfull: c_int,
-    time_ms: u64,
-) void {
-    _ = manager;
-    uci_output.setLastNodesSearched(nodes);
-    if (uci_output.isQuiet()) return;
-
-    const ca = std.heap.c_allocator;
-    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
-    const material = position_port.wdlMaterial(root_pos);
-    const chess960 = position_port.isChess960(root_pos);
-
-    const score_c = scoreTextAlloc(v, material) orelse return;
-    defer ca.free(std.mem.span(score_c));
-    const score_text = std.mem.span(score_c);
-
-    const bound_text: []const u8 = switch (bound_kind) {
-        1 => "lowerbound",
-        2 => "upperbound",
-        else => "",
-    };
-
-    var wdl_c: ?[*:0]u8 = null;
-    var wdl_text: []const u8 = "";
-    if (show_wdl != 0) {
-        wdl_c = uci_port.wdl(v, material);
-        if (wdl_c) |wc| wdl_text = std.mem.span(wc);
-    }
-    defer if (wdl_c) |wc| ca.free(std.mem.span(wc));
-
-    // PV string: space-separated UCI moves over rootMoves[move_index].pv.
-    const rm = workerRootMoveAt(worker, move_index);
-    const pv = &graph_layout.RootMove.fromAddr(rm).pv;
-    const pv_len = pv.length;
-    var pv_buf: [4096]u8 = undefined;
-    var pv_n: usize = 0;
-    var i: usize = 0;
-    while (i < pv_len) : (i += 1) {
-        if (i != 0) {
-            pv_buf[pv_n] = ' ';
-            pv_n += 1;
-        }
-        const m = pv.moves[i];
-        var mbuf: [5]u8 = undefined;
-        const txt = uci_move_port.renderMoveText(&mbuf, m, chess960);
-        @memcpy(pv_buf[pv_n..][0..txt.len], txt);
-        pv_n += txt.len;
-    }
-
-    const nps: usize = if (time_ms != 0) @intCast(nodes * 1000 / time_ms) else 0;
-    const line_c = uci_port.formatInfoFull(
-        depth,
-        sel_depth,
-        multipv,
-        score_text,
-        bound_text,
-        wdl_text,
-        show_wdl,
-        @intCast(nodes),
-        nps,
-        hashfull,
-        @intCast(tb_hits),
-        @intCast(time_ms),
-        pv_buf[0..pv_n],
-    ) orelse return;
-    defer ca.free(std.mem.span(line_c));
-    const line = std.mem.span(line_c);
-    uci_output.printLine(line.ptr, line.len);
-}
 
 // zfish_ss_set_prev_scores: w->main_manager()->bestPreviousScore =
 // b->rootMoves[0].score, and likewise bestPreviousAverageScore. Reads the two
@@ -836,14 +751,6 @@ fn uciEngineDestructAt(storage: *anyopaque) callconv(.c) void {
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
 // 31507, VALUE_TB=31753, VALUE_MATE=32000), then map to the cp/tb/mate formatter
 // exactly as the C++ Score visit. Caller frees via c_allocator.
-fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
-    const sc = score_port.classify(v, 31507, 31753, 32000);
-    return switch (sc.kind) {
-        2 => uci_port.formatScore(0, sc.plies, 0),
-        1 => uci_port.formatScore(1, sc.plies, sc.win),
-        else => uci_port.formatScore(2, uci_port.toCp(v, material), 0),
-    };
-}
 
 // Windows steady clock (M-PORT): QueryPerformanceCounter is the monotonic high-res
 // counter; ticks/QueryPerformanceFrequency gives seconds. Declared here (not in
@@ -1408,73 +1315,15 @@ const ZfishPvContext = extern struct {
 // zfish_search_cb_root_on_iter: on the main thread, print "info depth D currmove
 // X currmovenumber N" (N = move_count + pvIdx). The native search only calls this
 // past 10M nodes; quiet mode is a no-op. Bridge-only symbol, no gating.
-pub export fn zfish_search_cb_root_on_iter(worker: *const anyopaque, depth: c_int, move: u16, move_count: c_int) void {
-    const thread_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.thread_idx);
-    if (thread_idx.* != 0) return;
-    if (uci_output.isQuiet()) return;
-    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
-    const chess960 = position_port.isChess960(root_pos);
-    const pv_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.pv_idx);
-    var mbuf: [5]u8 = undefined;
-    const currmove = uci_move_port.renderMoveText(&mbuf, move, chess960);
-    const currmovenumber: c_int = move_count + @as(c_int, @intCast(pv_idx.*));
-    const line_c = uci_port.formatInfoIter(depth, currmove, currmovenumber) orelse return;
-    defer std.heap.c_allocator.free(std.mem.span(line_c));
-    const line = std.mem.span(line_c);
-    uci_output.printLine(line.ptr, line.len);
-}
 
 // zfish_ss_emit_no_moves: at a checkmated/stalemated root, print "info depth 0
 // score <fmt>" (mate 0 when in check, else cp 0) followed by "bestmove (none)".
 // Quiet mode is a no-op. Bridge-only symbol, no gating.
-pub export fn zfish_ss_emit_no_moves(worker: *const anyopaque) void {
-    if (uci_output.isQuiet()) return;
-    const ca = std.heap.c_allocator;
-    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
-    const v: c_int = if (position_port.hasCheckers(root_pos)) -32000 else 0;
-    const material = position_port.wdlMaterial(root_pos);
-
-    const score_c = scoreTextAlloc(v, material) orelse return;
-    defer ca.free(std.mem.span(score_c));
-    const line_c = uci_port.formatInfoNoMoves(0, std.mem.span(score_c)) orelse return;
-    defer ca.free(std.mem.span(line_c));
-    const line = std.mem.span(line_c);
-    uci_output.printLine(line.ptr, line.len);
-
-    const bm = "bestmove (none)";
-    uci_output.printLine(bm.ptr, bm.len);
-}
 
 // zfish_ss_emit_bestmove: in interactive mode prints "bestmove X[ ponder Y]"
 // where X = best->rootMoves[0].pv[0] and Y = pv[1] (when pv length > 1), both
 // rendered with worker->rootPos chess960. Quiet mode is a no-op, matching the
 // C++ no-op onBestmove listener. Bridge-only symbol, no gating.
-pub export fn zfish_ss_emit_bestmove(worker: *const anyopaque, best: *const anyopaque) void {
-    if (uci_output.isQuiet()) return;
-    const rm0 = workerRootMove0(best);
-    const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
-    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
-    const chess960 = position_port.isChess960(root_pos);
-
-    var buf0: [5]u8 = undefined;
-    const bestmove = uci_move_port.renderMoveText(&buf0, pv.moves[0], chess960);
-
-    var line: [40]u8 = undefined;
-    var n: usize = 0;
-    @memcpy(line[n..][0..9], "bestmove ");
-    n += 9;
-    @memcpy(line[n..][0..bestmove.len], bestmove);
-    n += bestmove.len;
-    if (pv.length > 1) {
-        var buf1: [5]u8 = undefined;
-        const ponder = uci_move_port.renderMoveText(&buf1, pv.moves[1], chess960);
-        @memcpy(line[n..][0..8], " ponder ");
-        n += 8;
-        @memcpy(line[n..][0..ponder.len], ponder);
-        n += ponder.len;
-    }
-    uci_output.printLine(line[0..n].ptr, n);
-}
 
 // zfish_ss_set_stop: worker->threads.stop = true. Plain byte store, matching the
 // gate-verified native tpSetStopFlag (bridge-only symbol, no gating).
