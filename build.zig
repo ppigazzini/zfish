@@ -446,6 +446,7 @@ pub fn build(b: *std.Build) void {
     position_module.addImport("memory", memory_module);
     position_module.addImport("option", option_module);
     position_module.addImport("timeman", timeman_module);
+    position_module.addImport("uci_move", uci_move_module);
     misc_module.addImport("memory", memory_module);
     tt_module.addImport("graph_layout", graph_layout_module);
     tt_module.addImport("thread", thread_module_default);
@@ -453,7 +454,6 @@ pub fn build(b: *std.Build) void {
     engine_module_default.addImport("graph_layout", graph_layout_module);
     thread_module_default.addImport("movegen", movegen_module);
     uci_move_module.addImport("movegen", movegen_module);
-    uci_move_module.addImport("position", position_module);
     thread_module_default.addImport("tablebase", tablebase_module);
     thread_module_default.addImport("option", option_module);
     thread_module_default.addImport("state_list", state_list_module);
