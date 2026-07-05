@@ -21,23 +21,14 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const NativeThread = @import("native_thread").NativeThread;
+const graph_layout = @import("graph_layout");
+const ThreadPool = graph_layout.ThreadPool;
 
-pub const pool_off = struct {
-    pub const stop: usize = 0;
-    pub const increase_depth: usize = 1;
-    pub const threads_begin: usize = 16;
-    pub const threads_end: usize = 24;
-    pub const threads_cap: usize = 32;
-    pub const bound_begin: usize = 40;
-    pub const bound_end: usize = 48;
-    pub const bound_cap: usize = 56;
-};
-
-fn writeUsize(base: [*]u8, off: usize, v: usize) void {
-    @as(*usize, @ptrCast(@alignCast(base + off))).* = v;
-}
-fn readUsize(base: [*]const u8, off: usize) usize {
-    return @as(*const usize, @ptrCast(@alignCast(base + off))).*;
+// The 64-byte pool footprint is now a native graph_layout.ThreadPool (M16.8 de-mirror):
+// the writer here and every reader (graph_layout accessors, the search's captured
+// &stop pointer) go through the same typed struct, so Zig owns the field placement.
+inline fn poolOf(slot: [*]u8) *ThreadPool {
+    return ThreadPool.fromPtr(@ptrCast(slot));
 }
 
 // Per-thread construction hook: given the thread index and the freshly spawned
@@ -66,19 +57,20 @@ pub const NativePool = struct {
     // them into the footprint. Mirrors ThreadPool::set's thread-creation loop.
     pub fn set(self: *NativePool, count: usize, builder: ThreadBuilder) !void {
         self.clear();
+        const tp = poolOf(self.slot);
 
         // stop / increaseDepth start cleared (no search in flight).
-        self.slot[pool_off.stop] = 0;
-        self.slot[pool_off.increase_depth] = 0;
+        tp.stop = 0;
+        tp.increase_depth = 0;
         // boundThreadToNumaNode: empty (no NUMA binding on the single-node path).
-        writeUsize(self.slot, pool_off.bound_begin, 0);
-        writeUsize(self.slot, pool_off.bound_end, 0);
-        writeUsize(self.slot, pool_off.bound_cap, 0);
+        tp.bound_begin = 0;
+        tp.bound_end = 0;
+        tp.bound_cap = 0;
 
         if (count == 0) {
-            writeUsize(self.slot, pool_off.threads_begin, 0);
-            writeUsize(self.slot, pool_off.threads_end, 0);
-            writeUsize(self.slot, pool_off.threads_cap, 0);
+            tp.threads_begin = 0;
+            tp.threads_end = 0;
+            tp.threads_cap = 0;
             return;
         }
 
@@ -104,9 +96,9 @@ pub const NativePool = struct {
         self.threads = vec;
 
         const begin = @intFromPtr(vec.ptr);
-        writeUsize(self.slot, pool_off.threads_begin, begin);
-        writeUsize(self.slot, pool_off.threads_end, begin + count * @sizeOf(usize));
-        writeUsize(self.slot, pool_off.threads_cap, begin + count * @sizeOf(usize));
+        tp.threads_begin = begin;
+        tp.threads_end = begin + count * @sizeOf(usize);
+        tp.threads_cap = begin + count * @sizeOf(usize);
     }
 
     // Footprint-based (stateless): recovers the threads buffer from the C++ slot's
@@ -115,9 +107,10 @@ pub const NativePool = struct {
     // Requires a zeroed-or-valid footprint (a default-constructed C++ ThreadPool is
     // zeroed, so begin==0 is the no-op case).
     pub fn clear(self: *NativePool) void {
-        const begin = readUsize(self.slot, pool_off.threads_begin);
+        const tp = poolOf(self.slot);
+        const begin = tp.threads_begin;
         if (begin != 0) {
-            const end = readUsize(self.slot, pool_off.threads_end);
+            const end = tp.threads_end;
             const count = (end - begin) / @sizeOf(usize);
             const buf = @as([*]*NativeThread, @ptrFromInt(begin))[0..count];
             // Drain any queued/in-flight job BEFORE tearing threads down. The
@@ -136,16 +129,13 @@ pub const NativePool = struct {
             self.allocator.free(buf);
         }
         self.threads = &.{};
-        writeUsize(self.slot, pool_off.threads_begin, 0);
-        writeUsize(self.slot, pool_off.threads_end, 0);
-        writeUsize(self.slot, pool_off.threads_cap, 0);
+        tp.threads_begin = 0;
+        tp.threads_end = 0;
+        tp.threads_cap = 0;
     }
 
     pub fn numThreads(self: *const NativePool) usize {
-        const begin = readUsize(self.slot, pool_off.threads_begin);
-        const end = readUsize(self.slot, pool_off.threads_end);
-        if (begin == 0) return 0;
-        return (end - begin) / @sizeOf(usize);
+        return poolOf(self.slot).numThreads();
     }
 };
 
@@ -189,10 +179,9 @@ pub export fn zfish_native_threadpool_clear(pool: *anyopaque) void {
 // Thread's std::mutex, which is garbage on a NativeThread. Routed here by the
 // gated zfish_threadpool_wait_thread bridge shim in the default build.
 pub export fn zfish_native_threadpool_wait_thread(pool: *anyopaque, thread_id: usize) void {
-    const slot: [*]u8 = @ptrCast(pool);
-    const begin = readUsize(slot, pool_off.threads_begin);
-    if (begin == 0) return;
-    const vec: [*]const usize = @ptrFromInt(begin);
+    const tp = poolOf(@ptrCast(pool));
+    if (tp.threads_begin == 0) return;
+    const vec: [*]const usize = @ptrFromInt(tp.threads_begin);
     const thread: *NativeThread = @ptrFromInt(vec[thread_id]);
     thread.waitForSearchFinished();
 }
@@ -238,26 +227,26 @@ test "NativePool lays the C++ footprint and reads back the thread vector" {
     try pool.set(4, .{ .ctx = &mb, .build = MockBuild.build });
 
     try testing.expectEqual(@as(u32, 4), mb.attached.load(.monotonic));
+    const tp = poolOf(&footprint);
     // stop / increaseDepth cleared.
-    try testing.expectEqual(@as(u8, 0), footprint[pool_off.stop]);
-    try testing.expectEqual(@as(u8, 0), footprint[pool_off.increase_depth]);
-    // threads vector: begin/end consistent, count == 4 via the offset readers.
+    try testing.expectEqual(@as(u8, 0), tp.stop);
+    try testing.expectEqual(@as(u8, 0), tp.increase_depth);
+    // threads vector: begin/end consistent, count == 4 via the typed accessors.
     try testing.expectEqual(@as(usize, 4), pool.numThreads());
-    const begin = readUsize(&footprint, pool_off.threads_begin);
-    const end = readUsize(&footprint, pool_off.threads_end);
+    const begin = tp.threads_begin;
+    const end = tp.threads_end;
     try testing.expect(begin != 0);
     try testing.expectEqual(@as(usize, 4), (end - begin) / 8);
     // each threads[i] is a live NativeThread with the right idx and worker@8 slot.
     var i: usize = 0;
     while (i < 4) : (i += 1) {
-        const tptr = readUsize(@ptrFromInt(begin), i * 8);
-        const t: *NativeThread = @ptrFromInt(tptr);
+        const t: *NativeThread = @ptrFromInt(tp.threadAt(i));
         try testing.expectEqual(i, t.idx);
         // offset-8 worker read (null here; a real builder would set it).
         try testing.expectEqual(@as(usize, 8), @offsetOf(NativeThread, "worker"));
     }
     // bound vector empty.
-    try testing.expectEqual(@as(usize, 0), readUsize(&footprint, pool_off.bound_begin));
+    try testing.expectEqual(@as(usize, 0), tp.bound_begin);
 }
 
 test "NativePool set(0) clears the vector; resize re-lays it" {
@@ -272,5 +261,5 @@ test "NativePool set(0) clears the vector; resize re-lays it" {
     try testing.expectEqual(@as(usize, 8), pool.numThreads());
     try pool.set(0, .{ .ctx = &mb, .build = MockBuild.build });
     try testing.expectEqual(@as(usize, 0), pool.numThreads());
-    try testing.expectEqual(@as(usize, 0), readUsize(&footprint, pool_off.threads_begin));
+    try testing.expectEqual(@as(usize, 0), poolOf(&footprint).threads_begin);
 }

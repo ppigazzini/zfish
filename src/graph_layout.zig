@@ -197,17 +197,16 @@ pub const SearchManager = struct {
 // triples (native_threadpool lays *NativeThread into a contiguous buffer that
 // begin/end point into); the extern layout is byte-identical to the probed offsets,
 // so this is a pure offset-arithmetic → field-access change.
-pub const ThreadPool = extern struct {
-    stop: u8, // std::atomic_bool @0
-    increase_depth: u8, // std::atomic_bool @1
-    _pad: [6]u8,
-    setup_states: ?*anyopaque, // StateListPtr (?*StateList) @8
-    threads_begin: usize, // std::vector<Thread*> {begin,end,cap} @16/24/32
-    threads_end: usize,
-    threads_cap: usize,
-    bound_begin: usize, // std::vector<size_t> {begin,end,cap} @40/48/56
-    bound_end: usize,
-    bound_cap: usize,
+pub const ThreadPool = struct {
+    stop: u8 = 0, // atomic_bool
+    increase_depth: u8 = 0, // atomic_bool
+    setup_states: ?*anyopaque = null, // StateListPtr (?*StateList)
+    threads_begin: usize = 0, // Thread* vector {begin,end,cap}
+    threads_end: usize = 0,
+    threads_cap: usize = 0,
+    bound_begin: usize = 0, // size_t vector {begin,end,cap}
+    bound_end: usize = 0,
+    bound_cap: usize = 0,
 
     pub inline fn fromPtr(p: *anyopaque) *ThreadPool {
         return @ptrCast(@alignCast(p));
@@ -252,12 +251,11 @@ pub const ThreadPool = extern struct {
 };
 
 comptime {
-    // The extern layout must reproduce the 64-byte C++ ThreadPool the native
-    // constructor writes (native_threadpool.zig), or reads and writes disagree.
+    // ThreadPool is now a native struct (M16.8 de-mirror): native_threadpool.zig
+    // writes and every reader (accessors here, the search's captured &stop pointer)
+    // go through this typed struct, so Zig owns the field placement. The size must
+    // still equal the calloc'd pool buffer (native_engine.memberThreadpoolNew).
     std.debug.assert(@sizeOf(ThreadPool) == thread_pool_size);
-    std.debug.assert(@offsetOf(ThreadPool, "setup_states") == 8);
-    std.debug.assert(@offsetOf(ThreadPool, "threads_begin") == 16);
-    std.debug.assert(@offsetOf(ThreadPool, "bound_begin") == 40);
 }
 
 // A Thread (view). The full C++ Thread is 208 bytes; the search-driver code only
