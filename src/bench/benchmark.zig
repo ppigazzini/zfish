@@ -8,7 +8,7 @@ const c = @import("libc");
 // glibc's global FILE* symbol, macOS's __stderrp global, or the Windows CRT accessor. Each
 // arm is comptime-selected, so only the target's symbol is referenced/linked.
 const std_streams = struct {
-    extern "c" fn __acrt_iob_func(index: c_uint) callconv(.c) *c.FILE;
+    extern "c" fn __acrt_iob_func(index: c_uint) *c.FILE;
     extern "c" var __stderrp: *c.FILE;
     extern "c" var stderr: *c.FILE;
 };

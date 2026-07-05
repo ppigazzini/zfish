@@ -85,11 +85,11 @@ pub const NativeThread = struct {
 // native_thread must not import position (position imports the thread stack for its
 // pool ops, so the reverse would cycle), so the driver is registered as a function
 // pointer rather than called by name.
-pub var searchEntry: ?*const fn (?*anyopaque) callconv(.c) void = null;
+pub var searchEntry: ?*const fn (?*anyopaque) void = null;
 
 // Production search job: run the registered Zig search driver on this thread, with
 // the Worker pointer as context.
-pub fn searchJob(ctx: ?*anyopaque) callconv(.c) void {
+pub fn searchJob(ctx: ?*anyopaque) void {
     if (searchEntry) |f| f(ctx);
 }
 
@@ -124,7 +124,7 @@ pub fn waitPoolSiblings(pool: *anyopaque) void {
 // Per-thread Worker::clear job (the C++ Thread::clear_worker == run_custom_job([
 // worker->clear()])). Submitted to the idle loop; caller waits separately.
 
-fn clearWorkerJob(ctx: ?*anyopaque) callconv(.c) void {
+fn clearWorkerJob(ctx: ?*anyopaque) void {
     native_hooks.worker_clear.?(ctx.?);
 }
 
@@ -145,7 +145,7 @@ const MockCtx = struct {
     runs: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     last_worker: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
-    fn job(raw: ?*anyopaque) callconv(.c) void {
+    fn job(raw: ?*anyopaque) void {
         const self: *MockCtx = @ptrCast(@alignCast(raw.?));
         _ = self.runs.fetchAdd(1, .monotonic);
     }

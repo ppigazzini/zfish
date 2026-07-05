@@ -2,7 +2,7 @@ const std = @import("std");
 const position_snapshot = @import("position_snapshot");
 // Call the pure-Zig feature-index helpers directly instead of round-tripping
 // through the C-ABI exports in main.zig. Passing a small `extern struct` BY VALUE
-// across callconv(.c) is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
+// across is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
 // HalfThreatParams / 7-byte HalfDiff arrive scrambled), which silently corrupted
 // the psq feature indices off-x86 (bench diverged: 6860970 vs 2067208). A direct
 // Zig call has no C-ABI marshaling, so it is correct on every target and bit-

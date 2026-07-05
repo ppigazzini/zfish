@@ -79,7 +79,7 @@ pub fn distributeThreadsAmongNodes(_: *const anyopaque, requested: usize, out_no
 pub fn executeOnNode(
     _: *const anyopaque,
     _: usize,
-    callback: *const fn (?*anyopaque) callconv(.c) void,
+    callback: *const fn (?*anyopaque) void,
     context: ?*anyopaque,
 ) void {
     callback(context);

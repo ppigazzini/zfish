@@ -205,7 +205,7 @@ const MockBuild = struct {
         thread.startJob(noopJob, null);
         thread.waitForSearchFinished();
     }
-    fn noopJob(_: ?*anyopaque) callconv(.c) void {}
+    fn noopJob(_: ?*anyopaque) void {}
 };
 
 test "NativePool lays the C++ footprint and reads back the thread vector" {

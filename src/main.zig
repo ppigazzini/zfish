@@ -135,10 +135,10 @@ fn freeSetupStatesIfAny(pool: *anyopaque) void {
     }
 }
 
-fn zfishStateListStorageDestroy(storage: ?*anyopaque) callconv(.c) void {
+fn zfishStateListStorageDestroy(storage: ?*anyopaque) void {
     if (storage) |s| @as(*PendingStateStorage, @ptrCast(@alignCast(s))).destroy();
 }
-fn zfishStateListStoragePush(storage: *anyopaque) callconv(.c) *anyopaque {
+fn zfishStateListStoragePush(storage: *anyopaque) *anyopaque {
     return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).push() catch @panic("OOM: state push");
 }
 // engine `states` slot: a ?*StateList. reset() mirrors unique_ptr::reset() — free + null
@@ -242,10 +242,10 @@ fn workerClearNative(worker: *anyopaque) void {
 // ::operator new/delete bottom out in malloc/free, so they are an interchangeable matched alloc/free
 // family for the native containers (RootMoves/searchmoves/bound_nodes/Position/caches) — verified by
 // parity-valgrind + parity-teardown. The legacy oracle keeps its own libc++ ::operator new/delete.
-fn zfishOperatorNew(n: usize) callconv(.c) ?*anyopaque {
+fn zfishOperatorNew(n: usize) ?*anyopaque {
     return std.c.malloc(n);
 }
-fn zfishOperatorDelete(p: ?*anyopaque) callconv(.c) void {
+fn zfishOperatorDelete(p: ?*anyopaque) void {
     std.c.free(p);
 }
 
@@ -255,7 +255,7 @@ fn zfishOperatorDelete(p: ?*anyopaque) callconv(.c) void {
 // allocator-boundary mismatch (the trap that blocks porting operator new/delete). Offsets
 // from graph_layout.limits_off (verified vs src/search.h LimitsType field order). Exported
 // default-only (comptime block below); the legacy oracle keeps the C++ defs under #ifdef.
-fn zfishLimitsPerftValue(limits: *const anyopaque) callconv(.c) usize {
+fn zfishLimitsPerftValue(limits: *const anyopaque) usize {
     return @intCast(graph_layout.LimitsType.fromPtr(@constCast(limits)).perft);
 }
 
@@ -317,16 +317,16 @@ fn smMgr(pool: *anyopaque) ?*graph_layout.SearchManager {
     return graph_layout.ThreadPool.fromPtr(pool).mainManager();
 }
 
-fn smResetBestPreviousScore(pool: *anyopaque) callconv(.c) void {
+fn smResetBestPreviousScore(pool: *anyopaque) void {
     if (smMgr(pool)) |m| m.best_previous_score = 32001; // VALUE_INFINITE
 }
-fn smResetOriginalTimeAdjust(pool: *anyopaque) callconv(.c) void {
+fn smResetOriginalTimeAdjust(pool: *anyopaque) void {
     if (smMgr(pool)) |m| m.original_time_adjust = -1;
 }
-fn smSetPonder(pool: *anyopaque, ponder_mode: u8) callconv(.c) void {
+fn smSetPonder(pool: *anyopaque, ponder_mode: u8) void {
     if (smMgr(pool)) |m| m.ponder = if (ponder_mode != 0) 1 else 0;
 }
-fn smClearTimeman(pool: *anyopaque) callconv(.c) void {
+fn smClearTimeman(pool: *anyopaque) void {
     // TimeManagement::clear() sets availableNodes = -1; nothing else.
     if (smMgr(pool)) |m| m.tm.available_nodes = -1;
 }
@@ -334,7 +334,7 @@ fn smClearTimeman(pool: *anyopaque) callconv(.c) void {
 // Native ThreadPool flag shims: stop and increaseDepth are the leading
 // std::atomic_bool pair at pool+0 / pool+1. Written directly (single-threaded
 // setup context), gated to the default build alongside the manager shims.
-fn tpSetIncreaseDepth(pool: *anyopaque, increase_depth: u8) callconv(.c) void {
+fn tpSetIncreaseDepth(pool: *anyopaque, increase_depth: u8) void {
     graph_layout.ThreadPool.fromPtr(pool).increase_depth = if (increase_depth != 0) 1 else 0;
 }
 // Native Thread->worker field reads. thread+8 holds the Worker pointer; read the
@@ -345,7 +345,7 @@ fn threadWorker(thread: *const anyopaque) ?[*]const u8 {
     if (w == 0) return null;
     return @ptrFromInt(w);
 }
-fn thTbHits(thread: *const anyopaque) callconv(.c) u64 {
+fn thTbHits(thread: *const anyopaque) u64 {
     const w = threadWorker(thread) orelse return 0;
     const p: *const u64 = @ptrCast(@alignCast(w + graph_layout.worker_off.tb_hits));
     return p.*;
@@ -407,10 +407,10 @@ fn threadWorkerMut(thread: *anyopaque) ?[*]u8 {
 // REPORT-12 TU=0 grind: the NumaPolicy setters are no-ops in the default build — the numa context is
 // a fixed single-node native stub, so reconfiguring it does nothing (and must not touch the stub).
 // Native no-op replaces the C++ default stubs; the legacy oracle keeps the real C++ set_numa_config.
-fn numaSuggestsBindingThreads(_: *const anyopaque, _: usize) callconv(.c) u8 {
+fn numaSuggestsBindingThreads(_: *const anyopaque, _: usize) u8 {
     return 0;
 }
-fn numaExecuteOnNode(_: *const anyopaque, _: usize, callback: *const fn (?*anyopaque) callconv(.c) void, context: ?*anyopaque) callconv(.c) void {
+fn numaExecuteOnNode(_: *const anyopaque, _: usize, callback: *const fn (?*anyopaque) void, context: ?*anyopaque) void {
     callback(context);
 }
 
@@ -476,7 +476,7 @@ fn freeSideTt() void {
 // REPORT-12 TU=0 grind: the _info_text display fns are pure pass-throughs to the already-native
 // *_information_owner fns — the owner already returns a malloc'd C string the caller frees with
 // c.free, so the C++ wrappers' std::string re-copy was redundant. Default-only; legacy keeps C++.
-fn engineThreadAllocationInfoText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
+fn engineThreadAllocationInfoText(engine_ptr: *const anyopaque) ?[*:0]u8 {
     return engine_port.threadAllocationInformationEngine(engine_ptr);
 }
 // REPORT-12 TU=0 grind: the "uci" option listing is rendered from the native Zig option model;
@@ -600,7 +600,7 @@ const embedded_nnue_stub = [_]u8{0};
 // "to keep the C++ oracle in sync" (network.zig). In the default build there is no C++ eval reading
 // it — the native load owns the state (nn_current/nn_description, set just before these calls) — so
 // they are no-ops, avoiding the frozen Network cast. Legacy keeps the real NetworkBridgeAccess writes.
-fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, current_name_len: usize, description_ptr: [*]const u8, description_len: usize) callconv(.c) void {
+fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, current_name_len: usize, description_ptr: [*]const u8, description_len: usize) void {
     _ = network;
     _ = current_name_ptr;
     _ = current_name_len;
@@ -622,7 +622,7 @@ fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, cur
 // exercises this every node, so search-parity + oracle-parity certify the offsets.
 // REPORT-12 TU=0: the read-blob fns parse weights into the C++ Network only in the legacy oracle; the
 // default build serves weights from native storage and discards these results, so they are no-ops.
-fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) callconv(.c) usize {
+fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) usize {
     _ = network;
     _ = bucket;
     _ = data_ptr;
@@ -631,7 +631,7 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
 }
 // REPORT-12 TU=0: native engine teardown (no C++ ~UCIEngine). Free the states slot, join+free the
 // native Threads + null the pool's threads vector, then free the heap members. All three are native.
-fn uciEngineDestructAt(storage: *anyopaque) callconv(.c) void {
+fn uciEngineDestructAt(storage: *anyopaque) void {
     zfish_engine_release_pending_state_slot(native_engine.NativeEngine.fromPtr(storage).statesSlotPtr());
     thread_port.nativeThreadpoolClear(engineThreadsPtr(storage));
     zfishNativeEngineDestructMembers(storage);
@@ -661,11 +661,11 @@ fn optInt(name: []const u8) c_int {
 // guards this; bench gates Hash/Threads since they size the TT / thread pool). Default-only
 // exports (comptime block below); the legacy oracle keeps the C++ OptionsMap reads. The
 // `options`/`shared_state` pointer args are unused (the model is a process-global).
-fn zfishSharedStateThreadsValue(shared_state_ptr: *const anyopaque) callconv(.c) usize {
+fn zfishSharedStateThreadsValue(shared_state_ptr: *const anyopaque) usize {
     _ = shared_state_ptr;
     return @intCast(optInt("Threads"));
 }
-fn zfishOptionsSyzygyProbeLimit(options_ptr: *const anyopaque) callconv(.c) c_int {
+fn zfishOptionsSyzygyProbeLimit(options_ptr: *const anyopaque) c_int {
     _ = options_ptr;
     return optInt("SyzygyProbeLimit");
 }
@@ -687,7 +687,7 @@ fn dupOptCString(name: []const u8) ?[*:0]u8 {
     dst[s.len] = 0;
     return @ptrCast(dst);
 }
-fn zfishEngineEvalfileText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
+fn zfishEngineEvalfileText(engine_ptr: *const anyopaque) ?[*:0]u8 {
     _ = engine_ptr;
     return dupOptCString("EvalFile");
 }
@@ -696,7 +696,7 @@ fn zfishEngineEvalfileText(engine_ptr: *const anyopaque) callconv(.c) ?[*:0]u8 {
 // native side-allocated buffer (M1; tt_off: cluster_count@0, table@8, generation8@16); the
 // native resize/clear (threaded parallel zero) + hashfull already exist and are the same code
 // the live search uses. Default-only; the legacy oracle keeps the C++ TranspositionTable methods.
-fn zfishEngineTtClear(tt_ptr: *anyopaque, threads: *anyopaque) callconv(.c) void {
+fn zfishEngineTtClear(tt_ptr: *anyopaque, threads: *anyopaque) void {
     const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
     tt_port.clearState(tp.table, tp.cluster_count, &tp.generation8, threads);
 }
@@ -716,7 +716,7 @@ fn zfishEngineTtClear(tt_ptr: *anyopaque, threads: *anyopaque) callconv(.c) void
 //     dtors), so manager + rootMoves are the ONLY heap ~Worker freed — this reproduces it
 //     without the virtual `delete manager`. Default-only; the legacy oracle keeps the real
 //     C++ SearchManager + ~Worker. See [[frozen-header-wall-blocks-member-cuts]].
-fn zfishMakeSearchManager(update_context: ?*const anyopaque, is_main: u8) callconv(.c) ?*anyopaque {
+fn zfishMakeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque {
     const buf = zfishOperatorNew(@sizeOf(graph_layout.SearchManager)) orelse return null;
     const bytes: [*]u8 = @ptrCast(buf);
     @memset(bytes[0..@sizeOf(graph_layout.SearchManager)], 0);
@@ -830,7 +830,7 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void 
 // type alias, not a member), so value-init == a zeroed position_size (1032B) block. operator
 // new/delete keeps the alloc/free family matched (the trace_pos / pool throwaway Position is
 // destroyed via zfish_position_destroy). Default-only; legacy keeps new/delete Position.
-fn zfishPositionDestroy(pos: ?*anyopaque) callconv(.c) void {
+fn zfishPositionDestroy(pos: ?*anyopaque) void {
     if (pos) |p| zfishOperatorDelete(p);
 }
 
@@ -842,7 +842,7 @@ fn zfishPositionDestroy(pos: ?*anyopaque) callconv(.c) void {
 // == a zeroed accumulator_stack_size block with size set to 1. zfish_accumulator_stack_reset on
 // a zeroed buffer is exactly that (it sets size=1 and clears state-0's already-zero computed/diff
 // fields), so it reproduces the ctor state. operator new/delete keeps the family matched.
-fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) callconv(.c) void {
+fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) void {
     if (stack) |buf| zfishOperatorDelete(buf);
 }
 
@@ -975,10 +975,10 @@ pub fn zfish_engine_init_body(engine: *anyopaque) void {
 // reference the default-only zfish_member_* heap helpers). Exported + compiled now but
 // NOT yet on the live path (zfish_uci_engine_construct_at still builds the C++ UCIEngine);
 // the flip commit swaps main()'s allocation + the member accessors to these.
-fn zfishNativeEngineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) callconv(.c) bool {
+fn zfishNativeEngineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     return native_engine.constructMembers(buf, argv0);
 }
-fn zfishNativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) callconv(.c) void {
+fn zfishNativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     native_engine.setCli(buf, argc, argv);
 }
 // REPORT-12 TU=0: native engine construction (no C++ UCIEngine ctor). Verify the object-graph
@@ -987,14 +987,14 @@ fn zfishNativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8)
 // body did. The C++ default also ran Tune::init(engine_options()), but Tune (SPSA) is INERT in a release
 // build (no live TUNE() macros → instance().list is empty → init/read are empty loops; only the unused
 // static Tune::options is set), so it is dropped here. oracle-parity proves dropping it is behavior-neutral.
-fn nativeUciEngineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) callconv(.c) void {
+fn nativeUciEngineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     graph_layout.zfish_graph_verify_layouts();
     if (!zfishNativeEngineConstructMembers(storage, argv[0]))
         @panic("native engine construct: member allocation failed");
     zfishNativeEngineSetCli(storage, argc, argv);
     zfish_engine_init_body(storage);
 }
-fn zfishNativeEngineDestructMembers(buf: *anyopaque) callconv(.c) void {
+fn zfishNativeEngineDestructMembers(buf: *anyopaque) void {
     native_engine.destructMembers(buf);
 }
 

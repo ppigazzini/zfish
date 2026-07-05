@@ -273,12 +273,12 @@ fn boundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, count: usize) 
     tp.bound_end = @intFromPtr(buf) + nbytes;
     tp.bound_cap = @intFromPtr(buf) + nbytes;
 }
-const ThreadCallback = *const fn (?*anyopaque) callconv(.c) void;
+const ThreadCallback = *const fn (?*anyopaque) void;
 
-const NumaNodeCallback = *const fn (?*anyopaque) callconv(.c) void;
+const NumaNodeCallback = *const fn (?*anyopaque) void;
 
 
-fn applyRootSetup(context_ptr: ?*anyopaque) callconv(.c) void {
+fn applyRootSetup(context_ptr: ?*anyopaque) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
     // Stage 5: native LimitsType POD-tail copy.
     workerSetLimits(context.thread, context.input.limits);
@@ -717,7 +717,7 @@ pub fn reconfigure(
 
 // The search-driver entry native_thread invokes as each thread's search job. Set
 // as a function pointer (M16.7) so native_thread need not import position.
-fn workerSearchEntry(ctx: ?*anyopaque) callconv(.c) void {
+fn workerSearchEntry(ctx: ?*anyopaque) void {
     position_port.workerStartSearching(ctx);
 }
 

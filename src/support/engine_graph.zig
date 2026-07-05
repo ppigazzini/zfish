@@ -143,10 +143,10 @@ pub const EngineGraph = struct {
 
 const testing = std.testing;
 
-fn noopNoMoves(_: ?*anyopaque, _: *const sm.InfoShort) callconv(.c) void {}
-fn noopFull(_: ?*anyopaque, _: *const sm.InfoFull) callconv(.c) void {}
-fn noopIter(_: ?*anyopaque, _: *const sm.InfoIteration) callconv(.c) void {}
-fn noopBest(_: ?*anyopaque, _: [*:0]const u8, _: [*:0]const u8) callconv(.c) void {}
+fn noopNoMoves(_: ?*anyopaque, _: *const sm.InfoShort) void {}
+fn noopFull(_: ?*anyopaque, _: *const sm.InfoFull) void {}
+fn noopIter(_: ?*anyopaque, _: *const sm.InfoIteration) void {}
+fn noopBest(_: ?*anyopaque, _: [*:0]const u8, _: [*:0]const u8) void {}
 
 fn testUpdateContext() UpdateContext {
     return .{

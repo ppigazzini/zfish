@@ -6,7 +6,7 @@
 //
 //   * std::function -> a plain function pointer plus an opaque context pointer.
 //     The four UCI-output callbacks (no-moves / full / iteration / bestmove)
-//     become `*const fn (...) callconv(.c) void` fields, bound to whatever owns
+//     become `*const fn (...) void` fields, bound to whatever owns
 //     the output sink (the native UCIEngine, eventually). No libstdc++
 //     _Function_handler instantiation, no heap closure.
 //
@@ -55,10 +55,10 @@ pub const InfoIteration = struct {
 // C-ABI function pointer so the same vtable-free dispatch works whether the sink
 // is implemented in Zig or handed across a C boundary.
 pub const UpdateContext = struct {
-    pub const NoMovesFn = *const fn (ctx: ?*anyopaque, info: *const InfoShort) callconv(.c) void;
-    pub const FullFn = *const fn (ctx: ?*anyopaque, info: *const InfoFull) callconv(.c) void;
-    pub const IterFn = *const fn (ctx: ?*anyopaque, info: *const InfoIteration) callconv(.c) void;
-    pub const BestmoveFn = *const fn (ctx: ?*anyopaque, bestmove: [*:0]const u8, ponder: [*:0]const u8) callconv(.c) void;
+    pub const NoMovesFn = *const fn (ctx: ?*anyopaque, info: *const InfoShort) void;
+    pub const FullFn = *const fn (ctx: ?*anyopaque, info: *const InfoFull) void;
+    pub const IterFn = *const fn (ctx: ?*anyopaque, info: *const InfoIteration) void;
+    pub const BestmoveFn = *const fn (ctx: ?*anyopaque, bestmove: [*:0]const u8, ponder: [*:0]const u8) void;
 
     ctx: ?*anyopaque,
     on_update_no_moves: NoMovesFn,
@@ -129,19 +129,19 @@ const Captured = struct {
     var bestmove_len: usize = 0;
     var no_moves_score: i32 = 0;
 
-    fn onNoMoves(ctx: ?*anyopaque, info: *const InfoShort) callconv(.c) void {
+    fn onNoMoves(ctx: ?*anyopaque, info: *const InfoShort) void {
         _ = ctx;
         no_moves_score = info.score;
     }
-    fn onFull(ctx: ?*anyopaque, info: *const InfoFull) callconv(.c) void {
+    fn onFull(ctx: ?*anyopaque, info: *const InfoFull) void {
         _ = ctx;
         full_nodes = info.nodes;
     }
-    fn onIter(ctx: ?*anyopaque, info: *const InfoIteration) callconv(.c) void {
+    fn onIter(ctx: ?*anyopaque, info: *const InfoIteration) void {
         _ = ctx;
         _ = info;
     }
-    fn onBestmove(ctx: ?*anyopaque, best: [*:0]const u8, ponder: [*:0]const u8) callconv(.c) void {
+    fn onBestmove(ctx: ?*anyopaque, best: [*:0]const u8, ponder: [*:0]const u8) void {
         _ = ctx;
         _ = ponder;
         const s = std.mem.span(best);

@@ -121,7 +121,7 @@ pub const Condition = struct {
     }
 };
 
-pub const ThreadJobFn = *const fn (?*anyopaque) callconv(.c) void;
+pub const ThreadJobFn = *const fn (?*anyopaque) void;
 
 pub const ThreadRuntime = struct {
     handle: ?std.Thread = null,
@@ -259,7 +259,7 @@ pub const ThreadPool = struct {
 const TestCtx = struct {
     counter: Atomic = Atomic.init(0),
 
-    fn job(raw: ?*anyopaque) callconv(.c) void {
+    fn job(raw: ?*anyopaque) void {
         const self: *TestCtx = @ptrCast(@alignCast(raw.?));
         _ = self.counter.fetchAdd(1, .monotonic);
     }

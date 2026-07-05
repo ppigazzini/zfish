@@ -15,7 +15,7 @@ const c = @import("libc");
 // directly: glibc's global FILE* symbol, macOS's __stdoutp global, or the Windows
 // CRT __acrt_iob_func(n) accessor. Each arm is comptime-selected.
 const std_streams = struct {
-    extern "c" fn __acrt_iob_func(index: c_uint) callconv(.c) *c.FILE;
+    extern "c" fn __acrt_iob_func(index: c_uint) *c.FILE;
     extern "c" var __stdoutp: *c.FILE;
     extern "c" var stdout: *c.FILE;
 };
