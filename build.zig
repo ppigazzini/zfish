@@ -471,6 +471,8 @@ pub fn build(b: *std.Build) void {
     uci_module.addImport("uci_wdl", uci_wdl_module);
     uci_module.addImport("uci_output", uci_output_module);
     uci_module.addImport("native_engine", native_engine_module);
+    uci_module.addImport("graph_layout", graph_layout_module);
+    uci_module.addImport("clock", clock_module);
     engine_module_default.addImport("uci_wdl", uci_wdl_module);
     position_module.addImport("uci_wdl", uci_wdl_module);
     tt_module.addImport("memory", memory_module);

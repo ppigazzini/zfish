@@ -486,7 +486,6 @@ comptime {
     // virtual-dtor wall). Legacy keeps the C++ SearchManager + ~Worker.
     @export(&zfishNativeWorkerDestroy, .{ .name = "zfish_native_worker_destroy" });
     @export(&nativeWorkerBuild, .{ .name = "zfish_native_worker_build" });
-    @export(&goParsedOwner, .{ .name = "zfish_engine_go_parsed_owner" });
     @export(&perftOwner, .{ .name = "zfish_engine_perft_owner" });
     @export(&threadpoolBoundNodesAssign, .{ .name = "zfish_threadpool_bound_nodes_assign" });
     // M-FINAL: native Position construct/destroy (legacy keeps new/delete Position).
@@ -859,65 +858,6 @@ const ParsedLimits = extern struct {
     ponder_mode: u8,
     searchmoves: ?[*:0]u8,
 };
-fn goParsedOwner(engine_ptr: *anyopaque, parsed: ParsedLimits) callconv(.c) void {
-    var limits: graph_layout.LimitsType = std.mem.zeroes(graph_layout.LimitsType);
-    const base: [*]u8 = @ptrCast(&limits);
-    // Capture the search start as early as possible -- upstream UCIEngine::parse_limits
-    // sets `limits.startTime = now()` first thing. TimeManagement::init copies it into
-    // tm.startTime, and the info-line elapsed is `now() - tm.startTime`. Left unset (0),
-    // that elapsed reads as now()-0 (~machine uptime), which is why the `info ... time`
-    // /`nps` fields were bogus while the bench's own Total-time summary was correct.
-    // Depth/node-limited searches never consult startTime for stopping, so bench node
-    // count / signature is unaffected; only the reported time/nps become correct.
-    limits.start_time = clock.now();
-    limits.time[0] = parsed.wtime;
-    limits.time[1] = parsed.btime;
-    limits.inc[0] = parsed.winc;
-    limits.inc[1] = parsed.binc;
-    limits.movestogo = parsed.movestogo;
-    limits.depth = parsed.depth;
-    limits.mate = parsed.mate;
-    limits.perft = parsed.perft;
-    limits.infinite = if (parsed.infinite != 0) 1 else 0;
-    limits.movetime = parsed.movetime;
-    limits.nodes = parsed.nodes;
-    limits.ponder_mode = parsed.ponder_mode;
-
-    // searchmoves std::vector<std::string> @ offset 0.
-    var sm_elems: ?*anyopaque = null;
-    if (parsed.searchmoves) |sm_ptr| {
-        const sm = std.mem.span(sm_ptr);
-        var count: usize = 0;
-        var it = std.mem.splitScalar(u8, sm, '\n');
-        while (it.next()) |tok| {
-            if (tok.len != 0) count += 1;
-        }
-        if (count != 0) {
-            const nbytes = count * 24; // count * sizeof(std::string)
-            const elems = zfishOperatorNew(nbytes) orelse @panic("searchmoves: operator new failed");
-            const ebase: [*]u8 = @ptrCast(elems);
-            @memset(ebase[0..nbytes], 0);
-            var i: usize = 0;
-            it = std.mem.splitScalar(u8, sm, '\n');
-            while (it.next()) |tok| {
-                if (tok.len == 0) continue;
-                const slot = ebase + i * 24;
-                slot[0] = @intCast(tok.len << 1); // libc++ SSO size byte
-                @memcpy(slot[1 .. 1 + tok.len], tok);
-                i += 1;
-            }
-            @as(*usize, @ptrCast(@alignCast(base))).* = @intFromPtr(elems); // begin
-            @as(*usize, @ptrCast(@alignCast(base + 8))).* = @intFromPtr(elems) + nbytes; // end
-            @as(*usize, @ptrCast(@alignCast(base + 16))).* = @intFromPtr(elems) + nbytes; // cap
-            sm_elems = elems;
-        }
-    }
-
-    zfish_engine_go_owner(engine_ptr, @ptrCast(base));
-    // start_thinking deep-copied limits into the workers, so free our searchmoves buffer now (the moves
-    // are SSO, so no per-string heap to free — just the element buffer).
-    if (sm_elems) |e| zfishOperatorDelete(e);
-}
 
 // REPORT-12 TU=0: `go perft N` root divide. Reads the engine FEN, builds a scratch Position + StateInfo
 // (operator_new'd, max-aligned; the C++ used stack p/st), set()s it, generates the legal root moves

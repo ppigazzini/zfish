@@ -9,12 +9,13 @@ const option_port = @import("option");
 const uci_wdl = @import("uci_wdl");
 const uci_output = @import("uci_output");
 const native_engine = @import("native_engine");
+const graph_layout = @import("graph_layout");
+const clock = @import("clock");
 
 // These engine_owner entry points are @export'd main.zig-local orchestrators (not thin
 // engine-module wrappers), so they stay C-ABI for now -- a later slice moves that logic out
 // of main.zig. The other zfish_engine_*_owner calls became engine_mod.* direct calls (M16.5).
 extern fn zfish_engine_perft_owner(engine_ptr: *anyopaque, depth: c_int) u64;
-extern fn zfish_engine_go_parsed_owner(engine_ptr: *anyopaque, limits: ParsedLimits) void;
 
 // C stdio stdin, obtained portably (M-PORT). @cImport's translation of the stream macros
 // is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on
@@ -90,6 +91,61 @@ pub const ParsedPosition = extern struct {
 // move views directly (M16.5) rather than through a duplicate C-ABI-mirror struct.
 const ByteView = engine_mod.ByteView;
 
+
+// Build the native LimitsType from the parsed UCI `go` args (including the libc++
+// searchmoves std::vector<std::string>) and hand it to the engine go driver. Relocated
+// from main.zig (M16.7): startTime is stamped here (earliest point), so the info-line
+// elapsed/nps are correct; the searchmoves element buffer is freed after start_thinking
+// deep-copied the limits into the workers (moves are SSO -- no per-string heap).
+fn goParsed(engine_ptr: *anyopaque, parsed: ParsedLimits) void {
+    var limits: graph_layout.LimitsType = std.mem.zeroes(graph_layout.LimitsType);
+    const base: [*]u8 = @ptrCast(&limits);
+    limits.start_time = clock.now();
+    limits.time[0] = parsed.wtime;
+    limits.time[1] = parsed.btime;
+    limits.inc[0] = parsed.winc;
+    limits.inc[1] = parsed.binc;
+    limits.movestogo = parsed.movestogo;
+    limits.depth = parsed.depth;
+    limits.mate = parsed.mate;
+    limits.perft = parsed.perft;
+    limits.infinite = if (parsed.infinite != 0) 1 else 0;
+    limits.movetime = parsed.movetime;
+    limits.nodes = parsed.nodes;
+    limits.ponder_mode = parsed.ponder_mode;
+
+    var sm_elems: ?*anyopaque = null;
+    if (parsed.searchmoves) |sm_ptr| {
+        const sm = std.mem.span(sm_ptr);
+        var count: usize = 0;
+        var it = std.mem.splitScalar(u8, sm, '\n');
+        while (it.next()) |tok| {
+            if (tok.len != 0) count += 1;
+        }
+        if (count != 0) {
+            const nbytes = count * 24; // count * sizeof(std::string)
+            const elems = std.c.malloc(nbytes) orelse @panic("searchmoves: operator new failed");
+            const ebase: [*]u8 = @ptrCast(elems);
+            @memset(ebase[0..nbytes], 0);
+            var i: usize = 0;
+            it = std.mem.splitScalar(u8, sm, '\n');
+            while (it.next()) |tok| {
+                if (tok.len == 0) continue;
+                const slot = ebase + i * 24;
+                slot[0] = @intCast(tok.len << 1); // libc++ SSO size byte
+                @memcpy(slot[1 .. 1 + tok.len], tok);
+                i += 1;
+            }
+            @as(*usize, @ptrCast(@alignCast(base))).* = @intFromPtr(elems); // begin
+            @as(*usize, @ptrCast(@alignCast(base + 8))).* = @intFromPtr(elems) + nbytes; // end
+            @as(*usize, @ptrCast(@alignCast(base + 16))).* = @intFromPtr(elems) + nbytes; // cap
+            sm_elems = elems;
+        }
+    }
+
+    engine_mod.goEngine(engine_ptr, @ptrCast(base));
+    if (sm_elems) |e| std.c.free(e);
+}
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(input) catch .{
@@ -442,7 +498,7 @@ fn applyGo(engine: *anyopaque, trimmed: []const u8) void {
         return;
     }
 
-    zfish_engine_go_parsed_owner(engine_ptr, limits);
+    goParsed(engine_ptr, limits);
 }
 
 fn emitInfoString(text: []const u8) void {
