@@ -137,7 +137,7 @@ const CorrectionBundle = struct {
 // DynStats { size_t size; T* data } (the LargePagePtr is a unique_ptr with a
 // stateless deleter, so just an 8-byte pointer), followed by the two index
 // masks. pawn page = [16][64] int16 (1024); correction page = [2]CorrectionBundle.
-pub const SharedHistories = extern struct {
+pub const SharedHistories = struct {
     corr_size: usize,
     corr_data: [*][2]CorrectionBundle,
     pawn_size: usize,
