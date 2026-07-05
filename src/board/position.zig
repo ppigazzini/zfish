@@ -508,18 +508,98 @@ const SsCtx = extern struct {
     skill_enabled: u8,
 };
 
-extern fn zfish_ss_prologue(worker: ?*anyopaque) void;
+// Search-manager driver callbacks that touch only the Worker graph (via graph_layout)
+// + the accumulator stack — relocated from main.zig (M16.7). The driver
+// (workerStartSearching) now calls them locally instead of through C-ABI. Callbacks that
+// need the thread pool / options / timeman / uci output / network stay main-side bridges,
+// since position sits below those layers (importing them would cycle).
+fn workerThreadsPool(worker: *const anyopaque) usize {
+    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.threads));
+    return p.*;
+}
+fn workerManager(worker: *const anyopaque) usize {
+    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.manager));
+    return p.*;
+}
+fn workerRootMove0(worker: *const anyopaque) usize {
+    const begin: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.root_moves));
+    return begin.*;
+}
+fn workerTT(worker: *const anyopaque) usize {
+    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.tt));
+    return p.*;
+}
+
+// Per-search reset: clear the worker's accumulator stack + last-iteration PV.
+fn ssPrologue(worker: *anyopaque) void {
+    const wb = @intFromPtr(worker);
+    const acc_stack: *anyopaque = @ptrFromInt(wb + graph_layout.worker_off.accumulator_stack);
+    nnue_acc.stackReset(acc_stack);
+    graph_layout.PVMoves.fromAddr(wb + graph_layout.worker_off.last_iteration_pv).length = 0;
+}
+
+// Sum and reset each thread's worker bestMoveChanges (atomic u64), as a double.
+fn searchIdCollectBmc(worker: *anyopaque) f64 {
+    const tp = graph_layout.ThreadPool.fromAddr(@as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.threads)).*);
+    const count = tp.numThreads();
+    var tot: f64 = 0;
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        const thread = tp.threadAt(i);
+        const wkr = graph_layout.Thread.fromAddr(thread).worker;
+        const bmc: *u64 = @ptrFromInt(wkr + graph_layout.worker_off.best_move_changes);
+        tot += @floatFromInt(bmc.*);
+        bmc.* = 0;
+    }
+    return tot;
+}
+
+fn ssSetStop(worker: *anyopaque) void {
+    const pool = workerThreadsPool(worker);
+    graph_layout.ThreadPool.fromAddr(pool).stop = 1;
+}
+
+// !threads.stop && (manager->ponder || limits.infinite).
+fn ssShouldBusywait(worker: *const anyopaque) u8 {
+    const pool = workerThreadsPool(worker);
+    if (graph_layout.ThreadPool.fromAddr(pool).stop != 0) return 0;
+    const ponder = graph_layout.SearchManager.fromAddr(workerManager(worker)).ponder;
+    const infinite = graph_layout.LimitsType.fromAddr(@intFromPtr(worker) + graph_layout.worker_off.limits).infinite;
+    return if (ponder != 0 or infinite != 0) 1 else 0;
+}
+
+fn ssSetPrevScores(worker: *anyopaque, best: *const anyopaque) void {
+    const rm0 = workerRootMove0(best);
+    const rmv = graph_layout.RootMove.fromAddr(rm0);
+    const sm = graph_layout.SearchManager.fromAddr(workerManager(worker));
+    sm.best_previous_score = rmv.score;
+    sm.best_previous_average_score = rmv.average_score;
+}
+
+// best->rootMoves[0].pv.size()==1 && extract_ponder_from_tt(worker->tt, worker->rootPos).
+fn ssPvOneAndPonder(worker: *anyopaque, best: *anyopaque) u8 {
+    const rm0 = workerRootMove0(best);
+    const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
+    if (pv.length != 1) return 0;
+    const tp = graph_layout.TranspositionTable.fromAddr(workerTT(worker));
+    const pos: usize = @intFromPtr(worker) + graph_layout.worker_off.root_pos;
+    return extractPonderFromTt(@ptrCast(pv), tp.table, tp.cluster_count, tp.generation8, @ptrFromInt(pos));
+}
+
+fn searchCbTtContext(worker: *const anyopaque, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
+    const tp = graph_layout.TranspositionTable.fromAddr(@as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.tt)).*);
+    out_table.* = tp.table;
+    out_cluster_count.* = tp.cluster_count;
+    out_generation.* = tp.generation8;
+}
+
 extern fn zfish_ss_context(worker: ?*anyopaque, out: *SsCtx) void;
 extern fn zfish_ss_tm_init(worker: ?*anyopaque) void;
 extern fn zfish_ss_emit_no_moves(worker: ?*anyopaque) void;
 extern fn zfish_ss_threads_start(worker: ?*anyopaque) void;
-extern fn zfish_ss_should_busywait(worker: ?*anyopaque) u8;
-extern fn zfish_ss_set_stop(worker: ?*anyopaque) void;
 extern fn zfish_ss_wait_finished(worker: ?*anyopaque) void;
 extern fn zfish_ss_npmsec_advance(worker: ?*anyopaque) void;
 extern fn zfish_ss_get_best_thread(worker: ?*anyopaque) ?*anyopaque;
-extern fn zfish_ss_set_prev_scores(worker: ?*anyopaque, best: ?*anyopaque) void;
-extern fn zfish_ss_pv_one_and_ponder(worker: ?*anyopaque, best: ?*anyopaque) u8;
 extern fn zfish_ss_emit_pv(worker: ?*anyopaque, best: ?*anyopaque) void;
 extern fn zfish_ss_emit_bestmove(worker: ?*anyopaque, best: ?*anyopaque) void;
 
@@ -527,7 +607,7 @@ extern fn zfish_ss_emit_bestmove(worker: ?*anyopaque, best: ?*anyopaque) void;
 // branch and the sequencing; the C++ leaf helpers run the individual time-
 // management, thread-pool, skill, and UCI-output operations.
 pub fn workerStartSearching(worker: ?*anyopaque) void {
-    zfish_ss_prologue(worker);
+    ssPrologue(worker.?);
 
     var ctx: SsCtx = undefined;
     zfish_ss_context(worker, &ctx);
@@ -547,9 +627,9 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     zfish_ss_threads_start(worker);
     var uci_pv_sent = iterativeDeepening(worker.?) != 0;
 
-    while (zfish_ss_should_busywait(worker) != 0) {}
+    while (ssShouldBusywait(worker.?) != 0) {}
 
-    zfish_ss_set_stop(worker);
+    ssSetStop(worker.?);
     zfish_ss_wait_finished(worker);
 
     if (ctx.npmsec != 0) zfish_ss_npmsec_advance(worker);
@@ -558,9 +638,9 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     if (ctx.limits_depth == 0 and ctx.skill_enabled == 0)
         best = zfish_ss_get_best_thread(worker);
 
-    zfish_ss_set_prev_scores(worker, best);
+    ssSetPrevScores(worker.?, best.?);
 
-    if (zfish_ss_pv_one_and_ponder(worker, best) != 0)
+    if (ssPvOneAndPonder(worker.?, best.?) != 0)
         uci_pv_sent = false;
 
     if (!uci_pv_sent or best != worker)
@@ -569,7 +649,6 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     zfish_ss_emit_bestmove(worker, best);
 }
 
-extern fn zfish_search_cb_tt_context(worker: *anyopaque, out_table: *?*anyopaque, out_cc: *usize, out_gen: *u8) void;
 
 // One-shot fetch of the Worker state the inlined search needs, all stable for the
 // whole search: the NNUE accumulator stack, the node counter, the (numa-resolved)
@@ -1195,7 +1274,7 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
     var table: ?*anyopaque = null;
     var cc: usize = 0;
     var gen: u8 = 0;
-    zfish_search_cb_tt_context(worker, &table, &cc, &gen);
+    searchCbTtContext(worker, &table, &cc, &gen);
     const ctx = buildCtx(worker, table, cc, gen);
     return qsearchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, pv_node != 0);
 }
@@ -1845,7 +1924,7 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
     var table: ?*anyopaque = null;
     var cc: usize = 0;
     var gen: u8 = 0;
-    zfish_search_cb_tt_context(worker, &table, &cc, &gen);
+    searchCbTtContext(worker, &table, &cc, &gen);
     const ctx = buildCtx(worker, table, cc, gen);
     return searchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, depth, cut_node != 0, pv_node != 0, root_node != 0);
 }
@@ -1857,7 +1936,6 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
 // redirects here when skill is off), so no skill/RNG logic is needed in Zig.
 extern fn zfish_search_id_state(worker: *anyopaque, out: *ZfishIdState) void;
 extern fn zfish_search_id_pv(worker: *anyopaque, depth: c_int) void;
-extern fn zfish_search_id_collect_bmc(worker: *anyopaque) f64;
 
 const id_nodes_limit_output: u64 = 10_000_000;
 
@@ -1959,7 +2037,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
     var table: ?*anyopaque = null;
     var cc: usize = 0;
     var gen: u8 = 0;
-    zfish_search_cb_tt_context(worker, &table, &cc, &gen);
+    searchCbTtContext(worker, &table, &cc, &gen);
     const ctx = buildCtx(worker, table, cc, gen);
 
     var pv: PVMoves = undefined;
@@ -2130,7 +2208,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
         if (id.skill_enabled != 0 and skillTimeToPick(id.skill_level, id.root_depth.*))
             skill_best = skillPickBest(&id, multi_pv);
 
-        tot_best_move_changes += zfish_search_id_collect_bmc(worker);
+        tot_best_move_changes += searchIdCollectBmc(worker);
 
         // Time management: do we have time for the next iteration / can we stop?
         if (id.use_time_management != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and id.stop_on_ponderhit.* == 0) {

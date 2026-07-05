@@ -705,13 +705,7 @@ pub export fn zfish_search_emit_info_full(
 // b->rootMoves[0].score, and likewise bestPreviousAverageScore. Reads the two
 // Value ints from best's first RootMove and stores them in worker's manager
 // (bridge-only symbol, no gating).
-pub export fn zfish_ss_set_prev_scores(worker: *anyopaque, best: *const anyopaque) void {
-    const rm0 = workerRootMove0(best);
-    const rmv = graph_layout.RootMove.fromAddr(rm0);
-    const sm = graph_layout.SearchManager.fromAddr(workerManager(worker));
-    sm.best_previous_score = rmv.score;
-    sm.best_previous_average_score = rmv.average_score;
-}
+// zfish_ss_set_prev_scores: relocated into position.zig (M16.7).
 
 fn workerTT(worker: *const anyopaque) usize {
     const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.tt));
@@ -723,20 +717,7 @@ fn workerTT(worker: *const anyopaque) usize {
 // and length come from best's first RootMove; the TT (table/clusterCount/
 // generation8) and rootPos come from worker. extract_ponder mutates pv exactly as
 // the C++ does. Bridge-only symbol, no gating.
-pub export fn zfish_ss_pv_one_and_ponder(worker: *anyopaque, best: *anyopaque) u8 {
-    const rm0 = workerRootMove0(best);
-    const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
-    if (pv.length != 1) return 0;
-    const tp = graph_layout.TranspositionTable.fromAddr(workerTT(worker));
-    const pos: usize = @intFromPtr(worker) + graph_layout.worker_off.root_pos;
-    return zfish_search_extract_ponder_from_tt(
-        @ptrCast(pv),
-        tp.table,
-        tp.cluster_count,
-        tp.generation8,
-        @ptrFromInt(pos),
-    );
-}
+// zfish_ss_pv_one_and_ponder: relocated into position.zig (M16.7).
 
 // Native quiet-mode flag, mirrored from the C++ zfish_uci_set_listener_mode. In
 // quiet mode (bench/speedtest) the search-driver emit functions are no-ops; in
@@ -1341,12 +1322,7 @@ fn zfishEngineAccumulatorStackDestroy(stack: ?*anyopaque) callconv(.c) void {
 
 // zfish_search_cb_tt_context: hand the native search the worker TT's cluster
 // array, cluster count, and generation, resolved by offset. Bridge-only symbol.
-pub export fn zfish_search_cb_tt_context(worker: *const anyopaque, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
-    const tp = graph_layout.TranspositionTable.fromAddr(@as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.tt)).*);
-    out_table.* = tp.table;
-    out_cluster_count.* = tp.cluster_count;
-    out_generation.* = tp.generation8;
-}
+// zfish_search_cb_tt_context: relocated into position.zig (M16.7).
 
 // SearchManager::check_time inputs, snapshotted once per search tree. Mirrors the
 // position.zig SearchTimeState exactly: live (mutable) fields are pointers; the
@@ -1440,12 +1416,7 @@ pub export fn zfish_search_cb_worker_state(
 // stackReset -- the same clearComputed/zeroDiff/size primitives the push/pop path
 // already proves byte-exact) and clears lastIterationPV (PVMoves::clear == length
 // 0). Touches no options, so it is identical across builds: plain export.
-pub export fn zfish_ss_prologue(worker: *anyopaque) void {
-    const wb = @intFromPtr(worker);
-    const acc_stack: *anyopaque = @ptrFromInt(wb + graph_layout.worker_off.accumulator_stack);
-    nnue_accumulator_port.stackReset(acc_stack);
-    graph_layout.PVMoves.fromAddr(wb + graph_layout.worker_off.last_iteration_pv).length = 0;
-}
+// zfish_ss_prologue: relocated into position.zig (M16.7).
 
 // zfish_ss_tm_init: the per-search TimeManagement::init + TT::new_search the main
 // thread runs at search start. The time-control math is already native
@@ -1524,22 +1495,7 @@ pub export fn zfish_ss_get_best_thread(worker: *anyopaque) ?*anyopaque {
     return @ptrFromInt(graph_layout.Thread.fromAddr(thread).worker);
 }
 
-// zfish_search_id_collect_bmc: sum and reset each thread's worker bestMoveChanges
-// (atomic u64), returned as a double (matching the C++ accumulation).
-pub export fn zfish_search_id_collect_bmc(worker: *anyopaque) f64 {
-    const tp = graph_layout.ThreadPool.fromAddr(@as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.threads)).*);
-    const count = tp.numThreads();
-    var tot: f64 = 0;
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
-        const thread = tp.threadAt(i);
-        const wkr = graph_layout.Thread.fromAddr(thread).worker;
-        const bmc: *u64 = @ptrFromInt(wkr + graph_layout.worker_off.best_move_changes);
-        tot += @floatFromInt(bmc.*);
-        bmc.* = 0;
-    }
-    return tot;
-}
+// zfish_search_id_collect_bmc: relocated into position.zig (M16.7).
 
 // Matches the bridge ZfishIdState struct (iterative-deepening snapshot).
 const ZfishIdState = extern struct {
@@ -1818,21 +1774,12 @@ pub export fn zfish_ss_emit_bestmove(worker: *const anyopaque, best: *const anyo
 
 // zfish_ss_set_stop: worker->threads.stop = true. Plain byte store, matching the
 // gate-verified native tpSetStopFlag (bridge-only symbol, no gating).
-pub export fn zfish_ss_set_stop(worker: *anyopaque) void {
-    const pool = workerThreadsPool(worker);
-    graph_layout.ThreadPool.fromAddr(pool).stop = 1;
-}
+// zfish_ss_set_stop: relocated into position.zig (M16.7).
 
 // zfish_ss_should_busywait: !threads.stop && (manager->ponder || limits.infinite).
 // Resolves the pool stop byte, the worker's manager ponder flag, and the limits
 // infinite int by offset (bridge-only symbol, no gating).
-pub export fn zfish_ss_should_busywait(worker: *const anyopaque) u8 {
-    const pool = workerThreadsPool(worker);
-    if (graph_layout.ThreadPool.fromAddr(pool).stop != 0) return 0;
-    const ponder = graph_layout.SearchManager.fromAddr(workerManager(worker)).ponder;
-    const infinite = graph_layout.LimitsType.fromAddr(@intFromPtr(worker) + graph_layout.worker_off.limits).infinite;
-    return if (ponder != 0 or infinite != 0) 1 else 0;
-}
+// zfish_ss_should_busywait: relocated into position.zig (M16.7).
 
 // UCIEngine::cli accessors (bridge-only). cli is a CommandLine {int argc;
 // char** argv} at uci_engine_off.cli_argc; arg_at bounds-checks against argc and
