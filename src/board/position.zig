@@ -665,6 +665,91 @@ fn ssTmInit(worker: *anyopaque) void {
     gen.* = tt.generationNext(gen.*);
 }
 
+// Skill level as a float: from UCI_Elo (interpolated) when UCI_LimitStrength is set,
+// else the raw Skill Level option. Relocated from main.zig (M16.7).
+fn skillLevel() f64 {
+    const limit_strength = optInt("UCI_LimitStrength") != 0;
+    const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
+    if (uci_elo != 0) {
+        const e = @as(f64, @floatFromInt(uci_elo - 1320)) / @as(f64, 3190 - 1320);
+        const raw = (((37.2473 * e - 40.8525) * e + 22.2943) * e - 0.311438);
+        return std.math.clamp(raw, 0.0, 19.0);
+    }
+    return @floatFromInt(optInt("Skill Level"));
+}
+
+// Snapshot the iterative-deepening state (worker/pool member pointers + scalars) for
+// the native search root loop. Relocated from main.zig (M16.7); graph reads + the
+// native OptionsModel only.
+fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
+    const wb = @intFromPtr(worker);
+    const off = graph_layout.worker_off;
+    const thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx)).*;
+    const is_main = thread_idx == 0;
+    const pool = @as(*const usize, @ptrFromInt(wb + off.threads)).*;
+    const limits = wb + off.limits;
+
+    const rm_begin = @as(*const usize, @ptrFromInt(wb + off.root_moves)).*;
+    const rm_end = @as(*const usize, @ptrFromInt(wb + off.root_moves + 8)).*;
+    const tp = graph_layout.ThreadPool.fromAddr(pool);
+
+    out.root_pos = @ptrFromInt(wb + off.root_pos);
+    out.root_moves = @ptrFromInt(rm_begin);
+    out.pv_idx = @ptrFromInt(wb + off.pv_idx);
+    out.pv_last = @ptrFromInt(wb + off.pv_last);
+    out.sel_depth = @ptrFromInt(wb + off.sel_depth);
+    out.root_depth = @ptrFromInt(wb + off.root_depth);
+    out.root_delta = @ptrFromInt(wb + off.root_delta);
+    out.optimism = @ptrFromInt(wb + off.optimism);
+    out.nodes = @ptrFromInt(wb + off.nodes);
+    out.stop = @ptrFromInt(@intFromPtr(&tp.stop));
+    out.increase_depth = @ptrFromInt(@intFromPtr(&tp.increase_depth));
+    out.last_iter_pv = @ptrFromInt(wb + off.last_iteration_pv);
+    out.root_moves_count = (rm_end - rm_begin) / graph_layout.root_move_size;
+    out.thread_idx = thread_idx;
+    out.threads_size = tp.numThreads();
+    out.multipv_option = @intCast(@max(optInt("MultiPV"), 0));
+    out.limits_depth = graph_layout.LimitsType.fromAddr(limits).depth;
+    out.limits_mate = graph_layout.LimitsType.fromAddr(limits).mate;
+    const time_w = @as(*const i64, @ptrFromInt(limits + 24)).*;
+    const time_b = @as(*const i64, @ptrFromInt(limits + 32)).*;
+    out.use_time_management = @intFromBool(time_w != 0 or time_b != 0);
+    out.is_main = @intFromBool(is_main);
+
+    const sl = skillLevel();
+    out.skill_level = sl;
+    out.skill_enabled = @intFromBool(sl < 20.0);
+
+    if (is_main) {
+        const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
+        out.stop_on_ponderhit = @ptrCast(&smgr.stop_on_ponderhit);
+        out.ponder = @ptrCast(&smgr.ponder);
+        out.iter_value = @ptrCast(&smgr.iter_value);
+        out.previous_time_reduction = @ptrCast(&smgr.previous_time_reduction);
+        out.tm_optimum = smgr.tm.optimum_time;
+        out.tm_maximum = smgr.tm.maximum_time;
+        out.tm_start_time = smgr.tm.start_time;
+        out.tm_use_nodes_time = smgr.tm.use_nodes_time;
+        out.best_previous_score = smgr.best_previous_score;
+        out.best_previous_average_score = smgr.best_previous_average_score;
+    } else {
+        // Non-main threads bail before the time-management block (`if (!main_thread)
+        // continue;`), so these SearchManager/TM pointer fields are never dereferenced
+        // for them. position's ZfishIdState types them non-optional, so use the worker
+        // pointer as a harmless valid placeholder (the C++ path left them null/unused).
+        out.stop_on_ponderhit = @ptrCast(worker);
+        out.ponder = @ptrCast(worker);
+        out.iter_value = @ptrCast(@alignCast(worker));
+        out.previous_time_reduction = @ptrCast(@alignCast(worker));
+        out.tm_optimum = 0;
+        out.tm_maximum = 0;
+        out.tm_start_time = 0;
+        out.tm_use_nodes_time = 0;
+        out.best_previous_score = 0;
+        out.best_previous_average_score = 0;
+    }
+}
+
 extern fn zfish_ss_emit_no_moves(worker: ?*anyopaque) void;
 extern fn zfish_ss_threads_start(worker: ?*anyopaque) void;
 extern fn zfish_ss_wait_finished(worker: ?*anyopaque) void;
@@ -2004,7 +2089,6 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
 // bestMoveChanges collection (sum + reset, returned as a double) so multi-thread
 // stays correct. The skill-enabled handicap path stays in C++ (the seam only
 // redirects here when skill is off), so no skill/RNG logic is needed in Zig.
-extern fn zfish_search_id_state(worker: *anyopaque, out: *ZfishIdState) void;
 extern fn zfish_search_id_pv(worker: *anyopaque, depth: c_int) void;
 
 const id_nodes_limit_output: u64 = 10_000_000;
@@ -2101,7 +2185,7 @@ fn skillSwapBest(id: *const ZfishIdState, move: u16) void {
 
 pub fn iterativeDeepening(worker: *anyopaque) u8 {
     var id: ZfishIdState = undefined;
-    zfish_search_id_state(worker, &id);
+    searchIdState(worker, &id);
     const main_thread = id.is_main != 0;
 
     var table: ?*anyopaque = null;

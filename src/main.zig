@@ -472,7 +472,6 @@ fn numaExecuteOnNode(_: *const anyopaque, _: usize, callback: *const fn (?*anyop
 comptime {
     // id_state reads the native option model (default-only populated), so the
     // native version is default-only; legacy keeps the bridge C++ body.
-    @export(&zfish_search_id_state, .{ .name = "zfish_search_id_state" });
     // M-FINAL (limits readers): pure LimitsType offset reads (legacy keeps the C++ defs).
     // M-FINAL (option readers): native OptionsModel reads (legacy keeps OptionsMap[]).
     // M-FINAL (string-option readers): native OptionsModel string reads (legacy keeps C++).
@@ -1454,16 +1453,6 @@ const ZfishIdState = extern struct {
 
 // Skill(level, elo) from the C++ ctor: a set UCI_Elo maps to a clamped [0,19]
 // level; otherwise the level is the Skill Level option. enabled() == level < 20.
-fn skillLevel() f64 {
-    const limit_strength = optInt("UCI_LimitStrength") != 0;
-    const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
-    if (uci_elo != 0) {
-        const e = @as(f64, @floatFromInt(uci_elo - 1320)) / @as(f64, 3190 - 1320);
-        const raw = (((37.2473 * e - 40.8525) * e + 22.2943) * e - 0.311438);
-        return std.math.clamp(raw, 0.0, 19.0);
-    }
-    return @floatFromInt(optInt("Skill Level"));
-}
 
 // zfish_search_id_state: snapshot the iterative-deepening state for the native
 // search. Worker/pool member pointers and scalars are taken by offset; the main
@@ -1472,70 +1461,7 @@ fn skillLevel() f64 {
 // the native option model, which is only populated in the default build, so this
 // is gated default-only (the legacy oracle keeps the C++ body that reads the C++
 // OptionsMap). See the gated @export below.
-fn zfish_search_id_state(worker: *anyopaque, out: *ZfishIdState) callconv(.c) void {
-    const wb = @intFromPtr(worker);
-    const off = graph_layout.worker_off;
-    const thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx)).*;
-    const is_main = thread_idx == 0;
-    const pool = @as(*const usize, @ptrFromInt(wb + off.threads)).*;
-    const limits = wb + off.limits;
-
-    const rm_begin = @as(*const usize, @ptrFromInt(wb + off.root_moves)).*;
-    const rm_end = @as(*const usize, @ptrFromInt(wb + off.root_moves + 8)).*;
-    const tp = graph_layout.ThreadPool.fromAddr(pool);
-
-    out.root_pos = @ptrFromInt(wb + off.root_pos);
-    out.root_moves = @ptrFromInt(rm_begin);
-    out.pv_idx = @ptrFromInt(wb + off.pv_idx);
-    out.pv_last = @ptrFromInt(wb + off.pv_last);
-    out.sel_depth = @ptrFromInt(wb + off.sel_depth);
-    out.root_depth = @ptrFromInt(wb + off.root_depth);
-    out.root_delta = @ptrFromInt(wb + off.root_delta);
-    out.optimism = @ptrFromInt(wb + off.optimism);
-    out.nodes = @ptrFromInt(wb + off.nodes);
-    out.stop = @ptrFromInt(@intFromPtr(&tp.stop));
-    out.increase_depth = @ptrFromInt(@intFromPtr(&tp.increase_depth));
-    out.last_iter_pv = @ptrFromInt(wb + off.last_iteration_pv);
-    out.root_moves_count = (rm_end - rm_begin) / graph_layout.root_move_size;
-    out.thread_idx = thread_idx;
-    out.threads_size = tp.numThreads();
-    out.multipv_option = @intCast(@max(optInt("MultiPV"), 0));
-    out.limits_depth = graph_layout.LimitsType.fromAddr(limits).depth;
-    out.limits_mate = graph_layout.LimitsType.fromAddr(limits).mate;
-    const time_w = @as(*const i64, @ptrFromInt(limits + 24)).*;
-    const time_b = @as(*const i64, @ptrFromInt(limits + 32)).*;
-    out.use_time_management = @intFromBool(time_w != 0 or time_b != 0);
-    out.is_main = @intFromBool(is_main);
-
-    const sl = skillLevel();
-    out.skill_level = sl;
-    out.skill_enabled = @intFromBool(sl < 20.0);
-
-    if (is_main) {
-        const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
-        out.stop_on_ponderhit = @ptrCast(&smgr.stop_on_ponderhit);
-        out.ponder = @ptrCast(&smgr.ponder);
-        out.iter_value = @ptrCast(&smgr.iter_value);
-        out.previous_time_reduction = @ptrCast(&smgr.previous_time_reduction);
-        out.tm_optimum = smgr.tm.optimum_time;
-        out.tm_maximum = smgr.tm.maximum_time;
-        out.tm_start_time = smgr.tm.start_time;
-        out.tm_use_nodes_time = smgr.tm.use_nodes_time;
-        out.best_previous_score = smgr.best_previous_score;
-        out.best_previous_average_score = smgr.best_previous_average_score;
-    } else {
-        out.stop_on_ponderhit = null;
-        out.ponder = null;
-        out.iter_value = null;
-        out.previous_time_reduction = null;
-        out.tm_optimum = 0;
-        out.tm_maximum = 0;
-        out.tm_start_time = 0;
-        out.tm_use_nodes_time = 0;
-        out.best_previous_score = 0;
-        out.best_previous_average_score = 0;
-    }
-}
+// zfish_search_id_state + skillLevel: relocated into position.zig (M16.7).
 
 // Matches the bridge ZfishSsCtx struct.
 const ZfishSsCtx = extern struct {
