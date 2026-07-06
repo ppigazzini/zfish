@@ -125,15 +125,14 @@ pub const WorkerHistories = struct {
 };
 
 // Offset of the shared_history reference WITHIN WorkerHistories (a native struct, so
-// Zig's choice). The worker builder/reader add graph_layout.worker_off.histories to
-// get the absolute Worker offset.
+// Zig's choice). Readers index it inside the WorkerLayout.histories byte region.
 pub const worker_shared_history_off = @offsetOf(WorkerHistories, "shared_history");
 
-// The Worker's WorkerHistories sub-block lives at graph_layout.worker_off.histories
-// (no longer offset 0 — the native WorkerLayout floats the 64-aligned NNUE arenas to
-// the front). Cast a Worker base pointer to its histories view through this helper.
+// The Worker's WorkerHistories sub-block is the WorkerLayout.histories field (no
+// longer offset 0 — the native WorkerLayout floats the 64-aligned NNUE arenas to the
+// front). Reinterpret that opaque byte region as the typed histories view.
 inline fn workerHistories(worker_ptr: *anyopaque) *WorkerHistories {
-    return @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker_ptr)) + graph_layout.worker_off.histories));
+    return @ptrCast(@alignCast(&graph_layout.WorkerLayout.fromPtr(worker_ptr).histories));
 }
 
 comptime {
