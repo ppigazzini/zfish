@@ -48,12 +48,11 @@ comptime {
 
 const testing = std.testing;
 
-test "StateInfo reproduces the C++ footprint and anchors" {
+test "StateInfo holds the contractual 192-byte footprint" {
+    // Native struct (M16.8): Zig owns field order, so only @sizeOf is a contract
+    // (WorkerLayout overlays a 192-byte opaque region on it). Field offsets are
+    // Zig's to choose and are deliberately NOT asserted.
     try testing.expectEqual(@as(usize, 192), @sizeOf(StateInfo));
-    try testing.expectEqual(@as(usize, 0), @offsetOf(StateInfo, "material_key"));
-    try testing.expectEqual(@as(usize, 64), @offsetOf(StateInfo, "key"));
-    try testing.expectEqual(@as(usize, 80), @offsetOf(StateInfo, "previous"));
-    try testing.expectEqual(@as(usize, 188), @offsetOf(StateInfo, "repetition"));
 }
 
 test "StateInfo chains through previous" {

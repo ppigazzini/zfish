@@ -934,6 +934,8 @@ pub fn build(b: *std.Build) void {
         tt_module,
         network_holder_module,
         shared_histories_module,
+        native_thread_module,
+        thread_runtime_module,
     }) |unit_module| {
         const unit_test = b.addTest(.{ .root_module = unit_module });
         test_step.dependOn(&b.addRunArtifact(unit_test).step);
@@ -949,6 +951,30 @@ pub fn build(b: *std.Build) void {
         }),
     });
     test_step.dependOn(&b.addRunArtifact(option_test).step);
+
+    // M17.0c: standalone test artifacts for the tested sub-files that were
+    // path-imported into larger modules (so their `test {}` blocks never ran in
+    // the aggregate). These depend only on std (+ libc for c_allocator) or on a
+    // sibling path import, so they build in isolation.
+    inline for (.{
+        "src/board/state_info.zig",
+        "src/board/state_list.zig",
+        "src/support/root_move.zig",
+        "src/support/search_manager.zig",
+        "src/support/shared_state.zig",
+        "src/eval/nnue_parse.zig",
+        "src/eval/nnue_hash.zig",
+    }) |src_path| {
+        const file_test = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(src_path),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+        });
+        test_step.dependOn(&b.addRunArtifact(file_test).step);
+    }
 
     const parity_step = b.step(
         "parity",
