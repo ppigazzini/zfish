@@ -8,7 +8,7 @@
 // if the native construction drifted.
 //
 // This verifier asserts the freshly constructed native pool against the pinned
-// offsets. Same model as worker_construct.zig. Read-only; panics on drift.
+// offsets. Same model as the native worker constructor. Read-only; panics on drift.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");
