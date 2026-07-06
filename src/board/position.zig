@@ -463,7 +463,7 @@ fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
 // in this build, so the upstream TB/syzygy branches never apply (rootInTB is always
 // false).
 const PvContext = struct {
-    manager: ?*anyopaque,
+    manager: ?*graph_layout.SearchManager,
     worker: ?*anyopaque,
     root_moves: [*]const RootMove,
     root_moves_count: usize,
@@ -478,7 +478,7 @@ const PvContext = struct {
 // Per-PV-emit context: root-move span, MultiPV/WDL options, chess960, pool nodes/tbhits,
 // TT hashfull and elapsed ms. Relocated from main.zig (M16.7); graph_layout + option +
 // the leaf pool aggregates, so no thread-module import (which would cycle).
-fn searchCbPvContext(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, out: *PvContext) void {
+fn searchCbPvContext(manager: ?*graph_layout.SearchManager, worker: ?*anyopaque, threads: *graph_layout.ThreadPool, tt_ptr: *graph_layout.TranspositionTable, out: *PvContext) void {
     const wl = graph_layout.WorkerLayout.fromPtr(worker.?);
     // root_moves is the {begin,end,cap} vector header.
     const rm_begin = wl.root_moves[0];
@@ -496,13 +496,13 @@ fn searchCbPvContext(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyop
 
     const root_pos: *const anyopaque = &wl.root_pos;
     out.chess960 = if (isChess960(root_pos)) 1 else 0;
-    out.nodes = graph_layout.poolNodesSearched(threads.?);
-    out.tb_hits = graph_layout.poolTbHits(threads.?);
+    out.nodes = graph_layout.poolNodesSearched(threads);
+    out.tb_hits = graph_layout.poolTbHits(threads);
 
-    const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr.?);
+    const tp = tt_ptr;
     out.hashfull = tt.hashfull(@ptrFromInt(@intFromPtr(tp.table)), tp.cluster_count, tp.generation8, 0);
 
-    const start_time = graph_layout.SearchManager.fromPtr(manager.?).tm.start_time;
+    const start_time = manager.?.tm.start_time;
     const elapsed = clock.now() - start_time;
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
@@ -642,7 +642,7 @@ fn searchCbRootOnIter(worker: *const anyopaque, depth: c_int, move: u16, move_co
     uci_output.printLine(line.ptr, line.len);
 }
 
-fn searchPv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void {
+fn searchPv(manager: ?*graph_layout.SearchManager, worker: ?*anyopaque, threads: *graph_layout.ThreadPool, tt_ptr: *graph_layout.TranspositionTable, depth: c_int) void {
     const value_infinite: i32 = 32001;
     var ctx: PvContext = undefined;
     searchCbPvContext(manager, worker, threads, tt_ptr, &ctx);
