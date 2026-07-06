@@ -122,8 +122,9 @@ fn workerClearNative(worker: *anyopaque) void {
     const off = graph_layout.worker_off;
     position_port.clearWorkerHistories(worker);
     const shared_history: *anyopaque = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + graph_layout.worker_off.histories + position_port.worker_shared_history_off)).*);
-    const numa_thread_idx = @as(*const usize, @ptrFromInt(wb + off.numa_thread_idx)).*;
-    const numa_total = @as(*const usize, @ptrFromInt(wb + off.numa_total)).*;
+    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    const numa_thread_idx = wl.numa_thread_idx;
+    const numa_total = wl.numa_total;
     position_port.clearSharedHistory(shared_history, numa_thread_idx, numa_total);
     const reductions: [*]c_int = @ptrFromInt(wb + off.reductions);
     search_port.fillReductions(reductions, 256);
@@ -197,24 +198,21 @@ fn freeSideTt() void {
 // reference is stored as a pointer; main_manager() is manager.get()), so the
 // resolver loads the slot value.
 fn workerThreadsPool(worker: *const anyopaque) usize {
-    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.threads));
-    return p.*;
+    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).threads;
 }
 fn workerManager(worker: *const anyopaque) usize {
-    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.manager));
-    return p.*;
+    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).manager;
 }
 
 // worker->rootMoves[0]: rootMoves is a std::vector<RootMove> whose begin pointer
 // is the first element's address.
 fn workerRootMove0(worker: *const anyopaque) usize {
-    const begin: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.root_moves));
-    return begin.*;
+    // root_moves is the {begin,end,cap} vector header; [0] is the begin pointer.
+    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).root_moves[0];
 }
 
 fn workerTT(worker: *const anyopaque) usize {
-    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.tt));
-    return p.*;
+    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).tt;
 }
 
 // workerRefPtr: read a Worker reference slot -- threads/tt/manager are pointers stored at

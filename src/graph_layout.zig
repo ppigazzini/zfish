@@ -104,6 +104,15 @@ pub const WorkerLayout = struct {
     network: usize,
     accumulator_stack: [accumulator_stack_size]u8 align(64),
     refresh_table: [refresh_table_bytes]u8 align(64),
+
+    /// Typed view over the 13.2 MB worker block (M17.2a). The block is a
+    /// 64-aligned large-page allocation, so this reinterpret is sound and reads
+    /// each scalar field at its @offsetOf -- the same address worker_off yields,
+    /// so it is bench-invariant. Opaque byte regions (histories/root_pos/NNUE
+    /// arenas) still need the position-type embedding a later slice will do.
+    pub inline fn fromPtr(p: *anyopaque) *WorkerLayout {
+        return @ptrCast(@alignCast(p));
+    }
 };
 
 pub const worker_off = struct {
