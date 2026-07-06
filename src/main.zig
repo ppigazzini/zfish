@@ -76,29 +76,10 @@ pub fn main(init: std.process.Init) !void {
     uci_port.loopRuntime(engine);
 }
 
-// do_move that links a fresh StateInfo and computes givesCheck internally
-// (Position::do_move(Move, StateInfo&)); exported from the bridge.
-
-// Recursive perft node counter. Replaces the C++ Benchmark::perft recursion:
-// the bridge keeps the root divide loop (for byte-identical per-move output and
-// MoveList ordering) and calls this for each root move's subtree. Reuses the
-// Zig legal movegen and the do_move/undo_move seam the search already drives.
-
-
-
-// M-FINAL cutover (position-set port): native Position::set (FEN parse) + legality, replacing
-// the C++ Position::set / Position::legal in the bridge. The live pos is the Zig side block, so
-// these operate on the same byte-compatible storage the native search reads. Default-only
-// (legacy keeps the C++ Position methods); gate-verified by search-parity (51 FENs) + bench.
-// M-FINAL cutover (thread-cluster leaf): native TT-slice zero. In the default build the
-// pool holds native Threads (no C++ run_custom_job vehicle); the TT clear is a deterministic
-// memset whose result is thread-independent, so zero the slice synchronously on the caller
-// (the paired wait_thread no-ops). Matches the C++ #else branch byte-for-byte. Legacy keeps
-// the C++ ThreadPool::run_on_thread path.
-// M-FINAL cutover (states crack): native StateList replaces the C++ deque<StateInfo> across the
-// storage (position-setup chain), the engine `states` slot (fallback root), and the pool's
-// setupStates@8. PendingStateStorage carries the unique_ptr MOVE semantics (state_list.zig).
-// The slot + setupStates@8 hold a `?*StateList`; adopt MOVEs the pointer + nulls the source.
+// The native StateList backs the position-setup chain, the engine `states` slot
+// (fallback root), and the pool's setupStates. PendingStateStorage carries move
+// semantics (state_list.zig); the slot + setupStates hold a `?*StateList`, and
+// adopt MOVEs the pointer + nulls the source.
 const StateList = state_list_port.StateList;
 const PendingStateStorage = state_list_port.PendingStateStorage;
 
@@ -113,10 +94,8 @@ fn freeSetupStatesIfAny(pool: *anyopaque) void {
     }
 }
 
-// engine `states` slot: a ?*StateList. reset() mirrors unique_ptr::reset() — free + null
-// (the slot is the rarely-used fallback; the storage chain is what searches normally adopt).
-// adopt: MOVE the StateList into the pool's setupStates@8, freeing any prior one (between
-// searches setupStates still owns the previous list; ~ThreadPool no longer frees it).
+// adopt: MOVE the StateList into the pool's setupStates, freeing any prior one
+// (between searches setupStates still owns the previous list).
 fn threadpoolSetupStatesAdoptFromStorage(pool: *anyopaque, storage: *anyopaque) void {
     freeSetupStatesIfAny(pool);
     poolSetupStatesSlot(pool).* = @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).moveOut();
@@ -133,25 +112,8 @@ fn threadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
     return null;
 }
 
-// M-FINAL cutover (thread cluster): native ThreadPool::setupStates null-check. setupStates is
-// a StateListPtr (single pointer) at ThreadPool.setup_states; has-states == ptr != null.
-// Pure offset read (no deque internals). Default-only (legacy keeps the C++ method).
-
-
-
-// zfish_search_stat_bonus/stat_malus retired -- position.zig calls search directly (M16.5).
-
-
-
-
-// Native-graph cut flip fire 2: shadow verifier. The bridge calls this right after the
-// C++ try_emplace builds a node's SharedHistories, so the native sizing logic (the
-// builder the flip will use) is diffed against the live oracle every engine
-// construction. Returns false (and logs) on any mismatch; the bridge aborts loudly.
-
-// Native Worker::clear (stage-4 layer 5): the per-search worker reset the native
-// clear_worker job runs on its thread. Reproduces Search::Worker::clear() by
-// offset -- the four native clear helpers in declaration order: histories, the
+// Native Worker::clear: the per-search worker reset the clear_worker job runs on
+// its thread. The four native clear helpers in declaration order: histories, the
 // shared-history page (sharedHistory ref + numaThreadIdx@thread_idx+8 /
 // numaTotal@+16), the reductions table (int[256], the 1024-byte slot before
 // manager), and the refresh cache (native feature-transformer biases). All four
