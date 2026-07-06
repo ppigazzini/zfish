@@ -193,8 +193,8 @@ fn rootMovesDestroy(ptr: ?*anyopaque) void {
 // than a byte range; searchmoves is deliberately left as the worker's own (the search
 // reads the worker's, always empty on the gated single-node path).
 fn workerSetLimits(thread: *anyopaque, src_limits: *const anyopaque) void {
-    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + 8)).*;
-    const dst = graph_layout.LimitsType.fromAddr(worker + graph_layout.worker_off.limits);
+    const worker = graph_layout.Thread.fromPtr(thread).worker;
+    const dst = &graph_layout.WorkerLayout.fromAddr(worker).limits;
     const src = graph_layout.LimitsType.fromPtr(@constCast(src_limits));
     dst.time = src.time;
     dst.inc = src.inc;
@@ -214,16 +214,17 @@ fn workerSetLimits(thread: *anyopaque, src_limits: *const anyopaque) void {
 // reuse the existing buffer when its capacity fits, else operator-new a
 // fresh one and free the old — exactly like assigning an element range.
 fn workerSetRootMoves(thread: *anyopaque, src_rm: *const anyopaque) void {
-    // worker@8, then the rootMoves vector object {begin@0,end@8,cap@16}.
-    const worker = @as(*const usize, @ptrFromInt(@intFromPtr(thread) + 8)).*;
-    const vbase = worker + graph_layout.worker_off.root_moves;
-    const dst_begin: *usize = @ptrFromInt(vbase + 0);
-    const dst_end: *usize = @ptrFromInt(vbase + 8);
-    const dst_cap: *usize = @ptrFromInt(vbase + 16);
+    // worker@8, then the rootMoves vector object {begin[0],end[1],cap[2]}.
+    const worker = graph_layout.Thread.fromPtr(thread).worker;
+    const dst = &graph_layout.WorkerLayout.fromAddr(worker).root_moves;
+    const dst_begin: *usize = &dst[0];
+    const dst_end: *usize = &dst[1];
+    const dst_cap: *usize = &dst[2];
 
-    const sb = @intFromPtr(src_rm);
-    const src_begin = @as(*const usize, @ptrFromInt(sb + 0)).*;
-    const src_end = @as(*const usize, @ptrFromInt(sb + 8)).*;
+    // src_rm is a libc++ vector<RootMove> header {begin,end,cap}.
+    const src = @as(*const [3]usize, @ptrCast(@alignCast(src_rm)));
+    const src_begin = src[0];
+    const src_end = src[1];
     const byte_count = src_end - src_begin;
 
     if (byte_count == 0) {
