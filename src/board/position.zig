@@ -796,12 +796,11 @@ fn ssContext(worker: *anyopaque, out: *SsCtx) void {
 // Overhead/Ponder from the native model, writes the outputs back, and bumps the TT
 // generation. Relocated from main.zig (M16.7).
 fn ssTmInit(worker: *anyopaque) void {
-    const wb = @intFromPtr(worker);
-    const off = graph_layout.worker_off;
-    const lim = graph_layout.LimitsType.fromAddr(wb + off.limits);
-    const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
+    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    const lim = &wl.limits;
+    const smgr = graph_layout.SearchManager.fromAddr(wl.manager);
     const tm = &smgr.tm;
-    const root_pos: *const anyopaque = @ptrFromInt(wb + off.root_pos);
+    const root_pos: *const anyopaque = &wl.root_pos;
 
     const us: usize = sideToMove(root_pos);
 
@@ -832,7 +831,7 @@ fn ssTmInit(worker: *anyopaque) void {
     lim.inc[us] = out.inc_us;
     lim.npmsec = out.npmsec;
 
-    const gen = &graph_layout.TranspositionTable.fromAddr(@as(*const usize, @ptrFromInt(wb + off.tt)).*).generation8;
+    const gen = &graph_layout.TranspositionTable.fromAddr(wl.tt).generation8;
     gen.* = tt.generationNext(gen.*);
 }
 
@@ -853,38 +852,36 @@ fn skillLevel() f64 {
 // the native search root loop. Relocated from main.zig (M16.7); graph reads + the
 // native OptionsModel only.
 fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
-    const wb = @intFromPtr(worker);
-    const off = graph_layout.worker_off;
-    const thread_idx = @as(*const usize, @ptrFromInt(wb + off.thread_idx)).*;
+    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    const thread_idx = wl.thread_idx;
     const is_main = thread_idx == 0;
-    const pool = @as(*const usize, @ptrFromInt(wb + off.threads)).*;
-    const limits = wb + off.limits;
+    const tp = graph_layout.ThreadPool.fromAddr(wl.threads);
 
-    const rm_begin = @as(*const usize, @ptrFromInt(wb + off.root_moves)).*;
-    const rm_end = @as(*const usize, @ptrFromInt(wb + off.root_moves + 8)).*;
-    const tp = graph_layout.ThreadPool.fromAddr(pool);
+    // root_moves is the {begin,end,cap} vector header.
+    const rm_begin = wl.root_moves[0];
+    const rm_end = wl.root_moves[1];
 
-    out.root_pos = @ptrFromInt(wb + off.root_pos);
+    out.root_pos = &wl.root_pos;
     out.root_moves = @ptrFromInt(rm_begin);
-    out.pv_idx = @ptrFromInt(wb + off.pv_idx);
-    out.pv_last = @ptrFromInt(wb + off.pv_last);
-    out.sel_depth = @ptrFromInt(wb + off.sel_depth);
-    out.root_depth = @ptrFromInt(wb + off.root_depth);
-    out.root_delta = @ptrFromInt(wb + off.root_delta);
-    out.optimism = @ptrFromInt(wb + off.optimism);
-    out.nodes = @ptrFromInt(wb + off.nodes);
-    out.stop = @ptrFromInt(@intFromPtr(&tp.stop));
-    out.increase_depth = @ptrFromInt(@intFromPtr(&tp.increase_depth));
-    out.last_iter_pv = @ptrFromInt(wb + off.last_iteration_pv);
+    out.pv_idx = &wl.pv_idx;
+    out.pv_last = &wl.pv_last;
+    out.sel_depth = &wl.sel_depth;
+    out.root_depth = &wl.root_depth;
+    out.root_delta = &wl.root_delta;
+    out.optimism = &wl.optimism;
+    out.nodes = &wl.nodes;
+    out.stop = &tp.stop;
+    out.increase_depth = &tp.increase_depth;
+    // graph_layout.PVMoves and position.PVMoves are the same layout; ZfishIdState
+    // types this field as the position one, so bridge the pointer.
+    out.last_iter_pv = @ptrCast(&wl.last_iteration_pv);
     out.root_moves_count = (rm_end - rm_begin) / graph_layout.root_move_size;
     out.thread_idx = thread_idx;
     out.threads_size = tp.numThreads();
     out.multipv_option = @intCast(@max(optInt("MultiPV"), 0));
-    out.limits_depth = graph_layout.LimitsType.fromAddr(limits).depth;
-    out.limits_mate = graph_layout.LimitsType.fromAddr(limits).mate;
-    const time_w = @as(*const i64, @ptrFromInt(limits + 24)).*;
-    const time_b = @as(*const i64, @ptrFromInt(limits + 32)).*;
-    out.use_time_management = @intFromBool(time_w != 0 or time_b != 0);
+    out.limits_depth = wl.limits.depth;
+    out.limits_mate = wl.limits.mate;
+    out.use_time_management = @intFromBool(wl.limits.time[0] != 0 or wl.limits.time[1] != 0);
     out.is_main = @intFromBool(is_main);
 
     const sl = skillLevel();
@@ -892,7 +889,7 @@ fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
     out.skill_enabled = @intFromBool(sl < 20.0);
 
     if (is_main) {
-        const smgr = graph_layout.SearchManager.fromAddr(@as(*const usize, @ptrFromInt(wb + off.manager)).*);
+        const smgr = graph_layout.SearchManager.fromAddr(wl.manager);
         out.stop_on_ponderhit = @ptrCast(&smgr.stop_on_ponderhit);
         out.ponder = @ptrCast(&smgr.ponder);
         out.iter_value = @ptrCast(&smgr.iter_value);
@@ -934,8 +931,7 @@ fn ssWaitFinished(worker: ?*anyopaque) void {
 // Worker of the vote-winning thread (Lazy-SMP best-thread selection via the leaf
 // thread_vote model). Relocated from main.zig (M16.7).
 fn ssGetBestThread(worker: ?*anyopaque) ?*anyopaque {
-    const wb = @intFromPtr(worker.?);
-    const pool = @as(*const usize, @ptrFromInt(wb + graph_layout.worker_off.threads)).*;
+    const pool = graph_layout.WorkerLayout.fromPtr(worker.?).threads;
     return @ptrFromInt(thread_vote.bestThreadWorker(@ptrFromInt(pool)));
 }
 
