@@ -326,7 +326,7 @@ pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
         .uci => {
             const info_ptr = misc_port.engineInfoText(1) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(info_ptr));
-            const options_ptr = option_port.zfish_optmodel_render() orelse return .{ .should_quit = 0 };
+            const options_ptr = option_port.renderOptions() orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(options_ptr));
 
             std.debug.print(

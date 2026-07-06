@@ -788,7 +788,7 @@ fn searchCbTtContext(worker: *const anyopaque, out_table: *?*anyopaque, out_clus
 }
 
 fn optInt(name: []const u8) c_int {
-    return option_port.zfish_optmodel_int_by_name(name.ptr, name.len);
+    return option_port.intByName(name);
 }
 
 // Per-search context flags read off the worker graph + the native OptionsModel.

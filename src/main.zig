@@ -521,7 +521,7 @@ fn uciEngineDestructAt(storage: *anyopaque) void {
 // only monotonicity). Ported across the owned OSes (M-PORT).
 
 fn optInt(name: []const u8) c_int {
-    return option_port.zfish_optmodel_int_by_name(name.ptr, name.len);
+    return option_port.intByName(name);
 }
 
 // M-FINAL (option readers): the OptionsMap["..."] readers ported to native-model reads.

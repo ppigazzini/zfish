@@ -339,7 +339,7 @@ pub fn applySetOptionEngine(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_
     const vlen: usize = if (has_value != 0) value_len else 0;
     const vptr: [*]const u8 = if (has_value != 0) value_ptr else name_ptr;
     var res: option_port.ModelSetResult = undefined;
-    option_port.zfish_optmodel_set_by_name(name_ptr, name_len, vptr, vlen, &res);
+    option_port.setByName(name_ptr[0..name_len], vptr[0..vlen], &res);
     if (res.found == 0) {
         var buf: [256]u8 = undefined;
         const out = std.fmt.bufPrint(&buf, "No such option: {s}", .{name_ptr[0..name_len]}) catch return;
@@ -351,12 +351,12 @@ pub fn applySetOptionEngine(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_
         var relay_value: []const u8 = "";
         var relay_int: c_int = 0;
         if (res.kind == 1 or res.kind == 2) {
-            relay_int = option_port.zfish_optmodel_int_by_index(res.idx);
+            relay_int = option_port.intByIndex(res.idx);
             relay_value = std.fmt.bufPrint(&relay_buf, "{d}", .{relay_int}) catch "";
         } else if (res.kind == 0) {
-            const len = option_port.zfish_optmodel_current_len(res.idx);
+            const len = option_port.currentLen(res.idx);
             if (len != 0) {
-                if (option_port.zfish_optmodel_current_ptr(res.idx)) |p| relay_value = p[0..len];
+                if (option_port.currentPtr(res.idx)) |p| relay_value = p[0..len];
             }
         }
         const ret = optionOnChange(engine_ptr, res.callback_kind, relay_value.ptr, relay_value.len, relay_int);
@@ -786,7 +786,7 @@ pub fn perftEngine(engine_ptr: *anyopaque, depth: c_int) u64 {
     verifyNetwork(engine_ptr);
     const fen_ptr = fen(ne(engine_ptr).positionPtr()) orelse @panic("perft: null fen");
     const fen_text = std.mem.span(fen_ptr);
-    const chess960 = option_port.zfish_optmodel_int_by_name("UCI_Chess960", 12) != 0;
+    const chess960 = option_port.intByName("UCI_Chess960") != 0;
 
     const p = std.c.malloc(graph_layout.position_size) orelse @panic("perft: position alloc");
     const st = std.c.malloc(graph_layout.state_info_size) orelse @panic("perft: state alloc");
@@ -1025,7 +1025,7 @@ fn engineAddOption(
         0 => default_ptr[0..default_len], // string
         else => @panic("engineAddOption: bad option kind"),
     };
-    _ = option_port.zfish_optmodel_add(name_ptr, name_len, option_kind, default_slice.ptr, default_slice.len, min_value, max_value);
+    _ = option_port.addOption(name_ptr[0..name_len], option_kind, default_slice, min_value, max_value);
 }
 
 fn addStringOption(engine_ptr: *anyopaque, name: []const u8, default_value: []const u8, callback_kind: u8) void {
