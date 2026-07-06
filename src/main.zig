@@ -118,19 +118,16 @@ fn threadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
 // manager), and the refresh cache (native feature-transformer biases). All four
 // callees are gate-verified; only this orchestration is new.
 fn workerClearNative(worker: *anyopaque) void {
-    const wb = @intFromPtr(worker);
-    const off = graph_layout.worker_off;
-    position_port.clearWorkerHistories(worker);
-    const shared_history: *anyopaque = @ptrFromInt(@as(*const usize, @ptrFromInt(wb + graph_layout.worker_off.histories + position_port.worker_shared_history_off)).*);
     const wl = graph_layout.WorkerLayout.fromPtr(worker);
-    const numa_thread_idx = wl.numa_thread_idx;
-    const numa_total = wl.numa_total;
-    position_port.clearSharedHistory(shared_history, numa_thread_idx, numa_total);
-    const reductions: [*]c_int = @ptrFromInt(wb + off.reductions);
-    search_port.fillReductions(reductions, 256);
-    const refresh: *anyopaque = @ptrFromInt(wb + off.refresh_table);
+    position_port.clearWorkerHistories(worker);
+    // sharedHistory is a pointer stored inside the histories sub-block at
+    // worker_shared_history_off; load it through the typed histories field.
+    const sh_slot: *const usize = @ptrCast(@alignCast(&wl.histories[position_port.worker_shared_history_off]));
+    const shared_history: *anyopaque = @ptrFromInt(sh_slot.*);
+    position_port.clearSharedHistory(shared_history, wl.numa_thread_idx, wl.numa_total);
+    search_port.fillReductions(&wl.reductions, 256);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));
-    nnue_accumulator_port.clearRefreshCache(refresh, biases);
+    nnue_accumulator_port.clearRefreshCache(&wl.refresh_table, biases);
 }
 
 // operatorNew/operatorDelete: the matched alloc/free family for the native
@@ -290,13 +287,11 @@ fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque
 }
 fn nativeWorkerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
-    const base: [*]u8 = @ptrCast(w);
-    // rootMoves vector buffer (begin @ root_moves+0); operator new'd by the RootMoves builder.
-    const rm_begin: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.root_moves));
-    if (rm_begin.*) |b| operatorDelete(b);
+    const wl = graph_layout.WorkerLayout.fromPtr(w);
+    // rootMoves vector buffer (begin == root_moves[0]); operator new'd by the RootMoves builder.
+    if (wl.root_moves[0] != 0) operatorDelete(@ptrFromInt(wl.root_moves[0]));
     // SearchManager buffer (operator new'd by makeSearchManager above).
-    const mgr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.manager));
-    if (mgr.*) |m| operatorDelete(m);
+    if (wl.manager != 0) operatorDelete(@ptrFromInt(wl.manager));
     memory_port.alignedLargePagesFree(w);
 }
 
@@ -338,7 +333,7 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void 
         ctx.total,
         0,
     );
-    @as(*usize, @ptrFromInt(@intFromPtr(thread) + 8)).* = @intFromPtr(raw);
+    graph_layout.Thread.fromPtr(thread).worker = @intFromPtr(raw);
 }
 
 pub fn engineInitBody(engine: *anyopaque) void {
