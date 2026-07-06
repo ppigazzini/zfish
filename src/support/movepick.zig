@@ -538,7 +538,8 @@ fn selectProbcut(state: *MovePickerState, context: *const MovePickerContext) ?u1
         state.cur += 1;
 
         if (entry.raw_move != state.tt_move_raw and
-            seeGe(context.pos, entry.raw_move, state.threshold)) {
+            seeGe(context.pos, entry.raw_move, state.threshold))
+        {
             return entry.raw_move;
         }
     }

@@ -128,8 +128,7 @@ pub fn attacks(piece_type: u8, square: u8, occupied: u64) u64 {
         knight_piece => knightAttacks(sq),
         bishop_piece => slidingAttack(PieceType.bishop, sq, occupied),
         rook_piece => slidingAttack(PieceType.rook, sq, occupied),
-        queen_piece =>
-            slidingAttack(PieceType.bishop, sq, occupied) | slidingAttack(PieceType.rook, sq, occupied),
+        queen_piece => slidingAttack(PieceType.bishop, sq, occupied) | slidingAttack(PieceType.rook, sq, occupied),
         king_piece => kingAttacks(sq),
         else => 0,
     };
@@ -472,8 +471,8 @@ fn kingAttacks(square: usize) u64 {
     const rank = @as(i32, @intCast(rankOf(square)));
     const offsets = [_][2]i32{
         .{ -1, -1 }, .{ -1, 0 }, .{ -1, 1 },
-        .{ 0, -1 },               .{ 0, 1 },
-        .{ 1, -1 },  .{ 1, 0 },  .{ 1, 1 },
+        .{ 0, -1 },  .{ 0, 1 },  .{ 1, -1 },
+        .{ 1, 0 },   .{ 1, 1 },
     };
 
     for (offsets) |offset| {

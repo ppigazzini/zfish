@@ -31,7 +31,6 @@ comptime {
     _ = worker_native_construct;
 }
 
-
 pub fn main(init: std.process.Init) !void {
     // Cross-platform argv (M-PORT): initAllocator handles Windows/WASI, where argv must be
     // decoded from the raw command line into an owned buffer (on POSIX it is a no-op view of

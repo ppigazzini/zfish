@@ -146,7 +146,6 @@ pub const NnueTraceInput = struct {
     positional_cp: [*]const c_int,
 };
 
-
 pub fn initBody(engine_ptr: *anyopaque) void {
     const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
     const max_hash_mb: c_int = if (@sizeOf(usize) >= 8) 33554432 else 2048;
@@ -901,9 +900,9 @@ pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
     return owned.ptr;
 }
 
-    pub fn visualizeEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
-        return visualize(ne(engine_ptr).positionPtr());
-    }
+pub fn visualizeEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+    return visualize(ne(engine_ptr).positionPtr());
+}
 
 pub fn formatNumaInfo(config_ptr: [*]const u8, config_len: usize) ?[*:0]u8 {
     return allocMessage("Available processors: {s}", .{config_ptr[0..config_len]});
