@@ -86,6 +86,168 @@ pub fn build(b: *std.Build) void {
         .abi = abi,
     });
 
+    // Module graph as data (M17.1): each engine module is a uniform {name, path}
+    // spec, and import edges are a table -- replacing 41 createModule blocks + the
+    // 142 hand-written addImport lines.
+    const ModuleSpec = struct { name: []const u8, path: []const u8 };
+    const module_specs = [_]ModuleSpec{
+        .{ .name = "libc", .path = "src/libc.zig" },
+        .{ .name = "memory", .path = "src/memory.zig" },
+        .{ .name = "tablebase", .path = "src/support/tablebase.zig" },
+        .{ .name = "clock", .path = "src/support/clock.zig" },
+        .{ .name = "uci_output", .path = "src/support/uci_output.zig" },
+        .{ .name = "uci_wdl", .path = "src/support/uci_wdl.zig" },
+        .{ .name = "score", .path = "src/score.zig" },
+        .{ .name = "thread_vote", .path = "src/support/thread_vote.zig" },
+        .{ .name = "thread_runtime", .path = "src/support/thread_runtime.zig" },
+        .{ .name = "native_thread", .path = "src/support/native_thread.zig" },
+        .{ .name = "numa", .path = "src/support/numa.zig" },
+        .{ .name = "graph_layout", .path = "src/graph_layout.zig" },
+        .{ .name = "native_engine", .path = "src/native_engine.zig" },
+        .{ .name = "timeman", .path = "src/time/timeman.zig" },
+        .{ .name = "benchmark", .path = "src/bench/benchmark.zig" },
+        .{ .name = "misc", .path = "src/support/misc.zig" },
+        .{ .name = "engine", .path = "src/support/engine.zig" },
+        .{ .name = "uci_move", .path = "src/support/uci_move.zig" },
+        .{ .name = "movepick", .path = "src/support/movepick.zig" },
+        .{ .name = "search", .path = "src/support/search.zig" },
+        .{ .name = "thread", .path = "src/support/thread.zig" },
+        .{ .name = "tt", .path = "src/support/tt.zig" },
+        .{ .name = "option", .path = "src/uci/option.zig" },
+        .{ .name = "bitboard", .path = "src/board/bitboard.zig" },
+        .{ .name = "position", .path = "src/board/position.zig" },
+        .{ .name = "position_snapshot", .path = "src/board/position_snapshot.zig" },
+        .{ .name = "native_hooks", .path = "src/support/native_hooks.zig" },
+        .{ .name = "movegen", .path = "src/board/movegen.zig" },
+        .{ .name = "nnue_feature", .path = "src/eval/nnue_feature.zig" },
+        .{ .name = "uci", .path = "src/uci/uci.zig" },
+        .{ .name = "evaluate", .path = "src/eval/evaluate.zig" },
+        .{ .name = "nnue_accumulator", .path = "src/eval/nnue_accumulator.zig" },
+        .{ .name = "network", .path = "src/eval/network.zig" },
+        .{ .name = "nnue_misc", .path = "src/eval/nnue_misc.zig" },
+        .{ .name = "state_list", .path = "src/board/state_list.zig" },
+        .{ .name = "numa_config", .path = "src/support/numa_config.zig" },
+        .{ .name = "numa_replication", .path = "src/support/numa_replication.zig" },
+        .{ .name = "position_storage", .path = "src/board/position_storage.zig" },
+        .{ .name = "shared_histories", .path = "src/support/shared_histories.zig" },
+        .{ .name = "shared_histories_map", .path = "src/support/shared_histories_map.zig" },
+        .{ .name = "network_holder", .path = "src/support/network_holder.zig" },
+    };
+    var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
+    for (module_specs) |spec| {
+        mods.put(spec.name, b.createModule(.{
+            .root_source_file = b.path(spec.path),
+            .target = target,
+            .optimize = optimize,
+        })) catch @panic("OOM building module graph");
+    }
+    const Edge = struct { from: []const u8, imp: []const u8, to: []const u8 };
+    const module_edges = [_]Edge{
+        .{ .from = "numa_replication", .imp = "numa_config", .to = "numa_config" },
+        .{ .from = "position", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
+        .{ .from = "position", .imp = "evaluate", .to = "evaluate" },
+        .{ .from = "position", .imp = "shared_histories", .to = "shared_histories" },
+        .{ .from = "position", .imp = "shared_histories_map", .to = "shared_histories_map" },
+        .{ .from = "engine", .imp = "position", .to = "position" },
+        .{ .from = "engine", .imp = "position_snapshot", .to = "position_snapshot" },
+        .{ .from = "position", .imp = "position_snapshot", .to = "position_snapshot" },
+        .{ .from = "thread", .imp = "native_hooks", .to = "native_hooks" },
+        .{ .from = "engine", .imp = "native_hooks", .to = "native_hooks" },
+        .{ .from = "native_thread", .imp = "native_hooks", .to = "native_hooks" },
+        .{ .from = "engine", .imp = "uci_move", .to = "uci_move" },
+        .{ .from = "engine", .imp = "misc", .to = "misc" },
+        .{ .from = "engine", .imp = "thread", .to = "thread" },
+        .{ .from = "native_engine", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "native_engine", .imp = "misc", .to = "misc" },
+        .{ .from = "native_engine", .imp = "state_list", .to = "state_list" },
+        .{ .from = "native_engine", .imp = "network", .to = "network" },
+        .{ .from = "engine", .imp = "native_engine", .to = "native_engine" },
+        .{ .from = "engine", .imp = "numa", .to = "numa" },
+        .{ .from = "thread", .imp = "numa", .to = "numa" },
+        .{ .from = "engine", .imp = "tt", .to = "tt" },
+        .{ .from = "engine", .imp = "state_list", .to = "state_list" },
+        .{ .from = "engine", .imp = "numa_config", .to = "numa_config" },
+        .{ .from = "engine", .imp = "numa_replication", .to = "numa_replication" },
+        .{ .from = "engine", .imp = "position_storage", .to = "position_storage" },
+        .{ .from = "engine", .imp = "network", .to = "network" },
+        .{ .from = "engine", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
+        .{ .from = "engine", .imp = "evaluate", .to = "evaluate" },
+        .{ .from = "engine", .imp = "nnue_misc", .to = "nnue_misc" },
+        .{ .from = "uci_move", .imp = "position_snapshot", .to = "position_snapshot" },
+        .{ .from = "movepick", .imp = "position_snapshot", .to = "position_snapshot" },
+        .{ .from = "movepick", .imp = "bitboard", .to = "bitboard" },
+        .{ .from = "movepick", .imp = "movegen", .to = "movegen" },
+        .{ .from = "movegen", .imp = "position_snapshot", .to = "position_snapshot" },
+        .{ .from = "movegen", .imp = "bitboard", .to = "bitboard" },
+        .{ .from = "nnue_accumulator", .imp = "position_snapshot", .to = "position_snapshot" },
+        .{ .from = "nnue_accumulator", .imp = "nnue_feature", .to = "nnue_feature" },
+        .{ .from = "position", .imp = "bitboard", .to = "bitboard" },
+        .{ .from = "position", .imp = "movegen", .to = "movegen" },
+        .{ .from = "engine", .imp = "movegen", .to = "movegen" },
+        .{ .from = "position", .imp = "tt", .to = "tt" },
+        .{ .from = "position", .imp = "movepick", .to = "movepick" },
+        .{ .from = "position", .imp = "search", .to = "search" },
+        .{ .from = "thread", .imp = "position_snapshot", .to = "position_snapshot" },
+        .{ .from = "thread", .imp = "position", .to = "position" },
+        .{ .from = "thread", .imp = "uci_move", .to = "uci_move" },
+        .{ .from = "uci", .imp = "benchmark", .to = "benchmark" },
+        .{ .from = "uci", .imp = "misc", .to = "misc" },
+        .{ .from = "uci", .imp = "engine", .to = "engine" },
+        .{ .from = "uci", .imp = "option", .to = "option" },
+        .{ .from = "benchmark", .imp = "libc", .to = "libc" },
+        .{ .from = "uci", .imp = "libc", .to = "libc" },
+        .{ .from = "misc", .imp = "libc", .to = "libc" },
+        .{ .from = "engine", .imp = "libc", .to = "libc" },
+        .{ .from = "thread", .imp = "libc", .to = "libc" },
+        .{ .from = "uci_output", .imp = "libc", .to = "libc" },
+        .{ .from = "engine", .imp = "uci_output", .to = "uci_output" },
+        .{ .from = "uci", .imp = "uci_wdl", .to = "uci_wdl" },
+        .{ .from = "uci", .imp = "uci_output", .to = "uci_output" },
+        .{ .from = "uci", .imp = "native_engine", .to = "native_engine" },
+        .{ .from = "uci", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "uci", .imp = "clock", .to = "clock" },
+        .{ .from = "engine", .imp = "uci_wdl", .to = "uci_wdl" },
+        .{ .from = "position", .imp = "uci_wdl", .to = "uci_wdl" },
+        .{ .from = "tt", .imp = "memory", .to = "memory" },
+        .{ .from = "position", .imp = "memory", .to = "memory" },
+        .{ .from = "position", .imp = "option", .to = "option" },
+        .{ .from = "position", .imp = "timeman", .to = "timeman" },
+        .{ .from = "position", .imp = "uci_move", .to = "uci_move" },
+        .{ .from = "position", .imp = "uci_output", .to = "uci_output" },
+        .{ .from = "position", .imp = "score", .to = "score" },
+        .{ .from = "position", .imp = "thread_vote", .to = "thread_vote" },
+        .{ .from = "thread", .imp = "thread_vote", .to = "thread_vote" },
+        .{ .from = "thread_vote", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "native_thread", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "native_thread", .imp = "thread_runtime", .to = "thread_runtime" },
+        .{ .from = "thread", .imp = "native_thread", .to = "native_thread" },
+        .{ .from = "thread", .imp = "thread_runtime", .to = "thread_runtime" },
+        .{ .from = "position", .imp = "native_thread", .to = "native_thread" },
+        .{ .from = "misc", .imp = "memory", .to = "memory" },
+        .{ .from = "tt", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "tt", .imp = "thread", .to = "thread" },
+        .{ .from = "thread", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "engine", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "thread", .imp = "movegen", .to = "movegen" },
+        .{ .from = "uci_move", .imp = "movegen", .to = "movegen" },
+        .{ .from = "thread", .imp = "tablebase", .to = "tablebase" },
+        .{ .from = "thread", .imp = "option", .to = "option" },
+        .{ .from = "thread", .imp = "state_list", .to = "state_list" },
+        .{ .from = "engine", .imp = "tablebase", .to = "tablebase" },
+        .{ .from = "engine", .imp = "option", .to = "option" },
+        .{ .from = "position", .imp = "clock", .to = "clock" },
+        .{ .from = "position", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "network", .imp = "libc", .to = "libc" },
+        .{ .from = "network", .imp = "memory", .to = "memory" },
+        .{ .from = "network", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "network", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
+        .{ .from = "position", .imp = "network", .to = "network" },
+        .{ .from = "nnue_misc", .imp = "libc", .to = "libc" },
+        .{ .from = "evaluate", .imp = "libc", .to = "libc" },
+    };
+    for (module_edges) |e| mods.get(e.from).?.addImport(e.imp, mods.get(e.to).?);
+    mods.get("misc").?.addImport("build_options", build_options_module);
+
     const exe = b.addExecutable(.{
         .name = "stockfish",
         .root_module = b.createModule(.{
@@ -101,271 +263,34 @@ pub fn build(b: *std.Build) void {
 
     // Thin libc binding shared by the files that used to each @cImport <stdio.h> etc.
     // (REPORT-16). Imported as `libc` wherever a module says `const c = @import("libc")`.
-    const libc_module = b.createModule(.{
-        .root_source_file = b.path("src/libc.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
 
     // Aligned/large-page allocator as a shared module (REPORT-16 M16.5): consumers call it
     // directly instead of round-tripping through main.zig's C-ABI `zfish_aligned_large_pages_*`
     // exports (dead scaffolding now the C++ oracle is retired).
-    const memory_module = b.createModule(.{
-        .root_source_file = b.path("src/memory.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
 
     // M16.2b/M16.5: typed engine-graph views (ThreadPool/Worker/... offset structs), imported
     // by the modules that used to reach the graph through main.zig C-ABI glue.
-    const tablebase_module = b.createModule(.{
-        .root_source_file = b.path("src/support/tablebase.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const clock_module = b.createModule(.{
-        .root_source_file = b.path("src/support/clock.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const uci_output_module = b.createModule(.{
-        .root_source_file = b.path("src/support/uci_output.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const uci_wdl_module = b.createModule(.{
-        .root_source_file = b.path("src/support/uci_wdl.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const score_module = b.createModule(.{
-        .root_source_file = b.path("src/score.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const thread_vote_module = b.createModule(.{
-        .root_source_file = b.path("src/support/thread_vote.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const thread_runtime_module = b.createModule(.{
-        .root_source_file = b.path("src/support/thread_runtime.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const native_thread_module = b.createModule(.{
-        .root_source_file = b.path("src/support/native_thread.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const numa_module = b.createModule(.{
-        .root_source_file = b.path("src/support/numa.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const graph_layout_module = b.createModule(.{
-        .root_source_file = b.path("src/graph_layout.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
 
-    const native_engine_module = b.createModule(.{
-        .root_source_file = b.path("src/native_engine.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const timeman_module = b.createModule(.{
-        .root_source_file = b.path("src/time/timeman.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
     // The bench positions (Defaults) and benchmark-command games (BenchmarkPositions)
     // are native Zig arrays in benchmark.zig, so the build depends on nothing from the
     // old src/ tree. The only external artifact is the NNUE net, fetched into net/.
-    const benchmark_module = b.createModule(.{
-        .root_source_file = b.path("src/bench/benchmark.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const misc_module = b.createModule(.{
-        .root_source_file = b.path("src/support/misc.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    misc_module.addImport("build_options", build_options_module);
-    const engine_module = b.createModule(.{
-        .root_source_file = b.path("src/support/engine.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const uci_move_module = b.createModule(.{
-        .root_source_file = b.path("src/support/uci_move.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const movepick_module = b.createModule(.{
-        .root_source_file = b.path("src/support/movepick.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const search_module = b.createModule(.{
-        .root_source_file = b.path("src/support/search.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const thread_module = b.createModule(.{
-        .root_source_file = b.path("src/support/thread.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const tt_module = b.createModule(.{
-        .root_source_file = b.path("src/support/tt.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const option_module = b.createModule(.{
-        .root_source_file = b.path("src/uci/option.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const bitboard_module = b.createModule(.{
-        .root_source_file = b.path("src/board/bitboard.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const position_module = b.createModule(.{
-        .root_source_file = b.path("src/board/position.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const position_snapshot_module = b.createModule(.{
-        .root_source_file = b.path("src/board/position_snapshot.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const native_hooks_module = b.createModule(.{
-        .root_source_file = b.path("src/support/native_hooks.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const movegen_module = b.createModule(.{
-        .root_source_file = b.path("src/board/movegen.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const nnue_feature_module = b.createModule(.{
-        .root_source_file = b.path("src/eval/nnue_feature.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const uci_module = b.createModule(.{
-        .root_source_file = b.path("src/uci/uci.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const evaluate_module = b.createModule(.{
-        .root_source_file = b.path("src/eval/evaluate.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const nnue_accumulator_module = b.createModule(.{
-        .root_source_file = b.path("src/eval/nnue_accumulator.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const network_module = b.createModule(.{
-        .root_source_file = b.path("src/eval/network.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const nnue_misc_module = b.createModule(.{
-        .root_source_file = b.path("src/eval/nnue_misc.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
     // Native StateList (the post-src/ `states` deque replacement, native-graph cut);
     // its own module so engine_graph.zig can hold it as a typed member.
-    const state_list_module = b.createModule(.{
-        .root_source_file = b.path("src/board/state_list.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
     // Native NumaConfig (the post-src/ numaContext member, native-graph cut).
-    const numa_config_module = b.createModule(.{
-        .root_source_file = b.path("src/support/numa_config.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
     // Native NumaReplicationContext (the `numa_context` member; B2 switch).
-    const numa_replication_module = b.createModule(.{
-        .root_source_file = b.path("src/support/numa_replication.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    numa_replication_module.addImport("numa_config", numa_config_module);
     // Native PositionStorage (post-src/ owner of the `pos` member's 1032B block).
-    const position_storage_module = b.createModule(.{
-        .root_source_file = b.path("src/board/position_storage.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
     // Native SharedHistories sizing (the `shared_histories` member, pure count logic).
-    const shared_histories_module = b.createModule(.{
-        .root_source_file = b.path("src/support/shared_histories.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    position_module.addImport("nnue_accumulator", nnue_accumulator_module);
-    position_module.addImport("evaluate", evaluate_module);
-    position_module.addImport("shared_histories", shared_histories_module);
     // Native sharedHists map container (the `sharedHists` member type), instantiated in
     // position.zig with the real SharedHistories.
-    const shared_histories_map_module = b.createModule(.{
-        .root_source_file = b.path("src/support/shared_histories_map.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    position_module.addImport("shared_histories_map", shared_histories_map_module);
     // Native network holder (the `network` member: LazyNumaReplicated<Network> shape +
     // replica-count shadow verifier).
-    const network_holder_module = b.createModule(.{
-        .root_source_file = b.path("src/support/network_holder.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
 
     // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
     // engine module: it binds the native ThreadPool and TranspositionTable.
-    engine_module.addImport("position", position_module);
-    engine_module.addImport("position_snapshot", position_snapshot_module);
-    position_module.addImport("position_snapshot", position_snapshot_module);
-    thread_module.addImport("native_hooks", native_hooks_module);
-    engine_module.addImport("native_hooks", native_hooks_module);
-    native_thread_module.addImport("native_hooks", native_hooks_module);
-    exe.root_module.addImport("native_hooks", native_hooks_module);
-    engine_module.addImport("uci_move", uci_move_module);
-    engine_module.addImport("misc", misc_module);
-    engine_module.addImport("thread", thread_module);
-    native_engine_module.addImport("graph_layout", graph_layout_module);
-    native_engine_module.addImport("misc", misc_module);
-    native_engine_module.addImport("state_list", state_list_module);
-    native_engine_module.addImport("network", network_module);
-    engine_module.addImport("native_engine", native_engine_module);
-    engine_module.addImport("numa", numa_module);
-    thread_module.addImport("numa", numa_module);
-    exe.root_module.addImport("native_engine", native_engine_module);
-    engine_module.addImport("tt", tt_module);
-    engine_module.addImport("state_list", state_list_module);
-    engine_module.addImport("numa_config", numa_config_module);
-    engine_module.addImport("numa_replication", numa_replication_module);
-    engine_module.addImport("position_storage", position_storage_module);
+    exe.root_module.addImport("native_hooks", mods.get("native_hooks").?);
+    exe.root_module.addImport("native_engine", mods.get("native_engine").?);
     // engine.zig single-sources default_eval_file_name from network.zig
     // (network has no engine dep, so this edge is acyclic).
-    engine_module.addImport("network", network_module);
-    engine_module.addImport("nnue_accumulator", nnue_accumulator_module);
-    engine_module.addImport("evaluate", evaluate_module);
-    engine_module.addImport("nnue_misc", nnue_misc_module);
 
     // Native-graph cut: run the EngineGraph + member-module unit tests (construction,
     // lifetime, SharedState binding) with their module deps. `zig build test-graph`.
@@ -376,12 +301,12 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    graph_test.root_module.addImport("thread", thread_module);
-    graph_test.root_module.addImport("tt", tt_module);
-    graph_test.root_module.addImport("state_list", state_list_module);
-    graph_test.root_module.addImport("numa_config", numa_config_module);
-    graph_test.root_module.addImport("numa_replication", numa_replication_module);
-    graph_test.root_module.addImport("position_storage", position_storage_module);
+    graph_test.root_module.addImport("thread", mods.get("thread").?);
+    graph_test.root_module.addImport("tt", mods.get("tt").?);
+    graph_test.root_module.addImport("state_list", mods.get("state_list").?);
+    graph_test.root_module.addImport("numa_config", mods.get("numa_config").?);
+    graph_test.root_module.addImport("numa_replication", mods.get("numa_replication").?);
+    graph_test.root_module.addImport("position_storage", mods.get("position_storage").?);
     const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
     graph_test_step.dependOn(&b.addRunArtifact(graph_test).step);
     // B2 switch: native NumaReplicationContext (numaContext member) — tests need the
@@ -393,7 +318,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    numa_repl_test.root_module.addImport("numa_config", numa_config_module);
+    numa_repl_test.root_module.addImport("numa_config", mods.get("numa_config").?);
     graph_test_step.dependOn(&b.addRunArtifact(numa_repl_test).step);
     // B2 switch: native sharedHists map container (std-only generic; tested with a mock
     // entry). board/position.zig instantiates it with the real SharedHistories.
@@ -406,117 +331,46 @@ pub fn build(b: *std.Build) void {
     });
     graph_test_step.dependOn(&b.addRunArtifact(sh_map_test).step);
 
-    uci_move_module.addImport("position_snapshot", position_snapshot_module);
-    movepick_module.addImport("position_snapshot", position_snapshot_module);
-    movepick_module.addImport("bitboard", bitboard_module);
-    movepick_module.addImport("movegen", movegen_module);
-    movegen_module.addImport("position_snapshot", position_snapshot_module);
-    movegen_module.addImport("bitboard", bitboard_module);
-    nnue_accumulator_module.addImport("position_snapshot", position_snapshot_module);
-    nnue_accumulator_module.addImport("nnue_feature", nnue_feature_module);
-    position_module.addImport("bitboard", bitboard_module);
-    position_module.addImport("movegen", movegen_module);
-    engine_module.addImport("movegen", movegen_module);
-    position_module.addImport("tt", tt_module);
-    position_module.addImport("movepick", movepick_module);
-    position_module.addImport("search", search_module);
-    thread_module.addImport("position_snapshot", position_snapshot_module);
-    thread_module.addImport("position", position_module);
-    thread_module.addImport("uci_move", uci_move_module);
-    uci_module.addImport("benchmark", benchmark_module);
-    uci_module.addImport("misc", misc_module);
-    uci_module.addImport("engine", engine_module); // M16.5: direct engine calls
-    uci_module.addImport("option", option_module);
-    exe.root_module.addImport("benchmark", benchmark_module);
-    exe.root_module.addImport("bitboard", bitboard_module);
-    exe.root_module.addImport("engine", engine_module);
-    exe.root_module.addImport("evaluate", evaluate_module);
-    exe.root_module.addImport("misc", misc_module);
-    exe.root_module.addImport("movegen", movegen_module);
-    exe.root_module.addImport("movepick", movepick_module);
-    exe.root_module.addImport("nnue_accumulator", nnue_accumulator_module);
-    exe.root_module.addImport("network", network_module);
-    exe.root_module.addImport("nnue_feature", nnue_feature_module);
-    exe.root_module.addImport("nnue_misc", nnue_misc_module);
-    exe.root_module.addImport("network_holder", network_holder_module);
-    exe.root_module.addImport("state_list", state_list_module);
-    exe.root_module.addImport("numa_config", numa_config_module);
-    exe.root_module.addImport("position_storage", position_storage_module);
-    exe.root_module.addImport("option", option_module);
-    exe.root_module.addImport("position", position_module);
-    exe.root_module.addImport("position_snapshot", position_snapshot_module);
-    exe.root_module.addImport("search", search_module);
-    exe.root_module.addImport("timeman", timeman_module);
-    exe.root_module.addImport("thread", thread_module);
-    exe.root_module.addImport("tt", tt_module);
-    exe.root_module.addImport("uci", uci_module);
-    exe.root_module.addImport("uci_move", uci_move_module);
+    exe.root_module.addImport("benchmark", mods.get("benchmark").?);
+    exe.root_module.addImport("bitboard", mods.get("bitboard").?);
+    exe.root_module.addImport("engine", mods.get("engine").?);
+    exe.root_module.addImport("evaluate", mods.get("evaluate").?);
+    exe.root_module.addImport("misc", mods.get("misc").?);
+    exe.root_module.addImport("movegen", mods.get("movegen").?);
+    exe.root_module.addImport("movepick", mods.get("movepick").?);
+    exe.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
+    exe.root_module.addImport("network", mods.get("network").?);
+    exe.root_module.addImport("nnue_feature", mods.get("nnue_feature").?);
+    exe.root_module.addImport("nnue_misc", mods.get("nnue_misc").?);
+    exe.root_module.addImport("network_holder", mods.get("network_holder").?);
+    exe.root_module.addImport("state_list", mods.get("state_list").?);
+    exe.root_module.addImport("numa_config", mods.get("numa_config").?);
+    exe.root_module.addImport("position_storage", mods.get("position_storage").?);
+    exe.root_module.addImport("option", mods.get("option").?);
+    exe.root_module.addImport("position", mods.get("position").?);
+    exe.root_module.addImport("position_snapshot", mods.get("position_snapshot").?);
+    exe.root_module.addImport("search", mods.get("search").?);
+    exe.root_module.addImport("timeman", mods.get("timeman").?);
+    exe.root_module.addImport("thread", mods.get("thread").?);
+    exe.root_module.addImport("tt", mods.get("tt").?);
+    exe.root_module.addImport("uci", mods.get("uci").?);
+    exe.root_module.addImport("uci_move", mods.get("uci_move").?);
 
     // REPORT-16: the thin libc binding, for every module that replaced an @cImport with
     // `const c = @import("libc")` (main + the 8 files below; misc keeps its own @cImport
     // until its compiler-macro reads are ported to Zig build info).
-    exe.root_module.addImport("libc", libc_module);
-    benchmark_module.addImport("libc", libc_module);
-    uci_module.addImport("libc", libc_module);
-    misc_module.addImport("libc", libc_module);
-    engine_module.addImport("libc", libc_module);
-    thread_module.addImport("libc", libc_module);
+    exe.root_module.addImport("libc", mods.get("libc").?);
 
     // M16.5: direct callers of the aligned/large-page allocator.
-    exe.root_module.addImport("memory", memory_module);
-    exe.root_module.addImport("graph_layout", graph_layout_module);
-    exe.root_module.addImport("clock", clock_module);
-    exe.root_module.addImport("uci_output", uci_output_module);
-    uci_output_module.addImport("libc", libc_module);
-    engine_module.addImport("uci_output", uci_output_module);
-    exe.root_module.addImport("uci_wdl", uci_wdl_module);
-    uci_module.addImport("uci_wdl", uci_wdl_module);
-    uci_module.addImport("uci_output", uci_output_module);
-    uci_module.addImport("native_engine", native_engine_module);
-    uci_module.addImport("graph_layout", graph_layout_module);
-    uci_module.addImport("clock", clock_module);
-    engine_module.addImport("uci_wdl", uci_wdl_module);
-    position_module.addImport("uci_wdl", uci_wdl_module);
-    tt_module.addImport("memory", memory_module);
-    position_module.addImport("memory", memory_module);
-    position_module.addImport("option", option_module);
-    position_module.addImport("timeman", timeman_module);
-    position_module.addImport("uci_move", uci_move_module);
-    position_module.addImport("uci_output", uci_output_module);
-    position_module.addImport("score", score_module);
-    exe.root_module.addImport("score", score_module);
-    position_module.addImport("thread_vote", thread_vote_module);
-    thread_module.addImport("thread_vote", thread_vote_module);
-    thread_vote_module.addImport("graph_layout", graph_layout_module);
-    native_thread_module.addImport("graph_layout", graph_layout_module);
-    native_thread_module.addImport("thread_runtime", thread_runtime_module);
-    thread_module.addImport("native_thread", native_thread_module);
-    thread_module.addImport("thread_runtime", thread_runtime_module);
-    position_module.addImport("native_thread", native_thread_module);
-    misc_module.addImport("memory", memory_module);
-    tt_module.addImport("graph_layout", graph_layout_module);
-    tt_module.addImport("thread", thread_module);
-    thread_module.addImport("graph_layout", graph_layout_module);
-    engine_module.addImport("graph_layout", graph_layout_module);
-    thread_module.addImport("movegen", movegen_module);
-    uci_move_module.addImport("movegen", movegen_module);
-    thread_module.addImport("tablebase", tablebase_module);
-    thread_module.addImport("option", option_module);
-    thread_module.addImport("state_list", state_list_module);
-    engine_module.addImport("tablebase", tablebase_module);
-    engine_module.addImport("option", option_module);
-    position_module.addImport("clock", clock_module);
-    position_module.addImport("graph_layout", graph_layout_module);
-    network_module.addImport("libc", libc_module);
-    network_module.addImport("memory", memory_module);
-    network_module.addImport("graph_layout", graph_layout_module);
-    network_module.addImport("nnue_accumulator", nnue_accumulator_module);
+    exe.root_module.addImport("memory", mods.get("memory").?);
+    exe.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    exe.root_module.addImport("clock", mods.get("clock").?);
+    exe.root_module.addImport("uci_output", mods.get("uci_output").?);
+    exe.root_module.addImport("uci_wdl", mods.get("uci_wdl").?);
+    exe.root_module.addImport("score", mods.get("score").?);
     // network no longer imports position (broke the network->position cycle, M16.7):
     // its two Position field reads go through the leaf graph_layout. That frees
     // position -> network for the direct eval call below.
-    position_module.addImport("network", network_module);
-    nnue_misc_module.addImport("libc", libc_module);
-    evaluate_module.addImport("libc", libc_module);
 
     // REPORT-12 TU=0 / REPORT-16 M16.1: the shipped engine compiles zero C++ TUs and
     // the in-tree C++ oracle is retired, so the whole C++ toolchain (compile flags,
@@ -928,14 +782,14 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run the Zig unit tests");
     test_step.dependOn(graph_test_step);
     inline for (.{
-        position_storage_module,
-        state_list_module,
-        numa_config_module,
-        tt_module,
-        network_holder_module,
-        shared_histories_module,
-        native_thread_module,
-        thread_runtime_module,
+        mods.get("position_storage").?,
+        mods.get("state_list").?,
+        mods.get("numa_config").?,
+        mods.get("tt").?,
+        mods.get("network_holder").?,
+        mods.get("shared_histories").?,
+        mods.get("native_thread").?,
+        mods.get("thread_runtime").?,
     }) |unit_module| {
         const unit_test = b.addTest(.{ .root_module = unit_module });
         test_step.dependOn(&b.addRunArtifact(unit_test).step);
