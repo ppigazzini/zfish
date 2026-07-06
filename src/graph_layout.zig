@@ -175,8 +175,8 @@ pub const SearchManager = struct {
         return @ptrFromInt(addr);
     }
 
-    // Typed replacements for the zfish_threadpool_main_manager_* C-ABI glue: reset the
-    // per-search MainSearchManager state the ThreadPool::start_searching path re-inits.
+    // Typed accessors that reset the per-search MainSearchManager state the
+    // ThreadPool::start_searching path re-inits.
     pub inline fn resetCallsCount(self: *SearchManager) void {
         self.calls_cnt = 0;
     }
@@ -258,7 +258,7 @@ pub const ThreadPool = struct {
         self.increase_depth = @intFromBool(v);
     }
     /// The main thread's SearchManager (thread 0's Worker's manager), or null if not built
-    /// yet. Replaces zfish_threadpool_main_manager_ptr.
+    /// yet.
     pub inline fn mainManager(self: *ThreadPool) ?*SearchManager {
         const worker = Thread.fromPtr(self.threadAtPtr(0)).worker;
         if (worker == 0) return null;
