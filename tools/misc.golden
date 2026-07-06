@@ -1,0 +1,20 @@
+== startpos d ==
+Fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+Key: 8F8F01D4562F59FB
+Checkers: 
+== startpos flip d ==
+Fen: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1
+Key: 2F7A21709FD50237
+Checkers: 
+== kiwipete d ==
+Fen: r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1
+Key: BA0586148EFA180B
+Checkers: 
+== kiwipete flip d ==
+Fen: r3k2r/pppbbppp/2n2q1P/1P2p3/3pn3/BN2PNP1/P1PPQPB1/R3K2R b KQkq - 0 1
+Key: 1B29E38538A02EB6
+Checkers: 
+== in-check d ==
+Fen: rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3
+Key: DF880B7B5D8574E4
+Checkers: h4 
