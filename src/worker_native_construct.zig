@@ -71,10 +71,10 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     writePtr(worker, off.histories + position_port.worker_shared_history_off, in.shared_history);
     // Four SharedState reference members + the manager unique_ptr's moved-in pointer.
     wl.options = in.options;
-    wl.threads = in.threads;
-    wl.tt = in.tt;
+    wl.threads = @ptrFromInt(in.threads);
+    wl.tt = @ptrFromInt(in.tt);
     wl.network = in.network;
-    wl.manager = in.manager;
+    wl.manager = @ptrFromInt(in.manager);
     // NUMA identity scalars.
     wl.thread_idx = in.thread_idx;
     wl.numa_thread_idx = in.numa_thread_idx;
