@@ -203,7 +203,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     misc_module.addImport("build_options", build_options_module);
-    const engine_module_default = b.createModule(.{
+    const engine_module = b.createModule(.{
         .root_source_file = b.path("src/support/engine.zig"),
         .target = target,
         .optimize = optimize,
@@ -223,7 +223,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const thread_module_default = b.createModule(.{
+    const thread_module = b.createModule(.{
         .root_source_file = b.path("src/support/thread.zig"),
         .target = target,
         .optimize = optimize,
@@ -346,35 +346,35 @@ pub fn build(b: *std.Build) void {
 
     // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
     // engine module: it binds the native ThreadPool and TranspositionTable.
-    engine_module_default.addImport("position", position_module);
-    engine_module_default.addImport("position_snapshot", position_snapshot_module);
+    engine_module.addImport("position", position_module);
+    engine_module.addImport("position_snapshot", position_snapshot_module);
     position_module.addImport("position_snapshot", position_snapshot_module);
-    thread_module_default.addImport("native_hooks", native_hooks_module);
-    engine_module_default.addImport("native_hooks", native_hooks_module);
+    thread_module.addImport("native_hooks", native_hooks_module);
+    engine_module.addImport("native_hooks", native_hooks_module);
     native_thread_module.addImport("native_hooks", native_hooks_module);
     exe.root_module.addImport("native_hooks", native_hooks_module);
-    engine_module_default.addImport("uci_move", uci_move_module);
-    engine_module_default.addImport("misc", misc_module);
-    engine_module_default.addImport("thread", thread_module_default);
+    engine_module.addImport("uci_move", uci_move_module);
+    engine_module.addImport("misc", misc_module);
+    engine_module.addImport("thread", thread_module);
     native_engine_module.addImport("graph_layout", graph_layout_module);
     native_engine_module.addImport("misc", misc_module);
     native_engine_module.addImport("state_list", state_list_module);
     native_engine_module.addImport("network", network_module);
-    engine_module_default.addImport("native_engine", native_engine_module);
-    engine_module_default.addImport("numa", numa_module);
-    thread_module_default.addImport("numa", numa_module);
+    engine_module.addImport("native_engine", native_engine_module);
+    engine_module.addImport("numa", numa_module);
+    thread_module.addImport("numa", numa_module);
     exe.root_module.addImport("native_engine", native_engine_module);
-    engine_module_default.addImport("tt", tt_module);
-    engine_module_default.addImport("state_list", state_list_module);
-    engine_module_default.addImport("numa_config", numa_config_module);
-    engine_module_default.addImport("numa_replication", numa_replication_module);
-    engine_module_default.addImport("position_storage", position_storage_module);
+    engine_module.addImport("tt", tt_module);
+    engine_module.addImport("state_list", state_list_module);
+    engine_module.addImport("numa_config", numa_config_module);
+    engine_module.addImport("numa_replication", numa_replication_module);
+    engine_module.addImport("position_storage", position_storage_module);
     // engine.zig single-sources default_eval_file_name from network.zig
     // (network has no engine dep, so this edge is acyclic).
-    engine_module_default.addImport("network", network_module);
-    engine_module_default.addImport("nnue_accumulator", nnue_accumulator_module);
-    engine_module_default.addImport("evaluate", evaluate_module);
-    engine_module_default.addImport("nnue_misc", nnue_misc_module);
+    engine_module.addImport("network", network_module);
+    engine_module.addImport("nnue_accumulator", nnue_accumulator_module);
+    engine_module.addImport("evaluate", evaluate_module);
+    engine_module.addImport("nnue_misc", nnue_misc_module);
 
     // Native-graph cut: run the EngineGraph + member-module unit tests (construction,
     // lifetime, SharedState binding) with their module deps. `zig build test-graph`.
@@ -385,7 +385,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    graph_test.root_module.addImport("thread", thread_module_default);
+    graph_test.root_module.addImport("thread", thread_module);
     graph_test.root_module.addImport("tt", tt_module);
     graph_test.root_module.addImport("state_list", state_list_module);
     graph_test.root_module.addImport("numa_config", numa_config_module);
@@ -425,20 +425,20 @@ pub fn build(b: *std.Build) void {
     nnue_accumulator_module.addImport("nnue_feature", nnue_feature_module);
     position_module.addImport("bitboard", bitboard_module);
     position_module.addImport("movegen", movegen_module);
-    engine_module_default.addImport("movegen", movegen_module);
+    engine_module.addImport("movegen", movegen_module);
     position_module.addImport("tt", tt_module);
     position_module.addImport("movepick", movepick_module);
     position_module.addImport("search", search_module);
-    thread_module_default.addImport("position_snapshot", position_snapshot_module);
-    thread_module_default.addImport("position", position_module);
-    thread_module_default.addImport("uci_move", uci_move_module);
+    thread_module.addImport("position_snapshot", position_snapshot_module);
+    thread_module.addImport("position", position_module);
+    thread_module.addImport("uci_move", uci_move_module);
     uci_module.addImport("benchmark", benchmark_module);
     uci_module.addImport("misc", misc_module);
-    uci_module.addImport("engine", engine_module_default); // M16.5: direct engine calls
+    uci_module.addImport("engine", engine_module); // M16.5: direct engine calls
     uci_module.addImport("option", option_module);
     exe.root_module.addImport("benchmark", benchmark_module);
     exe.root_module.addImport("bitboard", bitboard_module);
-    exe.root_module.addImport("engine", engine_module_default);
+    exe.root_module.addImport("engine", engine_module);
     exe.root_module.addImport("evaluate", evaluate_module);
     exe.root_module.addImport("misc", misc_module);
     exe.root_module.addImport("movegen", movegen_module);
@@ -456,7 +456,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("position_snapshot", position_snapshot_module);
     exe.root_module.addImport("search", search_module);
     exe.root_module.addImport("timeman", timeman_module);
-    exe.root_module.addImport("thread", thread_module_default);
+    exe.root_module.addImport("thread", thread_module);
     exe.root_module.addImport("tt", tt_module);
     exe.root_module.addImport("uci", uci_module);
     exe.root_module.addImport("uci_move", uci_move_module);
@@ -468,8 +468,8 @@ pub fn build(b: *std.Build) void {
     benchmark_module.addImport("libc", libc_module);
     uci_module.addImport("libc", libc_module);
     misc_module.addImport("libc", libc_module);
-    engine_module_default.addImport("libc", libc_module);
-    thread_module_default.addImport("libc", libc_module);
+    engine_module.addImport("libc", libc_module);
+    thread_module.addImport("libc", libc_module);
 
     // M16.5: direct callers of the aligned/large-page allocator.
     exe.root_module.addImport("memory", memory_module);
@@ -477,14 +477,14 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("clock", clock_module);
     exe.root_module.addImport("uci_output", uci_output_module);
     uci_output_module.addImport("libc", libc_module);
-    engine_module_default.addImport("uci_output", uci_output_module);
+    engine_module.addImport("uci_output", uci_output_module);
     exe.root_module.addImport("uci_wdl", uci_wdl_module);
     uci_module.addImport("uci_wdl", uci_wdl_module);
     uci_module.addImport("uci_output", uci_output_module);
     uci_module.addImport("native_engine", native_engine_module);
     uci_module.addImport("graph_layout", graph_layout_module);
     uci_module.addImport("clock", clock_module);
-    engine_module_default.addImport("uci_wdl", uci_wdl_module);
+    engine_module.addImport("uci_wdl", uci_wdl_module);
     position_module.addImport("uci_wdl", uci_wdl_module);
     tt_module.addImport("memory", memory_module);
     position_module.addImport("memory", memory_module);
@@ -495,25 +495,25 @@ pub fn build(b: *std.Build) void {
     position_module.addImport("score", score_module);
     exe.root_module.addImport("score", score_module);
     position_module.addImport("thread_vote", thread_vote_module);
-    thread_module_default.addImport("thread_vote", thread_vote_module);
+    thread_module.addImport("thread_vote", thread_vote_module);
     thread_vote_module.addImport("graph_layout", graph_layout_module);
     native_thread_module.addImport("graph_layout", graph_layout_module);
     native_thread_module.addImport("thread_runtime", thread_runtime_module);
-    thread_module_default.addImport("native_thread", native_thread_module);
-    thread_module_default.addImport("thread_runtime", thread_runtime_module);
+    thread_module.addImport("native_thread", native_thread_module);
+    thread_module.addImport("thread_runtime", thread_runtime_module);
     position_module.addImport("native_thread", native_thread_module);
     misc_module.addImport("memory", memory_module);
     tt_module.addImport("graph_layout", graph_layout_module);
-    tt_module.addImport("thread", thread_module_default);
-    thread_module_default.addImport("graph_layout", graph_layout_module);
-    engine_module_default.addImport("graph_layout", graph_layout_module);
-    thread_module_default.addImport("movegen", movegen_module);
+    tt_module.addImport("thread", thread_module);
+    thread_module.addImport("graph_layout", graph_layout_module);
+    engine_module.addImport("graph_layout", graph_layout_module);
+    thread_module.addImport("movegen", movegen_module);
     uci_move_module.addImport("movegen", movegen_module);
-    thread_module_default.addImport("tablebase", tablebase_module);
-    thread_module_default.addImport("option", option_module);
-    thread_module_default.addImport("state_list", state_list_module);
-    engine_module_default.addImport("tablebase", tablebase_module);
-    engine_module_default.addImport("option", option_module);
+    thread_module.addImport("tablebase", tablebase_module);
+    thread_module.addImport("option", option_module);
+    thread_module.addImport("state_list", state_list_module);
+    engine_module.addImport("tablebase", tablebase_module);
+    engine_module.addImport("option", option_module);
     position_module.addImport("clock", clock_module);
     position_module.addImport("graph_layout", graph_layout_module);
     network_module.addImport("libc", libc_module);
