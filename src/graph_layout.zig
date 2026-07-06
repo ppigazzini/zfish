@@ -113,6 +113,11 @@ pub const WorkerLayout = struct {
     pub inline fn fromPtr(p: *anyopaque) *WorkerLayout {
         return @ptrCast(@alignCast(p));
     }
+    /// Same typed view from a raw Worker base address (the value a Thread.worker
+    /// slot holds), for the search driver's per-thread worker walks.
+    pub inline fn fromAddr(addr: usize) *WorkerLayout {
+        return @ptrFromInt(addr);
+    }
 };
 
 pub const worker_off = struct {

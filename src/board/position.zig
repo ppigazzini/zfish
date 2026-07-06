@@ -694,40 +694,35 @@ const SsCtx = struct {
 // Search-manager driver callbacks that touch only the Worker graph (via graph_layout)
 // + the accumulator stack; the driver (workerStartSearching) calls them locally.
 fn workerThreadsPool(worker: *const anyopaque) usize {
-    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.threads));
-    return p.*;
+    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).threads;
 }
 fn workerManager(worker: *const anyopaque) usize {
-    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.manager));
-    return p.*;
+    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).manager;
 }
 fn workerRootMove0(worker: *const anyopaque) usize {
-    const begin: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.root_moves));
-    return begin.*;
+    // root_moves is the {begin,end,cap} vector header; [0] is the begin pointer.
+    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).root_moves[0];
 }
 fn workerTT(worker: *const anyopaque) usize {
-    const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.tt));
-    return p.*;
+    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).tt;
 }
 
 // Per-search reset: clear the worker's accumulator stack + last-iteration PV.
 fn ssPrologue(worker: *anyopaque) void {
-    const wb = @intFromPtr(worker);
-    const acc_stack: *anyopaque = @ptrFromInt(wb + graph_layout.worker_off.accumulator_stack);
-    nnue_acc.stackReset(acc_stack);
-    graph_layout.PVMoves.fromAddr(wb + graph_layout.worker_off.last_iteration_pv).length = 0;
+    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    nnue_acc.stackReset(&wl.accumulator_stack);
+    wl.last_iteration_pv.length = 0;
 }
 
 // Sum and reset each thread's worker bestMoveChanges (atomic u64), as a double.
 fn searchIdCollectBmc(worker: *anyopaque) f64 {
-    const tp = graph_layout.ThreadPool.fromAddr(@as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.threads)).*);
+    const tp = graph_layout.ThreadPool.fromAddr(graph_layout.WorkerLayout.fromPtr(worker).threads);
     const count = tp.numThreads();
     var tot: f64 = 0;
     var i: usize = 0;
     while (i < count) : (i += 1) {
-        const thread = tp.threadAt(i);
-        const wkr = graph_layout.Thread.fromAddr(thread).worker;
-        const bmc: *u64 = @ptrFromInt(wkr + graph_layout.worker_off.best_move_changes);
+        const wkr = graph_layout.Thread.fromAddr(tp.threadAt(i)).worker;
+        const bmc = &graph_layout.WorkerLayout.fromAddr(wkr).best_move_changes;
         tot += @floatFromInt(bmc.*);
         bmc.* = 0;
     }
@@ -744,7 +739,7 @@ fn ssShouldBusywait(worker: *const anyopaque) u8 {
     const pool = workerThreadsPool(worker);
     if (graph_layout.ThreadPool.fromAddr(pool).stop != 0) return 0;
     const ponder = graph_layout.SearchManager.fromAddr(workerManager(worker)).ponder;
-    const infinite = graph_layout.LimitsType.fromAddr(@intFromPtr(worker) + graph_layout.worker_off.limits).infinite;
+    const infinite = graph_layout.WorkerLayout.fromPtr(@constCast(worker)).limits.infinite;
     return if (ponder != 0 or infinite != 0) 1 else 0;
 }
 
@@ -762,12 +757,12 @@ fn ssPvOneAndPonder(worker: *anyopaque, best: *anyopaque) u8 {
     const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
     if (pv.length != 1) return 0;
     const tp = graph_layout.TranspositionTable.fromAddr(workerTT(worker));
-    const pos: usize = @intFromPtr(worker) + graph_layout.worker_off.root_pos;
-    return extractPonderFromTt(@ptrCast(pv), tp.table, tp.cluster_count, tp.generation8, @ptrFromInt(pos));
+    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    return extractPonderFromTt(@ptrCast(pv), tp.table, tp.cluster_count, tp.generation8, &wl.root_pos);
 }
 
 fn searchCbTtContext(worker: *const anyopaque, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
-    const tp = graph_layout.TranspositionTable.fromAddr(@as(*const usize, @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.tt)).*);
+    const tp = graph_layout.TranspositionTable.fromAddr(workerTT(worker));
     out_table.* = tp.table;
     out_cluster_count.* = tp.cluster_count;
     out_generation.* = tp.generation8;
@@ -779,22 +774,20 @@ fn optInt(name: []const u8) c_int {
 
 // Per-search context flags read off the worker graph + the native OptionsModel.
 fn ssContext(worker: *anyopaque, out: *SsCtx) void {
-    const wbase = @intFromPtr(worker);
-    const thread_idx = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.thread_idx)).*;
-    const rm_begin = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves)).*;
-    const rm_end = @as(*const usize, @ptrFromInt(wbase + graph_layout.worker_off.root_moves + 8)).*;
-    const limits = wbase + graph_layout.worker_off.limits;
-    const npmsec = graph_layout.LimitsType.fromAddr(limits).npmsec;
+    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    // root_moves is the {begin,end,cap} vector header; empty iff begin == end.
+    const rm_begin = wl.root_moves[0];
+    const rm_end = wl.root_moves[1];
 
     const limit_strength = optInt("UCI_LimitStrength") != 0;
     const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
     const skill_level = optInt("Skill Level");
     const skill_enabled = uci_elo != 0 or skill_level < 20;
 
-    out.is_mainthread = @intFromBool(thread_idx == 0);
+    out.is_mainthread = @intFromBool(wl.thread_idx == 0);
     out.root_moves_empty = @intFromBool(rm_begin == rm_end);
-    out.npmsec = @intFromBool(npmsec != 0);
-    out.limits_depth = graph_layout.LimitsType.fromAddr(limits).depth;
+    out.npmsec = @intFromBool(wl.limits.npmsec != 0);
+    out.limits_depth = wl.limits.depth;
     out.skill_enabled = @intFromBool(skill_enabled);
 }
 
