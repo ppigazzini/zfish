@@ -49,7 +49,7 @@ pub fn main(init: std.process.Init) !void {
     const argv = argv_list.items;
     const argc = argv.len;
 
-    const info = zfish_misc_engine_info_text() orelse return error.OutOfMemory;
+    const info = misc_port.engineInfoText(0) orelse return error.OutOfMemory;
     defer c.free(@ptrCast(info));
 
     _ = c.puts(@ptrCast(info));
@@ -74,10 +74,6 @@ pub fn main(init: std.process.Init) !void {
     defer uciEngineDestructAt(engine);
 
     uci_port.loopRuntime(engine);
-}
-
-pub fn zfish_misc_engine_info_text() ?[*:0]u8 {
-    return misc_port.engineInfoText(0);
 }
 
 // do_move that links a fresh StateInfo and computes givesCheck internally
@@ -502,7 +498,7 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
 // REPORT-12 TU=0: native engine teardown (no C++ ~UCIEngine). Free the states slot, join+free the
 // native Threads + null the pool's threads vector, then free the heap members. All three are native.
 fn uciEngineDestructAt(storage: *anyopaque) void {
-    zfish_engine_release_pending_state_slot(native_engine.NativeEngine.fromPtr(storage).statesSlotPtr());
+    releasePendingStateSlot(native_engine.NativeEngine.fromPtr(storage).statesSlotPtr());
     thread_port.nativeThreadpoolClear(engineThreadsPtr(storage));
     zfishNativeEngineDestructMembers(storage);
 }
@@ -648,7 +644,7 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void 
     const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse
         @panic("native worker build: large-page OOM");
     const shared_history = engine_port.sharedHistoriesAt(@ptrFromInt(ss_shared_hist), 0);
-    worker_native_construct.zfish_worker_construct_full(
+    worker_native_construct.constructFull(
         raw,
         @intFromPtr(shared_history),
         ss_options,
@@ -797,7 +793,7 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void 
 // numa node-count / cpus-in-node single-node stubs moved into numa.zig (M16.7);
 // engine.zig and thread.zig call the numa module directly.
 
-pub fn zfish_engine_init_body(engine: *anyopaque) void {
+pub fn engineInitBody(engine: *anyopaque) void {
     return engine_port.initBody(engine);
 }
 
@@ -819,17 +815,17 @@ fn zfishNativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8)
 // build (no live TUNE() macros → instance().list is empty → init/read are empty loops; only the unused
 // static Tune::options is set), so it is dropped here. oracle-parity proves dropping it is behavior-neutral.
 fn nativeUciEngineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
-    graph_layout.zfish_graph_verify_layouts();
+    graph_layout.verifyLayouts();
     if (!zfishNativeEngineConstructMembers(storage, argv[0]))
         @panic("native engine construct: member allocation failed");
     zfishNativeEngineSetCli(storage, argc, argv);
-    zfish_engine_init_body(storage);
+    engineInitBody(storage);
 }
 fn zfishNativeEngineDestructMembers(buf: *anyopaque) void {
     native_engine.destructMembers(buf);
 }
 
-pub fn zfish_engine_release_pending_state_slot(states_slot: *anyopaque) void {
+pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
     return engine_port.releasePendingStateSlot(states_slot);
 }
 

@@ -670,7 +670,7 @@ fn searchCbRootOnIter(worker: *const anyopaque, depth: c_int, move: u16, move_co
     uci_output.printLine(line.ptr, line.len);
 }
 
-fn zfish_search_pv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void {
+fn searchPv(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, depth: c_int) void {
     const value_infinite: i32 = 32001;
     var ctx: PvContext = undefined;
     searchCbPvContext(manager, worker, threads, tt_ptr, &ctx);
@@ -975,7 +975,7 @@ fn workerRootDepthOf(worker: *anyopaque) c_int {
 // Relocated from main.zig (M16.7).
 fn ssEmitPv(worker: ?*anyopaque, best: ?*anyopaque) void {
     const w = worker.?;
-    zfish_search_pv(
+    searchPv(
         workerRefPtr(w, graph_layout.worker_off.manager),
         best,
         workerRefPtr(w, graph_layout.worker_off.threads),
@@ -984,7 +984,7 @@ fn ssEmitPv(worker: ?*anyopaque, best: ?*anyopaque) void {
     );
 }
 fn searchIdPv(worker: *anyopaque, depth: c_int) void {
-    zfish_search_pv(
+    searchPv(
         workerRefPtr(worker, graph_layout.worker_off.manager),
         worker,
         workerRefPtr(worker, graph_layout.worker_off.threads),

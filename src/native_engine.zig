@@ -206,8 +206,8 @@ pub fn setCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
 
 /// Free the engine's heap members in reverse construction / dependency order, bypassing
 /// every C++ dtor (~Engine/~ThreadPool/~UCIEngine). The caller (main.zig destruct_at)
-/// runs the thread teardown first: zfish_native_threadpool_clear nulls the pool's native
-/// Threads vector, and zfish_engine_release_pending_state_slot frees `states` if it was
+/// runs the thread teardown first: clear nulls the pool's native
+/// Threads vector, and releasePendingStateSlot frees `states` if it was
 /// never moved into pool.setupStates. After that:
 ///   - delete network  (frees the replicated Network instances; references numa, so first)
 ///   - delete threads   (~ThreadPool frees setupStates if states was handed off to it)

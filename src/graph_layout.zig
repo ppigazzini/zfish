@@ -481,7 +481,7 @@ comptime {
     std.debug.assert(@sizeOf(LimitsType) <= 120);
 }
 
-pub fn zfish_graph_verify_layouts() void {
+pub fn verifyLayouts() void {
     // The pinned layout constants were cross-checked against the in-tree C++ oracle
     // (sizeof/offsetof of the real src/ types) until it was retired (REPORT-16 M16.1).
     // With no C++ types left to compare against, the constants are trusted directly;

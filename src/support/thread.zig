@@ -631,7 +631,7 @@ pub fn reconfigure(
 ) void {
     if (graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads() > 0) {
         waitMainThread(pool);
-        native_threadpool.zfish_native_threadpool_clear(pool);
+        native_threadpool.clear(pool);
     }
 
     const requested = option_port.optionThreads();
@@ -694,7 +694,7 @@ pub fn reconfigure(
     // Build native Threads (idle loop + Worker) into the pool's threads vector via
     // the native ThreadPool. Single-node host (do_bind == false): numaIndex 0,
     // idxInNuma == idx, totalNuma == requested.
-    native_threadpool.zfish_native_threadpool_set(
+    native_threadpool.set(
         pool,
         @constCast(shared_state),
         update_context,
@@ -867,13 +867,13 @@ pub fn startSearching(pool: *anyopaque) void {
 // Wait until one thread's worker finishes its current search (native ThreadPool op).
 // Relocated the main.zig C-ABI bridge (M16.7): consumers call this thread-module fn.
 pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
-    native_threadpool.zfish_native_threadpool_wait_thread(pool, thread_id);
+    native_threadpool.waitThread(pool, thread_id);
 }
 
 // Join+free the native Threads and null the pool's threads vector (engine teardown).
 // Wraps native_threadpool for main.zig, which doesn't import it directly.
 pub fn nativeThreadpoolClear(pool: *anyopaque) void {
-    native_threadpool.zfish_native_threadpool_clear(pool);
+    native_threadpool.clear(pool);
 }
 
 pub fn waitForSearchFinished(pool: *anyopaque) void {

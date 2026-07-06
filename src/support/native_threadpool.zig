@@ -14,7 +14,7 @@
 // once the Engine that embeds the pool is itself natively constructed/destructed
 // (layer 4). Here it is unit-tested in isolation over a standalone 64-byte buffer.
 //
-// The Worker construction (large-page alloc + zfish_worker_construct_full +
+// The Worker construction (large-page alloc + constructFull +
 // SearchManager) is injected as a callback so the footprint bookkeeping is tested
 // without the engine graph; layer 4 passes the real builder.
 
@@ -34,7 +34,7 @@ inline fn poolOf(slot: [*]u8) *ThreadPool {
 
 // Per-thread construction hook: given the thread index and the freshly spawned
 // NativeThread (idle loop running, no Worker yet), build + attach the Worker.
-// Layer 4 binds this to the large-page Worker alloc + zfish_worker_construct_full.
+// Layer 4 binds this to the large-page Worker alloc + constructFull.
 pub const ThreadBuilder = struct {
     ctx: ?*anyopaque = null,
     // thread is passed opaque so the C++ worker-builder can write worker@8 directly.
@@ -154,7 +154,7 @@ const WorkerBuildCtx = struct {
 
 // Build `count` native Threads (idle loops + Workers) into the Engine's embedded
 // ThreadPool footprint `pool`. Replaces the C++ per-thread add_main_thread loop.
-pub fn zfish_native_threadpool_set(
+pub fn set(
     pool: *anyopaque,
     shared_state: *anyopaque,
     update_context: *const anyopaque,
@@ -168,7 +168,7 @@ pub fn zfish_native_threadpool_set(
 // Join + free every native Thread and null the footprint vector. Called by the
 // native reset_for_reconfigure and the zfish_uci_engine_destruct_at teardown hook,
 // BEFORE any C++ ThreadPool dtor (which then sees an empty vector and no-ops).
-pub fn zfish_native_threadpool_clear(pool: *anyopaque) void {
+pub fn clear(pool: *anyopaque) void {
     var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
     p.clear();
 }
@@ -178,7 +178,7 @@ pub fn zfish_native_threadpool_clear(pool: *anyopaque) void {
 // by index and calls the native wait -- the C++ wait_on_thread would lock the C++
 // Thread's std::mutex, which is garbage on a NativeThread. Routed here by the
 // gated zfish_threadpool_wait_thread bridge shim in the default build.
-pub fn zfish_native_threadpool_wait_thread(pool: *anyopaque, thread_id: usize) void {
+pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads_begin == 0) return;
     const vec: [*]const usize = @ptrFromInt(tp.threads_begin);
