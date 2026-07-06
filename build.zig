@@ -180,22 +180,13 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const benchmark_source_files = b.addWriteFiles();
-    // REPORT-12 TU=0: the bench positions are embedded from an in-repo copy (src/bench),
-    // so the native build depends on NOTHING from the old src/ tree at build time. The only
-    // external artifact is the NNUE net, fetched into net/ and read from cwd at runtime.
-    _ = benchmark_source_files.addCopyFile(b.path("src/bench/benchmark.cpp"), "benchmark.cpp");
-    const benchmark_source_module = benchmark_source_files.add(
-        "benchmark_source_data.zig",
-        "pub const source = @embedFile(\"benchmark.cpp\");\n",
-    );
+    // The bench positions (Defaults) and benchmark-command games (BenchmarkPositions)
+    // are native Zig arrays in benchmark.zig, so the build depends on nothing from the
+    // old src/ tree. The only external artifact is the NNUE net, fetched into net/.
     const benchmark_module = b.createModule(.{
         .root_source_file = b.path("src/bench/benchmark.zig"),
         .target = target,
         .optimize = optimize,
-    });
-    benchmark_module.addAnonymousImport("benchmark_source_data", .{
-        .root_source_file = benchmark_source_module,
     });
     const misc_module = b.createModule(.{
         .root_source_file = b.path("src/support/misc.zig"),
