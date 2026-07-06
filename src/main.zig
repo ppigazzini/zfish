@@ -258,7 +258,7 @@ fn nativeWorkerDestroy(worker: ?*anyopaque) void {
     // rootMoves vector buffer (begin == root_moves[0]); operator new'd by the RootMoves builder.
     if (wl.root_moves[0] != 0) operatorDelete(@ptrFromInt(wl.root_moves[0]));
     // SearchManager buffer (operator new'd by makeSearchManager above).
-    if (wl.manager != 0) operatorDelete(@ptrFromInt(wl.manager));
+    if (wl.manager) |m| operatorDelete(m);
     memory_port.alignedLargePagesFree(w);
 }
 

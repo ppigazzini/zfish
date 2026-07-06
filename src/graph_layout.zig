@@ -96,12 +96,12 @@ pub const WorkerLayout = struct {
     numa_total: usize,
     numa_access_token: usize,
     reductions: [256]c_int,
-    manager: usize, // ?*SearchManager as a raw address
+    manager: ?*SearchManager, // the worker's SearchManager (null before build / after free)
     tb_config: [16]u8 align(8), // {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32} — read as i32, keep aligned
-    options: usize, // SharedState reference slots
-    threads: usize,
-    tt: usize,
-    network: usize,
+    options: usize, // SharedState OptionsModel reference (raw address)
+    threads: *ThreadPool,
+    tt: *TranspositionTable,
+    network: usize, // SharedState network reference (raw address)
     accumulator_stack: [accumulator_stack_size]u8 align(64),
     refresh_table: [refresh_table_bytes]u8 align(64),
 
@@ -297,7 +297,7 @@ pub const ThreadPool = struct {
     pub inline fn mainManager(self: *ThreadPool) ?*SearchManager {
         const worker = Thread.fromPtr(self.threadAtPtr(0)).worker;
         if (worker == 0) return null;
-        return SearchManager.fromAddr(WorkerLayout.fromAddr(worker).manager);
+        return WorkerLayout.fromAddr(worker).manager;
     }
 };
 
