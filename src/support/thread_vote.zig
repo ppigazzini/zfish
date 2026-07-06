@@ -1,4 +1,4 @@
-// Lazy-SMP best-thread vote (M16.7, relocated from thread.zig).
+// Lazy-SMP best-thread vote.
 //
 // A leaf module (graph_layout only): picks the vote-winning thread's worker from the
 // pool's per-thread root-move summaries. Both thread.zig and the search driver

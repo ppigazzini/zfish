@@ -1,4 +1,4 @@
-// UCI win-rate / centipawn / WDL model (M16.7, relocated from uci.zig).
+// UCI win-rate / centipawn / WDL model.
 //
 // A leaf module (std only): the internal-eval -> centipawn conversion and the
 // win/draw/loss estimate share the same win-rate polynomial. Kept dependency-free so

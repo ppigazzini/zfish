@@ -540,7 +540,7 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
     };
 }
 
-// Build + print one "info depth ... pv ..." line (relocated from main.zig, M16.7).
+// Build + print one "info depth ... pv ..." line.
 // Publishes the whole-search node count to the shared leaf; no-op in quiet mode.
 fn searchEmitInfoFull(manager: ?*anyopaque, worker: ?*anyopaque, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void {
     _ = manager;
@@ -693,10 +693,7 @@ const SsCtx = struct {
 };
 
 // Search-manager driver callbacks that touch only the Worker graph (via graph_layout)
-// + the accumulator stack — relocated from main.zig (M16.7). The driver
-// (workerStartSearching) now calls them locally. Callbacks that need the thread pool /
-// options / timeman / uci output / network stay in main.zig, since position sits below
-// those layers (importing them would cycle).
+// + the accumulator stack; the driver (workerStartSearching) calls them locally.
 fn workerThreadsPool(worker: *const anyopaque) usize {
     const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.threads));
     return p.*;

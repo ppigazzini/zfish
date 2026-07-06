@@ -135,7 +135,7 @@ const CaptureHistoryRow = [square_nb][piece_type_nb]HistoryEntry;
 const PieceToHistoryRow = [square_nb]HistoryEntry;
 const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 
-// History-table base pointers packed into a HistorySnapshot (M16.7 — relocated from main.zig).
+// History-table base pointers packed into a HistorySnapshot.
 fn fillHistorySnapshot(
     main_history: ?*const anyopaque,
     low_ply_history: ?*const anyopaque,

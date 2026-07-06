@@ -1,4 +1,4 @@
-// Native UCI output primitive + log-file sink (M16.7, relocated from main.zig).
+// Native UCI output primitive + log-file sink.
 //
 // A leaf module (libc + builtin only) so any layer can print without a cycle: the
 // coordinated line writer tees stdout to an optional log file, replacing the C++

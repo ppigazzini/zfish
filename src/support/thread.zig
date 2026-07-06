@@ -211,8 +211,8 @@ fn workerSetLimits(thread: *anyopaque, src_limits: *const anyopaque) void {
     dst.ponder_mode = src.ponder_mode;
 }
 
-// libc++ vector<RootMove> copy-assign into the worker's rootMoves member (relocated from
-// main.zig, M16.7): reuse the existing buffer when its capacity fits, else operator-new a
+// libc++ vector<RootMove> copy-assign into the worker's rootMoves member:
+// reuse the existing buffer when its capacity fits, else operator-new a
 // fresh one and free the old — exactly like assigning an element range.
 fn workerSetRootMoves(thread: *anyopaque, src_rm: *const anyopaque) void {
     // worker@8, then the rootMoves vector object {begin@0,end@8,cap@16}.

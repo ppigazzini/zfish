@@ -439,7 +439,7 @@ pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
 }
 
 // Native SharedHistoriesMap (the post-src/ replacement for std::map<NumaIndex,
-// SharedHistories>), engine-owned side storage relocated from main.zig (M16.7).
+// SharedHistories>), engine-owned side storage.
 // The engine is a gate singleton, so a lazily-built module global suffices; the
 // map pointer flows into SharedState.sharedHistories, and the clear/insert/at
 // bridge sites operate on that same pointer. Each element (SharedHistories: two
@@ -486,7 +486,7 @@ pub fn freeSharedHistories() void {
     }
 }
 
-// TT lifecycle + engine setup helpers relocated from main.zig (M16.7), reached through the typed
+// TT lifecycle + engine setup helpers, reached through the typed
 // TranspositionTable view + the tt/state_list modules this module already imports.
 fn ttResize(tt_ptr: *anyopaque, mb: usize, threads: *anyopaque) void {
     const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
@@ -754,7 +754,7 @@ pub fn fenEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
     return fen(ne(engine_ptr).positionPtr());
 }
 
-// `go perft N` root divide (relocated from main.zig, M16.7): build a scratch Position +
+// `go perft N` root divide: build a scratch Position +
 // StateInfo, set the engine FEN, generate the legal root moves, run the native perft subtree
 // per move, print "<move>: <count>" then the "Nodes searched: N" total (byte-exact vs the C++
 // divide -- the `perft` gate diffs it). engine + movegen + position + uci_move + uci_output.
@@ -1000,7 +1000,7 @@ pub fn threadAllocationInformation(
     return formatThreadAllocation(graph_layout.ThreadPool.fromPtr(@constCast(threads)).numThreads(), binding.ptr, binding.len);
 }
 
-// Register one option into the native OptionsModel (relocated from main.zig, M16.7).
+// Register one option into the native OptionsModel.
 // The engine handle + callback kind are unused (the model holds no per-option callback);
 // spin/check defaults are rendered to the model's string form.
 fn engineAddOption(
