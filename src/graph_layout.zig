@@ -218,6 +218,27 @@ pub const SearchManager = struct {
 // C++ offset mirror (@offsetOf == 8/60/88/... asserts) is retired. The allocation in
 // zfishMakeSearchManager now sizes to @sizeOf(SearchManager).
 
+// The SharedState bundle (40 bytes): the five subsystem references the Engine
+// hands each Worker at construction (options, thread pool, TT, per-NUMA shared
+// histories, network), stored as pointers in source order. Typed view over the
+// *anyopaque worker-build boundary that main.zig's native hook impls cross; the
+// owner is support/shared_state.zig (same field list, comptime-asserted there).
+pub const SharedState = struct {
+    options: *anyopaque, // @0  OptionsModel
+    threads: *anyopaque, // @8  ThreadPool
+    tt: *anyopaque, // @16 TranspositionTable
+    shared_histories: *anyopaque, // @24 per-NUMA SharedHistories
+    network: *anyopaque, // @32
+
+    pub inline fn fromPtr(p: *const anyopaque) *SharedState {
+        return @ptrCast(@alignCast(@constCast(p)));
+    }
+};
+
+comptime {
+    std.debug.assert(@sizeOf(SharedState) == shared_state_size);
+}
+
 // The ThreadPool object (64 bytes): the runtime constructs and reads the pool
 // through these fields. The `threads`/`bound` members are libc++-`std::vector`
 // `{begin,end,cap}` pointer triples (native_threadpool lays *NativeThread into a

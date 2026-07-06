@@ -36,9 +36,10 @@ pub const SharedState = struct {
 comptime {
     // Native struct (M16.8 de-mirror). The worker-build path (main.zig
     // nativeWorkerBuild / sharedStateClearHistories / sharedStateInsertHistory)
-    // reads this bundle by raw offset across the *anyopaque worker-build boundary,
-    // so guard the pointer layout: five equal-alignment pointers keep source order,
-    // and this asserts it loudly rather than corrupting silently if that changes.
+    // reads this bundle through the graph_layout.SharedState view across the
+    // *anyopaque worker-build boundary, which mirrors this field list; guard the
+    // pointer layout so the two definitions cannot silently drift apart: five
+    // equal-alignment pointers keep source order, asserted loudly here.
     std.debug.assert(@sizeOf(SharedState) == 40);
     std.debug.assert(@offsetOf(SharedState, "options") == 0);
     std.debug.assert(@offsetOf(SharedState, "threads") == 8);

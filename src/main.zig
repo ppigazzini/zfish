@@ -218,21 +218,18 @@ fn workerRefPtr(worker: *anyopaque, offset: usize) ?*anyopaque {
     const slot: *const ?*anyopaque = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + offset));
     return slot.*;
 }
-// SharedState.sharedHistories (a reference) is the 4th pointer field of the native
-// SharedState struct (shared_state.zig: options/threads/tt/shared_histories/network), i.e.
-// offset 24. Read that stored pointer directly and clear the native SharedHistoriesMap.
+// SharedState.sharedHistories (a reference) is the 4th pointer field of the
+// native SharedState bundle (options/threads/tt/shared_histories/network); read
+// it through the typed graph_layout.SharedState view and clear the native map.
 fn sharedStateClearHistories(shared_state: *const anyopaque) void {
-    const shared_histories_off: usize = 3 * @sizeOf(usize);
-    const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + shared_histories_off));
-    engine_port.sharedHistoriesClear(slot.*);
+    engine_port.sharedHistoriesClear(graph_layout.SharedState.fromPtr(shared_state).shared_histories);
 }
 // insert_history: single-node never binds (do_bind always 0, numa_config unused) — insert
-// directly into the native SharedHistoriesMap reached via the offset-24 shared_histories pointer.
+// directly into the native SharedHistoriesMap reached via the typed shared_histories field.
 fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) void {
     _ = numa_config;
     _ = do_bind;
-    const slot: *const *anyopaque = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(shared_state)) + 3 * @sizeOf(usize)));
-    engine_port.sharedHistoriesInsert(slot.*, numa_index, size);
+    engine_port.sharedHistoriesInsert(graph_layout.SharedState.fromPtr(shared_state).shared_histories, numa_index, size);
 }
 // With NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub; loadNetworkBytes
 // fails on it and falls back to the on-disk EvalFile (bench validates the file net).
@@ -296,12 +293,12 @@ fn nativeWorkerDestroy(worker: ?*anyopaque) void {
 }
 
 // The native ThreadBuilder callback. Reads the native SharedState's five reference
-// referents by offset (options@0, threads@8, tt@16, sharedHistories@24, network@32 —
-// shared_state.zig's 40-byte bundle), mints the SearchManager, large-page-allocs + natively
-// constructs the Worker, and writes the Worker at thread+8 (the worker@8 layout contract).
-// Single-node host: numaIndex 0, idxInNuma == idx, totalNuma == ctx.total. A reference
-// member's referent address equals the native field VALUE, so the field values are passed
-// straight through.
+// referents through the typed graph_layout.SharedState view (options/threads/tt/
+// sharedHistories/network — the 40-byte bundle), mints the SearchManager, large-page-
+// allocs + natively constructs the Worker, and writes the Worker through Thread.worker
+// (the worker@8 layout contract). Single-node host: numaIndex 0, idxInNuma == idx,
+// totalNuma == ctx.total. A reference member's referent address equals the native field
+// VALUE, so the field values are passed straight through.
 const WorkerBuildCtx = struct {
     shared_state: ?*anyopaque,
     update_context: ?*const anyopaque,
@@ -309,24 +306,19 @@ const WorkerBuildCtx = struct {
 };
 fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
     const ctx: *WorkerBuildCtx = @ptrCast(@alignCast(ctx_ptr.?));
-    const ss: [*]u8 = @ptrCast(ctx.shared_state.?);
-    const ss_options = @as(*usize, @ptrCast(@alignCast(ss + 0))).*;
-    const ss_threads = @as(*usize, @ptrCast(@alignCast(ss + 8))).*;
-    const ss_tt = @as(*usize, @ptrCast(@alignCast(ss + 16))).*;
-    const ss_shared_hist = @as(*usize, @ptrCast(@alignCast(ss + 24))).*;
-    const ss_network = @as(*usize, @ptrCast(@alignCast(ss + 32))).*;
+    const ss = graph_layout.SharedState.fromPtr(ctx.shared_state.?);
     const manager = makeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
         @panic("native worker build: SearchManager OOM");
     const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse
         @panic("native worker build: large-page OOM");
-    const shared_history = engine_port.sharedHistoriesAt(@ptrFromInt(ss_shared_hist), 0);
+    const shared_history = engine_port.sharedHistoriesAt(ss.shared_histories, 0);
     worker_native_construct.constructFull(
         raw,
         @intFromPtr(shared_history),
-        ss_options,
-        ss_threads,
-        ss_tt,
-        ss_network,
+        @intFromPtr(ss.options),
+        @intFromPtr(ss.threads),
+        @intFromPtr(ss.tt),
+        @intFromPtr(ss.network),
         @intFromPtr(manager),
         idx,
         idx,
