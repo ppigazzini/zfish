@@ -922,10 +922,10 @@ fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
 // runtime directly now (M16.7): native_thread no longer imports position (its search
 // job is a registered fn-pointer), so position can drive the pool without a cycle.
 fn ssThreadsStart(worker: ?*anyopaque) void {
-    native_thread.startPoolSiblings(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
+    native_thread.startPoolSiblings(@ptrFromInt(graph_layout.WorkerLayout.fromPtr(worker.?).threads));
 }
 fn ssWaitFinished(worker: ?*anyopaque) void {
-    native_thread.waitPoolSiblings(workerRefPtr(worker.?, graph_layout.worker_off.threads).?);
+    native_thread.waitPoolSiblings(@ptrFromInt(graph_layout.WorkerLayout.fromPtr(worker.?).threads));
 }
 
 // Worker of the vote-winning thread (Lazy-SMP best-thread selection via the leaf
@@ -935,48 +935,41 @@ fn ssGetBestThread(worker: ?*anyopaque) ?*anyopaque {
     return @ptrFromInt(thread_vote.bestThreadWorker(@ptrFromInt(pool)));
 }
 
-// Read a Worker reference slot (a pointer stored at worker+offset).
-fn workerRefPtr(worker: *anyopaque, offset: usize) ?*anyopaque {
-    const slot: *const ?*anyopaque = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + offset));
-    return slot.*;
-}
 fn workerRootDepthOf(worker: *anyopaque) c_int {
-    const p: *const c_int = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + graph_layout.worker_off.root_depth));
-    return p.*;
+    return graph_layout.WorkerLayout.fromPtr(worker).root_depth;
 }
 
 // emit_pv / search_id_pv: thin graph-only wrappers that resolve the worker's
 // manager/threads/tt reference slots and drive the local PV emitter (searchPv).
 // Relocated from main.zig (M16.7).
 fn ssEmitPv(worker: ?*anyopaque, best: ?*anyopaque) void {
-    const w = worker.?;
+    const wl = graph_layout.WorkerLayout.fromPtr(worker.?);
     searchPv(
-        workerRefPtr(w, graph_layout.worker_off.manager),
+        @ptrFromInt(wl.manager),
         best,
-        workerRefPtr(w, graph_layout.worker_off.threads),
-        workerRefPtr(w, graph_layout.worker_off.tt),
+        @ptrFromInt(wl.threads),
+        @ptrFromInt(wl.tt),
         workerRootDepthOf(best.?),
     );
 }
 fn searchIdPv(worker: *anyopaque, depth: c_int) void {
+    const wl = graph_layout.WorkerLayout.fromPtr(worker);
     searchPv(
-        workerRefPtr(worker, graph_layout.worker_off.manager),
+        @ptrFromInt(wl.manager),
         worker,
-        workerRefPtr(worker, graph_layout.worker_off.threads),
-        workerRefPtr(worker, graph_layout.worker_off.tt),
+        @ptrFromInt(wl.threads),
+        @ptrFromInt(wl.tt),
         depth,
     );
 }
 
 // nodestime available-nodes advance (tm.advance_nodes_time). Relocated from main.zig (M16.7).
 fn ssNpmsecAdvance(worker: *anyopaque) void {
-    const wbase: [*]u8 = @ptrCast(worker);
-    const off = graph_layout.worker_off;
-    const manager = workerRefPtr(worker, off.manager).?;
-    const avail = &graph_layout.SearchManager.fromPtr(manager).tm.available_nodes;
-    const us: usize = sideToMove(@ptrCast(wbase + off.root_pos));
-    const inc = graph_layout.LimitsType.fromAddr(@intFromPtr(wbase) + off.limits).inc[us];
-    const nodes: i64 = @intCast(graph_layout.poolNodesSearched(workerRefPtr(worker, off.threads).?));
+    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    const avail = &graph_layout.SearchManager.fromAddr(wl.manager).tm.available_nodes;
+    const us: usize = sideToMove(&wl.root_pos);
+    const inc = wl.limits.inc[us];
+    const nodes: i64 = @intCast(graph_layout.poolNodesSearched(@ptrFromInt(wl.threads)));
     avail.* = @max(@as(i64, 0), avail.* - (nodes - inc));
 }
 
