@@ -7,7 +7,6 @@ const uci_output = @import("uci_output");
 const graph_layout = @import("graph_layout");
 const native_hooks = @import("native_hooks");
 const clock = @import("clock");
-const worker_construct = @import("worker_construct.zig");
 const thread_construct = @import("thread_construct.zig");
 const worker_native_construct = @import("worker_native_construct.zig");
 const native_engine = @import("native_engine"); // native engine container
@@ -26,7 +25,6 @@ const position_snapshot = @import("position_snapshot");
 
 comptime {
     _ = graph_layout;
-    _ = worker_construct;
     _ = thread_construct;
     _ = worker_native_construct;
 }

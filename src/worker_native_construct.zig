@@ -1,17 +1,17 @@
 // Native Search::Worker field constructor.
 //
 // The Worker's 13.2 MB storage is already Zig-allocated (aligned_large_pages),
-// its POD fill is Zig (Worker::clear), and
-// worker_construct.zig already locks the field-init model of a freshly built
-// Worker. The non-history members written by the constructor are: the five
+// its POD fill is Zig (Worker::clear). The non-history members written by the
+// constructor are: the five
 // SharedState reference slots, the NUMA scalars, the manager pointer, and the one
 // live AccumulatorStack slot. This module writes exactly that set in Zig, so the
 // Engine graph constructs a Worker without any C++ constructor.
 //
 // Only the constructor-set fields are written here; the histories, reductions,
 // refresh cache, and shared history are filled afterwards by the existing native
-// Worker::clear path. Offsets come from graph_layout.worker_off, the address map
-// that worker_construct.zig verifies on every Worker.
+// Worker::clear path. Writes go through typed graph_layout.WorkerLayout fields,
+// with worker_off kept only for the two sub-region slots (shared-history pointer,
+// AccumulatorStack size).
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");
@@ -37,8 +37,7 @@ const numa_total_off = off.numa_total;
 const numa_access_token_off = off.numa_access_token;
 
 // AccumulatorStack::size (size_t == 1 at construction) sits 64 bytes before the
-// refresh table -- its last real member plus trailing alignment padding. Matches
-// accumulator_stack_size_off in worker_construct.zig.
+// refresh table -- its last real member plus trailing alignment padding.
 const accumulator_stack_size_off = off.accumulator_stack_size_field;
 
 fn writePtr(base: [*]u8, offset: usize, value: usize) void {
