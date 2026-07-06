@@ -496,10 +496,10 @@ const PvContext = struct {
 // TT hashfull and elapsed ms. Relocated from main.zig (M16.7); graph_layout + option +
 // the leaf pool aggregates, so no thread-module import (which would cycle).
 fn searchCbPvContext(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyopaque, tt_ptr: ?*anyopaque, out: *PvContext) void {
-    const w = @intFromPtr(worker.?);
-    const rm_vec = w + graph_layout.worker_off.root_moves;
-    const rm_begin = @as(*const usize, @ptrFromInt(rm_vec)).*;
-    const rm_end = @as(*const usize, @ptrFromInt(rm_vec + 8)).*;
+    const wl = graph_layout.WorkerLayout.fromPtr(worker.?);
+    // root_moves is the {begin,end,cap} vector header.
+    const rm_begin = wl.root_moves[0];
+    const rm_end = wl.root_moves[1];
     const rm_count = (rm_end - rm_begin) / graph_layout.root_move_size;
 
     const multipv_opt: usize = @intCast(@max(optInt("MultiPV"), 0));
@@ -511,7 +511,7 @@ fn searchCbPvContext(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyop
     out.multipv = @min(multipv_opt, rm_count);
     out.show_wdl = if (optInt("UCI_ShowWDL") != 0) 1 else 0;
 
-    const root_pos: *const anyopaque = @ptrFromInt(w + graph_layout.worker_off.root_pos);
+    const root_pos: *const anyopaque = &wl.root_pos;
     out.chess960 = if (isChess960(root_pos)) 1 else 0;
     out.nodes = graph_layout.poolNodesSearched(threads.?);
     out.tb_hits = graph_layout.poolTbHits(threads.?);
@@ -524,8 +524,9 @@ fn searchCbPvContext(manager: ?*anyopaque, worker: ?*anyopaque, threads: ?*anyop
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
 fn workerRootMoveAt(worker: *const anyopaque, index: usize) usize {
-    const begin: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.root_moves));
-    return begin.* + index * graph_layout.root_move_size;
+    // root_moves[0] is the vector's begin pointer; stride by root_move_size.
+    const begin = graph_layout.WorkerLayout.fromPtr(@constCast(worker)).root_moves[0];
+    return begin + index * graph_layout.root_move_size;
 }
 
 // Score text (mate/tb-cp/cp) via the score classifier + the leaf uci_wdl formatters.
@@ -548,7 +549,7 @@ fn searchEmitInfoFull(manager: ?*anyopaque, worker: ?*anyopaque, move_index: usi
 
     const w = worker.?;
     const ca = std.heap.c_allocator;
-    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(w) + graph_layout.worker_off.root_pos);
+    const root_pos: *const anyopaque = &graph_layout.WorkerLayout.fromPtr(w).root_pos;
     const material = wdlMaterial(root_pos);
     const chess960 = isChess960(root_pos);
 
@@ -599,7 +600,7 @@ fn ssEmitNoMoves(worker: ?*anyopaque) void {
     if (uci_output.isQuiet()) return;
     const w = worker.?;
     const ca = std.heap.c_allocator;
-    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(w) + graph_layout.worker_off.root_pos);
+    const root_pos: *const anyopaque = &graph_layout.WorkerLayout.fromPtr(w).root_pos;
     const v: c_int = if (hasCheckers(root_pos)) -32000 else 0;
     const material = wdlMaterial(root_pos);
 
@@ -619,7 +620,7 @@ fn ssEmitBestmove(worker: ?*anyopaque, best: ?*anyopaque) void {
     if (uci_output.isQuiet()) return;
     const rm0 = workerRootMove0(best.?);
     const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
-    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker.?) + graph_layout.worker_off.root_pos);
+    const root_pos: *const anyopaque = &graph_layout.WorkerLayout.fromPtr(worker.?).root_pos;
     const chess960 = isChess960(root_pos);
 
     var buf0: [5]u8 = undefined;
@@ -644,15 +645,14 @@ fn ssEmitBestmove(worker: ?*anyopaque, best: ?*anyopaque) void {
 
 // "info depth D currmove M currmovenumber N" (main thread, past the node threshold).
 fn searchCbRootOnIter(worker: *const anyopaque, depth: c_int, move: u16, move_count: c_int) void {
-    const thread_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.thread_idx);
-    if (thread_idx.* != 0) return;
+    const wl = graph_layout.WorkerLayout.fromPtr(@constCast(worker));
+    if (wl.thread_idx != 0) return;
     if (uci_output.isQuiet()) return;
-    const root_pos: *const anyopaque = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.root_pos);
+    const root_pos: *const anyopaque = &wl.root_pos;
     const chess960 = isChess960(root_pos);
-    const pv_idx: *const usize = @ptrFromInt(@intFromPtr(worker) + graph_layout.worker_off.pv_idx);
     var mbuf: [5]u8 = undefined;
     const currmove = uci_move_port.renderMoveText(&mbuf, move, chess960);
-    const currmovenumber: c_int = move_count + @as(c_int, @intCast(pv_idx.*));
+    const currmovenumber: c_int = move_count + @as(c_int, @intCast(wl.pv_idx));
     const line_c = uci_wdl.formatInfoIter(depth, currmove, currmovenumber) orelse return;
     defer std.heap.c_allocator.free(std.mem.span(line_c));
     const line = std.mem.span(line_c);
