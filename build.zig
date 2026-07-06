@@ -132,6 +132,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "shared_histories", .path = "src/support/shared_histories.zig" },
         .{ .name = "shared_histories_map", .path = "src/support/shared_histories_map.zig" },
         .{ .name = "network_holder", .path = "src/support/network_holder.zig" },
+        .{ .name = "worker_histories", .path = "src/board/worker_histories.zig" },
     };
     var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
     for (module_specs) |spec| {
@@ -148,6 +149,8 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "evaluate", .to = "evaluate" },
         .{ .from = "position", .imp = "shared_histories", .to = "shared_histories" },
         .{ .from = "position", .imp = "shared_histories_map", .to = "shared_histories_map" },
+        .{ .from = "position", .imp = "worker_histories", .to = "worker_histories" },
+        .{ .from = "graph_layout", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "engine", .imp = "position", .to = "position" },
         .{ .from = "engine", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "position", .imp = "position_snapshot", .to = "position_snapshot" },

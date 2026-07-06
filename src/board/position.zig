@@ -98,41 +98,25 @@ pub const SearchStack = struct {
     reduction: c_int,
 };
 
-// History-table dimensions (src/history.h, src/types.h).
-const hist_color_nb: usize = 2;
-const hist_uint16: usize = 65536;
-const hist_low_ply: usize = 5;
-const hist_piece_nb: usize = 16;
-const hist_square_nb: usize = 64;
-const hist_piece_type_nb: usize = 8;
-const hist_pieceto: usize = hist_piece_nb * hist_square_nb; // PieceToHistory page = [16][64]
+// History tables + their dimensions live in the worker_histories leaf module so that
+// both this module (the history-update code) and graph_layout (which embeds the type
+// as WorkerLayout.histories) can name them without an import cycle. Re-export the
+// names the ported search code + external callers already use.
+const worker_histories = @import("worker_histories");
+const hist_color_nb = worker_histories.hist_color_nb;
+const hist_uint16 = worker_histories.hist_uint16;
+const hist_low_ply = worker_histories.hist_low_ply;
+const hist_piece_nb = worker_histories.hist_piece_nb;
+const hist_square_nb = worker_histories.hist_square_nb;
+const hist_piece_type_nb = worker_histories.hist_piece_type_nb;
+const hist_pieceto = worker_histories.hist_pieceto;
+pub const WorkerHistories = worker_histories.WorkerHistories;
+pub const worker_shared_history_off = worker_histories.worker_shared_history_off;
 
-// Memory mirror of the leading data members of Search::Worker (src/search.h):
-// the per-Worker history tables, which form a contiguous int16-array prefix
-// (no vtable; mainHistory is at offset 0) followed by the shared-history
-// reference. Only ever used through a Worker pointer, so the field order and sizes
-// must byte-match the WorkerLayout histories sub-block; the comptime assert below
-// checks @sizeOf against graph_layout.worker_histories_bytes. This mirror lets ported
-// search code address every table from one Worker pointer instead of per-call base passing.
-pub const WorkerHistories = struct {
-    main_history: [hist_color_nb * hist_uint16]i16, // ButterflyHistory [2][65536]
-    low_ply_history: [hist_low_ply * hist_uint16]i16, // LowPlyHistory [5][65536]
-    capture_history: [hist_piece_nb * hist_square_nb * hist_piece_type_nb]i16, // [16][64][8]
-    continuation_history: [2 * 2 * hist_pieceto * hist_pieceto]i16, // [2][2] of [16][64]->[16][64]
-    continuation_correction_history: [hist_pieceto * hist_pieceto]i16, // [16][64]->[16][64]
-    tt_move_history: i16,
-    shared_history: ?*anyopaque, // &SharedHistories
-};
-
-// Offset of the shared_history reference WITHIN WorkerHistories (a native struct, so
-// Zig's choice). Readers index it inside the WorkerLayout.histories byte region.
-pub const worker_shared_history_off = @offsetOf(WorkerHistories, "shared_history");
-
-// The Worker's WorkerHistories sub-block is the WorkerLayout.histories field (no
-// longer offset 0 — the native WorkerLayout floats the 64-aligned NNUE arenas to the
-// front). Reinterpret that opaque byte region as the typed histories view.
+// The Worker's WorkerHistories sub-block is now the typed WorkerLayout.histories field
+// (M17.2p), so this is just its address -- no reinterpret.
 inline fn workerHistories(worker_ptr: *anyopaque) *WorkerHistories {
-    return @ptrCast(@alignCast(&graph_layout.WorkerLayout.fromPtr(worker_ptr).histories));
+    return &graph_layout.WorkerLayout.fromPtr(worker_ptr).histories;
 }
 
 comptime {
