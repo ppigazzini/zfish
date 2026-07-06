@@ -190,34 +190,6 @@ fn freeSideTt() void {
     native_engine.sideTtReset();
 }
 
-// Worker -> threads (ThreadPool&) and Worker -> manager (the worker's own
-// SearchManager via the unique_ptr) resolvers. Both slots hold a pointer (the
-// reference is stored as a pointer; main_manager() is manager.get()), so the
-// resolver loads the slot value.
-fn workerThreadsPool(worker: *const anyopaque) usize {
-    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).threads;
-}
-fn workerManager(worker: *const anyopaque) usize {
-    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).manager;
-}
-
-// worker->rootMoves[0]: rootMoves is a std::vector<RootMove> whose begin pointer
-// is the first element's address.
-fn workerRootMove0(worker: *const anyopaque) usize {
-    // root_moves is the {begin,end,cap} vector header; [0] is the begin pointer.
-    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).root_moves[0];
-}
-
-fn workerTT(worker: *const anyopaque) usize {
-    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).tt;
-}
-
-// workerRefPtr: read a Worker reference slot -- threads/tt/manager are pointers stored at
-// worker+offset, using graph_layout.worker_off (the same offsets the native search reads).
-fn workerRefPtr(worker: *anyopaque, offset: usize) ?*anyopaque {
-    const slot: *const ?*anyopaque = @ptrCast(@alignCast(@as([*]u8, @ptrCast(worker)) + offset));
-    return slot.*;
-}
 // SharedState.sharedHistories (a reference) is the 4th pointer field of the
 // native SharedState bundle (options/threads/tt/shared_histories/network); read
 // it through the typed graph_layout.SharedState view and clear the native map.
