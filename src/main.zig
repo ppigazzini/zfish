@@ -94,10 +94,6 @@ pub fn zfish_misc_engine_info_text() ?[*:0]u8 {
     return misc_port.engineInfoText(0);
 }
 
-pub fn zfish_position_undo_move_method(pos_ptr: *anyopaque, move: u16) void {
-    position_port.undoMove(pos_ptr, move);
-}
-
 // do_move that links a fresh StateInfo and computes givesCheck internally
 // (Position::do_move(Move, StateInfo&)); exported from the bridge.
 
@@ -166,10 +162,6 @@ fn zfishThreadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
 // Pure offset read (no deque internals). Default-only (legacy keeps the C++ method).
 
 
-pub fn zfish_position_flip_fen(fen_ptr: [*]const u8, fen_len: usize) ?[*:0]u8 {
-    return position_port.flipFen(fen_ptr, fen_len);
-}
-
 pub fn zfish_position_set_method(
     pos_ptr: *anyopaque,
     fen_ptr: [*]const u8,
@@ -186,10 +178,6 @@ pub fn zfish_position_set_method(
 // zfish_search_stat_bonus/stat_malus retired -- position.zig calls search directly (M16.5).
 
 
-
-pub fn zfish_search_extract_ponder_from_tt(pv: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8, pos: *anyopaque) u8 {
-    return position_port.extractPonderFromTt(pv, table, cc, gen, pos);
-}
 
 
 // Native-graph cut flip fire 2: shadow verifier. The bridge calls this right after the
@@ -290,23 +278,11 @@ fn handoffPendingStates(
 // threadpool reconfigure: engine calls thread.reconfigure directly (M16.7).
 
 
-pub fn zfish_threadpool_start_searching(pool: *anyopaque) void {
-    return thread_port.startSearching(pool);
-}
 
-
-
-pub fn zfish_threadpool_nodes_searched(pool: *anyopaque) u64 {
-    return thread_port.nodesSearched(pool);
-}
 
 // REPORT-12 B4b: side-to-move of a Position by pointer, for the bridge's de-typed
 // zfish_ss_npmsec_advance (rootPos.side_to_move() once Position is forward-declared). Reuses the
 // native layout authority (position_port.sideToMove), so no C++ offset needs pinning.
-pub fn zfish_ss_side_to_move(pos: *const anyopaque) u8 {
-    return position_port.sideToMove(pos);
-}
-
 // Native SearchManager data-field shims. The main manager's data members are
 // written through the C++ navigation helper (which returns the manager pointer)
 // plus the search_manager_off offset map, so these resets no longer use the C++
@@ -539,10 +515,6 @@ fn workerTT(worker: *const anyopaque) usize {
 // quiet mode (bench/speedtest) the search-driver emit functions are no-ops; in
 // interactive mode they format natively and print through the shared sync_cout
 // wrapper.
-pub fn zfish_uci_set_quiet_mode(quiet: u8) void {
-    uci_output.setQuietMode(quiet != 0);
-}
-
 // REPORT-12 TU=0: the native output primitive (replacing the C++ sync_cout wrapper zfish_uci_print_line +
 // the Tie logger). Writes one mutex-guarded, flushed line to libc stdout — the SAME FILE* the rest of the
 // native UCI output uses (uci.zig c.puts), so there is no buffered/unbuffered interleave — and tees it to
@@ -998,30 +970,12 @@ fn zfishNativeEngineDestructMembers(buf: *anyopaque) void {
     native_engine.destructMembers(buf);
 }
 
-pub fn zfish_engine_option_on_change(
-    engine: *anyopaque,
-    callback_kind: u8,
-    value_ptr: [*]const u8,
-    value_len: usize,
-    int_value: c_int,
-) ?[*:0]u8 {
-    return engine_port.optionOnChange(engine, callback_kind, value_ptr, value_len, int_value);
-}
-
 pub fn zfish_engine_release_pending_state_slot(states_slot: *anyopaque) void {
     return engine_port.releasePendingStateSlot(states_slot);
 }
 
-pub fn zfish_engine_fen(pos: *const anyopaque) ?[*:0]u8 {
-    return engine_port.fen(pos);
-}
 
 
-
-
-pub fn zfish_engine_verify_network_method(engine_ptr: *const anyopaque) void {
-    return engine_port.verifyNetwork(engine_ptr);
-}
 
 
 
@@ -1063,27 +1017,7 @@ pub fn zfish_engine_go_owner(engine_ptr: *anyopaque, limits_ptr: *const anyopaqu
 // broken (network reads Position's side-to-move/board via the leaf graph_layout),
 // so position calls network.evaluate directly -- no main bridge remains.
 
-pub fn zfish_tt_generation_next(curr_generation: u8) u8 {
-    return tt_port.generationNext(curr_generation);
-}
-
-pub fn zfish_tt_hashfull(
-    clusters: [*]const tt_port.TtCluster,
-    cluster_count: usize,
-    generation: u8,
-    max_age: c_int,
-) c_int {
-    return tt_port.hashfull(clusters, cluster_count, generation, max_age);
-}
-
 // setoption parsing: uci.zig calls option.parseSetOption directly (M16.7).
-
-pub fn zfish_uci_format_info_string(
-    input_ptr: [*]const u8,
-    input_len: usize,
-) ?[*:0]u8 {
-    return uci_port.formatInfoString(input_ptr[0..input_len]);
-}
 
 // uci_to_cp: engine calls the leaf uci_wdl.toCp directly (M16.7).
 
