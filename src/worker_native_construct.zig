@@ -66,23 +66,24 @@ pub const WorkerCtorInputs = struct {
 // owns the buffer (aligned_large_pages, worker_size bytes) and must zero it and
 // run the native Worker::clear afterwards.
 pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
-    // Five SharedState reference members.
+    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+
+    // sharedHistories reference: a pointer slot inside the histories sub-block.
     writePtr(worker, off.histories + position_port.worker_shared_history_off, in.shared_history);
-    writePtr(worker, off.options, in.options);
-    writePtr(worker, off.threads, in.threads);
-    writePtr(worker, off.tt, in.tt);
-    writePtr(worker, off.network, in.network);
-
-    // manager unique_ptr<ISearchManager>: the moved-in pointer.
-    writePtr(worker, off.manager, in.manager);
-
+    // Four SharedState reference members + the manager unique_ptr's moved-in pointer.
+    wl.options = in.options;
+    wl.threads = in.threads;
+    wl.tt = in.tt;
+    wl.network = in.network;
+    wl.manager = in.manager;
     // NUMA identity scalars.
-    writePtr(worker, off.thread_idx, in.thread_idx);
-    writePtr(worker, numa_thread_idx_off, in.numa_thread_idx);
-    writePtr(worker, numa_total_off, in.numa_total);
-    writePtr(worker, numa_access_token_off, in.numa_access_token);
+    wl.thread_idx = in.thread_idx;
+    wl.numa_thread_idx = in.numa_thread_idx;
+    wl.numa_total = in.numa_total;
+    wl.numa_access_token = in.numa_access_token;
 
-    // AccumulatorStack starts with one live slot.
+    // AccumulatorStack starts with one live slot (size_t at the size field, inside
+    // the accumulator_stack region so still addressed by offset).
     writePtr(worker, accumulator_stack_size_off, 1);
 }
 
@@ -97,11 +98,12 @@ fn constructWorkerInto(
     shared_obj: *anyopaque,
     biases: [*]const i16,
 ) void {
+    const wl = graph_layout.WorkerLayout.fromPtr(buf);
     writeConstructorFields(buf, in);
     position_port.clearWorkerHistories(buf);
     position_port.clearSharedHistory(shared_obj, in.numa_thread_idx, in.numa_total);
-    search_port.fillReductions(@ptrCast(@alignCast(buf + off.reductions)), reductions_count);
-    nnue_acc.clearRefreshCache(@ptrCast(buf + off.refresh_table), biases);
+    search_port.fillReductions(&wl.reductions, reductions_count);
+    nnue_acc.clearRefreshCache(&wl.refresh_table, biases);
 }
 
 // Production entry: construct a complete native Worker into `buf` (a large-page
