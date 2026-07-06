@@ -142,18 +142,6 @@ fn zfishThreadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
 // Pure offset read (no deque internals). Default-only (legacy keeps the C++ method).
 
 
-pub fn zfish_position_set_method(
-    pos_ptr: *anyopaque,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
-    is_chess960: u8,
-    st_ptr: *anyopaque,
-    pos_size: usize,
-    st_size: usize,
-) ?[*:0]u8 {
-    return position_port.setPosition(pos_ptr, fen_ptr, fen_len, is_chess960, st_ptr, pos_size, st_size);
-}
-
 
 // zfish_search_stat_bonus/stat_malus retired -- position.zig calls search directly (M16.5).
 
@@ -164,18 +152,6 @@ pub fn zfish_position_set_method(
 // C++ try_emplace builds a node's SharedHistories, so the native sizing logic (the
 // builder the flip will use) is diffed against the live oracle every engine
 // construction. Returns false (and logs) on any mismatch; the bridge aborts loudly.
-pub fn zfish_shadow_verify_shared_histories(shared: *const anyopaque, thread_count: usize) bool {
-    const ok = position_port.verifySharedHistories(shared, thread_count);
-    if (!ok) {
-        std.debug.print(
-            "zfish: shadow_verify_shared_histories MISMATCH (thread_count={d}) -- " ++
-                "native SharedHistories sizing diverged from the C++ try_emplace\n",
-            .{thread_count},
-        );
-    }
-    return ok;
-}
-
 
 // Native Worker::clear (stage-4 layer 5): the per-search worker reset the native
 // clear_worker job runs on its thread. Reproduces Search::Worker::clear() by
@@ -862,10 +838,6 @@ pub fn zfish_engine_release_pending_state_slot(states_slot: *anyopaque) void {
 
 
 
-pub fn zfish_engine_go_owner(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
-    return engine_port.goEngine(engine_ptr, limits_ptr);
-}
-
 
 
 // numa-config-from-option is applied inside engine.zig directly (M16.7).
@@ -903,20 +875,6 @@ pub fn zfish_engine_go_owner(engine_ptr: *anyopaque, limits_ptr: *const anyopaqu
 // setoption parsing: uci.zig calls option.parseSetOption directly (M16.7).
 
 // uci_to_cp: engine calls the leaf uci_wdl.toCp directly (M16.7).
-
-pub fn zfish_half_ka_make_index(
-    params: nnue_feature_port.HalfThreatParams,
-) u32 {
-    return nnue_feature_port.halfMakeIndex(params);
-}
-
-pub fn zfish_half_ka_append_changed(
-    perspective: u8,
-    king_square: u8,
-    diff: nnue_feature_port.HalfDiff,
-) nnue_feature_port.HalfAppendResult {
-    return nnue_feature_port.halfAppendChanged(perspective, king_square, diff);
-}
 
 // full-threats append (changed/active): nnue_accumulator.zig calls nnue_feature directly (M16.7).
 
