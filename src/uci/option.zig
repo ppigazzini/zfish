@@ -751,3 +751,82 @@ test "options model renders the UCI listing in order" {
         listing,
     );
 }
+
+// ---- property fuzz (M17.0d) --------------------------------------------------
+// The pure UCI parsers are the most fuzz-appropriate surface in the engine (a
+// tokenizer bolted to a validator). Until coverage-guided `-ffuzz` is wired
+// (M17.5), these PRNG property tests hammer them with random + adversarial input
+// and assert the only universal invariant: no crash / no UB, and results freed.
+
+const testing = std.testing;
+
+fn freeCStr(p: ?[*:0]u8) void {
+    if (p) |ptr| std.c.free(@ptrCast(ptr));
+}
+
+test "fuzz: parseSetOption survives random and adversarial input" {
+    var prng = std.Random.DefaultPrng.init(0xF00D_CAFE);
+    const rand = prng.random();
+    var buf: [160]u8 = undefined;
+    var i: usize = 0;
+    while (i < 20000) : (i += 1) {
+        const len = rand.uintLessThan(usize, buf.len + 1);
+        for (buf[0..len]) |*b| b.* = rand.int(u8);
+        const parsed = parseSetOption(buf[0..len]);
+        freeCStr(parsed.name);
+        freeCStr(parsed.value);
+    }
+    const cases = [_][]const u8{
+        "",                                                      "setoption",
+        "setoption name",                                        "setoption name  value ",
+        "setoption value x name y",                              "setoption name value",
+        "\x00\xff\x00",                                          "   \t\r\n  ",
+        "setoption name Hash value 999999999999999999999999999", "setoption name " ++ "A" ** 300 ++ " value " ++ "B" ** 300,
+    };
+    for (cases) |case| {
+        const parsed = parseSetOption(case);
+        freeCStr(parsed.name);
+        freeCStr(parsed.value);
+    }
+}
+
+test "fuzz: caseInsensitiveLess is a strict weak ordering" {
+    var prng = std.Random.DefaultPrng.init(0x1234_5678);
+    const rand = prng.random();
+    var a: [24]u8 = undefined;
+    var b: [24]u8 = undefined;
+    var i: usize = 0;
+    while (i < 50000) : (i += 1) {
+        const la = rand.uintLessThan(usize, a.len + 1);
+        const lb = rand.uintLessThan(usize, b.len + 1);
+        for (a[0..la]) |*x| x.* = rand.int(u8);
+        for (b[0..lb]) |*x| x.* = rand.int(u8);
+        const sa = a[0..la];
+        const sb = b[0..lb];
+        // irreflexive: never a < a
+        try testing.expect(!caseInsensitiveLess(sa, sa));
+        // asymmetric: not both a < b and b < a
+        try testing.expect(!(caseInsensitiveLess(sa, sb) and caseInsensitiveLess(sb, sa)));
+    }
+}
+
+test "fuzz: validateAssignment / tuneNext never crash" {
+    var prng = std.Random.DefaultPrng.init(0x9E37_79B9);
+    const rand = prng.random();
+    const types = [_][]const u8{ "spin", "check", "string", "combo", "button", "junk" };
+    var vbuf: [40]u8 = undefined;
+    var i: usize = 0;
+    while (i < 20000) : (i += 1) {
+        const ty = types[rand.uintLessThan(usize, types.len)];
+        const vlen = rand.uintLessThan(usize, vbuf.len + 1);
+        for (vbuf[0..vlen]) |*x| x.* = rand.int(u8);
+        const val = vbuf[0..vlen];
+        const mn = rand.int(c_int);
+        const mx = rand.int(c_int);
+        const res = validateAssignment(ty, val, mn, mx, val);
+        freeCStr(res.normalized_value);
+        const tn = tuneNext(val, rand.int(u8));
+        freeCStr(tn.token);
+        freeCStr(tn.remaining);
+    }
+}
