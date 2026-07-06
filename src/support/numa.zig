@@ -103,6 +103,6 @@ pub fn contextCpusInNode(_: *const anyopaque, _: usize) usize {
     return 1;
 }
 
-// NumaPolicy reconfigure from an option string: single-node default build, so this
+// NumaPolicy reconfigure from an option string: single-node build, so this
 // is a no-op (there is no multi-node topology to re-derive). Relocated from main.zig (M16.7).
 pub fn setFromString(_: *anyopaque, _: [*]const u8, _: usize) void {}

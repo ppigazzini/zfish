@@ -1,16 +1,13 @@
-// Object-graph layout lock for the Zig engine reimplementation.
+// Object-graph layout lock for the Zig engine.
 //
-// The C++ object graph (Engine -> ThreadPool -> Thread -> Worker, plus Position,
-// TT, accumulator storage, ...) is what the Zig runtime currently constructs and
-// reads through layout mirrors. Reimplementing construction in Zig means
-// allocating these objects from Zig, byte-for-byte compatible. These constants
-// pin the exact C++ footprint captured from the bridge probe; the verifier runs
-// at engine creation and aborts on any drift, so an upstream size change is
-// caught immediately rather than corrupting a mirror silently.
+// The object graph (Engine -> ThreadPool -> Thread -> Worker, plus Position,
+// TT, accumulator storage, ...) is constructed and read by the Zig runtime.
+// These constants pin the exact byte footprint each object must have; native
+// allocations size to them, and any drift surfaces as a bench/parity failure.
 
 const std = @import("std");
 
-// Canonical C++ footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
+// Canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = @sizeOf(WorkerLayout);
 pub const worker_align: usize = 64;
 pub const thread_size: usize = 208;
@@ -26,12 +23,6 @@ pub const accumulator_stack_size: usize = 2181568;
 pub const accumulator_caches_size: usize = 278528;
 pub const root_move_size: usize = 552;
 
-// Worker member offsets (bytes from the Worker base), captured from a live
-// Worker via pointer arithmetic. Non-reference members are probed directly;
-// the three reference members (sharedHistory, tt, network) are stored as
-// pointers but &ref yields the referent, so their slots are derived from the
-// gaps between neighbours and cross-checked against alignment. This is the
-// address map the Zig Worker struct (HARD-3) must reproduce.
 // Position field offsets the NNUE eval reads directly, so network.zig need not
 // import the (heavy, cycle-prone) position module for two scalar reads. Pinned
 // here in the leaf layout authority; position.zig comptime-asserts them against
@@ -150,13 +141,6 @@ pub const worker_off = struct {
     pub const refresh_table = @offsetOf(WorkerLayout, "refresh_table");
 };
 
-// SearchManager member offsets (bytes from the manager base), probed from the
-// live C++ Search::SearchManager (offsetof). The vtable pointer occupies [0,8);
-// `tm` is a 40-byte TimeManagement. This is the address map the native
-// SearchManager flip uses to read/write the manager's data fields, which the
-// search reaches today through the C++ main_manager() shims. See the
-// [[searchmanager-flip-plan]] memory: the vtable is functionally dead, so only
-// these data fields plus `updates` are live.
 // TimeManagement (40 bytes): the clock sub-object embedded in SearchManager at
 // offset 8. availableNodes (4th i64) is set to -1 by TimeManagement::clear.
 pub const TimeManagement = struct {
@@ -225,12 +209,10 @@ pub const SearchManager = struct {
 // C++ offset mirror (@offsetOf == 8/60/88/... asserts) is retired. The allocation in
 // zfishMakeSearchManager now sizes to @sizeOf(SearchManager).
 
-// The ThreadPool object (64 bytes). Typed replacement for the old thread_pool_off
-// offset map: the runtime constructs and reads the pool through these fields. The
-// `threads`/`bound` members are still C++-`std::vector` `{begin,end,cap}` pointer
-// triples (native_threadpool lays *NativeThread into a contiguous buffer that
-// begin/end point into); the extern layout is byte-identical to the probed offsets,
-// so this is a pure offset-arithmetic → field-access change.
+// The ThreadPool object (64 bytes): the runtime constructs and reads the pool
+// through these fields. The `threads`/`bound` members are libc++-`std::vector`
+// `{begin,end,cap}` pointer triples (native_threadpool lays *NativeThread into a
+// contiguous buffer that begin/end point into).
 pub const ThreadPool = struct {
     stop: u8 = 0, // atomic_bool
     increase_depth: u8 = 0, // atomic_bool
@@ -292,9 +274,9 @@ comptime {
     std.debug.assert(@sizeOf(ThreadPool) == thread_pool_size);
 }
 
-// A Thread (view). The full C++ Thread is 208 bytes; the search-driver code only
+// A Thread (view). The full Thread is 208 bytes; the search-driver code only
 // needs the LargePagePtr<Worker> `worker` at offset 8 (a single pointer, dereferenced
-// to the Worker base), so this partial extern struct reinterprets a Thread pointer to
+// to the Worker base), so this partial view struct reinterprets a Thread pointer to
 // read that one slot. `worker` is kept as a raw address (the loaded pointer value).
 pub const Thread = struct {
     _lo: usize, // @0 (idle-loop / vtable region; unused here)
@@ -318,9 +300,9 @@ pub const Thread = struct {
     }
 };
 
-// A cursor over the 13 MB opaque Worker: the base address plus typed accessors for the few
-// fields the search-driver reads/writes at `worker_off`. (The full Worker stays opaque until
-// it is natively constructed -- the M16.8 layout phase; this just types the *access*.)
+// A cursor over the ~13 MB Worker: the base address plus typed accessors for the few
+// fields the search-driver reads/writes at `worker_off`. This just types the *access*
+// over a raw Worker base address.
 pub const Worker = struct {
     base: usize,
 
@@ -429,16 +411,11 @@ pub const TranspositionTable = struct {
 // native_engine.side_tt_storage is written+read only through these typed accessors, so
 // Zig owns the (naturally-ordered) layout; the C++ offset mirror is retired.
 
-// LimitsType field offsets (bytes from the limits sub-object base). searchmoves
-// is a 24-byte std::vector at 0, then seven 8-byte TimePoints
-// (time[2]/inc[2]/npmsec/movetime/startTime) ending at 80, then the five ints
-// movestogo/depth/mate/perft/infinite. The bridge's zfish_ss_context reads depth
-// at +84, which cross-checks this map.
-// The LimitsType object (120 bytes). Typed replacement for limits_off: a leading
-// 24-byte std::vector<std::string> `searchmoves` (POD-opaque here), then the
-// TimePoints, the search-mode ints, nodes, and ponderMode. The POD tail copied by
-// zfish_worker_set_limits is [@offsetOf(.,"time") .. @sizeOf), so any layout error
-// here breaks bench (gate-verified).
+// The LimitsType object (120 bytes): a leading 24-byte std::vector<std::string>
+// `searchmoves` (POD-opaque here), then seven 8-byte TimePoints
+// (time[2]/inc[2]/npmsec/movetime/startTime) ending at 80, then the search-mode
+// ints (movestogo/depth/mate/perft/infinite), nodes, and ponderMode. workerSetLimits
+// copies the POD fields, so any layout error here breaks bench (gate-verified).
 pub const LimitsType = struct {
     searchmoves: [24]u8, // std::vector<std::string> mirror {begin,end,cap}
     time: [2]i64, // time[WHITE], time[BLACK]
@@ -482,9 +459,7 @@ comptime {
 }
 
 pub fn verifyLayouts() void {
-    // The pinned layout constants were cross-checked against the in-tree C++ oracle
-    // (sizeof/offsetof of the real src/ types) until it was retired (REPORT-16 M16.1).
-    // With no C++ types left to compare against, the constants are trusted directly;
-    // any drift now surfaces as a bench/parity failure, and upstream-parity re-pins
-    // them against pristine upstream on a resync.
+    // The pinned layout constants are trusted directly; any drift surfaces as a
+    // bench/parity failure, and upstream-parity re-pins them against pristine
+    // upstream on a resync.
 }

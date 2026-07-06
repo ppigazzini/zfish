@@ -16,9 +16,8 @@ const no_piece: u8 = 0;
 const network_version: u32 = 0x6A448AFA; // upstream nnue_common.h Version (post-merge format)
 const hash_combine_magic: usize = 0x9e3779b9;
 const none_name = "None";
-// EvalFileDefaultName (evaluate.h): the embedded net's default name. A build
-// constant, so the native path no longer reads it from the C++ Network's
-// EvalFile.defaultName. Single source of truth: engine.zig imports this via the
+// EvalFileDefaultName (evaluate.h): the embedded net's default name, a build
+// constant. Single source of truth: engine.zig imports this via the
 // "network" module rather than re-declaring it (a net bump edits one line).
 pub const default_eval_file_name = "nn-af1339a6dea3.nnue";
 
@@ -61,9 +60,8 @@ pub const TraceOutput = struct {
     correct_bucket: usize,
 };
 
-// M16.7: the native NNUE parse (parse*Native) populates the Zig-owned inference storage and is
-// the sole source of weights. These were C++-oracle dual-write hooks; with the oracle retired
-// (M16.1) they are no-op stubs, now local to this module instead of main.zig C-ABI glue.
+// The native NNUE parse (parse*Native) populates the Zig-owned inference storage and is
+// the sole source of weights. The hooks below are no-op stubs, local to this module.
 const embedded_nnue_stub = [_]u8{0};
 fn networkEmbeddedBytes() ByteView {
     return .{ .ptr = &embedded_nnue_stub, .len = 1 };
@@ -163,10 +161,9 @@ inline fn affineDpbusd(
     out.* = acc;
 }
 
-// M-FINAL cutover: native affine-layer byte sizes — fixed by the NNUE architecture
+// Native affine-layer byte sizes — fixed by the NNUE architecture
 // (fc_0 1024->32, fc_1 64->32, fc_2 32->1; biases int32 linear, weights int8 SSSE3-scrambled).
-// sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,32}. Replaces the C++
-// zfish_layer_*_bytes (sizeof the C++ Network's AffineTransform arrays), self-sufficient native.
+// sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,32}.
 const layer_biases_bytes = [3]usize{ 128, 128, 4 };
 const layer_weights_bytes = [3]usize{ 32768, 2048, 32 };
 fn layerBiasesBytes(idx: c_int) usize {
@@ -182,11 +179,8 @@ fn layerWeights(bucket: usize, idx: c_int) [*]const i8 {
     return @ptrCast(@alignCast(nativeLayerPtr(bucket, idx, 1) orelse unreachable));
 }
 fn propagateBucket(network: *const anyopaque, bucket: usize, transformed: [*]const u8) c_int {
-    // M-FINAL cutover (network layers): read the affine-layer weights from the Zig-owned
-    // native storage (zfish_native_layer_ptr) instead of the C++ Network (zfish_layer_biases/
-    // weights). The native parse writes this storage and the load-time cross-check proves it
-    // bit-identical to the C++ Network, so the eval is unchanged (bench-verified). Removes the
-    // C++ Network from the eval hot path.
+    // Read the affine-layer weights from the Zig-owned native storage. The native parse
+    // writes this storage and is the sole source, so the eval is bench-verified.
     _ = network;
     const fc0_b = layerBiases(bucket, 0);
     const fc0_w = layerWeights(bucket, 0);
@@ -320,10 +314,9 @@ pub fn verify(
         };
     }
 
-    // M-FINAL cutover: the verification dims are fixed by the NNUE architecture (sizeof the C++
+    // The verification dims are fixed by the NNUE architecture (sizeof the
     // FeatureTransformer + NetworkArchitecture*LayerStacks; the static InputDimensions /
-    // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS). Native constants replace
-    // zfish_network_verify_info, so the verify message needs no C++ Network.
+    // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS). Native constants.
     _ = network;
     const info = VerifyInfo{
         .size_bytes = 111263232,
@@ -419,9 +412,7 @@ fn nativeLayerContentHash(network: *const anyopaque, bucket: usize) usize {
 
 // Zig-owned EvalFile dynamic state: the current eval-file name, the net
 // description, and the initialized flag. The native load path owns these (the
-// only consumers were here in network.zig). The C++ EvalFile is kept dual-written
-// so the content-hash oracle self-check stays valid until the big-bang removes
-// it. The default name stays sourced from the C++ EvalFile (a build constant).
+// only consumers are here in network.zig).
 var nn_initialized: bool = false;
 var nn_current: [256]u8 = undefined;
 var nn_current_len: usize = 0;
@@ -438,7 +429,7 @@ fn nnDescription() []const u8 {
 
 fn markInitializedNative(network: *anyopaque) void {
     nn_initialized = true;
-    networkMarkInitialized(network); // keep the C++ oracle in sync
+    networkMarkInitialized(network);
 }
 
 fn setLoadedStateNative(network: *anyopaque, current: []const u8, description: []const u8) void {
@@ -636,10 +627,9 @@ fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []cons
     }
 
     setLoadedStateNative(network, current_name, header.description);
-    // M-FINAL cutover: the C++ Network is no longer parsed (no read_blob), so the load-time
-    // native-vs-C++ content-hash + serialization self-checks are retired. The native parse is
-    // the sole source; correctness is verified end-to-end by the eval gates (bench 2336177 /
-    // search-parity), and the offset==bytes.len check above verifies the consumed-byte count.
+    // The native parse is the sole source of weights; correctness is verified end-to-end
+    // by the eval gates (bench / search-parity), and the offset==bytes.len check above
+    // verifies the consumed-byte count.
     return true;
 }
 
@@ -725,14 +715,10 @@ fn networkTransformBucket(
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
 }
 
-// Parse the FT blob natively into the Zig-owned inference storage, then confirm
-// it matches the C++-parsed feature-transformer byte-for-byte (per weight region,
-// skipping alignment padding). The native parse is the inference source; the C++
-// parse remains only as a load-time cross-check.
 // Parse the feature transformer natively into the Zig-owned storage and return the bytes
 // consumed (leading component hash + the LEB-coded params). The native parse is the sole
-// source — the C++ Network is no longer parsed (the eval gates verify the weights end-to-end,
-// and the offset==bytes.len check at the end of loadNetworkBytes verifies the consumed count).
+// source (the eval gates verify the weights end-to-end, and the offset==bytes.len check
+// at the end of loadNetworkBytes verifies the consumed count).
 fn parseFeatureTransformerNative(blob: []const u8) usize {
     const dst_ptr = nativeFtStorage(nnue_parse.ft_total_bytes) orelse
         @panic("native feature-transformer storage allocation failed");
@@ -747,19 +733,16 @@ fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
-    // Legacy oracle populates the C++ Network here; default build no-op. Return ignored.
+    // No-op stub (the native parse is the sole source); return ignored.
     _ = networkFeatureTransformerReadBlob(network, remaining.ptr, remaining.len);
     offset.* += consumed;
     return true;
 }
 
 
-// Parse this bucket's affine layers natively into the Zig-owned inference storage
-// (skip the architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights), then
-// confirm each matches the C++-parsed layer memory byte-for-byte.
 // Parse this bucket's affine layers natively into the Zig-owned storage (skip the leading
 // architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights) and return the bytes
-// consumed. Native is the sole source — no C++ Network parse.
+// consumed. Native is the sole source.
 fn parseLayerNative(bucket: usize, blob: []const u8) usize {
     var pos: usize = 4; // architecture component hash
     var idx: c_int = 0;
@@ -783,7 +766,7 @@ fn readLayer(network: *anyopaque, bucket: usize, bytes: []const u8, offset: *usi
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
-    // Legacy oracle populates the C++ Network here; default build no-op. Return ignored.
+    // No-op stub (the native parse is the sole source); return ignored.
     _ = networkLayerReadBlob(network, bucket, remaining.ptr, remaining.len);
     offset.* += consumed;
     return true;

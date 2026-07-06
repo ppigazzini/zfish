@@ -46,10 +46,9 @@ pub const PositionStorage = @import("position_storage").PositionStorage;
 //   onVerifyNetwork   std::function                         -> retired at flip (emit is native)
 //   shared_histories  std::map<NumaIndex, SharedHistories>  -> *anyopaque         [PENDING: native table]
 //
-// *anyopaque slots are the remaining ports; concrete-typed members are done. This
-// is now a complete definition of the post-src/ Engine; later iterations replace
-// the *anyopaque slots with native types, then the atomic flip constructs this and
-// rewires the ~226 bridge accessors to it.
+// *anyopaque slots are the members whose storage is still opaque; concrete-typed
+// members own native types directly. This is the complete definition of the
+// native Engine graph.
 pub const EngineGraph = struct {
     binary_directory: []const u8,
     numa_context: *NumaReplicationContext, // native NUMA context: config + replica registry
@@ -63,7 +62,7 @@ pub const EngineGraph = struct {
     update_context: UpdateContext,
 
     // Build the SharedState handed to every Worker, bound to this graph's own
-    // subsystems. Replaces the C++ SharedState the bridge constructs.
+    // subsystems.
     pub fn sharedState(self: *EngineGraph) SharedState {
         return SharedState.init(
             self.options,
@@ -84,12 +83,11 @@ pub const EngineGraph = struct {
     }
 
     // Native construction of the graph's OWNED members (states, numaContext,
-    // position storage) — the post-src/ replacement for the C++ Engine member-init
+    // position storage) — the native replacement for the C++ Engine member-init
     // list (binaryDirectory/numaContext/states + pos default-construct). The other
     // members are subsystems the graph references, not owns: options (the global
     // OptionsModel), threads (the native ThreadPool), network, shared_histories,
-    // update_context are passed in; tt starts empty (sized later by resize). The
-    // flip calls this where the bridge today runs zfish_engine_construct_members.
+    // update_context are passed in; tt starts empty (sized later by resize).
     pub fn init(
         allocator: std.mem.Allocator,
         binary_directory: []const u8,

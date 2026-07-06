@@ -110,10 +110,10 @@ const hist_pieceto: usize = hist_piece_nb * hist_square_nb; // PieceToHistory pa
 // Memory mirror of the leading data members of Search::Worker (src/search.h):
 // the per-Worker history tables, which form a contiguous int16-array prefix
 // (no vtable; mainHistory is at offset 0) followed by the shared-history
-// reference. Only ever used through a pointer to the live C++ Worker, so the
-// field order and sizes must byte-match the C++ class. The bridge proves the
-// layout with offsetof static_asserts; this mirror lets ported search code
-// address every table from one Worker pointer instead of per-call base passing.
+// reference. Only ever used through a Worker pointer, so the field order and sizes
+// must byte-match the WorkerLayout histories sub-block; the comptime assert below
+// checks @sizeOf against graph_layout.worker_histories_bytes. This mirror lets ported
+// search code address every table from one Worker pointer instead of per-call base passing.
 pub const WorkerHistories = struct {
     main_history: [hist_color_nb * hist_uint16]i16, // ButterflyHistory [2][65536]
     low_ply_history: [hist_low_ply * hist_uint16]i16, // LowPlyHistory [5][65536]
@@ -199,16 +199,13 @@ pub fn clearSharedHistory(shared_ptr: *anyopaque, thread_idx: usize, numa_total:
     }
 }
 
-// Native construction of one node's SharedHistories — the post-src/ replacement for
-// the C++ ctor SharedHistories(threadCount) reached via try_emplace. Allocates the
-// two DynStats arrays from large pages (corr: [2]CorrectionBundle elements; pawn:
-// [16][64] int16 pages, exposed as a flat int16 array) and fills in the size fields +
-// index masks. `thread_count` is nextPowerOfTwo(threads on the node), so the counts
-// are powers of two and the masks are (count - 1). Element strides come from the same
-// types the native search already reads C++-built histories through, so they match the
-// C++ layout; the COUNT logic is shared with the shadow verifier (shared_histories.zig).
-// UNWIRED: the live path still builds histories via the C++ try_emplace; this is the
-// native builder the flip will call. Native-graph cut flip fire 2.
+// Native construction of one node's SharedHistories. Allocates the two DynStats arrays
+// from large pages (corr: [2]CorrectionBundle elements; pawn: [16][64] int16 pages,
+// exposed as a flat int16 array) and fills in the size fields + index masks.
+// `thread_count` is nextPowerOfTwo(threads on the node), so the counts are powers of two
+// and the masks are (count - 1). Element strides come from the same types the native
+// search reads the histories through, so the layouts match; the COUNT logic is shared
+// with shared_histories.zig (sharedHistoriesSizes).
 pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHistories {
     const sizes = shared_hist.sharedHistoriesSizes(thread_count);
     const corr_bytes = sizes.corr * @sizeOf([2]CorrectionBundle);
@@ -231,7 +228,7 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
 }
 
 // Release a SharedHistories' two large-page arrays — the free hook the native
-// sharedHists map (SharedHistoriesMap) calls per element on erase/clear (~map<>).
+// sharedHists map (SharedHistoriesMap) calls per element on erase/clear.
 pub fn deinitSharedHistories(sh: *SharedHistories) void {
     memory.alignedLargePagesFree(@ptrCast(sh.corr_data));
     memory.alignedLargePagesFree(@ptrCast(sh.pawn_data));
@@ -239,13 +236,11 @@ pub fn deinitSharedHistories(sh: *SharedHistories) void {
 }
 
 // The native engine `sharedHists` member: NumaIndex -> SharedHistories, built with the
-// large-page-backed construct/free hooks. UNWIRED until the atomic repoint.
+// large-page-backed construct/free hooks.
 pub const SharedHistoriesMap = shared_histories_map.SharedHistoriesMapOf(SharedHistories);
 
-// Shadow verifier: read a constructed (C++ try_emplace) SharedHistories through the
-// native mirror and confirm its four size fields match the native sizing for
-// `thread_count`. Called at the live insert to diff the native logic against the
-// oracle without changing behavior.
+// Read a SharedHistories through the native mirror and confirm its four size fields
+// match the native sizing for `thread_count`.
 pub fn verifySharedHistories(shared_ptr: *const anyopaque, thread_count: usize) bool {
     const shared: *const SharedHistories = @ptrCast(@alignCast(shared_ptr));
     return shared_hist.verifySizes(
@@ -264,9 +259,9 @@ inline fn pawnEntryRow(shared: *SharedHistories, pos: *const Position) [*]i16 {
 }
 
 // update_quiet_histories addressed through the Worker + SharedHistories mirrors:
-// the bridge passes only the Worker and Position pointers and the move, and Zig
+// the caller passes only the Worker and Position pointers and the move, and Zig
 // resolves mainHistory[us][move], lowPlyHistory[ply][move], and the pawn entry
-// itself (no per-call base pointers from C++).
+// itself (no per-call base pointers).
 pub fn updateQuietHistoriesWorker(
     worker_ptr: *anyopaque,
     pos_ptr: *const anyopaque,
@@ -293,8 +288,7 @@ pub fn updateQuietHistoriesWorker(
 // [in_check][capture][pc][to] (a PieceToHistory page) and continuation_
 // correction_history to &continuationCorrectionHistory[pc][to]. The null move
 // and the iterative_deepening sentinels pass all-zero indices (NO_PIECE), which
-// resolve to the table bases. This moves the Worker-table address arithmetic
-// out of the C++ do_move wrappers and into Zig ownership.
+// resolve to the table bases. Zig owns the Worker-table address arithmetic.
 pub fn setContHist(worker_ptr: *anyopaque, ss_ptr: *anyopaque, in_check: u8, capture: u8, pc: u8, to: u8) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
@@ -323,9 +317,9 @@ pub fn fillLowPlyHistory(worker_ptr: *anyopaque) void {
     for (&w.low_ply_history) |*e| e.* = 100;
 }
 
-// Worker::clear() per-Worker history resets (the shared correction/pawn
-// clear_range stays C++ for its numa partitioning, and the NNUE refreshTable is
-// untouched). mainHistory=-5, captureHistory=-699, ttMoveHistory=0,
+// Worker::clear() per-Worker history resets (the shared correction/pawn clear_range
+// is handled separately by clearSharedHistory for its numa partitioning, and the NNUE
+// refreshTable is untouched). mainHistory=-5, captureHistory=-699, ttMoveHistory=0,
 // continuationCorrectionHistory=5, continuationHistory=-552.
 pub fn clearWorkerHistories(worker_ptr: *anyopaque) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
@@ -355,9 +349,9 @@ inline fn statsUpdate(entry: *i16, bonus: c_int, comptime d: c_int) void {
 }
 
 
-// The bridge shim performs the C++ table lookups (mainHistory[us][move],
-// lowPlyHistory, sharedHistory.pawn_entry) and hands Zig the int16 entry
-// pointers; Zig owns the bonus scaling + gravity update sequence.
+// The caller resolves the table lookups (mainHistory[us][move], lowPlyHistory,
+// sharedHistory.pawn_entry) and hands this the int16 entry pointers; Zig owns the
+// bonus scaling + gravity update sequence.
 pub fn updateQuietHistories(
     main_entry: *i16,
     lowply_entry: ?*i16,
@@ -409,10 +403,8 @@ pub fn isShuffling(pos_ptr: *const anyopaque, ss_ptr: *const anyopaque, move: u1
 // ======================= qsearch() (ported to Zig) =======================
 // Mirrors Search::Worker::qsearch (src/search.cpp). Calls Zig-native TT
 // (tt.probeTable/entrySave), MovePicker (movepick.nextMove), position
-// predicates, and search-formula helpers directly; the accumulator-coupled
-// do_move/undo_move/evaluate and the Worker-private nodes/selDepth go through
-// C++ callbacks (zfish_search_cb_*). All history/correction tables are read
-// from the Worker + SharedHistories mirrors.
+// predicates, and search-formula helpers directly. All history/correction
+// tables are read from the Worker + SharedHistories mirrors.
 const q_value_draw: c_int = 0;
 const q_value_none: c_int = 32002;
 const q_value_inf: c_int = 32001;
@@ -453,10 +445,9 @@ pub const PVMoves = struct {
 };
 
 // Memory mirror of Search::RootMove (src/search.h). RootMove is a standard-layout
-// POD (its pv is the inline PVMoves, not a heap vector), so std::vector<RootMove>
-// rootMoves is a contiguous array the Zig search indexes through a base pointer
-// handed over by worker_state. Field order/types match the C++ declaration; the
-// C ABI extern struct reproduces the same offsets.
+// POD (its pv is the inline PVMoves, not a heap vector), so the rootMoves vector is
+// a contiguous array the Zig search indexes through a base pointer handed over by
+// worker_state. Field order/types/offsets match the RootMove layout the search reads.
 pub const RootMove = struct {
     effort: u64,
     score: i32,
@@ -484,12 +475,11 @@ fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
     pv.length = n + 1;
 }
 
-// SearchManager::pv driver (default target). The C++ pv() delegates the multiPV
-// info-line loop here; Zig derives each line's fields from the RootMove memory
-// mirror and calls zfish_search_emit_info_full, which rebuilds InfoFull and
-// routes it through the unchanged updates.onUpdateFull listener for byte-exact
-// output. No tablebases in this build, so the upstream TB/syzygy branches never
-// apply (rootInTB is always false).
+// SearchManager::pv driver. Drives the multiPV info-line loop: Zig derives each
+// line's fields from the RootMove memory mirror and calls searchEmitInfoFull, which
+// builds the InfoFull line and routes it through the update listener. No tablebases
+// in this build, so the upstream TB/syzygy branches never apply (rootInTB is always
+// false).
 const PvContext = struct {
     manager: ?*anyopaque,
     worker: ?*anyopaque,
@@ -704,9 +694,9 @@ const SsCtx = struct {
 
 // Search-manager driver callbacks that touch only the Worker graph (via graph_layout)
 // + the accumulator stack — relocated from main.zig (M16.7). The driver
-// (workerStartSearching) now calls them locally instead of through C-ABI. Callbacks that
-// need the thread pool / options / timeman / uci output / network stay main-side bridges,
-// since position sits below those layers (importing them would cycle).
+// (workerStartSearching) now calls them locally. Callbacks that need the thread pool /
+// options / timeman / uci output / network stay in main.zig, since position sits below
+// those layers (importing them would cycle).
 fn workerThreadsPool(worker: *const anyopaque) usize {
     const p: *const usize = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(worker)) + graph_layout.worker_off.threads));
     return p.*;
@@ -928,7 +918,7 @@ fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
         // Non-main threads bail before the time-management block (`if (!main_thread)
         // continue;`), so these SearchManager/TM pointer fields are never dereferenced
         // for them. position's ZfishIdState types them non-optional, so use the worker
-        // pointer as a harmless valid placeholder (the C++ path left them null/unused).
+        // pointer as a harmless valid placeholder (they are otherwise null/unused).
         out.stop_on_ponderhit = @ptrCast(worker);
         out.ponder = @ptrCast(worker);
         out.iter_value = @ptrCast(@alignCast(worker));
@@ -1005,9 +995,9 @@ fn ssNpmsecAdvance(worker: *anyopaque) void {
     avail.* = @max(@as(i64, 0), avail.* - (nodes - inc));
 }
 
-// Worker::start_searching control flow, ported from the bridge. Zig owns every
-// branch and the sequencing; the C++ leaf helpers run the individual time-
-// management, thread-pool, skill, and UCI-output operations.
+// Worker::start_searching control flow. Zig owns every branch and the sequencing;
+// the leaf helpers run the individual time-management, thread-pool, skill, and
+// UCI-output operations.
 pub fn workerStartSearching(worker: ?*anyopaque) void {
     ssPrologue(worker.?);
 
@@ -1056,9 +1046,9 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 // whole search: the NNUE accumulator stack, the node counter, the (numa-resolved)
 // Network, the accumulator-refresh cache, the optimism[2] array, and the three
 // scalar Worker fields the search reads/writes directly — nmpMinPly, selDepth, and
-// rootDepth. Cached in QCtx at entry so do_move/undo_move/evaluate and these scalar
-// accesses touch no C++ (the accumulator push/pop, pos.do_move, and the network
-// forward pass + eval scaling are all Zig-owned).
+// rootDepth. Cached in QCtx at entry; do_move/undo_move/evaluate and these scalar
+// accesses are all Zig-owned (the accumulator push/pop, pos.do_move, and the network
+// forward pass + eval scaling).
 // Once-per-search snapshot of the Worker's live member pointers + shared stop flag,
 // and -- on the main thread -- the SearchManager/TimeManagement/LimitsType time inputs.
 // Relocated from main.zig (M16.7): graph_layout offset reads + the native FT pointer
@@ -1145,10 +1135,9 @@ const SearchTimeState = struct {
     use_time_management: u8,
 };
 
-// iterative_deepening state, snapshotted once at entry (skill-off path only; the
-// C++ keeps the skill-enabled handicap path and remains the rebase body). Live
+// iterative_deepening state, snapshotted once at entry (skill-off path only). Live
 // fields are pointers into Worker/SearchManager/ThreadPool; the rest are values
-// read once. Layout matches the bridge ZfishIdState exactly.
+// read once.
 const ZfishIdState = struct {
     root_pos: *anyopaque,
     root_moves: [*]RootMove,
@@ -1281,11 +1270,10 @@ inline fn verifyUndoMove(pos_ptr: *anyopaque, move: u16) void {
     undoMove(pos_ptr, move);
 }
 
-// M-FINAL cutover: native Position::do_move(Move, StateInfo&) for UCI move application
-// (the bridge's zfish_position_do_move_state, used to apply `position ... moves`). Mirrors
-// verifyDoMove: gives_check is computed here and scratch DirtyPiece/DirtyThreats are passed
-// (during setup no accumulator slot consumes the dirty state). Replaces the C++
-// Position::do_move in the default build.
+// Native Position::do_move(Move, StateInfo&) for UCI move application (used to apply
+// `position ... moves`). Mirrors verifyDoMove: gives_check is computed here and scratch
+// DirtyPiece/DirtyThreats are passed (during setup no accumulator slot consumes the
+// dirty state).
 pub fn doMoveState(pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque) void {
     var dp: DirtyPiece = undefined;
     var dts: DirtyThreats = undefined;
@@ -1293,7 +1281,7 @@ pub fn doMoveState(pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque) void {
     doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
 }
 
-/// Allocate a zeroed Position block (M16.7 — was main.zig's zfish_position_create).
+/// Allocate a zeroed Position block.
 pub fn create() ?*anyopaque {
     const buf = std.c.malloc(graph_layout.position_size) orelse return null;
     @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.position_size], 0);
@@ -1303,8 +1291,8 @@ pub fn destroy(pos: ?*anyopaque) void {
     if (pos) |p| std.c.free(p);
 }
 
-/// setPosition with the engine-graph Position/StateInfo sizes filled in (M16.7 — lets callers
-/// keep the old 5-arg zfish_position_set_state shape without threading graph sizes through).
+/// setPosition with the engine-graph Position/StateInfo sizes filled in (lets callers keep
+/// the 5-arg shape without threading graph sizes through).
 pub fn setPositionState(pos_ptr: *anyopaque, fen_ptr: [*]const u8, fen_len: usize, chess960_enabled: u8, state_ptr: *anyopaque) ?[*:0]u8 {
     return setPosition(pos_ptr, fen_ptr, fen_len, chess960_enabled, state_ptr, graph_layout.position_size, graph_layout.state_info_size);
 }
@@ -1323,7 +1311,7 @@ fn legalContains(pos_ptr: *const anyopaque, move: u16) bool {
 // RootMove::extract_ponder_from_tt: make the best move, probe the TT for a reply
 // stored there, append it to the PV if it is a legal move, unmake. Returns
 // whether a ponder move was found (pv length > 1). The tt context (table base,
-// cluster count, generation) is handed over by the bridge.
+// cluster count, generation) is handed over by the caller.
 pub fn extractPonderFromTt(pv_ptr: *anyopaque, table: ?*anyopaque, cluster_count: usize, generation: u8, pos_ptr: *anyopaque) u8 {
     const pv: *PVMoves = @ptrCast(@alignCast(pv_ptr));
     const move = pv.moves[0];
@@ -1725,9 +1713,9 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
     return qsearchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, pv_node != 0);
 }
 
-// ======================= search() (ported to Zig, non-root) =======================
-// Mirrors Search::Worker::search for PV/NonPV nodes (Root stays C++ in search.cpp,
-// so rootMoves never crosses the boundary). Reuses the qsearch infrastructure
+// ======================= search() (ported to Zig) =======================
+// Mirrors Search::Worker::search for Root/PV/NonPV nodes (node type selected by the
+// root_node/pv_node/cut_node params). Reuses the qsearch infrastructure
 // (mirrors, TT, MovePicker, the worker_state pointers) plus the pos_do_move
 // (2-arg) / followPV / root-bookkeeping callbacks. (do_null_move, reduction,
 // nmpMinPly, and seldepth are now inlined: null make/unmake is Zig-owned, and the
@@ -2184,7 +2172,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
 
         if (root_node) {
             // (ss+1)->pv is only valid (non-null) when this move ran a PV search,
-            // i.e. move_count == 1 or value > alpha; otherwise the C++ ignores it.
+            // i.e. move_count == 1 or value > alpha; otherwise it is ignored.
             const cpv: ?*const PVMoves = if (move_count == 1 or value > alpha) @ptrCast(@alignCast(ssAdd(ss, 1).pv.?)) else null;
             rootUpdate(ctx, move, value, ctx.nodes.* - node_count, move_count, alpha, beta, cpv);
         }
@@ -2288,8 +2276,8 @@ pub fn wdlMaterial(pos_ptr: *const anyopaque) c_int {
         5 * (pc[4] + pc[12]) + 9 * (pc[5] + pc[13]);
 }
 
-// Layout matches position_snapshot.PositionSnapshot / the bridge
-// ZfishPositionSnapshot. Read straight from the Position memory mirror.
+// Layout matches position_snapshot.PositionSnapshot. Read straight from the
+// Position memory mirror.
 const FillSnapshot = struct {
     side_to_move: u8,
     pieces_all: u64,
@@ -2312,8 +2300,8 @@ const FillSnapshot = struct {
     is_chess960: u8,
 };
 
-// Position::fill_snapshot, ported from the C++ bridge: derive the NNUE/board
-// snapshot from the live Position. Reads the memory mirror directly, no C++.
+// Position::fill_snapshot: derive the NNUE/board snapshot from the live Position.
+// Reads the memory mirror directly.
 pub fn fillSnapshot(pos_ptr: *const anyopaque, out_ptr: *anyopaque) void {
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const st = pos.st;
@@ -2375,10 +2363,9 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
 }
 
 // ==================== iterative_deepening() (ported to Zig) ====================
-// Compatibility-surface externs: the UCI pv() sink, and the cross-thread
-// bestMoveChanges collection (sum + reset, returned as a double) so multi-thread
-// stays correct. The skill-enabled handicap path stays in C++ (the seam only
-// redirects here when skill is off), so no skill/RNG logic is needed in Zig.
+// The UCI pv() sink and the cross-thread bestMoveChanges collection (sum + reset,
+// returned as a double) keep multi-thread correct. This handles the skill-off path
+// only, so no skill/RNG logic is needed here.
 
 const id_nodes_limit_output: u64 = 10_000_000;
 
@@ -2700,11 +2687,11 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
 
 const low_ply_history_size: c_int = 5;
 
-// Compute the three quiet-history entries for `move` from the table bases the
-// bridge passed and apply the shared quiet-history update. mainHistory is
-// [2][65536], lowPlyHistory [5][65536], pawn_row is one fixed [16][64] page.
+// Compute the three quiet-history entries for `move` from the table bases and
+// apply the shared quiet-history update. mainHistory is [2][65536], lowPlyHistory
+// [5][65536], pawn_row is one fixed [16][64] page.
 // update_all_stats (search.cpp): credit the best move and debit the searched-but-
-// rejected quiets/captures. The bridge passes only the Worker, Position, and
+// rejected quiets/captures. The caller passes only the Worker, Position, and
 // Stack pointers and the two move lists (ptr+len); Zig resolves captureHistory
 // from the Worker mirror and the quiet entries via updateQuietHistoriesWorker,
 // and owns all bonus/malus scaling, the running malus decay, and the gravity.
@@ -2857,9 +2844,9 @@ const piece_to_char = " PNBRQK  pnbrqk";
 
 
 // Memory mirror of upstream Stockfish StateInfo (src/position.h). Field order,
-// types, and C-ABI alignment match the C++ struct exactly so Zig can read the
-// live state stack that the C++ Position owns. Only used via pointer (never
-// allocated here), so it must stay byte-compatible with the C++ layout.
+// types, and alignment match the upstream layout exactly so Zig can walk the live
+// state stack (linked via `previous`). Only used via pointer (never allocated as a
+// standalone here), so it must stay byte-compatible with that layout.
 pub const StateInfo = struct {
     material_key: u64,
     pawn_key: u64,
@@ -2883,8 +2870,8 @@ pub const StateInfo = struct {
 // Full memory image of upstream Position (src/position.h): the leading data
 // members the ported code reaches through a pointer, plus the trailing NNUE
 // scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
-// members the struct is the whole 1032-byte object, so the native graph can own
-// and allocate a Position outright rather than only borrowing the C++ one.
+// members the struct is the whole 1032-byte object, so the native graph owns and
+// allocates a Position outright.
 pub const Position = struct {
     board: [64]u8,
     by_type_bb: [8]u64,
@@ -2937,8 +2924,7 @@ const init_pieces = [_]u8{ 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14 };
 
 pub fn initRuntime() void {
     // Register the cycle-break hooks movegen/movepick/nnue/uci_move call (they can't
-    // import position). Replaces the zfish_position_fill_snapshot / _move_is_legal
-    // C-ABI exports.
+    // import position).
     position_snapshot_port.fill_fn = &fillSnapshot;
     position_snapshot_port.move_is_legal_fn = &legal;
 

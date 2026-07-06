@@ -1,26 +1,22 @@
-// Native engine — the buffer-resident, post-src/ replacement for the C++
-// UCIEngine/Engine placement-construct (NATIVE_ENGINE_CUTOVER.md).
+// Native engine — the buffer-resident engine object (replaces the C++
+// UCIEngine/Engine).
 //
-// The engine buffer (Zig-allocated in main.zig) holds a NativeEngine instead of a
-// C++ UCIEngine. NativeEngine is an OWNERSHIP CONTAINER: it owns each engine member
-// as an explicitly-freed heap object it points at, so NO C++ ~Engine/~UCIEngine ever
-// runs and the ~Engine/~ThreadPool coupling that made the cut look atomic is gone.
+// The engine buffer (Zig-allocated in main.zig) holds a NativeEngine. It is an
+// OWNERSHIP CONTAINER: it owns each engine member as an explicitly-freed heap
+// object it points at, so member teardown is explicit and ordered here.
 //
-// Member ownership at the flip (see the cutover doc):
-//   numa_context   heap C++ NumaReplicationContext   (zfish_member_numa_context_*)
-//   states         heap C++ deque<StateInfo>(1)      (zfish_member_states_*)
-//   options        heap C++ OptionsMap               (zfish_member_options_*)
-//   threads        heap C++ ThreadPool               (zfish_member_threadpool_*)
-//   network        heap C++ LazyNumaReplicated<Net>  (zfish_member_network_*)
-//   update_context inline native placeholder         (dead in the default build)
+// Members:
+//   numa_context     malloc(1) handle (single node; never dereferenced)
+//   states           native StateList (the fallback root list)
+//   options          malloc(1) handle (never dereferenced; values live in the OptionsModel)
+//   threads          value-initialized ThreadPool buffer (native Threads vector)
+//   network          native single-node NNUE holder
+//   update_context   inline native UpdateContext slot
 //   binary_directory owned C string                  (misc getBinaryDirectory)
-//   cli            argc/argv                          (UCIEngine::cli accessors)
-// pos / tt / sharedHists are ALREADY Zig-side globals (side_pos_storage /
-// side_tt_storage / side_shared_histories in main.zig) whose accessors ignore the
-// engine pointer, so the native engine does not own them.
-//
-// Each interim-C++ heap member ports to a native type one-at-a-time, incrementally
-// green, after the flip — until uci_bridge.cpp + src delete (TU=0).
+//   cli              argc/argv
+// pos / tt / sharedHists are Zig-side globals (side_pos_storage / side_tt_storage
+// here, side_shared_histories) whose accessors ignore the engine pointer, so the
+// native engine does not own them.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");
@@ -28,14 +24,12 @@ const misc_port = @import("misc");
 const state_list_port = @import("state_list"); // native StateList (states crack)
 const network_port = @import("network");
 
-// ---- the interim-C++ member heap allocators (uci_bridge.cpp, default build) -------
-// M-FINAL cutover: the trivial raw-heap members (numa_context + options are 1-byte handles never
-// dereferenced; threads is a value-initialized ThreadPool buffer whose threads vector is native-
-// managed and whose ~ThreadPool is a no-op after native teardown) are allocated natively here —
-// std.c.malloc/calloc is the SAME libc allocator the C++ std::malloc used, so the alloc/free
-// pairing is preserved (valgrind-clean) and the C++ member_{numa_context,threadpool,options}_*
-// fns + the sizeof(ThreadPool) drop out of the default build. graph_layout.thread_pool_size (64)
-// replaces sizeof(Stockfish::ThreadPool). Verified by teardown (H5) + valgrind (H3).
+// ---- the member heap allocators -------
+// The trivial raw-heap members (numa_context + options are 1-byte handles never dereferenced;
+// threads is a value-initialized ThreadPool buffer whose threads vector is native-managed and
+// whose ~ThreadPool is a no-op after native teardown) are allocated with std.c.malloc/calloc,
+// so the alloc/free pairing stays within one libc allocator (valgrind-clean).
+// graph_layout.thread_pool_size (64) is the ThreadPool buffer size.
 fn memberNumaContextNew() ?*anyopaque {
     return std.c.malloc(1);
 }
@@ -50,9 +44,8 @@ fn memberHandleFree(p: ?*anyopaque) void {
 }
 // network: native single-node holder. malloc(1) handle (never dereferenced — the worker network
 // resolver / eval / verify read native storage; nothing indexes network[token]) + trigger the
-// native NNUE load into the Zig-owned storage, exactly as the old C++ net->load() did. numa_context
-// is unused (single node). (states_new/delete dropped: states is a native StateList — state_list.zig
-// — and member_states_* had no caller.)
+// native NNUE load into the Zig-owned storage. numa_context is unused (single node). states is a
+// native StateList (state_list.zig), so it has no allocator here.
 fn memberNetworkNew(binary_dir: [*:0]const u8, binary_dir_len: usize) ?*anyopaque {
     const holder = std.c.malloc(1) orelse return null;
     network_port.load(holder, binary_dir, binary_dir_len, binary_dir, 0);
@@ -61,15 +54,14 @@ fn memberNetworkNew(binary_dir: [*:0]const u8, binary_dir_len: usize) ?*anyopaqu
 // updateContext + onVerifyNetwork are held INLINE in the native engine (stable address
 // for the worker managers / verify emit to bind via accessor) and placement-constructed.
 
-// sizeof(Search::SearchManager::UpdateContext): 4 std::function (libc++ 48B each) + a
-// void* ctx, padded. LIVE: the native search emit calls its onUpdateFull/onBestmove
-// (set by init_search_update_listeners) — so this slot is placement-constructed as a
-// real C++ UpdateContext and bound by the worker managers via the accessor. 240 is a
+// sizeof(SearchManager::UpdateContext): 4 std::function (48B each) + a void* ctx,
+// padded. The native search emit calls its onUpdateFull/onBestmove (set by
+// init_search_update_listeners) and binds this slot via the accessor. 240 is a
 // generous upper bound on sizeof(UpdateContext).
 pub const update_context_size: usize = 240;
 // sizeof(std::function<void(std::string_view)>) — libc++ is 48B; 64 is a safe bound.
 // onVerifyNetwork: set to print_info_string (interactive) or a no-op (quiet) and called
-// by zfish_engine_emit_verify_message on a network verify message.
+// on a network verify message.
 pub const verify_network_fn_size: usize = 64;
 
 /// The buffer-resident native engine. `extern struct` so the field offsets are stable
@@ -107,7 +99,7 @@ pub const NativeEngine = struct {
         return @ptrCast(@alignCast(p));
     }
 
-    // Member accessors (M16.7 -- relocated from main.zig's zfish_engine_*_ptr C-ABI exports).
+    // Member accessors.
     pub fn cliArgc(self: *const NativeEngine) c_int {
         return self.cli_argc;
     }
@@ -189,10 +181,10 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
     e.network = memberNetworkNew(bdir, std.mem.span(bdir).len) orelse return false;
 
-    // REPORT-12 TU=0 std::function cluster: the update_context / on_verify_network slots are zeroed
-    // by the field initializers above, which is byte-equivalent to a default-constructed empty
-    // std::function/UpdateContext. The native search binds engine_graph's native UpdateContext and the
-    // verify emitter reads the empty slot, so no C++ placement-construct is needed (it was a no-op).
+    // The update_context / on_verify_network slots are zeroed by the field initializers above,
+    // which is byte-equivalent to a default-constructed empty std::function/UpdateContext. The
+    // native search binds engine_graph's native UpdateContext and the verify emitter reads the
+    // empty slot, so no placement-construct is needed (it was a no-op).
 
     return true;
 }
@@ -204,27 +196,25 @@ pub fn setCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     e.cli_argv = argv;
 }
 
-/// Free the engine's heap members in reverse construction / dependency order, bypassing
-/// every C++ dtor (~Engine/~ThreadPool/~UCIEngine). The caller (main.zig destruct_at)
-/// runs the thread teardown first: clear nulls the pool's native
+/// Free the engine's heap members in reverse construction / dependency order. The caller
+/// (main.zig destruct_at) runs the thread teardown first: clear nulls the pool's native
 /// Threads vector, and releasePendingStateSlot frees `states` if it was
 /// never moved into pool.setupStates. After that:
-///   - delete network  (frees the replicated Network instances; references numa, so first)
-///   - delete threads   (~ThreadPool frees setupStates if states was handed off to it)
-///   - delete options
-///   - delete numa_context
+///   - free network  (the single-node NNUE holder handle; references numa, so first)
+///   - free threads   (setupStates is freed by the block below, not by a dtor)
+///   - free options
+///   - free numa_context
 ///   - free  binary_directory
-/// states is freed by EXACTLY ONE of {release_pending_state_slot, ~ThreadPool} — never
-/// both — matching the std::move handoff lifecycle.
+/// states is freed by EXACTLY ONE of {release_pending_state_slot, the setupStates block
+/// below} — never both — matching the move handoff lifecycle.
 pub fn destructMembers(buf: *anyopaque) void {
     const e = NativeEngine.fromBuffer(buf);
 
-    // Destruct the inline live C++ sub-objects (the std::functions they hold) first.
-    // (update_context / on_verify_network are plain zeroed buffers in default — no C++ dtor needed)
+    // update_context / on_verify_network are plain zeroed buffers — no dtor needed.
 
     // states crack: free the pool's setupStates StateList @8 + the engine `states` slot's
-    // StateList, and NULL setupStates@8, BEFORE deleting the C++ ThreadPool — else
-    // ~ThreadPool would delete setupStates as a deque* and corrupt the native StateList.
+    // StateList, and NULL setupStates@8, before freeing the ThreadPool buffer, so the
+    // native StateList is destroyed here rather than left dangling.
     // Each list is owned by exactly one of {slot, setupStates} (adopt MOVEs + nulls source),
     // and the side-table storage was already freed by release_pending_state_slot, so this
     // frees each surviving list exactly once.

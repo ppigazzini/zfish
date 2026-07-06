@@ -12,10 +12,6 @@ const native_engine = @import("native_engine");
 const graph_layout = @import("graph_layout");
 const clock = @import("clock");
 
-// These engine_owner entry points are @export'd main.zig-local orchestrators (not thin
-// engine-module wrappers), so they stay C-ABI for now -- a later slice moves that logic out
-// of main.zig. The other zfish_engine_*_owner calls became engine_mod.* direct calls (M16.5).
-
 // C stdio stdin, obtained portably (M-PORT). @cImport's translation of the stream macros
 // is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on
 // Windows, an inline getter on macOS), so the underlying entry point is declared directly:

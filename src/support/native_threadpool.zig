@@ -37,7 +37,7 @@ inline fn poolOf(slot: [*]u8) *ThreadPool {
 // Layer 4 binds this to the large-page Worker alloc + constructFull.
 pub const ThreadBuilder = struct {
     ctx: ?*anyopaque = null,
-    // thread is passed opaque so the C++ worker-builder can write worker@8 directly.
+    // thread is passed opaque so the native worker-builder can write worker@8 directly.
     build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) void,
 };
 
@@ -140,11 +140,11 @@ pub const NativePool = struct {
     }
 };
 
-// ---- C-ABI entry points (called by the native reconfigure + teardown) -------
+// ---- Entry points (called by the native reconfigure + teardown) -------
 
-// The C++ worker-builder (uci_bridge): resolves the SharedState members + numa
-// params for thread `idx`, large-page-allocs + constructs the Worker, mints the
-// SearchManager, and writes the Worker at thread+8 (worker@8). Single-node host.
+// The native worker-builder: resolves the SharedState members + numa params for
+// thread `idx`, large-page-allocs + constructs the Worker, mints the SearchManager,
+// and writes the Worker at thread+8 (worker@8). Single-node host.
 
 const WorkerBuildCtx = struct {
     shared_state: ?*anyopaque,
@@ -166,8 +166,7 @@ pub fn set(
 }
 
 // Join + free every native Thread and null the footprint vector. Called by the
-// native reset_for_reconfigure and the zfish_uci_engine_destruct_at teardown hook,
-// BEFORE any C++ ThreadPool dtor (which then sees an empty vector and no-ops).
+// native reset_for_reconfigure and the engine teardown hook.
 pub fn clear(pool: *anyopaque) void {
     var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
     p.clear();
@@ -176,8 +175,7 @@ pub fn clear(pool: *anyopaque) void {
 // Native equivalent of C++ ThreadPool::wait_on_thread(id): wait for one thread's
 // in-flight job to finish. Reads the thread pointer out of the footprint vector
 // by index and calls the native wait -- the C++ wait_on_thread would lock the C++
-// Thread's std::mutex, which is garbage on a NativeThread. Routed here by the
-// gated zfish_threadpool_wait_thread bridge shim in the default build.
+// Thread's std::mutex, which is garbage on a NativeThread.
 pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads_begin == 0) return;
@@ -185,9 +183,6 @@ pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
     const thread: *NativeThread = @ptrFromInt(vec[thread_id]);
     thread.waitForSearchFinished();
 }
-
-// In test builds the real C++ builder is absent; provide a stub so the module
-// links standalone. The tests drive set() with MockBuild, not this symbol.
 
 // ---- tests (isolated; mock builder, standalone footprint) -------------------
 

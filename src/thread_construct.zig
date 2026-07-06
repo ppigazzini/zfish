@@ -1,19 +1,14 @@
 // Construction verifier for the ThreadPool / Thread graph (harness H4).
 //
-// The stage-4 big-bang replaces the C++ ThreadPool::set + std::thread/idle_loop
-// Thread with a native runtime. The native ThreadPool must reproduce the C++
-// ThreadPool's observable layout (stop@0, increaseDepth@1, the threads vector at
-// 16/24, boundThreadToNumaNode at 40/48) and each native Thread must keep its
-// Worker at thread_off.worker, because the search-driver code (cb_worker_state,
-// id_collect_bmc, nodesSearched, get_best_thread, ...) reads all of these by
-// offset and would silently corrupt if the native construction drifted.
+// The native ThreadPool reproduces the ThreadPool's observable layout (stop@0,
+// increaseDepth@1, the threads vector at 16/24, boundThreadToNumaNode at 40/48)
+// and each native Thread keeps its Worker at thread_off.worker, because the
+// search-driver code (cb_worker_state, id_collect_bmc, nodesSearched,
+// get_best_thread, ...) reads all of these by offset and would silently corrupt
+// if the native construction drifted.
 //
-// This runs at the end of the live C++ ThreadPool::set (default build only) and
-// asserts the freshly constructed pool against the pinned offsets. Landed now, it
-// verifies the C++-built pool — anchoring the offsets while the C++ runtime is
-// still alive — and it will verify the native pool unchanged once stage 4 swaps
-// the construction. Same model as worker_construct.zig. Read-only; panics on
-// drift.
+// This verifier asserts the freshly constructed native pool against the pinned
+// offsets. Same model as worker_construct.zig. Read-only; panics on drift.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");

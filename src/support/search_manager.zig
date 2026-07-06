@@ -15,11 +15,8 @@
 //     does nothing on check_time; there is no vtable, just a branch. Dispatch is
 //     a direct Zig call, resolved at the call site.
 //
-// The C++ build keeps Stockfish::Search::SearchManager (a real polymorphic
-// object) because the frozen headers declare it that way and the bridge still
-// constructs the graph. This module is the native replacement that the Zig graph
-// will own once construction moves off the bridge; it is built and unit-tested
-// standalone first, exactly like thread_runtime.zig.
+// This module is the native SearchManager the Zig engine graph owns; it is built
+// and unit-tested standalone, exactly like thread_runtime.zig.
 
 const std = @import("std");
 

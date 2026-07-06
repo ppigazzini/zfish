@@ -1,18 +1,17 @@
 // Native Search::Worker field constructor.
 //
 // The Worker's 13.2 MB storage is already Zig-allocated (aligned_large_pages),
-// its POD fill is Zig (Worker::clear -> zfish_search_clear_*), and
+// its POD fill is Zig (Worker::clear), and
 // worker_construct.zig already locks the field-init model of a freshly built
-// Worker. The one thing still done by the frozen C++ Worker constructor is the
-// placement-new that writes the non-history members: the five SharedState
-// reference slots, the NUMA scalars, the manager pointer, and the one live
-// AccumulatorStack slot. This module reproduces exactly that write set in Zig,
-// so the atomic Engine cut can construct a Worker without the C++ constructor.
+// Worker. The non-history members written by the constructor are: the five
+// SharedState reference slots, the NUMA scalars, the manager pointer, and the one
+// live AccumulatorStack slot. This module writes exactly that set in Zig, so the
+// Engine graph constructs a Worker without any C++ constructor.
 //
 // Only the constructor-set fields are written here; the histories, reductions,
 // refresh cache, and shared history are filled afterwards by the existing native
-// Worker::clear path. Offsets come from graph_layout.worker_off, the live-probed
-// address map that worker_construct.zig verifies on every C++ Worker.
+// Worker::clear path. Offsets come from graph_layout.worker_off, the address map
+// that worker_construct.zig verifies on every Worker.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");
@@ -47,7 +46,7 @@ fn writePtr(base: [*]u8, offset: usize, value: usize) void {
     p.* = value;
 }
 
-// Inputs the C++ Worker constructor receives, unpacked from the SharedState plus
+// Inputs the native Worker constructor receives, unpacked from the SharedState plus
 // the thread parameters. Pointers are the exact referents the reference members
 // must bind to (the SharedState members), matching the C++ initializer list.
 pub const WorkerCtorInputs = struct {
@@ -65,7 +64,7 @@ pub const WorkerCtorInputs = struct {
 
 // Write the constructor-set members into a (zeroed) Worker buffer. The caller
 // owns the buffer (aligned_large_pages, worker_size bytes) and must zero it and
-// run the native Worker::clear afterwards, exactly as the C++ path does.
+// run the native Worker::clear afterwards.
 pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     // Five SharedState reference members.
     writePtr(worker, off.histories + position_port.worker_shared_history_off, in.shared_history);
@@ -89,8 +88,8 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
 
 // Full native Worker construction into a caller-owned, zeroed buffer: write the
 // constructor field set, then run the native Worker::clear pieces (histories,
-// shared history, reductions, refresh cache) exactly as the C++ ctor's clear()
-// call. `shared_obj` is the SharedHistories the thread clears its range of, and
+// shared history, reductions, refresh cache). `shared_obj` is the SharedHistories
+// the thread clears its range of, and
 // `biases` is the network feature-transformer bias array.
 fn constructWorkerInto(
     buf: [*]u8,
@@ -107,10 +106,10 @@ fn constructWorkerInto(
 
 // Production entry: construct a complete native Worker into `buf` (a large-page
 // block of at least worker_size bytes). Zeroes the block, writes the constructor
-// field set, and runs the native Worker::clear pieces -- the full replacement for
-// the C++ Worker placement-new that the engine-graph cut calls instead of
-// make_unique_large_page<Worker>. `manager` is the moved ISearchManager pointer;
-// the feature-transformer biases are sourced from the native network.
+// field set, and runs the native Worker::clear pieces -- the full native
+// replacement for the C++ Worker placement-new, called by the engine graph.
+// `manager` is the moved ISearchManager pointer; the feature-transformer biases
+// are sourced from the native network.
 pub fn constructFull(
     buf: ?*anyopaque,
     shared_history: usize,

@@ -54,8 +54,7 @@ fn reportAllocFailure(mb: usize) noreturn {
     std.process.exit(1);
 }
 // Zero a [start_cluster, start_cluster+cluster_len) span of the TT (single-node: the
-// per-thread parallel-clear NUMA split is a no-op here). Native Zig, was the
-// zfish_threadpool_zero_tt_slice C-ABI export in main.zig.
+// per-thread parallel-clear NUMA split is a no-op here). Native Zig.
 fn zeroTtSlice(table_ptr: ?*anyopaque, start_cluster: usize, cluster_len: usize) void {
     if (cluster_len == 0) return;
     const table = table_ptr orelse return;

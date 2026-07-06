@@ -10,15 +10,12 @@
 //   pawn element count  = threadCount * PAWN_HISTORY_BASE_SIZE
 // and the two index masks are (count - 1) (counts are powers of two, used as `key &
 // mask`). This module is the COUNT logic only — pure usize math, no allocation — so
-// it unit-tests in `zig build test-graph` and is shared by both the native
-// construction (board/position.zig constructSharedHistories) and the shadow verifier
-// that checks the live C++ try_emplace result (zfish_shadow_verify_shared_histories).
+// it unit-tests in `zig build test-graph` and is shared by the native construction
+// (board/position.zig constructSharedHistories) and the verifySizes check below.
 //
 // The element BYTE sizes (@sizeOf([2]CorrectionBundle), the 1024-int16 pawn page) are
-// already validated independently: the native search reads C++-allocated histories
-// through board/position.zig today, so its element strides match the C++ layout.
-//
-// Native-graph cut flip fire 2 (REPORT-09 Annex B, ITERATION-157).
+// validated independently: the native search reads these histories through
+// board/position.zig, so its element strides match the layout.
 
 const std = @import("std");
 
@@ -43,9 +40,8 @@ pub fn sharedHistoriesSizes(thread_count: usize) Sizes {
     };
 }
 
-/// Shadow check: do a constructed SharedHistories' four size fields (corr_size,
+/// Check: do a constructed SharedHistories' four size fields (corr_size,
 /// pawn_size, and the two masks) match the expected counts for `thread_count`?
-/// Used against the live C++ try_emplace result to de-risk the native sizing.
 pub fn verifySizes(
     corr_size: usize,
     pawn_size: usize,

@@ -1,17 +1,8 @@
 const std = @import("std");
 
-// Zig-owned option value store. The C++ OptionsMap still owns option metadata
-// (type/min/max/default) and the setoption write path, but the live current
-// value of every option is mirrored here, keyed by the Option's registration
-// index, and the bridge's Option read operators source their value from this
-// store in the default target. This moves option-read authority out of the C++
-// object as the first slice of retiring OptionsMap; the legacy oracle keeps
-// reading the C++ currentValue, so oracle-parity cross-checks the two.
-// Process-global Zig OptionsModel, the live option store for the default build.
-// The bridge registers every option here at OptionsMap::add (in lockstep with
-// the C++ insert order, so indices match) and reads current values back through
-// the index-keyed accessors. The C++ currentValue remains the legacy oracle, so
-// oracle-parity cross-checks the two.
+// Process-global Zig OptionsModel: the live option store. Owns every option's
+// metadata (type/min/max/default) and current value, keyed by the option's
+// registration index, and serves both name- and index-keyed reads.
 var global_model: ?OptionsModel = null;
 
 fn ensureModel() *OptionsModel {
@@ -99,8 +90,8 @@ pub const ModelSetResult = struct {
 
 // Apply a setoption assignment to the model: validate, normalize, and store.
 // Reports whether the option exists, whether the value was accepted/changed,
-// the change-callback kind, the option kind, and the index, so the bridge can
-// fire the on_change callback exactly as the C++ Option operator= would.
+// the change-callback kind, the option kind, and the index, so the caller can
+// fire the on_change callback for the changed option.
 pub fn setByName(name: []const u8, value: []const u8, out: *ModelSetResult) void {
     out.* = .{ .found = 0, .accepted = 0, .changed = 0, .callback_kind = 0, .kind = 0, .idx = 0 };
     const model = ensureModel();
@@ -120,8 +111,8 @@ pub fn setByName(name: []const u8, value: []const u8, out: *ModelSetResult) void
     };
 }
 
-// Render the UCI option listing (the C++ OptionsMap operator<< output) from the
-// Zig model, as a malloc-backed C string the caller frees.
+// Render the UCI option listing from the Zig model, as a malloc-backed C string
+// the caller frees.
 pub fn renderOptions() ?[*:0]u8 {
     const model = ensureModel();
     const listing = model.renderAlloc() catch return null;
@@ -491,8 +482,8 @@ pub const OptionsModel = struct {
         return 0;
     }
 
-    // Index-keyed reads, used by the bridge Option read operators which carry a
-    // registration index rather than a name.
+    // Index-keyed reads, for callers that carry a registration index rather than
+    // a name.
     pub fn hasIndex(self: *const OptionsModel, idx: usize) bool {
         return idx < self.entries.items.len;
     }
@@ -553,8 +544,7 @@ pub const OptionsModel = struct {
         return .{ .found = true, .accepted = true, .changed = changed, .callback_kind = entry.callback_kind };
     }
 
-    // Render the UCI option listing in registration order, matching the C++
-    // OptionsMap operator<<.
+    // Render the UCI option listing in registration order.
     pub fn renderAlloc(self: *OptionsModel) ![]u8 {
         var out = std.ArrayList(u8).empty;
         errdefer out.deinit(self.allocator);
@@ -584,8 +574,7 @@ pub const OptionsModel = struct {
     }
 };
 
-// Change-callback kinds, matching the bridge's kOptionCallback* constants and
-// engine.zig's option_callback_* values.
+// Change-callback kinds, matching engine.zig's option_callback_* values.
 pub const callback_none: u8 = 0;
 pub const callback_debug_log_file: u8 = 1;
 pub const callback_numa_policy: u8 = 2;
@@ -596,8 +585,8 @@ pub const callback_syzygy_path: u8 = 6;
 pub const callback_eval_file: u8 = 7;
 
 // The on-change callback kind for an option, keyed by its (canonical) name — the same
-// mapping registerStandardOptions uses. The runtime registration path (C++ OptionsMap::add →
-// zfish_optmodel_register → zfish_optmodel_add) does not carry the kind, so derive it here;
+// mapping registerStandardOptions uses. The runtime registration path (addOption) does not
+// carry the kind, so derive it here;
 // otherwise every option registers with callback_none and setoption never fires the engine
 // callbacks (resize threads / TT / reload net / numa), i.e. options take no effect.
 pub fn callbackKindForName(name: []const u8) u8 {
@@ -622,7 +611,7 @@ pub const StandardOptionParams = struct {
 // Register the standard UCI option set into a fresh model, in the same order
 // and with the same defaults, bounds, and callback kinds as engine.zig initBody.
 // The machine-dependent Threads/Hash maxima and the eval-file name are supplied
-// by the caller, so the Zig engine and the C++ initBody stay in lockstep.
+// by the caller, so this set stays in lockstep with engine.zig initBody.
 pub fn registerStandardOptions(model: *OptionsModel, params: StandardOptionParams) !void {
     var elo_buf: [16]u8 = undefined;
     const elo_default = std.fmt.bufPrint(&elo_buf, "{d}", .{params.skill_lowest_elo}) catch unreachable;
@@ -658,7 +647,7 @@ test "options model stores defaults and reads typed values" {
     try std.testing.expectEqual(@as(c_int, 1), model.getInt("Threads"));
     try std.testing.expectEqual(@as(c_int, 0), model.getInt("Ponder"));
     try std.testing.expectEqualStrings("nn-x.nnue", model.getString("EvalFile"));
-    // Name lookup is case-insensitive, as in the C++ OptionsMap.
+    // Name lookup is case-insensitive.
     try std.testing.expectEqual(@as(c_int, 1), model.getInt("threads"));
 }
 

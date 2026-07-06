@@ -47,16 +47,15 @@ comptime {
     std.debug.assert(@offsetOf(SharedState, "network") == 32);
 }
 
-// REPORT-10 M-HUB: the LIVE SharedState handed to the workers is now this native
-// 40-byte struct, not the C++ Search::SharedState (which was just 5 references, no
-// methods — byte-identical, proven by zfish_verify_shared_state_native). The bridge's
-// zfish_search_shared_state_create routes here; the workers bind it by reference and
-// read the same 5 pointers. This makes the SharedState a type-AGNOSTIC pointer bundle,
-// so its member subsystems can become native types pointed-to (the dependency unblock).
-// One engine, one search at a time (sequential go commands; the workers only READ the
-// SharedState during a search), so a single static instance reproduces the C++
-// new/delete lifetime without an allocator (keeps shared_state.zig libc-free for the
-// test-graph artifact). The SharedState is rebuilt per search and never aliased.
+// The LIVE SharedState handed to the workers is this native 40-byte struct,
+// byte-identical to the 5-reference C++ Search::SharedState it replaced (5
+// references, no methods). The workers bind it by reference and read the same 5
+// pointers. This makes the SharedState a type-AGNOSTIC pointer bundle, so its
+// member subsystems can become native types pointed-to (the dependency unblock).
+// One engine, one search at a time (sequential go commands; the workers only READ
+// the SharedState during a search), so a single static instance reproduces the
+// new/delete lifetime without an allocator (keeps shared_state.zig libc-free for
+// the test-graph artifact). The SharedState is rebuilt per search and never aliased.
 var live_shared_state: SharedState = undefined;
 
 // Build the live SharedState from the five referents and return it (M16.7: engine.zig

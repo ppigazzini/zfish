@@ -6,7 +6,7 @@ const position_snapshot = @import("position_snapshot");
 // HalfThreatParams / 7-byte HalfDiff arrive scrambled), which silently corrupted
 // the psq feature indices off-x86 (bench diverged: 6860970 vs 2067208). A direct
 // Zig call has no C-ABI marshaling, so it is correct on every target and bit-
-// identical on x86. The main.zig exports stay for the x86-only C++ oracle.
+// identical on x86.
 const nnue_feature = @import("nnue_feature");
 
 const psq_feature: u8 = 0;
@@ -93,10 +93,10 @@ const FullAppendResult = struct {
     indices: [threat_index_capacity]u32,
 };
 
-// zfish_half_ka_make_index / zfish_half_ka_append_changed are now called directly
-// as nnue_feature.halfMakeIndex / halfAppendChanged (see the import note above); the
-// C-ABI extern decls were removed because the by-value struct passing they used is
-// mis-marshaled on aarch64.
+// The half-KA make-index / append-changed helpers are called directly as
+// nnue_feature.halfMakeIndex / halfAppendChanged (see the import note above); the
+// former C-ABI extern decls were removed because the by-value struct passing they
+// used is mis-marshaled on aarch64.
 // full-threats append (changed/active) call nnue_feature directly (M16.7).
 
 const BridgePositionSnapshot = position_snapshot.PositionSnapshot;
@@ -657,7 +657,7 @@ fn applyThreatDelta(
 // Accumulator delta/refresh row op, vectorized (M15.3). Adds or subtracts one
 // half_dimensions-wide feature-transformer weight row to the i16 accumulator. Vector
 // +/- is the same element-wise i16 op as the scalar loop it replaces (identical wrap
-// behaviour), so it is bit-exact -- signature/oracle-parity hold at 2067208. Width 32
+// behaviour), so it is bit-exact -- the bench signature holds at 2067208. Width 32
 // i16 = one AVX-512 register; LLVM splits it for narrower targets. i8 weight rows
 // widen to i16 (as the scalar `@as(i16, ...)` did).
 const acc_vec_width: usize = 32;
@@ -881,7 +881,7 @@ fn cacheEntry(cache: *anyopaque, king_square: u8, perspective: u8) *anyopaque {
 // refresh entry to the empty board -- accumulation = the feature-transformer
 // biases, and the rest of the entry (psqt, pieces, pieceBB) zeroed. Mirrors the
 // C++ Entry::clear (accumulation = biases; memset from psqtAccumulation to end).
-// The biases pointer is handed over by the bridge.
+// The biases pointer is passed in by the caller.
 pub fn clearRefreshCache(cache: *anyopaque, biases: [*]const i16) void {
     const biases_bytes: [*]const u8 = @ptrCast(biases);
     var ks: usize = 0;

@@ -1,7 +1,7 @@
 // Native Search Thread (big-bang stage 4, layer 1).
 //
 // Replaces the C++ `Thread` vehicle: a std::thread idle_loop that runs the search
-// as its job. The search BODY is already Zig (zfish_worker_start_searching); this
+// as its job. The search BODY is already Zig; this
 // owns the *vehicle* -- the worker handle + the futex idle-loop runner
 // (thread_runtime.zig) + the per-thread search job.
 //
@@ -74,9 +74,8 @@ pub const NativeThread = struct {
     }
 };
 
-// C++ teardown for the native Worker (uci_bridge): ~Worker + large-page free,
-// mirroring the C++ LargePagePtr deleter. Resolved natively only; the legacy
-// build provides an abort stub it never calls.
+// Native teardown for the Worker (via native_hooks.native_worker_destroy):
+// ~Worker + large-page free, mirroring the C++ LargePagePtr deleter.
 
 // The native_thread tests attach only dummy workers (worker == 0), so deinit's
 // native_hooks.native_worker_destroy call is never reached — no test stub needed.

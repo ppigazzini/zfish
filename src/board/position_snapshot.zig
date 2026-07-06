@@ -22,8 +22,8 @@ pub const PositionSnapshot = struct {
 
 // Cycle-break hooks (M16.9): position.zig can't be imported by movegen/movepick/
 // nnue/uci_move (they are imported *by* position), so it registers these here — the
-// shared leaf they all already import — instead of the old zfish_position_* C-ABI
-// exports. position.initRuntime() installs them before any search runs.
+// shared leaf they all already import — instead of the old C-ABI exports.
+// position.initRuntime() installs them before any search runs.
 pub var fill_fn: ?*const fn (pos: *const anyopaque, out: *anyopaque) void = null;
 pub var move_is_legal_fn: ?*const fn (pos: *const anyopaque, raw_move: u16) bool = null;
 

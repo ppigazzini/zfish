@@ -7,13 +7,11 @@
 // lazily replicated off the search path). On the single-node target there is exactly
 // one replica.
 //
-// This module provides (a) NetworkHolder — the native structural replacement the flip
-// will own (the per-NUMA replica pointers; the Network instances + the 106 MB .nnue
-// parse remain native-elsewhere giants, deferred to phase B), and (b) a SHADOW
-// VERIFIER that reads the live C++ holder's replica count through the documented
-// member offset and asserts it equals the holder's own configured node count — run at
-// every engine construction so the native model of the holder's shape is diffed
-// against the oracle. Native-graph cut flip fire 3 (REPORT-09 Annex B, ITERATION-157).
+// This module provides (a) NetworkHolder — the native structural replacement
+// (the per-NUMA replica pointers; the Network instances + the 106 MB .nnue parse
+// remain native-elsewhere giants), and (b) a replica-count reader that reads a
+// LazyNumaReplicated holder's replica count through the documented member offset
+// and asserts it equals the holder's own configured node count.
 
 const std = @import("std");
 
@@ -23,14 +21,14 @@ const std = @import("std");
 // the `instances` std::vector follows at 16 as {begin, end, cap_end}. std::vector::
 // size() is (end - begin) / sizeof(element) — but the element here is NOT a pointer,
 // it is std::vector<SystemWideSharedConstant<Network>>, a fat value type. So the
-// element stride is supplied by the C++ build (sizeof, passed in) rather than assumed.
+// element stride is supplied by the caller (sizeof, passed in) rather than assumed.
 // The shadow verifier caught exactly this (an 8-byte assumption read 18 replicas for a
-// 1-node holder) — proof the offset/stride model is now pinned to the oracle.
+// 1-node holder) — proof the element stride must be the real fat-value size, not 8.
 const instances_begin_off: usize = 16;
 const instances_end_off: usize = 24;
 
-/// Read the live C++ holder's replica count (instances.size()), given the C++ element
-/// stride sizeof(SystemWideSharedConstant<Network>).
+/// Read a LazyNumaReplicated holder's replica count (instances.size()), given the
+/// element stride sizeof(SystemWideSharedConstant<Network>).
 pub fn replicaCountOf(lazy_ptr: *const anyopaque, elem_size: usize) usize {
     const base: [*]const u8 = @ptrCast(lazy_ptr);
     const begin = @as(*const usize, @ptrCast(@alignCast(base + instances_begin_off))).*;
@@ -38,8 +36,8 @@ pub fn replicaCountOf(lazy_ptr: *const anyopaque, elem_size: usize) usize {
     return (end - begin) / elem_size;
 }
 
-/// Shadow check: the live holder's replica count matches the expected node count
-/// (network.get_numa_config().num_numa_nodes(), supplied by the bridge).
+/// Check: the holder's replica count matches the expected node count
+/// (network.get_numa_config().num_numa_nodes(), supplied by the caller).
 pub fn verifyReplicaCount(lazy_ptr: *const anyopaque, elem_size: usize, expected_nodes: usize) bool {
     return replicaCountOf(lazy_ptr, elem_size) == expected_nodes;
 }

@@ -1,18 +1,15 @@
-// Native PositionStorage — the post-src/ owner of the engine's `pos` member's
+// Native PositionStorage — the native owner of the engine's `pos` member's
 // storage. The Position ALGORITHMS are already native (board/position.zig operates
-// on a Position by offset); what the cut still needs is native OWNERSHIP of the
-// 1032-byte Position object the C++ Engine holds by value (today `new Position()`
-// in the bridge). This is that storage: one aligned, zeroed block the native runtime
-// hands to the position ops as the live Position.
+// on a Position by offset); this provides native OWNERSHIP of the 1032-byte
+// Position object the engine holds by value. This is that storage: one aligned,
+// zeroed block the native runtime hands to the position ops as the live Position.
 //
 // Treated as opaque bytes (Position internals are written/read by position.zig).
-// Native-graph cut iteration 5 (REPORT-09 Annex B, ITERATION-157); ready-to-wire.
 //
-// ALIGNMENT NOTE: sizeof(Position) == 1032 is pinned by graph_layout.zig against the
-// C++ build (zfish_graph_layout_size(8)). alignof(Position) is not separately
-// probed; 8 covers its u64/pointer members. If a future upstream Position gains an
-// over-aligned (SIMD) member, the flip's layout verifier must bump this — flagged
-// there, harmless until then.
+// ALIGNMENT NOTE: sizeof(Position) == 1032 is pinned by graph_layout.zig.
+// alignof(Position) is not separately probed; 8 covers its u64/pointer members. If
+// a future upstream Position gains an over-aligned (SIMD) member, the layout
+// verifier must bump this — flagged there, harmless until then.
 
 const std = @import("std");
 

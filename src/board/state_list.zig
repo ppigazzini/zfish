@@ -1,8 +1,8 @@
-// Native StateList — the post-src/ replacement for the C++ engine `states` member
-// (StateListPtr = std::unique_ptr<std::deque<StateInfo>>), used to hold the chain
-// of StateInfo records that back a position and its applied moves.
+// Native StateList — the engine `states` member (modeling StateListPtr =
+// std::unique_ptr<std::deque<StateInfo>>), holding the chain of StateInfo records
+// that back a position and its applied moves.
 //
-// CONTRACT (mirrors the C++ deque the bridge's ZfishPendingStateListStorage wraps):
+// CONTRACT (models a std::deque<StateInfo>):
 //   - starts non-empty (one root StateInfo), like `new std::deque<StateInfo>(1)`;
 //   - reset()  -> drops to a single fresh root and returns its address;
 //   - push()   -> appends one StateInfo and returns its address;
@@ -13,19 +13,13 @@
 //     chunking; here every StateInfo is its own heap allocation, which is strictly
 //     pointer-stable and keeps the type free of any libstdc++ ABI dependency.
 //
-// StateInfo is treated as an opaque 192-byte POD block (graph_layout.state_info_size
-// / zfish_graph_layout_size(9)); the native runtime memsets/fills it via Position,
-// so this module owns lifetime + ordering only, not StateInfo's internals.
-//
-// This is iteration 1 of the native-graph cut (REPORT-09 Annex B 7.3+). It is a
-// ready-to-wire native type: the live runtime still uses the C++ storage until the
-// atomic flip moves `states` (and the pool's setupStates it is std::move'd into)
-// native together — wiring it alone is impossible while the pool is C++.
+// StateInfo is treated as an opaque 192-byte POD block (graph_layout.state_info_size);
+// the native runtime memsets/fills it via Position, so this module owns lifetime +
+// ordering only, not StateInfo's internals.
 
 const std = @import("std");
 
-/// sizeof(Stockfish::StateInfo). Pinned against the C++ build by
-/// graph_layout.zig (state_info_size = 192, cross-checked by zfish_graph_layout_size).
+/// sizeof(Stockfish::StateInfo). Pinned by graph_layout.zig (state_info_size = 192).
 pub const state_info_size: usize = 192;
 pub const state_info_align: usize = 8;
 
@@ -83,8 +77,8 @@ pub const StateList = struct {
         return @ptrCast(self.blocks.items[self.blocks.items.len - 1]);
     }
 
-    /// Whether the list currently holds any StateInfo (the C++ storage's
-    /// `states ? 1 : 0` after a handoff nulls the unique_ptr).
+    /// Whether the list currently holds any StateInfo (models `states ? 1 : 0`;
+    /// after a handoff the owning pointer is nulled).
     pub fn hasStates(self: *const StateList) bool {
         return self.blocks.items.len != 0;
     }
@@ -94,8 +88,7 @@ pub const StateList = struct {
     }
 };
 
-// Native replacement for the bridge's ZfishPendingStateListStorage (M-FINAL states cutover).
-// It owns a StateList and supports the std::unique_ptr MOVE semantics the C++ setupStates
+// Owns a StateList and supports the std::unique_ptr MOVE semantics the setupStates
 // adopt relies on: moveOut() hands the StateList to the pool and NULLS the wrapper, so a
 // later destroy() frees nothing (mirroring `pool.setupStates = std::move(storage.states)`
 // followed by storage destruction). The position-setup flow (engine.zig) builds the chain
@@ -159,9 +152,8 @@ pub fn destroyStateList(allocator: std.mem.Allocator, list: *StateList) void {
     allocator.destroy(list);
 }
 
-// Opaque-handle wrappers over PendingStateStorage for the engine/thread setup paths (M16.7 --
-// relocated from main.zig's zfish_engine_state_list_storage_* C-ABI exports). The handle stays
-// *anyopaque across the module boundary; the cast is confined here.
+// Opaque-handle wrappers over PendingStateStorage for the engine/thread setup paths. The
+// handle stays *anyopaque across the module boundary; the cast is confined here.
 pub fn storageCreate() ?*anyopaque {
     return PendingStateStorage.create(std.heap.c_allocator) catch null;
 }
@@ -272,6 +264,6 @@ test "reset drops to a single fresh root and zeroes it" {
 }
 
 test "state_info_size matches the pinned C++ StateInfo footprint" {
-    // Cross-checked at build time by graph_layout.zig against zfish_graph_layout_size(9).
+    // state_info_size is pinned to 192 by graph_layout.zig.
     try testing.expectEqual(@as(usize, 192), state_info_size);
 }

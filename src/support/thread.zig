@@ -14,9 +14,8 @@ const numa = @import("numa");
 // Zig-owned thread job runner (engine-graph reimplementation). Verified by its
 // own concurrency tests; compile-checked here until wired into construction.
 pub const thread_runtime = @import("thread_runtime");
-// Stage-4 native thread runtime (the live vehicle): native Threads + ThreadPool
-// replacing the C++ Thread/std::thread idle_loop. The C++ pool/Engine stay, but
-// their threads vector now holds native Threads (contents-swap).
+// Native thread runtime (the live vehicle): native Threads + ThreadPool replacing
+// the C++ Thread/std::thread idle_loop.
 const native_thread = @import("native_thread");
 const native_threadpool = @import("native_threadpool.zig");
 
@@ -25,8 +24,7 @@ inline fn nt(thread: *anyopaque) *native_thread.NativeThread {
     return @ptrCast(@alignCast(thread));
 }
 
-// Thread sync handshake -> the native runtime (the in-tree C++ Thread vehicle was
-// retired with the oracle, REPORT-16 M16.1).
+// Thread sync handshake -> the native runtime.
 inline fn threadWaitFinished(thread: *anyopaque) void {
     nt(thread).waitForSearchFinished();
 }
@@ -39,8 +37,7 @@ inline fn threadClearWorker(thread: *anyopaque) void {
 inline fn threadRunJob(thread: *anyopaque, job: ThreadCallback, ctx: ?*anyopaque) void {
     nt(thread).startJob(job, ctx);
 }
-// M-FINAL cutover: native read of LimitsType::searchmoves[index] in the default build, dropping the
-// C++ zfish_limits_searchmove_text bridge. The default exe is built by Zig (bundled libc++), so
+// Native read of LimitsType::searchmoves[index]. The exe is built by Zig (bundled libc++), so
 // std::string is the LIBC++ layout: sizeof 24; short/SSO has byte0 = (size<<1) (low bit 0) with the
 // chars inline at +1; long has byte0 low bit 1, size@+8, data ptr@+16. searchmoves is the leading
 // std::vector<std::string> (limits+0, {_M_start@0}); element stride is sizeof(std::string)=24.
@@ -255,7 +252,6 @@ fn workerSetRootMoves(thread: *anyopaque, src_rm: *const anyopaque) void {
     }
 }
 // Assign the pool's boundThreadToNumaNode vector (native graph_layout.ThreadPool field).
-// Native Zig, was the zfish_threadpool_bound_nodes_assign C-ABI export in main.zig.
 fn boundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, count: usize) void {
     const tp = graph_layout.ThreadPool.fromPtr(pool_ptr);
     if (nodes == null or count == 0) {
@@ -280,9 +276,9 @@ const NumaNodeCallback = *const fn (?*anyopaque) void;
 
 fn applyRootSetup(context_ptr: ?*anyopaque) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
-    // Stage 5: native LimitsType POD-tail copy.
+    // Native LimitsType POD-field copy.
     workerSetLimits(context.thread, context.input.limits);
-    // Stage 5: native vector<RootMove> copy-assign.
+    // Native vector<RootMove> copy-assign.
     workerSetRootMoves(context.thread, context.input.root_moves);
     if (graph_layout.Worker.fromThread(context.thread)) |w| {
         w.resetRootSetupState();
@@ -707,9 +703,7 @@ pub fn reconfigure(
     // Harness H4: prove the freshly (re)configured pool matches the Zig model of
     // the ThreadPool/Thread graph -- stop/increaseDepth zeroed, threads vector
     // sized == requested, boundThreadToNumaNode sized as bound, each Thread's
-    // Worker slot bound. This anchors the offsets the native stage-4 construction
-    // must reproduce, verified here against the live C++ Thread objects. Read-only;
-    // panics on drift.
+    // Worker slot bound. Read-only; panics on drift.
     native_hooks.verify_thread_graph.?(pool, requested, if (do_bind) requested else 0);
 }
 
@@ -865,7 +859,6 @@ pub fn startSearching(pool: *anyopaque) void {
 }
 
 // Wait until one thread's worker finishes its current search (native ThreadPool op).
-// Relocated the main.zig C-ABI bridge (M16.7): consumers call this thread-module fn.
 pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
     native_threadpool.waitThread(pool, thread_id);
 }
