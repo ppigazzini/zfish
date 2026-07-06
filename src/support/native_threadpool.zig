@@ -111,9 +111,7 @@ pub const NativePool = struct {
         const tp = poolOf(self.slot);
         const begin = tp.threads_begin;
         if (begin != 0) {
-            const end = tp.threads_end;
-            const count = (end - begin) / @sizeOf(usize);
-            const buf = @as([*]*NativeThread, @ptrFromInt(begin))[0..count];
+            const buf = @as([*]*NativeThread, @ptrFromInt(begin))[0..tp.numThreads()];
             // Drain any queued/in-flight job BEFORE tearing threads down. The
             // teardown path runs with the stop flag already set (quit /
             // reset_for_reconfigure), so an in-flight search bails immediately and
@@ -179,8 +177,7 @@ pub fn clear(pool: *anyopaque) void {
 pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads_begin == 0) return;
-    const vec: [*]const usize = @ptrFromInt(tp.threads_begin);
-    const thread: *NativeThread = @ptrFromInt(vec[thread_id]);
+    const thread: *NativeThread = @ptrFromInt(tp.threadAt(thread_id));
     thread.waitForSearchFinished();
 }
 
