@@ -67,8 +67,8 @@ pub const WorkerCtorInputs = struct {
 pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     const wl = graph_layout.WorkerLayout.fromPtr(worker);
 
-    // sharedHistories reference: a pointer slot inside the histories sub-block.
-    writePtr(worker, off.histories + position_port.worker_shared_history_off, in.shared_history);
+    // sharedHistories reference: now a typed field of the embedded WorkerHistories.
+    wl.histories.shared_history = @ptrFromInt(in.shared_history);
     // Four SharedState reference members + the manager unique_ptr's moved-in pointer.
     wl.options = in.options;
     wl.threads = @ptrFromInt(in.threads);

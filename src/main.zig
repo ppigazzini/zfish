@@ -118,10 +118,8 @@ fn threadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
 fn workerClearNative(worker: *anyopaque) void {
     const wl = graph_layout.WorkerLayout.fromPtr(worker);
     position_port.clearWorkerHistories(worker);
-    // sharedHistory is a pointer stored inside the histories sub-block at
-    // worker_shared_history_off; load it through the typed histories field.
-    const sh_slot: *const usize = @ptrCast(@alignCast(&wl.histories[position_port.worker_shared_history_off]));
-    const shared_history: *anyopaque = @ptrFromInt(sh_slot.*);
+    // sharedHistory is now a typed field of the embedded WorkerHistories.
+    const shared_history: *anyopaque = wl.histories.shared_history.?;
     position_port.clearSharedHistory(shared_history, wl.numa_thread_idx, wl.numa_total);
     search_port.fillReductions(&wl.reductions, 256);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));

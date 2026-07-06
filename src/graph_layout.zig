@@ -6,6 +6,7 @@
 // allocations size to them, and any drift surfaces as a bench/parity failure.
 
 const std = @import("std");
+const worker_histories = @import("worker_histories");
 
 // Canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = @sizeOf(WorkerLayout);
@@ -63,19 +64,21 @@ pub inline fn positionBoard(pos: *const anyopaque) [*]const u8 {
     return @as([*]const u8, @ptrCast(pos)) + position_board_off;
 }
 
-// Byte sizes of the position-module sub-blocks embedded in the Worker (asserted
-// against @sizeOf of the real structs in position.zig, which can't be imported here).
-pub const worker_histories_bytes: usize = 11419664; // == @sizeOf(position.WorkerHistories)
+// Byte size of the still-opaque position-module sub-blocks embedded in the Worker
+// (asserted against @sizeOf of the real structs in position.zig, which can't be
+// imported here). histories is no longer here -- it is a typed WorkerHistories field
+// (the worker_histories leaf module is importable, unlike position).
+pub const worker_histories_bytes: usize = @sizeOf(worker_histories.WorkerHistories);
 pub const refresh_table_bytes: usize = 278528; // native FT refresh cache
 
 // The full Search::Worker block as a native Zig layout (M16.9): worker_off is now
 // @offsetOf of this struct, not a hand-probed C++ offset map. graph_layout owns it
-// using its own LimitsType/PVMoves + opaque byte regions for the position-module types
-// (histories/Position/StateInfo). Zig picks the field order (the 64-aligned NNUE arenas
-// float to the front), so every consumer must read via worker_off/@offsetOf, never a
-// raw absolute offset.
+// using its own LimitsType/PVMoves + the typed WorkerHistories, plus opaque byte
+// regions for the position-module types still trapped behind the cycle (Position /
+// StateInfo). Zig picks the field order (the 64-aligned NNUE arenas float to the
+// front), so every consumer must read via worker_off/@offsetOf, never a raw offset.
 pub const WorkerLayout = struct {
-    histories: [worker_histories_bytes]u8 align(8), // position.WorkerHistories
+    histories: worker_histories.WorkerHistories align(8), // the typed per-Worker history tables
     limits: LimitsType,
     pv_idx: usize,
     pv_last: usize,
