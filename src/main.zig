@@ -117,17 +117,17 @@ fn freeSetupStatesIfAny(pool: *anyopaque) void {
 // (the slot is the rarely-used fallback; the storage chain is what searches normally adopt).
 // adopt: MOVE the StateList into the pool's setupStates@8, freeing any prior one (between
 // searches setupStates still owns the previous list; ~ThreadPool no longer frees it).
-fn zfishThreadpoolSetupStatesAdoptFromStorage(pool: *anyopaque, storage: *anyopaque) void {
+fn threadpoolSetupStatesAdoptFromStorage(pool: *anyopaque, storage: *anyopaque) void {
     freeSetupStatesIfAny(pool);
     poolSetupStatesSlot(pool).* = @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).moveOut();
 }
-fn zfishThreadpoolSetupStatesAdoptFromSlot(pool: *anyopaque, slot_ptr: *anyopaque) void {
+fn threadpoolSetupStatesAdoptFromSlot(pool: *anyopaque, slot_ptr: *anyopaque) void {
     freeSetupStatesIfAny(pool);
     const src: *?*StateList = @ptrCast(@alignCast(slot_ptr));
     poolSetupStatesSlot(pool).* = src.*;
     src.* = null;
 }
-fn zfishThreadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
+fn threadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
     const slot: ?*StateList = @ptrCast(@alignCast(graph_layout.ThreadPool.fromPtr(@constCast(pool)).setup_states));
     if (slot) |list| return list.back();
     return null;
@@ -182,10 +182,10 @@ fn workerClearNative(worker: *anyopaque) void {
 // ::operator new/delete bottom out in malloc/free, so they are an interchangeable matched alloc/free
 // family for the native containers (RootMoves/searchmoves/bound_nodes/Position/caches) — verified by
 // parity-valgrind + parity-teardown. The legacy oracle keeps its own libc++ ::operator new/delete.
-fn zfishOperatorNew(n: usize) ?*anyopaque {
+fn operatorNew(n: usize) ?*anyopaque {
     return std.c.malloc(n);
 }
-fn zfishOperatorDelete(p: ?*anyopaque) void {
+fn operatorDelete(p: ?*anyopaque) void {
     std.c.free(p);
 }
 
@@ -299,12 +299,12 @@ fn handoffPendingStates(
 fn installNativeHooks() void {
     native_hooks.shared_state_clear_histories = &sharedStateClearHistories;
     native_hooks.shared_state_insert_history = &sharedStateInsertHistory;
-    native_hooks.native_worker_destroy = &zfishNativeWorkerDestroy;
+    native_hooks.native_worker_destroy = &nativeWorkerDestroy;
     native_hooks.native_worker_build = &nativeWorkerBuild;
     native_hooks.worker_clear = &workerClearNative;
-    native_hooks.setup_states_adopt_from_storage = &zfishThreadpoolSetupStatesAdoptFromStorage;
-    native_hooks.setup_states_adopt_from_slot = &zfishThreadpoolSetupStatesAdoptFromSlot;
-    native_hooks.setup_state_back = &zfishThreadpoolSetupStateBack;
+    native_hooks.setup_states_adopt_from_storage = &threadpoolSetupStatesAdoptFromStorage;
+    native_hooks.setup_states_adopt_from_slot = &threadpoolSetupStatesAdoptFromSlot;
+    native_hooks.setup_state_back = &threadpoolSetupStateBack;
     native_hooks.pending_states_available = &pendingStatesAvailable;
     native_hooks.handoff_pending_states = &handoffPendingStates;
     native_hooks.verify_thread_graph = &thread_construct.verifyThreadGraph;
@@ -500,7 +500,7 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
 fn uciEngineDestructAt(storage: *anyopaque) void {
     releasePendingStateSlot(native_engine.NativeEngine.fromPtr(storage).statesSlotPtr());
     thread_port.nativeThreadpoolClear(engineThreadsPtr(storage));
-    zfishNativeEngineDestructMembers(storage);
+    nativeEngineDestructMembers(storage);
 }
 
 // Allocate the UCI score text for a raw value: classify (VALUE_TB_WIN_IN_MAX_PLY=
@@ -551,8 +551,8 @@ fn optInt(name: []const u8) c_int {
 //     dtors), so manager + rootMoves are the ONLY heap ~Worker freed — this reproduces it
 //     without the virtual `delete manager`. Default-only; the legacy oracle keeps the real
 //     C++ SearchManager + ~Worker. See [[frozen-header-wall-blocks-member-cuts]].
-fn zfishMakeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque {
-    const buf = zfishOperatorNew(@sizeOf(graph_layout.SearchManager)) orelse return null;
+fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque {
+    const buf = operatorNew(@sizeOf(graph_layout.SearchManager)) orelse return null;
     const bytes: [*]u8 = @ptrCast(buf);
     @memset(bytes[0..@sizeOf(graph_layout.SearchManager)], 0);
     if (is_main != 0) {
@@ -560,15 +560,15 @@ fn zfishMakeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyo
     }
     return buf;
 }
-fn zfishNativeWorkerDestroy(worker: ?*anyopaque) void {
+fn nativeWorkerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
     const base: [*]u8 = @ptrCast(w);
     // rootMoves vector buffer (begin @ root_moves+0); operator new'd by zfish_worker_set_root_moves.
     const rm_begin: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.root_moves));
-    if (rm_begin.*) |b| zfishOperatorDelete(b);
-    // SearchManager buffer (operator new'd by zfishMakeSearchManager above).
+    if (rm_begin.*) |b| operatorDelete(b);
+    // SearchManager buffer (operator new'd by makeSearchManager above).
     const mgr: *?*anyopaque = @ptrCast(@alignCast(base + graph_layout.worker_off.manager));
-    if (mgr.*) |m| zfishOperatorDelete(m);
+    if (mgr.*) |m| operatorDelete(m);
     memory_port.alignedLargePagesFree(w);
 }
 
@@ -639,7 +639,7 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void 
     const ss_tt = @as(*usize, @ptrCast(@alignCast(ss + 16))).*;
     const ss_shared_hist = @as(*usize, @ptrCast(@alignCast(ss + 24))).*;
     const ss_network = @as(*usize, @ptrCast(@alignCast(ss + 32))).*;
-    const manager = zfishMakeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
+    const manager = makeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
         @panic("native worker build: SearchManager OOM");
     const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse
         @panic("native worker build: large-page OOM");
@@ -802,10 +802,10 @@ pub fn engineInitBody(engine: *anyopaque) void {
 // reference the default-only zfish_member_* heap helpers). Exported + compiled now but
 // NOT yet on the live path (zfish_uci_engine_construct_at still builds the C++ UCIEngine);
 // the flip commit swaps main()'s allocation + the member accessors to these.
-fn zfishNativeEngineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
+fn nativeEngineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     return native_engine.constructMembers(buf, argv0);
 }
-fn zfishNativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
+fn nativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     native_engine.setCli(buf, argc, argv);
 }
 // REPORT-12 TU=0: native engine construction (no C++ UCIEngine ctor). Verify the object-graph
@@ -816,12 +816,12 @@ fn zfishNativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8)
 // static Tune::options is set), so it is dropped here. oracle-parity proves dropping it is behavior-neutral.
 fn nativeUciEngineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     graph_layout.verifyLayouts();
-    if (!zfishNativeEngineConstructMembers(storage, argv[0]))
+    if (!nativeEngineConstructMembers(storage, argv[0]))
         @panic("native engine construct: member allocation failed");
-    zfishNativeEngineSetCli(storage, argc, argv);
+    nativeEngineSetCli(storage, argc, argv);
     engineInitBody(storage);
 }
-fn zfishNativeEngineDestructMembers(buf: *anyopaque) void {
+fn nativeEngineDestructMembers(buf: *anyopaque) void {
     native_engine.destructMembers(buf);
 }
 
