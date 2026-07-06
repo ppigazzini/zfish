@@ -297,7 +297,7 @@ pub const ThreadPool = struct {
     pub inline fn mainManager(self: *ThreadPool) ?*SearchManager {
         const worker = Thread.fromPtr(self.threadAtPtr(0)).worker;
         if (worker == 0) return null;
-        return SearchManager.fromAddr(@as(*const usize, @ptrFromInt(worker + worker_off.manager)).*);
+        return SearchManager.fromAddr(WorkerLayout.fromAddr(worker).manager);
     }
 };
 
@@ -326,17 +326,18 @@ pub const Thread = struct {
     /// This thread's Worker cumulative node count (0 if no worker attached).
     pub inline fn nodesSearched(self: *const Thread) u64 {
         if (self.worker == 0) return 0;
-        return @as(*const u64, @ptrFromInt(self.worker + worker_off.nodes)).*;
+        return WorkerLayout.fromAddr(self.worker).nodes;
     }
     /// This thread's Worker cumulative tablebase-hit count.
     pub inline fn tbHits(self: *const Thread) u64 {
         if (self.worker == 0) return 0;
-        return @as(*const u64, @ptrFromInt(self.worker + worker_off.tb_hits)).*;
+        return WorkerLayout.fromAddr(self.worker).tb_hits;
     }
 };
 
 // A cursor over the ~13 MB Worker: the base address plus typed accessors for the few
-// fields the search-driver reads/writes at `worker_off`. This just types the *access*
+// fields the search-driver reads/writes. Each accessor reinterprets the base as a
+// *WorkerLayout (via layout()) and touches the field directly -- typing the *access*
 // over a raw Worker base address.
 pub const Worker = struct {
     base: usize,
@@ -345,40 +346,42 @@ pub const Worker = struct {
         const w = Thread.fromPtr(thread).worker;
         return if (w == 0) null else Worker{ .base = w };
     }
-    inline fn ptr(self: Worker, comptime T: type, off: usize) *T {
-        return @ptrFromInt(self.base + off);
+    inline fn layout(self: Worker) *WorkerLayout {
+        return WorkerLayout.fromAddr(self.base);
     }
     /// ThreadPool::start_searching re-inits: zero the per-search Worker counters.
     pub inline fn resetRootSetupState(self: Worker) void {
-        self.ptr(u64, worker_off.nodes).* = 0;
-        self.ptr(u64, worker_off.tb_hits).* = 0;
-        self.ptr(u64, worker_off.best_move_changes).* = 0;
-        self.ptr(i32, worker_off.nmp_min_ply).* = 0;
-        self.ptr(i32, worker_off.root_depth).* = 0;
+        const wl = self.layout();
+        wl.nodes = 0;
+        wl.tb_hits = 0;
+        wl.best_move_changes = 0;
+        wl.nmp_min_ply = 0;
+        wl.root_depth = 0;
     }
     pub inline fn setTbConfig(self: Worker, cardinality: c_int, root_in_tb: bool, use_rule50: bool, probe_depth: c_int) void {
-        const b = self.base + worker_off.tb_config;
-        @as(*c_int, @ptrFromInt(b)).* = cardinality;
-        @as(*u8, @ptrFromInt(b + 4)).* = @intFromBool(root_in_tb);
-        @as(*u8, @ptrFromInt(b + 5)).* = @intFromBool(use_rule50);
-        @as(*c_int, @ptrFromInt(b + 8)).* = probe_depth;
+        // tb_config is a 16-byte blob {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32}.
+        const b = &self.layout().tb_config;
+        @as(*c_int, @ptrCast(@alignCast(&b[0]))).* = cardinality;
+        b[4] = @intFromBool(root_in_tb);
+        b[5] = @intFromBool(use_rule50);
+        @as(*c_int, @ptrCast(@alignCast(&b[8]))).* = probe_depth;
     }
     pub inline fn setRootState(self: Worker, src: *const anyopaque) void {
-        const dst: [*]u8 = @ptrFromInt(self.base + worker_off.root_state);
+        const dst: [*]u8 = &self.layout().root_state;
         @memcpy(dst[0..state_info_size], @as([*]const u8, @ptrCast(src))[0..state_info_size]);
     }
     pub inline fn rootPosPtr(self: Worker) *anyopaque {
-        return @ptrFromInt(self.base + worker_off.root_pos);
+        return &self.layout().root_pos;
     }
     pub inline fn rootStatePtr(self: Worker) *anyopaque {
-        return @ptrFromInt(self.base + worker_off.root_state);
+        return &self.layout().root_state;
     }
     pub inline fn rootDepth(self: Worker) c_int {
-        return self.ptr(c_int, worker_off.root_depth).*;
+        return self.layout().root_depth;
     }
     /// &rootMoves[0] as a typed RootMove.
     pub inline fn rootMovesFirst(self: Worker) *RootMove {
-        return RootMove.fromAddr(self.ptr(usize, worker_off.root_moves).*);
+        return RootMove.fromAddr(self.layout().root_moves[0]);
     }
 };
 
