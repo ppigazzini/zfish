@@ -21,6 +21,21 @@ permissions:
   contents: read
 
 jobs:
+  # Formatting gate (M17.0a): the canonical `zig fmt` must be clean on every
+  # owned Zig surface. Cheap, fast, and blocks the rest of the matrix on drift.
+  fmt:
+    name: zig fmt --check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      # Owned Zig only (src/, tools/, build.zig); tests/ and scripts/ are
+      # imported upstream mirrors and are not zfish-formatted.
+      - run: zig fmt --check src/ tools/ build.zig
+
   parity:
     name: Linux x86-64 parity
     runs-on: ubuntu-latest

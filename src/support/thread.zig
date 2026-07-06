@@ -144,7 +144,6 @@ const PositionSnapshot = position_snapshot.PositionSnapshot;
 const numa_policy_none: u8 = 0;
 const numa_policy_auto: u8 = 1;
 
-
 // Native Search::RootMoves (= the C++ std::vector<RootMove>) builder/destroyer, relocated
 // from main.zig (M16.7). Lays out a 24-byte {begin,end,cap} header over a `count`-element
 // RootMove array (stride graph_layout.root_move_size == 552), each element zeroed then
@@ -272,7 +271,6 @@ fn boundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, count: usize) 
 const ThreadCallback = *const fn (?*anyopaque) void;
 
 const NumaNodeCallback = *const fn (?*anyopaque) void;
-
 
 fn applyRootSetup(context_ptr: ?*anyopaque) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
@@ -707,8 +705,6 @@ pub fn reconfigure(
     native_hooks.verify_thread_graph.?(pool, requested, if (do_bind) requested else 0);
 }
 
-
-
 // The search-driver entry native_thread invokes as each thread's search job. Set
 // as a function pointer (M16.7) so native_thread need not import position.
 fn workerSearchEntry(ctx: ?*anyopaque) void {
@@ -849,7 +845,6 @@ pub fn tbHits(pool: *anyopaque) u64 {
     return graph_layout.poolTbHits(pool);
 }
 
-
 pub fn startSearching(pool: *anyopaque) void {
     const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
     var index: usize = 1;
@@ -882,7 +877,6 @@ pub fn ensureNetworkReplicated(pool: *anyopaque) void {
     // replica), so Worker::ensure_network_replicated is a no-op.
     _ = pool;
 }
-
 
 fn containsMove(moves: []const u16, target: u16) bool {
     for (moves) |move_raw| {

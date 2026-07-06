@@ -21,7 +21,6 @@ const max_moves: usize = 256;
 
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
-
 pub fn noneRaw() u16 {
     return none_raw;
 }

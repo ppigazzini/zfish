@@ -101,7 +101,6 @@ const FullAppendResult = struct {
 
 const BridgePositionSnapshot = position_snapshot.PositionSnapshot;
 
-
 const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32) + color_count * @sizeOf(bool);
 const computed_offset = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32);
 const accumulator_state_bytes = roundUp(accumulator_bytes, nnue_align);

@@ -348,7 +348,6 @@ inline fn statsUpdate(entry: *i16, bonus: c_int, comptime d: c_int) void {
     entry.* = @intCast(val + clamped - @divTrunc(val * abs_clamped, d));
 }
 
-
 // The caller resolves the table lookups (mainHistory[us][move], lowPlyHistory,
 // sharedHistory.pawn_entry) and hands this the int16 entry pointers; Zig owns the
 // bonus scaling + gravity update sequence.
@@ -1037,7 +1036,6 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 
     ssEmitBestmove(worker, best);
 }
-
 
 // One-shot fetch of the Worker state the inlined search needs, all stable for the
 // whole search: the NNUE accumulator stack, the node counter, the (numa-resolved)
@@ -1988,7 +1986,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
 
     // contHist[6] = {(ss-1)..(ss-6)}.continuation_history.
     var cont_hist = [6]?*const anyopaque{
-        ss1.continuation_history,        ssSub(ss, 2).continuation_history,
+        ss1.continuation_history,          ssSub(ss, 2).continuation_history,
         ssSub(ss, 3).continuation_history, ssSub(ss, 4).continuation_history,
         ssSub(ss, 5).continuation_history, ssSub(ss, 6).continuation_history,
     };
@@ -2681,7 +2679,6 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
     return if (uci_pv_sent) 1 else 0;
 }
 
-
 const low_ply_history_size: c_int = 5;
 
 // Compute the three quiet-history entries for `move` from the table bases and
@@ -2838,7 +2835,6 @@ const black: u8 = 1;
 const sq_none: u8 = 64;
 
 const piece_to_char = " PNBRQK  pnbrqk";
-
 
 // Memory mirror of upstream Stockfish StateInfo (src/position.h). Field order,
 // types, and alignment match the upstream layout exactly so Zig can walk the live

@@ -404,9 +404,12 @@ fn nativeLayerContentHash(network: *const anyopaque, bucket: usize) usize {
         wn[ui] = layerWeightsBytes(idx);
     }
     return nnue_hash.layerStackContentHash(
-        b[0][0..bn[0]], w[0][0..wn[0]],
-        b[1][0..bn[1]], w[1][0..wn[1]],
-        b[2][0..bn[2]], w[2][0..wn[2]],
+        b[0][0..bn[0]],
+        w[0][0..wn[0]],
+        b[1][0..bn[1]],
+        w[1][0..wn[1]],
+        b[2][0..bn[2]],
+        w[2][0..wn[2]],
     );
 }
 
@@ -468,7 +471,6 @@ fn nativeEvalFileContentHash() usize {
         nnDescription(),
     );
 }
-
 
 fn evaluateBucketRaw(
     network: *const anyopaque,
@@ -651,7 +653,6 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
     return .{ .hash_value = hash_value, .description = description };
 }
 
-
 // Native-owned inference storage. The native parse writes the weights straight
 // here; inference reads from the same memory. Owned by this module (M16.7): the
 // feature transformer is ~106 MB of SIMD-permuted weights, and each per-bucket
@@ -739,7 +740,6 @@ fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize
     return true;
 }
 
-
 // Parse this bucket's affine layers natively into the Zig-owned storage (skip the leading
 // architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights) and return the bytes
 // consumed. Native is the sole source.
@@ -815,10 +815,7 @@ fn readU32Le(bytes: []const u8, offset: *usize) ?u32 {
 
     const start = offset.*;
     offset.* += 4;
-    return @as(u32, bytes[start])
-        | (@as(u32, bytes[start + 1]) << 8)
-        | (@as(u32, bytes[start + 2]) << 16)
-        | (@as(u32, bytes[start + 3]) << 24);
+    return @as(u32, bytes[start]) | (@as(u32, bytes[start + 1]) << 8) | (@as(u32, bytes[start + 2]) << 16) | (@as(u32, bytes[start + 3]) << 24);
 }
 
 fn writeU32LeInto(bytes: []u8, value: u32) void {
