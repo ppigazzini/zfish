@@ -61,6 +61,12 @@ const rankOf = board_core.rankOf;
 const colorOfPiece = board_core.colorOfPiece;
 const isEmpty = board_core.isEmpty;
 
+// Zobrist/cuckoo hashing lives in the zobrist leaf (M17.3i). The index helpers
+// are comptime, so re-exported; the runtime tables are read as zobrist.<name>.
+const psqIdx = zobrist.psqIdx;
+const h1 = zobrist.h1;
+const h2 = zobrist.h2;
+
 // Memory mirror of the search Stack (src/search.h). Only the scalar fields used
 // by ported search helpers are read; the layout/size must match for ss-N stack
 // arithmetic.
@@ -91,6 +97,7 @@ const position_types = @import("position_types");
 const fen = @import("fen");
 const board_core = @import("board_core");
 const legality = @import("legality");
+const zobrist = @import("zobrist");
 const hist_color_nb = worker_histories.hist_color_nb;
 const hist_uint16 = worker_histories.hist_uint16;
 const hist_low_ply = worker_histories.hist_low_ply;
@@ -2801,70 +2808,14 @@ const sq_none_u8: u8 = 64;
 
 // Zobrist + cuckoo tables, owned by Zig (built by initRuntime, mirroring
 // upstream Position::init and the xorshift64* PRNG seeded with 1070372).
-var zob_psq: [16 * 64]u64 = undefined;
-var zob_enpassant: [8]u64 = undefined;
-var zob_castling: [16]u64 = undefined;
-var zob_side_val: u64 = undefined;
-var zob_no_pawns: u64 = undefined;
-var cuckoo_tbl: [8192]u64 = undefined;
-var cuckoo_move_tbl: [8192]u16 = undefined;
-
-const Prng = struct {
-    s: u64,
-    fn rand64(self: *Prng) u64 {
-        self.s ^= self.s >> 12;
-        self.s ^= self.s << 25;
-        self.s ^= self.s >> 27;
-        return self.s *% 2685821657736338717;
-    }
-};
-
-const init_pieces = [_]u8{ 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14 };
-
 pub fn initRuntime() void {
     // Register the cycle-break hooks movegen/movepick/nnue/uci_move call (they can't
     // import position).
     position_snapshot_port.fill_fn = &fillSnapshot;
     position_snapshot_port.move_is_legal_fn = &legal;
 
-    var rng = Prng{ .s = 1070372 };
-    @memset(&zob_psq, 0);
-    for (init_pieces) |pc| {
-        for (0..64) |s| zob_psq[@as(usize, pc) * 64 + s] = rng.rand64();
-    }
-    for (56..64) |s| zob_psq[1 * 64 + s] = 0; // W_PAWN promotion rank
-    for (0..8) |s| zob_psq[9 * 64 + s] = 0; // B_PAWN promotion rank
-    for (0..8) |f| zob_enpassant[f] = rng.rand64();
-    for (0..16) |cr| zob_castling[cr] = rng.rand64();
-    zob_side_val = rng.rand64();
-    zob_no_pawns = rng.rand64();
-
-    @memset(&cuckoo_tbl, 0);
-    @memset(&cuckoo_move_tbl, 0);
-    for (init_pieces) |pc| {
-        const pt = pc & 7;
-        var s1: u8 = 0;
-        while (s1 < 64) : (s1 += 1) {
-            var s2: u8 = s1 + 1;
-            while (s2 < 64) : (s2 += 1) {
-                if ((bitboard.attacks(pt, s1, 0) & sqBb(s2)) != 0) {
-                    var move: u16 = (@as(u16, s1) << 6) | s2;
-                    var key = zob_psq[psqIdx(pc, s1)] ^ zob_psq[psqIdx(pc, s2)] ^ zob_side_val;
-                    var i = h1(key);
-                    while (true) {
-                        const tk = cuckoo_tbl[i];
-                        cuckoo_tbl[i] = key;
-                        key = tk;
-                        const tm = cuckoo_move_tbl[i];
-                        cuckoo_move_tbl[i] = move;
-                        move = tm;
-                        if (move == 0) break;
-                        i = if (i == h1(key)) h2(key) else h1(key);
-                    }
-                }
-            }
-        }
-    }
+    // Build the Zobrist + cuckoo tables (now owned by the zobrist leaf, M17.3i).
+    zobrist.init();
 }
 
 pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque) void {
@@ -2876,10 +2827,10 @@ pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque) void {
     pos.st = new_st;
 
     if (pos.st.ep_square != sq_none_u8) {
-        pos.st.key ^= zob_enpassant[fileOf(pos.st.ep_square)];
+        pos.st.key ^= zobrist.zob_enpassant[fileOf(pos.st.ep_square)];
         pos.st.ep_square = sq_none_u8;
     }
-    pos.st.key ^= zob_side_val;
+    pos.st.key ^= zobrist.zob_side_val;
     pos.st.plies_from_null = 0;
 
     // Upstream 782852b26: the StateInfo was copied from the previous ply (incl. its capturedPiece);
@@ -2897,28 +2848,21 @@ pub fn undoNullMove(pos_ptr: *anyopaque) void {
     pos.side_to_move ^= 1;
 }
 
-inline fn h1(key: u64) usize {
-    return @intCast(key & 0x1fff);
-}
-inline fn h2(key: u64) usize {
-    return @intCast((key >> 16) & 0x1fff);
-}
-
 pub fn upcomingRepetition(pos_ptr: *const anyopaque, ply: c_int) bool {
-    const cuckoo: [*]const u64 = &cuckoo_tbl;
-    const cuckoo_move: [*]const u16 = &cuckoo_move_tbl;
+    const cuckoo: [*]const u64 = &zobrist.cuckoo_tbl;
+    const cuckoo_move: [*]const u16 = &zobrist.cuckoo_move_tbl;
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const end = @min(pos.st.rule50, pos.st.plies_from_null);
     if (end < 3) return false;
 
     const original_key = pos.st.key;
     var stp: *const StateInfo = pos.st.previous.?;
-    var other = original_key ^ stp.key ^ zob_side_val;
+    var other = original_key ^ stp.key ^ zobrist.zob_side_val;
 
     var i: c_int = 3;
     while (i <= end) : (i += 2) {
         stp = stp.previous.?;
-        other ^= stp.key ^ stp.previous.?.key ^ zob_side_val;
+        other ^= stp.key ^ stp.previous.?.key ^ zobrist.zob_side_val;
         stp = stp.previous.?;
         if (other != 0) continue;
 
@@ -3189,10 +3133,6 @@ fn swapPiece(pos: *Position, s: u8, pc: u8) void {
     putPiece(pos, pc, s);
 }
 
-inline fn psqIdx(pc: u8, sq: u8) usize {
-    return @as(usize, pc) * 64 + sq;
-}
-
 const CastleSquares = struct { to: u8, rfrom: u8, rto: u8 };
 
 fn doCastlingDo(pos: *Position, us: u8, from: u8, to_in: u8, dp: *DirtyPiece, dts: *DirtyThreats) CastleSquares {
@@ -3220,10 +3160,10 @@ pub fn doMove(
     dp_ptr: *anyopaque,
     dts_ptr: *anyopaque,
 ) void {
-    const psq: [*]const u64 = &zob_psq;
-    const enpassant: [*]const u64 = &zob_enpassant;
-    const castling: [*]const u64 = &zob_castling;
-    const zob_side = zob_side_val;
+    const psq: [*]const u64 = &zobrist.zob_psq;
+    const enpassant: [*]const u64 = &zobrist.zob_enpassant;
+    const castling: [*]const u64 = &zobrist.zob_castling;
+    const zob_side = zobrist.zob_side_val;
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
     const new_st: *StateInfo = @ptrCast(@alignCast(new_st_ptr));
     const dp: *DirtyPiece = @ptrCast(@alignCast(dp_ptr));
@@ -3627,11 +3567,11 @@ fn parseInt(cur: *FenCursor) ?c_int {
 }
 
 pub fn setState(pos_ptr: *const anyopaque) void {
-    const psq: [*]const u64 = &zob_psq;
-    const enpassant: [*]const u64 = &zob_enpassant;
-    const castling: [*]const u64 = &zob_castling;
-    const zob_side = zob_side_val;
-    const no_pawns = zob_no_pawns;
+    const psq: [*]const u64 = &zobrist.zob_psq;
+    const enpassant: [*]const u64 = &zobrist.zob_enpassant;
+    const castling: [*]const u64 = &zobrist.zob_castling;
+    const zob_side = zobrist.zob_side_val;
+    const no_pawns = zobrist.zob_no_pawns;
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const st = pos.st;
     st.key = 0;
@@ -3700,7 +3640,7 @@ pub fn computeMaterialKey(piece_counts_ptr: [*]const c_int, piece_count_len: usi
 
         var slot: usize = 0;
         while (slot < @as(usize, @intCast(count))) : (slot += 1) {
-            key ^= zob_psq[@as(usize, @intCast(piece_index)) * 64 + 8 + slot];
+            key ^= zobrist.zob_psq[@as(usize, @intCast(piece_index)) * 64 + 8 + slot];
         }
     }
 
