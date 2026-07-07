@@ -98,6 +98,7 @@ const fen = @import("fen");
 const board_core = @import("board_core");
 const legality = @import("legality");
 const zobrist = @import("zobrist");
+const repetition = @import("repetition");
 const hist_color_nb = worker_histories.hist_color_nb;
 const hist_uint16 = worker_histories.hist_uint16;
 const hist_low_ply = worker_histories.hist_low_ply;
@@ -2848,68 +2849,12 @@ pub fn undoNullMove(pos_ptr: *anyopaque) void {
     pos.side_to_move ^= 1;
 }
 
-pub fn upcomingRepetition(pos_ptr: *const anyopaque, ply: c_int) bool {
-    const cuckoo: [*]const u64 = &zobrist.cuckoo_tbl;
-    const cuckoo_move: [*]const u16 = &zobrist.cuckoo_move_tbl;
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const end = @min(pos.st.rule50, pos.st.plies_from_null);
-    if (end < 3) return false;
-
-    const original_key = pos.st.key;
-    var stp: *const StateInfo = pos.st.previous.?;
-    var other = original_key ^ stp.key ^ zobrist.zob_side_val;
-
-    var i: c_int = 3;
-    while (i <= end) : (i += 2) {
-        stp = stp.previous.?;
-        other ^= stp.key ^ stp.previous.?.key ^ zobrist.zob_side_val;
-        stp = stp.previous.?;
-        if (other != 0) continue;
-
-        const move_key = original_key ^ stp.key;
-        var j = h1(move_key);
-        if (cuckoo[j] != move_key) {
-            j = h2(move_key);
-            if (cuckoo[j] != move_key) continue;
-        }
-
-        const mv = cuckoo_move[j];
-        const s1 = moveFrom(mv);
-        const s2 = moveTo(mv);
-        if (((bitboard.between(s1, s2) ^ sqBb(s2)) & pos.by_type_bb[0]) == 0) {
-            if (ply > i) return true;
-            if (stp.repetition != 0) return true;
-        }
-    }
-    return false;
-}
-
-pub fn isDraw(pos_ptr: *const anyopaque, ply: c_int) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    if (pos.st.rule50 > 99) {
-        if (pos.st.checkers_bb == 0) return true;
-        var buf: [256]u16 = undefined;
-        if (movegen.generateLegal(pos_ptr, &buf) != 0) return true;
-    }
-    return isRepetition(pos_ptr, ply);
-}
-
-pub fn isRepetition(pos_ptr: *const anyopaque, ply: c_int) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const rep = pos.st.repetition;
-    return rep != 0 and rep < ply;
-}
-
-pub fn hasRepeated(pos_ptr: *const anyopaque) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    var stc: *const StateInfo = pos.st;
-    var end = @min(pos.st.rule50, pos.st.plies_from_null);
-    while (end >= 4) : (end -= 1) {
-        if (stc.repetition != 0) return true;
-        stc = stc.previous.?;
-    }
-    return false;
-}
+// Repetition / draw detection lives in the repetition leaf (M17.3j); re-exported
+// so the search callers resolve through the position surface.
+pub const upcomingRepetition = repetition.upcomingRepetition;
+pub const isDraw = repetition.isDraw;
+pub const isRepetition = repetition.isRepetition;
+pub const hasRepeated = repetition.hasRepeated;
 
 pub fn setCastlingRight(pos_ptr: *anyopaque, c: u8, rfrom: u8) void {
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
