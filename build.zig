@@ -140,6 +140,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "zobrist", .path = "src/board/zobrist.zig" },
         .{ .name = "repetition", .path = "src/board/repetition.zig" },
         .{ .name = "position_query", .path = "src/board/position_query.zig" },
+        .{ .name = "state_setup", .path = "src/board/state_setup.zig" },
     };
     var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
     for (module_specs) |spec| {
@@ -180,6 +181,12 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "position_query", .to = "position_query" },
         .{ .from = "position_query", .imp = "board_core", .to = "board_core" },
         .{ .from = "position_query", .imp = "position_types", .to = "position_types" },
+        .{ .from = "position", .imp = "state_setup", .to = "state_setup" },
+        .{ .from = "state_setup", .imp = "bitboard", .to = "bitboard" },
+        .{ .from = "state_setup", .imp = "board_core", .to = "board_core" },
+        .{ .from = "state_setup", .imp = "zobrist", .to = "zobrist" },
+        .{ .from = "state_setup", .imp = "legality", .to = "legality" },
+        .{ .from = "state_setup", .imp = "position_types", .to = "position_types" },
         .{ .from = "engine", .imp = "position", .to = "position" },
         .{ .from = "engine", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "position", .imp = "position_snapshot", .to = "position_snapshot" },
