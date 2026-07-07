@@ -235,6 +235,38 @@ test "givesCheck agrees with the post-move check state" {
     try checkGivesCheck(cpw5_fen);
 }
 
+// A null move flips the side to move (and clears any en-passant square + rehashes
+// the side key) without moving a piece; undoing it must restore the position
+// exactly. In between, the side and key must have actually changed. Exercises the
+// move_do null-move path the search's null-move pruning relies on.
+fn checkNullMoveRoundTrip(fen: []const u8) !void {
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+    if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
+        std.heap.c_allocator.free(std.mem.span(err));
+        @panic("checkNullMoveRoundTrip: setPosition failed on a known-legal FEN");
+    }
+    const pos: *const position.Position = @ptrCast(&p);
+
+    const key0 = pos.st.key;
+    const side0 = pos.side_to_move;
+
+    var null_st: [state_info_size]u8 align(16) = undefined;
+    position.doNullMove(&p, &null_st);
+    try std.testing.expect(pos.side_to_move != side0); // side flipped
+    try std.testing.expect(pos.st.key != key0); // key rehashed
+
+    position.undoNullMove(&p);
+    try std.testing.expectEqual(key0, pos.st.key); // key restored
+    try std.testing.expectEqual(side0, pos.side_to_move); // side restored
+}
+
+test "null move round-trips" {
+    position.initRuntime();
+    try checkNullMoveRoundTrip(start_fen);
+    try checkNullMoveRoundTrip(kiwipete_fen);
+}
+
 fn sq(file: u8, rank: u8) u8 {
     return rank * 8 + file;
 }
