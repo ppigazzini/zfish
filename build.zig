@@ -136,6 +136,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "position_types", .path = "src/board/position_types.zig" },
         .{ .name = "fen", .path = "src/board/fen.zig" },
         .{ .name = "board_core", .path = "src/board/board_core.zig" },
+        .{ .name = "legality", .path = "src/board/legality.zig" },
     };
     var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
     for (module_specs) |spec| {
@@ -159,6 +160,11 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "fen", .to = "fen" },
         .{ .from = "position", .imp = "board_core", .to = "board_core" },
         .{ .from = "board_core", .imp = "position_types", .to = "position_types" },
+        .{ .from = "position", .imp = "legality", .to = "legality" },
+        .{ .from = "legality", .imp = "board_core", .to = "board_core" },
+        .{ .from = "legality", .imp = "bitboard", .to = "bitboard" },
+        .{ .from = "legality", .imp = "movegen", .to = "movegen" },
+        .{ .from = "legality", .imp = "position_types", .to = "position_types" },
         .{ .from = "engine", .imp = "position", .to = "position" },
         .{ .from = "engine", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "position", .imp = "position_snapshot", .to = "position_snapshot" },

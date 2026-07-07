@@ -90,6 +90,7 @@ const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
 const fen = @import("fen");
 const board_core = @import("board_core");
+const legality = @import("legality");
 const hist_color_nb = worker_histories.hist_color_nb;
 const hist_uint16 = worker_histories.hist_uint16;
 const hist_low_ply = worker_histories.hist_low_ply;
@@ -2777,6 +2778,15 @@ pub const flipFen = fen.flipFen;
 pub const formatFen = fen.formatFen;
 pub const buildEndgameFen = fen.buildEndgameFen;
 
+// Move legality / SEE queries live in the legality leaf (M17.3h); re-exported so
+// the search + movegen call sites and the move_is_legal_fn hook keep resolving.
+pub const attackersTo = legality.attackersTo;
+pub const attackersToExist = legality.attackersToExist;
+pub const legal = legality.legal;
+pub const seeGe = legality.seeGe;
+pub const pseudoLegal = legality.pseudoLegal;
+pub const givesCheck = legality.givesCheck;
+
 comptime {
     // Native struct (M16.8 de-mirror): Zig owns the field order. The only external
     // layout pin is the network's board/side reads (graph_layout.positionBoard/
@@ -2955,20 +2965,6 @@ pub fn hasRepeated(pos_ptr: *const anyopaque) bool {
         stc = stc.previous.?;
     }
     return false;
-}
-
-pub fn attackersTo(pos_ptr: *const anyopaque, s: u8, occupied: u64) u64 {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const rook_queen = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
-    const bishop_queen = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
-    const white_pawns = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
-    const black_pawns = pos.by_color_bb[color_black] & pos.by_type_bb[pawn_pt];
-    return (bitboard.attacks(rook_pt, s, occupied) & rook_queen) |
-        (bitboard.attacks(bishop_pt, s, occupied) & bishop_queen) |
-        (pawnAttacks(color_black, s) & white_pawns) |
-        (pawnAttacks(color_white, s) & black_pawns) |
-        (bitboard.attacks(knight_pt, s, 0) & pos.by_type_bb[knight_pt]) |
-        (bitboard.attacks(king_pt, s, 0) & pos.by_type_bb[king_pt]);
 }
 
 pub fn setCastlingRight(pos_ptr: *anyopaque, c: u8, rfrom: u8) void {
@@ -3691,219 +3687,6 @@ pub fn setCheckInfo(pos_ptr: *const anyopaque) void {
     pos.st.check_squares[rook_pt] = bitboard.attacks(rook_pt, ksq, all);
     pos.st.check_squares[queen_pt] = pos.st.check_squares[bishop_pt] | pos.st.check_squares[rook_pt];
     pos.st.check_squares[king_pt] = 0;
-}
-
-pub fn legal(pos_ptr: *const anyopaque, m: u16) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const us = pos.side_to_move;
-    const them = us ^ 1;
-    const from = moveFrom(m);
-    const orig_to = moveTo(m);
-    const all = pos.by_type_bb[0];
-
-    if (moveTypeOf(m) == mt_castling) {
-        const king_dest_rel: u8 = if (orig_to > from) 6 else 2; // SQ_G1 : SQ_C1
-        const to = relativeSquare(us, king_dest_rel);
-        const step: i8 = if (to > from) -1 else 1; // WEST : EAST
-        var s: u8 = to;
-        while (s != from) : (s = @intCast(@as(i16, s) + step)) {
-            if (attackersToExist(pos_ptr, s, all, them)) return false;
-        }
-        if (!pos.chess960) return true;
-        return (pos.st.blockers_for_king[us] & sqBb(orig_to)) == 0;
-    }
-
-    if (pieceTypeOn(pos, from) == king_pt) {
-        return !attackersToExist(pos_ptr, orig_to, all ^ sqBb(from), them);
-    }
-
-    return (pos.st.blockers_for_king[us] & sqBb(from)) == 0 or
-        (bitboard.line(from, orig_to) & (pos.by_color_bb[us] & pos.by_type_bb[king_pt])) != 0;
-}
-
-pub fn seeGe(pos_ptr: *const anyopaque, m: u16, threshold: c_int) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    if (moveTypeOf(m) != mt_normal) return 0 >= threshold;
-
-    const from = moveFrom(m);
-    const to = moveTo(m);
-
-    var swap: c_int = piece_value_by_type[pos.board[to] & 7] - threshold;
-    if (swap < 0) return false;
-    swap = piece_value_by_type[pos.board[from] & 7] - swap;
-    if (swap <= 0) return true;
-
-    var occupied = pos.by_type_bb[0] ^ sqBb(from) ^ sqBb(to);
-    var stm = pos.side_to_move;
-    var attackers = attackersTo(pos_ptr, to, occupied);
-    var res: c_int = 1;
-
-    const bishops_queens = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
-    const rooks_queens = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
-
-    while (true) {
-        stm ^= 1;
-        attackers &= occupied;
-
-        var stm_attackers = attackers & pos.by_color_bb[stm];
-        if (stm_attackers == 0) break;
-
-        if ((pos.st.pinners[stm ^ 1] & occupied) != 0) {
-            stm_attackers &= ~pos.st.blockers_for_king[stm];
-            if (stm_attackers == 0) break;
-        }
-
-        res ^= 1;
-        var bb = stm_attackers & pos.by_type_bb[pawn_pt];
-        if (bb != 0) {
-            swap = 208 - swap;
-            if (swap < res) break;
-            occupied ^= lsbBb(bb);
-            attackers |= bitboard.attacks(bishop_pt, to, occupied) & bishops_queens;
-        } else if (blk: {
-            bb = stm_attackers & pos.by_type_bb[knight_pt];
-            break :blk bb != 0;
-        }) {
-            swap = 781 - swap;
-            if (swap < res) break;
-            occupied ^= lsbBb(bb);
-        } else if (blk: {
-            bb = stm_attackers & pos.by_type_bb[bishop_pt];
-            break :blk bb != 0;
-        }) {
-            swap = 825 - swap;
-            if (swap < res) break;
-            occupied ^= lsbBb(bb);
-            attackers |= bitboard.attacks(bishop_pt, to, occupied) & bishops_queens;
-        } else if (blk: {
-            bb = stm_attackers & pos.by_type_bb[rook_pt];
-            break :blk bb != 0;
-        }) {
-            swap = 1276 - swap;
-            if (swap < res) break;
-            occupied ^= lsbBb(bb);
-            attackers |= bitboard.attacks(rook_pt, to, occupied) & rooks_queens;
-        } else if (blk: {
-            bb = stm_attackers & pos.by_type_bb[queen_pt];
-            break :blk bb != 0;
-        }) {
-            swap = 2538 - swap;
-            occupied ^= lsbBb(bb);
-            attackers |= (bitboard.attacks(bishop_pt, to, occupied) & bishops_queens) |
-                (bitboard.attacks(rook_pt, to, occupied) & rooks_queens);
-        } else {
-            // King capture: if the opponent still has attackers, reverse the result.
-            return if ((attackers & ~pos.by_color_bb[stm]) != 0) (res ^ 1) != 0 else res != 0;
-        }
-    }
-
-    return res != 0;
-}
-
-pub fn pseudoLegal(pos_ptr: *const anyopaque, m: u16) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const us = pos.side_to_move;
-    const them = us ^ 1;
-    const from = moveFrom(m);
-    const to = moveTo(m);
-    const pc = pos.board[from];
-    const all = pos.by_type_bb[0];
-
-    // Slower but simpler path for non-NORMAL moves: membership in the generator.
-    if (moveTypeOf(m) != mt_normal) {
-        var buf: [256]u16 = undefined;
-        const n = if (pos.st.checkers_bb != 0)
-            movegen.generateEvasions(pos_ptr, &buf)
-        else
-            movegen.generateNonEvasions(pos_ptr, &buf);
-        for (buf[0..n]) |mv| {
-            if (mv == m) return true;
-        }
-        return false;
-    }
-
-    if (pc == 0 or colorOfPiece(pc) != us) return false;
-    if ((pos.by_color_bb[us] & sqBb(to)) != 0) return false;
-
-    if ((pc & 7) == pawn_pt) {
-        if (((rank8_bb | rank1_bb) & sqBb(to)) != 0) return false;
-
-        const push: i16 = if (us == color_white) 8 else -8;
-        const is_capture = (pawnAttacks(us, from) & pos.by_color_bb[them] & sqBb(to)) != 0;
-        const is_single_push = (@as(i16, from) + push == @as(i16, to)) and isEmpty(pos, to);
-        const rel_rank = rankOf(from) ^ (us * 7);
-        const is_double_push = (@as(i16, from) + 2 * push == @as(i16, to)) and rel_rank == 1 and
-            isEmpty(pos, to) and isEmpty(pos, @intCast(@as(i16, to) - push));
-        if (!(is_capture or is_single_push or is_double_push)) return false;
-    } else if ((bitboard.attacks(pc & 7, from, all) & sqBb(to)) == 0) {
-        return false;
-    }
-
-    const checkers = pos.st.checkers_bb;
-    if (checkers != 0) {
-        if ((pc & 7) != king_pt) {
-            if ((checkers & (checkers -% 1)) != 0) return false; // double check
-            const ksq = kingSquare(pos, us);
-            const checker_sq: u8 = @intCast(@ctz(checkers));
-            if ((bitboard.between(ksq, checker_sq) & sqBb(to)) == 0) return false;
-        } else if (attackersToExist(pos_ptr, to, all ^ sqBb(from), them)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-pub fn givesCheck(pos_ptr: *const anyopaque, m: u16) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const stm = pos.side_to_move;
-    const them = stm ^ 1;
-    const from = moveFrom(m);
-    const to = moveTo(m);
-    const mt = moveTypeOf(m);
-    const all = pos.by_type_bb[0];
-    const their_king_bb = pos.by_color_bb[them] & pos.by_type_bb[king_pt];
-
-    // Direct check.
-    if ((pos.st.check_squares[pieceTypeOn(pos, from)] & sqBb(to)) != 0) return true;
-
-    // Discovered check.
-    if ((pos.st.blockers_for_king[them] & sqBb(from)) != 0) {
-        return (bitboard.line(from, to) & their_king_bb) == 0 or mt == mt_castling;
-    }
-
-    switch (mt) {
-        mt_normal => return false,
-        mt_promotion => return (bitboard.attacks(movePromotionType(m), to, all ^ sqBb(from)) &
-            their_king_bb) != 0,
-        mt_en_passant => {
-            const capsq = makeSquare(fileOf(to), rankOf(from));
-            const b = (all ^ sqBb(from) ^ sqBb(capsq)) | sqBb(to);
-            const ksq = kingSquare(pos, them);
-            const our = pos.by_color_bb[stm];
-            const our_qr = our & (pos.by_type_bb[queen_pt] | pos.by_type_bb[rook_pt]);
-            const our_qb = our & (pos.by_type_bb[queen_pt] | pos.by_type_bb[bishop_pt]);
-            return ((bitboard.attacks(rook_pt, ksq, b) & our_qr) |
-                (bitboard.attacks(bishop_pt, ksq, b) & our_qb)) != 0;
-        },
-        else => { // castling
-            const rto = relativeSquare(stm, if (to > from) 5 else 3); // SQ_F1 : SQ_D1
-            return (pos.st.check_squares[rook_pt] & sqBb(rto)) != 0;
-        },
-    }
-}
-
-pub fn attackersToExist(pos_ptr: *const anyopaque, s: u8, occupied: u64, c: u8) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const them = pos.by_color_bb[c];
-    const rook_queen = them & (pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt]);
-    const bishop_queen = them & (pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt]);
-    if ((bitboard.attacks(rook_pt, s, occupied) & rook_queen) != 0) return true;
-    if ((bitboard.attacks(bishop_pt, s, occupied) & bishop_queen) != 0) return true;
-    if ((pawnAttacks(c ^ 1, s) & (them & pos.by_type_bb[pawn_pt])) != 0) return true;
-    if ((bitboard.attacks(knight_pt, s, 0) & (them & pos.by_type_bb[knight_pt])) != 0) return true;
-    if ((bitboard.attacks(king_pt, s, 0) & (them & pos.by_type_bb[king_pt])) != 0) return true;
-    return false;
 }
 
 pub fn computeMaterialKey(piece_counts_ptr: [*]const c_int, piece_count_len: usize) u64 {
