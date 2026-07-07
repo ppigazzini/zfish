@@ -104,11 +104,11 @@ fn goParsed(engine_ptr: *anyopaque, parsed: ParsedLimits) void {
                 @memcpy(slot[1 .. 1 + tok.len], tok);
                 i += 1;
             }
-            // Write the libc++ vector {begin,end,cap} into the native searchmoves field
-            // (LimitsType is a native struct now; searchmoves is no longer at offset 0).
-            @as(*usize, @ptrCast(@alignCast(&limits.searchmoves[0]))).* = @intFromPtr(elems); // begin
-            @as(*usize, @ptrCast(@alignCast(&limits.searchmoves[8]))).* = @intFromPtr(elems) + nbytes; // end
-            @as(*usize, @ptrCast(@alignCast(&limits.searchmoves[16]))).* = @intFromPtr(elems) + nbytes; // cap
+            // Write the libc++ vector {begin,end,cap} into the native searchmoves
+            // header (a typed [3]usize now -- no reinterpret of a byte array).
+            limits.searchmoves[0] = @intFromPtr(elems); // begin
+            limits.searchmoves[1] = @intFromPtr(elems) + nbytes; // end
+            limits.searchmoves[2] = @intFromPtr(elems) + nbytes; // cap
             sm_elems = elems;
         }
     }

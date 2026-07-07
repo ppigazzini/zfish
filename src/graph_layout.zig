@@ -474,7 +474,7 @@ pub const TranspositionTable = struct {
 // ints (movestogo/depth/mate/perft/infinite), nodes, and ponderMode. workerSetLimits
 // copies the POD fields, so any layout error here breaks bench (gate-verified).
 pub const LimitsType = struct {
-    searchmoves: [24]u8, // std::vector<std::string> mirror {begin,end,cap}
+    searchmoves: [3]usize, // std::vector<std::string> header {begin, end, cap}
     time: [2]i64, // time[WHITE], time[BLACK]
     inc: [2]i64, // inc[WHITE], inc[BLACK]
     npmsec: i64,
@@ -500,10 +500,11 @@ pub const LimitsType = struct {
     pub inline fn perftValue(self: *const LimitsType) usize {
         return @intCast(self.perft);
     }
-    /// Number of entries in the searchmoves std::vector<std::string> at offset 0.
+    /// Number of entries in the searchmoves std::vector<std::string>: (end-begin)
+    /// over sizeof(std::string) (24). begin/end are the typed usize header words.
     pub inline fn searchmoveCount(self: *const LimitsType) usize {
-        const begin = @as(*const usize, @ptrCast(@alignCast(&self.searchmoves[0]))).*;
-        const end = @as(*const usize, @ptrCast(@alignCast(&self.searchmoves[8]))).*;
+        const begin = self.searchmoves[0];
+        const end = self.searchmoves[1];
         return (end - begin) / 24;
     }
 };

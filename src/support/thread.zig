@@ -46,7 +46,7 @@ inline fn limitsSearchmoveText(limits: *const anyopaque, index: usize) ByteView 
     // searchmoves is no longer at LimitsType offset 0 (native struct); read its
     // libc++ vector begin pointer through the typed field.
     const lt = graph_layout.LimitsType.fromPtr(@constCast(limits));
-    const vec_begin = @as(*const usize, @ptrCast(@alignCast(&lt.searchmoves[0]))).*;
+    const vec_begin = lt.searchmoves[0]; // typed [3]usize header {begin, end, cap}
     const str_ptr = vec_begin + index * 24;
     const b0 = @as(*const u8, @ptrFromInt(str_ptr)).*;
     if (b0 & 1 == 0) return .{ .ptr = @ptrFromInt(str_ptr + 1), .len = b0 >> 1 };
