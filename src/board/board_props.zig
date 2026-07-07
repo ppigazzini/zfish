@@ -169,3 +169,34 @@ test "FEN parse -> format round-trips" {
     try checkFenRoundTrip(start_fen);
     try checkFenRoundTrip(kiwipete_fen);
 }
+
+// Cross-check the movegen and legality leaves against each other: every move the
+// generator emits as legal must also be accepted by the standalone legal() and
+// pseudoLegal() predicates. A disagreement means the extracted legality leaf
+// drifted from the generator's own legality filter (or vice versa) -- a class of
+// bug perft can hide when two errors cancel in the count.
+fn checkMoveGenLegalityAgree(fen: []const u8) !void {
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+    if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
+        std.heap.c_allocator.free(std.mem.span(err));
+        @panic("checkMoveGenLegalityAgree: setPosition failed on a known-legal FEN");
+    }
+    var moves: [256]u16 = undefined;
+    const n = movegen.generateLegal(&p, &moves);
+    try std.testing.expect(n > 0);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        try std.testing.expect(position.legal(&p, moves[i]));
+        try std.testing.expect(position.pseudoLegal(&p, moves[i]));
+    }
+}
+
+test "generated legal moves satisfy legal() and pseudoLegal()" {
+    position.initRuntime();
+    try checkMoveGenLegalityAgree(start_fen);
+    try checkMoveGenLegalityAgree(kiwipete_fen);
+    try checkMoveGenLegalityAgree(cpw3_fen);
+    try checkMoveGenLegalityAgree(cpw4_fen);
+    try checkMoveGenLegalityAgree(cpw5_fen);
+}
