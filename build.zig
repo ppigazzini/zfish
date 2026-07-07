@@ -139,6 +139,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "legality", .path = "src/board/legality.zig" },
         .{ .name = "zobrist", .path = "src/board/zobrist.zig" },
         .{ .name = "repetition", .path = "src/board/repetition.zig" },
+        .{ .name = "position_query", .path = "src/board/position_query.zig" },
     };
     var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
     for (module_specs) |spec| {
@@ -176,6 +177,9 @@ pub fn build(b: *std.Build) void {
         .{ .from = "repetition", .imp = "board_core", .to = "board_core" },
         .{ .from = "repetition", .imp = "zobrist", .to = "zobrist" },
         .{ .from = "repetition", .imp = "position_types", .to = "position_types" },
+        .{ .from = "position", .imp = "position_query", .to = "position_query" },
+        .{ .from = "position_query", .imp = "board_core", .to = "board_core" },
+        .{ .from = "position_query", .imp = "position_types", .to = "position_types" },
         .{ .from = "engine", .imp = "position", .to = "position" },
         .{ .from = "engine", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "position", .imp = "position_snapshot", .to = "position_snapshot" },
