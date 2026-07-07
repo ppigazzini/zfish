@@ -66,6 +66,31 @@ test "perft: Kiwipete matches reference node counts" {
     try std.testing.expectEqual(@as(u64, 97862), perftFen(kiwipete_fen, 0, 3));
 }
 
+// The remaining Chess Programming Wiki perft reference positions. Position 3 is an
+// endgame rich in en-passant + rook checks; positions 4/5 are promotion-heavy
+// (P/p on the 7th/2nd rank) and 5 is asymmetric; these hit make/unmake edge cases
+// (ep capture-square, promotion material-key, castling-rights masking) that the
+// start position and Kiwipete under-cover.
+const cpw3_fen = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
+const cpw4_fen = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
+const cpw5_fen = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8";
+
+test "perft: CPW reference positions 3-5 match reference node counts" {
+    position.initRuntime();
+    try std.testing.expectEqual(@as(u64, 14), perftFen(cpw3_fen, 0, 1));
+    try std.testing.expectEqual(@as(u64, 191), perftFen(cpw3_fen, 0, 2));
+    try std.testing.expectEqual(@as(u64, 2812), perftFen(cpw3_fen, 0, 3));
+    try std.testing.expectEqual(@as(u64, 43238), perftFen(cpw3_fen, 0, 4));
+
+    try std.testing.expectEqual(@as(u64, 6), perftFen(cpw4_fen, 0, 1));
+    try std.testing.expectEqual(@as(u64, 264), perftFen(cpw4_fen, 0, 2));
+    try std.testing.expectEqual(@as(u64, 9467), perftFen(cpw4_fen, 0, 3));
+
+    try std.testing.expectEqual(@as(u64, 44), perftFen(cpw5_fen, 0, 1));
+    try std.testing.expectEqual(@as(u64, 1486), perftFen(cpw5_fen, 0, 2));
+    try std.testing.expectEqual(@as(u64, 62379), perftFen(cpw5_fen, 0, 3));
+}
+
 // For every legal move, do then immediately undo, and assert the Position is
 // byte-for-byte the pre-move state -- key, bitboards, board, and piece counts.
 // Perft only checks node COUNTS; this catches state corruption that leaves the
