@@ -73,6 +73,16 @@ jobs:
       # not gated in CI.
       - run: zig build test -Darch=x86-64-sse41-popcnt
 
+      # Safety-checked (UBSan-equivalent) test run: the same unit + property suite
+      # rebuilt under -Doptimize=ReleaseSafe, so Zig's runtime safety checks --
+      # bounds, integer overflow, pointer alignment, null-unwrap, illegal cast --
+      # are ON across the board path the tests drive (incl. the 80k-iteration parser
+      # fuzz). This was blocked for the whole campaign by two latent UB bugs in the
+      # production code (M17.5c misaligned searchmoves reinterpret, M17.5d null child
+      # PV) surfaced only under ReleaseSafe; with those fixed, both bench and the
+      # full suite are green here.
+      - run: zig build test -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
+
       # Arch-variant determinism (REPORT-14 M14.D, widened in REPORT-15 M15.1): the
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
       # codegen change must not perturb the integer-exact eval. This sweep asserts
