@@ -103,6 +103,7 @@ pub const SearchStack = struct {
 // as WorkerLayout.histories) can name them without an import cycle. Re-export the
 // names the ported search code + external callers already use.
 const worker_histories = @import("worker_histories");
+const position_types = @import("position_types");
 const hist_color_nb = worker_histories.hist_color_nb;
 const hist_uint16 = worker_histories.hist_uint16;
 const hist_low_ply = worker_histories.hist_low_ply;
@@ -2800,46 +2801,11 @@ const piece_to_char = " PNBRQK  pnbrqk";
 // types, and alignment match the upstream layout exactly so Zig can walk the live
 // state stack (linked via `previous`). Only used via pointer (never allocated as a
 // standalone here), so it must stay byte-compatible with that layout.
-pub const StateInfo = struct {
-    material_key: u64,
-    pawn_key: u64,
-    minor_piece_key: u64,
-    non_pawn_key: [2]u64,
-    non_pawn_material: [2]c_int,
-    castling_rights: c_int,
-    rule50: c_int,
-    plies_from_null: c_int,
-    ep_square: u8,
-    key: u64,
-    checkers_bb: u64,
-    previous: ?*StateInfo,
-    blockers_for_king: [2]u64,
-    pinners: [2]u64,
-    check_squares: [8]u64,
-    captured_piece: u8,
-    repetition: c_int,
-};
-
-// Full memory image of upstream Position (src/position.h): the leading data
-// members the ported code reaches through a pointer, plus the trailing NNUE
-// scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
-// members the struct is the whole 1032-byte object, so the native graph owns and
-// allocates a Position outright.
-pub const Position = struct {
-    board: [64]u8,
-    by_type_bb: [8]u64,
-    by_color_bb: [2]u64,
-    piece_count: [16]c_int,
-    castling_rights_mask: [64]c_int,
-    castling_rook_square: [16]u8,
-    castling_path: [16]u64,
-    st: *StateInfo,
-    game_ply: c_int,
-    side_to_move: u8,
-    chess960: bool,
-    scratch_dp: DirtyPiece,
-    scratch_dts: DirtyThreats,
-};
+// StateInfo/Position and their POD scratch members live in the position_types leaf
+// module (M17.3b) so graph_layout can embed typed root_pos/root_state without a
+// module cycle; re-exported here as the position module's public surface.
+pub const StateInfo = position_types.StateInfo;
+pub const Position = position_types.Position;
 
 comptime {
     // Native struct (M16.8 de-mirror): Zig owns the field order. The only external
@@ -3138,22 +3104,8 @@ pub fn updateSliderBlockers(pos_ptr: *const anyopaque, c: u8) void {
 const max_u64: u64 = 0xFFFFFFFFFFFFFFFF;
 
 // Mirrors of the NNUE dirty-state structs (src/types.h) the accumulator consumes.
-const DirtyPiece = struct {
-    pc: u8,
-    from: u8,
-    to: u8,
-    remove_sq: u8,
-    add_sq: u8,
-    remove_pc: u8,
-    add_pc: u8,
-};
-const DirtyThreats = struct {
-    list_values: [96]u32, // ValueList<DirtyThreat,96>::values_
-    list_size: usize, // ValueList<...>::size_
-    us: u8,
-    prev_ksq: u8,
-    ksq: u8,
-};
+const DirtyPiece = position_types.DirtyPiece;
+const DirtyThreats = position_types.DirtyThreats;
 
 fn addDirtyThreat(dts: *DirtyThreats, put_piece: bool, pc: u8, threatened: u8, s: u8, threatened_sq: u8) void {
     const data: u32 = (@as(u32, @intFromBool(put_piece)) << 31) |

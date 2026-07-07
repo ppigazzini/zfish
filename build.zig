@@ -133,6 +133,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "shared_histories_map", .path = "src/support/shared_histories_map.zig" },
         .{ .name = "network_holder", .path = "src/support/network_holder.zig" },
         .{ .name = "worker_histories", .path = "src/board/worker_histories.zig" },
+        .{ .name = "position_types", .path = "src/board/position_types.zig" },
     };
     var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
     for (module_specs) |spec| {
@@ -151,6 +152,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "shared_histories_map", .to = "shared_histories_map" },
         .{ .from = "position", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "graph_layout", .imp = "worker_histories", .to = "worker_histories" },
+        .{ .from = "position", .imp = "position_types", .to = "position_types" },
         .{ .from = "engine", .imp = "position", .to = "position" },
         .{ .from = "engine", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "position", .imp = "position_snapshot", .to = "position_snapshot" },
@@ -815,6 +817,7 @@ pub fn build(b: *std.Build) void {
     // sibling path import, so they build in isolation.
     inline for (.{
         "src/board/state_info.zig",
+        "src/board/position_types.zig",
         "src/board/state_list.zig",
         "src/support/root_move.zig",
         "src/support/search_manager.zig",
