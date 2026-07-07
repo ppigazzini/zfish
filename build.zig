@@ -359,6 +359,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine", .imp = "nnue_misc", .to = "nnue_misc" },
         .{ .from = "uci_move", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "movepick", .imp = "position_snapshot", .to = "position_snapshot" },
+        .{ .from = "movepick", .imp = "position_types", .to = "position_types" },
         .{ .from = "movepick", .imp = "bitboard", .to = "bitboard" },
         .{ .from = "movepick", .imp = "movegen", .to = "movegen" },
         .{ .from = "movegen", .imp = "position_snapshot", .to = "position_snapshot" },
