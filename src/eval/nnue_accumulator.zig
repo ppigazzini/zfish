@@ -171,30 +171,6 @@ pub fn stackLatestThreat(stack: *const anyopaque) *const anyopaque {
     return @ptrCast(stateBytesConst(threat_feature, stackSize(stack) - 1, stack));
 }
 
-pub fn stackMutLatestPsq(stack: *anyopaque) *anyopaque {
-    return @ptrCast(stateBytesMut(psq_feature, stackSize(stack) - 1, stack));
-}
-
-pub fn stackMutLatestThreat(stack: *anyopaque) *anyopaque {
-    return @ptrCast(stateBytesMut(threat_feature, stackSize(stack) - 1, stack));
-}
-
-pub fn stackPsqArray(stack: *const anyopaque) *const anyopaque {
-    return @ptrCast(stackBytes(stack));
-}
-
-pub fn stackThreatArray(stack: *const anyopaque) *const anyopaque {
-    return @ptrCast(stackBytes(stack) + threat_array_offset);
-}
-
-pub fn stackMutPsqArray(stack: *anyopaque) *anyopaque {
-    return @ptrCast(stackBytesMut(stack));
-}
-
-pub fn stackMutThreatArray(stack: *anyopaque) *anyopaque {
-    return @ptrCast(stackBytesMut(stack) + threat_array_offset);
-}
-
 // FeatureTransformer::transform (src/nnue/nnue_feature_transformer.h scalar path),
 // ported to Zig. After the (Zig) accumulator evaluate, read the latest PSQ +
 // Threat accumulator states and produce the int8 transformed output plus the
@@ -796,10 +772,6 @@ fn statePsqtMut(feature_kind: u8, index: usize, stack: *anyopaque, perspective: 
 
 fn diffBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
     return stateBytesMut(feature_kind, index, stack) + diffOffset(feature_kind);
-}
-
-fn squareMask(square: usize) u64 {
-    return @as(u64, 1) << @as(u6, @intCast(square));
 }
 
 fn psqDiff(bytes: [*]const u8) HalfDiff {
