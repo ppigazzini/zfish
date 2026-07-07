@@ -236,6 +236,32 @@ test "repetition detection flags a returned-to position" {
     try std.testing.expect(position.hasRepeated(&p));
 }
 
+// The parser must REJECT malformed input with an error message, not crash or
+// silently accept it. Each of these violates a documented FEN invariant.
+fn expectRejected(fen: []const u8) !void {
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+    const err = position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size);
+    if (err) |msg| {
+        std.heap.c_allocator.free(std.mem.span(msg)); // rejected as expected
+    } else {
+        std.debug.print("FEN was accepted but should have been rejected: {s}\n", .{fen});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "malformed FENs are rejected, not accepted or crashed" {
+    position.initRuntime();
+    try expectRejected(""); // empty
+    try expectRejected("8/8/8/8/8/8/8/8 w - - 0 1"); // no kings
+    try expectRejected("3kk3/8/8/8/8/8/8/4K3 w - - 0 1"); // two black kings
+    try expectRejected("9/8/8/8/8/8/8/8 w - - 0 1"); // 9 skipped squares in a rank
+    try expectRejected("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNX w KQkq - 0 1"); // bad piece 'X'
+    try expectRejected("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1"); // bad side 'x'
+    try expectRejected("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBN w KQkq - 0 1"); // short back rank
+    try expectRejected("4k3/8/8/8/8/8/8/4K3 w - z9 0 1"); // bad en-passant square
+}
+
 // isDraw: the 50-move rule fires once rule50 exceeds 99 (in a non-mate position);
 // a fresh position is not a draw.
 test "isDraw honours the fifty-move rule" {
