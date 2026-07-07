@@ -262,6 +262,45 @@ test "malformed FENs are rejected, not accepted or crashed" {
     try expectRejected("4k3/8/8/8/8/8/8/4K3 w - z9 0 1"); // bad en-passant square
 }
 
+// FEN characters + separators + a few out-of-band bytes, so random strings drawn
+// from this alphabet hit both the parser's happy path and its reject branches.
+const fen_alphabet = "PNBRQKpnbrqk12345678/ wb-KQkqabcdefgh36xz0";
+
+// Property (fuzz): setPosition must never crash / OOB on arbitrary input -- it
+// either rejects it or produces a self-consistent position. And any position it
+// DOES accept must survive movegen + one make/unmake without crashing. A
+// deterministic PRNG (fixed seed) keeps it reproducible in `zig build test`; it is
+// also the natural seed corpus for a real `--fuzz` run.
+test "fuzz: setPosition tolerates arbitrary input without crashing" {
+    position.initRuntime();
+    var prng = std.Random.DefaultPrng.init(0x5EED_F00D);
+    const rand = prng.random();
+
+    var iter: usize = 0;
+    while (iter < 50_000) : (iter += 1) {
+        var buf: [96]u8 = undefined;
+        const len = rand.intRangeAtMost(usize, 0, buf.len);
+        for (buf[0..len]) |*byte| byte.* = fen_alphabet[rand.uintLessThan(usize, fen_alphabet.len)];
+
+        var p: [position_size]u8 align(64) = undefined;
+        var st: [state_info_size]u8 align(16) = undefined;
+        const err = position.setPosition(&p, &buf, len, 0, &st, position_size, state_info_size);
+        if (err) |msg| {
+            std.heap.c_allocator.free(std.mem.span(msg));
+            continue; // rejected -- fine
+        }
+        // Accepted as a legal position: legal-move generation + one round-trip
+        // must not crash on it either.
+        var moves: [256]u16 = undefined;
+        const n = movegen.generateLegal(&p, &moves);
+        if (n > 0) {
+            var new_st: [state_info_size]u8 align(16) = undefined;
+            position.doMoveState(&p, moves[0], &new_st);
+            position.undoMove(&p, moves[0]);
+        }
+    }
+}
+
 // isDraw: the 50-move rule fires once rule50 exceeds 99 (in a non-mate position);
 // a fresh position is not a draw.
 test "isDraw honours the fifty-move rule" {
