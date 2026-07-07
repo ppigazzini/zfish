@@ -200,3 +200,38 @@ test "generated legal moves satisfy legal() and pseudoLegal()" {
     try checkMoveGenLegalityAgree(cpw4_fen);
     try checkMoveGenLegalityAgree(cpw5_fen);
 }
+
+fn sq(file: u8, rank: u8) u8 {
+    return rank * 8 + file;
+}
+fn mkMove(from: u8, to: u8) u16 {
+    return (@as(u16, from) << 6) | @as(u16, to);
+}
+
+fn setup(p: *[position_size]u8, st: *[state_info_size]u8, fen: []const u8) void {
+    if (position.setPosition(p, fen.ptr, fen.len, 0, st, position_size, state_info_size)) |err| {
+        std.heap.c_allocator.free(std.mem.span(err));
+        @panic("setup: setPosition failed on a known-legal FEN");
+    }
+}
+
+// Static Exchange Evaluation (the seeGe predicate in the legality leaf). A pawn
+// capturing an undefended queen is a large winning exchange; a queen capturing a
+// pawn defended by a pawn is a large losing one. seeGe(move, t) answers SEE >= t.
+test "seeGe classifies winning and losing captures" {
+    position.initRuntime();
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+
+    // White pawn e4 captures an undefended black queen on d5.
+    setup(&p, &st, "4k3/8/8/3q4/4P3/8/8/4K3 w - - 0 1");
+    const pxq = mkMove(sq(4, 3), sq(3, 4)); // e4 -> d5
+    try std.testing.expect(position.seeGe(&p, pxq, 0)); // winning: SEE >= 0
+    try std.testing.expect(position.seeGe(&p, pxq, 1000)); // still wins a queen
+    try std.testing.expect(!position.seeGe(&p, pxq, 3000)); // but not >= 3000
+
+    // White queen d4 captures a black pawn c5 that is defended by the b6 pawn.
+    setup(&p, &st, "4k3/8/1p6/2p5/3Q4/8/8/4K3 w - - 0 1");
+    const qxp = mkMove(sq(3, 3), sq(2, 4)); // d4 -> c5
+    try std.testing.expect(!position.seeGe(&p, qxp, 0)); // losing: SEE < 0
+}
