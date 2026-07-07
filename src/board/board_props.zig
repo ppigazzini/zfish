@@ -1,0 +1,67 @@
+// Board property tests (M17.4h).
+//
+// Real asserted invariants over the decomposed board leaves, not golden diffs:
+// perft to KNOWN node counts. A perft count is an end-to-end property test of
+// movegen + make/unmake together -- if legal-move generation OR do/undo were
+// wrong, the counts diverge from these published Stockfish reference values. This
+// runs in `zig build test` (no engine binary, no golden file), exercising the
+// pure board path: zobrist tables + setPosition + generateLegal + doMoveState/
+// undoMove. Enabled by the position.zig decomposition -- the whole board path is
+// now reachable without pulling the search/engine graph at runtime.
+
+const std = @import("std");
+const position = @import("position");
+const movegen = @import("movegen");
+const graph_layout = @import("graph_layout");
+
+const position_size = graph_layout.position_size;
+const state_info_size = graph_layout.state_info_size;
+const perft_max_depth = 8;
+
+const StateBuf = [state_info_size]u8;
+
+fn perft(pos: *anyopaque, depth: c_int, states: *[perft_max_depth]StateBuf, ply: usize) u64 {
+    if (depth <= 0) return 1;
+    var moves: [256]u16 = undefined;
+    const n = movegen.generateLegal(pos, &moves);
+    if (depth == 1) return n;
+    var nodes: u64 = 0;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        position.doMoveState(pos, moves[i], &states[ply]);
+        nodes += perft(pos, depth - 1, states, ply + 1);
+        position.undoMove(pos, moves[i]);
+    }
+    return nodes;
+}
+
+fn perftFen(fen: []const u8, chess960: u8, depth: c_int) u64 {
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+    if (position.setPosition(&p, fen.ptr, fen.len, chess960, &st, position_size, state_info_size)) |err| {
+        std.heap.c_allocator.free(std.mem.span(err));
+        @panic("perftFen: setPosition failed on a known-legal FEN");
+    }
+    var states: [perft_max_depth]StateBuf align(64) = undefined;
+    return perft(&p, depth, &states, 0);
+}
+
+const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+// Peter Ellis Jones' "Kiwipete" -- dense tactical node, catches castling / ep /
+// promotion / pin bugs the start position misses.
+const kiwipete_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+
+test "perft: start position matches reference node counts" {
+    position.initRuntime();
+    try std.testing.expectEqual(@as(u64, 20), perftFen(start_fen, 0, 1));
+    try std.testing.expectEqual(@as(u64, 400), perftFen(start_fen, 0, 2));
+    try std.testing.expectEqual(@as(u64, 8902), perftFen(start_fen, 0, 3));
+    try std.testing.expectEqual(@as(u64, 197281), perftFen(start_fen, 0, 4));
+}
+
+test "perft: Kiwipete matches reference node counts" {
+    position.initRuntime();
+    try std.testing.expectEqual(@as(u64, 48), perftFen(kiwipete_fen, 0, 1));
+    try std.testing.expectEqual(@as(u64, 2039), perftFen(kiwipete_fen, 0, 2));
+    try std.testing.expectEqual(@as(u64, 97862), perftFen(kiwipete_fen, 0, 3));
+}
