@@ -236,6 +236,22 @@ test "repetition detection flags a returned-to position" {
     try std.testing.expect(position.hasRepeated(&p));
 }
 
+// isDraw: the 50-move rule fires once rule50 exceeds 99 (in a non-mate position);
+// a fresh position is not a draw.
+test "isDraw honours the fifty-move rule" {
+    position.initRuntime();
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+
+    // rule50 = 100 half-moves, not in check, legal moves available -> draw.
+    setup(&p, &st, "4k3/8/8/8/8/8/8/4K3 w - - 100 60");
+    try std.testing.expect(position.isDraw(&p, 0));
+
+    // The start position is not a draw.
+    setup(&p, &st, start_fen);
+    try std.testing.expect(!position.isDraw(&p, 0));
+}
+
 fn setup(p: *[position_size]u8, st: *[state_info_size]u8, fen: []const u8) void {
     if (position.setPosition(p, fen.ptr, fen.len, 0, st, position_size, state_info_size)) |err| {
         std.heap.c_allocator.free(std.mem.span(err));
