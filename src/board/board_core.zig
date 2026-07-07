@@ -25,6 +25,8 @@ pub const color_black: u8 = 1;
 
 pub const file_a_bb: u64 = 0x0101010101010101;
 pub const file_h_bb: u64 = 0x8080808080808080;
+pub const rank1_bb: u64 = 0xFF;
+pub const rank8_bb: u64 = 0xFF << 56;
 
 // MoveType (top 2 bits of the 16-bit move word).
 pub const mt_normal: u16 = 0;
@@ -59,8 +61,20 @@ pub inline fn relativeSquare(c: u8, s: u8) u8 {
 pub inline fn makeSquare(f: u8, r: u8) u8 {
     return (r << 3) + f;
 }
+pub inline fn fileOf(square: u8) u8 {
+    return square & 7;
+}
+pub inline fn rankOf(square: u8) u8 {
+    return square >> 3;
+}
+pub inline fn colorOfPiece(pc: u8) u8 {
+    return pc >> 3;
+}
 pub inline fn pieceTypeOn(pos: *const Position, s: u8) u8 {
     return pos.board[s] & 7;
+}
+pub inline fn isEmpty(pos: *const Position, s: u8) bool {
+    return pos.board[s] == 0;
 }
 
 // attacks_bb<PAWN>(s, c): squares a color-c pawn on `s` attacks.
