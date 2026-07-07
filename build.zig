@@ -995,6 +995,19 @@ pub fn build(b: *std.Build) void {
     board_props_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
     test_step.dependOn(&b.addRunArtifact(board_props_test).step);
 
+    // M17.5b: uci_parse property + fuzz tests (needs libc for c_allocator + the
+    // uci_strings base leaf).
+    const uci_parse_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/uci/uci_parse.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    uci_parse_test.root_module.addImport("uci_strings", mods.get("uci_strings").?);
+    test_step.dependOn(&b.addRunArtifact(uci_parse_test).step);
+
     // M17.0c: standalone test artifacts for the tested sub-files that were
     // path-imported into larger modules (so their `test {}` blocks never ran in
     // the aggregate). These depend only on std (+ libc for c_allocator) or on a
