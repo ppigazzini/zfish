@@ -65,6 +65,14 @@ jobs:
       # reproducible and CPU-independent (sse41 runs on any runner).
       - run: zig build parity -Darch=x86-64-sse41-popcnt
 
+      # Unit + property tests (M17.0c/M17.4): the module `test {}` blocks plus the
+      # board property suite (perft to reference counts, make/unmake & null-move
+      # round-trips, FEN round-trip/flip, movegen<->legality, SEE, givesCheck,
+      # repetition/50-move draw, malformed-FEN rejection, and a 50k-iter parse fuzz).
+      # These assert real invariants over the decomposed leaves and were previously
+      # not gated in CI.
+      - run: zig build test -Darch=x86-64-sse41-popcnt
+
       # Arch-variant determinism (REPORT-14 M14.D, widened in REPORT-15 M15.1): the
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
       # codegen change must not perturb the integer-exact eval. This sweep asserts
