@@ -1026,6 +1026,24 @@ pub fn build(b: *std.Build) void {
     uci_parse_test.root_module.addImport("uci_strings", mods.get("uci_strings").?);
     test_step.dependOn(&b.addRunArtifact(uci_parse_test).step);
 
+    // M17.5i: coverage-guided fuzz targets (std.testing.fuzz). Wired to its OWN
+    // `zig build fuzz` step, deliberately NOT test_step -- these are meant to be run
+    // with `zig build fuzz --fuzz` (the fuzzer), and run once as a smoke otherwise.
+    // Build under -Doptimize=ReleaseSafe so a found crash trips a safety check.
+    const fuzz_targets_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/board/fuzz_targets.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    fuzz_targets_test.root_module.addImport("position", mods.get("position").?);
+    fuzz_targets_test.root_module.addImport("movegen", mods.get("movegen").?);
+    fuzz_targets_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
+    fuzz_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
+
     // M17.0c: standalone test artifacts for the tested sub-files that were
     // path-imported into larger modules (so their `test {}` blocks never ran in
     // the aggregate). These depend only on std (+ libc for c_allocator) or on a
