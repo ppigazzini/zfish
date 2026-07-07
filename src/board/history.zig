@@ -43,13 +43,13 @@ const sq_none: u8 = 64;
 pub fn updateQuietHistoriesWorker(
     worker_ptr: *anyopaque,
     pos_ptr: *const anyopaque,
-    ss_ptr: *anyopaque,
+    ss_ptr: *const SearchStack,
     move: u16,
     bonus: c_int,
 ) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const ss: *const SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const ss = ss_ptr;
     const raw: usize = move;
     const main_entry = &w.main_history[@as(usize, pos.side_to_move) * hist_uint16 + raw];
     var lowply_entry: ?*i16 = null;
@@ -67,9 +67,9 @@ pub fn updateQuietHistoriesWorker(
 // correction_history to &continuationCorrectionHistory[pc][to]. The null move
 // and the iterative_deepening sentinels pass all-zero indices (NO_PIECE), which
 // resolve to the table bases. Zig owns the Worker-table address arithmetic.
-pub fn setContHist(worker_ptr: *anyopaque, ss_ptr: *anyopaque, in_check: u8, capture: u8, pc: u8, to: u8) void {
+pub fn setContHist(worker_ptr: *anyopaque, ss_ptr: *SearchStack, in_check: u8, capture: u8, pc: u8, to: u8) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
-    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const ss = ss_ptr;
     const ch_block = (@as(usize, in_check) * 2 + capture) * hist_pieceto +
         @as(usize, pc) * hist_square_nb + to;
     ss.continuation_history = @ptrCast(&w.continuation_history[ch_block * hist_pieceto]);
@@ -118,7 +118,7 @@ pub fn updateQuietHistories(
     main_entry: *i16,
     lowply_entry: ?*i16,
     pawn_entry: *i16,
-    ss_ptr: *anyopaque,
+    ss_ptr: *const SearchStack,
     pc: u8,
     to: u8,
     bonus: c_int,
@@ -135,8 +135,8 @@ const conthist_bonuses = [6]ConthistBonus{
     .{ .i = 4, .w = 537 },  .{ .i = 5, .w = 129 }, .{ .i = 6, .w = 423 },
 };
 
-pub fn updateContinuationHistories(ss_ptr: *anyopaque, pc: u8, to: u8, bonus: c_int) void {
-    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, bonus: c_int) void {
+    const ss = ss_ptr;
     var positive_count: c_int = 0;
     for (conthist_bonuses) |b| {
         if (ss.in_check and b.i > 2) break;
@@ -154,7 +154,7 @@ pub fn updateContinuationHistories(ss_ptr: *anyopaque, pc: u8, to: u8, bonus: c_
 pub fn updateAllStats(
     worker_ptr: *anyopaque,
     pos_ptr: *anyopaque,
-    ss_ptr: *anyopaque,
+    ss_ptr: *const SearchStack,
     best_move: u16,
     prev_sq: c_int,
     quiets: [*]const u16,
@@ -167,7 +167,7 @@ pub fn updateAllStats(
 ) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const ss = ss_ptr;
     const ss_prev: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
     const capture_base: [*]i16 = &w.capture_history;
 
@@ -230,7 +230,7 @@ const correction_history_limit: c_int = 1024;
 pub fn updateCorrectionHistory(
     worker_ptr: *anyopaque,
     pos_ptr: *const anyopaque,
-    ss_ptr: *anyopaque,
+    ss_ptr: *const SearchStack,
     bonus: c_int,
 ) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
@@ -248,7 +248,7 @@ pub fn updateCorrectionHistory(
     statsUpdate(npw_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
     statsUpdate(npb_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
 
-    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const ss = ss_ptr;
     const ss_prev: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
     const m = ss_prev.current_move;
     if (moveIsOk(m)) {
