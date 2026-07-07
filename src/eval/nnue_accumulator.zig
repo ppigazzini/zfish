@@ -9,6 +9,17 @@ const position_snapshot = @import("position_snapshot");
 // identical on x86.
 const nnue_feature = @import("nnue_feature");
 
+// Vectorized FT weight-row add/sub kernels live in the nnue_acc_rowops leaf
+// (M17.4d); aliased so the refresh/incremental core stays unqualified.
+const nnue_acc_rowops = @import("nnue_acc_rowops");
+const applyAccumulatorDeltaI16 = nnue_acc_rowops.applyAccumulatorDeltaI16;
+const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
+const applyAccumulatorDeltaI8 = nnue_acc_rowops.applyAccumulatorDeltaI8;
+const accumulateRowsI8 = nnue_acc_rowops.accumulateRowsI8;
+const applyPsqtDelta = nnue_acc_rowops.applyPsqtDelta;
+const applyPsqtDeltaInPlace = nnue_acc_rowops.applyPsqtDeltaInPlace;
+const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
+
 const psq_feature: u8 = 0;
 const threat_feature: u8 = 1;
 const white: u8 = 0;
@@ -23,6 +34,7 @@ const nnue_align: usize = 64;
 const color_count: usize = 2;
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
+const acc_vec_width: usize = 32; // SIMD width, also used by transformBucket's ReLU
 const dirty_threat_capacity: usize = 96;
 const psq_index_capacity: usize = 32;
 const threat_index_capacity: usize = 128;
@@ -651,127 +663,6 @@ fn applyThreatDelta(
         featureTransformerThreatPsqtWeights(feature_transformer),
     );
     stateBytesMut(threat_feature, target_index, stack)[computed_offset + perspective] = 1;
-}
-
-// Accumulator delta/refresh row op, vectorized (M15.3). Adds or subtracts one
-// half_dimensions-wide feature-transformer weight row to the i16 accumulator. Vector
-// +/- is the same element-wise i16 op as the scalar loop it replaces (identical wrap
-// behaviour), so it is bit-exact -- the bench signature holds at 2067208. Width 32
-// i16 = one AVX-512 register; LLVM splits it for narrower targets. i8 weight rows
-// widen to i16 (as the scalar `@as(i16, ...)` did).
-const acc_vec_width: usize = 32;
-comptime {
-    if (half_dimensions % acc_vec_width != 0)
-        @compileError("half_dimensions must be a multiple of acc_vec_width");
-}
-
-inline fn accRow(comptime WT: type, comptime add: bool, target: []i16, weights_row: [*]const WT) void {
-    const V = acc_vec_width;
-    const Vi16 = @Vector(V, i16);
-    var d: usize = 0;
-    while (d < half_dimensions) : (d += V) {
-        const t: Vi16 = target.ptr[d..][0..V].*;
-        const wraw: @Vector(V, WT) = weights_row[d..][0..V].*;
-        const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
-        target.ptr[d..][0..V].* = if (add) t + w else t - w;
-    }
-}
-
-fn applyAccumulatorDeltaI16(
-    target: []i16,
-    source: []const i16,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]const i16,
-) void {
-    @memcpy(target, source);
-    for (removed) |index| accRow(i16, false, target, weights + @as(usize, index) * half_dimensions);
-    for (added) |index| accRow(i16, true, target, weights + @as(usize, index) * half_dimensions);
-}
-
-fn applyAccumulatorDeltaInPlaceI16(
-    target: []i16,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]const i16,
-) void {
-    for (removed) |index| accRow(i16, false, target, weights + @as(usize, index) * half_dimensions);
-    for (added) |index| accRow(i16, true, target, weights + @as(usize, index) * half_dimensions);
-}
-
-fn applyAccumulatorDeltaI8(
-    target: []i16,
-    source: []const i16,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]const i8,
-) void {
-    @memcpy(target, source);
-    for (removed) |index| accRow(i8, false, target, weights + @as(usize, index) * half_dimensions);
-    for (added) |index| accRow(i8, true, target, weights + @as(usize, index) * half_dimensions);
-}
-
-fn accumulateRowsI8(target: []i16, rows: []const u32, weights: [*]const i8) void {
-    for (rows) |index| accRow(i8, true, target, weights + @as(usize, index) * half_dimensions);
-}
-
-fn applyPsqtDelta(
-    target: []i32,
-    source: []const i32,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]const i32,
-) void {
-    @memcpy(target, source);
-
-    for (removed) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] -= weights[row_offset + bucket];
-        }
-    }
-
-    for (added) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] += weights[row_offset + bucket];
-        }
-    }
-}
-
-fn applyPsqtDeltaInPlace(
-    target: []i32,
-    removed: []const u32,
-    added: []const u32,
-    weights: [*]const i32,
-) void {
-    for (removed) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] -= weights[row_offset + bucket];
-        }
-    }
-
-    for (added) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] += weights[row_offset + bucket];
-        }
-    }
-}
-
-fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i32) void {
-    for (rows) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] += weights[row_offset + bucket];
-        }
-    }
 }
 
 fn findLastUsable(feature_kind: u8, stack: *const anyopaque, perspective: u8) usize {
