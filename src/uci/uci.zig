@@ -166,136 +166,6 @@ pub fn parsePosition(input: []const u8) ParsedPosition {
     return parsePositionAlloc(input) catch .{ .ok = 0, .fen = null, .moves = null };
 }
 
-pub fn formatInfoString(input: []const u8) ?[*:0]u8 {
-    return allocInfoString(input) catch null;
-}
-
-pub fn formatScore(kind: u8, value: c_int, extra: c_int) ?[*:0]u8 {
-    return uci_wdl.formatScore(kind, value, extra);
-}
-
-pub fn toCp(value: c_int, material: c_int) c_int {
-    return uci_wdl.toCp(value, material);
-}
-
-pub fn wdl(value: c_int, material: c_int) ?[*:0]u8 {
-    return uci_wdl.wdl(value, material);
-}
-
-pub fn formatSquare(file: u8, rank: u8) ?[*:0]u8 {
-    const bytes = [_]u8{ @as(u8, 'a') + file, @as(u8, '1') + rank };
-    return allocCString(bytes[0..]) catch null;
-}
-
-pub fn formatMove(from_file: u8, from_rank: u8, to_file: u8, to_rank: u8, promotion: u8) ?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const extra: usize = if (promotion == 0) 0 else 1;
-    const result = allocator.allocSentinel(u8, 4 + extra, 0) catch return null;
-    result[0] = @as(u8, 'a') + from_file;
-    result[1] = @as(u8, '1') + from_rank;
-    result[2] = @as(u8, 'a') + to_file;
-    result[3] = @as(u8, '1') + to_rank;
-    if (promotion != 0) {
-        result[4] = promotion;
-    }
-    return result.ptr;
-}
-
-pub fn toLower(input: []const u8) ?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const result = allocator.allocSentinel(u8, input.len, 0) catch return null;
-    for (input, 0..) |byte, index| {
-        result[index] = asciiLower(byte);
-    }
-    return result.ptr;
-}
-
-pub fn formatInfoNoMoves(depth: c_int, score_text: []const u8) ?[*:0]u8 {
-    return allocFormatted("info depth {d} score {s}", .{ depth, score_text }) catch null;
-}
-
-pub fn formatInfoFull(
-    depth: c_int,
-    sel_depth: c_int,
-    multi_pv: usize,
-    score_text: []const u8,
-    bound_text: []const u8,
-    wdl_text: []const u8,
-    show_wdl: u8,
-    nodes: usize,
-    nps: usize,
-    hashfull: c_int,
-    tb_hits: usize,
-    time_ms: usize,
-    pv: []const u8,
-) ?[*:0]u8 {
-    var builder = std.ArrayList(u8).empty;
-    defer builder.deinit(std.heap.c_allocator);
-
-    builder.appendSlice(std.heap.c_allocator, "info depth ") catch return null;
-    appendFormatted(&builder, "{d}", .{depth}) catch return null;
-    builder.appendSlice(std.heap.c_allocator, " seldepth ") catch return null;
-    appendFormatted(&builder, "{d}", .{sel_depth}) catch return null;
-    builder.appendSlice(std.heap.c_allocator, " multipv ") catch return null;
-    appendFormatted(&builder, "{d}", .{multi_pv}) catch return null;
-    builder.appendSlice(std.heap.c_allocator, " score ") catch return null;
-    builder.appendSlice(std.heap.c_allocator, score_text) catch return null;
-    if (bound_text.len != 0) {
-        builder.append(std.heap.c_allocator, ' ') catch return null;
-        builder.appendSlice(std.heap.c_allocator, bound_text) catch return null;
-    }
-    if (show_wdl != 0) {
-        builder.appendSlice(std.heap.c_allocator, " wdl ") catch return null;
-        builder.appendSlice(std.heap.c_allocator, wdl_text) catch return null;
-    }
-    builder.appendSlice(std.heap.c_allocator, " nodes ") catch return null;
-    appendFormatted(&builder, "{d}", .{nodes}) catch return null;
-    builder.appendSlice(std.heap.c_allocator, " nps ") catch return null;
-    appendFormatted(&builder, "{d}", .{nps}) catch return null;
-    builder.appendSlice(std.heap.c_allocator, " hashfull ") catch return null;
-    appendFormatted(&builder, "{d}", .{hashfull}) catch return null;
-    builder.appendSlice(std.heap.c_allocator, " tbhits ") catch return null;
-    appendFormatted(&builder, "{d}", .{tb_hits}) catch return null;
-    builder.appendSlice(std.heap.c_allocator, " time ") catch return null;
-    appendFormatted(&builder, "{d}", .{time_ms}) catch return null;
-    builder.appendSlice(std.heap.c_allocator, " pv ") catch return null;
-    builder.appendSlice(std.heap.c_allocator, pv) catch return null;
-
-    return allocCString(builder.items) catch null;
-}
-
-pub fn formatInfoIter(depth: c_int, currmove: []const u8, currmove_number: c_int) ?[*:0]u8 {
-    return allocFormatted(
-        "info depth {d} currmove {s} currmovenumber {d}",
-        .{ depth, currmove, currmove_number },
-    ) catch null;
-}
-
-pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[*:0]u8 {
-    if (ponder.len == 0) {
-        return allocFormatted("bestmove {s}", .{bestmove}) catch null;
-    }
-
-    return allocFormatted("bestmove {s} ponder {s}", .{ bestmove, ponder }) catch null;
-}
-
-pub fn helpText() ?[*:0]u8 {
-    return allocCString(
-        "\nStockfish is a powerful chess engine for playing and analyzing.\n" ++ "It is released as free software licensed under the GNU GPLv3 License.\n" ++ "Stockfish is normally used with a graphical user interface (GUI) and implements\n" ++ "the Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc.\n" ++ "For any further information, visit https://github.com/official-stockfish/Stockfish#readme\n" ++ "or read the corresponding README.md and Copying.txt files distributed along with this program.\n",
-    ) catch null;
-}
-
-pub fn formatUnknownCommand(command: []const u8) ?[*:0]u8 {
-    return allocFormatted("Unknown command: '{s}'. Type help for more information.", .{command}) catch null;
-}
-
-pub fn formatCriticalError(command: []const u8, message: []const u8) ?[*:0]u8 {
-    return allocFormatted(
-        "info string CRITICAL ERROR: Command `{s}` failed. Reason: {s}\n",
-        .{ command, message },
-    ) catch null;
-}
-
 pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
     const trimmed = trimAsciiWhitespace(input);
     if (trimmed.len == 0 or trimmed[0] == '#')
@@ -948,24 +818,6 @@ fn parseMoveViews(moves_text: []const u8) !std.ArrayList(ByteView) {
     return views;
 }
 
-fn allocInfoString(input: []const u8) !?[*:0]u8 {
-    var builder = std.ArrayList(u8).empty;
-    defer builder.deinit(std.heap.c_allocator);
-    var line_iter = std.mem.splitScalar(u8, input, '\n');
-    while (line_iter.next()) |line| {
-        if (trimAsciiWhitespace(line).len == 0) {
-            continue;
-        }
-        if (builder.items.len != 0) {
-            try builder.append(std.heap.c_allocator, '\n');
-        }
-        try builder.appendSlice(std.heap.c_allocator, "info string ");
-        try builder.appendSlice(std.heap.c_allocator, line);
-    }
-
-    return try allocCString(builder.items);
-}
-
 fn lowerAlloc(input: []const u8) ![]u8 {
     const allocator = std.heap.c_allocator;
     const result = try allocator.alloc(u8, input.len);
@@ -984,6 +836,14 @@ const freeMaybeCString = uci_strings.freeMaybeCString;
 const trimAsciiWhitespace = uci_strings.trimAsciiWhitespace;
 const asciiLower = uci_strings.asciiLower;
 const isSpaceByte = uci_strings.isSpaceByte;
+
+// Live UCI output formatters live in the uci_format leaf (M17.3v); aliased for the
+// dispatch code below.
+const uci_format = @import("uci_format");
+const formatInfoString = uci_format.formatInfoString;
+const helpText = uci_format.helpText;
+const formatUnknownCommand = uci_format.formatUnknownCommand;
+const formatCriticalError = uci_format.formatCriticalError;
 
 fn parseI64(token: ?[]const u8) ?i64 {
     return parseInt(i64, token);
