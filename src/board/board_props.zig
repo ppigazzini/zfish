@@ -65,3 +65,47 @@ test "perft: Kiwipete matches reference node counts" {
     try std.testing.expectEqual(@as(u64, 2039), perftFen(kiwipete_fen, 0, 2));
     try std.testing.expectEqual(@as(u64, 97862), perftFen(kiwipete_fen, 0, 3));
 }
+
+// For every legal move, do then immediately undo, and assert the Position is
+// byte-for-byte the pre-move state -- key, bitboards, board, and piece counts.
+// Perft only checks node COUNTS; this catches state corruption that leaves the
+// count right but the derived state (e.g. an un-restored zobrist key, a stale
+// bitboard, a leaked castling right) subtly wrong.
+fn checkRoundTrip(fen: []const u8) !void {
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+    if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
+        std.heap.c_allocator.free(std.mem.span(err));
+        @panic("checkRoundTrip: setPosition failed on a known-legal FEN");
+    }
+    const pos: *const position.Position = @ptrCast(&p);
+
+    var moves: [256]u16 = undefined;
+    const n = movegen.generateLegal(&p, &moves);
+    try std.testing.expect(n > 0);
+
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const key0 = pos.st.key;
+        const by_type0 = pos.by_type_bb;
+        const by_color0 = pos.by_color_bb;
+        const board0 = pos.board;
+        const piece_count0 = pos.piece_count;
+
+        var new_st: [state_info_size]u8 align(16) = undefined;
+        position.doMoveState(&p, moves[i], &new_st);
+        position.undoMove(&p, moves[i]);
+
+        try std.testing.expectEqual(key0, pos.st.key);
+        try std.testing.expectEqual(by_type0, pos.by_type_bb);
+        try std.testing.expectEqual(by_color0, pos.by_color_bb);
+        try std.testing.expect(std.mem.eql(u8, &board0, &pos.board));
+        try std.testing.expectEqual(piece_count0, pos.piece_count);
+    }
+}
+
+test "make/unmake restores the position byte-exact" {
+    position.initRuntime();
+    try checkRoundTrip(start_fen);
+    try checkRoundTrip(kiwipete_fen); // castling / en passant / promotion / pins
+}
