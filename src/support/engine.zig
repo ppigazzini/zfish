@@ -305,6 +305,14 @@ const fen = engine_trace.fen;
 const engine_perft = @import("engine_perft");
 pub const perftEngine = engine_perft.perftEngine;
 
+// Option-registration helpers live in the engine_options leaf (M17.4c); aliased
+// for initBody.
+const engine_options = @import("engine_options");
+const addStringOption = engine_options.addStringOption;
+const addCheckOption = engine_options.addCheckOption;
+const addSpinOption = engine_options.addSpinOption;
+const addButtonOption = engine_options.addButtonOption;
+
 // setoption apply: wait for the search, set into the native OptionsModel, and run the
 // on-change callback (relaying string/spin/check values). Relocated from main.zig (M16.7).
 pub fn applySetOptionEngine(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
@@ -670,94 +678,3 @@ pub fn threadAllocationInformation(
 // Register one option into the native OptionsModel.
 // The engine handle + callback kind are unused (the model holds no per-option callback);
 // spin/check defaults are rendered to the model's string form.
-fn engineAddOption(
-    engine_ptr: *anyopaque,
-    name_ptr: [*]const u8,
-    name_len: usize,
-    option_kind: u8,
-    default_ptr: [*]const u8,
-    default_len: usize,
-    default_value: c_int,
-    min_value: c_int,
-    max_value: c_int,
-    callback_kind: u8,
-) void {
-    _ = engine_ptr;
-    _ = callback_kind;
-    var buf: [16]u8 = undefined;
-    const default_slice: []const u8 = switch (option_kind) {
-        1 => if (default_value != 0) "true" else "false", // check
-        2 => std.fmt.bufPrint(&buf, "{d}", .{default_value}) catch unreachable, // spin
-        3 => "", // button
-        0 => default_ptr[0..default_len], // string
-        else => @panic("engineAddOption: bad option kind"),
-    };
-    _ = option_port.addOption(name_ptr[0..name_len], option_kind, default_slice, min_value, max_value);
-}
-
-fn addStringOption(engine_ptr: *anyopaque, name: []const u8, default_value: []const u8, callback_kind: u8) void {
-    engineAddOption(
-        engine_ptr,
-        name.ptr,
-        name.len,
-        option_kind_string,
-        default_value.ptr,
-        default_value.len,
-        0,
-        0,
-        0,
-        callback_kind,
-    );
-}
-
-fn addCheckOption(engine_ptr: *anyopaque, name: []const u8, default_value: u8) void {
-    engineAddOption(
-        engine_ptr,
-        name.ptr,
-        name.len,
-        option_kind_check,
-        "".ptr,
-        0,
-        default_value,
-        0,
-        0,
-        option_callback_none,
-    );
-}
-
-fn addSpinOption(
-    engine_ptr: *anyopaque,
-    name: []const u8,
-    default_value: c_int,
-    min_value: c_int,
-    max_value: c_int,
-    callback_kind: u8,
-) void {
-    engineAddOption(
-        engine_ptr,
-        name.ptr,
-        name.len,
-        option_kind_spin,
-        "".ptr,
-        0,
-        default_value,
-        min_value,
-        max_value,
-        callback_kind,
-    );
-}
-
-fn addButtonOption(engine_ptr: *anyopaque, name: []const u8, callback_kind: u8) void {
-    engineAddOption(
-        engine_ptr,
-        name.ptr,
-        name.len,
-        option_kind_button,
-        "".ptr,
-        0,
-        0,
-        0,
-        0,
-        callback_kind,
-    );
-}
