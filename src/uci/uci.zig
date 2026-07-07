@@ -11,6 +11,7 @@ const uci_output = @import("uci_output");
 const native_engine = @import("native_engine");
 const graph_layout = @import("graph_layout");
 const clock = @import("clock");
+const uci_strings = @import("uci_strings");
 
 // C stdio stdin, obtained portably (M-PORT). @cImport's translation of the stream macros
 // is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on
@@ -974,49 +975,15 @@ fn lowerAlloc(input: []const u8) ![]u8 {
     return result;
 }
 
-fn appendFormatted(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
-    const allocator = std.heap.c_allocator;
-    const formatted = try std.fmt.allocPrint(allocator, fmt, args);
-    defer allocator.free(formatted);
-    try buffer.appendSlice(allocator, formatted);
-}
-
-fn allocFormatted(comptime fmt: []const u8, args: anytype) !?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const formatted = try std.fmt.allocPrint(allocator, fmt, args);
-    defer allocator.free(formatted);
-    return try allocCString(formatted);
-}
-
-fn allocCString(value: []const u8) !?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const result = try allocator.allocSentinel(u8, value.len, 0);
-    @memcpy(result[0..value.len], value);
-    return result.ptr;
-}
-
-fn freeMaybeCString(value: ?[*:0]u8) void {
-    if (value) |ptr|
-        std.heap.c_allocator.free(std.mem.span(ptr));
-}
-
-fn trimAsciiWhitespace(input: []const u8) []const u8 {
-    var start: usize = 0;
-    var end: usize = input.len;
-    while (start < end and isSpaceByte(input[start])) : (start += 1) {}
-    while (end > start and isSpaceByte(input[end - 1])) {
-        end -= 1;
-    }
-    return input[start..end];
-}
-
-fn asciiLower(byte: u8) u8 {
-    return if (byte >= 'A' and byte <= 'Z') byte + ('a' - 'A') else byte;
-}
-
-fn isSpaceByte(byte: u8) bool {
-    return byte == ' ' or byte == '\t' or byte == '\n' or byte == '\r' or byte == 0x0b or byte == 0x0c;
-}
+// C-string helpers live in the uci_strings base leaf (M17.3u); aliased so the
+// bodies throughout this file stay unqualified.
+const appendFormatted = uci_strings.appendFormatted;
+const allocFormatted = uci_strings.allocFormatted;
+const allocCString = uci_strings.allocCString;
+const freeMaybeCString = uci_strings.freeMaybeCString;
+const trimAsciiWhitespace = uci_strings.trimAsciiWhitespace;
+const asciiLower = uci_strings.asciiLower;
+const isSpaceByte = uci_strings.isSpaceByte;
 
 fn parseI64(token: ?[]const u8) ?i64 {
     return parseInt(i64, token);
