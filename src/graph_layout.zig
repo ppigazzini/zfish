@@ -123,6 +123,20 @@ pub const WorkerLayout = struct {
     }
 };
 
+comptime {
+    // Worker-block layout-lock (M17.3a). The Worker is a fixed 64-aligned large-page
+    // image; `root_pos`/`root_state` reserve exactly one Position / one StateInfo each
+    // (see position_size/state_info_size). Pin that those slots stay their contractual
+    // width and abut the next field with no shift, so when a later slice embeds the
+    // *typed* Position/StateInfo in place of the opaque `[N]u8` the block layout is
+    // provably unchanged. These are relative (offset-delta) checks over fixed slot
+    // sizes, hence arch-invariant -- they hold on every target, turning the runtime
+    // bench coincidence into a build-time contract.
+    std.debug.assert(@alignOf(WorkerLayout) == 64);
+    std.debug.assert(@offsetOf(WorkerLayout, "root_state") == @offsetOf(WorkerLayout, "root_pos") + position_size);
+    std.debug.assert(@offsetOf(WorkerLayout, "root_moves") == @offsetOf(WorkerLayout, "root_state") + state_info_size);
+}
+
 pub const worker_off = struct {
     pub const histories = @offsetOf(WorkerLayout, "histories");
     // shared_history is inside WorkerHistories at position.worker_shared_history_off
