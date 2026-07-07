@@ -740,8 +740,8 @@ inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta: c_
 // then apply the eval scaling. Mirrors Eval::evaluate exactly — material is
 // 534 * pawn count (both colours) + non-pawn material, optimism is indexed by the
 // side to move, and the TB clamp bounds are ±VALUE_TB_WIN_IN_MAX_PLY.
-inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *anyopaque) c_int {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) c_int {
+    const pos = pos_ptr;
     const out = network_port.evaluate(ctx.network, pos_ptr, ctx.acc_stack, ctx.cache);
     const pawns = pos.piece_count[1] + pos.piece_count[9];
     const material = 534 * pawns + pos.st.non_pawn_material[0] + pos.st.non_pawn_material[1];
@@ -760,9 +760,9 @@ inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *anyopaque) c_int {
 // move (the Zig make-move records the dirty piece/threats into that slot), then set
 // the Stack's current move and continuation-history pointer. Mirrors search.cpp
 // do_move exactly; capture_stage is read pre-move, dirtyPiece.pc post-move.
-inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque, gives_check: u8, ss_ptr: *anyopaque) void {
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
-    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr: *StateInfo, gives_check: u8, ss_ptr: *SearchStack) void {
+    const pos = pos_ptr;
+    const ss = ss_ptr;
     const capture = captureStage(pos, move);
     ctx.nodes.* +%= 1;
     const out = nnue_acc.stackPush(ctx.acc_stack);
@@ -773,7 +773,7 @@ inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *anyopaque, move: u16, st_ptr: *a
 }
 
 // Worker::undo_move inlined: unmake the move, then drop the accumulator slot.
-inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *anyopaque, move: u16) void {
+inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16) void {
     undoMove(pos_ptr, move);
     nnue_acc.stackPop(ctx.acc_stack);
 }
@@ -1012,7 +1012,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha
         }
 
         // Step 7. Make and search the move.
-        doMoveAcc(ctx, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
+        doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(gc), ss_ptr);
         const value = -qsearchImpl(ctx, pos_ptr, ss_next, -beta, -alpha, pv_node);
         undoMoveAcc(ctx, pos_ptr, move);
 
@@ -1471,7 +1471,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
                 const move = movepick.nextMove(&pc_state, &pc_ctx);
                 if (move == 0) break;
                 if (move == excluded_move or !legal(pos_ptr, move)) continue;
-                doMoveAcc(ctx, pos_ptr, move, @ptrCast(&st), @intFromBool(givesCheck(pos_ptr, move)), ss_ptr);
+                doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(givesCheck(pos_ptr, move)), ss_ptr);
                 var value = -qsearchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, false);
                 if (value >= probcut_beta and probcut_depth > 0)
                     value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, probcut_depth, !cut_node, false, false);
@@ -1614,7 +1614,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
         const node_count: u64 = if (root_node) ctx.nodes.* else 0;
 
         // Step 16. Make the move.
-        doMoveAcc(ctx, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
+        doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(gc), ss_ptr);
         new_depth += extension;
 
         if (ss.tt_pv)
