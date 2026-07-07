@@ -980,6 +980,21 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(&b.addRunArtifact(option_test).step);
 
+    // M17.4h: board property tests (perft to known node counts) -- needs libc
+    // (position uses c_allocator) + the board module graph.
+    const board_props_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/board/board_props.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    board_props_test.root_module.addImport("position", mods.get("position").?);
+    board_props_test.root_module.addImport("movegen", mods.get("movegen").?);
+    board_props_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    test_step.dependOn(&b.addRunArtifact(board_props_test).step);
+
     // M17.0c: standalone test artifacts for the tested sub-files that were
     // path-imported into larger modules (so their `test {}` blocks never ran in
     // the aggregate). These depend only on std (+ libc for c_allocator) or on a
