@@ -1,6 +1,8 @@
 const std = @import("std");
 const bitboard = @import("bitboard");
 const position_snapshot = @import("position_snapshot");
+const position_types = @import("position_types");
+const Position = position_types.Position;
 const movegen = @import("movegen");
 
 const captures: u8 = 0;
@@ -101,7 +103,7 @@ pub const MovePickerState = struct {
 };
 
 pub const MovePickerContext = struct {
-    pos: *const anyopaque,
+    pos: *const Position,
     main_history: ?*const anyopaque,
     low_ply_history: ?*const anyopaque,
     capture_history: ?*const anyopaque,
@@ -567,7 +569,7 @@ fn squareMask(square: u8) u64 {
     return @as(u64, 1) << @intCast(square);
 }
 
-fn seeGe(pos: *const anyopaque, raw_move: u16, threshold: c_int) bool {
+fn seeGe(pos: *const Position, raw_move: u16, threshold: c_int) bool {
     const snapshot = loadPositionSnapshot(pos);
     return seeGeWithSnapshot(&snapshot, raw_move, threshold);
 }
@@ -667,7 +669,7 @@ fn seeGeWithSnapshot(snapshot: *const PositionSnapshot, raw_move: u16, threshold
     return result != 0;
 }
 
-fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
+fn loadPositionSnapshot(pos: *const Position) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
     position_snapshot.fill(pos, &snapshot);
     snapshot.pieces_by_type[no_piece_type] = snapshot.pieces_all;
