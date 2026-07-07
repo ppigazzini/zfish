@@ -83,13 +83,15 @@ jobs:
       # full suite are green here.
       - run: zig build test -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
-      # Safety-checked bench: the full alpha-beta search + eval + threads run under
-      # ReleaseSafe and must still produce the exact signature 2067208. The board
-      # property tests above drive movegen/make-unmake but not the real search
-      # (searchImpl), which is exactly where the M17.5d null-child-PV UB lived and
-      # the M17.5c searchmoves-alignment UB is reached (via `go`). This gate closes
-      # that hole -- the whole engine, safety-checked, still bit-exact.
-      - run: zig build signature -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe -Dsignature-ref=2067208
+      # Safety-checked full engine: the ENTIRE parity suite rebuilt under
+      # -Doptimize=ReleaseSafe. Supersets the safety-checked bench (signature 2067208)
+      # and additionally drives the multi-thread (mt-sanity), Lazy-SMP go/stop stress,
+      # transposition-table, NNUE-eval, time-management, and every UCI-output golden
+      # path with Zig's runtime safety checks ON -- the paths the property tests and a
+      # bare bench do not reach. This is where the M17.5c/d UB bugs lived (search +
+      # `go`); with those fixed the whole engine is safety-clean, so gate it to keep
+      # any future bounds / overflow / alignment / null-unwrap regression out of CI.
+      - run: zig build parity -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
       # Arch-variant determinism (REPORT-14 M14.D, widened in REPORT-15 M15.1): the
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
