@@ -95,6 +95,7 @@ pub const SearchStack = struct {
 // names the ported search code + external callers already use.
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
+const fen = @import("fen");
 const hist_color_nb = worker_histories.hist_color_nb;
 const hist_uint16 = worker_histories.hist_uint16;
 const hist_low_ply = worker_histories.hist_low_ply;
@@ -2788,15 +2789,18 @@ const sq_none: u8 = 64;
 
 const piece_to_char = " PNBRQK  pnbrqk";
 
-// Memory mirror of upstream Stockfish StateInfo (src/position.h). Field order,
-// types, and alignment match the upstream layout exactly so Zig can walk the live
-// state stack (linked via `previous`). Only used via pointer (never allocated as a
-// standalone here), so it must stay byte-compatible with that layout.
 // StateInfo/Position and their POD scratch members live in the position_types leaf
 // module (M17.3b) so graph_layout can embed typed root_pos/root_state without a
 // module cycle; re-exported here as the position module's public surface.
 pub const StateInfo = position_types.StateInfo;
 pub const Position = position_types.Position;
+
+// FEN encoding (format/flip/endgame-code synthesis) lives in the fen leaf module
+// (M17.3e); re-exported so position_port.flipFen/formatFen/buildEndgameFen keep
+// resolving through the position module's surface.
+pub const flipFen = fen.flipFen;
+pub const formatFen = fen.formatFen;
+pub const buildEndgameFen = fen.buildEndgameFen;
 
 comptime {
     // Native struct (M16.8 de-mirror): Zig owns the field order. The only external
@@ -2994,57 +2998,6 @@ pub fn attackersTo(pos_ptr: *const anyopaque, s: u8, occupied: u64) u64 {
 
 fn kingSquare(pos: *const Position, c: u8) u8 {
     return @intCast(@ctz(pos.by_color_bb[c] & pos.by_type_bb[king_pt]));
-}
-
-pub fn flipFen(fen_ptr: [*]const u8, fen_len: usize) ?[*:0]u8 {
-    return flipFenAlloc(fen_ptr[0..fen_len]) catch null;
-}
-
-fn flipFenAlloc(fen: []const u8) ![*:0]u8 {
-    const alloc = std.heap.c_allocator;
-    var it = std.mem.tokenizeScalar(u8, fen, ' ');
-    const placement = it.next() orelse return error.BadFen;
-    const active = it.next() orelse return error.BadFen;
-    const castling = it.next() orelse return error.BadFen;
-    const ep = it.next() orelse return error.BadFen;
-    const rest = it.rest(); // half/full move counters
-
-    var out = std.ArrayList(u8).empty;
-    defer out.deinit(alloc);
-
-    // Piece placement with the rank order reversed (vertical mirror).
-    var ranks: [8][]const u8 = undefined;
-    var nr: usize = 0;
-    var rank_it = std.mem.splitScalar(u8, placement, '/');
-    while (rank_it.next()) |r| : (nr += 1) ranks[nr] = r;
-    var ri: usize = nr;
-    while (ri > 0) {
-        ri -= 1;
-        try out.appendSlice(alloc, ranks[ri]);
-        if (ri > 0) try out.append(alloc, '/');
-    }
-    try out.append(alloc, ' ');
-    try out.append(alloc, if (active[0] == 'w') 'B' else 'W');
-    try out.append(alloc, ' ');
-    try out.appendSlice(alloc, castling);
-
-    // Swap the case of everything so far: flips piece colors, the active color,
-    // and castling-rights case in one pass (matches upstream flip()).
-    for (out.items) |*ch| {
-        ch.* = if (std.ascii.isLower(ch.*)) std.ascii.toUpper(ch.*) else std.ascii.toLower(ch.*);
-    }
-
-    try out.append(alloc, ' ');
-    if (std.mem.eql(u8, ep, "-")) {
-        try out.append(alloc, '-');
-    } else {
-        try out.append(alloc, ep[0]);
-        try out.append(alloc, if (ep[1] == '3') @as(u8, '6') else @as(u8, '3'));
-    }
-    try out.append(alloc, ' ');
-    try out.appendSlice(alloc, rest);
-
-    return try allocCString(out.items);
 }
 
 pub fn setCastlingRight(pos_ptr: *anyopaque, c: u8, rfrom: u8) void {
@@ -3988,38 +3941,6 @@ pub fn attackersToExist(pos_ptr: *const anyopaque, s: u8, occupied: u64, c: u8) 
     return false;
 }
 
-pub fn buildEndgameFen(code_ptr: [*]const u8, code_len: usize, color: u8) ?[*:0]u8 {
-    return buildEndgameFenAlloc(code_ptr[0..code_len], color) catch null;
-}
-
-pub fn formatFen(
-    board_ptr: [*]const u8,
-    side_to_move: u8,
-    chess960: u8,
-    castling_rights: u8,
-    white_oo_rook_square: u8,
-    white_ooo_rook_square: u8,
-    black_oo_rook_square: u8,
-    black_ooo_rook_square: u8,
-    ep_square: u8,
-    rule50: c_int,
-    game_ply: c_int,
-) ?[*:0]u8 {
-    return formatFenAlloc(
-        board_ptr[0..64],
-        side_to_move,
-        chess960 != 0,
-        castling_rights,
-        white_oo_rook_square,
-        white_ooo_rook_square,
-        black_oo_rook_square,
-        black_ooo_rook_square,
-        ep_square,
-        rule50,
-        game_ply,
-    ) catch null;
-}
-
 pub fn computeMaterialKey(piece_counts_ptr: [*]const c_int, piece_count_len: usize) u64 {
     const piece_counts = piece_counts_ptr[0..piece_count_len];
     var key: u64 = 0;
@@ -4038,142 +3959,10 @@ pub fn computeMaterialKey(piece_counts_ptr: [*]const c_int, piece_count_len: usi
     return key;
 }
 
-fn buildEndgameFenAlloc(code: []const u8, color: u8) ![*:0]u8 {
-    std.debug.assert(code.len > 0 and code[0] == 'K');
-
-    const second_king = std.mem.indexOfScalarPos(u8, code, 1, 'K') orelse unreachable;
-    const versus = std.mem.indexOfScalar(u8, code, 'v') orelse unreachable;
-    const strong_end = @min(second_king, versus);
-
-    const weak_side = code[second_king..];
-    const strong_side = code[0..strong_end];
-
-    var builder = std.ArrayList(u8).empty;
-    defer builder.deinit(std.heap.c_allocator);
-
-    try builder.appendSlice(std.heap.c_allocator, "8/");
-    try appendSide(&builder, weak_side, color == 0);
-    try builder.append(std.heap.c_allocator, digitChar(@as(u8, @intCast(8 - weak_side.len))));
-    try builder.appendSlice(std.heap.c_allocator, "/8/8/8/8/");
-    try appendSide(&builder, strong_side, color == 1);
-    try builder.append(std.heap.c_allocator, digitChar(@as(u8, @intCast(8 - strong_side.len))));
-    try builder.appendSlice(std.heap.c_allocator, "/8 w - - 0 10");
-
-    return try allocCString(builder.items);
-}
-
-fn formatFenAlloc(
-    board: []const u8,
-    side_to_move: u8,
-    chess960: bool,
-    castling_rights: u8,
-    white_oo_rook_square: u8,
-    white_ooo_rook_square: u8,
-    black_oo_rook_square: u8,
-    black_ooo_rook_square: u8,
-    ep_square: u8,
-    rule50: c_int,
-    game_ply: c_int,
-) ![*:0]u8 {
-    var builder = std.ArrayList(u8).empty;
-    defer builder.deinit(std.heap.c_allocator);
-
-    var rank: i32 = 7;
-    while (rank >= 0) : (rank -= 1) {
-        var file: usize = 0;
-        var empty_count: u8 = 0;
-
-        while (file < 8) : (file += 1) {
-            const rank_index: usize = @intCast(rank);
-            const square_index = rank_index * 8 + file;
-            const piece = board[square_index];
-            if (piece == 0) {
-                empty_count += 1;
-                continue;
-            }
-
-            if (empty_count != 0) {
-                try builder.append(std.heap.c_allocator, digitChar(empty_count));
-                empty_count = 0;
-            }
-
-            try builder.append(std.heap.c_allocator, piece_to_char[@as(usize, piece)]);
-        }
-
-        if (empty_count != 0) {
-            try builder.append(std.heap.c_allocator, digitChar(empty_count));
-        }
-
-        if (rank != 0) {
-            try builder.append(std.heap.c_allocator, '/');
-        }
-    }
-
-    try builder.appendSlice(std.heap.c_allocator, if (side_to_move == 0) " w " else " b ");
-
-    var has_castling = false;
-    if ((castling_rights & white_oo) != 0) {
-        has_castling = true;
-        try builder.append(std.heap.c_allocator, if (chess960) rookFileCharUpper(white_oo_rook_square) else 'K');
-    }
-    if ((castling_rights & white_ooo) != 0) {
-        has_castling = true;
-        try builder.append(std.heap.c_allocator, if (chess960) rookFileCharUpper(white_ooo_rook_square) else 'Q');
-    }
-    if ((castling_rights & black_oo) != 0) {
-        has_castling = true;
-        try builder.append(std.heap.c_allocator, if (chess960) rookFileCharLower(black_oo_rook_square) else 'k');
-    }
-    if ((castling_rights & black_ooo) != 0) {
-        has_castling = true;
-        try builder.append(std.heap.c_allocator, if (chess960) rookFileCharLower(black_ooo_rook_square) else 'q');
-    }
-    if (!has_castling) {
-        try builder.append(std.heap.c_allocator, '-');
-    }
-
-    if (ep_square == sq_none) {
-        try builder.appendSlice(std.heap.c_allocator, " - ");
-    } else {
-        try builder.append(std.heap.c_allocator, ' ');
-        try appendSquare(&builder, ep_square);
-        try builder.append(std.heap.c_allocator, ' ');
-    }
-
-    try appendInt(&builder, rule50);
-    try builder.append(std.heap.c_allocator, ' ');
-    const side_offset: c_int = if (side_to_move == black) 1 else 0;
-    const fullmove = 1 + @divTrunc(game_ply - side_offset, 2);
-    try appendInt(&builder, fullmove);
-
-    return try allocCString(builder.items);
-}
-
-fn appendSide(builder: *std.ArrayList(u8), side: []const u8, lower: bool) !void {
-    for (side) |byte| {
-        try builder.append(std.heap.c_allocator, if (lower) std.ascii.toLower(byte) else byte);
-    }
-}
-
-fn appendSquare(builder: *std.ArrayList(u8), square: u8) !void {
-    try builder.append(std.heap.c_allocator, 'a' + fileOf(square));
-    try builder.append(std.heap.c_allocator, '1' + rankOf(square));
-}
-
-fn appendInt(builder: *std.ArrayList(u8), value: c_int) !void {
-    var buffer: [32]u8 = undefined;
-    const text = try std.fmt.bufPrint(&buffer, "{d}", .{value});
-    try builder.appendSlice(std.heap.c_allocator, text);
-}
-
 fn allocCString(value: []const u8) ![*:0]u8 {
     const result = try std.heap.c_allocator.allocSentinel(u8, value.len, 0);
     @memcpy(result[0..value.len], value);
     return result.ptr;
-}
-
-fn digitChar(value: u8) u8 {
-    return '0' + value;
 }
 
 fn fileOf(square: u8) u8 {
@@ -4182,14 +3971,6 @@ fn fileOf(square: u8) u8 {
 
 fn rankOf(square: u8) u8 {
     return square >> 3;
-}
-
-fn rookFileCharUpper(square: u8) u8 {
-    return 'A' + fileOf(square);
-}
-
-fn rookFileCharLower(square: u8) u8 {
-    return 'a' + fileOf(square);
 }
 
 fn isMaterialPiece(piece: u8) bool {
