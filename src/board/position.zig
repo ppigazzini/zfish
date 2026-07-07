@@ -101,6 +101,7 @@ const zobrist = @import("zobrist");
 const repetition = @import("repetition");
 const position_query = @import("position_query");
 const state_setup = @import("state_setup");
+const move_do = @import("move_do");
 const hist_color_nb = worker_histories.hist_color_nb;
 const hist_uint16 = worker_histories.hist_uint16;
 const hist_low_ply = worker_histories.hist_low_ply;
@@ -2721,35 +2722,10 @@ pub fn initRuntime() void {
     zobrist.init();
 }
 
-pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque) void {
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
-    const new_st: *StateInfo = @ptrCast(@alignCast(new_st_ptr));
-
-    new_st.* = pos.st.*; // memcpy(&newSt, st, sizeof(StateInfo))
-    new_st.previous = pos.st;
-    pos.st = new_st;
-
-    if (pos.st.ep_square != sq_none_u8) {
-        pos.st.key ^= zobrist.zob_enpassant[fileOf(pos.st.ep_square)];
-        pos.st.ep_square = sq_none_u8;
-    }
-    pos.st.key ^= zobrist.zob_side_val;
-    pos.st.plies_from_null = 0;
-
-    // Upstream 782852b26: the StateInfo was copied from the previous ply (incl. its capturedPiece);
-    // a null move captures nothing, so clear it or prior_capture detection reads a stale value.
-    pos.st.captured_piece = 0; // NO_PIECE
-
-    pos.side_to_move ^= 1;
-    setCheckInfo(pos_ptr);
-    pos.st.repetition = 0;
-}
-
-pub fn undoNullMove(pos_ptr: *anyopaque) void {
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
-    pos.st = pos.st.previous.?;
-    pos.side_to_move ^= 1;
-}
+// Move make/unmake lives in the move_do leaf (M17.3m); re-exported so the search
+// callers resolve through the position surface.
+pub const doNullMove = move_do.doNullMove;
+pub const undoNullMove = move_do.undoNullMove;
 
 // Repetition / draw detection lives in the repetition leaf (M17.3j); re-exported
 // so the search callers resolve through the position surface.
