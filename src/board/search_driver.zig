@@ -865,10 +865,10 @@ inline fn adjustKey50(pos: *const Position) u64 {
     return k ^ (seed *% 6364136223846793005 +% 1442695040888963407);
 }
 
-fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_in: c_int, beta: c_int, pv_node: bool) c_int {
+fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta: c_int, pv_node: bool) c_int {
     const w: *WorkerHistories = workerHistories(ctx.worker);
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
-    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const pos = pos_ptr;
+    const ss = ss_ptr;
     const ss1: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
     const ss_next: *SearchStack = @ptrFromInt(@intFromPtr(ss) + @sizeOf(SearchStack));
     var alpha = alpha_in;
@@ -1013,7 +1013,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_
 
         // Step 7. Make and search the move.
         doMoveAcc(ctx, pos_ptr, move, @ptrCast(&st), @intFromBool(gc), ss_ptr);
-        const value = -qsearchImpl(ctx, pos_ptr, @ptrCast(ss_next), -beta, -alpha, pv_node);
+        const value = -qsearchImpl(ctx, pos_ptr, ss_next, -beta, -alpha, pv_node);
         undoMoveAcc(ctx, pos_ptr, move);
 
         // Step 8. New best move.
@@ -1207,7 +1207,11 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
     var gen: u8 = 0;
     searchCbTtContext(worker, &table, &cc, &gen);
     const ctx = buildCtx(worker, table, cc, gen);
-    return qsearchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, pv_node != 0);
+    // Single erasure boundary: the hook signature is *anyopaque; the whole search
+    // recursion below runs on typed *Position / *SearchStack.
+    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    return qsearchImpl(&ctx, pos, ss, alpha, beta, pv_node != 0);
 }
 
 // ======================= search() (ported to Zig) =======================
@@ -1245,15 +1249,15 @@ inline fn contVal(ss_ch: ?*const anyopaque, pc: u8, to: u8) c_int {
     return p[@as(usize, pc) * 64 + to];
 }
 
-fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_in: c_int, beta_in: c_int, depth_in: c_int, cut_node: bool, pv_node: bool, root_node: bool) c_int {
+fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta_in: c_int, depth_in: c_int, cut_node: bool, pv_node: bool, root_node: bool) c_int {
     const all_node = !(pv_node or cut_node);
 
     // Dive into qsearch at depth 0.
     if (depth_in <= 0) return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha_in, beta_in, pv_node);
 
     const w: *WorkerHistories = workerHistories(ctx.worker);
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
-    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    const pos = pos_ptr;
+    const ss = ss_ptr;
     const ss1 = ssSub(ss, 1);
     const ss2 = ssSub(ss, 2);
 
@@ -1420,7 +1424,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
             doNullMove(pos_ptr, @ptrCast(&st));
             ss.current_move = 65;
             setContHist(ctx.worker, ss_ptr, 0, 0, 0, 0);
-            const null_value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -beta, -beta + 1, depth - r, false, false, false);
+            const null_value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -beta, -beta + 1, depth - r, false, false, false);
             undoNullMove(pos_ptr);
             if (null_value >= beta and !qIsWin(null_value)) {
                 if (ctx.nmp_min_ply.* != 0 or depth < 16) return null_value;
@@ -1468,9 +1472,9 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
                 if (move == 0) break;
                 if (move == excluded_move or !legal(pos_ptr, move)) continue;
                 doMoveAcc(ctx, pos_ptr, move, @ptrCast(&st), @intFromBool(givesCheck(pos_ptr, move)), ss_ptr);
-                var value = -qsearchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -probcut_beta, -probcut_beta + 1, false);
+                var value = -qsearchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, false);
                 if (value >= probcut_beta and probcut_depth > 0)
-                    value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -probcut_beta, -probcut_beta + 1, probcut_depth, !cut_node, false, false);
+                    value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, probcut_depth, !cut_node, false, false);
                 undoMoveAcc(ctx, pos_ptr, move);
                 if (value >= probcut_beta) {
                     tt.entrySave(writer, pos_key, search.valueToTt(value, ss.ply), @intFromBool(ss.tt_pv), q_bound_lower, probcut_depth + 1, q_depth_none, move, unadjusted_static_eval, ctx.generation);
@@ -1638,19 +1642,19 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
         if (depth >= 2 and move_count > 1) {
             const d = @max(@as(c_int, 1), @min(new_depth - @divTrunc(r, 1024), new_depth + 2)) + @as(c_int, @intFromBool(pv_node));
             ss.reduction = new_depth - d;
-            value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -(alpha + 1), -alpha, d, true, false, false);
+            value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -(alpha + 1), -alpha, d, true, false, false);
             ss.reduction = 0;
             if (value > alpha) {
                 const do_deeper = d < new_depth and value > best_value + 52;
                 const do_shallower = value < best_value + 9;
                 new_depth += @as(c_int, @intFromBool(do_deeper)) - @as(c_int, @intFromBool(do_shallower));
                 if (new_depth > d)
-                    value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -(alpha + 1), -alpha, new_depth, !cut_node, false, false);
+                    value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -(alpha + 1), -alpha, new_depth, !cut_node, false, false);
                 updateContinuationHistories(ss, moved_piece, to, 1415);
             }
         } else if (!pv_node or move_count > 1) {
             if (tt_move == 0) r += 1085;
-            value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -(alpha + 1), -alpha, new_depth - @as(c_int, @intFromBool(r > 5039)) - @as(c_int, @intFromBool(r > 5223 and new_depth > 2)), !cut_node, false, false);
+            value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -(alpha + 1), -alpha, new_depth - @as(c_int, @intFromBool(r > 5039)) - @as(c_int, @intFromBool(r > 5223 and new_depth > 2)), !cut_node, false, false);
         }
 
         if (pv_node and (move_count == 1 or value > alpha)) {
@@ -1658,7 +1662,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
             pvClear(&pv);
             if (move == tt_move and ((qIsValid(tt_value) and qIsDecisive(tt_value) and tt_depth > 0) or tt_depth > 1))
                 new_depth = @max(new_depth, 1);
-            value = -searchImpl(ctx, pos_ptr, @ptrCast(ssAdd(ss, 1)), -beta, -alpha, new_depth, false, true, false);
+            value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -beta, -alpha, new_depth, false, true, false);
         }
 
         // Step 19. Undo move.
@@ -1759,7 +1763,11 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
     var gen: u8 = 0;
     searchCbTtContext(worker, &table, &cc, &gen);
     const ctx = buildCtx(worker, table, cc, gen);
-    return searchImpl(&ctx, pos_ptr, ss_ptr, alpha, beta, depth, cut_node != 0, pv_node != 0, root_node != 0);
+    // Single erasure boundary: the hook signature is *anyopaque; the whole search
+    // recursion below runs on typed *Position / *SearchStack.
+    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
+    return searchImpl(&ctx, pos, ss, alpha, beta, depth, cut_node != 0, pv_node != 0, root_node != 0);
 }
 
 // ==================== iterative_deepening() (ported to Zig) ====================
@@ -1959,7 +1967,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
             while (true) {
                 const adjusted_depth = @max(@as(c_int, 1), id.root_depth.* - failed_high_cnt - @divTrunc(3 * (search_again_counter + 1), 4));
                 id.root_delta.* = beta - alpha;
-                best_value = searchImpl(&ctx, id.root_pos, &stack[7], alpha, beta, adjusted_depth, false, true, true);
+                best_value = searchImpl(&ctx, @ptrCast(@alignCast(id.root_pos)), &stack[7], alpha, beta, adjusted_depth, false, true, true);
 
                 stableSortRoot(id.root_moves, id.pv_idx.*, id.pv_last.*);
 
