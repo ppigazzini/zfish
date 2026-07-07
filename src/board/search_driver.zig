@@ -45,6 +45,7 @@ const position_query = @import("position_query");
 const state_setup = @import("state_setup");
 const move_do = @import("move_do");
 const fen_parse = @import("fen_parse");
+const shared_history = @import("shared_history");
 
 // Types.
 const Position = position_types.Position;
@@ -157,110 +158,18 @@ comptime {
 
 const CorrectionBundle = search_types.CorrectionBundle;
 
-// Memory mirror of SharedHistories (src/history.h), reached through the Worker
-// mirror's shared_history pointer. correctionHistory and pawnHistory are each a
-// DynStats { size_t size; T* data } (the LargePagePtr is a unique_ptr with a
-// stateless deleter, so just an 8-byte pointer), followed by the two index
-// masks. pawn page = [16][64] int16 (1024); correction page = [2]CorrectionBundle.
-pub const SharedHistories = struct {
-    corr_size: usize,
-    corr_data: [*][2]CorrectionBundle,
-    pawn_size: usize,
-    pawn_data: [*]i16,
-    size_minus1: usize,
-    pawn_hist_size_minus1: usize,
-};
-
-inline fn sharedOf(w: *const WorkerHistories) *SharedHistories {
-    return @ptrCast(@alignCast(w.shared_history.?));
-}
-
-// DynStats::clear_range numa partition of `size` entries: [start, end).
-inline fn dynRange(size: usize, thread_idx: usize, numa_total: usize) struct { start: usize, end: usize } {
-    const start = thread_idx * size / numa_total;
-    const end = if (thread_idx + 1 == numa_total) size else (thread_idx + 1) * size / numa_total;
-    return .{ .start = start, .end = end };
-}
-
-// SharedHistories clear_range pair from Worker::clear: correctionHistory entries
-// (each [2]CorrectionBundle, 8 int16) filled to -6, pawnHistory pages (each a
-// [16][64] int16 page) filled to -1262, over this thread's numa partition.
-pub fn clearSharedHistory(shared_ptr: *anyopaque, thread_idx: usize, numa_total: usize) void {
-    const shared: *SharedHistories = @ptrCast(@alignCast(shared_ptr));
-    const corr_entry_i16: usize = @sizeOf([2]CorrectionBundle) / @sizeOf(i16);
-    {
-        const r = dynRange(shared.corr_size, thread_idx, numa_total);
-        const base: [*]i16 = @ptrCast(@alignCast(shared.corr_data));
-        var i = r.start * corr_entry_i16;
-        const stop = r.end * corr_entry_i16;
-        while (i < stop) : (i += 1) base[i] = -6;
-    }
-    {
-        const r = dynRange(shared.pawn_size, thread_idx, numa_total);
-        var i = r.start * hist_pieceto;
-        const stop = r.end * hist_pieceto;
-        while (i < stop) : (i += 1) shared.pawn_data[i] = -1262;
-    }
-}
-
-// Native construction of one node's SharedHistories. Allocates the two DynStats arrays
-// from large pages (corr: [2]CorrectionBundle elements; pawn: [16][64] int16 pages,
-// exposed as a flat int16 array) and fills in the size fields + index masks.
-// `thread_count` is nextPowerOfTwo(threads on the node), so the counts are powers of two
-// and the masks are (count - 1). Element strides come from the same types the native
-// search reads the histories through, so the layouts match; the COUNT logic is shared
-// with shared_histories.zig (sharedHistoriesSizes).
-pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHistories {
-    const sizes = shared_hist.sharedHistoriesSizes(thread_count);
-    const corr_bytes = sizes.corr * @sizeOf([2]CorrectionBundle);
-    const pawn_bytes = sizes.pawn * hist_pieceto * @sizeOf(i16);
-
-    const corr_ptr = memory.alignedLargePagesAlloc(corr_bytes) orelse return error.OutOfMemory;
-    const pawn_ptr = memory.alignedLargePagesAlloc(pawn_bytes) orelse {
-        memory.alignedLargePagesFree(corr_ptr); // don't leak corr if pawn alloc fails
-        return error.OutOfMemory;
-    };
-
-    return .{
-        .corr_size = sizes.corr,
-        .corr_data = @ptrCast(@alignCast(corr_ptr)),
-        .pawn_size = sizes.pawn,
-        .pawn_data = @ptrCast(@alignCast(pawn_ptr)),
-        .size_minus1 = sizes.corr - 1,
-        .pawn_hist_size_minus1 = sizes.pawn - 1,
-    };
-}
-
-// Release a SharedHistories' two large-page arrays — the free hook the native
-// sharedHists map (SharedHistoriesMap) calls per element on erase/clear.
-pub fn deinitSharedHistories(sh: *SharedHistories) void {
-    memory.alignedLargePagesFree(@ptrCast(sh.corr_data));
-    memory.alignedLargePagesFree(@ptrCast(sh.pawn_data));
-    sh.* = undefined;
-}
-
-// The native engine `sharedHists` member: NumaIndex -> SharedHistories, built with the
-// large-page-backed construct/free hooks.
-pub const SharedHistoriesMap = shared_histories_map.SharedHistoriesMapOf(SharedHistories);
-
-// Read a SharedHistories through the native mirror and confirm its four size fields
-// match the native sizing for `thread_count`.
-pub fn verifySharedHistories(shared_ptr: *const anyopaque, thread_count: usize) bool {
-    const shared: *const SharedHistories = @ptrCast(@alignCast(shared_ptr));
-    return shared_hist.verifySizes(
-        shared.corr_size,
-        shared.pawn_size,
-        shared.size_minus1,
-        shared.pawn_hist_size_minus1,
-        thread_count,
-    );
-}
-
-// pawn_entry(pos) row base: pawnHistory[pawn_key & mask] is a [16][64] page.
-inline fn pawnEntryRow(shared: *SharedHistories, pos: *const Position) [*]i16 {
-    const idx: usize = @intCast(pos.st.pawn_key & @as(u64, shared.pawn_hist_size_minus1));
-    return shared.pawn_data + idx * hist_pieceto;
-}
+// Shared-history arena lives in the shared_history leaf (M17.3r); the accessors are
+// aliased here so the search bodies stay verbatim, and the public management
+// functions are re-exported onward so position.zig's port surface is unchanged.
+pub const SharedHistories = shared_history.SharedHistories;
+const sharedOf = shared_history.sharedOf;
+const pawnEntryRow = shared_history.pawnEntryRow;
+const corrBundle = shared_history.corrBundle;
+pub const SharedHistoriesMap = shared_history.SharedHistoriesMap;
+pub const clearSharedHistory = shared_history.clearSharedHistory;
+pub const constructSharedHistories = shared_history.constructSharedHistories;
+pub const deinitSharedHistories = shared_history.deinitSharedHistories;
+pub const verifySharedHistories = shared_history.verifySharedHistories;
 
 // update_quiet_histories addressed through the Worker + SharedHistories mirrors:
 // the caller passes only the Worker and Position pointers and the move, and Zig
@@ -2617,12 +2526,6 @@ pub fn updateAllStats(
 }
 
 const correction_history_limit: c_int = 1024;
-
-// correctionHistory[key & sizeMinus1][us] bundle, via the SharedHistories mirror.
-inline fn corrBundle(shared: *SharedHistories, key: u64) *[2]CorrectionBundle {
-    const idx: usize = @intCast(key & @as(u64, shared.size_minus1));
-    return &shared.corr_data[idx];
-}
 
 // update_correction_history (search.cpp): nudge the four shared correction
 // tables plus the (ss-2)/(ss-4) continuation correction entries toward the
