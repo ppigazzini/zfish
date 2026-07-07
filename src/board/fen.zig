@@ -280,6 +280,26 @@ test "flipFen vertically mirrors and swaps colors" {
     );
 }
 
+test "flipFen is an involution" {
+    // flip mirrors the ranks and swaps every case; applying it twice restores the
+    // original FEN exactly (rank order back, case back, active color back, and the
+    // ep rank 6<->3 mapping back). Covers a symmetric position, an en-passant
+    // position, and an asymmetric-castling one.
+    const cases = [_][]const u8{
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
+        "r3k2r/8/8/8/8/8/8/R3K2R w Kq - 5 12",
+    };
+    for (cases) |fen| {
+        const once = flipFen(fen.ptr, fen.len).?;
+        defer std.heap.c_allocator.free(std.mem.span(once));
+        const once_slice = std.mem.span(once);
+        const twice = flipFen(once_slice.ptr, once_slice.len).?;
+        defer std.heap.c_allocator.free(std.mem.span(twice));
+        try testing.expectEqualStrings(fen, std.mem.span(twice));
+    }
+}
+
 test "formatFen renders the start position from primitives" {
     // Native piece codes: 1..6 = W P/N/B/R/Q/K, 9..14 = B p/n/b/r/q/k.
     var board = [_]u8{0} ** 64;
