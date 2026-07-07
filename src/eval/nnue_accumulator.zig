@@ -28,6 +28,18 @@ const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
 const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
 const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
 
+// Refresh cache / finny tables live in the nnue_refresh_cache leaf (M17.4f);
+// accessors aliased for the refresh path, clearRefreshCache re-exported (external).
+const nnue_refresh_cache = @import("nnue_refresh_cache");
+pub const clearRefreshCache = nnue_refresh_cache.clearRefreshCache;
+const cacheEntry = nnue_refresh_cache.cacheEntry;
+const cacheEntryAccumulationConst = nnue_refresh_cache.cacheEntryAccumulationConst;
+const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;
+const cacheEntryPsqtConst = nnue_refresh_cache.cacheEntryPsqtConst;
+const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
+const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
+const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
+
 const psq_feature: u8 = 0;
 const threat_feature: u8 = 1;
 const white: u8 = 0;
@@ -43,7 +55,6 @@ const color_count: usize = 2;
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
 const acc_vec_width: usize = 32; // SIMD width, also used by transformBucket's ReLU
-const feature_transformer_biases_bytes = half_dimensions * @sizeOf(i16); // used by clearRefreshCache
 const dirty_threat_capacity: usize = 96;
 const psq_index_capacity: usize = 32;
 const threat_index_capacity: usize = 128;
@@ -134,10 +145,6 @@ const threat_array_offset = psq_array_bytes;
 const threat_array_bytes = threat_state_stride * max_stack_size;
 const stack_size_offset = threat_array_offset + threat_array_bytes;
 const threat_refresh_diff_offset = threat_diff_offset + @sizeOf(DirtyThreatListView);
-const cache_entry_psqt_offset = half_dimensions * @sizeOf(i16);
-const cache_entry_pieces_offset = cache_entry_psqt_offset + psqt_buckets * @sizeOf(i32);
-const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
-const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
 
 const PositionSnapshot = struct {
     pieces: [square_count]u8,
@@ -761,66 +768,6 @@ fn loadBridgeSnapshot(pos: *const anyopaque) BridgePositionSnapshot {
     var snapshot = std.mem.zeroes(BridgePositionSnapshot);
     position_snapshot.fill(pos, &snapshot);
     return snapshot;
-}
-
-fn cacheEntry(cache: *anyopaque, king_square: u8, perspective: u8) *anyopaque {
-    return @ptrCast(cacheBytesMut(cache) +
-        ((@as(usize, king_square) * color_count + @as(usize, perspective)) * cache_entry_bytes));
-}
-
-// AccumulatorRefreshTable::clear: initialize every (king_square, perspective)
-// refresh entry to the empty board -- accumulation = the feature-transformer
-// biases, and the rest of the entry (psqt, pieces, pieceBB) zeroed. Mirrors the
-// C++ Entry::clear (accumulation = biases; memset from psqtAccumulation to end).
-// The biases pointer is passed in by the caller.
-pub fn clearRefreshCache(cache: *anyopaque, biases: [*]const i16) void {
-    const biases_bytes: [*]const u8 = @ptrCast(biases);
-    var ks: usize = 0;
-    while (ks < square_count) : (ks += 1) {
-        var p: usize = 0;
-        while (p < color_count) : (p += 1) {
-            const bytes = cacheEntryBytesMut(cacheEntry(cache, @intCast(ks), @intCast(p)));
-            @memcpy(bytes[0..feature_transformer_biases_bytes], biases_bytes[0..feature_transformer_biases_bytes]);
-            @memset(bytes[cache_entry_psqt_offset..cache_entry_bytes], 0);
-        }
-    }
-}
-
-fn cacheBytesMut(cache: *anyopaque) [*]u8 {
-    return @ptrCast(cache);
-}
-
-fn cacheEntryBytesMut(entry: *anyopaque) [*]u8 {
-    return @ptrCast(entry);
-}
-
-fn cacheEntryAccumulationConst(entry: *const anyopaque) []const i16 {
-    const ptr: [*]const i16 = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(entry))));
-    return ptr[0..half_dimensions];
-}
-
-fn cacheEntryAccumulationMut(entry: *anyopaque) []i16 {
-    const ptr: [*]i16 = @ptrCast(@alignCast(cacheEntryBytesMut(entry)));
-    return ptr[0..half_dimensions];
-}
-
-fn cacheEntryPsqtConst(entry: *const anyopaque) []const i32 {
-    const ptr: [*]const i32 = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(entry)) + cache_entry_psqt_offset));
-    return ptr[0..psqt_buckets];
-}
-
-fn cacheEntryPsqtMut(entry: *anyopaque) []i32 {
-    const ptr: [*]i32 = @ptrCast(@alignCast(cacheEntryBytesMut(entry) + cache_entry_psqt_offset));
-    return ptr[0..psqt_buckets];
-}
-
-fn cacheEntryPiecesMut(entry: *anyopaque) []u8 {
-    return (cacheEntryBytesMut(entry) + cache_entry_pieces_offset)[0..square_count];
-}
-
-fn setCacheEntryPieceBb(entry: *anyopaque, piece_bb: u64) void {
-    const bytes = cacheEntryBytesMut(entry);
-    std.mem.writeInt(u64, bytes[cache_entry_piece_bb_offset..][0..@sizeOf(u64)], piece_bb, .little);
 }
 
 fn stateAccumulationConst(feature_kind: u8, index: usize, stack: *const anyopaque, perspective: u8) []const i16 {
