@@ -315,22 +315,14 @@ pub fn waitForSearchFinishedEngine(engine_ptr: *anyopaque) void {
 }
 
 // Print each non-blank line as "info string ...". Relocated from main.zig (M16.7).
-fn printInfoStringNative(str: []const u8) void {
-    var it = std.mem.splitScalar(u8, str, '\n');
-    while (it.next()) |line| {
-        var all_ws = true;
-        for (line) |ch| {
-            if (ch != ' ' and ch != '\t' and ch != '\r' and ch != '\n') {
-                all_ws = false;
-                break;
-            }
-        }
-        if (all_ws) continue;
-        var buf: [1024]u8 = undefined;
-        const out = std.fmt.bufPrint(&buf, "info string {s}", .{line}) catch continue;
-        uci_output.printLine(out.ptr, out.len);
-    }
-}
+// NNUE network lifecycle (verifyNetwork/loadNetworkEngine/saveNetworkEngine) +
+// printInfoStringNative live in the engine_nnue leaf (M17.3z); saveNetworkEngine is
+// re-exported (external), the rest aliased for the go/perft/option-apply callers.
+const engine_nnue = @import("engine_nnue");
+const printInfoStringNative = engine_nnue.printInfoStringNative;
+pub const verifyNetwork = engine_nnue.verifyNetwork;
+pub const loadNetworkEngine = engine_nnue.loadNetworkEngine;
+pub const saveNetworkEngine = engine_nnue.saveNetworkEngine;
 
 // setoption apply: wait for the search, set into the native OptionsModel, and run the
 // on-change callback (relaying string/spin/check values). Relocated from main.zig (M16.7).
@@ -600,25 +592,6 @@ pub fn threadAllocationInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 
     );
 }
 
-pub fn verifyNetwork(engine_ptr: *const anyopaque) void {
-    const evalfile_ptr = option_port.dupEvalFile() orelse return;
-    defer c.free(@ptrCast(evalfile_ptr));
-    const evalfile = std.mem.span(evalfile_ptr);
-
-    const network_ptr = ne(engine_ptr).networkPtr();
-
-    const result = network_port.verify(network_ptr, evalfile.ptr, evalfile.len);
-    if (result.message) |message_ptr| {
-        defer c.free(@ptrCast(message_ptr));
-        // onVerifyNetwork: interactive -> print as "info string ..."; quiet -> no-op.
-        if (!uci_output.isQuiet()) printInfoStringNative(std.mem.span(message_ptr));
-    }
-
-    if (result.should_exit != 0) {
-        c.exit(1);
-    }
-}
-
 pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     verifyNetwork(engine_ptr);
 
@@ -641,22 +614,6 @@ pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
     }
 
     return evalTrace(trace_pos, network);
-}
-
-// Load a network from the given EvalFile path directly through the network module
-// (M16.9): the engine owns the network pointer + binary directory, so no C-ABI round
-// trip to main is needed. Mirrors the startup load in native_engine.constructMembers.
-pub fn loadNetworkEngine(engine_ptr: *anyopaque, evalfile_path: []const u8) void {
-    const e = ne(engine_ptr);
-    const bdir: [*:0]const u8 = e.binary_directory orelse "";
-    const bdir_slice = std.mem.span(bdir);
-    network_port.load(@constCast(e.networkPtr()), bdir_slice.ptr, bdir_slice.len, evalfile_path.ptr, evalfile_path.len);
-}
-
-pub fn saveNetworkEngine(engine_ptr: *anyopaque, filename_opt: ?[]const u8) void {
-    const has_filename: u8 = if (filename_opt != null) 1 else 0;
-    const filename = filename_opt orelse "";
-    _ = network_port.save(ne(engine_ptr).networkPtr(), has_filename, filename.ptr, filename.len);
 }
 
 fn ensurePendingStateStorage(states_slot: *anyopaque) *anyopaque {
