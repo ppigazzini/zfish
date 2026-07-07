@@ -82,19 +82,20 @@ const default_eval_file_name = network_port.default_eval_file_name;
 const default_skill_lowest_elo: c_int = 1320;
 const default_skill_highest_elo: c_int = 3190;
 
-pub const CountPair = struct {
-    current: usize,
-    total: usize,
-};
+// String/format helpers + ByteView/CountPair live in the engine_util base leaf
+// (M17.3x); ByteView re-exported (external port surface), the rest aliased.
+const engine_util = @import("engine_util");
+pub const ByteView = engine_util.ByteView;
+pub const CountPair = engine_util.CountPair;
+const allocMessage = engine_util.allocMessage;
+const appendFormat = engine_util.appendFormat;
+const appendHexKey = engine_util.appendHexKey;
+const appendPaddedInt = engine_util.appendPaddedInt;
+const appendCheckers = engine_util.appendCheckers;
 
 const NetworkVerifyResult = struct {
     should_exit: u8,
     message: ?[*:0]u8,
-};
-
-pub const ByteView = struct {
-    ptr: ?[*]const u8,
-    len: usize,
 };
 
 pub const PositionSummary = struct {
@@ -1094,15 +1095,6 @@ fn addButtonOption(engine_ptr: *anyopaque, name: []const u8, callback_kind: u8) 
     );
 }
 
-fn allocMessage(comptime fmt: []const u8, args: anytype) ?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const rendered = std.fmt.allocPrint(allocator, fmt, args) catch return null;
-    defer allocator.free(rendered);
-    const owned = allocator.allocSentinel(u8, rendered.len, 0) catch return null;
-    @memcpy(owned[0..rendered.len], rendered);
-    return owned.ptr;
-}
-
 fn buildNnueTrace(
     pos: *anyopaque,
     network: *const anyopaque,
@@ -1216,38 +1208,4 @@ fn emptyTablebaseProbe() TablebaseProbe {
         .dtz = 0,
         .dtz_state = 0,
     };
-}
-
-fn appendFormat(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
-    const allocator = std.heap.c_allocator;
-    const rendered = try std.fmt.allocPrint(allocator, fmt, args);
-    defer allocator.free(rendered);
-    try buffer.appendSlice(allocator, rendered);
-}
-
-fn appendHexKey(buffer: *std.ArrayList(u8), key: u64) !void {
-    var numeric: [32]u8 = undefined;
-    const len = c.snprintf(&numeric, numeric.len, "%016llX", @as(c_ulonglong, key));
-    try buffer.appendSlice(std.heap.c_allocator, numeric[0..@intCast(len)]);
-}
-
-fn appendPaddedInt(buffer: *std.ArrayList(u8), value: c_int) !void {
-    var numeric: [32]u8 = undefined;
-    const len = c.snprintf(&numeric, numeric.len, "%4d", value);
-    try buffer.appendSlice(std.heap.c_allocator, numeric[0..@intCast(len)]);
-}
-
-fn appendCheckers(buffer: *std.ArrayList(u8), checkers: u64) !void {
-    var remaining = checkers;
-    while (remaining != 0) {
-        const square: usize = @intCast(@ctz(remaining));
-        remaining &= remaining - 1;
-
-        const square_text = [_]u8{
-            @as(u8, 'a') + @as(u8, @intCast(square % 8)),
-            @as(u8, '1') + @as(u8, @intCast(square / 8)),
-        };
-        try buffer.appendSlice(std.heap.c_allocator, &square_text);
-        try buffer.append(std.heap.c_allocator, ' ');
-    }
 }
