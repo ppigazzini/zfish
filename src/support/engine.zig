@@ -301,6 +301,10 @@ pub const fenEngine = engine_trace.fenEngine;
 pub const accumulatorCachesCreate = engine_trace.accumulatorCachesCreate;
 const fen = engine_trace.fen;
 
+// Perft driver lives in the engine_perft leaf (M17.4b); re-exported for uci `go perft`.
+const engine_perft = @import("engine_perft");
+pub const perftEngine = engine_perft.perftEngine;
+
 // setoption apply: wait for the search, set into the native OptionsModel, and run the
 // on-change callback (relaying string/spin/check values). Relocated from main.zig (M16.7).
 pub fn applySetOptionEngine(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
@@ -596,75 +600,6 @@ fn findPendingStateIndex(slot_key: usize) ?usize {
 // StateInfo, set the engine FEN, generate the legal root moves, run the native perft subtree
 // per move, print "<move>: <count>" then the "Nodes searched: N" total (byte-exact vs the C++
 // divide -- the `perft` gate diffs it). engine + movegen + position + uci_move + uci_output.
-const perft_max_depth = 64;
-const PerftStateBuf = [graph_layout.state_info_size]u8;
-
-fn perftCount(pos_ptr: *anyopaque, depth: c_int, states: *[perft_max_depth]PerftStateBuf, ply: usize) u64 {
-    if (depth <= 0) return 1;
-    var moves: [256]u16 = undefined;
-    const n = movegen_port.generateLegal(pos_ptr, &moves);
-    if (depth == 1) return n;
-    var nodes: u64 = 0;
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
-        position_port.doMoveState(pos_ptr, moves[i], &states[ply]);
-        nodes += perftCount(pos_ptr, depth - 1, states, ply + 1);
-        position_port.undoMove(pos_ptr, moves[i]);
-    }
-    return nodes;
-}
-
-fn perftSubtree(pos_ptr: *anyopaque, depth: c_int) u64 {
-    const capped = if (depth > perft_max_depth) perft_max_depth else depth;
-    var states: [perft_max_depth]PerftStateBuf align(64) = undefined;
-    return perftCount(pos_ptr, capped, &states, 0);
-}
-
-pub fn perftEngine(engine_ptr: *anyopaque, depth: c_int) u64 {
-    verifyNetwork(engine_ptr);
-    const fen_ptr = fen(ne(engine_ptr).positionPtr()) orelse @panic("perft: null fen");
-    const fen_text = std.mem.span(fen_ptr);
-    const chess960 = option_port.intByName("UCI_Chess960") != 0;
-
-    const p = std.c.malloc(graph_layout.position_size) orelse @panic("perft: position alloc");
-    const st = std.c.malloc(graph_layout.state_info_size) orelse @panic("perft: state alloc");
-    @memset(@as([*]u8, @ptrCast(p))[0..graph_layout.position_size], 0);
-    @memset(@as([*]u8, @ptrCast(st))[0..graph_layout.state_info_size], 0);
-    if (position_port.setPosition(p, fen_text.ptr, fen_text.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.c.free(msg);
-
-    var moves: [256]u16 = undefined;
-    const count = movegen_port.generateLegal(p, &moves);
-    var nodes: u64 = 0;
-    var mbuf: [5]u8 = undefined;
-    var line: [64]u8 = undefined;
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
-        const m = moves[i];
-        var cnt: u64 = undefined;
-        if (depth <= 1) {
-            cnt = 1;
-            nodes += 1;
-        } else {
-            var si: [graph_layout.state_info_size]u8 align(16) = undefined;
-            position_port.doMoveState(p, m, @ptrCast(&si));
-            cnt = perftSubtree(p, depth - 1);
-            nodes += cnt;
-            position_port.undoMove(p, m);
-        }
-        const txt = uci_move.renderMoveText(&mbuf, m, chess960);
-        const out = std.fmt.bufPrint(&line, "{s}: {d}", .{ txt, cnt }) catch unreachable;
-        uci_output.printLine(out.ptr, out.len);
-    }
-
-    std.c.free(p);
-    std.c.free(st);
-    std.c.free(@ptrCast(fen_ptr));
-
-    var nbuf: [64]u8 = undefined;
-    const nout = std.fmt.bufPrint(&nbuf, "\nNodes searched: {d}\n", .{nodes}) catch unreachable;
-    uci_output.printLine(nout.ptr, nout.len);
-    return nodes;
-}
 
 // Engine::flip -> read the live FEN, flip it, re-set the position. Relocated from
 // main.zig (M16.7); all native (engine fen + position flipFen + setPosition).
