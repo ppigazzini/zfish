@@ -20,6 +20,14 @@ const applyPsqtDelta = nnue_acc_rowops.applyPsqtDelta;
 const applyPsqtDeltaInPlace = nnue_acc_rowops.applyPsqtDeltaInPlace;
 const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
 
+// FeatureTransformer weight-blob layout + accessors live in the nnue_ft leaf
+// (M17.4e); aliased for the refresh/apply-delta core.
+const nnue_ft = @import("nnue_ft");
+const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
+const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
+const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
+const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
+
 const psq_feature: u8 = 0;
 const threat_feature: u8 = 1;
 const white: u8 = 0;
@@ -35,6 +43,7 @@ const color_count: usize = 2;
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
 const acc_vec_width: usize = 32; // SIMD width, also used by transformBucket's ReLU
+const feature_transformer_biases_bytes = half_dimensions * @sizeOf(i16); // used by clearRefreshCache
 const dirty_threat_capacity: usize = 96;
 const psq_index_capacity: usize = 32;
 const threat_index_capacity: usize = 128;
@@ -129,14 +138,6 @@ const cache_entry_psqt_offset = half_dimensions * @sizeOf(i16);
 const cache_entry_pieces_offset = cache_entry_psqt_offset + psqt_buckets * @sizeOf(i32);
 const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
 const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
-const feature_transformer_biases_bytes = half_dimensions * @sizeOf(i16);
-const feature_transformer_psq_weights_bytes = half_dimensions * psq_feature_dimensions * @sizeOf(i16);
-const feature_transformer_threat_weights_bytes = half_dimensions * @as(usize, threat_dimensions) * @sizeOf(i8);
-const feature_transformer_psqt_weights_bytes = psq_feature_dimensions * psqt_buckets * @sizeOf(i32);
-const feature_transformer_weights_offset = roundUp(feature_transformer_biases_bytes, nnue_align);
-const feature_transformer_threat_weights_offset = roundUp(feature_transformer_weights_offset + feature_transformer_psq_weights_bytes, nnue_align);
-const feature_transformer_psqt_weights_offset = roundUp(feature_transformer_threat_weights_offset + feature_transformer_threat_weights_bytes, nnue_align);
-const feature_transformer_threat_psqt_weights_offset = roundUp(feature_transformer_psqt_weights_offset + feature_transformer_psqt_weights_bytes, nnue_align);
 
 const PositionSnapshot = struct {
     pieces: [square_count]u8,
@@ -791,26 +792,6 @@ fn cacheBytesMut(cache: *anyopaque) [*]u8 {
 
 fn cacheEntryBytesMut(entry: *anyopaque) [*]u8 {
     return @ptrCast(entry);
-}
-
-fn featureTransformerPsqWeights(feature_transformer: *const anyopaque) [*]const i16 {
-    const bytes: [*]const u8 = @ptrCast(feature_transformer);
-    return @ptrCast(@alignCast(bytes + feature_transformer_weights_offset));
-}
-
-fn featureTransformerThreatWeights(feature_transformer: *const anyopaque) [*]const i8 {
-    const bytes: [*]const u8 = @ptrCast(feature_transformer);
-    return @ptrCast(bytes + feature_transformer_threat_weights_offset);
-}
-
-fn featureTransformerPsqPsqtWeights(feature_transformer: *const anyopaque) [*]const i32 {
-    const bytes: [*]const u8 = @ptrCast(feature_transformer);
-    return @ptrCast(@alignCast(bytes + feature_transformer_psqt_weights_offset));
-}
-
-fn featureTransformerThreatPsqtWeights(feature_transformer: *const anyopaque) [*]const i32 {
-    const bytes: [*]const u8 = @ptrCast(feature_transformer);
-    return @ptrCast(@alignCast(bytes + feature_transformer_threat_psqt_weights_offset));
 }
 
 fn cacheEntryAccumulationConst(entry: *const anyopaque) []const i16 {
