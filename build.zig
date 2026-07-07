@@ -143,6 +143,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "state_setup", .path = "src/board/state_setup.zig" },
         .{ .name = "move_do", .path = "src/board/move_do.zig" },
         .{ .name = "fen_parse", .path = "src/board/fen_parse.zig" },
+        .{ .name = "search_types", .path = "src/board/search_types.zig" },
     };
     var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
     for (module_specs) |spec| {
@@ -197,6 +198,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "move_do", .imp = "legality", .to = "legality" },
         .{ .from = "move_do", .imp = "position_types", .to = "position_types" },
         .{ .from = "position", .imp = "fen_parse", .to = "fen_parse" },
+        .{ .from = "position", .imp = "search_types", .to = "search_types" },
         .{ .from = "fen_parse", .imp = "board_core", .to = "board_core" },
         .{ .from = "fen_parse", .imp = "move_do", .to = "move_do" },
         .{ .from = "fen_parse", .imp = "state_setup", .to = "state_setup" },
