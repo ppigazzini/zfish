@@ -165,6 +165,17 @@ test "NativeThread spawns, round-trips a job, and joins" {
 }
 
 test "setWorker stores the handle read by offset 8" {
+    // The engine registers native_worker_destroy at startup; a standalone test does
+    // not, so deinit()'s `native_worker_destroy.?(worker)` on the mock worker below
+    // would deref a null hook (UB -- silent under ReleaseFast, a panic under
+    // ReleaseSafe). Install a no-op teardown for the mock (it is a stack value, not
+    // a real large-page Worker) and restore the prior hook after.
+    const prev_destroy = native_hooks.native_worker_destroy;
+    native_hooks.native_worker_destroy = struct {
+        fn noop(_: *anyopaque) void {}
+    }.noop;
+    defer native_hooks.native_worker_destroy = prev_destroy;
+
     var thread: NativeThread = .{};
     try thread.spawn(testing.allocator, 3);
     defer thread.deinit(testing.allocator);
