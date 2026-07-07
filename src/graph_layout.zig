@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const worker_histories = @import("worker_histories");
+const position_types = @import("position_types");
 
 // Canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = @sizeOf(WorkerLayout);
@@ -88,8 +89,8 @@ pub const WorkerLayout = struct {
     sel_depth: c_int,
     nmp_min_ply: c_int,
     optimism: [2]c_int,
-    root_pos: [position_size]u8 align(8), // position.Position
-    root_state: [state_info_size]u8 align(8), // position.StateInfo
+    root_pos: position_types.Position align(8), // the worker's root Position (typed, M17.3c)
+    root_state: position_types.StateInfo align(8), // its root StateInfo (typed, M17.3c)
     root_moves: [3]usize, // libc++ vector header {begin,end,cap}
     root_depth: c_int,
     root_delta: c_int,
@@ -125,13 +126,14 @@ pub const WorkerLayout = struct {
 
 comptime {
     // Worker-block layout-lock (M17.3a). The Worker is a fixed 64-aligned large-page
-    // image; `root_pos`/`root_state` reserve exactly one Position / one StateInfo each
-    // (see position_size/state_info_size). Pin that those slots stay their contractual
-    // width and abut the next field with no shift, so when a later slice embeds the
-    // *typed* Position/StateInfo in place of the opaque `[N]u8` the block layout is
-    // provably unchanged. These are relative (offset-delta) checks over fixed slot
-    // sizes, hence arch-invariant -- they hold on every target, turning the runtime
-    // bench coincidence into a build-time contract.
+    // image; `root_pos`/`root_state` now carry a *typed* Position / StateInfo (M17.3c),
+    // each reserving exactly its slot width (position_size/state_info_size). Pin that
+    // the typed embed keeps those slots their contractual width and abutting the next
+    // field with no shift -- i.e. @sizeOf(Position)==position_size and
+    // @sizeOf(StateInfo)==state_info_size, enforced here via the field offsets. These
+    // are relative (offset-delta) checks over fixed slot sizes, hence arch-invariant --
+    // they hold on every target, turning the runtime bench coincidence into a
+    // build-time contract.
     std.debug.assert(@alignOf(WorkerLayout) == 64);
     std.debug.assert(@offsetOf(WorkerLayout, "root_state") == @offsetOf(WorkerLayout, "root_pos") + position_size);
     std.debug.assert(@offsetOf(WorkerLayout, "root_moves") == @offsetOf(WorkerLayout, "root_state") + state_info_size);
@@ -384,13 +386,13 @@ pub const Worker = struct {
         @as(*c_int, @ptrCast(@alignCast(&b[8]))).* = probe_depth;
     }
     pub inline fn setRootState(self: Worker, src: *const anyopaque) void {
-        const dst: [*]u8 = &self.layout().root_state;
-        @memcpy(dst[0..state_info_size], @as([*]const u8, @ptrCast(src))[0..state_info_size]);
+        // root_state is a typed StateInfo now (M17.3c): a struct copy, not a byte memcpy.
+        self.layout().root_state = @as(*const position_types.StateInfo, @ptrCast(@alignCast(src))).*;
     }
-    pub inline fn rootPosPtr(self: Worker) *anyopaque {
+    pub inline fn rootPosPtr(self: Worker) *position_types.Position {
         return &self.layout().root_pos;
     }
-    pub inline fn rootStatePtr(self: Worker) *anyopaque {
+    pub inline fn rootStatePtr(self: Worker) *position_types.StateInfo {
         return &self.layout().root_state;
     }
     pub inline fn rootDepth(self: Worker) c_int {
