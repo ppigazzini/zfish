@@ -189,3 +189,62 @@ fn parseInt(comptime T: type, token: ?[]const u8) ?T {
 }
 
 const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+// ---- tests ------------------------------------------------------------------
+
+const testing = std.testing;
+
+fn freeLimits(l: ParsedLimits) void {
+    if (l.searchmoves) |s| std.heap.c_allocator.free(std.mem.span(s));
+}
+fn freePosition(pp: ParsedPosition) void {
+    if (pp.fen) |f| std.heap.c_allocator.free(std.mem.span(f));
+    if (pp.moves) |m| std.heap.c_allocator.free(std.mem.span(m));
+}
+
+test "parseLimits reads the go parameters" {
+    const l = parseLimits("wtime 1000 btime 2000 winc 10 binc 20 movestogo 30 depth 7 nodes 5000 movetime 500 infinite ponder");
+    defer freeLimits(l);
+    try testing.expectEqual(@as(i64, 1000), l.wtime);
+    try testing.expectEqual(@as(i64, 2000), l.btime);
+    try testing.expectEqual(@as(i64, 10), l.winc);
+    try testing.expectEqual(@as(i64, 20), l.binc);
+    try testing.expectEqual(@as(c_int, 30), l.movestogo);
+    try testing.expectEqual(@as(c_int, 7), l.depth);
+    try testing.expectEqual(@as(u64, 5000), l.nodes);
+    try testing.expectEqual(@as(i64, 500), l.movetime);
+    try testing.expectEqual(@as(u8, 1), l.infinite);
+    try testing.expectEqual(@as(u8, 1), l.ponder_mode);
+}
+
+test "parsePosition handles startpos and fen with moves" {
+    const sp = parsePosition("position startpos moves e2e4 e7e5");
+    defer freePosition(sp);
+    try testing.expectEqual(@as(u8, 1), sp.ok);
+    try testing.expectEqualStrings(start_fen, std.mem.span(sp.fen.?));
+    try testing.expectEqualStrings("e2e4\ne7e5", std.mem.span(sp.moves.?));
+
+    const fp = parsePosition("position fen 4k3/8/8/8/8/8/8/4K3 w - - 0 1 moves e1e2");
+    defer freePosition(fp);
+    try testing.expectEqual(@as(u8, 1), fp.ok);
+    try testing.expectEqualStrings("4k3/8/8/8/8/8/8/4K3 w - - 0 1", std.mem.span(fp.fen.?));
+    try testing.expectEqualStrings("e1e2", std.mem.span(fp.moves.?));
+}
+
+// Fuzz: neither parser may crash / OOB on arbitrary input -- it returns a struct
+// (parseLimits) or an ok/not-ok result (parsePosition). Deterministic PRNG so it
+// is reproducible in `zig build test`.
+const uci_alphabet = "go position startpos fen moves wtime btime depth nodes infinite ponder 0123456789 /-KQkqabcdefgh ";
+
+test "fuzz: the UCI parsers tolerate arbitrary input" {
+    var prng = std.Random.DefaultPrng.init(0xC0FFEE);
+    const rand = prng.random();
+    var iter: usize = 0;
+    while (iter < 30_000) : (iter += 1) {
+        var buf: [128]u8 = undefined;
+        const len = rand.intRangeAtMost(usize, 0, buf.len);
+        for (buf[0..len]) |*b| b.* = uci_alphabet[rand.uintLessThan(usize, uci_alphabet.len)];
+        freeLimits(parseLimits(buf[0..len]));
+        freePosition(parsePosition(buf[0..len]));
+    }
+}
