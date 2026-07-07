@@ -146,6 +146,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "search_types", .path = "src/board/search_types.zig" },
         .{ .name = "search_driver", .path = "src/board/search_driver.zig" },
         .{ .name = "shared_history", .path = "src/board/shared_history.zig" },
+        .{ .name = "search_common", .path = "src/board/search_common.zig" },
     };
     var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
     for (module_specs) |spec| {
@@ -237,6 +238,11 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_driver", .imp = "move_do", .to = "move_do" },
         .{ .from = "search_driver", .imp = "fen_parse", .to = "fen_parse" },
         .{ .from = "search_driver", .imp = "shared_history", .to = "shared_history" },
+        .{ .from = "search_driver", .imp = "search_common", .to = "search_common" },
+        .{ .from = "search_common", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "search_common", .imp = "worker_histories", .to = "worker_histories" },
+        .{ .from = "search_common", .imp = "position_types", .to = "position_types" },
+        .{ .from = "search_common", .imp = "board_core", .to = "board_core" },
         .{ .from = "shared_history", .imp = "memory", .to = "memory" },
         .{ .from = "shared_history", .imp = "shared_histories", .to = "shared_histories" },
         .{ .from = "shared_history", .imp = "shared_histories_map", .to = "shared_histories_map" },

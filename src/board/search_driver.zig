@@ -46,6 +46,13 @@ const state_setup = @import("state_setup");
 const move_do = @import("move_do");
 const fen_parse = @import("fen_parse");
 const shared_history = @import("shared_history");
+const search_common = @import("search_common");
+const workerHistories = search_common.workerHistories;
+const captureStage = search_common.captureStage;
+const moveIsOk = search_common.moveIsOk;
+const statsUpdate = search_common.statsUpdate;
+const captVal = search_common.captVal;
+const captEntry = search_common.captEntry;
 
 // Types.
 const Position = position_types.Position;
@@ -144,10 +151,6 @@ const sq_none_u8: u8 = 64;
 // ======================================================================== //
 // The search + history subsystem, moved verbatim from position.zig (M17.3q).  //
 // ======================================================================== //
-inline fn workerHistories(worker_ptr: *anyopaque) *WorkerHistories {
-    return &graph_layout.WorkerLayout.fromPtr(worker_ptr).histories;
-}
-
 comptime {
     // graph_layout.WorkerLayout uses opaque byte regions for these position-module
     // sub-blocks; assert its sizes match the real structs so worker_off stays correct.
@@ -243,23 +246,8 @@ pub fn clearWorkerHistories(worker_ptr: *anyopaque) void {
     for (&w.continuation_history) |*e| e.* = -552;
 }
 
-fn captureStage(pos: *const Position, m: u16) bool {
-    const cap = (pos.board[moveTo(m)] != 0 and moveTypeOf(m) != mt_castling) or
-        moveTypeOf(m) == mt_en_passant;
-    return cap or movePromotionType(m) == queen_pt;
-}
-
-inline fn moveIsOk(m: u16) bool {
-    return m != 0 and m != 65; // != none() and != null()
-}
-
-// StatsEntry<int16, D>::operator<<(bonus): gravity update toward [-D, D].
-inline fn statsUpdate(entry: *i16, bonus: c_int, comptime d: c_int) void {
-    const clamped = @max(-d, @min(d, bonus));
-    const val: c_int = entry.*;
-    const abs_clamped = if (clamped < 0) -clamped else clamped;
-    entry.* = @intCast(val + clamped - @divTrunc(val * abs_clamped, d));
-}
+// captureStage / moveIsOk / statsUpdate / captVal / captEntry / workerHistories
+// live in the search_common leaf (M17.3s), shared with the history-update code.
 
 // The caller resolves the table lookups (mainHistory[us][move], lowPlyHistory,
 // sharedHistory.pawn_entry) and hands this the int16 entry pointers; Zig owns the
@@ -2109,12 +2097,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
     return best_value;
 }
 
-inline fn captVal(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) c_int {
-    return w.capture_history[@as(usize, pc) * 512 + @as(usize, to) * 8 + captured_type];
-}
-inline fn captEntry(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) *i16 {
-    return &w.capture_history[@as(usize, pc) * 512 + @as(usize, to) * 8 + captured_type];
-}
+// captVal / captEntry live in the search_common leaf (M17.3s).
 
 pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, depth: c_int, cut_node: u8, pv_node: u8, root_node: u8) c_int {
     var table: ?*anyopaque = null;
