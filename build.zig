@@ -153,6 +153,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "graph_layout", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "position", .imp = "position_types", .to = "position_types" },
+        .{ .from = "graph_layout", .imp = "position_types", .to = "position_types" },
         .{ .from = "engine", .imp = "position", .to = "position" },
         .{ .from = "engine", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "position", .imp = "position_snapshot", .to = "position_snapshot" },
