@@ -44,7 +44,6 @@ const repetition = @import("repetition");
 const position_query = @import("position_query");
 const state_setup = @import("state_setup");
 const move_do = @import("move_do");
-const fen_parse = @import("fen_parse");
 const shared_history = @import("shared_history");
 const search_common = @import("search_common");
 const workerHistories = search_common.workerHistories;
@@ -146,7 +145,6 @@ const updateSliderBlockers = state_setup.updateSliderBlockers;
 const setState = state_setup.setState;
 const setCheckInfo = state_setup.setCheckInfo;
 const computeMaterialKey = state_setup.computeMaterialKey;
-const setPosition = fen_parse.setPosition;
 const flipFen = fen.flipFen;
 const formatFen = fen.formatFen;
 const buildEndgameFen = fen.buildEndgameFen;
@@ -794,33 +792,6 @@ inline fn verifyDoMove(pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque) void 
 
 inline fn verifyUndoMove(pos_ptr: *anyopaque, move: u16) void {
     undoMove(pos_ptr, move);
-}
-
-// Native Position::do_move(Move, StateInfo&) for UCI move application (used to apply
-// `position ... moves`). Mirrors verifyDoMove: gives_check is computed here and scratch
-// DirtyPiece/DirtyThreats are passed (during setup no accumulator slot consumes the
-// dirty state).
-pub fn doMoveState(pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque) void {
-    var dp: DirtyPiece = undefined;
-    var dts: DirtyThreats = undefined;
-    dts.list_size = 0;
-    doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
-}
-
-/// Allocate a zeroed Position block.
-pub fn create() ?*anyopaque {
-    const buf = std.c.malloc(graph_layout.position_size) orelse return null;
-    @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.position_size], 0);
-    return buf;
-}
-pub fn destroy(pos: ?*anyopaque) void {
-    if (pos) |p| std.c.free(p);
-}
-
-/// setPosition with the engine-graph Position/StateInfo sizes filled in (lets callers keep
-/// the 5-arg shape without threading graph sizes through).
-pub fn setPositionState(pos_ptr: *anyopaque, fen_ptr: [*]const u8, fen_len: usize, chess960_enabled: u8, state_ptr: *anyopaque) ?[*:0]u8 {
-    return setPosition(pos_ptr, fen_ptr, fen_len, chess960_enabled, state_ptr, graph_layout.position_size, graph_layout.state_info_size);
 }
 
 // Is `move` in the legal move list of the current position?
