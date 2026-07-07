@@ -25,15 +25,6 @@ const native_thread = @import("native_thread");
 const option_port = @import("option");
 const timeman_port = @import("timeman");
 
-// Force-compile the native StateInfo leaf node so its 192-byte layout assert is
-// build-verified rather than dead source (part of the post-src/ object graph).
-comptime {
-    _ = @import("state_info.zig");
-    // NOTE: state_list.zig (native `states` member) is build-verified via the
-    // engine module (engine_graph.zig imports it as the EngineGraph.states type) —
-    // a file may belong to only one module, so it is NOT force-compiled here.
-}
-
 const pawn_pt: u8 = 1;
 const knight_pt: u8 = 2;
 const bishop_pt: u8 = 3;

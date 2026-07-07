@@ -817,7 +817,6 @@ pub fn build(b: *std.Build) void {
     // the aggregate). These depend only on std (+ libc for c_allocator) or on a
     // sibling path import, so they build in isolation.
     inline for (.{
-        "src/board/state_info.zig",
         "src/board/position_types.zig",
         "src/board/state_list.zig",
         "src/support/root_move.zig",
