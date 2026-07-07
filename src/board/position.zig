@@ -25,48 +25,35 @@ const native_thread = @import("native_thread");
 const option_port = @import("option");
 const timeman_port = @import("timeman");
 
-const pawn_pt: u8 = 1;
-const knight_pt: u8 = 2;
-const bishop_pt: u8 = 3;
-const rook_pt: u8 = 4;
-const queen_pt: u8 = 5;
-const king_pt: u8 = 6;
-const color_white: u8 = 0;
-const color_black: u8 = 1;
-
-const file_a_bb: u64 = 0x0101010101010101;
-const file_h_bb: u64 = 0x8080808080808080;
-
-// MoveType (top 2 bits of the 16-bit move).
-const mt_normal: u16 = 0;
-const mt_promotion: u16 = 1 << 14;
-const mt_en_passant: u16 = 2 << 14;
-const mt_castling: u16 = 3 << 14;
-
-inline fn sqBb(s: u8) u64 {
-    return @as(u64, 1) << @intCast(s);
-}
-inline fn moveFrom(m: u16) u8 {
-    return @intCast((m >> 6) & 0x3F);
-}
-inline fn moveTo(m: u16) u8 {
-    return @intCast(m & 0x3F);
-}
-inline fn moveTypeOf(m: u16) u16 {
-    return m & (3 << 14);
-}
-inline fn movePromotionType(m: u16) u8 {
-    return @intCast(((m >> 12) & 3) + 2); // + KNIGHT
-}
-inline fn relativeSquare(c: u8, s: u8) u8 {
-    return s ^ (c * 56);
-}
-inline fn makeSquare(f: u8, r: u8) u8 {
-    return (r << 3) + f;
-}
-inline fn pieceTypeOn(pos: *const Position, s: u8) u8 {
-    return pos.board[s] & 7;
-}
+// Board primitives (piece/color/file/move-type consts, move-word decoders, the
+// pure square helpers) live in the board_core leaf (M17.3f); re-exported so the
+// call sites throughout this file stay unqualified.
+const pawn_pt = board_core.pawn_pt;
+const knight_pt = board_core.knight_pt;
+const bishop_pt = board_core.bishop_pt;
+const rook_pt = board_core.rook_pt;
+const queen_pt = board_core.queen_pt;
+const king_pt = board_core.king_pt;
+const color_white = board_core.color_white;
+const color_black = board_core.color_black;
+const file_a_bb = board_core.file_a_bb;
+const file_h_bb = board_core.file_h_bb;
+const mt_normal = board_core.mt_normal;
+const mt_promotion = board_core.mt_promotion;
+const mt_en_passant = board_core.mt_en_passant;
+const mt_castling = board_core.mt_castling;
+const piece_value_by_type = board_core.piece_value_by_type;
+const sqBb = board_core.sqBb;
+const lsbBb = board_core.lsbBb;
+const moveFrom = board_core.moveFrom;
+const moveTo = board_core.moveTo;
+const moveTypeOf = board_core.moveTypeOf;
+const movePromotionType = board_core.movePromotionType;
+const relativeSquare = board_core.relativeSquare;
+const makeSquare = board_core.makeSquare;
+const pieceTypeOn = board_core.pieceTypeOn;
+const pawnAttacks = board_core.pawnAttacks;
+const kingSquare = board_core.kingSquare;
 
 // Memory mirror of the search Stack (src/search.h). Only the scalar fields used
 // by ported search helpers are read; the layout/size must match for ss-N stack
@@ -96,6 +83,7 @@ pub const SearchStack = struct {
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
 const fen = @import("fen");
+const board_core = @import("board_core");
 const hist_color_nb = worker_histories.hist_color_nb;
 const hist_uint16 = worker_histories.hist_uint16;
 const hist_low_ply = worker_histories.hist_low_ply;
@@ -2771,15 +2759,6 @@ inline fn isEmpty(pos: *const Position, s: u8) bool {
 const rank1_bb: u64 = 0xFF;
 const rank8_bb: u64 = 0xFF << 56;
 
-// attacks_bb<PAWN>(s, c): squares a color-c pawn on `s` attacks.
-fn pawnAttacks(color: u8, sq: u8) u64 {
-    const b: u64 = @as(u64, 1) << @intCast(sq);
-    if (color == color_white) {
-        return ((b & ~file_h_bb) << 9) | ((b & ~file_a_bb) << 7);
-    }
-    return ((b & ~file_h_bb) >> 7) | ((b & ~file_a_bb) >> 9);
-}
-
 const white_oo: u8 = 1;
 const white_ooo: u8 = 2;
 const black_oo: u8 = 4;
@@ -2994,10 +2973,6 @@ pub fn attackersTo(pos_ptr: *const anyopaque, s: u8, occupied: u64) u64 {
         (pawnAttacks(color_white, s) & black_pawns) |
         (bitboard.attacks(knight_pt, s, 0) & pos.by_type_bb[knight_pt]) |
         (bitboard.attacks(king_pt, s, 0) & pos.by_type_bb[king_pt]);
-}
-
-fn kingSquare(pos: *const Position, c: u8) u8 {
-    return @intCast(@ctz(pos.by_color_bb[c] & pos.by_type_bb[king_pt]));
 }
 
 pub fn setCastlingRight(pos_ptr: *anyopaque, c: u8, rfrom: u8) void {
@@ -3748,12 +3723,6 @@ pub fn legal(pos_ptr: *const anyopaque, m: u16) bool {
 
     return (pos.st.blockers_for_king[us] & sqBb(from)) == 0 or
         (bitboard.line(from, orig_to) & (pos.by_color_bb[us] & pos.by_type_bb[king_pt])) != 0;
-}
-
-const piece_value_by_type = [8]c_int{ 0, 208, 781, 825, 1276, 2538, 0, 0 };
-
-inline fn lsbBb(bb: u64) u64 {
-    return bb & (~bb +% 1);
 }
 
 pub fn seeGe(pos_ptr: *const anyopaque, m: u16, threshold: c_int) bool {
