@@ -1936,7 +1936,15 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha_i
             best_value = value;
             if (value + inc > alpha) {
                 best_move = move;
-                if (pv_node and !root_node) pvUpdate(@ptrCast(@alignCast(ss.pv.?)), move, @ptrCast(@alignCast(ssAdd(ss, 1).pv.?)));
+                // (ss+1)->pv is only set (1913) when this move ran a PV re-search;
+                // if a rare best-move update fires without one it stays null, and
+                // pvUpdate takes the child PV as optional (null -> PV is just the
+                // move). Force-unwrapping it here was a latent null-deref (silent
+                // under ReleaseFast, panics under ReleaseSafe/Debug).
+                if (pv_node and !root_node) {
+                    const child_pv: ?*PVMoves = if (ssAdd(ss, 1).pv) |cpv| @ptrCast(@alignCast(cpv)) else null;
+                    pvUpdate(@ptrCast(@alignCast(ss.pv.?)), move, child_pv);
+                }
                 if (value >= beta) {
                     ss.cutoff_cnt += @intFromBool(extension < 2 or pv_node);
                     break;
