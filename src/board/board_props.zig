@@ -201,6 +201,40 @@ test "generated legal moves satisfy legal() and pseudoLegal()" {
     try checkMoveGenLegalityAgree(cpw5_fen);
 }
 
+// givesCheck(m) predicts, without playing the move, whether m delivers check.
+// Validate it against ground truth: play m, ask hasCheckers (is the now-to-move
+// side in check), undo. They must agree for every legal move -- this cross-checks
+// the givesCheck fast path (direct + discovered + castling/ep/promotion check
+// detection) in the legality leaf against the actual post-move state.
+fn checkGivesCheck(fen: []const u8) !void {
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+    if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
+        std.heap.c_allocator.free(std.mem.span(err));
+        @panic("checkGivesCheck: setPosition failed on a known-legal FEN");
+    }
+    var moves: [256]u16 = undefined;
+    const n = movegen.generateLegal(&p, &moves);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        const predicted = position.givesCheck(&p, moves[i]);
+        var new_st: [state_info_size]u8 align(16) = undefined;
+        position.doMoveState(&p, moves[i], &new_st);
+        const actual = position.hasCheckers(&p);
+        position.undoMove(&p, moves[i]);
+        try std.testing.expectEqual(actual, predicted);
+    }
+}
+
+test "givesCheck agrees with the post-move check state" {
+    position.initRuntime();
+    try checkGivesCheck(start_fen);
+    try checkGivesCheck(kiwipete_fen);
+    try checkGivesCheck(cpw3_fen);
+    try checkGivesCheck(cpw4_fen);
+    try checkGivesCheck(cpw5_fen);
+}
+
 fn sq(file: u8, rank: u8) u8 {
     return rank * 8 + file;
 }
