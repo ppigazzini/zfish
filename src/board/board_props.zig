@@ -208,6 +208,34 @@ fn mkMove(from: u8, to: u8) u16 {
     return (@as(u16, from) << 6) | @as(u16, to);
 }
 
+// Play both knights out and straight back (Nf3 Nc6 Ng1 Nb8): four reversible
+// moves that return to a position identical to the start (same key -- move
+// counters are not hashed), so the make/unmake repetition detector must flag it.
+// The StateInfo chain must stay live across the moves, so each ply gets its own
+// buffer (do NOT reuse one). hasRepeated walks that chain; it is false before the
+// cycle closes and true once the start position recurs.
+test "repetition detection flags a returned-to position" {
+    position.initRuntime();
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+    setup(&p, &st, start_fen);
+
+    const moves = [_]u16{
+        mkMove(sq(6, 0), sq(5, 2)), // Ng1-f3
+        mkMove(sq(1, 7), sq(2, 5)), // Nb8-c6
+        mkMove(sq(5, 2), sq(6, 0)), // Nf3-g1
+        mkMove(sq(2, 5), sq(1, 7)), // Nc6-b8  (position == start)
+    };
+    var chain: [8][state_info_size]u8 align(16) = undefined;
+
+    for (moves, 0..) |m, ply| {
+        try std.testing.expect(!position.hasRepeated(&p)); // not yet repeated
+        position.doMoveState(&p, m, &chain[ply]);
+    }
+    // After the fourth move the start position has recurred.
+    try std.testing.expect(position.hasRepeated(&p));
+}
+
 fn setup(p: *[position_size]u8, st: *[state_info_size]u8, fen: []const u8) void {
     if (position.setPosition(p, fen.ptr, fen.len, 0, st, position_size, state_info_size)) |err| {
         std.heap.c_allocator.free(std.mem.span(err));
