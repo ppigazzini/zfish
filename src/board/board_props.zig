@@ -109,3 +109,38 @@ test "make/unmake restores the position byte-exact" {
     try checkRoundTrip(start_fen);
     try checkRoundTrip(kiwipete_fen); // castling / en passant / promotion / pins
 }
+
+// Parse a FEN into a Position, then format the Position back out, and assert the
+// result equals the input FEN. Exercises the setPosition (fen_parse) -> Position
+// -> formatFen (fen) round-trip on a real parsed position (fen.zig's own test uses
+// a synthetic board), catching any drift between the parse and format sides.
+fn checkFenRoundTrip(fen: []const u8) !void {
+    var p: [position_size]u8 align(64) = undefined;
+    var st: [state_info_size]u8 align(16) = undefined;
+    if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
+        std.heap.c_allocator.free(std.mem.span(err));
+        @panic("checkFenRoundTrip: setPosition failed on a known-legal FEN");
+    }
+    const pos: *const position.Position = @ptrCast(&p);
+    const out = position.formatFen(
+        &pos.board,
+        pos.side_to_move,
+        @intFromBool(pos.chess960),
+        @intCast(pos.st.castling_rights),
+        pos.castling_rook_square[1], // white_oo
+        pos.castling_rook_square[2], // white_ooo
+        pos.castling_rook_square[4], // black_oo
+        pos.castling_rook_square[8], // black_ooo
+        pos.st.ep_square,
+        pos.st.rule50,
+        pos.game_ply,
+    ) orelse @panic("checkFenRoundTrip: formatFen returned null");
+    defer std.heap.c_allocator.free(std.mem.span(out));
+    try std.testing.expectEqualStrings(fen, std.mem.span(out));
+}
+
+test "FEN parse -> format round-trips" {
+    position.initRuntime();
+    try checkFenRoundTrip(start_fen);
+    try checkFenRoundTrip(kiwipete_fen);
+}
