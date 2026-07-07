@@ -83,6 +83,14 @@ jobs:
       # full suite are green here.
       - run: zig build test -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
+      # Safety-checked bench: the full alpha-beta search + eval + threads run under
+      # ReleaseSafe and must still produce the exact signature 2067208. The board
+      # property tests above drive movegen/make-unmake but not the real search
+      # (searchImpl), which is exactly where the M17.5d null-child-PV UB lived and
+      # the M17.5c searchmoves-alignment UB is reached (via `go`). This gate closes
+      # that hole -- the whole engine, safety-checked, still bit-exact.
+      - run: zig build signature -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe -Dsignature-ref=2067208
+
       # Arch-variant determinism (REPORT-14 M14.D, widened in REPORT-15 M15.1): the
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
       # codegen change must not perturb the integer-exact eval. This sweep asserts
