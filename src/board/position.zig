@@ -38,6 +38,8 @@ const color_white = board_core.color_white;
 const color_black = board_core.color_black;
 const file_a_bb = board_core.file_a_bb;
 const file_h_bb = board_core.file_h_bb;
+const rank1_bb = board_core.rank1_bb;
+const rank8_bb = board_core.rank8_bb;
 const mt_normal = board_core.mt_normal;
 const mt_promotion = board_core.mt_promotion;
 const mt_en_passant = board_core.mt_en_passant;
@@ -54,6 +56,10 @@ const makeSquare = board_core.makeSquare;
 const pieceTypeOn = board_core.pieceTypeOn;
 const pawnAttacks = board_core.pawnAttacks;
 const kingSquare = board_core.kingSquare;
+const fileOf = board_core.fileOf;
+const rankOf = board_core.rankOf;
+const colorOfPiece = board_core.colorOfPiece;
+const isEmpty = board_core.isEmpty;
 
 // Memory mirror of the search Stack (src/search.h). Only the scalar fields used
 // by ported search helpers are read; the layout/size must match for ss-N stack
@@ -2749,16 +2755,6 @@ pub fn updateCorrectionHistory(
     }
 }
 
-inline fn colorOfPiece(pc: u8) u8 {
-    return pc >> 3;
-}
-inline fn isEmpty(pos: *const Position, s: u8) bool {
-    return pos.board[s] == 0;
-}
-
-const rank1_bb: u64 = 0xFF;
-const rank8_bb: u64 = 0xFF << 56;
-
 const white_oo: u8 = 1;
 const white_ooo: u8 = 2;
 const black_oo: u8 = 4;
@@ -3932,14 +3928,6 @@ fn allocCString(value: []const u8) ![*:0]u8 {
     const result = try std.heap.c_allocator.allocSentinel(u8, value.len, 0);
     @memcpy(result[0..value.len], value);
     return result.ptr;
-}
-
-fn fileOf(square: u8) u8 {
-    return square & 7;
-}
-
-fn rankOf(square: u8) u8 {
-    return square >> 3;
 }
 
 fn isMaterialPiece(piece: u8) bool {
