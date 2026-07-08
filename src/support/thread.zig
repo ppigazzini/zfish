@@ -252,8 +252,8 @@ fn workerSetRootMoves(thread: *anyopaque, src_rm: *const anyopaque) void {
     }
 }
 // Assign the pool's boundThreadToNumaNode vector (native graph_layout.ThreadPool field).
-fn boundNodesAssign(pool_ptr: *anyopaque, nodes: ?[*]const usize, count: usize) void {
-    const tp = graph_layout.ThreadPool.fromPtr(pool_ptr);
+fn boundNodesAssign(pool_ptr: *graph_layout.ThreadPool, nodes: ?[*]const usize, count: usize) void {
+    const tp = pool_ptr;
     if (nodes == null or count == 0) {
         tp.bound_end = tp.bound_begin; // clear (keep capacity)
         return;
@@ -812,23 +812,23 @@ pub fn startThinking(
     threadStartSearching(main_thread);
 }
 
-pub fn clear(pool: *anyopaque) void {
-    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
+pub fn clear(pool: *graph_layout.ThreadPool) void {
+    const thread_count = pool.numThreads();
     if (thread_count == 0) {
         return;
     }
 
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        threadClearWorker(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
+        threadClearWorker(pool.threadAtPtr(index));
     }
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        threadWaitFinished(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
+        threadWaitFinished(pool.threadAtPtr(index));
     }
 
-    if (graph_layout.ThreadPool.fromPtr(pool).mainManager()) |m| {
+    if (pool.mainManager()) |m| {
         m.resetBestPreviousAverageScore();
         m.resetPreviousTimeReduction();
         m.resetCallsCount();
