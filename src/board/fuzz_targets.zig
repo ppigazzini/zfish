@@ -29,8 +29,8 @@ fn fuzzSetPosition(_: void, smith: *std.testing.Smith) anyerror!void {
     const len = @as(usize, raw[0]) % (raw.len - 1); // 0..127, drawn from the input
     const fen = raw[1..][0..len];
 
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     const err = position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size);
     if (err) |msg| {
         std.heap.c_allocator.free(std.mem.span(msg));
@@ -39,7 +39,7 @@ fn fuzzSetPosition(_: void, smith: *std.testing.Smith) anyerror!void {
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
     if (n > 0) {
-        var new_st: [state_info_size]u8 align(16) = undefined;
+        var new_st: position.StateInfo align(16) = undefined;
         position.doMoveState(&p, moves[0], &new_st);
         position.undoMove(&p, moves[0]);
     }
@@ -62,14 +62,14 @@ fn fuzzRandomGame(_: void, smith: *std.testing.Smith) anyerror!void {
     var choices: [96]u8 = undefined;
     smith.bytesWithHash(&choices, 3);
 
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
         std.heap.c_allocator.free(std.mem.span(msg));
         return; // start position is always legal, but stay defensive
     }
 
-    var chain: [choices.len][state_info_size]u8 align(16) = undefined;
+    var chain: [choices.len]position.StateInfo align(16) = undefined;
     var played: [choices.len]u16 = undefined;
     var ply: usize = 0;
     while (ply < choices.len) : (ply += 1) {
