@@ -803,13 +803,13 @@ fn legalContains(pos_ptr: *const anyopaque, move: u16) bool {
 // stored there, append it to the PV if it is a legal move, unmake. Returns
 // whether a ponder move was found (pv length > 1). The tt context (table base,
 // cluster count, generation) is handed over by the caller.
-pub fn extractPonderFromTt(pv_ptr: *anyopaque, table: ?*anyopaque, cluster_count: usize, generation: u8, pos_ptr: *anyopaque) u8 {
+pub fn extractPonderFromTt(pv_ptr: *anyopaque, table: ?*anyopaque, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
     const pv: *PVMoves = @ptrCast(@alignCast(pv_ptr));
     const move = pv.moves[0];
     var st: StateInfo = undefined;
     verifyDoMove(pos_ptr, move, &st);
     if (!isDraw(pos_ptr, 1)) {
-        const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+        const pos = pos_ptr;
         const key = adjustKey50(pos);
         const probe = tt.probeTable(table, cluster_count, key, generation, q_depth_none);
         const ttm = probe.data.move16;
