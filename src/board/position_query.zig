@@ -15,8 +15,7 @@ const position_types = @import("position_types");
 const Position = position_types.Position;
 const king_pt = board_core.king_pt;
 
-pub fn sideToMove(pos_ptr: *const anyopaque) u8 {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn sideToMove(pos: *const Position) u8 {
     return pos.side_to_move;
 }
 
@@ -25,8 +24,7 @@ pub fn isChess960(pos_ptr: *const anyopaque) bool {
     return pos.chess960;
 }
 
-pub fn gamePly(pos_ptr: *const anyopaque) c_int {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn gamePly(pos: *const Position) c_int {
     return pos.game_ply;
 }
 

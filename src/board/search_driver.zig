@@ -374,7 +374,7 @@ fn ssTmInit(wl: *graph_layout.WorkerLayout) void {
     const lim = &wl.limits;
     const smgr = wl.manager.?;
     const tm = &smgr.tm;
-    const root_pos: *const anyopaque = &wl.root_pos;
+    const root_pos = &wl.root_pos;
 
     const us: usize = sideToMove(root_pos);
 
@@ -657,7 +657,7 @@ const SearchTimeState = struct {
 // fields are pointers into Worker/SearchManager/ThreadPool; the rest are values
 // read once.
 const ZfishIdState = struct {
-    root_pos: *anyopaque,
+    root_pos: *Position,
     root_moves: [*]RootMove,
     pv_idx: *usize,
     pv_last: *usize,
@@ -1966,7 +1966,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
             while (true) {
                 const adjusted_depth = @max(@as(c_int, 1), id.root_depth.* - failed_high_cnt - @divTrunc(3 * (search_again_counter + 1), 4));
                 id.root_delta.* = beta - alpha;
-                best_value = searchImpl(&ctx, @ptrCast(@alignCast(id.root_pos)), &stack[7], alpha, beta, adjusted_depth, false, true, true);
+                best_value = searchImpl(&ctx, id.root_pos, &stack[7], alpha, beta, adjusted_depth, false, true, true);
 
                 stableSortRoot(id.root_moves, id.pv_idx.*, id.pv_last.*);
 
