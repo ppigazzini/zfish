@@ -105,16 +105,16 @@ inline fn asNativeThread(thread: *anyopaque) *NativeThread {
 // Start the sibling threads (index 1..) searching. The pool-level entry the search
 // driver (position.zig) calls -- pure graph iteration + the per-thread start, so it
 // needs no position import.
-pub fn startPoolSiblings(pool: *anyopaque) void {
-    const tp = graph_layout.ThreadPool.fromPtr(@constCast(pool));
+pub fn startPoolSiblings(pool: *graph_layout.ThreadPool) void {
+    const tp = pool;
     const n = tp.numThreads();
     var i: usize = 1;
     while (i < n) : (i += 1) startSearching(asNativeThread(tp.threadAtPtr(i)));
 }
 
 // Wait for the sibling threads (index 1..) to finish their current search.
-pub fn waitPoolSiblings(pool: *anyopaque) void {
-    const tp = graph_layout.ThreadPool.fromPtr(@constCast(pool));
+pub fn waitPoolSiblings(pool: *graph_layout.ThreadPool) void {
+    const tp = pool;
     const n = tp.numThreads();
     var i: usize = 1;
     while (i < n) : (i += 1) asNativeThread(tp.threadAtPtr(i)).waitForSearchFinished();
