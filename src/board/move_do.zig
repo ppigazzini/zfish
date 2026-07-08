@@ -53,9 +53,9 @@ inline fn pawnPush(c: u8) i16 {
     return if (c == color_white) 8 else -8;
 }
 
-pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque) void {
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
-    const new_st: *StateInfo = @ptrCast(@alignCast(new_st_ptr));
+pub fn doNullMove(pos_ptr: *Position, new_st_ptr: *StateInfo) void {
+    const pos = pos_ptr;
+    const new_st = new_st_ptr;
 
     new_st.* = pos.st.*; // memcpy(&newSt, st, sizeof(StateInfo))
     new_st.previous = pos.st;
@@ -77,8 +77,8 @@ pub fn doNullMove(pos_ptr: *anyopaque, new_st_ptr: *anyopaque) void {
     pos.st.repetition = 0;
 }
 
-pub fn undoNullMove(pos_ptr: *anyopaque) void {
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+pub fn undoNullMove(pos_ptr: *Position) void {
+    const pos = pos_ptr;
     pos.st = pos.st.previous.?;
     pos.side_to_move ^= 1;
 }

@@ -1416,7 +1416,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
             // call the Zig-owned pos.do_null_move, mark the stack move as null
             // (Move::null() == 65), and set the all-NO_PIECE continuation-history
             // pointer -- the work the removed cb_do_null_move callback did.
-            doNullMove(pos_ptr, @ptrCast(&st));
+            doNullMove(pos_ptr, &st);
             ss.current_move = 65;
             setContHist(ctx.worker, ss_ptr, 0, 0, 0, 0);
             const null_value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -beta, -beta + 1, depth - r, false, false, false);
