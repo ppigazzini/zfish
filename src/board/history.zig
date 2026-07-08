@@ -44,13 +44,13 @@ const sq_none: u8 = 64;
 // ======================================================================== //
 pub fn updateQuietHistoriesWorker(
     worker_ptr: *WorkerLayout,
-    pos_ptr: *const anyopaque,
+    pos_ptr: *const Position,
     ss_ptr: *const SearchStack,
     move: u16,
     bonus: c_int,
 ) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const pos = pos_ptr;
     const ss = ss_ptr;
     const raw: usize = move;
     const main_entry = &w.main_history[@as(usize, pos.side_to_move) * hist_uint16 + raw];
@@ -158,7 +158,7 @@ pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, b
 
 pub fn updateAllStats(
     worker_ptr: *WorkerLayout,
-    pos_ptr: *anyopaque,
+    pos_ptr: *const Position,
     ss_ptr: *const SearchStack,
     best_move: u16,
     prev_sq: c_int,
@@ -171,7 +171,7 @@ pub fn updateAllStats(
     pv_node: u8,
 ) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const pos = pos_ptr;
     const ss = ss_ptr;
     const ss_prev: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
     const capture_base: [*]i16 = &w.capture_history;
@@ -234,12 +234,12 @@ const correction_history_limit: c_int = 1024;
 // relative continuation correction writes.
 pub fn updateCorrectionHistory(
     worker_ptr: *WorkerLayout,
-    pos_ptr: *const anyopaque,
+    pos_ptr: *const Position,
     ss_ptr: *const SearchStack,
     bonus: c_int,
 ) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const pos = pos_ptr;
     const shared = sharedOf(w);
     const us = pos.side_to_move;
 
