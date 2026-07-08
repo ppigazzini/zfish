@@ -37,22 +37,15 @@ inline fn threadClearWorker(thread: *anyopaque) void {
 inline fn threadRunJob(thread: *anyopaque, job: ThreadCallback, ctx: ?*anyopaque) void {
     nt(thread).startJob(job, ctx);
 }
-// Native read of LimitsType::searchmoves[index]. The exe is built by Zig (bundled libc++), so
-// std::string is the LIBC++ layout: sizeof 24; short/SSO has byte0 = (size<<1) (low bit 0) with the
-// chars inline at +1; long has byte0 low bit 1, size@+8, data ptr@+16. searchmoves is the leading
-// std::vector<std::string> (limits+0, {_M_start@0}); element stride is sizeof(std::string)=24.
-// Read-only (no allocation). Gate-verified by search-modes (exercises `go ... searchmoves`).
+// Read searchmoves[index] as a Zig-owned SearchMoveText record (M17.6): the libc++
+// std::string SSO byte decode is gone -- the length + inline chars are read through
+// typed struct fields. The header stays a {begin,end,cap} usize triple, so the
+// element pointer is still @ptrFromInt(begin + index*stride), but into Zig-owned
+// memory (no foreign-runtime layout). Gate-verified by search-modes.
 inline fn limitsSearchmoveText(limits: *const graph_layout.LimitsType, index: usize) ByteView {
-    // searchmoves is no longer at LimitsType offset 0 (native struct); read its
-    // libc++ vector begin pointer through the typed field.
-    const lt = limits;
-    const vec_begin = lt.searchmoves[0]; // typed [3]usize header {begin, end, cap}
-    const str_ptr = vec_begin + index * 24;
-    const b0 = @as(*const u8, @ptrFromInt(str_ptr)).*;
-    if (b0 & 1 == 0) return .{ .ptr = @ptrFromInt(str_ptr + 1), .len = b0 >> 1 };
-    const size = @as(*const usize, @ptrFromInt(str_ptr + 8)).*;
-    const data = @as(*const usize, @ptrFromInt(str_ptr + 16)).*;
-    return .{ .ptr = @ptrFromInt(data), .len = size };
+    const stride = @sizeOf(graph_layout.SearchMoveText);
+    const rec: *const graph_layout.SearchMoveText = @ptrFromInt(limits.searchmoves[0] + index * stride);
+    return .{ .ptr = &rec.text, .len = rec.len };
 }
 comptime {
     _ = &thread_runtime.ThreadRuntime.start;

@@ -471,8 +471,20 @@ pub const TranspositionTable = struct {
 // (time[2]/inc[2]/npmsec/movetime/startTime) ending at 80, then the search-mode
 // ints (movestogo/depth/mate/perft/infinite), nodes, and ponderMode. workerSetLimits
 // copies the POD fields, so any layout error here breaks bench (gate-verified).
+// A Zig-owned UCI searchmove text record (M17.6): replaces the libc++ std::string
+// element the searchmoves vector used to hold. Fixed 8-byte record -- a length byte
+// plus up to 7 chars ("e2e4", "e7e8q"). uci.goParsed writes these; the startThinking
+// move filter reads them by plain field access, so no foreign-runtime std::string SSO
+// byte layout is decoded any more. The searchmoves header stays a {begin,end,cap}
+// usize triple (the LimitsType slot layout is contractual, graph_layout comptime),
+// but it now points at Zig-owned records, not a C++ container.
+pub const SearchMoveText = extern struct {
+    len: u8,
+    text: [7]u8,
+};
+
 pub const LimitsType = struct {
-    searchmoves: [3]usize, // std::vector<std::string> header {begin, end, cap}
+    searchmoves: [3]usize, // {begin, end, cap} over Zig SearchMoveText records (M17.6)
     time: [2]i64, // time[WHITE], time[BLACK]
     inc: [2]i64, // inc[WHITE], inc[BLACK]
     npmsec: i64,
@@ -498,12 +510,12 @@ pub const LimitsType = struct {
     pub inline fn perftValue(self: *const LimitsType) usize {
         return @intCast(self.perft);
     }
-    /// Number of entries in the searchmoves std::vector<std::string>: (end-begin)
-    /// over sizeof(std::string) (24). begin/end are the typed usize header words.
+    /// Number of searchmoves entries: (end-begin) over the SearchMoveText record
+    /// size. begin/end are the typed usize header words.
     pub inline fn searchmoveCount(self: *const LimitsType) usize {
         const begin = self.searchmoves[0];
         const end = self.searchmoves[1];
-        return (end - begin) / 24;
+        return (end - begin) / @sizeOf(SearchMoveText);
     }
 };
 

@@ -90,21 +90,22 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
             if (tok.len != 0) count += 1;
         }
         if (count != 0) {
-            const nbytes = count * 24; // count * sizeof(std::string)
-            const elems = std.c.malloc(nbytes) orelse @panic("searchmoves: operator new failed");
-            const ebase: [*]u8 = @ptrCast(elems);
-            @memset(ebase[0..nbytes], 0);
+            // Zig-owned SearchMoveText records (M17.6): no libc++ std::string SSO
+            // encoding -- write the length + inline chars through the typed struct.
+            const stride = @sizeOf(graph_layout.SearchMoveText);
+            const nbytes = count * stride;
+            const elems = std.c.malloc(nbytes) orelse @panic("searchmoves: malloc failed");
+            const recs: [*]graph_layout.SearchMoveText = @ptrCast(@alignCast(elems));
+            @memset(@as([*]u8, @ptrCast(elems))[0..nbytes], 0);
             var i: usize = 0;
             it = std.mem.splitScalar(u8, sm, '\n');
             while (it.next()) |tok| {
                 if (tok.len == 0) continue;
-                const slot = ebase + i * 24;
-                slot[0] = @intCast(tok.len << 1); // libc++ SSO size byte
-                @memcpy(slot[1 .. 1 + tok.len], tok);
+                const n: usize = @min(tok.len, recs[i].text.len); // UCI moves are <=5 chars
+                recs[i].len = @intCast(n);
+                @memcpy(recs[i].text[0..n], tok[0..n]);
                 i += 1;
             }
-            // Write the libc++ vector {begin,end,cap} into the native searchmoves
-            // header (a typed [3]usize now -- no reinterpret of a byte array).
             limits.searchmoves[0] = @intFromPtr(elems); // begin
             limits.searchmoves[1] = @intFromPtr(elems) + nbytes; // end
             limits.searchmoves[2] = @intFromPtr(elems) + nbytes; // cap
