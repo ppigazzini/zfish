@@ -382,8 +382,8 @@ pub fn setNumaConfigFromOptionEngine(engine_ptr: *native_engine.NativeEngine, op
 pub fn resizeThreads(
     numa_context: *const anyopaque,
     options: *const anyopaque,
-    threads: *anyopaque,
-    tt: *anyopaque,
+    threads: *graph_layout.ThreadPool,
+    tt: *graph_layout.TranspositionTable,
     shared_hists: *anyopaque,
     network: *const anyopaque,
     update_context: *const anyopaque,
@@ -472,12 +472,12 @@ pub fn freeSharedHistories() void {
 
 // TT lifecycle + engine setup helpers, reached through the typed
 // TranspositionTable view + the tt/state_list modules this module already imports.
-fn ttResize(tt_ptr: *anyopaque, mb: usize, threads: *anyopaque) void {
-    const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
+fn ttResize(tt_ptr: *graph_layout.TranspositionTable, mb: usize, threads: *graph_layout.ThreadPool) void {
+    const tp = tt_ptr;
     tt_port.resizeState(&tp.table, &tp.cluster_count, &tp.generation8, mb, threads);
 }
-fn ttClear(tt_ptr: *anyopaque, threads: *anyopaque) void {
-    const tp = graph_layout.TranspositionTable.fromPtr(tt_ptr);
+fn ttClear(tt_ptr: *graph_layout.TranspositionTable, threads: *graph_layout.ThreadPool) void {
+    const tp = tt_ptr;
     tt_port.clearState(tp.table, tp.cluster_count, &tp.generation8, threads);
 }
 fn statesSlotReset(slot_ptr: *anyopaque) void {
@@ -496,7 +496,7 @@ fn setStartPosition(engine_ptr: *native_engine.NativeEngine) void {
 // Accumulator stack/caches lifecycle (M16.7 -- malloc'd engine-graph buffers). The refresh-cache
 // biases come from the native FT storage (network.zig), so the create path is fully engine-local.
 
-pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
+pub fn setTtSize(threads: *graph_layout.ThreadPool, tt: *graph_layout.TranspositionTable, mb: usize) void {
     thread_port.waitThread(threads, 0);
     ttResize(tt, mb, threads);
 }
@@ -513,7 +513,7 @@ pub fn setPonderhitEngine(engine_ptr: *native_engine.NativeEngine, ponder: u8) v
     setPonderhit(engine_ptr.threadsPtr(), ponder);
 }
 
-pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8) void {
+pub fn searchClear(threads: *graph_layout.ThreadPool, tt: *graph_layout.TranspositionTable, syzygy_path: []const u8) void {
     thread_port.waitForSearchFinished(threads);
     ttClear(tt, threads);
     thread_port.clear(threads);
