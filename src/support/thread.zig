@@ -296,11 +296,11 @@ fn applyRootSetup(context_ptr: ?*anyopaque) void {
     }
 }
 
-fn waitMainThread(pool: *anyopaque) void {
-    if (graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads() == 0)
+fn waitMainThread(pool: *graph_layout.ThreadPool) void {
+    if (pool.numThreads() == 0)
         return;
 
-    threadWaitFinished(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(0));
+    threadWaitFinished(pool.threadAtPtr(0));
 }
 
 fn buildRootFen(pos: *const position_port.Position) ?[*:0]u8 {
