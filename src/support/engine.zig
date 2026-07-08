@@ -101,6 +101,9 @@ const NetworkVerifyResult = struct {
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
+    // Construction boundary: main hands the engine as a raw buffer; this hook keeps
+    // the *anyopaque ABI and casts once to drive the typed init entries below.
+    const e: *native_engine.NativeEngine = ne(engine_ptr);
     const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
     const max_hash_mb: c_int = if (@sizeOf(usize) >= 8) 33554432 else 2048;
 
@@ -127,12 +130,12 @@ pub fn initBody(engine_ptr: *anyopaque) void {
     addSpinOption(engine_ptr, "SyzygyProbeLimit", 7, 0, 7, option_callback_none);
     addStringOption(engine_ptr, "EvalFile", default_eval_file_name, option_callback_eval_file);
 
-    setStartPosition(engine_ptr);
-    resizeThreadsEngine(engine_ptr);
+    setStartPosition(e);
+    resizeThreadsEngine(e);
 }
 
 pub fn optionOnChange(
-    engine_ptr: *anyopaque,
+    engine_ptr: *native_engine.NativeEngine,
     callback_kind: u8,
     value_ptr: [*]const u8,
     value_len: usize,
@@ -215,17 +218,17 @@ pub fn setPosition(
 }
 
 pub fn setPositionEngine(
-    engine_ptr: *anyopaque,
+    engine_ptr: *native_engine.NativeEngine,
     fen_ptr: [*]const u8,
     fen_len: usize,
     moves_ptr: ?[*]const ByteView,
     move_count: usize,
 ) ?[*:0]u8 {
-    const states_slot = ne(engine_ptr).statesSlotPtr();
+    const states_slot = engine_ptr.statesSlotPtr();
     statesSlotReset(states_slot);
 
     return setPosition(
-        ne(engine_ptr).positionPtr(),
+        engine_ptr.positionPtr(),
         states_slot,
         @intFromBool(option_port.uciChess960()),
         fen_ptr,
@@ -259,12 +262,12 @@ pub fn stop(threads: *anyopaque) void {
     graph_layout.ThreadPool.fromPtr(threads).setStop(true);
 }
 
-pub fn stopEngine(engine_ptr: *anyopaque) void {
-    stop(ne(engine_ptr).threadsPtr());
+pub fn stopEngine(engine_ptr: *native_engine.NativeEngine) void {
+    stop(engine_ptr.threadsPtr());
 }
 
-pub fn waitForSearchFinishedEngine(engine_ptr: *anyopaque) void {
-    thread_port.waitThread(ne(engine_ptr).threadsPtr(), 0);
+pub fn waitForSearchFinishedEngine(engine_ptr: *native_engine.NativeEngine) void {
+    thread_port.waitThread(engine_ptr.threadsPtr(), 0);
 }
 
 // Print each non-blank line as "info string ...". Relocated from main.zig (M16.7).
@@ -315,7 +318,7 @@ const addButtonOption = engine_options.addButtonOption;
 
 // setoption apply: wait for the search, set into the native OptionsModel, and run the
 // on-change callback (relaying string/spin/check values). Relocated from main.zig (M16.7).
-pub fn applySetOptionEngine(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
+pub fn applySetOptionEngine(engine_ptr: *native_engine.NativeEngine, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
     waitForSearchFinishedEngine(engine_ptr);
     const vlen: usize = if (has_value != 0) value_len else 0;
     const vptr: [*]const u8 = if (has_value != 0) value_ptr else name_ptr;
@@ -348,20 +351,20 @@ pub fn applySetOptionEngine(engine_ptr: *anyopaque, name_ptr: [*]const u8, name_
     }
 }
 
-pub fn goEngine(engine_ptr: *anyopaque, limits_ptr: *const anyopaque) void {
+pub fn goEngine(engine_ptr: *native_engine.NativeEngine, limits_ptr: *const anyopaque) void {
     std.debug.assert(graph_layout.LimitsType.fromPtr(@constCast(limits_ptr)).perftValue() == 0);
     verifyNetwork(engine_ptr);
     thread_port.startThinking(
-        ne(engine_ptr).threadsPtr(),
-        ne(engine_ptr).optionsPtr(),
-        ne(engine_ptr).positionPtr(),
+        engine_ptr.threadsPtr(),
+        engine_ptr.optionsPtr(),
+        engine_ptr.positionPtr(),
         limits_ptr,
-        ne(engine_ptr).statesSlotPtr(),
+        engine_ptr.statesSlotPtr(),
     );
 }
 
-pub fn setNumaConfigFromOptionEngine(engine_ptr: *anyopaque, option_text: []const u8) void {
-    const numa_context = ne(engine_ptr).numaContextPtr();
+pub fn setNumaConfigFromOptionEngine(engine_ptr: *native_engine.NativeEngine, option_text: []const u8) void {
+    const numa_context = engine_ptr.numaContextPtr();
 
     if (std.mem.eql(u8, option_text, "auto") or std.mem.eql(u8, option_text, "system")) {
         numa.contextSetSystem(numa_context);
@@ -407,15 +410,15 @@ pub fn resizeThreads(
     thread_port.ensureNetworkReplicated(threads);
 }
 
-pub fn resizeThreadsEngine(engine_ptr: *anyopaque) void {
+pub fn resizeThreadsEngine(engine_ptr: *native_engine.NativeEngine) void {
     resizeThreads(
-        ne(engine_ptr).numaContextPtr(),
-        ne(engine_ptr).optionsPtr(),
-        ne(engine_ptr).threadsPtr(),
-        ne(engine_ptr).ttPtr(),
+        engine_ptr.numaContextPtr(),
+        engine_ptr.optionsPtr(),
+        engine_ptr.threadsPtr(),
+        engine_ptr.ttPtr(),
         sharedHistoriesPtr(),
-        ne(engine_ptr).networkPtr(),
-        ne(engine_ptr).updateContextPtr(),
+        engine_ptr.networkPtr(),
+        engine_ptr.updateContextPtr(),
     );
 }
 
@@ -484,7 +487,7 @@ fn statesSlotReset(slot_ptr: *anyopaque) void {
         slot.* = null;
     }
 }
-fn setStartPosition(engine_ptr: *anyopaque) void {
+fn setStartPosition(engine_ptr: *native_engine.NativeEngine) void {
     const start_fen: []const u8 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     if (setPositionEngine(engine_ptr, start_fen.ptr, start_fen.len, null, 0)) |_|
         @panic("set start position failed");
@@ -498,16 +501,16 @@ pub fn setTtSize(threads: *anyopaque, tt: *anyopaque, mb: usize) void {
     ttResize(tt, mb, threads);
 }
 
-pub fn setTtSizeEngine(engine_ptr: *anyopaque, mb: usize) void {
-    setTtSize(ne(engine_ptr).threadsPtr(), ne(engine_ptr).ttPtr(), mb);
+pub fn setTtSizeEngine(engine_ptr: *native_engine.NativeEngine, mb: usize) void {
+    setTtSize(engine_ptr.threadsPtr(), engine_ptr.ttPtr(), mb);
 }
 
 pub fn setPonderhit(threads: *anyopaque, ponder: u8) void {
     if (graph_layout.ThreadPool.fromPtr(threads).mainManager()) |m| m.setPonder(ponder != 0);
 }
 
-pub fn setPonderhitEngine(engine_ptr: *anyopaque, ponder: u8) void {
-    setPonderhit(ne(engine_ptr).threadsPtr(), ponder);
+pub fn setPonderhitEngine(engine_ptr: *native_engine.NativeEngine, ponder: u8) void {
+    setPonderhit(engine_ptr.threadsPtr(), ponder);
 }
 
 pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8) void {
@@ -517,24 +520,24 @@ pub fn searchClear(threads: *anyopaque, tt: *anyopaque, syzygy_path: []const u8)
     tablebase.init(syzygy_path.ptr, syzygy_path.len);
 }
 
-pub fn searchClearEngine(engine_ptr: *anyopaque) void {
+pub fn searchClearEngine(engine_ptr: *native_engine.NativeEngine) void {
     const syzygy_ptr = option_port.dupSyzygyPath() orelse return;
     defer c.free(@ptrCast(syzygy_ptr));
     searchClear(
-        ne(engine_ptr).threadsPtr(),
-        ne(engine_ptr).ttPtr(),
+        engine_ptr.threadsPtr(),
+        engine_ptr.ttPtr(),
         std.mem.span(syzygy_ptr),
     );
 }
 
-pub fn numaConfigStringEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+pub fn numaConfigStringEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     _ = engine_ptr;
     const config_ptr = numa.configString() orelse return null;
     defer c.free(@ptrCast(config_ptr));
     return allocMessage("{s}", .{std.mem.span(config_ptr)});
 }
 
-pub fn numaConfigInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+pub fn numaConfigInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     _ = engine_ptr;
     const config_ptr = numa.configString() orelse return null;
     defer c.free(@ptrCast(config_ptr));
@@ -542,17 +545,17 @@ pub fn numaConfigInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
     return formatNumaInfo(config.ptr, config.len);
 }
 
-pub fn threadBindingInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+pub fn threadBindingInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     return threadBindingInformation(
-        ne(engine_ptr).numaContextPtr(),
-        ne(engine_ptr).threadsPtr(),
+        engine_ptr.numaContextPtr(),
+        engine_ptr.threadsPtr(),
     );
 }
 
-pub fn threadAllocationInformationEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
+pub fn threadAllocationInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     return threadAllocationInformation(
-        ne(engine_ptr).numaContextPtr(),
-        ne(engine_ptr).threadsPtr(),
+        engine_ptr.numaContextPtr(),
+        engine_ptr.threadsPtr(),
     );
 }
 
@@ -611,8 +614,8 @@ fn findPendingStateIndex(slot_key: usize) ?usize {
 
 // Engine::flip -> read the live FEN, flip it, re-set the position. Relocated from
 // main.zig (M16.7); all native (engine fen + position flipFen + setPosition).
-pub fn flipEngine(engine_ptr: *anyopaque) void {
-    const fen_c = fen(ne(engine_ptr).positionPtr()) orelse return;
+pub fn flipEngine(engine_ptr: *native_engine.NativeEngine) void {
+    const fen_c = fen(engine_ptr.positionPtr()) orelse return;
     defer c.free(@ptrCast(fen_c));
     const fen_text = std.mem.span(fen_c);
     const flipped_c = position_port.flipFen(fen_text.ptr, fen_text.len) orelse return;
@@ -622,8 +625,8 @@ pub fn flipEngine(engine_ptr: *anyopaque) void {
         c.free(@ptrCast(err));
 }
 
-pub fn hashfullEngine(engine_ptr: *const anyopaque, max_age: c_int) c_int {
-    const tp = graph_layout.TranspositionTable.fromPtr(ne(engine_ptr).ttPtr());
+pub fn hashfullEngine(engine_ptr: *native_engine.NativeEngine, max_age: c_int) c_int {
+    const tp = graph_layout.TranspositionTable.fromPtr(engine_ptr.ttPtr());
     const table = tp.table orelse return 0;
     return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);
 }
