@@ -716,7 +716,7 @@ pub fn startThinking(
     pool: *graph_layout.ThreadPool,
     options: *const anyopaque,
     pos: *position_port.Position,
-    limits: *const anyopaque,
+    limits: *const graph_layout.LimitsType,
     states_slot: *anyopaque,
 ) void {
     native_thread.searchEntry = &workerSearchEntry;
@@ -724,7 +724,7 @@ pub fn startThinking(
     const tp = pool;
     if (tp.mainManager()) |m| {
         m.setStopOnPonderhit(false);
-        m.setPonder(graph_layout.LimitsType.fromPtr(@constCast(limits)).ponderMode());
+        m.setPonder(limits.ponderMode());
     }
     tp.setStop(false);
     tp.setIncreaseDepth(true);
@@ -749,7 +749,7 @@ pub fn startThinking(
     var selected_moves = std.ArrayList(u16).empty;
     defer selected_moves.deinit(std.heap.c_allocator);
 
-    const searchmove_count = graph_layout.LimitsType.fromPtr(@constCast(limits)).searchmoveCount();
+    const searchmove_count = limits.searchmoveCount();
     var index: usize = 0;
     while (index < searchmove_count) : (index += 1) {
         const move_text = limitsSearchmoveText(limits, index);

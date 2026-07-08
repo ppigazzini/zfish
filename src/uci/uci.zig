@@ -67,7 +67,6 @@ const ByteView = engine_mod.ByteView;
 // deep-copied the limits into the workers (moves are SSO -- no per-string heap).
 fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void {
     var limits: graph_layout.LimitsType = std.mem.zeroes(graph_layout.LimitsType);
-    const base: [*]u8 = @ptrCast(&limits);
     limits.start_time = clock.now();
     limits.time[0] = parsed.wtime;
     limits.time[1] = parsed.btime;
@@ -113,7 +112,7 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
         }
     }
 
-    engine_mod.goEngine(engine_ptr, @ptrCast(base));
+    engine_mod.goEngine(engine_ptr, &limits);
     if (sm_elems) |e| std.c.free(e);
 }
 

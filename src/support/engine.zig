@@ -351,8 +351,8 @@ pub fn applySetOptionEngine(engine_ptr: *native_engine.NativeEngine, name_ptr: [
     }
 }
 
-pub fn goEngine(engine_ptr: *native_engine.NativeEngine, limits_ptr: *const anyopaque) void {
-    std.debug.assert(graph_layout.LimitsType.fromPtr(@constCast(limits_ptr)).perftValue() == 0);
+pub fn goEngine(engine_ptr: *native_engine.NativeEngine, limits_ptr: *const graph_layout.LimitsType) void {
+    std.debug.assert(limits_ptr.perftValue() == 0);
     verifyNetwork(engine_ptr);
     thread_port.startThinking(
         engine_ptr.threadsPtr(),
