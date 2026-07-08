@@ -273,18 +273,18 @@ const SsCtx = struct {
 
 // Search-manager driver callbacks that touch only the Worker graph (via graph_layout)
 // + the accumulator stack; the driver (workerStartSearching) calls them locally.
-fn workerThreadsPool(worker: *const anyopaque) *graph_layout.ThreadPool {
-    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).threads;
+fn workerThreadsPool(wl: *const graph_layout.WorkerLayout) *graph_layout.ThreadPool {
+    return wl.threads;
 }
-fn workerManager(worker: *const anyopaque) ?*graph_layout.SearchManager {
-    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).manager;
+fn workerManager(wl: *const graph_layout.WorkerLayout) ?*graph_layout.SearchManager {
+    return wl.manager;
 }
-fn workerRootMove0(worker: *const anyopaque) usize {
+fn workerRootMove0(wl: *const graph_layout.WorkerLayout) usize {
     // root_moves is the {begin,end,cap} vector header; [0] is the begin pointer.
-    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).root_moves[0];
+    return wl.root_moves[0];
 }
-fn workerTT(worker: *const anyopaque) *graph_layout.TranspositionTable {
-    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).tt;
+fn workerTT(wl: *const graph_layout.WorkerLayout) *graph_layout.TranspositionTable {
+    return wl.tt;
 }
 
 // Per-search reset: clear the worker's accumulator stack + last-iteration PV.
