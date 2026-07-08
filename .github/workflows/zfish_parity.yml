@@ -83,6 +83,15 @@ jobs:
       # full suite are green here.
       - run: zig build test -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
+      # Coverage-guided fuzz-target SMOKE (M17.5i): `zig build fuzz` runs each
+      # std.testing.fuzz target once (FEN-parse -> movegen -> make/unmake via the
+      # Smith model) under ReleaseSafe, so the fuzz harness itself is build- and
+      # run-gated on every push even though the continuous `--fuzz` sweep is a
+      # separate nightly job (zfish_fuzz.yml). Built under ReleaseSafe so a target
+      # that trips a bounds/overflow/alignment/null check fails here. Cheap and
+      # deterministic.
+      - run: zig build fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
+
       # Safety-checked full engine: the ENTIRE parity suite rebuilt under
       # -Doptimize=ReleaseSafe. Supersets the safety-checked bench (signature 2067208)
       # and additionally drives the multi-thread (mt-sanity), Lazy-SMP go/stop stress,

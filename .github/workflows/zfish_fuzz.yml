@@ -1,0 +1,62 @@
+# Nightly coverage-guided fuzzing (M17.5i / report §2.F "no fuzz job").
+#
+# The `zig build fuzz` SMOKE (one iteration per target) runs on every push inside
+# the parity workflow; this job runs the CONTINUOUS Zig fuzzer for a bounded budget
+# each night. `zig build fuzz --fuzz` mutates toward new coverage over the
+# FEN-parse -> generateLegal -> make/unmake targets (src/board/fuzz_targets.zig),
+# built under -Doptimize=ReleaseSafe so a discovered input that trips a Zig safety
+# check -- out-of-bounds, integer overflow, pointer misalignment, null-unwrap --
+# crashes the run with the reproducer instead of reading garbage. This is the
+# failure mode the M17.5c/d/e latent-UB bugs had; the fuzzer is how new ones get
+# caught before they reach the bench/parity goldens.
+name: zfish fuzz (nightly)
+
+on:
+  schedule:
+    # 04:17 UTC daily -- off the hour to dodge the scheduler's peak.
+    - cron: "17 4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Continuous fuzz (bounded)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      # The fuzz targets call position.initRuntime() which needs the NNUE net on
+      # disk (same cache key as the parity workflow -- a Zig-only net bump busts it).
+      - name: Cache NNUE network
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: net/nn-*.nnue
+          key: nnue-${{ hashFiles('src/eval/network.zig') }}
+      - name: Fetch the NNUE net
+        run: zig build net
+
+      # Fuzz for a fixed ~15 min budget. `--fuzz` fuzzes continuously (and serves a
+      # monitoring web UI we ignore headless). SIGINT it at the budget: an interrupt
+      # with no crash exits 130 (PASS -- no bug in the window); a target crash exits
+      # non-zero BEFORE the budget (FAIL, with the ReleaseSafe safety-check trace +
+      # the reproducing input in the log). A fresh corpus each night finds shallow
+      # regressions; corpus persistence for depth is a later enhancement.
+      - name: Fuzz (bounded, ~15 min, ReleaseSafe)
+        run: |
+          set +e
+          timeout --preserve-status --signal=INT 900 \
+            zig build fuzz --fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
+          ec=$?
+          if [ "$ec" -eq 130 ] || [ "$ec" -eq 0 ]; then
+            echo "fuzz: no crash found in the ~15 min budget (exit $ec)"
+            exit 0
+          fi
+          echo "fuzz: a target crashed or the fuzzer errored (exit $ec)" >&2
+          exit "$ec"
