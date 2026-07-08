@@ -258,8 +258,8 @@ pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
     }
 }
 
-pub fn stop(threads: *anyopaque) void {
-    graph_layout.ThreadPool.fromPtr(threads).setStop(true);
+pub fn stop(threads: *graph_layout.ThreadPool) void {
+    threads.setStop(true);
 }
 
 pub fn stopEngine(engine_ptr: *native_engine.NativeEngine) void {
@@ -505,8 +505,8 @@ pub fn setTtSizeEngine(engine_ptr: *native_engine.NativeEngine, mb: usize) void 
     setTtSize(engine_ptr.threadsPtr(), engine_ptr.ttPtr(), mb);
 }
 
-pub fn setPonderhit(threads: *anyopaque, ponder: u8) void {
-    if (graph_layout.ThreadPool.fromPtr(threads).mainManager()) |m| m.setPonder(ponder != 0);
+pub fn setPonderhit(threads: *graph_layout.ThreadPool, ponder: u8) void {
+    if (threads.mainManager()) |m| m.setPonder(ponder != 0);
 }
 
 pub fn setPonderhitEngine(engine_ptr: *native_engine.NativeEngine, ponder: u8) void {
@@ -626,7 +626,7 @@ pub fn flipEngine(engine_ptr: *native_engine.NativeEngine) void {
 }
 
 pub fn hashfullEngine(engine_ptr: *native_engine.NativeEngine, max_age: c_int) c_int {
-    const tp = graph_layout.TranspositionTable.fromPtr(engine_ptr.ttPtr());
+    const tp = engine_ptr.ttPtr();
     const table = tp.table orelse return 0;
     return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);
 }
