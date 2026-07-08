@@ -38,8 +38,8 @@ const kingSquare = board_core.kingSquare;
 const fileOf = board_core.fileOf;
 const attackersTo = legality.attackersTo;
 
-pub fn setCastlingRight(pos_ptr: *anyopaque, c: u8, rfrom: u8) void {
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+pub fn setCastlingRight(pos_ptr: *Position, c: u8, rfrom: u8) void {
+    const pos = pos_ptr;
     const kfrom = kingSquare(pos, c);
     const side_mask: u8 = if (kfrom < rfrom) 5 else 10; // KING_SIDE : QUEEN_SIDE
     const color_castling: u8 = if (c == color_white) 3 else 12; // WHITE_CASTLING : BLACK_CASTLING
@@ -57,8 +57,8 @@ pub fn setCastlingRight(pos_ptr: *anyopaque, c: u8, rfrom: u8) void {
         ~(sqBb(kfrom) | sqBb(rfrom));
 }
 
-pub fn updateSliderBlockers(pos_ptr: *const anyopaque, c: u8) void {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn updateSliderBlockers(pos_ptr: *const Position, c: u8) void {
+    const pos = pos_ptr;
     const ksq = kingSquare(pos, c);
     const nc = c ^ 1;
     pos.st.blockers_for_king[c] = 0;
@@ -83,13 +83,13 @@ pub fn updateSliderBlockers(pos_ptr: *const anyopaque, c: u8) void {
     }
 }
 
-pub fn setState(pos_ptr: *const anyopaque) void {
+pub fn setState(pos_ptr: *const Position) void {
     const psq: [*]const u64 = &zobrist.zob_psq;
     const enpassant: [*]const u64 = &zobrist.zob_enpassant;
     const castling: [*]const u64 = &zobrist.zob_castling;
     const zob_side = zobrist.zob_side_val;
     const no_pawns = zobrist.zob_no_pawns;
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+    const pos = pos_ptr;
     const st = pos.st;
     st.key = 0;
     st.minor_piece_key = 0;
@@ -130,8 +130,8 @@ pub fn setState(pos_ptr: *const anyopaque) void {
     st.material_key = computeMaterialKey(&pos.piece_count, 16);
 }
 
-pub fn setCheckInfo(pos_ptr: *const anyopaque) void {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn setCheckInfo(pos_ptr: *const Position) void {
+    const pos = pos_ptr;
     updateSliderBlockers(pos_ptr, color_white);
     updateSliderBlockers(pos_ptr, color_black);
 
