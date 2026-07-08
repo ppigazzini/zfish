@@ -160,7 +160,7 @@ pub fn set(
 ) void {
     var bctx = WorkerBuildCtx{ .shared_state = shared_state, .update_context = update_context, .total = count };
     var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
-    p.set(count, .{ .ctx = &bctx, .build = native_hooks.native_worker_build.? }) catch @panic("native thread pool set: OOM");
+    p.set(count, .{ .ctx = &bctx, .build = native_hooks.native_worker_build }) catch @panic("native thread pool set: OOM");
 }
 
 // Join + free every native Thread and null the footprint vector. Called by the

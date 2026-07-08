@@ -68,7 +68,7 @@ pub const NativeThread = struct {
         // (~Worker + aligned_large_pages_free); without this the ~14 MB Worker
         // leaks on every reconfigure/teardown. Done after the join above.
         if (self.worker) |w| {
-            native_hooks.native_worker_destroy.?(w);
+            native_hooks.native_worker_destroy(w);
             self.worker = null;
         }
     }
@@ -124,7 +124,7 @@ pub fn waitPoolSiblings(pool: *graph_layout.ThreadPool) void {
 // worker->clear()])). Submitted to the idle loop; caller waits separately.
 
 fn clearWorkerJob(ctx: ?*anyopaque) void {
-    native_hooks.worker_clear.?(ctx.?);
+    native_hooks.worker_clear(ctx.?);
 }
 
 pub fn clearWorker(self: *NativeThread) void {

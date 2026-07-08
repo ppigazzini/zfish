@@ -248,7 +248,7 @@ pub fn handoffPendingStates(pool: *anyopaque, states_slot: *anyopaque) u8 {
     if (!state_list.storageHasStates(state_storage))
         return 0;
 
-    native_hooks.setup_states_adopt_from_storage.?(pool, state_storage);
+    native_hooks.setup_states_adopt_from_storage(pool, state_storage);
     return @intFromBool(graph_layout.ThreadPool.fromPtr(@constCast(pool)).hasSetupStates());
 }
 
