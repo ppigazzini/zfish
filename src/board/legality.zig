@@ -224,8 +224,8 @@ pub fn pseudoLegal(pos_ptr: *const Position, m: u16) bool {
     return true;
 }
 
-pub fn givesCheck(pos_ptr: *const anyopaque, m: u16) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn givesCheck(pos_ptr: *const Position, m: u16) bool {
+    const pos = pos_ptr;
     const stm = pos.side_to_move;
     const them = stm ^ 1;
     const from = moveFrom(m);
