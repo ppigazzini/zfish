@@ -31,12 +31,12 @@ pub fn doMoveState(pos_ptr: *Position, move: u16, st_ptr: *anyopaque) void {
 }
 
 /// Allocate a zeroed Position block.
-pub fn create() ?*anyopaque {
+pub fn create() ?*Position {
     const buf = std.c.malloc(graph_layout.position_size) orelse return null;
     @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.position_size], 0);
-    return buf;
+    return @ptrCast(@alignCast(buf));
 }
-pub fn destroy(pos: ?*anyopaque) void {
+pub fn destroy(pos: ?*Position) void {
     if (pos) |p| std.c.free(p);
 }
 
