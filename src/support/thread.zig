@@ -42,10 +42,10 @@ inline fn threadRunJob(thread: *anyopaque, job: ThreadCallback, ctx: ?*anyopaque
 // chars inline at +1; long has byte0 low bit 1, size@+8, data ptr@+16. searchmoves is the leading
 // std::vector<std::string> (limits+0, {_M_start@0}); element stride is sizeof(std::string)=24.
 // Read-only (no allocation). Gate-verified by search-modes (exercises `go ... searchmoves`).
-inline fn limitsSearchmoveText(limits: *const anyopaque, index: usize) ByteView {
+inline fn limitsSearchmoveText(limits: *const graph_layout.LimitsType, index: usize) ByteView {
     // searchmoves is no longer at LimitsType offset 0 (native struct); read its
     // libc++ vector begin pointer through the typed field.
-    const lt = graph_layout.LimitsType.fromPtr(@constCast(limits));
+    const lt = limits;
     const vec_begin = lt.searchmoves[0]; // typed [3]usize header {begin, end, cap}
     const str_ptr = vec_begin + index * 24;
     const b0 = @as(*const u8, @ptrFromInt(str_ptr)).*;
