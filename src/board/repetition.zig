@@ -58,18 +58,16 @@ pub fn upcomingRepetition(pos: *const Position, ply: c_int) bool {
     return false;
 }
 
-pub fn isDraw(pos_ptr: *const anyopaque, ply: c_int) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn isDraw(pos: *const Position, ply: c_int) bool {
     if (pos.st.rule50 > 99) {
         if (pos.st.checkers_bb == 0) return true;
         var buf: [256]u16 = undefined;
-        if (movegen.generateLegal(pos_ptr, &buf) != 0) return true;
+        if (movegen.generateLegal(pos, &buf) != 0) return true;
     }
-    return isRepetition(pos_ptr, ply);
+    return isRepetition(pos, ply);
 }
 
-pub fn isRepetition(pos_ptr: *const anyopaque, ply: c_int) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn isRepetition(pos: *const Position, ply: c_int) bool {
     const rep = pos.st.repetition;
     return rep != 0 and rep < ply;
 }
