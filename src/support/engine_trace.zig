@@ -30,11 +30,6 @@ const native_engine = @import("native_engine");
 const engine_util = @import("engine_util");
 const engine_nnue = @import("engine_nnue");
 
-// Engine-handle adapter (duplicated from engine.zig's ne()).
-inline fn ne(p: *const anyopaque) *native_engine.NativeEngine {
-    return native_engine.NativeEngine.fromPtr(@constCast(p));
-}
-
 const allocMessage = engine_util.allocMessage;
 const appendFormat = engine_util.appendFormat;
 const appendHexKey = engine_util.appendHexKey;
@@ -136,11 +131,11 @@ fn accumulatorCachesDestroy(caches: ?*anyopaque) void {
     if (caches) |buf| std.c.free(buf);
 }
 
-pub fn traceEvalEngine(engine_ptr: *anyopaque) ?[*:0]u8 {
+pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     verifyNetwork(engine_ptr);
 
-    const source_pos = ne(engine_ptr).positionPtr();
-    const network = ne(engine_ptr).networkPtr();
+    const source_pos = engine_ptr.positionPtr();
+    const network = engine_ptr.networkPtr();
     const fen_ptr = fen(source_pos) orelse return null;
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
@@ -203,8 +198,8 @@ pub fn fen(pos: *const anyopaque) ?[*:0]u8 {
     return positionFen(pos, null);
 }
 
-pub fn fenEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
-    return fen(ne(engine_ptr).positionPtr());
+pub fn fenEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
+    return fen(engine_ptr.positionPtr());
 }
 
 pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
@@ -261,8 +256,8 @@ pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
     return owned.ptr;
 }
 
-pub fn visualizeEngine(engine_ptr: *const anyopaque) ?[*:0]u8 {
-    return visualize(ne(engine_ptr).positionPtr());
+pub fn visualizeEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
+    return visualize(engine_ptr.positionPtr());
 }
 
 fn buildNnueTrace(
