@@ -140,7 +140,7 @@ pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
 
-    const trace_pos = position_port.create() orelse return null;
+    const trace_pos: *position_port.Position = @ptrCast(@alignCast(position_port.create() orelse return null));
     defer position_port.destroy(trace_pos);
 
     const state_storage = state_list.storageCreate() orelse return null;
@@ -155,7 +155,7 @@ pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     return evalTrace(trace_pos, network);
 }
 
-pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
+pub fn evalTrace(pos: *const position_port.Position, network: *const anyopaque) ?[*:0]u8 {
     const summary = positionSummary(pos);
     if (summary.checkers != 0)
         return allocMessage("Final evaluation: none (in check)", .{});
@@ -261,7 +261,7 @@ pub fn visualizeEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
 }
 
 fn buildNnueTrace(
-    pos: *anyopaque,
+    pos: *const position_port.Position,
     network: *const anyopaque,
     summary: PositionSummary,
     caches: *anyopaque,
@@ -289,7 +289,7 @@ fn buildNnueTrace(
     });
 }
 
-fn positionSummary(pos: *const anyopaque) PositionSummary {
+fn positionSummary(pos: *const position_port.Position) PositionSummary {
     const snapshot = loadPositionSnapshot(pos);
     return .{
         .side_to_move_white = if (snapshot.side_to_move == white) 1 else 0,
@@ -300,7 +300,7 @@ fn positionSummary(pos: *const anyopaque) PositionSummary {
     };
 }
 
-fn positionFen(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) ?[*:0]u8 {
+fn positionFen(pos: *const position_port.Position, pieces_opt: ?*const [square_count]u8) ?[*:0]u8 {
     const snapshot = loadPositionSnapshot(pos);
     var pieces_storage: [square_count]u8 = undefined;
     const pieces: *const [square_count]u8 = if (pieces_opt) |provided|
@@ -325,7 +325,7 @@ fn positionFen(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) ?[*:
     );
 }
 
-fn probeTablebases(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) TablebaseProbe {
+fn probeTablebases(pos: *const position_port.Position, pieces_opt: ?*const [square_count]u8) TablebaseProbe {
     const snapshot = loadPositionSnapshot(pos);
     if (snapshot.castling_rights != 0) {
         return emptyTablebaseProbe();
@@ -349,7 +349,7 @@ fn probeTablebases(pos: *const anyopaque, pieces_opt: ?*const [square_count]u8) 
     return tablebase.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }
 
-fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
+fn loadPositionSnapshot(pos: *const position_port.Position) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
     position_port.fillSnapshot(pos, &snapshot);
     return snapshot;

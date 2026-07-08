@@ -104,8 +104,7 @@ pub fn fillSnapshot(pos_ptr: *const anyopaque, out_ptr: *anyopaque) void {
 
 // The 64-square piece board only, for NNUE piece-count/accumulator callers that
 // need just the board (not the full snapshot). Relocated from main.zig (M16.7).
-pub fn accumulatorSnapshot(pos_ptr: *const anyopaque, pieces_out: [*]u8) void {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn accumulatorSnapshot(pos: *const Position, pieces_out: [*]u8) void {
     var s: usize = 0;
     while (s < 64) : (s += 1) pieces_out[s] = pos.board[s];
 }
