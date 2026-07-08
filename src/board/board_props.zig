@@ -215,6 +215,8 @@ fn checkGivesCheck(fen: []const u8) !void {
         std.heap.c_allocator.free(std.mem.span(err));
         @panic("checkGivesCheck: setPosition failed on a known-legal FEN");
     }
+    // The test drives raw native-sized storage; cast to the typed hasCheckers API.
+    const pp: *const position.Position = @ptrCast(@alignCast(&p));
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
     var i: usize = 0;
@@ -222,7 +224,7 @@ fn checkGivesCheck(fen: []const u8) !void {
         const predicted = position.givesCheck(&p, moves[i]);
         var new_st: [state_info_size]u8 align(16) = undefined;
         position.doMoveState(&p, moves[i], &new_st);
-        const actual = position.hasCheckers(&p);
+        const actual = position.hasCheckers(pp);
         position.undoMove(&p, moves[i]);
         try std.testing.expectEqual(actual, predicted);
     }
