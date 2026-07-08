@@ -376,14 +376,16 @@ test "isDraw honours the fifty-move rule" {
     position.initRuntime();
     var p: [position_size]u8 align(64) = undefined;
     var st: [state_info_size]u8 align(16) = undefined;
+    // The test drives raw native-sized storage; cast to the typed isDraw API.
+    const pp: *const position.Position = @ptrCast(@alignCast(&p));
 
     // rule50 = 100 half-moves, not in check, legal moves available -> draw.
     setup(&p, &st, "4k3/8/8/8/8/8/8/4K3 w - - 100 60");
-    try std.testing.expect(position.isDraw(&p, 0));
+    try std.testing.expect(position.isDraw(pp, 0));
 
     // The start position is not a draw.
     setup(&p, &st, start_fen);
-    try std.testing.expect(!position.isDraw(&p, 0));
+    try std.testing.expect(!position.isDraw(pp, 0));
 }
 
 fn setup(p: *[position_size]u8, st: *[state_info_size]u8, fen: []const u8) void {
