@@ -294,8 +294,8 @@ fn ssPrologue(wl: *graph_layout.WorkerLayout) void {
 }
 
 // Sum and reset each thread's worker bestMoveChanges (atomic u64), as a double.
-fn searchIdCollectBmc(worker: *anyopaque) f64 {
-    const tp = graph_layout.WorkerLayout.fromPtr(worker).threads;
+fn searchIdCollectBmc(wl: *const graph_layout.WorkerLayout) f64 {
+    const tp = wl.threads;
     const count = tp.numThreads();
     var tot: f64 = 0;
     var i: usize = 0;
@@ -337,8 +337,8 @@ fn ssPvOneAndPonder(wl: *graph_layout.WorkerLayout, best: *const graph_layout.Wo
     return extractPonderFromTt(@ptrCast(pv), tp.table, tp.cluster_count, tp.generation8, &wl.root_pos);
 }
 
-fn searchCbTtContext(worker: *const anyopaque, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
-    const tp = workerTT(worker);
+fn searchCbTtContext(wl: *const graph_layout.WorkerLayout, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
+    const tp = workerTT(wl);
     out_table.* = tp.table;
     out_cluster_count.* = tp.cluster_count;
     out_generation.* = tp.generation8;
@@ -425,8 +425,7 @@ fn skillLevel() f64 {
 // Snapshot the iterative-deepening state (worker/pool member pointers + scalars) for
 // the native search root loop. Relocated from main.zig (M16.7); graph reads + the
 // native OptionsModel only.
-fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+fn searchIdState(wl: *graph_layout.WorkerLayout, out: *ZfishIdState) void {
     const thread_idx = wl.thread_idx;
     const is_main = thread_idx == 0;
     const tp = wl.threads;
@@ -479,10 +478,10 @@ fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
         // continue;`), so these SearchManager/TM pointer fields are never dereferenced
         // for them. position's ZfishIdState types them non-optional, so use the worker
         // pointer as a harmless valid placeholder (they are otherwise null/unused).
-        out.stop_on_ponderhit = @ptrCast(worker);
-        out.ponder = @ptrCast(worker);
-        out.iter_value = @ptrCast(@alignCast(worker));
-        out.previous_time_reduction = @ptrCast(@alignCast(worker));
+        out.stop_on_ponderhit = @ptrCast(wl);
+        out.ponder = @ptrCast(wl);
+        out.iter_value = @ptrCast(@alignCast(wl));
+        out.previous_time_reduction = @ptrCast(@alignCast(wl));
         out.tm_optimum = 0;
         out.tm_maximum = 0;
         out.tm_start_time = 0;
@@ -576,8 +575,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 // and -- on the main thread -- the SearchManager/TimeManagement/LimitsType time inputs.
 // Relocated from main.zig (M16.7): graph_layout offset reads + the native FT pointer
 // (the network handle is never dereferenced -- weights serve from native storage).
-fn searchCbWorkerState(worker: *anyopaque, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
     const stop = &wl.threads.stop;
 
     out_acc_stack.* = &wl.accumulator_stack;
@@ -694,7 +692,7 @@ const ZfishIdState = struct {
 };
 
 const QCtx = struct {
-    worker: *anyopaque,
+    worker: *graph_layout.WorkerLayout,
     table: ?*anyopaque,
     cluster_count: usize,
     generation: u8,
@@ -1048,7 +1046,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha
 
 // Fetch the stable per-search Worker state once and assemble the QCtx threaded
 // through the whole (q)search recursion.
-fn buildCtx(worker: *anyopaque, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
+fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var acc_stack: ?*anyopaque = null;
     var nodes: ?*u64 = null;
     var network: ?*const anyopaque = null;
@@ -1198,13 +1196,14 @@ inline fn inLastIterPv(ctx: *const QCtx, ply_minus_1: c_int, move: u16) bool {
 }
 
 pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, pv_node: u8) c_int {
+    // Single erasure boundary: the hook signature is *anyopaque; the whole search
+    // recursion below runs on typed *WorkerLayout / *Position / *SearchStack.
+    const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker));
     var table: ?*anyopaque = null;
     var cc: usize = 0;
     var gen: u8 = 0;
-    searchCbTtContext(worker, &table, &cc, &gen);
-    const ctx = buildCtx(worker, table, cc, gen);
-    // Single erasure boundary: the hook signature is *anyopaque; the whole search
-    // recursion below runs on typed *Position / *SearchStack.
+    searchCbTtContext(wl, &table, &cc, &gen);
+    const ctx = buildCtx(wl, table, cc, gen);
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
     return qsearchImpl(&ctx, pos, ss, alpha, beta, pv_node != 0);
@@ -1754,13 +1753,14 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
 // captVal / captEntry live in the search_common leaf (M17.3s).
 
 pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, depth: c_int, cut_node: u8, pv_node: u8, root_node: u8) c_int {
+    // Single erasure boundary: the hook signature is *anyopaque; the whole search
+    // recursion below runs on typed *WorkerLayout / *Position / *SearchStack.
+    const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker));
     var table: ?*anyopaque = null;
     var cc: usize = 0;
     var gen: u8 = 0;
-    searchCbTtContext(worker, &table, &cc, &gen);
-    const ctx = buildCtx(worker, table, cc, gen);
-    // Single erasure boundary: the hook signature is *anyopaque; the whole search
-    // recursion below runs on typed *Position / *SearchStack.
+    searchCbTtContext(wl, &table, &cc, &gen);
+    const ctx = buildCtx(wl, table, cc, gen);
     const pos: *Position = @ptrCast(@alignCast(pos_ptr));
     const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
     return searchImpl(&ctx, pos, ss, alpha, beta, depth, cut_node != 0, pv_node != 0, root_node != 0);
@@ -1864,15 +1864,18 @@ fn skillSwapBest(id: *const ZfishIdState, move: u16) void {
 }
 
 pub fn iterativeDeepening(worker: *anyopaque) u8 {
+    // Single erasure boundary: the hook signature is *anyopaque; the whole loop
+    // below drives the typed *WorkerLayout graph.
+    const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker));
     var id: ZfishIdState = undefined;
-    searchIdState(worker, &id);
+    searchIdState(wl, &id);
     const main_thread = id.is_main != 0;
 
     var table: ?*anyopaque = null;
     var cc: usize = 0;
     var gen: u8 = 0;
-    searchCbTtContext(worker, &table, &cc, &gen);
-    const ctx = buildCtx(worker, table, cc, gen);
+    searchCbTtContext(wl, &table, &cc, &gen);
+    const ctx = buildCtx(wl, table, cc, gen);
 
     var pv: PVMoves = undefined;
     pv.length = 0;
@@ -1890,7 +1893,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
     {
         var k: usize = 0;
         while (k < 7) : (k += 1) {
-            setContHist(worker, &stack[k], 0, 0, 0, 0); // sentinel (NO_PIECE)
+            setContHist(wl, &stack[k], 0, 0, 0, 0); // sentinel (NO_PIECE)
             stack[k].static_eval = q_value_none;
         }
         const ply_hi: usize = @intCast(q_max_ply + 2);
@@ -1912,8 +1915,8 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
     if (multi_pv > id.root_moves_count) multi_pv = id.root_moves_count;
     var skill_best: u16 = 0;
 
-    fillLowPlyHistory(worker);
-    ageMainHistory(worker);
+    fillLowPlyHistory(wl);
+    ageMainHistory(wl);
 
     var search_again_counter: c_int = 0;
     var uci_pv_sent = false;
@@ -1970,7 +1973,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
                 if (@atomicLoad(u8, id.stop, .monotonic) != 0) break;
 
                 if (main_thread and multi_pv == 1 and (best_value <= alpha or best_value >= beta) and id.nodes.* > id_nodes_limit_output)
-                    searchIdPv(worker, id.root_depth.*);
+                    searchIdPv(wl, id.root_depth.*);
 
                 if (best_value <= alpha) {
                     beta = alpha;
@@ -2006,7 +2009,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
             if (main_thread and @atomicLoad(u8, id.stop, .monotonic) == 0 and
                 (id.pv_idx.* + 1 == multi_pv or id.nodes.* > id_nodes_limit_output))
             {
-                searchIdPv(worker, id.root_depth.*);
+                searchIdPv(wl, id.root_depth.*);
                 uci_pv_sent = (id.pv_idx.* + 1 == multi_pv);
             }
 
@@ -2042,7 +2045,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
         if (id.skill_enabled != 0 and skillTimeToPick(id.skill_level, id.root_depth.*))
             skill_best = skillPickBest(&id, multi_pv);
 
-        tot_best_move_changes += searchIdCollectBmc(worker);
+        tot_best_move_changes += searchIdCollectBmc(wl);
 
         // Time management: do we have time for the next iteration / can we stop?
         if (id.use_time_management != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and id.stop_on_ponderhit.* == 0) {
