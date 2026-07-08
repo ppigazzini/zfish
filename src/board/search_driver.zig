@@ -279,9 +279,11 @@ fn workerThreadsPool(wl: *const graph_layout.WorkerLayout) *graph_layout.ThreadP
 fn workerManager(wl: *const graph_layout.WorkerLayout) ?*graph_layout.SearchManager {
     return wl.manager;
 }
-fn workerRootMove0(wl: *const graph_layout.WorkerLayout) usize {
-    // root_moves is the {begin,end,cap} vector header; [0] is the begin pointer.
-    return wl.root_moves[0];
+fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootMove {
+    // root_moves is the {begin,end,cap} vector header; [0] is the first element's
+    // address. Return the typed first RootMove via the graph adapter so callers read
+    // fields directly instead of each re-doing RootMove.fromAddr.
+    return graph_layout.RootMove.fromAddr(wl.root_moves[0]);
 }
 fn workerTT(wl: *const graph_layout.WorkerLayout) *graph_layout.TranspositionTable {
     return wl.tt;
@@ -321,8 +323,7 @@ fn ssShouldBusywait(wl: *const graph_layout.WorkerLayout) u8 {
 }
 
 fn ssSetPrevScores(wl: *const graph_layout.WorkerLayout, best: *const graph_layout.WorkerLayout) void {
-    const rm0 = workerRootMove0(best);
-    const rmv = graph_layout.RootMove.fromAddr(rm0);
+    const rmv = workerRootMove0(best);
     const sm = workerManager(wl).?;
     sm.best_previous_score = rmv.score;
     sm.best_previous_average_score = rmv.average_score;
@@ -330,8 +331,7 @@ fn ssSetPrevScores(wl: *const graph_layout.WorkerLayout, best: *const graph_layo
 
 // best->rootMoves[0].pv.size()==1 && extract_ponder_from_tt(worker->tt, worker->rootPos).
 fn ssPvOneAndPonder(wl: *graph_layout.WorkerLayout, best: *const graph_layout.WorkerLayout) u8 {
-    const rm0 = workerRootMove0(best);
-    const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
+    const pv = &workerRootMove0(best).pv;
     if (pv.length != 1) return 0;
     const tp = workerTT(wl);
     return extractPonderFromTt(@ptrCast(pv), tp.table, tp.cluster_count, tp.generation8, &wl.root_pos);
