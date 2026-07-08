@@ -633,9 +633,9 @@ pub fn hashfullEngine(engine_ptr: *native_engine.NativeEngine, max_age: c_int) c
 
 pub fn threadBindingInformation(
     numa_context: *const anyopaque,
-    threads: *const anyopaque,
+    threads: *graph_layout.ThreadPool,
 ) ?[*:0]u8 {
-    const bound_count = graph_layout.ThreadPool.fromPtr(@constCast(threads)).boundCount();
+    const bound_count = threads.boundCount();
     if (bound_count == 0)
         return allocMessage("", .{});
 
@@ -648,7 +648,7 @@ pub fn threadBindingInformation(
 
     var index: usize = 0;
     while (index < bound_count) : (index += 1) {
-        const node = graph_layout.ThreadPool.fromPtr(@constCast(threads)).boundAt(index);
+        const node = threads.boundAt(index);
         if (node < node_count)
             counts[node] += 1;
     }
@@ -669,13 +669,13 @@ pub fn threadBindingInformation(
 
 pub fn threadAllocationInformation(
     numa_context: *const anyopaque,
-    threads: *const anyopaque,
+    threads: *graph_layout.ThreadPool,
 ) ?[*:0]u8 {
     const binding_ptr = threadBindingInformation(numa_context, threads) orelse return null;
     defer c.free(@ptrCast(binding_ptr));
 
     const binding = std.mem.span(binding_ptr);
-    return formatThreadAllocation(graph_layout.ThreadPool.fromPtr(@constCast(threads)).numThreads(), binding.ptr, binding.len);
+    return formatThreadAllocation(threads.numThreads(), binding.ptr, binding.len);
 }
 
 // Register one option into the native OptionsModel.
