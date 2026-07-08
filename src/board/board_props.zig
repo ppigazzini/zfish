@@ -18,7 +18,7 @@ const position_size = graph_layout.position_size;
 const state_info_size = graph_layout.state_info_size;
 const perft_max_depth = 8;
 
-const StateBuf = [state_info_size]u8;
+const StateBuf = position.StateInfo;
 
 fn perft(pos: *position.Position, depth: c_int, states: *[perft_max_depth]StateBuf, ply: usize) u64 {
     if (depth <= 0) return 1;
@@ -36,15 +36,14 @@ fn perft(pos: *position.Position, depth: c_int, states: *[perft_max_depth]StateB
 }
 
 fn perftFen(fen: []const u8, chess960: u8, depth: c_int) u64 {
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, chess960, &st, position_size, state_info_size)) |err| {
         std.heap.c_allocator.free(std.mem.span(err));
         @panic("perftFen: setPosition failed on a known-legal FEN");
     }
     var states: [perft_max_depth]StateBuf align(64) = undefined;
-    // The test drives raw native-sized storage; cast to the typed perft helper.
-    return perft(@ptrCast(@alignCast(&p)), depth, &states, 0);
+    return perft(&p, depth, &states, 0);
 }
 
 const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -98,13 +97,13 @@ test "perft: CPW reference positions 3-5 match reference node counts" {
 // count right but the derived state (e.g. an un-restored zobrist key, a stale
 // bitboard, a leaked castling right) subtly wrong.
 fn checkRoundTrip(fen: []const u8) !void {
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
         std.heap.c_allocator.free(std.mem.span(err));
         @panic("checkRoundTrip: setPosition failed on a known-legal FEN");
     }
-    const pos: *const position.Position = @ptrCast(&p);
+    const pos = &p;
 
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
@@ -118,7 +117,7 @@ fn checkRoundTrip(fen: []const u8) !void {
         const board0 = pos.board;
         const piece_count0 = pos.piece_count;
 
-        var new_st: [state_info_size]u8 align(16) = undefined;
+        var new_st: position.StateInfo align(16) = undefined;
         position.doMoveState(&p, moves[i], &new_st);
         position.undoMove(&p, moves[i]);
 
@@ -141,13 +140,13 @@ test "make/unmake restores the position byte-exact" {
 // -> formatFen (fen) round-trip on a real parsed position (fen.zig's own test uses
 // a synthetic board), catching any drift between the parse and format sides.
 fn checkFenRoundTrip(fen: []const u8) !void {
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
         std.heap.c_allocator.free(std.mem.span(err));
         @panic("checkFenRoundTrip: setPosition failed on a known-legal FEN");
     }
-    const pos: *const position.Position = @ptrCast(&p);
+    const pos = &p;
     const out = position.formatFen(
         &pos.board,
         pos.side_to_move,
@@ -177,14 +176,13 @@ test "FEN parse -> format round-trips" {
 // drifted from the generator's own legality filter (or vice versa) -- a class of
 // bug perft can hide when two errors cancel in the count.
 fn checkMoveGenLegalityAgree(fen: []const u8) !void {
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
         std.heap.c_allocator.free(std.mem.span(err));
         @panic("checkMoveGenLegalityAgree: setPosition failed on a known-legal FEN");
     }
-    // The test drives raw native-sized storage; cast to the typed legality API.
-    const pp: *const position.Position = @ptrCast(@alignCast(&p));
+    const pp = &p;
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
     try std.testing.expect(n > 0);
@@ -210,20 +208,19 @@ test "generated legal moves satisfy legal() and pseudoLegal()" {
 // the givesCheck fast path (direct + discovered + castling/ep/promotion check
 // detection) in the legality leaf against the actual post-move state.
 fn checkGivesCheck(fen: []const u8) !void {
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
         std.heap.c_allocator.free(std.mem.span(err));
         @panic("checkGivesCheck: setPosition failed on a known-legal FEN");
     }
-    // The test drives raw native-sized storage; cast to the typed hasCheckers API.
-    const pp: *const position.Position = @ptrCast(@alignCast(&p));
+    const pp = &p;
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
     var i: usize = 0;
     while (i < n) : (i += 1) {
         const predicted = position.givesCheck(&p, moves[i]);
-        var new_st: [state_info_size]u8 align(16) = undefined;
+        var new_st: position.StateInfo align(16) = undefined;
         position.doMoveState(&p, moves[i], &new_st);
         const actual = position.hasCheckers(pp);
         position.undoMove(&p, moves[i]);
@@ -245,24 +242,23 @@ test "givesCheck agrees with the post-move check state" {
 // exactly. In between, the side and key must have actually changed. Exercises the
 // move_do null-move path the search's null-move pruning relies on.
 fn checkNullMoveRoundTrip(fen: []const u8) !void {
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
         std.heap.c_allocator.free(std.mem.span(err));
         @panic("checkNullMoveRoundTrip: setPosition failed on a known-legal FEN");
     }
-    const pos: *const position.Position = @ptrCast(&p);
+    const pos = &p;
 
     const key0 = pos.st.key;
     const side0 = pos.side_to_move;
 
-    var null_st: [state_info_size]u8 align(16) = undefined;
-    // The test drives raw native-sized storage; cast to the typed move_do API.
-    position.doNullMove(@ptrCast(@alignCast(&p)), @ptrCast(@alignCast(&null_st)));
+    var null_st: position.StateInfo align(16) = undefined;
+    position.doNullMove(&p, &null_st);
     try std.testing.expect(pos.side_to_move != side0); // side flipped
     try std.testing.expect(pos.st.key != key0); // key rehashed
 
-    position.undoNullMove(@ptrCast(@alignCast(&p)));
+    position.undoNullMove(&p);
     try std.testing.expectEqual(key0, pos.st.key); // key restored
     try std.testing.expectEqual(side0, pos.side_to_move); // side restored
 }
@@ -288,8 +284,8 @@ fn mkMove(from: u8, to: u8) u16 {
 // cycle closes and true once the start position recurs.
 test "repetition detection flags a returned-to position" {
     position.initRuntime();
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     setup(&p, &st, start_fen);
 
     const moves = [_]u16{
@@ -298,7 +294,7 @@ test "repetition detection flags a returned-to position" {
         mkMove(sq(5, 2), sq(6, 0)), // Nf3-g1
         mkMove(sq(2, 5), sq(1, 7)), // Nc6-b8  (position == start)
     };
-    var chain: [8][state_info_size]u8 align(16) = undefined;
+    var chain: [8]position.StateInfo align(16) = undefined;
 
     for (moves, 0..) |m, ply| {
         try std.testing.expect(!position.hasRepeated(&p)); // not yet repeated
@@ -311,8 +307,8 @@ test "repetition detection flags a returned-to position" {
 // The parser must REJECT malformed input with an error message, not crash or
 // silently accept it. Each of these violates a documented FEN invariant.
 fn expectRejected(fen: []const u8) !void {
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
     const err = position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size);
     if (err) |msg| {
         std.heap.c_allocator.free(std.mem.span(msg)); // rejected as expected
@@ -354,8 +350,8 @@ test "fuzz: setPosition tolerates arbitrary input without crashing" {
         const len = rand.intRangeAtMost(usize, 0, buf.len);
         for (buf[0..len]) |*byte| byte.* = fen_alphabet[rand.uintLessThan(usize, fen_alphabet.len)];
 
-        var p: [position_size]u8 align(64) = undefined;
-        var st: [state_info_size]u8 align(16) = undefined;
+        var p: position.Position align(64) = undefined;
+        var st: position.StateInfo align(16) = undefined;
         const err = position.setPosition(&p, &buf, len, 0, &st, position_size, state_info_size);
         if (err) |msg| {
             std.heap.c_allocator.free(std.mem.span(msg));
@@ -366,7 +362,7 @@ test "fuzz: setPosition tolerates arbitrary input without crashing" {
         var moves: [256]u16 = undefined;
         const n = movegen.generateLegal(&p, &moves);
         if (n > 0) {
-            var new_st: [state_info_size]u8 align(16) = undefined;
+            var new_st: position.StateInfo align(16) = undefined;
             position.doMoveState(&p, moves[0], &new_st);
             position.undoMove(&p, moves[0]);
         }
@@ -377,10 +373,9 @@ test "fuzz: setPosition tolerates arbitrary input without crashing" {
 // a fresh position is not a draw.
 test "isDraw honours the fifty-move rule" {
     position.initRuntime();
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
-    // The test drives raw native-sized storage; cast to the typed isDraw API.
-    const pp: *const position.Position = @ptrCast(@alignCast(&p));
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
+    const pp = &p;
 
     // rule50 = 100 half-moves, not in check, legal moves available -> draw.
     setup(&p, &st, "4k3/8/8/8/8/8/8/4K3 w - - 100 60");
@@ -391,7 +386,7 @@ test "isDraw honours the fifty-move rule" {
     try std.testing.expect(!position.isDraw(pp, 0));
 }
 
-fn setup(p: *[position_size]u8, st: *[state_info_size]u8, fen: []const u8) void {
+fn setup(p: *position.Position, st: *position.StateInfo, fen: []const u8) void {
     if (position.setPosition(p, fen.ptr, fen.len, 0, st, position_size, state_info_size)) |err| {
         std.heap.c_allocator.free(std.mem.span(err));
         @panic("setup: setPosition failed on a known-legal FEN");
@@ -403,10 +398,9 @@ fn setup(p: *[position_size]u8, st: *[state_info_size]u8, fen: []const u8) void 
 // pawn defended by a pawn is a large losing one. seeGe(move, t) answers SEE >= t.
 test "seeGe classifies winning and losing captures" {
     position.initRuntime();
-    var p: [position_size]u8 align(64) = undefined;
-    var st: [state_info_size]u8 align(16) = undefined;
-    // The test drives raw native-sized storage; cast to the typed seeGe API.
-    const pp: *const position.Position = @ptrCast(@alignCast(&p));
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
+    const pp = &p;
 
     // White pawn e4 captures an undefended black queen on d5.
     setup(&p, &st, "4k3/8/8/3q4/4P3/8/8/4K3 w - - 0 1");
