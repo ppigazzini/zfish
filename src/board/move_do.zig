@@ -274,7 +274,7 @@ fn doCastlingDo(pos: *Position, us: u8, from: u8, to_in: u8, dp: *DirtyPiece, dt
 }
 
 pub fn doMove(
-    pos_ptr: *anyopaque,
+    pos_ptr: *Position,
     m: u16,
     new_st_ptr: *anyopaque,
     gives_check: u8,
@@ -285,7 +285,7 @@ pub fn doMove(
     const enpassant: [*]const u64 = &zobrist.zob_enpassant;
     const castling: [*]const u64 = &zobrist.zob_castling;
     const zob_side = zobrist.zob_side_val;
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    const pos = pos_ptr;
     const new_st: *StateInfo = @ptrCast(@alignCast(new_st_ptr));
     const dp: *DirtyPiece = @ptrCast(@alignCast(dp_ptr));
     const dts: *DirtyThreats = @ptrCast(@alignCast(dts_ptr));
@@ -441,8 +441,8 @@ pub fn doMove(
     dts.ksq = kingSquare(pos, us);
 }
 
-pub fn undoMove(pos_ptr: *anyopaque, m: u16) void {
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+pub fn undoMove(pos_ptr: *Position, m: u16) void {
+    const pos = pos_ptr;
     pos.side_to_move ^= 1;
     const us = pos.side_to_move;
     const from = moveFrom(m);
