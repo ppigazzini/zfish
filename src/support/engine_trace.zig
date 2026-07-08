@@ -194,7 +194,7 @@ pub fn evalTrace(pos: *anyopaque, network: *const anyopaque) ?[*:0]u8 {
     });
 }
 
-pub fn fen(pos: *const anyopaque) ?[*:0]u8 {
+pub fn fen(pos: *const position_port.Position) ?[*:0]u8 {
     return positionFen(pos, null);
 }
 
@@ -202,7 +202,7 @@ pub fn fenEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     return fen(engine_ptr.positionPtr());
 }
 
-pub fn visualize(pos: *const anyopaque) ?[*:0]u8 {
+pub fn visualize(pos: *const position_port.Position) ?[*:0]u8 {
     const allocator = std.heap.c_allocator;
     var pieces: [square_count]u8 = [_]u8{0} ** square_count;
     position_port.accumulatorSnapshot(pos, &pieces);

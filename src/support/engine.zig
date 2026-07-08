@@ -184,7 +184,7 @@ pub fn optionOnChange(
 }
 
 pub fn setPosition(
-    pos: *anyopaque,
+    pos: *position_port.Position,
     states_slot: *anyopaque,
     chess960_enabled: u8,
     fen_ptr: [*]const u8,
