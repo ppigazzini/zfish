@@ -23,10 +23,9 @@ const moveTo = board_core.moveTo;
 const h1 = zobrist.h1;
 const h2 = zobrist.h2;
 
-pub fn upcomingRepetition(pos_ptr: *const anyopaque, ply: c_int) bool {
+pub fn upcomingRepetition(pos: *const Position, ply: c_int) bool {
     const cuckoo: [*]const u64 = &zobrist.cuckoo_tbl;
     const cuckoo_move: [*]const u16 = &zobrist.cuckoo_move_tbl;
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
     const end = @min(pos.st.rule50, pos.st.plies_from_null);
     if (end < 3) return false;
 
