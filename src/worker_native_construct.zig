@@ -99,7 +99,7 @@ fn constructWorkerInto(
 ) void {
     const wl = graph_layout.WorkerLayout.fromPtr(buf);
     writeConstructorFields(buf, in);
-    position_port.clearWorkerHistories(buf);
+    position_port.clearWorkerHistories(wl);
     position_port.clearSharedHistory(shared_obj, in.numa_thread_idx, in.numa_total);
     search_port.fillReductions(&wl.reductions, reductions_count);
     nnue_acc.clearRefreshCache(&wl.refresh_table, biases);
