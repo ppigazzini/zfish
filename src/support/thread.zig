@@ -713,7 +713,7 @@ fn workerSearchEntry(ctx: ?*anyopaque) void {
 }
 
 pub fn startThinking(
-    pool: *anyopaque,
+    pool: *graph_layout.ThreadPool,
     options: *const anyopaque,
     pos: *position_port.Position,
     limits: *const anyopaque,
@@ -721,7 +721,7 @@ pub fn startThinking(
 ) void {
     native_thread.searchEntry = &workerSearchEntry;
     waitMainThread(pool);
-    const tp = graph_layout.ThreadPool.fromPtr(pool);
+    const tp = pool;
     if (tp.mainManager()) |m| {
         m.setStopOnPonderhit(false);
         m.setPonder(graph_layout.LimitsType.fromPtr(@constCast(limits)).ponderMode());
@@ -734,7 +734,7 @@ pub fn startThinking(
             @panic("failed to hand off pending setup states");
     } else {
         native_hooks.setup_states_adopt_from_slot.?(pool, states_slot);
-        if (!graph_layout.ThreadPool.fromPtr(@constCast(pool)).hasSetupStates())
+        if (!pool.hasSetupStates())
             @panic("missing setup states");
     }
 
@@ -779,14 +779,14 @@ pub fn startThinking(
     const root_moves = root_setup.root_moves;
     defer rootMovesDestroy(root_moves);
     const tb_config = root_setup.tb_config;
-    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
+    const thread_count = pool.numThreads();
     const allocator = std.heap.c_allocator;
     const root_setup_contexts = allocator.alloc(RootSetupContext, thread_count) catch @panic("OOM");
     defer allocator.free(root_setup_contexts);
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        const thread = graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index);
+        const thread = pool.threadAtPtr(index);
         root_setup_contexts[index] = .{
             .thread = thread,
             .input = .{
@@ -804,11 +804,11 @@ pub fn startThinking(
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        const thread = graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index);
+        const thread = pool.threadAtPtr(index);
         threadWaitFinished(thread);
     }
 
-    const main_thread = graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(0);
+    const main_thread = pool.threadAtPtr(0);
     threadStartSearching(main_thread);
 }
 
