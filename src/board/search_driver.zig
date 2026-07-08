@@ -189,9 +189,9 @@ pub const verifySharedHistories = shared_history.verifySharedHistories;
 // resolves mainHistory[us][move], lowPlyHistory[ply][move], and the pawn entry
 // itself (no per-call base pointers).
 
-pub fn isShuffling(pos_ptr: *const anyopaque, ss_ptr: *const anyopaque, move: u16) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
-    const ss: *const SearchStack = @ptrCast(@alignCast(ss_ptr));
+pub fn isShuffling(pos_ptr: *const Position, ss_ptr: *const SearchStack, move: u16) bool {
+    const pos = pos_ptr;
+    const ss = ss_ptr;
     if (captureStage(pos, move) or pos.st.rule50 < 10) return false;
     if (pos.st.plies_from_null < 6 or ss.ply < 20) return false;
     const ss2: *const SearchStack = @ptrFromInt(@intFromPtr(ss) - 2 * @sizeOf(SearchStack));
@@ -777,19 +777,19 @@ inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16) void {
 // fresh DirtyThreats list and a throwaway DirtyPiece are passed as scratch (no
 // accumulator slot is pushed, so the dirty state doMove writes is never
 // consumed). undo is the plain Position-level unmake.
-inline fn verifyDoMove(pos_ptr: *anyopaque, move: u16, st_ptr: *anyopaque) void {
+inline fn verifyDoMove(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     var dp: DirtyPiece = undefined;
     var dts: DirtyThreats = undefined;
     dts.list_size = 0;
     doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
 }
 
-inline fn verifyUndoMove(pos_ptr: *anyopaque, move: u16) void {
+inline fn verifyUndoMove(pos_ptr: *Position, move: u16) void {
     undoMove(pos_ptr, move);
 }
 
 // Is `move` in the legal move list of the current position?
-fn legalContains(pos_ptr: *const anyopaque, move: u16) bool {
+fn legalContains(pos_ptr: *const Position, move: u16) bool {
     var buf: [256]u16 = undefined;
     const n = movegen.generateLegal(pos_ptr, &buf);
     var i: usize = 0;
@@ -1363,7 +1363,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
         }
         if (pos.st.rule50 < 96) {
             if (depth >= 7 and tt_move != 0 and pseudoLegal(pos_ptr, tt_move) and legal(pos_ptr, tt_move) and !qIsDecisive(tt_value)) {
-                verifyDoMove(pos_ptr, tt_move, @ptrCast(&st));
+                verifyDoMove(pos_ptr, tt_move, &st);
                 const next_key = adjustKey50(pos);
                 const probe_next = tt.probeTable(ctx.table, ctx.cluster_count, next_key, ctx.generation, q_depth_none);
                 verifyUndoMove(pos_ptr, tt_move);
