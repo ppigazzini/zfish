@@ -63,7 +63,7 @@ fn searchEmitInfoFull(manager: ?*anyopaque, worker: ?*graph_layout.WorkerLayout,
 
     const w = worker.?;
     const ca = std.heap.c_allocator;
-    const root_pos: *const anyopaque = &w.root_pos;
+    const root_pos = &w.root_pos;
     const material = wdlMaterial(root_pos);
     const chess960 = isChess960(root_pos);
 
@@ -114,7 +114,7 @@ pub fn ssEmitNoMoves(worker: ?*graph_layout.WorkerLayout) void {
     if (uci_output.isQuiet()) return;
     const w = worker.?;
     const ca = std.heap.c_allocator;
-    const root_pos: *const anyopaque = &w.root_pos;
+    const root_pos = &w.root_pos;
     const v: c_int = if (hasCheckers(root_pos)) -32000 else 0;
     const material = wdlMaterial(root_pos);
 
@@ -134,7 +134,7 @@ pub fn ssEmitBestmove(worker: ?*graph_layout.WorkerLayout, best: ?*graph_layout.
     if (uci_output.isQuiet()) return;
     const rm0 = workerRootMove0(best.?);
     const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
-    const root_pos: *const anyopaque = &worker.?.root_pos;
+    const root_pos = &worker.?.root_pos;
     const chess960 = isChess960(root_pos);
 
     var buf0: [5]u8 = undefined;
@@ -161,7 +161,7 @@ pub fn ssEmitBestmove(worker: ?*graph_layout.WorkerLayout, best: ?*graph_layout.
 pub fn searchCbRootOnIter(wl: *const graph_layout.WorkerLayout, depth: c_int, move: u16, move_count: c_int) void {
     if (wl.thread_idx != 0) return;
     if (uci_output.isQuiet()) return;
-    const root_pos: *const anyopaque = &wl.root_pos;
+    const root_pos = &wl.root_pos;
     const chess960 = isChess960(root_pos);
     var mbuf: [5]u8 = undefined;
     const currmove = uci_move_port.renderMoveText(&mbuf, move, chess960);
@@ -203,7 +203,7 @@ fn searchCbPvContext(manager: ?*graph_layout.SearchManager, worker: ?*graph_layo
     out.multipv = @min(multipv_opt, rm_count);
     out.show_wdl = if (optInt("UCI_ShowWDL") != 0) 1 else 0;
 
-    const root_pos: *const anyopaque = &wl.root_pos;
+    const root_pos = &wl.root_pos;
     out.chess960 = if (isChess960(root_pos)) 1 else 0;
     out.nodes = graph_layout.poolNodesSearched(threads);
     out.tb_hits = graph_layout.poolTbHits(threads);

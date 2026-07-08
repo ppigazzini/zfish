@@ -19,8 +19,7 @@ pub fn sideToMove(pos: *const Position) u8 {
     return pos.side_to_move;
 }
 
-pub fn isChess960(pos_ptr: *const anyopaque) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn isChess960(pos: *const Position) bool {
     return pos.chess960;
 }
 
@@ -28,16 +27,14 @@ pub fn gamePly(pos: *const Position) c_int {
     return pos.game_ply;
 }
 
-pub fn hasCheckers(pos_ptr: *const anyopaque) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn hasCheckers(pos: *const Position) bool {
     return pos.st.checkers_bb != 0;
 }
 
 // WDL-model material count (src/uci.cpp): pawns + 3*(knights+bishops) +
 // 5*rooks + 9*queens, both colours. piece_count is indexed by piece
 // (white type at 1..5, black type at 9..13).
-pub fn wdlMaterial(pos_ptr: *const anyopaque) c_int {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn wdlMaterial(pos: *const Position) c_int {
     const pc = pos.piece_count;
     return (pc[1] + pc[9]) + 3 * (pc[2] + pc[10]) + 3 * (pc[3] + pc[11]) +
         5 * (pc[4] + pc[12]) + 9 * (pc[5] + pc[13]);
