@@ -48,14 +48,14 @@ pub fn poolNodesSearched(tp: *ThreadPool) u64 {
     const n = tp.numThreads();
     var total: u64 = 0;
     var i: usize = 0;
-    while (i < n) : (i += 1) total += Thread.fromPtr(tp.threadAtPtr(i)).nodesSearched();
+    while (i < n) : (i += 1) total += tp.threadTyped(i).nodesSearched();
     return total;
 }
 pub fn poolTbHits(tp: *ThreadPool) u64 {
     const n = tp.numThreads();
     var total: u64 = 0;
     var i: usize = 0;
-    while (i < n) : (i += 1) total += Thread.fromPtr(tp.threadAtPtr(i)).tbHits();
+    while (i < n) : (i += 1) total += tp.threadTyped(i).tbHits();
     return total;
 }
 // The 64-square piece board of a Position by pointer (Position.board, offset 0).
@@ -289,9 +289,16 @@ pub const ThreadPool = struct {
     pub inline fn threadAt(self: *const ThreadPool, i: usize) usize {
         return @as(*const usize, @ptrFromInt(self.threads_begin + i * @sizeOf(usize))).*;
     }
-    /// The i-th `Thread*` as an opaque pointer (for the search-driver call sites).
-    pub inline fn threadAtPtr(self: *const ThreadPool, i: usize) *anyopaque {
+    /// The i-th pool Thread as a typed pointer. The threads vector stores Thread
+    /// addresses as usize, so this is the single @ptrFromInt the graph callers used
+    /// to each re-do via Thread.fromPtr/fromAddr.
+    pub inline fn threadTyped(self: *const ThreadPool, i: usize) *Thread {
         return @ptrFromInt(self.threadAt(i));
+    }
+    /// The i-th `Thread*` as an opaque pointer (the still-erased thread-runtime
+    /// callers -- native_thread/native_threadpool -- take *anyopaque).
+    pub inline fn threadAtPtr(self: *const ThreadPool, i: usize) *anyopaque {
+        return self.threadTyped(i);
     }
     pub inline fn boundCount(self: *const ThreadPool) usize {
         return (self.bound_end - self.bound_begin) / @sizeOf(usize);
@@ -312,7 +319,7 @@ pub const ThreadPool = struct {
     /// The main thread's SearchManager (thread 0's Worker's manager), or null if not built
     /// yet.
     pub inline fn mainManager(self: *ThreadPool) ?*SearchManager {
-        const worker = Thread.fromPtr(self.threadAtPtr(0)).worker orelse return null;
+        const worker = self.threadTyped(0).worker orelse return null;
         return worker.manager;
     }
 };
