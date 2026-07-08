@@ -70,7 +70,7 @@ const FenCursor = struct {
 };
 
 pub fn setPosition(
-    pos_ptr: *anyopaque,
+    pos_ptr: *Position,
     fen_ptr: [*]const u8,
     fen_len: usize,
     is_chess960: u8,
@@ -78,7 +78,7 @@ pub fn setPosition(
     pos_size: usize,
     st_size: usize,
 ) ?[*:0]u8 {
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
+    const pos = pos_ptr;
     @memset(@as([*]u8, @ptrCast(pos))[0..pos_size], 0);
     @memset(@as([*]u8, @ptrCast(st_ptr))[0..st_size], 0);
     pos.st = @ptrCast(@alignCast(st_ptr));
