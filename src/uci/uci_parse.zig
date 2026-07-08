@@ -248,3 +248,10 @@ test "fuzz: the UCI parsers tolerate arbitrary input" {
         freePosition(parsePosition(buf[0..len]));
     }
 }
+
+// refAllDecls the UCI parse surface + the uci_strings C-string base leaf, so every
+// pub decl compiles under `zig build test` even if the exe never reaches it.
+test "all public decls compile (uci_parse + uci_strings)" {
+    std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(uci_strings);
+}
