@@ -302,7 +302,7 @@ fn searchIdCollectBmc(wl: *const graph_layout.WorkerLayout) f64 {
     var tot: f64 = 0;
     var i: usize = 0;
     while (i < count) : (i += 1) {
-        const wkr = graph_layout.Thread.fromAddr(tp.threadAt(i)).worker.?;
+        const wkr = tp.threadTyped(i).worker.?;
         const bmc = &wkr.best_move_changes;
         tot += @floatFromInt(bmc.*);
         bmc.* = 0;
