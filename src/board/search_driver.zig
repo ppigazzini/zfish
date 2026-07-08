@@ -302,8 +302,8 @@ fn searchIdCollectBmc(wl: *const graph_layout.WorkerLayout) f64 {
     var tot: f64 = 0;
     var i: usize = 0;
     while (i < count) : (i += 1) {
-        const wkr = graph_layout.Thread.fromAddr(tp.threadAt(i)).worker;
-        const bmc = &graph_layout.WorkerLayout.fromAddr(wkr).best_move_changes;
+        const wkr = graph_layout.Thread.fromAddr(tp.threadAt(i)).worker.?;
+        const bmc = &wkr.best_move_changes;
         tot += @floatFromInt(bmc.*);
         bmc.* = 0;
     }
@@ -505,7 +505,7 @@ fn ssWaitFinished(wl: *const graph_layout.WorkerLayout) void {
 // thread_vote model). Relocated from main.zig (M16.7).
 fn ssGetBestThread(wl: *const graph_layout.WorkerLayout) ?*graph_layout.WorkerLayout {
     const pool = wl.threads;
-    return @ptrFromInt(thread_vote.bestThreadWorker(pool));
+    return thread_vote.bestThreadWorker(pool);
 }
 
 // nodestime available-nodes advance (tm.advance_nodes_time). Relocated from main.zig (M16.7).

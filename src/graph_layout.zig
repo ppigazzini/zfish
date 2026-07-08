@@ -312,9 +312,8 @@ pub const ThreadPool = struct {
     /// The main thread's SearchManager (thread 0's Worker's manager), or null if not built
     /// yet.
     pub inline fn mainManager(self: *ThreadPool) ?*SearchManager {
-        const worker = Thread.fromPtr(self.threadAtPtr(0)).worker;
-        if (worker == 0) return null;
-        return WorkerLayout.fromAddr(worker).manager;
+        const worker = Thread.fromPtr(self.threadAtPtr(0)).worker orelse return null;
+        return worker.manager;
     }
 };
 
@@ -332,7 +331,7 @@ comptime {
 // read that one slot. `worker` is kept as a raw address (the loaded pointer value).
 pub const Thread = struct {
     _lo: usize, // @0 (idle-loop / vtable region; unused here)
-    worker: usize, // @8 (LargePagePtr<Worker>, as a raw address)
+    worker: ?*WorkerLayout, // @8 (LargePagePtr<Worker>; a typed pointer, null == 0)
 
     pub inline fn fromAddr(addr: usize) *Thread {
         return @ptrFromInt(addr);
@@ -342,13 +341,13 @@ pub const Thread = struct {
     }
     /// This thread's Worker cumulative node count (0 if no worker attached).
     pub inline fn nodesSearched(self: *const Thread) u64 {
-        if (self.worker == 0) return 0;
-        return WorkerLayout.fromAddr(self.worker).nodes;
+        const w = self.worker orelse return 0;
+        return w.nodes;
     }
     /// This thread's Worker cumulative tablebase-hit count.
     pub inline fn tbHits(self: *const Thread) u64 {
-        if (self.worker == 0) return 0;
-        return WorkerLayout.fromAddr(self.worker).tb_hits;
+        const w = self.worker orelse return 0;
+        return w.tb_hits;
     }
 };
 
@@ -357,14 +356,14 @@ pub const Thread = struct {
 // *WorkerLayout (via layout()) and touches the field directly -- typing the *access*
 // over a raw Worker base address.
 pub const Worker = struct {
-    base: usize,
+    base: *WorkerLayout,
 
     pub inline fn fromThread(thread: *anyopaque) ?Worker {
-        const w = Thread.fromPtr(thread).worker;
-        return if (w == 0) null else Worker{ .base = w };
+        const w = Thread.fromPtr(thread).worker orelse return null;
+        return Worker{ .base = w };
     }
     inline fn layout(self: Worker) *WorkerLayout {
-        return WorkerLayout.fromAddr(self.base);
+        return self.base;
     }
     /// ThreadPool::start_searching re-inits: zero the per-search Worker counters.
     pub inline fn resetRootSetupState(self: Worker) void {

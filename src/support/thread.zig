@@ -186,8 +186,8 @@ fn rootMovesDestroy(ptr: ?*anyopaque) void {
 // than a byte range; searchmoves is deliberately left as the worker's own (the search
 // reads the worker's, always empty on the gated single-node path).
 fn workerSetLimits(thread: *anyopaque, src_limits: *const graph_layout.LimitsType) void {
-    const worker = graph_layout.Thread.fromPtr(thread).worker;
-    const dst = &graph_layout.WorkerLayout.fromAddr(worker).limits;
+    const worker = graph_layout.Thread.fromPtr(thread).worker.?;
+    const dst = &worker.limits;
     const src = src_limits;
     dst.time = src.time;
     dst.inc = src.inc;
@@ -208,8 +208,8 @@ fn workerSetLimits(thread: *anyopaque, src_limits: *const graph_layout.LimitsTyp
 // fresh one and free the old — exactly like assigning an element range.
 fn workerSetRootMoves(thread: *anyopaque, src_rm: *const anyopaque) void {
     // worker@8, then the rootMoves vector object {begin[0],end[1],cap[2]}.
-    const worker = graph_layout.Thread.fromPtr(thread).worker;
-    const dst = &graph_layout.WorkerLayout.fromAddr(worker).root_moves;
+    const worker = graph_layout.Thread.fromPtr(thread).worker.?;
+    const dst = &worker.root_moves;
     const dst_begin: *usize = &dst[0];
     const dst_end: *usize = &dst[1];
     const dst_cap: *usize = &dst[2];
