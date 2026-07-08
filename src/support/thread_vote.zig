@@ -111,10 +111,10 @@ pub fn bestThreadIndex(pool: *graph_layout.ThreadPool) usize {
     return pickBestThread(&summaries, thread_count);
 }
 
-// Worker pointer (as usize) of the vote-winning thread -- the value the search driver
-// picks as `bestThread` when choosing the move to report.
-pub fn bestThreadWorker(pool: *graph_layout.ThreadPool) usize {
+// Worker of the vote-winning thread -- the value the search driver picks as
+// `bestThread` when choosing the move to report.
+pub fn bestThreadWorker(pool: *graph_layout.ThreadPool) *graph_layout.WorkerLayout {
     const idx = bestThreadIndex(pool);
     const thread = pool.threadAt(idx);
-    return graph_layout.Thread.fromAddr(thread).worker;
+    return graph_layout.Thread.fromAddr(thread).worker.?;
 }

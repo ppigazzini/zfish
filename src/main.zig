@@ -293,7 +293,7 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void 
         ctx.total,
         0,
     );
-    graph_layout.Thread.fromPtr(thread).worker = @intFromPtr(raw);
+    graph_layout.Thread.fromPtr(thread).worker = @ptrCast(@alignCast(raw));
 }
 
 pub fn engineInitBody(engine: *anyopaque) void {
