@@ -838,11 +838,11 @@ pub fn clear(pool: *anyopaque) void {
     }
 }
 
-pub fn nodesSearched(pool: *anyopaque) u64 {
+pub fn nodesSearched(pool: *graph_layout.ThreadPool) u64 {
     return graph_layout.poolNodesSearched(pool);
 }
 
-pub fn tbHits(pool: *anyopaque) u64 {
+pub fn tbHits(pool: *graph_layout.ThreadPool) u64 {
     return graph_layout.poolTbHits(pool);
 }
 

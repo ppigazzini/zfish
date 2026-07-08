@@ -44,16 +44,14 @@ pub inline fn positionSideToMove(pos: *const anyopaque) u8 {
 // live here in the leaf: position.zig (search driver) reads them without importing the
 // thread module, which would cycle (thread imports position). thread.zig's public
 // nodesSearched/tbHits forward here.
-pub fn poolNodesSearched(pool: *anyopaque) u64 {
-    const tp = ThreadPool.fromPtr(@constCast(pool));
+pub fn poolNodesSearched(tp: *ThreadPool) u64 {
     const n = tp.numThreads();
     var total: u64 = 0;
     var i: usize = 0;
     while (i < n) : (i += 1) total += Thread.fromPtr(tp.threadAtPtr(i)).nodesSearched();
     return total;
 }
-pub fn poolTbHits(pool: *anyopaque) u64 {
-    const tp = ThreadPool.fromPtr(@constCast(pool));
+pub fn poolTbHits(tp: *ThreadPool) u64 {
     const n = tp.numThreads();
     var total: u64 = 0;
     var i: usize = 0;
