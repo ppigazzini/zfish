@@ -91,8 +91,8 @@ pub fn legal(pos_ptr: *const anyopaque, m: u16) bool {
         (bitboard.line(from, orig_to) & (pos.by_color_bb[us] & pos.by_type_bb[king_pt])) != 0;
 }
 
-pub fn seeGe(pos_ptr: *const anyopaque, m: u16, threshold: c_int) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn seeGe(pos_ptr: *const Position, m: u16, threshold: c_int) bool {
+    const pos = pos_ptr;
     if (moveTypeOf(m) != mt_normal) return 0 >= threshold;
 
     const from = moveFrom(m);
@@ -170,8 +170,8 @@ pub fn seeGe(pos_ptr: *const anyopaque, m: u16, threshold: c_int) bool {
     return res != 0;
 }
 
-pub fn pseudoLegal(pos_ptr: *const anyopaque, m: u16) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn pseudoLegal(pos_ptr: *const Position, m: u16) bool {
+    const pos = pos_ptr;
     const us = pos.side_to_move;
     const them = us ^ 1;
     const from = moveFrom(m);
