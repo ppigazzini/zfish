@@ -121,8 +121,8 @@ pub const NativeEngine = struct {
     pub fn networkPtr(self: *const NativeEngine) *const anyopaque {
         return self.network.?;
     }
-    pub fn threadsPtr(self: *NativeEngine) *anyopaque {
-        return self.threads.?;
+    pub fn threadsPtr(self: *NativeEngine) *graph_layout.ThreadPool {
+        return @ptrCast(@alignCast(self.threads.?));
     }
     /// The side Position block (replaces the C++ Engine's pos member); engine-independent.
     pub fn positionPtr(self: *NativeEngine) *position_types.Position {
@@ -130,9 +130,9 @@ pub const NativeEngine = struct {
         return @ptrCast(@alignCast(&side_pos_storage));
     }
     /// The side TranspositionTable block (replaces the C++ Engine's tt member).
-    pub fn ttPtr(self: *NativeEngine) *anyopaque {
+    pub fn ttPtr(self: *NativeEngine) *graph_layout.TranspositionTable {
         _ = self;
-        return @ptrCast(&side_tt_storage);
+        return @ptrCast(@alignCast(&side_tt_storage));
     }
     pub fn updateContextPtr(self: *const NativeEngine) *const anyopaque {
         return @ptrCast(&self.update_context);
