@@ -140,7 +140,7 @@ pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
 
-    const trace_pos: *position_port.Position = @ptrCast(@alignCast(position_port.create() orelse return null));
+    const trace_pos = position_port.create() orelse return null;
     defer position_port.destroy(trace_pos);
 
     const state_storage = state_list.storageCreate() orelse return null;

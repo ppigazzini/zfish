@@ -321,7 +321,7 @@ const ScratchPosition = struct {
     storage: *anyopaque,
 
     fn init(root_fen: []const u8, chess960: u8) ScratchPosition {
-        const pos: *position_port.Position = @ptrCast(@alignCast(position_port.create() orelse @panic("OOM")));
+        const pos = position_port.create() orelse @panic("OOM");
         errdefer position_port.destroy(pos);
 
         const storage = state_list.storageCreate() orelse @panic("OOM");
