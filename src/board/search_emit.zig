@@ -31,17 +31,17 @@ const wdlMaterial = position_query.wdlMaterial;
 fn optInt(name: []const u8) c_int {
     return option_port.intByName(name);
 }
-fn workerRootMove0(worker: *const anyopaque) usize {
+fn workerRootMove0(wl: *const graph_layout.WorkerLayout) usize {
     // root_moves is the {begin,end,cap} vector header; [0] is the begin pointer.
-    return graph_layout.WorkerLayout.fromPtr(@constCast(worker)).root_moves[0];
+    return wl.root_moves[0];
 }
-fn workerRootMoveAt(worker: *const anyopaque, index: usize) usize {
+fn workerRootMoveAt(wl: *const graph_layout.WorkerLayout, index: usize) usize {
     // root_moves[0] is the vector's begin pointer; stride by root_move_size.
-    const begin = graph_layout.WorkerLayout.fromPtr(@constCast(worker)).root_moves[0];
+    const begin = wl.root_moves[0];
     return begin + index * graph_layout.root_move_size;
 }
-fn workerRootDepthOf(worker: *anyopaque) c_int {
-    return graph_layout.WorkerLayout.fromPtr(worker).root_depth;
+fn workerRootDepthOf(wl: *const graph_layout.WorkerLayout) c_int {
+    return wl.root_depth;
 }
 
 // Score text (mate/tb-cp/cp) via the score classifier + the leaf uci_wdl formatters.
@@ -56,14 +56,14 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
 
 // Build + print one "info depth ... pv ..." line.
 // Publishes the whole-search node count to the shared leaf; no-op in quiet mode.
-fn searchEmitInfoFull(manager: ?*anyopaque, worker: ?*anyopaque, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void {
+fn searchEmitInfoFull(manager: ?*anyopaque, worker: ?*graph_layout.WorkerLayout, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void {
     _ = manager;
     uci_output.setLastNodesSearched(nodes);
     if (uci_output.isQuiet()) return;
 
     const w = worker.?;
     const ca = std.heap.c_allocator;
-    const root_pos: *const anyopaque = &graph_layout.WorkerLayout.fromPtr(w).root_pos;
+    const root_pos: *const anyopaque = &w.root_pos;
     const material = wdlMaterial(root_pos);
     const chess960 = isChess960(root_pos);
 
@@ -110,11 +110,11 @@ fn searchEmitInfoFull(manager: ?*anyopaque, worker: ?*anyopaque, move_index: usi
 }
 
 // Checkmated/stalemated root: "info depth 0 score ..." + "bestmove (none)".
-pub fn ssEmitNoMoves(worker: ?*anyopaque) void {
+pub fn ssEmitNoMoves(worker: ?*graph_layout.WorkerLayout) void {
     if (uci_output.isQuiet()) return;
     const w = worker.?;
     const ca = std.heap.c_allocator;
-    const root_pos: *const anyopaque = &graph_layout.WorkerLayout.fromPtr(w).root_pos;
+    const root_pos: *const anyopaque = &w.root_pos;
     const v: c_int = if (hasCheckers(root_pos)) -32000 else 0;
     const material = wdlMaterial(root_pos);
 
@@ -130,11 +130,11 @@ pub fn ssEmitNoMoves(worker: ?*anyopaque) void {
 }
 
 // "bestmove X[ ponder Y]" from best's first RootMove PV. No-op in quiet mode.
-pub fn ssEmitBestmove(worker: ?*anyopaque, best: ?*anyopaque) void {
+pub fn ssEmitBestmove(worker: ?*graph_layout.WorkerLayout, best: ?*graph_layout.WorkerLayout) void {
     if (uci_output.isQuiet()) return;
     const rm0 = workerRootMove0(best.?);
     const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
-    const root_pos: *const anyopaque = &graph_layout.WorkerLayout.fromPtr(worker.?).root_pos;
+    const root_pos: *const anyopaque = &worker.?.root_pos;
     const chess960 = isChess960(root_pos);
 
     var buf0: [5]u8 = undefined;
@@ -158,8 +158,7 @@ pub fn ssEmitBestmove(worker: ?*anyopaque, best: ?*anyopaque) void {
 }
 
 // "info depth D currmove M currmovenumber N" (main thread, past the node threshold).
-pub fn searchCbRootOnIter(worker: *const anyopaque, depth: c_int, move: u16, move_count: c_int) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(@constCast(worker));
+pub fn searchCbRootOnIter(wl: *const graph_layout.WorkerLayout, depth: c_int, move: u16, move_count: c_int) void {
     if (wl.thread_idx != 0) return;
     if (uci_output.isQuiet()) return;
     const root_pos: *const anyopaque = &wl.root_pos;
@@ -175,7 +174,7 @@ pub fn searchCbRootOnIter(worker: *const anyopaque, depth: c_int, move: u16, mov
 
 const PvContext = struct {
     manager: ?*graph_layout.SearchManager,
-    worker: ?*anyopaque,
+    worker: ?*graph_layout.WorkerLayout,
     root_moves: [*]const RootMove,
     root_moves_count: usize,
     multipv: usize,
@@ -188,8 +187,8 @@ const PvContext = struct {
 };
 // Per-PV-emit context: root-move span, MultiPV/WDL options, chess960, pool nodes/tbhits,
 // TT hashfull and elapsed ms. graph_layout + option + the leaf pool aggregates.
-fn searchCbPvContext(manager: ?*graph_layout.SearchManager, worker: ?*anyopaque, threads: *graph_layout.ThreadPool, tt_ptr: *graph_layout.TranspositionTable, out: *PvContext) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker.?);
+fn searchCbPvContext(manager: ?*graph_layout.SearchManager, worker: ?*graph_layout.WorkerLayout, threads: *graph_layout.ThreadPool, tt_ptr: *graph_layout.TranspositionTable, out: *PvContext) void {
+    const wl = worker.?;
     // root_moves is the {begin,end,cap} vector header.
     const rm_begin = wl.root_moves[0];
     const rm_end = wl.root_moves[1];
@@ -217,7 +216,7 @@ fn searchCbPvContext(manager: ?*graph_layout.SearchManager, worker: ?*anyopaque,
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
 
-pub fn searchPv(manager: ?*graph_layout.SearchManager, worker: ?*anyopaque, threads: *graph_layout.ThreadPool, tt_ptr: *graph_layout.TranspositionTable, depth: c_int) void {
+pub fn searchPv(manager: ?*graph_layout.SearchManager, worker: ?*graph_layout.WorkerLayout, threads: *graph_layout.ThreadPool, tt_ptr: *graph_layout.TranspositionTable, depth: c_int) void {
     const value_infinite: i32 = 32001;
     var ctx: PvContext = undefined;
     searchCbPvContext(manager, worker, threads, tt_ptr, &ctx);
@@ -243,8 +242,8 @@ pub fn searchPv(manager: ?*graph_layout.SearchManager, worker: ?*anyopaque, thre
 
 // emit_pv / search_id_pv: thin graph-only wrappers that resolve the worker's
 // manager/threads/tt reference slots and drive the MultiPV emitter (searchPv).
-pub fn ssEmitPv(worker: ?*anyopaque, best: ?*anyopaque) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker.?);
+pub fn ssEmitPv(worker: ?*graph_layout.WorkerLayout, best: ?*graph_layout.WorkerLayout) void {
+    const wl = worker.?;
     searchPv(
         wl.manager,
         best,
@@ -253,8 +252,8 @@ pub fn ssEmitPv(worker: ?*anyopaque, best: ?*anyopaque) void {
         workerRootDepthOf(best.?),
     );
 }
-pub fn searchIdPv(worker: *anyopaque, depth: c_int) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+pub fn searchIdPv(worker: *graph_layout.WorkerLayout, depth: c_int) void {
+    const wl = worker;
     searchPv(
         wl.manager,
         worker,
