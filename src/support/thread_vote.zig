@@ -98,23 +98,23 @@ fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
 }
 
 // Index of the vote-winning thread within the pool.
-pub fn bestThreadIndex(pool: *anyopaque) usize {
-    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
+pub fn bestThreadIndex(pool: *graph_layout.ThreadPool) usize {
+    const thread_count = pool.numThreads();
     if (thread_count == 0) return 0;
     if (thread_count > max_thread_summaries) @panic("thread summary buffer too small");
 
     var summaries: [max_thread_summaries]ThreadSummary = undefined;
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        fillThreadSummary(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index), &summaries[index]);
+        fillThreadSummary(pool.threadAtPtr(index), &summaries[index]);
     }
     return pickBestThread(&summaries, thread_count);
 }
 
 // Worker pointer (as usize) of the vote-winning thread -- the value the search driver
 // picks as `bestThread` when choosing the move to report.
-pub fn bestThreadWorker(pool: *anyopaque) usize {
+pub fn bestThreadWorker(pool: *graph_layout.ThreadPool) usize {
     const idx = bestThreadIndex(pool);
-    const thread = graph_layout.ThreadPool.fromAddr(@intFromPtr(pool)).threadAt(idx);
+    const thread = pool.threadAt(idx);
     return graph_layout.Thread.fromAddr(thread).worker;
 }
