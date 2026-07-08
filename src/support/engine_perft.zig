@@ -17,9 +17,6 @@ const native_engine = @import("native_engine");
 const engine_nnue = @import("engine_nnue");
 const engine_trace = @import("engine_trace");
 
-inline fn ne(p: *const anyopaque) *native_engine.NativeEngine {
-    return native_engine.NativeEngine.fromPtr(@constCast(p));
-}
 const verifyNetwork = engine_nnue.verifyNetwork;
 const fen = engine_trace.fen;
 
@@ -47,9 +44,9 @@ fn perftSubtree(pos_ptr: *anyopaque, depth: c_int) u64 {
     return perftCount(pos_ptr, capped, &states, 0);
 }
 
-pub fn perftEngine(engine_ptr: *anyopaque, depth: c_int) u64 {
+pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
     verifyNetwork(engine_ptr);
-    const fen_ptr = fen(ne(engine_ptr).positionPtr()) orelse @panic("perft: null fen");
+    const fen_ptr = fen(engine_ptr.positionPtr()) orelse @panic("perft: null fen");
     const fen_text = std.mem.span(fen_ptr);
     const chess960 = option_port.intByName("UCI_Chess960") != 0;
 
