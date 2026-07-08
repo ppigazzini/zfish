@@ -182,13 +182,15 @@ fn checkMoveGenLegalityAgree(fen: []const u8) !void {
         std.heap.c_allocator.free(std.mem.span(err));
         @panic("checkMoveGenLegalityAgree: setPosition failed on a known-legal FEN");
     }
+    // The test drives raw native-sized storage; cast to the typed legality API.
+    const pp: *const position.Position = @ptrCast(@alignCast(&p));
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(&p, &moves);
     try std.testing.expect(n > 0);
     var i: usize = 0;
     while (i < n) : (i += 1) {
-        try std.testing.expect(position.legal(&p, moves[i]));
-        try std.testing.expect(position.pseudoLegal(&p, moves[i]));
+        try std.testing.expect(position.legal(pp, moves[i]));
+        try std.testing.expect(position.pseudoLegal(pp, moves[i]));
     }
 }
 
@@ -398,16 +400,18 @@ test "seeGe classifies winning and losing captures" {
     position.initRuntime();
     var p: [position_size]u8 align(64) = undefined;
     var st: [state_info_size]u8 align(16) = undefined;
+    // The test drives raw native-sized storage; cast to the typed seeGe API.
+    const pp: *const position.Position = @ptrCast(@alignCast(&p));
 
     // White pawn e4 captures an undefended black queen on d5.
     setup(&p, &st, "4k3/8/8/3q4/4P3/8/8/4K3 w - - 0 1");
     const pxq = mkMove(sq(4, 3), sq(3, 4)); // e4 -> d5
-    try std.testing.expect(position.seeGe(&p, pxq, 0)); // winning: SEE >= 0
-    try std.testing.expect(position.seeGe(&p, pxq, 1000)); // still wins a queen
-    try std.testing.expect(!position.seeGe(&p, pxq, 3000)); // but not >= 3000
+    try std.testing.expect(position.seeGe(pp, pxq, 0)); // winning: SEE >= 0
+    try std.testing.expect(position.seeGe(pp, pxq, 1000)); // still wins a queen
+    try std.testing.expect(!position.seeGe(pp, pxq, 3000)); // but not >= 3000
 
     // White queen d4 captures a black pawn c5 that is defended by the b6 pawn.
     setup(&p, &st, "4k3/8/1p6/2p5/3Q4/8/8/4K3 w - - 0 1");
     const qxp = mkMove(sq(3, 3), sq(2, 4)); // d4 -> c5
-    try std.testing.expect(!position.seeGe(&p, qxp, 0)); // losing: SEE < 0
+    try std.testing.expect(!position.seeGe(pp, qxp, 0)); // losing: SEE < 0
 }
