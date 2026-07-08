@@ -101,10 +101,7 @@ pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
 // is handled separately by clearSharedHistory for its numa partitioning, and the NNUE
 // refreshTable is untouched). mainHistory=-5, captureHistory=-699, ttMoveHistory=0,
 // continuationCorrectionHistory=5, continuationHistory=-552.
-pub fn clearWorkerHistories(worker_ptr: *anyopaque) void {
-    // Construction/clear-time boundary: main.zig + worker_native_construct hold the
-    // worker as a raw buffer, so this hook keeps the *anyopaque ABI and casts once.
-    const wl: *WorkerLayout = @ptrCast(@alignCast(worker_ptr));
+pub fn clearWorkerHistories(wl: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(wl);
     for (&w.main_history) |*e| e.* = -5;
     for (&w.capture_history) |*e| e.* = -699;
