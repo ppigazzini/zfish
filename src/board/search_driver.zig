@@ -288,8 +288,7 @@ fn workerTT(worker: *const anyopaque) *graph_layout.TranspositionTable {
 }
 
 // Per-search reset: clear the worker's accumulator stack + last-iteration PV.
-fn ssPrologue(worker: *anyopaque) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+fn ssPrologue(wl: *graph_layout.WorkerLayout) void {
     nnue_acc.stackReset(&wl.accumulator_stack);
     wl.last_iteration_pv.length = 0;
 }
@@ -309,33 +308,32 @@ fn searchIdCollectBmc(worker: *anyopaque) f64 {
     return tot;
 }
 
-fn ssSetStop(worker: *anyopaque) void {
-    workerThreadsPool(worker).stop = 1;
+fn ssSetStop(wl: *const graph_layout.WorkerLayout) void {
+    workerThreadsPool(wl).stop = 1;
 }
 
 // !threads.stop && (manager->ponder || limits.infinite).
-fn ssShouldBusywait(worker: *const anyopaque) u8 {
-    if (workerThreadsPool(worker).stop != 0) return 0;
-    const ponder = workerManager(worker).?.ponder;
-    const infinite = graph_layout.WorkerLayout.fromPtr(@constCast(worker)).limits.infinite;
+fn ssShouldBusywait(wl: *const graph_layout.WorkerLayout) u8 {
+    if (workerThreadsPool(wl).stop != 0) return 0;
+    const ponder = workerManager(wl).?.ponder;
+    const infinite = wl.limits.infinite;
     return if (ponder != 0 or infinite != 0) 1 else 0;
 }
 
-fn ssSetPrevScores(worker: *anyopaque, best: *const anyopaque) void {
+fn ssSetPrevScores(wl: *const graph_layout.WorkerLayout, best: *const graph_layout.WorkerLayout) void {
     const rm0 = workerRootMove0(best);
     const rmv = graph_layout.RootMove.fromAddr(rm0);
-    const sm = workerManager(worker).?;
+    const sm = workerManager(wl).?;
     sm.best_previous_score = rmv.score;
     sm.best_previous_average_score = rmv.average_score;
 }
 
 // best->rootMoves[0].pv.size()==1 && extract_ponder_from_tt(worker->tt, worker->rootPos).
-fn ssPvOneAndPonder(worker: *anyopaque, best: *anyopaque) u8 {
+fn ssPvOneAndPonder(wl: *graph_layout.WorkerLayout, best: *const graph_layout.WorkerLayout) u8 {
     const rm0 = workerRootMove0(best);
     const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
     if (pv.length != 1) return 0;
-    const tp = workerTT(worker);
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    const tp = workerTT(wl);
     return extractPonderFromTt(@ptrCast(pv), tp.table, tp.cluster_count, tp.generation8, &wl.root_pos);
 }
 
@@ -351,8 +349,7 @@ fn optInt(name: []const u8) c_int {
 }
 
 // Per-search context flags read off the worker graph + the native OptionsModel.
-fn ssContext(worker: *anyopaque, out: *SsCtx) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+fn ssContext(wl: *const graph_layout.WorkerLayout, out: *SsCtx) void {
     // root_moves is the {begin,end,cap} vector header; empty iff begin == end.
     const rm_begin = wl.root_moves[0];
     const rm_end = wl.root_moves[1];
@@ -373,8 +370,7 @@ fn ssContext(worker: *anyopaque, out: *SsCtx) void {
 // input from the worker's limits/rootPos + the manager's tm, reads nodestime/Move
 // Overhead/Ponder from the native model, writes the outputs back, and bumps the TT
 // generation. Relocated from main.zig (M16.7).
-fn ssTmInit(worker: *anyopaque) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+fn ssTmInit(wl: *graph_layout.WorkerLayout) void {
     const lim = &wl.limits;
     const smgr = wl.manager.?;
     const tm = &smgr.tm;
@@ -499,23 +495,22 @@ fn searchIdState(worker: *anyopaque, out: *ZfishIdState) void {
 // Start / wait the sibling search threads. The driver reaches the native thread
 // runtime directly now (M16.7): native_thread no longer imports position (its search
 // job is a registered fn-pointer), so position can drive the pool without a cycle.
-fn ssThreadsStart(worker: ?*anyopaque) void {
-    native_thread.startPoolSiblings(graph_layout.WorkerLayout.fromPtr(worker.?).threads);
+fn ssThreadsStart(wl: *const graph_layout.WorkerLayout) void {
+    native_thread.startPoolSiblings(wl.threads);
 }
-fn ssWaitFinished(worker: ?*anyopaque) void {
-    native_thread.waitPoolSiblings(graph_layout.WorkerLayout.fromPtr(worker.?).threads);
+fn ssWaitFinished(wl: *const graph_layout.WorkerLayout) void {
+    native_thread.waitPoolSiblings(wl.threads);
 }
 
 // Worker of the vote-winning thread (Lazy-SMP best-thread selection via the leaf
 // thread_vote model). Relocated from main.zig (M16.7).
-fn ssGetBestThread(worker: ?*anyopaque) ?*anyopaque {
-    const pool = graph_layout.WorkerLayout.fromPtr(worker.?).threads;
+fn ssGetBestThread(wl: *const graph_layout.WorkerLayout) ?*graph_layout.WorkerLayout {
+    const pool = wl.threads;
     return @ptrFromInt(thread_vote.bestThreadWorker(pool));
 }
 
 // nodestime available-nodes advance (tm.advance_nodes_time). Relocated from main.zig (M16.7).
-fn ssNpmsecAdvance(worker: *anyopaque) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+fn ssNpmsecAdvance(wl: *const graph_layout.WorkerLayout) void {
     const avail = &wl.manager.?.tm.available_nodes;
     const us: usize = sideToMove(&wl.root_pos);
     const inc = wl.limits.inc[us];
@@ -527,46 +522,47 @@ fn ssNpmsecAdvance(worker: *anyopaque) void {
 // the leaf helpers run the individual time-management, thread-pool, skill, and
 // UCI-output operations.
 pub fn workerStartSearching(worker: ?*anyopaque) void {
-    ssPrologue(worker.?);
+    const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker.?));
+    ssPrologue(wl);
 
     var ctx: SsCtx = undefined;
-    ssContext(worker.?, &ctx);
+    ssContext(wl, &ctx);
 
     if (ctx.is_mainthread == 0) {
         _ = iterativeDeepening(worker.?);
         return;
     }
 
-    ssTmInit(worker.?);
+    ssTmInit(wl);
 
     if (ctx.root_moves_empty != 0) {
-        ssEmitNoMoves(worker);
+        ssEmitNoMoves(wl);
         return;
     }
 
-    ssThreadsStart(worker);
+    ssThreadsStart(wl);
     var uci_pv_sent = iterativeDeepening(worker.?) != 0;
 
-    while (ssShouldBusywait(worker.?) != 0) {}
+    while (ssShouldBusywait(wl) != 0) {}
 
-    ssSetStop(worker.?);
-    ssWaitFinished(worker);
+    ssSetStop(wl);
+    ssWaitFinished(wl);
 
-    if (ctx.npmsec != 0) ssNpmsecAdvance(worker.?);
+    if (ctx.npmsec != 0) ssNpmsecAdvance(wl);
 
-    var best = worker;
+    var best: ?*graph_layout.WorkerLayout = wl;
     if (ctx.limits_depth == 0 and ctx.skill_enabled == 0)
-        best = ssGetBestThread(worker);
+        best = ssGetBestThread(wl);
 
-    ssSetPrevScores(worker.?, best.?);
+    ssSetPrevScores(wl, best.?);
 
-    if (ssPvOneAndPonder(worker.?, best.?) != 0)
+    if (ssPvOneAndPonder(wl, best.?) != 0)
         uci_pv_sent = false;
 
-    if (!uci_pv_sent or best != worker)
-        ssEmitPv(worker, best);
+    if (!uci_pv_sent or best != wl)
+        ssEmitPv(wl, best);
 
-    ssEmitBestmove(worker, best);
+    ssEmitBestmove(wl, best);
 }
 
 // One-shot fetch of the Worker state the inlined search needs, all stable for the
