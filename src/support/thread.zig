@@ -125,7 +125,7 @@ const RankedRootMove = struct {
 };
 
 const RootSetupInput = struct {
-    limits: *const anyopaque,
+    limits: *const graph_layout.LimitsType,
     root_moves: *const anyopaque,
     fen_ptr: [*]const u8,
     fen_len: usize,
@@ -192,10 +192,10 @@ fn rootMovesDestroy(ptr: ?*anyopaque) void {
 // the worker's limits member. LimitsType is a native struct now, so copy by field rather
 // than a byte range; searchmoves is deliberately left as the worker's own (the search
 // reads the worker's, always empty on the gated single-node path).
-fn workerSetLimits(thread: *anyopaque, src_limits: *const anyopaque) void {
+fn workerSetLimits(thread: *anyopaque, src_limits: *const graph_layout.LimitsType) void {
     const worker = graph_layout.Thread.fromPtr(thread).worker;
     const dst = &graph_layout.WorkerLayout.fromAddr(worker).limits;
-    const src = graph_layout.LimitsType.fromPtr(@constCast(src_limits));
+    const src = src_limits;
     dst.time = src.time;
     dst.inc = src.inc;
     dst.npmsec = src.npmsec;
