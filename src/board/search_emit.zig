@@ -31,9 +31,11 @@ const wdlMaterial = position_query.wdlMaterial;
 fn optInt(name: []const u8) c_int {
     return option_port.intByName(name);
 }
-fn workerRootMove0(wl: *const graph_layout.WorkerLayout) usize {
-    // root_moves is the {begin,end,cap} vector header; [0] is the begin pointer.
-    return wl.root_moves[0];
+fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootMove {
+    // root_moves is the {begin,end,cap} vector header; [0] is the first element's
+    // address. Return the typed first RootMove via the graph adapter so callers read
+    // fields directly instead of each re-doing RootMove.fromAddr.
+    return graph_layout.RootMove.fromAddr(wl.root_moves[0]);
 }
 fn workerRootMoveAt(wl: *const graph_layout.WorkerLayout, index: usize) usize {
     // root_moves[0] is the vector's begin pointer; stride by root_move_size.
@@ -132,8 +134,7 @@ pub fn ssEmitNoMoves(worker: ?*graph_layout.WorkerLayout) void {
 // "bestmove X[ ponder Y]" from best's first RootMove PV. No-op in quiet mode.
 pub fn ssEmitBestmove(worker: ?*graph_layout.WorkerLayout, best: ?*graph_layout.WorkerLayout) void {
     if (uci_output.isQuiet()) return;
-    const rm0 = workerRootMove0(best.?);
-    const pv = &graph_layout.RootMove.fromAddr(rm0).pv;
+    const pv = &workerRootMove0(best.?).pv;
     const root_pos = &worker.?.root_pos;
     const chess960 = isChess960(root_pos);
 

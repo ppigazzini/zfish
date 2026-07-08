@@ -60,11 +60,11 @@ const CommandKind = enum {
 // move views directly (M16.5) rather than through a duplicate C-ABI-mirror struct.
 const ByteView = engine_mod.ByteView;
 
-// Build the native LimitsType from the parsed UCI `go` args (including the libc++
-// searchmoves std::vector<std::string>) and hand it to the engine go driver. Relocated
-// from main.zig (M16.7): startTime is stamped here (earliest point), so the info-line
-// elapsed/nps are correct; the searchmoves element buffer is freed after start_thinking
-// deep-copied the limits into the workers (moves are SSO -- no per-string heap).
+// Build the native LimitsType from the parsed UCI `go` args (including the
+// searchmoves list, now Zig-owned graph_layout.SearchMoveText records -- M17.6) and
+// hand it to the engine go driver. Relocated from main.zig (M16.7): startTime is
+// stamped here (earliest point), so the info-line elapsed/nps are correct; the
+// searchmoves element buffer is freed after start_thinking has read it.
 fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void {
     var limits: graph_layout.LimitsType = std.mem.zeroes(graph_layout.LimitsType);
     limits.start_time = clock.now();
