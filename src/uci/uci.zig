@@ -65,7 +65,7 @@ const ByteView = engine_mod.ByteView;
 // from main.zig (M16.7): startTime is stamped here (earliest point), so the info-line
 // elapsed/nps are correct; the searchmoves element buffer is freed after start_thinking
 // deep-copied the limits into the workers (moves are SSO -- no per-string heap).
-fn goParsed(engine_ptr: *anyopaque, parsed: ParsedLimits) void {
+fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void {
     var limits: graph_layout.LimitsType = std.mem.zeroes(graph_layout.LimitsType);
     const base: [*]u8 = @ptrCast(&limits);
     limits.start_time = clock.now();
@@ -117,7 +117,7 @@ fn goParsed(engine_ptr: *anyopaque, parsed: ParsedLimits) void {
     if (sm_elems) |e| std.c.free(e);
 }
 
-pub fn dispatchCommand(engine: *anyopaque, input: []const u8) DispatchResult {
+pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) DispatchResult {
     const trimmed = trimAsciiWhitespace(input);
     if (trimmed.len == 0 or trimmed[0] == '#')
         return .{ .should_quit = 0 };
@@ -246,7 +246,7 @@ fn classifyCommandToken(token: []const u8) CommandKind {
     return .unknown;
 }
 
-fn applySetoption(engine: *anyopaque, trimmed: []const u8) void {
+fn applySetoption(engine: *native_engine.NativeEngine, trimmed: []const u8) void {
     const parsed = option_port.parseSetOption(trimmed);
     defer freeMaybeCString(parsed.name);
     defer freeMaybeCString(parsed.value);
@@ -266,7 +266,7 @@ fn applySetoption(engine: *anyopaque, trimmed: []const u8) void {
     );
 }
 
-fn applyPosition(engine: *anyopaque, trimmed: []const u8) void {
+fn applyPosition(engine: *native_engine.NativeEngine, trimmed: []const u8) void {
     const parsed = parsePosition(trimmed);
     defer freeMaybeCString(parsed.fen);
     defer freeMaybeCString(parsed.moves);
@@ -295,7 +295,7 @@ fn applyPosition(engine: *anyopaque, trimmed: []const u8) void {
     }
 }
 
-fn applyGo(engine: *anyopaque, trimmed: []const u8) void {
+fn applyGo(engine: *native_engine.NativeEngine, trimmed: []const u8) void {
     const limits = parseLimits(trimmed);
     defer freeMaybeCString(limits.searchmoves);
 
@@ -333,8 +333,11 @@ fn isHelpToken(token: []const u8) bool {
 }
 
 pub fn loopRuntime(uci_ptr: *anyopaque) void {
+    // Single erasure boundary: main hands the engine as *anyopaque; the whole UCI
+    // dispatch below runs on the typed *NativeEngine handle.
+    const e: *native_engine.NativeEngine = native_engine.NativeEngine.fromPtr(uci_ptr);
     const allocator = std.heap.c_allocator;
-    const argc = native_engine.NativeEngine.fromPtr(@constCast(uci_ptr)).cliArgc();
+    const argc = e.cliArgc();
 
     if (argc != 1) {
         var command = std.ArrayList(u8).empty;
@@ -342,30 +345,30 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
 
         var index: c_int = 1;
         while (index < argc) : (index += 1) {
-            const arg_ptr = native_engine.NativeEngine.fromPtr(@constCast(uci_ptr)).cliArgAt(index) orelse continue;
+            const arg_ptr = e.cliArgAt(index) orelse continue;
             if (command.items.len != 0) {
                 command.append(allocator, ' ') catch return;
             }
             command.appendSlice(allocator, std.mem.span(arg_ptr)) catch return;
         }
 
-        _ = dispatchCommand(uci_ptr, command.items);
+        _ = dispatchCommand(e, command.items);
         return;
     }
 
     while (true) {
         const command = readCommandLineAlloc() catch {
-            _ = dispatchCommand(uci_ptr, "quit");
+            _ = dispatchCommand(e, "quit");
             return;
         };
         if (command) |line| {
             defer std.heap.c_allocator.free(line);
-            const result = dispatchCommand(uci_ptr, line);
+            const result = dispatchCommand(e, line);
             if (result.should_quit != 0) {
                 return;
             }
         } else {
-            _ = dispatchCommand(uci_ptr, "quit");
+            _ = dispatchCommand(e, "quit");
             return;
         }
     }
@@ -388,7 +391,7 @@ fn readCommandLineAlloc() !?[]u8 {
     return owned;
 }
 
-pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
+pub fn benchRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8) void {
     const engine_ptr = uci_ptr;
 
     const current_fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
@@ -457,7 +460,7 @@ pub fn benchRuntime(uci_ptr: *anyopaque, args: []const u8) void {
     );
 }
 
-pub fn benchmarkRuntime(uci_ptr: *anyopaque, args: []const u8) void {
+pub fn benchmarkRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8) void {
     const warmup_positions: usize = 3;
     const engine_ptr = uci_ptr;
 
