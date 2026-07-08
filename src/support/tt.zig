@@ -68,7 +68,7 @@ pub fn resizeState(
     cluster_count_ptr: *usize,
     generation_ptr: *u8,
     mb: usize,
-    threads: *anyopaque,
+    threads: *graph_layout.ThreadPool,
 ) void {
     memory.alignedLargePagesFree(table_ptr.*);
 
@@ -86,11 +86,11 @@ pub fn clearState(
     table: ?*anyopaque,
     cluster_count: usize,
     generation_ptr: *u8,
-    threads: *anyopaque,
+    threads: *graph_layout.ThreadPool,
 ) void {
     generation_ptr.* = 0;
 
-    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(threads)).numThreads();
+    const thread_count = threads.numThreads();
     if (table == null or cluster_count == 0 or thread_count == 0) {
         return;
     }
