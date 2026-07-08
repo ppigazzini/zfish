@@ -252,11 +252,12 @@ fn checkNullMoveRoundTrip(fen: []const u8) !void {
     const side0 = pos.side_to_move;
 
     var null_st: [state_info_size]u8 align(16) = undefined;
-    position.doNullMove(&p, &null_st);
+    // The test drives raw native-sized storage; cast to the typed move_do API.
+    position.doNullMove(@ptrCast(@alignCast(&p)), @ptrCast(@alignCast(&null_st)));
     try std.testing.expect(pos.side_to_move != side0); // side flipped
     try std.testing.expect(pos.st.key != key0); // key rehashed
 
-    position.undoNullMove(&p);
+    position.undoNullMove(@ptrCast(@alignCast(&p)));
     try std.testing.expectEqual(key0, pos.st.key); // key restored
     try std.testing.expectEqual(side0, pos.side_to_move); // side restored
 }
