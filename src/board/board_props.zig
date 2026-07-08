@@ -20,7 +20,7 @@ const perft_max_depth = 8;
 
 const StateBuf = [state_info_size]u8;
 
-fn perft(pos: *anyopaque, depth: c_int, states: *[perft_max_depth]StateBuf, ply: usize) u64 {
+fn perft(pos: *position.Position, depth: c_int, states: *[perft_max_depth]StateBuf, ply: usize) u64 {
     if (depth <= 0) return 1;
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(pos, &moves);
@@ -43,7 +43,8 @@ fn perftFen(fen: []const u8, chess960: u8, depth: c_int) u64 {
         @panic("perftFen: setPosition failed on a known-legal FEN");
     }
     var states: [perft_max_depth]StateBuf align(64) = undefined;
-    return perft(&p, depth, &states, 0);
+    // The test drives raw native-sized storage; cast to the typed perft helper.
+    return perft(@ptrCast(@alignCast(&p)), depth, &states, 0);
 }
 
 const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
