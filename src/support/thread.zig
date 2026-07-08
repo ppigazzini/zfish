@@ -303,7 +303,7 @@ fn waitMainThread(pool: *anyopaque) void {
     threadWaitFinished(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(0));
 }
 
-fn buildRootFen(pos: *const anyopaque) ?[*:0]u8 {
+fn buildRootFen(pos: *const position_port.Position) ?[*:0]u8 {
     var pieces: [square_count]u8 = undefined;
     position_port.accumulatorSnapshot(pos, &pieces);
     const snapshot = loadPositionSnapshot(pos);
@@ -324,11 +324,11 @@ fn buildRootFen(pos: *const anyopaque) ?[*:0]u8 {
 }
 
 const ScratchPosition = struct {
-    pos: *anyopaque,
+    pos: *position_port.Position,
     storage: *anyopaque,
 
     fn init(root_fen: []const u8, chess960: u8) ScratchPosition {
-        const pos = position_port.create() orelse @panic("OOM");
+        const pos: *position_port.Position = @ptrCast(@alignCast(position_port.create() orelse @panic("OOM")));
         errdefer position_port.destroy(pos);
 
         const storage = state_list.storageCreate() orelse @panic("OOM");
@@ -358,7 +358,7 @@ const ScratchPosition = struct {
     }
 };
 
-fn countPieces(pos: *const anyopaque) usize {
+fn countPieces(pos: *const position_port.Position) usize {
     var pieces: [square_count]u8 = undefined;
     position_port.accumulatorSnapshot(pos, &pieces);
 
@@ -370,7 +370,7 @@ fn countPieces(pos: *const anyopaque) usize {
     return count;
 }
 
-fn loadTbConfig(options: *const anyopaque, pos: *const anyopaque) TbConfig {
+fn loadTbConfig(options: *const anyopaque, pos: *const position_port.Position) TbConfig {
     _ = options; // syzygy options now read from the native option model, not this pointer
     const snapshot = loadPositionSnapshot(pos);
     var config = TbConfig{
@@ -395,7 +395,7 @@ fn loadTbConfig(options: *const anyopaque, pos: *const anyopaque) TbConfig {
     return config;
 }
 
-fn probePosition(pos: *const anyopaque) TablebaseProbe {
+fn probePosition(pos: *const position_port.Position) TablebaseProbe {
     const snapshot = loadPositionSnapshot(pos);
     const fen_ptr = buildRootFen(pos) orelse @panic("OOM");
     defer c.free(@ptrCast(fen_ptr));
@@ -494,7 +494,7 @@ fn rankRootMovesDtz(
     return .success;
 }
 
-fn loadPositionSnapshot(pos: *const anyopaque) PositionSnapshot {
+fn loadPositionSnapshot(pos: *const position_port.Position) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
     position_port.fillSnapshot(pos, &snapshot);
     return snapshot;
@@ -556,7 +556,7 @@ fn stableSortRankedMovesByTbRank(ranked_moves: []RankedRootMove) void {
 fn buildRootMoves(
     allocator: std.mem.Allocator,
     options: *const anyopaque,
-    pos: *const anyopaque,
+    pos: *const position_port.Position,
     root_fen: []const u8,
     chess960: u8,
     move_raws: []const u16,
@@ -715,7 +715,7 @@ fn workerSearchEntry(ctx: ?*anyopaque) void {
 pub fn startThinking(
     pool: *anyopaque,
     options: *const anyopaque,
-    pos: *anyopaque,
+    pos: *position_port.Position,
     limits: *const anyopaque,
     states_slot: *anyopaque,
 ) void {

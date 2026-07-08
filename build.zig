@@ -346,6 +346,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "native_engine", .imp = "misc", .to = "misc" },
         .{ .from = "native_engine", .imp = "state_list", .to = "state_list" },
         .{ .from = "native_engine", .imp = "network", .to = "network" },
+        .{ .from = "native_engine", .imp = "position_types", .to = "position_types" },
         .{ .from = "engine", .imp = "native_engine", .to = "native_engine" },
         .{ .from = "engine", .imp = "numa", .to = "numa" },
         .{ .from = "thread", .imp = "numa", .to = "numa" },
