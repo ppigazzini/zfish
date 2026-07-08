@@ -23,6 +23,7 @@ const graph_layout = @import("graph_layout");
 const misc_port = @import("misc");
 const state_list_port = @import("state_list"); // native StateList (states crack)
 const network_port = @import("network");
+const position_types = @import("position_types");
 
 // ---- the member heap allocators -------
 // The trivial raw-heap members (numa_context + options are 1-byte handles never dereferenced;
@@ -124,9 +125,9 @@ pub const NativeEngine = struct {
         return self.threads.?;
     }
     /// The side Position block (replaces the C++ Engine's pos member); engine-independent.
-    pub fn positionPtr(self: *NativeEngine) *anyopaque {
+    pub fn positionPtr(self: *NativeEngine) *position_types.Position {
         _ = self;
-        return @ptrCast(&side_pos_storage);
+        return @ptrCast(@alignCast(&side_pos_storage));
     }
     /// The side TranspositionTable block (replaces the C++ Engine's tt member).
     pub fn ttPtr(self: *NativeEngine) *anyopaque {
