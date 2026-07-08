@@ -11,6 +11,7 @@
 // unchanged.
 
 const search = @import("search");
+const graph_layout = @import("graph_layout");
 const search_common = @import("search_common");
 const shared_history = @import("shared_history");
 const worker_histories = @import("worker_histories");
@@ -19,6 +20,7 @@ const position_types = @import("position_types");
 const board_core = @import("board_core");
 
 const WorkerHistories = worker_histories.WorkerHistories;
+const WorkerLayout = graph_layout.WorkerLayout;
 const Position = position_types.Position;
 const SearchStack = search_types.SearchStack;
 const hist_uint16 = worker_histories.hist_uint16;
@@ -41,7 +43,7 @@ const sq_none: u8 = 64;
 // History-update functions, moved verbatim from search_driver.zig (M17.3t).  //
 // ======================================================================== //
 pub fn updateQuietHistoriesWorker(
-    worker_ptr: *anyopaque,
+    worker_ptr: *WorkerLayout,
     pos_ptr: *const anyopaque,
     ss_ptr: *const SearchStack,
     move: u16,
@@ -67,7 +69,7 @@ pub fn updateQuietHistoriesWorker(
 // correction_history to &continuationCorrectionHistory[pc][to]. The null move
 // and the iterative_deepening sentinels pass all-zero indices (NO_PIECE), which
 // resolve to the table bases. Zig owns the Worker-table address arithmetic.
-pub fn setContHist(worker_ptr: *anyopaque, ss_ptr: *SearchStack, in_check: u8, capture: u8, pc: u8, to: u8) void {
+pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: u8, capture: u8, pc: u8, to: u8) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const ss = ss_ptr;
     const ch_block = (@as(usize, in_check) * 2 + capture) * hist_pieceto +
@@ -80,7 +82,7 @@ pub fn setContHist(worker_ptr: *anyopaque, ss_ptr: *SearchStack, in_check: u8, c
 
 // iterative_deepening() per-iteration main-history decay, now addressed through
 // the Worker mirror: (v + 5) * 789 / 1024 toward zero over the whole table.
-pub fn ageMainHistory(worker_ptr: *anyopaque) void {
+pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     for (&w.main_history) |*e| {
         const v: c_int = e.*;
@@ -90,7 +92,7 @@ pub fn ageMainHistory(worker_ptr: *anyopaque) void {
 
 // iterative_deepening() per-search lowPlyHistory reset: lowPlyHistory.fill(100)
 // over the whole [5][65536] table, via the Worker mirror.
-pub fn fillLowPlyHistory(worker_ptr: *anyopaque) void {
+pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     for (&w.low_ply_history) |*e| e.* = 100;
 }
@@ -100,7 +102,10 @@ pub fn fillLowPlyHistory(worker_ptr: *anyopaque) void {
 // refreshTable is untouched). mainHistory=-5, captureHistory=-699, ttMoveHistory=0,
 // continuationCorrectionHistory=5, continuationHistory=-552.
 pub fn clearWorkerHistories(worker_ptr: *anyopaque) void {
-    const w: *WorkerHistories = workerHistories(worker_ptr);
+    // Construction/clear-time boundary: main.zig + worker_native_construct hold the
+    // worker as a raw buffer, so this hook keeps the *anyopaque ABI and casts once.
+    const wl: *WorkerLayout = @ptrCast(@alignCast(worker_ptr));
+    const w: *WorkerHistories = workerHistories(wl);
     for (&w.main_history) |*e| e.* = -5;
     for (&w.capture_history) |*e| e.* = -699;
     w.tt_move_history = 0;
@@ -152,7 +157,7 @@ pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, b
 }
 
 pub fn updateAllStats(
-    worker_ptr: *anyopaque,
+    worker_ptr: *WorkerLayout,
     pos_ptr: *anyopaque,
     ss_ptr: *const SearchStack,
     best_move: u16,
@@ -228,7 +233,7 @@ const correction_history_limit: c_int = 1024;
 // the shared block) and owns the bonus weighting, gravity, and the stack-
 // relative continuation correction writes.
 pub fn updateCorrectionHistory(
-    worker_ptr: *anyopaque,
+    worker_ptr: *WorkerLayout,
     pos_ptr: *const anyopaque,
     ss_ptr: *const SearchStack,
     bonus: c_int,

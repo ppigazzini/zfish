@@ -22,8 +22,8 @@ const mt_castling = board_core.mt_castling;
 const mt_en_passant = board_core.mt_en_passant;
 const queen_pt = board_core.queen_pt;
 
-pub inline fn workerHistories(worker_ptr: *anyopaque) *WorkerHistories {
-    return &graph_layout.WorkerLayout.fromPtr(worker_ptr).histories;
+pub inline fn workerHistories(wl: *graph_layout.WorkerLayout) *WorkerHistories {
+    return &wl.histories;
 }
 
 pub fn captureStage(pos: *const Position, m: u16) bool {

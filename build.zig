@@ -278,6 +278,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "history", .imp = "search_types", .to = "search_types" },
         .{ .from = "history", .imp = "position_types", .to = "position_types" },
         .{ .from = "history", .imp = "board_core", .to = "board_core" },
+        .{ .from = "history", .imp = "graph_layout", .to = "graph_layout" },
         .{ .from = "search_common", .imp = "graph_layout", .to = "graph_layout" },
         .{ .from = "search_common", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "search_common", .imp = "position_types", .to = "position_types" },
