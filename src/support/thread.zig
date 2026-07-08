@@ -846,16 +846,16 @@ pub fn tbHits(pool: *graph_layout.ThreadPool) u64 {
     return graph_layout.poolTbHits(pool);
 }
 
-pub fn startSearching(pool: *anyopaque) void {
-    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
+pub fn startSearching(pool: *graph_layout.ThreadPool) void {
+    const thread_count = pool.numThreads();
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
-        threadStartSearching(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
+        threadStartSearching(pool.threadAtPtr(index));
     }
 }
 
 // Wait until one thread's worker finishes its current search (native ThreadPool op).
-pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
+pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
     native_threadpool.waitThread(pool, thread_id);
 }
 
