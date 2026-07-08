@@ -619,12 +619,12 @@ pub fn nextPowerOfTwo(count: u64) usize {
 }
 
 pub fn reconfigure(
-    pool: *anyopaque,
+    pool: *graph_layout.ThreadPool,
     numa_config: *const anyopaque,
     shared_state: *const anyopaque,
     update_context: *const anyopaque,
 ) void {
-    if (graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads() > 0) {
+    if (pool.numThreads() > 0) {
         waitMainThread(pool);
         native_threadpool.clear(pool);
     }
@@ -865,15 +865,15 @@ pub fn nativeThreadpoolClear(pool: *anyopaque) void {
     native_threadpool.clear(pool);
 }
 
-pub fn waitForSearchFinished(pool: *anyopaque) void {
-    const thread_count = graph_layout.ThreadPool.fromPtr(@constCast(pool)).numThreads();
+pub fn waitForSearchFinished(pool: *graph_layout.ThreadPool) void {
+    const thread_count = pool.numThreads();
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
-        threadWaitFinished(graph_layout.ThreadPool.fromPtr(@constCast(pool)).threadAtPtr(index));
+        threadWaitFinished(pool.threadAtPtr(index));
     }
 }
 
-pub fn ensureNetworkReplicated(pool: *anyopaque) void {
+pub fn ensureNetworkReplicated(pool: *graph_layout.ThreadPool) void {
     // The NNUE weights are always resident in native storage (no C++ Network numa
     // replica), so Worker::ensure_network_replicated is a no-op.
     _ = pool;
