@@ -72,8 +72,7 @@ pub fn isRepetition(pos: *const Position, ply: c_int) bool {
     return rep != 0 and rep < ply;
 }
 
-pub fn hasRepeated(pos_ptr: *const anyopaque) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn hasRepeated(pos: *const Position) bool {
     var stc: *const StateInfo = pos.st;
     var end = @min(pos.st.rule50, pos.st.plies_from_null);
     while (end >= 4) : (end -= 1) {
