@@ -63,8 +63,8 @@ pub fn loadNetworkEngine(engine_ptr: *native_engine.NativeEngine, evalfile_path:
     network_port.load(@constCast(e.networkPtr()), bdir_slice.ptr, bdir_slice.len, evalfile_path.ptr, evalfile_path.len);
 }
 
-pub fn saveNetworkEngine(engine_ptr: *native_engine.NativeEngine, filename_opt: ?[]const u8) void {
+pub fn saveNetworkEngine(filename_opt: ?[]const u8) void {
     const has_filename: u8 = if (filename_opt != null) 1 else 0;
     const filename = filename_opt orelse "";
-    _ = network_port.save(engine_ptr.networkPtr(), has_filename, filename.ptr, filename.len);
+    _ = network_port.save(has_filename, filename.ptr, filename.len);
 }
