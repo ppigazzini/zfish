@@ -123,7 +123,7 @@ fn workerClearNative(worker: *anyopaque) void {
     position_port.clearSharedHistory(shared_history, wl.numa_thread_idx, wl.numa_total);
     search_port.fillReductions(&wl.reductions, 256);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));
-    nnue_accumulator_port.clearRefreshCache(&wl.refresh_table, biases);
+    nnue_accumulator_port.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
 
 // operatorNew/operatorDelete: the matched alloc/free family for the native

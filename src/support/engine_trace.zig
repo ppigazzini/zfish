@@ -123,7 +123,7 @@ pub fn accumulatorCachesCreate() ?*anyopaque {
         std.c.free(buf);
         return null;
     }));
-    nnue_acc.clearRefreshCache(buf, biases);
+    nnue_acc.clearRefreshCache(@ptrCast(buf), biases);
     return buf;
 }
 fn accumulatorCachesDestroy(caches: ?*anyopaque) void {

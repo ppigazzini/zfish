@@ -27,7 +27,14 @@ const cache_entry_pieces_offset = cache_entry_psqt_offset + psqt_buckets * @size
 const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
 const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
 
-pub fn cacheEntry(cache: *anyopaque, king_square: u8, perspective: u8) *anyopaque {
+/// Opaque handles (M18.4-B4). The refresh cache is a raw byte arena (the
+/// per-(king-square,perspective) finny table); its entries are byte slots within it.
+/// Distinct handle types so the eval can't confuse a cache with a stack/FT handle,
+/// while the accessors below reinterpret to bytes exactly as before.
+pub const RefreshCache = opaque {};
+pub const CacheEntry = opaque {};
+
+pub fn cacheEntry(cache: *RefreshCache, king_square: u8, perspective: u8) *CacheEntry {
     return @ptrCast(cacheBytesMut(cache) +
         ((@as(usize, king_square) * color_count + @as(usize, perspective)) * cache_entry_bytes));
 }
@@ -37,7 +44,7 @@ pub fn cacheEntry(cache: *anyopaque, king_square: u8, perspective: u8) *anyopaqu
 // biases, and the rest of the entry (psqt, pieces, pieceBB) zeroed. Mirrors the
 // C++ Entry::clear (accumulation = biases; memset from psqtAccumulation to end).
 // The biases pointer is passed in by the caller.
-pub fn clearRefreshCache(cache: *anyopaque, biases: [*]const i16) void {
+pub fn clearRefreshCache(cache: *RefreshCache, biases: [*]const i16) void {
     const biases_bytes: [*]const u8 = @ptrCast(biases);
     var ks: usize = 0;
     while (ks < square_count) : (ks += 1) {
@@ -50,39 +57,39 @@ pub fn clearRefreshCache(cache: *anyopaque, biases: [*]const i16) void {
     }
 }
 
-fn cacheBytesMut(cache: *anyopaque) [*]u8 {
+fn cacheBytesMut(cache: *RefreshCache) [*]u8 {
     return @ptrCast(cache);
 }
 
-fn cacheEntryBytesMut(entry: *anyopaque) [*]u8 {
+fn cacheEntryBytesMut(entry: *CacheEntry) [*]u8 {
     return @ptrCast(entry);
 }
 
-pub fn cacheEntryAccumulationConst(entry: *const anyopaque) []const i16 {
+pub fn cacheEntryAccumulationConst(entry: *const CacheEntry) []const i16 {
     const ptr: [*]const i16 = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(entry))));
     return ptr[0..half_dimensions];
 }
 
-pub fn cacheEntryAccumulationMut(entry: *anyopaque) []i16 {
+pub fn cacheEntryAccumulationMut(entry: *CacheEntry) []i16 {
     const ptr: [*]i16 = @ptrCast(@alignCast(cacheEntryBytesMut(entry)));
     return ptr[0..half_dimensions];
 }
 
-pub fn cacheEntryPsqtConst(entry: *const anyopaque) []const i32 {
+pub fn cacheEntryPsqtConst(entry: *const CacheEntry) []const i32 {
     const ptr: [*]const i32 = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(entry)) + cache_entry_psqt_offset));
     return ptr[0..psqt_buckets];
 }
 
-pub fn cacheEntryPsqtMut(entry: *anyopaque) []i32 {
+pub fn cacheEntryPsqtMut(entry: *CacheEntry) []i32 {
     const ptr: [*]i32 = @ptrCast(@alignCast(cacheEntryBytesMut(entry) + cache_entry_psqt_offset));
     return ptr[0..psqt_buckets];
 }
 
-pub fn cacheEntryPiecesMut(entry: *anyopaque) []u8 {
+pub fn cacheEntryPiecesMut(entry: *CacheEntry) []u8 {
     return (cacheEntryBytesMut(entry) + cache_entry_pieces_offset)[0..square_count];
 }
 
-pub fn setCacheEntryPieceBb(entry: *anyopaque, piece_bb: u64) void {
+pub fn setCacheEntryPieceBb(entry: *CacheEntry, piece_bb: u64) void {
     const bytes = cacheEntryBytesMut(entry);
     std.mem.writeInt(u64, bytes[cache_entry_piece_bb_offset..][0..@sizeOf(u64)], piece_bb, .little);
 }

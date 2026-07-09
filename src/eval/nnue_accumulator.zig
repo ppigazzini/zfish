@@ -34,6 +34,8 @@ const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqt
 // Refresh cache / finny tables live in the nnue_refresh_cache leaf (M17.4f);
 // accessors aliased for the refresh path, clearRefreshCache re-exported (external).
 const nnue_refresh_cache = @import("nnue_refresh_cache");
+/// Re-export the opaque cache handle so callers can type it (M18.4-B4).
+pub const RefreshCache = nnue_refresh_cache.RefreshCache;
 pub const clearRefreshCache = nnue_refresh_cache.clearRefreshCache;
 const cacheEntry = nnue_refresh_cache.cacheEntry;
 const cacheEntryAccumulationConst = nnue_refresh_cache.cacheEntryAccumulationConst;
@@ -158,7 +160,7 @@ pub fn evaluate(
     stack: *anyopaque,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
-    cache: *anyopaque,
+    cache: *RefreshCache,
 ) void {
     evaluateSide(psq_feature, white, stack, pos, feature_transformer, cache);
     evaluateSide(psq_feature, black, stack, pos, feature_transformer, cache);
@@ -185,7 +187,7 @@ pub fn transformBucket(
     stack: *anyopaque,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
-    cache: *anyopaque,
+    cache: *RefreshCache,
     bucket: usize,
     stm: u8,
     output: [*]u8,
@@ -277,7 +279,7 @@ fn evaluateSide(
     stack: *anyopaque,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
-    cache: *anyopaque,
+    cache: *RefreshCache,
 ) void {
     const last_usable = findLastUsable(feature_kind, stack, perspective);
     const size = stackSize(stack);
@@ -328,7 +330,7 @@ fn refreshLatest(
     stack: *anyopaque,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
-    cache: *anyopaque,
+    cache: *RefreshCache,
 ) void {
     const king_square = loadBridgeSnapshot(pos).king_square[perspective];
 
@@ -345,7 +347,7 @@ fn refreshLatestPsq(
     stack: *anyopaque,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
-    cache: *anyopaque,
+    cache: *RefreshCache,
 ) void {
     const latest_index = stackSize(stack) - 1;
     const entry_ptr = cacheEntry(cache, king_square, perspective);
