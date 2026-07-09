@@ -2,9 +2,12 @@
 //
 // The read-only "is this move legal / winning" side of the board, carved out of
 // position.zig: attackersTo, legal, seeGe, pseudoLegal, givesCheck,
-// attackersToExist. Every function takes a *const Position (via *anyopaque, the
-// port ABI) and only reads it, so this is a leaf over board_core + bitboard +
-// movegen + position_types -- it never imports position.zig, so no cycle.
+// attackersToExist. All take a typed *const Position and only read it, except
+// legal, which stays *const anyopaque because it is registered as the
+// move_is_legal_fn snapshot hook (its signature is locked to the port ABI); it
+// casts once at the top and threads the typed pos to attackersToExist. This is a
+// leaf over board_core + bitboard + movegen + position_types -- it never imports
+// position.zig, so no cycle.
 // position.zig re-exports all six, so the search/movegen call sites and the
 // move_is_legal_fn hook keep resolving through the position surface.
 
@@ -49,8 +52,8 @@ const rankOf = board_core.rankOf;
 const colorOfPiece = board_core.colorOfPiece;
 const isEmpty = board_core.isEmpty;
 
-pub fn attackersTo(pos_ptr: *const anyopaque, s: u8, occupied: u64) u64 {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn attackersTo(pos_ptr: *const Position, s: u8, occupied: u64) u64 {
+    const pos = pos_ptr;
     const rook_queen = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
     const bishop_queen = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
     const white_pawns = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
@@ -77,14 +80,14 @@ pub fn legal(pos_ptr: *const anyopaque, m: u16) bool {
         const step: i8 = if (to > from) -1 else 1; // WEST : EAST
         var s: u8 = to;
         while (s != from) : (s = @intCast(@as(i16, s) + step)) {
-            if (attackersToExist(pos_ptr, s, all, them)) return false;
+            if (attackersToExist(pos, s, all, them)) return false;
         }
         if (!pos.chess960) return true;
         return (pos.st.blockers_for_king[us] & sqBb(orig_to)) == 0;
     }
 
     if (pieceTypeOn(pos, from) == king_pt) {
-        return !attackersToExist(pos_ptr, orig_to, all ^ sqBb(from), them);
+        return !attackersToExist(pos, orig_to, all ^ sqBb(from), them);
     }
 
     return (pos.st.blockers_for_king[us] & sqBb(from)) == 0 or
@@ -263,8 +266,8 @@ pub fn givesCheck(pos_ptr: *const Position, m: u16) bool {
     }
 }
 
-pub fn attackersToExist(pos_ptr: *const anyopaque, s: u8, occupied: u64, c: u8) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn attackersToExist(pos_ptr: *const Position, s: u8, occupied: u64, c: u8) bool {
+    const pos = pos_ptr;
     const them = pos.by_color_bb[c];
     const rook_queen = them & (pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt]);
     const bishop_queen = them & (pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt]);
