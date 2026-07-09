@@ -24,6 +24,11 @@ pub const hist_square_nb: usize = 64;
 pub const hist_piece_type_nb: usize = 8;
 pub const hist_pieceto: usize = hist_piece_nb * hist_square_nb; // PieceToHistory page = [16][64]
 
+// One [16][64] continuation-history page: a stat_entry-per-(piece,to) table. The
+// search stack's continuation_history points at one such page (indexed pc*64+to),
+// so this is the concrete type that replaces the erased ?*anyopaque handle (M18.7).
+pub const PieceToHistory = [hist_pieceto]i16;
+
 pub const WorkerHistories = struct {
     main_history: [hist_color_nb * hist_uint16]i16, // ButterflyHistory [2][65536]
     low_ply_history: [hist_low_ply * hist_uint16]i16, // LowPlyHistory [5][65536]
