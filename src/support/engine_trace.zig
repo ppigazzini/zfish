@@ -108,7 +108,7 @@ pub const NnueTraceInput = struct {
 fn accumulatorStackCreate() ?*anyopaque {
     const buf = std.c.malloc(graph_layout.accumulator_stack_size) orelse return null;
     @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.accumulator_stack_size], 0);
-    nnue_acc.stackReset(buf);
+    nnue_acc.stackReset(@ptrCast(buf));
     return buf;
 }
 fn accumulatorStackDestroy(stack: ?*anyopaque) void {
@@ -265,7 +265,7 @@ fn buildNnueTrace(
 ) ?[*:0]u8 {
     const accumulators = accumulatorStackCreate() orelse return null;
     defer accumulatorStackDestroy(accumulators);
-    nnue_acc.stackReset(accumulators);
+    nnue_acc.stackReset(@ptrCast(accumulators));
 
     const trace = network_port.traceEvaluate(pos, accumulators, caches);
     var psqt_cp: [layer_stacks]c_int = undefined;
