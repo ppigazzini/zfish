@@ -38,6 +38,7 @@ const position_types = @import("position_types");
 const search_types = @import("search_types");
 const search_ctx = @import("search_ctx");
 const search_id = @import("search_id");
+const search_acc = @import("search_acc");
 const fen = @import("fen");
 const board_core = @import("board_core");
 const legality = @import("legality");
@@ -438,87 +439,16 @@ const QCtx = search_ctx.QCtx;
 
 // Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
 // only for UCI reporting. Bumps the cached field when this ply is deeper.
-inline fn updateSelDepth(ctx: *const QCtx, ply: c_int) void {
-    if (ctx.sel_depth.* < ply + 1) ctx.sel_depth.* = ply + 1;
-}
-
-// Worker::reduction inlined: the LMR base reduction from the per-thread reductions
-// table, the root delta, and the improving flag. Mirrors search.cpp exactly with
-// C truncating integer division.
-inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta: c_int) c_int {
-    const reduction_scale = ctx.reductions[@intCast(d)] * ctx.reductions[@intCast(mn)];
-    return reduction_scale - @divTrunc(delta * 617, ctx.root_delta.*) +
-        @divTrunc(@as(c_int, @intFromBool(!i)) * reduction_scale * 194, 512) + 1027;
-}
-
-// Worker::evaluate inlined: run the NNUE forward pass on the current position,
-// then apply the eval scaling. Mirrors Eval::evaluate exactly — material is
-// 534 * pawn count (both colours) + non-pawn material, optimism is indexed by the
-// side to move, and the TB clamp bounds are ±VALUE_TB_WIN_IN_MAX_PLY.
-inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) c_int {
-    const pos = pos_ptr;
-    const out = network_port.evaluate(pos_ptr, ctx.acc_stack, ctx.cache);
-    const pawns = pos.piece_count[1] + pos.piece_count[9];
-    const material = 534 * pawns + pos.st.non_pawn_material[0] + pos.st.non_pawn_material[1];
-    return evaluate_mod.computeValue(.{
-        .psqt = out.psqt,
-        .positional = out.positional,
-        .optimism = ctx.optimism[pos.side_to_move],
-        .material = material,
-        .rule50_count = pos.st.rule50,
-        .value_tb_loss_in_max_ply = -q_value_tb_win,
-        .value_tb_win_in_max_ply = q_value_tb_win,
-    });
-}
-
-// Worker::do_move inlined: count the node, push a fresh accumulator slot, make the
-// move (the Zig make-move records the dirty piece/threats into that slot), then set
-// the Stack's current move and continuation-history pointer. Mirrors search.cpp
-// do_move exactly; capture_stage is read pre-move, dirtyPiece.pc post-move.
-inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr: *StateInfo, gives_check: u8, ss_ptr: *SearchStack) void {
-    const pos = pos_ptr;
-    const ss = ss_ptr;
-    const capture = captureStage(pos, move);
-    ctx.nodes.* +%= 1;
-    const out = nnue_acc.stackPush(@ptrCast(ctx.acc_stack));
-    doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats);
-    const dp: *const DirtyPiece = out.dirty_piece;
-    ss.current_move = move;
-    setContHist(ctx.worker, ss_ptr, @intFromBool(ss.in_check), @intFromBool(capture), dp.pc, moveTo(move));
-}
-
-// Worker::undo_move inlined: unmake the move, then drop the accumulator slot.
-inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16) void {
-    undoMove(pos_ptr, move);
-    nnue_acc.stackPop(@ptrCast(ctx.acc_stack));
-}
-
-// Position-level verification make/unmake used by the qsearch TT-move cutoff.
-// Mirrors Position::do_move(Move, StateInfo&): gives_check is computed here, a
-// fresh DirtyThreats list and a throwaway DirtyPiece are passed as scratch (no
-// accumulator slot is pushed, so the dirty state doMove writes is never
-// consumed). undo is the plain Position-level unmake.
-inline fn verifyDoMove(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
-    var dp: DirtyPiece = undefined;
-    var dts: DirtyThreats = undefined;
-    dts.list_size = 0;
-    doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
-}
-
-inline fn verifyUndoMove(pos_ptr: *Position, move: u16) void {
-    undoMove(pos_ptr, move);
-}
-
-// Is `move` in the legal move list of the current position?
-fn legalContains(pos_ptr: *const Position, move: u16) bool {
-    var buf: [256]u16 = undefined;
-    const n = movegen.generateLegal(pos_ptr, &buf);
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
-        if (buf[i] == move) return true;
-    }
-    return false;
-}
+// Node-level accumulator / do-move / eval helpers moved to the search_acc leaf
+// (M18.7); aliased here so the qsearch/search recursion call sites are unchanged.
+const updateSelDepth = search_acc.updateSelDepth;
+const reductionAcc = search_acc.reductionAcc;
+const evaluateAcc = search_acc.evaluateAcc;
+const doMoveAcc = search_acc.doMoveAcc;
+const undoMoveAcc = search_acc.undoMoveAcc;
+const verifyDoMove = search_acc.verifyDoMove;
+const verifyUndoMove = search_acc.verifyUndoMove;
+const legalContains = search_acc.legalContains;
 
 // RootMove::extract_ponder_from_tt: make the best move, probe the TT for a reply
 // stored there, append it to the PV if it is a legal move, unmake. Returns
