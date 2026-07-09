@@ -144,7 +144,7 @@ pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, b
         if (ss.in_check and b.i > 2) break;
         const ssi: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @as(usize, b.i) * @sizeOf(SearchStack));
         if (moveIsOk(ssi.current_move)) {
-            const cont: [*]i16 = @ptrCast(@alignCast(ssi.continuation_history.?));
+            const cont = ssi.continuation_history.?;
             const entry = &cont[@as(usize, pc) * 64 + to]; // PieceToHistory[pc][to]
             if (entry.* > 0) positive_count += 1;
             const delta = search.conthistDelta(bonus, b.w, positive_count, @intCast(b.i));
@@ -259,8 +259,8 @@ pub fn updateCorrectionHistory(
         const idx = @as(usize, pc) * 64 + to;
         const ss2: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 2 * @sizeOf(SearchStack));
         const ss4: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 4 * @sizeOf(SearchStack));
-        const cc2: [*]i16 = @ptrCast(@alignCast(ss2.continuation_correction_history.?));
-        const cc4: [*]i16 = @ptrCast(@alignCast(ss4.continuation_correction_history.?));
+        const cc2 = ss2.continuation_correction_history.?;
+        const cc4 = ss4.continuation_correction_history.?;
         statsUpdate(&cc2[idx], @divTrunc(bonus * 136, 128), correction_history_limit);
         statsUpdate(&cc4[idx], @divTrunc(bonus * 68, 128), correction_history_limit);
     }

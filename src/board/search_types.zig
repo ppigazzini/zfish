@@ -9,14 +9,15 @@
 
 const std = @import("std");
 const root_move = @import("root_move");
+const worker_histories = @import("worker_histories");
 
 // Memory mirror of the search Stack (src/search.h): the scalar fields the ported
-// search helpers read; the three history pointers are opaque (resolved through the
-// worker/shared-history mirrors).
+// search helpers read. The two continuation pointers are concrete PieceToHistory
+// pages (M18.7 de-erasure); pv stays opaque (resolved through the PV mirror).
 pub const SearchStack = struct {
     pv: ?*anyopaque,
-    continuation_history: ?*anyopaque,
-    continuation_correction_history: ?*anyopaque,
+    continuation_history: ?*worker_histories.PieceToHistory,
+    continuation_correction_history: ?*worker_histories.PieceToHistory,
     ply: c_int,
     current_move: u16,
     excluded_move: u16,

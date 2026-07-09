@@ -458,8 +458,8 @@ fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchStack)
         const idx = @as(usize, pos.board[to]) * 64 + to;
         const ss2: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 2 * @sizeOf(SearchStack));
         const ss4: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 4 * @sizeOf(SearchStack));
-        const cc2: [*]i16 = @ptrCast(@alignCast(ss2.continuation_correction_history.?));
-        const cc4: [*]i16 = @ptrCast(@alignCast(ss4.continuation_correction_history.?));
+        const cc2 = ss2.continuation_correction_history.?;
+        const cc4 = ss4.continuation_correction_history.?;
         cch2 = cc2[idx];
         cch4 = cc4[idx];
     }
@@ -561,7 +561,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha
         futility_base = search.qsearchFutilityBase(ss.static_eval);
     }
 
-    var cont_hist = [1]?*const anyopaque{ss1.continuation_history};
+    var cont_hist = [1]?*const worker_histories.PieceToHistory{ss1.continuation_history};
     const prev_sq: c_int = if (moveIsOk(ss1.current_move)) @intCast(moveTo(ss1.current_move)) else @as(c_int, sq_none);
 
     // Step 5. MovePicker (captures, or evasions when in check).
@@ -814,9 +814,8 @@ inline fn ssSub(ss: *SearchStack, n: usize) *SearchStack {
 inline fn ttMoveHistoryUpdate(w: *WorkerHistories, bonus: c_int) void {
     statsUpdate(&w.tt_move_history, bonus, 8192);
 }
-inline fn contVal(ss_ch: ?*const anyopaque, pc: u8, to: u8) c_int {
-    const p: [*]const i16 = @ptrCast(@alignCast(ss_ch.?));
-    return p[@as(usize, pc) * 64 + to];
+inline fn contVal(ss_ch: ?*const worker_histories.PieceToHistory, pc: u8, to: u8) c_int {
+    return ss_ch.?[@as(usize, pc) * 64 + to];
 }
 
 fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta_in: c_int, depth_in: c_int, cut_node: bool, pv_node: bool, root_node: bool) c_int {
@@ -1061,7 +1060,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
         !qIsDecisive(beta) and qIsValid(tt_value) and !qIsDecisive(tt_value)) return probcut_beta2;
 
     // contHist[6] = {(ss-1)..(ss-6)}.continuation_history.
-    var cont_hist = [6]?*const anyopaque{
+    var cont_hist = [6]?*const worker_histories.PieceToHistory{
         ss1.continuation_history,          ssSub(ss, 2).continuation_history,
         ssSub(ss, 3).continuation_history, ssSub(ss, 4).continuation_history,
         ssSub(ss, 5).continuation_history, ssSub(ss, 6).continuation_history,
