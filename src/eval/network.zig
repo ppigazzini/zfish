@@ -254,7 +254,6 @@ pub fn load(
 }
 
 pub fn save(
-    network: *const anyopaque,
     has_filename: u8,
     filename_ptr: [*]const u8,
     filename_len: usize,
@@ -279,7 +278,7 @@ pub fn save(
         actual_filename = default_name;
     }
 
-    const saved = saveNamed(network, actual_filename);
+    const saved = saveNamed(actual_filename);
     return .{
         .saved = boolToU8(saved),
         .message = if (saved)
@@ -535,8 +534,7 @@ fn loadInternal(network: *anyopaque) void {
 }
 
 // Gather one layer stack's native biases/weights slices (fc_0/fc_1/fc_2).
-fn nativeLayerArrays(network: *const anyopaque, bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
-    _ = network;
+fn nativeLayerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
     var b: [3][]const u8 = undefined;
     var w: [3][]const u8 = undefined;
     var idx: c_int = 0;
@@ -563,12 +561,12 @@ fn serializeFtNative(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
 }
 
 // Serialize one native layer stack into `out`.
-fn serializeLayerNative(network: *const anyopaque, bucket: usize, out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
-    const arr = nativeLayerArrays(network, bucket) orelse return error.NoNetwork;
+fn serializeLayerNative(bucket: usize, out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
+    const arr = nativeLayerArrays(bucket) orelse return error.NoNetwork;
     try nnue_parse.serializeLayer(nnue_hash.architectureHashValue(), arr.b, arr.w, out, a);
 }
 
-fn saveNamed(network: *const anyopaque, filename: []const u8) bool {
+fn saveNamed(filename: []const u8) bool {
     const current_name = nnCurrent();
     if (current_name.len == 0 or std.mem.eql(u8, current_name, none_name)) {
         return false;
@@ -594,7 +592,7 @@ fn saveNamed(network: *const anyopaque, filename: []const u8) bool {
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
         blob.clearRetainingCapacity();
-        serializeLayerNative(network, bucket, &blob, a) catch return false;
+        serializeLayerNative(bucket, &blob, a) catch return false;
         writer.interface.writeAll(blob.items) catch return false;
     }
 

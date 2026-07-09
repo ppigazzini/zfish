@@ -205,7 +205,6 @@ pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) D
         .export_net => {
             const filename = trimAsciiWhitespace(args);
             engine_mod.saveNetworkEngine(
-                engine,
                 if (filename.len != 0) filename else null,
             );
             return .{ .should_quit = 0 };
