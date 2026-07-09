@@ -292,7 +292,7 @@ fn ssPvOneAndPonder(wl: *graph_layout.WorkerLayout, best: *const graph_layout.Wo
     const pv = &workerRootMove0(best).pv;
     if (pv.length != 1) return 0;
     const tp = workerTT(wl);
-    return extractPonderFromTt(@ptrCast(pv), tp.table, tp.cluster_count, tp.generation8, &wl.root_pos);
+    return extractPonderFromTt(pv, tp.table, tp.cluster_count, tp.generation8, &wl.root_pos);
 }
 
 const searchCbTtContext = search_ctx.searchCbTtContext;
@@ -420,8 +420,7 @@ const legalContains = search_acc.legalContains;
 // stored there, append it to the PV if it is a legal move, unmake. Returns
 // whether a ponder move was found (pv length > 1). The tt context (table base,
 // cluster count, generation) is handed over by the caller.
-pub fn extractPonderFromTt(pv_ptr: *anyopaque, table: ?*anyopaque, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
-    const pv: *PVMoves = @ptrCast(@alignCast(pv_ptr));
+pub fn extractPonderFromTt(pv: *PVMoves, table: ?*anyopaque, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
     const move = pv.moves[0];
     var st: StateInfo = undefined;
     verifyDoMove(pos_ptr, move, &st);
@@ -499,8 +498,8 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha
 
     // Step 1. Initialize node (PV).
     if (pv_node) {
-        ss_next.pv = @ptrCast(&pv);
-        pvClear(@ptrCast(@alignCast(ss.pv.?)));
+        ss_next.pv = &pv;
+        pvClear(ss.pv.?);
         updateSelDepth(ctx, ss.ply);
     }
 
@@ -632,7 +631,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha
             best_value = value;
             if (value > alpha) {
                 best_move = move;
-                if (pv_node) pvUpdate(@ptrCast(@alignCast(ss.pv.?)), move, @ptrCast(@alignCast(ss_next.pv.?)));
+                if (pv_node) pvUpdate(ss.pv.?, move, ss_next.pv.?);
                 if (value < beta) alpha = value else break;
             }
         }
@@ -1227,7 +1226,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
         }
 
         if (pv_node and (move_count == 1 or value > alpha)) {
-            ssAdd(ss, 1).pv = @ptrCast(&pv);
+            ssAdd(ss, 1).pv = &pv;
             pvClear(&pv);
             if (move == tt_move and ((qIsValid(tt_value) and qIsDecisive(tt_value) and tt_depth > 0) or tt_depth > 1))
                 new_depth = @max(new_depth, 1);
@@ -1243,7 +1242,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
         if (root_node) {
             // (ss+1)->pv is only valid (non-null) when this move ran a PV search,
             // i.e. move_count == 1 or value > alpha; otherwise it is ignored.
-            const cpv: ?*const PVMoves = if (move_count == 1 or value > alpha) @ptrCast(@alignCast(ssAdd(ss, 1).pv.?)) else null;
+            const cpv: ?*const PVMoves = if (move_count == 1 or value > alpha) ssAdd(ss, 1).pv.? else null;
             rootUpdate(ctx, move, value, ctx.nodes.* - node_count, move_count, alpha, beta, cpv);
         }
 
@@ -1259,8 +1258,8 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
                 // move). Force-unwrapping it here was a latent null-deref (silent
                 // under ReleaseFast, panics under ReleaseSafe/Debug).
                 if (pv_node and !root_node) {
-                    const child_pv: ?*PVMoves = if (ssAdd(ss, 1).pv) |cpv| @ptrCast(@alignCast(cpv)) else null;
-                    pvUpdate(@ptrCast(@alignCast(ss.pv.?)), move, child_pv);
+                    const child_pv = ssAdd(ss, 1).pv;
+                    pvUpdate(ss.pv.?, move, child_pv);
                 }
                 if (value >= beta) {
                     ss.cutoff_cnt += @intFromBool(extension < 2 or pv_node);

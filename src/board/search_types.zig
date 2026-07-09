@@ -15,7 +15,7 @@ const worker_histories = @import("worker_histories");
 // search helpers read. The two continuation pointers are concrete PieceToHistory
 // pages (M18.7 de-erasure); pv stays opaque (resolved through the PV mirror).
 pub const SearchStack = struct {
-    pv: ?*anyopaque,
+    pv: ?*root_move.PVMoves,
     continuation_history: ?*worker_histories.PieceToHistory,
     continuation_correction_history: ?*worker_histories.PieceToHistory,
     ply: c_int,
