@@ -618,7 +618,7 @@ fn networkTransformBucket(
     bucket: usize,
     transformed_ptr: [*]u8,
 ) c_int {
-    const ft = native_ft_ptr_storage orelse @panic("native feature-transformer storage not initialized");
+    const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(native_ft_ptr_storage orelse @panic("native feature-transformer storage not initialized"));
     const stm = pos.side_to_move;
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
 }
