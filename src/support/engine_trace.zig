@@ -163,14 +163,14 @@ pub fn evalTrace(pos: *const position_port.Position, network: *const anyopaque) 
     const caches = accumulatorCachesCreate(network) orelse return null;
     defer accumulatorCachesDestroy(caches);
 
-    const inner_trace_ptr = buildNnueTrace(pos, network, summary, caches) orelse return null;
+    const inner_trace_ptr = buildNnueTrace(pos, summary, caches) orelse return null;
     defer c.free(@ptrCast(inner_trace_ptr));
     const inner_trace = std.mem.span(inner_trace_ptr);
 
     const accumulators = accumulatorStackCreate() orelse return null;
     defer accumulatorStackDestroy(accumulators);
 
-    const nnue_output = network_port.evaluate(network, pos, accumulators, caches);
+    const nnue_output = network_port.evaluate(pos, accumulators, caches);
     const nnue_value = nnue_output.psqt + nnue_output.positional;
     const nnue_white_side = if (summary.side_to_move_white != 0) nnue_value else -nnue_value;
 
@@ -262,7 +262,6 @@ pub fn visualizeEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
 
 fn buildNnueTrace(
     pos: *const position_port.Position,
-    network: *const anyopaque,
     summary: PositionSummary,
     caches: *anyopaque,
 ) ?[*:0]u8 {
@@ -270,7 +269,7 @@ fn buildNnueTrace(
     defer accumulatorStackDestroy(accumulators);
     nnue_acc.stackReset(accumulators);
 
-    const trace = network_port.traceEvaluate(network, pos, accumulators, caches);
+    const trace = network_port.traceEvaluate(pos, accumulators, caches);
     var psqt_cp: [layer_stacks]c_int = undefined;
     var positional_cp: [layer_stacks]c_int = undefined;
 

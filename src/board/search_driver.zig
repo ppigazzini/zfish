@@ -575,12 +575,11 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 // and -- on the main thread -- the SearchManager/TimeManagement/LimitsType time inputs.
 // Relocated from main.zig (M16.7): graph_layout offset reads + the native FT pointer
 // (the network handle is never dereferenced -- weights serve from native storage).
-fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_network: *?*const anyopaque, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
+fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
     const stop = &wl.threads.stop;
 
     out_acc_stack.* = &wl.accumulator_stack;
     out_nodes.* = &wl.nodes;
-    out_network.* = network_port.nativeFtPtr();
     out_cache.* = &wl.refresh_table;
     out_optimism.* = &wl.optimism;
     out_nmp_min_ply.* = &wl.nmp_min_ply;
@@ -698,7 +697,6 @@ const QCtx = struct {
     generation: u8,
     acc_stack: *anyopaque,
     nodes: *u64,
-    network: *const anyopaque,
     cache: *anyopaque,
     optimism: *const [2]c_int,
     nmp_min_ply: *c_int,
@@ -736,7 +734,7 @@ inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta: c_
 // side to move, and the TB clamp bounds are ±VALUE_TB_WIN_IN_MAX_PLY.
 inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) c_int {
     const pos = pos_ptr;
-    const out = network_port.evaluate(ctx.network, pos_ptr, ctx.acc_stack, ctx.cache);
+    const out = network_port.evaluate(pos_ptr, ctx.acc_stack, ctx.cache);
     const pawns = pos.piece_count[1] + pos.piece_count[9];
     const material = 534 * pawns + pos.st.non_pawn_material[0] + pos.st.non_pawn_material[1];
     return evaluate_mod.computeValue(.{
@@ -1049,7 +1047,6 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha
 fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
     var acc_stack: ?*anyopaque = null;
     var nodes: ?*u64 = null;
-    var network: ?*const anyopaque = null;
     var cache: ?*anyopaque = null;
     var optimism: ?*const [2]c_int = null;
     var nmp_min_ply: ?*c_int = null;
@@ -1064,7 +1061,7 @@ fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?*anyopaque, cc: usize, g
     var pv_last: ?*const usize = null;
     var best_move_changes: ?*u64 = null;
     var time_state: SearchTimeState = undefined;
-    searchCbWorkerState(worker, &acc_stack, &nodes, &network, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes, &time_state);
+    searchCbWorkerState(worker, &acc_stack, &nodes, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes, &time_state);
     return .{
         .worker = worker,
         .table = table,
@@ -1072,7 +1069,6 @@ fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?*anyopaque, cc: usize, g
         .generation = gen,
         .acc_stack = acc_stack.?,
         .nodes = nodes.?,
-        .network = network.?,
         .cache = cache.?,
         .optimism = optimism.?,
         .nmp_min_ply = nmp_min_ply.?,
