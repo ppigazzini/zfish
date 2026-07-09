@@ -9,6 +9,7 @@ const graph_layout = @import("graph_layout");
 const root_move = @import("root_move");
 const search_ctx = @import("search_ctx");
 const tt_types = @import("tt_types");
+const nnue_acc = @import("nnue_accumulator");
 
 const PVMoves = root_move.PVMoves;
 const QCtx = search_ctx.QCtx;
@@ -17,12 +18,14 @@ const SearchTimeState = search_ctx.SearchTimeState;
 // One-shot fetch of the Worker state the inlined search needs, all stable for the
 // duration of one search tree. Live (mutable) fields are pointers into the Worker;
 // the main-thread-only time-management fields are null on helper threads.
-fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
+fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
     const stop = &wl.threads.stop;
 
-    out_acc_stack.* = &wl.accumulator_stack;
+    // The NNUE arenas are raw byte buffers embedded in the worker; this is their
+    // single erasure boundary into the opaque B4 handles the eval path consumes.
+    out_acc_stack.* = @ptrCast(&wl.accumulator_stack);
     out_nodes.* = &wl.nodes;
-    out_cache.* = &wl.refresh_table;
+    out_cache.* = @ptrCast(&wl.refresh_table);
     out_optimism.* = &wl.optimism;
     out_nmp_min_ply.* = &wl.nmp_min_ply;
     out_sel_depth.* = &wl.sel_depth;
@@ -56,9 +59,9 @@ fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*anyopaq
 }
 
 pub fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?[*]tt_types.TtCluster, cc: usize, gen: u8) QCtx {
-    var acc_stack: ?*anyopaque = null;
+    var acc_stack: ?*nnue_acc.AccumulatorStack = null;
     var nodes: ?*u64 = null;
-    var cache: ?*anyopaque = null;
+    var cache: ?*nnue_acc.RefreshCache = null;
     var optimism: ?*const [2]c_int = null;
     var nmp_min_ply: ?*c_int = null;
     var sel_depth: ?*c_int = null;

@@ -77,7 +77,7 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     const ss = ss_ptr;
     const capture = captureStage(pos, move);
     ctx.nodes.* +%= 1;
-    const out = nnue_acc.stackPush(@ptrCast(ctx.acc_stack));
+    const out = nnue_acc.stackPush(ctx.acc_stack);
     doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats);
     const dp: *const DirtyPiece = out.dirty_piece;
     ss.current_move = move;
@@ -87,7 +87,7 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
 // Worker::undo_move inlined: unmake the move, then drop the accumulator slot.
 pub inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16) void {
     undoMove(pos_ptr, move);
-    nnue_acc.stackPop(@ptrCast(ctx.acc_stack));
+    nnue_acc.stackPop(ctx.acc_stack);
 }
 
 // Position-level verification make/unmake used by the qsearch TT-move cutoff.

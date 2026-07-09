@@ -11,6 +11,7 @@ const graph_layout = @import("graph_layout");
 const position_types = @import("position_types");
 const root_move = @import("root_move");
 const tt_types = @import("tt_types");
+const nnue_acc = @import("nnue_accumulator");
 
 const Position = position_types.Position;
 const PVMoves = root_move.PVMoves;
@@ -103,15 +104,15 @@ pub const ZfishIdState = struct {
 
 // The hot per-node context the qsearch/search recursion carries: the Worker graph +
 // the pointers into it the node bodies read/write. `table` is the typed TT cluster
-// base; `acc_stack`/`cache` stay erased (the NNUE arena handles are addressed opaquely).
+// base; `acc_stack`/`cache` are the NNUE arena opaque handles (B4 idiom).
 pub const QCtx = struct {
     worker: *graph_layout.WorkerLayout,
     table: ?[*]tt_types.TtCluster,
     cluster_count: usize,
     generation: u8,
-    acc_stack: *anyopaque,
+    acc_stack: *nnue_acc.AccumulatorStack,
     nodes: *u64,
-    cache: *anyopaque,
+    cache: *nnue_acc.RefreshCache,
     optimism: *const [2]c_int,
     nmp_min_ply: *c_int,
     sel_depth: *c_int,
