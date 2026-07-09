@@ -445,9 +445,9 @@ fn searchIdState(wl: *graph_layout.WorkerLayout, out: *ZfishIdState) void {
     out.nodes = &wl.nodes;
     out.stop = &tp.stop;
     out.increase_depth = &tp.increase_depth;
-    // graph_layout.PVMoves and position.PVMoves are the same layout; ZfishIdState
-    // types this field as the position one, so bridge the pointer.
-    out.last_iter_pv = @ptrCast(&wl.last_iteration_pv);
+    // wl.last_iteration_pv and ZfishIdState's field are now the one canonical
+    // PVMoves (M18.2 de-mirror), so this is a plain mut->const coercion, no cast.
+    out.last_iter_pv = &wl.last_iteration_pv;
     out.root_moves_count = (rm_end - rm_begin) / graph_layout.root_move_size;
     out.thread_idx = thread_idx;
     out.threads_size = tp.numThreads();
@@ -587,8 +587,8 @@ fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*anyopaq
     out_root_depth.* = &wl.root_depth;
     out_reductions.* = &wl.reductions;
     out_root_delta.* = &wl.root_delta;
-    // graph_layout.PVMoves and position.PVMoves share a layout; bridge the pointer.
-    out_last_iter_pv.* = @ptrCast(&wl.last_iteration_pv);
+    // One canonical PVMoves now (M18.2 de-mirror) -- plain mut->const, no cast.
+    out_last_iter_pv.* = &wl.last_iteration_pv;
     out_stop.* = stop;
     out_pv_idx.* = &wl.pv_idx;
     // root_moves[0] is the vector's begin pointer (the first element's address).

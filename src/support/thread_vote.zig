@@ -25,7 +25,7 @@ fn fillThreadSummary(thread: *anyopaque, out: *ThreadSummary) void {
     const w = graph_layout.Worker.fromThread(thread) orelse return;
     const rmv = w.rootMovesFirst();
     out.pv0_raw = rmv.pv.moves[0];
-    out.score_is_bound = @intFromBool(rmv.score_lowerbound != 0 or rmv.score_upperbound != 0);
+    out.score_is_bound = @intFromBool(rmv.score_lowerbound or rmv.score_upperbound);
     out.pv_has_more_than_two = @intFromBool(rmv.pv.length > 2);
     out.score = rmv.score;
     out.root_depth = w.rootDepth();

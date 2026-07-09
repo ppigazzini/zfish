@@ -10,6 +10,7 @@ const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
 const shared_state = @import("shared_state");
 const limits_type = @import("limits_type");
+const root_move = @import("root_move");
 
 // Canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = @sizeOf(WorkerLayout);
@@ -383,40 +384,14 @@ pub const Worker = struct {
     }
 };
 
-// PVMoves: a Move[MAX_PLY+1] buffer plus a length. Now a native struct (M16.8
-// de-mirror): the _pad is gone and Zig owns the field order (length lands first),
-// so every reader/writer goes through the typed fields, not the old C++ offsets.
-pub const PVMoves = struct {
-    moves: [247]u16,
-    length: usize,
-
-    pub inline fn fromAddr(addr: usize) *PVMoves {
-        return @ptrFromInt(addr);
-    }
-};
-
-// A RootMove: effort, the Value(int) scores, the two bound bools, the depth/tb
-// ranks, and the embedded PVMoves. Native struct (M16.8) with the same field list
-// as position.RootMove / root_move.RootMove, so all three share one Zig layout and
-// alias the rootMoves vector element (stride @sizeOf(RootMove) == root_move_size).
-pub const RootMove = struct {
-    effort: u64,
-    score: i32,
-    previous_score: i32,
-    average_score: i32,
-    mean_squared_score: i32,
-    uci_score: i32,
-    score_lowerbound: u8,
-    score_upperbound: u8,
-    sel_depth: i32,
-    tb_rank: i32,
-    tb_score: i32,
-    pv: PVMoves,
-
-    pub inline fn fromAddr(addr: usize) *RootMove {
-        return @ptrFromInt(addr);
-    }
-};
+// PVMoves + RootMove are re-exported from the single canonical definition in
+// support/root_move.zig (M18.2 de-mirror): the former graph_layout copies (RootMove
+// with u8 bound flags, PVMoves) were byte-identical to root_move's (bool flags — same
+// 1-byte layout), so unify to one type. The Worker embeds `last_iteration_pv: PVMoves`
+// and strides its rootMoves vector by @sizeOf(RootMove); the size asserts below still
+// pin those (504 / 552). `.fromAddr` now lives on the canonical def.
+pub const PVMoves = root_move.PVMoves;
+pub const RootMove = root_move.RootMove;
 
 comptime {
     std.debug.assert(@offsetOf(Thread, "worker") == 8);

@@ -8,6 +8,7 @@
 // board). position.zig re-exports all four, so its call sites are unchanged.
 
 const std = @import("std");
+const root_move = @import("root_move");
 
 // Memory mirror of the search Stack (src/search.h): the scalar fields the ported
 // search helpers read; the three history pointers are opaque (resolved through the
@@ -39,27 +40,9 @@ pub const CorrectionBundle = struct {
     nonpawn_black: i16,
 };
 
-// Memory mirror of Search::PVMoves (src/search.h): a Move array + length.
-pub const PVMoves = struct {
-    moves: [247]u16,
-    length: usize,
-};
-
-// Memory mirror of Search::RootMove (src/search.h). RootMove is a standard-layout
-// POD (its pv is the inline PVMoves, not a heap vector), so the rootMoves vector is
-// a contiguous array the Zig search indexes through a base pointer handed over by
-// worker_state. Field order/types/offsets match the RootMove layout the search reads.
-pub const RootMove = struct {
-    effort: u64,
-    score: i32,
-    previous_score: i32,
-    average_score: i32,
-    mean_squared_score: i32,
-    uci_score: i32,
-    score_lowerbound: bool,
-    score_upperbound: bool,
-    sel_depth: i32,
-    tb_rank: i32,
-    tb_score: i32,
-    pv: PVMoves,
-};
+// PVMoves + RootMove are re-exported from the single canonical definition in
+// support/root_move.zig (M18.2 de-mirror). The search indexes the rootMoves vector
+// (a contiguous array handed over by worker_state) through these; the canonical def
+// carries the same field order/types/offsets plus the search's methods.
+pub const PVMoves = root_move.PVMoves;
+pub const RootMove = root_move.RootMove;

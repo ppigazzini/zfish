@@ -35,7 +35,7 @@ comptime {
     _ = @import("engine_graph.zig");
     _ = @import("search_manager.zig");
     _ = shared_state_mod;
-    _ = @import("root_move.zig");
+    _ = @import("root_move");
 }
 
 const PendingStateEntry = struct {

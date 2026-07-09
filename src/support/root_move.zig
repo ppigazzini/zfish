@@ -32,6 +32,12 @@ pub const PVMoves = struct {
     pub fn slice(self: *const PVMoves) []const Move {
         return self.moves[0..self.length];
     }
+
+    /// Reinterpret a raw Worker-graph address as a *PVMoves (M18.2: graph_layout
+    /// re-exports this type, so its former fromAddr moves onto the canonical def).
+    pub inline fn fromAddr(addr: usize) *PVMoves {
+        return @ptrFromInt(addr);
+    }
 };
 
 comptime {
@@ -74,6 +80,13 @@ pub const RootMove = struct {
     // Descending sort: by score, then previousScore (C++ operator<).
     pub fn lessThan(_: void, a: RootMove, b: RootMove) bool {
         return if (b.score != a.score) b.score < a.score else b.previous_score < a.previous_score;
+    }
+
+    /// Reinterpret a raw rootMoves-vector element address as a *RootMove (M18.2:
+    /// graph_layout re-exports this type, so its former fromAddr moves onto the
+    /// canonical def; the vector strides by @sizeOf(RootMove) == 552).
+    pub inline fn fromAddr(addr: usize) *RootMove {
+        return @ptrFromInt(addr);
     }
 };
 
