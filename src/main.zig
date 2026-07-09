@@ -190,14 +190,14 @@ fn freeSideTt() void {
 // native SharedState bundle (options/threads/tt/shared_histories/network); read
 // it through the typed graph_layout.SharedState view and clear the native map.
 fn sharedStateClearHistories(shared_state: *const anyopaque) void {
-    engine_port.sharedHistoriesClear(graph_layout.SharedState.fromPtr(shared_state).shared_histories);
+    engine_port.sharedHistoriesClear(engine_port.SharedState.fromPtr(shared_state).shared_histories);
 }
 // insert_history: single-node never binds (do_bind always 0, numa_config unused) — insert
 // directly into the native SharedHistoriesMap reached via the typed shared_histories field.
 fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) void {
     _ = numa_config;
     _ = do_bind;
-    engine_port.sharedHistoriesInsert(graph_layout.SharedState.fromPtr(shared_state).shared_histories, numa_index, size);
+    engine_port.sharedHistoriesInsert(engine_port.SharedState.fromPtr(shared_state).shared_histories, numa_index, size);
 }
 // With NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub; loadNetworkBytes
 // fails on it and falls back to the on-disk EvalFile (bench validates the file net).
@@ -274,7 +274,7 @@ const WorkerBuildCtx = struct {
 };
 fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
     const ctx: *WorkerBuildCtx = @ptrCast(@alignCast(ctx_ptr.?));
-    const ss = graph_layout.SharedState.fromPtr(ctx.shared_state.?);
+    const ss = engine_port.SharedState.fromPtr(ctx.shared_state.?);
     const manager = makeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
         @panic("native worker build: SearchManager OOM");
     const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse

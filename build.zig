@@ -186,7 +186,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "position_types", .to = "position_types" },
         .{ .from = "graph_layout", .imp = "position_types", .to = "position_types" },
         .{ .from = "state_list", .imp = "position_types", .to = "position_types" },
-        .{ .from = "graph_layout", .imp = "shared_state", .to = "shared_state" },
         .{ .from = "graph_layout", .imp = "limits_type", .to = "limits_type" },
         .{ .from = "graph_layout", .imp = "root_move", .to = "root_move" },
         .{ .from = "search_types", .imp = "root_move", .to = "root_move" },

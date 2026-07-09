@@ -8,7 +8,6 @@
 const std = @import("std");
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
-const shared_state = @import("shared_state");
 const limits_type = @import("limits_type");
 const root_move = @import("root_move");
 
@@ -224,18 +223,13 @@ pub const SearchManager = struct {
 // C++ offset mirror (@offsetOf == 8/60/88/... asserts) is retired. The allocation in
 // zfishMakeSearchManager now sizes to @sizeOf(SearchManager).
 
-// The SharedState bundle (40 bytes): the five subsystem references the Engine
-// hands each Worker at construction (options, thread pool, TT, per-NUMA shared
-// histories, network), stored as pointers in source order. main.zig's native hook
-// impls read it across the *anyopaque worker-build boundary through .fromPtr. This
-// is a RE-EXPORT of the single owner definition in support/shared_state.zig
-// (M17.7x de-mirror): the view and the owner are now one struct, so they cannot
-// drift -- the former graph_layout duplicate + its offset asserts are retired.
-pub const SharedState = shared_state.SharedState;
-
-comptime {
-    std.debug.assert(@sizeOf(SharedState) == shared_state_size);
-}
+// The SharedState bundle (40 bytes) is no longer re-exported here (M18.5): typing its
+// five fields required the referent types, which reach graph_layout and would close a
+// module cycle. It is now the comptime-generic support/shared_state.SharedStateOf,
+// instantiated once with concrete types in support/engine.zig; main.zig reads it via
+// engine.SharedState.fromPtr. graph_layout no longer imports shared_state, which cuts
+// the last `→ shared_state` back-edge. `shared_state_size` (40) stays as the pinned
+// footprint the native allocations reserve. See REPORT-17 Annex A.
 
 // The ThreadPool object (64 bytes): the runtime constructs and reads the pool
 // through these fields. The `threads`/`bound` members are libc++-`std::vector`
