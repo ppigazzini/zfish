@@ -317,8 +317,8 @@ pub fn verify(
 
 pub fn evaluate(
     pos: *const Position,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
+    accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
+    cache: *nnue_accumulator_port.RefreshCache,
 ) EvalOutput {
     const piece_count = pieceCount(pos);
     const bucket = (piece_count - 1) / 4;
@@ -331,8 +331,8 @@ pub fn evaluate(
 
 pub fn traceEvaluate(
     pos: *const Position,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
+    accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
+    cache: *nnue_accumulator_port.RefreshCache,
 ) TraceOutput {
     var output = TraceOutput{
         .psqt = [_]c_int{0} ** layer_stacks,
@@ -393,8 +393,8 @@ fn setLoadedStateNative(current: []const u8, description: []const u8) void {
 
 fn evaluateBucketRaw(
     pos: *const Position,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
+    accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
+    cache: *nnue_accumulator_port.RefreshCache,
     bucket: usize,
 ) EvalOutput {
     var transformed: [transformed_feature_bytes]u8 align(cache_line_size) = undefined;
@@ -620,16 +620,14 @@ fn nativeLayerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?*const anyopaqu
 // transform. Relocated from main.zig (M16.7).
 fn networkTransformBucket(
     pos: *const Position,
-    accumulator_stack: *anyopaque,
-    cache: *anyopaque,
+    accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
+    cache: *nnue_accumulator_port.RefreshCache,
     bucket: usize,
     transformed_ptr: [*]u8,
 ) c_int {
     const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(native_ft_ptr_storage orelse @panic("native feature-transformer storage not initialized"));
-    const rc: *nnue_accumulator_port.RefreshCache = @ptrCast(cache);
-    const as: *nnue_accumulator_port.AccumulatorStack = @ptrCast(accumulator_stack);
     const stm = pos.side_to_move;
-    return nnue_accumulator_port.transformBucket(as, pos, ft, rc, bucket, stm, transformed_ptr);
+    return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
 }
 
 // Parse the feature transformer natively into the Zig-owned storage and return the bytes

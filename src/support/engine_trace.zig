@@ -168,7 +168,7 @@ pub fn evalTrace(pos: *const position_port.Position) ?[*:0]u8 {
     const accumulators = accumulatorStackCreate() orelse return null;
     defer accumulatorStackDestroy(accumulators);
 
-    const nnue_output = network_port.evaluate(pos, accumulators, caches);
+    const nnue_output = network_port.evaluate(pos, @ptrCast(accumulators), @ptrCast(caches));
     const nnue_value = nnue_output.psqt + nnue_output.positional;
     const nnue_white_side = if (summary.side_to_move_white != 0) nnue_value else -nnue_value;
 
@@ -267,7 +267,7 @@ fn buildNnueTrace(
     defer accumulatorStackDestroy(accumulators);
     nnue_acc.stackReset(@ptrCast(accumulators));
 
-    const trace = network_port.traceEvaluate(pos, accumulators, caches);
+    const trace = network_port.traceEvaluate(pos, @ptrCast(accumulators), @ptrCast(caches));
     var psqt_cp: [layer_stacks]c_int = undefined;
     var positional_cp: [layer_stacks]c_int = undefined;
 
