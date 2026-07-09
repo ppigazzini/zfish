@@ -759,7 +759,7 @@ inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr: *St
     ctx.nodes.* +%= 1;
     const out = nnue_acc.stackPush(@ptrCast(ctx.acc_stack));
     doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats);
-    const dp: *const DirtyPiece = @ptrCast(@alignCast(out.dirty_piece));
+    const dp: *const DirtyPiece = out.dirty_piece;
     ss.current_move = move;
     setContHist(ctx.worker, ss_ptr, @intFromBool(ss.in_check), @intFromBool(capture), dp.pc, moveTo(move));
 }

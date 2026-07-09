@@ -377,6 +377,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "nnue_accumulator", .imp = "nnue_ft", .to = "nnue_ft" },
         .{ .from = "nnue_accumulator", .imp = "nnue_refresh_cache", .to = "nnue_refresh_cache" },
         .{ .from = "nnue_accumulator", .imp = "nnue_feature", .to = "nnue_feature" },
+        .{ .from = "nnue_accumulator", .imp = "position_types", .to = "position_types" },
         .{ .from = "position", .imp = "bitboard", .to = "bitboard" },
         .{ .from = "position", .imp = "movegen", .to = "movegen" },
         .{ .from = "engine", .imp = "movegen", .to = "movegen" },
