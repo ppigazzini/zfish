@@ -492,18 +492,15 @@ pub fn sharedHistoriesPtr() *anyopaque {
     return @ptrCast(sideSharedHistories());
 }
 
-pub fn sharedHistoriesClear(map_ptr: *anyopaque) void {
-    const map: *position_port.SharedHistoriesMap = @ptrCast(@alignCast(map_ptr));
+pub fn sharedHistoriesClear(map: *position_port.SharedHistoriesMap) void {
     map.clear();
 }
 
-pub fn sharedHistoriesInsert(map_ptr: *anyopaque, numa_index: usize, size: usize) void {
-    const map: *position_port.SharedHistoriesMap = @ptrCast(@alignCast(map_ptr));
+pub fn sharedHistoriesInsert(map: *position_port.SharedHistoriesMap, numa_index: usize, size: usize) void {
     map.tryEmplace(numa_index, size) catch @panic("OOM: native sharedHistories insert");
 }
 
-pub fn sharedHistoriesAt(map_ptr: *anyopaque, numa_index: usize) *anyopaque {
-    const map: *position_port.SharedHistoriesMap = @ptrCast(@alignCast(map_ptr));
+pub fn sharedHistoriesAt(map: *position_port.SharedHistoriesMap, numa_index: usize) *anyopaque {
     return @ptrCast(map.at(numa_index));
 }
 
