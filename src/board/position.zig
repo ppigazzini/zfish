@@ -138,13 +138,11 @@ pub const pseudoLegal = legality.pseudoLegal;
 pub const givesCheck = legality.givesCheck;
 
 comptime {
-    // Native struct (M16.8 de-mirror): Zig owns the field order. The only external
-    // layout pin is the network's board/side reads (graph_layout.positionBoard/
-    // positionSideToMove); assert they stay in sync, and that Position still fits the
-    // 1032-byte slot the Worker (worker_off.root_pos) and side storage reserve for it.
+    // Native struct (M16.8 de-mirror): Zig owns the field order. The network now
+    // reads board/side through a typed *const Position (M17.7w), so no field-offset
+    // pin remains -- only assert Position still fits the 1032-byte slot the Worker
+    // (worker_off.root_pos) and side storage reserve for it.
     std.debug.assert(@sizeOf(Position) <= graph_layout.position_size);
-    std.debug.assert(@offsetOf(Position, "side_to_move") == graph_layout.position_side_to_move_off);
-    std.debug.assert(@offsetOf(Position, "board") == graph_layout.position_board_off);
 }
 
 const sq_none_u8: u8 = 64;

@@ -3,8 +3,10 @@ const nnue_parse = @import("nnue_parse.zig");
 const nnue_hash = @import("nnue_hash.zig");
 const c = @import("libc");
 const memory_port = @import("memory");
-const graph_layout = @import("graph_layout");
+const position_types = @import("position_types");
 const nnue_accumulator_port = @import("nnue_accumulator");
+
+const Position = position_types.Position;
 
 const output_scale: c_int = 16;
 const layer_stacks: usize = 8;
@@ -343,7 +345,7 @@ pub fn verify(
 
 pub fn evaluate(
     network: *const anyopaque,
-    pos: *const anyopaque,
+    pos: *const Position,
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
 ) EvalOutput {
@@ -358,7 +360,7 @@ pub fn evaluate(
 
 pub fn traceEvaluate(
     network: *const anyopaque,
-    pos: *const anyopaque,
+    pos: *const Position,
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
 ) TraceOutput {
@@ -474,7 +476,7 @@ fn nativeEvalFileContentHash() usize {
 
 fn evaluateBucketRaw(
     network: *const anyopaque,
-    pos: *const anyopaque,
+    pos: *const Position,
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
     bucket: usize,
@@ -494,8 +496,8 @@ fn evaluateBucketRaw(
     };
 }
 
-fn pieceCount(pos: *const anyopaque) usize {
-    const board = graph_layout.positionBoard(pos); // Position.board [64]u8 (offset 0)
+fn pieceCount(pos: *const Position) usize {
+    const board = &pos.board; // Position.board [64]u8
     var count: usize = 0;
     var sq: usize = 0;
     while (sq < square_count) : (sq += 1) {
@@ -704,7 +706,7 @@ fn nativeLayerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?*const anyopaqu
 // transform. Relocated from main.zig (M16.7).
 fn networkTransformBucket(
     network: *const anyopaque,
-    pos: *const anyopaque,
+    pos: *const Position,
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
     bucket: usize,
@@ -712,7 +714,7 @@ fn networkTransformBucket(
 ) c_int {
     _ = network;
     const ft = native_ft_ptr_storage orelse @panic("native feature-transformer storage not initialized");
-    const stm = graph_layout.positionSideToMove(pos);
+    const stm = pos.side_to_move;
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
 }
 

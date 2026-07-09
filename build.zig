@@ -434,7 +434,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "graph_layout", .to = "graph_layout" },
         .{ .from = "network", .imp = "libc", .to = "libc" },
         .{ .from = "network", .imp = "memory", .to = "memory" },
-        .{ .from = "network", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "network", .imp = "position_types", .to = "position_types" },
         .{ .from = "network", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "position", .imp = "network", .to = "network" },
         .{ .from = "nnue_misc", .imp = "libc", .to = "libc" },

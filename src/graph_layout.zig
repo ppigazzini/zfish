@@ -25,21 +25,6 @@ pub const accumulator_stack_size: usize = 2181568;
 pub const accumulator_caches_size: usize = 278528;
 pub const root_move_size: usize = 552;
 
-// Position field offsets the NNUE eval reads directly, so network.zig need not
-// import the (heavy, cycle-prone) position module for two scalar reads. Pinned
-// here in the leaf layout authority; position.zig comptime-asserts them against
-// its real Position struct, so a layout change is caught at build time.
-// Position is now a native Zig struct (M16.8): Zig chose these field offsets; the
-// network reads board/side through them and position.zig comptime-asserts they match
-// @offsetOf(Position, ...), so a layout change fails the build instead of corrupting.
-pub const position_board_off: usize = 940; // Position.board [64]u8
-pub const position_side_to_move_off: usize = 1020; // Position.side_to_move (u8)
-
-// Side to move of a Position by pointer (== Position.side_to_move).
-pub inline fn positionSideToMove(pos: *const anyopaque) u8 {
-    return @as([*]const u8, @ptrCast(pos))[position_side_to_move_off];
-}
-
 // ThreadPool aggregate reads (sum over the pool's threads). Pure graph reads, so they
 // live here in the leaf: position.zig (search driver) reads them without importing the
 // thread module, which would cycle (thread imports position). thread.zig's public
@@ -57,10 +42,6 @@ pub fn poolTbHits(tp: *ThreadPool) u64 {
     var i: usize = 0;
     while (i < n) : (i += 1) total += tp.threadTyped(i).tbHits();
     return total;
-}
-// The 64-square piece board of a Position by pointer (Position.board, offset 0).
-pub inline fn positionBoard(pos: *const anyopaque) [*]const u8 {
-    return @as([*]const u8, @ptrCast(pos)) + position_board_off;
 }
 
 // Byte size of the still-opaque position-module sub-blocks embedded in the Worker
