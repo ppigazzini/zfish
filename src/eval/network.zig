@@ -381,7 +381,6 @@ fn setLoadedStateNative(current: []const u8, description: []const u8) void {
     nn_description_len = dl;
 }
 
-
 // Content hash of the eval-file names (std::hash<EvalFile>), computed natively
 // from the Zig-owned EvalFile state.
 
@@ -728,7 +727,6 @@ fn writeU32LeInto(bytes: []u8, value: u32) void {
     bytes[2] = @intCast((value >> 16) & 0xff);
     bytes[3] = @intCast((value >> 24) & 0xff);
 }
-
 
 fn viewToSlice(view: ByteView) []const u8 {
     return view.ptr[0..view.len];
