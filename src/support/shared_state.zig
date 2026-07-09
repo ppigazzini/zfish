@@ -1,103 +1,91 @@
-// Native Zig SharedState.
+// Native Zig SharedState — the bundle of references the Engine hands every Worker at
+// construction (options, thread pool, transposition table, per-NUMA shared histories,
+// network). In C++ these are five references; natively they are five typed pointers
+// into the Zig-owned subsystems.
 //
-// Part of the post-src/ object graph: the bundle of references the Engine hands
-// to every Worker at construction (options, thread pool, transposition table,
-// the per-NUMA shared histories, and the network). In C++ these are five
-// references; natively they are five pointers into the Zig-owned subsystems
-// (OptionsModel, ThreadPool, TranspositionTable, shared histories, network).
-// Matches the locked 40-byte SharedState footprint.
+// M18.5 — CALL-SITE TYPE INJECTION (idiomatic Zig DI). This module exposes only the
+// *generic* `SharedStateOf(comptime …)` and stays a **pure std-only leaf**: it never
+// imports OptionsModel / ThreadPool / TranspositionTable / SharedHistoriesMap /
+// Network, so it cannot sit in a module cycle (the referent modules reach graph_layout,
+// which used to reach back here). The concrete `SharedState = SharedStateOf(…)` is
+// instantiated once at the root that sees all five types — support/engine.zig — which
+// also owns the live static + create/destroy. See REPORT-17 Annex A. This mirrors the
+// tree's existing `shared_histories_map.SharedHistoriesMapOf(comptime Entry)` pattern.
 
 const std = @import("std");
 
-pub const SharedState = struct {
-    options: *anyopaque, // OptionsModel   @0
-    threads: *anyopaque, // ThreadPool     @8
-    tt: *anyopaque, // TranspositionTable  @16
-    shared_histories: *anyopaque, // per-NUMA SharedHistories @24
-    network: *anyopaque, //                @32
+/// The 40-byte SharedState bundle, generic over its five referent types. Five
+/// pointers in source order → byte-identical to the old 5×*anyopaque struct (the
+/// engine asserts @sizeOf == 40 at the instantiation), so the worker-build reinterpret
+/// is unchanged.
+pub fn SharedStateOf(
+    comptime Options: type,
+    comptime Threads: type,
+    comptime TranspositionTable: type,
+    comptime Histories: type,
+    comptime Network: type,
+) type {
+    return struct {
+        options: *Options, // @0
+        threads: *Threads, // @8
+        tt: *TranspositionTable, // @16
+        shared_histories: *Histories, // @24
+        network: *Network, // @32
 
-    pub fn init(
-        options: *anyopaque,
-        threads: *anyopaque,
-        tt: *anyopaque,
-        shared_histories: *anyopaque,
-        network: *anyopaque,
-    ) SharedState {
-        return .{
-            .options = options,
-            .threads = threads,
-            .tt = tt,
-            .shared_histories = shared_histories,
-            .network = network,
-        };
-    }
+        const Self = @This();
 
-    // Typed view over the *anyopaque worker-build boundary that main.zig's native
-    // hook impls cross to read the five referents. graph_layout re-exports this
-    // struct (M17.7x de-mirror), so the view and the owner are ONE definition and
-    // cannot drift -- the former graph_layout duplicate + its offset asserts are gone.
-    pub inline fn fromPtr(p: *const anyopaque) *SharedState {
-        return @ptrCast(@alignCast(@constCast(p)));
-    }
-};
+        pub fn init(
+            options: *Options,
+            threads: *Threads,
+            tt: *TranspositionTable,
+            shared_histories: *Histories,
+            network: *Network,
+        ) Self {
+            return .{
+                .options = options,
+                .threads = threads,
+                .tt = tt,
+                .shared_histories = shared_histories,
+                .network = network,
+            };
+        }
 
-comptime {
-    // Native struct (M16.8 de-mirror). This is the SINGLE definition; graph_layout
-    // re-exports it (M17.7x), so the worker-build path (main.zig nativeWorkerBuild /
-    // sharedStateClearHistories / sharedStateInsertHistory) reads the same struct it
-    // is built from. Pin the pointer layout so the 40-byte footprint the native
-    // allocations reserve stays exact: five equal-alignment pointers in source order.
-    std.debug.assert(@sizeOf(SharedState) == 40);
-    std.debug.assert(@offsetOf(SharedState, "options") == 0);
-    std.debug.assert(@offsetOf(SharedState, "threads") == 8);
-    std.debug.assert(@offsetOf(SharedState, "tt") == 16);
-    std.debug.assert(@offsetOf(SharedState, "shared_histories") == 24);
-    std.debug.assert(@offsetOf(SharedState, "network") == 32);
-}
-
-// The LIVE SharedState handed to the workers is this native 40-byte struct,
-// byte-identical to the 5-reference C++ Search::SharedState it replaced (5
-// references, no methods). The workers bind it by reference and read the same 5
-// pointers. This makes the SharedState a type-AGNOSTIC pointer bundle, so its
-// member subsystems can become native types pointed-to (the dependency unblock).
-// One engine, one search at a time (sequential go commands; the workers only READ
-// the SharedState during a search), so a single static instance reproduces the
-// new/delete lifetime without an allocator (keeps shared_state.zig libc-free for
-// the test-graph artifact). The SharedState is rebuilt per search and never aliased.
-var live_shared_state: SharedState = undefined;
-
-// Build the live SharedState from the five referents and return it (M16.7: engine.zig
-// calls this directly instead of the former main.zig C-ABI wrapper). Rebuilt per search.
-pub fn create(
-    options: *anyopaque,
-    threads: *anyopaque,
-    tt: *anyopaque,
-    shared_histories: *anyopaque,
-    network: *anyopaque,
-) ?*anyopaque {
-    live_shared_state = SharedState.init(options, threads, tt, shared_histories, network);
-    return @ptrCast(&live_shared_state);
-}
-
-pub fn destroy(ss: ?*anyopaque) void {
-    _ = ss; // static storage — nothing to free (lifetime is the static itself)
+        /// Typed view over the *anyopaque worker-build boundary that main.zig's native
+        /// hook impls cross to read the referents. The engine's concrete instantiation
+        /// is the single definition, so the view and the owner cannot drift.
+        pub inline fn fromPtr(p: *const anyopaque) *Self {
+            return @ptrCast(@alignCast(@constCast(p)));
+        }
+    };
 }
 
 // ---- tests ------------------------------------------------------------------
 
 const testing = std.testing;
 
-test "SharedState reproduces the C++ footprint and binds references" {
-    try testing.expectEqual(@as(usize, 40), @sizeOf(SharedState));
+test "SharedStateOf reproduces the 40-byte footprint and binds typed references" {
+    // Instantiate with a mock referent type; the layout is five pointers regardless.
+    const Mock = u32;
+    const SS = SharedStateOf(Mock, Mock, Mock, Mock, Mock);
+    try testing.expectEqual(@as(usize, 40), @sizeOf(SS));
+    try testing.expectEqual(@as(usize, 0), @offsetOf(SS, "options"));
+    try testing.expectEqual(@as(usize, 8), @offsetOf(SS, "threads"));
+    try testing.expectEqual(@as(usize, 16), @offsetOf(SS, "tt"));
+    try testing.expectEqual(@as(usize, 24), @offsetOf(SS, "shared_histories"));
+    try testing.expectEqual(@as(usize, 32), @offsetOf(SS, "network"));
 
-    var options: u32 = 1;
-    var threads: u32 = 2;
-    var tt: u32 = 3;
-    var hists: u32 = 4;
-    var network: u32 = 5;
+    var options: Mock = 1;
+    var threads: Mock = 2;
+    var tt: Mock = 3;
+    var hists: Mock = 4;
+    var network: Mock = 5;
 
-    const ss = SharedState.init(&options, &threads, &tt, &hists, &network);
-    try testing.expectEqual(@as(*anyopaque, &options), ss.options);
-    try testing.expectEqual(@as(*anyopaque, &network), ss.network);
-    try testing.expectEqual(@as(u32, 3), @as(*const u32, @ptrCast(@alignCast(ss.tt))).*);
+    const ss = SS.init(&options, &threads, &tt, &hists, &network);
+    try testing.expectEqual(&options, ss.options);
+    try testing.expectEqual(&network, ss.network);
+    try testing.expectEqual(@as(u32, 3), ss.tt.*);
+
+    // fromPtr round-trips the bundle address back to the typed view.
+    const view = SS.fromPtr(@ptrCast(&ss));
+    try testing.expectEqual(&tt, view.tt);
 }

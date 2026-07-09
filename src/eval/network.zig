@@ -22,6 +22,13 @@ const none_name = "None";
 // "network" module rather than re-declaring it (a net bump edits one line).
 pub const default_eval_file_name = "nn-af1339a6dea3.nnue";
 
+/// Opaque handle to the network subsystem (M18.5). The NNUE weights live in this
+/// module's globals (native_ft_ptr_storage &c.), so there is no struct to point at --
+/// the engine holds a malloc(1) placeholder. An `opaque {}` gives the SharedState
+/// bundle a distinct `*Network` handle (not a bare *anyopaque) without inventing a
+/// fake layout; it is the same idiom the B4 arena handles use.
+pub const Network = opaque {};
+
 pub const ByteView = struct {
     ptr: [*]const u8,
     len: usize,

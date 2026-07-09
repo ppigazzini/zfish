@@ -25,7 +25,10 @@ const TranspositionTable = tt_mod.TranspositionTable;
 const sm = @import("search_manager.zig");
 const UpdateContext = sm.UpdateContext;
 const SearchManager = sm.SearchManager;
-const SharedState = @import("shared_state").SharedState;
+// M18.5: shared_state is now the generic SharedStateOf; this scaffolding binds its own
+// referents (native ThreadPool + TranspositionTable typed, the rest still erased here),
+// so it instantiates its own view. The live engine path uses engine.SharedState.
+const SharedState = @import("shared_state").SharedStateOf(anyopaque, ThreadPool, TranspositionTable, anyopaque, anyopaque);
 pub const StateList = @import("state_list").StateList;
 pub const NumaConfig = @import("numa_config").NumaConfig;
 pub const NumaReplicationContext = @import("numa_replication").NumaReplicationContext;
@@ -182,8 +185,8 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
 
     const ss = graph.sharedState();
     try testing.expectEqual(@as(*anyopaque, &options), ss.options);
-    try testing.expectEqual(@as(*anyopaque, &pool), ss.threads);
-    try testing.expectEqual(@as(*anyopaque, &graph.tt), ss.tt); // bound to the graph's own TT
+    try testing.expectEqual(&pool, ss.threads); // typed *ThreadPool (M18.5)
+    try testing.expectEqual(&graph.tt, ss.tt); // typed *TranspositionTable, the graph's own TT
     try testing.expectEqual(@as(*anyopaque, &network), ss.network);
     // states member is the native StateList (iter 1), non-empty at construction
     try testing.expect(graph.states.hasStates());

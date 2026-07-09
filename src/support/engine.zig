@@ -38,6 +38,52 @@ comptime {
     _ = @import("root_move");
 }
 
+// M18.5 — the ONE concrete instantiation of the SharedState bundle. engine.zig is the
+// root that sees all five referent types (nothing imports engine, so this can't be in a
+// cycle); shared_state.zig stays a pure std leaf via the injected comptime types. The
+// bundle's five typed pointers are 40 bytes, byte-identical to the former 5×*anyopaque,
+// so the worker-build reinterpret is unchanged (asserted). See REPORT-17 Annex A.
+pub const SharedState = shared_state_mod.SharedStateOf(
+    option_port.OptionsModel,
+    graph_layout.ThreadPool,
+    tt_port.TranspositionTable,
+    position_port.SharedHistoriesMap,
+    network_port.Network,
+);
+
+comptime {
+    std.debug.assert(@sizeOf(SharedState) == 40);
+}
+
+// One engine, one search at a time (sequential go commands; workers only READ the
+// bundle during a search), so a single static reproduces the C++ new/delete lifetime
+// without an allocator. Rebuilt per search, never aliased.
+var live_shared_state: SharedState = undefined;
+
+/// Build the live SharedState from the five referent handles and return its address.
+/// The handles arrive erased across the reconfigure hook ABI; cast each to its typed
+/// pointer once here (the storage boundary) so every downstream read is typed.
+fn sharedStateCreate(
+    options: *anyopaque,
+    threads: *anyopaque,
+    tt: *anyopaque,
+    shared_histories: *anyopaque,
+    network: *anyopaque,
+) *anyopaque {
+    live_shared_state = SharedState.init(
+        @ptrCast(@alignCast(options)),
+        @ptrCast(@alignCast(threads)),
+        @ptrCast(@alignCast(tt)),
+        @ptrCast(@alignCast(shared_histories)),
+        @ptrCast(@alignCast(network)),
+    );
+    return @ptrCast(&live_shared_state);
+}
+
+fn sharedStateDestroy(ss: *anyopaque) void {
+    _ = ss; // static storage — nothing to free (lifetime is the static itself)
+}
+
 const PendingStateEntry = struct {
     slot_key: usize,
     storage: *anyopaque,
@@ -390,14 +436,14 @@ pub fn resizeThreads(
 ) void {
     thread_port.waitForSearchFinished(threads);
 
-    const shared_state = shared_state_mod.create(
+    const shared_state = sharedStateCreate(
         @constCast(options),
         threads,
         tt,
         shared_hists,
         @constCast(network),
-    ) orelse @panic("OOM");
-    defer shared_state_mod.destroy(shared_state);
+    );
+    defer sharedStateDestroy(shared_state);
 
     thread_port.reconfigure(
         threads,
