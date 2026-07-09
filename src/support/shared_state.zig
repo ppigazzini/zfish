@@ -31,15 +31,22 @@ pub const SharedState = struct {
             .network = network,
         };
     }
+
+    // Typed view over the *anyopaque worker-build boundary that main.zig's native
+    // hook impls cross to read the five referents. graph_layout re-exports this
+    // struct (M17.7x de-mirror), so the view and the owner are ONE definition and
+    // cannot drift -- the former graph_layout duplicate + its offset asserts are gone.
+    pub inline fn fromPtr(p: *const anyopaque) *SharedState {
+        return @ptrCast(@alignCast(@constCast(p)));
+    }
 };
 
 comptime {
-    // Native struct (M16.8 de-mirror). The worker-build path (main.zig
-    // nativeWorkerBuild / sharedStateClearHistories / sharedStateInsertHistory)
-    // reads this bundle through the graph_layout.SharedState view across the
-    // *anyopaque worker-build boundary, which mirrors this field list; guard the
-    // pointer layout so the two definitions cannot silently drift apart: five
-    // equal-alignment pointers keep source order, asserted loudly here.
+    // Native struct (M16.8 de-mirror). This is the SINGLE definition; graph_layout
+    // re-exports it (M17.7x), so the worker-build path (main.zig nativeWorkerBuild /
+    // sharedStateClearHistories / sharedStateInsertHistory) reads the same struct it
+    // is built from. Pin the pointer layout so the 40-byte footprint the native
+    // allocations reserve stays exact: five equal-alignment pointers in source order.
     std.debug.assert(@sizeOf(SharedState) == 40);
     std.debug.assert(@offsetOf(SharedState, "options") == 0);
     std.debug.assert(@offsetOf(SharedState, "threads") == 8);

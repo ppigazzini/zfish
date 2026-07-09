@@ -8,6 +8,7 @@
 const std = @import("std");
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
+const shared_state = @import("shared_state");
 
 // Canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = @sizeOf(WorkerLayout);
@@ -223,20 +224,12 @@ pub const SearchManager = struct {
 
 // The SharedState bundle (40 bytes): the five subsystem references the Engine
 // hands each Worker at construction (options, thread pool, TT, per-NUMA shared
-// histories, network), stored as pointers in source order. Typed view over the
-// *anyopaque worker-build boundary that main.zig's native hook impls cross; the
-// owner is support/shared_state.zig (same field list, comptime-asserted there).
-pub const SharedState = struct {
-    options: *anyopaque, // @0  OptionsModel
-    threads: *anyopaque, // @8  ThreadPool
-    tt: *anyopaque, // @16 TranspositionTable
-    shared_histories: *anyopaque, // @24 per-NUMA SharedHistories
-    network: *anyopaque, // @32
-
-    pub inline fn fromPtr(p: *const anyopaque) *SharedState {
-        return @ptrCast(@alignCast(@constCast(p)));
-    }
-};
+// histories, network), stored as pointers in source order. main.zig's native hook
+// impls read it across the *anyopaque worker-build boundary through .fromPtr. This
+// is a RE-EXPORT of the single owner definition in support/shared_state.zig
+// (M17.7x de-mirror): the view and the owner are now one struct, so they cannot
+// drift -- the former graph_layout duplicate + its offset asserts are retired.
+pub const SharedState = shared_state.SharedState;
 
 comptime {
     std.debug.assert(@sizeOf(SharedState) == shared_state_size);

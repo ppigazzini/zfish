@@ -29,7 +29,7 @@ inline fn ne(p: *const anyopaque) *native_engine.NativeEngine {
 // layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
 // are build-verified rather than dead source. These are the vtable-free,
 // std::function-free post-src/ graph nodes the atomic Engine cut switches to.
-const shared_state_mod = @import("shared_state.zig");
+const shared_state_mod = @import("shared_state");
 
 comptime {
     _ = @import("engine_graph.zig");
