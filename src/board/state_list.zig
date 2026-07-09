@@ -18,16 +18,21 @@
 // ordering only, not StateInfo's internals.
 
 const std = @import("std");
+const position_types = @import("position_types");
+
+/// The typed StateInfo the engine fills through Position (M18.3). This module owns
+/// its lifetime + ordering only, not its internals, but the handles it hands out are
+/// now typed `*StateInfo` rather than `*anyopaque`. @sizeOf(StateInfo) == 192, pinned
+/// in position_types + graph_layout, so the per-record heap block is exactly one.
+pub const StateInfo = position_types.StateInfo;
 
 /// sizeof(Stockfish::StateInfo). Pinned by graph_layout.zig (state_info_size = 192).
 pub const state_info_size: usize = 192;
 pub const state_info_align: usize = 8;
 
-/// One StateInfo record. 8-byte aligned (C++ StateInfo has 8-byte members);
-/// treated as opaque bytes here — Position fills the internals.
-const StateInfo = struct {
-    bytes: [state_info_size]u8 align(state_info_align),
-};
+comptime {
+    std.debug.assert(@sizeOf(StateInfo) == state_info_size);
+}
 
 pub const StateList = struct {
     allocator: std.mem.Allocator,
@@ -51,30 +56,30 @@ pub const StateList = struct {
 
     fn appendBlock(self: *StateList) error{OutOfMemory}!*StateInfo {
         const block = try self.allocator.create(StateInfo);
-        @memset(&block.bytes, 0);
+        @memset(std.mem.asBytes(block), 0);
         try self.blocks.append(self.allocator, block);
         return block;
     }
 
     /// Drop to a single fresh root StateInfo and return its address. Mirrors
     /// `storage.states = StateListPtr(new std::deque<StateInfo>(1))`.
-    pub fn reset(self: *StateList) error{OutOfMemory}!*anyopaque {
+    pub fn reset(self: *StateList) error{OutOfMemory}!*StateInfo {
         // Reuse the first block (already allocated) and free the rest, so reset
         // cannot fail after the list exists.
         for (self.blocks.items[1..]) |block| self.allocator.destroy(block);
         self.blocks.shrinkRetainingCapacity(1);
-        @memset(&self.blocks.items[0].bytes, 0);
-        return @ptrCast(self.blocks.items[0]);
+        @memset(std.mem.asBytes(self.blocks.items[0]), 0);
+        return self.blocks.items[0];
     }
 
     /// Append one StateInfo and return its address. Mirrors `emplace_back` + `&back()`.
-    pub fn push(self: *StateList) error{OutOfMemory}!*anyopaque {
-        return @ptrCast(try self.appendBlock());
+    pub fn push(self: *StateList) error{OutOfMemory}!*StateInfo {
+        return self.appendBlock();
     }
 
     /// Address of the most recently added StateInfo (`&back()`).
-    pub fn back(self: *StateList) *anyopaque {
-        return @ptrCast(self.blocks.items[self.blocks.items.len - 1]);
+    pub fn back(self: *StateList) *StateInfo {
+        return self.blocks.items[self.blocks.items.len - 1];
     }
 
     /// Whether the list currently holds any StateInfo (models `states ? 1 : 0`;
@@ -117,7 +122,7 @@ pub const PendingStateStorage = struct {
 
     /// Drop to a single fresh root and return its address (storage_reset). Re-creates the
     /// list if it was moved out (mirrors `storage.states = StateListPtr(new deque(1))`).
-    pub fn reset(self: *PendingStateStorage) error{OutOfMemory}!*anyopaque {
+    pub fn reset(self: *PendingStateStorage) error{OutOfMemory}!*StateInfo {
         if (self.list == null) {
             const list = try self.allocator.create(StateList);
             errdefer self.allocator.destroy(list);
@@ -128,7 +133,7 @@ pub const PendingStateStorage = struct {
         return self.list.?.reset();
     }
 
-    pub fn push(self: *PendingStateStorage) error{OutOfMemory}!*anyopaque {
+    pub fn push(self: *PendingStateStorage) error{OutOfMemory}!*StateInfo {
         return self.list.?.push();
     }
 
@@ -160,10 +165,10 @@ pub fn storageCreate() ?*anyopaque {
 pub fn storageDestroy(storage: ?*anyopaque) void {
     if (storage) |s| @as(*PendingStateStorage, @ptrCast(@alignCast(s))).destroy();
 }
-pub fn storageReset(storage: *anyopaque) *anyopaque {
+pub fn storageReset(storage: *anyopaque) *StateInfo {
     return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).reset() catch @panic("OOM: state reset");
 }
-pub fn storagePush(storage: *anyopaque) *anyopaque {
+pub fn storagePush(storage: *anyopaque) *StateInfo {
     return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).push() catch @panic("OOM: state push");
 }
 pub fn storageHasStates(storage: *const anyopaque) bool {
@@ -218,8 +223,8 @@ test "StateList starts with one zeroed root, like deque<StateInfo>(1)" {
     defer list.deinit();
     try testing.expectEqual(@as(usize, 1), list.len());
     try testing.expect(list.hasStates());
-    const root: *StateInfo = @ptrCast(@alignCast(list.back()));
-    for (root.bytes) |b| try testing.expectEqual(@as(u8, 0), b);
+    const root = list.back();
+    for (std.mem.asBytes(root)) |b| try testing.expectEqual(@as(u8, 0), b);
 }
 
 test "push grows and keeps earlier StateInfo addresses stable" {
@@ -237,14 +242,13 @@ test "push grows and keeps earlier StateInfo addresses stable" {
     try testing.expectEqual(@as(usize, 4), list.len());
 
     // pointer stability: the root and earlier pushes are unchanged after growth
-    try testing.expectEqual(root, @as(*anyopaque, @ptrCast(list.blocks.items[0])));
-    try testing.expectEqual(p1, @as(*anyopaque, @ptrCast(list.blocks.items[1])));
+    try testing.expectEqual(root, list.blocks.items[0]);
+    try testing.expectEqual(p1, list.blocks.items[1]);
 
     // a value written into an early StateInfo survives later pushes
-    const early: *StateInfo = @ptrCast(@alignCast(p1));
-    early.bytes[0] = 0x5A;
+    std.mem.asBytes(p1)[0] = 0x5A;
     _ = try list.push();
-    try testing.expectEqual(@as(u8, 0x5A), early.bytes[0]);
+    try testing.expectEqual(@as(u8, 0x5A), std.mem.asBytes(p1)[0]);
 }
 
 test "reset drops to a single fresh root and zeroes it" {
@@ -253,14 +257,14 @@ test "reset drops to a single fresh root and zeroes it" {
 
     _ = try list.push();
     _ = try list.push();
-    const back: *StateInfo = @ptrCast(@alignCast(list.back()));
-    back.bytes[10] = 0xFF;
+    const back = list.back();
+    std.mem.asBytes(back)[10] = 0xFF;
     try testing.expectEqual(@as(usize, 3), list.len());
 
-    const root: *StateInfo = @ptrCast(@alignCast(try list.reset()));
+    const root = try list.reset();
     try testing.expectEqual(@as(usize, 1), list.len());
-    for (root.bytes) |b| try testing.expectEqual(@as(u8, 0), b);
-    try testing.expectEqual(@as(*anyopaque, @ptrCast(root)), list.back());
+    for (std.mem.asBytes(root)) |b| try testing.expectEqual(@as(u8, 0), b);
+    try testing.expectEqual(root, list.back());
 }
 
 test "state_info_size matches the pinned C++ StateInfo footprint" {
