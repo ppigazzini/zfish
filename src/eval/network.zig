@@ -620,8 +620,9 @@ fn networkTransformBucket(
 ) c_int {
     const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(native_ft_ptr_storage orelse @panic("native feature-transformer storage not initialized"));
     const rc: *nnue_accumulator_port.RefreshCache = @ptrCast(cache);
+    const as: *nnue_accumulator_port.AccumulatorStack = @ptrCast(accumulator_stack);
     const stm = pos.side_to_move;
-    return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, rc, bucket, stm, transformed_ptr);
+    return nnue_accumulator_port.transformBucket(as, pos, ft, rc, bucket, stm, transformed_ptr);
 }
 
 // Parse the feature transformer natively into the Zig-owned storage and return the bytes

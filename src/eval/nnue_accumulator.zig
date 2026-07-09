@@ -92,6 +92,13 @@ const ThreatDiffView = struct {
     ksq: u8,
 };
 
+/// Opaque handle to the per-Worker accumulator stack arena (M18.4-B4). A raw
+/// 64-aligned byte buffer of accumulator_stack_size bytes (embedded in the Worker /
+/// malloc'd for the eval trace); the state/diff byte-offset accessors below
+/// reinterpret it. A distinct handle type, not a bare *anyopaque, so it can't be
+/// confused with the FT / refresh-cache handles.
+pub const AccumulatorStack = opaque {};
+
 pub const StackPushOutput = struct {
     dirty_piece: *anyopaque,
     dirty_threats: *anyopaque,
@@ -157,7 +164,7 @@ const PositionSnapshot = struct {
 };
 
 pub fn evaluate(
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
@@ -168,11 +175,11 @@ pub fn evaluate(
     evaluateSide(threat_feature, black, stack, pos, feature_transformer, cache);
 }
 
-pub fn stackLatestPsq(stack: *const anyopaque) *const anyopaque {
+pub fn stackLatestPsq(stack: *const AccumulatorStack) *const anyopaque {
     return @ptrCast(stateBytesConst(psq_feature, stackSize(stack) - 1, stack));
 }
 
-pub fn stackLatestThreat(stack: *const anyopaque) *const anyopaque {
+pub fn stackLatestThreat(stack: *const AccumulatorStack) *const anyopaque {
     return @ptrCast(stateBytesConst(threat_feature, stackSize(stack) - 1, stack));
 }
 
@@ -184,7 +191,7 @@ pub fn stackLatestThreat(stack: *const anyopaque) *const anyopaque {
 const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
 
 pub fn transformBucket(
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
@@ -235,7 +242,7 @@ pub fn transformBucket(
     return psqt;
 }
 
-pub fn stackReset(stack: *anyopaque) void {
+pub fn stackReset(stack: *AccumulatorStack) void {
     const bytes = stackBytesMut(stack);
 
     clearComputed(bytes, psq_feature, 0);
@@ -247,7 +254,7 @@ pub fn stackReset(stack: *anyopaque) void {
     setStackSize(bytes, 1);
 }
 
-pub fn stackPush(stack: *anyopaque) StackPushOutput {
+pub fn stackPush(stack: *AccumulatorStack) StackPushOutput {
     const bytes = stackBytesMut(stack);
     const index = stackSize(stack);
     std.debug.assert(index < max_stack_size);
@@ -266,7 +273,7 @@ pub fn stackPush(stack: *anyopaque) StackPushOutput {
     };
 }
 
-pub fn stackPop(stack: *anyopaque) void {
+pub fn stackPop(stack: *AccumulatorStack) void {
     const bytes = stackBytesMut(stack);
     const size = stackSize(stack);
     std.debug.assert(size > 1);
@@ -276,7 +283,7 @@ pub fn stackPop(stack: *anyopaque) void {
 fn evaluateSide(
     feature_kind: u8,
     perspective: u8,
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
@@ -327,7 +334,7 @@ fn evaluateSide(
 fn refreshLatest(
     feature_kind: u8,
     perspective: u8,
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
@@ -344,7 +351,7 @@ fn refreshLatest(
 fn refreshLatestPsq(
     perspective: u8,
     king_square: u8,
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
@@ -419,7 +426,7 @@ fn refreshLatestPsq(
 fn refreshLatestThreat(
     perspective: u8,
     king_square: u8,
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     pos: *const anyopaque,
     feature_transformer: *const FeatureTransformer,
 ) void {
@@ -438,7 +445,7 @@ fn refreshLatestThreat(
 }
 
 fn incrementalStep(
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     feature_kind: u8,
     forward: bool,
     perspective: u8,
@@ -473,7 +480,7 @@ fn incrementalStep(
 }
 
 fn incrementalStepPsq(
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     forward: bool,
     perspective: u8,
     king_square: u8,
@@ -532,7 +539,7 @@ fn incrementalStepPsq(
 }
 
 fn incrementalStepThreat(
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     forward: bool,
     perspective: u8,
     king_square: u8,
@@ -603,7 +610,7 @@ fn appendHalfChange(
 }
 
 fn applyPsqDelta(
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     perspective: u8,
     feature_transformer: *const FeatureTransformer,
     target_index: usize,
@@ -629,7 +636,7 @@ fn applyPsqDelta(
 }
 
 fn applyThreatDelta(
-    stack: *anyopaque,
+    stack: *AccumulatorStack,
     perspective: u8,
     feature_transformer: *const FeatureTransformer,
     target_index: usize,
@@ -654,7 +661,7 @@ fn applyThreatDelta(
     stateBytesMut(threat_feature, target_index, stack)[computed_offset + perspective] = 1;
 }
 
-fn findLastUsable(feature_kind: u8, stack: *const anyopaque, perspective: u8) usize {
+fn findLastUsable(feature_kind: u8, stack: *const AccumulatorStack, perspective: u8) usize {
     const size = stackSize(stack);
     var current = size - 1;
 
@@ -673,15 +680,15 @@ fn roundUp(value: usize, alignment: usize) usize {
     return ((value + alignment - 1) / alignment) * alignment;
 }
 
-fn stackBytes(stack: *const anyopaque) [*]const u8 {
+fn stackBytes(stack: *const AccumulatorStack) [*]const u8 {
     return @ptrCast(stack);
 }
 
-fn stackBytesMut(stack: *anyopaque) [*]u8 {
+fn stackBytesMut(stack: *AccumulatorStack) [*]u8 {
     return @ptrCast(stack);
 }
 
-fn stackSize(stack: *const anyopaque) usize {
+fn stackSize(stack: *const AccumulatorStack) usize {
     const bytes = stackBytes(stack);
     return std.mem.readInt(usize, bytes[stack_size_offset..][0..@sizeOf(usize)], .little);
 }
@@ -690,7 +697,7 @@ fn setStackSize(bytes: [*]u8, size: usize) void {
     std.mem.writeInt(usize, bytes[stack_size_offset..][0..@sizeOf(usize)], size, .little);
 }
 
-fn stateComputed(stack: *const anyopaque, feature_kind: u8, index: usize, perspective: u8) bool {
+fn stateComputed(stack: *const AccumulatorStack, feature_kind: u8, index: usize, perspective: u8) bool {
     const bytes = stackBytes(stack);
     return bytes[stateOffset(feature_kind, index) + computed_offset + perspective] != 0;
 }
@@ -699,7 +706,7 @@ fn clearComputed(bytes: [*]u8, feature_kind: u8, index: usize) void {
     @memset(bytes[stateOffset(feature_kind, index) + computed_offset ..][0..color_count], 0);
 }
 
-fn stateRequiresRefresh(stack: *const anyopaque, feature_kind: u8, index: usize, perspective: u8) bool {
+fn stateRequiresRefresh(stack: *const AccumulatorStack, feature_kind: u8, index: usize, perspective: u8) bool {
     const bytes = stackBytes(stack);
     return switch (feature_kind) {
         psq_feature => psqRequiresRefresh(bytes, index, perspective),
@@ -724,11 +731,11 @@ fn diffOffset(feature_kind: u8) usize {
     };
 }
 
-fn stateBytesConst(feature_kind: u8, index: usize, stack: *const anyopaque) [*]const u8 {
+fn stateBytesConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack) [*]const u8 {
     return stackBytes(stack) + stateOffset(feature_kind, index);
 }
 
-fn stateBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
+fn stateBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [*]u8 {
     return stackBytesMut(stack) + stateOffset(feature_kind, index);
 }
 
@@ -751,31 +758,31 @@ fn loadBridgeSnapshot(pos: *const anyopaque) BridgePositionSnapshot {
     return snapshot;
 }
 
-fn stateAccumulationConst(feature_kind: u8, index: usize, stack: *const anyopaque, perspective: u8) []const i16 {
+fn stateAccumulationConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack, perspective: u8) []const i16 {
     const offset = perspective * half_dimensions * @sizeOf(i16);
     const ptr: [*]const i16 = @ptrCast(@alignCast(stateBytesConst(feature_kind, index, stack) + offset));
     return ptr[0..half_dimensions];
 }
 
-fn stateAccumulationMut(feature_kind: u8, index: usize, stack: *anyopaque, perspective: u8) []i16 {
+fn stateAccumulationMut(feature_kind: u8, index: usize, stack: *AccumulatorStack, perspective: u8) []i16 {
     const offset = perspective * half_dimensions * @sizeOf(i16);
     const ptr: [*]i16 = @ptrCast(@alignCast(stateBytesMut(feature_kind, index, stack) + offset));
     return ptr[0..half_dimensions];
 }
 
-fn statePsqtConst(feature_kind: u8, index: usize, stack: *const anyopaque, perspective: u8) []const i32 {
+fn statePsqtConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack, perspective: u8) []const i32 {
     const offset = color_count * half_dimensions * @sizeOf(i16) + perspective * psqt_buckets * @sizeOf(i32);
     const ptr: [*]const i32 = @ptrCast(@alignCast(stateBytesConst(feature_kind, index, stack) + offset));
     return ptr[0..psqt_buckets];
 }
 
-fn statePsqtMut(feature_kind: u8, index: usize, stack: *anyopaque, perspective: u8) []i32 {
+fn statePsqtMut(feature_kind: u8, index: usize, stack: *AccumulatorStack, perspective: u8) []i32 {
     const offset = color_count * half_dimensions * @sizeOf(i16) + perspective * psqt_buckets * @sizeOf(i32);
     const ptr: [*]i32 = @ptrCast(@alignCast(stateBytesMut(feature_kind, index, stack) + offset));
     return ptr[0..psqt_buckets];
 }
 
-fn diffBytesMut(feature_kind: u8, index: usize, stack: *anyopaque) [*]u8 {
+fn diffBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [*]u8 {
     return stateBytesMut(feature_kind, index, stack) + diffOffset(feature_kind);
 }
 
