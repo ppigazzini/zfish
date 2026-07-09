@@ -1,6 +1,7 @@
 const std = @import("std");
+const tt_types = @import("tt_types");
 
-const cluster_size = 3;
+const cluster_size = tt_types.cluster_size;
 const value_none: i16 = 32002;
 const generation_bits: u8 = 5;
 const generation_mask: u8 = (1 << generation_bits) - 1;
@@ -11,19 +12,8 @@ const pv_mask: u8 = 1 << pv_shift;
 // is_decisive threshold (VALUE_TB_WIN_IN_MAX_PLY); used by secondary TT aging.
 const value_tb_win_in_max_ply: c_int = 31507;
 
-pub const TtEntry = struct {
-    key16: u16,
-    depth8: u8,
-    gen_bound8: u8,
-    move16: u16,
-    value16: i16,
-    eval16: i16,
-};
-
-pub const TtCluster = struct {
-    entry: [cluster_size]TtEntry,
-    padding: [2]u8,
-};
+pub const TtEntry = tt_types.TtEntry;
+pub const TtCluster = tt_types.TtCluster;
 
 pub const TtReadOutput = struct {
     move16: u16,
