@@ -363,8 +363,9 @@ fn countPieces(pos: *const position_port.Position) usize {
     return count;
 }
 
-fn loadTbConfig(options: *const anyopaque, pos: *const position_port.Position) TbConfig {
-    _ = options; // syzygy options now read from the native option model, not this pointer
+fn loadTbConfig(pos: *const position_port.Position) TbConfig {
+    // syzygy options read from the native global option model (option_port.*), not a
+    // handle -- so no `options` param is threaded here (M18.5 vestigial-handle deletion).
     const snapshot = loadPositionSnapshot(pos);
     var config = TbConfig{
         .cardinality = option_port.syzygyProbeLimit(),
@@ -548,7 +549,6 @@ fn stableSortRankedMovesByTbRank(ranked_moves: []RankedRootMove) void {
 
 fn buildRootMoves(
     allocator: std.mem.Allocator,
-    options: *const anyopaque,
     pos: *const position_port.Position,
     root_fen: []const u8,
     chess960: u8,
@@ -566,7 +566,7 @@ fn buildRootMoves(
         };
     }
 
-    var tb_config = loadTbConfig(options, pos);
+    var tb_config = loadTbConfig(pos);
     var dtz_available = true;
 
     if (tb_config.cardinality != 0) {
@@ -707,7 +707,6 @@ fn workerSearchEntry(ctx: ?*anyopaque) void {
 
 pub fn startThinking(
     pool: *graph_layout.ThreadPool,
-    options: *const anyopaque,
     pos: *position_port.Position,
     limits: *const graph_layout.LimitsType,
     states_slot: *anyopaque,
@@ -763,7 +762,6 @@ pub fn startThinking(
     const chess960 = loadPositionSnapshot(pos).is_chess960;
     const root_setup = buildRootMoves(
         std.heap.c_allocator,
-        options,
         pos,
         root_fen_text,
         chess960,
