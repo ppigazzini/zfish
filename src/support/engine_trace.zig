@@ -132,7 +132,7 @@ fn accumulatorCachesDestroy(caches: ?*anyopaque) void {
 }
 
 pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
-    verifyNetwork(engine_ptr);
+    verifyNetwork();
 
     const source_pos = engine_ptr.positionPtr();
     const network = engine_ptr.networkPtr();

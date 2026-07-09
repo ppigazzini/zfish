@@ -16,7 +16,6 @@ const transformed_feature_bytes: usize = 1024;
 const square_count: usize = 64;
 const no_piece: u8 = 0;
 const network_version: u32 = 0x6A448AFA; // upstream nnue_common.h Version (post-merge format)
-const hash_combine_magic: usize = 0x9e3779b9;
 const none_name = "None";
 // EvalFileDefaultName (evaluate.h): the embedded net's default name, a build
 // constant. Single source of truth: engine.zig imports this via the
@@ -259,7 +258,6 @@ pub fn save(
 }
 
 pub fn verify(
-    network: *const anyopaque,
     evalfile_path_ptr: [*]const u8,
     evalfile_path_len: usize,
 ) VerifyResult {
@@ -287,7 +285,6 @@ pub fn verify(
     // The verification dims are fixed by the NNUE architecture (sizeof the
     // FeatureTransformer + NetworkArchitecture*LayerStacks; the static InputDimensions /
     // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS). Native constants.
-    _ = network;
     const info = VerifyInfo{
         .size_bytes = 111263232,
         .input_dimensions = 83248,
@@ -350,36 +347,9 @@ pub fn traceEvaluate(
 
 // Content hash of the natively-parsed feature transformer (read from the
 // Zig-owned storage). Equivalent to FeatureTransformer::get_content_hash.
-fn nativeFeatureTransformerContentHash() usize {
-    const ft: [*]const u8 = @ptrCast(nativeFtPtr() orelse return 0);
-    return nnue_hash.featureTransformerContentHash(ft);
-}
 
 // Content hash of one natively-parsed layer stack. Equivalent to
 // NetworkArchitecture::get_content_hash.
-fn nativeLayerContentHash(network: *const anyopaque, bucket: usize) usize {
-    _ = network;
-    var b: [3][*]const u8 = undefined;
-    var w: [3][*]const u8 = undefined;
-    var bn: [3]usize = undefined;
-    var wn: [3]usize = undefined;
-    var idx: c_int = 0;
-    while (idx < 3) : (idx += 1) {
-        const ui: usize = @intCast(idx);
-        b[ui] = @ptrCast(nativeLayerPtr(bucket, idx, 0) orelse return 0);
-        w[ui] = @ptrCast(nativeLayerPtr(bucket, idx, 1) orelse return 0);
-        bn[ui] = layerBiasesBytes(idx);
-        wn[ui] = layerWeightsBytes(idx);
-    }
-    return nnue_hash.layerStackContentHash(
-        b[0][0..bn[0]],
-        w[0][0..wn[0]],
-        b[1][0..bn[1]],
-        w[1][0..wn[1]],
-        b[2][0..bn[2]],
-        w[2][0..wn[2]],
-    );
-}
 
 // Zig-owned EvalFile dynamic state: the current eval-file name, the net
 // description, and the initialized flag. The native load path owns these (the
@@ -411,32 +381,9 @@ fn setLoadedStateNative(current: []const u8, description: []const u8) void {
     nn_description_len = dl;
 }
 
-pub fn contentHash(network: *const anyopaque) usize {
-    if (!nn_initialized) {
-        return 0;
-    }
-
-    var hash: usize = 0;
-    hashCombine(&hash, nativeFeatureTransformerContentHash());
-
-    var bucket: usize = 0;
-    while (bucket < layer_stacks) : (bucket += 1) {
-        hashCombine(&hash, nativeLayerContentHash(network, bucket));
-    }
-
-    hashCombine(&hash, nativeEvalFileContentHash());
-    return hash;
-}
 
 // Content hash of the eval-file names (std::hash<EvalFile>), computed natively
 // from the Zig-owned EvalFile state.
-fn nativeEvalFileContentHash() usize {
-    return nnue_hash.evalFileContentHash(
-        default_eval_file_name,
-        nnCurrent(),
-        nnDescription(),
-    );
-}
 
 fn evaluateBucketRaw(
     pos: *const Position,
@@ -782,9 +729,6 @@ fn writeU32LeInto(bytes: []u8, value: u32) void {
     bytes[3] = @intCast((value >> 24) & 0xff);
 }
 
-fn hashCombine(seed: *usize, value: usize) void {
-    seed.* ^= value +% hash_combine_magic +% (seed.* << 6) +% (seed.* >> 2);
-}
 
 fn viewToSlice(view: ByteView) []const u8 {
     return view.ptr[0..view.len];

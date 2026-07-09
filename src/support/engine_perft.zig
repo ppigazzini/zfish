@@ -45,7 +45,7 @@ fn perftSubtree(pos_ptr: *position_port.Position, depth: c_int) u64 {
 }
 
 pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
-    verifyNetwork(engine_ptr);
+    verifyNetwork();
     const fen_ptr = fen(engine_ptr.positionPtr()) orelse @panic("perft: null fen");
     const fen_text = std.mem.span(fen_ptr);
     const chess960 = option_port.intByName("UCI_Chess960") != 0;
