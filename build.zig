@@ -103,6 +103,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "native_thread", .path = "src/support/native_thread.zig" },
         .{ .name = "numa", .path = "src/support/numa.zig" },
         .{ .name = "graph_layout", .path = "src/graph_layout.zig" },
+        .{ .name = "shared_state", .path = "src/support/shared_state.zig" },
         .{ .name = "native_engine", .path = "src/native_engine.zig" },
         .{ .name = "timeman", .path = "src/time/timeman.zig" },
         .{ .name = "benchmark", .path = "src/bench/benchmark.zig" },
@@ -182,6 +183,8 @@ pub fn build(b: *std.Build) void {
         .{ .from = "graph_layout", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "position", .imp = "position_types", .to = "position_types" },
         .{ .from = "graph_layout", .imp = "position_types", .to = "position_types" },
+        .{ .from = "graph_layout", .imp = "shared_state", .to = "shared_state" },
+        .{ .from = "engine", .imp = "shared_state", .to = "shared_state" },
         .{ .from = "position", .imp = "fen", .to = "fen" },
         .{ .from = "position", .imp = "board_core", .to = "board_core" },
         .{ .from = "board_core", .imp = "position_types", .to = "position_types" },
@@ -498,6 +501,7 @@ pub fn build(b: *std.Build) void {
     });
     graph_test.root_module.addImport("thread", mods.get("thread").?);
     graph_test.root_module.addImport("tt", mods.get("tt").?);
+    graph_test.root_module.addImport("shared_state", mods.get("shared_state").?);
     graph_test.root_module.addImport("state_list", mods.get("state_list").?);
     graph_test.root_module.addImport("numa_config", mods.get("numa_config").?);
     graph_test.root_module.addImport("numa_replication", mods.get("numa_replication").?);
