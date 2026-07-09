@@ -180,10 +180,9 @@ fn layerBiases(bucket: usize, idx: c_int) [*]const i32 {
 fn layerWeights(bucket: usize, idx: c_int) [*]const i8 {
     return @ptrCast(@alignCast(nativeLayerPtr(bucket, idx, 1) orelse unreachable));
 }
-fn propagateBucket(network: *const anyopaque, bucket: usize, transformed: [*]const u8) c_int {
+fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
     // Read the affine-layer weights from the Zig-owned native storage. The native parse
     // writes this storage and is the sole source, so the eval is bench-verified.
-    _ = network;
     const fc0_b = layerBiases(bucket, 0);
     const fc0_w = layerWeights(bucket, 0);
     const fc1_b = layerBiases(bucket, 1);
@@ -344,14 +343,13 @@ pub fn verify(
 }
 
 pub fn evaluate(
-    network: *const anyopaque,
     pos: *const Position,
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
 ) EvalOutput {
     const piece_count = pieceCount(pos);
     const bucket = (piece_count - 1) / 4;
-    const raw = evaluateBucketRaw(network, pos, accumulator_stack, cache, bucket);
+    const raw = evaluateBucketRaw(pos, accumulator_stack, cache, bucket);
     return .{
         .psqt = @divTrunc(raw.psqt, output_scale),
         .positional = @divTrunc(raw.positional, output_scale),
@@ -359,7 +357,6 @@ pub fn evaluate(
 }
 
 pub fn traceEvaluate(
-    network: *const anyopaque,
     pos: *const Position,
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
@@ -374,7 +371,7 @@ pub fn traceEvaluate(
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
-        const raw = evaluateBucketRaw(network, pos, accumulator_stack, cache, bucket);
+        const raw = evaluateBucketRaw(pos, accumulator_stack, cache, bucket);
         output.psqt[bucket] = @divTrunc(raw.psqt, output_scale);
         output.positional[bucket] = @divTrunc(raw.positional, output_scale);
     }
@@ -475,7 +472,6 @@ fn nativeEvalFileContentHash() usize {
 }
 
 fn evaluateBucketRaw(
-    network: *const anyopaque,
     pos: *const Position,
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
@@ -485,14 +481,13 @@ fn evaluateBucketRaw(
 
     return .{
         .psqt = networkTransformBucket(
-            network,
             pos,
             accumulator_stack,
             cache,
             bucket,
             @ptrCast(&transformed),
         ),
-        .positional = propagateBucket(network, bucket, @ptrCast(&transformed)),
+        .positional = propagateBucket(bucket, @ptrCast(&transformed)),
     };
 }
 
@@ -705,14 +700,12 @@ fn nativeLayerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?*const anyopaqu
 // storage above (always resident after a network load) and runs the Zig accumulator
 // transform. Relocated from main.zig (M16.7).
 fn networkTransformBucket(
-    network: *const anyopaque,
     pos: *const Position,
     accumulator_stack: *anyopaque,
     cache: *anyopaque,
     bucket: usize,
     transformed_ptr: [*]u8,
 ) c_int {
-    _ = network;
     const ft = native_ft_ptr_storage orelse @panic("native feature-transformer storage not initialized");
     const stm = pos.side_to_move;
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
