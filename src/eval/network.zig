@@ -68,35 +68,6 @@ const embedded_nnue_stub = [_]u8{0};
 fn networkEmbeddedBytes() ByteView {
     return .{ .ptr = &embedded_nnue_stub, .len = 1 };
 }
-fn networkMarkInitialized(network: *anyopaque) void {
-    _ = network;
-}
-fn networkSetLoadedState(
-    network: *anyopaque,
-    current_name_ptr: [*]const u8,
-    current_name_len: usize,
-    description_ptr: [*]const u8,
-    description_len: usize,
-) void {
-    _ = network;
-    _ = current_name_ptr;
-    _ = current_name_len;
-    _ = description_ptr;
-    _ = description_len;
-}
-fn networkFeatureTransformerReadBlob(network: *anyopaque, data_ptr: [*]const u8, data_len: usize) usize {
-    _ = network;
-    _ = data_ptr;
-    _ = data_len;
-    return 0;
-}
-fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) usize {
-    _ = network;
-    _ = bucket;
-    _ = data_ptr;
-    _ = data_len;
-    return 0;
-}
 
 // NNUE network layer forward pass (NetworkArchitecture::propagate), ported to
 // Zig. Layers: fc_0 (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 62->32)
@@ -226,7 +197,6 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
 }
 
 pub fn load(
-    network: *anyopaque,
     root_directory_ptr: [*]const u8,
     root_directory_len: usize,
     evalfile_path_ptr: [*]const u8,
@@ -241,13 +211,13 @@ pub fn load(
     const dirs = [_][]const u8{ internal_dir, "", root_directory };
 
     for (dirs) |directory| {
-        if (!equalCurrentName(network, evalfile_path)) {
+        if (!equalCurrentName(evalfile_path)) {
             if (!std.mem.eql(u8, directory, internal_dir)) {
-                loadUserNet(network, directory, evalfile_path);
+                loadUserNet(directory, evalfile_path);
             }
 
             if (std.mem.eql(u8, directory, internal_dir) and std.mem.eql(u8, evalfile_path, default_name)) {
-                loadInternal(network);
+                loadInternal();
             }
         }
     }
@@ -428,19 +398,17 @@ fn nnDescription() []const u8 {
     return nn_description[0..nn_description_len];
 }
 
-fn markInitializedNative(network: *anyopaque) void {
+fn markInitializedNative() void {
     nn_initialized = true;
-    networkMarkInitialized(network);
 }
 
-fn setLoadedStateNative(network: *anyopaque, current: []const u8, description: []const u8) void {
+fn setLoadedStateNative(current: []const u8, description: []const u8) void {
     const cl = @min(current.len, nn_current.len);
     @memcpy(nn_current[0..cl], current[0..cl]);
     nn_current_len = cl;
     const dl = @min(description.len, nn_description.len);
     @memcpy(nn_description[0..dl], description[0..dl]);
     nn_description_len = dl;
-    networkSetLoadedState(network, current.ptr, current.len, description.ptr, description.len);
 }
 
 pub fn contentHash(network: *const anyopaque) usize {
@@ -505,8 +473,8 @@ const Header = struct {
     description: []const u8,
 };
 
-fn loadUserNet(network: *anyopaque, dir: []const u8, evalfile_path: []const u8) void {
-    markInitializedNative(network);
+fn loadUserNet(dir: []const u8, evalfile_path: []const u8) void {
+    markInitializedNative();
 
     var arena_state = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena_state.deinit();
@@ -523,14 +491,14 @@ fn loadUserNet(network: *anyopaque, dir: []const u8, evalfile_path: []const u8) 
     var reader = file.reader(io, &reader_buffer);
 
     const bytes = reader.interface.readAlloc(arena, stat.size) catch return;
-    _ = loadNetworkBytes(network, bytes, evalfile_path);
+    _ = loadNetworkBytes(bytes, evalfile_path);
 }
 
-fn loadInternal(network: *anyopaque) void {
-    markInitializedNative(network);
+fn loadInternal() void {
+    markInitializedNative();
 
     const default_name = default_eval_file_name;
-    _ = loadNetworkBytes(network, viewToSlice(networkEmbeddedBytes()), default_name);
+    _ = loadNetworkBytes(viewToSlice(networkEmbeddedBytes()), default_name);
 }
 
 // Gather one layer stack's native biases/weights slices (fc_0/fc_1/fc_2).
@@ -601,20 +569,20 @@ fn saveNamed(filename: []const u8) bool {
     return true;
 }
 
-fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []const u8) bool {
+fn loadNetworkBytes(bytes: []const u8, current_name: []const u8) bool {
     var offset: usize = 0;
     const header = readHeader(bytes, &offset) orelse return false;
     if (header.hash_value != nnue_hash.networkHashValue()) {
         return false;
     }
 
-    if (!readFeatureTransformer(network, bytes, &offset)) {
+    if (!readFeatureTransformer(bytes, &offset)) {
         return false;
     }
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
-        if (!readLayer(network, bucket, bytes, &offset)) {
+        if (!readLayer(bucket, bytes, &offset)) {
             return false;
         }
     }
@@ -623,7 +591,7 @@ fn loadNetworkBytes(network: *anyopaque, bytes: []const u8, current_name: []cons
         return false;
     }
 
-    setLoadedStateNative(network, current_name, header.description);
+    setLoadedStateNative(current_name, header.description);
     // The native parse is the sole source of weights; correctness is verified end-to-end
     // by the eval gates (bench / search-parity), and the offset==bytes.len check above
     // verifies the consumed-byte count.
@@ -721,14 +689,12 @@ fn parseFeatureTransformerNative(blob: []const u8) usize {
         @panic("native feature-transformer parse failed");
 }
 
-fn readFeatureTransformer(network: *anyopaque, bytes: []const u8, offset: *usize) bool {
+fn readFeatureTransformer(bytes: []const u8, offset: *usize) bool {
     const remaining = bytes[offset.*..];
     const consumed = parseFeatureTransformerNative(remaining);
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
-    // No-op stub (the native parse is the sole source); return ignored.
-    _ = networkFeatureTransformerReadBlob(network, remaining.ptr, remaining.len);
     offset.* += consumed;
     return true;
 }
@@ -753,14 +719,12 @@ fn parseLayerNative(bucket: usize, blob: []const u8) usize {
     return pos;
 }
 
-fn readLayer(network: *anyopaque, bucket: usize, bytes: []const u8, offset: *usize) bool {
+fn readLayer(bucket: usize, bytes: []const u8, offset: *usize) bool {
     const remaining = bytes[offset.*..];
     const consumed = parseLayerNative(bucket, remaining);
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
-    // No-op stub (the native parse is the sole source); return ignored.
-    _ = networkLayerReadBlob(network, bucket, remaining.ptr, remaining.len);
     offset.* += consumed;
     return true;
 }
@@ -826,8 +790,7 @@ fn viewToSlice(view: ByteView) []const u8 {
     return view.ptr[0..view.len];
 }
 
-fn equalCurrentName(network: *const anyopaque, target: []const u8) bool {
-    _ = network;
+fn equalCurrentName(target: []const u8) bool {
     return std.mem.eql(u8, nnCurrent(), target);
 }
 

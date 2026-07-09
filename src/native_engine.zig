@@ -49,7 +49,7 @@ fn memberHandleFree(p: ?*anyopaque) void {
 // native StateList (state_list.zig), so it has no allocator here.
 fn memberNetworkNew(binary_dir: [*:0]const u8, binary_dir_len: usize) ?*anyopaque {
     const holder = std.c.malloc(1) orelse return null;
-    network_port.load(holder, binary_dir, binary_dir_len, binary_dir, 0);
+    network_port.load(binary_dir, binary_dir_len, binary_dir, 0);
     return holder;
 }
 // updateContext + onVerifyNetwork are held INLINE in the native engine (stable address
