@@ -10,6 +10,7 @@
 const graph_layout = @import("graph_layout");
 const position_types = @import("position_types");
 const root_move = @import("root_move");
+const tt_types = @import("tt_types");
 
 const Position = position_types.Position;
 const PVMoves = root_move.PVMoves;
@@ -34,7 +35,7 @@ pub fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootM
 pub fn workerTT(wl: *const graph_layout.WorkerLayout) *graph_layout.TranspositionTable {
     return wl.tt;
 }
-pub fn searchCbTtContext(wl: *const graph_layout.WorkerLayout, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
+pub fn searchCbTtContext(wl: *const graph_layout.WorkerLayout, out_table: *?[*]tt_types.TtCluster, out_cluster_count: *usize, out_generation: *u8) void {
     const tp = workerTT(wl);
     out_table.* = tp.table;
     out_cluster_count.* = tp.cluster_count;
@@ -101,11 +102,11 @@ pub const ZfishIdState = struct {
 };
 
 // The hot per-node context the qsearch/search recursion carries: the Worker graph +
-// the pointers into it the node bodies read/write. `table`/`acc_stack`/`cache` stay
-// erased (TT cluster buffer + the NNUE arena handles are addressed opaquely here).
+// the pointers into it the node bodies read/write. `table` is the typed TT cluster
+// base; `acc_stack`/`cache` stay erased (the NNUE arena handles are addressed opaquely).
 pub const QCtx = struct {
     worker: *graph_layout.WorkerLayout,
-    table: ?*anyopaque,
+    table: ?[*]tt_types.TtCluster,
     cluster_count: usize,
     generation: u8,
     acc_stack: *anyopaque,

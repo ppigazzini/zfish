@@ -10,6 +10,7 @@ const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
 const limits_type = @import("limits_type");
 const root_move = @import("root_move");
+const tt_types = @import("tt_types");
 
 // Canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = @sizeOf(WorkerLayout);
@@ -401,7 +402,7 @@ comptime {
 // TT the native engine allocates uses this layout.
 pub const TranspositionTable = struct {
     cluster_count: usize = 0,
-    table: ?*anyopaque = null, // Cluster*
+    table: ?[*]tt_types.TtCluster = null,
     generation8: u8 = 0,
 
     pub inline fn fromPtr(p: *anyopaque) *TranspositionTable {

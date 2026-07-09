@@ -420,7 +420,7 @@ const legalContains = search_acc.legalContains;
 // stored there, append it to the PV if it is a legal move, unmake. Returns
 // whether a ponder move was found (pv length > 1). The tt context (table base,
 // cluster count, generation) is handed over by the caller.
-pub fn extractPonderFromTt(pv: *PVMoves, table: ?*anyopaque, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
+pub fn extractPonderFromTt(pv: *PVMoves, table: ?[*]tt.TtCluster, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
     const move = pv.moves[0];
     var st: StateInfo = undefined;
     verifyDoMove(pos_ptr, move, &st);
@@ -520,7 +520,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha
     const tt_bound: u8 = probe.data.bound;
     const tt_eval: c_int = probe.data.eval16;
     const pv_hit = tt_hit and probe.data.is_pv != 0;
-    const writer: *tt.TtEntry = @ptrCast(@alignCast(probe.writer_ptr.?));
+    const writer = probe.writer_ptr.?;
 
     if (!pv_node and tt_depth >= q_depth_qs and qIsValid(tt_value) and
         (tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0)
@@ -773,7 +773,7 @@ pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque,
     // Single erasure boundary: the hook signature is *anyopaque; the whole search
     // recursion below runs on typed *WorkerLayout / *Position / *SearchStack.
     const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker));
-    var table: ?*anyopaque = null;
+    var table: ?[*]tt.TtCluster = null;
     var cc: usize = 0;
     var gen: u8 = 0;
     searchCbTtContext(wl, &table, &cc, &gen);
@@ -890,7 +890,7 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
     const tt_is_pv = tt_hit and probe.data.is_pv != 0;
     ss.tt_pv = if (excluded_move != 0) ss.tt_pv else (pv_node or tt_is_pv);
     const tt_capture = tt_move != 0 and captureStage(pos, tt_move);
-    const writer: *tt.TtEntry = @ptrCast(@alignCast(probe.writer_ptr.?));
+    const writer = probe.writer_ptr.?;
 
     // Step 5. Static evaluation.
     var unadjusted_static_eval: c_int = q_value_none;
@@ -1329,7 +1329,7 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
     // Single erasure boundary: the hook signature is *anyopaque; the whole search
     // recursion below runs on typed *WorkerLayout / *Position / *SearchStack.
     const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker));
-    var table: ?*anyopaque = null;
+    var table: ?[*]tt.TtCluster = null;
     var cc: usize = 0;
     var gen: u8 = 0;
     searchCbTtContext(wl, &table, &cc, &gen);
@@ -1367,7 +1367,7 @@ pub fn iterativeDeepening(worker: *anyopaque) u8 {
     searchIdState(wl, &id);
     const main_thread = id.is_main != 0;
 
-    var table: ?*anyopaque = null;
+    var table: ?[*]tt.TtCluster = null;
     var cc: usize = 0;
     var gen: u8 = 0;
     searchCbTtContext(wl, &table, &cc, &gen);
