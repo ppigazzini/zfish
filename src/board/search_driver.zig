@@ -36,6 +36,7 @@ const timeman_port = @import("timeman");
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
 const search_types = @import("search_types");
+const search_ctx = @import("search_ctx");
 const fen = @import("fen");
 const board_core = @import("board_core");
 const legality = @import("legality");
@@ -263,13 +264,7 @@ fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
     pv.length = n + 1;
 }
 
-const SsCtx = struct {
-    is_mainthread: u8,
-    root_moves_empty: u8,
-    npmsec: u8,
-    limits_depth: i32,
-    skill_enabled: u8,
-};
+const SsCtx = search_ctx.SsCtx;
 
 // Search-manager driver callbacks that touch only the Worker graph (via graph_layout)
 // + the accumulator stack; the driver (workerStartSearching) calls them locally.
@@ -639,79 +634,14 @@ const EvalInput = struct {
 // Live (mutable) fields are pointers; fixed-per-search fields are snapshot values.
 // calls_cnt is null when this worker is not the main thread (check_time is a
 // main-thread-only operation), matching the C++ is_mainthread() gate.
-const SearchTimeState = struct {
-    calls_cnt: ?*c_int,
-    stop_write: ?*u8,
-    ponder: ?*const u8,
-    stop_on_ponderhit: ?*const u8,
-    tm_start_time: i64,
-    tm_maximum_time: i64,
-    lim_nodes: u64,
-    lim_movetime: i64,
-    tm_use_nodes_time: u8,
-    use_time_management: u8,
-};
+const SearchTimeState = search_ctx.SearchTimeState;
 
 // iterative_deepening state, snapshotted once at entry (skill-off path only). Live
 // fields are pointers into Worker/SearchManager/ThreadPool; the rest are values
 // read once.
-const ZfishIdState = struct {
-    root_pos: *Position,
-    root_moves: [*]RootMove,
-    pv_idx: *usize,
-    pv_last: *usize,
-    sel_depth: *c_int,
-    root_depth: *c_int,
-    root_delta: *c_int,
-    optimism: *[2]c_int,
-    nodes: *const u64,
-    stop: *u8,
-    increase_depth: *u8,
-    stop_on_ponderhit: *u8,
-    ponder: *const u8,
-    iter_value: *[4]c_int,
-    previous_time_reduction: *f64,
-    last_iter_pv: *PVMoves,
-    root_moves_count: usize,
-    thread_idx: usize,
-    threads_size: usize,
-    multipv_option: usize,
-    tm_optimum: i64,
-    tm_maximum: i64,
-    tm_start_time: i64,
-    limits_depth: c_int,
-    limits_mate: c_int,
-    best_previous_score: c_int,
-    best_previous_average_score: c_int,
-    skill_level: f64,
-    is_main: u8,
-    use_time_management: u8,
-    tm_use_nodes_time: u8,
-    skill_enabled: u8,
-};
+const ZfishIdState = search_ctx.ZfishIdState;
 
-const QCtx = struct {
-    worker: *graph_layout.WorkerLayout,
-    table: ?*anyopaque,
-    cluster_count: usize,
-    generation: u8,
-    acc_stack: *anyopaque,
-    nodes: *u64,
-    cache: *anyopaque,
-    optimism: *const [2]c_int,
-    nmp_min_ply: *c_int,
-    sel_depth: *c_int,
-    root_depth: *c_int,
-    reductions: [*]const c_int,
-    root_delta: *const c_int,
-    last_iter_pv: *const PVMoves,
-    stop: *const u8,
-    pv_idx: *const usize,
-    root_moves: [*]RootMove,
-    pv_last: *const usize,
-    best_move_changes: *u64,
-    time_state: SearchTimeState,
-};
+const QCtx = search_ctx.QCtx;
 
 // Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
 // only for UCI reporting. Bumps the cached field when this ply is deeper.
