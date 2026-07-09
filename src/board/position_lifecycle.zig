@@ -15,6 +15,7 @@ const fen_parse = @import("fen_parse");
 const position_types = @import("position_types");
 
 const Position = position_types.Position;
+const StateInfo = position_types.StateInfo;
 const DirtyPiece = position_types.DirtyPiece;
 const DirtyThreats = position_types.DirtyThreats;
 const doMove = move_do.doMove;
@@ -23,7 +24,7 @@ const setPosition = fen_parse.setPosition;
 
 // do a move with fresh dirty-piece/threats scratch (the perft/setup path, which
 // does not thread an accumulator delta through).
-pub fn doMoveState(pos_ptr: *Position, move: u16, st_ptr: *anyopaque) void {
+pub fn doMoveState(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     var dp: DirtyPiece = undefined;
     var dts: DirtyThreats = undefined;
     dts.list_size = 0;
@@ -42,6 +43,6 @@ pub fn destroy(pos: ?*Position) void {
 
 /// setPosition with the engine-graph Position/StateInfo sizes filled in (lets callers keep
 /// the 5-arg shape without threading graph sizes through).
-pub fn setPositionState(pos_ptr: *Position, fen_ptr: [*]const u8, fen_len: usize, chess960_enabled: u8, state_ptr: *anyopaque) ?[*:0]u8 {
+pub fn setPositionState(pos_ptr: *Position, fen_ptr: [*]const u8, fen_len: usize, chess960_enabled: u8, state_ptr: *StateInfo) ?[*:0]u8 {
     return setPosition(pos_ptr, fen_ptr, fen_len, chess960_enabled, state_ptr, graph_layout.position_size, graph_layout.state_info_size);
 }
