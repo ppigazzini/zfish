@@ -769,20 +769,6 @@ inline fn inLastIterPv(ctx: *const QCtx, ply_minus_1: c_int, move: u16) bool {
     return idx < pv.length and pv.moves[idx] == move;
 }
 
-pub fn qsearchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, pv_node: u8) c_int {
-    // Single erasure boundary: the hook signature is *anyopaque; the whole search
-    // recursion below runs on typed *WorkerLayout / *Position / *SearchStack.
-    const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker));
-    var table: ?[*]tt.TtCluster = null;
-    var cc: usize = 0;
-    var gen: u8 = 0;
-    searchCbTtContext(wl, &table, &cc, &gen);
-    const ctx = buildCtx(wl, table, cc, gen);
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
-    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
-    return qsearchImpl(&ctx, pos, ss, alpha, beta, pv_node != 0);
-}
-
 // ======================= search() (ported to Zig) =======================
 // Mirrors Search::Worker::search for Root/PV/NonPV nodes (node type selected by the
 // root_node/pv_node/cut_node params). Reuses the qsearch infrastructure
@@ -1324,20 +1310,6 @@ fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_
 }
 
 // captVal / captEntry live in the search_common leaf (M17.3s).
-
-pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, alpha: c_int, beta: c_int, depth: c_int, cut_node: u8, pv_node: u8, root_node: u8) c_int {
-    // Single erasure boundary: the hook signature is *anyopaque; the whole search
-    // recursion below runs on typed *WorkerLayout / *Position / *SearchStack.
-    const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker));
-    var table: ?[*]tt.TtCluster = null;
-    var cc: usize = 0;
-    var gen: u8 = 0;
-    searchCbTtContext(wl, &table, &cc, &gen);
-    const ctx = buildCtx(wl, table, cc, gen);
-    const pos: *Position = @ptrCast(@alignCast(pos_ptr));
-    const ss: *SearchStack = @ptrCast(@alignCast(ss_ptr));
-    return searchImpl(&ctx, pos, ss, alpha, beta, depth, cut_node != 0, pv_node != 0, root_node != 0);
-}
 
 // ==================== iterative_deepening() (ported to Zig) ====================
 // The UCI pv() sink and the cross-thread bestMoveChanges collection (sum + reset,
