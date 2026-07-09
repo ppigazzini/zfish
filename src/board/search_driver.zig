@@ -39,6 +39,7 @@ const search_types = @import("search_types");
 const search_ctx = @import("search_ctx");
 const search_id = @import("search_id");
 const search_acc = @import("search_acc");
+const search_setup = @import("search_setup");
 const fen = @import("fen");
 const board_core = @import("board_core");
 const legality = @import("legality");
@@ -364,43 +365,8 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 // and -- on the main thread -- the SearchManager/TimeManagement/LimitsType time inputs.
 // Relocated from main.zig (M16.7): graph_layout offset reads + the native FT pointer
 // (the network handle is never dereferenced -- weights serve from native storage).
-fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*anyopaque, out_nodes: *?*u64, out_cache: *?*anyopaque, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
-    const stop = &wl.threads.stop;
-
-    out_acc_stack.* = &wl.accumulator_stack;
-    out_nodes.* = &wl.nodes;
-    out_cache.* = &wl.refresh_table;
-    out_optimism.* = &wl.optimism;
-    out_nmp_min_ply.* = &wl.nmp_min_ply;
-    out_sel_depth.* = &wl.sel_depth;
-    out_root_depth.* = &wl.root_depth;
-    out_reductions.* = &wl.reductions;
-    out_root_delta.* = &wl.root_delta;
-    // One canonical PVMoves now (M18.2 de-mirror) -- plain mut->const, no cast.
-    out_last_iter_pv.* = &wl.last_iteration_pv;
-    out_stop.* = stop;
-    out_pv_idx.* = &wl.pv_idx;
-    // root_moves[0] is the vector's begin pointer (the first element's address).
-    out_root_moves.* = @ptrFromInt(wl.root_moves[0]);
-    out_pv_last.* = &wl.pv_last;
-    out_best_move_changes.* = &wl.best_move_changes;
-
-    if (wl.thread_idx == 0) {
-        const smgr = wl.manager.?;
-        out_time.calls_cnt = &smgr.calls_cnt;
-        out_time.stop_write = stop;
-        out_time.ponder = &smgr.ponder;
-        out_time.stop_on_ponderhit = &smgr.stop_on_ponderhit;
-        out_time.tm_start_time = smgr.tm.start_time;
-        out_time.tm_maximum_time = smgr.tm.maximum_time;
-        out_time.lim_nodes = wl.limits.nodes;
-        out_time.lim_movetime = wl.limits.movetime;
-        out_time.tm_use_nodes_time = smgr.tm.use_nodes_time;
-        out_time.use_time_management = @intFromBool(wl.limits.time[0] != 0 or wl.limits.time[1] != 0);
-    } else {
-        out_time.calls_cnt = null;
-    }
-}
+// QCtx construction (searchCbWorkerState + buildCtx) moved to the search_setup leaf
+// (M18.7); buildCtx aliased below (searchCbWorkerState is private to that leaf).
 
 // Zig-owned accumulator stack push/pop (defined in stockfish_zcu.o). push() bumps
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
@@ -697,47 +663,7 @@ fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha
 
 // Fetch the stable per-search Worker state once and assemble the QCtx threaded
 // through the whole (q)search recursion.
-fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
-    var acc_stack: ?*anyopaque = null;
-    var nodes: ?*u64 = null;
-    var cache: ?*anyopaque = null;
-    var optimism: ?*const [2]c_int = null;
-    var nmp_min_ply: ?*c_int = null;
-    var sel_depth: ?*c_int = null;
-    var root_depth: ?*c_int = null;
-    var reductions: ?[*]const c_int = null;
-    var root_delta: ?*const c_int = null;
-    var last_iter_pv: ?*const PVMoves = null;
-    var stop: ?*const u8 = null;
-    var pv_idx: ?*const usize = null;
-    var root_moves: ?*anyopaque = null;
-    var pv_last: ?*const usize = null;
-    var best_move_changes: ?*u64 = null;
-    var time_state: SearchTimeState = undefined;
-    searchCbWorkerState(worker, &acc_stack, &nodes, &cache, &optimism, &nmp_min_ply, &sel_depth, &root_depth, &reductions, &root_delta, &last_iter_pv, &stop, &pv_idx, &root_moves, &pv_last, &best_move_changes, &time_state);
-    return .{
-        .worker = worker,
-        .table = table,
-        .cluster_count = cc,
-        .generation = gen,
-        .acc_stack = acc_stack.?,
-        .nodes = nodes.?,
-        .cache = cache.?,
-        .optimism = optimism.?,
-        .nmp_min_ply = nmp_min_ply.?,
-        .sel_depth = sel_depth.?,
-        .root_depth = root_depth.?,
-        .reductions = reductions.?,
-        .root_delta = root_delta.?,
-        .last_iter_pv = last_iter_pv.?,
-        .stop = stop.?,
-        .pv_idx = pv_idx.?,
-        .root_moves = @ptrCast(@alignCast(root_moves.?)),
-        .pv_last = pv_last.?,
-        .best_move_changes = best_move_changes.?,
-        .time_state = time_state,
-    };
-}
+const buildCtx = search_setup.buildCtx;
 
 // SearchManager::check_time inlined (main thread only). Decrements the call
 // counter; when it reaches zero, resets it and applies the stop conditions.
