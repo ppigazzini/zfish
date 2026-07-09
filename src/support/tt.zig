@@ -32,7 +32,7 @@ pub const TtProbeOutput = struct {
 
 pub const TtProbeTableOutput = struct {
     found: u8,
-    writer_ptr: ?*anyopaque,
+    writer_ptr: ?*TtEntry,
     data: TtReadOutput,
 };
 
@@ -45,7 +45,7 @@ fn reportAllocFailure(mb: usize) noreturn {
 }
 // Zero a [start_cluster, start_cluster+cluster_len) span of the TT (single-node: the
 // per-thread parallel-clear NUMA split is a no-op here). Native Zig.
-fn zeroTtSlice(table_ptr: ?*anyopaque, start_cluster: usize, cluster_len: usize) void {
+fn zeroTtSlice(table_ptr: ?[*]TtCluster, start_cluster: usize, cluster_len: usize) void {
     if (cluster_len == 0) return;
     const table = table_ptr orelse return;
     const cs = @sizeOf(TtCluster);
@@ -54,26 +54,29 @@ fn zeroTtSlice(table_ptr: ?*anyopaque, start_cluster: usize, cluster_len: usize)
 }
 
 pub fn resizeState(
-    table_ptr: *?*anyopaque,
+    table_ptr: *?[*]TtCluster,
     cluster_count_ptr: *usize,
     generation_ptr: *u8,
     mb: usize,
     threads: *graph_layout.ThreadPool,
 ) void {
-    memory.alignedLargePagesFree(table_ptr.*);
+    // The large-page allocator deals in raw bytes; the cluster typing resumes the
+    // moment the buffer is handed back to the typed graph handle.
+    memory.alignedLargePagesFree(@ptrCast(table_ptr.*));
 
     const cluster_count = mb * 1024 * 1024 / @sizeOf(TtCluster);
     cluster_count_ptr.* = cluster_count;
 
-    const table = memory.alignedLargePagesAlloc(cluster_count * @sizeOf(TtCluster)) orelse
+    const raw = memory.alignedLargePagesAlloc(cluster_count * @sizeOf(TtCluster)) orelse
         reportAllocFailure(mb);
+    const table: [*]TtCluster = @ptrCast(@alignCast(raw));
     table_ptr.* = table;
 
     clearState(table, cluster_count, generation_ptr, threads);
 }
 
 pub fn clearState(
-    table: ?*anyopaque,
+    table: ?[*]TtCluster,
     cluster_count: usize,
     generation_ptr: *u8,
     threads: *graph_layout.ThreadPool,
@@ -243,7 +246,7 @@ pub fn probe(
 }
 
 pub fn probeTable(
-    table: ?*anyopaque,
+    table: ?[*]TtCluster,
     cluster_count: usize,
     key: u64,
     generation: u8,
@@ -265,15 +268,14 @@ pub fn probeTable(
     }
 
     const cluster_index = firstEntryIndex(key, cluster_count);
-    const clusters_const: [*]const TtCluster = @ptrCast(@alignCast(table.?));
-    const result = probe(&clusters_const[cluster_index], key, generation, depth_none);
+    const clusters: [*]TtCluster = table.?;
+    const result = probe(&clusters[cluster_index], key, generation, depth_none);
 
-    const clusters_mut: [*]TtCluster = @ptrCast(@alignCast(table.?));
-    const writer_ptr: *TtEntry = &clusters_mut[cluster_index].entry[result.writer_index];
+    const writer_ptr: *TtEntry = &clusters[cluster_index].entry[result.writer_index];
 
     return .{
         .found = result.found,
-        .writer_ptr = @ptrCast(writer_ptr),
+        .writer_ptr = writer_ptr,
         .data = result.data,
     };
 }

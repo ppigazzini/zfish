@@ -8,6 +8,7 @@
 const graph_layout = @import("graph_layout");
 const root_move = @import("root_move");
 const search_ctx = @import("search_ctx");
+const tt_types = @import("tt_types");
 
 const PVMoves = root_move.PVMoves;
 const QCtx = search_ctx.QCtx;
@@ -54,7 +55,7 @@ fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*anyopaq
     }
 }
 
-pub fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?*anyopaque, cc: usize, gen: u8) QCtx {
+pub fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?[*]tt_types.TtCluster, cc: usize, gen: u8) QCtx {
     var acc_stack: ?*anyopaque = null;
     var nodes: ?*u64 = null;
     var cache: ?*anyopaque = null;
