@@ -402,7 +402,6 @@ pub fn goEngine(engine_ptr: *native_engine.NativeEngine, limits_ptr: *const grap
     verifyNetwork();
     thread_port.startThinking(
         engine_ptr.threadsPtr(),
-        engine_ptr.optionsPtr(),
         engine_ptr.positionPtr(),
         limits_ptr,
         engine_ptr.statesSlotPtr(),
