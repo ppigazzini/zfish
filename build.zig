@@ -184,6 +184,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "graph_layout", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "position", .imp = "position_types", .to = "position_types" },
         .{ .from = "graph_layout", .imp = "position_types", .to = "position_types" },
+        .{ .from = "state_list", .imp = "position_types", .to = "position_types" },
         .{ .from = "graph_layout", .imp = "shared_state", .to = "shared_state" },
         .{ .from = "graph_layout", .imp = "limits_type", .to = "limits_type" },
         .{ .from = "engine", .imp = "shared_state", .to = "shared_state" },
@@ -1061,7 +1062,6 @@ pub fn build(b: *std.Build) void {
         "src/board/position_types.zig",
         "src/board/fen.zig",
         "src/board/board_core.zig",
-        "src/board/state_list.zig",
         "src/support/root_move.zig",
         "src/support/search_manager.zig",
         "src/support/shared_state.zig",
@@ -1078,6 +1078,19 @@ pub fn build(b: *std.Build) void {
         });
         test_step.dependOn(&b.addRunArtifact(file_test).step);
     }
+
+    // state_list.zig holds a typed StateInfo (M18.3), so its standalone test needs the
+    // position_types module (unlike the std-only files in the loop above).
+    const state_list_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/board/state_list.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    state_list_test.root_module.addImport("position_types", mods.get("position_types").?);
+    test_step.dependOn(&b.addRunArtifact(state_list_test).step);
 
     const parity_step = b.step(
         "parity",
