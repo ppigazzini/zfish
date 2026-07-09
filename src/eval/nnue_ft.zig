@@ -26,22 +26,29 @@ const feature_transformer_threat_weights_offset = roundUp(feature_transformer_we
 const feature_transformer_psqt_weights_offset = roundUp(feature_transformer_threat_weights_offset + feature_transformer_threat_weights_bytes, nnue_align);
 const feature_transformer_threat_psqt_weights_offset = roundUp(feature_transformer_psqt_weights_offset + feature_transformer_psqt_weights_bytes, nnue_align);
 
-pub fn featureTransformerPsqWeights(feature_transformer: *const anyopaque) [*]const i16 {
+/// Opaque handle to the loaded feature-transformer weight blob (M18.4-B4). A raw
+/// large-page byte arena whose layout is fixed by the .nnue file + SIMD access, so
+/// the bytes stay raw -- but the *handle* is a distinct type, not a bare *anyopaque,
+/// so the eval can't confuse it with the accumulator stack / cache handles. The
+/// accessors below reinterpret it as bytes and hand back typed weight pointers.
+pub const FeatureTransformer = opaque {};
+
+pub fn featureTransformerPsqWeights(feature_transformer: *const FeatureTransformer) [*]const i16 {
     const bytes: [*]const u8 = @ptrCast(feature_transformer);
     return @ptrCast(@alignCast(bytes + feature_transformer_weights_offset));
 }
 
-pub fn featureTransformerThreatWeights(feature_transformer: *const anyopaque) [*]const i8 {
+pub fn featureTransformerThreatWeights(feature_transformer: *const FeatureTransformer) [*]const i8 {
     const bytes: [*]const u8 = @ptrCast(feature_transformer);
     return @ptrCast(bytes + feature_transformer_threat_weights_offset);
 }
 
-pub fn featureTransformerPsqPsqtWeights(feature_transformer: *const anyopaque) [*]const i32 {
+pub fn featureTransformerPsqPsqtWeights(feature_transformer: *const FeatureTransformer) [*]const i32 {
     const bytes: [*]const u8 = @ptrCast(feature_transformer);
     return @ptrCast(@alignCast(bytes + feature_transformer_psqt_weights_offset));
 }
 
-pub fn featureTransformerThreatPsqtWeights(feature_transformer: *const anyopaque) [*]const i32 {
+pub fn featureTransformerThreatPsqtWeights(feature_transformer: *const FeatureTransformer) [*]const i32 {
     const bytes: [*]const u8 = @ptrCast(feature_transformer);
     return @ptrCast(@alignCast(bytes + feature_transformer_threat_psqt_weights_offset));
 }

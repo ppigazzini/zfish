@@ -23,6 +23,9 @@ const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
 // FeatureTransformer weight-blob layout + accessors live in the nnue_ft leaf
 // (M17.4e); aliased for the refresh/apply-delta core.
 const nnue_ft = @import("nnue_ft");
+/// Re-export the opaque FT handle so callers (network.zig) can type the pointer they
+/// hand in without importing nnue_ft directly (M18.4-B4).
+pub const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
 const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
 const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
@@ -154,7 +157,7 @@ const PositionSnapshot = struct {
 pub fn evaluate(
     stack: *anyopaque,
     pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     cache: *anyopaque,
 ) void {
     evaluateSide(psq_feature, white, stack, pos, feature_transformer, cache);
@@ -181,7 +184,7 @@ const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
 pub fn transformBucket(
     stack: *anyopaque,
     pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     cache: *anyopaque,
     bucket: usize,
     stm: u8,
@@ -273,7 +276,7 @@ fn evaluateSide(
     perspective: u8,
     stack: *anyopaque,
     pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     cache: *anyopaque,
 ) void {
     const last_usable = findLastUsable(feature_kind, stack, perspective);
@@ -324,7 +327,7 @@ fn refreshLatest(
     perspective: u8,
     stack: *anyopaque,
     pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     cache: *anyopaque,
 ) void {
     const king_square = loadBridgeSnapshot(pos).king_square[perspective];
@@ -341,7 +344,7 @@ fn refreshLatestPsq(
     king_square: u8,
     stack: *anyopaque,
     pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     cache: *anyopaque,
 ) void {
     const latest_index = stackSize(stack) - 1;
@@ -416,7 +419,7 @@ fn refreshLatestThreat(
     king_square: u8,
     stack: *anyopaque,
     pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
 ) void {
     const latest_index = stackSize(stack) - 1;
     const snapshot = positionSnapshot(pos);
@@ -438,7 +441,7 @@ fn incrementalStep(
     forward: bool,
     perspective: u8,
     pos: *const anyopaque,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     target_index: usize,
     computed_index: usize,
 ) void {
@@ -472,7 +475,7 @@ fn incrementalStepPsq(
     forward: bool,
     perspective: u8,
     king_square: u8,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     target_index: usize,
     computed_index: usize,
 ) void {
@@ -531,7 +534,7 @@ fn incrementalStepThreat(
     forward: bool,
     perspective: u8,
     king_square: u8,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     target_index: usize,
     computed_index: usize,
 ) void {
@@ -600,7 +603,7 @@ fn appendHalfChange(
 fn applyPsqDelta(
     stack: *anyopaque,
     perspective: u8,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     target_index: usize,
     computed_index: usize,
     removed: []const u32,
@@ -626,7 +629,7 @@ fn applyPsqDelta(
 fn applyThreatDelta(
     stack: *anyopaque,
     perspective: u8,
-    feature_transformer: *const anyopaque,
+    feature_transformer: *const FeatureTransformer,
     target_index: usize,
     computed_index: usize,
     removed: []const u32,
