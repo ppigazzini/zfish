@@ -102,7 +102,7 @@ fn constructWorkerInto(
     position_port.clearWorkerHistories(wl);
     position_port.clearSharedHistory(shared_obj, in.numa_thread_idx, in.numa_total);
     search_port.fillReductions(&wl.reductions, reductions_count);
-    nnue_acc.clearRefreshCache(&wl.refresh_table, biases);
+    nnue_acc.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
 
 // Production entry: construct a complete native Worker into `buf` (a large-page
