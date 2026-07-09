@@ -21,7 +21,7 @@ const verifyNetwork = engine_nnue.verifyNetwork;
 const fen = engine_trace.fen;
 
 const perft_max_depth = 64;
-const PerftStateBuf = [graph_layout.state_info_size]u8;
+const PerftStateBuf = position_port.StateInfo;
 
 fn perftCount(pos_ptr: *position_port.Position, depth: c_int, states: *[perft_max_depth]PerftStateBuf, ply: usize) u64 {
     if (depth <= 0) return 1;
@@ -69,8 +69,8 @@ pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
             cnt = 1;
             nodes += 1;
         } else {
-            var si: [graph_layout.state_info_size]u8 align(16) = undefined;
-            position_port.doMoveState(p, m, @ptrCast(&si));
+            var si: position_port.StateInfo = undefined;
+            position_port.doMoveState(p, m, &si);
             cnt = perftSubtree(p, depth - 1);
             nodes += cnt;
             position_port.undoMove(p, m);
