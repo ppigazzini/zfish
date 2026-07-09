@@ -51,7 +51,7 @@ pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
     const chess960 = option_port.intByName("UCI_Chess960") != 0;
 
     const p: *position_port.Position = @ptrCast(@alignCast(std.c.malloc(graph_layout.position_size) orelse @panic("perft: position alloc")));
-    const st = std.c.malloc(graph_layout.state_info_size) orelse @panic("perft: state alloc");
+    const st: *position_port.StateInfo = @ptrCast(@alignCast(std.c.malloc(graph_layout.state_info_size) orelse @panic("perft: state alloc")));
     @memset(@as([*]u8, @ptrCast(p))[0..graph_layout.position_size], 0);
     @memset(@as([*]u8, @ptrCast(st))[0..graph_layout.state_info_size], 0);
     if (position_port.setPosition(p, fen_text.ptr, fen_text.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.c.free(msg);
