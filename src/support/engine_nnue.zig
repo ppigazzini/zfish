@@ -60,7 +60,7 @@ pub fn loadNetworkEngine(engine_ptr: *native_engine.NativeEngine, evalfile_path:
     const e = engine_ptr;
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
     const bdir_slice = std.mem.span(bdir);
-    network_port.load(@constCast(e.networkPtr()), bdir_slice.ptr, bdir_slice.len, evalfile_path.ptr, evalfile_path.len);
+    network_port.load(bdir_slice.ptr, bdir_slice.len, evalfile_path.ptr, evalfile_path.len);
 }
 
 pub fn saveNetworkEngine(filename_opt: ?[]const u8) void {
