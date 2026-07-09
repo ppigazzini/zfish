@@ -24,12 +24,31 @@ pub const PositionSnapshot = struct {
 // nnue/uci_move (they are imported *by* position), so it registers these here — the
 // shared leaf they all already import — instead of the old C-ABI exports.
 // position.initRuntime() installs them before any search runs.
-pub var fill_fn: ?*const fn (pos: *const anyopaque, out: *anyopaque) void = null;
-pub var move_is_legal_fn: ?*const fn (pos: *const anyopaque, raw_move: u16) bool = null;
+//
+// M17.9: NON-OPTIONAL, each defaulting to a named panic stub (matching the
+// native_hooks registry idiom), so fill()/moveIsLegal() invoke them directly with no
+// `.?` null-unwrap. An unregistered hook fails fast with its own name instead of an
+// opaque null-optional panic.
+fn hookPanic(comptime name: []const u8) noreturn {
+    @panic(name ++ ": position snapshot hook not registered (initRuntime not run?)");
+}
+
+pub var fill_fn: *const fn (pos: *const anyopaque, out: *anyopaque) void =
+    struct {
+        fn stub(_: *const anyopaque, _: *anyopaque) void {
+            hookPanic("fill_fn");
+        }
+    }.stub;
+pub var move_is_legal_fn: *const fn (pos: *const anyopaque, raw_move: u16) bool =
+    struct {
+        fn stub(_: *const anyopaque, _: u16) bool {
+            hookPanic("move_is_legal_fn");
+        }
+    }.stub;
 
 pub inline fn fill(pos: *const anyopaque, out: *anyopaque) void {
-    fill_fn.?(pos, out);
+    fill_fn(pos, out);
 }
 pub inline fn moveIsLegal(pos: *const anyopaque, raw_move: u16) bool {
-    return move_is_legal_fn.?(pos, raw_move);
+    return move_is_legal_fn(pos, raw_move);
 }
