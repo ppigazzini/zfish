@@ -15,6 +15,32 @@ const Position = position_types.Position;
 const PVMoves = root_move.PVMoves;
 const RootMove = root_move.RootMove;
 
+// Worker-graph accessors shared by BOTH the ID-orchestration driver and the node
+// recursion (M18.7): pure reads of a `*WorkerLayout` into its bound subsystems. Kept
+// here in the context leaf so the coming search_id leaf and search_driver both reach
+// them without importing each other (searchCbTtContext in particular was the shared
+// edge that would otherwise cycle the two).
+pub fn workerThreadsPool(wl: *const graph_layout.WorkerLayout) *graph_layout.ThreadPool {
+    return wl.threads;
+}
+pub fn workerManager(wl: *const graph_layout.WorkerLayout) ?*graph_layout.SearchManager {
+    return wl.manager;
+}
+pub fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootMove {
+    // root_moves is the {begin,end,cap} vector header; [0] is the first element's
+    // address; return the typed first RootMove via the graph adapter.
+    return graph_layout.RootMove.fromAddr(wl.root_moves[0]);
+}
+pub fn workerTT(wl: *const graph_layout.WorkerLayout) *graph_layout.TranspositionTable {
+    return wl.tt;
+}
+pub fn searchCbTtContext(wl: *const graph_layout.WorkerLayout, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
+    const tp = workerTT(wl);
+    out_table.* = tp.table;
+    out_cluster_count.* = tp.cluster_count;
+    out_generation.* = tp.generation8;
+}
+
 pub const SsCtx = struct {
     is_mainthread: u8,
     root_moves_empty: u8,

@@ -268,21 +268,12 @@ const SsCtx = search_ctx.SsCtx;
 
 // Search-manager driver callbacks that touch only the Worker graph (via graph_layout)
 // + the accumulator stack; the driver (workerStartSearching) calls them locally.
-fn workerThreadsPool(wl: *const graph_layout.WorkerLayout) *graph_layout.ThreadPool {
-    return wl.threads;
-}
-fn workerManager(wl: *const graph_layout.WorkerLayout) ?*graph_layout.SearchManager {
-    return wl.manager;
-}
-fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootMove {
-    // root_moves is the {begin,end,cap} vector header; [0] is the first element's
-    // address. Return the typed first RootMove via the graph adapter so callers read
-    // fields directly instead of each re-doing RootMove.fromAddr.
-    return graph_layout.RootMove.fromAddr(wl.root_moves[0]);
-}
-fn workerTT(wl: *const graph_layout.WorkerLayout) *graph_layout.TranspositionTable {
-    return wl.tt;
-}
+// Worker-graph accessors moved to the search_ctx leaf (M18.7) so the coming search_id
+// leaf and this file share them without a cycle; aliased here to keep call sites.
+const workerThreadsPool = search_ctx.workerThreadsPool;
+const workerManager = search_ctx.workerManager;
+const workerRootMove0 = search_ctx.workerRootMove0;
+const workerTT = search_ctx.workerTT;
 
 // Per-search reset: clear the worker's accumulator stack + last-iteration PV.
 fn ssPrologue(wl: *graph_layout.WorkerLayout) void {
@@ -332,12 +323,7 @@ fn ssPvOneAndPonder(wl: *graph_layout.WorkerLayout, best: *const graph_layout.Wo
     return extractPonderFromTt(@ptrCast(pv), tp.table, tp.cluster_count, tp.generation8, &wl.root_pos);
 }
 
-fn searchCbTtContext(wl: *const graph_layout.WorkerLayout, out_table: *?*anyopaque, out_cluster_count: *usize, out_generation: *u8) void {
-    const tp = workerTT(wl);
-    out_table.* = tp.table;
-    out_cluster_count.* = tp.cluster_count;
-    out_generation.* = tp.generation8;
-}
+const searchCbTtContext = search_ctx.searchCbTtContext;
 
 fn optInt(name: []const u8) c_int {
     return option_port.intByName(name);
