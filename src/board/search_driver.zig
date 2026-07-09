@@ -1346,97 +1346,20 @@ pub fn searchEntry(worker: *anyopaque, pos_ptr: *anyopaque, ss_ptr: *anyopaque, 
 // returned as a double) keep multi-thread correct. This handles the skill-off path
 // only, so no skill/RNG logic is needed here.
 
-const id_nodes_limit_output: u64 = 10_000_000;
-
-inline fn idIsLoss(v: c_int) bool {
-    return v <= -q_value_tb_win;
-}
-inline fn idIsMate(v: c_int) bool {
-    return v >= q_value_mate_in_max;
-}
-inline fn idIsMated(v: c_int) bool {
-    return v <= -q_value_mate_in_max;
-}
-// RootMove::operator<: descending by (score, previousScore).
-inline fn rootLess(a: *const RootMove, b: *const RootMove) bool {
-    return if (a.score != b.score) a.score > b.score else a.previous_score > b.previous_score;
-}
-// Stable insertion sort over root_moves[lo, hi): matches std::stable_sort with
-// RootMove::operator< (equal elements keep their relative order).
-fn stableSortRoot(rm: [*]RootMove, lo: usize, hi: usize) void {
-    if (hi <= lo) return;
-    var i: usize = lo + 1;
-    while (i < hi) : (i += 1) {
-        const key = rm[i];
-        var j: usize = i;
-        while (j > lo and rootLess(&key, &rm[j - 1])) : (j -= 1) rm[j] = rm[j - 1];
-        rm[j] = key;
-    }
-}
-// Utility::move_to_front: rotate the first RootMove whose pv[0]==target to front.
-fn moveToFront(rm: [*]RootMove, count: usize, target: u16) void {
-    var fi: usize = 0;
-    while (fi < count and rm[fi].pv.moves[0] != target) : (fi += 1) {}
-    if (fi >= count) return;
-    const tmp = rm[fi];
-    var z: usize = fi;
-    while (z > 0) : (z -= 1) rm[z] = rm[z - 1];
-    rm[0] = tmp;
-}
-inline fn idElapsed(id: *const ZfishIdState) i64 {
-    return if (id.tm_use_nodes_time != 0) @intCast(id.nodes.*) else clock.now() - id.tm_start_time;
-}
-inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
-    return @max(lo, @min(v, hi));
-}
-
-// Skill (strength handicap). Move::none() == 0. The PRNG matches misc.h's
-// xorshift*, seeded once from now() on first use (non-deterministic by design).
-const skill_pawn_value: c_int = 208;
-var skill_rng_state: u64 = 0;
-fn skillRand64() u64 {
-    if (skill_rng_state == 0) skill_rng_state = @bitCast(clock.now());
-    var s = skill_rng_state;
-    s ^= s >> 12;
-    s ^= s << 25;
-    s ^= s >> 27;
-    skill_rng_state = s;
-    return s *% 2685821657736338717;
-}
-inline fn skillTimeToPick(level: f64, depth: c_int) bool {
-    return depth == 1 + @as(c_int, @intFromFloat(level));
-}
-// Skill::pick_best: a statistical rule over the (descending-sorted) rootMoves.
-fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
-    const top_score = id.root_moves[0].score;
-    const span = top_score - id.root_moves[multi_pv - 1].score;
-    const delta: c_int = if (span < skill_pawn_value) span else skill_pawn_value;
-    const weakness: f64 = 120.0 - 2.0 * id.skill_level;
-    const modw: u32 = @intFromFloat(weakness);
-    var max_score: c_int = -q_value_inf;
-    var best: u16 = 0;
-    var i: usize = 0;
-    while (i < multi_pv) : (i += 1) {
-        const r: u32 = @truncate(skillRand64());
-        const term1 = weakness * @as(f64, @floatFromInt(top_score - id.root_moves[i].score));
-        const term2: c_int = delta * @as(c_int, @intCast(r % modw));
-        const push = @divTrunc(@as(c_int, @intFromFloat(term1 + @as(f64, @floatFromInt(term2)))), 128);
-        if (id.root_moves[i].score + push >= max_score) {
-            max_score = id.root_moves[i].score + push;
-            best = id.root_moves[i].pv.moves[0];
-        }
-    }
-    return best;
-}
-// std::swap(rootMoves[0], *find(rootMoves, move)).
-fn skillSwapBest(id: *const ZfishIdState, move: u16) void {
-    var i: usize = 0;
-    while (i < id.root_moves_count and id.root_moves[i].pv.moves[0] != move) : (i += 1) {}
-    if (i >= id.root_moves_count or i == 0) return;
-    const tmp = id.root_moves[0];
-    id.root_moves[0] = id.root_moves[i];
-    id.root_moves[i] = tmp;
-}
+// ID-loop root-move / skill / mate helpers now live in the search_id leaf
+// (M18.7); iterativeDeepening drives them through these aliases.
+const id_nodes_limit_output = search_id.id_nodes_limit_output;
+const idIsLoss = search_id.idIsLoss;
+const idIsMate = search_id.idIsMate;
+const idIsMated = search_id.idIsMated;
+const rootLess = search_id.rootLess;
+const stableSortRoot = search_id.stableSortRoot;
+const moveToFront = search_id.moveToFront;
+const idElapsed = search_id.idElapsed;
+const fclamp = search_id.fclamp;
+const skillTimeToPick = search_id.skillTimeToPick;
+const skillPickBest = search_id.skillPickBest;
+const skillSwapBest = search_id.skillSwapBest;
 
 pub fn iterativeDeepening(worker: *anyopaque) u8 {
     // Single erasure boundary: the hook signature is *anyopaque; the whole loop

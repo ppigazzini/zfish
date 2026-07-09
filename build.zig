@@ -289,6 +289,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_id", .imp = "thread_vote", .to = "thread_vote" },
         .{ .from = "search_id", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "search_id", .imp = "position_query", .to = "position_query" },
+        .{ .from = "search_id", .imp = "clock", .to = "clock" },
         .{ .from = "search_id", .imp = "search_ctx", .to = "search_ctx" },
         .{ .from = "search_ctx", .imp = "graph_layout", .to = "graph_layout" },
         .{ .from = "search_ctx", .imp = "position_types", .to = "position_types" },
