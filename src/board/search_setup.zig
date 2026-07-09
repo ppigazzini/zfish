@@ -18,7 +18,7 @@ const SearchTimeState = search_ctx.SearchTimeState;
 // One-shot fetch of the Worker state the inlined search needs, all stable for the
 // duration of one search tree. Live (mutable) fields are pointers into the Worker;
 // the main-thread-only time-management fields are null on helper threads.
-fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?*anyopaque, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
+fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?[*]root_move.RootMove, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
     const stop = &wl.threads.stop;
 
     // The NNUE arenas are raw byte buffers embedded in the worker; this is their
@@ -71,7 +71,7 @@ pub fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?[*]tt_types.TtCluste
     var last_iter_pv: ?*const PVMoves = null;
     var stop: ?*const u8 = null;
     var pv_idx: ?*const usize = null;
-    var root_moves: ?*anyopaque = null;
+    var root_moves: ?[*]root_move.RootMove = null;
     var pv_last: ?*const usize = null;
     var best_move_changes: ?*u64 = null;
     var time_state: SearchTimeState = undefined;
@@ -93,7 +93,7 @@ pub fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?[*]tt_types.TtCluste
         .last_iter_pv = last_iter_pv.?,
         .stop = stop.?,
         .pv_idx = pv_idx.?,
-        .root_moves = @ptrCast(@alignCast(root_moves.?)),
+        .root_moves = root_moves.?,
         .pv_last = pv_last.?,
         .best_move_changes = best_move_changes.?,
         .time_state = time_state,
