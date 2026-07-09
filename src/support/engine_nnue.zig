@@ -34,14 +34,12 @@ pub fn printInfoStringNative(str: []const u8) void {
     }
 }
 
-pub fn verifyNetwork(engine_ptr: *native_engine.NativeEngine) void {
+pub fn verifyNetwork() void {
     const evalfile_ptr = option_port.dupEvalFile() orelse return;
     defer c.free(@ptrCast(evalfile_ptr));
     const evalfile = std.mem.span(evalfile_ptr);
 
-    const network_ptr = engine_ptr.networkPtr();
-
-    const result = network_port.verify(network_ptr, evalfile.ptr, evalfile.len);
+    const result = network_port.verify(evalfile.ptr, evalfile.len);
     if (result.message) |message_ptr| {
         defer c.free(@ptrCast(message_ptr));
         // onVerifyNetwork: interactive -> print as "info string ..."; quiet -> no-op.

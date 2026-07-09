@@ -353,7 +353,7 @@ pub fn applySetOptionEngine(engine_ptr: *native_engine.NativeEngine, name_ptr: [
 
 pub fn goEngine(engine_ptr: *native_engine.NativeEngine, limits_ptr: *const graph_layout.LimitsType) void {
     std.debug.assert(limits_ptr.perftValue() == 0);
-    verifyNetwork(engine_ptr);
+    verifyNetwork();
     thread_port.startThinking(
         engine_ptr.threadsPtr(),
         engine_ptr.optionsPtr(),
