@@ -276,19 +276,19 @@ fn doCastlingDo(pos: *Position, us: u8, from: u8, to_in: u8, dp: *DirtyPiece, dt
 pub fn doMove(
     pos_ptr: *Position,
     m: u16,
-    new_st_ptr: *anyopaque,
+    new_st_ptr: *StateInfo,
     gives_check: u8,
-    dp_ptr: *anyopaque,
-    dts_ptr: *anyopaque,
+    dp_ptr: *DirtyPiece,
+    dts_ptr: *DirtyThreats,
 ) void {
     const psq: [*]const u64 = &zobrist.zob_psq;
     const enpassant: [*]const u64 = &zobrist.zob_enpassant;
     const castling: [*]const u64 = &zobrist.zob_castling;
     const zob_side = zobrist.zob_side_val;
     const pos = pos_ptr;
-    const new_st: *StateInfo = @ptrCast(@alignCast(new_st_ptr));
-    const dp: *DirtyPiece = @ptrCast(@alignCast(dp_ptr));
-    const dts: *DirtyThreats = @ptrCast(@alignCast(dts_ptr));
+    const new_st = new_st_ptr;
+    const dp = dp_ptr;
+    const dts = dts_ptr;
 
     var k = pos.st.key ^ zob_side;
 

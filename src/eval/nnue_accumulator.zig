@@ -1,5 +1,11 @@
 const std = @import("std");
 const position_snapshot = @import("position_snapshot");
+const position_types = @import("position_types");
+// The dirty-piece / dirty-threats slots that stackPush hands to doMove are the
+// board's typed records (position_types); the accumulator's local HalfDiff /
+// ThreatDiffView are layout-identical views of the same bytes (M18.4-B4).
+const DirtyPiece = position_types.DirtyPiece;
+const DirtyThreats = position_types.DirtyThreats;
 // Call the pure-Zig feature-index helpers directly instead of round-tripping
 // through the C-ABI exports in main.zig. Passing a small `extern struct` BY VALUE
 // across is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
@@ -100,8 +106,8 @@ const ThreatDiffView = struct {
 pub const AccumulatorStack = opaque {};
 
 pub const StackPushOutput = struct {
-    dirty_piece: *anyopaque,
-    dirty_threats: *anyopaque,
+    dirty_piece: *DirtyPiece,
+    dirty_threats: *DirtyThreats,
 };
 
 const HalfAppendDiff = struct {
