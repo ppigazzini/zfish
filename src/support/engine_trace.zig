@@ -117,8 +117,7 @@ fn accumulatorStackDestroy(stack: ?*anyopaque) void {
 // `new AccumulatorCaches(network)` / delete, ported native: the C++ ctor clears every cache
 // entry from the network FT biases; clearRefreshCache does exactly that over the caches block
 // from the native FT biases (the loaded net). Relocated from main.zig (M16.7).
-pub fn accumulatorCachesCreate(network: *const anyopaque) ?*anyopaque {
-    _ = network; // the native fill uses the native FT biases (same loaded net)
+pub fn accumulatorCachesCreate() ?*anyopaque {
     const buf = std.c.malloc(graph_layout.accumulator_caches_size) orelse return null;
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse {
         std.c.free(buf);
@@ -135,7 +134,6 @@ pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     verifyNetwork();
 
     const source_pos = engine_ptr.positionPtr();
-    const network = engine_ptr.networkPtr();
     const fen_ptr = fen(source_pos) orelse return null;
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
@@ -152,15 +150,15 @@ pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
         return null;
     }
 
-    return evalTrace(trace_pos, network);
+    return evalTrace(trace_pos);
 }
 
-pub fn evalTrace(pos: *const position_port.Position, network: *const anyopaque) ?[*:0]u8 {
+pub fn evalTrace(pos: *const position_port.Position) ?[*:0]u8 {
     const summary = positionSummary(pos);
     if (summary.checkers != 0)
         return allocMessage("Final evaluation: none (in check)", .{});
 
-    const caches = accumulatorCachesCreate(network) orelse return null;
+    const caches = accumulatorCachesCreate() orelse return null;
     defer accumulatorCachesDestroy(caches);
 
     const inner_trace_ptr = buildNnueTrace(pos, summary, caches) orelse return null;
