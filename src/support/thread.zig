@@ -264,11 +264,11 @@ const ScratchPosition = struct {
     pos: *position_port.Position,
     storage: *PendingStateStorage,
 
-    fn init(root_fen: []const u8, chess960: u8) ScratchPosition {
-        const pos = position_port.create() orelse @panic("OOM");
+    fn init(root_fen: []const u8, chess960: u8) !ScratchPosition {
+        const pos = position_port.create() orelse return error.OutOfMemory;
         errdefer position_port.destroy(pos);
 
-        const storage = state_list.storageCreate() orelse @panic("OOM");
+        const storage = state_list.storageCreate() orelse return error.OutOfMemory;
         errdefer state_list.storageDestroy(storage);
 
         var scratch = ScratchPosition{ .pos = pos, .storage = storage };
@@ -333,9 +333,9 @@ fn loadTbConfig(pos: *const position_port.Position) TbConfig {
     return config;
 }
 
-fn probePosition(pos: *const position_port.Position) TablebaseProbe {
+fn probePosition(pos: *const position_port.Position) !TablebaseProbe {
     const snapshot = loadPositionSnapshot(pos);
-    const fen_ptr = buildRootFen(pos) orelse @panic("OOM");
+    const fen_ptr = buildRootFen(pos) orelse return error.OutOfMemory;
     defer c.free(@ptrCast(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
     return tablebase.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
@@ -363,8 +363,8 @@ fn rankRootMovesDtz(
     root_rule50: c_int,
     root_has_repeated: bool,
     ranked_moves: []RankedRootMove,
-) DtzRankResult {
-    var scratch = ScratchPosition.init(root_fen, chess960);
+) !DtzRankResult {
+    var scratch = try ScratchPosition.init(root_fen, chess960);
     defer scratch.deinit();
 
     const bound: c_int = if (rule50) @divTrunc(max_dtz, 2) - 100 else 1;
@@ -375,7 +375,7 @@ fn rankRootMovesDtz(
 
         var dtz: c_int = 0;
         if (loadPositionSnapshot(scratch.pos).rule50_count == 0) {
-            const probe = probePosition(scratch.pos);
+            const probe = try probePosition(scratch.pos);
             if (probe.wdl_state == probe_fail)
                 return .fallback_to_wdl;
             dtz = dtzBeforeZeroing(-probe.wdl);
@@ -384,7 +384,7 @@ fn rankRootMovesDtz(
         {
             dtz = 0;
         } else {
-            const probe = probePosition(scratch.pos);
+            const probe = try probePosition(scratch.pos);
             if (probe.dtz_state == probe_fail)
                 return .fallback_to_wdl;
 
@@ -443,8 +443,8 @@ fn rankRootMovesWdl(
     chess960: u8,
     rule50: bool,
     ranked_moves: []RankedRootMove,
-) bool {
-    var scratch = ScratchPosition.init(root_fen, chess960);
+) !bool {
+    var scratch = try ScratchPosition.init(root_fen, chess960);
     defer scratch.deinit();
 
     for (ranked_moves) |*ranked_move| {
@@ -455,7 +455,7 @@ fn rankRootMovesWdl(
         if (position_port.isDraw(scratch.pos, 1)) {
             wdl = wdl_draw;
         } else {
-            const probe = probePosition(scratch.pos);
+            const probe = try probePosition(scratch.pos);
             if (probe.wdl_state == probe_fail)
                 return false;
             wdl = -probe.wdl;
@@ -515,7 +515,7 @@ fn buildRootMoves(
 
     if (tb_config.cardinality != 0) {
         const root_snapshot = loadPositionSnapshot(pos);
-        const dtz_result = rankRootMovesDtz(
+        const dtz_result = try rankRootMovesDtz(
             root_fen,
             chess960,
             tb_config.use_rule50 != 0,
@@ -528,7 +528,7 @@ fn buildRootMoves(
             .success => tb_config.root_in_tb = 1,
             .fallback_to_wdl => {
                 dtz_available = false;
-                if (rankRootMovesWdl(root_fen, chess960, tb_config.use_rule50 != 0, ranked_moves)) {
+                if (try rankRootMovesWdl(root_fen, chess960, tb_config.use_rule50 != 0, ranked_moves)) {
                     tb_config.root_in_tb = 1;
                 }
             },
