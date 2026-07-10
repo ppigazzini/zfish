@@ -1130,6 +1130,7 @@ pub fn build(b: *std.Build) void {
         "src/eval/nnue_parse.zig",
         "src/eval/nnue_hash.zig",
         "src/support/debug_counters.zig",
+        "src/bench/bench_positions.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
