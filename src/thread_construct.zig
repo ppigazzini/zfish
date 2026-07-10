@@ -35,8 +35,8 @@ pub fn verifyThreadGraph(pool: *const graph_layout.ThreadPool, requested: usize,
     if (tp.stop != 0) fail("ThreadPool.stop not zero at construction");
     if (tp.increase_depth != 0) fail("ThreadPool.increaseDepth not zero at construction");
 
-    // threads is std::vector<unique_ptr<Thread>> {begin,end,cap}; size == requested.
-    if (tp.threads_begin == 0) fail("ThreadPool.threads vector is null after construction");
+    // threads is a Zig slice of Thread* addresses (M19.1); size == requested.
+    if (tp.threads.len == 0) fail("ThreadPool.threads vector is null after construction");
     const count = tp.numThreads();
     if (count != requested) fail("ThreadPool.threads size != requested");
 

@@ -17,7 +17,7 @@ const state_list = @import("state_list");
 pub const worker_size: usize = @sizeOf(WorkerLayout);
 pub const worker_align: usize = 64;
 pub const thread_size: usize = 208;
-pub const thread_pool_size: usize = 64;
+pub const thread_pool_size: usize = 56;
 pub const engine_size: usize = 1680;
 pub const uci_engine_size: usize = 1696;
 pub const shared_state_size: usize = 40;
@@ -227,17 +227,16 @@ pub const SearchManager = struct {
 // the last `→ shared_state` back-edge. `shared_state_size` (40) stays as the pinned
 // footprint the native allocations reserve. See REPORT-17 Annex A.
 
-// The ThreadPool object (64 bytes): the runtime constructs and reads the pool
-// through these fields. The `threads`/`bound` members are libc++-`std::vector`
-// `{begin,end,cap}` pointer triples (native_threadpool lays *NativeThread into a
-// contiguous buffer that begin/end point into).
+// The ThreadPool object (56 bytes): the runtime constructs and reads the pool
+// through these fields. `threads` is a Zig slice of Thread* addresses (M19.1, was a
+// libc++-`std::vector` {begin,end,cap} triple); native_threadpool allocates the
+// backing buffer and the accessors index it. `bound` remains a size_t {begin,end,cap}
+// triple (the cold NUMA-binding path).
 pub const ThreadPool = struct {
     stop: u8 = 0, // atomic_bool
     increase_depth: u8 = 0, // atomic_bool
     setup_states: ?*state_list.StateList = null, // the native `states` StateListPtr
-    threads_begin: usize = 0, // Thread* vector {begin,end,cap}
-    threads_end: usize = 0,
-    threads_cap: usize = 0,
+    threads: []usize = &.{}, // Thread* addresses (M19.1: a typed slice, was {begin,end,cap})
     bound_begin: usize = 0, // size_t vector {begin,end,cap}
     bound_end: usize = 0,
     bound_cap: usize = 0,
@@ -249,11 +248,11 @@ pub const ThreadPool = struct {
         return @ptrFromInt(addr);
     }
     pub inline fn numThreads(self: *const ThreadPool) usize {
-        return (self.threads_end - self.threads_begin) / @sizeOf(usize);
+        return self.threads.len;
     }
-    /// The i-th `Thread*` (loaded slot value) in the threads vector.
+    /// The i-th `Thread*` (loaded slot value) in the threads slice.
     pub inline fn threadAt(self: *const ThreadPool, i: usize) usize {
-        return @as(*const usize, @ptrFromInt(self.threads_begin + i * @sizeOf(usize))).*;
+        return self.threads[i];
     }
     /// The i-th pool Thread as a typed pointer. The threads vector stores Thread
     /// addresses as usize, so this is the single @ptrFromInt the graph callers used
