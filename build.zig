@@ -1171,6 +1171,25 @@ pub fn build(b: *std.Build) void {
     native_threadpool_test.root_module.addImport("native_hooks", mods.get("native_hooks").?);
     test_step.dependOn(&b.addRunArtifact(native_threadpool_test).step);
 
+    // M19.1: worker_native_construct.zig is path-imported only into main.zig (the exe
+    // root, not a test root), so its lone test -- the WorkerLayout offset-invariant check
+    // guarding constructFull's field placement against a Zig field reorder -- never ran.
+    // Wire it standalone so `zig build test` exercises that layout contract under RF + RS.
+    const worker_construct_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/worker_native_construct.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    worker_construct_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    worker_construct_test.root_module.addImport("position", mods.get("position").?);
+    worker_construct_test.root_module.addImport("search", mods.get("search").?);
+    worker_construct_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
+    worker_construct_test.root_module.addImport("network", mods.get("network").?);
+    test_step.dependOn(&b.addRunArtifact(worker_construct_test).step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",

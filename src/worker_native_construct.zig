@@ -144,11 +144,15 @@ test "writeConstructorFields lands every member at its worker_off slot" {
     defer testing.allocator.free(buf);
     @memset(buf, 0);
 
+    // Sentinels must be aligned to each destination pointer's @alignOf: they are stored
+    // via @ptrFromInt into typed pointer fields (*ThreadPool, *SearchManager, ...) and
+    // ReleaseSafe validates the integer's alignment. Page-aligned values satisfy any
+    // field alignment while staying distinct and recognizable in the byte image.
     const in = WorkerCtorInputs{
-        .shared_history = 0x1111,
-        .threads = 0x3333,
-        .tt = 0x4444,
-        .manager = 0x6666,
+        .shared_history = 0x1000,
+        .threads = 0x3000,
+        .tt = 0x4000,
+        .manager = 0x6000,
         .thread_idx = 7,
         .numa_thread_idx = 8,
         .numa_total = 9,
@@ -163,10 +167,10 @@ test "writeConstructorFields lands every member at its worker_off slot" {
         }
     }.read;
 
-    try testing.expectEqual(@as(usize, 0x1111), readPtr(buf.ptr, off.histories + position_port.worker_shared_history_off));
-    try testing.expectEqual(@as(usize, 0x3333), readPtr(buf.ptr, off.threads));
-    try testing.expectEqual(@as(usize, 0x4444), readPtr(buf.ptr, off.tt));
-    try testing.expectEqual(@as(usize, 0x6666), readPtr(buf.ptr, off.manager));
+    try testing.expectEqual(@as(usize, 0x1000), readPtr(buf.ptr, off.histories + position_port.worker_shared_history_off));
+    try testing.expectEqual(@as(usize, 0x3000), readPtr(buf.ptr, off.threads));
+    try testing.expectEqual(@as(usize, 0x4000), readPtr(buf.ptr, off.tt));
+    try testing.expectEqual(@as(usize, 0x6000), readPtr(buf.ptr, off.manager));
     try testing.expectEqual(@as(usize, 7), readPtr(buf.ptr, off.thread_idx));
     try testing.expectEqual(@as(usize, 8), readPtr(buf.ptr, numa_thread_idx_off));
     try testing.expectEqual(@as(usize, 9), readPtr(buf.ptr, numa_total_off));
