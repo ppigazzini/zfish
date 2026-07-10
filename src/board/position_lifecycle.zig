@@ -31,14 +31,16 @@ pub fn doMoveState(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
 }
 
-/// Allocate a zeroed Position block.
+/// Allocate a zeroed Position block via the Allocator interface (M19.0). c_allocator
+/// is libc-backed, so create/destroy pair with any std.c.free the callers still use.
 pub fn create() ?*Position {
-    const buf = std.c.malloc(graph_layout.position_size) orelse return null;
-    @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.position_size], 0);
-    return @ptrCast(@alignCast(buf));
+    const p = std.heap.c_allocator.create(Position) catch return null;
+    // Byte-zero then fill (Position carries non-null pointer fields — see engine_perft).
+    @memset(@as([*]u8, @ptrCast(p))[0..@sizeOf(Position)], 0);
+    return p;
 }
 pub fn destroy(pos: ?*Position) void {
-    if (pos) |p| std.c.free(p);
+    if (pos) |p| std.heap.c_allocator.destroy(p);
 }
 
 /// setPosition with the engine-graph Position/StateInfo sizes filled in (lets callers keep
