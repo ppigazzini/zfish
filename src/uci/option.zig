@@ -152,7 +152,7 @@ pub fn caseInsensitiveLess(left: []const u8, right: []const u8) bool {
 }
 
 pub fn parseSetOption(input: []const u8) ParsedSetOption {
-    return parseSetOptionAlloc(input) catch .{ .name = null, .value = null };
+    return parseSetOptionAlloc(std.heap.c_allocator, input) catch .{ .name = null, .value = null };
 }
 
 pub fn comboEquals(current: []const u8, query: []const u8) bool {
@@ -166,22 +166,21 @@ pub fn validateAssignment(
     max_value: c_int,
     default_value: []const u8,
 ) AssignmentResult {
-    return validateAssignmentAlloc(type_name, value, min_value, max_value, default_value) catch .{
+    return validateAssignmentAlloc(std.heap.c_allocator, type_name, value, min_value, max_value, default_value) catch .{
         .accepted = 0,
         .normalized_value = null,
     };
 }
 
 pub fn tuneNext(names: []const u8, pop: u8) TuneNextResult {
-    return tuneNextAlloc(names, pop) catch .{ .token = null, .remaining = null };
+    return tuneNextAlloc(std.heap.c_allocator, names, pop) catch .{ .token = null, .remaining = null };
 }
 
 pub fn tuneShouldMakeOption(min_value: c_int, max_value: c_int) bool {
     return min_value != max_value;
 }
 
-fn parseSetOptionAlloc(input: []const u8) !ParsedSetOption {
-    const allocator = std.heap.c_allocator;
+fn parseSetOptionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedSetOption {
     var token_iter = std.mem.tokenizeAny(u8, input, " \t\r\n");
     _ = token_iter.next();
 
@@ -211,13 +210,16 @@ fn parseSetOptionAlloc(input: []const u8) !ParsedSetOption {
         try target.appendSlice(allocator, token);
     }
 
-    return .{
-        .name = try allocCString(name.items),
-        .value = try allocCString(value.items),
-    };
+    // Allocate both result strings; if the second fails, the first must be freed
+    // (it isn't owned by anything yet) -- else it leaks on OOM.
+    const name_c = try allocCString(allocator, name.items);
+    errdefer if (name_c) |n| allocator.free(std.mem.span(n));
+    const value_c = try allocCString(allocator, value.items);
+    return .{ .name = name_c, .value = value_c };
 }
 
 fn validateAssignmentAlloc(
+    allocator: std.mem.Allocator,
     type_name: []const u8,
     value: []const u8,
     min_value: c_int,
@@ -254,12 +256,11 @@ fn validateAssignmentAlloc(
 
     return .{
         .accepted = 1,
-        .normalized_value = try allocCString(normalized),
+        .normalized_value = try allocCString(allocator, normalized),
     };
 }
 
-fn tuneNextAlloc(names: []const u8, pop: u8) !TuneNextResult {
-    const allocator = std.heap.c_allocator;
+fn tuneNextAlloc(allocator: std.mem.Allocator, names: []const u8, pop: u8) !TuneNextResult {
     var remaining = names;
     var token = std.ArrayList(u8).empty;
     defer token.deinit(allocator);
@@ -300,10 +301,11 @@ fn tuneNextAlloc(names: []const u8, pop: u8) !TuneNextResult {
         }
     } else names;
 
-    return .{
-        .token = try allocCString(token.items),
-        .remaining = try allocCString(next_remaining),
-    };
+    // As in parseSetOptionAlloc: free the first result if the second alloc fails.
+    const token_c = try allocCString(allocator, token.items);
+    errdefer if (token_c) |t| allocator.free(std.mem.span(t));
+    const remaining_c = try allocCString(allocator, next_remaining);
+    return .{ .token = token_c, .remaining = remaining_c };
 }
 
 fn comboContains(options: []const u8, value: []const u8) bool {
@@ -321,8 +323,7 @@ fn parseSignedInt(input: []const u8) ?c_int {
     return std.fmt.parseInt(c_int, trimmed, 10) catch null;
 }
 
-fn allocCString(value: []const u8) !?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
+fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[*:0]u8 {
     const result = try allocator.allocSentinel(u8, value.len, 0);
     @memcpy(result[0..value.len], value);
     return result.ptr;
@@ -750,6 +751,64 @@ test "options model renders the UCI listing in order" {
             "\noption name Clear Hash type button",
         listing,
     );
+}
+
+test "OptionsModel add/setValue/renderAlloc unwind leak-free on every allocation failure" {
+    // M19: OptionsModel.add dups three strings then appends to the entries vector --
+    // the same create-then-append shape that leaked in state_list. checkAllAllocation
+    // Failures fails each allocation in turn (the three dups, the vector growth,
+    // setValue's re-dup, renderAlloc's buffer + per-entry allocPrints) and asserts every
+    // unwind returns error.OutOfMemory while leaking nothing, exercising the errdefer
+    // chains in add/normalize/renderAlloc on the high-traffic UCI options core.
+    const Roundtrip = struct {
+        fn run(a: std.mem.Allocator) !void {
+            var model = OptionsModel.init(a);
+            defer model.deinit();
+            _ = try model.add("Threads", .spin, "1", 1, 1024, callback_threads);
+            _ = try model.add("EvalFile", .string, "nn-x.nnue", 0, 0, callback_eval_file);
+            _ = try model.add("Ponder", .check, "false", 0, 0, callback_none);
+            _ = try model.setValue("Threads", "8");
+            const listing = try model.renderAlloc();
+            a.free(listing);
+        }
+    };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, Roundtrip.run, .{});
+}
+
+// M19: the pure UCI parsers now take an injected allocator (was a hardcoded
+// std.heap.c_allocator), so their OOM paths are testable. Each builds ArrayList
+// scratch (freed via defer) then allocCStrings the result -- gate every allocation
+// failure and free the result with the same allocator.
+test "parseSetOptionAlloc unwinds leak-free on every allocation failure" {
+    const T = struct {
+        fn run(a: std.mem.Allocator) !void {
+            const parsed = try parseSetOptionAlloc(a, "name Threads value 8");
+            if (parsed.name) |n| a.free(std.mem.span(n));
+            if (parsed.value) |v| a.free(std.mem.span(v));
+        }
+    };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
+}
+
+test "validateAssignmentAlloc unwinds leak-free on every allocation failure" {
+    const T = struct {
+        fn run(a: std.mem.Allocator) !void {
+            const res = try validateAssignmentAlloc(a, "spin", "8", 1, 1024, "1");
+            if (res.normalized_value) |v| a.free(std.mem.span(v));
+        }
+    };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
+}
+
+test "tuneNextAlloc unwinds leak-free on every allocation failure" {
+    const T = struct {
+        fn run(a: std.mem.Allocator) !void {
+            const res = try tuneNextAlloc(a, "a(1),b(2),c(3)", 1);
+            if (res.token) |t| a.free(std.mem.span(t));
+            if (res.remaining) |r| a.free(std.mem.span(r));
+        }
+    };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
 }
 
 // ---- property fuzz (M17.0d) --------------------------------------------------
