@@ -318,7 +318,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     ssContext(wl, &ctx);
 
     if (ctx.is_mainthread == 0) {
-        _ = iterativeDeepening(worker.?);
+        _ = iterativeDeepening(wl);
         return;
     }
 
@@ -330,7 +330,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
     }
 
     ssThreadsStart(wl);
-    var uci_pv_sent = iterativeDeepening(worker.?) != 0;
+    var uci_pv_sent = iterativeDeepening(wl) != 0;
 
     while (ssShouldBusywait(wl) != 0) {}
 
@@ -1331,10 +1331,9 @@ const skillTimeToPick = search_id.skillTimeToPick;
 const skillPickBest = search_id.skillPickBest;
 const skillSwapBest = search_id.skillSwapBest;
 
-pub fn iterativeDeepening(worker: *anyopaque) u8 {
-    // Single erasure boundary: the hook signature is *anyopaque; the whole loop
-    // below drives the typed *WorkerLayout graph.
-    const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker));
+pub fn iterativeDeepening(wl: *graph_layout.WorkerLayout) u8 {
+    // Not a hook -- called only by workerStartSearching, which already holds the typed
+    // *WorkerLayout; it drives the typed graph directly (M18.7).
     var id: ZfishIdState = undefined;
     searchIdState(wl, &id);
     const main_thread = id.is_main != 0;
