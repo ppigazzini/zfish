@@ -9,8 +9,16 @@
 const std = @import("std");
 const uci_strings = @import("uci_strings");
 
-const allocCString = uci_strings.allocCString;
 const asciiLower = uci_strings.asciiLower;
+
+// A local allocator-taking allocCString (uci_strings.allocCString hardcodes
+// std.heap.c_allocator and has ~25 callers, so it is left alone); injecting the
+// allocator here makes the parsers' OOM paths reachable by checkAllAllocationFailures.
+fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[*:0]u8 {
+    const result = try allocator.allocSentinel(u8, value.len, 0);
+    @memcpy(result[0..value.len], value);
+    return result.ptr;
+}
 
 // ======================================================================== //
 // Parser cluster, moved verbatim from uci.zig (M17.3w).                       //
@@ -43,7 +51,7 @@ pub const ParsedPosition = struct {
 };
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
-    return parseLimitsAlloc(input) catch .{
+    return parseLimitsAlloc(std.heap.c_allocator, input) catch .{
         .wtime = 0,
         .btime = 0,
         .winc = 0,
@@ -61,10 +69,10 @@ pub fn parseLimits(input: []const u8) ParsedLimits {
 }
 
 pub fn parsePosition(input: []const u8) ParsedPosition {
-    return parsePositionAlloc(input) catch .{ .ok = 0, .fen = null, .moves = null };
+    return parsePositionAlloc(std.heap.c_allocator, input) catch .{ .ok = 0, .fen = null, .moves = null };
 }
 
-fn parseLimitsAlloc(input: []const u8) !ParsedLimits {
+fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimits {
     var result = ParsedLimits{
         .wtime = 0,
         .btime = 0,
@@ -81,18 +89,18 @@ fn parseLimitsAlloc(input: []const u8) !ParsedLimits {
         .searchmoves = null,
     };
     var searchmoves = std.ArrayList(u8).empty;
-    defer searchmoves.deinit(std.heap.c_allocator);
+    defer searchmoves.deinit(allocator);
     var iter = std.mem.tokenizeAny(u8, input, " \t\r\n");
 
     while (iter.next()) |token| {
         if (std.mem.eql(u8, token, "searchmoves")) {
             while (iter.next()) |move| {
                 if (searchmoves.items.len != 0) {
-                    try searchmoves.append(std.heap.c_allocator, '\n');
+                    try searchmoves.append(allocator, '\n');
                 }
-                const lowered = try lowerAlloc(move);
-                defer std.heap.c_allocator.free(lowered);
-                try searchmoves.appendSlice(std.heap.c_allocator, lowered);
+                const lowered = try lowerAlloc(allocator, move);
+                defer allocator.free(lowered);
+                try searchmoves.appendSlice(allocator, lowered);
             }
             break;
         } else if (std.mem.eql(u8, token, "wtime")) {
@@ -122,11 +130,11 @@ fn parseLimitsAlloc(input: []const u8) !ParsedLimits {
         }
     }
 
-    result.searchmoves = try allocCString(searchmoves.items);
+    result.searchmoves = try allocCString(allocator, searchmoves.items);
     return result;
 }
 
-fn parsePositionAlloc(input: []const u8) !ParsedPosition {
+fn parsePositionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedPosition {
     var iter = std.mem.tokenizeAny(u8, input, " \t\r\n");
     const first = iter.next() orelse return .{ .ok = 0, .fen = null, .moves = null };
     var token = first;
@@ -135,12 +143,12 @@ fn parsePositionAlloc(input: []const u8) !ParsedPosition {
     }
 
     var fen = std.ArrayList(u8).empty;
-    defer fen.deinit(std.heap.c_allocator);
+    defer fen.deinit(allocator);
     var moves = std.ArrayList(u8).empty;
-    defer moves.deinit(std.heap.c_allocator);
+    defer moves.deinit(allocator);
 
     if (std.mem.eql(u8, token, "startpos")) {
-        try fen.appendSlice(std.heap.c_allocator, start_fen);
+        try fen.appendSlice(allocator, start_fen);
         _ = iter.next();
     } else if (std.mem.eql(u8, token, "fen")) {
         while (iter.next()) |fen_token| {
@@ -148,9 +156,9 @@ fn parsePositionAlloc(input: []const u8) !ParsedPosition {
                 break;
             }
             if (fen.items.len != 0) {
-                try fen.append(std.heap.c_allocator, ' ');
+                try fen.append(allocator, ' ');
             }
-            try fen.appendSlice(std.heap.c_allocator, fen_token);
+            try fen.appendSlice(allocator, fen_token);
         }
     } else {
         return .{ .ok = 0, .fen = null, .moves = null };
@@ -158,20 +166,19 @@ fn parsePositionAlloc(input: []const u8) !ParsedPosition {
 
     while (iter.next()) |move| {
         if (moves.items.len != 0) {
-            try moves.append(std.heap.c_allocator, '\n');
+            try moves.append(allocator, '\n');
         }
-        try moves.appendSlice(std.heap.c_allocator, move);
+        try moves.appendSlice(allocator, move);
     }
 
-    return .{
-        .ok = 1,
-        .fen = try allocCString(fen.items),
-        .moves = try allocCString(moves.items),
-    };
+    // Free the first result if the second alloc fails (else it leaks on OOM).
+    const fen_c = try allocCString(allocator, fen.items);
+    errdefer if (fen_c) |f| allocator.free(std.mem.span(f));
+    const moves_c = try allocCString(allocator, moves.items);
+    return .{ .ok = 1, .fen = fen_c, .moves = moves_c };
 }
 
-fn lowerAlloc(input: []const u8) ![]u8 {
-    const allocator = std.heap.c_allocator;
+fn lowerAlloc(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     const result = try allocator.alloc(u8, input.len);
     for (input, 0..) |byte, index| {
         result[index] = asciiLower(byte);
@@ -247,6 +254,31 @@ test "fuzz: the UCI parsers tolerate arbitrary input" {
         freeLimits(parseLimits(buf[0..len]));
         freePosition(parsePosition(buf[0..len]));
     }
+}
+
+// M19: OOM-unwind gates. The parsers now take an injected allocator, so
+// checkAllAllocationFailures can fail each allocation (ArrayList growth, lowerAlloc,
+// the result allocCStrings) and assert every unwind is leak-free -- this is what caught
+// the parsePositionAlloc double-result leak.
+test "parseLimitsAlloc unwinds leak-free on every allocation failure" {
+    const T = struct {
+        fn run(a: std.mem.Allocator) !void {
+            const l = try parseLimitsAlloc(a, "searchmoves e2e4 d2d4 g1f3 wtime 1000 depth 7");
+            if (l.searchmoves) |s| a.free(std.mem.span(s));
+        }
+    };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
+}
+
+test "parsePositionAlloc unwinds leak-free on every allocation failure" {
+    const T = struct {
+        fn run(a: std.mem.Allocator) !void {
+            const pp = try parsePositionAlloc(a, "position startpos moves e2e4 e7e5 g1f3 b8c6");
+            if (pp.fen) |f| a.free(std.mem.span(f));
+            if (pp.moves) |m| a.free(std.mem.span(m));
+        }
+    };
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
 }
 
 // refAllDecls the UCI parse surface + the uci_strings C-string base leaf, so every
