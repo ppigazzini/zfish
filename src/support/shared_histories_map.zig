@@ -120,3 +120,32 @@ test "deinit frees outstanding entries (no leak of element arrays)" {
     map.deinit();
     try testing.expectEqual(@as(usize, 0), live_entries);
 }
+
+// M19: construct-failure rollback. try_emplace inserts the map slot (getOrPut) BEFORE
+// building the value, so if construct fails it must remove that slot again -- otherwise
+// a later at()/clear() would touch an uninitialized Entry (and clear would call free on
+// garbage). A checkAllAllocationFailures gate can't reach this branch (mockConstruct
+// doesn't allocate, so the failing allocator never trips it), so drive it directly with
+// a construct hook that fails.
+fn mockConstructFail(thread_count: usize) error{OutOfMemory}!MockEntry {
+    _ = thread_count;
+    return error.OutOfMemory;
+}
+
+test "tryEmplace rolls back the inserted slot when construct fails" {
+    live_entries = 0;
+    var map = MockMap.init(testing.allocator, mockConstructFail, mockFree);
+    defer map.deinit();
+
+    try testing.expectError(error.OutOfMemory, map.tryEmplace(0, 8));
+    // the failed construct must leave NO trace: no slot, no phantom live entry.
+    try testing.expectEqual(@as(usize, 0), map.count());
+    try testing.expect(!map.contains(0));
+    try testing.expectEqual(@as(usize, 0), live_entries);
+
+    // and the map is still usable afterwards -- a good construct now succeeds.
+    map.construct = mockConstruct;
+    try map.tryEmplace(0, 8);
+    try testing.expectEqual(@as(usize, 1), map.count());
+    try testing.expectEqual(@as(usize, 8), map.at(0).thread_count);
+}

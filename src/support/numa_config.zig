@@ -277,3 +277,31 @@ test "distributeThreads: multi-node places every thread and favors the larger no
     try testing.expectEqual(@as(usize, 6), n0 + n1);
     try testing.expect(n1 > n0); // the larger node takes more threads
 }
+
+// M19: allocation-failure gates. checkAllAllocationFailures fails each successive
+// allocation and asserts every unwind returns error.OutOfMemory leak-free -- covering
+// the ArrayList/HashMap growth inside addCpuToNode (reached via fromString) and the
+// two-slice distributeThreads, whose errdefer/deinit chains must hold on any partial
+// failure. (The state_list gate found a real leak this way; these confirm the
+// container-owned allocations here need no per-item errdefer.)
+test "NumaConfig.fromString unwinds leak-free on every allocation failure" {
+    const T = struct {
+        fn run(a: std.mem.Allocator) !void {
+            var cfg = try NumaConfig.fromString(a, "0-3,8:4-7");
+            cfg.deinit();
+        }
+    };
+    try testing.checkAllAllocationFailures(testing.allocator, T.run, .{});
+}
+
+test "NumaConfig.distributeThreads unwinds leak-free on every allocation failure" {
+    const T = struct {
+        fn run(a: std.mem.Allocator) !void {
+            var cfg = try NumaConfig.fromString(a, "0-1:2-5"); // 2 nodes -> the alloc path
+            defer cfg.deinit();
+            const ns = try cfg.distributeThreads(a, 4);
+            a.free(ns);
+        }
+    };
+    try testing.checkAllAllocationFailures(testing.allocator, T.run, .{});
+}
