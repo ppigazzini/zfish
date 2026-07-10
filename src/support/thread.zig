@@ -190,50 +190,22 @@ fn workerSetLimits(thread: *graph_layout.Thread, src_limits: *const graph_layout
     dst.ponder_mode = src.ponder_mode;
 }
 
-// libc++ vector<RootMove> copy-assign into the worker's rootMoves member:
-// reuse the existing buffer when its capacity fits, else operator-new a
-// fresh one and free the old — exactly like assigning an element range.
+// Copy the ranked source RootMoves into the worker's own []RootMove (M19.1: the DST
+// is a typed slice now, unblocked by M20's proof the WorkerLayout layout is free).
+// Reuse the buffer when the count is unchanged (the common re-search case), else free
+// and reallocate -- the slice equivalent of the old std::vector copy-assign.
 fn workerSetRootMoves(thread: *graph_layout.Thread, src: []const position_port.RootMove) void {
-    // worker@8, then the rootMoves vector object {begin[0],end[1],cap[2]}.
     const worker = thread.worker.?;
-    const dst = &worker.root_moves;
-    const dst_begin: *usize = &dst[0];
-    const dst_end: *usize = &dst[1];
-    const dst_cap: *usize = &dst[2];
-
-    // src is a typed []RootMove now (M19.1); the dst stays the worker's vector header.
-    const src_begin = @intFromPtr(src.ptr);
-    const byte_count = src.len * @sizeOf(position_port.RootMove);
-
-    if (byte_count == 0) {
-        dst_end.* = dst_begin.*;
+    if (src.len == 0) {
+        if (worker.root_moves.len != 0) std.heap.c_allocator.free(worker.root_moves);
+        worker.root_moves = &[_]position_port.RootMove{};
         return;
     }
-
-    const cap_bytes = if (dst_begin.* != 0) dst_cap.* - dst_begin.* else 0;
-    if (dst_begin.* != 0 and cap_bytes >= byte_count) {
-        @memcpy(
-            @as([*]u8, @ptrFromInt(dst_begin.*))[0..byte_count],
-            @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
-        );
-        dst_end.* = dst_begin.* + byte_count;
-    } else {
-        // M19: the worker's rootMoves buffer is a []RootMove (allocator-managed, freed
-        // to match by nativeWorkerDestroy). byte_count is count*@sizeOf(RootMove).
-        const new_slice = std.heap.c_allocator.alloc(position_port.RootMove, byte_count / @sizeOf(position_port.RootMove)) catch @panic("set_root_moves: OOM");
-        const new_buf = @intFromPtr(new_slice.ptr);
-        @memcpy(
-            @as([*]u8, @ptrFromInt(new_buf))[0..byte_count],
-            @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
-        );
-        if (dst_begin.* != 0) {
-            const old_cnt = (dst_cap.* - dst_begin.*) / @sizeOf(position_port.RootMove);
-            std.heap.c_allocator.free(@as([*]position_port.RootMove, @ptrFromInt(dst_begin.*))[0..old_cnt]);
-        }
-        dst_begin.* = new_buf;
-        dst_end.* = new_buf + byte_count;
-        dst_cap.* = new_buf + byte_count;
+    if (worker.root_moves.len != src.len) {
+        if (worker.root_moves.len != 0) std.heap.c_allocator.free(worker.root_moves);
+        worker.root_moves = std.heap.c_allocator.alloc(position_port.RootMove, src.len) catch @panic("set_root_moves: OOM");
     }
+    @memcpy(worker.root_moves, src);
 }
 // Assign the pool's boundThreadToNumaNode vector (native graph_layout.ThreadPool field).
 fn boundNodesAssign(pool_ptr: *graph_layout.ThreadPool, nodes: ?[*]const usize, count: usize) void {

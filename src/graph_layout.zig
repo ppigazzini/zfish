@@ -74,7 +74,7 @@ pub const WorkerLayout = struct {
     optimism: [2]c_int,
     root_pos: position_types.Position align(8), // the worker's root Position (typed, M17.3c)
     root_state: position_types.StateInfo align(8), // its root StateInfo (typed, M17.3c)
-    root_moves: [3]usize, // libc++ vector header {begin,end,cap}
+    root_moves: []root_move.RootMove, // the worker's rootMoves (M19.1: a typed slice, was {begin,end,cap})
     root_depth: c_int,
     root_delta: c_int,
     last_iteration_pv: PVMoves,
@@ -365,7 +365,7 @@ pub const Worker = struct {
     }
     /// &rootMoves[0] as a typed RootMove.
     pub inline fn rootMovesFirst(self: Worker) *RootMove {
-        return RootMove.fromAddr(self.layout().root_moves[0]);
+        return @ptrCast(self.layout().root_moves.ptr);
     }
 };
 

@@ -241,12 +241,9 @@ fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque
 fn nativeWorkerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
     const wl = graph_layout.WorkerLayout.fromPtr(w);
-    // rootMoves vector buffer: a []RootMove allocated by workerSetRootMoves; free the
-    // slice reconstructed from the {begin,cap} of the vector header (M19).
-    if (wl.root_moves[0] != 0) {
-        const cnt = (wl.root_moves[2] - wl.root_moves[0]) / @sizeOf(graph_layout.RootMove);
-        std.heap.c_allocator.free(@as([*]graph_layout.RootMove, @ptrFromInt(wl.root_moves[0]))[0..cnt]);
-    }
+    // rootMoves buffer: a []RootMove allocated by workerSetRootMoves (M19.1) -- free the
+    // slice directly.
+    if (wl.root_moves.len != 0) std.heap.c_allocator.free(wl.root_moves);
     // SearchManager buffer (allocator.create'd by makeSearchManager; manager is typed).
     if (wl.manager) |m| std.heap.c_allocator.destroy(m);
     memory_port.alignedLargePagesFree(w);
