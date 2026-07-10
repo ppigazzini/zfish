@@ -129,7 +129,7 @@ const RootSetupInput = struct {
 };
 
 const RootSetupContext = struct {
-    thread: *anyopaque,
+    thread: *graph_layout.Thread,
     input: RootSetupInput,
 };
 
@@ -186,8 +186,8 @@ fn rootMovesDestroy(ptr: ?*anyopaque) void {
 // the worker's limits member. LimitsType is a native struct now, so copy by field rather
 // than a byte range; searchmoves is deliberately left as the worker's own (the search
 // reads the worker's, always empty on the gated single-node path).
-fn workerSetLimits(thread: *anyopaque, src_limits: *const graph_layout.LimitsType) void {
-    const worker = graph_layout.Thread.fromPtr(thread).worker.?;
+fn workerSetLimits(thread: *graph_layout.Thread, src_limits: *const graph_layout.LimitsType) void {
+    const worker = thread.worker.?;
     const dst = &worker.limits;
     const src = src_limits;
     dst.time = src.time;
@@ -207,9 +207,9 @@ fn workerSetLimits(thread: *anyopaque, src_limits: *const graph_layout.LimitsTyp
 // libc++ vector<RootMove> copy-assign into the worker's rootMoves member:
 // reuse the existing buffer when its capacity fits, else operator-new a
 // fresh one and free the old — exactly like assigning an element range.
-fn workerSetRootMoves(thread: *anyopaque, src_rm: *const anyopaque) void {
+fn workerSetRootMoves(thread: *graph_layout.Thread, src_rm: *const anyopaque) void {
     // worker@8, then the rootMoves vector object {begin[0],end[1],cap[2]}.
-    const worker = graph_layout.Thread.fromPtr(thread).worker.?;
+    const worker = thread.worker.?;
     const dst = &worker.root_moves;
     const dst_begin: *usize = &dst[0];
     const dst_end: *usize = &dst[1];
