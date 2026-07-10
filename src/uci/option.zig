@@ -48,14 +48,14 @@ pub fn optionThreads() usize {
 pub fn uciChess960() bool {
     return intByName("UCI_Chess960") != 0;
 }
-/// A malloc'd NUL-terminated copy of a string option (caller frees), or null on OOM.
+/// A NUL-terminated copy of a string option (caller frees; c_allocator is libc-backed
+/// so the existing c.free still pairs), or null on OOM. M19.0: allocSentinel is the
+/// idiomatic NUL-terminated allocation -- it sizes len+1 and writes the sentinel.
 pub fn dupCString(name: []const u8) ?[*:0]u8 {
     const s = strByName(name);
-    const buf = std.c.malloc(s.len + 1) orelse return null;
-    const dst: [*]u8 = @ptrCast(buf);
-    @memcpy(dst[0..s.len], s);
-    dst[s.len] = 0;
-    return @ptrCast(dst);
+    const buf = std.heap.c_allocator.allocSentinel(u8, s.len, 0) catch return null;
+    @memcpy(buf[0..s.len], s);
+    return buf.ptr;
 }
 pub fn dupEvalFile() ?[*:0]u8 {
     return dupCString("EvalFile");
