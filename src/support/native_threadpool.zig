@@ -150,10 +150,12 @@ pub fn set(
     shared_state: *anyopaque,
     update_context: *const anyopaque,
     count: usize,
-) void {
+) !void {
     var bctx = WorkerBuildCtx{ .shared_state = shared_state, .update_context = update_context, .total = count };
     var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
-    p.set(count, .{ .ctx = &bctx, .build = native_hooks.native_worker_build }) catch @panic("native thread pool set: OOM");
+    // M19.2: propagate the OOM / thread-spawn error to the engine's resize boundary
+    // instead of panicking here (the caller reconfigure -> resizeThreads is now !void).
+    try p.set(count, .{ .ctx = &bctx, .build = native_hooks.native_worker_build });
 }
 
 // Join + free every native Thread and null the footprint vector. Called by the
@@ -181,13 +183,14 @@ pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
 // allocator (the bound-vector unit test drives exactly this). Lives here beside set()
 // -- which clears the same footprint slot -- rather than in thread.zig, so all the
 // ThreadPool-footprint writes sit in one module and the writer is directly testable.
-pub fn boundNodesAssign(pool: *graph_layout.ThreadPool, allocator: std.mem.Allocator, nodes: ?[]const usize) void {
+pub fn boundNodesAssign(pool: *graph_layout.ThreadPool, allocator: std.mem.Allocator, nodes: ?[]const usize) error{OutOfMemory}!void {
     const tp = pool;
     if (tp.bound.len != 0) allocator.free(tp.bound);
     tp.bound = &.{};
     const src = nodes orelse return;
     if (src.len == 0) return;
-    const buf = allocator.alloc(usize, src.len) catch @panic("bound_nodes_assign: OOM");
+    // M19.2: propagate OOM (was `catch @panic`); the reconfigure caller now unwinds it.
+    const buf = try allocator.alloc(usize, src.len);
     @memcpy(buf, src);
     tp.bound = buf;
 }
@@ -250,24 +253,41 @@ test "boundNodesAssign lays/reads/reassigns/clears the bound slice (leak-checked
 
     // Assign 4 per-thread node indices; read back via the graph_layout accessors.
     const nodes = [_]usize{ 0, 1, 0, 2 };
-    boundNodesAssign(tp, testing.allocator, &nodes);
+    try boundNodesAssign(tp, testing.allocator, &nodes);
     try testing.expectEqual(@as(usize, 4), tp.boundCount());
     for (nodes, 0..) |n, i| try testing.expectEqual(n, tp.boundAt(i));
 
     // Reassign to a shorter list -- the prior buffer must be freed, not leaked.
     const nodes2 = [_]usize{ 3, 3 };
-    boundNodesAssign(tp, testing.allocator, &nodes2);
+    try boundNodesAssign(tp, testing.allocator, &nodes2);
     try testing.expectEqual(@as(usize, 2), tp.boundCount());
     try testing.expectEqual(@as(usize, 3), tp.boundAt(0));
     try testing.expectEqual(@as(usize, 3), tp.boundAt(1));
 
     // Empty assign (null) frees and clears to len 0 -- the single-node do_bind==false case.
-    boundNodesAssign(tp, testing.allocator, null);
+    try boundNodesAssign(tp, testing.allocator, null);
     try testing.expectEqual(@as(usize, 0), tp.boundCount());
 
     // A zero-length slice is also a clear (frees nothing here; must not leak/UB).
-    boundNodesAssign(tp, testing.allocator, &.{});
+    try boundNodesAssign(tp, testing.allocator, &.{});
     try testing.expectEqual(@as(usize, 0), tp.boundCount());
+}
+
+test "boundNodesAssign unwinds leak-free on allocation failure (M19.2)" {
+    // Now that boundNodesAssign propagates error.OutOfMemory (was `catch @panic`),
+    // checkAllAllocationFailures can fail its single allocation and assert the reassign
+    // frees the prior buffer and returns the error leak-free.
+    const T = struct {
+        fn run(a: std.mem.Allocator) !void {
+            var footprint: [graph_layout.thread_pool_size]u8 align(8) = [_]u8{0} ** graph_layout.thread_pool_size;
+            const tp = poolOf(&footprint);
+            tp.* = .{};
+            defer boundNodesAssign(tp, a, null) catch {}; // free any live buffer
+            try boundNodesAssign(tp, a, &[_]usize{ 0, 1, 0, 2 });
+            try boundNodesAssign(tp, a, &[_]usize{ 1, 2 });
+        }
+    };
+    try testing.checkAllAllocationFailures(testing.allocator, T.run, .{});
 }
 
 test "NativePool set(0) clears the vector; resize re-lays it" {
