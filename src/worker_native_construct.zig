@@ -50,10 +50,8 @@ fn writePtr(base: [*]u8, offset: usize, value: usize) void {
 // must bind to (the SharedState members), matching the C++ initializer list.
 pub const WorkerCtorInputs = struct {
     shared_history: usize, // &sharedState.sharedHistories.at(numa)
-    options: usize, // &sharedState.options
     threads: usize, // &sharedState.threads
     tt: usize, // &sharedState.tt
-    network: usize, // &sharedState.network
     manager: usize, // released ISearchManager / native SearchManager
     thread_idx: usize,
     numa_thread_idx: usize,
@@ -69,11 +67,11 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
 
     // sharedHistories reference: now a typed field of the embedded WorkerHistories.
     wl.histories.shared_history = @ptrFromInt(in.shared_history);
-    // Four SharedState reference members + the manager unique_ptr's moved-in pointer.
-    wl.options = in.options;
+    // The live SharedState reference members (threads + tt) + the moved-in manager.
+    // options/network were vestigial pass-through (never read -- the search reads the
+    // global OptionsModel / native FT storage) and are removed (M20.1).
     wl.threads = @ptrFromInt(in.threads);
     wl.tt = @ptrFromInt(in.tt);
-    wl.network = in.network;
     wl.manager = @ptrFromInt(in.manager);
     // NUMA identity scalars.
     wl.thread_idx = in.thread_idx;
@@ -114,10 +112,8 @@ fn constructWorkerInto(
 pub fn constructFull(
     buf: ?*anyopaque,
     shared_history: usize,
-    options: usize,
     threads: usize,
     tt: usize,
-    network: usize,
     manager: usize,
     thread_idx: usize,
     numa_thread_idx: usize,
@@ -129,10 +125,8 @@ pub fn constructFull(
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));
     constructWorkerInto(base, .{
         .shared_history = shared_history,
-        .options = options,
         .threads = threads,
         .tt = tt,
-        .network = network,
         .manager = manager,
         .thread_idx = thread_idx,
         .numa_thread_idx = numa_thread_idx,
@@ -152,10 +146,8 @@ test "writeConstructorFields lands every member at its worker_off slot" {
 
     const in = WorkerCtorInputs{
         .shared_history = 0x1111,
-        .options = 0x2222,
         .threads = 0x3333,
         .tt = 0x4444,
-        .network = 0x5555,
         .manager = 0x6666,
         .thread_idx = 7,
         .numa_thread_idx = 8,
@@ -172,10 +164,8 @@ test "writeConstructorFields lands every member at its worker_off slot" {
     }.read;
 
     try testing.expectEqual(@as(usize, 0x1111), readPtr(buf.ptr, off.histories + position_port.worker_shared_history_off));
-    try testing.expectEqual(@as(usize, 0x2222), readPtr(buf.ptr, off.options));
     try testing.expectEqual(@as(usize, 0x3333), readPtr(buf.ptr, off.threads));
     try testing.expectEqual(@as(usize, 0x4444), readPtr(buf.ptr, off.tt));
-    try testing.expectEqual(@as(usize, 0x5555), readPtr(buf.ptr, off.network));
     try testing.expectEqual(@as(usize, 0x6666), readPtr(buf.ptr, off.manager));
     try testing.expectEqual(@as(usize, 7), readPtr(buf.ptr, off.thread_idx));
     try testing.expectEqual(@as(usize, 8), readPtr(buf.ptr, numa_thread_idx_off));
