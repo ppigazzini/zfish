@@ -157,22 +157,24 @@ pub fn destroyStateList(allocator: std.mem.Allocator, list: *StateList) void {
     allocator.destroy(list);
 }
 
-// Opaque-handle wrappers over PendingStateStorage for the engine/thread setup paths. The
-// handle stays *anyopaque across the module boundary; the cast is confined here.
-pub fn storageCreate() ?*anyopaque {
+// Typed wrappers over PendingStateStorage for the engine/thread setup paths (M18.7): the
+// handle is `*PendingStateStorage` end-to-end now -- the engine side-table and the thread
+// scratch both hold the concrete type, and only the native_hooks adopt boundary coerces it
+// to *anyopaque (implicitly). No cast survives here.
+pub fn storageCreate() ?*PendingStateStorage {
     return PendingStateStorage.create(std.heap.c_allocator) catch null;
 }
-pub fn storageDestroy(storage: ?*anyopaque) void {
-    if (storage) |s| @as(*PendingStateStorage, @ptrCast(@alignCast(s))).destroy();
+pub fn storageDestroy(storage: ?*PendingStateStorage) void {
+    if (storage) |s| s.destroy();
 }
-pub fn storageReset(storage: *anyopaque) *StateInfo {
-    return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).reset() catch @panic("OOM: state reset");
+pub fn storageReset(storage: *PendingStateStorage) *StateInfo {
+    return storage.reset() catch @panic("OOM: state reset");
 }
-pub fn storagePush(storage: *anyopaque) *StateInfo {
-    return @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).push() catch @panic("OOM: state push");
+pub fn storagePush(storage: *PendingStateStorage) *StateInfo {
+    return storage.push() catch @panic("OOM: state push");
 }
-pub fn storageHasStates(storage: *const anyopaque) bool {
-    return @as(*const PendingStateStorage, @ptrCast(@alignCast(storage))).hasStates();
+pub fn storageHasStates(storage: *const PendingStateStorage) bool {
+    return storage.hasStates();
 }
 
 // ---- tests ------------------------------------------------------------------

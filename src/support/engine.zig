@@ -84,9 +84,11 @@ fn sharedStateDestroy(ss: *anyopaque) void {
     _ = ss; // static storage — nothing to free (lifetime is the static itself)
 }
 
+const PendingStateStorage = state_list.PendingStateStorage;
+
 const PendingStateEntry = struct {
     slot_key: usize,
-    storage: *anyopaque,
+    storage: *PendingStateStorage,
 };
 
 var pending_state_entries = std.ArrayListUnmanaged(PendingStateEntry).empty;
@@ -601,7 +603,7 @@ pub fn threadAllocationInformationEngine(engine_ptr: *native_engine.NativeEngine
     );
 }
 
-fn ensurePendingStateStorage(states_slot: *anyopaque) *anyopaque {
+fn ensurePendingStateStorage(states_slot: *anyopaque) *PendingStateStorage {
     const slot_key = @intFromPtr(states_slot);
 
     if (findPendingStateIndex(slot_key)) |index| {
@@ -620,7 +622,7 @@ fn ensurePendingStateStorage(states_slot: *anyopaque) *anyopaque {
     return state_storage;
 }
 
-fn lookupPendingStateStorage(slot_key: usize) ?*anyopaque {
+fn lookupPendingStateStorage(slot_key: usize) ?*PendingStateStorage {
     if (findPendingStateIndex(slot_key)) |index| {
         return pending_state_entries.items[index].storage;
     }
@@ -628,7 +630,7 @@ fn lookupPendingStateStorage(slot_key: usize) ?*anyopaque {
     return null;
 }
 
-fn removePendingStateStorage(slot_key: usize) ?*anyopaque {
+fn removePendingStateStorage(slot_key: usize) ?*PendingStateStorage {
     if (findPendingStateIndex(slot_key)) |index| {
         const state_storage = pending_state_entries.items[index].storage;
         _ = pending_state_entries.swapRemove(index);
