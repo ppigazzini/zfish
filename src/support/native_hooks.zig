@@ -37,21 +37,21 @@ pub var worker_clear: *const fn (worker: *anyopaque) void =
             hookPanic("worker_clear");
         }
     }.stub;
-pub var setup_states_adopt_from_slot: *const fn (pool: *anyopaque, states_slot: *anyopaque) void =
+pub var setup_states_adopt_from_slot: *const fn (pool: *graph_layout.ThreadPool, states_slot: *anyopaque) void =
     struct {
-        fn stub(_: *anyopaque, _: *anyopaque) void {
+        fn stub(_: *graph_layout.ThreadPool, _: *anyopaque) void {
             hookPanic("setup_states_adopt_from_slot");
         }
     }.stub;
-pub var setup_states_adopt_from_storage: *const fn (pool: *anyopaque, storage: *anyopaque) void =
+pub var setup_states_adopt_from_storage: *const fn (pool: *graph_layout.ThreadPool, storage: *anyopaque) void =
     struct {
-        fn stub(_: *anyopaque, _: *anyopaque) void {
+        fn stub(_: *graph_layout.ThreadPool, _: *anyopaque) void {
             hookPanic("setup_states_adopt_from_storage");
         }
     }.stub;
-pub var setup_state_back: *const fn (pool: *const anyopaque) ?*const anyopaque =
+pub var setup_state_back: *const fn (pool: *const graph_layout.ThreadPool) ?*const anyopaque =
     struct {
-        fn stub(_: *const anyopaque) ?*const anyopaque {
+        fn stub(_: *const graph_layout.ThreadPool) ?*const anyopaque {
             hookPanic("setup_state_back");
         }
     }.stub;
@@ -61,9 +61,9 @@ pub var pending_states_available: *const fn (states_slot: *anyopaque) u8 =
             hookPanic("pending_states_available");
         }
     }.stub;
-pub var handoff_pending_states: *const fn (pool: *anyopaque, states_slot: *anyopaque) u8 =
+pub var handoff_pending_states: *const fn (pool: *graph_layout.ThreadPool, states_slot: *anyopaque) u8 =
     struct {
-        fn stub(_: *anyopaque, _: *anyopaque) u8 {
+        fn stub(_: *graph_layout.ThreadPool, _: *anyopaque) u8 {
             hookPanic("handoff_pending_states");
         }
     }.stub;
