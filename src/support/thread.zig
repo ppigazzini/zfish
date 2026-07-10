@@ -560,7 +560,7 @@ pub fn reconfigure(
     numa_config: *const anyopaque,
     shared_state: *const anyopaque,
     update_context: *const anyopaque,
-) void {
+) !void {
     if (pool.numThreads() > 0) {
         waitMainThread(pool);
         native_threadpool.clear(pool);
@@ -579,7 +579,7 @@ pub fn reconfigure(
     }
 
     const allocator = std.heap.c_allocator;
-    const bound_nodes = allocator.alloc(usize, requested) catch @panic("OOM");
+    const bound_nodes = try allocator.alloc(usize, requested);
     defer allocator.free(bound_nodes);
 
     if (do_bind) {
@@ -588,13 +588,13 @@ pub fn reconfigure(
             requested,
             bound_nodes.ptr,
         );
-        native_threadpool.boundNodesAssign(pool, allocator, bound_nodes);
+        try native_threadpool.boundNodesAssign(pool, allocator, bound_nodes);
     } else {
-        native_threadpool.boundNodesAssign(pool, allocator, null);
+        try native_threadpool.boundNodesAssign(pool, allocator, null);
     }
 
     const node_count = @max(numa.configNodeCount(numa_config), @as(usize, 1));
-    const threads_per_node = allocator.alloc(usize, node_count) catch @panic("OOM");
+    const threads_per_node = try allocator.alloc(usize, node_count);
     defer allocator.free(threads_per_node);
     @memset(threads_per_node, 0);
 
@@ -626,7 +626,7 @@ pub fn reconfigure(
     // Build native Threads (idle loop + Worker) into the pool's threads vector via
     // the native ThreadPool. Single-node host (do_bind == false): numaIndex 0,
     // idxInNuma == idx, totalNuma == requested.
-    native_threadpool.set(
+    try native_threadpool.set(
         pool,
         @constCast(shared_state),
         update_context,

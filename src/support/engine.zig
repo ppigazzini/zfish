@@ -426,7 +426,7 @@ pub fn resizeThreads(
     tt: *graph_layout.TranspositionTable,
     shared_hists: *position_port.SharedHistoriesMap,
     update_context: *const anyopaque,
-) void {
+) !void {
     thread_port.waitForSearchFinished(threads);
 
     const shared_state = sharedStateCreate(
@@ -436,7 +436,7 @@ pub fn resizeThreads(
     );
     defer sharedStateDestroy(shared_state);
 
-    thread_port.reconfigure(
+    try thread_port.reconfigure(
         threads,
         numa.contextConfig(numa_context),
         shared_state,
@@ -448,13 +448,18 @@ pub fn resizeThreads(
 }
 
 pub fn resizeThreadsEngine(engine_ptr: *native_engine.NativeEngine) void {
+    // M19.2: the resize chain (reconfigure -> native_threadpool.set/boundNodesAssign)
+    // now propagates OOM / thread-spawn errors as `!void`; this is the engine's single
+    // handling boundary. A UCI Threads/NumaPolicy change or init that cannot allocate
+    // its thread pool is unrecoverable, so fail loudly here instead of scattering
+    // `catch @panic("OOM")` across every leaf allocation.
     resizeThreads(
         engine_ptr.numaContextPtr(),
         engine_ptr.threadsPtr(),
         engine_ptr.ttPtr(),
         sharedHistoriesPtr(),
         engine_ptr.updateContextPtr(),
-    );
+    ) catch @panic("OOM: thread pool resize failed");
 }
 
 // Native SharedHistoriesMap (the post-src/ replacement for std::map<NumaIndex,
