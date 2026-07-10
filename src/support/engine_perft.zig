@@ -50,10 +50,18 @@ pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
     const fen_text = std.mem.span(fen_ptr);
     const chess960 = option_port.intByName("UCI_Chess960") != 0;
 
-    const p: *position_port.Position = @ptrCast(@alignCast(std.c.malloc(graph_layout.position_size) orelse @panic("perft: position alloc")));
-    const st: *position_port.StateInfo = @ptrCast(@alignCast(std.c.malloc(graph_layout.state_info_size) orelse @panic("perft: state alloc")));
-    @memset(@as([*]u8, @ptrCast(p))[0..graph_layout.position_size], 0);
-    @memset(@as([*]u8, @ptrCast(st))[0..graph_layout.state_info_size], 0);
+    // M19.0: scope-local Position/StateInfo via the Allocator interface (c_allocator
+    // keeps the libc backing, so lifetimes are valgrind-identical) + defer cleanup +
+    // typed create (no @ptrCast, no @memset). @sizeOf == the pinned slot size.
+    const allocator = std.heap.c_allocator;
+    const p = allocator.create(position_port.Position) catch @panic("perft: position alloc");
+    defer allocator.destroy(p);
+    const st = allocator.create(position_port.StateInfo) catch @panic("perft: state alloc");
+    defer allocator.destroy(st);
+    // Zero via @memset (not std.mem.zeroes): Position/StateInfo carry non-null pointer
+    // fields, so byte-zero-then-setPosition-populate is the (existing) init contract.
+    @memset(@as([*]u8, @ptrCast(p))[0..@sizeOf(position_port.Position)], 0);
+    @memset(@as([*]u8, @ptrCast(st))[0..@sizeOf(position_port.StateInfo)], 0);
     if (position_port.setPosition(p, fen_text.ptr, fen_text.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.c.free(msg);
 
     var moves: [256]u16 = undefined;
@@ -80,8 +88,6 @@ pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
         uci_output.printLine(out.ptr, out.len);
     }
 
-    std.c.free(p);
-    std.c.free(st);
     std.c.free(@ptrCast(fen_ptr));
 
     var nbuf: [64]u8 = undefined;
