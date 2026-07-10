@@ -30,17 +30,18 @@ const position_types = @import("position_types");
 // threads is a value-initialized ThreadPool buffer whose threads vector is native-managed and
 // whose ~ThreadPool is a no-op after native teardown) are allocated with std.c.malloc/calloc,
 // so the alloc/free pairing stays within one libc allocator (valgrind-clean).
-// graph_layout.thread_pool_size (64) is the ThreadPool buffer size.
+// graph_layout.thread_pool_size (56) is the ThreadPool buffer size.
 fn memberNumaContextNew() ?*anyopaque {
     return std.c.malloc(1);
 }
 fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
-    // M19: a typed, zero-initialized ThreadPool via the Allocator interface. @sizeOf ==
-    // thread_pool_size (64, asserted in graph_layout), and ThreadPool is all-zeroable
-    // (nullable setup_states + usize fields), so create + std.mem.zeroes replaces the
-    // raw calloc + @ptrCast/@alignCast.
+    // M19: a typed, default-initialized ThreadPool via the Allocator interface. @sizeOf ==
+    // thread_pool_size (56, asserted in graph_layout). Every field has a default (the
+    // `threads` slice is a non-optional pointer that std.mem.zeroes would reject, so `.{}`
+    // -- an empty slice + null setup_states + zeroed bounds -- is the idiomatic init here,
+    // replacing the raw calloc + @ptrCast/@alignCast.
     const tp = std.heap.c_allocator.create(graph_layout.ThreadPool) catch return null;
-    tp.* = std.mem.zeroes(graph_layout.ThreadPool);
+    tp.* = .{};
     return tp;
 }
 fn memberHandleFree(p: ?*anyopaque) void {
