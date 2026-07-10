@@ -17,7 +17,6 @@ const option_kind_button: u8 = 3;
 const option_callback_none: u8 = 0;
 
 fn engineAddOption(
-    engine_ptr: *anyopaque,
     name_ptr: [*]const u8,
     name_len: usize,
     option_kind: u8,
@@ -28,7 +27,6 @@ fn engineAddOption(
     max_value: c_int,
     callback_kind: u8,
 ) void {
-    _ = engine_ptr;
     _ = callback_kind;
     var buf: [16]u8 = undefined;
     const default_slice: []const u8 = switch (option_kind) {
@@ -41,9 +39,8 @@ fn engineAddOption(
     _ = option_port.addOption(name_ptr[0..name_len], option_kind, default_slice, min_value, max_value);
 }
 
-pub fn addStringOption(engine_ptr: *anyopaque, name: []const u8, default_value: []const u8, callback_kind: u8) void {
+pub fn addStringOption(name: []const u8, default_value: []const u8, callback_kind: u8) void {
     engineAddOption(
-        engine_ptr,
         name.ptr,
         name.len,
         option_kind_string,
@@ -56,9 +53,8 @@ pub fn addStringOption(engine_ptr: *anyopaque, name: []const u8, default_value: 
     );
 }
 
-pub fn addCheckOption(engine_ptr: *anyopaque, name: []const u8, default_value: u8) void {
+pub fn addCheckOption(name: []const u8, default_value: u8) void {
     engineAddOption(
-        engine_ptr,
         name.ptr,
         name.len,
         option_kind_check,
@@ -72,7 +68,6 @@ pub fn addCheckOption(engine_ptr: *anyopaque, name: []const u8, default_value: u
 }
 
 pub fn addSpinOption(
-    engine_ptr: *anyopaque,
     name: []const u8,
     default_value: c_int,
     min_value: c_int,
@@ -80,7 +75,6 @@ pub fn addSpinOption(
     callback_kind: u8,
 ) void {
     engineAddOption(
-        engine_ptr,
         name.ptr,
         name.len,
         option_kind_spin,
@@ -93,9 +87,8 @@ pub fn addSpinOption(
     );
 }
 
-pub fn addButtonOption(engine_ptr: *anyopaque, name: []const u8, callback_kind: u8) void {
+pub fn addButtonOption(name: []const u8, callback_kind: u8) void {
     engineAddOption(
-        engine_ptr,
         name.ptr,
         name.len,
         option_kind_button,
