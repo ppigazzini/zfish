@@ -2,11 +2,9 @@
 //
 // The read-only "is this move legal / winning" side of the board, carved out of
 // position.zig: attackersTo, legal, seeGe, pseudoLegal, givesCheck,
-// attackersToExist. All take a typed *const Position and only read it, except
-// legal, which stays *const anyopaque because it is registered as the
-// move_is_legal_fn snapshot hook (its signature is locked to the port ABI); it
-// casts once at the top and threads the typed pos to attackersToExist. This is a
-// leaf over board_core + bitboard + movegen + position_types -- it never imports
+// attackersToExist. All take a typed *const Position and only read it -- including
+// legal, now that the move_is_legal_fn snapshot hook is itself typed (M18.7). This
+// is a leaf over board_core + bitboard + movegen + position_types -- it never imports
 // position.zig, so no cycle.
 // position.zig re-exports all six, so the search/movegen call sites and the
 // move_is_legal_fn hook keep resolving through the position surface.
@@ -66,8 +64,7 @@ pub fn attackersTo(pos_ptr: *const Position, s: u8, occupied: u64) u64 {
         (bitboard.attacks(king_pt, s, 0) & pos.by_type_bb[king_pt]);
 }
 
-pub fn legal(pos_ptr: *const anyopaque, m: u16) bool {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn legal(pos: *const Position, m: u16) bool {
     const us = pos.side_to_move;
     const them = us ^ 1;
     const from = moveFrom(m);

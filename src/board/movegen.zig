@@ -1,6 +1,12 @@
 const std = @import("std");
 const bitboard = @import("bitboard");
 const position_snapshot = @import("position_snapshot");
+const position_types = @import("position_types");
+
+// The `pos` threaded through every generator is the board's typed Position (M18.7):
+// each function hands it to position_snapshot.fill()/moveIsLegal(), which take it as
+// the concrete type now. position_types is a pure std leaf, so no import cycle.
+const Position = position_types.Position;
 
 const white: u8 = 0;
 const black: u8 = 1;
@@ -61,23 +67,23 @@ const MoveWriter = struct {
     }
 };
 
-pub fn generateCaptures(pos: *const anyopaque, move_list: [*]u16) usize {
+pub fn generateCaptures(pos: *const Position, move_list: [*]u16) usize {
     return generate(.captures, pos, move_list);
 }
 
-pub fn generateQuiets(pos: *const anyopaque, move_list: [*]u16) usize {
+pub fn generateQuiets(pos: *const Position, move_list: [*]u16) usize {
     return generate(.quiets, pos, move_list);
 }
 
-pub fn generateEvasions(pos: *const anyopaque, move_list: [*]u16) usize {
+pub fn generateEvasions(pos: *const Position, move_list: [*]u16) usize {
     return generate(.evasions, pos, move_list);
 }
 
-pub fn generateNonEvasions(pos: *const anyopaque, move_list: [*]u16) usize {
+pub fn generateNonEvasions(pos: *const Position, move_list: [*]u16) usize {
     return generate(.non_evasions, pos, move_list);
 }
 
-pub fn generateLegal(pos: *const anyopaque, move_list: [*]u16) usize {
+pub fn generateLegal(pos: *const Position, move_list: [*]u16) usize {
     var snapshot = loadSnapshot(pos);
 
     const count = if (snapshot.checkers != 0)
@@ -88,13 +94,13 @@ pub fn generateLegal(pos: *const anyopaque, move_list: [*]u16) usize {
     return filterLegalMoves(pos, &snapshot, move_list, count);
 }
 
-fn generate(comptime kind: GenType, pos: *const anyopaque, move_list: [*]u16) usize {
+fn generate(comptime kind: GenType, pos: *const Position, move_list: [*]u16) usize {
     var snapshot = loadSnapshot(pos);
 
     return generateWithSnapshot(kind, &snapshot, move_list);
 }
 
-fn loadSnapshot(pos: *const anyopaque) PositionSnapshot {
+fn loadSnapshot(pos: *const Position) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
     position_snapshot.fill(pos, &snapshot);
     snapshot.pieces_by_type[0] = snapshot.pieces_all;
@@ -353,7 +359,7 @@ fn squareBb(square: u8) u64 {
 }
 
 fn filterLegalMoves(
-    pos: *const anyopaque,
+    pos: *const Position,
     snapshot: *const PositionSnapshot,
     move_list: [*]u16,
     count: usize,
