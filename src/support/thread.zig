@@ -44,8 +44,7 @@ inline fn threadRunJob(thread: *graph_layout.Thread, job: ThreadCallback, ctx: ?
 // element pointer is still @ptrFromInt(begin + index*stride), but into Zig-owned
 // memory (no foreign-runtime layout). Gate-verified by search-modes.
 inline fn limitsSearchmoveText(limits: *const graph_layout.LimitsType, index: usize) ByteView {
-    const stride = @sizeOf(graph_layout.SearchMoveText);
-    const rec: *const graph_layout.SearchMoveText = @ptrFromInt(limits.searchmoves[0] + index * stride);
+    const rec: *const graph_layout.SearchMoveText = &limits.searchmoves[index];
     return .{ .ptr = &rec.text, .len = rec.len };
 }
 comptime {

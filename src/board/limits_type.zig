@@ -24,7 +24,7 @@ pub const SearchMoveText = extern struct {
 // ints (movestogo/depth/mate/perft/infinite), nodes, and ponderMode. workerSetLimits
 // copies the POD fields, so any layout error here breaks bench (gate-verified).
 pub const LimitsType = struct {
-    searchmoves: [3]usize, // {begin, end, cap} over Zig SearchMoveText records (M17.6)
+    searchmoves: []SearchMoveText, // the `go searchmoves` list (M19.1: a typed slice, was {begin,end,cap})
     time: [2]i64, // time[WHITE], time[BLACK]
     inc: [2]i64, // inc[WHITE], inc[BLACK]
     npmsec: i64,
@@ -50,12 +50,9 @@ pub const LimitsType = struct {
     pub inline fn perftValue(self: *const LimitsType) usize {
         return @intCast(self.perft);
     }
-    /// Number of searchmoves entries: (end-begin) over the SearchMoveText record
-    /// size. begin/end are the typed usize header words.
+    /// Number of `go searchmoves` entries -- the slice length (M19.1).
     pub inline fn searchmoveCount(self: *const LimitsType) usize {
-        const begin = self.searchmoves[0];
-        const end = self.searchmoves[1];
-        return (end - begin) / @sizeOf(SearchMoveText);
+        return self.searchmoves.len;
     }
 };
 
