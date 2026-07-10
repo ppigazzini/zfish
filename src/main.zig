@@ -174,7 +174,7 @@ fn nativeEng(engine: *anyopaque) *native_engine.NativeEngine {
 }
 // threads_ptr is main-internal only; engine.zig reaches the other graph slots
 // through native_engine.zig accessors.
-fn engineThreadsPtr(engine: *anyopaque) *anyopaque {
+fn engineThreadsPtr(engine: *anyopaque) *graph_layout.ThreadPool {
     return nativeEng(engine).threads.?;
 }
 

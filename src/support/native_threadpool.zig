@@ -165,7 +165,7 @@ pub fn set(
 
 // Join + free every native Thread and null the footprint vector. Called by the
 // native reset_for_reconfigure and the engine teardown hook.
-pub fn clear(pool: *anyopaque) void {
+pub fn clear(pool: *graph_layout.ThreadPool) void {
     var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
     p.clear();
 }
