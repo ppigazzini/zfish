@@ -38,9 +38,13 @@ fn memberOptionsNew() ?*anyopaque {
     return std.c.malloc(1);
 }
 fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
-    // calloc(1, thread_pool_size) is a value-initialized ThreadPool; the one @ptrCast at
-    // this alloc boundary is the honest seam, so the member field can stay typed.
-    return @ptrCast(@alignCast(std.c.calloc(1, graph_layout.thread_pool_size)));
+    // M19: a typed, zero-initialized ThreadPool via the Allocator interface. @sizeOf ==
+    // thread_pool_size (64, asserted in graph_layout), and ThreadPool is all-zeroable
+    // (nullable setup_states + usize fields), so create + std.mem.zeroes replaces the
+    // raw calloc + @ptrCast/@alignCast.
+    const tp = std.heap.c_allocator.create(graph_layout.ThreadPool) catch return null;
+    tp.* = std.mem.zeroes(graph_layout.ThreadPool);
+    return tp;
 }
 fn memberHandleFree(p: ?*anyopaque) void {
     std.c.free(p);
@@ -235,7 +239,8 @@ pub fn destructMembers(buf: *anyopaque) void {
 
     memberHandleFree(e.network);
     e.network = null;
-    memberHandleFree(e.threads);
+    // threads was allocator.create'd (M19) -- free it through the same interface.
+    if (e.threads) |t| std.heap.c_allocator.destroy(t);
     e.threads = null;
     memberHandleFree(e.options);
     e.options = null;
