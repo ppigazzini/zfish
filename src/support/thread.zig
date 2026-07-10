@@ -152,14 +152,16 @@ fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?*anyopaq
         hdr[2] = 0;
         return header;
     }
-    const stride = graph_layout.root_move_size; // 552
-    const bytes = count * stride;
-    const elems = std.c.malloc(bytes) orelse return null;
-    const base: [*]u8 = @ptrCast(elems);
-    var i: usize = 0;
-    while (i < count) : (i += 1) {
-        const rm: *position_port.RootMove = @ptrCast(@alignCast(base + i * stride));
-        @memset(@as([*]u8, @ptrCast(rm))[0..stride], 0);
+    // M19.1: the element array is a TYPED slice now (@sizeOf(RootMove)==root_move_size==552,
+    // so alloc(RootMove, count) matches the stride) -- no byte math, no per-element
+    // @ptrCast/@alignCast, no @memset. The 24-byte {begin,end,cap} header stays a raw
+    // malloc: it is the vector-header ABI the worker binds by reference.
+    const elems = std.heap.c_allocator.alloc(position_port.RootMove, count) catch {
+        std.c.free(header);
+        return null;
+    };
+    for (elems, 0..) |*rm, i| {
+        rm.* = std.mem.zeroes(position_port.RootMove);
         rm.score = -value_infinite;
         rm.previous_score = -value_infinite;
         rm.average_score = -value_infinite;
@@ -170,15 +172,21 @@ fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?*anyopaq
         rm.pv.moves[0] = items[i].raw_move;
         rm.pv.length = 1;
     }
-    hdr[0] = @intFromPtr(elems);
-    hdr[1] = @intFromPtr(elems) + bytes;
-    hdr[2] = @intFromPtr(elems) + bytes;
+    const begin = @intFromPtr(elems.ptr);
+    const bytes = count * @sizeOf(position_port.RootMove);
+    hdr[0] = begin;
+    hdr[1] = begin + bytes;
+    hdr[2] = begin + bytes;
     return header;
 }
 fn rootMovesDestroy(ptr: ?*anyopaque) void {
     const p = ptr orelse return;
     const hdr: [*]usize = @ptrCast(@alignCast(p));
-    if (hdr[0] != 0) std.c.free(@ptrFromInt(hdr[0]));
+    if (hdr[0] != 0) {
+        const cnt = (hdr[1] - hdr[0]) / @sizeOf(position_port.RootMove);
+        const elems: [*]position_port.RootMove = @ptrFromInt(hdr[0]);
+        std.heap.c_allocator.free(elems[0..cnt]);
+    }
     std.c.free(p);
 }
 
