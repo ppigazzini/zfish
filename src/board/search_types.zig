@@ -10,6 +10,7 @@
 const std = @import("std");
 const root_move = @import("root_move");
 const worker_histories = @import("worker_histories");
+const correction_bundle = @import("correction_bundle");
 
 // Memory mirror of the search Stack (src/search.h): the scalar fields the ported
 // search helpers read. The two continuation pointers are concrete PieceToHistory
@@ -32,14 +33,11 @@ pub const SearchStack = struct {
     reduction: c_int,
 };
 
-// One CorrectionBundle (src/history.h): the four correction StatsEntry<int16>
-// fields, one [2] page per correctionHistory index (indexed by color).
-pub const CorrectionBundle = struct {
-    pawn: i16,
-    minor: i16,
-    nonpawn_white: i16,
-    nonpawn_black: i16,
-};
+// CorrectionBundle now lives in the std-only correction_bundle leaf (M18.7); re-export
+// it as the canonical name so the ported search code + shared-history sizing are
+// unchanged, while the shared-history record can name the same type from a leaf that
+// worker_histories imports (breaking the search_types -> worker_histories cycle).
+pub const CorrectionBundle = correction_bundle.CorrectionBundle;
 
 // PVMoves + RootMove are re-exported from the single canonical definition in
 // support/root_move.zig (M18.2 de-mirror). The search indexes the rootMoves vector
