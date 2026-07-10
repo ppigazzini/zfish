@@ -65,14 +65,14 @@ var live_shared_state: SharedState = undefined;
 /// pointer once here (the storage boundary) so every downstream read is typed.
 fn sharedStateCreate(
     options: *anyopaque,
-    threads: *anyopaque,
-    tt: *anyopaque,
+    threads: *graph_layout.ThreadPool,
+    tt: *graph_layout.TranspositionTable,
     shared_histories: *anyopaque,
     network: *anyopaque,
 ) *anyopaque {
     live_shared_state = SharedState.init(
         @ptrCast(@alignCast(options)),
-        @ptrCast(@alignCast(threads)),
+        threads,
         @ptrCast(@alignCast(tt)),
         @ptrCast(@alignCast(shared_histories)),
         @ptrCast(@alignCast(network)),
