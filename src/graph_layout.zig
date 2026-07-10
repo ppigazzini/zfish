@@ -11,6 +11,7 @@ const position_types = @import("position_types");
 const limits_type = @import("limits_type");
 const root_move = @import("root_move");
 const tt_types = @import("tt_types");
+const state_list = @import("state_list");
 
 // Canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = @sizeOf(WorkerLayout);
@@ -239,7 +240,7 @@ pub const SearchManager = struct {
 pub const ThreadPool = struct {
     stop: u8 = 0, // atomic_bool
     increase_depth: u8 = 0, // atomic_bool
-    setup_states: ?*anyopaque = null, // StateListPtr (?*StateList)
+    setup_states: ?*state_list.StateList = null, // the native `states` StateListPtr
     threads_begin: usize = 0, // Thread* vector {begin,end,cap}
     threads_end: usize = 0,
     threads_cap: usize = 0,
