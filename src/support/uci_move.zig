@@ -1,6 +1,8 @@
 const std = @import("std");
 const movegen_port = @import("movegen");
 const position_snapshot = @import("position_snapshot");
+const position_types = @import("position_types");
+const Position = position_types.Position;
 
 // M16.7: uci_move reads the position snapshot through the main-exported bridge rather
 // than importing position -- position (the search driver) imports uci_move to format
@@ -25,7 +27,7 @@ pub fn noneRaw() u16 {
     return none_raw;
 }
 
-pub fn toMoveRaw(pos: *const anyopaque, text: []const u8) u16 {
+pub fn toMoveRaw(pos: *const Position, text: []const u8) u16 {
     var move_buffer: [max_moves]u16 = undefined;
     const count = movegen_port.generateLegal(pos, move_buffer[0..].ptr);
     var snapshot = std.mem.zeroes(PositionSnapshot);

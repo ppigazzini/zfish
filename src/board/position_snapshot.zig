@@ -1,3 +1,5 @@
+const position_types = @import("position_types");
+
 pub const PositionSnapshot = struct {
     side_to_move: u8,
     pieces_all: u64,
@@ -39,9 +41,9 @@ pub var fill_fn: *const fn (pos: *const anyopaque, out: *anyopaque) void =
             hookPanic("fill_fn");
         }
     }.stub;
-pub var move_is_legal_fn: *const fn (pos: *const anyopaque, raw_move: u16) bool =
+pub var move_is_legal_fn: *const fn (pos: *const position_types.Position, raw_move: u16) bool =
     struct {
-        fn stub(_: *const anyopaque, _: u16) bool {
+        fn stub(_: *const position_types.Position, _: u16) bool {
             hookPanic("move_is_legal_fn");
         }
     }.stub;
@@ -49,6 +51,6 @@ pub var move_is_legal_fn: *const fn (pos: *const anyopaque, raw_move: u16) bool 
 pub inline fn fill(pos: *const anyopaque, out: *anyopaque) void {
     fill_fn(pos, out);
 }
-pub inline fn moveIsLegal(pos: *const anyopaque, raw_move: u16) bool {
+pub inline fn moveIsLegal(pos: *const position_types.Position, raw_move: u16) bool {
     return move_is_legal_fn(pos, raw_move);
 }
