@@ -347,6 +347,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "shared_history", .imp = "position_types", .to = "position_types" },
         .{ .from = "shared_history", .imp = "shared_history_types", .to = "shared_history_types" },
         .{ .from = "shared_history_types", .imp = "correction_bundle", .to = "correction_bundle" },
+        .{ .from = "worker_histories", .imp = "shared_history_types", .to = "shared_history_types" },
         .{ .from = "fen_parse", .imp = "board_core", .to = "board_core" },
         .{ .from = "fen_parse", .imp = "move_do", .to = "move_do" },
         .{ .from = "fen_parse", .imp = "state_setup", .to = "state_setup" },

@@ -14,6 +14,7 @@
 // asserts @sizeOf against worker_histories_bytes.
 
 const std = @import("std");
+const shared_history_types = @import("shared_history_types");
 
 // History-table dimensions (src/history.h, src/types.h).
 pub const hist_color_nb: usize = 2;
@@ -36,7 +37,7 @@ pub const WorkerHistories = struct {
     continuation_history: [2 * 2 * hist_pieceto * hist_pieceto]i16, // [2][2] of [16][64]->[16][64]
     continuation_correction_history: [hist_pieceto * hist_pieceto]i16, // [16][64]->[16][64]
     tt_move_history: i16,
-    shared_history: ?*anyopaque, // &SharedHistories
+    shared_history: ?*shared_history_types.SharedHistories,
 };
 
 // Offset of the shared_history reference WITHIN WorkerHistories (a native struct, so
