@@ -120,7 +120,7 @@ const RankedRootMove = struct {
 
 const RootSetupInput = struct {
     limits: *const graph_layout.LimitsType,
-    root_moves: *const anyopaque,
+    root_moves: []const position_port.RootMove,
     fen_ptr: [*]const u8,
     fen_len: usize,
     setup_state: *const position_port.StateInfo,
@@ -143,23 +143,13 @@ const numa_policy_auto: u8 = 1;
 // RootMove array (stride graph_layout.root_move_size == 552), each element zeroed then
 // initialised to the RootMove default (scores at -VALUE_INFINITE) with the ranked tb fields
 // and the single-move PV. Matches the vector the worker binds by reference.
-fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?*anyopaque {
-    const header = std.c.malloc(24) orelse return null;
-    const hdr: [*]usize = @ptrCast(@alignCast(header));
-    if (count == 0) {
-        hdr[0] = 0;
-        hdr[1] = 0;
-        hdr[2] = 0;
-        return header;
-    }
-    // M19.1: the element array is a TYPED slice now (@sizeOf(RootMove)==root_move_size==552,
-    // so alloc(RootMove, count) matches the stride) -- no byte math, no per-element
-    // @ptrCast/@alignCast, no @memset. The 24-byte {begin,end,cap} header stays a raw
-    // malloc: it is the vector-header ABI the worker binds by reference.
-    const elems = std.heap.c_allocator.alloc(position_port.RootMove, count) catch {
-        std.c.free(header);
-        return null;
-    };
+// M19.1 (the transient src header, retired now that M20 confirmed these are just
+// containers): the ranked source RootMoves is a plain []RootMove -- no hand-built
+// 24-byte {begin,end,cap} header. The worker still copies it into its own vector-header
+// buffer (workerSetRootMoves reads src.ptr/src.len). @sizeOf(RootMove)==552.
+fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?[]position_port.RootMove {
+    if (count == 0) return &[_]position_port.RootMove{};
+    const elems = std.heap.c_allocator.alloc(position_port.RootMove, count) catch return null;
     for (elems, 0..) |*rm, i| {
         rm.* = std.mem.zeroes(position_port.RootMove);
         rm.score = -value_infinite;
@@ -172,22 +162,10 @@ fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?*anyopaq
         rm.pv.moves[0] = items[i].raw_move;
         rm.pv.length = 1;
     }
-    const begin = @intFromPtr(elems.ptr);
-    const bytes = count * @sizeOf(position_port.RootMove);
-    hdr[0] = begin;
-    hdr[1] = begin + bytes;
-    hdr[2] = begin + bytes;
-    return header;
+    return elems;
 }
-fn rootMovesDestroy(ptr: ?*anyopaque) void {
-    const p = ptr orelse return;
-    const hdr: [*]usize = @ptrCast(@alignCast(p));
-    if (hdr[0] != 0) {
-        const cnt = (hdr[1] - hdr[0]) / @sizeOf(position_port.RootMove);
-        const elems: [*]position_port.RootMove = @ptrFromInt(hdr[0]);
-        std.heap.c_allocator.free(elems[0..cnt]);
-    }
-    std.c.free(p);
+fn rootMovesDestroy(rm: []position_port.RootMove) void {
+    if (rm.len != 0) std.heap.c_allocator.free(rm);
 }
 
 // Copy the LimitsType POD fields (everything but the leading searchmoves vector) into
@@ -215,7 +193,7 @@ fn workerSetLimits(thread: *graph_layout.Thread, src_limits: *const graph_layout
 // libc++ vector<RootMove> copy-assign into the worker's rootMoves member:
 // reuse the existing buffer when its capacity fits, else operator-new a
 // fresh one and free the old — exactly like assigning an element range.
-fn workerSetRootMoves(thread: *graph_layout.Thread, src_rm: *const anyopaque) void {
+fn workerSetRootMoves(thread: *graph_layout.Thread, src: []const position_port.RootMove) void {
     // worker@8, then the rootMoves vector object {begin[0],end[1],cap[2]}.
     const worker = thread.worker.?;
     const dst = &worker.root_moves;
@@ -223,11 +201,9 @@ fn workerSetRootMoves(thread: *graph_layout.Thread, src_rm: *const anyopaque) vo
     const dst_end: *usize = &dst[1];
     const dst_cap: *usize = &dst[2];
 
-    // src_rm is a libc++ vector<RootMove> header {begin,end,cap}.
-    const src = @as(*const [3]usize, @ptrCast(@alignCast(src_rm)));
-    const src_begin = src[0];
-    const src_end = src[1];
-    const byte_count = src_end - src_begin;
+    // src is a typed []RootMove now (M19.1); the dst stays the worker's vector header.
+    const src_begin = @intFromPtr(src.ptr);
+    const byte_count = src.len * @sizeOf(position_port.RootMove);
 
     if (byte_count == 0) {
         dst_end.* = dst_begin.*;
@@ -568,7 +544,7 @@ fn buildRootMoves(
     root_fen: []const u8,
     chess960: u8,
     move_raws: []const u16,
-) struct { root_moves: *anyopaque, tb_config: TbConfig } {
+) struct { root_moves: []position_port.RootMove, tb_config: TbConfig } {
     const ranked_moves = allocator.alloc(RankedRootMove, move_raws.len) catch @panic("OOM");
     defer allocator.free(ranked_moves);
 
