@@ -21,21 +21,21 @@ const native_thread = @import("native_thread");
 const native_threadpool = @import("native_threadpool.zig");
 
 // Reinterpret a pool thread slot (NativeThread*) for the sync handshake.
-inline fn nt(thread: *anyopaque) *native_thread.NativeThread {
+inline fn nt(thread: *graph_layout.Thread) *native_thread.NativeThread {
     return @ptrCast(@alignCast(thread));
 }
 
 // Thread sync handshake -> the native runtime.
-inline fn threadWaitFinished(thread: *anyopaque) void {
+inline fn threadWaitFinished(thread: *graph_layout.Thread) void {
     nt(thread).waitForSearchFinished();
 }
-inline fn threadStartSearching(thread: *anyopaque) void {
+inline fn threadStartSearching(thread: *graph_layout.Thread) void {
     native_thread.startSearching(nt(thread));
 }
-inline fn threadClearWorker(thread: *anyopaque) void {
+inline fn threadClearWorker(thread: *graph_layout.Thread) void {
     native_thread.clearWorker(nt(thread));
 }
-inline fn threadRunJob(thread: *anyopaque, job: ThreadCallback, ctx: ?*anyopaque) void {
+inline fn threadRunJob(thread: *graph_layout.Thread, job: ThreadCallback, ctx: ?*anyopaque) void {
     nt(thread).startJob(job, ctx);
 }
 // Read searchmoves[index] as a Zig-owned SearchMoveText record (M17.6): the libc++
@@ -294,7 +294,7 @@ fn waitMainThread(pool: *graph_layout.ThreadPool) void {
     if (pool.numThreads() == 0)
         return;
 
-    threadWaitFinished(pool.threadAtPtr(0));
+    threadWaitFinished(pool.threadTyped(0));
 }
 
 fn buildRootFen(pos: *const position_port.Position) ?[*:0]u8 {
@@ -778,7 +778,7 @@ pub fn startThinking(
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        const thread = pool.threadAtPtr(index);
+        const thread = pool.threadTyped(index);
         root_setup_contexts[index] = .{
             .thread = thread,
             .input = .{
@@ -796,11 +796,11 @@ pub fn startThinking(
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        const thread = pool.threadAtPtr(index);
+        const thread = pool.threadTyped(index);
         threadWaitFinished(thread);
     }
 
-    const main_thread = pool.threadAtPtr(0);
+    const main_thread = pool.threadTyped(0);
     threadStartSearching(main_thread);
 }
 
@@ -812,12 +812,12 @@ pub fn clear(pool: *graph_layout.ThreadPool) void {
 
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        threadClearWorker(pool.threadAtPtr(index));
+        threadClearWorker(pool.threadTyped(index));
     }
 
     index = 0;
     while (index < thread_count) : (index += 1) {
-        threadWaitFinished(pool.threadAtPtr(index));
+        threadWaitFinished(pool.threadTyped(index));
     }
 
     if (pool.mainManager()) |m| {
@@ -842,7 +842,7 @@ pub fn startSearching(pool: *graph_layout.ThreadPool) void {
     const thread_count = pool.numThreads();
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
-        threadStartSearching(pool.threadAtPtr(index));
+        threadStartSearching(pool.threadTyped(index));
     }
 }
 
@@ -861,7 +861,7 @@ pub fn waitForSearchFinished(pool: *graph_layout.ThreadPool) void {
     const thread_count = pool.numThreads();
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
-        threadWaitFinished(pool.threadAtPtr(index));
+        threadWaitFinished(pool.threadTyped(index));
     }
 }
 
