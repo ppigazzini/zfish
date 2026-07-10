@@ -34,9 +34,6 @@ const position_types = @import("position_types");
 fn memberNumaContextNew() ?*anyopaque {
     return std.c.malloc(1);
 }
-fn memberOptionsNew() ?*anyopaque {
-    return std.c.malloc(1);
-}
 fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
     // M19: a typed, zero-initialized ThreadPool via the Allocator interface. @sizeOf ==
     // thread_pool_size (64, asserted in graph_layout), and ThreadPool is all-zeroable
@@ -49,14 +46,11 @@ fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
 fn memberHandleFree(p: ?*anyopaque) void {
     std.c.free(p);
 }
-// network: native single-node holder. malloc(1) handle (never dereferenced — the worker network
-// resolver / eval / verify read native storage; nothing indexes network[token]) + trigger the
-// native NNUE load into the Zig-owned storage. numa_context is unused (single node). states is a
-// native StateList (state_list.zig), so it has no allocator here.
-fn memberNetworkNew(binary_dir: [*:0]const u8, binary_dir_len: usize) ?*anyopaque {
-    const holder = std.c.malloc(1) orelse return null;
+// Trigger the native NNUE load into the Zig-owned storage. M20.1: there is no engine
+// `network` member any more -- the worker network resolver / eval / verify read the
+// global native FT storage directly, so the old malloc(1) holder was pure dead weight.
+fn loadNetwork(binary_dir: [*:0]const u8, binary_dir_len: usize) void {
     network_port.load(binary_dir, binary_dir_len, binary_dir, 0);
-    return holder;
 }
 // updateContext + onVerifyNetwork are held INLINE in the native engine (stable address
 // for the worker managers / verify emit to bind via accessor) and placement-constructed.
@@ -76,9 +70,7 @@ pub const verify_network_fn_size: usize = 64;
 pub const NativeEngine = struct {
     numa_context: ?*anyopaque = null,
     states: ?*state_list_port.StateList = null,
-    options: ?*anyopaque = null,
     threads: ?*graph_layout.ThreadPool = null,
-    network: ?*anyopaque = null,
     binary_directory: ?[*:0]u8 = null,
     cli_argc: c_int = 0,
     cli_argv: ?[*]const [*:0]u8 = null,
@@ -90,9 +82,7 @@ pub const NativeEngine = struct {
     pub const off = struct {
         pub const numa_context = @offsetOf(NativeEngine, "numa_context");
         pub const states = @offsetOf(NativeEngine, "states");
-        pub const options = @offsetOf(NativeEngine, "options");
         pub const threads = @offsetOf(NativeEngine, "threads");
-        pub const network = @offsetOf(NativeEngine, "network");
         pub const cli_argc = @offsetOf(NativeEngine, "cli_argc");
         pub const cli_argv = @offsetOf(NativeEngine, "cli_argv");
         pub const update_context = @offsetOf(NativeEngine, "update_context");
@@ -115,17 +105,11 @@ pub const NativeEngine = struct {
         const argv = self.cli_argv orelse return null;
         return argv[@intCast(index)];
     }
-    pub fn optionsPtr(self: *const NativeEngine) *const anyopaque {
-        return self.options.?;
-    }
     pub fn numaContextPtr(self: *NativeEngine) *anyopaque {
         return self.numa_context.?;
     }
     pub fn statesSlotPtr(self: *NativeEngine) *anyopaque {
         return @ptrCast(&self.states);
-    }
-    pub fn networkPtr(self: *const NativeEngine) *const anyopaque {
-        return self.network.?;
     }
     pub fn threadsPtr(self: *NativeEngine) *graph_layout.ThreadPool {
         return self.threads.?;
@@ -182,11 +166,10 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
         return false;
     };
     e.states = states_list;
-    e.options = memberOptionsNew() orelse return false;
     e.threads = memberThreadpoolNew() orelse return false;
 
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
-    e.network = memberNetworkNew(bdir, std.mem.span(bdir).len) orelse return false;
+    loadNetwork(bdir, std.mem.span(bdir).len);
 
     // The update_context / on_verify_network slots are zeroed by the field initializers above,
     // which is byte-equivalent to a default-constructed empty std::function/UpdateContext. The
@@ -237,13 +220,9 @@ pub fn destructMembers(buf: *anyopaque) void {
         e.states = null;
     }
 
-    memberHandleFree(e.network);
-    e.network = null;
     // threads was allocator.create'd (M19) -- free it through the same interface.
     if (e.threads) |t| std.heap.c_allocator.destroy(t);
     e.threads = null;
-    memberHandleFree(e.options);
-    e.options = null;
     memberHandleFree(e.numa_context);
     e.numa_context = null;
     if (e.binary_directory) |bd| std.c.free(bd);
