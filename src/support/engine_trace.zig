@@ -105,28 +105,28 @@ pub const NnueTraceInput = struct {
 // ======================================================================== //
 // Trace / visualize / snapshot functions, moved verbatim from engine.zig.    //
 // ======================================================================== //
-fn accumulatorStackCreate() ?*anyopaque {
-    const buf = std.c.malloc(graph_layout.accumulator_stack_size) orelse return null;
+fn accumulatorStackCreate() ?*nnue_acc.AccumulatorStack {
+    const buf: *nnue_acc.AccumulatorStack = @ptrCast(std.c.malloc(graph_layout.accumulator_stack_size) orelse return null);
     @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.accumulator_stack_size], 0);
-    nnue_acc.stackReset(@ptrCast(buf));
+    nnue_acc.stackReset(buf);
     return buf;
 }
-fn accumulatorStackDestroy(stack: ?*anyopaque) void {
+fn accumulatorStackDestroy(stack: ?*nnue_acc.AccumulatorStack) void {
     if (stack) |buf| std.c.free(buf);
 }
 // `new AccumulatorCaches(network)` / delete, ported native: the C++ ctor clears every cache
 // entry from the network FT biases; clearRefreshCache does exactly that over the caches block
 // from the native FT biases (the loaded net). Relocated from main.zig (M16.7).
-pub fn accumulatorCachesCreate() ?*anyopaque {
-    const buf = std.c.malloc(graph_layout.accumulator_caches_size) orelse return null;
+pub fn accumulatorCachesCreate() ?*nnue_acc.RefreshCache {
+    const buf: *nnue_acc.RefreshCache = @ptrCast(std.c.malloc(graph_layout.accumulator_caches_size) orelse return null);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse {
         std.c.free(buf);
         return null;
     }));
-    nnue_acc.clearRefreshCache(@ptrCast(buf), biases);
+    nnue_acc.clearRefreshCache(buf, biases);
     return buf;
 }
-fn accumulatorCachesDestroy(caches: ?*anyopaque) void {
+fn accumulatorCachesDestroy(caches: ?*nnue_acc.RefreshCache) void {
     if (caches) |buf| std.c.free(buf);
 }
 
@@ -168,7 +168,7 @@ pub fn evalTrace(pos: *const position_port.Position) ?[*:0]u8 {
     const accumulators = accumulatorStackCreate() orelse return null;
     defer accumulatorStackDestroy(accumulators);
 
-    const nnue_output = network_port.evaluate(pos, @ptrCast(accumulators), @ptrCast(caches));
+    const nnue_output = network_port.evaluate(pos, accumulators, caches);
     const nnue_value = nnue_output.psqt + nnue_output.positional;
     const nnue_white_side = if (summary.side_to_move_white != 0) nnue_value else -nnue_value;
 
@@ -261,13 +261,13 @@ pub fn visualizeEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
 fn buildNnueTrace(
     pos: *const position_port.Position,
     summary: PositionSummary,
-    caches: *anyopaque,
+    caches: *nnue_acc.RefreshCache,
 ) ?[*:0]u8 {
     const accumulators = accumulatorStackCreate() orelse return null;
     defer accumulatorStackDestroy(accumulators);
-    nnue_acc.stackReset(@ptrCast(accumulators));
+    nnue_acc.stackReset(accumulators);
 
-    const trace = network_port.traceEvaluate(pos, @ptrCast(accumulators), @ptrCast(caches));
+    const trace = network_port.traceEvaluate(pos, accumulators, caches);
     var psqt_cp: [layer_stacks]c_int = undefined;
     var positional_cp: [layer_stacks]c_int = undefined;
 
