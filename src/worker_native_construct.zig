@@ -94,7 +94,7 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
 fn constructWorkerInto(
     buf: [*]u8,
     in: WorkerCtorInputs,
-    shared_obj: *anyopaque,
+    shared_obj: *position_port.SharedHistories,
     biases: [*]const i16,
 ) void {
     const wl = graph_layout.WorkerLayout.fromPtr(buf);

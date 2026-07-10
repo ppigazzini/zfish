@@ -29,7 +29,7 @@ const Position = position_types.Position;
 pub const SharedHistories = shared_history_types.SharedHistories;
 
 pub inline fn sharedOf(w: *const WorkerHistories) *SharedHistories {
-    return @ptrCast(@alignCast(w.shared_history.?));
+    return w.shared_history.?;
 }
 
 // DynStats::clear_range numa partition of `size` entries: [start, end).
@@ -42,8 +42,7 @@ inline fn dynRange(size: usize, thread_idx: usize, numa_total: usize) struct { s
 // SharedHistories clear_range pair from Worker::clear: correctionHistory entries
 // (each [2]CorrectionBundle, 8 int16) filled to -6, pawnHistory pages (each a
 // [16][64] int16 page) filled to -1262, over this thread's numa partition.
-pub fn clearSharedHistory(shared_ptr: *anyopaque, thread_idx: usize, numa_total: usize) void {
-    const shared: *SharedHistories = @ptrCast(@alignCast(shared_ptr));
+pub fn clearSharedHistory(shared: *SharedHistories, thread_idx: usize, numa_total: usize) void {
     const corr_entry_i16: usize = @sizeOf([2]CorrectionBundle) / @sizeOf(i16);
     {
         const r = dynRange(shared.corr_size, thread_idx, numa_total);
@@ -102,8 +101,7 @@ pub const SharedHistoriesMap = shared_histories_map.SharedHistoriesMapOf(SharedH
 
 // Read a SharedHistories through the native mirror and confirm its four size fields
 // match the native sizing for `thread_count`.
-pub fn verifySharedHistories(shared_ptr: *const anyopaque, thread_count: usize) bool {
-    const shared: *const SharedHistories = @ptrCast(@alignCast(shared_ptr));
+pub fn verifySharedHistories(shared: *const SharedHistories, thread_count: usize) bool {
     return shared_hist.verifySizes(
         shared.corr_size,
         shared.pawn_size,

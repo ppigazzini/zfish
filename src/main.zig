@@ -119,7 +119,7 @@ fn workerClearNative(worker: *anyopaque) void {
     const wl = graph_layout.WorkerLayout.fromPtr(worker);
     position_port.clearWorkerHistories(wl);
     // sharedHistory is now a typed field of the embedded WorkerHistories.
-    const shared_history: *anyopaque = wl.histories.shared_history.?;
+    const shared_history = wl.histories.shared_history.?;
     position_port.clearSharedHistory(shared_history, wl.numa_thread_idx, wl.numa_total);
     search_port.fillReductions(&wl.reductions, 256);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));
