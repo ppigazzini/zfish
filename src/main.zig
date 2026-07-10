@@ -93,18 +93,18 @@ fn freeSetupStatesIfAny(pool: *anyopaque) void {
 
 // adopt: MOVE the StateList into the pool's setupStates, freeing any prior one
 // (between searches setupStates still owns the previous list).
-fn threadpoolSetupStatesAdoptFromStorage(pool: *anyopaque, storage: *anyopaque) void {
+fn threadpoolSetupStatesAdoptFromStorage(pool: *graph_layout.ThreadPool, storage: *anyopaque) void {
     freeSetupStatesIfAny(pool);
     poolSetupStatesSlot(pool).* = @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).moveOut();
 }
-fn threadpoolSetupStatesAdoptFromSlot(pool: *anyopaque, slot_ptr: *anyopaque) void {
+fn threadpoolSetupStatesAdoptFromSlot(pool: *graph_layout.ThreadPool, slot_ptr: *anyopaque) void {
     freeSetupStatesIfAny(pool);
     const src: *?*StateList = @ptrCast(@alignCast(slot_ptr));
     poolSetupStatesSlot(pool).* = src.*;
     src.* = null;
 }
-fn threadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
-    const slot = graph_layout.ThreadPool.fromPtr(@constCast(pool)).setup_states;
+fn threadpoolSetupStateBack(pool: *const graph_layout.ThreadPool) ?*anyopaque {
+    const slot = pool.setup_states;
     if (slot) |list| return list.back();
     return null;
 }
@@ -142,7 +142,7 @@ fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
 }
 
 fn handoffPendingStates(
-    pool: *anyopaque,
+    pool: *graph_layout.ThreadPool,
     states_slot: *anyopaque,
 ) u8 {
     return engine_port.handoffPendingStates(pool, states_slot);

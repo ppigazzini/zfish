@@ -291,13 +291,13 @@ pub fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
     return @intFromBool(state_list.storageHasStates(state_storage));
 }
 
-pub fn handoffPendingStates(pool: *anyopaque, states_slot: *anyopaque) u8 {
+pub fn handoffPendingStates(pool: *graph_layout.ThreadPool, states_slot: *anyopaque) u8 {
     const state_storage = lookupPendingStateStorage(@intFromPtr(states_slot)) orelse return 0;
     if (!state_list.storageHasStates(state_storage))
         return 0;
 
     native_hooks.setup_states_adopt_from_storage(pool, state_storage);
-    return @intFromBool(graph_layout.ThreadPool.fromPtr(@constCast(pool)).hasSetupStates());
+    return @intFromBool(pool.hasSetupStates());
 }
 
 pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
