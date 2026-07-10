@@ -13,6 +13,8 @@
 // panic -- the M17.5e failure mode (a test that skipped installNativeHooks) now
 // reports exactly which hook is missing.
 
+const graph_layout = @import("graph_layout");
+
 fn hookPanic(comptime name: []const u8) noreturn {
     @panic(name ++ ": native hook not registered (installNativeHooks not run?)");
 }
@@ -77,9 +79,9 @@ pub var shared_state_insert_history: *const fn (shared_state: *const anyopaque, 
             hookPanic("shared_state_insert_history");
         }
     }.stub;
-pub var verify_thread_graph: *const fn (pool: *const anyopaque, requested: usize, bound: usize) void =
+pub var verify_thread_graph: *const fn (pool: *const graph_layout.ThreadPool, requested: usize, bound: usize) void =
     struct {
-        fn stub(_: *const anyopaque, _: usize, _: usize) void {
+        fn stub(_: *const graph_layout.ThreadPool, _: usize, _: usize) void {
             hookPanic("verify_thread_graph");
         }
     }.stub;

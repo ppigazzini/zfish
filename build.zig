@@ -197,6 +197,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "graph_layout", .imp = "root_move", .to = "root_move" },
         .{ .from = "graph_layout", .imp = "tt_types", .to = "tt_types" },
         .{ .from = "graph_layout", .imp = "state_list", .to = "state_list" },
+        .{ .from = "native_hooks", .imp = "graph_layout", .to = "graph_layout" },
         .{ .from = "search_types", .imp = "root_move", .to = "root_move" },
         .{ .from = "search_types", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "search_types", .imp = "correction_bundle", .to = "correction_bundle" },
