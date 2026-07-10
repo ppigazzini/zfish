@@ -58,7 +58,7 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
 
 // Build + print one "info depth ... pv ..." line.
 // Publishes the whole-search node count to the shared leaf; no-op in quiet mode.
-fn searchEmitInfoFull(manager: ?*anyopaque, worker: ?*graph_layout.WorkerLayout, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void {
+fn searchEmitInfoFull(manager: ?*graph_layout.SearchManager, worker: ?*graph_layout.WorkerLayout, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void {
     _ = manager;
     uci_output.setLastNodesSearched(nodes);
     if (uci_output.isQuiet()) return;
