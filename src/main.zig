@@ -80,10 +80,10 @@ pub fn main(init: std.process.Init) !void {
 const StateList = state_list_port.StateList;
 const PendingStateStorage = state_list_port.PendingStateStorage;
 
-fn poolSetupStatesSlot(pool: *anyopaque) *?*StateList {
-    return &graph_layout.ThreadPool.fromPtr(pool).setup_states;
+fn poolSetupStatesSlot(pool: *graph_layout.ThreadPool) *?*StateList {
+    return &pool.setup_states;
 }
-fn freeSetupStatesIfAny(pool: *anyopaque) void {
+fn freeSetupStatesIfAny(pool: *graph_layout.ThreadPool) void {
     const slot = poolSetupStatesSlot(pool);
     if (slot.*) |old| {
         state_list_port.destroyStateList(std.heap.c_allocator, old);
