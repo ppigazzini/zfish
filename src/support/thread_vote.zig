@@ -21,7 +21,7 @@ pub const ThreadSummary = struct {
     root_depth: c_int,
 };
 
-fn fillThreadSummary(thread: *anyopaque, out: *ThreadSummary) void {
+fn fillThreadSummary(thread: *graph_layout.Thread, out: *ThreadSummary) void {
     const w = graph_layout.Worker.fromThread(thread) orelse return;
     const rmv = w.rootMovesFirst();
     out.pv0_raw = rmv.pv.moves[0];
@@ -106,7 +106,7 @@ pub fn bestThreadIndex(pool: *graph_layout.ThreadPool) usize {
     var summaries: [max_thread_summaries]ThreadSummary = undefined;
     var index: usize = 0;
     while (index < thread_count) : (index += 1) {
-        fillThreadSummary(pool.threadAtPtr(index), &summaries[index]);
+        fillThreadSummary(pool.threadTyped(index), &summaries[index]);
     }
     return pickBestThread(&summaries, thread_count);
 }
