@@ -267,11 +267,6 @@ pub const ThreadPool = struct {
     pub inline fn threadTyped(self: *const ThreadPool, i: usize) *Thread {
         return @ptrFromInt(self.threadAt(i));
     }
-    /// The i-th `Thread*` as an opaque pointer (the still-erased thread-runtime
-    /// callers -- native_thread/native_threadpool -- take *anyopaque).
-    pub inline fn threadAtPtr(self: *const ThreadPool, i: usize) *anyopaque {
-        return self.threadTyped(i);
-    }
     pub inline fn boundCount(self: *const ThreadPool) usize {
         return (self.bound_end - self.bound_begin) / @sizeOf(usize);
     }
