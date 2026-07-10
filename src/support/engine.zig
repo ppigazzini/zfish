@@ -44,15 +44,13 @@ comptime {
 // bundle's five typed pointers are 40 bytes, byte-identical to the former 5×*anyopaque,
 // so the worker-build reinterpret is unchanged (asserted). See REPORT-17 Annex A.
 pub const SharedState = shared_state_mod.SharedStateOf(
-    option_port.OptionsModel,
     graph_layout.ThreadPool,
     tt_port.TranspositionTable,
     position_port.SharedHistoriesMap,
-    network_port.Network,
 );
 
 comptime {
-    std.debug.assert(@sizeOf(SharedState) == 40);
+    std.debug.assert(@sizeOf(SharedState) == 24);
 }
 
 // One engine, one search at a time (sequential go commands; workers only READ the
@@ -64,18 +62,14 @@ var live_shared_state: SharedState = undefined;
 /// The handles arrive erased across the reconfigure hook ABI; cast each to its typed
 /// pointer once here (the storage boundary) so every downstream read is typed.
 fn sharedStateCreate(
-    options: *anyopaque,
     threads: *graph_layout.ThreadPool,
     tt: *graph_layout.TranspositionTable,
     shared_histories: *position_port.SharedHistoriesMap,
-    network: *anyopaque,
 ) *anyopaque {
     live_shared_state = SharedState.init(
-        @ptrCast(@alignCast(options)),
         threads,
         @ptrCast(@alignCast(tt)),
         shared_histories,
-        @ptrCast(@alignCast(network)),
     );
     return @ptrCast(&live_shared_state);
 }
@@ -428,21 +422,17 @@ pub fn setNumaConfigFromOptionEngine(engine_ptr: *native_engine.NativeEngine, op
 
 pub fn resizeThreads(
     numa_context: *const anyopaque,
-    options: *const anyopaque,
     threads: *graph_layout.ThreadPool,
     tt: *graph_layout.TranspositionTable,
     shared_hists: *position_port.SharedHistoriesMap,
-    network: *const anyopaque,
     update_context: *const anyopaque,
 ) void {
     thread_port.waitForSearchFinished(threads);
 
     const shared_state = sharedStateCreate(
-        @constCast(options),
         threads,
         tt,
         shared_hists,
-        @constCast(network),
     );
     defer sharedStateDestroy(shared_state);
 
@@ -460,11 +450,9 @@ pub fn resizeThreads(
 pub fn resizeThreadsEngine(engine_ptr: *native_engine.NativeEngine) void {
     resizeThreads(
         engine_ptr.numaContextPtr(),
-        engine_ptr.optionsPtr(),
         engine_ptr.threadsPtr(),
         engine_ptr.ttPtr(),
         sharedHistoriesPtr(),
-        engine_ptr.networkPtr(),
         engine_ptr.updateContextPtr(),
     );
 }

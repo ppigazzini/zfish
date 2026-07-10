@@ -19,34 +19,29 @@ const std = @import("std");
 /// engine asserts @sizeOf == 40 at the instantiation), so the worker-build reinterpret
 /// is unchanged.
 pub fn SharedStateOf(
-    comptime Options: type,
     comptime Threads: type,
     comptime TranspositionTable: type,
     comptime Histories: type,
-    comptime Network: type,
 ) type {
     return struct {
-        options: *Options, // @0
-        threads: *Threads, // @8
-        tt: *TranspositionTable, // @16
-        shared_histories: *Histories, // @24
-        network: *Network, // @32
+        threads: *Threads, // @0
+        tt: *TranspositionTable, // @8
+        shared_histories: *Histories, // @16
 
         const Self = @This();
 
+        // M20.1: options/network dropped -- they were never read by the worker (the
+        // search reads the global OptionsModel + the native FT storage), so the bundle
+        // is the three live references the worker actually binds.
         pub fn init(
-            options: *Options,
             threads: *Threads,
             tt: *TranspositionTable,
             shared_histories: *Histories,
-            network: *Network,
         ) Self {
             return .{
-                .options = options,
                 .threads = threads,
                 .tt = tt,
                 .shared_histories = shared_histories,
-                .network = network,
             };
         }
 
@@ -63,26 +58,22 @@ pub fn SharedStateOf(
 
 const testing = std.testing;
 
-test "SharedStateOf reproduces the 40-byte footprint and binds typed references" {
-    // Instantiate with a mock referent type; the layout is five pointers regardless.
+test "SharedStateOf reproduces the 24-byte footprint and binds typed references" {
+    // Instantiate with a mock referent type; the layout is three pointers regardless.
     const Mock = u32;
-    const SS = SharedStateOf(Mock, Mock, Mock, Mock, Mock);
-    try testing.expectEqual(@as(usize, 40), @sizeOf(SS));
-    try testing.expectEqual(@as(usize, 0), @offsetOf(SS, "options"));
-    try testing.expectEqual(@as(usize, 8), @offsetOf(SS, "threads"));
-    try testing.expectEqual(@as(usize, 16), @offsetOf(SS, "tt"));
-    try testing.expectEqual(@as(usize, 24), @offsetOf(SS, "shared_histories"));
-    try testing.expectEqual(@as(usize, 32), @offsetOf(SS, "network"));
+    const SS = SharedStateOf(Mock, Mock, Mock);
+    try testing.expectEqual(@as(usize, 24), @sizeOf(SS));
+    try testing.expectEqual(@as(usize, 0), @offsetOf(SS, "threads"));
+    try testing.expectEqual(@as(usize, 8), @offsetOf(SS, "tt"));
+    try testing.expectEqual(@as(usize, 16), @offsetOf(SS, "shared_histories"));
 
-    var options: Mock = 1;
     var threads: Mock = 2;
     var tt: Mock = 3;
     var hists: Mock = 4;
-    var network: Mock = 5;
 
-    const ss = SS.init(&options, &threads, &tt, &hists, &network);
-    try testing.expectEqual(&options, ss.options);
-    try testing.expectEqual(&network, ss.network);
+    const ss = SS.init(&threads, &tt, &hists);
+    try testing.expectEqual(&threads, ss.threads);
+    try testing.expectEqual(&hists, ss.shared_histories);
     try testing.expectEqual(@as(u32, 3), ss.tt.*);
 
     // fromPtr round-trips the bundle address back to the typed view.

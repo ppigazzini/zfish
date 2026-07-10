@@ -28,7 +28,9 @@ const SearchManager = sm.SearchManager;
 // M18.5: shared_state is now the generic SharedStateOf; this scaffolding binds its own
 // referents (native ThreadPool + TranspositionTable typed, the rest still erased here),
 // so it instantiates its own view. The live engine path uses engine.SharedState.
-const SharedState = @import("shared_state").SharedStateOf(anyopaque, ThreadPool, TranspositionTable, anyopaque, anyopaque);
+// M20.1: the SharedState bundle is the three live references the worker binds
+// (threads/tt/sharedHistories); options/network are NOT in the bundle (never read).
+const SharedState = @import("shared_state").SharedStateOf(ThreadPool, TranspositionTable, anyopaque);
 pub const StateList = @import("state_list").StateList;
 pub const NumaConfig = @import("numa_config").NumaConfig;
 pub const NumaReplicationContext = @import("numa_replication").NumaReplicationContext;
@@ -68,11 +70,9 @@ pub const EngineGraph = struct {
     // subsystems.
     pub fn sharedState(self: *EngineGraph) SharedState {
         return SharedState.init(
-            self.options,
             self.threads,
             &self.tt,
             self.shared_histories,
-            self.network,
         );
     }
 
@@ -184,10 +184,10 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
     };
 
     const ss = graph.sharedState();
-    try testing.expectEqual(@as(*anyopaque, &options), ss.options);
     try testing.expectEqual(&pool, ss.threads); // typed *ThreadPool (M18.5)
     try testing.expectEqual(&graph.tt, ss.tt); // typed *TranspositionTable, the graph's own TT
-    try testing.expectEqual(@as(*anyopaque, &network), ss.network);
+    // options/network are the graph's own members (staged native-storage placeholders),
+    // no longer bound into the 3-reference SharedState bundle (M20.1).
     // states member is the native StateList (iter 1), non-empty at construction
     try testing.expect(graph.states.hasStates());
     try testing.expectEqual(@as(usize, 1), graph.states.len());
