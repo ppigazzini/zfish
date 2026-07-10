@@ -573,7 +573,7 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
 // here; inference reads from the same memory. Owned by this module (M16.7): the
 // feature transformer is ~106 MB of SIMD-permuted weights, and each per-bucket
 // affine layer stack has fc_0/fc_1/fc_2 biases+weights.
-var native_ft_ptr_storage: ?*anyopaque = null;
+var native_ft_ptr_storage: ?[*]u8 = null;
 var native_ft_len: usize = 0;
 
 fn nativeFtStorage(n: usize) ?[*]u8 {
@@ -583,33 +583,33 @@ fn nativeFtStorage(n: usize) ?[*]u8 {
         native_ft_ptr_storage = null;
     }
     if (native_ft_ptr_storage == null) {
-        native_ft_ptr_storage = memory_port.alignedLargePagesAlloc(n) orelse return null;
+        native_ft_ptr_storage = @ptrCast(memory_port.alignedLargePagesAlloc(n) orelse return null);
         native_ft_len = n;
     }
-    return @ptrCast(native_ft_ptr_storage.?);
+    return native_ft_ptr_storage.?;
 }
 
-pub fn nativeFtPtr() ?*const anyopaque {
+pub fn nativeFtPtr() ?[*]const u8 {
     return native_ft_ptr_storage;
 }
 
 const layer_stacks_n = 8;
 const layers_per_stack = 3;
 
-var native_layer_w: [layer_stacks_n][layers_per_stack]?*anyopaque =
+var native_layer_w: [layer_stacks_n][layers_per_stack]?[*]u8 =
     .{.{ null, null, null }} ** layer_stacks_n;
-var native_layer_b: [layer_stacks_n][layers_per_stack]?*anyopaque =
+var native_layer_b: [layer_stacks_n][layers_per_stack]?[*]u8 =
     .{.{ null, null, null }} ** layer_stacks_n;
 
 fn nativeLayerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8 {
     if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack or n == 0) return null;
     const ui: usize = @intCast(idx);
     const slot = if (is_weights != 0) &native_layer_w[bucket][ui] else &native_layer_b[bucket][ui];
-    if (slot.* == null) slot.* = memory_port.alignedLargePagesAlloc(n) orelse return null;
-    return @ptrCast(slot.*.?);
+    if (slot.* == null) slot.* = @ptrCast(memory_port.alignedLargePagesAlloc(n) orelse return null);
+    return slot.*.?;
 }
 
-fn nativeLayerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?*const anyopaque {
+fn nativeLayerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?[*]const u8 {
     if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack) return null;
     const ui: usize = @intCast(idx);
     return if (is_weights != 0) native_layer_w[bucket][ui] else native_layer_b[bucket][ui];
