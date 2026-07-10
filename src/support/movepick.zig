@@ -107,7 +107,7 @@ pub const MovePickerContext = struct {
     main_history: ?[*]const MainHistoryRow,
     low_ply_history: ?[*]const LowPlyHistoryRow,
     capture_history: ?[*]const CaptureHistoryRow,
-    continuation_history: ?*const anyopaque,
+    continuation_history: ?[*]const ContHistSlot,
     shared_history: ?*const anyopaque,
     ply: c_int,
 };
@@ -118,7 +118,7 @@ const HistorySnapshot = struct {
     main_base: ?[*]const MainHistoryRow,
     low_ply_base: ?[*]const LowPlyHistoryRow,
     capture_base: ?[*]const CaptureHistoryRow,
-    continuation_base: [6]?*const anyopaque,
+    continuation_base: [6]ContHistSlot,
     pawn_table: ?*const anyopaque,
     pawn_mask: u64,
 };
@@ -137,12 +137,17 @@ const CaptureHistoryRow = [square_nb][piece_type_nb]HistoryEntry;
 const PieceToHistoryRow = [square_nb]HistoryEntry;
 const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 
+// One continuation-history slot: a PieceToHistory page viewed as [piece][square].
+// The context holds a many-pointer to these slots -- the source array is [1] on the
+// qsearch path and [6] in the main search, so a bounded array type won't fit both.
+const ContHistSlot = ?[*]const PieceToHistoryRow;
+
 // History-table base pointers packed into a HistorySnapshot.
 fn fillHistorySnapshot(
     main_history: ?[*]const MainHistoryRow,
     low_ply_history: ?[*]const LowPlyHistoryRow,
     capture_history: ?[*]const CaptureHistoryRow,
-    continuation_history: ?*const anyopaque,
+    continuation_history: ?[*]const ContHistSlot,
     shared_history: ?*const anyopaque,
     out: *HistorySnapshot,
 ) void {
@@ -150,8 +155,7 @@ fn fillHistorySnapshot(
     out.low_ply_base = low_ply_history;
     out.capture_base = capture_history;
     out.continuation_base = .{ null, null, null, null, null, null };
-    if (continuation_history) |ch_ptr| {
-        const ch: [*]const ?*const anyopaque = @ptrCast(@alignCast(ch_ptr));
+    if (continuation_history) |ch| {
         var slot: usize = 0;
         while (slot < 6) : (slot += 1) out.continuation_base[slot] = ch[slot];
     }
@@ -779,8 +783,7 @@ fn continuationHistoryScore(
     piece: u8,
     square: u8,
 ) c_int {
-    const base_ptr = history_snapshot.continuation_base[slot] orelse unreachable;
-    const history: [*]const PieceToHistoryRow = @ptrCast(@alignCast(base_ptr));
+    const history = history_snapshot.continuation_base[slot] orelse unreachable;
     return history[@as(usize, piece)][@as(usize, square)].value;
 }
 
