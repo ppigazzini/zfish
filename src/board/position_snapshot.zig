@@ -35,9 +35,9 @@ fn hookPanic(comptime name: []const u8) noreturn {
     @panic(name ++ ": position snapshot hook not registered (initRuntime not run?)");
 }
 
-pub var fill_fn: *const fn (pos: *const anyopaque, out: *anyopaque) void =
+pub var fill_fn: *const fn (pos: *const position_types.Position, out: *PositionSnapshot) void =
     struct {
-        fn stub(_: *const anyopaque, _: *anyopaque) void {
+        fn stub(_: *const position_types.Position, _: *PositionSnapshot) void {
             hookPanic("fill_fn");
         }
     }.stub;
@@ -48,7 +48,7 @@ pub var move_is_legal_fn: *const fn (pos: *const position_types.Position, raw_mo
         }
     }.stub;
 
-pub inline fn fill(pos: *const anyopaque, out: *anyopaque) void {
+pub inline fn fill(pos: *const position_types.Position, out: *PositionSnapshot) void {
     fill_fn(pos, out);
 }
 pub inline fn moveIsLegal(pos: *const position_types.Position, raw_move: u16) bool {

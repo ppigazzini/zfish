@@ -222,6 +222,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "position_query", .to = "position_query" },
         .{ .from = "position_query", .imp = "board_core", .to = "board_core" },
         .{ .from = "position_query", .imp = "position_types", .to = "position_types" },
+        .{ .from = "position_query", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "position", .imp = "state_setup", .to = "state_setup" },
         .{ .from = "state_setup", .imp = "bitboard", .to = "bitboard" },
         .{ .from = "state_setup", .imp = "board_core", .to = "board_core" },

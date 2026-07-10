@@ -11,6 +11,7 @@
 const std = @import("std");
 const board_core = @import("board_core");
 const position_types = @import("position_types");
+const position_snapshot = @import("position_snapshot");
 
 const Position = position_types.Position;
 const king_pt = board_core.king_pt;
@@ -40,36 +41,14 @@ pub fn wdlMaterial(pos: *const Position) c_int {
         5 * (pc[4] + pc[12]) + 9 * (pc[5] + pc[13]);
 }
 
-// Layout matches position_snapshot.PositionSnapshot. Read straight from the
-// Position memory mirror.
-const FillSnapshot = struct {
-    side_to_move: u8,
-    pieces_all: u64,
-    pieces_by_color: [2]u64,
-    pieces_by_type: [8]u64,
-    blockers_for_king: [2]u64,
-    pinners: [2]u64,
-    king_square: [2]u8,
-    ep_square: u8,
-    castling_rights: u8,
-    castling_impeded: [16]u8,
-    castling_rook_square: [16]u8,
-    checkers: u64,
-    board: [64]u8,
-    pawn_key: u64,
-    key: u64,
-    material_value: c_int,
-    rule50_count: c_int,
-    game_ply: c_int,
-    is_chess960: u8,
-};
+// The snapshot the fill hook writes IS position_snapshot.PositionSnapshot (M18.7);
+// the former local mirror is retired now that this module names the real type.
+const FillSnapshot = position_snapshot.PositionSnapshot;
 
 // Position::fill_snapshot: derive the NNUE/board snapshot from the live Position.
 // Reads the memory mirror directly.
-pub fn fillSnapshot(pos_ptr: *const anyopaque, out_ptr: *anyopaque) void {
-    const pos: *const Position = @ptrCast(@alignCast(pos_ptr));
+pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     const st = pos.st;
-    const out: *FillSnapshot = @ptrCast(@alignCast(out_ptr));
 
     out.side_to_move = pos.side_to_move;
     out.pieces_all = pos.by_type_bb[0];
