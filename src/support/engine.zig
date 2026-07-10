@@ -67,14 +67,14 @@ fn sharedStateCreate(
     options: *anyopaque,
     threads: *graph_layout.ThreadPool,
     tt: *graph_layout.TranspositionTable,
-    shared_histories: *anyopaque,
+    shared_histories: *position_port.SharedHistoriesMap,
     network: *anyopaque,
 ) *anyopaque {
     live_shared_state = SharedState.init(
         @ptrCast(@alignCast(options)),
         threads,
         @ptrCast(@alignCast(tt)),
-        @ptrCast(@alignCast(shared_histories)),
+        shared_histories,
         @ptrCast(@alignCast(network)),
     );
     return @ptrCast(&live_shared_state);
@@ -431,7 +431,7 @@ pub fn resizeThreads(
     options: *const anyopaque,
     threads: *graph_layout.ThreadPool,
     tt: *graph_layout.TranspositionTable,
-    shared_hists: *anyopaque,
+    shared_hists: *position_port.SharedHistoriesMap,
     network: *const anyopaque,
     update_context: *const anyopaque,
 ) void {
@@ -489,8 +489,8 @@ fn sideSharedHistories() *position_port.SharedHistoriesMap {
     return &side_shared_histories.?;
 }
 
-pub fn sharedHistoriesPtr() *anyopaque {
-    return @ptrCast(sideSharedHistories());
+pub fn sharedHistoriesPtr() *position_port.SharedHistoriesMap {
+    return sideSharedHistories();
 }
 
 pub fn sharedHistoriesClear(map: *position_port.SharedHistoriesMap) void {
