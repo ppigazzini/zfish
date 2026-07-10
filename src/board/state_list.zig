@@ -56,6 +56,9 @@ pub const StateList = struct {
 
     fn appendBlock(self: *StateList) error{OutOfMemory}!*StateInfo {
         const block = try self.allocator.create(StateInfo);
+        // If the blocks-vector growth below fails, `block` isn't tracked yet, so free
+        // it here -- otherwise deinit (which only walks blocks.items) would leak it.
+        errdefer self.allocator.destroy(block);
         @memset(std.mem.asBytes(block), 0);
         try self.blocks.append(self.allocator, block);
         return block;
@@ -272,4 +275,39 @@ test "reset drops to a single fresh root and zeroes it" {
 test "state_info_size matches the pinned C++ StateInfo footprint" {
     // state_info_size is pinned to 192 by graph_layout.zig.
     try testing.expectEqual(@as(usize, 192), state_info_size);
+}
+
+// M19: prove the allocation error paths actually unwind. std.testing
+// .checkAllAllocationFailures runs the body once cleanly, then again failing each
+// successive allocation in turn, and asserts every run either succeeds or returns
+// error.OutOfMemory while leaking nothing -- so the errdefer/defer chains are
+// verified on every partial-failure point, not just the happy path.
+test "StateList.init/push/reset unwind leak-free on every allocation failure" {
+    const Roundtrip = struct {
+        fn run(allocator: std.mem.Allocator) !void {
+            var list = try StateList.init(allocator);
+            defer list.deinit();
+            _ = try list.push();
+            _ = try list.push();
+            _ = try list.reset();
+            _ = try list.push();
+        }
+    };
+    try testing.checkAllAllocationFailures(testing.allocator, Roundtrip.run, .{});
+}
+
+test "PendingStateStorage.create/reset/push unwind leak-free on every allocation failure" {
+    // create() has a 3-deep errdefer chain (self -> list -> StateList.init); a failure
+    // at any step must free the earlier ones, and a later reset/push failure must leave
+    // destroy() with a consistent chain to free.
+    const Roundtrip = struct {
+        fn run(allocator: std.mem.Allocator) !void {
+            const storage = try PendingStateStorage.create(allocator);
+            defer storage.destroy();
+            _ = try storage.reset();
+            _ = try storage.push();
+            _ = try storage.push();
+        }
+    };
+    try testing.checkAllAllocationFailures(testing.allocator, Roundtrip.run, .{});
 }
