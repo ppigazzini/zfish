@@ -9,6 +9,7 @@ const movegen_port = @import("movegen");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
 const state_list = @import("state_list");
+const PendingStateStorage = state_list.PendingStateStorage;
 const numa = @import("numa");
 
 // Zig-owned thread job runner (engine-graph reimplementation). Verified by its
@@ -318,7 +319,7 @@ fn buildRootFen(pos: *const position_port.Position) ?[*:0]u8 {
 
 const ScratchPosition = struct {
     pos: *position_port.Position,
-    storage: *anyopaque,
+    storage: *PendingStateStorage,
 
     fn init(root_fen: []const u8, chess960: u8) ScratchPosition {
         const pos = position_port.create() orelse @panic("OOM");
