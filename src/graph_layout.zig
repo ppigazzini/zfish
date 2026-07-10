@@ -108,18 +108,16 @@ pub const WorkerLayout = struct {
 };
 
 comptime {
-    // Worker-block layout-lock (M17.3a). The Worker is a fixed 64-aligned large-page
-    // image; `root_pos`/`root_state` now carry a *typed* Position / StateInfo (M17.3c),
-    // each reserving exactly its slot width (position_size/state_info_size). Pin that
-    // the typed embed keeps those slots their contractual width and abutting the next
-    // field with no shift -- i.e. @sizeOf(Position)==position_size and
-    // @sizeOf(StateInfo)==state_info_size, enforced here via the field offsets. These
-    // are relative (offset-delta) checks over fixed slot sizes, hence arch-invariant --
-    // they hold on every target, turning the runtime bench coincidence into a
-    // build-time contract.
+    // Worker-block layout-lock (M17.3a / M20). The Worker is a fixed 64-aligned
+    // large-page image. `root_pos`/`root_state` carry typed Position / StateInfo
+    // (M17.3c) accessed by @offsetOf (worker_off), never by cross-field adjacency, so
+    // the real contract is only that each type fills exactly its reserved slot width.
+    // Assert that directly on the TYPE SIZES (ordering-independent) rather than on the
+    // WorkerLayout field offset-deltas -- the former held a hidden dependency on Zig's
+    // auto field-reorder that blocked removing unrelated fields (M20).
     std.debug.assert(@alignOf(WorkerLayout) == 64);
-    std.debug.assert(@offsetOf(WorkerLayout, "root_state") == @offsetOf(WorkerLayout, "root_pos") + position_size);
-    std.debug.assert(@offsetOf(WorkerLayout, "root_moves") == @offsetOf(WorkerLayout, "root_state") + state_info_size);
+    std.debug.assert(@sizeOf(position_types.Position) == position_size);
+    std.debug.assert(@sizeOf(position_types.StateInfo) == state_info_size);
 }
 
 pub const worker_off = struct {
