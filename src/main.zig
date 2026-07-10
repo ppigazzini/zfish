@@ -127,17 +127,6 @@ fn workerClearNative(worker: *anyopaque) void {
     nnue_accumulator_port.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
 
-// operatorNew/operatorDelete: the matched alloc/free family for the native
-// containers (RootMoves/searchmoves/bound_nodes/Position/caches). They bottom out
-// in malloc/free, so any allocation here is freed by the matching free -- verified
-// by parity-valgrind + parity-teardown.
-fn operatorNew(n: usize) ?*anyopaque {
-    return std.c.malloc(n);
-}
-fn operatorDelete(p: ?*anyopaque) void {
-    std.c.free(p);
-}
-
 fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
     return engine_port.pendingStatesAvailable(states_slot);
 }
@@ -243,21 +232,23 @@ fn optInt(name: []const u8) c_int {
 //     dtors), so manager + rootMoves are the ONLY heap members ~Worker frees — reproducing
 //     it without a virtual `delete manager`.
 fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque {
-    const buf = operatorNew(@sizeOf(graph_layout.SearchManager)) orelse return null;
-    const bytes: [*]u8 = @ptrCast(buf);
-    @memset(bytes[0..@sizeOf(graph_layout.SearchManager)], 0);
-    if (is_main != 0) {
-        graph_layout.SearchManager.fromPtr(@ptrCast(bytes)).updates = update_context;
-    }
-    return buf;
+    // M19: a typed SearchManager via the Allocator interface (c_allocator, libc-backed).
+    const sm = std.heap.c_allocator.create(graph_layout.SearchManager) catch return null;
+    @memset(@as([*]u8, @ptrCast(sm))[0..@sizeOf(graph_layout.SearchManager)], 0);
+    if (is_main != 0) sm.updates = update_context;
+    return sm;
 }
 fn nativeWorkerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
     const wl = graph_layout.WorkerLayout.fromPtr(w);
-    // rootMoves vector buffer (begin == root_moves[0]); operator new'd by the RootMoves builder.
-    if (wl.root_moves[0] != 0) operatorDelete(@ptrFromInt(wl.root_moves[0]));
-    // SearchManager buffer (operator new'd by makeSearchManager above).
-    if (wl.manager) |m| operatorDelete(m);
+    // rootMoves vector buffer: a []RootMove allocated by workerSetRootMoves; free the
+    // slice reconstructed from the {begin,cap} of the vector header (M19).
+    if (wl.root_moves[0] != 0) {
+        const cnt = (wl.root_moves[2] - wl.root_moves[0]) / @sizeOf(graph_layout.RootMove);
+        std.heap.c_allocator.free(@as([*]graph_layout.RootMove, @ptrFromInt(wl.root_moves[0]))[0..cnt]);
+    }
+    // SearchManager buffer (allocator.create'd by makeSearchManager; manager is typed).
+    if (wl.manager) |m| std.heap.c_allocator.destroy(m);
     memory_port.alignedLargePagesFree(w);
 }
 

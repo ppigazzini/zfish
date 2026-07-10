@@ -242,12 +242,18 @@ fn workerSetRootMoves(thread: *graph_layout.Thread, src_rm: *const anyopaque) vo
         );
         dst_end.* = dst_begin.* + byte_count;
     } else {
-        const new_buf = @intFromPtr(std.c.malloc(byte_count) orelse @panic("set_root_moves: OOM"));
+        // M19: the worker's rootMoves buffer is a []RootMove (allocator-managed, freed
+        // to match by nativeWorkerDestroy). byte_count is count*@sizeOf(RootMove).
+        const new_slice = std.heap.c_allocator.alloc(position_port.RootMove, byte_count / @sizeOf(position_port.RootMove)) catch @panic("set_root_moves: OOM");
+        const new_buf = @intFromPtr(new_slice.ptr);
         @memcpy(
             @as([*]u8, @ptrFromInt(new_buf))[0..byte_count],
             @as([*]const u8, @ptrFromInt(src_begin))[0..byte_count],
         );
-        if (dst_begin.* != 0) std.c.free(@ptrFromInt(dst_begin.*));
+        if (dst_begin.* != 0) {
+            const old_cnt = (dst_cap.* - dst_begin.*) / @sizeOf(position_port.RootMove);
+            std.heap.c_allocator.free(@as([*]position_port.RootMove, @ptrFromInt(dst_begin.*))[0..old_cnt]);
+        }
         dst_begin.* = new_buf;
         dst_end.* = new_buf + byte_count;
         dst_cap.* = new_buf + byte_count;
