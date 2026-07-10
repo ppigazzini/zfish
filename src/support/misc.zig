@@ -3,18 +3,19 @@ const build_options = @import("build_options");
 const std = @import("std");
 const c = @import("libc");
 const memory = @import("memory");
+// M21: the dbg_* debug statistics counters live in their own std-only leaf now.
+// Re-exported so the existing misc.dbg* API (misc.dbgPrint from uci.zig) is unchanged.
+const debug_counters = @import("debug_counters.zig");
+pub const dbgHitOn = debug_counters.dbgHitOn;
+pub const dbgMeanOf = debug_counters.dbgMeanOf;
+pub const dbgStdevOf = debug_counters.dbgStdevOf;
+pub const dbgExtremesOf = debug_counters.dbgExtremesOf;
+pub const dbgCorrelOf = debug_counters.dbgCorrelOf;
+pub const dbgPrint = debug_counters.dbgPrint;
+pub const dbgClear = debug_counters.dbgClear;
 
-const max_debug_slots: usize = 32;
 const version = "dev";
 const fallback_build_date = computeFallbackBuildDate();
-
-var dbg_hit: [max_debug_slots][2]i64 = .{.{ 0, 0 }} ** max_debug_slots;
-var dbg_mean: [max_debug_slots][2]i64 = .{.{ 0, 0 }} ** max_debug_slots;
-var dbg_stdev: [max_debug_slots][3]i64 = .{.{ 0, 0, 0 }} ** max_debug_slots;
-var dbg_correl: [max_debug_slots][6]i64 = .{.{ 0, 0, 0, 0, 0, 0 }} ** max_debug_slots;
-var dbg_extremes_count: [max_debug_slots]i64 = [_]i64{0} ** max_debug_slots;
-var dbg_extremes_max: [max_debug_slots]i64 = [_]i64{std.math.minInt(i64)} ** max_debug_slots;
-var dbg_extremes_min: [max_debug_slots]i64 = [_]i64{std.math.maxInt(i64)} ** max_debug_slots;
 
 pub fn hashBytes(data: []const u8) u64 {
     const m: u64 = 0xc6a4a7935bd1e995;
@@ -174,151 +175,6 @@ pub fn hardwareConcurrency() c_int {
     return std.math.cast(c_int, n) orelse 0;
 }
 
-pub fn dbgHitOn(cond: bool, slot: c_int) void {
-    const index = slotIndex(slot);
-    _ = @atomicRmw(i64, &dbg_hit[index][0], .Add, 1, .seq_cst);
-    if (cond) {
-        _ = @atomicRmw(i64, &dbg_hit[index][1], .Add, 1, .seq_cst);
-    }
-}
-
-pub fn dbgMeanOf(value: i64, slot: c_int) void {
-    const index = slotIndex(slot);
-    _ = @atomicRmw(i64, &dbg_mean[index][0], .Add, 1, .seq_cst);
-    _ = @atomicRmw(i64, &dbg_mean[index][1], .Add, value, .seq_cst);
-}
-
-pub fn dbgStdevOf(value: i64, slot: c_int) void {
-    const index = slotIndex(slot);
-    _ = @atomicRmw(i64, &dbg_stdev[index][0], .Add, 1, .seq_cst);
-    _ = @atomicRmw(i64, &dbg_stdev[index][1], .Add, value, .seq_cst);
-    _ = @atomicRmw(i64, &dbg_stdev[index][2], .Add, value * value, .seq_cst);
-}
-
-pub fn dbgExtremesOf(value: i64, slot: c_int) void {
-    const index = slotIndex(slot);
-    _ = @atomicRmw(i64, &dbg_extremes_count[index], .Add, 1, .seq_cst);
-
-    var current_max = @atomicLoad(i64, &dbg_extremes_max[index], .seq_cst);
-    while (current_max < value) {
-        const previous = @cmpxchgWeak(i64, &dbg_extremes_max[index], current_max, value, .seq_cst, .seq_cst);
-        if (previous == null) {
-            break;
-        }
-        current_max = previous.?;
-    }
-
-    var current_min = @atomicLoad(i64, &dbg_extremes_min[index], .seq_cst);
-    while (current_min > value) {
-        const previous = @cmpxchgWeak(i64, &dbg_extremes_min[index], current_min, value, .seq_cst, .seq_cst);
-        if (previous == null) {
-            break;
-        }
-        current_min = previous.?;
-    }
-}
-
-pub fn dbgCorrelOf(value1: i64, value2: i64, slot: c_int) void {
-    const index = slotIndex(slot);
-    _ = @atomicRmw(i64, &dbg_correl[index][0], .Add, 1, .seq_cst);
-    _ = @atomicRmw(i64, &dbg_correl[index][1], .Add, value1, .seq_cst);
-    _ = @atomicRmw(i64, &dbg_correl[index][2], .Add, value1 * value1, .seq_cst);
-    _ = @atomicRmw(i64, &dbg_correl[index][3], .Add, value2, .seq_cst);
-    _ = @atomicRmw(i64, &dbg_correl[index][4], .Add, value2 * value2, .seq_cst);
-    _ = @atomicRmw(i64, &dbg_correl[index][5], .Add, value1 * value2, .seq_cst);
-}
-
-pub fn dbgPrint() void {
-    var index: usize = 0;
-    while (index < max_debug_slots) : (index += 1) {
-        const total = @atomicLoad(i64, &dbg_hit[index][0], .seq_cst);
-        if (total != 0) {
-            const hits = @atomicLoad(i64, &dbg_hit[index][1], .seq_cst);
-            std.debug.print(
-                "Hit #{d}: Total {d} Hits {d} Hit Rate (%) {}\n",
-                .{ index, total, hits, 100.0 * asFloat(hits) / asFloat(total) },
-            );
-        }
-    }
-
-    index = 0;
-    while (index < max_debug_slots) : (index += 1) {
-        const total = @atomicLoad(i64, &dbg_mean[index][0], .seq_cst);
-        if (total != 0) {
-            const sum = @atomicLoad(i64, &dbg_mean[index][1], .seq_cst);
-            std.debug.print("Mean #{d}: Total {d} Mean {}\n", .{ index, total, asFloat(sum) / asFloat(total) });
-        }
-    }
-
-    index = 0;
-    while (index < max_debug_slots) : (index += 1) {
-        const total = @atomicLoad(i64, &dbg_stdev[index][0], .seq_cst);
-        if (total != 0) {
-            const sum = @atomicLoad(i64, &dbg_stdev[index][1], .seq_cst);
-            const sum_sq = @atomicLoad(i64, &dbg_stdev[index][2], .seq_cst);
-            const mean = asFloat(sum) / asFloat(total);
-            const variance = asFloat(sum_sq) / asFloat(total) - mean * mean;
-            std.debug.print("Stdev #{d}: Total {d} Stdev {}\n", .{ index, total, @sqrt(@max(variance, 0.0)) });
-        }
-    }
-
-    index = 0;
-    while (index < max_debug_slots) : (index += 1) {
-        const total = @atomicLoad(i64, &dbg_extremes_count[index], .seq_cst);
-        if (total != 0) {
-            std.debug.print(
-                "Extremity #{d}: Total {d} Min {d} Max {d}\n",
-                .{
-                    index,
-                    total,
-                    @atomicLoad(i64, &dbg_extremes_min[index], .seq_cst),
-                    @atomicLoad(i64, &dbg_extremes_max[index], .seq_cst),
-                },
-            );
-        }
-    }
-
-    index = 0;
-    while (index < max_debug_slots) : (index += 1) {
-        const total = @atomicLoad(i64, &dbg_correl[index][0], .seq_cst);
-        if (total != 0) {
-            const sum1 = asFloat(@atomicLoad(i64, &dbg_correl[index][1], .seq_cst));
-            const sum1_sq = asFloat(@atomicLoad(i64, &dbg_correl[index][2], .seq_cst));
-            const sum2 = asFloat(@atomicLoad(i64, &dbg_correl[index][3], .seq_cst));
-            const sum2_sq = asFloat(@atomicLoad(i64, &dbg_correl[index][4], .seq_cst));
-            const sum12 = asFloat(@atomicLoad(i64, &dbg_correl[index][5], .seq_cst));
-            const n = asFloat(total);
-            const numerator = sum12 / n - (sum1 / n) * (sum2 / n);
-            const denom_left = @sqrt(@max(sum1_sq / n - (sum1 / n) * (sum1 / n), 0.0));
-            const denom_right = @sqrt(@max(sum2_sq / n - (sum2 / n) * (sum2 / n), 0.0));
-            const coefficient = if (denom_left == 0.0 or denom_right == 0.0) 0.0 else numerator / (denom_left * denom_right);
-            std.debug.print("Correl. #{d}: Total {d} Coefficient {}\n", .{ index, total, coefficient });
-        }
-    }
-}
-
-pub fn dbgClear() void {
-    var index: usize = 0;
-    while (index < max_debug_slots) : (index += 1) {
-        @atomicStore(i64, &dbg_hit[index][0], 0, .seq_cst);
-        @atomicStore(i64, &dbg_hit[index][1], 0, .seq_cst);
-        @atomicStore(i64, &dbg_mean[index][0], 0, .seq_cst);
-        @atomicStore(i64, &dbg_mean[index][1], 0, .seq_cst);
-        @atomicStore(i64, &dbg_stdev[index][0], 0, .seq_cst);
-        @atomicStore(i64, &dbg_stdev[index][1], 0, .seq_cst);
-        @atomicStore(i64, &dbg_stdev[index][2], 0, .seq_cst);
-        @atomicStore(i64, &dbg_correl[index][0], 0, .seq_cst);
-        @atomicStore(i64, &dbg_correl[index][1], 0, .seq_cst);
-        @atomicStore(i64, &dbg_correl[index][2], 0, .seq_cst);
-        @atomicStore(i64, &dbg_correl[index][3], 0, .seq_cst);
-        @atomicStore(i64, &dbg_correl[index][4], 0, .seq_cst);
-        @atomicStore(i64, &dbg_correl[index][5], 0, .seq_cst);
-        @atomicStore(i64, &dbg_extremes_count[index], 0, .seq_cst);
-        @atomicStore(i64, &dbg_extremes_max[index], std.math.minInt(i64), .seq_cst);
-        @atomicStore(i64, &dbg_extremes_min[index], std.math.maxInt(i64), .seq_cst);
-    }
-}
-
 fn readFileToStringAlloc(path: []const u8) ![*:0]u8 {
     const allocator = std.heap.c_allocator;
     const contents = try readFileAlloc(allocator, path);
@@ -386,15 +242,6 @@ fn allocFormattedCString(comptime fmt: []const u8, args: anytype) ![*:0]u8 {
     const rendered = try std.fmt.allocPrint(allocator, fmt, args);
     defer allocator.free(rendered);
     return try allocCString(rendered);
-}
-
-fn slotIndex(slot: c_int) usize {
-    std.debug.assert(slot >= 0 and slot < max_debug_slots);
-    return @intCast(slot);
-}
-
-fn asFloat(value: i64) f64 {
-    return @as(f64, @floatFromInt(value));
 }
 
 fn engineVersionOwned(allocator: std.mem.Allocator) ![]u8 {
