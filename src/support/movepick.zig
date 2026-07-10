@@ -119,7 +119,7 @@ const HistorySnapshot = struct {
     low_ply_base: ?[*]const LowPlyHistoryRow,
     capture_base: ?[*]const CaptureHistoryRow,
     continuation_base: [6]ContHistSlot,
-    pawn_table: ?*const anyopaque,
+    pawn_table: ?[*]const PawnHistoryRow,
     pawn_mask: u64,
 };
 
@@ -162,7 +162,7 @@ fn fillHistorySnapshot(
     if (shared_history) |sh_ptr| {
         const sh: [*]const u8 = @ptrCast(sh_ptr);
         const pawn_size = @as(*const usize, @ptrCast(@alignCast(sh + 16))).*;
-        out.pawn_table = if (pawn_size != 0) @as(*const ?*const anyopaque, @ptrCast(@alignCast(sh + 24))).* else null;
+        out.pawn_table = if (pawn_size != 0) @as(*const ?[*]const PawnHistoryRow, @ptrCast(@alignCast(sh + 24))).* else null;
         out.pawn_mask = @as(*const u64, @ptrCast(@alignCast(sh + 40))).*;
     } else {
         out.pawn_table = null;
@@ -793,8 +793,7 @@ fn pawnHistoryScore(
     piece: u8,
     square: u8,
 ) c_int {
-    const base_ptr = history_snapshot.pawn_table orelse return 0;
-    const history: [*]const PawnHistoryRow = @ptrCast(@alignCast(base_ptr));
+    const history = history_snapshot.pawn_table orelse return 0;
     // pawn history is indexed [(pawn_key & mask) * PIECE_NB + piece][square]
     const index: usize = @intCast(snapshot.pawn_key & history_snapshot.pawn_mask);
     const row_index = index * piece_nb + @as(usize, piece);
