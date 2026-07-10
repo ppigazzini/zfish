@@ -81,7 +81,6 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
     limits.nodes = parsed.nodes;
     limits.ponder_mode = parsed.ponder_mode;
 
-    var sm_elems: ?[]graph_layout.SearchMoveText = null;
     if (parsed.searchmoves) |sm_ptr| {
         const sm = std.mem.span(sm_ptr);
         var count: usize = 0;
@@ -90,8 +89,8 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
             if (tok.len != 0) count += 1;
         }
         if (count != 0) {
-            // Zig-owned SearchMoveText records (M17.6 / M19.1): a typed slice, not a
-            // byte malloc. Write the length + inline chars through the typed struct.
+            // Zig-owned SearchMoveText records (M17.6 / M19.1): limits.searchmoves IS
+            // the typed slice now -- no {begin,end,cap} header, no separate handle.
             const recs = std.heap.c_allocator.alloc(graph_layout.SearchMoveText, count) catch @panic("searchmoves: alloc failed");
             @memset(recs, std.mem.zeroes(graph_layout.SearchMoveText));
             var i: usize = 0;
@@ -103,17 +102,12 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
                 @memcpy(recs[i].text[0..n], tok[0..n]);
                 i += 1;
             }
-            const begin = @intFromPtr(recs.ptr);
-            const nbytes = count * @sizeOf(graph_layout.SearchMoveText);
-            limits.searchmoves[0] = begin; // begin
-            limits.searchmoves[1] = begin + nbytes; // end
-            limits.searchmoves[2] = begin + nbytes; // cap
-            sm_elems = recs;
+            limits.searchmoves = recs;
         }
     }
 
     engine_mod.goEngine(engine_ptr, &limits);
-    if (sm_elems) |e| std.heap.c_allocator.free(e);
+    if (limits.searchmoves.len != 0) std.heap.c_allocator.free(limits.searchmoves);
 }
 
 pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) DispatchResult {
