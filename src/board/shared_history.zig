@@ -15,25 +15,18 @@ const shared_histories_map = @import("shared_histories_map");
 const worker_histories = @import("worker_histories");
 const search_types = @import("search_types");
 const position_types = @import("position_types");
+const shared_history_types = @import("shared_history_types");
 
 const WorkerHistories = worker_histories.WorkerHistories;
 const hist_pieceto = worker_histories.hist_pieceto;
 const CorrectionBundle = search_types.CorrectionBundle;
 const Position = position_types.Position;
 
-// Memory mirror of SharedHistories (src/history.h), reached through the Worker
-// mirror's shared_history pointer. correctionHistory and pawnHistory are each a
-// DynStats { size_t size; T* data } (the LargePagePtr is a unique_ptr with a
-// stateless deleter, so just an 8-byte pointer), followed by the two index
-// masks. pawn page = [16][64] int16 (1024); correction page = [2]CorrectionBundle.
-pub const SharedHistories = struct {
-    corr_size: usize,
-    corr_data: [*][2]CorrectionBundle,
-    pawn_size: usize,
-    pawn_data: [*]i16,
-    size_minus1: usize,
-    pawn_hist_size_minus1: usize,
-};
+// SharedHistories now lives in the shared_history_types leaf (M18.7) so that
+// worker_histories can name it for its `shared_history` field without importing this
+// module (which imports worker_histories -- the reverse would cycle). Re-export it as
+// the canonical name so the storage/management/accessor code below is unchanged.
+pub const SharedHistories = shared_history_types.SharedHistories;
 
 pub inline fn sharedOf(w: *const WorkerHistories) *SharedHistories {
     return @ptrCast(@alignCast(w.shared_history.?));
