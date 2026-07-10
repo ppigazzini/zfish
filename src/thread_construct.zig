@@ -40,7 +40,7 @@ pub fn verifyThreadGraph(pool: *const graph_layout.ThreadPool, requested: usize,
     const count = tp.numThreads();
     if (count != requested) fail("ThreadPool.threads size != requested");
 
-    // boundThreadToNumaNode is std::vector<NumaIndex> {begin,end}; size == bound.
+    // boundThreadToNumaNode is a []usize slice of NumaIndex (M19.1); size == bound.
     if (tp.boundCount() != bound) fail("ThreadPool.boundThreadToNumaNode size != expected");
 
     // Each threads[i] is a live unique_ptr<Thread> whose Worker slot is bound.

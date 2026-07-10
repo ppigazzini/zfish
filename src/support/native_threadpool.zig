@@ -4,7 +4,7 @@
 // so the accessors keep working unchanged:
 //   stop@0 (atomic_bool), increaseDepth@1 (atomic_bool),
 //   threads slice {ptr@16, len@24}  (of Thread* == NativeThread* addresses, M19.1),
-//   boundThreadToNumaNode vector {begin@32, end@40, cap@48}.
+//   boundThreadToNumaNode slice {ptr@32, len@40}  (per-thread NUMA node, M19.1).
 // num_threads == threads.len; threads[i] == the i-th slice element (a Thread* addr).
 //
 // LIFECYCLE NOTE (the trap that makes stages 4+6 atomic): the threads-vector buffer
@@ -60,10 +60,10 @@ pub const NativePool = struct {
         // stop / increaseDepth start cleared (no search in flight).
         tp.stop = 0;
         tp.increase_depth = 0;
-        // boundThreadToNumaNode: empty (no NUMA binding on the single-node path).
-        tp.bound_begin = 0;
-        tp.bound_end = 0;
-        tp.bound_cap = 0;
+        // boundThreadToNumaNode: empty (no NUMA binding on the single-node path). The
+        // multi-node reconfigure path assigns it via boundNodesAssign before building
+        // threads; this reset matches the C++ ThreadPool::set clearing it first.
+        tp.bound = &.{};
 
         if (count == 0) {
             tp.threads = &.{};
@@ -174,6 +174,24 @@ pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
     thread.waitForSearchFinished();
 }
 
+// Assign the pool's boundThreadToNumaNode footprint slice (M19.1: a typed []usize via
+// the allocator interface, was a raw c.malloc {begin,end,cap} triple in thread.zig).
+// `nodes` is the per-thread NUMA-node index list, or null/empty to clear. Frees any
+// prior buffer on every reassign, so the lifecycle is leak-clean under a checked
+// allocator (the bound-vector unit test drives exactly this). Lives here beside set()
+// -- which clears the same footprint slot -- rather than in thread.zig, so all the
+// ThreadPool-footprint writes sit in one module and the writer is directly testable.
+pub fn boundNodesAssign(pool: *graph_layout.ThreadPool, allocator: std.mem.Allocator, nodes: ?[]const usize) void {
+    const tp = pool;
+    if (tp.bound.len != 0) allocator.free(tp.bound);
+    tp.bound = &.{};
+    const src = nodes orelse return;
+    if (src.len == 0) return;
+    const buf = allocator.alloc(usize, src.len) catch @panic("bound_nodes_assign: OOM");
+    @memcpy(buf, src);
+    tp.bound = buf;
+}
+
 // ---- tests (isolated; mock builder, standalone footprint) -------------------
 
 const testing = std.testing;
@@ -218,8 +236,38 @@ test "NativePool lays the C++ footprint and reads back the thread vector" {
         // offset-8 worker read (null here; a real builder would set it).
         try testing.expectEqual(@as(usize, 8), @offsetOf(NativeThread, "worker"));
     }
-    // bound vector empty.
-    try testing.expectEqual(@as(usize, 0), tp.bound_begin);
+    // bound slice empty.
+    try testing.expectEqual(@as(usize, 0), tp.bound.len);
+}
+
+test "boundNodesAssign lays/reads/reassigns/clears the bound slice (leak-checked)" {
+    // Standalone footprint -- no threads needed, just the bound slice contract that the
+    // multi-node reconfigure path drives (and that single-node runs never populate, so
+    // this is its ONLY gate). testing.allocator flags any missed free.
+    var footprint: [graph_layout.thread_pool_size]u8 align(8) = [_]u8{0} ** graph_layout.thread_pool_size;
+    const tp = poolOf(&footprint);
+    tp.* = .{};
+
+    // Assign 4 per-thread node indices; read back via the graph_layout accessors.
+    const nodes = [_]usize{ 0, 1, 0, 2 };
+    boundNodesAssign(tp, testing.allocator, &nodes);
+    try testing.expectEqual(@as(usize, 4), tp.boundCount());
+    for (nodes, 0..) |n, i| try testing.expectEqual(n, tp.boundAt(i));
+
+    // Reassign to a shorter list -- the prior buffer must be freed, not leaked.
+    const nodes2 = [_]usize{ 3, 3 };
+    boundNodesAssign(tp, testing.allocator, &nodes2);
+    try testing.expectEqual(@as(usize, 2), tp.boundCount());
+    try testing.expectEqual(@as(usize, 3), tp.boundAt(0));
+    try testing.expectEqual(@as(usize, 3), tp.boundAt(1));
+
+    // Empty assign (null) frees and clears to len 0 -- the single-node do_bind==false case.
+    boundNodesAssign(tp, testing.allocator, null);
+    try testing.expectEqual(@as(usize, 0), tp.boundCount());
+
+    // A zero-length slice is also a clear (frees nothing here; must not leak/UB).
+    boundNodesAssign(tp, testing.allocator, &.{});
+    try testing.expectEqual(@as(usize, 0), tp.boundCount());
 }
 
 test "NativePool set(0) clears the vector; resize re-lays it" {
