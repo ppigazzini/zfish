@@ -104,9 +104,9 @@ pub const MovePickerState = struct {
 
 pub const MovePickerContext = struct {
     pos: *const Position,
-    main_history: ?*const anyopaque,
-    low_ply_history: ?*const anyopaque,
-    capture_history: ?*const anyopaque,
+    main_history: ?[*]const MainHistoryRow,
+    low_ply_history: ?[*]const LowPlyHistoryRow,
+    capture_history: ?[*]const CaptureHistoryRow,
     continuation_history: ?*const anyopaque,
     shared_history: ?*const anyopaque,
     ply: c_int,
@@ -115,9 +115,9 @@ pub const MovePickerContext = struct {
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 const HistorySnapshot = struct {
-    main_base: ?*const anyopaque,
-    low_ply_base: ?*const anyopaque,
-    capture_base: ?*const anyopaque,
+    main_base: ?[*]const MainHistoryRow,
+    low_ply_base: ?[*]const LowPlyHistoryRow,
+    capture_base: ?[*]const CaptureHistoryRow,
     continuation_base: [6]?*const anyopaque,
     pawn_table: ?*const anyopaque,
     pawn_mask: u64,
@@ -139,9 +139,9 @@ const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 
 // History-table base pointers packed into a HistorySnapshot.
 fn fillHistorySnapshot(
-    main_history: ?*const anyopaque,
-    low_ply_history: ?*const anyopaque,
-    capture_history: ?*const anyopaque,
+    main_history: ?[*]const MainHistoryRow,
+    low_ply_history: ?[*]const LowPlyHistoryRow,
+    capture_history: ?[*]const CaptureHistoryRow,
     continuation_history: ?*const anyopaque,
     shared_history: ?*const anyopaque,
     out: *HistorySnapshot,
@@ -754,14 +754,12 @@ fn isCapture(snapshot: *const PositionSnapshot, raw_move: u16) bool {
 }
 
 fn mainHistoryScore(history_snapshot: *const HistorySnapshot, side_to_move: u8, raw_move: u16) c_int {
-    const base_ptr = history_snapshot.main_base orelse unreachable;
-    const history: [*]const MainHistoryRow = @ptrCast(@alignCast(base_ptr));
+    const history = history_snapshot.main_base orelse unreachable;
     return history[@as(usize, side_to_move)][@as(usize, raw_move)].value;
 }
 
 fn lowPlyHistoryScore(history_snapshot: *const HistorySnapshot, ply: c_int, raw_move: u16) c_int {
-    const base_ptr = history_snapshot.low_ply_base orelse unreachable;
-    const history: [*]const LowPlyHistoryRow = @ptrCast(@alignCast(base_ptr));
+    const history = history_snapshot.low_ply_base orelse unreachable;
     return history[@as(usize, @intCast(ply))][@as(usize, raw_move)].value;
 }
 
@@ -771,8 +769,7 @@ fn captureHistoryScore(
     square: u8,
     captured_piece_type: u8,
 ) c_int {
-    const base_ptr = history_snapshot.capture_base orelse unreachable;
-    const history: [*]const CaptureHistoryRow = @ptrCast(@alignCast(base_ptr));
+    const history = history_snapshot.capture_base orelse unreachable;
     return history[@as(usize, piece)][@as(usize, square)][@as(usize, captured_piece_type)].value;
 }
 
