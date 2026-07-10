@@ -1154,6 +1154,23 @@ pub fn build(b: *std.Build) void {
     state_list_test.root_module.addImport("position_types", mods.get("position_types").?);
     test_step.dependOn(&b.addRunArtifact(state_list_test).step);
 
+    // M19.1: native_threadpool.zig is path-imported into the (untested) `thread` module,
+    // so its NativePool footprint + bound-slice lifecycle `test {}` blocks never ran in any
+    // step. Build it as a standalone test artifact (spawns real NativeThreads -> link_libc)
+    // so `zig build test` actually exercises the ThreadPool-footprint writer/accessors.
+    const native_threadpool_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/support/native_threadpool.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    native_threadpool_test.root_module.addImport("native_thread", mods.get("native_thread").?);
+    native_threadpool_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    native_threadpool_test.root_module.addImport("native_hooks", mods.get("native_hooks").?);
+    test_step.dependOn(&b.addRunArtifact(native_threadpool_test).step);
+
     const parity_step = b.step(
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",

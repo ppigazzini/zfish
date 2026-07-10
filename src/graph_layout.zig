@@ -17,7 +17,7 @@ const state_list = @import("state_list");
 pub const worker_size: usize = @sizeOf(WorkerLayout);
 pub const worker_align: usize = 64;
 pub const thread_size: usize = 208;
-pub const thread_pool_size: usize = 56;
+pub const thread_pool_size: usize = 48;
 pub const engine_size: usize = 1680;
 pub const uci_engine_size: usize = 1696;
 pub const shared_state_size: usize = 40;
@@ -227,19 +227,17 @@ pub const SearchManager = struct {
 // the last `→ shared_state` back-edge. `shared_state_size` (40) stays as the pinned
 // footprint the native allocations reserve. See REPORT-17 Annex A.
 
-// The ThreadPool object (56 bytes): the runtime constructs and reads the pool
-// through these fields. `threads` is a Zig slice of Thread* addresses (M19.1, was a
-// libc++-`std::vector` {begin,end,cap} triple); native_threadpool allocates the
-// backing buffer and the accessors index it. `bound` remains a size_t {begin,end,cap}
-// triple (the cold NUMA-binding path).
+// The ThreadPool object (48 bytes): the runtime constructs and reads the pool
+// through these fields. `threads` and `bound` are both Zig slices (M19.1, each was a
+// libc++-`std::vector` {begin,end,cap} triple): `threads` holds Thread* addresses,
+// `bound` holds the per-thread NUMA-node index of the cold binding path.
+// native_threadpool allocates the backing buffers and the accessors index them.
 pub const ThreadPool = struct {
     stop: u8 = 0, // atomic_bool
     increase_depth: u8 = 0, // atomic_bool
     setup_states: ?*state_list.StateList = null, // the native `states` StateListPtr
     threads: []usize = &.{}, // Thread* addresses (M19.1: a typed slice, was {begin,end,cap})
-    bound_begin: usize = 0, // size_t vector {begin,end,cap}
-    bound_end: usize = 0,
-    bound_cap: usize = 0,
+    bound: []usize = &.{}, // per-thread NUMA node bindings (M19.1: a typed slice, was {begin,end,cap})
 
     pub inline fn fromPtr(p: *anyopaque) *ThreadPool {
         return @ptrCast(@alignCast(p));
@@ -261,14 +259,14 @@ pub const ThreadPool = struct {
         return @ptrFromInt(self.threadAt(i));
     }
     pub inline fn boundCount(self: *const ThreadPool) usize {
-        return (self.bound_end - self.bound_begin) / @sizeOf(usize);
+        return self.bound.len;
     }
     pub inline fn hasSetupStates(self: *const ThreadPool) bool {
         return self.setup_states != null;
     }
-    /// The i-th entry of the bound-nodes vector.
+    /// The i-th entry of the bound-nodes slice.
     pub inline fn boundAt(self: *const ThreadPool, i: usize) usize {
-        return @as(*const usize, @ptrFromInt(self.bound_begin + i * @sizeOf(usize))).*;
+        return self.bound[i];
     }
     pub inline fn setStop(self: *ThreadPool, v: bool) void {
         self.stop = @intFromBool(v);

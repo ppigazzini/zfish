@@ -206,24 +206,6 @@ fn workerSetRootMoves(thread: *graph_layout.Thread, src: []const position_port.R
     }
     @memcpy(worker.root_moves, src);
 }
-// Assign the pool's boundThreadToNumaNode vector (native graph_layout.ThreadPool field).
-fn boundNodesAssign(pool_ptr: *graph_layout.ThreadPool, nodes: ?[*]const usize, count: usize) void {
-    const tp = pool_ptr;
-    if (nodes == null or count == 0) {
-        tp.bound_end = tp.bound_begin; // clear (keep capacity)
-        return;
-    }
-    if (tp.bound_begin != 0) c.free(@ptrFromInt(tp.bound_begin));
-    const nbytes = count * 8;
-    const buf = c.malloc(nbytes) orelse @panic("bound_nodes_assign: malloc failed");
-    const dst: [*]usize = @ptrCast(@alignCast(buf));
-    const src = nodes.?;
-    var i: usize = 0;
-    while (i < count) : (i += 1) dst[i] = src[i];
-    tp.bound_begin = @intFromPtr(buf);
-    tp.bound_end = @intFromPtr(buf) + nbytes;
-    tp.bound_cap = @intFromPtr(buf) + nbytes;
-}
 const ThreadCallback = *const fn (?*anyopaque) void;
 
 const NumaNodeCallback = *const fn (?*anyopaque) void;
@@ -606,9 +588,9 @@ pub fn reconfigure(
             requested,
             bound_nodes.ptr,
         );
-        boundNodesAssign(pool, bound_nodes.ptr, requested);
+        native_threadpool.boundNodesAssign(pool, allocator, bound_nodes);
     } else {
-        boundNodesAssign(pool, null, 0);
+        native_threadpool.boundNodesAssign(pool, allocator, null);
     }
 
     const node_count = @max(numa.configNodeCount(numa_config), @as(usize, 1));
