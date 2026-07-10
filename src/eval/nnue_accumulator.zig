@@ -6,6 +6,11 @@ const position_types = @import("position_types");
 // ThreatDiffView are layout-identical views of the same bytes (M18.4-B4).
 const DirtyPiece = position_types.DirtyPiece;
 const DirtyThreats = position_types.DirtyThreats;
+// The `pos` threaded through the accumulator path is the board's typed record
+// (M18.7): every use either hands it onward or feeds position_snapshot.fill(),
+// whose registration boundary is the sole remaining erasure. The concrete
+// *const Position coerces to the hook's *const anyopaque at that one call.
+const Position = position_types.Position;
 // Call the pure-Zig feature-index helpers directly instead of round-tripping
 // through the C-ABI exports in main.zig. Passing a small `extern struct` BY VALUE
 // across is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
@@ -171,7 +176,7 @@ const PositionSnapshot = struct {
 
 pub fn evaluate(
     stack: *AccumulatorStack,
-    pos: *const anyopaque,
+    pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
@@ -198,7 +203,7 @@ const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
 
 pub fn transformBucket(
     stack: *AccumulatorStack,
-    pos: *const anyopaque,
+    pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
     bucket: usize,
@@ -290,7 +295,7 @@ fn evaluateSide(
     feature_kind: u8,
     perspective: u8,
     stack: *AccumulatorStack,
-    pos: *const anyopaque,
+    pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
@@ -341,7 +346,7 @@ fn refreshLatest(
     feature_kind: u8,
     perspective: u8,
     stack: *AccumulatorStack,
-    pos: *const anyopaque,
+    pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
@@ -358,7 +363,7 @@ fn refreshLatestPsq(
     perspective: u8,
     king_square: u8,
     stack: *AccumulatorStack,
-    pos: *const anyopaque,
+    pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
@@ -433,7 +438,7 @@ fn refreshLatestThreat(
     perspective: u8,
     king_square: u8,
     stack: *AccumulatorStack,
-    pos: *const anyopaque,
+    pos: *const Position,
     feature_transformer: *const FeatureTransformer,
 ) void {
     const latest_index = stackSize(stack) - 1;
@@ -455,7 +460,7 @@ fn incrementalStep(
     feature_kind: u8,
     forward: bool,
     perspective: u8,
-    pos: *const anyopaque,
+    pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     target_index: usize,
     computed_index: usize,
@@ -745,7 +750,7 @@ fn stateBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [*]u8
     return stackBytesMut(stack) + stateOffset(feature_kind, index);
 }
 
-fn positionSnapshot(pos: *const anyopaque) PositionSnapshot {
+fn positionSnapshot(pos: *const Position) PositionSnapshot {
     const bridge = loadBridgeSnapshot(pos);
     var snapshot = PositionSnapshot{
         .pieces = [_]u8{0} ** square_count,
@@ -758,7 +763,7 @@ fn positionSnapshot(pos: *const anyopaque) PositionSnapshot {
     return snapshot;
 }
 
-fn loadBridgeSnapshot(pos: *const anyopaque) BridgePositionSnapshot {
+fn loadBridgeSnapshot(pos: *const Position) BridgePositionSnapshot {
     var snapshot = std.mem.zeroes(BridgePositionSnapshot);
     position_snapshot.fill(pos, &snapshot);
     return snapshot;
