@@ -98,7 +98,7 @@ pub fn startSearching(self: *NativeThread) void {
 }
 
 // Reinterpret a pool thread slot (a *NativeThread) for the pool-level sibling ops.
-inline fn asNativeThread(thread: *anyopaque) *NativeThread {
+inline fn asNativeThread(thread: *graph_layout.Thread) *NativeThread {
     return @ptrCast(@alignCast(thread));
 }
 
@@ -109,7 +109,7 @@ pub fn startPoolSiblings(pool: *graph_layout.ThreadPool) void {
     const tp = pool;
     const n = tp.numThreads();
     var i: usize = 1;
-    while (i < n) : (i += 1) startSearching(asNativeThread(tp.threadAtPtr(i)));
+    while (i < n) : (i += 1) startSearching(asNativeThread(tp.threadTyped(i)));
 }
 
 // Wait for the sibling threads (index 1..) to finish their current search.
@@ -117,7 +117,7 @@ pub fn waitPoolSiblings(pool: *graph_layout.ThreadPool) void {
     const tp = pool;
     const n = tp.numThreads();
     var i: usize = 1;
-    while (i < n) : (i += 1) asNativeThread(tp.threadAtPtr(i)).waitForSearchFinished();
+    while (i < n) : (i += 1) asNativeThread(tp.threadTyped(i)).waitForSearchFinished();
 }
 
 // Per-thread Worker::clear job (the C++ Thread::clear_worker == run_custom_job([
