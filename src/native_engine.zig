@@ -37,8 +37,10 @@ fn memberNumaContextNew() ?*anyopaque {
 fn memberOptionsNew() ?*anyopaque {
     return std.c.malloc(1);
 }
-fn memberThreadpoolNew() ?*anyopaque {
-    return std.c.calloc(1, graph_layout.thread_pool_size);
+fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
+    // calloc(1, thread_pool_size) is a value-initialized ThreadPool; the one @ptrCast at
+    // this alloc boundary is the honest seam, so the member field can stay typed.
+    return @ptrCast(@alignCast(std.c.calloc(1, graph_layout.thread_pool_size)));
 }
 fn memberHandleFree(p: ?*anyopaque) void {
     std.c.free(p);
@@ -69,9 +71,9 @@ pub const verify_network_fn_size: usize = 64;
 /// and the member accessors (main.zig) can read them by the documented native offset.
 pub const NativeEngine = struct {
     numa_context: ?*anyopaque = null,
-    states: ?*anyopaque = null,
+    states: ?*state_list_port.StateList = null,
     options: ?*anyopaque = null,
-    threads: ?*anyopaque = null,
+    threads: ?*graph_layout.ThreadPool = null,
     network: ?*anyopaque = null,
     binary_directory: ?[*:0]u8 = null,
     cli_argc: c_int = 0,
@@ -122,7 +124,7 @@ pub const NativeEngine = struct {
         return self.network.?;
     }
     pub fn threadsPtr(self: *NativeEngine) *graph_layout.ThreadPool {
-        return @ptrCast(@alignCast(self.threads.?));
+        return self.threads.?;
     }
     /// The side Position block (replaces the C++ Engine's pos member); engine-independent.
     pub fn positionPtr(self: *NativeEngine) *position_types.Position {
@@ -220,15 +222,14 @@ pub fn destructMembers(buf: *anyopaque) void {
     // and the side-table storage was already freed by release_pending_state_slot, so this
     // frees each surviving list exactly once.
     if (e.threads) |pool| {
-        const setup: *?*state_list_port.StateList =
-            &graph_layout.ThreadPool.fromPtr(pool).setup_states;
+        const setup: *?*state_list_port.StateList = &pool.setup_states;
         if (setup.*) |list| {
             state_list_port.destroyStateList(std.heap.c_allocator, list);
             setup.* = null;
         }
     }
     if (e.states) |s| {
-        state_list_port.destroyStateList(std.heap.c_allocator, @ptrCast(@alignCast(s)));
+        state_list_port.destroyStateList(std.heap.c_allocator, s);
         e.states = null;
     }
 
