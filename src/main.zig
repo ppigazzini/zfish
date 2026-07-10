@@ -5,6 +5,7 @@ const engine_port = @import("engine");
 const memory_port = @import("memory");
 const uci_output = @import("uci_output");
 const graph_layout = @import("graph_layout");
+const position_types = @import("position_types");
 const native_hooks = @import("native_hooks");
 const clock = @import("clock");
 const thread_construct = @import("thread_construct.zig");
@@ -103,7 +104,7 @@ fn threadpoolSetupStatesAdoptFromSlot(pool: *graph_layout.ThreadPool, slot_ptr: 
     poolSetupStatesSlot(pool).* = src.*;
     src.* = null;
 }
-fn threadpoolSetupStateBack(pool: *const graph_layout.ThreadPool) ?*anyopaque {
+fn threadpoolSetupStateBack(pool: *const graph_layout.ThreadPool) ?*const position_types.StateInfo {
     const slot = pool.setup_states;
     if (slot) |list| return list.back();
     return null;

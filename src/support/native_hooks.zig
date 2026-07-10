@@ -14,6 +14,7 @@
 // reports exactly which hook is missing.
 
 const graph_layout = @import("graph_layout");
+const position_types = @import("position_types");
 
 fn hookPanic(comptime name: []const u8) noreturn {
     @panic(name ++ ": native hook not registered (installNativeHooks not run?)");
@@ -49,9 +50,9 @@ pub var setup_states_adopt_from_storage: *const fn (pool: *graph_layout.ThreadPo
             hookPanic("setup_states_adopt_from_storage");
         }
     }.stub;
-pub var setup_state_back: *const fn (pool: *const graph_layout.ThreadPool) ?*const anyopaque =
+pub var setup_state_back: *const fn (pool: *const graph_layout.ThreadPool) ?*const position_types.StateInfo =
     struct {
-        fn stub(_: *const graph_layout.ThreadPool) ?*const anyopaque {
+        fn stub(_: *const graph_layout.ThreadPool) ?*const position_types.StateInfo {
             hookPanic("setup_state_back");
         }
     }.stub;

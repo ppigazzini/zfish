@@ -123,7 +123,7 @@ const RootSetupInput = struct {
     root_moves: *const anyopaque,
     fen_ptr: [*]const u8,
     fen_len: usize,
-    setup_state: *const anyopaque,
+    setup_state: *const position_port.StateInfo,
     chess960: u8,
     tb_config: TbConfig,
 };

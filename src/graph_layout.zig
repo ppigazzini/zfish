@@ -356,9 +356,9 @@ pub const Worker = struct {
         b[5] = @intFromBool(use_rule50);
         @as(*c_int, @ptrCast(@alignCast(&b[8]))).* = probe_depth;
     }
-    pub inline fn setRootState(self: Worker, src: *const anyopaque) void {
-        // root_state is a typed StateInfo now (M17.3c): a struct copy, not a byte memcpy.
-        self.layout().root_state = @as(*const position_types.StateInfo, @ptrCast(@alignCast(src))).*;
+    pub inline fn setRootState(self: Worker, src: *const position_types.StateInfo) void {
+        // root_state is a typed StateInfo (M17.3c/M18.7): a struct copy, not a byte memcpy.
+        self.layout().root_state = src.*;
     }
     pub inline fn rootPosPtr(self: Worker) *position_types.Position {
         return &self.layout().root_pos;

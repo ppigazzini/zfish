@@ -198,6 +198,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "graph_layout", .imp = "tt_types", .to = "tt_types" },
         .{ .from = "graph_layout", .imp = "state_list", .to = "state_list" },
         .{ .from = "native_hooks", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "native_hooks", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_types", .imp = "root_move", .to = "root_move" },
         .{ .from = "search_types", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "search_types", .imp = "correction_bundle", .to = "correction_bundle" },
@@ -626,6 +627,7 @@ pub fn build(b: *std.Build) void {
     // M16.5: direct callers of the aligned/large-page allocator.
     exe.root_module.addImport("memory", mods.get("memory").?);
     exe.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    exe.root_module.addImport("position_types", mods.get("position_types").?);
     exe.root_module.addImport("clock", mods.get("clock").?);
     exe.root_module.addImport("uci_output", mods.get("uci_output").?);
     exe.root_module.addImport("uci_wdl", mods.get("uci_wdl").?);
