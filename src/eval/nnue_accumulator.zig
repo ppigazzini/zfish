@@ -186,12 +186,12 @@ pub fn evaluate(
     evaluateSide(threat_feature, black, stack, pos, feature_transformer, cache);
 }
 
-pub fn stackLatestPsq(stack: *const AccumulatorStack) *const anyopaque {
-    return @ptrCast(stateBytesConst(psq_feature, stackSize(stack) - 1, stack));
+pub fn stackLatestPsq(stack: *const AccumulatorStack) [*]const u8 {
+    return stateBytesConst(psq_feature, stackSize(stack) - 1, stack);
 }
 
-pub fn stackLatestThreat(stack: *const AccumulatorStack) *const anyopaque {
-    return @ptrCast(stateBytesConst(threat_feature, stackSize(stack) - 1, stack));
+pub fn stackLatestThreat(stack: *const AccumulatorStack) [*]const u8 {
+    return stateBytesConst(threat_feature, stackSize(stack) - 1, stack);
 }
 
 // FeatureTransformer::transform (src/nnue/nnue_feature_transformer.h scalar path),
@@ -212,8 +212,8 @@ pub fn transformBucket(
 ) c_int {
     evaluate(stack, pos, feature_transformer, cache);
 
-    const psq_bytes: [*]const u8 = @ptrCast(stackLatestPsq(stack));
-    const thr_bytes: [*]const u8 = @ptrCast(stackLatestThreat(stack));
+    const psq_bytes: [*]const u8 = stackLatestPsq(stack);
+    const thr_bytes: [*]const u8 = stackLatestThreat(stack);
     const psq_acc: [*]const i16 = @ptrCast(@alignCast(psq_bytes));
     const thr_acc: [*]const i16 = @ptrCast(@alignCast(thr_bytes));
     const psq_psqt: [*]const i32 = @ptrCast(@alignCast(psq_bytes + state_psqt_offset));
