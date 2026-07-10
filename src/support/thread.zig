@@ -497,8 +497,8 @@ fn buildRootMoves(
     root_fen: []const u8,
     chess960: u8,
     move_raws: []const u16,
-) struct { root_moves: []position_port.RootMove, tb_config: TbConfig } {
-    const ranked_moves = allocator.alloc(RankedRootMove, move_raws.len) catch @panic("OOM");
+) !struct { root_moves: []position_port.RootMove, tb_config: TbConfig } {
+    const ranked_moves = try allocator.alloc(RankedRootMove, move_raws.len);
     defer allocator.free(ranked_moves);
 
     for (move_raws, 0..) |raw_move, index| {
@@ -542,7 +542,7 @@ fn buildRootMoves(
     }
 
     const root_moves = rootMovesCreateRanked(ranked_moves.ptr, ranked_moves.len) orelse
-        @panic("OOM: native RootMoves allocation");
+        return error.OutOfMemory;
     return .{
         .root_moves = root_moves,
         .tb_config = tb_config,
@@ -654,7 +654,7 @@ pub fn startThinking(
     pos: *position_port.Position,
     limits: *const graph_layout.LimitsType,
     states_slot: *anyopaque,
-) void {
+) !void {
     native_thread.searchEntry = &workerSearchEntry;
     waitMainThread(pool);
     const tp = pool;
@@ -692,19 +692,19 @@ pub fn startThinking(
         const text_ptr = move_text.ptr orelse continue;
         const move_raw = uci_move.toMoveRaw(pos, text_ptr[0..move_text.len]);
         if (move_raw != none_raw and containsMove(legal_moves, move_raw)) {
-            selected_moves.append(std.heap.c_allocator, move_raw) catch @panic("OOM");
+            try selected_moves.append(std.heap.c_allocator, move_raw);
         }
     }
 
     if (selected_moves.items.len == 0) {
-        selected_moves.appendSlice(std.heap.c_allocator, legal_moves) catch @panic("OOM");
+        try selected_moves.appendSlice(std.heap.c_allocator, legal_moves);
     }
 
-    const root_fen = buildRootFen(pos) orelse @panic("OOM");
+    const root_fen = buildRootFen(pos) orelse return error.OutOfMemory;
     defer c.free(@ptrCast(root_fen));
     const root_fen_text = std.mem.span(root_fen);
     const chess960 = loadPositionSnapshot(pos).is_chess960;
-    const root_setup = buildRootMoves(
+    const root_setup = try buildRootMoves(
         std.heap.c_allocator,
         pos,
         root_fen_text,
@@ -716,7 +716,7 @@ pub fn startThinking(
     const tb_config = root_setup.tb_config;
     const thread_count = pool.numThreads();
     const allocator = std.heap.c_allocator;
-    const root_setup_contexts = allocator.alloc(RootSetupContext, thread_count) catch @panic("OOM");
+    const root_setup_contexts = try allocator.alloc(RootSetupContext, thread_count);
     defer allocator.free(root_setup_contexts);
 
     index = 0;

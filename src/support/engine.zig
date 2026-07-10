@@ -396,12 +396,16 @@ pub fn applySetOptionEngine(engine_ptr: *native_engine.NativeEngine, name_ptr: [
 pub fn goEngine(engine_ptr: *native_engine.NativeEngine, limits_ptr: *const graph_layout.LimitsType) void {
     std.debug.assert(limits_ptr.perftValue() == 0);
     verifyNetwork();
+    // M19.2: startThinking's root-move setup (selected-moves / root-fen / RootMoves /
+    // per-thread contexts) now propagates OOM as `!void`; this is the single handling
+    // boundary for the `go` path. A search that cannot allocate its root setup is
+    // unrecoverable, so fail loudly here instead of `catch @panic("OOM")` in each leaf.
     thread_port.startThinking(
         engine_ptr.threadsPtr(),
         engine_ptr.positionPtr(),
         limits_ptr,
         engine_ptr.statesSlotPtr(),
-    );
+    ) catch @panic("OOM: search setup failed");
 }
 
 pub fn setNumaConfigFromOptionEngine(engine_ptr: *native_engine.NativeEngine, option_text: []const u8) void {
