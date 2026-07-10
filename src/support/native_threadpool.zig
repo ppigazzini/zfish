@@ -174,7 +174,7 @@ pub fn clear(pool: *graph_layout.ThreadPool) void {
 // in-flight job to finish. Reads the thread pointer out of the footprint vector
 // by index and calls the native wait -- the C++ wait_on_thread would lock the C++
 // Thread's std::mutex, which is garbage on a NativeThread.
-pub fn waitThread(pool: *anyopaque, thread_id: usize) void {
+pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads_begin == 0) return;
     const thread: *NativeThread = @ptrFromInt(tp.threadAt(thread_id));
