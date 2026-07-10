@@ -153,7 +153,7 @@ const WorkerBuildCtx = struct {
 // Build `count` native Threads (idle loops + Workers) into the Engine's embedded
 // ThreadPool footprint `pool`. Replaces the C++ per-thread add_main_thread loop.
 pub fn set(
-    pool: *anyopaque,
+    pool: *graph_layout.ThreadPool,
     shared_state: *anyopaque,
     update_context: *const anyopaque,
     count: usize,
