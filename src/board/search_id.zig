@@ -80,17 +80,13 @@ pub fn optInt(name: []const u8) c_int {
 
 // Per-search context flags read off the worker graph + the native OptionsModel.
 pub fn ssContext(wl: *const graph_layout.WorkerLayout, out: *SsCtx) void {
-    // root_moves is the {begin,end,cap} vector header; empty iff begin == end.
-    const rm_begin = wl.root_moves[0];
-    const rm_end = wl.root_moves[1];
-
     const limit_strength = optInt("UCI_LimitStrength") != 0;
     const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
     const skill_level = optInt("Skill Level");
     const skill_enabled = uci_elo != 0 or skill_level < 20;
 
     out.is_mainthread = @intFromBool(wl.thread_idx == 0);
-    out.root_moves_empty = @intFromBool(rm_begin == rm_end);
+    out.root_moves_empty = @intFromBool(wl.root_moves.len == 0);
     out.npmsec = @intFromBool(wl.limits.npmsec != 0);
     out.limits_depth = wl.limits.depth;
     out.skill_enabled = @intFromBool(skill_enabled);
@@ -160,12 +156,8 @@ pub fn searchIdState(wl: *graph_layout.WorkerLayout, out: *ZfishIdState) void {
     const is_main = thread_idx == 0;
     const tp = wl.threads;
 
-    // root_moves is the {begin,end,cap} vector header.
-    const rm_begin = wl.root_moves[0];
-    const rm_end = wl.root_moves[1];
-
     out.root_pos = &wl.root_pos;
-    out.root_moves = @ptrFromInt(rm_begin);
+    out.root_moves = wl.root_moves.ptr;
     out.pv_idx = &wl.pv_idx;
     out.pv_last = &wl.pv_last;
     out.sel_depth = &wl.sel_depth;
@@ -178,7 +170,7 @@ pub fn searchIdState(wl: *graph_layout.WorkerLayout, out: *ZfishIdState) void {
     // wl.last_iteration_pv and ZfishIdState's field are now the one canonical
     // PVMoves (M18.2 de-mirror), so this is a plain mut->const coercion, no cast.
     out.last_iter_pv = &wl.last_iteration_pv;
-    out.root_moves_count = (rm_end - rm_begin) / graph_layout.root_move_size;
+    out.root_moves_count = wl.root_moves.len;
     out.thread_idx = thread_idx;
     out.threads_size = tp.numThreads();
     out.multipv_option = @intCast(@max(optInt("MultiPV"), 0));

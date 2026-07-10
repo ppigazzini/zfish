@@ -31,7 +31,7 @@ pub fn workerManager(wl: *const graph_layout.WorkerLayout) ?*graph_layout.Search
 pub fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootMove {
     // root_moves is the {begin,end,cap} vector header; [0] is the first element's
     // address; return the typed first RootMove via the graph adapter.
-    return graph_layout.RootMove.fromAddr(wl.root_moves[0]);
+    return @ptrCast(wl.root_moves.ptr);
 }
 pub fn workerTT(wl: *const graph_layout.WorkerLayout) *graph_layout.TranspositionTable {
     return wl.tt;

@@ -35,12 +35,11 @@ fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootMove 
     // root_moves is the {begin,end,cap} vector header; [0] is the first element's
     // address. Return the typed first RootMove via the graph adapter so callers read
     // fields directly instead of each re-doing RootMove.fromAddr.
-    return graph_layout.RootMove.fromAddr(wl.root_moves[0]);
+    return @ptrCast(wl.root_moves.ptr);
 }
 fn workerRootMoveAt(wl: *const graph_layout.WorkerLayout, index: usize) usize {
-    // root_moves[0] is the vector's begin pointer; stride by root_move_size.
-    const begin = wl.root_moves[0];
-    return begin + index * graph_layout.root_move_size;
+    // root_moves is a typed slice; the i-th element's address, stride root_move_size.
+    return @intFromPtr(wl.root_moves.ptr) + index * graph_layout.root_move_size;
 }
 fn workerRootDepthOf(wl: *const graph_layout.WorkerLayout) c_int {
     return wl.root_depth;
@@ -190,16 +189,13 @@ const PvContext = struct {
 // TT hashfull and elapsed ms. graph_layout + option + the leaf pool aggregates.
 fn searchCbPvContext(manager: ?*graph_layout.SearchManager, worker: ?*graph_layout.WorkerLayout, threads: *graph_layout.ThreadPool, tt_ptr: *graph_layout.TranspositionTable, out: *PvContext) void {
     const wl = worker.?;
-    // root_moves is the {begin,end,cap} vector header.
-    const rm_begin = wl.root_moves[0];
-    const rm_end = wl.root_moves[1];
-    const rm_count = (rm_end - rm_begin) / graph_layout.root_move_size;
+    const rm_count = wl.root_moves.len;
 
     const multipv_opt: usize = @intCast(@max(optInt("MultiPV"), 0));
 
     out.manager = manager;
     out.worker = worker;
-    out.root_moves = @ptrFromInt(rm_begin);
+    out.root_moves = wl.root_moves.ptr;
     out.root_moves_count = rm_count;
     out.multipv = @min(multipv_opt, rm_count);
     out.show_wdl = if (optInt("UCI_ShowWDL") != 0) 1 else 0;

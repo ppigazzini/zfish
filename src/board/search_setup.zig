@@ -36,8 +36,8 @@ fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*nnue_ac
     out_last_iter_pv.* = &wl.last_iteration_pv;
     out_stop.* = stop;
     out_pv_idx.* = &wl.pv_idx;
-    // root_moves[0] is the vector's begin pointer (the first element's address).
-    out_root_moves.* = @ptrFromInt(wl.root_moves[0]);
+    // root_moves is a typed slice now (M19.1); its .ptr is the first element.
+    out_root_moves.* = wl.root_moves.ptr;
     out_pv_last.* = &wl.pv_last;
     out_best_move_changes.* = &wl.best_move_changes;
 
