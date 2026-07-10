@@ -501,8 +501,8 @@ pub fn sharedHistoriesInsert(map: *position_port.SharedHistoriesMap, numa_index:
     map.tryEmplace(numa_index, size) catch @panic("OOM: native sharedHistories insert");
 }
 
-pub fn sharedHistoriesAt(map: *position_port.SharedHistoriesMap, numa_index: usize) *anyopaque {
-    return @ptrCast(map.at(numa_index));
+pub fn sharedHistoriesAt(map: *position_port.SharedHistoriesMap, numa_index: usize) *position_port.SharedHistories {
+    return map.at(numa_index);
 }
 
 // Free the side map (each element's large-page DynStats arrays + the bucket
