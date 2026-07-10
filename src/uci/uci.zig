@@ -81,7 +81,7 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
     limits.nodes = parsed.nodes;
     limits.ponder_mode = parsed.ponder_mode;
 
-    var sm_elems: ?*anyopaque = null;
+    var sm_elems: ?[*]graph_layout.SearchMoveText = null;
     if (parsed.searchmoves) |sm_ptr| {
         const sm = std.mem.span(sm_ptr);
         var count: usize = 0;
@@ -109,7 +109,7 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
             limits.searchmoves[0] = @intFromPtr(elems); // begin
             limits.searchmoves[1] = @intFromPtr(elems) + nbytes; // end
             limits.searchmoves[2] = @intFromPtr(elems) + nbytes; // cap
-            sm_elems = elems;
+            sm_elems = recs;
         }
     }
 
