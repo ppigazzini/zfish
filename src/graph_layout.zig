@@ -85,10 +85,8 @@ pub const WorkerLayout = struct {
     reductions: [256]c_int,
     manager: ?*SearchManager, // the worker's SearchManager (null before build / after free)
     tb_config: [16]u8 align(8), // {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32} — read as i32, keep aligned
-    options: usize, // SharedState OptionsModel reference (raw address)
     threads: *ThreadPool,
     tt: *TranspositionTable,
-    network: usize, // SharedState network reference (raw address)
     accumulator_stack: [accumulator_stack_size]u8 align(64),
     refresh_table: [refresh_table_bytes]u8 align(64),
 
@@ -146,10 +144,8 @@ pub const worker_off = struct {
     pub const reductions = @offsetOf(WorkerLayout, "reductions");
     pub const manager = @offsetOf(WorkerLayout, "manager");
     pub const tb_config = @offsetOf(WorkerLayout, "tb_config");
-    pub const options = @offsetOf(WorkerLayout, "options");
     pub const threads = @offsetOf(WorkerLayout, "threads");
     pub const tt = @offsetOf(WorkerLayout, "tt");
-    pub const network = @offsetOf(WorkerLayout, "network");
     pub const accumulator_stack = @offsetOf(WorkerLayout, "accumulator_stack");
     pub const accumulator_stack_size_field = accumulator_stack + accumulator_stack_size - 64;
     pub const refresh_table = @offsetOf(WorkerLayout, "refresh_table");

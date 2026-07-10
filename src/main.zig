@@ -275,10 +275,8 @@ fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void 
     worker_native_construct.constructFull(
         raw,
         @intFromPtr(shared_history),
-        @intFromPtr(ss.options),
         @intFromPtr(ss.threads),
         @intFromPtr(ss.tt),
-        @intFromPtr(ss.network),
         @intFromPtr(manager),
         idx,
         idx,
