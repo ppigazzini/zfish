@@ -332,8 +332,8 @@ pub const Thread = struct {
 pub const Worker = struct {
     base: *WorkerLayout,
 
-    pub inline fn fromThread(thread: *anyopaque) ?Worker {
-        const w = Thread.fromPtr(thread).worker orelse return null;
+    pub inline fn fromThread(thread: *Thread) ?Worker {
+        const w = thread.worker orelse return null;
         return Worker{ .base = w };
     }
     inline fn layout(self: Worker) *WorkerLayout {
