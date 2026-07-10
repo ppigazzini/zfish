@@ -234,8 +234,9 @@ pub fn setPosition(
     moves_ptr: ?[*]const ByteView,
     move_count: usize,
 ) ?[*:0]u8 {
-    const state_storage = ensurePendingStateStorage(states_slot);
-    const root_state = state_list.storageReset(state_storage);
+    const state_storage = ensurePendingStateStorage(states_slot) orelse
+        return allocMessage("out of memory", .{});
+    const root_state = state_storage.reset() catch return allocMessage("out of memory", .{});
 
     if (position_port.setPositionState(pos, fen_ptr, fen_len, chess960_enabled, root_state)) |err| {
         return err;
@@ -252,7 +253,7 @@ pub fn setPosition(
             return allocMessage("Illegal move: {s}", .{move_text});
         }
 
-        const next_state = state_list.storagePush(state_storage);
+        const next_state = state_storage.push() catch return allocMessage("out of memory", .{});
         position_port.doMoveState(pos, move_raw, next_state);
     }
 
@@ -600,20 +601,22 @@ pub fn threadAllocationInformationEngine(engine_ptr: *native_engine.NativeEngine
     );
 }
 
-fn ensurePendingStateStorage(states_slot: *anyopaque) *PendingStateStorage {
+fn ensurePendingStateStorage(states_slot: *anyopaque) ?*PendingStateStorage {
     const slot_key = @intFromPtr(states_slot);
 
     if (findPendingStateIndex(slot_key)) |index| {
         return pending_state_entries.items[index].storage;
     }
 
-    const state_storage = state_list.storageCreate() orelse @panic("OOM");
+    // M19.2: null on OOM (was `@panic("OOM")`); setPosition reports it as a UCI error
+    // message through its existing `?[*:0]u8` channel instead of crashing.
+    const state_storage = state_list.storageCreate() orelse return null;
     pending_state_entries.append(std.heap.c_allocator, .{
         .slot_key = slot_key,
         .storage = state_storage,
     }) catch {
         state_list.storageDestroy(state_storage);
-        @panic("OOM");
+        return null;
     };
 
     return state_storage;
