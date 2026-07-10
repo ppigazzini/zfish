@@ -221,7 +221,7 @@ pub fn destructMembers(buf: *anyopaque) void {
     // frees each surviving list exactly once.
     if (e.threads) |pool| {
         const setup: *?*state_list_port.StateList =
-            @ptrCast(@alignCast(&graph_layout.ThreadPool.fromPtr(pool).setup_states));
+            &graph_layout.ThreadPool.fromPtr(pool).setup_states;
         if (setup.*) |list| {
             state_list_port.destroyStateList(std.heap.c_allocator, list);
             setup.* = null;

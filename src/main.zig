@@ -81,7 +81,7 @@ const StateList = state_list_port.StateList;
 const PendingStateStorage = state_list_port.PendingStateStorage;
 
 fn poolSetupStatesSlot(pool: *anyopaque) *?*StateList {
-    return @ptrCast(&graph_layout.ThreadPool.fromPtr(pool).setup_states);
+    return &graph_layout.ThreadPool.fromPtr(pool).setup_states;
 }
 fn freeSetupStatesIfAny(pool: *anyopaque) void {
     const slot = poolSetupStatesSlot(pool);
@@ -104,7 +104,7 @@ fn threadpoolSetupStatesAdoptFromSlot(pool: *anyopaque, slot_ptr: *anyopaque) vo
     src.* = null;
 }
 fn threadpoolSetupStateBack(pool: *const anyopaque) ?*anyopaque {
-    const slot: ?*StateList = @ptrCast(@alignCast(graph_layout.ThreadPool.fromPtr(@constCast(pool)).setup_states));
+    const slot = graph_layout.ThreadPool.fromPtr(@constCast(pool)).setup_states;
     if (slot) |list| return list.back();
     return null;
 }
