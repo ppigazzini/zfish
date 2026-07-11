@@ -459,7 +459,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "misc", .imp = "libc", .to = "libc" },
         .{ .from = "engine", .imp = "libc", .to = "libc" },
         .{ .from = "thread", .imp = "libc", .to = "libc" },
-        .{ .from = "uci_output", .imp = "libc", .to = "libc" },
         .{ .from = "engine", .imp = "uci_output", .to = "uci_output" },
         .{ .from = "uci", .imp = "uci_wdl", .to = "uci_wdl" },
         .{ .from = "uci", .imp = "uci_output", .to = "uci_output" },
@@ -1132,6 +1131,7 @@ pub fn build(b: *std.Build) void {
         "src/eval/nnue_hash.zig",
         "src/support/debug_counters.zig",
         "src/bench/bench_positions.zig",
+        "src/support/uci_output.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
