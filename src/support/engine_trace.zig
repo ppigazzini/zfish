@@ -153,7 +153,7 @@ pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
 
     const state_storage = state_list.storageCreate() orelse return null;
     defer state_list.storageDestroy(state_storage);
-    const state = state_list.storageReset(state_storage);
+    const state = state_list.storageReset(state_storage) catch return null;
 
     if (position_port.setPositionState(trace_pos, fen_text.ptr, fen_text.len, @intFromBool(option_port.uciChess960()), state)) |err| {
         defer freeCString(err);

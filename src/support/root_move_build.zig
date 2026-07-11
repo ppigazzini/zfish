@@ -132,7 +132,7 @@ const ScratchPosition = struct {
         errdefer state_list.storageDestroy(storage);
 
         var scratch = ScratchPosition{ .pos = pos, .storage = storage };
-        scratch.reset(root_fen, chess960);
+        try scratch.reset(root_fen, chess960);
         return scratch;
     }
 
@@ -141,16 +141,16 @@ const ScratchPosition = struct {
         position_port.destroy(self.pos);
     }
 
-    fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) void {
-        const root_state = state_list.storageReset(self.storage);
+    fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) error{OutOfMemory}!void {
+        const root_state = try state_list.storageReset(self.storage);
         if (position_port.setPositionState(self.pos, root_fen.ptr, root_fen.len, chess960, root_state)) |err| {
             defer std.heap.c_allocator.free(std.mem.span(err));
             @panic("scratch position set failed");
         }
     }
 
-    fn doMove(self: *ScratchPosition, raw_move: u16) void {
-        const next_state = state_list.storagePush(self.storage);
+    fn doMove(self: *ScratchPosition, raw_move: u16) error{OutOfMemory}!void {
+        const next_state = try state_list.storagePush(self.storage);
         position_port.doMoveState(self.pos, raw_move, next_state);
     }
 };
@@ -230,8 +230,8 @@ fn rankRootMovesDtz(
     const bound: c_int = if (rule50) @divTrunc(max_dtz, 2) - 100 else 1;
 
     for (ranked_moves) |*ranked_move| {
-        scratch.reset(root_fen, chess960);
-        scratch.doMove(ranked_move.raw_move);
+        try scratch.reset(root_fen, chess960);
+        try scratch.doMove(ranked_move.raw_move);
 
         var dtz: c_int = 0;
         if (loadPositionSnapshot(scratch.pos).rule50_count == 0) {
@@ -308,8 +308,8 @@ fn rankRootMovesWdl(
     defer scratch.deinit();
 
     for (ranked_moves) |*ranked_move| {
-        scratch.reset(root_fen, chess960);
-        scratch.doMove(ranked_move.raw_move);
+        try scratch.reset(root_fen, chess960);
+        try scratch.doMove(ranked_move.raw_move);
 
         var wdl: c_int = undefined;
         if (position_port.isDraw(scratch.pos, 1)) {
