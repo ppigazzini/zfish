@@ -7,7 +7,6 @@
 // 2067208) exercises benchRuntime directly.
 
 const std = @import("std");
-const c = @import("libc");
 const clock = @import("clock");
 const benchmark_port = @import("benchmark");
 const misc_port = @import("misc");
@@ -27,10 +26,10 @@ pub fn benchRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8, disp
     const engine_ptr = uci_ptr;
 
     const current_fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
-    defer c.free(@ptrCast(current_fen_ptr));
+    defer freeMaybeCString(current_fen_ptr);
 
     const commands_ptr = benchmark_port.setupBench(std.mem.span(current_fen_ptr), args) orelse return;
-    defer c.free(@ptrCast(commands_ptr));
+    defer freeMaybeCString(commands_ptr);
     const commands = std.mem.span(commands_ptr);
 
     const total_positions = countBenchPositions(commands);
@@ -47,7 +46,7 @@ pub fn benchRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8, disp
 
         if (std.mem.eql(u8, token, "go") or std.mem.eql(u8, token, "eval")) {
             const fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
-            defer c.free(@ptrCast(fen_ptr));
+            defer freeMaybeCString(fen_ptr);
             std.debug.print(
                 "\nPosition: {d}/{d} ({s})\n",
                 .{ current_position, total_positions, std.mem.span(fen_ptr) },
@@ -191,13 +190,13 @@ pub fn benchmarkRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8, 
     std.debug.print("\n", .{});
 
     const version_ptr = misc_port.engineVersionInfoText() orelse return;
-    defer c.free(@ptrCast(version_ptr));
+    defer freeMaybeCString(version_ptr);
     const compiler_ptr = misc_port.compilerInfoText() orelse return;
-    defer c.free(@ptrCast(compiler_ptr));
+    defer freeMaybeCString(compiler_ptr);
     const numa_ptr = engine_mod.numaConfigStringEngine(engine_ptr) orelse return;
-    defer c.free(@ptrCast(numa_ptr));
+    defer freeMaybeCString(numa_ptr);
     const binding_ptr = engine_mod.threadBindingInformationEngine(engine_ptr) orelse return;
-    defer c.free(@ptrCast(binding_ptr));
+    defer freeMaybeCString(binding_ptr);
 
     const binding = if (std.mem.span(binding_ptr).len == 0) "none" else std.mem.span(binding_ptr);
     const original_invocation = if (setup.original_invocation_ptr) |ptr| std.mem.span(ptr) else "";
