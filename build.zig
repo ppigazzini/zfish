@@ -1179,6 +1179,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/board/position_query.zig", .deps = &.{ "board_core", "position_snapshot", "position_types" } },
         .{ .path = "src/board/zobrist.zig", .deps = &.{ "bitboard", "board_core" } },
         .{ .path = "src/support/uci_move.zig", .deps = &.{ "movegen", "position_snapshot", "position_types" } },
+        .{ .path = "src/support/movepick_snapshot.zig", .deps = &.{ "bitboard", "position_snapshot" } },
         .{ .path = "src/bench/benchmark.zig", .deps = &.{"libc"} },
         .{ .path = "src/board/movegen.zig", .deps = &.{ "bitboard", "position_snapshot", "position_types" } },
         .{ .path = "src/eval/network.zig", .deps = &.{ "memory", "nnue_accumulator", "position_types" } },
