@@ -120,3 +120,65 @@ pub fn init(input: TimemanInput) TimemanOutput {
     output.original_time_adjust = original_time_adjust;
     return output;
 }
+
+// --- tests (M22.0) --------------------------------------------------------------
+// Pure port of Stockfish TimeManagement::init. The exact float outputs are not
+// pinned (they track upstream constants); these assert the structural invariants.
+const base = TimemanInput{
+    .time_us = 60_000_000,
+    .inc_us = 100_000,
+    .start_time = 0,
+    .npmsec = 0,
+    .move_overhead = 10_000,
+    .available_nodes = -1,
+    .current_optimum_time = 0,
+    .current_maximum_time = 0,
+    .movestogo = 0,
+    .ply = 20,
+    .original_time_adjust = -1,
+    .ponder = 0,
+};
+
+test "timeman: zero time is a pass-through" {
+    var in = base;
+    in.time_us = 0;
+    in.current_optimum_time = 111;
+    in.current_maximum_time = 222;
+    const out = init(in);
+    try std.testing.expectEqual(@as(i64, 111), out.optimum_time);
+    try std.testing.expectEqual(@as(i64, 222), out.maximum_time);
+    try std.testing.expectEqual(@as(u8, 0), out.use_nodes_time);
+}
+
+test "timeman: a real budget yields 0 < optimum <= maximum" {
+    const out = init(base);
+    try std.testing.expect(out.optimum_time > 0);
+    try std.testing.expect(out.maximum_time >= out.optimum_time);
+    // and with an explicit movestogo
+    var mtg = base;
+    mtg.movestogo = 30;
+    const out2 = init(mtg);
+    try std.testing.expect(out2.optimum_time > 0);
+    try std.testing.expect(out2.maximum_time >= out2.optimum_time);
+}
+
+test "timeman: ponder boosts optimum by exactly 25%" {
+    var in = base;
+    in.original_time_adjust = 1.0;
+    const no_ponder = init(in);
+    in.ponder = 1;
+    const with_ponder = init(in);
+    try std.testing.expectEqual(
+        no_ponder.optimum_time + @divTrunc(no_ponder.optimum_time, 4),
+        with_ponder.optimum_time,
+    );
+}
+
+test "timeman: npmsec != 0 enables nodes-time mode" {
+    var in = base;
+    in.npmsec = 600;
+    in.time_us = 1000;
+    in.movestogo = 40;
+    try std.testing.expectEqual(@as(u8, 1), init(in).use_nodes_time);
+    try std.testing.expectEqual(@as(u8, 0), init(base).use_nodes_time);
+}
