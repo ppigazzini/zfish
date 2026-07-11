@@ -1151,6 +1151,7 @@ pub fn build(b: *std.Build) void {
         "src/board/bitboard_geom.zig",
         "src/board/search_values.zig",
         "src/uci/option_parse.zig",
+        "src/uci/option_model.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
