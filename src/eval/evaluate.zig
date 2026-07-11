@@ -85,10 +85,18 @@ fn appendIntLine(
     value: c_int,
     suffix: []const u8,
 ) !void {
+    // C `%+15d` forces a leading sign then space-pads to width 15. std.fmt has no
+    // force-sign flag, so emit the sign explicitly, format the magnitude, then pad the
+    // resulting string (string padding adds no sign of its own). Byte-identical to C.
+    var signed: [32]u8 = undefined;
+    const body = std.fmt.bufPrint(&signed, "{c}{d}", .{
+        @as(u8, if (value < 0) '-' else '+'),
+        @abs(value),
+    }) catch unreachable;
     var numeric: [64]u8 = undefined;
-    const len = c.snprintf(&numeric, numeric.len, "%+15d", value);
+    const rendered = std.fmt.bufPrint(&numeric, "{s: >15}", .{body}) catch unreachable;
     try buffer.appendSlice(std.heap.c_allocator, prefix);
-    try buffer.appendSlice(std.heap.c_allocator, numeric[0..@intCast(len)]);
+    try buffer.appendSlice(std.heap.c_allocator, rendered);
     try buffer.appendSlice(std.heap.c_allocator, suffix);
 }
 
@@ -98,6 +106,10 @@ fn appendFloatLine(
     value: f64,
     suffix: []const u8,
 ) !void {
+    // Kept on C snprintf deliberately: C's `%.2f` rounds halves to even whereas std.fmt
+    // rounds halves away, so a float on an exact half (x.xx5) would diverge from the eval
+    // goldens. Stays on libc until we can match glibc's round-half-to-even; the integer
+    // `%+15d` line above has no such divergence and moved to std.fmt.
     var numeric: [64]u8 = undefined;
     const len = c.snprintf(&numeric, numeric.len, "%+15.2f", value);
     try buffer.appendSlice(std.heap.c_allocator, prefix);

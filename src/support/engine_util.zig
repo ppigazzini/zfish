@@ -3,12 +3,11 @@
 // The pure C-string alloc + ArrayList append builders and the small shared value
 // types (ByteView, CountPair) used across engine.zig's info-formatting, trace, and
 // setup clusters. Split into a base leaf so those clusters can move into their own
-// modules without duplicating the helpers. Depends only on std + libc; nothing in
+// modules without duplicating the helpers. Depends only on std; nothing in
 // the engine graph, so no cycle. engine.zig re-exports ByteView (its external port
 // surface) and aliases the rest.
 
 const std = @import("std");
-const c = @import("libc");
 
 pub const ByteView = struct {
     ptr: ?[*]const u8,
@@ -37,15 +36,21 @@ pub fn appendFormat(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: 
 }
 
 pub fn appendHexKey(buffer: *std.ArrayList(u8), key: u64) !void {
+    // `{X:0>16}` is byte-identical to C `%016llX` (uppercase hex, zero-padded to 16).
     var numeric: [32]u8 = undefined;
-    const len = c.snprintf(&numeric, numeric.len, "%016llX", @as(c_ulonglong, key));
-    try buffer.appendSlice(std.heap.c_allocator, numeric[0..@intCast(len)]);
+    const rendered = std.fmt.bufPrint(&numeric, "{X:0>16}", .{key}) catch unreachable;
+    try buffer.appendSlice(std.heap.c_allocator, rendered);
 }
 
 pub fn appendPaddedInt(buffer: *std.ArrayList(u8), value: c_int) !void {
+    // C `%4d` = space-pad the decimal to width 4, right-aligned. std.fmt emits a `+`
+    // when a width is applied directly to a signed int (`{d:4}` -> "+5"), so render the
+    // digits first, then pad the *string* -- string padding carries no sign semantics.
+    var digits: [16]u8 = undefined;
+    const body = std.fmt.bufPrint(&digits, "{d}", .{value}) catch unreachable;
     var numeric: [32]u8 = undefined;
-    const len = c.snprintf(&numeric, numeric.len, "%4d", value);
-    try buffer.appendSlice(std.heap.c_allocator, numeric[0..@intCast(len)]);
+    const rendered = std.fmt.bufPrint(&numeric, "{s: >4}", .{body}) catch unreachable;
+    try buffer.appendSlice(std.heap.c_allocator, rendered);
 }
 
 pub fn appendCheckers(buffer: *std.ArrayList(u8), checkers: u64) !void {
