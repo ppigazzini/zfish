@@ -15,9 +15,19 @@ const std = @import("std");
 const position = @import("position");
 const movegen = @import("movegen");
 const graph_layout = @import("graph_layout");
+const position_snapshot = @import("position_snapshot");
 
 const position_size = graph_layout.position_size;
 const state_info_size = graph_layout.state_info_size;
+
+// The stored (incremental) zobrist key of the current position -- fillSnapshot copies
+// `st.key`, the value doMove maintains, NOT a recomputed one, so comparing it across a
+// make/unmake round-trip is a genuine incremental-hash correctness check.
+fn positionKey(p: *const position.Position) u64 {
+    var snap: position_snapshot.PositionSnapshot = undefined;
+    position.fillSnapshot(p, &snap);
+    return snap.key;
+}
 
 // Property: setPosition must never crash / OOB on arbitrary input -- it rejects it
 // or produces a self-consistent position, and any position it accepts must survive
@@ -90,4 +100,94 @@ fn fuzzRandomGame(_: void, smith: *std.testing.Smith) anyerror!void {
 test "fuzz: deep random legal-move games make/unmake cleanly" {
     position.initRuntime();
     try std.testing.fuzz({}, fuzzRandomGame, .{});
+}
+
+// Property: a deep line of legal moves, fully unwound, must restore the incremental
+// zobrist key byte-exactly. This is a correctness invariant far stronger than "doesn't
+// crash" -- a make/unmake key desync (mis-hashed castling right, en-passant file, or
+// side-to-move) survives fuzzRandomGame silently but is caught here. The coverage-
+// guided fuzzer steers toward lines that reach the rarely-hit hashing branches.
+fn fuzzKeyStability(_: void, smith: *std.testing.Smith) anyerror!void {
+    var choices: [96]u8 = undefined;
+    smith.bytesWithHash(&choices, 3);
+
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
+    if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
+        std.heap.c_allocator.free(std.mem.span(msg));
+        return;
+    }
+    const key0 = positionKey(&p);
+
+    var chain: [choices.len]position.StateInfo align(16) = undefined;
+    var played: [choices.len]u16 = undefined;
+    var ply: usize = 0;
+    while (ply < choices.len) : (ply += 1) {
+        var moves: [256]u16 = undefined;
+        const n = movegen.generateLegal(&p, &moves);
+        if (n == 0) break;
+        const pick = moves[choices[ply] % n];
+        played[ply] = pick;
+        position.doMoveState(&p, pick, &chain[ply]);
+    }
+    while (ply > 0) {
+        ply -= 1;
+        position.undoMove(&p, played[ply]);
+    }
+    if (positionKey(&p) != key0) return error.KeyDesyncAfterUnwind;
+}
+
+test "fuzz: make/unmake restores the zobrist key over a deep line" {
+    position.initRuntime();
+    try std.testing.fuzz({}, fuzzKeyStability, .{});
+}
+
+// Property: from a fuzzer-reached position, EVERY legal move must restore the key on
+// undo -- not just the first. This exercises each move category (captures, castling,
+// en passant, promotions, double-push) at one board, so a category-specific
+// incremental-hash bug cannot hide behind a quiet leading move.
+fn fuzzAllMovesKeyStability(_: void, smith: *std.testing.Smith) anyerror!void {
+    var choices: [24]u8 = undefined;
+    smith.bytesWithHash(&choices, 3);
+
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
+    if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
+        std.heap.c_allocator.free(std.mem.span(msg));
+        return;
+    }
+    // Diversify the starting board with a shallow random line.
+    var chain: [choices.len]position.StateInfo align(16) = undefined;
+    var played: [choices.len]u16 = undefined;
+    var ply: usize = 0;
+    while (ply < choices.len) : (ply += 1) {
+        var moves: [256]u16 = undefined;
+        const n = movegen.generateLegal(&p, &moves);
+        if (n == 0) break;
+        const pick = moves[choices[ply] % n];
+        played[ply] = pick;
+        position.doMoveState(&p, pick, &chain[ply]);
+    }
+
+    // Every legal move at the reached board must round-trip the key on undo.
+    const key = positionKey(&p);
+    var moves: [256]u16 = undefined;
+    const n = movegen.generateLegal(&p, &moves);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        var mst: position.StateInfo align(16) = undefined;
+        position.doMoveState(&p, moves[i], &mst);
+        position.undoMove(&p, moves[i]);
+        if (positionKey(&p) != key) return error.KeyDesyncAfterMove;
+    }
+
+    while (ply > 0) {
+        ply -= 1;
+        position.undoMove(&p, played[ply]);
+    }
+}
+
+test "fuzz: every legal move restores the zobrist key on undo" {
+    position.initRuntime();
+    try std.testing.fuzz({}, fuzzAllMovesKeyStability, .{});
 }
