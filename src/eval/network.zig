@@ -1,7 +1,6 @@
 const std = @import("std");
 const nnue_parse = @import("nnue_parse.zig");
 const nnue_hash = @import("nnue_hash.zig");
-const c = @import("libc");
 const memory_port = @import("memory");
 const position_types = @import("position_types");
 const nnue_accumulator_port = @import("nnue_accumulator");
@@ -31,11 +30,6 @@ pub const Network = opaque {};
 
 pub const ByteView = struct {
     ptr: [*]const u8,
-    len: usize,
-};
-
-pub const OwnedByteView = struct {
-    ptr: ?[*]const u8,
     len: usize,
 };
 
@@ -705,17 +699,6 @@ fn writeHeader(writer: *std.Io.Writer, hash_value: u32, description: []const u8)
     writeU32LeInto(header[8..12], @intCast(description.len));
     try writer.writeAll(&header);
     try writer.writeAll(description);
-}
-
-fn freeOwnedBlob(blob: OwnedByteView) void {
-    if (blob.ptr) |ptr| {
-        c.free(@ptrCast(@constCast(ptr)));
-    }
-}
-
-fn ownedViewToSlice(view: OwnedByteView) ?[]const u8 {
-    const ptr = view.ptr orelse return null;
-    return ptr[0..view.len];
 }
 
 fn readU32Le(bytes: []const u8, offset: *usize) ?u32 {
