@@ -1148,6 +1148,7 @@ pub fn build(b: *std.Build) void {
         "src/support/tablebase.zig",
         "src/support/tt_types.zig",
         "src/eval/nnue_feature_bb.zig",
+        "src/board/bitboard_geom.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
