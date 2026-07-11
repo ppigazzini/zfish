@@ -1205,6 +1205,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/eval/nnue_accumulator.zig", .deps = &.{ "nnue_acc_rowops", "nnue_feature", "nnue_ft", "nnue_refresh_cache", "position_snapshot", "position_types" } },
         .{ .path = "src/native_engine.zig", .deps = &.{ "graph_layout", "misc", "network", "position_types", "state_list" } },
         .{ .path = "src/support/engine_nnue.zig", .deps = &.{ "libc", "native_engine", "network", "option", "uci_output" } },
+        .{ .path = "src/support/engine_control.zig", .deps = &.{ "libc", "graph_layout", "native_engine", "tt", "thread", "option", "tablebase" } },
         .{ .path = "src/board/shared_history.zig", .deps = &.{ "memory", "position_types", "search_types", "shared_histories", "shared_histories_map", "shared_history_types", "worker_histories" } },
         .{ .path = "src/board/history.zig", .deps = &.{ "board_core", "graph_layout", "position_types", "search", "search_common", "search_types", "shared_history", "worker_histories" } },
     }) |dt| {
