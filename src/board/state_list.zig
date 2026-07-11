@@ -170,11 +170,14 @@ pub fn storageCreate() ?*PendingStateStorage {
 pub fn storageDestroy(storage: ?*PendingStateStorage) void {
     if (storage) |s| s.destroy();
 }
-pub fn storageReset(storage: *PendingStateStorage) *StateInfo {
-    return storage.reset() catch @panic("OOM: state reset");
+// M19.2: the StateList is legitimately growable (models std::deque<StateInfo>, bounded by UCI
+// game-move input, not max_ply), so OOM here propagates as error rather than panicking -- the
+// callers are on error-capable paths (buildRootMoves is !void; traceEvalEngine returns optional).
+pub fn storageReset(storage: *PendingStateStorage) error{OutOfMemory}!*StateInfo {
+    return storage.reset();
 }
-pub fn storagePush(storage: *PendingStateStorage) *StateInfo {
-    return storage.push() catch @panic("OOM: state push");
+pub fn storagePush(storage: *PendingStateStorage) error{OutOfMemory}!*StateInfo {
+    return storage.push();
 }
 pub fn storageHasStates(storage: *const PendingStateStorage) bool {
     return storage.hasStates();
