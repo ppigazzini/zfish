@@ -1,5 +1,10 @@
 const std = @import("std");
-const c = @import("libc");
+
+// Free a c_allocator-allocated NUL-terminated string through the Allocator
+// interface (M-MEM.B), exact for these tightly-sized sentinel allocations.
+fn freeCString(ptr: [*:0]u8) void {
+    std.heap.c_allocator.free(std.mem.span(ptr));
+}
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
@@ -194,10 +199,10 @@ pub fn optionOnChange(
             setNumaConfigFromOptionEngine(engine_ptr, value);
 
             const numa_info_ptr = numaConfigInformationEngine(engine_ptr) orelse break :blk null;
-            defer c.free(@ptrCast(numa_info_ptr));
+            defer freeCString(numa_info_ptr);
 
             const thread_info_ptr = threadAllocationInformationEngine(engine_ptr) orelse break :blk null;
-            defer c.free(@ptrCast(thread_info_ptr));
+            defer freeCString(thread_info_ptr);
 
             break :blk allocMessage("{s}\n{s}", .{ std.mem.span(numa_info_ptr), std.mem.span(thread_info_ptr) });
         },
@@ -389,7 +394,7 @@ pub fn applySetOptionEngine(engine_ptr: *native_engine.NativeEngine, name_ptr: [
         const ret = optionOnChange(engine_ptr, res.callback_kind, relay_value.ptr, relay_value.len, relay_int);
         if (ret) |msg| {
             printInfoStringNative(std.mem.span(msg));
-            std.c.free(@ptrCast(msg));
+            freeCString(msg);
         }
     }
 }
@@ -564,7 +569,7 @@ pub fn searchClear(threads: *graph_layout.ThreadPool, tt: *graph_layout.Transpos
 
 pub fn searchClearEngine(engine_ptr: *native_engine.NativeEngine) void {
     const syzygy_ptr = option_port.dupSyzygyPath() orelse return;
-    defer c.free(@ptrCast(syzygy_ptr));
+    defer freeCString(syzygy_ptr);
     searchClear(
         engine_ptr.threadsPtr(),
         engine_ptr.ttPtr(),
@@ -575,14 +580,14 @@ pub fn searchClearEngine(engine_ptr: *native_engine.NativeEngine) void {
 pub fn numaConfigStringEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     _ = engine_ptr;
     const config_ptr = numa.configString() orelse return null;
-    defer c.free(@ptrCast(config_ptr));
+    defer freeCString(config_ptr);
     return allocMessage("{s}", .{std.mem.span(config_ptr)});
 }
 
 pub fn numaConfigInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     _ = engine_ptr;
     const config_ptr = numa.configString() orelse return null;
-    defer c.free(@ptrCast(config_ptr));
+    defer freeCString(config_ptr);
     const config = std.mem.span(config_ptr);
     return formatNumaInfo(config.ptr, config.len);
 }
@@ -660,13 +665,13 @@ fn findPendingStateIndex(slot_key: usize) ?usize {
 // main.zig (M16.7); all native (engine fen + position flipFen + setPosition).
 pub fn flipEngine(engine_ptr: *native_engine.NativeEngine) void {
     const fen_c = fen(engine_ptr.positionPtr()) orelse return;
-    defer c.free(@ptrCast(fen_c));
+    defer freeCString(fen_c);
     const fen_text = std.mem.span(fen_c);
     const flipped_c = position_port.flipFen(fen_text.ptr, fen_text.len) orelse return;
-    defer c.free(@ptrCast(flipped_c));
+    defer freeCString(flipped_c);
     const flipped = std.mem.span(flipped_c);
     if (setPositionEngine(engine_ptr, flipped.ptr, flipped.len, null, 0)) |err|
-        c.free(@ptrCast(err));
+        freeCString(err);
 }
 
 pub fn hashfullEngine(engine_ptr: *native_engine.NativeEngine, max_age: c_int) c_int {
@@ -716,7 +721,7 @@ pub fn threadAllocationInformation(
     threads: *graph_layout.ThreadPool,
 ) ?[*:0]u8 {
     const binding_ptr = threadBindingInformation(numa_context, threads) orelse return null;
-    defer c.free(@ptrCast(binding_ptr));
+    defer freeCString(binding_ptr);
 
     const binding = std.mem.span(binding_ptr);
     return formatThreadAllocation(threads.numThreads(), binding.ptr, binding.len);
