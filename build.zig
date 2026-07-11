@@ -1129,6 +1129,8 @@ pub fn build(b: *std.Build) void {
         "src/support/uci_output.zig",
         "src/support/uci_wdl.zig",
         "src/score.zig",
+        "src/uci/uci_strings.zig",
+        "src/support/engine_util.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
