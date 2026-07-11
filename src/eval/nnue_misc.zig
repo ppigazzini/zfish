@@ -34,8 +34,9 @@ fn formatTraceAlloc(input: NnueTraceInput) ![*:0]u8 {
     var bucket: usize = 0;
     while (bucket < input.bucket_count) : (bucket += 1) {
         var bucket_buffer: [64]u8 = undefined;
-        const bucket_len = c.snprintf(&bucket_buffer, bucket_buffer.len, "|  %zu        |  ", bucket);
-        try buffer.appendSlice(allocator, bucket_buffer[0..@intCast(bucket_len)]);
+        // `%zu` has no width here, so `{d}` reproduces it byte-for-byte.
+        const bucket_text = std.fmt.bufPrint(&bucket_buffer, "|  {d}        |  ", .{bucket}) catch unreachable;
+        try buffer.appendSlice(allocator, bucket_text);
         try appendAlignedDot(&buffer, input.psqt_cp[bucket]);
         try buffer.appendSlice(allocator, "  |  ");
         try appendAlignedDot(&buffer, input.positional_cp[bucket]);
@@ -64,6 +65,10 @@ fn appendAlignedDot(buffer: *std.ArrayList(u8), cp_value: c_int) !void {
         ' ';
     const pawns = @as(f64, @floatFromInt(absInt(cp_value))) * 0.01;
 
+    // Kept on C snprintf deliberately: C's `%.2f` rounds halves to even (0.125 -> "0.12")
+    // whereas std.fmt rounds halves away (-> "0.13"). The eval trace must stay byte-exact
+    // against the goldens, so the float formats stay on libc until we can match glibc's
+    // round-half-to-even. Integer/hex formats (no such divergence) moved to std.fmt.
     var numeric: [64]u8 = undefined;
     const len = c.snprintf(&numeric, numeric.len, "%c%6.2f", sign, pawns);
     try buffer.appendSlice(std.heap.c_allocator, numeric[0..@intCast(len)]);
