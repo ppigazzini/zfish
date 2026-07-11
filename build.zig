@@ -456,7 +456,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "uci", .imp = "option", .to = "option" },
         .{ .from = "benchmark", .imp = "libc", .to = "libc" },
         .{ .from = "misc", .imp = "libc", .to = "libc" },
-        .{ .from = "engine", .imp = "libc", .to = "libc" },
         .{ .from = "thread", .imp = "libc", .to = "libc" },
         .{ .from = "engine", .imp = "uci_output", .to = "uci_output" },
         .{ .from = "uci", .imp = "uci_wdl", .to = "uci_wdl" },
