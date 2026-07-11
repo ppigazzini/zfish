@@ -151,3 +151,59 @@ pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[:0]u8 {
     if (ponder.len == 0) return allocFormatted("bestmove {s}", .{bestmove}) catch null;
     return allocFormatted("bestmove {s} ponder {s}", .{ bestmove, ponder }) catch null;
 }
+
+// --- tests (M22.0) --------------------------------------------------------------
+// Pure std-only leaf: the win-rate model + score/info formatters. Wired as a
+// standalone artifact in build.zig so these run under `zig build test`.
+const test_alloc = std.heap.c_allocator;
+
+test "toCp: zero-centred and sign-preserving" {
+    try std.testing.expectEqual(@as(c_int, 0), toCp(0, 50));
+    try std.testing.expect(toCp(300, 50) > 0);
+    try std.testing.expect(toCp(-300, 50) < 0);
+    // odd symmetry of the model: toCp(-v) == -toCp(v)
+    try std.testing.expectEqual(-toCp(300, 50), toCp(-300, 50));
+}
+
+test "wdl: the permille triple always sums to 1000" {
+    for ([_]c_int{ -800, -100, 0, 100, 800 }) |v| {
+        const s = wdl(v, 50).?;
+        defer test_alloc.free(s);
+        var it = std.mem.tokenizeScalar(u8, s, ' ');
+        var sum: i64 = 0;
+        var n: usize = 0;
+        while (it.next()) |tok| {
+            sum += try std.fmt.parseInt(i64, tok, 10);
+            n += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 3), n);
+        try std.testing.expectEqual(@as(i64, 1000), sum);
+    }
+}
+
+test "formatScore: mate (kind 0) vs cp (else)" {
+    const mate = formatScore(0, 6, 0).?; // kind 0 -> "mate N"
+    defer test_alloc.free(mate);
+    try std.testing.expect(std.mem.startsWith(u8, mate, "mate "));
+    const cp = formatScore(2, 123, 0).?; // else -> "cp N"
+    defer test_alloc.free(cp);
+    try std.testing.expectEqualStrings("cp 123", cp);
+}
+
+test "formatBestmove: with and without ponder" {
+    const bm = formatBestmove("e2e4", "").?;
+    defer test_alloc.free(bm);
+    try std.testing.expectEqualStrings("bestmove e2e4", bm);
+    const bmp = formatBestmove("e2e4", "e7e5").?;
+    defer test_alloc.free(bmp);
+    try std.testing.expectEqualStrings("bestmove e2e4 ponder e7e5", bmp);
+}
+
+test "formatInfoNoMoves / formatInfoIter render the expected shape" {
+    const nomoves = formatInfoNoMoves(0, "mate 0").?;
+    defer test_alloc.free(nomoves);
+    try std.testing.expectEqualStrings("info depth 0 score mate 0", nomoves);
+    const iter = formatInfoIter(7, "e2e4", 3).?;
+    defer test_alloc.free(iter);
+    try std.testing.expectEqualStrings("info depth 7 currmove e2e4 currmovenumber 3", iter);
+}
