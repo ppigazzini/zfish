@@ -14,6 +14,12 @@
 
 const std = @import("std");
 const c = @import("libc");
+
+// c_allocator string free through the Allocator interface (M-MEM.B); the raw
+// std.c.malloc AccumulatorStack/RefreshCache blocks below stay on std.c.free.
+fn freeCString(ptr: [*:0]u8) void {
+    std.heap.c_allocator.free(std.mem.span(ptr));
+}
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
@@ -135,7 +141,7 @@ pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
 
     const source_pos = engine_ptr.positionPtr();
     const fen_ptr = fen(source_pos) orelse return null;
-    defer c.free(@ptrCast(fen_ptr));
+    defer freeCString(fen_ptr);
     const fen_text = std.mem.span(fen_ptr);
 
     const trace_pos = position_port.create() orelse return null;
@@ -146,7 +152,7 @@ pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
     const state = state_list.storageReset(state_storage);
 
     if (position_port.setPositionState(trace_pos, fen_text.ptr, fen_text.len, @intFromBool(option_port.uciChess960()), state)) |err| {
-        defer c.free(@ptrCast(err));
+        defer freeCString(err);
         return null;
     }
 
@@ -162,7 +168,7 @@ pub fn evalTrace(pos: *const position_port.Position) ?[*:0]u8 {
     defer accumulatorCachesDestroy(caches);
 
     const inner_trace_ptr = buildNnueTrace(pos, summary, caches) orelse return null;
-    defer c.free(@ptrCast(inner_trace_ptr));
+    defer freeCString(inner_trace_ptr);
     const inner_trace = std.mem.span(inner_trace_ptr);
 
     const accumulators = accumulatorStackCreate() orelse return null;
@@ -207,7 +213,7 @@ pub fn visualize(pos: *const position_port.Position) ?[*:0]u8 {
 
     const summary = positionSummary(pos);
     const fen_ptr = positionFen(pos, &pieces) orelse return null;
-    defer c.free(@ptrCast(fen_ptr));
+    defer freeCString(fen_ptr);
     const fen_text = std.mem.span(fen_ptr);
 
     var buffer = std.ArrayList(u8).empty;
@@ -341,7 +347,7 @@ fn probeTablebases(pos: *const position_port.Position, pieces_opt: ?*const [squa
     }
 
     const fen_ptr = positionFen(pos, pieces) orelse return emptyTablebaseProbe();
-    defer c.free(@ptrCast(fen_ptr));
+    defer freeCString(fen_ptr);
     const fen_text = std.mem.span(fen_ptr);
     return tablebase.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }
