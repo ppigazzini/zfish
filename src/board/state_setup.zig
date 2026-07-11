@@ -176,3 +176,7 @@ comptime {
     // change is seen here too.
     std.debug.assert(@sizeOf(StateInfo) == 192);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

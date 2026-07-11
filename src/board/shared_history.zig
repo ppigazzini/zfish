@@ -122,3 +122,7 @@ pub inline fn corrBundle(shared: *SharedHistories, key: u64) *[2]CorrectionBundl
     const idx: usize = @intCast(key & @as(u64, shared.size_minus1));
     return &shared.corr_data[idx];
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

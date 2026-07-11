@@ -837,3 +837,7 @@ fn otherColor(color: u8) u8 {
 fn promotionType(raw_move: u16) u8 {
     return @intCast(((raw_move >> 12) & 0x3) + knight);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}
