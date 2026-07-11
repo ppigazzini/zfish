@@ -820,7 +820,7 @@ test "tuneNextAlloc unwinds leak-free on every allocation failure" {
 const testing = std.testing;
 
 fn freeCStr(p: ?[*:0]u8) void {
-    if (p) |ptr| std.c.free(@ptrCast(ptr));
+    if (p) |ptr| std.heap.c_allocator.free(std.mem.span(ptr));
 }
 
 test "fuzz: parseSetOption survives random and adversarial input" {

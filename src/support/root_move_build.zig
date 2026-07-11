@@ -12,7 +12,6 @@ const state_list = @import("state_list");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
 const movegen_port = @import("movegen");
-const c = @import("libc");
 const position_snapshot = @import("position_snapshot");
 
 const PositionSnapshot = position_snapshot.PositionSnapshot;
@@ -145,7 +144,7 @@ const ScratchPosition = struct {
     fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) void {
         const root_state = state_list.storageReset(self.storage);
         if (position_port.setPositionState(self.pos, root_fen.ptr, root_fen.len, chess960, root_state)) |err| {
-            defer c.free(@ptrCast(err));
+            defer std.heap.c_allocator.free(std.mem.span(err));
             @panic("scratch position set failed");
         }
     }
@@ -197,7 +196,7 @@ fn loadTbConfig(pos: *const position_port.Position) TbConfig {
 fn probePosition(pos: *const position_port.Position) !TablebaseProbe {
     const snapshot = loadPositionSnapshot(pos);
     const fen_ptr = buildRootFen(pos) orelse return error.OutOfMemory;
-    defer c.free(@ptrCast(fen_ptr));
+    defer std.heap.c_allocator.free(std.mem.span(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
     return tablebase.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }

@@ -226,7 +226,7 @@ pub fn destructMembers(buf: *anyopaque) void {
     e.threads = null;
     memberHandleFree(e.numa_context);
     e.numa_context = null;
-    if (e.binary_directory) |bd| std.c.free(bd);
+    if (e.binary_directory) |bd| std.heap.c_allocator.free(std.mem.span(bd));
     e.binary_directory = null;
 }
 
