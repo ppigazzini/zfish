@@ -496,7 +496,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine", .imp = "option", .to = "option" },
         .{ .from = "position", .imp = "clock", .to = "clock" },
         .{ .from = "position", .imp = "graph_layout", .to = "graph_layout" },
-        .{ .from = "network", .imp = "libc", .to = "libc" },
         .{ .from = "network", .imp = "memory", .to = "memory" },
         .{ .from = "network", .imp = "position_types", .to = "position_types" },
         .{ .from = "network", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
