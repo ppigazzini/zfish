@@ -165,7 +165,7 @@ pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) D
             return .{ .should_quit = 0 };
         },
         .isready => {
-            _ = c.puts("readyok");
+            putsLine("readyok");
             return .{ .should_quit = 0 };
         },
         .flip => {
@@ -183,7 +183,7 @@ pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) D
         .visualize => {
             const text_ptr = engine_mod.visualizeEngine(engine) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(text_ptr));
-            _ = c.puts(@ptrCast(text_ptr));
+            putsLine(text_ptr);
             return .{ .should_quit = 0 };
         },
         .eval => {
@@ -195,7 +195,7 @@ pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) D
         .compiler => {
             const compiler_ptr = misc_port.compilerInfoText() orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(compiler_ptr));
-            _ = c.puts(@ptrCast(compiler_ptr));
+            putsLine(compiler_ptr);
             return .{ .should_quit = 0 };
         },
         .export_net => {
@@ -208,13 +208,13 @@ pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) D
         .help => {
             const help_ptr = helpText() orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(help_ptr));
-            _ = c.puts(@ptrCast(help_ptr));
+            putsLine(help_ptr);
             return .{ .should_quit = 0 };
         },
         .unknown => {
             const unknown_ptr = formatUnknownCommand(trimmed) orelse return .{ .should_quit = 0 };
             defer c.free(@ptrCast(unknown_ptr));
-            _ = c.puts(@ptrCast(unknown_ptr));
+            putsLine(unknown_ptr);
             return .{ .should_quit = 0 };
         },
     }
@@ -286,7 +286,7 @@ fn applyPosition(engine: *native_engine.NativeEngine, trimmed: []const u8) void 
         defer c.free(@ptrCast(err_ptr));
         const critical = formatCriticalError("position", std.mem.span(err_ptr)) orelse return;
         defer c.free(@ptrCast(critical));
-        _ = c.puts(@ptrCast(critical));
+        putsLine(critical);
     }
 }
 
@@ -314,10 +314,18 @@ fn applyGo(engine: *native_engine.NativeEngine, trimmed: []const u8) void {
     goParsed(engine_ptr, limits);
 }
 
+// Print a NUL-terminated line to stdout through the shared output funnel (replacing
+// libc puts): printLine adds the newline and the tear-proof lock, and tees to the log
+// like Stockfish's full-cout tee. The span drops the sentinel; the bytes are unchanged.
+fn putsLine(ptr: [*:0]const u8) void {
+    const s = std.mem.span(ptr);
+    uci_output.printLine(s.ptr, s.len);
+}
+
 fn emitInfoString(text: []const u8) void {
     const rendered = formatInfoString(text) orelse return;
     defer c.free(@ptrCast(rendered));
-    _ = c.puts(@ptrCast(rendered));
+    putsLine(rendered);
 }
 
 fn isHelpToken(token: []const u8) bool {

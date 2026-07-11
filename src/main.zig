@@ -50,7 +50,8 @@ pub fn main(init: std.process.Init) !void {
     const info = misc_port.engineInfoText(0) orelse return error.OutOfMemory;
     defer c.free(@ptrCast(info));
 
-    _ = c.puts(@ptrCast(info));
+    const info_line = std.mem.span(info);
+    uci_output.printLine(info_line.ptr, info_line.len);
 
     // The native movegen computes attacks/rays on the fly (bitboard.zig slidingAttack
     // etc.); the runtime tables come from position_port.initRuntime().
