@@ -87,3 +87,7 @@ pub fn accumulatorSnapshot(pos: *const Position, pieces_out: [*]u8) void {
     var s: usize = 0;
     while (s < 64) : (s += 1) pieces_out[s] = pos.board[s];
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

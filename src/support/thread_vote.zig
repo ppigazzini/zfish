@@ -118,3 +118,7 @@ pub fn bestThreadWorker(pool: *graph_layout.ThreadPool) *graph_layout.WorkerLayo
     const thread = pool.threadAt(idx);
     return graph_layout.Thread.fromAddr(thread).worker.?;
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

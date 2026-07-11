@@ -22,3 +22,7 @@ pub const SharedHistories = struct {
     size_minus1: usize,
     pawn_hist_size_minus1: usize,
 };
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

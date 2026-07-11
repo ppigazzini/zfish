@@ -1159,6 +1159,37 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&b.addRunArtifact(file_test).step);
     }
 
+    // M22.0 coverage: leaves that need a few module imports for their `test {}` /
+    // refAllDecls to compile. Each entry lists the file's DIRECT imports; the modules
+    // in `mods` already carry their own transitive imports.
+    const DepTest = struct { path: []const u8, deps: []const []const u8 };
+    for ([_]DepTest{
+        .{ .path = "src/uci/uci_format.zig", .deps = &.{"uci_strings"} },
+        .{ .path = "src/support/engine_infofmt.zig", .deps = &.{"engine_util"} },
+        .{ .path = "src/support/engine_options.zig", .deps = &.{"option"} },
+        .{ .path = "src/board/position_snapshot.zig", .deps = &.{"position_types"} },
+        .{ .path = "src/board/worker_histories.zig", .deps = &.{"shared_history_types"} },
+        .{ .path = "src/board/shared_history_types.zig", .deps = &.{"correction_bundle"} },
+        .{ .path = "src/support/thread_vote.zig", .deps = &.{"graph_layout"} },
+        .{ .path = "src/thread_construct.zig", .deps = &.{"graph_layout"} },
+        .{ .path = "src/support/native_hooks.zig", .deps = &.{ "graph_layout", "position_types" } },
+        .{ .path = "src/board/search_types.zig", .deps = &.{ "correction_bundle", "root_move", "worker_histories" } },
+        .{ .path = "src/board/position_query.zig", .deps = &.{ "board_core", "position_snapshot", "position_types" } },
+        .{ .path = "src/board/zobrist.zig", .deps = &.{ "bitboard", "board_core" } },
+        .{ .path = "src/support/uci_move.zig", .deps = &.{ "movegen", "position_snapshot", "position_types" } },
+    }) |dt| {
+        const t = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(dt.path),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+        });
+        for (dt.deps) |d| t.root_module.addImport(d, mods.get(d).?);
+        test_step.dependOn(&b.addRunArtifact(t).step);
+    }
+
     // state_list.zig holds a typed StateInfo (M18.3), so its standalone test needs the
     // position_types module (unlike the std-only files in the loop above).
     const state_list_test = b.addTest(.{

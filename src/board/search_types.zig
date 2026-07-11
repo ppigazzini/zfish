@@ -45,3 +45,7 @@ pub const CorrectionBundle = correction_bundle.CorrectionBundle;
 // carries the same field order/types/offsets plus the search's methods.
 pub const PVMoves = root_move.PVMoves;
 pub const RootMove = root_move.RootMove;
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

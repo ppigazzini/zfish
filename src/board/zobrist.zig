@@ -90,3 +90,7 @@ pub fn init() void {
         }
     }
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

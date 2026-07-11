@@ -56,3 +56,18 @@ pub fn formatCriticalError(command: []const u8, message: []const u8) ?[*:0]u8 {
         .{ command, message },
     ) catch null;
 }
+
+// --- tests (M22.0) --------------------------------------------------------------
+test "uci_format: help / unknown / info-string / critical render" {
+    const help = helpText().?;
+    defer std.heap.c_allocator.free(std.mem.span(help));
+    try std.testing.expect(std.mem.indexOf(u8, std.mem.span(help), "Universal Chess Interface") != null);
+
+    const unk = formatUnknownCommand("foo").?;
+    defer std.heap.c_allocator.free(std.mem.span(unk));
+    try std.testing.expectEqualStrings("Unknown command: 'foo'. Type help for more information.", std.mem.span(unk));
+
+    const info = formatInfoString("hello\nworld").?;
+    defer std.heap.c_allocator.free(std.mem.span(info));
+    try std.testing.expectEqualStrings("info string hello\ninfo string world", std.mem.span(info));
+}
