@@ -16,22 +16,23 @@ const graph_layout = @import("graph_layout");
 const clock = @import("clock");
 const uci_strings = @import("uci_strings");
 
-// C stdio stdin, obtained portably (M-PORT). @cImport's translation of the stream macros
-// is not uniform across the owned OSes (a comptime-uncallable __acrt_iob_func() macro on
-// Windows, an inline getter on macOS), so the underlying entry point is declared directly:
-// glibc's global FILE* symbol, macOS's __stdinp global, or the Windows CRT accessor. Each
-// arm is comptime-selected, so only the target's symbol is referenced/linked.
-const std_streams = struct {
-    extern "c" fn __acrt_iob_func(index: c_uint) *c.FILE;
-    extern "c" var __stdinp: *c.FILE;
-    extern "c" var stdin: *c.FILE;
-};
-fn cStdin() *c.FILE {
-    return switch (builtin.os.tag) {
-        .windows => std_streams.__acrt_iob_func(0),
-        .macos, .ios, .tvos, .watchos, .visionos => std_streams.__stdinp,
-        else => std_streams.stdin,
-    };
+// Blocking std.Io handle for stdin, plus a persistent line reader (replacing libc
+// fgets). `init_single_threaded` spawns no threads and installs no signal handlers, so
+// input reading, like output, never touches the engine's native threadpool. The reader
+// keeps a 4096-byte buffer across calls (its state must not move, so it lives in a
+// module var recovered by @fieldParentPtr); it bounds one command line -- UCI commands
+// are short, and a longer line reports error.StreamTooLong, handled as end-of-input.
+var stdin_threaded = std.Io.Threaded.init_single_threaded;
+var stdin_buffer: [4096]u8 = undefined;
+var stdin_reader: std.Io.File.Reader = undefined;
+var stdin_ready = false;
+
+fn stdinInterface() *std.Io.Reader {
+    if (!stdin_ready) {
+        stdin_reader = std.Io.File.stdin().reader(stdin_threaded.io(), &stdin_buffer);
+        stdin_ready = true;
+    }
+    return &stdin_reader.interface;
 }
 
 pub const DispatchResult = struct {
@@ -378,20 +379,19 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
 }
 
 fn readCommandLineAlloc() !?[]u8 {
-    var buffer: [4096]u8 = undefined;
-    const read_ptr = c.fgets(@ptrCast(&buffer), @intCast(buffer.len), cStdin());
-    if (read_ptr == null) {
-        return null;
-    }
+    const reader = stdinInterface();
+    // takeDelimiter returns the next line without the '\n' (and the final unterminated
+    // line before EOF, then null) -- exactly fgets' line-at-a-time behaviour. An
+    // over-long line or a read failure is treated as end-of-input, as a closed stdin was.
+    const raw = reader.takeDelimiter('\n') catch return null;
+    const line = raw orelse return null;
 
-    const line = std.mem.span(@as([*:0]u8, @ptrCast(&buffer)));
     var end = line.len;
     while (end > 0 and (line[end - 1] == '\n' or line[end - 1] == '\r')) {
         end -= 1;
     }
 
-    const owned = try std.heap.c_allocator.dupe(u8, line[0..end]);
-    return owned;
+    return try std.heap.c_allocator.dupe(u8, line[0..end]);
 }
 
 // The bench/benchmark runners live in uci_bench.zig (M21); these thin wrappers keep the
