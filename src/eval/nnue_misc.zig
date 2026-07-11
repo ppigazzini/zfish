@@ -79,3 +79,41 @@ fn appendAlignedDot(buffer: *std.ArrayList(u8), cp_value: c_int) !void {
 fn absInt(value: c_int) c_int {
     return if (value < 0) -value else value;
 }
+
+// --- tests (M22.0) --------------------------------------------------------------
+test "formatTrace: side line, bucket row, and the %c%6.2f float cells" {
+    const psqt = [_]c_int{22}; // +0.22
+    const positional = [_]c_int{-76}; // -0.76 ; total -54 -> -0.54
+    const s = formatTrace(.{
+        .side_to_move_white = 1,
+        .bucket_count = 1,
+        .correct_bucket = 0,
+        .psqt_cp = &psqt,
+        .positional_cp = &positional,
+    }).?;
+    defer std.heap.c_allocator.free(std.mem.span(s));
+    const out = std.mem.span(s);
+
+    try std.testing.expect(std.mem.indexOf(u8, out, "White to move)") != null);
+    // these pin the sign + width-6 float format (centipawns*0.01) byte-for-byte:
+    try std.testing.expect(std.mem.indexOf(u8, out, "+  0.22") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "-  0.76") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "-  0.54") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "<-- this bucket is used") != null);
+}
+
+test "formatTrace: black-to-move header" {
+    const z = [_]c_int{0};
+    const s = formatTrace(.{
+        .side_to_move_white = 0,
+        .bucket_count = 1,
+        .correct_bucket = 9, // no bucket marked
+        .psqt_cp = &z,
+        .positional_cp = &z,
+    }).?;
+    defer std.heap.c_allocator.free(std.mem.span(s));
+    const out = std.mem.span(s);
+    try std.testing.expect(std.mem.indexOf(u8, out, "Black to move)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "  0.00") != null); // zero -> space sign
+    try std.testing.expect(std.mem.indexOf(u8, out, "<-- this bucket is used") == null);
+}
