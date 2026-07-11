@@ -503,8 +503,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "network", .imp = "position_types", .to = "position_types" },
         .{ .from = "network", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "position", .imp = "network", .to = "network" },
-        .{ .from = "nnue_misc", .imp = "libc", .to = "libc" },
-        .{ .from = "evaluate", .imp = "libc", .to = "libc" },
     };
     for (module_edges) |e| mods.get(e.from).?.addImport(e.imp, mods.get(e.to).?);
     mods.get("misc").?.addImport("build_options", build_options_module);
