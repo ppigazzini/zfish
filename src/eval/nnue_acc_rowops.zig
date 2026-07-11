@@ -124,3 +124,7 @@ pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i3
         }
     }
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

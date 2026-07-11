@@ -33,3 +33,7 @@ pub fn now() i64 {
         },
     }
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

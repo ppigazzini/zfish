@@ -126,3 +126,38 @@ fn appendFloatLine(
 fn absInt(value: i64) i64 {
     return if (value < 0) -value else value;
 }
+
+// --- tests (M22.0) --------------------------------------------------------------
+test "computeValue: zeros -> 0; equal psqt/positional passes through" {
+    try std.testing.expectEqual(@as(c_int, 0), computeValue(.{
+        .psqt = 0,
+        .positional = 0,
+        .optimism = 0,
+        .material = 0,
+        .rule50_count = 0,
+        .value_tb_loss_in_max_ply = -30000,
+        .value_tb_win_in_max_ply = 30000,
+    }));
+    // psqt == positional -> zero complexity, zero optimism -> value == psqt+positional
+    try std.testing.expectEqual(@as(c_int, 200), computeValue(.{
+        .psqt = 100,
+        .positional = 100,
+        .optimism = 0,
+        .material = 0,
+        .rule50_count = 0,
+        .value_tb_loss_in_max_ply = -30000,
+        .value_tb_win_in_max_ply = 30000,
+    }));
+}
+
+test "computeValue: clamps to the tb bounds" {
+    try std.testing.expectEqual(@as(c_int, 30000 - 1), computeValue(.{
+        .psqt = 100000,
+        .positional = 100000,
+        .optimism = 0,
+        .material = 0,
+        .rule50_count = 0,
+        .value_tb_loss_in_max_ply = -30000,
+        .value_tb_win_in_max_ply = 30000,
+    }));
+}

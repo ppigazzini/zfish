@@ -648,3 +648,7 @@ const dirty_threat_pc_sq_offset: u5 = 0;
 const dirty_threatened_sq_offset: u5 = 8;
 const dirty_threatened_pc_offset: u5 = 16;
 const dirty_threat_pc_offset: u5 = 20;
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

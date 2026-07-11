@@ -62,3 +62,7 @@ comptime {
     // 120-byte limits slot (worker_off.limits..pv_idx) is contractual.
     std.debug.assert(@sizeOf(LimitsType) <= 120);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

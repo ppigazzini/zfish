@@ -395,3 +395,27 @@ pub fn reduction(
     const reduction_scale = reductions_ptr[depth_index] * reductions_ptr[move_index];
     return reduction_scale - @divTrunc(delta * 617, root_delta) + (if (!improving) @divTrunc(reduction_scale * 194, 512) else 0) + 1027;
 }
+
+// --- tests (M22.0) --------------------------------------------------------------
+test "valueToTt / valueFromTt: mid-range scores pass through unchanged" {
+    try std.testing.expectEqual(@as(c_int, 500), valueToTt(500, 7));
+    try std.testing.expectEqual(@as(c_int, -500), valueToTt(-500, 7));
+    try std.testing.expectEqual(@as(c_int, 500), valueFromTt(500, 7, 50));
+}
+
+test "toCorrectedStaticEval: correction is a >>17 add, then clamp" {
+    try std.testing.expectEqual(@as(c_int, 300), toCorrectedStaticEval(300, 0));
+    try std.testing.expectEqual(@as(c_int, 301), toCorrectedStaticEval(300, 131072)); // +1
+    try std.testing.expectEqual(@as(c_int, 300), toCorrectedStaticEval(300, 131071)); // <131072 -> +0
+}
+
+test "fillReductions: log-scaled, index 0 untouched, monotonic from 1" {
+    var r: [64]c_int = undefined;
+    r[0] = -999;
+    fillReductions(&r, 64);
+    try std.testing.expectEqual(@as(c_int, -999), r[0]); // loop starts at i=1
+    try std.testing.expectEqual(@as(c_int, 0), r[1]); // log(1) == 0
+    try std.testing.expect(r[63] > r[2]);
+    var i: usize = 2;
+    while (i < 64) : (i += 1) try std.testing.expect(r[i] >= r[i - 1]);
+}

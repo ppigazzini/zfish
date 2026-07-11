@@ -26,3 +26,7 @@ pub fn init(path_ptr: [*]const u8, path_len: usize) void {
     _ = path_ptr;
     _ = path_len;
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

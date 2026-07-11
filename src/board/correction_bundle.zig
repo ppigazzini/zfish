@@ -12,3 +12,7 @@ pub const CorrectionBundle = struct {
     nonpawn_white: i16,
     nonpawn_black: i16,
 };
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}
