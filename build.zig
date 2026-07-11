@@ -1174,6 +1174,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/support/engine_options.zig", .deps = &.{"option"} },
         .{ .path = "src/board/position_snapshot.zig", .deps = &.{"position_types"} },
         .{ .path = "src/eval/nnue_acc_layout.zig", .deps = &.{ "position_snapshot", "position_types" } },
+        .{ .path = "src/eval/nnue_acc_update.zig", .deps = &.{ "position_snapshot", "position_types", "nnue_feature", "nnue_acc_rowops", "nnue_ft", "nnue_refresh_cache" } },
         .{ .path = "src/board/worker_histories.zig", .deps = &.{"shared_history_types"} },
         .{ .path = "src/board/shared_history_types.zig", .deps = &.{"correction_bundle"} },
         .{ .path = "src/support/thread_vote.zig", .deps = &.{"graph_layout"} },
