@@ -1,5 +1,13 @@
 const std = @import("std");
 
+// ANNEX B.6: the side shared-histories map is its own state-owning leaf now.
+const engine_shared_histories = @import("engine_shared_histories.zig");
+pub const sharedHistoriesPtr = engine_shared_histories.sharedHistoriesPtr;
+pub const sharedHistoriesClear = engine_shared_histories.sharedHistoriesClear;
+pub const sharedHistoriesInsert = engine_shared_histories.sharedHistoriesInsert;
+pub const sharedHistoriesAt = engine_shared_histories.sharedHistoriesAt;
+pub const freeSharedHistories = engine_shared_histories.freeSharedHistories;
+
 // ANNEX B.6: the pending-state registry is its own state-owning leaf now.
 const engine_pending = @import("engine_pending.zig");
 pub const PendingStateStorage = engine_pending.PendingStateStorage;
@@ -467,43 +475,6 @@ pub fn resizeThreadsEngine(engine_ptr: *native_engine.NativeEngine) void {
 // bridge sites operate on that same pointer. Each element (SharedHistories: two
 // large-page DynStats arrays) is built by constructSharedHistories / freed by
 // deinitSharedHistories; the bucket storage uses the c allocator.
-var side_shared_histories: ?position_port.SharedHistoriesMap = null;
-
-fn sideSharedHistories() *position_port.SharedHistoriesMap {
-    if (side_shared_histories == null) {
-        side_shared_histories = position_port.SharedHistoriesMap.init(
-            std.heap.c_allocator,
-            position_port.constructSharedHistories,
-            position_port.deinitSharedHistories,
-        );
-    }
-    return &side_shared_histories.?;
-}
-
-pub fn sharedHistoriesPtr() *position_port.SharedHistoriesMap {
-    return sideSharedHistories();
-}
-
-pub fn sharedHistoriesClear(map: *position_port.SharedHistoriesMap) void {
-    map.clear();
-}
-
-pub fn sharedHistoriesInsert(map: *position_port.SharedHistoriesMap, numa_index: usize, size: usize) void {
-    map.tryEmplace(numa_index, size) catch @panic("OOM: native sharedHistories insert");
-}
-
-pub fn sharedHistoriesAt(map: *position_port.SharedHistoriesMap, numa_index: usize) *position_port.SharedHistories {
-    return map.at(numa_index);
-}
-
-// Free the side map (each element's large-page DynStats arrays + the bucket
-// storage) at engine teardown + reset for any re-construct (H5/valgrind).
-pub fn freeSharedHistories() void {
-    if (side_shared_histories) |*m| {
-        m.deinit();
-        side_shared_histories = null;
-    }
-}
 
 // TT lifecycle + engine setup helpers, reached through the typed
 // TranspositionTable view + the tt/state_list modules this module already imports.
