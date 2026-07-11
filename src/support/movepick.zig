@@ -1,4 +1,18 @@
 const std = @import("std");
+
+// ANNEX B.3: snapshot-query + SEE layer lives in a std-only leaf now; alias back.
+const movepick_snapshot = @import("movepick_snapshot.zig");
+const seeGeWithSnapshot = movepick_snapshot.seeGeWithSnapshot;
+const attackersTo = movepick_snapshot.attackersTo;
+const piecesColorType = movepick_snapshot.piecesColorType;
+const piecesByTypes = movepick_snapshot.piecesByTypes;
+const pieceAt = movepick_snapshot.pieceAt;
+const attacksBy = movepick_snapshot.attacksBy;
+const checkSquares = movepick_snapshot.checkSquares;
+const pawnAttackersTo = movepick_snapshot.pawnAttackersTo;
+const pawnAttacksFromSquare = movepick_snapshot.pawnAttacksFromSquare;
+const leastSignificantSquareBb = movepick_snapshot.leastSignificantSquareBb;
+const shift = movepick_snapshot.shift;
 const bitboard = @import("bitboard");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
@@ -578,101 +592,6 @@ fn seeGe(pos: *const Position, raw_move: u16, threshold: c_int) bool {
     return seeGeWithSnapshot(&snapshot, raw_move, threshold);
 }
 
-fn seeGeWithSnapshot(snapshot: *const PositionSnapshot, raw_move: u16, threshold: c_int) bool {
-    if (moveType(raw_move) != normal_move)
-        return 0 >= threshold;
-
-    const from = moveFrom(raw_move);
-    const to = moveTo(raw_move);
-    const moving_piece = pieceAt(snapshot, from);
-    const captured_piece = pieceAt(snapshot, to);
-
-    var swap = piece_values[@as(usize, captured_piece)] - threshold;
-    if (swap < 0)
-        return false;
-
-    swap = piece_values[@as(usize, moving_piece)] - swap;
-    if (swap <= 0)
-        return true;
-
-    var occupied = snapshot.pieces_all ^ squareMask(from) ^ squareMask(to);
-    var stm = snapshot.side_to_move;
-    var attackers = attackersTo(to, occupied, snapshot);
-    var result: c_int = 1;
-
-    while (true) {
-        stm = otherColor(stm);
-        attackers &= occupied;
-
-        var stm_attackers = attackers & snapshot.pieces_by_color[stm];
-        if (stm_attackers == 0)
-            break;
-
-        if ((snapshot.pinners[otherColor(stm)] & occupied) != 0) {
-            stm_attackers &= ~snapshot.blockers_for_king[stm];
-            if (stm_attackers == 0)
-                break;
-        }
-
-        result ^= 1;
-
-        var candidates = stm_attackers & snapshot.pieces_by_type[pawn];
-        if (candidates != 0) {
-            swap = piece_values[pawn] - swap;
-            if (swap < result)
-                break;
-            occupied ^= leastSignificantSquareBb(candidates);
-            attackers |= bitboard.attacks(bishop, to, occupied) & piecesByTypes(snapshot, bishop, queen);
-            continue;
-        }
-
-        candidates = stm_attackers & snapshot.pieces_by_type[knight];
-        if (candidates != 0) {
-            swap = piece_values[knight] - swap;
-            if (swap < result)
-                break;
-            occupied ^= leastSignificantSquareBb(candidates);
-            continue;
-        }
-
-        candidates = stm_attackers & snapshot.pieces_by_type[bishop];
-        if (candidates != 0) {
-            swap = piece_values[bishop] - swap;
-            if (swap < result)
-                break;
-            occupied ^= leastSignificantSquareBb(candidates);
-            attackers |= bitboard.attacks(bishop, to, occupied) & piecesByTypes(snapshot, bishop, queen);
-            continue;
-        }
-
-        candidates = stm_attackers & snapshot.pieces_by_type[rook];
-        if (candidates != 0) {
-            swap = piece_values[rook] - swap;
-            if (swap < result)
-                break;
-            occupied ^= leastSignificantSquareBb(candidates);
-            attackers |= bitboard.attacks(rook, to, occupied) & piecesByTypes(snapshot, rook, queen);
-            continue;
-        }
-
-        candidates = stm_attackers & snapshot.pieces_by_type[queen];
-        if (candidates != 0) {
-            swap = piece_values[queen] - swap;
-            occupied ^= leastSignificantSquareBb(candidates);
-            attackers |= bitboard.attacks(bishop, to, occupied) & piecesByTypes(snapshot, bishop, queen);
-            attackers |= bitboard.attacks(rook, to, occupied) & piecesByTypes(snapshot, rook, queen);
-            continue;
-        }
-
-        return if ((attackers & ~snapshot.pieces_by_color[stm]) != 0)
-            (result ^ 1) != 0
-        else
-            result != 0;
-    }
-
-    return result != 0;
-}
-
 fn loadPositionSnapshot(pos: *const Position) PositionSnapshot {
     var snapshot = std.mem.zeroes(PositionSnapshot);
     position_snapshot.fill(pos, &snapshot);
@@ -692,60 +611,6 @@ fn loadHistorySnapshot(context: *const MovePickerContext) HistorySnapshot {
         &snapshot,
     );
     return snapshot;
-}
-
-fn attackersTo(square: u8, occupied: u64, snapshot: *const PositionSnapshot) u64 {
-    return (bitboard.attacks(rook, square, occupied) & piecesByTypes(snapshot, rook, queen)) |
-        (bitboard.attacks(bishop, square, occupied) & piecesByTypes(snapshot, bishop, queen)) |
-        (pawnAttackersTo(square, white) & piecesColorType(snapshot, white, pawn)) |
-        (pawnAttackersTo(square, black) & piecesColorType(snapshot, black, pawn)) |
-        (bitboard.attacks(knight, square, occupied) & snapshot.pieces_by_type[knight]) |
-        (bitboard.attacks(king, square, occupied) & snapshot.pieces_by_type[king]);
-}
-
-fn piecesColorType(snapshot: *const PositionSnapshot, color: u8, piece_type: u8) u64 {
-    return snapshot.pieces_by_color[color] & snapshot.pieces_by_type[piece_type];
-}
-
-fn piecesByTypes(snapshot: *const PositionSnapshot, first: u8, second: u8) u64 {
-    return snapshot.pieces_by_type[first] | snapshot.pieces_by_type[second];
-}
-
-fn pieceAt(snapshot: *const PositionSnapshot, square: u8) u8 {
-    return snapshot.board[@as(usize, square)];
-}
-
-fn attacksBy(snapshot: *const PositionSnapshot, color: u8, piece_type: u8) u64 {
-    var pieces = piecesColorType(snapshot, color, piece_type);
-    var result: u64 = 0;
-
-    while (pieces != 0) {
-        const piece_square_bb = leastSignificantSquareBb(pieces);
-        const square: u8 = @intCast(@ctz(piece_square_bb));
-        pieces ^= piece_square_bb;
-
-        result |= if (piece_type == pawn)
-            pawnAttacksFromSquare(square, color)
-        else
-            bitboard.attacks(piece_type, square, snapshot.pieces_all);
-    }
-
-    return result;
-}
-
-fn checkSquares(snapshot: *const PositionSnapshot, piece_type: u8) u64 {
-    const them_king_square = snapshot.king_square[@as(usize, otherColor(snapshot.side_to_move))];
-
-    return switch (piece_type) {
-        pawn => pawnAttackersTo(them_king_square, snapshot.side_to_move),
-        knight => bitboard.attacks(knight, them_king_square, snapshot.pieces_all),
-        bishop => bitboard.attacks(bishop, them_king_square, snapshot.pieces_all),
-        rook => bitboard.attacks(rook, them_king_square, snapshot.pieces_all),
-        queen => bitboard.attacks(bishop, them_king_square, snapshot.pieces_all) |
-            bitboard.attacks(rook, them_king_square, snapshot.pieces_all),
-        king => 0,
-        else => 0,
-    };
 }
 
 fn captureStage(snapshot: *const PositionSnapshot, raw_move: u16) bool {
@@ -798,36 +663,6 @@ fn pawnHistoryScore(
     const index: usize = @intCast(snapshot.pawn_key & history_snapshot.pawn_mask);
     const row_index = index * piece_nb + @as(usize, piece);
     return history[row_index][@as(usize, square)].value;
-}
-
-fn pawnAttackersTo(square: u8, color: u8) u64 {
-    const target = squareMask(square);
-    return if (color == white)
-        shift(south_west, target) | shift(south_east, target)
-    else
-        shift(north_west, target) | shift(north_east, target);
-}
-
-fn pawnAttacksFromSquare(square: u8, color: u8) u64 {
-    const target = squareMask(square);
-    return if (color == white)
-        shift(north_west, target) | shift(north_east, target)
-    else
-        shift(south_west, target) | shift(south_east, target);
-}
-
-fn leastSignificantSquareBb(bitboard_value: u64) u64 {
-    return bitboard_value & (~bitboard_value +% 1);
-}
-
-fn shift(comptime direction: i8, bitboard_value: u64) u64 {
-    return switch (direction) {
-        north_east => (bitboard_value & ~file_h_bb) << 9,
-        north_west => (bitboard_value & ~file_a_bb) << 7,
-        south_east => (bitboard_value & ~file_h_bb) >> 7,
-        south_west => (bitboard_value & ~file_a_bb) >> 9,
-        else => unreachable,
-    };
 }
 
 fn otherColor(color: u8) u8 {
