@@ -561,3 +561,7 @@ const Prng = struct {
         return self.rand64() & self.rand64() & self.rand64();
     }
 };
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

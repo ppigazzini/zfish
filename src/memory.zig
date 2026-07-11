@@ -67,3 +67,7 @@ pub fn alignedLargePagesFree(ptr: ?*anyopaque) void {
 pub fn hasLargePages() bool {
     return builtin.os.tag == .linux;
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

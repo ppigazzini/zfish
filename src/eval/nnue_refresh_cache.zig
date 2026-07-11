@@ -93,3 +93,7 @@ pub fn setCacheEntryPieceBb(entry: *CacheEntry, piece_bb: u64) void {
     const bytes = cacheEntryBytesMut(entry);
     std.mem.writeInt(u64, bytes[cache_entry_piece_bb_offset..][0..@sizeOf(u64)], piece_bb, .little);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

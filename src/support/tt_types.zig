@@ -19,3 +19,7 @@ pub const TtCluster = struct {
     entry: [cluster_size]TtEntry,
     padding: [2]u8,
 };
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

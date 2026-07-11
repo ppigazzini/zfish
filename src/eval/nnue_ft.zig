@@ -52,3 +52,7 @@ pub fn featureTransformerThreatPsqtWeights(feature_transformer: *const FeatureTr
     const bytes: [*]const u8 = @ptrCast(feature_transformer);
     return @ptrCast(@alignCast(bytes + feature_transformer_threat_psqt_weights_offset));
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

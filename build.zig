@@ -1133,6 +1133,20 @@ pub fn build(b: *std.Build) void {
         "src/support/engine_util.zig",
         "src/time/timeman.zig",
         "src/eval/nnue_misc.zig",
+        "src/eval/evaluate.zig",
+        "src/support/search.zig",
+        "src/board/bitboard.zig",
+        "src/board/correction_bundle.zig",
+        "src/board/limits_type.zig",
+        "src/eval/nnue_acc_rowops.zig",
+        "src/eval/nnue_feature.zig",
+        "src/eval/nnue_ft.zig",
+        "src/eval/nnue_refresh_cache.zig",
+        "src/memory.zig",
+        "src/support/clock.zig",
+        "src/support/numa.zig",
+        "src/support/tablebase.zig",
+        "src/support/tt_types.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
