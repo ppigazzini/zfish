@@ -32,15 +32,15 @@ pub fn toCp(value: c_int, material: c_int) c_int {
 }
 
 // Allocated "win draw loss" permille triple (c_allocator; caller frees). null on OOM.
-pub fn wdl(value: c_int, material: c_int) ?[*:0]u8 {
+pub fn wdl(value: c_int, material: c_int) ?[:0]u8 {
     return allocWdl(value, material) catch null;
 }
 
 // Allocated UCI score text: kind 0 -> "mate N", kind 1 -> TB "cp N", else "cp N".
-pub fn formatScore(kind: u8, value: c_int, extra: c_int) ?[*:0]u8 {
+pub fn formatScore(kind: u8, value: c_int, extra: c_int) ?[:0]u8 {
     return allocScore(kind, value, extra) catch null;
 }
-fn allocScore(kind: u8, value: c_int, extra: c_int) !?[*:0]u8 {
+fn allocScore(kind: u8, value: c_int, extra: c_int) !?[:0]u8 {
     return switch (kind) {
         0 => blk: {
             const mate = @divTrunc(if (value > 0) value + 1 else value, 2);
@@ -55,25 +55,25 @@ fn allocScore(kind: u8, value: c_int, extra: c_int) !?[*:0]u8 {
     };
 }
 
-fn allocWdl(value: c_int, material: c_int) !?[*:0]u8 {
+fn allocWdl(value: c_int, material: c_int) !?[:0]u8 {
     const win = winRateModel(value, material);
     const loss = winRateModel(-value, material);
     const draw = 1000 - win - loss;
     return try allocFormatted("{d} {d} {d}", .{ win, draw, loss });
 }
 
-pub fn allocFormatted(comptime fmt: []const u8, args: anytype) !?[*:0]u8 {
+pub fn allocFormatted(comptime fmt: []const u8, args: anytype) !?[:0]u8 {
     const allocator = std.heap.c_allocator;
     const formatted = try std.fmt.allocPrint(allocator, fmt, args);
     defer allocator.free(formatted);
     return try allocCString(formatted);
 }
 
-pub fn allocCString(value: []const u8) !?[*:0]u8 {
+pub fn allocCString(value: []const u8) !?[:0]u8 {
     const allocator = std.heap.c_allocator;
     const result = try allocator.allocSentinel(u8, value.len, 0);
     @memcpy(result[0..value.len], value);
-    return result.ptr;
+    return result;
 }
 
 fn appendFormatted(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
@@ -84,7 +84,7 @@ fn appendFormatted(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: a
 }
 
 // "info depth D score S" for the no-legal-moves (mate/stalemate) case.
-pub fn formatInfoNoMoves(depth: c_int, score_text: []const u8) ?[*:0]u8 {
+pub fn formatInfoNoMoves(depth: c_int, score_text: []const u8) ?[:0]u8 {
     return allocFormatted("info depth {d} score {s}", .{ depth, score_text }) catch null;
 }
 
@@ -104,7 +104,7 @@ pub fn formatInfoFull(
     tb_hits: usize,
     time_ms: usize,
     pv: []const u8,
-) ?[*:0]u8 {
+) ?[:0]u8 {
     const ca = std.heap.c_allocator;
     var builder = std.ArrayList(u8).empty;
     defer builder.deinit(ca);
@@ -142,12 +142,12 @@ pub fn formatInfoFull(
 }
 
 // "info depth D currmove M currmovenumber N".
-pub fn formatInfoIter(depth: c_int, currmove: []const u8, currmove_number: c_int) ?[*:0]u8 {
+pub fn formatInfoIter(depth: c_int, currmove: []const u8, currmove_number: c_int) ?[:0]u8 {
     return allocFormatted("info depth {d} currmove {s} currmovenumber {d}", .{ depth, currmove, currmove_number }) catch null;
 }
 
 // "bestmove M [ponder P]".
-pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[*:0]u8 {
+pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[:0]u8 {
     if (ponder.len == 0) return allocFormatted("bestmove {s}", .{bestmove}) catch null;
     return allocFormatted("bestmove {s} ponder {s}", .{ bestmove, ponder }) catch null;
 }

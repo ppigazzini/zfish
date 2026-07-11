@@ -46,7 +46,7 @@ fn workerRootDepthOf(wl: *const graph_layout.WorkerLayout) c_int {
 }
 
 // Score text (mate/tb-cp/cp) via the score classifier + the leaf uci_wdl formatters.
-fn scoreTextAlloc(v: c_int, material: c_int) ?[*:0]u8 {
+fn scoreTextAlloc(v: c_int, material: c_int) ?[:0]u8 {
     const sc = score_port.classify(v, 31507, 31753, 32000);
     return switch (sc.kind) {
         2 => uci_wdl.formatScore(0, sc.plies, 0),
@@ -69,8 +69,8 @@ fn searchEmitInfoFull(manager: ?*graph_layout.SearchManager, worker: ?*graph_lay
     const chess960 = isChess960(root_pos);
 
     const score_c = scoreTextAlloc(v, material) orelse return;
-    defer ca.free(std.mem.span(score_c));
-    const score_text = std.mem.span(score_c);
+    defer ca.free(score_c);
+    const score_text = score_c;
 
     const bound_text: []const u8 = switch (bound_kind) {
         1 => "lowerbound",
@@ -78,13 +78,13 @@ fn searchEmitInfoFull(manager: ?*graph_layout.SearchManager, worker: ?*graph_lay
         else => "",
     };
 
-    var wdl_c: ?[*:0]u8 = null;
+    var wdl_c: ?[:0]u8 = null;
     var wdl_text: []const u8 = "";
     if (show_wdl != 0) {
         wdl_c = uci_wdl.wdl(v, material);
-        if (wdl_c) |wc| wdl_text = std.mem.span(wc);
+        if (wdl_c) |wc| wdl_text = wc;
     }
-    defer if (wdl_c) |wc| ca.free(std.mem.span(wc));
+    defer if (wdl_c) |wc| ca.free(wc);
 
     const rm = workerRootMoveAt(w, move_index);
     const pv = &graph_layout.RootMove.fromAddr(rm).pv;
@@ -105,9 +105,8 @@ fn searchEmitInfoFull(manager: ?*graph_layout.SearchManager, worker: ?*graph_lay
 
     const nps: usize = if (time_ms != 0) @intCast(nodes * 1000 / time_ms) else 0;
     const line_c = uci_wdl.formatInfoFull(depth, sel_depth, multipv, score_text, bound_text, wdl_text, show_wdl, @intCast(nodes), nps, hashfull, @intCast(tb_hits), @intCast(time_ms), pv_buf[0..pv_n]) orelse return;
-    defer ca.free(std.mem.span(line_c));
-    const line = std.mem.span(line_c);
-    uci_output.printLine(line.ptr, line.len);
+    defer ca.free(line_c);
+    uci_output.printLine(line_c.ptr, line_c.len);
 }
 
 // Checkmated/stalemated root: "info depth 0 score ..." + "bestmove (none)".
@@ -120,11 +119,10 @@ pub fn ssEmitNoMoves(worker: ?*graph_layout.WorkerLayout) void {
     const material = wdlMaterial(root_pos);
 
     const score_c = scoreTextAlloc(v, material) orelse return;
-    defer ca.free(std.mem.span(score_c));
-    const line_c = uci_wdl.formatInfoNoMoves(0, std.mem.span(score_c)) orelse return;
-    defer ca.free(std.mem.span(line_c));
-    const line = std.mem.span(line_c);
-    uci_output.printLine(line.ptr, line.len);
+    defer ca.free(score_c);
+    const line_c = uci_wdl.formatInfoNoMoves(0, score_c) orelse return;
+    defer ca.free(line_c);
+    uci_output.printLine(line_c.ptr, line_c.len);
 
     const bm = "bestmove (none)";
     uci_output.printLine(bm.ptr, bm.len);
@@ -167,9 +165,8 @@ pub fn searchCbRootOnIter(wl: *const graph_layout.WorkerLayout, depth: c_int, mo
     const currmove = uci_move_port.renderMoveText(&mbuf, move, chess960);
     const currmovenumber: c_int = move_count + @as(c_int, @intCast(wl.pv_idx));
     const line_c = uci_wdl.formatInfoIter(depth, currmove, currmovenumber) orelse return;
-    defer std.heap.c_allocator.free(std.mem.span(line_c));
-    const line = std.mem.span(line_c);
-    uci_output.printLine(line.ptr, line.len);
+    defer std.heap.c_allocator.free(line_c);
+    uci_output.printLine(line_c.ptr, line_c.len);
 }
 
 const PvContext = struct {
