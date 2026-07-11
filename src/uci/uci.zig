@@ -91,10 +91,11 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
         while (it.next()) |tok| {
             if (tok.len != 0) count += 1;
         }
-        if (count != 0) {
+        if (count != 0) sm_build: {
             // Zig-owned SearchMoveText records (M17.6 / M19.1): limits.searchmoves IS
             // the typed slice now -- no {begin,end,cap} header, no separate handle.
-            const recs = std.heap.c_allocator.alloc(graph_layout.SearchMoveText, count) catch @panic("searchmoves: alloc failed");
+            // M19.2: on OOM, degrade gracefully (search all moves) rather than aborting the game.
+            const recs = std.heap.c_allocator.alloc(graph_layout.SearchMoveText, count) catch break :sm_build;
             @memset(recs, std.mem.zeroes(graph_layout.SearchMoveText));
             var i: usize = 0;
             it = std.mem.splitScalar(u8, sm, '\n');
