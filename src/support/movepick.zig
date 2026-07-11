@@ -1,5 +1,23 @@
 const std = @import("std");
 
+// ANNEX B.3: the history-heuristic layer lives in a std-only leaf now; alias back.
+const movepick_history = @import("movepick_history.zig");
+const HistorySnapshot = movepick_history.HistorySnapshot;
+const HistoryEntry = movepick_history.HistoryEntry;
+const AtomicHistoryEntry = movepick_history.AtomicHistoryEntry;
+const MainHistoryRow = movepick_history.MainHistoryRow;
+const LowPlyHistoryRow = movepick_history.LowPlyHistoryRow;
+const CaptureHistoryRow = movepick_history.CaptureHistoryRow;
+const PieceToHistoryRow = movepick_history.PieceToHistoryRow;
+const PawnHistoryRow = movepick_history.PawnHistoryRow;
+const ContHistSlot = movepick_history.ContHistSlot;
+const fillHistorySnapshot = movepick_history.fillHistorySnapshot;
+const mainHistoryScore = movepick_history.mainHistoryScore;
+const lowPlyHistoryScore = movepick_history.lowPlyHistoryScore;
+const captureHistoryScore = movepick_history.captureHistoryScore;
+const continuationHistoryScore = movepick_history.continuationHistoryScore;
+const pawnHistoryScore = movepick_history.pawnHistoryScore;
+
 // ANNEX B.3: snapshot-query + SEE layer lives in a std-only leaf now; alias back.
 const movepick_snapshot = @import("movepick_snapshot.zig");
 const seeGeWithSnapshot = movepick_snapshot.seeGeWithSnapshot;
@@ -127,62 +145,6 @@ pub const MovePickerContext = struct {
 };
 
 const PositionSnapshot = position_snapshot.PositionSnapshot;
-
-const HistorySnapshot = struct {
-    main_base: ?[*]const MainHistoryRow,
-    low_ply_base: ?[*]const LowPlyHistoryRow,
-    capture_base: ?[*]const CaptureHistoryRow,
-    continuation_base: [6]ContHistSlot,
-    pawn_table: ?[*]const PawnHistoryRow,
-    pawn_mask: u64,
-};
-
-const HistoryEntry = struct {
-    value: i16,
-};
-
-const AtomicHistoryEntry = struct {
-    value: i16,
-};
-
-const MainHistoryRow = [1 << 16]HistoryEntry;
-const LowPlyHistoryRow = [1 << 16]HistoryEntry;
-const CaptureHistoryRow = [square_nb][piece_type_nb]HistoryEntry;
-const PieceToHistoryRow = [square_nb]HistoryEntry;
-const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
-
-// One continuation-history slot: a PieceToHistory page viewed as [piece][square].
-// The context holds a many-pointer to these slots -- the source array is [1] on the
-// qsearch path and [6] in the main search, so a bounded array type won't fit both.
-const ContHistSlot = ?[*]const PieceToHistoryRow;
-
-// History-table base pointers packed into a HistorySnapshot.
-fn fillHistorySnapshot(
-    main_history: ?[*]const MainHistoryRow,
-    low_ply_history: ?[*]const LowPlyHistoryRow,
-    capture_history: ?[*]const CaptureHistoryRow,
-    continuation_history: ?[*]const ContHistSlot,
-    shared_history: ?*const anyopaque,
-    out: *HistorySnapshot,
-) void {
-    out.main_base = main_history;
-    out.low_ply_base = low_ply_history;
-    out.capture_base = capture_history;
-    out.continuation_base = .{ null, null, null, null, null, null };
-    if (continuation_history) |ch| {
-        var slot: usize = 0;
-        while (slot < 6) : (slot += 1) out.continuation_base[slot] = ch[slot];
-    }
-    if (shared_history) |sh_ptr| {
-        const sh: [*]const u8 = @ptrCast(sh_ptr);
-        const pawn_size = @as(*const usize, @ptrCast(@alignCast(sh + 16))).*;
-        out.pawn_table = if (pawn_size != 0) @as(*const ?[*]const PawnHistoryRow, @ptrCast(@alignCast(sh + 24))).* else null;
-        out.pawn_mask = @as(*const u64, @ptrCast(@alignCast(sh + 40))).*;
-    } else {
-        out.pawn_table = null;
-        out.pawn_mask = 0;
-    }
-}
 
 pub fn initMainStage(has_checkers: bool, has_tt_move: bool, depth: c_int) c_int {
     const base_stage: c_int = if (has_checkers)
@@ -620,49 +582,6 @@ fn captureStage(snapshot: *const PositionSnapshot, raw_move: u16) bool {
 fn isCapture(snapshot: *const PositionSnapshot, raw_move: u16) bool {
     return (pieceAt(snapshot, moveTo(raw_move)) != 0 and moveType(raw_move) != castling_move) or
         moveType(raw_move) == en_passant_move;
-}
-
-fn mainHistoryScore(history_snapshot: *const HistorySnapshot, side_to_move: u8, raw_move: u16) c_int {
-    const history = history_snapshot.main_base orelse unreachable;
-    return history[@as(usize, side_to_move)][@as(usize, raw_move)].value;
-}
-
-fn lowPlyHistoryScore(history_snapshot: *const HistorySnapshot, ply: c_int, raw_move: u16) c_int {
-    const history = history_snapshot.low_ply_base orelse unreachable;
-    return history[@as(usize, @intCast(ply))][@as(usize, raw_move)].value;
-}
-
-fn captureHistoryScore(
-    history_snapshot: *const HistorySnapshot,
-    piece: u8,
-    square: u8,
-    captured_piece_type: u8,
-) c_int {
-    const history = history_snapshot.capture_base orelse unreachable;
-    return history[@as(usize, piece)][@as(usize, square)][@as(usize, captured_piece_type)].value;
-}
-
-fn continuationHistoryScore(
-    history_snapshot: *const HistorySnapshot,
-    slot: usize,
-    piece: u8,
-    square: u8,
-) c_int {
-    const history = history_snapshot.continuation_base[slot] orelse unreachable;
-    return history[@as(usize, piece)][@as(usize, square)].value;
-}
-
-fn pawnHistoryScore(
-    history_snapshot: *const HistorySnapshot,
-    snapshot: *const PositionSnapshot,
-    piece: u8,
-    square: u8,
-) c_int {
-    const history = history_snapshot.pawn_table orelse return 0;
-    // pawn history is indexed [(pawn_key & mask) * PIECE_NB + piece][square]
-    const index: usize = @intCast(snapshot.pawn_key & history_snapshot.pawn_mask);
-    const row_index = index * piece_nb + @as(usize, piece);
-    return history[row_index][@as(usize, square)].value;
 }
 
 fn otherColor(color: u8) u8 {
