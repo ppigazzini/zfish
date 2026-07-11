@@ -56,59 +56,75 @@ const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 
-const psq_feature: u8 = 0;
-const threat_feature: u8 = 1;
-const white: u8 = 0;
-const black: u8 = 1;
-const king_piece: u8 = 6;
-const pawn_piece_type: u8 = 1;
-const no_piece: u8 = 0;
-const sq_none: u8 = 64;
-const square_count: usize = 64;
-const max_stack_size: usize = 247;
-const nnue_align: usize = 64;
-const color_count: usize = 2;
-const half_dimensions: usize = 1024;
-const psqt_buckets: usize = 8;
-const acc_vec_width: usize = 32; // SIMD width, also used by transformBucket's ReLU
-const dirty_threat_capacity: usize = 96;
-const psq_index_capacity: usize = 32;
-const threat_index_capacity: usize = 128;
-const threat_dimensions: u32 = 60720;
-const psq_feature_dimensions: usize = 22528;
-
-const HalfDiff = struct {
-    pc: u8,
-    from: u8,
-    to: u8,
-    remove_sq: u8,
-    add_sq: u8,
-    remove_pc: u8,
-    add_pc: u8,
-};
-
-const DirtyThreatRaw = struct {
-    data: u32,
-};
-
-const DirtyThreatListView = struct {
-    values: [dirty_threat_capacity]DirtyThreatRaw,
-    size_: usize,
-};
-
-const ThreatDiffView = struct {
-    list: DirtyThreatListView,
-    us: u8,
-    prev_ksq: u8,
-    ksq: u8,
-};
-
-/// Opaque handle to the per-Worker accumulator stack arena (M18.4-B4). A raw
-/// 64-aligned byte buffer of accumulator_stack_size bytes (embedded in the Worker /
-/// malloc'd for the eval trace); the state/diff byte-offset accessors below
-/// reinterpret it. A distinct handle type, not a bare *anyopaque, so it can't be
-/// confused with the FT / refresh-cache handles.
-pub const AccumulatorStack = opaque {};
+// The accumulator-stack layout + accessors live in the nnue_acc_layout leaf
+// now; alias the whole foundation back so the facade + update call sites are
+// unqualified (AccumulatorStack re-exported pub for external callers).
+const layout = @import("nnue_acc_layout.zig");
+const psq_feature = layout.psq_feature;
+const threat_feature = layout.threat_feature;
+const white = layout.white;
+const black = layout.black;
+const king_piece = layout.king_piece;
+const pawn_piece_type = layout.pawn_piece_type;
+const no_piece = layout.no_piece;
+const sq_none = layout.sq_none;
+const square_count = layout.square_count;
+const max_stack_size = layout.max_stack_size;
+const nnue_align = layout.nnue_align;
+const color_count = layout.color_count;
+const half_dimensions = layout.half_dimensions;
+const psqt_buckets = layout.psqt_buckets;
+const acc_vec_width = layout.acc_vec_width;
+const dirty_threat_capacity = layout.dirty_threat_capacity;
+const psq_index_capacity = layout.psq_index_capacity;
+const threat_index_capacity = layout.threat_index_capacity;
+const threat_dimensions = layout.threat_dimensions;
+const psq_feature_dimensions = layout.psq_feature_dimensions;
+const HalfDiff = layout.HalfDiff;
+const DirtyThreatRaw = layout.DirtyThreatRaw;
+const DirtyThreatListView = layout.DirtyThreatListView;
+const ThreatDiffView = layout.ThreatDiffView;
+pub const AccumulatorStack = layout.AccumulatorStack;
+const BridgePositionSnapshot = layout.BridgePositionSnapshot;
+const accumulator_bytes = layout.accumulator_bytes;
+const computed_offset = layout.computed_offset;
+const accumulator_state_bytes = layout.accumulator_state_bytes;
+const psq_diff_offset = layout.psq_diff_offset;
+const threat_diff_offset = layout.threat_diff_offset;
+const psq_state_stride = layout.psq_state_stride;
+const threat_state_stride = layout.threat_state_stride;
+const psq_array_bytes = layout.psq_array_bytes;
+const threat_array_offset = layout.threat_array_offset;
+const threat_array_bytes = layout.threat_array_bytes;
+const stack_size_offset = layout.stack_size_offset;
+const threat_refresh_diff_offset = layout.threat_refresh_diff_offset;
+const PositionSnapshot = layout.PositionSnapshot;
+const findLastUsable = layout.findLastUsable;
+const roundUp = layout.roundUp;
+const stackBytes = layout.stackBytes;
+const stackBytesMut = layout.stackBytesMut;
+const stackSize = layout.stackSize;
+const setStackSize = layout.setStackSize;
+const stateComputed = layout.stateComputed;
+const clearComputed = layout.clearComputed;
+const stateRequiresRefresh = layout.stateRequiresRefresh;
+const stateOffset = layout.stateOffset;
+const diffOffset = layout.diffOffset;
+const stateBytesConst = layout.stateBytesConst;
+const stateBytesMut = layout.stateBytesMut;
+const positionSnapshot = layout.positionSnapshot;
+const loadBridgeSnapshot = layout.loadBridgeSnapshot;
+const stateAccumulationConst = layout.stateAccumulationConst;
+const stateAccumulationMut = layout.stateAccumulationMut;
+const statePsqtConst = layout.statePsqtConst;
+const statePsqtMut = layout.statePsqtMut;
+const diffBytesMut = layout.diffBytesMut;
+const psqDiff = layout.psqDiff;
+const threatDiff = layout.threatDiff;
+const zeroDiff = layout.zeroDiff;
+const psqRequiresRefresh = layout.psqRequiresRefresh;
+const threatRequiresRefresh = layout.threatRequiresRefresh;
+const kingPiece = layout.kingPiece;
 
 pub const StackPushOutput = struct {
     dirty_piece: *DirtyPiece,
@@ -153,26 +169,6 @@ const FullAppendResult = struct {
 // former C-ABI extern decls were removed because the by-value struct passing they
 // used is mis-marshaled on aarch64.
 // full-threats append (changed/active) call nnue_feature directly (M16.7).
-
-const BridgePositionSnapshot = position_snapshot.PositionSnapshot;
-
-const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32) + color_count * @sizeOf(bool);
-const computed_offset = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32);
-const accumulator_state_bytes = roundUp(accumulator_bytes, nnue_align);
-const psq_diff_offset = accumulator_bytes;
-const threat_diff_offset = roundUp(accumulator_bytes, @alignOf(ThreatDiffView));
-const psq_state_stride = accumulator_state_bytes;
-const threat_state_stride = roundUp(threat_diff_offset + @sizeOf(ThreatDiffView), nnue_align);
-const psq_array_bytes = psq_state_stride * max_stack_size;
-const threat_array_offset = psq_array_bytes;
-const threat_array_bytes = threat_state_stride * max_stack_size;
-const stack_size_offset = threat_array_offset + threat_array_bytes;
-const threat_refresh_diff_offset = threat_diff_offset + @sizeOf(DirtyThreatListView);
-
-const PositionSnapshot = struct {
-    pieces: [square_count]u8,
-    occupied: u64,
-};
 
 pub fn evaluate(
     stack: *AccumulatorStack,
@@ -670,158 +666,6 @@ fn applyThreatDelta(
         featureTransformerThreatPsqtWeights(feature_transformer),
     );
     stateBytesMut(threat_feature, target_index, stack)[computed_offset + perspective] = 1;
-}
-
-fn findLastUsable(feature_kind: u8, stack: *const AccumulatorStack, perspective: u8) usize {
-    const size = stackSize(stack);
-    var current = size - 1;
-
-    while (current > 0) : (current -= 1) {
-        if (stateComputed(stack, feature_kind, current, perspective))
-            return current;
-
-        if (stateRequiresRefresh(stack, feature_kind, current, perspective))
-            return current;
-    }
-
-    return 0;
-}
-
-fn roundUp(value: usize, alignment: usize) usize {
-    return ((value + alignment - 1) / alignment) * alignment;
-}
-
-fn stackBytes(stack: *const AccumulatorStack) [*]const u8 {
-    return @ptrCast(stack);
-}
-
-fn stackBytesMut(stack: *AccumulatorStack) [*]u8 {
-    return @ptrCast(stack);
-}
-
-fn stackSize(stack: *const AccumulatorStack) usize {
-    const bytes = stackBytes(stack);
-    return std.mem.readInt(usize, bytes[stack_size_offset..][0..@sizeOf(usize)], .little);
-}
-
-fn setStackSize(bytes: [*]u8, size: usize) void {
-    std.mem.writeInt(usize, bytes[stack_size_offset..][0..@sizeOf(usize)], size, .little);
-}
-
-fn stateComputed(stack: *const AccumulatorStack, feature_kind: u8, index: usize, perspective: u8) bool {
-    const bytes = stackBytes(stack);
-    return bytes[stateOffset(feature_kind, index) + computed_offset + perspective] != 0;
-}
-
-fn clearComputed(bytes: [*]u8, feature_kind: u8, index: usize) void {
-    @memset(bytes[stateOffset(feature_kind, index) + computed_offset ..][0..color_count], 0);
-}
-
-fn stateRequiresRefresh(stack: *const AccumulatorStack, feature_kind: u8, index: usize, perspective: u8) bool {
-    const bytes = stackBytes(stack);
-    return switch (feature_kind) {
-        psq_feature => psqRequiresRefresh(bytes, index, perspective),
-        threat_feature => threatRequiresRefresh(bytes, index, perspective),
-        else => unreachable,
-    };
-}
-
-fn stateOffset(feature_kind: u8, index: usize) usize {
-    return switch (feature_kind) {
-        psq_feature => index * psq_state_stride,
-        threat_feature => threat_array_offset + index * threat_state_stride,
-        else => unreachable,
-    };
-}
-
-fn diffOffset(feature_kind: u8) usize {
-    return switch (feature_kind) {
-        psq_feature => psq_diff_offset,
-        threat_feature => threat_diff_offset,
-        else => unreachable,
-    };
-}
-
-fn stateBytesConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack) [*]const u8 {
-    return stackBytes(stack) + stateOffset(feature_kind, index);
-}
-
-fn stateBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [*]u8 {
-    return stackBytesMut(stack) + stateOffset(feature_kind, index);
-}
-
-fn positionSnapshot(pos: *const Position) PositionSnapshot {
-    const bridge = loadBridgeSnapshot(pos);
-    var snapshot = PositionSnapshot{
-        .pieces = [_]u8{0} ** square_count,
-        .occupied = 0,
-    };
-
-    snapshot.occupied = bridge.pieces_all;
-    @memcpy(snapshot.pieces[0..], bridge.board[0..]);
-
-    return snapshot;
-}
-
-fn loadBridgeSnapshot(pos: *const Position) BridgePositionSnapshot {
-    var snapshot = std.mem.zeroes(BridgePositionSnapshot);
-    position_snapshot.fill(pos, &snapshot);
-    return snapshot;
-}
-
-fn stateAccumulationConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack, perspective: u8) []const i16 {
-    const offset = perspective * half_dimensions * @sizeOf(i16);
-    const ptr: [*]const i16 = @ptrCast(@alignCast(stateBytesConst(feature_kind, index, stack) + offset));
-    return ptr[0..half_dimensions];
-}
-
-fn stateAccumulationMut(feature_kind: u8, index: usize, stack: *AccumulatorStack, perspective: u8) []i16 {
-    const offset = perspective * half_dimensions * @sizeOf(i16);
-    const ptr: [*]i16 = @ptrCast(@alignCast(stateBytesMut(feature_kind, index, stack) + offset));
-    return ptr[0..half_dimensions];
-}
-
-fn statePsqtConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack, perspective: u8) []const i32 {
-    const offset = color_count * half_dimensions * @sizeOf(i16) + perspective * psqt_buckets * @sizeOf(i32);
-    const ptr: [*]const i32 = @ptrCast(@alignCast(stateBytesConst(feature_kind, index, stack) + offset));
-    return ptr[0..psqt_buckets];
-}
-
-fn statePsqtMut(feature_kind: u8, index: usize, stack: *AccumulatorStack, perspective: u8) []i32 {
-    const offset = color_count * half_dimensions * @sizeOf(i16) + perspective * psqt_buckets * @sizeOf(i32);
-    const ptr: [*]i32 = @ptrCast(@alignCast(stateBytesMut(feature_kind, index, stack) + offset));
-    return ptr[0..psqt_buckets];
-}
-
-fn diffBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [*]u8 {
-    return stateBytesMut(feature_kind, index, stack) + diffOffset(feature_kind);
-}
-
-fn psqDiff(bytes: [*]const u8) HalfDiff {
-    return @as(*const HalfDiff, @ptrCast(@alignCast(bytes + psq_diff_offset))).*;
-}
-
-fn threatDiff(bytes: [*]const u8) ThreatDiffView {
-    return @as(*const ThreatDiffView, @ptrCast(@alignCast(bytes + threat_diff_offset))).*;
-}
-
-fn zeroDiff(bytes: [*]u8, feature_kind: u8, index: usize, len: usize) void {
-    @memset(bytes[stateOffset(feature_kind, index) + diffOffset(feature_kind) ..][0..len], 0);
-}
-
-fn psqRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) bool {
-    const offset = stateOffset(psq_feature, index) + psq_diff_offset;
-    return bytes[offset] == kingPiece(perspective);
-}
-
-fn threatRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) bool {
-    const offset = stateOffset(threat_feature, index) + threat_refresh_diff_offset;
-    return perspective == bytes[offset] and
-        (((@as(i8, @bitCast(bytes[offset + 2])) & 0b100) != (@as(i8, @bitCast(bytes[offset + 1])) & 0b100)));
-}
-
-fn kingPiece(perspective: u8) u8 {
-    return king_piece + 8 * perspective;
 }
 
 test {
