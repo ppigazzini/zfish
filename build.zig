@@ -1192,6 +1192,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/board/legality.zig", .deps = &.{ "bitboard", "board_core", "movegen", "position_types" } },
         .{ .path = "src/board/search_common.zig", .deps = &.{ "board_core", "graph_layout", "position_types", "worker_histories" } },
         .{ .path = "src/support/movepick.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types" } },
+        .{ .path = "src/support/movepick_score.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types" } },
         .{ .path = "src/board/position_lifecycle.zig", .deps = &.{ "fen_parse", "graph_layout", "legality", "move_do", "position_types" } },
         .{ .path = "src/board/search_setup.zig", .deps = &.{ "graph_layout", "nnue_accumulator", "root_move", "search_ctx", "tt_types" } },
         .{ .path = "src/board/fen_parse.zig", .deps = &.{ "board_core", "legality", "move_do", "position_types", "state_setup" } },
