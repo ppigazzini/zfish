@@ -30,24 +30,33 @@ pub const threadAllocationInformation = engine_info.threadAllocationInformation;
 fn freeCString(ptr: [*:0]u8) void {
     std.heap.c_allocator.free(std.mem.span(ptr));
 }
+
+// Engine runtime control (TT resize/clear, tt-size/ponderhit/search-clear/
+// hashfull + *Engine unwrappers) lives in the engine_control leaf now;
+// re-export its surface so the C-ABI callers + staying code are unchanged.
+const engine_control = @import("engine_control.zig");
+pub const setTtSize = engine_control.setTtSize;
+pub const setTtSizeEngine = engine_control.setTtSizeEngine;
+pub const setPonderhit = engine_control.setPonderhit;
+pub const setPonderhitEngine = engine_control.setPonderhitEngine;
+pub const searchClear = engine_control.searchClear;
+pub const searchClearEngine = engine_control.searchClearEngine;
+pub const hashfullEngine = engine_control.hashfullEngine;
+pub const stop = engine_control.stop;
+pub const stopEngine = engine_control.stopEngine;
+pub const waitForSearchFinishedEngine = engine_control.waitForSearchFinishedEngine;
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
 const misc_port = @import("misc");
 const thread_port = @import("thread");
-const nnue_acc = @import("nnue_accumulator");
-const evaluate_mod = @import("evaluate");
 const graph_layout = @import("graph_layout");
-const native_hooks = @import("native_hooks");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
 const state_list = @import("state_list");
-const nnue_misc_mod = @import("nnue_misc");
 const tt_port = @import("tt");
 const numa = @import("numa");
-const uci_wdl = @import("uci_wdl");
 const uci_output = @import("uci_output");
-const movegen_port = @import("movegen");
 const native_engine = @import("native_engine");
 
 // Cast an engine handle to the native container (M16.7).
@@ -108,21 +117,10 @@ fn sharedStateDestroy(ss: *anyopaque) void {
     _ = ss; // static storage — nothing to free (lifetime is the static itself)
 }
 
-const layer_stacks: usize = 8;
-const square_count: usize = 64;
-const piece_to_char = " PNBRQK  pnbrqk";
-const white: u8 = 0;
-const black: u8 = 1;
-const white_oo: u8 = 1;
-const white_ooo: u8 = 2;
-const black_oo: u8 = 4;
-const black_ooo: u8 = 8;
-const sq_none: u8 = 64;
 const max_ply: c_int = 246;
 const value_mate: c_int = 32000;
 const value_tb: c_int = value_mate - max_ply - 1;
 const value_tb_win_in_max_ply: c_int = value_tb - max_ply;
-const value_tb_loss_in_max_ply: c_int = -value_tb_win_in_max_ply;
 
 const option_callback_none: u8 = 0;
 const option_callback_debug_log_file: u8 = 1;
@@ -132,11 +130,6 @@ const option_callback_hash: u8 = 4;
 const option_callback_clear_hash: u8 = 5;
 const option_callback_syzygy_path: u8 = 6;
 const option_callback_eval_file: u8 = 7;
-
-const option_kind_string: u8 = 0;
-const option_kind_check: u8 = 1;
-const option_kind_spin: u8 = 2;
-const option_kind_button: u8 = 3;
 
 // Single-sourced from network.zig via the "network" module (build.zig wires the
 // engine->network edge). Avoids the net-name-drift bug of two copies.
@@ -300,18 +293,6 @@ pub fn setPositionEngine(
         moves_ptr,
         move_count,
     );
-}
-
-pub fn stop(threads: *graph_layout.ThreadPool) void {
-    threads.setStop(true);
-}
-
-pub fn stopEngine(engine_ptr: *native_engine.NativeEngine) void {
-    stop(engine_ptr.threadsPtr());
-}
-
-pub fn waitForSearchFinishedEngine(engine_ptr: *native_engine.NativeEngine) void {
-    thread_port.waitThread(engine_ptr.threadsPtr(), 0);
 }
 
 // Print each non-blank line as "info string ...". Relocated from main.zig (M16.7).
@@ -478,14 +459,6 @@ pub fn resizeThreadsEngine(engine_ptr: *native_engine.NativeEngine) void {
 
 // TT lifecycle + engine setup helpers, reached through the typed
 // TranspositionTable view + the tt/state_list modules this module already imports.
-fn ttResize(tt_ptr: *graph_layout.TranspositionTable, mb: usize, threads: *graph_layout.ThreadPool) void {
-    const tp = tt_ptr;
-    tt_port.resizeState(&tp.table, &tp.cluster_count, &tp.generation8, mb, threads);
-}
-fn ttClear(tt_ptr: *graph_layout.TranspositionTable, threads: *graph_layout.ThreadPool) void {
-    const tp = tt_ptr;
-    tt_port.clearState(tp.table, tp.cluster_count, &tp.generation8, threads);
-}
 fn statesSlotReset(slot_ptr: *anyopaque) void {
     const slot: *?*state_list.StateList = @ptrCast(@alignCast(slot_ptr));
     if (slot.*) |list| {
@@ -501,40 +474,6 @@ fn setStartPosition(engine_ptr: *native_engine.NativeEngine) void {
 
 // Accumulator stack/caches lifecycle (M16.7 -- malloc'd engine-graph buffers). The refresh-cache
 // biases come from the native FT storage (network.zig), so the create path is fully engine-local.
-
-pub fn setTtSize(threads: *graph_layout.ThreadPool, tt: *graph_layout.TranspositionTable, mb: usize) void {
-    thread_port.waitThread(threads, 0);
-    ttResize(tt, mb, threads);
-}
-
-pub fn setTtSizeEngine(engine_ptr: *native_engine.NativeEngine, mb: usize) void {
-    setTtSize(engine_ptr.threadsPtr(), engine_ptr.ttPtr(), mb);
-}
-
-pub fn setPonderhit(threads: *graph_layout.ThreadPool, ponder: u8) void {
-    if (threads.mainManager()) |m| m.setPonder(ponder != 0);
-}
-
-pub fn setPonderhitEngine(engine_ptr: *native_engine.NativeEngine, ponder: u8) void {
-    setPonderhit(engine_ptr.threadsPtr(), ponder);
-}
-
-pub fn searchClear(threads: *graph_layout.ThreadPool, tt: *graph_layout.TranspositionTable, syzygy_path: []const u8) void {
-    thread_port.waitForSearchFinished(threads);
-    ttClear(tt, threads);
-    thread_port.clear(threads);
-    tablebase.init(syzygy_path.ptr, syzygy_path.len);
-}
-
-pub fn searchClearEngine(engine_ptr: *native_engine.NativeEngine) void {
-    const syzygy_ptr = option_port.dupSyzygyPath() orelse return;
-    defer freeCString(syzygy_ptr);
-    searchClear(
-        engine_ptr.threadsPtr(),
-        engine_ptr.ttPtr(),
-        std.mem.span(syzygy_ptr),
-    );
-}
 
 // `go perft N` root divide: build a scratch Position +
 // StateInfo, set the engine FEN, generate the legal root moves, run the native perft subtree
@@ -552,12 +491,6 @@ pub fn flipEngine(engine_ptr: *native_engine.NativeEngine) void {
     const flipped = std.mem.span(flipped_c);
     if (setPositionEngine(engine_ptr, flipped.ptr, flipped.len, null, 0)) |err|
         freeCString(err);
-}
-
-pub fn hashfullEngine(engine_ptr: *native_engine.NativeEngine, max_age: c_int) c_int {
-    const tp = engine_ptr.ttPtr();
-    const table = tp.table orelse return 0;
-    return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);
 }
 
 // Register one option into the native OptionsModel.
