@@ -1,7 +1,6 @@
 const std = @import("std");
 const graph_layout = @import("graph_layout");
 const native_hooks = @import("native_hooks");
-const c = @import("libc");
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
@@ -317,7 +316,7 @@ pub fn startThinking(
     }
 
     const root_fen = buildRootFen(pos) orelse return error.OutOfMemory;
-    defer c.free(@ptrCast(root_fen));
+    defer std.heap.c_allocator.free(std.mem.span(root_fen));
     const root_fen_text = std.mem.span(root_fen);
     const chess960 = loadPositionSnapshot(pos).is_chess960;
     const root_setup = try buildRootMoves(

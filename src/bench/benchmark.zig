@@ -147,13 +147,13 @@ fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: c_int) !Benchmark
     }
 
     const commands_ptr = try allocCString(commands.items);
-    errdefer c.free(@ptrCast(commands_ptr));
+    errdefer std.heap.c_allocator.free(std.mem.span(commands_ptr));
 
     const original_invocation_ptr = try allocCString(original_invocation.items);
-    errdefer c.free(@ptrCast(original_invocation_ptr));
+    errdefer std.heap.c_allocator.free(std.mem.span(original_invocation_ptr));
 
     const filled_invocation_ptr = try allocCString(filled_invocation);
-    errdefer c.free(@ptrCast(filled_invocation_ptr));
+    errdefer std.heap.c_allocator.free(std.mem.span(filled_invocation_ptr));
 
     return .{
         .tt_size = tt_size,

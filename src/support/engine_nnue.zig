@@ -36,12 +36,12 @@ pub fn printInfoStringNative(str: []const u8) void {
 
 pub fn verifyNetwork() void {
     const evalfile_ptr = option_port.dupEvalFile() orelse return;
-    defer c.free(@ptrCast(evalfile_ptr));
+    defer std.heap.c_allocator.free(std.mem.span(evalfile_ptr));
     const evalfile = std.mem.span(evalfile_ptr);
 
     const result = network_port.verify(evalfile.ptr, evalfile.len);
     if (result.message) |message_ptr| {
-        defer c.free(@ptrCast(message_ptr));
+        defer std.heap.c_allocator.free(std.mem.span(message_ptr));
         // onVerifyNetwork: interactive -> print as "info string ..."; quiet -> no-op.
         if (!uci_output.isQuiet()) printInfoStringNative(std.mem.span(message_ptr));
     }

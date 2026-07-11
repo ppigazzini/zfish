@@ -62,7 +62,7 @@ pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
     // fields, so byte-zero-then-setPosition-populate is the (existing) init contract.
     @memset(@as([*]u8, @ptrCast(p))[0..@sizeOf(position_port.Position)], 0);
     @memset(@as([*]u8, @ptrCast(st))[0..@sizeOf(position_port.StateInfo)], 0);
-    if (position_port.setPosition(p, fen_text.ptr, fen_text.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.c.free(msg);
+    if (position_port.setPosition(p, fen_text.ptr, fen_text.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.heap.c_allocator.free(std.mem.span(msg));
 
     var moves: [256]u16 = undefined;
     const count = movegen_port.generateLegal(p, &moves);
@@ -88,7 +88,7 @@ pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
         uci_output.printLine(out.ptr, out.len);
     }
 
-    std.c.free(@ptrCast(fen_ptr));
+    std.heap.c_allocator.free(std.mem.span(fen_ptr));
 
     var nbuf: [64]u8 = undefined;
     const nout = std.fmt.bufPrint(&nbuf, "\nNodes searched: {d}\n", .{nodes}) catch unreachable;

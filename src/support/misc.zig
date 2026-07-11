@@ -348,7 +348,7 @@ fn takeOwnedString(pointer: [*:0]u8) ![]u8 {
     const allocator = std.heap.c_allocator;
     const owned = try allocator.alloc(u8, slice.len);
     @memcpy(owned, slice);
-    c.free(@ptrCast(pointer));
+    std.heap.c_allocator.free(std.mem.span(pointer));
     return owned;
 }
 

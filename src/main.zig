@@ -1,5 +1,4 @@
 const std = @import("std");
-const c = @import("libc");
 
 const engine_port = @import("engine");
 const memory_port = @import("memory");
@@ -48,7 +47,7 @@ pub fn main(init: std.process.Init) !void {
     const argc = argv.len;
 
     const info = misc_port.engineInfoText(0) orelse return error.OutOfMemory;
-    defer c.free(@ptrCast(info));
+    defer std.heap.c_allocator.free(std.mem.span(info));
 
     const info_line = std.mem.span(info);
     uci_output.printLine(info_line.ptr, info_line.len);
