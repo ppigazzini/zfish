@@ -51,3 +51,26 @@ pub fn asciiLower(byte: u8) u8 {
 pub fn isSpaceByte(byte: u8) bool {
     return byte == ' ' or byte == '\t' or byte == '\n' or byte == '\r' or byte == 0x0b or byte == 0x0c;
 }
+
+// --- tests (M22.0) --------------------------------------------------------------
+test "trimAsciiWhitespace strips leading/trailing ws, preserves interior" {
+    try std.testing.expectEqualStrings("hi", trimAsciiWhitespace("  \t hi \n "));
+    try std.testing.expectEqualStrings("", trimAsciiWhitespace("   \t\r\n"));
+    try std.testing.expectEqualStrings("a b", trimAsciiWhitespace("a b"));
+    try std.testing.expectEqualStrings("x", trimAsciiWhitespace("x"));
+}
+
+test "asciiLower / isSpaceByte" {
+    try std.testing.expectEqual(@as(u8, 'a'), asciiLower('A'));
+    try std.testing.expectEqual(@as(u8, 'z'), asciiLower('Z'));
+    try std.testing.expectEqual(@as(u8, '5'), asciiLower('5')); // non-alpha unchanged
+    try std.testing.expect(isSpaceByte(' ') and isSpaceByte('\t') and isSpaceByte('\n') and isSpaceByte('\r'));
+    try std.testing.expect(!isSpaceByte('x') and !isSpaceByte('0'));
+}
+
+test "allocCString: NUL-terminated exact copy" {
+    const s = (try allocCString("abc")).?;
+    defer std.heap.c_allocator.free(std.mem.span(s));
+    try std.testing.expectEqualStrings("abc", std.mem.span(s));
+    try std.testing.expectEqual(@as(u8, 0), s[3]);
+}

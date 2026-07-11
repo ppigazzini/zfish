@@ -67,3 +67,39 @@ pub fn appendCheckers(buffer: *std.ArrayList(u8), checkers: u64) !void {
         try buffer.append(std.heap.c_allocator, ' ');
     }
 }
+
+// --- tests (M22.0) --------------------------------------------------------------
+// These pin the byte-exactness of the formatters that replaced C snprintf
+// (%016llX / %4d) -- a regression here would drift the eval-trace goldens.
+const ally = std.heap.c_allocator;
+
+test "appendHexKey: 16-digit uppercase zero-padded (== C %016llX)" {
+    var buf = std.ArrayList(u8).empty;
+    defer buf.deinit(ally);
+    try appendHexKey(&buf, 0xDEADBEEF);
+    try std.testing.expectEqualStrings("00000000DEADBEEF", buf.items);
+    buf.clearRetainingCapacity();
+    try appendHexKey(&buf, 0xFFFFFFFFFFFFFFFF);
+    try std.testing.expectEqualStrings("FFFFFFFFFFFFFFFF", buf.items);
+}
+
+test "appendPaddedInt: width-4 right-aligned, no forced sign (== C %4d)" {
+    var buf = std.ArrayList(u8).empty;
+    defer buf.deinit(ally);
+    try appendPaddedInt(&buf, 5);
+    try std.testing.expectEqualStrings("   5", buf.items);
+    buf.clearRetainingCapacity();
+    try appendPaddedInt(&buf, -5);
+    try std.testing.expectEqualStrings("  -5", buf.items);
+    buf.clearRetainingCapacity();
+    try appendPaddedInt(&buf, 12345); // overflows the field, not truncated
+    try std.testing.expectEqualStrings("12345", buf.items);
+}
+
+test "appendCheckers: renders occupied squares as algebraic + space" {
+    var buf = std.ArrayList(u8).empty;
+    defer buf.deinit(ally);
+    // a1 (bit 0) and h8 (bit 63)
+    try appendCheckers(&buf, (@as(u64, 1) << 0) | (@as(u64, 1) << 63));
+    try std.testing.expectEqualStrings("a1 h8 ", buf.items);
+}
