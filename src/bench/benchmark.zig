@@ -239,34 +239,17 @@ fn allocCString(value: []const u8) ![*:0]u8 {
 }
 
 fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    const c_path = try allocCString(path);
-    defer c.free(@ptrCast(c_path));
-
-    const file = c.fopen(c_path, "rb") orelse return error.FileOpenFailed;
-    defer _ = c.fclose(file);
-
-    if (c.fseek(file, 0, c.SEEK_END) != 0) {
-        return error.FileOpenFailed;
-    }
-
-    const file_size = c.ftell(file);
-    if (file_size < 0) {
-        return error.FileOpenFailed;
-    }
-
-    if (c.fseek(file, 0, c.SEEK_SET) != 0) {
-        return error.FileOpenFailed;
-    }
-
-    const buffer = try allocator.alloc(u8, @intCast(file_size));
-    errdefer allocator.free(buffer);
-
-    const bytes_read = c.fread(buffer.ptr, 1, buffer.len, file);
-    if (bytes_read != buffer.len and c.ferror(file) != 0) {
-        return error.FileOpenFailed;
-    }
-
-    return buffer;
+    // Idiomatic-Zig whole-file read, replacing the libc fopen/fseek/ftell/fread/fclose
+    // dance. `init_single_threaded` is a BLOCKING std.Io handle: it spawns no threads and
+    // installs no signal handlers (`have_signal_handler = false`), so this startup read has
+    // zero interaction with the engine's own threadpool. Non-OOM failures collapse to the
+    // caller's existing FileOpenFailed, keeping the error set {FileOpenFailed, OutOfMemory}.
+    var threaded = std.Io.Threaded.init_single_threaded;
+    const io = threaded.io();
+    return std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .unlimited) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.FileOpenFailed,
+    };
 }
 
 fn getCorrectedTime(ply: c_int) f64 {
