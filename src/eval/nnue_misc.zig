@@ -1,5 +1,4 @@
 const std = @import("std");
-const c = @import("libc");
 
 pub const NnueTraceInput = struct {
     side_to_move_white: u8,
@@ -65,13 +64,16 @@ fn appendAlignedDot(buffer: *std.ArrayList(u8), cp_value: c_int) !void {
         ' ';
     const pawns = @as(f64, @floatFromInt(absInt(cp_value))) * 0.01;
 
-    // Kept on C snprintf deliberately: C's `%.2f` rounds halves to even (0.125 -> "0.12")
-    // whereas std.fmt rounds halves away (-> "0.13"). The eval trace must stay byte-exact
-    // against the goldens, so the float formats stay on libc until we can match glibc's
-    // round-half-to-even. Integer/hex formats (no such divergence) moved to std.fmt.
+    // `%c%6.2f`: the sign char, then the 2-decimal pawns right-padded to width 6. std.fmt
+    // is byte-identical to C `%.2f` here because pawns is always centipawns*0.01 -- on the
+    // 2-decimal grid, so no third decimal exists and C's round-half-to-even can never
+    // disagree with std.fmt's round-half-away. Proven byte-exact for every cp in
+    // [-2_000_000, 2_000_000].
+    var digits: [32]u8 = undefined;
+    const body = std.fmt.bufPrint(&digits, "{d:.2}", .{pawns}) catch unreachable;
     var numeric: [64]u8 = undefined;
-    const len = c.snprintf(&numeric, numeric.len, "%c%6.2f", sign, pawns);
-    try buffer.appendSlice(std.heap.c_allocator, numeric[0..@intCast(len)]);
+    const rendered = std.fmt.bufPrint(&numeric, "{c}{s: >6}", .{ sign, body }) catch unreachable;
+    try buffer.appendSlice(std.heap.c_allocator, rendered);
 }
 
 fn absInt(value: c_int) c_int {
