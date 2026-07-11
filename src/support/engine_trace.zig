@@ -111,29 +111,33 @@ pub const NnueTraceInput = struct {
 // ======================================================================== //
 // Trace / visualize / snapshot functions, moved verbatim from engine.zig.    //
 // ======================================================================== //
+// M19.1/M19.3: static allocation (TigerBeetle discipline). These arenas are only used by the
+// cold `d`/`eval` UCI trace commands -- single-threaded, non-reentrant (one command at a time
+// from the UCI loop), and their sizes are comptime constants -- so a module-static, 64-aligned
+// buffer replaces the raw std.c.malloc/free entirely: no alloc, no free, no OOM, deterministic.
+var trace_stack_buf: [graph_layout.accumulator_stack_size]u8 align(64) = undefined;
+var trace_caches_buf: [graph_layout.accumulator_caches_size]u8 align(64) = undefined;
+
 fn accumulatorStackCreate() ?*nnue_acc.AccumulatorStack {
-    const buf: *nnue_acc.AccumulatorStack = @ptrCast(std.c.malloc(graph_layout.accumulator_stack_size) orelse return null);
-    @memset(@as([*]u8, @ptrCast(buf))[0..graph_layout.accumulator_stack_size], 0);
+    const buf: *nnue_acc.AccumulatorStack = @ptrCast(&trace_stack_buf);
+    @memset(trace_stack_buf[0..], 0);
     nnue_acc.stackReset(buf);
     return buf;
 }
 fn accumulatorStackDestroy(stack: ?*nnue_acc.AccumulatorStack) void {
-    if (stack) |buf| std.c.free(buf);
+    _ = stack; // static buffer -- nothing to free
 }
 // `new AccumulatorCaches(network)` / delete, ported native: the C++ ctor clears every cache
 // entry from the network FT biases; clearRefreshCache does exactly that over the caches block
 // from the native FT biases (the loaded net). Relocated from main.zig (M16.7).
 pub fn accumulatorCachesCreate() ?*nnue_acc.RefreshCache {
-    const buf: *nnue_acc.RefreshCache = @ptrCast(std.c.malloc(graph_layout.accumulator_caches_size) orelse return null);
-    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse {
-        std.c.free(buf);
-        return null;
-    }));
+    const buf: *nnue_acc.RefreshCache = @ptrCast(&trace_caches_buf);
+    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return null));
     nnue_acc.clearRefreshCache(buf, biases);
     return buf;
 }
 fn accumulatorCachesDestroy(caches: ?*nnue_acc.RefreshCache) void {
-    if (caches) |buf| std.c.free(buf);
+    _ = caches; // static buffer -- nothing to free
 }
 
 pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
