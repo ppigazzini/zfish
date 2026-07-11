@@ -1,5 +1,29 @@
 const std = @import("std");
 
+// M21.1: the pure bitboard-math helpers live in a std-only leaf now; alias them
+// back (Zig top-level decls are order-independent, so callers above are unaffected).
+const nnue_feature_bb = @import("nnue_feature_bb.zig");
+const makePiece = nnue_feature_bb.makePiece;
+const constexprPopcount = nnue_feature_bb.constexprPopcount;
+const typeOf = nnue_feature_bb.typeOf;
+const colorOf = nnue_feature_bb.colorOf;
+const shift = nnue_feature_bb.shift;
+const pawnPushOrAttacks = nnue_feature_bb.pawnPushOrAttacks;
+const safeDestination = nnue_feature_bb.safeDestination;
+const attacksBb = nnue_feature_bb.attacksBb;
+const piecesOfExact = nnue_feature_bb.piecesOfExact;
+const piecesOfType = nnue_feature_bb.piecesOfType;
+const occupiedFromPieces = nnue_feature_bb.occupiedFromPieces;
+const pawnSinglePush = nnue_feature_bb.pawnSinglePush;
+const popLsb = nnue_feature_bb.popLsb;
+const slidingAttack = nnue_feature_bb.slidingAttack;
+const knightAttack = nnue_feature_bb.knightAttack;
+const kingAttack = nnue_feature_bb.kingAttack;
+const pseudoAttacks = nnue_feature_bb.pseudoAttacks;
+const squareBb = nnue_feature_bb.squareBb;
+const makePieceIndicesType = nnue_feature_bb.makePieceIndicesType;
+const makePieceIndicesPawn = nnue_feature_bb.makePieceIndicesPawn;
+
 comptime {
     @setEvalBranchQuota(200000);
 }
@@ -257,196 +281,6 @@ fn decodeThreat(raw: u32) DecodedThreat {
         .to_sq = @intCast((raw >> dirty_threatened_sq_offset) & 0xff),
         .from_sq = @intCast((raw >> dirty_threat_pc_sq_offset) & 0xff),
     };
-}
-
-fn makePiece(color: u8, piece_type: u8) u8 {
-    return @intCast((color << 3) + piece_type);
-}
-
-fn constexprPopcount(bitboard: u64) u8 {
-    return @intCast(@popCount(bitboard));
-}
-
-fn typeOf(piece: u8) u8 {
-    return piece & 7;
-}
-
-fn colorOf(piece: u8) u8 {
-    return piece >> 3;
-}
-
-fn shift(dir: i8, bitboard: u64) u64 {
-    return switch (dir) {
-        north => bitboard << 8,
-        south => bitboard >> 8,
-        east => (bitboard & ~file_h_bb) << 1,
-        west => (bitboard & ~file_a_bb) >> 1,
-        north_east => (bitboard & ~file_h_bb) << 9,
-        north_west => (bitboard & ~file_a_bb) << 7,
-        south_east => (bitboard & ~file_h_bb) >> 7,
-        south_west => (bitboard & ~file_a_bb) >> 9,
-        else => 0,
-    };
-}
-
-fn pawnPushOrAttacks(color: u8, square: usize) u64 {
-    const one = squareBb(square);
-    return if (color == white)
-        shift(north, one) | shift(north_west, one) | shift(north_east, one)
-    else
-        shift(south, one) | shift(south_west, one) | shift(south_east, one);
-}
-
-fn safeDestination(square: usize, step: i8) u64 {
-    const target = @as(i32, @intCast(square)) + step;
-    if (target < 0 or target >= 64) {
-        return 0;
-    }
-    const from_file = square % 8;
-    const to_file: usize = @intCast(@mod(target, 8));
-    const diff = if (from_file > to_file) from_file - to_file else to_file - from_file;
-    if (diff > 2) {
-        return 0;
-    }
-    return squareBb(@intCast(target));
-}
-
-fn attacksBb(piece_type: u8, square: usize, occupied: u64) u64 {
-    return switch (piece_type) {
-        knight_piece_type => knightAttack(square),
-        bishop_piece_type => slidingAttack(bishop_piece_type, square, occupied),
-        rook_piece_type => slidingAttack(rook_piece_type, square, occupied),
-        queen_piece_type => slidingAttack(queen_piece_type, square, occupied),
-        else => 0,
-    };
-}
-
-fn piecesOfExact(pieces: []const u8, wanted: u8) u64 {
-    var bitboard: u64 = 0;
-    var square: usize = 0;
-    while (square < pieces.len) : (square += 1) {
-        if (pieces[square] == wanted) {
-            bitboard |= squareBb(square);
-        }
-    }
-    return bitboard;
-}
-
-fn piecesOfType(pieces: []const u8, wanted_type: u8) u64 {
-    var bitboard: u64 = 0;
-    var square: usize = 0;
-    while (square < pieces.len) : (square += 1) {
-        const piece = pieces[square];
-        if (piece != no_piece and typeOf(piece) == wanted_type) {
-            bitboard |= squareBb(square);
-        }
-    }
-    return bitboard;
-}
-
-fn occupiedFromPieces(pieces: []const u8) u64 {
-    var bitboard: u64 = 0;
-    var square: usize = 0;
-    while (square < pieces.len) : (square += 1) {
-        if (pieces[square] != no_piece) {
-            bitboard |= squareBb(square);
-        }
-    }
-    return bitboard;
-}
-
-fn pawnSinglePush(color: u8, bitboard: u64) u64 {
-    return if (color == white)
-        shift(north, bitboard)
-    else
-        shift(south, bitboard);
-}
-
-fn popLsb(bitboard: *u64) usize {
-    const square: usize = @intCast(@ctz(bitboard.*));
-    bitboard.* &= bitboard.* - 1;
-    return square;
-}
-
-fn slidingAttack(piece_type: u8, square: usize, occupied: u64) u64 {
-    var attacks: u64 = 0;
-    const dirs = switch (piece_type) {
-        bishop_piece_type => bishop_dirs[0..],
-        rook_piece_type => rook_dirs[0..],
-        queen_piece_type => queen_dirs[0..],
-        else => &[_]i8{},
-    };
-    for (dirs) |dir| {
-        var current = square;
-        while (true) {
-            const dest = safeDestination(current, dir);
-            if (dest == 0) break;
-            attacks |= dest;
-            current = @ctz(dest);
-            if ((occupied & dest) != 0) break;
-        }
-    }
-    return attacks;
-}
-
-fn knightAttack(square: usize) u64 {
-    var bitboard: u64 = 0;
-    for (knight_steps) |step| {
-        bitboard |= safeDestination(square, step);
-    }
-    return bitboard;
-}
-
-fn kingAttack(square: usize) u64 {
-    var bitboard: u64 = 0;
-    for (king_steps) |step| {
-        bitboard |= safeDestination(square, step);
-    }
-    return bitboard;
-}
-
-fn pseudoAttacks(piece_type: u8, square: usize) u64 {
-    return switch (piece_type) {
-        knight_piece_type => knightAttack(square),
-        bishop_piece_type => slidingAttack(bishop_piece_type, square, 0),
-        rook_piece_type => slidingAttack(rook_piece_type, square, 0),
-        queen_piece_type => slidingAttack(queen_piece_type, square, 0),
-        king_piece_type => kingAttack(square),
-        else => 0,
-    };
-}
-
-fn squareBb(square: usize) u64 {
-    return @as(u64, 1) << @as(u6, @intCast(square));
-}
-
-fn makePieceIndicesType(comptime piece_type: u8) [64][64]u8 {
-    @setEvalBranchQuota(200000);
-    var out = std.mem.zeroes([64][64]u8);
-    var from: usize = 0;
-    while (from < 64) : (from += 1) {
-        const attacks = pseudoAttacks(piece_type, from);
-        var to: usize = 0;
-        while (to < 64) : (to += 1) {
-            out[from][to] = constexprPopcount(((squareBb(to) - 1) & attacks));
-        }
-    }
-    return out;
-}
-
-fn makePieceIndicesPawn(comptime piece: u8) [64][64]u8 {
-    @setEvalBranchQuota(200000);
-    var out = std.mem.zeroes([64][64]u8);
-    const color = colorOf(piece);
-    var from: usize = 0;
-    while (from < 64) : (from += 1) {
-        const attacks = pawnPushOrAttacks(color, from);
-        var to: usize = 0;
-        while (to < 64) : (to += 1) {
-            out[from][to] = constexprPopcount(((squareBb(to) - 1) & attacks));
-        }
-    }
-    return out;
 }
 
 fn indexLut2Array() [16][64][64]u8 {
