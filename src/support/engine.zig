@@ -1,5 +1,14 @@
 const std = @import("std");
 
+// ANNEX B.6: the info-string builders live in a leaf now; re-export for uci + core.
+const engine_info = @import("engine_info.zig");
+pub const numaConfigStringEngine = engine_info.numaConfigStringEngine;
+pub const numaConfigInformationEngine = engine_info.numaConfigInformationEngine;
+pub const threadBindingInformationEngine = engine_info.threadBindingInformationEngine;
+pub const threadAllocationInformationEngine = engine_info.threadAllocationInformationEngine;
+pub const threadBindingInformation = engine_info.threadBindingInformation;
+pub const threadAllocationInformation = engine_info.threadAllocationInformation;
+
 // Free a c_allocator-allocated NUL-terminated string through the Allocator
 // interface (M-MEM.B), exact for these tightly-sized sentinel allocations.
 fn freeCString(ptr: [*:0]u8) void {
@@ -577,35 +586,6 @@ pub fn searchClearEngine(engine_ptr: *native_engine.NativeEngine) void {
     );
 }
 
-pub fn numaConfigStringEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
-    _ = engine_ptr;
-    const config_ptr = numa.configString() orelse return null;
-    defer freeCString(config_ptr);
-    return allocMessage("{s}", .{std.mem.span(config_ptr)});
-}
-
-pub fn numaConfigInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
-    _ = engine_ptr;
-    const config_ptr = numa.configString() orelse return null;
-    defer freeCString(config_ptr);
-    const config = std.mem.span(config_ptr);
-    return formatNumaInfo(config.ptr, config.len);
-}
-
-pub fn threadBindingInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
-    return threadBindingInformation(
-        engine_ptr.numaContextPtr(),
-        engine_ptr.threadsPtr(),
-    );
-}
-
-pub fn threadAllocationInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
-    return threadAllocationInformation(
-        engine_ptr.numaContextPtr(),
-        engine_ptr.threadsPtr(),
-    );
-}
-
 fn ensurePendingStateStorage(states_slot: *anyopaque) ?*PendingStateStorage {
     const slot_key = @intFromPtr(states_slot);
 
@@ -678,53 +658,6 @@ pub fn hashfullEngine(engine_ptr: *native_engine.NativeEngine, max_age: c_int) c
     const tp = engine_ptr.ttPtr();
     const table = tp.table orelse return 0;
     return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);
-}
-
-pub fn threadBindingInformation(
-    numa_context: *const anyopaque,
-    threads: *graph_layout.ThreadPool,
-) ?[*:0]u8 {
-    const bound_count = threads.boundCount();
-    if (bound_count == 0)
-        return allocMessage("", .{});
-
-    const allocator = std.heap.c_allocator;
-    const node_count = numa.contextNodeCount(numa_context);
-
-    const counts = allocator.alloc(usize, node_count) catch return null;
-    defer allocator.free(counts);
-    @memset(counts, 0);
-
-    var index: usize = 0;
-    while (index < bound_count) : (index += 1) {
-        const node = threads.boundAt(index);
-        if (node < node_count)
-            counts[node] += 1;
-    }
-
-    const pairs = allocator.alloc(CountPair, node_count) catch return null;
-    defer allocator.free(pairs);
-
-    index = 0;
-    while (index < node_count) : (index += 1) {
-        pairs[index] = .{
-            .current = counts[index],
-            .total = numa.contextCpusInNode(numa_context, index),
-        };
-    }
-
-    return formatThreadBinding(pairs.ptr, pairs.len);
-}
-
-pub fn threadAllocationInformation(
-    numa_context: *const anyopaque,
-    threads: *graph_layout.ThreadPool,
-) ?[*:0]u8 {
-    const binding_ptr = threadBindingInformation(numa_context, threads) orelse return null;
-    defer freeCString(binding_ptr);
-
-    const binding = std.mem.span(binding_ptr);
-    return formatThreadAllocation(threads.numThreads(), binding.ptr, binding.len);
 }
 
 // Register one option into the native OptionsModel.
