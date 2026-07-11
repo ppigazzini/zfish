@@ -6,9 +6,8 @@
 // object it points at, so member teardown is explicit and ordered here.
 //
 // Members:
-//   numa_context     malloc(1) handle (single node; never dereferenced)
+//   numa_context     static-byte-address handle (single node; never dereferenced)
 //   states           native StateList (the fallback root list)
-//   options          malloc(1) handle (never dereferenced; values live in the OptionsModel)
 //   threads          value-initialized ThreadPool buffer (native Threads vector)
 //   network          native single-node NNUE holder
 //   update_context   inline native UpdateContext slot
@@ -25,14 +24,16 @@ const state_list_port = @import("state_list"); // native StateList (states crack
 const network_port = @import("network");
 const position_types = @import("position_types");
 
-// ---- the member heap allocators -------
-// The trivial raw-heap members (numa_context + options are 1-byte handles never dereferenced;
-// threads is a value-initialized ThreadPool buffer whose threads vector is native-managed and
-// whose ~ThreadPool is a no-op after native teardown) are allocated with std.c.malloc/calloc,
-// so the alloc/free pairing stays within one libc allocator (valgrind-clean).
+// ---- the member allocators -------
+// numa_context is a never-dereferenced non-null handle -> a module-static byte address (M19.1,
+// no alloc/free). threads is a typed ThreadPool created through the Allocator interface (M19).
 // graph_layout.thread_pool_size (48) is the ThreadPool buffer size.
+// numa_context is a single-node, never-dereferenced handle -- a distinct non-null pointer
+// identity for the C-ABI, not a real allocation. Use the address of a module-static byte
+// (TigerBeetle: no alloc, no free) instead of malloc(1)/free (M19.1).
+var numa_ctx_placeholder: u8 = 0;
 fn memberNumaContextNew() ?*anyopaque {
-    return std.c.malloc(1);
+    return @ptrCast(&numa_ctx_placeholder);
 }
 fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
     // M19: a typed, default-initialized ThreadPool via the Allocator interface. @sizeOf ==
@@ -43,9 +44,6 @@ fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
     const tp = std.heap.c_allocator.create(graph_layout.ThreadPool) catch return null;
     tp.* = .{};
     return tp;
-}
-fn memberHandleFree(p: ?*anyopaque) void {
-    std.c.free(p);
 }
 // Trigger the native NNUE load into the Zig-owned storage. M20.1: there is no engine
 // `network` member any more -- the worker network resolver / eval / verify read the
@@ -224,8 +222,7 @@ pub fn destructMembers(buf: *anyopaque) void {
     // threads was allocator.create'd (M19) -- free it through the same interface.
     if (e.threads) |t| std.heap.c_allocator.destroy(t);
     e.threads = null;
-    memberHandleFree(e.numa_context);
-    e.numa_context = null;
+    e.numa_context = null; // static placeholder -- nothing to free (M19.1)
     if (e.binary_directory) |bd| std.heap.c_allocator.free(std.mem.span(bd));
     e.binary_directory = null;
 }
