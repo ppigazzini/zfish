@@ -54,9 +54,10 @@ pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
     // keeps the libc backing, so lifetimes are valgrind-identical) + defer cleanup +
     // typed create (no @ptrCast, no @memset). @sizeOf == the pinned slot size.
     const allocator = std.heap.c_allocator;
-    const p = allocator.create(position_port.Position) catch @panic("perft: position alloc");
+    // M19.2: `go perft` is a debug command -- on OOM report 0 nodes rather than aborting.
+    const p = allocator.create(position_port.Position) catch return 0;
     defer allocator.destroy(p);
-    const st = allocator.create(position_port.StateInfo) catch @panic("perft: state alloc");
+    const st = allocator.create(position_port.StateInfo) catch return 0;
     defer allocator.destroy(st);
     // Zero via @memset (not std.mem.zeroes): Position/StateInfo carry non-null pointer
     // fields, so byte-zero-then-setPosition-populate is the (existing) init contract.
