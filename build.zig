@@ -1192,6 +1192,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/board/search_setup.zig", .deps = &.{ "graph_layout", "nnue_accumulator", "root_move", "search_ctx", "tt_types" } },
         .{ .path = "src/board/fen_parse.zig", .deps = &.{ "board_core", "legality", "move_do", "position_types", "state_setup" } },
         .{ .path = "src/board/search_ctx.zig", .deps = &.{ "graph_layout", "nnue_accumulator", "position_types", "root_move", "tt_types" } },
+        .{ .path = "src/board/search_control.zig", .deps = &.{ "clock", "search_ctx", "search_types" } },
         .{ .path = "src/board/repetition.zig", .deps = &.{ "bitboard", "board_core", "movegen", "position_types", "zobrist" } },
         .{ .path = "src/board/state_setup.zig", .deps = &.{ "bitboard", "board_core", "legality", "position_types", "zobrist" } },
         .{ .path = "src/graph_layout.zig", .deps = &.{ "limits_type", "position_types", "root_move", "state_list", "tt_types", "worker_histories" } },
