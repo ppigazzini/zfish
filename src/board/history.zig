@@ -265,3 +265,7 @@ pub fn updateCorrectionHistory(
         statsUpdate(&cc4[idx], @divTrunc(bonus * 68, 128), correction_history_limit);
     }
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

@@ -484,3 +484,7 @@ pub fn putPiece(pos: *Position, pc: u8, s: u8) void {
     pos.piece_count[pc] += 1;
     pos.piece_count[(pc >> 3) << 3] += 1; // make_piece(color, ALL_PIECES)
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

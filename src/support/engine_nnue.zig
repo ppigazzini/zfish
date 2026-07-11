@@ -66,3 +66,7 @@ pub fn saveNetworkEngine(filename_opt: ?[]const u8) void {
     const filename = filename_opt orelse "";
     _ = network_port.save(has_filename, filename.ptr, filename.len);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

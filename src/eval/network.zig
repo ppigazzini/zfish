@@ -738,3 +738,7 @@ fn allocMessage(comptime fmt: []const u8, args: anytype) ?[*:0]u8 {
     @memcpy(owned[0..rendered.len], rendered);
     return owned.ptr;
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

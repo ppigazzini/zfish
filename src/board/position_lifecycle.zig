@@ -48,3 +48,7 @@ pub fn destroy(pos: ?*Position) void {
 pub fn setPositionState(pos_ptr: *Position, fen_ptr: [*]const u8, fen_len: usize, chess960_enabled: u8, state_ptr: *StateInfo) ?[*:0]u8 {
     return setPosition(pos_ptr, fen_ptr, fen_len, chess960_enabled, state_ptr, graph_layout.position_size, graph_layout.state_info_size);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

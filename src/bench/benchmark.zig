@@ -232,3 +232,7 @@ fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
 fn getCorrectedTime(ply: c_int) f64 {
     return 50000.0 / (@as(f64, @floatFromInt(ply)) + 15.0);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

@@ -81,3 +81,7 @@ pub fn hasRepeated(pos: *const Position) bool {
     }
     return false;
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

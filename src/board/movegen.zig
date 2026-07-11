@@ -429,3 +429,7 @@ fn pawnAttacksFromSquare(square: u8, color: u8) u64 {
     else
         shift(south_west, bb) | shift(south_east, bb);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

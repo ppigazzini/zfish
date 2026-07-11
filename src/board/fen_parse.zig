@@ -247,3 +247,7 @@ fn allocCString(value: []const u8) ![*:0]u8 {
     @memcpy(result[0..value.len], value);
     return result.ptr;
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

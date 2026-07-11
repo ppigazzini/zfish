@@ -237,3 +237,7 @@ pub fn sizeofEngine() usize {
 pub fn alignofEngine() usize {
     return @alignOf(NativeEngine);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

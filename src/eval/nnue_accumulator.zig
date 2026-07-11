@@ -823,3 +823,7 @@ fn threatRequiresRefresh(bytes: [*]const u8, index: usize, perspective: u8) bool
 fn kingPiece(perspective: u8) u8 {
     return king_piece + 8 * perspective;
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

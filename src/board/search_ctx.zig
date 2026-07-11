@@ -127,3 +127,7 @@ pub const QCtx = struct {
     best_move_changes: *u64,
     time_state: SearchTimeState,
 };
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

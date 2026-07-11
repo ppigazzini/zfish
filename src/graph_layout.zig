@@ -416,3 +416,7 @@ pub fn verifyLayouts() void {
     // bench/parity failure, and upstream-parity re-pins them against pristine
     // upstream on a resync.
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

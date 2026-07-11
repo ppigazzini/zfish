@@ -50,3 +50,7 @@ pub inline fn captVal(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) c_
 pub inline fn captEntry(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) *i16 {
     return &w.capture_history[@as(usize, pc) * 512 + @as(usize, to) * 8 + captured_type];
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

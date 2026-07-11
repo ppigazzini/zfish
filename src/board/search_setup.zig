@@ -99,3 +99,7 @@ pub fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?[*]tt_types.TtCluste
         .time_state = time_state,
     };
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}
