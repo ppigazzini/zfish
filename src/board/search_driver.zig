@@ -193,9 +193,7 @@ pub const verifySharedHistories = shared_history.verifySharedHistories;
 // resolves mainHistory[us][move], lowPlyHistory[ply][move], and the pawn entry
 // itself (no per-call base pointers).
 
-pub fn isShuffling(pos_ptr: *const Position, ss_ptr: *const SearchStack, move: u16) bool {
-    const pos = pos_ptr;
-    const ss = ss_ptr;
+pub fn isShuffling(pos: *const Position, ss: *const SearchStack, move: u16) bool {
     if (captureStage(pos, move) or pos.st.rule50 < 10) return false;
     if (pos.st.plies_from_null < 6 or ss.ply < 20) return false;
     const ss2: *const SearchStack = @ptrFromInt(@intFromPtr(ss) - 2 * @sizeOf(SearchStack));
