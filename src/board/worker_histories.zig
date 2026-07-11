@@ -44,3 +44,7 @@ pub const WorkerHistories = struct {
 // Zig's choice); the constructor + clear path address it through the typed field now,
 // this offset survives only for the worker_native_construct address cross-check test.
 pub const worker_shared_history_off = @offsetOf(WorkerHistories, "shared_history");
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

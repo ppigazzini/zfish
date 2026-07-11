@@ -100,3 +100,7 @@ pub fn addButtonOption(name: []const u8, callback_kind: u8) void {
         callback_kind,
     );
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

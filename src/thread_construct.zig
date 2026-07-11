@@ -51,3 +51,7 @@ pub fn verifyThreadGraph(pool: *const graph_layout.ThreadPool, requested: usize,
         if (graph_layout.Thread.fromAddr(thread).worker == null) fail("Thread[i].worker (LargePagePtr) is null");
     }
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

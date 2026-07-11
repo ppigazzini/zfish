@@ -130,3 +130,17 @@ fn moveType(raw_move: u16) u16 {
 fn promotionType(raw_move: u16) u8 {
     return @intCast(((raw_move >> 12) & 0x3) + knight);
 }
+
+// --- tests (M22.0) --------------------------------------------------------------
+test "renderMoveText: normal move and promotion" {
+    var buf: [5]u8 = undefined;
+    const e2: u16 = 12; // rank 1 (0-based), file e -> 1*8+4
+    const e4: u16 = 28;
+    try std.testing.expectEqualStrings("e2e4", renderMoveText(&buf, (e2 << 6) | e4, false));
+
+    const e7: u16 = 52;
+    const e8: u16 = 60;
+    const promo_queen: u16 = 3; // queen - knight, encoded in bits 12..13
+    const m: u16 = (1 << 14) | (promo_queen << 12) | (e7 << 6) | e8; // promotion_move
+    try std.testing.expectEqualStrings("e7e8q", renderMoveText(&buf, m, false));
+}

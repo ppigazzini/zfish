@@ -61,3 +61,7 @@ pub fn formatThreadAllocation(
         .{ thread_count, if (thread_count > 1) "threads" else "thread", binding },
     );
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

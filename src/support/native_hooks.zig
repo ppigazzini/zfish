@@ -86,3 +86,7 @@ pub var verify_thread_graph: *const fn (pool: *const graph_layout.ThreadPool, re
             hookPanic("verify_thread_graph");
         }
     }.stub;
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}

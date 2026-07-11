@@ -54,3 +54,7 @@ pub inline fn fill(pos: *const position_types.Position, out: *PositionSnapshot) 
 pub inline fn moveIsLegal(pos: *const position_types.Position, raw_move: u16) bool {
     return move_is_legal_fn(pos, raw_move);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}
