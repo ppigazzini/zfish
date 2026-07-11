@@ -132,7 +132,6 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         if (alpha >= beta) return alpha;
     }
 
-    var pv: PVMoves = undefined;
     var st: StateInfo = undefined;
 
     // Step 1. Initialize node.
@@ -140,7 +139,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     const prior_capture = pos.st.captured_piece != 0;
     const us = pos.side_to_move;
     ss.move_count = 0;
-    var best_value: c_int = -q_value_inf;
+    const best_value: c_int = -q_value_inf;
     const max_value: c_int = q_value_inf;
 
     ss.follow_pv = root_node or (ss1.follow_pv and inLastIterPv(ctx, ss.ply - 1, ss1.current_move));
@@ -163,7 +162,6 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     }
 
     const prev_sq: c_int = if (moveIsOk(ss1.current_move)) @intCast(moveTo(ss1.current_move)) else @as(c_int, sq_none);
-    var best_move: u16 = 0;
     const prior_reduction = ss1.reduction;
     ss1.reduction = 0;
     ss.stat_score = 0;
@@ -351,267 +349,36 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     if ((tt_bound & q_bound_lower) != 0 and tt_depth >= depth - 4 and tt_value >= probcut_beta2 and
         !qIsDecisive(beta) and qIsValid(tt_value) and !qIsDecisive(tt_value)) return probcut_beta2;
 
-    // contHist[6] = {(ss-1)..(ss-6)}.continuation_history.
-    var cont_hist = [6]?*const worker_histories.PieceToHistory{
-        ss1.continuation_history,          ssSub(ss, 2).continuation_history,
-        ssSub(ss, 3).continuation_history, ssSub(ss, 4).continuation_history,
-        ssSub(ss, 5).continuation_history, ssSub(ss, 6).continuation_history,
-    };
-
-    var mp_moves: [256]movepick.SortEntry = undefined;
-    var mp_state = movepick.MovePickerState{
-        .tt_move_raw = tt_move,
-        .stage = movepick.initMainStage(pos.st.checkers_bb != 0, tt_move != 0 and pseudoLegal(pos_ptr, tt_move), depth),
-        .threshold = 0,
+    return @import("search_back.zig").runBack(.{
+        .ctx = ctx,
+        .pos_ptr = pos_ptr,
+        .ss_ptr = ss_ptr,
+        .pos = pos,
+        .ss = ss,
+        .ss1 = ss1,
+        .w = w,
+        .us = us,
+        .alpha = alpha,
+        .beta = beta,
         .depth = depth,
-        .skip_quiets = 0,
-        .cur = 0,
-        .end_cur = 0,
-        .end_bad_captures = 0,
-        .end_captures = 0,
-        .end_generated = 0,
-        .moves = &mp_moves,
-    };
-    const mp_ctx = movepick.MovePickerContext{
-        .pos = pos_ptr,
-        .main_history = @ptrCast(&w.main_history),
-        .low_ply_history = @ptrCast(&w.low_ply_history),
-        .capture_history = @ptrCast(&w.capture_history),
-        .continuation_history = @ptrCast(&cont_hist),
-        .shared_history = w.shared_history,
-        .ply = ss.ply,
-    };
-
-    var value: c_int = best_value;
-    var move_count: c_int = 0;
-    var quiets_searched: [32]u16 = undefined;
-    var n_quiets: usize = 0;
-    var captures_searched: [32]u16 = undefined;
-    var n_captures: usize = 0;
-
-    // Step 13. Move loop.
-    while (true) {
-        const move = movepick.nextMove(&mp_state, &mp_ctx);
-        if (move == 0) break;
-        if (move == excluded_move) continue;
-        if (!legal(pos_ptr, move)) continue;
-        if (root_node and !rootInList(ctx, move)) continue;
-
-        move_count += 1;
-        ss.move_count = move_count;
-
-        if (root_node and ctx.nodes.* > 10_000_000)
-            searchCbRootOnIter(ctx.worker, depth, move, move_count);
-
-        if (pv_node) ssAdd(ss, 1).pv = null;
-
-        var extension: c_int = 0;
-        const capture = captureStage(pos, move);
-        const moved_piece = pos.board[moveFrom(move)];
-        const to = moveTo(move);
-        const gc = givesCheck(pos_ptr, move);
-
-        var new_depth = depth - 1;
-        const delta = beta - alpha;
-        var r = reductionAcc(ctx, improving, depth, move_count, delta);
-        if (ss.tt_pv) r += 1006;
-
-        // Step 14. Shallow-depth pruning.
-        if (!root_node and pos.st.non_pawn_material[us] != 0 and !qIsLoss(best_value)) {
-            if (move_count >= search.moveCountLimit(depth, improving)) mp_state.skip_quiets = 1;
-            var lmr_depth = new_depth - @divTrunc(r, 1024);
-            if (capture or gc) {
-                const captured = pos.board[to];
-                const capt_hist = captVal(w, moved_piece, to, captured & 7);
-                if (!gc and lmr_depth < 7) {
-                    const fv = search.captureFutilityValue(ss.static_eval, lmr_depth, q_piece_value[captured], capt_hist);
-                    if (fv <= alpha) continue;
-                }
-                const margin = search.captureSeeMargin(depth, capt_hist);
-                if ((alpha >= q_value_draw or pos.st.non_pawn_material[us] != q_piece_value[moved_piece]) and !seeGe(pos_ptr, move, -margin)) continue;
-            } else if (!ss.follow_pv or !pv_node) {
-                const d_index: usize = @intCast(@min(depth, @as(c_int, lmr_divisor.len)) - 1);
-                var history = contVal(cont_hist[0], moved_piece, to) + contVal(cont_hist[1], moved_piece, to) +
-                    pawnEntryRow(sharedOf(w), pos)[@as(usize, moved_piece) * 64 + to];
-                if (history < search.historyPruneThreshold(depth)) continue;
-                history += @divTrunc(64 * @as(c_int, w.main_history[@as(usize, us) * hist_uint16 + move]), 32);
-                lmr_depth += @divTrunc(history, lmr_divisor[d_index]);
-                const fv = search.quietFutilityValue(ss.static_eval, best_move == 0, lmr_depth, ss.static_eval > alpha);
-                if (!ss.in_check and lmr_depth < 12 and fv <= alpha) {
-                    if (best_value <= fv and !qIsDecisive(best_value) and !qIsWin(fv)) best_value = fv;
-                    continue;
-                }
-                if (lmr_depth < 0) lmr_depth = 0;
-                if (!seeGe(pos_ptr, move, -search.quietSeeMargin(lmr_depth))) continue;
-            }
-        }
-
-        // Step 15. Extensions (singular).
-        if (!root_node and move == tt_move and excluded_move == 0 and depth >= 6 + @as(c_int, @intFromBool(ss.tt_pv)) and
-            qIsValid(tt_value) and !qIsDecisive(tt_value) and (tt_bound & q_bound_lower) != 0 and
-            tt_depth >= depth - 3 and !isShuffling(pos_ptr, ss_ptr, move))
-        {
-            const singular_beta = search.singularBeta(tt_value, ss.tt_pv and !pv_node, depth);
-            const singular_depth = @divTrunc(new_depth, 2);
-            ss.excluded_move = move;
-            value = searchImpl(ctx, pos_ptr, ss_ptr, singular_beta - 1, singular_beta, singular_depth, cut_node, false, false);
-            ss.excluded_move = 0;
-            if (value < singular_beta) {
-                const ply_gt_root = ss.ply > ctx.root_depth.*;
-                const double_margin = search.singularDoubleMargin(pv_node, !tt_capture, correction_value, w.tt_move_history, ply_gt_root);
-                const triple_margin = search.singularTripleMargin(pv_node, !tt_capture, ss.tt_pv, correction_value, ply_gt_root);
-                extension = 1 + @as(c_int, @intFromBool(value < singular_beta - double_margin)) + @as(c_int, @intFromBool(value < singular_beta - triple_margin));
-                depth += 1;
-            } else if (value >= beta and !qIsDecisive(value)) {
-                ttMoveHistoryUpdate(w, search.ttMoveHistoryDepthBonus(depth));
-                return value;
-            } else if (tt_value >= beta) {
-                extension = -3;
-            } else if (cut_node) {
-                extension = -2;
-            }
-        }
-
-        const node_count: u64 = if (root_node) ctx.nodes.* else 0;
-
-        // Step 16. Make the move.
-        doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(gc), ss_ptr);
-        new_depth += extension;
-
-        if (ss.tt_pv)
-            r -= search.lmrTtpvReduction(pv_node, tt_value > alpha, tt_depth >= depth, cut_node);
-        r += 714;
-        r -= move_count * 62;
-        r -= search.lmrCorrReduction(correction_value);
-        if (cut_node) r += 3995 + 1059 * @as(c_int, @intFromBool(tt_move == 0));
-        if (ssAdd(ss, 1).cutoff_cnt > 1) {
-            r += 236 + 1079 * @as(c_int, @intFromBool(ssAdd(ss, 1).cutoff_cnt > 2)) + 1143 * @as(c_int, @intFromBool(all_node));
-        } else if (move == tt_move) {
-            r = @max(@as(c_int, 0), r - 2016); // upstream 3c858c19e: simplify ttMove reduction
-        }
-        if (tt_capture) r += 1039;
-
-        if (capture)
-            ss.stat_score = search.captureStatScore(q_piece_value[pos.st.captured_piece], captVal(w, moved_piece, to, pos.st.captured_piece & 7))
-        else
-            ss.stat_score = search.quietStatScore(w.main_history[@as(usize, us) * hist_uint16 + move], contVal(cont_hist[0], moved_piece, to), contVal(cont_hist[1], moved_piece, to));
-
-        r -= search.lmrStatScoreReduction(ss.stat_score);
-        if (all_node) r += search.lmrAllNodeScale(r, depth);
-
-        // Step 17/18. LMR + full-depth search.
-        if (depth >= 2 and move_count > 1) {
-            const d = @max(@as(c_int, 1), @min(new_depth - @divTrunc(r, 1024), new_depth + 2)) + @as(c_int, @intFromBool(pv_node));
-            ss.reduction = new_depth - d;
-            value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -(alpha + 1), -alpha, d, true, false, false);
-            ss.reduction = 0;
-            if (value > alpha) {
-                const do_deeper = d < new_depth and value > best_value + 52;
-                const do_shallower = value < best_value + 9;
-                new_depth += @as(c_int, @intFromBool(do_deeper)) - @as(c_int, @intFromBool(do_shallower));
-                if (new_depth > d)
-                    value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -(alpha + 1), -alpha, new_depth, !cut_node, false, false);
-                updateContinuationHistories(ss, moved_piece, to, 1415);
-            }
-        } else if (!pv_node or move_count > 1) {
-            if (tt_move == 0) r += 1085;
-            value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -(alpha + 1), -alpha, new_depth - @as(c_int, @intFromBool(r > 5039)) - @as(c_int, @intFromBool(r > 5223 and new_depth > 2)), !cut_node, false, false);
-        }
-
-        if (pv_node and (move_count == 1 or value > alpha)) {
-            ssAdd(ss, 1).pv = &pv;
-            pvClear(&pv);
-            if (move == tt_move and ((qIsValid(tt_value) and qIsDecisive(tt_value) and tt_depth > 0) or tt_depth > 1))
-                new_depth = @max(new_depth, 1);
-            value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -beta, -alpha, new_depth, false, true, false);
-        }
-
-        // Step 19. Undo move.
-        undoMoveAcc(ctx, pos_ptr, move);
-
-        // Step 20. Check for a new best move.
-        if (searchStopped(ctx)) return q_value_draw;
-
-        if (root_node) {
-            // (ss+1)->pv is only valid (non-null) when this move ran a PV search,
-            // i.e. move_count == 1 or value > alpha; otherwise it is ignored.
-            const cpv: ?*const PVMoves = if (move_count == 1 or value > alpha) ssAdd(ss, 1).pv.? else null;
-            rootUpdate(ctx, move, value, ctx.nodes.* - node_count, move_count, alpha, beta, cpv);
-        }
-
-        const av = if (value < 0) -value else value;
-        const inc: c_int = @intFromBool(value == best_value and ss.ply + 2 >= ctx.root_depth.* and (@as(c_int, @intCast(ctx.nodes.* & 14)) == 0) and !qIsWin(av + 1));
-        if (value + inc > best_value) {
-            best_value = value;
-            if (value + inc > alpha) {
-                best_move = move;
-                // (ss+1)->pv is only set (1913) when this move ran a PV re-search;
-                // if a rare best-move update fires without one it stays null, and
-                // pvUpdate takes the child PV as optional (null -> PV is just the
-                // move). Force-unwrapping it here was a latent null-deref (silent
-                // under ReleaseFast, panics under ReleaseSafe/Debug).
-                if (pv_node and !root_node) {
-                    const child_pv = ssAdd(ss, 1).pv;
-                    pvUpdate(ss.pv.?, move, child_pv);
-                }
-                if (value >= beta) {
-                    ss.cutoff_cnt += @intFromBool(extension < 2 or pv_node);
-                    break;
-                }
-                if (depth > 2 and depth < 13 and !qIsDecisive(value)) depth -= 2;
-                alpha = value;
-            }
-        }
-
-        if (move != best_move and move_count <= 32) {
-            if (capture) {
-                captures_searched[n_captures] = move;
-                n_captures += 1;
-            } else {
-                quiets_searched[n_quiets] = move;
-                n_quiets += 1;
-            }
-        }
-    }
-
-    // Step 21. Mate / stalemate / fail-high adjust.
-    if (best_value >= beta and !qIsDecisive(best_value) and !qIsDecisive(alpha))
-        best_value = @divTrunc(best_value * depth + beta, depth + 1);
-
-    if (move_count == 0) {
-        best_value = if (excluded_move != 0) alpha else if (ss.in_check) qMatedIn(ss.ply) else q_value_draw;
-    } else if (best_move != 0) {
-        updateAllStats(ctx.worker, pos_ptr, ss_ptr, best_move, prev_sq, &quiets_searched, n_quiets, &captures_searched, n_captures, depth, tt_move, @intFromBool(pv_node));
-        if (!pv_node) ttMoveHistoryUpdate(w, search.ttMoveHistoryMatchBonus(best_move == tt_move));
-    } else if (!prior_capture and prev_sq != @as(c_int, sq_none)) {
-        const psq: u8 = @intCast(prev_sq);
-        const bonus_scale = search.priorBonusScale(ss1.stat_score, depth, ss1.move_count > 8, !ss.in_check and best_value <= ss.static_eval - 103, !ss1.in_check and best_value <= -ss1.static_eval - 78);
-        const scaled_bonus = search.priorScaledBonusBase(depth) * bonus_scale;
-        updateContinuationHistories(ss1, pos.board[psq], psq, search.priorConthistScale(scaled_bonus));
-        statsUpdate(&w.main_history[@as(usize, us ^ 1) * hist_uint16 + ss1.current_move], search.priorMainhistScale(scaled_bonus), 7183);
-        if ((pos.board[psq] & 7) != pawn_pt and moveTypeOf(ss1.current_move) != q_mt_promotion) {
-            const row = pawnEntryRow(sharedOf(w), pos);
-            statsUpdate(&row[@as(usize, pos.board[psq]) * 64 + psq], search.priorPawnhistScale(scaled_bonus), 8192);
-        }
-    } else if (prior_capture and prev_sq != @as(c_int, sq_none)) {
-        const psq: u8 = @intCast(prev_sq);
-        statsUpdate(captEntry(w, pos.board[psq], psq, pos.st.captured_piece & 7), 901, 10692);
-    }
-
-    if (pv_node) best_value = @min(best_value, max_value);
-
-    if (best_value <= alpha) ss.tt_pv = ss.tt_pv or ss1.tt_pv;
-
-    if (excluded_move == 0 and !(root_node and ctx.pv_idx.* != 0)) {
-        const bound: u8 = if (best_value >= beta) q_bound_lower else if (pv_node and best_move != 0) q_bound_exact else q_bound_upper;
-        const wdepth: c_int = if (move_count != 0) depth else @min(q_max_ply - 1, depth + 6);
-        tt.entrySave(writer, pos_key, search.valueToTt(best_value, ss.ply), @intFromBool(ss.tt_pv), bound, wdepth, q_depth_none, best_move, unadjusted_static_eval, ctx.generation);
-    }
-
-    // Adjust correction history.
-    if (!ss.in_check and !(best_move != 0 and posCapture(pos, best_move)) and (best_value > ss.static_eval) == (best_move != 0)) {
-        updateCorrectionHistory(ctx.worker, pos_ptr, ss_ptr, search.correctionHistoryBonus(best_value - ss.static_eval, depth, best_move != 0));
-    }
-
-    return best_value;
+        .best_value = best_value,
+        .excluded_move = excluded_move,
+        .tt_move = tt_move,
+        .tt_value = tt_value,
+        .tt_depth = tt_depth,
+        .tt_bound = tt_bound,
+        .tt_capture = tt_capture,
+        .correction_value = correction_value,
+        .cut_node = cut_node,
+        .pv_node = pv_node,
+        .root_node = root_node,
+        .all_node = all_node,
+        .improving = improving,
+        .unadjusted_static_eval = unadjusted_static_eval,
+        .writer = writer,
+        .pos_key = pos_key,
+        .max_value = max_value,
+        .prev_sq = prev_sq,
+        .prior_capture = prior_capture,
+    });
 }
