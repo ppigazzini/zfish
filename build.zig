@@ -1113,6 +1113,7 @@ pub fn build(b: *std.Build) void {
     fuzz_targets_test.root_module.addImport("position", mods.get("position").?);
     fuzz_targets_test.root_module.addImport("movegen", mods.get("movegen").?);
     fuzz_targets_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    fuzz_targets_test.root_module.addImport("position_snapshot", mods.get("position_snapshot").?);
     const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
     fuzz_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
 
