@@ -1,6 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const c = @import("libc");
 
 const benchmark_port = @import("benchmark");
 const misc_port = @import("misc");
@@ -139,9 +138,9 @@ pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) D
         },
         .uci => {
             const info_ptr = misc_port.engineInfoText(1) orelse return .{ .should_quit = 0 };
-            defer c.free(@ptrCast(info_ptr));
+            defer freeMaybeCString(info_ptr);
             const options_ptr = option_port.renderOptions() orelse return .{ .should_quit = 0 };
-            defer c.free(@ptrCast(options_ptr));
+            defer freeMaybeCString(options_ptr);
 
             std.debug.print(
                 "id name {s}\n{s}\nuciok\n",
@@ -183,19 +182,19 @@ pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) D
         },
         .visualize => {
             const text_ptr = engine_mod.visualizeEngine(engine) orelse return .{ .should_quit = 0 };
-            defer c.free(@ptrCast(text_ptr));
+            defer freeMaybeCString(text_ptr);
             putsLine(text_ptr);
             return .{ .should_quit = 0 };
         },
         .eval => {
             const text_ptr = engine_mod.traceEvalEngine(engine) orelse return .{ .should_quit = 0 };
-            defer c.free(@ptrCast(text_ptr));
+            defer freeMaybeCString(text_ptr);
             std.debug.print("\n{s}\n", .{std.mem.span(text_ptr)});
             return .{ .should_quit = 0 };
         },
         .compiler => {
             const compiler_ptr = misc_port.compilerInfoText() orelse return .{ .should_quit = 0 };
-            defer c.free(@ptrCast(compiler_ptr));
+            defer freeMaybeCString(compiler_ptr);
             putsLine(compiler_ptr);
             return .{ .should_quit = 0 };
         },
@@ -208,13 +207,13 @@ pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) D
         },
         .help => {
             const help_ptr = helpText() orelse return .{ .should_quit = 0 };
-            defer c.free(@ptrCast(help_ptr));
+            defer freeMaybeCString(help_ptr);
             putsLine(help_ptr);
             return .{ .should_quit = 0 };
         },
         .unknown => {
             const unknown_ptr = formatUnknownCommand(trimmed) orelse return .{ .should_quit = 0 };
-            defer c.free(@ptrCast(unknown_ptr));
+            defer freeMaybeCString(unknown_ptr);
             putsLine(unknown_ptr);
             return .{ .should_quit = 0 };
         },
@@ -284,9 +283,9 @@ fn applyPosition(engine: *native_engine.NativeEngine, trimmed: []const u8) void 
         move_views.items.len,
     );
     if (err) |err_ptr| {
-        defer c.free(@ptrCast(err_ptr));
+        defer freeMaybeCString(err_ptr);
         const critical = formatCriticalError("position", std.mem.span(err_ptr)) orelse return;
-        defer c.free(@ptrCast(critical));
+        defer freeMaybeCString(critical);
         putsLine(critical);
     }
 }
@@ -298,12 +297,12 @@ fn applyGo(engine: *native_engine.NativeEngine, trimmed: []const u8) void {
     const engine_ptr = engine;
 
     if (engine_mod.numaConfigInformationEngine(engine_ptr)) |numa_info_ptr| {
-        defer c.free(@ptrCast(numa_info_ptr));
+        defer freeMaybeCString(numa_info_ptr);
         emitInfoString(std.mem.span(numa_info_ptr));
     }
 
     if (engine_mod.threadAllocationInformationEngine(engine_ptr)) |thread_info_ptr| {
-        defer c.free(@ptrCast(thread_info_ptr));
+        defer freeMaybeCString(thread_info_ptr);
         emitInfoString(std.mem.span(thread_info_ptr));
     }
 
@@ -325,7 +324,7 @@ fn putsLine(ptr: [*:0]const u8) void {
 
 fn emitInfoString(text: []const u8) void {
     const rendered = formatInfoString(text) orelse return;
-    defer c.free(@ptrCast(rendered));
+    defer freeMaybeCString(rendered);
     putsLine(rendered);
 }
 
