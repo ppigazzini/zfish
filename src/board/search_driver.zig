@@ -209,38 +209,33 @@ pub fn isShuffling(pos_ptr: *const Position, ss_ptr: *const SearchStack, move: u
 // (tt.probeTable/entrySave), MovePicker (movepick.nextMove), position
 // predicates, and search-formula helpers directly. All history/correction
 // tables are read from the Worker + SharedHistories mirrors.
-const q_value_draw: c_int = 0;
-const q_value_none: c_int = 32002;
-const q_value_inf: c_int = 32001;
-const q_value_mate: c_int = 32000;
-const q_max_ply: c_int = 246;
-const q_value_mate_in_max: c_int = q_value_mate - q_max_ply; // 31754
-const q_value_tb: c_int = q_value_mate_in_max - 1; // 31753
-const q_value_tb_win: c_int = q_value_tb - q_max_ply; // 31507
-const q_depth_qs: c_int = 0;
-const q_depth_unsearched: c_int = -2;
-const q_depth_none: c_int = -3;
-const q_bound_upper: u8 = 1;
-const q_bound_lower: u8 = 2;
-const q_mt_promotion: u16 = 1 << 14;
-
-const q_piece_value = [16]c_int{ 0, 208, 781, 825, 1276, 2538, 0, 0, 0, 208, 781, 825, 1276, 2538, 0, 0 };
-
-inline fn qIsValid(v: c_int) bool {
-    return v != q_value_none;
-}
-inline fn qIsWin(v: c_int) bool {
-    return v >= q_value_tb_win;
-}
-inline fn qIsLoss(v: c_int) bool {
-    return v <= -q_value_tb_win;
-}
-inline fn qIsDecisive(v: c_int) bool {
-    return qIsWin(v) or qIsLoss(v);
-}
-inline fn qMatedIn(ply: c_int) c_int {
-    return -q_value_mate + ply;
-}
+// The search value model (score sentinels, mate arithmetic, bound/depth enums,
+// predicates) lives in the search_values leaf now; alias back with the short
+// names the two search bodies already use.
+const sv = @import("search_values.zig");
+const q_value_draw = sv.value_draw;
+const q_value_none = sv.value_none;
+const q_value_inf = sv.value_inf;
+const q_value_mate = sv.value_mate;
+const q_max_ply = sv.max_ply;
+const q_value_mate_in_max = sv.value_mate_in_max;
+const q_value_tb = sv.value_tb;
+const q_value_tb_win = sv.value_tb_win;
+const q_depth_qs = sv.depth_qs;
+const q_depth_unsearched = sv.depth_unsearched;
+const q_depth_none = sv.depth_none;
+const q_bound_none = sv.bound_none;
+const q_bound_upper = sv.bound_upper;
+const q_bound_lower = sv.bound_lower;
+const q_bound_exact = sv.bound_exact;
+const q_mt_promotion = sv.mt_promotion;
+const q_piece_value = sv.piece_value;
+const qIsValid = sv.isValid;
+const qIsWin = sv.isWin;
+const qIsLoss = sv.isLoss;
+const qIsDecisive = sv.isDecisive;
+const qMatedIn = sv.matedIn;
+const qMateIn = sv.mateIn;
 
 pub const PVMoves = search_types.PVMoves;
 pub const RootMove = search_types.RootMove;
@@ -778,13 +773,8 @@ inline fn inLastIterPv(ctx: *const QCtx, ply_minus_1: c_int, move: u16) bool {
 // reductions table / rootDelta / nmpMinPly / selDepth are read through the stable
 // pointers worker_state hands the search.)
 
-const q_bound_none: u8 = 0;
-const q_bound_exact: u8 = 3;
 const lmr_divisor = [16]c_int{ 3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782, 2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599 };
 
-inline fn qMateIn(ply: c_int) c_int {
-    return q_value_mate - ply;
-}
 // pos.capture(m): occupied target (non-castling) or en passant; excludes pure promotions.
 inline fn posCapture(pos: *const Position, m: u16) bool {
     const t = moveTypeOf(m);
