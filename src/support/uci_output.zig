@@ -25,12 +25,24 @@ fn io() std.Io {
     return io_threaded.io();
 }
 
-// The stdout sink. A module-level var so the concurrency test can redirect it to a
-// capture file; in production it is the process stdout. When a log file is open,
+// The stdout sink. `null` means the process stdout, resolved lazily on first use: on
+// Windows `std.Io.File.stdout()` is a runtime PEB query (not comptime-evaluable), so it
+// must NOT be a container-level comptime initializer -- an eager `= std.Io.File.stdout()`
+// compiles on Linux/macOS (fd 1 is comptime) but breaks the Windows build. A module-level
+// var so the concurrency test can redirect it to a capture file. When a log file is open,
 // printLine tees each line to it as well.
-var out_file: std.Io.File = std.Io.File.stdout();
+var out_file: ?std.Io.File = null;
 var log_file: ?std.Io.File = null;
 var write_mutex: std.Io.Mutex = .init;
+
+// Resolve the stdout sink, caching the process stdout on first use. Only ever called
+// while holding write_mutex, so the lazy set is race-free.
+fn resolveOut() std.Io.File {
+    if (out_file) |f| return f;
+    const f = std.Io.File.stdout();
+    out_file = f;
+    return f;
+}
 
 // Latest whole-search node count, published by the search-driver info emit and read
 // by the uci layer's `nodes` accessor. A shared leaf home so both sides reach it
@@ -71,7 +83,7 @@ pub fn printLine(str: [*]const u8, len: usize) void {
     const the_io = io();
     write_mutex.lockUncancelable(the_io);
     defer write_mutex.unlock(the_io);
-    writeLineLocked(the_io, out_file, str[0..len]);
+    writeLineLocked(the_io, resolveOut(), str[0..len]);
     if (log_file) |f| writeLineLocked(the_io, f, str[0..len]);
 }
 
