@@ -1127,6 +1127,7 @@ pub fn build(b: *std.Build) void {
         "src/support/debug_counters.zig",
         "src/bench/bench_positions.zig",
         "src/support/uci_output.zig",
+        "src/support/uci_wdl.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
