@@ -19,7 +19,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const rt = @import("thread_runtime");
 const graph_layout = @import("graph_layout");
-const native_hooks = @import("native_hooks");
+const runtime_hooks = @import("runtime_hooks");
 
 // Marker at offset 0 (no reader touches thread@0, so this just makes a
 // SearchThread identifiable in a dump and pads `worker` to offset 8).
@@ -65,17 +65,17 @@ pub const SearchThread = struct {
         // (~Worker + aligned_large_pages_free); without this the ~14 MB Worker
         // leaks on every reconfigure/teardown. Done after the join above.
         if (self.worker) |w| {
-            native_hooks.native_worker_destroy(w);
+            runtime_hooks.worker_destroy(w);
             self.worker = null;
         }
     }
 };
 
-// Native teardown for the Worker (via native_hooks.native_worker_destroy):
+// Native teardown for the Worker (via runtime_hooks.worker_destroy):
 // destruct the Worker + large-page free.
 
 // The search_thread tests attach only dummy workers (worker == 0), so deinit's
-// native_hooks.native_worker_destroy call is never reached — no test stub needed.
+// runtime_hooks.worker_destroy call is never reached — no test stub needed.
 
 // The search driver entry, injected by the thread module at search start.
 // search_thread must not import position (position imports the thread stack for its
@@ -120,7 +120,7 @@ pub fn waitPoolSiblings(pool: *graph_layout.ThreadPool) void {
 // Per-thread Worker::clear job. Submitted to the idle loop; caller waits separately.
 
 fn clearWorkerJob(ctx: ?*anyopaque) void {
-    native_hooks.worker_clear(ctx.?);
+    runtime_hooks.worker_clear(ctx.?);
 }
 
 pub fn clearWorker(self: *SearchThread) void {
@@ -161,16 +161,16 @@ test "SearchThread spawns, round-trips a job, and joins" {
 }
 
 test "setWorker stores the handle read by offset 8" {
-    // The engine registers native_worker_destroy at startup; a standalone test does
-    // not, so deinit()'s `native_worker_destroy.?(worker)` on the mock worker below
+    // The engine registers worker_destroy at startup; a standalone test does
+    // not, so deinit()'s `worker_destroy.?(worker)` on the mock worker below
     // would deref a null hook (UB -- silent under ReleaseFast, a panic under
     // ReleaseSafe). Install a no-op teardown for the mock (it is a stack value, not
     // a real large-page Worker) and restore the prior hook after.
-    const prev_destroy = native_hooks.native_worker_destroy;
-    native_hooks.native_worker_destroy = struct {
+    const prev_destroy = runtime_hooks.worker_destroy;
+    runtime_hooks.worker_destroy = struct {
         fn noop(_: *anyopaque) void {}
     }.noop;
-    defer native_hooks.native_worker_destroy = prev_destroy;
+    defer runtime_hooks.worker_destroy = prev_destroy;
 
     var thread: SearchThread = .{};
     try thread.spawn(testing.allocator, 3);

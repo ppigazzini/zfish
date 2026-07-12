@@ -1,6 +1,6 @@
 const std = @import("std");
 const graph_layout = @import("graph_layout");
-const native_hooks = @import("native_hooks");
+const runtime_hooks = @import("runtime_hooks");
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const search_driver = @import("search_driver");
@@ -222,13 +222,13 @@ pub fn reconfigure(
         threads_per_node[0] = requested;
     }
 
-    native_hooks.shared_state_clear_histories(shared_state);
+    runtime_hooks.shared_state_clear_histories(shared_state);
 
     var node_index: usize = 0;
     while (node_index < node_count) : (node_index += 1) {
         const count = threads_per_node[node_index];
         if (count != 0) {
-            native_hooks.shared_state_insert_history(
+            runtime_hooks.shared_state_insert_history(
                 shared_state,
                 numa_config,
                 node_index,
@@ -255,7 +255,7 @@ pub fn reconfigure(
     // the ThreadPool/Thread graph -- stop/increaseDepth zeroed, threads vector
     // sized == requested, boundThreadToNumaNode sized as bound, each Thread's
     // Worker slot bound. Read-only; panics on drift.
-    native_hooks.verify_thread_graph(pool, requested, if (do_bind) requested else 0);
+    runtime_hooks.verify_thread_graph(pool, requested, if (do_bind) requested else 0);
 }
 
 // The search-driver entry search_thread invokes as each thread's search job. Set
@@ -280,16 +280,16 @@ pub fn startThinking(
     tp.setStop(false);
     tp.setIncreaseDepth(true);
 
-    if (native_hooks.pending_states_available(states_slot) != 0) {
-        if (native_hooks.handoff_pending_states(pool, states_slot) == 0)
+    if (runtime_hooks.pending_states_available(states_slot) != 0) {
+        if (runtime_hooks.handoff_pending_states(pool, states_slot) == 0)
             @panic("failed to hand off pending setup states");
     } else {
-        native_hooks.setup_states_adopt_from_slot(pool, states_slot);
+        runtime_hooks.setup_states_adopt_from_slot(pool, states_slot);
         if (!pool.hasSetupStates())
             @panic("missing setup states");
     }
 
-    const setup_state = native_hooks.setup_state_back(pool) orelse
+    const setup_state = runtime_hooks.setup_state_back(pool) orelse
         @panic("missing setup state");
 
     var legal_move_buffer: [256]u16 = undefined;
