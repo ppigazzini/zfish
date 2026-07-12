@@ -411,7 +411,7 @@ pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
 
 // Join+free the native Threads and null the pool's threads vector (engine teardown).
 // Wraps thread_pool for main.zig, which doesn't import it directly.
-pub fn nativeThreadpoolClear(pool: *graph_layout.ThreadPool) void {
+pub fn threadPoolClear(pool: *graph_layout.ThreadPool) void {
     thread_pool.clear(pool);
 }
 

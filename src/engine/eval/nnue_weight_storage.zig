@@ -30,11 +30,11 @@ pub fn nnDescription() []const u8 {
     return nn_description[0..nn_description_len];
 }
 
-pub fn markInitializedNative() void {
+pub fn markInitialized() void {
     nn_initialized = true;
 }
 
-pub fn setLoadedStateNative(current: []const u8, description: []const u8) void {
+pub fn setLoadedState(current: []const u8, description: []const u8) void {
     const cl = @min(current.len, nn_current.len);
     @memcpy(nn_current[0..cl], current[0..cl]);
     nn_current_len = cl;
@@ -49,35 +49,35 @@ pub fn equalCurrentName(target: []const u8) bool {
 
 // Inference storage. The native parse writes the weights straight here;
 // inference reads from the same memory.
-var native_ft_ptr_storage: ?[*]u8 = null;
-var native_ft_len: usize = 0;
+var ft_ptr_storage: ?[*]u8 = null;
+var ft_len: usize = 0;
 
 pub fn ftStorage(n: usize) ?[*]u8 {
     if (n == 0) return null;
-    if (native_ft_ptr_storage != null and native_ft_len != n) {
-        memory_port.alignedLargePagesFree(native_ft_ptr_storage);
-        native_ft_ptr_storage = null;
+    if (ft_ptr_storage != null and ft_len != n) {
+        memory_port.alignedLargePagesFree(ft_ptr_storage);
+        ft_ptr_storage = null;
     }
-    if (native_ft_ptr_storage == null) {
-        native_ft_ptr_storage = @ptrCast(memory_port.alignedLargePagesAlloc(n) orelse return null);
-        native_ft_len = n;
+    if (ft_ptr_storage == null) {
+        ft_ptr_storage = @ptrCast(memory_port.alignedLargePagesAlloc(n) orelse return null);
+        ft_len = n;
     }
-    return native_ft_ptr_storage.?;
+    return ft_ptr_storage.?;
 }
 
 pub fn ftPtr() ?[*]const u8 {
-    return native_ft_ptr_storage;
+    return ft_ptr_storage;
 }
 
-var native_layer_w: [layer_stacks_n][layers_per_stack]?[*]u8 =
+var layer_w: [layer_stacks_n][layers_per_stack]?[*]u8 =
     .{.{ null, null, null }} ** layer_stacks_n;
-var native_layer_b: [layer_stacks_n][layers_per_stack]?[*]u8 =
+var layer_b: [layer_stacks_n][layers_per_stack]?[*]u8 =
     .{.{ null, null, null }} ** layer_stacks_n;
 
 pub fn layerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8 {
     if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack or n == 0) return null;
     const ui: usize = @intCast(idx);
-    const slot = if (is_weights != 0) &native_layer_w[bucket][ui] else &native_layer_b[bucket][ui];
+    const slot = if (is_weights != 0) &layer_w[bucket][ui] else &layer_b[bucket][ui];
     if (slot.* == null) slot.* = @ptrCast(memory_port.alignedLargePagesAlloc(n) orelse return null);
     return slot.*.?;
 }
@@ -85,7 +85,7 @@ pub fn layerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]
 pub fn layerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?[*]const u8 {
     if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack) return null;
     const ui: usize = @intCast(idx);
-    return if (is_weights != 0) native_layer_w[bucket][ui] else native_layer_b[bucket][ui];
+    return if (is_weights != 0) layer_w[bucket][ui] else layer_b[bucket][ui];
 }
 
 test {
