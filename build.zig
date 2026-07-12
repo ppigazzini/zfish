@@ -179,6 +179,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "search_setup", .path = "src/engine/search/search_setup.zig" },
         .{ .name = "search_driver", .path = "src/engine/search/search_driver.zig" },
         .{ .name = "search_emit", .path = "src/engine/search/search_emit.zig" },
+        .{ .name = "time_source", .path = "src/engine/search/time_source.zig" },
         .{ .name = "position_lifecycle", .path = "src/engine/board/position_lifecycle.zig" },
         .{ .name = "shared_history", .path = "src/engine/search/shared_history.zig" },
         .{ .name = "search_common", .path = "src/engine/search/search_common.zig" },
@@ -274,7 +275,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position_lifecycle", .imp = "legality", .to = "legality" },
         .{ .from = "position_lifecycle", .imp = "fen_parse", .to = "fen_parse" },
         .{ .from = "position_lifecycle", .imp = "position_types", .to = "position_types" },
-        .{ .from = "search_driver", .imp = "clock", .to = "clock" },
+        .{ .from = "search_driver", .imp = "time_source", .to = "time_source" },
         .{ .from = "search_driver", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_driver", .imp = "bitboard", .to = "bitboard" },
         .{ .from = "search_driver", .imp = "movegen", .to = "movegen" },
@@ -328,7 +329,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_id", .imp = "thread_vote", .to = "thread_vote" },
         .{ .from = "search_id", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "search_id", .imp = "position_query", .to = "position_query" },
-        .{ .from = "search_id", .imp = "clock", .to = "clock" },
+        .{ .from = "search_id", .imp = "time_source", .to = "time_source" },
         .{ .from = "search_id", .imp = "search_ctx", .to = "search_ctx" },
         .{ .from = "search_ctx", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_ctx", .imp = "position_types", .to = "position_types" },
@@ -347,7 +348,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_driver", .imp = "search_common", .to = "search_common" },
         .{ .from = "search_driver", .imp = "history", .to = "history" },
         .{ .from = "search_driver", .imp = "search_emit", .to = "search_emit" },
-        .{ .from = "search_emit", .imp = "clock", .to = "clock" },
+        .{ .from = "search_emit", .imp = "time_source", .to = "time_source" },
         .{ .from = "search_emit", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_emit", .imp = "tt", .to = "tt" },
         .{ .from = "search_emit", .imp = "score", .to = "score" },
@@ -553,6 +554,7 @@ pub fn build(b: *std.Build) void {
     // The engine graph (engine_graph.zig) is compiled via the engine module: it
     // binds the ThreadPool and TranspositionTable.
     exe.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
+    exe.root_module.addImport("time_source", mods.get("time_source").?);
     exe.root_module.addImport("engine_object", mods.get("engine_object").?);
     // main.zig and its worker-construction helper reach the search-history helpers directly.
     exe.root_module.addImport("search_driver", mods.get("search_driver").?);
@@ -1018,7 +1020,7 @@ pub fn build(b: *std.Build) void {
     // count only ratchets down; the baseline is the currently-allowed maximum and the
     // gate fails if the real count exceeds it. Lower it as each seam is severed; at 0
     // the engine is a standalone search+eval library.
-    const headless_baseline = "18";
+    const headless_baseline = "15";
     const headless_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/headless_lint.sh"),
@@ -1040,6 +1042,7 @@ pub fn build(b: *std.Build) void {
     inline for (.{
         mods.get("position_storage").?,
         mods.get("state_list").?,
+        mods.get("time_source").?,
         mods.get("tt").?,
         mods.get("network_holder").?,
         mods.get("shared_histories").?,
@@ -1212,7 +1215,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/engine/search/search_setup.zig", .deps = &.{ "worker_layout", "nnue_accumulator", "root_move", "search_ctx", "tt_types" } },
         .{ .path = "src/engine/board/fen_parse.zig", .deps = &.{ "board_core", "legality", "move_do", "position_types", "state_setup" } },
         .{ .path = "src/engine/search/search_ctx.zig", .deps = &.{ "worker_layout", "nnue_accumulator", "position_types", "root_move", "tt_types" } },
-        .{ .path = "src/engine/search/search_control.zig", .deps = &.{ "clock", "search_ctx", "search_types" } },
+        .{ .path = "src/engine/search/search_control.zig", .deps = &.{ "time_source", "search_ctx", "search_types" } },
         .{ .path = "src/engine/board/repetition.zig", .deps = &.{ "bitboard", "board_core", "movegen", "position_types", "zobrist" } },
         .{ .path = "src/engine/board/state_setup.zig", .deps = &.{ "bitboard", "board_core", "legality", "position_types", "zobrist" } },
         .{ .path = "src/engine/state/worker_layout.zig", .deps = &.{ "limits_type", "position_types", "root_move", "state_list", "tt_types", "worker_histories" } },

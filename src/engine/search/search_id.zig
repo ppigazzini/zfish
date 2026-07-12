@@ -15,7 +15,7 @@ const search_thread = @import("search_thread");
 const thread_vote = @import("thread_vote");
 const nnue_acc = @import("nnue_accumulator");
 const position_query = @import("position_query");
-const clock = @import("clock");
+const time_source = @import("time_source");
 const search_ctx = @import("search_ctx");
 
 const SsCtx = search_ctx.SsCtx;
@@ -276,7 +276,7 @@ pub fn moveToFront(rm: [*]RootMove, count: usize, target: u16) void {
     rm[0] = tmp;
 }
 pub inline fn idElapsed(id: *const ZfishIdState) i64 {
-    return if (id.tm_use_nodes_time != 0) @intCast(id.nodes.*) else clock.now() - id.tm_start_time;
+    return if (id.tm_use_nodes_time != 0) @intCast(id.nodes.*) else time_source.now() - id.tm_start_time;
 }
 pub inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
     return @max(lo, @min(v, hi));
@@ -287,7 +287,7 @@ pub inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
 const skill_pawn_value: c_int = 208;
 var skill_rng_state: u64 = 0;
 fn skillRand64() u64 {
-    if (skill_rng_state == 0) skill_rng_state = @bitCast(clock.now());
+    if (skill_rng_state == 0) skill_rng_state = @bitCast(time_source.now());
     var s = skill_rng_state;
     s ^= s >> 12;
     s ^= s << 25;

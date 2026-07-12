@@ -7,6 +7,7 @@ const worker_layout = @import("worker_layout");
 const position_types = @import("position_types");
 const runtime_hooks = @import("runtime_hooks");
 const clock = @import("clock");
+const time_source = @import("time_source");
 const thread_construct = @import("thread_construct.zig");
 const worker_construct = @import("worker_construct.zig");
 const engine_object = @import("engine_object"); // the engine object container
@@ -155,6 +156,9 @@ fn installRuntimeHooks() void {
     runtime_hooks.pending_states_available = &pendingStatesAvailable;
     runtime_hooks.handoff_pending_states = &handoffPendingStates;
     runtime_hooks.verify_thread_graph = &thread_construct.verifyThreadGraph;
+    // Inject the platform monotonic clock into the engine's time-source seam, so
+    // the search reads the OS clock without importing a platform module.
+    time_source.now = &clock.now;
 }
 
 // The engine buffer is a EngineObject, so the member accessors return its fields

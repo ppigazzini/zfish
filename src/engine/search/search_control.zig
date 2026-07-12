@@ -8,10 +8,10 @@
 //   * rootInList    -- RootMove::operator== over [pvIdx, pvLast)
 //   * searchStopped -- monotonic load of the shared stop flag
 //   * inLastIterPv  -- follow-PV test against lastIterationPV
-// Pure aside from the atomics/clock.
+// Pure aside from the atomics and the injected clock.
 
 const std = @import("std");
-const clock = @import("clock");
+const time_source = @import("time_source");
 const search_ctx = @import("search_ctx");
 const search_types = @import("search_types");
 const sv = @import("search_values.zig");
@@ -30,7 +30,7 @@ pub fn checkTime(ctx: *const QCtx) void {
     const elapsed: i64 = if (ts.tm_use_nodes_time != 0)
         @intCast(ctx.nodes.*)
     else
-        clock.now() - ts.tm_start_time;
+        time_source.now() - ts.tm_start_time;
 
     if (ts.ponder.?.* != 0) return;
 

@@ -9,7 +9,7 @@
 // the output-golden / driver-golden / search-parity gates.
 
 const std = @import("std");
-const clock = @import("clock");
+const time_source = @import("time_source");
 const worker_layout = @import("worker_layout");
 const tt = @import("tt");
 const score_port = @import("score");
@@ -204,7 +204,7 @@ fn searchCbPvContext(manager: ?*worker_layout.SearchManager, worker: ?*worker_la
     out.hashfull = tt.hashfull(@ptrFromInt(@intFromPtr(tp.table)), tp.cluster_count, tp.generation8, 0);
 
     const start_time = manager.?.tm.start_time;
-    const elapsed = clock.now() - start_time;
+    const elapsed = time_source.now() - start_time;
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
 
