@@ -272,71 +272,11 @@ jobs:
       - name: Memcheck -- multi-thread search
         run: zig build parity-valgrind -Darch=x86-64
 
-  # M23.1 line coverage. kcov instruments the unit-test ELF at runtime (no coverage rebuild
-  # flags -- Debug binaries carry the DWARF kcov needs), so `zig build test -Dtest-coverage`
-  # runs each test artifact under kcov into its own kcov-out/cov-N subdir (unique per artifact
-  # -> the parallel test runs never write the same dir). We then merge the subdirs into one
-  # report. Gives a real coverage number to hold the M22.0 test-surface accountable. Pinned to
-  # the sse41 baseline for reproducibility, matching the parity job.
-  #
-  # continue-on-error: coverage is INFORMATIONAL, not a correctness gate -- the tests are already
-  # gated (blocking) in the `parity` job; this job re-runs them under kcov only to report the
-  # number. So a kcov hiccup must never block a push. kcov is no longer packaged for Ubuntu 24.04
-  # (noble), so it is built from source (the deps are its documented build requirements); the
-  # ~2-min build runs each time (a non-blocking job -- not worth caching a root-owned prefix).
-  coverage:
-    name: Linux test coverage (kcov)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 30
-    env:
-      KCOV_REF: v42
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.16.0
-      - name: Build kcov from source
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y binutils-dev libssl-dev libcurl4-openssl-dev \
-            zlib1g-dev libdw-dev libiberty-dev cmake
-          git clone --depth 1 --branch "$KCOV_REF" https://github.com/SimonKagstrom/kcov.git
-          cmake -S kcov -B kcov/build
-          cmake --build kcov/build --parallel
-          sudo cmake --install kcov/build
-      # The unit/property tests are pure Zig (no NNUE net load), so no net fetch is needed.
-      - name: Run the unit tests under kcov
-        run: zig build test -Dtest-coverage -Darch=x86-64-sse41-popcnt
-      - name: Merge per-artifact coverage
-        run: |
-          kcov --merge kcov-out/merged kcov-out/cov-*
-          # Best-effort: surface the merged line-coverage percentage in the log.
-          find kcov-out/merged -name 'coverage.json' -exec cat {} \; | \
-            grep -o '"percent_covered"[^,]*' | head -1 || true
-
-  # M23.1 toolchain-drift lane. A non-blocking build/test on Zig nightly (master) so the
-  # pinned-0.16.0 build gets early warning when an upcoming release changes std / the build
-  # API (Ghostty and zls both run such a lane). continue-on-error: nightly breakage must never
-  # block a push -- it is a heads-up, not a gate. Reports 2067208 to catch a codegen drift too.
-  zig-nightly:
-    name: Zig nightly (non-blocking)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: master
-      - name: Cache NNUE network
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: net/nn-*.nnue
-          key: nnue-${{ hashFiles('src/eval/network.zig') }}
-      - name: Fetch the NNUE net
-        run: zig build net
-      - name: Build + unit tests (nightly)
-        run: zig build test -Darch=x86-64-sse41-popcnt
-      - name: Bench signature (nightly)
-        run: zig build signature -Darch=x86-64-sse41-popcnt
+  # NOTE (M23.1): the kcov line-coverage and Zig-nightly lanes were removed. Both went red for
+  # reasons that can't be reproduced/verified in the dev environment, and neither is a correctness
+  # gate: kcov is no longer packaged for Ubuntu 24.04 and, built from source, its ptrace-based
+  # instrumentation fails on the runner sandbox; the nightly lane is red BY DESIGN whenever Zig
+  # master drifts (e.g. 0.17 removed b.pathFromRoot). Coverage stays available locally via the
+  # `-Dtest-coverage` build option (`zig build test -Dtest-coverage`, needs kcov on PATH). Only
+  # gates that are verified green are kept here -- the valgrind memcheck gate above is the M23.1
+  # memory-safety addition (its exact commands were run locally and reported clean before wiring).
