@@ -1013,6 +1013,23 @@ pub fn build(b: *std.Build) void {
     );
     src_free_step.dependOn(&src_free_cmd.step);
 
+    // Headless-engine structural gate: src/engine/ must import only engine/ modules,
+    // never platform/ or shell/. The seams are injected one at a time, so the up-edge
+    // count only ratchets down; the baseline is the currently-allowed maximum and the
+    // gate fails if the real count exceeds it. Lower it as each seam is severed; at 0
+    // the engine is a standalone search+eval library.
+    const headless_baseline = "18";
+    const headless_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("tools/headless_lint.sh"),
+    });
+    headless_cmd.setEnvironmentVariable("HEADLESS_BASELINE", headless_baseline);
+    const headless_step = b.step(
+        "headless",
+        "headless-engine structural gate: engine/ imports only engine/ (ratchets to 0)",
+    );
+    headless_step.dependOn(&headless_cmd.step);
+
     // Aggregate unit-test step: run the in-tree `test {}` blocks of
     // every named module that has them, reusing the already-wired modules so their
     // imports resolve, plus the engine-graph tests. Reachability
@@ -1299,6 +1316,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&time_cmd.step);
     // The src-free structural invariant is permanent, so it gates every push.
     parity_step.dependOn(&src_free_cmd.step);
+    parity_step.dependOn(&headless_cmd.step);
 
     // Cross-OS aggregate: the platform-independent subset of `parity` -- bench,
     // the UCI handshake, the bench signature, and all six golden checks, every one driven by
