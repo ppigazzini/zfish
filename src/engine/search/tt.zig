@@ -36,7 +36,7 @@ pub const TtProbeTableOutput = struct {
     data: TtReadOutput,
 };
 
-const memory = @import("memory");
+const page_alloc = @import("page_alloc");
 const worker_layout = @import("worker_layout");
 const thread_port = @import("thread");
 fn reportAllocFailure(mb: usize) noreturn {
@@ -62,12 +62,12 @@ pub fn resizeState(
 ) void {
     // The large-page allocator deals in raw bytes; the cluster typing resumes the
     // moment the buffer is handed back to the typed graph handle.
-    memory.alignedLargePagesFree(@ptrCast(table_ptr.*));
+    page_alloc.free(@ptrCast(table_ptr.*));
 
     const cluster_count = mb * 1024 * 1024 / @sizeOf(TtCluster);
     cluster_count_ptr.* = cluster_count;
 
-    const raw = memory.alignedLargePagesAlloc(cluster_count * @sizeOf(TtCluster)) orelse
+    const raw = page_alloc.alloc(cluster_count * @sizeOf(TtCluster)) orelse
         reportAllocFailure(mb);
     const table: [*]TtCluster = @ptrCast(@alignCast(raw));
     table_ptr.* = table;
