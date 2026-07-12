@@ -9,6 +9,7 @@ const runtime_hooks = @import("runtime_hooks");
 const clock = @import("clock");
 const time_source = @import("time_source");
 const page_alloc = @import("page_alloc");
+const option_source = @import("option_source");
 const thread_construct = @import("thread_construct.zig");
 const worker_construct = @import("worker_construct.zig");
 const engine_object = @import("engine_object"); // the engine object container
@@ -164,6 +165,12 @@ fn installRuntimeHooks() void {
     // the big engine arenas allocate without importing a platform module.
     page_alloc.alloc = &memory_port.alignedLargePagesAlloc;
     page_alloc.free = &memory_port.alignedLargePagesFree;
+    // Inject the UCI option model's readers into the engine's option seam, so the
+    // search reads option values without importing the shell option module.
+    option_source.intByName = &option_port.intByName;
+    option_source.syzygyProbeDepth = &option_port.syzygyProbeDepth;
+    option_source.syzygyProbeLimit = &option_port.syzygyProbeLimit;
+    option_source.syzygy50MoveRule = &option_port.syzygy50MoveRule;
 }
 
 // The engine buffer is a EngineObject, so the member accessors return its fields

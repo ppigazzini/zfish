@@ -157,6 +157,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "state_list", .path = "src/engine/board/state_list.zig" },
         .{ .name = "position_storage", .path = "src/engine/state/position_storage.zig" },
         .{ .name = "page_alloc", .path = "src/engine/state/page_alloc.zig" },
+        .{ .name = "option_source", .path = "src/engine/search/option_source.zig" },
         .{ .name = "shared_histories", .path = "src/engine/search/shared_histories.zig" },
         .{ .name = "shared_histories_map", .path = "src/engine/search/shared_histories_map.zig" },
         .{ .name = "network_holder", .path = "src/engine/eval/network_holder.zig" },
@@ -208,7 +209,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "root_move_build", .imp = "position", .to = "position" },
         .{ .from = "root_move_build", .imp = "state_list", .to = "state_list" },
         .{ .from = "root_move_build", .imp = "tablebase", .to = "tablebase" },
-        .{ .from = "root_move_build", .imp = "option", .to = "option" },
+        .{ .from = "root_move_build", .imp = "option_source", .to = "option_source" },
         .{ .from = "root_move_build", .imp = "movegen", .to = "movegen" },
         .{ .from = "root_move_build", .imp = "position_snapshot", .to = "position_snapshot" },
         // Consumers import the owning search modules directly: search_driver's public
@@ -323,7 +324,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_acc", .imp = "search_types", .to = "search_types" },
         .{ .from = "search_acc", .imp = "search_ctx", .to = "search_ctx" },
         .{ .from = "search_id", .imp = "worker_layout", .to = "worker_layout" },
-        .{ .from = "search_id", .imp = "option", .to = "option" },
+        .{ .from = "search_id", .imp = "option_source", .to = "option_source" },
         .{ .from = "search_id", .imp = "timeman", .to = "timeman" },
         .{ .from = "search_id", .imp = "tt", .to = "tt" },
         .{ .from = "search_id", .imp = "search_thread", .to = "search_thread" },
@@ -357,7 +358,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_emit", .imp = "uci_output", .to = "uci_output" },
         .{ .from = "search_emit", .imp = "uci_move", .to = "uci_move" },
         .{ .from = "search_emit", .imp = "position_query", .to = "position_query" },
-        .{ .from = "search_emit", .imp = "option", .to = "option" },
+        .{ .from = "search_emit", .imp = "option_source", .to = "option_source" },
         .{ .from = "search_emit", .imp = "search_types", .to = "search_types" },
         .{ .from = "history", .imp = "search", .to = "search" },
         .{ .from = "history", .imp = "search_common", .to = "search_common" },
@@ -557,6 +558,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     exe.root_module.addImport("time_source", mods.get("time_source").?);
     exe.root_module.addImport("page_alloc", mods.get("page_alloc").?);
+    exe.root_module.addImport("option_source", mods.get("option_source").?);
     exe.root_module.addImport("engine_object", mods.get("engine_object").?);
     // main.zig and its worker-construction helper reach the search-history helpers directly.
     exe.root_module.addImport("search_driver", mods.get("search_driver").?);
@@ -1022,7 +1024,7 @@ pub fn build(b: *std.Build) void {
     // count only ratchets down; the baseline is the currently-allowed maximum and the
     // gate fails if the real count exceeds it. Lower it as each seam is severed; at 0
     // the engine is a standalone search+eval library.
-    const headless_baseline = "10";
+    const headless_baseline = "7";
     const headless_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/headless_lint.sh"),
@@ -1046,6 +1048,7 @@ pub fn build(b: *std.Build) void {
         mods.get("state_list").?,
         mods.get("time_source").?,
         mods.get("page_alloc").?,
+        mods.get("option_source").?,
         mods.get("tt").?,
         mods.get("network_holder").?,
         mods.get("shared_histories").?,

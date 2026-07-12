@@ -17,7 +17,7 @@ const uci_wdl = @import("uci_wdl");
 const uci_output = @import("uci_output");
 const uci_move_port = @import("uci_move");
 const position_query = @import("position_query");
-const option_port = @import("option");
+const option_port = @import("option_source");
 const search_types = @import("search_types");
 
 const RootMove = search_types.RootMove;

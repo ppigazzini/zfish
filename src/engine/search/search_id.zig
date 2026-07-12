@@ -8,7 +8,7 @@
 
 const std = @import("std");
 const worker_layout = @import("worker_layout");
-const option_port = @import("option");
+const option_port = @import("option_source");
 const timeman_port = @import("timeman");
 const tt = @import("tt");
 const search_thread = @import("search_thread");

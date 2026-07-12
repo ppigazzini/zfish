@@ -11,7 +11,7 @@ const position_port = @import("position");
 const search_types = @import("search_types");
 const state_list = @import("state_list");
 const tablebase = @import("tablebase");
-const option_port = @import("option");
+const option_port = @import("option_source");
 const movegen_port = @import("movegen");
 const position_snapshot = @import("position_snapshot");
 
