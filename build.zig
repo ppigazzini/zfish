@@ -155,8 +155,6 @@ pub fn build(b: *std.Build) void {
         .{ .name = "network", .path = "src/engine/eval/network.zig" },
         .{ .name = "nnue_misc", .path = "src/engine/eval/nnue_misc.zig" },
         .{ .name = "state_list", .path = "src/engine/board/state_list.zig" },
-        .{ .name = "numa_config", .path = "src/platform/numa_config.zig" },
-        .{ .name = "numa_replication", .path = "src/platform/numa_replication.zig" },
         .{ .name = "position_storage", .path = "src/engine/state/position_storage.zig" },
         .{ .name = "shared_histories", .path = "src/engine/search/shared_histories.zig" },
         .{ .name = "shared_histories_map", .path = "src/engine/search/shared_histories_map.zig" },
@@ -217,7 +215,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "thread", .imp = "search_driver", .to = "search_driver" },
         .{ .from = "thread", .imp = "search_types", .to = "search_types" },
         .{ .from = "root_move_build", .imp = "search_types", .to = "search_types" },
-        .{ .from = "numa_replication", .imp = "numa_config", .to = "numa_config" },
         .{ .from = "position", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "graph_layout", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "position", .imp = "position_types", .to = "position_types" },
@@ -444,8 +441,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "thread", .imp = "numa", .to = "numa" },
         .{ .from = "engine", .imp = "tt", .to = "tt" },
         .{ .from = "engine", .imp = "state_list", .to = "state_list" },
-        .{ .from = "engine", .imp = "numa_config", .to = "numa_config" },
-        .{ .from = "engine", .imp = "numa_replication", .to = "numa_replication" },
         .{ .from = "engine", .imp = "position_storage", .to = "position_storage" },
         .{ .from = "engine", .imp = "network", .to = "network" },
         .{ .from = "engine", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
@@ -578,25 +573,13 @@ pub fn build(b: *std.Build) void {
     graph_test.root_module.addImport("tt", mods.get("tt").?);
     graph_test.root_module.addImport("shared_state", mods.get("shared_state").?);
     graph_test.root_module.addImport("state_list", mods.get("state_list").?);
-    graph_test.root_module.addImport("numa_config", mods.get("numa_config").?);
-    graph_test.root_module.addImport("numa_replication", mods.get("numa_replication").?);
+    graph_test.root_module.addImport("numa", mods.get("numa").?);
     graph_test.root_module.addImport("position_storage", mods.get("position_storage").?);
     // engine_graph.zig imports search_manager by name; this standalone test builds it as a fresh
     // root module (outside the module-edge table), so the dependency must be added explicitly.
     graph_test.root_module.addImport("search_manager", mods.get("search_manager").?);
     const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
     addTestRun(b, graph_test_step, graph_test, cov_dir, &cov_idx);
-    // NumaReplicationContext (numaContext member): tests need the
-    // numa_config dep, so they run via test-graph rather than standalone.
-    const numa_repl_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/platform/numa_replication.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    numa_repl_test.root_module.addImport("numa_config", mods.get("numa_config").?);
-    addTestRun(b, graph_test_step, numa_repl_test, cov_dir, &cov_idx);
     // sharedHists map container (std-only generic; tested with a mock
     // entry). board/position.zig instantiates it with the real SharedHistories.
     const sh_map_test = b.addTest(.{
@@ -621,7 +604,6 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("nnue_misc", mods.get("nnue_misc").?);
     exe.root_module.addImport("network_holder", mods.get("network_holder").?);
     exe.root_module.addImport("state_list", mods.get("state_list").?);
-    exe.root_module.addImport("numa_config", mods.get("numa_config").?);
     exe.root_module.addImport("position_storage", mods.get("position_storage").?);
     exe.root_module.addImport("option", mods.get("option").?);
     exe.root_module.addImport("position", mods.get("position").?);
@@ -1041,7 +1023,6 @@ pub fn build(b: *std.Build) void {
     inline for (.{
         mods.get("position_storage").?,
         mods.get("state_list").?,
-        mods.get("numa_config").?,
         mods.get("tt").?,
         mods.get("network_holder").?,
         mods.get("shared_histories").?,
@@ -1051,6 +1032,19 @@ pub fn build(b: *std.Build) void {
         const unit_test = b.addTest(.{ .root_module = unit_module });
         addTestRun(b, test_step, unit_test, cov_dir, &cov_idx);
     }
+    // The NUMA surface: numa.zig (configString uses c_allocator -> needs libc) plus the
+    // config + replication types it owns via platform/numa/ (path-imported, same module),
+    // so this one test covers the whole numa cluster.
+    const numa_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/platform/numa.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    addTestRun(b, test_step, numa_test, cov_dir, &cov_idx);
+
     // option.zig uses std.heap.c_allocator, so its standalone test build needs libc
     // (in the exe the libc linkage comes from the root module). It has no module deps.
     const option_test = b.addTest(.{

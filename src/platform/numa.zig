@@ -5,6 +5,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+// The NUMA config + replication types this surface owns (platform/numa/). The
+// surface is the face for the directory; callers reach the types as numa.NumaConfig.
+pub const NumaConfig = @import("numa/config.zig").NumaConfig;
+pub const NumaReplicationContext = @import("numa/replication.zig").NumaReplicationContext;
+pub const NumaReplicatedBase = @import("numa/replication.zig").NumaReplicatedBase;
+
 /// The affinity CPU-range string (e.g. "0-15"), malloc'd + NUL-terminated (caller frees). On
 /// Linux this is the process's sched_getaffinity mask rendered as comma-joined ranges; elsewhere
 /// it is the full "0-{ncpu-1}" range.
