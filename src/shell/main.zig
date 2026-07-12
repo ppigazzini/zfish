@@ -10,6 +10,8 @@ const clock = @import("clock");
 const time_source = @import("time_source");
 const page_alloc = @import("page_alloc");
 const option_source = @import("option_source");
+const tb_source = @import("tb_source");
+const tablebase = @import("tablebase");
 const thread_construct = @import("thread_construct.zig");
 const worker_construct = @import("worker_construct.zig");
 const engine_object = @import("engine_object"); // the engine object container
@@ -171,6 +173,10 @@ fn installRuntimeHooks() void {
     option_source.syzygyProbeDepth = &option_port.syzygyProbeDepth;
     option_source.syzygyProbeLimit = &option_port.syzygyProbeLimit;
     option_source.syzygy50MoveRule = &option_port.syzygy50MoveRule;
+    // Inject the platform Syzygy prober into the engine's tablebase seam, so the
+    // search probes tablebases without importing a platform module.
+    tb_source.maxCardinality = &tablebase.maxCardinality;
+    tb_source.probeFen = &tablebase.probeFen;
 }
 
 // The engine buffer is a EngineObject, so the member accessors return its fields

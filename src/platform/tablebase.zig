@@ -3,13 +3,9 @@
 //! "unavailable", and init is a no-op. Kept as a real module (not main.zig C-ABI glue) so the
 //! search/engine paths call it as ordinary Zig.
 
-pub const ProbeResult = struct {
-    available: u8,
-    wdl: c_int,
-    wdl_state: c_int,
-    dtz: c_int,
-    dtz_state: c_int,
-};
+// The probe result type is a search-facing value owned by the engine tb_source seam;
+// re-export it so the shell inspection commands keep reaching it as tablebase.ProbeResult.
+pub const ProbeResult = @import("tb_source").ProbeResult;
 
 pub fn maxCardinality() usize {
     return 0;

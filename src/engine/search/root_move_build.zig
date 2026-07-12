@@ -3,14 +3,14 @@
 // The `go`-path root-move builder: ranks the legal / searchmoves by DTZ then WDL when
 // tablebases are loaded, builds the RootMoves array the workers bind to, and owns
 // the scratch position + root-FEN helpers it needs. Pure over position / state_list /
-// tablebase / movegen / option -- NO thread or worker-pool dependency, so the OOM paths
-// here are unit-testable in isolation.
+// movegen plus the injected tb_source / option_source seams -- NO thread or worker-pool
+// dependency, so the OOM paths here are unit-testable in isolation.
 
 const std = @import("std");
 const position_port = @import("position");
 const search_types = @import("search_types");
 const state_list = @import("state_list");
-const tablebase = @import("tablebase");
+const tb_source = @import("tb_source");
 const option_port = @import("option_source");
 const movegen_port = @import("movegen");
 const position_snapshot = @import("position_snapshot");
@@ -62,7 +62,7 @@ pub const TbConfig = struct {
     probe_depth: c_int,
 };
 
-const TablebaseProbe = tablebase.ProbeResult;
+const TablebaseProbe = tb_source.ProbeResult;
 
 const RankedRootMove = struct {
     raw_move: u16,
@@ -174,7 +174,7 @@ fn loadTbConfig(pos: *const position_port.Position) TbConfig {
         .probe_depth = option_port.syzygyProbeDepth(),
     };
 
-    const max_cardinality: c_int = @intCast(tablebase.maxCardinality());
+    const max_cardinality: c_int = @intCast(tb_source.maxCardinality());
     if (config.cardinality > max_cardinality) {
         config.cardinality = max_cardinality;
         config.probe_depth = 0;
@@ -194,7 +194,7 @@ fn probePosition(pos: *const position_port.Position) !TablebaseProbe {
     const fen_ptr = buildRootFen(pos) orelse return error.OutOfMemory;
     defer std.heap.c_allocator.free(std.mem.span(fen_ptr));
     const fen_text = std.mem.span(fen_ptr);
-    return tablebase.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
+    return tb_source.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }
 
 fn dtzBeforeZeroing(wdl: c_int) c_int {
