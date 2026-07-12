@@ -1,25 +1,25 @@
-// Native engine — the buffer-resident engine object.
+// The buffer-resident engine object.
 //
-// The engine buffer (Zig-allocated in main.zig) holds a NativeEngine. It is an
+// The engine buffer (Zig-allocated in main.zig) holds an EngineObject. It is an
 // OWNERSHIP CONTAINER: it owns each engine member as an explicitly-freed heap
 // object it points at, so member teardown is explicit and ordered here.
 //
 // Members:
 //   numa_context     static-byte-address handle (single node; never dereferenced)
-//   states           native StateList (the fallback root list)
-//   threads          value-initialized ThreadPool buffer (native Threads vector)
-//   network          native single-node NNUE holder
-//   update_context   inline native UpdateContext slot
+//   states           StateList (the fallback root list)
+//   threads          value-initialized ThreadPool buffer (the thread vector)
+//   network          single-node NNUE holder
+//   update_context   inline UpdateContext slot
 //   binary_directory owned C string                  (misc getBinaryDirectory)
 //   cli              argc/argv
 // pos / tt / sharedHists are Zig-side globals (side_pos_storage / side_tt_storage
 // here, side_shared_histories) whose accessors ignore the engine pointer, so the
-// native engine does not own them.
+// engine object does not own them.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");
 const misc_port = @import("misc");
-const state_list_port = @import("state_list"); // native StateList
+const state_list_port = @import("state_list"); // StateList
 const network_port = @import("network");
 const position_types = @import("position_types");
 
@@ -63,7 +63,7 @@ pub const verify_network_fn_size: usize = 64;
 
 /// The buffer-resident native engine. `extern struct` so the field offsets are stable
 /// and the member accessors (main.zig) can read them by the documented native offset.
-pub const NativeEngine = struct {
+pub const EngineObject = struct {
     numa_context: ?*anyopaque = null,
     states: ?*state_list_port.StateList = null,
     threads: ?*graph_layout.ThreadPool = null,
@@ -76,51 +76,51 @@ pub const NativeEngine = struct {
     /// Native field offsets the member accessors read. @offsetOf keeps these pinned
     /// to the struct.
     pub const off = struct {
-        pub const numa_context = @offsetOf(NativeEngine, "numa_context");
-        pub const states = @offsetOf(NativeEngine, "states");
-        pub const threads = @offsetOf(NativeEngine, "threads");
-        pub const cli_argc = @offsetOf(NativeEngine, "cli_argc");
-        pub const cli_argv = @offsetOf(NativeEngine, "cli_argv");
-        pub const update_context = @offsetOf(NativeEngine, "update_context");
-        pub const on_verify_network = @offsetOf(NativeEngine, "on_verify_network");
+        pub const numa_context = @offsetOf(EngineObject, "numa_context");
+        pub const states = @offsetOf(EngineObject, "states");
+        pub const threads = @offsetOf(EngineObject, "threads");
+        pub const cli_argc = @offsetOf(EngineObject, "cli_argc");
+        pub const cli_argv = @offsetOf(EngineObject, "cli_argv");
+        pub const update_context = @offsetOf(EngineObject, "update_context");
+        pub const on_verify_network = @offsetOf(EngineObject, "on_verify_network");
     };
 
-    pub fn fromBuffer(buf: *anyopaque) *NativeEngine {
+    pub fn fromBuffer(buf: *anyopaque) *EngineObject {
         return @ptrCast(@alignCast(buf));
     }
-    pub fn fromPtr(p: *anyopaque) *NativeEngine {
+    pub fn fromPtr(p: *anyopaque) *EngineObject {
         return @ptrCast(@alignCast(p));
     }
 
     // Member accessors.
-    pub fn cliArgc(self: *const NativeEngine) c_int {
+    pub fn cliArgc(self: *const EngineObject) c_int {
         return self.cli_argc;
     }
-    pub fn cliArgAt(self: *const NativeEngine, index: c_int) ?[*:0]const u8 {
+    pub fn cliArgAt(self: *const EngineObject, index: c_int) ?[*:0]const u8 {
         if (index < 0 or index >= self.cli_argc) return null;
         const argv = self.cli_argv orelse return null;
         return argv[@intCast(index)];
     }
-    pub fn numaContextPtr(self: *NativeEngine) *anyopaque {
+    pub fn numaContextPtr(self: *EngineObject) *anyopaque {
         return self.numa_context.?;
     }
-    pub fn statesSlotPtr(self: *NativeEngine) *anyopaque {
+    pub fn statesSlotPtr(self: *EngineObject) *anyopaque {
         return @ptrCast(&self.states);
     }
-    pub fn threadsPtr(self: *NativeEngine) *graph_layout.ThreadPool {
+    pub fn threadsPtr(self: *EngineObject) *graph_layout.ThreadPool {
         return self.threads.?;
     }
     /// The side Position block (the engine's pos storage); engine-independent.
-    pub fn positionPtr(self: *NativeEngine) *position_types.Position {
+    pub fn positionPtr(self: *EngineObject) *position_types.Position {
         _ = self;
         return @ptrCast(@alignCast(&side_pos_storage));
     }
     /// The side TranspositionTable block (the engine's tt storage).
-    pub fn ttPtr(self: *NativeEngine) *graph_layout.TranspositionTable {
+    pub fn ttPtr(self: *EngineObject) *graph_layout.TranspositionTable {
         _ = self;
         return @ptrCast(@alignCast(&side_tt_storage));
     }
-    pub fn updateContextPtr(self: *const NativeEngine) *const anyopaque {
+    pub fn updateContextPtr(self: *const EngineObject) *const anyopaque {
         return @ptrCast(&self.update_context);
     }
 };
@@ -146,7 +146,7 @@ pub fn sideTtReset() void {
 ///
 /// Returns false on any allocation failure (caller aborts loudly — startup only).
 pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
-    const e = NativeEngine.fromBuffer(buf);
+    const e = EngineObject.fromBuffer(buf);
     e.* = .{};
 
     // binaryDirectory (owned C string) — get_default_network loads the .nnue from it.
@@ -154,7 +154,7 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     e.binary_directory = misc_port.getBinaryDirectory(argv0_slice);
 
     e.numa_context = memberNumaContextNew() orelse return false;
-    // states slot: a native StateList (the fallback root list).
+    // states slot: a StateList (the fallback root list).
     const states_list = std.heap.c_allocator.create(state_list_port.StateList) catch return false;
     states_list.* = state_list_port.StateList.init(std.heap.c_allocator) catch {
         std.heap.c_allocator.destroy(states_list);
@@ -175,7 +175,7 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
 
 /// Store the CLI argc/argv (the UCIEngine::cli sub-object the native engine subsumes).
 pub fn setCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
-    const e = NativeEngine.fromBuffer(buf);
+    const e = EngineObject.fromBuffer(buf);
     e.cli_argc = argc;
     e.cli_argv = argv;
 }
@@ -192,13 +192,13 @@ pub fn setCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
 /// states is freed by EXACTLY ONE of {release_pending_state_slot, the setupStates block
 /// below} — never both — matching the move handoff lifecycle.
 pub fn destructMembers(buf: *anyopaque) void {
-    const e = NativeEngine.fromBuffer(buf);
+    const e = EngineObject.fromBuffer(buf);
 
     // update_context / on_verify_network are plain zeroed buffers — no dtor needed.
 
     // states crack: free the pool's setupStates StateList @8 + the engine `states` slot's
     // StateList, and NULL setupStates@8, before freeing the ThreadPool buffer, so the
-    // native StateList is destroyed here rather than left dangling.
+    // StateList is destroyed here rather than left dangling.
     // Each list is owned by exactly one of {slot, setupStates} (adopt MOVEs + nulls source),
     // and the side-table storage was already freed by release_pending_state_slot, so this
     // frees each surviving list exactly once.
@@ -224,10 +224,10 @@ pub fn destructMembers(buf: *anyopaque) void {
 
 /// sizeof the buffer the native engine needs (replaces sizeof(UCIEngine)=1696).
 pub fn sizeofEngine() usize {
-    return @sizeOf(NativeEngine);
+    return @sizeOf(EngineObject);
 }
 pub fn alignofEngine() usize {
-    return @alignOf(NativeEngine);
+    return @alignOf(EngineObject);
 }
 
 test {

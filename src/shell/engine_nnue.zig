@@ -5,7 +5,7 @@
 // funnel through (verifyNetwork), so extracting them into a leaf breaks that
 // cross-cluster coupling -- the trace cluster can then move out without reaching
 // back into the engine core. Depends only on the network / option / uci_output
-// modules + native_engine (for the engine-handle adapter, duplicated here); no
+// modules + engine_object (for the engine-handle adapter, duplicated here); no
 // import of engine, so no cycle. engine.zig re-exports the three (saveNetworkEngine
 // is external port surface) and aliases printInfoStringNative for its option-apply
 // code.
@@ -15,7 +15,7 @@ const c = @import("libc");
 const option_port = @import("option");
 const network_port = @import("network");
 const uci_output = @import("uci_output");
-const native_engine = @import("native_engine");
+const engine_object = @import("engine_object");
 
 pub fn printInfoStringNative(str: []const u8) void {
     var it = std.mem.splitScalar(u8, str, '\n');
@@ -53,8 +53,8 @@ pub fn verifyNetwork() void {
 
 // Load a network from the given EvalFile path directly through the network module
 // the engine owns the network pointer + binary directory, so no C-ABI round
-// trip to main is needed. Mirrors the startup load in native_engine.constructMembers.
-pub fn loadNetworkEngine(engine_ptr: *native_engine.NativeEngine, evalfile_path: []const u8) void {
+// trip to main is needed. Mirrors the startup load in engine_object.constructMembers.
+pub fn loadNetworkEngine(engine_ptr: *engine_object.EngineObject, evalfile_path: []const u8) void {
     const e = engine_ptr;
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
     const bdir_slice = std.mem.span(bdir);

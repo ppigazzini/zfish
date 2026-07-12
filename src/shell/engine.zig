@@ -58,11 +58,11 @@ const state_list = @import("state_list");
 const tt_port = @import("tt");
 const numa = @import("numa");
 const uci_output = @import("uci_output");
-const native_engine = @import("native_engine");
+const engine_object = @import("engine_object");
 
 // Cast an engine handle to the native container.
-inline fn ne(p: *const anyopaque) *native_engine.NativeEngine {
-    return native_engine.NativeEngine.fromPtr(@constCast(p));
+inline fn ne(p: *const anyopaque) *engine_object.EngineObject {
+    return engine_object.EngineObject.fromPtr(@constCast(p));
 }
 
 // Force-compile the self-contained native engine-graph leaf nodes so their
@@ -160,7 +160,7 @@ const PositionSnapshot = position_snapshot.PositionSnapshot;
 pub fn initBody(engine_ptr: *anyopaque) void {
     // Construction boundary: main hands the engine as a raw buffer; this hook keeps
     // the *anyopaque ABI and casts once to drive the typed init entries below.
-    const e: *native_engine.NativeEngine = ne(engine_ptr);
+    const e: *engine_object.EngineObject = ne(engine_ptr);
     const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
     const max_hash_mb: c_int = if (@sizeOf(usize) >= 8) 33554432 else 2048;
 
@@ -192,7 +192,7 @@ pub fn initBody(engine_ptr: *anyopaque) void {
 }
 
 pub fn optionOnChange(
-    engine_ptr: *native_engine.NativeEngine,
+    engine_ptr: *engine_object.EngineObject,
     callback_kind: u8,
     value_ptr: [*]const u8,
     value_len: usize,
@@ -276,7 +276,7 @@ pub fn setPosition(
 }
 
 pub fn setPositionEngine(
-    engine_ptr: *native_engine.NativeEngine,
+    engine_ptr: *engine_object.EngineObject,
     fen_ptr: [*]const u8,
     fen_len: usize,
     moves_ptr: ?[*]const ByteView,
@@ -344,7 +344,7 @@ const addButtonOption = engine_options.addButtonOption;
 
 // setoption apply: wait for the search, set into the native OptionsModel, and run the
 // on-change callback (relaying string/spin/check values). Relocated from main.zig.
-pub fn applySetOptionEngine(engine_ptr: *native_engine.NativeEngine, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
+pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
     waitForSearchFinishedEngine(engine_ptr);
     const vlen: usize = if (has_value != 0) value_len else 0;
     const vptr: [*]const u8 = if (has_value != 0) value_ptr else name_ptr;
@@ -377,7 +377,7 @@ pub fn applySetOptionEngine(engine_ptr: *native_engine.NativeEngine, name_ptr: [
     }
 }
 
-pub fn goEngine(engine_ptr: *native_engine.NativeEngine, limits_ptr: *const graph_layout.LimitsType) void {
+pub fn goEngine(engine_ptr: *engine_object.EngineObject, limits_ptr: *const graph_layout.LimitsType) void {
     std.debug.assert(limits_ptr.perftValue() == 0);
     verifyNetwork();
     // startThinking's root-move setup (selected-moves / root-fen / RootMoves /
@@ -392,7 +392,7 @@ pub fn goEngine(engine_ptr: *native_engine.NativeEngine, limits_ptr: *const grap
     ) catch @panic("OOM: search setup failed");
 }
 
-pub fn setNumaConfigFromOptionEngine(engine_ptr: *native_engine.NativeEngine, option_text: []const u8) void {
+pub fn setNumaConfigFromOptionEngine(engine_ptr: *engine_object.EngineObject, option_text: []const u8) void {
     const numa_context = engine_ptr.numaContextPtr();
 
     if (std.mem.eql(u8, option_text, "auto") or std.mem.eql(u8, option_text, "system")) {
@@ -435,7 +435,7 @@ pub fn resizeThreads(
     thread_port.ensureNetworkReplicated(threads);
 }
 
-pub fn resizeThreadsEngine(engine_ptr: *native_engine.NativeEngine) void {
+pub fn resizeThreadsEngine(engine_ptr: *engine_object.EngineObject) void {
     // The resize chain (reconfigure -> thread_pool.set/boundNodesAssign)
     // now propagates OOM / thread-spawn errors as `!void`; this is the engine's single
     // handling boundary. A UCI Threads/NumaPolicy change or init that cannot allocate
@@ -467,7 +467,7 @@ fn statesSlotReset(slot_ptr: *anyopaque) void {
         slot.* = null;
     }
 }
-fn setStartPosition(engine_ptr: *native_engine.NativeEngine) void {
+fn setStartPosition(engine_ptr: *engine_object.EngineObject) void {
     const start_fen: []const u8 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     if (setPositionEngine(engine_ptr, start_fen.ptr, start_fen.len, null, 0)) |_|
         @panic("set start position failed");
@@ -483,7 +483,7 @@ fn setStartPosition(engine_ptr: *native_engine.NativeEngine) void {
 
 // Engine::flip -> read the live FEN, flip it, re-set the position. Relocated from
 // main.zig; all native (engine fen + position flipFen + setPosition).
-pub fn flipEngine(engine_ptr: *native_engine.NativeEngine) void {
+pub fn flipEngine(engine_ptr: *engine_object.EngineObject) void {
     const fen_c = fen(engine_ptr.positionPtr()) orelse return;
     defer freeCString(fen_c);
     const fen_text = std.mem.span(fen_c);

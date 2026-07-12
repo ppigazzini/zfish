@@ -7,7 +7,7 @@ const engine_mod = @import("engine");
 const option_port = @import("option");
 const uci_wdl = @import("uci_wdl");
 const uci_output = @import("uci_output");
-const native_engine = @import("native_engine");
+const engine_object = @import("engine_object");
 // The bench / benchmark command runners live in their own leaf (uci passes it a
 // void wrapper over dispatchCommand, so the leaf has no cycle back into the loop).
 const uci_bench = @import("uci_bench.zig");
@@ -68,7 +68,7 @@ const ByteView = engine_mod.ByteView;
 // hand it to the engine go driver. Relocated from main.zig: startTime is
 // stamped here (earliest point), so the info-line elapsed/nps are correct; the
 // searchmoves element buffer is freed after start_thinking has read it.
-fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void {
+fn goParsed(engine_ptr: *engine_object.EngineObject, parsed: ParsedLimits) void {
     var limits: graph_layout.LimitsType = std.mem.zeroes(graph_layout.LimitsType);
     limits.start_time = clock.now();
     limits.time[0] = parsed.wtime;
@@ -114,7 +114,7 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
     if (limits.searchmoves.len != 0) std.heap.c_allocator.free(limits.searchmoves);
 }
 
-pub fn dispatchCommand(engine: *native_engine.NativeEngine, input: []const u8) DispatchResult {
+pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) DispatchResult {
     const trimmed = trimAsciiWhitespace(input);
     if (trimmed.len == 0 or trimmed[0] == '#')
         return .{ .should_quit = 0 };
@@ -242,7 +242,7 @@ fn classifyCommandToken(token: []const u8) CommandKind {
     return .unknown;
 }
 
-fn applySetoption(engine: *native_engine.NativeEngine, trimmed: []const u8) void {
+fn applySetoption(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     const parsed = option_port.parseSetOption(trimmed);
     defer freeMaybeCString(parsed.name);
     defer freeMaybeCString(parsed.value);
@@ -262,7 +262,7 @@ fn applySetoption(engine: *native_engine.NativeEngine, trimmed: []const u8) void
     );
 }
 
-fn applyPosition(engine: *native_engine.NativeEngine, trimmed: []const u8) void {
+fn applyPosition(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     const parsed = parsePosition(trimmed);
     defer freeMaybeCString(parsed.fen);
     defer freeMaybeCString(parsed.moves);
@@ -291,7 +291,7 @@ fn applyPosition(engine: *native_engine.NativeEngine, trimmed: []const u8) void 
     }
 }
 
-fn applyGo(engine: *native_engine.NativeEngine, trimmed: []const u8) void {
+fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     const limits = parseLimits(trimmed);
     defer freeMaybeCString(limits.searchmoves);
 
@@ -338,8 +338,8 @@ fn isHelpToken(token: []const u8) bool {
 
 pub fn loopRuntime(uci_ptr: *anyopaque) void {
     // Single erasure boundary: main hands the engine as *anyopaque; the whole UCI
-    // dispatch below runs on the typed *NativeEngine handle.
-    const e: *native_engine.NativeEngine = native_engine.NativeEngine.fromPtr(uci_ptr);
+    // dispatch below runs on the typed *EngineObject handle.
+    const e: *engine_object.EngineObject = engine_object.EngineObject.fromPtr(uci_ptr);
     const allocator = std.heap.c_allocator;
     const argc = e.cliArgc();
 
@@ -397,15 +397,15 @@ fn readCommandLineAlloc() !?[]u8 {
 // The bench/benchmark runners live in uci_bench.zig; these thin wrappers keep the
 // public entry points and inject dispatchCommand (as a void wrapper) so the leaf carries
 // no import cycle back into the command loop.
-pub fn benchRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8) void {
+pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8) void {
     uci_bench.benchRuntime(uci_ptr, args, dispatchVoid);
 }
 
-pub fn benchmarkRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8) void {
+pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8) void {
     uci_bench.benchmarkRuntime(uci_ptr, args, dispatchVoid);
 }
 
-fn dispatchVoid(engine: *native_engine.NativeEngine, input: []const u8) void {
+fn dispatchVoid(engine: *engine_object.EngineObject, input: []const u8) void {
     _ = dispatchCommand(engine, input);
 }
 

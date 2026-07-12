@@ -1,4 +1,4 @@
-// Native Search::Worker field constructor.
+// Search::Worker field constructor.
 //
 // The Worker's 13.2 MB storage is already Zig-allocated (aligned_large_pages),
 // its POD fill is Zig (Worker::clear). The non-history members written by the
@@ -24,10 +24,10 @@ const network_port = @import("network");
 
 const off = graph_layout.worker_off;
 
-// The native FT pointer (network.zig-owned inference storage) lets the full native
+// The FT pointer (network.zig-owned inference storage) lets the full native
 // constructor fill the histories exactly as Worker::clear.
 
-// reductions is the [256]c_int table in WorkerLayout (the native layout no longer
+// reductions is the [256]c_int table in WorkerLayout (the layout no longer
 // puts it immediately before `manager`, so take the fixed element count directly).
 const reductions_count: usize = 256;
 
