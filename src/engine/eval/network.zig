@@ -15,7 +15,7 @@ const none_name = "None";
 // EvalFileDefaultName (evaluate.h): the embedded net's default name, a build
 // constant. Single source of truth: engine.zig imports this via the
 // "network" module rather than re-declaring it (a net bump edits one line).
-pub const default_eval_file_name = "nn-af1339a6dea3.nnue";
+pub const default_eval_file_name = "nn-0ee0657fb25e.nnue";
 
 /// Opaque handle to the network subsystem. The NNUE weights live in this
 /// module's globals (ft_ptr_storage &c.), so there is no struct to point at --
@@ -62,11 +62,11 @@ fn networkEmbeddedBytes() ByteView {
     return .{ .ptr = &embedded_nnue_stub, .len = 1 };
 }
 
-// Affine-layer byte sizes — fixed by the NNUE architecture
-// (fc_0 1024->32, fc_1 64->32, fc_2 32->1; biases int32 linear, weights int8 SSSE3-scrambled).
-// sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,32}.
+// Affine-layer byte sizes — fixed by the NNUE architecture (SFNNv15)
+// (fc_0 1024->32, fc_1 64->32, fc_2 128->1; biases int32 linear, weights int8 SSSE3-scrambled).
+// sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,128}.
 const layer_biases_bytes = [3]usize{ 128, 128, 4 };
-const layer_weights_bytes = [3]usize{ 32768, 2048, 32 };
+const layer_weights_bytes = [3]usize{ 32768, 2048, 128 };
 fn layerBiasesBytes(idx: c_int) usize {
     return layer_biases_bytes[@intCast(idx)];
 }
@@ -168,7 +168,7 @@ pub fn verify(
         .size_bytes = 111263232,
         .input_dimensions = 83248,
         .transformed_dimensions = 1024,
-        .fc0_outputs = 31,
+        .fc0_outputs = 32,
         .fc1_outputs = 32,
     };
     return .{

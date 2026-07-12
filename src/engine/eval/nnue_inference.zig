@@ -2,7 +2,7 @@
 // the feature-transformer and per-bucket affine-layer weights from the shared
 // nnue_weight_storage leaf and runs the accumulator transform + affine layers.
 // No file I/O and no dependency on network.zig, so it sits below the I/O half.
-// Bench-verified bit-exact (node signature 2067208 on every arch).
+// Bench-verified bit-exact (node signature 2466447 on every arch).
 
 const std = @import("std");
 const position_types = @import("position_types");
@@ -32,9 +32,9 @@ pub const TraceOutput = struct {
     correct_bucket: usize,
 };
 
-// NNUE network layer forward pass (NetworkArchitecture::propagate). Layers: fc_0
-// (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 62->32)
-// -> ac_1 -> fc_2 (affine 32->1), plus the fwdOut bias term. Bit-exact with the
+// NNUE network layer forward pass (NetworkArchitecture::propagate, SFNNv15). Layers:
+// fc_0 (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 64->32) -> {ac_sqr_1, ac_1}
+// -> fc_2 (affine 128->1), plus the fwdOut skip term. Bit-exact with the
 // SSSE3 integer path. Weights are int8 in the SSSE3-scrambled layout;
 // biases int32 linear. WeightScaleBits=6.
 // Affine layer over the int8 weights' dpbusd (SSSE3/AVX2/AVX-512-VNNI) tiling.
@@ -46,7 +46,7 @@ pub const TraceOutput = struct {
 // i16), then sum each group of 4 sublanes into the i32 accumulator.
 //
 // Integer sums are order-independent and no partial ever leaves i32's range, so this
-// is BIT-EXACT with the prior scalar loop (signature stays 2067208 on every arch);
+// is BIT-EXACT with the prior scalar loop (signature stays 2466447 on every arch);
 // it just lets LLVM emit vector multiplies/shuffles (and dpbusd-class ops) instead of
 // a scalar MAC. `input.len` must be the padded input dim (a multiple of 4); zero tail
 // lanes contribute nothing.
@@ -118,34 +118,37 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
     var fc0_out: [32]i32 = undefined;
     affineDpbusd(32, &fc0_out, fc0_b, fc0_w, transformed[0..1024]);
 
-    // ac_sqr_0 / ac_0 on the first FC_0_OUTPUTS=31 outputs, concatenated into 62.
-    // upstream 7c7fe322e: ac_sqr_0/ac_0 use WeightScaleBitsLocal = WeightScaleBits+1 = 7.
-    var combined: [64]u8 = [_]u8{0} ** 64;
+    // SFNNv15 concat[128] = [ac_sqr_0(32) | ac_0(32) | ac_sqr_1(32) | ac_1(32)].
+    // ac_sqr_0 / ac_0 over all FC_0_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits+1 = 7:
+    // SqrClippedReLU shift = 2*7+7 = 21, ClippedReLU shift = 7.
+    var concat: [128]u8 = [_]u8{0} ** 128;
     var i: usize = 0;
-    while (i < 31) : (i += 1) {
+    while (i < 32) : (i += 1) {
         const sq: i64 = @as(i64, fc0_out[i]) * @as(i64, fc0_out[i]);
-        combined[i] = @intCast(@min(@as(i64, 127), sq >> 21)); // SqrClippedReLU: >> (2*7+7)
-        combined[31 + i] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc0_out[i] >> 7))); // ClippedReLU (WSB+1)
+        concat[i] = @intCast(@min(@as(i64, 127), sq >> 21));
+        concat[32 + i] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc0_out[i] >> 7)));
     }
 
-    // fc_1: affine 62 -> 32 (PaddedInputDimensions = 64). Pass the full padded 64:
-    // combined[62..64] are the zero-init pad, so the extra lanes add nothing.
+    // fc_1: affine 64 -> 32 over [ac_sqr_0 | ac_0].
     var fc1_out: [32]i32 = undefined;
-    affineDpbusd(32, &fc1_out, fc1_b, fc1_w, combined[0..64]);
+    affineDpbusd(32, &fc1_out, fc1_b, fc1_w, concat[0..64]);
 
-    // ac_1: ClippedReLU 32.
-    var ac1: [32]u8 = undefined;
-    var k: usize = 0;
-    while (k < 32) : (k += 1) ac1[k] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc1_out[k] >> 6)));
+    // ac_sqr_1 / ac_1 over FC_1_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits = 6:
+    // SqrClippedReLU shift = 2*6+7 = 19, ClippedReLU shift = 6. Written into concat[64..128].
+    var j: usize = 0;
+    while (j < 32) : (j += 1) {
+        const sq: i64 = @as(i64, fc1_out[j]) * @as(i64, fc1_out[j]);
+        concat[64 + j] = @intCast(@min(@as(i64, 127), sq >> 19));
+        concat[96 + j] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc1_out[j] >> 6)));
+    }
 
-    // fc_2: affine 32 -> 1 (PaddedInputDimensions = 32). OUT=1 makes the scramble the
-    // identity (phys == i); the dpbusd path handles it uniformly.
+    // fc_2: affine 128 -> 1 over the full concat (OUT=1 -> identity scramble).
     var fc2_out: [1]i32 = undefined;
-    affineDpbusd(1, &fc2_out, fc2_b, fc2_w, ac1[0..32]);
+    affineDpbusd(1, &fc2_out, fc2_b, fc2_w, concat[0..128]);
 
-    // upstream 7c7fe322e: fwdOut = fc_2_out[0] + fc_0_out[FC_0_OUTPUTS], then scale the sum by
-    // 600*OutputScale / (HiddenOneVal*(1<<WeightScaleBits)*2) = 9600/16384, via i64.
-    const fwd_sum: i64 = @as(i64, fc2_out[0]) + @as(i64, fc0_out[31]);
+    // SFNNv15: fwdOut = fc_2_out[0] + (fc_0_out[FC_0_OUTPUTS-2] - fc_0_out[FC_0_OUTPUTS-1]),
+    // then scale by 600*OutputScale / (HiddenOneVal*(1<<WeightScaleBits)*2) = 9600/16384 via i64.
+    const fwd_sum: i64 = @as(i64, fc2_out[0]) + (@as(i64, fc0_out[30]) - @as(i64, fc0_out[31]));
     return @intCast(@divTrunc(fwd_sum * (600 * 16), 128 * 64 * 2));
 }
 

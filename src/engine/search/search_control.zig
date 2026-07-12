@@ -57,10 +57,34 @@ pub fn rootUpdate(ctx: *const QCtx, move: u16, value: c_int, nodes_delta: u64, m
     const rm = &ctx.root_moves[idx];
 
     rm.effort += nodes_delta;
-    rm.average_score = if (rm.average_score != -q_value_inf) @divTrunc(value + rm.average_score, 2) else value;
+
+    // Dynamic EMA (upstream 93ed4b53c): weight this move's node share (N) against its
+    // prior effort (E_prev). The averageScore / meanSquaredScore updates run in u64 as
+    // upstream -- `value * w` promotes the signed value to u64, so this is UNSIGNED
+    // wrapping arithmetic truncated back to i32; bit-exact only when replicated exactly.
+    const scale: u64 = 32;
+    const n: u64 = nodes_delta;
+    const e_prev: u64 = @max(@as(u64, 1), rm.effort - n);
+    const w: u64 = @min(@max((scale * n * 2) / (n * 2 + 3 * e_prev), @as(u64, 12)), @as(u64, 24));
+    const w_mss: u64 = @min(w, @as(u64, 16));
     const av = if (value < 0) -value else value;
-    const v_sq = value * av;
-    rm.mean_squared_score = if (rm.mean_squared_score != root_mean_sq_sentinel) @divTrunc(v_sq + rm.mean_squared_score, 2) else v_sq;
+    const v2: i64 = @as(i64, value) * @as(i64, av);
+
+    if (rm.average_score == -q_value_inf) {
+        rm.average_score = value;
+    } else {
+        const value_u: u64 = @bitCast(@as(i64, value));
+        const avg_u: u64 = @bitCast(@as(i64, rm.average_score));
+        rm.average_score = @bitCast(@as(u32, @truncate((value_u *% w +% avg_u *% (scale - w)) / scale)));
+    }
+
+    if (rm.mean_squared_score == root_mean_sq_sentinel) {
+        rm.mean_squared_score = value * av;
+    } else {
+        const v2_u: u64 = @bitCast(v2);
+        const mss_u: u64 = @bitCast(@as(i64, rm.mean_squared_score));
+        rm.mean_squared_score = @bitCast(@as(u32, @truncate((v2_u *% w_mss +% mss_u *% (scale - w_mss)) / scale)));
+    }
 
     if (move_count == 1 or value > alpha) {
         rm.score = value;

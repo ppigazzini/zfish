@@ -15,7 +15,7 @@ const Position = position_types.Position;
 // boundary. Passing a small `extern struct` BY VALUE
 // across is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
 // HalfThreatParams / 7-byte HalfDiff arrive scrambled), which silently corrupted
-// the psq feature indices off-x86 (bench diverged: 6860970 vs 2067208). A direct
+// the psq feature indices off-x86 (bench diverged: 6860970 vs 2466447). A direct
 // Zig call has no C-ABI marshaling, so it is correct on every target and bit-
 // identical on x86.
 const nnue_feature = @import("nnue_feature");
@@ -188,7 +188,7 @@ pub fn transformBucket(
 
     // Pairwise clipped-ReLU output, vectorized. Per element: sum psq+threat
     // accumulators (i16 wrap), clamp to [0,255], multiply the two halves, /512 -> u8.
-    // Same element-wise ops as the scalar loop, so bit-exact (signature 2067208).
+    // Same element-wise ops as the scalar loop, so bit-exact (signature 2466447).
     const half = half_dimensions / 2;
     const V = acc_vec_width;
     const Vi16 = @Vector(V, i16);

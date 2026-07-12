@@ -228,7 +228,7 @@ pub fn runBack(nd: anytype) c_int {
         if (ssAdd(nd.ss, 1).cutoff_cnt > 1) {
             r += 236 + 1079 * @as(c_int, @intFromBool(ssAdd(nd.ss, 1).cutoff_cnt > 2)) + 1143 * @as(c_int, @intFromBool(nd.all_node));
         } else if (move == nd.tt_move) {
-            r = @max(@as(c_int, 0), r - 2016); // upstream 3c858c19e: simplify ttMove reduction
+            r -= 2016; // upstream 924d29d3c: simplify the first-picked-move (ttMove) reduction
         }
         if (nd.tt_capture) r += 1039;
 

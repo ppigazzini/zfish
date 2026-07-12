@@ -5,7 +5,7 @@
 // weight rows, depending only on the two network dimensions (duplicated as tiny
 // consts). No *anyopaque, no position_snapshot / nnue_feature, so no cycle. The
 // accumulator core imports this and aliases the kernels. Bit-exact: vector +/- is
-// the same element-wise i16 op as the scalar loop it replaces (bench 2067208).
+// the same element-wise i16 op as the scalar loop it replaces (bench 2466447).
 
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;

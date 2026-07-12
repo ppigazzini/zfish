@@ -82,8 +82,7 @@ pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
     return v;
 }
 
-// Step 8 child-node futility pruning. futilityMult inlines
-// interpolate(min(depth,10), 1, 10, 40, 80) = 40 + 40*(d-1)/9.
+// Step 8 child-node futility pruning: futilityMult = min(40 + depth*4, 80).
 pub fn futilityMargin(
     depth: c_int,
     tt_hit: bool,
@@ -91,8 +90,7 @@ pub fn futilityMargin(
     opponent_worsening: bool,
     correction_value: c_int,
 ) c_int {
-    const d = @min(depth, 10);
-    var futility_mult: c_int = 40 + @divTrunc(40 * (d - 1), 9);
+    var futility_mult: c_int = @min(40 + depth * 4, 80);
     futility_mult -= 20 * @as(c_int, @intFromBool(!tt_hit));
     const imp: c_int = @intFromBool(improving);
     const opp: c_int = @intFromBool(opponent_worsening);
