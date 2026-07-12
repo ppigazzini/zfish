@@ -123,7 +123,7 @@ pub fn constructFull(
 ) void {
     const base: [*]u8 = @ptrCast(buf orelse return);
     @memset(base[0..graph_layout.worker_size], 0);
-    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));
+    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.ftPtr() orelse return));
     constructWorkerInto(base, .{
         .shared_history = shared_history,
         .threads = threads,

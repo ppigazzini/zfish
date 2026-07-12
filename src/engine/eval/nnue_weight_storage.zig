@@ -52,7 +52,7 @@ pub fn equalCurrentName(target: []const u8) bool {
 var native_ft_ptr_storage: ?[*]u8 = null;
 var native_ft_len: usize = 0;
 
-pub fn nativeFtStorage(n: usize) ?[*]u8 {
+pub fn ftStorage(n: usize) ?[*]u8 {
     if (n == 0) return null;
     if (native_ft_ptr_storage != null and native_ft_len != n) {
         memory_port.alignedLargePagesFree(native_ft_ptr_storage);
@@ -65,7 +65,7 @@ pub fn nativeFtStorage(n: usize) ?[*]u8 {
     return native_ft_ptr_storage.?;
 }
 
-pub fn nativeFtPtr() ?[*]const u8 {
+pub fn ftPtr() ?[*]const u8 {
     return native_ft_ptr_storage;
 }
 
@@ -74,7 +74,7 @@ var native_layer_w: [layer_stacks_n][layers_per_stack]?[*]u8 =
 var native_layer_b: [layer_stacks_n][layers_per_stack]?[*]u8 =
     .{.{ null, null, null }} ** layer_stacks_n;
 
-pub fn nativeLayerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8 {
+pub fn layerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8 {
     if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack or n == 0) return null;
     const ui: usize = @intCast(idx);
     const slot = if (is_weights != 0) &native_layer_w[bucket][ui] else &native_layer_b[bucket][ui];
@@ -82,7 +82,7 @@ pub fn nativeLayerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize
     return slot.*.?;
 }
 
-pub fn nativeLayerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?[*]const u8 {
+pub fn layerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?[*]const u8 {
     if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack) return null;
     const ui: usize = @intCast(idx);
     return if (is_weights != 0) native_layer_w[bucket][ui] else native_layer_b[bucket][ui];

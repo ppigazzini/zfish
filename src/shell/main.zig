@@ -124,7 +124,7 @@ fn workerClear(worker: *anyopaque) void {
     const shared_history = wl.histories.shared_history.?;
     search_driver.clearSharedHistory(shared_history, wl.numa_thread_idx, wl.numa_total);
     search_port.fillReductions(&wl.reductions, 256);
-    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));
+    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.ftPtr() orelse return));
     nnue_accumulator_port.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
 

@@ -131,7 +131,7 @@ fn accumulatorStackDestroy(stack: ?*nnue_acc.AccumulatorStack) void {
 // caches block from the native FT biases (the loaded net). Relocated from main.zig.
 pub fn accumulatorCachesCreate() ?*nnue_acc.RefreshCache {
     const buf: *nnue_acc.RefreshCache = @ptrCast(&trace_caches_buf);
-    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return null));
+    const biases: [*]const i16 = @ptrCast(@alignCast(network_port.ftPtr() orelse return null));
     nnue_acc.clearRefreshCache(buf, biases);
     return buf;
 }
