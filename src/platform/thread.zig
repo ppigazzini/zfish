@@ -3,6 +3,8 @@ const graph_layout = @import("graph_layout");
 const native_hooks = @import("native_hooks");
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
+const search_driver = @import("search_driver");
+const search_types = @import("search_types");
 const uci_move = @import("uci_move");
 const movegen_port = @import("movegen");
 const tablebase = @import("tablebase");
@@ -73,7 +75,7 @@ pub const ByteView = struct {
 
 const RootSetupInput = struct {
     limits: *const graph_layout.LimitsType,
-    root_moves: []const position_port.RootMove,
+    root_moves: []const search_types.RootMove,
     fen_ptr: [*]const u8,
     fen_len: usize,
     setup_state: *const position_port.StateInfo,
@@ -117,16 +119,16 @@ fn workerSetLimits(thread: *graph_layout.Thread, src_limits: *const graph_layout
 // is a typed slice now, unblocked by M20's proof the WorkerLayout layout is free).
 // Reuse the buffer when the count is unchanged (the common re-search case), else free
 // and reallocate -- the slice equivalent of the old std::vector copy-assign.
-fn workerSetRootMoves(thread: *graph_layout.Thread, src: []const position_port.RootMove) void {
+fn workerSetRootMoves(thread: *graph_layout.Thread, src: []const search_types.RootMove) void {
     const worker = thread.worker.?;
     if (src.len == 0) {
         if (worker.root_moves.len != 0) std.heap.c_allocator.free(worker.root_moves);
-        worker.root_moves = &[_]position_port.RootMove{};
+        worker.root_moves = &[_]search_types.RootMove{};
         return;
     }
     if (worker.root_moves.len != src.len) {
         if (worker.root_moves.len != 0) std.heap.c_allocator.free(worker.root_moves);
-        worker.root_moves = std.heap.c_allocator.alloc(position_port.RootMove, src.len) catch @panic("set_root_moves: OOM");
+        worker.root_moves = std.heap.c_allocator.alloc(search_types.RootMove, src.len) catch @panic("set_root_moves: OOM");
     }
     @memcpy(worker.root_moves, src);
 }
@@ -261,7 +263,7 @@ pub fn reconfigure(
 // The search-driver entry native_thread invokes as each thread's search job. Set
 // as a function pointer (M16.7) so native_thread need not import position.
 fn workerSearchEntry(ctx: ?*anyopaque) void {
-    position_port.workerStartSearching(ctx);
+    search_driver.workerStartSearching(ctx);
 }
 
 pub fn startThinking(

@@ -17,6 +17,7 @@ const state_list_port = @import("state_list"); // native `states` member
 const nnue_feature_port = @import("nnue_feature");
 const option_port = @import("option");
 const position_port = @import("position");
+const search_driver = @import("search_driver");
 const search_port = @import("search");
 const thread_port = @import("thread");
 const timeman_port = @import("timeman");
@@ -118,10 +119,10 @@ fn threadpoolSetupStateBack(pool: *const graph_layout.ThreadPool) ?*const positi
 // callees are gate-verified; only this orchestration is new.
 fn workerClearNative(worker: *anyopaque) void {
     const wl = graph_layout.WorkerLayout.fromPtr(worker);
-    position_port.clearWorkerHistories(wl);
+    search_driver.clearWorkerHistories(wl);
     // sharedHistory is now a typed field of the embedded WorkerHistories.
     const shared_history = wl.histories.shared_history.?;
-    position_port.clearSharedHistory(shared_history, wl.numa_thread_idx, wl.numa_total);
+    search_driver.clearSharedHistory(shared_history, wl.numa_thread_idx, wl.numa_total);
     search_port.fillReductions(&wl.reductions, 256);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return));
     nnue_accumulator_port.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);

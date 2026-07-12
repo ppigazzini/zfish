@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const position_port = @import("position");
+const search_types = @import("search_types");
 const state_list = @import("state_list");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
@@ -79,11 +80,11 @@ const RankedRootMove = struct {
 // containers): the ranked source RootMoves is a plain []RootMove -- no hand-built
 // 24-byte {begin,end,cap} header. The worker still copies it into its own vector-header
 // buffer (workerSetRootMoves reads src.ptr/src.len). @sizeOf(RootMove)==552.
-fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?[]position_port.RootMove {
-    if (count == 0) return &[_]position_port.RootMove{};
-    const elems = std.heap.c_allocator.alloc(position_port.RootMove, count) catch return null;
+fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?[]search_types.RootMove {
+    if (count == 0) return &[_]search_types.RootMove{};
+    const elems = std.heap.c_allocator.alloc(search_types.RootMove, count) catch return null;
     for (elems, 0..) |*rm, i| {
-        rm.* = std.mem.zeroes(position_port.RootMove);
+        rm.* = std.mem.zeroes(search_types.RootMove);
         rm.score = -value_infinite;
         rm.previous_score = -value_infinite;
         rm.average_score = -value_infinite;
@@ -96,7 +97,7 @@ fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?[]positi
     }
     return elems;
 }
-pub fn rootMovesDestroy(rm: []position_port.RootMove) void {
+pub fn rootMovesDestroy(rm: []search_types.RootMove) void {
     if (rm.len != 0) std.heap.c_allocator.free(rm);
 }
 
@@ -357,7 +358,7 @@ pub fn buildRootMoves(
     root_fen: []const u8,
     chess960: u8,
     move_raws: []const u16,
-) !struct { root_moves: []position_port.RootMove, tb_config: TbConfig } {
+) !struct { root_moves: []search_types.RootMove, tb_config: TbConfig } {
     const ranked_moves = try allocator.alloc(RankedRootMove, move_raws.len);
     defer allocator.free(ranked_moves);
 

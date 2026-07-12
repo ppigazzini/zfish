@@ -73,9 +73,6 @@ const h2 = zobrist.h2;
 // Search POD types (SearchStack/CorrectionBundle/PVMoves/RootMove) live in the
 // search_types leaf (M17.3p); re-exported so the search-driver call sites are
 // unchanged.
-pub const SearchStack = search_types.SearchStack;
-pub const PVMoves = search_types.PVMoves;
-pub const RootMove = search_types.RootMove;
 
 // History tables + their dimensions live in the worker_histories leaf module so that
 // both this module (the history-update code) and graph_layout (which embeds the type
@@ -83,7 +80,6 @@ pub const RootMove = search_types.RootMove;
 // names the ported search code + external callers already use.
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
-const search_types = @import("search_types");
 const fen = @import("fen");
 const board_core = @import("board_core");
 const legality = @import("legality");
@@ -93,7 +89,6 @@ const position_query = @import("position_query");
 const state_setup = @import("state_setup");
 const move_do = @import("move_do");
 const fen_parse = @import("fen_parse");
-const search_driver = @import("search_driver");
 const position_lifecycle = @import("position_lifecycle");
 const hist_color_nb = worker_histories.hist_color_nb;
 const hist_uint16 = worker_histories.hist_uint16;
@@ -102,8 +97,6 @@ const hist_piece_nb = worker_histories.hist_piece_nb;
 const hist_square_nb = worker_histories.hist_square_nb;
 const hist_piece_type_nb = worker_histories.hist_piece_type_nb;
 const hist_pieceto = worker_histories.hist_pieceto;
-pub const WorkerHistories = worker_histories.WorkerHistories;
-pub const worker_shared_history_off = worker_histories.worker_shared_history_off;
 
 // The Worker's WorkerHistories sub-block is now the typed WorkerLayout.histories field
 // (M17.2p), so this is just its address -- no reinterpret.
@@ -204,26 +197,7 @@ const DirtyThreats = position_types.DirtyThreats;
 // deepening live in the search_driver leaf (M17.3q); re-exported so the engine,
 // thread, and main callers resolve the search entry points through the position
 // surface (position.zig is now a thin board+search facade over the leaf modules).
-pub const SharedHistories = search_driver.SharedHistories;
-pub const SharedHistoriesMap = search_driver.SharedHistoriesMap;
-pub const clearSharedHistory = search_driver.clearSharedHistory;
-pub const constructSharedHistories = search_driver.constructSharedHistories;
-pub const deinitSharedHistories = search_driver.deinitSharedHistories;
-pub const verifySharedHistories = search_driver.verifySharedHistories;
-pub const updateQuietHistoriesWorker = search_driver.updateQuietHistoriesWorker;
-pub const setContHist = search_driver.setContHist;
-pub const ageMainHistory = search_driver.ageMainHistory;
-pub const fillLowPlyHistory = search_driver.fillLowPlyHistory;
-pub const clearWorkerHistories = search_driver.clearWorkerHistories;
-pub const updateQuietHistories = search_driver.updateQuietHistories;
-pub const updateContinuationHistories = search_driver.updateContinuationHistories;
-pub const isShuffling = search_driver.isShuffling;
-pub const workerStartSearching = search_driver.workerStartSearching;
 pub const doMoveState = position_lifecycle.doMoveState;
 pub const create = position_lifecycle.create;
 pub const destroy = position_lifecycle.destroy;
 pub const setPositionState = position_lifecycle.setPositionState;
-pub const extractPonderFromTt = search_driver.extractPonderFromTt;
-pub const iterativeDeepening = search_driver.iterativeDeepening;
-pub const updateAllStats = search_driver.updateAllStats;
-pub const updateCorrectionHistory = search_driver.updateCorrectionHistory;

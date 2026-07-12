@@ -16,6 +16,8 @@
 const std = @import("std");
 const graph_layout = @import("graph_layout");
 const position_port = @import("position");
+const search_driver = @import("search_driver");
+const worker_histories = @import("worker_histories");
 const search_port = @import("search");
 const nnue_acc = @import("nnue_accumulator");
 const network_port = @import("network");
@@ -92,13 +94,13 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
 fn constructWorkerInto(
     buf: [*]u8,
     in: WorkerCtorInputs,
-    shared_obj: *position_port.SharedHistories,
+    shared_obj: *search_driver.SharedHistories,
     biases: [*]const i16,
 ) void {
     const wl = graph_layout.WorkerLayout.fromPtr(buf);
     writeConstructorFields(buf, in);
-    position_port.clearWorkerHistories(wl);
-    position_port.clearSharedHistory(shared_obj, in.numa_thread_idx, in.numa_total);
+    search_driver.clearWorkerHistories(wl);
+    search_driver.clearSharedHistory(shared_obj, in.numa_thread_idx, in.numa_total);
     search_port.fillReductions(&wl.reductions, reductions_count);
     nnue_acc.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
@@ -167,7 +169,7 @@ test "writeConstructorFields lands every member at its worker_off slot" {
         }
     }.read;
 
-    try testing.expectEqual(@as(usize, 0x1000), readPtr(buf.ptr, off.histories + position_port.worker_shared_history_off));
+    try testing.expectEqual(@as(usize, 0x1000), readPtr(buf.ptr, off.histories + worker_histories.worker_shared_history_off));
     try testing.expectEqual(@as(usize, 0x3000), readPtr(buf.ptr, off.threads));
     try testing.expectEqual(@as(usize, 0x4000), readPtr(buf.ptr, off.tt));
     try testing.expectEqual(@as(usize, 0x6000), readPtr(buf.ptr, off.manager));

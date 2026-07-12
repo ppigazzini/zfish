@@ -47,6 +47,7 @@ pub const stopEngine = engine_control.stopEngine;
 pub const waitForSearchFinishedEngine = engine_control.waitForSearchFinishedEngine;
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
+const search_driver = @import("search_driver");
 const uci_move = @import("uci_move");
 const misc_port = @import("misc");
 const thread_port = @import("thread");
@@ -85,7 +86,7 @@ comptime {
 pub const SharedState = shared_state_mod.SharedStateOf(
     graph_layout.ThreadPool,
     tt_port.TranspositionTable,
-    position_port.SharedHistoriesMap,
+    search_driver.SharedHistoriesMap,
 );
 
 comptime {
@@ -103,7 +104,7 @@ var live_shared_state: SharedState = undefined;
 fn sharedStateCreate(
     threads: *graph_layout.ThreadPool,
     tt: *graph_layout.TranspositionTable,
-    shared_histories: *position_port.SharedHistoriesMap,
+    shared_histories: *search_driver.SharedHistoriesMap,
 ) *anyopaque {
     live_shared_state = SharedState.init(
         threads,
@@ -411,7 +412,7 @@ pub fn resizeThreads(
     numa_context: *const anyopaque,
     threads: *graph_layout.ThreadPool,
     tt: *graph_layout.TranspositionTable,
-    shared_hists: *position_port.SharedHistoriesMap,
+    shared_hists: *search_driver.SharedHistoriesMap,
     update_context: *const anyopaque,
 ) !void {
     thread_port.waitForSearchFinished(threads);
