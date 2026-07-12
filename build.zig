@@ -1046,6 +1046,26 @@ pub fn build(b: *std.Build) void {
     );
     headless_step.dependOn(&headless_cmd.step);
 
+    // Engine-only build/test target: compile the entire engine module graph in
+    // isolation via src/engine/headless.zig, which imports every engine-zone module.
+    // By the headless invariant that graph has no platform/ or shell/ module, so this
+    // proves at the compiler + linker level (not just structurally) that the engine is
+    // a standalone library. link_libc: some engine arenas use the C allocator.
+    const engine_root = b.createModule(.{
+        .root_source_file = b.path("src/engine/headless.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    for (module_specs) |spec| {
+        if (std.mem.startsWith(u8, spec.path, "src/engine/")) {
+            engine_root.addImport(spec.name, mods.get(spec.name).?);
+        }
+    }
+    const engine_test = b.addTest(.{ .root_module = engine_root });
+    const engine_step = b.step("engine", "Build + test the engine module graph headless (no platform/shell)");
+    addTestRun(b, engine_step, engine_test, cov_dir, &cov_idx);
+
     // Aggregate unit-test step: run the in-tree `test {}` blocks of
     // every named module that has them, reusing the already-wired modules so their
     // imports resolve, plus the engine-graph tests. Reachability
@@ -1053,6 +1073,8 @@ pub fn build(b: *std.Build) void {
     // imports it; a file with no test-reachable importer is not yet covered.
     const test_step = b.step("test", "Run the Zig unit tests");
     test_step.dependOn(graph_test_step);
+    // The engine graph must also compile + test standalone (the headless invariant).
+    test_step.dependOn(engine_step);
     inline for (.{
         mods.get("position_storage").?,
         mods.get("state_list").?,
