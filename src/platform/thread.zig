@@ -1,5 +1,5 @@
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const runtime_hooks = @import("runtime_hooks");
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
@@ -28,29 +28,29 @@ const loadPositionSnapshot = root_move_build.loadPositionSnapshot;
 const rootMovesDestroy = root_move_build.rootMovesDestroy;
 
 // Reinterpret a pool thread slot (SearchThread*) for the sync handshake.
-inline fn nt(thread: *graph_layout.Thread) *search_thread.SearchThread {
+inline fn nt(thread: *worker_layout.Thread) *search_thread.SearchThread {
     return @ptrCast(@alignCast(thread));
 }
 
 // Thread sync handshake -> the runtime.
-inline fn threadWaitFinished(thread: *graph_layout.Thread) void {
+inline fn threadWaitFinished(thread: *worker_layout.Thread) void {
     nt(thread).waitForSearchFinished();
 }
-inline fn threadStartSearching(thread: *graph_layout.Thread) void {
+inline fn threadStartSearching(thread: *worker_layout.Thread) void {
     search_thread.startSearching(nt(thread));
 }
-inline fn threadClearWorker(thread: *graph_layout.Thread) void {
+inline fn threadClearWorker(thread: *worker_layout.Thread) void {
     search_thread.clearWorker(nt(thread));
 }
-inline fn threadRunJob(thread: *graph_layout.Thread, job: ThreadCallback, ctx: ?*anyopaque) void {
+inline fn threadRunJob(thread: *worker_layout.Thread, job: ThreadCallback, ctx: ?*anyopaque) void {
     nt(thread).startJob(job, ctx);
 }
 // Read searchmoves[index] as a Zig-owned SearchMoveText record: the length + inline
 // chars are read through typed struct fields. The header stays a {begin,end,cap} usize
 // triple, so the element pointer is still @ptrFromInt(begin + index*stride), but into
 // Zig-owned memory. Gate-verified by search-modes.
-inline fn limitsSearchmoveText(limits: *const graph_layout.LimitsType, index: usize) ByteView {
-    const rec: *const graph_layout.SearchMoveText = &limits.searchmoves[index];
+inline fn limitsSearchmoveText(limits: *const worker_layout.LimitsType, index: usize) ByteView {
+    const rec: *const worker_layout.SearchMoveText = &limits.searchmoves[index];
     return .{ .ptr = &rec.text, .len = rec.len };
 }
 comptime {
@@ -71,7 +71,7 @@ pub const ByteView = struct {
 };
 
 const RootSetupInput = struct {
-    limits: *const graph_layout.LimitsType,
+    limits: *const worker_layout.LimitsType,
     root_moves: []const search_types.RootMove,
     fen_ptr: [*]const u8,
     fen_len: usize,
@@ -81,7 +81,7 @@ const RootSetupInput = struct {
 };
 
 const RootSetupContext = struct {
-    thread: *graph_layout.Thread,
+    thread: *worker_layout.Thread,
     input: RootSetupInput,
 };
 
@@ -94,7 +94,7 @@ const numa_policy_auto: u8 = 1;
 // the worker's limits member. LimitsType is a struct now, so copy by field rather
 // than a byte range; searchmoves is deliberately left as the worker's own (the search
 // reads the worker's, always empty on the gated single-node path).
-fn workerSetLimits(thread: *graph_layout.Thread, src_limits: *const graph_layout.LimitsType) void {
+fn workerSetLimits(thread: *worker_layout.Thread, src_limits: *const worker_layout.LimitsType) void {
     const worker = thread.worker.?;
     const dst = &worker.limits;
     const src = src_limits;
@@ -116,7 +116,7 @@ fn workerSetLimits(thread: *graph_layout.Thread, src_limits: *const graph_layout
 // is a typed slice now, unblocked by the proof the WorkerLayout layout is free).
 // Reuse the buffer when the count is unchanged (the common re-search case), else free
 // and reallocate -- the slice equivalent of a grow-and-copy.
-fn workerSetRootMoves(thread: *graph_layout.Thread, src: []const search_types.RootMove) void {
+fn workerSetRootMoves(thread: *worker_layout.Thread, src: []const search_types.RootMove) void {
     const worker = thread.worker.?;
     if (src.len == 0) {
         if (worker.root_moves.len != 0) std.heap.c_allocator.free(worker.root_moves);
@@ -139,7 +139,7 @@ fn applyRootSetup(context_ptr: ?*anyopaque) void {
     workerSetLimits(context.thread, context.input.limits);
     // []RootMove grow-and-copy.
     workerSetRootMoves(context.thread, context.input.root_moves);
-    if (graph_layout.Worker.fromThread(context.thread)) |w| {
+    if (worker_layout.Worker.fromThread(context.thread)) |w| {
         w.resetRootSetupState();
         const cfg = context.input.tb_config;
         _ = position_port.setPosition(
@@ -148,15 +148,15 @@ fn applyRootSetup(context_ptr: ?*anyopaque) void {
             context.input.fen_len,
             context.input.chess960,
             w.rootStatePtr(),
-            graph_layout.position_size,
-            graph_layout.state_info_size,
+            worker_layout.position_size,
+            worker_layout.state_info_size,
         );
         w.setRootState(context.input.setup_state);
         w.setTbConfig(cfg.cardinality, cfg.root_in_tb != 0, cfg.use_rule50 != 0, cfg.probe_depth);
     }
 }
 
-fn waitMainThread(pool: *graph_layout.ThreadPool) void {
+fn waitMainThread(pool: *worker_layout.ThreadPool) void {
     if (pool.numThreads() == 0)
         return;
 
@@ -170,7 +170,7 @@ pub fn nextPowerOfTwo(count: u64) usize {
 }
 
 pub fn reconfigure(
-    pool: *graph_layout.ThreadPool,
+    pool: *worker_layout.ThreadPool,
     numa_config: *const anyopaque,
     shared_state: *const anyopaque,
     update_context: *const anyopaque,
@@ -264,9 +264,9 @@ fn workerSearchEntry(ctx: ?*anyopaque) void {
 }
 
 pub fn startThinking(
-    pool: *graph_layout.ThreadPool,
+    pool: *worker_layout.ThreadPool,
     pos: *position_port.Position,
-    limits: *const graph_layout.LimitsType,
+    limits: *const worker_layout.LimitsType,
     states_slot: *anyopaque,
 ) !void {
     search_thread.searchEntry = &workerSearchEntry;
@@ -361,7 +361,7 @@ pub fn startThinking(
     threadStartSearching(main_thread);
 }
 
-pub fn clear(pool: *graph_layout.ThreadPool) void {
+pub fn clear(pool: *worker_layout.ThreadPool) void {
     const thread_count = pool.numThreads();
     if (thread_count == 0) {
         return;
@@ -387,15 +387,15 @@ pub fn clear(pool: *graph_layout.ThreadPool) void {
     }
 }
 
-pub fn nodesSearched(pool: *graph_layout.ThreadPool) u64 {
-    return graph_layout.poolNodesSearched(pool);
+pub fn nodesSearched(pool: *worker_layout.ThreadPool) u64 {
+    return worker_layout.poolNodesSearched(pool);
 }
 
-pub fn tbHits(pool: *graph_layout.ThreadPool) u64 {
-    return graph_layout.poolTbHits(pool);
+pub fn tbHits(pool: *worker_layout.ThreadPool) u64 {
+    return worker_layout.poolTbHits(pool);
 }
 
-pub fn startSearching(pool: *graph_layout.ThreadPool) void {
+pub fn startSearching(pool: *worker_layout.ThreadPool) void {
     const thread_count = pool.numThreads();
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
@@ -404,17 +404,17 @@ pub fn startSearching(pool: *graph_layout.ThreadPool) void {
 }
 
 // Wait until one thread's worker finishes its current search (thread pool op).
-pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
+pub fn waitThread(pool: *worker_layout.ThreadPool, thread_id: usize) void {
     thread_pool.waitThread(pool, thread_id);
 }
 
 // Join+free the threads and null the pool's threads slice (engine teardown).
 // Wraps thread_pool for main.zig, which doesn't import it directly.
-pub fn threadPoolClear(pool: *graph_layout.ThreadPool) void {
+pub fn threadPoolClear(pool: *worker_layout.ThreadPool) void {
     thread_pool.clear(pool);
 }
 
-pub fn waitForSearchFinished(pool: *graph_layout.ThreadPool) void {
+pub fn waitForSearchFinished(pool: *worker_layout.ThreadPool) void {
     const thread_count = pool.numThreads();
     var index: usize = 1;
     while (index < thread_count) : (index += 1) {
@@ -422,7 +422,7 @@ pub fn waitForSearchFinished(pool: *graph_layout.ThreadPool) void {
     }
 }
 
-pub fn ensureNetworkReplicated(pool: *graph_layout.ThreadPool) void {
+pub fn ensureNetworkReplicated(pool: *worker_layout.ThreadPool) void {
     // The NNUE weights are always resident (no per-node Network replica), so the
     // per-worker ensure_network_replicated is a no-op.
     _ = pool;

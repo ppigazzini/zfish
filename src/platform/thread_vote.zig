@@ -1,11 +1,11 @@
 // Lazy-SMP best-thread vote.
 //
-// A leaf module (graph_layout only): picks the vote-winning thread's worker from the
+// A leaf module (worker_layout only): picks the vote-winning thread's worker from the
 // pool's per-thread root-move summaries. Both thread.zig and the search driver
 // (position.zig) select the best thread, and position cannot import thread (thread
 // imports position), so the pure graph-read + integer-vote logic lives here.
 
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 
 const value_none: c_int = 32002;
 const value_infinite: c_int = 32001;
@@ -21,8 +21,8 @@ pub const ThreadSummary = struct {
     root_depth: c_int,
 };
 
-fn fillThreadSummary(thread: *graph_layout.Thread, out: *ThreadSummary) void {
-    const w = graph_layout.Worker.fromThread(thread) orelse return;
+fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
+    const w = worker_layout.Worker.fromThread(thread) orelse return;
     const rmv = w.rootMovesFirst();
     out.pv0_raw = rmv.pv.moves[0];
     out.score_is_bound = @intFromBool(rmv.score_lowerbound or rmv.score_upperbound);
@@ -98,7 +98,7 @@ fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
 }
 
 // Index of the vote-winning thread within the pool.
-pub fn bestThreadIndex(pool: *graph_layout.ThreadPool) usize {
+pub fn bestThreadIndex(pool: *worker_layout.ThreadPool) usize {
     const thread_count = pool.numThreads();
     if (thread_count == 0) return 0;
     if (thread_count > max_thread_summaries) @panic("thread summary buffer too small");
@@ -113,10 +113,10 @@ pub fn bestThreadIndex(pool: *graph_layout.ThreadPool) usize {
 
 // Worker of the vote-winning thread -- the value the search driver picks as
 // `bestThread` when choosing the move to report.
-pub fn bestThreadWorker(pool: *graph_layout.ThreadPool) *graph_layout.WorkerLayout {
+pub fn bestThreadWorker(pool: *worker_layout.ThreadPool) *worker_layout.WorkerLayout {
     const idx = bestThreadIndex(pool);
     const thread = pool.threadAt(idx);
-    return graph_layout.Thread.fromAddr(thread).worker.?;
+    return worker_layout.Thread.fromAddr(thread).worker.?;
 }
 
 test {

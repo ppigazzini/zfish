@@ -1,12 +1,12 @@
 // WorkerHistories.
 //
 // The per-Worker history tables (butterfly / low-ply / capture / continuation /
-// correction + tt-move history) plus the shared-history reference. graph_layout embeds
+// correction + tt-move history) plus the shared-history reference. worker_layout embeds
 // it directly as WorkerLayout.histories.
 //
 // A contiguous int16-array prefix (no vtable; mainHistory is at offset 0) followed by
 // the shared-history reference. Only ever used through a Worker pointer, so the field
-// order/sizes must byte-match the WorkerLayout histories slot; graph_layout comptime-
+// order/sizes must byte-match the WorkerLayout histories slot; worker_layout comptime-
 // asserts @sizeOf against worker_histories_bytes.
 
 const std = @import("std");

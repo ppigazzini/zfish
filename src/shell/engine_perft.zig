@@ -7,7 +7,7 @@
 // uci `go perft`).
 
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const movegen_port = @import("movegen");
 const position_port = @import("position");
 const option_port = @import("option");
@@ -63,7 +63,7 @@ pub fn perftEngine(engine_ptr: *engine_object.EngineObject, depth: c_int) u64 {
     // fields, so byte-zero-then-setPosition-populate is the (existing) init contract.
     @memset(@as([*]u8, @ptrCast(p))[0..@sizeOf(position_port.Position)], 0);
     @memset(@as([*]u8, @ptrCast(st))[0..@sizeOf(position_port.StateInfo)], 0);
-    if (position_port.setPosition(p, fen_text.ptr, fen_text.len, if (chess960) @as(u8, 1) else 0, st, graph_layout.position_size, graph_layout.state_info_size)) |msg| std.heap.c_allocator.free(std.mem.span(msg));
+    if (position_port.setPosition(p, fen_text.ptr, fen_text.len, if (chess960) @as(u8, 1) else 0, st, worker_layout.position_size, worker_layout.state_info_size)) |msg| std.heap.c_allocator.free(std.mem.span(msg));
 
     var moves: [256]u16 = undefined;
     const count = movegen_port.generateLegal(p, &moves);

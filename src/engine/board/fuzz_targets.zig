@@ -14,11 +14,11 @@
 const std = @import("std");
 const position = @import("position");
 const movegen = @import("movegen");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const position_snapshot = @import("position_snapshot");
 
-const position_size = graph_layout.position_size;
-const state_info_size = graph_layout.state_info_size;
+const position_size = worker_layout.position_size;
+const state_info_size = worker_layout.state_info_size;
 
 // The stored (incremental) zobrist key of the current position -- fillSnapshot copies
 // `st.key`, the value doMove maintains, NOT a recomputed one, so comparing it across a

@@ -115,7 +115,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "thread_runtime", .path = "src/platform/thread_runtime.zig" },
         .{ .name = "search_thread", .path = "src/platform/search_thread.zig" },
         .{ .name = "numa", .path = "src/platform/numa.zig" },
-        .{ .name = "graph_layout", .path = "src/engine/state/graph_layout.zig" },
+        .{ .name = "worker_layout", .path = "src/engine/state/worker_layout.zig" },
         .{ .name = "shared_state", .path = "src/engine/state/shared_state.zig" },
         .{ .name = "limits_type", .path = "src/engine/state/limits_type.zig" },
         .{ .name = "root_move", .path = "src/engine/state/root_move.zig" },
@@ -216,15 +216,15 @@ pub fn build(b: *std.Build) void {
         .{ .from = "thread", .imp = "search_types", .to = "search_types" },
         .{ .from = "root_move_build", .imp = "search_types", .to = "search_types" },
         .{ .from = "position", .imp = "worker_histories", .to = "worker_histories" },
-        .{ .from = "graph_layout", .imp = "worker_histories", .to = "worker_histories" },
+        .{ .from = "worker_layout", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "position", .imp = "position_types", .to = "position_types" },
-        .{ .from = "graph_layout", .imp = "position_types", .to = "position_types" },
+        .{ .from = "worker_layout", .imp = "position_types", .to = "position_types" },
         .{ .from = "state_list", .imp = "position_types", .to = "position_types" },
-        .{ .from = "graph_layout", .imp = "limits_type", .to = "limits_type" },
-        .{ .from = "graph_layout", .imp = "root_move", .to = "root_move" },
-        .{ .from = "graph_layout", .imp = "tt_types", .to = "tt_types" },
-        .{ .from = "graph_layout", .imp = "state_list", .to = "state_list" },
-        .{ .from = "runtime_hooks", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "worker_layout", .imp = "limits_type", .to = "limits_type" },
+        .{ .from = "worker_layout", .imp = "root_move", .to = "root_move" },
+        .{ .from = "worker_layout", .imp = "tt_types", .to = "tt_types" },
+        .{ .from = "worker_layout", .imp = "state_list", .to = "state_list" },
+        .{ .from = "runtime_hooks", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "runtime_hooks", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_types", .imp = "root_move", .to = "root_move" },
         .{ .from = "search_types", .imp = "worker_histories", .to = "worker_histories" },
@@ -269,13 +269,13 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "search_types", .to = "search_types" },
         .{ .from = "position", .imp = "search_driver", .to = "search_driver" },
         .{ .from = "position", .imp = "position_lifecycle", .to = "position_lifecycle" },
-        .{ .from = "position_lifecycle", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "position_lifecycle", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "position_lifecycle", .imp = "move_do", .to = "move_do" },
         .{ .from = "position_lifecycle", .imp = "legality", .to = "legality" },
         .{ .from = "position_lifecycle", .imp = "fen_parse", .to = "fen_parse" },
         .{ .from = "position_lifecycle", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_driver", .imp = "clock", .to = "clock" },
-        .{ .from = "search_driver", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "search_driver", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_driver", .imp = "bitboard", .to = "bitboard" },
         .{ .from = "search_driver", .imp = "movegen", .to = "movegen" },
         .{ .from = "search_driver", .imp = "tt", .to = "tt" },
@@ -303,7 +303,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_driver", .imp = "search_id", .to = "search_id" },
         .{ .from = "search_driver", .imp = "search_acc", .to = "search_acc" },
         .{ .from = "search_driver", .imp = "search_setup", .to = "search_setup" },
-        .{ .from = "search_setup", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "search_setup", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_setup", .imp = "root_move", .to = "root_move" },
         .{ .from = "search_setup", .imp = "tt_types", .to = "tt_types" },
         .{ .from = "search_setup", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
@@ -320,7 +320,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_acc", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_acc", .imp = "search_types", .to = "search_types" },
         .{ .from = "search_acc", .imp = "search_ctx", .to = "search_ctx" },
-        .{ .from = "search_id", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "search_id", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_id", .imp = "option", .to = "option" },
         .{ .from = "search_id", .imp = "timeman", .to = "timeman" },
         .{ .from = "search_id", .imp = "tt", .to = "tt" },
@@ -330,7 +330,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_id", .imp = "position_query", .to = "position_query" },
         .{ .from = "search_id", .imp = "clock", .to = "clock" },
         .{ .from = "search_id", .imp = "search_ctx", .to = "search_ctx" },
-        .{ .from = "search_ctx", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "search_ctx", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_ctx", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_ctx", .imp = "root_move", .to = "root_move" },
         .{ .from = "search_ctx", .imp = "tt_types", .to = "tt_types" },
@@ -348,7 +348,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_driver", .imp = "history", .to = "history" },
         .{ .from = "search_driver", .imp = "search_emit", .to = "search_emit" },
         .{ .from = "search_emit", .imp = "clock", .to = "clock" },
-        .{ .from = "search_emit", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "search_emit", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_emit", .imp = "tt", .to = "tt" },
         .{ .from = "search_emit", .imp = "score", .to = "score" },
         .{ .from = "search_emit", .imp = "uci_wdl", .to = "uci_wdl" },
@@ -364,8 +364,8 @@ pub fn build(b: *std.Build) void {
         .{ .from = "history", .imp = "search_types", .to = "search_types" },
         .{ .from = "history", .imp = "position_types", .to = "position_types" },
         .{ .from = "history", .imp = "board_core", .to = "board_core" },
-        .{ .from = "history", .imp = "graph_layout", .to = "graph_layout" },
-        .{ .from = "search_common", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "history", .imp = "worker_layout", .to = "worker_layout" },
+        .{ .from = "search_common", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_common", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "search_common", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_common", .imp = "board_core", .to = "board_core" },
@@ -397,7 +397,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine", .imp = "engine_perft", .to = "engine_perft" },
         .{ .from = "engine", .imp = "engine_options", .to = "engine_options" },
         .{ .from = "engine_options", .imp = "option", .to = "option" },
-        .{ .from = "engine_perft", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "engine_perft", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "engine_perft", .imp = "movegen", .to = "movegen" },
         .{ .from = "engine_perft", .imp = "position", .to = "position" },
         .{ .from = "engine_perft", .imp = "option", .to = "option" },
@@ -412,7 +412,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine_trace", .imp = "uci_move", .to = "uci_move" },
         .{ .from = "engine_trace", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "engine_trace", .imp = "evaluate", .to = "evaluate" },
-        .{ .from = "engine_trace", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "engine_trace", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "engine_trace", .imp = "tablebase", .to = "tablebase" },
         .{ .from = "engine_trace", .imp = "option", .to = "option" },
         .{ .from = "engine_trace", .imp = "state_list", .to = "state_list" },
@@ -431,7 +431,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine", .imp = "uci_move", .to = "uci_move" },
         .{ .from = "engine", .imp = "misc", .to = "misc" },
         .{ .from = "engine", .imp = "thread", .to = "thread" },
-        .{ .from = "engine_object", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "engine_object", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "engine_object", .imp = "misc", .to = "misc" },
         .{ .from = "engine_object", .imp = "state_list", .to = "state_list" },
         .{ .from = "engine_object", .imp = "network", .to = "network" },
@@ -484,23 +484,23 @@ pub fn build(b: *std.Build) void {
         .{ .from = "uci", .imp = "uci_wdl", .to = "uci_wdl" },
         .{ .from = "uci", .imp = "uci_output", .to = "uci_output" },
         .{ .from = "uci", .imp = "engine_object", .to = "engine_object" },
-        .{ .from = "uci", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "uci", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "uci", .imp = "clock", .to = "clock" },
         .{ .from = "engine", .imp = "uci_wdl", .to = "uci_wdl" },
         .{ .from = "tt", .imp = "memory", .to = "memory" },
         .{ .from = "tt", .imp = "tt_types", .to = "tt_types" },
         .{ .from = "position", .imp = "score", .to = "score" },
         .{ .from = "thread", .imp = "thread_vote", .to = "thread_vote" },
-        .{ .from = "thread_vote", .imp = "graph_layout", .to = "graph_layout" },
-        .{ .from = "search_thread", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "thread_vote", .imp = "worker_layout", .to = "worker_layout" },
+        .{ .from = "search_thread", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_thread", .imp = "thread_runtime", .to = "thread_runtime" },
         .{ .from = "thread", .imp = "search_thread", .to = "search_thread" },
         .{ .from = "thread", .imp = "thread_runtime", .to = "thread_runtime" },
         .{ .from = "misc", .imp = "memory", .to = "memory" },
-        .{ .from = "tt", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "tt", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "tt", .imp = "thread", .to = "thread" },
-        .{ .from = "thread", .imp = "graph_layout", .to = "graph_layout" },
-        .{ .from = "engine", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "thread", .imp = "worker_layout", .to = "worker_layout" },
+        .{ .from = "engine", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "thread", .imp = "movegen", .to = "movegen" },
         .{ .from = "uci_move", .imp = "movegen", .to = "movegen" },
         .{ .from = "uci_move", .imp = "position_types", .to = "position_types" },
@@ -509,7 +509,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "thread", .imp = "state_list", .to = "state_list" },
         .{ .from = "engine", .imp = "tablebase", .to = "tablebase" },
         .{ .from = "engine", .imp = "option", .to = "option" },
-        .{ .from = "position", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "position", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "network", .imp = "memory", .to = "memory" },
         .{ .from = "network", .imp = "position_types", .to = "position_types" },
         .{ .from = "network", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
@@ -620,14 +620,14 @@ pub fn build(b: *std.Build) void {
 
     // Direct callers of the aligned/large-page allocator.
     exe.root_module.addImport("memory", mods.get("memory").?);
-    exe.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    exe.root_module.addImport("worker_layout", mods.get("worker_layout").?);
     exe.root_module.addImport("position_types", mods.get("position_types").?);
     exe.root_module.addImport("clock", mods.get("clock").?);
     exe.root_module.addImport("uci_output", mods.get("uci_output").?);
     exe.root_module.addImport("uci_wdl", mods.get("uci_wdl").?);
     exe.root_module.addImport("score", mods.get("score").?);
     // network does not import position: its two Position field reads go through the
-    // leaf graph_layout, which frees position -> network for the direct eval call below.
+    // leaf worker_layout, which frees position -> network for the direct eval call below.
 
     // The engine compiles zero C++ TUs (TU=0), so these addCMacro calls are dead
     // (no C TU consumes them) but harmless.
@@ -1069,7 +1069,7 @@ pub fn build(b: *std.Build) void {
     });
     board_props_test.root_module.addImport("position", mods.get("position").?);
     board_props_test.root_module.addImport("movegen", mods.get("movegen").?);
-    board_props_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    board_props_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
     addTestRun(b, test_step, board_props_test, cov_dir, &cov_idx);
 
     // uci_parse property + fuzz tests (needs libc for c_allocator + the
@@ -1099,7 +1099,7 @@ pub fn build(b: *std.Build) void {
     });
     fuzz_targets_test.root_module.addImport("position", mods.get("position").?);
     fuzz_targets_test.root_module.addImport("movegen", mods.get("movegen").?);
-    fuzz_targets_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    fuzz_targets_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
     fuzz_targets_test.root_module.addImport("position_snapshot", mods.get("position_snapshot").?);
     const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
     fuzz_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
@@ -1173,9 +1173,9 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/engine/eval/nnue_acc_update.zig", .deps = &.{ "position_snapshot", "position_types", "nnue_feature", "nnue_acc_rowops", "nnue_ft", "nnue_refresh_cache" } },
         .{ .path = "src/engine/state/worker_histories.zig", .deps = &.{"shared_history_types"} },
         .{ .path = "src/engine/state/shared_history_types.zig", .deps = &.{"correction_bundle"} },
-        .{ .path = "src/platform/thread_vote.zig", .deps = &.{"graph_layout"} },
-        .{ .path = "src/shell/thread_construct.zig", .deps = &.{"graph_layout"} },
-        .{ .path = "src/platform/runtime_hooks.zig", .deps = &.{ "graph_layout", "position_types" } },
+        .{ .path = "src/platform/thread_vote.zig", .deps = &.{"worker_layout"} },
+        .{ .path = "src/shell/thread_construct.zig", .deps = &.{"worker_layout"} },
+        .{ .path = "src/platform/runtime_hooks.zig", .deps = &.{ "worker_layout", "position_types" } },
         .{ .path = "src/engine/search/search_types.zig", .deps = &.{ "correction_bundle", "root_move", "worker_histories" } },
         .{ .path = "src/engine/board/position_query.zig", .deps = &.{ "board_core", "position_snapshot", "position_types" } },
         .{ .path = "src/engine/board/zobrist.zig", .deps = &.{ "bitboard", "board_core" } },
@@ -1188,24 +1188,24 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/engine/eval/nnue_weight_storage.zig", .deps = &.{"memory"} },
         .{ .path = "src/engine/eval/nnue_inference.zig", .deps = &.{ "nnue_accumulator", "position_types", "memory" } },
         .{ .path = "src/engine/board/legality.zig", .deps = &.{ "bitboard", "board_core", "movegen", "position_types" } },
-        .{ .path = "src/engine/search/search_common.zig", .deps = &.{ "board_core", "graph_layout", "position_types", "worker_histories" } },
+        .{ .path = "src/engine/search/search_common.zig", .deps = &.{ "board_core", "worker_layout", "position_types", "worker_histories" } },
         .{ .path = "src/engine/search/movepick.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types" } },
         .{ .path = "src/engine/search/movepick_score.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types" } },
-        .{ .path = "src/engine/board/position_lifecycle.zig", .deps = &.{ "fen_parse", "graph_layout", "legality", "move_do", "position_types" } },
-        .{ .path = "src/engine/search/search_setup.zig", .deps = &.{ "graph_layout", "nnue_accumulator", "root_move", "search_ctx", "tt_types" } },
+        .{ .path = "src/engine/board/position_lifecycle.zig", .deps = &.{ "fen_parse", "worker_layout", "legality", "move_do", "position_types" } },
+        .{ .path = "src/engine/search/search_setup.zig", .deps = &.{ "worker_layout", "nnue_accumulator", "root_move", "search_ctx", "tt_types" } },
         .{ .path = "src/engine/board/fen_parse.zig", .deps = &.{ "board_core", "legality", "move_do", "position_types", "state_setup" } },
-        .{ .path = "src/engine/search/search_ctx.zig", .deps = &.{ "graph_layout", "nnue_accumulator", "position_types", "root_move", "tt_types" } },
+        .{ .path = "src/engine/search/search_ctx.zig", .deps = &.{ "worker_layout", "nnue_accumulator", "position_types", "root_move", "tt_types" } },
         .{ .path = "src/engine/search/search_control.zig", .deps = &.{ "clock", "search_ctx", "search_types" } },
         .{ .path = "src/engine/board/repetition.zig", .deps = &.{ "bitboard", "board_core", "movegen", "position_types", "zobrist" } },
         .{ .path = "src/engine/board/state_setup.zig", .deps = &.{ "bitboard", "board_core", "legality", "position_types", "zobrist" } },
-        .{ .path = "src/engine/state/graph_layout.zig", .deps = &.{ "limits_type", "position_types", "root_move", "state_list", "tt_types", "worker_histories" } },
+        .{ .path = "src/engine/state/worker_layout.zig", .deps = &.{ "limits_type", "position_types", "root_move", "state_list", "tt_types", "worker_histories" } },
         .{ .path = "src/engine/board/move_do.zig", .deps = &.{ "bitboard", "board_core", "legality", "position_types", "state_setup", "zobrist" } },
         .{ .path = "src/engine/eval/nnue_accumulator.zig", .deps = &.{ "nnue_acc_rowops", "nnue_feature", "nnue_ft", "nnue_refresh_cache", "position_snapshot", "position_types" } },
-        .{ .path = "src/shell/engine_object.zig", .deps = &.{ "graph_layout", "misc", "network", "position_types", "state_list" } },
+        .{ .path = "src/shell/engine_object.zig", .deps = &.{ "worker_layout", "misc", "network", "position_types", "state_list" } },
         .{ .path = "src/shell/engine_nnue.zig", .deps = &.{ "libc", "engine_object", "network", "option", "uci_output" } },
-        .{ .path = "src/shell/engine_control.zig", .deps = &.{ "libc", "graph_layout", "engine_object", "tt", "thread", "option", "tablebase" } },
+        .{ .path = "src/shell/engine_control.zig", .deps = &.{ "libc", "worker_layout", "engine_object", "tt", "thread", "option", "tablebase" } },
         .{ .path = "src/engine/search/shared_history.zig", .deps = &.{ "memory", "position_types", "search_types", "shared_histories", "shared_histories_map", "shared_history_types", "worker_histories" } },
-        .{ .path = "src/engine/search/history.zig", .deps = &.{ "board_core", "graph_layout", "position_types", "search", "search_common", "search_types", "shared_history", "worker_histories" } },
+        .{ .path = "src/engine/search/history.zig", .deps = &.{ "board_core", "worker_layout", "position_types", "search", "search_common", "search_types", "shared_history", "worker_histories" } },
     }) |dt| {
         const t = b.addTest(.{
             .root_module = b.createModule(.{
@@ -1245,7 +1245,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     thread_pool_test.root_module.addImport("search_thread", mods.get("search_thread").?);
-    thread_pool_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    thread_pool_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
     thread_pool_test.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     addTestRun(b, test_step, thread_pool_test, cov_dir, &cov_idx);
 
@@ -1261,7 +1261,7 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
-    worker_construct_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    worker_construct_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
     worker_construct_test.root_module.addImport("position", mods.get("position").?);
     worker_construct_test.root_module.addImport("search", mods.get("search").?);
     worker_construct_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);

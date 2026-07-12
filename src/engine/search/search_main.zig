@@ -4,7 +4,7 @@
 // (search_id_loop) imports it.
 
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const tt = @import("tt");
 const movepick = @import("movepick");
 const search = @import("search");
@@ -51,11 +51,11 @@ const pseudoLegal = legality.pseudoLegal;
 const givesCheck = legality.givesCheck;
 const sq_none: u8 = 64;
 comptime {
-    // graph_layout.WorkerLayout uses opaque byte regions for these position-module
+    // worker_layout.WorkerLayout uses opaque byte regions for these position-module
     // sub-blocks; assert its sizes match the real structs so worker_off stays correct.
-    std.debug.assert(graph_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
-    std.debug.assert(graph_layout.position_size == @sizeOf(Position));
-    std.debug.assert(graph_layout.state_info_size == @sizeOf(StateInfo));
+    std.debug.assert(worker_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
+    std.debug.assert(worker_layout.position_size == @sizeOf(Position));
+    std.debug.assert(worker_layout.state_info_size == @sizeOf(StateInfo));
 }
 const sharedOf = shared_history.sharedOf;
 const pawnEntryRow = shared_history.pawnEntryRow;

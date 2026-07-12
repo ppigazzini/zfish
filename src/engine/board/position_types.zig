@@ -2,16 +2,16 @@
 //
 // The plain-data core of the board representation, pulled out of the 4257-line
 // position.zig god-file into a std-only leaf module so it can be imported from
-// BOTH position.zig and graph_layout.zig without a module cycle (position imports
-// graph_layout, so graph_layout cannot import position). This is the same
+// BOTH position.zig and worker_layout.zig without a module cycle (position imports
+// worker_layout, so worker_layout cannot import position). This is the same
 // cycle-break pattern proven for WorkerHistories: once these types live
-// in a leaf, graph_layout can embed a *typed* Position/StateInfo in the Worker
+// in a leaf, worker_layout can embed a *typed* Position/StateInfo in the Worker
 // block instead of an opaque [N]u8 region.
 //
 // Plain-data structs: Zig owns the field order. The only external
 // layout contracts are the fixed struct sizes (asserted below) that the Worker
 // block reserves a slot for, plus the board/side_to_move offsets the NNUE eval
-// reads (asserted against graph_layout in position.zig, which sees both).
+// reads (asserted against worker_layout in position.zig, which sees both).
 
 const std = @import("std");
 
@@ -79,9 +79,9 @@ pub const Position = struct {
 };
 
 comptime {
-    // The Worker block reserves a fixed-width slot for each of these (graph_layout's
+    // The Worker block reserves a fixed-width slot for each of these (worker_layout's
     // position_size / state_info_size). These self-contained size asserts keep the
-    // slot contract local to the type definition (graph_layout re-asserts the tie to
+    // slot contract local to the type definition (worker_layout re-asserts the tie to
     // its constants). Field order is Zig's to choose; only the sizes are contractual.
     std.debug.assert(@sizeOf(Position) == 1032);
     std.debug.assert(@alignOf(Position) == 8);

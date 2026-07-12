@@ -11,9 +11,9 @@
 // offsets. Same model as the worker constructor. Read-only; panics on drift.
 
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 
-const thread_off = graph_layout.thread_off;
+const thread_off = worker_layout.thread_off;
 
 fn readUsize(base: [*]const u8, offset: usize) usize {
     const p: *const usize = @ptrCast(@alignCast(base + offset));
@@ -28,7 +28,7 @@ fn fail(comptime msg: []const u8) noreturn {
 // Verify a freshly constructed ThreadPool against the Zig model. `requested` is
 // the Thread count the pool was asked to build; `bound` is the expected
 // boundThreadToNumaNode size (0 when threads are not NUMA-bound, else == requested).
-pub fn verifyThreadGraph(pool: *const graph_layout.ThreadPool, requested: usize, bound: usize) void {
+pub fn verifyThreadGraph(pool: *const worker_layout.ThreadPool, requested: usize, bound: usize) void {
     const tp = pool;
 
     // The leading atomic pair is zeroed right after construction (no search has started).
@@ -48,7 +48,7 @@ pub fn verifyThreadGraph(pool: *const graph_layout.ThreadPool, requested: usize,
     while (i < count) : (i += 1) {
         const thread = tp.threadAt(i);
         if (thread == 0) fail("ThreadPool.threads[i] is null");
-        if (graph_layout.Thread.fromAddr(thread).worker == null) fail("Thread[i].worker (LargePagePtr) is null");
+        if (worker_layout.Thread.fromAddr(thread).worker == null) fail("Thread[i].worker (LargePagePtr) is null");
     }
 }
 

@@ -13,7 +13,7 @@
 // panic -- the failure mode (a test that skipped installRuntimeHooks) now
 // reports exactly which hook is missing.
 
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const position_types = @import("position_types");
 
 fn hookPanic(comptime name: []const u8) noreturn {
@@ -38,21 +38,21 @@ pub var worker_clear: *const fn (worker: *anyopaque) void =
             hookPanic("worker_clear");
         }
     }.stub;
-pub var setup_states_adopt_from_slot: *const fn (pool: *graph_layout.ThreadPool, states_slot: *anyopaque) void =
+pub var setup_states_adopt_from_slot: *const fn (pool: *worker_layout.ThreadPool, states_slot: *anyopaque) void =
     struct {
-        fn stub(_: *graph_layout.ThreadPool, _: *anyopaque) void {
+        fn stub(_: *worker_layout.ThreadPool, _: *anyopaque) void {
             hookPanic("setup_states_adopt_from_slot");
         }
     }.stub;
-pub var setup_states_adopt_from_storage: *const fn (pool: *graph_layout.ThreadPool, storage: *anyopaque) void =
+pub var setup_states_adopt_from_storage: *const fn (pool: *worker_layout.ThreadPool, storage: *anyopaque) void =
     struct {
-        fn stub(_: *graph_layout.ThreadPool, _: *anyopaque) void {
+        fn stub(_: *worker_layout.ThreadPool, _: *anyopaque) void {
             hookPanic("setup_states_adopt_from_storage");
         }
     }.stub;
-pub var setup_state_back: *const fn (pool: *const graph_layout.ThreadPool) ?*const position_types.StateInfo =
+pub var setup_state_back: *const fn (pool: *const worker_layout.ThreadPool) ?*const position_types.StateInfo =
     struct {
-        fn stub(_: *const graph_layout.ThreadPool) ?*const position_types.StateInfo {
+        fn stub(_: *const worker_layout.ThreadPool) ?*const position_types.StateInfo {
             hookPanic("setup_state_back");
         }
     }.stub;
@@ -62,9 +62,9 @@ pub var pending_states_available: *const fn (states_slot: *anyopaque) u8 =
             hookPanic("pending_states_available");
         }
     }.stub;
-pub var handoff_pending_states: *const fn (pool: *graph_layout.ThreadPool, states_slot: *anyopaque) u8 =
+pub var handoff_pending_states: *const fn (pool: *worker_layout.ThreadPool, states_slot: *anyopaque) u8 =
     struct {
-        fn stub(_: *graph_layout.ThreadPool, _: *anyopaque) u8 {
+        fn stub(_: *worker_layout.ThreadPool, _: *anyopaque) u8 {
             hookPanic("handoff_pending_states");
         }
     }.stub;
@@ -80,9 +80,9 @@ pub var shared_state_insert_history: *const fn (shared_state: *const anyopaque, 
             hookPanic("shared_state_insert_history");
         }
     }.stub;
-pub var verify_thread_graph: *const fn (pool: *const graph_layout.ThreadPool, requested: usize, bound: usize) void =
+pub var verify_thread_graph: *const fn (pool: *const worker_layout.ThreadPool, requested: usize, bound: usize) void =
     struct {
-        fn stub(_: *const graph_layout.ThreadPool, _: usize, _: usize) void {
+        fn stub(_: *const worker_layout.ThreadPool, _: usize, _: usize) void {
             hookPanic("verify_thread_graph");
         }
     }.stub;

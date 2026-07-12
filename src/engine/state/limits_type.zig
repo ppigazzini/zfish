@@ -1,5 +1,5 @@
 // LimitsType + SearchMoveText — the UCI `go` search-limits record and its
-// searchmoves element. graph_layout re-exports them so `graph_layout.LimitsType` /
+// searchmoves element. worker_layout re-exports them so `worker_layout.LimitsType` /
 // `.SearchMoveText` keep resolving for the go-command call chain. A standalone POD
 // leaf over std.
 

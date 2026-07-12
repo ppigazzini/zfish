@@ -25,7 +25,7 @@ const position_port = @import("position");
 const uci_move = @import("uci_move");
 const nnue_acc = @import("nnue_accumulator");
 const evaluate_mod = @import("evaluate");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
 const state_list = @import("state_list");
@@ -115,8 +115,8 @@ pub const NnueTraceInput = struct {
 // cold `d`/`eval` UCI trace commands -- single-threaded, non-reentrant (one command at a time
 // from the UCI loop), and their sizes are comptime constants -- so a module-static, 64-aligned
 // buffer replaces the raw std.c.malloc/free entirely: no alloc, no free, no OOM, deterministic.
-var trace_stack_buf: [graph_layout.accumulator_stack_size]u8 align(64) = undefined;
-var trace_caches_buf: [graph_layout.accumulator_caches_size]u8 align(64) = undefined;
+var trace_stack_buf: [worker_layout.accumulator_stack_size]u8 align(64) = undefined;
+var trace_caches_buf: [worker_layout.accumulator_caches_size]u8 align(64) = undefined;
 
 fn accumulatorStackCreate() ?*nnue_acc.AccumulatorStack {
     const buf: *nnue_acc.AccumulatorStack = @ptrCast(&trace_stack_buf);

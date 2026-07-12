@@ -51,7 +51,7 @@ pub fn poolTbHits(tp: *ThreadPool) u64 {
 pub const worker_histories_bytes: usize = @sizeOf(worker_histories.WorkerHistories);
 pub const refresh_table_bytes: usize = 278528; // FT refresh cache
 
-// The full Worker block as a Zig layout, using graph_layout's own
+// The full Worker block as a Zig layout, using worker_layout's own
 // LimitsType/PVMoves and the typed WorkerHistories. Zig picks the field order (the
 // 64-aligned NNUE arenas float to the front), so every consumer must read via
 // worker_off/@offsetOf, never a raw offset.
@@ -384,7 +384,7 @@ pub const TranspositionTable = struct {
 // these typed accessors, so Zig owns the (naturally-ordered) layout.
 
 // LimitsType + SearchMoveText are re-exported from the limits_type module so the
-// go-command chain keeps resolving graph_layout.LimitsType / .SearchMoveText.
+// go-command chain keeps resolving worker_layout.LimitsType / .SearchMoveText.
 // WorkerLayout embeds the re-exported LimitsType (same layout, the 120-byte
 // contractual slot is asserted in limits_type.zig).
 pub const SearchMoveText = limits_type.SearchMoveText;

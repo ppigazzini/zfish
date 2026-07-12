@@ -6,7 +6,7 @@
 // import -- the edge stays one-way (engine.zig re-exports these).
 
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const engine_object = @import("engine_object");
 const tt_port = @import("tt");
 const thread_port = @import("thread");
@@ -19,16 +19,16 @@ fn freeCString(ptr: [*:0]u8) void {
     std.heap.c_allocator.free(std.mem.span(ptr));
 }
 
-fn ttResize(tt_ptr: *graph_layout.TranspositionTable, mb: usize, threads: *graph_layout.ThreadPool) void {
+fn ttResize(tt_ptr: *worker_layout.TranspositionTable, mb: usize, threads: *worker_layout.ThreadPool) void {
     const tp = tt_ptr;
     tt_port.resizeState(&tp.table, &tp.cluster_count, &tp.generation8, mb, threads);
 }
-fn ttClear(tt_ptr: *graph_layout.TranspositionTable, threads: *graph_layout.ThreadPool) void {
+fn ttClear(tt_ptr: *worker_layout.TranspositionTable, threads: *worker_layout.ThreadPool) void {
     const tp = tt_ptr;
     tt_port.clearState(tp.table, tp.cluster_count, &tp.generation8, threads);
 }
 
-pub fn setTtSize(threads: *graph_layout.ThreadPool, tt: *graph_layout.TranspositionTable, mb: usize) void {
+pub fn setTtSize(threads: *worker_layout.ThreadPool, tt: *worker_layout.TranspositionTable, mb: usize) void {
     thread_port.waitThread(threads, 0);
     ttResize(tt, mb, threads);
 }
@@ -37,7 +37,7 @@ pub fn setTtSizeEngine(engine_ptr: *engine_object.EngineObject, mb: usize) void 
     setTtSize(engine_ptr.threadsPtr(), engine_ptr.ttPtr(), mb);
 }
 
-pub fn setPonderhit(threads: *graph_layout.ThreadPool, ponder: u8) void {
+pub fn setPonderhit(threads: *worker_layout.ThreadPool, ponder: u8) void {
     if (threads.mainManager()) |m| m.setPonder(ponder != 0);
 }
 
@@ -45,7 +45,7 @@ pub fn setPonderhitEngine(engine_ptr: *engine_object.EngineObject, ponder: u8) v
     setPonderhit(engine_ptr.threadsPtr(), ponder);
 }
 
-pub fn searchClear(threads: *graph_layout.ThreadPool, tt: *graph_layout.TranspositionTable, syzygy_path: []const u8) void {
+pub fn searchClear(threads: *worker_layout.ThreadPool, tt: *worker_layout.TranspositionTable, syzygy_path: []const u8) void {
     thread_port.waitForSearchFinished(threads);
     ttClear(tt, threads);
     thread_port.clear(threads);
@@ -68,7 +68,7 @@ pub fn hashfullEngine(engine_ptr: *engine_object.EngineObject, max_age: c_int) c
     return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);
 }
 
-pub fn stop(threads: *graph_layout.ThreadPool) void {
+pub fn stop(threads: *worker_layout.ThreadPool) void {
     threads.setStop(true);
 }
 

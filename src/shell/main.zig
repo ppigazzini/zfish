@@ -3,7 +3,7 @@ const std = @import("std");
 const engine_port = @import("engine");
 const memory_port = @import("memory");
 const uci_output = @import("uci_output");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const position_types = @import("position_types");
 const runtime_hooks = @import("runtime_hooks");
 const clock = @import("clock");
@@ -25,7 +25,7 @@ const uci_port = @import("uci");
 const position_snapshot = @import("position_snapshot");
 
 comptime {
-    _ = graph_layout;
+    _ = worker_layout;
     _ = thread_construct;
     _ = worker_construct;
 }
@@ -82,10 +82,10 @@ pub fn main(init: std.process.Init) !void {
 const StateList = state_list_port.StateList;
 const PendingStateStorage = state_list_port.PendingStateStorage;
 
-fn poolSetupStatesSlot(pool: *graph_layout.ThreadPool) *?*StateList {
+fn poolSetupStatesSlot(pool: *worker_layout.ThreadPool) *?*StateList {
     return &pool.setup_states;
 }
-fn freeSetupStatesIfAny(pool: *graph_layout.ThreadPool) void {
+fn freeSetupStatesIfAny(pool: *worker_layout.ThreadPool) void {
     const slot = poolSetupStatesSlot(pool);
     if (slot.*) |old| {
         state_list_port.destroyStateList(std.heap.c_allocator, old);
@@ -95,17 +95,17 @@ fn freeSetupStatesIfAny(pool: *graph_layout.ThreadPool) void {
 
 // adopt: MOVE the StateList into the pool's setupStates, freeing any prior one
 // (between searches setupStates still owns the previous list).
-fn threadpoolSetupStatesAdoptFromStorage(pool: *graph_layout.ThreadPool, storage: *anyopaque) void {
+fn threadpoolSetupStatesAdoptFromStorage(pool: *worker_layout.ThreadPool, storage: *anyopaque) void {
     freeSetupStatesIfAny(pool);
     poolSetupStatesSlot(pool).* = @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).moveOut();
 }
-fn threadpoolSetupStatesAdoptFromSlot(pool: *graph_layout.ThreadPool, slot_ptr: *anyopaque) void {
+fn threadpoolSetupStatesAdoptFromSlot(pool: *worker_layout.ThreadPool, slot_ptr: *anyopaque) void {
     freeSetupStatesIfAny(pool);
     const src: *?*StateList = @ptrCast(@alignCast(slot_ptr));
     poolSetupStatesSlot(pool).* = src.*;
     src.* = null;
 }
-fn threadpoolSetupStateBack(pool: *const graph_layout.ThreadPool) ?*const position_types.StateInfo {
+fn threadpoolSetupStateBack(pool: *const worker_layout.ThreadPool) ?*const position_types.StateInfo {
     const slot = pool.setup_states;
     if (slot) |list| return list.back();
     return null;
@@ -118,7 +118,7 @@ fn threadpoolSetupStateBack(pool: *const graph_layout.ThreadPool) ?*const positi
 // manager), and the refresh cache (feature-transformer biases). All four
 // callees are gate-verified; only this orchestration is new.
 fn workerClear(worker: *anyopaque) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    const wl = worker_layout.WorkerLayout.fromPtr(worker);
     search_driver.clearWorkerHistories(wl);
     // sharedHistory is now a typed field of the embedded WorkerHistories.
     const shared_history = wl.histories.shared_history.?;
@@ -133,7 +133,7 @@ fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
 }
 
 fn handoffPendingStates(
-    pool: *graph_layout.ThreadPool,
+    pool: *worker_layout.ThreadPool,
     states_slot: *anyopaque,
 ) u8 {
     return engine_port.handoffPendingStates(pool, states_slot);
@@ -165,21 +165,21 @@ fn engineObj(engine: *anyopaque) *engine_object.EngineObject {
 }
 // threads_ptr is main-internal only; engine.zig reaches the other graph slots
 // through engine_object.zig accessors.
-fn engineThreadsPtr(engine: *anyopaque) *graph_layout.ThreadPool {
+fn engineThreadsPtr(engine: *anyopaque) *worker_layout.ThreadPool {
     return engineObj(engine).threads.?;
 }
 
 // Free the side tt's large-page table at engine teardown + rezero for any re-construct
 // (valgrind). The table pointer lives at tt_off.table within the side storage.
 fn freeSideTt() void {
-    const table_ptr = &graph_layout.TranspositionTable.fromPtr(engine_object.sideTtPtr()).table;
+    const table_ptr = &worker_layout.TranspositionTable.fromPtr(engine_object.sideTtPtr()).table;
     if (table_ptr.*) |tbl| memory_port.alignedLargePagesFree(@ptrCast(tbl));
     engine_object.sideTtReset();
 }
 
 // SharedState.sharedHistories (a reference) is the 4th pointer field of the
 // SharedState bundle (options/threads/tt/shared_histories/network); read
-// it through the typed graph_layout.SharedState view and clear the map.
+// it through the typed worker_layout.SharedState view and clear the map.
 fn sharedStateClearHistories(shared_state: *const anyopaque) void {
     engine_port.sharedHistoriesClear(engine_port.SharedState.fromPtr(shared_state).shared_histories);
 }
@@ -232,14 +232,14 @@ fn optInt(name: []const u8) c_int {
 //     so manager + rootMoves are the ONLY heap members the worker frees.
 fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque {
     // A typed SearchManager via the Allocator interface (c_allocator, libc-backed).
-    const sm = std.heap.c_allocator.create(graph_layout.SearchManager) catch return null;
-    @memset(@as([*]u8, @ptrCast(sm))[0..@sizeOf(graph_layout.SearchManager)], 0);
+    const sm = std.heap.c_allocator.create(worker_layout.SearchManager) catch return null;
+    @memset(@as([*]u8, @ptrCast(sm))[0..@sizeOf(worker_layout.SearchManager)], 0);
     if (is_main != 0) sm.updates = update_context;
     return sm;
 }
 fn workerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
-    const wl = graph_layout.WorkerLayout.fromPtr(w);
+    const wl = worker_layout.WorkerLayout.fromPtr(w);
     // rootMoves buffer: a []RootMove allocated by workerSetRootMoves -- free the
     // slice directly.
     if (wl.root_moves.len != 0) std.heap.c_allocator.free(wl.root_moves);
@@ -249,7 +249,7 @@ fn workerDestroy(worker: ?*anyopaque) void {
 }
 
 // The ThreadBuilder callback. Reads the SharedState's five reference
-// referents through the typed graph_layout.SharedState view (options/threads/tt/
+// referents through the typed worker_layout.SharedState view (options/threads/tt/
 // sharedHistories/network — the 40-byte bundle), mints the SearchManager, large-page-
 // allocs + constructs the Worker, and writes the Worker through Thread.worker
 // (the worker@8 layout contract). Single-node host: numaIndex 0, idxInNuma == idx,
@@ -265,7 +265,7 @@ fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
     const ss = engine_port.SharedState.fromPtr(ctx.shared_state.?);
     const manager = makeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
         @panic("worker build: SearchManager OOM");
-    const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse
+    const raw = memory_port.alignedLargePagesAlloc(worker_layout.worker_size) orelse
         @panic("worker build: large-page OOM");
     const shared_history = engine_port.sharedHistoriesAt(ss.shared_histories, 0);
     worker_construct.constructFull(
@@ -279,7 +279,7 @@ fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
         ctx.total,
         0,
     );
-    graph_layout.Thread.fromPtr(thread).worker = @ptrCast(@alignCast(raw));
+    worker_layout.Thread.fromPtr(thread).worker = @ptrCast(@alignCast(raw));
 }
 
 pub fn engineInitBody(engine: *anyopaque) void {
@@ -299,7 +299,7 @@ fn engineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
 // position, size threads) — the same post-member work the engine constructor runs. Tune (SPSA)
 // is INERT in a release build (no live TUNE() macros → empty list), so it is dropped here.
 fn engineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
-    graph_layout.verifyLayouts();
+    worker_layout.verifyLayouts();
     if (!engineConstructMembers(storage, argv[0]))
         @panic("engine construct: member allocation failed");
     engineSetCli(storage, argc, argv);
