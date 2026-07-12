@@ -1,35 +1,35 @@
-// Native runtime hook registry: a fn-pointer table that breaks module import
+// Runtime hook registry: a fn-pointer table that breaks module import
 // cycles between the runtime hooks and their implementations.
 //
 // The impls live in main.zig because they need position/engine/network/search/... —
 // modules that already import their callers (thread/engine/search_thread/
 // thread_pool), so the callers can't import back to reach them. main installs
-// the pointers at startup (installNativeHooks); the callers invoke through here.
+// the pointers at startup (installRuntimeHooks); the callers invoke through here.
 // Pure Zig fn pointers -- no C ABI, type-checked.
 //
 // The fields are NON-OPTIONAL, each defaulting to a named panic stub, so the
 // callers invoke them directly (no `.?` null-unwrap at 10+ sites). A hook that was
 // never registered fails fast with its own name instead of an opaque null-optional
-// panic -- the failure mode (a test that skipped installNativeHooks) now
+// panic -- the failure mode (a test that skipped installRuntimeHooks) now
 // reports exactly which hook is missing.
 
 const graph_layout = @import("graph_layout");
 const position_types = @import("position_types");
 
 fn hookPanic(comptime name: []const u8) noreturn {
-    @panic(name ++ ": native hook not registered (installNativeHooks not run?)");
+    @panic(name ++ ": runtime hook not registered (installRuntimeHooks not run?)");
 }
 
-pub var native_worker_build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) void =
+pub var worker_build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) void =
     struct {
         fn stub(_: ?*anyopaque, _: usize, _: *anyopaque) void {
-            hookPanic("native_worker_build");
+            hookPanic("worker_build");
         }
     }.stub;
-pub var native_worker_destroy: *const fn (worker: *anyopaque) void =
+pub var worker_destroy: *const fn (worker: *anyopaque) void =
     struct {
         fn stub(_: *anyopaque) void {
-            hookPanic("native_worker_destroy");
+            hookPanic("worker_destroy");
         }
     }.stub;
 pub var worker_clear: *const fn (worker: *anyopaque) void =

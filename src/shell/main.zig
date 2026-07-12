@@ -5,7 +5,7 @@ const memory_port = @import("memory");
 const uci_output = @import("uci_output");
 const graph_layout = @import("graph_layout");
 const position_types = @import("position_types");
-const native_hooks = @import("native_hooks");
+const runtime_hooks = @import("runtime_hooks");
 const clock = @import("clock");
 const thread_construct = @import("thread_construct.zig");
 const worker_native_construct = @import("worker_native_construct.zig");
@@ -56,7 +56,7 @@ pub fn main(init: std.process.Init) !void {
     // The native movegen computes attacks/rays on the fly (bitboard.zig slidingAttack
     // etc.); the runtime tables come from position_port.initRuntime().
     position_port.initRuntime();
-    installNativeHooks();
+    installRuntimeHooks();
 
     // Zig-owned engine footprint: allocate aligned storage, placement-construct the
     // NativeEngine (an ownership container of heap members) into it, and on teardown
@@ -117,7 +117,7 @@ fn threadpoolSetupStateBack(pool: *const graph_layout.ThreadPool) ?*const positi
 // numaTotal@+16), the reductions table (int[256], the 1024-byte slot before
 // manager), and the refresh cache (native feature-transformer biases). All four
 // callees are gate-verified; only this orchestration is new.
-fn workerClearNative(worker: *anyopaque) void {
+fn workerClear(worker: *anyopaque) void {
     const wl = graph_layout.WorkerLayout.fromPtr(worker);
     search_driver.clearWorkerHistories(wl);
     // sharedHistory is now a typed field of the embedded WorkerHistories.
@@ -141,20 +141,20 @@ fn handoffPendingStates(
 
 // Install the native runtime hooks: these impls live here because they need
 // position/engine/network/search/state modules that already import their callers
-// (thread/engine/search_thread), so the callers reach them through the native_hooks
+// (thread/engine/search_thread), so the callers reach them through the runtime_hooks
 // fn-pointer registry.
-fn installNativeHooks() void {
-    native_hooks.shared_state_clear_histories = &sharedStateClearHistories;
-    native_hooks.shared_state_insert_history = &sharedStateInsertHistory;
-    native_hooks.native_worker_destroy = &nativeWorkerDestroy;
-    native_hooks.native_worker_build = &nativeWorkerBuild;
-    native_hooks.worker_clear = &workerClearNative;
-    native_hooks.setup_states_adopt_from_storage = &threadpoolSetupStatesAdoptFromStorage;
-    native_hooks.setup_states_adopt_from_slot = &threadpoolSetupStatesAdoptFromSlot;
-    native_hooks.setup_state_back = &threadpoolSetupStateBack;
-    native_hooks.pending_states_available = &pendingStatesAvailable;
-    native_hooks.handoff_pending_states = &handoffPendingStates;
-    native_hooks.verify_thread_graph = &thread_construct.verifyThreadGraph;
+fn installRuntimeHooks() void {
+    runtime_hooks.shared_state_clear_histories = &sharedStateClearHistories;
+    runtime_hooks.shared_state_insert_history = &sharedStateInsertHistory;
+    runtime_hooks.worker_destroy = &workerDestroy;
+    runtime_hooks.worker_build = &workerBuild;
+    runtime_hooks.worker_clear = &workerClear;
+    runtime_hooks.setup_states_adopt_from_storage = &threadpoolSetupStatesAdoptFromStorage;
+    runtime_hooks.setup_states_adopt_from_slot = &threadpoolSetupStatesAdoptFromSlot;
+    runtime_hooks.setup_state_back = &threadpoolSetupStateBack;
+    runtime_hooks.pending_states_available = &pendingStatesAvailable;
+    runtime_hooks.handoff_pending_states = &handoffPendingStates;
+    runtime_hooks.verify_thread_graph = &thread_construct.verifyThreadGraph;
 }
 
 // The engine buffer is a NativeEngine, so the member accessors return its fields
@@ -237,7 +237,7 @@ fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque
     if (is_main != 0) sm.updates = update_context;
     return sm;
 }
-fn nativeWorkerDestroy(worker: ?*anyopaque) void {
+fn workerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
     const wl = graph_layout.WorkerLayout.fromPtr(w);
     // rootMoves buffer: a []RootMove allocated by workerSetRootMoves -- free the
@@ -260,7 +260,7 @@ const WorkerBuildCtx = struct {
     update_context: ?*const anyopaque,
     total: usize,
 };
-fn nativeWorkerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
+fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
     const ctx: *WorkerBuildCtx = @ptrCast(@alignCast(ctx_ptr.?));
     const ss = engine_port.SharedState.fromPtr(ctx.shared_state.?);
     const manager = makeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse

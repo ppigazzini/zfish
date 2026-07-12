@@ -20,7 +20,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const SearchThread = @import("search_thread").SearchThread;
 const graph_layout = @import("graph_layout");
-const native_hooks = @import("native_hooks");
+const runtime_hooks = @import("runtime_hooks");
 const ThreadPool = graph_layout.ThreadPool;
 
 // The 64-byte pool footprint is a graph_layout.ThreadPool: the writer here
@@ -153,7 +153,7 @@ pub fn set(
     var p = Pool.init(std.heap.c_allocator, @ptrCast(pool));
     // Propagate the OOM / thread-spawn error to the engine's resize boundary
     // instead of panicking here (the caller reconfigure -> resizeThreads is now !void).
-    try p.set(count, .{ .ctx = &bctx, .build = native_hooks.native_worker_build });
+    try p.set(count, .{ .ctx = &bctx, .build = runtime_hooks.worker_build });
 }
 
 // Join + free every native Thread and null the footprint vector. Called by the

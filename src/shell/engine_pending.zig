@@ -5,7 +5,7 @@
 const std = @import("std");
 const state_list = @import("state_list");
 const graph_layout = @import("graph_layout");
-const native_hooks = @import("native_hooks");
+const runtime_hooks = @import("runtime_hooks");
 
 pub const PendingStateStorage = state_list.PendingStateStorage;
 
@@ -76,7 +76,7 @@ pub fn handoffPendingStates(pool: *graph_layout.ThreadPool, states_slot: *anyopa
     if (!state_list.storageHasStates(state_storage))
         return 0;
 
-    native_hooks.setup_states_adopt_from_storage(pool, state_storage);
+    runtime_hooks.setup_states_adopt_from_storage(pool, state_storage);
     return @intFromBool(pool.hasSetupStates());
 }
 

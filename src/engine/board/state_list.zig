@@ -157,7 +157,7 @@ pub fn destroyStateList(allocator: std.mem.Allocator, list: *StateList) void {
 
 // Typed wrappers over PendingStateStorage for the engine/thread setup paths: the
 // handle is `*PendingStateStorage` end-to-end now -- the engine side-table and the thread
-// scratch both hold the concrete type, and only the native_hooks adopt boundary coerces it
+// scratch both hold the concrete type, and only the runtime_hooks adopt boundary coerces it
 // to *anyopaque (implicitly). No cast survives here.
 pub fn storageCreate() ?*PendingStateStorage {
     return PendingStateStorage.create(std.heap.c_allocator) catch null;

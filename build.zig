@@ -140,7 +140,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "bitboard", .path = "src/engine/board/bitboard.zig" },
         .{ .name = "position", .path = "src/engine/board/position.zig" },
         .{ .name = "position_snapshot", .path = "src/engine/board/position_snapshot.zig" },
-        .{ .name = "native_hooks", .path = "src/platform/native_hooks.zig" },
+        .{ .name = "runtime_hooks", .path = "src/platform/runtime_hooks.zig" },
         .{ .name = "movegen", .path = "src/engine/board/movegen.zig" },
         .{ .name = "nnue_feature", .path = "src/engine/eval/nnue_feature.zig" },
         .{ .name = "uci", .path = "src/shell/uci.zig" },
@@ -227,8 +227,8 @@ pub fn build(b: *std.Build) void {
         .{ .from = "graph_layout", .imp = "root_move", .to = "root_move" },
         .{ .from = "graph_layout", .imp = "tt_types", .to = "tt_types" },
         .{ .from = "graph_layout", .imp = "state_list", .to = "state_list" },
-        .{ .from = "native_hooks", .imp = "graph_layout", .to = "graph_layout" },
-        .{ .from = "native_hooks", .imp = "position_types", .to = "position_types" },
+        .{ .from = "runtime_hooks", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "runtime_hooks", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_types", .imp = "root_move", .to = "root_move" },
         .{ .from = "search_types", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "search_types", .imp = "correction_bundle", .to = "correction_bundle" },
@@ -428,9 +428,9 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine", .imp = "position", .to = "position" },
         .{ .from = "engine", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "position", .imp = "position_snapshot", .to = "position_snapshot" },
-        .{ .from = "thread", .imp = "native_hooks", .to = "native_hooks" },
-        .{ .from = "engine", .imp = "native_hooks", .to = "native_hooks" },
-        .{ .from = "search_thread", .imp = "native_hooks", .to = "native_hooks" },
+        .{ .from = "thread", .imp = "runtime_hooks", .to = "runtime_hooks" },
+        .{ .from = "engine", .imp = "runtime_hooks", .to = "runtime_hooks" },
+        .{ .from = "search_thread", .imp = "runtime_hooks", .to = "runtime_hooks" },
         .{ .from = "engine", .imp = "uci_move", .to = "uci_move" },
         .{ .from = "engine", .imp = "misc", .to = "misc" },
         .{ .from = "engine", .imp = "thread", .to = "thread" },
@@ -557,7 +557,7 @@ pub fn build(b: *std.Build) void {
 
     // The engine graph (engine_graph.zig) is compiled via the engine module: it
     // binds the ThreadPool and TranspositionTable.
-    exe.root_module.addImport("native_hooks", mods.get("native_hooks").?);
+    exe.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     exe.root_module.addImport("native_engine", mods.get("native_engine").?);
     // main.zig and its worker-construction helper reach the search-history helpers directly.
     exe.root_module.addImport("search_driver", mods.get("search_driver").?);
@@ -1181,7 +1181,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/engine/state/shared_history_types.zig", .deps = &.{"correction_bundle"} },
         .{ .path = "src/platform/thread_vote.zig", .deps = &.{"graph_layout"} },
         .{ .path = "src/shell/thread_construct.zig", .deps = &.{"graph_layout"} },
-        .{ .path = "src/platform/native_hooks.zig", .deps = &.{ "graph_layout", "position_types" } },
+        .{ .path = "src/platform/runtime_hooks.zig", .deps = &.{ "graph_layout", "position_types" } },
         .{ .path = "src/engine/search/search_types.zig", .deps = &.{ "correction_bundle", "root_move", "worker_histories" } },
         .{ .path = "src/engine/board/position_query.zig", .deps = &.{ "board_core", "position_snapshot", "position_types" } },
         .{ .path = "src/engine/board/zobrist.zig", .deps = &.{ "bitboard", "board_core" } },
@@ -1252,7 +1252,7 @@ pub fn build(b: *std.Build) void {
     });
     thread_pool_test.root_module.addImport("search_thread", mods.get("search_thread").?);
     thread_pool_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
-    thread_pool_test.root_module.addImport("native_hooks", mods.get("native_hooks").?);
+    thread_pool_test.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     addTestRun(b, test_step, thread_pool_test, cov_dir, &cov_idx);
 
     // worker_native_construct.zig is path-imported only into main.zig (the exe
