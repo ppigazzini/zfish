@@ -188,8 +188,8 @@ pub fn singularTripleMargin(pv_node: bool, not_tt_capture: bool, ttpv: bool, cor
         @as(c_int, @intFromBool(ply_gt_root)) * 45;
 }
 
-// Capture pruning in the move loop: futility value (piece_value is the C++
-// PieceValue[] lookup, passed in) and the SEE pruning margin.
+// Capture pruning in the move loop: futility value (piece_value is the
+// piece-value lookup, passed in) and the SEE pruning margin.
 pub fn captureFutilityValue(static_eval: c_int, lmr_depth: c_int, piece_value: c_int, capt_hist: c_int) c_int {
     return static_eval + 231 + 232 * lmr_depth + piece_value + @divTrunc(131 * capt_hist, 1024);
 }
@@ -250,8 +250,8 @@ pub fn evalDiff(prev_static_eval: c_int, static_eval: c_int) c_int {
     return @max(@as(c_int, -183), @min(@as(c_int, 180), -(prev_static_eval + static_eval))) + 62;
 }
 
-// Qsearch futility base = static eval plus a fixed margin (search.cpp qsearch
-// step 4). The move loop later adds the captured piece value to this base.
+// Qsearch futility base = static eval plus a fixed margin. The move loop later
+// adds the captured piece value to this base.
 pub fn qsearchFutilityBase(static_eval: c_int) c_int {
     return static_eval + 335;
 }
@@ -272,7 +272,7 @@ pub fn priorPawnhistScale(scaled_bonus: c_int) c_int {
 }
 
 // Step 17 LMR stat-score assembly (search()). The caller reads the relevant
-// history-table entries and passes their values; Zig owns the tuned weighting.
+// history-table entries and passes their values; this owns the tuned weighting.
 // Capture: 809*pieceValue/128 plus capture history. Quiet: 2*main plus the two
 // continuation-history entries.
 pub fn captureStatScore(piece_value: c_int, capture_hist: c_int) c_int {
@@ -333,11 +333,9 @@ pub fn quietPawnScale(bonus: c_int) c_int {
 // running positiveCount in update_continuation_histories.
 const cmhc_multipliers = [_]c_int{ 96, 113, 101, 105, 127, 121, 126 };
 
-// Per-entry continuation-history update delta. The (i, weight) pairs and the
-// positiveCount accumulation stay C++-side (they drive Stack indexing); this
-// owns the multiplier table and the bonus*weight*multiplier/131072 formula.
-// bonus*weight*multiplier stays within i32 for the bonus magnitudes search
-// produces.
+// Per-entry continuation-history update delta: this owns the multiplier table
+// and the bonus*weight*multiplier/131072 formula. bonus*weight*multiplier
+// stays within i32 for the bonus magnitudes search produces.
 pub fn conthistDelta(bonus: c_int, weight: c_int, positive_count: c_int, i: c_int) c_int {
     const multiplier = cmhc_multipliers[@intCast(positive_count)];
     return @divTrunc(bonus * weight * multiplier, 131072) +
@@ -345,8 +343,8 @@ pub fn conthistDelta(bonus: c_int, weight: c_int, positive_count: c_int, i: c_in
 }
 
 // Weighted correction-history blend (correction_value). Inputs are the raw
-// correction entries read C++-side; only the magic weights live here. All
-// terms stay well within i32 (entries clamped to +/-1024).
+// correction entries; only the magic weights live here. All terms stay well
+// within i32 (entries clamped to +/-1024).
 pub fn correctionValue(
     pcv: c_int,
     micv: c_int,
@@ -396,7 +394,7 @@ pub fn reduction(
     return reduction_scale - @divTrunc(delta * 617, root_delta) + (if (!improving) @divTrunc(reduction_scale * 194, 512) else 0) + 1027;
 }
 
-// --- tests (M22.0) --------------------------------------------------------------
+// --- tests --------------------------------------------------------------
 test "valueToTt / valueFromTt: mid-range scores pass through unchanged" {
     try std.testing.expectEqual(@as(c_int, 500), valueToTt(500, 7));
     try std.testing.expectEqual(@as(c_int, -500), valueToTt(-500, 7));

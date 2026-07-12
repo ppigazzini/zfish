@@ -1,4 +1,4 @@
-// Native CPU -> best Stockfish ARCH tier, in pure Zig (M23.0), replacing the 362-line
+// Native CPU -> best Stockfish ARCH tier, in pure Zig, replacing the 362-line
 // scripts/get_native_properties.sh shell-out. This is a pure function of std.Target.Cpu, so it is
 // unit-testable against synthetic feature sets; build.zig calls detectArchFromCpu on the host CPU
 // that Zig's build graph already resolved via cpuid -- no /proc/cpuinfo grep, no `sh`, works on

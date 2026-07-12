@@ -1,9 +1,7 @@
 // Native .nnue parse primitives.
 //
-// The C++ Network's last remaining job is parsing the .nnue file into its
-// (already-permuted) weight memory; Zig currently copies those bytes out. To
-// retire the C++ Network entirely, Zig must parse the file itself. These are the
-// verified building blocks of that parse, matching src/nnue exactly:
+// Parses the .nnue file into its (already-permuted) weight memory. These are the
+// building blocks of that parse, matching src/nnue exactly:
 //
 //   * decodeLebI16 / decodeLebI32 -- signed LEB128 with the same sign-extension
 //     and 32-bit shift masking as read_leb_128_detail (nnue_common.h).
@@ -138,7 +136,7 @@ fn readLebSection2(comptime T: type, blob: []const u8, out1: []T, out2: []T) ?us
 // layout). No permute -- PackusEpi16Order is the identity on the SSE4.1 target.
 // Returns the number of blob bytes consumed, or null on malformed input.
 pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
-    // Leading u32 component hash (Detail::read_parameters), verified by C++; skip.
+    // Leading u32 component hash (Detail::read_parameters); skip.
     var pos: usize = 4;
     // Read order (upstream 7c7fe322e merge): biases, threatWeights, threatPsqtWeights, weights,
     // psqtWeights -- each i32 PSQT array is now its OWN leb section (base packed both into one,
@@ -170,7 +168,7 @@ pub const ft_regions = [_]FtRegion{
 };
 
 // Parse `blob` into `scratch` and confirm each weight region matches `reference`
-// (the C++-parsed FeatureTransformer memory). Returns true iff bit-identical.
+// (a reference FeatureTransformer memory image). Returns true iff bit-identical.
 pub fn verifyFeatureTransformer(blob: []const u8, reference: []const u8, scratch: []u8) bool {
     if (reference.len < ft_total_bytes or scratch.len < ft_total_bytes) return false;
     if (parseFeatureTransformer(blob, scratch) == null) return false;

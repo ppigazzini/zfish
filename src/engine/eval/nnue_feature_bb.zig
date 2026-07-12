@@ -1,4 +1,4 @@
-// NNUE feature-index bitboard math (M21.1): the pure square/piece/attack helpers +
+// NNUE feature-index bitboard math: the pure square/piece/attack helpers +
 // the two per-piece index-table generators, split out of nnue_feature.zig so the
 // feature core stays under the file-size budget. std-only, no NNUE state -- the
 // parent aliases these back in. Behaviour is identical (bench 2067208).

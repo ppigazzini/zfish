@@ -44,7 +44,7 @@ fn reportAllocFailure(mb: usize) noreturn {
     std.process.exit(1);
 }
 // Zero a [start_cluster, start_cluster+cluster_len) span of the TT (single-node: the
-// per-thread parallel-clear NUMA split is a no-op here). Native Zig.
+// per-thread parallel-clear NUMA split is a no-op here).
 fn zeroTtSlice(table_ptr: ?[*]TtCluster, start_cluster: usize, cluster_len: usize) void {
     if (cluster_len == 0) return;
     const table = table_ptr orelse return;
@@ -280,10 +280,9 @@ pub fn probeTable(
     };
 }
 
-// Native TranspositionTable handle (the post-src/ object). Byte-compatible with
-// the 24-byte C++ TranspositionTable: a TtCluster* table, the cluster count and
-// the 8-bit generation. The heavy logic lives in the functions above; this is
-// the owning object the native Engine graph holds, delegating to them.
+// Native TranspositionTable handle: a 24-byte object holding a TtCluster* table, the
+// cluster count and the 8-bit generation. The heavy logic lives in the functions above;
+// this is the owning object the native Engine graph holds, delegating to them.
 pub const TranspositionTable = struct {
     table: ?[*]TtCluster = null,
     cluster_count: usize = 0,
@@ -304,7 +303,7 @@ pub const TranspositionTable = struct {
 };
 
 comptime {
-    // native handle; layout is Zig's (M16.8 de-mirror)
+    // native TranspositionTable handle
 }
 
 test "TranspositionTable native handle: layout and generation cycling" {

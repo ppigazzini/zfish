@@ -5,7 +5,7 @@
 // constructor are: the five
 // SharedState reference slots, the NUMA scalars, the manager pointer, and the one
 // live AccumulatorStack slot. This module writes exactly that set in Zig, so the
-// Engine graph constructs a Worker without any C++ constructor.
+// Engine graph constructs a Worker directly in Zig.
 //
 // Only the constructor-set fields are written here; the histories, reductions,
 // refresh cache, and shared history are filled afterwards by the existing native
@@ -49,7 +49,7 @@ fn writePtr(base: [*]u8, offset: usize, value: usize) void {
 
 // Inputs the native Worker constructor receives, unpacked from the SharedState plus
 // the thread parameters. Pointers are the exact referents the reference members
-// must bind to (the SharedState members), matching the C++ initializer list.
+// must bind to (the SharedState members).
 pub const WorkerCtorInputs = struct {
     shared_history: usize, // &sharedState.sharedHistories.at(numa)
     threads: usize, // &sharedState.threads
@@ -71,7 +71,7 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     wl.histories.shared_history = @ptrFromInt(in.shared_history);
     // The live SharedState reference members (threads + tt) + the moved-in manager.
     // options/network were vestigial pass-through (never read -- the search reads the
-    // global OptionsModel / native FT storage) and are removed (M20.1).
+    // global OptionsModel / native FT storage) and are removed.
     wl.threads = @ptrFromInt(in.threads);
     wl.tt = @ptrFromInt(in.tt);
     wl.manager = @ptrFromInt(in.manager);
@@ -107,8 +107,7 @@ fn constructWorkerInto(
 
 // Production entry: construct a complete native Worker into `buf` (a large-page
 // block of at least worker_size bytes). Zeroes the block, writes the constructor
-// field set, and runs the native Worker::clear pieces -- the full native
-// replacement for the C++ Worker placement-new, called by the engine graph.
+// field set, and runs the native Worker::clear pieces, called by the engine graph.
 // `manager` is the moved ISearchManager pointer; the feature-transformer biases
 // are sourced from the native network.
 pub fn constructFull(

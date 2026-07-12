@@ -1,4 +1,4 @@
-// UCI C-string helpers (M17.3u).
+// UCI C-string helpers.
 //
 // The std-only C-string alloc / format / trim primitives shared across uci.zig's
 // formatter, parser, dispatch, and runtime clusters. Split into a base leaf so
@@ -52,7 +52,7 @@ pub fn isSpaceByte(byte: u8) bool {
     return byte == ' ' or byte == '\t' or byte == '\n' or byte == '\r' or byte == 0x0b or byte == 0x0c;
 }
 
-// --- tests (M22.0) --------------------------------------------------------------
+// --- tests--------------------------------------------------------------
 test "trimAsciiWhitespace strips leading/trailing ws, preserves interior" {
     try std.testing.expectEqualStrings("hi", trimAsciiWhitespace("  \t hi \n "));
     try std.testing.expectEqualStrings("", trimAsciiWhitespace("   \t\r\n"));

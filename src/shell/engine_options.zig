@@ -1,4 +1,4 @@
-// Engine option-registration helpers (M17.4c).
+// Engine option-registration helpers.
 //
 // The add{String,Check,Spin,Button}Option wrappers + the engineAddOption core that
 // register the UCI options into the native OptionsModel. Used only by

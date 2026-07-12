@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Net-placement helper (REPORT-13 Annex A6).
+# Net-placement helper.
 #
 # The .nnue is gitignored and per-worktree, so a synced `refactor` won't run unless the target net is
 # present in EVERY worktree's src/. This resolves the net name for a commit (its EvalFileDefaultName),

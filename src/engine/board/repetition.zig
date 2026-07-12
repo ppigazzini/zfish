@@ -1,4 +1,4 @@
-// Repetition and draw detection (M17.3j).
+// Repetition and draw detection.
 //
 // The read-only "has this position repeated / is it a draw" queries lifted out of
 // position.zig: upcomingRepetition (the cuckoo no-progress-cycle test), isDraw,

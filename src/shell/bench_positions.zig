@@ -1,4 +1,4 @@
-// Bench / benchmark position tables (extracted from benchmark.zig, M21).
+// Bench / benchmark position tables (extracted from benchmark.zig).
 //
 // `Defaults` is the fixed position set the `bench` command runs -- its FENs pin the
 // bench signature 2067208, so bench itself is this data's regression gate.

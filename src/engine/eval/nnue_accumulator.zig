@@ -3,16 +3,16 @@ const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 // The dirty-piece / dirty-threats slots that stackPush hands to doMove are the
 // board's typed records (position_types); the accumulator's local HalfDiff /
-// ThreatDiffView are layout-identical views of the same bytes (M18.4-B4).
+// ThreatDiffView are layout-identical views of the same bytes.
 const DirtyPiece = position_types.DirtyPiece;
 const DirtyThreats = position_types.DirtyThreats;
 // The `pos` threaded through the accumulator path is the board's typed record
-// (M18.7): every use either hands it onward or feeds position_snapshot.fill(),
+// every use either hands it onward or feeds position_snapshot.fill(),
 // whose registration boundary is the sole remaining erasure. The concrete
 // *const Position coerces to the hook's *const anyopaque at that one call.
 const Position = position_types.Position;
-// Call the pure-Zig feature-index helpers directly instead of round-tripping
-// through the C-ABI exports in main.zig. Passing a small `extern struct` BY VALUE
+// Call the pure-Zig feature-index helpers directly rather than across a C-ABI
+// boundary. Passing a small `extern struct` BY VALUE
 // across is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
 // HalfThreatParams / 7-byte HalfDiff arrive scrambled), which silently corrupted
 // the psq feature indices off-x86 (bench diverged: 6860970 vs 2067208). A direct
@@ -21,7 +21,7 @@ const Position = position_types.Position;
 const nnue_feature = @import("nnue_feature");
 
 // Vectorized FT weight-row add/sub kernels live in the nnue_acc_rowops leaf
-// (M17.4d); aliased so the refresh/incremental core stays unqualified.
+// aliased so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyAccumulatorDeltaI16 = nnue_acc_rowops.applyAccumulatorDeltaI16;
 const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
@@ -32,20 +32,20 @@ const applyPsqtDeltaInPlace = nnue_acc_rowops.applyPsqtDeltaInPlace;
 const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
 
 // FeatureTransformer weight-blob layout + accessors live in the nnue_ft leaf
-// (M17.4e); aliased for the refresh/apply-delta core.
+// aliased for the refresh/apply-delta core.
 const nnue_ft = @import("nnue_ft");
 /// Re-export the opaque FT handle so callers (network.zig) can type the pointer they
-/// hand in without importing nnue_ft directly (M18.4-B4).
+/// hand in without importing nnue_ft directly.
 pub const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
 const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
 const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
 const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
 
-// Refresh cache / finny tables live in the nnue_refresh_cache leaf (M17.4f);
+// Refresh cache / finny tables live in the nnue_refresh_cache leaf;
 // accessors aliased for the refresh path, clearRefreshCache re-exported (external).
 const nnue_refresh_cache = @import("nnue_refresh_cache");
-/// Re-export the opaque cache handle so callers can type it (M18.4-B4).
+/// Re-export the opaque cache handle so callers can type it.
 pub const RefreshCache = nnue_refresh_cache.RefreshCache;
 pub const clearRefreshCache = nnue_refresh_cache.clearRefreshCache;
 const cacheEntry = nnue_refresh_cache.cacheEntry;
@@ -186,7 +186,7 @@ pub fn transformBucket(
     var psqt: c_int = psq_psqt[p0 * psqt_buckets + bucket] - psq_psqt[p1 * psqt_buckets + bucket];
     psqt = @divTrunc(psqt + thr_psqt[p0 * psqt_buckets + bucket] - thr_psqt[p1 * psqt_buckets + bucket], 2);
 
-    // Pairwise clipped-ReLU output (M15.3), vectorized. Per element: sum psq+threat
+    // Pairwise clipped-ReLU output, vectorized. Per element: sum psq+threat
     // accumulators (i16 wrap), clamp to [0,255], multiply the two halves, /512 -> u8.
     // Same element-wise ops as the scalar loop, so bit-exact (signature 2067208).
     const half = half_dimensions / 2;

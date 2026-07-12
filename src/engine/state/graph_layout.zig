@@ -29,9 +29,8 @@ pub const accumulator_stack_size: usize = 2181568;
 pub const accumulator_caches_size: usize = 278528;
 pub const root_move_size: usize = 552;
 
-// ThreadPool aggregate reads (sum over the pool's threads). Pure graph reads, so they
-// live here in the leaf: position.zig (search driver) reads them without importing the
-// thread module, which would cycle (thread imports position). thread.zig's public
+// ThreadPool aggregate reads (sum over the pool's threads): position.zig (the search
+// driver) reads them here without importing the thread module. thread.zig's public
 // nodesSearched/tbHits forward here.
 pub fn poolNodesSearched(tp: *ThreadPool) u64 {
     const n = tp.numThreads();
@@ -48,19 +47,14 @@ pub fn poolTbHits(tp: *ThreadPool) u64 {
     return total;
 }
 
-// Byte size of the still-opaque position-module sub-blocks embedded in the Worker
-// (asserted against @sizeOf of the real structs in position.zig, which can't be
-// imported here). histories is no longer here -- it is a typed WorkerHistories field
-// (the worker_histories leaf module is importable, unlike position).
+// Byte size of the WorkerHistories block embedded in the Worker.
 pub const worker_histories_bytes: usize = @sizeOf(worker_histories.WorkerHistories);
 pub const refresh_table_bytes: usize = 278528; // native FT refresh cache
 
-// The full Search::Worker block as a native Zig layout (M16.9): worker_off is now
-// @offsetOf of this struct, not a hand-probed C++ offset map. graph_layout owns it
-// using its own LimitsType/PVMoves + the typed WorkerHistories, plus opaque byte
-// regions for the position-module types still trapped behind the cycle (Position /
-// StateInfo). Zig picks the field order (the 64-aligned NNUE arenas float to the
-// front), so every consumer must read via worker_off/@offsetOf, never a raw offset.
+// The full Worker block as a native Zig layout, using graph_layout's own
+// LimitsType/PVMoves and the typed WorkerHistories. Zig picks the field order (the
+// 64-aligned NNUE arenas float to the front), so every consumer must read via
+// worker_off/@offsetOf, never a raw offset.
 pub const WorkerLayout = struct {
     histories: worker_histories.WorkerHistories align(8), // the typed per-Worker history tables
     limits: LimitsType,
@@ -72,9 +66,9 @@ pub const WorkerLayout = struct {
     sel_depth: c_int,
     nmp_min_ply: c_int,
     optimism: [2]c_int,
-    root_pos: position_types.Position align(8), // the worker's root Position (typed, M17.3c)
-    root_state: position_types.StateInfo align(8), // its root StateInfo (typed, M17.3c)
-    root_moves: []root_move.RootMove, // the worker's rootMoves (M19.1: a typed slice, was {begin,end,cap})
+    root_pos: position_types.Position align(8), // the worker's root Position
+    root_state: position_types.StateInfo align(8), // its root StateInfo
+    root_moves: []root_move.RootMove, // the worker's rootMoves
     root_depth: c_int,
     root_delta: c_int,
     last_iteration_pv: PVMoves,
@@ -90,11 +84,9 @@ pub const WorkerLayout = struct {
     accumulator_stack: [accumulator_stack_size]u8 align(64),
     refresh_table: [refresh_table_bytes]u8 align(64),
 
-    /// Typed view over the 13.2 MB worker block (M17.2a). The block is a
-    /// 64-aligned large-page allocation, so this reinterpret is sound and reads
-    /// each scalar field at its @offsetOf -- the same address worker_off yields,
-    /// so it is bench-invariant. Opaque byte regions (histories/root_pos/NNUE
-    /// arenas) still need the position-type embedding a later slice will do.
+    /// Typed view over the 13.2 MB worker block. The block is a 64-aligned large-page
+    /// allocation, so this reinterpret is sound and reads each scalar field at its
+    /// @offsetOf -- the same address worker_off yields, so it is bench-invariant.
     pub inline fn fromPtr(p: *anyopaque) *WorkerLayout {
         return @ptrCast(@alignCast(p));
     }
@@ -106,13 +98,11 @@ pub const WorkerLayout = struct {
 };
 
 comptime {
-    // Worker-block layout-lock (M17.3a / M20). The Worker is a fixed 64-aligned
-    // large-page image. `root_pos`/`root_state` carry typed Position / StateInfo
-    // (M17.3c) accessed by @offsetOf (worker_off), never by cross-field adjacency, so
-    // the real contract is only that each type fills exactly its reserved slot width.
-    // Assert that directly on the TYPE SIZES (ordering-independent) rather than on the
-    // WorkerLayout field offset-deltas -- the former held a hidden dependency on Zig's
-    // auto field-reorder that blocked removing unrelated fields (M20).
+    // Worker-block layout-lock. The Worker is a fixed 64-aligned large-page image.
+    // `root_pos`/`root_state` carry typed Position / StateInfo accessed by @offsetOf
+    // (worker_off), never by cross-field adjacency, so the real contract is only that
+    // each type fills exactly its reserved slot width. Assert that directly on the TYPE
+    // SIZES (ordering-independent) rather than on the WorkerLayout field offset-deltas.
     std.debug.assert(@alignOf(WorkerLayout) == 64);
     std.debug.assert(@sizeOf(position_types.Position) == position_size);
     std.debug.assert(@sizeOf(position_types.StateInfo) == state_info_size);
@@ -161,9 +151,9 @@ pub const TimeManagement = struct {
     use_nodes_time: u8 = 0, // bool
 };
 
-// The SearchManager object (120 bytes). Typed replacement for search_manager_off:
-// a vtable slot, the embedded TimeManagement, and the per-search bookkeeping the
-// time-management + PV code reads. `ponder` is a std::atomic_bool in a 4-byte slot.
+// The SearchManager object (120 bytes): a vtable slot, the embedded TimeManagement,
+// and the per-search bookkeeping the time-management + PV code reads. `ponder` is a
+// std::atomic_bool in a 4-byte slot.
 pub const SearchManager = struct {
     vtable: usize = 0, // functionally dead (no virtual dispatch); kept as a zero slot
     tm: TimeManagement = .{},
@@ -213,31 +203,25 @@ pub const SearchManager = struct {
     }
 };
 
-// SearchManager + TimeManagement are now native Zig structs (M16.8 de-mirror): the
-// manager is a standalone heap object reached only through these typed accessors and
-// pointed to by worker_off.manager, so its internal layout is Zig's to choose -- the
-// C++ offset mirror (@offsetOf == 8/60/88/... asserts) is retired. The allocation in
-// zfishMakeSearchManager now sizes to @sizeOf(SearchManager).
+// The SearchManager is a standalone heap object reached only through these typed
+// accessors and pointed to by worker_off.manager, so its internal layout is Zig's to
+// choose. The allocation in zfishMakeSearchManager sizes to @sizeOf(SearchManager).
 
-// The SharedState bundle (40 bytes) is no longer re-exported here (M18.5): typing its
-// five fields required the referent types, which reach graph_layout and would close a
-// module cycle. It is now the comptime-generic support/shared_state.SharedStateOf,
-// instantiated once with concrete types in support/engine.zig; main.zig reads it via
-// engine.SharedState.fromPtr. graph_layout no longer imports shared_state, which cuts
-// the last `→ shared_state` back-edge. `shared_state_size` (40) stays as the pinned
-// footprint the native allocations reserve. See REPORT-17 Annex A.
+// The SharedState bundle (40 bytes) lives in support/shared_state.SharedStateOf,
+// instantiated with concrete types in support/engine.zig; main.zig reads it via
+// engine.SharedState.fromPtr. `shared_state_size` (40) stays here as the pinned
+// footprint the native allocations reserve.
 
 // The ThreadPool object (48 bytes): the runtime constructs and reads the pool
-// through these fields. `threads` and `bound` are both Zig slices (M19.1, each was a
-// libc++-`std::vector` {begin,end,cap} triple): `threads` holds Thread* addresses,
-// `bound` holds the per-thread NUMA-node index of the cold binding path.
-// native_threadpool allocates the backing buffers and the accessors index them.
+// through these fields. `threads` and `bound` are both Zig slices: `threads` holds
+// Thread* addresses, `bound` holds the per-thread NUMA-node index of the cold binding
+// path. native_threadpool allocates the backing buffers and the accessors index them.
 pub const ThreadPool = struct {
     stop: u8 = 0, // atomic_bool
     increase_depth: u8 = 0, // atomic_bool
     setup_states: ?*state_list.StateList = null, // the native `states` StateListPtr
-    threads: []usize = &.{}, // Thread* addresses (M19.1: a typed slice, was {begin,end,cap})
-    bound: []usize = &.{}, // per-thread NUMA node bindings (M19.1: a typed slice, was {begin,end,cap})
+    threads: []usize = &.{}, // Thread* addresses
+    bound: []usize = &.{}, // per-thread NUMA node bindings
 
     pub inline fn fromPtr(p: *anyopaque) *ThreadPool {
         return @ptrCast(@alignCast(p));
@@ -253,8 +237,7 @@ pub const ThreadPool = struct {
         return self.threads[i];
     }
     /// The i-th pool Thread as a typed pointer. The threads vector stores Thread
-    /// addresses as usize, so this is the single @ptrFromInt the graph callers used
-    /// to each re-do via Thread.fromPtr/fromAddr.
+    /// addresses as usize, so this is the single @ptrFromInt over that slot.
     pub inline fn threadTyped(self: *const ThreadPool, i: usize) *Thread {
         return @ptrFromInt(self.threadAt(i));
     }
@@ -283,10 +266,10 @@ pub const ThreadPool = struct {
 };
 
 comptime {
-    // ThreadPool is now a native struct (M16.8 de-mirror): native_threadpool.zig
-    // writes and every reader (accessors here, the search's captured &stop pointer)
-    // go through this typed struct, so Zig owns the field placement. The size must
-    // still equal the calloc'd pool buffer (native_engine.memberThreadpoolNew).
+    // native_threadpool.zig writes and every reader (accessors here, the search's
+    // captured &stop pointer) go through this typed struct, so Zig owns the field
+    // placement. The size must equal the calloc'd pool buffer
+    // (native_engine.memberThreadpoolNew).
     std.debug.assert(@sizeOf(ThreadPool) == thread_pool_size);
 }
 
@@ -348,7 +331,7 @@ pub const Worker = struct {
         @as(*c_int, @ptrCast(@alignCast(&b[8]))).* = probe_depth;
     }
     pub inline fn setRootState(self: Worker, src: *const position_types.StateInfo) void {
-        // root_state is a typed StateInfo (M17.3c/M18.7): a struct copy, not a byte memcpy.
+        // root_state is a typed StateInfo: a struct copy, not a byte memcpy.
         self.layout().root_state = src.*;
     }
     pub inline fn rootPosPtr(self: Worker) *position_types.Position {
@@ -366,27 +349,24 @@ pub const Worker = struct {
     }
 };
 
-// PVMoves + RootMove are re-exported from the single canonical definition in
-// support/root_move.zig (M18.2 de-mirror): the former graph_layout copies (RootMove
-// with u8 bound flags, PVMoves) were byte-identical to root_move's (bool flags — same
-// 1-byte layout), so unify to one type. The Worker embeds `last_iteration_pv: PVMoves`
-// and strides its rootMoves vector by @sizeOf(RootMove); the size asserts below still
-// pin those (504 / 552). `.fromAddr` now lives on the canonical def.
+// PVMoves + RootMove are re-exported from the canonical definition in
+// support/root_move.zig. The Worker embeds `last_iteration_pv: PVMoves` and strides
+// its rootMoves vector by @sizeOf(RootMove); the size asserts below pin those
+// (504 / 552).
 pub const PVMoves = root_move.PVMoves;
 pub const RootMove = root_move.RootMove;
 
 comptime {
     std.debug.assert(@offsetOf(Thread, "worker") == 8);
-    // Native layouts, but the sizes must still equal the C++ footprint the rootMoves
-    // vector is strided/allocated by (root_move_size) and the Worker's embedded
-    // lastIterationPV slot -- Zig's reorder happens to keep both (504 / 552).
+    // The sizes must equal the footprint the rootMoves vector is strided/allocated by
+    // (root_move_size) and the Worker's embedded lastIterationPV slot (504 / 552).
     std.debug.assert(@sizeOf(PVMoves) == 504);
     std.debug.assert(@sizeOf(RootMove) == root_move_size);
 }
 
-// The TranspositionTable object (24 bytes). Typed replacement for the tt_off offset
-// map: clusterCount, table (Cluster*), generation8, in declaration order. The side
-// TT the native engine allocates uses this layout.
+// The TranspositionTable object (24 bytes): clusterCount, table (Cluster*),
+// generation8, in declaration order. The side TT the native engine allocates uses
+// this layout.
 pub const TranspositionTable = struct {
     cluster_count: usize = 0,
     table: ?[*]tt_types.TtCluster = null,
@@ -400,14 +380,13 @@ pub const TranspositionTable = struct {
     }
 };
 
-// TranspositionTable is now a native struct (M16.8 de-mirror): the side-TT handle in
-// native_engine.side_tt_storage is written+read only through these typed accessors, so
-// Zig owns the (naturally-ordered) layout; the C++ offset mirror is retired.
+// The side-TT handle in native_engine.side_tt_storage is written+read only through
+// these typed accessors, so Zig owns the (naturally-ordered) layout.
 
-// LimitsType + SearchMoveText moved to the limits_type leaf (M17.10 god-module
-// split); re-exported so the go-command chain keeps resolving graph_layout.LimitsType
-// / .SearchMoveText. WorkerLayout embeds the re-exported LimitsType (same layout, the
-// 120-byte contractual slot is asserted in limits_type.zig).
+// LimitsType + SearchMoveText are re-exported from the limits_type module so the
+// go-command chain keeps resolving graph_layout.LimitsType / .SearchMoveText.
+// WorkerLayout embeds the re-exported LimitsType (same layout, the 120-byte
+// contractual slot is asserted in limits_type.zig).
 pub const SearchMoveText = limits_type.SearchMoveText;
 pub const LimitsType = limits_type.LimitsType;
 

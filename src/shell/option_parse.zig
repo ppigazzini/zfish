@@ -245,7 +245,7 @@ pub fn nameEquals(left: []const u8, right: []const u8) bool {
     return !caseInsensitiveLess(left, right) and !caseInsensitiveLess(right, left);
 }
 
-// M19: the pure UCI parsers now take an injected allocator (was a hardcoded
+// The pure UCI parsers now take an injected allocator (was a hardcoded
 // std.heap.c_allocator), so their OOM paths are testable. Each builds ArrayList
 // scratch (freed via defer) then allocCStrings the result -- gate every allocation
 // failure and free the result with the same allocator.
@@ -285,10 +285,10 @@ test {
     @import("std").testing.refAllDecls(@This());
 }
 
-// ---- property fuzz (M17.0d) --------------------------------------------------
+// ---- property fuzz--------------------------------------------------
 // The pure UCI parsers are the most fuzz-appropriate surface in the engine (a
-// tokenizer bolted to a validator). Until coverage-guided `-ffuzz` is wired
-// (M17.5), these PRNG property tests hammer them with random + adversarial input
+// tokenizer bolted to a validator). Until coverage-guided `-ffuzz` is wired,
+// these PRNG property tests hammer them with random + adversarial input
 // and assert the only universal invariant: no crash / no UB, and results freed.
 
 const testing = std.testing;

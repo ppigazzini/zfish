@@ -1,17 +1,15 @@
-// Native StateList — the engine `states` member (modeling StateListPtr =
-// std::unique_ptr<std::deque<StateInfo>>), holding the chain of StateInfo records
-// that back a position and its applied moves.
+// Native StateList — the engine `states` member, holding the chain of StateInfo
+// records that back a position and its applied moves.
 //
-// CONTRACT (models a std::deque<StateInfo>):
-//   - starts non-empty (one root StateInfo), like `new std::deque<StateInfo>(1)`;
+// CONTRACT:
+//   - starts non-empty (one root StateInfo);
 //   - reset()  -> drops to a single fresh root and returns its address;
 //   - push()   -> appends one StateInfo and returns its address;
 //   - back()   -> address of the most recently added StateInfo;
-//   - POINTER STABILITY is mandatory: Position::do_move writes into the latest
-//     StateInfo while earlier ones remain referenced by the search, so a record's
-//     address must never change once handed out. std::deque guarantees this by
-//     chunking; here every StateInfo is its own heap allocation, which is strictly
-//     pointer-stable and keeps the type free of any libstdc++ ABI dependency.
+//   - POINTER STABILITY is mandatory: doMove writes into the latest StateInfo
+//     while earlier ones remain referenced by the search, so a record's address
+//     must never change once handed out. Here every StateInfo is its own heap
+//     allocation, which is strictly pointer-stable.
 //
 // StateInfo is treated as an opaque 192-byte POD block (graph_layout.state_info_size);
 // the native runtime memsets/fills it via Position, so this module owns lifetime +
@@ -20,13 +18,13 @@
 const std = @import("std");
 const position_types = @import("position_types");
 
-/// The typed StateInfo the engine fills through Position (M18.3). This module owns
+/// The typed StateInfo the engine fills through Position. This module owns
 /// its lifetime + ordering only, not its internals, but the handles it hands out are
 /// now typed `*StateInfo` rather than `*anyopaque`. @sizeOf(StateInfo) == 192, pinned
 /// in position_types + graph_layout, so the per-record heap block is exactly one.
 pub const StateInfo = position_types.StateInfo;
 
-/// sizeof(Stockfish::StateInfo). Pinned by graph_layout.zig (state_info_size = 192).
+/// The StateInfo block size. Pinned by graph_layout.zig (state_info_size = 192).
 pub const state_info_size: usize = 192;
 pub const state_info_align: usize = 8;
 
@@ -39,8 +37,7 @@ pub const StateList = struct {
     /// One heap block per StateInfo → addresses are stable for the block's lifetime.
     blocks: std.ArrayListUnmanaged(*StateInfo),
 
-    /// Construct with a single zeroed root StateInfo, matching
-    /// `new std::deque<StateInfo>(1)`.
+    /// Construct with a single zeroed root StateInfo.
     pub fn init(allocator: std.mem.Allocator) error{OutOfMemory}!StateList {
         var self = StateList{ .allocator = allocator, .blocks = .empty };
         errdefer self.deinit();
@@ -64,8 +61,7 @@ pub const StateList = struct {
         return block;
     }
 
-    /// Drop to a single fresh root StateInfo and return its address. Mirrors
-    /// `storage.states = StateListPtr(new std::deque<StateInfo>(1))`.
+    /// Drop to a single fresh root StateInfo and return its address.
     pub fn reset(self: *StateList) error{OutOfMemory}!*StateInfo {
         // Reuse the first block (already allocated) and free the rest, so reset
         // cannot fail after the list exists.
@@ -75,7 +71,7 @@ pub const StateList = struct {
         return self.blocks.items[0];
     }
 
-    /// Append one StateInfo and return its address. Mirrors `emplace_back` + `&back()`.
+    /// Append one StateInfo and return its address.
     pub fn push(self: *StateList) error{OutOfMemory}!*StateInfo {
         return self.appendBlock();
     }
@@ -85,8 +81,8 @@ pub const StateList = struct {
         return self.blocks.items[self.blocks.items.len - 1];
     }
 
-    /// Whether the list currently holds any StateInfo (models `states ? 1 : 0`;
-    /// after a handoff the owning pointer is nulled).
+    /// Whether the list currently holds any StateInfo (after a handoff the owning
+    /// pointer is nulled).
     pub fn hasStates(self: *const StateList) bool {
         return self.blocks.items.len != 0;
     }
@@ -96,10 +92,9 @@ pub const StateList = struct {
     }
 };
 
-// Owns a StateList and supports the std::unique_ptr MOVE semantics the setupStates
-// adopt relies on: moveOut() hands the StateList to the pool and NULLS the wrapper, so a
-// later destroy() frees nothing (mirroring `pool.setupStates = std::move(storage.states)`
-// followed by storage destruction). The position-setup flow (engine.zig) builds the chain
+// Owns a StateList and supports the MOVE semantics the setupStates adopt relies on:
+// moveOut() hands the StateList to the pool and NULLS the wrapper, so a later
+// destroy() frees nothing. The position-setup flow (engine.zig) builds the chain
 // here via reset()/push(); at search start the pool adopts it (moveOut) or the slot's list.
 pub const PendingStateStorage = struct {
     allocator: std.mem.Allocator,
@@ -124,7 +119,7 @@ pub const PendingStateStorage = struct {
     }
 
     /// Drop to a single fresh root and return its address (storage_reset). Re-creates the
-    /// list if it was moved out (mirrors `storage.states = StateListPtr(new deque(1))`).
+    /// list if it was moved out.
     pub fn reset(self: *PendingStateStorage) error{OutOfMemory}!*StateInfo {
         if (self.list == null) {
             const list = try self.allocator.create(StateList);
@@ -144,7 +139,7 @@ pub const PendingStateStorage = struct {
         return self.list != null and self.list.?.hasStates();
     }
 
-    /// MOVE the owned StateList out (mirrors std::move of the unique_ptr): returns it and
+    /// MOVE the owned StateList out: returns it and
     /// nulls the wrapper so a later destroy() frees nothing. The caller (the pool's
     /// setupStates slot) becomes the owner.
     pub fn moveOut(self: *PendingStateStorage) ?*StateList {
@@ -160,7 +155,7 @@ pub fn destroyStateList(allocator: std.mem.Allocator, list: *StateList) void {
     allocator.destroy(list);
 }
 
-// Typed wrappers over PendingStateStorage for the engine/thread setup paths (M18.7): the
+// Typed wrappers over PendingStateStorage for the engine/thread setup paths: the
 // handle is `*PendingStateStorage` end-to-end now -- the engine side-table and the thread
 // scratch both hold the concrete type, and only the native_hooks adopt boundary coerces it
 // to *anyopaque (implicitly). No cast survives here.
@@ -170,7 +165,7 @@ pub fn storageCreate() ?*PendingStateStorage {
 pub fn storageDestroy(storage: ?*PendingStateStorage) void {
     if (storage) |s| s.destroy();
 }
-// M19.2: the StateList is legitimately growable (models std::deque<StateInfo>, bounded by UCI
+// The StateList is legitimately growable (bounded by UCI
 // game-move input, not max_ply), so OOM here propagates as error rather than panicking -- the
 // callers are on error-capable paths (buildRootMoves is !void; traceEvalEngine returns optional).
 pub fn storageReset(storage: *PendingStateStorage) error{OutOfMemory}!*StateInfo {
@@ -280,7 +275,7 @@ test "state_info_size matches the pinned C++ StateInfo footprint" {
     try testing.expectEqual(@as(usize, 192), state_info_size);
 }
 
-// M19: prove the allocation error paths actually unwind. std.testing
+// Prove the allocation error paths actually unwind. std.testing
 // .checkAllAllocationFailures runs the body once cleanly, then again failing each
 // successive allocation in turn, and asserts every run either succeeds or returns
 // error.OutOfMemory while leaking nothing -- so the errdefer/defer chains are

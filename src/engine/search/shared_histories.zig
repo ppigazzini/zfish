@@ -1,7 +1,5 @@
-// Native sizing for the engine's `shared_histories` member (the post-src/ replacement
-// for std::map<NumaIndex, SharedHistories>). One SharedHistories per NUMA node is
-// built by the C++ ctor SharedHistories(threadCount) (src/history.h), which sizes two
-// thread-shared DynStats arrays:
+// Native sizing for the engine's `shared_histories` member. One SharedHistories per
+// NUMA node sizes two thread-shared DynStats arrays:
 //   correctionHistory : DynStats<[2]CorrectionBundle, CORRHIST_BASE_SIZE>
 //   pawnHistory       : DynStats<[16][64] int16,      PAWN_HISTORY_BASE_SIZE>
 // DynStats(s) sets its element count to s * SizeMultiplier, so for a node built with
@@ -19,9 +17,9 @@
 
 const std = @import("std");
 
-/// UINT_16_HISTORY_SIZE = std::numeric_limits<uint16_t>::max() + 1 (src/history.h).
+/// UINT_16_HISTORY_SIZE = std::numeric_limits<uint16_t>::max() + 1.
 pub const corrhist_base_size: usize = 65536;
-/// PAWN_HISTORY_BASE_SIZE (src/history.h).
+/// PAWN_HISTORY_BASE_SIZE.
 pub const pawn_history_base_size: usize = 8192;
 
 pub const Sizes = struct {

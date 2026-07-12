@@ -1,4 +1,4 @@
-// Debug statistics counters (extracted from misc.zig, M21).
+// Debug statistics counters (extracted from misc.zig).
 //
 // Stockfish's dbg_hit_on / dbg_mean_of / dbg_stdev_of / dbg_extremes_of /
 // dbg_correl_of instrumentation: lock-free per-slot accumulators + a print/clear

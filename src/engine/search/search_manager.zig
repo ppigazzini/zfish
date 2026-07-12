@@ -1,27 +1,18 @@
 // Native Zig SearchManager + UpdateContext.
 //
-// This is the piece of the post-src/ object graph that dissolves two of the
-// three things people assume force C++ to stay: the SearchManager vtable and the
-// std::function UpdateContext. A native Zig engine needs neither.
-//
-//   * std::function -> a plain function pointer plus an opaque context pointer.
+//   * UpdateContext: a plain function pointer plus an opaque context pointer.
 //     The four UCI-output callbacks (no-moves / full / iteration / bestmove)
-//     become `*const fn (...) void` fields, bound to whatever owns
-//     the output sink (the native UCIEngine, eventually). No libstdc++
-//     _Function_handler instantiation, no heap closure.
+//     are `*const fn (...) void` fields, bound to whatever owns
+//     the output sink (the native UCIEngine).
 //
-//   * the ISearchManager / NullSearchManager virtual hierarchy -> a single
-//     struct with an `is_main` flag. Non-main workers get a manager that simply
-//     does nothing on check_time; there is no vtable, just a branch. Dispatch is
-//     a direct Zig call, resolved at the call site.
+//   * SearchManager: a single struct with an `is_main` flag. Non-main workers
+//     get a manager that simply does nothing on check_time; there is no vtable,
+//     just a branch. Dispatch is a direct Zig call, resolved at the call site.
 //
-// This module is the native SearchManager the Zig engine graph owns; it is built
-// and unit-tested standalone, exactly like thread_runtime.zig.
+// This module is built and unit-tested standalone.
 
 const std = @import("std");
 
-// Mirrors of Search::InfoShort / InfoFull / InfoIteration, with the C++
-// std::string_view fields rendered as native Zig slices.
 pub const InfoShort = struct {
     depth: i32,
     score: i32,
@@ -47,7 +38,7 @@ pub const InfoIteration = struct {
     currmovenumber: usize,
 };
 
-// The std::function UpdateContext, natively: four callbacks plus the opaque
+// UpdateContext: four callbacks plus the opaque
 // sink they write through (the native UCIEngine output side). Each callback is a
 // C-ABI function pointer so the same vtable-free dispatch works whether the sink
 // is implemented in Zig or handed across a C boundary.
@@ -77,17 +68,14 @@ pub const UpdateContext = struct {
     }
 };
 
-// SearchManager, natively. The main thread gets a manager with is_main = true and
+// The main thread gets a manager with is_main = true and
 // a bound UpdateContext; non-main threads get one with is_main = false whose
-// check_time is a no-op (the old NullSearchManager). No vtable -- the single
-// branch in check_time replaces the virtual dispatch.
+// check_time is a no-op. No vtable -- a single branch in check_time.
 pub const SearchManager = struct {
     is_main: bool,
     updates: *const UpdateContext,
 
-    // Main-thread search bookkeeping (Search::SearchManager data members). tm
-    // will hold the Zig TimeManagement (timeman.zig) once the graph is native;
-    // kept as the scalar state here so the struct stands alone for testing.
+    // Main-thread search bookkeeping.
     original_time_adjust: f64 = 0,
     calls_cnt: i32 = 0,
     ponder: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
@@ -106,10 +94,7 @@ pub const SearchManager = struct {
         return .{ .is_main = false, .updates = updates };
     }
 
-    // Replaces the ISearchManager::check_time virtual. Non-main managers do
-    // nothing, exactly like NullSearchManager. The actual time logic (the body
-    // of the old SearchManager::check_time) plugs in here when the time manager
-    // is wired; the point of this module is that the dispatch is vtable-free.
+    // Non-main managers do nothing; main managers run the supplied CheckBody.
     pub fn checkTime(self: *SearchManager, comptime CheckBody: type) void {
         if (!self.is_main) return;
         CheckBody.run(self);
@@ -197,7 +182,7 @@ test "non-main manager skips check_time (no vtable, just a branch)" {
 
     Body.ran = false;
     null_mgr.checkTime(Body);
-    try testing.expect(!Body.ran); // NullSearchManager: no-op
+    try testing.expect(!Body.ran); // non-main manager: no-op
 
     Body.ran = false;
     main_mgr.checkTime(Body);

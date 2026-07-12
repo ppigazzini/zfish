@@ -1,4 +1,4 @@
-# Nightly coverage-guided fuzzing (M17.5i / report §2.F "no fuzz job").
+# Nightly coverage-guided fuzzing.
 #
 # The `zig build fuzz` SMOKE (one iteration per target) runs on every push inside
 # the parity workflow; this job runs the CONTINUOUS Zig fuzzer for a bounded budget
@@ -6,9 +6,8 @@
 # FEN-parse -> generateLegal -> make/unmake targets (src/board/fuzz_targets.zig),
 # built under -Doptimize=ReleaseSafe so a discovered input that trips a Zig safety
 # check -- out-of-bounds, integer overflow, pointer misalignment, null-unwrap --
-# crashes the run with the reproducer instead of reading garbage. This is the
-# failure mode the M17.5c/d/e latent-UB bugs had; the fuzzer is how new ones get
-# caught before they reach the bench/parity goldens.
+# crashes the run with the reproducer instead of reading garbage. The fuzzer
+# catches such bugs before they reach the bench/parity goldens.
 name: zfish fuzz (nightly)
 
 on:

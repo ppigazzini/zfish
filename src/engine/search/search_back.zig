@@ -1,8 +1,7 @@
-// The move loop + node finalization (Steps 13-21) of searchImpl, split out of
-// search_main.zig. Takes the pre-loop node state as an anytype `nd` struct
-// (Steps 1-12 invariants); the loop's mutable running state + scratch are
-// local here. It recurses into search_main.searchImpl for child nodes -- a
-// file cycle within the search_driver module, which Zig permits.
+// The move loop + node finalization (Steps 13-21) of searchImpl. Takes the
+// pre-loop node state as an anytype `nd` struct (Steps 1-12 invariants); the
+// loop's mutable running state + scratch are local here. It recurses into
+// search_main.searchImpl for child nodes.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");

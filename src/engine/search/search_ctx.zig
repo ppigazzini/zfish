@@ -1,11 +1,8 @@
-// Search-driver context types (M18.7 — the planned prerequisite to splitting the
-// search_driver god-file). The plain-data bundles the search driver threads through:
-// the per-iteration `SsCtx`/`SearchTimeState`/`ZfishIdState` snapshots and the hot
-// `QCtx` the qsearch/search recursion carries. Pulled into a std-free leaf over the
-// worker/board POD leaves so the ID-orchestration and node-recursion clusters can
-// leaf out of search_driver.zig (next slices) importing THIS for the types instead of
-// each other. Depends only on graph_layout + the position/root-move type leaves, so it
-// is a leaf both search_driver and the coming search leaves import (no cycle).
+// Search-driver context types: the plain-data bundles the search driver threads
+// through: the per-iteration `SsCtx`/`SearchTimeState`/`ZfishIdState` snapshots and
+// the hot `QCtx` the qsearch/search recursion carries. A std-free leaf over the
+// worker/board POD leaves. Depends only on graph_layout + the position/root-move
+// type leaves.
 
 const graph_layout = @import("graph_layout");
 const position_types = @import("position_types");
@@ -18,10 +15,8 @@ const PVMoves = root_move.PVMoves;
 const RootMove = root_move.RootMove;
 
 // Worker-graph accessors shared by BOTH the ID-orchestration driver and the node
-// recursion (M18.7): pure reads of a `*WorkerLayout` into its bound subsystems. Kept
-// here in the context leaf so the coming search_id leaf and search_driver both reach
-// them without importing each other (searchCbTtContext in particular was the shared
-// edge that would otherwise cycle the two).
+// recursion: pure reads of a `*WorkerLayout` into its bound subsystems. Kept
+// here in the context leaf so search_id and search_driver both reach them.
 pub fn workerThreadsPool(wl: *const graph_layout.WorkerLayout) *graph_layout.ThreadPool {
     return wl.threads;
 }
@@ -29,8 +24,8 @@ pub fn workerManager(wl: *const graph_layout.WorkerLayout) ?*graph_layout.Search
     return wl.manager;
 }
 pub fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootMove {
-    // root_moves is the {begin,end,cap} vector header; [0] is the first element's
-    // address; return the typed first RootMove via the graph adapter.
+    // root_moves[0] is the first element's address; return the typed first RootMove
+    // via the graph adapter.
     return @ptrCast(wl.root_moves.ptr);
 }
 pub fn workerTT(wl: *const graph_layout.WorkerLayout) *graph_layout.TranspositionTable {

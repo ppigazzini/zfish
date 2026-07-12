@@ -31,7 +31,7 @@ comptime {
 }
 
 pub fn main(init: std.process.Init) !void {
-    // Cross-platform argv (M-PORT): initAllocator handles Windows/WASI, where argv must be
+    // Cross-platform argv: initAllocator handles Windows/WASI, where argv must be
     // decoded from the raw command line into an owned buffer (on POSIX it is a no-op view of
     // the kernel-provided vector). The iterator owns the arg strings, so it stays alive
     // (deinit deferred) for all of main -- argv points into its buffer. Collected once into a
@@ -68,8 +68,8 @@ pub fn main(init: std.process.Init) !void {
     defer memory_port.stdAlignedFree(engine);
 
     nativeUciEngineConstructAt(engine, @intCast(argc), argv.ptr);
-    defer freeSideTt(); // M1: free the side tt AFTER the engine destruct (LIFO)
-    defer engine_port.freeSharedHistories(); // M-SH: free the side sharedHistories map (after destruct)
+    defer freeSideTt(); // free the side tt AFTER the engine destruct (LIFO)
+    defer engine_port.freeSharedHistories(); // free the side sharedHistories map (after destruct)
     defer uciEngineDestructAt(engine);
 
     uci_port.loopRuntime(engine);
@@ -223,17 +223,15 @@ fn optInt(name: []const u8) c_int {
 }
 
 // Native SearchManager construction + native Worker teardown:
-//   * make: a raw search_manager_size buffer (operator new, so a matching operator delete
-//     frees it valgrind-clean), zeroed — the manager's data fields are written by the
-//     native reset shims (smReset*) + tm_init before every search, and updates@112 is set
-//     to the engine UpdateContext for the main thread. No vtable, no ctor; check_time is
-//     dead and pv() is native, so the vtable is never dispatched.
+//   * make: a raw search_manager_size buffer, zeroed — the manager's data fields are
+//     written by the native reset shims (smReset*) + tm_init before every search, and
+//     updates@112 is set to the engine UpdateContext for the main thread. No vtable,
+//     no ctor; check_time is dead and pv() is native.
 //   * destroy: free the rootMoves vector buffer + the manager by offset, then return the
-//     large-page block. accumulatorStack/refreshTable are POD std::array members (trivial
-//     dtors), so manager + rootMoves are the ONLY heap members ~Worker frees — reproducing
-//     it without a virtual `delete manager`.
+//     large-page block. accumulatorStack/refreshTable are POD array members (no teardown),
+//     so manager + rootMoves are the ONLY heap members the worker frees.
 fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque {
-    // M19: a typed SearchManager via the Allocator interface (c_allocator, libc-backed).
+    // A typed SearchManager via the Allocator interface (c_allocator, libc-backed).
     const sm = std.heap.c_allocator.create(graph_layout.SearchManager) catch return null;
     @memset(@as([*]u8, @ptrCast(sm))[0..@sizeOf(graph_layout.SearchManager)], 0);
     if (is_main != 0) sm.updates = update_context;
@@ -242,7 +240,7 @@ fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque
 fn nativeWorkerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
     const wl = graph_layout.WorkerLayout.fromPtr(w);
-    // rootMoves buffer: a []RootMove allocated by workerSetRootMoves (M19.1) -- free the
+    // rootMoves buffer: a []RootMove allocated by workerSetRootMoves -- free the
     // slice directly.
     if (wl.root_moves.len != 0) std.heap.c_allocator.free(wl.root_moves);
     // SearchManager buffer (allocator.create'd by makeSearchManager; manager is typed).

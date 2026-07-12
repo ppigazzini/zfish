@@ -1,20 +1,17 @@
-// Zig-owned thread job runner (engine-graph reimplementation).
+// Zig-owned thread job runner.
 //
-// Replaces the C++ Thread idle_loop / run_custom_job / wait_for_search_finished
-// handshake so worker threads can be owned by Zig once engine construction moves
-// off the C++ object graph. Self-contained (std only): it owns a std.Thread and
-// executes opaque jobs (a C-ABI callback plus context pointer), exactly as the
-// C++ runner executes std::function<void()>.
+// The idle_loop / run_custom_job / wait_for_search_finished handshake for worker
+// threads. Self-contained (std only): it owns a std.Thread and executes opaque
+// jobs (a callback plus context pointer).
 //
 // Zig 0.16 removed std.Thread.Mutex / Condition / Futex, so the blocking
 // primitives are built directly on a wait/wake-on-address seam: a canonical
 // three-state (Drepper) mutex and a sequence-counter condition variable. Both
 // are exercised by the tests at the bottom, which spawn the thread and
-// round-trip jobs, so the concurrency handshake is verified here rather than
-// deferred to the wiring step.
+// round-trip jobs, so the concurrency handshake is verified here.
 //
 // The seam (futexWait/futexWakeOne/futexWakeAll) is the ONLY OS-specific code
-// here; the Mutex/Condition logic on top is platform-independent (M-PORT). It is
+// here; the Mutex/Condition logic on top is platform-independent. It is
 // implemented per owned OS: Linux futex(2), Windows RtlWaitOnAddress/RtlWakeAddress
 // (ntdll), macOS __ulock_wait/__ulock_wake. Spurious wakeups are harmless -- every
 // caller re-checks a predicate.
@@ -130,7 +127,7 @@ pub const ThreadRuntime = struct {
     job_fn: ?ThreadJobFn = null,
     job_ctx: ?*anyopaque = null,
     // 'searching' starts true and idle_loop drives it to false once the thread
-    // parks, matching the C++ Thread constructor's stated contract.
+    // parks.
     searching: bool = true,
     exit: bool = false,
 
@@ -193,11 +190,11 @@ pub const ThreadRuntime = struct {
     }
 };
 
-// A pool of Zig-owned worker threads. Mirrors the C++ ThreadPool job-dispatch
-// surface (run_on_thread / wait_on_thread / per-thread start + wait), plus the
-// shared `stop` flag the search polls. Thread 0 is the main thread. The pool
-// owns the ThreadRuntime array; the per-thread search payload is attached by
-// the caller through the job context, exactly as the C++ pool attaches Workers.
+// A pool of Zig-owned worker threads. Provides the job-dispatch surface
+// (run_on_thread / wait_on_thread / per-thread start + wait), plus the shared
+// `stop` flag the search polls. Thread 0 is the main thread. The pool owns the
+// ThreadRuntime array; the per-thread search payload is attached by the caller
+// through the job context.
 pub const ThreadPool = struct {
     threads: []ThreadRuntime = &.{},
     allocator: std.mem.Allocator,

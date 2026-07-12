@@ -1,4 +1,4 @@
-// Pure-Zig parity harness (M-PORT.2): the cross-platform replacement for the bash
+// Pure-Zig parity harness: the cross-platform replacement for the bash
 // golden-diff scripts (output_parity_golden.sh / search_parity.sh / search_modes.sh /
 // perft.sh / eval.sh / misc.sh). It drives the built stockfish binary over UCI, extracts
 // the same deterministic fingerprints those scripts did, and diffs them against the same
@@ -502,7 +502,7 @@ fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []con
 // bash gates held stdin open with a sleep. Here we instead read stdout to the `bestmove`
 // line BEFORE sending quit -- the search runs to its real depth/time limit. stderr is sent
 // to null (the target info/bestmove lines are on stdout) so a single-stream read can't
-// deadlock. This is what exercises the M-PORT sync primitives (futex / RtlWaitOnAddress /
+// deadlock. This is what exercises the sync primitives (futex / RtlWaitOnAddress /
 // __ulock) and the ported steady clock (QueryPerformanceCounter on Windows) under real
 // concurrency and wall-clock timing -- coverage the single-threaded goldens can't give.
 
@@ -728,7 +728,7 @@ fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []const 
 const stress_cycles = 24;
 const stress_churn = 12;
 
-// stress: liveness for the M-PORT thread runtime. Phase A hammers ONE process with go/stop
+// stress: liveness for the thread runtime. Phase A hammers ONE process with go/stop
 // cycles across thread counts {1,2,4,8} (a third use the go-infinite -> stop handshake, which
 // exercises the futex/RtlWaitOnAddress/__ulock wakeup); Phase B churns fresh engine graphs.
 // A hang trips the CI job timeout; every search must yield a well-formed bestmove and every
@@ -875,7 +875,7 @@ pub fn main(init: std.process.Init) !void {
     std.process.exit(1);
 }
 
-// M22.2 structured parity: a byte diff says "these two lines differ" but not WHICH field drifted.
+// Structured parity: a byte diff says "these two lines differ" but not WHICH field drifted.
 // For the UCI search fingerprints (`info depth ...` / `bestmove ...`) that the search-port workflow
 // diffs, parse both sides into a typed record and report the exact field(s) that changed -- so a
 // score/nodes/pv regression is localized to one field instead of eyeballed out of a byte diff.
@@ -1017,7 +1017,7 @@ fn structuredFieldDiff(golden_line: []const u8, live_line: []const u8) bool {
 }
 
 // First ~40 differing lines, in `diff`-ish `< golden` / `> live` form, each followed (when the
-// pair is a parseable search line) by the M22.2 structured field-level delta.
+// pair is a parseable search line) by the structured field-level delta.
 fn printDiff(golden: []const u8, live: []const u8) void {
     var g = lines(golden);
     var l = lines(live);

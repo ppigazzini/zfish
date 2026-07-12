@@ -1,18 +1,12 @@
-// Native NumaConfig — the post-src/ replacement for the C++ NumaConfig
-// (std::vector<std::set<CpuIndex>> nodes + nodeByCpu map). Models the NUMA topology
-// the engine's numaContext holds: a list of NUMA nodes, each an ascending, unique
-// set of CPU indices, plus a cpu->node index and the customAffinity flag.
+// Native NumaConfig — models the NUMA topology the engine's numaContext holds: a
+// list of NUMA nodes, each an ascending, unique set of CPU indices, plus a
+// cpu->node index and the customAffinity flag.
 //
-// This iteration covers the data structure + the queries + from_string (user
-// "NumaPolicy a-b:c-d" parsing) + suggests_binding_threads (the bind/no-bind
-// decision). DEFERRED to the flip (and only ever exercised when do_bind is true,
-// which the single-node WSL2 target never hits): from_system (the /sys topology
-// read + BundledL3 splitting) and distribute_threads / execute_on_numa_node (the
-// NUMA binding syscalls). On the gate target from_system yields a single node, so
-// the engine builds one node holding every online CPU; suggests_binding is false.
-//
-// Native-graph cut, iteration 3 (REPORT-09 Annex B, ITERATION-157). Ready-to-wire:
-// the live runtime still uses the C++ NumaConfig until the atomic flip.
+// Covers the data structure, the queries, fromString (user "NumaPolicy a-b:c-d"
+// parsing), fromSystem, distributeThreads, and suggestsBindingThreads (the
+// bind/no-bind decision). fromSystem builds a single node holding every online CPU
+// -- the single-node target the engine runs on -- so suggestsBinding is false there;
+// a multi-node /sys topology read + BundledL3 split is not implemented.
 
 const std = @import("std");
 
@@ -23,7 +17,7 @@ pub const NumaConfig = struct {
     nodes: std.ArrayListUnmanaged(Node),
     node_by_cpu: std.AutoHashMapUnmanaged(usize, usize),
     /// Set when the topology came from a user "NumaPolicy" string rather than the
-    /// system; forces thread binding (matches the C++ flag).
+    /// system; forces thread binding.
     custom_affinity: bool,
 
     pub fn empty(allocator: std.mem.Allocator) NumaConfig {
@@ -58,10 +52,9 @@ pub const NumaConfig = struct {
         return self.node_by_cpu.contains(cpu);
     }
 
-    /// Add `cpu` to NUMA node `node`, mirroring C++ add_cpu_to_node: a CPU belongs
-    /// to at most one node, the node's set stays ascending+unique, and missing
-    /// lower nodes are created. Returns false if `cpu` is already assigned
-    /// elsewhere (the C++ caller treats that as fatal).
+    /// Add `cpu` to NUMA node `node`: a CPU belongs to at most one node, the node's
+    /// set stays ascending+unique, and missing lower nodes are created. Returns false
+    /// if `cpu` is already assigned elsewhere (the caller treats that as fatal).
     pub fn addCpuToNode(self: *NumaConfig, node: usize, cpu: usize) error{OutOfMemory}!bool {
         if (self.node_by_cpu.get(cpu)) |existing| return existing == node;
         while (self.nodes.items.len <= node) {
@@ -74,7 +67,7 @@ pub const NumaConfig = struct {
 
     /// Parse a "NumaPolicy" string: nodes separated by ':', each a comma list of
     /// CPU indices or ranges, e.g. "0-3,8:4-7" -> node0 {0,1,2,3,8}, node1 {4,5,6,7}.
-    /// Empty node strings are skipped (do not advance the node index), matching C++.
+    /// Empty node strings are skipped (do not advance the node index).
     pub fn fromString(allocator: std.mem.Allocator, s: []const u8) error{ OutOfMemory, BadNuma }!NumaConfig {
         var cfg = NumaConfig.empty(allocator);
         errdefer cfg.deinit();
@@ -100,10 +93,9 @@ pub const NumaConfig = struct {
     }
 
     /// Build the topology from the system. Single-node fallback (the only path the
-    /// WSL2/CI gate target takes — its /sys exposes no NUMA nodes, so the C++
-    /// from_system yields one node too): one node holding every online CPU, not
-    /// custom-affinity. The multi-node /sys read + BundledL3 split is deferred to
-    /// the flip (it only matters on real multi-socket hosts).
+    /// WSL2/CI gate target takes — its /sys exposes no NUMA nodes): one node holding
+    /// every online CPU, not custom-affinity. A multi-node /sys read + BundledL3
+    /// split is not implemented (it only matters on real multi-socket hosts).
     pub fn fromSystem(allocator: std.mem.Allocator) error{OutOfMemory}!NumaConfig {
         var cfg = NumaConfig.empty(allocator);
         errdefer cfg.deinit();
@@ -115,10 +107,9 @@ pub const NumaConfig = struct {
         return cfg;
     }
 
-    /// Assign each of `num_threads` threads to a NUMA node, balancing by fill ratio
-    /// exactly as C++ distribute_threads_among_numa_nodes: single node -> all node 0;
-    /// otherwise greedily place each thread on the node with the lowest
-    /// (occupation+1)/size. Caller owns the returned slice.
+    /// Assign each of `num_threads` threads to a NUMA node, balancing by fill ratio:
+    /// single node -> all node 0; otherwise greedily place each thread on the node
+    /// with the lowest (occupation+1)/size. Caller owns the returned slice.
     pub fn distributeThreads(self: *const NumaConfig, allocator: std.mem.Allocator, num_threads: usize) error{OutOfMemory}![]usize {
         const ns = try allocator.alloc(usize, num_threads);
         errdefer allocator.free(ns);
@@ -146,9 +137,9 @@ pub const NumaConfig = struct {
         return ns;
     }
 
-    /// Whether to bind threads to NUMA nodes (C++ suggests_binding_threads, the
-    /// part the gates reach): bind if the affinity is user-set; never bind a single
-    /// thread; otherwise bind only if the threads cannot fit the largest node.
+    /// Whether to bind threads to NUMA nodes: bind if the affinity is user-set;
+    /// never bind a single thread; otherwise bind only if the threads cannot fit
+    /// the largest node.
     pub fn suggestsBindingThreads(self: *const NumaConfig, num_threads: usize) bool {
         if (self.custom_affinity) return true;
         if (num_threads <= 1) return false;
@@ -278,7 +269,7 @@ test "distributeThreads: multi-node places every thread and favors the larger no
     try testing.expect(n1 > n0); // the larger node takes more threads
 }
 
-// M19: allocation-failure gates. checkAllAllocationFailures fails each successive
+// Allocation-failure gates. checkAllAllocationFailures fails each successive
 // allocation and asserts every unwind returns error.OutOfMemory leak-free -- covering
 // the ArrayList/HashMap growth inside addCpuToNode (reached via fromString) and the
 // two-slice distributeThreads, whose errdefer/deinit chains must hold on any partial

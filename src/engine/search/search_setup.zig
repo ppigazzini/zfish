@@ -1,9 +1,9 @@
-// QCtx construction (M18.7 — split out of search_driver.zig). The one-shot fetch of
-// the Worker-graph state the inlined node recursion needs (searchCbWorkerState) and
-// the assembly of the hot QCtx from it (buildCtx). Pure worker-graph reads -- no call
-// into the recursion -- so this is a leaf over graph_layout + the root_move / search_ctx
-// type leaves; search_driver's entry points (qsearchEntry/searchEntry/iterativeDeepening)
-// import it one-way to build the ctx they thread into qsearchImpl/searchImpl.
+// QCtx construction: the one-shot fetch of the Worker-graph state the inlined node
+// recursion needs (searchCbWorkerState) and the assembly of the hot QCtx from it
+// (buildCtx). Pure worker-graph reads -- no call into the recursion -- so this is a
+// leaf over graph_layout + the root_move / search_ctx type leaves;
+// search_driver's entry points (qsearchEntry/searchEntry/iterativeDeepening) import
+// it one-way to build the ctx they thread into qsearchImpl/searchImpl.
 
 const graph_layout = @import("graph_layout");
 const root_move = @import("root_move");
@@ -32,11 +32,11 @@ fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*nnue_ac
     out_root_depth.* = &wl.root_depth;
     out_reductions.* = &wl.reductions;
     out_root_delta.* = &wl.root_delta;
-    // One canonical PVMoves now (M18.2 de-mirror) -- plain mut->const, no cast.
+    // One canonical PVMoves now -- plain mut->const, no cast.
     out_last_iter_pv.* = &wl.last_iteration_pv;
     out_stop.* = stop;
     out_pv_idx.* = &wl.pv_idx;
-    // root_moves is a typed slice now (M19.1); its .ptr is the first element.
+    // root_moves is a typed slice now; its .ptr is the first element.
     out_root_moves.* = wl.root_moves.ptr;
     out_pv_last.* = &wl.pv_last;
     out_best_move_changes.* = &wl.best_move_changes;

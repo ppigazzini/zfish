@@ -8,7 +8,7 @@ const option_port = @import("option");
 const uci_wdl = @import("uci_wdl");
 const uci_output = @import("uci_output");
 const native_engine = @import("native_engine");
-// M21: the bench / benchmark command runners live in their own leaf (uci passes it a
+// The bench / benchmark command runners live in their own leaf (uci passes it a
 // void wrapper over dispatchCommand, so the leaf has no cycle back into the loop).
 const uci_bench = @import("uci_bench.zig");
 const graph_layout = @import("graph_layout");
@@ -60,12 +60,12 @@ const CommandKind = enum {
 };
 
 // Same layout as the engine module's ByteView; alias it so setPositionEngine takes our
-// move views directly (M16.5) rather than through a duplicate C-ABI-mirror struct.
+// move views directly rather than through a duplicate struct.
 const ByteView = engine_mod.ByteView;
 
 // Build the native LimitsType from the parsed UCI `go` args (including the
-// searchmoves list, now Zig-owned graph_layout.SearchMoveText records -- M17.6) and
-// hand it to the engine go driver. Relocated from main.zig (M16.7): startTime is
+// searchmoves list, now Zig-owned graph_layout.SearchMoveText records) and
+// hand it to the engine go driver. Relocated from main.zig: startTime is
 // stamped here (earliest point), so the info-line elapsed/nps are correct; the
 // searchmoves element buffer is freed after start_thinking has read it.
 fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void {
@@ -92,9 +92,9 @@ fn goParsed(engine_ptr: *native_engine.NativeEngine, parsed: ParsedLimits) void 
             if (tok.len != 0) count += 1;
         }
         if (count != 0) sm_build: {
-            // Zig-owned SearchMoveText records (M17.6 / M19.1): limits.searchmoves IS
+            // Zig-owned SearchMoveText records: limits.searchmoves IS
             // the typed slice now -- no {begin,end,cap} header, no separate handle.
-            // M19.2: on OOM, degrade gracefully (search all moves) rather than aborting the game.
+            // On OOM, degrade gracefully (search all moves) rather than aborting the game.
             const recs = std.heap.c_allocator.alloc(graph_layout.SearchMoveText, count) catch break :sm_build;
             @memset(recs, std.mem.zeroes(graph_layout.SearchMoveText));
             var i: usize = 0;
@@ -394,7 +394,7 @@ fn readCommandLineAlloc() !?[]u8 {
     return try std.heap.c_allocator.dupe(u8, line[0..end]);
 }
 
-// The bench/benchmark runners live in uci_bench.zig (M21); these thin wrappers keep the
+// The bench/benchmark runners live in uci_bench.zig; these thin wrappers keep the
 // public entry points and inject dispatchCommand (as a void wrapper) so the leaf carries
 // no import cycle back into the command loop.
 pub fn benchRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8) void {
@@ -430,7 +430,7 @@ fn parseMoveViews(moves_text: []const u8) !std.ArrayList(ByteView) {
     return views;
 }
 
-// C-string helpers live in the uci_strings base leaf (M17.3u); aliased so the
+// C-string helpers live in the uci_strings base leaf; aliased so the
 // bodies throughout this file stay unqualified.
 const appendFormatted = uci_strings.appendFormatted;
 const allocFormatted = uci_strings.allocFormatted;
@@ -440,7 +440,7 @@ const trimAsciiWhitespace = uci_strings.trimAsciiWhitespace;
 const asciiLower = uci_strings.asciiLower;
 const isSpaceByte = uci_strings.isSpaceByte;
 
-// Live UCI output formatters live in the uci_format leaf (M17.3v); aliased for the
+// Live UCI output formatters live in the uci_format leaf; aliased for the
 // dispatch code below.
 const uci_format = @import("uci_format");
 const formatInfoString = uci_format.formatInfoString;
@@ -448,7 +448,7 @@ const helpText = uci_format.helpText;
 const formatUnknownCommand = uci_format.formatUnknownCommand;
 const formatCriticalError = uci_format.formatCriticalError;
 
-// UCI command parsers live in the uci_parse leaf (M17.3w); aliased for the
+// UCI command parsers live in the uci_parse leaf; aliased for the
 // dispatch/runtime code.
 const uci_parse = @import("uci_parse");
 pub const ParsedSetOption = uci_parse.ParsedSetOption;

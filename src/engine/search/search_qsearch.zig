@@ -1,9 +1,8 @@
-// Quiescence search + the PV/low-level primitives shared with the main search,
-// split out of search_driver.zig. qsearchImpl is a call-graph leaf (only
-// self-recurses, never calls searchImpl) so it extracts one-way; the shared
-// primitives (isShuffling/pvClear/pvUpdate/qCorrectionValue/adjustKey50/ssAdd/
-// ssSub/posCapture/ttMoveHistoryUpdate/contVal) live here and search_driver
-// aliases them back for the main search.
+// Quiescence search + the PV/low-level primitives shared with the main search.
+// qsearchImpl is a call-graph leaf (only self-recurses, never calls
+// searchImpl); the shared primitives (isShuffling/pvClear/pvUpdate/
+// qCorrectionValue/adjustKey50/ssAdd/ssSub/posCapture/ttMoveHistoryUpdate/
+// contVal) live here.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");

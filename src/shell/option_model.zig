@@ -143,7 +143,7 @@ pub const OptionsModel = struct {
         return 0;
     }
 
-    // Normalize a candidate value for an option, mirroring validateAssignment.
+    // Normalize a candidate value for an option.
     // Returns an allocator-owned normalized string, or null if rejected.
     fn normalize(self: *OptionsModel, entry: OptionEntry, value: []const u8) !?[]u8 {
         const is_button = entry.kind == .button;
@@ -394,7 +394,7 @@ test "options model renders the UCI listing in order" {
 }
 
 test "OptionsModel add/setValue/renderAlloc unwind leak-free on every allocation failure" {
-    // M19: OptionsModel.add dups three strings then appends to the entries vector --
+    // OptionsModel.add dups three strings then appends to the entries vector --
     // the same create-then-append shape that leaked in state_list. checkAllAllocation
     // Failures fails each allocation in turn (the three dups, the vector growth,
     // setValue's re-dup, renderAlloc's buffer + per-entry allocPrints) and asserts every

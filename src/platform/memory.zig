@@ -1,4 +1,4 @@
-// Aligned + large-page allocation, ported to a cross-platform seam (M-PORT).
+// Aligned + large-page allocation, ported to a cross-platform seam.
 //
 // No @cImport here: sys/mman.h does not exist on Windows and the macOS SDK headers
 // can't be cross-compiled, so the C entry points are declared directly via std.c

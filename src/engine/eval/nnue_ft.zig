@@ -1,4 +1,4 @@
-// NNUE feature-transformer weight-blob layout (M17.4e).
+// NNUE feature-transformer weight-blob layout.
 //
 // The comptime byte-offset table into the loaded FeatureTransformer weight blob
 // plus the typed accessors that hand back [*]const pointers to each weight region
@@ -26,7 +26,7 @@ const feature_transformer_threat_weights_offset = roundUp(feature_transformer_we
 const feature_transformer_psqt_weights_offset = roundUp(feature_transformer_threat_weights_offset + feature_transformer_threat_weights_bytes, nnue_align);
 const feature_transformer_threat_psqt_weights_offset = roundUp(feature_transformer_psqt_weights_offset + feature_transformer_psqt_weights_bytes, nnue_align);
 
-/// Opaque handle to the loaded feature-transformer weight blob (M18.4-B4). A raw
+/// Opaque handle to the loaded feature-transformer weight blob. A raw
 /// large-page byte arena whose layout is fixed by the .nnue file + SIMD access, so
 /// the bytes stay raw -- but the *handle* is a distinct type, not a bare *anyopaque,
 /// so the eval can't confuse it with the accumulator stack / cache handles. The

@@ -1,9 +1,9 @@
-// Node-level accumulator / do-move / eval helpers (M18.7 — split out of
-// search_driver.zig). The small QCtx-carrying primitives the qsearch/search recursion
-// calls per node: the seldepth/LMR-reduction reads, the NNUE evaluate, the
-// accumulator-slot do_move/undo_move, the verify make/unmake, and the legal-move
-// membership test. None call back into the recursion, so this is a std-free leaf over
-// the board/eval leaves + the search_ctx QCtx; search_driver imports it one-way.
+// Node-level accumulator / do-move / eval helpers. The small QCtx-carrying
+// primitives the qsearch/search recursion calls per node: the seldepth/LMR-reduction
+// reads, the NNUE evaluate, the accumulator-slot do_move/undo_move, the verify
+// make/unmake, and the legal-move membership test. None call back into the
+// recursion, so this is a std-free leaf over the board/eval leaves + the search_ctx
+// QCtx; search_driver imports it one-way.
 
 const network_port = @import("network");
 const evaluate_mod = @import("evaluate");
@@ -40,8 +40,7 @@ pub inline fn updateSelDepth(ctx: *const QCtx, ply: c_int) void {
 }
 
 // Worker::reduction inlined: the LMR base reduction from the per-thread reductions
-// table, the root delta, and the improving flag. Mirrors search.cpp exactly with
-// C truncating integer division.
+// table, the root delta, and the improving flag. Uses truncating integer division.
 pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta: c_int) c_int {
     const reduction_scale = ctx.reductions[@intCast(d)] * ctx.reductions[@intCast(mn)];
     return reduction_scale - @divTrunc(delta * 617, ctx.root_delta.*) +
@@ -49,9 +48,9 @@ pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta
 }
 
 // Worker::evaluate inlined: run the NNUE forward pass on the current position,
-// then apply the eval scaling. Mirrors Eval::evaluate exactly -- material is
-// 534 * pawn count (both colours) + non-pawn material, optimism is indexed by the
-// side to move, and the TB clamp bounds are +/-VALUE_TB_WIN_IN_MAX_PLY.
+// then apply the eval scaling. Material is 534 * pawn count (both colours) +
+// non-pawn material, optimism is indexed by the side to move, and the TB clamp
+// bounds are +/-VALUE_TB_WIN_IN_MAX_PLY.
 pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) c_int {
     const pos = pos_ptr;
     const out = network_port.evaluate(pos_ptr, ctx.acc_stack, ctx.cache);
@@ -69,9 +68,9 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) c_int {
 }
 
 // Worker::do_move inlined: count the node, push a fresh accumulator slot, make the
-// move (the Zig make-move records the dirty piece/threats into that slot), then set
-// the Stack's current move and continuation-history pointer. Mirrors search.cpp
-// do_move exactly; capture_stage is read pre-move, dirtyPiece.pc post-move.
+// move (the make-move records the dirty piece/threats into that slot), then set
+// the Stack's current move and continuation-history pointer. capture_stage is read
+// pre-move, dirtyPiece.pc post-move.
 pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr: *StateInfo, gives_check: u8, ss_ptr: *SearchStack) void {
     const pos = pos_ptr;
     const ss = ss_ptr;
@@ -91,10 +90,9 @@ pub inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16) void 
 }
 
 // Position-level verification make/unmake used by the qsearch TT-move cutoff.
-// Mirrors Position::do_move(Move, StateInfo&): gives_check is computed here, a
-// fresh DirtyThreats list and a throwaway DirtyPiece are passed as scratch (no
-// accumulator slot is pushed, so the dirty state doMove writes is never
-// consumed). undo is the plain Position-level unmake.
+// gives_check is computed here, a fresh DirtyThreats list and a throwaway
+// DirtyPiece are passed as scratch (no accumulator slot is pushed, so the dirty
+// state doMove writes is never consumed). undo is the plain Position-level unmake.
 pub inline fn verifyDoMove(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     var dp: DirtyPiece = undefined;
     var dts: DirtyThreats = undefined;

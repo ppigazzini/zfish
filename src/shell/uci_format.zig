@@ -1,4 +1,4 @@
-// UCI output formatters (M17.3v).
+// UCI output formatters.
 //
 // The live UCI string builders split out of uci.zig: the `info string` renderer,
 // the help text, and the unknown-command / critical-error lines. Pure over std +
@@ -57,7 +57,7 @@ pub fn formatCriticalError(command: []const u8, message: []const u8) ?[*:0]u8 {
     ) catch null;
 }
 
-// --- tests (M22.0) --------------------------------------------------------------
+// --- tests--------------------------------------------------------------
 test "uci_format: help / unknown / info-string / critical render" {
     const help = helpText().?;
     defer std.heap.c_allocator.free(std.mem.span(help));

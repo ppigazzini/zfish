@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Per-commit bench-signature map (REPORT-13 §5.2).
+# Per-commit bench-signature map.
 #
 # Every upstream commit message carries a "Bench: NNNN" line -- a free, exact, per-commit bit-exact
 # checkpoint. This emits  <short-sha>\t<bench>\t<subject>  for UPSTREAM_BASE..UPSTREAM_TARGET, oldest

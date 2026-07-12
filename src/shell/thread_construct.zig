@@ -35,12 +35,12 @@ pub fn verifyThreadGraph(pool: *const graph_layout.ThreadPool, requested: usize,
     if (tp.stop != 0) fail("ThreadPool.stop not zero at construction");
     if (tp.increase_depth != 0) fail("ThreadPool.increaseDepth not zero at construction");
 
-    // threads is a Zig slice of Thread* addresses (M19.1); size == requested.
+    // threads is a Zig slice of Thread* addresses; size == requested.
     if (tp.threads.len == 0) fail("ThreadPool.threads vector is null after construction");
     const count = tp.numThreads();
     if (count != requested) fail("ThreadPool.threads size != requested");
 
-    // boundThreadToNumaNode is a []usize slice of NumaIndex (M19.1); size == bound.
+    // boundThreadToNumaNode is a []usize slice of NumaIndex; size == bound.
     if (tp.boundCount() != bound) fail("ThreadPool.boundThreadToNumaNode size != expected");
 
     // Each threads[i] is a live unique_ptr<Thread> whose Worker slot is bound.

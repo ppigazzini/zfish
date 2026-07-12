@@ -1,4 +1,4 @@
-// Move-ordering history heuristics (ANNEX B.3): the HistorySnapshot (typed views
+// Move-ordering history heuristics: the HistorySnapshot (typed views
 // over the worker's history tables) + the five history-score lookups. Pure reads of
 // value snapshots; std + position_snapshot only.
 

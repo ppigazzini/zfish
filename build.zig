@@ -5,7 +5,7 @@ const Macro = struct {
     value: []const u8,
 };
 
-// Owned runtime OSes (M-PORT). Selected with -Dos=; each maps to an (os_tag, abi) pair
+// Owned runtime OSes. Selected with -Dos=; each maps to an (os_tag, abi) pair
 // in build(). Orthogonal to -Darch= (the ISA tier), so any arch tier can target any OS.
 const TargetOs = enum { linux, windows, macos };
 
@@ -14,9 +14,8 @@ const ArchConfig = struct {
     flags: []const []const u8,
     macros: []const Macro,
     target_features: std.Target.Cpu.Feature.Set,
-    // Owned runtime is x86_64 by default; non-x86 tiers (M15.5) set this so the pure
-    // Zig @Vector NNUE cross-compiles to that ISA (LLVM lowers to NEON/etc). The C++
-    // differential oracle is x86-only and is skipped off x86_64.
+    // Owned runtime is x86_64 by default; non-x86 tiers set this so the pure
+    // Zig @Vector NNUE cross-compiles to that ISA (LLVM lowers to NEON/etc).
     cpu_arch: std.Target.Cpu.Arch = .x86_64,
 };
 
@@ -42,7 +41,7 @@ pub fn build(b: *std.Build) void {
         "Stockfish ARCH value (e.g. x86-64-avx2), or 'native' to auto-detect the host CPU tier in Zig",
     ) orelse "native";
     const arch = resolveArch(b, requested_arch);
-    // M23.1: `-Dtest-coverage` runs each unit-test binary under kcov, merging line coverage
+    // `-Dtest-coverage` runs each unit-test binary under kcov, merging line coverage
     // into ./kcov-out (one subdir per test artifact -> no parallel-write race). kcov
     // instruments the ELF at runtime, so no coverage rebuild flags are needed; default off
     // (every normal `zig build test` runs the artifact directly, unchanged). CI installs kcov,
@@ -57,7 +56,7 @@ pub fn build(b: *std.Build) void {
     // removed in 0.17), which keeps the non-blocking nightly lane building instead of tripping here.
     const cov_dir: ?[]const u8 = if (test_coverage) "kcov-out" else null;
     var cov_idx: usize = 0;
-    // Owned runtime targets (M-PORT): Linux (default), Windows, and macOS. The pure-Zig
+    // Owned runtime targets: Linux (default), Windows, and macOS. The pure-Zig
     // engine is OS-portable behind a thin platform seam -- sync (thread_runtime.zig futex
     // seam), aligned/large-page allocation (memory.zig), the steady clock and CPU-affinity
     // string (main.zig). Windows uses the self-contained mingw (gnu) ABI so no MSVC/SDK is
@@ -101,9 +100,8 @@ pub fn build(b: *std.Build) void {
         .abi = abi,
     });
 
-    // Module graph as data (M17.1): each engine module is a uniform {name, path}
-    // spec, and import edges are a table -- replacing 41 createModule blocks + the
-    // 142 hand-written addImport lines.
+    // Module graph as data: each engine module is a uniform {name, path}
+    // spec, and import edges are a table.
     const ModuleSpec = struct { name: []const u8, path: []const u8 };
     const module_specs = [_]ModuleSpec{
         .{ .name = "libc", .path = "src/platform/libc.zig" },
@@ -190,7 +188,7 @@ pub fn build(b: *std.Build) void {
         // search_manager and root_move_build are registered as named modules (not path-imported
         // leaves) so they can be imported by module name from any directory. A path import
         // (@import("x.zig")) binds a file into its importer's module and directory; naming them
-        // lets their location change without touching the importers. Same files, no behavior change.
+        // lets their location change without touching the importers.
         .{ .name = "search_manager", .path = "src/engine/search/search_manager.zig" },
         .{ .name = "root_move_build", .path = "src/engine/search/root_move_build.zig" },
     };
@@ -204,9 +202,7 @@ pub fn build(b: *std.Build) void {
     }
     const Edge = struct { from: []const u8, imp: []const u8, to: []const u8 };
     const module_edges = [_]Edge{
-        // Import edges for search_manager and root_move_build now that they are standalone
-        // named modules; these deps were previously inherited from the module that path-imported
-        // them (engine for search_manager, thread for root_move_build).
+        // Import edges for the standalone named modules search_manager and root_move_build.
         .{ .from = "engine", .imp = "search_manager", .to = "search_manager" },
         .{ .from = "thread", .imp = "root_move_build", .to = "root_move_build" },
         .{ .from = "root_move_build", .imp = "position", .to = "position" },
@@ -215,9 +211,8 @@ pub fn build(b: *std.Build) void {
         .{ .from = "root_move_build", .imp = "option", .to = "option" },
         .{ .from = "root_move_build", .imp = "movegen", .to = "movegen" },
         .{ .from = "root_move_build", .imp = "position_snapshot", .to = "position_snapshot" },
-        // Consumers that used to reach these search symbols through position.zig's aggregator
-        // now import the owning search modules directly (search_driver's public face, and the
-        // RootMove type in search_types).
+        // Consumers import the owning search modules directly: search_driver's public
+        // face, and the RootMove type in search_types.
         .{ .from = "engine", .imp = "search_driver", .to = "search_driver" },
         .{ .from = "thread", .imp = "search_driver", .to = "search_driver" },
         .{ .from = "thread", .imp = "search_types", .to = "search_types" },
@@ -535,46 +530,42 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libc = true,
             // No .link_libcpp: the engine compiles zero C++ TUs (TU=0), so the C++
-            // stdlib is dead weight. (The retired in-tree oracle was the only linker
-            // of it; REPORT-16 M16.1.)
+            // stdlib is dead weight.
         }),
     });
 
-    // Thin libc binding shared by the files that used to each @cImport <stdio.h> etc.
-    // (REPORT-16). Imported as `libc` wherever a module says `const c = @import("libc")`.
+    // Thin libc binding shared by the files that need C stdio etc.
+    // Imported as `libc` wherever a module says `const c = @import("libc")`.
 
-    // Aligned/large-page allocator as a shared module (REPORT-16 M16.5): consumers call it
-    // directly instead of round-tripping through main.zig's C-ABI `zfish_aligned_large_pages_*`
-    // exports (dead scaffolding now the C++ oracle is retired).
+    // Aligned/large-page allocator as a shared module: consumers call it directly.
 
-    // M16.2b/M16.5: typed engine-graph views (ThreadPool/Worker/... offset structs), imported
-    // by the modules that used to reach the graph through main.zig C-ABI glue.
+    // Typed engine-graph views (ThreadPool/Worker/... offset structs), imported
+    // by the modules that read the engine graph.
 
     // The bench positions (Defaults) and benchmark-command games (BenchmarkPositions)
-    // are native Zig arrays in benchmark.zig, so the build depends on nothing from the
-    // old src/ tree. The only external artifact is the NNUE net, fetched into net/.
-    // Native StateList (the post-src/ `states` deque replacement, native-graph cut);
-    // its own module so engine_graph.zig can hold it as a typed member.
-    // Native NumaConfig (the post-src/ numaContext member, native-graph cut).
-    // Native NumaReplicationContext (the `numa_context` member; B2 switch).
-    // Native PositionStorage (post-src/ owner of the `pos` member's 1032B block).
-    // Native SharedHistories sizing (the `shared_histories` member, pure count logic).
-    // Native sharedHists map container (the `sharedHists` member type), instantiated in
+    // are Zig arrays in benchmark.zig. The only external artifact is the NNUE net,
+    // fetched into net/.
+    // StateList: its own module so engine_graph.zig can hold it as a typed member.
+    // NumaConfig: the numaContext member.
+    // NumaReplicationContext: the `numa_context` member.
+    // PositionStorage: owner of the `pos` member's 1032B block.
+    // SharedHistories sizing: the `shared_histories` member, pure count logic.
+    // sharedHists map container: the `sharedHists` member type, instantiated in
     // position.zig with the real SharedHistories.
-    // Native network holder (the `network` member: LazyNumaReplicated<Network> shape +
+    // network holder: the `network` member (LazyNumaReplicated<Network> shape +
     // replica-count shadow verifier).
 
-    // For the native engine-graph scaffolding (engine_graph.zig) compiled via the
-    // engine module: it binds the native ThreadPool and TranspositionTable.
+    // The engine graph (engine_graph.zig) is compiled via the engine module: it
+    // binds the ThreadPool and TranspositionTable.
     exe.root_module.addImport("native_hooks", mods.get("native_hooks").?);
     exe.root_module.addImport("native_engine", mods.get("native_engine").?);
-    // main.zig and its worker-construction helper reach the search-history helpers directly now.
+    // main.zig and its worker-construction helper reach the search-history helpers directly.
     exe.root_module.addImport("search_driver", mods.get("search_driver").?);
     exe.root_module.addImport("worker_histories", mods.get("worker_histories").?);
     // engine.zig single-sources default_eval_file_name from network.zig
     // (network has no engine dep, so this edge is acyclic).
 
-    // Native-graph cut: run the EngineGraph + member-module unit tests (construction,
+    // Run the EngineGraph + member-module unit tests (construction,
     // lifetime, SharedState binding) with their module deps. `zig build test-graph`.
     const graph_test = b.addTest(.{
         .root_module = b.createModule(.{
@@ -595,7 +586,7 @@ pub fn build(b: *std.Build) void {
     graph_test.root_module.addImport("search_manager", mods.get("search_manager").?);
     const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
     addTestRun(b, graph_test_step, graph_test, cov_dir, &cov_idx);
-    // B2 switch: native NumaReplicationContext (numaContext member) — tests need the
+    // NumaReplicationContext (numaContext member): tests need the
     // numa_config dep, so they run via test-graph rather than standalone.
     const numa_repl_test = b.addTest(.{
         .root_module = b.createModule(.{
@@ -606,7 +597,7 @@ pub fn build(b: *std.Build) void {
     });
     numa_repl_test.root_module.addImport("numa_config", mods.get("numa_config").?);
     addTestRun(b, graph_test_step, numa_repl_test, cov_dir, &cov_idx);
-    // B2 switch: native sharedHists map container (std-only generic; tested with a mock
+    // sharedHists map container (std-only generic; tested with a mock
     // entry). board/position.zig instantiates it with the real SharedHistories.
     const sh_map_test = b.addTest(.{
         .root_module = b.createModule(.{
@@ -642,12 +633,10 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("uci", mods.get("uci").?);
     exe.root_module.addImport("uci_move", mods.get("uci_move").?);
 
-    // REPORT-16: the thin libc binding, for every module that replaced an @cImport with
-    // `const c = @import("libc")` (main + the 8 files below; misc keeps its own @cImport
-    // until its compiler-macro reads are ported to Zig build info).
+    // The thin libc binding, imported as `const c = @import("libc")` by main.zig.
     exe.root_module.addImport("libc", mods.get("libc").?);
 
-    // M16.5: direct callers of the aligned/large-page allocator.
+    // Direct callers of the aligned/large-page allocator.
     exe.root_module.addImport("memory", mods.get("memory").?);
     exe.root_module.addImport("graph_layout", mods.get("graph_layout").?);
     exe.root_module.addImport("position_types", mods.get("position_types").?);
@@ -655,15 +644,11 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("uci_output", mods.get("uci_output").?);
     exe.root_module.addImport("uci_wdl", mods.get("uci_wdl").?);
     exe.root_module.addImport("score", mods.get("score").?);
-    // network no longer imports position (broke the network->position cycle, M16.7):
-    // its two Position field reads go through the leaf graph_layout. That frees
-    // position -> network for the direct eval call below.
+    // network does not import position: its two Position field reads go through the
+    // leaf graph_layout, which frees position -> network for the direct eval call below.
 
-    // REPORT-12 TU=0 / REPORT-16 M16.1: the shipped engine compiles zero C++ TUs and
-    // the in-tree C++ oracle is retired, so the whole C++ toolchain (compile flags,
-    // src/ + zig_compat/ sources, include paths, C macros) is gone. These addCMacro
-    // calls are dead now (no C TU consumes them) but harmless; dropped with the last
-    // interop in a later milestone.
+    // The engine compiles zero C++ TUs (TU=0), so these addCMacro calls are dead
+    // (no C TU consumes them) but harmless.
     exe.root_module.addCMacro("NDEBUG", "1");
     exe.root_module.addCMacro("DIS_64BIT", "1");
     exe.root_module.addCMacro("USE_PTHREADS", "1");
@@ -694,7 +679,7 @@ pub fn build(b: *std.Build) void {
     // source of truth engine.zig imports), not the net named in the stale upstream src/evaluate.h. After
     // an upstream net bump the two diverge, and the upstream scripts/net.sh would fetch the wrong file ->
     // the binary can't load its net and crashes.
-    // M23.0: the fetcher is a compiled Zig tool (tools/fetch_net.zig), not a `sh` script -- it
+    // The fetcher is a compiled Zig tool (tools/fetch_net.zig), not a `sh` script -- it
     // reads the net name from network.zig's authoritative constant, sha256-validates, and downloads
     // via std.http.Client. Built for the host (it runs at build time). argv[1] = the net-name source.
     const fetch_net_exe = b.addExecutable(.{
@@ -709,7 +694,7 @@ pub fn build(b: *std.Build) void {
     net_cmd.addFileArg(b.path("src/engine/eval/network.zig"));
     net_cmd.setCwd(b.path("net"));
     // Always run (the tool is idempotent: it validates an existing net and no-ops), so a deleted or
-    // corrupt net is re-fetched -- matching the old always-run shell step's semantics.
+    // corrupt net is re-fetched.
     net_cmd.has_side_effects = true;
 
     const net_step = b.step(
@@ -718,7 +703,7 @@ pub fn build(b: *std.Build) void {
     );
     net_step.dependOn(&net_cmd.step);
 
-    // Pure-Zig parity harness (M-PORT.2): drives the built engine over UCI and diffs the
+    // Pure-Zig parity harness: drives the built engine over UCI and diffs the
     // deterministic fingerprints against the committed goldens -- the cross-platform
     // replacement for the bash golden scripts (output_parity/search_parity/search_modes/
     // perft/eval/misc), so `zig build parity` runs identically on Linux/Windows/macOS with
@@ -762,7 +747,7 @@ pub fn build(b: *std.Build) void {
     );
     uci_step.dependOn(&uci_run.step);
 
-    // M23.0: the bench signature is verified by the pure-Zig parity harness (tools/parity_harness.zig
+    // The bench signature is verified by the pure-Zig parity harness (tools/parity_harness.zig
     // `signature` check), not tests/signature.sh -- one cross-OS gate instead of a bash wrapper that
     // only ran on Linux. Defaults to the 2067208 arch/OS invariant; -Dsignature-ref overrides.
     const signature_reference = signature_ref orelse "2067208";
@@ -774,9 +759,8 @@ pub fn build(b: *std.Build) void {
     );
     signature_step.dependOn(&signature_cmd.step);
 
-    // Per-position search-fingerprint differential harness (M5). Localizes a
-    // bench-signature mismatch to a single position + drifted field, the
-    // granularity the search.cpp keystone port needs to validate safely.
+    // Per-position search-fingerprint differential harness. Localizes a
+    // bench-signature mismatch to a single position + drifted field.
     const search_parity_golden = b.pathFromRoot("tools/search_parity.golden");
 
     const search_parity_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "search-parity", search_parity_golden, "check");
@@ -815,15 +799,11 @@ pub fn build(b: *std.Build) void {
     );
     search_modes_update_step.dependOn(&search_modes_update_cmd.step);
 
-    // Worktree-based upstream oracle gate (REPORT-16 M16.1): assert the default (Zig)
+    // Worktree-based upstream oracle gate: assert the default (Zig)
     // bench == the PRISTINE upstream Stockfish at UPSTREAM_BASE, built in a persistent
-    // git worktree with ZERO vendored C++. This is the drift-proof replacement for
-    // oracle-parity: it pins to the exact upstream sha we claim to be at (so it can
-    // never become a stale/broken test the way frozen src/ does), and the oracle build
-    // is a cached no-op in steady state (upstream_oracle.sh only rebuilds when BASE
-    // moves), so it is actually faster than rebuilding the in-tree legacy exe. Kept
-    // standalone for now; the parity aggregate + CI switch land with the oracle
-    // deletion so CI can add the upstream fetch atomically.
+    // git worktree with ZERO vendored C++. It pins to the exact upstream sha we claim to
+    // be at, and the oracle build is a cached no-op in steady state (upstream_oracle.sh
+    // only rebuilds when BASE moves). Run standalone at sync time.
     const upstream_base_sha = runAndTrimOrNull(b, &.{
         "cat",
         b.pathFromRoot("tools/upstream/UPSTREAM_BASE"),
@@ -842,10 +822,8 @@ pub fn build(b: *std.Build) void {
     );
     upstream_parity_step.dependOn(&upstream_parity_cmd.step);
 
-    // Full-output GOLDEN gate (Stage-7 7.0a, H8): same stripped bench info+bestmove
-    // text as output-parity, but pinned against a committed golden instead of the
-    // legacy oracle, so it survives oracle deletion (Annex B B.4). The golden is
-    // captured while the oracle still exists; output-parity proves golden == oracle.
+    // Full-output GOLDEN gate: the stripped bench info+bestmove text pinned against a
+    // committed golden.
     const output_golden = b.pathFromRoot("tools/output_parity.golden");
     const output_golden_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "output-golden", output_golden, "check");
 
@@ -863,8 +841,8 @@ pub fn build(b: *std.Build) void {
     );
     output_golden_update_step.dependOn(&output_golden_update_cmd.step);
 
-    // driver-golden (M16.7): pins the search-manager driver + its emit callbacks
-    // (multipv/wdl/ponder/currmove/no-moves) bit-exact, to de-risk relocating them.
+    // driver-golden: pins the search-manager driver + its emit callbacks
+    // (multipv/wdl/ponder/currmove/no-moves) bit-exact.
     const driver_golden = b.pathFromRoot("tools/driver.golden");
     const driver_golden_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "check");
     const driver_golden_step = b.step(
@@ -880,11 +858,10 @@ pub fn build(b: *std.Build) void {
     );
     driver_golden_update_step.dependOn(&driver_golden_update_cmd.step);
 
-    // Thread-runtime stress / liveness harness (H2, REPORT-09 big-bang plan).
+    // Thread-runtime stress / liveness harness.
     // Hammers (ucinewgame -> setoption Threads -> go/stop) cycles across thread
     // counts + a construct/destroy churn, under a wall-clock watchdog. A liveness
-    // gate (no hang / crash / lost search), not a determinism gate -- the
-    // regression net the native stage-4 thread runtime must still pass. Kept out
+    // gate (no hang / crash / lost search), not a determinism gate. Kept out
     // of the core `parity` aggregate (slower, wall-clock-timed); run explicitly
     // for any thread-runtime slice.
     const stress_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "stress", "-", "check");
@@ -895,13 +872,11 @@ pub fn build(b: *std.Build) void {
     );
     stress_step.dependOn(&stress_cmd.step);
 
-    // Memory-error / leak gate (H3, REPORT-09 big-bang plan): Valgrind memcheck
+    // Memory-error / leak gate: Valgrind memcheck
     // over short multi-thread sessions, asserting no invalid access / bad free /
     // definite leak (uninit-value checking off -- NNUE SIMD makes it false-noisy).
-    // The ASan/LSan-equivalent net for the native Worker/large-page lifecycle and
-    // the stage-4 cut. (TSan/race detection is deferred to stage 4: meaningful
-    // only for the native futex runtime; the current C++ runtime has benign TT
-    // data races by design.) Out of the core `parity` aggregate (slow).
+    // The ASan/LSan-equivalent net for the Worker/large-page lifecycle. Out of the
+    // core `parity` aggregate (slow).
     const valgrind_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/valgrind.sh"),
@@ -917,14 +892,13 @@ pub fn build(b: *std.Build) void {
     );
     valgrind_step.dependOn(&valgrind_cmd.step);
 
-    // Multi-thread search sanity (H1, REPORT-09 big-bang plan). Multi-threaded
+    // Multi-thread search sanity. Multi-threaded
     // search is non-deterministic (Lazy SMP), so this is a tolerance gate, not a
     // bit-exact golden: at fixed depth on calm positions, Threads {2,4} must emit
     // a well-formed bestmove and a score of the same kind/sign within a generous
-    // cp band of the deterministic single-thread reference. Anchors gross
-    // multi-thread behaviour against the live C++ runtime before stage 4 swaps it;
-    // catches a native runtime that runs but corrupts result aggregation. Out of
-    // the core `parity` aggregate (non-deterministic, sleep-paced).
+    // cp band of the deterministic single-thread reference. Catches a runtime that
+    // runs but corrupts result aggregation. Out of the core `parity` aggregate
+    // (non-deterministic, sleep-paced).
     const mt_golden = b.pathFromRoot("tools/mt_sanity.golden");
 
     const mt_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "mt-sanity", mt_golden, "check");
@@ -943,7 +917,7 @@ pub fn build(b: *std.Build) void {
     );
     mt_update_step.dependOn(&mt_update_cmd.step);
 
-    // Leak gate for the std::vector lifecycle stage 5 ports (H5, REPORT-09 plan):
+    // Leak gate for the searchmoves / rootMoves vector lifecycle:
     // Valgrind memcheck over a `go searchmoves` + ucinewgame churn, asserting no
     // definite leak / bad free of limits.searchmoves and worker.rootMoves -- the
     // path bench never exercises. Reads the verdict from valgrind's summary and
@@ -964,7 +938,7 @@ pub fn build(b: *std.Build) void {
     );
     teardown_step.dependOn(&teardown_cmd.step);
 
-    // Wall-clock time-management sanity (REPORT-15 §9): the ONLY gate over `go
+    // Wall-clock time-management sanity: the ONLY gate over `go
     // movetime` / `go wtime` / TimeManagement.startTime -- the whole rest of the
     // battery is depth/node-limited and never consults the clock, which is how the
     // startTime=0 bug (fbcefd0d6) shipped. Invariant-based (no golden): reported
@@ -979,10 +953,9 @@ pub fn build(b: *std.Build) void {
     );
     time_step.dependOn(&time_cmd.step);
 
-    // Perft differential + golden gate (REPORT-11 E1.1): the ONLY gate over
-    // Position::do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
-    // perft; search-modes only checks bestmoves). perft-parity certifies default == legacy while the
-    // oracle still exists; the perft golden survives oracle deletion at TU=0 (REPORT-11 §2.2).
+    // Perft differential + golden gate: the ONLY gate over
+    // do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
+    // perft; search-modes only checks bestmoves), pinned against the committed golden.
     const perft_golden = b.pathFromRoot("tools/perft.golden");
     const perft_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "perft", perft_golden, "check");
 
@@ -1000,10 +973,9 @@ pub fn build(b: *std.Build) void {
     );
     perft_update_step.dependOn(&perft_update_cmd.step);
 
-    // Eval-trace differential + golden gate (REPORT-11 E1.2): pins the NNUE `eval` trace block
+    // Eval-trace differential + golden gate: pins the NNUE `eval` trace block
     // (buildNnueTrace + the network-ptr / accumulator-cache trace path) — bench covers the eval
-    // value but not this formatting path. eval-parity certifies default == legacy while the oracle
-    // lives; the golden survives oracle deletion.
+    // value but not this formatting path.
     const eval_golden = b.pathFromRoot("tools/eval.golden");
     const eval_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "eval", eval_golden, "check");
 
@@ -1021,8 +993,8 @@ pub fn build(b: *std.Build) void {
     );
     eval_update_step.dependOn(&eval_update_cmd.step);
 
-    // UCI misc-command gate (REPORT-11 E1.2 coverage tail): d/flip Fen+Key+Checkers — the
-    // frozen-Position fen/flip/zobrist/gives_check read paths no other gate touches.
+    // UCI misc-command gate (coverage tail): d/flip Fen+Key+Checkers — the
+    // Position fen/flip/zobrist/gives_check read paths no other gate touches.
     const misc_golden = b.pathFromRoot("tools/misc.golden");
     const misc_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "misc", misc_golden, "check");
 
@@ -1040,11 +1012,10 @@ pub fn build(b: *std.Build) void {
     );
     misc_update_step.dependOn(&misc_update_cmd.step);
 
-    // H9 src-free / TU=0 structural gate (REPORT-11 E1.4; achieved REPORT-16 M16.1): asserts the
+    // H9 src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
-    // benches 2067208. Now that the in-tree oracle is retired and src/ is deleted, this is GREEN and
-    // a permanent invariant, so it joins the `parity` aggregate below (guards against any C++ TU
-    // being reintroduced into the default binary).
+    // benches 2067208. A permanent invariant in the `parity` aggregate below, guarding
+    // against any C++ TU being reintroduced into the default binary.
     const h9_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/h9_src_free.sh"),
@@ -1060,9 +1031,9 @@ pub fn build(b: *std.Build) void {
     );
     h9_step.dependOn(&h9_cmd.step);
 
-    // Aggregate unit-test step (REPORT-16 M16.0b): run the in-tree `test {}` blocks of
+    // Aggregate unit-test step: run the in-tree `test {}` blocks of
     // every named module that has them, reusing the already-wired modules so their
-    // imports resolve, plus the pre-existing native-graph (cut) tests. Reachability
+    // imports resolve, plus the engine-graph tests. Reachability
     // caveat: tests in a path-imported sub-file run only when a module built here
     // imports it; a file with no test-reachable importer is not yet covered.
     const test_step = b.step("test", "Run the Zig unit tests");
@@ -1092,7 +1063,7 @@ pub fn build(b: *std.Build) void {
     });
     addTestRun(b, test_step, option_test, cov_dir, &cov_idx);
 
-    // M17.4h: board property tests (perft to known node counts) -- needs libc
+    // Board property tests (perft to known node counts) -- needs libc
     // (position uses c_allocator) + the board module graph.
     const board_props_test = b.addTest(.{
         .root_module = b.createModule(.{
@@ -1107,7 +1078,7 @@ pub fn build(b: *std.Build) void {
     board_props_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
     addTestRun(b, test_step, board_props_test, cov_dir, &cov_idx);
 
-    // M17.5b: uci_parse property + fuzz tests (needs libc for c_allocator + the
+    // uci_parse property + fuzz tests (needs libc for c_allocator + the
     // uci_strings base leaf).
     const uci_parse_test = b.addTest(.{
         .root_module = b.createModule(.{
@@ -1120,7 +1091,7 @@ pub fn build(b: *std.Build) void {
     uci_parse_test.root_module.addImport("uci_strings", mods.get("uci_strings").?);
     addTestRun(b, test_step, uci_parse_test, cov_dir, &cov_idx);
 
-    // M17.5i: coverage-guided fuzz targets (std.testing.fuzz). Wired to its OWN
+    // Coverage-guided fuzz targets (std.testing.fuzz). Wired to its OWN
     // `zig build fuzz` step, deliberately NOT test_step -- these are meant to be run
     // with `zig build fuzz --fuzz` (the fuzzer), and run once as a smoke otherwise.
     // Build under -Doptimize=ReleaseSafe so a found crash trips a safety check.
@@ -1139,7 +1110,7 @@ pub fn build(b: *std.Build) void {
     const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
     fuzz_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
 
-    // M17.0c: standalone test artifacts for the tested sub-files that were
+    // Standalone test artifacts for the tested sub-files that were
     // path-imported into larger modules (so their `test {}` blocks never ran in
     // the aggregate). These depend only on std (+ libc for c_allocator) or on a
     // sibling path import, so they build in isolation.
@@ -1195,7 +1166,7 @@ pub fn build(b: *std.Build) void {
         addTestRun(b, test_step, file_test, cov_dir, &cov_idx);
     }
 
-    // M22.0 coverage: leaves that need a few module imports for their `test {}` /
+    // Coverage: leaves that need a few module imports for their `test {}` /
     // refAllDecls to compile. Each entry lists the file's DIRECT imports; the modules
     // in `mods` already carry their own transitive imports.
     const DepTest = struct { path: []const u8, deps: []const []const u8 };
@@ -1254,7 +1225,7 @@ pub fn build(b: *std.Build) void {
         addTestRun(b, test_step, t, cov_dir, &cov_idx);
     }
 
-    // state_list.zig holds a typed StateInfo (M18.3), so its standalone test needs the
+    // state_list.zig holds a typed StateInfo, so its standalone test needs the
     // position_types module (unlike the std-only files in the loop above).
     const state_list_test = b.addTest(.{
         .root_module = b.createModule(.{
@@ -1267,7 +1238,7 @@ pub fn build(b: *std.Build) void {
     state_list_test.root_module.addImport("position_types", mods.get("position_types").?);
     addTestRun(b, test_step, state_list_test, cov_dir, &cov_idx);
 
-    // M19.1: native_threadpool.zig is path-imported into the (untested) `thread` module,
+    // native_threadpool.zig is path-imported into the (untested) `thread` module,
     // so its NativePool footprint + bound-slice lifecycle `test {}` blocks never ran in any
     // step. Build it as a standalone test artifact (spawns real NativeThreads -> link_libc)
     // so `zig build test` actually exercises the ThreadPool-footprint writer/accessors.
@@ -1284,7 +1255,7 @@ pub fn build(b: *std.Build) void {
     native_threadpool_test.root_module.addImport("native_hooks", mods.get("native_hooks").?);
     addTestRun(b, test_step, native_threadpool_test, cov_dir, &cov_idx);
 
-    // M19.1: worker_native_construct.zig is path-imported only into main.zig (the exe
+    // worker_native_construct.zig is path-imported only into main.zig (the exe
     // root, not a test root), so its lone test -- the WorkerLayout offset-invariant check
     // guarding constructFull's field placement against a Zig field reorder -- never ran.
     // Wire it standalone so `zig build test` exercises that layout contract under RF + RS.
@@ -1311,14 +1282,12 @@ pub fn build(b: *std.Build) void {
         "parity",
         "Run the current bench, UCI, and signature checks through the Zig build entry",
     );
-    // M16.1b: the per-push `parity` aggregate no longer depends on the in-tree C++
-    // oracle. Whole-engine regression is caught by `signature` (== 2067208) and the
-    // GOLDEN gates (output-golden / perft / eval-trace / misc / search-parity /
-    // search-modes), all in-repo with no oracle. The `*-parity`-vs-legacy-C++ variants
-    // they replace were redundant with those goldens and were the only thing exercising
-    // the legacy exe in this gate. The authoritative differential-vs-real-upstream check
-    // is `upstream-parity` (worktree oracle), run at sync time where upstream is already
-    // fetched -- per push it would only re-assert the same 2067208 the signature checks.
+    // The per-push `parity` aggregate: whole-engine regression is caught by `signature`
+    // (== 2067208) and the GOLDEN gates (output-golden / perft / eval-trace / misc /
+    // search-parity / search-modes), all in-repo. The authoritative
+    // differential-vs-real-upstream check is `upstream-parity` (worktree oracle), run at
+    // sync time where upstream is already fetched -- per push it would only re-assert the
+    // same 2067208 the signature checks.
     parity_step.dependOn(&bench_run.step);
     parity_step.dependOn(&uci_run.step);
     parity_step.dependOn(&signature_cmd.step);
@@ -1329,15 +1298,15 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&perft_cmd.step);
     parity_step.dependOn(&eval_cmd.step);
     parity_step.dependOn(&misc_cmd.step);
-    // M-PORT.2: the interactive concurrency/timing gates now run in the pure-Zig harness, so
-    // they join the core aggregate (previously CI ran them as separate ad-hoc steps).
+    // The interactive concurrency/timing gates run in the pure-Zig harness, so
+    // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);
     parity_step.dependOn(&stress_cmd.step);
     parity_step.dependOn(&time_cmd.step);
-    // M16.1d: the src-free structural invariant is now permanent, so it gates every push.
+    // The src-free structural invariant is permanent, so it gates every push.
     parity_step.dependOn(&h9_cmd.step);
 
-    // Cross-OS aggregate (M-PORT.2): the platform-independent subset of `parity` -- bench,
+    // Cross-OS aggregate: the platform-independent subset of `parity` -- bench,
     // the UCI handshake, the bench signature, and all six golden checks, every one driven by
     // the pure-Zig harness (no bash / no nm). This is what the Windows and macOS lanes run;
     // the Linux-only structural gates (h9 src-free via `nm`, arch-determinism) stay in `parity`.
@@ -1355,9 +1324,9 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&perft_cmd.step);
     parity_portable_step.dependOn(&eval_cmd.step);
     parity_portable_step.dependOn(&misc_cmd.step);
-    // The concurrency + timing gates -- the cross-OS payoff of M-PORT: these exercise the
-    // ported sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
-    // ported steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.
+    // The concurrency + timing gates -- the cross-OS payoff: these exercise the
+    // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
+    // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.
     parity_portable_step.dependOn(&mt_cmd.step);
     parity_portable_step.dependOn(&stress_cmd.step);
     parity_portable_step.dependOn(&time_cmd.step);
@@ -1369,7 +1338,7 @@ pub fn build(b: *std.Build) void {
     stockfish_step.dependOn(install_step);
 }
 
-// M23.1 coverage: wire a unit-test artifact into `step`. Without coverage this is the plain
+// Coverage: wire a unit-test artifact into `step`. Without coverage this is the plain
 // `b.addRunArtifact`. With `-Dtest-coverage` (cov_dir set) the binary runs under kcov into its
 // OWN subdir `kcov-out/cov-N` -- unique per artifact so the parallel test runs never write the
 // same directory -- and CI merges the subdirs afterwards. `--include-path=src` scopes coverage
@@ -1388,7 +1357,7 @@ fn addTestRun(b: *std.Build, step: *std.Build.Step, artifact: *std.Build.Step.Co
     }
 }
 
-// Wire one pure-Zig parity-harness invocation (M-PORT.2): run the harness (host) with the
+// Wire one pure-Zig parity-harness invocation: run the harness (host) with the
 // engine binary, golden path, and mode, from net/ so the spawned engine finds the net.
 fn addHarnessRun(
     b: *std.Build,
@@ -1412,9 +1381,9 @@ fn applyMacros(module: *std.Build.Module, macros: []const Macro) void {
         module.addCMacro(macro.name, macro.value);
 }
 
-// M23.0: native CPU -> best Stockfish ARCH tier in pure, unit-tested Zig (tools/native_arch.zig),
-// replacing the 362-line scripts/get_native_properties.sh shell-out. Uses the host CPU features
-// Zig's build graph already resolved via cpuid -- no /proc/cpuinfo grep, no `sh`.
+// Native CPU -> best Stockfish ARCH tier in pure, unit-tested Zig (tools/native_arch.zig).
+// Uses the host CPU features Zig's build graph already resolved via cpuid -- no
+// /proc/cpuinfo grep, no `sh`.
 const native_arch = @import("tools/native_arch.zig");
 
 fn resolveArch(b: *std.Build, requested_arch: []const u8) ArchConfig {
@@ -1758,12 +1727,11 @@ fn archConfigFor(arch_name: []const u8) ArchConfig {
             }),
         };
 
-    // Non-x86 tiers (M15.5). The pure-Zig @Vector NNUE lowers to NEON with no source
-    // changes, so these just map get_native_properties.sh's aarch64 outputs to a Zig
-    // aarch64 target. NEON is mandatory in AArch64 (baseline has it); dotprod (sdot) is
-    // added where present. The C++ differential oracle is x86-only, so `-Darch=<arm>`
-    // builds the pure Zig engine only (legacy is skipped off x86_64). Runtime-validated
-    // under qemu-user in CI (bench == 2067208), matching upstream's arm_compilation.yml.
+    // Non-x86 tiers. The pure-Zig @Vector NNUE lowers to NEON with no source
+    // changes, so these just map the aarch64 CPU features to a Zig aarch64 target.
+    // NEON is mandatory in AArch64 (baseline has it); dotprod (sdot) is added where
+    // present. Runtime-validated under qemu-user in CI (bench == 2067208), matching
+    // upstream's arm_compilation.yml.
     if (std.mem.eql(u8, arch_name, "armv8"))
         return .{
             .name = "armv8",

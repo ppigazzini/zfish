@@ -22,12 +22,12 @@ pub const PositionSnapshot = struct {
     is_chess960: u8,
 };
 
-// Cycle-break hooks (M16.9): position.zig can't be imported by movegen/movepick/
+// Cycle-break hooks: position.zig can't be imported by movegen/movepick/
 // nnue/uci_move (they are imported *by* position), so it registers these here — the
 // shared leaf they all already import — instead of the old C-ABI exports.
 // position.initRuntime() installs them before any search runs.
 //
-// M17.9: NON-OPTIONAL, each defaulting to a named panic stub (matching the
+// NON-OPTIONAL, each defaulting to a named panic stub (matching the
 // native_hooks registry idiom), so fill()/moveIsLegal() invoke them directly with no
 // `.?` null-unwrap. An unregistered hook fails fast with its own name instead of an
 // opaque null-optional panic.

@@ -1,4 +1,4 @@
-// Root-search bookkeeping and time/stop control, split out of search_driver.
+// Root-search bookkeeping and time/stop control.
 // These operate purely on the QCtx (built by search_setup) plus the clock and
 // the shared stop/ponder flags worker_state hands over; none of them touch the
 // search recursion itself, so they form a clean, self-contained cluster:
@@ -8,7 +8,7 @@
 //   * rootInList    -- RootMove::operator== over [pvIdx, pvLast)
 //   * searchStopped -- monotonic load of the shared stop flag
 //   * inLastIterPv  -- follow-PV test against lastIterationPV
-// Pure aside from the atomics/clock; imported by path so the graph is unchanged.
+// Pure aside from the atomics/clock.
 
 const std = @import("std");
 const clock = @import("clock");
@@ -43,11 +43,11 @@ pub fn checkTime(ctx: *const QCtx) void {
     }
 }
 
-// search<Root> per-move bookkeeping (Worker root_update, inlined). Finds the
+// Per-move root bookkeeping. Finds the
 // RootMove for `move` in [pvIdx, pvLast) (unique, guaranteed present by the
 // rootInList filter), updates its effort / averageScore / meanSquaredScore, and
-// on a PV move stores the score/bound flags/PV. C truncating division (@divTrunc)
-// and i32 arithmetic match the C++ exactly (no overflow: both squared terms are
+// on a PV move stores the score/bound flags/PV. Uses C truncating division
+// (@divTrunc) and i32 arithmetic (no overflow: both squared terms are
 // < VALUE_INFINITE^2, sum < INT_MAX).
 const root_mean_sq_sentinel: c_int = -(q_value_inf * q_value_inf);
 pub fn rootUpdate(ctx: *const QCtx, move: u16, value: c_int, nodes_delta: u64, move_count: c_int, alpha: c_int, beta: c_int, child_pv: ?*const PVMoves) void {
@@ -87,13 +87,13 @@ pub fn rootUpdate(ctx: *const QCtx, move: u16, value: c_int, nodes_delta: u64, m
     } else rm.score = -q_value_inf;
 }
 
-// search<Root> reads the TT move and the legal-root filter from the rootMoves
-// array (a contiguous std::vector<RootMove>) handed over by worker_state.
+// Reads the root TT move from the rootMoves array (a contiguous RootMove array)
+// handed over by worker_state.
 pub inline fn rootTtMove(ctx: *const QCtx) u16 {
     return ctx.root_moves[ctx.pv_idx.*].pv.moves[0];
 }
 
-// RootMove::operator==(Move) compares pv[0]; std::count over [pvIdx, pvLast).
+// Compares pv[0] against move over [pvIdx, pvLast).
 pub inline fn rootInList(ctx: *const QCtx, move: u16) bool {
     var i: usize = ctx.pv_idx.*;
     const last = ctx.pv_last.*;
@@ -103,16 +103,14 @@ pub inline fn rootInList(ctx: *const QCtx, move: u16) bool {
     return false;
 }
 
-// Worker::threads.stop inlined: the search aborts when the shared stop flag is
-// set. worker_state hands Zig a pointer to the std::atomic_bool; this mirrors
-// the C++ load(memory_order_relaxed) with a monotonic atomic byte load.
+// The search aborts when the shared stop flag is set: a monotonic atomic byte
+// load (relaxed ordering).
 pub inline fn searchStopped(ctx: *const QCtx) bool {
     return @atomicLoad(u8, ctx.stop, .monotonic) != 0;
 }
 
-// Worker::is_in_last_iteration_pv inlined: lastIterationPV is an inline PVMoves
-// member (fixed Move array + length), so worker_state hands Zig a stable pointer
-// and the follow-pv test compares directly against it.
+// lastIterationPV is an inline PVMoves member (fixed Move array + length); the
+// follow-pv test compares the move directly against it.
 pub inline fn inLastIterPv(ctx: *const QCtx, ply_minus_1: c_int, move: u16) bool {
     const pv = ctx.last_iter_pv;
     const idx: usize = @intCast(ply_minus_1);

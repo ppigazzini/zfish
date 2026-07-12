@@ -36,7 +36,7 @@ fn isDecisive(value: c_int, value_tb_win_in_max_ply: c_int) bool {
     return value >= value_tb_win_in_max_ply or value <= -value_tb_win_in_max_ply;
 }
 
-// --- tests (M22.0) --------------------------------------------------------------
+// --- tests --------------------------------------------------------------
 // Pure leaf: score classification (non-decisive / tablebase / mate). The live
 // thresholds (search_emit) are (31507, 31753, 32000).
 const std = @import("std");

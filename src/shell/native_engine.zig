@@ -1,5 +1,4 @@
-// Native engine — the buffer-resident engine object (replaces the C++
-// UCIEngine/Engine).
+// Native engine — the buffer-resident engine object.
 //
 // The engine buffer (Zig-allocated in main.zig) holds a NativeEngine. It is an
 // OWNERSHIP CONTAINER: it owns each engine member as an explicitly-freed heap
@@ -20,46 +19,44 @@
 const std = @import("std");
 const graph_layout = @import("graph_layout");
 const misc_port = @import("misc");
-const state_list_port = @import("state_list"); // native StateList (states crack)
+const state_list_port = @import("state_list"); // native StateList
 const network_port = @import("network");
 const position_types = @import("position_types");
 
 // ---- the member allocators -------
-// numa_context is a never-dereferenced non-null handle -> a module-static byte address (M19.1,
-// no alloc/free). threads is a typed ThreadPool created through the Allocator interface (M19).
+// numa_context is a never-dereferenced non-null handle -> a module-static byte address
+// (no alloc/free). threads is a typed ThreadPool created through the Allocator interface.
 // graph_layout.thread_pool_size (48) is the ThreadPool buffer size.
 // numa_context is a single-node, never-dereferenced handle -- a distinct non-null pointer
 // identity for the C-ABI, not a real allocation. Use the address of a module-static byte
-// (TigerBeetle: no alloc, no free) instead of malloc(1)/free (M19.1).
+// (TigerBeetle: no alloc, no free) instead of malloc(1)/free.
 var numa_ctx_placeholder: u8 = 0;
 fn memberNumaContextNew() ?*anyopaque {
     return @ptrCast(&numa_ctx_placeholder);
 }
 fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
-    // M19: a typed, default-initialized ThreadPool via the Allocator interface. @sizeOf ==
+    // A typed, default-initialized ThreadPool via the Allocator interface. @sizeOf ==
     // thread_pool_size (48, asserted in graph_layout). Every field has a default (the
     // `threads`/`bound` slices are non-optional pointers that std.mem.zeroes would reject,
-    // so `.{}` -- empty slices + null setup_states -- is the idiomatic init here, replacing
-    // the raw calloc + @ptrCast/@alignCast.
+    // so `.{}` -- empty slices + null setup_states -- is the idiomatic init here.
     const tp = std.heap.c_allocator.create(graph_layout.ThreadPool) catch return null;
     tp.* = .{};
     return tp;
 }
-// Trigger the native NNUE load into the Zig-owned storage. M20.1: there is no engine
-// `network` member any more -- the worker network resolver / eval / verify read the
-// global native FT storage directly, so the old malloc(1) holder was pure dead weight.
+// Trigger the native NNUE load into the Zig-owned storage. There is no engine
+// `network` member -- the worker network resolver / eval / verify read the
+// global native FT storage directly.
 fn loadNetwork(binary_dir: [*:0]const u8, binary_dir_len: usize) void {
     network_port.load(binary_dir, binary_dir_len, binary_dir, 0);
 }
 // updateContext + onVerifyNetwork are held INLINE in the native engine (stable address
 // for the worker managers / verify emit to bind via accessor) and placement-constructed.
 
-// sizeof(SearchManager::UpdateContext): 4 std::function (48B each) + a void* ctx,
-// padded. The native search emit calls its onUpdateFull/onBestmove (set by
-// init_search_update_listeners) and binds this slot via the accessor. 240 is a
-// generous upper bound on sizeof(UpdateContext).
+// The UpdateContext slot. The native search emit calls its onUpdateFull/onBestmove
+// (set by init_search_update_listeners) and binds this slot via the accessor. 240 is
+// a generous upper bound on sizeof(UpdateContext).
 pub const update_context_size: usize = 240;
-// sizeof(std::function<void(std::string_view)>) — libc++ is 48B; 64 is a safe bound.
+// The onVerifyNetwork slot; 64 is a safe upper bound on its size.
 // onVerifyNetwork: set to print_info_string (interactive) or a no-op (quiet) and called
 // on a network verify message.
 pub const verify_network_fn_size: usize = 64;
@@ -76,8 +73,8 @@ pub const NativeEngine = struct {
     update_context: [update_context_size]u8 align(8) = [_]u8{0} ** update_context_size,
     on_verify_network: [verify_network_fn_size]u8 align(8) = [_]u8{0} ** verify_network_fn_size,
 
-    /// Native field offsets the member accessors read (replacing graph_layout.engine_off
-    /// inline-into-C++-Engine offsets). @offsetOf keeps these pinned to the struct.
+    /// Native field offsets the member accessors read. @offsetOf keeps these pinned
+    /// to the struct.
     pub const off = struct {
         pub const numa_context = @offsetOf(NativeEngine, "numa_context");
         pub const states = @offsetOf(NativeEngine, "states");
@@ -113,12 +110,12 @@ pub const NativeEngine = struct {
     pub fn threadsPtr(self: *NativeEngine) *graph_layout.ThreadPool {
         return self.threads.?;
     }
-    /// The side Position block (replaces the C++ Engine's pos member); engine-independent.
+    /// The side Position block (the engine's pos storage); engine-independent.
     pub fn positionPtr(self: *NativeEngine) *position_types.Position {
         _ = self;
         return @ptrCast(@alignCast(&side_pos_storage));
     }
-    /// The side TranspositionTable block (replaces the C++ Engine's tt member).
+    /// The side TranspositionTable block (the engine's tt storage).
     pub fn ttPtr(self: *NativeEngine) *graph_layout.TranspositionTable {
         _ = self;
         return @ptrCast(@alignCast(&side_tt_storage));
@@ -128,8 +125,8 @@ pub const NativeEngine = struct {
     }
 };
 
-// The side Position/TT storage the native engine uses instead of C++ Engine members. File-scoped
-// here so the accessors own them (were main.zig globals).
+// The side Position/TT storage the native engine uses. File-scoped here so the
+// accessors own them.
 var side_pos_storage: [1032]u8 align(64) = [_]u8{0} ** 1032;
 var side_tt_storage: [64]u8 align(64) = [_]u8{0} ** 64;
 
@@ -141,12 +138,11 @@ pub fn sideTtReset() void {
     @memset(&side_tt_storage, 0);
 }
 
-/// Allocate + assemble the engine's heap members into the buffer. Mirrors the member-
-/// init list of the C++ Engine ctor (binaryDirectory, numaContext, states, options,
-/// threads, network), in dependency order: numaContext before network (network
-/// captures it), binaryDirectory before network (get_default_network reads it). The
-/// post-member work (option registration, start position, thread/worker sizing) runs
-/// after this, in init_body, exactly as the C++ ctor body did.
+/// Allocate + assemble the engine's heap members into the buffer (binaryDirectory,
+/// numaContext, states, options, threads, network), in dependency order: numaContext
+/// before network (network captures it), binaryDirectory before network
+/// (get_default_network reads it). The post-member work (option registration, start
+/// position, thread/worker sizing) runs after this, in init_body.
 ///
 /// Returns false on any allocation failure (caller aborts loudly — startup only).
 pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
@@ -158,7 +154,7 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     e.binary_directory = misc_port.getBinaryDirectory(argv0_slice);
 
     e.numa_context = memberNumaContextNew() orelse return false;
-    // states slot: a native StateList (the fallback root list); replaces the C++ deque(1).
+    // states slot: a native StateList (the fallback root list).
     const states_list = std.heap.c_allocator.create(state_list_port.StateList) catch return false;
     states_list.* = state_list_port.StateList.init(std.heap.c_allocator) catch {
         std.heap.c_allocator.destroy(states_list);
@@ -170,10 +166,9 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
     loadNetwork(bdir, std.mem.span(bdir).len);
 
-    // The update_context / on_verify_network slots are zeroed by the field initializers above,
-    // which is byte-equivalent to a default-constructed empty std::function/UpdateContext. The
-    // native search binds engine_graph's native UpdateContext and the verify emitter reads the
-    // empty slot, so no placement-construct is needed (it was a no-op).
+    // The update_context / on_verify_network slots are zeroed by the field initializers
+    // above. The native search binds engine_graph's native UpdateContext and the verify
+    // emitter reads the empty slot, so no further construction is needed.
 
     return true;
 }
@@ -219,10 +214,10 @@ pub fn destructMembers(buf: *anyopaque) void {
         e.states = null;
     }
 
-    // threads was allocator.create'd (M19) -- free it through the same interface.
+    // threads was allocator.create'd -- free it through the same interface.
     if (e.threads) |t| std.heap.c_allocator.destroy(t);
     e.threads = null;
-    e.numa_context = null; // static placeholder -- nothing to free (M19.1)
+    e.numa_context = null; // static placeholder -- nothing to free
     if (e.binary_directory) |bd| std.heap.c_allocator.free(std.mem.span(bd));
     e.binary_directory = null;
 }

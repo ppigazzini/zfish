@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# H9 — src-free / TU=0 structural gate (REPORT-11 E1.4; achieved at REPORT-16 M16.1).
+# Src-free / TU=0 structural gate.
 #
 # Definition-of-done for TU=0: the shipped binary contains ZERO C++ translation
 # units. The robust structural signal is the symbol table — a C++ Stockfish TU
 # leaves mangled `Stockfish::…` symbols and the statically-linked libc++ runtime
 # (`std::` / `__cxa_*`) behind; the native Zig runtime exports only `zfish_*` +
 # opaque pointers. With the in-tree C++ oracle retired and the src/ tree deleted
-# (M16.1c/d), this gate is GREEN and now a permanent invariant: it guards against
+# this gate is GREEN and now a permanent invariant: it guards against
 # any C++ TU being reintroduced into the default binary. It also re-asserts the
 # bench signature so a src-free binary that lost behaviour cannot pass.
 #

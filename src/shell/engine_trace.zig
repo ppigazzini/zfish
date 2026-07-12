@@ -1,4 +1,4 @@
-// Engine eval-trace / visualize / snapshot cluster (M17.4a).
+// Engine eval-trace / visualize / snapshot cluster.
 //
 // The read-only inspection commands split out of engine.zig: the `eval` trace
 // (traceEvalEngine/evalTrace/buildNnueTrace), the `d` board visualize
@@ -111,7 +111,7 @@ pub const NnueTraceInput = struct {
 // ======================================================================== //
 // Trace / visualize / snapshot functions, moved verbatim from engine.zig.    //
 // ======================================================================== //
-// M19.1/M19.3: static allocation (TigerBeetle discipline). These arenas are only used by the
+// Static allocation (TigerBeetle discipline). These arenas are only used by the
 // cold `d`/`eval` UCI trace commands -- single-threaded, non-reentrant (one command at a time
 // from the UCI loop), and their sizes are comptime constants -- so a module-static, 64-aligned
 // buffer replaces the raw std.c.malloc/free entirely: no alloc, no free, no OOM, deterministic.
@@ -127,9 +127,8 @@ fn accumulatorStackCreate() ?*nnue_acc.AccumulatorStack {
 fn accumulatorStackDestroy(stack: ?*nnue_acc.AccumulatorStack) void {
     _ = stack; // static buffer -- nothing to free
 }
-// `new AccumulatorCaches(network)` / delete, ported native: the C++ ctor clears every cache
-// entry from the network FT biases; clearRefreshCache does exactly that over the caches block
-// from the native FT biases (the loaded net). Relocated from main.zig (M16.7).
+// Create the AccumulatorCaches: clearRefreshCache clears every cache entry over the
+// caches block from the native FT biases (the loaded net). Relocated from main.zig.
 pub fn accumulatorCachesCreate() ?*nnue_acc.RefreshCache {
     const buf: *nnue_acc.RefreshCache = @ptrCast(&trace_caches_buf);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.nativeFtPtr() orelse return null));

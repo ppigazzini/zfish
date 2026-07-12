@@ -3,7 +3,7 @@ const build_options = @import("build_options");
 const std = @import("std");
 const c = @import("libc");
 const memory = @import("memory");
-// M21: the dbg_* debug statistics counters live in their own std-only leaf now.
+// The dbg_* debug statistics counters live in their own std-only leaf now.
 // Re-exported so the existing misc.dbg* API (misc.dbgPrint from uci.zig) is unchanged.
 const debug_counters = @import("debug_counters.zig");
 pub const dbgHitOn = debug_counters.dbgHitOn;
@@ -167,10 +167,10 @@ pub fn hasLargePages() bool {
 }
 
 pub fn hardwareConcurrency() c_int {
-    // Mirrors Stockfish get_hardware_concurrency() == std::thread::hardware_concurrency().
-    // std.Thread.getCpuCount() is its cross-platform equivalent -- sysconf(_SC_NPROCESSORS_ONLN)
+    // Returns the number of hardware threads (Stockfish's get_hardware_concurrency).
+    // std.Thread.getCpuCount() is the cross-platform equivalent -- sysconf(_SC_NPROCESSORS_ONLN)
     // on POSIX, GetSystemInfo on Windows -- so it matches the prior Linux glibc behavior while
-    // also working on the owned Windows/macOS tiers. Clamp an error to 0 as libstdc++ does.
+    // also working on the owned Windows/macOS tiers. Clamp an error to 0.
     const n = std.Thread.getCpuCount() catch return 0;
     return std.math.cast(c_int, n) orelse 0;
 }
@@ -276,9 +276,9 @@ fn gitShaText() []const u8 {
 }
 
 fn compilerNameOwned(allocator: std.mem.Allocator) ![]u8 {
-    // Stockfish detects the C++ compiler through preprocessor macros (__clang__ / __GNUC__ /
-    // _MSC_VER / ...). The zfish port compiles zero C++ and is built by Zig (LLVM backend),
-    // so report that honestly instead of the macros that @cImport used to surface.
+    // Stockfish reports the C++ compiler via preprocessor macros (__clang__ / __GNUC__ /
+    // _MSC_VER / ...). zfish compiles no C++ and is built by Zig (LLVM backend), so it
+    // reports the Zig toolchain instead.
     return std.fmt.allocPrint(allocator, "Zig {s} (LLVM)", .{builtin.zig_version_string});
 }
 
@@ -324,8 +324,8 @@ fn compilationSettingsOwned(allocator: std.mem.Allocator) ![]u8 {
 }
 
 fn compilerVersionMacroText() []const u8 {
-    // Was the C `__VERSION__` macro (the C++ compiler's version banner); the Zig build has no
-    // such macro, so report the Zig toolchain version.
+    // The Zig build has no `__VERSION__`-style compiler banner macro, so report the
+    // Zig toolchain version.
     return "Zig " ++ builtin.zig_version_string;
 }
 

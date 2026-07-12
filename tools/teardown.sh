@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Harness H5 (REPORT-09 big-bang plan): leak gate for the std::vector lifecycle
+# Leak gate for the std::vector lifecycle
 # stage 5 ports -- Worker::set_limits (limits.searchmoves, a std::vector<string>)
 # and set_root_moves (worker.rootMoves) -- plus Worker::clear churn.
 #
@@ -10,7 +10,7 @@
 # memcheck and asserts no definite leak / bad free / invalid access. Captured
 # against the current C++ runtime as the baseline the native port must match.
 #
-# IMPORTANT teardown quirk (finding, ITERATION-152): under memcheck this engine's
+# IMPORTANT teardown quirk (finding): under memcheck this engine's
 # PROCESS EXIT hangs in the C++ thread-join after valgrind has already printed its
 # leak/error summary (valgrind serializes threads and the idle_loop join stalls;
 # a Threads resize hangs outright). The leak VERDICT is therefore reliably in the

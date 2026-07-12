@@ -13,14 +13,12 @@ const state_list = @import("state_list");
 const PendingStateStorage = state_list.PendingStateStorage;
 const numa = @import("numa");
 
-// Zig-owned thread job runner (engine-graph reimplementation). Verified by its
-// own concurrency tests; compile-checked here until wired into construction.
+// Zig-owned thread job runner. Verified by its own concurrency tests.
 pub const thread_runtime = @import("thread_runtime");
-// Native thread runtime (the live vehicle): native Threads + ThreadPool replacing
-// the C++ Thread/std::thread idle_loop.
+// Native thread runtime: native Threads + ThreadPool driving the idle-loop vehicle.
 const native_thread = @import("native_thread");
 const native_threadpool = @import("native_threadpool.zig");
-// M21: the root-move builder + Syzygy root-ranking cluster now lives in its own leaf.
+// The root-move builder + Syzygy root-ranking cluster now lives in its own leaf.
 // startThinking (and the RootSetupInput it fills) reference these by their old names.
 const root_move_build = @import("root_move_build");
 const TbConfig = root_move_build.TbConfig;
@@ -47,7 +45,7 @@ inline fn threadClearWorker(thread: *graph_layout.Thread) void {
 inline fn threadRunJob(thread: *graph_layout.Thread, job: ThreadCallback, ctx: ?*anyopaque) void {
     nt(thread).startJob(job, ctx);
 }
-// Read searchmoves[index] as a Zig-owned SearchMoveText record (M17.6): the libc++
+// Read searchmoves[index] as a Zig-owned SearchMoveText record: the libc++
 // std::string SSO byte decode is gone -- the length + inline chars are read through
 // typed struct fields. The header stays a {begin,end,cap} usize triple, so the
 // element pointer is still @ptrFromInt(begin + index*stride), but into Zig-owned
@@ -115,8 +113,8 @@ fn workerSetLimits(thread: *graph_layout.Thread, src_limits: *const graph_layout
     dst.ponder_mode = src.ponder_mode;
 }
 
-// Copy the ranked source RootMoves into the worker's own []RootMove (M19.1: the DST
-// is a typed slice now, unblocked by M20's proof the WorkerLayout layout is free).
+// Copy the ranked source RootMoves into the worker's own []RootMove (the DST
+// is a typed slice now, unblocked by the proof the WorkerLayout layout is free).
 // Reuse the buffer when the count is unchanged (the common re-search case), else free
 // and reallocate -- the slice equivalent of the old std::vector copy-assign.
 fn workerSetRootMoves(thread: *graph_layout.Thread, src: []const search_types.RootMove) void {
@@ -261,7 +259,7 @@ pub fn reconfigure(
 }
 
 // The search-driver entry native_thread invokes as each thread's search job. Set
-// as a function pointer (M16.7) so native_thread need not import position.
+// as a function pointer so native_thread need not import position.
 fn workerSearchEntry(ctx: ?*anyopaque) void {
     search_driver.workerStartSearching(ctx);
 }
@@ -426,7 +424,7 @@ pub fn waitForSearchFinished(pool: *graph_layout.ThreadPool) void {
 }
 
 pub fn ensureNetworkReplicated(pool: *graph_layout.ThreadPool) void {
-    // The NNUE weights are always resident in native storage (no C++ Network numa
+    // The NNUE weights are always resident in native storage (no per-node Network
     // replica), so Worker::ensure_network_replicated is a no-op.
     _ = pool;
 }

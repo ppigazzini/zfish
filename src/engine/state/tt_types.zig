@@ -1,8 +1,6 @@
-// Transposition-table POD layout types (M18.7 — split out of tt.zig). The cluster
-// array element and its entry record, factored into a std-only leaf so the graph
-// side (graph_layout.TranspositionTable) can type its cluster-base pointer as
-// [*]TtCluster without importing tt.zig (which imports graph_layout — a cycle).
-// tt.zig re-exports these, so its internal + external users are unchanged.
+// Transposition-table POD layout types: the cluster array element and its entry
+// record. graph_layout.TranspositionTable types its cluster-base pointer as
+// [*]TtCluster from here; tt.zig re-exports these.
 
 pub const cluster_size = 3;
 

@@ -1,4 +1,4 @@
-// Position-snapshot analysis (ANNEX B.3): the pure PositionSnapshot query helpers +
+// Position-snapshot analysis: the pure PositionSnapshot query helpers +
 // static-exchange-evaluation, used by BOTH movepick scoring and SEE. Value snapshot,
 // no live-board aliasing. bitboard + snapshot only.
 

@@ -1,4 +1,4 @@
-// NNUE refresh cache / finny tables (M17.4f).
+// NNUE refresh cache / finny tables.
 //
 // The per-(king-square, perspective) AccumulatorRefreshTable: the entry byte
 // layout, the typed accessors into each entry (accumulation i16 / psqt i32 /
@@ -27,7 +27,7 @@ const cache_entry_pieces_offset = cache_entry_psqt_offset + psqt_buckets * @size
 const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
 const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
 
-/// Opaque handles (M18.4-B4). The refresh cache is a raw byte arena (the
+/// Opaque handles. The refresh cache is a raw byte arena (the
 /// per-(king-square,perspective) finny table); its entries are byte slots within it.
 /// Distinct handle types so the eval can't confuse a cache with a stack/FT handle,
 /// while the accessors below reinterpret to bytes exactly as before.
@@ -41,8 +41,7 @@ pub fn cacheEntry(cache: *RefreshCache, king_square: u8, perspective: u8) *Cache
 
 // AccumulatorRefreshTable::clear: initialize every (king_square, perspective)
 // refresh entry to the empty board -- accumulation = the feature-transformer
-// biases, and the rest of the entry (psqt, pieces, pieceBB) zeroed. Mirrors the
-// C++ Entry::clear (accumulation = biases; memset from psqtAccumulation to end).
+// biases, and the rest of the entry (psqt, pieces, pieceBB) zeroed.
 // The biases pointer is passed in by the caller.
 pub fn clearRefreshCache(cache: *RefreshCache, biases: [*]const i16) void {
     const biases_bytes: [*]const u8 = @ptrCast(biases);

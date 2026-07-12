@@ -1,4 +1,4 @@
-// Coverage-guided fuzz targets (M17.5i).
+// Coverage-guided fuzz targets.
 //
 // Real std.testing.fuzz targets driven by the Zig fuzzer's Smith input model, kept
 // in a DEDICATED artifact wired to the `zig build fuzz` step -- deliberately OUT of

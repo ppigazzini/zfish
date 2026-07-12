@@ -1,4 +1,4 @@
-// Move make/unmake (M17.3m/n).
+// Move make/unmake.
 //
 // The mutating side of the board: applying and reverting moves on a live
 // Position -- do/undo-null, doMove/undoMove, the board+DirtyThreats mutators, and
@@ -292,9 +292,8 @@ pub fn doMove(
 
     var k = pos.st.key ^ zob_side;
 
-    // Carry the "copied when making a move" StateInfo fields (the C++ memcpy prefix up
-    // to offsetof(key)); StateInfo is a native struct now, so copy them by field rather
-    // than assuming a byte-contiguous 64-byte prefix.
+    // Carry the StateInfo fields that are copied when making a move (up to key); copy
+    // them by field rather than assuming a byte-contiguous prefix.
     new_st.material_key = pos.st.material_key;
     new_st.pawn_key = pos.st.pawn_key;
     new_st.minor_piece_key = pos.st.minor_piece_key;

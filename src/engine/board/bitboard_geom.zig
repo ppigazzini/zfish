@@ -1,4 +1,4 @@
-// Bitboard geometry + magic-index helpers (M21.1): the pure square/file/rank math
+// Bitboard geometry + magic-index helpers: the pure square/file/rank math
 // and from-scratch attack generators used to build the runtime tables. std-only,
 // no table state -- bitboard.zig aliases these back. Identical behaviour (bench 2067208).
 
