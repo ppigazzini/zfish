@@ -67,7 +67,7 @@ pub fn main(init: std.process.Init) !void {
         return error.OutOfMemory;
     defer memory_port.stdAlignedFree(engine);
 
-    nativeUciEngineConstructAt(engine, @intCast(argc), argv.ptr);
+    engineConstructAt(engine, @intCast(argc), argv.ptr);
     defer freeSideTt(); // free the side tt AFTER the engine destruct (LIFO)
     defer engine_port.freeSharedHistories(); // free the side sharedHistories map (after destruct)
     defer uciEngineDestructAt(engine);
@@ -214,7 +214,7 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
 // pool's threads vector, then free the heap members. All three are native.
 fn uciEngineDestructAt(storage: *anyopaque) void {
     releasePendingStateSlot(engine_object.EngineObject.fromPtr(storage).statesSlotPtr());
-    thread_port.nativeThreadpoolClear(engineThreadsPtr(storage));
+    thread_port.threadPoolClear(engineThreadsPtr(storage));
     engineDestructMembers(storage);
 }
 
@@ -298,7 +298,7 @@ fn engineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
 // inline sub-objects, store argc/argv, then run init_body (register options, set start
 // position, size threads) — the same post-member work the engine ctor body did. Tune (SPSA)
 // is INERT in a release build (no live TUNE() macros → empty list), so it is dropped here.
-fn nativeUciEngineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
+fn engineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     graph_layout.verifyLayouts();
     if (!engineConstructMembers(storage, argv[0]))
         @panic("native engine construct: member allocation failed");

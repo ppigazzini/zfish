@@ -19,7 +19,7 @@ const none_name = "None";
 pub const default_eval_file_name = "nn-af1339a6dea3.nnue";
 
 /// Opaque handle to the network subsystem. The NNUE weights live in this
-/// module's globals (native_ft_ptr_storage &c.), so there is no struct to point at --
+/// module's globals (ft_ptr_storage &c.), so there is no struct to point at --
 /// the engine holds a malloc(1) placeholder. An `opaque {}` gives the SharedState
 /// bundle a distinct `*Network` handle (not a bare *anyopaque) without inventing a
 /// fake layout; it is the same idiom the B4 arena handles use.
@@ -199,8 +199,8 @@ pub fn verify(
 // alias the accessors back so the call sites here stay unqualified.
 const nnCurrent = weight_storage.nnCurrent;
 const nnDescription = weight_storage.nnDescription;
-const markInitializedNative = weight_storage.markInitializedNative;
-const setLoadedStateNative = weight_storage.setLoadedStateNative;
+const markInitialized = weight_storage.markInitialized;
+const setLoadedState = weight_storage.setLoadedState;
 const equalCurrentName = weight_storage.equalCurrentName;
 const ftStorage = weight_storage.ftStorage;
 const layerStorage = weight_storage.layerStorage;
@@ -216,7 +216,7 @@ const Header = struct {
 };
 
 fn loadUserNet(dir: []const u8, evalfile_path: []const u8) void {
-    markInitializedNative();
+    markInitialized();
 
     var arena_state = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena_state.deinit();
@@ -237,7 +237,7 @@ fn loadUserNet(dir: []const u8, evalfile_path: []const u8) void {
 }
 
 fn loadInternal() void {
-    markInitializedNative();
+    markInitialized();
 
     const default_name = default_eval_file_name;
     _ = loadNetworkBytes(viewToSlice(networkEmbeddedBytes()), default_name);
@@ -260,7 +260,7 @@ fn layerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
 
 // Serialize the native feature transformer into `out` (write_parameters blob,
 // including the leading component hash).
-fn serializeFtNative(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
+fn emitFt(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     const ft: [*]const u8 = @ptrCast(ftPtr() orelse return error.NoNetwork);
     try nnue_parse.serializeFeatureTransformer(
         ft[0..nnue_parse.ft_total_bytes],
@@ -271,7 +271,7 @@ fn serializeFtNative(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
 }
 
 // Serialize one native layer stack into `out`.
-fn serializeLayerNative(bucket: usize, out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
+fn emitLayer(bucket: usize, out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     const arr = layerArrays(bucket) orelse return error.NoNetwork;
     try nnue_parse.serializeLayer(nnue_hash.architectureHashValue(), arr.b, arr.w, out, a);
 }
@@ -296,13 +296,13 @@ fn saveNamed(filename: []const u8) bool {
 
     writeHeader(&writer.interface, nnue_hash.networkHashValue(), description) catch return false;
 
-    serializeFtNative(&blob, a) catch return false;
+    emitFt(&blob, a) catch return false;
     writer.interface.writeAll(blob.items) catch return false;
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
         blob.clearRetainingCapacity();
-        serializeLayerNative(bucket, &blob, a) catch return false;
+        emitLayer(bucket, &blob, a) catch return false;
         writer.interface.writeAll(blob.items) catch return false;
     }
 
@@ -333,7 +333,7 @@ fn loadNetworkBytes(bytes: []const u8, current_name: []const u8) bool {
         return false;
     }
 
-    setLoadedStateNative(current_name, header.description);
+    setLoadedState(current_name, header.description);
     // The native parse is the sole source of weights; correctness is verified end-to-end
     // by the eval gates (bench / search-parity), and the offset==bytes.len check above
     // verifies the consumed-byte count.
@@ -366,7 +366,7 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
 // consumed (leading component hash + the LEB-coded params). The native parse is the sole
 // source (the eval gates verify the weights end-to-end, and the offset==bytes.len check
 // at the end of loadNetworkBytes verifies the consumed count).
-fn parseFeatureTransformerNative(blob: []const u8) usize {
+fn loadFt(blob: []const u8) usize {
     const dst_ptr = ftStorage(nnue_parse.ft_total_bytes) orelse
         @panic("native feature-transformer storage allocation failed");
     const dst = dst_ptr[0..nnue_parse.ft_total_bytes];
@@ -376,7 +376,7 @@ fn parseFeatureTransformerNative(blob: []const u8) usize {
 
 fn readFeatureTransformer(bytes: []const u8, offset: *usize) bool {
     const remaining = bytes[offset.*..];
-    const consumed = parseFeatureTransformerNative(remaining);
+    const consumed = loadFt(remaining);
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }
@@ -387,7 +387,7 @@ fn readFeatureTransformer(bytes: []const u8, offset: *usize) bool {
 // Parse this bucket's affine layers natively into the Zig-owned storage (skip the leading
 // architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights) and return the bytes
 // consumed. Native is the sole source.
-fn parseLayerNative(bucket: usize, blob: []const u8) usize {
+fn loadLayer(bucket: usize, blob: []const u8) usize {
     var pos: usize = 4; // architecture component hash
     var idx: c_int = 0;
     while (idx < 3) : (idx += 1) {
@@ -406,7 +406,7 @@ fn parseLayerNative(bucket: usize, blob: []const u8) usize {
 
 fn readLayer(bucket: usize, bytes: []const u8, offset: *usize) bool {
     const remaining = bytes[offset.*..];
-    const consumed = parseLayerNative(bucket, remaining);
+    const consumed = loadLayer(bucket, remaining);
     if (consumed == 0 or consumed > remaining.len) {
         return false;
     }

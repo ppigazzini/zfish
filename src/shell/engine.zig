@@ -298,10 +298,10 @@ pub fn setPositionEngine(
 
 // Print each non-blank line as "info string ...". Relocated from main.zig.
 // NNUE network lifecycle (verifyNetwork/loadNetworkEngine/saveNetworkEngine) +
-// printInfoStringNative live in the engine_nnue leaf; saveNetworkEngine is
+// printInfoString live in the engine_nnue leaf; saveNetworkEngine is
 // re-exported (external), the rest aliased for the go/perft/option-apply callers.
 const engine_nnue = @import("engine_nnue");
-const printInfoStringNative = engine_nnue.printInfoStringNative;
+const printInfoString = engine_nnue.printInfoString;
 pub const verifyNetwork = engine_nnue.verifyNetwork;
 pub const loadNetworkEngine = engine_nnue.loadNetworkEngine;
 pub const saveNetworkEngine = engine_nnue.saveNetworkEngine;
@@ -371,7 +371,7 @@ pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [
         }
         const ret = optionOnChange(engine_ptr, res.callback_kind, relay_value.ptr, relay_value.len, relay_int);
         if (ret) |msg| {
-            printInfoStringNative(std.mem.span(msg));
+            printInfoString(std.mem.span(msg));
             freeCString(msg);
         }
     }

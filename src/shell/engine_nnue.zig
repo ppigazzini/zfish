@@ -7,7 +7,7 @@
 // back into the engine core. Depends only on the network / option / uci_output
 // modules + engine_object (for the engine-handle adapter, duplicated here); no
 // import of engine, so no cycle. engine.zig re-exports the three (saveNetworkEngine
-// is external port surface) and aliases printInfoStringNative for its option-apply
+// is external port surface) and aliases printInfoString for its option-apply
 // code.
 
 const std = @import("std");
@@ -17,7 +17,7 @@ const network_port = @import("network");
 const uci_output = @import("uci_output");
 const engine_object = @import("engine_object");
 
-pub fn printInfoStringNative(str: []const u8) void {
+pub fn printInfoString(str: []const u8) void {
     var it = std.mem.splitScalar(u8, str, '\n');
     while (it.next()) |line| {
         var all_ws = true;
@@ -43,7 +43,7 @@ pub fn verifyNetwork() void {
     if (result.message) |message_ptr| {
         defer std.heap.c_allocator.free(std.mem.span(message_ptr));
         // onVerifyNetwork: interactive -> print as "info string ..."; quiet -> no-op.
-        if (!uci_output.isQuiet()) printInfoStringNative(std.mem.span(message_ptr));
+        if (!uci_output.isQuiet()) printInfoString(std.mem.span(message_ptr));
     }
 
     if (result.should_exit != 0) {
