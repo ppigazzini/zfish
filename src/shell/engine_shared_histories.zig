@@ -4,33 +4,34 @@
 
 const std = @import("std");
 const position_port = @import("position");
+const search_driver = @import("search_driver");
 
-var side_shared_histories: ?position_port.SharedHistoriesMap = null;
+var side_shared_histories: ?search_driver.SharedHistoriesMap = null;
 
-fn sideSharedHistories() *position_port.SharedHistoriesMap {
+fn sideSharedHistories() *search_driver.SharedHistoriesMap {
     if (side_shared_histories == null) {
-        side_shared_histories = position_port.SharedHistoriesMap.init(
+        side_shared_histories = search_driver.SharedHistoriesMap.init(
             std.heap.c_allocator,
-            position_port.constructSharedHistories,
-            position_port.deinitSharedHistories,
+            search_driver.constructSharedHistories,
+            search_driver.deinitSharedHistories,
         );
     }
     return &side_shared_histories.?;
 }
 
-pub fn sharedHistoriesPtr() *position_port.SharedHistoriesMap {
+pub fn sharedHistoriesPtr() *search_driver.SharedHistoriesMap {
     return sideSharedHistories();
 }
 
-pub fn sharedHistoriesClear(map: *position_port.SharedHistoriesMap) void {
+pub fn sharedHistoriesClear(map: *search_driver.SharedHistoriesMap) void {
     map.clear();
 }
 
-pub fn sharedHistoriesInsert(map: *position_port.SharedHistoriesMap, numa_index: usize, size: usize) void {
+pub fn sharedHistoriesInsert(map: *search_driver.SharedHistoriesMap, numa_index: usize, size: usize) void {
     map.tryEmplace(numa_index, size) catch @panic("OOM: native sharedHistories insert");
 }
 
-pub fn sharedHistoriesAt(map: *position_port.SharedHistoriesMap, numa_index: usize) *position_port.SharedHistories {
+pub fn sharedHistoriesAt(map: *search_driver.SharedHistoriesMap, numa_index: usize) *search_driver.SharedHistories {
     return map.at(numa_index);
 }
 

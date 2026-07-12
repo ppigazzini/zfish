@@ -215,6 +215,13 @@ pub fn build(b: *std.Build) void {
         .{ .from = "root_move_build", .imp = "option", .to = "option" },
         .{ .from = "root_move_build", .imp = "movegen", .to = "movegen" },
         .{ .from = "root_move_build", .imp = "position_snapshot", .to = "position_snapshot" },
+        // Consumers that used to reach these search symbols through position.zig's aggregator
+        // now import the owning search modules directly (search_driver's public face, and the
+        // RootMove type in search_types).
+        .{ .from = "engine", .imp = "search_driver", .to = "search_driver" },
+        .{ .from = "thread", .imp = "search_driver", .to = "search_driver" },
+        .{ .from = "thread", .imp = "search_types", .to = "search_types" },
+        .{ .from = "root_move_build", .imp = "search_types", .to = "search_types" },
         .{ .from = "numa_replication", .imp = "numa_config", .to = "numa_config" },
         .{ .from = "position", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "position", .imp = "evaluate", .to = "evaluate" },
@@ -577,6 +584,9 @@ pub fn build(b: *std.Build) void {
     // engine module: it binds the native ThreadPool and TranspositionTable.
     exe.root_module.addImport("native_hooks", mods.get("native_hooks").?);
     exe.root_module.addImport("native_engine", mods.get("native_engine").?);
+    // main.zig and its worker-construction helper reach the search-history helpers directly now.
+    exe.root_module.addImport("search_driver", mods.get("search_driver").?);
+    exe.root_module.addImport("worker_histories", mods.get("worker_histories").?);
     // engine.zig single-sources default_eval_file_name from network.zig
     // (network has no engine dep, so this edge is acyclic).
 
@@ -1307,6 +1317,10 @@ pub fn build(b: *std.Build) void {
     worker_construct_test.root_module.addImport("search", mods.get("search").?);
     worker_construct_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
     worker_construct_test.root_module.addImport("network", mods.get("network").?);
+    // worker_native_construct.zig calls the search-history helpers directly (search_driver's
+    // public face) and reads a worker_histories offset; this fresh test module needs both.
+    worker_construct_test.root_module.addImport("search_driver", mods.get("search_driver").?);
+    worker_construct_test.root_module.addImport("worker_histories", mods.get("worker_histories").?);
     addTestRun(b, test_step, worker_construct_test, cov_dir, &cov_idx);
 
     const parity_step = b.step(
