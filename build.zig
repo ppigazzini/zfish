@@ -223,10 +223,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "thread", .imp = "search_types", .to = "search_types" },
         .{ .from = "root_move_build", .imp = "search_types", .to = "search_types" },
         .{ .from = "numa_replication", .imp = "numa_config", .to = "numa_config" },
-        .{ .from = "position", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
-        .{ .from = "position", .imp = "evaluate", .to = "evaluate" },
-        .{ .from = "position", .imp = "shared_histories", .to = "shared_histories" },
-        .{ .from = "position", .imp = "shared_histories_map", .to = "shared_histories_map" },
         .{ .from = "position", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "graph_layout", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "position", .imp = "position_types", .to = "position_types" },
@@ -478,8 +474,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "bitboard", .to = "bitboard" },
         .{ .from = "position", .imp = "movegen", .to = "movegen" },
         .{ .from = "engine", .imp = "movegen", .to = "movegen" },
-        .{ .from = "position", .imp = "tt", .to = "tt" },
-        .{ .from = "position", .imp = "movepick", .to = "movepick" },
         .{ .from = "position", .imp = "search", .to = "search" },
         .{ .from = "thread", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "thread", .imp = "position", .to = "position" },
@@ -538,7 +532,6 @@ pub fn build(b: *std.Build) void {
         .{ .from = "network", .imp = "memory", .to = "memory" },
         .{ .from = "network", .imp = "position_types", .to = "position_types" },
         .{ .from = "network", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
-        .{ .from = "position", .imp = "network", .to = "network" },
     };
     for (module_edges) |e| mods.get(e.from).?.addImport(e.imp, mods.get(e.to).?);
     mods.get("misc").?.addImport("build_options", build_options_module);

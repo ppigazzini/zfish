@@ -3,18 +3,11 @@ const clock = @import("clock");
 const graph_layout = @import("graph_layout");
 const bitboard = @import("bitboard");
 const movegen = @import("movegen");
-const tt = @import("tt");
-const movepick = @import("movepick");
 const search = @import("search");
-const nnue_acc = @import("nnue_accumulator");
-const evaluate_mod = @import("evaluate");
-const shared_hist = @import("shared_histories"); // native SharedHistories sizing (cut)
-const shared_histories_map = @import("shared_histories_map"); // native sharedHists map (cut)
 
 // Large-page allocator used by the native SharedHistories construction
 // (mirrors C++ make_unique_large_page<T[]> over aligned_large_pages_alloc/free).
 const memory = @import("memory");
-const network_port = @import("network");
 const position_snapshot_port = @import("position_snapshot");
 const uci_output = @import("uci_output");
 const uci_wdl = @import("uci_wdl");
