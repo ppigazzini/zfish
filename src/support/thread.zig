@@ -20,7 +20,7 @@ const native_thread = @import("native_thread");
 const native_threadpool = @import("native_threadpool.zig");
 // M21: the root-move builder + Syzygy root-ranking cluster now lives in its own leaf.
 // startThinking (and the RootSetupInput it fills) reference these by their old names.
-const root_move_build = @import("root_move_build.zig");
+const root_move_build = @import("root_move_build");
 const TbConfig = root_move_build.TbConfig;
 const buildRootMoves = root_move_build.buildRootMoves;
 const buildRootFen = root_move_build.buildRootFen;
