@@ -37,7 +37,7 @@ pub const TtProbeTableOutput = struct {
 };
 
 const memory = @import("memory");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const thread_port = @import("thread");
 fn reportAllocFailure(mb: usize) noreturn {
     std.debug.print("Failed to allocate {d}MB for transposition table.\n", .{mb});
@@ -58,7 +58,7 @@ pub fn resizeState(
     cluster_count_ptr: *usize,
     generation_ptr: *u8,
     mb: usize,
-    threads: *graph_layout.ThreadPool,
+    threads: *worker_layout.ThreadPool,
 ) void {
     // The large-page allocator deals in raw bytes; the cluster typing resumes the
     // moment the buffer is handed back to the typed graph handle.
@@ -79,7 +79,7 @@ pub fn clearState(
     table: ?[*]TtCluster,
     cluster_count: usize,
     generation_ptr: *u8,
-    threads: *graph_layout.ThreadPool,
+    threads: *worker_layout.ThreadPool,
 ) void {
     generation_ptr.* = 0;
 

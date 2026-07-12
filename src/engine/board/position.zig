@@ -1,5 +1,5 @@
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const bitboard = @import("bitboard");
 const movegen = @import("movegen");
 const search = @import("search");
@@ -59,7 +59,7 @@ const h2 = zobrist.h2;
 // unchanged.
 
 // History tables + their dimensions live in the worker_histories leaf module so that
-// both this module (the history-update code) and graph_layout (which embeds the type
+// both this module (the history-update code) and worker_layout (which embeds the type
 // as WorkerLayout.histories) can name them without an import cycle. Re-export the
 // names the search code + external callers already use.
 const worker_histories = @import("worker_histories");
@@ -93,7 +93,7 @@ const black: u8 = 1;
 const sq_none: u8 = 64;
 
 // StateInfo/Position and their POD scratch members live in the position_types leaf
-// module so graph_layout can embed typed root_pos/root_state without a
+// module so worker_layout can embed typed root_pos/root_state without a
 // module cycle; re-exported here as the position module's public surface.
 pub const StateInfo = position_types.StateInfo;
 pub const Position = position_types.Position;
@@ -119,7 +119,7 @@ comptime {
     // reads board/side through a typed *const Position, so no field-offset
     // pin remains -- only assert Position still fits the 1032-byte slot the Worker
     // (worker_off.root_pos) and side storage reserve for it.
-    std.debug.assert(@sizeOf(Position) <= graph_layout.position_size);
+    std.debug.assert(@sizeOf(Position) <= worker_layout.position_size);
 }
 
 const sq_none_u8: u8 = 64;

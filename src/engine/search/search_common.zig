@@ -5,7 +5,7 @@
 // lookups, the StatsEntry gravity update, the capture-stage predicate, and the
 // move-validity check.
 
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
 const board_core = @import("board_core");
@@ -19,7 +19,7 @@ const mt_castling = board_core.mt_castling;
 const mt_en_passant = board_core.mt_en_passant;
 const queen_pt = board_core.queen_pt;
 
-pub inline fn workerHistories(wl: *graph_layout.WorkerLayout) *WorkerHistories {
+pub inline fn workerHistories(wl: *worker_layout.WorkerLayout) *WorkerHistories {
     return &wl.histories;
 }
 

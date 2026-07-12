@@ -1,11 +1,11 @@
 // QCtx construction: the one-shot fetch of the Worker-graph state the inlined node
 // recursion needs (searchCbWorkerState) and the assembly of the hot QCtx from it
 // (buildCtx). Pure worker-graph reads -- no call into the recursion -- so this is a
-// leaf over graph_layout + the root_move / search_ctx type leaves;
+// leaf over worker_layout + the root_move / search_ctx type leaves;
 // search_driver's entry points (qsearchEntry/searchEntry/iterativeDeepening) import
 // it one-way to build the ctx they thread into qsearchImpl/searchImpl.
 
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const root_move = @import("root_move");
 const search_ctx = @import("search_ctx");
 const tt_types = @import("tt_types");
@@ -18,7 +18,7 @@ const SearchTimeState = search_ctx.SearchTimeState;
 // One-shot fetch of the Worker state the inlined search needs, all stable for the
 // duration of one search tree. Live (mutable) fields are pointers into the Worker;
 // the main-thread-only time-management fields are null on helper threads.
-fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?[*]root_move.RootMove, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
+fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?[*]root_move.RootMove, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
     const stop = &wl.threads.stop;
 
     // The NNUE arenas are raw byte buffers embedded in the worker; this is their
@@ -58,7 +58,7 @@ fn searchCbWorkerState(wl: *graph_layout.WorkerLayout, out_acc_stack: *?*nnue_ac
     }
 }
 
-pub fn buildCtx(worker: *graph_layout.WorkerLayout, table: ?[*]tt_types.TtCluster, cc: usize, gen: u8) QCtx {
+pub fn buildCtx(worker: *worker_layout.WorkerLayout, table: ?[*]tt_types.TtCluster, cc: usize, gen: u8) QCtx {
     var acc_stack: ?*nnue_acc.AccumulatorStack = null;
     var nodes: ?*u64 = null;
     var cache: ?*nnue_acc.RefreshCache = null;

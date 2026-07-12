@@ -9,12 +9,12 @@
 //
 // Only the constructor-set fields are written here; the histories, reductions,
 // refresh cache, and shared history are filled afterwards by the existing
-// worker-clear reset path. Writes go through typed graph_layout.WorkerLayout fields,
+// worker-clear reset path. Writes go through typed worker_layout.WorkerLayout fields,
 // with worker_off kept only for the two sub-region slots (shared-history pointer,
 // AccumulatorStack size).
 
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const position_port = @import("position");
 const search_driver = @import("search_driver");
 const worker_histories = @import("worker_histories");
@@ -22,7 +22,7 @@ const search_port = @import("search");
 const nnue_acc = @import("nnue_accumulator");
 const network_port = @import("network");
 
-const off = graph_layout.worker_off;
+const off = worker_layout.worker_off;
 
 // The FT pointer (network.zig-owned inference storage) lets the full
 // constructor fill the histories exactly as the worker-clear reset.
@@ -65,7 +65,7 @@ pub const WorkerCtorInputs = struct {
 // owns the buffer (aligned_large_pages, worker_size bytes) and must zero it and
 // run the worker-clear reset afterwards.
 pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(worker);
+    const wl = worker_layout.WorkerLayout.fromPtr(worker);
 
     // sharedHistories reference: now a typed field of the embedded WorkerHistories.
     wl.histories.shared_history = @ptrFromInt(in.shared_history);
@@ -97,7 +97,7 @@ fn constructWorkerInto(
     shared_obj: *search_driver.SharedHistories,
     biases: [*]const i16,
 ) void {
-    const wl = graph_layout.WorkerLayout.fromPtr(buf);
+    const wl = worker_layout.WorkerLayout.fromPtr(buf);
     writeConstructorFields(buf, in);
     search_driver.clearWorkerHistories(wl);
     search_driver.clearSharedHistory(shared_obj, in.numa_thread_idx, in.numa_total);
@@ -122,7 +122,7 @@ pub fn constructFull(
     numa_access_token: usize,
 ) void {
     const base: [*]u8 = @ptrCast(buf orelse return);
-    @memset(base[0..graph_layout.worker_size], 0);
+    @memset(base[0..worker_layout.worker_size], 0);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.ftPtr() orelse return));
     constructWorkerInto(base, .{
         .shared_history = shared_history,
@@ -141,7 +141,7 @@ pub fn constructFull(
 const testing = std.testing;
 
 test "writeConstructorFields lands every member at its worker_off slot" {
-    const buf = try testing.allocator.alignedAlloc(u8, .@"64", graph_layout.worker_size);
+    const buf = try testing.allocator.alignedAlloc(u8, .@"64", worker_layout.worker_size);
     defer testing.allocator.free(buf);
     @memset(buf, 0);
 

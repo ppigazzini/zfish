@@ -51,7 +51,7 @@ const search_driver = @import("search_driver");
 const uci_move = @import("uci_move");
 const misc_port = @import("misc");
 const thread_port = @import("thread");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
 const state_list = @import("state_list");
@@ -84,7 +84,7 @@ comptime {
 // bundle's typed pointers have a fixed layout the worker-build reinterpret relies on
 // (asserted by the @sizeOf check below).
 pub const SharedState = shared_state_mod.SharedStateOf(
-    graph_layout.ThreadPool,
+    worker_layout.ThreadPool,
     tt_port.TranspositionTable,
     search_driver.SharedHistoriesMap,
 );
@@ -102,8 +102,8 @@ var live_shared_state: SharedState = undefined;
 /// The handles arrive erased across the reconfigure hook ABI; cast each to its typed
 /// pointer once here (the storage boundary) so every downstream read is typed.
 fn sharedStateCreate(
-    threads: *graph_layout.ThreadPool,
-    tt: *graph_layout.TranspositionTable,
+    threads: *worker_layout.ThreadPool,
+    tt: *worker_layout.TranspositionTable,
     shared_histories: *search_driver.SharedHistoriesMap,
 ) *anyopaque {
     live_shared_state = SharedState.init(
@@ -377,7 +377,7 @@ pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [
     }
 }
 
-pub fn goEngine(engine_ptr: *engine_object.EngineObject, limits_ptr: *const graph_layout.LimitsType) void {
+pub fn goEngine(engine_ptr: *engine_object.EngineObject, limits_ptr: *const worker_layout.LimitsType) void {
     std.debug.assert(limits_ptr.perftValue() == 0);
     verifyNetwork();
     // startThinking's root-move setup (selected-moves / root-fen / RootMoves /
@@ -410,8 +410,8 @@ pub fn setNumaConfigFromOptionEngine(engine_ptr: *engine_object.EngineObject, op
 
 pub fn resizeThreads(
     numa_context: *const anyopaque,
-    threads: *graph_layout.ThreadPool,
-    tt: *graph_layout.TranspositionTable,
+    threads: *worker_layout.ThreadPool,
+    tt: *worker_layout.TranspositionTable,
     shared_hists: *search_driver.SharedHistoriesMap,
     update_context: *const anyopaque,
 ) !void {

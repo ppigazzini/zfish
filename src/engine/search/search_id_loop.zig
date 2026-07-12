@@ -4,7 +4,7 @@
 // one-way leaf that search_driver drives.
 
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const tt = @import("tt");
 const search = @import("search");
 const worker_histories = @import("worker_histories");
@@ -24,11 +24,11 @@ const SearchStack = search_types.SearchStack;
 const WorkerHistories = worker_histories.WorkerHistories;
 const sideToMove = position_query.sideToMove;
 comptime {
-    // graph_layout.WorkerLayout uses opaque byte regions for these position-module
+    // worker_layout.WorkerLayout uses opaque byte regions for these position-module
     // sub-blocks; assert its sizes match the real structs so worker_off stays correct.
-    std.debug.assert(graph_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
-    std.debug.assert(graph_layout.position_size == @sizeOf(Position));
-    std.debug.assert(graph_layout.state_info_size == @sizeOf(StateInfo));
+    std.debug.assert(worker_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
+    std.debug.assert(worker_layout.position_size == @sizeOf(Position));
+    std.debug.assert(worker_layout.state_info_size == @sizeOf(StateInfo));
 }
 const sv = @import("search_values.zig");
 const q_value_none = sv.value_none;
@@ -58,7 +58,7 @@ const skillSwapBest = search_id.skillSwapBest;
 const search_main = @import("search_main.zig");
 const searchImpl = search_main.searchImpl;
 
-pub fn iterativeDeepening(wl: *graph_layout.WorkerLayout) u8 {
+pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     // Not a hook -- called only by workerStartSearching, which already holds the typed
     // *WorkerLayout; it drives the typed graph directly.
     var id: ZfishIdState = undefined;

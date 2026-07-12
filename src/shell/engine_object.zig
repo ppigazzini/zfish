@@ -17,7 +17,7 @@
 // engine object does not own them.
 
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const misc_port = @import("misc");
 const state_list_port = @import("state_list"); // StateList
 const network_port = @import("network");
@@ -26,7 +26,7 @@ const position_types = @import("position_types");
 // ---- the member allocators -------
 // numa_context is a never-dereferenced non-null handle -> a module-static byte address
 // (no alloc/free). threads is a typed ThreadPool created through the Allocator interface.
-// graph_layout.thread_pool_size (48) is the ThreadPool buffer size.
+// worker_layout.thread_pool_size (48) is the ThreadPool buffer size.
 // numa_context is a single-node, never-dereferenced handle -- a distinct non-null pointer
 // identity for the C-ABI, not a real allocation. Use the address of a module-static byte
 // (TigerBeetle: no alloc, no free) instead of malloc(1)/free.
@@ -34,12 +34,12 @@ var numa_ctx_placeholder: u8 = 0;
 fn memberNumaContextNew() ?*anyopaque {
     return @ptrCast(&numa_ctx_placeholder);
 }
-fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
+fn memberThreadpoolNew() ?*worker_layout.ThreadPool {
     // A typed, default-initialized ThreadPool via the Allocator interface. @sizeOf ==
-    // thread_pool_size (48, asserted in graph_layout). Every field has a default (the
+    // thread_pool_size (48, asserted in worker_layout). Every field has a default (the
     // `threads`/`bound` slices are non-optional pointers that std.mem.zeroes would reject,
     // so `.{}` -- empty slices + null setup_states -- is the idiomatic init here.
-    const tp = std.heap.c_allocator.create(graph_layout.ThreadPool) catch return null;
+    const tp = std.heap.c_allocator.create(worker_layout.ThreadPool) catch return null;
     tp.* = .{};
     return tp;
 }
@@ -66,7 +66,7 @@ pub const verify_network_fn_size: usize = 64;
 pub const EngineObject = struct {
     numa_context: ?*anyopaque = null,
     states: ?*state_list_port.StateList = null,
-    threads: ?*graph_layout.ThreadPool = null,
+    threads: ?*worker_layout.ThreadPool = null,
     binary_directory: ?[*:0]u8 = null,
     cli_argc: c_int = 0,
     cli_argv: ?[*]const [*:0]u8 = null,
@@ -107,7 +107,7 @@ pub const EngineObject = struct {
     pub fn statesSlotPtr(self: *EngineObject) *anyopaque {
         return @ptrCast(&self.states);
     }
-    pub fn threadsPtr(self: *EngineObject) *graph_layout.ThreadPool {
+    pub fn threadsPtr(self: *EngineObject) *worker_layout.ThreadPool {
         return self.threads.?;
     }
     /// The side Position block (the engine's pos storage); engine-independent.
@@ -116,7 +116,7 @@ pub const EngineObject = struct {
         return @ptrCast(@alignCast(&side_pos_storage));
     }
     /// The side TranspositionTable block (the engine's tt storage).
-    pub fn ttPtr(self: *EngineObject) *graph_layout.TranspositionTable {
+    pub fn ttPtr(self: *EngineObject) *worker_layout.TranspositionTable {
         _ = self;
         return @ptrCast(@alignCast(&side_tt_storage));
     }

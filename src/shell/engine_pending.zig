@@ -1,10 +1,10 @@
 // Pending-state registry (ANNEX B.6): the keyed store of per-slot PendingStateStorage
 // handed from the UCI thread to the search pool. Owns its state (the entries list)
-// and lifecycle; the engine facade calls its pub API. state_list/graph_layout only.
+// and lifecycle; the engine facade calls its pub API. state_list/worker_layout only.
 
 const std = @import("std");
 const state_list = @import("state_list");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const runtime_hooks = @import("runtime_hooks");
 
 pub const PendingStateStorage = state_list.PendingStateStorage;
@@ -71,7 +71,7 @@ pub fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
     return @intFromBool(state_list.storageHasStates(state_storage));
 }
 
-pub fn handoffPendingStates(pool: *graph_layout.ThreadPool, states_slot: *anyopaque) u8 {
+pub fn handoffPendingStates(pool: *worker_layout.ThreadPool, states_slot: *anyopaque) u8 {
     const state_storage = lookupPendingStateStorage(@intFromPtr(states_slot)) orelse return 0;
     if (!state_list.storageHasStates(state_storage))
         return 0;

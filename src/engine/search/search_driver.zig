@@ -1,7 +1,7 @@
 // Search driver: the per-Worker history subsystem plus the full
 // alpha-beta / quiescence search, iterative deepening, skill level, and the
 // UCI-info emit callbacks -- the mutually-recursive search core. It drives a
-// Worker (the WorkerLayout in graph_layout) over a Position, calling the board
+// Worker (the WorkerLayout in worker_layout) over a Position, calling the board
 // leaves (move_do / legality / repetition / state_setup / fen_parse) and the
 // engine support modules (movepick / tt / nnue / evaluate / timeman / uci_* /
 // threads). position.zig re-exports the public entry points (searchEntry /
@@ -10,7 +10,7 @@
 // resolve through the position surface unchanged.
 
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const tt = @import("tt");
 const movepick = @import("movepick");
 const search = @import("search");
@@ -65,11 +65,11 @@ const legal = legality.legal;
 // The search + history subsystem.  //
 // ======================================================================== //
 comptime {
-    // graph_layout.WorkerLayout uses opaque byte regions for these position-module
+    // worker_layout.WorkerLayout uses opaque byte regions for these position-module
     // sub-blocks; assert its sizes match the real structs so worker_off stays correct.
-    std.debug.assert(graph_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
-    std.debug.assert(graph_layout.position_size == @sizeOf(Position));
-    std.debug.assert(graph_layout.state_info_size == @sizeOf(StateInfo));
+    std.debug.assert(worker_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
+    std.debug.assert(worker_layout.position_size == @sizeOf(Position));
+    std.debug.assert(worker_layout.state_info_size == @sizeOf(StateInfo));
 }
 
 // Shared-history arena lives in the shared_history leaf; the accessors are
@@ -110,7 +110,7 @@ const ssEmitPv = search_emit.ssEmitPv;
 
 const SsCtx = search_ctx.SsCtx;
 
-// Search-manager driver callbacks that touch only the Worker graph (via graph_layout)
+// Search-manager driver callbacks that touch only the Worker graph (via worker_layout)
 // + the accumulator stack; the driver (workerStartSearching) calls them locally.
 // Worker-graph accessors live in the search_ctx leaf; aliased here to keep call sites.
 const workerRootMove0 = search_ctx.workerRootMove0;
@@ -125,7 +125,7 @@ const ssShouldBusywait = search_id.ssShouldBusywait;
 const ssSetPrevScores = search_id.ssSetPrevScores;
 
 // best->rootMoves[0].pv.size()==1 && extract_ponder_from_tt(worker->tt, worker->rootPos).
-fn ssPvOneAndPonder(wl: *graph_layout.WorkerLayout, best: *const graph_layout.WorkerLayout) u8 {
+fn ssPvOneAndPonder(wl: *worker_layout.WorkerLayout, best: *const worker_layout.WorkerLayout) u8 {
     const pv = &workerRootMove0(best).pv;
     if (pv.length != 1) return 0;
     const tp = workerTT(wl);
@@ -147,7 +147,7 @@ const search_id_loop = @import("search_id_loop.zig");
 pub const iterativeDeepening = search_id_loop.iterativeDeepening;
 
 pub fn workerStartSearching(worker: ?*anyopaque) void {
-    const wl: *graph_layout.WorkerLayout = @ptrCast(@alignCast(worker.?));
+    const wl: *worker_layout.WorkerLayout = @ptrCast(@alignCast(worker.?));
     ssPrologue(wl);
 
     var ctx: SsCtx = undefined;
@@ -175,7 +175,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 
     if (ctx.npmsec != 0) ssNpmsecAdvance(wl);
 
-    var best: ?*graph_layout.WorkerLayout = wl;
+    var best: ?*worker_layout.WorkerLayout = wl;
     if (ctx.limits_depth == 0 and ctx.skill_enabled == 0)
         best = ssGetBestThread(wl);
 
@@ -199,7 +199,7 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 // pass + eval scaling.
 // Once-per-search snapshot of the Worker's live member pointers + shared stop flag,
 // and -- on the main thread -- the SearchManager/TimeManagement/LimitsType time inputs.
-// The graph_layout offset reads + the FT pointer (the network handle is never
+// The worker_layout offset reads + the FT pointer (the network handle is never
 // dereferenced -- weights serve from the network's own storage).
 // QCtx construction (searchCbWorkerState + buildCtx) lives in the search_setup leaf;
 // buildCtx aliased below (searchCbWorkerState is private to that leaf).

@@ -8,7 +8,7 @@
 // over the move_do / fen_parse / legality leaves with the graph sizes filled in.
 
 const std = @import("std");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const move_do = @import("move_do");
 const legality = @import("legality");
 const fen_parse = @import("fen_parse");
@@ -46,7 +46,7 @@ pub fn destroy(pos: ?*Position) void {
 /// setPosition with the engine-graph Position/StateInfo sizes filled in (lets callers keep
 /// the 5-arg shape without threading graph sizes through).
 pub fn setPositionState(pos_ptr: *Position, fen_ptr: [*]const u8, fen_len: usize, chess960_enabled: u8, state_ptr: *StateInfo) ?[*:0]u8 {
-    return setPosition(pos_ptr, fen_ptr, fen_len, chess960_enabled, state_ptr, graph_layout.position_size, graph_layout.state_info_size);
+    return setPosition(pos_ptr, fen_ptr, fen_len, chess960_enabled, state_ptr, worker_layout.position_size, worker_layout.state_info_size);
 }
 
 test {

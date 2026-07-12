@@ -8,7 +8,7 @@
 // search_common, and the tuning scales come from the search module.
 
 const search = @import("search");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const search_common = @import("search_common");
 const shared_history = @import("shared_history");
 const worker_histories = @import("worker_histories");
@@ -17,7 +17,7 @@ const position_types = @import("position_types");
 const board_core = @import("board_core");
 
 const WorkerHistories = worker_histories.WorkerHistories;
-const WorkerLayout = graph_layout.WorkerLayout;
+const WorkerLayout = worker_layout.WorkerLayout;
 const Position = position_types.Position;
 const SearchStack = search_types.SearchStack;
 const hist_uint16 = worker_histories.hist_uint16;

@@ -5,7 +5,7 @@
 // futex idle-loop runner (thread_runtime.zig) + the per-thread search job.
 //
 // LAYOUT CONTRACT: the only field any other code reads off a live Thread by offset
-// is `worker` at offset 8 (graph_layout.Thread / the sibling ops all read `*(thread
+// is `worker` at offset 8 (worker_layout.Thread / the sibling ops all read `*(thread
 // + 8)`). `worker` stays at offset 8 because the four fields are equal-size (u64/
 // pointer) and Zig keeps their declaration order; the `@offsetOf(worker) == 8` test
 // below guards it. The ThreadRuntime (std.Thread handle + futex atomics) lives on
@@ -18,7 +18,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const rt = @import("thread_runtime");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const runtime_hooks = @import("runtime_hooks");
 
 // Marker at offset 0 (no reader touches thread@0, so this just makes a
@@ -95,14 +95,14 @@ pub fn startSearching(self: *SearchThread) void {
 }
 
 // Reinterpret a pool thread slot (a *SearchThread) for the pool-level sibling ops.
-inline fn asSearchThread(thread: *graph_layout.Thread) *SearchThread {
+inline fn asSearchThread(thread: *worker_layout.Thread) *SearchThread {
     return @ptrCast(@alignCast(thread));
 }
 
 // Start the sibling threads (index 1..) searching. The pool-level entry the search
 // driver (position.zig) calls -- pure graph iteration + the per-thread start, so it
 // needs no position import.
-pub fn startPoolSiblings(pool: *graph_layout.ThreadPool) void {
+pub fn startPoolSiblings(pool: *worker_layout.ThreadPool) void {
     const tp = pool;
     const n = tp.numThreads();
     var i: usize = 1;
@@ -110,7 +110,7 @@ pub fn startPoolSiblings(pool: *graph_layout.ThreadPool) void {
 }
 
 // Wait for the sibling threads (index 1..) to finish their current search.
-pub fn waitPoolSiblings(pool: *graph_layout.ThreadPool) void {
+pub fn waitPoolSiblings(pool: *worker_layout.ThreadPool) void {
     const tp = pool;
     const n = tp.numThreads();
     var i: usize = 1;

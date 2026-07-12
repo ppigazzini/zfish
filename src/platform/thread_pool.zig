@@ -19,12 +19,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const SearchThread = @import("search_thread").SearchThread;
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const runtime_hooks = @import("runtime_hooks");
-const ThreadPool = graph_layout.ThreadPool;
+const ThreadPool = worker_layout.ThreadPool;
 
-// The 64-byte pool footprint is a graph_layout.ThreadPool: the writer here
-// and every reader (graph_layout accessors, the search's captured
+// The 64-byte pool footprint is a worker_layout.ThreadPool: the writer here
+// and every reader (worker_layout accessors, the search's captured
 // &stop pointer) go through the same typed struct, so Zig owns the field placement.
 inline fn poolOf(slot: [*]u8) *ThreadPool {
     return ThreadPool.fromPtr(@ptrCast(slot));
@@ -144,7 +144,7 @@ const WorkerBuildCtx = struct {
 // Build `count` threads (idle loops + Workers) into the Engine's embedded
 // ThreadPool footprint `pool`.
 pub fn set(
-    pool: *graph_layout.ThreadPool,
+    pool: *worker_layout.ThreadPool,
     shared_state: *anyopaque,
     update_context: *const anyopaque,
     count: usize,
@@ -158,14 +158,14 @@ pub fn set(
 
 // Join + free every thread and null the footprint slice. Called by the
 // reset_for_reconfigure and the engine teardown hook.
-pub fn clear(pool: *graph_layout.ThreadPool) void {
+pub fn clear(pool: *worker_layout.ThreadPool) void {
     var p = Pool.init(std.heap.c_allocator, @ptrCast(pool));
     p.clear();
 }
 
 // Wait for one thread's in-flight job to finish. Reads the thread pointer out of
 // the footprint slice by index and calls the wait.
-pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
+pub fn waitThread(pool: *worker_layout.ThreadPool, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads.len == 0) return;
     const thread: *SearchThread = @ptrFromInt(tp.threadAt(thread_id));
@@ -179,7 +179,7 @@ pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
 // allocator (the bound-slice unit test drives exactly this). Lives here beside set()
 // -- which clears the same footprint slot -- rather than in thread.zig, so all the
 // ThreadPool-footprint writes sit in one module and the writer is directly testable.
-pub fn boundNodesAssign(pool: *graph_layout.ThreadPool, allocator: std.mem.Allocator, nodes: ?[]const usize) error{OutOfMemory}!void {
+pub fn boundNodesAssign(pool: *worker_layout.ThreadPool, allocator: std.mem.Allocator, nodes: ?[]const usize) error{OutOfMemory}!void {
     const tp = pool;
     if (tp.bound.len != 0) allocator.free(tp.bound);
     tp.bound = &.{};
@@ -243,11 +243,11 @@ test "boundNodesAssign lays/reads/reassigns/clears the bound slice (leak-checked
     // Standalone footprint -- no threads needed, just the bound slice contract that the
     // multi-node reconfigure path drives (and that single-node runs never populate, so
     // this is its ONLY gate). testing.allocator flags any missed free.
-    var footprint: [graph_layout.thread_pool_size]u8 align(8) = [_]u8{0} ** graph_layout.thread_pool_size;
+    var footprint: [worker_layout.thread_pool_size]u8 align(8) = [_]u8{0} ** worker_layout.thread_pool_size;
     const tp = poolOf(&footprint);
     tp.* = .{};
 
-    // Assign 4 per-thread node indices; read back via the graph_layout accessors.
+    // Assign 4 per-thread node indices; read back via the worker_layout accessors.
     const nodes = [_]usize{ 0, 1, 0, 2 };
     try boundNodesAssign(tp, testing.allocator, &nodes);
     try testing.expectEqual(@as(usize, 4), tp.boundCount());
@@ -275,7 +275,7 @@ test "boundNodesAssign unwinds leak-free on allocation failure" {
     // frees the prior buffer and returns the error leak-free.
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
-            var footprint: [graph_layout.thread_pool_size]u8 align(8) = [_]u8{0} ** graph_layout.thread_pool_size;
+            var footprint: [worker_layout.thread_pool_size]u8 align(8) = [_]u8{0} ** worker_layout.thread_pool_size;
             const tp = poolOf(&footprint);
             tp.* = .{};
             defer boundNodesAssign(tp, a, null) catch {}; // free any live buffer

@@ -11,7 +11,7 @@ const engine_object = @import("engine_object");
 // The bench / benchmark command runners live in their own leaf (uci passes it a
 // void wrapper over dispatchCommand, so the leaf has no cycle back into the loop).
 const uci_bench = @import("uci_bench.zig");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const clock = @import("clock");
 const uci_strings = @import("uci_strings");
 
@@ -64,12 +64,12 @@ const CommandKind = enum {
 const ByteView = engine_mod.ByteView;
 
 // Build the LimitsType from the parsed UCI `go` args (including the
-// searchmoves list, now Zig-owned graph_layout.SearchMoveText records) and
+// searchmoves list, now Zig-owned worker_layout.SearchMoveText records) and
 // hand it to the engine go driver. startTime is stamped here (the earliest
 // point), so the info-line elapsed/nps are correct; the
 // searchmoves element buffer is freed after start_thinking has read it.
 fn goParsed(engine_ptr: *engine_object.EngineObject, parsed: ParsedLimits) void {
-    var limits: graph_layout.LimitsType = std.mem.zeroes(graph_layout.LimitsType);
+    var limits: worker_layout.LimitsType = std.mem.zeroes(worker_layout.LimitsType);
     limits.start_time = clock.now();
     limits.time[0] = parsed.wtime;
     limits.time[1] = parsed.btime;
@@ -95,8 +95,8 @@ fn goParsed(engine_ptr: *engine_object.EngineObject, parsed: ParsedLimits) void 
             // Zig-owned SearchMoveText records: limits.searchmoves IS
             // the typed slice now -- no {begin,end,cap} header, no separate handle.
             // On OOM, degrade gracefully (search all moves) rather than aborting the game.
-            const recs = std.heap.c_allocator.alloc(graph_layout.SearchMoveText, count) catch break :sm_build;
-            @memset(recs, std.mem.zeroes(graph_layout.SearchMoveText));
+            const recs = std.heap.c_allocator.alloc(worker_layout.SearchMoveText, count) catch break :sm_build;
+            @memset(recs, std.mem.zeroes(worker_layout.SearchMoveText));
             var i: usize = 0;
             it = std.mem.splitScalar(u8, sm, '\n');
             while (it.next()) |tok| {

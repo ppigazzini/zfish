@@ -7,7 +7,7 @@ const numa = @import("numa");
 const engine_infofmt = @import("engine_infofmt");
 const engine_util = @import("engine_util");
 const engine_object = @import("engine_object");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 
 const CountPair = engine_util.CountPair;
 const allocMessage = engine_util.allocMessage;
@@ -21,7 +21,7 @@ fn freeCString(ptr: [*:0]u8) void {
 
 pub fn threadBindingInformation(
     numa_context: *const anyopaque,
-    threads: *graph_layout.ThreadPool,
+    threads: *worker_layout.ThreadPool,
 ) ?[*:0]u8 {
     const bound_count = threads.boundCount();
     if (bound_count == 0)
@@ -57,7 +57,7 @@ pub fn threadBindingInformation(
 
 pub fn threadAllocationInformation(
     numa_context: *const anyopaque,
-    threads: *graph_layout.ThreadPool,
+    threads: *worker_layout.ThreadPool,
 ) ?[*:0]u8 {
     const binding_ptr = threadBindingInformation(numa_context, threads) orelse return null;
     defer freeCString(binding_ptr);

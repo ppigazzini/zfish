@@ -1,10 +1,10 @@
 // Search-driver context types: the plain-data bundles the search driver threads
 // through: the per-iteration `SsCtx`/`SearchTimeState`/`ZfishIdState` snapshots and
 // the hot `QCtx` the qsearch/search recursion carries. A std-free leaf over the
-// worker/board POD leaves. Depends only on graph_layout + the position/root-move
+// worker/board POD leaves. Depends only on worker_layout + the position/root-move
 // type leaves.
 
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 const position_types = @import("position_types");
 const root_move = @import("root_move");
 const tt_types = @import("tt_types");
@@ -17,21 +17,21 @@ const RootMove = root_move.RootMove;
 // Worker-graph accessors shared by BOTH the ID-orchestration driver and the node
 // recursion: pure reads of a `*WorkerLayout` into its bound subsystems. Kept
 // here in the context leaf so search_id and search_driver both reach them.
-pub fn workerThreadsPool(wl: *const graph_layout.WorkerLayout) *graph_layout.ThreadPool {
+pub fn workerThreadsPool(wl: *const worker_layout.WorkerLayout) *worker_layout.ThreadPool {
     return wl.threads;
 }
-pub fn workerManager(wl: *const graph_layout.WorkerLayout) ?*graph_layout.SearchManager {
+pub fn workerManager(wl: *const worker_layout.WorkerLayout) ?*worker_layout.SearchManager {
     return wl.manager;
 }
-pub fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootMove {
+pub fn workerRootMove0(wl: *const worker_layout.WorkerLayout) *worker_layout.RootMove {
     // root_moves[0] is the first element's address; return the typed first RootMove
     // via the graph adapter.
     return @ptrCast(wl.root_moves.ptr);
 }
-pub fn workerTT(wl: *const graph_layout.WorkerLayout) *graph_layout.TranspositionTable {
+pub fn workerTT(wl: *const worker_layout.WorkerLayout) *worker_layout.TranspositionTable {
     return wl.tt;
 }
-pub fn searchCbTtContext(wl: *const graph_layout.WorkerLayout, out_table: *?[*]tt_types.TtCluster, out_cluster_count: *usize, out_generation: *u8) void {
+pub fn searchCbTtContext(wl: *const worker_layout.WorkerLayout, out_table: *?[*]tt_types.TtCluster, out_cluster_count: *usize, out_generation: *u8) void {
     const tp = workerTT(wl);
     out_table.* = tp.table;
     out_cluster_count.* = tp.cluster_count;
@@ -101,7 +101,7 @@ pub const ZfishIdState = struct {
 // the pointers into it the node bodies read/write. `table` is the typed TT cluster
 // base; `acc_stack`/`cache` are the NNUE arena opaque handles (B4 idiom).
 pub const QCtx = struct {
-    worker: *graph_layout.WorkerLayout,
+    worker: *worker_layout.WorkerLayout,
     table: ?[*]tt_types.TtCluster,
     cluster_count: usize,
     generation: u8,

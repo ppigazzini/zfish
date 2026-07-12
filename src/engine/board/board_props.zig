@@ -12,10 +12,10 @@
 const std = @import("std");
 const position = @import("position");
 const movegen = @import("movegen");
-const graph_layout = @import("graph_layout");
+const worker_layout = @import("worker_layout");
 
-const position_size = graph_layout.position_size;
-const state_info_size = graph_layout.state_info_size;
+const position_size = worker_layout.position_size;
+const state_info_size = worker_layout.state_info_size;
 const perft_max_depth = 8;
 
 const StateBuf = position.StateInfo;
@@ -419,8 +419,8 @@ test "seeGe classifies winning and losing captures" {
 // compiles under `zig build test` even if the exe never reaches it (catches dead/
 // broken code the golden gates and the property tests above miss). Non-recursive is
 // the Zig 0.16 std.testing API; it forces each module's top-level pub decls.
-test "all public decls compile (position + movegen + graph_layout)" {
+test "all public decls compile (position + movegen + worker_layout)" {
     std.testing.refAllDecls(position);
     std.testing.refAllDecls(movegen);
-    std.testing.refAllDecls(graph_layout);
+    std.testing.refAllDecls(worker_layout);
 }

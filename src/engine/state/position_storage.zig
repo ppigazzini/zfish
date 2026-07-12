@@ -6,14 +6,14 @@
 //
 // Treated as opaque bytes (Position internals are written/read by position.zig).
 //
-// ALIGNMENT NOTE: sizeof(Position) == 1032 is pinned by graph_layout.zig.
+// ALIGNMENT NOTE: sizeof(Position) == 1032 is pinned by worker_layout.zig.
 // alignof(Position) is not separately probed; 8 covers its u64/pointer members. If
 // a future upstream Position gains an over-aligned (SIMD) member, the layout
 // verifier must bump this — flagged there, harmless until then.
 
 const std = @import("std");
 
-/// sizeof(Position), pinned by graph_layout.zig (= 1032).
+/// sizeof(Position), pinned by worker_layout.zig (= 1032).
 pub const position_size: usize = 1032;
 pub const position_align: usize = 8;
 

@@ -30,7 +30,7 @@ pub const PVMoves = struct {
         return self.moves[0..self.length];
     }
 
-    /// Reinterpret a raw Worker-graph address as a *PVMoves (graph_layout re-exports
+    /// Reinterpret a raw Worker-graph address as a *PVMoves (worker_layout re-exports
     /// this type).
     pub inline fn fromAddr(addr: usize) *PVMoves {
         return @ptrFromInt(addr);
@@ -79,7 +79,7 @@ pub const RootMove = struct {
         return if (b.score != a.score) b.score < a.score else b.previous_score < a.previous_score;
     }
 
-    /// Reinterpret a raw rootMoves-vector element address as a *RootMove (graph_layout
+    /// Reinterpret a raw rootMoves-vector element address as a *RootMove (worker_layout
     /// re-exports this type; the vector strides by @sizeOf(RootMove) == 552).
     pub inline fn fromAddr(addr: usize) *RootMove {
         return @ptrFromInt(addr);
