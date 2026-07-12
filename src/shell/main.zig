@@ -15,6 +15,7 @@ const tablebase = @import("tablebase");
 const thread_ops = @import("thread_ops");
 const search_thread = @import("search_thread");
 const thread_vote = @import("thread_vote");
+const output_sink = @import("output_sink");
 const thread_construct = @import("thread_construct.zig");
 const worker_construct = @import("worker_construct.zig");
 const engine_object = @import("engine_object"); // the engine object container
@@ -186,6 +187,11 @@ fn installRuntimeHooks() void {
     thread_ops.waitSiblings = &search_thread.waitPoolSiblings;
     thread_ops.waitThread = &thread_port.waitThread;
     thread_ops.bestThreadWorker = &thread_vote.bestThreadWorker;
+    // Inject the shell UCI output writer into the engine's output-sink seam, so the
+    // search emits its info/bestmove lines without importing a shell module.
+    output_sink.printLine = &uci_output.printLine;
+    output_sink.isQuiet = &uci_output.isQuiet;
+    output_sink.setLastNodesSearched = &uci_output.setLastNodesSearched;
 }
 
 // The engine buffer is a EngineObject, so the member accessors return its fields

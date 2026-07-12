@@ -109,7 +109,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "tablebase", .path = "src/platform/tablebase.zig" },
         .{ .name = "clock", .path = "src/platform/clock.zig" },
         .{ .name = "uci_output", .path = "src/shell/uci_output.zig" },
-        .{ .name = "uci_wdl", .path = "src/shell/uci_wdl.zig" },
+        .{ .name = "uci_wdl", .path = "src/engine/search/uci_wdl.zig" },
         .{ .name = "score", .path = "src/engine/board/score.zig" },
         .{ .name = "thread_vote", .path = "src/platform/thread_vote.zig" },
         .{ .name = "thread_runtime", .path = "src/platform/thread_runtime.zig" },
@@ -130,7 +130,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "engine_trace", .path = "src/shell/engine/trace.zig" },
         .{ .name = "engine_perft", .path = "src/shell/engine/perft.zig" },
         .{ .name = "engine_options", .path = "src/shell/engine/options.zig" },
-        .{ .name = "uci_move", .path = "src/shell/uci_move.zig" },
+        .{ .name = "uci_move", .path = "src/engine/board/uci_move.zig" },
         .{ .name = "movepick", .path = "src/engine/search/movepick.zig" },
         .{ .name = "search", .path = "src/engine/search/search.zig" },
         .{ .name = "thread", .path = "src/platform/thread.zig" },
@@ -160,6 +160,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "option_source", .path = "src/engine/search/option_source.zig" },
         .{ .name = "tb_source", .path = "src/engine/search/tb_source.zig" },
         .{ .name = "thread_ops", .path = "src/engine/search/thread_ops.zig" },
+        .{ .name = "output_sink", .path = "src/engine/search/output_sink.zig" },
         .{ .name = "shared_histories", .path = "src/engine/search/shared_histories.zig" },
         .{ .name = "shared_histories_map", .path = "src/engine/search/shared_histories_map.zig" },
         .{ .name = "network_holder", .path = "src/engine/eval/network_holder.zig" },
@@ -358,7 +359,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_emit", .imp = "tt", .to = "tt" },
         .{ .from = "search_emit", .imp = "score", .to = "score" },
         .{ .from = "search_emit", .imp = "uci_wdl", .to = "uci_wdl" },
-        .{ .from = "search_emit", .imp = "uci_output", .to = "uci_output" },
+        .{ .from = "search_emit", .imp = "output_sink", .to = "output_sink" },
         .{ .from = "search_emit", .imp = "uci_move", .to = "uci_move" },
         .{ .from = "search_emit", .imp = "position_query", .to = "position_query" },
         .{ .from = "search_emit", .imp = "option_source", .to = "option_source" },
@@ -565,6 +566,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("tb_source", mods.get("tb_source").?);
     exe.root_module.addImport("tablebase", mods.get("tablebase").?);
     exe.root_module.addImport("thread_ops", mods.get("thread_ops").?);
+    exe.root_module.addImport("output_sink", mods.get("output_sink").?);
     exe.root_module.addImport("search_thread", mods.get("search_thread").?);
     exe.root_module.addImport("thread_vote", mods.get("thread_vote").?);
     exe.root_module.addImport("engine_object", mods.get("engine_object").?);
@@ -1032,7 +1034,7 @@ pub fn build(b: *std.Build) void {
     // count only ratchets down; the baseline is the currently-allowed maximum and the
     // gate fails if the real count exceeds it. Lower it as each seam is severed; at 0
     // the engine is a standalone search+eval library.
-    const headless_baseline = "3";
+    const headless_baseline = "0";
     const headless_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/headless_lint.sh"),
@@ -1059,6 +1061,7 @@ pub fn build(b: *std.Build) void {
         mods.get("option_source").?,
         mods.get("tb_source").?,
         mods.get("thread_ops").?,
+        mods.get("output_sink").?,
         mods.get("tt").?,
         mods.get("network_holder").?,
         mods.get("shared_histories").?,
@@ -1156,7 +1159,7 @@ pub fn build(b: *std.Build) void {
         "src/shell/debug_counters.zig",
         "src/shell/bench_positions.zig",
         "src/shell/uci_output.zig",
-        "src/shell/uci_wdl.zig",
+        "src/engine/search/uci_wdl.zig",
         "src/engine/board/score.zig",
         "src/shell/uci_strings.zig",
         "src/shell/engine/util.zig",
@@ -1215,7 +1218,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/engine/search/search_types.zig", .deps = &.{ "correction_bundle", "root_move", "worker_histories" } },
         .{ .path = "src/engine/board/position_query.zig", .deps = &.{ "board_core", "position_snapshot", "position_types" } },
         .{ .path = "src/engine/board/zobrist.zig", .deps = &.{ "bitboard", "board_core" } },
-        .{ .path = "src/shell/uci_move.zig", .deps = &.{ "movegen", "position_snapshot", "position_types" } },
+        .{ .path = "src/engine/board/uci_move.zig", .deps = &.{ "movegen", "position_snapshot", "position_types" } },
         .{ .path = "src/engine/search/movepick_snapshot.zig", .deps = &.{ "bitboard", "position_snapshot" } },
         .{ .path = "src/engine/search/movepick_history.zig", .deps = &.{"position_snapshot"} },
         .{ .path = "src/shell/benchmark.zig", .deps = &.{"libc"} },
