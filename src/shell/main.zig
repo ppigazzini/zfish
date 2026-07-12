@@ -12,6 +12,9 @@ const page_alloc = @import("page_alloc");
 const option_source = @import("option_source");
 const tb_source = @import("tb_source");
 const tablebase = @import("tablebase");
+const thread_ops = @import("thread_ops");
+const search_thread = @import("search_thread");
+const thread_vote = @import("thread_vote");
 const thread_construct = @import("thread_construct.zig");
 const worker_construct = @import("worker_construct.zig");
 const engine_object = @import("engine_object"); // the engine object container
@@ -177,6 +180,12 @@ fn installRuntimeHooks() void {
     // search probes tablebases without importing a platform module.
     tb_source.maxCardinality = &tablebase.maxCardinality;
     tb_source.probeFen = &tablebase.probeFen;
+    // Inject the platform thread-pool ops into the engine's thread-ops seam, so the
+    // parallel search coordinates siblings without importing a platform module.
+    thread_ops.startSiblings = &search_thread.startPoolSiblings;
+    thread_ops.waitSiblings = &search_thread.waitPoolSiblings;
+    thread_ops.waitThread = &thread_port.waitThread;
+    thread_ops.bestThreadWorker = &thread_vote.bestThreadWorker;
 }
 
 // The engine buffer is a EngineObject, so the member accessors return its fields

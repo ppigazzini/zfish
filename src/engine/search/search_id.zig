@@ -11,8 +11,7 @@ const worker_layout = @import("worker_layout");
 const option_port = @import("option_source");
 const timeman_port = @import("timeman");
 const tt = @import("tt");
-const search_thread = @import("search_thread");
-const thread_vote = @import("thread_vote");
+const thread_ops = @import("thread_ops");
 const nnue_acc = @import("nnue_accumulator");
 const position_query = @import("position_query");
 const time_source = @import("time_source");
@@ -213,17 +212,17 @@ pub fn searchIdState(wl: *worker_layout.WorkerLayout, out: *ZfishIdState) void {
 
 // Start / wait the sibling search threads.
 pub fn ssThreadsStart(wl: *const worker_layout.WorkerLayout) void {
-    search_thread.startPoolSiblings(wl.threads);
+    thread_ops.startSiblings(wl.threads);
 }
 pub fn ssWaitFinished(wl: *const worker_layout.WorkerLayout) void {
-    search_thread.waitPoolSiblings(wl.threads);
+    thread_ops.waitSiblings(wl.threads);
 }
 
 // Worker of the vote-winning thread (Lazy-SMP best-thread selection via the leaf
 // thread_vote model).
 pub fn ssGetBestThread(wl: *const worker_layout.WorkerLayout) ?*worker_layout.WorkerLayout {
     const pool = wl.threads;
-    return thread_vote.bestThreadWorker(pool);
+    return thread_ops.bestThreadWorker(pool);
 }
 
 // nodestime available-nodes advance (tm.advance_nodes_time).
