@@ -187,6 +187,12 @@ pub fn build(b: *std.Build) void {
         .{ .name = "shared_history", .path = "src/board/shared_history.zig" },
         .{ .name = "search_common", .path = "src/board/search_common.zig" },
         .{ .name = "history", .path = "src/board/history.zig" },
+        // search_manager and root_move_build are registered as named modules (not path-imported
+        // leaves) so they can be imported by module name from any directory. A path import
+        // (@import("x.zig")) binds a file into its importer's module and directory; naming them
+        // lets their location change without touching the importers. Same files, no behavior change.
+        .{ .name = "search_manager", .path = "src/support/search_manager.zig" },
+        .{ .name = "root_move_build", .path = "src/support/root_move_build.zig" },
     };
     var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
     for (module_specs) |spec| {
@@ -198,6 +204,17 @@ pub fn build(b: *std.Build) void {
     }
     const Edge = struct { from: []const u8, imp: []const u8, to: []const u8 };
     const module_edges = [_]Edge{
+        // Import edges for search_manager and root_move_build now that they are standalone
+        // named modules; these deps were previously inherited from the module that path-imported
+        // them (engine for search_manager, thread for root_move_build).
+        .{ .from = "engine", .imp = "search_manager", .to = "search_manager" },
+        .{ .from = "thread", .imp = "root_move_build", .to = "root_move_build" },
+        .{ .from = "root_move_build", .imp = "position", .to = "position" },
+        .{ .from = "root_move_build", .imp = "state_list", .to = "state_list" },
+        .{ .from = "root_move_build", .imp = "tablebase", .to = "tablebase" },
+        .{ .from = "root_move_build", .imp = "option", .to = "option" },
+        .{ .from = "root_move_build", .imp = "movegen", .to = "movegen" },
+        .{ .from = "root_move_build", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "numa_replication", .imp = "numa_config", .to = "numa_config" },
         .{ .from = "position", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "position", .imp = "evaluate", .to = "evaluate" },
@@ -579,6 +596,9 @@ pub fn build(b: *std.Build) void {
     graph_test.root_module.addImport("numa_config", mods.get("numa_config").?);
     graph_test.root_module.addImport("numa_replication", mods.get("numa_replication").?);
     graph_test.root_module.addImport("position_storage", mods.get("position_storage").?);
+    // engine_graph.zig imports search_manager by name; this standalone test builds it as a fresh
+    // root module (outside the module-edge table), so the dependency must be added explicitly.
+    graph_test.root_module.addImport("search_manager", mods.get("search_manager").?);
     const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
     addTestRun(b, graph_test_step, graph_test, cov_dir, &cov_idx);
     // B2 switch: native NumaReplicationContext (numaContext member) — tests need the

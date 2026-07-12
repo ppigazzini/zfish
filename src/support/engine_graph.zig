@@ -22,7 +22,7 @@ const std = @import("std");
 const ThreadPool = @import("thread").thread_runtime.ThreadPool;
 const tt_mod = @import("tt");
 const TranspositionTable = tt_mod.TranspositionTable;
-const sm = @import("search_manager.zig");
+const sm = @import("search_manager");
 const UpdateContext = sm.UpdateContext;
 const SearchManager = sm.SearchManager;
 // M18.5: shared_state is now the generic SharedStateOf; this scaffolding binds its own

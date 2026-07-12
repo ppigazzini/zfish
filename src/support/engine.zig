@@ -72,7 +72,7 @@ const shared_state_mod = @import("shared_state");
 
 comptime {
     _ = @import("engine_graph.zig");
-    _ = @import("search_manager.zig");
+    _ = @import("search_manager");
     _ = shared_state_mod;
     _ = @import("root_move");
 }
