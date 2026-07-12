@@ -38,7 +38,7 @@ pub const TtProbeTableOutput = struct {
 
 const page_alloc = @import("page_alloc");
 const worker_layout = @import("worker_layout");
-const thread_port = @import("thread");
+const thread_ops = @import("thread_ops");
 fn reportAllocFailure(mb: usize) noreturn {
     std.debug.print("Failed to allocate {d}MB for transposition table.\n", .{mb});
     std.process.exit(1);
@@ -102,7 +102,7 @@ pub fn clearState(
 
     thread_index = 0;
     while (thread_index < thread_count) : (thread_index += 1) {
-        thread_port.waitThread(threads, thread_index);
+        thread_ops.waitThread(threads, thread_index);
     }
 }
 

@@ -159,6 +159,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "page_alloc", .path = "src/engine/state/page_alloc.zig" },
         .{ .name = "option_source", .path = "src/engine/search/option_source.zig" },
         .{ .name = "tb_source", .path = "src/engine/search/tb_source.zig" },
+        .{ .name = "thread_ops", .path = "src/engine/search/thread_ops.zig" },
         .{ .name = "shared_histories", .path = "src/engine/search/shared_histories.zig" },
         .{ .name = "shared_histories_map", .path = "src/engine/search/shared_histories_map.zig" },
         .{ .name = "network_holder", .path = "src/engine/eval/network_holder.zig" },
@@ -329,8 +330,8 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_id", .imp = "option_source", .to = "option_source" },
         .{ .from = "search_id", .imp = "timeman", .to = "timeman" },
         .{ .from = "search_id", .imp = "tt", .to = "tt" },
-        .{ .from = "search_id", .imp = "search_thread", .to = "search_thread" },
-        .{ .from = "search_id", .imp = "thread_vote", .to = "thread_vote" },
+        .{ .from = "search_id", .imp = "thread_ops", .to = "thread_ops" },
+        .{ .from = "thread_ops", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_id", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "search_id", .imp = "position_query", .to = "position_query" },
         .{ .from = "search_id", .imp = "time_source", .to = "time_source" },
@@ -503,7 +504,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "thread", .imp = "thread_runtime", .to = "thread_runtime" },
         .{ .from = "misc", .imp = "memory", .to = "memory" },
         .{ .from = "tt", .imp = "worker_layout", .to = "worker_layout" },
-        .{ .from = "tt", .imp = "thread", .to = "thread" },
+        .{ .from = "tt", .imp = "thread_ops", .to = "thread_ops" },
         .{ .from = "thread", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "engine", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "thread", .imp = "movegen", .to = "movegen" },
@@ -563,6 +564,9 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("option_source", mods.get("option_source").?);
     exe.root_module.addImport("tb_source", mods.get("tb_source").?);
     exe.root_module.addImport("tablebase", mods.get("tablebase").?);
+    exe.root_module.addImport("thread_ops", mods.get("thread_ops").?);
+    exe.root_module.addImport("search_thread", mods.get("search_thread").?);
+    exe.root_module.addImport("thread_vote", mods.get("thread_vote").?);
     exe.root_module.addImport("engine_object", mods.get("engine_object").?);
     // main.zig and its worker-construction helper reach the search-history helpers directly.
     exe.root_module.addImport("search_driver", mods.get("search_driver").?);
@@ -1028,7 +1032,7 @@ pub fn build(b: *std.Build) void {
     // count only ratchets down; the baseline is the currently-allowed maximum and the
     // gate fails if the real count exceeds it. Lower it as each seam is severed; at 0
     // the engine is a standalone search+eval library.
-    const headless_baseline = "6";
+    const headless_baseline = "3";
     const headless_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/headless_lint.sh"),
@@ -1054,6 +1058,7 @@ pub fn build(b: *std.Build) void {
         mods.get("page_alloc").?,
         mods.get("option_source").?,
         mods.get("tb_source").?,
+        mods.get("thread_ops").?,
         mods.get("tt").?,
         mods.get("network_holder").?,
         mods.get("shared_histories").?,
