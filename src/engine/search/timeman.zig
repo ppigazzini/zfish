@@ -122,7 +122,7 @@ pub fn init(input: TimemanInput) TimemanOutput {
 }
 
 // --- tests--------------------------------------------------------------
-// Pure port of Stockfish TimeManagement::init. The exact float outputs are not
+// Mirrors Stockfish's TimeManagement::init. The exact float outputs are not
 // pinned (they track upstream constants); these assert the structural invariants.
 const base = TimemanInput{
     .time_us = 60_000_000,
