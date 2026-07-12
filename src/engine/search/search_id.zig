@@ -11,7 +11,7 @@ const graph_layout = @import("graph_layout");
 const option_port = @import("option");
 const timeman_port = @import("timeman");
 const tt = @import("tt");
-const native_thread = @import("native_thread");
+const search_thread = @import("search_thread");
 const thread_vote = @import("thread_vote");
 const nnue_acc = @import("nnue_accumulator");
 const position_query = @import("position_query");
@@ -213,10 +213,10 @@ pub fn searchIdState(wl: *graph_layout.WorkerLayout, out: *ZfishIdState) void {
 
 // Start / wait the sibling search threads.
 pub fn ssThreadsStart(wl: *const graph_layout.WorkerLayout) void {
-    native_thread.startPoolSiblings(wl.threads);
+    search_thread.startPoolSiblings(wl.threads);
 }
 pub fn ssWaitFinished(wl: *const graph_layout.WorkerLayout) void {
-    native_thread.waitPoolSiblings(wl.threads);
+    search_thread.waitPoolSiblings(wl.threads);
 }
 
 // Worker of the vote-winning thread (Lazy-SMP best-thread selection via the leaf

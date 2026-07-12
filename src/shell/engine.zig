@@ -436,7 +436,7 @@ pub fn resizeThreads(
 }
 
 pub fn resizeThreadsEngine(engine_ptr: *native_engine.NativeEngine) void {
-    // The resize chain (reconfigure -> native_threadpool.set/boundNodesAssign)
+    // The resize chain (reconfigure -> thread_pool.set/boundNodesAssign)
     // now propagates OOM / thread-spawn errors as `!void`; this is the engine's single
     // handling boundary. A UCI Threads/NumaPolicy change or init that cannot allocate
     // its thread pool is unrecoverable, so fail loudly here instead of scattering

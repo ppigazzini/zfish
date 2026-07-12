@@ -1,4 +1,4 @@
-// Native Search Thread.
+// Search thread.
 //
 // The thread vehicle: a std.Thread idle_loop that runs the search as its job. The
 // search BODY lives elsewhere; this owns the *vehicle* -- the worker handle + the
@@ -21,11 +21,11 @@ const rt = @import("thread_runtime");
 const graph_layout = @import("graph_layout");
 const native_hooks = @import("native_hooks");
 
-// Marker at offset 0 (no native reader touches thread@0, so this just makes a
-// NativeThread identifiable in a dump and pads `worker` to offset 8).
+// Marker at offset 0 (no reader touches thread@0, so this just makes a
+// SearchThread identifiable in a dump and pads `worker` to offset 8).
 pub const thread_tag: u64 = 0x5a_46_49_53_48_54_48_31; // "ZFISHTH1"
 
-pub const NativeThread = struct {
+pub const SearchThread = struct {
     tag: u64 = thread_tag, // @0
     worker: ?*anyopaque = null, // @8  -- offset-read by thread_off.worker
     runtime: ?*rt.ThreadRuntime = null, // @16
@@ -33,7 +33,7 @@ pub const NativeThread = struct {
 
     // Allocate + spawn the futex idle-loop runner. The Worker is attached later
     // (setWorker), by the ThreadPool construction that builds the Worker block.
-    pub fn spawn(self: *NativeThread, allocator: std.mem.Allocator, idx: usize) !void {
+    pub fn spawn(self: *SearchThread, allocator: std.mem.Allocator, idx: usize) !void {
         const runtime = try allocator.create(rt.ThreadRuntime);
         errdefer allocator.destroy(runtime);
         runtime.* = rt.ThreadRuntime{};
@@ -41,21 +41,21 @@ pub const NativeThread = struct {
         self.* = .{ .worker = null, .runtime = runtime, .idx = idx };
     }
 
-    pub fn setWorker(self: *NativeThread, worker: ?*anyopaque) void {
+    pub fn setWorker(self: *SearchThread, worker: ?*anyopaque) void {
         self.worker = worker;
     }
 
     // Submit a job to the idle loop and return immediately. The job runs on the thread.
-    pub fn startJob(self: *NativeThread, job: rt.ThreadJobFn, ctx: ?*anyopaque) void {
+    pub fn startJob(self: *SearchThread, job: rt.ThreadJobFn, ctx: ?*anyopaque) void {
         self.runtime.?.runCustomJob(job, ctx);
     }
 
-    pub fn waitForSearchFinished(self: *NativeThread) void {
+    pub fn waitForSearchFinished(self: *SearchThread) void {
         self.runtime.?.waitForSearchFinished();
     }
 
     // Join the runner, then tear down the attached Worker. Idempotent.
-    pub fn deinit(self: *NativeThread, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *SearchThread, allocator: std.mem.Allocator) void {
         if (self.runtime) |runtime| {
             runtime.deinit(); // join the idle loop first -- no thread uses worker after this
             allocator.destroy(runtime);
@@ -74,11 +74,11 @@ pub const NativeThread = struct {
 // Native teardown for the Worker (via native_hooks.native_worker_destroy):
 // destruct the Worker + large-page free.
 
-// The native_thread tests attach only dummy workers (worker == 0), so deinit's
+// The search_thread tests attach only dummy workers (worker == 0), so deinit's
 // native_hooks.native_worker_destroy call is never reached — no test stub needed.
 
 // The search driver entry, injected by the thread module at search start.
-// native_thread must not import position (position imports the thread stack for its
+// search_thread must not import position (position imports the thread stack for its
 // pool ops, so the reverse would cycle), so the driver is registered as a function
 // pointer rather than called by name.
 pub var searchEntry: ?*const fn (?*anyopaque) void = null;
@@ -90,12 +90,12 @@ pub fn searchJob(ctx: ?*anyopaque) void {
 }
 
 // Start this thread's search: run searchJob with the attached Worker as context.
-pub fn startSearching(self: *NativeThread) void {
+pub fn startSearching(self: *SearchThread) void {
     self.startJob(searchJob, self.worker);
 }
 
-// Reinterpret a pool thread slot (a *NativeThread) for the pool-level sibling ops.
-inline fn asNativeThread(thread: *graph_layout.Thread) *NativeThread {
+// Reinterpret a pool thread slot (a *SearchThread) for the pool-level sibling ops.
+inline fn asSearchThread(thread: *graph_layout.Thread) *SearchThread {
     return @ptrCast(@alignCast(thread));
 }
 
@@ -106,7 +106,7 @@ pub fn startPoolSiblings(pool: *graph_layout.ThreadPool) void {
     const tp = pool;
     const n = tp.numThreads();
     var i: usize = 1;
-    while (i < n) : (i += 1) startSearching(asNativeThread(tp.threadTyped(i)));
+    while (i < n) : (i += 1) startSearching(asSearchThread(tp.threadTyped(i)));
 }
 
 // Wait for the sibling threads (index 1..) to finish their current search.
@@ -114,7 +114,7 @@ pub fn waitPoolSiblings(pool: *graph_layout.ThreadPool) void {
     const tp = pool;
     const n = tp.numThreads();
     var i: usize = 1;
-    while (i < n) : (i += 1) asNativeThread(tp.threadTyped(i)).waitForSearchFinished();
+    while (i < n) : (i += 1) asSearchThread(tp.threadTyped(i)).waitForSearchFinished();
 }
 
 // Per-thread Worker::clear job. Submitted to the idle loop; caller waits separately.
@@ -123,7 +123,7 @@ fn clearWorkerJob(ctx: ?*anyopaque) void {
     native_hooks.worker_clear(ctx.?);
 }
 
-pub fn clearWorker(self: *NativeThread) void {
+pub fn clearWorker(self: *SearchThread) void {
     self.startJob(clearWorkerJob, self.worker);
 }
 
@@ -131,9 +131,9 @@ pub fn clearWorker(self: *NativeThread) void {
 
 const testing = std.testing;
 
-test "NativeThread keeps worker at offset 8" {
-    try testing.expectEqual(@as(usize, 0), @offsetOf(NativeThread, "tag"));
-    try testing.expectEqual(@as(usize, 8), @offsetOf(NativeThread, "worker"));
+test "SearchThread keeps worker at offset 8" {
+    try testing.expectEqual(@as(usize, 0), @offsetOf(SearchThread, "tag"));
+    try testing.expectEqual(@as(usize, 8), @offsetOf(SearchThread, "worker"));
 }
 
 const MockCtx = struct {
@@ -146,8 +146,8 @@ const MockCtx = struct {
     }
 };
 
-test "NativeThread spawns, round-trips a job, and joins" {
-    var thread: NativeThread = .{};
+test "SearchThread spawns, round-trips a job, and joins" {
+    var thread: SearchThread = .{};
     try thread.spawn(testing.allocator, 0);
     defer thread.deinit(testing.allocator);
 
@@ -172,7 +172,7 @@ test "setWorker stores the handle read by offset 8" {
     }.noop;
     defer native_hooks.native_worker_destroy = prev_destroy;
 
-    var thread: NativeThread = .{};
+    var thread: SearchThread = .{};
     try thread.spawn(testing.allocator, 3);
     defer thread.deinit(testing.allocator);
 

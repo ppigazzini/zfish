@@ -16,8 +16,8 @@ const numa = @import("numa");
 // Zig-owned thread job runner. Verified by its own concurrency tests.
 pub const thread_runtime = @import("thread_runtime");
 // Native thread runtime: native Threads + ThreadPool driving the idle-loop vehicle.
-const native_thread = @import("native_thread");
-const native_threadpool = @import("native_threadpool.zig");
+const search_thread = @import("search_thread");
+const thread_pool = @import("thread_pool.zig");
 // The root-move builder + Syzygy root-ranking cluster now lives in its own leaf.
 // startThinking (and the RootSetupInput it fills) reference these by their old names.
 const root_move_build = @import("root_move_build");
@@ -27,8 +27,8 @@ const buildRootFen = root_move_build.buildRootFen;
 const loadPositionSnapshot = root_move_build.loadPositionSnapshot;
 const rootMovesDestroy = root_move_build.rootMovesDestroy;
 
-// Reinterpret a pool thread slot (NativeThread*) for the sync handshake.
-inline fn nt(thread: *graph_layout.Thread) *native_thread.NativeThread {
+// Reinterpret a pool thread slot (SearchThread*) for the sync handshake.
+inline fn nt(thread: *graph_layout.Thread) *search_thread.SearchThread {
     return @ptrCast(@alignCast(thread));
 }
 
@@ -37,10 +37,10 @@ inline fn threadWaitFinished(thread: *graph_layout.Thread) void {
     nt(thread).waitForSearchFinished();
 }
 inline fn threadStartSearching(thread: *graph_layout.Thread) void {
-    native_thread.startSearching(nt(thread));
+    search_thread.startSearching(nt(thread));
 }
 inline fn threadClearWorker(thread: *graph_layout.Thread) void {
-    native_thread.clearWorker(nt(thread));
+    search_thread.clearWorker(nt(thread));
 }
 inline fn threadRunJob(thread: *graph_layout.Thread, job: ThreadCallback, ctx: ?*anyopaque) void {
     nt(thread).startJob(job, ctx);
@@ -178,7 +178,7 @@ pub fn reconfigure(
 ) !void {
     if (pool.numThreads() > 0) {
         waitMainThread(pool);
-        native_threadpool.clear(pool);
+        thread_pool.clear(pool);
     }
 
     const requested = option_port.optionThreads();
@@ -203,9 +203,9 @@ pub fn reconfigure(
             requested,
             bound_nodes.ptr,
         );
-        try native_threadpool.boundNodesAssign(pool, allocator, bound_nodes);
+        try thread_pool.boundNodesAssign(pool, allocator, bound_nodes);
     } else {
-        try native_threadpool.boundNodesAssign(pool, allocator, null);
+        try thread_pool.boundNodesAssign(pool, allocator, null);
     }
 
     const node_count = @max(numa.configNodeCount(numa_config), @as(usize, 1));
@@ -241,7 +241,7 @@ pub fn reconfigure(
     // Build native Threads (idle loop + Worker) into the pool's threads vector via
     // the native ThreadPool. Single-node host (do_bind == false): numaIndex 0,
     // idxInNuma == idx, totalNuma == requested.
-    try native_threadpool.set(
+    try thread_pool.set(
         pool,
         @constCast(shared_state),
         update_context,
@@ -258,8 +258,8 @@ pub fn reconfigure(
     native_hooks.verify_thread_graph(pool, requested, if (do_bind) requested else 0);
 }
 
-// The search-driver entry native_thread invokes as each thread's search job. Set
-// as a function pointer so native_thread need not import position.
+// The search-driver entry search_thread invokes as each thread's search job. Set
+// as a function pointer so search_thread need not import position.
 fn workerSearchEntry(ctx: ?*anyopaque) void {
     search_driver.workerStartSearching(ctx);
 }
@@ -270,7 +270,7 @@ pub fn startThinking(
     limits: *const graph_layout.LimitsType,
     states_slot: *anyopaque,
 ) !void {
-    native_thread.searchEntry = &workerSearchEntry;
+    search_thread.searchEntry = &workerSearchEntry;
     waitMainThread(pool);
     const tp = pool;
     if (tp.mainManager()) |m| {
@@ -406,13 +406,13 @@ pub fn startSearching(pool: *graph_layout.ThreadPool) void {
 
 // Wait until one thread's worker finishes its current search (native ThreadPool op).
 pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
-    native_threadpool.waitThread(pool, thread_id);
+    thread_pool.waitThread(pool, thread_id);
 }
 
 // Join+free the native Threads and null the pool's threads vector (engine teardown).
-// Wraps native_threadpool for main.zig, which doesn't import it directly.
+// Wraps thread_pool for main.zig, which doesn't import it directly.
 pub fn nativeThreadpoolClear(pool: *graph_layout.ThreadPool) void {
-    native_threadpool.clear(pool);
+    thread_pool.clear(pool);
 }
 
 pub fn waitForSearchFinished(pool: *graph_layout.ThreadPool) void {

@@ -113,7 +113,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "score", .path = "src/engine/board/score.zig" },
         .{ .name = "thread_vote", .path = "src/platform/thread_vote.zig" },
         .{ .name = "thread_runtime", .path = "src/platform/thread_runtime.zig" },
-        .{ .name = "native_thread", .path = "src/platform/native_thread.zig" },
+        .{ .name = "search_thread", .path = "src/platform/search_thread.zig" },
         .{ .name = "numa", .path = "src/platform/numa.zig" },
         .{ .name = "graph_layout", .path = "src/engine/state/graph_layout.zig" },
         .{ .name = "shared_state", .path = "src/engine/state/shared_state.zig" },
@@ -296,7 +296,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_driver", .imp = "uci_move", .to = "uci_move" },
         .{ .from = "search_driver", .imp = "score", .to = "score" },
         .{ .from = "search_driver", .imp = "thread_vote", .to = "thread_vote" },
-        .{ .from = "search_driver", .imp = "native_thread", .to = "native_thread" },
+        .{ .from = "search_driver", .imp = "search_thread", .to = "search_thread" },
         .{ .from = "search_driver", .imp = "option", .to = "option" },
         .{ .from = "search_driver", .imp = "timeman", .to = "timeman" },
         .{ .from = "search_driver", .imp = "worker_histories", .to = "worker_histories" },
@@ -327,7 +327,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_id", .imp = "option", .to = "option" },
         .{ .from = "search_id", .imp = "timeman", .to = "timeman" },
         .{ .from = "search_id", .imp = "tt", .to = "tt" },
-        .{ .from = "search_id", .imp = "native_thread", .to = "native_thread" },
+        .{ .from = "search_id", .imp = "search_thread", .to = "search_thread" },
         .{ .from = "search_id", .imp = "thread_vote", .to = "thread_vote" },
         .{ .from = "search_id", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "search_id", .imp = "position_query", .to = "position_query" },
@@ -430,7 +430,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "position_snapshot", .to = "position_snapshot" },
         .{ .from = "thread", .imp = "native_hooks", .to = "native_hooks" },
         .{ .from = "engine", .imp = "native_hooks", .to = "native_hooks" },
-        .{ .from = "native_thread", .imp = "native_hooks", .to = "native_hooks" },
+        .{ .from = "search_thread", .imp = "native_hooks", .to = "native_hooks" },
         .{ .from = "engine", .imp = "uci_move", .to = "uci_move" },
         .{ .from = "engine", .imp = "misc", .to = "misc" },
         .{ .from = "engine", .imp = "thread", .to = "thread" },
@@ -497,9 +497,9 @@ pub fn build(b: *std.Build) void {
         .{ .from = "position", .imp = "score", .to = "score" },
         .{ .from = "thread", .imp = "thread_vote", .to = "thread_vote" },
         .{ .from = "thread_vote", .imp = "graph_layout", .to = "graph_layout" },
-        .{ .from = "native_thread", .imp = "graph_layout", .to = "graph_layout" },
-        .{ .from = "native_thread", .imp = "thread_runtime", .to = "thread_runtime" },
-        .{ .from = "thread", .imp = "native_thread", .to = "native_thread" },
+        .{ .from = "search_thread", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "search_thread", .imp = "thread_runtime", .to = "thread_runtime" },
+        .{ .from = "thread", .imp = "search_thread", .to = "search_thread" },
         .{ .from = "thread", .imp = "thread_runtime", .to = "thread_runtime" },
         .{ .from = "misc", .imp = "memory", .to = "memory" },
         .{ .from = "tt", .imp = "graph_layout", .to = "graph_layout" },
@@ -1045,7 +1045,7 @@ pub fn build(b: *std.Build) void {
         mods.get("tt").?,
         mods.get("network_holder").?,
         mods.get("shared_histories").?,
-        mods.get("native_thread").?,
+        mods.get("search_thread").?,
         mods.get("thread_runtime").?,
     }) |unit_module| {
         const unit_test = b.addTest(.{ .root_module = unit_module });
@@ -1238,22 +1238,22 @@ pub fn build(b: *std.Build) void {
     state_list_test.root_module.addImport("position_types", mods.get("position_types").?);
     addTestRun(b, test_step, state_list_test, cov_dir, &cov_idx);
 
-    // native_threadpool.zig is path-imported into the (untested) `thread` module,
-    // so its NativePool footprint + bound-slice lifecycle `test {}` blocks never ran in any
-    // step. Build it as a standalone test artifact (spawns real NativeThreads -> link_libc)
+    // thread_pool.zig is path-imported into the (untested) `thread` module,
+    // so its Pool footprint + bound-slice lifecycle `test {}` blocks never ran in any
+    // step. Build it as a standalone test artifact (spawns real SearchThreads -> link_libc)
     // so `zig build test` actually exercises the ThreadPool-footprint writer/accessors.
-    const native_threadpool_test = b.addTest(.{
+    const thread_pool_test = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/platform/native_threadpool.zig"),
+            .root_source_file = b.path("src/platform/thread_pool.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,
         }),
     });
-    native_threadpool_test.root_module.addImport("native_thread", mods.get("native_thread").?);
-    native_threadpool_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
-    native_threadpool_test.root_module.addImport("native_hooks", mods.get("native_hooks").?);
-    addTestRun(b, test_step, native_threadpool_test, cov_dir, &cov_idx);
+    thread_pool_test.root_module.addImport("search_thread", mods.get("search_thread").?);
+    thread_pool_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
+    thread_pool_test.root_module.addImport("native_hooks", mods.get("native_hooks").?);
+    addTestRun(b, test_step, thread_pool_test, cov_dir, &cov_idx);
 
     // worker_native_construct.zig is path-imported only into main.zig (the exe
     // root, not a test root), so its lone test -- the WorkerLayout offset-invariant check
