@@ -225,13 +225,18 @@ jobs:
 
       # Pre-fetch the net so it is cached before the build. `zig build net` runs the pure-Zig
       # fetcher (tools/fetch_net.zig) -- no bash/curl/wget -- and early-exits when present.
+      # `shell: bash` is required on the windows-11-arm emulated lane: the x86_64 Zig above is
+      # put on PATH via a bash step ($GITHUB_PATH with a bash-style path), so a step must run
+      # under bash to resolve `zig`; the default Windows shell is PowerShell and can't. Harmless
+      # on the other lanes (git-bash on Windows-x64, bash on macOS).
       - name: Fetch the NNUE net
+        shell: bash
         run: zig build net
 
       # Full cross-OS parity: bench signature (2067208) + the six golden gates, all via the
-      # pure-Zig harness. No shell needed -- the net fetch and the harness are both compiled
-      # Zig tools now, so these lanes carry no bash/coreutils dependency.
+      # pure-Zig harness. `shell: bash` for the same emulated-lane PATH reason as the fetch step.
       - name: Build + parity-portable (native, ${{ matrix.arch }})
+        shell: bash
         run: zig build parity-portable -Dos=${{ matrix.os }} -Darch=${{ matrix.arch }}
 
   # M23.1 memory-safety gate. Valgrind memcheck over the two allocation-lifecycle paths a
@@ -273,17 +278,33 @@ jobs:
   # -> the parallel test runs never write the same dir). We then merge the subdirs into one
   # report. Gives a real coverage number to hold the M22.0 test-surface accountable. Pinned to
   # the sse41 baseline for reproducibility, matching the parity job.
+  #
+  # continue-on-error: coverage is INFORMATIONAL, not a correctness gate -- the tests are already
+  # gated (blocking) in the `parity` job; this job re-runs them under kcov only to report the
+  # number. So a kcov hiccup must never block a push. kcov is no longer packaged for Ubuntu 24.04
+  # (noble), so it is built from source (the deps are its documented build requirements); the
+  # ~2-min build runs each time (a non-blocking job -- not worth caching a root-owned prefix).
   coverage:
     name: Linux test coverage (kcov)
     runs-on: ubuntu-latest
+    continue-on-error: true
     timeout-minutes: 30
+    env:
+      KCOV_REF: v42
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.16.0
-      - name: Install kcov
-        run: sudo apt-get update && sudo apt-get install -y kcov
+      - name: Build kcov from source
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-dev libssl-dev libcurl4-openssl-dev \
+            zlib1g-dev libdw-dev libiberty-dev cmake
+          git clone --depth 1 --branch "$KCOV_REF" https://github.com/SimonKagstrom/kcov.git
+          cmake -S kcov -B kcov/build
+          cmake --build kcov/build --parallel
+          sudo cmake --install kcov/build
       # The unit/property tests are pure Zig (no NNUE net load), so no net fetch is needed.
       - name: Run the unit tests under kcov
         run: zig build test -Dtest-coverage -Darch=x86-64-sse41-popcnt
