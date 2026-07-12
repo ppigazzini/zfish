@@ -1,4 +1,4 @@
-// Native NNUE content hashing.
+// NNUE content hashing.
 //
 // Network::get_content_hash (network.cpp) combines per-component hashes of the
 // feature transformer and the eight layer stacks. Each component hashes its raw
@@ -160,8 +160,8 @@ pub fn networkHashValue() u32 {
     return featureTransformerHashValue() ^ architectureHashValue();
 }
 
-// std::hash<EvalFile>: combine hash_bytes of defaultName, current, netDescription
-// (each a FixedString hashed over its .data()/.size()).
+// Eval-file identity hash (matches upstream): combine the byte hashes of
+// defaultName, current, and netDescription (each a fixed string).
 pub fn evalFileContentHash(default_name: []const u8, current: []const u8, description: []const u8) usize {
     var h: usize = 0;
     hashCombine(&h, @intCast(hashBytes(default_name)));

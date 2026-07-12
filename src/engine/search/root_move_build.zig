@@ -1,7 +1,7 @@
 // Root-move construction + Syzygy tablebase root-ranking.
 //
 // The `go`-path root-move builder: ranks the legal / searchmoves by DTZ then WDL when
-// tablebases are loaded, builds the native RootMoves array the workers bind to, and owns
+// tablebases are loaded, builds the RootMoves array the workers bind to, and owns
 // the scratch position + root-FEN helpers it needs. Pure over position / state_list /
 // tablebase / movegen / option -- NO thread or worker-pool dependency, so the OOM paths
 // here are unit-testable in isolation.
@@ -71,10 +71,10 @@ const RankedRootMove = struct {
     tb_score: c_int,
 };
 
-// Builds/destroys the native RootMoves array: a plain `count`-element []RootMove, each
+// Builds/destroys the RootMoves array: a plain `count`-element []RootMove, each
 // element zeroed then initialised to the RootMove default (scores at -VALUE_INFINITE)
 // with the ranked tb fields and the single-move PV. The worker copies it into its own
-// vector-header buffer (workerSetRootMoves reads src.ptr/src.len). @sizeOf(RootMove)==552.
+// slice-header buffer (workerSetRootMoves reads src.ptr/src.len). @sizeOf(RootMove)==552.
 fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?[]search_types.RootMove {
     if (count == 0) return &[_]search_types.RootMove{};
     const elems = std.heap.c_allocator.alloc(search_types.RootMove, count) catch return null;
@@ -164,7 +164,7 @@ fn countPieces(pos: *const position_port.Position) usize {
 }
 
 fn loadTbConfig(pos: *const position_port.Position) TbConfig {
-    // syzygy options read from the native global option model (option_port.*), not a
+    // syzygy options read from the global option model (option_port.*), not a
     // handle -- so no `options` param is threaded here.
     const snapshot = loadPositionSnapshot(pos);
     var config = TbConfig{

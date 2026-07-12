@@ -1,4 +1,4 @@
-//! Syzygy tablebase probe surface (relocated out of main.zig). Currently a stub:
+//! Syzygy tablebase probe surface. Currently a stub:
 //! zfish does not ship the Syzygy prober, so max-cardinality is 0, every probe reports
 //! "unavailable", and init is a no-op. Kept as a real module (not main.zig C-ABI glue) so the
 //! search/engine paths call it as ordinary Zig.

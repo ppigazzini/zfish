@@ -21,9 +21,9 @@ pub fn intByIndex(idx: usize) c_int {
     return ensureModel().intByIndex(idx);
 }
 
-// Read an option's integer value by name (0 if absent). Used by native callers
+// Read an option's integer value by name (0 if absent). Used by callers
 // that carry an option name (e.g. the search driver's MultiPV / UCI_ShowWDL).
-/// Read an integer option by name from the native option model.
+/// Read an integer option by name from the option model.
 pub fn intByName(name: []const u8) c_int {
     return ensureModel().getInt(name);
 }

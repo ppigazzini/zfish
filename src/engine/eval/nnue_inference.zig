@@ -105,7 +105,7 @@ fn layerWeights(bucket: usize, idx: c_int) [*]const i8 {
 }
 
 fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
-    // Read the affine-layer weights from the Zig-owned native storage. The native parse
+    // Read the affine-layer weights from the Zig-owned storage. The parse
     // writes this storage and is the sole source, so the eval is bench-verified.
     const fc0_b = layerBiases(bucket, 0);
     const fc0_w = layerWeights(bucket, 0);

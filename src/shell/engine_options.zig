@@ -1,7 +1,7 @@
 // Engine option-registration helpers.
 //
 // The add{String,Check,Spin,Button}Option wrappers + the engineAddOption core that
-// register the UCI options into the native OptionsModel. Used only by
+// register the UCI options into the OptionsModel. Used only by
 // engine.zig's initBody; they touch only std + the option module, so they extract
 // to a leaf with no cycle. engine.zig aliases the four add*Option helpers for
 // initBody. (The option_callback_* constants stay in engine.zig -- its

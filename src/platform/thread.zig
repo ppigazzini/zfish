@@ -15,7 +15,7 @@ const numa = @import("numa");
 
 // Zig-owned thread job runner. Verified by its own concurrency tests.
 pub const thread_runtime = @import("thread_runtime");
-// Native thread runtime: native Threads + ThreadPool driving the idle-loop vehicle.
+// The thread runtime: the threads + the thread pool driving the idle-loop vehicle.
 const search_thread = @import("search_thread");
 const thread_pool = @import("thread_pool.zig");
 // The root-move builder + Syzygy root-ranking cluster now lives in its own leaf.
@@ -32,7 +32,7 @@ inline fn nt(thread: *graph_layout.Thread) *search_thread.SearchThread {
     return @ptrCast(@alignCast(thread));
 }
 
-// Thread sync handshake -> the native runtime.
+// Thread sync handshake -> the runtime.
 inline fn threadWaitFinished(thread: *graph_layout.Thread) void {
     nt(thread).waitForSearchFinished();
 }
@@ -45,11 +45,10 @@ inline fn threadClearWorker(thread: *graph_layout.Thread) void {
 inline fn threadRunJob(thread: *graph_layout.Thread, job: ThreadCallback, ctx: ?*anyopaque) void {
     nt(thread).startJob(job, ctx);
 }
-// Read searchmoves[index] as a Zig-owned SearchMoveText record: the libc++
-// std::string SSO byte decode is gone -- the length + inline chars are read through
-// typed struct fields. The header stays a {begin,end,cap} usize triple, so the
-// element pointer is still @ptrFromInt(begin + index*stride), but into Zig-owned
-// memory (no foreign-runtime layout). Gate-verified by search-modes.
+// Read searchmoves[index] as a Zig-owned SearchMoveText record: the length + inline
+// chars are read through typed struct fields. The header stays a {begin,end,cap} usize
+// triple, so the element pointer is still @ptrFromInt(begin + index*stride), but into
+// Zig-owned memory. Gate-verified by search-modes.
 inline fn limitsSearchmoveText(limits: *const graph_layout.LimitsType, index: usize) ByteView {
     const rec: *const graph_layout.SearchMoveText = &limits.searchmoves[index];
     return .{ .ptr = &rec.text, .len = rec.len };
@@ -91,8 +90,8 @@ const PositionSnapshot = position_snapshot.PositionSnapshot;
 const numa_policy_none: u8 = 0;
 const numa_policy_auto: u8 = 1;
 
-// Copy the LimitsType POD fields (everything but the leading searchmoves vector) into
-// the worker's limits member. LimitsType is a native struct now, so copy by field rather
+// Copy the LimitsType POD fields (everything but the leading searchmoves slice) into
+// the worker's limits member. LimitsType is a struct now, so copy by field rather
 // than a byte range; searchmoves is deliberately left as the worker's own (the search
 // reads the worker's, always empty on the gated single-node path).
 fn workerSetLimits(thread: *graph_layout.Thread, src_limits: *const graph_layout.LimitsType) void {
@@ -116,7 +115,7 @@ fn workerSetLimits(thread: *graph_layout.Thread, src_limits: *const graph_layout
 // Copy the ranked source RootMoves into the worker's own []RootMove (the DST
 // is a typed slice now, unblocked by the proof the WorkerLayout layout is free).
 // Reuse the buffer when the count is unchanged (the common re-search case), else free
-// and reallocate -- the slice equivalent of the old std::vector copy-assign.
+// and reallocate -- the slice equivalent of a grow-and-copy.
 fn workerSetRootMoves(thread: *graph_layout.Thread, src: []const search_types.RootMove) void {
     const worker = thread.worker.?;
     if (src.len == 0) {
@@ -136,9 +135,9 @@ const NumaNodeCallback = *const fn (?*anyopaque) void;
 
 fn applyRootSetup(context_ptr: ?*anyopaque) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
-    // Native LimitsType POD-field copy.
+    // LimitsType POD-field copy.
     workerSetLimits(context.thread, context.input.limits);
-    // Native vector<RootMove> copy-assign.
+    // []RootMove grow-and-copy.
     workerSetRootMoves(context.thread, context.input.root_moves);
     if (graph_layout.Worker.fromThread(context.thread)) |w| {
         w.resetRootSetupState();
@@ -238,8 +237,8 @@ pub fn reconfigure(
         }
     }
 
-    // Build native Threads (idle loop + Worker) into the pool's threads vector via
-    // the native ThreadPool. Single-node host (do_bind == false): numaIndex 0,
+    // Build the threads (idle loop + Worker) into the pool's threads slice via
+    // the thread pool. Single-node host (do_bind == false): numaIndex 0,
     // idxInNuma == idx, totalNuma == requested.
     try thread_pool.set(
         pool,
@@ -252,7 +251,7 @@ pub fn reconfigure(
     waitMainThread(pool);
 
     // Prove the freshly (re)configured pool matches the Zig model of
-    // the ThreadPool/Thread graph -- stop/increaseDepth zeroed, threads vector
+    // the ThreadPool/Thread graph -- stop/increaseDepth zeroed, threads slice
     // sized == requested, boundThreadToNumaNode sized as bound, each Thread's
     // Worker slot bound. Read-only; panics on drift.
     runtime_hooks.verify_thread_graph(pool, requested, if (do_bind) requested else 0);
@@ -404,12 +403,12 @@ pub fn startSearching(pool: *graph_layout.ThreadPool) void {
     }
 }
 
-// Wait until one thread's worker finishes its current search (native ThreadPool op).
+// Wait until one thread's worker finishes its current search (thread pool op).
 pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
     thread_pool.waitThread(pool, thread_id);
 }
 
-// Join+free the native Threads and null the pool's threads vector (engine teardown).
+// Join+free the threads and null the pool's threads slice (engine teardown).
 // Wraps thread_pool for main.zig, which doesn't import it directly.
 pub fn threadPoolClear(pool: *graph_layout.ThreadPool) void {
     thread_pool.clear(pool);
@@ -424,8 +423,8 @@ pub fn waitForSearchFinished(pool: *graph_layout.ThreadPool) void {
 }
 
 pub fn ensureNetworkReplicated(pool: *graph_layout.ThreadPool) void {
-    // The NNUE weights are always resident in native storage (no per-node Network
-    // replica), so Worker::ensure_network_replicated is a no-op.
+    // The NNUE weights are always resident (no per-node Network replica), so the
+    // per-worker ensure_network_replicated is a no-op.
     _ = pool;
 }
 

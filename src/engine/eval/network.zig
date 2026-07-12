@@ -56,14 +56,14 @@ pub const VerifyInfo = struct {
     fc1_outputs: c_int,
 };
 
-// The native NNUE parse (parse*Native) populates the Zig-owned inference storage and is
+// The NNUE parse populates the Zig-owned inference storage and is
 // the sole source of weights. The hooks below are no-op stubs, local to this module.
 const embedded_nnue_stub = [_]u8{0};
 fn networkEmbeddedBytes() ByteView {
     return .{ .ptr = &embedded_nnue_stub, .len = 1 };
 }
 
-// Native affine-layer byte sizes — fixed by the NNUE architecture
+// Affine-layer byte sizes — fixed by the NNUE architecture
 // (fc_0 1024->32, fc_1 64->32, fc_2 32->1; biases int32 linear, weights int8 SSSE3-scrambled).
 // sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,32}.
 const layer_biases_bytes = [3]usize{ 128, 128, 4 };
@@ -164,7 +164,7 @@ pub fn verify(
 
     // The verification dims are fixed by the NNUE architecture (sizeof the
     // FeatureTransformer + NetworkArchitecture*LayerStacks; the static InputDimensions /
-    // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS). Native constants.
+    // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS). Fixed constants.
     const info = VerifyInfo{
         .size_bytes = 111263232,
         .input_dimensions = 83248,
@@ -188,13 +188,13 @@ pub fn verify(
     };
 }
 
-// Content hash of the natively-parsed feature transformer (read from the
+// Content hash of the parsed feature transformer (read from the
 // Zig-owned storage). Equivalent to FeatureTransformer::get_content_hash.
 
-// Content hash of one natively-parsed layer stack. Equivalent to
+// Content hash of one parsed layer stack. Equivalent to
 // NetworkArchitecture::get_content_hash.
 
-// Zig-owned EvalFile dynamic state + the native weight storage live in the
+// Zig-owned EvalFile dynamic state + the weight storage live in the
 // nnue_weight_storage leaf now (shared owner for the inference and I/O paths);
 // alias the accessors back so the call sites here stay unqualified.
 const nnCurrent = weight_storage.nnCurrent;
@@ -207,8 +207,8 @@ const layerStorage = weight_storage.layerStorage;
 const layerPtr = weight_storage.layerPtr;
 pub const ftPtr = weight_storage.ftPtr;
 
-// Content hash of the eval-file names (std::hash<EvalFile>), computed natively
-// from the Zig-owned EvalFile state.
+// Content hash of the eval-file names, computed from the Zig-owned EvalFile
+// state (matches upstream's net-identity hash).
 
 const Header = struct {
     hash_value: u32,
@@ -243,7 +243,7 @@ fn loadInternal() void {
     _ = loadNetworkBytes(viewToSlice(networkEmbeddedBytes()), default_name);
 }
 
-// Gather one layer stack's native biases/weights slices (fc_0/fc_1/fc_2).
+// Gather one layer stack's biases/weights slices (fc_0/fc_1/fc_2).
 fn layerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
     var b: [3][]const u8 = undefined;
     var w: [3][]const u8 = undefined;
@@ -258,7 +258,7 @@ fn layerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
     return .{ .b = b, .w = w };
 }
 
-// Serialize the native feature transformer into `out` (write_parameters blob,
+// Serialize the feature transformer into `out` (write_parameters blob,
 // including the leading component hash).
 fn emitFt(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     const ft: [*]const u8 = @ptrCast(ftPtr() orelse return error.NoNetwork);
@@ -270,7 +270,7 @@ fn emitFt(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     );
 }
 
-// Serialize one native layer stack into `out`.
+// Serialize one layer stack into `out`.
 fn emitLayer(bucket: usize, out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     const arr = layerArrays(bucket) orelse return error.NoNetwork;
     try nnue_parse.serializeLayer(nnue_hash.architectureHashValue(), arr.b, arr.w, out, a);
@@ -334,7 +334,7 @@ fn loadNetworkBytes(bytes: []const u8, current_name: []const u8) bool {
     }
 
     setLoadedState(current_name, header.description);
-    // The native parse is the sole source of weights; correctness is verified end-to-end
+    // The parse is the sole source of weights; correctness is verified end-to-end
     // by the eval gates (bench / search-parity), and the offset==bytes.len check above
     // verifies the consumed-byte count.
     return true;
@@ -358,20 +358,20 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
     return .{ .hash_value = hash_value, .description = description };
 }
 
-// FT transform for one output bucket. Reads weights from the native feature-transformer
+// FT transform for one output bucket. Reads weights from the feature-transformer
 // storage above (always resident after a network load) and runs the Zig accumulator
 // transform.
 
-// Parse the feature transformer natively into the Zig-owned storage and return the bytes
-// consumed (leading component hash + the LEB-coded params). The native parse is the sole
+// Parse the feature transformer into the Zig-owned storage and return the bytes
+// consumed (leading component hash + the LEB-coded params). The parse is the sole
 // source (the eval gates verify the weights end-to-end, and the offset==bytes.len check
 // at the end of loadNetworkBytes verifies the consumed count).
 fn loadFt(blob: []const u8) usize {
     const dst_ptr = ftStorage(nnue_parse.ft_total_bytes) orelse
-        @panic("native feature-transformer storage allocation failed");
+        @panic("feature-transformer storage allocation failed");
     const dst = dst_ptr[0..nnue_parse.ft_total_bytes];
     return nnue_parse.parseFeatureTransformer(blob, dst) orelse
-        @panic("native feature-transformer parse failed");
+        @panic("feature-transformer parse failed");
 }
 
 fn readFeatureTransformer(bytes: []const u8, offset: *usize) bool {
@@ -384,9 +384,9 @@ fn readFeatureTransformer(bytes: []const u8, offset: *usize) bool {
     return true;
 }
 
-// Parse this bucket's affine layers natively into the Zig-owned storage (skip the leading
+// Parse this bucket's affine layers into the Zig-owned storage (skip the leading
 // architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights) and return the bytes
-// consumed. Native is the sole source.
+// consumed. The parse is the sole source.
 fn loadLayer(bucket: usize, blob: []const u8) usize {
     var pos: usize = 4; // architecture component hash
     var idx: c_int = 0;
@@ -394,11 +394,11 @@ fn loadLayer(bucket: usize, blob: []const u8) usize {
         const wb = layerWeightsBytes(idx);
         const bb = layerBiasesBytes(idx);
         const bdst = layerStorage(bucket, idx, 0, bb) orelse
-            @panic("native affine-layer storage allocation failed");
+            @panic("affine-layer storage allocation failed");
         const wdst = layerStorage(bucket, idx, 1, wb) orelse
-            @panic("native affine-layer storage allocation failed");
+            @panic("affine-layer storage allocation failed");
         const used = nnue_parse.parseLayer(blob[pos..], bdst[0..bb], wdst[0..wb]) orelse
-            @panic("native affine-layer parse failed");
+            @panic("affine-layer parse failed");
         pos += used;
     }
     return pos;

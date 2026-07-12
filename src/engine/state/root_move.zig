@@ -1,4 +1,4 @@
-// Native Zig RootMove and PVMoves.
+// RootMove and PVMoves.
 //
 // The root-move list the search ranks and the per-line principal variation.
 
@@ -7,7 +7,7 @@ const std = @import("std");
 pub const max_ply = 246; // MAX_PLY
 pub const value_infinite = 32001; // VALUE_INFINITE
 
-pub const Move = u16; // Move::raw()
+pub const Move = u16; // raw Move word
 pub const move_none: Move = 0;
 
 // PVMoves: a fixed Move[MAX_PLY+1] buffer plus a length.
@@ -57,7 +57,7 @@ pub const RootMove = struct {
     tb_score: i32 = 0,
     pv: PVMoves,
 
-    // RootMove(Move m): pv.push_back(m).
+    // init(m): pv.pushBack(m).
     pub fn init(m: Move) RootMove {
         var rm = RootMove{ .pv = PVMoves.empty() };
         rm.pv.pushBack(m);

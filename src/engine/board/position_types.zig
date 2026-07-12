@@ -8,7 +8,7 @@
 // in a leaf, graph_layout can embed a *typed* Position/StateInfo in the Worker
 // block instead of an opaque [N]u8 region.
 //
-// Native structs: Zig owns the field order. The only external
+// Plain-data structs: Zig owns the field order. The only external
 // layout contracts are the fixed struct sizes (asserted below) that the Worker
 // block reserves a slot for, plus the board/side_to_move offsets the NNUE eval
 // reads (asserted against graph_layout in position.zig, which sees both).
@@ -27,10 +27,10 @@ pub const DirtyPiece = struct {
 };
 
 // Per-move threat deltas the NNUE update consumes (Position.scratch_dts):
-// ValueList<DirtyThreat,96> plus the from/to king-square bookkeeping.
+// a bounded 96-slot DirtyThreat list plus the from/to king-square bookkeeping.
 pub const DirtyThreats = struct {
-    list_values: [96]u32, // ValueList<DirtyThreat,96>::values_
-    list_size: usize, // ValueList<...>::size_
+    list_values: [96]u32, // the DirtyThreat values (bounded 96)
+    list_size: usize, // the DirtyThreat list length
     us: u8,
     prev_ksq: u8,
     ksq: u8,

@@ -1,4 +1,4 @@
-// Native StateList — the engine `states` member, holding the chain of StateInfo
+// StateList — the engine `states` member, holding the chain of StateInfo
 // records that back a position and its applied moves.
 //
 // CONTRACT:
@@ -12,7 +12,7 @@
 //     allocation, which is strictly pointer-stable.
 //
 // StateInfo is treated as an opaque 192-byte POD block (graph_layout.state_info_size);
-// the native runtime memsets/fills it via Position, so this module owns lifetime +
+// the runtime memsets/fills it via Position, so this module owns lifetime +
 // ordering only, not StateInfo's internals.
 
 const std = @import("std");
@@ -221,7 +221,7 @@ test "PendingStateStorage reset after moveOut re-creates the list" {
     storage.destroy();
 }
 
-test "StateList starts with one zeroed root, like deque<StateInfo>(1)" {
+test "StateList starts with one zeroed root" {
     var list = try StateList.init(testing.allocator);
     defer list.deinit();
     try testing.expectEqual(@as(usize, 1), list.len());
@@ -270,7 +270,7 @@ test "reset drops to a single fresh root and zeroes it" {
     try testing.expectEqual(root, list.back());
 }
 
-test "state_info_size matches the pinned C++ StateInfo footprint" {
+test "state_info_size matches the pinned StateInfo footprint" {
     // state_info_size is pinned to 192 by graph_layout.zig.
     try testing.expectEqual(@as(usize, 192), state_info_size);
 }

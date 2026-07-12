@@ -61,8 +61,8 @@ pub const SearchThread = struct {
             allocator.destroy(runtime);
             self.runtime = null;
         }
-        // Free the large-page Worker block the builder attached at worker@8
-        // (~Worker + aligned_large_pages_free); without this the ~14 MB Worker
+        // Free the large-page Worker block the builder attached at worker@8 (the
+        // Worker teardown + aligned_large_pages_free); without this the ~14 MB Worker
         // leaks on every reconfigure/teardown. Done after the join above.
         if (self.worker) |w| {
             runtime_hooks.worker_destroy(w);
@@ -71,7 +71,7 @@ pub const SearchThread = struct {
     }
 };
 
-// Native teardown for the Worker (via runtime_hooks.worker_destroy):
+// The teardown for the Worker (via runtime_hooks.worker_destroy):
 // destruct the Worker + large-page free.
 
 // The search_thread tests attach only dummy workers (worker == 0), so deinit's
@@ -117,7 +117,7 @@ pub fn waitPoolSiblings(pool: *graph_layout.ThreadPool) void {
     while (i < n) : (i += 1) asSearchThread(tp.threadTyped(i)).waitForSearchFinished();
 }
 
-// Per-thread Worker::clear job. Submitted to the idle loop; caller waits separately.
+// Per-thread worker-clear job. Submitted to the idle loop; caller waits separately.
 
 fn clearWorkerJob(ctx: ?*anyopaque) void {
     runtime_hooks.worker_clear(ctx.?);

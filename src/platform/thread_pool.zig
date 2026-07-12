@@ -7,9 +7,9 @@
 //   boundThreadToNumaNode slice {ptr@32, len@40}  (per-thread NUMA node).
 // num_threads == threads.len; threads[i] == the i-th slice element (a Thread* addr).
 //
-// LIFECYCLE NOTE: the threads-vector buffer here is Zig-allocated, and each
+// LIFECYCLE NOTE: the threads-slice buffer here is Zig-allocated, and each
 // SearchThread is Zig-owned, so teardown goes through the pool's clear() path
-// rather than any foreign destructor over this footprint. It is unit-tested in
+// rather than any implicit teardown over this footprint. It is unit-tested in
 // isolation over a standalone 64-byte buffer.
 //
 // The Worker construction (large-page alloc + constructFull +
@@ -49,7 +49,7 @@ pub const Pool = struct {
         return .{ .allocator = allocator, .slot = slot };
     }
 
-    // Build `count` native Threads (idle loops + Workers via the builder) and lay
+    // Build `count` threads (idle loops + Workers via the builder) and lay
     // them into the footprint.
     pub fn set(self: *Pool, count: usize, builder: ThreadBuilder) !void {
         self.clear();
@@ -108,8 +108,8 @@ pub const Pool = struct {
             // emits its bestmove here. Without this, deinit's exit flag races the
             // idle loop and can drop a just-queued-but-not-yet-started search job
             // -> a lost bestmove (deterministic for `go ...; quit` back-to-back).
-            // Idle threads return immediately. Mirrors ~ThreadPool's
-            // wait_for_search_finished before deleting threads.
+            // Idle threads return immediately. Waits for every in-flight search to
+            // finish, as upstream does before deleting threads.
             for (buf) |addr| {
                 const t: *SearchThread = @ptrFromInt(addr);
                 t.waitForSearchFinished();
@@ -129,9 +129,9 @@ pub const Pool = struct {
     }
 };
 
-// ---- Entry points (called by the native reconfigure + teardown) -------
+// ---- Entry points (called by the reconfigure + teardown) -------
 
-// The native worker-builder: resolves the SharedState members + numa params for
+// The worker-builder: resolves the SharedState members + numa params for
 // thread `idx`, large-page-allocs + constructs the Worker, mints the SearchManager,
 // and writes the Worker at thread+8 (worker@8). Single-node host.
 
@@ -141,7 +141,7 @@ const WorkerBuildCtx = struct {
     total: usize,
 };
 
-// Build `count` native Threads (idle loops + Workers) into the Engine's embedded
+// Build `count` threads (idle loops + Workers) into the Engine's embedded
 // ThreadPool footprint `pool`.
 pub fn set(
     pool: *graph_layout.ThreadPool,
@@ -156,15 +156,15 @@ pub fn set(
     try p.set(count, .{ .ctx = &bctx, .build = runtime_hooks.worker_build });
 }
 
-// Join + free every native Thread and null the footprint vector. Called by the
-// native reset_for_reconfigure and the engine teardown hook.
+// Join + free every thread and null the footprint slice. Called by the
+// reset_for_reconfigure and the engine teardown hook.
 pub fn clear(pool: *graph_layout.ThreadPool) void {
     var p = Pool.init(std.heap.c_allocator, @ptrCast(pool));
     p.clear();
 }
 
 // Wait for one thread's in-flight job to finish. Reads the thread pointer out of
-// the footprint vector by index and calls the native wait.
+// the footprint slice by index and calls the wait.
 pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads.len == 0) return;
@@ -176,7 +176,7 @@ pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
 // the allocator interface).
 // `nodes` is the per-thread NUMA-node index list, or null/empty to clear. Frees any
 // prior buffer on every reassign, so the lifecycle is leak-clean under a checked
-// allocator (the bound-vector unit test drives exactly this). Lives here beside set()
+// allocator (the bound-slice unit test drives exactly this). Lives here beside set()
 // -- which clears the same footprint slot -- rather than in thread.zig, so all the
 // ThreadPool-footprint writes sit in one module and the writer is directly testable.
 pub fn boundNodesAssign(pool: *graph_layout.ThreadPool, allocator: std.mem.Allocator, nodes: ?[]const usize) error{OutOfMemory}!void {
@@ -210,7 +210,7 @@ const MockBuild = struct {
     fn noopJob(_: ?*anyopaque) void {}
 };
 
-test "Pool lays the C++ footprint and reads back the thread vector" {
+test "Pool lays the ThreadPool footprint and reads back the thread vector" {
     var footprint: [64]u8 align(8) = [_]u8{0} ** 64; // zeroed = default-constructed pool
     var mb = MockBuild{};
     var pool = Pool.init(testing.allocator, &footprint);

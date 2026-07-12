@@ -1,4 +1,4 @@
-//! NUMA topology surface (relocated out of main.zig). zfish runs single-node: binding is
+//! NUMA topology surface. zfish runs single-node: binding is
 //! a no-op, every thread maps to node 0, and execute-on-node runs the callback inline. Kept as a
 //! real module so the engine/thread paths call it as ordinary Zig instead of main.zig C-ABI glue.
 
@@ -85,13 +85,13 @@ pub fn executeOnNode(
     callback(context);
 }
 
-// NumaConfig::num_numa_nodes() — single-node runtime, always 1. Relocated from
-// main.zig; the config/context pointers are the native single-node stubs.
+// num_numa_nodes() — single-node runtime, always 1; the config/context
+// pointers are the single-node stubs.
 pub fn configNodeCount(_: *const anyopaque) usize {
     return 1;
 }
 
-// NumaReplicationContext::get_numa_config().num_numa_nodes() — config is the
+// NumaReplicationContext's get_numa_config().num_numa_nodes() — config is the
 // context's first member, so it delegates to configNodeCount.
 pub fn contextNodeCount(numa_context: *const anyopaque) usize {
     return configNodeCount(numa_context);
@@ -104,7 +104,7 @@ pub fn contextCpusInNode(_: *const anyopaque, _: usize) usize {
 }
 
 // NumaPolicy reconfigure from an option string: single-node build, so this
-// is a no-op (there is no multi-node topology to re-derive). Relocated from main.zig.
+// is a no-op (there is no multi-node topology to re-derive).
 pub fn setFromString(_: *anyopaque, _: [*]const u8, _: usize) void {}
 
 test {

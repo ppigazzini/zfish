@@ -89,7 +89,7 @@ pub fn formatInfoNoMoves(depth: c_int, score_text: []const u8) ?[:0]u8 {
 }
 
 // The full per-PV info line (depth/seldepth/multipv/score/[bound]/[wdl]/nodes/nps/
-// hashfull/tbhits/time/pv). Relocated from uci.zig.
+// hashfull/tbhits/time/pv).
 pub fn formatInfoFull(
     depth: c_int,
     sel_depth: c_int,

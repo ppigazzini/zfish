@@ -3,7 +3,7 @@
 // (workerStartSearching / iterativeDeepening, which stay in search_driver because
 // they call the node recursion) drives. None of these touch the qsearch/search
 // recursion, so they form a std-free leaf over the worker/board POD leaves + the
-// option/timeman/tt/native-thread runtimes. The context types + shared worker
+// option/timeman/tt/thread runtimes. The context types + shared worker
 // accessors live in the search_ctx leaf both sides import.
 
 const std = @import("std");
@@ -77,7 +77,7 @@ pub fn optInt(name: []const u8) c_int {
     return option_port.intByName(name);
 }
 
-// Per-search context flags read off the worker graph + the native OptionsModel.
+// Per-search context flags read off the worker graph + the OptionsModel.
 pub fn ssContext(wl: *const graph_layout.WorkerLayout, out: *SsCtx) void {
     const limit_strength = optInt("UCI_LimitStrength") != 0;
     const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
@@ -91,9 +91,9 @@ pub fn ssContext(wl: *const graph_layout.WorkerLayout, out: *SsCtx) void {
     out.skill_enabled = @intFromBool(skill_enabled);
 }
 
-// Per-search TimeManagement::init + TT::new_search (main thread). Builds the timeman
+// Per-search TimeManagement init + TT new-search (main thread). Builds the timeman
 // input from the worker's limits/rootPos + the manager's tm, reads nodestime/Move
-// Overhead/Ponder from the native model, writes the outputs back, and bumps the TT
+// Overhead/Ponder from the OptionsModel, writes the outputs back, and bumps the TT
 // generation.
 pub fn ssTmInit(wl: *graph_layout.WorkerLayout) void {
     const lim = &wl.limits;
@@ -148,7 +148,7 @@ pub fn skillLevel() f64 {
 }
 
 // Snapshot the iterative-deepening state (worker/pool member pointers + scalars) for
-// the native search root loop. Graph reads + the native OptionsModel only.
+// the search root loop. Graph reads + the OptionsModel only.
 pub fn searchIdState(wl: *graph_layout.WorkerLayout, out: *ZfishIdState) void {
     const thread_idx = wl.thread_idx;
     const is_main = thread_idx == 0;
@@ -249,12 +249,12 @@ pub inline fn idIsMate(v: c_int) bool {
 pub inline fn idIsMated(v: c_int) bool {
     return v <= -q_value_mate_in_max;
 }
-// RootMove::operator<: descending by (score, previousScore).
+// RootMove ordering: descending by (score, previousScore).
 pub inline fn rootLess(a: *const RootMove, b: *const RootMove) bool {
     return if (a.score != b.score) a.score > b.score else a.previous_score > b.previous_score;
 }
-// Stable insertion sort over root_moves[lo, hi): matches std::stable_sort with
-// RootMove::operator< (equal elements keep their relative order).
+// Stable insertion sort over root_moves[lo, hi): a stable sort by the RootMove
+// ordering (equal elements keep their relative order).
 pub fn stableSortRoot(rm: [*]RootMove, lo: usize, hi: usize) void {
     if (hi <= lo) return;
     var i: usize = lo + 1;
@@ -265,7 +265,7 @@ pub fn stableSortRoot(rm: [*]RootMove, lo: usize, hi: usize) void {
         rm[j] = key;
     }
 }
-// Utility::move_to_front: rotate the first RootMove whose pv[0]==target to front.
+// move-to-front: rotate the first RootMove whose pv[0]==target to front.
 pub fn moveToFront(rm: [*]RootMove, count: usize, target: u16) void {
     var fi: usize = 0;
     while (fi < count and rm[fi].pv.moves[0] != target) : (fi += 1) {}
@@ -282,7 +282,7 @@ pub inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
     return @max(lo, @min(v, hi));
 }
 
-// Skill (strength handicap). Move::none() == 0. The PRNG matches misc.h's
+// Skill (strength handicap). The none-move is 0. The PRNG matches misc.h's
 // xorshift*, seeded once from now() on first use (non-deterministic by design).
 const skill_pawn_value: c_int = 208;
 var skill_rng_state: u64 = 0;
@@ -298,7 +298,7 @@ fn skillRand64() u64 {
 pub inline fn skillTimeToPick(level: f64, depth: c_int) bool {
     return depth == 1 + @as(c_int, @intFromFloat(level));
 }
-// Skill::pick_best: a statistical rule over the (descending-sorted) rootMoves.
+// Skill pick-best: a statistical rule over the (descending-sorted) rootMoves.
 pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
     const top_score = id.root_moves[0].score;
     const span = top_score - id.root_moves[multi_pv - 1].score;
@@ -320,7 +320,7 @@ pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
     }
     return best;
 }
-// std::swap(rootMoves[0], *find(rootMoves, move)).
+// Swap rootMoves[0] with the RootMove whose pv[0]==move.
 pub fn skillSwapBest(id: *const ZfishIdState, move: u16) void {
     var i: usize = 0;
     while (i < id.root_moves_count and id.root_moves[i].pv.moves[0] != move) : (i += 1) {}

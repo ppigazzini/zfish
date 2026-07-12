@@ -1,4 +1,4 @@
-// Native Zig WorkerHistories.
+// WorkerHistories.
 //
 // The per-Worker history tables (butterfly / low-ply / capture / continuation /
 // correction + tt-move history) plus the shared-history reference. graph_layout embeds
@@ -35,7 +35,7 @@ pub const WorkerHistories = struct {
     shared_history: ?*shared_history_types.SharedHistories,
 };
 
-// Offset of the shared_history reference WITHIN WorkerHistories (a native struct, so
+// Offset of the shared_history reference WITHIN WorkerHistories (a Zig-owned struct, so
 // Zig's choice); the constructor + clear path address it through the typed field, and
 // this offset survives only for the worker_construct address cross-check test.
 pub const worker_shared_history_off = @offsetOf(WorkerHistories, "shared_history");

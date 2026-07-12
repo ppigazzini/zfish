@@ -9,11 +9,11 @@ const runtime_hooks = @import("runtime_hooks");
 const clock = @import("clock");
 const thread_construct = @import("thread_construct.zig");
 const worker_construct = @import("worker_construct.zig");
-const engine_object = @import("engine_object"); // native engine container
+const engine_object = @import("engine_object"); // the engine object container
 const misc_port = @import("misc");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const network_port = @import("network");
-const state_list_port = @import("state_list"); // native `states` member
+const state_list_port = @import("state_list"); // the `states` member
 const nnue_feature_port = @import("nnue_feature");
 const option_port = @import("option");
 const position_port = @import("position");
@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init) !void {
     const info_line = std.mem.span(info);
     uci_output.printLine(info_line.ptr, info_line.len);
 
-    // The native movegen computes attacks/rays on the fly (bitboard.zig slidingAttack
+    // The movegen computes attacks/rays on the fly (bitboard.zig slidingAttack
     // etc.); the runtime tables come from position_port.initRuntime().
     position_port.initRuntime();
     installRuntimeHooks();
@@ -75,7 +75,7 @@ pub fn main(init: std.process.Init) !void {
     uci_port.loopRuntime(engine);
 }
 
-// The native StateList backs the position-setup chain, the engine `states` slot
+// The StateList backs the position-setup chain, the engine `states` slot
 // (fallback root), and the pool's setupStates. PendingStateStorage carries move
 // semantics (state_list.zig); the slot + setupStates hold a `?*StateList`, and
 // adopt MOVEs the pointer + nulls the source.
@@ -111,11 +111,11 @@ fn threadpoolSetupStateBack(pool: *const graph_layout.ThreadPool) ?*const positi
     return null;
 }
 
-// Native Worker::clear: the per-search worker reset the clear_worker job runs on
-// its thread. The four native clear helpers in declaration order: histories, the
+// The worker-clear reset: the per-search worker reset the clear_worker job runs on
+// its thread. The four clear helpers in declaration order: histories, the
 // shared-history page (sharedHistory ref + numaThreadIdx@thread_idx+8 /
 // numaTotal@+16), the reductions table (int[256], the 1024-byte slot before
-// manager), and the refresh cache (native feature-transformer biases). All four
+// manager), and the refresh cache (feature-transformer biases). All four
 // callees are gate-verified; only this orchestration is new.
 fn workerClear(worker: *anyopaque) void {
     const wl = graph_layout.WorkerLayout.fromPtr(worker);
@@ -139,7 +139,7 @@ fn handoffPendingStates(
     return engine_port.handoffPendingStates(pool, states_slot);
 }
 
-// Install the native runtime hooks: these impls live here because they need
+// Install the runtime hooks: these impls live here because they need
 // position/engine/network/search/state modules that already import their callers
 // (thread/engine/search_thread), so the callers reach them through the runtime_hooks
 // fn-pointer registry.
@@ -178,13 +178,13 @@ fn freeSideTt() void {
 }
 
 // SharedState.sharedHistories (a reference) is the 4th pointer field of the
-// native SharedState bundle (options/threads/tt/shared_histories/network); read
-// it through the typed graph_layout.SharedState view and clear the native map.
+// SharedState bundle (options/threads/tt/shared_histories/network); read
+// it through the typed graph_layout.SharedState view and clear the map.
 fn sharedStateClearHistories(shared_state: *const anyopaque) void {
     engine_port.sharedHistoriesClear(engine_port.SharedState.fromPtr(shared_state).shared_histories);
 }
 // insert_history: single-node never binds (do_bind always 0, numa_config unused) — insert
-// directly into the native SharedHistoriesMap reached via the typed shared_histories field.
+// directly into the SharedHistoriesMap reached via the typed shared_histories field.
 fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) void {
     _ = numa_config;
     _ = do_bind;
@@ -192,7 +192,7 @@ fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const 
 }
 // With NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub; loadNetworkBytes
 // fails on it and falls back to the on-disk EvalFile (bench validates the file net).
-// set_loaded_state is a no-op: the native load owns the EvalFile state (nn_current/
+// set_loaded_state is a no-op: the load owns the EvalFile state (nn_current/
 // nn_description, set just before these calls), so there is nothing more to record.
 fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, current_name_len: usize, description_ptr: [*]const u8, description_len: usize) void {
     _ = network;
@@ -201,7 +201,7 @@ fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, cur
     _ = description_ptr;
     _ = description_len;
 }
-// The read-blob fns are no-ops: weights are served from native storage, so the parse
+// The read-blob fns are no-ops: weights are served from storage, so the parse
 // result is discarded.
 fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) usize {
     _ = network;
@@ -210,8 +210,8 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
     _ = data_len;
     return 0;
 }
-// Native engine teardown. Free the states slot, join+free the native Threads + null the
-// pool's threads vector, then free the heap members. All three are native.
+// The engine object teardown. Free the states slot, join+free the threads + null the
+// pool's threads vector, then free the heap members.
 fn uciEngineDestructAt(storage: *anyopaque) void {
     releasePendingStateSlot(engine_object.EngineObject.fromPtr(storage).statesSlotPtr());
     thread_port.threadPoolClear(engineThreadsPtr(storage));
@@ -222,11 +222,11 @@ fn optInt(name: []const u8) c_int {
     return option_port.intByName(name);
 }
 
-// Native SearchManager construction + native Worker teardown:
+// The SearchManager construction + the Worker teardown:
 //   * make: a raw search_manager_size buffer, zeroed — the manager's data fields are
-//     written by the native reset shims (smReset*) + tm_init before every search, and
+//     written by the reset shims (smReset*) + tm_init before every search, and
 //     updates@112 is set to the engine UpdateContext for the main thread. No vtable,
-//     no ctor; check_time is dead and pv() is native.
+//     no constructor; check_time is dead.
 //   * destroy: free the rootMoves vector buffer + the manager by offset, then return the
 //     large-page block. accumulatorStack/refreshTable are POD array members (no teardown),
 //     so manager + rootMoves are the ONLY heap members the worker frees.
@@ -248,12 +248,12 @@ fn workerDestroy(worker: ?*anyopaque) void {
     memory_port.alignedLargePagesFree(w);
 }
 
-// The native ThreadBuilder callback. Reads the native SharedState's five reference
+// The ThreadBuilder callback. Reads the SharedState's five reference
 // referents through the typed graph_layout.SharedState view (options/threads/tt/
 // sharedHistories/network — the 40-byte bundle), mints the SearchManager, large-page-
-// allocs + natively constructs the Worker, and writes the Worker through Thread.worker
+// allocs + constructs the Worker, and writes the Worker through Thread.worker
 // (the worker@8 layout contract). Single-node host: numaIndex 0, idxInNuma == idx,
-// totalNuma == ctx.total. A reference member's referent address equals the native field
+// totalNuma == ctx.total. A reference member's referent address equals the field
 // VALUE, so the field values are passed straight through.
 const WorkerBuildCtx = struct {
     shared_state: ?*anyopaque,
@@ -264,9 +264,9 @@ fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
     const ctx: *WorkerBuildCtx = @ptrCast(@alignCast(ctx_ptr.?));
     const ss = engine_port.SharedState.fromPtr(ctx.shared_state.?);
     const manager = makeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
-        @panic("native worker build: SearchManager OOM");
+        @panic("worker build: SearchManager OOM");
     const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse
-        @panic("native worker build: large-page OOM");
+        @panic("worker build: large-page OOM");
     const shared_history = engine_port.sharedHistoriesAt(ss.shared_histories, 0);
     worker_construct.constructFull(
         raw,
@@ -286,7 +286,7 @@ pub fn engineInitBody(engine: *anyopaque) void {
     return engine_port.initBody(engine);
 }
 
-// Native engine container construct/destruct: build the heap members + inline sub-objects
+// The engine object container construct/destruct: build the heap members + inline sub-objects
 // of the EngineObject, and store argc/argv.
 fn engineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     return engine_object.constructMembers(buf, argv0);
@@ -294,14 +294,14 @@ fn engineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
 fn engineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     engine_object.setCli(buf, argc, argv);
 }
-// Native engine construction. Verify the object-graph footprint, build the heap members +
+// The engine object construction. Verify the object-graph footprint, build the heap members +
 // inline sub-objects, store argc/argv, then run init_body (register options, set start
-// position, size threads) — the same post-member work the engine ctor body did. Tune (SPSA)
+// position, size threads) — the same post-member work the engine constructor runs. Tune (SPSA)
 // is INERT in a release build (no live TUNE() macros → empty list), so it is dropped here.
 fn engineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     graph_layout.verifyLayouts();
     if (!engineConstructMembers(storage, argv[0]))
-        @panic("native engine construct: member allocation failed");
+        @panic("engine construct: member allocation failed");
     engineSetCli(storage, argc, argv);
     engineInitBody(storage);
 }

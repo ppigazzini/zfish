@@ -1,4 +1,4 @@
-// Native .nnue parse primitives.
+// .nnue parse primitives.
 //
 // Parses the .nnue file into its (already-permuted) weight memory. These are the
 // building blocks of that parse, matching src/nnue exactly:
@@ -132,7 +132,7 @@ fn readLebSection2(comptime T: type, blob: []const u8, out1: []T, out2: []T) ?us
     return leb_magic.len + 4 + count;
 }
 
-// Parse the feature-transformer blob into `dst` (native FeatureTransformer memory
+// Parse the feature-transformer blob into `dst` (the FeatureTransformer memory
 // layout). No permute -- PackusEpi16Order is the identity on the SSE4.1 target.
 // Returns the number of blob bytes consumed, or null on malformed input.
 pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
@@ -156,8 +156,8 @@ pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
     return pos;
 }
 
-// The five written weight regions (offset, byte length), used to compare a native
-// parse against a reference while skipping the alignment padding between them.
+// The five written weight regions (offset, byte length), used to compare a parse
+// against a reference while skipping the alignment padding between them.
 const FtRegion = struct { off: usize, len: usize };
 pub const ft_regions = [_]FtRegion{
     .{ .off = biases_off, .len = biases_count * 2 },
@@ -363,7 +363,7 @@ test "permuteBlocks reorders blocks per a non-trivial order" {
     try testing.expectEqualSlices(u8, &[_]u8{ 30, 31, 40, 41, 10, 11, 20, 21 }, &data);
 }
 
-test "weightIndexScrambled matches the C++ formula" {
+test "weightIndexScrambled matches the upstream weight-scramble formula" {
     // fc_0-like: PaddedInputDimensions=1024, OutputDimensions=32.
     try testing.expectEqual(@as(usize, 0), weightIndexScrambled(0, 1024, 32));
     try testing.expectEqual(@as(usize, 1), weightIndexScrambled(1, 1024, 32));
@@ -373,7 +373,7 @@ test "weightIndexScrambled matches the C++ formula" {
     try testing.expectEqual(@as(usize, 4), weightIndexScrambled(1024, 1024, 32));
 }
 
-test "feature transformer layout offsets match the C++ FeatureTransformer" {
+test "feature transformer layout offsets match the FeatureTransformer format" {
     try testing.expectEqual(@as(usize, 0), biases_off);
     try testing.expectEqual(@as(usize, 2048), weights_off);
     try testing.expectEqual(@as(usize, 46139392), threat_weights_off);

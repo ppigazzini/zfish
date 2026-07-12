@@ -1,4 +1,4 @@
-// Native sizing for the engine's `shared_histories` member. One SharedHistories per
+// Sizing for the engine's `shared_histories` member. One SharedHistories per
 // NUMA node sizes two thread-shared DynStats arrays:
 //   correctionHistory : DynStats<[2]CorrectionBundle, CORRHIST_BASE_SIZE>
 //   pawnHistory       : DynStats<[16][64] int16,      PAWN_HISTORY_BASE_SIZE>
@@ -8,16 +8,16 @@
 //   pawn element count  = threadCount * PAWN_HISTORY_BASE_SIZE
 // and the two index masks are (count - 1) (counts are powers of two, used as `key &
 // mask`). This module is the COUNT logic only — pure usize math, no allocation — so
-// it unit-tests in `zig build test-graph` and is shared by the native construction
+// it unit-tests in `zig build test-graph` and is shared by the construction
 // (board/position.zig constructSharedHistories) and the verifySizes check below.
 //
 // The element BYTE sizes (@sizeOf([2]CorrectionBundle), the 1024-int16 pawn page) are
-// validated independently: the native search reads these histories through
+// validated independently: the search reads these histories through
 // board/position.zig, so its element strides match the layout.
 
 const std = @import("std");
 
-/// UINT_16_HISTORY_SIZE = std::numeric_limits<uint16_t>::max() + 1.
+/// UINT_16_HISTORY_SIZE = std.math.maxInt(u16) + 1.
 pub const corrhist_base_size: usize = 65536;
 /// PAWN_HISTORY_BASE_SIZE.
 pub const pawn_history_base_size: usize = 8192;

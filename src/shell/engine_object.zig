@@ -43,16 +43,16 @@ fn memberThreadpoolNew() ?*graph_layout.ThreadPool {
     tp.* = .{};
     return tp;
 }
-// Trigger the native NNUE load into the Zig-owned storage. There is no engine
+// Trigger the NNUE load into the Zig-owned storage. There is no engine
 // `network` member -- the worker network resolver / eval / verify read the
-// global native FT storage directly.
+// global FT storage directly.
 fn loadNetwork(binary_dir: [*:0]const u8, binary_dir_len: usize) void {
     network_port.load(binary_dir, binary_dir_len, binary_dir, 0);
 }
-// updateContext + onVerifyNetwork are held INLINE in the native engine (stable address
+// updateContext + onVerifyNetwork are held INLINE in the engine object (stable address
 // for the worker managers / verify emit to bind via accessor) and placement-constructed.
 
-// The UpdateContext slot. The native search emit calls its onUpdateFull/onBestmove
+// The UpdateContext slot. The search emit calls its onUpdateFull/onBestmove
 // (set by init_search_update_listeners) and binds this slot via the accessor. 240 is
 // a generous upper bound on sizeof(UpdateContext).
 pub const update_context_size: usize = 240;
@@ -61,8 +61,8 @@ pub const update_context_size: usize = 240;
 // on a network verify message.
 pub const verify_network_fn_size: usize = 64;
 
-/// The buffer-resident native engine. `extern struct` so the field offsets are stable
-/// and the member accessors (main.zig) can read them by the documented native offset.
+/// The buffer-resident engine object. `extern struct` so the field offsets are stable
+/// and the member accessors (main.zig) can read them by the documented offset.
 pub const EngineObject = struct {
     numa_context: ?*anyopaque = null,
     states: ?*state_list_port.StateList = null,
@@ -73,7 +73,7 @@ pub const EngineObject = struct {
     update_context: [update_context_size]u8 align(8) = [_]u8{0} ** update_context_size,
     on_verify_network: [verify_network_fn_size]u8 align(8) = [_]u8{0} ** verify_network_fn_size,
 
-    /// Native field offsets the member accessors read. @offsetOf keeps these pinned
+    /// The field offsets the member accessors read. @offsetOf keeps these pinned
     /// to the struct.
     pub const off = struct {
         pub const numa_context = @offsetOf(EngineObject, "numa_context");
@@ -125,7 +125,7 @@ pub const EngineObject = struct {
     }
 };
 
-// The side Position/TT storage the native engine uses. File-scoped here so the
+// The side Position/TT storage the engine object uses. File-scoped here so the
 // accessors own them.
 var side_pos_storage: [1032]u8 align(64) = [_]u8{0} ** 1032;
 var side_tt_storage: [64]u8 align(64) = [_]u8{0} ** 64;
@@ -167,13 +167,13 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     loadNetwork(bdir, std.mem.span(bdir).len);
 
     // The update_context / on_verify_network slots are zeroed by the field initializers
-    // above. The native search binds engine_graph's native UpdateContext and the verify
+    // above. The search binds engine_graph's UpdateContext and the verify
     // emitter reads the empty slot, so no further construction is needed.
 
     return true;
 }
 
-/// Store the CLI argc/argv (the UCIEngine::cli sub-object the native engine subsumes).
+/// Store the CLI argc/argv (the cli sub-object the engine object subsumes).
 pub fn setCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     const e = EngineObject.fromBuffer(buf);
     e.cli_argc = argc;
@@ -181,8 +181,8 @@ pub fn setCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
 }
 
 /// Free the engine's heap members in reverse construction / dependency order. The caller
-/// (main.zig destruct_at) runs the thread teardown first: clear nulls the pool's native
-/// Threads vector, and releasePendingStateSlot frees `states` if it was
+/// (main.zig destruct_at) runs the thread teardown first: clear nulls the pool's
+/// threads vector, and releasePendingStateSlot frees `states` if it was
 /// never moved into pool.setupStates. After that:
 ///   - free network  (the single-node NNUE holder handle; references numa, so first)
 ///   - free threads   (setupStates is freed by the block below, not by a dtor)
@@ -222,7 +222,7 @@ pub fn destructMembers(buf: *anyopaque) void {
     e.binary_directory = null;
 }
 
-/// sizeof the buffer the native engine needs (replaces sizeof(UCIEngine)=1696).
+/// sizeof the buffer the engine object needs.
 pub fn sizeofEngine() usize {
     return @sizeOf(EngineObject);
 }

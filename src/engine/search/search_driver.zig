@@ -139,7 +139,7 @@ const ssWaitFinished = search_id.ssWaitFinished;
 const ssGetBestThread = search_id.ssGetBestThread;
 const ssNpmsecAdvance = search_id.ssNpmsecAdvance;
 
-// Worker::start_searching control flow. The leaf helpers run the individual
+// workerStartSearching control flow. The leaf helpers run the individual
 // time-management, thread-pool, skill, and UCI-output operations.
 // Iterative deepening lives in the search_id_loop leaf; alias it back for
 // workerStartSearching (the only caller) + the position.zig entry re-export.
@@ -199,8 +199,8 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 // pass + eval scaling.
 // Once-per-search snapshot of the Worker's live member pointers + shared stop flag,
 // and -- on the main thread -- the SearchManager/TimeManagement/LimitsType time inputs.
-// The graph_layout offset reads + the native FT pointer (the network handle is never
-// dereferenced -- weights serve from native storage).
+// The graph_layout offset reads + the FT pointer (the network handle is never
+// dereferenced -- weights serve from the network's own storage).
 // QCtx construction (searchCbWorkerState + buildCtx) lives in the search_setup leaf;
 // buildCtx aliased below (searchCbWorkerState is private to that leaf).
 
@@ -225,7 +225,7 @@ const EvalInput = struct {
     value_tb_win_in_max_ply: c_int,
 };
 
-// SearchManager::check_time inputs, fetched once per search tree by worker_state.
+// SearchManager check-time inputs, fetched once per search tree by worker_state.
 // Live (mutable) fields are pointers; fixed-per-search fields are snapshot values.
 // calls_cnt is null when this worker is not the main thread (check_time is a
 // main-thread-only operation).
@@ -236,7 +236,7 @@ const EvalInput = struct {
 
 const QCtx = search_ctx.QCtx;
 
-// Worker::update_seldepth inlined: selDepth tracks the deepest ply reached, used
+// The update-seldepth step: selDepth tracks the deepest ply reached, used
 // only for UCI reporting. Bumps the cached field when this ply is deeper.
 // Node-level accumulator / do-move / eval helpers live in the search_acc leaf;
 // aliased here so the qsearch/search recursion call sites are unchanged.
@@ -244,7 +244,7 @@ const verifyDoMove = search_acc.verifyDoMove;
 const verifyUndoMove = search_acc.verifyUndoMove;
 const legalContains = search_acc.legalContains;
 
-// RootMove::extract_ponder_from_tt: make the best move, probe the TT for a reply
+// extractPonderFromTt: make the best move, probe the TT for a reply
 // stored there, append it to the PV if it is a legal move, unmake. Returns
 // whether a ponder move was found (pv length > 1). The tt context (table base,
 // cluster count, generation) is handed over by the caller.

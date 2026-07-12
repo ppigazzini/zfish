@@ -280,9 +280,9 @@ pub fn probeTable(
     };
 }
 
-// Native TranspositionTable handle: a 24-byte object holding a TtCluster* table, the
+// TranspositionTable handle: a 24-byte object holding a TtCluster* table, the
 // cluster count and the 8-bit generation. The heavy logic lives in the functions above;
-// this is the owning object the native Engine graph holds, delegating to them.
+// this is the owning object the Engine graph holds, delegating to them.
 pub const TranspositionTable = struct {
     table: ?[*]TtCluster = null,
     cluster_count: usize = 0,
@@ -303,10 +303,10 @@ pub const TranspositionTable = struct {
 };
 
 comptime {
-    // native TranspositionTable handle
+    // TranspositionTable handle
 }
 
-test "TranspositionTable native handle: layout and generation cycling" {
+test "TranspositionTable handle: layout and generation cycling" {
     try std.testing.expectEqual(@as(usize, 24), @sizeOf(TranspositionTable));
     var tt = TranspositionTable{ .cluster_count = 1000, .generation8 = 0 };
     try std.testing.expectEqual(@as(usize, 0), tt.firstEntry(0));

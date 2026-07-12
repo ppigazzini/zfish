@@ -39,7 +39,7 @@ pub inline fn updateSelDepth(ctx: *const QCtx, ply: c_int) void {
     if (ctx.sel_depth.* < ply + 1) ctx.sel_depth.* = ply + 1;
 }
 
-// Worker::reduction inlined: the LMR base reduction from the per-thread reductions
+// The LMR reduction step: the LMR base reduction from the per-thread reductions
 // table, the root delta, and the improving flag. Uses truncating integer division.
 pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta: c_int) c_int {
     const reduction_scale = ctx.reductions[@intCast(d)] * ctx.reductions[@intCast(mn)];
@@ -47,7 +47,7 @@ pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta
         @divTrunc(@as(c_int, @intFromBool(!i)) * reduction_scale * 194, 512) + 1027;
 }
 
-// Worker::evaluate inlined: run the NNUE forward pass on the current position,
+// The evaluate step: run the NNUE forward pass on the current position,
 // then apply the eval scaling. Material is 534 * pawn count (both colours) +
 // non-pawn material, optimism is indexed by the side to move, and the TB clamp
 // bounds are +/-VALUE_TB_WIN_IN_MAX_PLY.
@@ -67,7 +67,7 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) c_int {
     });
 }
 
-// Worker::do_move inlined: count the node, push a fresh accumulator slot, make the
+// The do-move step: count the node, push a fresh accumulator slot, make the
 // move (the make-move records the dirty piece/threats into that slot), then set
 // the Stack's current move and continuation-history pointer. capture_stage is read
 // pre-move, dirtyPiece.pc post-move.
@@ -83,7 +83,7 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     setContHist(ctx.worker, ss_ptr, @intFromBool(ss.in_check), @intFromBool(capture), dp.pc, moveTo(move));
 }
 
-// Worker::undo_move inlined: unmake the move, then drop the accumulator slot.
+// The undo-move step: unmake the move, then drop the accumulator slot.
 pub inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16) void {
     undoMove(pos_ptr, move);
     nnue_acc.stackPop(ctx.acc_stack);

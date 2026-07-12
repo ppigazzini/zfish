@@ -1,9 +1,9 @@
-// Native Zig SearchManager + UpdateContext.
+// SearchManager + UpdateContext.
 //
 //   * UpdateContext: a plain function pointer plus an opaque context pointer.
 //     The four UCI-output callbacks (no-moves / full / iteration / bestmove)
 //     are `*const fn (...) void` fields, bound to whatever owns
-//     the output sink (the native UCIEngine).
+//     the output sink (the UCIEngine).
 //
 //   * SearchManager: a single struct with an `is_main` flag. Non-main workers
 //     get a manager that simply does nothing on check_time; there is no vtable,
@@ -39,7 +39,7 @@ pub const InfoIteration = struct {
 };
 
 // UpdateContext: four callbacks plus the opaque
-// sink they write through (the native UCIEngine output side). Each callback is a
+// sink they write through (the UCIEngine output side). Each callback is a
 // C-ABI function pointer so the same vtable-free dispatch works whether the sink
 // is implemented in Zig or handed across a C boundary.
 pub const UpdateContext = struct {
@@ -142,7 +142,7 @@ fn testContext() UpdateContext {
     };
 }
 
-test "UpdateContext dispatches through function pointers (no std::function)" {
+test "UpdateContext dispatches through function pointers" {
     const ctx = testContext();
     const full = InfoFull{
         .short = .{ .depth = 12, .score = 34 },

@@ -1,13 +1,13 @@
-// Native holder for the engine's `network` member, modeling
-// LazyNumaReplicated<Network> (src/numa.h). The C++ holder is a NumaReplicatedBase
-// (a polymorphic base: vtable + NumaReplicationContext* context) followed by a
-//   mutable std::vector<std::unique_ptr<Network>> instances;  // one replica per NUMA node
-//   mutable std::mutex                            mutex;
+// Holder for the engine's `network` member, modeling
+// LazyNumaReplicated<Network> (src/numa.h). The upstream holder is a NumaReplicatedBase
+// (a polymorphic base: vtable + NumaReplicationContext* context) followed by
+//   an `instances` vector of owning pointers to Network (one replica per NUMA node)
+//   and a `mutex`.
 // `instances` is sized to num_numa_nodes() at construction (node 0 eager, the rest
 // lazily replicated off the search path). On the single-node target there is exactly
 // one replica.
 //
-// This module provides (a) NetworkHolder — the native structural replacement
+// This module provides (a) NetworkHolder — the structural replacement
 // (the per-NUMA replica pointers; the Network instances + the 106 MB .nnue parse
 // are owned elsewhere), and (b) a replica-count reader that reads a
 // LazyNumaReplicated holder's replica count through the documented member offset
@@ -16,11 +16,11 @@
 const std = @import("std");
 
 // LazyNumaReplicatedSystemWide<Network> member offsets (System V x86-64, libstdc++).
-// The engine's `network` is the SystemWide variant (Engine::network in src/engine.h);
+// The engine's `network` is the SystemWide variant (declared in src/engine.h);
 // its polymorphic base (NumaReplicatedBase) puts the vtable at 0 and context at 8, and
-// the `instances` std::vector follows at 16 as {begin, end, cap_end}. std::vector::
-// size() is (end - begin) / sizeof(element) — but the element here is NOT a pointer,
-// it is std::vector<SystemWideSharedConstant<Network>>, a fat value type. So the
+// the `instances` vector follows at 16 as libstdc++'s {begin, end, cap_end} pointers.
+// Its element count is (end - begin) / sizeof(element) — but the element here is NOT a
+// pointer, it is a vector of SystemWideSharedConstant<Network>, a fat value type. So the
 // element stride is supplied by the caller (sizeof, passed in) rather than assumed.
 // An 8-byte pointer assumption would misread the count (18 replicas for a 1-node
 // holder), so the element stride must be the real fat-value size, not 8.
@@ -66,7 +66,7 @@ pub const NetworkHolder = struct {
 const testing = std.testing;
 
 test "replicaCountOf reads instances.size() from the holder layout for a given stride" {
-    // Synthesize the C++ object prefix: [vtable][context][vec.begin][vec.end][vec.cap].
+    // Synthesize the holder object prefix: [vtable][context][vec.begin][vec.end][vec.cap].
     // Use a 48-byte element stride to model the fat SystemWideSharedConstant element;
     // a 3-element span is 144 bytes, so size() == 3.
     const stride: usize = 48;

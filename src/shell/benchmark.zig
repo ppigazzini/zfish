@@ -6,7 +6,7 @@ const bench_positions = @import("bench_positions.zig");
 const Defaults = bench_positions.Defaults;
 const BenchmarkPositions = bench_positions.BenchmarkPositions;
 
-// Native benchmark data.
+// Benchmark data.
 pub const BenchmarkSetupOutput = struct {
     tt_size: c_int,
     threads: c_int,
