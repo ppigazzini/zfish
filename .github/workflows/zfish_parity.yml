@@ -154,7 +154,7 @@ jobs:
   # eval is arch/OS-invariant, so
   # any per-OS regression (a mis-marshaled sync primitive, a bad aligned allocation, an
   # argv/stdio mistake) that perturbs the search shows up here. Only the Linux-specific
-  # structural gates (h9 src-free via `nm`, arch-determinism) stay exclusive to `parity`.
+  # structural gates (src-free via `nm`, arch-determinism) stay exclusive to `parity`.
   # July-2026 standard runner labels: windows-2025 (x64), windows-11-arm (arm64),
   # macos-26 (Apple silicon arm64), macos-26-intel (x64). fail-fast off so one OS failing
   # still reports the others.
@@ -233,7 +233,7 @@ jobs:
 
   # Memory-safety gate. Valgrind memcheck over the two allocation-lifecycle paths a
   # bench never exercises: the searchmoves/rootMoves list churn + Worker construct/
-  # destroy (parity-teardown, H5) and multi-thread go sessions (parity-valgrind, H3). Both
+  # destroy (parity-teardown) and multi-thread go sessions (parity-valgrind). Both
   # assert no definite leak / invalid access / bad free, reading valgrind's own summary. Catches
   # a leak/bad-free regression on every push. Pinned to -Darch=x86-64: the
   # default AVX-512 build SIGILLs under valgrind 3.x (documented workaround), and the baseline
@@ -256,10 +256,10 @@ jobs:
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
       - name: Fetch the NNUE net
         run: zig build net
-      # H5: searchmoves/rootMoves list lifecycle + Worker clear churn (Threads=1).
+      # searchmoves/rootMoves list lifecycle + Worker clear churn (Threads=1).
       - name: Leak gate -- searchmoves/rootMoves + Worker clear
         run: zig build parity-teardown -Darch=x86-64
-      # H3: multi-thread memcheck across Threads {1,2}.
+      # multi-thread memcheck across Threads {1,2}.
       - name: Memcheck -- multi-thread search
         run: zig build parity-valgrind -Darch=x86-64
 

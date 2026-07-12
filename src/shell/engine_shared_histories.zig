@@ -36,7 +36,7 @@ pub fn sharedHistoriesAt(map: *search_driver.SharedHistoriesMap, numa_index: usi
 }
 
 // Free the side map (each element's large-page DynStats arrays + the bucket
-// storage) at engine teardown + reset for any re-construct (H5/valgrind).
+// storage) at engine teardown + reset for any re-construct (valgrind).
 pub fn freeSharedHistories() void {
     if (side_shared_histories) |*m| {
         m.deinit();

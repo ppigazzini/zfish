@@ -251,7 +251,7 @@ pub fn reconfigure(
     clear(pool);
     waitMainThread(pool);
 
-    // Harness H4: prove the freshly (re)configured pool matches the Zig model of
+    // Prove the freshly (re)configured pool matches the Zig model of
     // the ThreadPool/Thread graph -- stop/increaseDepth zeroed, threads vector
     // sized == requested, boundThreadToNumaNode sized as bound, each Thread's
     // Worker slot bound. Read-only; panics on drift.
