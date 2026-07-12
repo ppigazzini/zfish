@@ -52,7 +52,10 @@ pub fn build(b: *std.Build) void {
         "test-coverage",
         "Run the unit tests under kcov, merging line coverage into ./kcov-out (needs kcov on PATH)",
     ) orelse false;
-    const cov_dir: ?[]const u8 = if (test_coverage) b.pathFromRoot("kcov-out") else null;
+    // Relative "kcov-out" (not b.pathFromRoot): the Run step's default cwd is the build root, so
+    // kcov writes there -- and a plain string stays valid across Zig 0.16/0.17 (pathFromRoot was
+    // removed in 0.17), which keeps the non-blocking nightly lane building instead of tripping here.
+    const cov_dir: ?[]const u8 = if (test_coverage) "kcov-out" else null;
     var cov_idx: usize = 0;
     // Owned runtime targets (M-PORT): Linux (default), Windows, and macOS. The pure-Zig
     // engine is OS-portable behind a thin platform seam -- sync (thread_runtime.zig futex
