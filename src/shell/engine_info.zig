@@ -6,7 +6,7 @@ const std = @import("std");
 const numa = @import("numa");
 const engine_infofmt = @import("engine_infofmt");
 const engine_util = @import("engine_util");
-const native_engine = @import("native_engine");
+const engine_object = @import("engine_object");
 const graph_layout = @import("graph_layout");
 
 const CountPair = engine_util.CountPair;
@@ -66,14 +66,14 @@ pub fn threadAllocationInformation(
     return formatThreadAllocation(threads.numThreads(), binding.ptr, binding.len);
 }
 
-pub fn numaConfigStringEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
+pub fn numaConfigStringEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
     _ = engine_ptr;
     const config_ptr = numa.configString() orelse return null;
     defer freeCString(config_ptr);
     return allocMessage("{s}", .{std.mem.span(config_ptr)});
 }
 
-pub fn numaConfigInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
+pub fn numaConfigInformationEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
     _ = engine_ptr;
     const config_ptr = numa.configString() orelse return null;
     defer freeCString(config_ptr);
@@ -81,14 +81,14 @@ pub fn numaConfigInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:
     return formatNumaInfo(config.ptr, config.len);
 }
 
-pub fn threadBindingInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
+pub fn threadBindingInformationEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
     return threadBindingInformation(
         engine_ptr.numaContextPtr(),
         engine_ptr.threadsPtr(),
     );
 }
 
-pub fn threadAllocationInformationEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
+pub fn threadAllocationInformationEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
     return threadAllocationInformation(
         engine_ptr.numaContextPtr(),
         engine_ptr.threadsPtr(),

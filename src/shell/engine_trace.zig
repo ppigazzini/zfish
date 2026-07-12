@@ -32,7 +32,7 @@ const state_list = @import("state_list");
 const nnue_misc_mod = @import("nnue_misc");
 const uci_wdl = @import("uci_wdl");
 const network_port = @import("network");
-const native_engine = @import("native_engine");
+const engine_object = @import("engine_object");
 const engine_util = @import("engine_util");
 const engine_nnue = @import("engine_nnue");
 
@@ -139,7 +139,7 @@ fn accumulatorCachesDestroy(caches: ?*nnue_acc.RefreshCache) void {
     _ = caches; // static buffer -- nothing to free
 }
 
-pub fn traceEvalEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
+pub fn traceEvalEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
     verifyNetwork();
 
     const source_pos = engine_ptr.positionPtr();
@@ -205,7 +205,7 @@ pub fn fen(pos: *const position_port.Position) ?[*:0]u8 {
     return positionFen(pos, null);
 }
 
-pub fn fenEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
+pub fn fenEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
     return fen(engine_ptr.positionPtr());
 }
 
@@ -263,7 +263,7 @@ pub fn visualize(pos: *const position_port.Position) ?[*:0]u8 {
     return owned.ptr;
 }
 
-pub fn visualizeEngine(engine_ptr: *native_engine.NativeEngine) ?[*:0]u8 {
+pub fn visualizeEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
     return visualize(engine_ptr.positionPtr());
 }
 

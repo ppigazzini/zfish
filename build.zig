@@ -119,7 +119,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "shared_state", .path = "src/engine/state/shared_state.zig" },
         .{ .name = "limits_type", .path = "src/engine/state/limits_type.zig" },
         .{ .name = "root_move", .path = "src/engine/state/root_move.zig" },
-        .{ .name = "native_engine", .path = "src/shell/native_engine.zig" },
+        .{ .name = "engine_object", .path = "src/shell/engine_object.zig" },
         .{ .name = "timeman", .path = "src/shell/timeman.zig" },
         .{ .name = "benchmark", .path = "src/shell/benchmark.zig" },
         .{ .name = "misc", .path = "src/shell/misc.zig" },
@@ -395,7 +395,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine_nnue", .imp = "option", .to = "option" },
         .{ .from = "engine_nnue", .imp = "network", .to = "network" },
         .{ .from = "engine_nnue", .imp = "uci_output", .to = "uci_output" },
-        .{ .from = "engine_nnue", .imp = "native_engine", .to = "native_engine" },
+        .{ .from = "engine_nnue", .imp = "engine_object", .to = "engine_object" },
         .{ .from = "engine", .imp = "engine_trace", .to = "engine_trace" },
         .{ .from = "engine", .imp = "engine_perft", .to = "engine_perft" },
         .{ .from = "engine", .imp = "engine_options", .to = "engine_options" },
@@ -406,7 +406,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine_perft", .imp = "option", .to = "option" },
         .{ .from = "engine_perft", .imp = "uci_move", .to = "uci_move" },
         .{ .from = "engine_perft", .imp = "uci_output", .to = "uci_output" },
-        .{ .from = "engine_perft", .imp = "native_engine", .to = "native_engine" },
+        .{ .from = "engine_perft", .imp = "engine_object", .to = "engine_object" },
         .{ .from = "engine_perft", .imp = "engine_nnue", .to = "engine_nnue" },
         .{ .from = "engine_perft", .imp = "engine_trace", .to = "engine_trace" },
         .{ .from = "engine_trace", .imp = "libc", .to = "libc" },
@@ -422,7 +422,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine_trace", .imp = "nnue_misc", .to = "nnue_misc" },
         .{ .from = "engine_trace", .imp = "uci_wdl", .to = "uci_wdl" },
         .{ .from = "engine_trace", .imp = "network", .to = "network" },
-        .{ .from = "engine_trace", .imp = "native_engine", .to = "native_engine" },
+        .{ .from = "engine_trace", .imp = "engine_object", .to = "engine_object" },
         .{ .from = "engine_trace", .imp = "engine_util", .to = "engine_util" },
         .{ .from = "engine_trace", .imp = "engine_nnue", .to = "engine_nnue" },
         .{ .from = "engine", .imp = "position", .to = "position" },
@@ -434,12 +434,12 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine", .imp = "uci_move", .to = "uci_move" },
         .{ .from = "engine", .imp = "misc", .to = "misc" },
         .{ .from = "engine", .imp = "thread", .to = "thread" },
-        .{ .from = "native_engine", .imp = "graph_layout", .to = "graph_layout" },
-        .{ .from = "native_engine", .imp = "misc", .to = "misc" },
-        .{ .from = "native_engine", .imp = "state_list", .to = "state_list" },
-        .{ .from = "native_engine", .imp = "network", .to = "network" },
-        .{ .from = "native_engine", .imp = "position_types", .to = "position_types" },
-        .{ .from = "engine", .imp = "native_engine", .to = "native_engine" },
+        .{ .from = "engine_object", .imp = "graph_layout", .to = "graph_layout" },
+        .{ .from = "engine_object", .imp = "misc", .to = "misc" },
+        .{ .from = "engine_object", .imp = "state_list", .to = "state_list" },
+        .{ .from = "engine_object", .imp = "network", .to = "network" },
+        .{ .from = "engine_object", .imp = "position_types", .to = "position_types" },
+        .{ .from = "engine", .imp = "engine_object", .to = "engine_object" },
         .{ .from = "engine", .imp = "numa", .to = "numa" },
         .{ .from = "thread", .imp = "numa", .to = "numa" },
         .{ .from = "engine", .imp = "tt", .to = "tt" },
@@ -488,7 +488,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine", .imp = "uci_output", .to = "uci_output" },
         .{ .from = "uci", .imp = "uci_wdl", .to = "uci_wdl" },
         .{ .from = "uci", .imp = "uci_output", .to = "uci_output" },
-        .{ .from = "uci", .imp = "native_engine", .to = "native_engine" },
+        .{ .from = "uci", .imp = "engine_object", .to = "engine_object" },
         .{ .from = "uci", .imp = "graph_layout", .to = "graph_layout" },
         .{ .from = "uci", .imp = "clock", .to = "clock" },
         .{ .from = "engine", .imp = "uci_wdl", .to = "uci_wdl" },
@@ -558,7 +558,7 @@ pub fn build(b: *std.Build) void {
     // The engine graph (engine_graph.zig) is compiled via the engine module: it
     // binds the ThreadPool and TranspositionTable.
     exe.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
-    exe.root_module.addImport("native_engine", mods.get("native_engine").?);
+    exe.root_module.addImport("engine_object", mods.get("engine_object").?);
     // main.zig and its worker-construction helper reach the search-history helpers directly.
     exe.root_module.addImport("search_driver", mods.get("search_driver").?);
     exe.root_module.addImport("worker_histories", mods.get("worker_histories").?);
@@ -1207,9 +1207,9 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/engine/state/graph_layout.zig", .deps = &.{ "limits_type", "position_types", "root_move", "state_list", "tt_types", "worker_histories" } },
         .{ .path = "src/engine/board/move_do.zig", .deps = &.{ "bitboard", "board_core", "legality", "position_types", "state_setup", "zobrist" } },
         .{ .path = "src/engine/eval/nnue_accumulator.zig", .deps = &.{ "nnue_acc_rowops", "nnue_feature", "nnue_ft", "nnue_refresh_cache", "position_snapshot", "position_types" } },
-        .{ .path = "src/shell/native_engine.zig", .deps = &.{ "graph_layout", "misc", "network", "position_types", "state_list" } },
-        .{ .path = "src/shell/engine_nnue.zig", .deps = &.{ "libc", "native_engine", "network", "option", "uci_output" } },
-        .{ .path = "src/shell/engine_control.zig", .deps = &.{ "libc", "graph_layout", "native_engine", "tt", "thread", "option", "tablebase" } },
+        .{ .path = "src/shell/engine_object.zig", .deps = &.{ "graph_layout", "misc", "network", "position_types", "state_list" } },
+        .{ .path = "src/shell/engine_nnue.zig", .deps = &.{ "libc", "engine_object", "network", "option", "uci_output" } },
+        .{ .path = "src/shell/engine_control.zig", .deps = &.{ "libc", "graph_layout", "engine_object", "tt", "thread", "option", "tablebase" } },
         .{ .path = "src/engine/search/shared_history.zig", .deps = &.{ "memory", "position_types", "search_types", "shared_histories", "shared_histories_map", "shared_history_types", "worker_histories" } },
         .{ .path = "src/engine/search/history.zig", .deps = &.{ "board_core", "graph_layout", "position_types", "search", "search_common", "search_types", "shared_history", "worker_histories" } },
     }) |dt| {
@@ -1255,13 +1255,13 @@ pub fn build(b: *std.Build) void {
     thread_pool_test.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     addTestRun(b, test_step, thread_pool_test, cov_dir, &cov_idx);
 
-    // worker_native_construct.zig is path-imported only into main.zig (the exe
+    // worker_construct.zig is path-imported only into main.zig (the exe
     // root, not a test root), so its lone test -- the WorkerLayout offset-invariant check
     // guarding constructFull's field placement against a Zig field reorder -- never ran.
     // Wire it standalone so `zig build test` exercises that layout contract under RF + RS.
     const worker_construct_test = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/shell/worker_native_construct.zig"),
+            .root_source_file = b.path("src/shell/worker_construct.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,
@@ -1272,7 +1272,7 @@ pub fn build(b: *std.Build) void {
     worker_construct_test.root_module.addImport("search", mods.get("search").?);
     worker_construct_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
     worker_construct_test.root_module.addImport("network", mods.get("network").?);
-    // worker_native_construct.zig calls the search-history helpers directly (search_driver's
+    // worker_construct.zig calls the search-history helpers directly (search_driver's
     // public face) and reads a worker_histories offset; this fresh test module needs both.
     worker_construct_test.root_module.addImport("search_driver", mods.get("search_driver").?);
     worker_construct_test.root_module.addImport("worker_histories", mods.get("worker_histories").?);

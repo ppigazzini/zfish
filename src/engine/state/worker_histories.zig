@@ -37,7 +37,7 @@ pub const WorkerHistories = struct {
 
 // Offset of the shared_history reference WITHIN WorkerHistories (a native struct, so
 // Zig's choice); the constructor + clear path address it through the typed field, and
-// this offset survives only for the worker_native_construct address cross-check test.
+// this offset survives only for the worker_construct address cross-check test.
 pub const worker_shared_history_off = @offsetOf(WorkerHistories, "shared_history");
 
 test {

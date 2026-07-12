@@ -7,7 +7,7 @@
 // cache blob (std for writeInt), no module deps -- the dimension consts + roundUp
 // are duplicated locally. The accumulator core imports this and aliases the
 // accessors for its refresh path; clearRefreshCache is pub and re-exported onward
-// (called by main.zig / worker_native_construct / engine_trace).
+// (called by main.zig / worker_construct / engine_trace).
 
 const std = @import("std");
 

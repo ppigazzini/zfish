@@ -13,7 +13,7 @@ const position_port = @import("position");
 const option_port = @import("option");
 const uci_move = @import("uci_move");
 const uci_output = @import("uci_output");
-const native_engine = @import("native_engine");
+const engine_object = @import("engine_object");
 const engine_nnue = @import("engine_nnue");
 const engine_trace = @import("engine_trace");
 
@@ -44,7 +44,7 @@ fn perftSubtree(pos_ptr: *position_port.Position, depth: c_int) u64 {
     return perftCount(pos_ptr, capped, &states, 0);
 }
 
-pub fn perftEngine(engine_ptr: *native_engine.NativeEngine, depth: c_int) u64 {
+pub fn perftEngine(engine_ptr: *engine_object.EngineObject, depth: c_int) u64 {
     verifyNetwork();
     const fen_ptr = fen(engine_ptr.positionPtr()) orelse @panic("perft: null fen");
     const fen_text = std.mem.span(fen_ptr);

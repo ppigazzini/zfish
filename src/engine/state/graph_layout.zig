@@ -269,7 +269,7 @@ comptime {
     // thread_pool.zig writes and every reader (accessors here, the search's
     // captured &stop pointer) go through this typed struct, so Zig owns the field
     // placement. The size must equal the calloc'd pool buffer
-    // (native_engine.memberThreadpoolNew).
+    // (engine_object.memberThreadpoolNew).
     std.debug.assert(@sizeOf(ThreadPool) == thread_pool_size);
 }
 
@@ -380,7 +380,7 @@ pub const TranspositionTable = struct {
     }
 };
 
-// The side-TT handle in native_engine.side_tt_storage is written+read only through
+// The side-TT handle in engine_object.side_tt_storage is written+read only through
 // these typed accessors, so Zig owns the (naturally-ordered) layout.
 
 // LimitsType + SearchMoveText are re-exported from the limits_type module so the

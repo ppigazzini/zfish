@@ -8,8 +8,8 @@ const position_types = @import("position_types");
 const runtime_hooks = @import("runtime_hooks");
 const clock = @import("clock");
 const thread_construct = @import("thread_construct.zig");
-const worker_native_construct = @import("worker_native_construct.zig");
-const native_engine = @import("native_engine"); // native engine container
+const worker_construct = @import("worker_construct.zig");
+const engine_object = @import("engine_object"); // native engine container
 const misc_port = @import("misc");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const network_port = @import("network");
@@ -27,7 +27,7 @@ const position_snapshot = @import("position_snapshot");
 comptime {
     _ = graph_layout;
     _ = thread_construct;
-    _ = worker_native_construct;
+    _ = worker_construct;
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -59,10 +59,10 @@ pub fn main(init: std.process.Init) !void {
     installRuntimeHooks();
 
     // Zig-owned engine footprint: allocate aligned storage, placement-construct the
-    // NativeEngine (an ownership container of heap members) into it, and on teardown
+    // EngineObject (an ownership container of heap members) into it, and on teardown
     // destruct-in-place then free (defers run LIFO, so destruct precedes free).
-    const eng_align = native_engine.alignofEngine();
-    const eng_size = native_engine.sizeofEngine();
+    const eng_align = engine_object.alignofEngine();
+    const eng_size = engine_object.sizeofEngine();
     const engine = memory_port.stdAlignedAlloc(eng_align, eng_size) orelse
         return error.OutOfMemory;
     defer memory_port.stdAlignedFree(engine);
@@ -157,24 +157,24 @@ fn installRuntimeHooks() void {
     runtime_hooks.verify_thread_graph = &thread_construct.verifyThreadGraph;
 }
 
-// The engine buffer is a NativeEngine, so the member accessors return its fields
+// The engine buffer is a EngineObject, so the member accessors return its fields
 // (the heap member pointer for pointer-members; the field address for the inline
 // states slot / update_context).
-fn nativeEng(engine: *anyopaque) *native_engine.NativeEngine {
-    return native_engine.NativeEngine.fromBuffer(engine);
+fn engineObj(engine: *anyopaque) *engine_object.EngineObject {
+    return engine_object.EngineObject.fromBuffer(engine);
 }
 // threads_ptr is main-internal only; engine.zig reaches the other graph slots
-// through native_engine.zig accessors.
+// through engine_object.zig accessors.
 fn engineThreadsPtr(engine: *anyopaque) *graph_layout.ThreadPool {
-    return nativeEng(engine).threads.?;
+    return engineObj(engine).threads.?;
 }
 
 // Free the side tt's large-page table at engine teardown + rezero for any re-construct
 // (valgrind). The table pointer lives at tt_off.table within the side storage.
 fn freeSideTt() void {
-    const table_ptr = &graph_layout.TranspositionTable.fromPtr(native_engine.sideTtPtr()).table;
+    const table_ptr = &graph_layout.TranspositionTable.fromPtr(engine_object.sideTtPtr()).table;
     if (table_ptr.*) |tbl| memory_port.alignedLargePagesFree(@ptrCast(tbl));
-    native_engine.sideTtReset();
+    engine_object.sideTtReset();
 }
 
 // SharedState.sharedHistories (a reference) is the 4th pointer field of the
@@ -213,9 +213,9 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
 // Native engine teardown. Free the states slot, join+free the native Threads + null the
 // pool's threads vector, then free the heap members. All three are native.
 fn uciEngineDestructAt(storage: *anyopaque) void {
-    releasePendingStateSlot(native_engine.NativeEngine.fromPtr(storage).statesSlotPtr());
+    releasePendingStateSlot(engine_object.EngineObject.fromPtr(storage).statesSlotPtr());
     thread_port.nativeThreadpoolClear(engineThreadsPtr(storage));
-    nativeEngineDestructMembers(storage);
+    engineDestructMembers(storage);
 }
 
 fn optInt(name: []const u8) c_int {
@@ -268,7 +268,7 @@ fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
     const raw = memory_port.alignedLargePagesAlloc(graph_layout.worker_size) orelse
         @panic("native worker build: large-page OOM");
     const shared_history = engine_port.sharedHistoriesAt(ss.shared_histories, 0);
-    worker_native_construct.constructFull(
+    worker_construct.constructFull(
         raw,
         @intFromPtr(shared_history),
         @intFromPtr(ss.threads),
@@ -287,12 +287,12 @@ pub fn engineInitBody(engine: *anyopaque) void {
 }
 
 // Native engine container construct/destruct: build the heap members + inline sub-objects
-// of the NativeEngine, and store argc/argv.
-fn nativeEngineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
-    return native_engine.constructMembers(buf, argv0);
+// of the EngineObject, and store argc/argv.
+fn engineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
+    return engine_object.constructMembers(buf, argv0);
 }
-fn nativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
-    native_engine.setCli(buf, argc, argv);
+fn engineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
+    engine_object.setCli(buf, argc, argv);
 }
 // Native engine construction. Verify the object-graph footprint, build the heap members +
 // inline sub-objects, store argc/argv, then run init_body (register options, set start
@@ -300,13 +300,13 @@ fn nativeEngineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void
 // is INERT in a release build (no live TUNE() macros → empty list), so it is dropped here.
 fn nativeUciEngineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     graph_layout.verifyLayouts();
-    if (!nativeEngineConstructMembers(storage, argv[0]))
+    if (!engineConstructMembers(storage, argv[0]))
         @panic("native engine construct: member allocation failed");
-    nativeEngineSetCli(storage, argc, argv);
+    engineSetCli(storage, argc, argv);
     engineInitBody(storage);
 }
-fn nativeEngineDestructMembers(buf: *anyopaque) void {
-    native_engine.destructMembers(buf);
+fn engineDestructMembers(buf: *anyopaque) void {
+    engine_object.destructMembers(buf);
 }
 
 pub fn releasePendingStateSlot(states_slot: *anyopaque) void {

@@ -12,7 +12,7 @@ const benchmark_port = @import("benchmark");
 const misc_port = @import("misc");
 const engine_mod = @import("engine");
 const uci_output = @import("uci_output");
-const native_engine = @import("native_engine");
+const engine_object = @import("engine_object");
 const uci_parse = @import("uci_parse");
 const uci_strings = @import("uci_strings");
 
@@ -20,9 +20,9 @@ const parseLimits = uci_parse.parseLimits;
 const freeMaybeCString = uci_strings.freeMaybeCString;
 
 /// Per-command dispatch, injected by uci.zig (a void wrapper over dispatchCommand).
-pub const DispatchFn = *const fn (*native_engine.NativeEngine, []const u8) void;
+pub const DispatchFn = *const fn (*engine_object.EngineObject, []const u8) void;
 
-pub fn benchRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8, dispatch: DispatchFn) void {
+pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, dispatch: DispatchFn) void {
     const engine_ptr = uci_ptr;
 
     const current_fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
@@ -91,7 +91,7 @@ pub fn benchRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8, disp
     );
 }
 
-pub fn benchmarkRuntime(uci_ptr: *native_engine.NativeEngine, args: []const u8, dispatch: DispatchFn) void {
+pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, dispatch: DispatchFn) void {
     const warmup_positions: usize = 3;
     const engine_ptr = uci_ptr;
 
