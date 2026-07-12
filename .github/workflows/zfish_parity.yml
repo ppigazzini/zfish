@@ -223,17 +223,13 @@ jobs:
           path: net/nn-*.nnue
           key: nnue-${{ hashFiles('src/eval/network.zig') }}
 
-      # Pre-fetch the net through `bash` (git-bash on Windows) so it is cached before the
-      # build; `zig build` also fetches it via net_cmd, which now early-exits when present.
+      # Pre-fetch the net so it is cached before the build. `zig build net` runs the pure-Zig
+      # fetcher (tools/fetch_net.zig) -- no bash/curl/wget -- and early-exits when present.
       - name: Fetch the NNUE net
-        shell: bash
-        run: |
-          cd net
-          bash ../tools/fetch_net.sh ../src/eval/network.zig
+        run: zig build net
 
       # Full cross-OS parity: bench signature (2067208) + the six golden gates, all via the
-      # pure-Zig harness. `shell: bash` only supplies bash on PATH for the net fetch that
-      # `zig build` shells out to; the harness itself needs no shell.
+      # pure-Zig harness. No shell needed -- the net fetch and the harness are both compiled
+      # Zig tools now, so these lanes carry no bash/coreutils dependency.
       - name: Build + parity-portable (native, ${{ matrix.arch }})
-        shell: bash
         run: zig build parity-portable -Dos=${{ matrix.os }} -Darch=${{ matrix.arch }}

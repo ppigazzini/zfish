@@ -34,7 +34,7 @@ pub fn build(b: *std.Build) void {
     const signature_ref = b.option(
         []const u8,
         "signature-ref",
-        "Expected bench signature for tests/signature.sh; omit to print the current signature",
+        "Expected bench signature for the `signature` step; defaults to the 2067208 invariant",
     );
     const requested_arch = b.option(
         []const u8,
@@ -665,15 +665,23 @@ pub fn build(b: *std.Build) void {
     // source of truth engine.zig imports), not the net named in the stale upstream src/evaluate.h. After
     // an upstream net bump the two diverge, and the upstream scripts/net.sh would fetch the wrong file ->
     // the binary can't load its net and crashes.
-    // `bash` (not `sh`): on Windows runners git-bash's bash.exe is on PATH while a bare
-    // `sh` is not, so this keeps `zig build net`/`parity-portable` working there. The script
-    // is POSIX and runs the same under bash on Linux/macOS.
-    const net_cmd = b.addSystemCommand(&.{
-        "bash",
-        b.pathFromRoot("tools/fetch_net.sh"),
-        b.pathFromRoot("src/eval/network.zig"),
+    // M23.0: the fetcher is a compiled Zig tool (tools/fetch_net.zig), not a `sh` script -- it
+    // reads the net name from network.zig's authoritative constant, sha256-validates, and downloads
+    // via std.http.Client. Built for the host (it runs at build time). argv[1] = the net-name source.
+    const fetch_net_exe = b.addExecutable(.{
+        .name = "fetch_net",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/fetch_net.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseFast,
+        }),
     });
+    const net_cmd = b.addRunArtifact(fetch_net_exe);
+    net_cmd.addFileArg(b.path("src/eval/network.zig"));
     net_cmd.setCwd(b.path("net"));
+    // Always run (the tool is idempotent: it validates an existing net and no-ops), so a deleted or
+    // corrupt net is re-fetched -- matching the old always-run shell step's semantics.
+    net_cmd.has_side_effects = true;
 
     const net_step = b.step(
         "net",
@@ -725,24 +733,15 @@ pub fn build(b: *std.Build) void {
     );
     uci_step.dependOn(&uci_run.step);
 
-    const signature_cmd = b.addSystemCommand(&.{
-        "env",
-        b.fmt("STOCKFISH_BIN={s}", .{b.getInstallPath(.bin, "stockfish")}),
-        "bash",
-        b.pathFromRoot("tests/signature.sh"),
-    });
-    signature_cmd.step.dependOn(install_step);
-    signature_cmd.step.dependOn(&net_cmd.step);
-    signature_cmd.setCwd(b.path("net"));
-    if (signature_ref) |reference|
-        signature_cmd.addArg(reference);
+    // M23.0: the bench signature is verified by the pure-Zig parity harness (tools/parity_harness.zig
+    // `signature` check), not tests/signature.sh -- one cross-OS gate instead of a bash wrapper that
+    // only ran on Linux. Defaults to the 2067208 arch/OS invariant; -Dsignature-ref overrides.
+    const signature_reference = signature_ref orelse "2067208";
+    const signature_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "signature", signature_reference, "check");
 
     const signature_step = b.step(
         "signature",
-        if (signature_ref != null)
-            "Verify the Zig-built Stockfish bench signature through tests/signature.sh"
-        else
-            "Report the Zig-built Stockfish bench signature through tests/signature.sh",
+        "Verify the Zig-built Stockfish bench signature (== 2067208 by default; -Dsignature-ref to override) via the pure-Zig parity harness",
     );
     signature_step.dependOn(&signature_cmd.step);
 
@@ -1153,6 +1152,7 @@ pub fn build(b: *std.Build) void {
         "src/uci/option_parse.zig",
         "src/uci/option_model.zig",
         "tools/native_arch.zig",
+        "tools/fetch_net.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
@@ -1306,17 +1306,15 @@ pub fn build(b: *std.Build) void {
     // Cross-OS aggregate (M-PORT.2): the platform-independent subset of `parity` -- bench,
     // the UCI handshake, the bench signature, and all six golden checks, every one driven by
     // the pure-Zig harness (no bash / no nm). This is what the Windows and macOS lanes run;
-    // the Linux-only structural gates (h9 src-free via `nm`, signature.sh, arch-determinism)
-    // stay in `parity`. The bench signature is asserted in-harness against the 2067208
-    // arch/OS invariant.
-    const harness_sig_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "signature", "2067208", "check");
+    // the Linux-only structural gates (h9 src-free via `nm`, arch-determinism) stay in `parity`.
+    // The bench signature is the same harness `signature_cmd` `parity` uses (2067208 invariant).
     const parity_portable_step = b.step(
         "parity-portable",
         "Cross-OS parity via the pure-Zig harness: signature + six golden gates + mt/stress/time",
     );
     parity_portable_step.dependOn(&bench_run.step);
     parity_portable_step.dependOn(&uci_run.step);
-    parity_portable_step.dependOn(&harness_sig_cmd.step);
+    parity_portable_step.dependOn(&signature_cmd.step);
     parity_portable_step.dependOn(&search_parity_cmd.step);
     parity_portable_step.dependOn(&search_modes_cmd.step);
     parity_portable_step.dependOn(&output_golden_cmd.step);
