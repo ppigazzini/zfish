@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) void {
     const requested_arch = b.option(
         []const u8,
         "arch",
-        "Stockfish ARCH value for Linux x86_64, or 'native' to use scripts/get_native_properties.sh",
+        "Stockfish ARCH value (e.g. x86-64-avx2), or 'native' to auto-detect the host CPU tier in Zig",
     ) orelse "native";
     const arch = resolveArch(b, requested_arch);
     // Owned runtime targets (M-PORT): Linux (default), Windows, and macOS. The pure-Zig
@@ -1152,6 +1152,7 @@ pub fn build(b: *std.Build) void {
         "src/board/search_values.zig",
         "src/uci/option_parse.zig",
         "src/uci/option_model.zig",
+        "tools/native_arch.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
@@ -1360,9 +1361,14 @@ fn applyMacros(module: *std.Build.Module, macros: []const Macro) void {
         module.addCMacro(macro.name, macro.value);
 }
 
+// M23.0: native CPU -> best Stockfish ARCH tier in pure, unit-tested Zig (tools/native_arch.zig),
+// replacing the 362-line scripts/get_native_properties.sh shell-out. Uses the host CPU features
+// Zig's build graph already resolved via cpuid -- no /proc/cpuinfo grep, no `sh`.
+const native_arch = @import("tools/native_arch.zig");
+
 fn resolveArch(b: *std.Build, requested_arch: []const u8) ArchConfig {
     const arch_name = if (std.mem.eql(u8, requested_arch, "native"))
-        trimOutput(b.run(&.{ "sh", b.pathFromRoot("scripts/get_native_properties.sh") }))
+        native_arch.detectArchFromCpu(b.graph.host.result.cpu)
     else
         requested_arch;
 
