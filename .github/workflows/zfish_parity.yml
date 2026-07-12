@@ -233,3 +233,89 @@ jobs:
       # Zig tools now, so these lanes carry no bash/coreutils dependency.
       - name: Build + parity-portable (native, ${{ matrix.arch }})
         run: zig build parity-portable -Dos=${{ matrix.os }} -Darch=${{ matrix.arch }}
+
+  # M23.1 memory-safety gate. Valgrind memcheck over the two allocation-lifecycle paths a
+  # bench never exercises: the searchmoves/rootMoves std::vector churn + Worker construct/
+  # destroy (parity-teardown, H5) and multi-thread go sessions (parity-valgrind, H3). Both
+  # assert no definite leak / invalid access / bad free, reading valgrind's own summary. Run
+  # locally per memory-touching change since the M19/M20 memory campaign; this promotes them
+  # to CI so a leak/bad-free regression is caught on every push. Pinned to -Darch=x86-64: the
+  # default AVX-512 build SIGILLs under valgrind 3.x (documented workaround), and the baseline
+  # tier runs on any runner. Out of the fast `parity` job (memcheck is ~20-50x slower).
+  valgrind:
+    name: Linux valgrind memcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Cache NNUE network
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: net/nn-*.nnue
+          key: nnue-${{ hashFiles('src/eval/network.zig') }}
+      - name: Fetch the NNUE net
+        run: zig build net
+      # H5: searchmoves/rootMoves vector lifecycle + Worker clear churn (Threads=1).
+      - name: Leak gate -- searchmoves/rootMoves + Worker clear
+        run: zig build parity-teardown -Darch=x86-64
+      # H3: multi-thread memcheck across Threads {1,2}.
+      - name: Memcheck -- multi-thread search
+        run: zig build parity-valgrind -Darch=x86-64
+
+  # M23.1 line coverage. kcov instruments the unit-test ELF at runtime (no coverage rebuild
+  # flags -- Debug binaries carry the DWARF kcov needs), so `zig build test -Dtest-coverage`
+  # runs each test artifact under kcov into its own kcov-out/cov-N subdir (unique per artifact
+  # -> the parallel test runs never write the same dir). We then merge the subdirs into one
+  # report. Gives a real coverage number to hold the M22.0 test-surface accountable. Pinned to
+  # the sse41 baseline for reproducibility, matching the parity job.
+  coverage:
+    name: Linux test coverage (kcov)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - name: Install kcov
+        run: sudo apt-get update && sudo apt-get install -y kcov
+      # The unit/property tests are pure Zig (no NNUE net load), so no net fetch is needed.
+      - name: Run the unit tests under kcov
+        run: zig build test -Dtest-coverage -Darch=x86-64-sse41-popcnt
+      - name: Merge per-artifact coverage
+        run: |
+          kcov --merge kcov-out/merged kcov-out/cov-*
+          # Best-effort: surface the merged line-coverage percentage in the log.
+          find kcov-out/merged -name 'coverage.json' -exec cat {} \; | \
+            grep -o '"percent_covered"[^,]*' | head -1 || true
+
+  # M23.1 toolchain-drift lane. A non-blocking build/test on Zig nightly (master) so the
+  # pinned-0.16.0 build gets early warning when an upcoming release changes std / the build
+  # API (Ghostty and zls both run such a lane). continue-on-error: nightly breakage must never
+  # block a push -- it is a heads-up, not a gate. Reports 2067208 to catch a codegen drift too.
+  zig-nightly:
+    name: Zig nightly (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: master
+      - name: Cache NNUE network
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: net/nn-*.nnue
+          key: nnue-${{ hashFiles('src/eval/network.zig') }}
+      - name: Fetch the NNUE net
+        run: zig build net
+      - name: Build + unit tests (nightly)
+        run: zig build test -Darch=x86-64-sse41-popcnt
+      - name: Bench signature (nightly)
+        run: zig build signature -Darch=x86-64-sse41-popcnt

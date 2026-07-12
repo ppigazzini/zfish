@@ -42,6 +42,18 @@ pub fn build(b: *std.Build) void {
         "Stockfish ARCH value (e.g. x86-64-avx2), or 'native' to auto-detect the host CPU tier in Zig",
     ) orelse "native";
     const arch = resolveArch(b, requested_arch);
+    // M23.1: `-Dtest-coverage` runs each unit-test binary under kcov, merging line coverage
+    // into ./kcov-out (one subdir per test artifact -> no parallel-write race). kcov
+    // instruments the ELF at runtime, so no coverage rebuild flags are needed; default off
+    // (every normal `zig build test` runs the artifact directly, unchanged). CI installs kcov,
+    // merges the subdirs, and uploads the report. See addTestRun.
+    const test_coverage = b.option(
+        bool,
+        "test-coverage",
+        "Run the unit tests under kcov, merging line coverage into ./kcov-out (needs kcov on PATH)",
+    ) orelse false;
+    const cov_dir: ?[]const u8 = if (test_coverage) b.pathFromRoot("kcov-out") else null;
+    var cov_idx: usize = 0;
     // Owned runtime targets (M-PORT): Linux (default), Windows, and macOS. The pure-Zig
     // engine is OS-portable behind a thin platform seam -- sync (thread_runtime.zig futex
     // seam), aligned/large-page allocation (memory.zig), the steady clock and CPU-affinity
@@ -565,7 +577,7 @@ pub fn build(b: *std.Build) void {
     graph_test.root_module.addImport("numa_replication", mods.get("numa_replication").?);
     graph_test.root_module.addImport("position_storage", mods.get("position_storage").?);
     const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
-    graph_test_step.dependOn(&b.addRunArtifact(graph_test).step);
+    addTestRun(b, graph_test_step, graph_test, cov_dir, &cov_idx);
     // B2 switch: native NumaReplicationContext (numaContext member) — tests need the
     // numa_config dep, so they run via test-graph rather than standalone.
     const numa_repl_test = b.addTest(.{
@@ -576,7 +588,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     numa_repl_test.root_module.addImport("numa_config", mods.get("numa_config").?);
-    graph_test_step.dependOn(&b.addRunArtifact(numa_repl_test).step);
+    addTestRun(b, graph_test_step, numa_repl_test, cov_dir, &cov_idx);
     // B2 switch: native sharedHists map container (std-only generic; tested with a mock
     // entry). board/position.zig instantiates it with the real SharedHistories.
     const sh_map_test = b.addTest(.{
@@ -586,7 +598,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    graph_test_step.dependOn(&b.addRunArtifact(sh_map_test).step);
+    addTestRun(b, graph_test_step, sh_map_test, cov_dir, &cov_idx);
 
     exe.root_module.addImport("benchmark", mods.get("benchmark").?);
     exe.root_module.addImport("bitboard", mods.get("bitboard").?);
@@ -1049,7 +1061,7 @@ pub fn build(b: *std.Build) void {
         mods.get("thread_runtime").?,
     }) |unit_module| {
         const unit_test = b.addTest(.{ .root_module = unit_module });
-        test_step.dependOn(&b.addRunArtifact(unit_test).step);
+        addTestRun(b, test_step, unit_test, cov_dir, &cov_idx);
     }
     // option.zig uses std.heap.c_allocator, so its standalone test build needs libc
     // (in the exe the libc linkage comes from the root module). It has no module deps.
@@ -1061,7 +1073,7 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
-    test_step.dependOn(&b.addRunArtifact(option_test).step);
+    addTestRun(b, test_step, option_test, cov_dir, &cov_idx);
 
     // M17.4h: board property tests (perft to known node counts) -- needs libc
     // (position uses c_allocator) + the board module graph.
@@ -1076,7 +1088,7 @@ pub fn build(b: *std.Build) void {
     board_props_test.root_module.addImport("position", mods.get("position").?);
     board_props_test.root_module.addImport("movegen", mods.get("movegen").?);
     board_props_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
-    test_step.dependOn(&b.addRunArtifact(board_props_test).step);
+    addTestRun(b, test_step, board_props_test, cov_dir, &cov_idx);
 
     // M17.5b: uci_parse property + fuzz tests (needs libc for c_allocator + the
     // uci_strings base leaf).
@@ -1089,7 +1101,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     uci_parse_test.root_module.addImport("uci_strings", mods.get("uci_strings").?);
-    test_step.dependOn(&b.addRunArtifact(uci_parse_test).step);
+    addTestRun(b, test_step, uci_parse_test, cov_dir, &cov_idx);
 
     // M17.5i: coverage-guided fuzz targets (std.testing.fuzz). Wired to its OWN
     // `zig build fuzz` step, deliberately NOT test_step -- these are meant to be run
@@ -1162,7 +1174,7 @@ pub fn build(b: *std.Build) void {
                 .link_libc = true,
             }),
         });
-        test_step.dependOn(&b.addRunArtifact(file_test).step);
+        addTestRun(b, test_step, file_test, cov_dir, &cov_idx);
     }
 
     // M22.0 coverage: leaves that need a few module imports for their `test {}` /
@@ -1221,7 +1233,7 @@ pub fn build(b: *std.Build) void {
             }),
         });
         for (dt.deps) |d| t.root_module.addImport(d, mods.get(d).?);
-        test_step.dependOn(&b.addRunArtifact(t).step);
+        addTestRun(b, test_step, t, cov_dir, &cov_idx);
     }
 
     // state_list.zig holds a typed StateInfo (M18.3), so its standalone test needs the
@@ -1235,7 +1247,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     state_list_test.root_module.addImport("position_types", mods.get("position_types").?);
-    test_step.dependOn(&b.addRunArtifact(state_list_test).step);
+    addTestRun(b, test_step, state_list_test, cov_dir, &cov_idx);
 
     // M19.1: native_threadpool.zig is path-imported into the (untested) `thread` module,
     // so its NativePool footprint + bound-slice lifecycle `test {}` blocks never ran in any
@@ -1252,7 +1264,7 @@ pub fn build(b: *std.Build) void {
     native_threadpool_test.root_module.addImport("native_thread", mods.get("native_thread").?);
     native_threadpool_test.root_module.addImport("graph_layout", mods.get("graph_layout").?);
     native_threadpool_test.root_module.addImport("native_hooks", mods.get("native_hooks").?);
-    test_step.dependOn(&b.addRunArtifact(native_threadpool_test).step);
+    addTestRun(b, test_step, native_threadpool_test, cov_dir, &cov_idx);
 
     // M19.1: worker_native_construct.zig is path-imported only into main.zig (the exe
     // root, not a test root), so its lone test -- the WorkerLayout offset-invariant check
@@ -1271,7 +1283,7 @@ pub fn build(b: *std.Build) void {
     worker_construct_test.root_module.addImport("search", mods.get("search").?);
     worker_construct_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
     worker_construct_test.root_module.addImport("network", mods.get("network").?);
-    test_step.dependOn(&b.addRunArtifact(worker_construct_test).step);
+    addTestRun(b, test_step, worker_construct_test, cov_dir, &cov_idx);
 
     const parity_step = b.step(
         "parity",
@@ -1333,6 +1345,25 @@ pub fn build(b: *std.Build) void {
         "Build the Zig-owned Stockfish engine for Linux x86_64 / aarch64",
     );
     stockfish_step.dependOn(install_step);
+}
+
+// M23.1 coverage: wire a unit-test artifact into `step`. Without coverage this is the plain
+// `b.addRunArtifact`. With `-Dtest-coverage` (cov_dir set) the binary runs under kcov into its
+// OWN subdir `kcov-out/cov-N` -- unique per artifact so the parallel test runs never write the
+// same directory -- and CI merges the subdirs afterwards. `--include-path=src` scopes coverage
+// to the owned source. Verified locally with a stub `kcov` (arg order + every artifact runs);
+// CI installs the real kcov.
+fn addTestRun(b: *std.Build, step: *std.Build.Step, artifact: *std.Build.Step.Compile, cov_dir: ?[]const u8, cov_idx: *usize) void {
+    if (cov_dir) |dir| {
+        const sub = b.fmt("{s}/cov-{d}", .{ dir, cov_idx.* });
+        cov_idx.* += 1;
+        const run = b.addSystemCommand(&.{ "kcov", "--include-path=src", sub });
+        run.addArtifactArg(artifact);
+        run.has_side_effects = true;
+        step.dependOn(&run.step);
+    } else {
+        step.dependOn(&b.addRunArtifact(artifact).step);
+    }
 }
 
 // Wire one pure-Zig parity-harness invocation (M-PORT.2): run the harness (host) with the
