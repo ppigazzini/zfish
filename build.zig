@@ -120,7 +120,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "limits_type", .path = "src/engine/state/limits_type.zig" },
         .{ .name = "root_move", .path = "src/engine/state/root_move.zig" },
         .{ .name = "engine_object", .path = "src/shell/engine/object.zig" },
-        .{ .name = "timeman", .path = "src/shell/timeman.zig" },
+        .{ .name = "timeman", .path = "src/engine/search/timeman.zig" },
         .{ .name = "benchmark", .path = "src/shell/benchmark.zig" },
         .{ .name = "misc", .path = "src/shell/misc.zig" },
         .{ .name = "engine", .path = "src/shell/engine.zig" },
@@ -1020,7 +1020,7 @@ pub fn build(b: *std.Build) void {
     // count only ratchets down; the baseline is the currently-allowed maximum and the
     // gate fails if the real count exceeds it. Lower it as each seam is severed; at 0
     // the engine is a standalone search+eval library.
-    const headless_baseline = "15";
+    const headless_baseline = "14";
     const headless_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/headless_lint.sh"),
@@ -1144,7 +1144,7 @@ pub fn build(b: *std.Build) void {
         "src/engine/board/score.zig",
         "src/shell/uci_strings.zig",
         "src/shell/engine/util.zig",
-        "src/shell/timeman.zig",
+        "src/engine/search/timeman.zig",
         "src/engine/eval/nnue_misc.zig",
         "src/engine/eval/evaluate.zig",
         "src/engine/search/search.zig",
