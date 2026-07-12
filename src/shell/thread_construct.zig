@@ -1,14 +1,14 @@
 // Construction verifier for the ThreadPool / Thread graph.
 //
-// The native ThreadPool reproduces the ThreadPool's observable layout (stop@0,
+// The ThreadPool reproduces a pinned observable layout (stop@0,
 // increaseDepth@1, the threads vector at 16/24, boundThreadToNumaNode at 40/48)
-// and each native Thread keeps its Worker at thread_off.worker, because the
+// and each Thread keeps its Worker at thread_off.worker, because the
 // search-driver code (cb_worker_state, id_collect_bmc, nodesSearched,
 // get_best_thread, ...) reads all of these by offset and would silently corrupt
-// if the native construction drifted.
+// if the construction drifted.
 //
-// This verifier asserts the freshly constructed native pool against the pinned
-// offsets. Same model as the native worker constructor. Read-only; panics on drift.
+// This verifier asserts the freshly constructed pool against the pinned
+// offsets. Same model as the worker constructor. Read-only; panics on drift.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");
@@ -26,7 +26,7 @@ fn fail(comptime msg: []const u8) noreturn {
 }
 
 // Verify a freshly constructed ThreadPool against the Zig model. `requested` is
-// the Thread count ThreadPool::set was asked to build; `bound` is the expected
+// the Thread count the pool was asked to build; `bound` is the expected
 // boundThreadToNumaNode size (0 when threads are not NUMA-bound, else == requested).
 pub fn verifyThreadGraph(pool: *const graph_layout.ThreadPool, requested: usize, bound: usize) void {
     const tp = pool;
@@ -43,7 +43,7 @@ pub fn verifyThreadGraph(pool: *const graph_layout.ThreadPool, requested: usize,
     // boundThreadToNumaNode is a []usize slice of NumaIndex; size == bound.
     if (tp.boundCount() != bound) fail("ThreadPool.boundThreadToNumaNode size != expected");
 
-    // Each threads[i] is a live unique_ptr<Thread> whose Worker slot is bound.
+    // Each threads[i] is a live owned Thread whose Worker slot is bound.
     var i: usize = 0;
     while (i < count) : (i += 1) {
         const thread = tp.threadAt(i);

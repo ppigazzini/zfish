@@ -1,4 +1,4 @@
-// Native shared-histories map — the engine member mapping NumaIndex -> SharedHistories.
+// Shared-histories map — the engine member mapping NumaIndex -> SharedHistories.
 // One SharedHistories per NUMA node, built lazily by try_emplace(numa, threadCount) and
 // read by workers via at(numa). The element (SharedHistories) owns two large-page
 // arrays, so the map needs a construct hook (constructSharedHistories) and a free hook

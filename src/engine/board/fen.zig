@@ -14,7 +14,7 @@
 
 const std = @import("std");
 
-// Piece code -> FEN letter (index by the native piece encoding: 1..6 white,
+// Piece code -> FEN letter (index by the engine's piece encoding: 1..6 white,
 // 9..14 black). Mirrors position.zig's table; FEN letters are intrinsic here.
 const piece_to_char = " PNBRQK  pnbrqk";
 
@@ -300,7 +300,7 @@ test "flipFen is an involution" {
 }
 
 test "formatFen renders the start position from primitives" {
-    // Native piece codes: 1..6 = W P/N/B/R/Q/K, 9..14 = B p/n/b/r/q/k.
+    // The engine's piece codes: 1..6 = W P/N/B/R/Q/K, 9..14 = B p/n/b/r/q/k.
     var board = [_]u8{0} ** 64;
     const back = [_]u8{ 4, 2, 3, 5, 6, 3, 2, 4 }; // R N B Q K B N R
     for (0..8) |f| {

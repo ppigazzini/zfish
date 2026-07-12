@@ -1,4 +1,4 @@
-// Native Zig SharedState — the bundle of references the Engine hands every Worker at
+// SharedState — the bundle of references the Engine hands every Worker at
 // construction (thread pool, transposition table, per-NUMA shared histories), as typed
 // pointers into the Zig-owned subsystems.
 //
@@ -25,7 +25,7 @@ pub fn SharedStateOf(
         const Self = @This();
 
         // The bundle is the three live references the worker actually binds; options
-        // and network are read elsewhere (the global OptionsModel + the native FT
+        // and network are read elsewhere (the global OptionsModel + the FT
         // storage), not through SharedState.
         pub fn init(
             threads: *Threads,
@@ -39,7 +39,7 @@ pub fn SharedStateOf(
             };
         }
 
-        /// Typed view over the *anyopaque worker-build boundary that main.zig's native
+        /// Typed view over the *anyopaque worker-build boundary that main.zig's
         /// hook impls cross to read the referents. The engine's concrete instantiation
         /// is the single definition, so the view and the owner cannot drift.
         pub inline fn fromPtr(p: *const anyopaque) *Self {

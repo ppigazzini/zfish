@@ -17,7 +17,7 @@ const uci_strings = @import("uci_strings");
 
 // Blocking std.Io handle for stdin, plus a persistent line reader (replacing libc
 // fgets). `init_single_threaded` spawns no threads and installs no signal handlers, so
-// input reading, like output, never touches the engine's native threadpool. The reader
+// input reading, like output, never touches the engine's thread pool. The reader
 // keeps a 4096-byte buffer across calls (its state must not move, so it lives in a
 // module var recovered by @fieldParentPtr); it bounds one command line -- UCI commands
 // are short, and a longer line reports error.StreamTooLong, handled as end-of-input.
@@ -63,10 +63,10 @@ const CommandKind = enum {
 // move views directly rather than through a duplicate struct.
 const ByteView = engine_mod.ByteView;
 
-// Build the native LimitsType from the parsed UCI `go` args (including the
+// Build the LimitsType from the parsed UCI `go` args (including the
 // searchmoves list, now Zig-owned graph_layout.SearchMoveText records) and
-// hand it to the engine go driver. Relocated from main.zig: startTime is
-// stamped here (earliest point), so the info-line elapsed/nps are correct; the
+// hand it to the engine go driver. startTime is stamped here (the earliest
+// point), so the info-line elapsed/nps are correct; the
 // searchmoves element buffer is freed after start_thinking has read it.
 fn goParsed(engine_ptr: *engine_object.EngineObject, parsed: ParsedLimits) void {
     var limits: graph_layout.LimitsType = std.mem.zeroes(graph_layout.LimitsType);

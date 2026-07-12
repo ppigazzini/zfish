@@ -1,4 +1,4 @@
-// Native UCI output primitive + log-file sink.
+// UCI output primitive + log-file sink.
 //
 // A leaf module (std only) so any layer can print without a cycle: the coordinated
 // line writer tees stdout to an optional log file. `printLine` is the single
@@ -8,7 +8,7 @@
 // `std.Io.Threaded.init_single_threaded` -- a BLOCKING handle that spawns no threads
 // and installs no signal handlers (`have_signal_handler = false`), the same
 // lightweight handle the net-file read uses, so the output path never interacts with
-// the engine's own native threadpool. A `std.Io.Mutex` serialises `printLine` so the
+// the engine's own thread pool. A `std.Io.Mutex` serialises `printLine` so the
 // search info emitter and the UCI listener can never tear a line -- stronger than the
 // old per-glibc-stream lock, which took a separate lock for each fwrite/fputc/fflush
 // and could interleave a line with its newline.

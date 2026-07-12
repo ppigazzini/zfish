@@ -1,8 +1,8 @@
-// Native PositionStorage — the native owner of the engine's `pos` member's
-// storage. The Position ALGORITHMS are already native (board/position.zig operates
-// on a Position by offset); this provides native OWNERSHIP of the 1032-byte
+// PositionStorage — the owner of the engine's `pos` member's
+// storage. The Position ALGORITHMS live in board/position.zig (which operates
+// on a Position by offset); this provides OWNERSHIP of the 1032-byte
 // Position object the engine holds by value. This is that storage: one aligned,
-// zeroed block the native runtime hands to the position ops as the live Position.
+// zeroed block the runtime hands to the position ops as the live Position.
 //
 // Treated as opaque bytes (Position internals are written/read by position.zig).
 //
@@ -13,20 +13,20 @@
 
 const std = @import("std");
 
-/// sizeof(Stockfish::Position), pinned by graph_layout.zig (= 1032).
+/// sizeof(Position), pinned by graph_layout.zig (= 1032).
 pub const position_size: usize = 1032;
 pub const position_align: usize = 8;
 
 pub const PositionStorage = struct {
     bytes: [position_size]u8 align(position_align),
 
-    /// A fresh, zeroed Position block (matches the value-initialized C++ `pos`
+    /// A fresh, zeroed Position block (matches the value-initialized `pos`
     /// member before pos.set(StartFEN) runs).
     pub fn zeroed() PositionStorage {
         return .{ .bytes = [_]u8{0} ** position_size };
     }
 
-    /// Address of the Position object, handed to the native position ops.
+    /// Address of the Position object, handed to the position ops.
     pub fn ptr(self: *PositionStorage) *anyopaque {
         return @ptrCast(&self.bytes);
     }

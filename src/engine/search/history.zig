@@ -91,7 +91,7 @@ pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
     for (&w.low_ply_history) |*e| e.* = 100;
 }
 
-// Worker::clear() per-Worker history resets (the shared correction/pawn clear_range
+// Worker clear: per-Worker history resets (the shared correction/pawn clear_range
 // is handled separately by clearSharedHistory for its numa partitioning, and the NNUE
 // refreshTable is untouched). mainHistory=-5, captureHistory=-699, ttMoveHistory=0,
 // continuationCorrectionHistory=5, continuationHistory=-552.
@@ -172,7 +172,7 @@ pub fn updateAllStats(
     const malus = search.statMalus(depth);
 
     // upstream 645b636df: at non-PV nodes, scale the best-move bonus by the number of searched moves.
-    // Replicate C++ `bonus += bonus * uint64_t(N) / 256` EXACTLY: the mul/div are UNSIGNED (int promoted
+    // Match upstream's `bonus += bonus * uint64_t(N) / 256` EXACTLY: the mul/div are UNSIGNED (int promoted
     // to uint64_t), which differs from signed when bonus < 0; the u64 sum narrows back to i32.
     if (pv_node == 0) {
         const n: u64 = @intCast(n_quiets + n_captures);

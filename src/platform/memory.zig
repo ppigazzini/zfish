@@ -1,4 +1,4 @@
-// Aligned + large-page allocation, ported to a cross-platform seam.
+// Aligned + large-page allocation behind a cross-platform seam.
 //
 // No @cImport here: sys/mman.h does not exist on Windows and the macOS SDK headers
 // can't be cross-compiled, so the C entry points are declared directly via std.c
@@ -47,7 +47,7 @@ pub fn alignedLargePagesAlloc(alloc_size: usize) ?*anyopaque {
         // clear) carry stale data, and the Worker has a field read during multipv search
         // that neither its constructor nor clear() initializes, leaving it heap-layout-
         // dependent. Zeroing makes that field deterministically 0 -- the same value a
-        // fresh-page allocation gives -- and lets native Worker construction rely on
+        // fresh-page allocation gives -- and lets the Worker construction rely on
         // zero-fill.
         @memset(@as([*]u8, @ptrCast(ptr))[0..rounded_size], 0);
         // Transparent huge pages are a Linux hint (madvise MADV_HUGEPAGE). macOS/Windows

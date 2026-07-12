@@ -2,7 +2,7 @@
 //
 // The object graph (Engine -> ThreadPool -> Thread -> Worker, plus Position,
 // TT, accumulator storage, ...) is constructed and read by the Zig runtime.
-// These constants pin the exact byte footprint each object must have; native
+// These constants pin the exact byte footprint each object must have; the
 // allocations size to them, and any drift surfaces as a bench/parity failure.
 
 const std = @import("std");
@@ -49,9 +49,9 @@ pub fn poolTbHits(tp: *ThreadPool) u64 {
 
 // Byte size of the WorkerHistories block embedded in the Worker.
 pub const worker_histories_bytes: usize = @sizeOf(worker_histories.WorkerHistories);
-pub const refresh_table_bytes: usize = 278528; // native FT refresh cache
+pub const refresh_table_bytes: usize = 278528; // FT refresh cache
 
-// The full Worker block as a native Zig layout, using graph_layout's own
+// The full Worker block as a Zig layout, using graph_layout's own
 // LimitsType/PVMoves and the typed WorkerHistories. Zig picks the field order (the
 // 64-aligned NNUE arenas float to the front), so every consumer must read via
 // worker_off/@offsetOf, never a raw offset.
@@ -111,7 +111,7 @@ comptime {
 pub const worker_off = struct {
     pub const histories = @offsetOf(WorkerLayout, "histories");
     // shared_history is inside WorkerHistories at position.worker_shared_history_off
-    // (a native struct, so not a fixed sub-offset); users add histories + that.
+    // (a Zig-owned struct, so not a fixed sub-offset); users add histories + that.
     pub const limits = @offsetOf(WorkerLayout, "limits");
     pub const pv_idx = @offsetOf(WorkerLayout, "pv_idx");
     pub const pv_last = @offsetOf(WorkerLayout, "pv_last");
@@ -142,7 +142,7 @@ pub const worker_off = struct {
 };
 
 // TimeManagement (40 bytes): the clock sub-object embedded in SearchManager at
-// offset 8. availableNodes (4th i64) is set to -1 by TimeManagement::clear.
+// offset 8. availableNodes (4th i64) is set to -1 by TimeManagement's clear.
 pub const TimeManagement = struct {
     start_time: i64 = 0,
     optimum_time: i64 = 0,
@@ -152,8 +152,8 @@ pub const TimeManagement = struct {
 };
 
 // The SearchManager object (120 bytes): a vtable slot, the embedded TimeManagement,
-// and the per-search bookkeeping the time-management + PV code reads. `ponder` is a
-// std::atomic_bool in a 4-byte slot.
+// and the per-search bookkeeping the time-management + PV code reads. `ponder` is an
+// atomic bool in a 4-byte slot.
 pub const SearchManager = struct {
     vtable: usize = 0, // functionally dead (no virtual dispatch); kept as a zero slot
     tm: TimeManagement = .{},
@@ -166,7 +166,7 @@ pub const SearchManager = struct {
     best_previous_average_score: i32 = 0,
     stop_on_ponderhit: u8 = 0, // bool
     id: usize = 0,
-    updates: ?*const anyopaque = null, // const UpdateContext&
+    updates: ?*const anyopaque = null, // pointer to a const UpdateContext
 
     pub inline fn fromPtr(p: *anyopaque) *SearchManager {
         return @ptrCast(@alignCast(p));
@@ -176,7 +176,7 @@ pub const SearchManager = struct {
     }
 
     // Typed accessors that reset the per-search MainSearchManager state the
-    // ThreadPool::start_searching path re-inits.
+    // ThreadPool's start_searching path re-inits.
     pub inline fn resetCallsCount(self: *SearchManager) void {
         self.calls_cnt = 0;
     }
@@ -210,7 +210,7 @@ pub const SearchManager = struct {
 // The SharedState bundle (40 bytes) lives in support/shared_state.SharedStateOf,
 // instantiated with concrete types in support/engine.zig; main.zig reads it via
 // engine.SharedState.fromPtr. `shared_state_size` (40) stays here as the pinned
-// footprint the native allocations reserve.
+// footprint the allocations reserve.
 
 // The ThreadPool object (48 bytes): the runtime constructs and reads the pool
 // through these fields. `threads` and `bound` are both Zig slices: `threads` holds
@@ -219,7 +219,7 @@ pub const SearchManager = struct {
 pub const ThreadPool = struct {
     stop: u8 = 0, // atomic_bool
     increase_depth: u8 = 0, // atomic_bool
-    setup_states: ?*state_list.StateList = null, // the native `states` StateListPtr
+    setup_states: ?*state_list.StateList = null, // the `states` StateListPtr
     threads: []usize = &.{}, // Thread* addresses
     bound: []usize = &.{}, // per-thread NUMA node bindings
 
@@ -313,7 +313,7 @@ pub const Worker = struct {
     inline fn layout(self: Worker) *WorkerLayout {
         return self.base;
     }
-    /// ThreadPool::start_searching re-inits: zero the per-search Worker counters.
+    /// ThreadPool's start_searching re-inits: zero the per-search Worker counters.
     pub inline fn resetRootSetupState(self: Worker) void {
         const wl = self.layout();
         wl.nodes = 0;
@@ -365,7 +365,7 @@ comptime {
 }
 
 // The TranspositionTable object (24 bytes): clusterCount, table (Cluster*),
-// generation8, in declaration order. The side TT the native engine allocates uses
+// generation8, in declaration order. The side TT the engine allocates uses
 // this layout.
 pub const TranspositionTable = struct {
     cluster_count: usize = 0,

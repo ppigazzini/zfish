@@ -60,15 +60,15 @@ const numa = @import("numa");
 const uci_output = @import("uci_output");
 const engine_object = @import("engine_object");
 
-// Cast an engine handle to the native container.
+// Cast an engine handle to the container.
 inline fn ne(p: *const anyopaque) *engine_object.EngineObject {
     return engine_object.EngineObject.fromPtr(@constCast(p));
 }
 
-// Force-compile the self-contained native engine-graph leaf nodes so their
+// Force-compile the self-contained engine-graph leaf nodes so their
 // layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
 // are build-verified rather than dead source. These are the vtable-free,
-// callback-free native engine-graph nodes.
+// callback-free engine-graph nodes.
 const shared_state_mod = @import("shared_state");
 
 comptime {
@@ -296,7 +296,7 @@ pub fn setPositionEngine(
     );
 }
 
-// Print each non-blank line as "info string ...". Relocated from main.zig.
+// Print each non-blank line as "info string ...".
 // NNUE network lifecycle (verifyNetwork/loadNetworkEngine/saveNetworkEngine) +
 // printInfoString live in the engine_nnue leaf; saveNetworkEngine is
 // re-exported (external), the rest aliased for the go/perft/option-apply callers.
@@ -342,8 +342,8 @@ const addCheckOption = engine_options.addCheckOption;
 const addSpinOption = engine_options.addSpinOption;
 const addButtonOption = engine_options.addButtonOption;
 
-// setoption apply: wait for the search, set into the native OptionsModel, and run the
-// on-change callback (relaying string/spin/check values). Relocated from main.zig.
+// setoption apply: wait for the search, set into the OptionsModel, and run the
+// on-change callback (relaying string/spin/check values).
 pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
     waitForSearchFinishedEngine(engine_ptr);
     const vlen: usize = if (has_value != 0) value_len else 0;
@@ -450,7 +450,7 @@ pub fn resizeThreadsEngine(engine_ptr: *engine_object.EngineObject) void {
     ) catch @panic("OOM: thread pool resize failed");
 }
 
-// Native SharedHistoriesMap (a map from NumaIndex to SharedHistories),
+// The SharedHistoriesMap (a map from NumaIndex to SharedHistories),
 // engine-owned side storage.
 // The engine is a gate singleton, so a lazily-built module global suffices; the
 // map pointer flows into SharedState.sharedHistories, and the clear/insert/at
@@ -474,15 +474,15 @@ fn setStartPosition(engine_ptr: *engine_object.EngineObject) void {
 }
 
 // Accumulator stack/caches lifecycle (malloc'd engine-graph buffers). The refresh-cache
-// biases come from the native FT storage (network.zig), so the create path is fully engine-local.
+// biases come from the FT storage (network.zig), so the create path is fully engine-local.
 
 // `go perft N` root divide: build a scratch Position +
-// StateInfo, set the engine FEN, generate the legal root moves, run the native perft subtree
+// StateInfo, set the engine FEN, generate the legal root moves, run the perft subtree
 // per move, print "<move>: <count>" then the "Nodes searched: N" total (byte-exact,
 // the `perft` gate diffs it). engine + movegen + position + uci_move + uci_output.
 
-// Engine::flip -> read the live FEN, flip it, re-set the position. Relocated from
-// main.zig; all native (engine fen + position flipFen + setPosition).
+// The flip command: read the live FEN, flip it, re-set the position. All
+// engine-local (engine fen + position flipFen + setPosition).
 pub fn flipEngine(engine_ptr: *engine_object.EngineObject) void {
     const fen_c = fen(engine_ptr.positionPtr()) orelse return;
     defer freeCString(fen_c);
@@ -494,6 +494,6 @@ pub fn flipEngine(engine_ptr: *engine_object.EngineObject) void {
         freeCString(err);
 }
 
-// Register one option into the native OptionsModel.
+// Register one option into the OptionsModel.
 // The engine handle + callback kind are unused (the model holds no per-option callback);
 // spin/check defaults are rendered to the model's string form.

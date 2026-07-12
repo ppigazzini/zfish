@@ -1,4 +1,4 @@
-// Native Zig Engine graph: the assembly node.
+// Zig Engine graph: the assembly node.
 //
 // This is where the object graph comes together: a plain struct owning the Zig
 // subsystems:
@@ -11,7 +11,7 @@
 //   position       -> Position             (position.zig)
 //
 // Position and Network are reached through opaque slots here; everything else is a
-// concrete native type. The graph's job is to hand each Worker a SharedState bound
+// concrete type. The graph's job is to hand each Worker a SharedState bound
 // to these members -- which it does here, vtable-free and callback-free.
 
 const std = @import("std");
@@ -23,7 +23,7 @@ const sm = @import("search_manager");
 const UpdateContext = sm.UpdateContext;
 const SearchManager = sm.SearchManager;
 // shared_state is the generic SharedStateOf; this scaffolding binds its own referents
-// (native ThreadPool + TranspositionTable typed, the rest erased here), so it
+// (ThreadPool + TranspositionTable typed, the rest erased here), so it
 // instantiates its own view. The live engine path uses engine.SharedState.
 // The SharedState bundle is the three live references the worker binds
 // (threads/tt/sharedHistories); options/network are NOT in the bundle (never read).
@@ -33,7 +33,7 @@ pub const NumaConfig = @import("numa_config").NumaConfig;
 pub const NumaReplicationContext = @import("numa_replication").NumaReplicationContext;
 pub const PositionStorage = @import("position_storage").PositionStorage;
 
-// Full native member map of the Engine graph, in declaration order:
+// Full member map of the Engine graph, in declaration order:
 //
 //   binary_directory  -> []const u8                 [trivial slot]
 //   numa_context      -> *NumaReplicationContext    [config + replica registry]
@@ -47,12 +47,12 @@ pub const PositionStorage = @import("position_storage").PositionStorage;
 //   shared_histories  -> *anyopaque                 [opaque handle]
 //
 // *anyopaque slots are members reached through an opaque handle; concrete-typed
-// members own native types directly. This is the complete definition of the
-// native Engine graph.
+// members own their types directly. This is the complete definition of the
+// Engine graph.
 pub const EngineGraph = struct {
     binary_directory: []const u8,
-    numa_context: *NumaReplicationContext, // native NUMA context: config + replica registry
-    position: *PositionStorage, // native owner of the 1032B Position block
+    numa_context: *NumaReplicationContext, // NUMA context: config + replica registry
+    position: *PositionStorage, // owner of the 1032B Position block
     states: *StateList, // the StateInfo list
     options: *anyopaque, // OptionsModel
     threads: *ThreadPool,
@@ -80,10 +80,10 @@ pub const EngineGraph = struct {
             SearchManager.initNull(&self.update_context);
     }
 
-    // Native construction of the graph's OWNED members (states, numaContext,
+    // Construction of the graph's OWNED members (states, numaContext,
     // position storage): binaryDirectory/numaContext/states + pos default-construct.
     // The other members are subsystems the graph references, not owns: options (the global
-    // OptionsModel), threads (the native ThreadPool), network, shared_histories,
+    // OptionsModel), threads (the thread pool), network, shared_histories,
     // update_context are passed in; tt starts empty (sized later by resize).
     pub fn init(
         allocator: std.mem.Allocator,
@@ -123,7 +123,7 @@ pub const EngineGraph = struct {
     }
 
     // Destroy the owned members in reverse construction order (the referenced
-    // subsystems are not owned here). Mirrors ~Engine for the native-owned slots.
+    // subsystems are not owned here). Mirrors the engine teardown for the owned slots.
     pub fn deinit(self: *EngineGraph, allocator: std.mem.Allocator) void {
         allocator.destroy(self.position);
         self.numa_context.deinit();
@@ -182,7 +182,7 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
     try testing.expectEqual(&graph.tt, ss.tt); // typed *TranspositionTable, the graph's own TT
     // options/network are the graph's own members (opaque handles),
     // no longer bound into the 3-reference SharedState bundle.
-    // states member is the native StateList, non-empty at construction
+    // states member is the StateList, non-empty at construction
     try testing.expect(graph.states.hasStates());
     try testing.expectEqual(@as(usize, 1), graph.states.len());
 }
@@ -234,7 +234,7 @@ test "EngineGraph.init builds+owns states/numa/position; deinit frees them" {
     );
     defer graph.deinit(testing.allocator);
 
-    // owned members were natively constructed
+    // owned members were constructed
     try testing.expect(graph.states.hasStates());
     try testing.expectEqual(@as(usize, 1), graph.states.len()); // deque(1) root
     try testing.expectEqual(@as(usize, 1), graph.numa_context.getNumaConfig().numNodes()); // single node

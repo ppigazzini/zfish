@@ -53,11 +53,11 @@ pub fn clearSharedHistory(shared: *SharedHistories, thread_idx: usize, numa_tota
     }
 }
 
-// Native construction of one node's SharedHistories. Allocates the two DynStats arrays
+// Construction of one node's SharedHistories. Allocates the two DynStats arrays
 // from large pages (corr: [2]CorrectionBundle elements; pawn: [16][64] int16 pages,
 // exposed as a flat int16 array) and fills in the size fields + index masks.
 // `thread_count` is nextPowerOfTwo(threads on the node), so the counts are powers of two
-// and the masks are (count - 1). Element strides come from the same types the native
+// and the masks are (count - 1). Element strides come from the same types the
 // search reads the histories through, so the layouts match; the COUNT logic is shared
 // with shared_histories.zig (sharedHistoriesSizes).
 pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHistories {
@@ -81,7 +81,7 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
     };
 }
 
-// Release a SharedHistories' two large-page arrays — the free hook the native
+// Release a SharedHistories' two large-page arrays — the free hook the
 // sharedHists map (SharedHistoriesMap) calls per element on erase/clear.
 pub fn deinitSharedHistories(sh: *SharedHistories) void {
     memory.alignedLargePagesFree(@ptrCast(sh.corr_data));
@@ -89,11 +89,11 @@ pub fn deinitSharedHistories(sh: *SharedHistories) void {
     sh.* = undefined;
 }
 
-// The native engine `sharedHists` member: NumaIndex -> SharedHistories, built with the
+// The engine `sharedHists` member: NumaIndex -> SharedHistories, built with the
 // large-page-backed construct/free hooks.
 pub const SharedHistoriesMap = shared_histories_map.SharedHistoriesMapOf(SharedHistories);
 
-// Read a SharedHistories and confirm its four size fields match the native sizing for
+// Read a SharedHistories and confirm its four size fields match the sizing for
 // `thread_count`.
 pub fn verifySharedHistories(shared: *const SharedHistories, thread_count: usize) bool {
     return shared_hist.verifySizes(

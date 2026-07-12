@@ -1,4 +1,4 @@
-// Native NumaConfig — models the NUMA topology the engine's numaContext holds: a
+// NumaConfig — models the NUMA topology the engine's numaContext holds: a
 // list of NUMA nodes, each an ascending, unique set of CPU indices, plus a
 // cpu->node index and the customAffinity flag.
 //

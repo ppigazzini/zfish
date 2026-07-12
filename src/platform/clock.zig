@@ -1,4 +1,4 @@
-//! Monotonic steady clock (Stockfish now()), relocated out of main.zig.
+//! Monotonic steady clock (Stockfish now()).
 //! Milliseconds since an arbitrary epoch; used by time management and the skill-level RNG seed.
 
 const std = @import("std");

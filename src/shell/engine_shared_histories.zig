@@ -28,7 +28,7 @@ pub fn sharedHistoriesClear(map: *search_driver.SharedHistoriesMap) void {
 }
 
 pub fn sharedHistoriesInsert(map: *search_driver.SharedHistoriesMap, numa_index: usize, size: usize) void {
-    map.tryEmplace(numa_index, size) catch @panic("OOM: native sharedHistories insert");
+    map.tryEmplace(numa_index, size) catch @panic("OOM: sharedHistories insert");
 }
 
 pub fn sharedHistoriesAt(map: *search_driver.SharedHistoriesMap, numa_index: usize) *search_driver.SharedHistories {

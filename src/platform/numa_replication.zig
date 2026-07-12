@@ -1,4 +1,4 @@
-// Native NumaReplicationContext + NumaReplicatedBase — the NUMA replication
+// NumaReplicationContext + NumaReplicatedBase — the NUMA replication
 // framework. The context owns the NumaConfig and a registry of replicated objects
 // (the engine's `network` is the live one); on a NUMA config change it notifies each
 // to re-replicate. NumaReplicatedBase is the registry hook every replicated wrapper

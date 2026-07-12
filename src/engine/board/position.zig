@@ -4,8 +4,8 @@ const bitboard = @import("bitboard");
 const movegen = @import("movegen");
 const search = @import("search");
 
-// Large-page allocator used by the native SharedHistories construction
-// (mirrors C++ make_unique_large_page<T[]> over aligned_large_pages_alloc/free).
+// Large-page allocator used by the SharedHistories construction
+// (aligned large-page allocation over aligned_large_pages_alloc/free).
 const position_snapshot_port = @import("position_snapshot");
 const score_port = @import("score");
 
@@ -115,7 +115,7 @@ pub const pseudoLegal = legality.pseudoLegal;
 pub const givesCheck = legality.givesCheck;
 
 comptime {
-    // Native struct: Zig owns the field order. The network now
+    // Plain-data struct: Zig owns the field order. The network now
     // reads board/side through a typed *const Position, so no field-offset
     // pin remains -- only assert Position still fits the 1032-byte slot the Worker
     // (worker_off.root_pos) and side storage reserve for it.
