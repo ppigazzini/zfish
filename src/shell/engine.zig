@@ -1,7 +1,7 @@
 const std = @import("std");
 
 // ANNEX B.6: the side shared-histories map is its own state-owning leaf now.
-const engine_shared_histories = @import("engine_shared_histories.zig");
+const engine_shared_histories = @import("engine/shared_histories.zig");
 pub const sharedHistoriesPtr = engine_shared_histories.sharedHistoriesPtr;
 pub const sharedHistoriesClear = engine_shared_histories.sharedHistoriesClear;
 pub const sharedHistoriesInsert = engine_shared_histories.sharedHistoriesInsert;
@@ -9,7 +9,7 @@ pub const sharedHistoriesAt = engine_shared_histories.sharedHistoriesAt;
 pub const freeSharedHistories = engine_shared_histories.freeSharedHistories;
 
 // ANNEX B.6: the pending-state registry is its own state-owning leaf now.
-const engine_pending = @import("engine_pending.zig");
+const engine_pending = @import("engine/pending.zig");
 pub const PendingStateStorage = engine_pending.PendingStateStorage;
 pub const ensurePendingStateStorage = engine_pending.ensurePendingStateStorage;
 pub const pendingStatesAvailable = engine_pending.pendingStatesAvailable;
@@ -17,7 +17,7 @@ pub const handoffPendingStates = engine_pending.handoffPendingStates;
 pub const releasePendingStateSlot = engine_pending.releasePendingStateSlot;
 
 // ANNEX B.6: the info-string builders live in a leaf now; re-export for uci + core.
-const engine_info = @import("engine_info.zig");
+const engine_info = @import("engine/info.zig");
 pub const numaConfigStringEngine = engine_info.numaConfigStringEngine;
 pub const numaConfigInformationEngine = engine_info.numaConfigInformationEngine;
 pub const threadBindingInformationEngine = engine_info.threadBindingInformationEngine;
@@ -34,7 +34,7 @@ fn freeCString(ptr: [*:0]u8) void {
 // Engine runtime control (TT resize/clear, tt-size/ponderhit/search-clear/
 // hashfull + *Engine unwrappers) lives in the engine_control leaf now;
 // re-export its surface so the C-ABI callers + staying code are unchanged.
-const engine_control = @import("engine_control.zig");
+const engine_control = @import("engine/control.zig");
 pub const setTtSize = engine_control.setTtSize;
 pub const setTtSizeEngine = engine_control.setTtSizeEngine;
 pub const setPonderhit = engine_control.setPonderhit;
@@ -72,7 +72,7 @@ inline fn ne(p: *const anyopaque) *engine_object.EngineObject {
 const shared_state_mod = @import("shared_state");
 
 comptime {
-    _ = @import("engine_graph.zig");
+    _ = @import("engine/graph.zig");
     _ = @import("search_manager");
     _ = shared_state_mod;
     _ = @import("root_move");
