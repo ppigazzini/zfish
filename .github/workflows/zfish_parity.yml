@@ -51,13 +51,13 @@ jobs:
 
       # Cache the downloaded NNUE network (~50 MB) keyed on the net name the Zig
       # binary actually loads -- the `default_eval_file_name` constant in
-      # src/eval/network.zig -- so a Zig-only net bump busts the cache. The
+      # src/engine/eval/network.zig -- so a Zig-only net bump busts the cache. The
       # net is fetched into and read from net/ (the runtime cwd; src/ is gone).
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: net/nn-*.nnue
-          key: nnue-${{ hashFiles('src/eval/network.zig') }}
+          key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
       # Pin the ARCH instead of `native`: GitHub runners have modern CPUs whose
       # `native` resolves to a PEXT/AVX512 arch. Pin the exact baseline the bench
@@ -138,7 +138,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: net/nn-*.nnue
-          key: nnue-${{ hashFiles('src/eval/network.zig') }}
+          key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
       - name: Fetch the NNUE net
         run: zig build net
@@ -221,7 +221,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: net/nn-*.nnue
-          key: nnue-${{ hashFiles('src/eval/network.zig') }}
+          key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
       # Pre-fetch the net so it is cached before the build. `zig build net` runs the pure-Zig
       # fetcher (tools/fetch_net.zig) -- no bash/curl/wget -- and early-exits when present.
@@ -262,7 +262,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: net/nn-*.nnue
-          key: nnue-${{ hashFiles('src/eval/network.zig') }}
+          key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
       - name: Fetch the NNUE net
         run: zig build net
       # H5: searchmoves/rootMoves vector lifecycle + Worker clear churn (Threads=1).

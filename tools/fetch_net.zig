@@ -1,7 +1,7 @@
 // zfish NNUE net fetcher, in pure Zig (M23.0), replacing tools/fetch_net.sh -- no `sh`, no external
 // wget/curl/sha256sum, works on every OS. It downloads (and sha256-validates) the net the Zig binary
 // ACTUALLY loads: the name is read at runtime from the authoritative Zig constant
-// `default_eval_file_name` in src/eval/network.zig (the single source of truth engine.zig imports),
+// `default_eval_file_name` in src/engine/eval/network.zig (the single source of truth engine.zig imports),
 // NOT the stale upstream src/evaluate.h that scripts/net.sh keys on. build.zig runs this with
 // cwd = net/ and argv[1] = the path to network.zig.
 //
