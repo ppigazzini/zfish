@@ -156,6 +156,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "nnue_misc", .path = "src/engine/eval/nnue_misc.zig" },
         .{ .name = "state_list", .path = "src/engine/board/state_list.zig" },
         .{ .name = "position_storage", .path = "src/engine/state/position_storage.zig" },
+        .{ .name = "page_alloc", .path = "src/engine/state/page_alloc.zig" },
         .{ .name = "shared_histories", .path = "src/engine/search/shared_histories.zig" },
         .{ .name = "shared_histories_map", .path = "src/engine/search/shared_histories_map.zig" },
         .{ .name = "network_holder", .path = "src/engine/eval/network_holder.zig" },
@@ -370,7 +371,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_common", .imp = "worker_histories", .to = "worker_histories" },
         .{ .from = "search_common", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_common", .imp = "board_core", .to = "board_core" },
-        .{ .from = "shared_history", .imp = "memory", .to = "memory" },
+        .{ .from = "shared_history", .imp = "page_alloc", .to = "page_alloc" },
         .{ .from = "shared_history", .imp = "shared_histories", .to = "shared_histories" },
         .{ .from = "shared_history", .imp = "shared_histories_map", .to = "shared_histories_map" },
         .{ .from = "shared_history", .imp = "worker_histories", .to = "worker_histories" },
@@ -488,7 +489,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "uci", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "uci", .imp = "clock", .to = "clock" },
         .{ .from = "engine", .imp = "uci_wdl", .to = "uci_wdl" },
-        .{ .from = "tt", .imp = "memory", .to = "memory" },
+        .{ .from = "tt", .imp = "page_alloc", .to = "page_alloc" },
         .{ .from = "tt", .imp = "tt_types", .to = "tt_types" },
         .{ .from = "position", .imp = "score", .to = "score" },
         .{ .from = "thread", .imp = "thread_vote", .to = "thread_vote" },
@@ -511,7 +512,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine", .imp = "tablebase", .to = "tablebase" },
         .{ .from = "engine", .imp = "option", .to = "option" },
         .{ .from = "position", .imp = "worker_layout", .to = "worker_layout" },
-        .{ .from = "network", .imp = "memory", .to = "memory" },
+        .{ .from = "network", .imp = "page_alloc", .to = "page_alloc" },
         .{ .from = "network", .imp = "position_types", .to = "position_types" },
         .{ .from = "network", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
     };
@@ -555,6 +556,7 @@ pub fn build(b: *std.Build) void {
     // binds the ThreadPool and TranspositionTable.
     exe.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     exe.root_module.addImport("time_source", mods.get("time_source").?);
+    exe.root_module.addImport("page_alloc", mods.get("page_alloc").?);
     exe.root_module.addImport("engine_object", mods.get("engine_object").?);
     // main.zig and its worker-construction helper reach the search-history helpers directly.
     exe.root_module.addImport("search_driver", mods.get("search_driver").?);
@@ -1020,7 +1022,7 @@ pub fn build(b: *std.Build) void {
     // count only ratchets down; the baseline is the currently-allowed maximum and the
     // gate fails if the real count exceeds it. Lower it as each seam is severed; at 0
     // the engine is a standalone search+eval library.
-    const headless_baseline = "14";
+    const headless_baseline = "10";
     const headless_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/headless_lint.sh"),
@@ -1043,6 +1045,7 @@ pub fn build(b: *std.Build) void {
         mods.get("position_storage").?,
         mods.get("state_list").?,
         mods.get("time_source").?,
+        mods.get("page_alloc").?,
         mods.get("tt").?,
         mods.get("network_holder").?,
         mods.get("shared_histories").?,
@@ -1204,9 +1207,9 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/engine/search/movepick_history.zig", .deps = &.{"position_snapshot"} },
         .{ .path = "src/shell/benchmark.zig", .deps = &.{"libc"} },
         .{ .path = "src/engine/board/movegen.zig", .deps = &.{ "bitboard", "position_snapshot", "position_types" } },
-        .{ .path = "src/engine/eval/network.zig", .deps = &.{ "memory", "nnue_accumulator", "position_types" } },
-        .{ .path = "src/engine/eval/nnue_weight_storage.zig", .deps = &.{"memory"} },
-        .{ .path = "src/engine/eval/nnue_inference.zig", .deps = &.{ "nnue_accumulator", "position_types", "memory" } },
+        .{ .path = "src/engine/eval/network.zig", .deps = &.{ "page_alloc", "nnue_accumulator", "position_types" } },
+        .{ .path = "src/engine/eval/nnue_weight_storage.zig", .deps = &.{"page_alloc"} },
+        .{ .path = "src/engine/eval/nnue_inference.zig", .deps = &.{ "page_alloc", "nnue_accumulator", "position_types" } },
         .{ .path = "src/engine/board/legality.zig", .deps = &.{ "bitboard", "board_core", "movegen", "position_types" } },
         .{ .path = "src/engine/search/search_common.zig", .deps = &.{ "board_core", "worker_layout", "position_types", "worker_histories" } },
         .{ .path = "src/engine/search/movepick.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types" } },
@@ -1224,7 +1227,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/shell/engine/object.zig", .deps = &.{ "worker_layout", "misc", "network", "position_types", "state_list" } },
         .{ .path = "src/shell/engine/nnue.zig", .deps = &.{ "libc", "engine_object", "network", "option", "uci_output" } },
         .{ .path = "src/shell/engine/control.zig", .deps = &.{ "libc", "worker_layout", "engine_object", "tt", "thread", "option", "tablebase" } },
-        .{ .path = "src/engine/search/shared_history.zig", .deps = &.{ "memory", "position_types", "search_types", "shared_histories", "shared_histories_map", "shared_history_types", "worker_histories" } },
+        .{ .path = "src/engine/search/shared_history.zig", .deps = &.{ "page_alloc", "position_types", "search_types", "shared_histories", "shared_histories_map", "shared_history_types", "worker_histories" } },
         .{ .path = "src/engine/search/history.zig", .deps = &.{ "board_core", "worker_layout", "position_types", "search", "search_common", "search_types", "shared_history", "worker_histories" } },
     }) |dt| {
         const t = b.addTest(.{

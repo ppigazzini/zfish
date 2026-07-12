@@ -9,7 +9,7 @@
 // come from the memory port and are freed there on resize.
 
 const std = @import("std");
-const memory_port = @import("memory");
+const page_alloc = @import("page_alloc");
 
 const layer_stacks_n = 8;
 const layers_per_stack = 3;
@@ -55,11 +55,11 @@ var ft_len: usize = 0;
 pub fn ftStorage(n: usize) ?[*]u8 {
     if (n == 0) return null;
     if (ft_ptr_storage != null and ft_len != n) {
-        memory_port.alignedLargePagesFree(ft_ptr_storage);
+        page_alloc.free(ft_ptr_storage);
         ft_ptr_storage = null;
     }
     if (ft_ptr_storage == null) {
-        ft_ptr_storage = @ptrCast(memory_port.alignedLargePagesAlloc(n) orelse return null);
+        ft_ptr_storage = @ptrCast(page_alloc.alloc(n) orelse return null);
         ft_len = n;
     }
     return ft_ptr_storage.?;
@@ -78,7 +78,7 @@ pub fn layerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]
     if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack or n == 0) return null;
     const ui: usize = @intCast(idx);
     const slot = if (is_weights != 0) &layer_w[bucket][ui] else &layer_b[bucket][ui];
-    if (slot.* == null) slot.* = @ptrCast(memory_port.alignedLargePagesAlloc(n) orelse return null);
+    if (slot.* == null) slot.* = @ptrCast(page_alloc.alloc(n) orelse return null);
     return slot.*.?;
 }
 

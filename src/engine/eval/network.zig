@@ -3,7 +3,6 @@ const nnue_parse = @import("nnue_parse.zig");
 const nnue_hash = @import("nnue_hash.zig");
 const weight_storage = @import("nnue_weight_storage.zig");
 const nnue_inference = @import("nnue_inference.zig");
-const memory_port = @import("memory");
 const position_types = @import("position_types");
 const nnue_accumulator_port = @import("nnue_accumulator");
 

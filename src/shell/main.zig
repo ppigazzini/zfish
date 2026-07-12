@@ -8,6 +8,7 @@ const position_types = @import("position_types");
 const runtime_hooks = @import("runtime_hooks");
 const clock = @import("clock");
 const time_source = @import("time_source");
+const page_alloc = @import("page_alloc");
 const thread_construct = @import("thread_construct.zig");
 const worker_construct = @import("worker_construct.zig");
 const engine_object = @import("engine_object"); // the engine object container
@@ -159,6 +160,10 @@ fn installRuntimeHooks() void {
     // Inject the platform monotonic clock into the engine's time-source seam, so
     // the search reads the OS clock without importing a platform module.
     time_source.now = &clock.now;
+    // Inject the platform huge-page allocator into the engine's page-alloc seam, so
+    // the big engine arenas allocate without importing a platform module.
+    page_alloc.alloc = &memory_port.alignedLargePagesAlloc;
+    page_alloc.free = &memory_port.alignedLargePagesFree;
 }
 
 // The engine buffer is a EngineObject, so the member accessors return its fields

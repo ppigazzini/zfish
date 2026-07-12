@@ -7,7 +7,7 @@
 // leaves plus the memory and sizing helpers.
 
 const std = @import("std");
-const memory = @import("memory");
+const page_alloc = @import("page_alloc");
 const shared_hist = @import("shared_histories");
 const shared_histories_map = @import("shared_histories_map");
 const worker_histories = @import("worker_histories");
@@ -65,9 +65,9 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
     const corr_bytes = sizes.corr * @sizeOf([2]CorrectionBundle);
     const pawn_bytes = sizes.pawn * hist_pieceto * @sizeOf(i16);
 
-    const corr_ptr = memory.alignedLargePagesAlloc(corr_bytes) orelse return error.OutOfMemory;
-    const pawn_ptr = memory.alignedLargePagesAlloc(pawn_bytes) orelse {
-        memory.alignedLargePagesFree(corr_ptr); // don't leak corr if pawn alloc fails
+    const corr_ptr = page_alloc.alloc(corr_bytes) orelse return error.OutOfMemory;
+    const pawn_ptr = page_alloc.alloc(pawn_bytes) orelse {
+        page_alloc.free(corr_ptr); // don't leak corr if pawn alloc fails
         return error.OutOfMemory;
     };
 
@@ -84,8 +84,8 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
 // Release a SharedHistories' two large-page arrays — the free hook the
 // sharedHists map (SharedHistoriesMap) calls per element on erase/clear.
 pub fn deinitSharedHistories(sh: *SharedHistories) void {
-    memory.alignedLargePagesFree(@ptrCast(sh.corr_data));
-    memory.alignedLargePagesFree(@ptrCast(sh.pawn_data));
+    page_alloc.free(@ptrCast(sh.corr_data));
+    page_alloc.free(@ptrCast(sh.pawn_data));
     sh.* = undefined;
 }
 
