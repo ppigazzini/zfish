@@ -1168,6 +1168,7 @@ pub fn build(b: *std.Build) void {
         "src/uci/option_model.zig",
         "tools/native_arch.zig",
         "tools/fetch_net.zig",
+        "tools/parity_harness.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{
