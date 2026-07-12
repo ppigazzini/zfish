@@ -11,7 +11,7 @@
 //     check  (default): rebuild the live fingerprint, diff vs the golden, exit 1 on drift.
 //     update:           (re)write the golden from the live run.
 //   parity_harness signature <stockfish-bin> <expected-nodes>
-//     run bench and assert `Nodes searched` == expected (the 2067208 arch/OS invariant).
+//     run bench and assert `Nodes searched` == expected (the 2466447 arch/OS invariant).
 // Exit codes mirror the scripts: 0 pass, 1 golden mismatch, 2 crash / parse failure / usage.
 //
 // Stream routing (empirically verified, identical on every OS because the engine's print
@@ -474,7 +474,7 @@ fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// signature: bench must report the exact node count (the 2067208 arch/OS invariant).
+// signature: bench must report the exact node count (the 2466447 arch/OS invariant).
 fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []const u8) noreturn {
     var cap = runEngine(gpa, io, bin, &.{"bench"}, null) catch fail("signature: engine run failed", .{});
     defer cap.deinit(gpa);

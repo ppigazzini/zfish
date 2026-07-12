@@ -3,7 +3,7 @@
 **zfish** is a [Zig][zig] port of the [Stockfish][stockfish] chess engine. The
 shipped engine is **pure Zig** — the default `zig build` compiles zero C++
 translation units — and is **bit-exact** to upstream Stockfish: it reproduces the
-identical `bench` node signature (`2067208` at the current upstream sync) on both
+identical `bench` node signature (`2466447` at the current upstream sync) on both
 Linux x86-64 and Linux aarch64.
 
 zfish is a derivative work of Stockfish and is distributed under the same
@@ -14,7 +14,7 @@ zfish, like Stockfish, is **not** a graphical interface; use it with any UCI GUI
 ## Status
 
 - Owned runtime target: **Linux x86-64** (primary) and **Linux aarch64**, both
-  CI-gated to `bench == 2067208`.
+  CI-gated to `bench == 2466447`.
 - The whole runtime (~22.8k lines of Zig) is Zig-owned. The NNUE hot path is
   portable `@Vector` SIMD, lowered by LLVM to AVX-512/AVX2/SSE on x86 and NEON on
   aarch64 with no per-arch source.
@@ -45,7 +45,7 @@ the exact network the binary loads.
 zfish keeps a battery of parity and determinism gates. The essentials:
 
 ```
-zig build signature -Dsignature-ref=2067208   # bench signature == reference
+zig build signature -Dsignature-ref=2466447   # bench signature == reference
 zig build parity                               # signature + in-repo golden gates
 zig build test                                 # Zig unit tests
 ```

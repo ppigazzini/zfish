@@ -11,11 +11,11 @@ See the [README](README.md#building): install **Zig 0.16.0** and run `zig build`
 ## The golden rule: preserve the bench signature
 
 The shipped engine must reproduce upstream Stockfish's exact `bench` node count
-(`2067208` at the current sync). Any change that touches engine behavior must hold
+(`2466447` at the current sync). Any change that touches engine behavior must hold
 that signature, proven by the gates:
 
 ```
-zig build signature -Dsignature-ref=2067208
+zig build signature -Dsignature-ref=2466447
 zig build parity          # signature + in-repo golden gates
 zig build upstream-parity # differential vs pristine upstream (worktree oracle)
 zig build test            # Zig unit tests

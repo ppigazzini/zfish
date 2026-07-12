@@ -1,6 +1,6 @@
-nodes-startpos     bestmove e2e4 ponder e7e5
+nodes-startpos     bestmove e2e4 ponder c7c6
 nodes-kiwipete     bestmove d5e6 ponder a6e2
 nodes-endgame      bestmove b4f4 ponder h4g3
-depth-searchmoves  bestmove d2d4 ponder g8f6
-multipv3-startpos  bestmove e2e4 ponder e7e5
+depth-searchmoves  bestmove g1f3 ponder g8f6
+multipv3-startpos  bestmove e2e4 ponder e7e6
 multipv4-kiwipete  bestmove e2a6 ponder b4c3
