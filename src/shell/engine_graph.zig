@@ -29,8 +29,8 @@ const SearchManager = sm.SearchManager;
 // (threads/tt/sharedHistories); options/network are NOT in the bundle (never read).
 const SharedState = @import("shared_state").SharedStateOf(ThreadPool, TranspositionTable, anyopaque);
 pub const StateList = @import("state_list").StateList;
-pub const NumaConfig = @import("numa_config").NumaConfig;
-pub const NumaReplicationContext = @import("numa_replication").NumaReplicationContext;
+pub const NumaConfig = @import("numa").NumaConfig;
+pub const NumaReplicationContext = @import("numa").NumaReplicationContext;
 pub const PositionStorage = @import("position_storage").PositionStorage;
 
 // Full member map of the Engine graph, in declaration order:

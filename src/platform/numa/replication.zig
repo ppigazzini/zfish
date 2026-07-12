@@ -8,7 +8,7 @@
 // isolation.
 
 const std = @import("std");
-const NumaConfig = @import("numa_config").NumaConfig;
+const NumaConfig = @import("config.zig").NumaConfig;
 
 /// Registry hook embedded by every replicated wrapper.
 pub const NumaReplicatedBase = struct {
