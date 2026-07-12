@@ -215,7 +215,7 @@ pub const SearchManager = struct {
 // The ThreadPool object (48 bytes): the runtime constructs and reads the pool
 // through these fields. `threads` and `bound` are both Zig slices: `threads` holds
 // Thread* addresses, `bound` holds the per-thread NUMA-node index of the cold binding
-// path. native_threadpool allocates the backing buffers and the accessors index them.
+// path. thread_pool allocates the backing buffers and the accessors index them.
 pub const ThreadPool = struct {
     stop: u8 = 0, // atomic_bool
     increase_depth: u8 = 0, // atomic_bool
@@ -266,7 +266,7 @@ pub const ThreadPool = struct {
 };
 
 comptime {
-    // native_threadpool.zig writes and every reader (accessors here, the search's
+    // thread_pool.zig writes and every reader (accessors here, the search's
     // captured &stop pointer) go through this typed struct, so Zig owns the field
     // placement. The size must equal the calloc'd pool buffer
     // (native_engine.memberThreadpoolNew).

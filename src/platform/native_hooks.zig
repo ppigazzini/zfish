@@ -2,8 +2,8 @@
 // cycles between the runtime hooks and their implementations.
 //
 // The impls live in main.zig because they need position/engine/network/search/... —
-// modules that already import their callers (thread/engine/native_thread/
-// native_threadpool), so the callers can't import back to reach them. main installs
+// modules that already import their callers (thread/engine/search_thread/
+// thread_pool), so the callers can't import back to reach them. main installs
 // the pointers at startup (installNativeHooks); the callers invoke through here.
 // Pure Zig fn pointers -- no C ABI, type-checked.
 //

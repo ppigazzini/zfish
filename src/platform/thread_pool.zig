@@ -1,14 +1,14 @@
-// Native ThreadPool.
+// Thread pool.
 //
-// Owns native Threads and writes the ThreadPool's observable 56-byte footprint
+// Owns the search threads and writes the ThreadPool's observable 56-byte footprint
 // so the accessors keep working unchanged:
 //   stop@0 (atomic_bool), increaseDepth@1 (atomic_bool),
-//   threads slice {ptr@16, len@24}  (of Thread* == NativeThread* addresses),
+//   threads slice {ptr@16, len@24}  (of Thread* == SearchThread* addresses),
 //   boundThreadToNumaNode slice {ptr@32, len@40}  (per-thread NUMA node).
 // num_threads == threads.len; threads[i] == the i-th slice element (a Thread* addr).
 //
 // LIFECYCLE NOTE: the threads-vector buffer here is Zig-allocated, and each
-// NativeThread is Zig-owned, so teardown goes through the native clear() path
+// SearchThread is Zig-owned, so teardown goes through the pool's clear() path
 // rather than any foreign destructor over this footprint. It is unit-tested in
 // isolation over a standalone 64-byte buffer.
 //
@@ -18,12 +18,12 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const NativeThread = @import("native_thread").NativeThread;
+const SearchThread = @import("search_thread").SearchThread;
 const graph_layout = @import("graph_layout");
 const native_hooks = @import("native_hooks");
 const ThreadPool = graph_layout.ThreadPool;
 
-// The 64-byte pool footprint is a native graph_layout.ThreadPool: the writer here
+// The 64-byte pool footprint is a graph_layout.ThreadPool: the writer here
 // and every reader (graph_layout accessors, the search's captured
 // &stop pointer) go through the same typed struct, so Zig owns the field placement.
 inline fn poolOf(slot: [*]u8) *ThreadPool {
@@ -31,27 +31,27 @@ inline fn poolOf(slot: [*]u8) *ThreadPool {
 }
 
 // Per-thread construction hook: given the thread index and the freshly spawned
-// NativeThread (idle loop running, no Worker yet), build + attach the Worker.
+// SearchThread (idle loop running, no Worker yet), build + attach the Worker.
 // Layer 4 binds this to the large-page Worker alloc + constructFull.
 pub const ThreadBuilder = struct {
     ctx: ?*anyopaque = null,
-    // thread is passed opaque so the native worker-builder can write worker@8 directly.
+    // thread is passed opaque so the worker-builder can write worker@8 directly.
     build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) void,
 };
 
-// A native ThreadPool. `slot` points at the 64-byte ThreadPool footprint
+// The thread pool. `slot` points at the 64-byte ThreadPool footprint
 // (the Engine's embedded pool, or a standalone buffer in tests).
-pub const NativePool = struct {
+pub const Pool = struct {
     allocator: std.mem.Allocator,
     slot: [*]u8,
 
-    pub fn init(allocator: std.mem.Allocator, slot: [*]u8) NativePool {
+    pub fn init(allocator: std.mem.Allocator, slot: [*]u8) Pool {
         return .{ .allocator = allocator, .slot = slot };
     }
 
     // Build `count` native Threads (idle loops + Workers via the builder) and lay
     // them into the footprint.
-    pub fn set(self: *NativePool, count: usize, builder: ThreadBuilder) !void {
+    pub fn set(self: *Pool, count: usize, builder: ThreadBuilder) !void {
         self.clear();
         const tp = poolOf(self.slot);
 
@@ -75,14 +75,14 @@ pub const NativePool = struct {
         errdefer {
             var i: usize = 0;
             while (i < built) : (i += 1) {
-                const t: *NativeThread = @ptrFromInt(vec[i]);
+                const t: *SearchThread = @ptrFromInt(vec[i]);
                 t.deinit(self.allocator);
                 self.allocator.destroy(t);
             }
             self.allocator.free(vec);
         }
         for (vec, 0..) |*slotptr, idx| {
-            const thread = try self.allocator.create(NativeThread);
+            const thread = try self.allocator.create(SearchThread);
             errdefer self.allocator.destroy(thread);
             thread.* = .{};
             try thread.spawn(self.allocator, idx);
@@ -94,11 +94,11 @@ pub const NativePool = struct {
     }
 
     // Footprint-based (stateless): recovers the threads buffer straight from the slot's
-    // `threads` slice, not a held field -- so a fresh NativePool wrapper over the same
+    // `threads` slice, not a held field -- so a fresh Pool wrapper over the same
     // slot (reset_for_reconfigure, the destroy hook) tears the pool down correctly.
     // Requires a zeroed-or-valid footprint (a default-constructed ThreadPool has an
     // empty slice, so len==0 is the no-op case).
-    pub fn clear(self: *NativePool) void {
+    pub fn clear(self: *Pool) void {
         const tp = poolOf(self.slot);
         const buf = tp.threads;
         if (buf.len != 0) {
@@ -111,11 +111,11 @@ pub const NativePool = struct {
             // Idle threads return immediately. Mirrors ~ThreadPool's
             // wait_for_search_finished before deleting threads.
             for (buf) |addr| {
-                const t: *NativeThread = @ptrFromInt(addr);
+                const t: *SearchThread = @ptrFromInt(addr);
                 t.waitForSearchFinished();
             }
             for (buf) |addr| {
-                const t: *NativeThread = @ptrFromInt(addr);
+                const t: *SearchThread = @ptrFromInt(addr);
                 t.deinit(self.allocator);
                 self.allocator.destroy(t);
             }
@@ -124,7 +124,7 @@ pub const NativePool = struct {
         tp.threads = &.{};
     }
 
-    pub fn numThreads(self: *const NativePool) usize {
+    pub fn numThreads(self: *const Pool) usize {
         return poolOf(self.slot).numThreads();
     }
 };
@@ -150,7 +150,7 @@ pub fn set(
     count: usize,
 ) !void {
     var bctx = WorkerBuildCtx{ .shared_state = shared_state, .update_context = update_context, .total = count };
-    var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
+    var p = Pool.init(std.heap.c_allocator, @ptrCast(pool));
     // Propagate the OOM / thread-spawn error to the engine's resize boundary
     // instead of panicking here (the caller reconfigure -> resizeThreads is now !void).
     try p.set(count, .{ .ctx = &bctx, .build = native_hooks.native_worker_build });
@@ -159,7 +159,7 @@ pub fn set(
 // Join + free every native Thread and null the footprint vector. Called by the
 // native reset_for_reconfigure and the engine teardown hook.
 pub fn clear(pool: *graph_layout.ThreadPool) void {
-    var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
+    var p = Pool.init(std.heap.c_allocator, @ptrCast(pool));
     p.clear();
 }
 
@@ -168,7 +168,7 @@ pub fn clear(pool: *graph_layout.ThreadPool) void {
 pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads.len == 0) return;
-    const thread: *NativeThread = @ptrFromInt(tp.threadAt(thread_id));
+    const thread: *SearchThread = @ptrFromInt(tp.threadAt(thread_id));
     thread.waitForSearchFinished();
 }
 
@@ -202,7 +202,7 @@ const MockBuild = struct {
         _ = idx;
         const self: *MockBuild = @ptrCast(@alignCast(ctx.?));
         _ = self.attached.fetchAdd(1, .monotonic);
-        const thread: *NativeThread = @ptrCast(@alignCast(thread_ptr));
+        const thread: *SearchThread = @ptrCast(@alignCast(thread_ptr));
         // Leave thread.worker null (a real builder sets it); confirm idle loop ran.
         thread.startJob(noopJob, null);
         thread.waitForSearchFinished();
@@ -210,10 +210,10 @@ const MockBuild = struct {
     fn noopJob(_: ?*anyopaque) void {}
 };
 
-test "NativePool lays the C++ footprint and reads back the thread vector" {
+test "Pool lays the C++ footprint and reads back the thread vector" {
     var footprint: [64]u8 align(8) = [_]u8{0} ** 64; // zeroed = default-constructed pool
     var mb = MockBuild{};
-    var pool = NativePool.init(testing.allocator, &footprint);
+    var pool = Pool.init(testing.allocator, &footprint);
     defer pool.clear();
 
     try pool.set(4, .{ .ctx = &mb, .build = MockBuild.build });
@@ -227,13 +227,13 @@ test "NativePool lays the C++ footprint and reads back the thread vector" {
     try testing.expectEqual(@as(usize, 4), pool.numThreads());
     try testing.expectEqual(@as(usize, 4), tp.threads.len);
     try testing.expect(tp.threads.len != 0);
-    // each threads[i] is a live NativeThread with the right idx and worker@8 slot.
+    // each threads[i] is a live SearchThread with the right idx and worker@8 slot.
     var i: usize = 0;
     while (i < 4) : (i += 1) {
-        const t: *NativeThread = @ptrFromInt(tp.threadAt(i));
+        const t: *SearchThread = @ptrFromInt(tp.threadAt(i));
         try testing.expectEqual(i, t.idx);
         // offset-8 worker read (null here; a real builder would set it).
-        try testing.expectEqual(@as(usize, 8), @offsetOf(NativeThread, "worker"));
+        try testing.expectEqual(@as(usize, 8), @offsetOf(SearchThread, "worker"));
     }
     // bound slice empty.
     try testing.expectEqual(@as(usize, 0), tp.bound.len);
@@ -286,10 +286,10 @@ test "boundNodesAssign unwinds leak-free on allocation failure" {
     try testing.checkAllAllocationFailures(testing.allocator, T.run, .{});
 }
 
-test "NativePool set(0) clears the vector; resize re-lays it" {
+test "Pool set(0) clears the vector; resize re-lays it" {
     var footprint: [64]u8 align(8) = [_]u8{0} ** 64;
     var mb = MockBuild{};
-    var pool = NativePool.init(testing.allocator, &footprint);
+    var pool = Pool.init(testing.allocator, &footprint);
     defer pool.clear();
 
     try pool.set(1, .{ .ctx = &mb, .build = MockBuild.build });

@@ -141,7 +141,7 @@ fn handoffPendingStates(
 
 // Install the native runtime hooks: these impls live here because they need
 // position/engine/network/search/state modules that already import their callers
-// (thread/engine/native_thread), so the callers reach them through the native_hooks
+// (thread/engine/search_thread), so the callers reach them through the native_hooks
 // fn-pointer registry.
 fn installNativeHooks() void {
     native_hooks.shared_state_clear_histories = &sharedStateClearHistories;
