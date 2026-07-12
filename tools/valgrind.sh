@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
-# Memory-error / leak gate (the ASan+LSan
-# half). Runs the engine under Valgrind memcheck across thread counts and asserts
-# no invalid read/write, no invalid/double free, and no DEFINITE leak.
+# Memory-error / leak gate. Runs the engine under Valgrind memcheck across thread
+# counts and asserts no invalid read/write, no invalid/double free, and no DEFINITE leak.
 #
-# Why this and not -fsanitize=address: the runtime is a Zig+C++ binary; Valgrind
-# instruments both without a sanitizer rebuild, and works on the exact artifact
-# the parity gate ships. It directly targets the failure class the stage-4 cut
-# and the native Worker/large-page lifecycle can introduce -- a missed free on
-# teardown, a use-after-free in the idle-loop handshake, an out-of-bounds in the
-# native ThreadPool construction. It is also the tool that would have caught the
-# documented worker-uninitialized-memory landmine.
+# Why this and not -fsanitize=address: Valgrind instruments the exact artifact the
+# parity gate ships without a sanitizer rebuild. It directly targets the failure class
+# the Worker/large-page lifecycle can introduce -- a missed free on teardown, a
+# use-after-free in the idle-loop handshake, an out-of-bounds in the ThreadPool
+# construction. It is also the tool that would have caught the worker-uninitialized-memory
+# landmine that motivates the large-page zero-fill invariant.
 #
 # Uninitialized-value checking is DISABLED (--undef-value-errors=no): the NNUE
 # eval is heavy SSE/AVX and reads whole vector lanes incl. padding, which memcheck
 # reports as false "uninitialised value" use. Leak / invalid-access / bad-free
-# detection is unaffected and reliable. (The race half -- TSan/helgrind -- is
-# deferred to stage 4: it is meaningful only for the native futex runtime, and the
-# current C++ std::thread runtime has benign TT data races by design that a race
-# gate would flag.)
+# detection is unaffected and reliable. (The race half -- TSan/helgrind -- is not run
+# here: the TT has benign data races by design that a race gate would flag.)
 #
 # Usage: valgrind.sh <stockfish-binary>   (run with CWD = src/, so the net loads)
 set -u

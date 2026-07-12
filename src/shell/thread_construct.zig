@@ -1,4 +1,4 @@
-// Construction verifier for the ThreadPool / Thread graph (harness H4).
+// Construction verifier for the ThreadPool / Thread graph.
 //
 // The native ThreadPool reproduces the ThreadPool's observable layout (stop@0,
 // increaseDepth@1, the threads vector at 16/24, boundThreadToNumaNode at 40/48)

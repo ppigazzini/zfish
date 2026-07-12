@@ -1012,24 +1012,24 @@ pub fn build(b: *std.Build) void {
     );
     misc_update_step.dependOn(&misc_update_cmd.step);
 
-    // H9 src-free / TU=0 structural gate: asserts the
+    // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2067208. A permanent invariant in the `parity` aggregate below, guarding
     // against any C++ TU being reintroduced into the default binary.
-    const h9_cmd = b.addSystemCommand(&.{
+    const src_free_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("tools/h9_src_free.sh"),
+        b.pathFromRoot("tools/src_free.sh"),
         b.getInstallPath(.bin, "stockfish"),
     });
-    h9_cmd.step.dependOn(install_step);
-    h9_cmd.step.dependOn(&net_cmd.step);
-    h9_cmd.setCwd(b.path("net"));
+    src_free_cmd.step.dependOn(install_step);
+    src_free_cmd.step.dependOn(&net_cmd.step);
+    src_free_cmd.setCwd(b.path("net"));
 
-    const h9_step = b.step(
-        "h9",
+    const src_free_step = b.step(
+        "src-free",
         "src-free structural gate: zero C++ Stockfish/libc++ symbols in the shipped binary",
     );
-    h9_step.dependOn(&h9_cmd.step);
+    src_free_step.dependOn(&src_free_cmd.step);
 
     // Aggregate unit-test step: run the in-tree `test {}` blocks of
     // every named module that has them, reusing the already-wired modules so their
@@ -1304,12 +1304,12 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&stress_cmd.step);
     parity_step.dependOn(&time_cmd.step);
     // The src-free structural invariant is permanent, so it gates every push.
-    parity_step.dependOn(&h9_cmd.step);
+    parity_step.dependOn(&src_free_cmd.step);
 
     // Cross-OS aggregate: the platform-independent subset of `parity` -- bench,
     // the UCI handshake, the bench signature, and all six golden checks, every one driven by
     // the pure-Zig harness (no bash / no nm). This is what the Windows and macOS lanes run;
-    // the Linux-only structural gates (h9 src-free via `nm`, arch-determinism) stay in `parity`.
+    // the Linux-only structural gates (src-free via `nm`, arch-determinism) stay in `parity`.
     // The bench signature is the same harness `signature_cmd` `parity` uses (2067208 invariant).
     const parity_portable_step = b.step(
         "parity-portable",

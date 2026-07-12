@@ -1,22 +1,15 @@
 #!/usr/bin/env bash
-# Leak gate for the std::vector lifecycle
-# stage 5 ports -- Worker::set_limits (limits.searchmoves, a std::vector<string>)
-# and set_root_moves (worker.rootMoves) -- plus Worker::clear churn.
+# Valgrind leak gate for the searchmoves / rootMoves list lifecycle plus Worker clear
+# churn -- paths bench never exercises. bench never sets searchmoves, so the searchmoves
+# list's allocate/free is otherwise un-gated; a Worker teardown that frees it with the
+# wrong allocator would leak silently. Drives `go searchmoves <moves>` + ucinewgame
+# repeatedly under Valgrind memcheck and asserts no definite leak / bad free / invalid access.
 #
-# bench never sets searchmoves, so the searchmoves vector's allocate/free is
-# UN-exercised by the existing gate; a native stage-5 vector-assign that frees it
-# with the wrong allocator (the Worker is natively destructed) would leak silently.
-# H5 drives `go searchmoves <moves>` + ucinewgame repeatedly under Valgrind
-# memcheck and asserts no definite leak / bad free / invalid access. Captured
-# against the current C++ runtime as the baseline the native port must match.
-#
-# IMPORTANT teardown quirk (finding): under memcheck this engine's
-# PROCESS EXIT hangs in the C++ thread-join after valgrind has already printed its
-# leak/error summary (valgrind serializes threads and the idle_loop join stalls;
-# a Threads resize hangs outright). The leak VERDICT is therefore reliably in the
-# log even though the process never returns -- so H5 reads the verdict from the
-# log and treats a post-summary watchdog kill as success. (The thread-join-under-
-# serialization pathology is stage-4 intel for the native futex runtime.)
+# IMPORTANT teardown quirk: under memcheck this engine's process exit hangs in the
+# thread-join after valgrind has already printed its leak/error summary (valgrind serializes
+# threads and the idle-loop join stalls; a Threads resize hangs outright). The leak VERDICT is
+# therefore reliably in the log even though the process never returns -- so this gate reads the
+# verdict from the log and treats a post-summary watchdog kill as success.
 #
 # Usage: teardown.sh <stockfish-binary>   (CWD = src/, so the net loads)
 set -u

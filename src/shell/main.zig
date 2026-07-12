@@ -170,7 +170,7 @@ fn engineThreadsPtr(engine: *anyopaque) *graph_layout.ThreadPool {
 }
 
 // Free the side tt's large-page table at engine teardown + rezero for any re-construct
-// (H5/valgrind). The table pointer lives at tt_off.table within the side storage.
+// (valgrind). The table pointer lives at tt_off.table within the side storage.
 fn freeSideTt() void {
     const table_ptr = &graph_layout.TranspositionTable.fromPtr(native_engine.sideTtPtr()).table;
     if (table_ptr.*) |tbl| memory_port.alignedLargePagesFree(@ptrCast(tbl));
