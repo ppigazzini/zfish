@@ -202,10 +202,10 @@ const nnDescription = weight_storage.nnDescription;
 const markInitializedNative = weight_storage.markInitializedNative;
 const setLoadedStateNative = weight_storage.setLoadedStateNative;
 const equalCurrentName = weight_storage.equalCurrentName;
-const nativeFtStorage = weight_storage.nativeFtStorage;
-const nativeLayerStorage = weight_storage.nativeLayerStorage;
-const nativeLayerPtr = weight_storage.nativeLayerPtr;
-pub const nativeFtPtr = weight_storage.nativeFtPtr;
+const ftStorage = weight_storage.ftStorage;
+const layerStorage = weight_storage.layerStorage;
+const layerPtr = weight_storage.layerPtr;
+pub const ftPtr = weight_storage.ftPtr;
 
 // Content hash of the eval-file names (std::hash<EvalFile>), computed natively
 // from the Zig-owned EvalFile state.
@@ -244,14 +244,14 @@ fn loadInternal() void {
 }
 
 // Gather one layer stack's native biases/weights slices (fc_0/fc_1/fc_2).
-fn nativeLayerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
+fn layerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
     var b: [3][]const u8 = undefined;
     var w: [3][]const u8 = undefined;
     var idx: c_int = 0;
     while (idx < 3) : (idx += 1) {
         const ui: usize = @intCast(idx);
-        const bp: [*]const u8 = @ptrCast(nativeLayerPtr(bucket, idx, 0) orelse return null);
-        const wp: [*]const u8 = @ptrCast(nativeLayerPtr(bucket, idx, 1) orelse return null);
+        const bp: [*]const u8 = @ptrCast(layerPtr(bucket, idx, 0) orelse return null);
+        const wp: [*]const u8 = @ptrCast(layerPtr(bucket, idx, 1) orelse return null);
         b[ui] = bp[0..layerBiasesBytes(idx)];
         w[ui] = wp[0..layerWeightsBytes(idx)];
     }
@@ -261,7 +261,7 @@ fn nativeLayerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8
 // Serialize the native feature transformer into `out` (write_parameters blob,
 // including the leading component hash).
 fn serializeFtNative(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
-    const ft: [*]const u8 = @ptrCast(nativeFtPtr() orelse return error.NoNetwork);
+    const ft: [*]const u8 = @ptrCast(ftPtr() orelse return error.NoNetwork);
     try nnue_parse.serializeFeatureTransformer(
         ft[0..nnue_parse.ft_total_bytes],
         nnue_hash.featureTransformerHashValue(),
@@ -272,7 +272,7 @@ fn serializeFtNative(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
 
 // Serialize one native layer stack into `out`.
 fn serializeLayerNative(bucket: usize, out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
-    const arr = nativeLayerArrays(bucket) orelse return error.NoNetwork;
+    const arr = layerArrays(bucket) orelse return error.NoNetwork;
     try nnue_parse.serializeLayer(nnue_hash.architectureHashValue(), arr.b, arr.w, out, a);
 }
 
@@ -367,7 +367,7 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
 // source (the eval gates verify the weights end-to-end, and the offset==bytes.len check
 // at the end of loadNetworkBytes verifies the consumed count).
 fn parseFeatureTransformerNative(blob: []const u8) usize {
-    const dst_ptr = nativeFtStorage(nnue_parse.ft_total_bytes) orelse
+    const dst_ptr = ftStorage(nnue_parse.ft_total_bytes) orelse
         @panic("native feature-transformer storage allocation failed");
     const dst = dst_ptr[0..nnue_parse.ft_total_bytes];
     return nnue_parse.parseFeatureTransformer(blob, dst) orelse
@@ -393,9 +393,9 @@ fn parseLayerNative(bucket: usize, blob: []const u8) usize {
     while (idx < 3) : (idx += 1) {
         const wb = layerWeightsBytes(idx);
         const bb = layerBiasesBytes(idx);
-        const bdst = nativeLayerStorage(bucket, idx, 0, bb) orelse
+        const bdst = layerStorage(bucket, idx, 0, bb) orelse
             @panic("native affine-layer storage allocation failed");
-        const wdst = nativeLayerStorage(bucket, idx, 1, wb) orelse
+        const wdst = layerStorage(bucket, idx, 1, wb) orelse
             @panic("native affine-layer storage allocation failed");
         const used = nnue_parse.parseLayer(blob[pos..], bdst[0..bb], wdst[0..wb]) orelse
             @panic("native affine-layer parse failed");

@@ -18,8 +18,8 @@ const transformed_feature_bytes: usize = 1024;
 const square_count: usize = 64;
 const no_piece: u8 = 0;
 
-const nativeLayerPtr = weight_storage.nativeLayerPtr;
-const nativeFtPtr = weight_storage.nativeFtPtr;
+const layerPtr = weight_storage.layerPtr;
+const ftPtr = weight_storage.ftPtr;
 
 pub const EvalOutput = struct {
     psqt: c_int,
@@ -98,10 +98,10 @@ inline fn affineDpbusd(
 }
 
 fn layerBiases(bucket: usize, idx: c_int) [*]const i32 {
-    return @ptrCast(@alignCast(nativeLayerPtr(bucket, idx, 0) orelse unreachable));
+    return @ptrCast(@alignCast(layerPtr(bucket, idx, 0) orelse unreachable));
 }
 fn layerWeights(bucket: usize, idx: c_int) [*]const i8 {
-    return @ptrCast(@alignCast(nativeLayerPtr(bucket, idx, 1) orelse unreachable));
+    return @ptrCast(@alignCast(layerPtr(bucket, idx, 1) orelse unreachable));
 }
 
 fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
@@ -223,7 +223,7 @@ fn networkTransformBucket(
     bucket: usize,
     transformed_ptr: [*]u8,
 ) c_int {
-    const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(nativeFtPtr() orelse @panic("native feature-transformer storage not initialized"));
+    const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(ftPtr() orelse @panic("feature-transformer storage not initialized"));
     const stm = pos.side_to_move;
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
 }
