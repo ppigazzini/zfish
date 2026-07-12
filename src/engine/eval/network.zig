@@ -187,12 +187,6 @@ pub fn verify(
     };
 }
 
-// Content hash of the parsed feature transformer (read from the
-// Zig-owned storage). Equivalent to FeatureTransformer::get_content_hash.
-
-// Content hash of one parsed layer stack. Equivalent to
-// NetworkArchitecture::get_content_hash.
-
 // Zig-owned EvalFile dynamic state + the weight storage live in the
 // nnue_weight_storage leaf now (shared owner for the inference and I/O paths);
 // alias the accessors back so the call sites here stay unqualified.
