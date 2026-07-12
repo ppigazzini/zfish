@@ -1,23 +1,17 @@
 // Native Zig SharedState — the bundle of references the Engine hands every Worker at
-// construction (options, thread pool, transposition table, per-NUMA shared histories,
-// network). In C++ these are five references; natively they are five typed pointers
-// into the Zig-owned subsystems.
+// construction (thread pool, transposition table, per-NUMA shared histories), as typed
+// pointers into the Zig-owned subsystems.
 //
-// M18.5 — CALL-SITE TYPE INJECTION (idiomatic Zig DI). This module exposes only the
-// *generic* `SharedStateOf(comptime …)` and stays a **pure std-only leaf**: it never
-// imports OptionsModel / ThreadPool / TranspositionTable / SharedHistoriesMap /
-// Network, so it cannot sit in a module cycle (the referent modules reach graph_layout,
-// which used to reach back here). The concrete `SharedState = SharedStateOf(…)` is
-// instantiated once at the root that sees all five types — support/engine.zig — which
-// also owns the live static + create/destroy. See REPORT-17 Annex A. This mirrors the
-// tree's existing `shared_histories_map.SharedHistoriesMapOf(comptime Entry)` pattern.
+// This module exposes only the *generic* `SharedStateOf(comptime …)` and stays a pure
+// std-only leaf: it never imports ThreadPool / TranspositionTable / SharedHistoriesMap.
+// The concrete `SharedState = SharedStateOf(…)` is instantiated once at the root that
+// sees all the referent types — support/engine.zig — which also owns the live static +
+// create/destroy.
 
 const std = @import("std");
 
-/// The 40-byte SharedState bundle, generic over its five referent types. Five
-/// pointers in source order → byte-identical to the old 5×*anyopaque struct (the
-/// engine asserts @sizeOf == 40 at the instantiation), so the worker-build reinterpret
-/// is unchanged.
+/// The SharedState bundle, generic over its three referent types: three typed
+/// pointers in source order.
 pub fn SharedStateOf(
     comptime Threads: type,
     comptime TranspositionTable: type,
@@ -30,9 +24,9 @@ pub fn SharedStateOf(
 
         const Self = @This();
 
-        // M20.1: options/network dropped -- they were never read by the worker (the
-        // search reads the global OptionsModel + the native FT storage), so the bundle
-        // is the three live references the worker actually binds.
+        // The bundle is the three live references the worker actually binds; options
+        // and network are read elsewhere (the global OptionsModel + the native FT
+        // storage), not through SharedState.
         pub fn init(
             threads: *Threads,
             tt: *TranspositionTable,

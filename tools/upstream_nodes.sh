@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Node-count divergence localizer (REPORT-13 Annex A3).
+# Node-count divergence localizer.
 #
 # When several search commits land together and the final bench is close-but-off, you need to find WHICH
 # commit/condition diverges. This builds the pristine oracle at <sha> (which carries its own net) and

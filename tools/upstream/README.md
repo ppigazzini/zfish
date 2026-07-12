@@ -1,9 +1,8 @@
 # Upstream sync toolkit
 
-Keeps the native Zig port in lock-step with the always-moving upstream Stockfish master. Full rationale,
-the phased port history, findings, and the recommendations these tools implement:
-[`../../../__DEV/reports/REPORT-13-FETCH-UPSTREAM.md`](../../../__DEV/reports/REPORT-13-FETCH-UPSTREAM.md)
-(see §0.5 OUTCOME + Annex A). Per-commit log: [`SYNC-LOG.md`](SYNC-LOG.md).
+Keeps the native Zig port in lock-step with the always-moving upstream Stockfish master: detect what
+changed upstream, route each changed commit to the Zig file that must absorb it, and gate the result
+bit-exact against a pristine upstream build.
 
 **Status:** the port is synced to upstream HEAD (see `UPSTREAM_BASE`). Run `upstream_sync.sh --check`.
 
@@ -41,7 +40,7 @@ zig build signature output-golden eval-trace perft misc parity-mt parity-valgrin
 cp UPSTREAM_TARGET UPSTREAM_BASE ; git commit ; git merge --ff-only <branch> ; git tag -f synced-upstream-<sha>
 ```
 
-## The oracle (REPORT-16 M16.1)
+## The oracle
 - **Pristine** (`upstream_oracle.sh`): vanilla upstream at any sha; the source of truth for `upstream_parity`
   and `upstream_nodes`. This is how we *follow* upstream, and it is now the **only** oracle.
 - The former **in-tree legacy** oracle (`stockfish-legacy-cpp`, the `*-parity` gates) is **retired**:
@@ -49,7 +48,7 @@ cp UPSTREAM_TARGET UPSTREAM_BASE ; git commit ; git merge --ff-only <branch> ; g
   vs-upstream check, and it carried the whole vendored-C++ / `zig_compat/` build. The pristine worktree
   oracle is a strict superset (real upstream, drift-proof, cached no-op in steady state), so it replaces it.
 
-## Integer-semantics watch (FORMULA commits — A4)
+## Integer-semantics watch (FORMULA commits)
 When porting an arithmetic expression in search/eval, the algorithm is rarely the trap — the **integer
 semantics** are. The router flags these `FORMULA`. Check: unsigned promotion (`int * uint64_t` does the
 multiply/divide UNSIGNED — differs from signed when a term is negative, e.g. `645b636df`), shift

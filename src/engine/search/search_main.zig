@@ -1,7 +1,7 @@
-// The main alpha-beta search, split out of search_driver.zig. searchImpl
-// recurses on itself and dives into qsearchImpl (search_qsearch) at depth 0;
-// it never calls the iterative-deepening driver or the worker-start glue, so
-// it is a one-way leaf. iterativeDeepening (search_id_loop) imports it.
+// The main alpha-beta search. searchImpl recurses on itself and dives into
+// qsearchImpl (search_qsearch) at depth 0; it never calls the
+// iterative-deepening driver or the worker-start glue. iterativeDeepening
+// (search_id_loop) imports it.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");
@@ -276,10 +276,9 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= ctx.nmp_min_ply.* and !qIsLoss(beta))
         {
             const r = search.nullMoveReduction(depth);
-            // Worker::do_null_move, inlined: null moves touch no accumulator, so
-            // call the Zig-owned pos.do_null_move, mark the stack move as null
-            // (Move::null() == 65), and set the all-NO_PIECE continuation-history
-            // pointer -- the work the removed cb_do_null_move callback did.
+            // Null moves touch no accumulator: call pos.do_null_move, mark the
+            // stack move as null (65), and set the all-NO_PIECE
+            // continuation-history pointer.
             doNullMove(pos_ptr, &st);
             ss.current_move = 65;
             setContHist(ctx.worker, ss_ptr, 0, 0, 0, 0);

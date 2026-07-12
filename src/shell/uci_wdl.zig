@@ -89,7 +89,7 @@ pub fn formatInfoNoMoves(depth: c_int, score_text: []const u8) ?[:0]u8 {
 }
 
 // The full per-PV info line (depth/seldepth/multipv/score/[bound]/[wdl]/nodes/nps/
-// hashfull/tbhits/time/pv). Relocated from uci.zig (M16.7).
+// hashfull/tbhits/time/pv). Relocated from uci.zig.
 pub fn formatInfoFull(
     depth: c_int,
     sel_depth: c_int,
@@ -152,7 +152,7 @@ pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[:0]u8 {
     return allocFormatted("bestmove {s} ponder {s}", .{ bestmove, ponder }) catch null;
 }
 
-// --- tests (M22.0) --------------------------------------------------------------
+// --- tests--------------------------------------------------------------
 // Pure std-only leaf: the win-rate model + score/info formatters. Wired as a
 // standalone artifact in build.zig so these run under `zig build test`.
 const test_alloc = std.heap.c_allocator;

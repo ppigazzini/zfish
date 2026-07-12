@@ -32,10 +32,10 @@ pub const TraceOutput = struct {
     correct_bucket: usize,
 };
 
-// NNUE network layer forward pass (NetworkArchitecture::propagate), ported to
-// Zig. Layers: fc_0 (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 62->32)
+// NNUE network layer forward pass (NetworkArchitecture::propagate). Layers: fc_0
+// (affine 1024->32) -> {ac_sqr_0, ac_0} -> fc_1 (affine 62->32)
 // -> ac_1 -> fc_2 (affine 32->1), plus the fwdOut bias term. Bit-exact with the
-// C++ SSSE3 path (integer math). Weights are int8 in the SSSE3-scrambled layout;
+// SSSE3 integer path. Weights are int8 in the SSSE3-scrambled layout;
 // biases int32 linear. WeightScaleBits=6.
 // Affine layer over the int8 weights' dpbusd (SSSE3/AVX2/AVX-512-VNNI) tiling.
 // The scrambled physical index weightIndexScrambled(j*padded+i,padded,OUT) reduces,

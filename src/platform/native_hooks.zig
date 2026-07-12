@@ -1,16 +1,16 @@
-// Native runtime hook registry (M16.9): a fn-pointer table that breaks the module
-// import cycles the retired C++ oracle used C-ABI `extern fn zfish_*` symbols for.
+// Native runtime hook registry: a fn-pointer table that breaks module import
+// cycles between the runtime hooks and their implementations.
 //
 // The impls live in main.zig because they need position/engine/network/search/... —
 // modules that already import their callers (thread/engine/native_thread/
 // native_threadpool), so the callers can't import back to reach them. main installs
-// the pointers at startup (installNativeHooks); the callers invoke through here
-// instead of the old C-ABI exports. Pure Zig fn pointers -- no C ABI, type-checked.
+// the pointers at startup (installNativeHooks); the callers invoke through here.
+// Pure Zig fn pointers -- no C ABI, type-checked.
 //
-// M17.9: the fields are NON-OPTIONAL, each defaulting to a named panic stub, so the
+// The fields are NON-OPTIONAL, each defaulting to a named panic stub, so the
 // callers invoke them directly (no `.?` null-unwrap at 10+ sites). A hook that was
 // never registered fails fast with its own name instead of an opaque null-optional
-// panic -- the M17.5e failure mode (a test that skipped installNativeHooks) now
+// panic -- the failure mode (a test that skipped installNativeHooks) now
 // reports exactly which hook is missing.
 
 const graph_layout = @import("graph_layout");

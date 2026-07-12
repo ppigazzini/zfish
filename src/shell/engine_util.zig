@@ -1,4 +1,4 @@
-// Engine string/format helpers + shared POD types (M17.3x).
+// Engine string/format helpers + shared POD types.
 //
 // The pure C-string alloc + ArrayList append builders and the small shared value
 // types (ByteView, CountPair) used across engine.zig's info-formatting, trace, and
@@ -68,7 +68,7 @@ pub fn appendCheckers(buffer: *std.ArrayList(u8), checkers: u64) !void {
     }
 }
 
-// --- tests (M22.0) --------------------------------------------------------------
+// --- tests--------------------------------------------------------------
 // These pin the byte-exactness of the formatters that replaced C snprintf
 // (%016llX / %4d) -- a regression here would drift the eval-trace goldens.
 const ally = std.heap.c_allocator;

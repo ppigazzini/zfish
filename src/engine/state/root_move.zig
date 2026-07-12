@@ -1,19 +1,16 @@
 // Native Zig RootMove and PVMoves.
 //
-// Part of the post-src/ object graph: the root-move list the search ranks and
-// the per-line principal variation. Laid out byte-for-byte against the C++
-// Search::RootMove / PVMoves so the native struct interoperates with the ported
-// search during the transition, and stands on its own once src/ is gone.
+// The root-move list the search ranks and the per-line principal variation.
 
 const std = @import("std");
 
-pub const max_ply = 246; // src/types.h MAX_PLY
-pub const value_infinite = 32001; // src/types.h VALUE_INFINITE
+pub const max_ply = 246; // MAX_PLY
+pub const value_infinite = 32001; // VALUE_INFINITE
 
 pub const Move = u16; // Move::raw()
 pub const move_none: Move = 0;
 
-// PVMoves: a fixed Move[MAX_PLY+1] buffer plus a length, matching the C++ POD.
+// PVMoves: a fixed Move[MAX_PLY+1] buffer plus a length.
 pub const PVMoves = struct {
     moves: [max_ply + 1]Move,
     length: usize,
@@ -33,16 +30,16 @@ pub const PVMoves = struct {
         return self.moves[0..self.length];
     }
 
-    /// Reinterpret a raw Worker-graph address as a *PVMoves (M18.2: graph_layout
-    /// re-exports this type, so its former fromAddr moves onto the canonical def).
+    /// Reinterpret a raw Worker-graph address as a *PVMoves (graph_layout re-exports
+    /// this type).
     pub inline fn fromAddr(addr: usize) *PVMoves {
         return @ptrFromInt(addr);
     }
 };
 
 comptime {
-    // Must reproduce the C++ PVMoves footprint (494 bytes of moves, padded to an
-    // 8-byte length -> 504), and the RootMove footprint (552).
+    // The PVMoves footprint is 494 bytes of moves, padded to an 8-byte length -> 504,
+    // and the RootMove footprint is 552.
     std.debug.assert(@sizeOf(PVMoves) == 504);
 }
 
@@ -77,22 +74,21 @@ pub const RootMove = struct {
     pub fn eqMove(self: *const RootMove, m: Move) bool {
         return self.pv.moves[0] == m;
     }
-    // Descending sort: by score, then previousScore (C++ operator<).
+    // Descending sort: by score, then previousScore.
     pub fn lessThan(_: void, a: RootMove, b: RootMove) bool {
         return if (b.score != a.score) b.score < a.score else b.previous_score < a.previous_score;
     }
 
-    /// Reinterpret a raw rootMoves-vector element address as a *RootMove (M18.2:
-    /// graph_layout re-exports this type, so its former fromAddr moves onto the
-    /// canonical def; the vector strides by @sizeOf(RootMove) == 552).
+    /// Reinterpret a raw rootMoves-vector element address as a *RootMove (graph_layout
+    /// re-exports this type; the vector strides by @sizeOf(RootMove) == 552).
     pub inline fn fromAddr(addr: usize) *RootMove {
         return @ptrFromInt(addr);
     }
 };
 
 comptime {
-    // Native struct (M16.8 de-mirror): Zig owns the field order (pv no longer @48),
-    // but the element size must still equal the strided rootMoves vector element.
+    // Zig owns the field order, but the element size must equal the strided rootMoves
+    // vector element.
     std.debug.assert(@sizeOf(RootMove) == 552);
 }
 

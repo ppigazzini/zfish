@@ -1,4 +1,4 @@
-// Read-only Position accessors and snapshot builders (M17.3k).
+// Read-only Position accessors and snapshot builders.
 //
 // The small "read a fact off the live Position" queries lifted out of
 // position.zig: the scalar accessors (side/chess960/ply/checkers/material), and
@@ -41,12 +41,11 @@ pub fn wdlMaterial(pos: *const Position) c_int {
         5 * (pc[4] + pc[12]) + 9 * (pc[5] + pc[13]);
 }
 
-// The snapshot the fill hook writes IS position_snapshot.PositionSnapshot (M18.7);
-// the former local mirror is retired now that this module names the real type.
+// The snapshot the fill hook writes IS position_snapshot.PositionSnapshot.
 const FillSnapshot = position_snapshot.PositionSnapshot;
 
-// Position::fill_snapshot: derive the NNUE/board snapshot from the live Position.
-// Reads the memory mirror directly.
+// fillSnapshot: derive the NNUE/board snapshot from the live Position.
+// Reads the Position fields directly.
 pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     const st = pos.st;
 
@@ -82,7 +81,7 @@ pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
 }
 
 // The 64-square piece board only, for NNUE piece-count/accumulator callers that
-// need just the board (not the full snapshot). Relocated from main.zig (M16.7).
+// need just the board (not the full snapshot).
 pub fn accumulatorSnapshot(pos: *const Position, pieces_out: [*]u8) void {
     var s: usize = 0;
     while (s < 64) : (s += 1) pieces_out[s] = pos.board[s];

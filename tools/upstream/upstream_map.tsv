@@ -1,4 +1,4 @@
-# Blast-radius manifest (REPORT-13 §5.3) — routes an upstream src/ change to the Zig file(s) that must
+# Blast-radius manifest — routes an upstream src/ change to the Zig file(s) that must
 # absorb it, plus a risk tier. Used by upstream_router.py to classify each upstream commit mechanically.
 # Format:  <src-glob>\t<zig-owner(s)>\t<risk>     risk ∈ {SKIP,LOW,MED,HIGH}.  First matching rule wins,
 # so order most-specific first. fnmatch globs (use * ).

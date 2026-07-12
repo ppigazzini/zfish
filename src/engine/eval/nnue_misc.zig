@@ -80,7 +80,7 @@ fn absInt(value: c_int) c_int {
     return if (value < 0) -value else value;
 }
 
-// --- tests (M22.0) --------------------------------------------------------------
+// --- tests --------------------------------------------------------------
 test "formatTrace: side line, bucket row, and the %c%6.2f float cells" {
     const psqt = [_]c_int{22}; // +0.22
     const positional = [_]c_int{-76}; // -0.76 ; total -54 -> -0.54

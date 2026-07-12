@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Arch-variant bench-determinism sweep (REPORT-15 M15.1).
+# Arch-variant bench-determinism sweep.
 #
 # The pure-Zig eval is integer-exact, hence arch-INVARIANT: every x86-64 tier must
 # produce the same bench signature (node count) 2067208. Only sse41 (via
 # `zig build parity`) and avx2 were gated before. This sweeps the wider tiers too
 # -- bmi2 (PEXT + comptime-attacks codegen) and the host's best AVX-512 tier --
-# which are exactly where the upcoming @Vector NNUE kernels (M15.2+) could silently
+# which are exactly where the upcoming @Vector NNUE kernels could silently
 # break bit-exactness at a wider vector width while sse41/avx2 stay green. It runs
 # the REAL bench per tier (`zig build signature` fails on any mismatch), so it is
 # not a hollow gate.

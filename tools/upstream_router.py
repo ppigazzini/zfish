@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Blast-radius router (REPORT-13 §5.3).
+"""Blast-radius router.
 
 Classify an upstream commit (or range) by which Zig file(s) it forces us to touch and at what risk tier,
 reading the manifest at tools/upstream/upstream_map.tsv. Turns "what does this commit cost us" into a

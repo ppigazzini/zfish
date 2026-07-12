@@ -1,6 +1,6 @@
 const std = @import("std");
 
-// M21.1: the pure bitboard-math helpers live in a std-only leaf now; alias them
+// The pure bitboard-math helpers live in a std-only leaf now; alias them
 // back (Zig top-level decls are order-independent, so callers above are unaffected).
 const nnue_feature_bb = @import("nnue_feature_bb.zig");
 const makePiece = nnue_feature_bb.makePiece;

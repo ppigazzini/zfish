@@ -1,10 +1,9 @@
-// Iterative-deepening orchestration helpers (M18.7 — split out of search_driver.zig).
-// The per-search worker-graph reads + time-management / thread-pool / skill / vote
-// primitives the search root loop (workerStartSearching / iterativeDeepening, which
-// stay in search_driver because they call the node recursion) drives. None of these
-// touch the qsearch/search recursion, so they form a std-free leaf over the worker/
-// board POD leaves + the option/timeman/tt/native-thread runtimes -- search_driver
-// imports it one-directionally (no cycle). The context types + shared worker
+// Iterative-deepening orchestration helpers. The per-search worker-graph reads +
+// time-management / thread-pool / skill / vote primitives the search root loop
+// (workerStartSearching / iterativeDeepening, which stay in search_driver because
+// they call the node recursion) drives. None of these touch the qsearch/search
+// recursion, so they form a std-free leaf over the worker/board POD leaves + the
+// option/timeman/tt/native-thread runtimes. The context types + shared worker
 // accessors live in the search_ctx leaf both sides import.
 
 const std = @import("std");
@@ -95,7 +94,7 @@ pub fn ssContext(wl: *const graph_layout.WorkerLayout, out: *SsCtx) void {
 // Per-search TimeManagement::init + TT::new_search (main thread). Builds the timeman
 // input from the worker's limits/rootPos + the manager's tm, reads nodestime/Move
 // Overhead/Ponder from the native model, writes the outputs back, and bumps the TT
-// generation. Relocated from main.zig (M16.7).
+// generation.
 pub fn ssTmInit(wl: *graph_layout.WorkerLayout) void {
     const lim = &wl.limits;
     const smgr = wl.manager.?;
@@ -136,7 +135,7 @@ pub fn ssTmInit(wl: *graph_layout.WorkerLayout) void {
 }
 
 // Skill level as a float: from UCI_Elo (interpolated) when UCI_LimitStrength is set,
-// else the raw Skill Level option. Relocated from main.zig (M16.7).
+// else the raw Skill Level option.
 pub fn skillLevel() f64 {
     const limit_strength = optInt("UCI_LimitStrength") != 0;
     const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
@@ -149,8 +148,7 @@ pub fn skillLevel() f64 {
 }
 
 // Snapshot the iterative-deepening state (worker/pool member pointers + scalars) for
-// the native search root loop. Relocated from main.zig (M16.7); graph reads + the
-// native OptionsModel only.
+// the native search root loop. Graph reads + the native OptionsModel only.
 pub fn searchIdState(wl: *graph_layout.WorkerLayout, out: *ZfishIdState) void {
     const thread_idx = wl.thread_idx;
     const is_main = thread_idx == 0;
@@ -167,8 +165,8 @@ pub fn searchIdState(wl: *graph_layout.WorkerLayout, out: *ZfishIdState) void {
     out.nodes = &wl.nodes;
     out.stop = &tp.stop;
     out.increase_depth = &tp.increase_depth;
-    // wl.last_iteration_pv and ZfishIdState's field are now the one canonical
-    // PVMoves (M18.2 de-mirror), so this is a plain mut->const coercion, no cast.
+    // wl.last_iteration_pv and ZfishIdState's field are the one canonical PVMoves,
+    // so this is a plain mut->const coercion, no cast.
     out.last_iter_pv = &wl.last_iteration_pv;
     out.root_moves_count = wl.root_moves.len;
     out.thread_idx = thread_idx;
@@ -222,13 +220,13 @@ pub fn ssWaitFinished(wl: *const graph_layout.WorkerLayout) void {
 }
 
 // Worker of the vote-winning thread (Lazy-SMP best-thread selection via the leaf
-// thread_vote model). Relocated from main.zig (M16.7).
+// thread_vote model).
 pub fn ssGetBestThread(wl: *const graph_layout.WorkerLayout) ?*graph_layout.WorkerLayout {
     const pool = wl.threads;
     return thread_vote.bestThreadWorker(pool);
 }
 
-// nodestime available-nodes advance (tm.advance_nodes_time). Relocated from main.zig (M16.7).
+// nodestime available-nodes advance (tm.advance_nodes_time).
 pub fn ssNpmsecAdvance(wl: *const graph_layout.WorkerLayout) void {
     const avail = &wl.manager.?.tm.available_nodes;
     const us: usize = sideToMove(&wl.root_pos);
@@ -237,7 +235,7 @@ pub fn ssNpmsecAdvance(wl: *const graph_layout.WorkerLayout) void {
     avail.* = @max(@as(i64, 0), avail.* - (nodes - inc));
 }
 
-// ---- ID-loop root-move / skill / mate helpers (M18.7) ----------------------
+// ---- ID-loop root-move / skill / mate helpers ----------------------
 // Pure over RootMove / ZfishIdState + the value bounds above; the depth loop
 // (iterativeDeepening, which stays in search_driver because it calls the node
 // recursion) uses them via search_driver aliases.

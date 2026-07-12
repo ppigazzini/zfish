@@ -1,4 +1,4 @@
-// FEN parsing: build a Position from a FEN string (M17.3o).
+// FEN parsing: build a Position from a FEN string.
 //
 // The FEN *decode* side of the board, split out of position.zig. Unlike fen.zig
 // (pure string encoding), parsing writes a live Position -- it places pieces,

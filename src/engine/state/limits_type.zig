@@ -1,30 +1,24 @@
 // LimitsType + SearchMoveText — the UCI `go` search-limits record and its
-// searchmoves element (M17.10 god-module split: lifted out of graph_layout, whose
-// re-export keeps `graph_layout.LimitsType` / `.SearchMoveText` resolving for the
-// go-command call chain). A standalone POD leaf over std — no reference to the
-// worker/thread graph, so it carries no cycle.
+// searchmoves element. graph_layout re-exports them so `graph_layout.LimitsType` /
+// `.SearchMoveText` keep resolving for the go-command call chain. A standalone POD
+// leaf over std.
 
 const std = @import("std");
 
-// A Zig-owned UCI searchmove text record (M17.6): replaces the libc++ std::string
-// element the searchmoves vector used to hold. Fixed 8-byte record -- a length byte
-// plus up to 7 chars ("e2e4", "e7e8q"). uci.goParsed writes these; the startThinking
-// move filter reads them by plain field access, so no foreign-runtime std::string SSO
-// byte layout is decoded any more. The searchmoves header stays a {begin,end,cap}
-// usize triple (the LimitsType slot layout is contractual, comptime-checked below),
-// but it now points at Zig-owned records, not a C++ container.
+// A Zig-owned UCI searchmove text record. Fixed 8-byte record -- a length byte plus
+// up to 7 chars ("e2e4", "e7e8q"). uci.goParsed writes these; the startThinking move
+// filter reads them by plain field access.
 pub const SearchMoveText = extern struct {
     len: u8,
     text: [7]u8,
 };
 
-// The LimitsType object (120 bytes): a leading 24-byte std::vector<std::string>
-// `searchmoves` (POD-opaque here), then seven 8-byte TimePoints
-// (time[2]/inc[2]/npmsec/movetime/startTime) ending at 80, then the search-mode
-// ints (movestogo/depth/mate/perft/infinite), nodes, and ponderMode. workerSetLimits
+// The LimitsType object: the `searchmoves` list, seven TimePoints
+// (time[2]/inc[2]/npmsec/movetime/startTime), the search-mode ints
+// (movestogo/depth/mate/perft/infinite), nodes, and ponderMode. workerSetLimits
 // copies the POD fields, so any layout error here breaks bench (gate-verified).
 pub const LimitsType = struct {
-    searchmoves: []SearchMoveText, // the `go searchmoves` list (M19.1: a typed slice, was {begin,end,cap})
+    searchmoves: []SearchMoveText, // the `go searchmoves` list
     time: [2]i64, // time[WHITE], time[BLACK]
     inc: [2]i64, // inc[WHITE], inc[BLACK]
     npmsec: i64,
@@ -50,16 +44,16 @@ pub const LimitsType = struct {
     pub inline fn perftValue(self: *const LimitsType) usize {
         return @intCast(self.perft);
     }
-    /// Number of `go searchmoves` entries -- the slice length (M19.1).
+    /// Number of `go searchmoves` entries -- the slice length.
     pub inline fn searchmoveCount(self: *const LimitsType) usize {
         return self.searchmoves.len;
     }
 };
 
 comptime {
-    // Native struct (M16.8 de-mirror): Zig owns the field order; workerSetLimits copies
-    // the POD fields explicitly (not a byte range), so only the fit in the Worker's
-    // 120-byte limits slot (worker_off.limits..pv_idx) is contractual.
+    // Zig owns the field order; workerSetLimits copies the POD fields explicitly (not
+    // a byte range), so only the fit in the Worker's 120-byte limits slot
+    // (worker_off.limits..pv_idx) is contractual.
     std.debug.assert(@sizeOf(LimitsType) <= 120);
 }
 

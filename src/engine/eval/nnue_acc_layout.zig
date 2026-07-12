@@ -57,7 +57,7 @@ pub const ThreatDiffView = struct {
     ksq: u8,
 };
 
-/// Opaque handle to the per-Worker accumulator stack arena (M18.4-B4). A raw
+/// Opaque handle to the per-Worker accumulator stack arena. A raw
 /// 64-aligned byte buffer of accumulator_stack_size bytes (embedded in the Worker /
 /// malloc'd for the eval trace); the state/diff byte-offset accessors below
 /// reinterpret it. A distinct handle type, not a bare *anyopaque, so it can't be

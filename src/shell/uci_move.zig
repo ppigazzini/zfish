@@ -4,7 +4,7 @@ const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 const Position = position_types.Position;
 
-// M16.7: uci_move reads the position snapshot through the main-exported bridge rather
+// uci_move reads the position snapshot through the main-exported bridge rather
 // than importing position -- position (the search driver) imports uci_move to format
 // its emit output, so uci_move must not import position back (would cycle).
 
@@ -131,7 +131,7 @@ fn promotionType(raw_move: u16) u8 {
     return @intCast(((raw_move >> 12) & 0x3) + knight);
 }
 
-// --- tests (M22.0) --------------------------------------------------------------
+// --- tests--------------------------------------------------------------
 test "renderMoveText: normal move and promotion" {
     var buf: [5]u8 = undefined;
     const e2: u16 = 12; // rank 1 (0-based), file e -> 1*8+4

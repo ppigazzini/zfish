@@ -1,10 +1,10 @@
-//! Monotonic steady clock (Stockfish now()), relocated out of main.zig (M16.7).
+//! Monotonic steady clock (Stockfish now()), relocated out of main.zig.
 //! Milliseconds since an arbitrary epoch; used by time management and the skill-level RNG seed.
 
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Windows steady clock (M-PORT): QueryPerformanceCounter is the monotonic high-res counter;
+// Windows steady clock: QueryPerformanceCounter is the monotonic high-res counter;
 // ticks/QueryPerformanceFrequency gives seconds. Declared here (only linked on Windows, where
 // the switch below references it).
 extern "kernel32" fn QueryPerformanceCounter(count: *i64) callconv(.winapi) i32;

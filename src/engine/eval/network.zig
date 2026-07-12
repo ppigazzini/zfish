@@ -18,16 +18,16 @@ const none_name = "None";
 // "network" module rather than re-declaring it (a net bump edits one line).
 pub const default_eval_file_name = "nn-af1339a6dea3.nnue";
 
-/// Opaque handle to the network subsystem (M18.5). The NNUE weights live in this
+/// Opaque handle to the network subsystem. The NNUE weights live in this
 /// module's globals (native_ft_ptr_storage &c.), so there is no struct to point at --
 /// the engine holds a malloc(1) placeholder. An `opaque {}` gives the SharedState
 /// bundle a distinct `*Network` handle (not a bare *anyopaque) without inventing a
 /// fake layout; it is the same idiom the B4 arena handles use.
 pub const Network = opaque {};
 
-// Inference (forward pass) lives in the nnue_inference leaf now; re-export the
-// public entry points + result types so the network module's port surface --
-// which the engine, worker, and trace callers resolve through -- is unchanged.
+// Inference (forward pass) lives in the nnue_inference leaf; re-export the
+// public entry points + result types so the engine, worker, and trace callers
+// resolve them through the network module.
 pub const evaluate = nnue_inference.evaluate;
 pub const traceEvaluate = nnue_inference.traceEvaluate;
 pub const EvalOutput = nnue_inference.EvalOutput;
@@ -360,7 +360,7 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
 
 // FT transform for one output bucket. Reads weights from the native feature-transformer
 // storage above (always resident after a network load) and runs the Zig accumulator
-// transform. Relocated from main.zig (M16.7).
+// transform.
 
 // Parse the feature transformer natively into the Zig-owned storage and return the bytes
 // consumed (leading component hash + the LEB-coded params). The native parse is the sole

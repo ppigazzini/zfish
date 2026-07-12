@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# upstream-parity (REPORT-13 §5.1).
+# upstream-parity.
 #
 # Assert the native Zig default build's bench == the PRISTINE upstream oracle's bench at the current
 # target sha. This is the whole-engine convergence gate for the resync. It is RED until the port catches

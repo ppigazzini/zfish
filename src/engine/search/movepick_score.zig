@@ -1,12 +1,9 @@
-// Move scoring, split out of movepick.zig: the ScoreInput/SortEntry/
-// MovePickerState/MovePickerContext types plus scoreMoves/scoreList and the
-// low-level move-bit / snapshot-load helpers they use. The yielder (nextMove
-// + select*) in movepick.zig calls scoreList; scoring never calls the yielder,
-// so this leaf imports only the snapshot/history/movegen leaves -- no cycle.
+// Move scoring: the ScoreInput/SortEntry/MovePickerState/MovePickerContext types
+// plus scoreMoves/scoreList and the low-level move-bit / snapshot-load helpers
+// they use.
 
 const std = @import("std");
 
-// ANNEX B.3: the history-heuristic layer lives in a std-only leaf now; alias back.
 const movepick_history = @import("movepick_history.zig");
 const HistorySnapshot = movepick_history.HistorySnapshot;
 const HistoryEntry = movepick_history.HistoryEntry;
@@ -24,7 +21,6 @@ const captureHistoryScore = movepick_history.captureHistoryScore;
 const continuationHistoryScore = movepick_history.continuationHistoryScore;
 const pawnHistoryScore = movepick_history.pawnHistoryScore;
 
-// ANNEX B.3: snapshot-query + SEE layer lives in a std-only leaf now; alias back.
 const movepick_snapshot = @import("movepick_snapshot.zig");
 const seeGeWithSnapshot = movepick_snapshot.seeGeWithSnapshot;
 const attackersTo = movepick_snapshot.attackersTo;

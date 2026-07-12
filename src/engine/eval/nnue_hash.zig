@@ -3,9 +3,8 @@
 // Network::get_content_hash (network.cpp) combines per-component hashes of the
 // feature transformer and the eight layer stacks. Each component hashes its raw
 // weight bytes with hash_bytes (MurmurHash2-64A, misc.cpp) and mixes in the
-// compile-time architecture hash values. These are the native equivalents,
-// computed from the Zig-owned weight storage and cross-checked against the C++
-// hashes at load time. Matches src/nnue exactly.
+// compile-time architecture hash values. These are computed from the weight
+// storage at load time. Matches src/nnue exactly.
 
 const std = @import("std");
 const nnue_parse = @import("nnue_parse.zig");

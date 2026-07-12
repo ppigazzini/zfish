@@ -127,7 +127,7 @@ fn absInt(value: i64) i64 {
     return if (value < 0) -value else value;
 }
 
-// --- tests (M22.0) --------------------------------------------------------------
+// --- tests --------------------------------------------------------------
 test "computeValue: zeros -> 0; equal psqt/positional passes through" {
     try std.testing.expectEqual(@as(c_int, 0), computeValue(.{
         .psqt = 0,

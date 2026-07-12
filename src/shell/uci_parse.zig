@@ -1,4 +1,4 @@
-// UCI command parsers (M17.3w).
+// UCI command parsers.
 //
 // The `go` / `position` / `setoption` token parsers and their Parsed* result
 // structs, split out of uci.zig. Pure over std + the uci_strings base leaf (no
@@ -21,7 +21,7 @@ fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[*:0]u8 {
 }
 
 // ======================================================================== //
-// Parser cluster, moved verbatim from uci.zig (M17.3w).                       //
+// Parser cluster, moved verbatim from uci.zig.                       //
 // ======================================================================== //
 pub const ParsedSetOption = struct {
     name: ?[*:0]u8,
@@ -256,7 +256,7 @@ test "fuzz: the UCI parsers tolerate arbitrary input" {
     }
 }
 
-// M19: OOM-unwind gates. The parsers now take an injected allocator, so
+// OOM-unwind gates. The parsers now take an injected allocator, so
 // checkAllAllocationFailures can fail each allocation (ArrayList growth, lowerAlloc,
 // the result allocCStrings) and assert every unwind is leak-free -- this is what caught
 // the parsePositionAlloc double-result leak.

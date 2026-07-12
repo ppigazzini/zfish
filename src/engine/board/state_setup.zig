@@ -1,4 +1,4 @@
-// Position derived-state setup (M17.3l).
+// Position derived-state setup.
 //
 // The functions that (re)derive a Position's cached StateInfo from its board:
 // setState (full key/material/checkers rebuild), setCheckInfo (blockers + check

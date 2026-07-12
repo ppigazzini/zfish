@@ -23,7 +23,7 @@ pub fn intByIndex(idx: usize) c_int {
 
 // Read an option's integer value by name (0 if absent). Used by native callers
 // that carry an option name (e.g. the search driver's MultiPV / UCI_ShowWDL).
-/// Read an integer option by name from the native option model (M16.7).
+/// Read an integer option by name from the native option model.
 pub fn intByName(name: []const u8) c_int {
     return ensureModel().getInt(name);
 }
@@ -49,7 +49,7 @@ pub fn uciChess960() bool {
     return intByName("UCI_Chess960") != 0;
 }
 /// A NUL-terminated copy of a string option (caller frees; c_allocator is libc-backed
-/// so the existing c.free still pairs), or null on OOM. M19.0: allocSentinel is the
+/// so the existing c.free still pairs), or null on OOM. allocSentinel is the
 /// idiomatic NUL-terminated allocation -- it sizes len+1 and writes the sentinel.
 pub fn dupCString(name: []const u8) ?[*:0]u8 {
     const s = strByName(name);
@@ -143,8 +143,8 @@ const nameEquals = option_parse.nameEquals;
 //
 // The complete data model behind a UCI OptionsMap: name, type, default,
 // current value, spin bounds, registration order, and the change-callback kind,
-// all owned in Zig. This replaces the C++ Option metadata fields and the
-// std::map storage; the parse/validate/normalize logic already lives in this
+// all owned in Zig. It holds the option metadata and storage; the
+// parse/validate/normalize logic lives in this
 // file and is reused here. Verified by the tests at the bottom.
 // ---------------------------------------------------------------------------
 

@@ -1,12 +1,10 @@
-// Shared-history arena (M17.3r).
+// Shared-history arena.
 //
 // The per-numa-node SharedHistories block (correction + pawn history), its
 // large-page allocation / free / clear / verify management, and the accessors the
-// search reads it through (sharedOf / pawnEntryRow / corrBundle). Split out of
-// search_driver.zig: this is the history *storage* layer, and it depends on
-// nothing search-specific -- only the worker/board POD leaves plus the memory and
-// sizing helpers. So it is a leaf; search_driver imports it (and re-exports the
-// public management functions onward so position.zig's port surface is unchanged).
+// search reads it through (sharedOf / pawnEntryRow / corrBundle). This is the history
+// *storage* layer; it depends on nothing search-specific -- only the worker/board POD
+// leaves plus the memory and sizing helpers.
 
 const std = @import("std");
 const memory = @import("memory");
@@ -22,26 +20,22 @@ const hist_pieceto = worker_histories.hist_pieceto;
 const CorrectionBundle = search_types.CorrectionBundle;
 const Position = position_types.Position;
 
-// SharedHistories now lives in the shared_history_types leaf (M18.7) so that
-// worker_histories can name it for its `shared_history` field without importing this
-// module (which imports worker_histories -- the reverse would cycle). Re-export it as
-// the canonical name so the storage/management/accessor code below is unchanged.
 pub const SharedHistories = shared_history_types.SharedHistories;
 
 pub inline fn sharedOf(w: *const WorkerHistories) *SharedHistories {
     return w.shared_history.?;
 }
 
-// DynStats::clear_range numa partition of `size` entries: [start, end).
+// Numa partition of `size` entries: [start, end).
 inline fn dynRange(size: usize, thread_idx: usize, numa_total: usize) struct { start: usize, end: usize } {
     const start = thread_idx * size / numa_total;
     const end = if (thread_idx + 1 == numa_total) size else (thread_idx + 1) * size / numa_total;
     return .{ .start = start, .end = end };
 }
 
-// SharedHistories clear_range pair from Worker::clear: correctionHistory entries
-// (each [2]CorrectionBundle, 8 int16) filled to -6, pawnHistory pages (each a
-// [16][64] int16 page) filled to -1262, over this thread's numa partition.
+// SharedHistories clear: correctionHistory entries (each [2]CorrectionBundle, 8 int16)
+// filled to -6, pawnHistory pages (each a [16][64] int16 page) filled to -1262, over
+// this thread's numa partition.
 pub fn clearSharedHistory(shared: *SharedHistories, thread_idx: usize, numa_total: usize) void {
     const corr_entry_i16: usize = @sizeOf([2]CorrectionBundle) / @sizeOf(i16);
     {
@@ -99,8 +93,8 @@ pub fn deinitSharedHistories(sh: *SharedHistories) void {
 // large-page-backed construct/free hooks.
 pub const SharedHistoriesMap = shared_histories_map.SharedHistoriesMapOf(SharedHistories);
 
-// Read a SharedHistories through the native mirror and confirm its four size fields
-// match the native sizing for `thread_count`.
+// Read a SharedHistories and confirm its four size fields match the native sizing for
+// `thread_count`.
 pub fn verifySharedHistories(shared: *const SharedHistories, thread_count: usize) bool {
     return shared_hist.verifySizes(
         shared.corr_size,
@@ -117,7 +111,7 @@ pub inline fn pawnEntryRow(shared: *SharedHistories, pos: *const Position) [*]i1
     return shared.pawn_data + idx * hist_pieceto;
 }
 
-// correctionHistory[key & sizeMinus1][us] bundle, via the SharedHistories mirror.
+// correctionHistory[key & sizeMinus1][us] bundle.
 pub inline fn corrBundle(shared: *SharedHistories, key: u64) *[2]CorrectionBundle {
     const idx: usize = @intCast(key & @as(u64, shared.size_minus1));
     return &shared.corr_data[idx];

@@ -1,4 +1,4 @@
-// NNUE accumulator SIMD row ops (M17.4d).
+// NNUE accumulator SIMD row ops.
 //
 // The vectorized feature-transformer weight-row add/sub kernels split out of
 // nnue_accumulator.zig. Fully self-contained: pure @Vector math over the FT

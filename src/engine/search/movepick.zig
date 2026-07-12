@@ -1,6 +1,5 @@
 const std = @import("std");
 
-// ANNEX B.3: the history-heuristic layer lives in a std-only leaf now; alias back.
 const movepick_history = @import("movepick_history.zig");
 const HistorySnapshot = movepick_history.HistorySnapshot;
 const HistoryEntry = movepick_history.HistoryEntry;
@@ -18,7 +17,6 @@ const captureHistoryScore = movepick_history.captureHistoryScore;
 const continuationHistoryScore = movepick_history.continuationHistoryScore;
 const pawnHistoryScore = movepick_history.pawnHistoryScore;
 
-// ANNEX B.3: snapshot-query + SEE layer lives in a std-only leaf now; alias back.
 const movepick_snapshot = @import("movepick_snapshot.zig");
 const seeGeWithSnapshot = movepick_snapshot.seeGeWithSnapshot;
 const attackersTo = movepick_snapshot.attackersTo;
@@ -99,8 +97,6 @@ const piece_values = [_]c_int{
     0, 208, 781, 825, 1276, 2538, 0, 0,
 };
 
-// Scoring + the shared types live in the movepick_score leaf now; re-export the
-// public types and alias back scoreList / loadPositionSnapshot for the yielder.
 const movepick_score = @import("movepick_score.zig");
 pub const ScoreInput = movepick_score.ScoreInput;
 pub const SortEntry = movepick_score.SortEntry;

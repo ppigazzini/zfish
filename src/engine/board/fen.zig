@@ -1,17 +1,16 @@
-// FEN encoding: format / flip / endgame-code synthesis (M17.3e leaf-extraction).
+// FEN encoding: format / flip / endgame-code synthesis.
 //
 // The FEN *output* side of the board, carved out of the 4200-line position.zig
 // god-file. Every entry point takes raw primitives (a 64-byte board image, a
 // side/castling/ep byte, counters) rather than a *Position, so this is a pure
 // std-only leaf with no dependency on the position graph -- it forms no module
-// cycle and position.zig re-exports the three public entry points to keep the
-// port surface (position_port.flipFen / formatFen / buildEndgameFen) intact.
+// cycle and position.zig re-exports the three public entry points
+// (flipFen / formatFen / buildEndgameFen).
 //
 // A few one-line primitives (allocCString, fileOf, rankOf) and the piece/castling
 // constants also exist in position.zig, where other clusters still use them; they
 // are duplicated here (kept intentionally tiny) rather than shared through a
-// back-import, which would reintroduce a cycle. FEN *parsing* stays in position.zig
-// for now (it writes directly into a Position).
+// back-import, which would reintroduce a cycle.
 
 const std = @import("std");
 

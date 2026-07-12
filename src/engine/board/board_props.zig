@@ -1,4 +1,4 @@
-// Board property tests (M17.4h).
+// Board property tests.
 //
 // Real asserted invariants over the decomposed board leaves, not golden diffs:
 // perft to KNOWN node counts. A perft count is an end-to-end property test of

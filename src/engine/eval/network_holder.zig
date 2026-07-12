@@ -1,4 +1,4 @@
-// Native holder for the engine's `network` member — the post-src/ replacement for
+// Native holder for the engine's `network` member, modeling
 // LazyNumaReplicated<Network> (src/numa.h). The C++ holder is a NumaReplicatedBase
 // (a polymorphic base: vtable + NumaReplicationContext* context) followed by a
 //   mutable std::vector<std::unique_ptr<Network>> instances;  // one replica per NUMA node
@@ -9,7 +9,7 @@
 //
 // This module provides (a) NetworkHolder — the native structural replacement
 // (the per-NUMA replica pointers; the Network instances + the 106 MB .nnue parse
-// remain native-elsewhere giants), and (b) a replica-count reader that reads a
+// are owned elsewhere), and (b) a replica-count reader that reads a
 // LazyNumaReplicated holder's replica count through the documented member offset
 // and asserts it equals the holder's own configured node count.
 
@@ -22,8 +22,8 @@ const std = @import("std");
 // size() is (end - begin) / sizeof(element) — but the element here is NOT a pointer,
 // it is std::vector<SystemWideSharedConstant<Network>>, a fat value type. So the
 // element stride is supplied by the caller (sizeof, passed in) rather than assumed.
-// The shadow verifier caught exactly this (an 8-byte assumption read 18 replicas for a
-// 1-node holder) — proof the element stride must be the real fat-value size, not 8.
+// An 8-byte pointer assumption would misread the count (18 replicas for a 1-node
+// holder), so the element stride must be the real fat-value size, not 8.
 const instances_begin_off: usize = 16;
 const instances_end_off: usize = 24;
 
@@ -42,9 +42,9 @@ pub fn verifyReplicaCount(lazy_ptr: *const anyopaque, elem_size: usize, expected
     return replicaCountOf(lazy_ptr, elem_size) == expected_nodes;
 }
 
-/// Native structural replacement for the holder: the per-NUMA replica pointers. Index
+/// The per-NUMA replica pointers. Index
 /// 0 is always present; higher indices are null until lazily replicated. The Network
-/// objects themselves are owned/built elsewhere (native eval; net parse is phase B).
+/// objects themselves are owned/built elsewhere.
 pub const NetworkHolder = struct {
     instances: []?*anyopaque,
 
@@ -55,7 +55,7 @@ pub const NetworkHolder = struct {
     pub fn at(self: NetworkHolder, idx: usize) ?*anyopaque {
         return self.instances[idx];
     }
-    /// Node 0's replica — always present (operator* / operator-> in C++).
+    /// Node 0's replica — always present.
     pub fn primary(self: NetworkHolder) ?*anyopaque {
         return self.instances[0];
     }

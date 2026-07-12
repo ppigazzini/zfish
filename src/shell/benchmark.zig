@@ -1,12 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("libc");
-// M21: the bench/benchmark position tables live in their own pure-data leaf now.
+// The bench/benchmark position tables live in their own pure-data leaf now.
 const bench_positions = @import("bench_positions.zig");
 const Defaults = bench_positions.Defaults;
 const BenchmarkPositions = bench_positions.BenchmarkPositions;
 
-// Native benchmark data, ported from the retired src/bench/benchmark.cpp
+// Native benchmark data.
 pub const BenchmarkSetupOutput = struct {
     tt_size: c_int,
     threads: c_int,

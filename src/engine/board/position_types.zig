@@ -1,14 +1,14 @@
-// Position POD data types (M17.3b leaf-extraction).
+// Position POD data types.
 //
 // The plain-data core of the board representation, pulled out of the 4257-line
 // position.zig god-file into a std-only leaf module so it can be imported from
 // BOTH position.zig and graph_layout.zig without a module cycle (position imports
 // graph_layout, so graph_layout cannot import position). This is the same
-// cycle-break pattern proven for WorkerHistories (M17.2p): once these types live
+// cycle-break pattern proven for WorkerHistories: once these types live
 // in a leaf, graph_layout can embed a *typed* Position/StateInfo in the Worker
 // block instead of an opaque [N]u8 region.
 //
-// Native structs (M16.8 de-mirror): Zig owns the field order. The only external
+// Native structs: Zig owns the field order. The only external
 // layout contracts are the fixed struct sizes (asserted below) that the Worker
 // block reserves a slot for, plus the board/side_to_move offsets the NNUE eval
 // reads (asserted against graph_layout in position.zig, which sees both).
@@ -58,10 +58,9 @@ pub const StateInfo = struct {
     repetition: c_int,
 };
 
-// Full memory image of upstream Position (src/position.h): the leading data
-// members the ported code reaches through a pointer, plus the trailing NNUE
+// The full Position object: the leading data members plus the trailing NNUE
 // scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
-// members the struct is the whole 1032-byte object, so the native graph owns and
+// members the struct is the whole 1032-byte object, so the graph owns and
 // allocates a Position outright.
 pub const Position = struct {
     board: [64]u8,

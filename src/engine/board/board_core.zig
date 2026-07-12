@@ -1,5 +1,5 @@
 // Board primitives: piece/color/file/move-type constants, move-word decoders,
-// and the small pure square helpers shared across the board code (M17.3f).
+// and the small pure square helpers shared across the board code.
 //
 // Extracted from position.zig so the clusters being split out of that god-file
 // (FEN, legality/SEE, move gen, make/unmake) can share one definition of these

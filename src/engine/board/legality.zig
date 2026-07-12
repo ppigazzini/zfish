@@ -1,9 +1,9 @@
-// Move legality and Static Exchange Evaluation queries (M17.3h).
+// Move legality and Static Exchange Evaluation queries.
 //
 // The read-only "is this move legal / winning" side of the board, carved out of
 // position.zig: attackersTo, legal, seeGe, pseudoLegal, givesCheck,
 // attackersToExist. All take a typed *const Position and only read it -- including
-// legal, now that the move_is_legal_fn snapshot hook is itself typed (M18.7). This
+// legal, now that the move_is_legal_fn snapshot hook is itself typed. This
 // is a leaf over board_core + bitboard + movegen + position_types -- it never imports
 // position.zig, so no cycle.
 // position.zig re-exports all six, so the search/movegen call sites and the

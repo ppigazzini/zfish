@@ -1,5 +1,5 @@
 // Zobrist hash tables + cuckoo (upcoming-repetition) tables and their runtime
-// build (M17.3i).
+// build.
 //
 // The board's hashing state, carved out of position.zig: the psq/enpassant/
 // castling/side/no-pawns Zobrist keys and the cuckoo tables used to detect an

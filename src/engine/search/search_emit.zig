@@ -1,12 +1,11 @@
-// Search UCI reporting (M17.3x): the "info"/"bestmove" emission and MultiPV walk.
+// Search UCI reporting: the "info"/"bestmove" emission and MultiPV walk.
 //
 // The output half of the search driver -- everything that formats and prints a
 // UCI line during search: the per-PV info line (searchEmitInfoFull), the MultiPV
 // loop (searchPv + its PvContext), the mate/stalemate line, the bestmove/ponder
 // line, and the "currmove" iteration line. Reads the Worker graph + options and
 // routes text through uci_output; it has NO dependency on the search algorithm
-// (searchImpl / qsearch / QCtx), so it splits cleanly out of search_driver.zig,
-// which imports it and aliases the driver-facing emitters. Byte-exactly covered by
+// (searchImpl / qsearch / QCtx). Byte-exactly covered by
 // the output-golden / driver-golden / search-parity gates.
 
 const std = @import("std");
@@ -26,13 +25,12 @@ const isChess960 = position_query.isChess960;
 const hasCheckers = position_query.hasCheckers;
 const wdlMaterial = position_query.wdlMaterial;
 
-// Trivial accessors duplicated from search_driver (a leaf cannot import the driver
-// that imports it); both are one-line reads of the Worker graph.
+// Trivial accessors; both are one-line reads of the Worker graph.
 fn optInt(name: []const u8) c_int {
     return option_port.intByName(name);
 }
 fn workerRootMove0(wl: *const graph_layout.WorkerLayout) *graph_layout.RootMove {
-    // root_moves is the {begin,end,cap} vector header; [0] is the first element's
+    // root_moves[0] is the first element's
     // address. Return the typed first RootMove via the graph adapter so callers read
     // fields directly instead of each re-doing RootMove.fromAddr.
     return @ptrCast(wl.root_moves.ptr);
@@ -183,7 +181,7 @@ const PvContext = struct {
     elapsed_ms: u64,
 };
 // Per-PV-emit context: root-move span, MultiPV/WDL options, chess960, pool nodes/tbhits,
-// TT hashfull and elapsed ms. graph_layout + option + the leaf pool aggregates.
+// TT hashfull and elapsed ms. graph_layout + option + the pool aggregates.
 fn searchCbPvContext(manager: ?*graph_layout.SearchManager, worker: ?*graph_layout.WorkerLayout, threads: *graph_layout.ThreadPool, tt_ptr: *graph_layout.TranspositionTable, out: *PvContext) void {
     const wl = worker.?;
     const rm_count = wl.root_moves.len;

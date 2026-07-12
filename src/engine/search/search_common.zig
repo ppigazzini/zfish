@@ -1,12 +1,9 @@
-// Search/history shared helpers (M17.3s).
+// Search/history shared helpers.
 //
 // The small accessors and stat primitives used by BOTH the history-update code
 // and the search itself: the Worker->histories accessor, the capture-history
 // lookups, the StatsEntry gravity update, the capture-stage predicate, and the
-// move-validity check. Split into their own base leaf so the history-update
-// functions can move out of search_driver.zig (next slice) without duplicating
-// them. Depends only on the worker/board POD leaves + graph_layout, so it is a
-// leaf both search_driver and the coming history leaf import.
+// move-validity check.
 
 const graph_layout = @import("graph_layout");
 const worker_histories = @import("worker_histories");
@@ -36,7 +33,7 @@ pub inline fn moveIsOk(m: u16) bool {
     return m != 0 and m != 65; // != none() and != null()
 }
 
-// StatsEntry<int16, D>::operator<<(bonus): gravity update toward [-D, D].
+// Gravity update toward [-D, D].
 pub inline fn statsUpdate(entry: *i16, bonus: c_int, comptime d: c_int) void {
     const clamped = @max(-d, @min(d, bonus));
     const val: c_int = entry.*;

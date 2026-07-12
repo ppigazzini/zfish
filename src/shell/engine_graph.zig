@@ -1,21 +1,18 @@
 // Native Zig Engine graph: the assembly node.
 //
-// This is where the post-src/ object graph comes together. The C++ Engine is a
-// std::string + std::map + unique_ptr + ThreadPool aggregate; natively it is a
-// plain struct owning the Zig subsystems already built:
+// This is where the object graph comes together: a plain struct owning the Zig
+// subsystems:
 //
 //   options        -> OptionsModel        (uci/option.zig)
 //   threads        -> ThreadPool          (thread_runtime.zig)
 //   tt             -> TranspositionTable   (tt.zig)
 //   update_context -> UpdateContext        (search_manager.zig)
-//   network        -> NNUE network         (network.zig) [remaining giant]
-//   position       -> Position             (position.zig) [remaining giant]
+//   network        -> NNUE network         (network.zig)
+//   position       -> Position             (position.zig)
 //
-// The two giants (Position, Network) keep opaque slots here: their algorithms
-// are already ported to Zig, but native ownership of their storage is the large
-// remaining step. Everything else is a concrete native type. The graph's job is
-// to hand each Worker a SharedState bound to these members -- which it does
-// here, vtable-free and std::function-free.
+// Position and Network are reached through opaque slots here; everything else is a
+// concrete native type. The graph's job is to hand each Worker a SharedState bound
+// to these members -- which it does here, vtable-free and callback-free.
 
 const std = @import("std");
 
@@ -25,10 +22,10 @@ const TranspositionTable = tt_mod.TranspositionTable;
 const sm = @import("search_manager");
 const UpdateContext = sm.UpdateContext;
 const SearchManager = sm.SearchManager;
-// M18.5: shared_state is now the generic SharedStateOf; this scaffolding binds its own
-// referents (native ThreadPool + TranspositionTable typed, the rest still erased here),
-// so it instantiates its own view. The live engine path uses engine.SharedState.
-// M20.1: the SharedState bundle is the three live references the worker binds
+// shared_state is the generic SharedStateOf; this scaffolding binds its own referents
+// (native ThreadPool + TranspositionTable typed, the rest erased here), so it
+// instantiates its own view. The live engine path uses engine.SharedState.
+// The SharedState bundle is the three live references the worker binds
 // (threads/tt/sharedHistories); options/network are NOT in the bundle (never read).
 const SharedState = @import("shared_state").SharedStateOf(ThreadPool, TranspositionTable, anyopaque);
 pub const StateList = @import("state_list").StateList;
@@ -36,33 +33,31 @@ pub const NumaConfig = @import("numa_config").NumaConfig;
 pub const NumaReplicationContext = @import("numa_replication").NumaReplicationContext;
 pub const PositionStorage = @import("position_storage").PositionStorage;
 
-// Full native member map of the C++ Engine, in declaration order, with each
-// member's native-ownership status for the cut (REPORT-09 Annex B, ITERATION-157):
+// Full native member map of the Engine graph, in declaration order:
 //
-//   binary_directory  const std::string                    -> []const u8         [trivial slot]
-//   numa_context      NumaReplicationContext (std::set)     -> *NumaReplicationContext [native, B2 step 1]
-//   position          Position (1032B)                      -> *PositionStorage   [native storage DONE, iter 5]
-//   states            unique_ptr<deque<StateInfo>>          -> *StateList         [native type DONE, iter 1]
-//   options           OptionsMap (std::map)                 -> *anyopaque (Model) [native store exists]
-//   threads           ThreadPool                            -> *ThreadPool        [native runtime exists]
-//   tt                TranspositionTable                    -> TranspositionTable  [native]
-//   network           LazyNumaReplicated<Network>           -> *anyopaque         [logic native; HOLDER pending]
-//   update_context    SearchManager::UpdateContext          -> UpdateContext      [native]
-//   onVerifyNetwork   std::function                         -> retired at flip (emit is native)
-//   shared_histories  std::map<NumaIndex, SharedHistories>  -> *anyopaque         [PENDING: native table]
+//   binary_directory  -> []const u8                 [trivial slot]
+//   numa_context      -> *NumaReplicationContext    [config + replica registry]
+//   position          -> *PositionStorage           [owns the 1032B Position block]
+//   states            -> *StateList                 [the StateInfo list]
+//   options           -> *anyopaque (OptionsModel)  [opaque handle]
+//   threads           -> *ThreadPool
+//   tt                -> TranspositionTable
+//   network           -> *anyopaque (NNUE network)  [opaque handle]
+//   update_context    -> UpdateContext
+//   shared_histories  -> *anyopaque                 [opaque handle]
 //
-// *anyopaque slots are the members whose storage is still opaque; concrete-typed
+// *anyopaque slots are members reached through an opaque handle; concrete-typed
 // members own native types directly. This is the complete definition of the
 // native Engine graph.
 pub const EngineGraph = struct {
     binary_directory: []const u8,
     numa_context: *NumaReplicationContext, // native NUMA context: config + replica registry
-    position: *PositionStorage, // native owner of the 1032B Position block (iter 5)
-    states: *StateList, // native deque<StateInfo> replacement (iter 1)
+    position: *PositionStorage, // native owner of the 1032B Position block
+    states: *StateList, // the StateInfo list
     options: *anyopaque, // OptionsModel
     threads: *ThreadPool,
     tt: TranspositionTable,
-    network: *anyopaque, // NNUE network (logic ported; native ownership pending)
+    network: *anyopaque, // NNUE network (opaque handle)
     shared_histories: *anyopaque,
     update_context: UpdateContext,
 
@@ -77,7 +72,7 @@ pub const EngineGraph = struct {
     }
 
     // The main thread's manager binds this graph's UpdateContext; others get a
-    // null manager. No vtable, no std::function.
+    // null manager. No vtable, no callback.
     pub fn makeManager(self: *EngineGraph, is_main: bool, id: usize) SearchManager {
         return if (is_main)
             SearchManager.initMain(&self.update_context, id)
@@ -86,9 +81,8 @@ pub const EngineGraph = struct {
     }
 
     // Native construction of the graph's OWNED members (states, numaContext,
-    // position storage) — the native replacement for the C++ Engine member-init
-    // list (binaryDirectory/numaContext/states + pos default-construct). The other
-    // members are subsystems the graph references, not owns: options (the global
+    // position storage): binaryDirectory/numaContext/states + pos default-construct.
+    // The other members are subsystems the graph references, not owns: options (the global
     // OptionsModel), threads (the native ThreadPool), network, shared_histories,
     // update_context are passed in; tt starts empty (sized later by resize).
     pub fn init(
@@ -184,11 +178,11 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
     };
 
     const ss = graph.sharedState();
-    try testing.expectEqual(&pool, ss.threads); // typed *ThreadPool (M18.5)
+    try testing.expectEqual(&pool, ss.threads); // typed *ThreadPool
     try testing.expectEqual(&graph.tt, ss.tt); // typed *TranspositionTable, the graph's own TT
-    // options/network are the graph's own members (staged native-storage placeholders),
-    // no longer bound into the 3-reference SharedState bundle (M20.1).
-    // states member is the native StateList (iter 1), non-empty at construction
+    // options/network are the graph's own members (opaque handles),
+    // no longer bound into the 3-reference SharedState bundle.
+    // states member is the native StateList, non-empty at construction
     try testing.expect(graph.states.hasStates());
     try testing.expectEqual(@as(usize, 1), graph.states.len());
 }

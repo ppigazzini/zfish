@@ -1,9 +1,8 @@
 // Native UCI output primitive + log-file sink.
 //
 // A leaf module (std only) so any layer can print without a cycle: the coordinated
-// line writer tees stdout to an optional log file, replacing the C++ sync_cout
-// wrapper. `printLine` is the single output funnel; `startLogger` opens/closes the
-// log destination.
+// line writer tees stdout to an optional log file. `printLine` is the single
+// output funnel; `startLogger` opens/closes the log destination.
 //
 // Output goes through std.Io, not libc stdio. The handle is
 // `std.Io.Threaded.init_single_threaded` -- a BLOCKING handle that spawns no threads
@@ -46,7 +45,7 @@ fn resolveOut() std.Io.File {
 
 // Latest whole-search node count, published by the search-driver info emit and read
 // by the uci layer's `nodes` accessor. A shared leaf home so both sides reach it
-// without a cycle (M16.7).
+// without a cycle.
 var last_nodes_searched = std.atomic.Value(u64).init(0);
 pub fn setLastNodesSearched(nodes: u64) void {
     last_nodes_searched.store(nodes, .monotonic);

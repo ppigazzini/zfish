@@ -1,9 +1,8 @@
-// Native Search Thread (big-bang stage 4, layer 1).
+// Native Search Thread.
 //
-// Replaces the C++ `Thread` vehicle: a std::thread idle_loop that runs the search
-// as its job. The search BODY is already Zig; this
-// owns the *vehicle* -- the worker handle + the futex idle-loop runner
-// (thread_runtime.zig) + the per-thread search job.
+// The thread vehicle: a std.Thread idle_loop that runs the search as its job. The
+// search BODY lives elsewhere; this owns the *vehicle* -- the worker handle + the
+// futex idle-loop runner (thread_runtime.zig) + the per-thread search job.
 //
 // LAYOUT CONTRACT: the only field any other code reads off a live Thread by offset
 // is `worker` at offset 8 (graph_layout.Thread / the sibling ops all read `*(thread
@@ -12,9 +11,9 @@
 // below guards it. The ThreadRuntime (std.Thread handle + futex atomics) lives on
 // the heap behind a pointer so this footprint stays small.
 //
-// This layer is wired to NOTHING yet: it is unit-tested in isolation against
-// thread_runtime.zig with a mock job, so the search-launch handshake is proven
-// before the ThreadPool/Engine construction (layers 3-4) attach a real Worker.
+// This module is unit-tested in isolation against thread_runtime.zig with a mock
+// job, so the search-launch handshake is proven independently of the
+// ThreadPool/Engine construction that attaches a real Worker.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -22,9 +21,8 @@ const rt = @import("thread_runtime");
 const graph_layout = @import("graph_layout");
 const native_hooks = @import("native_hooks");
 
-// Marker at offset 0 (the C++ Thread had its vtable pointer here; no native reader
-// touches thread@0, so this just makes a NativeThread identifiable in a dump and
-// pads `worker` to offset 8).
+// Marker at offset 0 (no native reader touches thread@0, so this just makes a
+// NativeThread identifiable in a dump and pads `worker` to offset 8).
 pub const thread_tag: u64 = 0x5a_46_49_53_48_54_48_31; // "ZFISHTH1"
 
 pub const NativeThread = struct {
@@ -47,8 +45,7 @@ pub const NativeThread = struct {
         self.worker = worker;
     }
 
-    // Submit a job to the idle loop and return immediately (the C++
-    // Thread::start_searching / run_custom_job shape). The job runs on the thread.
+    // Submit a job to the idle loop and return immediately. The job runs on the thread.
     pub fn startJob(self: *NativeThread, job: rt.ThreadJobFn, ctx: ?*anyopaque) void {
         self.runtime.?.runCustomJob(job, ctx);
     }
@@ -75,12 +72,12 @@ pub const NativeThread = struct {
 };
 
 // Native teardown for the Worker (via native_hooks.native_worker_destroy):
-// ~Worker + large-page free, mirroring the C++ LargePagePtr deleter.
+// destruct the Worker + large-page free.
 
 // The native_thread tests attach only dummy workers (worker == 0), so deinit's
 // native_hooks.native_worker_destroy call is never reached — no test stub needed.
 
-// The search driver entry, injected by the thread module at search start (M16.7).
+// The search driver entry, injected by the thread module at search start.
 // native_thread must not import position (position imports the thread stack for its
 // pool ops, so the reverse would cycle), so the driver is registered as a function
 // pointer rather than called by name.
@@ -120,8 +117,7 @@ pub fn waitPoolSiblings(pool: *graph_layout.ThreadPool) void {
     while (i < n) : (i += 1) asNativeThread(tp.threadTyped(i)).waitForSearchFinished();
 }
 
-// Per-thread Worker::clear job (the C++ Thread::clear_worker == run_custom_job([
-// worker->clear()])). Submitted to the idle loop; caller waits separately.
+// Per-thread Worker::clear job. Submitted to the idle loop; caller waits separately.
 
 fn clearWorkerJob(ctx: ?*anyopaque) void {
     native_hooks.worker_clear(ctx.?);

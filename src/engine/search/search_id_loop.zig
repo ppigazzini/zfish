@@ -1,7 +1,7 @@
-// Iterative-deepening driver, split out of search_driver.zig. Drives the main
-// search (search_main.searchImpl) across depths + aspiration windows, handles
-// skill/MultiPV/time, and emits UCI info. It calls searchImpl but nothing in
-// the worker-start glue, so it is a one-way leaf that search_driver drives.
+// Iterative-deepening driver. Drives the main search (search_main.searchImpl)
+// across depths + aspiration windows, handles skill/MultiPV/time, and emits UCI
+// info. It calls searchImpl but nothing in the worker-start glue, so it is a
+// one-way leaf that search_driver drives.
 
 const std = @import("std");
 const graph_layout = @import("graph_layout");
@@ -60,7 +60,7 @@ const searchImpl = search_main.searchImpl;
 
 pub fn iterativeDeepening(wl: *graph_layout.WorkerLayout) u8 {
     // Not a hook -- called only by workerStartSearching, which already holds the typed
-    // *WorkerLayout; it drives the typed graph directly (M18.7).
+    // *WorkerLayout; it drives the typed graph directly.
     var id: ZfishIdState = undefined;
     searchIdState(wl, &id);
     const main_thread = id.is_main != 0;

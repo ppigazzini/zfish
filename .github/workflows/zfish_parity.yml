@@ -3,7 +3,7 @@
 # in-repo golden / per-position / non-bench micro-parity harnesses. No C++ is vendored
 # or compiled; the differential-vs-upstream check is the worktree oracle (upstream-parity),
 # exercised at sync time. Linux x86_64 (parity job) + aarch64 on a native arm64 runner
-# (arm-native job, M15.5).
+# (arm-native job).
 name: zfish parity
 
 on:
@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 jobs:
-  # Formatting gate (M17.0a): the canonical `zig fmt` must be clean on every
+  # Formatting gate: the canonical `zig fmt` must be clean on every
   # owned Zig surface. Cheap, fast, and blocks the rest of the matrix on drift.
   fmt:
     name: zig fmt --check
@@ -65,25 +65,21 @@ jobs:
       # reproducible and CPU-independent (sse41 runs on any runner).
       - run: zig build parity -Darch=x86-64-sse41-popcnt
 
-      # Unit + property tests (M17.0c/M17.4): the module `test {}` blocks plus the
+      # Unit + property tests: the module `test {}` blocks plus the
       # board property suite (perft to reference counts, make/unmake & null-move
       # round-trips, FEN round-trip/flip, movegen<->legality, SEE, givesCheck,
       # repetition/50-move draw, malformed-FEN rejection, and a 50k-iter parse fuzz).
-      # These assert real invariants over the decomposed leaves and were previously
-      # not gated in CI.
+      # These assert real invariants.
       - run: zig build test -Darch=x86-64-sse41-popcnt
 
       # Safety-checked (UBSan-equivalent) test run: the same unit + property suite
       # rebuilt under -Doptimize=ReleaseSafe, so Zig's runtime safety checks --
       # bounds, integer overflow, pointer alignment, null-unwrap, illegal cast --
       # are ON across the board path the tests drive (incl. the 80k-iteration parser
-      # fuzz). This was blocked for the whole campaign by two latent UB bugs in the
-      # production code (M17.5c misaligned searchmoves reinterpret, M17.5d null child
-      # PV) surfaced only under ReleaseSafe; with those fixed, both bench and the
-      # full suite are green here.
+      # fuzz).
       - run: zig build test -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
-      # Coverage-guided fuzz-target SMOKE (M17.5i): `zig build fuzz` runs each
+      # Coverage-guided fuzz-target SMOKE: `zig build fuzz` runs each
       # std.testing.fuzz target once (FEN-parse -> movegen -> make/unmake via the
       # Smith model) under ReleaseSafe, so the fuzz harness itself is build- and
       # run-gated on every push even though the continuous `--fuzz` sweep is a
@@ -97,33 +93,29 @@ jobs:
       # and additionally drives the multi-thread (mt-sanity), Lazy-SMP go/stop stress,
       # transposition-table, NNUE-eval, time-management, and every UCI-output golden
       # path with Zig's runtime safety checks ON -- the paths the property tests and a
-      # bare bench do not reach. This is where the M17.5c/d UB bugs lived (search +
-      # `go`); with those fixed the whole engine is safety-clean, so gate it to keep
-      # any future bounds / overflow / alignment / null-unwrap regression out of CI.
+      # bare bench do not reach. This gate keeps any future bounds / overflow /
+      # alignment / null-unwrap regression out of CI.
       - run: zig build parity -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
-      # Arch-variant determinism (REPORT-14 M14.D, widened in REPORT-15 M15.1): the
+      # Arch-variant determinism: the
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
       # codegen change must not perturb the integer-exact eval. This sweep asserts
       # signature == 2067208 on every tier THIS runner can execute (avx2, bmi2/PEXT,
       # and its best AVX-512 tier), not just avx2 -- the wider tiers are where the
-      # upcoming @Vector NNUE kernels (M15.2+) could break bit-exactness while
+      # @Vector NNUE kernels could break bit-exactness while
       # sse41/avx2 stay green. Runs the real bench per tier, so it is not hollow.
       - run: bash tools/arch_determinism.sh 2067208
 
-      # (Wall-clock time management, multi-thread sanity, and the go/stop stress gate now run
-      # INSIDE `zig build parity` above -- M-PORT.2 moved them into the pure-Zig harness -- so
-      # they no longer need separate steps here and also run on the Windows/macOS lanes.)
+      # (Wall-clock time management, multi-thread sanity, and the go/stop stress gate run
+      # INSIDE `zig build parity` above, so they also run on the Windows/macOS lanes.)
 
-  # M15.5 cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
+  # Cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
   # with no source changes -- where upstream needs hand-written NEON intrinsics per
   # its own src/nnue/**. The integer-exact eval is arch-invariant, so the ARM bench must be
   # exactly 2067208; x86 CI cannot see an ARM-only codegen or C-ABI regression. We run
   # on a NATIVE GitHub arm64 runner (free for public repos) instead of qemu-user: it
   # exercises real NEON hardware and native codegen, is far faster than emulation, and
-  # needs no cross-libc. (This gate first caught a real bug: a by-value extern-struct
-  # NNUE index arg mis-marshaled by callconv(.c) on aarch64 -- fixed by calling the Zig
-  # helper directly; see nnue_accumulator.zig.)
+  # needs no cross-libc.
   arm-native:
     name: Linux aarch64 parity
     runs-on: ubuntu-24.04-arm
@@ -153,13 +145,13 @@ jobs:
             || { echo 'arm-native: FAIL -- aarch64 bench != 2067208'; exit 1; }
           echo 'arm-native: OK -- aarch64 bench == 2067208 on a native arm64 runner'
 
-  # M-PORT cross-OS gate. The same pure-Zig source builds for the other two owned runtime
+  # Cross-OS gate. The same pure-Zig source builds for the other two owned runtime
   # OSes -- Windows and macOS -- across their x86_64 and aarch64 tiers, behind the platform
   # seam (sync/alloc/clock/argv/stdio). Each lane builds NATIVELY on a GitHub-hosted runner
   # (free for public repos) and runs `zig build parity-portable`: the bench signature plus all
   # six golden gates (output / search-parity / search-modes / perft / eval / misc), driven by
-  # the pure-Zig parity harness -- the same coverage the Linux lanes get, now that the harness
-  # replaced the POSIX-only bash scripts. The integer-exact NNUE eval is arch/OS-invariant, so
+  # the pure-Zig parity harness -- the same coverage the Linux lanes get. The integer-exact NNUE
+  # eval is arch/OS-invariant, so
   # any per-OS regression (a mis-marshaled sync primitive, a bad aligned allocation, an
   # argv/stdio mistake) that perturbs the search shows up here. Only the Linux-specific
   # structural gates (h9 src-free via `nm`, arch-determinism) stay exclusive to `parity`.
@@ -239,12 +231,11 @@ jobs:
         shell: bash
         run: zig build parity-portable -Dos=${{ matrix.os }} -Darch=${{ matrix.arch }}
 
-  # M23.1 memory-safety gate. Valgrind memcheck over the two allocation-lifecycle paths a
-  # bench never exercises: the searchmoves/rootMoves std::vector churn + Worker construct/
+  # Memory-safety gate. Valgrind memcheck over the two allocation-lifecycle paths a
+  # bench never exercises: the searchmoves/rootMoves list churn + Worker construct/
   # destroy (parity-teardown, H5) and multi-thread go sessions (parity-valgrind, H3). Both
-  # assert no definite leak / invalid access / bad free, reading valgrind's own summary. Run
-  # locally per memory-touching change since the M19/M20 memory campaign; this promotes them
-  # to CI so a leak/bad-free regression is caught on every push. Pinned to -Darch=x86-64: the
+  # assert no definite leak / invalid access / bad free, reading valgrind's own summary. Catches
+  # a leak/bad-free regression on every push. Pinned to -Darch=x86-64: the
   # default AVX-512 build SIGILLs under valgrind 3.x (documented workaround), and the baseline
   # tier runs on any runner. Out of the fast `parity` job (memcheck is ~20-50x slower).
   valgrind:
@@ -265,18 +256,17 @@ jobs:
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
       - name: Fetch the NNUE net
         run: zig build net
-      # H5: searchmoves/rootMoves vector lifecycle + Worker clear churn (Threads=1).
+      # H5: searchmoves/rootMoves list lifecycle + Worker clear churn (Threads=1).
       - name: Leak gate -- searchmoves/rootMoves + Worker clear
         run: zig build parity-teardown -Darch=x86-64
       # H3: multi-thread memcheck across Threads {1,2}.
       - name: Memcheck -- multi-thread search
         run: zig build parity-valgrind -Darch=x86-64
 
-  # NOTE (M23.1): the kcov line-coverage and Zig-nightly lanes were removed. Both went red for
+  # NOTE: the kcov line-coverage and Zig-nightly lanes were removed. Both went red for
   # reasons that can't be reproduced/verified in the dev environment, and neither is a correctness
   # gate: kcov is no longer packaged for Ubuntu 24.04 and, built from source, its ptrace-based
   # instrumentation fails on the runner sandbox; the nightly lane is red BY DESIGN whenever Zig
   # master drifts (e.g. 0.17 removed b.pathFromRoot). Coverage stays available locally via the
   # `-Dtest-coverage` build option (`zig build test -Dtest-coverage`, needs kcov on PATH). Only
-  # gates that are verified green are kept here -- the valgrind memcheck gate above is the M23.1
-  # memory-safety addition (its exact commands were run locally and reported clean before wiring).
+  # gates that are verified green are kept here.

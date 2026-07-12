@@ -1,4 +1,4 @@
-// Position lifecycle / port surface (M17.3y).
+// Position lifecycle / port surface.
 //
 // The allocate/free/setup/do-move entry points the engine and thread drivers call
 // through the position facade -- position operations that had accreted in
@@ -31,7 +31,7 @@ pub fn doMoveState(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
 }
 
-/// Allocate a zeroed Position block via the Allocator interface (M19.0). c_allocator
+/// Allocate a zeroed Position block via the Allocator interface. c_allocator
 /// is libc-backed, so create/destroy pair with any std.c.free the callers still use.
 pub fn create() ?*Position {
     const p = std.heap.c_allocator.create(Position) catch return null;

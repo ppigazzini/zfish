@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Steady-state upstream sync driver (REPORT-13 Annex A1 + A2).
+# Steady-state upstream sync driver.
 #
 # One command that answers "what do I need to do to follow upstream?": fetch, compute the behind-count
 # from UPSTREAM_BASE, and print the tiered backlog + per-commit bench targets and Zig owner files.

@@ -1,4 +1,4 @@
-// Engine NUMA/thread info string builders (M17.3y).
+// Engine NUMA/thread info string builders.
 //
 // The pure formatters that render the "Available processors" / thread-binding /
 // thread-allocation info lines from primitives (a CountPair array, a thread count,

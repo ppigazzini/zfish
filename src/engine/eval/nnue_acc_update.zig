@@ -12,7 +12,7 @@ const Position = position_types.Position;
 const nnue_feature = @import("nnue_feature");
 
 // Vectorized FT weight-row add/sub kernels live in the nnue_acc_rowops leaf
-// (M17.4d); aliased so the refresh/incremental core stays unqualified.
+// aliased so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyAccumulatorDeltaI16 = nnue_acc_rowops.applyAccumulatorDeltaI16;
 const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
@@ -23,7 +23,7 @@ const applyPsqtDeltaInPlace = nnue_acc_rowops.applyPsqtDeltaInPlace;
 const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
 
 // FeatureTransformer weight-blob layout + accessors live in the nnue_ft leaf
-// (M17.4e); aliased for the refresh/apply-delta core.
+// aliased for the refresh/apply-delta core.
 const nnue_ft = @import("nnue_ft");
 pub const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
@@ -31,7 +31,7 @@ const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
 const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
 const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
 
-// Refresh cache / finny tables live in the nnue_refresh_cache leaf (M17.4f);
+// Refresh cache / finny tables live in the nnue_refresh_cache leaf;
 // accessors aliased for the refresh path, clearRefreshCache re-exported (external).
 const nnue_refresh_cache = @import("nnue_refresh_cache");
 pub const RefreshCache = nnue_refresh_cache.RefreshCache;
@@ -108,10 +108,9 @@ const FullAppendResult = struct {
 };
 
 // The half-KA make-index / append-changed helpers are called directly as
-// nnue_feature.halfMakeIndex / halfAppendChanged (see the import note above); the
-// former C-ABI extern decls were removed because the by-value struct passing they
-// used is mis-marshaled on aarch64.
-// full-threats append (changed/active) call nnue_feature directly (M16.7).
+// nnue_feature.halfMakeIndex / halfAppendChanged (see the import note above); a
+// direct Zig call avoids the by-value struct passing that is mis-marshaled on aarch64.
+// full-threats append (changed/active) call nnue_feature directly.
 
 pub fn evaluateSide(
     feature_kind: u8,

@@ -1,4 +1,4 @@
-// UCI `bench` / `benchmark` command runners (extracted from uci.zig, M21).
+// UCI `bench` / `benchmark` command runners (extracted from uci.zig).
 //
 // Drives the bench / benchmark command sequences. Each command is run through an
 // INJECTED dispatch function pointer (DispatchFn) rather than importing uci.zig's

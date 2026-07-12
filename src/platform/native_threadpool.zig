@@ -1,22 +1,20 @@
-// Native ThreadPool (big-bang stage 4, layer 3).
+// Native ThreadPool.
 //
 // Owns native Threads and writes the ThreadPool's observable 56-byte footprint
 // so the accessors keep working unchanged:
 //   stop@0 (atomic_bool), increaseDepth@1 (atomic_bool),
-//   threads slice {ptr@16, len@24}  (of Thread* == NativeThread* addresses, M19.1),
-//   boundThreadToNumaNode slice {ptr@32, len@40}  (per-thread NUMA node, M19.1).
+//   threads slice {ptr@16, len@24}  (of Thread* == NativeThread* addresses),
+//   boundThreadToNumaNode slice {ptr@32, len@40}  (per-thread NUMA node).
 // num_threads == threads.len; threads[i] == the i-th slice element (a Thread* addr).
 //
-// LIFECYCLE NOTE (the trap that makes stages 4+6 atomic): the threads-vector buffer
-// here is Zig-allocated, and each NativeThread is Zig-owned. The C++ ThreadPool
-// destructor must NOT run over this footprint -- it would delete the NativeThread*
-// as C++ Thread* and free the buffer with the C++ allocator. So this is only safe
-// once the Engine that embeds the pool is itself natively constructed/destructed
-// (layer 4). Here it is unit-tested in isolation over a standalone 64-byte buffer.
+// LIFECYCLE NOTE: the threads-vector buffer here is Zig-allocated, and each
+// NativeThread is Zig-owned, so teardown goes through the native clear() path
+// rather than any foreign destructor over this footprint. It is unit-tested in
+// isolation over a standalone 64-byte buffer.
 //
 // The Worker construction (large-page alloc + constructFull +
 // SearchManager) is injected as a callback so the footprint bookkeeping is tested
-// without the engine graph; layer 4 passes the real builder.
+// without the engine graph; the engine passes the real builder.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -25,8 +23,8 @@ const graph_layout = @import("graph_layout");
 const native_hooks = @import("native_hooks");
 const ThreadPool = graph_layout.ThreadPool;
 
-// The 64-byte pool footprint is now a native graph_layout.ThreadPool (M16.8 de-mirror):
-// the writer here and every reader (graph_layout accessors, the search's captured
+// The 64-byte pool footprint is a native graph_layout.ThreadPool: the writer here
+// and every reader (graph_layout accessors, the search's captured
 // &stop pointer) go through the same typed struct, so Zig owns the field placement.
 inline fn poolOf(slot: [*]u8) *ThreadPool {
     return ThreadPool.fromPtr(@ptrCast(slot));
@@ -41,7 +39,7 @@ pub const ThreadBuilder = struct {
     build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) void,
 };
 
-// A native ThreadPool. `slot` points at the 64-byte C++ ThreadPool footprint
+// A native ThreadPool. `slot` points at the 64-byte ThreadPool footprint
 // (the Engine's embedded pool, or a standalone buffer in tests).
 pub const NativePool = struct {
     allocator: std.mem.Allocator,
@@ -52,7 +50,7 @@ pub const NativePool = struct {
     }
 
     // Build `count` native Threads (idle loops + Workers via the builder) and lay
-    // them into the footprint. Mirrors ThreadPool::set's thread-creation loop.
+    // them into the footprint.
     pub fn set(self: *NativePool, count: usize, builder: ThreadBuilder) !void {
         self.clear();
         const tp = poolOf(self.slot);
@@ -62,7 +60,7 @@ pub const NativePool = struct {
         tp.increase_depth = 0;
         // boundThreadToNumaNode: empty (no NUMA binding on the single-node path). The
         // multi-node reconfigure path assigns it via boundNodesAssign before building
-        // threads; this reset matches the C++ ThreadPool::set clearing it first.
+        // threads; this reset clears it first.
         tp.bound = &.{};
 
         if (count == 0) {
@@ -144,7 +142,7 @@ const WorkerBuildCtx = struct {
 };
 
 // Build `count` native Threads (idle loops + Workers) into the Engine's embedded
-// ThreadPool footprint `pool`. Replaces the C++ per-thread add_main_thread loop.
+// ThreadPool footprint `pool`.
 pub fn set(
     pool: *graph_layout.ThreadPool,
     shared_state: *anyopaque,
@@ -153,7 +151,7 @@ pub fn set(
 ) !void {
     var bctx = WorkerBuildCtx{ .shared_state = shared_state, .update_context = update_context, .total = count };
     var p = NativePool.init(std.heap.c_allocator, @ptrCast(pool));
-    // M19.2: propagate the OOM / thread-spawn error to the engine's resize boundary
+    // Propagate the OOM / thread-spawn error to the engine's resize boundary
     // instead of panicking here (the caller reconfigure -> resizeThreads is now !void).
     try p.set(count, .{ .ctx = &bctx, .build = native_hooks.native_worker_build });
 }
@@ -165,10 +163,8 @@ pub fn clear(pool: *graph_layout.ThreadPool) void {
     p.clear();
 }
 
-// Native equivalent of C++ ThreadPool::wait_on_thread(id): wait for one thread's
-// in-flight job to finish. Reads the thread pointer out of the footprint vector
-// by index and calls the native wait -- the C++ wait_on_thread would lock the C++
-// Thread's std::mutex, which is garbage on a NativeThread.
+// Wait for one thread's in-flight job to finish. Reads the thread pointer out of
+// the footprint vector by index and calls the native wait.
 pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads.len == 0) return;
@@ -176,8 +172,8 @@ pub fn waitThread(pool: *graph_layout.ThreadPool, thread_id: usize) void {
     thread.waitForSearchFinished();
 }
 
-// Assign the pool's boundThreadToNumaNode footprint slice (M19.1: a typed []usize via
-// the allocator interface, was a raw c.malloc {begin,end,cap} triple in thread.zig).
+// Assign the pool's boundThreadToNumaNode footprint slice (a typed []usize via
+// the allocator interface).
 // `nodes` is the per-thread NUMA-node index list, or null/empty to clear. Frees any
 // prior buffer on every reassign, so the lifecycle is leak-clean under a checked
 // allocator (the bound-vector unit test drives exactly this). Lives here beside set()
@@ -189,7 +185,7 @@ pub fn boundNodesAssign(pool: *graph_layout.ThreadPool, allocator: std.mem.Alloc
     tp.bound = &.{};
     const src = nodes orelse return;
     if (src.len == 0) return;
-    // M19.2: propagate OOM (was `catch @panic`); the reconfigure caller now unwinds it.
+    // Propagate OOM (was `catch @panic`); the reconfigure caller now unwinds it.
     const buf = try allocator.alloc(usize, src.len);
     @memcpy(buf, src);
     tp.bound = buf;
@@ -215,7 +211,7 @@ const MockBuild = struct {
 };
 
 test "NativePool lays the C++ footprint and reads back the thread vector" {
-    var footprint: [64]u8 align(8) = [_]u8{0} ** 64; // zeroed = default-constructed C++ pool
+    var footprint: [64]u8 align(8) = [_]u8{0} ** 64; // zeroed = default-constructed pool
     var mb = MockBuild{};
     var pool = NativePool.init(testing.allocator, &footprint);
     defer pool.clear();
@@ -273,7 +269,7 @@ test "boundNodesAssign lays/reads/reassigns/clears the bound slice (leak-checked
     try testing.expectEqual(@as(usize, 0), tp.boundCount());
 }
 
-test "boundNodesAssign unwinds leak-free on allocation failure (M19.2)" {
+test "boundNodesAssign unwinds leak-free on allocation failure" {
     // Now that boundNodesAssign propagates error.OutOfMemory (was `catch @panic`),
     // checkAllAllocationFailures can fail its single allocation and assert the reassign
     // frees the prior buffer and returns the error leak-free.

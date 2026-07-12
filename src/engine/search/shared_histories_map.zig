@@ -1,18 +1,16 @@
-// Native shared-histories map — the post-src/ replacement for the engine member
-// std::map<NumaIndex, SharedHistories> (src/engine.h). One SharedHistories per NUMA
-// node, built lazily by try_emplace(numa, threadCount) and read by workers via
-// at(numa). The element (SharedHistories) owns two large-page arrays, so the map needs
-// a construct hook (constructSharedHistories) and a free hook (release the arrays).
+// Native shared-histories map — the engine member mapping NumaIndex -> SharedHistories.
+// One SharedHistories per NUMA node, built lazily by try_emplace(numa, threadCount) and
+// read by workers via at(numa). The element (SharedHistories) owns two large-page
+// arrays, so the map needs a construct hook (constructSharedHistories) and a free hook
+// (release the arrays).
 //
 // Defined as a generic over the entry type + its construct/free, so the CONTAINER
 // logic unit-tests standalone (std-only) with a mock entry, while board/position.zig
-// instantiates it with the real SharedHistories + the large-page-backed hooks. A B2
-// atomic-switch building block (the native `sharedHists` member); UNWIRED until the
-// repoint. Native-graph cut, B2.
+// instantiates it with the real SharedHistories + the large-page-backed hooks.
 
 const std = @import("std");
 
-/// NumaIndex (matches the C++ std::size_t key).
+/// NumaIndex map key.
 pub const NumaIndex = usize;
 
 pub fn SharedHistoriesMapOf(comptime Entry: type) type {
@@ -22,7 +20,7 @@ pub fn SharedHistoriesMapOf(comptime Entry: type) type {
         /// Build one node's Entry sized for `thread_count` threads (try_emplace's value
         /// ctor). May fail to allocate.
         pub const ConstructFn = *const fn (thread_count: usize) error{OutOfMemory}!Entry;
-        /// Release one node's Entry (free its large-page arrays). ~map element.
+        /// Release one node's Entry (free its large-page arrays).
         pub const FreeFn = *const fn (entry: *Entry) void;
 
         entries: std.AutoHashMapUnmanaged(NumaIndex, Entry) = .empty,
@@ -40,7 +38,7 @@ pub fn SharedHistoriesMapOf(comptime Entry: type) type {
             self.* = undefined;
         }
 
-        /// std::map::try_emplace(numa, threadCount): construct + insert iff absent.
+        /// try_emplace(numa, threadCount): construct + insert iff absent.
         pub fn tryEmplace(self: *Self, numa: NumaIndex, thread_count: usize) !void {
             const gop = try self.entries.getOrPut(self.allocator, numa);
             if (!gop.found_existing) {
@@ -51,7 +49,7 @@ pub fn SharedHistoriesMapOf(comptime Entry: type) type {
             }
         }
 
-        /// std::map::at(numa): the node's Entry (must exist, like the C++ .at).
+        /// at(numa): the node's Entry (must exist).
         pub fn at(self: *Self, numa: NumaIndex) *Entry {
             return self.entries.getPtr(numa) orelse unreachable;
         }
@@ -64,7 +62,7 @@ pub fn SharedHistoriesMapOf(comptime Entry: type) type {
             return self.entries.count();
         }
 
-        /// std::map::clear(): free + drop every entry.
+        /// clear(): free + drop every entry.
         pub fn clear(self: *Self) void {
             var it = self.entries.iterator();
             while (it.next()) |e| self.free(e.value_ptr);
@@ -121,7 +119,7 @@ test "deinit frees outstanding entries (no leak of element arrays)" {
     try testing.expectEqual(@as(usize, 0), live_entries);
 }
 
-// M19: construct-failure rollback. try_emplace inserts the map slot (getOrPut) BEFORE
+// Construct-failure rollback. try_emplace inserts the map slot (getOrPut) BEFORE
 // building the value, so if construct fails it must remove that slot again -- otherwise
 // a later at()/clear() would touch an uninitialized Entry (and clear would call free on
 // garbage). A checkAllAllocationFailures gate can't reach this branch (mockConstruct

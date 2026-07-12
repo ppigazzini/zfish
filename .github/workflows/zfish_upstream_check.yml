@@ -1,4 +1,4 @@
-# Scheduled upstream-sync DETECTION (REPORT-13 A2 / REPORT-14 M14.C(b)).
+# Scheduled upstream-sync DETECTION.
 #
 # Judgment-free: fetch official-stockfish/master and print how many commits the
 # port is behind its UPSTREAM_BASE marker, so a net-format / bench change can't
@@ -9,7 +9,7 @@ name: zfish upstream check
 on:
   schedule:
     # Weekly, Monday 06:00 UTC. Upstream master moves a few commits a week; the
-    # rule (A2) is "sync at least at every net bump", and weekly detection is
+    # rule is "sync at least at every net bump", and weekly detection is
     # cheap insurance against one slipping through.
     - cron: "0 6 * * 1"
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
           fetch-depth: 0
 
       # The sync driver fetches from a remote named `upstream`; add it here (the
-      # local dev clone adds it per 00-CONTRACT.md, CI adds its own).
+      # local dev clone adds it separately, CI adds its own).
       - name: Add upstream remote
         run: |
           git remote add upstream https://github.com/official-stockfish/Stockfish.git

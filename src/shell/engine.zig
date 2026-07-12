@@ -60,7 +60,7 @@ const numa = @import("numa");
 const uci_output = @import("uci_output");
 const native_engine = @import("native_engine");
 
-// Cast an engine handle to the native container (M16.7).
+// Cast an engine handle to the native container.
 inline fn ne(p: *const anyopaque) *native_engine.NativeEngine {
     return native_engine.NativeEngine.fromPtr(@constCast(p));
 }
@@ -68,7 +68,7 @@ inline fn ne(p: *const anyopaque) *native_engine.NativeEngine {
 // Force-compile the self-contained native engine-graph leaf nodes so their
 // layout asserts (SharedState 40B, RootMove 552B, the search-manager dispatch)
 // are build-verified rather than dead source. These are the vtable-free,
-// std::function-free post-src/ graph nodes the atomic Engine cut switches to.
+// callback-free native engine-graph nodes.
 const shared_state_mod = @import("shared_state");
 
 comptime {
@@ -78,11 +78,11 @@ comptime {
     _ = @import("root_move");
 }
 
-// M18.5 — the ONE concrete instantiation of the SharedState bundle. engine.zig is the
-// root that sees all five referent types (nothing imports engine, so this can't be in a
+// The ONE concrete instantiation of the SharedState bundle. engine.zig is the
+// root that sees all referent types (nothing imports engine, so this can't be in a
 // cycle); shared_state.zig stays a pure std leaf via the injected comptime types. The
-// bundle's five typed pointers are 40 bytes, byte-identical to the former 5×*anyopaque,
-// so the worker-build reinterpret is unchanged (asserted). See REPORT-17 Annex A.
+// bundle's typed pointers have a fixed layout the worker-build reinterpret relies on
+// (asserted by the @sizeOf check below).
 pub const SharedState = shared_state_mod.SharedStateOf(
     graph_layout.ThreadPool,
     tt_port.TranspositionTable,
@@ -94,8 +94,8 @@ comptime {
 }
 
 // One engine, one search at a time (sequential go commands; workers only READ the
-// bundle during a search), so a single static reproduces the C++ new/delete lifetime
-// without an allocator. Rebuilt per search, never aliased.
+// bundle during a search), so a single static provides its lifetime without an
+// allocator. Rebuilt per search, never aliased.
 var live_shared_state: SharedState = undefined;
 
 /// Build the live SharedState from the five referent handles and return its address.
@@ -140,7 +140,7 @@ const default_skill_lowest_elo: c_int = 1320;
 const default_skill_highest_elo: c_int = 3190;
 
 // String/format helpers + ByteView/CountPair live in the engine_util base leaf
-// (M17.3x); ByteView re-exported (external port surface), the rest aliased.
+// ByteView re-exported (external surface), the rest aliased.
 const engine_util = @import("engine_util");
 pub const ByteView = engine_util.ByteView;
 pub const CountPair = engine_util.CountPair;
@@ -296,9 +296,9 @@ pub fn setPositionEngine(
     );
 }
 
-// Print each non-blank line as "info string ...". Relocated from main.zig (M16.7).
+// Print each non-blank line as "info string ...". Relocated from main.zig.
 // NNUE network lifecycle (verifyNetwork/loadNetworkEngine/saveNetworkEngine) +
-// printInfoStringNative live in the engine_nnue leaf (M17.3z); saveNetworkEngine is
+// printInfoStringNative live in the engine_nnue leaf; saveNetworkEngine is
 // re-exported (external), the rest aliased for the go/perft/option-apply callers.
 const engine_nnue = @import("engine_nnue");
 const printInfoStringNative = engine_nnue.printInfoStringNative;
@@ -306,7 +306,7 @@ pub const verifyNetwork = engine_nnue.verifyNetwork;
 pub const loadNetworkEngine = engine_nnue.loadNetworkEngine;
 pub const saveNetworkEngine = engine_nnue.saveNetworkEngine;
 
-// NUMA/thread info formatters live in the engine_infofmt leaf (M17.3y); aliased
+// NUMA/thread info formatters live in the engine_infofmt leaf; aliased
 // for the threadBindingInformation/threadAllocationInformation gatherers.
 const engine_infofmt = @import("engine_infofmt");
 const formatNumaInfo = engine_infofmt.formatNumaInfo;
@@ -314,7 +314,7 @@ const formatThreadBinding = engine_infofmt.formatThreadBinding;
 const formatThreadAllocation = engine_infofmt.formatThreadAllocation;
 
 // Eval-trace / visualize / snapshot cluster lives in the engine_trace leaf
-// (M17.4a); the external entry points + pub trace types are re-exported, and `fen`
+// the external entry points + pub trace types are re-exported, and `fen`
 // is aliased for the perft/flip callers.
 const engine_trace = @import("engine_trace");
 pub const PositionSummary = engine_trace.PositionSummary;
@@ -330,11 +330,11 @@ pub const fenEngine = engine_trace.fenEngine;
 pub const accumulatorCachesCreate = engine_trace.accumulatorCachesCreate;
 const fen = engine_trace.fen;
 
-// Perft driver lives in the engine_perft leaf (M17.4b); re-exported for uci `go perft`.
+// Perft driver lives in the engine_perft leaf; re-exported for uci `go perft`.
 const engine_perft = @import("engine_perft");
 pub const perftEngine = engine_perft.perftEngine;
 
-// Option-registration helpers live in the engine_options leaf (M17.4c); aliased
+// Option-registration helpers live in the engine_options leaf; aliased
 // for initBody.
 const engine_options = @import("engine_options");
 const addStringOption = engine_options.addStringOption;
@@ -343,7 +343,7 @@ const addSpinOption = engine_options.addSpinOption;
 const addButtonOption = engine_options.addButtonOption;
 
 // setoption apply: wait for the search, set into the native OptionsModel, and run the
-// on-change callback (relaying string/spin/check values). Relocated from main.zig (M16.7).
+// on-change callback (relaying string/spin/check values). Relocated from main.zig.
 pub fn applySetOptionEngine(engine_ptr: *native_engine.NativeEngine, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
     waitForSearchFinishedEngine(engine_ptr);
     const vlen: usize = if (has_value != 0) value_len else 0;
@@ -380,7 +380,7 @@ pub fn applySetOptionEngine(engine_ptr: *native_engine.NativeEngine, name_ptr: [
 pub fn goEngine(engine_ptr: *native_engine.NativeEngine, limits_ptr: *const graph_layout.LimitsType) void {
     std.debug.assert(limits_ptr.perftValue() == 0);
     verifyNetwork();
-    // M19.2: startThinking's root-move setup (selected-moves / root-fen / RootMoves /
+    // startThinking's root-move setup (selected-moves / root-fen / RootMoves /
     // per-thread contexts) now propagates OOM as `!void`; this is the single handling
     // boundary for the `go` path. A search that cannot allocate its root setup is
     // unrecoverable, so fail loudly here instead of `catch @panic("OOM")` in each leaf.
@@ -436,7 +436,7 @@ pub fn resizeThreads(
 }
 
 pub fn resizeThreadsEngine(engine_ptr: *native_engine.NativeEngine) void {
-    // M19.2: the resize chain (reconfigure -> native_threadpool.set/boundNodesAssign)
+    // The resize chain (reconfigure -> native_threadpool.set/boundNodesAssign)
     // now propagates OOM / thread-spawn errors as `!void`; this is the engine's single
     // handling boundary. A UCI Threads/NumaPolicy change or init that cannot allocate
     // its thread pool is unrecoverable, so fail loudly here instead of scattering
@@ -450,8 +450,8 @@ pub fn resizeThreadsEngine(engine_ptr: *native_engine.NativeEngine) void {
     ) catch @panic("OOM: thread pool resize failed");
 }
 
-// Native SharedHistoriesMap (the post-src/ replacement for std::map<NumaIndex,
-// SharedHistories>), engine-owned side storage.
+// Native SharedHistoriesMap (a map from NumaIndex to SharedHistories),
+// engine-owned side storage.
 // The engine is a gate singleton, so a lazily-built module global suffices; the
 // map pointer flows into SharedState.sharedHistories, and the clear/insert/at
 // bridge sites operate on that same pointer. Each element (SharedHistories: two
@@ -473,16 +473,16 @@ fn setStartPosition(engine_ptr: *native_engine.NativeEngine) void {
         @panic("set start position failed");
 }
 
-// Accumulator stack/caches lifecycle (M16.7 -- malloc'd engine-graph buffers). The refresh-cache
+// Accumulator stack/caches lifecycle (malloc'd engine-graph buffers). The refresh-cache
 // biases come from the native FT storage (network.zig), so the create path is fully engine-local.
 
 // `go perft N` root divide: build a scratch Position +
 // StateInfo, set the engine FEN, generate the legal root moves, run the native perft subtree
-// per move, print "<move>: <count>" then the "Nodes searched: N" total (byte-exact vs the C++
-// divide -- the `perft` gate diffs it). engine + movegen + position + uci_move + uci_output.
+// per move, print "<move>: <count>" then the "Nodes searched: N" total (byte-exact,
+// the `perft` gate diffs it). engine + movegen + position + uci_move + uci_output.
 
 // Engine::flip -> read the live FEN, flip it, re-set the position. Relocated from
-// main.zig (M16.7); all native (engine fen + position flipFen + setPosition).
+// main.zig; all native (engine fen + position flipFen + setPosition).
 pub fn flipEngine(engine_ptr: *native_engine.NativeEngine) void {
     const fen_c = fen(engine_ptr.positionPtr()) orelse return;
     defer freeCString(fen_c);

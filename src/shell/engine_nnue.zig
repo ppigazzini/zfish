@@ -1,4 +1,4 @@
-// Engine NNUE network lifecycle (M17.3z).
+// Engine NNUE network lifecycle.
 //
 // The network verify / load / save operations, split out of engine.zig. These are
 // the shared NNUE-load path that goEngine, perftEngine, and the eval trace all
@@ -52,7 +52,7 @@ pub fn verifyNetwork() void {
 }
 
 // Load a network from the given EvalFile path directly through the network module
-// (M16.9): the engine owns the network pointer + binary directory, so no C-ABI round
+// the engine owns the network pointer + binary directory, so no C-ABI round
 // trip to main is needed. Mirrors the startup load in native_engine.constructMembers.
 pub fn loadNetworkEngine(engine_ptr: *native_engine.NativeEngine, evalfile_path: []const u8) void {
     const e = engine_ptr;

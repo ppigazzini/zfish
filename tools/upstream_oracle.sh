@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pristine upstream oracle (REPORT-13 §5.1).
+# Pristine upstream oracle.
 #
 # Builds VANILLA upstream Stockfish at a given sha into a detached git worktree, decoupled from this
 # fork's src/ edits, and prints the resulting binary path. This is the binary-to-binary reference for the

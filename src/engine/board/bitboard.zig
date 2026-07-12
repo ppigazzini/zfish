@@ -1,6 +1,6 @@
 const std = @import("std");
 
-// M21.1: geometry/magic-index helpers live in a std-only leaf now; alias back
+// Geometry/magic-index helpers live in a std-only leaf now; alias back
 // (top-level decls are order-independent).
 const bitboard_geom = @import("bitboard_geom.zig");
 const PieceType = bitboard_geom.PieceType;
