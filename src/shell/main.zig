@@ -181,6 +181,7 @@ fn installRuntimeHooks() void {
     // search probes tablebases without importing a platform module.
     tb_source.maxCardinality = &tablebase.maxCardinality;
     tb_source.probeFen = &tablebase.probeFen;
+    tb_source.probeWdlPos = &tablebase.probeWdlPos;
     // Inject the platform thread-pool ops into the engine's thread-ops seam, so the
     // parallel search coordinates siblings without importing a platform module.
     thread_ops.startSiblings = &search_thread.startPoolSiblings;

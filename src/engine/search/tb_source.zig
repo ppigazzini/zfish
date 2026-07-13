@@ -8,6 +8,7 @@
 //! the platform prober (a stub today), so tablebase behaviour is the platform's.
 
 const std = @import("std");
+const position_types = @import("position_types");
 
 pub const ProbeResult = struct {
     available: u8,
@@ -23,11 +24,17 @@ fn noTablebases() usize {
 fn unavailable(_: [*]const u8, _: usize, _: u8) ProbeResult {
     return .{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 };
 }
+fn unavailablePos(_: *position_types.Position) ProbeResult {
+    return .{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 };
+}
 
 /// Largest position (piece count) the tablebases cover; 0 when none are loaded.
 pub var maxCardinality: *const fn () usize = &noTablebases;
 /// Probe a FEN; `available == 0` means no result.
 pub var probeFen: *const fn (fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult = &unavailable;
+/// In-search WDL probe on the live search Position (Step 6); `available == 0` means FAIL/no result.
+/// The probe does do/undo on `pos` for its capture recursion and restores it exactly.
+pub var probeWdlPos: *const fn (pos: *position_types.Position) ProbeResult = &unavailablePos;
 
 test {
     try std.testing.expectEqual(@as(usize, 0), maxCardinality());

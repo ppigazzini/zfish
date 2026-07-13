@@ -659,6 +659,48 @@ fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// tb-search: the in-search Step 6 WDL probe (M-SZ-4). Benches a small 4-man EPD (each position
+// bigger than the 3-man tables, so the root is searched normally and Step 6 probes the 3-man
+// nodes reached in the tree). The node count WITH SyzygyPath (Step 6 cutting the tree) and WITHOUT
+// (Step 6 off) both pin == the upstream oracle -- bit-exact node-count parity. bench writes the
+// count to stderr; the EPD is written transiently into the net/ cwd. Both counts are deterministic.
+fn benchNodes(gpa: std.mem.Allocator, io: Io, bin: []const u8, input: []const u8) !u64 {
+    var cap = try runEngine(gpa, io, bin, &.{}, input);
+    defer cap.deinit(gpa);
+    var nodes: ?u64 = null;
+    var li = lines(cap.stderr);
+    while (li.next()) |line| {
+        if (startsWith(line, "Nodes searched")) {
+            var toks = std.mem.tokenizeScalar(u8, line, ' ');
+            var last: []const u8 = "";
+            while (toks.next()) |t| last = t;
+            nodes = std.fmt.parseInt(u64, last, 10) catch null;
+        }
+    }
+    return nodes orelse fail("tb-search: no 'Nodes searched' line (bench crashed / bad EPD?)", .{});
+}
+
+fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    // Each position has more pieces than the 3-man tables, so the root searches normally and the
+    // in-tree Step 6 probe fires at the 3-man nodes captures reach. Benched ONE per file (a
+    // multi-position bench carries the TT between positions), so both the no-tb baseline and the
+    // Step 6 delta are per-position bit-exact vs the oracle. Both draws (KNNvK, KRvKR).
+    const rows = [_]struct { label: []const u8, fen: []const u8 }{
+        .{ .label = "KNNvK", .fen = "8/8/8/8/3k4/8/1N1NK3/8 w - - 0 1" },
+        .{ .label = "KNvKN", .fen = "8/8/8/8/3k4/8/1N1nK3/8 w - - 0 1" },
+        .{ .label = "KPvKN", .fen = "8/8/8/8/3k4/8/1P1nK3/8 w - - 0 1" },
+    };
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    for (rows) |r| {
+        try Io.Dir.cwd().writeFile(io, .{ .sub_path = "tb_search_tmp.epd", .data = r.fen });
+        const with_tb = try benchNodes(gpa, io, bin, "setoption name SyzygyPath value syzygy\nbench 16 1 10 tb_search_tmp.epd depth\nquit\n");
+        const no_tb = try benchNodes(gpa, io, bin, "bench 16 1 10 tb_search_tmp.epd depth\nquit\n");
+        try out.print(gpa, "{s} no-tb={d} with-tb={d}\n", .{ r.label, no_tb, with_tb });
+    }
+    return out.toOwnedSlice(gpa);
+}
+
 // FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
 // the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
 fn fnv1a64(data: []const u8) u64 {
@@ -1514,7 +1556,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root" };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root", @"tb-search" };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -1561,6 +1603,7 @@ pub fn main(init: std.process.Init) !void {
         .@"tb-wdl" => try buildTbWdl(gpa, io, bin),
         .@"tb-dtz" => try buildTbDtz(gpa, io, bin),
         .@"tb-root" => try buildTbRoot(gpa, io, bin),
+        .@"tb-search" => try buildTbSearch(gpa, io, bin),
     };
     defer gpa.free(live);
 
