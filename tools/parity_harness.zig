@@ -544,6 +544,29 @@ fn buildBenchMatrix(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// tb-init: the Syzygy load report (M-SZ-1). Point SyzygyPath at the fetched 3-man set (syzygy/,
+// relative to the net/ cwd) and pin the `info string Found N WDL and N DTZ tablebase files (up to
+// M-man)` line -- the discovery half of the Syzygy port, matched to the upstream oracle. The
+// message is on stdout (printInfoString). Synchronous, so the feed-all-then-quit path is safe.
+fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    var cap = try runEngine(gpa, io, bin, &.{}, "setoption name SyzygyPath value syzygy\nquit\n");
+    defer cap.deinit(gpa);
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    var found = false;
+    var li = lines(cap.stdout);
+    while (li.next()) |line| {
+        if (std.mem.indexOf(u8, line, "Found") != null and std.mem.indexOf(u8, line, "tablebase") != null) {
+            try out.appendSlice(gpa, line);
+            try out.append(gpa, '\n');
+            found = true;
+        }
+    }
+    if (!found) fail("tb-init: no 'Found ... tablebase' line (SyzygyPath init failed / syzygy/ missing?)", .{});
+    return out.toOwnedSlice(gpa);
+}
+
 // FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
 // the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
 fn fnv1a64(data: []const u8) u64 {
@@ -1399,7 +1422,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix" };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init" };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -1442,6 +1465,7 @@ pub fn main(init: std.process.Init) !void {
         .mate => try buildMate(gpa, io, bin),
         .chess960 => try buildChess960(gpa, io, bin),
         .@"bench-matrix" => try buildBenchMatrix(gpa, io, bin),
+        .@"tb-init" => try buildTbInit(gpa, io, bin),
     };
     defer gpa.free(live);
 

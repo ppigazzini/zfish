@@ -230,6 +230,12 @@ pub fn optionOnChange(
         },
         option_callback_syzygy_path => blk: {
             tablebase.init(value.ptr, value.len);
+            // SF `Tablebases::init` prints this whenever a path is set (even when 0 found).
+            if (value.len != 0) {
+                var buf: [96]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "Found {d} WDL and {d} DTZ tablebase files (up to {d}-man).", .{ tablebase.foundWdl(), tablebase.foundDtz(), tablebase.discoveredMax() }) catch break :blk null;
+                printInfoString(msg);
+            }
             break :blk null;
         },
         option_callback_eval_file => blk: {

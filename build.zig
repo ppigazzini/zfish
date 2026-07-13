@@ -701,6 +701,27 @@ pub fn build(b: *std.Build) void {
     );
     net_step.dependOn(&net_cmd.step);
 
+    // The 3-man Syzygy tablebase fetcher (tools/fetch_tb.zig): downloads the ~26 KB 3-man set into
+    // net/syzygy/ for the Syzygy load/probe gates. The tables are NEVER committed (see .gitignore);
+    // like the net they are fetched + cached. link_libc: it uses libc mkdir (Io.Dir has no makeDir).
+    const fetch_tb_exe = b.addExecutable(.{
+        .name = "fetch_tb",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/fetch_tb.zig"),
+            .target = b.graph.host,
+            .optimize = .ReleaseFast,
+            .link_libc = true,
+        }),
+    });
+    const tb_cmd = b.addRunArtifact(fetch_tb_exe);
+    tb_cmd.setCwd(b.path("net"));
+    tb_cmd.has_side_effects = true; // idempotent: skips files already present
+    const tb_step = b.step(
+        "tb",
+        "Download the 3-man Syzygy tablebases into net/syzygy/ (for the Syzygy gates)",
+    );
+    tb_step.dependOn(&tb_cmd.step);
+
     // Pure-Zig parity harness: drives the built engine over UCI and diffs the
     // deterministic fingerprints against the committed goldens -- the cross-platform
     // replacement for the bash golden scripts (output_parity/search_parity/search_modes/
@@ -1177,6 +1198,29 @@ pub fn build(b: *std.Build) void {
     );
     bench_matrix_update_step.dependOn(&bench_matrix_update_cmd.step);
 
+    // tb-init golden: the Syzygy load report (M-SZ-1). Sets SyzygyPath to the fetched 3-man set
+    // (net/syzygy/) and pins the `info string Found N WDL and N DTZ ... (up to M-man)` line ==
+    // upstream oracle. Depends on the `tb` fetch too. Linux-only (`parity`, not portable): the
+    // fetched tables + libc file-check are verified on Linux; cross-OS Syzygy comes with M-SZ-4.
+    const tb_init_golden = b.pathFromRoot("tools/tb_init.golden");
+    const tb_init_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-init", tb_init_golden, "check");
+    tb_init_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_init_step = b.step(
+        "tb-init",
+        "Diff the Syzygy load report (Found N WDL/DTZ, up to M-man) against the golden",
+    );
+    tb_init_step.dependOn(&tb_init_cmd.step);
+
+    const tb_init_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-init", tb_init_golden, "update");
+    tb_init_update_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_init_update_step = b.step(
+        "tb-init-update",
+        "Regenerate tools/tb_init.golden from the current binary",
+    );
+    tb_init_update_step.dependOn(&tb_init_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1529,6 +1573,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&skill_cmd.step);
     parity_step.dependOn(&ponder_cmd.step);
     parity_step.dependOn(&bench_matrix_cmd.step);
+    parity_step.dependOn(&tb_init_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);

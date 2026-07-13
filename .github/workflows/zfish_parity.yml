@@ -59,6 +59,15 @@ jobs:
           path: net/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
+      # Cache the ~26 KB 3-man Syzygy tablebases (fetched by `zig build tb`, which the
+      # `tb-init` gate inside `zig build parity` triggers). Never committed; keyed on the
+      # fetcher so a set/source change re-downloads.
+      - name: Cache Syzygy tablebases
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: net/syzygy
+          key: syzygy-3man-${{ hashFiles('tools/fetch_tb.zig') }}
+
       # Pin the ARCH instead of `native`: GitHub runners have modern CPUs whose
       # `native` resolves to a PEXT/AVX512 arch. Pin the exact baseline the bench
       # signature / parity goldens were validated against so the gate is
