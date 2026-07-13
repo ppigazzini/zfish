@@ -212,10 +212,30 @@ const DtzRankResult = enum {
     fallback_to_wdl,
 };
 
+// SF Position::dtz_is_dtm: pawnless && (3-men || 4-men-minors-only). When true the DTZ tables rank
+// exactly like DTM, so the root ranking uses the exact DTZ (rankDTZ); otherwise all winning moves
+// tie at MAX_DTZ and the tie-break is the (movegen) order.
+fn dtzIsDtm(pos: *const position_port.Position) bool {
+    var pieces: [square_count]u8 = undefined;
+    position_port.accumulatorSnapshot(pos, &pieces);
+    var total: usize = 0;
+    var pawns: usize = 0;
+    var queens_rooks: usize = 0;
+    for (pieces) |p| {
+        if (p == 0) continue;
+        total += 1;
+        const t = p & 7;
+        if (t == 1) pawns += 1;
+        if (t == 4 or t == 5) queens_rooks += 1;
+    }
+    return pawns == 0 and (total == 3 or (total == 4 and queens_rooks == 0));
+}
+
 fn rankRootMovesDtz(
     root_fen: []const u8,
     chess960: u8,
     rule50: bool,
+    rank_dtz: bool,
     root_rule50: c_int,
     root_has_repeated: bool,
     ranked_moves: []RankedRootMove,
@@ -259,14 +279,15 @@ fn rankRootMovesDtz(
                 dtz = 1;
         }
 
+        const rank_term: c_int = if (rank_dtz) dtz else 0; // SF (rankDTZ ? dtz : 0)
         const rank: c_int = if (dtz > 0)
             if (dtz + root_rule50 <= 99 and !root_has_repeated)
-                max_dtz - dtz
+                max_dtz - rank_term
             else
                 @divTrunc(max_dtz, 2) - (dtz + root_rule50)
         else if (dtz < 0)
             if (-dtz * 2 + root_rule50 < 100)
-                -max_dtz - dtz
+                -max_dtz - rank_term
             else
                 -@divTrunc(max_dtz, 2) + (-dtz + root_rule50)
         else
@@ -375,6 +396,7 @@ pub fn buildRootMoves(
             root_fen,
             chess960,
             tb_config.use_rule50 != 0,
+            dtzIsDtm(pos), // SF: rankDTZ = false || pos.dtz_is_dtm()
             root_snapshot.rule50_count,
             position_port.hasRepeated(pos),
             ranked_moves,

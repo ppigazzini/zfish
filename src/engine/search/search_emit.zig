@@ -167,11 +167,19 @@ pub fn searchCbRootOnIter(wl: *const worker_layout.WorkerLayout, depth: c_int, m
     uci_output.printLine(line_c.ptr, line_c.len);
 }
 
+// SF is_mate_or_mated: |v| >= VALUE_MATE_IN_MAX_PLY (a real mate, not a TB win). Used to decide
+// whether the root-TB tbScore override applies (it does NOT override a genuine mate score).
+fn isMateOrMated(v: i32) bool {
+    const value_mate_in_max_ply: i32 = 32000 - 246; // VALUE_MATE - MAX_PLY
+    return v >= value_mate_in_max_ply or v <= -value_mate_in_max_ply;
+}
+
 const PvContext = struct {
     manager: ?*worker_layout.SearchManager,
     worker: ?*worker_layout.WorkerLayout,
     root_moves: [*]const RootMove,
     root_moves_count: usize,
+    root_in_tb: bool,
     multipv: usize,
     show_wdl: u8,
     chess960: u8,
@@ -198,7 +206,10 @@ fn searchCbPvContext(manager: ?*worker_layout.SearchManager, worker: ?*worker_la
     const root_pos = &wl.root_pos;
     out.chess960 = if (isChess960(root_pos)) 1 else 0;
     out.nodes = worker_layout.poolNodesSearched(threads);
-    out.tb_hits = worker_layout.poolTbHits(threads);
+    // SF: reported tbHits == pool hits + (rootInTB ? rootMoves.size() : 0). The root-ranking
+    // probes are counted as one hit per root move at emit time (tb_config byte[4] = root_in_tb).
+    out.root_in_tb = wl.tb_config[4] != 0;
+    out.tb_hits = worker_layout.poolTbHits(threads) + (if (out.root_in_tb) rm_count else 0);
 
     const tp = tt_ptr;
     out.hashfull = tt.hashfull(@ptrFromInt(@intFromPtr(tp.table)), tp.cluster_count, tp.generation8, 0);
@@ -220,8 +231,14 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
         const d: c_int = if (use_prev) @max(@as(c_int, 1), depth - 1) else depth;
         var v: i32 = if (use_prev) rm.previous_score else rm.uci_score;
         if (v == -value_infinite) v = 0;
+        // SF: when the root is in a tablebase and the score isn't a real mate, show the exact
+        // tbScore (the DTZ/WDL-derived value) instead of the search score. Gated by root_in_tb,
+        // so non-TB searches (incl. bench) are unaffected.
+        const is_tb_score = ctx.root_in_tb and !isMateOrMated(v);
+        if (is_tb_score) v = rm.tb_score;
         var bound_kind: u8 = 0;
-        if (!use_prev) {
+        // TB scores are exact even if the root move's bound flags say otherwise.
+        if (!use_prev and !is_tb_score) {
             if (rm.score_lowerbound) {
                 bound_kind = 1;
             } else if (rm.score_upperbound) {

@@ -612,6 +612,53 @@ fn buildTbDtz(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return buildTbProbe(gpa, io, bin, "Tablebases DTZ:", "tb-dtz");
 }
 
+// tb-root: the Syzygy root DTZ ranking (M-SZ-3b). With the DTZ probe live, `go` on a TB win ranks
+// the root moves via rankRootMovesDtz; the emit shows the exact tbScore (not the search score) and
+// tbHits == pool hits + rootMoves.size(). Pins score + tbhits == the upstream oracle -- this
+// first-validates the formerly-dead root-ranking formula end to end (it surfaced three real
+// discrepancies: the missing +rootMoves.size tbHits term, the missing tbScore emit override, and
+// the hardcoded max_dtz-dtz rank ignoring rankDTZ/dtz_is_dtm).
+//
+// NOT gated here: the exact bestmove + nodes. The oracle early-returns (nodes 0) on a rootInTB
+// decisive win and plays rootMoves[0] (the DTZ tie-break order); zfish still runs the search, so
+// among equally-optimal TB moves it can pick a different (also-winning) move. That rootInTB
+// search early-exit is in-search behaviour (M-SZ-4), so gating zfish's divergent bestmove as a
+// golden would be fake parity. score + tbhits are robust to it (both engines do 0 in-tree probes
+// and both override the shown score with tbScore). Threads=1; Interactive read-to-bestmove.
+fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    const rows = [_]struct { label: []const u8, fen: []const u8, depth: u8 }{
+        .{ .label = "KQvK-wtm ", .fen = "4k3/8/8/8/3QK3/8/8/8 w - - 0 1", .depth = 6 },
+        .{ .label = "KRvK-wtm ", .fen = "8/8/8/8/8/3k4/8/R2K4 w - - 0 1", .depth = 8 },
+        .{ .label = "KPvK-win ", .fen = "8/8/8/8/8/3K4/3P4/3k4 w - - 0 1", .depth = 8 },
+    };
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    for (rows) |r| {
+        var s: Interactive = undefined;
+        try s.init(io, gpa, bin);
+        s.send("setoption name SyzygyPath value syzygy\nsetoption name Threads value 1\n");
+        var cmdbuf: [256]u8 = undefined;
+        s.send(std.fmt.bufPrint(&cmdbuf, "position fen {s}\ngo depth {d}\n", .{ r.fen, r.depth }) catch unreachable);
+        _ = s.fillUntil("\nbestmove");
+        const buf = s.buffered();
+
+        var score: ?InfoLine = null;
+        var li = lines(buf);
+        while (li.next()) |raw| {
+            const line = trimCR(raw);
+            if (parseInfoLine(line)) |info| {
+                if (info.score_kind != .none) score = info;
+            }
+        }
+        const sc = score orelse fail("tb-root: {s}: no scored info line (root probe failed?)", .{r.label});
+        try out.print(gpa, "{s} score={s} {?d} tbhits={?d}\n", .{
+            r.label, @tagName(sc.score_kind), sc.score_val, sc.tbhits,
+        });
+        _ = s.finish();
+    }
+    return out.toOwnedSlice(gpa);
+}
+
 // FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
 // the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
 fn fnv1a64(data: []const u8) u64 {
@@ -1467,7 +1514,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz" };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root" };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -1513,6 +1560,7 @@ pub fn main(init: std.process.Init) !void {
         .@"tb-init" => try buildTbInit(gpa, io, bin),
         .@"tb-wdl" => try buildTbWdl(gpa, io, bin),
         .@"tb-dtz" => try buildTbDtz(gpa, io, bin),
+        .@"tb-root" => try buildTbRoot(gpa, io, bin),
     };
     defer gpa.free(live);
 
