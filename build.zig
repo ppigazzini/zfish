@@ -1010,6 +1010,29 @@ pub fn build(b: *std.Build) void {
     );
     misc_update_step.dependOn(&misc_update_cmd.step);
 
+    // export-net golden: the length + FNV-1a of the net produced by `export_net`. The
+    // serializer (write_parameters) must reproduce the canonical .nnue byte-for-byte;
+    // upstream round-trips to the input net exactly, so a matching hash is a
+    // differential-vs-upstream check (zfish export == oracle export == distributed net).
+    // The net bytes are arch/OS-invariant, so the golden is portable. Regenerate on a net
+    // bump alongside the other goldens.
+    const export_net_golden = b.pathFromRoot("tools/export_net.golden");
+    const export_net_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "export-net", export_net_golden, "check");
+
+    const export_net_step = b.step(
+        "export-net",
+        "Diff the export_net (write_parameters) net fingerprint against the committed golden",
+    );
+    export_net_step.dependOn(&export_net_cmd.step);
+
+    const export_net_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "export-net", export_net_golden, "update");
+
+    const export_net_update_step = b.step(
+        "export-net-update",
+        "Regenerate tools/export_net.golden from the current binary",
+    );
+    export_net_update_step.dependOn(&export_net_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1353,6 +1376,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&perft_cmd.step);
     parity_step.dependOn(&eval_cmd.step);
     parity_step.dependOn(&misc_cmd.step);
+    parity_step.dependOn(&export_net_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);
@@ -1386,6 +1410,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&perft_cmd.step);
     parity_portable_step.dependOn(&eval_cmd.step);
     parity_portable_step.dependOn(&misc_cmd.step);
+    parity_portable_step.dependOn(&export_net_cmd.step);
     // The concurrency + timing gates -- the cross-OS payoff: these exercise the
     // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
     // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.
