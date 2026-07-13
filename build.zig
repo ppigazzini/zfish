@@ -1130,6 +1130,29 @@ pub fn build(b: *std.Build) void {
     );
     chess960_update_step.dependOn(&chess960_update_cmd.step);
 
+    // bench-matrix golden: bench node counts for non-default configs (hash size / shallow
+    // depth / node limit / bench-perft) -- distinct deterministic code paths the default
+    // signature (2466447) never exercises, each verified equal to the upstream oracle.
+    // Linux-only (`parity`, not `parity-portable`): verified bit-exact on x86 in both build
+    // modes, but the node-limited config's cross-arch equality is not locally verifiable, and
+    // the default bench already gates cross-OS signature. Regenerate on an upstream bump.
+    const bench_matrix_golden = b.pathFromRoot("tools/bench_matrix.golden");
+    const bench_matrix_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "bench-matrix", bench_matrix_golden, "check");
+
+    const bench_matrix_step = b.step(
+        "bench-matrix",
+        "Diff non-default bench node counts (hash/depth/nodes/perft configs) against the golden",
+    );
+    bench_matrix_step.dependOn(&bench_matrix_cmd.step);
+
+    const bench_matrix_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "bench-matrix", bench_matrix_golden, "update");
+
+    const bench_matrix_update_step = b.step(
+        "bench-matrix-update",
+        "Regenerate tools/bench_matrix.golden from the current binary",
+    );
+    bench_matrix_update_step.dependOn(&bench_matrix_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1479,6 +1502,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&mate_cmd.step);
     parity_step.dependOn(&chess960_cmd.step);
     parity_step.dependOn(&reset_cmd.step);
+    parity_step.dependOn(&bench_matrix_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);

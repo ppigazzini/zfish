@@ -508,6 +508,42 @@ fn buildUciOptions(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// bench-matrix: bench node counts for non-default configs (hash size / shallow depth / node
+// limit / bench-perft), each a distinct deterministic code path the default bench
+// (16/1/depth-13 -> 2466447) never exercises. Verified equal to the pristine upstream oracle
+// and bit-exact across build modes (the node-limited config needed the conthistDelta i32-wrap
+// fix -- deep searches otherwise overflow under ReleaseSafe). `bench` is synchronous, so the
+// feed-all-then-quit path is safe. Regenerate on an upstream/net bump, like the signature.
+const bench_matrix_configs = [_][]const u8{
+    "16 1 8", // shallow depth
+    "128 1 13", // hash size (2561648 != the default 2466447 -> the TT-sizing path)
+    "16 1 200000 default nodes", // node-limit path
+    "16 1 3 default perft", // bench-perft path
+};
+fn buildBenchMatrix(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    for (bench_matrix_configs) |args| {
+        const input = try std.fmt.allocPrint(gpa, "bench {s}\nquit\n", .{args});
+        defer gpa.free(input);
+        var cap = try runEngine(gpa, io, bin, &.{}, input);
+        defer cap.deinit(gpa);
+        var nodes: ?[]const u8 = null;
+        var li = lines(cap.stderr);
+        while (li.next()) |line| {
+            if (startsWith(line, "Nodes searched")) {
+                var toks = std.mem.tokenizeScalar(u8, line, ' ');
+                var last: []const u8 = "";
+                while (toks.next()) |t| last = t;
+                nodes = last;
+            }
+        }
+        const n = nodes orelse fail("bench-matrix: `bench {s}` produced no node count (panic?)", .{args});
+        try out.print(gpa, "bench {s} nodes={s}\n", .{ args, n });
+    }
+    return out.toOwnedSlice(gpa);
+}
+
 // FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
 // the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
 fn fnv1a64(data: []const u8) u64 {
@@ -1158,7 +1194,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960 };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix" };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -1198,6 +1234,7 @@ pub fn main(init: std.process.Init) !void {
         .@"uci-options" => try buildUciOptions(gpa, io, bin),
         .mate => try buildMate(gpa, io, bin),
         .chess960 => try buildChess960(gpa, io, bin),
+        .@"bench-matrix" => try buildBenchMatrix(gpa, io, bin),
     };
     defer gpa.free(live);
 
