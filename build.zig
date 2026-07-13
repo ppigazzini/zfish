@@ -840,7 +840,7 @@ pub fn build(b: *std.Build) void {
     output_golden_update_step.dependOn(&output_golden_update_cmd.step);
 
     // driver-golden: pins the search-manager driver + its emit callbacks
-    // (multipv/wdl/ponder/currmove/no-moves) bit-exact.
+    // (multipv/wdl/ponder/no-moves) bit-exact.
     const driver_golden = b.pathFromRoot("tools/driver.golden");
     const driver_golden_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "check");
     const driver_golden_step = b.step(
@@ -1503,11 +1503,9 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&search_parity_cmd.step);
     parity_portable_step.dependOn(&search_modes_cmd.step);
     parity_portable_step.dependOn(&output_golden_cmd.step);
-    // driver-golden is node-deterministic (its info/currmove/bestmove lines are all
-    // node-gated, not wall-clock-gated), so it is OS/arch-invariant like the other
-    // golden gates -- its earlier absence here was an oversight. It now also covers the
-    // currmove emit callback (a >10M-node search in the battery), so the cross-OS lanes
-    // gain that path too.
+    // driver-golden is node-deterministic (its depth-limited info/bestmove lines are
+    // bit-exact like bench, not wall-clock-gated), so it is OS/arch-invariant like the other
+    // golden gates -- its earlier absence here was an oversight.
     parity_portable_step.dependOn(&driver_golden_cmd.step);
     parity_portable_step.dependOn(&perft_cmd.step);
     parity_portable_step.dependOn(&eval_cmd.step);
