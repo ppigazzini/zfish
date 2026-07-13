@@ -652,6 +652,88 @@ fn buildMate(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// chess960: UCI_Chess960 search + castling + eval. `perft` already covers FRC MOVEGEN
+// counts; this exercises what it cannot -- FRC castling make/unmake inside a real search,
+// the FRC castling ENCODING (applying the king-to-rook-square move f1g1 = O-O and rendering
+// the resulting position), and the NNUE eval on FRC king placements. Single thread + fixed
+// node budget -> deterministic; FRC castling/eval are arch/OS-invariant. Searches are async
+// (Interactive); `d`/`eval` are synchronous (runEngine batch).
+const frc_start = "nrkrbbqn/pppppppp/8/8/8/8/PPPPPPPP/NRKRBBQN w KQkq - 0 1";
+const frc_mid = "qbrnnkrb/pppppppp/8/8/8/8/PPPPPPPP/QBRNNKRB w KGkg - 0 1";
+fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+
+    // --- FRC searches (Interactive, node-limited): FRC castling is made/unmade in the tree.
+    const positions = [_]struct { label: []const u8, fen: []const u8 }{
+        .{ .label = "frc-start", .fen = frc_start },
+        .{ .label = "frc-mid  ", .fen = frc_mid },
+    };
+    for (positions) |p| {
+        var s: Interactive = undefined;
+        try s.init(io, gpa, bin);
+        s.send("setoption name Threads value 1\nsetoption name UCI_Chess960 value true\n");
+        var cb: [160]u8 = undefined;
+        s.send(std.fmt.bufPrint(&cb, "position fen {s}\ngo nodes 300000\n", .{p.fen}) catch unreachable);
+        _ = s.fillUntil("\nbestmove");
+        const buf = s.buffered();
+        var info: ?InfoLine = null;
+        var best: ?BestmoveLine = null;
+        var li = lines(buf);
+        while (li.next()) |raw| {
+            const line = trimCR(raw);
+            if (parseInfoLine(line)) |i| {
+                if (i.nodes != null and i.score_kind != .none) info = i;
+            } else if (parseBestmove(line)) |bm| {
+                best = bm;
+            }
+        }
+        _ = s.finish();
+        const i = info orelse fail("chess960: {s}: no scored info", .{p.label});
+        const bm = best orelse fail("chess960: {s}: no bestmove", .{p.label});
+        try out.print(gpa, "search {s} depth={?d} score={s} {?d} nodes={?d} bestmove={s}\n", .{ p.label, i.depth, @tagName(i.score_kind), i.score_val, i.nodes, bm.bestmove });
+    }
+
+    // --- FRC castling applied: f1g1 is O-O in this setup (king f1 and its rook g1 are adjacent,
+    // so O-O -- king onto its own rook's square -- is legal from the start). Apply it and dump
+    // `d`: the resulting Fen must show the king on g1 and the rook on f1 (they swap), white's
+    // castling rights cleared. This pins that the FRC castling move parses, applies, and renders
+    // -- perft never plays/renders a castling move.
+    {
+        const input = "setoption name UCI_Chess960 value true\nposition fen " ++ frc_mid ++ " moves f1g1\nd\nquit\n";
+        var cap = try runEngine(gpa, io, bin, &.{}, input);
+        defer cap.deinit(gpa);
+        var found = false;
+        var li = lines(cap.stdout);
+        while (li.next()) |line| {
+            if (startsWithIgnoreCase(line, "Fen:") or startsWithIgnoreCase(line, "Key:")) {
+                try out.print(gpa, "castle-OO {s}\n", .{line});
+                found = true;
+            }
+        }
+        if (!found) fail("chess960: castling `d` produced no Fen/Key (castling move rejected?)", .{});
+    }
+
+    // --- FRC eval: the NNUE eval on FRC king placements (Final evaluation line).
+    for (positions) |p| {
+        const input = try std.fmt.allocPrint(gpa, "setoption name UCI_Chess960 value true\nposition fen {s}\neval\nquit\n", .{p.fen});
+        defer gpa.free(input);
+        var cap = try runEngine(gpa, io, bin, &.{}, input);
+        defer cap.deinit(gpa);
+        var final_line: ?[]const u8 = null;
+        inline for (.{ cap.stderr, cap.stdout }) |stream| {
+            var li = lines(stream);
+            while (li.next()) |line| {
+                if (startsWith(line, "Final evaluation") and final_line == null) final_line = line;
+            }
+        }
+        const fl = final_line orelse fail("chess960: {s}: no Final evaluation", .{p.label});
+        try out.print(gpa, "eval {s} {s}\n", .{ p.label, std.mem.trim(u8, fl, " ") });
+    }
+
+    return out.toOwnedSlice(gpa);
+}
+
 // signature: bench must report the exact node count (the 2466447 arch/OS invariant).
 fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []const u8) noreturn {
     var cap = runEngine(gpa, io, bin, &.{"bench"}, null) catch fail("signature: engine run failed", .{});
@@ -991,7 +1073,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960 };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -1029,6 +1111,7 @@ pub fn main(init: std.process.Init) !void {
         .nodestime => try buildNodestime(gpa, io, bin),
         .@"uci-options" => try buildUciOptions(gpa, io, bin),
         .mate => try buildMate(gpa, io, bin),
+        .chess960 => try buildChess960(gpa, io, bin),
     };
     defer gpa.free(live);
 

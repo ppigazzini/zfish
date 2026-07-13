@@ -1097,6 +1097,27 @@ pub fn build(b: *std.Build) void {
     );
     mate_update_step.dependOn(&mate_update_cmd.step);
 
+    // chess960 golden: UCI_Chess960 search + castling encoding + eval. perft covers FRC
+    // movegen counts; this pins FRC castling made/unmade in a real search, the played
+    // king-to-rook-square castling move (f1g1 = O-O) via `d`, and the NNUE eval on FRC king
+    // placements. Single-thread + node budget -> arch/OS-invariant, so the golden is portable.
+    const chess960_golden = b.pathFromRoot("tools/chess960.golden");
+    const chess960_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "chess960", chess960_golden, "check");
+
+    const chess960_step = b.step(
+        "chess960",
+        "Diff UCI_Chess960 search + castling + eval against the committed golden",
+    );
+    chess960_step.dependOn(&chess960_cmd.step);
+
+    const chess960_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "chess960", chess960_golden, "update");
+
+    const chess960_update_step = b.step(
+        "chess960-update",
+        "Regenerate tools/chess960.golden from the current binary",
+    );
+    chess960_update_step.dependOn(&chess960_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1444,6 +1465,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&nodestime_cmd.step);
     parity_step.dependOn(&uci_options_cmd.step);
     parity_step.dependOn(&mate_cmd.step);
+    parity_step.dependOn(&chess960_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);
@@ -1481,6 +1503,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&nodestime_cmd.step);
     parity_portable_step.dependOn(&uci_options_cmd.step);
     parity_portable_step.dependOn(&mate_cmd.step);
+    parity_portable_step.dependOn(&chess960_cmd.step);
     // The concurrency + timing gates -- the cross-OS payoff: these exercise the
     // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
     // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.
