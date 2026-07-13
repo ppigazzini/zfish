@@ -806,6 +806,7 @@ const Outcome = struct {
     got_bestmove: bool = false,
     kind: ScoreKind = .none,
     val: i64 = 0,
+    nodes: ?i64 = null,
     time_ms: ?i64 = null,
     bm_buf: [8]u8 = undefined,
     bm_len: usize = 0,
@@ -828,7 +829,9 @@ fn wellFormedMove(m: []const u8) bool {
     return true;
 }
 
-// Parse "score cp N" / "score mate N" (last one wins) and "time N" into `out`.
+// Parse "score cp N" / "score mate N" (last one wins), "time N", "nodes N", and the
+// "bestmove M" move token into `out`. Used both on live engine output (info + bestmove
+// lines) and on a committed golden line that packs the same fields.
 fn scanInfo(out: *Outcome, line: []const u8) void {
     var t = std.mem.tokenizeScalar(u8, line, ' ');
     var prev: []const u8 = "";
@@ -844,6 +847,12 @@ fn scanInfo(out: *Outcome, line: []const u8) void {
             }
         } else if (std.mem.eql(u8, prev, "time")) {
             out.time_ms = std.fmt.parseInt(i64, tok, 10) catch out.time_ms;
+        } else if (std.mem.eql(u8, prev, "nodes")) {
+            out.nodes = std.fmt.parseInt(i64, tok, 10) catch out.nodes;
+        } else if (std.mem.eql(u8, prev, "bestmove")) {
+            const n = @min(tok.len, out.bm_buf.len);
+            @memcpy(out.bm_buf[0..n], tok[0..n]);
+            out.bm_len = n;
         }
         prev = tok;
     }
@@ -923,15 +932,8 @@ fn parseOutcome(text: []const u8) Outcome {
     var li = lines(text);
     while (li.next()) |raw| {
         const line = trimCR(raw);
-        scanInfo(&out, line);
+        scanInfo(&out, line); // captures score/nodes from info lines, the move from bestmove
         if (startsWith(line, "bestmove")) {
-            var bt = std.mem.tokenizeScalar(u8, line, ' ');
-            _ = bt.next();
-            if (bt.next()) |m| {
-                const n = @min(m.len, out.bm_buf.len);
-                @memcpy(out.bm_buf[0..n], m[0..n]);
-                out.bm_len = n;
-            }
             out.got_bestmove = true;
             break;
         }
@@ -960,10 +962,12 @@ const mt_positions = [_]MtPos{
 const mt_depth = 12;
 const mt_band = 150;
 
-// mt-sanity: multi-threaded search must complete with a well-formed bestmove and a score of
-// the same kind/sign and within BAND cp of the deterministic single-thread golden. Non-
-// deterministic (Lazy SMP), so a band, not a bit-exact gate -- it catches garbled result
-// aggregation (wrong voting, dropped PV, sign flips) that the single-thread goldens can't.
+// mt-sanity: two-layer TT/search gate. (1) A bit-exact single-thread RE-ANCHOR: Threads=1
+// must reproduce the golden's score+nodes+bestmove EXACTLY (depth-limited, so deterministic)
+// -- an exact floor that catches a single-thread regression the band would mask. (2) The
+// non-deterministic Lazy-SMP band: Threads {2,4} must complete with a well-formed bestmove and
+// a score of the same kind/sign and within BAND cp of that single-thread reference -- catching
+// garbled result aggregation (wrong voting, dropped PV, sign flips) that no snapshot can.
 fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []const u8, mode: []const u8) noreturn {
     if (std.mem.eql(u8, mode, "update")) {
         var out: std.ArrayList(u8) = .empty;
@@ -973,7 +977,7 @@ fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []const 
             const o = runSearch(io, gpa, bin, cmds) catch fail("mt-sanity: engine run failed", .{});
             if (!o.got_bestmove) fail("mt-sanity: {s} single-thread produced no bestmove", .{p.name});
             const kind = if (o.kind == .mate) "mate" else "cp";
-            out.print(gpa, "{s:<10} score {s} {d}|bestmove {s}\n", .{ p.name, kind, o.val, o.bestmove() }) catch fail("mt-sanity: oom", .{});
+            out.print(gpa, "{s:<10} score {s} {d} nodes {?d} bestmove {s}\n", .{ p.name, kind, o.val, o.nodes, o.bestmove() }) catch fail("mt-sanity: oom", .{});
         }
         Io.Dir.cwd().writeFile(io, .{ .sub_path = golden, .data = out.items }) catch fail("mt-sanity: cannot write {s}", .{golden});
         std.debug.print("mt-sanity: wrote golden ({d} positions, depth {d})\n", .{ mt_positions.len, mt_depth });
@@ -1000,6 +1004,19 @@ fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []const 
         }
         if (!found or ref.kind == .none) fail("mt-sanity: golden has no score for {s} (regenerate)", .{p.name});
 
+        // Bit-exact single-thread RE-ANCHOR: Threads=1 must reproduce the golden EXACTLY
+        // (score kind+value, node count, bestmove). go depth 12 is depth-limited, so it is
+        // bit-exact like bench (arch/OS/build-mode-invariant). A single-thread regression that
+        // still lands inside the multi-thread band below would slip past the band check; this
+        // exact floor under the band catches it.
+        {
+            const cmds1 = std.fmt.allocPrint(gpa, "setoption name Threads value 1\n{s}\ngo depth {d}\n", .{ p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
+            defer gpa.free(cmds1);
+            const o1 = runSearch(io, gpa, bin, cmds1) catch fail("mt-sanity: engine run failed", .{});
+            if (o1.kind != ref.kind or o1.val != ref.val or !optEql(o1.nodes, ref.nodes) or !std.mem.eql(u8, o1.bestmove(), ref.bestmove()))
+                fail("mt-sanity: {s} Threads=1 does not reproduce the golden ({s} {d} nodes {?d} bm {s} vs golden {s} {d} nodes {?d} bm {s}) -- single-thread regression", .{ p.name, @tagName(o1.kind), o1.val, o1.nodes, o1.bestmove(), @tagName(ref.kind), ref.val, ref.nodes, ref.bestmove() });
+        }
+
         for ([_]u8{ 2, 4 }) |tc| {
             const cmds = std.fmt.allocPrint(gpa, "setoption name Threads value {d}\n{s}\ngo depth {d}\n", .{ tc, p.cmds, mt_depth }) catch fail("mt-sanity: oom", .{});
             defer gpa.free(cmds);
@@ -1015,7 +1032,7 @@ fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []const 
             }
         }
     }
-    std.debug.print("mt-sanity: OK ({d} positions, Threads {{2,4}} within band {d} of single-thread, depth {d})\n", .{ mt_positions.len, mt_band, mt_depth });
+    std.debug.print("mt-sanity: OK ({d} positions, Threads=1 reproduces golden bit-exact + Threads {{2,4}} within band {d}, depth {d})\n", .{ mt_positions.len, mt_band, mt_depth });
     std.process.exit(0);
 }
 
