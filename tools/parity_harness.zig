@@ -569,9 +569,10 @@ fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 
 // tb-wdl: the Syzygy WDL probe (M-SZ-2c). Sets SyzygyPath, then for each curated 3-man position
 // pins the `d`-command "Tablebases WDL: N (state)" line == the upstream oracle's value. Covers all
-// five 3-man piece types (Q/R/B/N/P), win/loss/draw, white/black to move, and the pawn +
-// blackStronger (lead pawn is black) flip paths. Runs in net/ cwd so "syzygy" resolves to the
-// fetch dir. (The search<false> capture-recursion positions are added in M-SZ-2c pt2b.)
+// five 3-man piece types (Q/R/B/N/P), win/loss/draw, white/black to move, the pawn + blackStronger
+// (lead pawn is black) flip paths, and -- via the last two -- the search<false> capture recursion
+// (the lone king captures the piece into a KvK draw, WDL 0 vs the raw-table -2). Runs in net/ cwd
+// so "syzygy" resolves to the fetch dir.
 fn buildTbWdl(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const runs = [_]struct { label: []const u8, fen: []const u8 }{
         .{ .label = "KQvK-wtm (win)  ", .fen = "4k3/8/8/8/3QK3/8/8/8 w - - 0 1" },
@@ -581,6 +582,8 @@ fn buildTbWdl(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         .{ .label = "KRvK-wtm (win)  ", .fen = "8/8/8/8/8/3k4/8/R2K4 w - - 0 1" },
         .{ .label = "KNvK-wtm (draw) ", .fen = "8/8/8/8/8/3k4/8/N2K4 w - - 0 1" },
         .{ .label = "KBvK-wtm (draw) ", .fen = "8/8/8/8/8/3k4/8/B2K4 w - - 0 1" },
+        .{ .label = "KQvK cap->draw  ", .fen = "8/8/8/8/8/1Qk5/8/K7 b - - 0 1" },
+        .{ .label = "KRvK cap->draw  ", .fen = "8/8/8/8/8/1Rk5/8/K7 b - - 0 1" },
     };
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);

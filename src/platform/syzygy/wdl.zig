@@ -27,6 +27,7 @@ const encode = @import("encode.zig");
 const position = @import("position");
 const board_core = @import("board_core");
 const state_list = @import("state_list");
+const movegen = @import("movegen");
 
 const Position = position.Position;
 const StateInfo = position.StateInfo;
@@ -509,37 +510,89 @@ inline fn stableSortSquares(sq: []u8) void {
     }
 }
 
-// ---- probe_table<WDL> + probe_wdl -------------------------------------------
+// ---- probe_table<WDL> + probe_wdl (search<false>) ---------------------------
 
-const probe_ok = 1; // SF ProbeState::OK
-const probe_fail = 0; // SF ProbeState::FAIL
+// SF ProbeState: FAIL=0, OK=1, ZEROING_BEST_MOVE=2 (CHANGE_STM=-1 is DTZ-only, M-SZ-3).
+const probe_fail: i32 = 0;
+const probe_ok: i32 = 1;
+const probe_zeroing: i32 = 2;
+const wdl_win: i32 = 2;
+const wdl_loss: i32 = -2;
+
+const Probe = struct { value: i32, state: i32 };
 
 // SF probe_table<WDL>: KvK short-circuit, registry lookup, lazy map, do_probe_table.
-fn probeTable(pos: *const Position, t: *TBTable, ok: *bool) i32 {
+fn probeTable(pos: *const Position, out_state: *i32) i32 {
     if (@popCount(pos.by_type_bb[0]) == 2) return 0; // KvK draw
+    const t = hashGet(pos.st.material_key) orelse {
+        out_state.* = probe_fail;
+        return 0;
+    };
     if (!mapped(t)) {
-        ok.* = false;
+        out_state.* = probe_fail;
         return 0;
     }
     return doProbeTable(pos, t);
 }
 
-/// Probe the WDL of `pos`. Sets `ok` false on failure. pt2a implements the no-capture control
-/// flow (SF search<false> with no capturing moves falls straight through to probe_table); the
-/// full capture recursion lands in pt2b.
-fn probeWdl(pos: *const Position, ok: *bool) i32 {
-    const t = hashGet(pos.st.material_key) orelse {
-        ok.* = false;
-        return 0;
-    };
-    return probeTable(pos, t, ok);
+fn isCapture(pos: *const Position, m: u16) bool {
+    const to = board_core.moveTo(m);
+    const mt = board_core.moveTypeOf(m);
+    return (pos.board[to] != 0 and mt != board_core.mt_castling) or mt == board_core.mt_en_passant;
+}
+
+// SF search<false> (WDL): the "best of the position and its winning/drawing captures" recursion.
+// A capture is a zeroing move, so its result must be probed and compared against the position's
+// own stored value. `storage` supplies one StateInfo per recursion frame (reused across siblings).
+fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage) Probe {
+    var best: i32 = wdl_loss;
+    var move_count: usize = 0;
+    var buf: [256]u16 = undefined;
+    const total = movegen.generateLegal(pos, buf[0..].ptr);
+
+    const st = state_list.storagePush(storage) catch return .{ .value = 0, .state = probe_fail };
+
+    var i: usize = 0;
+    while (i < total) : (i += 1) {
+        const m = buf[i];
+        if (!isCapture(pos, m)) continue;
+        move_count += 1;
+        position.doMoveState(pos, m, st);
+        const child = searchWdl(pos, storage);
+        position.undoMove(pos, m);
+        if (child.state == probe_fail) return .{ .value = 0, .state = probe_fail };
+        const v = -child.value;
+        if (v > best) {
+            best = v;
+            if (v >= wdl_win) return .{ .value = v, .state = probe_zeroing }; // winning zeroing move
+        }
+    }
+
+    // If every legal move is a capture and we searched them all, the stored value could be wrong
+    // (ep rights, all-captures) -- use bestValue instead of probing.
+    const no_more_moves = move_count != 0 and move_count == total;
+    var value: i32 = undefined;
+    if (no_more_moves) {
+        value = best;
+    } else {
+        var st_probe: i32 = probe_ok;
+        value = probeTable(pos, &st_probe);
+        if (st_probe == probe_fail) return .{ .value = 0, .state = probe_fail };
+    }
+
+    // DTZ stores a "don't care" when bestValue is a win: prefer bestValue when it dominates.
+    if (best >= value) {
+        const state: i32 = if (best > 0 or no_more_moves) probe_zeroing else probe_ok;
+        return .{ .value = best, .state = state };
+    }
+    return .{ .value = value, .state = probe_ok };
 }
 
 // ---- probeFen: the platform probe surface -----------------------------------
 
-/// Probe a FEN for its WDL. Builds a scratch Position (engine down-edge), looks up the material
-/// key in the registry, and runs the probe. `available == 0` means no result (no table, load
-/// failure, or castling rights present -- TB positions have none).
+/// Probe a FEN for its WDL. Builds a scratch Position (engine down-edge), then runs SF's
+/// search<false> WDL probe (best of the position and its captures). `available == 0` means no
+/// result (no table, load failure, or castling rights present -- TB positions have none).
 pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult {
     const empty = ProbeResult{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 };
     if (arena_state == null) return empty;
@@ -554,10 +607,9 @@ pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult 
         return empty;
     }
 
-    var ok = true;
-    const wdl = probeWdl(pos, &ok);
-    if (!ok) return empty;
-    return .{ .available = 1, .wdl = wdl, .wdl_state = probe_ok, .dtz = 0, .dtz_state = 0 };
+    const r = searchWdl(pos, storage);
+    if (r.state == probe_fail) return empty;
+    return .{ .available = 1, .wdl = r.value, .wdl_state = r.state, .dtz = 0, .dtz_state = 0 };
 }
 
 test {
