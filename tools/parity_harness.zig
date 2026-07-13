@@ -486,6 +486,43 @@ fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
+// the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
+fn fnv1a64(data: []const u8) u64 {
+    var h: u64 = 0xcbf29ce484222325;
+    for (data) |b| {
+        h ^= b;
+        h *%= 0x100000001b3;
+    }
+    return h;
+}
+
+// export-net: fingerprint (length + FNV-1a) of the net produced by `export_net`. The
+// serializer (nnue_parse.serializeFeatureTransformer/serializeLayer, i.e. Stockfish's
+// write_parameters) must reproduce the canonical .nnue byte-for-byte -- upstream's
+// export round-trips to the input net exactly, so this gate is a differential-vs-upstream
+// check authored against the pristine oracle (see tools/upstream_parity.sh): a matching
+// hash means zfish's export == upstream's export == the distributed net. `export_net` is
+// synchronous (it runs to completion in the command handler, no async search), so the
+// feed-all-then-quit runEngine path is safe here. Writes a temp net in cwd (net/), hashes
+// it, and removes it.
+fn buildExportNet(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    const tmp = "parity_export.tmp.nnue";
+    var cap = try runEngine(gpa, io, bin, &.{}, "export_net " ++ tmp ++ "\nquit\n");
+    cap.deinit(gpa);
+
+    const bytes = Io.Dir.cwd().readFileAlloc(io, tmp, gpa, .unlimited) catch
+        fail("export-net: engine wrote no {s} (export_net failed / panicked?)", .{tmp});
+    defer gpa.free(bytes);
+    Io.Dir.cwd().deleteFile(io, tmp) catch {};
+    if (bytes.len == 0) fail("export-net: exported net is empty (export_net failed?)", .{});
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.print(gpa, "export_net len={d} fnv1a={x:0>16}\n", .{ bytes.len, fnv1a64(bytes) });
+    return out.toOwnedSlice(gpa);
+}
+
 // signature: bench must report the exact node count (the 2466447 arch/OS invariant).
 fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []const u8) noreturn {
     var cap = runEngine(gpa, io, bin, &.{"bench"}, null) catch fail("signature: engine run failed", .{});
@@ -825,7 +862,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net" };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -859,6 +896,7 @@ pub fn main(init: std.process.Init) !void {
         .perft => try buildPerft(gpa, io, bin),
         .eval => try buildEval(gpa, io, bin),
         .misc => try buildMisc(gpa, io, bin),
+        .@"export-net" => try buildExportNet(gpa, io, bin),
     };
     defer gpa.free(live);
 
