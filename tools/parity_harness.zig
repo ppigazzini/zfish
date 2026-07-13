@@ -567,43 +567,49 @@ fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// tb-wdl: the Syzygy WDL probe (M-SZ-2c). Sets SyzygyPath, then for each curated 3-man position
-// pins the `d`-command "Tablebases WDL: N (state)" line == the upstream oracle's value. Covers all
-// five 3-man piece types (Q/R/B/N/P), win/loss/draw, white/black to move, the pawn + blackStronger
-// (lead pawn is black) flip paths, and -- via the last two -- the search<false> capture recursion
-// (the lone king captures the piece into a KvK draw, WDL 0 vs the raw-table -2). Runs in net/ cwd
-// so "syzygy" resolves to the fetch dir.
-fn buildTbWdl(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
-    const runs = [_]struct { label: []const u8, fen: []const u8 }{
-        .{ .label = "KQvK-wtm (win)  ", .fen = "4k3/8/8/8/3QK3/8/8/8 w - - 0 1" },
-        .{ .label = "KQvK-btm (loss) ", .fen = "4k3/8/8/8/3QK3/8/8/8 b - - 0 1" },
-        .{ .label = "KPvK-wtm (win)  ", .fen = "8/8/8/8/8/3K4/3P4/3k4 w - - 0 1" },
-        .{ .label = "KPvK-btm (draw) ", .fen = "8/8/8/8/8/k7/p7/K7 b - - 0 1" },
-        .{ .label = "KRvK-wtm (win)  ", .fen = "8/8/8/8/8/3k4/8/R2K4 w - - 0 1" },
-        .{ .label = "KNvK-wtm (draw) ", .fen = "8/8/8/8/8/3k4/8/N2K4 w - - 0 1" },
-        .{ .label = "KBvK-wtm (draw) ", .fen = "8/8/8/8/8/3k4/8/B2K4 w - - 0 1" },
-        .{ .label = "KQvK cap->draw  ", .fen = "8/8/8/8/8/1Qk5/8/K7 b - - 0 1" },
-        .{ .label = "KRvK cap->draw  ", .fen = "8/8/8/8/8/1Rk5/8/K7 b - - 0 1" },
-    };
+// The curated 3-man probe battery, shared by tb-wdl (M-SZ-2c) and tb-dtz (M-SZ-3a): all five
+// piece types (Q/R/B/N/P), win/loss/draw, white/black to move, the pawn + blackStronger (lead pawn
+// is black) flip paths, and -- via the last two -- the search<false> capture recursion (the lone
+// king captures the piece into a KvK draw). KQvK-btm also exercises the DTZ CHANGE_STM 1-ply path.
+const tb_probe_runs = [_]struct { label: []const u8, fen: []const u8 }{
+    .{ .label = "KQvK-wtm (win)  ", .fen = "4k3/8/8/8/3QK3/8/8/8 w - - 0 1" },
+    .{ .label = "KQvK-btm (loss) ", .fen = "4k3/8/8/8/3QK3/8/8/8 b - - 0 1" },
+    .{ .label = "KPvK-wtm (win)  ", .fen = "8/8/8/8/8/3K4/3P4/3k4 w - - 0 1" },
+    .{ .label = "KPvK-btm (draw) ", .fen = "8/8/8/8/8/k7/p7/K7 b - - 0 1" },
+    .{ .label = "KRvK-wtm (win)  ", .fen = "8/8/8/8/8/3k4/8/R2K4 w - - 0 1" },
+    .{ .label = "KNvK-wtm (draw) ", .fen = "8/8/8/8/8/3k4/8/N2K4 w - - 0 1" },
+    .{ .label = "KBvK-wtm (draw) ", .fen = "8/8/8/8/8/3k4/8/B2K4 w - - 0 1" },
+    .{ .label = "KQvK cap->draw  ", .fen = "8/8/8/8/8/1Qk5/8/K7 b - - 0 1" },
+    .{ .label = "KRvK cap->draw  ", .fen = "8/8/8/8/8/1Rk5/8/K7 b - - 0 1" },
+};
+
+// Run the `d`-command probe battery, pinning the `Tablebases <prefix>: N (state)` line ==
+// upstream oracle for each position. Runs in net/ cwd so "syzygy" resolves to the fetch dir.
+fn buildTbProbe(gpa: std.mem.Allocator, io: Io, bin: []const u8, prefix: []const u8, tag: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
-    var seen: usize = 0;
-    for (runs) |r| {
+    for (tb_probe_runs) |r| {
         const input = try std.fmt.allocPrint(gpa, "setoption name SyzygyPath value syzygy\nposition fen {s}\nd\nquit\n", .{r.fen});
         defer gpa.free(input);
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
-        var wdl_line: ?[]const u8 = null;
+        var found: ?[]const u8 = null;
         var li = lines(cap.stdout);
         while (li.next()) |line| {
-            if (startsWithIgnoreCase(line, "Tablebases WDL:")) wdl_line = line;
+            if (startsWithIgnoreCase(line, prefix)) found = line;
         }
-        const line = wdl_line orelse fail("tb-wdl: {s}: no 'Tablebases WDL:' line (probe unavailable / syzygy/ missing?)", .{r.label});
+        const line = found orelse fail("{s}: {s}: no '{s}' line (probe unavailable / syzygy/ missing?)", .{ tag, r.label, prefix });
         try out.print(gpa, "{s} | {s}\n", .{ r.label, line });
-        seen += 1;
     }
-    if (seen != runs.len) fail("tb-wdl: expected {d} WDL lines, got {d}", .{ runs.len, seen });
     return out.toOwnedSlice(gpa);
+}
+
+fn buildTbWdl(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    return buildTbProbe(gpa, io, bin, "Tablebases WDL:", "tb-wdl");
+}
+
+fn buildTbDtz(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    return buildTbProbe(gpa, io, bin, "Tablebases DTZ:", "tb-dtz");
 }
 
 // FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
@@ -1461,7 +1467,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl" };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz" };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -1506,6 +1512,7 @@ pub fn main(init: std.process.Init) !void {
         .@"bench-matrix" => try buildBenchMatrix(gpa, io, bin),
         .@"tb-init" => try buildTbInit(gpa, io, bin),
         .@"tb-wdl" => try buildTbWdl(gpa, io, bin),
+        .@"tb-dtz" => try buildTbDtz(gpa, io, bin),
     };
     defer gpa.free(live);
 
