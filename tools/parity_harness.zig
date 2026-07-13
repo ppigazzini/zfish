@@ -567,6 +567,42 @@ fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// tb-wdl: the Syzygy WDL probe (M-SZ-2c). Sets SyzygyPath, then for each curated 3-man position
+// pins the `d`-command "Tablebases WDL: N (state)" line == the upstream oracle's value. Covers all
+// five 3-man piece types (Q/R/B/N/P), win/loss/draw, white/black to move, and the pawn +
+// blackStronger (lead pawn is black) flip paths. Runs in net/ cwd so "syzygy" resolves to the
+// fetch dir. (The search<false> capture-recursion positions are added in M-SZ-2c pt2b.)
+fn buildTbWdl(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    const runs = [_]struct { label: []const u8, fen: []const u8 }{
+        .{ .label = "KQvK-wtm (win)  ", .fen = "4k3/8/8/8/3QK3/8/8/8 w - - 0 1" },
+        .{ .label = "KQvK-btm (loss) ", .fen = "4k3/8/8/8/3QK3/8/8/8 b - - 0 1" },
+        .{ .label = "KPvK-wtm (win)  ", .fen = "8/8/8/8/8/3K4/3P4/3k4 w - - 0 1" },
+        .{ .label = "KPvK-btm (draw) ", .fen = "8/8/8/8/8/k7/p7/K7 b - - 0 1" },
+        .{ .label = "KRvK-wtm (win)  ", .fen = "8/8/8/8/8/3k4/8/R2K4 w - - 0 1" },
+        .{ .label = "KNvK-wtm (draw) ", .fen = "8/8/8/8/8/3k4/8/N2K4 w - - 0 1" },
+        .{ .label = "KBvK-wtm (draw) ", .fen = "8/8/8/8/8/3k4/8/B2K4 w - - 0 1" },
+    };
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    var seen: usize = 0;
+    for (runs) |r| {
+        const input = try std.fmt.allocPrint(gpa, "setoption name SyzygyPath value syzygy\nposition fen {s}\nd\nquit\n", .{r.fen});
+        defer gpa.free(input);
+        var cap = try runEngine(gpa, io, bin, &.{}, input);
+        defer cap.deinit(gpa);
+        var wdl_line: ?[]const u8 = null;
+        var li = lines(cap.stdout);
+        while (li.next()) |line| {
+            if (startsWithIgnoreCase(line, "Tablebases WDL:")) wdl_line = line;
+        }
+        const line = wdl_line orelse fail("tb-wdl: {s}: no 'Tablebases WDL:' line (probe unavailable / syzygy/ missing?)", .{r.label});
+        try out.print(gpa, "{s} | {s}\n", .{ r.label, line });
+        seen += 1;
+    }
+    if (seen != runs.len) fail("tb-wdl: expected {d} WDL lines, got {d}", .{ runs.len, seen });
+    return out.toOwnedSlice(gpa);
+}
+
 // FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
 // the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
 fn fnv1a64(data: []const u8) u64 {
@@ -1422,7 +1458,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init" };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl" };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -1466,6 +1502,7 @@ pub fn main(init: std.process.Init) !void {
         .chess960 => try buildChess960(gpa, io, bin),
         .@"bench-matrix" => try buildBenchMatrix(gpa, io, bin),
         .@"tb-init" => try buildTbInit(gpa, io, bin),
+        .@"tb-wdl" => try buildTbWdl(gpa, io, bin),
     };
     defer gpa.free(live);
 

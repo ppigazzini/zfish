@@ -1,13 +1,14 @@
 //! Syzygy tablebase facade: the platform-registered probe surface the shell/engine call as
 //! ordinary Zig. File discovery + `init`/`maxCardinality` are real (M-SZ-1, in syzygy/tables.zig);
-//! WDL/DTZ *probing* is still a stub (M-SZ-2+), so `probeFen` reports "unavailable" and search
-//! behaviour is unchanged until the prober lands.
+//! WDL *probing* is real as of M-SZ-2c (syzygy/wdl.zig) -- `probeFen` returns the Syzygy WDL for
+//! positions up to the discovered cardinality. DTZ + in-search root ranking land in M-SZ-3/4.
 
 const std = @import("std");
 const tables = @import("syzygy/tables.zig");
-const encode = @import("syzygy/encode.zig"); // M-SZ-2a geometry (dead until M-SZ-2c); test-referenced
+const encode = @import("syzygy/encode.zig"); // M-SZ-2a geometry; test-referenced
 const probe = @import("syzygy/probe.zig"); // M-SZ-2b probe model + pure helpers; test-referenced
-const decode = @import("syzygy/decode.zig"); // M-SZ-2c pt1 parse+decompress (WIP, ungated); test-ref
+const decode = @import("syzygy/decode.zig"); // M-SZ-2c pt1 parse + RE-PAIR decoder; test-referenced
+const wdl = @import("syzygy/wdl.zig"); // M-SZ-2c pt2 WDL probe orchestration
 
 // The probe result type is a search-facing value owned by the engine tb_source seam;
 // re-export it so the shell inspection commands keep reaching it as tablebase.ProbeResult.
@@ -20,13 +21,9 @@ pub const discoveredMax = tables.discoveredMax; // disk discovery: for the "up t
 pub const foundWdl = tables.foundWdl;
 pub const foundDtz = tables.foundDtz;
 
-// Stub until M-SZ-2: no prober, so every probe is "unavailable".
-pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult {
-    _ = fen_ptr;
-    _ = fen_len;
-    _ = chess960;
-    return .{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 };
-}
+// Real WDL probe (M-SZ-2c): parse the position's FEN, look up its material key in the registry,
+// and return the Syzygy WDL. `available == 0` when no table serves the position.
+pub const probeFen = wdl.probeFen;
 
 test {
     std.testing.refAllDecls(@This());
@@ -34,4 +31,5 @@ test {
     std.testing.refAllDecls(encode);
     std.testing.refAllDecls(probe);
     std.testing.refAllDecls(decode);
+    std.testing.refAllDecls(wdl);
 }

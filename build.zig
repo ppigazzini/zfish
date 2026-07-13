@@ -213,6 +213,13 @@ pub fn build(b: *std.Build) void {
         .{ .from = "root_move_build", .imp = "state_list", .to = "state_list" },
         .{ .from = "root_move_build", .imp = "tb_source", .to = "tb_source" },
         .{ .from = "tablebase", .imp = "tb_source", .to = "tb_source" },
+        // Syzygy WDL prober (M-SZ-2c): the platform tablebase module reaches down to the
+        // headless engine (a legal platform->engine down-edge) for a scratch Position, its
+        // material key, piece bitboards, and legal-capture movegen used by the probe.
+        .{ .from = "tablebase", .imp = "position", .to = "position" },
+        .{ .from = "tablebase", .imp = "state_list", .to = "state_list" },
+        .{ .from = "tablebase", .imp = "movegen", .to = "movegen" },
+        .{ .from = "tablebase", .imp = "board_core", .to = "board_core" },
         .{ .from = "root_move_build", .imp = "option_source", .to = "option_source" },
         .{ .from = "root_move_build", .imp = "movegen", .to = "movegen" },
         .{ .from = "root_move_build", .imp = "position_snapshot", .to = "position_snapshot" },
@@ -1221,6 +1228,29 @@ pub fn build(b: *std.Build) void {
     );
     tb_init_update_step.dependOn(&tb_init_update_cmd.step);
 
+    // tb-wdl golden: the Syzygy WDL probe (M-SZ-2c). Sets SyzygyPath to net/syzygy and pins the
+    // `d`-command `Tablebases WDL: N (state)` line == upstream oracle for a curated 3-man battery
+    // (all five piece types, win/loss/draw, wtm/btm, pawn + blackStronger flips, and the
+    // search<false> capture recursion). Linux-only (like tb-init); depends on the `tb` fetch.
+    const tb_wdl_golden = b.pathFromRoot("tools/tb_wdl.golden");
+    const tb_wdl_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-wdl", tb_wdl_golden, "check");
+    tb_wdl_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_wdl_step = b.step(
+        "tb-wdl",
+        "Diff the Syzygy WDL probe (KQvK/KPvK/... == oracle) against the golden",
+    );
+    tb_wdl_step.dependOn(&tb_wdl_cmd.step);
+
+    const tb_wdl_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-wdl", tb_wdl_golden, "update");
+    tb_wdl_update_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_wdl_update_step = b.step(
+        "tb-wdl-update",
+        "Regenerate tools/tb_wdl.golden from the current binary",
+    );
+    tb_wdl_update_step.dependOn(&tb_wdl_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1436,7 +1466,7 @@ pub fn build(b: *std.Build) void {
     // in `mods` already carry their own transitive imports.
     const DepTest = struct { path: []const u8, deps: []const []const u8 };
     for ([_]DepTest{
-        .{ .path = "src/platform/tablebase.zig", .deps = &.{"tb_source"} },
+        .{ .path = "src/platform/tablebase.zig", .deps = &.{ "tb_source", "position", "state_list", "movegen", "board_core" } },
         .{ .path = "src/shell/uci_format.zig", .deps = &.{"uci_strings"} },
         .{ .path = "src/shell/engine/infofmt.zig", .deps = &.{"engine_util"} },
         .{ .path = "src/shell/engine/options.zig", .deps = &.{"option"} },
@@ -1574,6 +1604,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&ponder_cmd.step);
     parity_step.dependOn(&bench_matrix_cmd.step);
     parity_step.dependOn(&tb_init_cmd.step);
+    parity_step.dependOn(&tb_wdl_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);
