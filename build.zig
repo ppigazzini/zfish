@@ -1369,7 +1369,7 @@ pub fn build(b: *std.Build) void {
     // The bench signature is the same harness `signature_cmd` `parity` uses (2466447 invariant).
     const parity_portable_step = b.step(
         "parity-portable",
-        "Cross-OS parity via the pure-Zig harness: signature + six golden gates + mt/stress/time",
+        "Cross-OS parity via the pure-Zig harness: signature + seven golden gates + mt/stress/time",
     );
     parity_portable_step.dependOn(&bench_run.step);
     parity_portable_step.dependOn(&uci_run.step);
@@ -1377,6 +1377,12 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&search_parity_cmd.step);
     parity_portable_step.dependOn(&search_modes_cmd.step);
     parity_portable_step.dependOn(&output_golden_cmd.step);
+    // driver-golden is node-deterministic (its info/currmove/bestmove lines are all
+    // node-gated, not wall-clock-gated), so it is OS/arch-invariant like the other
+    // golden gates -- its earlier absence here was an oversight. It now also covers the
+    // currmove emit callback (a >10M-node search in the battery), so the cross-OS lanes
+    // gain that path too.
+    parity_portable_step.dependOn(&driver_golden_cmd.step);
     parity_portable_step.dependOn(&perft_cmd.step);
     parity_portable_step.dependOn(&eval_cmd.step);
     parity_portable_step.dependOn(&misc_cmd.step);
