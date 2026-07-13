@@ -523,6 +523,61 @@ fn buildExportNet(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// nodestime: with `nodestime` set, wall-clock budgets convert to a NODE budget
+// (timeman.zig `npmsec`), so the otherwise non-deterministic time-management path becomes
+// BIT-EXACT -- the `time-mgmt` gate can only band-check the reported ms. This pins the
+// allocation arithmetic across its distinct branches (sudden-death wtime/btime, movestogo,
+// increment, and the movetime hard limit) by the deterministic depth/score/nodes/bestmove
+// the budget yields; the volatile `time`/`nps` fields are dropped. Single thread + node
+// budget -> arch/OS-invariant. It is an async search, so it drives the engine via the
+// Interactive read-to-bestmove path -- a feed-all-then-quit pipe would truncate it (the
+// batch hazard the search-modes gate also avoids).
+const NodestimeRow = struct { label: []const u8, cmds: []const u8 };
+fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    const sp = "position startpos";
+    const end = "position fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
+    const rows = [_]NodestimeRow{
+        .{ .label = "sudden-death ", .cmds = sp ++ "\ngo wtime 10000 btime 10000" },
+        .{ .label = "movestogo    ", .cmds = sp ++ "\ngo wtime 10000 btime 10000 movestogo 30" },
+        .{ .label = "with-inc     ", .cmds = sp ++ "\ngo wtime 10000 btime 10000 winc 100 binc 100" },
+        .{ .label = "endgame-sd   ", .cmds = end ++ "\ngo wtime 5000 btime 5000" },
+        .{ .label = "movetime     ", .cmds = sp ++ "\ngo movetime 500" },
+    };
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    for (rows) |r| {
+        var s: Interactive = undefined;
+        try s.init(io, gpa, bin);
+        s.send("setoption name Threads value 1\nsetoption name nodestime value 600\n");
+        s.send(r.cmds);
+        s.send("\n");
+        _ = s.fillUntil("\nbestmove");
+        const buf = s.buffered();
+
+        // Keep the last SCORED info line (the final iteration) + the bestmove; any
+        // currmove line has no nodes/score and is skipped (the budget stays <10M anyway).
+        var last_info: ?InfoLine = null;
+        var best: ?BestmoveLine = null;
+        var li = lines(buf);
+        while (li.next()) |raw| {
+            const line = trimCR(raw);
+            if (parseInfoLine(line)) |info| {
+                if (info.nodes != null and info.score_kind != .none) last_info = info;
+            } else if (parseBestmove(line)) |bm| {
+                best = bm;
+            }
+        }
+        _ = s.finish();
+
+        const info = last_info orelse fail("nodestime: {s}: no scored info line (truncated?)", .{r.label});
+        const bm = best orelse fail("nodestime: {s}: no bestmove", .{r.label});
+        try out.print(gpa, "{s}depth={?d} score={s} {?d} nodes={?d} bestmove={s} ponder={s}\n", .{
+            r.label, info.depth, @tagName(info.score_kind), info.score_val, info.nodes, bm.bestmove, bm.ponder,
+        });
+    }
+    return out.toOwnedSlice(gpa);
+}
+
 // signature: bench must report the exact node count (the 2466447 arch/OS invariant).
 fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []const u8) noreturn {
     var cap = runEngine(gpa, io, bin, &.{"bench"}, null) catch fail("signature: engine run failed", .{});
@@ -862,7 +917,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net" };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -897,6 +952,7 @@ pub fn main(init: std.process.Init) !void {
         .eval => try buildEval(gpa, io, bin),
         .misc => try buildMisc(gpa, io, bin),
         .@"export-net" => try buildExportNet(gpa, io, bin),
+        .nodestime => try buildNodestime(gpa, io, bin),
     };
     defer gpa.free(live);
 
