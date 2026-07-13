@@ -336,7 +336,12 @@ const cmhc_multipliers = [_]c_int{ 96, 113, 101, 105, 127, 121, 126 };
 // stays within i32 for the bonus magnitudes search produces.
 pub fn conthistDelta(bonus: c_int, weight: c_int, positive_count: c_int, i: c_int) c_int {
     const multiplier = cmhc_multipliers[@intCast(positive_count)];
-    return @divTrunc(bonus * weight * multiplier, 131072) +
+    // Upstream (search.cpp: `bonus * weight * multiplier / 131072`) computes this in `int`,
+    // so the 3-way product overflows i32 for large bonuses and WRAPS (2's complement on
+    // x86 -- UB in C++ but relied upon). Match it with `*%` so the wrap is bit-identical
+    // (the shipped ReleaseFast build already wrapped here; this only stops ReleaseSafe's
+    // overflow trap from aborting on deep searches -- the value is unchanged).
+    return @divTrunc(bonus *% weight *% multiplier, 131072) +
         71 * @as(c_int, @intFromBool(i < 2));
 }
 
