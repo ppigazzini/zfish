@@ -9,6 +9,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const wdl = @import("wdl.zig");
 
 // PieceType indices match Stockfish: 1=Pawn 2=Knight 3=Bishop 4=Rook 5=Queen 6=King.
 const piece_char = " PNBRQK"; // index by piece type; `code += PieceToChar[pt]`
@@ -27,12 +28,12 @@ pub fn discoveredMax() usize {
     return max_card;
 }
 
-/// Search-facing max cardinality: what the prober can actually probe. **0 until M-SZ-2** --
-/// no prober exists yet, so the search must NOT attempt probing (which would exercise the
-/// unvalidated root-probe fallback and change nothing but waste work). M-SZ-2 returns
-/// `max_card` here once `probeFen` is real, activating probing and discovery together.
+/// Search-facing max cardinality: the largest position the WDL prober can serve (M-SZ-2c).
+/// Equal to `max_card` (the largest table discovered on disk). With no SyzygyPath set this is 0,
+/// so a default build -- and `bench`, which never sets a path -- takes no tablebase path and the
+/// signature is unchanged. DTZ/root ranking still bounded elsewhere until M-SZ-3.
 pub fn maxCardinality() usize {
-    return 0;
+    return max_card;
 }
 pub fn foundWdl() usize {
     return found_wdl;
@@ -89,6 +90,7 @@ fn add(pieces: []const u8) void {
     if (!tbFileExists(stem, ".rtbw")) return;
     found_wdl += 1;
     if (pieces.len > max_card) max_card = pieces.len;
+    wdl.register(pieces); // register the WDL table in the probe registry (M-SZ-2c)
 }
 
 // SF `Tablebases::init`: enumerate every material configuration up to 7 men and `add` each.
@@ -98,12 +100,14 @@ pub fn init(path_ptr: [*]const u8, path_len: usize) void {
     max_card = 0;
     if (path_len == 0) {
         path_str = "";
+        wdl.reset("");
         return;
     }
     const src = path_ptr[0..path_len];
     const n = @min(src.len, path_buf.len);
     @memcpy(path_buf[0..n], src[0..n]);
     path_str = path_buf[0..n];
+    wdl.reset(path_str); // (re)build the probe registry for this path (M-SZ-2c)
 
     var p1: u8 = pawn;
     while (p1 < king) : (p1 += 1) {
