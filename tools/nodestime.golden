@@ -1,0 +1,5 @@
+sudden-death depth=18 score=cp 35 nodes=321820 bestmove=e2e4 ponder=e7e6
+movestogo    depth=18 score=cp 31 nodes=211890 bestmove=e2e4 ponder=c7c5
+with-inc     depth=19 score=cp 35 nodes=354528 bestmove=e2e4 ponder=e7e6
+endgame-sd   depth=12 score=cp 16 nodes=208131 bestmove=b4f4 ponder=h4g3
+movetime     depth=5 score=cp 28 nodes=791 bestmove=e2e4 ponder=d7d5
