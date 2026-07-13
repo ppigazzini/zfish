@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const tables = @import("syzygy/tables.zig");
+const encode = @import("syzygy/encode.zig"); // M-SZ-2a geometry (dead until M-SZ-2c); test-referenced
 
 // The probe result type is a search-facing value owned by the engine tb_source seam;
 // re-export it so the shell inspection commands keep reaching it as tablebase.ProbeResult.
@@ -28,4 +29,5 @@ pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult 
 test {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(tables);
+    std.testing.refAllDecls(encode);
 }
