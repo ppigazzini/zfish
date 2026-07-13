@@ -107,8 +107,9 @@ jobs:
       - run: bash tools/arch_determinism.sh 2466447
 
       # (Wall-clock time management, multi-thread sanity, the go/stop stress gate, the TT/history
-      # reset-determinism metamorphic gate, and the Skill Level metamorphic gate run INSIDE
-      # `zig build parity` above, so they also run on the Windows/macOS lanes.)
+      # reset-determinism metamorphic gate, the Skill Level metamorphic gate, and the ponder
+      # handshake gate run INSIDE `zig build parity` above, so they also run on the
+      # Windows/macOS lanes.)
 
   # Cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
   # with no source changes -- where upstream needs hand-written NEON intrinsics per

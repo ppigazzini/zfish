@@ -1284,6 +1284,114 @@ fn runSkill(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
+// ponder: the ponder handshake (N-time). `go ... ponder` searches the expected reply without
+// the clock; `ponderhit` (opponent played it) converts to a timed search that must yield a
+// bestmove; `stop` (opponent played otherwise) must also yield the best-so-far. Both must emit a
+// well-formed, LEGAL move and the process must exit cleanly. Liveness + legality, not a snapshot
+// (the timing/exact move is wall-clock-dependent). Drives the interactive session like `stress`.
+
+// Copy the first `bestmove M [ponder P]` in `seg` into the caller's fixed buffers. Returns
+// false if the segment has no bestmove line.
+fn firstBestmove(seg: []const u8, bm: []u8, bm_len: *usize, pd: []u8, pd_len: *usize) bool {
+    var li = lines(seg);
+    while (li.next()) |raw| {
+        const line = trimCR(raw);
+        if (parseBestmove(line)) |b| {
+            const n = @min(b.bestmove.len, bm.len);
+            @memcpy(bm[0..n], b.bestmove[0..n]);
+            bm_len.* = n;
+            const m = @min(b.ponder.len, pd.len);
+            @memcpy(pd[0..m], b.ponder[0..m]);
+            pd_len.* = m;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Is `move` in the legal-move list of `position` (a "position ..." command)? Uses `go perft 1`,
+// whose divide lines ("<move>: <count>") enumerate exactly the legal moves.
+fn ponderMoveLegal(gpa: std.mem.Allocator, io: Io, bin: []const u8, position: []const u8, move: []const u8) bool {
+    const input = std.fmt.allocPrint(gpa, "{s}\ngo perft 1\nquit\n", .{position}) catch return false;
+    defer gpa.free(input);
+    var cap = runEngine(gpa, io, bin, &.{}, input) catch return false;
+    defer cap.deinit(gpa);
+    var li = lines(cap.stdout);
+    while (li.next()) |line| {
+        if (isDivideLine(line)) {
+            const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+            if (std.mem.eql(u8, line[0..colon], move)) return true;
+        }
+    }
+    return false;
+}
+
+fn runPonder(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    var s: Interactive = undefined;
+    s.init(io, gpa, bin) catch fail("ponder: spawn failed", .{});
+    s.send("setoption name Ponder value true\n");
+
+    // 1. bestmove X ponder Y from startpos (the move to play + the expected reply to ponder).
+    var xb: [8]u8 = undefined;
+    var xl: usize = 0;
+    var yb: [8]u8 = undefined;
+    var yl: usize = 0;
+    {
+        const mark = s.buffered().len;
+        s.send("position startpos\ngo depth 10\n");
+        _ = s.fillUntil("\nbestmove");
+        if (!firstBestmove(s.buffered()[mark..], &xb, &xl, &yb, &yl) or yl == 0)
+            fail("ponder: startpos search gave no 'bestmove X ponder Y'", .{});
+    }
+    const x = xb[0..xl];
+    const y = yb[0..yl];
+
+    // 2. ponderhit path: ponder the reply, then ponderhit -> a timed search must emit bestmove Z.
+    var zb: [8]u8 = undefined;
+    var zl: usize = 0;
+    var zpd: [8]u8 = undefined;
+    var zpl: usize = 0;
+    {
+        var cmdbuf: [96]u8 = undefined;
+        const mark = s.buffered().len;
+        s.send(std.fmt.bufPrint(&cmdbuf, "position startpos moves {s} {s}\ngo wtime 3000 btime 3000 ponder\n", .{ x, y }) catch unreachable);
+        if (!s.fillUntil("\ninfo depth")) fail("ponder: ponder search never started (no info)", .{});
+        s.send("ponderhit\n");
+        if (!s.fillUntil("\nbestmove")) fail("ponder: ponderhit produced no bestmove (hang?)", .{});
+        if (!firstBestmove(s.buffered()[mark..], &zb, &zl, &zpd, &zpl)) fail("ponder: could not parse the ponderhit bestmove", .{});
+    }
+
+    // 3. stop path: ponder, then stop (opponent deviated) -> the best-so-far must be emitted.
+    var wb: [8]u8 = undefined;
+    var wl: usize = 0;
+    var wpd: [8]u8 = undefined;
+    var wpl: usize = 0;
+    {
+        const mark = s.buffered().len;
+        s.send("position startpos moves e2e4\ngo wtime 3000 btime 3000 ponder\n");
+        if (!s.fillUntil("\ninfo depth")) fail("ponder: stop-path ponder never started", .{});
+        s.send("stop\n");
+        if (!s.fillUntil("\nbestmove")) fail("ponder: stop produced no bestmove", .{});
+        if (!firstBestmove(s.buffered()[mark..], &wb, &wl, &wpd, &wpl)) fail("ponder: could not parse the stop bestmove", .{});
+    }
+
+    const clean = s.finish();
+    if (!clean) fail("ponder: engine did not exit cleanly after the handshake", .{});
+
+    // 4. both results must be well-formed AND legal in their position.
+    const z = zb[0..zl];
+    const w = wb[0..wl];
+    if (!wellFormedMove(z)) fail("ponder: ponderhit bestmove '{s}' is malformed", .{z});
+    if (!wellFormedMove(w)) fail("ponder: stop bestmove '{s}' is malformed", .{w});
+    var posbuf: [96]u8 = undefined;
+    const pos_xy = std.fmt.bufPrint(&posbuf, "position startpos moves {s} {s}", .{ x, y }) catch unreachable;
+    if (!ponderMoveLegal(gpa, io, bin, pos_xy, z)) fail("ponder: ponderhit move '{s}' is illegal after {s} {s}", .{ z, x, y });
+    if (!ponderMoveLegal(gpa, io, bin, "position startpos moves e2e4", w)) fail("ponder: stop move '{s}' is illegal after e2e4", .{w});
+
+    std.debug.print("ponder: OK (bestmove {s} ponder {s}; ponderhit -> {s} legal; stop -> {s} legal; clean exit)\n", .{ x, y, z, w });
+    std.process.exit(0);
+}
+
 // ---- driver -----------------------------------------------------------------
 
 fn fail(comptime fmt: []const u8, args: anytype) noreturn {
@@ -1315,6 +1423,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, check_name, "time-mgmt")) runTimeMgmt(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "reset-determinism")) runResetDeterminism(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "skill")) runSkill(gpa, io, bin);
+    if (std.mem.eql(u8, check_name, "ponder")) runPonder(gpa, io, bin);
 
     const check = std.meta.stringToEnum(Check, check_name) orelse
         fail("parity_harness: unknown check '{s}'", .{check_name});
