@@ -1273,6 +1273,27 @@ pub fn build(b: *std.Build) void {
     );
     tb_dtz_update_step.dependOn(&tb_dtz_update_cmd.step);
 
+    // tb-root golden: the Syzygy root DTZ ranking (M-SZ-3b). Runs `go` on TB wins and pins
+    // bestmove + tbScore + tbHits == upstream oracle, first-validating rankRootMovesDtz end to end.
+    const tb_root_golden = b.pathFromRoot("tools/tb_root.golden");
+    const tb_root_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-root", tb_root_golden, "check");
+    tb_root_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_root_step = b.step(
+        "tb-root",
+        "Diff the Syzygy root DTZ ranking (bestmove/score/tbhits == oracle) against the golden",
+    );
+    tb_root_step.dependOn(&tb_root_cmd.step);
+
+    const tb_root_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-root", tb_root_golden, "update");
+    tb_root_update_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_root_update_step = b.step(
+        "tb-root-update",
+        "Regenerate tools/tb_root.golden from the current binary",
+    );
+    tb_root_update_step.dependOn(&tb_root_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1628,6 +1649,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&tb_init_cmd.step);
     parity_step.dependOn(&tb_wdl_cmd.step);
     parity_step.dependOn(&tb_dtz_cmd.step);
+    parity_step.dependOn(&tb_root_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);
