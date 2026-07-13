@@ -152,8 +152,8 @@ jobs:
   # (free for public repos) and runs `zig build parity-portable`: the bench signature plus all
   # twelve golden gates (output / driver / search-parity / search-modes / perft / eval / misc /
   # export-net / nodestime / uci-options / mate / chess960), driven by the pure-Zig parity
-  # harness -- the same coverage the Linux lanes get, including the search-manager driver +
-  # currmove emit path, the export_net serializer fingerprint, the deterministic nodestime
+  # harness -- the same coverage the Linux lanes get, including the search-manager driver
+  # emit path, the export_net serializer fingerprint, the deterministic nodestime
   # allocation, the uci option-list handshake, the go-mate distance search, and the
   # UCI_Chess960 search + castling + eval. The integer-exact NNUE
   # eval is arch/OS-invariant, so

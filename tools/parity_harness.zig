@@ -176,18 +176,13 @@ const driver_battery =
     "setoption name UCI_ShowWDL value false\n" ++
     "position fen 8/8/8/8/8/6k1/6p1/6K1 w - - 0 1\n" ++
     "go depth 24\n" ++
-    // currmove coverage: searchCbRootOnIter (the "info depth D currmove M
-    // currmovenumber N" emit callback) only fires on the main thread once the search
-    // passes 10M nodes (search_back.zig, `nodes > 10_000_000`). None of the other
-    // searches reach that, so the callback was UNCOVERED by every golden. A node-limited
-    // search past the threshold exercises it deterministically (single-thread, fixed
-    // node budget -> arch/OS-invariant), pinning the currmove format + numbering. It is
-    // NOT last: the following checkmate `go` blocks in startThinking's
-    // wait-for-search-finished, so this node-limited search runs to completion (a
-    // trailing `quit` would stopEngine and truncate it before 10M -- see the batch
-    // note in runEngine).
-    "position fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1\n" ++
-    "go nodes 13000000\n" ++
+    // NOTE: the currmove emit callback (searchCbRootOnIter, gated at `nodes > 10_000_000`
+    // in search_back.zig) is deliberately NOT pinned here. Triggering it needs a >10M-node
+    // search, which -- node-limited -- is cut off mid-iteration at ~depth 50; that boundary
+    // tail is NOT bit-exact across build modes (ReleaseFast vs ReleaseSafe diverged in CI),
+    // unlike the depth-limited searches above, which are bit-exact like `bench`. A robust
+    // currmove golden would need a >10M-node DEPTH-limited search (deep + slow + a huge
+    // currmove list), not worth its fragility for a cosmetic progress line; left uncovered.
     "position fen rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3\n" ++
     "go depth 5\n" ++
     "quit\n";
@@ -594,13 +589,15 @@ fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
                 best = bm;
             }
         }
-        _ = s.finish();
-
+        // Print BEFORE finish: bm.bestmove/ponder are slices into s.buffered(), which
+        // s.finish() frees -- printing first copies the bytes into `out` (a
+        // use-after-free here read as null bytes on macOS aarch64).
         const info = last_info orelse fail("nodestime: {s}: no scored info line (truncated?)", .{r.label});
         const bm = best orelse fail("nodestime: {s}: no bestmove", .{r.label});
         try out.print(gpa, "{s}depth={?d} score={s} {?d} nodes={?d} bestmove={s} ponder={s}\n", .{
             r.label, info.depth, @tagName(info.score_kind), info.score_val, info.nodes, bm.bestmove, bm.ponder,
         });
+        _ = s.finish();
     }
     return out.toOwnedSlice(gpa);
 }
@@ -641,13 +638,13 @@ fn buildMate(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
                 best = bm;
             }
         }
-        _ = s.finish();
-
+        // Print BEFORE finish: bm.bestmove/ponder point into s.buffered(), freed by finish.
         const sc = score orelse fail("mate: {s}: no scored info line (mate not found?)", .{r.label});
         const bm = best orelse fail("mate: {s}: no bestmove", .{r.label});
         try out.print(gpa, "{s} score={s} {?d} bestmove={s} ponder={s}\n", .{
             r.label, @tagName(sc.score_kind), sc.score_val, bm.bestmove, bm.ponder,
         });
+        _ = s.finish();
     }
     return out.toOwnedSlice(gpa);
 }
@@ -688,10 +685,11 @@ fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
                 best = bm;
             }
         }
-        _ = s.finish();
+        // Print BEFORE finish: bm.bestmove points into s.buffered(), freed by finish.
         const i = info orelse fail("chess960: {s}: no scored info", .{p.label});
         const bm = best orelse fail("chess960: {s}: no bestmove", .{p.label});
         try out.print(gpa, "search {s} depth={?d} score={s} {?d} nodes={?d} bestmove={s}\n", .{ p.label, i.depth, @tagName(i.score_kind), i.score_val, i.nodes, bm.bestmove });
+        _ = s.finish();
     }
 
     // --- FRC castling applied: f1g1 is O-O in this setup (king f1 and its rook g1 are adjacent,
