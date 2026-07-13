@@ -1251,6 +1251,28 @@ pub fn build(b: *std.Build) void {
     );
     tb_wdl_update_step.dependOn(&tb_wdl_update_cmd.step);
 
+    // tb-dtz golden: the Syzygy DTZ probe (M-SZ-3a). Same 3-man battery as tb-wdl but pins the
+    // `d`-command `Tablebases DTZ: N (state)` line == upstream oracle -- exercising do_probe_table
+    // <DTZ>, the DTZ value map, and the CHANGE_STM 1-ply search (KQvK-btm). Linux-only; needs `tb`.
+    const tb_dtz_golden = b.pathFromRoot("tools/tb_dtz.golden");
+    const tb_dtz_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-dtz", tb_dtz_golden, "check");
+    tb_dtz_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_dtz_step = b.step(
+        "tb-dtz",
+        "Diff the Syzygy DTZ probe (KQvK/KPvK/... == oracle) against the golden",
+    );
+    tb_dtz_step.dependOn(&tb_dtz_cmd.step);
+
+    const tb_dtz_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-dtz", tb_dtz_golden, "update");
+    tb_dtz_update_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_dtz_update_step = b.step(
+        "tb-dtz-update",
+        "Regenerate tools/tb_dtz.golden from the current binary",
+    );
+    tb_dtz_update_step.dependOn(&tb_dtz_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1605,6 +1627,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&bench_matrix_cmd.step);
     parity_step.dependOn(&tb_init_cmd.step);
     parity_step.dependOn(&tb_wdl_cmd.step);
+    parity_step.dependOn(&tb_dtz_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);

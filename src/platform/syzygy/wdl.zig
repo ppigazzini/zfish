@@ -41,6 +41,7 @@ const pawn_pt = board_core.pawn_pt;
 const king_pt = board_core.king_pt;
 
 const wdl_magic = [4]u8{ 0x71, 0xE8, 0x23, 0x5D };
+const dtz_magic = [4]u8{ 0xD7, 0x66, 0x0C, 0xA5 };
 const sep_char: u8 = if (builtin.os.tag == .windows) ';' else ':';
 
 // ---- TBTable + registry -----------------------------------------------------
@@ -52,12 +53,18 @@ const TBTable = struct {
     has_pawns: bool,
     has_unique_pieces: bool,
     pawn_count: [2]u8,
-    sides: usize, // 2 when key != key2, else 1
+    sides: usize, // WDL: 2 when key != key2, else 1. DTZ is always one-sided (1 side).
     stem: [8]u8 = [_]u8{0} ** 8, // canonical file stem, e.g. "KQvK"
     stem_len: usize = 0,
+    // WDL (.rtbw): two sides x up to four files.
     ready: bool = false,
-    base: ?[]const u8 = null, // whole file bytes (64-aligned base), null if load failed
+    base: ?[]const u8 = null, // whole .rtbw bytes (64-aligned base), null if load failed
     items: [2][4]PairsData = [_][4]PairsData{[_]PairsData{.{}} ** 4} ** 2,
+    // DTZ (.rtbz): one side x up to four files, plus the value-remap table base.
+    dtz_ready: bool = false,
+    dtz_base: ?[]const u8 = null,
+    dtz_map: ?[*]const u8 = null, // set_dtz_map: base of the DTZ value maps
+    dtz_items: [1][4]PairsData = [_][4]PairsData{[_]PairsData{.{}} ** 4} ** 1,
 
     fn info(self: *const TBTable) EntryInfo {
         return .{
@@ -68,8 +75,11 @@ const TBTable = struct {
         };
     }
 
-    fn get(self: *TBTable, stm: usize, f: usize) *PairsData {
-        return &self.items[stm % self.sides][if (self.has_pawns) f else 0];
+    // SF entry->get(stm, f): WDL uses items[stm % sides][f], DTZ is one-sided (items[0][f]).
+    fn get(self: *TBTable, comptime dtz: bool, stm: usize, f: usize) *PairsData {
+        const file = if (self.has_pawns) f else 0;
+        if (dtz) return &self.dtz_items[0][file];
+        return &self.items[stm % self.sides][file];
     }
 };
 
@@ -182,19 +192,19 @@ fn buildStem(pieces: []const u8, t: *TBTable) void {
 
 // ---- file load (64-aligned buffer, libc, Linux-gated) -----------------------
 
-// Read <stem>.rtbw from the first SyzygyPath dir that has it into a 64-byte-aligned buffer.
-// Returns the whole file (magic included) or null on any failure. The 64-alignment makes the
-// data-section rounding in `set` match an mmap base. POSIX only (libc open/read); Windows file
-// mapping (a distinct CreateFileMapping path) comes with M-SZ-4, so on Windows this yields null
-// and the probe reports "unavailable" -- the same graceful path as a missing file.
-fn loadFile(t: *TBTable) ?[]const u8 {
+// Read <stem><ext> from the first SyzygyPath dir that has it into a 64-byte-aligned buffer,
+// verifying `magic`. Returns the whole file (magic included) or null on any failure. The
+// 64-alignment makes the data-section rounding in `set` match an mmap base. POSIX only (libc
+// open/read); Windows file mapping (a distinct CreateFileMapping path) comes with M-SZ-4, so on
+// Windows this yields null and the probe reports "unavailable" -- the graceful missing-file path.
+fn loadFile(t: *TBTable, ext: []const u8, magic: [4]u8) ?[]const u8 {
     if (builtin.os.tag == .windows) return null;
 
     var it = std.mem.splitScalar(u8, reg_path, sep_char);
     while (it.next()) |dir| {
         if (dir.len == 0) continue;
         var zbuf: [4097]u8 = undefined;
-        const full = std.fmt.bufPrint(&zbuf, "{s}/{s}.rtbw\x00", .{ dir, t.stem[0..t.stem_len] }) catch continue;
+        const full = std.fmt.bufPrint(&zbuf, "{s}/{s}{s}\x00", .{ dir, t.stem[0..t.stem_len], ext }) catch continue;
         const z: [*:0]const u8 = @ptrCast(full.ptr);
         const fd = std.c.open(z, .{ .ACCMODE = .RDONLY });
         if (fd < 0) continue;
@@ -214,7 +224,7 @@ fn loadFile(t: *TBTable) ?[]const u8 {
                 const off = (64 - (@intFromPtr(raw.ptr) & 63)) & 63;
                 const buf = raw[off .. off + size];
                 @memcpy(buf, acc.items);
-                if (!std.mem.eql(u8, buf[0..4], &wdl_magic)) break;
+                if (!std.mem.eql(u8, buf[0..4], &magic)) break;
                 return buf;
             }
             acc.appendSlice(arena(), chunk[0..@intCast(r)]) catch return null;
@@ -225,22 +235,24 @@ fn loadFile(t: *TBTable) ?[]const u8 {
 
 // ---- set: parse the file's PairsData records (SF `set`) ---------------------
 
-// SF `set` (WDL specialization: set_dtz_map is a no-op). `buf` is the whole file (64-aligned
-// base); parsing starts at offset 4 (after the magic). Fills every (side,file) PairsData.
-fn set(t: *TBTable, buf: []const u8) void {
+// SF `set`, generic over WDL/DTZ. `buf` is the whole file (64-aligned base); parsing starts at
+// offset 4 (after the magic). Fills every (side,file) PairsData. For DTZ, `set_dtz_map` reads the
+// value-remap table between the size headers and the sparse indices.
+fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) void {
     const e = t.info();
     var pos: usize = 4; // skip magic
     // First byte after magic: Split(1)/HasPawns(2) flags (asserted in SF; we trust the file).
     pos += 1;
 
-    const sides = t.sides;
+    // DTZ tables are one-sided; WDL split tables (key != key2) store both sides.
+    const sides: usize = if (dtz) 1 else t.sides;
     const max_file: usize = if (t.has_pawns) 3 else 0; // FILE_D or FILE_A
     const pp = t.has_pawns and t.pawn_count[1] != 0;
 
     var f: usize = 0;
     while (f <= max_file) : (f += 1) {
         var i: usize = 0;
-        while (i < sides) : (i += 1) t.items[i][f] = .{};
+        while (i < sides) : (i += 1) t.get(dtz, i, f).* = .{};
 
         var order: [2][2]i32 = undefined;
         order[0][0] = @intCast(buf[pos] & 0xF);
@@ -253,13 +265,13 @@ fn set(t: *TBTable, buf: []const u8) void {
         while (k < @as(usize, @intCast(t.piece_count))) : (k += 1) {
             i = 0;
             while (i < sides) : (i += 1) {
-                t.items[i][f].pieces[k] = if (i != 0) buf[pos] >> 4 else buf[pos] & 0xF;
+                t.get(dtz, i, f).pieces[k] = if (i != 0) buf[pos] >> 4 else buf[pos] & 0xF;
             }
             pos += 1;
         }
         i = 0;
         while (i < sides) : (i += 1) {
-            probe.setGroups(&t.items[i][f], e, order[i], f);
+            probe.setGroups(t.get(dtz, i, f), e, order[i], f);
         }
     }
 
@@ -269,26 +281,28 @@ fn set(t: *TBTable, buf: []const u8) void {
     while (f <= max_file) : (f += 1) {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
-            decode.setSizes(arena(), &t.items[i][f], buf, &pos) catch return;
+            decode.setSizes(arena(), t.get(dtz, i, f), buf, &pos) catch return;
         }
     }
 
-    // set_dtz_map: WDL no-op.
+    if (dtz) setDtzMap(t, buf, &pos, max_file);
 
     f = 0;
     while (f <= max_file) : (f += 1) {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
-            t.items[i][f].sparse_index = buf[pos..].ptr;
-            pos += t.items[i][f].sparse_index_size * @sizeOf(probe.SparseEntry);
+            const d = t.get(dtz, i, f);
+            d.sparse_index = buf[pos..].ptr;
+            pos += d.sparse_index_size * @sizeOf(probe.SparseEntry);
         }
     }
     f = 0;
     while (f <= max_file) : (f += 1) {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
-            t.items[i][f].block_length = buf[pos..].ptr;
-            pos += @as(usize, t.items[i][f].block_length_size) * 2;
+            const d = t.get(dtz, i, f);
+            d.block_length = buf[pos..].ptr;
+            pos += @as(usize, d.block_length_size) * 2;
         }
     }
     f = 0;
@@ -296,22 +310,68 @@ fn set(t: *TBTable, buf: []const u8) void {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
             pos = (pos + 0x3F) & ~@as(usize, 0x3F); // 64-byte alignment
-            t.items[i][f].data = buf[pos..].ptr;
-            pos += @as(usize, t.items[i][f].blocks_num) * t.items[i][f].sizeof_block;
+            const d = t.get(dtz, i, f);
+            d.data = buf[pos..].ptr;
+            pos += @as(usize, d.blocks_num) * d.sizeof_block;
         }
     }
 }
 
-// Lazy load + parse on first probe. Returns true if the table is usable.
+// SF `set_dtz_map`: read the per-file DTZ value-remap tables. `map_idx[i]` records the offset of
+// each of the four WDL-class maps from `dtz_map` (u16 units when Wide, bytes otherwise, +1 as SF).
+fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, max_file: usize) void {
+    t.dtz_map = buf[pos.*..].ptr;
+    const map_base = pos.*;
+    var f: usize = 0;
+    while (f <= max_file) : (f += 1) {
+        const d = t.get(true, 0, f);
+        if (d.flags & decode.flag_mapped != 0) {
+            if (d.flags & decode.flag_wide != 0) {
+                pos.* += pos.* & 1; // word align
+                var i: usize = 0;
+                while (i < 4) : (i += 1) {
+                    d.map_idx[i] = @intCast((pos.* - map_base) / 2 + 1);
+                    pos.* += 2 * @as(usize, rdU16(buf[pos.*..].ptr)) + 2;
+                }
+            } else {
+                var i: usize = 0;
+                while (i < 4) : (i += 1) {
+                    d.map_idx[i] = @intCast(pos.* - map_base + 1);
+                    pos.* += @as(usize, buf[pos.*]) + 1;
+                }
+            }
+        }
+    }
+    pos.* += pos.* & 1; // word align
+}
+
+inline fn rdU16(p: [*]const u8) u16 {
+    return std.mem.readInt(u16, @ptrCast(p), .little);
+}
+
+// Lazy load + parse on first probe. Returns true if the WDL table is usable.
 fn mapped(t: *TBTable) bool {
     if (t.ready) return t.base != null;
     t.ready = true;
-    const buf = loadFile(t) orelse {
+    const buf = loadFile(t, ".rtbw", wdl_magic) orelse {
         t.base = null;
         return false;
     };
     t.base = buf;
-    set(t, buf);
+    set(t, false, buf);
+    return true;
+}
+
+// Lazy load + parse of the DTZ (.rtbz) file on first DTZ probe.
+fn mappedDtz(t: *TBTable) bool {
+    if (t.dtz_ready) return t.dtz_base != null;
+    t.dtz_ready = true;
+    const buf = loadFile(t, ".rtbz", dtz_magic) orelse {
+        t.dtz_base = null;
+        return false;
+    };
+    t.dtz_base = buf;
+    set(t, true, buf);
     return true;
 }
 
@@ -329,8 +389,10 @@ inline fn mapPawns(sq: u8) i32 {
     return encode.map_pawns[sq];
 }
 
-// SF do_probe_table<WDL>. Returns the raw WDL score in -2..2 (map_score = value - 2).
-fn doProbeTable(pos: *const Position, t: *TBTable) i32 {
+// SF do_probe_table, generic over WDL/DTZ. WDL returns the raw score in -2..2 (value - 2); DTZ
+// returns map_score<DTZ>(value) given the position's `wdl_score`. For DTZ, if the stored side does
+// not match the side to move, sets out_state = CHANGE_STM (the caller does a 1-ply search).
+fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_score: i32, out_state: *i32) i32 {
     var squares: [tb_pieces]u8 = undefined;
     var pieces_arr: [tb_pieces]u8 = undefined;
     var size: usize = 0;
@@ -349,7 +411,7 @@ fn doProbeTable(pos: *const Position, t: *TBTable) i32 {
 
     var lead_pawns: u64 = 0;
     if (t.has_pawns) {
-        const pc = t.items[0][0].pieces[0] ^ flip_color;
+        const pc = t.get(dtz, 0, 0).pieces[0] ^ flip_color;
         const lead_color: usize = pc >> 3;
         lead_pawns = pos.by_color_bb[lead_color] & pos.by_type_bb[pawn_pt];
         var b = lead_pawns;
@@ -374,7 +436,16 @@ fn doProbeTable(pos: *const Position, t: *TBTable) i32 {
         tb_file = encode.edgeDistance(fileOf(squares[0]));
     }
 
-    // check_dtz_stm for WDL is always true.
+    // DTZ tables are one-sided: if the stored side is not the side to move, bail to a 1-ply
+    // search (CHANGE_STM). WDL check_dtz_stm is always true.
+    if (dtz) {
+        const flags = t.get(true, stm, tb_file).flags;
+        const stm_ok = (flags & decode.flag_stm) == stm or (t.key == t.key2 and !t.has_pawns);
+        if (!stm_ok) {
+            out_state.* = change_stm;
+            return 0;
+        }
+    }
 
     // Gather the remaining pieces (all except the lead pawns).
     var b = pos.by_type_bb[0] ^ lead_pawns;
@@ -386,7 +457,7 @@ fn doProbeTable(pos: *const Position, t: *TBTable) i32 {
         size += 1;
     }
 
-    const d = t.get(stm, tb_file);
+    const d = t.get(dtz, stm, tb_file);
 
     // Reorder pieces to match the file's canonical d.pieces sequence.
     var ri = lead_pawns_cnt;
@@ -486,7 +557,33 @@ fn doProbeTable(pos: *const Position, t: *TBTable) i32 {
         group_off += glen;
     }
 
-    return decode.decompressPairs(d, idx) - 2; // map_score<WDL> = value - 2
+    const raw = decode.decompressPairs(d, idx);
+    if (dtz) return mapScoreDtz(t, d, raw, wdl_score);
+    return raw - 2; // map_score<WDL> = value - 2
+}
+
+// SF map_score<DTZ>: remap the raw DTZ value through the per-WDL-class map, then convert to plies
+// (x2 unless the flags already store plies for this class) and +1.
+fn mapScoreDtz(t: *TBTable, d: *const PairsData, value_in: i32, wdl: i32) i32 {
+    const wdl_map = [_]usize{ 1, 3, 0, 2, 0 }; // index by wdl+2
+    var value = value_in;
+    const flags = d.flags;
+    if (flags & decode.flag_mapped != 0) {
+        const mi: usize = d.map_idx[wdl_map[@intCast(wdl + 2)]];
+        const off = mi + @as(usize, @intCast(value));
+        if (flags & decode.flag_wide != 0) {
+            value = rdU16(t.dtz_map.? + off * 2);
+        } else {
+            value = t.dtz_map.?[off];
+        }
+    }
+    if ((wdl == wdl_win and flags & decode.flag_win_plies == 0) or
+        (wdl == wdl_loss and flags & decode.flag_loss_plies == 0) or
+        wdl == wdl_cursed_win or wdl == wdl_blessed_loss)
+    {
+        value *= 2;
+    }
+    return value + 1;
 }
 
 inline fn stableSortByMapPawns(sq: []u8) void {
@@ -510,29 +607,35 @@ inline fn stableSortSquares(sq: []u8) void {
     }
 }
 
-// ---- probe_table<WDL> + probe_wdl (search<false>) ---------------------------
+// ---- probe_table + probe_wdl (search) + probe_dtz ---------------------------
 
-// SF ProbeState: FAIL=0, OK=1, ZEROING_BEST_MOVE=2 (CHANGE_STM=-1 is DTZ-only, M-SZ-3).
+// SF ProbeState: FAIL=0, OK=1, ZEROING_BEST_MOVE=2, CHANGE_STM=-1.
 const probe_fail: i32 = 0;
 const probe_ok: i32 = 1;
 const probe_zeroing: i32 = 2;
+const change_stm: i32 = -1;
+// SF WDLScore.
 const wdl_win: i32 = 2;
+const wdl_cursed_win: i32 = 1;
+const wdl_draw: i32 = 0;
+const wdl_blessed_loss: i32 = -1;
 const wdl_loss: i32 = -2;
 
 const Probe = struct { value: i32, state: i32 };
 
-// SF probe_table<WDL>: KvK short-circuit, registry lookup, lazy map, do_probe_table.
-fn probeTable(pos: *const Position, out_state: *i32) i32 {
+// SF probe_table, generic over WDL/DTZ: KvK short-circuit, registry lookup, lazy map, do_probe.
+fn probeTable(pos: *const Position, comptime dtz: bool, wdl_score: i32, out_state: *i32) i32 {
     if (@popCount(pos.by_type_bb[0]) == 2) return 0; // KvK draw
     const t = hashGet(pos.st.material_key) orelse {
         out_state.* = probe_fail;
         return 0;
     };
-    if (!mapped(t)) {
+    const ok = if (dtz) mappedDtz(t) else mapped(t);
+    if (!ok) {
         out_state.* = probe_fail;
         return 0;
     }
-    return doProbeTable(pos, t);
+    return doProbeTable(pos, t, dtz, wdl_score, out_state);
 }
 
 fn isCapture(pos: *const Position, m: u16) bool {
@@ -541,10 +644,30 @@ fn isCapture(pos: *const Position, m: u16) bool {
     return (pos.board[to] != 0 and mt != board_core.mt_castling) or mt == board_core.mt_en_passant;
 }
 
-// SF search<false> (WDL): the "best of the position and its winning/drawing captures" recursion.
-// A capture is a zeroing move, so its result must be probed and compared against the position's
-// own stored value. `storage` supplies one StateInfo per recursion frame (reused across siblings).
-fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage) Probe {
+inline fn movedPieceType(pos: *const Position, m: u16) u8 {
+    return pos.board[board_core.moveFrom(m)] & 7;
+}
+
+fn signOf(x: i32) i32 {
+    return @as(i32, @intFromBool(x > 0)) - @intFromBool(x < 0);
+}
+
+// SF dtz_before_zeroing: recover the DTZ of the move before a zeroing (capture/pawn) move.
+fn dtzBeforeZeroing(wdl: i32) i32 {
+    return switch (wdl) {
+        wdl_win => 1,
+        wdl_cursed_win => 101,
+        wdl_blessed_loss => -101,
+        wdl_loss => -1,
+        else => 0,
+    };
+}
+
+// SF search<CheckZeroingMoves>: the "best of the position and its winning/drawing zeroing moves"
+// recursion. A capture (and, when check_zeroing, a pawn move) zeroes the rule50 counter, so its
+// result must be probed and compared to the position's own stored value. Children recurse with
+// check_zeroing=false. `storage` supplies one StateInfo per recursion frame (reused across sibs).
+fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage, comptime check_zeroing: bool) Probe {
     var best: i32 = wdl_loss;
     var move_count: usize = 0;
     var buf: [256]u16 = undefined;
@@ -555,10 +678,10 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage) Probe {
     var i: usize = 0;
     while (i < total) : (i += 1) {
         const m = buf[i];
-        if (!isCapture(pos, m)) continue;
+        if (!isCapture(pos, m) and (!check_zeroing or movedPieceType(pos, m) != pawn_pt)) continue;
         move_count += 1;
         position.doMoveState(pos, m, st);
-        const child = searchWdl(pos, storage);
+        const child = searchWdl(pos, storage, false);
         position.undoMove(pos, m);
         if (child.state == probe_fail) return .{ .value = 0, .state = probe_fail };
         const v = -child.value;
@@ -568,15 +691,15 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage) Probe {
         }
     }
 
-    // If every legal move is a capture and we searched them all, the stored value could be wrong
-    // (ep rights, all-captures) -- use bestValue instead of probing.
+    // If every legal move is a zeroing move and we searched them all, the stored value could be
+    // wrong (ep rights, all-captures) -- use bestValue instead of probing.
     const no_more_moves = move_count != 0 and move_count == total;
     var value: i32 = undefined;
     if (no_more_moves) {
         value = best;
     } else {
         var st_probe: i32 = probe_ok;
-        value = probeTable(pos, &st_probe);
+        value = probeTable(pos, false, 0, &st_probe);
         if (st_probe == probe_fail) return .{ .value = 0, .state = probe_fail };
     }
 
@@ -588,11 +711,74 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage) Probe {
     return .{ .value = value, .state = probe_ok };
 }
 
+// SF probe_dtz: DTZ from the side-to-move's view. Uses search<true> to fold in zeroing pawn moves,
+// then probe_table<DTZ>; the CHANGE_STM branch does a 1-ply search that minimizes DTZ (the DTZ
+// table stored the other side, so we step one move and read the resulting DTZ).
+fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state: *i32) i32 {
+    out_state.* = probe_ok;
+    const w = searchWdl(pos, storage, true);
+    if (w.state == probe_fail) {
+        out_state.* = probe_fail;
+        return 0;
+    }
+    const wdl = w.value;
+    if (wdl == wdl_draw) return 0; // DTZ tables don't store draws
+    if (w.state == probe_zeroing) return dtzBeforeZeroing(wdl); // best move is a winning zeroing move
+
+    var st: i32 = probe_ok;
+    const dtz = probeTable(pos, true, wdl, &st);
+    if (st == probe_fail) {
+        out_state.* = probe_fail;
+        return 0;
+    }
+    if (st != change_stm) {
+        const cursed: i32 = @intFromBool(wdl == wdl_blessed_loss or wdl == wdl_cursed_win);
+        return (dtz + 100 * cursed) * signOf(wdl);
+    }
+
+    // CHANGE_STM: the DTZ is stored for the other side; do a 1-ply search minimizing DTZ.
+    var min_dtz: i32 = 0xFFFF;
+    var buf: [256]u16 = undefined;
+    const total = movegen.generateLegal(pos, buf[0..].ptr);
+    const node = state_list.storagePush(storage) catch {
+        out_state.* = probe_fail;
+        return 0;
+    };
+    var i: usize = 0;
+    while (i < total) : (i += 1) {
+        const m = buf[i];
+        const zeroing = isCapture(pos, m) or movedPieceType(pos, m) == pawn_pt;
+        position.doMoveState(pos, m, node);
+        var cst: i32 = probe_ok;
+        var d: i32 = undefined;
+        if (zeroing) {
+            const s = searchWdl(pos, storage, false);
+            cst = s.state;
+            d = -dtzBeforeZeroing(s.value);
+        } else {
+            d = -probeDtz(pos, storage, &cst);
+        }
+        // A mating move gets DTZ 1 (child is in check with no legal reply).
+        var mbuf: [256]u16 = undefined;
+        if (d == 1 and pos.st.checkers_bb != 0 and movegen.generateLegal(pos, mbuf[0..].ptr) == 0)
+            min_dtz = 1;
+        if (!zeroing) d += signOf(d); // correct for the 1-ply search
+        if (d < min_dtz and signOf(d) == signOf(wdl)) min_dtz = d;
+        position.undoMove(pos, m);
+        if (cst == probe_fail) {
+            out_state.* = probe_fail;
+            return 0;
+        }
+    }
+    return if (min_dtz == 0xFFFF) -1 else min_dtz; // no legal moves -> mate -> -1
+}
+
 // ---- probeFen: the platform probe surface -----------------------------------
 
-/// Probe a FEN for its WDL. Builds a scratch Position (engine down-edge), then runs SF's
-/// search<false> WDL probe (best of the position and its captures). `available == 0` means no
-/// result (no table, load failure, or castling rights present -- TB positions have none).
+/// Probe a FEN for its WDL and DTZ. Builds a scratch Position (engine down-edge), then runs SF's
+/// probe_wdl (search<false>) and probe_dtz. `available == 0` means no WDL result (no table, load
+/// failure, or castling rights present -- TB positions have none); a DTZ failure is reported via
+/// `dtz_state` while WDL still reports.
 pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult {
     const empty = ProbeResult{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 };
     if (arena_state == null) return empty;
@@ -607,9 +793,19 @@ pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult 
         return empty;
     }
 
-    const r = searchWdl(pos, storage);
-    if (r.state == probe_fail) return empty;
-    return .{ .available = 1, .wdl = r.value, .wdl_state = r.state, .dtz = 0, .dtz_state = 0 };
+    const w = searchWdl(pos, storage, false); // probe_wdl
+    if (w.state == probe_fail) return empty;
+
+    var dtz_state: i32 = probe_ok;
+    const dtz = probeDtz(pos, storage, &dtz_state);
+
+    return .{
+        .available = 1,
+        .wdl = w.value,
+        .wdl_state = w.state,
+        .dtz = dtz,
+        .dtz_state = dtz_state,
+    };
 }
 
 test {
