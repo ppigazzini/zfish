@@ -951,6 +951,18 @@ pub fn build(b: *std.Build) void {
     );
     time_step.dependOn(&time_cmd.step);
 
+    // reset-determinism: metamorphic TT/history reset gate (no golden -- asserts internal
+    // relations in one process): a second no-reset search reuses the TT (node count changes),
+    // Clear Hash removes that reuse, and ucinewgame restores the exact clean search (no stale
+    // state bleed). Single-thread deterministic, so it joins the portable aggregate.
+    const reset_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "reset-determinism", "-", "check");
+
+    const reset_step = b.step(
+        "parity-reset",
+        "Metamorphic TT/history reset: ucinewgame + Clear Hash restore state, TT reuse is live",
+    );
+    reset_step.dependOn(&reset_cmd.step);
+
     // Perft differential + golden gate: the ONLY gate over
     // do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
     // perft; search-modes only checks bestmoves), pinned against the committed golden.
@@ -1466,6 +1478,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&uci_options_cmd.step);
     parity_step.dependOn(&mate_cmd.step);
     parity_step.dependOn(&chess960_cmd.step);
+    parity_step.dependOn(&reset_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);
@@ -1504,6 +1517,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&uci_options_cmd.step);
     parity_portable_step.dependOn(&mate_cmd.step);
     parity_portable_step.dependOn(&chess960_cmd.step);
+    parity_portable_step.dependOn(&reset_cmd.step);
     // The concurrency + timing gates -- the cross-OS payoff: these exercise the
     // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
     // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.

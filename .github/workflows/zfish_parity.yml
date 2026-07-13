@@ -106,8 +106,9 @@ jobs:
       # sse41/avx2 stay green. Runs the real bench per tier, so it is not hollow.
       - run: bash tools/arch_determinism.sh 2466447
 
-      # (Wall-clock time management, multi-thread sanity, and the go/stop stress gate run
-      # INSIDE `zig build parity` above, so they also run on the Windows/macOS lanes.)
+      # (Wall-clock time management, multi-thread sanity, the go/stop stress gate, and the
+      # TT/history reset-determinism metamorphic gate run INSIDE `zig build parity` above, so
+      # they also run on the Windows/macOS lanes.)
 
   # Cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
   # with no source changes -- where upstream needs hand-written NEON intrinsics per

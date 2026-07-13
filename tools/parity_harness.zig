@@ -1066,6 +1066,93 @@ fn runTimeMgmt(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
+// reset-determinism: metamorphic gate for TT/history reset. A stale-state bleed (a
+// ucinewgame that fails to clear the TT/histories, or a Clear Hash that no-ops) is invisible
+// to every golden -- those run one clean process. Here, in ONE process, run the SAME fixed-node
+// single-thread search several times and assert three relations no snapshot can:
+//   R1 reuse-live: a second identical search WITHOUT a reset changes the node count (the TT is
+//                  actually being consulted -- else it would repeat the same count).
+//   R2 clear-hash: after `setoption Clear Hash`, the search no longer gets the reuse discount
+//                  (its node count differs from the reuse run). Compared against the REUSE run,
+//                  not the clean run, on purpose: Clear Hash empties only the TT, not the
+//                  histories, so it need not reproduce the clean count exactly -- only lose the
+//                  TT-reuse speedup.
+//   R3 full-reset: `ucinewgame` restores the EXACT clean search (depth/score/nodes/bestmove/
+//                  ponder), proving it clears both the TT and the histories with no bleed.
+const ResetFp = struct {
+    depth: ?i64 = null,
+    kind: ScoreKind = .none,
+    val: ?i64 = null,
+    nodes: ?i64 = null,
+    bm_buf: [8]u8 = undefined,
+    bm_len: usize = 0,
+    pd_buf: [8]u8 = undefined,
+    pd_len: usize = 0,
+    fn bm(self: *const ResetFp) []const u8 {
+        return self.bm_buf[0..self.bm_len];
+    }
+    fn pd(self: *const ResetFp) []const u8 {
+        return self.pd_buf[0..self.pd_len];
+    }
+    fn eql(x: ResetFp, y: ResetFp) bool {
+        return optEql(x.depth, y.depth) and x.kind == y.kind and optEql(x.val, y.val) and
+            optEql(x.nodes, y.nodes) and std.mem.eql(u8, x.bm(), y.bm()) and std.mem.eql(u8, x.pd(), y.pd());
+    }
+};
+
+// Run one startpos depth-14 search in the shared session (optionally preceded by `pre`, e.g.
+// ucinewgame / Clear Hash) and fingerprint its final scored info line + bestmove. Parses only
+// the output since the previous search (the buffer grows; `mark` is a stable offset).
+fn resetSearch(s: *Interactive, pre: []const u8) ResetFp {
+    const mark = s.buffered().len;
+    if (pre.len != 0) s.send(pre);
+    s.send("position startpos\ngo depth 14\n");
+    _ = s.fillUntil("\nbestmove");
+    var fp = ResetFp{};
+    var li = lines(s.buffered()[mark..]);
+    while (li.next()) |raw| {
+        const line = trimCR(raw);
+        if (parseInfoLine(line)) |i| {
+            if (i.nodes != null and i.score_kind != .none) {
+                fp.depth = i.depth;
+                fp.kind = i.score_kind;
+                fp.val = i.score_val;
+                fp.nodes = i.nodes;
+            }
+        } else if (parseBestmove(line)) |b| {
+            const n = @min(b.bestmove.len, fp.bm_buf.len);
+            @memcpy(fp.bm_buf[0..n], b.bestmove[0..n]);
+            fp.bm_len = n;
+            const m = @min(b.ponder.len, fp.pd_buf.len);
+            @memcpy(fp.pd_buf[0..m], b.ponder[0..m]);
+            fp.pd_len = m;
+        }
+    }
+    return fp;
+}
+
+fn runResetDeterminism(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    var s: Interactive = undefined;
+    s.init(io, gpa, bin) catch fail("reset-determinism: spawn failed", .{});
+    const a = resetSearch(&s, "ucinewgame\n"); // clean reference
+    const b = resetSearch(&s, ""); // no reset -> TT reuse
+    const f = resetSearch(&s, "setoption name Clear Hash\n"); // clears TT only
+    const c = resetSearch(&s, "ucinewgame\n"); // full reset
+    _ = s.finish();
+
+    if (a.nodes == null or b.nodes == null or f.nodes == null or c.nodes == null)
+        fail("reset-determinism: a search produced no node count (truncated?)", .{});
+    if (a.nodes.? == b.nodes.?)
+        fail("reset-determinism: TT reuse not observable -- second search matched the first ({d} nodes); TT unused?", .{a.nodes.?});
+    if (f.nodes.? == b.nodes.?)
+        fail("reset-determinism: Clear Hash did NOT clear the TT -- still reusing ({d} nodes)", .{b.nodes.?});
+    if (!ResetFp.eql(a, c))
+        fail("reset-determinism: ucinewgame did NOT restore the clean search (state bleed) -- A nodes={?d} score={s} {?d} bm={s} | C nodes={?d} score={s} {?d} bm={s}", .{ a.nodes, @tagName(a.kind), a.val, a.bm(), c.nodes, @tagName(c.kind), c.val, c.bm() });
+
+    std.debug.print("reset-determinism: OK (ucinewgame A==C exact nodes={?d}; TT reuse {?d}->{?d} live; Clear Hash clears TT -> {?d})\n", .{ a.nodes, a.nodes, b.nodes, f.nodes });
+    std.process.exit(0);
+}
+
 // ---- driver -----------------------------------------------------------------
 
 fn fail(comptime fmt: []const u8, args: anytype) noreturn {
@@ -1095,6 +1182,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, check_name, "mt-sanity")) runMtSanity(gpa, io, bin, golden, mode);
     if (std.mem.eql(u8, check_name, "stress")) runStress(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "time-mgmt")) runTimeMgmt(gpa, io, bin);
+    if (std.mem.eql(u8, check_name, "reset-determinism")) runResetDeterminism(gpa, io, bin);
 
     const check = std.meta.stringToEnum(Check, check_name) orelse
         fail("parity_harness: unknown check '{s}'", .{check_name});
