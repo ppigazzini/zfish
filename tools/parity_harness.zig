@@ -176,6 +176,18 @@ const driver_battery =
     "setoption name UCI_ShowWDL value false\n" ++
     "position fen 8/8/8/8/8/6k1/6p1/6K1 w - - 0 1\n" ++
     "go depth 24\n" ++
+    // currmove coverage: searchCbRootOnIter (the "info depth D currmove M
+    // currmovenumber N" emit callback) only fires on the main thread once the search
+    // passes 10M nodes (search_back.zig, `nodes > 10_000_000`). None of the other
+    // searches reach that, so the callback was UNCOVERED by every golden. A node-limited
+    // search past the threshold exercises it deterministically (single-thread, fixed
+    // node budget -> arch/OS-invariant), pinning the currmove format + numbering. It is
+    // NOT last: the following checkmate `go` blocks in startThinking's
+    // wait-for-search-finished, so this node-limited search runs to completion (a
+    // trailing `quit` would stopEngine and truncate it before 10M -- see the batch
+    // note in runEngine).
+    "position fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1\n" ++
+    "go nodes 13000000\n" ++
     "position fen rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3\n" ++
     "go depth 5\n" ++
     "quit\n";
