@@ -1204,6 +1204,86 @@ fn runResetDeterminism(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn
     std.process.exit(0);
 }
 
+// skill: Skill Level is a NON-deterministic path (a wall-clock-seeded PRNG biases the move
+// pick, search_id.zig), so no snapshot is possible. Assert the metamorphic relations a snapshot
+// cannot: (1) at Skill 20 the handicap is disabled (skill_enabled=0), so repeated searches are
+// DETERMINISTIC -- one distinct move; (2) at Skill 0 the PRNG is active, so repeated searches
+// VARY -- >= 2 distinct moves, every one legal. The PRNG seeds once per process and advances per
+// pick (it is not reset by ucinewgame), so K searches in ONE process give variance without the
+// cross-process same-millisecond seed collision a multi-process loop risks. Robustness measured:
+// over 25 process-seeds, K=12 skill-0 cardinality was min 3 (never near the >=2 floor).
+const MoveSet = struct {
+    moves: [24][8]u8 = undefined,
+    lens: [24]usize = undefined,
+    count: usize = 0,
+    fn add(self: *MoveSet, m: []const u8) void {
+        var j: usize = 0;
+        while (j < self.count) : (j += 1) {
+            if (std.mem.eql(u8, self.moves[j][0..self.lens[j]], m)) return; // already seen
+        }
+        if (self.count >= self.moves.len) return; // cap (24 distinct is far beyond any real case)
+        const n = @min(m.len, self.moves[self.count].len);
+        @memcpy(self.moves[self.count][0..n], m[0..n]);
+        self.lens[self.count] = n;
+        self.count += 1;
+    }
+};
+
+const skill_depth = 10;
+const skill_det_runs = 6; // Skill 20: must stay a single move (deterministic)
+const skill_live_runs = 12; // Skill 0: must vary (>= 2 distinct)
+
+// One startpos depth-`skill_depth` search in the shared session (fresh TT via ucinewgame; the
+// skill PRNG persists across it) -> the bestmove (a slice into s.buffered(), valid until finish).
+fn skillMove(s: *Interactive) []const u8 {
+    const mark = s.buffered().len;
+    s.send("ucinewgame\nposition startpos\ngo depth 10\n");
+    _ = s.fillUntil("\nbestmove");
+    var li = lines(s.buffered()[mark..]);
+    while (li.next()) |raw| {
+        const line = trimCR(raw);
+        if (startsWith(line, "bestmove")) {
+            var t = std.mem.tokenizeScalar(u8, line, ' ');
+            _ = t.next();
+            return t.next() orelse "";
+        }
+    }
+    return "";
+}
+
+fn runSkill(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    var s: Interactive = undefined;
+    s.init(io, gpa, bin) catch fail("skill: spawn failed", .{});
+
+    // (1) Skill 20 -> handicap off -> deterministic (one distinct move).
+    s.send("setoption name Skill Level value 20\n");
+    var det: MoveSet = .{};
+    var i: usize = 0;
+    while (i < skill_det_runs) : (i += 1) {
+        const m = skillMove(&s);
+        if (!wellFormedMove(m)) fail("skill: Skill 20 emitted a malformed move '{s}'", .{m});
+        det.add(m);
+    }
+    if (det.count != 1)
+        fail("skill: Skill 20 is not deterministic ({d} distinct moves) -- the handicap is not disabled at max level", .{det.count});
+
+    // (2) Skill 0 -> PRNG active -> varies (>= 2 distinct), every move legal.
+    s.send("setoption name Skill Level value 0\n");
+    var live: MoveSet = .{};
+    i = 0;
+    while (i < skill_live_runs) : (i += 1) {
+        const m = skillMove(&s);
+        if (!wellFormedMove(m)) fail("skill: Skill 0 emitted a malformed move '{s}'", .{m});
+        live.add(m);
+    }
+    _ = s.finish();
+    if (live.count < 2)
+        fail("skill: Skill 0 produced no move variance ({d} distinct in {d} runs) -- the move-bias PRNG is dead", .{ live.count, skill_live_runs });
+
+    std.debug.print("skill: OK (Skill 20 deterministic 1 move; Skill 0 random {d} distinct in {d}, all legal)\n", .{ live.count, skill_live_runs });
+    std.process.exit(0);
+}
+
 // ---- driver -----------------------------------------------------------------
 
 fn fail(comptime fmt: []const u8, args: anytype) noreturn {
@@ -1234,6 +1314,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, check_name, "stress")) runStress(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "time-mgmt")) runTimeMgmt(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "reset-determinism")) runResetDeterminism(gpa, io, bin);
+    if (std.mem.eql(u8, check_name, "skill")) runSkill(gpa, io, bin);
 
     const check = std.meta.stringToEnum(Check, check_name) orelse
         fail("parity_harness: unknown check '{s}'", .{check_name});
