@@ -149,11 +149,11 @@ jobs:
   # OSes -- Windows and macOS -- across their x86_64 and aarch64 tiers, behind the platform
   # seam (sync/alloc/clock/argv/stdio). Each lane builds NATIVELY on a GitHub-hosted runner
   # (free for public repos) and runs `zig build parity-portable`: the bench signature plus all
-  # ten golden gates (output / driver / search-parity / search-modes / perft / eval / misc /
-  # export-net / nodestime / uci-options), driven by the pure-Zig parity harness -- the same
-  # coverage the Linux lanes get, including the search-manager driver + currmove emit path, the
-  # export_net serializer fingerprint, the deterministic nodestime allocation, and the uci
-  # option-list handshake. The integer-exact NNUE
+  # eleven golden gates (output / driver / search-parity / search-modes / perft / eval / misc /
+  # export-net / nodestime / uci-options / mate), driven by the pure-Zig parity harness -- the
+  # same coverage the Linux lanes get, including the search-manager driver + currmove emit path,
+  # the export_net serializer fingerprint, the deterministic nodestime allocation, the uci
+  # option-list handshake, and the go-mate distance search. The integer-exact NNUE
   # eval is arch/OS-invariant, so
   # any per-OS regression (a mis-marshaled sync primitive, a bad aligned allocation, an
   # argv/stdio mistake) that perturbs the search shows up here. Only the Linux-specific
