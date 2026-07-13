@@ -13,6 +13,7 @@ const position_types = @import("position_types");
 const search_types = @import("search_types");
 const search_ctx = @import("search_ctx");
 const search_acc = @import("search_acc");
+const tb_source = @import("tb_source");
 const board_core = @import("board_core");
 const legality = @import("legality");
 const repetition = @import("repetition");
@@ -139,8 +140,8 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     const prior_capture = pos.st.captured_piece != 0;
     const us = pos.side_to_move;
     ss.move_count = 0;
-    const best_value: c_int = -q_value_inf;
-    const max_value: c_int = q_value_inf;
+    var best_value: c_int = -q_value_inf;
+    var max_value: c_int = q_value_inf;
 
     ss.follow_pv = root_node or (ss1.follow_pv and inLastIterPv(ctx, ss.ply - 1, ss1.current_move));
 
@@ -247,7 +248,55 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         tt.entryPenalize(writer, 1);
     }
 
-    // Step 6. Tablebases: cardinality is 0 in this build; skipped.
+    // Step 6. Tablebases probe. A faithful port of SF search.cpp: probe the WDL of the current
+    // (non-root, non-excluded) position when it is small enough, has a zeroed rule50 counter, and
+    // no castling rights; on success score it in the VALUE_TB..VALUE_TB_WIN range and cut/adjust.
+    // Gated by the worker's tb_config.cardinality, which is 0 without a SyzygyPath, so a default
+    // build (and bench) never enters here and the node count is unchanged.
+    if (!root_node and excluded_move == 0) {
+        const tb_cfg = &ctx.worker.tb_config;
+        const cardinality: c_int = @as(*const c_int, @ptrCast(@alignCast(&tb_cfg[0]))).*;
+        if (cardinality != 0) {
+            const pieces_count: c_int = @popCount(pos.by_type_bb[0]);
+            const probe_depth: c_int = @as(*const c_int, @ptrCast(@alignCast(&tb_cfg[8]))).*;
+            if (pieces_count <= cardinality and
+                (pieces_count < cardinality or depth >= probe_depth) and
+                pos.st.rule50 == 0 and pos.st.castling_rights == 0)
+            {
+                const res = tb_source.probeWdlPos(pos_ptr);
+                if (res.available != 0) {
+                    ctx.worker.tb_hits += 1;
+                    const draw_score: c_int = if (tb_cfg[5] != 0) 1 else 0;
+                    const tb_value: c_int = sv.value_tb - ss.ply;
+                    const wdl = res.wdl;
+                    const value: c_int = if (wdl < -draw_score)
+                        -tb_value
+                    else if (wdl > draw_score)
+                        tb_value
+                    else
+                        q_value_draw + 2 * wdl * draw_score;
+                    const b: u8 = if (wdl < -draw_score)
+                        q_bound_upper
+                    else if (wdl > draw_score)
+                        q_bound_lower
+                    else
+                        q_bound_exact;
+                    if (b == q_bound_exact or (if (b == q_bound_lower) value >= beta else value <= alpha)) {
+                        tt.entrySave(writer, pos_key, search.valueToTt(value, ss.ply), @intFromBool(ss.tt_pv), b, @min(q_max_ply - 1, depth + 6), q_depth_none, 0, q_value_none, ctx.generation);
+                        return value;
+                    }
+                    if (pv_node) {
+                        if (b == q_bound_lower) {
+                            best_value = value;
+                            alpha = @max(alpha, best_value);
+                        } else {
+                            max_value = value;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (!ss.in_check) {
         // Static-eval-difference quiet ordering.

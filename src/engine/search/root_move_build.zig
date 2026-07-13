@@ -166,7 +166,7 @@ fn countPieces(pos: *const position_port.Position) usize {
 fn loadTbConfig(pos: *const position_port.Position) TbConfig {
     // syzygy options read from the global option model (option_port.*), not a
     // handle -- so no `options` param is threaded here.
-    const snapshot = loadPositionSnapshot(pos);
+    _ = pos;
     var config = TbConfig{
         .cardinality = option_port.syzygyProbeLimit(),
         .root_in_tb = 0,
@@ -179,13 +179,9 @@ fn loadTbConfig(pos: *const position_port.Position) TbConfig {
         config.cardinality = max_cardinality;
         config.probe_depth = 0;
     }
-
-    if (config.cardinality < @as(c_int, @intCast(countPieces(pos))) or
-        snapshot.castling_rights != 0)
-    {
-        config.cardinality = 0;
-    }
-
+    // NOTE: SF does NOT zero cardinality for positions larger than the TB -- it keeps it so the
+    // in-search Step 6 probe fires at smaller (in-tree) positions. Whether the ROOT itself is
+    // ranked is a separate `cardinality >= pieceCount && !castling` gate in buildRootMoves.
     return config;
 }
 
@@ -390,8 +386,11 @@ pub fn buildRootMoves(
     var tb_config = loadTbConfig(pos);
     var dtz_available = true;
 
-    if (tb_config.cardinality != 0) {
-        const root_snapshot = loadPositionSnapshot(pos);
+    // SF: rank the root moves only when the root itself fits the TB and can't castle. Otherwise the
+    // root is searched normally (cardinality kept, so Step 6 probes smaller in-tree positions).
+    const root_snapshot0 = loadPositionSnapshot(pos);
+    if (tb_config.cardinality >= @as(c_int, @intCast(countPieces(pos))) and root_snapshot0.castling_rights == 0) {
+        const root_snapshot = root_snapshot0;
         const dtz_result = try rankRootMovesDtz(
             root_fen,
             chess960,

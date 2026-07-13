@@ -213,6 +213,8 @@ pub fn build(b: *std.Build) void {
         .{ .from = "root_move_build", .imp = "state_list", .to = "state_list" },
         .{ .from = "root_move_build", .imp = "tb_source", .to = "tb_source" },
         .{ .from = "tablebase", .imp = "tb_source", .to = "tb_source" },
+        .{ .from = "tb_source", .imp = "position_types", .to = "position_types" },
+        .{ .from = "search_driver", .imp = "tb_source", .to = "tb_source" },
         // Syzygy WDL prober (M-SZ-2c): the platform tablebase module reaches down to the
         // headless engine (a legal platform->engine down-edge) for a scratch Position, its
         // material key, piece bitboards, and legal-capture movegen used by the probe.
@@ -1294,6 +1296,28 @@ pub fn build(b: *std.Build) void {
     );
     tb_root_update_step.dependOn(&tb_root_update_cmd.step);
 
+    // tb-search golden: the in-search Step 6 WDL probe (M-SZ-4). Benches a 4-man EPD; the node
+    // count with Step 6 on (SyzygyPath set) and off both pin == upstream oracle -- bit-exact
+    // node-count parity that the in-tree probe shapes. Linux-only; depends on the `tb` fetch.
+    const tb_search_golden = b.pathFromRoot("tools/tb_search.golden");
+    const tb_search_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-search", tb_search_golden, "check");
+    tb_search_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_search_step = b.step(
+        "tb-search",
+        "Diff the in-search Step 6 node count (with/without TB == oracle) against the golden",
+    );
+    tb_search_step.dependOn(&tb_search_cmd.step);
+
+    const tb_search_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-search", tb_search_golden, "update");
+    tb_search_update_cmd.step.dependOn(&tb_cmd.step);
+
+    const tb_search_update_step = b.step(
+        "tb-search-update",
+        "Regenerate tools/tb_search.golden from the current binary",
+    );
+    tb_search_update_step.dependOn(&tb_search_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1650,6 +1674,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&tb_wdl_cmd.step);
     parity_step.dependOn(&tb_dtz_cmd.step);
     parity_step.dependOn(&tb_root_cmd.step);
+    parity_step.dependOn(&tb_search_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);

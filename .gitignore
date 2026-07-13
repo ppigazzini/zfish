@@ -27,6 +27,7 @@ tsan.supp
 __pycache__/
 tests/syzygy
 tests/bench_tmp.epd
+net/tb_search_tmp.epd
 /.zfish-upstream-oracle/
 
 # Syzygy tablebases: fetched + cached (zig build tb), never committed
