@@ -605,6 +605,53 @@ fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// mate: `go mate N` -- the mate-distance search mode, distinct from the node/depth modes in
+// search-modes (it uses mate-distance pruning and reports `score mate N`). The fingerprint
+// pins the mate DISTANCE and the mating move+ponder: a bestmove-only golden would pass an
+// engine that plays the mating move but reports the wrong distance. Each position has a
+// VERIFIED forced mate at <= N, so `go mate N` finds it and stops fast (single thread ->
+// deterministic); a mate-finding regression would instead never emit bestmove and hang the
+// gate to the CI job timeout -- still a failure, just a slower one. Async -> Interactive path.
+const MateRow = struct { label: []const u8, fen: []const u8, n: u8 };
+fn buildMate(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    const rows = [_]MateRow{
+        .{ .label = "mate1-backrank   ", .fen = "6k1/5ppp/8/8/8/8/8/R6K w - - 0 1", .n = 1 },
+        .{ .label = "mate2-tworooks   ", .fen = "6k1/8/8/8/8/8/1R6/R6K w - - 0 1", .n = 2 },
+        .{ .label = "mate3-rook+bishop", .fen = "r5rk/5p1p/5R2/4B3/8/8/7P/7K w - - 0 1", .n = 3 },
+    };
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    for (rows) |r| {
+        var s: Interactive = undefined;
+        try s.init(io, gpa, bin);
+        s.send("setoption name Threads value 1\n");
+        var cmdbuf: [256]u8 = undefined;
+        s.send(std.fmt.bufPrint(&cmdbuf, "position fen {s}\ngo mate {d}\n", .{ r.fen, r.n }) catch unreachable);
+        _ = s.fillUntil("\nbestmove");
+        const buf = s.buffered();
+
+        var score: ?InfoLine = null;
+        var best: ?BestmoveLine = null;
+        var li = lines(buf);
+        while (li.next()) |raw| {
+            const line = trimCR(raw);
+            if (parseInfoLine(line)) |info| {
+                if (info.score_kind != .none) score = info;
+            } else if (parseBestmove(line)) |bm| {
+                best = bm;
+            }
+        }
+        _ = s.finish();
+
+        const sc = score orelse fail("mate: {s}: no scored info line (mate not found?)", .{r.label});
+        const bm = best orelse fail("mate: {s}: no bestmove", .{r.label});
+        try out.print(gpa, "{s} score={s} {?d} bestmove={s} ponder={s}\n", .{
+            r.label, @tagName(sc.score_kind), sc.score_val, bm.bestmove, bm.ponder,
+        });
+    }
+    return out.toOwnedSlice(gpa);
+}
+
 // signature: bench must report the exact node count (the 2466447 arch/OS invariant).
 fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []const u8) noreturn {
     var cap = runEngine(gpa, io, bin, &.{"bench"}, null) catch fail("signature: engine run failed", .{});
@@ -944,7 +991,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options" };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -981,6 +1028,7 @@ pub fn main(init: std.process.Init) !void {
         .@"export-net" => try buildExportNet(gpa, io, bin),
         .nodestime => try buildNodestime(gpa, io, bin),
         .@"uci-options" => try buildUciOptions(gpa, io, bin),
+        .mate => try buildMate(gpa, io, bin),
     };
     defer gpa.free(live);
 

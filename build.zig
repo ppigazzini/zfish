@@ -1076,6 +1076,27 @@ pub fn build(b: *std.Build) void {
     );
     uci_options_update_step.dependOn(&uci_options_update_cmd.step);
 
+    // mate golden: `go mate N` (mate-distance search mode). Pins the reported mate DISTANCE
+    // (score mate N) and the mating move+ponder across three verified forced mates (mate in
+    // 1/2/3) -- a bestmove-only check would miss a wrong-distance regression. Single-thread and
+    // mate-distance-deterministic, so arch/OS-invariant and portable.
+    const mate_golden = b.pathFromRoot("tools/mate.golden");
+    const mate_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "mate", mate_golden, "check");
+
+    const mate_step = b.step(
+        "mate",
+        "Diff `go mate N` (mate distance + move) against the committed golden",
+    );
+    mate_step.dependOn(&mate_cmd.step);
+
+    const mate_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "mate", mate_golden, "update");
+
+    const mate_update_step = b.step(
+        "mate-update",
+        "Regenerate tools/mate.golden from the current binary",
+    );
+    mate_update_step.dependOn(&mate_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1422,6 +1443,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&export_net_cmd.step);
     parity_step.dependOn(&nodestime_cmd.step);
     parity_step.dependOn(&uci_options_cmd.step);
+    parity_step.dependOn(&mate_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);
@@ -1458,6 +1480,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&export_net_cmd.step);
     parity_portable_step.dependOn(&nodestime_cmd.step);
     parity_portable_step.dependOn(&uci_options_cmd.step);
+    parity_portable_step.dependOn(&mate_cmd.step);
     // The concurrency + timing gates -- the cross-OS payoff: these exercise the
     // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
     // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.
