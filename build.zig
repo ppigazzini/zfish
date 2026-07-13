@@ -963,6 +963,19 @@ pub fn build(b: *std.Build) void {
     );
     reset_step.dependOn(&reset_cmd.step);
 
+    // skill: metamorphic Skill Level gate (no golden -- the path is RNG-seeded). Skill 20 is
+    // deterministic (handicap off -> one move), Skill 0 varies (>= 2 distinct, all legal). The
+    // PRNG persists per process, so K searches in one process give robust variance (measured
+    // min 3 over 25 seeds). Single-thread, relations are platform-agnostic, so it joins the
+    // portable aggregate.
+    const skill_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "skill", "-", "check");
+
+    const skill_step = b.step(
+        "parity-skill",
+        "Metamorphic Skill Level gate: Skill 20 deterministic, Skill 0 random + legal",
+    );
+    skill_step.dependOn(&skill_cmd.step);
+
     // Perft differential + golden gate: the ONLY gate over
     // do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
     // perft; search-modes only checks bestmoves), pinned against the committed golden.
@@ -1502,6 +1515,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&mate_cmd.step);
     parity_step.dependOn(&chess960_cmd.step);
     parity_step.dependOn(&reset_cmd.step);
+    parity_step.dependOn(&skill_cmd.step);
     parity_step.dependOn(&bench_matrix_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
@@ -1540,6 +1554,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&mate_cmd.step);
     parity_portable_step.dependOn(&chess960_cmd.step);
     parity_portable_step.dependOn(&reset_cmd.step);
+    parity_portable_step.dependOn(&skill_cmd.step);
     // The concurrency + timing gates -- the cross-OS payoff: these exercise the
     // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
     // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.
