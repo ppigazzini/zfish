@@ -486,6 +486,33 @@ fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// uci-options: the `uci` handshake option list -- the compatibility surface a GUI reads.
+// The 19 `option name ...` lines are emitted via std.debug.print (stderr); the id name /
+// id author lines and the startup banner carry the git sha + date (misc.zig) and are
+// volatile every commit, so ONLY the `option name` lines are pinned. Their defaults and
+// min/max are static constants -> machine/OS-invariant (Threads max is a fixed 1024, not the
+// core count; Hash max is fixed), except EvalFile's default which is the net name (regenerate
+// on a net bump, like the other goldens). Complements the option-model unit test
+// (option_model.zig) by covering the command -> rendered-output wiring end to end.
+fn buildUciOptions(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    var cap = try runEngine(gpa, io, bin, &.{}, "uci\nquit\n");
+    defer cap.deinit(gpa);
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    var n: usize = 0;
+    var li = lines(cap.stderr);
+    while (li.next()) |line| {
+        if (startsWith(line, "option name ")) {
+            try out.appendSlice(gpa, line);
+            try out.append(gpa, '\n');
+            n += 1;
+        }
+    }
+    if (n == 0) fail("uci-options: no 'option name' lines (uci handshake changed / wrong stream?)", .{});
+    return out.toOwnedSlice(gpa);
+}
+
 // FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
 // the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
 fn fnv1a64(data: []const u8) u64 {
@@ -917,7 +944,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options" };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -953,6 +980,7 @@ pub fn main(init: std.process.Init) !void {
         .misc => try buildMisc(gpa, io, bin),
         .@"export-net" => try buildExportNet(gpa, io, bin),
         .nodestime => try buildNodestime(gpa, io, bin),
+        .@"uci-options" => try buildUciOptions(gpa, io, bin),
     };
     defer gpa.free(live);
 

@@ -1055,6 +1055,27 @@ pub fn build(b: *std.Build) void {
     );
     nodestime_update_step.dependOn(&nodestime_update_cmd.step);
 
+    // uci-options golden: the `uci` handshake `option name ...` lines (the GUI compatibility
+    // surface). Only the option lines are pinned -- the id name / author + banner carry the
+    // git sha/date and are volatile. Defaults/min/max are static constants (machine-invariant),
+    // so the golden is portable; EvalFile's default is the net name, regenerated on a net bump.
+    const uci_options_golden = b.pathFromRoot("tools/uci_options.golden");
+    const uci_options_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "uci-options", uci_options_golden, "check");
+
+    const uci_options_step = b.step(
+        "uci-options",
+        "Diff the `uci` option-list handshake against the committed golden",
+    );
+    uci_options_step.dependOn(&uci_options_cmd.step);
+
+    const uci_options_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "uci-options", uci_options_golden, "update");
+
+    const uci_options_update_step = b.step(
+        "uci-options-update",
+        "Regenerate tools/uci_options.golden from the current binary",
+    );
+    uci_options_update_step.dependOn(&uci_options_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
@@ -1400,6 +1421,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&misc_cmd.step);
     parity_step.dependOn(&export_net_cmd.step);
     parity_step.dependOn(&nodestime_cmd.step);
+    parity_step.dependOn(&uci_options_cmd.step);
     // The interactive concurrency/timing gates run in the pure-Zig harness, so
     // they join the core aggregate.
     parity_step.dependOn(&mt_cmd.step);
@@ -1435,6 +1457,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&misc_cmd.step);
     parity_portable_step.dependOn(&export_net_cmd.step);
     parity_portable_step.dependOn(&nodestime_cmd.step);
+    parity_portable_step.dependOn(&uci_options_cmd.step);
     // The concurrency + timing gates -- the cross-OS payoff: these exercise the
     // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
     // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.
