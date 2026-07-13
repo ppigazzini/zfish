@@ -7,6 +7,7 @@ const std = @import("std");
 const tables = @import("syzygy/tables.zig");
 const encode = @import("syzygy/encode.zig"); // M-SZ-2a geometry (dead until M-SZ-2c); test-referenced
 const probe = @import("syzygy/probe.zig"); // M-SZ-2b probe model + pure helpers; test-referenced
+const decode = @import("syzygy/decode.zig"); // M-SZ-2c pt1 parse+decompress (WIP, ungated); test-ref
 
 // The probe result type is a search-facing value owned by the engine tb_source seam;
 // re-export it so the shell inspection commands keep reaching it as tablebase.ProbeResult.
@@ -32,4 +33,5 @@ test {
     std.testing.refAllDecls(tables);
     std.testing.refAllDecls(encode);
     std.testing.refAllDecls(probe);
+    std.testing.refAllDecls(decode);
 }
