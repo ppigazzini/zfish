@@ -249,8 +249,13 @@ fn encodeLebSection(
 
 // FeatureTransformer::write_parameters preceded by Detail::write_parameters'
 // u32 hash. PackusEpi16Order is the identity, so unpermute is a no-op. Member
-// write order: biases (LEB i16), threatWeights (raw i8), weights (LEB i16),
-// combined threatPsqtWeights++psqtWeights (LEB i32).
+// write order MUST mirror parseFeatureTransformer (the file / upstream layout):
+// biases (LEB i16), threatWeights (raw i8), threatPsqtWeights (LEB i32),
+// weights (LEB i16), psqtWeights (LEB i32). Note threatPsqt and psqt are SEPARATE
+// sections on opposite sides of `weights` -- they are NOT a single combined i32
+// section (an earlier version wrote weights before threatPsqt and merged
+// threatPsqt++psqt, producing a 21-byte-short, non-round-trippable export that
+// diverged from upstream at the weights-section boundary).
 pub fn serializeFeatureTransformer(
     ft: []const u8,
     hash_value: u32,
@@ -263,14 +268,9 @@ pub fn serializeFeatureTransformer(
 
     try encodeLebSection(i16, constSlice(i16, ft, biases_off, biases_count), &.{}, out, a);
     try out.appendSlice(a, ft[threat_weights_off .. threat_weights_off + threat_weights_count]);
+    try encodeLebSection(i32, constSlice(i32, ft, threat_psqt_weights_off, threat_psqt_weights_count), &.{}, out, a);
     try encodeLebSection(i16, constSlice(i16, ft, weights_off, psq_weights_count), &.{}, out, a);
-    try encodeLebSection(
-        i32,
-        constSlice(i32, ft, threat_psqt_weights_off, threat_psqt_weights_count),
-        constSlice(i32, ft, psqt_weights_off, psqt_weights_count),
-        out,
-        a,
-    );
+    try encodeLebSection(i32, constSlice(i32, ft, psqt_weights_off, psqt_weights_count), &.{}, out, a);
 }
 
 // AffineTransform::write_parameters: biases (int32 LE) then weights in the file's
