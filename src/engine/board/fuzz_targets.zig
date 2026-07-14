@@ -16,6 +16,8 @@ const position = @import("position");
 const movegen = @import("movegen");
 const worker_layout = @import("worker_layout");
 const position_snapshot = @import("position_snapshot");
+const network = @import("network");
+const nnue_acc = @import("nnue_accumulator");
 
 const position_size = worker_layout.position_size;
 const state_info_size = worker_layout.state_info_size;
@@ -289,4 +291,83 @@ fn fuzzMoveCountStability(_: void, smith: *std.testing.Smith) anyerror!void {
 test "fuzz: make/unmake of every move preserves the legal-move count" {
     position.initRuntime();
     try std.testing.fuzz({}, fuzzMoveCountStability, .{});
+}
+
+// The NNUE forward pass touches the whole eval crown jewel that the board fuzz above
+// never reaches: feature extraction from the position, a full accumulator refresh, the
+// feature-transformer + fully-connected layers, and the psqt/positional bucket blend. The
+// accumulator stack + refresh cache are opaque byte blocks (sized by worker_layout), reused
+// across iterations (single-threaded fuzz) exactly like the eval-trace command's static
+// arenas. Built under ReleaseSafe so an OOB feature index, a mis-aligned FT read, or an
+// overflow in the accumulation trips a Zig safety check instead of reading garbage.
+var eval_stack_buf: [worker_layout.accumulator_stack_size]u8 align(64) = undefined;
+var eval_caches_buf: [worker_layout.accumulator_caches_size]u8 align(64) = undefined;
+
+// Load the on-disk net once into the module-global weight storage (there is no embedded
+// net in the Zig port). `network.load` scans cwd + the given root dir; the fuzz artifact
+// runs from the repo root, so "net/" reaches net/nn-<default>.nnue (and the parity harness's
+// cwd is net/ itself, which the "" scan covers). Returns false when the net is absent so the
+// body no-ops instead of dereferencing a null FT -- the target is then a vacuous pass rather
+// than a spurious failure in an environment without the weights.
+fn ensureNetLoaded() bool {
+    if (network.ftPtr() != null) return true;
+    const dir = "net/";
+    network.load(dir, dir.len, "", 0);
+    return network.ftPtr() != null;
+}
+
+// Property: the NNUE evaluation of ANY fuzzer-reached legal position completes without UB and
+// returns a finite score. The reached board is arbitrary (a legal line from the start), so
+// this steers the feature/accumulator code through positions the fixed golden `eval` test
+// never sees (lopsided material, many promotions, deep pawn structures). The bound is a gross
+// tripwire: a correct internal eval is in the hundreds (kiwipete = -427; startpos = +10), so
+// 1<<22 cannot false-positive on a legal board yet still catches pointer-garbage / overflow.
+fn fuzzNnueEval(_: void, smith: *std.testing.Smith) anyerror!void {
+    if (!ensureNetLoaded()) return; // no weights available -- nothing to fuzz
+
+    var choices: [24]u8 = undefined;
+    smith.bytesWithHash(&choices, 3);
+
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
+    if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
+        std.heap.c_allocator.free(std.mem.span(msg));
+        return;
+    }
+    var chain: [choices.len]position.StateInfo align(16) = undefined;
+    var played: [choices.len]u16 = undefined;
+    var ply: usize = 0;
+    while (ply < choices.len) : (ply += 1) {
+        var moves: [256]u16 = undefined;
+        const n = movegen.generateLegal(&p, &moves);
+        if (n == 0) break;
+        const pick = moves[choices[ply] % n];
+        played[ply] = pick;
+        position.doMoveState(&p, pick, &chain[ply]);
+    }
+
+    // Fresh stack + cache -> the first evaluate does a FULL accumulator refresh from the
+    // reached position (the incremental doMove-driven update path is search-driven, exercised
+    // by the shallow-search target once that lands).
+    const stack: *nnue_acc.AccumulatorStack = @ptrCast(&eval_stack_buf);
+    @memset(eval_stack_buf[0..], 0);
+    nnue_acc.stackReset(stack);
+    const cache: *nnue_acc.RefreshCache = @ptrCast(&eval_caches_buf);
+    const biases: [*]const i16 = @ptrCast(@alignCast(network.ftPtr().?));
+    nnue_acc.clearRefreshCache(cache, biases);
+
+    const out = network.evaluate(&p, stack, cache);
+    const limit: c_int = 1 << 22;
+    if (out.psqt > limit or out.psqt < -limit) return error.NnuePsqtOutOfRange;
+    if (out.positional > limit or out.positional < -limit) return error.NnuePositionalOutOfRange;
+
+    while (ply > 0) {
+        ply -= 1;
+        position.undoMove(&p, played[ply]);
+    }
+}
+
+test "fuzz: NNUE eval of reached positions is finite and crash-free" {
+    position.initRuntime();
+    try std.testing.fuzz({}, fuzzNnueEval, .{});
 }
