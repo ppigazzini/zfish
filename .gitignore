@@ -32,5 +32,6 @@ net/tb_search_tmp.epd
 
 # Syzygy tablebases: fetched + cached (zig build tb), never committed
 net/syzygy/
+net/syzygy5/
 *.rtbw
 *.rtbz
