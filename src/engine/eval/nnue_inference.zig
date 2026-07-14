@@ -67,15 +67,30 @@ inline fn affineDpbusd(
         for (0..N) |k| m[k] = @intCast(k % 4);
         break :blk m;
     };
-    // deinterleave masks: mask[sub] gathers lanes {j*4+sub : j in 0..OUT}.
-    const deint: [4]@Vector(OUT, i32) = comptime blk: {
-        var d: [4]@Vector(OUT, i32) = undefined;
-        for (0..4) |sub| {
-            var col: [OUT]i32 = undefined;
-            for (0..OUT) |j| col[j] = @intCast(j * 4 + sub);
-            d[sub] = col;
-        }
-        break :blk d;
+    // Two-stage vpmaddwd reduction masks. Stage 1: deinterleave the N interleaved
+    // products into even/odd halves so LLVM matches widen+mul+add as vpmaddwd(inpat,
+    // w16) -> N/2 i32 partials (madd[2j], madd[2j+1] are output j's two partials).
+    // Stage 2: gather the even/odd partials and add -> OUT i32.
+    const N2 = N / 2;
+    const even_n: @Vector(N2, i32) = comptime blk: {
+        var m: [N2]i32 = undefined;
+        for (0..N2) |k| m[k] = @intCast(2 * k);
+        break :blk m;
+    };
+    const odd_n: @Vector(N2, i32) = comptime blk: {
+        var m: [N2]i32 = undefined;
+        for (0..N2) |k| m[k] = @intCast(2 * k + 1);
+        break :blk m;
+    };
+    const even_out: @Vector(OUT, i32) = comptime blk: {
+        var m: [OUT]i32 = undefined;
+        for (0..OUT) |k| m[k] = @intCast(2 * k);
+        break :blk m;
+    };
+    const odd_out: @Vector(OUT, i32) = comptime blk: {
+        var m: [OUT]i32 = undefined;
+        for (0..OUT) |k| m[k] = @intCast(2 * k + 1);
+        break :blk m;
     };
     var acc: Vo = biases[0..OUT].*;
     const groups = input.len / 4;
@@ -95,12 +110,18 @@ inline fn affineDpbusd(
         const inpat: Vi16 = @shuffle(i16, in4, @as(@Vector(4, i16), undefined), rep_mask);
         const wq: @Vector(N, i8) = weights[g * N ..][0..N].*;
         const w16: Vi16 = wq; // widen i8 -> i16
-        const prod: Vi16 = inpat * w16; // exact: |input|<=127, |weight|<=128
-        inline for (0..4) |sub| {
-            const s: @Vector(OUT, i16) = @shuffle(i16, prod, @as(Vi16, undefined), deint[sub]);
-            const s32: Vo = s; // widen i16 -> i32 before summing (4 partials can exceed i16)
-            acc += s32;
-        }
+        const Vh = @Vector(N2, i32);
+        // Stage 1 = vpmaddwd(inpat, w16): the deinterleave+widen+mul+add folds into a
+        // single pmaddwd per register (products are exact: |in|<=127, |w|<=128).
+        const in_e: @Vector(N2, i16) = @shuffle(i16, inpat, @as(Vi16, undefined), even_n);
+        const in_o: @Vector(N2, i16) = @shuffle(i16, inpat, @as(Vi16, undefined), odd_n);
+        const w_e: @Vector(N2, i16) = @shuffle(i16, w16, @as(Vi16, undefined), even_n);
+        const w_o: @Vector(N2, i16) = @shuffle(i16, w16, @as(Vi16, undefined), odd_n);
+        const madd: Vh = @as(Vh, in_e) * @as(Vh, w_e) + @as(Vh, in_o) * @as(Vh, w_o);
+        // Stage 2: sum output j's two i32 partials.
+        const m_e: Vo = @shuffle(i32, madd, @as(Vh, undefined), even_out);
+        const m_o: Vo = @shuffle(i32, madd, @as(Vh, undefined), odd_out);
+        acc += m_e + m_o;
     }
     out.* = acc;
 }
