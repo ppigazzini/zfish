@@ -163,6 +163,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "thread_ops", .path = "src/engine/search/thread_ops.zig" },
         .{ .name = "output_sink", .path = "src/engine/search/output_sink.zig" },
         .{ .name = "shared_histories", .path = "src/engine/search/shared_histories.zig" },
+        .{ .name = "headless_search", .path = "src/engine/search/headless_search.zig" },
         .{ .name = "shared_histories_map", .path = "src/engine/search/shared_histories_map.zig" },
         .{ .name = "network_holder", .path = "src/engine/eval/network_holder.zig" },
         .{ .name = "worker_histories", .path = "src/engine/state/worker_histories.zig" },
@@ -218,6 +219,19 @@ pub fn build(b: *std.Build) void {
         .{ .from = "worker_construct", .imp = "search", .to = "search" },
         .{ .from = "worker_construct", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "worker_construct", .imp = "network", .to = "network" },
+        // headless_search: engine-zone single-worker shallow-search entry (the "search one
+        // position at depth N" helper the platform ThreadPool otherwise gatekeeps).
+        .{ .from = "headless_search", .imp = "worker_layout", .to = "worker_layout" },
+        .{ .from = "headless_search", .imp = "worker_construct", .to = "worker_construct" },
+        .{ .from = "headless_search", .imp = "search_driver", .to = "search_driver" },
+        .{ .from = "headless_search", .imp = "root_move_build", .to = "root_move_build" },
+        .{ .from = "headless_search", .imp = "page_alloc", .to = "page_alloc" },
+        .{ .from = "headless_search", .imp = "tt_types", .to = "tt_types" },
+        .{ .from = "headless_search", .imp = "network", .to = "network" },
+        .{ .from = "headless_search", .imp = "movegen", .to = "movegen" },
+        .{ .from = "headless_search", .imp = "position", .to = "position" },
+        .{ .from = "headless_search", .imp = "option_source", .to = "option_source" },
+        .{ .from = "headless_search", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "thread", .imp = "root_move_build", .to = "root_move_build" },
         .{ .from = "root_move_build", .imp = "position", .to = "position" },
         .{ .from = "root_move_build", .imp = "state_list", .to = "state_list" },
@@ -1523,6 +1537,7 @@ pub fn build(b: *std.Build) void {
     fuzz_targets_test.root_module.addImport("position_snapshot", mods.get("position_snapshot").?);
     fuzz_targets_test.root_module.addImport("network", mods.get("network").?);
     fuzz_targets_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
+    fuzz_targets_test.root_module.addImport("headless_search", mods.get("headless_search").?);
     const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
     fuzz_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
 
@@ -1597,7 +1612,7 @@ pub fn build(b: *std.Build) void {
         "search_setup",      "fen_parse",        "search_ctx",           "repetition",
         "state_setup",       "worker_layout",    "move_do",              "nnue_accumulator",
         "engine_object",     "engine_nnue",      "shared_history",       "history",
-        "worker_construct",
+        "worker_construct",  "headless_search",
     };
     for (module_unit_test_names) |name| {
         const spec_path = blk: {
