@@ -18,6 +18,7 @@ const worker_layout = @import("worker_layout");
 const position_snapshot = @import("position_snapshot");
 const network = @import("network");
 const nnue_acc = @import("nnue_accumulator");
+const headless_search = @import("headless_search");
 
 const position_size = worker_layout.position_size;
 const state_info_size = worker_layout.state_info_size;
@@ -370,4 +371,66 @@ fn fuzzNnueEval(_: void, smith: *std.testing.Smith) anyerror!void {
 test "fuzz: NNUE eval of reached positions is finite and crash-free" {
     position.initRuntime();
     try std.testing.fuzz({}, fuzzNnueEval, .{});
+}
+
+// The deepest crown-jewel target: a shallow SEARCH on a fuzzer-reached position. This
+// drives the whole engine-zone search tree headless -- move ordering, the transposition
+// table, pruning/reduction, qsearch, the incremental accumulator push/pop, and the eval
+// -- via the headless_search helper (no platform thread pool). Built under ReleaseSafe so
+// any OOB / overflow / null-deref anywhere in that tree trips a safety check. A correct
+// search must return a move that is LEGAL at the reached root and a finite score.
+fn fuzzShallowSearch(_: void, smith: *std.testing.Smith) anyerror!void {
+    if (!ensureNetLoaded()) return; // no weights -> nothing to search
+
+    var choices: [16]u8 = undefined;
+    smith.bytesWithHash(&choices, 3);
+
+    var p: position.Position align(64) = undefined;
+    var st: position.StateInfo align(16) = undefined;
+    if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
+        std.heap.c_allocator.free(std.mem.span(msg));
+        return;
+    }
+    var chain: [choices.len]position.StateInfo align(16) = undefined;
+    var played: [choices.len]u16 = undefined;
+    var ply: usize = 0;
+    while (ply < choices.len) : (ply += 1) {
+        var moves: [256]u16 = undefined;
+        const cnt = movegen.generateLegal(&p, &moves);
+        if (cnt == 0) break;
+        const pick = moves[choices[ply] % cnt];
+        played[ply] = pick;
+        position.doMoveState(&p, pick, &chain[ply]);
+    }
+
+    // Search the reached position headless (depth 1..3 from a fuzzer byte -- shallow keeps
+    // iterations fast while still entering the full search recursion + qsearch). searchPosition
+    // copies the board, so `p` is untouched and stays valid for the legality check below.
+    const depth: i32 = @as(i32, choices[0] % 3) + 1;
+    const maybe = headless_search.searchPosition(&p, 0, depth);
+
+    // The best move must be legal at the reached root; capture before unwinding `p`.
+    var search_err: ?anyerror = null;
+    if (maybe) |res| {
+        var moves2: [256]u16 = undefined;
+        const cnt2 = movegen.generateLegal(&p, &moves2);
+        var legal_best = false;
+        for (moves2[0..cnt2]) |m| {
+            if (m == res.best_move) legal_best = true;
+        }
+        if (!legal_best) search_err = error.SearchMoveNotLegalAtRoot;
+        if (res.score <= -32000 or res.score >= 32000) search_err = error.SearchScoreOutOfRange;
+        if (res.nodes == 0) search_err = error.SearchVisitedNoNodes;
+    }
+
+    while (ply > 0) {
+        ply -= 1;
+        position.undoMove(&p, played[ply]);
+    }
+    if (search_err) |e| return e;
+}
+
+test "fuzz: shallow headless search on reached positions is legal + finite" {
+    position.initRuntime();
+    try std.testing.fuzz({}, fuzzShallowSearch, .{});
 }
