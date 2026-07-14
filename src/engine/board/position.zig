@@ -132,6 +132,11 @@ pub fn initRuntime() void {
     position_snapshot_port.fill_fn = &fillSnapshot;
     position_snapshot_port.move_is_legal_fn = &legal;
 
+    // Build the magic-bitboard slider attack tables first: zobrist.init() (cuckoo
+    // tables) and every later position setup / search call bitboard.attacks(), which
+    // now reads these tables (see bitboard.zig). Read-only after this point.
+    bitboard.initSliderMagics();
+
     // Build the Zobrist + cuckoo tables (now owned by the zobrist leaf).
     zobrist.init();
 }

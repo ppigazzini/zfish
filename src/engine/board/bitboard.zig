@@ -141,13 +141,29 @@ pub fn initRuntimeTables(
     }
 }
 
+// Runtime magic-bitboard attack tables (Stockfish-style): built once at startup by
+// initSliderMagics() (invoked from position.initRuntime, before any position setup or
+// search), read-only during search. The magic search builds each entry from the
+// ray-cast slidingAttack reference, so attacksBb() returns bit-identical attack sets
+// while replacing the per-node direction loop with an O(1) mask/multiply/shift/load.
+// ~860 KB total; the single-threaded startup init is the only writer.
+var rook_magic_attacks: [0x19000]u64 = undefined;
+var bishop_magic_attacks: [0x1480]u64 = undefined;
+var slider_magics: [64][2]Magic = undefined;
+
+pub fn initSliderMagics() void {
+    initMagics(PieceType.rook, rook_magic_attacks[0..], &slider_magics);
+    initMagics(PieceType.bishop, bishop_magic_attacks[0..], &slider_magics);
+}
+
 pub fn attacks(piece_type: u8, square: u8, occupied: u64) u64 {
     const sq = @as(usize, @intCast(square));
     return switch (piece_type) {
         knight_piece => knightAttacks(sq),
-        bishop_piece => slidingAttack(PieceType.bishop, sq, occupied),
-        rook_piece => slidingAttack(PieceType.rook, sq, occupied),
-        queen_piece => slidingAttack(PieceType.bishop, sq, occupied) | slidingAttack(PieceType.rook, sq, occupied),
+        bishop_piece => attacksBb(PieceType.bishop, sq, occupied, &slider_magics),
+        rook_piece => attacksBb(PieceType.rook, sq, occupied, &slider_magics),
+        queen_piece => attacksBb(PieceType.bishop, sq, occupied, &slider_magics) |
+            attacksBb(PieceType.rook, sq, occupied, &slider_magics),
         king_piece => kingAttacks(sq),
         else => 0,
     };
