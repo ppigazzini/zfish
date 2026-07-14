@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# God-file structural gate (REPORT-19 AR9 / R6, REPORT-17 M21).
+#
+# The invariant: no src/**/*.zig file should grow into a god-file. REPORT-17 M21
+# reached "0 files >= 500 lines"; the post-report Syzygy prober (wdl.zig) and the
+# session facade (engine.zig) re-crossed it, and nothing gated the property. This
+# is that gate.
+#
+# It counts .zig files with >= LOC_THRESHOLD (default 500) lines and ratchets like
+# the headless gate: LOC_BASELINE is the currently-allowed count; the gate FAILS if
+# the real count exceeds it (a new god-file appeared or one grew past the line),
+# and NUDGES if it drops (lower the baseline). Waiving the current large files (each
+# is one cohesive subsystem, not a true god-file -- splitting a cohesive file into
+# coupled micro-files is the R6 barnacle anti-pattern) while forbidding new ones is
+# the intended steady state; target 0 only if a clean split emerges.
+#
+# Usage: loc_lint.sh
+#        LOC_BASELINE=N LOC_THRESHOLD=500 loc_lint.sh
+set -u
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+THRESHOLD="${LOC_THRESHOLD:-500}"
+BASELINE="${LOC_BASELINE:-2}"
+
+count=0
+tmp="$(mktemp)"
+while IFS= read -r f; do
+    n=$(wc -l < "$f")
+    if [ "$n" -ge "$THRESHOLD" ]; then
+        printf '  %5d  %s\n' "$n" "${f#"$ROOT"/}" >> "$tmp"
+        count=$((count + 1))
+    fi
+done < <(find "$ROOT/src" -name '*.zig' | sort)
+
+if [ "$count" -gt 0 ]; then
+    echo "loc: files >= $THRESHOLD lines:"
+    sort -rn "$tmp"
+fi
+rm -f "$tmp"
+echo "loc: $count file(s) >= $THRESHOLD lines (baseline $BASELINE)"
+
+if [ "$count" -gt "$BASELINE" ]; then
+    echo "loc: REGRESSION -- a new god-file crossed $THRESHOLD lines (split it, or justify + raise LOC_BASELINE)." >&2
+    exit 1
+fi
+if [ "$count" -lt "$BASELINE" ]; then
+    echo "loc: NUDGE -- $count < baseline $BASELINE; lower LOC_BASELINE (a god-file was split)."
+fi
+if [ "$count" -eq 0 ]; then
+    echo "loc: OK -- no file >= $THRESHOLD lines (god-file split holds)"
+fi
+exit 0
