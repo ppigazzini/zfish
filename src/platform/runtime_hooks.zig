@@ -74,9 +74,13 @@ pub var shared_state_clear_histories: *const fn (shared_state: *const anyopaque)
             hookPanic("shared_state_clear_histories");
         }
     }.stub;
-pub var shared_state_insert_history: *const fn (shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) void =
+// Returns error.OutOfMemory: inserting a numa node's shared-history entry allocates
+// (the map bucket + the large-page DynStats arrays), so this seam propagates OOM to the
+// engine's single reconfigure handling boundary (resizeThreadsEngine) instead of
+// panicking deep in the hook.
+pub var shared_state_insert_history: *const fn (shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) error{OutOfMemory}!void =
     struct {
-        fn stub(_: *const anyopaque, _: *const anyopaque, _: usize, _: usize, _: u8) void {
+        fn stub(_: *const anyopaque, _: *const anyopaque, _: usize, _: usize, _: u8) error{OutOfMemory}!void {
             hookPanic("shared_state_insert_history");
         }
     }.stub;

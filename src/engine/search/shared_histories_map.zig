@@ -147,3 +147,20 @@ test "tryEmplace rolls back the inserted slot when construct fails" {
     try testing.expectEqual(@as(usize, 1), map.count());
     try testing.expectEqual(@as(usize, 8), map.at(0).thread_count);
 }
+
+// The OTHER OOM path: the map-slot allocation (getOrPut) itself failing, BEFORE construct
+// runs. The construct-failure test above uses a non-allocating mock construct, so a failing
+// allocator never trips getOrPut; a fail-fast FailingAllocator drives that branch directly.
+// This is the allocation-failure the shared-histories insert hook now propagates as
+// error.OutOfMemory to the engine's single reconfigure boundary instead of panicking.
+test "tryEmplace propagates OOM when the map-slot allocation fails" {
+    live_entries = 0;
+    var failing = std.testing.FailingAllocator.init(testing.allocator, .{ .fail_index = 0 });
+    var map = MockMap.init(failing.allocator(), mockConstruct, mockFree);
+    defer map.deinit();
+
+    // getOrPut allocates the map's initial storage -> fails at index 0, before construct.
+    try testing.expectError(error.OutOfMemory, map.tryEmplace(0, 8));
+    try testing.expectEqual(@as(usize, 0), map.count());
+    try testing.expectEqual(@as(usize, 0), live_entries); // construct never ran -> nothing to free
+}

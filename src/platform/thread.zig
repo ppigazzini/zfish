@@ -227,7 +227,7 @@ pub fn reconfigure(
     while (node_index < node_count) : (node_index += 1) {
         const count = threads_per_node[node_index];
         if (count != 0) {
-            runtime_hooks.shared_state_insert_history(
+            try runtime_hooks.shared_state_insert_history(
                 shared_state,
                 numa_config,
                 node_index,
