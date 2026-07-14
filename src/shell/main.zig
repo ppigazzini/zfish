@@ -223,10 +223,10 @@ fn sharedStateClearHistories(shared_state: *const anyopaque) void {
 }
 // insert_history: single-node never binds (do_bind always 0, numa_config unused) — insert
 // directly into the SharedHistoriesMap reached via the typed shared_histories field.
-fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) void {
+fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) error{OutOfMemory}!void {
     _ = numa_config;
     _ = do_bind;
-    engine_port.sharedHistoriesInsert(engine_port.SharedState.fromPtr(shared_state).shared_histories, numa_index, size);
+    try engine_port.sharedHistoriesInsert(engine_port.SharedState.fromPtr(shared_state).shared_histories, numa_index, size);
 }
 // With NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub; loadNetworkBytes
 // fails on it and falls back to the on-disk EvalFile (bench validates the file net).

@@ -1,6 +1,6 @@
-// Engine side shared-histories map (ANNEX B.6): the numa-replicated history map the
-// engine owns outside the WorkerLayout graph, + its accessors and teardown. Owns its
-// state (the lazy map); position + std only.
+// Engine side shared-histories map: the numa-replicated history map the engine owns
+// outside the WorkerLayout graph, + its accessors and teardown. Owns its state (the
+// lazy map); position + std only.
 
 const std = @import("std");
 const position_port = @import("position");
@@ -27,8 +27,8 @@ pub fn sharedHistoriesClear(map: *search_driver.SharedHistoriesMap) void {
     map.clear();
 }
 
-pub fn sharedHistoriesInsert(map: *search_driver.SharedHistoriesMap, numa_index: usize, size: usize) void {
-    map.tryEmplace(numa_index, size) catch @panic("OOM: sharedHistories insert");
+pub fn sharedHistoriesInsert(map: *search_driver.SharedHistoriesMap, numa_index: usize, size: usize) error{OutOfMemory}!void {
+    try map.tryEmplace(numa_index, size);
 }
 
 pub fn sharedHistoriesAt(map: *search_driver.SharedHistoriesMap, numa_index: usize) *search_driver.SharedHistories {
