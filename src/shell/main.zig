@@ -62,8 +62,8 @@ pub fn main(init: std.process.Init) !void {
     const info_line = std.mem.span(info);
     uci_output.printLine(info_line.ptr, info_line.len);
 
-    // The movegen computes attacks/rays on the fly (bitboard.zig slidingAttack
-    // etc.); the runtime tables come from position_port.initRuntime().
+    // Slider attacks use magic-bitboard tables; between/line rays are computed on
+    // the fly (bitboard.zig). Both are set up by position_port.initRuntime().
     position_port.initRuntime();
     installRuntimeHooks();
 
