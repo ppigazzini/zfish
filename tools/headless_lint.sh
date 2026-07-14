@@ -43,6 +43,7 @@ done < <(grep -oE '\.name = "[a-z_]+", \.path = "[^"]+"' "$BUILD" \
 violations=0
 tmp="$(mktemp)"
 while IFS= read -r f; do
+    # (a) named-module imports: resolve the key via module_specs to a zone.
     while IFS= read -r key; do
         z="${ZONE[$key]:-}"
         if [ "$z" = platform ] || [ "$z" = shell ]; then
@@ -50,6 +51,22 @@ while IFS= read -r f; do
             violations=$((violations + 1))
         fi
     done < <(grep -oE '@import\("[a-z_]+"\)' "$f" | sed -E 's/@import\("([a-z_]+)"\)/\1/' | sort -u)
+
+    # (b) path-leaf imports (`@import("../x.zig")`): the named-key scan above misses these
+    # (they contain `.zig`/`/`), so an engine file could path-import a platform/shell file and
+    # slip past. Resolve each relative to the importing file's dir and flag any that escape
+    # src/engine/. (The Zig compiler also rejects these as "import of file outside module path",
+    # but the structural gate should not be silent about a re-coupling.)
+    fdir="$(dirname "$f")"
+    while IFS= read -r rel; do
+        abs="$(cd "$fdir" 2>/dev/null && cd "$(dirname "$rel")" 2>/dev/null && printf '%s/%s' "$(pwd)" "$(basename "$rel")")"
+        case "$abs" in
+            "$ROOT"/src/engine/*) : ;;                        # stays in engine — fine
+            "$ROOT"/src/platform/*|"$ROOT"/src/shell/*)
+                printf '  %s -> %s (path-leaf)\n' "${f#"$ROOT"/src/engine/}" "${abs#"$ROOT"/}" >> "$tmp"
+                violations=$((violations + 1)) ;;
+        esac
+    done < <(grep -oE '@import\("[^"]*\.zig"\)' "$f" | sed -E 's/@import\("([^"]*)"\)/\1/' | sort -u)
 done < <(find "$ROOT/src/engine" -name '*.zig' | sort)
 
 if [ "$violations" -gt 0 ]; then
