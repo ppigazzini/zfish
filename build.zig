@@ -1510,6 +1510,8 @@ pub fn build(b: *std.Build) void {
     fuzz_targets_test.root_module.addImport("movegen", mods.get("movegen").?);
     fuzz_targets_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
     fuzz_targets_test.root_module.addImport("position_snapshot", mods.get("position_snapshot").?);
+    fuzz_targets_test.root_module.addImport("network", mods.get("network").?);
+    fuzz_targets_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
     const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
     fuzz_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
 
