@@ -5,10 +5,12 @@
 
 const std = @import("std");
 
-// A Zig-owned UCI searchmove text record. Fixed 8-byte record -- a length byte plus
-// up to 7 chars ("e2e4", "e7e8q"). uci.goParsed writes these; the startThinking move
-// filter reads them by plain field access.
-pub const SearchMoveText = extern struct {
+// A Zig-owned UCI searchmove text record: a length byte plus up to 7 chars ("e2e4",
+// "e7e8q"). uci.goParsed writes these; the startThinking move filter reads them by plain
+// field access. A plain Zig struct (not `extern`): the layout is not a C-ABI or byte-
+// serialization contract -- it is only ever a typed `[]SearchMoveText` element -- and
+// with two u8-based fields Zig lays it out as the same contiguous 8 bytes regardless.
+pub const SearchMoveText = struct {
     len: u8,
     text: [7]u8,
 };

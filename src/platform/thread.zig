@@ -45,10 +45,9 @@ inline fn threadClearWorker(thread: *worker_layout.Thread) void {
 inline fn threadRunJob(thread: *worker_layout.Thread, job: ThreadCallback, ctx: ?*anyopaque) void {
     nt(thread).startJob(job, ctx);
 }
-// Read searchmoves[index] as a Zig-owned SearchMoveText record: the length + inline
-// chars are read through typed struct fields. The header stays a {begin,end,cap} usize
-// triple, so the element pointer is still @ptrFromInt(begin + index*stride), but into
-// Zig-owned memory. Gate-verified by search-modes.
+// Read searchmoves[index] as a Zig-owned SearchMoveText record: `searchmoves` is a plain
+// `[]SearchMoveText` slice (typed indexing, no hand-built vector header), and the length +
+// inline chars are read through typed struct fields. Gate-verified by search-modes.
 inline fn limitsSearchmoveText(limits: *const worker_layout.LimitsType, index: usize) ByteView {
     const rec: *const worker_layout.SearchMoveText = &limits.searchmoves[index];
     return .{ .ptr = &rec.text, .len = rec.len };
