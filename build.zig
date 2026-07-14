@@ -215,7 +215,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "tablebase", .imp = "tb_source", .to = "tb_source" },
         .{ .from = "tb_source", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_driver", .imp = "tb_source", .to = "tb_source" },
-        // Syzygy WDL prober (M-SZ-2c): the platform tablebase module reaches down to the
+        // Syzygy WDL prober: the platform tablebase module reaches down to the
         // headless engine (a legal platform->engine down-edge) for a scratch Position, its
         // material key, piece bitboards, and legal-capture movegen used by the probe.
         .{ .from = "tablebase", .imp = "position", .to = "position" },
@@ -1377,7 +1377,7 @@ pub fn build(b: *std.Build) void {
     // God-file structural gate: ratchet on the count of .zig files >= 500 lines across ALL
     // repo-owned code (src/ + build.zig + tools/), so the "no god-files" property is enforced
     // repo-wide, not just claimed. An earlier src/-only scan was blind to the two LARGEST files:
-    // build.zig (2237, the declarative module graph) and tools/parity_harness.zig (1888, the gate
+    // build.zig (2245, the declarative module graph) and tools/parity_harness.zig (1888, the gate
     // driver). Both are cohesive-not-god (a build script, a test harness), so they are waived at
     // baseline 2 -- but a THIRD (or growth of a smaller file past the line) fails the gate. Two
     // earlier splits ratcheted this down: syzygy/wdl.zig 832 -> wdl 490 + registry 371, and
@@ -1568,53 +1568,62 @@ pub fn build(b: *std.Build) void {
         addTestRun(b, test_step, file_test, cov_dir, &cov_idx);
     }
 
-    // Coverage: leaves that need a few module imports for their `test {}` /
-    // refAllDecls to compile. Each entry lists the file's DIRECT imports; the modules
-    // in `mods` already carry their own transitive imports.
+    // Isolated unit tests for the NAMED modules whose in-tree `test {}` blocks need their
+    // imports wired to compile standalone. The import set is DERIVED from module_edges
+    // (single-source): the exe wiring IS the test wiring, so adding a module_edges edge
+    // auto-covers the isolated test -- there is no second list to keep in sync. These 32
+    // modules previously re-declared their imports in the DepTest table below; that
+    // duplication was a proven foot-gun (a new edge silently skipped the standalone test,
+    // e.g. the Syzygy `tb_source` wiring). Listing a module name here is the whole opt-in.
+    const module_unit_test_names = [_][]const u8{
+        "tablebase",         "uci_format",       "engine_infofmt",       "engine_options",
+        "position_snapshot", "worker_histories", "shared_history_types", "thread_vote",
+        "runtime_hooks",     "search_types",     "position_query",       "zobrist",
+        "uci_move",          "benchmark",        "movegen",              "network",
+        "legality",          "search_common",    "movepick",             "position_lifecycle",
+        "search_setup",      "fen_parse",        "search_ctx",           "repetition",
+        "state_setup",       "worker_layout",    "move_do",              "nnue_accumulator",
+        "engine_object",     "engine_nnue",      "shared_history",       "history",
+    };
+    for (module_unit_test_names) |name| {
+        const spec_path = blk: {
+            for (module_specs) |s| {
+                if (std.mem.eql(u8, s.name, name)) break :blk s.path;
+            }
+            @panic("module_unit_test_names references an unknown module");
+        };
+        // A fresh module (not the shared exe module) so the test artifact links libc for
+        // the c_allocator-using `test {}` blocks without mutating the exe module.
+        const tm = b.createModule(.{
+            .root_source_file = b.path(spec_path),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        for (module_edges) |e| {
+            if (std.mem.eql(u8, e.from, name)) tm.addImport(e.imp, mods.get(e.to).?);
+        }
+        const tm_test = b.addTest(.{ .root_module = tm });
+        addTestRun(b, test_step, tm_test, cov_dir, &cov_idx);
+    }
+
+    // Coverage: PATH-LEAF files (NOT named modules, so they have no module_edges row) whose
+    // `test {}` / refAllDecls need a few module imports to compile. Their deps are genuinely
+    // their own data -- there is nothing to derive them from but the file's own `@import`
+    // lines -- so each lists its DIRECT imports explicitly. The modules in `mods` already
+    // carry their own transitive imports.
     const DepTest = struct { path: []const u8, deps: []const []const u8 };
     for ([_]DepTest{
-        .{ .path = "src/platform/tablebase.zig", .deps = &.{ "tb_source", "position", "state_list", "movegen", "board_core" } },
-        .{ .path = "src/shell/uci_format.zig", .deps = &.{"uci_strings"} },
-        .{ .path = "src/shell/engine/infofmt.zig", .deps = &.{"engine_util"} },
-        .{ .path = "src/shell/engine/options.zig", .deps = &.{"option"} },
-        .{ .path = "src/engine/board/position_snapshot.zig", .deps = &.{"position_types"} },
         .{ .path = "src/engine/eval/nnue_acc_layout.zig", .deps = &.{ "position_snapshot", "position_types" } },
         .{ .path = "src/engine/eval/nnue_acc_update.zig", .deps = &.{ "position_snapshot", "position_types", "nnue_feature", "nnue_acc_rowops", "nnue_ft", "nnue_refresh_cache" } },
-        .{ .path = "src/engine/state/worker_histories.zig", .deps = &.{"shared_history_types"} },
-        .{ .path = "src/engine/state/shared_history_types.zig", .deps = &.{"correction_bundle"} },
-        .{ .path = "src/platform/thread_vote.zig", .deps = &.{"worker_layout"} },
         .{ .path = "src/shell/thread_construct.zig", .deps = &.{"worker_layout"} },
-        .{ .path = "src/platform/runtime_hooks.zig", .deps = &.{ "worker_layout", "position_types" } },
-        .{ .path = "src/engine/search/search_types.zig", .deps = &.{ "correction_bundle", "root_move", "worker_histories" } },
-        .{ .path = "src/engine/board/position_query.zig", .deps = &.{ "board_core", "position_snapshot", "position_types" } },
-        .{ .path = "src/engine/board/zobrist.zig", .deps = &.{ "bitboard", "board_core" } },
-        .{ .path = "src/engine/board/uci_move.zig", .deps = &.{ "movegen", "position_snapshot", "position_types" } },
         .{ .path = "src/engine/search/movepick_snapshot.zig", .deps = &.{ "bitboard", "position_snapshot" } },
         .{ .path = "src/engine/search/movepick_history.zig", .deps = &.{"position_snapshot"} },
-        .{ .path = "src/shell/benchmark.zig", .deps = &.{"libc"} },
-        .{ .path = "src/engine/board/movegen.zig", .deps = &.{ "bitboard", "position_snapshot", "position_types" } },
-        .{ .path = "src/engine/eval/network.zig", .deps = &.{ "page_alloc", "nnue_accumulator", "position_types" } },
         .{ .path = "src/engine/eval/nnue_weight_storage.zig", .deps = &.{"page_alloc"} },
         .{ .path = "src/engine/eval/nnue_inference.zig", .deps = &.{ "page_alloc", "nnue_accumulator", "position_types" } },
-        .{ .path = "src/engine/board/legality.zig", .deps = &.{ "bitboard", "board_core", "movegen", "position_types" } },
-        .{ .path = "src/engine/search/search_common.zig", .deps = &.{ "board_core", "worker_layout", "position_types", "worker_histories" } },
-        .{ .path = "src/engine/search/movepick.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types" } },
         .{ .path = "src/engine/search/movepick_score.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types" } },
-        .{ .path = "src/engine/board/position_lifecycle.zig", .deps = &.{ "fen_parse", "worker_layout", "legality", "move_do", "position_types" } },
-        .{ .path = "src/engine/search/search_setup.zig", .deps = &.{ "worker_layout", "nnue_accumulator", "root_move", "search_ctx", "tt_types" } },
-        .{ .path = "src/engine/board/fen_parse.zig", .deps = &.{ "board_core", "legality", "move_do", "position_types", "state_setup" } },
-        .{ .path = "src/engine/search/search_ctx.zig", .deps = &.{ "worker_layout", "nnue_accumulator", "position_types", "root_move", "tt_types" } },
         .{ .path = "src/engine/search/search_control.zig", .deps = &.{ "time_source", "search_ctx", "search_types" } },
-        .{ .path = "src/engine/board/repetition.zig", .deps = &.{ "bitboard", "board_core", "movegen", "position_types", "zobrist" } },
-        .{ .path = "src/engine/board/state_setup.zig", .deps = &.{ "bitboard", "board_core", "legality", "position_types", "zobrist" } },
-        .{ .path = "src/engine/state/worker_layout.zig", .deps = &.{ "limits_type", "position_types", "root_move", "state_list", "tt_types", "worker_histories" } },
-        .{ .path = "src/engine/board/move_do.zig", .deps = &.{ "bitboard", "board_core", "legality", "position_types", "state_setup", "zobrist" } },
-        .{ .path = "src/engine/eval/nnue_accumulator.zig", .deps = &.{ "nnue_acc_rowops", "nnue_feature", "nnue_ft", "nnue_refresh_cache", "position_snapshot", "position_types" } },
-        .{ .path = "src/shell/engine/object.zig", .deps = &.{ "worker_layout", "misc", "network", "position_types", "state_list" } },
-        .{ .path = "src/shell/engine/nnue.zig", .deps = &.{ "libc", "engine_object", "network", "option", "uci_output" } },
         .{ .path = "src/shell/engine/control.zig", .deps = &.{ "libc", "worker_layout", "engine_object", "tt", "thread", "option", "tablebase" } },
-        .{ .path = "src/engine/search/shared_history.zig", .deps = &.{ "page_alloc", "position_types", "search_types", "shared_histories", "shared_histories_map", "shared_history_types", "worker_histories" } },
-        .{ .path = "src/engine/search/history.zig", .deps = &.{ "board_core", "worker_layout", "position_types", "search", "search_common", "search_types", "shared_history", "worker_histories" } },
     }) |dt| {
         const t = b.addTest(.{
             .root_module = b.createModule(.{
