@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# God-file structural gate (REPORT-19 AR9 / R6, REPORT-17 M21).
+# God-file structural gate.
 #
-# The invariant: no src/**/*.zig file should grow into a god-file. REPORT-17 M21
-# reached "0 files >= 500 lines"; the post-report Syzygy prober (wdl.zig) and the
+# The invariant: no repo-owned .zig file should grow into a god-file. An earlier decomposition
+# reached "0 files >= 500 lines"; the later-grown Syzygy prober (wdl.zig) and the
 # session facade (engine.zig) re-crossed it, and nothing gated the property. This
 # is that gate.
 #

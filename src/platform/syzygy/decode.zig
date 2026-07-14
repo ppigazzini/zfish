@@ -1,4 +1,4 @@
-//! Syzygy file parse + RE-PAIR decompression (M-SZ-2c, part 1). Faithful ports of Stockfish's
+//! Syzygy file parse + RE-PAIR decompression. Faithful ports of Stockfish's
 //! `set_sizes` (parse one PairsData's header out of the mmapped file) and `decompress_pairs`
 //! (given a value index, walk the SparseIndex/blockLength and decode the canonical-Huffman
 //! symbol via the btree). The `number<T,LE/BE>` reads become std.mem.readInt (all zfish targets

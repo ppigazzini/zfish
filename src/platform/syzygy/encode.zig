@@ -1,9 +1,9 @@
-//! Syzygy position->index encoding geometry (M-SZ-2a): the precomputed tables Stockfish's
+//! Syzygy position->index encoding geometry: the precomputed tables Stockfish's
 //! `Tablebases::init` builds and `do_probe_table` indexes through -- Binomial coefficients, the
 //! king-pair map (MapKK, 462 legal positions), the a1-d1-d4 / below-a1h8 square maps, and the
 //! leading-pawn encoding (MapPawns / LeadPawnIdx / LeadPawnsSize). Pure board geometry: computed
 //! once, no I/O, no engine types, so it is unit-testable against known mathematics on its own.
-//! Dead until M-SZ-2c wires the WDL probe; committed now as the verified foundation.
+//! The verified geometry the WDL probe indexes through.
 
 const std = @import("std");
 

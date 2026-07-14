@@ -2,7 +2,7 @@
 // downloads the 5 three-man endgames (KPvK KNvK KBvK KRvK KQvK), WDL (.rtbw) + DTZ (.rtbz), into
 // `syzygy/` under the cwd (build.zig runs it with cwd = net/, so -> net/syzygy/). ~26 KB total;
 // the tables are NEVER committed (see .gitignore) -- fetched + cached like the NNUE net. Only the
-// 3-man set is needed for the M-SZ CI gate (a KPvK/KQvK probe); it verifies each file's Syzygy
+// 3-man set is needed for the Syzygy CI gate (a KPvK/KQvK probe); it verifies each file's Syzygy
 // magic header so a mirror error page can't masquerade as a table. Skips files already present.
 
 const std = @import("std");
