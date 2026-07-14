@@ -544,7 +544,7 @@ fn buildBenchMatrix(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// tb-init: the Syzygy load report (M-SZ-1). Point SyzygyPath at the fetched 3-man set (syzygy/,
+// tb-init: the Syzygy load report. Point SyzygyPath at the fetched 3-man set (syzygy/,
 // relative to the net/ cwd) and pin the `info string Found N WDL and N DTZ tablebase files (up to
 // M-man)` line -- the discovery half of the Syzygy port, matched to the upstream oracle. The
 // message is on stdout (printInfoString). Synchronous, so the feed-all-then-quit path is safe.
@@ -567,7 +567,7 @@ fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// The curated 3-man probe battery, shared by tb-wdl (M-SZ-2c) and tb-dtz (M-SZ-3a): all five
+// The curated 3-man probe battery, shared by tb-wdl and tb-dtz: all five
 // piece types (Q/R/B/N/P), win/loss/draw, white/black to move, the pawn + blackStronger (lead pawn
 // is black) flip paths, and -- via the last two -- the search<false> capture recursion (the lone
 // king captures the piece into a KvK draw). KQvK-btm also exercises the DTZ CHANGE_STM 1-ply path.
@@ -612,7 +612,7 @@ fn buildTbDtz(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return buildTbProbe(gpa, io, bin, "Tablebases DTZ:", "tb-dtz");
 }
 
-// tb-root: the Syzygy root DTZ ranking (M-SZ-3b). With the DTZ probe live, `go` on a TB win ranks
+// tb-root: the Syzygy root DTZ ranking. With the DTZ probe live, `go` on a TB win ranks
 // the root moves via rankRootMovesDtz; the emit shows the exact tbScore (not the search score) and
 // tbHits == pool hits + rootMoves.size(). Pins score + tbhits == the upstream oracle -- this
 // first-validates the formerly-dead root-ranking formula end to end (it surfaced three real
@@ -622,7 +622,7 @@ fn buildTbDtz(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 // NOT gated here: the exact bestmove + nodes. The oracle early-returns (nodes 0) on a rootInTB
 // decisive win and plays rootMoves[0] (the DTZ tie-break order); zfish still runs the search, so
 // among equally-optimal TB moves it can pick a different (also-winning) move. That rootInTB
-// search early-exit is in-search behaviour (M-SZ-4), so gating zfish's divergent bestmove as a
+// search early-exit is in-search behaviour, so gating zfish's divergent bestmove as a
 // golden would be fake parity. score + tbhits are robust to it (both engines do 0 in-tree probes
 // and both override the shown score with tbScore). Threads=1; Interactive read-to-bestmove.
 fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
@@ -659,7 +659,7 @@ fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// tb-search: the in-search Step 6 WDL probe (M-SZ-4). Benches a small 4-man EPD (each position
+// tb-search: the in-search Step 6 WDL probe. Benches a small 4-man EPD (each position
 // bigger than the 3-man tables, so the root is searched normally and Step 6 probes the 3-man
 // nodes reached in the tree). The node count WITH SyzygyPath (Step 6 cutting the tree) and WITHOUT
 // (Step 6 off) both pin == the upstream oracle -- bit-exact node-count parity. bench writes the
@@ -701,7 +701,7 @@ fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// tb-cursed (LOCAL ONLY -- M-SZ-5): validate the cursed-win / blessed-loss / 50-move logic on real
+// tb-cursed (LOCAL ONLY): validate the cursed-win / blessed-loss / 50-move logic on real
 // DTZ>100 positions, which need 4-5-man tables the 3-man CI set never contains. Pins the `d`-command
 // WDL + DTZ == the upstream oracle for a KNNvKP cursed win (WDL +1, DTZ 122 -- a win that is a draw
 // under the 50-move rule) and its blessed-loss mirror (WDL -1, DTZ -115). This exercises the cursed

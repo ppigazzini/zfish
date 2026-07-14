@@ -1,8 +1,8 @@
-//! Syzygy WDL-probe data model + pure indexing helpers (M-SZ-2b). The structs (LR btree entry,
+//! Syzygy WDL-probe data model + pure indexing helpers. The structs (LR btree entry,
 //! PairsData, TBTable) mirror Stockfish's, and the pure functions `setGroups` (split the piece
 //! sequence into encoding groups) and `setSymLen` (expand the RE-PAIR Huffman btree) are ported
 //! and unit-tested WITHOUT a live file -- the file-mmap orchestration (`do_init`) and the probe
-//! itself (`decompress_pairs`/`do_probe_table`) land in M-SZ-2c, where the whole chain is gated
+//! itself (`decompress_pairs`/`do_probe_table`) are in decode.zig / wdl.zig, where the whole chain is gated
 //! bit-exact vs the oracle. Dead until then; bench unchanged.
 
 const std = @import("std");
@@ -36,7 +36,7 @@ comptime {
 }
 
 // Low-level indexing/decompression state for one (side, file) of a table. The `[*]`-typed fields
-// point into the mmap'd file and are filled by do_init (M-SZ-2c); the slices are owned.
+// point into the mmap'd file and are filled by registry.set; the slices are owned.
 pub const PairsData = struct {
     flags: u8 = 0,
     max_sym_len: u8 = 0,
@@ -69,7 +69,7 @@ pub const EntryInfo = struct {
 
 // SF `set_groups`: from the piece sequence in d.pieces, fill group_len[] (0-terminated) and
 // group_idx[] (the multiplicative start index of each group). `order` + `f` come from the file
-// header. Uses encode.binomial / encode.lead_pawns_size (M-SZ-2a).
+// header. Uses encode.binomial / encode.lead_pawns_size.
 pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: usize) void {
     var n: usize = 0;
     var first_len: i32 = if (e.has_pawns) 0 else if (e.has_unique_pieces) 3 else 2;
