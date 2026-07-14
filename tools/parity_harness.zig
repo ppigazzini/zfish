@@ -701,6 +701,41 @@ fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+// tb-cursed (LOCAL ONLY -- M-SZ-5): validate the cursed-win / blessed-loss / 50-move logic on real
+// DTZ>100 positions, which need 4-5-man tables the 3-man CI set never contains. Pins the `d`-command
+// WDL + DTZ == the upstream oracle for a KNNvKP cursed win (WDL +1, DTZ 122 -- a win that is a draw
+// under the 50-move rule) and its blessed-loss mirror (WDL -1, DTZ -115). This exercises the cursed
+// branches of map_score<DTZ> (x2 plies) and probe_dtz (the dtz+100*cursed*sign arithmetic). NOT in
+// the `parity` aggregate: it requires ~40 MB of 5-man tables staged into net/syzygy5/ locally,
+// e.g. (from net/):  for t in KNNvKP KNNvK KNNvKQ KNNvKR KNNvKB KNNvKN KNvKP KNvKQ KNvKR KNvKB KNvKN
+//   KPvKN KQvKN KRvKN KBvKN; do for e in wdl:rtbw dtz:rtbz; do curl -s -o syzygy5/$t.${e#*:} \
+//   https://tablebase.lichess.ovh/tables/standard/3-4-5-${e%:*}/$t.${e#*:}; done; done
+fn buildTbCursed(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    const runs = [_]struct { label: []const u8, fen: []const u8 }{
+        .{ .label = "cursed-win  ", .fen = "8/8/8/3k4/p7/8/2N5/N3K3 w - - 0 1" },
+        .{ .label = "blessed-loss", .fen = "n3k3/2n5/8/3K4/P7/8/8/8 w - - 0 1" },
+    };
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    for (runs) |r| {
+        const input = try std.fmt.allocPrint(gpa, "setoption name SyzygyPath value syzygy5:syzygy\nposition fen {s}\nd\nquit\n", .{r.fen});
+        defer gpa.free(input);
+        var cap = try runEngine(gpa, io, bin, &.{}, input);
+        defer cap.deinit(gpa);
+        var wdl_line: ?[]const u8 = null;
+        var dtz_line: ?[]const u8 = null;
+        var li = lines(cap.stdout);
+        while (li.next()) |line| {
+            if (startsWithIgnoreCase(line, "Tablebases WDL:")) wdl_line = line;
+            if (startsWithIgnoreCase(line, "Tablebases DTZ:")) dtz_line = line;
+        }
+        const wl = wdl_line orelse fail("tb-cursed: {s}: no WDL line (5-man tables missing from net/syzygy5/? see the fn comment)", .{r.label});
+        const dl = dtz_line orelse fail("tb-cursed: {s}: no DTZ line (5-man tables missing?)", .{r.label});
+        try out.print(gpa, "{s} | {s} | {s}\n", .{ r.label, wl, dl });
+    }
+    return out.toOwnedSlice(gpa);
+}
+
 // FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
 // the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
 fn fnv1a64(data: []const u8) u64 {
@@ -1556,7 +1591,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root", @"tb-search" };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root", @"tb-search", @"tb-cursed" };
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -1604,6 +1639,7 @@ pub fn main(init: std.process.Init) !void {
         .@"tb-dtz" => try buildTbDtz(gpa, io, bin),
         .@"tb-root" => try buildTbRoot(gpa, io, bin),
         .@"tb-search" => try buildTbSearch(gpa, io, bin),
+        .@"tb-cursed" => try buildTbCursed(gpa, io, bin),
     };
     defer gpa.free(live);
 

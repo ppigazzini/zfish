@@ -1318,6 +1318,26 @@ pub fn build(b: *std.Build) void {
     );
     tb_search_update_step.dependOn(&tb_search_update_cmd.step);
 
+    // tb-cursed golden: cursed-win / blessed-loss / 50-move (M-SZ-5). LOCAL ONLY -- needs ~40 MB of
+    // 5-man tables staged into net/syzygy5/ (see buildTbCursed's comment), which the 3-man CI set
+    // never contains, so this is NOT wired into `parity`. Pins WDL+DTZ of a KNNvKP cursed win
+    // (+1/122) and its blessed-loss mirror (-1/-115) == the upstream oracle.
+    const tb_cursed_golden = b.pathFromRoot("tools/tb_cursed.golden");
+    const tb_cursed_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-cursed", tb_cursed_golden, "check");
+
+    const tb_cursed_step = b.step(
+        "tb-cursed",
+        "LOCAL: diff cursed-win/blessed-loss WDL+DTZ (needs net/syzygy5/ 5-man tables) vs golden",
+    );
+    tb_cursed_step.dependOn(&tb_cursed_cmd.step);
+
+    const tb_cursed_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-cursed", tb_cursed_golden, "update");
+    const tb_cursed_update_step = b.step(
+        "tb-cursed-update",
+        "LOCAL: regenerate tools/tb_cursed.golden from the current binary",
+    );
+    tb_cursed_update_step.dependOn(&tb_cursed_update_cmd.step);
+
     // Src-free / TU=0 structural gate: asserts the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
     // benches 2466447. A permanent invariant in the `parity` aggregate below, guarding
