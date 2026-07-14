@@ -69,6 +69,7 @@ comptime {
     _ = @import("tt_types");
     _ = @import("uci_move");
     _ = @import("uci_wdl");
+    _ = @import("worker_construct");
     _ = @import("worker_histories");
     _ = @import("worker_layout");
     _ = @import("zobrist");

@@ -116,6 +116,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "search_thread", .path = "src/platform/search_thread.zig" },
         .{ .name = "numa", .path = "src/platform/numa.zig" },
         .{ .name = "worker_layout", .path = "src/engine/state/worker_layout.zig" },
+        .{ .name = "worker_construct", .path = "src/engine/state/worker_construct.zig" },
         .{ .name = "shared_state", .path = "src/engine/state/shared_state.zig" },
         .{ .name = "limits_type", .path = "src/engine/state/limits_type.zig" },
         .{ .name = "root_move", .path = "src/engine/state/root_move.zig" },
@@ -208,6 +209,15 @@ pub fn build(b: *std.Build) void {
     const module_edges = [_]Edge{
         // Import edges for the standalone named modules search_manager and root_move_build.
         .{ .from = "engine", .imp = "search_manager", .to = "search_manager" },
+        // worker_construct: engine-zone Worker field constructor (moved out of shell; imports
+        // only engine modules). main.zig + the headless search helper both drive it.
+        .{ .from = "worker_construct", .imp = "worker_layout", .to = "worker_layout" },
+        .{ .from = "worker_construct", .imp = "position", .to = "position" },
+        .{ .from = "worker_construct", .imp = "search_driver", .to = "search_driver" },
+        .{ .from = "worker_construct", .imp = "worker_histories", .to = "worker_histories" },
+        .{ .from = "worker_construct", .imp = "search", .to = "search" },
+        .{ .from = "worker_construct", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
+        .{ .from = "worker_construct", .imp = "network", .to = "network" },
         .{ .from = "thread", .imp = "root_move_build", .to = "root_move_build" },
         .{ .from = "root_move_build", .imp = "position", .to = "position" },
         .{ .from = "root_move_build", .imp = "state_list", .to = "state_list" },
@@ -582,6 +592,7 @@ pub fn build(b: *std.Build) void {
     // main.zig and its worker-construction helper reach the search-history helpers directly.
     exe.root_module.addImport("search_driver", mods.get("search_driver").?);
     exe.root_module.addImport("worker_histories", mods.get("worker_histories").?);
+    exe.root_module.addImport("worker_construct", mods.get("worker_construct").?);
     // engine.zig single-sources default_eval_file_name from network.zig
     // (network has no engine dep, so this edge is acyclic).
 
@@ -1586,6 +1597,7 @@ pub fn build(b: *std.Build) void {
         "search_setup",      "fen_parse",        "search_ctx",           "repetition",
         "state_setup",       "worker_layout",    "move_do",              "nnue_accumulator",
         "engine_object",     "engine_nnue",      "shared_history",       "history",
+        "worker_construct",
     };
     for (module_unit_test_names) |name| {
         const spec_path = blk: {
@@ -1668,29 +1680,6 @@ pub fn build(b: *std.Build) void {
     thread_pool_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
     thread_pool_test.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     addTestRun(b, test_step, thread_pool_test, cov_dir, &cov_idx);
-
-    // worker_construct.zig is path-imported only into main.zig (the exe
-    // root, not a test root), so its lone test -- the WorkerLayout offset-invariant check
-    // guarding constructFull's field placement against a Zig field reorder -- never ran.
-    // Wire it standalone so `zig build test` exercises that layout contract under RF + RS.
-    const worker_construct_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/shell/worker_construct.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    worker_construct_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
-    worker_construct_test.root_module.addImport("position", mods.get("position").?);
-    worker_construct_test.root_module.addImport("search", mods.get("search").?);
-    worker_construct_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
-    worker_construct_test.root_module.addImport("network", mods.get("network").?);
-    // worker_construct.zig calls the search-history helpers directly (search_driver's
-    // public face) and reads a worker_histories offset; this fresh test module needs both.
-    worker_construct_test.root_module.addImport("search_driver", mods.get("search_driver").?);
-    worker_construct_test.root_module.addImport("worker_histories", mods.get("worker_histories").?);
-    addTestRun(b, test_step, worker_construct_test, cov_dir, &cov_idx);
 
     const parity_step = b.step(
         "parity",
