@@ -5,19 +5,9 @@
 // Bench-verified bit-exact (node signature 2466447 on every arch).
 
 const std = @import("std");
-const builtin = @import("builtin");
 const position_types = @import("position_types");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const weight_storage = @import("nnue_weight_storage.zig");
-
-// The affine int8 dot has a real codegen lever: on AVX-512-VNNI the whole 4-way dot +
-// accumulate is one `vpdpbusd`, where the portable `@Vector` fallback needs a broadcast, an
-// i16 multiply (`vpmullw`), and a shuffle-heavy 4-way reduction (profiled at ~61% of search
-// cost). LLVM will NOT auto-emit `vpdpbusd` from the portable pattern, so it is a small inline
-// asm seam, gated on the target actually having the feature and validated bit-identical by the
-// affineDpbusd scalar-reference test (run at `-Darch=x86-64-vnni512`).
-const has_vnni = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
 
 const Position = position_types.Position;
 
@@ -60,39 +50,6 @@ pub const TraceOutput = struct {
 // it just lets LLVM emit vector multiplies/shuffles (and dpbusd-class ops) instead of
 // a scalar MAC. `input.len` must be the padded input dim (a multiple of 4); zero tail
 // lanes contribute nothing.
-// `vpdpbusd %b, %a, %acc`: acc(i32×16) += the 4-way int8 dot of a(u8×64) and b(i8×64) over
-// its 16 groups of 4 (acc[k] += Σ_m a[4k+m]·b[4k+m]). One VNNI instruction; bit-identical to
-// the scalar 4-way MAC (verified 0/1000 in isolation + the affineDpbusd test on a vnni build).
-inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i8)) @Vector(16, i32) {
-    return asm (
-        \\vpdpbusd %[b], %[a], %[acc]
-        : [acc] "=v" (-> @Vector(16, i32)),
-        : [_] "0" (acc),
-          [a] "v" (a),
-          [b] "v" (b),
-    );
-}
-
-// VNNI affine: the scrambled layout stores each group's OUT×4 weights contiguously, so each
-// 16-output chunk of a group is exactly one `vpdpbusd` with the group's 4 input bytes broadcast
-// across all 16 outputs (a[4k+m] == input[g*4+m] for every k). Zero shuffles, zero i16 multiply.
-inline fn affineVnni(comptime OUT: usize, out: *[OUT]i32, biases: [*]const i32, weights: [*]const i8, input: []const u8) void {
-    const chunks = OUT / 16;
-    var acc: [chunks]@Vector(16, i32) = undefined;
-    inline for (0..chunks) |c| acc[c] = biases[c * 16 ..][0..16].*;
-    const groups = input.len / 4;
-    var g: usize = 0;
-    while (g < groups) : (g += 1) {
-        const in4: [4]u8 = input[g * 4 ..][0..4].*;
-        const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
-        inline for (0..chunks) |c| {
-            const b: @Vector(64, i8) = weights[g * OUT * 4 + c * 64 ..][0..64].*;
-            acc[c] = vpdpbusd16(acc[c], a, b);
-        }
-    }
-    inline for (0..chunks) |c| out[c * 16 ..][0..16].* = acc[c];
-}
-
 inline fn affineDpbusd(
     comptime OUT: usize,
     out: *[OUT]i32,
@@ -100,10 +57,6 @@ inline fn affineDpbusd(
     weights: [*]const i8,
     input: []const u8,
 ) void {
-    if (comptime (has_vnni and OUT % 16 == 0)) {
-        affineVnni(OUT, out, biases, weights, input);
-        return;
-    }
     const N = OUT * 4;
     const Vi16 = @Vector(N, i16);
     const Vo = @Vector(OUT, i32);
@@ -276,45 +229,6 @@ fn networkTransformBucket(
     const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(ftPtr() orelse @panic("feature-transformer storage not initialized"));
     const stm = pos.side_to_move;
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
-}
-
-// Bit-identity harness for affineDpbusd. The scalar reference computes the same affine
-// over the scrambled weight layout by definition; the integer 4-way dot is order- and
-// codegen-independent, so ANY SIMD reformulation of affineDpbusd MUST match this exactly.
-// This is what holds bench 2466447 and localizes a codegen regression below the engine.
-fn affineScalarRef(comptime OUT: usize, out: *[OUT]i32, biases: [*]const i32, weights: [*]const i8, input: []const u8) void {
-    for (0..OUT) |j| {
-        var acc: i32 = biases[j];
-        for (input, 0..) |x, i| {
-            const g = i / 4;
-            const m = i % 4;
-            acc += @as(i32, x) * @as(i32, weights[g * OUT * 4 + j * 4 + m]);
-        }
-        out[j] = acc;
-    }
-}
-
-test "affineDpbusd is bit-identical to the scalar reference (random inputs, all layer shapes)" {
-    var prng = std.Random.DefaultPrng.init(0xA1FFEE);
-    const rand = prng.random();
-    inline for (.{ .{ 32, 1024 }, .{ 32, 64 }, .{ 1, 128 } }) |cfg| {
-        const OUT: usize = cfg[0];
-        const LEN: usize = cfg[1];
-        var iter: usize = 0;
-        while (iter < 100) : (iter += 1) {
-            var input: [LEN]u8 = undefined;
-            for (&input) |*x| x.* = rand.intRangeAtMost(u8, 0, 127); // ClippedReLU output range
-            var weights: [(LEN / 4) * OUT * 4]i8 = undefined;
-            for (&weights) |*w| w.* = rand.intRangeAtMost(i8, -128, 127);
-            var biases: [OUT]i32 = undefined;
-            for (&biases) |*b| b.* = rand.intRangeAtMost(i32, -100_000, 100_000);
-            var got: [OUT]i32 = undefined;
-            var want: [OUT]i32 = undefined;
-            affineDpbusd(OUT, &got, &biases, &weights, &input);
-            affineScalarRef(OUT, &want, &biases, &weights, &input);
-            try std.testing.expectEqual(want, got);
-        }
-    }
 }
 
 test {
