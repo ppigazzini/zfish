@@ -185,15 +185,22 @@ pub fn transformBucket(
     // (psq_diff + thr_diff)/2 == (combined_diff)/2 since combined = psq + threat.
     const psqt: c_int = @divTrunc(comb_psqt[p0 * psqt_buckets + bucket] - comb_psqt[p1 * psqt_buckets + bucket], 2);
 
-    // Pairwise clipped-ReLU output, vectorized. Per element: sum psq+threat
-    // accumulators (i16 wrap), clamp to [0,255], multiply the two halves, /512 -> u8.
-    // Same element-wise ops as the scalar loop, so bit-exact (signature 2466447).
+    // Pairwise squared-clipped-ReLU output (port of upstream FeatureTransformer::
+    // transform). Per element: sum psq+threat accumulators (i16 wrap), ClippedReLU to
+    // [0,255], multiply the two halves and divide by 512 -> u8. Stays in 16-bit via
+    // SF's mulhi identity  (c0*c1) >> 9  ==  ((c0<<7) * c1) >> 16  ==  pmulhuw(c0<<7, c1),
+    // which avoids the i32 widening so each vector register holds twice the lanes. The
+    // scaled product 128*c0*c1 is exact and >>16 is floor, so this is bit-identical to
+    // the i32 clamp*mul>>9 path (integer, no rounding): signature 2466447.
     const half = half_dimensions / 2;
     const V = acc_vec_width;
     const Vi16 = @Vector(V, i16);
-    const Vi32 = @Vector(V, i32);
-    const zero: Vi32 = @splat(0);
-    const c255: Vi32 = @splat(255);
+    const Vu16 = @Vector(V, u16);
+    const Vu32 = @Vector(V, u32);
+    const zero: Vi16 = @splat(0);
+    const c255: Vi16 = @splat(255);
+    const shl7: @Vector(V, u4) = @splat(7);
+    const shr16: @Vector(V, u5) = @splat(16);
     var p: usize = 0;
     while (p < 2) : (p += 1) {
         const pp: usize = if (p == 0) p0 else p1;
@@ -203,11 +210,10 @@ pub fn transformBucket(
         while (j < half) : (j += V) {
             const s0i: Vi16 = comb_acc[base + j ..][0..V].*;
             const s1i: Vi16 = comb_acc[base + j + half ..][0..V].*;
-            const c0: Vi32 = @max(zero, @min(c255, @as(Vi32, s0i)));
-            const c1: Vi32 = @max(zero, @min(c255, @as(Vi32, s1i)));
-            // /512 == >>9 exactly (product is non-negative, 512 == 2^9). A vector-by-vector
-            // divide scalarizes to per-lane integer divides; the shift is one vpsrld.
-            const q: @Vector(V, u32) = @as(@Vector(V, u32), @intCast(c0 * c1)) >> @as(@Vector(V, u5), @splat(9));
+            const c0: Vu16 = @intCast(@max(zero, @min(c255, s0i))); // ClippedReLU [0,255]
+            const c1: Vu16 = @intCast(@max(zero, @min(c255, s1i)));
+            // pmulhuw(c0<<7, c1) == (c0*c1) >> 9
+            const q: Vu16 = @intCast((@as(Vu32, c0 << shl7) * @as(Vu32, c1)) >> shr16);
             output[offset + j ..][0..V].* = @as(@Vector(V, u8), @intCast(q));
         }
     }
