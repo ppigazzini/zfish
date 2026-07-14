@@ -1374,6 +1374,23 @@ pub fn build(b: *std.Build) void {
     );
     headless_step.dependOn(&headless_cmd.step);
 
+    // God-file structural gate (REPORT-19 AR9 / R6): ratchet on the count of .zig files >= 500
+    // lines, so the REPORT-17 M21 "no god-files" property is enforced, not just claimed. The two
+    // current large files (syzygy/wdl.zig, shell/engine.zig) are cohesive subsystems, not true
+    // god-files, so they are waived at baseline 2 -- but a THIRD (or growth of a smaller file past
+    // the line) fails the gate. Lower the baseline if one is cleanly split.
+    const loc_baseline = "2";
+    const loc_cmd = b.addSystemCommand(&.{
+        "bash",
+        b.pathFromRoot("tools/loc_lint.sh"),
+    });
+    loc_cmd.setEnvironmentVariable("LOC_BASELINE", loc_baseline);
+    const loc_step = b.step(
+        "loc",
+        "god-file structural gate: no new .zig file >= 500 lines (ratchets down)",
+    );
+    loc_step.dependOn(&loc_cmd.step);
+
     // Engine-only build/test target: compile the entire engine module graph in
     // isolation via src/engine/headless.zig, which imports every engine-zone module.
     // By the headless invariant that graph has no platform/ or shell/ module, so this
@@ -1703,6 +1720,7 @@ pub fn build(b: *std.Build) void {
     // The src-free structural invariant is permanent, so it gates every push.
     parity_step.dependOn(&src_free_cmd.step);
     parity_step.dependOn(&headless_cmd.step);
+    parity_step.dependOn(&loc_cmd.step);
 
     // Cross-OS aggregate: the platform-independent subset of `parity` -- bench,
     // the UCI handshake, the bench signature, and all six golden checks, every one driven by
