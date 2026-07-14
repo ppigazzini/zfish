@@ -125,6 +125,66 @@ pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i3
     }
 }
 
+// Hand-vectorized port of upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
+// one combined accumulator (HalfKA + Threats), loaded per tile ONCE into a register,
+// with both feature sets' removed/added weight rows applied in-register (psq int16 rows
+// via i16 add/sub, threat int8 rows widened to i16), then stored ONCE. Replaces the two
+// separate load/store round-trips (one per feature) of the split-accumulator design.
+// Integer add/sub commute under 2's-complement i16 wrap, so the final tile value equals
+// source + Σpsq_added − Σpsq_removed + Σthr_added − Σthr_removed regardless of order:
+// bit-exact with the prior two-accumulator path (signature 2466447).
+pub fn applyCombinedDelta(
+    target: []i16,
+    source: []const i16,
+    psq_removed: []const u32,
+    psq_added: []const u32,
+    thr_removed: []const u32,
+    thr_added: []const u32,
+    psq_weights: [*]const i16,
+    thr_weights: [*]const i8,
+) void {
+    const V = acc_vec_width;
+    const Vi16 = @Vector(V, i16);
+    var d: usize = 0;
+    while (d < half_dimensions) : (d += V) {
+        var acc: Vi16 = source.ptr[d..][0..V].*;
+        for (psq_removed) |index| {
+            const w: Vi16 = (psq_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            acc -= w;
+        }
+        for (psq_added) |index| {
+            const w: Vi16 = (psq_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            acc += w;
+        }
+        for (thr_removed) |index| {
+            const wraw: @Vector(V, i8) = (thr_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            acc -= @as(Vi16, wraw); // i8 -> i16 widen
+        }
+        for (thr_added) |index| {
+            const wraw: @Vector(V, i8) = (thr_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            acc += @as(Vi16, wraw);
+        }
+        target.ptr[d..][0..V].* = acc;
+    }
+}
+
+// psqt counterpart of applyCombinedDelta: one combined psqtAccumulation, both feature
+// sets applied (psq + threat psqt weights, both i32). Scalar -- PSQTBuckets is tiny.
+pub fn applyCombinedPsqtDelta(
+    target: []i32,
+    source: []const i32,
+    psq_removed: []const u32,
+    psq_added: []const u32,
+    thr_removed: []const u32,
+    thr_added: []const u32,
+    psq_weights: [*]const i32,
+    thr_weights: [*]const i32,
+) void {
+    @memcpy(target, source);
+    applyPsqtDeltaInPlace(target, psq_removed, psq_added, psq_weights);
+    applyPsqtDeltaInPlace(target, thr_removed, thr_added, thr_weights);
+}
+
 test {
     @import("std").testing.refAllDecls(@This());
 }
