@@ -141,10 +141,11 @@ pub fn evaluate(
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
-    evaluateSide(psq_feature, white, stack, pos, feature_transformer, cache);
-    evaluateSide(psq_feature, black, stack, pos, feature_transformer, cache);
-    evaluateSide(threat_feature, white, stack, pos, feature_transformer, cache);
-    evaluateSide(threat_feature, black, stack, pos, feature_transformer, cache);
+    // Upstream AccumulatorStack::evaluate: one combined (HalfKA + Threats) pass per
+    // perspective, not one per (feature, perspective). The combined accumulator lives
+    // in the psq_feature storage slot.
+    evaluateSide(white, stack, pos, feature_transformer, cache);
+    evaluateSide(black, stack, pos, feature_transformer, cache);
 }
 
 pub fn stackLatestPsq(stack: *const AccumulatorStack) [*]const u8 {
@@ -173,18 +174,16 @@ pub fn transformBucket(
 ) c_int {
     evaluate(stack, pos, feature_transformer, cache);
 
-    const psq_bytes: [*]const u8 = stackLatestPsq(stack);
-    const thr_bytes: [*]const u8 = stackLatestThreat(stack);
-    const psq_acc: [*]const i16 = @ptrCast(@alignCast(psq_bytes));
-    const thr_acc: [*]const i16 = @ptrCast(@alignCast(thr_bytes));
-    const psq_psqt: [*]const i32 = @ptrCast(@alignCast(psq_bytes + state_psqt_offset));
-    const thr_psqt: [*]const i32 = @ptrCast(@alignCast(thr_bytes + state_psqt_offset));
+    // Single combined (HalfKA + Threats) accumulator, held in the psq_feature slot.
+    const comb_bytes: [*]const u8 = stackLatestPsq(stack);
+    const comb_acc: [*]const i16 = @ptrCast(@alignCast(comb_bytes));
+    const comb_psqt: [*]const i32 = @ptrCast(@alignCast(comb_bytes + state_psqt_offset));
 
     const p0: usize = stm;
     const p1: usize = stm ^ 1;
 
-    var psqt: c_int = psq_psqt[p0 * psqt_buckets + bucket] - psq_psqt[p1 * psqt_buckets + bucket];
-    psqt = @divTrunc(psqt + thr_psqt[p0 * psqt_buckets + bucket] - thr_psqt[p1 * psqt_buckets + bucket], 2);
+    // (psq_diff + thr_diff)/2 == (combined_diff)/2 since combined = psq + threat.
+    const psqt: c_int = @divTrunc(comb_psqt[p0 * psqt_buckets + bucket] - comb_psqt[p1 * psqt_buckets + bucket], 2);
 
     // Pairwise clipped-ReLU output, vectorized. Per element: sum psq+threat
     // accumulators (i16 wrap), clamp to [0,255], multiply the two halves, /512 -> u8.
@@ -202,8 +201,8 @@ pub fn transformBucket(
         const base = pp * half_dimensions;
         var j: usize = 0;
         while (j < half) : (j += V) {
-            const s0i: Vi16 = @as(Vi16, psq_acc[base + j ..][0..V].*) +% @as(Vi16, thr_acc[base + j ..][0..V].*);
-            const s1i: Vi16 = @as(Vi16, psq_acc[base + j + half ..][0..V].*) +% @as(Vi16, thr_acc[base + j + half ..][0..V].*);
+            const s0i: Vi16 = comb_acc[base + j ..][0..V].*;
+            const s1i: Vi16 = comb_acc[base + j + half ..][0..V].*;
             const c0: Vi32 = @max(zero, @min(c255, @as(Vi32, s0i)));
             const c1: Vi32 = @max(zero, @min(c255, @as(Vi32, s1i)));
             // /512 == >>9 exactly (product is non-negative, 512 == 2^9). A vector-by-vector

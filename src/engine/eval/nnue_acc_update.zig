@@ -14,13 +14,12 @@ const nnue_feature = @import("nnue_feature");
 // Vectorized FT weight-row add/sub kernels live in the nnue_acc_rowops leaf
 // aliased so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
-const applyAccumulatorDeltaI16 = nnue_acc_rowops.applyAccumulatorDeltaI16;
 const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
-const applyAccumulatorDeltaI8 = nnue_acc_rowops.applyAccumulatorDeltaI8;
 const accumulateRowsI8 = nnue_acc_rowops.accumulateRowsI8;
-const applyPsqtDelta = nnue_acc_rowops.applyPsqtDelta;
 const applyPsqtDeltaInPlace = nnue_acc_rowops.applyPsqtDeltaInPlace;
 const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
+const applyCombinedDelta = nnue_acc_rowops.applyCombinedDelta;
+const applyCombinedPsqtDelta = nnue_acc_rowops.applyCombinedPsqtDelta;
 
 // FeatureTransformer weight-blob layout + accessors live in the nnue_ft leaf
 // aliased for the refresh/apply-delta core.
@@ -112,72 +111,65 @@ const FullAppendResult = struct {
 // direct Zig call avoids the by-value struct passing that is mis-marshaled on aarch64.
 // full-threats append (changed/active) call nnue_feature directly.
 
+// Combined HalfKA + Threats accumulator, one per-perspective walk of the stack --
+// a direct port of upstream Stockfish's AccumulatorStack::evaluate_side. The single
+// combined accumulator lives in the psq_feature storage slot (the threat_feature
+// accumulation slot is now unused); find_last_usable uses ONLY the PSQ (HalfKA)
+// refresh condition, because a threat refresh (king move across the center) is a
+// subset of a HalfKA refresh, so the combined accumulator always refreshes together.
 pub fn evaluateSide(
-    feature_kind: u8,
     perspective: u8,
     stack: *AccumulatorStack,
     pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
-    const last_usable = findLastUsable(feature_kind, stack, perspective);
+    const last_usable = findLastUsable(psq_feature, stack, perspective);
     const size = stackSize(stack);
+    const king_square = loadBridgeSnapshot(pos).king_square[perspective];
 
-    if (stateComputed(stack, feature_kind, last_usable, perspective)) {
+    if (stateComputed(stack, psq_feature, last_usable, perspective)) {
         var next = last_usable + 1;
         while (next < size) : (next += 1) {
-            incrementalStep(
-                stack,
-                feature_kind,
-                true,
-                perspective,
-                pos,
-                feature_transformer,
-                next,
-                next - 1,
-            );
+            applyCombined(stack, perspective, feature_transformer, king_square, next, next - 1, true);
         }
     } else {
-        refreshLatest(
-            feature_kind,
-            perspective,
-            stack,
-            pos,
-            feature_transformer,
-            cache,
-        );
+        refreshCombined(perspective, king_square, stack, pos, feature_transformer, cache);
 
         var computed_index = size - 1;
         while (computed_index > last_usable) : (computed_index -= 1) {
-            incrementalStep(
-                stack,
-                feature_kind,
-                false,
-                perspective,
-                pos,
-                feature_transformer,
-                computed_index - 1,
-                computed_index,
-            );
+            applyCombined(stack, perspective, feature_transformer, king_square, computed_index - 1, computed_index, false);
         }
     }
 }
 
-fn refreshLatest(
-    feature_kind: u8,
+// Fused refresh: PSQ (HalfKA) via the finny refresh cache fills the combined
+// accumulation + psqt and sets computed; the Threat features are then ADDED on top
+// (additive accumulate, no zeroing), so the combined = psq + threat -- the refresh
+// half of apply_combined.
+fn refreshCombined(
     perspective: u8,
+    king_square: u8,
     stack: *AccumulatorStack,
     pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
-    const king_square = loadBridgeSnapshot(pos).king_square[perspective];
+    refreshLatestPsq(perspective, king_square, stack, pos, feature_transformer, cache);
 
-    switch (feature_kind) {
-        psq_feature => refreshLatestPsq(perspective, king_square, stack, pos, feature_transformer, cache),
-        threat_feature => refreshLatestThreat(perspective, king_square, stack, pos, feature_transformer),
-        else => unreachable,
-    }
+    const latest_index = stackSize(stack) - 1;
+    const snapshot = positionSnapshot(pos);
+    const active = nnue_feature.fullAppendActive(perspective, king_square, @ptrCast(&snapshot.pieces));
+    accumulateRowsI8(
+        stateAccumulationMut(psq_feature, latest_index, stack, perspective),
+        active.indices[0..active.len],
+        featureTransformerThreatWeights(feature_transformer),
+    );
+    accumulatePsqtRows(
+        statePsqtMut(psq_feature, latest_index, stack, perspective),
+        active.indices[0..active.len],
+        featureTransformerThreatPsqtWeights(feature_transformer),
+    );
 }
 
 fn refreshLatestPsq(
@@ -255,173 +247,110 @@ fn refreshLatestPsq(
     stateBytesMut(psq_feature, latest_index, stack)[computed_offset + perspective] = 1;
 }
 
-fn refreshLatestThreat(
+// One fused incremental step onto the combined accumulator -- a port of upstream's
+// update_accumulator_incremental + apply_combined. Computes the PSQ (HalfKA) and
+// Threat changed-feature index lists for this ply, then applies both to the single
+// combined accumulation (psq_feature slot) in one load/store per tile.
+fn applyCombined(
+    stack: *AccumulatorStack,
     perspective: u8,
+    feature_transformer: *const FeatureTransformer,
     king_square: u8,
-    stack: *AccumulatorStack,
-    pos: *const Position,
-    feature_transformer: *const FeatureTransformer,
-) void {
-    const latest_index = stackSize(stack) - 1;
-    const snapshot = positionSnapshot(pos);
-    const active = nnue_feature.fullAppendActive(perspective, king_square, @ptrCast(&snapshot.pieces));
-    const accumulation = stateAccumulationMut(threat_feature, latest_index, stack, perspective);
-    const psqt = statePsqtMut(threat_feature, latest_index, stack, perspective);
-
-    @memset(accumulation, 0);
-    @memset(psqt, 0);
-
-    accumulateRowsI8(accumulation, active.indices[0..active.len], featureTransformerThreatWeights(feature_transformer));
-    accumulatePsqtRows(psqt, active.indices[0..active.len], featureTransformerThreatPsqtWeights(feature_transformer));
-    stateBytesMut(threat_feature, latest_index, stack)[computed_offset + perspective] = 1;
-}
-
-fn incrementalStep(
-    stack: *AccumulatorStack,
-    feature_kind: u8,
-    forward: bool,
-    perspective: u8,
-    pos: *const Position,
-    feature_transformer: *const FeatureTransformer,
     target_index: usize,
     computed_index: usize,
-) void {
-    const king_square = loadBridgeSnapshot(pos).king_square[perspective];
-
-    switch (feature_kind) {
-        psq_feature => incrementalStepPsq(
-            stack,
-            forward,
-            perspective,
-            king_square,
-            feature_transformer,
-            target_index,
-            computed_index,
-        ),
-        threat_feature => incrementalStepThreat(
-            stack,
-            forward,
-            perspective,
-            king_square,
-            feature_transformer,
-            target_index,
-            computed_index,
-        ),
-        else => unreachable,
-    }
-}
-
-fn incrementalStepPsq(
-    stack: *AccumulatorStack,
     forward: bool,
-    perspective: u8,
-    king_square: u8,
-    feature_transformer: *const FeatureTransformer,
-    target_index: usize,
-    computed_index: usize,
 ) void {
     std.debug.assert(stateComputed(stack, psq_feature, computed_index, perspective));
     std.debug.assert(!stateComputed(stack, psq_feature, target_index, perspective));
 
-    const diff = if (forward)
+    // --- PSQ (HalfKA) changed-feature indices ---
+    const psq_diff = if (forward)
         psqDiff(stateBytesConst(psq_feature, target_index, stack))
     else
         psqDiff(stateBytesConst(psq_feature, computed_index, stack));
 
-    const append = nnue_feature.halfAppendChanged(perspective, king_square, .{
-        .from = diff.from,
-        .to = diff.to,
-        .pc = diff.pc,
-        .remove_sq = diff.remove_sq,
-        .add_sq = diff.add_sq,
-        .remove_pc = diff.remove_pc,
-        .add_pc = diff.add_pc,
+    const psq_append = nnue_feature.halfAppendChanged(perspective, king_square, .{
+        .from = psq_diff.from,
+        .to = psq_diff.to,
+        .pc = psq_diff.pc,
+        .remove_sq = psq_diff.remove_sq,
+        .add_sq = psq_diff.add_sq,
+        .remove_pc = psq_diff.remove_pc,
+        .add_pc = psq_diff.add_pc,
     });
 
-    var removed: [psq_index_capacity]u32 = undefined;
-    var added: [psq_index_capacity]u32 = undefined;
-    var removed_len: usize = 0;
-    var added_len: usize = 0;
+    var psq_removed: [psq_index_capacity]u32 = undefined;
+    var psq_added: [psq_index_capacity]u32 = undefined;
+    var psq_removed_len: usize = 0;
+    var psq_added_len: usize = 0;
     var cursor: usize = 0;
 
-    appendHalfChange(&removed, &removed_len, &added, &added_len, append.indices[cursor], forward);
+    appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, psq_append.indices[cursor], forward);
     cursor += 1;
-
-    if (diff.to != sq_none) {
-        appendHalfChange(&removed, &removed_len, &added, &added_len, append.indices[cursor], !forward);
+    if (psq_diff.to != sq_none) {
+        appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, psq_append.indices[cursor], !forward);
         cursor += 1;
     }
-    if (diff.remove_sq != sq_none) {
-        appendHalfChange(&removed, &removed_len, &added, &added_len, append.indices[cursor], forward);
+    if (psq_diff.remove_sq != sq_none) {
+        appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, psq_append.indices[cursor], forward);
         cursor += 1;
     }
-    if (diff.add_sq != sq_none) {
-        appendHalfChange(&removed, &removed_len, &added, &added_len, append.indices[cursor], !forward);
+    if (psq_diff.add_sq != sq_none) {
+        appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, psq_append.indices[cursor], !forward);
     }
 
-    applyPsqDelta(
-        stack,
-        perspective,
-        feature_transformer,
-        target_index,
-        computed_index,
-        removed[0..removed_len],
-        added[0..added_len],
-    );
-}
-
-fn incrementalStepThreat(
-    stack: *AccumulatorStack,
-    forward: bool,
-    perspective: u8,
-    king_square: u8,
-    feature_transformer: *const FeatureTransformer,
-    target_index: usize,
-    computed_index: usize,
-) void {
-    std.debug.assert(stateComputed(stack, threat_feature, computed_index, perspective));
-    std.debug.assert(!stateComputed(stack, threat_feature, target_index, perspective));
-
-    const diff = if (forward)
+    // --- Threat changed-feature indices ---
+    const thr_diff = if (forward)
         threatDiff(stateBytesConst(threat_feature, target_index, stack))
     else
         threatDiff(stateBytesConst(threat_feature, computed_index, stack));
 
-    const append = nnue_feature.fullAppendChanged(
+    const thr_append = nnue_feature.fullAppendChanged(
         perspective,
         king_square,
-        @ptrCast(&diff.list.values),
-        diff.list.size_,
+        @ptrCast(&thr_diff.list.values),
+        thr_diff.list.size_,
     );
 
-    var removed: [threat_index_capacity]u32 = undefined;
-    var added: [threat_index_capacity]u32 = undefined;
-    var removed_len: usize = 0;
-    var added_len: usize = 0;
+    var thr_removed: [threat_index_capacity]u32 = undefined;
+    var thr_added: [threat_index_capacity]u32 = undefined;
+    var thr_removed_len: usize = 0;
+    var thr_added_len: usize = 0;
 
-    for (append.indices[0..append.len], 0..) |index, list_index| {
-        if (index >= threat_dimensions) {
-            continue;
-        }
-        const is_add = (diff.list.values[list_index].data >> 31) != 0;
+    for (thr_append.indices[0..thr_append.len], 0..) |index, list_index| {
+        if (index >= threat_dimensions) continue;
+        const is_add = (thr_diff.list.values[list_index].data >> 31) != 0;
         if (is_add == forward) {
-            added[added_len] = index;
-            added_len += 1;
+            thr_added[thr_added_len] = index;
+            thr_added_len += 1;
         } else {
-            removed[removed_len] = index;
-            removed_len += 1;
+            thr_removed[thr_removed_len] = index;
+            thr_removed_len += 1;
         }
     }
 
-    applyThreatDelta(
-        stack,
-        perspective,
-        feature_transformer,
-        target_index,
-        computed_index,
-        removed[0..removed_len],
-        added[0..added_len],
+    // --- fused apply onto the ONE combined accumulator (psq_feature slot) ---
+    applyCombinedDelta(
+        stateAccumulationMut(psq_feature, target_index, stack, perspective),
+        stateAccumulationConst(psq_feature, computed_index, stack, perspective),
+        psq_removed[0..psq_removed_len],
+        psq_added[0..psq_added_len],
+        thr_removed[0..thr_removed_len],
+        thr_added[0..thr_added_len],
+        featureTransformerPsqWeights(feature_transformer),
+        featureTransformerThreatWeights(feature_transformer),
     );
+    applyCombinedPsqtDelta(
+        statePsqtMut(psq_feature, target_index, stack, perspective),
+        statePsqtConst(psq_feature, computed_index, stack, perspective),
+        psq_removed[0..psq_removed_len],
+        psq_added[0..psq_added_len],
+        thr_removed[0..thr_removed_len],
+        thr_added[0..thr_added_len],
+        featureTransformerPsqPsqtWeights(feature_transformer),
+        featureTransformerThreatPsqtWeights(feature_transformer),
+    );
+    stateBytesMut(psq_feature, target_index, stack)[computed_offset + perspective] = 1;
 }
 
 fn appendHalfChange(
@@ -439,58 +368,6 @@ fn appendHalfChange(
         added[added_len.*] = index;
         added_len.* += 1;
     }
-}
-
-fn applyPsqDelta(
-    stack: *AccumulatorStack,
-    perspective: u8,
-    feature_transformer: *const FeatureTransformer,
-    target_index: usize,
-    computed_index: usize,
-    removed: []const u32,
-    added: []const u32,
-) void {
-    applyAccumulatorDeltaI16(
-        stateAccumulationMut(psq_feature, target_index, stack, perspective),
-        stateAccumulationConst(psq_feature, computed_index, stack, perspective),
-        removed,
-        added,
-        featureTransformerPsqWeights(feature_transformer),
-    );
-    applyPsqtDelta(
-        statePsqtMut(psq_feature, target_index, stack, perspective),
-        statePsqtConst(psq_feature, computed_index, stack, perspective),
-        removed,
-        added,
-        featureTransformerPsqPsqtWeights(feature_transformer),
-    );
-    stateBytesMut(psq_feature, target_index, stack)[computed_offset + perspective] = 1;
-}
-
-fn applyThreatDelta(
-    stack: *AccumulatorStack,
-    perspective: u8,
-    feature_transformer: *const FeatureTransformer,
-    target_index: usize,
-    computed_index: usize,
-    removed: []const u32,
-    added: []const u32,
-) void {
-    applyAccumulatorDeltaI8(
-        stateAccumulationMut(threat_feature, target_index, stack, perspective),
-        stateAccumulationConst(threat_feature, computed_index, stack, perspective),
-        removed,
-        added,
-        featureTransformerThreatWeights(feature_transformer),
-    );
-    applyPsqtDelta(
-        statePsqtMut(threat_feature, target_index, stack, perspective),
-        statePsqtConst(threat_feature, computed_index, stack, perspective),
-        removed,
-        added,
-        featureTransformerThreatPsqtWeights(feature_transformer),
-    );
-    stateBytesMut(threat_feature, target_index, stack)[computed_offset + perspective] = 1;
 }
 
 test {
