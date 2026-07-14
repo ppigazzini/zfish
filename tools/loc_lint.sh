@@ -2,9 +2,10 @@
 # God-file structural gate.
 #
 # The invariant: no repo-owned .zig file should grow into a god-file. An earlier decomposition
-# reached "0 files >= 500 lines"; the later-grown Syzygy prober (wdl.zig) and the
-# session facade (engine.zig) re-crossed it, and nothing gated the property. This
-# is that gate.
+# reached "0 files >= 500 lines"; later-grown files (the Syzygy prober wdl.zig, the session
+# facade engine.zig) re-crossed it, and nothing gated the property -- so it drifted back. This
+# is that gate. Both were since split back under the line; the remaining waived files are the
+# build script and the parity harness (cohesive-not-god).
 #
 # It counts .zig files with >= LOC_THRESHOLD (default 500) lines and ratchets like
 # the headless gate: LOC_BASELINE is the currently-allowed count; the gate FAILS if
@@ -21,6 +22,8 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 THRESHOLD="${LOC_THRESHOLD:-500}"
 BASELINE="${LOC_BASELINE:-2}"
+# (build.zig passes LOC_BASELINE; the default here matches the current waived set:
+#  build.zig + tools/parity_harness.zig.)
 
 count=0
 tmp="$(mktemp)"
