@@ -52,6 +52,7 @@ pub const TraceOutput = struct {
 // lanes contribute nothing.
 inline fn affineDpbusd(
     comptime OUT: usize,
+    comptime sparse: bool,
     out: *[OUT]i32,
     biases: [*]const i32,
     weights: [*]const i8,
@@ -78,8 +79,15 @@ inline fn affineDpbusd(
     };
     var acc: Vo = biases[0..OUT].*;
     const groups = input.len / 4;
+    // Sparse input (port of upstream AffineTransformSparseInput): a 4-byte input
+    // chunk that is all-zero contributes 0 to every output, so skip it. Bit-exact
+    // with the dense loop -- only the zero-chunk work is elided. `input` is the
+    // 64-aligned feature-transformer output for the sparse (fc0) call, so the u32
+    // chunk read is aligned.
+    const in32: [*]const u32 = if (sparse) @ptrCast(@alignCast(input.ptr)) else undefined;
     var g: usize = 0;
     while (g < groups) : (g += 1) {
+        if (sparse and in32[g] == 0) continue;
         const in4: @Vector(4, i16) = .{
             @intCast(input[g * 4]),     @intCast(input[g * 4 + 1]),
             @intCast(input[g * 4 + 2]), @intCast(input[g * 4 + 3]),
@@ -116,7 +124,7 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
 
     // fc_0: affine 1024 -> 32 (PaddedInputDimensions = 1024).
     var fc0_out: [32]i32 = undefined;
-    affineDpbusd(32, &fc0_out, fc0_b, fc0_w, transformed[0..1024]);
+    affineDpbusd(32, true, &fc0_out, fc0_b, fc0_w, transformed[0..1024]);
 
     // SFNNv15 concat[128] = [ac_sqr_0(32) | ac_0(32) | ac_sqr_1(32) | ac_1(32)].
     // ac_sqr_0 / ac_0 over all FC_0_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits+1 = 7:
@@ -131,7 +139,7 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
 
     // fc_1: affine 64 -> 32 over [ac_sqr_0 | ac_0].
     var fc1_out: [32]i32 = undefined;
-    affineDpbusd(32, &fc1_out, fc1_b, fc1_w, concat[0..64]);
+    affineDpbusd(32, false, &fc1_out, fc1_b, fc1_w, concat[0..64]);
 
     // ac_sqr_1 / ac_1 over FC_1_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits = 6:
     // SqrClippedReLU shift = 2*6+7 = 19, ClippedReLU shift = 6. Written into concat[64..128].
@@ -144,7 +152,7 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
 
     // fc_2: affine 128 -> 1 over the full concat (OUT=1 -> identity scramble).
     var fc2_out: [1]i32 = undefined;
-    affineDpbusd(1, &fc2_out, fc2_b, fc2_w, concat[0..128]);
+    affineDpbusd(1, false, &fc2_out, fc2_b, fc2_w, concat[0..128]);
 
     // SFNNv15: fwdOut = fc_2_out[0] + (fc_0_out[FC_0_OUTPUTS-2] - fc_0_out[FC_0_OUTPUTS-1]),
     // then scale by 600*OutputScale / (HiddenOneVal*(1<<WeightScaleBits)*2) = 9600/16384 via i64.
