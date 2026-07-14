@@ -193,8 +193,8 @@ fn refreshLatestPsq(
     const snapshot = positionSnapshot(pos);
     const entry_pieces = cacheEntryPiecesMut(entry_ptr);
 
-    var removed = [_]u32{0} ** psq_index_capacity;
-    var added = [_]u32{0} ** psq_index_capacity;
+    var removed: [psq_index_capacity]u32 = undefined;
+    var added: [psq_index_capacity]u32 = undefined;
     var removed_len: usize = 0;
     var added_len: usize = 0;
     var square: usize = 0;
@@ -338,8 +338,8 @@ fn incrementalStepPsq(
         .add_pc = diff.add_pc,
     });
 
-    var removed = [_]u32{0} ** psq_index_capacity;
-    var added = [_]u32{0} ** psq_index_capacity;
+    var removed: [psq_index_capacity]u32 = undefined;
+    var added: [psq_index_capacity]u32 = undefined;
     var removed_len: usize = 0;
     var added_len: usize = 0;
     var cursor: usize = 0;
@@ -394,8 +394,8 @@ fn incrementalStepThreat(
         diff.list.size_,
     );
 
-    var removed = [_]u32{0} ** threat_index_capacity;
-    var added = [_]u32{0} ** threat_index_capacity;
+    var removed: [threat_index_capacity]u32 = undefined;
+    var added: [threat_index_capacity]u32 = undefined;
     var removed_len: usize = 0;
     var added_len: usize = 0;
 

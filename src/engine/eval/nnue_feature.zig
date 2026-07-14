@@ -80,7 +80,7 @@ pub fn halfMakeIndex(params: HalfThreatParams) u32 {
 }
 
 pub fn halfAppendChanged(perspective: u8, king_square: u8, diff: HalfDiff) HalfAppendResult {
-    var result: HalfAppendResult = .{ .len = 0, .indices = [_]u32{0} ** 32 };
+    var result: HalfAppendResult = .{ .len = 0, .indices = undefined };
     appendHalfIndex(&result, perspective, diff.from, diff.pc, king_square);
     if (diff.to != sq_none) {
         appendHalfIndex(&result, perspective, diff.to, diff.pc, king_square);
@@ -115,7 +115,7 @@ pub fn fullAppendChanged(
     list_ptr: [*]const DirtyThreatRaw,
     list_len: usize,
 ) FullAppendResult {
-    var result: FullAppendResult = .{ .len = 0, .indices = [_]u32{0} ** 128 };
+    var result: FullAppendResult = .{ .len = 0, .indices = undefined };
     var index: usize = 0;
     while (index < list_len) : (index += 1) {
         const dirty = list_ptr[index].data;
@@ -142,7 +142,7 @@ pub fn fullAppendActive(
     const occupied = occupiedFromPieces(pieces);
     const pawns = piecesOfType(pieces, pawn_piece_type);
 
-    var result: FullAppendResult = .{ .len = 0, .indices = [_]u32{0} ** 128 };
+    var result: FullAppendResult = .{ .len = 0, .indices = undefined };
     var color_index: u8 = 0;
 
     while (color_index < 2) : (color_index += 1) {
