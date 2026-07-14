@@ -195,7 +195,6 @@ pub fn transformBucket(
     const Vi32 = @Vector(V, i32);
     const zero: Vi32 = @splat(0);
     const c255: Vi32 = @splat(255);
-    const d512: @Vector(V, u32) = @splat(512);
     var p: usize = 0;
     while (p < 2) : (p += 1) {
         const pp: usize = if (p == 0) p0 else p1;
@@ -207,7 +206,9 @@ pub fn transformBucket(
             const s1i: Vi16 = @as(Vi16, psq_acc[base + j + half ..][0..V].*) +% @as(Vi16, thr_acc[base + j + half ..][0..V].*);
             const c0: Vi32 = @max(zero, @min(c255, @as(Vi32, s0i)));
             const c1: Vi32 = @max(zero, @min(c255, @as(Vi32, s1i)));
-            const q: @Vector(V, u32) = @as(@Vector(V, u32), @intCast(c0 * c1)) / d512;
+            // /512 == >>9 exactly (product is non-negative, 512 == 2^9). A vector-by-vector
+            // divide scalarizes to per-lane integer divides; the shift is one vpsrld.
+            const q: @Vector(V, u32) = @as(@Vector(V, u32), @intCast(c0 * c1)) >> @as(@Vector(V, u5), @splat(9));
             output[offset + j ..][0..V].* = @as(@Vector(V, u8), @intCast(q));
         }
     }
