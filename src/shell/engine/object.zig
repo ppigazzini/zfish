@@ -61,8 +61,11 @@ pub const update_context_size: usize = 240;
 // on a network verify message.
 pub const verify_network_fn_size: usize = 64;
 
-/// The buffer-resident engine object. `extern struct` so the field offsets are stable
-/// and the member accessors (main.zig) can read them by the documented offset.
+/// The buffer-resident engine object: `main` allocates a `@sizeOf(EngineObject)`-byte
+/// buffer and reinterprets it as this struct (`fromBuffer`). A plain Zig struct -- the
+/// buffer is written and read as this same type throughout, so Zig owns the layout; there
+/// is no C-ABI or cross-language contract that would need `extern`. Every access below is
+/// a typed member accessor, never a byte offset.
 pub const EngineObject = struct {
     numa_context: ?*anyopaque = null,
     states: ?*state_list_port.StateList = null,
@@ -72,18 +75,6 @@ pub const EngineObject = struct {
     cli_argv: ?[*]const [*:0]u8 = null,
     update_context: [update_context_size]u8 align(8) = [_]u8{0} ** update_context_size,
     on_verify_network: [verify_network_fn_size]u8 align(8) = [_]u8{0} ** verify_network_fn_size,
-
-    /// The field offsets the member accessors read. @offsetOf keeps these pinned
-    /// to the struct.
-    pub const off = struct {
-        pub const numa_context = @offsetOf(EngineObject, "numa_context");
-        pub const states = @offsetOf(EngineObject, "states");
-        pub const threads = @offsetOf(EngineObject, "threads");
-        pub const cli_argc = @offsetOf(EngineObject, "cli_argc");
-        pub const cli_argv = @offsetOf(EngineObject, "cli_argv");
-        pub const update_context = @offsetOf(EngineObject, "update_context");
-        pub const on_verify_network = @offsetOf(EngineObject, "on_verify_network");
-    };
 
     pub fn fromBuffer(buf: *anyopaque) *EngineObject {
         return @ptrCast(@alignCast(buf));
