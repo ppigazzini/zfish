@@ -86,4 +86,27 @@ fi
 if [ "$violations" -eq 0 ]; then
     echo "headless: OK -- engine/ imports only engine/ (standalone library invariant holds)"
 fi
+
+# Completeness of the compiler-proof root (`src/engine/headless.zig`). The up-edge check above is
+# structural; `zig build engine` compiles headless.zig -- which must @import EVERY engine module --
+# to prove standalone-ness at the compiler+linker level. That list is hand-maintained, so a new
+# engine module silently added to module_specs but forgotten here shrinks the proof unnoticed.
+# This asserts headless.zig's import set covers every engine-zone module (and flags stale entries).
+HEADLESS_ROOT="$ROOT/src/engine/headless.zig"
+if [ -f "$HEADLESS_ROOT" ]; then
+    imported="$(grep -oE '@import\("[a-z_]+"\)' "$HEADLESS_ROOT" | sed -E 's/@import\("([a-z_]+)"\)/\1/' | sort -u)"
+    missing=0
+    for name in "${!ZONE[@]}"; do
+        [ "${ZONE[$name]}" = engine ] || continue
+        if ! printf '%s\n' "$imported" | grep -qx "$name"; then
+            echo "headless: MISSING from headless.zig: engine module '$name' (compiler-proof incomplete)" >&2
+            missing=$((missing + 1))
+        fi
+    done
+    if [ "$missing" -gt 0 ]; then
+        echo "headless: $missing engine module(s) absent from src/engine/headless.zig -- add them so \`zig build engine\` proves the full graph." >&2
+        exit 1
+    fi
+    echo "headless: OK -- headless.zig covers all engine modules (compiler-proof complete)"
+fi
 exit 0
