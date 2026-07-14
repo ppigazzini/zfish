@@ -1380,9 +1380,10 @@ pub fn build(b: *std.Build) void {
     // found the earlier src/-only scan blind to the two LARGEST files -- build.zig (2233, the
     // declarative module graph) and tools/parity_harness.zig (1888, the gate driver) -- plus
     // syzygy/wdl.zig (832) and shell/engine.zig (505). All four are cohesive-not-god (a build
-    // script, a test harness, a Syzygy prober, a session facade), so they are waived at baseline 4
-    // -- but a FIFTH (or growth of a smaller file past the line) fails the gate. Lower as any split.
-    const loc_baseline = "4";
+    // script, a test harness, a session facade), so they are waived at baseline 3 -- but a FOURTH
+    // (or growth of a smaller file past the line) fails the gate. (AR9b split syzygy/wdl.zig 832 ->
+    // wdl 490 + registry 371, dropping it below the line, so the baseline ratcheted 4 -> 3.)
+    const loc_baseline = "3";
     const loc_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/loc_lint.sh"),
