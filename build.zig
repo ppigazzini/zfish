@@ -1375,11 +1375,14 @@ pub fn build(b: *std.Build) void {
     headless_step.dependOn(&headless_cmd.step);
 
     // God-file structural gate (REPORT-19 AR9 / R6): ratchet on the count of .zig files >= 500
-    // lines, so the REPORT-17 M21 "no god-files" property is enforced, not just claimed. The two
-    // current large files (syzygy/wdl.zig, shell/engine.zig) are cohesive subsystems, not true
-    // god-files, so they are waived at baseline 2 -- but a THIRD (or growth of a smaller file past
-    // the line) fails the gate. Lower the baseline if one is cleanly split.
-    const loc_baseline = "2";
+    // lines across ALL repo-owned code (src/ + build.zig + tools/), so the REPORT-17 M21 "no
+    // god-files" property is enforced repo-wide, not just claimed. A REPORT-19 third-pass audit
+    // found the earlier src/-only scan blind to the two LARGEST files -- build.zig (2233, the
+    // declarative module graph) and tools/parity_harness.zig (1888, the gate driver) -- plus
+    // syzygy/wdl.zig (832) and shell/engine.zig (505). All four are cohesive-not-god (a build
+    // script, a test harness, a Syzygy prober, a session facade), so they are waived at baseline 4
+    // -- but a FIFTH (or growth of a smaller file past the line) fails the gate. Lower as any split.
+    const loc_baseline = "4";
     const loc_cmd = b.addSystemCommand(&.{
         "bash",
         b.pathFromRoot("tools/loc_lint.sh"),

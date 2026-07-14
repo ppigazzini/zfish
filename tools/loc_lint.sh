@@ -24,13 +24,16 @@ BASELINE="${LOC_BASELINE:-2}"
 
 count=0
 tmp="$(mktemp)"
+# Scan every repo-owned .zig -- src/ (runtime) AND build.zig + tools/ (the build script and
+# harness). A src/-only scan is a blind spot: build.zig is the repo's largest file, and the
+# "no god-files" property is dishonest if the gate cannot see it.
 while IFS= read -r f; do
     n=$(wc -l < "$f")
     if [ "$n" -ge "$THRESHOLD" ]; then
         printf '  %5d  %s\n' "$n" "${f#"$ROOT"/}" >> "$tmp"
         count=$((count + 1))
     fi
-done < <(find "$ROOT/src" -name '*.zig' | sort)
+done < <({ find "$ROOT/src" "$ROOT/tools" -name '*.zig'; [ -f "$ROOT/build.zig" ] && echo "$ROOT/build.zig"; } | sort)
 
 if [ "$count" -gt 0 ]; then
     echo "loc: files >= $THRESHOLD lines:"
