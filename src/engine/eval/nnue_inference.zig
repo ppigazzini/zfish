@@ -5,9 +5,16 @@
 // Bench-verified bit-exact (node signature 2466447 on every arch).
 
 const std = @import("std");
+const builtin = @import("builtin");
 const position_types = @import("position_types");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const weight_storage = @import("nnue_weight_storage.zig");
+
+// LLVM will not lower the portable @Vector int8-dot pattern to `vpdpbusd`, so on an
+// AVX-512-VNNI target the affine uses an inline-asm seam; other tiers keep the pmaddwd
+// reduction. Both paths are bit-identical (pure integer dot), so bench holds 2466447.
+const has_vnni = builtin.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
 
 const Position = position_types.Position;
 
@@ -50,6 +57,46 @@ pub const TraceOutput = struct {
 // it just lets LLVM emit vector multiplies/shuffles (and dpbusd-class ops) instead of
 // a scalar MAC. `input.len` must be the padded input dim (a multiple of 4); zero tail
 // lanes contribute nothing.
+// acc(i32x16) += the 4-way int8 dot of a(u8x64) and b(i8x64) over its 16 groups of 4.
+inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i8)) @Vector(16, i32) {
+    return asm (
+        \\vpdpbusd %[b], %[a], %[acc]
+        : [acc] "=v" (-> @Vector(16, i32)),
+        : [_] "0" (acc),
+          [a] "v" (a),
+          [b] "v" (b),
+    );
+}
+
+// VNNI affine: the scrambled layout stores each group's OUT*4 weights contiguously, so a
+// 16-output chunk is one vpdpbusd with the group's 4 input bytes broadcast across the 16
+// outputs. Honors the sparse-input skip.
+inline fn affineVnni(
+    comptime OUT: usize,
+    comptime sparse: bool,
+    out: *[OUT]i32,
+    biases: [*]const i32,
+    weights: [*]const i8,
+    input: []const u8,
+) void {
+    const chunks = OUT / 16;
+    var acc: [chunks]@Vector(16, i32) = undefined;
+    inline for (0..chunks) |c| acc[c] = biases[c * 16 ..][0..16].*;
+    const groups = input.len / 4;
+    const in32: [*]const u32 = if (sparse) @ptrCast(@alignCast(input.ptr)) else undefined;
+    var g: usize = 0;
+    while (g < groups) : (g += 1) {
+        if (sparse and in32[g] == 0) continue;
+        const in4: [4]u8 = input[g * 4 ..][0..4].*;
+        const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
+        inline for (0..chunks) |c| {
+            const b: @Vector(64, i8) = weights[g * OUT * 4 + c * 64 ..][0..64].*;
+            acc[c] = vpdpbusd16(acc[c], a, b);
+        }
+    }
+    inline for (0..chunks) |c| out[c * 16 ..][0..16].* = acc[c];
+}
+
 inline fn affineDpbusd(
     comptime OUT: usize,
     comptime sparse: bool,
@@ -58,6 +105,10 @@ inline fn affineDpbusd(
     weights: [*]const i8,
     input: []const u8,
 ) void {
+    if (comptime (has_vnni and OUT % 16 == 0)) {
+        affineVnni(OUT, sparse, out, biases, weights, input);
+        return;
+    }
     const N = OUT * 4;
     const Vi16 = @Vector(N, i16);
     const Vo = @Vector(OUT, i32);
