@@ -19,6 +19,8 @@ pub const pawn_piece_type: u8 = 1;
 pub const no_piece: u8 = 0;
 pub const sq_none: u8 = 64;
 pub const square_count: usize = 64;
+/// PieceType.king, for reading the king square straight off the Position (see kingSquare).
+const king_piece_type: u8 = 6;
 pub const max_stack_size: usize = 247;
 pub const nnue_align: usize = 64;
 pub const color_count: usize = 2;
@@ -162,22 +164,25 @@ pub fn stateBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [
     return stackBytesMut(stack) + stateOffset(feature_kind, index);
 }
 
-pub fn positionSnapshot(pos: *const Position) PositionSnapshot {
-    const bridge = loadBridgeSnapshot(pos);
-    var snapshot = PositionSnapshot{
-        .pieces = [_]u8{0} ** square_count,
-        .occupied = 0,
-    };
-
-    snapshot.occupied = bridge.pieces_all;
-    @memcpy(snapshot.pieces[0..], bridge.board[0..]);
-
-    return snapshot;
+/// Upstream reads the king square straight off the Position (`pos.square<KING>(c)`).
+/// Do the same. This used to go through the bridge snapshot to read a single byte, which
+/// cost the whole 19-field structure -- zeroed, filled through the opaque `fill_fn`
+/// pointer, then copied out by value -- roughly 3x258 B of traffic per call, ~2 calls per
+/// node. `fill_fn` being a function POINTER is what made it unelidable: LLVM cannot see
+/// the writer, so none of it folded away.
+pub fn kingSquare(pos: *const Position, color: u8) u8 {
+    return @intCast(@ctz(pos.by_color_bb[color] & pos.by_type_bb[king_piece_type]));
 }
 
-pub fn loadBridgeSnapshot(pos: *const Position) BridgePositionSnapshot {
-    var snapshot = std.mem.zeroes(BridgePositionSnapshot);
-    position_snapshot.fill(pos, &snapshot);
+/// Reads the board and occupancy straight off the Position, as upstream's feature code does.
+/// `pieces` is fully overwritten by the @memcpy, so it starts `undefined` rather than being
+/// zeroed and immediately clobbered.
+pub fn positionSnapshot(pos: *const Position) PositionSnapshot {
+    var snapshot: PositionSnapshot = .{
+        .pieces = undefined,
+        .occupied = pos.by_type_bb[0],
+    };
+    @memcpy(snapshot.pieces[0..], pos.board[0..]);
     return snapshot;
 }
 

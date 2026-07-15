@@ -65,7 +65,7 @@ const stateComputed = layout.stateComputed;
 const stateBytesConst = layout.stateBytesConst;
 const stateBytesMut = layout.stateBytesMut;
 const positionSnapshot = layout.positionSnapshot;
-const loadBridgeSnapshot = layout.loadBridgeSnapshot;
+const kingSquare = layout.kingSquare;
 const stateAccumulationConst = layout.stateAccumulationConst;
 const stateAccumulationMut = layout.stateAccumulationMut;
 const statePsqtConst = layout.statePsqtConst;
@@ -126,7 +126,7 @@ pub fn evaluateSide(
 ) void {
     const last_usable = findLastUsable(psq_feature, stack, perspective);
     const size = stackSize(stack);
-    const king_square = loadBridgeSnapshot(pos).king_square[perspective];
+    const king_square = kingSquare(pos, perspective);
 
     if (stateComputed(stack, psq_feature, last_usable, perspective)) {
         var next = last_usable + 1;

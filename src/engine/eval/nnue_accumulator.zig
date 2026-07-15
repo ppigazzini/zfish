@@ -113,7 +113,6 @@ const diffOffset = layout.diffOffset;
 const stateBytesConst = layout.stateBytesConst;
 const stateBytesMut = layout.stateBytesMut;
 const positionSnapshot = layout.positionSnapshot;
-const loadBridgeSnapshot = layout.loadBridgeSnapshot;
 const stateAccumulationConst = layout.stateAccumulationConst;
 const stateAccumulationMut = layout.stateAccumulationMut;
 const statePsqtConst = layout.statePsqtConst;
