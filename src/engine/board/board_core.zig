@@ -78,12 +78,20 @@ pub inline fn isEmpty(pos: *const Position, s: u8) bool {
 }
 
 // attacks_bb<PAWN>(s, c): squares a color-c pawn on `s` attacks.
-pub fn pawnAttacks(color: u8, sq: u8) u64 {
-    const b: u64 = @as(u64, 1) << @intCast(sq);
-    if (color == color_white) {
-        return ((b & ~file_h_bb) << 9) | ((b & ~file_a_bb) << 7);
+// Pawn attack table -- upstream's PawnAttacks[c][s]. position.initRuntime calls
+// initPawnAttacks() before any position setup or search.
+var pawn_attacks_bb: [2][64]u64 = undefined;
+
+pub fn initPawnAttacks() void {
+    for (0..64) |sq| {
+        const b: u64 = @as(u64, 1) << @intCast(sq);
+        pawn_attacks_bb[color_white][sq] = ((b & ~file_h_bb) << 9) | ((b & ~file_a_bb) << 7);
+        pawn_attacks_bb[color_black][sq] = ((b & ~file_h_bb) >> 7) | ((b & ~file_a_bb) >> 9);
     }
-    return ((b & ~file_h_bb) >> 7) | ((b & ~file_a_bb) >> 9);
+}
+
+pub fn pawnAttacks(color: u8, sq: u8) u64 {
+    return pawn_attacks_bb[color][sq];
 }
 
 pub inline fn kingSquare(pos: *const Position, c: u8) u8 {

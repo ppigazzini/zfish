@@ -135,6 +135,7 @@ pub fn initRuntime() void {
     // Build the magic-bitboard slider attack tables first: zobrist.init() (cuckoo
     // tables) and every later position setup / search call bitboard.attacks(), which
     // now reads these tables (see bitboard.zig). Read-only after this point.
+    board_core.initPawnAttacks();
     bitboard.initSliderMagics();
 
     // Build the Zobrist + cuckoo tables (now owned by the zobrist leaf).
