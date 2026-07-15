@@ -64,7 +64,6 @@ const stackSize = layout.stackSize;
 const stateComputed = layout.stateComputed;
 const stateBytesConst = layout.stateBytesConst;
 const stateBytesMut = layout.stateBytesMut;
-const positionSnapshot = layout.positionSnapshot;
 const kingSquare = layout.kingSquare;
 const stateAccumulationConst = layout.stateAccumulationConst;
 const stateAccumulationMut = layout.stateAccumulationMut;
@@ -158,8 +157,7 @@ fn refreshCombined(
     refreshLatestPsq(perspective, king_square, stack, pos, feature_transformer, cache);
 
     const latest_index = stackSize(stack) - 1;
-    const snapshot = positionSnapshot(pos);
-    const active = nnue_feature.fullAppendActive(perspective, king_square, @ptrCast(&snapshot.pieces));
+    const active = nnue_feature.fullAppendActive(perspective, king_square, &pos.board);
     accumulateRowsI8(
         stateAccumulationMut(psq_feature, latest_index, stack, perspective),
         active.indices[0..active.len],
@@ -182,7 +180,6 @@ fn refreshLatestPsq(
 ) void {
     const latest_index = stackSize(stack) - 1;
     const entry_ptr = cacheEntry(cache, king_square, perspective);
-    const snapshot = positionSnapshot(pos);
     const entry_pieces = cacheEntryPiecesMut(entry_ptr);
 
     var removed: [psq_index_capacity]u32 = undefined;
@@ -193,7 +190,7 @@ fn refreshLatestPsq(
 
     while (square < square_count) : (square += 1) {
         const old_piece = entry_pieces[square];
-        const new_piece = snapshot.pieces[square];
+        const new_piece = pos.board[square];
         if (old_piece != new_piece and old_piece != no_piece) {
             removed[removed_len] = nnue_feature.halfMakeIndex(.{
                 .perspective = perspective,
@@ -208,7 +205,7 @@ fn refreshLatestPsq(
     square = 0;
     while (square < square_count) : (square += 1) {
         const old_piece = entry_pieces[square];
-        const new_piece = snapshot.pieces[square];
+        const new_piece = pos.board[square];
         if (old_piece != new_piece and new_piece != no_piece) {
             added[added_len] = nnue_feature.halfMakeIndex(.{
                 .perspective = perspective,
@@ -233,8 +230,8 @@ fn refreshLatestPsq(
         featureTransformerPsqPsqtWeights(feature_transformer),
     );
 
-    @memcpy(entry_pieces, snapshot.pieces[0..]);
-    setCacheEntryPieceBb(entry_ptr, snapshot.occupied);
+    @memcpy(entry_pieces, pos.board[0..]);
+    setCacheEntryPieceBb(entry_ptr, pos.by_type_bb[0]);
 
     @memcpy(
         stateAccumulationMut(psq_feature, latest_index, stack, perspective),

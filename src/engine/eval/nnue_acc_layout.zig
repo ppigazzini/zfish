@@ -81,11 +81,6 @@ pub const threat_array_bytes = threat_state_stride * max_stack_size;
 pub const stack_size_offset = threat_array_offset + threat_array_bytes;
 pub const threat_refresh_diff_offset = threat_diff_offset + @sizeOf(DirtyThreatListView);
 
-pub const PositionSnapshot = struct {
-    pieces: [square_count]u8,
-    occupied: u64,
-};
-
 pub fn findLastUsable(feature_kind: u8, stack: *const AccumulatorStack, perspective: u8) usize {
     const size = stackSize(stack);
     var current = size - 1;
@@ -167,16 +162,6 @@ pub fn stateBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [
 /// Upstream's `pos.square<KING>(c)`.
 pub fn kingSquare(pos: *const Position, color: u8) u8 {
     return @intCast(@ctz(pos.by_color_bb[color] & pos.by_type_bb[king_piece_type]));
-}
-
-/// `pieces` is left `undefined` because the @memcpy below overwrites all of it.
-pub fn positionSnapshot(pos: *const Position) PositionSnapshot {
-    var snapshot: PositionSnapshot = .{
-        .pieces = undefined,
-        .occupied = pos.by_type_bb[0],
-    };
-    @memcpy(snapshot.pieces[0..], pos.board[0..]);
-    return snapshot;
 }
 
 pub fn stateAccumulationConst(feature_kind: u8, index: usize, stack: *const AccumulatorStack, perspective: u8) []const i16 {
