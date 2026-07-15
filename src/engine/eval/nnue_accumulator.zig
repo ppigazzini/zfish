@@ -74,7 +74,7 @@ const nnue_align = layout.nnue_align;
 const color_count = layout.color_count;
 const half_dimensions = layout.half_dimensions;
 const psqt_buckets = layout.psqt_buckets;
-const acc_vec_width = layout.acc_vec_width;
+const transform_vec_width = layout.transform_vec_width;
 const dirty_threat_capacity = layout.dirty_threat_capacity;
 const psq_index_capacity = layout.psq_index_capacity;
 const threat_index_capacity = layout.threat_index_capacity;
@@ -197,7 +197,7 @@ pub fn transformBucket(
     // scaled product 128*c0*c1 is exact and >>16 is floor, so this is bit-identical to
     // the i32 clamp*mul>>9 path (integer, no rounding): signature 2466447.
     const half = half_dimensions / 2;
-    const V = acc_vec_width;
+    const V = transform_vec_width;
     const Vi16 = @Vector(V, i16);
     const Vu16 = @Vector(V, u16);
     const Vu32 = @Vector(V, u32);

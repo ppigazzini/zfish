@@ -26,7 +26,10 @@ pub const nnue_align: usize = 64;
 pub const color_count: usize = 2;
 pub const half_dimensions: usize = 1024;
 pub const psqt_buckets: usize = 8;
-pub const acc_vec_width: usize = 32; // SIMD width, also used by transformBucket's ReLU
+/// Lane count for transformBucket's clipped-ReLU pass. Independent of nnue_acc_rowops's
+/// row_tile_width -- they touch different loops, and a sweep of each (16/32/64 here; 32/64/128/256
+/// there) finds different optima. Do not fold them into one knob.
+pub const transform_vec_width: usize = 32;
 pub const dirty_threat_capacity: usize = 96;
 pub const psq_index_capacity: usize = 32;
 pub const threat_index_capacity: usize = 128;

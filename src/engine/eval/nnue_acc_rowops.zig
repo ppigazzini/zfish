@@ -10,14 +10,17 @@
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
 
-const acc_vec_width: usize = 64;
+/// Lane count for the FT weight-row add/sub tile. Swept as the only variable (5c93ad7fe): 64
+/// beats 32 by +3.4%/+4.7%, 128 is flat, 256 spills. Independent of nnue_acc_layout's
+/// transform_vec_width.
+const row_tile_width: usize = 64;
 comptime {
-    if (half_dimensions % acc_vec_width != 0)
-        @compileError("half_dimensions must be a multiple of acc_vec_width");
+    if (half_dimensions % row_tile_width != 0)
+        @compileError("half_dimensions must be a multiple of row_tile_width");
 }
 
 inline fn accRow(comptime WT: type, comptime add: bool, target: []i16, weights_row: [*]const WT) void {
-    const V = acc_vec_width;
+    const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
@@ -143,7 +146,7 @@ pub fn applyCombinedDelta(
     psq_weights: [*]const i16,
     thr_weights: [*]const i8,
 ) void {
-    const V = acc_vec_width;
+    const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
