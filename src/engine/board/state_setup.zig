@@ -66,8 +66,8 @@ pub fn updateSliderBlockers(pos_ptr: *const Position, c: u8) void {
 
     const queen_rook = pos.by_type_bb[queen_pt] | pos.by_type_bb[rook_pt];
     const queen_bishop = pos.by_type_bb[queen_pt] | pos.by_type_bb[bishop_pt];
-    var snipers = ((bitboard.attacks(rook_pt, ksq, 0) & queen_rook) |
-        (bitboard.attacks(bishop_pt, ksq, 0) & queen_bishop)) & pos.by_color_bb[nc];
+    var snipers = ((bitboard.pseudoAttacks(rook_pt, ksq) & queen_rook) |
+        (bitboard.pseudoAttacks(bishop_pt, ksq) & queen_bishop)) & pos.by_color_bb[nc];
     const occupancy = pos.by_type_bb[0] ^ snipers;
 
     while (snipers != 0) {
