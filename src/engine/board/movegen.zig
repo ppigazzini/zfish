@@ -101,7 +101,14 @@ fn generate(comptime kind: GenType, pos: *const Position, move_list: [*]u16) usi
 }
 
 fn loadSnapshot(pos: *const Position) PositionSnapshot {
-    var snapshot = std.mem.zeroes(PositionSnapshot);
+    // `fill` writes every field. Its only partial writes are castling_impeded /
+    // castling_rook_square, which it sets at the four single-right indices
+    // {white_oo, white_ooo, black_oo, black_ooo}; those are also the only indices any
+    // reader uses (isCastlingImpeded / castlingRookSquare are called with a single
+    // right, never a combined mask), so zeroing the other twelve was a dead store on
+    // a ~250-byte struct, per node. ReleaseSafe's 0xaa poison catches any read of a
+    // field `fill` leaves unwritten.
+    var snapshot: PositionSnapshot = undefined;
     position_snapshot.fill(pos, &snapshot);
     snapshot.pieces_by_type[0] = snapshot.pieces_all;
 

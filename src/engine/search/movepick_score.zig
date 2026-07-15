@@ -327,7 +327,9 @@ fn squareMask(square: u8) u64 {
 }
 
 pub fn loadPositionSnapshot(pos: *const Position) PositionSnapshot {
-    var snapshot = std.mem.zeroes(PositionSnapshot);
+    // See movegen.loadSnapshot: `fill` writes every field, so the zero-init was a dead
+    // store on a ~250-byte struct, per node.
+    var snapshot: PositionSnapshot = undefined;
     position_snapshot.fill(pos, &snapshot);
     snapshot.pieces_by_type[no_piece_type] = snapshot.pieces_all;
 
