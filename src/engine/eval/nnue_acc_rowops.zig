@@ -10,7 +10,7 @@
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
 
-const acc_vec_width: usize = 32;
+const acc_vec_width: usize = 64;
 comptime {
     if (half_dimensions % acc_vec_width != 0)
         @compileError("half_dimensions must be a multiple of acc_vec_width");
