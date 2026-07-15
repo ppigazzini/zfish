@@ -57,6 +57,12 @@ var ray_pass_bb: [64][64]u64 = undefined;
 var knight_attacks_bb: [64]u64 = undefined;
 var king_attacks_bb: [64]u64 = undefined;
 
+// Occupancy-free attack sets -- upstream's PseudoAttacks[pt][s]. A slider's empty-board
+// reach depends only on its square, so deriving it through the magic pipeline (mask,
+// multiply, shift, then a load from the ~860 KB attack table) re-computes a constant and
+// touches cold memory. Upstream reads a 64-entry table; attacks_bb<Pt>(s) IS that read.
+var pseudo_attacks_bb: [8][64]u64 = undefined;
+
 pub fn initSliderMagics() void {
     initMagics(PieceType.rook, rook_magic_attacks[0..], &slider_magics);
     initMagics(PieceType.bishop, bishop_magic_attacks[0..], &slider_magics);
@@ -68,7 +74,19 @@ fn initLeaperTables() void {
     for (0..64) |s| {
         knight_attacks_bb[s] = knightAttacks(s);
         king_attacks_bb[s] = kingAttacks(s);
+        const b = attacksBb(PieceType.bishop, s, 0, &slider_magics);
+        const r = attacksBb(PieceType.rook, s, 0, &slider_magics);
+        pseudo_attacks_bb[knight_piece][s] = knight_attacks_bb[s];
+        pseudo_attacks_bb[bishop_piece][s] = b;
+        pseudo_attacks_bb[rook_piece][s] = r;
+        pseudo_attacks_bb[queen_piece][s] = b | r;
+        pseudo_attacks_bb[king_piece][s] = king_attacks_bb[s];
     }
+}
+
+// Upstream's attacks_bb<Pt>(s): the empty-board attack set, one table read.
+pub fn pseudoAttacks(piece_type: u8, square: u8) u64 {
+    return pseudo_attacks_bb[piece_type][@as(usize, square)];
 }
 
 fn initDerivedTables() void {
@@ -82,7 +100,7 @@ fn initDerivedTables() void {
     for (0..64) |s1| {
         for (piece_types) |pt| {
             for (0..64) |s2| {
-                if ((pseudoAttacks(pt, s1) & squareBb(s2)) != 0) {
+                if ((slidingAttack(pt, s1, 0) & squareBb(s2)) != 0) {
                     line_bb[s1][s2] =
                         (attacksBb(pt, s1, 0, &slider_magics) & attacksBb(pt, s2, 0, &slider_magics)) |
                         squareBb(s1) | squareBb(s2);
@@ -248,10 +266,6 @@ fn attacksBb(pt: PieceType, square: usize, occupied: u64, magics: *[64][2]Magic)
 
 fn computeMagicIndex(magic_ref: Magic, occupied: u64) usize {
     return @intCast(((occupied & magic_ref.mask) *% magic_ref.magic) >> @as(u6, @intCast(magic_ref.shift)));
-}
-
-fn pseudoAttacks(pt: PieceType, square: usize) u64 {
-    return slidingAttack(pt, square, 0);
 }
 
 fn slidingAttack(pt: PieceType, square: usize, occupied: u64) u64 {
