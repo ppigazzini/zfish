@@ -4,7 +4,7 @@ const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 
 // The `pos` threaded through every generator is the board's typed Position:
-// each function hands it to position_snapshot.fill()/moveIsLegal(), which take it as
+// each function hands it to position_snapshot.moveIsLegal(), which takes it as
 // the concrete type now. position_types is a pure std leaf, so no import cycle.
 const Position = position_types.Position;
 
@@ -84,46 +84,27 @@ pub fn generateNonEvasions(pos: *const Position, move_list: [*]u16) usize {
 }
 
 pub fn generateLegal(pos: *const Position, move_list: [*]u16) usize {
-    var snapshot = loadSnapshot(pos);
-
-    const count = if (snapshot.checkers != 0)
-        generateWithSnapshot(.evasions, &snapshot, move_list)
+    const count = if (pos.st.checkers_bb != 0)
+        generateFor(.evasions, pos, move_list)
     else
-        generateWithSnapshot(.non_evasions, &snapshot, move_list);
+        generateFor(.non_evasions, pos, move_list);
 
-    return filterLegalMoves(pos, &snapshot, move_list, count);
+    return filterLegalMoves(pos, move_list, count);
 }
 
 fn generate(comptime kind: GenType, pos: *const Position, move_list: [*]u16) usize {
-    var snapshot = loadSnapshot(pos);
-
-    return generateWithSnapshot(kind, &snapshot, move_list);
+    return generateFor(kind, pos, move_list);
 }
 
-fn loadSnapshot(pos: *const Position) PositionSnapshot {
-    // `fill` writes every field. Its only partial writes are castling_impeded /
-    // castling_rook_square, which it sets at the four single-right indices
-    // {white_oo, white_ooo, black_oo, black_ooo}; those are also the only indices any
-    // reader uses (isCastlingImpeded / castlingRookSquare are called with a single
-    // right, never a combined mask), so zeroing the other twelve was a dead store on
-    // a ~250-byte struct, per node. ReleaseSafe's 0xaa poison catches any read of a
-    // field `fill` leaves unwritten.
-    var snapshot: PositionSnapshot = undefined;
-    position_snapshot.fill(pos, &snapshot);
-    snapshot.pieces_by_type[0] = snapshot.pieces_all;
-
-    return snapshot;
-}
-
-fn generateWithSnapshot(
+fn generateFor(
     comptime kind: GenType,
-    snapshot: *const PositionSnapshot,
+    pos: *const Position,
     move_list: [*]u16,
 ) usize {
     var writer = MoveWriter{ .moves = move_list };
-    switch (snapshot.side_to_move) {
-        white => generateAll(white, kind, snapshot, &writer),
-        black => generateAll(black, kind, snapshot, &writer),
+    switch (pos.side_to_move) {
+        white => generateAll(white, kind, pos, &writer),
+        black => generateAll(black, kind, pos, &writer),
         else => unreachable,
     }
 
@@ -133,40 +114,40 @@ fn generateWithSnapshot(
 fn generateAll(
     comptime us: u8,
     comptime kind: GenType,
-    snapshot: *const PositionSnapshot,
+    pos: *const Position,
     writer: *MoveWriter,
 ) void {
     const them = otherColor(us);
-    const ksq = snapshot.king_square[us];
+    const ksq = @as(u8, @intCast(@ctz(pos.by_color_bb[us] & pos.by_type_bb[king])));
     var target: u64 = 0;
 
-    if (kind != .evasions or !moreThanOne(snapshot.checkers)) {
+    if (kind != .evasions or !moreThanOne(pos.st.checkers_bb)) {
         target = switch (kind) {
-            .evasions => bitboard.between(ksq, lsb(snapshot.checkers)),
-            .non_evasions => ~piecesColor(snapshot, us),
-            .captures => piecesColor(snapshot, them),
-            .quiets => ~snapshot.pieces_all,
+            .evasions => bitboard.between(ksq, lsb(pos.st.checkers_bb)),
+            .non_evasions => ~piecesColor(pos, us),
+            .captures => piecesColor(pos, them),
+            .quiets => ~pos.by_type_bb[0],
         };
 
-        generatePawnMoves(us, kind, snapshot, writer, target);
-        generateMoves(us, kind, knight, snapshot, writer, target);
-        generateMoves(us, kind, bishop, snapshot, writer, target);
-        generateMoves(us, kind, rook, snapshot, writer, target);
-        generateMoves(us, kind, queen, snapshot, writer, target);
+        generatePawnMoves(us, kind, pos, writer, target);
+        generateMoves(us, kind, knight, pos, writer, target);
+        generateMoves(us, kind, bishop, pos, writer, target);
+        generateMoves(us, kind, rook, pos, writer, target);
+        generateMoves(us, kind, queen, pos, writer, target);
     }
 
-    const king_target = if (kind == .evasions) ~piecesColor(snapshot, us) else target;
+    const king_target = if (kind == .evasions) ~piecesColor(pos, us) else target;
     splatMoves(writer, ksq, bitboard.attacks(king, ksq, 0) & king_target);
 
-    if ((kind == .quiets or kind == .non_evasions) and canCastleAny(snapshot, us)) {
+    if ((kind == .quiets or kind == .non_evasions) and canCastleAny(pos, us)) {
         const king_side = kingSideRight(us);
-        if (!isCastlingImpeded(snapshot, king_side) and canCastle(snapshot, king_side)) {
-            writer.push(makeSpecialMove(castling, ksq, castlingRookSquare(snapshot, king_side), knight));
+        if (!isCastlingImpeded(pos, king_side) and canCastle(pos, king_side)) {
+            writer.push(makeSpecialMove(castling, ksq, castlingRookSquare(pos, king_side), knight));
         }
 
         const queen_side = queenSideRight(us);
-        if (!isCastlingImpeded(snapshot, queen_side) and canCastle(snapshot, queen_side)) {
-            writer.push(makeSpecialMove(castling, ksq, castlingRookSquare(snapshot, queen_side), knight));
+        if (!isCastlingImpeded(pos, queen_side) and canCastle(pos, queen_side)) {
+            writer.push(makeSpecialMove(castling, ksq, castlingRookSquare(pos, queen_side), knight));
         }
     }
 }
@@ -174,21 +155,21 @@ fn generateAll(
 fn generatePawnMoves(
     comptime us: u8,
     comptime kind: GenType,
-    snapshot: *const PositionSnapshot,
+    pos: *const Position,
     writer: *MoveWriter,
     target: u64,
 ) void {
     const them = otherColor(us);
-    const empty_squares = ~snapshot.pieces_all;
-    const enemies = if (kind == .evasions) snapshot.checkers else piecesColor(snapshot, them);
+    const empty_squares = ~pos.by_type_bb[0];
+    const enemies = if (kind == .evasions) pos.st.checkers_bb else piecesColor(pos, them);
     const t_rank_7 = if (us == white) rank_7_bb else rank_2_bb;
     const t_rank_3 = if (us == white) rank_3_bb else rank_6_bb;
     const up: i8 = if (us == white) north else south;
     const up_right: i8 = if (us == white) north_east else south_west;
     const up_left: i8 = if (us == white) north_west else south_east;
 
-    const pawns_on_7 = piecesColorType(snapshot, us, pawn) & t_rank_7;
-    const pawns_not_on_7 = piecesColorType(snapshot, us, pawn) & ~t_rank_7;
+    const pawns_on_7 = piecesColorType(pos, us, pawn) & t_rank_7;
+    const pawns_not_on_7 = piecesColorType(pos, us, pawn) & ~t_rank_7;
 
     if (kind != .captures) {
         var b1 = shift(up, pawns_not_on_7) & empty_squares;
@@ -232,15 +213,15 @@ fn generatePawnMoves(
         splatPawnMoves(writer, up_right, b1);
         splatPawnMoves(writer, up_left, b2);
 
-        if (snapshot.ep_square != sq_none) {
-            if (kind == .evasions and (target & squareBb(addDirection(snapshot.ep_square, up))) != 0) {
+        if (pos.st.ep_square != sq_none) {
+            if (kind == .evasions and (target & squareBb(addDirection(pos.st.ep_square, up))) != 0) {
                 return;
             }
 
-            var ep_attackers = pawns_not_on_7 & pawnAttacksFromSquare(snapshot.ep_square, them);
+            var ep_attackers = pawns_not_on_7 & pawnAttacksFromSquare(pos.st.ep_square, them);
             while (ep_attackers != 0) {
                 const from = popLsb(&ep_attackers);
-                writer.push(makeSpecialMove(en_passant, from, snapshot.ep_square, knight));
+                writer.push(makeSpecialMove(en_passant, from, pos.st.ep_square, knight));
             }
         }
     }
@@ -250,16 +231,16 @@ fn generateMoves(
     comptime us: u8,
     comptime kind: GenType,
     comptime piece_type: u8,
-    snapshot: *const PositionSnapshot,
+    pos: *const Position,
     writer: *MoveWriter,
     target: u64,
 ) void {
     _ = kind;
 
-    var pieces = piecesColorType(snapshot, us, piece_type);
+    var pieces = piecesColorType(pos, us, piece_type);
     while (pieces != 0) {
         const from = popLsb(&pieces);
-        const attacks = bitboard.attacks(piece_type, from, snapshot.pieces_all) & target;
+        const attacks = bitboard.attacks(piece_type, from, pos.by_type_bb[0]) & target;
         splatMoves(writer, from, attacks);
     }
 }
@@ -312,33 +293,33 @@ fn makeSpecialMove(kind: u16, from: u8, to: u8, promotion_piece: u8) u16 {
     return kind | promotion_bits | (@as(u16, from) << 6) | @as(u16, to);
 }
 
-fn piecesColor(snapshot: *const PositionSnapshot, color: u8) u64 {
-    return snapshot.pieces_by_color[color];
+fn piecesColor(pos: *const Position, color: u8) u64 {
+    return pos.by_color_bb[color];
 }
 
-fn piecesColorType(snapshot: *const PositionSnapshot, color: u8, piece_type: u8) u64 {
-    return snapshot.pieces_by_color[color] & snapshot.pieces_by_type[piece_type];
+fn piecesColorType(pos: *const Position, color: u8, piece_type: u8) u64 {
+    return pos.by_color_bb[color] & pos.by_type_bb[piece_type];
 }
 
 fn otherColor(color: u8) u8 {
     return color ^ 1;
 }
 
-fn canCastle(snapshot: *const PositionSnapshot, right: u8) bool {
-    return (snapshot.castling_rights & right) != 0;
+fn canCastle(pos: *const Position, right: u8) bool {
+    return (pos.st.castling_rights & right) != 0;
 }
 
-fn canCastleAny(snapshot: *const PositionSnapshot, color: u8) bool {
+fn canCastleAny(pos: *const Position, color: u8) bool {
     const mask = if (color == white) white_castling else black_castling;
-    return (snapshot.castling_rights & mask) != 0;
+    return (pos.st.castling_rights & mask) != 0;
 }
 
-fn isCastlingImpeded(snapshot: *const PositionSnapshot, right: u8) bool {
-    return snapshot.castling_impeded[right] != 0;
+fn isCastlingImpeded(pos: *const Position, right: u8) bool {
+    return (pos.by_type_bb[0] & pos.castling_path[right]) != 0;
 }
 
-fn castlingRookSquare(snapshot: *const PositionSnapshot, right: u8) u8 {
-    return snapshot.castling_rook_square[right];
+fn castlingRookSquare(pos: *const Position, right: u8) u8 {
+    return pos.castling_rook_square[right];
 }
 
 fn kingSideRight(color: u8) u8 {
@@ -367,13 +348,12 @@ fn squareBb(square: u8) u64 {
 
 fn filterLegalMoves(
     pos: *const Position,
-    snapshot: *const PositionSnapshot,
     move_list: [*]u16,
     count: usize,
 ) usize {
-    const us = snapshot.side_to_move;
-    const pinned = snapshot.blockers_for_king[us] & piecesColor(snapshot, us);
-    const king_square = snapshot.king_square[us];
+    const us = pos.side_to_move;
+    const pinned = pos.st.blockers_for_king[us] & piecesColor(pos, us);
+    const king_square = @as(u8, @intCast(@ctz(pos.by_color_bb[us] & pos.by_type_bb[king])));
 
     var keep_count: usize = 0;
     var index: usize = 0;
