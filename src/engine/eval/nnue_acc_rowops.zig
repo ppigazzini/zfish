@@ -19,15 +19,32 @@ comptime {
         @compileError("half_dimensions must be a multiple of row_tile_width");
 }
 
-inline fn accRow(comptime WT: type, comptime add: bool, target: []i16, weights_row: [*]const WT) void {
+/// Applies a whole row list to the accumulator, upstream's `apply_combined` way: tile the
+/// accumulator, hold the tile in a register, and walk the rows INSIDE. The rows are the inner
+/// loop, so the accumulator is loaded and stored once per tile rather than once per row --
+/// which is what a row-outer loop costs, since each row streams all half_dimensions of it
+/// through memory.
+///
+/// Order per element is unchanged, and i16 wrap-around addition is associative regardless, so
+/// this is bit-identical to applying the rows one at a time.
+inline fn accRows(
+    comptime WT: type,
+    comptime add: bool,
+    target: []i16,
+    rows: []const u32,
+    weights: [*]const WT,
+) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
-        const t: Vi16 = target.ptr[d..][0..V].*;
-        const wraw: @Vector(V, WT) = weights_row[d..][0..V].*;
-        const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
-        target.ptr[d..][0..V].* = if (add) t + w else t - w;
+        var acc: Vi16 = target.ptr[d..][0..V].*;
+        for (rows) |index| {
+            const wraw: @Vector(V, WT) = (weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
+            acc = if (add) acc + w else acc - w;
+        }
+        target.ptr[d..][0..V].* = acc;
     }
 }
 
@@ -39,8 +56,8 @@ pub fn applyAccumulatorDeltaI16(
     weights: [*]const i16,
 ) void {
     @memcpy(target, source);
-    for (removed) |index| accRow(i16, false, target, weights + @as(usize, index) * half_dimensions);
-    for (added) |index| accRow(i16, true, target, weights + @as(usize, index) * half_dimensions);
+    accRows(i16, false, target, removed, weights);
+    accRows(i16, true, target, added, weights);
 }
 
 pub fn applyAccumulatorDeltaInPlaceI16(
@@ -49,8 +66,8 @@ pub fn applyAccumulatorDeltaInPlaceI16(
     added: []const u32,
     weights: [*]const i16,
 ) void {
-    for (removed) |index| accRow(i16, false, target, weights + @as(usize, index) * half_dimensions);
-    for (added) |index| accRow(i16, true, target, weights + @as(usize, index) * half_dimensions);
+    accRows(i16, false, target, removed, weights);
+    accRows(i16, true, target, added, weights);
 }
 
 pub fn applyAccumulatorDeltaI8(
@@ -61,12 +78,12 @@ pub fn applyAccumulatorDeltaI8(
     weights: [*]const i8,
 ) void {
     @memcpy(target, source);
-    for (removed) |index| accRow(i8, false, target, weights + @as(usize, index) * half_dimensions);
-    for (added) |index| accRow(i8, true, target, weights + @as(usize, index) * half_dimensions);
+    accRows(i8, false, target, removed, weights);
+    accRows(i8, true, target, added, weights);
 }
 
 pub fn accumulateRowsI8(target: []i16, rows: []const u32, weights: [*]const i8) void {
-    for (rows) |index| accRow(i8, true, target, weights + @as(usize, index) * half_dimensions);
+    accRows(i8, true, target, rows, weights);
 }
 
 pub fn applyPsqtDelta(
