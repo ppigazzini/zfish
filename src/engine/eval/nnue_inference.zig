@@ -360,6 +360,55 @@ fn networkTransformBucket(
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
 }
 
+// affineDpbusd has four codegen paths (portable pmaddwd; pmaddubsw+pmaddwd intrinsics on
+// the SSSE3 tier; vpdpbusd on VNNI; and the OUT==1 fallback), selected at comptime by the
+// -Darch tier. The whole-engine bench (2466447) proves the composite is right but cannot
+// localize which path broke, and it only exercises the input distribution the search happens
+// to produce. This pins every path against a scalar reference over random inputs -- run it at
+// each -Darch to cover the tier that arch selects.
+test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
+    const testing = std.testing;
+    var prng = std.Random.DefaultPrng.init(0x9E3779B97F4A7C15);
+    const rnd = prng.random();
+
+    // {OUT, IN, sparse} for fc0 / fc1 / fc2 as propagateBucket calls them.
+    inline for (.{ .{ 32, 1024, true }, .{ 32, 64, false }, .{ 1, 128, false } }) |shape| {
+        const OUT: usize = shape[0];
+        const IN: usize = shape[1];
+        const SPARSE: bool = shape[2];
+        const groups = IN / 4;
+
+        var iter: usize = 0;
+        while (iter < 32) : (iter += 1) {
+            var input: [IN]u8 align(64) = undefined;
+            for (&input) |*v| {
+                // ClippedReLU output range, with ~half zeroed so the sparse skip is hit.
+                v.* = if (rnd.boolean()) 0 else rnd.intRangeAtMost(u8, 0, 127);
+            }
+            var weights: [IN * OUT]i8 = undefined;
+            for (&weights) |*w| w.* = rnd.intRangeAtMost(i8, -128, 127);
+            var biases: [OUT]i32 = undefined;
+            for (&biases) |*b| b.* = rnd.intRangeAtMost(i32, -100000, 100000);
+
+            // Scalar reference over the scrambled layout: weight of output j, group g,
+            // sublane m lives at g*OUT*4 + j*4 + m.
+            var ref: [OUT]i32 = biases;
+            for (0..groups) |g| {
+                for (0..OUT) |j| {
+                    for (0..4) |m| {
+                        ref[j] += @as(i32, input[g * 4 + m]) *
+                            @as(i32, weights[g * OUT * 4 + j * 4 + m]);
+                    }
+                }
+            }
+
+            var got: [OUT]i32 = undefined;
+            affineDpbusd(OUT, SPARSE, &got, &biases, &weights, input[0..IN]);
+            try testing.expectEqualSlices(i32, &ref, &got);
+        }
+    }
+}
+
 test {
     @import("std").testing.refAllDecls(@This());
 }
