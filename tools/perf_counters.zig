@@ -38,8 +38,19 @@
 //! Instructions are near-deterministic and are the trustworthy headline; cycles/IPC carry
 //! thermal noise, which is exactly why they are reported as interleaved paired ratios.
 //!
+//! GATING. Set MAX_INSTR_RATIO to make this a regression gate: it exits non-zero when the
+//! median paired INSTRUCTION ratio exceeds that bound. Instructions are the right quantity to
+//! gate on -- measured spread across rounds is 2,150 in 13.6 BILLION (0.000016%), so a bound
+//! is as reproducible as the node count, where an nps threshold is thermally void. Gate on the
+//! RATIO against the oracle rather than an absolute count: the ratio cancels machine, libc and
+//! net-load differences, so the same bound holds anywhere.
+//!
+//! This is a LOCAL gate. perf_event_open can be refused inside CI containers (poop#17), so it
+//! is deliberately not wired into `zig build parity`; run it before committing perf work.
+//!
 //! Usage (CWD must be net/ so the net loads):
 //!   zig run tools/perf_counters.zig -- ./zf_sse41 $ORACLE/sf_sse41 8 bench 16 1 13
+//!   MAX_INSTR_RATIO=1.36 perf_counters ./zf_sse41 $ORACLE/sf_sse41 8 bench 16 1 13
 //!
 //! See __DEV/4-PERFORMANCE-REFERENCES.md sections 1-2 for the laws this encodes.
 
@@ -271,6 +282,19 @@ pub fn main(init: std.process.Init) !void {
         \\# it slower -- and NO amount of instruction-count reduction closes that half.
         \\
     , .{});
+
+    // MAX_INSTR_RATIO turns this into a regression gate (see the header).
+    const bound_str = init.minimal.environ.getPosix("MAX_INSTR_RATIO") orelse return;
+    const bound = std.fmt.parseFloat(f64, bound_str) catch {
+        std.debug.print("error: MAX_INSTR_RATIO={s} is not a number\n", .{bound_str});
+        std.process.exit(2);
+    };
+    const got = median(r_instr);
+    if (got > bound) {
+        std.debug.print("\nFAIL: instruction ratio {d:.4} exceeds MAX_INSTR_RATIO {d:.4}\n", .{ got, bound });
+        std.process.exit(1);
+    }
+    std.debug.print("\nOK: instruction ratio {d:.4} within MAX_INSTR_RATIO {d:.4}\n", .{ got, bound });
 }
 
 fn ratio(a: u64, b: u64) f64 {
