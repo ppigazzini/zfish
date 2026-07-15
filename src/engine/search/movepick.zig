@@ -97,7 +97,6 @@ const piece_values = [_]c_int{
 };
 
 const movepick_score = @import("movepick_score.zig");
-pub const ScoreInput = movepick_score.ScoreInput;
 pub const SortEntry = movepick_score.SortEntry;
 pub const MovePickerState = movepick_score.MovePickerState;
 pub const MovePickerContext = movepick_score.MovePickerContext;

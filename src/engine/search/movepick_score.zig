@@ -1,5 +1,5 @@
 // Move scoring: the ScoreInput/SortEntry/MovePickerState/MovePickerContext types
-// plus scoreMoves/scoreList and the low-level move-bit / history-load helpers
+// plus scoreValue/scoreList and the low-level move-bit / history-load helpers
 // they use.
 
 const std = @import("std");
@@ -145,34 +145,24 @@ pub const MovePickerContext = struct {
     ply: c_int,
 };
 
-pub fn scoreMoves(
-    kind: u8,
-    inputs: [*]const ScoreInput,
-    count: usize,
-    outputs: [*]SortEntry,
-) void {
-    var index: usize = 0;
-    while (index < count) : (index += 1) {
-        const input = inputs[index];
-        outputs[index] = .{
-            .raw_move = input.raw_move,
-            .reserved = 0,
-            .value = switch (kind) {
-                captures => input.capture_history + 7 * input.captured_piece_value,
-                quiets => 2 * input.main_history +
-                    2 * input.pawn_history +
-                    input.continuation_sum +
-                    @as(c_int, input.check_bonus) * 16384 +
-                    input.piece_value * 20 * (@as(c_int, input.from_threatened) - @as(c_int, input.to_threatened)) +
-                    input.low_ply_bonus,
-                evasions => if (input.capture_stage != 0)
-                    input.captured_piece_value + (1 << 28)
-                else
-                    input.main_history + input.continuation_sum,
-                else => unreachable,
-            },
-        };
-    }
+// The per-move score. Upstream's MovePicker::score() computes this straight into the
+// move's value in a single pass; keeping it a leaf over ScoreInput lets scoreList do
+// the same without materialising the inputs.
+fn scoreValue(kind: u8, input: ScoreInput) c_int {
+    return switch (kind) {
+        captures => input.capture_history + 7 * input.captured_piece_value,
+        quiets => 2 * input.main_history +
+            2 * input.pawn_history +
+            input.continuation_sum +
+            @as(c_int, input.check_bonus) * 16384 +
+            input.piece_value * 20 * (@as(c_int, input.from_threatened) - @as(c_int, input.to_threatened)) +
+            input.low_ply_bonus,
+        evasions => if (input.capture_stage != 0)
+            input.captured_piece_value + (1 << 28)
+        else
+            input.main_history + input.continuation_sum,
+        else => unreachable,
+    };
 }
 
 pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEntry) usize {
@@ -184,7 +174,6 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
         else => unreachable,
     };
 
-    var inputs: [max_moves]ScoreInput = undefined;
     const pos = context.pos;
     const history = loadHistorySnapshot(context);
     const side_to_move = pos.side_to_move;
@@ -296,10 +285,9 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
             else => unreachable,
         }
 
-        inputs[index] = input;
+        outputs[index] = .{ .raw_move = raw_move, .reserved = 0, .value = scoreValue(kind, input) };
     }
 
-    scoreMoves(kind, inputs[0..].ptr, count, outputs);
     return count;
 }
 
