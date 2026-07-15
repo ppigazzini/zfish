@@ -130,18 +130,37 @@ inline fn affineVnni(
     nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {
     const chunks = OUT / 16;
-    var acc: [chunks]@Vector(16, i32) = undefined;
+    // vpdpbusd is high-latency, so one accumulator serialises the whole layer: each group's dot
+    // waits on the previous group's. Upstream splits into independent chains and merges at the
+    // end (affine_transform_sparse_input.h: "If we're using high-latency dot product
+    // instructions, split the accumulators into separate dependency chains and merge at the
+    // end", NumRegs = 3 * NumAccums under VNNI).
+    //
+    // `ch` comes from an `inline for`, so every acc index is comptime and the array stays in
+    // registers. A runtime chain counter spills it, which is the whole reason this is unrolled
+    // rather than rotated. Integer adds commute, so the merge is bit-identical.
+    const chains = 3;
+    var acc: [chunks * chains]@Vector(16, i32) = undefined;
     inline for (0..chunks) |c| acc[c] = biases[c * 16 ..][0..16].*;
+    inline for (chunks..chunks * chains) |c| acc[c] = @splat(0);
+
     var it = GroupIter(sparse){ .nnz = nnz, .groups = input.len / 4 };
-    while (it.next()) |g| {
-        const in4: [4]u8 = input[g * 4 ..][0..4].*;
-        const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
-        inline for (0..chunks) |c| {
-            const b: @Vector(64, i8) = weights[g * OUT * 4 + c * 64 ..][0..64].*;
-            acc[c] = vpdpbusd16(acc[c], a, b);
+    outer: while (true) {
+        inline for (0..chains) |ch| {
+            const g = it.next() orelse break :outer;
+            const in4: [4]u8 = input[g * 4 ..][0..4].*;
+            const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
+            inline for (0..chunks) |c| {
+                const b: @Vector(64, i8) = weights[g * OUT * 4 + c * 64 ..][0..64].*;
+                acc[ch * chunks + c] = vpdpbusd16(acc[ch * chunks + c], a, b);
+            }
         }
     }
-    inline for (0..chunks) |c| out[c * 16 ..][0..16].* = acc[c];
+    inline for (0..chunks) |c| {
+        var sum = acc[c];
+        inline for (1..chains) |ch| sum += acc[ch * chunks + c];
+        out[c * 16 ..][0..16].* = sum;
+    }
 }
 
 // SSSE3 affine via the LLVM pmaddubsw/pmaddwd intrinsics: each 128-bit weight chunk (16
