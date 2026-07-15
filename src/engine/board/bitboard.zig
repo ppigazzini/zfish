@@ -50,10 +50,25 @@ var line_bb: [64][64]u64 = undefined;
 var between_bb: [64][64]u64 = undefined;
 var ray_pass_bb: [64][64]u64 = undefined;
 
+// Leaper attack tables -- upstream's PseudoAttacks[KNIGHT|KING][s]. The generators in
+// bitboard_geom walk eight offsets through a bounds-checked squareAt() per call, so
+// without these attacks() re-derives a leaper attack set on every SEE, movegen and
+// threat update. Built once here from those same generators, so the sets are identical.
+var knight_attacks_bb: [64]u64 = undefined;
+var king_attacks_bb: [64]u64 = undefined;
+
 pub fn initSliderMagics() void {
     initMagics(PieceType.rook, rook_magic_attacks[0..], &slider_magics);
     initMagics(PieceType.bishop, bishop_magic_attacks[0..], &slider_magics);
+    initLeaperTables();
     initDerivedTables();
+}
+
+fn initLeaperTables() void {
+    for (0..64) |s| {
+        knight_attacks_bb[s] = knightAttacks(s);
+        king_attacks_bb[s] = kingAttacks(s);
+    }
 }
 
 fn initDerivedTables() void {
@@ -85,12 +100,12 @@ fn initDerivedTables() void {
 pub fn attacks(piece_type: u8, square: u8, occupied: u64) u64 {
     const sq = @as(usize, @intCast(square));
     return switch (piece_type) {
-        knight_piece => knightAttacks(sq),
+        knight_piece => knight_attacks_bb[sq],
         bishop_piece => attacksBb(PieceType.bishop, sq, occupied, &slider_magics),
         rook_piece => attacksBb(PieceType.rook, sq, occupied, &slider_magics),
         queen_piece => attacksBb(PieceType.bishop, sq, occupied, &slider_magics) |
             attacksBb(PieceType.rook, sq, occupied, &slider_magics),
-        king_piece => kingAttacks(sq),
+        king_piece => king_attacks_bb[sq],
         else => 0,
     };
 }
