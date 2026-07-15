@@ -53,8 +53,7 @@ pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     out.pieces_all = pos.by_type_bb[0];
     out.pieces_by_color[0] = pos.by_color_bb[0];
     out.pieces_by_color[1] = pos.by_color_bb[1];
-    var t: usize = 0;
-    while (t < 8) : (t += 1) out.pieces_by_type[t] = pos.by_type_bb[t];
+    @memcpy(out.pieces_by_type[0..8], pos.by_type_bb[0..8]);
     out.blockers_for_king = st.blockers_for_king;
     out.pinners = st.pinners;
     out.king_square[0] = @intCast(@ctz(pos.by_color_bb[0] & pos.by_type_bb[king_pt]));
@@ -76,8 +75,9 @@ pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     out.game_ply = pos.game_ply;
     out.is_chess960 = @intFromBool(pos.chess960);
 
-    var s: usize = 0;
-    while (s < 64) : (s += 1) out.board[s] = pos.board[s];
+    // The two bulk fields are the whole cost of this function: a byte-at-a-time board
+    // copy is 64 scalar moves per node. @memcpy lowers to vector loads/stores.
+    @memcpy(out.board[0..64], pos.board[0..64]);
 }
 
 // The 64-square piece board only, for NNUE piece-count/accumulator callers that

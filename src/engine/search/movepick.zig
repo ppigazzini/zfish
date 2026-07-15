@@ -18,7 +18,7 @@ const continuationHistoryScore = movepick_history.continuationHistoryScore;
 const pawnHistoryScore = movepick_history.pawnHistoryScore;
 
 const movepick_snapshot = @import("movepick_snapshot.zig");
-const seeGeWithSnapshot = movepick_snapshot.seeGeWithSnapshot;
+const seeGe = movepick_snapshot.seeGe;
 const attackersTo = movepick_snapshot.attackersTo;
 const piecesColorType = movepick_snapshot.piecesColorType;
 const piecesByTypes = movepick_snapshot.piecesByTypes;
@@ -30,7 +30,6 @@ const pawnAttacksFromSquare = movepick_snapshot.pawnAttacksFromSquare;
 const leastSignificantSquareBb = movepick_snapshot.leastSignificantSquareBb;
 const shift = movepick_snapshot.shift;
 const bitboard = @import("bitboard");
-const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 const Position = position_types.Position;
 const movegen = @import("movegen");
@@ -103,9 +102,6 @@ pub const SortEntry = movepick_score.SortEntry;
 pub const MovePickerState = movepick_score.MovePickerState;
 pub const MovePickerContext = movepick_score.MovePickerContext;
 const scoreList = movepick_score.scoreList;
-const loadPositionSnapshot = movepick_score.loadPositionSnapshot;
-
-const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 pub fn initMainStage(has_checkers: bool, has_tt_move: bool, depth: c_int) c_int {
     const base_stage: c_int = if (has_checkers)
@@ -330,11 +326,6 @@ fn selectProbcut(state: *MovePickerState, context: *const MovePickerContext) ?u1
     }
 
     return null;
-}
-
-fn seeGe(pos: *const Position, raw_move: u16, threshold: c_int) bool {
-    const snapshot = loadPositionSnapshot(pos);
-    return seeGeWithSnapshot(&snapshot, raw_move, threshold);
 }
 
 test {
