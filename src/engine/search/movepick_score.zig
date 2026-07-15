@@ -1,5 +1,5 @@
 // Move scoring: the ScoreInput/SortEntry/MovePickerState/MovePickerContext types
-// plus scoreMoves/scoreList and the low-level move-bit / snapshot-load helpers
+// plus scoreMoves/scoreList and the low-level move-bit / history-load helpers
 // they use.
 
 const std = @import("std");
@@ -22,7 +22,7 @@ const continuationHistoryScore = movepick_history.continuationHistoryScore;
 const pawnHistoryScore = movepick_history.pawnHistoryScore;
 
 const movepick_snapshot = @import("movepick_snapshot.zig");
-const seeGeWithSnapshot = movepick_snapshot.seeGeWithSnapshot;
+const seeGe = movepick_snapshot.seeGe;
 const attackersTo = movepick_snapshot.attackersTo;
 const piecesColorType = movepick_snapshot.piecesColorType;
 const piecesByTypes = movepick_snapshot.piecesByTypes;
@@ -34,7 +34,6 @@ const pawnAttacksFromSquare = movepick_snapshot.pawnAttacksFromSquare;
 const leastSignificantSquareBb = movepick_snapshot.leastSignificantSquareBb;
 const shift = movepick_snapshot.shift;
 const bitboard = @import("bitboard");
-const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 const Position = position_types.Position;
 const movegen = @import("movegen");
@@ -146,8 +145,6 @@ pub const MovePickerContext = struct {
     ply: c_int,
 };
 
-const PositionSnapshot = position_snapshot.PositionSnapshot;
-
 pub fn scoreMoves(
     kind: u8,
     inputs: [*]const ScoreInput,
@@ -188,20 +185,20 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
     };
 
     var inputs: [max_moves]ScoreInput = undefined;
-    const snapshot = loadPositionSnapshot(context.pos);
+    const pos = context.pos;
     const history = loadHistorySnapshot(context);
-    const side_to_move = snapshot.side_to_move;
+    const side_to_move = pos.side_to_move;
 
     var threat_by_lesser: [7]u64 = [_]u64{0} ** 7;
     if (kind == quiets) {
         const them = otherColor(side_to_move);
         threat_by_lesser[pawn] = 0;
-        threat_by_lesser[knight] = attacksBy(&snapshot, them, pawn);
+        threat_by_lesser[knight] = attacksBy(pos, them, pawn);
         threat_by_lesser[bishop] = threat_by_lesser[knight];
-        threat_by_lesser[rook] = attacksBy(&snapshot, them, knight) |
-            attacksBy(&snapshot, them, bishop) |
+        threat_by_lesser[rook] = attacksBy(pos, them, knight) |
+            attacksBy(pos, them, bishop) |
             threat_by_lesser[knight];
-        threat_by_lesser[queen] = attacksBy(&snapshot, them, rook) |
+        threat_by_lesser[queen] = attacksBy(pos, them, rook) |
             threat_by_lesser[rook];
         threat_by_lesser[king] = 0;
     }
@@ -211,9 +208,9 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
         const raw_move = move_list[index];
         const from = moveFrom(raw_move);
         const to = moveTo(raw_move);
-        const piece = pieceAt(&snapshot, from);
+        const piece = pieceAt(pos, from);
         const piece_type = typeOf(piece);
-        const captured_piece = pieceAt(&snapshot, to);
+        const captured_piece = pieceAt(pos, to);
 
         var input = ScoreInput{
             .raw_move = raw_move,
@@ -248,7 +245,7 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
                 );
                 input.pawn_history = pawnHistoryScore(
                     &history,
-                    &snapshot,
+                    pos.st.pawn_key,
                     piece,
                     to,
                 );
@@ -259,8 +256,8 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
                     continuationHistoryScore(&history, 3, piece, to) +
                     continuationHistoryScore(&history, 5, piece, to);
                 input.check_bonus = @intFromBool(
-                    (checkSquares(&snapshot, piece_type) & squareMask(to)) != 0 and
-                        seeGeWithSnapshot(&snapshot, raw_move, -75),
+                    (checkSquares(pos, piece_type) & squareMask(to)) != 0 and
+                        seeGe(pos, raw_move, -75),
                 );
                 input.from_threatened = @intFromBool(
                     (threat_by_lesser[piece_type] & squareMask(from)) != 0,
@@ -294,7 +291,7 @@ pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEn
                     to,
                 );
                 input.captured_piece_value = piece_values[@as(usize, captured_piece)];
-                input.capture_stage = @intFromBool(captureStage(&snapshot, raw_move));
+                input.capture_stage = @intFromBool(captureStage(pos, raw_move));
             },
             else => unreachable,
         }
@@ -326,16 +323,6 @@ fn squareMask(square: u8) u64 {
     return @as(u64, 1) << @intCast(square);
 }
 
-pub fn loadPositionSnapshot(pos: *const Position) PositionSnapshot {
-    // See movegen.loadSnapshot: `fill` writes every field, so the zero-init was a dead
-    // store on a ~250-byte struct, per node.
-    var snapshot: PositionSnapshot = undefined;
-    position_snapshot.fill(pos, &snapshot);
-    snapshot.pieces_by_type[no_piece_type] = snapshot.pieces_all;
-
-    return snapshot;
-}
-
 fn loadHistorySnapshot(context: *const MovePickerContext) HistorySnapshot {
     var snapshot = std.mem.zeroes(HistorySnapshot);
     fillHistorySnapshot(
@@ -349,12 +336,12 @@ fn loadHistorySnapshot(context: *const MovePickerContext) HistorySnapshot {
     return snapshot;
 }
 
-fn captureStage(snapshot: *const PositionSnapshot, raw_move: u16) bool {
-    return isCapture(snapshot, raw_move) or promotionType(raw_move) == queen;
+fn captureStage(pos: *const Position, raw_move: u16) bool {
+    return isCapture(pos, raw_move) or promotionType(raw_move) == queen;
 }
 
-fn isCapture(snapshot: *const PositionSnapshot, raw_move: u16) bool {
-    return (pieceAt(snapshot, moveTo(raw_move)) != 0 and moveType(raw_move) != castling_move) or
+fn isCapture(pos: *const Position, raw_move: u16) bool {
+    return (pieceAt(pos, moveTo(raw_move)) != 0 and moveType(raw_move) != castling_move) or
         moveType(raw_move) == en_passant_move;
 }
 

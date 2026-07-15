@@ -1,10 +1,8 @@
 // Move-ordering history heuristics: the HistorySnapshot (typed views
 // over the worker's history tables) + the five history-score lookups. Pure reads of
-// value snapshots; std + position_snapshot only.
+// value snapshots; std only.
 
 const std = @import("std");
-const position_snapshot = @import("position_snapshot");
-const PositionSnapshot = position_snapshot.PositionSnapshot;
 
 const square_nb: usize = 64;
 const piece_type_nb: usize = 8;
@@ -98,13 +96,13 @@ pub fn continuationHistoryScore(
 
 pub fn pawnHistoryScore(
     history_snapshot: *const HistorySnapshot,
-    snapshot: *const PositionSnapshot,
+    pawn_key: u64,
     piece: u8,
     square: u8,
 ) c_int {
     const history = history_snapshot.pawn_table orelse return 0;
     // pawn history is indexed [(pawn_key & mask) * PIECE_NB + piece][square]
-    const index: usize = @intCast(snapshot.pawn_key & history_snapshot.pawn_mask);
+    const index: usize = @intCast(pawn_key & history_snapshot.pawn_mask);
     const row_index = index * piece_nb + @as(usize, piece);
     return history[row_index][@as(usize, square)].value;
 }
