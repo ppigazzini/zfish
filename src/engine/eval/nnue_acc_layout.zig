@@ -19,7 +19,7 @@ pub const pawn_piece_type: u8 = 1;
 pub const no_piece: u8 = 0;
 pub const sq_none: u8 = 64;
 pub const square_count: usize = 64;
-/// PieceType.king, for reading the king square straight off the Position (see kingSquare).
+/// PieceType.king.
 const king_piece_type: u8 = 6;
 pub const max_stack_size: usize = 247;
 pub const nnue_align: usize = 64;
@@ -164,19 +164,12 @@ pub fn stateBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [
     return stackBytesMut(stack) + stateOffset(feature_kind, index);
 }
 
-/// Upstream reads the king square straight off the Position (`pos.square<KING>(c)`).
-/// Do the same. This used to go through the bridge snapshot to read a single byte, which
-/// cost the whole 19-field structure -- zeroed, filled through the opaque `fill_fn`
-/// pointer, then copied out by value -- roughly 3x258 B of traffic per call, ~2 calls per
-/// node. `fill_fn` being a function POINTER is what made it unelidable: LLVM cannot see
-/// the writer, so none of it folded away.
+/// Upstream's `pos.square<KING>(c)`.
 pub fn kingSquare(pos: *const Position, color: u8) u8 {
     return @intCast(@ctz(pos.by_color_bb[color] & pos.by_type_bb[king_piece_type]));
 }
 
-/// Reads the board and occupancy straight off the Position, as upstream's feature code does.
-/// `pieces` is fully overwritten by the @memcpy, so it starts `undefined` rather than being
-/// zeroed and immediately clobbered.
+/// `pieces` is left `undefined` because the @memcpy below overwrites all of it.
 pub fn positionSnapshot(pos: *const Position) PositionSnapshot {
     var snapshot: PositionSnapshot = .{
         .pieces = undefined,

@@ -111,15 +111,9 @@ const ssSub = search_qsearch.ssSub;
 const ttMoveHistoryUpdate = search_qsearch.ttMoveHistoryUpdate;
 const contVal = search_qsearch.contVal;
 
-/// Upstream is `template<NodeType nodeType> search<Root>/<PV>/<NonPV>(..., bool cutNode)`
-/// (search.cpp): the node type is a template parameter, `cutNode` is a runtime bool. Mirror that
-/// exactly -- `pv_node`/`root_node` are comptime (every call site passes a literal), `cut_node`
-/// stays runtime (four call sites pass `nd.cut_node`/`!cut_node`).
-///
-/// The comptime-ness propagates on its own into `search_back.runBack`: the `.{ .pv_node = ... }`
-/// literal handed to its `nd: anytype` keeps comptime fields comptime, so runBack monomorphises
-/// per node type too -- which is what upstream gets for free by keeping the move loop inside
-/// `search<NodeType>`.
+/// Mirrors upstream `template<NodeType> search<Root>/<PV>/<NonPV>(..., bool cutNode)`: the node
+/// type is comptime, `cut_node` is runtime. The comptime fields carry into `search_back.runBack`
+/// through its `nd: anytype`, specialising it per node type as well.
 pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta_in: c_int, depth_in: c_int, cut_node: bool, comptime pv_node: bool, comptime root_node: bool) c_int {
     const all_node = !(pv_node or cut_node);
 
