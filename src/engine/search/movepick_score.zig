@@ -148,7 +148,7 @@ pub const MovePickerContext = struct {
 // The per-move score. Upstream's MovePicker::score() computes this straight into the
 // move's value in a single pass; keeping it a leaf over ScoreInput lets scoreList do
 // the same without materialising the inputs.
-fn scoreValue(kind: u8, input: ScoreInput) c_int {
+fn scoreValue(comptime kind: u8, input: ScoreInput) c_int {
     return switch (kind) {
         captures => input.capture_history + 7 * input.captured_piece_value,
         quiets => 2 * input.main_history +
@@ -165,7 +165,7 @@ fn scoreValue(kind: u8, input: ScoreInput) c_int {
     };
 }
 
-pub fn scoreList(kind: u8, context: *const MovePickerContext, outputs: [*]SortEntry) usize {
+pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: [*]SortEntry) usize {
     var move_list: [max_moves]u16 = undefined;
     const count = switch (kind) {
         captures => movegen.generateCaptures(context.pos, move_list[0..].ptr),
