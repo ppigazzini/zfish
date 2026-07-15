@@ -82,13 +82,13 @@ fn canSliderThreat(pc: u8, slider: u8) bool {
 }
 
 pub fn updatePieceThreats(
+    comptime compute_ray: bool,
     pos: *const Position,
     pc: u8,
     put_piece: bool,
     s: u8,
     dts: *DirtyThreats,
     no_rays: u64,
-    compute_ray: bool,
 ) void {
     const occupied = pos.by_type_bb[0];
     const rook_queens = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];

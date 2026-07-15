@@ -86,7 +86,7 @@ pub fn undoNullMove(pos_ptr: *Position) void {
 
 fn removePieceDts(pos: *Position, s: u8, dts: *DirtyThreats) void {
     const pc = pos.board[s];
-    move_do_threats.updatePieceThreats(pos, pc, false, s, dts, max_u64, true);
+    move_do_threats.updatePieceThreats(true, pos, pc, false, s, dts, max_u64);
     const bb = sqBb(s);
     pos.by_type_bb[0] ^= bb;
     pos.by_type_bb[pc & 7] ^= bb;
@@ -104,27 +104,27 @@ fn putPieceDts(pos: *Position, pc: u8, s: u8, dts: *DirtyThreats) void {
     pos.by_color_bb[pc >> 3] |= bb;
     pos.piece_count[pc] += 1;
     pos.piece_count[(pc >> 3) << 3] += 1;
-    move_do_threats.updatePieceThreats(pos, pc, true, s, dts, max_u64, true);
+    move_do_threats.updatePieceThreats(true, pos, pc, true, s, dts, max_u64);
 }
 
 fn movePieceDts(pos: *Position, from: u8, to: u8, dts: *DirtyThreats) void {
     const pc = pos.board[from];
     const from_to = sqBb(from) | sqBb(to);
-    move_do_threats.updatePieceThreats(pos, pc, false, from, dts, from_to, true);
+    move_do_threats.updatePieceThreats(true, pos, pc, false, from, dts, from_to);
     pos.by_type_bb[0] ^= from_to;
     pos.by_type_bb[pc & 7] ^= from_to;
     pos.by_color_bb[pc >> 3] ^= from_to;
     pos.board[from] = 0;
     pos.board[to] = pc;
-    move_do_threats.updatePieceThreats(pos, pc, true, to, dts, from_to, true);
+    move_do_threats.updatePieceThreats(true, pos, pc, true, to, dts, from_to);
 }
 
 fn swapPieceDts(pos: *Position, s: u8, pc: u8, dts: *DirtyThreats) void {
     const old = pos.board[s];
     removePiece(pos, s); // dts=nullptr in swap_piece
-    move_do_threats.updatePieceThreats(pos, old, false, s, dts, max_u64, false);
+    move_do_threats.updatePieceThreats(false, pos, old, false, s, dts, max_u64);
     putPiece(pos, pc, s);
-    move_do_threats.updatePieceThreats(pos, pc, true, s, dts, max_u64, false);
+    move_do_threats.updatePieceThreats(false, pos, pc, true, s, dts, max_u64);
 }
 
 fn removePiece(pos: *Position, s: u8) void {
