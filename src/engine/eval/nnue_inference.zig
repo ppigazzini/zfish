@@ -16,6 +16,26 @@ const weight_storage = @import("nnue_weight_storage.zig");
 const has_vnni = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
 
+// SSSE3 tier (no AVX2): the pmaddwd reduction is 128-bit and widens the u8 inputs to i16;
+// pmaddubsw multiplies u8*i8 directly, twice the lanes per register. Reached through the
+// LLVM intrinsic rather than inline asm: asm is an optimization barrier LLVM cannot
+// schedule or reorder across, the intrinsic it can.
+const use_maddubs = builtin.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .ssse3) and
+    !std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+
+const pmaddubsw128 = struct {
+    extern fn @"llvm.x86.ssse3.pmadd.ub.sw.128"(@Vector(16, i8), @Vector(16, i8)) @Vector(8, i16);
+}.@"llvm.x86.ssse3.pmadd.ub.sw.128";
+
+const vpdpbusd512 = struct {
+    extern fn @"llvm.x86.avx512.vpdpbusd.512"(@Vector(16, i32), @Vector(16, i32), @Vector(16, i32)) @Vector(16, i32);
+}.@"llvm.x86.avx512.vpdpbusd.512";
+
+const pmaddwd128 = struct {
+    extern fn @"llvm.x86.sse2.pmadd.wd"(@Vector(8, i16), @Vector(8, i16)) @Vector(4, i32);
+}.@"llvm.x86.sse2.pmadd.wd";
+
 const Position = position_types.Position;
 
 const output_scale: c_int = 16;
@@ -59,13 +79,7 @@ pub const TraceOutput = struct {
 // lanes contribute nothing.
 // acc(i32x16) += the 4-way int8 dot of a(u8x64) and b(i8x64) over its 16 groups of 4.
 inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i8)) @Vector(16, i32) {
-    return asm (
-        \\vpdpbusd %[b], %[a], %[acc]
-        : [acc] "=v" (-> @Vector(16, i32)),
-        : [_] "0" (acc),
-          [a] "v" (a),
-          [b] "v" (b),
-    );
+    return vpdpbusd512(acc, @bitCast(a), @bitCast(b));
 }
 
 // VNNI affine: the scrambled layout stores each group's OUT*4 weights contiguously, so a
@@ -97,6 +111,37 @@ inline fn affineVnni(
     inline for (0..chunks) |c| out[c * 16 ..][0..16].* = acc[c];
 }
 
+// SSSE3 affine via the LLVM pmaddubsw/pmaddwd intrinsics: each 128-bit weight chunk (16
+// bytes = 4 outputs' 4 sublanes) is one pmaddubsw of the group's 4 input bytes (broadcast
+// x4), then pmaddwd against ones folds each output's two i16 partials into its i32.
+// pmaddubsw saturates at i16, but our products span [-16256,16129] and a pair sums inside
+// i16, so it never saturates -- bit-identical to the pmaddwd path.
+inline fn affineSsse3(
+    comptime OUT: usize,
+    comptime sparse: bool,
+    out: *[OUT]i32,
+    biases: [*]const i32,
+    weights: [*]const i8,
+    input: []const u8,
+) void {
+    const ones: @Vector(8, i16) = @splat(1);
+    var acc: [OUT]i32 = biases[0..OUT].*;
+    const groups = input.len / 4;
+    const in32: [*]const u32 = if (sparse) @ptrCast(@alignCast(input.ptr)) else undefined;
+    var g: usize = 0;
+    while (g < groups) : (g += 1) {
+        if (sparse and in32[g] == 0) continue;
+        const in4: [4]u8 = input[g * 4 ..][0..4].*;
+        const inpat: @Vector(16, i8) = @bitCast(@as(@Vector(4, u32), @splat(@as(u32, @bitCast(in4)))));
+        inline for (0..OUT / 4) |c| {
+            const w: @Vector(16, i8) = weights[g * OUT * 4 + c * 16 ..][0..16].*;
+            const p: @Vector(4, i32) = pmaddwd128(pmaddubsw128(inpat, w), ones);
+            acc[c * 4 ..][0..4].* = @as(@Vector(4, i32), acc[c * 4 ..][0..4].*) + p;
+        }
+    }
+    out.* = acc;
+}
+
 inline fn affineDpbusd(
     comptime OUT: usize,
     comptime sparse: bool,
@@ -107,6 +152,10 @@ inline fn affineDpbusd(
 ) void {
     if (comptime (has_vnni and OUT % 16 == 0)) {
         affineVnni(OUT, sparse, out, biases, weights, input);
+        return;
+    }
+    if (comptime (use_maddubs and OUT % 4 == 0)) {
+        affineSsse3(OUT, sparse, out, biases, weights, input);
         return;
     }
     const N = OUT * 4;
