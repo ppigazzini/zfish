@@ -257,6 +257,40 @@ fn layerWeights(bucket: usize, idx: c_int) [*]const i8 {
     return @ptrCast(@alignCast(layerPtr(bucket, idx, 1) orelse unreachable));
 }
 
+/// Upstream's SqrClippedReLU: min(127, (x*x) >> shift), over 32 outputs.
+///
+/// Clamping x into i16 first is what keeps the square inside i32 (32767^2 < 2^31), and it is
+/// exact rather than an approximation: any x outside i16 squares past the 127 clamp regardless.
+/// That is the same property upstream's saturating `packs_epi32` relies on before its
+/// `mulhi_epi16`.
+inline fn sqrClippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void {
+    const V = 8;
+    const lo: @Vector(V, i32) = @splat(-32768);
+    const hi: @Vector(V, i32) = @splat(32767);
+    const cap: @Vector(V, i32) = @splat(127);
+    const sh: @Vector(V, u5) = @splat(shift);
+    var i: usize = 0;
+    while (i < 32) : (i += V) {
+        const x: @Vector(V, i32) = in[i..][0..V].*;
+        const clamped = @max(lo, @min(hi, x));
+        const q = @min(cap, (clamped * clamped) >> sh);
+        out[i..][0..V].* = @as(@Vector(V, u8), @intCast(q));
+    }
+}
+
+/// Upstream's ClippedReLU: clamp(x >> shift, 0, 127), over 32 outputs.
+inline fn clippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void {
+    const V = 8;
+    const zero: @Vector(V, i32) = @splat(0);
+    const cap: @Vector(V, i32) = @splat(127);
+    const sh: @Vector(V, u5) = @splat(shift);
+    var i: usize = 0;
+    while (i < 32) : (i += V) {
+        const x: @Vector(V, i32) = in[i..][0..V].*;
+        out[i..][0..V].* = @as(@Vector(V, u8), @intCast(@max(zero, @min(cap, x >> sh))));
+    }
+}
+
 fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_accumulator_port.NnzBitset) c_int {
     // Read the affine-layer weights from the Zig-owned storage. The parse
     // writes this storage and is the sole source, so the eval is bench-verified.
@@ -275,12 +309,8 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     // ac_sqr_0 / ac_0 over all FC_0_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits+1 = 7:
     // SqrClippedReLU shift = 2*7+7 = 21, ClippedReLU shift = 7.
     var concat: [128]u8 = [_]u8{0} ** 128;
-    var i: usize = 0;
-    while (i < 32) : (i += 1) {
-        const sq: i64 = @as(i64, fc0_out[i]) * @as(i64, fc0_out[i]);
-        concat[i] = @intCast(@min(@as(i64, 127), sq >> 21));
-        concat[32 + i] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc0_out[i] >> 7)));
-    }
+    sqrClippedReLU(21, &fc0_out, concat[0..32]);
+    clippedReLU(7, &fc0_out, concat[32..64]);
 
     // fc_1: affine 64 -> 32 over [ac_sqr_0 | ac_0].
     var fc1_out: [32]i32 = undefined;
@@ -288,12 +318,8 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
 
     // ac_sqr_1 / ac_1 over FC_1_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits = 6:
     // SqrClippedReLU shift = 2*6+7 = 19, ClippedReLU shift = 6. Written into concat[64..128].
-    var j: usize = 0;
-    while (j < 32) : (j += 1) {
-        const sq: i64 = @as(i64, fc1_out[j]) * @as(i64, fc1_out[j]);
-        concat[64 + j] = @intCast(@min(@as(i64, 127), sq >> 19));
-        concat[96 + j] = @intCast(@max(@as(i32, 0), @min(@as(i32, 127), fc1_out[j] >> 6)));
-    }
+    sqrClippedReLU(19, &fc1_out, concat[64..96]);
+    clippedReLU(6, &fc1_out, concat[96..128]);
 
     // fc_2: affine 128 -> 1 over the full concat (OUT=1 -> identity scramble).
     var fc2_out: [1]i32 = undefined;
