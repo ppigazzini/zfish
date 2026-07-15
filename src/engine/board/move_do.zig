@@ -14,6 +14,7 @@ const board_core = @import("board_core");
 const zobrist = @import("zobrist");
 const state_setup = @import("state_setup");
 const legality = @import("legality");
+const move_do_threats = @import("move_do_threats.zig");
 const position_types = @import("position_types");
 
 const Position = position_types.Position;
@@ -83,111 +84,9 @@ pub fn undoNullMove(pos_ptr: *Position) void {
     pos.side_to_move ^= 1;
 }
 
-fn addDirtyThreat(dts: *DirtyThreats, put_piece: bool, pc: u8, threatened: u8, s: u8, threatened_sq: u8) void {
-    const data: u32 = (@as(u32, @intFromBool(put_piece)) << 31) |
-        (@as(u32, pc) << 20) | (@as(u32, threatened) << 16) |
-        (@as(u32, threatened_sq) << 8) | @as(u32, s);
-    dts.list_values[dts.list_size] = data;
-    dts.list_size += 1;
-}
-
-fn pawnPushOrAttacks(c: u8, s: u8) u64 {
-    const b = sqBb(s);
-    const push = if (c == color_white) b << 8 else b >> 8;
-    return push | pawnAttacks(c, s);
-}
-
-fn processSliders(
-    pos: *const Position,
-    dts: *DirtyThreats,
-    sliders_in: u64,
-    s: u8,
-    pc: u8,
-    put_piece: bool,
-    no_rays: u64,
-    r_attacks: u64,
-    b_attacks: u64,
-    occupied_no_k: u64,
-    add_direct: bool,
-) void {
-    var sliders = sliders_in;
-    while (sliders != 0) {
-        const slider_sq: u8 = @intCast(@ctz(sliders));
-        sliders &= sliders - 1;
-        const slider = pos.board[slider_sq];
-        const ray = bitboard.rayPass(slider_sq, s);
-        const discovered = ray & (r_attacks | b_attacks) & occupied_no_k;
-        if (discovered != 0 and (ray & no_rays) != no_rays) {
-            const tsq: u8 = @intCast(@ctz(discovered));
-            addDirtyThreat(dts, !put_piece, slider, pos.board[tsq], slider_sq, tsq);
-        }
-        if (add_direct) addDirtyThreat(dts, put_piece, slider, pc, slider_sq, s);
-    }
-}
-
-fn updatePieceThreats(
-    pos: *const Position,
-    pc: u8,
-    put_piece: bool,
-    s: u8,
-    dts: *DirtyThreats,
-    no_rays: u64,
-    compute_ray: bool,
-) void {
-    const occupied = pos.by_type_bb[0];
-    const rook_queens = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
-    const bishop_queens = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
-    const r_attacks = bitboard.attacks(rook_pt, s, occupied);
-    const b_attacks = bitboard.attacks(bishop_pt, s, occupied);
-    const kings = pos.by_type_bb[king_pt];
-    const occupied_no_k = occupied ^ kings;
-    const sliders = (rook_queens & r_attacks) | (bishop_queens & b_attacks);
-
-    if ((pc & 7) == king_pt) {
-        if (compute_ray)
-            processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, r_attacks, b_attacks, occupied_no_k, false);
-        return;
-    }
-
-    const knights = pos.by_type_bb[knight_pt];
-    const white_pawns = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
-    const black_pawns = pos.by_color_bb[color_black] & pos.by_type_bb[pawn_pt];
-
-    var threatened = (if ((pc & 7) == pawn_pt) pawnAttacks(pc >> 3, s) else bitboard.attacks(pc & 7, s, occupied)) & occupied_no_k;
-    var incoming = (bitboard.attacks(knight_pt, s, 0) & knights) | (bitboard.attacks(king_pt, s, 0) & kings);
-
-    if ((pc & 7) == pawn_pt) {
-        const white_attacks = pawnPushOrAttacks(color_white, s);
-        const black_attacks = pawnPushOrAttacks(color_black, s);
-        threatened |= (if ((pc >> 3) == color_white) white_attacks else black_attacks) & pos.by_type_bb[pawn_pt];
-        incoming |= white_attacks & black_pawns;
-        incoming |= black_attacks & white_pawns;
-    } else {
-        incoming |= (pawnAttacks(color_white, s) & black_pawns) | (pawnAttacks(color_black, s) & white_pawns);
-    }
-
-    while (threatened != 0) {
-        const tsq: u8 = @intCast(@ctz(threatened));
-        threatened &= threatened - 1;
-        addDirtyThreat(dts, put_piece, pc, pos.board[tsq], s, tsq);
-    }
-
-    if (compute_ray) {
-        processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, r_attacks, b_attacks, occupied_no_k, true);
-    } else {
-        incoming |= sliders;
-    }
-
-    while (incoming != 0) {
-        const src_sq: u8 = @intCast(@ctz(incoming));
-        incoming &= incoming - 1;
-        addDirtyThreat(dts, put_piece, pos.board[src_sq], pc, src_sq, s);
-    }
-}
-
 fn removePieceDts(pos: *Position, s: u8, dts: *DirtyThreats) void {
     const pc = pos.board[s];
-    updatePieceThreats(pos, pc, false, s, dts, max_u64, true);
+    move_do_threats.updatePieceThreats(pos, pc, false, s, dts, max_u64, true);
     const bb = sqBb(s);
     pos.by_type_bb[0] ^= bb;
     pos.by_type_bb[pc & 7] ^= bb;
@@ -205,27 +104,27 @@ fn putPieceDts(pos: *Position, pc: u8, s: u8, dts: *DirtyThreats) void {
     pos.by_color_bb[pc >> 3] |= bb;
     pos.piece_count[pc] += 1;
     pos.piece_count[(pc >> 3) << 3] += 1;
-    updatePieceThreats(pos, pc, true, s, dts, max_u64, true);
+    move_do_threats.updatePieceThreats(pos, pc, true, s, dts, max_u64, true);
 }
 
 fn movePieceDts(pos: *Position, from: u8, to: u8, dts: *DirtyThreats) void {
     const pc = pos.board[from];
     const from_to = sqBb(from) | sqBb(to);
-    updatePieceThreats(pos, pc, false, from, dts, from_to, true);
+    move_do_threats.updatePieceThreats(pos, pc, false, from, dts, from_to, true);
     pos.by_type_bb[0] ^= from_to;
     pos.by_type_bb[pc & 7] ^= from_to;
     pos.by_color_bb[pc >> 3] ^= from_to;
     pos.board[from] = 0;
     pos.board[to] = pc;
-    updatePieceThreats(pos, pc, true, to, dts, from_to, true);
+    move_do_threats.updatePieceThreats(pos, pc, true, to, dts, from_to, true);
 }
 
 fn swapPieceDts(pos: *Position, s: u8, pc: u8, dts: *DirtyThreats) void {
     const old = pos.board[s];
     removePiece(pos, s); // dts=nullptr in swap_piece
-    updatePieceThreats(pos, old, false, s, dts, max_u64, false);
+    move_do_threats.updatePieceThreats(pos, old, false, s, dts, max_u64, false);
     putPiece(pos, pc, s);
-    updatePieceThreats(pos, pc, true, s, dts, max_u64, false);
+    move_do_threats.updatePieceThreats(pos, pc, true, s, dts, max_u64, false);
 }
 
 fn removePiece(pos: *Position, s: u8) void {
