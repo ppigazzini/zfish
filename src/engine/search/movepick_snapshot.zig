@@ -165,6 +165,17 @@ pub fn pieceAt(pos: *const Position, square: u8) u8 {
 }
 
 pub fn attacksBy(pos: *const Position, color: u8, piece_type: u8) u64 {
+    // Pawns shift as a set: every pawn attacks the same two relative squares, so the
+    // whole bitboard resolves in two shifts. Upstream's attacks_by<PAWN> does this
+    // (pawn_attacks_bb over pieces(c, PAWN)); only the other types walk piece by piece.
+    if (piece_type == pawn) {
+        const pawns = piecesColorType(pos, color, pawn);
+        return if (color == white)
+            shift(north_west, pawns) | shift(north_east, pawns)
+        else
+            shift(south_west, pawns) | shift(south_east, pawns);
+    }
+
     var pieces = piecesColorType(pos, color, piece_type);
     var result: u64 = 0;
 
@@ -173,10 +184,7 @@ pub fn attacksBy(pos: *const Position, color: u8, piece_type: u8) u64 {
         const square: u8 = @intCast(@ctz(piece_square_bb));
         pieces ^= piece_square_bb;
 
-        result |= if (piece_type == pawn)
-            pawnAttacksFromSquare(square, color)
-        else
-            bitboard.attacks(piece_type, square, pos.by_type_bb[0]);
+        result |= bitboard.attacks(piece_type, square, pos.by_type_bb[0]);
     }
 
     return result;
