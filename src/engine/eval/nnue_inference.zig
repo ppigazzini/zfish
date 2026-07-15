@@ -82,6 +82,41 @@ inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i
     return vpdpbusd512(acc, @bitCast(a), @bitCast(b));
 }
 
+/// Yields the input groups a layer must accumulate: every group when dense, only the
+/// non-zero ones when sparse. Sparse walks upstream's NNZ bitset -- recorded by the feature
+/// transformer, which had the values in a register -- so the per-group data-dependent test
+/// does not exist. Indices ascend either way, so the accumulation order, and the result, is
+/// unchanged.
+///
+/// It yields an index rather than taking the accumulator, so the accumulator stays a local
+/// the caller can keep in registers.
+fn GroupIter(comptime sparse: bool) type {
+    return struct {
+        nnz: *const nnue_accumulator_port.NnzBitset,
+        groups: usize,
+        w: usize = 0,
+        bits: u64 = 0,
+        g: usize = 0,
+
+        inline fn next(self: *@This()) ?usize {
+            if (sparse) {
+                while (self.bits == 0) {
+                    if (self.w >= nnue_accumulator_port.nnz_word_count) return null;
+                    self.bits = self.nnz[self.w];
+                    self.w += 1;
+                }
+                const found = (self.w - 1) * 64 + @ctz(self.bits);
+                self.bits &= self.bits - 1;
+                return found;
+            }
+            if (self.g >= self.groups) return null;
+            const found = self.g;
+            self.g += 1;
+            return found;
+        }
+    };
+}
+
 // VNNI affine: the scrambled layout stores each group's OUT*4 weights contiguously, so a
 // 16-output chunk is one vpdpbusd with the group's 4 input bytes broadcast across the 16
 // outputs. Honors the sparse-input skip.
@@ -92,15 +127,13 @@ inline fn affineVnni(
     biases: [*]const i32,
     weights: [*]const i8,
     input: []const u8,
+    nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {
     const chunks = OUT / 16;
     var acc: [chunks]@Vector(16, i32) = undefined;
     inline for (0..chunks) |c| acc[c] = biases[c * 16 ..][0..16].*;
-    const groups = input.len / 4;
-    const in32: [*]const u32 = if (sparse) @ptrCast(@alignCast(input.ptr)) else undefined;
-    var g: usize = 0;
-    while (g < groups) : (g += 1) {
-        if (sparse and in32[g] == 0) continue;
+    var it = GroupIter(sparse){ .nnz = nnz, .groups = input.len / 4 };
+    while (it.next()) |g| {
         const in4: [4]u8 = input[g * 4 ..][0..4].*;
         const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
         inline for (0..chunks) |c| {
@@ -123,14 +156,12 @@ inline fn affineSsse3(
     biases: [*]const i32,
     weights: [*]const i8,
     input: []const u8,
+    nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {
-    const ones: @Vector(8, i16) = @splat(1);
     var acc: [OUT]i32 = biases[0..OUT].*;
-    const groups = input.len / 4;
-    const in32: [*]const u32 = if (sparse) @ptrCast(@alignCast(input.ptr)) else undefined;
-    var g: usize = 0;
-    while (g < groups) : (g += 1) {
-        if (sparse and in32[g] == 0) continue;
+    const ones: @Vector(8, i16) = @splat(1);
+    var it = GroupIter(sparse){ .nnz = nnz, .groups = input.len / 4 };
+    while (it.next()) |g| {
         const in4: [4]u8 = input[g * 4 ..][0..4].*;
         const inpat: @Vector(16, i8) = @bitCast(@as(@Vector(4, u32), @splat(@as(u32, @bitCast(in4)))));
         inline for (0..OUT / 4) |c| {
@@ -149,13 +180,14 @@ inline fn affineDpbusd(
     biases: [*]const i32,
     weights: [*]const i8,
     input: []const u8,
+    nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {
     if (comptime (has_vnni and OUT % 16 == 0)) {
-        affineVnni(OUT, sparse, out, biases, weights, input);
+        affineVnni(OUT, sparse, out, biases, weights, input, nnz);
         return;
     }
     if (comptime (use_maddubs and OUT % 4 == 0)) {
-        affineSsse3(OUT, sparse, out, biases, weights, input);
+        affineSsse3(OUT, sparse, out, biases, weights, input, nnz);
         return;
     }
     const N = OUT * 4;
@@ -193,16 +225,8 @@ inline fn affineDpbusd(
         break :blk m;
     };
     var acc: Vo = biases[0..OUT].*;
-    const groups = input.len / 4;
-    // Sparse input (port of upstream AffineTransformSparseInput): a 4-byte input
-    // chunk that is all-zero contributes 0 to every output, so skip it. Bit-exact
-    // with the dense loop -- only the zero-chunk work is elided. `input` is the
-    // 64-aligned feature-transformer output for the sparse (fc0) call, so the u32
-    // chunk read is aligned.
-    const in32: [*]const u32 = if (sparse) @ptrCast(@alignCast(input.ptr)) else undefined;
-    var g: usize = 0;
-    while (g < groups) : (g += 1) {
-        if (sparse and in32[g] == 0) continue;
+    var it = GroupIter(sparse){ .nnz = nnz, .groups = input.len / 4 };
+    while (it.next()) |g| {
         const in4: @Vector(4, i16) = .{
             @intCast(input[g * 4]),     @intCast(input[g * 4 + 1]),
             @intCast(input[g * 4 + 2]), @intCast(input[g * 4 + 3]),
@@ -233,7 +257,7 @@ fn layerWeights(bucket: usize, idx: c_int) [*]const i8 {
     return @ptrCast(@alignCast(layerPtr(bucket, idx, 1) orelse unreachable));
 }
 
-fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
+fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_accumulator_port.NnzBitset) c_int {
     // Read the affine-layer weights from the Zig-owned storage. The parse
     // writes this storage and is the sole source, so the eval is bench-verified.
     const fc0_b = layerBiases(bucket, 0);
@@ -245,7 +269,7 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
 
     // fc_0: affine 1024 -> 32 (PaddedInputDimensions = 1024).
     var fc0_out: [32]i32 = undefined;
-    affineDpbusd(32, true, &fc0_out, fc0_b, fc0_w, transformed[0..1024]);
+    affineDpbusd(32, true, &fc0_out, fc0_b, fc0_w, transformed[0..1024], nnz);
 
     // SFNNv15 concat[128] = [ac_sqr_0(32) | ac_0(32) | ac_sqr_1(32) | ac_1(32)].
     // ac_sqr_0 / ac_0 over all FC_0_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits+1 = 7:
@@ -260,7 +284,7 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
 
     // fc_1: affine 64 -> 32 over [ac_sqr_0 | ac_0].
     var fc1_out: [32]i32 = undefined;
-    affineDpbusd(32, false, &fc1_out, fc1_b, fc1_w, concat[0..64]);
+    affineDpbusd(32, false, &fc1_out, fc1_b, fc1_w, concat[0..64], nnz);
 
     // ac_sqr_1 / ac_1 over FC_1_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits = 6:
     // SqrClippedReLU shift = 2*6+7 = 19, ClippedReLU shift = 6. Written into concat[64..128].
@@ -273,7 +297,7 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8) c_int {
 
     // fc_2: affine 128 -> 1 over the full concat (OUT=1 -> identity scramble).
     var fc2_out: [1]i32 = undefined;
-    affineDpbusd(1, false, &fc2_out, fc2_b, fc2_w, concat[0..128]);
+    affineDpbusd(1, false, &fc2_out, fc2_b, fc2_w, concat[0..128], nnz);
 
     // SFNNv15: fwdOut = fc_2_out[0] + (fc_0_out[FC_0_OUTPUTS-2] - fc_0_out[FC_0_OUTPUTS-1]),
     // then scale by 600*OutputScale / (HiddenOneVal*(1<<WeightScaleBits)*2) = 9600/16384 via i64.
@@ -325,6 +349,7 @@ fn evaluateBucketRaw(
     bucket: usize,
 ) EvalOutput {
     var transformed: [transformed_feature_bytes]u8 align(cache_line_size) = undefined;
+    var nnz: nnue_accumulator_port.NnzBitset = undefined;
 
     return .{
         .psqt = networkTransformBucket(
@@ -333,8 +358,9 @@ fn evaluateBucketRaw(
             cache,
             bucket,
             @ptrCast(&transformed),
+            &nnz,
         ),
-        .positional = propagateBucket(bucket, @ptrCast(&transformed)),
+        .positional = propagateBucket(bucket, @ptrCast(&transformed), &nnz),
     };
 }
 
@@ -354,10 +380,11 @@ fn networkTransformBucket(
     cache: *nnue_accumulator_port.RefreshCache,
     bucket: usize,
     transformed_ptr: [*]u8,
+    nnz: *nnue_accumulator_port.NnzBitset,
 ) c_int {
     const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(ftPtr() orelse @panic("feature-transformer storage not initialized"));
     const stm = pos.side_to_move;
-    return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr);
+    return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr, nnz);
 }
 
 // affineDpbusd has four codegen paths (portable pmaddwd; pmaddubsw+pmaddwd intrinsics on
@@ -402,8 +429,16 @@ test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
                 }
             }
 
+            // The transform records this bitset in the engine; build it here to match.
+            var nnz: nnue_accumulator_port.NnzBitset = .{0} ** nnue_accumulator_port.nnz_word_count;
+            if (SPARSE) {
+                const in32: [*]const u32 = @ptrCast(@alignCast(&input));
+                for (0..groups) |g| {
+                    if (in32[g] != 0) nnz[g / 64] |= @as(u64, 1) << @intCast(g % 64);
+                }
+            }
             var got: [OUT]i32 = undefined;
-            affineDpbusd(OUT, SPARSE, &got, &biases, &weights, input[0..IN]);
+            affineDpbusd(OUT, SPARSE, &got, &biases, &weights, input[0..IN], &nnz);
             try testing.expectEqualSlices(i32, &ref, &got);
         }
     }
