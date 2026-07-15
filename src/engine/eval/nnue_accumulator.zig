@@ -162,6 +162,12 @@ pub fn stackLatestThreat(stack: *const AccumulatorStack) [*]const u8 {
 // in int16 before the [0,255] clamp; the pairwise product is /512.
 const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
 
+/// One bit per 4-byte output chunk, set when that chunk is non-zero. Upstream's NNZInfo
+/// (nnz_helper.h), recorded here rather than re-derived by a later pass: the values are
+/// already in a register at the point they are packed.
+pub const nnz_word_count: usize = half_dimensions * 2 / 4 / 64;
+pub const NnzBitset = [nnz_word_count]u64;
+
 pub fn transformBucket(
     stack: *AccumulatorStack,
     pos: *const Position,
@@ -170,6 +176,7 @@ pub fn transformBucket(
     bucket: usize,
     stm: u8,
     output: [*]u8,
+    nnz: *NnzBitset,
 ) c_int {
     evaluate(stack, pos, feature_transformer, cache);
 
@@ -200,6 +207,10 @@ pub fn transformBucket(
     const c255: Vi16 = @splat(255);
     const shl7: @Vector(V, u4) = @splat(7);
     const shr16: @Vector(V, u5) = @splat(16);
+    const groups_per_step = V / 4;
+    const Vg = @Vector(groups_per_step, u32);
+    const GMask = std.meta.Int(.unsigned, groups_per_step);
+    @memset(nnz, 0);
     var p: usize = 0;
     while (p < 2) : (p += 1) {
         const pp: usize = if (p == 0) p0 else p1;
@@ -213,7 +224,13 @@ pub fn transformBucket(
             const c1: Vu16 = @intCast(@max(zero, @min(c255, s1i)));
             // pmulhuw(c0<<7, c1) == (c0*c1) >> 9
             const q: Vu16 = @intCast((@as(Vu32, c0 << shl7) * @as(Vu32, c1)) >> shr16);
-            output[offset + j ..][0..V].* = @as(@Vector(V, u8), @intCast(q));
+            const bytes: @Vector(V, u8) = @intCast(q);
+            output[offset + j ..][0..V].* = bytes;
+            // Record which 4-byte chunks are non-zero while they are still in a register:
+            // a vector compare plus a movemask, no reload of what was just stored.
+            const mask: GMask = @bitCast(@as(Vg, @bitCast(bytes)) != @as(Vg, @splat(0)));
+            const bit = (offset + j) / 4;
+            nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
         }
     }
     return psqt;
