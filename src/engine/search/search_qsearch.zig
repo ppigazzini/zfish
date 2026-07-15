@@ -131,7 +131,10 @@ pub inline fn adjustKey50(pos: *const Position) u64 {
     return k ^ (seed *% 6364136223846793005 +% 1442695040888963407);
 }
 
-pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta: c_int, pv_node: bool) c_int {
+/// Upstream is `template<NodeType nodeType> qsearch<PV>/<NonPV>` (search.cpp) -- node type is a
+/// template parameter and there is no cutNode. Mirror it: `pv_node` is comptime, and the two
+/// instantiations are the whole set.
+pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta: c_int, comptime pv_node: bool) c_int {
     const w: *WorkerHistories = workerHistories(ctx.worker);
     const pos = pos_ptr;
     const ss = ss_ptr;
