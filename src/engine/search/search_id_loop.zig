@@ -81,6 +81,10 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     // conflated them.
     var last_best_move_pv: PVMoves = undefined;
     last_best_move_pv.length = 0;
+    // Remember the best score alongside its PV (upstream's `lastBestMoveScore`,
+    // search.cpp:277). The rollback restored root_moves[0].previous_score instead, which
+    // is this iteration's saved score -- not the score that belongs to last_best_move_pv.
+    var last_best_move_score: c_int = -q_value_inf;
     var last_best_move_depth: c_int = 0;
     var best_value: c_int = -q_value_inf;
     const us: usize = @intCast(sideToMove(id.root_pos));
@@ -266,21 +270,48 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             if (@atomicLoad(u8, id.stop, .monotonic) != 0) break;
         }
 
-        if (@atomicLoad(u8, id.stop, .monotonic) == 0) {
+        // Detect a mate score found in an earlier iteration that this iteration failed to
+        // recover -- upstream's `forgottenMate` (search.cpp:504-507), which was absent.
+        // It fires when the remembered best score is a mate/mated and the new score is
+        // either shorter-in-absolute-terms or merely a bound. Note it is NOT conditioned
+        // on `stop`: a COMPLETED iteration that forgets a mate is rolled back too.
+        const stopped = @atomicLoad(u8, id.stop, .monotonic) != 0;
+        const forgotten_mate = last_best_move_score != -q_value_inf and
+            (idIsMate(last_best_move_score) or idIsMated(last_best_move_score)) and
+            (@abs(id.root_moves[0].score) < @abs(last_best_move_score) or
+                id.root_moves[0].scoreIsBound());
+
+        if (!stopped) {
             if (last_best_move_pv.length == 0 or id.root_moves[0].pv.moves[0] != last_best_move_pv.moves[0])
                 last_best_move_depth = id.root_depth.*;
-            last_best_move_pv = id.root_moves[0].pv;
-        } else if (id.pv_idx.* == 0 and id.root_moves[0].score != -q_value_inf and
-            idIsLoss(id.root_moves[0].score) and
-            !(id.root_moves[0].score_lowerbound or id.root_moves[0].score_upperbound))
-        {
+
+            // Do not replace (shorter) mate scores from a previous iteration.
+            if (!forgotten_mate) {
+                last_best_move_pv = id.root_moves[0].pv;
+                last_best_move_score = id.root_moves[0].score;
+            }
+        }
+
+        const aborted_loss_search = stopped and id.pv_idx.* == 0 and
+            id.root_moves[0].scoreIsExactLoss(idIsLoss(id.root_moves[0].score));
+
+        // An exact mated-in/TB-loss score from an aborted search cannot be trusted: the
+        // loss could be delayed or refuted upon exploring the remaining root-moves. Roll
+        // back to the previous iteration's score. Do the same when a search has failed to
+        // recover a mate score found in a previous iteration.
+        if (aborted_loss_search or (id.root_moves[0].score != -q_value_inf and forgotten_mate)) {
+            // Bring the last best move to the front for best thread selection.
             if (last_best_move_pv.length != 0) {
                 moveToFront(id.root_moves, id.root_moves_count, last_best_move_pv.moves[0]);
+                id.root_moves[0].score = last_best_move_score;
+                id.root_moves[0].uci_score = last_best_move_score;
                 id.root_moves[0].pv = last_best_move_pv;
-                id.root_moves[0].score = id.root_moves[0].previous_score;
-                id.root_moves[0].uci_score = id.root_moves[0].previous_score;
+                id.root_moves[0].unsetBoundFlags();
                 if (main_thread) uci_pv_sent = false;
-            } else id.root_moves[0].score_lowerbound = true;
+            } else if (aborted_loss_search) {
+                // For an aborted d1 search label the loss score as a lower bound.
+                id.root_moves[0].score_lowerbound = true;
+            }
         }
 
         // Check whether mate in x is found.
