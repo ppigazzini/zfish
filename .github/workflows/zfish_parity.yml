@@ -120,6 +120,52 @@ jobs:
       # handshake gate run INSIDE `zig build parity` above, so they also run on the
       # Windows/macOS lanes.)
 
+  # NON-BLOCKING Zig-master compatibility monitor.
+  #
+  # zfish targets Zig 0.16.0 (every gate above). This lane additionally builds and runs
+  # the full parity suite under an AUDITED Zig master snapshot, so a language / std /
+  # build-system change on Zig's road to 0.17 surfaces here as an early warning instead
+  # of ambushing the next toolchain bump. `continue-on-error: true` makes it INFORMATIONAL:
+  # the job reports its real pass/fail in the UI but never fails the workflow, because
+  # master is a moving target that may break at any time through no fault of this repo.
+  #
+  # The snapshot is PINNED (not floating "master") for reproducibility and bumped by hand
+  # -- same value z47 audits. Today the port is master-clean on the Linux host (build +
+  # bench 2466447 + all 31 parity gates), achieved via cross-version idioms: @splat for
+  # array-repeat (0.17 rejects `**` after `}`), @Int for the removed std.meta.Int, and a
+  # comptime repoPath shim + addArtifactArg for the removed b.pathFromRoot / getInstallPath.
+  zig-master-compat:
+    name: Zig master compatibility (non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The whole point: a master regression must NOT block the merge queue.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      # Audited Zig master snapshot. Bump deliberately (verify the port locally first),
+      # not automatically -- a floating master would make this lane flap on upstream's
+      # in-flight work rather than on our regressions.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0-dev.1398+cb5635714
+
+      - name: Cache NNUE network
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: net/nn-*.nnue
+          key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
+
+      - name: Cache Syzygy tablebases
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: net/syzygy
+          key: syzygy-3man-${{ hashFiles('tools/fetch_tb.zig') }}
+
+      - run: zig version
+      # Same host arch/gates as the blocking Linux lane, under Zig master.
+      - run: zig build parity -Darch=x86-64-sse41-popcnt
+
   # Cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
   # with no source changes -- where upstream needs hand-written NEON intrinsics per
   # its own src/nnue/**. The integer-exact eval is arch-invariant, so the ARM bench must be
