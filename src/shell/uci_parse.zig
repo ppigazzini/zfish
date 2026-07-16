@@ -42,6 +42,11 @@ pub const ParsedLimits = struct {
     nodes: u64,
     ponder_mode: u8,
     searchmoves: ?[*:0]u8,
+    // Name the keyword whose argument would not parse, mirroring upstream's `is.fail()`
+    // check after the token if-chain (uci.cpp:226). Upstream reports the KEYWORD, not the
+    // offending value: `go depth abc` -> "Invalid argument for 'depth'". Null means every
+    // argument parsed. The caller terminates on it; parsing itself stays total.
+    bad_token: ?[]const u8 = null,
 };
 
 pub const ParsedPosition = struct {
@@ -104,25 +109,75 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
             }
             break;
         } else if (std.mem.eql(u8, token, "wtime")) {
-            result.wtime = parseI64(iter.next()) orelse result.wtime;
+            if (parseI64(iter.next())) |v| {
+                result.wtime = v;
+            } else {
+                result.bad_token = "wtime";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "btime")) {
-            result.btime = parseI64(iter.next()) orelse result.btime;
+            if (parseI64(iter.next())) |v| {
+                result.btime = v;
+            } else {
+                result.bad_token = "btime";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "winc")) {
-            result.winc = parseI64(iter.next()) orelse result.winc;
+            if (parseI64(iter.next())) |v| {
+                result.winc = v;
+            } else {
+                result.bad_token = "winc";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "binc")) {
-            result.binc = parseI64(iter.next()) orelse result.binc;
+            if (parseI64(iter.next())) |v| {
+                result.binc = v;
+            } else {
+                result.bad_token = "binc";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "movestogo")) {
-            result.movestogo = parseInt(c_int, iter.next()) orelse result.movestogo;
+            if (parseInt(c_int, iter.next())) |v| {
+                result.movestogo = v;
+            } else {
+                result.bad_token = "movestogo";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "depth")) {
-            result.depth = parseInt(c_int, iter.next()) orelse result.depth;
+            if (parseInt(c_int, iter.next())) |v| {
+                result.depth = v;
+            } else {
+                result.bad_token = "depth";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "nodes")) {
-            result.nodes = parseInt(u64, iter.next()) orelse result.nodes;
+            if (parseInt(u64, iter.next())) |v| {
+                result.nodes = v;
+            } else {
+                result.bad_token = "nodes";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "movetime")) {
-            result.movetime = parseI64(iter.next()) orelse result.movetime;
+            if (parseI64(iter.next())) |v| {
+                result.movetime = v;
+            } else {
+                result.bad_token = "movetime";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "mate")) {
-            result.mate = parseInt(c_int, iter.next()) orelse result.mate;
+            if (parseInt(c_int, iter.next())) |v| {
+                result.mate = v;
+            } else {
+                result.bad_token = "mate";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "perft")) {
-            result.perft = parseInt(c_int, iter.next()) orelse result.perft;
+            if (parseInt(c_int, iter.next())) |v| {
+                result.perft = v;
+            } else {
+                result.bad_token = "perft";
+                break;
+            }
         } else if (std.mem.eql(u8, token, "infinite")) {
             result.infinite = 1;
         } else if (std.mem.eql(u8, token, "ponder")) {
