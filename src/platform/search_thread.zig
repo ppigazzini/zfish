@@ -1,18 +1,18 @@
-// Search thread.
+// Implement the search thread.
 //
-// The thread vehicle: a std.Thread idle_loop that runs the search as its job. The
-// search BODY lives elsewhere; this owns the *vehicle* -- the worker handle + the
+// Provide the thread vehicle: a std.Thread idle_loop that runs the search as its job. Keep the
+// search BODY elsewhere; own the *vehicle* here -- the worker handle + the
 // futex idle-loop runner (thread_runtime.zig) + the per-thread search job.
 //
-// LAYOUT CONTRACT: the only field any other code reads off a live Thread by offset
-// is `worker` at offset 8 (worker_layout.Thread / the sibling ops all read `*(thread
-// + 8)`). `worker` stays at offset 8 because the four fields are equal-size (u64/
+// LAYOUT CONTRACT: read `worker` at offset 8 as the only field any other code reads off a live Thread by offset
+// (worker_layout.Thread / the sibling ops all read `*(thread
+// + 8)`). Keep `worker` at offset 8 because the four fields are equal-size (u64/
 // pointer) and Zig keeps their declaration order; the `@offsetOf(worker) == 8` test
-// below guards it. The ThreadRuntime (std.Thread handle + futex atomics) lives on
+// below guards it. Hold the ThreadRuntime (std.Thread handle + futex atomics) on
 // the heap behind a pointer so this footprint stays small.
 //
-// This module is unit-tested in isolation against thread_runtime.zig with a mock
-// job, so the search-launch handshake is proven independently of the
+// Unit-test this module in isolation against thread_runtime.zig with a mock
+// job, so the search-launch handshake holds independently of the
 // ThreadPool/Engine construction that attaches a real Worker.
 
 const std = @import("std");
@@ -21,7 +21,7 @@ const rt = @import("thread_runtime");
 const worker_layout = @import("worker_layout");
 const runtime_hooks = @import("runtime_hooks");
 
-// Marker at offset 0 (no reader touches thread@0, so this just makes a
+// Place a marker at offset 0 (no reader touches thread@0, so this just makes a
 // SearchThread identifiable in a dump and pads `worker` to offset 8).
 pub const thread_tag: u64 = 0x5a_46_49_53_48_54_48_31; // "ZFISHTH1"
 
@@ -31,8 +31,8 @@ pub const SearchThread = struct {
     runtime: ?*rt.ThreadRuntime = null, // @16
     idx: usize = 0, // @24
 
-    // Allocate + spawn the futex idle-loop runner. The Worker is attached later
-    // (setWorker), by the ThreadPool construction that builds the Worker block.
+    // Allocate + spawn the futex idle-loop runner. Attach the Worker later
+    // (setWorker) via the ThreadPool construction that builds the Worker block.
     pub fn spawn(self: *SearchThread, allocator: std.mem.Allocator, idx: usize) !void {
         const runtime = try allocator.create(rt.ThreadRuntime);
         errdefer allocator.destroy(runtime);
@@ -45,7 +45,7 @@ pub const SearchThread = struct {
         self.worker = worker;
     }
 
-    // Submit a job to the idle loop and return immediately. The job runs on the thread.
+    // Submit a job to the idle loop and return immediately. Run the job on the thread.
     pub fn startJob(self: *SearchThread, job: rt.ThreadJobFn, ctx: ?*anyopaque) void {
         self.runtime.?.runCustomJob(job, ctx);
     }
@@ -54,7 +54,7 @@ pub const SearchThread = struct {
         self.runtime.?.waitForSearchFinished();
     }
 
-    // Join the runner, then tear down the attached Worker. Idempotent.
+    // Join the runner, then tear down the attached Worker. Keep it idempotent.
     pub fn deinit(self: *SearchThread, allocator: std.mem.Allocator) void {
         if (self.runtime) |runtime| {
             runtime.deinit(); // join the idle loop first -- no thread uses worker after this
@@ -63,7 +63,7 @@ pub const SearchThread = struct {
         }
         // Free the large-page Worker block the builder attached at worker@8 (the
         // Worker teardown + aligned_large_pages_free); without this the ~14 MB Worker
-        // leaks on every reconfigure/teardown. Done after the join above.
+        // leaks on every reconfigure/teardown. Do this after the join above.
         if (self.worker) |w| {
             runtime_hooks.worker_destroy(w);
             self.worker = null;
@@ -71,20 +71,20 @@ pub const SearchThread = struct {
     }
 };
 
-// The teardown for the Worker (via runtime_hooks.worker_destroy):
+// Tear down the Worker (via runtime_hooks.worker_destroy):
 // destruct the Worker + large-page free.
 
-// The search_thread tests attach only dummy workers (worker == 0), so deinit's
+// Attach only dummy workers (worker == 0) in the search_thread tests, so deinit's
 // runtime_hooks.worker_destroy call is never reached — no test stub needed.
 
-// The search driver entry, injected by the thread module at search start.
+// Hold the search driver entry, injected by the thread module at search start.
 // search_thread must not import position (position imports the thread stack for its
-// pool ops, so the reverse would cycle), so the driver is registered as a function
-// pointer rather than called by name.
+// pool ops, so the reverse would cycle), so register the driver as a function
+// pointer rather than call it by name.
 pub var searchEntry: ?*const fn (?*anyopaque) void = null;
 
-// Production search job: run the registered Zig search driver on this thread, with
-// the Worker pointer as context.
+// Run the registered Zig search driver on this thread as the production search job,
+// with the Worker pointer as context.
 pub fn searchJob(ctx: ?*anyopaque) void {
     if (searchEntry) |f| f(ctx);
 }
@@ -99,7 +99,7 @@ inline fn asSearchThread(thread: *worker_layout.Thread) *SearchThread {
     return @ptrCast(@alignCast(thread));
 }
 
-// Start the sibling threads (index 1..) searching. The pool-level entry the search
+// Start the sibling threads (index 1..) searching. Serve as the pool-level entry the search
 // driver (position.zig) calls -- pure graph iteration + the per-thread start, so it
 // needs no position import.
 pub fn startPoolSiblings(pool: *worker_layout.ThreadPool) void {
@@ -117,7 +117,7 @@ pub fn waitPoolSiblings(pool: *worker_layout.ThreadPool) void {
     while (i < n) : (i += 1) asSearchThread(tp.threadTyped(i)).waitForSearchFinished();
 }
 
-// Per-thread worker-clear job. Submitted to the idle loop; caller waits separately.
+// Clear the worker per thread. Submit the job to the idle loop; caller waits separately.
 
 fn clearWorkerJob(ctx: ?*anyopaque) void {
     runtime_hooks.worker_clear(ctx.?);
@@ -161,7 +161,7 @@ test "SearchThread spawns, round-trips a job, and joins" {
 }
 
 test "setWorker stores the handle read by offset 8" {
-    // The engine registers worker_destroy at startup; a standalone test does
+    // Recall the engine registers worker_destroy at startup; a standalone test does
     // not, so deinit()'s `worker_destroy.?(worker)` on the mock worker below
     // would deref a null hook (UB -- silent under ReleaseFast, a panic under
     // ReleaseSafe). Install a no-op teardown for the mock (it is a stack value, not
@@ -179,7 +179,7 @@ test "setWorker stores the handle read by offset 8" {
     var dummy_worker: u64 = 0xABCD;
     thread.setWorker(&dummy_worker);
 
-    // The offset-8 read the rest of the engine does:
+    // Perform the offset-8 read the rest of the engine does:
     const base: [*]const u8 = @ptrCast(&thread);
     const at_8 = @as(*const usize, @ptrCast(@alignCast(base + 8))).*;
     try testing.expectEqual(@intFromPtr(&dummy_worker), at_8);

@@ -1,9 +1,9 @@
-// UCI C-string helpers.
+// Provide the UCI C-string helpers.
 //
-// The std-only C-string alloc / format / trim primitives shared across uci.zig's
+// Share the std-only C-string alloc / format / trim primitives across uci.zig's
 // formatter, parser, dispatch, and runtime clusters. Split into a base leaf so
 // those clusters can move into their own modules (uci_format / uci_parse / ...)
-// without duplicating these helpers. Depends only on std; uci.zig and the leaves
+// without duplicating these helpers. Depend only on std; uci.zig and the leaves
 // import it and alias the names so their bodies stay unqualified.
 
 const std = @import("std");
@@ -63,7 +63,7 @@ test "trimAsciiWhitespace strips leading/trailing ws, preserves interior" {
 test "asciiLower / isSpaceByte" {
     try std.testing.expectEqual(@as(u8, 'a'), asciiLower('A'));
     try std.testing.expectEqual(@as(u8, 'z'), asciiLower('Z'));
-    try std.testing.expectEqual(@as(u8, '5'), asciiLower('5')); // non-alpha unchanged
+    try std.testing.expectEqual(@as(u8, '5'), asciiLower('5')); // keep non-alpha unchanged
     try std.testing.expect(isSpaceByte(' ') and isSpaceByte('\t') and isSpaceByte('\n') and isSpaceByte('\r'));
     try std.testing.expect(!isSpaceByte('x') and !isSpaceByte('0'));
 }

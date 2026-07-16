@@ -1,9 +1,9 @@
-// UCI `bench` / `benchmark` command runners (extracted from uci.zig).
+// Run the UCI `bench` / `benchmark` commands (extracted from uci.zig).
 //
-// Drives the bench / benchmark command sequences. Each command is run through an
+// Drive the bench / benchmark command sequences. Run each command through an
 // INJECTED dispatch function pointer (DispatchFn) rather than importing uci.zig's
 // command loop back -- uci passes a thin wrapper over dispatchCommand, so this leaf
-// carries no cycle. Behaviour is byte-identical; `stockfish bench` (which pins signature
+// carries no cycle. Keep behaviour byte-identical; `stockfish bench` (which pins signature
 // 2466447) exercises benchRuntime directly.
 
 const std = @import("std");
@@ -19,7 +19,7 @@ const uci_strings = @import("uci_strings");
 const parseLimits = uci_parse.parseLimits;
 const freeMaybeCString = uci_strings.freeMaybeCString;
 
-/// Per-command dispatch, injected by uci.zig (a void wrapper over dispatchCommand).
+/// Dispatch per command, injected by uci.zig (a void wrapper over dispatchCommand).
 pub const DispatchFn = *const fn (*engine_object.EngineObject, []const u8) void;
 
 pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, dispatch: DispatchFn) void {
@@ -271,7 +271,7 @@ fn firstToken(command: []const u8) []const u8 {
 }
 
 fn nowMillis() i64 {
-    // Monotonic millis (the shared clock module) -- correct for elapsed timing and free
+    // Read monotonic millis (the shared clock module) -- correct for elapsed timing and free
     // of the libc struct_timeval / gettimeofday C-ABI dependency.
     return clock.now();
 }

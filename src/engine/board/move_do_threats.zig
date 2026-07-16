@@ -1,11 +1,11 @@
-// Threat recording for the NNUE threat feature set.
+// Record threats for the NNUE threat feature set.
 //
-// Split out of move_do.zig: the dirty-threat machinery (updatePieceThreats and its slider
+// Provide the dirty-threat machinery split out of move_do.zig (updatePieceThreats and its slider
 // helpers) that do/undo-move calls whenever a piece lands on or leaves a square. A leaf --
 // depends only on bitboard/board_core/position_types, never on move_do -- so the mutating
 // half imports it one way and no cycle appears.
 //
-// Mirrors upstream Position::update_piece_threats: the (attacker, attacked) pairs recorded
+// Mirror upstream Position::update_piece_threats: the (attacker, attacked) pairs recorded
 // here are exactly those the feature indexer encodes, so the filters are not an
 // approximation -- rejecting the rest early is what upstream does too.
 
@@ -72,8 +72,8 @@ fn processSliders(
     }
 }
 
-// A threatened queen is only a threat-feature when the slider is itself a queen; every
-// other threatened type is. Mirrors upstream `can_slider_threat`. Rejecting here is what
+// Count a threatened queen as a threat-feature only when the slider is itself a queen; every
+// other threatened type always counts. Mirrors upstream `can_slider_threat`. Rejecting here is what
 // keeps the dirty-threat list to the set the feature indexer accepts -- the combinations
 // filtered out are exactly those fullMakeIndex maps out of range and the accumulator then
 // discards, so recording them was pure work.
@@ -98,7 +98,7 @@ pub fn updatePieceThreats(
     const kings = pos.by_type_bb[king_pt];
     const occupied_no_k = occupied ^ kings;
     const sliders = (rook_queens & r_attacks) | (bishop_queens & b_attacks);
-    // can_slider_threat in bitboard form: a threatened queen only counts against a queen.
+    // Apply can_slider_threat in bitboard form: a threatened queen only counts against a queen.
     const direct_sliders = if ((pc & 7) == queen_pt) sliders & pos.by_type_bb[queen_pt] else sliders;
 
     if ((pc & 7) == king_pt) {

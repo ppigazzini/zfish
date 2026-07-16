@@ -1,8 +1,8 @@
-// Native CPU -> best Stockfish ARCH tier, in pure Zig, replacing the 362-line
-// scripts/get_native_properties.sh shell-out. This is a pure function of std.Target.Cpu, so it is
+// Map the native CPU -> best Stockfish ARCH tier, in pure Zig, replacing the 362-line
+// scripts/get_native_properties.sh shell-out. Keep it a pure function of std.Target.Cpu, so it is
 // unit-testable against synthetic feature sets; build.zig calls detectArchFromCpu on the host CPU
 // that Zig's build graph already resolved via cpuid -- no /proc/cpuinfo grep, no `sh`, works on
-// every OS. The tier order + predicates mirror get_native_properties.sh's set_arch_x86_64 table
+// every OS. Mirror get_native_properties.sh's set_arch_x86_64 table in tier order + predicates
 // (strongest -> weakest, first match wins), and archConfigFor in build.zig maps each returned name
 // to its -mcpu feature set.
 const std = @import("std");
@@ -21,7 +21,7 @@ pub fn detectArchFromCpu(cpu: std.Target.Cpu) []const u8 {
     if (cpu.arch == .aarch64) {
         return if (std.Target.aarch64.featureSetHas(cpu.features, .dotprod)) "armv8-dotprod" else "armv8";
     }
-    // The owned native scope is x86_64 (and aarch64 above); any other host falls back to the
+    // Scope the owned native path to x86_64 (aarch64 handled above); send any other host to the
     // generic baseline (non-x86 CI lanes always pass an explicit -Darch, never `native`).
     if (cpu.arch != .x86_64) return "x86-64";
 
@@ -29,7 +29,7 @@ pub fn detectArchFromCpu(cpu: std.Target.Cpu) []const u8 {
     if (hasAllX86(cpu, &.{ .avx512vnni, .avx512dq, .avx512f, .avx512bw, .avx512vl })) return "x86-64-vnni512";
     if (hasAllX86(cpu, &.{ .avx512f, .avx512bw })) return "x86-64-avx512";
     if (hasX86(cpu, .avxvnni)) return "x86-64-avxvnni";
-    // AMD Zen1/Zen2 have slow BMI2 PEXT/PDEP; the script excludes them from the bmi2 tier.
+    // Exclude AMD Zen1/Zen2 from the bmi2 tier -- their BMI2 PEXT/PDEP is slow (as the script does).
     const znver12 = cpu.model == &std.Target.x86.cpu.znver1 or cpu.model == &std.Target.x86.cpu.znver2;
     if (!znver12 and hasX86(cpu, .bmi2)) return "x86-64-bmi2";
     if (hasX86(cpu, .avx2)) return "x86-64-avx2";

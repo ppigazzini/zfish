@@ -1,6 +1,6 @@
-// Search/history shared helpers.
+// Provide the shared search/history helpers.
 //
-// The small accessors and stat primitives used by BOTH the history-update code
+// Gather the small accessors and stat primitives used by BOTH the history-update code
 // and the search itself: the Worker->histories accessor, the capture-history
 // lookups, the StatsEntry gravity update, the capture-stage predicate, and the
 // move-validity check.
@@ -33,7 +33,7 @@ pub inline fn moveIsOk(m: u16) bool {
     return m != 0 and m != 65; // != none() and != null()
 }
 
-// Gravity update toward [-D, D].
+// Update by gravity toward [-D, D].
 pub inline fn statsUpdate(entry: *i16, bonus: c_int, comptime d: c_int) void {
     const clamped = @max(-d, @min(d, bonus));
     const val: c_int = entry.*;

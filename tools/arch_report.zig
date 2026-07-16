@@ -1,6 +1,6 @@
-//! arch_report: the coupling report + the two tripwires the compiler will not give (G1 / D.2).
+//! arch_report: report coupling and raise the two tripwires the compiler will not give (G1 / D.2).
 //!
-//! Reports Lakos CCD/ACD/NCCD over zfish's import graphs, at BOTH granularities,
+//! Report Lakos CCD/ACD/NCCD over zfish's import graphs, at BOTH granularities,
 //! because zfish has two and they disagree: the module graph is a DAG, the file graph
 //! is not (search_main <-> search_back, the alpha-beta mutual recursion). Always state
 //! which graph a number came from.
@@ -23,7 +23,7 @@
 //! build also wires misc->build_options and main.zig -- the shipped entry point, which
 //! is not in the table at all and is the composition root the whole architecture rests
 //! on. Parse the table alone and you report a graph that excludes the program's entry
-//! point. This tool parses the addImport call sites, and reports the table-only
+//! point. Parse the addImport call sites, and report the table-only
 //! subgraph separately and clearly labelled.
 
 const std = @import("std");
@@ -76,7 +76,7 @@ fn computeCcd(gpa: std.mem.Allocator, g: *const Graph) !usize {
     return total;
 }
 
-/// The NCCD normalizer: CCD of a balanced binary tree of n nodes, computed EXACTLY as
+/// Compute the NCCD normalizer: CCD of a balanced binary tree of n nodes, computed EXACTLY as
 /// the sum of subtree sizes over a heap-shaped tree. NCCD exists to be portable across
 /// codebase sizes; approximating it (the tempting `N*log2(N+1)-N+1`) silently destroys
 /// that -- it gave 2.41 where the exact normalizer gives 2.35.
@@ -98,7 +98,7 @@ fn normalizerOf(gpa: std.mem.Allocator, n: usize) !usize {
     return total;
 }
 
-/// Tarjan SCC, iterative (the graph is small but recursion depth is not worth the risk).
+/// Run Tarjan SCC iteratively (the graph is small but recursion depth is not worth the risk).
 fn countSccs(gpa: std.mem.Allocator, g: *const Graph, in_cycles: *usize, list: ?*std.ArrayList(u8)) !usize {
     const n = g.names.len;
     const index = try gpa.alloc(?usize, n);
@@ -284,7 +284,7 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
-    // Every addImport call site: `<owner>.addImport("<name>", ...)`. The table is data;
+    // Scan every addImport call site: `<owner>.addImport("<name>", ...)`. The table is data;
     // THIS is the wiring. misc->build_options and main.zig's 45 edges live only here.
     var wired_main: usize = 0;
     {
@@ -327,7 +327,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("    declared in the table: {d} modules / {d} edges; +build_options +main\n", .{ declared, table_edges });
 
     // ---- unused declared edges ---------------------------------------------
-    // main.zig is wired to 45 modules but @imports far fewer. Zig accepts the gap
+    // Note that main.zig is wired to 45 modules but @imports far fewer. Zig accepts the gap
     // silently, so it is invisible without this. Report, do not gate: dead edges cost
     // no bytes and no compile time -- the finding is that nothing SEES them.
     const main_src = try Io.Dir.cwd().readFileAlloc(io, "src/shell/main.zig", gpa, .unlimited);
@@ -395,7 +395,7 @@ pub fn main(init: std.process.Init) !void {
     if (fscc_text.items.len > 0) std.debug.print("{s}", .{fscc_text.items});
 
     // ---- tripwires ----------------------------------------------------------
-    // Known file SCC: search_main <-> search_back IS the alpha-beta mutual recursion.
+    // Name the known file SCC: search_main <-> search_back IS the alpha-beta mutual recursion.
     // Per Lakos the answer is to NAME it one component, not break it. Naming it here
     // means a NEW cycle is visible against it instead of hiding behind it (G3).
     const known_scc = "src/engine/search/search_main.zig <-> src/engine/search/search_back.zig";

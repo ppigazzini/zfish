@@ -1,6 +1,6 @@
-// Read-only Position accessors and snapshot builders.
+// Provide the read-only Position accessors and snapshot builders.
 //
-// The small "read a fact off the live Position" queries lifted out of
+// Gather the small "read a fact off the live Position" queries lifted out of
 // position.zig: the scalar accessors (side/chess960/ply/checkers/material), and
 // the snapshot fills that copy the Position into the NNUE/board views the eval
 // and movegen consume. All are read-only over a *const Position, so this is a
@@ -32,7 +32,7 @@ pub fn hasCheckers(pos: *const Position) bool {
     return pos.st.checkers_bb != 0;
 }
 
-// WDL-model material count (src/uci.cpp): pawns + 3*(knights+bishops) +
+// Count the WDL-model material (src/uci.cpp): pawns + 3*(knights+bishops) +
 // 5*rooks + 9*queens, both colours. piece_count is indexed by piece
 // (white type at 1..5, black type at 9..13).
 pub fn wdlMaterial(pos: *const Position) c_int {
@@ -41,11 +41,11 @@ pub fn wdlMaterial(pos: *const Position) c_int {
         5 * (pc[4] + pc[12]) + 9 * (pc[5] + pc[13]);
 }
 
-// The snapshot the fill hook writes IS position_snapshot.PositionSnapshot.
+// Alias position_snapshot.PositionSnapshot -- the snapshot the fill hook writes.
 const FillSnapshot = position_snapshot.PositionSnapshot;
 
-// fillSnapshot: derive the NNUE/board snapshot from the live Position.
-// Reads the Position fields directly.
+// Derive the NNUE/board snapshot from the live Position (fillSnapshot).
+// Read the Position fields directly.
 pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     const st = pos.st;
 
@@ -75,12 +75,12 @@ pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     out.game_ply = pos.game_ply;
     out.is_chess960 = @intFromBool(pos.chess960);
 
-    // The two bulk fields are the whole cost of this function: a byte-at-a-time board
-    // copy is 64 scalar moves per node. @memcpy lowers to vector loads/stores.
+    // Copy the two bulk fields -- the whole cost of this function -- with @memcpy: a
+    // byte-at-a-time board copy is 64 scalar moves per node; @memcpy lowers to vector loads/stores.
     @memcpy(out.board[0..64], pos.board[0..64]);
 }
 
-// The 64-square piece board only, for NNUE piece-count/accumulator callers that
+// Copy the 64-square piece board only, for NNUE piece-count/accumulator callers that
 // need just the board (not the full snapshot).
 pub fn accumulatorSnapshot(pos: *const Position, pieces_out: [*]u8) void {
     var s: usize = 0;

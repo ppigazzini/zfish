@@ -1,14 +1,13 @@
-// Engine NNUE network lifecycle.
+// Manage the engine NNUE network lifecycle.
 //
-// The network verify / load / save operations, split out of engine.zig. These are
-// the shared NNUE-load path that goEngine, perftEngine, and the eval trace all
-// funnel through (verifyNetwork), so extracting them into a leaf breaks that
-// cross-cluster coupling -- the trace cluster can then move out without reaching
-// back into the engine core. Depends only on the network / option / uci_output
-// modules + engine_object (for the engine-handle adapter, duplicated here); no
-// import of engine, so no cycle. engine.zig re-exports the three (saveNetworkEngine
-// is external port surface) and aliases printInfoString for its option-apply
-// code.
+// Provide the network verify / load / save operations, split out of engine.zig. Funnel
+// goEngine, perftEngine, and the eval trace through the shared NNUE-load path
+// (verifyNetwork), so extracting them into a leaf breaks that cross-cluster coupling --
+// the trace cluster can then move out without reaching back into the engine core.
+// Depend only on the network / option / uci_output modules + engine_object (for the
+// engine-handle adapter, duplicated here); no import of engine, so no cycle. engine.zig
+// re-exports the three (saveNetworkEngine is external port surface) and aliases
+// printInfoString for its option-apply code.
 
 const std = @import("std");
 const c = @import("libc");
@@ -34,7 +33,7 @@ pub fn printInfoString(str: []const u8) void {
     }
 }
 
-// The external net is a RUNTIME input, not a build-time one (NNUE_EMBEDDING_OFF):
+// Treat the external net as a RUNTIME input, not a build-time one (NNUE_EMBEDDING_OFF):
 // `network.load` resolves EvalFile against the cwd and the binary directory, and
 // reports nothing when every candidate misses. Worker construction then reads the
 // feature-transformer biases (worker_construct.constructFull), which `orelse return`s
@@ -43,8 +42,8 @@ pub fn printInfoString(str: []const u8) void {
 // subsystem. Report it here instead, at the site that requires the net: name the
 // file sought and every directory searched, and exit non-zero.
 //
-// ftPtr() IS the contract constructFull needs, so it is what is checked.
-// Written to stderr, not through uci_output: this is a fatal startup diagnostic, so
+// Check ftPtr() -- it IS the contract constructFull needs.
+// Write to stderr, not through uci_output: this is a fatal startup diagnostic, so
 // it must not be swallowed by `Quiet` (a bench/parity run is quiet) nor depend on
 // the output_sink hook being registered.
 pub fn requireNetworkLoaded(engine_ptr: *engine_object.EngineObject) void {
@@ -85,7 +84,7 @@ pub fn verifyNetwork() void {
     const result = network_port.verify(evalfile.ptr, evalfile.len);
     if (result.message) |message_ptr| {
         defer std.heap.c_allocator.free(std.mem.span(message_ptr));
-        // onVerifyNetwork: interactive -> print as "info string ..."; quiet -> no-op.
+        // Follow onVerifyNetwork: interactive -> print as "info string ..."; quiet -> no-op.
         if (!uci_output.isQuiet()) printInfoString(std.mem.span(message_ptr));
     }
 
@@ -96,7 +95,7 @@ pub fn verifyNetwork() void {
 
 // Load a network from the given EvalFile path directly through the network module
 // the engine owns the network pointer + binary directory, so no C-ABI round
-// trip to main is needed. Mirrors the startup load in engine_object.constructMembers.
+// trip to main is needed. Mirror the startup load in engine_object.constructMembers.
 pub fn loadNetworkEngine(engine_ptr: *engine_object.EngineObject, evalfile_path: []const u8) void {
     const e = engine_ptr;
     const bdir: [*:0]const u8 = e.binary_directory orelse "";

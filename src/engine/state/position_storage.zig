@@ -1,32 +1,32 @@
-// PositionStorage — the owner of the engine's `pos` member's
-// storage. The Position ALGORITHMS live in board/position.zig (which operates
-// on a Position by offset); this provides OWNERSHIP of the 1032-byte
-// Position object the engine holds by value. This is that storage: one aligned,
-// zeroed block the runtime hands to the position ops as the live Position.
+// Own the engine's `pos` member's storage. The Position ALGORITHMS live in
+// board/position.zig (which operates on a Position by offset); this provides
+// OWNERSHIP of the 1032-byte Position object the engine holds by value. Serve as
+// that storage: one aligned, zeroed block the runtime hands to the position ops as
+// the live Position.
 //
-// Treated as opaque bytes (Position internals are written/read by position.zig).
+// Treat as opaque bytes (Position internals are written/read by position.zig).
 //
-// ALIGNMENT NOTE: sizeof(Position) == 1032 is pinned by worker_layout.zig.
-// alignof(Position) is not separately probed; 8 covers its u64/pointer members. If
+// ALIGNMENT NOTE: rely on worker_layout.zig to pin sizeof(Position) == 1032.
+// Do not separately probe alignof(Position); 8 covers its u64/pointer members. If
 // a future upstream Position gains an over-aligned (SIMD) member, the layout
 // verifier must bump this — flagged there, harmless until then.
 
 const std = @import("std");
 
-/// sizeof(Position), pinned by worker_layout.zig (= 1032).
+/// Pin sizeof(Position), matching worker_layout.zig (= 1032).
 pub const position_size: usize = 1032;
 pub const position_align: usize = 8;
 
 pub const PositionStorage = struct {
     bytes: [position_size]u8 align(position_align),
 
-    /// A fresh, zeroed Position block (matches the value-initialized `pos`
+    /// Return a fresh, zeroed Position block (matches the value-initialized `pos`
     /// member before pos.set(StartFEN) runs).
     pub fn zeroed() PositionStorage {
         return .{ .bytes = @splat(0) };
     }
 
-    /// Address of the Position object, handed to the position ops.
+    /// Return the address of the Position object, handed to the position ops.
     pub fn ptr(self: *PositionStorage) *anyopaque {
         return @ptrCast(&self.bytes);
     }
@@ -41,6 +41,6 @@ test "PositionStorage is a zeroed 1032-byte block at its base address" {
     try testing.expectEqual(@as(usize, 1032), @sizeOf([position_size]u8));
     try testing.expectEqual(@as(*anyopaque, @ptrCast(&pos.bytes)), pos.ptr());
     for (pos.bytes) |b| try testing.expectEqual(@as(u8, 0), b);
-    // 8-byte aligned base (Position holds u64/pointer members)
+    // Verify the 8-byte aligned base (Position holds u64/pointer members)
     try testing.expectEqual(@as(usize, 0), @intFromPtr(pos.ptr()) % position_align);
 }

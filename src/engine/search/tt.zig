@@ -9,7 +9,7 @@ const bound_shift: u8 = generation_bits;
 const bound_mask: u8 = 0b11 << bound_shift;
 const pv_shift: u8 = bound_shift + 2;
 const pv_mask: u8 = 1 << pv_shift;
-// is_decisive threshold (VALUE_TB_WIN_IN_MAX_PLY); used by secondary TT aging.
+// Define the is_decisive threshold (VALUE_TB_WIN_IN_MAX_PLY); used by secondary TT aging.
 const value_tb_win_in_max_ply: c_int = 31507;
 
 pub const TtEntry = tt_types.TtEntry;
@@ -60,7 +60,7 @@ pub fn resizeState(
     mb: usize,
     threads: *worker_layout.ThreadPool,
 ) void {
-    // The large-page allocator deals in raw bytes; the cluster typing resumes the
+    // Work in raw bytes here -- the large-page allocator's currency; cluster typing resumes the
     // moment the buffer is handed back to the typed graph handle.
     page_alloc.free(@ptrCast(table_ptr.*));
 
@@ -134,7 +134,7 @@ pub fn entrySave(
         entry.value16 = @intCast(value);
         entry.eval16 = @intCast(eval);
     }
-    // upstream 94beadffb: secondary aging. Important for elementary mate finding. Age a deep,
+    // upstream 94beadffb: apply secondary aging. Matters for elementary mate finding. Age a deep,
     // decisive, non-exact entry that we are NOT overwriting. (depth8 + DEPTH_NONE >= 5; DEPTH_NONE = depth_none = -3.)
     else if (@as(c_int, entry.depth8) + depth_none >= 5 and
         (@as(c_int, entry.value16) >= value_tb_win_in_max_ply or @as(c_int, entry.value16) <= -value_tb_win_in_max_ply) and
@@ -280,9 +280,9 @@ pub fn probeTable(
     };
 }
 
-// TranspositionTable handle: a 24-byte object holding a TtCluster* table, the
+// Hold the TranspositionTable handle: a 24-byte object holding a TtCluster* table, the
 // cluster count and the 8-bit generation. The heavy logic lives in the functions above;
-// this is the owning object the Engine graph holds, delegating to them.
+// serve as the owning object the Engine graph holds, delegating to them.
 pub const TranspositionTable = struct {
     table: ?[*]TtCluster = null,
     cluster_count: usize = 0,
@@ -312,5 +312,5 @@ test "TranspositionTable handle: layout and generation cycling" {
     try std.testing.expectEqual(@as(usize, 0), tt.firstEntry(0));
     const g0 = tt.generation();
     tt.newSearch();
-    try std.testing.expect(tt.generation() != g0); // generation advanced by GENERATION_DELTA
+    try std.testing.expect(tt.generation() != g0); // advance the generation by GENERATION_DELTA
 }

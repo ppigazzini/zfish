@@ -1,6 +1,6 @@
-// NNUE refresh cache / finny tables.
+// Provide the NNUE refresh cache / finny tables.
 //
-// The per-(king-square, perspective) AccumulatorRefreshTable: the entry byte
+// Model the per-(king-square, perspective) AccumulatorRefreshTable: the entry byte
 // layout, the typed accessors into each entry (accumulation i16 / psqt i32 /
 // pieces / pieceBB), and clearRefreshCache which seeds every entry from the FT
 // biases. Split out of nnue_accumulator.zig; pure pointer-offset math over the
@@ -27,7 +27,7 @@ const cache_entry_pieces_offset = cache_entry_psqt_offset + psqt_buckets * @size
 const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
 const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
 
-/// Opaque handles. The refresh cache is a raw byte arena (the
+/// Expose opaque handles. The refresh cache is a raw byte arena (the
 /// per-(king-square,perspective) finny table); its entries are byte slots within it.
 /// Distinct handle types so the eval can't confuse a cache with a stack/FT handle,
 /// while the accessors below reinterpret to bytes exactly as before.
@@ -39,7 +39,7 @@ pub fn cacheEntry(cache: *RefreshCache, king_square: u8, perspective: u8) *Cache
         ((@as(usize, king_square) * color_count + @as(usize, perspective)) * cache_entry_bytes));
 }
 
-// AccumulatorRefreshTable::clear: initialize every (king_square, perspective)
+// Clear the AccumulatorRefreshTable: initialize every (king_square, perspective)
 // refresh entry to the empty board -- accumulation = the feature-transformer
 // biases, and the rest of the entry (psqt, pieces, pieceBB) zeroed.
 // The biases pointer is passed in by the caller.

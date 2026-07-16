@@ -1,30 +1,30 @@
-//! Injected large-block allocator for the engine's big, long-lived arenas
+//! Inject a large-block allocator for the engine's big, long-lived arenas
 //! (transposition table, shared-history stats, NNUE weight storage).
 //!
-//! Allocating huge-page-aligned memory is a platform service (posix_memalign +
+//! Treat huge-page-aligned allocation as a platform service (posix_memalign +
 //! madvise, or the Windows aligned CRT), so the engine must not call it directly or
-//! it stops being a standalone library. The platform registers its allocator at
-//! startup; the default is a std page-backed allocator so a headless engine build
+//! it stops being a standalone library. Let the platform register its allocator at
+//! startup; default to a std page-backed allocator so a headless engine build
 //! (unit tests, fuzzing) can still allocate with no platform attached.
 //!
-//! Contract (matches the platform allocator): `alloc(size)` returns a zeroed block
-//! whose payload is at least 64-byte aligned, or null on failure; `free(ptr)` takes
-//! only the pointer. The default records the block length in a header word placed
-//! before the payload so free() needs no size. In the shipped engine the platform
+//! Honor this contract (matches the platform allocator): `alloc(size)` returns a zeroed
+//! block whose payload is at least 64-byte aligned, or null on failure; `free(ptr)` takes
+//! only the pointer. Have the default record the block length in a header word placed
+//! before the payload so free() needs no size. Note that in the shipped engine the platform
 //! injects its 2 MiB huge-page allocator, so production allocation is the platform's,
 //! including the zero-fill the worker construction relies on.
 //!
 //! hook-class: service — a leaf answering a query it must not import the answer for.
 //!
-//! These 2 are GENUINELY SAFE unregistered: the default is a REAL page-backed
+//! Treat these 2 as GENUINELY SAFE unregistered: the default is a REAL page-backed
 //! allocator honouring the same contract (zeroed, >=64-aligned, size-free `free`), not
-//! a stub that returns a plausible-looking answer. A headless build allocates
-//! correctly with no platform attached; only the huge-page optimisation is lost.
+//! a stub that returns a plausible-looking answer. Allocate correctly in a headless build
+//! with no platform attached; lose only the huge-page optimisation.
 
 const std = @import("std");
 
-// One 64-byte unit reserved before the payload: keeps the payload 64-aligned (page
-// memory is already 4096-aligned) and holds the block length for free().
+// Reserve one 64-byte unit before the payload: keep the payload 64-aligned (page
+// memory is already 4096-aligned) and hold the block length for free().
 const payload_offset = 64;
 
 fn defaultAlloc(size: usize) ?*anyopaque {
@@ -43,8 +43,8 @@ fn defaultFree(ptr: ?*anyopaque) void {
     std.heap.page_allocator.free(raw[0..total]);
 }
 
-/// A zeroed, >=64-aligned block of `size` bytes, or null. Registered by the platform;
-/// the default is the std page-backed allocator above.
+/// Return a zeroed, >=64-aligned block of `size` bytes, or null. Let the platform
+/// register it; default to the std page-backed allocator above.
 /// failure: silent — a real page-backed allocator meeting the full contract, not a
 /// stub. Correct unregistered; the platform's huge pages are an optimisation, not a
 /// requirement. (The zero-fill IS required -- worker construction depends on it.)
@@ -56,7 +56,7 @@ pub var alloc: *const fn (size: usize) ?*anyopaque = &defaultAlloc;
 pub var free: *const fn (ptr: ?*anyopaque) void = &defaultFree;
 
 test {
-    // The default round-trips a zeroed, aligned block headless.
+    // Round-trip a zeroed, aligned block headless through the default.
     const p = alloc(4096) orelse return error.OutOfMemory;
     const bytes: [*]u8 = @ptrCast(p);
     try std.testing.expectEqual(@as(usize, 0), @intFromPtr(p) % 64);

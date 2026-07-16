@@ -1,6 +1,6 @@
-// Position lifecycle / port surface.
+// Provide the position lifecycle / port surface.
 //
-// The allocate/free/setup/do-move entry points the engine and thread drivers call
+// Expose the allocate/free/setup/do-move entry points the engine and thread drivers call
 // through the position facade -- position operations that had accreted in
 // search_driver.zig only because that file was carved out of position.zig. They
 // touch no search state (no QCtx / SearchStack / worker graph), so they live here
@@ -22,7 +22,7 @@ const doMove = move_do.doMove;
 const givesCheck = legality.givesCheck;
 const setPosition = fen_parse.setPosition;
 
-// do a move with fresh dirty-piece/threats scratch (the perft/setup path, which
+// Do a move with fresh dirty-piece/threats scratch (the perft/setup path, which
 // does not thread an accumulator delta through).
 pub fn doMoveState(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     var dp: DirtyPiece = undefined;
@@ -43,7 +43,7 @@ pub fn destroy(pos: ?*Position) void {
     if (pos) |p| std.heap.c_allocator.destroy(p);
 }
 
-/// setPosition with the engine-graph Position/StateInfo sizes filled in (lets callers keep
+/// Call setPosition with the engine-graph Position/StateInfo sizes filled in (lets callers keep
 /// the 5-arg shape without threading graph sizes through).
 pub fn setPositionState(pos_ptr: *Position, fen_ptr: [*]const u8, fen_len: usize, chess960_enabled: u8, state_ptr: *StateInfo) ?[*:0]u8 {
     return setPosition(pos_ptr, fen_ptr, fen_len, chess960_enabled, state_ptr, worker_layout.position_size, worker_layout.state_info_size);

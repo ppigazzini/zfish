@@ -3,8 +3,8 @@ const build_options = @import("build_options");
 const std = @import("std");
 const c = @import("libc");
 const memory = @import("memory");
-// The dbg_* debug statistics counters live in their own std-only leaf now.
-// Re-exported so the existing misc.dbg* API (misc.dbgPrint from uci.zig) is unchanged.
+// Keep the dbg_* debug statistics counters in their own std-only leaf now.
+// Re-export them so the existing misc.dbg* API (misc.dbgPrint from uci.zig) is unchanged.
 const debug_counters = @import("debug_counters.zig");
 pub const dbgHitOn = debug_counters.dbgHitOn;
 pub const dbgMeanOf = debug_counters.dbgMeanOf;
@@ -167,8 +167,8 @@ pub fn hasLargePages() bool {
 }
 
 pub fn hardwareConcurrency() c_int {
-    // Returns the number of hardware threads (Stockfish's get_hardware_concurrency).
-    // std.Thread.getCpuCount() is the cross-platform equivalent -- sysconf(_SC_NPROCESSORS_ONLN)
+    // Return the number of hardware threads (Stockfish's get_hardware_concurrency).
+    // Use std.Thread.getCpuCount(), the cross-platform equivalent -- sysconf(_SC_NPROCESSORS_ONLN)
     // on POSIX, GetSystemInfo on Windows -- so it matches the prior Linux glibc behavior while
     // also working on the owned Windows/macOS tiers. Clamp an error to 0.
     const n = std.Thread.getCpuCount() catch return 0;
@@ -227,10 +227,10 @@ fn getBinaryDirectoryAlloc(argv0: []const u8) ![*:0]u8 {
 }
 
 fn getWorkingDirectoryAlloc() ![*:0]u8 {
-    // Idiomatic-Zig cwd lookup, replacing libc getcwd. std.process.currentPath is the
-    // cross-platform accessor (its Io vtable wraps POSIX getcwd / NT RtlGetCurrentDirectory);
-    // `init_single_threaded` is the same blocking, no-thread, no-signal-handler handle used
-    // for the net-file read. On any failure we keep the original "" fallback.
+    // Look up the cwd the idiomatic-Zig way, replacing libc getcwd. Use std.process.currentPath,
+    // the cross-platform accessor (its Io vtable wraps POSIX getcwd / NT RtlGetCurrentDirectory);
+    // rely on `init_single_threaded`, the same blocking, no-thread, no-signal-handler handle used
+    // for the net-file read. On any failure keep the original "" fallback.
     var threaded = std.Io.Threaded.init_single_threaded;
     const io = threaded.io();
     var buffer: [40000]u8 = undefined;
@@ -276,9 +276,9 @@ fn gitShaText() []const u8 {
 }
 
 fn compilerNameOwned(allocator: std.mem.Allocator) ![]u8 {
-    // Stockfish reports the C++ compiler via preprocessor macros (__clang__ / __GNUC__ /
-    // _MSC_VER / ...). zfish compiles no C++ and is built by Zig (LLVM backend), so it
-    // reports the Zig toolchain instead.
+    // Note that Stockfish reports the C++ compiler via preprocessor macros (__clang__ / __GNUC__ /
+    // _MSC_VER / ...). zfish compiles no C++ and is built by Zig (LLVM backend), so
+    // report the Zig toolchain instead.
     return std.fmt.allocPrint(allocator, "Zig {s} (LLVM)", .{builtin.zig_version_string});
 }
 
@@ -324,15 +324,15 @@ fn compilationSettingsOwned(allocator: std.mem.Allocator) ![]u8 {
 }
 
 fn compilerVersionMacroText() []const u8 {
-    // The Zig build has no `__VERSION__`-style compiler banner macro, so report the
-    // Zig toolchain version.
+    // Report the Zig toolchain version, since the Zig build has no `__VERSION__`-style
+    // compiler banner macro.
     return "Zig " ++ builtin.zig_version_string;
 }
 
 fn computeFallbackBuildDate() [8]u8 {
-    // Was derived from the C `__DATE__` macro. The authoritative build date is
-    // build_options.git_date (injected by build.zig); Zig exposes no compile-time date, so
-    // this fallback -- used only when git metadata is absent -- is a fixed placeholder.
+    // Recall this was derived from the C `__DATE__` macro. Treat build_options.git_date
+    // (injected by build.zig) as the authoritative build date; Zig exposes no compile-time
+    // date, so keep this fallback -- used only when git metadata is absent -- a fixed placeholder.
     return .{ '0', '0', '0', '0', '0', '0', '0', '0' };
 }
 
@@ -353,10 +353,10 @@ fn takeOwnedString(pointer: [*:0]u8) ![]u8 {
 }
 
 fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    // Idiomatic-Zig whole-file read, replacing the libc fopen/fseek/ftell/fread/fclose
-    // dance. `init_single_threaded` is a BLOCKING std.Io handle: it spawns no threads and
+    // Read the whole file the idiomatic-Zig way, replacing the libc fopen/fseek/ftell/fread/fclose
+    // dance. Rely on `init_single_threaded`, a BLOCKING std.Io handle: it spawns no threads and
     // installs no signal handlers (`have_signal_handler = false`), so this startup read has
-    // zero interaction with the engine's own threadpool. Non-OOM failures collapse to the
+    // zero interaction with the engine's own threadpool. Collapse non-OOM failures to the
     // caller's existing FileOpenFailed, keeping the error set {FileOpenFailed, OutOfMemory}.
     var threaded = std.Io.Threaded.init_single_threaded;
     const io = threaded.io();

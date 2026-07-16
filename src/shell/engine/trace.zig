@@ -1,13 +1,13 @@
-// Engine eval-trace / visualize / snapshot cluster.
+// Cluster the engine eval-trace / visualize / snapshot commands.
 //
-// The read-only inspection commands split out of engine.zig: the `eval` trace
+// Group the read-only inspection commands split out of engine.zig: the `eval` trace
 // (traceEvalEngine/evalTrace/buildNnueTrace), the `d` board visualize
 // (visualize/visualizeEngine), the FEN reader (fen/fenEngine), the NNUE
 // accumulator scratch buffers those use, and the position-snapshot helpers
 // (positionSummary/positionFen/probeTablebases/loadPositionSnapshot/countPieces/
-// emptyTablebaseProbe). Grep-verified to have zero engine-core coupling: it calls
+// emptyTablebaseProbe). Grep-verify zero engine-core coupling: it calls
 // only the engine-handle adapter (ne, duplicated), verifyNetwork (the engine_nnue
-// leaf), its own siblings, and the downstream graph leaves. So it is a leaf; no
+// leaf), its own siblings, and the downstream graph leaves. So keep it a leaf; no
 // import of engine, no cycle. engine.zig re-exports the external entry points
 // (traceEvalEngine/visualizeEngine/fenEngine/accumulatorCachesCreate + the pub
 // trace types) and aliases `fen` for its perft/flip callers.
@@ -15,7 +15,7 @@
 const std = @import("std");
 const c = @import("libc");
 
-// c_allocator string free through the Allocator interface (M-MEM.B); the raw
+// Free a c_allocator string through the Allocator interface (M-MEM.B); the raw
 // std.c.malloc AccumulatorStack/RefreshCache blocks below stay on std.c.free.
 fn freeCString(ptr: [*:0]u8) void {
     std.heap.c_allocator.free(std.mem.span(ptr));
@@ -111,7 +111,7 @@ pub const NnueTraceInput = struct {
 // ======================================================================== //
 // Trace / visualize / snapshot functions, moved verbatim from engine.zig.    //
 // ======================================================================== //
-// Static allocation (TigerBeetle discipline). These arenas are only used by the
+// Allocate statically (TigerBeetle discipline). Use these arenas only from the
 // cold `d`/`eval` UCI trace commands -- single-threaded, non-reentrant (one command at a time
 // from the UCI loop), and their sizes are comptime constants -- so a module-static, 64-aligned
 // buffer replaces the raw std.c.malloc/free entirely: no alloc, no free, no OOM, deterministic.

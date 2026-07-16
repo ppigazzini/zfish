@@ -1,6 +1,6 @@
-// Repetition and draw detection.
+// Detect repetitions and draws.
 //
-// The read-only "has this position repeated / is it a draw" queries lifted out of
+// Provide the read-only "has this position repeated / is it a draw" queries lifted out of
 // position.zig: upcomingRepetition (the cuckoo no-progress-cycle test), isDraw,
 // isRepetition, hasRepeated. Each walks the StateInfo chain (and the cuckoo table)
 // through a *const Position and never mutates, so it is a leaf over zobrist +

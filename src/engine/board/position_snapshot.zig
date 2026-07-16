@@ -23,15 +23,15 @@ pub const PositionSnapshot = struct {
 };
 
 // hook-class: service — a leaf answering a query it must not import the answer for.
-// The 2 hooks position.zig owns and self-registers; every other hook in the tree is
+// Own and self-register these 2 hooks in position.zig; every other hook in the tree is
 // registered by the composition root (main.zig).
 //
-// Cycle-break hooks: position.zig can't be imported by movegen/movepick/
+// Break the import cycle: position.zig can't be imported by movegen/movepick/
 // nnue/uci_move (they are imported *by* position), so it registers these here — the
 // shared leaf they all already import — instead of the old C-ABI exports.
-// position.initRuntime() installs them before any search runs.
+// Install them via position.initRuntime() before any search runs.
 //
-// NON-OPTIONAL, each defaulting to a named panic stub (matching the
+// Make each NON-OPTIONAL, defaulting to a named panic stub (matching the
 // runtime_hooks registry idiom), so fill()/moveIsLegal() invoke them directly with no
 // `.?` null-unwrap. An unregistered hook fails fast with its own name instead of an
 // opaque null-optional panic.
@@ -39,14 +39,14 @@ fn hookPanic(comptime name: []const u8) noreturn {
     @panic(name ++ ": position snapshot hook not registered (initRuntime not run?)");
 }
 
-/// failure: loud — hookPanic naming the hook. position.initRuntime() installs it before any search runs.
+/// failure: loud — hookPanic naming the hook. Install it via position.initRuntime() before any search runs.
 pub var fill_fn: *const fn (pos: *const position_types.Position, out: *PositionSnapshot) void =
     struct {
         fn stub(_: *const position_types.Position, _: *PositionSnapshot) void {
             hookPanic("fill_fn");
         }
     }.stub;
-/// failure: loud — hookPanic naming the hook. position.initRuntime() installs it before any search runs.
+/// failure: loud — hookPanic naming the hook. Install it via position.initRuntime() before any search runs.
 pub var move_is_legal_fn: *const fn (pos: *const position_types.Position, raw_move: u16) bool =
     struct {
         fn stub(_: *const position_types.Position, _: u16) bool {

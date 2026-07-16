@@ -1,7 +1,7 @@
-// Pure UCI option-string parsing, split out of option.zig. Case-insensitive
+// Parse UCI option strings, split out of option.zig. Provide case-insensitive
 // name compare, the setoption/validate/tune parsers (allocating + wrapper
 // forms), and their combo/int/whitespace helpers plus the OOM-unwind gates.
-// Depends only on std -- no OptionsModel and no global state -- so the
+// Depend only on std -- no OptionsModel and no global state -- so the
 // model/facade side imports this leaf without a cycle.
 
 const std = @import("std");
@@ -80,7 +80,7 @@ fn parseSetOptionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedS
             continue;
         }
 
-        // UCI grammar: `setoption name <id…> value <val…>`. The first token ("setoption") was
+        // Follow the UCI grammar: `setoption name <id…> value <val…>`. The first token ("setoption") was
         // skipped above; skip the leading "name" keyword too, else it is captured as part of the
         // option id and every lookup fails with "No such option: name <id>".
         if (!in_value and name.items.len == 0 and std.mem.eql(u8, token, "name")) {
@@ -245,7 +245,7 @@ pub fn nameEquals(left: []const u8, right: []const u8) bool {
     return !caseInsensitiveLess(left, right) and !caseInsensitiveLess(right, left);
 }
 
-// The pure UCI parsers now take an injected allocator (was a hardcoded
+// Note the pure UCI parsers now take an injected allocator (was a hardcoded
 // std.heap.c_allocator), so their OOM paths are testable. Each builds ArrayList
 // scratch (freed via defer) then allocCStrings the result -- gate every allocation
 // failure and free the result with the same allocator.
@@ -286,9 +286,9 @@ test {
 }
 
 // ---- property fuzz--------------------------------------------------
-// The pure UCI parsers are the most fuzz-appropriate surface in the engine (a
+// Treat the pure UCI parsers as the most fuzz-appropriate surface in the engine (a
 // tokenizer bolted to a validator). Until coverage-guided `-ffuzz` is wired,
-// these PRNG property tests hammer them with random + adversarial input
+// hammer them with these PRNG property tests on random + adversarial input
 // and assert the only universal invariant: no crash / no UB, and results freed.
 
 const testing = std.testing;
@@ -336,9 +336,9 @@ test "fuzz: caseInsensitiveLess is a strict weak ordering" {
         for (b[0..lb]) |*x| x.* = rand.int(u8);
         const sa = a[0..la];
         const sb = b[0..lb];
-        // irreflexive: never a < a
+        // Assert irreflexivity: never a < a
         try testing.expect(!caseInsensitiveLess(sa, sa));
-        // asymmetric: not both a < b and b < a
+        // Assert asymmetry: not both a < b and b < a
         try testing.expect(!(caseInsensitiveLess(sa, sb) and caseInsensitiveLess(sb, sa)));
     }
 }

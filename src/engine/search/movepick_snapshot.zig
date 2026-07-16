@@ -1,5 +1,5 @@
-// Position analysis: the pure read-only board queries + static-exchange-evaluation,
-// used by BOTH movepick scoring and SEE. Reads the live *const Position directly, as
+// Analyze the position: the pure read-only board queries + static-exchange-evaluation,
+// used by BOTH movepick scoring and SEE. Read the live *const Position directly, as
 // upstream's Position::see_ge does. bitboard + position_types only.
 
 const std = @import("std");
@@ -45,7 +45,7 @@ pub fn pieceAt(pos: *const Position, square: u8) u8 {
 }
 
 pub fn attacksBy(pos: *const Position, color: u8, piece_type: u8) u64 {
-    // Pawns shift as a set: every pawn attacks the same two relative squares, so the
+    // Shift the pawns as a set: every pawn attacks the same two relative squares, so the
     // whole bitboard resolves in two shifts. Upstream's attacks_by<PAWN> does this
     // (pawn_attacks_bb over pieces(c, PAWN)); only the other types walk piece by piece.
     if (piece_type == pawn) {

@@ -1,8 +1,8 @@
-// Quiescence search + the PV/low-level primitives shared with the main search.
-// qsearchImpl is a call-graph leaf (only self-recurses, never calls
-// searchImpl); the shared primitives (isShuffling/pvClear/pvUpdate/
+// Run quiescence search + provide the PV/low-level primitives shared with the main search.
+// Keep qsearchImpl a call-graph leaf (only self-recurses, never calls
+// searchImpl); house the shared primitives (isShuffling/pvClear/pvUpdate/
 // qCorrectionValue/adjustKey50/ssAdd/ssSub/posCapture/ttMoveHistoryUpdate/
-// contVal) live here.
+// contVal) here.
 
 const std = @import("std");
 const worker_layout = @import("worker_layout");
@@ -45,8 +45,8 @@ const pseudoLegal = legality.pseudoLegal;
 const givesCheck = legality.givesCheck;
 const sq_none: u8 = 64;
 comptime {
-    // worker_layout.WorkerLayout uses opaque byte regions for these position-module
-    // sub-blocks; assert its sizes match the real structs so worker_off stays correct.
+    // Assert the opaque byte regions worker_layout.WorkerLayout uses for these
+    // position-module sub-blocks match the real struct sizes so worker_off stays correct.
     std.debug.assert(worker_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
     std.debug.assert(worker_layout.position_size == @sizeOf(Position));
     std.debug.assert(worker_layout.state_info_size == @sizeOf(StateInfo));
@@ -131,7 +131,7 @@ pub inline fn adjustKey50(pos: *const Position) u64 {
     return k ^ (seed *% 6364136223846793005 +% 1442695040888963407);
 }
 
-/// Mirrors upstream `template<NodeType> qsearch<PV>/<NonPV>`: the node type is comptime, and
+/// Mirror upstream `template<NodeType> qsearch<PV>/<NonPV>`: the node type is comptime, and
 /// there is no cut_node.
 pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta: c_int, comptime pv_node: bool) c_int {
     const w: *WorkerHistories = workerHistories(ctx.worker);
@@ -141,7 +141,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
     const ss_next: *SearchStack = @ptrFromInt(@intFromPtr(ss) + @sizeOf(SearchStack));
     var alpha = alpha_in;
 
-    // Upcoming-repetition draw.
+    // Detect the upcoming-repetition draw.
     if (alpha < q_value_draw and upcomingRepetition(pos_ptr, ss.ply)) {
         alpha = search.valueDraw(ctx.nodes.*);
         if (alpha >= beta) return alpha;
@@ -161,13 +161,13 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
         updateSelDepth(ctx, ss.ply);
     }
 
-    // Step 2. Immediate draw or max ply.
+    // Step 2. Return on immediate draw or max ply.
     if (isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
         if (ss.ply >= q_max_ply and !ss.in_check) return evaluateAcc(ctx, pos_ptr);
         return q_value_draw;
     }
 
-    // Step 3. Transposition-table lookup.
+    // Step 3. Look up the transposition table.
     const pos_key = adjustKey50(pos);
     const probe = tt.probeTable(ctx.table, ctx.cluster_count, pos_key, ctx.generation, q_depth_none);
     const tt_hit = probe.found != 0;
@@ -184,7 +184,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
         (tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0)
         return tt_value;
 
-    // Step 4. Static evaluation.
+    // Step 4. Compute the static evaluation.
     var unadjusted_static_eval: c_int = q_value_none;
     var best_value: c_int = undefined;
     var futility_base: c_int = -q_value_inf;
@@ -221,7 +221,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
     var cont_hist = [1]?*const worker_histories.PieceToHistory{ss1.continuation_history};
     const prev_sq: c_int = if (moveIsOk(ss1.current_move)) @intCast(moveTo(ss1.current_move)) else @as(c_int, sq_none);
 
-    // Step 5. MovePicker (captures, or evasions when in check).
+    // Step 5. Pick moves (captures, or evasions when in check).
     var mp_moves: [256]movepick.SortEntry = undefined;
     const has_checkers = pos.st.checkers_bb != 0;
     const tt_pseudo = tt_move != 0 and pseudoLegal(pos_ptr, tt_move);
@@ -258,7 +258,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
         const capture = captureStage(pos, move);
         move_count += 1;
 
-        // Step 6. Pruning.
+        // Step 6. Prune.
         if (!qIsLoss(best_value)) {
             if (!gc and @as(c_int, moveTo(move)) != prev_sq and !qIsLoss(futility_base) and
                 moveTypeOf(move) != q_mt_promotion)
@@ -284,7 +284,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
         const value = -qsearchImpl(ctx, pos_ptr, ss_next, -beta, -alpha, pv_node);
         undoMoveAcc(ctx, pos_ptr, move);
 
-        // Step 8. New best move.
+        // Step 8. Record a new best move.
         if (value > best_value) {
             best_value = value;
             if (value > alpha) {
@@ -295,7 +295,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
         }
     }
 
-    // Step 9. Mate / stalemate.
+    // Step 9. Detect mate / stalemate.
     if (move_count == 0) {
         if (ss.in_check) return qMatedIn(ss.ply);
         const us = pos.side_to_move;

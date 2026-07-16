@@ -1,15 +1,15 @@
-// SearchManager + UpdateContext.
+// Define SearchManager + UpdateContext.
 //
-//   * UpdateContext: a plain function pointer plus an opaque context pointer.
-//     The four UCI-output callbacks (no-moves / full / iteration / bestmove)
-//     are `*const fn (...) void` fields, bound to whatever owns
+//   * UpdateContext: hold a plain function pointer plus an opaque context pointer.
+//     Bind the four UCI-output callbacks (no-moves / full / iteration / bestmove),
+//     `*const fn (...) void` fields, to whatever owns
 //     the output sink (the UCIEngine).
 //
-//   * SearchManager: a single struct with an `is_main` flag. Non-main workers
-//     get a manager that simply does nothing on check_time; there is no vtable,
-//     just a branch. Dispatch is a direct Zig call, resolved at the call site.
+//   * SearchManager: define a single struct with an `is_main` flag. Give non-main
+//     workers a manager that does nothing on check_time; use no vtable,
+//     just a branch. Dispatch a direct Zig call, resolved at the call site.
 //
-// This module is built and unit-tested standalone.
+// Build and unit-test this module standalone.
 
 const std = @import("std");
 
@@ -38,8 +38,8 @@ pub const InfoIteration = struct {
     currmovenumber: usize,
 };
 
-// UpdateContext: four callbacks plus the opaque
-// sink they write through (the UCIEngine output side). Each callback is a
+// UpdateContext: hold four callbacks plus the opaque
+// sink they write through (the UCIEngine output side). Make each callback a
 // C-ABI function pointer so the same vtable-free dispatch works whether the sink
 // is implemented in Zig or handed across a C boundary.
 pub const UpdateContext = struct {
@@ -68,14 +68,14 @@ pub const UpdateContext = struct {
     }
 };
 
-// The main thread gets a manager with is_main = true and
-// a bound UpdateContext; non-main threads get one with is_main = false whose
-// check_time is a no-op. No vtable -- a single branch in check_time.
+// Give the main thread a manager with is_main = true and
+// a bound UpdateContext; give non-main threads one with is_main = false whose
+// check_time is a no-op. Use no vtable -- a single branch in check_time.
 pub const SearchManager = struct {
     is_main: bool,
     updates: *const UpdateContext,
 
-    // Main-thread search bookkeeping.
+    // Track the main-thread search bookkeeping.
     original_time_adjust: f64 = 0,
     calls_cnt: i32 = 0,
     ponder: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
@@ -94,7 +94,7 @@ pub const SearchManager = struct {
         return .{ .is_main = false, .updates = updates };
     }
 
-    // Non-main managers do nothing; main managers run the supplied CheckBody.
+    // Do nothing for non-main managers; run the supplied CheckBody for main managers.
     pub fn checkTime(self: *SearchManager, comptime CheckBody: type) void {
         if (!self.is_main) return;
         CheckBody.run(self);
@@ -186,7 +186,7 @@ test "non-main manager skips check_time (no vtable, just a branch)" {
 
     Body.ran = false;
     main_mgr.checkTime(Body);
-    try testing.expect(Body.ran); // main thread runs the time check
+    try testing.expect(Body.ran); // run the time check on the main thread
 }
 
 test "SearchManager carries the main-thread bookkeeping" {

@@ -1,7 +1,7 @@
-// The Zig-owned UCI option data model, split out of option.zig: the option
+// Own the UCI option data model in Zig, split out of option.zig: the option
 // kind/entry/outcome types, the OptionsModel store (add/setValue/getInt/render),
 // the name->callback-kind mapping, and the standard-option reference fixture.
-// Pure over std + the option_parse leaf (parseSignedInt / nameEquals); no global
+// Keep pure over std + the option_parse leaf (parseSignedInt / nameEquals); hold no global
 // state and no dependency on the facade, so option.zig imports it acyclically.
 
 const std = @import("std");
@@ -123,7 +123,7 @@ pub const OptionsModel = struct {
         return 0;
     }
 
-    // Index-keyed reads, for callers that carry a registration index rather than
+    // Serve index-keyed reads, for callers that carry a registration index rather than
     // a name.
     pub fn hasIndex(self: *const OptionsModel, idx: usize) bool {
         return idx < self.entries.items.len;
@@ -144,7 +144,7 @@ pub const OptionsModel = struct {
     }
 
     // Normalize a candidate value for an option.
-    // Returns an allocator-owned normalized string, or null if rejected.
+    // Return an allocator-owned normalized string, or null if rejected.
     fn normalize(self: *OptionsModel, entry: OptionEntry, value: []const u8) !?[]u8 {
         const is_button = entry.kind == .button;
         const is_string = entry.kind == .string;
@@ -215,7 +215,7 @@ pub const OptionsModel = struct {
     }
 };
 
-// Change-callback kinds, matching engine.zig's option_callback_* values.
+// Define the change-callback kinds, matching engine.zig's option_callback_* values.
 pub const callback_none: u8 = 0;
 pub const callback_debug_log_file: u8 = 1;
 pub const callback_numa_policy: u8 = 2;
@@ -225,7 +225,7 @@ pub const callback_clear_hash: u8 = 5;
 pub const callback_syzygy_path: u8 = 6;
 pub const callback_eval_file: u8 = 7;
 
-// The on-change callback kind for an option, keyed by its (canonical) name — the same
+// Map the on-change callback kind for an option, keyed by its (canonical) name — the same
 // mapping registerStandardOptions uses. The runtime registration path (addOption) does not
 // carry the kind, so derive it here;
 // otherwise every option registers with callback_none and setoption never fires the engine
@@ -251,8 +251,8 @@ pub const StandardOptionParams = struct {
 
 // Register the standard UCI option set into a fresh model, in the same order
 // and with the same defaults, bounds, and callback kinds as engine.zig initBody.
-// The machine-dependent Threads/Hash maxima and the eval-file name are supplied
-// by the caller, so this set stays in lockstep with engine.zig initBody.
+// Take the machine-dependent Threads/Hash maxima and the eval-file name from
+// the caller, so this set stays in lockstep with engine.zig initBody.
 pub fn registerStandardOptions(model: *OptionsModel, params: StandardOptionParams) !void {
     var elo_buf: [16]u8 = undefined;
     const elo_default = std.fmt.bufPrint(&elo_buf, "{d}", .{params.skill_lowest_elo}) catch unreachable;
@@ -288,7 +288,7 @@ test "options model stores defaults and reads typed values" {
     try std.testing.expectEqual(@as(c_int, 1), model.getInt("Threads"));
     try std.testing.expectEqual(@as(c_int, 0), model.getInt("Ponder"));
     try std.testing.expectEqualStrings("nn-x.nnue", model.getString("EvalFile"));
-    // Name lookup is case-insensitive.
+    // Look up the name case-insensitively.
     try std.testing.expectEqual(@as(c_int, 1), model.getInt("threads"));
 }
 
@@ -303,19 +303,19 @@ test "options model validates and applies setValue" {
     try std.testing.expectEqual(@as(u8, 3), ok.callback_kind);
     try std.testing.expectEqual(@as(c_int, 8), model.getInt("Threads"));
 
-    // Out-of-range spin is rejected and leaves the value untouched.
+    // Reject an out-of-range spin and leave the value untouched.
     const low = try model.setValue("Threads", "0");
     try std.testing.expect(low.found and !low.accepted);
     try std.testing.expectEqual(@as(c_int, 8), model.getInt("Threads"));
 
-    // Non-boolean check is rejected.
+    // Reject a non-boolean check.
     const bad = try model.setValue("Ponder", "maybe");
     try std.testing.expect(bad.found and !bad.accepted);
     const good = try model.setValue("Ponder", "true");
     try std.testing.expect(good.accepted and good.changed);
     try std.testing.expectEqual(@as(c_int, 1), model.getInt("Ponder"));
 
-    // Unknown option.
+    // Reject an unknown option.
     const missing = try model.setValue("Nope", "1");
     try std.testing.expect(!missing.found);
 }
@@ -342,13 +342,13 @@ test "standard option set matches engine init" {
     try std.testing.expectEqualStrings("nn-0ee0657fb25e.nnue", model.getString("EvalFile"));
     try std.testing.expectEqualStrings("auto", model.getString("NumaPolicy"));
 
-    // Callback wiring survives registration.
+    // Verify the callback wiring survives registration.
     const threads_change = try model.setValue("Threads", "4");
     try std.testing.expectEqual(callback_threads, threads_change.callback_kind);
     const hash_change = try model.setValue("Hash", "256");
     try std.testing.expectEqual(callback_hash, hash_change.callback_kind);
 
-    // The listing leads with Debug Log File and ends with EvalFile.
+    // Check the listing leads with Debug Log File and ends with EvalFile.
     const listing = try model.renderAlloc();
     defer std.testing.allocator.free(listing);
     try std.testing.expect(std.mem.startsWith(u8, listing, "\noption name Debug Log File type string default <empty>"));
@@ -394,7 +394,7 @@ test "options model renders the UCI listing in order" {
 }
 
 test "OptionsModel add/setValue/renderAlloc unwind leak-free on every allocation failure" {
-    // OptionsModel.add dups three strings then appends to the entries vector --
+    // Note OptionsModel.add dups three strings then appends to the entries vector --
     // the same create-then-append shape that leaked in state_list. checkAllAllocation
     // Failures fails each allocation in turn (the three dups, the vector growth,
     // setValue's re-dup, renderAlloc's buffer + per-entry allocPrints) and asserts every

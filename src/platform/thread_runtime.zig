@@ -1,19 +1,19 @@
-// Zig-owned thread job runner.
+// Run Zig-owned thread jobs.
 //
-// The idle_loop / run_custom_job / wait_for_search_finished handshake for worker
-// threads. Self-contained (std only): it owns a std.Thread and executes opaque
-// jobs (a callback plus context pointer).
+// Provide the idle_loop / run_custom_job / wait_for_search_finished handshake for
+// worker threads. Stay self-contained (std only): own a std.Thread and execute
+// opaque jobs (a callback plus context pointer).
 //
-// Zig 0.16 removed std.Thread.Mutex / Condition / Futex, so the blocking
-// primitives are built directly on a wait/wake-on-address seam: a canonical
-// three-state (Drepper) mutex and a sequence-counter condition variable. Both
-// are exercised by the tests at the bottom, which spawn the thread and
-// round-trip jobs, so the concurrency handshake is verified here.
+// Build the blocking primitives directly on a wait/wake-on-address seam, since Zig
+// 0.16 removed std.Thread.Mutex / Condition / Futex: a canonical three-state
+// (Drepper) mutex and a sequence-counter condition variable. Exercise both in the
+// tests at the bottom, which spawn the thread and round-trip jobs, so the
+// concurrency handshake is verified here.
 //
-// The seam (futexWait/futexWakeOne/futexWakeAll) is the ONLY OS-specific code
-// here; the Mutex/Condition logic on top is platform-independent. It is
-// implemented per owned OS: Linux futex(2), Windows RtlWaitOnAddress/RtlWakeAddress
-// (ntdll), macOS __ulock_wait/__ulock_wake. Spurious wakeups are harmless -- every
+// Keep the seam (futexWait/futexWakeOne/futexWakeAll) as the ONLY OS-specific code
+// here; the Mutex/Condition logic on top stays platform-independent. Implement it
+// per owned OS: Linux futex(2), Windows RtlWaitOnAddress/RtlWakeAddress (ntdll),
+// macOS __ulock_wait/__ulock_wake. Treat spurious wakeups as harmless -- every
 // caller re-checks a predicate.
 
 const std = @import("std");
@@ -21,26 +21,26 @@ const builtin = @import("builtin");
 
 const Atomic = std.atomic.Value(u32);
 
-// Block while *ptr == expect. Returns on wake, on a value mismatch, or spuriously.
+// Block while *ptr == expect. Return on wake, on a value mismatch, or spuriously.
 fn futexWait(ptr: *const Atomic, expect: u32) void {
     switch (builtin.os.tag) {
         .linux => {
-            // FUTEX_WAIT reads the 4th (timeout) syscall argument, so it MUST be
-            // passed explicitly as NULL (wait indefinitely). futex_3arg leaves the
-            // timeout register undefined -> the kernel dereferences garbage -> EFAULT,
-            // so the wait returns immediately and the predicate loop busy-spins (and
-            // valgrind flags "futex(timeout) points to unaddressable byte(s)").
+            // Pass FUTEX_WAIT's 4th (timeout) syscall argument explicitly as NULL (wait
+            // indefinitely) -- FUTEX_WAIT reads it, so it MUST be present. futex_3arg
+            // leaves the timeout register undefined -> the kernel dereferences garbage ->
+            // EFAULT, so the wait returns immediately and the predicate loop busy-spins
+            // (and valgrind flags "futex(timeout) points to unaddressable byte(s)").
             _ = std.os.linux.futex_4arg(&ptr.raw, .{ .cmd = .WAIT, .private = true }, expect, null);
         },
         .windows => {
-            // Timeout = null -> wait indefinitely. STATUS_SUCCESS on wake or if the
-            // value already differs from CompareAddress.
+            // Pass Timeout = null to wait indefinitely. Return STATUS_SUCCESS on wake or
+            // if the value already differs from CompareAddress.
             var compare: u32 = expect;
             _ = std.os.windows.ntdll.RtlWaitOnAddress(&ptr.raw, &compare, @sizeOf(u32), null);
         },
         .macos, .ios, .tvos, .watchos, .visionos => {
-            // UL_COMPARE_AND_WAIT: block while the u32 at addr == val. timeout 0 =
-            // forever. NO_ERRNO returns -errno instead of setting errno; ignored.
+            // UL_COMPARE_AND_WAIT: block while the u32 at addr == val. Treat timeout 0 as
+            // forever. NO_ERRNO returns -errno instead of setting errno; ignore it.
             _ = std.c.__ulock_wait(.{ .op = .COMPARE_AND_WAIT, .NO_ERRNO = true }, &ptr.raw, expect, 0);
         },
         else => @compileError("thread_runtime: unsupported OS (owned: linux, windows, macos)"),
@@ -69,12 +69,12 @@ fn futexWakeAll(ptr: *const Atomic) void {
     }
 }
 
-// Three-state futex mutex (0 = unlocked, 1 = locked, 2 = locked with waiters).
+// Implement a three-state futex mutex (0 = unlocked, 1 = locked, 2 = locked with waiters).
 pub const Mutex = struct {
     state: Atomic = Atomic.init(0),
 
     pub fn lock(m: *Mutex) void {
-        // Fast path: uncontended acquire.
+        // Take the fast path: uncontended acquire.
         if (m.state.cmpxchgStrong(0, 1, .acquire, .monotonic) == null)
             return;
 
@@ -87,7 +87,7 @@ pub const Mutex = struct {
     }
 
     pub fn unlock(m: *Mutex) void {
-        // If there were waiters (state was 2), wake exactly one.
+        // Wake exactly one waiter if there were any (state was 2).
         if (m.state.fetchSub(1, .release) != 1) {
             m.state.store(0, .release);
             futexWakeOne(&m.state);
@@ -95,8 +95,8 @@ pub const Mutex = struct {
     }
 };
 
-// Sequence-counter condition variable. Callers use predicate loops, so spurious
-// wakeups are harmless.
+// Implement a sequence-counter condition variable. Callers use predicate loops, so
+// spurious wakeups are harmless.
 pub const Condition = struct {
     seq: Atomic = Atomic.init(0),
 
@@ -126,7 +126,7 @@ pub const ThreadRuntime = struct {
     cond: Condition = .{},
     job_fn: ?ThreadJobFn = null,
     job_ctx: ?*anyopaque = null,
-    // 'searching' starts true and idle_loop drives it to false once the thread
+    // Start 'searching' true; idle_loop drives it to false once the thread
     // parks.
     searching: bool = true,
     exit: bool = false,
@@ -141,7 +141,7 @@ pub const ThreadRuntime = struct {
             self.mutex.lock();
             self.searching = false;
             self.cond.broadcast(); // wake anyone waiting for search-finished
-            // The predicate must include `exit`: deinit may set exit+searching and
+            // Include `exit` in the predicate: deinit may set exit+searching and
             // broadcast while this loop is between iterations (just past a job). If
             // we then re-enter here, set searching=false, and waited on `searching`
             // alone, we would re-park and never observe the exit -- nothing sets
@@ -190,10 +190,10 @@ pub const ThreadRuntime = struct {
     }
 };
 
-// A pool of Zig-owned worker threads. Provides the job-dispatch surface
+// Pool Zig-owned worker threads. Provide the job-dispatch surface
 // (run_on_thread / wait_on_thread / per-thread start + wait), plus the shared
-// `stop` flag the search polls. Thread 0 is the main thread. The pool owns the
-// ThreadRuntime array; the per-thread search payload is attached by the caller
+// `stop` flag the search polls. Treat thread 0 as the main thread. Own the
+// ThreadRuntime array; the caller attaches the per-thread search payload
 // through the job context.
 pub const ThreadPool = struct {
     threads: []ThreadRuntime = &.{},
@@ -302,7 +302,7 @@ test "thread runtime round-trips jobs in order" {
 test "thread runtime exits cleanly when idle" {
     var runtime = ThreadRuntime{};
     try runtime.start();
-    // No jobs submitted; deinit must wake the parked thread and join it.
+    // Submit no jobs; deinit must wake the parked thread and join it.
     runtime.deinit();
     try std.testing.expect(runtime.handle == null);
 }

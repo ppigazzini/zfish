@@ -1,6 +1,6 @@
-// Move legality and Static Exchange Evaluation queries.
+// Query move legality and Static Exchange Evaluation.
 //
-// The read-only "is this move legal / winning" side of the board, carved out of
+// Provide the read-only "is this move legal / winning" side of the board, carved out of
 // position.zig: attackersTo, legal, seeGe, pseudoLegal, givesCheck,
 // attackersToExist. All take a typed *const Position and only read it -- including
 // legal, now that the move_is_legal_fn snapshot hook is itself typed. This
@@ -18,7 +18,7 @@ const position_types = @import("position_types");
 const Position = position_types.Position;
 const StateInfo = position_types.StateInfo;
 
-// board_core primitives, aliased so the moved bodies stay verbatim.
+// Alias the board_core primitives so the moved bodies stay verbatim.
 const pawn_pt = board_core.pawn_pt;
 const knight_pt = board_core.knight_pt;
 const bishop_pt = board_core.bishop_pt;
@@ -162,7 +162,7 @@ pub fn seeGe(pos_ptr: *const Position, m: u16, threshold: c_int) bool {
             attackers |= (bitboard.attacks(bishop_pt, to, occupied) & bishops_queens) |
                 (bitboard.attacks(rook_pt, to, occupied) & rooks_queens);
         } else {
-            // King capture: if the opponent still has attackers, reverse the result.
+            // Reverse the result on a king capture if the opponent still has attackers.
             return if ((attackers & ~pos.by_color_bb[stm]) != 0) (res ^ 1) != 0 else res != 0;
         }
     }
@@ -179,7 +179,7 @@ pub fn pseudoLegal(pos_ptr: *const Position, m: u16) bool {
     const pc = pos.board[from];
     const all = pos.by_type_bb[0];
 
-    // Slower but simpler path for non-NORMAL moves: membership in the generator.
+    // Use the slower but simpler path for non-NORMAL moves: membership in the generator.
     if (moveTypeOf(m) != mt_normal) {
         var buf: [256]u16 = undefined;
         const n = if (pos.st.checkers_bb != 0)
@@ -234,10 +234,10 @@ pub fn givesCheck(pos_ptr: *const Position, m: u16) bool {
     const all = pos.by_type_bb[0];
     const their_king_bb = pos.by_color_bb[them] & pos.by_type_bb[king_pt];
 
-    // Direct check.
+    // Detect a direct check.
     if ((pos.st.check_squares[pieceTypeOn(pos, from)] & sqBb(to)) != 0) return true;
 
-    // Discovered check.
+    // Detect a discovered check.
     if ((pos.st.blockers_for_king[them] & sqBb(from)) != 0) {
         return (bitboard.line(from, to) & their_king_bb) == 0 or mt == mt_castling;
     }
@@ -277,8 +277,8 @@ pub fn attackersToExist(pos_ptr: *const Position, s: u8, occupied: u64, c: u8) b
 }
 
 comptime {
-    // StateInfo is reached through Position.st in these readers; keep the import
-    // live so a layout change to it is seen here too.
+    // Keep the import live, since StateInfo is reached through Position.st in these
+    // readers, so a layout change to it is seen here too.
     std.debug.assert(@sizeOf(StateInfo) == 192);
 }
 

@@ -1,6 +1,6 @@
-// Position derived-state setup.
+// Set up the Position derived state.
 //
-// The functions that (re)derive a Position's cached StateInfo from its board:
+// Provide the functions that (re)derive a Position's cached StateInfo from its board:
 // setState (full key/material/checkers rebuild), setCheckInfo (blockers + check
 // squares), updateSliderBlockers, setCastlingRight, and the material-key helper.
 // They mutate the StateInfo the position points at but only *read* the board, and
@@ -172,7 +172,7 @@ fn isMaterialPiece(piece: u8) bool {
 }
 
 comptime {
-    // StateInfo is the thing these writers fill; keep the import live so a layout
+    // Keep the import live, since StateInfo is the thing these writers fill, so a layout
     // change is seen here too.
     std.debug.assert(@sizeOf(StateInfo) == 192);
 }

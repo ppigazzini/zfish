@@ -1,4 +1,4 @@
-// Node-level accumulator / do-move / eval helpers. The small QCtx-carrying
+// Provide node-level accumulator / do-move / eval helpers. The small QCtx-carrying
 // primitives the qsearch/search recursion calls per node: the seldepth/LMR-reduction
 // reads, the NNUE evaluate, the accumulator-slot do_move/undo_move, the verify
 // make/unmake, and the legal-move membership test. None call back into the
@@ -31,23 +31,23 @@ const doMove = move_do.doMove;
 const undoMove = move_do.undoMove;
 const givesCheck = legality.givesCheck;
 
-// q_value_mate(32000) - q_max_ply(246) - 1 - q_max_ply(246); the TB win-in-max-ply
-// eval clamp bound (VALUE_TB_WIN_IN_MAX_PLY).
+// Bound the TB win-in-max-ply eval clamp (VALUE_TB_WIN_IN_MAX_PLY):
+// q_value_mate(32000) - q_max_ply(246) - 1 - q_max_ply(246).
 const q_value_tb_win: c_int = 31507;
 
 pub inline fn updateSelDepth(ctx: *const QCtx, ply: c_int) void {
     if (ctx.sel_depth.* < ply + 1) ctx.sel_depth.* = ply + 1;
 }
 
-// The LMR reduction step: the LMR base reduction from the per-thread reductions
-// table, the root delta, and the improving flag. Uses truncating integer division.
+// Compute the LMR reduction step: the LMR base reduction from the per-thread reductions
+// table, the root delta, and the improving flag. Use truncating integer division.
 pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta: c_int) c_int {
     const reduction_scale = ctx.reductions[@intCast(d)] * ctx.reductions[@intCast(mn)];
     return reduction_scale - @divTrunc(delta * 617, ctx.root_delta.*) +
         @divTrunc(@as(c_int, @intFromBool(!i)) * reduction_scale * 194, 512) + 1027;
 }
 
-// The evaluate step: run the NNUE forward pass on the current position,
+// Run the evaluate step: the NNUE forward pass on the current position,
 // then apply the eval scaling. Material is 534 * pawn count (both colours) +
 // non-pawn material, optimism is indexed by the side to move, and the TB clamp
 // bounds are +/-VALUE_TB_WIN_IN_MAX_PLY.
@@ -67,7 +67,7 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) c_int {
     });
 }
 
-// The do-move step: count the node, push a fresh accumulator slot, make the
+// Run the do-move step: count the node, push a fresh accumulator slot, make the
 // move (the make-move records the dirty piece/threats into that slot), then set
 // the Stack's current move and continuation-history pointer. capture_stage is read
 // pre-move, dirtyPiece.pc post-move.
@@ -83,13 +83,13 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     setContHist(ctx.worker, ss_ptr, @intFromBool(ss.in_check), @intFromBool(capture), dp.pc, moveTo(move));
 }
 
-// The undo-move step: unmake the move, then drop the accumulator slot.
+// Run the undo-move step: unmake the move, then drop the accumulator slot.
 pub inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16) void {
     undoMove(pos_ptr, move);
     nnue_acc.stackPop(ctx.acc_stack);
 }
 
-// Position-level verification make/unmake used by the qsearch TT-move cutoff.
+// Verify with a position-level make/unmake used by the qsearch TT-move cutoff.
 // gives_check is computed here, a fresh DirtyThreats list and a throwaway
 // DirtyPiece are passed as scratch (no accumulator slot is pushed, so the dirty
 // state doMove writes is never consumed). undo is the plain Position-level unmake.
@@ -104,7 +104,7 @@ pub inline fn verifyUndoMove(pos_ptr: *Position, move: u16) void {
     undoMove(pos_ptr, move);
 }
 
-// Is `move` in the legal move list of the current position?
+// Test whether `move` is in the legal move list of the current position.
 pub fn legalContains(pos_ptr: *const Position, move: u16) bool {
     var buf: [256]u16 = undefined;
     const n = movegen.generateLegal(pos_ptr, &buf);

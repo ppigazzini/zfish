@@ -1,4 +1,4 @@
-// Holder for the engine's `network` member, modeling
+// Hold the engine's `network` member, modeling
 // LazyNumaReplicated<Network> (src/numa.h). The upstream holder is a NumaReplicatedBase
 // (a polymorphic base: vtable + NumaReplicationContext* context) followed by
 //   an `instances` vector of owning pointers to Network (one replica per NUMA node)
@@ -7,7 +7,7 @@
 // lazily replicated off the search path). On the single-node target there is exactly
 // one replica.
 //
-// This module provides (a) NetworkHolder — the structural replacement
+// Provide (a) NetworkHolder — the structural replacement
 // (the per-NUMA replica pointers; the Network instances + the 106 MB .nnue parse
 // are owned elsewhere), and (b) a replica-count reader that reads a
 // LazyNumaReplicated holder's replica count through the documented member offset
@@ -15,7 +15,7 @@
 
 const std = @import("std");
 
-// LazyNumaReplicatedSystemWide<Network> member offsets (System V x86-64, libstdc++).
+// Map the LazyNumaReplicatedSystemWide<Network> member offsets (System V x86-64, libstdc++).
 // The engine's `network` is the SystemWide variant (declared in src/engine.h);
 // its polymorphic base (NumaReplicatedBase) puts the vtable at 0 and context at 8, and
 // the `instances` vector follows at 16 as libstdc++'s {begin, end, cap_end} pointers.
@@ -42,7 +42,7 @@ pub fn verifyReplicaCount(lazy_ptr: *const anyopaque, elem_size: usize, expected
     return replicaCountOf(lazy_ptr, elem_size) == expected_nodes;
 }
 
-/// The per-NUMA replica pointers. Index
+/// Hold the per-NUMA replica pointers. Index
 /// 0 is always present; higher indices are null until lazily replicated. The Network
 /// objects themselves are owned/built elsewhere.
 pub const NetworkHolder = struct {
@@ -51,11 +51,11 @@ pub const NetworkHolder = struct {
     pub fn replicaCount(self: NetworkHolder) usize {
         return self.instances.len;
     }
-    /// The replica for a NUMA index (null if not yet built).
+    /// Return the replica for a NUMA index (null if not yet built).
     pub fn at(self: NetworkHolder, idx: usize) ?*anyopaque {
         return self.instances[idx];
     }
-    /// Node 0's replica — always present.
+    /// Return node 0's replica — always present.
     pub fn primary(self: NetworkHolder) ?*anyopaque {
         return self.instances[0];
     }
@@ -83,7 +83,7 @@ test "replicaCountOf reads instances.size() from the holder layout for a given s
     try testing.expect(verifyReplicaCount(@ptrCast(&obj), stride, 3));
     try testing.expect(!verifyReplicaCount(@ptrCast(&obj), stride, 1));
 
-    // Single-node case (the gate target): one element → size 1.
+    // Cover the single-node case (the gate target): one element → size 1.
     obj[3] = begin + 1 * stride;
     try testing.expectEqual(@as(usize, 1), replicaCountOf(@ptrCast(&obj), stride));
 }

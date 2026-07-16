@@ -1,6 +1,6 @@
-// .nnue parse primitives.
+// Provide the .nnue parse primitives.
 //
-// Parses the .nnue file into its (already-permuted) weight memory. These are the
+// Parse the .nnue file into its (already-permuted) weight memory. These are the
 // building blocks of that parse, matching src/nnue exactly:
 //
 //   * decodeLebI16 / decodeLebI32 -- signed LEB128 with the same sign-extension
@@ -15,11 +15,11 @@
 
 const std = @import("std");
 
-// SSE4.1 PackusEpi16Order: identity. Kept explicit so the assumption is visible
-// and a future wide-SIMD target can swap it.
+// Define the SSE4.1 PackusEpi16Order as identity. Keep it explicit so the assumption
+// is visible and a future wide-SIMD target can swap it.
 pub const packus_epi16_order_sse41 = [8]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
 
-// Signed LEB128 decode of `count` values from `src` into `out`, returning the
+// Decode `count` signed-LEB128 values from `src` into `out`, returning the
 // number of source bytes consumed. Mirrors read_leb_128_detail: 7 bits per byte,
 // shift masked to 32, sign-extend when the final shift < 32 and bit 0x40 is set.
 pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count: usize) usize {
@@ -49,8 +49,8 @@ pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count:
     return pos;
 }
 
-// permute<BlockSize>: reorder `order.len` blocks of `block_size` bytes within
-// each (block_size * order.len)-byte chunk of `data`.
+// Reorder blocks per permute<BlockSize>: `order.len` blocks of `block_size` bytes
+// within each (block_size * order.len)-byte chunk of `data`.
 pub fn permuteBlocks(data: []u8, block_size: usize, order: []const usize, scratch: []u8) void {
     const chunk = block_size * order.len;
     std.debug.assert(data.len % chunk == 0);
@@ -67,7 +67,7 @@ pub fn permuteBlocks(data: []u8, block_size: usize, order: []const usize, scratc
     }
 }
 
-// get_weight_index_scrambled(i): the SSSE3 affine weight index permutation.
+// Compute get_weight_index_scrambled(i): the SSSE3 affine weight index permutation.
 pub fn weightIndexScrambled(i: usize, padded_input: usize, output_dims: usize) usize {
     return (i / 4) % (padded_input / 4) * output_dims * 4 + i / padded_input * 4 + i % 4;
 }
@@ -86,14 +86,14 @@ fn roundUp(x: usize, a: usize) usize {
     return (x + a - 1) / a * a;
 }
 
-// Element counts of the five feature-transformer arrays.
+// Count the elements of the five feature-transformer arrays.
 pub const biases_count = half_dimensions; // i16
 pub const psq_weights_count = half_dimensions * psq_feature_dimensions; // i16
 pub const threat_weights_count = half_dimensions * threat_dimensions; // i8
 pub const psqt_weights_count = psq_feature_dimensions * psqt_buckets; // i32
 pub const threat_psqt_weights_count = threat_dimensions * psqt_buckets; // i32
 
-// In-memory byte offsets (member order, each alignas(64)): biases, weights(psq),
+// Lay out the in-memory byte offsets (member order, each alignas(64)): biases, weights(psq),
 // threatWeights, psqtWeights, threatPsqtWeights.
 pub const biases_off = 0;
 pub const weights_off = roundUp(biases_count * 2, cache_line);
@@ -119,7 +119,7 @@ fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
     return leb_magic.len + 4 + count;
 }
 
-// Two arrays packed in one LEB section (read_leb_128(a, b)).
+// Read two arrays packed in one LEB section (read_leb_128(a, b)).
 fn readLebSection2(comptime T: type, blob: []const u8, out1: []T, out2: []T) ?usize {
     if (blob.len < leb_magic.len + 4) return null;
     if (!std.mem.eql(u8, blob[0..leb_magic.len], leb_magic)) return null;
@@ -134,29 +134,29 @@ fn readLebSection2(comptime T: type, blob: []const u8, out1: []T, out2: []T) ?us
 
 // Parse the feature-transformer blob into `dst` (the FeatureTransformer memory
 // layout). No permute -- PackusEpi16Order is the identity on the SSE4.1 target.
-// Returns the number of blob bytes consumed, or null on malformed input.
+// Return the number of blob bytes consumed, or null on malformed input.
 pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
-    // Leading u32 component hash (Detail::read_parameters); skip.
+    // Skip the leading u32 component hash (Detail::read_parameters).
     var pos: usize = 4;
-    // Read order (upstream 7c7fe322e merge): biases, threatWeights, threatPsqtWeights, weights,
+    // Follow the read order (upstream 7c7fe322e merge): biases, threatWeights, threatPsqtWeights, weights,
     // psqtWeights -- each i32 PSQT array is now its OWN leb section (base packed both into one,
     // after weights). Storage offsets are unchanged; only the stream order/framing moved.
-    // 1. biases (LEB i16)
+    // 1. Read biases (LEB i16)
     pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, biases_off, biases_count)) orelse return null;
-    // 2. threatWeights (raw little-endian i8)
+    // 2. Copy threatWeights (raw little-endian i8)
     if (blob.len < pos + threat_weights_count) return null;
     @memcpy(dst[threat_weights_off .. threat_weights_off + threat_weights_count], blob[pos .. pos + threat_weights_count]);
     pos += threat_weights_count;
-    // 3. threatPsqtWeights (LEB i32, own section)
+    // 3. Read threatPsqtWeights (LEB i32, own section)
     pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, threat_psqt_weights_off, threat_psqt_weights_count)) orelse return null;
-    // 4. weights / psq weights (LEB i16)
+    // 4. Read weights / psq weights (LEB i16)
     pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, weights_off, psq_weights_count)) orelse return null;
-    // 5. psqtWeights (LEB i32, own section)
+    // 5. Read psqtWeights (LEB i32, own section)
     pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, psqt_weights_off, psqt_weights_count)) orelse return null;
     return pos;
 }
 
-// The five written weight regions (offset, byte length), used to compare a parse
+// List the five written weight regions (offset, byte length), used to compare a parse
 // against a reference while skipping the alignment padding between them.
 const FtRegion = struct { off: usize, len: usize };
 pub const ft_regions = [_]FtRegion{
@@ -190,7 +190,7 @@ pub fn parseLayer(blob: []const u8, biases_dst: []u8, weights_dst: []u8) ?usize 
     const output_dims = biases_dst.len / @sizeOf(i32);
     if (output_dims == 0) return null;
     if (blob.len < biases_dst.len + weights_dst.len) return null;
-    // biases: int32 little-endian == native bytes on x86.
+    // Copy the biases: int32 little-endian == native bytes on x86.
     @memcpy(biases_dst, blob[0..biases_dst.len]);
     var pos = biases_dst.len;
     const n = weights_dst.len; // int8 weights
@@ -247,7 +247,7 @@ fn encodeLebSection(
     std.mem.writeInt(u32, out.items[count_pos..][0..4], count, .little);
 }
 
-// FeatureTransformer::write_parameters preceded by Detail::write_parameters'
+// Serialize FeatureTransformer::write_parameters preceded by Detail::write_parameters'
 // u32 hash. PackusEpi16Order is the identity, so unpermute is a no-op. Member
 // write order MUST mirror parseFeatureTransformer (the file / upstream layout):
 // biases (LEB i16), threatWeights (raw i8), threatPsqtWeights (LEB i32),
@@ -273,7 +273,7 @@ pub fn serializeFeatureTransformer(
     try encodeLebSection(i32, constSlice(i32, ft, psqt_weights_off, psqt_weights_count), &.{}, out, a);
 }
 
-// AffineTransform::write_parameters: biases (int32 LE) then weights in the file's
+// Serialize AffineTransform::write_parameters: biases (int32 LE) then weights in the file's
 // linear order, recovered from the scrambled storage via get_weight_index.
 fn serializeLayerOne(biases: []const u8, weights: []const u8, out: *Bytes, a: std.mem.Allocator) !void {
     try out.appendSlice(a, biases);
@@ -286,7 +286,7 @@ fn serializeLayerOne(biases: []const u8, weights: []const u8, out: *Bytes, a: st
     }
 }
 
-// NetworkArchitecture::write_parameters preceded by Detail's u32 hash. The
+// Serialize NetworkArchitecture::write_parameters preceded by Detail's u32 hash. The
 // activations carry no parameters, so only fc_0/fc_1/fc_2 are written.
 pub fn serializeLayer(
     hash_value: u32,
@@ -308,7 +308,7 @@ pub fn serializeLayer(
 
 const testing = std.testing;
 
-// Reference signed-LEB128 encoder (standard) to round-trip against the decoder.
+// Encode a reference signed-LEB128 value (standard) to round-trip against the decoder.
 fn encodeOne(comptime IntType: type, v: IntType, buf: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     var value: i64 = v;
     while (true) {
@@ -355,7 +355,7 @@ test "permuteBlocks identity leaves data unchanged" {
 }
 
 test "permuteBlocks reorders blocks per a non-trivial order" {
-    // 4 blocks of 2 bytes; order swaps pairs.
+    // Use 4 blocks of 2 bytes; order swaps pairs.
     var data = [_]u8{ 10, 11, 20, 21, 30, 31, 40, 41 };
     const order = [_]usize{ 2, 3, 0, 1 };
     var scratch: [8]u8 = undefined;
@@ -364,7 +364,7 @@ test "permuteBlocks reorders blocks per a non-trivial order" {
 }
 
 test "weightIndexScrambled matches the upstream weight-scramble formula" {
-    // fc_0-like: PaddedInputDimensions=1024, OutputDimensions=32.
+    // Model fc_0-like: PaddedInputDimensions=1024, OutputDimensions=32.
     try testing.expectEqual(@as(usize, 0), weightIndexScrambled(0, 1024, 32));
     try testing.expectEqual(@as(usize, 1), weightIndexScrambled(1, 1024, 32));
     // i=4 -> (1)%256*128 + 0 + 0 = 128

@@ -1,10 +1,10 @@
-// Search UCI reporting: the "info"/"bestmove" emission and MultiPV walk.
+// Report search progress over UCI: the "info"/"bestmove" emission and MultiPV walk.
 //
-// The output half of the search driver -- everything that formats and prints a
+// Form the output half of the search driver -- everything that formats and prints a
 // UCI line during search: the per-PV info line (searchEmitInfoFull), the MultiPV
 // loop (searchPv + its PvContext), the mate/stalemate line, the bestmove/ponder
-// line, and the "currmove" iteration line. Reads the Worker graph + options and
-// routes text through uci_output; it has NO dependency on the search algorithm
+// line, and the "currmove" iteration line. Read the Worker graph + options and
+// route text through uci_output; it has NO dependency on the search algorithm
 // (searchImpl / qsearch / QCtx). Byte-exactly covered by
 // the output-golden / driver-golden / search-parity gates.
 
@@ -25,25 +25,25 @@ const isChess960 = position_query.isChess960;
 const hasCheckers = position_query.hasCheckers;
 const wdlMaterial = position_query.wdlMaterial;
 
-// Trivial accessors; both are one-line reads of the Worker graph.
+// Provide trivial accessors; both are one-line reads of the Worker graph.
 fn optInt(name: []const u8) c_int {
     return option_port.intByName(name);
 }
 fn workerRootMove0(wl: *const worker_layout.WorkerLayout) *worker_layout.RootMove {
-    // root_moves[0] is the first element's
-    // address. Return the typed first RootMove via the graph adapter so callers read
-    // fields directly instead of each re-doing RootMove.fromAddr.
+    // Return the typed first RootMove via the graph adapter so callers read fields
+    // directly instead of each re-doing RootMove.fromAddr; root_moves[0] is the
+    // first element's address.
     return @ptrCast(wl.root_moves.ptr);
 }
 fn workerRootMoveAt(wl: *const worker_layout.WorkerLayout, index: usize) usize {
-    // root_moves is a typed slice; the i-th element's address, stride root_move_size.
+    // Return the i-th element's address (stride root_move_size); root_moves is a typed slice.
     return @intFromPtr(wl.root_moves.ptr) + index * worker_layout.root_move_size;
 }
 fn workerRootDepthOf(wl: *const worker_layout.WorkerLayout) c_int {
     return wl.root_depth;
 }
 
-// Score text (mate/tb-cp/cp) via the score classifier + the leaf uci_wdl formatters.
+// Format the score text (mate/tb-cp/cp) via the score classifier + the leaf uci_wdl formatters.
 fn scoreTextAlloc(v: c_int, material: c_int) ?[:0]u8 {
     const sc = score_port.classify(v, 31507, 31753, 32000);
     return switch (sc.kind) {
@@ -54,7 +54,7 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[:0]u8 {
 }
 
 // Build + print one "info depth ... pv ..." line.
-// Publishes the whole-search node count to the shared leaf; no-op in quiet mode.
+// Publish the whole-search node count to the shared leaf; no-op in quiet mode.
 fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void {
     _ = manager;
     uci_output.setLastNodesSearched(nodes);
@@ -107,7 +107,7 @@ fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_l
     uci_output.printLine(line_c.ptr, line_c.len);
 }
 
-// Checkmated/stalemated root: "info depth 0 score ..." + "bestmove (none)".
+// Emit for a checkmated/stalemated root: "info depth 0 score ..." + "bestmove (none)".
 pub fn ssEmitNoMoves(worker: ?*worker_layout.WorkerLayout) void {
     if (uci_output.isQuiet()) return;
     const w = worker.?;
@@ -126,7 +126,7 @@ pub fn ssEmitNoMoves(worker: ?*worker_layout.WorkerLayout) void {
     uci_output.printLine(bm.ptr, bm.len);
 }
 
-// "bestmove X[ ponder Y]" from best's first RootMove PV. No-op in quiet mode.
+// Emit "bestmove X[ ponder Y]" from best's first RootMove PV. No-op in quiet mode.
 pub fn ssEmitBestmove(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layout.WorkerLayout) void {
     if (uci_output.isQuiet()) return;
     const pv = &workerRootMove0(best.?).pv;
@@ -153,7 +153,7 @@ pub fn ssEmitBestmove(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layou
     uci_output.printLine(line[0..n].ptr, n);
 }
 
-// "info depth D currmove M currmovenumber N" (main thread, past the node threshold).
+// Emit "info depth D currmove M currmovenumber N" (main thread, past the node threshold).
 pub fn searchCbRootOnIter(wl: *const worker_layout.WorkerLayout, depth: c_int, move: u16, move_count: c_int) void {
     if (wl.thread_idx != 0) return;
     if (uci_output.isQuiet()) return;
@@ -167,7 +167,7 @@ pub fn searchCbRootOnIter(wl: *const worker_layout.WorkerLayout, depth: c_int, m
     uci_output.printLine(line_c.ptr, line_c.len);
 }
 
-// SF is_mate_or_mated: |v| >= VALUE_MATE_IN_MAX_PLY (a real mate, not a TB win). Used to decide
+// Mirror SF is_mate_or_mated: |v| >= VALUE_MATE_IN_MAX_PLY (a real mate, not a TB win). Use it to decide
 // whether the root-TB tbScore override applies (it does NOT override a genuine mate score).
 fn isMateOrMated(v: i32) bool {
     const value_mate_in_max_ply: i32 = 32000 - 246; // VALUE_MATE - MAX_PLY
@@ -188,7 +188,7 @@ const PvContext = struct {
     hashfull: c_int,
     elapsed_ms: u64,
 };
-// Per-PV-emit context: root-move span, MultiPV/WDL options, chess960, pool nodes/tbhits,
+// Build the per-PV-emit context: root-move span, MultiPV/WDL options, chess960, pool nodes/tbhits,
 // TT hashfull and elapsed ms. worker_layout + option + the pool aggregates.
 fn searchCbPvContext(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, threads: *worker_layout.ThreadPool, tt_ptr: *worker_layout.TranspositionTable, out: *PvContext) void {
     const wl = worker.?;
@@ -206,8 +206,8 @@ fn searchCbPvContext(manager: ?*worker_layout.SearchManager, worker: ?*worker_la
     const root_pos = &wl.root_pos;
     out.chess960 = if (isChess960(root_pos)) 1 else 0;
     out.nodes = worker_layout.poolNodesSearched(threads);
-    // SF: reported tbHits == pool hits + (rootInTB ? rootMoves.size() : 0). The root-ranking
-    // probes are counted as one hit per root move at emit time (tb_config byte[4] = root_in_tb).
+    // SF: reported tbHits == pool hits + (rootInTB ? rootMoves.size() : 0). Count the root-ranking
+    // probes as one hit per root move at emit time (tb_config byte[4] = root_in_tb).
     out.root_in_tb = wl.tb_config[4] != 0;
     out.tb_hits = worker_layout.poolTbHits(threads) + (if (out.root_in_tb) rm_count else 0);
 
@@ -237,7 +237,7 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
         const is_tb_score = ctx.root_in_tb and !isMateOrMated(v);
         if (is_tb_score) v = rm.tb_score;
         var bound_kind: u8 = 0;
-        // TB scores are exact even if the root move's bound flags say otherwise.
+        // Treat TB scores as exact even if the root move's bound flags say otherwise.
         if (!use_prev and !is_tb_score) {
             if (rm.score_lowerbound) {
                 bound_kind = 1;
@@ -249,7 +249,7 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
     }
 }
 
-// emit_pv / search_id_pv: thin graph-only wrappers that resolve the worker's
+// Wrap emit_pv / search_id_pv as thin graph-only wrappers: resolve the worker's
 // manager/threads/tt reference slots and drive the MultiPV emitter (searchPv).
 pub fn ssEmitPv(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layout.WorkerLayout) void {
     const wl = worker.?;

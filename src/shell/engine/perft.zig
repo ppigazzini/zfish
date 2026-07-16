@@ -1,6 +1,6 @@
-// Engine perft driver.
+// Drive engine perft.
 //
-// `go perft N` root divide, split out of engine.zig. Now that verifyNetwork and
+// Divide the `go perft N` root, split out of engine.zig. Now that verifyNetwork and
 // fen live in leaves (engine_nnue / engine_trace), perft's only remaining
 // couplings are those two plus the ne() handle adapter -- all leaf-reachable -- so
 // it extracts cleanly with no cycle. engine.zig re-exports perftEngine (called by
@@ -50,11 +50,11 @@ pub fn perftEngine(engine_ptr: *engine_object.EngineObject, depth: c_int) u64 {
     const fen_text = std.mem.span(fen_ptr);
     const chess960 = option_port.intByName("UCI_Chess960") != 0;
 
-    // Scope-local Position/StateInfo via the Allocator interface (c_allocator
+    // Allocate scope-local Position/StateInfo via the Allocator interface (c_allocator
     // keeps the libc backing, so lifetimes are valgrind-identical) + defer cleanup +
     // typed create (no @ptrCast, no @memset). @sizeOf == the pinned slot size.
     const allocator = std.heap.c_allocator;
-    // `go perft` is a debug command -- on OOM report 0 nodes rather than aborting.
+    // Treat `go perft` as a debug command -- on OOM report 0 nodes rather than aborting.
     const p = allocator.create(position_port.Position) catch return 0;
     defer allocator.destroy(p);
     const st = allocator.create(position_port.StateInfo) catch return 0;

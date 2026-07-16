@@ -1,23 +1,23 @@
-// NumaConfig — models the NUMA topology the engine's numaContext holds: a
+// Model the NUMA topology the engine's numaContext holds: a
 // list of NUMA nodes, each an ascending, unique set of CPU indices, plus a
 // cpu->node index and the customAffinity flag.
 //
-// Covers the data structure, the queries, fromString (user "NumaPolicy a-b:c-d"
+// Cover the data structure, the queries, fromString (user "NumaPolicy a-b:c-d"
 // parsing), fromSystem, distributeThreads, and suggestsBindingThreads (the
-// bind/no-bind decision). fromSystem builds a single node holding every online CPU
+// bind/no-bind decision). Note fromSystem builds a single node holding every online CPU
 // -- the single-node target the engine runs on -- so suggestsBinding is false there;
-// a multi-node /sys topology read + BundledL3 split is not implemented.
+// leave a multi-node /sys topology read + BundledL3 split unimplemented.
 
 const std = @import("std");
 
-const Node = std.ArrayListUnmanaged(usize); // ascending, unique CPU indices
+const Node = std.ArrayListUnmanaged(usize); // hold ascending, unique CPU indices
 
 pub const NumaConfig = struct {
     allocator: std.mem.Allocator,
     nodes: std.ArrayListUnmanaged(Node),
     node_by_cpu: std.AutoHashMapUnmanaged(usize, usize),
-    /// Set when the topology came from a user "NumaPolicy" string rather than the
-    /// system; forces thread binding.
+    /// Flag that the topology came from a user "NumaPolicy" string rather than the
+    /// system; force thread binding.
     custom_affinity: bool,
 
     pub fn empty(allocator: std.mem.Allocator) NumaConfig {
@@ -53,7 +53,7 @@ pub const NumaConfig = struct {
     }
 
     /// Add `cpu` to NUMA node `node`: a CPU belongs to at most one node, the node's
-    /// set stays ascending+unique, and missing lower nodes are created. Returns false
+    /// set stays ascending+unique, and missing lower nodes are created. Return false
     /// if `cpu` is already assigned elsewhere (the caller treats that as fatal).
     pub fn addCpuToNode(self: *NumaConfig, node: usize, cpu: usize) error{OutOfMemory}!bool {
         if (self.node_by_cpu.get(cpu)) |existing| return existing == node;
@@ -67,7 +67,7 @@ pub const NumaConfig = struct {
 
     /// Parse a "NumaPolicy" string: nodes separated by ':', each a comma list of
     /// CPU indices or ranges, e.g. "0-3,8:4-7" -> node0 {0,1,2,3,8}, node1 {4,5,6,7}.
-    /// Empty node strings are skipped (do not advance the node index).
+    /// Skip empty node strings (do not advance the node index).
     pub fn fromString(allocator: std.mem.Allocator, s: []const u8) error{ OutOfMemory, BadNuma }!NumaConfig {
         var cfg = NumaConfig.empty(allocator);
         errdefer cfg.deinit();
@@ -92,10 +92,10 @@ pub const NumaConfig = struct {
         return cfg;
     }
 
-    /// Build the topology from the system. Single-node fallback (the only path the
+    /// Build the topology from the system. Fall back to a single node (the only path the
     /// WSL2/CI gate target takes — its /sys exposes no NUMA nodes): one node holding
-    /// every online CPU, not custom-affinity. A multi-node /sys read + BundledL3
-    /// split is not implemented (it only matters on real multi-socket hosts).
+    /// every online CPU, not custom-affinity. Leave a multi-node /sys read + BundledL3
+    /// split unimplemented (it only matters on real multi-socket hosts).
     pub fn fromSystem(allocator: std.mem.Allocator) error{OutOfMemory}!NumaConfig {
         var cfg = NumaConfig.empty(allocator);
         errdefer cfg.deinit();
@@ -109,7 +109,7 @@ pub const NumaConfig = struct {
 
     /// Assign each of `num_threads` threads to a NUMA node, balancing by fill ratio:
     /// single node -> all node 0; otherwise greedily place each thread on the node
-    /// with the lowest (occupation+1)/size. Caller owns the returned slice.
+    /// with the lowest (occupation+1)/size. Let the caller own the returned slice.
     pub fn distributeThreads(self: *const NumaConfig, allocator: std.mem.Allocator, num_threads: usize) error{OutOfMemory}![]usize {
         const ns = try allocator.alloc(usize, num_threads);
         errdefer allocator.free(ns);
@@ -137,7 +137,7 @@ pub const NumaConfig = struct {
         return ns;
     }
 
-    /// Whether to bind threads to NUMA nodes: bind if the affinity is user-set;
+    /// Decide whether to bind threads to NUMA nodes: bind if the affinity is user-set;
     /// never bind a single thread; otherwise bind only if the threads cannot fit
     /// the largest node.
     pub fn suggestsBindingThreads(self: *const NumaConfig, num_threads: usize) bool {
@@ -147,7 +147,7 @@ pub const NumaConfig = struct {
         for (self.nodes.items) |node| {
             if (node.items.len > largest) largest = node.items.len;
         }
-        // Threads fit the largest node with headroom -> no need to bind.
+        // Skip binding when threads fit the largest node with headroom.
         return num_threads > largest;
     }
 };
@@ -155,7 +155,7 @@ pub const NumaConfig = struct {
 fn insertSorted(node: *Node, allocator: std.mem.Allocator, cpu: usize) error{OutOfMemory}!void {
     var i: usize = 0;
     while (i < node.items.len and node.items[i] < cpu) : (i += 1) {}
-    if (i < node.items.len and node.items[i] == cpu) return; // unique
+    if (i < node.items.len and node.items[i] == cpu) return; // keep unique
     try node.insert(allocator, i, cpu);
 }
 
@@ -180,7 +180,7 @@ test "addCpuToNode keeps nodes ascending/unique and one node per cpu" {
 
     try testing.expect(try cfg.addCpuToNode(0, 5));
     try testing.expect(try cfg.addCpuToNode(0, 1));
-    try testing.expect(try cfg.addCpuToNode(0, 5)); // duplicate same node: ok, no-op
+    try testing.expect(try cfg.addCpuToNode(0, 5)); // accept duplicate on same node: no-op
     try testing.expect(try cfg.addCpuToNode(1, 9));
 
     try testing.expectEqual(@as(usize, 2), cfg.numNodes());
@@ -190,7 +190,7 @@ test "addCpuToNode keeps nodes ascending/unique and one node per cpu" {
     try testing.expect(cfg.isCpuAssigned(9));
     try testing.expect(!cfg.isCpuAssigned(2));
 
-    // re-adding cpu 5 to a different node is rejected
+    // reject re-adding cpu 5 to a different node
     try testing.expect(!(try cfg.addCpuToNode(1, 5)));
 }
 
@@ -214,22 +214,22 @@ test "fromString skips empty node segments without advancing the node index" {
 }
 
 test "suggestsBindingThreads: custom affinity binds; single node sized by threads" {
-    // user-set affinity always binds
+    // bind always for user-set affinity
     var custom = try NumaConfig.fromString(testing.allocator, "0-3");
     defer custom.deinit();
-    try testing.expect(custom.suggestsBindingThreads(1)); // custom overrides the <=1 rule
+    try testing.expect(custom.suggestsBindingThreads(1)); // let custom affinity override the <=1 rule
 
-    // system-style single node of 4 cpus
+    // build a system-style single node of 4 cpus
     var sys = NumaConfig.empty(testing.allocator);
     defer sys.deinit();
     for (0..4) |c| _ = try sys.addCpuToNode(0, c);
     try testing.expect(!sys.suggestsBindingThreads(1)); // never bind a single thread
-    try testing.expect(!sys.suggestsBindingThreads(4)); // fits the node -> no bind
-    try testing.expect(sys.suggestsBindingThreads(5)); // exceeds the node -> bind
+    try testing.expect(!sys.suggestsBindingThreads(4)); // skip bind — fits the node
+    try testing.expect(sys.suggestsBindingThreads(5)); // bind — exceeds the node
 }
 
 test "fromString rejects malformed input" {
-    try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "3-1")); // hi<lo
+    try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "3-1")); // reject hi<lo
     try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "x"));
 }
 
@@ -239,7 +239,7 @@ test "fromSystem yields a single non-empty node, not custom affinity" {
     try testing.expectEqual(@as(usize, 1), cfg.numNodes());
     try testing.expect(cfg.numCpusInNode(0) >= 1);
     try testing.expect(!cfg.custom_affinity);
-    try testing.expect(!cfg.suggestsBindingThreads(1)); // single node, single thread
+    try testing.expect(!cfg.suggestsBindingThreads(1)); // cover single node, single thread
 }
 
 test "distributeThreads: single node -> all node 0" {
@@ -253,8 +253,8 @@ test "distributeThreads: single node -> all node 0" {
 test "distributeThreads: multi-node places every thread and favors the larger node" {
     var cfg = NumaConfig.empty(testing.allocator);
     defer cfg.deinit();
-    for (0..2) |c| _ = try cfg.addCpuToNode(0, c); // node0: 2 cpus
-    for (2..6) |c| _ = try cfg.addCpuToNode(1, c); // node1: 4 cpus
+    for (0..2) |c| _ = try cfg.addCpuToNode(0, c); // build node0: 2 cpus
+    for (2..6) |c| _ = try cfg.addCpuToNode(1, c); // build node1: 4 cpus
 
     const ns = try cfg.distributeThreads(testing.allocator, 6);
     defer testing.allocator.free(ns);
@@ -266,15 +266,15 @@ test "distributeThreads: multi-node places every thread and favors the larger no
         if (n == 0) n0 += 1 else n1 += 1;
     }
     try testing.expectEqual(@as(usize, 6), n0 + n1);
-    try testing.expect(n1 > n0); // the larger node takes more threads
+    try testing.expect(n1 > n0); // expect the larger node to take more threads
 }
 
-// Allocation-failure gates. checkAllAllocationFailures fails each successive
+// Gate allocation failures: checkAllAllocationFailures fails each successive
 // allocation and asserts every unwind returns error.OutOfMemory leak-free -- covering
 // the ArrayList/HashMap growth inside addCpuToNode (reached via fromString) and the
 // two-slice distributeThreads, whose errdefer/deinit chains must hold on any partial
-// failure. (The state_list gate found a real leak this way; these confirm the
-// container-owned allocations here need no per-item errdefer.)
+// failure. Confirm the container-owned allocations here need no per-item errdefer
+// (the state_list gate found a real leak this way).
 test "NumaConfig.fromString unwinds leak-free on every allocation failure" {
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
@@ -288,7 +288,7 @@ test "NumaConfig.fromString unwinds leak-free on every allocation failure" {
 test "NumaConfig.distributeThreads unwinds leak-free on every allocation failure" {
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
-            var cfg = try NumaConfig.fromString(a, "0-1:2-5"); // 2 nodes -> the alloc path
+            var cfg = try NumaConfig.fromString(a, "0-1:2-5"); // force the alloc path with 2 nodes
             defer cfg.deinit();
             const ns = try cfg.distributeThreads(a, 4);
             a.free(ns);

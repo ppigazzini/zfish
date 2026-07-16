@@ -1,6 +1,6 @@
-// QCtx construction: the one-shot fetch of the Worker-graph state the inlined node
-// recursion needs (searchCbWorkerState) and the assembly of the hot QCtx from it
-// (buildCtx). Pure worker-graph reads -- no call into the recursion -- so this is a
+// Construct the QCtx: fetch the Worker-graph state the inlined node
+// recursion needs one-shot (searchCbWorkerState) and assemble the hot QCtx from it
+// (buildCtx). Read worker-graph only -- no call into the recursion -- so form a
 // leaf over worker_layout + the root_move / search_ctx type leaves;
 // search_driver's entry points (qsearchEntry/searchEntry/iterativeDeepening) import
 // it one-way to build the ctx they thread into qsearchImpl/searchImpl.
@@ -15,13 +15,13 @@ const PVMoves = root_move.PVMoves;
 const QCtx = search_ctx.QCtx;
 const SearchTimeState = search_ctx.SearchTimeState;
 
-// One-shot fetch of the Worker state the inlined search needs, all stable for the
-// duration of one search tree. Live (mutable) fields are pointers into the Worker;
-// the main-thread-only time-management fields are null on helper threads.
+// Fetch the Worker state the inlined search needs one-shot, all stable for the
+// duration of one search tree. Keep live (mutable) fields as pointers into the Worker;
+// null the main-thread-only time-management fields on helper threads.
 fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?[*]root_move.RootMove, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
     const stop = &wl.threads.stop;
 
-    // The NNUE arenas are raw byte buffers embedded in the worker; this is their
+    // Erase the NNUE arenas here -- raw byte buffers embedded in the worker; this is their
     // single erasure boundary into the opaque B4 handles the eval path consumes.
     out_acc_stack.* = @ptrCast(&wl.accumulator_stack);
     out_nodes.* = &wl.nodes;
@@ -32,11 +32,11 @@ fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_a
     out_root_depth.* = &wl.root_depth;
     out_reductions.* = &wl.reductions;
     out_root_delta.* = &wl.root_delta;
-    // One canonical PVMoves now -- plain mut->const, no cast.
+    // Coerce mut->const with no cast -- one canonical PVMoves now.
     out_last_iter_pv.* = &wl.last_iteration_pv;
     out_stop.* = stop;
     out_pv_idx.* = &wl.pv_idx;
-    // root_moves is a typed slice now; its .ptr is the first element.
+    // Point at root_moves' first element via .ptr (a typed slice now).
     out_root_moves.* = wl.root_moves.ptr;
     out_pv_last.* = &wl.pv_last;
     out_best_move_changes.* = &wl.best_move_changes;

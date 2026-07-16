@@ -1,5 +1,5 @@
-// Engine side shared-histories map: the numa-replicated history map the engine owns
-// outside the WorkerLayout graph, + its accessors and teardown. Owns its state (the
+// Hold the engine side shared-histories map: the numa-replicated history map the engine owns
+// outside the WorkerLayout graph, + its accessors and teardown. Own its state (the
 // lazy map); position + std only.
 
 const std = @import("std");

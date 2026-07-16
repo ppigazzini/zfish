@@ -1,4 +1,4 @@
-// The NNUE weight storage plus the loaded-net identity, split out of
+// Own the NNUE weight storage plus the loaded-net identity, split out of
 // network.zig so the inference path and the file-I/O path share one owner
 // without importing each other. The parse/load path writes the weights straight
 // into these buffers; inference reads from the same memory. Owning them here
@@ -14,7 +14,7 @@ const page_alloc = @import("page_alloc");
 const layer_stacks_n = 8;
 const layers_per_stack = 3;
 
-// Loaded-net identity: the current EvalFile name, its description, and the
+// Track the loaded-net identity: the current EvalFile name, its description, and the
 // initialized flag. The load path owns these.
 var nn_initialized: bool = false;
 var nn_current: [256]u8 = undefined;
@@ -47,7 +47,7 @@ pub fn equalCurrentName(target: []const u8) bool {
     return std.mem.eql(u8, nnCurrent(), target);
 }
 
-// Inference storage. The parse writes the weights straight here;
+// Hold the inference storage. The parse writes the weights straight here;
 // inference reads from the same memory.
 var ft_ptr_storage: ?[*]u8 = null;
 var ft_len: usize = 0;

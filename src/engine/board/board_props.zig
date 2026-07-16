@@ -1,6 +1,6 @@
-// Board property tests.
+// Test the board properties.
 //
-// Real asserted invariants over the decomposed board leaves, not golden diffs:
+// Assert real invariants over the decomposed board leaves, not golden diffs:
 // perft to KNOWN node counts. A perft count is an end-to-end property test of
 // movegen + make/unmake together -- if legal-move generation OR do/undo were
 // wrong, the counts diverge from these published Stockfish reference values. This
@@ -47,7 +47,7 @@ fn perftFen(fen: []const u8, chess960: u8, depth: c_int) u64 {
 }
 
 const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-// Peter Ellis Jones' "Kiwipete" -- dense tactical node, catches castling / ep /
+// Use Peter Ellis Jones' "Kiwipete" -- a dense tactical node, catching castling / ep /
 // promotion / pin bugs the start position misses.
 const kiwipete_fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
 
@@ -66,7 +66,7 @@ test "perft: Kiwipete matches reference node counts" {
     try std.testing.expectEqual(@as(u64, 97862), perftFen(kiwipete_fen, 0, 3));
 }
 
-// The remaining Chess Programming Wiki perft reference positions. Position 3 is an
+// Add the remaining Chess Programming Wiki perft reference positions. Position 3 is an
 // endgame rich in en-passant + rook checks; positions 4/5 are promotion-heavy
 // (P/p on the 7th/2nd rank) and 5 is asymmetric; these hit make/unmake edge cases
 // (ep capture-square, promotion material-key, castling-rights masking) that the
@@ -91,7 +91,7 @@ test "perft: CPW reference positions 3-5 match reference node counts" {
     try std.testing.expectEqual(@as(u64, 62379), perftFen(cpw5_fen, 0, 3));
 }
 
-// For every legal move, do then immediately undo, and assert the Position is
+// Do then immediately undo every legal move, and assert the Position is
 // byte-for-byte the pre-move state -- key, bitboards, board, and piece counts.
 // Perft only checks node COUNTS; this catches state corruption that leaves the
 // count right but the derived state (e.g. an un-restored zobrist key, a stale
@@ -202,7 +202,7 @@ test "generated legal moves satisfy legal() and pseudoLegal()" {
     try checkMoveGenLegalityAgree(cpw5_fen);
 }
 
-// givesCheck(m) predicts, without playing the move, whether m delivers check.
+// Predict, without playing the move, whether m delivers check (givesCheck(m)).
 // Validate it against ground truth: play m, ask hasCheckers (is the now-to-move
 // side in check), undo. They must agree for every legal move -- this cross-checks
 // the givesCheck fast path (direct + discovered + castling/ep/promotion check
@@ -237,8 +237,8 @@ test "givesCheck agrees with the post-move check state" {
     try checkGivesCheck(cpw5_fen);
 }
 
-// A null move flips the side to move (and clears any en-passant square + rehashes
-// the side key) without moving a piece; undoing it must restore the position
+// Flip the side to move (and clear any en-passant square + rehash the side key)
+// without moving a piece -- a null move; undoing it must restore the position
 // exactly. In between, the side and key must have actually changed. Exercises the
 // move_do null-move path the search's null-move pruning relies on.
 fn checkNullMoveRoundTrip(fen: []const u8) !void {
@@ -300,11 +300,11 @@ test "repetition detection flags a returned-to position" {
         try std.testing.expect(!position.hasRepeated(&p)); // not yet repeated
         position.doMoveState(&p, m, &chain[ply]);
     }
-    // After the fourth move the start position has recurred.
+    // Expect the start position to have recurred after the fourth move.
     try std.testing.expect(position.hasRepeated(&p));
 }
 
-// The parser must REJECT malformed input with an error message, not crash or
+// Require the parser to REJECT malformed input with an error message, not crash or
 // silently accept it. Each of these violates a documented FEN invariant.
 fn expectRejected(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
@@ -330,11 +330,11 @@ test "malformed FENs are rejected, not accepted or crashed" {
     try expectRejected("4k3/8/8/8/8/8/8/4K3 w - z9 0 1"); // bad en-passant square
 }
 
-// FEN characters + separators + a few out-of-band bytes, so random strings drawn
+// Collect FEN characters + separators + a few out-of-band bytes, so random strings drawn
 // from this alphabet hit both the parser's happy path and its reject branches.
 const fen_alphabet = "PNBRQKpnbrqk12345678/ wb-KQkqabcdefgh36xz0";
 
-// Property (fuzz): setPosition must never crash / OOB on arbitrary input -- it
+// Assert (fuzz) setPosition never crashes / OOBs on arbitrary input -- it
 // either rejects it or produces a self-consistent position. And any position it
 // DOES accept must survive movegen + one make/unmake without crashing. A
 // deterministic PRNG (fixed seed) keeps it reproducible in `zig build test`; it is
@@ -357,8 +357,8 @@ test "fuzz: setPosition tolerates arbitrary input without crashing" {
             std.heap.c_allocator.free(std.mem.span(msg));
             continue; // rejected -- fine
         }
-        // Accepted as a legal position: legal-move generation + one round-trip
-        // must not crash on it either.
+        // Run legal-move generation + one round-trip on the accepted legal position; it
+        // must not crash either.
         var moves: [256]u16 = undefined;
         const n = movegen.generateLegal(&p, &moves);
         if (n > 0) {
@@ -369,7 +369,7 @@ test "fuzz: setPosition tolerates arbitrary input without crashing" {
     }
 }
 
-// isDraw: the 50-move rule fires once rule50 exceeds 99 (in a non-mate position);
+// Check that isDraw fires the 50-move rule once rule50 exceeds 99 (in a non-mate position);
 // a fresh position is not a draw.
 test "isDraw honours the fifty-move rule" {
     position.initRuntime();
@@ -377,11 +377,11 @@ test "isDraw honours the fifty-move rule" {
     var st: position.StateInfo align(16) = undefined;
     const pp = &p;
 
-    // rule50 = 100 half-moves, not in check, legal moves available -> draw.
+    // Set up rule50 = 100 half-moves, not in check, legal moves available -> draw.
     setup(&p, &st, "4k3/8/8/8/8/8/8/4K3 w - - 100 60");
     try std.testing.expect(position.isDraw(pp, 0));
 
-    // The start position is not a draw.
+    // Confirm the start position is not a draw.
     setup(&p, &st, start_fen);
     try std.testing.expect(!position.isDraw(pp, 0));
 }
@@ -393,7 +393,7 @@ fn setup(p: *position.Position, st: *position.StateInfo, fen: []const u8) void {
     }
 }
 
-// Static Exchange Evaluation (the seeGe predicate in the legality leaf). A pawn
+// Exercise Static Exchange Evaluation (the seeGe predicate in the legality leaf). A pawn
 // capturing an undefended queen is a large winning exchange; a queen capturing a
 // pawn defended by a pawn is a large losing one. seeGe(move, t) answers SEE >= t.
 test "seeGe classifies winning and losing captures" {
@@ -402,20 +402,20 @@ test "seeGe classifies winning and losing captures" {
     var st: position.StateInfo align(16) = undefined;
     const pp = &p;
 
-    // White pawn e4 captures an undefended black queen on d5.
+    // Set up a white pawn e4 capturing an undefended black queen on d5.
     setup(&p, &st, "4k3/8/8/3q4/4P3/8/8/4K3 w - - 0 1");
     const pxq = mkMove(sq(4, 3), sq(3, 4)); // e4 -> d5
     try std.testing.expect(position.seeGe(pp, pxq, 0)); // winning: SEE >= 0
     try std.testing.expect(position.seeGe(pp, pxq, 1000)); // still wins a queen
     try std.testing.expect(!position.seeGe(pp, pxq, 3000)); // but not >= 3000
 
-    // White queen d4 captures a black pawn c5 that is defended by the b6 pawn.
+    // Set up a white queen d4 capturing a black pawn c5 defended by the b6 pawn.
     setup(&p, &st, "4k3/8/1p6/2p5/3Q4/8/8/4K3 w - - 0 1");
     const qxp = mkMove(sq(3, 3), sq(2, 4)); // d4 -> c5
     try std.testing.expect(!position.seeGe(pp, qxp, 0)); // losing: SEE < 0
 }
 
-// refAllDecls over the board path + the typed-view graph, so every pub decl
+// Run refAllDecls over the board path + the typed-view graph, so every pub decl
 // compiles under `zig build test` even if the exe never reaches it (catches dead/
 // broken code the golden gates and the property tests above miss). Non-recursive is
 // the Zig 0.16 std.testing API; it forces each module's top-level pub decls.

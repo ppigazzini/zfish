@@ -1,16 +1,16 @@
-// SharedState — the bundle of references the Engine hands every Worker at
-// construction (thread pool, transposition table, per-NUMA shared histories), as typed
-// pointers into the Zig-owned subsystems.
+// Bundle the references the Engine hands every Worker at construction (thread pool,
+// transposition table, per-NUMA shared histories), as typed pointers into the
+// Zig-owned subsystems.
 //
-// This module exposes only the *generic* `SharedStateOf(comptime …)` and stays a pure
-// std-only leaf: it never imports ThreadPool / TranspositionTable / SharedHistoriesMap.
-// The concrete `SharedState = SharedStateOf(…)` is instantiated once at the root that
+// Expose only the *generic* `SharedStateOf(comptime …)` and stay a pure std-only
+// leaf: never import ThreadPool / TranspositionTable / SharedHistoriesMap.
+// Instantiate the concrete `SharedState = SharedStateOf(…)` once at the root that
 // sees all the referent types — support/engine.zig — which also owns the live static +
 // create/destroy.
 
 const std = @import("std");
 
-/// The SharedState bundle, generic over its three referent types: three typed
+/// Build the SharedState bundle, generic over its three referent types: three typed
 /// pointers in source order.
 pub fn SharedStateOf(
     comptime Threads: type,
@@ -24,7 +24,7 @@ pub fn SharedStateOf(
 
         const Self = @This();
 
-        // The bundle is the three live references the worker actually binds; options
+        // Bind the three live references the worker actually uses; options
         // and network are read elsewhere (the global OptionsModel + the FT
         // storage), not through SharedState.
         pub fn init(
@@ -39,7 +39,7 @@ pub fn SharedStateOf(
             };
         }
 
-        /// Typed view over the *anyopaque worker-build boundary that main.zig's
+        /// Return a typed view over the *anyopaque worker-build boundary that main.zig's
         /// hook impls cross to read the referents. The engine's concrete instantiation
         /// is the single definition, so the view and the owner cannot drift.
         pub inline fn fromPtr(p: *const anyopaque) *Self {
@@ -70,7 +70,7 @@ test "SharedStateOf reproduces the 24-byte footprint and binds typed references"
     try testing.expectEqual(&hists, ss.shared_histories);
     try testing.expectEqual(@as(u32, 3), ss.tt.*);
 
-    // fromPtr round-trips the bundle address back to the typed view.
+    // Round-trip the bundle address back to the typed view via fromPtr.
     const view = SS.fromPtr(@ptrCast(&ss));
     try testing.expectEqual(&tt, view.tt);
 }

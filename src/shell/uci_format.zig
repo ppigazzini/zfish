@@ -1,11 +1,11 @@
-// UCI output formatters.
+// Format the UCI output.
 //
-// The live UCI string builders split out of uci.zig: the `info string` renderer,
-// the help text, and the unknown-command / critical-error lines. Pure over std +
+// Build the live UCI strings split out of uci.zig: the `info string` renderer,
+// the help text, and the unknown-command / critical-error lines. Keep pure over std +
 // the uci_strings base leaf (no engine coupling), so it is a leaf; uci.zig
 // re-exports these for its dispatch code.
 //
-// NOTE: uci.zig also carried ten *dead* formatters -- formatScore/toCp/wdl (thin
+// NOTE: recall uci.zig also carried ten *dead* formatters -- formatScore/toCp/wdl (thin
 // delegators) and formatSquare/formatMove/toLower/formatInfoNoMoves/
 // formatInfoFull/formatInfoIter/formatBestmove -- which duplicated the canonical
 // versions in src/support/uci_wdl.zig and had no caller anywhere. Those were

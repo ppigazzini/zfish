@@ -1,7 +1,7 @@
-// UCI win-rate / centipawn / WDL model.
+// Model the UCI win-rate / centipawn / WDL.
 //
-// A leaf module (std only): the internal-eval -> centipawn conversion and the
-// win/draw/loss estimate share the same win-rate polynomial. Kept dependency-free so
+// Form a leaf module (std only): the internal-eval -> centipawn conversion and the
+// win/draw/loss estimate share the same win-rate polynomial. Keep it dependency-free so
 // any layer can format a score without a cycle -- engine.zig (uci_to_cp) and the search
 // driver's info-line emit both call it, and neither can import the uci module.
 
@@ -9,7 +9,7 @@ const std = @import("std");
 
 const WinRateParams = struct { a: f64, b: f64 };
 
-// UCI_WinRateModel params for the given non-pawn material (clamped 17..78).
+// Return the UCI_WinRateModel params for the given non-pawn material (clamped 17..78).
 fn winRateParams(material: c_int) WinRateParams {
     const clamped = std.math.clamp(material, 17, 78);
     const m = @as(f64, @floatFromInt(clamped)) / 58.0;
@@ -25,18 +25,18 @@ fn winRateModel(value: c_int, material: c_int) c_int {
     return @intFromFloat(0.5 + 1000.0 / (1.0 + std.math.exp((params.a - @as(f64, @floatFromInt(value))) / params.b)));
 }
 
-// Internal eval -> centipawns (UCI::to_cp): value normalised by the win-rate `a` param.
+// Convert internal eval -> centipawns (UCI::to_cp): normalise value by the win-rate `a` param.
 pub fn toCp(value: c_int, material: c_int) c_int {
     const params = winRateParams(material);
     return @intFromFloat(@round(100.0 * @as(f64, @floatFromInt(value)) / params.a));
 }
 
-// Allocated "win draw loss" permille triple (c_allocator; caller frees). null on OOM.
+// Allocate the "win draw loss" permille triple (c_allocator; caller frees). null on OOM.
 pub fn wdl(value: c_int, material: c_int) ?[:0]u8 {
     return allocWdl(value, material) catch null;
 }
 
-// Allocated UCI score text: kind 0 -> "mate N", kind 1 -> TB "cp N", else "cp N".
+// Allocate the UCI score text: kind 0 -> "mate N", kind 1 -> TB "cp N", else "cp N".
 pub fn formatScore(kind: u8, value: c_int, extra: c_int) ?[:0]u8 {
     return allocScore(kind, value, extra) catch null;
 }
@@ -83,12 +83,12 @@ fn appendFormatted(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: a
     try buffer.appendSlice(allocator, formatted);
 }
 
-// "info depth D score S" for the no-legal-moves (mate/stalemate) case.
+// Format "info depth D score S" for the no-legal-moves (mate/stalemate) case.
 pub fn formatInfoNoMoves(depth: c_int, score_text: []const u8) ?[:0]u8 {
     return allocFormatted("info depth {d} score {s}", .{ depth, score_text }) catch null;
 }
 
-// The full per-PV info line (depth/seldepth/multipv/score/[bound]/[wdl]/nodes/nps/
+// Format the full per-PV info line (depth/seldepth/multipv/score/[bound]/[wdl]/nodes/nps/
 // hashfull/tbhits/time/pv).
 pub fn formatInfoFull(
     depth: c_int,
@@ -141,19 +141,19 @@ pub fn formatInfoFull(
     return allocCString(builder.items) catch null;
 }
 
-// "info depth D currmove M currmovenumber N".
+// Format "info depth D currmove M currmovenumber N".
 pub fn formatInfoIter(depth: c_int, currmove: []const u8, currmove_number: c_int) ?[:0]u8 {
     return allocFormatted("info depth {d} currmove {s} currmovenumber {d}", .{ depth, currmove, currmove_number }) catch null;
 }
 
-// "bestmove M [ponder P]".
+// Format "bestmove M [ponder P]".
 pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[:0]u8 {
     if (ponder.len == 0) return allocFormatted("bestmove {s}", .{bestmove}) catch null;
     return allocFormatted("bestmove {s} ponder {s}", .{ bestmove, ponder }) catch null;
 }
 
 // --- tests--------------------------------------------------------------
-// Pure std-only leaf: the win-rate model + score/info formatters. Wired as a
+// Keep a pure std-only leaf: the win-rate model + score/info formatters. Wire as a
 // standalone artifact in build.zig so these run under `zig build test`.
 const test_alloc = std.heap.c_allocator;
 
@@ -161,7 +161,7 @@ test "toCp: zero-centred and sign-preserving" {
     try std.testing.expectEqual(@as(c_int, 0), toCp(0, 50));
     try std.testing.expect(toCp(300, 50) > 0);
     try std.testing.expect(toCp(-300, 50) < 0);
-    // odd symmetry of the model: toCp(-v) == -toCp(v)
+    // check the odd symmetry of the model: toCp(-v) == -toCp(v)
     try std.testing.expectEqual(-toCp(300, 50), toCp(-300, 50));
 }
 

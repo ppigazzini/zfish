@@ -1,10 +1,10 @@
-// Single source of truth for the search value model: the score sentinels, mate
+// Serve as the single source of truth for the search value model: the score sentinels, mate
 // arithmetic, bound/depth enums, and the value predicates shared by both the
-// main search (searchImpl) and quiescence (qsearchImpl). These mirror the
-// canonical constants in support/search.zig; keeping one authoritative copy
-// here lets both search bodies alias them instead of re-declaring the magic
+// main search (searchImpl) and quiescence (qsearchImpl). Mirror the
+// canonical constants in support/search.zig; keep one authoritative copy
+// here to let both search bodies alias them instead of re-declaring the magic
 // numbers (the old `q_*` spelling was a misnomer — the main search uses them
-// too). Pure, std-only; imported by path so the build graph is unchanged.
+// too). Stay pure, std-only; import by path so the build graph is unchanged.
 
 const std = @import("std");
 

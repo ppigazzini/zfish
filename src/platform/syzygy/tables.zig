@@ -1,17 +1,17 @@
-//! Syzygy tablebase discovery: scans SyzygyPath, counts the `.rtbw`/`.rtbz` files
-//! that exist, and reports `maxCardinality`. Mirrors Stockfish `Tablebases::init` +
+//! Discover Syzygy tablebases: scan SyzygyPath, count the `.rtbw`/`.rtbz` files
+//! that exist, and report `maxCardinality`. Mirror Stockfish `Tablebases::init` +
 //! `TBTables::add`: enumerate every King-vs-King material configuration up to 7 men, build the
 //! canonical file name, and count a table by FILE EXISTENCE (`is_open()` -- the magic header is
-//! validated later, at probe time, not here). No probing yet: this is load + init only, so with
+//! validated later, at probe time, not here). Do no probing yet: this is load + init only, so with
 //! no path set the engine behaves exactly as before (bench 2466447 unchanged).
 //!
-//! Platform layer: file I/O is a platform service, and this slice touches no engine types.
+//! Keep this in the platform layer: file I/O is a platform service, and this slice touches no engine types.
 
 const std = @import("std");
 const builtin = @import("builtin");
 const registry = @import("registry.zig");
 
-// PieceType indices match Stockfish: 1=Pawn 2=Knight 3=Bishop 4=Rook 5=Queen 6=King.
+// Match Stockfish PieceType indices: 1=Pawn 2=Knight 3=Bishop 4=Rook 5=Queen 6=King.
 const piece_char = " PNBRQK"; // index by piece type; `code += PieceToChar[pt]`
 const king: u8 = 6;
 const pawn: u8 = 1;
@@ -23,12 +23,12 @@ var max_card: usize = 0;
 var path_buf: [4096]u8 = undefined;
 var path_str: []const u8 = "";
 
-/// Largest piece count DISCOVERED on disk (for the "up to N-man" message).
+/// Report the largest piece count DISCOVERED on disk (for the "up to N-man" message).
 pub fn discoveredMax() usize {
     return max_card;
 }
 
-/// Search-facing max cardinality: the largest position the WDL prober can serve.
+/// Return the search-facing max cardinality: the largest position the WDL prober can serve.
 /// Equal to `max_card` (the largest table discovered on disk). With no SyzygyPath set this is 0,
 /// so a default build -- and `bench`, which never sets a path -- takes no tablebase path and the
 /// signature is unchanged. DTZ/root ranking are bounded by the same value.
@@ -59,7 +59,7 @@ fn buildName(pieces: []const u8, out: *[16]u8) []const u8 {
 }
 
 fn fileExists(full: []const u8) bool {
-    // libc `access(path, F_OK)` -- the port does file/OS calls through libc (std.c.*), and this
+    // Call libc `access(path, F_OK)` -- the port does file/OS calls through libc (std.c.*), and this
     // needs no `Io` (the tablebase.init seam carries none). F_OK == 0.
     var zbuf: [4097]u8 = undefined;
     if (full.len >= zbuf.len) return false;
@@ -69,7 +69,7 @@ fn fileExists(full: []const u8) bool {
     return std.c.access(z, 0) == 0;
 }
 
-// True if `<stem><ext>` exists in any of the (sep-separated) SyzygyPath directories.
+// Report true if `<stem><ext>` exists in any of the (sep-separated) SyzygyPath directories.
 fn tbFileExists(stem: []const u8, ext: []const u8) bool {
     var it = std.mem.splitScalar(u8, path_str, sep_char);
     while (it.next()) |dir| {
@@ -81,7 +81,7 @@ fn tbFileExists(stem: []const u8, ext: []const u8) bool {
     return false;
 }
 
-// SF `TBTables::add`: count the DTZ file if present, then the WDL file (required -- a table is
+// Port SF `TBTables::add`: count the DTZ file if present, then the WDL file (required -- a table is
 // only "found" when its .rtbw exists), and raise maxCardinality to this config's piece count.
 fn add(pieces: []const u8) void {
     var nb: [16]u8 = undefined;
@@ -93,7 +93,7 @@ fn add(pieces: []const u8) void {
     registry.register(pieces); // register the WDL table in the probe registry
 }
 
-// SF `Tablebases::init`: enumerate every material configuration up to 7 men and `add` each.
+// Port SF `Tablebases::init`: enumerate every material configuration up to 7 men and `add` each.
 pub fn init(path_ptr: [*]const u8, path_len: usize) void {
     found_wdl = 0;
     found_dtz = 0;

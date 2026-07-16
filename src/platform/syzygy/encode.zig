@@ -1,13 +1,13 @@
-//! Syzygy position->index encoding geometry: the precomputed tables Stockfish's
+//! Build the Syzygy position->index encoding geometry: the precomputed tables Stockfish's
 //! `Tablebases::init` builds and `do_probe_table` indexes through -- Binomial coefficients, the
 //! king-pair map (MapKK, 462 legal positions), the a1-d1-d4 / below-a1h8 square maps, and the
-//! leading-pawn encoding (MapPawns / LeadPawnIdx / LeadPawnsSize). Pure board geometry: computed
+//! leading-pawn encoding (MapPawns / LeadPawnIdx / LeadPawnsSize). Keep it pure board geometry: computed
 //! once, no I/O, no engine types, so it is unit-testable against known mathematics on its own.
-//! The verified geometry the WDL probe indexes through.
+//! Provide the verified geometry the WDL probe indexes through.
 
 const std = @import("std");
 
-// Square numbering matches SF: A1=0 .. H8=63; rank = sq>>3, file = sq&7.
+// Number squares like SF: A1=0 .. H8=63; rank = sq>>3, file = sq&7.
 inline fn rankOf(sq: usize) usize {
     return sq >> 3;
 }
@@ -23,14 +23,14 @@ inline fn flipFile(sq: usize) usize {
 pub inline fn flipRank(sq: usize) usize {
     return sq ^ 56;
 }
-// off_A1H8(sq) = rank - file: <0 below the a1-h8 diagonal, 0 on it, >0 above.
+// Compute off_A1H8(sq) = rank - file: <0 below the a1-h8 diagonal, 0 on it, >0 above.
 pub inline fn offA1H8(sq: usize) i32 {
     return @as(i32, @intCast(rankOf(sq))) - @as(i32, @intCast(fileOf(sq)));
 }
 pub inline fn edgeDistance(f: usize) usize {
     return @min(f, 7 - f);
 }
-// King "touch": s2 == s1 or s2 is a king move from s1 (Chebyshev distance <= 1).
+// Detect a king "touch": s2 == s1 or s2 is a king move from s1 (Chebyshev distance <= 1).
 inline fn kingTouch(s1: usize, s2: usize) bool {
     const df = @abs(@as(i32, @intCast(fileOf(s1))) - @as(i32, @intCast(fileOf(s2))));
     const dr = @abs(@as(i32, @intCast(rankOf(s1))) - @as(i32, @intCast(rankOf(s2))));
@@ -57,7 +57,7 @@ pub fn initGeometry() void {
     for (&lead_pawn_idx) |*row| @memset(std.mem.asBytes(row), 0);
     for (&lead_pawns_size) |*row| @memset(std.mem.asBytes(row), 0);
 
-    // MapB1H1H7: a square below the a1-h8 diagonal -> 0..27.
+    // Fill MapB1H1H7: a square below the a1-h8 diagonal -> 0..27.
     var code: i32 = 0;
     var s: usize = 0;
     while (s < 64) : (s += 1) if (offA1H8(s) < 0) {
@@ -65,7 +65,7 @@ pub fn initGeometry() void {
         code += 1;
     };
 
-    // MapA1D1D4: a square in the a1-d1-d4 triangle -> 0..9 (diagonal squares last).
+    // Fill MapA1D1D4: a square in the a1-d1-d4 triangle -> 0..9 (diagonal squares last).
     var diagonal: [4]usize = undefined;
     var ndiag: usize = 0;
     code = 0;
@@ -84,7 +84,7 @@ pub fn initGeometry() void {
         code += 1;
     }
 
-    // MapKK: the 462 legal positions of two kings, first in the a1-d1-d4 triangle.
+    // Fill MapKK: the 462 legal positions of two kings, first in the a1-d1-d4 triangle.
     var both_on_diag: [64]struct { idx: usize, s2: usize } = undefined;
     var nboth: usize = 0;
     code = 0;
@@ -113,7 +113,7 @@ pub fn initGeometry() void {
     }
     kk_count = code;
 
-    // Binomial[k][n] via Pascal's rule == C(n,k).
+    // Fill Binomial[k][n] via Pascal's rule == C(n,k).
     binomial[0][0] = 1;
     var n: usize = 1;
     while (n < 64) : (n += 1) {
@@ -124,7 +124,7 @@ pub fn initGeometry() void {
         }
     }
 
-    // MapPawns (a2-h7 -> 0..47) + LeadPawnIdx/LeadPawnsSize (up to 5 leading pawns).
+    // Fill MapPawns (a2-h7 -> 0..47) + LeadPawnIdx/LeadPawnsSize (up to 5 leading pawns).
     var available: i32 = 47;
     var lead_cnt: usize = 1;
     while (lead_cnt <= 5) : (lead_cnt += 1) {
@@ -175,7 +175,7 @@ test "MapPawns encodes a2-h7 to 0..47 (a2=47, a3=45, h7=0-ish edge)" {
     try std.testing.expectEqual(@as(i32, 47), map_pawns[makeSquare(0, 1)]); // A2
     try std.testing.expectEqual(@as(i32, 45), map_pawns[makeSquare(0, 2)]); // A3
     try std.testing.expectEqual(@as(i32, 46), map_pawns[makeSquare(7, 1)]); // H2 (flip of A2)
-    // every a2..h7 square gets a distinct value in 0..47
+    // expect every a2..h7 square to get a distinct value in 0..47
     var seen: [48]bool = @splat(false);
     var f: usize = 0;
     while (f < 8) : (f += 1) {

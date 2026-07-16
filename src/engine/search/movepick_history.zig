@@ -1,4 +1,4 @@
-// Move-ordering history heuristics: the HistorySnapshot (typed views
+// Provide the move-ordering history heuristics: the HistorySnapshot (typed views
 // over the worker's history tables) + the five history-score lookups. Pure reads of
 // value snapshots; std only.
 
@@ -31,12 +31,12 @@ pub const CaptureHistoryRow = [square_nb][piece_type_nb]HistoryEntry;
 pub const PieceToHistoryRow = [square_nb]HistoryEntry;
 pub const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 
-// One continuation-history slot: a PieceToHistory page viewed as [piece][square].
+// Hold one continuation-history slot: a PieceToHistory page viewed as [piece][square].
 // The context holds a many-pointer to these slots -- the source array is [1] on the
 // qsearch path and [6] in the main search, so a bounded array type won't fit both.
 pub const ContHistSlot = ?[*]const PieceToHistoryRow;
 
-// History-table base pointers packed into a HistorySnapshot.
+// Pack the history-table base pointers into a HistorySnapshot.
 pub fn fillHistorySnapshot(
     main_history: ?[*]const MainHistoryRow,
     low_ply_history: ?[*]const LowPlyHistoryRow,
@@ -101,7 +101,7 @@ pub fn pawnHistoryScore(
     square: u8,
 ) c_int {
     const history = history_snapshot.pawn_table orelse return 0;
-    // pawn history is indexed [(pawn_key & mask) * PIECE_NB + piece][square]
+    // Index pawn history [(pawn_key & mask) * PIECE_NB + piece][square]
     const index: usize = @intCast(pawn_key & history_snapshot.pawn_mask);
     const row_index = index * piece_nb + @as(usize, piece);
     return history[row_index][@as(usize, square)].value;
