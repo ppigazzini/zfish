@@ -55,6 +55,7 @@ const searchClearEngine = engine_control.searchClearEngine;
 const waitForSearchFinishedEngine = engine_control.waitForSearchFinishedEngine;
 const printInfoString = engine_nnue.printInfoString;
 const verifyNetwork = engine_nnue.verifyNetwork;
+const requireNetworkLoaded = engine_nnue.requireNetworkLoaded;
 const loadNetworkEngine = engine_nnue.loadNetworkEngine;
 const ByteView = engine_util.ByteView;
 const allocMessage = engine_util.allocMessage;
@@ -159,6 +160,14 @@ pub fn initBody(engine_ptr: *anyopaque) void {
     addCheckOption("Syzygy50MoveRule", 1);
     addSpinOption("SyzygyProbeLimit", 7, 0, 7, option_callback_none);
     addStringOption("EvalFile", default_eval_file_name, option_callback_eval_file);
+
+    // Adding EvalFile fires its callback, which is the startup net load. Everything
+    // below needs the net: resizeThreadsEngine builds the Workers, and worker
+    // construction reads the feature-transformer biases. A missed load is silent
+    // (network.load returns void), so check it HERE -- between the load and the first
+    // code that requires it -- rather than letting it surface as a null unwrap on a
+    // worker thread. No-op when the net loaded, so bench/parity are untouched.
+    requireNetworkLoaded(e);
 
     setStartPosition(e);
     resizeThreadsEngine(e);

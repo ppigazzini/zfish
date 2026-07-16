@@ -1043,6 +1043,21 @@ pub fn build(b: *std.Build) void {
     );
     ponder_step.dependOn(&ponder_cmd.step);
 
+    // net-missing: the ONLY gate that exercises the binary WITHOUT the net beside it.
+    // Every other gate here runs with cwd=net/ (addHarnessRun's setCwd), which hands the
+    // engine the very precondition it must check -- so a startup that dies without a net
+    // is invisible to all of them, and did ship that way. The harness spawns the child in
+    // a scratch subdir holding no net and asserts a named diagnostic + a clean non-zero
+    // exit, never a signal. Startup contract only, no search: portable, so it joins the
+    // portable aggregate.
+    const net_missing_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "net-missing", "-", "check");
+
+    const net_missing_step = b.step(
+        "parity-net-missing",
+        "Missing-net startup: a named diagnostic + clean non-zero exit, never a signal",
+    );
+    net_missing_step.dependOn(&net_missing_cmd.step);
+
     // Perft differential + golden gate: the ONLY gate over
     // do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
     // perft; search-modes only checks bestmoves), pinned against the committed golden.
@@ -1725,6 +1740,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&reset_cmd.step);
     parity_step.dependOn(&skill_cmd.step);
     parity_step.dependOn(&ponder_cmd.step);
+    parity_step.dependOn(&net_missing_cmd.step);
     parity_step.dependOn(&bench_matrix_cmd.step);
     parity_step.dependOn(&tb_init_cmd.step);
     parity_step.dependOn(&tb_wdl_cmd.step);
@@ -1771,6 +1787,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&reset_cmd.step);
     parity_portable_step.dependOn(&skill_cmd.step);
     parity_portable_step.dependOn(&ponder_cmd.step);
+    parity_portable_step.dependOn(&net_missing_cmd.step);
     // The concurrency + timing gates -- the cross-OS payoff: these exercise the
     // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
     // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.

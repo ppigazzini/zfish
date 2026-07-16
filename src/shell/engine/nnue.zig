@@ -34,6 +34,49 @@ pub fn printInfoString(str: []const u8) void {
     }
 }
 
+// The external net is a RUNTIME input, not a build-time one (NNUE_EMBEDDING_OFF):
+// `network.load` resolves EvalFile against the cwd and the binary directory, and
+// reports nothing when every candidate misses. Worker construction then reads the
+// feature-transformer biases (worker_construct.constructFull), which `orelse return`s
+// on a null ftPtr and leaves the Worker zeroed -- so the miss first surfaces as a
+// null shared_history in the clear job, on a worker thread, in an unrelated
+// subsystem. Report it here instead, at the site that requires the net: name the
+// file sought and every directory searched, and exit non-zero.
+//
+// ftPtr() IS the contract constructFull needs, so it is what is checked.
+// Written to stderr, not through uci_output: this is a fatal startup diagnostic, so
+// it must not be swallowed by `Quiet` (a bench/parity run is quiet) nor depend on
+// the output_sink hook being registered.
+pub fn requireNetworkLoaded(engine_ptr: *engine_object.EngineObject) void {
+    if (network_port.ftPtr() != null) return;
+
+    const evalfile_ptr = option_port.dupEvalFile();
+    defer if (evalfile_ptr) |p| std.heap.c_allocator.free(std.mem.span(p));
+    const evalfile: []const u8 = if (evalfile_ptr) |p| std.mem.span(p) else network_port.default_eval_file_name;
+
+    const bdir: [*:0]const u8 = engine_ptr.binary_directory orelse "";
+    // Same cwd accessor misc.zig uses (its Io vtable wraps POSIX getcwd /
+    // NT RtlGetCurrentDirectory); single-threaded blocking handle, no signal handlers.
+    var threaded = std.Io.Threaded.init_single_threaded;
+    var cwd_buf: [40000]u8 = undefined;
+    const cwd: []const u8 = if (std.process.currentPath(threaded.io(), &cwd_buf)) |n|
+        cwd_buf[0..n]
+    else |_|
+        "<unknown>";
+
+    std.debug.print(
+        \\ERROR: The network file {s} was not found.
+        \\ERROR: Searched the current directory ({s}) and the binary directory ({s}).
+        \\ERROR: The NNUE net is a required runtime input and is not embedded in this build.
+        \\ERROR: Set the UCI option EvalFile to the full path of the network file, or run
+        \\ERROR: the engine from a directory containing it.
+        \\ERROR: The default net can be downloaded from: https://tests.stockfishchess.org/api/nn/{s}
+        \\ERROR: The engine will be terminated now.
+        \\
+    , .{ evalfile, cwd, std.mem.span(bdir), network_port.default_eval_file_name });
+    c.exit(1);
+}
+
 pub fn verifyNetwork() void {
     const evalfile_ptr = option_port.dupEvalFile() orelse return;
     defer std.heap.c_allocator.free(std.mem.span(evalfile_ptr));
