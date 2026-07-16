@@ -8,6 +8,17 @@
 //! single-threaded engine build runs with no thread pool attached (a valid engine
 //! build); the shipped engine injects the real pool ops, so parallel search is the
 //! platform's.
+//!
+//! hook-class: service — a leaf answering a query it must not import the answer for.
+//!
+//! These 4 are SEARCH-AFFECTING when unregistered: unregistered they answer rather
+//! than abort, so the engine searches single-threaded and still reports a legal move.
+//! Tolerated only because both roots are accounted for, which the hook-lint REGISTERED
+//! rule keeps true:
+//!   * shipped exe -- main.zig:68 registers all 4 before the engine is reachable
+//!     (main.zig:79), so no shipped path can read a default.
+//!   * headless roots -- genuinely single-threaded, so "no siblings" and "the main
+//!     worker is the best worker" are the correct answers, not degraded ones.
 
 const std = @import("std");
 const worker_layout = @import("worker_layout");
@@ -23,12 +34,18 @@ fn mainWorker(pool: *ThreadPool) *WorkerLayout {
 }
 
 /// Start the sibling search threads (index 1..).
+/// failure: silent — starts nothing, i.e. a single-threaded search. Correct with no
+/// pool attached: there are no siblings to start.
 pub var startSiblings: *const fn (pool: *ThreadPool) void = &noopPool;
 /// Wait for the sibling search threads to finish their current search.
+/// failure: silent — waits for nothing, the correct dual of startSiblings' no-op.
 pub var waitSiblings: *const fn (pool: *ThreadPool) void = &noopPool;
 /// Wait for one thread's in-flight job (used while a TT resize clears the table).
+/// failure: silent — no wait, correct when no pool means no in-flight job exists.
 pub var waitThread: *const fn (pool: *ThreadPool, thread_id: usize) void = &noopWaitThread;
 /// Worker of the vote-winning thread -- the thread whose move the search reports.
+/// failure: silent — the main worker, which IS the vote winner when it is the only
+/// searching thread. Correct single-threaded; wrong the moment siblings exist.
 pub var bestThreadWorker: *const fn (pool: *ThreadPool) *WorkerLayout = &mainWorker;
 
 test {

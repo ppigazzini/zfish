@@ -13,6 +13,13 @@
 //! before the payload so free() needs no size. In the shipped engine the platform
 //! injects its 2 MiB huge-page allocator, so production allocation is the platform's,
 //! including the zero-fill the worker construction relies on.
+//!
+//! hook-class: service — a leaf answering a query it must not import the answer for.
+//!
+//! These 2 are GENUINELY SAFE unregistered: the default is a REAL page-backed
+//! allocator honouring the same contract (zeroed, >=64-aligned, size-free `free`), not
+//! a stub that returns a plausible-looking answer. A headless build allocates
+//! correctly with no platform attached; only the huge-page optimisation is lost.
 
 const std = @import("std");
 
@@ -38,9 +45,14 @@ fn defaultFree(ptr: ?*anyopaque) void {
 
 /// A zeroed, >=64-aligned block of `size` bytes, or null. Registered by the platform;
 /// the default is the std page-backed allocator above.
+/// failure: silent — a real page-backed allocator meeting the full contract, not a
+/// stub. Correct unregistered; the platform's huge pages are an optimisation, not a
+/// requirement. (The zero-fill IS required -- worker construction depends on it.)
 pub var alloc: *const fn (size: usize) ?*anyopaque = &defaultAlloc;
 
 /// Free a block from `alloc`. Pointer only; the size is the allocator's business.
+/// failure: silent — the matching real free for the default alloc. Correct only when
+/// PAIRED with it, which holds: both are registered together or not at all.
 pub var free: *const fn (ptr: ?*anyopaque) void = &defaultFree;
 
 test {
