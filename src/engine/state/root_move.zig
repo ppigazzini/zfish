@@ -82,6 +82,12 @@ pub const RootMove = struct {
         self.score_lowerbound = false;
         self.score_upperbound = false;
     }
+    // Report an exact (non-bound) proven loss, mirroring upstream's
+    // `score_is_exact_loss()` (search.h:131). Take is_loss as a parameter: the loss
+    // threshold lives in the search's value module, and this type stays free of it.
+    pub fn scoreIsExactLoss(self: *const RootMove, is_loss: bool) bool {
+        return self.score != -value_infinite and is_loss and !self.scoreIsBound();
+    }
     pub fn eqMove(self: *const RootMove, m: Move) bool {
         return self.pv.moves[0] == m;
     }
