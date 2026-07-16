@@ -71,6 +71,15 @@ pub fn contextConfig(numa_context: *const anyopaque) *const anyopaque {
     return numa_context;
 }
 
+// KNOWN HOLE: this answers `false` for every host, so `NumaPolicy auto` (the DEFAULT)
+// never binds and NumaConfig.suggestsBindingThreads below is unreachable from the shipped
+// path. The model it should delegate to is now correct and unit-tested (numa/config.zig),
+// but wiring the facade to it is NOT a cast away: delegating it made this single-node host
+// bind under `auto` where upstream does not, which means the erased context or the config
+// the engine actually holds is not what the signature implies. That must be explained
+// before the edge is made live -- see the M17 de-erasure campaign. Do not "fix" this by
+// casting numa_context to NumaReplicationContext without first driving the auto path
+// against the upstream oracle on a single-node AND a multi-node host.
 pub fn suggestsBindingThreads(_: *const anyopaque, _: usize) bool {
     return false;
 }
