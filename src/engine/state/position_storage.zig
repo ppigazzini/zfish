@@ -23,7 +23,7 @@ pub const PositionStorage = struct {
     /// A fresh, zeroed Position block (matches the value-initialized `pos`
     /// member before pos.set(StartFEN) runs).
     pub fn zeroed() PositionStorage {
-        return .{ .bytes = [_]u8{0} ** position_size };
+        return .{ .bytes = @splat(0) };
     }
 
     /// Address of the Position object, handed to the position ops.

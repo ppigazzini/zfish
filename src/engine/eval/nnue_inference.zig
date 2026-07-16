@@ -327,7 +327,7 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     // SFNNv15 concat[128] = [ac_sqr_0(32) | ac_0(32) | ac_sqr_1(32) | ac_1(32)].
     // ac_sqr_0 / ac_0 over all FC_0_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits+1 = 7:
     // SqrClippedReLU shift = 2*7+7 = 21, ClippedReLU shift = 7.
-    var concat: [128]u8 = [_]u8{0} ** 128;
+    var concat: [128]u8 = @splat(0);
     sqrClippedReLU(21, &fc0_out, concat[0..32]);
     clippedReLU(7, &fc0_out, concat[32..64]);
 
@@ -370,8 +370,8 @@ pub fn traceEvaluate(
     cache: *nnue_accumulator_port.RefreshCache,
 ) TraceOutput {
     var output = TraceOutput{
-        .psqt = [_]c_int{0} ** layer_stacks,
-        .positional = [_]c_int{0} ** layer_stacks,
+        .psqt = @splat(0),
+        .positional = @splat(0),
         .correct_bucket = 0,
     };
     const piece_count = pieceCount(pos);
@@ -475,7 +475,7 @@ test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
             }
 
             // The transform records this bitset in the engine; build it here to match.
-            var nnz: nnue_accumulator_port.NnzBitset = .{0} ** nnue_accumulator_port.nnz_word_count;
+            var nnz: nnue_accumulator_port.NnzBitset = @splat(0);
             if (SPARSE) {
                 const in32: [*]const u32 = @ptrCast(@alignCast(&input));
                 for (0..groups) |g| {

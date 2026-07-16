@@ -70,9 +70,9 @@ pub fn ftPtr() ?[*]const u8 {
 }
 
 var layer_w: [layer_stacks_n][layers_per_stack]?[*]u8 =
-    .{.{ null, null, null }} ** layer_stacks_n;
+    @splat(.{ null, null, null });
 var layer_b: [layer_stacks_n][layers_per_stack]?[*]u8 =
-    .{.{ null, null, null }} ** layer_stacks_n;
+    @splat(.{ null, null, null });
 
 pub fn layerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8 {
     if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack or n == 0) return null;

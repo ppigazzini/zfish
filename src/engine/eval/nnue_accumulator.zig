@@ -207,7 +207,7 @@ pub fn transformBucket(
     const shr16: @Vector(V, u5) = @splat(16);
     const groups_per_step = V / 4;
     const Vg = @Vector(groups_per_step, u32);
-    const GMask = std.meta.Int(.unsigned, groups_per_step);
+    const GMask = @Int(.unsigned, groups_per_step);
     @memset(nnz, 0);
     var p: usize = 0;
     while (p < 2) : (p += 1) {

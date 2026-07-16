@@ -73,8 +73,8 @@ pub const EngineObject = struct {
     binary_directory: ?[*:0]u8 = null,
     cli_argc: c_int = 0,
     cli_argv: ?[*]const [*:0]u8 = null,
-    update_context: [update_context_size]u8 align(8) = [_]u8{0} ** update_context_size,
-    on_verify_network: [verify_network_fn_size]u8 align(8) = [_]u8{0} ** verify_network_fn_size,
+    update_context: [update_context_size]u8 align(8) = @splat(0),
+    on_verify_network: [verify_network_fn_size]u8 align(8) = @splat(0),
 
     pub fn fromBuffer(buf: *anyopaque) *EngineObject {
         return @ptrCast(@alignCast(buf));
@@ -118,8 +118,8 @@ pub const EngineObject = struct {
 
 // The side Position/TT storage the engine object uses. File-scoped here so the
 // accessors own them.
-var side_pos_storage: [1032]u8 align(64) = [_]u8{0} ** 1032;
-var side_tt_storage: [64]u8 align(64) = [_]u8{0} ** 64;
+var side_pos_storage: [1032]u8 align(64) = @splat(0);
+var side_tt_storage: [64]u8 align(64) = @splat(0);
 
 /// The side TT storage as a raw pointer (for main.zig's construction-time direct access).
 pub fn sideTtPtr() *anyopaque {

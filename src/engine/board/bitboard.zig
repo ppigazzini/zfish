@@ -202,8 +202,8 @@ const magic_is_64bit_index = false;
 
 fn initMagics(pt: PieceType, table: []u64, magics: *[64][2]Magic) void {
     var occupancy: [4096]u64 = undefined;
-    var epoch: [4096]c_int = [_]c_int{0} ** 4096;
-    var reference: [4096]u64 = [_]u64{0} ** 4096;
+    var epoch: [4096]c_int = @splat(0);
+    var reference: [4096]u64 = @splat(0);
     var cnt: c_int = 0;
     var previous_size: usize = 0;
     const table_index = magicIndexForPiece(pt);

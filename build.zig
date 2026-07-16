@@ -805,7 +805,7 @@ pub fn build(b: *std.Build) void {
     // `signature` check), not tests/signature.sh -- one cross-OS gate instead of a bash wrapper that
     // only ran on Linux. Defaults to the 2466447 arch/OS invariant; -Dsignature-ref overrides.
     const signature_reference = signature_ref orelse "2466447";
-    const signature_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "signature", signature_reference, "check");
+    const signature_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "signature", signature_reference, "check");
 
     const signature_step = b.step(
         "signature",
@@ -815,9 +815,9 @@ pub fn build(b: *std.Build) void {
 
     // Per-position search-fingerprint differential harness. Localizes a
     // bench-signature mismatch to a single position + drifted field.
-    const search_parity_golden = b.pathFromRoot("tools/search_parity.golden");
+    const search_parity_golden = repoPath(b, "tools/search_parity.golden");
 
-    const search_parity_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "search-parity", search_parity_golden, "check");
+    const search_parity_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "search-parity", search_parity_golden, "check");
 
     const search_parity_step = b.step(
         "search-parity",
@@ -825,7 +825,7 @@ pub fn build(b: *std.Build) void {
     );
     search_parity_step.dependOn(&search_parity_cmd.step);
 
-    const search_parity_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "search-parity", search_parity_golden, "update");
+    const search_parity_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "search-parity", search_parity_golden, "update");
 
     const search_parity_update_step = b.step(
         "search-parity-update",
@@ -835,9 +835,9 @@ pub fn build(b: *std.Build) void {
 
     // Deterministic non-bench search-mode harness (node-limit / MultiPV /
     // searchmoves) -- validates iterative_deepening control flow beyond bench.
-    const search_modes_golden = b.pathFromRoot("tools/search_modes.golden");
+    const search_modes_golden = repoPath(b, "tools/search_modes.golden");
 
-    const search_modes_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "search-modes", search_modes_golden, "check");
+    const search_modes_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "search-modes", search_modes_golden, "check");
 
     const search_modes_step = b.step(
         "search-modes",
@@ -845,7 +845,7 @@ pub fn build(b: *std.Build) void {
     );
     search_modes_step.dependOn(&search_modes_cmd.step);
 
-    const search_modes_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "search-modes", search_modes_golden, "update");
+    const search_modes_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "search-modes", search_modes_golden, "update");
 
     const search_modes_update_step = b.step(
         "search-modes-update",
@@ -860,14 +860,17 @@ pub fn build(b: *std.Build) void {
     // only rebuilds when BASE moves). Run standalone at sync time.
     const upstream_base_sha = runAndTrimOrNull(b, &.{
         "cat",
-        b.pathFromRoot("tools/upstream/UPSTREAM_BASE"),
+        repoPath(b, "tools/upstream/UPSTREAM_BASE"),
     }) orelse "";
     const upstream_parity_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("tools/upstream_parity.sh"),
-        b.getInstallPath(.bin, "stockfish"),
-        upstream_base_sha,
+        repoPath(b, "tools/upstream_parity.sh"),
     });
+    // Pass the engine binary as an artifact arg (the build supplies its path), then the
+    // upstream base sha. Keep the binary out of the string array above -- an artifact arg
+    // cannot live in it.
+    upstream_parity_cmd.addArtifactArg(exe);
+    upstream_parity_cmd.addArg(upstream_base_sha);
     upstream_parity_cmd.step.dependOn(install_step);
     upstream_parity_cmd.step.dependOn(&net_cmd.step);
     const upstream_parity_step = b.step(
@@ -878,8 +881,8 @@ pub fn build(b: *std.Build) void {
 
     // Full-output GOLDEN gate: the stripped bench info+bestmove text pinned against a
     // committed golden.
-    const output_golden = b.pathFromRoot("tools/output_parity.golden");
-    const output_golden_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "output-golden", output_golden, "check");
+    const output_golden = repoPath(b, "tools/output_parity.golden");
+    const output_golden_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "output-golden", output_golden, "check");
 
     const output_golden_step = b.step(
         "output-golden",
@@ -887,7 +890,7 @@ pub fn build(b: *std.Build) void {
     );
     output_golden_step.dependOn(&output_golden_cmd.step);
 
-    const output_golden_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "output-golden", output_golden, "update");
+    const output_golden_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "output-golden", output_golden, "update");
 
     const output_golden_update_step = b.step(
         "output-golden-update",
@@ -897,15 +900,15 @@ pub fn build(b: *std.Build) void {
 
     // driver-golden: pins the search-manager driver + its emit callbacks
     // (multipv/wdl/ponder/no-moves) bit-exact.
-    const driver_golden = b.pathFromRoot("tools/driver.golden");
-    const driver_golden_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "check");
+    const driver_golden = repoPath(b, "tools/driver.golden");
+    const driver_golden_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "check");
     const driver_golden_step = b.step(
         "driver-golden",
         "Assert the search-driver + emit-callback UCI output matches the committed golden",
     );
     driver_golden_step.dependOn(&driver_golden_cmd.step);
 
-    const driver_golden_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "update");
+    const driver_golden_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "update");
     const driver_golden_update_step = b.step(
         "driver-golden-update",
         "Regenerate tools/driver.golden from the current binary",
@@ -918,7 +921,7 @@ pub fn build(b: *std.Build) void {
     // gate (no hang / crash / lost search), not a determinism gate. Kept out
     // of the core `parity` aggregate (slower, wall-clock-timed); run explicitly
     // for any thread-runtime slice.
-    const stress_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "stress", "-", "check");
+    const stress_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "stress", "-", "check");
 
     const stress_step = b.step(
         "parity-stress",
@@ -933,9 +936,9 @@ pub fn build(b: *std.Build) void {
     // core `parity` aggregate (slow).
     const valgrind_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("tools/valgrind.sh"),
-        b.getInstallPath(.bin, "stockfish"),
+        repoPath(b, "tools/valgrind.sh"),
     });
+    valgrind_cmd.addArtifactArg(exe);
     valgrind_cmd.step.dependOn(install_step);
     valgrind_cmd.step.dependOn(&net_cmd.step);
     valgrind_cmd.setCwd(b.path("net"));
@@ -953,9 +956,9 @@ pub fn build(b: *std.Build) void {
     // cp band of the deterministic single-thread reference. Catches a runtime that
     // runs but corrupts result aggregation. Out of the core `parity` aggregate
     // (non-deterministic, sleep-paced).
-    const mt_golden = b.pathFromRoot("tools/mt_sanity.golden");
+    const mt_golden = repoPath(b, "tools/mt_sanity.golden");
 
-    const mt_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "mt-sanity", mt_golden, "check");
+    const mt_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "mt-sanity", mt_golden, "check");
 
     const mt_step = b.step(
         "parity-mt",
@@ -963,7 +966,7 @@ pub fn build(b: *std.Build) void {
     );
     mt_step.dependOn(&mt_cmd.step);
 
-    const mt_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "mt-sanity", mt_golden, "update");
+    const mt_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "mt-sanity", mt_golden, "update");
 
     const mt_update_step = b.step(
         "parity-mt-update",
@@ -979,9 +982,9 @@ pub fn build(b: *std.Build) void {
     // core `parity` aggregate (slow).
     const teardown_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("tools/teardown.sh"),
-        b.getInstallPath(.bin, "stockfish"),
+        repoPath(b, "tools/teardown.sh"),
     });
+    teardown_cmd.addArtifactArg(exe);
     teardown_cmd.step.dependOn(install_step);
     teardown_cmd.step.dependOn(&net_cmd.step);
     teardown_cmd.setCwd(b.path("net"));
@@ -999,7 +1002,7 @@ pub fn build(b: *std.Build) void {
     // elapsed must track the movetime budget and scale with it. Non-deterministic
     // and sleep-paced, so it is its own step (like parity-mt), outside the core
     // deterministic `parity` aggregate; the CI workflow runs it explicitly.
-    const time_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "time-mgmt", "-", "check");
+    const time_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "time-mgmt", "-", "check");
 
     const time_step = b.step(
         "parity-time",
@@ -1011,7 +1014,7 @@ pub fn build(b: *std.Build) void {
     // relations in one process): a second no-reset search reuses the TT (node count changes),
     // Clear Hash removes that reuse, and ucinewgame restores the exact clean search (no stale
     // state bleed). Single-thread deterministic, so it joins the portable aggregate.
-    const reset_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "reset-determinism", "-", "check");
+    const reset_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "reset-determinism", "-", "check");
 
     const reset_step = b.step(
         "parity-reset",
@@ -1024,7 +1027,7 @@ pub fn build(b: *std.Build) void {
     // PRNG persists per process, so K searches in one process give robust variance (measured
     // min 3 over 25 seeds). Single-thread, relations are platform-agnostic, so it joins the
     // portable aggregate.
-    const skill_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "skill", "-", "check");
+    const skill_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "skill", "-", "check");
 
     const skill_step = b.step(
         "parity-skill",
@@ -1035,7 +1038,7 @@ pub fn build(b: *std.Build) void {
     // ponder: the ponder handshake (no golden -- N-time). `go ... ponder` then `ponderhit` must
     // emit a legal bestmove, `stop` during ponder must emit the best-so-far, and the process must
     // exit cleanly. Liveness + legality, platform-agnostic, so it joins the portable aggregate.
-    const ponder_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "ponder", "-", "check");
+    const ponder_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "ponder", "-", "check");
 
     const ponder_step = b.step(
         "parity-ponder",
@@ -1050,7 +1053,7 @@ pub fn build(b: *std.Build) void {
     // a scratch subdir holding no net and asserts a named diagnostic + a clean non-zero
     // exit, never a signal. Startup contract only, no search: portable, so it joins the
     // portable aggregate.
-    const net_missing_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "net-missing", "-", "check");
+    const net_missing_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "net-missing", "-", "check");
 
     const net_missing_step = b.step(
         "parity-net-missing",
@@ -1061,8 +1064,8 @@ pub fn build(b: *std.Build) void {
     // Perft differential + golden gate: the ONLY gate over
     // do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
     // perft; search-modes only checks bestmoves), pinned against the committed golden.
-    const perft_golden = b.pathFromRoot("tools/perft.golden");
-    const perft_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "perft", perft_golden, "check");
+    const perft_golden = repoPath(b, "tools/perft.golden");
+    const perft_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "perft", perft_golden, "check");
 
     const perft_step = b.step(
         "perft",
@@ -1070,7 +1073,7 @@ pub fn build(b: *std.Build) void {
     );
     perft_step.dependOn(&perft_cmd.step);
 
-    const perft_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "perft", perft_golden, "update");
+    const perft_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "perft", perft_golden, "update");
 
     const perft_update_step = b.step(
         "perft-update",
@@ -1081,8 +1084,8 @@ pub fn build(b: *std.Build) void {
     // Eval-trace differential + golden gate: pins the NNUE `eval` trace block
     // (buildNnueTrace + the network-ptr / accumulator-cache trace path) — bench covers the eval
     // value but not this formatting path.
-    const eval_golden = b.pathFromRoot("tools/eval.golden");
-    const eval_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "eval", eval_golden, "check");
+    const eval_golden = repoPath(b, "tools/eval.golden");
+    const eval_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "eval", eval_golden, "check");
 
     const eval_step = b.step(
         "eval-trace",
@@ -1090,7 +1093,7 @@ pub fn build(b: *std.Build) void {
     );
     eval_step.dependOn(&eval_cmd.step);
 
-    const eval_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "eval", eval_golden, "update");
+    const eval_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "eval", eval_golden, "update");
 
     const eval_update_step = b.step(
         "eval-trace-update",
@@ -1100,8 +1103,8 @@ pub fn build(b: *std.Build) void {
 
     // UCI misc-command gate (coverage tail): d/flip Fen+Key+Checkers — the
     // Position fen/flip/zobrist/gives_check read paths no other gate touches.
-    const misc_golden = b.pathFromRoot("tools/misc.golden");
-    const misc_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "misc", misc_golden, "check");
+    const misc_golden = repoPath(b, "tools/misc.golden");
+    const misc_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "misc", misc_golden, "check");
 
     const misc_step = b.step(
         "misc",
@@ -1109,7 +1112,7 @@ pub fn build(b: *std.Build) void {
     );
     misc_step.dependOn(&misc_cmd.step);
 
-    const misc_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "misc", misc_golden, "update");
+    const misc_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "misc", misc_golden, "update");
 
     const misc_update_step = b.step(
         "misc-update",
@@ -1123,8 +1126,8 @@ pub fn build(b: *std.Build) void {
     // differential-vs-upstream check (zfish export == oracle export == distributed net).
     // The net bytes are arch/OS-invariant, so the golden is portable. Regenerate on a net
     // bump alongside the other goldens.
-    const export_net_golden = b.pathFromRoot("tools/export_net.golden");
-    const export_net_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "export-net", export_net_golden, "check");
+    const export_net_golden = repoPath(b, "tools/export_net.golden");
+    const export_net_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "export-net", export_net_golden, "check");
 
     const export_net_step = b.step(
         "export-net",
@@ -1132,7 +1135,7 @@ pub fn build(b: *std.Build) void {
     );
     export_net_step.dependOn(&export_net_cmd.step);
 
-    const export_net_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "export-net", export_net_golden, "update");
+    const export_net_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "export-net", export_net_golden, "update");
 
     const export_net_update_step = b.step(
         "export-net-update",
@@ -1145,8 +1148,8 @@ pub fn build(b: *std.Build) void {
     // band the `parity-time` gate checks. Pins depth/score/nodes/bestmove across the allocation
     // branches (sudden-death / movestogo / increment / movetime). Node budgets are
     // arch/OS-invariant, so the golden is portable.
-    const nodestime_golden = b.pathFromRoot("tools/nodestime.golden");
-    const nodestime_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "nodestime", nodestime_golden, "check");
+    const nodestime_golden = repoPath(b, "tools/nodestime.golden");
+    const nodestime_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "nodestime", nodestime_golden, "check");
 
     const nodestime_step = b.step(
         "nodestime",
@@ -1154,7 +1157,7 @@ pub fn build(b: *std.Build) void {
     );
     nodestime_step.dependOn(&nodestime_cmd.step);
 
-    const nodestime_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "nodestime", nodestime_golden, "update");
+    const nodestime_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "nodestime", nodestime_golden, "update");
 
     const nodestime_update_step = b.step(
         "nodestime-update",
@@ -1166,8 +1169,8 @@ pub fn build(b: *std.Build) void {
     // surface). Only the option lines are pinned -- the id name / author + banner carry the
     // git sha/date and are volatile. Defaults/min/max are static constants (machine-invariant),
     // so the golden is portable; EvalFile's default is the net name, regenerated on a net bump.
-    const uci_options_golden = b.pathFromRoot("tools/uci_options.golden");
-    const uci_options_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "uci-options", uci_options_golden, "check");
+    const uci_options_golden = repoPath(b, "tools/uci_options.golden");
+    const uci_options_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "uci-options", uci_options_golden, "check");
 
     const uci_options_step = b.step(
         "uci-options",
@@ -1175,7 +1178,7 @@ pub fn build(b: *std.Build) void {
     );
     uci_options_step.dependOn(&uci_options_cmd.step);
 
-    const uci_options_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "uci-options", uci_options_golden, "update");
+    const uci_options_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "uci-options", uci_options_golden, "update");
 
     const uci_options_update_step = b.step(
         "uci-options-update",
@@ -1187,8 +1190,8 @@ pub fn build(b: *std.Build) void {
     // (score mate N) and the mating move+ponder across three verified forced mates (mate in
     // 1/2/3) -- a bestmove-only check would miss a wrong-distance regression. Single-thread and
     // mate-distance-deterministic, so arch/OS-invariant and portable.
-    const mate_golden = b.pathFromRoot("tools/mate.golden");
-    const mate_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "mate", mate_golden, "check");
+    const mate_golden = repoPath(b, "tools/mate.golden");
+    const mate_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "mate", mate_golden, "check");
 
     const mate_step = b.step(
         "mate",
@@ -1196,7 +1199,7 @@ pub fn build(b: *std.Build) void {
     );
     mate_step.dependOn(&mate_cmd.step);
 
-    const mate_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "mate", mate_golden, "update");
+    const mate_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "mate", mate_golden, "update");
 
     const mate_update_step = b.step(
         "mate-update",
@@ -1208,8 +1211,8 @@ pub fn build(b: *std.Build) void {
     // movegen counts; this pins FRC castling made/unmade in a real search, the played
     // king-to-rook-square castling move (f1g1 = O-O) via `d`, and the NNUE eval on FRC king
     // placements. Single-thread + node budget -> arch/OS-invariant, so the golden is portable.
-    const chess960_golden = b.pathFromRoot("tools/chess960.golden");
-    const chess960_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "chess960", chess960_golden, "check");
+    const chess960_golden = repoPath(b, "tools/chess960.golden");
+    const chess960_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "chess960", chess960_golden, "check");
 
     const chess960_step = b.step(
         "chess960",
@@ -1217,7 +1220,7 @@ pub fn build(b: *std.Build) void {
     );
     chess960_step.dependOn(&chess960_cmd.step);
 
-    const chess960_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "chess960", chess960_golden, "update");
+    const chess960_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "chess960", chess960_golden, "update");
 
     const chess960_update_step = b.step(
         "chess960-update",
@@ -1231,8 +1234,8 @@ pub fn build(b: *std.Build) void {
     // Linux-only (`parity`, not `parity-portable`): verified bit-exact on x86 in both build
     // modes, but the node-limited config's cross-arch equality is not locally verifiable, and
     // the default bench already gates cross-OS signature. Regenerate on an upstream bump.
-    const bench_matrix_golden = b.pathFromRoot("tools/bench_matrix.golden");
-    const bench_matrix_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "bench-matrix", bench_matrix_golden, "check");
+    const bench_matrix_golden = repoPath(b, "tools/bench_matrix.golden");
+    const bench_matrix_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "bench-matrix", bench_matrix_golden, "check");
 
     const bench_matrix_step = b.step(
         "bench-matrix",
@@ -1240,7 +1243,7 @@ pub fn build(b: *std.Build) void {
     );
     bench_matrix_step.dependOn(&bench_matrix_cmd.step);
 
-    const bench_matrix_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "bench-matrix", bench_matrix_golden, "update");
+    const bench_matrix_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "bench-matrix", bench_matrix_golden, "update");
 
     const bench_matrix_update_step = b.step(
         "bench-matrix-update",
@@ -1252,8 +1255,8 @@ pub fn build(b: *std.Build) void {
     // (net/syzygy/) and pins the `info string Found N WDL and N DTZ ... (up to M-man)` line ==
     // upstream oracle. Depends on the `tb` fetch too. Linux-only (`parity`, not portable): the
     // fetched tables + libc file-check are verified on Linux; cross-OS Syzygy comes with M-SZ-4.
-    const tb_init_golden = b.pathFromRoot("tools/tb_init.golden");
-    const tb_init_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-init", tb_init_golden, "check");
+    const tb_init_golden = repoPath(b, "tools/tb_init.golden");
+    const tb_init_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-init", tb_init_golden, "check");
     tb_init_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_init_step = b.step(
@@ -1262,7 +1265,7 @@ pub fn build(b: *std.Build) void {
     );
     tb_init_step.dependOn(&tb_init_cmd.step);
 
-    const tb_init_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-init", tb_init_golden, "update");
+    const tb_init_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-init", tb_init_golden, "update");
     tb_init_update_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_init_update_step = b.step(
@@ -1275,8 +1278,8 @@ pub fn build(b: *std.Build) void {
     // `d`-command `Tablebases WDL: N (state)` line == upstream oracle for a curated 3-man battery
     // (all five piece types, win/loss/draw, wtm/btm, pawn + blackStronger flips, and the
     // search<false> capture recursion). Linux-only (like tb-init); depends on the `tb` fetch.
-    const tb_wdl_golden = b.pathFromRoot("tools/tb_wdl.golden");
-    const tb_wdl_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-wdl", tb_wdl_golden, "check");
+    const tb_wdl_golden = repoPath(b, "tools/tb_wdl.golden");
+    const tb_wdl_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-wdl", tb_wdl_golden, "check");
     tb_wdl_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_wdl_step = b.step(
@@ -1285,7 +1288,7 @@ pub fn build(b: *std.Build) void {
     );
     tb_wdl_step.dependOn(&tb_wdl_cmd.step);
 
-    const tb_wdl_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-wdl", tb_wdl_golden, "update");
+    const tb_wdl_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-wdl", tb_wdl_golden, "update");
     tb_wdl_update_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_wdl_update_step = b.step(
@@ -1297,8 +1300,8 @@ pub fn build(b: *std.Build) void {
     // tb-dtz golden: the Syzygy DTZ probe (M-SZ-3a). Same 3-man battery as tb-wdl but pins the
     // `d`-command `Tablebases DTZ: N (state)` line == upstream oracle -- exercising do_probe_table
     // <DTZ>, the DTZ value map, and the CHANGE_STM 1-ply search (KQvK-btm). Linux-only; needs `tb`.
-    const tb_dtz_golden = b.pathFromRoot("tools/tb_dtz.golden");
-    const tb_dtz_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-dtz", tb_dtz_golden, "check");
+    const tb_dtz_golden = repoPath(b, "tools/tb_dtz.golden");
+    const tb_dtz_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-dtz", tb_dtz_golden, "check");
     tb_dtz_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_dtz_step = b.step(
@@ -1307,7 +1310,7 @@ pub fn build(b: *std.Build) void {
     );
     tb_dtz_step.dependOn(&tb_dtz_cmd.step);
 
-    const tb_dtz_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-dtz", tb_dtz_golden, "update");
+    const tb_dtz_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-dtz", tb_dtz_golden, "update");
     tb_dtz_update_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_dtz_update_step = b.step(
@@ -1318,8 +1321,8 @@ pub fn build(b: *std.Build) void {
 
     // tb-root golden: the Syzygy root DTZ ranking (M-SZ-3b). Runs `go` on TB wins and pins
     // bestmove + tbScore + tbHits == upstream oracle, first-validating rankRootMovesDtz end to end.
-    const tb_root_golden = b.pathFromRoot("tools/tb_root.golden");
-    const tb_root_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-root", tb_root_golden, "check");
+    const tb_root_golden = repoPath(b, "tools/tb_root.golden");
+    const tb_root_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-root", tb_root_golden, "check");
     tb_root_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_root_step = b.step(
@@ -1328,7 +1331,7 @@ pub fn build(b: *std.Build) void {
     );
     tb_root_step.dependOn(&tb_root_cmd.step);
 
-    const tb_root_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-root", tb_root_golden, "update");
+    const tb_root_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-root", tb_root_golden, "update");
     tb_root_update_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_root_update_step = b.step(
@@ -1340,8 +1343,8 @@ pub fn build(b: *std.Build) void {
     // tb-search golden: the in-search Step 6 WDL probe (M-SZ-4). Benches a 4-man EPD; the node
     // count with Step 6 on (SyzygyPath set) and off both pin == upstream oracle -- bit-exact
     // node-count parity that the in-tree probe shapes. Linux-only; depends on the `tb` fetch.
-    const tb_search_golden = b.pathFromRoot("tools/tb_search.golden");
-    const tb_search_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-search", tb_search_golden, "check");
+    const tb_search_golden = repoPath(b, "tools/tb_search.golden");
+    const tb_search_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-search", tb_search_golden, "check");
     tb_search_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_search_step = b.step(
@@ -1350,7 +1353,7 @@ pub fn build(b: *std.Build) void {
     );
     tb_search_step.dependOn(&tb_search_cmd.step);
 
-    const tb_search_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-search", tb_search_golden, "update");
+    const tb_search_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-search", tb_search_golden, "update");
     tb_search_update_cmd.step.dependOn(&tb_cmd.step);
 
     const tb_search_update_step = b.step(
@@ -1363,8 +1366,8 @@ pub fn build(b: *std.Build) void {
     // 5-man tables staged into net/syzygy5/ (see buildTbCursed's comment), which the 3-man CI set
     // never contains, so this is NOT wired into `parity`. Pins WDL+DTZ of a KNNvKP cursed win
     // (+1/122) and its blessed-loss mirror (-1/-115) == the upstream oracle.
-    const tb_cursed_golden = b.pathFromRoot("tools/tb_cursed.golden");
-    const tb_cursed_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-cursed", tb_cursed_golden, "check");
+    const tb_cursed_golden = repoPath(b, "tools/tb_cursed.golden");
+    const tb_cursed_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-cursed", tb_cursed_golden, "check");
 
     const tb_cursed_step = b.step(
         "tb-cursed",
@@ -1372,7 +1375,7 @@ pub fn build(b: *std.Build) void {
     );
     tb_cursed_step.dependOn(&tb_cursed_cmd.step);
 
-    const tb_cursed_update_cmd = addHarnessRun(b, harness_exe, install_step, &net_cmd.step, "tb-cursed", tb_cursed_golden, "update");
+    const tb_cursed_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-cursed", tb_cursed_golden, "update");
     const tb_cursed_update_step = b.step(
         "tb-cursed-update",
         "LOCAL: regenerate tools/tb_cursed.golden from the current binary",
@@ -1385,9 +1388,9 @@ pub fn build(b: *std.Build) void {
     // against any C++ TU being reintroduced into the default binary.
     const src_free_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("tools/src_free.sh"),
-        b.getInstallPath(.bin, "stockfish"),
+        repoPath(b, "tools/src_free.sh"),
     });
+    src_free_cmd.addArtifactArg(exe);
     src_free_cmd.step.dependOn(install_step);
     src_free_cmd.step.dependOn(&net_cmd.step);
     src_free_cmd.setCwd(b.path("net"));
@@ -1406,7 +1409,7 @@ pub fn build(b: *std.Build) void {
     const headless_baseline = "0";
     const headless_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("tools/headless_lint.sh"),
+        repoPath(b, "tools/headless_lint.sh"),
     });
     headless_cmd.setEnvironmentVariable("HEADLESS_BASELINE", headless_baseline);
     const headless_step = b.step(
@@ -1426,7 +1429,7 @@ pub fn build(b: *std.Build) void {
     const loc_baseline = "2";
     const loc_cmd = b.addSystemCommand(&.{
         "bash",
-        b.pathFromRoot("tools/loc_lint.sh"),
+        repoPath(b, "tools/loc_lint.sh"),
     });
     loc_cmd.setEnvironmentVariable("LOC_BASELINE", loc_baseline);
     const loc_step = b.step(
@@ -1879,9 +1882,22 @@ fn addTestRun(b: *std.Build, step: *std.Build.Step, artifact: *std.Build.Step.Co
 
 // Wire one pure-Zig parity-harness invocation: run the harness (host) with the
 // engine binary, golden path, and mode, from net/ so the spawned engine finds the net.
+// Resolve a repo-root-relative path to an absolute string. Read the build root from
+// whichever field the running std.Build exposes -- 0.16 build_root: Cache.Directory,
+// 0.17 root: Cache.Path -- so this compiles on both; the comptime @hasField branch
+// prunes the absent field.
+fn repoPath(b: *std.Build, sub: []const u8) []const u8 {
+    const root: []const u8 = if (@hasField(std.Build, "build_root"))
+        (b.build_root.path orelse ".")
+    else
+        (b.root.root_dir.path orelse ".");
+    return b.pathResolve(&.{ root, sub });
+}
+
 fn addHarnessRun(
     b: *std.Build,
     harness: *std.Build.Step.Compile,
+    stockfish: *std.Build.Step.Compile,
     install_step: *std.Build.Step,
     net_step: *std.Build.Step,
     check_name: []const u8,
@@ -1889,7 +1905,12 @@ fn addHarnessRun(
     mode: []const u8,
 ) *std.Build.Step.Run {
     const run = b.addRunArtifact(harness);
-    run.addArgs(&.{ check_name, b.getInstallPath(.bin, "stockfish"), golden_or_expected, mode });
+    // Build the harness argv as <check> <engine binary> <golden-or-expected> <mode>.
+    // Pass the binary as an artifact arg (the build supplies its path), splitting it out
+    // of the surrounding string args.
+    run.addArg(check_name);
+    run.addArtifactArg(stockfish);
+    run.addArgs(&.{ golden_or_expected, mode });
     run.setCwd(b.path("net"));
     run.step.dependOn(install_step);
     run.step.dependOn(net_step);
@@ -2291,7 +2312,7 @@ fn hasMacro(macros: []const Macro, name: []const u8) bool {
 }
 
 fn readGitInfo(b: *std.Build) GitInfo {
-    const repo_root = b.pathFromRoot(".");
+    const repo_root = repoPath(b, ".");
 
     return .{
         .sha = runAndTrimOrNull(b, &.{ "git", "-C", repo_root, "rev-parse", "--short=8", "HEAD" }),

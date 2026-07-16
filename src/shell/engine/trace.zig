@@ -211,7 +211,7 @@ pub fn fenEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
 
 pub fn visualize(pos: *const position_port.Position) ?[*:0]u8 {
     const allocator = std.heap.c_allocator;
-    var pieces: [square_count]u8 = [_]u8{0} ** square_count;
+    var pieces: [square_count]u8 = @splat(0);
     position_port.accumulatorSnapshot(pos, &pieces);
 
     const summary = positionSummary(pos);
