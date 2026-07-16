@@ -38,10 +38,13 @@ pub const PVMoves = struct {
 };
 
 comptime {
-    // Pin the PVMoves footprint at 494 bytes of moves, padded to an 8-byte length -> 504,
-    // and the RootMove footprint at 552.
+    // Pin the PVMoves footprint at 494 bytes of moves, padded to an 8-byte length -> 504.
     std.debug.assert(@sizeOf(PVMoves) == 504);
 }
+
+// Pin the RootMove element size the strided rootMoves vector uses. Two PVMoves (pv +
+// previousPV) at 504 each, plus the scalar head.
+pub const root_move_footprint: usize = 1056;
 
 pub const RootMove = struct {
     effort: u64 = 0,
@@ -56,10 +59,18 @@ pub const RootMove = struct {
     tb_rank: i32 = 0,
     tb_score: i32 = 0,
     pv: PVMoves,
+    // Mirror upstream's `PVMoves pv, previousPV;` (search.h:153) and
+    // `bool previousScoreExact` (search.h:149). Both were absent, and their absence is
+    // what collapsed the two distinct PV memories into one: the follow-PV heuristic needs
+    // THIS line's PV from the previous iteration (rootMoves[pvIdx].previousPV), which
+    // rootMoves[0].pv cannot supply once MultiPV > 1. previous_score_exact additionally
+    // gates the aborted-MultiPV score repair (search.cpp:456).
+    previous_pv: PVMoves,
+    previous_score_exact: bool = false,
 
     // Push m onto the pv in init(m).
     pub fn init(m: Move) RootMove {
-        var rm = RootMove{ .pv = PVMoves.empty() };
+        var rm = RootMove{ .pv = PVMoves.empty(), .previous_pv = PVMoves.empty() };
         rm.pv.pushBack(m);
         return rm;
     }
@@ -80,7 +91,7 @@ pub const RootMove = struct {
     }
 
     /// Reinterpret a raw rootMoves-vector element address as a *RootMove (worker_layout
-    /// re-exports this type; the vector strides by @sizeOf(RootMove) == 552).
+    /// re-exports this type; the vector strides by @sizeOf(RootMove) == root_move_footprint).
     pub inline fn fromAddr(addr: usize) *RootMove {
         return @ptrFromInt(addr);
     }
@@ -88,8 +99,10 @@ pub const RootMove = struct {
 
 comptime {
     // Let Zig own the field order, but keep the element size equal to the strided
-    // rootMoves vector element.
-    std.debug.assert(@sizeOf(RootMove) == 552);
+    // rootMoves vector element. Grew from 552 when previousPV (504) + previousScoreExact
+    // were restored -- upstream's RootMove carries both, so the smaller footprint was a
+    // missing field, not a saving.
+    std.debug.assert(@sizeOf(RootMove) == root_move_footprint);
 }
 
 // ---- tests ------------------------------------------------------------------
@@ -98,7 +111,7 @@ const testing = std.testing;
 
 test "PVMoves and RootMove keep the strided element size" {
     try testing.expectEqual(@as(usize, 504), @sizeOf(PVMoves));
-    try testing.expectEqual(@as(usize, 552), @sizeOf(RootMove));
+    try testing.expectEqual(root_move_footprint, @sizeOf(RootMove));
 }
 
 test "RootMove(Move) seeds the pv and defaults" {

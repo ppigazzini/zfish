@@ -74,6 +74,13 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     var pv: PVMoves = undefined;
     pv.length = 0;
 
+    // Keep the best move's PV in a LOCAL, as upstream does (`PVMoves lastBestMovePV;`,
+    // search.cpp:275). It is the abort-rollback memory and is written only when the best
+    // move changes -- a different quantity, and a different lifetime, from the per-pvIdx
+    // follow-PV memory in the Worker (last_iteration_pv). Sharing one buffer for both
+    // conflated them.
+    var last_best_move_pv: PVMoves = undefined;
+    last_best_move_pv.length = 0;
     var last_best_move_depth: c_int = 0;
     var best_value: c_int = -q_value_inf;
     const us: usize = @intCast(sideToMove(id.root_pos));
@@ -126,10 +133,17 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             uci_pv_sent = false;
         }
 
-        // Save last iteration scores.
+        // Save the last iteration's scores before the first PV line is searched and all
+        // the move scores except the (new) PV are set to -VALUE_INFINITE. Mirror upstream
+        // search.cpp:346-351: the PV and its exactness are saved alongside the score.
+        // Only previous_score was saved before, so previousPV did not exist and the
+        // follow-PV memory had to borrow rootMoves[0].pv -- see last_iteration_pv below.
         var ri: usize = 0;
-        while (ri < id.root_moves_count) : (ri += 1)
+        while (ri < id.root_moves_count) : (ri += 1) {
             id.root_moves[ri].previous_score = id.root_moves[ri].score;
+            id.root_moves[ri].previous_pv = id.root_moves[ri].pv;
+            id.root_moves[ri].previous_score_exact = ri < multi_pv;
+        }
 
         var pv_first: usize = 0;
         id.pv_last.* = 0;
@@ -146,6 +160,13 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                     if (id.root_moves[id.pv_last.*].tb_rank != id.root_moves[pv_first].tb_rank) break;
                 }
             }
+
+            // Point the follow-PV memory at THIS line's PV from the previous iteration
+            // (upstream search.cpp:369). This is upstream's `lastIterationIdxPV`, a
+            // per-pvIdx value; it is NOT the best move's PV. zfish had one buffer doing
+            // both jobs, so every MultiPV line followed rootMoves[0]'s PV and searched a
+            // different tree once MultiPV > 1.
+            id.last_iter_pv.* = id.root_moves[id.pv_idx.*].previous_pv;
 
             id.sel_depth.* = 0;
 
@@ -211,16 +232,16 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
         }
 
         if (@atomicLoad(u8, id.stop, .monotonic) == 0) {
-            if (id.last_iter_pv.length == 0 or id.root_moves[0].pv.moves[0] != id.last_iter_pv.moves[0])
+            if (last_best_move_pv.length == 0 or id.root_moves[0].pv.moves[0] != last_best_move_pv.moves[0])
                 last_best_move_depth = id.root_depth.*;
-            id.last_iter_pv.* = id.root_moves[0].pv;
+            last_best_move_pv = id.root_moves[0].pv;
         } else if (id.pv_idx.* == 0 and id.root_moves[0].score != -q_value_inf and
             idIsLoss(id.root_moves[0].score) and
             !(id.root_moves[0].score_lowerbound or id.root_moves[0].score_upperbound))
         {
-            if (id.last_iter_pv.length != 0) {
-                moveToFront(id.root_moves, id.root_moves_count, id.last_iter_pv.moves[0]);
-                id.root_moves[0].pv = id.last_iter_pv.*;
+            if (last_best_move_pv.length != 0) {
+                moveToFront(id.root_moves, id.root_moves_count, last_best_move_pv.moves[0]);
+                id.root_moves[0].pv = last_best_move_pv;
                 id.root_moves[0].score = id.root_moves[0].previous_score;
                 id.root_moves[0].uci_score = id.root_moves[0].previous_score;
                 if (main_thread) uci_pv_sent = false;
