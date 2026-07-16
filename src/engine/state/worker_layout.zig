@@ -27,7 +27,7 @@ pub const state_info_size: usize = 192;
 pub const transposition_table_size: usize = 24;
 pub const accumulator_stack_size: usize = 2181568;
 pub const accumulator_caches_size: usize = 278528;
-pub const root_move_size: usize = 552;
+pub const root_move_size: usize = root_move.root_move_footprint;
 
 // Aggregate the ThreadPool reads (sum over the pool's threads): position.zig (the search
 // driver) reads them here without importing the thread module. thread.zig's public
@@ -352,14 +352,14 @@ pub const Worker = struct {
 // Re-export PVMoves + RootMove from the canonical definition in
 // support/root_move.zig. The Worker embeds `last_iteration_pv: PVMoves` and strides
 // its rootMoves vector by @sizeOf(RootMove); the size asserts below pin those
-// (504 / 552).
+// (504 / root_move_size).
 pub const PVMoves = root_move.PVMoves;
 pub const RootMove = root_move.RootMove;
 
 comptime {
     std.debug.assert(@offsetOf(Thread, "worker") == 8);
     // Keep the sizes equal to the footprint the rootMoves vector is strided/allocated by
-    // (root_move_size) and the Worker's embedded lastIterationPV slot (504 / 552).
+    // (root_move_size) and the Worker's embedded lastIterationPV slot (504).
     std.debug.assert(@sizeOf(PVMoves) == 504);
     std.debug.assert(@sizeOf(RootMove) == root_move_size);
 }
