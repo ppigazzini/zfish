@@ -11,6 +11,19 @@ const pv_shift: u8 = bound_shift + 2;
 const pv_mask: u8 = 1 << pv_shift;
 // Define the is_decisive threshold (VALUE_TB_WIN_IN_MAX_PLY); used by secondary TT aging.
 const value_tb_win_in_max_ply: c_int = 31507;
+// Define VALUE_INFINITE; secondary aging excludes |value| == VALUE_INFINITE.
+const value_infinite: c_int = 32001;
+
+// Subtract from a stored depth, saturating at 0 -- upstream's
+// `std::max(int(depth8) - n, 0)` with the comment "guard against racy underflows, default
+// to unoccupied" (tt.cpp:121, tt.cpp:146). Zig's `-%=` WRAPS, so a shallow entry
+// penalized past zero became depth ~253: the DEEPEST possible entry instead of the
+// shallowest, and `depth8 != 0` (the occupancy test at entryRelativeAge's caller) then
+// read a cleared slot as occupied. The clamp is not a C++ nicety; its absence inverted
+// the value.
+fn depthSaturatingSub(depth8: u8, n: u8) u8 {
+    return depth8 -| n;
+}
 
 pub const TtEntry = tt_types.TtEntry;
 pub const TtCluster = tt_types.TtCluster;
@@ -137,16 +150,27 @@ pub fn entrySave(
     // upstream 94beadffb: apply secondary aging. Matters for elementary mate finding. Age a deep,
     // decisive, non-exact entry that we are NOT overwriting. (depth8 + DEPTH_NONE >= 5; DEPTH_NONE = depth_none = -3.)
     else if (@as(c_int, entry.depth8) + depth_none >= 5 and
-        (@as(c_int, entry.value16) >= value_tb_win_in_max_ply or @as(c_int, entry.value16) <= -value_tb_win_in_max_ply) and
         ((entry.gen_bound8 & bound_mask) >> bound_shift) != 3)
     {
-        entry.depth8 -%= 1;
+        // Mirror upstream's inner test exactly (tt.cpp:120): `std::abs(v16) <
+        // VALUE_INFINITE && is_decisive(v16)`. The `abs < VALUE_INFINITE` half was
+        // missing, so an entry holding +/-VALUE_INFINITE was aged here and is not
+        // upstream. Keep it a nested `if`, as upstream does, rather than folding it into
+        // the else-if chain: the two guards are not the same condition.
+        const v16: c_int = @as(c_int, entry.value16);
+        if (@abs(v16) < value_infinite and
+            (v16 >= value_tb_win_in_max_ply or v16 <= -value_tb_win_in_max_ply))
+        {
+            entry.depth8 = depthSaturatingSub(entry.depth8, 1);
+        }
     }
 }
 
-// upstream 319d61eff: decrement a stored entry's depth as a penalty.
+// upstream 319d61eff: decrement a stored entry's depth as a penalty. Saturate at 0
+// (tt.cpp:146) -- a wrapping subtract turned a penalised shallow entry into the deepest
+// entry in the table.
 pub fn entryPenalize(entry: *TtEntry, penalty: u8) void {
-    entry.depth8 -%= penalty;
+    entry.depth8 = depthSaturatingSub(entry.depth8, penalty);
 }
 
 pub fn entryRead(entry: *const TtEntry, depth_none: c_int) TtReadOutput {
@@ -313,4 +337,19 @@ test "TranspositionTable handle: layout and generation cycling" {
     const g0 = tt.generation();
     tt.newSearch();
     try std.testing.expect(tt.generation() != g0); // advance the generation by GENERATION_DELTA
+}
+
+test "tt: depth penalty saturates at 0 instead of wrapping" {
+    // Drive the exact case the wrapping subtract inverted: penalise a shallow entry past
+    // zero. `-%=` yielded 253 -- the deepest possible entry, and non-zero, so the slot
+    // also read as occupied. Upstream clamps to 0 (tt.cpp:146).
+    var entry: TtEntry = std.mem.zeroes(TtEntry);
+    entry.depth8 = 2;
+    entryPenalize(&entry, 5);
+    try std.testing.expectEqual(@as(u8, 0), entry.depth8);
+    try std.testing.expectEqual(@as(u8, 2 -% @as(u8, 5)), @as(u8, 253)); // what it used to do
+
+    entry.depth8 = 20;
+    entryPenalize(&entry, 5);
+    try std.testing.expectEqual(@as(u8, 15), entry.depth8); // normal path unchanged
 }
