@@ -3,7 +3,7 @@ const correction_bundle = @import("correction_bundle");
 
 const CorrectionBundle = correction_bundle.CorrectionBundle;
 
-// The SharedHistories layout, reached through the Worker's shared_history pointer.
+// Lay out SharedHistories, reached through the Worker's shared_history pointer.
 // correctionHistory and pawnHistory are each a DynStats { size_t size; T* data } (an
 // 8-byte data pointer), followed by the two index masks. pawn page = [16][64] int16
 // (1024); correction page = [2]CorrectionBundle. shared_history.zig re-exports this as

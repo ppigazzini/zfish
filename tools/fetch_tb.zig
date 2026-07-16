@@ -1,15 +1,15 @@
-// zfish Syzygy 3-man tablebase fetcher, in pure Zig (mirrors fetch_net.zig) -- no sh/curl. It
-// downloads the 5 three-man endgames (KPvK KNvK KBvK KRvK KQvK), WDL (.rtbw) + DTZ (.rtbz), into
+// Fetch the zfish Syzygy 3-man tablebases, in pure Zig (mirrors fetch_net.zig) -- no sh/curl.
+// Download the 5 three-man endgames (KPvK KNvK KBvK KRvK KQvK), WDL (.rtbw) + DTZ (.rtbz), into
 // `syzygy/` under the cwd (build.zig runs it with cwd = net/, so -> net/syzygy/). ~26 KB total;
-// the tables are NEVER committed (see .gitignore) -- fetched + cached like the NNUE net. Only the
-// 3-man set is needed for the Syzygy CI gate (a KPvK/KQvK probe); it verifies each file's Syzygy
-// magic header so a mirror error page can't masquerade as a table. Skips files already present.
+// never commit the tables (see .gitignore) -- fetch + cache them like the NNUE net. Only the
+// 3-man set is needed for the Syzygy CI gate (a KPvK/KQvK probe); verify each file's Syzygy
+// magic header so a mirror error page can't masquerade as a table. Skip files already present.
 
 const std = @import("std");
 const Io = std.Io;
 
 const names = [_][]const u8{ "KPvK", "KNvK", "KBvK", "KRvK", "KQvK" };
-// First 4 bytes of a valid file (SF `Magics`): index [type == WDL] -> [0]=DTZ, [1]=WDL.
+// Match the first 4 bytes of a valid file (SF `Magics`): index [type == WDL] -> [0]=DTZ, [1]=WDL.
 const wdl_magic = [4]u8{ 0x71, 0xE8, 0x23, 0x5D };
 const dtz_magic = [4]u8{ 0xD7, 0x66, 0x0C, 0xA5 };
 const base = "https://tablebase.lichess.ovh/tables/standard";

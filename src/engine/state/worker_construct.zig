@@ -1,16 +1,16 @@
 // Worker field constructor.
 //
-// The Worker's 13.2 MB storage is already Zig-allocated (aligned_large_pages),
-// its POD fill is Zig (the worker-clear reset). The non-history members written by the
-// constructor are: the five
+// Note that the Worker's 13.2 MB storage is already Zig-allocated (aligned_large_pages),
+// its POD fill is Zig (the worker-clear reset). Write the non-history members the
+// constructor owns: the five
 // SharedState reference slots, the NUMA scalars, the manager pointer, and the one
-// live AccumulatorStack slot. This module writes exactly that set in Zig, so the
+// live AccumulatorStack slot. Write exactly that set in Zig, so the
 // Engine graph constructs a Worker directly in Zig.
 //
-// Only the constructor-set fields are written here; the histories, reductions,
-// refresh cache, and shared history are filled afterwards by the existing
-// worker-clear reset path. Writes go through typed worker_layout.WorkerLayout fields,
-// with worker_off kept only for the two sub-region slots (shared-history pointer,
+// Write only the constructor-set fields here; fill the histories, reductions,
+// refresh cache, and shared history afterwards through the existing
+// worker-clear reset path. Route writes through typed worker_layout.WorkerLayout fields,
+// keeping worker_off only for the two sub-region slots (shared-history pointer,
 // AccumulatorStack size).
 
 const std = @import("std");
@@ -24,21 +24,21 @@ const network_port = @import("network");
 
 const off = worker_layout.worker_off;
 
-// The FT pointer (network.zig-owned inference storage) lets the full
+// Use the FT pointer (network.zig-owned inference storage) to let the full
 // constructor fill the histories exactly as the worker-clear reset.
 
-// reductions is the [256]c_int table in WorkerLayout (the layout no longer
+// Treat reductions as the [256]c_int table in WorkerLayout (the layout no longer
 // puts it immediately before `manager`, so take the fixed element count directly).
 const reductions_count: usize = 256;
 
-// The NUMA scalars follow threadIdx in constructor order (threadIdx,
+// Place the NUMA scalars after threadIdx in constructor order (threadIdx,
 // numaThreadIdx, numaTotal, numaAccessToken), each a size_t-wide slot, filling
 // the 32-byte gap to `reductions`.
 const numa_thread_idx_off = off.numa_thread_idx;
 const numa_total_off = off.numa_total;
 const numa_access_token_off = off.numa_access_token;
 
-// AccumulatorStack::size (size_t == 1 at construction) sits 64 bytes before the
+// Locate AccumulatorStack::size (size_t == 1 at construction) 64 bytes before the
 // refresh table -- its last real member plus trailing alignment padding.
 const accumulator_stack_size_off = off.accumulator_stack_size_field;
 
@@ -47,9 +47,9 @@ fn writePtr(base: [*]u8, offset: usize, value: usize) void {
     p.* = value;
 }
 
-// Inputs the Worker constructor receives, unpacked from the SharedState plus
-// the thread parameters. Pointers are the exact referents the reference members
-// must bind to (the SharedState members).
+// Collect the inputs the Worker constructor receives, unpacked from the SharedState
+// plus the thread parameters. Point each pointer at the exact referent its reference
+// member must bind to (the SharedState members).
 pub const WorkerCtorInputs = struct {
     shared_history: usize, // &sharedState.sharedHistories.at(numa)
     threads: usize, // &sharedState.threads
@@ -67,30 +67,30 @@ pub const WorkerCtorInputs = struct {
 pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     const wl = worker_layout.WorkerLayout.fromPtr(worker);
 
-    // sharedHistories reference: now a typed field of the embedded WorkerHistories.
+    // Bind the sharedHistories reference: now a typed field of the embedded WorkerHistories.
     wl.histories.shared_history = @ptrFromInt(in.shared_history);
-    // The live SharedState reference members (threads + tt) + the moved-in manager.
-    // options/network were vestigial pass-through (never read -- the search reads the
-    // global OptionsModel / FT storage) and are removed.
+    // Bind the live SharedState reference members (threads + tt) + the moved-in manager.
+    // Drop options/network — vestigial pass-through (never read -- the search reads the
+    // global OptionsModel / FT storage).
     wl.threads = @ptrFromInt(in.threads);
     wl.tt = @ptrFromInt(in.tt);
     wl.manager = @ptrFromInt(in.manager);
-    // NUMA identity scalars.
+    // Write the NUMA identity scalars.
     wl.thread_idx = in.thread_idx;
     wl.numa_thread_idx = in.numa_thread_idx;
     wl.numa_total = in.numa_total;
     wl.numa_access_token = in.numa_access_token;
 
-    // AccumulatorStack starts with one live slot (size_t at the size field, inside
+    // Start the AccumulatorStack with one live slot (size_t at the size field, inside
     // the accumulator_stack region so still addressed by offset).
     writePtr(worker, accumulator_stack_size_off, 1);
 }
 
-// Full Worker construction into a caller-owned, zeroed buffer: write the
+// Construct a full Worker into a caller-owned, zeroed buffer: write the
 // constructor field set, then run the worker-clear reset pieces (histories,
-// shared history, reductions, refresh cache). `shared_obj` is the SharedHistories
+// shared history, reductions, refresh cache). Pass `shared_obj` as the SharedHistories
 // the thread clears its range of, and
-// `biases` is the network feature-transformer bias array.
+// `biases` as the network feature-transformer bias array.
 fn constructWorkerInto(
     buf: [*]u8,
     in: WorkerCtorInputs,
@@ -105,11 +105,11 @@ fn constructWorkerInto(
     nnue_acc.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
 
-// Production entry: construct a complete Worker into `buf` (a large-page
-// block of at least worker_size bytes). Zeroes the block, writes the constructor
-// field set, and runs the worker-clear reset pieces, called by the engine graph.
-// `manager` is the moved ISearchManager pointer; the feature-transformer biases
-// are sourced from the network.
+// Enter production: construct a complete Worker into `buf` (a large-page
+// block of at least worker_size bytes). Zero the block, write the constructor
+// field set, and run the worker-clear reset pieces, called by the engine graph.
+// Pass `manager` as the moved ISearchManager pointer; source the feature-transformer
+// biases from the network.
 pub fn constructFull(
     buf: ?*anyopaque,
     shared_history: usize,
@@ -145,9 +145,9 @@ test "writeConstructorFields lands every member at its worker_off slot" {
     defer testing.allocator.free(buf);
     @memset(buf, 0);
 
-    // Sentinels must be aligned to each destination pointer's @alignOf: they are stored
+    // Align sentinels to each destination pointer's @alignOf: they are stored
     // via @ptrFromInt into typed pointer fields (*ThreadPool, *SearchManager, ...) and
-    // ReleaseSafe validates the integer's alignment. Page-aligned values satisfy any
+    // ReleaseSafe validates the integer's alignment. Choose page-aligned values to satisfy any
     // field alignment while staying distinct and recognizable in the byte image.
     const in = WorkerCtorInputs{
         .shared_history = 0x1000,

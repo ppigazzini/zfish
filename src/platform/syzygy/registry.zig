@@ -1,14 +1,14 @@
-//! Syzygy table registry + file management. Owns the material-key -> TBTable map (built at init from
+//! Register Syzygy tables and manage their files. Own the material-key -> TBTable map (built at init from
 //! the same enumeration as file discovery, tables.zig), the lazy `.rtbw`/`.rtbz` file load into a
 //! 64-byte-aligned buffer, and Stockfish's `set`/`set_dtz_map` that parse a mapped file's
-//! per-(side,file) PairsData records. The probe *algorithm* (do_probe_table, the WDL/DTZ search
-//! recursion) is the layer above, in wdl.zig, which imports this one -- a single downward dependency
+//! per-(side,file) PairsData records. Keep the probe *algorithm* (do_probe_table, the WDL/DTZ search
+//! recursion) in the layer above, in wdl.zig, which imports this one -- a single downward dependency
 //! (registry knows nothing of the algorithm), so neither file is a god-file.
 //!
-//! Keys are computed directly from per-color piece counts via the engine's `computeMaterialKey`, so
-//! a registry key is bit-identical to the `pos.st.material_key` a probed position carries. File
-//! bytes are read via libc (no `Io` at the probe seam); the 64-alignment makes the data-section
-//! rounding in `set` match an mmap base. POSIX-only file load; a Windows CreateFileMapping path is
+//! Compute keys directly from per-color piece counts via the engine's `computeMaterialKey`, so
+//! a registry key is bit-identical to the `pos.st.material_key` a probed position carries. Read file
+//! bytes via libc (no `Io` at the probe seam); the 64-alignment makes the data-section
+//! rounding in `set` match an mmap base. Load files POSIX-only; a Windows CreateFileMapping path is
 //! not yet implemented, so on Windows the load yields null and the probe reports "unavailable".
 
 const std = @import("std");
@@ -40,7 +40,7 @@ pub const TBTable = struct {
     has_pawns: bool,
     has_unique_pieces: bool,
     pawn_count: [2]u8,
-    sides: usize, // WDL: 2 when key != key2, else 1. DTZ is always one-sided (1 side).
+    sides: usize, // WDL: keep 2 when key != key2, else 1. Treat DTZ as always one-sided (1 side).
     stem: [8]u8 = @splat(0), // canonical file stem, e.g. "KQvK"
     stem_len: usize = 0,
     // WDL (.rtbw): two sides x up to four files.
@@ -62,7 +62,7 @@ pub const TBTable = struct {
         };
     }
 
-    // SF entry->get(stm, f): WDL uses items[stm % sides][f], DTZ is one-sided (items[0][f]).
+    // Port SF entry->get(stm, f): WDL uses items[stm % sides][f], DTZ is one-sided (items[0][f]).
     pub fn get(self: *TBTable, comptime dtz: bool, stm: usize, f: usize) *PairsData {
         const file = if (self.has_pawns) f else 0;
         if (dtz) return &self.dtz_items[0][file];
@@ -84,7 +84,7 @@ fn arena() std.mem.Allocator {
     return arena_state.?.allocator();
 }
 
-/// True once a SyzygyPath has been set (so the probe surface can early-out when unconfigured).
+/// Report true once a SyzygyPath has been set (so the probe surface can early-out when unconfigured).
 pub fn ready() bool {
     return arena_state != null;
 }
@@ -119,8 +119,8 @@ pub fn hashGet(key: u64) ?*TBTable {
     return null;
 }
 
-/// Register a found WDL table for `pieces` (e.g. {K,Q,K}). Computes both material keys, the
-/// pawn/unique-piece flags SF derives from a code-Position, and inserts under key and key2.
+/// Register a found WDL table for `pieces` (e.g. {K,Q,K}). Compute both material keys, the
+/// pawn/unique-piece flags SF derives from a code-Position, and insert under key and key2.
 /// Called by tables.add when the `.rtbw` file exists.
 pub fn register(pieces: []const u8) void {
     // Split the code at the second king: white (strong) = [0, k2), black (weak) = [k2, len).
@@ -145,7 +145,7 @@ pub fn register(pieces: []const u8) void {
         if (counts[pt] == 1 or counts[pt | 8] == 1) has_unique = true;
     }
 
-    // Leading color: WHITE unless both sides have pawns and black has fewer (better compression).
+    // Pick the leading color: WHITE unless both sides have pawns and black has fewer (better compression).
     const lead_white = (bp == 0) or (wp != 0 and bp >= wp);
     const t = arena().create(TBTable) catch return;
     t.* = .{
@@ -185,7 +185,7 @@ fn buildStem(pieces: []const u8, t: *TBTable) void {
 // ---- file load (64-aligned buffer, libc, Linux-gated) -----------------------
 
 // Read <stem><ext> from the first SyzygyPath dir that has it into a 64-byte-aligned buffer,
-// verifying `magic`. Returns the whole file (magic included) or null on any failure. The
+// verifying `magic`. Return the whole file (magic included) or null on any failure. The
 // 64-alignment makes the data-section rounding in `set` match an mmap base. POSIX only (libc
 // open/read); Windows file mapping (a distinct CreateFileMapping path) is not yet implemented, so on
 // Windows this yields null and the probe reports "unavailable" -- the graceful missing-file path.
@@ -227,16 +227,16 @@ fn loadFile(t: *TBTable, ext: []const u8, magic: [4]u8) ?[]const u8 {
 
 // ---- set: parse the file's PairsData records (SF `set`) ---------------------
 
-// SF `set`, generic over WDL/DTZ. `buf` is the whole file (64-aligned base); parsing starts at
-// offset 4 (after the magic). Fills every (side,file) PairsData. For DTZ, `set_dtz_map` reads the
+// Port SF `set`, generic over WDL/DTZ. `buf` is the whole file (64-aligned base); parsing starts at
+// offset 4 (after the magic). Fill every (side,file) PairsData. For DTZ, `set_dtz_map` reads the
 // value-remap table between the size headers and the sparse indices.
 fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) void {
     const e = t.info();
     var pos: usize = 4; // skip magic
-    // First byte after magic: Split(1)/HasPawns(2) flags (asserted in SF; we trust the file).
+    // Skip the first byte after magic: Split(1)/HasPawns(2) flags (asserted in SF; we trust the file).
     pos += 1;
 
-    // DTZ tables are one-sided; WDL split tables (key != key2) store both sides.
+    // Treat DTZ tables as one-sided; WDL split tables (key != key2) store both sides.
     const sides: usize = if (dtz) 1 else t.sides;
     const max_file: usize = if (t.has_pawns) 3 else 0; // FILE_D or FILE_A
     const pp = t.has_pawns and t.pawn_count[1] != 0;
@@ -309,7 +309,7 @@ fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) void {
     }
 }
 
-// SF `set_dtz_map`: read the per-file DTZ value-remap tables. `map_idx[i]` records the offset of
+// Port SF `set_dtz_map`: read the per-file DTZ value-remap tables. `map_idx[i]` records the offset of
 // each of the four WDL-class maps from `dtz_map` (u16 units when Wide, bytes otherwise, +1 as SF).
 fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, max_file: usize) void {
     t.dtz_map = buf[pos.*..].ptr;
@@ -341,7 +341,7 @@ pub inline fn rdU16(p: [*]const u8) u16 {
     return std.mem.readInt(u16, @ptrCast(p), .little);
 }
 
-// Lazy load + parse on first probe. Returns true if the WDL table is usable.
+// Load + parse lazily on first probe. Return true if the WDL table is usable.
 pub fn mapped(t: *TBTable) bool {
     if (t.ready) return t.base != null;
     t.ready = true;
@@ -354,7 +354,7 @@ pub fn mapped(t: *TBTable) bool {
     return true;
 }
 
-// Lazy load + parse of the DTZ (.rtbz) file on first DTZ probe.
+// Load + parse the DTZ (.rtbz) file lazily on first DTZ probe.
 pub fn mappedDtz(t: *TBTable) bool {
     if (t.dtz_ready) return t.dtz_base != null;
     t.dtz_ready = true;

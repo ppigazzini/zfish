@@ -1,19 +1,19 @@
-// COMPONENT: search_main.zig + search_back.zig are ONE component, deliberately.
+// COMPONENT: treat search_main.zig + search_back.zig as ONE component, deliberately.
 //
-// They form the file graph's only import cycle (searchImpl <-> runBack), and it is
+// Form the file graph's only import cycle (searchImpl <-> runBack), and treat it as
 // not a layering defect to be fixed: it IS the alpha-beta recursion. searchImpl runs
 // a node's Steps 1-12, hands the node state to search_back's move loop (Steps 13-21),
-// and that loop recurses back into searchImpl for each child. The cycle is the
-// algorithm; splitting the file did not split the recursion. Per Lakos the answer to
-// a legitimate cycle is to NAME the component, not to break it -- so do not "fix"
+// and that loop recurses back into searchImpl for each child. Read the cycle as the
+// algorithm; splitting the file did not split the recursion. Per Lakos, answer a
+// legitimate cycle by NAMING the component, not breaking it -- so do not "fix"
 // this by inverting an import or threading a function pointer. That would buy nothing
 // and cost an optimizer barrier on the hottest path in the engine.
 //
-// `zig build arch-report` lists this SCC as KNOWN. That is the point: a NEW file
+// `zig build arch-report` lists this SCC as KNOWN, deliberately: a NEW file
 // cycle shows up as UNDECLARED and fails the gate, instead of hiding behind the one
 // everybody has learned to ignore.
 //
-// The main alpha-beta search. searchImpl recurses on itself and dives into
+// Run the main alpha-beta search. searchImpl recurses on itself and dives into
 // qsearchImpl (search_qsearch) at depth 0; it never calls the
 // iterative-deepening driver or the worker-start glue. iterativeDeepening
 // (search_id_loop) imports it.
@@ -67,8 +67,8 @@ const pseudoLegal = legality.pseudoLegal;
 const givesCheck = legality.givesCheck;
 const sq_none: u8 = 64;
 comptime {
-    // worker_layout.WorkerLayout uses opaque byte regions for these position-module
-    // sub-blocks; assert its sizes match the real structs so worker_off stays correct.
+    // Assert the opaque byte regions worker_layout.WorkerLayout uses for these
+    // position-module sub-blocks match the real struct sizes so worker_off stays correct.
     std.debug.assert(worker_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
     std.debug.assert(worker_layout.position_size == @sizeOf(Position));
     std.debug.assert(worker_layout.state_info_size == @sizeOf(StateInfo));
@@ -126,8 +126,8 @@ const ssSub = search_qsearch.ssSub;
 const ttMoveHistoryUpdate = search_qsearch.ttMoveHistoryUpdate;
 const contVal = search_qsearch.contVal;
 
-/// Mirrors upstream `template<NodeType> search<Root>/<PV>/<NonPV>(..., bool cutNode)`: the node
-/// type is comptime, `cut_node` is runtime. The comptime fields carry into `search_back.runBack`
+/// Mirror upstream `template<NodeType> search<Root>/<PV>/<NonPV>(..., bool cutNode)`: the node
+/// type is comptime, `cut_node` is runtime. Carry the comptime fields into `search_back.runBack`
 /// through its `nd: anytype`, specialising it per node type as well.
 pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta_in: c_int, depth_in: c_int, cut_node: bool, comptime pv_node: bool, comptime root_node: bool) c_int {
     const all_node = !(pv_node or cut_node);
@@ -145,7 +145,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     var beta = beta_in;
     var depth = @min(depth_in, q_max_ply - 1);
 
-    // Upcoming-repetition draw (non-root).
+    // Detect the upcoming-repetition draw (non-root).
     if (!root_node and alpha < q_value_draw and upcomingRepetition(pos_ptr, ss.ply)) {
         alpha = search.valueDraw(ctx.nodes.*);
         if (alpha >= beta) return alpha;
@@ -168,13 +168,13 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     if (pv_node) updateSelDepth(ctx, ss.ply);
 
     if (!root_node) {
-        // Step 2. Aborted search / immediate draw / max ply.
+        // Step 2. Bail on aborted search / immediate draw / max ply.
         if (searchStopped(ctx) or isDraw(pos_ptr, ss.ply) or ss.ply >= q_max_ply) {
             if (ss.ply >= q_max_ply and !ss.in_check) return evaluateAcc(ctx, pos_ptr);
             return search.valueDraw(ctx.nodes.*);
         }
 
-        // Step 3. Mate distance pruning.
+        // Step 3. Prune by mate distance.
         alpha = @max(qMatedIn(ss.ply), alpha);
         beta = @min(qMateIn(ss.ply + 1), beta);
         if (alpha >= beta) return alpha;
@@ -186,7 +186,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     ss.stat_score = 0;
     ssAdd(ss, 2).cutoff_cnt = 0;
 
-    // Step 4. Transposition-table lookup.
+    // Step 4. Look up the transposition table.
     const excluded_move = ss.excluded_move;
     const pos_key = adjustKey50(pos);
     const probe = tt.probeTable(ctx.table, ctx.cluster_count, pos_key, ctx.generation, q_depth_none);
@@ -202,7 +202,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     const tt_capture = tt_move != 0 and captureStage(pos, tt_move);
     const writer = probe.writer_ptr.?;
 
-    // Step 5. Static evaluation.
+    // Step 5. Compute the static evaluation.
     var unadjusted_static_eval: c_int = q_value_none;
     const correction_value = qCorrectionValue(w, pos, ss);
     var eval: c_int = undefined;
@@ -229,11 +229,11 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     var improving = ss.static_eval > ss2.static_eval;
     const opponent_worsening = ss.static_eval > -ss1.static_eval;
 
-    // Hindsight reduction adjustments.
+    // Apply the hindsight reduction adjustments.
     if (prior_reduction >= 3 and !opponent_worsening) depth += 1;
     if (prior_reduction >= 2 and depth >= 2 and ss.static_eval + ss1.static_eval > 173) depth -= 1;
 
-    // Early TT cutoff (non-PV).
+    // Cut off early on the TT (non-PV).
     if (!pv_node and excluded_move == 0 and tt_depth > depth - @as(c_int, @intFromBool(tt_value <= beta)) and
         qIsValid(tt_value) and (tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0 and
         (cut_node == (tt_value >= beta) or depth > 4))
@@ -256,7 +256,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             } else return tt_value;
         }
     }
-    // upstream 319d61eff: no cutoff, but if a window-bound mismatch is the only reason, penalize the
+    // upstream 319d61eff: take no cutoff, but if a window-bound mismatch is the only reason, penalize the
     // now-useless tte (decrement its stored depth).
     else if (!pv_node and excluded_move == 0 and
         tt_depth > depth - @as(c_int, @intFromBool(tt_value <= beta)) and
@@ -266,10 +266,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         tt.entryPenalize(writer, 1);
     }
 
-    // Step 6. Tablebases probe. A faithful port of SF search.cpp: probe the WDL of the current
+    // Step 6. Probe the tablebases. Port SF search.cpp faithfully: probe the WDL of the current
     // (non-root, non-excluded) position when it is small enough, has a zeroed rule50 counter, and
     // no castling rights; on success score it in the VALUE_TB..VALUE_TB_WIN range and cut/adjust.
-    // Gated by the worker's tb_config.cardinality, which is 0 without a SyzygyPath, so a default
+    // Gate on the worker's tb_config.cardinality, which is 0 without a SyzygyPath, so a default
     // build (and bench) never enters here and the node count is unchanged.
     if (!root_node and excluded_move == 0) {
         const tb_cfg = &ctx.worker.tb_config;
@@ -317,7 +317,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     }
 
     if (!ss.in_check) {
-        // Static-eval-difference quiet ordering.
+        // Order quiets by static-eval difference.
         if (moveIsOk(ss1.current_move) and !ss1.in_check and !prior_capture) {
             const eval_diff = search.evalDiff(ss1.static_eval, ss.static_eval);
             statsUpdate(&w.main_history[@as(usize, us ^ 1) * hist_uint16 + ss1.current_move], eval_diff * 10, 7183);
@@ -328,22 +328,22 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             }
         }
 
-        // Step 7. Razoring.
+        // Step 7. Apply razoring.
         if (!pv_node and eval < alpha - search.razorMargin(depth))
             return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha, beta, false);
 
-        // Step 8. Futility pruning.
+        // Step 8. Prune by futility.
         if (!ss.tt_pv and depth < 17 and eval >= beta and (tt_move == 0 or tt_capture) and !qIsLoss(beta) and !qIsWin(eval)) {
             const fm = search.futilityMargin(depth, ss.tt_hit, improving, opponent_worsening, correction_value);
             if (eval - fm >= beta) return search.futilityReturn(beta, eval);
         }
 
-        // Step 9. Null-move search.
+        // Step 9. Search the null move.
         if (cut_node and ss.static_eval >= search.nullMoveThreshold(beta, depth, improving) and
             excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= ctx.nmp_min_ply.* and !qIsLoss(beta))
         {
             const r = search.nullMoveReduction(depth);
-            // Null moves touch no accumulator: call pos.do_null_move, mark the
+            // Touch no accumulator for null moves: call pos.do_null_move, mark the
             // stack move as null (65), and set the all-NO_PIECE
             // continuation-history pointer.
             doNullMove(pos_ptr, &st);
@@ -362,10 +362,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
 
         if (ss.static_eval >= beta) improving = true;
 
-        // Step 10. Internal iterative reductions.
+        // Step 10. Apply internal iterative reductions.
         if (!ss.follow_pv and !all_node and depth >= 6 and tt_move == 0) depth -= 1; // upstream b1053e60b: drop priorReduction<=3
 
-        // Step 11. ProbCut.
+        // Step 11. Run ProbCut.
         const probcut_beta = search.probCutBeta(beta, improving);
         if (depth >= 3 and !qIsDecisive(beta) and !(qIsValid(tt_value) and tt_value < probcut_beta)) {
             var mp_moves2: [256]movepick.SortEntry = undefined;
@@ -410,7 +410,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     }
 
     // moves_loop:
-    // Step 12. Deep-probcut TT idea.
+    // Step 12. Apply the deep-probcut TT idea.
     const probcut_beta2 = search.probCutBetaDeep(beta);
     if ((tt_bound & q_bound_lower) != 0 and tt_depth >= depth - 4 and tt_value >= probcut_beta2 and
         !qIsDecisive(beta) and qIsValid(tt_value) and !qIsDecisive(tt_value)) return probcut_beta2;

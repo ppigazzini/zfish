@@ -1,7 +1,7 @@
-// Root-move construction + Syzygy tablebase root-ranking.
+// Construct root moves + Syzygy tablebase root-ranking.
 //
-// The `go`-path root-move builder: ranks the legal / searchmoves by DTZ then WDL when
-// tablebases are loaded, builds the RootMoves array the workers bind to, and owns
+// Build the `go`-path root moves: rank the legal / searchmoves by DTZ then WDL when
+// tablebases are loaded, build the RootMoves array the workers bind to, and own
 // the scratch position + root-FEN helpers it needs. Pure over position / state_list /
 // movegen plus the injected tb_source / option_source seams -- NO thread or worker-pool
 // dependency, so the OOM paths here are unit-testable in isolation.
@@ -71,7 +71,7 @@ const RankedRootMove = struct {
     tb_score: c_int,
 };
 
-// Builds/destroys the RootMoves array: a plain `count`-element []RootMove, each
+// Build/destroy the RootMoves array: a plain `count`-element []RootMove, each
 // element zeroed then initialised to the RootMove default (scores at -VALUE_INFINITE)
 // with the ranked tb fields and the single-move PV. The worker copies it into its own
 // slice-header buffer (workerSetRootMoves reads src.ptr/src.len). @sizeOf(RootMove)==552.
@@ -164,7 +164,7 @@ fn countPieces(pos: *const position_port.Position) usize {
 }
 
 fn loadTbConfig(pos: *const position_port.Position) TbConfig {
-    // syzygy options read from the global option model (option_port.*), not a
+    // Read syzygy options from the global option model (option_port.*), not a
     // handle -- so no `options` param is threaded here.
     _ = pos;
     var config = TbConfig{
@@ -208,7 +208,7 @@ const DtzRankResult = enum {
     fallback_to_wdl,
 };
 
-// SF Position::dtz_is_dtm: pawnless && (3-men || 4-men-minors-only). When true the DTZ tables rank
+// Mirror SF Position::dtz_is_dtm: pawnless && (3-men || 4-men-minors-only). When true the DTZ tables rank
 // exactly like DTM, so the root ranking uses the exact DTZ (rankDTZ); otherwise all winning moves
 // tie at MAX_DTZ and the tie-break is the (movegen) order.
 fn dtzIsDtm(pos: *const position_port.Position) bool {

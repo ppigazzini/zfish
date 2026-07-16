@@ -1,6 +1,6 @@
-// Iterative-deepening driver. Drives the main search (search_main.searchImpl)
-// across depths + aspiration windows, handles skill/MultiPV/time, and emits UCI
-// info. It calls searchImpl but nothing in the worker-start glue, so it is a
+// Drive iterative deepening. Drive the main search (search_main.searchImpl)
+// across depths + aspiration windows, handle skill/MultiPV/time, and emit UCI
+// info. Call searchImpl but nothing in the worker-start glue, so form a
 // one-way leaf that search_driver drives.
 
 const std = @import("std");
@@ -24,8 +24,8 @@ const SearchStack = search_types.SearchStack;
 const WorkerHistories = worker_histories.WorkerHistories;
 const sideToMove = position_query.sideToMove;
 comptime {
-    // worker_layout.WorkerLayout uses opaque byte regions for these position-module
-    // sub-blocks; assert its sizes match the real structs so worker_off stays correct.
+    // Assert the opaque byte regions worker_layout.WorkerLayout uses for these
+    // position-module sub-blocks match the real struct sizes so worker_off stays correct.
     std.debug.assert(worker_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
     std.debug.assert(worker_layout.position_size == @sizeOf(Position));
     std.debug.assert(worker_layout.state_info_size == @sizeOf(StateInfo));
@@ -59,8 +59,8 @@ const search_main = @import("search_main.zig");
 const searchImpl = search_main.searchImpl;
 
 pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
-    // Not a hook -- called only by workerStartSearching, which already holds the typed
-    // *WorkerLayout; it drives the typed graph directly.
+    // Drive the typed graph directly -- not a hook: only workerStartSearching calls it,
+    // and it already holds the typed *WorkerLayout.
     var id: ZfishIdState = undefined;
     searchIdState(wl, &id);
     const main_thread = id.is_main != 0;
@@ -81,7 +81,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     var tot_best_move_changes: f64 = 0;
     var iter_idx: usize = 0;
 
-    // Stack[MAX_PLY+10] = {} with (ss-7..ss-1) sentinels and ss[i].ply = i.
+    // Zero Stack[MAX_PLY+10] with (ss-7..ss-1) sentinels and ss[i].ply = i.
     const stack_n: usize = @intCast(q_max_ply + 10);
     var stack: [stack_n]SearchStack = std.mem.zeroes([stack_n]SearchStack);
     {
@@ -115,7 +115,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     var search_again_counter: c_int = 0;
     var uci_pv_sent = false;
 
-    // Iterative deepening loop.
+    // Run the iterative deepening loop.
     while (id.root_depth.* + 1 < q_max_ply and @atomicLoad(u8, id.stop, .monotonic) == 0 and
         !(id.limits_depth != 0 and main_thread and id.root_depth.* >= id.limits_depth))
     {
@@ -136,7 +136,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
 
         if (@atomicLoad(u8, id.increase_depth, .monotonic) == 0) search_again_counter += 1;
 
-        // MultiPV loop.
+        // Loop over the MultiPV lines.
         id.pv_idx.* = 0;
         while (id.pv_idx.* < multi_pv) : (id.pv_idx.* += 1) {
             if (id.pv_idx.* == id.pv_last.*) {
@@ -183,7 +183,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                 delta = search.aspirationDeltaGrow(delta);
             }
 
-            // MultiPV mated-in/TB-loss protection for aborted later PV lines.
+            // Protect aborted later PV lines from mated-in/TB-loss (MultiPV).
             if (@atomicLoad(u8, id.stop, .monotonic) != 0 and id.pv_idx.* != 0 and
                 idIsLoss(id.root_moves[id.pv_idx.* - 1].score) and
                 rootLess(&id.root_moves[id.pv_idx.*], &id.root_moves[id.pv_idx.* - 1]))
@@ -227,7 +227,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             } else id.root_moves[0].score_lowerbound = true;
         }
 
-        // Mate in x found?
+        // Check whether mate in x is found.
         if (id.limits_mate != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and
             ((idIsMate(id.root_moves[0].score) and q_value_mate - id.root_moves[0].score <= 2 * id.limits_mate) or
                 (idIsMated(id.root_moves[0].score) and q_value_mate + id.root_moves[0].score <= 2 * id.limits_mate)))
@@ -235,13 +235,13 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
 
         if (!main_thread) continue;
 
-        // If the skill level is enabled and time is up, pick a sub-optimal move.
+        // Pick a sub-optimal move if the skill level is enabled and time is up.
         if (id.skill_enabled != 0 and skillTimeToPick(id.skill_level, id.root_depth.*))
             skill_best = skillPickBest(&id, multi_pv);
 
         tot_best_move_changes += searchIdCollectBmc(wl);
 
-        // Time management: do we have time for the next iteration / can we stop?
+        // Manage time: decide whether we have time for the next iteration or can stop.
         if (id.use_time_management != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and id.stop_on_ponderhit.* == 0) {
             const nodes_effort: u64 = @divTrunc(id.root_moves[0].effort * 100000, @max(@as(u64, 1), id.nodes.*));
 
@@ -277,7 +277,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     if (!main_thread) return 0;
 
     id.previous_time_reduction.* = time_reduction;
-    // If the skill level is enabled, swap the best PV line with the sub-optimal one.
+    // Swap the best PV line with the sub-optimal one if the skill level is enabled.
     if (id.skill_enabled != 0) {
         const sel = if (skill_best != 0) skill_best else skillPickBest(&id, multi_pv);
         skillSwapBest(&id, sel);

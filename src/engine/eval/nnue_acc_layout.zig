@@ -1,4 +1,4 @@
-// NNUE accumulator-stack memory layout, split out of nnue_accumulator.zig: the
+// Lay out the NNUE accumulator-stack memory, split out of nnue_accumulator.zig: the
 // per-state byte offsets/strides, the diff-view record types, the opaque
 // AccumulatorStack handle, and every byte/offset accessor that reinterprets the
 // stack buffer. Pure layout math over std + the position snapshot; both the
@@ -19,14 +19,14 @@ pub const pawn_piece_type: u8 = 1;
 pub const no_piece: u8 = 0;
 pub const sq_none: u8 = 64;
 pub const square_count: usize = 64;
-/// PieceType.king.
+/// Match PieceType.king.
 const king_piece_type: u8 = 6;
 pub const max_stack_size: usize = 247;
 pub const nnue_align: usize = 64;
 pub const color_count: usize = 2;
 pub const half_dimensions: usize = 1024;
 pub const psqt_buckets: usize = 8;
-/// Lane count for transformBucket's clipped-ReLU pass. Independent of nnue_acc_rowops's
+/// Set the lane count for transformBucket's clipped-ReLU pass. Independent of nnue_acc_rowops's
 /// row_tile_width -- they touch different loops, and a sweep of each (16/32/64 here; 32/64/128/256
 /// there) finds different optima. Do not fold them into one knob.
 pub const transform_vec_width: usize = 32;
@@ -62,7 +62,7 @@ pub const ThreatDiffView = struct {
     ksq: u8,
 };
 
-/// Opaque handle to the per-Worker accumulator stack arena. A raw
+/// Expose an opaque handle to the per-Worker accumulator stack arena. A raw
 /// 64-aligned byte buffer of accumulator_stack_size bytes (embedded in the Worker /
 /// malloc'd for the eval trace); the state/diff byte-offset accessors below
 /// reinterpret it. A distinct handle type, not a bare *anyopaque, so it can't be
@@ -162,7 +162,7 @@ pub fn stateBytesMut(feature_kind: u8, index: usize, stack: *AccumulatorStack) [
     return stackBytesMut(stack) + stateOffset(feature_kind, index);
 }
 
-/// Upstream's `pos.square<KING>(c)`.
+/// Compute upstream's `pos.square<KING>(c)`.
 pub fn kingSquare(pos: *const Position, color: u8) u8 {
     return @intCast(@ctz(pos.by_color_bb[color] & pos.by_type_bb[king_piece_type]));
 }

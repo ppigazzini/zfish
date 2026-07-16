@@ -1,10 +1,10 @@
-// Pure-Zig parity harness: the cross-platform replacement for the bash
-// golden-diff scripts (output_parity_golden.sh / search_parity.sh / search_modes.sh /
-// perft.sh / eval.sh / misc.sh). It drives the built stockfish binary over UCI, extracts
-// the same deterministic fingerprints those scripts did, and diffs them against the same
-// committed .golden files -- but with zero shell/coreutils dependency, so `zig build parity`
-// runs identically on Linux, Windows, and macOS (the bash scripts relied on POSIX sh, GNU
-// vs BSD sed/grep/sort, and process substitution, none of which hold across the three).
+// Replace the bash golden-diff scripts (output_parity_golden.sh / search_parity.sh /
+// search_modes.sh / perft.sh / eval.sh / misc.sh) with this pure-Zig cross-platform
+// harness. Drive the built stockfish binary over UCI, extract the same deterministic
+// fingerprints those scripts did, and diff them against the same committed .golden files
+// -- but with zero shell/coreutils dependency, so `zig build parity` runs identically on
+// Linux, Windows, and macOS (the bash scripts relied on POSIX sh, GNU vs BSD
+// sed/grep/sort, and process substitution, none of which hold across the three).
 //
 // Contract (matches the bash scripts, invoked by build.zig):
 //   parity_harness <check> <stockfish-bin> <golden-path> [check|update]   (cwd = net/)
@@ -12,12 +12,12 @@
 //     update:           (re)write the golden from the live run.
 //   parity_harness signature <stockfish-bin> <expected-nodes>
 //     run bench and assert `Nodes searched` == expected (the 2466447 arch/OS invariant).
-// Exit codes mirror the scripts: 0 pass, 1 golden mismatch, 2 crash / parse failure / usage.
+// Mirror the scripts' exit codes: 0 pass, 1 golden mismatch, 2 crash / parse failure / usage.
 //
-// Stream routing (empirically verified, identical on every OS because the engine's print
+// Route the streams (empirically verified, identical on every OS because the engine's print
 // paths are the same): the interactive `d`/`go perft`/`go`/bestmove lines go to STDOUT; the
-// bench `Position:`/`Nodes searched` banners and the `eval` NNUE trace go to STDERR. Each
-// check captures both streams separately and reads the one(s) it needs, so no fragile
+// bench `Position:`/`Nodes searched` banners and the `eval` NNUE trace go to STDERR. Capture
+// both streams separately in each check and read the one(s) it needs, so no fragile
 // stderr->stdout merge (bash `2>&1`) is reconstructed.
 
 const std = @import("std");
@@ -35,7 +35,7 @@ const Captured = struct {
 };
 
 // Spawn the engine, optionally feed it a UCI script on stdin, and capture stdout+stderr
-// (CR-stripped so Windows text-mode CRLF matches the LF goldens). Mirrors std.process.run's
+// (CR-stripped so Windows text-mode CRLF matches the LF goldens). Mirror std.process.run's
 // deadlock-free MultiReader drain, adding the stdin write run() lacks.
 fn runEngine(
     gpa: std.mem.Allocator,
@@ -98,7 +98,7 @@ const LineIter = struct {
     it: std.mem.SplitIterator(u8, .scalar),
     fn next(self: *LineIter) ?[]const u8 {
         while (self.it.next()) |l| {
-            // splitScalar yields a trailing empty slice after the final '\n'; skip it so
+            // Skip the trailing empty slice splitScalar yields after the final '\n', so
             // callers see only real lines (bash pipelines never see that phantom line).
             if (self.it.index == null and l.len == 0) return null;
             return l;
@@ -133,7 +133,7 @@ fn removeField(gpa: std.mem.Allocator, line: []const u8, field: []const u8) ![]u
 
 // ---- per-check fingerprint builders -----------------------------------------
 
-// output-golden: bench info/bestmove lines with volatile `time`/`nps` stripped.
+// output-golden: capture the bench info/bestmove lines with volatile `time`/`nps` stripped.
 fn buildOutputGolden(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var cap = try runEngine(gpa, io, bin, &.{"bench"}, null);
     defer cap.deinit(gpa);
@@ -154,13 +154,13 @@ fn buildOutputGolden(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// driver-golden: pins the observable behaviour of the search-manager DRIVER + its emit
+// driver-golden: pin the observable behaviour of the search-manager DRIVER + its emit
 // callbacks (ss_emit_pv / emit_bestmove / emit_no_moves / search_emit_info_full /
 // search_cb_pv_context / search_cb_root_on_iter / search_id_pv / ss_pv_one_and_ponder).
-// A single-thread (deterministic) battery that exercises MultiPV (multi-line info +
+// Run a single-thread (deterministic) battery that exercises MultiPV (multi-line info +
 // pv_context), UCI_ShowWDL (wdl formatting), a deep endgame (currmove / currmovenumber),
-// a mate score, and a checkmated side-to-move ("bestmove (none)"). Every emitted info/
-// bestmove line is captured (volatile `time`/`nps` stripped). Purpose: de-risk relocating
+// a mate score, and a checkmated side-to-move ("bestmove (none)"). Capture every emitted
+// info/bestmove line (volatile `time`/`nps` stripped). Purpose: de-risk relocating
 // those callbacks off main.zig -- a driver refactor that changes ANY emitted line is caught
 // bit-exact, so the moves need not be "trusted", they are gate-proven.
 const driver_battery =
@@ -176,8 +176,8 @@ const driver_battery =
     "setoption name UCI_ShowWDL value false\n" ++
     "position fen 8/8/8/8/8/6k1/6p1/6K1 w - - 0 1\n" ++
     "go depth 24\n" ++
-    // NOTE: the currmove emit callback (searchCbRootOnIter, gated at `nodes > 10_000_000`
-    // in search_back.zig) is deliberately NOT pinned here. Triggering it needs a >10M-node
+    // NOTE: deliberately do NOT pin the currmove emit callback (searchCbRootOnIter, gated at
+    // `nodes > 10_000_000` in search_back.zig) here. Triggering it needs a >10M-node
     // search, which -- node-limited -- is cut off mid-iteration at ~depth 50; that boundary
     // tail is NOT bit-exact across build modes (ReleaseFast vs ReleaseSafe diverged in CI),
     // unlike the depth-limited searches above, which are bit-exact like `bench`. A robust
@@ -208,14 +208,14 @@ fn buildDriverGolden(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// search-parity: per-position (depth, score, nodes, bestmove) fingerprint + TOTAL. bench
+// search-parity: build a per-position (depth, score, nodes, bestmove) fingerprint + TOTAL. bench
 // info/bestmove are on stdout (51 blocks ending in `bestmove`); `Position:` + `Nodes
 // searched` are on stderr. Pair the K-th Position with the K-th stdout block by index.
 fn buildSearchParity(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var cap = try runEngine(gpa, io, bin, &.{"bench"}, null);
     defer cap.deinit(gpa);
 
-    // stderr: ordered Position fields (the "N/51" token) + the final total.
+    // Read off stderr the ordered Position fields (the "N/51" token) + the final total.
     var positions: std.ArrayList([]const u8) = .empty;
     defer positions.deinit(gpa);
     var total: ?[]const u8 = null;
@@ -235,7 +235,7 @@ fn buildSearchParity(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
-    // stdout: split into blocks at each `bestmove`, keeping the last `info depth` line.
+    // Split stdout into blocks at each `bestmove`, keeping the last `info depth` line.
     var block: usize = 0;
     var last_info: ?[]const u8 = null;
     var sli = lines(cap.stdout);
@@ -280,10 +280,10 @@ fn buildSearchParity(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// A labelled position sequence for the multi-run checks.
+// Hold a labelled position sequence for the multi-run checks.
 const Pos = struct { label: []const u8, cmds: []const u8 };
 
-// search-modes: one bestmove per deterministic node/depth-limited mode.
+// search-modes: produce one bestmove per deterministic node/depth-limited mode.
 fn buildSearchModes(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const kiwi = "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 10";
@@ -308,10 +308,10 @@ fn buildSearchModes(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 }
 
 // Run a search to its REAL bestmove (interactive; no early-quit truncation) and return the
-// full `bestmove ...` line (owned). The old approach piped `go\nquit`, which stops the search
-// mid-flight -- the resulting move is timing-dependent (a hollow, cross-platform-flaky gate).
-// These node/depth-limited single-thread modes are deterministic, so the completed bestmove
-// is a stable golden on every OS/arch.
+// full `bestmove ...` line (owned). Avoid the old approach that piped `go\nquit`, which stops
+// the search mid-flight -- the resulting move is timing-dependent (a hollow, cross-platform-flaky
+// gate). Rely on these deterministic node/depth-limited single-thread modes, so the completed
+// bestmove is a stable golden on every OS/arch.
 fn searchBestmoveLine(gpa: std.mem.Allocator, io: Io, bin: []const u8, seq: []const u8) ![]u8 {
     var s: Interactive = undefined;
     try s.init(io, gpa, bin);
@@ -330,7 +330,7 @@ fn searchBestmoveLine(gpa: std.mem.Allocator, io: Io, bin: []const u8, seq: []co
     return owned;
 }
 
-// perft: `== label ==` header, then SORTED divide lines (byte order == C locale), then the
+// perft: emit a `== label ==` header, then SORTED divide lines (byte order == C locale), then the
 // `Nodes searched` total, per position. Divide + total are on stdout.
 fn buildPerft(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
@@ -385,7 +385,7 @@ fn lessThanBytes(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.lessThan(u8, a, b);
 }
 
-// Matches ^[a-h][1-8][a-h][1-8][qrbnQRBN]?: [0-9]+ (a perft divide line).
+// Match ^[a-h][1-8][a-h][1-8][qrbnQRBN]?: [0-9]+ (a perft divide line).
 fn isDivideLine(line: []const u8) bool {
     if (line.len < 6) return false;
     var i: usize = 0;
@@ -404,8 +404,8 @@ fn isDivideLine(line: []const u8) bool {
     return true;
 }
 
-// eval: the NNUE trace block from `NNUE network contributions` through `Final evaluation`
-// (inclusive), per position. The trace is on stderr.
+// eval: capture the NNUE trace block from `NNUE network contributions` through `Final evaluation`
+// (inclusive), per position. Read the trace from stderr.
 fn buildEval(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const kiwi = "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
@@ -426,7 +426,7 @@ fn buildEval(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         defer gpa.free(input);
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
-        // range filter over stderr (trace) then stdout, sharing state (block is contiguous).
+        // Range-filter over stderr (trace) then stdout, sharing state (block is contiguous).
         var f = false;
         inline for (.{ cap.stderr, cap.stdout }) |buf| {
             var li = lines(buf);
@@ -447,7 +447,7 @@ fn buildEval(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// misc: the `d`-command Fen/Key/Checkers triple (on stdout), per sequence.
+// misc: capture the `d`-command Fen/Key/Checkers triple (on stdout), per sequence.
 fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const kiwi = "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
@@ -481,14 +481,14 @@ fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// uci-options: the `uci` handshake option list -- the compatibility surface a GUI reads.
-// The 19 `option name ...` lines are emitted via std.debug.print (stderr); the id name /
-// id author lines and the startup banner carry the git sha + date (misc.zig) and are
-// volatile every commit, so ONLY the `option name` lines are pinned. Their defaults and
-// min/max are static constants -> machine/OS-invariant (Threads max is a fixed 1024, not the
-// core count; Hash max is fixed), except EvalFile's default which is the net name (regenerate
-// on a net bump, like the other goldens). Complements the option-model unit test
-// (option_model.zig) by covering the command -> rendered-output wiring end to end.
+// uci-options: capture the `uci` handshake option list -- the compatibility surface a GUI reads.
+// std.debug.print emits the 19 `option name ...` lines (stderr); the id name / id author
+// lines and the startup banner carry the git sha + date (misc.zig) and are volatile every
+// commit, so pin ONLY the `option name` lines. Their defaults and min/max are static
+// constants -> machine/OS-invariant (Threads max is a fixed 1024, not the core count; Hash
+// max is fixed), except EvalFile's default which is the net name (regenerate on a net bump,
+// like the other goldens). Complement the option-model unit test (option_model.zig) by
+// covering the command -> rendered-output wiring end to end.
 fn buildUciOptions(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var cap = try runEngine(gpa, io, bin, &.{}, "uci\nquit\n");
     defer cap.deinit(gpa);
@@ -508,12 +508,12 @@ fn buildUciOptions(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// bench-matrix: bench node counts for non-default configs (hash size / shallow depth / node
-// limit / bench-perft), each a distinct deterministic code path the default bench
-// (16/1/depth-13 -> 2466447) never exercises. Verified equal to the pristine upstream oracle
+// bench-matrix: collect bench node counts for non-default configs (hash size / shallow depth
+// / node limit / bench-perft), each a distinct deterministic code path the default bench
+// (16/1/depth-13 -> 2466447) never exercises. Verify equal to the pristine upstream oracle
 // and bit-exact across build modes (the node-limited config needed the conthistDelta i32-wrap
-// fix -- deep searches otherwise overflow under ReleaseSafe). `bench` is synchronous, so the
-// feed-all-then-quit path is safe. Regenerate on an upstream/net bump, like the signature.
+// fix -- deep searches otherwise overflow under ReleaseSafe). Use the feed-all-then-quit path
+// safely -- `bench` is synchronous. Regenerate on an upstream/net bump, like the signature.
 const bench_matrix_configs = [_][]const u8{
     "16 1 8", // shallow depth
     "128 1 13", // hash size (2561648 != the default 2466447 -> the TT-sizing path)
@@ -544,10 +544,10 @@ fn buildBenchMatrix(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// tb-init: the Syzygy load report. Point SyzygyPath at the fetched 3-man set (syzygy/,
+// tb-init: capture the Syzygy load report. Point SyzygyPath at the fetched 3-man set (syzygy/,
 // relative to the net/ cwd) and pin the `info string Found N WDL and N DTZ tablebase files (up to
-// M-man)` line -- the discovery half of the Syzygy port, matched to the upstream oracle. The
-// message is on stdout (printInfoString). Synchronous, so the feed-all-then-quit path is safe.
+// M-man)` line -- the discovery half of the Syzygy port, matched to the upstream oracle. Find the
+// message on stdout (printInfoString). Synchronous, so the feed-all-then-quit path is safe.
 fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var cap = try runEngine(gpa, io, bin, &.{}, "setoption name SyzygyPath value syzygy\nquit\n");
     defer cap.deinit(gpa);
@@ -567,7 +567,7 @@ fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// The curated 3-man probe battery, shared by tb-wdl and tb-dtz: all five
+// Curate the 3-man probe battery, shared by tb-wdl and tb-dtz: all five
 // piece types (Q/R/B/N/P), win/loss/draw, white/black to move, the pawn + blackStronger (lead pawn
 // is black) flip paths, and -- via the last two -- the search<false> capture recursion (the lone
 // king captures the piece into a KvK draw). KQvK-btm also exercises the DTZ CHANGE_STM 1-ply path.
@@ -584,7 +584,7 @@ const tb_probe_runs = [_]struct { label: []const u8, fen: []const u8 }{
 };
 
 // Run the `d`-command probe battery, pinning the `Tablebases <prefix>: N (state)` line ==
-// upstream oracle for each position. Runs in net/ cwd so "syzygy" resolves to the fetch dir.
+// upstream oracle for each position. Operate in net/ cwd so "syzygy" resolves to the fetch dir.
 fn buildTbProbe(gpa: std.mem.Allocator, io: Io, bin: []const u8, prefix: []const u8, tag: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
@@ -612,9 +612,9 @@ fn buildTbDtz(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return buildTbProbe(gpa, io, bin, "Tablebases DTZ:", "tb-dtz");
 }
 
-// tb-root: the Syzygy root DTZ ranking. With the DTZ probe live, `go` on a TB win ranks
+// tb-root: capture the Syzygy root DTZ ranking. With the DTZ probe live, `go` on a TB win ranks
 // the root moves via rankRootMovesDtz; the emit shows the exact tbScore (not the search score) and
-// tbHits == pool hits + rootMoves.size(). Pins score + tbhits == the upstream oracle -- this
+// tbHits == pool hits + rootMoves.size(). Pin score + tbhits == the upstream oracle -- this
 // first-validates the formerly-dead root-ranking formula end to end (it surfaced three real
 // discrepancies: the missing +rootMoves.size tbHits term, the missing tbScore emit override, and
 // the hardcoded max_dtz-dtz rank ignoring rankDTZ/dtz_is_dtm).
@@ -659,10 +659,10 @@ fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// tb-search: the in-search Step 6 WDL probe. Benches a small 4-man EPD (each position
+// tb-search: exercise the in-search Step 6 WDL probe. Bench a small 4-man EPD (each position
 // bigger than the 3-man tables, so the root is searched normally and Step 6 probes the 3-man
-// nodes reached in the tree). The node count WITH SyzygyPath (Step 6 cutting the tree) and WITHOUT
-// (Step 6 off) both pin == the upstream oracle -- bit-exact node-count parity. bench writes the
+// nodes reached in the tree). Pin the node count WITH SyzygyPath (Step 6 cutting the tree) and
+// WITHOUT (Step 6 off) both == the upstream oracle -- bit-exact node-count parity. bench writes the
 // count to stderr; the EPD is written transiently into the net/ cwd. Both counts are deterministic.
 fn benchNodes(gpa: std.mem.Allocator, io: Io, bin: []const u8, input: []const u8) !u64 {
     var cap = try runEngine(gpa, io, bin, &.{}, input);
@@ -682,7 +682,7 @@ fn benchNodes(gpa: std.mem.Allocator, io: Io, bin: []const u8, input: []const u8
 
 fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     // Each position has more pieces than the 3-man tables, so the root searches normally and the
-    // in-tree Step 6 probe fires at the 3-man nodes captures reach. Benched ONE per file (a
+    // in-tree Step 6 probe fires at the 3-man nodes captures reach. Bench ONE per file (a
     // multi-position bench carries the TT between positions), so both the no-tb baseline and the
     // Step 6 delta are per-position bit-exact vs the oracle. Both draws (KNNvK, KRvKR).
     const rows = [_]struct { label: []const u8, fen: []const u8 }{
@@ -702,9 +702,9 @@ fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 }
 
 // tb-cursed (LOCAL ONLY): validate the cursed-win / blessed-loss / 50-move logic on real
-// DTZ>100 positions, which need 4-5-man tables the 3-man CI set never contains. Pins the `d`-command
+// DTZ>100 positions, which need 4-5-man tables the 3-man CI set never contains. Pin the `d`-command
 // WDL + DTZ == the upstream oracle for a KNNvKP cursed win (WDL +1, DTZ 122 -- a win that is a draw
-// under the 50-move rule) and its blessed-loss mirror (WDL -1, DTZ -115). This exercises the cursed
+// under the 50-move rule) and its blessed-loss mirror (WDL -1, DTZ -115). Exercise the cursed
 // branches of map_score<DTZ> (x2 plies) and probe_dtz (the dtz+100*cursed*sign arithmetic). NOT in
 // the `parity` aggregate: it requires ~40 MB of 5-man tables staged into net/syzygy5/ locally,
 // e.g. (from net/):  for t in KNNvKP KNNvK KNNvKQ KNNvKR KNNvKB KNNvKN KNvKP KNvKQ KNvKR KNvKB KNvKN
@@ -736,7 +736,7 @@ fn buildTbCursed(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
+// Hash with FNV-1a 64-bit -- a dependency-free content hash for the ~90 MB exported net (shipping
 // the net as a golden would be absurd; a 64-bit hash + exact length pins any change).
 fn fnv1a64(data: []const u8) u64 {
     var h: u64 = 0xcbf29ce484222325;
@@ -747,15 +747,15 @@ fn fnv1a64(data: []const u8) u64 {
     return h;
 }
 
-// export-net: fingerprint (length + FNV-1a) of the net produced by `export_net`. The
+// export-net: fingerprint (length + FNV-1a) the net produced by `export_net`. Require the
 // serializer (nnue_parse.serializeFeatureTransformer/serializeLayer, i.e. Stockfish's
-// write_parameters) must reproduce the canonical .nnue byte-for-byte -- upstream's
+// write_parameters) to reproduce the canonical .nnue byte-for-byte -- upstream's
 // export round-trips to the input net exactly, so this gate is a differential-vs-upstream
 // check authored against the pristine oracle (see tools/upstream_parity.sh): a matching
 // hash means zfish's export == upstream's export == the distributed net. `export_net` is
 // synchronous (it runs to completion in the command handler, no async search), so the
-// feed-all-then-quit runEngine path is safe here. Writes a temp net in cwd (net/), hashes
-// it, and removes it.
+// feed-all-then-quit runEngine path is safe here. Write a temp net in cwd (net/), hash
+// it, and remove it.
 fn buildExportNet(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const tmp = "parity_export.tmp.nnue";
     var cap = try runEngine(gpa, io, bin, &.{}, "export_net " ++ tmp ++ "\nquit\n");
@@ -775,12 +775,12 @@ fn buildExportNet(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 
 // nodestime: with `nodestime` set, wall-clock budgets convert to a NODE budget
 // (timeman.zig `npmsec`), so the otherwise non-deterministic time-management path becomes
-// BIT-EXACT -- the `time-mgmt` gate can only band-check the reported ms. This pins the
+// BIT-EXACT -- the `time-mgmt` gate can only band-check the reported ms. Pin the
 // allocation arithmetic across its distinct branches (sudden-death wtime/btime, movestogo,
 // increment, and the movetime hard limit) by the deterministic depth/score/nodes/bestmove
 // the budget yields; the volatile `time`/`nps` fields are dropped. Single thread + node
-// budget -> arch/OS-invariant. It is an async search, so it drives the engine via the
-// Interactive read-to-bestmove path -- a feed-all-then-quit pipe would truncate it (the
+// budget -> arch/OS-invariant. Drive the engine via the Interactive read-to-bestmove
+// path since this is an async search -- a feed-all-then-quit pipe would truncate it (the
 // batch hazard the search-modes gate also avoids).
 const NodestimeRow = struct { label: []const u8, cmds: []const u8 };
 fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
@@ -830,10 +830,10 @@ fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// mate: `go mate N` -- the mate-distance search mode, distinct from the node/depth modes in
-// search-modes (it uses mate-distance pruning and reports `score mate N`). The fingerprint
-// pins the mate DISTANCE and the mating move+ponder: a bestmove-only golden would pass an
-// engine that plays the mating move but reports the wrong distance. Each position has a
+// mate: exercise `go mate N` -- the mate-distance search mode, distinct from the node/depth
+// modes in search-modes (it uses mate-distance pruning and reports `score mate N`). Pin the
+// mate DISTANCE and the mating move+ponder in the fingerprint: a bestmove-only golden would
+// pass an engine that plays the mating move but reports the wrong distance. Each position has a
 // VERIFIED forced mate at <= N, so `go mate N` finds it and stops fast (single thread ->
 // deterministic); a mate-finding regression would instead never emit bestmove and hang the
 // gate to the CI job timeout -- still a failure, just a slower one. Async -> Interactive path.
@@ -877,8 +877,8 @@ fn buildMate(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// chess960: UCI_Chess960 search + castling + eval. `perft` already covers FRC MOVEGEN
-// counts; this exercises what it cannot -- FRC castling make/unmake inside a real search,
+// chess960: cover UCI_Chess960 search + castling + eval. `perft` already covers FRC MOVEGEN
+// counts; exercise what it cannot -- FRC castling make/unmake inside a real search,
 // the FRC castling ENCODING (applying the king-to-rook-square move f1g1 = O-O and rendering
 // the resulting position), and the NNUE eval on FRC king placements. Single thread + fixed
 // node budget -> deterministic; FRC castling/eval are arch/OS-invariant. Searches are async
@@ -889,7 +889,7 @@ fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
 
-    // --- FRC searches (Interactive, node-limited): FRC castling is made/unmade in the tree.
+    // --- FRC searches (Interactive, node-limited): make/unmake FRC castling in the tree.
     const positions = [_]struct { label: []const u8, fen: []const u8 }{
         .{ .label = "frc-start", .fen = frc_start },
         .{ .label = "frc-mid  ", .fen = frc_mid },
@@ -923,7 +923,7 @@ fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     // --- FRC castling applied: f1g1 is O-O in this setup (king f1 and its rook g1 are adjacent,
     // so O-O -- king onto its own rook's square -- is legal from the start). Apply it and dump
     // `d`: the resulting Fen must show the king on g1 and the rook on f1 (they swap), white's
-    // castling rights cleared. This pins that the FRC castling move parses, applies, and renders
+    // castling rights cleared. Pin that the FRC castling move parses, applies, and renders
     // -- perft never plays/renders a castling move.
     {
         const input = "setoption name UCI_Chess960 value true\nposition fen " ++ frc_mid ++ " moves f1g1\nd\nquit\n";
@@ -940,7 +940,7 @@ fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         if (!found) fail("chess960: castling `d` produced no Fen/Key (castling move rejected?)", .{});
     }
 
-    // --- FRC eval: the NNUE eval on FRC king placements (Final evaluation line).
+    // --- FRC eval: capture the NNUE eval on FRC king placements (Final evaluation line).
     for (positions) |p| {
         const input = try std.fmt.allocPrint(gpa, "setoption name UCI_Chess960 value true\nposition fen {s}\neval\nquit\n", .{p.fen});
         defer gpa.free(input);
@@ -960,7 +960,7 @@ fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// signature: bench must report the exact node count (the 2466447 arch/OS invariant).
+// signature: assert bench reports the exact node count (the 2466447 arch/OS invariant).
 fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []const u8) noreturn {
     var cap = runEngine(gpa, io, bin, &.{"bench"}, null) catch fail("signature: engine run failed", .{});
     defer cap.deinit(gpa);
@@ -983,14 +983,14 @@ fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []con
 
 // ---- interactive gates (concurrency + timing) -------------------------------
 //
-// mt-sanity / stress / time-mgmt drive a *live* search and must not truncate it: this
+// Drive a *live* search in mt-sanity / stress / time-mgmt and never truncate it: this
 // engine's UCI loop treats a `quit` (or stdin EOF) arriving during `go` as a stop, so the
-// bash gates held stdin open with a sleep. Here we instead read stdout to the `bestmove`
-// line BEFORE sending quit -- the search runs to its real depth/time limit. stderr is sent
+// bash gates held stdin open with a sleep. Here, instead read stdout to the `bestmove`
+// line BEFORE sending quit -- the search runs to its real depth/time limit. Send stderr
 // to null (the target info/bestmove lines are on stdout) so a single-stream read can't
-// deadlock. This is what exercises the sync primitives (futex / RtlWaitOnAddress /
-// __ulock) and the ported steady clock (QueryPerformanceCounter on Windows) under real
-// concurrency and wall-clock timing -- coverage the single-threaded goldens can't give.
+// deadlock. Exercise the sync primitives (futex / RtlWaitOnAddress / __ulock) and the
+// ported steady clock (QueryPerformanceCounter on Windows) under real concurrency and
+// wall-clock timing -- coverage the single-threaded goldens can't give.
 
 const ScoreKind = enum { none, cp, mate };
 
@@ -1022,7 +1022,7 @@ fn wellFormedMove(m: []const u8) bool {
 }
 
 // Parse "score cp N" / "score mate N" (last one wins), "time N", "nodes N", and the
-// "bestmove M" move token into `out`. Used both on live engine output (info + bestmove
+// "bestmove M" move token into `out`. Use it both on live engine output (info + bestmove
 // lines) and on a committed golden line that packs the same fields.
 fn scanInfo(out: *Outcome, line: []const u8) void {
     var t = std.mem.tokenizeScalar(u8, line, ' ');
@@ -1050,7 +1050,7 @@ fn scanInfo(out: *Outcome, line: []const u8) void {
     }
 }
 
-// Interactive UCI session. The child's stdout pipe is non-blocking (the Io sets it so), so a
+// Drive an interactive UCI session. The child's stdout pipe is non-blocking (the Io sets it so), so a
 // raw File.Reader busy-spins; MultiReader.fill is the Io-aware await that std.process.run
 // uses, so this drives the search through it -- accumulate stdout, scan the buffer for a
 // marker, keep the search alive (no early quit) until it emits its real bestmove. stderr ->
@@ -1063,8 +1063,8 @@ const Interactive = struct {
     fw: Io.File.Writer,
     mrbuf: Io.File.MultiReader.Buffer(1),
     mr: Io.File.MultiReader,
-    // Offset in the accumulated buffer past the last marker matched by fillUntil, so each call
-    // waits for the NEXT (new) occurrence rather than re-finding markers from earlier commands.
+    // Track the offset in the accumulated buffer past the last marker matched by fillUntil, so each
+    // call waits for the NEXT (new) occurrence rather than re-finding markers from earlier commands.
     scanned: usize,
 
     fn init(self: *Interactive, io: Io, gpa: std.mem.Allocator, bin: []const u8) !void {
@@ -1102,7 +1102,7 @@ const Interactive = struct {
         }
     }
 
-    // Send quit, drain to EOF, reap. Returns whether the process exited with code 0.
+    // Send quit, drain to EOF, reap. Return whether the process exited with code 0.
     fn finish(self: *Interactive) bool {
         self.send("quit\n");
         self.child.stdin.?.close(self.io);
@@ -1124,7 +1124,7 @@ fn parseOutcome(text: []const u8) Outcome {
     var li = lines(text);
     while (li.next()) |raw| {
         const line = trimCR(raw);
-        scanInfo(&out, line); // captures score/nodes from info lines, the move from bestmove
+        scanInfo(&out, line); // capture score/nodes from info lines, the move from bestmove
         if (startsWith(line, "bestmove")) {
             out.got_bestmove = true;
             break;
@@ -1133,7 +1133,7 @@ fn parseOutcome(text: []const u8) Outcome {
     return out;
 }
 
-// One interactive search: send `cmds`, read to the real bestmove (no early-quit truncation).
+// Run one interactive search: send `cmds`, read to the real bestmove (no early-quit truncation).
 fn runSearch(io: Io, gpa: std.mem.Allocator, bin: []const u8, cmds: []const u8) !Outcome {
     var s: Interactive = undefined;
     try s.init(io, gpa, bin);
@@ -1154,7 +1154,7 @@ const mt_positions = [_]MtPos{
 const mt_depth = 12;
 const mt_band = 150;
 
-// mt-sanity: two-layer TT/search gate. (1) A bit-exact single-thread RE-ANCHOR: Threads=1
+// mt-sanity: run a two-layer TT/search gate. (1) A bit-exact single-thread RE-ANCHOR: Threads=1
 // must reproduce the golden's score+nodes+bestmove EXACTLY (depth-limited, so deterministic)
 // -- an exact floor that catches a single-thread regression the band would mask. (2) The
 // non-deterministic Lazy-SMP band: Threads {2,4} must complete with a well-formed bestmove and
@@ -1231,9 +1231,9 @@ fn runMtSanity(gpa: std.mem.Allocator, io: Io, bin: []const u8, golden: []const 
 const stress_cycles = 24;
 const stress_churn = 12;
 
-// stress: liveness for the thread runtime. Phase A hammers ONE process with go/stop
-// cycles across thread counts {1,2,4,8} (a third use the go-infinite -> stop handshake, which
-// exercises the futex/RtlWaitOnAddress/__ulock wakeup); Phase B churns fresh engine graphs.
+// stress: assert liveness for the thread runtime. In Phase A, hammer ONE process with
+// go/stop cycles across thread counts {1,2,4,8} (a third use the go-infinite -> stop handshake,
+// which exercises the futex/RtlWaitOnAddress/__ulock wakeup); in Phase B, churn fresh engine graphs.
 // A hang trips the CI job timeout; every search must yield a well-formed bestmove and every
 // process must exit cleanly. Not a determinism gate.
 fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
@@ -1259,7 +1259,7 @@ fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
         } else {
             s.send("position startpos moves e2e4 e7e5\ngo depth 10\n");
         }
-        // The cursor makes this wait for THIS cycle's bestmove (not an earlier one).
+        // Use the cursor to wait for THIS cycle's bestmove (not an earlier one).
         if (!s.fillUntil("\nbestmove")) fail("stress: phase A cycle {d} -- no bestmove (lost search?)", .{i});
     }
     const got = std.mem.count(u8, s.buffered(), "\nbestmove");
@@ -1279,10 +1279,10 @@ fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
-// time-mgmt: wall-clock invariants no depth/node gate covers (the startTime=0 class of bug).
+// time-mgmt: assert wall-clock invariants no depth/node gate covers (the startTime=0 class of bug).
 // BAND: `go movetime T` reports elapsed within [T/3, 3T+1500]. SCALE: it grows with the
-// budget. ALLOC: `go wtime/btime` picks a sane sub-budget. Directly exercises the ported
-// steady clock (QueryPerformanceCounter on Windows, CLOCK_MONOTONIC on POSIX).
+// budget. ALLOC: `go wtime/btime` picks a sane sub-budget. Exercise the ported steady
+// clock directly (QueryPerformanceCounter on Windows, CLOCK_MONOTONIC on POSIX).
 fn runTimeMgmt(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     var reported: [2]i64 = .{ 0, 0 };
     const budgets = [_]i64{ 300, 900 };
@@ -1309,7 +1309,7 @@ fn runTimeMgmt(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
-// reset-determinism: metamorphic gate for TT/history reset. A stale-state bleed (a
+// reset-determinism: run a metamorphic gate for TT/history reset. A stale-state bleed (a
 // ucinewgame that fails to clear the TT/histories, or a Clear Hash that no-ops) is invisible
 // to every golden -- those run one clean process. Here, in ONE process, run the SAME fixed-node
 // single-thread search several times and assert three relations no snapshot can:
@@ -1344,7 +1344,7 @@ const ResetFp = struct {
 };
 
 // Run one startpos depth-14 search in the shared session (optionally preceded by `pre`, e.g.
-// ucinewgame / Clear Hash) and fingerprint its final scored info line + bestmove. Parses only
+// ucinewgame / Clear Hash) and fingerprint its final scored info line + bestmove. Parse only
 // the output since the previous search (the buffer grows; `mark` is a stable offset).
 fn resetSearch(s: *Interactive, pre: []const u8) ResetFp {
     const mark = s.buffered().len;
@@ -1396,7 +1396,7 @@ fn runResetDeterminism(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn
     std.process.exit(0);
 }
 
-// skill: Skill Level is a NON-deterministic path (a wall-clock-seeded PRNG biases the move
+// skill: treat Skill Level as a NON-deterministic path (a wall-clock-seeded PRNG biases the move
 // pick, search_id.zig), so no snapshot is possible. Assert the metamorphic relations a snapshot
 // cannot: (1) at Skill 20 the handicap is disabled (skill_enabled=0), so repeated searches are
 // DETERMINISTIC -- one distinct move; (2) at Skill 0 the PRNG is active, so repeated searches
@@ -1425,7 +1425,7 @@ const skill_depth = 10;
 const skill_det_runs = 6; // Skill 20: must stay a single move (deterministic)
 const skill_live_runs = 12; // Skill 0: must vary (>= 2 distinct)
 
-// One startpos depth-`skill_depth` search in the shared session (fresh TT via ucinewgame; the
+// Run one startpos depth-`skill_depth` search in the shared session (fresh TT via ucinewgame; the
 // skill PRNG persists across it) -> the bestmove (a slice into s.buffered(), valid until finish).
 fn skillMove(s: *Interactive) []const u8 {
     const mark = s.buffered().len;
@@ -1476,13 +1476,13 @@ fn runSkill(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
-// ponder: the ponder handshake (N-time). `go ... ponder` searches the expected reply without
+// ponder: exercise the ponder handshake (N-time). `go ... ponder` searches the expected reply without
 // the clock; `ponderhit` (opponent played it) converts to a timed search that must yield a
 // bestmove; `stop` (opponent played otherwise) must also yield the best-so-far. Both must emit a
 // well-formed, LEGAL move and the process must exit cleanly. Liveness + legality, not a snapshot
-// (the timing/exact move is wall-clock-dependent). Drives the interactive session like `stress`.
+// (the timing/exact move is wall-clock-dependent). Drive the interactive session like `stress`.
 
-// Copy the first `bestmove M [ponder P]` in `seg` into the caller's fixed buffers. Returns
+// Copy the first `bestmove M [ponder P]` in `seg` into the caller's fixed buffers. Return
 // false if the segment has no bestmove line.
 fn firstBestmove(seg: []const u8, bm: []u8, bm_len: *usize, pd: []u8, pd_len: *usize) bool {
     var li = lines(seg);
@@ -1501,8 +1501,8 @@ fn firstBestmove(seg: []const u8, bm: []u8, bm_len: *usize, pd: []u8, pd_len: *u
     return false;
 }
 
-// Is `move` in the legal-move list of `position` (a "position ..." command)? Uses `go perft 1`,
-// whose divide lines ("<move>: <count>") enumerate exactly the legal moves.
+// Report whether `move` is in the legal-move list of `position` (a "position ..." command). Use
+// `go perft 1`, whose divide lines ("<move>: <count>") enumerate exactly the legal moves.
 fn ponderMoveLegal(gpa: std.mem.Allocator, io: Io, bin: []const u8, position: []const u8, move: []const u8) bool {
     const input = std.fmt.allocPrint(gpa, "{s}\ngo perft 1\nquit\n", .{position}) catch return false;
     defer gpa.free(input);
@@ -1593,18 +1593,18 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
 
 const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root", @"tb-search", @"tb-cursed" };
 
-// net-missing: the ONLY gate that runs the installed binary from a cwd the build does
-// not pin. Every other gate sets cwd to net/ (build.zig `run.setCwd(b.path("net"))`),
+// net-missing: exercise the ONLY gate that runs the installed binary from a cwd the build
+// does not pin. Every other gate sets cwd to net/ (build.zig `run.setCwd(b.path("net"))`),
 // which supplies the very precondition the binary must check -- so none of them can
 // see a startup that fails without the net.
 //
-// The net is a runtime input (NNUE_EMBEDDING_OFF): `network.load` searches the cwd and
+// Treat the net as a runtime input (NNUE_EMBEDDING_OFF): `network.load` searches the cwd and
 // the binary directory and returns void on a miss. Unchecked, worker construction
 // `orelse return`s on the null feature-transformer pointer, leaves the Worker zeroed,
 // and the clear job null-unwraps on a worker thread -- a SIGSEGV naming nothing.
-// Asserted here: a NAMED diagnostic and a clean non-zero exit, never a signal.
+// Assert here a NAMED diagnostic and a clean non-zero exit, never a signal.
 fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
-    // Absolutize the binary path before spawning. This gate sets cwd to a scratch dir
+    // Absolutize the binary path before spawning -- this gate sets cwd to a scratch dir
     // (every other gate keeps cwd = net/), so a path relative to the harness's own cwd
     // would not resolve from there. Resolve a possibly-relative incoming arg against the
     // harness cwd.
@@ -1619,7 +1619,7 @@ fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
             fail("net-missing: cannot resolve the binary path", .{});
     };
 
-    // A scratch cwd with no net in it. Deliberately not under net/.
+    // Make a scratch cwd with no net in it. Deliberately not under net/.
     const dir_path = "net_missing_tmp";
     Io.Dir.cwd().createDirPath(io, dir_path) catch
         fail("net-missing: cannot create scratch dir {s}", .{dir_path});
@@ -1649,7 +1649,7 @@ fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
     const err_out = mr.toOwnedSlice(1) catch fail("net-missing: stderr capture failed", .{});
     defer gpa.free(err_out);
 
-    // 1. A clean exit, not a signal. This is the regression that shipped: SIGSEGV (139).
+    // 1. Assert a clean exit, not a signal. Recall the shipped regression: SIGSEGV (139).
     switch (term) {
         .exited => |code| if (code == 0)
             fail("net-missing: engine exited 0 without a net; it must fail", .{}),
@@ -1661,7 +1661,7 @@ fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
         else => fail("net-missing: engine terminated abnormally: {any}", .{term}),
     }
 
-    // 2. The diagnostic names the file sought. A non-zero exit that explains nothing
+    // 2. Require the diagnostic to name the file sought. A non-zero exit that explains nothing
     //    is not the contract; the whole point is that the cause is visible.
     const said = if (std.mem.indexOf(u8, err_out, "nn-") != null) err_out else out;
     if (std.mem.indexOf(u8, said, "nn-") == null)
@@ -1761,7 +1761,7 @@ fn nextInt(t: *Tokenizer) ?i64 {
     return std.fmt.parseInt(i64, tok, 10) catch null;
 }
 
-// One parsed `info` line. Absent fields stay null; `pv` is the move-list tail (a slice of `line`).
+// Hold one parsed `info` line. Absent fields stay null; `pv` is the move-list tail (a slice of `line`).
 const InfoLine = struct {
     depth: ?i64 = null,
     seldepth: ?i64 = null,
@@ -1836,7 +1836,7 @@ fn diffIntField(name: []const u8, g: ?i64, l: ?i64) bool {
     return true;
 }
 
-// Pure predicates (no I/O -> unit-testable): does any parsed field differ? structuredFieldDiff
+// Provide pure predicates (no I/O -> unit-testable): does any parsed field differ? structuredFieldDiff
 // prints the per-field breakdown for the same decision, so these mirror its "any differ" result.
 fn infoLinesDiffer(g: InfoLine, l: InfoLine) bool {
     return !optEql(g.depth, l.depth) or !optEql(g.seldepth, l.seldepth) or
@@ -1850,9 +1850,9 @@ fn bestmoveLinesDiffer(g: BestmoveLine, l: BestmoveLine) bool {
     return !std.mem.eql(u8, g.bestmove, l.bestmove) or !std.mem.eql(u8, g.ponder, l.ponder);
 }
 
-// Print the field-level delta of a differing line pair. Returns true iff the pair was a
+// Print the field-level delta of a differing line pair. Return true iff the pair was a
 // recognized (info / bestmove) shape AND at least one PARSED field differs -- if the lines
-// differ only in an un-parsed field (wdl / time / nps), returns false so the caller keeps the
+// differ only in an un-parsed field (wdl / time / nps), return false so the caller keeps the
 // raw `< / >` fallback rather than claiming "no field differs".
 fn structuredFieldDiff(golden_line: []const u8, live_line: []const u8) bool {
     if (parseInfoLine(golden_line)) |g| {
@@ -1890,7 +1890,7 @@ fn structuredFieldDiff(golden_line: []const u8, live_line: []const u8) bool {
     return false;
 }
 
-// First ~40 differing lines, in `diff`-ish `< golden` / `> live` form, each followed (when the
+// Print the first ~40 differing lines, in `diff`-ish `< golden` / `> live` form, each followed (when the
 // pair is a parseable search line) by the structured field-level delta.
 fn printDiff(golden: []const u8, live: []const u8) void {
     var g = lines(golden);

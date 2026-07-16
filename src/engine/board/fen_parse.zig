@@ -1,6 +1,6 @@
-// FEN parsing: build a Position from a FEN string.
+// Parse FEN: build a Position from a FEN string.
 //
-// The FEN *decode* side of the board, split out of position.zig. Unlike fen.zig
+// Provide the FEN *decode* side of the board, split out of position.zig. Unlike fen.zig
 // (pure string encoding), parsing writes a live Position -- it places pieces,
 // derives castling rights, and rebuilds the cached state -- so it depends on the
 // move/state leaves (move_do.putPiece, state_setup.setState/setCastlingRight,

@@ -1,11 +1,11 @@
-//! Interleaved paired A/B over CPU HARDWARE COUNTERS. The tool REPORT-18 spent five audits
+//! Run interleaved paired A/B over CPU HARDWARE COUNTERS. The tool REPORT-18 spent five audits
 //! saying it could not have.
 //!
 //! WHY THIS EXISTS. The report's §3-P1 declared the campaign "blocked" because "WSL2 has no
 //! `perf`", leaving callgrind as the only profiler -- and callgrind SIGILLs on avx512, so every
 //! profile in the campaign was taken on sse41 and the top arch was never measured directly.
 //! That premise is FALSE: the `perf` *binary* is absent, but `perf_event_open` is not, and it is
-//! the syscall that matters. This tool uses it directly, so it works on EVERY arch tier,
+//! the syscall that matters. Use it directly, so it works on EVERY arch tier,
 //! including vnni512.
 //!
 //! WHAT IT ADDS OVER THE OTHER TOOLS:
@@ -13,7 +13,7 @@
 //!     511,286 and 581,024 nps, a 13.6% swing from thermal state alone).
 //!   * perf_callgrind.sh gives deterministic INSTRUCTIONS, but ONLY on sse41 (callgrind SIGILLs
 //!     on avx512) and at ~50x slowdown. It also cannot see cycles/IPC at all.
-//!   * This gives BOTH: instructions (the work) AND cycles/IPC/cache-misses (the efficiency),
+//!   * Give BOTH: instructions (the work) AND cycles/IPC/cache-misses (the efficiency),
 //!     at native speed, on EVERY tier. It is the only tool here that can SEE an IPC/memory gap
 //!     rather than infer one -- §0.11 xxii inferred exactly such a component and never could.
 //!
@@ -28,12 +28,12 @@
 //!      zfish gains -34.3% instructions from sse41->vnni512 where upstream gains -44.4%.
 //!
 //! THE PROTOCOL IS THE POINT (every rule below was paid for by a wrong result):
-//!   * INTERLEAVED, alternating in one loop. Never two readings from different moments (L2).
-//!   * MEDIAN OF PER-ROUND PAIRED RATIOS, not the ratio of medians (L3) -- the two disagreed by
+//!   * INTERLEAVE, alternating in one loop. Never two readings from different moments (L2).
+//!   * TAKE THE MEDIAN OF PER-ROUND PAIRED RATIOS, not the ratio of medians (L3) -- the two disagreed by
 //!     2x on a real change here (+6.6% vs the correct +3.2%).
-//!   * PINNED to one core, so both binaries see the same thermal/frequency state.
-//!   * NODE COUNTS ASSERTED EQUAL (L5): a different tree is a different workload and every
-//!     ratio below would be meaningless. Refuses to report if they differ.
+//!   * PIN to one core, so both binaries see the same thermal/frequency state.
+//!   * ASSERT NODE COUNTS EQUAL (L5): a different tree is a different workload and every
+//!     ratio below would be meaningless. Refuse to report if they differ.
 //!
 //! Instructions are near-deterministic and are the trustworthy headline; cycles/IPC carry
 //! thermal noise, which is exactly why they are reported as interleaved paired ratios.
@@ -45,7 +45,7 @@
 //! RATIO against the oracle rather than an absolute count: the ratio cancels machine, libc and
 //! net-load differences, so the same bound holds anywhere.
 //!
-//! This is a LOCAL gate. perf_event_open can be refused inside CI containers (poop#17), so it
+//! Keep this a LOCAL gate. perf_event_open can be refused inside CI containers (poop#17), so it
 //! is deliberately not wired into `zig build parity`; run it before committing perf work.
 //!
 //! Usage (CWD must be net/ so the net loads):
@@ -85,7 +85,7 @@ fn openCounter(config: u64, pid: linux.pid_t) !i32 {
     return @intCast(rc);
 }
 
-/// Parse "Nodes searched  : N" out of the child's bench output. This is the L5 gate: without it
+/// Parse "Nodes searched  : N" out of the child's bench output. Enforce the L5 gate: without it
 /// the tool would happily compare two different trees.
 fn parseNodes(text: []const u8) ?u64 {
     const marker = "Nodes searched";
@@ -283,7 +283,7 @@ pub fn main(init: std.process.Init) !void {
         \\
     , .{});
 
-    // MAX_INSTR_RATIO turns this into a regression gate (see the header).
+    // Turn this into a regression gate when MAX_INSTR_RATIO is set (see the header).
     const bound_str = init.minimal.environ.getPosix("MAX_INSTR_RATIO") orelse return;
     const bound = std.fmt.parseFloat(f64, bound_str) catch {
         std.debug.print("error: MAX_INSTR_RATIO={s} is not a number\n", .{bound_str});

@@ -39,7 +39,7 @@ pub fn valueDraw(nodes: usize) c_int {
     return value_draw - 1 + @as(c_int, @intCast(nodes & 0x2));
 }
 
-// Adjusts a mate or TB score to "plies to mate from the current position"
+// Adjust a mate or TB score to "plies to mate from the current position"
 // before storing it in the transposition table. Standard scores are unchanged.
 pub fn valueToTt(v: c_int, ply: c_int) c_int {
     if (isWin(v)) return v + ply;
@@ -47,7 +47,7 @@ pub fn valueToTt(v: c_int, ply: c_int) c_int {
     return v;
 }
 
-// Inverse of valueToTt(): adjusts a mate/TB score read from the transposition
+// Invert valueToTt(): adjust a mate/TB score read from the transposition
 // table back to plies-from-root, downgrading potentially false mate/TB scores
 // related to the 50-move rule and graph-history interaction.
 pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
@@ -82,7 +82,7 @@ pub fn valueFromTt(v: c_int, ply: c_int, r50c: c_int) c_int {
     return v;
 }
 
-// Step 8 child-node futility pruning: futilityMult = min(40 + depth*4, 80).
+// Prune child-node futility (Step 8): futilityMult = min(40 + depth*4, 80).
 pub fn futilityMargin(
     depth: c_int,
     tt_hit: bool,
@@ -104,7 +104,7 @@ pub fn futilityReturn(beta: c_int, eval: c_int) c_int {
     return @divTrunc(716 * beta + 308 * eval, 1024);
 }
 
-// Quiet-move pruning in the move loop: continuation-history prune threshold,
+// Prune quiet moves in the move loop: continuation-history prune threshold,
 // parent-node futility value, and the negative-SEE margin.
 pub fn historyPruneThreshold(depth: c_int) c_int {
     return -4313 * depth;
@@ -119,7 +119,7 @@ pub fn quietSeeMargin(lmr_depth: c_int) c_int {
     return 25 * lmr_depth * lmr_depth;
 }
 
-// Post-search bonus formulas (ttMoveHistory updates and the prior-countermove
+// Compute the post-search bonus formulas (ttMoveHistory updates and the prior-countermove
 // fail-low bonus).
 pub fn ttMoveHistoryDepthBonus(depth: c_int) c_int {
     return -442 - 108 * depth;
@@ -143,7 +143,7 @@ pub fn priorScaledBonusBase(depth: c_int) c_int {
     return @min(141 * depth - 82, 1472);
 }
 
-// LMR reduction (r) adjustments before the reduced search.
+// Adjust the LMR reduction (r) before the reduced search.
 pub fn lmrTtpvReduction(pv_node: bool, value_gt_alpha: bool, depth_ge: bool, cut_node: bool) c_int {
     return 2766 + @as(c_int, @intFromBool(pv_node)) * 1017 +
         @as(c_int, @intFromBool(value_gt_alpha)) * 838 +
@@ -163,7 +163,7 @@ pub fn lmrAllNodeScale(r: c_int, depth: c_int) c_int {
     return @divTrunc(r * 272, 256 * depth + 285);
 }
 
-// Singular extension margins. corrValAdj = abs(correctionValue)/194822 is
+// Compute the singular extension margins. corrValAdj = abs(correctionValue)/194822 is
 // shared by both margins.
 fn corrValAdj(correction_value: c_int) c_int {
     const a: c_int = if (correction_value < 0) -correction_value else correction_value;
@@ -186,7 +186,7 @@ pub fn singularTripleMargin(pv_node: bool, not_tt_capture: bool, ttpv: bool, cor
         @as(c_int, @intFromBool(ply_gt_root)) * 45;
 }
 
-// Capture pruning in the move loop: futility value (piece_value is the
+// Prune captures in the move loop: futility value (piece_value is the
 // piece-value lookup, passed in) and the SEE pruning margin.
 pub fn captureFutilityValue(static_eval: c_int, lmr_depth: c_int, piece_value: c_int, capt_hist: c_int) c_int {
     return static_eval + 231 + 232 * lmr_depth + piece_value + @divTrunc(131 * capt_hist, 1024);
@@ -197,12 +197,12 @@ pub fn captureSeeMargin(depth: c_int, capt_hist: c_int) c_int {
     return 175 * depth + @divTrunc(capt_hist * 34, 1024);
 }
 
-// Late-move-count pruning: skip quiets once moveCount reaches this limit.
+// Prune by late move count: skip quiets once moveCount reaches this limit.
 pub fn moveCountLimit(depth: c_int, improving: bool) c_int {
     return @divTrunc(3 + depth * depth, 2 - @as(c_int, @intFromBool(improving)));
 }
 
-// Step 11 ProbCut beta thresholds (shallow probcut and the deep TT cutoff).
+// Compute the Step 11 ProbCut beta thresholds (shallow probcut and the deep TT cutoff).
 pub fn probCutBeta(beta: c_int, improving: bool) c_int {
     return beta + 214 - 59 * @as(c_int, @intFromBool(improving));
 }
@@ -211,7 +211,7 @@ pub fn probCutBetaDeep(beta: c_int) c_int {
     return beta + 428;
 }
 
-// Step 9 null-move pruning: static-eval cutoff threshold, dynamic reduction R,
+// Prune with the null move (Step 9): static-eval cutoff threshold, dynamic reduction R,
 // and the verification-search nmpMinPly.
 pub fn nullMoveThreshold(beta: c_int, depth: c_int, improving: bool) c_int {
     return beta - 14 * depth - 45 * @as(c_int, @intFromBool(improving)) + 374;
@@ -225,12 +225,12 @@ pub fn nmpMinPly(ply: c_int, depth: c_int, r: c_int) c_int {
     return ply + @divTrunc(3 * (depth - r), 4);
 }
 
-// Step 7 razoring threshold subtracted from alpha (search()).
+// Compute the Step 7 razoring threshold subtracted from alpha (search()).
 pub fn razorMargin(depth: c_int) c_int {
     return 465 + 300 * depth * depth;
 }
 
-// Qsearch beta-trend blends: when a non-decisive bestValue clears beta it is
+// Blend the qsearch beta-trend: when a non-decisive bestValue clears beta it is
 // pulled partway toward beta. Step 4 stand-pat uses 467/557; the pre-TT-store
 // fail-high path uses 481/543. Both divide by 1024 with toward-zero truncation.
 pub fn qsearchStandPatBlend(best_value: c_int, beta: c_int) c_int {
@@ -241,21 +241,21 @@ pub fn qsearchFailHighBlend(best_value: c_int, beta: c_int) c_int {
     return @divTrunc(481 * best_value + 543 * beta, 1024);
 }
 
-// Static-eval-difference quiet ordering (search(), after the moves_loop check
+// Order quiets by static-eval difference (search(), after the moves_loop check
 // guard): clamp the negated sum of the previous and current static evals into
 // [-183, 180] and bias by 62. The caller scales it (*10, *13) into history.
 pub fn evalDiff(prev_static_eval: c_int, static_eval: c_int) c_int {
     return @max(@as(c_int, -183), @min(@as(c_int, 180), -(prev_static_eval + static_eval))) + 62;
 }
 
-// Qsearch futility base = static eval plus a fixed margin. The move loop later
+// Compute the qsearch futility base = static eval plus a fixed margin. The move loop later
 // adds the captured piece value to this base.
 pub fn qsearchFutilityBase(static_eval: c_int) c_int {
     return static_eval + 335;
 }
 
-// Prior-countermove fail-low bonus scalings (search() POST_BONUS block): the
-// scaledBonus is fanned out into the continuation, main, and pawn history
+// Scale the prior-countermove fail-low bonus (search() POST_BONUS block): fan the
+// scaledBonus out into the continuation, main, and pawn history
 // tables with distinct tuned divisors, each truncated toward zero.
 pub fn priorConthistScale(scaled_bonus: c_int) c_int {
     return @divTrunc(scaled_bonus * 236, 16384);
@@ -269,7 +269,7 @@ pub fn priorPawnhistScale(scaled_bonus: c_int) c_int {
     return @divTrunc(scaled_bonus * 322, 8192);
 }
 
-// Step 17 LMR stat-score assembly (search()). The caller reads the relevant
+// Assemble the Step 17 LMR stat-score (search()). The caller reads the relevant
 // history-table entries and passes their values; this owns the tuned weighting.
 // Capture: 809*pieceValue/128 plus capture history. Quiet: 2*main plus the two
 // continuation-history entries.
@@ -281,7 +281,7 @@ pub fn quietStatScore(main_hist: c_int, cont0: c_int, cont1: c_int) c_int {
     return 2 * main_hist + cont0 + cont1;
 }
 
-// End-of-search correction-history bonus (search()): scale the static-eval
+// Compute the end-of-search correction-history bonus (search()): scale the static-eval
 // error by depth and a best-move-dependent weight (12 with a best move, 18
 // without), clamp into +/- CORRECTION_HISTORY_LIMIT/4 (=256), then apply the
 // final 1114/1024 scale passed to update_correction_history.
@@ -292,7 +292,7 @@ pub fn correctionHistoryBonus(eval_delta: c_int, depth: c_int, has_best_move: bo
     return @divTrunc(1114 * clamped, 1024);
 }
 
-// Aspiration-window sizing in iterative_deepening(). The starting half-width
+// Size the aspiration window in iterative_deepening(). The starting half-width
 // mixes a base, a per-thread stagger, and the root move's mean-squared score;
 // on each fail high/low it grows by 44/128.
 pub fn aspirationInitialDelta(thread_idx: usize, mean_squared_score: c_int) c_int {
@@ -305,14 +305,14 @@ pub fn aspirationDeltaGrow(delta: c_int) c_int {
     return delta + @divTrunc(44 * delta, 128);
 }
 
-// Eval optimism from the root move's average score (iterative_deepening()):
+// Compute eval optimism from the root move's average score (iterative_deepening()):
 // a saturating 137*avg/(|avg|+81). The caller mirrors it for the opponent.
 pub fn optimism(avg: c_int) c_int {
     const abs_avg = if (avg < 0) -avg else avg;
     return @divTrunc(137 * avg, abs_avg + 81);
 }
 
-// Quiet-history bonus scalings (update_quiet_histories). Each is bonus*N/1024
+// Scale the quiet-history bonus (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: c_int) c_int {
     return @divTrunc(bonus * 663, 1024);
@@ -327,11 +327,11 @@ pub fn quietPawnScale(bonus: c_int) c_int {
     return @divTrunc(bonus * weight, 1024);
 }
 
-// Continuation-history positive-consistency multipliers, indexed by the
+// Index the continuation-history positive-consistency multipliers by the
 // running positiveCount in update_continuation_histories.
 const cmhc_multipliers = [_]c_int{ 96, 113, 101, 105, 127, 121, 126 };
 
-// Per-entry continuation-history update delta: this owns the multiplier table
+// Compute the per-entry continuation-history update delta: own the multiplier table
 // and the bonus*weight*multiplier/131072 formula. bonus*weight*multiplier
 // stays within i32 for the bonus magnitudes search produces.
 pub fn conthistDelta(bonus: c_int, weight: c_int, positive_count: c_int, i: c_int) c_int {
@@ -345,7 +345,7 @@ pub fn conthistDelta(bonus: c_int, weight: c_int, positive_count: c_int, i: c_in
         71 * @as(c_int, @intFromBool(i < 2));
 }
 
-// Weighted correction-history blend (correction_value). Inputs are the raw
+// Blend the weighted correction history (correction_value). Inputs are the raw
 // correction entries; only the magic weights live here. All terms stay well
 // within i32 (entries clamped to +/-1024).
 pub fn correctionValue(
@@ -361,7 +361,7 @@ pub fn correctionValue(
     return 13345 * pcv + 9280 * micv + 11840 * (wnpcv + bnpcv) + cntcv;
 }
 
-// Base stat bonus/malus formulas applied at the end of search() when a
+// Compute the base stat bonus/malus formulas applied at the end of search() when a
 // bestMove is found (update_all_stats).
 pub fn statBonus(depth: c_int, is_tt_move: bool, prev_stat_score: c_int) c_int {
     return @min(134 * depth - 79, 1572) +

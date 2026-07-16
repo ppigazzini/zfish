@@ -1,7 +1,7 @@
-// Board primitives: piece/color/file/move-type constants, move-word decoders,
+// Define the board primitives: piece/color/file/move-type constants, move-word decoders,
 // and the small pure square helpers shared across the board code.
 //
-// Extracted from position.zig so the clusters being split out of that god-file
+// Extract from position.zig so the clusters being split out of that god-file
 // (FEN, legality/SEE, move gen, make/unmake) can share one definition of these
 // primitives instead of each duplicating them. position.zig re-exports every
 // symbol here, so its internal call sites are unchanged. The only dependency is
@@ -12,7 +12,7 @@ const std = @import("std");
 const position_types = @import("position_types");
 const Position = position_types.Position;
 
-// Piece types (low 3 bits of a piece code).
+// Define the piece types (low 3 bits of a piece code).
 pub const pawn_pt: u8 = 1;
 pub const knight_pt: u8 = 2;
 pub const bishop_pt: u8 = 3;
@@ -28,13 +28,13 @@ pub const file_h_bb: u64 = 0x8080808080808080;
 pub const rank1_bb: u64 = 0xFF;
 pub const rank8_bb: u64 = 0xFF << 56;
 
-// MoveType (top 2 bits of the 16-bit move word).
+// Define the MoveType (top 2 bits of the 16-bit move word).
 pub const mt_normal: u16 = 0;
 pub const mt_promotion: u16 = 1 << 14;
 pub const mt_en_passant: u16 = 2 << 14;
 pub const mt_castling: u16 = 3 << 14;
 
-// Non-pawn material value by piece type (index by piece & 7); pawn/none = 0.
+// List the non-pawn material value by piece type (index by piece & 7); pawn/none = 0.
 pub const piece_value_by_type = [8]c_int{ 0, 208, 781, 825, 1276, 2538, 0, 0 };
 
 pub inline fn sqBb(s: u8) u64 {
@@ -77,8 +77,8 @@ pub inline fn isEmpty(pos: *const Position, s: u8) bool {
     return pos.board[s] == 0;
 }
 
-// attacks_bb<PAWN>(s, c): squares a color-c pawn on `s` attacks.
-// Pawn attack table -- upstream's PawnAttacks[c][s]. position.initRuntime calls
+// Return the squares a color-c pawn on `s` attacks (attacks_bb<PAWN>(s, c)).
+// Hold the pawn attack table -- upstream's PawnAttacks[c][s]. position.initRuntime calls
 // initPawnAttacks() before any position setup or search.
 var pawn_attacks_bb: [2][64]u64 = undefined;
 
@@ -103,12 +103,12 @@ pub inline fn kingSquare(pos: *const Position, c: u8) u8 {
 const testing = std.testing;
 
 test "move-word decoders split from/to/type" {
-    // from e2(12) to e4(28), normal move.
+    // Encode from e2(12) to e4(28), a normal move.
     const m: u16 = (12 << 6) | 28;
     try testing.expectEqual(@as(u8, 12), moveFrom(m));
     try testing.expectEqual(@as(u8, 28), moveTo(m));
     try testing.expectEqual(mt_normal, moveTypeOf(m));
-    // promotion word carries the promo piece type in bits 12-13 (+KNIGHT).
+    // Encode the promo piece type in bits 12-13 of the promotion word (+KNIGHT).
     const promo: u16 = mt_promotion | (2 << 12); // 2 -> ROOK
     try testing.expectEqual(mt_promotion, moveTypeOf(promo));
     try testing.expectEqual(rook_pt, movePromotionType(promo));

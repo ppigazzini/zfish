@@ -1,19 +1,19 @@
-//! Thin explicit libc binding: the handful of C entry points the port still calls,
-//! declared directly as `extern "c"`. Modules reach them via `const c = @import("libc");`.
+//! Bind libc thinly and explicitly: the handful of C entry points the port still calls,
+//! declared directly as `extern "c"`. Reach them from modules via `const c = @import("libc");`.
 //!
-//! No stdio here -- file reads, stdout/stderr writes, the stdin command loop, the
-//! cwd lookup, and every numeric/float trace format go through std.Io / std.fmt
+//! Keep stdio out of here -- route file reads, stdout/stderr writes, the stdin command loop, the
+//! cwd lookup, and every numeric/float trace format through std.Io / std.fmt
 //! (`std.Io.Dir.readFileAlloc`, `std.Io.File.writeStreamingAll`, a `std.Io` stdin reader,
-//! `std.process.currentPath`, `std.fmt.bufPrint`). The float trace formats are only ever
+//! `std.process.currentPath`, `std.fmt.bufPrint`). Note the float trace formats are only ever
 //! `centipawns*0.01`, values on the 2-decimal grid, so C's round-half-to-even and
 //! std.fmt's round-half-away can never disagree (proven byte-exact over cp in +-2e6).
 //!
-//! What remains is genuinely libc, not stdio:
+//! Keep only what is genuinely libc, not stdio:
 //!   * malloc/free -- the C heap the graph allocator is layered on.
 //!   * exit         -- process exit on a fatal parse error.
 //!
-//! Compiler-detection preprocessor macros (`__GNUC__`, `__clang_*`, `__VERSION__`, ...) are
-//! NOT here -- they have no libc symbol; misc.zig reports the Zig/LLVM build info instead.
+//! Exclude compiler-detection preprocessor macros (`__GNUC__`, `__clang_*`, `__VERSION__`, ...) --
+//! they have no libc symbol; misc.zig reports the Zig/LLVM build info instead.
 
 // <stdlib.h>
 pub extern "c" fn malloc(size: usize) ?*anyopaque;

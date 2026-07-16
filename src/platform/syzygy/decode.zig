@@ -1,20 +1,20 @@
-//! Syzygy file parse + RE-PAIR decompression. Faithful ports of Stockfish's
-//! `set_sizes` (parse one PairsData's header out of the mmapped file) and `decompress_pairs`
+//! Parse Syzygy files and RE-PAIR-decompress them. Port Stockfish's
+//! `set_sizes` faithfully (parse one PairsData's header out of the mmapped file) and `decompress_pairs`
 //! (given a value index, walk the SparseIndex/blockLength and decode the canonical-Huffman
-//! symbol via the btree). The `number<T,LE/BE>` reads become std.mem.readInt (all zfish targets
+//! symbol via the btree). Read each `number<T,LE/BE>` as std.mem.readInt (all zfish targets
 //! are little-endian, so LittleEndian reads are native, BigEndian reads byte-swap).
 //!
-//! WIP: these are the decoder half. do_probe_table (position->index) + probe_wdl + wiring land in
-//! part 2, where the whole chain is gated bit-exact vs the oracle (`tb-wdl`). Only the SingleValue
+//! Treat these as the decoder half (WIP): do_probe_table (position->index) + probe_wdl + wiring land in
+//! part 2, where the whole chain is gated bit-exact vs the oracle (`tb-wdl`). Note that only the SingleValue
 //! path of decompress_pairs is independently testable here; the rest is validated end-to-end.
-//! Bounds-checked slices, not raw pointer walks (the RE-PAIR loop is D2-shaped under ReleaseSafe).
+//! Walk bounds-checked slices, not raw pointer walks (the RE-PAIR loop is D2-shaped under ReleaseSafe).
 
 const std = @import("std");
 const probe = @import("probe.zig");
 const PairsData = probe.PairsData;
 const Sym = probe.Sym;
 
-// SF TBFlag bits.
+// Define the SF TBFlag bits.
 pub const flag_stm: u8 = 1;
 pub const flag_mapped: u8 = 2;
 pub const flag_win_plies: u8 = 4;
@@ -22,7 +22,7 @@ pub const flag_loss_plies: u8 = 8;
 pub const flag_wide: u8 = 16;
 pub const flag_single_value: u8 = 128;
 
-// Unaligned little-/big-endian reads from a file byte pointer (SF `number<T, LE/BE>`).
+// Read unaligned little-/big-endian values from a file byte pointer (SF `number<T, LE/BE>`).
 inline fn rdU16(p: [*]const u8) u16 {
     return std.mem.readInt(u16, @ptrCast(p), .little);
 }
@@ -39,9 +39,9 @@ inline fn rdU32be(p: [*]const u8) u32 {
     return std.mem.readInt(u32, @ptrCast(p), .big);
 }
 
-// SF `set_sizes`: parse the header for one PairsData starting at `buf[pos]`, allocate base64[]
+// Port SF `set_sizes`: parse the header for one PairsData starting at `buf[pos]`, allocate base64[]
 // and symlen[], set the file pointers, and advance `pos` past the btree. group_len/group_idx must
-// already be filled (setGroups). Returns error only on OOM.
+// already be filled (setGroups). Return an error only on OOM.
 pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *usize) !void {
     var p = pos.*;
     d.flags = buf[p];
@@ -58,7 +58,7 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
         return;
     }
 
-    // tbSize = group_idx at the group_len[] terminator index.
+    // Compute tbSize as group_idx at the group_len[] terminator index.
     var term: usize = 0;
     while (term < probe.tb_pieces and d.group_len[term] != 0) term += 1;
     const tb_size: u64 = d.group_idx[term];
@@ -82,7 +82,7 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
     const base64_size: usize = @as(usize, d.max_sym_len - d.min_sym_len) + 1;
     d.base64 = try gpa.alloc(u64, base64_size);
 
-    // Canonical Huffman: base64[i] >= base64[i+1] (see SF). base64[last] starts at 0.
+    // Build canonical Huffman: base64[i] >= base64[i+1] (see SF). base64[last] starts at 0.
     d.base64[base64_size - 1] = 0;
     var i: i32 = @as(i32, @intCast(base64_size)) - 2;
     while (i >= 0) : (i -= 1) {
@@ -118,7 +118,7 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
     pos.* = p;
 }
 
-// SF `decompress_pairs`: return the stored value at index `idx`.
+// Port SF `decompress_pairs`: return the stored value at index `idx`.
 pub fn decompressPairs(d: *const PairsData, idx: u64) i32 {
     if (d.flags & flag_single_value != 0) return d.min_sym_len;
 

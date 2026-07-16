@@ -1,7 +1,7 @@
-// UCI command parsers.
+// Parse the UCI commands.
 //
-// The `go` / `position` / `setoption` token parsers and their Parsed* result
-// structs, split out of uci.zig. Pure over std + the uci_strings base leaf (no
+// Provide the `go` / `position` / `setoption` token parsers and their Parsed* result
+// structs, split out of uci.zig. Keep pure over std + the uci_strings base leaf (no
 // engine coupling -- the move-view parsing that needs engine_mod.ByteView stays
 // in uci.zig's dispatch code). uci.zig re-exports the structs + the two public
 // entry points (parseLimits / parsePosition) for its dispatch/runtime code.
@@ -11,7 +11,7 @@ const uci_strings = @import("uci_strings");
 
 const asciiLower = uci_strings.asciiLower;
 
-// A local allocator-taking allocCString (uci_strings.allocCString hardcodes
+// Provide a local allocator-taking allocCString (uci_strings.allocCString hardcodes
 // std.heap.c_allocator and has ~25 callers, so it is left alone); injecting the
 // allocator here makes the parsers' OOM paths reachable by checkAllAllocationFailures.
 fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[*:0]u8 {
@@ -238,8 +238,8 @@ test "parsePosition handles startpos and fen with moves" {
     try testing.expectEqualStrings("e1e2", std.mem.span(fp.moves.?));
 }
 
-// Fuzz: neither parser may crash / OOB on arbitrary input -- it returns a struct
-// (parseLimits) or an ok/not-ok result (parsePosition). Deterministic PRNG so it
+// Fuzz to prove neither parser crashes / OOBs on arbitrary input -- it returns a struct
+// (parseLimits) or an ok/not-ok result (parsePosition). Use a deterministic PRNG so it
 // is reproducible in `zig build test`.
 const uci_alphabet = "go position startpos fen moves wtime btime depth nodes infinite ponder 0123456789 /-KQkqabcdefgh ";
 
@@ -256,7 +256,7 @@ test "fuzz: the UCI parsers tolerate arbitrary input" {
     }
 }
 
-// OOM-unwind gates. The parsers now take an injected allocator, so
+// Gate the OOM unwinds. The parsers now take an injected allocator, so
 // checkAllAllocationFailures can fail each allocation (ArrayList growth, lowerAlloc,
 // the result allocCStrings) and assert every unwind is leak-free -- this is what caught
 // the parsePositionAlloc double-result leak.

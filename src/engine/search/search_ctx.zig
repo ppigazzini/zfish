@@ -1,7 +1,7 @@
-// Search-driver context types: the plain-data bundles the search driver threads
+// Define the search-driver context types: the plain-data bundles the search driver threads
 // through: the per-iteration `SsCtx`/`SearchTimeState`/`ZfishIdState` snapshots and
 // the hot `QCtx` the qsearch/search recursion carries. A std-free leaf over the
-// worker/board POD leaves. Depends only on worker_layout + the position/root-move
+// worker/board POD leaves. Depend only on worker_layout + the position/root-move
 // type leaves.
 
 const worker_layout = @import("worker_layout");
@@ -14,8 +14,8 @@ const Position = position_types.Position;
 const PVMoves = root_move.PVMoves;
 const RootMove = root_move.RootMove;
 
-// Worker-graph accessors shared by BOTH the ID-orchestration driver and the node
-// recursion: pure reads of a `*WorkerLayout` into its bound subsystems. Kept
+// Share the Worker-graph accessors between BOTH the ID-orchestration driver and the node
+// recursion: pure reads of a `*WorkerLayout` into its bound subsystems. Keep them
 // here in the context leaf so search_id and search_driver both reach them.
 pub fn workerThreadsPool(wl: *const worker_layout.WorkerLayout) *worker_layout.ThreadPool {
     return wl.threads;
@@ -24,8 +24,8 @@ pub fn workerManager(wl: *const worker_layout.WorkerLayout) ?*worker_layout.Sear
     return wl.manager;
 }
 pub fn workerRootMove0(wl: *const worker_layout.WorkerLayout) *worker_layout.RootMove {
-    // root_moves[0] is the first element's address; return the typed first RootMove
-    // via the graph adapter.
+    // Return the typed first RootMove via the graph adapter; root_moves[0] is the
+    // first element's address.
     return @ptrCast(wl.root_moves.ptr);
 }
 pub fn workerTT(wl: *const worker_layout.WorkerLayout) *worker_layout.TranspositionTable {
@@ -59,7 +59,7 @@ pub const SearchTimeState = struct {
     use_time_management: u8,
 };
 
-// iterative_deepening state, snapshotted once at entry (skill-off path only). Live
+// Snapshot the iterative_deepening state once at entry (skill-off path only). Live
 // fields are pointers into Worker/SearchManager/ThreadPool; the rest are values
 // read once.
 pub const ZfishIdState = struct {
@@ -97,7 +97,7 @@ pub const ZfishIdState = struct {
     skill_enabled: u8,
 };
 
-// The hot per-node context the qsearch/search recursion carries: the Worker graph +
+// Carry the hot per-node context through the qsearch/search recursion: the Worker graph +
 // the pointers into it the node bodies read/write. `table` is the typed TT cluster
 // base; `acc_stack`/`cache` are the NNUE arena opaque handles (B4 idiom).
 pub const QCtx = struct {

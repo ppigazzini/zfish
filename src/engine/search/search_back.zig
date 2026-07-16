@@ -1,12 +1,12 @@
-// COMPONENT: search_back.zig + search_main.zig are ONE component, deliberately.
-// The other half of the file graph's only import cycle -- the alpha-beta recursion
+// COMPONENT: treat search_back.zig + search_main.zig as ONE component, deliberately.
+// Form the other half of the file graph's only import cycle -- the alpha-beta recursion
 // itself (runBack <-> searchImpl), not a layering defect. See search_main.zig's
 // header for the full rationale; `zig build arch-report` lists this SCC as KNOWN so a
 // NEW one cannot hide behind it. Do not break this cycle.
 //
-// The move loop + node finalization (Steps 13-21) of searchImpl. Takes the
+// Run the move loop + node finalization (Steps 13-21) of searchImpl. Take the
 // pre-loop node state as an anytype `nd` struct (Steps 1-12 invariants); the
-// loop's mutable running state + scratch are local here. It recurses into
+// loop's mutable running state + scratch are local here. Recurse into
 // search_main.searchImpl for child nodes.
 
 const std = @import("std");
@@ -45,8 +45,8 @@ const pseudoLegal = legality.pseudoLegal;
 const givesCheck = legality.givesCheck;
 const sq_none: u8 = 64;
 comptime {
-    // worker_layout.WorkerLayout uses opaque byte regions for these position-module
-    // sub-blocks; assert its sizes match the real structs so worker_off stays correct.
+    // Assert the opaque byte regions worker_layout.WorkerLayout uses for these
+    // position-module sub-blocks match the real struct sizes so worker_off stays correct.
     std.debug.assert(worker_layout.worker_histories_bytes == @sizeOf(WorkerHistories));
     std.debug.assert(worker_layout.position_size == @sizeOf(Position));
     std.debug.assert(worker_layout.state_info_size == @sizeOf(StateInfo));
@@ -98,7 +98,7 @@ pub fn runBack(nd: anytype) c_int {
     var st: StateInfo = undefined;
     var pv: PVMoves = undefined;
 
-    // contHist[6] = {(nd.ss-1)..(nd.ss-6)}.continuation_history.
+    // Build contHist[6] = {(nd.ss-1)..(nd.ss-6)}.continuation_history.
     var cont_hist = [6]?*const worker_histories.PieceToHistory{
         nd.ss1.continuation_history,          ssSub(nd.ss, 2).continuation_history,
         ssSub(nd.ss, 3).continuation_history, ssSub(nd.ss, 4).continuation_history,
@@ -136,7 +136,7 @@ pub fn runBack(nd: anytype) c_int {
     var captures_searched: [32]u16 = undefined;
     var n_captures: usize = 0;
 
-    // Step 13. Move loop.
+    // Step 13. Loop over moves.
     while (true) {
         const move = movepick.nextMove(&mp_state, &mp_ctx);
         if (move == 0) break;
@@ -163,7 +163,7 @@ pub fn runBack(nd: anytype) c_int {
         var r = reductionAcc(nd.ctx, nd.improving, depth, move_count, delta);
         if (nd.ss.tt_pv) r += 1006;
 
-        // Step 14. Shallow-depth pruning.
+        // Step 14. Prune at shallow depth.
         if (!nd.root_node and nd.pos.st.non_pawn_material[nd.us] != 0 and !qIsLoss(best_value)) {
             if (move_count >= search.moveCountLimit(depth, nd.improving)) mp_state.skip_quiets = 1;
             var lmr_depth = new_depth - @divTrunc(r, 1024);
@@ -193,7 +193,7 @@ pub fn runBack(nd: anytype) c_int {
             }
         }
 
-        // Step 15. Extensions (singular).
+        // Step 15. Extend (singular).
         if (!nd.root_node and move == nd.tt_move and nd.excluded_move == 0 and depth >= 6 + @as(c_int, @intFromBool(nd.ss.tt_pv)) and
             qIsValid(nd.tt_value) and !qIsDecisive(nd.tt_value) and (nd.tt_bound & q_bound_lower) != 0 and
             nd.tt_depth >= depth - 3 and !isShuffling(nd.pos_ptr, nd.ss_ptr, move))
@@ -246,7 +246,7 @@ pub fn runBack(nd: anytype) c_int {
         r -= search.lmrStatScoreReduction(nd.ss.stat_score);
         if (nd.all_node) r += search.lmrAllNodeScale(r, depth);
 
-        // Step 17/18. LMR + full-depth search.
+        // Step 17/18. Run the LMR + full-depth search.
         if (depth >= 2 and move_count > 1) {
             const d = @max(@as(c_int, 1), @min(new_depth - @divTrunc(r, 1024), new_depth + 2)) + @as(c_int, @intFromBool(nd.pv_node));
             nd.ss.reduction = new_depth - d;
@@ -280,7 +280,7 @@ pub fn runBack(nd: anytype) c_int {
         if (searchStopped(nd.ctx)) return q_value_draw;
 
         if (nd.root_node) {
-            // (nd.ss+1)->pv is only valid (non-null) when this move ran a PV search,
+            // Hold that (nd.ss+1)->pv is only valid (non-null) when this move ran a PV search,
             // i.e. move_count == 1 or value > alpha; otherwise it is ignored.
             const cpv: ?*const PVMoves = if (move_count == 1 or value > alpha) ssAdd(nd.ss, 1).pv.? else null;
             rootUpdate(nd.ctx, move, value, nd.ctx.nodes.* - node_count, move_count, alpha, nd.beta, cpv);
@@ -292,7 +292,7 @@ pub fn runBack(nd: anytype) c_int {
             best_value = value;
             if (value + inc > alpha) {
                 best_move = move;
-                // (nd.ss+1)->pv is only set (1913) when this move ran a PV re-search;
+                // Hold that (nd.ss+1)->pv is only set (1913) when this move ran a PV re-search;
                 // if a rare best-move update fires without one it stays null, and
                 // pvUpdate takes the child PV as optional (null -> PV is just the
                 // move). Force-unwrapping it here was a latent null-deref (silent
@@ -321,7 +321,7 @@ pub fn runBack(nd: anytype) c_int {
         }
     }
 
-    // Step 21. Mate / stalemate / fail-high adjust.
+    // Step 21. Adjust for mate / stalemate / fail-high.
     if (best_value >= nd.beta and !qIsDecisive(best_value) and !qIsDecisive(alpha))
         best_value = @divTrunc(best_value * depth + nd.beta, depth + 1);
 

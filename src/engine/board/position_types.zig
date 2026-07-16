@@ -1,21 +1,21 @@
-// Position POD data types.
+// Define the position POD data types.
 //
-// The plain-data core of the board representation, pulled out of the 4257-line
+// Hold the plain-data core of the board representation, pulled out of the 4257-line
 // position.zig god-file into a std-only leaf module so it can be imported from
 // BOTH position.zig and worker_layout.zig without a module cycle (position imports
-// worker_layout, so worker_layout cannot import position). This is the same
+// worker_layout, so worker_layout cannot import position). Reuse the same
 // cycle-break pattern proven for WorkerHistories: once these types live
 // in a leaf, worker_layout can embed a *typed* Position/StateInfo in the Worker
 // block instead of an opaque [N]u8 region.
 //
-// Plain-data structs: Zig owns the field order. The only external
+// Let Zig own the field order (plain-data structs). The only external
 // layout contracts are the fixed struct sizes (asserted below) that the Worker
 // block reserves a slot for, plus the board/side_to_move offsets the NNUE eval
 // reads (asserted against worker_layout in position.zig, which sees both).
 
 const std = @import("std");
 
-// Per-move dirty state the NNUE incremental update consumes (Position.scratch_dp).
+// Hold the per-move dirty state the NNUE incremental update consumes (Position.scratch_dp).
 pub const DirtyPiece = struct {
     pc: u8,
     from: u8,
@@ -26,7 +26,7 @@ pub const DirtyPiece = struct {
     add_pc: u8,
 };
 
-// Per-move threat deltas the NNUE update consumes (Position.scratch_dts):
+// Hold the per-move threat deltas the NNUE update consumes (Position.scratch_dts):
 // a bounded 96-slot DirtyThreat list plus the from/to king-square bookkeeping.
 pub const DirtyThreats = struct {
     list_values: [96]u32, // the DirtyThreat values (bounded 96)
@@ -36,7 +36,7 @@ pub const DirtyThreats = struct {
     ksq: u8,
 };
 
-// The per-ply position state do_move pushes and undo_move pops. The leading block
+// Hold the per-ply position state do_move pushes and undo_move pops. The leading block
 // is copied on each move; the trailing block is recomputed, not copied.
 pub const StateInfo = struct {
     material_key: u64,
@@ -58,7 +58,7 @@ pub const StateInfo = struct {
     repetition: c_int,
 };
 
-// The full Position object: the leading data members plus the trailing NNUE
+// Define the full Position object: the leading data members plus the trailing NNUE
 // scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
 // members the struct is the whole 1032-byte object, so the graph owns and
 // allocates a Position outright.
@@ -79,7 +79,7 @@ pub const Position = struct {
 };
 
 comptime {
-    // The Worker block reserves a fixed-width slot for each of these (worker_layout's
+    // Assert the fixed-width slot the Worker block reserves for each of these (worker_layout's
     // position_size / state_info_size). These self-contained size asserts keep the
     // slot contract local to the type definition (worker_layout re-asserts the tie to
     // its constants). Field order is Zig's to choose; only the sizes are contractual.

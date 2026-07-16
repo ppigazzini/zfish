@@ -1,8 +1,8 @@
 const std = @import("std");
 
-// Process-global Zig OptionsModel: the live option store. Owns every option's
+// Hold the process-global Zig OptionsModel: the live option store. Own every option's
 // metadata (type/min/max/default) and current value, keyed by the option's
-// registration index, and serves both name- and index-keyed reads.
+// registration index, and serve both name- and index-keyed reads.
 var global_model: ?OptionsModel = null;
 
 fn ensureModel() *OptionsModel {
@@ -21,7 +21,7 @@ pub fn intByIndex(idx: usize) c_int {
     return ensureModel().intByIndex(idx);
 }
 
-// Read an option's integer value by name (0 if absent). Used by callers
+// Read an option's integer value by name (0 if absent). Serve callers
 // that carry an option name (e.g. the search driver's MultiPV / UCI_ShowWDL).
 /// Read an integer option by name from the option model.
 pub fn intByName(name: []const u8) c_int {
@@ -48,8 +48,8 @@ pub fn optionThreads() usize {
 pub fn uciChess960() bool {
     return intByName("UCI_Chess960") != 0;
 }
-/// A NUL-terminated copy of a string option (caller frees; c_allocator is libc-backed
-/// so the existing c.free still pairs), or null on OOM. allocSentinel is the
+/// Make a NUL-terminated copy of a string option (caller frees; c_allocator is libc-backed
+/// so the existing c.free still pairs), or null on OOM. Use allocSentinel, the
 /// idiomatic NUL-terminated allocation -- it sizes len+1 and writes the sentinel.
 pub fn dupCString(name: []const u8) ?[*:0]u8 {
     const s = strByName(name);
@@ -89,7 +89,7 @@ pub const ModelSetResult = struct {
 };
 
 // Apply a setoption assignment to the model: validate, normalize, and store.
-// Reports whether the option exists, whether the value was accepted/changed,
+// Report whether the option exists, whether the value was accepted/changed,
 // the change-callback kind, the option kind, and the index, so the caller can
 // fire the on_change callback for the changed option.
 pub fn setByName(name: []const u8, value: []const u8, out: *ModelSetResult) void {
@@ -122,7 +122,7 @@ pub fn renderOptions() ?[*:0]u8 {
     return buf.ptr;
 }
 
-// UCI option-string parsing lives in the option_parse leaf now; re-export the
+// Keep UCI option-string parsing in the option_parse leaf now; re-export the
 // public entry points + result types and alias back the helpers the model and
 // facade below reuse, so every call site stays unqualified.
 const option_parse = @import("option_parse.zig");
@@ -139,17 +139,17 @@ const parseSignedInt = option_parse.parseSignedInt;
 const nameEquals = option_parse.nameEquals;
 
 // ---------------------------------------------------------------------------
-// Zig-owned option model (engine-graph reimplementation).
+// Own the option model in Zig (engine-graph reimplementation).
 //
-// The complete data model behind a UCI OptionsMap: name, type, default,
+// Model the complete data behind a UCI OptionsMap: name, type, default,
 // current value, spin bounds, registration order, and the change-callback kind,
-// all owned in Zig. It holds the option metadata and storage; the
+// all owned in Zig. Hold the option metadata and storage; the
 // parse/validate/normalize logic lives in this
-// file and is reused here. Verified by the tests at the bottom.
+// file and is reused here. Verify via the tests at the bottom.
 // ---------------------------------------------------------------------------
 
-// The option data model (types + OptionsModel store + standard-option fixture)
-// lives in the option_model leaf now; re-export its public surface and alias
+// Keep the option data model (types + OptionsModel store + standard-option fixture)
+// in the option_model leaf now; re-export its public surface and alias
 // back what this facade calls so external + call sites stay unqualified.
 const option_model = @import("option_model.zig");
 pub const OptionKind = option_model.OptionKind;

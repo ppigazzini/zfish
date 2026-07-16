@@ -1,5 +1,5 @@
-// Transposition-table POD layout types: the cluster array element and its entry
-// record. worker_layout.TranspositionTable types its cluster-base pointer as
+// Define the transposition-table POD layout types: the cluster array element and its
+// entry record. worker_layout.TranspositionTable types its cluster-base pointer as
 // [*]TtCluster from here; tt.zig re-exports these.
 
 pub const cluster_size = 3;

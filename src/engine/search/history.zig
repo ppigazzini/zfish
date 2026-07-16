@@ -1,11 +1,11 @@
-// History-update functions.
+// Update the history tables.
 //
-// The functions that WRITE the per-Worker + shared history tables after a search
+// Gather the functions that WRITE the per-Worker + shared history tables after a search
 // node: the quiet/continuation/capture main-history updates (updateAllStats), the
 // correction-history nudges (updateCorrectionHistory), the continuation-history
 // pointer setup (setContHist), and the per-iteration/per-search decays + clears.
-// The storage layer is shared_history, the shared low-level helpers are
-// search_common, and the tuning scales come from the search module.
+// Draw the storage layer from shared_history, the shared low-level helpers from
+// search_common, and the tuning scales from the search module.
 
 const search = @import("search");
 const worker_layout = @import("worker_layout");
@@ -57,7 +57,7 @@ pub fn updateQuietHistoriesWorker(
     updateQuietHistories(main_entry, lowply_entry, pawn_entry, ss_ptr, pc, to, bonus);
 }
 
-// do_move / do_null_move continuation-history pointer setup. Sets the Stack's
+// Set up the do_move / do_null_move continuation-history pointer. Set the Stack's
 // continuation_history to &continuationHistory[in_check][capture][pc][to] (a
 // PieceToHistory page) and continuation_correction_history to
 // &continuationCorrectionHistory[pc][to]. The null move and the
@@ -74,7 +74,7 @@ pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: u8
         @ptrCast(&w.continuation_correction_history[cc_block * hist_pieceto]);
 }
 
-// iterative_deepening() per-iteration main-history decay: (v + 5) * 789 / 1024
+// Decay the main history per iterative_deepening() iteration: (v + 5) * 789 / 1024
 // toward zero over the whole table.
 pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
@@ -84,14 +84,14 @@ pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     }
 }
 
-// iterative_deepening() per-search lowPlyHistory reset: lowPlyHistory.fill(100)
+// Reset lowPlyHistory per iterative_deepening() search: lowPlyHistory.fill(100)
 // over the whole [5][65536] table.
 pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     for (&w.low_ply_history) |*e| e.* = 100;
 }
 
-// Worker clear: per-Worker history resets (the shared correction/pawn clear_range
+// Clear the Worker: reset the per-Worker histories (the shared correction/pawn clear_range
 // is handled separately by clearSharedHistory for its numa partitioning, and the NNUE
 // refreshTable is untouched). mainHistory=-5, captureHistory=-699, ttMoveHistory=0,
 // continuationCorrectionHistory=5, continuationHistory=-552.
@@ -104,12 +104,12 @@ pub fn clearWorkerHistories(wl: *WorkerLayout) void {
     for (&w.continuation_history) |*e| e.* = -552;
 }
 
-// captureStage / moveIsOk / statsUpdate / captVal / captEntry / workerHistories
-// live in the search_common leaf, shared with the history-update code.
+// Find captureStage / moveIsOk / statsUpdate / captVal / captEntry / workerHistories
+// in the search_common leaf, shared with the history-update code.
 
-// The caller resolves the table lookups (mainHistory[us][move], lowPlyHistory,
-// sharedHistory.pawn_entry) and hands this the int16 entry pointers; this owns the
-// bonus scaling + gravity update sequence.
+// Own the bonus scaling + gravity update sequence; the caller resolves the table
+// lookups (mainHistory[us][move], lowPlyHistory, sharedHistory.pawn_entry) and hands
+// this the int16 entry pointers.
 pub fn updateQuietHistories(
     main_entry: *i16,
     lowply_entry: ?*i16,
@@ -219,8 +219,8 @@ const correction_history_limit: c_int = 1024;
 
 // update_correction_history: nudge the four shared correction tables plus the
 // (ss-2)/(ss-4) continuation correction entries toward the search/static-eval
-// delta. Resolves all four key-masked, color-indexed correction entries from
-// SharedHistories (the Worker pointer gives the shared block) and applies the
+// delta. Resolve all four key-masked, color-indexed correction entries from
+// SharedHistories (the Worker pointer gives the shared block) and apply the
 // bonus weighting, gravity, and the stack-relative continuation correction writes.
 pub fn updateCorrectionHistory(
     worker_ptr: *WorkerLayout,

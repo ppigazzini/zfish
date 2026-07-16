@@ -1,4 +1,4 @@
-// Move scoring: the ScoreInput/SortEntry/MovePickerState/MovePickerContext types
+// Score moves: the ScoreInput/SortEntry/MovePickerState/MovePickerContext types
 // plus scoreValue/scoreList and the low-level move-bit / history-load helpers
 // they use.
 
@@ -138,7 +138,7 @@ pub const MovePickerContext = struct {
     ply: c_int,
 };
 
-// The per-move score. Upstream's MovePicker::score() computes this straight into the
+// Compute the per-move score. Upstream's MovePicker::score() computes this straight into the
 // move's value in a single pass; keeping it a leaf over ScoreInput lets scoreList do
 // the same without materialising the inputs.
 fn scoreValue(comptime kind: u8, input: ScoreInput) c_int {

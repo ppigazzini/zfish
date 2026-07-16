@@ -1,4 +1,4 @@
-// NNUE content hashing.
+// Hash the NNUE content.
 //
 // Network::get_content_hash (network.cpp) combines per-component hashes of the
 // feature transformer and the eight layer stacks. Each component hashes its raw
@@ -11,7 +11,7 @@ const nnue_parse = @import("nnue_parse.zig");
 
 const hash_combine_magic: usize = 0x9e3779b9;
 
-// hash_bytes: MurmurHash2 64-bit (misc.cpp).
+// Implement hash_bytes: MurmurHash2 64-bit (misc.cpp).
 pub fn hashBytes(data: []const u8) u64 {
     const m: u64 = 0xc6a4a7935bd1e995;
     const r: u6 = 47;
@@ -45,7 +45,7 @@ pub fn hashBytes(data: []const u8) u64 {
     return h;
 }
 
-// hash_combine for an integral value (misc.h): seed ^= v + 0x9e3779b9 +
+// Implement hash_combine for an integral value (misc.h): seed ^= v + 0x9e3779b9 +
 // (seed<<6) + (seed>>2).
 pub fn hashCombine(seed: *usize, v: usize) void {
     seed.* ^= v +% hash_combine_magic +% (seed.* << 6) +% (seed.* >> 2);
@@ -57,7 +57,7 @@ fn rawDataHash(seed: *usize, bytes: []const u8) void {
 
 // ---- feature transformer -----------------------------------------------------
 
-// combine_hash (nnue_feature_transformer.h): rotate-left-1 then xor.
+// Implement combine_hash (nnue_feature_transformer.h): rotate-left-1 then xor.
 fn combineHash(comptime hashes: []const u32) u32 {
     var hash: u32 = 0;
     inline for (hashes) |c| {
@@ -67,14 +67,14 @@ fn combineHash(comptime hashes: []const u32) u32 {
     return hash;
 }
 
-// FeatureTransformer::get_hash_value: combine the feature-set hashes, xor the
+// Compute FeatureTransformer::get_hash_value: combine the feature-set hashes, xor the
 // transformed dimensions. ThreatFeatureSet=full_threats (0x8f234cb8),
 // PSQFeatureSet=half_ka_v2_hm (0x7f234cb8), OutputDimensions=HalfDimensions=1024.
 pub fn featureTransformerHashValue() u32 {
     return combineHash(&.{ 0x8f234cb8, 0x7f234cb8 }) ^ (@as(u32, nnue_parse.half_dimensions) * 2);
 }
 
-// FeatureTransformer::get_content_hash. The raw-data hashes run in member-value
+// Compute FeatureTransformer::get_content_hash. The raw-data hashes run in member-value
 // order: biases, weights, psqtWeights, threatWeights, threatPsqtWeights.
 pub fn featureTransformerContentHash(ft: [*]const u8) usize {
     const p = nnue_parse;
@@ -93,7 +93,7 @@ pub fn featureTransformerContentHash(ft: [*]const u8) usize {
 const affine_base: u32 = 0xCC03DAE4;
 const clipped_base: u32 = 0x538D24C7;
 
-// AffineTransform/AffineTransformSparseInput::get_hash_value(prevHash).
+// Compute AffineTransform/AffineTransformSparseInput::get_hash_value(prevHash).
 fn affineHashValue(prev: u32, out_dims: u32) u32 {
     var hv = affine_base +% out_dims;
     hv ^= prev >> 1;
@@ -101,7 +101,7 @@ fn affineHashValue(prev: u32, out_dims: u32) u32 {
     return hv;
 }
 
-// AffineTransform::get_content_hash: hashes biases, weights, then get_hash_value(0)
+// Compute AffineTransform::get_content_hash: hash biases, weights, then get_hash_value(0)
 // (prevHash is 0, so the xors vanish).
 fn affineContentHash(biases: []const u8, weights: []const u8, out_dims: u32) usize {
     var h: usize = 0;
@@ -111,7 +111,7 @@ fn affineContentHash(biases: []const u8, weights: []const u8, out_dims: u32) usi
     return h;
 }
 
-// ClippedReLU/SqrClippedReLU::get_content_hash: get_hash_value(0). The activations
+// Compute ClippedReLU/SqrClippedReLU::get_content_hash: get_hash_value(0). The activations
 // carry no parameters, so this is a constant.
 fn activationContentHash() usize {
     var h: usize = 0;
@@ -119,7 +119,7 @@ fn activationContentHash() usize {
     return h;
 }
 
-// NetworkArchitecture::get_hash_value (nnue_architecture.h), the chained variant
+// Compute NetworkArchitecture::get_hash_value (nnue_architecture.h), the chained variant
 // that threads prevHash through fc_0, ac_0, fc_1, ac_1, fc_2.
 pub fn architectureHashValue() u32 {
     var hv: u32 = 0xEC42E90D;
@@ -132,7 +132,7 @@ pub fn architectureHashValue() u32 {
     return hv;
 }
 
-// NetworkArchitecture::get_content_hash for one layer stack. Per-layer dims:
+// Compute NetworkArchitecture::get_content_hash for one layer stack. Per-layer dims:
 // fc_0 1024->32, fc_1 62->32, fc_2 32->1.
 pub fn layerStackContentHash(
     fc0_biases: []const u8,
@@ -153,14 +153,14 @@ pub fn layerStackContentHash(
     return h;
 }
 
-// Network::hash (network.h): the evaluation-function structure hash embedded in
+// Compute Network::hash (network.h): the evaluation-function structure hash embedded in
 // the file header, FeatureTransformer::get_hash_value xor
 // NetworkArchitecture::get_hash_value.
 pub fn networkHashValue() u32 {
     return featureTransformerHashValue() ^ architectureHashValue();
 }
 
-// Eval-file identity hash (matches upstream): combine the byte hashes of
+// Compute the eval-file identity hash (matches upstream): combine the byte hashes of
 // defaultName, current, and netDescription (each a fixed string).
 pub fn evalFileContentHash(default_name: []const u8, current: []const u8, description: []const u8) usize {
     var h: usize = 0;
@@ -178,7 +178,7 @@ test "hashBytes matches a known MurmurHash2-64A vector" {
 }
 
 test "combine_hash and architecture hash value are stable" {
-    // Recomputed from the constants; guards against accidental edits.
+    // Recompute from the constants; guard against accidental edits.
     const ft = featureTransformerHashValue();
     const arch = architectureHashValue();
     try testing.expect(ft != 0);

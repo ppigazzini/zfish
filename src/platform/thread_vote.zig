@@ -1,9 +1,9 @@
-// Lazy-SMP best-thread vote.
+// Vote for the Lazy-SMP best thread.
 //
-// A leaf module (worker_layout only): picks the vote-winning thread's worker from the
-// pool's per-thread root-move summaries. Both thread.zig and the search driver
-// (position.zig) select the best thread, and position cannot import thread (thread
-// imports position), so the pure graph-read + integer-vote logic lives here.
+// Pick the vote-winning thread's worker from the pool's per-thread root-move summaries;
+// a leaf module (worker_layout only). Both thread.zig and the search driver (position.zig)
+// select the best thread, and position cannot import thread (thread imports position),
+// so keep the pure graph-read + integer-vote logic here.
 
 const worker_layout = @import("worker_layout");
 
@@ -97,7 +97,7 @@ fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
     return best_index;
 }
 
-// Index of the vote-winning thread within the pool.
+// Return the index of the vote-winning thread within the pool.
 pub fn bestThreadIndex(pool: *worker_layout.ThreadPool) usize {
     const thread_count = pool.numThreads();
     if (thread_count == 0) return 0;
@@ -111,7 +111,7 @@ pub fn bestThreadIndex(pool: *worker_layout.ThreadPool) usize {
     return pickBestThread(&summaries, thread_count);
 }
 
-// Worker of the vote-winning thread -- the value the search driver picks as
+// Return the worker of the vote-winning thread -- the value the search driver picks as
 // `bestThread` when choosing the move to report.
 pub fn bestThreadWorker(pool: *worker_layout.ThreadPool) *worker_layout.WorkerLayout {
     const idx = bestThreadIndex(pool);

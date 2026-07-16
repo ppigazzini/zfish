@@ -1,9 +1,9 @@
-//! Syzygy WDL-probe data model + pure indexing helpers. The structs (LR btree entry,
-//! PairsData, TBTable) mirror Stockfish's, and the pure functions `setGroups` (split the piece
-//! sequence into encoding groups) and `setSymLen` (expand the RE-PAIR Huffman btree) are ported
-//! and unit-tested WITHOUT a live file -- the file-mmap orchestration (`do_init`) and the probe
+//! Define the Syzygy WDL-probe data model + pure indexing helpers. Mirror Stockfish's structs (LR btree entry,
+//! PairsData, TBTable), and port + unit-test the pure functions `setGroups` (split the piece
+//! sequence into encoding groups) and `setSymLen` (expand the RE-PAIR Huffman btree)
+//! WITHOUT a live file -- the file-mmap orchestration (`do_init`) and the probe
 //! itself (`decompress_pairs`/`do_probe_table`) are in decode.zig / wdl.zig, where the whole chain is gated
-//! bit-exact vs the oracle. Dead until then; bench unchanged.
+//! bit-exact vs the oracle. Treat as dead until then; bench unchanged.
 
 const std = @import("std");
 const encode = @import("encode.zig");
@@ -11,7 +11,7 @@ const encode = @import("encode.zig");
 pub const tb_pieces = 7; // SF TBPIECES: max supported men
 pub const Sym = u16; // Huffman symbol
 
-// A RE-PAIR btree entry: 3 bytes packing two 12-bit symbols (left child, right child). If the
+// Represent a RE-PAIR btree entry: 3 bytes packing two 12-bit symbols (left child, right child). If the
 // symbol has length 1 the left field is the stored value; right == 0xFFF marks a leaf.
 pub const LR = extern struct {
     lr: [3]u8,
@@ -27,7 +27,7 @@ comptime {
     std.debug.assert(@sizeOf(LR) == 3);
 }
 
-// A partial index into blockLength[] (SF SparseEntry: `char block[4]; offset[2]`, read LE at
+// Hold a partial index into blockLength[] (SF SparseEntry: `char block[4]; offset[2]`, read LE at
 // access time -- byte arrays so it is exactly 6 bytes with no padding).
 pub const SparseEntry = extern struct { block: [4]u8, offset: [2]u8 };
 
@@ -35,7 +35,7 @@ comptime {
     std.debug.assert(@sizeOf(SparseEntry) == 6);
 }
 
-// Low-level indexing/decompression state for one (side, file) of a table. The `[*]`-typed fields
+// Hold low-level indexing/decompression state for one (side, file) of a table. The `[*]`-typed fields
 // point into the mmap'd file and are filled by registry.set; the slices are owned.
 pub const PairsData = struct {
     flags: u8 = 0,
@@ -59,7 +59,7 @@ pub const PairsData = struct {
     map_idx: [4]u16 = @splat(0),
 };
 
-// The per-table metadata (built at init from the material config); PairsData is filled lazily.
+// Hold the per-table metadata (built at init from the material config); PairsData is filled lazily.
 pub const EntryInfo = struct {
     has_pawns: bool,
     has_unique_pieces: bool,
@@ -67,9 +67,9 @@ pub const EntryInfo = struct {
     pawn_count: [2]u8, // [lead color, other color]
 };
 
-// SF `set_groups`: from the piece sequence in d.pieces, fill group_len[] (0-terminated) and
+// Port SF `set_groups`: from the piece sequence in d.pieces, fill group_len[] (0-terminated) and
 // group_idx[] (the multiplicative start index of each group). `order` + `f` come from the file
-// header. Uses encode.binomial / encode.lead_pawns_size.
+// header. Use encode.binomial / encode.lead_pawns_size.
 pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: usize) void {
     var n: usize = 0;
     var first_len: i32 = if (e.has_pawns) 0 else if (e.has_unique_pieces) 3 else 2;
@@ -117,9 +117,9 @@ pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: usize) void {
     d.group_idx[n] = idx;
 }
 
-// SF `set_symlen`: expand btree symbol `s` into its children until the leaves, returning the
-// number of values it represents (minus 1). Recursive; the tree is acyclic so `visited` guards
-// re-entry. Fills d.symlen[].
+// Port SF `set_symlen`: expand btree symbol `s` into its children until the leaves, returning the
+// number of values it represents (minus 1). Recurse; the tree is acyclic so `visited` guards
+// re-entry. Fill d.symlen[].
 pub fn setSymLen(d: *PairsData, s: Sym, visited: []bool) u8 {
     visited[s] = true; // safe now: the tree is acyclic
     const sr = d.btree[s].right();
@@ -172,7 +172,7 @@ test "setSymLen expands a synthetic RE-PAIR btree" {
     var symlen = [_]u8{ 0, 0, 0, 0 };
     var visited = [_]bool{ false, false, false, false };
     var d = PairsData{ .btree = &btree, .symlen = &symlen };
-    // sym 2 expands to leaves 0,1 -> 2 values -> symlen 1.
+    // Expect sym 2 to expand to leaves 0,1 -> 2 values -> symlen 1.
     try std.testing.expectEqual(@as(u8, 1), setSymLen(&d, 2, &visited));
     // sym 3 = (2,0) -> symlen[2] + symlen[0] + 1 = 1 + 0 + 1 = 2.
     var visited2 = [_]bool{ false, false, false, false };
@@ -180,7 +180,7 @@ test "setSymLen expands a synthetic RE-PAIR btree" {
 }
 
 fn pair(l: Sym, r: Sym) LR {
-    // Inverse of LR.left/right: lr[0]=l&0xFF, lr[1]=(l>>8)|((r&0xF)<<4), lr[2]=r>>4.
+    // Invert LR.left/right: lr[0]=l&0xFF, lr[1]=(l>>8)|((r&0xF)<<4), lr[2]=r>>4.
     return .{ .lr = .{
         @intCast(l & 0xFF),
         @intCast((l >> 8) | ((r & 0xF) << 4)),

@@ -33,7 +33,7 @@ fn formatTraceAlloc(input: NnueTraceInput) ![*:0]u8 {
     var bucket: usize = 0;
     while (bucket < input.bucket_count) : (bucket += 1) {
         var bucket_buffer: [64]u8 = undefined;
-        // `%zu` has no width here, so `{d}` reproduces it byte-for-byte.
+        // Match `%zu` (no width here) with `{d}` byte-for-byte.
         const bucket_text = std.fmt.bufPrint(&bucket_buffer, "|  {d}        |  ", .{bucket}) catch unreachable;
         try buffer.appendSlice(allocator, bucket_text);
         try appendAlignedDot(&buffer, input.psqt_cp[bucket]);
@@ -64,7 +64,7 @@ fn appendAlignedDot(buffer: *std.ArrayList(u8), cp_value: c_int) !void {
         ' ';
     const pawns = @as(f64, @floatFromInt(absInt(cp_value))) * 0.01;
 
-    // `%c%6.2f`: the sign char, then the 2-decimal pawns right-padded to width 6. std.fmt
+    // Reproduce `%c%6.2f`: the sign char, then the 2-decimal pawns right-padded to width 6. std.fmt
     // is byte-identical to C `%.2f` here because pawns is always centipawns*0.01 -- on the
     // 2-decimal grid, so no third decimal exists and C's round-half-to-even can never
     // disagree with std.fmt's round-half-away. Proven byte-exact for every cp in
@@ -95,7 +95,7 @@ test "formatTrace: side line, bucket row, and the %c%6.2f float cells" {
     const out = std.mem.span(s);
 
     try std.testing.expect(std.mem.indexOf(u8, out, "White to move)") != null);
-    // these pin the sign + width-6 float format (centipawns*0.01) byte-for-byte:
+    // Pin the sign + width-6 float format (centipawns*0.01) byte-for-byte:
     try std.testing.expect(std.mem.indexOf(u8, out, "+  0.22") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "-  0.76") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "-  0.54") != null);

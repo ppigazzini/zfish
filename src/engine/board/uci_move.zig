@@ -4,7 +4,7 @@ const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 const Position = position_types.Position;
 
-// uci_move reads the position snapshot through the main-exported bridge rather
+// Read the position snapshot through the main-exported bridge rather
 // than importing position -- position (the search driver) imports uci_move to format
 // its emit output, so uci_move must not import position back (would cycle).
 

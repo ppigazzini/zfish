@@ -1,8 +1,8 @@
-// Bench / benchmark position tables (extracted from benchmark.zig).
+// Hold the bench / benchmark position tables (extracted from benchmark.zig).
 //
-// `Defaults` is the fixed position set the `bench` command runs -- its FENs pin the
+// Run the fixed position set `Defaults` for the `bench` command -- its FENs pin the
 // bench signature 2466447, so bench itself is this data's regression gate.
-// `BenchmarkPositions` drives the richer `benchmark` command. Pure data, std-only.
+// Drive the richer `benchmark` command with `BenchmarkPositions`. Keep pure data, std-only.
 
 const std = @import("std");
 

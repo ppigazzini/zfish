@@ -8,17 +8,17 @@ const option_port = @import("option");
 const uci_wdl = @import("uci_wdl");
 const uci_output = @import("uci_output");
 const engine_object = @import("engine_object");
-// The bench / benchmark command runners live in their own leaf (uci passes it a
+// Keep the bench / benchmark command runners in their own leaf (uci passes it a
 // void wrapper over dispatchCommand, so the leaf has no cycle back into the loop).
 const uci_bench = @import("uci_bench.zig");
 const worker_layout = @import("worker_layout");
 const clock = @import("clock");
 const uci_strings = @import("uci_strings");
 
-// Blocking std.Io handle for stdin, plus a persistent line reader (replacing libc
+// Hold a blocking std.Io handle for stdin, plus a persistent line reader (replacing libc
 // fgets). `init_single_threaded` spawns no threads and installs no signal handlers, so
-// input reading, like output, never touches the engine's thread pool. The reader
-// keeps a 4096-byte buffer across calls (its state must not move, so it lives in a
+// input reading, like output, never touches the engine's thread pool. Keep the reader's
+// 4096-byte buffer across calls (its state must not move, so it lives in a
 // module var recovered by @fieldParentPtr); it bounds one command line -- UCI commands
 // are short, and a longer line reports error.StreamTooLong, handled as end-of-input.
 var stdin_threaded = std.Io.Threaded.init_single_threaded;
@@ -59,15 +59,15 @@ const CommandKind = enum {
     unknown,
 };
 
-// Same layout as the engine module's ByteView; alias it so setPositionEngine takes our
+// Match the engine module's ByteView layout; alias it so setPositionEngine takes our
 // move views directly rather than through a duplicate struct.
 const ByteView = engine_mod.ByteView;
 
 // Build the LimitsType from the parsed UCI `go` args (including the
 // searchmoves list, now Zig-owned worker_layout.SearchMoveText records) and
-// hand it to the engine go driver. startTime is stamped here (the earliest
-// point), so the info-line elapsed/nps are correct; the
-// searchmoves element buffer is freed after start_thinking has read it.
+// hand it to the engine go driver. Stamp startTime here (the earliest
+// point), so the info-line elapsed/nps are correct; free the
+// searchmoves element buffer after start_thinking has read it.
 fn goParsed(engine_ptr: *engine_object.EngineObject, parsed: ParsedLimits) void {
     var limits: worker_layout.LimitsType = std.mem.zeroes(worker_layout.LimitsType);
     limits.start_time = clock.now();
@@ -92,7 +92,7 @@ fn goParsed(engine_ptr: *engine_object.EngineObject, parsed: ParsedLimits) void 
             if (tok.len != 0) count += 1;
         }
         if (count != 0) sm_build: {
-            // Zig-owned SearchMoveText records: limits.searchmoves IS
+            // Own the SearchMoveText records in Zig: limits.searchmoves IS
             // the typed slice now -- no {begin,end,cap} header, no separate handle.
             // On OOM, degrade gracefully (search all moves) rather than aborting the game.
             const recs = std.heap.c_allocator.alloc(worker_layout.SearchMoveText, count) catch break :sm_build;
@@ -101,7 +101,7 @@ fn goParsed(engine_ptr: *engine_object.EngineObject, parsed: ParsedLimits) void 
             it = std.mem.splitScalar(u8, sm, '\n');
             while (it.next()) |tok| {
                 if (tok.len == 0) continue;
-                const n: usize = @min(tok.len, recs[i].text.len); // UCI moves are <=5 chars
+                const n: usize = @min(tok.len, recs[i].text.len); // cap at text.len; UCI moves are <=5 chars
                 recs[i].len = @intCast(n);
                 @memcpy(recs[i].text[0..n], tok[0..n]);
                 i += 1;
@@ -317,7 +317,7 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
 
 // Print a NUL-terminated line to stdout through the shared output funnel (replacing
 // libc puts): printLine adds the newline and the tear-proof lock, and tees to the log
-// like Stockfish's full-cout tee. The span drops the sentinel; the bytes are unchanged.
+// like Stockfish's full-cout tee. Drop the sentinel via the span; keep the bytes unchanged.
 fn putsLine(ptr: [*:0]const u8) void {
     const s = std.mem.span(ptr);
     uci_output.printLine(s.ptr, s.len);
@@ -337,7 +337,7 @@ fn isHelpToken(token: []const u8) bool {
 }
 
 pub fn loopRuntime(uci_ptr: *anyopaque) void {
-    // Single erasure boundary: main hands the engine as *anyopaque; the whole UCI
+    // Cross a single erasure boundary: main hands the engine as *anyopaque; the whole UCI
     // dispatch below runs on the typed *EngineObject handle.
     const e: *engine_object.EngineObject = engine_object.EngineObject.fromPtr(uci_ptr);
     const allocator = std.heap.c_allocator;
@@ -380,9 +380,9 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
 
 fn readCommandLineAlloc() !?[]u8 {
     const reader = stdinInterface();
-    // takeDelimiter returns the next line without the '\n' (and the final unterminated
-    // line before EOF, then null) -- exactly fgets' line-at-a-time behaviour. An
-    // over-long line or a read failure is treated as end-of-input, as a closed stdin was.
+    // Take the next line via takeDelimiter, without the '\n' (and the final unterminated
+    // line before EOF, then null) -- exactly fgets' line-at-a-time behaviour. Treat an
+    // over-long line or a read failure as end-of-input, as a closed stdin was.
     const raw = reader.takeDelimiter('\n') catch return null;
     const line = raw orelse return null;
 
@@ -394,7 +394,7 @@ fn readCommandLineAlloc() !?[]u8 {
     return try std.heap.c_allocator.dupe(u8, line[0..end]);
 }
 
-// The bench/benchmark runners live in uci_bench.zig; these thin wrappers keep the
+// Keep the bench/benchmark runners in uci_bench.zig; let these thin wrappers hold the
 // public entry points and inject dispatchCommand (as a void wrapper) so the leaf carries
 // no import cycle back into the command loop.
 pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8) void {
@@ -430,7 +430,7 @@ fn parseMoveViews(moves_text: []const u8) !std.ArrayList(ByteView) {
     return views;
 }
 
-// C-string helpers live in the uci_strings base leaf; aliased so the
+// Keep the C-string helpers in the uci_strings base leaf; alias them so the
 // bodies throughout this file stay unqualified.
 const appendFormatted = uci_strings.appendFormatted;
 const allocFormatted = uci_strings.allocFormatted;
@@ -440,7 +440,7 @@ const trimAsciiWhitespace = uci_strings.trimAsciiWhitespace;
 const asciiLower = uci_strings.asciiLower;
 const isSpaceByte = uci_strings.isSpaceByte;
 
-// Live UCI output formatters live in the uci_format leaf; aliased for the
+// Keep the live UCI output formatters in the uci_format leaf; alias them for the
 // dispatch code below.
 const uci_format = @import("uci_format");
 const formatInfoString = uci_format.formatInfoString;
@@ -448,7 +448,7 @@ const helpText = uci_format.helpText;
 const formatUnknownCommand = uci_format.formatUnknownCommand;
 const formatCriticalError = uci_format.formatCriticalError;
 
-// UCI command parsers live in the uci_parse leaf; aliased for the
+// Keep the UCI command parsers in the uci_parse leaf; alias them for the
 // dispatch/runtime code.
 const uci_parse = @import("uci_parse");
 pub const ParsedSetOption = uci_parse.ParsedSetOption;

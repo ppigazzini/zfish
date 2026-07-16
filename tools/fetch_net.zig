@@ -1,15 +1,15 @@
-// zfish NNUE net fetcher, in pure Zig, replacing tools/fetch_net.sh -- no `sh`, no external
-// wget/curl/sha256sum, works on every OS. It downloads (and sha256-validates) the net the Zig binary
-// ACTUALLY loads: the name is read at runtime from the authoritative Zig constant
+// Fetch the zfish NNUE net, in pure Zig, replacing tools/fetch_net.sh -- no `sh`, no external
+// wget/curl/sha256sum, works on every OS. Download (and sha256-validate) the net the Zig binary
+// ACTUALLY loads: read the name at runtime from the authoritative Zig constant
 // `default_eval_file_name` in src/engine/eval/network.zig (the single source of truth engine.zig imports),
 // NOT the stale upstream src/evaluate.h that scripts/net.sh keys on. build.zig runs this with
 // cwd = net/ and argv[1] = the path to network.zig.
 //
-// The name<->contents contract mirrors upstream: the file is named `nn-<first 12 hex of its
+// Mirror upstream's name<->contents contract: the file is named `nn-<first 12 hex of its
 // sha256>.nnue`, so validation recomputes the sha256 and compares. Download sources + order match
 // fetch_net.sh (tests.stockfishchess.org, then the official-stockfish/networks GitHub mirror).
 //
-// The pure helpers (parseNetName / nameFromBytes / validateBytes) are unit-tested against synthetic
+// Unit-test the pure helpers (parseNetName / nameFromBytes / validateBytes) against synthetic
 // inputs; main() wires them to std.http.Client + std.Io file I/O. std.http.Client speaks TLS with the
 // system CA bundle (auto-rescanned on the first HTTPS request), so there is no external cert tooling.
 
@@ -17,7 +17,7 @@ const std = @import("std");
 const Io = std.Io;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 
-// A net filename is `nn-` ++ 12 lowercase-hex ++ `.nnue` == 20 bytes.
+// Lay out a net filename as `nn-` ++ 12 lowercase-hex ++ `.nnue` == 20 bytes.
 const name_len = 3 + 12 + 5;
 
 fn isLowerHex(c: u8) bool {
@@ -33,7 +33,7 @@ fn isValidNetName(name: []const u8) bool {
 }
 
 /// Extract the net filename from network.zig source, matching the single source of truth
-/// `pub const default_eval_file_name = "nn-<12 hex>.nnue";`. Mirrors fetch_net.sh's sed capture.
+/// `pub const default_eval_file_name = "nn-<12 hex>.nnue";`. Mirror fetch_net.sh's sed capture.
 fn parseNetName(src: []const u8) ?[]const u8 {
     const key = "default_eval_file_name = \"";
     const kpos = std.mem.indexOf(u8, src, key) orelse return null;
@@ -43,7 +43,7 @@ fn parseNetName(src: []const u8) ?[]const u8 {
     return if (isValidNetName(name)) name else null;
 }
 
-/// The canonical filename for these bytes: `nn-` ++ first-12-hex-of-sha256 ++ `.nnue`.
+/// Derive the canonical filename for these bytes: `nn-` ++ first-12-hex-of-sha256 ++ `.nnue`.
 fn nameFromBytes(bytes: []const u8, buf: *[name_len]u8) []const u8 {
     var digest: [Sha256.digest_length]u8 = undefined;
     Sha256.hash(bytes, &digest, .{});
@@ -57,7 +57,7 @@ fn nameFromBytes(bytes: []const u8, buf: *[name_len]u8) []const u8 {
     return buf[0..name_len];
 }
 
-/// True iff `bytes` sha256-hash to the sha embedded in `name` (the upstream validity contract).
+/// Report true iff `bytes` sha256-hash to the sha embedded in `name` (the upstream validity contract).
 fn validateBytes(name: []const u8, bytes: []const u8) bool {
     var buf: [name_len]u8 = undefined;
     return std.mem.eql(u8, name, nameFromBytes(bytes, &buf));
@@ -85,7 +85,7 @@ pub fn main(init: std.process.Init) !void {
     const name = parseNetName(src) orelse
         fatal("no default_eval_file_name in {s}", .{net_src_path});
 
-    // cwd == net/ (set by build.zig). If the net is already present and valid, we are done.
+    // Assume cwd == net/ (set by build.zig). Skip the download if the net is already present and valid.
     if (Io.Dir.cwd().readFileAlloc(io, name, gpa, .unlimited)) |existing| {
         defer gpa.free(existing);
         if (validateBytes(name, existing)) {
@@ -97,7 +97,7 @@ pub fn main(init: std.process.Init) !void {
     var client: std.http.Client = .{ .allocator = gpa, .io = io };
     defer client.deinit();
 
-    // Download sources + order match fetch_net.sh: the Fishtest API first, then the GitHub mirror.
+    // Match fetch_net.sh's download sources + order: the Fishtest API first, then the GitHub mirror.
     const urls = [_][]const u8{
         try std.fmt.allocPrint(gpa, "https://tests.stockfishchess.org/api/nn/{s}", .{name}),
         try std.fmt.allocPrint(gpa, "https://github.com/official-stockfish/networks/raw/master/{s}", .{name}),
@@ -167,7 +167,7 @@ test "nameFromBytes derives nn-<first 12 hex of sha256>.nnue" {
 test "validateBytes accepts matching contents and rejects tampered contents" {
     var buf: [name_len]u8 = undefined;
     const name = nameFromBytes("stockfish net payload", &buf);
-    // nameFromBytes writes into buf; dupe so a later nameFromBytes call can't alias it.
+    // Dupe the name because nameFromBytes writes into buf and a later nameFromBytes call can alias it.
     var name_copy: [name_len]u8 = undefined;
     @memcpy(&name_copy, name);
     try std.testing.expect(validateBytes(&name_copy, "stockfish net payload"));

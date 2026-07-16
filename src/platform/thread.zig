@@ -13,13 +13,13 @@ const state_list = @import("state_list");
 const PendingStateStorage = state_list.PendingStateStorage;
 const numa = @import("numa");
 
-// Zig-owned thread job runner. Verified by its own concurrency tests.
+// Import the Zig-owned thread job runner; verified by its own concurrency tests.
 pub const thread_runtime = @import("thread_runtime");
-// The thread runtime: the threads + the thread pool driving the idle-loop vehicle.
+// Provide the thread runtime: the threads + the thread pool driving the idle-loop vehicle.
 const search_thread = @import("search_thread");
 const thread_pool = @import("thread_pool.zig");
-// The root-move builder + Syzygy root-ranking cluster now lives in its own leaf.
-// startThinking (and the RootSetupInput it fills) reference these by their old names.
+// Keep the root-move builder + Syzygy root-ranking cluster in its own leaf.
+// Reference these from startThinking (and the RootSetupInput it fills) by their old names.
 const root_move_build = @import("root_move_build");
 const TbConfig = root_move_build.TbConfig;
 const buildRootMoves = root_move_build.buildRootMoves;
@@ -32,7 +32,7 @@ inline fn nt(thread: *worker_layout.Thread) *search_thread.SearchThread {
     return @ptrCast(@alignCast(thread));
 }
 
-// Thread sync handshake -> the runtime.
+// Forward the thread sync handshake -> the runtime.
 inline fn threadWaitFinished(thread: *worker_layout.Thread) void {
     nt(thread).waitForSearchFinished();
 }
@@ -134,9 +134,9 @@ const NumaNodeCallback = *const fn (?*anyopaque) void;
 
 fn applyRootSetup(context_ptr: ?*anyopaque) void {
     const context: *const RootSetupContext = @ptrCast(@alignCast(context_ptr.?));
-    // LimitsType POD-field copy.
+    // Copy the LimitsType POD fields.
     workerSetLimits(context.thread, context.input.limits);
-    // []RootMove grow-and-copy.
+    // Grow-and-copy the []RootMove.
     workerSetRootMoves(context.thread, context.input.root_moves);
     if (worker_layout.Worker.fromThread(context.thread)) |w| {
         w.resetRootSetupState();
@@ -256,7 +256,7 @@ pub fn reconfigure(
     runtime_hooks.verify_thread_graph(pool, requested, if (do_bind) requested else 0);
 }
 
-// The search-driver entry search_thread invokes as each thread's search job. Set
+// Provide the search-driver entry search_thread invokes as each thread's search job. Set
 // as a function pointer so search_thread need not import position.
 fn workerSearchEntry(ctx: ?*anyopaque) void {
     search_driver.workerStartSearching(ctx);
@@ -408,7 +408,7 @@ pub fn waitThread(pool: *worker_layout.ThreadPool, thread_id: usize) void {
 }
 
 // Join+free the threads and null the pool's threads slice (engine teardown).
-// Wraps thread_pool for main.zig, which doesn't import it directly.
+// Wrap thread_pool for main.zig, which doesn't import it directly.
 pub fn threadPoolClear(pool: *worker_layout.ThreadPool) void {
     thread_pool.clear(pool);
 }
@@ -422,7 +422,7 @@ pub fn waitForSearchFinished(pool: *worker_layout.ThreadPool) void {
 }
 
 pub fn ensureNetworkReplicated(pool: *worker_layout.ThreadPool) void {
-    // The NNUE weights are always resident (no per-node Network replica), so the
+    // Note that the NNUE weights are always resident (no per-node Network replica), so the
     // per-worker ensure_network_replicated is a no-op.
     _ = pool;
 }

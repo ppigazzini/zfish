@@ -3,7 +3,7 @@ const bitboard = @import("bitboard");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 
-// The `pos` threaded through every generator is the board's typed Position:
+// Thread the board's typed Position as `pos` through every generator:
 // each function hands it to position_snapshot.moveIsLegal(), which takes it as
 // the concrete type now. position_types is a pure std leaf, so no import cycle.
 const Position = position_types.Position;

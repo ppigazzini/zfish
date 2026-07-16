@@ -17,12 +17,12 @@ const search_thread = @import("search_thread");
 const thread_vote = @import("thread_vote");
 const output_sink = @import("output_sink");
 const thread_construct = @import("thread_construct.zig");
-const worker_construct = @import("worker_construct"); // engine-zone Worker field constructor
-const engine_object = @import("engine_object"); // the engine object container
+const worker_construct = @import("worker_construct"); // construct the engine-zone Worker fields
+const engine_object = @import("engine_object"); // hold the engine object container
 const misc_port = @import("misc");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const network_port = @import("network");
-const state_list_port = @import("state_list"); // the `states` member
+const state_list_port = @import("state_list"); // hold the `states` member
 const nnue_feature_port = @import("nnue_feature");
 const option_port = @import("option");
 const position_port = @import("position");
@@ -40,10 +40,10 @@ comptime {
 }
 
 pub fn main(init: std.process.Init) !void {
-    // Cross-platform argv: initAllocator handles Windows/WASI, where argv must be
+    // Decode cross-platform argv: initAllocator handles Windows/WASI, where argv must be
     // decoded from the raw command line into an owned buffer (on POSIX it is a no-op view of
-    // the kernel-provided vector). The iterator owns the arg strings, so it stays alive
-    // (deinit deferred) for all of main -- argv points into its buffer. Collected once into a
+    // the kernel-provided vector). Keep the iterator alive (deinit deferred) for all of main,
+    // since it owns the arg strings -- argv points into its buffer. Collect it once into a
     // C-style [*:0]u8 vector for the engine constructor.
     var arg_iter = try std.process.Args.Iterator.initAllocator(init.minimal.args, init.gpa);
     defer arg_iter.deinit();
@@ -62,12 +62,12 @@ pub fn main(init: std.process.Init) !void {
     const info_line = std.mem.span(info);
     uci_output.printLine(info_line.ptr, info_line.len);
 
-    // Slider attacks use magic-bitboard tables; between/line rays are computed on
-    // the fly (bitboard.zig). Both are set up by position_port.initRuntime().
+    // Compute slider attacks from magic-bitboard tables; compute between/line rays on
+    // the fly (bitboard.zig). Set both up via position_port.initRuntime().
     position_port.initRuntime();
     installRuntimeHooks();
 
-    // Zig-owned engine footprint: allocate aligned storage, placement-construct the
+    // Own the engine footprint in Zig: allocate aligned storage, placement-construct the
     // EngineObject (an ownership container of heap members) into it, and on teardown
     // destruct-in-place then free (defers run LIFO, so destruct precedes free).
     const eng_align = engine_object.alignofEngine();
@@ -84,10 +84,10 @@ pub fn main(init: std.process.Init) !void {
     uci_port.loopRuntime(engine);
 }
 
-// The StateList backs the position-setup chain, the engine `states` slot
-// (fallback root), and the pool's setupStates. PendingStateStorage carries move
-// semantics (state_list.zig); the slot + setupStates hold a `?*StateList`, and
-// adopt MOVEs the pointer + nulls the source.
+// Back the position-setup chain, the engine `states` slot (fallback root), and
+// the pool's setupStates with the StateList. Carry move semantics in
+// PendingStateStorage (state_list.zig); hold a `?*StateList` in the slot + setupStates,
+// and MOVE the pointer + null the source on adopt.
 const StateList = state_list_port.StateList;
 const PendingStateStorage = state_list_port.PendingStateStorage;
 
@@ -120,16 +120,16 @@ fn threadpoolSetupStateBack(pool: *const worker_layout.ThreadPool) ?*const posit
     return null;
 }
 
-// The worker-clear reset: the per-search worker reset the clear_worker job runs on
-// its thread. The four clear helpers in declaration order: histories, the
+// Run the worker-clear reset: the per-search worker reset the clear_worker job runs on
+// its thread. Call the four clear helpers in declaration order: histories, the
 // shared-history page (sharedHistory ref + numaThreadIdx@thread_idx+8 /
 // numaTotal@+16), the reductions table (int[256], the 1024-byte slot before
-// manager), and the refresh cache (feature-transformer biases). All four
+// manager), and the refresh cache (feature-transformer biases). Note all four
 // callees are gate-verified; only this orchestration is new.
 fn workerClear(worker: *anyopaque) void {
     const wl = worker_layout.WorkerLayout.fromPtr(worker);
     search_driver.clearWorkerHistories(wl);
-    // sharedHistory is now a typed field of the embedded WorkerHistories.
+    // Treat sharedHistory now as a typed field of the embedded WorkerHistories.
     const shared_history = wl.histories.shared_history.?;
     search_driver.clearSharedHistory(shared_history, wl.numa_thread_idx, wl.numa_total);
     search_port.fillReductions(&wl.reductions, 256);
@@ -195,42 +195,42 @@ fn installRuntimeHooks() void {
     output_sink.setLastNodesSearched = &uci_output.setLastNodesSearched;
 }
 
-// The engine buffer is a EngineObject, so the member accessors return its fields
+// Treat the engine buffer as an EngineObject, so the member accessors return its fields
 // (the heap member pointer for pointer-members; the field address for the inline
 // states slot / update_context).
 fn engineObj(engine: *anyopaque) *engine_object.EngineObject {
     return engine_object.EngineObject.fromBuffer(engine);
 }
-// threads_ptr is main-internal only; engine.zig reaches the other graph slots
+// Keep threads_ptr main-internal only; engine.zig reaches the other graph slots
 // through engine_object.zig accessors.
 fn engineThreadsPtr(engine: *anyopaque) *worker_layout.ThreadPool {
     return engineObj(engine).threads.?;
 }
 
 // Free the side tt's large-page table at engine teardown + rezero for any re-construct
-// (valgrind). The table pointer lives at tt_off.table within the side storage.
+// (valgrind). Find the table pointer at tt_off.table within the side storage.
 fn freeSideTt() void {
     const table_ptr = &worker_layout.TranspositionTable.fromPtr(engine_object.sideTtPtr()).table;
     if (table_ptr.*) |tbl| memory_port.alignedLargePagesFree(@ptrCast(tbl));
     engine_object.sideTtReset();
 }
 
-// SharedState.sharedHistories (a reference) is the 4th pointer field of the
-// SharedState bundle (options/threads/tt/shared_histories/network); read
-// it through the typed worker_layout.SharedState view and clear the map.
+// Read SharedState.sharedHistories (a reference, the 4th pointer field of the
+// SharedState bundle: options/threads/tt/shared_histories/network) through the typed
+// worker_layout.SharedState view and clear the map.
 fn sharedStateClearHistories(shared_state: *const anyopaque) void {
     engine_port.sharedHistoriesClear(engine_port.SharedState.fromPtr(shared_state).shared_histories);
 }
-// insert_history: single-node never binds (do_bind always 0, numa_config unused) — insert
+// Insert history: single-node never binds (do_bind always 0, numa_config unused) — insert
 // directly into the SharedHistoriesMap reached via the typed shared_histories field.
 fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const anyopaque, numa_index: usize, size: usize, do_bind: u8) error{OutOfMemory}!void {
     _ = numa_config;
     _ = do_bind;
     try engine_port.sharedHistoriesInsert(engine_port.SharedState.fromPtr(shared_state).shared_histories, numa_index, size);
 }
-// With NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub; loadNetworkBytes
+// Note that with NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub; loadNetworkBytes
 // fails on it and falls back to the on-disk EvalFile (bench validates the file net).
-// set_loaded_state is a no-op: the load owns the EvalFile state (nn_current/
+// Keep set_loaded_state a no-op: the load owns the EvalFile state (nn_current/
 // nn_description, set just before these calls), so there is nothing more to record.
 fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, current_name_len: usize, description_ptr: [*]const u8, description_len: usize) void {
     _ = network;
@@ -239,8 +239,8 @@ fn networkSetLoadedState(network: *anyopaque, current_name_ptr: [*]const u8, cur
     _ = description_ptr;
     _ = description_len;
 }
-// The read-blob fns are no-ops: weights are served from storage, so the parse
-// result is discarded.
+// Keep the read-blob fns no-ops: weights are served from storage, so discard the
+// parse result.
 fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u8, data_len: usize) usize {
     _ = network;
     _ = bucket;
@@ -248,7 +248,7 @@ fn networkLayerReadBlob(network: *anyopaque, bucket: usize, data_ptr: [*]const u
     _ = data_len;
     return 0;
 }
-// The engine object teardown. Free the states slot, join+free the threads + null the
+// Tear down the engine object. Free the states slot, join+free the threads + null the
 // pool's threads vector, then free the heap members.
 fn uciEngineDestructAt(storage: *anyopaque) void {
     releasePendingStateSlot(engine_object.EngineObject.fromPtr(storage).statesSlotPtr());
@@ -260,8 +260,8 @@ fn optInt(name: []const u8) c_int {
     return option_port.intByName(name);
 }
 
-// The SearchManager construction + the Worker teardown:
-//   * make: a raw search_manager_size buffer, zeroed — the manager's data fields are
+// Construct the SearchManager + tear down the Worker:
+//   * make: allocate a raw search_manager_size buffer, zeroed — the manager's data fields are
 //     written by the reset shims (smReset*) + tm_init before every search, and
 //     updates@112 is set to the engine UpdateContext for the main thread. No vtable,
 //     no constructor; check_time is dead.
@@ -269,7 +269,7 @@ fn optInt(name: []const u8) c_int {
 //     large-page block. accumulatorStack/refreshTable are POD array members (no teardown),
 //     so manager + rootMoves are the ONLY heap members the worker frees.
 fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque {
-    // A typed SearchManager via the Allocator interface (c_allocator, libc-backed).
+    // Create a typed SearchManager via the Allocator interface (c_allocator, libc-backed).
     const sm = std.heap.c_allocator.create(worker_layout.SearchManager) catch return null;
     @memset(@as([*]u8, @ptrCast(sm))[0..@sizeOf(worker_layout.SearchManager)], 0);
     if (is_main != 0) sm.updates = update_context;
@@ -278,21 +278,21 @@ fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque
 fn workerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
     const wl = worker_layout.WorkerLayout.fromPtr(w);
-    // rootMoves buffer: a []RootMove allocated by workerSetRootMoves -- free the
-    // slice directly.
+    // Free the rootMoves buffer: a []RootMove allocated by workerSetRootMoves -- free
+    // the slice directly.
     if (wl.root_moves.len != 0) std.heap.c_allocator.free(wl.root_moves);
-    // SearchManager buffer (allocator.create'd by makeSearchManager; manager is typed).
+    // Destroy the SearchManager buffer (allocator.create'd by makeSearchManager; manager is typed).
     if (wl.manager) |m| std.heap.c_allocator.destroy(m);
     memory_port.alignedLargePagesFree(w);
 }
 
-// The ThreadBuilder callback. Reads the SharedState's five reference
+// Serve as the ThreadBuilder callback. Read the SharedState's five reference
 // referents through the typed worker_layout.SharedState view (options/threads/tt/
-// sharedHistories/network — the 40-byte bundle), mints the SearchManager, large-page-
-// allocs + constructs the Worker, and writes the Worker through Thread.worker
-// (the worker@8 layout contract). Single-node host: numaIndex 0, idxInNuma == idx,
-// totalNuma == ctx.total. A reference member's referent address equals the field
-// VALUE, so the field values are passed straight through.
+// sharedHistories/network — the 40-byte bundle), mint the SearchManager, large-page-
+// alloc + construct the Worker, and write the Worker through Thread.worker
+// (the worker@8 layout contract). Assume a single-node host: numaIndex 0, idxInNuma == idx,
+// totalNuma == ctx.total. Note a reference member's referent address equals the field
+// VALUE, so pass the field values straight through.
 const WorkerBuildCtx = struct {
     shared_state: ?*anyopaque,
     update_context: ?*const anyopaque,
@@ -324,7 +324,7 @@ pub fn engineInitBody(engine: *anyopaque) void {
     return engine_port.initBody(engine);
 }
 
-// The engine object container construct/destruct: build the heap members + inline sub-objects
+// Construct/destruct the engine object container: build the heap members + inline sub-objects
 // of the EngineObject, and store argc/argv.
 fn engineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     return engine_object.constructMembers(buf, argv0);
@@ -332,10 +332,10 @@ fn engineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
 fn engineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     engine_object.setCli(buf, argc, argv);
 }
-// The engine object construction. Verify the object-graph footprint, build the heap members +
+// Construct the engine object. Verify the object-graph footprint, build the heap members +
 // inline sub-objects, store argc/argv, then run init_body (register options, set start
-// position, size threads) — the same post-member work the engine constructor runs. Tune (SPSA)
-// is INERT in a release build (no live TUNE() macros → empty list), so it is dropped here.
+// position, size threads) — the same post-member work the engine constructor runs. Drop
+// Tune (SPSA) here: it is INERT in a release build (no live TUNE() macros → empty list).
 fn engineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
     worker_layout.verifyLayouts();
     if (!engineConstructMembers(storage, argv[0]))

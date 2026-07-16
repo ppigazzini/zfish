@@ -1,6 +1,6 @@
-// Search POD data types.
+// Define the search POD data types.
 //
-// The plain-data structs the search driver threads through: the per-ply
+// Collect the plain-data structs the search driver threads through: the per-ply
 // SearchStack, the correction-history bundle, and the PV / RootMove types.
 // position.zig re-exports all four, so its call sites are unchanged.
 
@@ -9,8 +9,8 @@ const root_move = @import("root_move");
 const worker_histories = @import("worker_histories");
 const correction_bundle = @import("correction_bundle");
 
-// The scalar fields the search helpers read. The two continuation pointers are
-// concrete PieceToHistory pages; pv stays opaque (resolved through the PV type).
+// List the scalar fields the search helpers read. Keep the two continuation pointers as
+// concrete PieceToHistory pages; keep pv opaque (resolved through the PV type).
 pub const SearchStack = struct {
     pv: ?*root_move.PVMoves,
     continuation_history: ?*worker_histories.PieceToHistory,
@@ -29,11 +29,11 @@ pub const SearchStack = struct {
     reduction: c_int,
 };
 
-// CorrectionBundle is re-exported from the correction_bundle module as the
+// Re-export CorrectionBundle from the correction_bundle module as the
 // canonical name.
 pub const CorrectionBundle = correction_bundle.CorrectionBundle;
 
-// PVMoves + RootMove are re-exported from the single canonical definition in
+// Re-export PVMoves + RootMove from the single canonical definition in
 // support/root_move.zig. The search indexes the rootMoves array
 // (handed over by worker_state) through these; the canonical def
 // carries the same field order/types/offsets plus the search's methods.

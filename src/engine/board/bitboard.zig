@@ -1,7 +1,7 @@
 const std = @import("std");
 
-// Geometry/magic-index helpers live in a std-only leaf now; alias back
-// (top-level decls are order-independent).
+// Alias back the geometry/magic-index helpers, which now live in a std-only
+// leaf (top-level decls are order-independent).
 const bitboard_geom = @import("bitboard_geom.zig");
 const PieceType = bitboard_geom.PieceType;
 const betweenSquares = bitboard_geom.betweenSquares;
@@ -32,7 +32,7 @@ const rook_piece: u8 = 4;
 const queen_piece: u8 = 5;
 const king_piece: u8 = 6;
 
-// Runtime magic-bitboard attack tables (Stockfish-style): built once at startup by
+// Hold the runtime magic-bitboard attack tables (Stockfish-style): built once at startup by
 // initSliderMagics() (invoked from position.initRuntime, before any position setup or
 // search), read-only during search. The magic search builds each entry from the
 // ray-cast slidingAttack reference, so attacksBb() returns bit-identical attack sets
@@ -42,7 +42,7 @@ var rook_magic_attacks: [0x19000]u64 = undefined;
 var bishop_magic_attacks: [0x1480]u64 = undefined;
 var slider_magics: [64][2]Magic = undefined;
 
-// Derived square-pair geometry, built once from the magics at startup and read-only during
+// Hold the derived square-pair geometry, built once from the magics at startup and read-only during
 // search -- the same tables upstream keeps (LineBB / BetweenBB / ray-pass). Without them
 // line/between/rayPass each re-ray-cast on every call, and rayPass runs per slider per
 // threat update per node.
@@ -50,14 +50,14 @@ var line_bb: [64][64]u64 = undefined;
 var between_bb: [64][64]u64 = undefined;
 var ray_pass_bb: [64][64]u64 = undefined;
 
-// Leaper attack tables -- upstream's PseudoAttacks[KNIGHT|KING][s]. The generators in
+// Hold the leaper attack tables -- upstream's PseudoAttacks[KNIGHT|KING][s]. The generators in
 // bitboard_geom walk eight offsets through a bounds-checked squareAt() per call, so
 // without these attacks() re-derives a leaper attack set on every SEE, movegen and
 // threat update. Built once here from those same generators, so the sets are identical.
 var knight_attacks_bb: [64]u64 = undefined;
 var king_attacks_bb: [64]u64 = undefined;
 
-// Occupancy-free attack sets -- upstream's PseudoAttacks[pt][s]. A slider's empty-board
+// Hold the occupancy-free attack sets -- upstream's PseudoAttacks[pt][s]. A slider's empty-board
 // reach depends only on its square, so deriving it through the magic pipeline (mask,
 // multiply, shift, then a load from the ~860 KB attack table) re-computes a constant and
 // touches cold memory. Upstream reads a 64-entry table; attacks_bb<Pt>(s) IS that read.
@@ -84,7 +84,7 @@ fn initLeaperTables() void {
     }
 }
 
-// Upstream's attacks_bb<Pt>(s): the empty-board attack set, one table read.
+// Return upstream's attacks_bb<Pt>(s): the empty-board attack set, one table read.
 pub fn pseudoAttacks(piece_type: u8, square: u8) u64 {
     return pseudo_attacks_bb[piece_type][@as(usize, square)];
 }
@@ -132,13 +132,13 @@ pub fn between(from: u8, to: u8) u64 {
     return between_bb[from][to];
 }
 
-// Full line through two squares (both endpoints + the ray extended to the board
+// Return the full line through two squares (both endpoints + the ray extended to the board
 // edges) if they are aligned, else 0. Mirrors upstream LineBB construction.
 pub fn line(s1: u8, s2: u8) u64 {
     return line_bb[s1][s2];
 }
 
-// RayPassBB[s1][s2]: from s1's attacks along the s1-s2 line, the squares at or
+// Return RayPassBB[s1][s2]: from s1's attacks along the s1-s2 line, the squares at or
 // beyond s2 (s1 removed from the occupancy). Mirrors the upstream init formula.
 pub fn rayPass(s1: u8, s2: u8) u64 {
     return ray_pass_bb[s1][s2];

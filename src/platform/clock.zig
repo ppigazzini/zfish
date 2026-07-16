@@ -1,16 +1,16 @@
-//! Monotonic steady clock (Stockfish now()).
-//! Milliseconds since an arbitrary epoch; used by time management and the skill-level RNG seed.
+//! Provide a monotonic steady clock (Stockfish now()).
+//! Report milliseconds since an arbitrary epoch; feed time management and the skill-level RNG seed.
 
 const std = @import("std");
 const builtin = @import("builtin");
 
-// Windows steady clock: QueryPerformanceCounter is the monotonic high-res counter;
-// ticks/QueryPerformanceFrequency gives seconds. Declared here (only linked on Windows, where
+// Read the Windows steady clock: QueryPerformanceCounter is the monotonic high-res counter;
+// divide ticks by QueryPerformanceFrequency for seconds. Declare here (only linked on Windows, where
 // the switch below references it).
 extern "kernel32" fn QueryPerformanceCounter(count: *i64) callconv(.winapi) i32;
 extern "kernel32" fn QueryPerformanceFrequency(freq: *i64) callconv(.winapi) i32;
 
-/// Monotonic time in milliseconds.
+/// Return monotonic time in milliseconds.
 pub fn now() i64 {
     switch (builtin.os.tag) {
         .windows => {

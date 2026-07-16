@@ -1,8 +1,8 @@
-// Debug statistics counters (extracted from misc.zig).
+// Provide the debug statistics counters (extracted from misc.zig).
 //
-// Stockfish's dbg_hit_on / dbg_mean_of / dbg_stdev_of / dbg_extremes_of /
+// Reproduce Stockfish's dbg_hit_on / dbg_mean_of / dbg_stdev_of / dbg_extremes_of /
 // dbg_correl_of instrumentation: lock-free per-slot accumulators + a print/clear
-// pair. Std-only (atomics + std.debug.print), no engine dependency -- misc.zig
+// pair. Keep std-only (atomics + std.debug.print), no engine dependency -- misc.zig
 // re-exports these so `misc.dbgPrint()` (the UCI debug dump) keeps working.
 
 const std = @import("std");

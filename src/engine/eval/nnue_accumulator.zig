@@ -1,13 +1,13 @@
 const std = @import("std");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
-// The dirty-piece / dirty-threats slots that stackPush hands to doMove are the
+// Type the dirty-piece / dirty-threats slots that stackPush hands to doMove as the
 // board's typed records (position_types); the accumulator's local HalfDiff /
 // ThreatDiffView are layout-identical views of the same bytes.
 const DirtyPiece = position_types.DirtyPiece;
 const DirtyThreats = position_types.DirtyThreats;
-// The `pos` threaded through the accumulator path is the board's typed record
-// every use either hands it onward or feeds position_snapshot.fill(),
+// Thread `pos` through the accumulator path as the board's typed record: every use
+// either hands it onward or feeds position_snapshot.fill(),
 // whose registration boundary is the sole remaining erasure. The concrete
 // *const Position coerces to the hook's *const anyopaque at that one call.
 const Position = position_types.Position;
@@ -20,8 +20,8 @@ const Position = position_types.Position;
 // identical on x86.
 const nnue_feature = @import("nnue_feature");
 
-// Vectorized FT weight-row add/sub kernels live in the nnue_acc_rowops leaf
-// aliased so the refresh/incremental core stays unqualified.
+// Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
+// so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyAccumulatorDeltaI16 = nnue_acc_rowops.applyAccumulatorDeltaI16;
 const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
@@ -31,8 +31,8 @@ const applyPsqtDelta = nnue_acc_rowops.applyPsqtDelta;
 const applyPsqtDeltaInPlace = nnue_acc_rowops.applyPsqtDeltaInPlace;
 const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
 
-// FeatureTransformer weight-blob layout + accessors live in the nnue_ft leaf
-// aliased for the refresh/apply-delta core.
+// Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
+// for the refresh/apply-delta core.
 const nnue_ft = @import("nnue_ft");
 /// Re-export the opaque FT handle so callers (network.zig) can type the pointer they
 /// hand in without importing nnue_ft directly.
@@ -42,8 +42,8 @@ const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
 const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
 const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
 
-// Refresh cache / finny tables live in the nnue_refresh_cache leaf;
-// accessors aliased for the refresh path, clearRefreshCache re-exported (external).
+// Alias the refresh cache / finny tables from the nnue_refresh_cache leaf for the
+// refresh path; re-export clearRefreshCache (external).
 const nnue_refresh_cache = @import("nnue_refresh_cache");
 /// Re-export the opaque cache handle so callers can type it.
 pub const RefreshCache = nnue_refresh_cache.RefreshCache;
@@ -56,9 +56,9 @@ const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 
-// The accumulator-stack layout + accessors live in the nnue_acc_layout leaf
-// now; alias the whole foundation back so the facade + update call sites are
-// unqualified (AccumulatorStack re-exported pub for external callers).
+// Alias back the accumulator-stack layout + accessors, which live in the
+// nnue_acc_layout leaf now, so the facade + update call sites are unqualified
+// (AccumulatorStack re-exported pub for external callers).
 const layout = @import("nnue_acc_layout.zig");
 const psq_feature = layout.psq_feature;
 const threat_feature = layout.threat_feature;
@@ -123,7 +123,7 @@ const psqRequiresRefresh = layout.psqRequiresRefresh;
 const threatRequiresRefresh = layout.threatRequiresRefresh;
 const kingPiece = layout.kingPiece;
 
-// The refresh/incremental update algorithm lives in the nnue_acc_update leaf
+// Alias the refresh/incremental update algorithm from the nnue_acc_update leaf
 // now; the facade calls evaluateSide (4x from evaluate).
 const nnue_acc_update = @import("nnue_acc_update.zig");
 const evaluateSide = nnue_acc_update.evaluateSide;
@@ -138,7 +138,7 @@ pub fn evaluate(
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
 ) void {
-    // Upstream AccumulatorStack::evaluate: one combined (HalfKA + Threats) pass per
+    // Match upstream AccumulatorStack::evaluate: one combined (HalfKA + Threats) pass per
     // perspective, not one per (feature, perspective). The combined accumulator lives
     // in the psq_feature storage slot.
     evaluateSide(white, stack, pos, feature_transformer, cache);
@@ -153,14 +153,14 @@ pub fn stackLatestThreat(stack: *const AccumulatorStack) [*]const u8 {
     return stateBytesConst(threat_feature, stackSize(stack) - 1, stack);
 }
 
-// FeatureTransformer::transform (src/nnue/nnue_feature_transformer.h scalar path),
-// ported to Zig. After the (Zig) accumulator evaluate, read the latest PSQ +
+// Port FeatureTransformer::transform (src/nnue/nnue_feature_transformer.h scalar path)
+// to Zig. After the (Zig) accumulator evaluate, read the latest PSQ +
 // Threat accumulator states and produce the int8 transformed output plus the
 // perspective-differenced psqt. BiasType is int16, so the accumulation sum wraps
 // in int16 before the [0,255] clamp; the pairwise product is /512.
 const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
 
-/// One bit per 4-byte output chunk, set when that chunk is non-zero. Upstream's NNZInfo
+/// Set one bit per 4-byte output chunk when that chunk is non-zero. Upstream's NNZInfo
 /// (nnz_helper.h), recorded here rather than re-derived by a later pass: the values are
 /// already in a register at the point they are packed.
 pub const nnz_word_count: usize = half_dimensions * 2 / 4 / 64;
@@ -178,7 +178,7 @@ pub fn transformBucket(
 ) c_int {
     evaluate(stack, pos, feature_transformer, cache);
 
-    // Single combined (HalfKA + Threats) accumulator, held in the psq_feature slot.
+    // Read the single combined (HalfKA + Threats) accumulator from the psq_feature slot.
     const comb_bytes: [*]const u8 = stackLatestPsq(stack);
     const comb_acc: [*]const i16 = @ptrCast(@alignCast(comb_bytes));
     const comb_psqt: [*]const i32 = @ptrCast(@alignCast(comb_bytes + state_psqt_offset));
@@ -189,7 +189,7 @@ pub fn transformBucket(
     // (psq_diff + thr_diff)/2 == (combined_diff)/2 since combined = psq + threat.
     const psqt: c_int = @divTrunc(comb_psqt[p0 * psqt_buckets + bucket] - comb_psqt[p1 * psqt_buckets + bucket], 2);
 
-    // Pairwise squared-clipped-ReLU output (port of upstream FeatureTransformer::
+    // Produce the pairwise squared-clipped-ReLU output (port of upstream FeatureTransformer::
     // transform). Per element: sum psq+threat accumulators (i16 wrap), ClippedReLU to
     // [0,255], multiply the two halves and divide by 512 -> u8. Stays in 16-bit via
     // SF's mulhi identity  (c0*c1) >> 9  ==  ((c0<<7) * c1) >> 16  ==  pmulhuw(c0<<7, c1),

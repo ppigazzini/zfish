@@ -12,21 +12,21 @@ const layer_stacks: usize = 8;
 const internal_dir = "<internal>";
 const network_version: u32 = 0x6A448AFA; // upstream nnue_common.h Version (post-merge format)
 const none_name = "None";
-// EvalFileDefaultName (evaluate.h): the embedded net's default name, a build
-// constant. Single source of truth: engine.zig imports this via the
+// Name the embedded net's default (EvalFileDefaultName, evaluate.h), a build
+// constant. Keep a single source of truth: engine.zig imports this via the
 // "network" module rather than re-declaring it (a net bump edits one line).
 pub const default_eval_file_name = "nn-0ee0657fb25e.nnue";
 
-/// Opaque handle to the network subsystem. The NNUE weights live in this
+/// Expose an opaque handle to the network subsystem. The NNUE weights live in this
 /// module's globals (ft_ptr_storage &c.), so there is no struct to point at --
 /// the engine holds a malloc(1) placeholder. An `opaque {}` gives the SharedState
 /// bundle a distinct `*Network` handle (not a bare *anyopaque) without inventing a
 /// fake layout; it is the same idiom the B4 arena handles use.
 pub const Network = opaque {};
 
-// Inference (forward pass) lives in the nnue_inference leaf; re-export the
-// public entry points + result types so the engine, worker, and trace callers
-// resolve them through the network module.
+// Re-export the inference (forward pass) public entry points + result types from
+// the nnue_inference leaf so the engine, worker, and trace callers resolve them
+// through the network module.
 pub const evaluate = nnue_inference.evaluate;
 pub const traceEvaluate = nnue_inference.traceEvaluate;
 pub const EvalOutput = nnue_inference.EvalOutput;
@@ -55,14 +55,14 @@ pub const VerifyInfo = struct {
     fc1_outputs: c_int,
 };
 
-// The NNUE parse populates the Zig-owned inference storage and is
-// the sole source of weights. The hooks below are no-op stubs, local to this module.
+// Populate the Zig-owned inference storage from the NNUE parse, the sole source
+// of weights. The hooks below are no-op stubs, local to this module.
 const embedded_nnue_stub = [_]u8{0};
 fn networkEmbeddedBytes() ByteView {
     return .{ .ptr = &embedded_nnue_stub, .len = 1 };
 }
 
-// Affine-layer byte sizes — fixed by the NNUE architecture (SFNNv15)
+// Fix the affine-layer byte sizes by the NNUE architecture (SFNNv15)
 // (fc_0 1024->32, fc_1 64->32, fc_2 128->1; biases int32 linear, weights int8 SSSE3-scrambled).
 // sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,128}.
 const layer_biases_bytes = [3]usize{ 128, 128, 4 };
@@ -161,7 +161,7 @@ pub fn verify(
         };
     }
 
-    // The verification dims are fixed by the NNUE architecture (sizeof the
+    // Fix the verification dims by the NNUE architecture (sizeof the
     // FeatureTransformer + NetworkArchitecture*LayerStacks; the static InputDimensions /
     // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS). Fixed constants.
     const info = VerifyInfo{
@@ -187,9 +187,9 @@ pub fn verify(
     };
 }
 
-// Zig-owned EvalFile dynamic state + the weight storage live in the
-// nnue_weight_storage leaf now (shared owner for the inference and I/O paths);
-// alias the accessors back so the call sites here stay unqualified.
+// Alias back the accessors for the Zig-owned EvalFile dynamic state + weight
+// storage, which live in the nnue_weight_storage leaf now (shared owner for the
+// inference and I/O paths), so the call sites here stay unqualified.
 const nnCurrent = weight_storage.nnCurrent;
 const nnDescription = weight_storage.nnDescription;
 const markInitialized = weight_storage.markInitialized;
@@ -200,8 +200,8 @@ const layerStorage = weight_storage.layerStorage;
 const layerPtr = weight_storage.layerPtr;
 pub const ftPtr = weight_storage.ftPtr;
 
-// Content hash of the eval-file names, computed from the Zig-owned EvalFile
-// state (matches upstream's net-identity hash).
+// Hash the eval-file names from the Zig-owned EvalFile state (matches upstream's
+// net-identity hash).
 
 const Header = struct {
     hash_value: u32,
@@ -327,7 +327,7 @@ fn loadNetworkBytes(bytes: []const u8, current_name: []const u8) bool {
     }
 
     setLoadedState(current_name, header.description);
-    // The parse is the sole source of weights; correctness is verified end-to-end
+    // Trust the parse as the sole source of weights; correctness is verified end-to-end
     // by the eval gates (bench / search-parity), and the offset==bytes.len check above
     // verifies the consumed-byte count.
     return true;
@@ -351,7 +351,7 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
     return .{ .hash_value = hash_value, .description = description };
 }
 
-// FT transform for one output bucket. Reads weights from the feature-transformer
+// Transform one output bucket (FT). Reads weights from the feature-transformer
 // storage above (always resident after a network load) and runs the Zig accumulator
 // transform.
 

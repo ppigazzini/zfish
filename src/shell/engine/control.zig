@@ -1,8 +1,8 @@
-// Engine runtime control, split out of engine.zig: TT resize/clear plus the
+// Control the engine runtime, split out of engine.zig: TT resize/clear plus the
 // transposition-size / ponderhit / search-clear / hashfull entry points and
-// their *Engine unwrappers. Operates on the ThreadPool / TranspositionTable /
-// EngineObject graph through the tt/thread/option/tablebase ports. freeCString
-// is duplicated here (a 3-line sentinel free) so the leaf needs no engine.zig
+// their *Engine unwrappers. Operate on the ThreadPool / TranspositionTable /
+// EngineObject graph through the tt/thread/option/tablebase ports. Duplicate
+// freeCString here (a 3-line sentinel free) so the leaf needs no engine.zig
 // import -- the edge stays one-way (engine.zig re-exports these).
 
 const std = @import("std");

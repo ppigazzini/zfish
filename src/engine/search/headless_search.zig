@@ -1,17 +1,17 @@
-//! Headless single-worker shallow search.
+//! Run a headless single-worker shallow search.
 //!
 //! In production the platform ThreadPool constructs each Worker and `startThinking`
 //! populates its root state before the engine-zone `search_driver.iterativeDeepening`
 //! runs. That left the engine with no way to run one depth-capped search on one position
 //! without the platform thread orchestrator -- the "search one position at depth N"
-//! entry this module supplies. It is pure engine-zone: it builds a single Worker plus a
-//! one-thread ThreadPool, a SearchManager, a small TT, and a SharedHistories, then drives
+//! entry this module supplies. Stay pure engine-zone: build a single Worker plus a
+//! one-thread ThreadPool, a SearchManager, a small TT, and a SharedHistories, then drive
 //! `iterativeDeepening` directly. Every DI seam (option/output/time/tb) self-defaults
-//! headless, so nothing needs installing; the one seam we set is a deterministic option
+//! headless, so nothing needs installing; set the one seam, a deterministic option
 //! source (Skill off, MultiPV 1) so a bounded search is reproducible.
 //!
-//! One search at a time (single-threaded): the heavy blocks are process-static and reused
-//! across calls. The net must be loaded (`network.load`) before calling.
+//! Run one search at a time (single-threaded): the heavy blocks are process-static and reused
+//! across calls. Load the net (`network.load`) before calling.
 
 const std = @import("std");
 const worker_layout = @import("worker_layout");
@@ -34,7 +34,7 @@ pub const Result = struct {
     nodes: u64,
 };
 
-// Process-static search context (one search at a time). The 13.2 MB Worker block is a
+// Hold the process-static search context (one search at a time). The 13.2 MB Worker block is a
 // BSS static; the small scaffolding structs sit beside it. All are referenced by the
 // Worker via pointers, so they must outlive the search -- statics guarantee that.
 var g_worker: [worker_layout.worker_size]u8 align(worker_layout.worker_align) = undefined;
@@ -46,7 +46,7 @@ var g_tt: worker_layout.TranspositionTable = .{};
 var g_shared: search_driver.SharedHistories = undefined;
 var g_ready = false;
 
-// Deterministic option source: Skill Level 20 turns skill mode OFF
+// Provide a deterministic option source: Skill Level 20 turns skill mode OFF
 // (skill_enabled = level < 20), MultiPV 1 keeps a single principal variation. Every
 // other option reads 0, which is the correct headless default for a depth-only search.
 fn deterministicIntByName(name: []const u8) c_int {
@@ -55,7 +55,7 @@ fn deterministicIntByName(name: []const u8) c_int {
     return 0;
 }
 
-// Build the process-static context once. Returns false when the net is not loaded or a
+// Build the process-static context once. Return false when the net is not loaded or a
 // TT / shared-histories allocation fails; the caller then treats the search as skipped.
 fn ensureReady() bool {
     if (g_ready) return true;
@@ -64,7 +64,7 @@ fn ensureReady() bool {
     g_shared = search_driver.constructSharedHistories(1) catch return false;
 
     // Allocate the TT clusters directly through the page_alloc default (zeroed, 64-aligned,
-    // no libc / huge pages). We bypass tt.resizeState because it clears in parallel over a
+    // no libc / huge pages). Bypass tt.resizeState because it clears in parallel over a
     // *ThreadPool; a fresh zeroed block needs no clear, and the store path only requires a
     // non-null table with cluster_count > 0.
     const tt_clusters: usize = 1 << 15; // ~1 MB of clusters; any positive count is valid
@@ -73,7 +73,7 @@ fn ensureReady() bool {
     g_tt.cluster_count = tt_clusters;
     g_tt.generation8 = 0;
 
-    // One-thread pool whose sole Thread points at the Worker block.
+    // Build a one-thread pool whose sole Thread points at the Worker block.
     g_thread = .{ ._lo = 0, .worker = WorkerLayout.fromPtr(&g_worker) };
     g_thread_addr[0] = @intFromPtr(&g_thread);
     g_pool.threads = g_thread_addr[0..];
@@ -127,14 +127,14 @@ fn resetManager() void {
 }
 
 /// Search one position (given as a FEN) to a fixed depth, headless and single-threaded.
-/// Returns null when the net is not loaded, the FEN is illegal, or the root has no legal
-/// move (mate/stalemate). Otherwise returns the best root move, its score, and the node
+/// Return null when the net is not loaded, the FEN is illegal, or the root has no legal
+/// move (mate/stalemate). Otherwise return the best root move, its score, and the node
 /// count. Not reentrant (process-static Worker); one search at a time.
 pub fn searchFen(fen: []const u8, chess960: u8, depth: i32) ?Result {
     if (!ensureReady()) return null;
     const wl = WorkerLayout.fromPtr(&g_worker);
 
-    // Root position into the Worker's own root Position / StateInfo.
+    // Set the root position into the Worker's own root Position / StateInfo.
     if (position.setPosition(
         &wl.root_pos,
         fen.ptr,
@@ -150,30 +150,30 @@ pub fn searchFen(fen: []const u8, chess960: u8, depth: i32) ?Result {
     return searchCore(wl, fen, chess960, depth);
 }
 
-/// Search a live Position to a fixed depth, headless and single-threaded. The position is
-/// copied into the Worker's own root slot as a fresh root (its StateInfo copied, the
+/// Search a live Position to a fixed depth, headless and single-threaded. Copy the position
+/// into the Worker's own root slot as a fresh root (its StateInfo copied, the
 /// `previous` chain cut -- the same shape a FEN-parsed root has, so repetition detection
-/// starts clean). Returns null on not-ready / no legal move. Not reentrant.
+/// starts clean). Return null on not-ready / no legal move. Not reentrant.
 pub fn searchPosition(pos: *const position.Position, chess960: u8, depth: i32) ?Result {
     if (!ensureReady()) return null;
     const wl = WorkerLayout.fromPtr(&g_worker);
     wl.root_pos = pos.*;
     wl.root_state = pos.st.*;
-    // Fresh root: no known pre-root history, exactly like a FEN-parsed root. The `previous`
-    // chain is cut, and plies_from_null / repetition are zeroed -- otherwise the search's
+    // Make a fresh root: no known pre-root history, exactly like a FEN-parsed root. Cut the
+    // `previous` chain and zero plies_from_null / repetition -- otherwise the search's
     // repetition walk (min(rule50, plies_from_null) states back through `previous`) would run
     // off the truncated chain into the null root->previous and crash.
     wl.root_state.previous = null;
     wl.root_state.plies_from_null = 0;
     wl.root_state.repetition = 0;
     wl.root_pos.st = &wl.root_state; // repoint at the Worker's own StateInfo
-    // No FEN available; buildRootMoves only reads root_fen on the TB-ranking path, which is
+    // Pass no FEN; buildRootMoves only reads root_fen on the TB-ranking path, which is
     // off headless (tb_source defaults to no tablebases), so "" is safe.
     return searchCore(wl, "", chess960, depth);
 }
 
 fn searchCore(wl: *WorkerLayout, root_fen: []const u8, chess960: u8, depth: i32) ?Result {
-    // Root moves from the legal moves at the root (no `go searchmoves` filter).
+    // Build the root moves from the legal moves at the root (no `go searchmoves` filter).
     var legal: [256]u16 = undefined;
     const n = movegen.generateLegal(&wl.root_pos, &legal);
     if (n == 0) return null; // mate / stalemate -- nothing to search
@@ -188,7 +188,7 @@ fn searchCore(wl: *WorkerLayout, root_fen: []const u8, chess960: u8, depth: i32)
     defer std.heap.c_allocator.free(built.root_moves);
     wl.root_moves = built.root_moves;
 
-    // Per-search Worker reset, mirroring applyRootSetup + startThinking.
+    // Reset the Worker per search, mirroring applyRootSetup + startThinking.
     const worker = worker_layout.Worker{ .base = wl };
     worker.resetRootSetupState();
     worker.setTbConfig(
@@ -203,16 +203,16 @@ fn searchCore(wl: *WorkerLayout, root_fen: []const u8, chess960: u8, depth: i32)
     g_pool.increase_depth = 1;
     resetManager();
 
-    // ssPrologue: fresh accumulator stack + cleared last-iteration PV.
+    // ssPrologue: reset the accumulator stack + clear the last-iteration PV.
     nnue_acc.stackReset(@ptrCast(&wl.accumulator_stack));
     wl.last_iteration_pv.length = 0;
 
     // Drive iterative deepening directly. thread_idx 0 makes it the main thread, so the
-    // depth cap in the ID loop stops it; we bypass the ThreadPool glue in
+    // depth cap in the ID loop stops it; bypass the ThreadPool glue in
     // workerStartSearching (sibling start/wait, best-thread vote, bestmove emit).
     _ = search_driver.iterativeDeepening(wl);
 
-    // After the search the root moves are sorted best-first.
+    // Read the root moves, now sorted best-first after the search.
     const best = wl.root_moves[0];
     return .{
         .best_move = best.pv.moves[0],
@@ -234,7 +234,7 @@ test "headless search: startpos to a shallow depth yields a legal move + finite 
     const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const r = searchFen(start_fen, 0, 6) orelse return error.SearchReturnedNull;
 
-    // The best move must be one of the 20 legal opening moves, and the score finite.
+    // Require the best move to be one of the 20 legal opening moves, and the score finite.
     var legal: [256]u16 = undefined;
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
@@ -248,7 +248,7 @@ test "headless search: startpos to a shallow depth yields a legal move + finite 
     try std.testing.expect(r.score > -32000 and r.score < 32000);
     try std.testing.expect(r.nodes > 0);
 
-    // searchPosition on the same live board must agree that the move is legal + score finite.
+    // Require searchPosition on the same live board to agree that the move is legal + score finite.
     const r2 = searchPosition(&p, 0, 4) orelse return error.SearchReturnedNull;
     var found2 = false;
     for (legal[0..n]) |m| {
@@ -259,7 +259,7 @@ test "headless search: startpos to a shallow depth yields a legal move + finite 
     try std.testing.expect(r2.nodes > 0);
 }
 
-// A deterministic stress of searchPosition over diverse reached boards -- the same class
+// Stress searchPosition deterministically over diverse reached boards -- the same class
 // the fuzz target explores, but in the always-run `zig build test` gate (RF+RS), so a
 // setup regression that only bites non-startpos positions (e.g. the repetition-walk crash
 // this originally caught: a fresh root must zero plies_from_null or the walk runs off the

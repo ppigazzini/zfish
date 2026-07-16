@@ -1,4 +1,4 @@
-// NNUE accumulator SIMD row ops.
+// Implement the NNUE accumulator SIMD row ops.
 //
 // The vectorized feature-transformer weight-row add/sub kernels split out of
 // nnue_accumulator.zig. Fully self-contained: pure @Vector math over the FT
@@ -10,7 +10,7 @@
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
 
-/// Lane count for the FT weight-row add/sub tile. Swept as the only variable (5c93ad7fe): 64
+/// Set the lane count for the FT weight-row add/sub tile. Swept as the only variable (5c93ad7fe): 64
 /// beats 32 by +3.4%/+4.7%, 128 is flat, 256 spills. Independent of nnue_acc_layout's
 /// transform_vec_width.
 const row_tile_width: usize = 64;
@@ -19,7 +19,7 @@ comptime {
         @compileError("half_dimensions must be a multiple of row_tile_width");
 }
 
-/// Applies a whole row list to the accumulator, upstream's `apply_combined` way: tile the
+/// Apply a whole row list to the accumulator, upstream's `apply_combined` way: tile the
 /// accumulator, hold the tile in a register, and walk the rows INSIDE. The rows are the inner
 /// loop, so the accumulator is loaded and stored once per tile rather than once per row --
 /// which is what a row-outer loop costs, since each row streams all half_dimensions of it
@@ -145,7 +145,7 @@ pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i3
     }
 }
 
-// Hand-vectorized port of upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
+// Port (hand-vectorized) upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
 // one combined accumulator (HalfKA + Threats), loaded per tile ONCE into a register,
 // with both feature sets' removed/added weight rows applied in-register (psq int16 rows
 // via i16 add/sub, threat int8 rows widened to i16), then stored ONCE. Replaces the two
@@ -188,7 +188,7 @@ pub fn applyCombinedDelta(
     }
 }
 
-// psqt counterpart of applyCombinedDelta: one combined psqtAccumulation, both feature
+// Mirror applyCombinedDelta for psqt: one combined psqtAccumulation, both feature
 // sets applied (psq + threat psqt weights, both i32). Scalar -- PSQTBuckets is tiny.
 pub fn applyCombinedPsqtDelta(
     target: []i32,

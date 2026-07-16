@@ -1,12 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("libc");
-// The bench/benchmark position tables live in their own pure-data leaf now.
+// Import the bench/benchmark position tables from their own pure-data leaf now.
 const bench_positions = @import("bench_positions.zig");
 const Defaults = bench_positions.Defaults;
 const BenchmarkPositions = bench_positions.BenchmarkPositions;
 
-// Benchmark data.
+// Define the benchmark data.
 pub const BenchmarkSetupOutput = struct {
     tt_size: c_int,
     threads: c_int,
@@ -216,10 +216,10 @@ fn allocCString(value: []const u8) ![*:0]u8 {
 }
 
 fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    // Idiomatic-Zig whole-file read, replacing the libc fopen/fseek/ftell/fread/fclose
-    // dance. `init_single_threaded` is a BLOCKING std.Io handle: it spawns no threads and
+    // Read the whole file the idiomatic-Zig way, replacing the libc fopen/fseek/ftell/fread/fclose
+    // dance. Rely on `init_single_threaded`, a BLOCKING std.Io handle: it spawns no threads and
     // installs no signal handlers (`have_signal_handler = false`), so this startup read has
-    // zero interaction with the engine's own threadpool. Non-OOM failures collapse to the
+    // zero interaction with the engine's own threadpool. Collapse non-OOM failures to the
     // caller's existing FileOpenFailed, keeping the error set {FileOpenFailed, OutOfMemory}.
     var threaded = std.Io.Threaded.init_single_threaded;
     const io = threaded.io();

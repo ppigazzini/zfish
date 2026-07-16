@@ -1,16 +1,16 @@
-// NumaReplicationContext + NumaReplicatedBase — the NUMA replication
-// framework. The context owns the NumaConfig and a registry of replicated objects
-// (the engine's `network` is the live one); on a NUMA config change it notifies each
-// to re-replicate. NumaReplicatedBase is the registry hook every replicated wrapper
-// embeds -- it stores a function pointer (no vtable).
+// Implement the NUMA replication framework: NumaReplicationContext +
+// NumaReplicatedBase. Own the NumaConfig and a registry of replicated objects
+// in the context (the engine's `network` is the live one); on a NUMA config change,
+// notify each to re-replicate. Embed NumaReplicatedBase as the registry hook in
+// every replicated wrapper -- it stores a function pointer (no vtable).
 //
-// It is the EngineGraph's `numaContext` member, and is also unit-tested here in
+// Serve as the EngineGraph's `numaContext` member, and unit-test it here in
 // isolation.
 
 const std = @import("std");
 const NumaConfig = @import("config.zig").NumaConfig;
 
-/// Registry hook embedded by every replicated wrapper.
+/// Embed this registry hook in every replicated wrapper.
 pub const NumaReplicatedBase = struct {
     context: ?*NumaReplicationContext = null,
     /// Re-replicate from node 0 after a config change.
@@ -19,8 +19,8 @@ pub const NumaReplicatedBase = struct {
 
 pub const NumaReplicationContext = struct {
     config: NumaConfig,
-    /// Tracked replicated objects. Pointer set;
-    /// membership is unique. A small list suffices (the engine tracks one: network).
+    /// Track replicated objects as a pointer set;
+    /// keep membership unique. Rely on a small list (the engine tracks one: network).
     tracked: std.ArrayListUnmanaged(*NumaReplicatedBase) = .empty,
     allocator: std.mem.Allocator,
 
@@ -43,13 +43,13 @@ pub const NumaReplicationContext = struct {
     }
 
     pub fn attach(self: *NumaReplicationContext, obj: *NumaReplicatedBase) !void {
-        std.debug.assert(self.indexOf(obj) == null); // must not already be tracked
+        std.debug.assert(self.indexOf(obj) == null); // require obj not already tracked
         obj.context = self;
         try self.tracked.append(self.allocator, obj);
     }
 
     pub fn detach(self: *NumaReplicationContext, obj: *NumaReplicatedBase) void {
-        const i = self.indexOf(obj) orelse unreachable; // must be tracked
+        const i = self.indexOf(obj) orelse unreachable; // require obj tracked
         _ = self.tracked.swapRemove(i);
     }
 
@@ -98,7 +98,7 @@ test "attach/detach manage the registry; setNumaConfig notifies each tracked obj
     try testing.expectEqual(@as(usize, 2), ctx.trackedCount());
     try testing.expectEqual(&ctx, a.context.?);
 
-    // setNumaConfig fires on_config_changed for every tracked object.
+    // fire on_config_changed for every tracked object via setNumaConfig.
     notify_count = 0;
     ctx.setNumaConfig(try NumaConfig.fromSystem(testing.allocator));
     try testing.expectEqual(@as(usize, 2), notify_count);

@@ -1,12 +1,12 @@
-// Engine NUMA/thread info string builders.
+// Build the engine NUMA/thread info strings.
 //
-// The pure formatters that render the "Available processors" / thread-binding /
-// thread-allocation info lines from primitives (a CountPair array, a thread count,
-// a binding string). Split out of engine.zig; they touch only std + the
-// engine_util base leaf (allocMessage/CountPair), no engine graph, so no cycle.
-// The threadBindingInformation/threadAllocationInformation gatherers that read the
-// live ThreadPool + numa context stay in engine.zig and call these. engine.zig
-// aliases the three (all internal callers).
+// Render the "Available processors" / thread-binding / thread-allocation info lines
+// from primitives (a CountPair array, a thread count, a binding string) with pure
+// formatters. Split out of engine.zig; they touch only std + the engine_util base leaf
+// (allocMessage/CountPair), no engine graph, so no cycle. Keep the
+// threadBindingInformation/threadAllocationInformation gatherers that read the live
+// ThreadPool + numa context in engine.zig, calling these. engine.zig aliases the three
+// (all internal callers).
 
 const std = @import("std");
 const engine_util = @import("engine_util");

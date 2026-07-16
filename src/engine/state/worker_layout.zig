@@ -1,8 +1,8 @@
-// Object-graph layout lock for the Zig engine.
+// Lock the object-graph layout for the Zig engine.
 //
-// The object graph (Engine -> ThreadPool -> Thread -> Worker, plus Position,
-// TT, accumulator storage, ...) is constructed and read by the Zig runtime.
-// These constants pin the exact byte footprint each object must have; the
+// Pin the object graph (Engine -> ThreadPool -> Thread -> Worker, plus Position,
+// TT, accumulator storage, ...) that the Zig runtime constructs and reads.
+// Fix the exact byte footprint each object must have with these constants; the
 // allocations size to them, and any drift surfaces as a bench/parity failure.
 
 const std = @import("std");
@@ -13,7 +13,7 @@ const root_move = @import("root_move");
 const tt_types = @import("tt_types");
 const state_list = @import("state_list");
 
-// Canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
+// Pin the canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = @sizeOf(WorkerLayout);
 pub const worker_align: usize = 64;
 pub const thread_size: usize = 208;
@@ -29,7 +29,7 @@ pub const accumulator_stack_size: usize = 2181568;
 pub const accumulator_caches_size: usize = 278528;
 pub const root_move_size: usize = 552;
 
-// ThreadPool aggregate reads (sum over the pool's threads): position.zig (the search
+// Aggregate the ThreadPool reads (sum over the pool's threads): position.zig (the search
 // driver) reads them here without importing the thread module. thread.zig's public
 // nodesSearched/tbHits forward here.
 pub fn poolNodesSearched(tp: *ThreadPool) u64 {
@@ -47,12 +47,12 @@ pub fn poolTbHits(tp: *ThreadPool) u64 {
     return total;
 }
 
-// Byte size of the WorkerHistories block embedded in the Worker.
+// Measure the byte size of the WorkerHistories block embedded in the Worker.
 pub const worker_histories_bytes: usize = @sizeOf(worker_histories.WorkerHistories);
 pub const refresh_table_bytes: usize = 278528; // FT refresh cache
 
-// The full Worker block as a Zig layout, using worker_layout's own
-// LimitsType/PVMoves and the typed WorkerHistories. Zig picks the field order (the
+// Lay out the full Worker block as a Zig layout, using worker_layout's own
+// LimitsType/PVMoves and the typed WorkerHistories. Let Zig pick the field order (the
 // 64-aligned NNUE arenas float to the front), so every consumer must read via
 // worker_off/@offsetOf, never a raw offset.
 pub const WorkerLayout = struct {
@@ -84,13 +84,13 @@ pub const WorkerLayout = struct {
     accumulator_stack: [accumulator_stack_size]u8 align(64),
     refresh_table: [refresh_table_bytes]u8 align(64),
 
-    /// Typed view over the 13.2 MB worker block. The block is a 64-aligned large-page
+    /// Return a typed view over the 13.2 MB worker block. The block is a 64-aligned large-page
     /// allocation, so this reinterpret is sound and reads each scalar field at its
     /// @offsetOf -- the same address worker_off yields, so it is bench-invariant.
     pub inline fn fromPtr(p: *anyopaque) *WorkerLayout {
         return @ptrCast(@alignCast(p));
     }
-    /// Same typed view from a raw Worker base address (the value a Thread.worker
+    /// Return the same typed view from a raw Worker base address (the value a Thread.worker
     /// slot holds), for the search driver's per-thread worker walks.
     pub inline fn fromAddr(addr: usize) *WorkerLayout {
         return @ptrFromInt(addr);
@@ -98,7 +98,7 @@ pub const WorkerLayout = struct {
 };
 
 comptime {
-    // Worker-block layout-lock. The Worker is a fixed 64-aligned large-page image.
+    // Lock the Worker-block layout. Treat the Worker as a fixed 64-aligned large-page image.
     // `root_pos`/`root_state` carry typed Position / StateInfo accessed by @offsetOf
     // (worker_off), never by cross-field adjacency, so the real contract is only that
     // each type fills exactly its reserved slot width. Assert that directly on the TYPE
@@ -110,7 +110,7 @@ comptime {
 
 pub const worker_off = struct {
     pub const histories = @offsetOf(WorkerLayout, "histories");
-    // shared_history is inside WorkerHistories at position.worker_shared_history_off
+    // Find shared_history inside WorkerHistories at position.worker_shared_history_off
     // (a Zig-owned struct, so not a fixed sub-offset); users add histories + that.
     pub const limits = @offsetOf(WorkerLayout, "limits");
     pub const pv_idx = @offsetOf(WorkerLayout, "pv_idx");
@@ -141,7 +141,7 @@ pub const worker_off = struct {
     pub const refresh_table = @offsetOf(WorkerLayout, "refresh_table");
 };
 
-// TimeManagement (40 bytes): the clock sub-object embedded in SearchManager at
+// Lay out TimeManagement (40 bytes): the clock sub-object embedded in SearchManager at
 // offset 8. availableNodes (4th i64) is set to -1 by TimeManagement's clear.
 pub const TimeManagement = struct {
     start_time: i64 = 0,
@@ -151,8 +151,8 @@ pub const TimeManagement = struct {
     use_nodes_time: u8 = 0, // bool
 };
 
-// The SearchManager object (120 bytes): a vtable slot, the embedded TimeManagement,
-// and the per-search bookkeeping the time-management + PV code reads. `ponder` is an
+// Lay out the SearchManager object (120 bytes): a vtable slot, the embedded TimeManagement,
+// and the per-search bookkeeping the time-management + PV code reads. Keep `ponder` an
 // atomic bool in a 4-byte slot.
 pub const SearchManager = struct {
     vtable: usize = 0, // functionally dead (no virtual dispatch); kept as a zero slot
@@ -175,7 +175,7 @@ pub const SearchManager = struct {
         return @ptrFromInt(addr);
     }
 
-    // Typed accessors that reset the per-search MainSearchManager state the
+    // Provide typed accessors that reset the per-search MainSearchManager state the
     // ThreadPool's start_searching path re-inits.
     pub inline fn resetCallsCount(self: *SearchManager) void {
         self.calls_cnt = 0;
@@ -203,17 +203,17 @@ pub const SearchManager = struct {
     }
 };
 
-// The SearchManager is a standalone heap object reached only through these typed
-// accessors and pointed to by worker_off.manager, so its internal layout is Zig's to
+// Reach the SearchManager as a standalone heap object only through these typed
+// accessors, pointed to by worker_off.manager, so its internal layout is Zig's to
 // choose. The allocation in zfishMakeSearchManager sizes to @sizeOf(SearchManager).
 
-// The SharedState bundle (40 bytes) lives in support/shared_state.SharedStateOf,
+// Locate the SharedState bundle (40 bytes) in support/shared_state.SharedStateOf,
 // instantiated with concrete types in support/engine.zig; main.zig reads it via
-// engine.SharedState.fromPtr. `shared_state_size` (40) stays here as the pinned
+// engine.SharedState.fromPtr. Keep `shared_state_size` (40) here as the pinned
 // footprint the allocations reserve.
 
-// The ThreadPool object (48 bytes): the runtime constructs and reads the pool
-// through these fields. `threads` and `bound` are both Zig slices: `threads` holds
+// Lay out the ThreadPool object (48 bytes): the runtime constructs and reads the pool
+// through these fields. Keep `threads` and `bound` both Zig slices: `threads` holds
 // Thread* addresses, `bound` holds the per-thread NUMA-node index of the cold binding
 // path. thread_pool allocates the backing buffers and the accessors index them.
 pub const ThreadPool = struct {
@@ -232,11 +232,11 @@ pub const ThreadPool = struct {
     pub inline fn numThreads(self: *const ThreadPool) usize {
         return self.threads.len;
     }
-    /// The i-th `Thread*` (loaded slot value) in the threads slice.
+    /// Return the i-th `Thread*` (loaded slot value) in the threads slice.
     pub inline fn threadAt(self: *const ThreadPool, i: usize) usize {
         return self.threads[i];
     }
-    /// The i-th pool Thread as a typed pointer. The threads vector stores Thread
+    /// Return the i-th pool Thread as a typed pointer. The threads vector stores Thread
     /// addresses as usize, so this is the single @ptrFromInt over that slot.
     pub inline fn threadTyped(self: *const ThreadPool, i: usize) *Thread {
         return @ptrFromInt(self.threadAt(i));
@@ -247,7 +247,7 @@ pub const ThreadPool = struct {
     pub inline fn hasSetupStates(self: *const ThreadPool) bool {
         return self.setup_states != null;
     }
-    /// The i-th entry of the bound-nodes slice.
+    /// Return the i-th entry of the bound-nodes slice.
     pub inline fn boundAt(self: *const ThreadPool, i: usize) usize {
         return self.bound[i];
     }
@@ -257,7 +257,7 @@ pub const ThreadPool = struct {
     pub inline fn setIncreaseDepth(self: *ThreadPool, v: bool) void {
         self.increase_depth = @intFromBool(v);
     }
-    /// The main thread's SearchManager (thread 0's Worker's manager), or null if not built
+    /// Return the main thread's SearchManager (thread 0's Worker's manager), or null if not built
     /// yet.
     pub inline fn mainManager(self: *ThreadPool) ?*SearchManager {
         const worker = self.threadTyped(0).worker orelse return null;
@@ -266,17 +266,17 @@ pub const ThreadPool = struct {
 };
 
 comptime {
-    // thread_pool.zig writes and every reader (accessors here, the search's
-    // captured &stop pointer) go through this typed struct, so Zig owns the field
+    // Route thread_pool.zig writes and every reader (accessors here, the search's
+    // captured &stop pointer) through this typed struct, so Zig owns the field
     // placement. The size must equal the calloc'd pool buffer
     // (engine_object.memberThreadpoolNew).
     std.debug.assert(@sizeOf(ThreadPool) == thread_pool_size);
 }
 
-// A Thread (view). The full Thread is 208 bytes; the search-driver code only
+// View a Thread. The full Thread is 208 bytes; the search-driver code only
 // needs the LargePagePtr<Worker> `worker` at offset 8 (a single pointer, dereferenced
 // to the Worker base), so this partial view struct reinterprets a Thread pointer to
-// read that one slot. `worker` is kept as a raw address (the loaded pointer value).
+// read that one slot. Keep `worker` as a raw address (the loaded pointer value).
 pub const Thread = struct {
     _lo: usize, // @0 (idle-loop / vtable region; unused here)
     worker: ?*WorkerLayout, // @8 (LargePagePtr<Worker>; a typed pointer, null == 0)
@@ -287,19 +287,19 @@ pub const Thread = struct {
     pub inline fn fromPtr(p: *anyopaque) *Thread {
         return @ptrCast(@alignCast(p));
     }
-    /// This thread's Worker cumulative node count (0 if no worker attached).
+    /// Return this thread's Worker cumulative node count (0 if no worker attached).
     pub inline fn nodesSearched(self: *const Thread) u64 {
         const w = self.worker orelse return 0;
         return w.nodes;
     }
-    /// This thread's Worker cumulative tablebase-hit count.
+    /// Return this thread's Worker cumulative tablebase-hit count.
     pub inline fn tbHits(self: *const Thread) u64 {
         const w = self.worker orelse return 0;
         return w.tb_hits;
     }
 };
 
-// A cursor over the ~13 MB Worker: the base address plus typed accessors for the few
+// Provide a cursor over the ~13 MB Worker: the base address plus typed accessors for the few
 // fields the search-driver reads/writes. Each accessor reinterprets the base as a
 // *WorkerLayout (via layout()) and touches the field directly -- typing the *access*
 // over a raw Worker base address.
@@ -313,7 +313,7 @@ pub const Worker = struct {
     inline fn layout(self: Worker) *WorkerLayout {
         return self.base;
     }
-    /// ThreadPool's start_searching re-inits: zero the per-search Worker counters.
+    /// Zero the per-search Worker counters that ThreadPool's start_searching re-inits.
     pub inline fn resetRootSetupState(self: Worker) void {
         const wl = self.layout();
         wl.nodes = 0;
@@ -323,7 +323,7 @@ pub const Worker = struct {
         wl.root_depth = 0;
     }
     pub inline fn setTbConfig(self: Worker, cardinality: c_int, root_in_tb: bool, use_rule50: bool, probe_depth: c_int) void {
-        // tb_config is a 16-byte blob {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32}.
+        // Treat tb_config as a 16-byte blob {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32}.
         const b = &self.layout().tb_config;
         @as(*c_int, @ptrCast(@alignCast(&b[0]))).* = cardinality;
         b[4] = @intFromBool(root_in_tb);
@@ -331,7 +331,7 @@ pub const Worker = struct {
         @as(*c_int, @ptrCast(@alignCast(&b[8]))).* = probe_depth;
     }
     pub inline fn setRootState(self: Worker, src: *const position_types.StateInfo) void {
-        // root_state is a typed StateInfo: a struct copy, not a byte memcpy.
+        // Copy root_state as a typed StateInfo: a struct copy, not a byte memcpy.
         self.layout().root_state = src.*;
     }
     pub inline fn rootPosPtr(self: Worker) *position_types.Position {
@@ -343,13 +343,13 @@ pub const Worker = struct {
     pub inline fn rootDepth(self: Worker) c_int {
         return self.layout().root_depth;
     }
-    /// &rootMoves[0] as a typed RootMove.
+    /// Return &rootMoves[0] as a typed RootMove.
     pub inline fn rootMovesFirst(self: Worker) *RootMove {
         return @ptrCast(self.layout().root_moves.ptr);
     }
 };
 
-// PVMoves + RootMove are re-exported from the canonical definition in
+// Re-export PVMoves + RootMove from the canonical definition in
 // support/root_move.zig. The Worker embeds `last_iteration_pv: PVMoves` and strides
 // its rootMoves vector by @sizeOf(RootMove); the size asserts below pin those
 // (504 / 552).
@@ -358,13 +358,13 @@ pub const RootMove = root_move.RootMove;
 
 comptime {
     std.debug.assert(@offsetOf(Thread, "worker") == 8);
-    // The sizes must equal the footprint the rootMoves vector is strided/allocated by
+    // Keep the sizes equal to the footprint the rootMoves vector is strided/allocated by
     // (root_move_size) and the Worker's embedded lastIterationPV slot (504 / 552).
     std.debug.assert(@sizeOf(PVMoves) == 504);
     std.debug.assert(@sizeOf(RootMove) == root_move_size);
 }
 
-// The TranspositionTable object (24 bytes): clusterCount, table (Cluster*),
+// Lay out the TranspositionTable object (24 bytes): clusterCount, table (Cluster*),
 // generation8, in declaration order. The side TT the engine allocates uses
 // this layout.
 pub const TranspositionTable = struct {
@@ -380,10 +380,10 @@ pub const TranspositionTable = struct {
     }
 };
 
-// The side-TT handle in engine_object.side_tt_storage is written+read only through
+// Write and read the side-TT handle in engine_object.side_tt_storage only through
 // these typed accessors, so Zig owns the (naturally-ordered) layout.
 
-// LimitsType + SearchMoveText are re-exported from the limits_type module so the
+// Re-export LimitsType + SearchMoveText from the limits_type module so the
 // go-command chain keeps resolving worker_layout.LimitsType / .SearchMoveText.
 // WorkerLayout embeds the re-exported LimitsType (same layout, the 120-byte
 // contractual slot is asserted in limits_type.zig).
@@ -391,7 +391,7 @@ pub const SearchMoveText = limits_type.SearchMoveText;
 pub const LimitsType = limits_type.LimitsType;
 
 pub fn verifyLayouts() void {
-    // The pinned layout constants are trusted directly; any drift surfaces as a
+    // Trust the pinned layout constants directly; any drift surfaces as a
     // bench/parity failure, and upstream-parity re-pins them against pristine
     // upstream on a resync.
 }

@@ -1,20 +1,20 @@
-// FEN encoding: format / flip / endgame-code synthesis.
+// Encode FEN: format / flip / endgame-code synthesis.
 //
-// The FEN *output* side of the board, carved out of the 4200-line position.zig
+// Provide the FEN *output* side of the board, carved out of the 4200-line position.zig
 // god-file. Every entry point takes raw primitives (a 64-byte board image, a
 // side/castling/ep byte, counters) rather than a *Position, so this is a pure
 // std-only leaf with no dependency on the position graph -- it forms no module
 // cycle and position.zig re-exports the three public entry points
 // (flipFen / formatFen / buildEndgameFen).
 //
-// A few one-line primitives (allocCString, fileOf, rankOf) and the piece/castling
-// constants also exist in position.zig, where other clusters still use them; they
-// are duplicated here (kept intentionally tiny) rather than shared through a
+// Duplicate here (kept intentionally tiny) a few one-line primitives (allocCString,
+// fileOf, rankOf) and the piece/castling constants that also exist in position.zig,
+// where other clusters still use them, rather than sharing them through a
 // back-import, which would reintroduce a cycle.
 
 const std = @import("std");
 
-// Piece code -> FEN letter (index by the engine's piece encoding: 1..6 white,
+// Map a piece code -> FEN letter (index by the engine's piece encoding: 1..6 white,
 // 9..14 black). Mirrors position.zig's table; FEN letters are intrinsic here.
 const piece_to_char = " PNBRQK  pnbrqk";
 
@@ -41,7 +41,7 @@ fn flipFenAlloc(fen: []const u8) ![*:0]u8 {
     var out = std.ArrayList(u8).empty;
     defer out.deinit(alloc);
 
-    // Piece placement with the rank order reversed (vertical mirror).
+    // Emit the piece placement with the rank order reversed (vertical mirror).
     var ranks: [8][]const u8 = undefined;
     var nr: usize = 0;
     var rank_it = std.mem.splitScalar(u8, placement, '/');
@@ -271,7 +271,7 @@ test "flipFen vertically mirrors and swaps colors" {
     const src = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const out = flipFen(src.ptr, src.len).?;
     defer std.heap.c_allocator.free(std.mem.span(out));
-    // Vertical rank mirror + full case-swap: the symmetric start position returns
+    // Verify the vertical rank mirror + full case-swap: the symmetric start position returns
     // to the same placement, black to move, castling case-swapped (KQkq -> kqKQ).
     try testing.expectEqualStrings(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b kqKQ - 0 1",
@@ -280,7 +280,7 @@ test "flipFen vertically mirrors and swaps colors" {
 }
 
 test "flipFen is an involution" {
-    // flip mirrors the ranks and swaps every case; applying it twice restores the
+    // Mirror the ranks and swap every case (flip); applying it twice restores the
     // original FEN exactly (rank order back, case back, active color back, and the
     // ep rank 6<->3 mapping back). Covers a symmetric position, an en-passant
     // position, and an asymmetric-castling one.
@@ -300,7 +300,7 @@ test "flipFen is an involution" {
 }
 
 test "formatFen renders the start position from primitives" {
-    // The engine's piece codes: 1..6 = W P/N/B/R/Q/K, 9..14 = B p/n/b/r/q/k.
+    // Use the engine's piece codes: 1..6 = W P/N/B/R/Q/K, 9..14 = B p/n/b/r/q/k.
     var board: [64]u8 = @splat(0);
     const back = [_]u8{ 4, 2, 3, 5, 6, 3, 2, 4 }; // R N B Q K B N R
     for (0..8) |f| {

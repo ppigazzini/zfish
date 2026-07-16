@@ -8,7 +8,7 @@
 //! happens when one is never registered -- so the next hook chose its failure mode by
 //! accident. That is what this lints.
 //!
-//! Four rules, each failing loudly:
+//! Enforce four rules, each failing loudly:
 //!
 //!   1. RATCHET      exactly `baseline` hooks exist. They buy the DAG; they must not
 //!                   grow unnoticed. Growth is a design decision, not a drive-by.
@@ -35,7 +35,7 @@ const Io = std.Io;
 
 const baseline: usize = 30;
 
-// The shipped registration sites. main.zig is the composition root (it may import
+// List the shipped registration sites. main.zig is the composition root (it may import
 // everything and nothing imports it, which is what lets it hand implementations
 // backwards to the leaves); position.zig self-registers the 2 snapshot hooks it owns.
 // Both run before the engine is constructed (main.zig:67 initRuntime, :68
@@ -58,7 +58,7 @@ const Hook = struct {
     loud: bool,
 };
 
-/// A hook declaration: `pub var <name>: *const fn ...`. The type often wraps onto the
+/// Match a hook declaration: `pub var <name>: *const fn ...`. The type often wraps onto the
 /// next line, so match on the two anchors rather than the whole signature.
 fn hookNameOf(line: []const u8) ?[]const u8 {
     const decl = "pub var ";
@@ -93,7 +93,7 @@ pub fn main(init: std.process.Init) !void {
         try files.append(gpa, try gpa.dupe(u8, entry.path));
     }
 
-    // Registration sites, read once.
+    // Read the registration sites once.
     var registrar_src: std.ArrayList([]const u8) = .empty;
     defer {
         for (registrar_src.items) |s| gpa.free(s);
@@ -144,7 +144,7 @@ pub fn main(init: std.process.Init) !void {
             if (hookNameOf(line)) |name| {
                 file_has_hook = true;
 
-                // Rule 2: the declaration states what happens when nobody registers it.
+                // Rule 2: require the declaration to state what happens when nobody registers it.
                 var loud = false;
                 var declared = false;
                 for (prev_doc.items) |d| {
@@ -153,7 +153,7 @@ pub fn main(init: std.process.Init) !void {
                         declared = true;
                     } else if (std.mem.indexOf(u8, d, "failure: silent") != null) {
                         declared = true;
-                        // A silent default must say WHY it is correct unregistered.
+                        // Require a silent default to say WHY it is correct unregistered.
                         const marker = "failure: silent";
                         const idx = std.mem.indexOf(u8, d, marker).?;
                         const why = std.mem.trim(u8, d[idx + marker.len ..], " -—:");
@@ -181,7 +181,7 @@ pub fn main(init: std.process.Init) !void {
             prev_doc.clearRetainingCapacity();
         }
 
-        // Rule 3: the file states its class.
+        // Rule 3: require the file to state its class.
         if (file_has_hook) {
             const lifecycle = std.mem.indexOf(u8, body, "hook-class: lifecycle") != null;
             const service = std.mem.indexOf(u8, body, "hook-class: service") != null;
@@ -198,7 +198,7 @@ pub fn main(init: std.process.Init) !void {
         gpa.free(h.file);
     };
 
-    // Rule 4: the shipped composition root registers every hook.
+    // Rule 4: require the shipped composition root to register every hook.
     for (hooks.items) |h| {
         const needle = try std.fmt.allocPrint(gpa, ".{s} = ", .{h.name});
         defer gpa.free(needle);
@@ -215,7 +215,7 @@ pub fn main(init: std.process.Init) !void {
             );
     }
 
-    // Rule 1: the ratchet.
+    // Rule 1: enforce the ratchet.
     var loud_n: usize = 0;
     for (hooks.items) |h| loud_n += @intFromBool(h.loud);
     if (hooks.items.len != baseline)

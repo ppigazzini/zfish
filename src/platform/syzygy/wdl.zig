@@ -1,14 +1,14 @@
-//! Syzygy WDL/DTZ probe algorithm. Faithful port of Stockfish's `do_probe_table` (position ->
+//! Probe Syzygy WDL/DTZ. Port Stockfish's `do_probe_table` (position ->
 //! unique index -> value), `probe_table`, `probe_wdl` (search<false> capture recursion),
-//! `probe_dtz`, and `map_score`. It ties the position->index geometry (encode.zig), the data model
+//! `probe_dtz`, and `map_score` faithfully. Tie the position->index geometry (encode.zig), the data model
 //! (probe.zig), and the RE-PAIR decoder (decode.zig) together, indexing through the tables that
 //! `registry.zig` owns and lazily maps.
 //!
-//! The registry (material key -> TBTable), file load, and `set`/`set_dtz_map` parsing live in
+//! Keep the registry (material key -> TBTable), file load, and `set`/`set_dtz_map` parsing in
 //! `registry.zig`; this file imports it downward and never the reverse (so neither is a god-file).
 //! Registry keys are bit-identical to a probed position's `pos.st.material_key`.
 //!
-//! Platform->engine down-edge (the harness may depend on the engine): the probe reaches the headless
+//! Cross the platform->engine down-edge (the harness may depend on the engine): the probe reaches the headless
 //! engine for a scratch Position (FEN parse), its material key + piece bitboards, and legal-capture
 //! movegen for the capture recursion.
 
@@ -47,7 +47,7 @@ inline fn mapPawns(sq: u8) i32 {
     return encode.map_pawns[sq];
 }
 
-// SF do_probe_table, generic over WDL/DTZ. WDL returns the raw score in -2..2 (value - 2); DTZ
+// Port SF do_probe_table, generic over WDL/DTZ. WDL returns the raw score in -2..2 (value - 2); DTZ
 // returns map_score<DTZ>(value) given the position's `wdl_score`. For DTZ, if the stored side does
 // not match the side to move, sets out_state = CHANGE_STM (the caller does a 1-ply search).
 fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_score: i32, out_state: *i32) i32 {
@@ -94,7 +94,7 @@ fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_score
         tb_file = encode.edgeDistance(fileOf(squares[0]));
     }
 
-    // DTZ tables are one-sided: if the stored side is not the side to move, bail to a 1-ply
+    // Treat DTZ tables as one-sided: if the stored side is not the side to move, bail to a 1-ply
     // search (CHANGE_STM). WDL check_dtz_stm is always true.
     if (dtz) {
         const flags = t.get(true, stm, tb_file).flags;
@@ -152,7 +152,7 @@ fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_score
         if (rankOf(squares[0]) > 3) {
             for (0..size) |i| squares[i] ^= 56;
         }
-        // First leading-group piece off the a1-h8 diagonal -> map below it.
+        // Take the first leading-group piece off the a1-h8 diagonal -> map below it.
         var i: usize = 0;
         while (i < @as(usize, @intCast(d.group_len[0]))) : (i += 1) {
             if (encode.offA1H8(squares[i]) == 0) continue;
@@ -220,7 +220,7 @@ fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_score
     return raw - 2; // map_score<WDL> = value - 2
 }
 
-// SF map_score<DTZ>: remap the raw DTZ value through the per-WDL-class map, then convert to plies
+// Port SF map_score<DTZ>: remap the raw DTZ value through the per-WDL-class map, then convert to plies
 // (x2 unless the flags already store plies for this class) and +1.
 fn mapScoreDtz(t: *TBTable, d: *const PairsData, value_in: i32, wdl: i32) i32 {
     const wdl_map = [_]usize{ 1, 3, 0, 2, 0 }; // index by wdl+2
@@ -245,7 +245,7 @@ fn mapScoreDtz(t: *TBTable, d: *const PairsData, value_in: i32, wdl: i32) i32 {
 }
 
 inline fn stableSortByMapPawns(sq: []u8) void {
-    // Insertion sort (stable), ascending MapPawns[].
+    // Sort by insertion (stable), ascending MapPawns[].
     var i: usize = 1;
     while (i < sq.len) : (i += 1) {
         const v = sq[i];
@@ -267,12 +267,12 @@ inline fn stableSortSquares(sq: []u8) void {
 
 // ---- probe_table + probe_wdl (search) + probe_dtz ---------------------------
 
-// SF ProbeState: FAIL=0, OK=1, ZEROING_BEST_MOVE=2, CHANGE_STM=-1.
+// Define SF ProbeState: FAIL=0, OK=1, ZEROING_BEST_MOVE=2, CHANGE_STM=-1.
 const probe_fail: i32 = 0;
 const probe_ok: i32 = 1;
 const probe_zeroing: i32 = 2;
 const change_stm: i32 = -1;
-// SF WDLScore.
+// Define SF WDLScore.
 const wdl_win: i32 = 2;
 const wdl_cursed_win: i32 = 1;
 const wdl_draw: i32 = 0;
@@ -281,7 +281,7 @@ const wdl_loss: i32 = -2;
 
 const Probe = struct { value: i32, state: i32 };
 
-// SF probe_table, generic over WDL/DTZ: KvK short-circuit, registry lookup, lazy map, do_probe.
+// Port SF probe_table, generic over WDL/DTZ: KvK short-circuit, registry lookup, lazy map, do_probe.
 fn probeTable(pos: *const Position, comptime dtz: bool, wdl_score: i32, out_state: *i32) i32 {
     if (@popCount(pos.by_type_bb[0]) == 2) return 0; // KvK draw
     const t = registry.hashGet(pos.st.material_key) orelse {
@@ -310,7 +310,7 @@ fn signOf(x: i32) i32 {
     return @as(i32, @intFromBool(x > 0)) - @intFromBool(x < 0);
 }
 
-// SF dtz_before_zeroing: recover the DTZ of the move before a zeroing (capture/pawn) move.
+// Port SF dtz_before_zeroing: recover the DTZ of the move before a zeroing (capture/pawn) move.
 fn dtzBeforeZeroing(wdl: i32) i32 {
     return switch (wdl) {
         wdl_win => 1,
@@ -321,7 +321,7 @@ fn dtzBeforeZeroing(wdl: i32) i32 {
     };
 }
 
-// SF search<CheckZeroingMoves>: the "best of the position and its winning/drawing zeroing moves"
+// Port SF search<CheckZeroingMoves>: the "best of the position and its winning/drawing zeroing moves"
 // recursion. A capture (and, when check_zeroing, a pawn move) zeroes the rule50 counter, so its
 // result must be probed and compared to the position's own stored value. Children recurse with
 // check_zeroing=false. `storage` supplies one StateInfo per recursion frame (reused across sibs).
@@ -349,8 +349,8 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage, comptime 
         }
     }
 
-    // If every legal move is a zeroing move and we searched them all, the stored value could be
-    // wrong (ep rights, all-captures) -- use bestValue instead of probing.
+    // Use bestValue instead of probing when every legal move is a zeroing move and all were
+    // searched: the stored value could be wrong (ep rights, all-captures).
     const no_more_moves = move_count != 0 and move_count == total;
     var value: i32 = undefined;
     if (no_more_moves) {
@@ -361,7 +361,7 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage, comptime 
         if (st_probe == probe_fail) return .{ .value = 0, .state = probe_fail };
     }
 
-    // DTZ stores a "don't care" when bestValue is a win: prefer bestValue when it dominates.
+    // Prefer bestValue when it dominates: DTZ stores a "don't care" when bestValue is a win.
     if (best >= value) {
         const state: i32 = if (best > 0 or no_more_moves) probe_zeroing else probe_ok;
         return .{ .value = best, .state = state };
@@ -369,7 +369,7 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage, comptime 
     return .{ .value = value, .state = probe_ok };
 }
 
-// SF probe_dtz: DTZ from the side-to-move's view. Uses search<true> to fold in zeroing pawn moves,
+// Port SF probe_dtz: DTZ from the side-to-move's view. Use search<true> to fold in zeroing pawn moves,
 // then probe_table<DTZ>; the CHANGE_STM branch does a 1-ply search that minimizes DTZ (the DTZ
 // table stored the other side, so we step one move and read the resulting DTZ).
 fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state: *i32) i32 {
@@ -380,7 +380,7 @@ fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state:
         return 0;
     }
     const wdl = w.value;
-    if (wdl == wdl_draw) return 0; // DTZ tables don't store draws
+    if (wdl == wdl_draw) return 0; // Return 0 -- DTZ tables don't store draws
     if (w.state == probe_zeroing) return dtzBeforeZeroing(wdl); // best move is a winning zeroing move
 
     var st: i32 = probe_ok;
@@ -394,7 +394,7 @@ fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state:
         return (dtz + 100 * cursed) * signOf(wdl);
     }
 
-    // CHANGE_STM: the DTZ is stored for the other side; do a 1-ply search minimizing DTZ.
+    // Resolve CHANGE_STM: the DTZ is stored for the other side; do a 1-ply search minimizing DTZ.
     var min_dtz: i32 = 0xFFFF;
     var buf: [256]u16 = undefined;
     const total = movegen.generateLegal(pos, buf[0..].ptr);
@@ -416,7 +416,7 @@ fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state:
         } else {
             d = -probeDtz(pos, storage, &cst);
         }
-        // A mating move gets DTZ 1 (child is in check with no legal reply).
+        // Give a mating move DTZ 1 (child is in check with no legal reply).
         var mbuf: [256]u16 = undefined;
         if (d == 1 and pos.st.checkers_bb != 0 and movegen.generateLegal(pos, mbuf[0..].ptr) == 0)
             min_dtz = 1;
@@ -433,7 +433,7 @@ fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state:
 
 // ---- probeFen: the platform probe surface -----------------------------------
 
-/// Probe a FEN for its WDL and DTZ. Builds a scratch Position (engine down-edge), then runs SF's
+/// Probe a FEN for its WDL and DTZ. Build a scratch Position (engine down-edge), then run SF's
 /// probe_wdl (search<false>) and probe_dtz. `available == 0` means no WDL result (no table, load
 /// failure, or castling rights present -- TB positions have none); a DTZ failure is reported via
 /// `dtz_state` while WDL still reports.
@@ -466,7 +466,7 @@ pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult 
     };
 }
 
-// In-search WDL probe: the search's Step 6 calls this on the LIVE search Position rather
+// Probe WDL in-search: the search's Step 6 calls this on the LIVE search Position rather
 // than round-tripping a FEN. searchWdl does do/undo on `pos` for its capture recursion and restores
 // it exactly (undoMove), and doMoveState touches only the board + StateInfo (never the NNUE
 // accumulator stack), so the search's position/eval state is intact on return. A persistent probe

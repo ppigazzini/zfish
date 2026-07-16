@@ -1,5 +1,5 @@
-// Engine info-string builders (ANNEX B.6): the numa/thread-binding/allocation UCI
-// info formatters. Pure string construction over numa + the thread pool; delegates
+// Build the engine info strings (ANNEX B.6): the numa/thread-binding/allocation UCI
+// info formatters. Construct pure strings over numa + the thread pool; delegate
 // the actual layout to engine_infofmt. No engine lifecycle/state here.
 
 const std = @import("std");

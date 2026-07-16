@@ -1,7 +1,7 @@
-// Zobrist hash tables + cuckoo (upcoming-repetition) tables and their runtime
+// Provide the Zobrist hash tables + cuckoo (upcoming-repetition) tables and their runtime
 // build.
 //
-// The board's hashing state, carved out of position.zig: the psq/enpassant/
+// Hold the board's hashing state, carved out of position.zig: the psq/enpassant/
 // castling/side/no-pawns Zobrist keys and the cuckoo tables used to detect an
 // upcoming repetition. These are process-global tables built once by init()
 // (from a fixed-seed xorshift64* PRNG, mirroring upstream Position::init), then
@@ -9,7 +9,7 @@
 // leaf lets those clusters be split out of position.zig without each reaching
 // back for the tables. init() is invoked from position.initRuntime.
 //
-// Depends only on std + bitboard (cuckoo build) + board_core (sqBb), so it is a
+// Depend only on std + bitboard (cuckoo build) + board_core (sqBb), so it is a
 // leaf: position -> zobrist, no cycle.
 
 const std = @import("std");

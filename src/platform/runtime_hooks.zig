@@ -1,19 +1,19 @@
 //! hook-class: lifecycle — worker build/destroy/clear and setup-state handoff.
-//! Structurally safe: a lifecycle hook cannot become per-query without the design
+//! Rely on structural safety: a lifecycle hook cannot become per-query without the design
 //! changing shape, so unlike the service hooks it carries no per-node cost risk.
 
-// Runtime hook registry: a fn-pointer table that breaks module import
+// Register the runtime hooks: a fn-pointer table that breaks module import
 // cycles between the runtime hooks and their implementations.
 //
-// The impls live in main.zig because they need position/engine/network/search/... —
+// Keep the impls in main.zig because they need position/engine/network/search/... —
 // modules that already import their callers (thread/engine/search_thread/
-// thread_pool), so the callers can't import back to reach them. main installs
-// the pointers at startup (installRuntimeHooks); the callers invoke through here.
-// Pure Zig fn pointers -- no C ABI, type-checked.
+// thread_pool), so the callers can't import back to reach them. Install
+// the pointers from main at startup (installRuntimeHooks); the callers invoke through here.
+// Use pure Zig fn pointers -- no C ABI, type-checked.
 //
-// The fields are NON-OPTIONAL, each defaulting to a named panic stub, so the
-// callers invoke them directly (no `.?` null-unwrap at 10+ sites). A hook that was
-// never registered fails fast with its own name instead of an opaque null-optional
+// Keep the fields NON-OPTIONAL, each defaulting to a named panic stub, so the
+// callers invoke them directly (no `.?` null-unwrap at 10+ sites). Fail fast on a hook that
+// was never registered, naming it instead of an opaque null-optional
 // panic -- the failure mode (a test that skipped installRuntimeHooks) now
 // reports exactly which hook is missing.
 
@@ -87,7 +87,7 @@ pub var shared_state_clear_histories: *const fn (shared_state: *const anyopaque)
             hookPanic("shared_state_clear_histories");
         }
     }.stub;
-// Returns error.OutOfMemory: inserting a numa node's shared-history entry allocates
+// Return error.OutOfMemory: inserting a numa node's shared-history entry allocates
 // (the map bucket + the large-page DynStats arrays), so this seam propagates OOM to the
 // engine's single reconfigure handling boundary (resizeThreadsEngine) instead of
 // panicking deep in the hook.

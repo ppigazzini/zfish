@@ -1,6 +1,6 @@
 // RootMove and PVMoves.
 //
-// The root-move list the search ranks and the per-line principal variation.
+// Define the root-move list the search ranks and the per-line principal variation.
 
 const std = @import("std");
 
@@ -10,7 +10,7 @@ pub const value_infinite = 32001; // VALUE_INFINITE
 pub const Move = u16; // raw Move word
 pub const move_none: Move = 0;
 
-// PVMoves: a fixed Move[MAX_PLY+1] buffer plus a length.
+// Hold PVMoves: a fixed Move[MAX_PLY+1] buffer plus a length.
 pub const PVMoves = struct {
     moves: [max_ply + 1]Move,
     length: usize,
@@ -38,8 +38,8 @@ pub const PVMoves = struct {
 };
 
 comptime {
-    // The PVMoves footprint is 494 bytes of moves, padded to an 8-byte length -> 504,
-    // and the RootMove footprint is 552.
+    // Pin the PVMoves footprint at 494 bytes of moves, padded to an 8-byte length -> 504,
+    // and the RootMove footprint at 552.
     std.debug.assert(@sizeOf(PVMoves) == 504);
 }
 
@@ -57,7 +57,7 @@ pub const RootMove = struct {
     tb_score: i32 = 0,
     pv: PVMoves,
 
-    // init(m): pv.pushBack(m).
+    // Push m onto the pv in init(m).
     pub fn init(m: Move) RootMove {
         var rm = RootMove{ .pv = PVMoves.empty() };
         rm.pv.pushBack(m);
@@ -74,7 +74,7 @@ pub const RootMove = struct {
     pub fn eqMove(self: *const RootMove, m: Move) bool {
         return self.pv.moves[0] == m;
     }
-    // Descending sort: by score, then previousScore.
+    // Sort descending by score, then previousScore.
     pub fn lessThan(_: void, a: RootMove, b: RootMove) bool {
         return if (b.score != a.score) b.score < a.score else b.previous_score < a.previous_score;
     }
@@ -87,8 +87,8 @@ pub const RootMove = struct {
 };
 
 comptime {
-    // Zig owns the field order, but the element size must equal the strided rootMoves
-    // vector element.
+    // Let Zig own the field order, but keep the element size equal to the strided
+    // rootMoves vector element.
     std.debug.assert(@sizeOf(RootMove) == 552);
 }
 
@@ -121,7 +121,7 @@ test "RootMove sorts descending by score then previousScore" {
     moves[2].previous_score = 9;
     std.sort.pdq(RootMove, &moves, {}, RootMove.lessThan);
     try testing.expectEqual(@as(i32, 50), moves[0].score);
-    // ties on score 10 break by previousScore descending (9 before 5)
+    // break ties on score 10 by previousScore descending (9 before 5)
     try testing.expectEqual(@as(i32, 9), moves[1].previous_score);
     try testing.expectEqual(@as(i32, 5), moves[2].previous_score);
 }

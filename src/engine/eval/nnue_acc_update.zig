@@ -1,4 +1,4 @@
-// NNUE accumulator update algorithm, split out of nnue_accumulator.zig: the
+// Run the NNUE accumulator update algorithm, split out of nnue_accumulator.zig: the
 // per-side refresh + incremental step machinery (evaluateSide, refreshLatest*,
 // incrementalStep*, apply*Delta, appendHalfChange) and its append-diff record
 // types. Reads/writes accumulator states through the nnue_acc_layout accessors
@@ -11,8 +11,8 @@ const position_types = @import("position_types");
 const Position = position_types.Position;
 const nnue_feature = @import("nnue_feature");
 
-// Vectorized FT weight-row add/sub kernels live in the nnue_acc_rowops leaf
-// aliased so the refresh/incremental core stays unqualified.
+// Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
+// so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
 const accumulateRowsI8 = nnue_acc_rowops.accumulateRowsI8;
@@ -21,8 +21,8 @@ const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
 const applyCombinedDelta = nnue_acc_rowops.applyCombinedDelta;
 const applyCombinedPsqtDelta = nnue_acc_rowops.applyCombinedPsqtDelta;
 
-// FeatureTransformer weight-blob layout + accessors live in the nnue_ft leaf
-// aliased for the refresh/apply-delta core.
+// Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
+// for the refresh/apply-delta core.
 const nnue_ft = @import("nnue_ft");
 pub const FeatureTransformer = nnue_ft.FeatureTransformer;
 const featureTransformerPsqWeights = nnue_ft.featureTransformerPsqWeights;
@@ -30,8 +30,8 @@ const featureTransformerThreatWeights = nnue_ft.featureTransformerThreatWeights;
 const featureTransformerPsqPsqtWeights = nnue_ft.featureTransformerPsqPsqtWeights;
 const featureTransformerThreatPsqtWeights = nnue_ft.featureTransformerThreatPsqtWeights;
 
-// Refresh cache / finny tables live in the nnue_refresh_cache leaf;
-// accessors aliased for the refresh path, clearRefreshCache re-exported (external).
+// Alias the refresh cache / finny tables from the nnue_refresh_cache leaf for the
+// refresh path; re-export clearRefreshCache (external).
 const nnue_refresh_cache = @import("nnue_refresh_cache");
 pub const RefreshCache = nnue_refresh_cache.RefreshCache;
 pub const clearRefreshCache = nnue_refresh_cache.clearRefreshCache;
@@ -43,9 +43,9 @@ const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 
-// The accumulator-stack layout + accessors live in the nnue_acc_layout leaf
-// now; alias the whole foundation back so the facade + update call sites are
-// unqualified (AccumulatorStack re-exported pub for external callers).
+// Alias back the accumulator-stack layout + accessors, which live in the
+// nnue_acc_layout leaf now, so the facade + update call sites are unqualified
+// (AccumulatorStack re-exported pub for external callers).
 const layout = @import("nnue_acc_layout.zig");
 const psq_feature = layout.psq_feature;
 const threat_feature = layout.threat_feature;
@@ -105,12 +105,12 @@ const FullAppendResult = struct {
     indices: [threat_index_capacity]u32,
 };
 
-// The half-KA make-index / append-changed helpers are called directly as
+// Call the half-KA make-index / append-changed helpers directly as
 // nnue_feature.halfMakeIndex / halfAppendChanged (see the import note above); a
 // direct Zig call avoids the by-value struct passing that is mis-marshaled on aarch64.
-// full-threats append (changed/active) call nnue_feature directly.
+// Call nnue_feature directly for full-threats append (changed/active).
 
-// Combined HalfKA + Threats accumulator, one per-perspective walk of the stack --
+// Walk the stack once per perspective over the combined HalfKA + Threats accumulator --
 // a direct port of upstream Stockfish's AccumulatorStack::evaluate_side. The single
 // combined accumulator lives in the psq_feature storage slot (the threat_feature
 // accumulation slot is now unused); find_last_usable uses ONLY the PSQ (HalfKA)
@@ -142,7 +142,7 @@ pub fn evaluateSide(
     }
 }
 
-// Fused refresh: PSQ (HalfKA) via the finny refresh cache fills the combined
+// Perform the fused refresh: PSQ (HalfKA) via the finny refresh cache fills the combined
 // accumulation + psqt and sets computed; the Threat features are then ADDED on top
 // (additive accumulate, no zeroing), so the combined = psq + threat -- the refresh
 // half of apply_combined.
@@ -244,7 +244,7 @@ fn refreshLatestPsq(
     stateBytesMut(psq_feature, latest_index, stack)[computed_offset + perspective] = 1;
 }
 
-// One fused incremental step onto the combined accumulator -- a port of upstream's
+// Take one fused incremental step onto the combined accumulator -- a port of upstream's
 // update_accumulator_incremental + apply_combined. Computes the PSQ (HalfKA) and
 // Threat changed-feature index lists for this ply, then applies both to the single
 // combined accumulation (psq_feature slot) in one load/store per tile.

@@ -1,6 +1,6 @@
-// Move make/unmake.
+// Make and unmake moves.
 //
-// The mutating side of the board: applying and reverting moves on a live
+// Own the mutating side of the board: applying and reverting moves on a live
 // Position -- do/undo-null, doMove/undoMove, the board+DirtyThreats mutators, and
 // putPiece. Every dependency is a leaf (board_core primitives, the zobrist keys,
 // state_setup.setCheckInfo, legality.attackersTo), so move_do imports no
@@ -69,8 +69,8 @@ pub fn doNullMove(pos_ptr: *Position, new_st_ptr: *StateInfo) void {
     pos.st.key ^= zobrist.zob_side_val;
     pos.st.plies_from_null = 0;
 
-    // Upstream 782852b26: the StateInfo was copied from the previous ply (incl. its capturedPiece);
-    // a null move captures nothing, so clear it or prior_capture detection reads a stale value.
+    // Clear the captured piece (upstream 782852b26): the StateInfo was copied from the previous ply
+    // (incl. its capturedPiece), and a null move captures nothing, so otherwise prior_capture detection reads a stale value.
     pos.st.captured_piece = 0; // NO_PIECE
 
     pos.side_to_move ^= 1;

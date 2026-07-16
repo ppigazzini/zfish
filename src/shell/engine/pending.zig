@@ -1,5 +1,5 @@
-// Pending-state registry (ANNEX B.6): the keyed store of per-slot PendingStateStorage
-// handed from the UCI thread to the search pool. Owns its state (the entries list)
+// Register the pending states (ANNEX B.6): the keyed store of per-slot PendingStateStorage
+// handed from the UCI thread to the search pool. Own its state (the entries list)
 // and lifecycle; the engine facade calls its pub API. state_list/worker_layout only.
 
 const std = @import("std");
@@ -23,7 +23,7 @@ pub fn ensurePendingStateStorage(states_slot: *anyopaque) ?*PendingStateStorage 
         return pending_state_entries.items[index].storage;
     }
 
-    // Null on OOM (was `@panic("OOM")`); setPosition reports it as a UCI error
+    // Return null on OOM (was `@panic("OOM")`); setPosition reports it as a UCI error
     // message through its existing `?[*:0]u8` channel instead of crashing.
     const state_storage = state_list.storageCreate() orelse return null;
     pending_state_entries.append(std.heap.c_allocator, .{

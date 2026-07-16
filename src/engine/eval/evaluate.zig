@@ -84,9 +84,9 @@ fn appendIntLine(
     value: c_int,
     suffix: []const u8,
 ) !void {
-    // C `%+15d` forces a leading sign then space-pads to width 15. std.fmt has no
-    // force-sign flag, so emit the sign explicitly, format the magnitude, then pad the
-    // resulting string (string padding adds no sign of its own). Byte-identical to C.
+    // Reproduce C `%+15d`: force a leading sign then space-pad to width 15. std.fmt has
+    // no force-sign flag, so emit the sign explicitly, format the magnitude, then pad the
+    // resulting string (string padding adds no sign of its own). Stay byte-identical to C.
     var signed: [32]u8 = undefined;
     const body = std.fmt.bufPrint(&signed, "{c}{d}", .{
         @as(u8, if (value < 0) '-' else '+'),
@@ -105,7 +105,7 @@ fn appendFloatLine(
     value: f64,
     suffix: []const u8,
 ) !void {
-    // `%+15.2f`: forced sign, 2 decimals, right-padded to width 15. std.fmt is
+    // Reproduce `%+15.2f`: forced sign, 2 decimals, right-padded to width 15. std.fmt is
     // byte-identical to C `%.2f` here because `value` is always centipawns*0.01 -- a value
     // on the 2-decimal grid, so no third decimal exists and C's round-half-to-even can
     // never disagree with std.fmt's round-half-away. Proven byte-exact for every cp in

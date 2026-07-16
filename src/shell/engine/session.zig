@@ -1,17 +1,17 @@
-//! The session driver, split out of engine.zig.
+//! Drive the session, split out of engine.zig.
 //!
-//! engine.zig was two things at once: a namespace *face* (the `pub const X = leaf.Y`
+//! Split engine.zig's two roles: a namespace *face* (the `pub const X = leaf.Y`
 //! re-export blocks that present the `shell/engine/` leaves as one `engine.` surface)
 //! and the *session driver* (the command-handler call graph that runs one UCI session:
 //! option registration + on-change dispatch, position setup, the `go`/perft entry, and
-//! the thread/NUMA/SharedState reconfigure chain). This file is the driver; engine.zig
+//! the thread/NUMA/SharedState reconfigure chain). Keep this file as the driver; engine.zig
 //! keeps the face and re-exports the driver's entry points, so external callers still
 //! reach `engine.initBody` / `engine.goEngine` / `engine.SharedState` unchanged.
 //!
-//! Depends only on the engine-graph named modules + the `shell/engine/` leaves; nothing
+//! Depend only on the engine-graph named modules + the `shell/engine/` leaves; nothing
 //! imports the shell facade (the headless invariant keeps every edge one-way), so the
 //! SharedState instantiation here -- which must see all five referent types -- cannot be
-//! in a cycle. `freeCString` is duplicated (a 3-line sentinel free) so the driver needs
+//! in a cycle. Duplicate `freeCString` (a 3-line sentinel free) so the driver needs
 //! no engine.zig import, keeping the face->driver edge one-way.
 
 const std = @import("std");
@@ -32,9 +32,9 @@ const engine_object = @import("engine_object");
 const network_port = @import("network");
 const shared_state_mod = @import("shared_state");
 
-// The `shell/engine/` leaves the driver calls into (the face re-exports the same leaves
+// Import the `shell/engine/` leaves the driver calls into (the face re-exports the same leaves
 // for external callers; a module is a singleton, so importing it here too is free).
-// shared_histories/pending/info/control are path-leaves of the engine module (same dir);
+// Reach shared_histories/pending/info/control as path-leaves of the engine module (same dir);
 // util/nnue/options/trace are named modules with their own build.zig dep sets.
 const engine_shared_histories = @import("shared_histories.zig");
 const engine_pending = @import("pending.zig");
@@ -76,10 +76,10 @@ inline fn ne(p: *const anyopaque) *engine_object.EngineObject {
     return engine_object.EngineObject.fromPtr(@constCast(p));
 }
 
-// The ONE concrete instantiation of the SharedState bundle. The driver is a graph
+// Instantiate the ONE concrete SharedState bundle. The driver is a graph
 // root that sees all referent types (nothing imports the shell facade, so this can't
 // be in a cycle); shared_state.zig stays a pure std leaf via the injected comptime
-// types. The bundle's typed pointers have a fixed layout the worker-build reinterpret
+// types. Give the bundle's typed pointers a fixed layout the worker-build reinterpret
 // relies on (asserted by the @sizeOf check below).
 pub const SharedState = shared_state_mod.SharedStateOf(
     worker_layout.ThreadPool,
@@ -91,9 +91,9 @@ comptime {
     std.debug.assert(@sizeOf(SharedState) == 24);
 }
 
-// One engine, one search at a time (sequential go commands; workers only READ the
+// Run one engine, one search at a time (sequential go commands; workers only READ the
 // bundle during a search), so a single static provides its lifetime without an
-// allocator. Rebuilt per search, never aliased.
+// allocator. Rebuild it per search, never alias it.
 var live_shared_state: SharedState = undefined;
 
 /// Build the live SharedState from the five referent handles and return its address.
@@ -125,15 +125,15 @@ const option_callback_clear_hash: u8 = 5;
 const option_callback_syzygy_path: u8 = 6;
 const option_callback_eval_file: u8 = 7;
 
-// Single-sourced from network.zig via the "network" module (build.zig wires the
-// engine->network edge). Avoids the net-name-drift bug of two copies.
+// Single-source from network.zig via the "network" module (build.zig wires the
+// engine->network edge). Avoid the net-name-drift bug of two copies.
 const default_eval_file_name = network_port.default_eval_file_name;
 const default_skill_lowest_elo: c_int = 1320;
 const default_skill_highest_elo: c_int = 3190;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
-    // Construction boundary: main hands the engine as a raw buffer; this hook keeps
-    // the *anyopaque ABI and casts once to drive the typed init entries below.
+    // Sit at the construction boundary: main hands the engine as a raw buffer; keep
+    // the *anyopaque ABI and cast once here to drive the typed init entries below.
     const e: *engine_object.EngineObject = ne(engine_ptr);
     const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
     const max_hash_mb: c_int = if (@sizeOf(usize) >= 8) 33554432 else 2048;
@@ -161,7 +161,7 @@ pub fn initBody(engine_ptr: *anyopaque) void {
     addSpinOption("SyzygyProbeLimit", 7, 0, 7, option_callback_none);
     addStringOption("EvalFile", default_eval_file_name, option_callback_eval_file);
 
-    // Adding EvalFile fires its callback, which is the startup net load. Everything
+    // Fire the startup net load by adding EvalFile (its callback). Everything
     // below needs the net: resizeThreadsEngine builds the Workers, and worker
     // construction reads the feature-transformer biases. A missed load is silent
     // (network.load returns void), so check it HERE -- between the load and the first
@@ -212,7 +212,7 @@ pub fn optionOnChange(
         },
         option_callback_syzygy_path => blk: {
             tablebase.init(value.ptr, value.len);
-            // SF `Tablebases::init` prints this whenever a path is set (even when 0 found).
+            // Print this whenever a path is set (even when 0 found), matching SF `Tablebases::init`.
             if (value.len != 0) {
                 var buf: [96]u8 = undefined;
                 const msg = std.fmt.bufPrint(&buf, "Found {d} WDL and {d} DTZ tablebase files (up to {d}-man).", .{ tablebase.foundWdl(), tablebase.foundDtz(), tablebase.discoveredMax() }) catch break :blk null;
@@ -284,7 +284,7 @@ pub fn setPositionEngine(
     );
 }
 
-// setoption apply: wait for the search, set into the OptionsModel, and run the
+// Apply setoption: wait for the search, set into the OptionsModel, and run the
 // on-change callback (relaying string/spin/check values).
 pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
     waitForSearchFinishedEngine(engine_ptr);
@@ -322,8 +322,8 @@ pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [
 pub fn goEngine(engine_ptr: *engine_object.EngineObject, limits_ptr: *const worker_layout.LimitsType) void {
     std.debug.assert(limits_ptr.perftValue() == 0);
     verifyNetwork();
-    // startThinking's root-move setup (selected-moves / root-fen / RootMoves /
-    // per-thread contexts) now propagates OOM as `!void`; this is the single handling
+    // Handle startThinking's root-move setup OOM here (selected-moves / root-fen / RootMoves /
+    // per-thread contexts): it now propagates OOM as `!void`, and this is the single handling
     // boundary for the `go` path. A search that cannot allocate its root setup is
     // unrecoverable, so fail loudly here instead of `catch @panic("OOM")` in each leaf.
     thread_port.startThinking(
@@ -378,8 +378,8 @@ pub fn resizeThreads(
 }
 
 pub fn resizeThreadsEngine(engine_ptr: *engine_object.EngineObject) void {
-    // The resize chain (reconfigure -> thread_pool.set/boundNodesAssign)
-    // now propagates OOM / thread-spawn errors as `!void`; this is the engine's single
+    // Handle the resize chain's errors here (reconfigure -> thread_pool.set/boundNodesAssign):
+    // it now propagates OOM / thread-spawn errors as `!void`, and this is the engine's single
     // handling boundary. A UCI Threads/NumaPolicy change or init that cannot allocate
     // its thread pool is unrecoverable, so fail loudly here instead of scattering
     // `catch @panic("OOM")` across every leaf allocation.
@@ -392,7 +392,7 @@ pub fn resizeThreadsEngine(engine_ptr: *engine_object.EngineObject) void {
     ) catch @panic("OOM: thread pool resize failed");
 }
 
-// TT lifecycle + engine setup helpers, reached through the typed
+// Provide TT lifecycle + engine setup helpers, reached through the typed
 // TranspositionTable view + the tt/state_list modules this module already imports.
 fn statesSlotReset(slot_ptr: *anyopaque) void {
     const slot: *?*state_list.StateList = @ptrCast(@alignCast(slot_ptr));
@@ -408,7 +408,7 @@ fn setStartPosition(engine_ptr: *engine_object.EngineObject) void {
         @panic("set start position failed");
 }
 
-// The flip command: read the live FEN, flip it, re-set the position. All
+// Run the flip command: read the live FEN, flip it, re-set the position. Keep it all
 // engine-local (engine fen + position flipFen + setPosition).
 pub fn flipEngine(engine_ptr: *engine_object.EngineObject) void {
     const fen_c = fen(engine_ptr.positionPtr()) orelse return;
