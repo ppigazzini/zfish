@@ -11,8 +11,9 @@ const nnue_accumulator_port = @import("nnue_accumulator");
 const weight_storage = @import("nnue_weight_storage.zig");
 
 // Work around LLVM's refusal to lower the portable @Vector int8-dot pattern to `vpdpbusd`:
-// on an AVX-512-VNNI target the affine uses an inline-asm seam; other tiers keep the pmaddwd
-// reduction. Both paths are bit-identical (pure integer dot), so bench holds 2466447.
+// on an AVX-512-VNNI target the affine reaches the instruction through the vpdpbusd512
+// LLVM intrinsic below. Every tier computes the same pure integer dot, so all paths are
+// bit-identical and the bench signature holds on each.
 const has_vnni = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
 
