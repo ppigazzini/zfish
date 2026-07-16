@@ -355,19 +355,33 @@ fn filterLegalMoves(
     const pinned = pos.st.blockers_for_king[us] & piecesColor(pos, us);
     const king_square = @as(u8, @intCast(@ctz(pos.by_color_bb[us] & pos.by_type_bb[king])));
 
-    var keep_count: usize = 0;
-    var index: usize = 0;
-    while (index < count) : (index += 1) {
-        const raw_move = move_list[index];
-        if (!requiresLegalCheck(raw_move, pinned, king_square) or
-            position_snapshot.moveIsLegal(pos, raw_move))
+    // Remove an illegal move by swapping the LAST move into its slot and shrinking, exactly
+    // as upstream's `*cur = *(--moveList)` (movegen.cpp:283). Do NOT advance `cur` on a
+    // removal: the move just swapped in has not been tested yet.
+    //
+    // This is an UNSTABLE removal, and the instability is the observable behaviour, not an
+    // implementation detail. Stable compaction keeps the same move SET (so perft, which
+    // only counts, agrees) but yields a different ORDER, and root-move order is the
+    // tiebreak between equal-scoring moves -- so the two orders play DIFFERENT moves. On
+    // `k3r3/8/8/8/8/8/4N3/4K2R w K - 0 1` upstream and stable-compaction zfish returned the
+    // same 14 moves in 14 different positions, and Threads=1 `go` picked e1d2 vs e1f2.
+    // Order only diverges where a move is actually removed, i.e. checks and pins; bench's
+    // roots never filter, which is why the anchor could not see this.
+    var cur: usize = 0;
+    var last: usize = count;
+    while (cur != last) {
+        const raw_move = move_list[cur];
+        if (requiresLegalCheck(raw_move, pinned, king_square) and
+            !position_snapshot.moveIsLegal(pos, raw_move))
         {
-            move_list[keep_count] = raw_move;
-            keep_count += 1;
+            last -= 1;
+            move_list[cur] = move_list[last];
+        } else {
+            cur += 1;
         }
     }
 
-    return keep_count;
+    return last;
 }
 
 fn requiresLegalCheck(raw_move: u16, pinned: u64, king_square: u8) bool {
