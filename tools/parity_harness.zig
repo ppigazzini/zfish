@@ -1593,6 +1593,71 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
 
 const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root", @"tb-search", @"tb-cursed" };
 
+// net-missing: the ONLY gate that runs the installed binary from a cwd the build does
+// not pin. Every other gate sets cwd to net/ (build.zig `run.setCwd(b.path("net"))`),
+// which supplies the very precondition the binary must check -- so none of them can
+// see a startup that fails without the net.
+//
+// The net is a runtime input (NNUE_EMBEDDING_OFF): `network.load` searches the cwd and
+// the binary directory and returns void on a miss. Unchecked, worker construction
+// `orelse return`s on the null feature-transformer pointer, leaves the Worker zeroed,
+// and the clear job null-unwraps on a worker thread -- a SIGSEGV naming nothing.
+// Asserted here: a NAMED diagnostic and a clean non-zero exit, never a signal.
+fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    // A scratch cwd with no net in it. Deliberately not under net/.
+    const dir_path = "net_missing_tmp";
+    Io.Dir.cwd().createDirPath(io, dir_path) catch
+        fail("net-missing: cannot create scratch dir {s}", .{dir_path});
+    defer Io.Dir.cwd().deleteTree(io, dir_path) catch {};
+
+    var child = std.process.spawn(io, .{
+        .argv = &.{ bin, "bench" },
+        .cwd = .{ .path = dir_path },
+        .stdin = .ignore,
+        .stdout = .pipe,
+        .stderr = .pipe,
+    }) catch fail("net-missing: spawn failed", .{});
+    defer child.kill(io);
+
+    var mr_buffer: Io.File.MultiReader.Buffer(2) = undefined;
+    var mr: Io.File.MultiReader = undefined;
+    mr.init(gpa, io, mr_buffer.toStreams(), &.{ child.stdout.?, child.stderr.? });
+    defer mr.deinit();
+    while (mr.fill(64, .none)) |_| {} else |err| switch (err) {
+        error.EndOfStream => {},
+        else => fail("net-missing: read failed", .{}),
+    }
+    const term = child.wait(io) catch fail("net-missing: wait failed", .{});
+
+    const out = mr.toOwnedSlice(0) catch fail("net-missing: stdout capture failed", .{});
+    defer gpa.free(out);
+    const err_out = mr.toOwnedSlice(1) catch fail("net-missing: stderr capture failed", .{});
+    defer gpa.free(err_out);
+
+    // 1. A clean exit, not a signal. This is the regression that shipped: SIGSEGV (139).
+    switch (term) {
+        .exited => |code| if (code == 0)
+            fail("net-missing: engine exited 0 without a net; it must fail", .{}),
+        .signal => |sig| fail(
+            "net-missing: engine died on signal {d} (a crash, not a diagnostic) -- " ++
+                "this is the defect the gate exists to catch",
+            .{@intFromEnum(sig)},
+        ),
+        else => fail("net-missing: engine terminated abnormally: {any}", .{term}),
+    }
+
+    // 2. The diagnostic names the file sought. A non-zero exit that explains nothing
+    //    is not the contract; the whole point is that the cause is visible.
+    const said = if (std.mem.indexOf(u8, err_out, "nn-") != null) err_out else out;
+    if (std.mem.indexOf(u8, said, "nn-") == null)
+        fail("net-missing: exit was clean but no diagnostic named the net file", .{});
+    if (std.mem.indexOf(u8, said, dir_path) == null)
+        fail("net-missing: diagnostic does not name the directory searched", .{});
+
+    std.debug.print("net-missing: OK (no net in cwd -> named diagnostic + clean exit, no signal)\n", .{});
+    std.process.exit(0);
+}
+
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const gpa = init.gpa;
@@ -1616,6 +1681,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, check_name, "reset-determinism")) runResetDeterminism(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "skill")) runSkill(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "ponder")) runPonder(gpa, io, bin);
+    if (std.mem.eql(u8, check_name, "net-missing")) runNetMissing(gpa, io, bin);
 
     const check = std.meta.stringToEnum(Check, check_name) orelse
         fail("parity_harness: unknown check '{s}'", .{check_name});
