@@ -151,14 +151,16 @@ pub fn contextNodeCount(numa_context: *const anyopaque) usize {
     return configNodeCount(numa_context);
 }
 
-// Return num_cpus_in_numa_node(node): the single-node stub never binds, so keep this >=1 and
-// never dereference the context.
-pub fn contextCpusInNode(_: *const anyopaque, _: usize) usize {
-    return 1;
+// Return num_cpus_in_numa_node(node) from the real topology. This answered a hard-coded 1,
+// so the `info string ... NUMA node thread binding` line reported every node as holding a
+// single CPU: this 16-CPU host printed 1/1 where upstream prints 1/16. The node's CPU
+// count was known all along -- the constant, not the topology, was the gap.
+pub fn contextCpusInNode(numa_context: *const anyopaque, node: usize) usize {
+    const cfg = &ctxOf(numa_context).config;
+    if (node >= cfg.nodes.items.len) return 0;
+    return cfg.nodes.items[node].items.len;
 }
 
-// Reconfigure NumaPolicy from an option string: single-node build, so no-op
-// here (there is no multi-node topology to re-derive).
 // Parse an explicit "NumaPolicy" topology ("0-3,8:4-7") and install it. This was empty, so
 // a user-supplied node list was accepted, echoed back by `uci`, and then had no effect --
 // the engine kept its startup topology and bound as if the string had never been given.
