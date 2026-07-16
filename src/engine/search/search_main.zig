@@ -1,3 +1,18 @@
+// COMPONENT: search_main.zig + search_back.zig are ONE component, deliberately.
+//
+// They form the file graph's only import cycle (searchImpl <-> runBack), and it is
+// not a layering defect to be fixed: it IS the alpha-beta recursion. searchImpl runs
+// a node's Steps 1-12, hands the node state to search_back's move loop (Steps 13-21),
+// and that loop recurses back into searchImpl for each child. The cycle is the
+// algorithm; splitting the file did not split the recursion. Per Lakos the answer to
+// a legitimate cycle is to NAME the component, not to break it -- so do not "fix"
+// this by inverting an import or threading a function pointer. That would buy nothing
+// and cost an optimizer barrier on the hottest path in the engine.
+//
+// `zig build arch-report` lists this SCC as KNOWN. That is the point: a NEW file
+// cycle shows up as UNDECLARED and fails the gate, instead of hiding behind the one
+// everybody has learned to ignore.
+//
 // The main alpha-beta search. searchImpl recurses on itself and dives into
 // qsearchImpl (search_qsearch) at depth 0; it never calls the
 // iterative-deepening driver or the worker-start glue. iterativeDeepening
