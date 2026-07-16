@@ -201,9 +201,6 @@ pub fn reconfigure(
             requested,
             bound_nodes.ptr,
         );
-        try thread_pool.boundNodesAssign(pool, allocator, bound_nodes);
-    } else {
-        try thread_pool.boundNodesAssign(pool, allocator, null);
     }
 
     const node_count = @max(numa.configNodeCount(numa_config), @as(usize, 1));
@@ -245,6 +242,15 @@ pub fn reconfigure(
         update_context,
         requested,
     );
+
+    // Assign the bound footprint AFTER set(): set() clears it (it is the single-node
+    // path's owner of that slot), so assigning before was silently undone -- boundCount()
+    // came back 0 and verifyThreadGraph aborted the process on every NumaPolicy that
+    // binds (`system`, `hardware`, an explicit node list). Upstream has the same order
+    // within one function: ThreadPool::set clears boundThreadToNumaNode (thread.cpp:11)
+    // and assigns it further down (thread.cpp:37). It also leaked the buffer, since
+    // set() dropped the slice without freeing it.
+    try thread_pool.boundNodesAssign(pool, allocator, if (do_bind) bound_nodes else null);
 
     clear(pool);
     waitMainThread(pool);
