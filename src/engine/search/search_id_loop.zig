@@ -204,19 +204,54 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                 delta = search.aspirationDeltaGrow(delta);
             }
 
-            // Protect aborted later PV lines from mated-in/TB-loss (MultiPV).
-            if (@atomicLoad(u8, id.stop, .monotonic) != 0 and id.pv_idx.* != 0 and
-                idIsLoss(id.root_moves[id.pv_idx.* - 1].score) and
-                rootLess(&id.root_moves[id.pv_idx.*], &id.root_moves[id.pv_idx.* - 1]))
-            {
-                const prev = id.root_moves[id.pv_idx.* - 1].score;
-                const cur_prev = id.root_moves[id.pv_idx.*].previous_score;
-                id.root_moves[id.pv_idx.*].score = if (cur_prev != -q_value_inf and cur_prev < prev) cur_prev else prev;
-                id.root_moves[id.pv_idx.*].uci_score = id.root_moves[id.pv_idx.*].score;
-                id.root_moves[id.pv_idx.*].previous_score = -q_value_inf;
-                id.root_moves[id.pv_idx.*].score_lowerbound = false;
-                id.root_moves[id.pv_idx.*].score_upperbound = false;
-                id.root_moves[id.pv_idx.*].pv.length = 1;
+            // In multiPV analysis we do not let aborted searches spoil mated-in/TB loss
+            // scores from a completed search in an earlier PV line. Guard against an
+            // aborted pvIdx line overtaking pvIdx - 1 when pvIdx - 1 is a proven loss.
+            // Moreover, do not trust an exact loss score from an aborted search.
+            // Port upstream search.cpp:443-489 faithfully; the previous code was an older
+            // revision that merged both arms into a min(), so it could not restore the
+            // previous PV, always cleared both bound flags, and never marked the later
+            // lines. It needed previousPV / previousScoreExact, which did not exist.
+            if (@atomicLoad(u8, id.stop, .monotonic) != 0 and id.pv_idx.* != 0) {
+                const cur = &id.root_moves[id.pv_idx.*];
+                const prev_line = &id.root_moves[id.pv_idx.* - 1];
+                const prev_is_loss = idIsLoss(prev_line.score);
+
+                if ((prev_is_loss and rootLess(cur, prev_line)) or
+                    cur.scoreIsExactLoss(idIsLoss(cur.score)))
+                {
+                    // If previousScore is exact and worse than pvIdx - 1, we can safely
+                    // use it. If it is equal, make sure it cannot overtake pvIdx - 1.
+                    if (cur.previous_score != -q_value_inf and cur.previous_score_exact and
+                        cur.previous_score <= prev_line.score)
+                    {
+                        cur.score = cur.previous_score;
+                        cur.uci_score = cur.previous_score;
+                        cur.previous_score = -q_value_inf;
+                        cur.pv = cur.previous_pv;
+                        cur.unsetBoundFlags();
+                    } else {
+                        // Otherwise, if we can, cap the score to the best possible and mark
+                        // it as a bound (also a valid excuse for the incomplete PV).
+                        if (prev_is_loss) {
+                            cur.score = prev_line.score;
+                            cur.uci_score = prev_line.score;
+                            cur.previous_score = -q_value_inf;
+                            cur.pv.length = 1;
+                            cur.score_upperbound = true;
+                        } else {
+                            cur.score_upperbound = false;
+                        }
+                        cur.score_lowerbound = !cur.score_upperbound;
+                    }
+                }
+
+                // Finally, mark all loss scores from partially searched moves as a bound.
+                var li: usize = id.pv_idx.* + 1;
+                while (li < multi_pv) : (li += 1) {
+                    const rm = &id.root_moves[li];
+                    if (rm.scoreIsExactLoss(idIsLoss(rm.score))) rm.score_lowerbound = true;
+                }
             }
 
             stableSortRoot(id.root_moves, pv_first, id.pv_idx.* + 1);
