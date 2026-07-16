@@ -7,6 +7,13 @@
 //! headless engine build (unit tests, fuzzing) keeps a working clock with no
 //! platform attached. In the shipped engine the platform injects its own clock, so
 //! the timing behaviour is exactly the platform clock's.
+//!
+//! hook-class: service — a leaf answering a query it must not import the answer for.
+//!
+//! GENUINELY SAFE unregistered: the default is a real monotonic clock (a per-call
+//! counter), which satisfies everything time management asks of it -- monotonic,
+//! non-negative -- and keeps a headless run deterministic. It is not a stub returning
+//! a plausible number; it is a valid clock with a different unit.
 
 const std = @import("std");
 
@@ -24,6 +31,9 @@ fn defaultNow() i64 {
 
 /// Monotonic time in milliseconds. Registered by the platform at startup; the
 /// default is the std monotonic fallback above.
+/// failure: silent — a real monotonic counter, not a stub: every property time
+/// management requires holds. Unregistered, only the UNIT is wrong (ticks, not ms),
+/// which no headless root reads, since none is time-limited.
 pub var now: *const fn () i64 = &defaultNow;
 
 test {
