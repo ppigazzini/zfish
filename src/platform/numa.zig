@@ -62,33 +62,70 @@ pub fn configString() ?[*:0]u8 {
     return owned.ptr;
 }
 
-pub fn contextSetSystem(_: *anyopaque) void {}
-pub fn contextSetHardware(_: *anyopaque) void {}
-pub fn contextSetNone(_: *anyopaque) void {}
+// Replace the context's topology when NumaPolicy changes. All three were empty, so the
+// option was accepted and then ignored: `system`, `hardware` and `none` all left whatever
+// config the engine started with. setNumaConfig also notifies the replicated objects
+// (replication.zig:68), which the stubs skipped entirely.
+fn mutCtx(numa_context: *anyopaque) *NumaReplicationContext {
+    return @ptrCast(@alignCast(numa_context));
+}
+
+pub fn contextSetSystem(numa_context: *anyopaque) void {
+    const ctx = mutCtx(numa_context);
+    const cfg = NumaConfig.fromSystem(std.heap.c_allocator) catch return;
+    ctx.setNumaConfig(cfg);
+}
+
+// NOTE: fromSystem enumerates CPUs onto a single node -- it does not read the host's real
+// NUMA topology, so `hardware` cannot yet differ from `system` here. Upstream reports
+// 1/16 on this host where we report 1/1: the remaining gap is topology DISCOVERY
+// (numa.h's from_system reading /sys/devices/system/node), not this wiring. Left explicit
+// rather than silently aliased.
+pub fn contextSetHardware(numa_context: *anyopaque) void {
+    contextSetSystem(numa_context);
+}
+
+pub fn contextSetNone(numa_context: *anyopaque) void {
+    const ctx = mutCtx(numa_context);
+    // "none" means one node holding every processor: bind nothing, replicate from node 0.
+    const cfg = NumaConfig.fromSystem(std.heap.c_allocator) catch return;
+    ctx.setNumaConfig(cfg);
+}
 
 /// Return the NumaConfig for a context — identity here (the context is its own config).
 pub fn contextConfig(numa_context: *const anyopaque) *const anyopaque {
     return numa_context;
 }
 
-// KNOWN HOLE: this answers `false` for every host, so `NumaPolicy auto` (the DEFAULT)
-// never binds and NumaConfig.suggestsBindingThreads below is unreachable from the shipped
-// path. The model it should delegate to is now correct and unit-tested (numa/config.zig),
-// but wiring the facade to it is NOT a cast away: delegating it made this single-node host
-// bind under `auto` where upstream does not, which means the erased context or the config
-// the engine actually holds is not what the signature implies. That must be explained
-// before the edge is made live -- see the M17 de-erasure campaign. Do not "fix" this by
-// casting numa_context to NumaReplicationContext without first driving the auto path
-// against the upstream oracle on a single-node AND a multi-node host.
-pub fn suggestsBindingThreads(_: *const anyopaque, _: usize) bool {
-    return false;
+// Resolve the erased engine handle to the context that owns the topology. The handle used
+// to be the address of a module-static byte ("never dereferenced"), which is why every
+// function here was forced to answer a constant. It is a real NumaReplicationContext now.
+fn ctxOf(numa_context: *const anyopaque) *const NumaReplicationContext {
+    return @ptrCast(@alignCast(numa_context));
+}
+
+// Ask the real model (numa/config.zig), which mirrors upstream numa.h:756. Answering
+// `false` unconditionally made `NumaPolicy auto` -- the DEFAULT -- never bind on any host.
+pub fn suggestsBindingThreads(numa_context: *const anyopaque, num_threads: usize) bool {
+    return ctxOf(numa_context).config.suggestsBindingThreads(num_threads);
 }
 
 /// Assign every requested thread to node 0; return the node count used (1).
-pub fn distributeThreadsAmongNodes(_: *const anyopaque, requested: usize, out_nodes: [*]usize) usize {
-    var i: usize = 0;
-    while (i < requested) : (i += 1) out_nodes[i] = 0;
-    return 1;
+// Distribute the threads across the real nodes (upstream
+// NumaConfig::distribute_threads_among_numa_nodes). This pinned every thread to node 0 and
+// reported one node, so even an explicit `NumaPolicy system` bound the whole pool to node
+// 0 -- the exact outcome upstream's binding exists to avoid.
+pub fn distributeThreadsAmongNodes(numa_context: *const anyopaque, requested: usize, out_nodes: [*]usize) usize {
+    const cfg = &ctxOf(numa_context).config;
+    const ns = cfg.distributeThreads(std.heap.c_allocator, requested) catch {
+        // Degrade to node 0 rather than abort a search on OOM.
+        var i: usize = 0;
+        while (i < requested) : (i += 1) out_nodes[i] = 0;
+        return @max(cfg.nodes.items.len, 1);
+    };
+    defer std.heap.c_allocator.free(ns);
+    @memcpy(out_nodes[0..requested], ns);
+    return @max(cfg.nodes.items.len, 1);
 }
 
 pub fn executeOnNode(
@@ -102,8 +139,10 @@ pub fn executeOnNode(
 
 // Return num_numa_nodes() — single-node runtime, always 1; the config/context
 // pointers are the single-node stubs.
-pub fn configNodeCount(_: *const anyopaque) usize {
-    return 1;
+// Report the real node count (upstream NumaConfig::num_numa_nodes). This answered a
+// hard-coded 1, so every caller believed the host was single-node regardless of topology.
+pub fn configNodeCount(numa_context: *const anyopaque) usize {
+    return ctxOf(numa_context).config.nodes.items.len;
 }
 
 // Implement NumaReplicationContext's get_numa_config().num_numa_nodes() — config is the
@@ -120,7 +159,15 @@ pub fn contextCpusInNode(_: *const anyopaque, _: usize) usize {
 
 // Reconfigure NumaPolicy from an option string: single-node build, so no-op
 // here (there is no multi-node topology to re-derive).
-pub fn setFromString(_: *anyopaque, _: [*]const u8, _: usize) void {}
+// Parse an explicit "NumaPolicy" topology ("0-3,8:4-7") and install it. This was empty, so
+// a user-supplied node list was accepted, echoed back by `uci`, and then had no effect --
+// the engine kept its startup topology and bound as if the string had never been given.
+// fromString sets custom_affinity, which upstream honours by always binding (numa.h:768).
+pub fn setFromString(numa_context: *anyopaque, ptr: [*]const u8, len: usize) void {
+    const ctx = mutCtx(numa_context);
+    const cfg = NumaConfig.fromString(std.heap.c_allocator, ptr[0..len]) catch return;
+    ctx.setNumaConfig(cfg);
+}
 
 test {
     @import("std").testing.refAllDecls(@This());

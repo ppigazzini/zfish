@@ -470,6 +470,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine_object", .imp = "misc", .to = "misc" },
         .{ .from = "engine_object", .imp = "state_list", .to = "state_list" },
         .{ .from = "engine_object", .imp = "network", .to = "network" },
+        .{ .from = "engine_object", .imp = "numa", .to = "numa" },
         .{ .from = "engine_object", .imp = "position_types", .to = "position_types" },
         .{ .from = "engine", .imp = "engine_object", .to = "engine_object" },
         .{ .from = "engine", .imp = "numa", .to = "numa" },
