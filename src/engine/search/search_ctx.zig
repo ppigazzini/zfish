@@ -57,7 +57,23 @@ pub const SearchTimeState = struct {
     lim_movetime: i64,
     tm_use_nodes_time: u8,
     use_time_management: u8,
+    // Carry the pool so checkTime can read the node count the WHOLE pool has searched,
+    // as upstream does (`worker.threads.nodes_searched()`, search.cpp:2073 and 2088).
+    // The per-worker counter is not the budget: checkTime runs on the main thread only,
+    // so gating on its private count let each of N threads spend the full limit and
+    // `go nodes N` overshot by ~N x Threads. Null on a non-main thread, where checkTime
+    // returns early anyway.
+    threads: ?*worker_layout.ThreadPool,
 };
+
+// Sum the nodes searched across the pool -- the quantity upstream's check_time gates on,
+// for both the node limit and `nodestime` elapsed. Live here rather than in
+// search_control so that module keeps its import set (it already depends on search_ctx);
+// worker_layout is already a dependency of this module.
+pub fn timeStatePoolNodes(ts: *const SearchTimeState, own_nodes: u64) u64 {
+    const tp = ts.threads orelse return own_nodes; // no pool wired => own count is all there is
+    return worker_layout.poolNodesSearched(tp);
+}
 
 // Snapshot the iterative_deepening state once at entry (skill-off path only). Live
 // fields are pointers into Worker/SearchManager/ThreadPool; the rest are values

@@ -53,8 +53,12 @@ fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_a
         out_time.lim_movetime = wl.limits.movetime;
         out_time.tm_use_nodes_time = smgr.tm.use_nodes_time;
         out_time.use_time_management = @intFromBool(wl.limits.time[0] != 0 or wl.limits.time[1] != 0);
+        // Wire the pool: checkTime must gate on the nodes the whole pool searched, not
+        // this worker's own count (search.cpp:2073, 2088).
+        out_time.threads = wl.threads;
     } else {
         out_time.calls_cnt = null;
+        out_time.threads = null;
     }
 }
 

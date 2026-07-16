@@ -27,14 +27,20 @@ pub fn checkTime(ctx: *const QCtx) void {
     if (cc.* > 0) return;
     cc.* = if (ts.lim_nodes != 0) @intCast(@min(@as(u64, 512), ts.lim_nodes / 1024)) else 512;
 
+    // Read the POOL's node count, not this worker's: upstream gates both `nodestime`
+    // elapsed and the node limit on `worker.threads.nodes_searched()` (search.cpp:2073,
+    // 2088). Sampled once per checkTime call (every <=512 nodes), so the sum over the
+    // pool is amortised, as it is upstream.
+    const pool_nodes: u64 = search_ctx.timeStatePoolNodes(ts, ctx.nodes.*);
+
     const elapsed: i64 = if (ts.tm_use_nodes_time != 0)
-        @intCast(ctx.nodes.*)
+        @intCast(pool_nodes)
     else
         time_source.now() - ts.tm_start_time;
 
     if (ts.ponder.?.* != 0) return;
 
-    const ns: u64 = ctx.nodes.*;
+    const ns: u64 = pool_nodes;
     if ((ts.use_time_management != 0 and (elapsed > ts.tm_maximum_time or ts.stop_on_ponderhit.?.* != 0)) or
         (ts.lim_movetime != 0 and elapsed >= ts.lim_movetime) or
         (ts.lim_nodes != 0 and ns >= ts.lim_nodes))
