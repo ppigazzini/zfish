@@ -140,15 +140,39 @@ pub const NumaConfig = struct {
     /// Decide whether to bind threads to NUMA nodes: bind if the affinity is user-set;
     /// never bind a single thread; otherwise bind only if the threads cannot fit
     /// the largest node.
+    // Advise binding when the threads cannot reasonably be contained by the OS within the
+    // first NUMA node: unbound threads can only use replicated objects from node 0, so we
+    // lose performance once the OS schedules elsewhere. Also advise it when there are
+    // enough threads to spread across nodes with minimal disparity. Ignore small nodes,
+    // in particular empty ones. Mirror upstream numa.h:756-794 exactly; the previous
+    // `num_threads > largest` was a different (and far stricter) rule -- it never fired on
+    // a 2-node host until the thread count exceeded a WHOLE node, so binding was
+    // effectively unreachable.
     pub fn suggestsBindingThreads(self: *const NumaConfig, num_threads: usize) bool {
+        // A mismatch between the user's affinity and the OS's means binding is required
+        // to keep threads on the correct processors.
         if (self.custom_affinity) return true;
+
+        // A single thread cannot be distributed, so never bind it.
         if (num_threads <= 1) return false;
-        var largest: usize = 0;
+
+        var largest_node_size: usize = 0;
         for (self.nodes.items) |node| {
-            if (node.items.len > largest) largest = node.items.len;
+            if (node.items.len > largest_node_size) largest_node_size = node.items.len;
         }
-        // Skip binding when threads fit the largest node with headroom.
-        return num_threads > largest;
+
+        // Treat a node holding <= 60% of the largest node's CPUs as small.
+        const small_node_threshold: f64 = 0.6;
+        var num_not_small_nodes: usize = 0;
+        for (self.nodes.items) |node| {
+            const ratio = @as(f64, @floatFromInt(node.items.len)) /
+                @as(f64, @floatFromInt(largest_node_size));
+            if (!(ratio <= small_node_threshold)) num_not_small_nodes += 1;
+        }
+
+        return (num_threads > largest_node_size / 2 or
+            num_threads >= num_not_small_nodes * 4) and
+            self.nodes.items.len > 1;
     }
 };
 
@@ -213,7 +237,7 @@ test "fromString skips empty node segments without advancing the node index" {
     try testing.expectEqualSlices(usize, &.{ 2, 3 }, cfg.nodes.items[1].items);
 }
 
-test "suggestsBindingThreads: custom affinity binds; single node sized by threads" {
+test "suggestsBindingThreads: custom affinity binds; a single node never does" {
     // bind always for user-set affinity
     var custom = try NumaConfig.fromString(testing.allocator, "0-3");
     defer custom.deinit();
@@ -224,8 +248,13 @@ test "suggestsBindingThreads: custom affinity binds; single node sized by thread
     defer sys.deinit();
     for (0..4) |c| _ = try sys.addCpuToNode(0, c);
     try testing.expect(!sys.suggestsBindingThreads(1)); // never bind a single thread
-    try testing.expect(!sys.suggestsBindingThreads(4)); // skip bind — fits the node
-    try testing.expect(sys.suggestsBindingThreads(5)); // bind — exceeds the node
+    try testing.expect(!sys.suggestsBindingThreads(4));
+    // Upstream ends the rule with `&& nodes.size() > 1` (numa.h:793): with ONE node there
+    // is nothing to distribute across, so binding is never suggested at any thread count.
+    // This case asserted `true` here, pinning the old `num_threads > largest` rule --
+    // the test encoded the divergence it should have caught.
+    try testing.expect(!sys.suggestsBindingThreads(5));
+    try testing.expect(!sys.suggestsBindingThreads(64));
 }
 
 test "fromString rejects malformed input" {
@@ -295,4 +324,35 @@ test "NumaConfig.distributeThreads unwinds leak-free on every allocation failure
         }
     };
     try testing.checkAllAllocationFailures(testing.allocator, T.run, .{});
+}
+
+test "numa: suggestsBindingThreads matches upstream's rule" {
+    const a = std.testing.allocator;
+    var cfg = NumaConfig.empty(a);
+    defer cfg.deinit();
+
+    // Two equal 8-CPU nodes: largest=8, not-small=2.
+    // Upstream: (n > 8/2 || n >= 2*4) && nodes>1  ->  binds from n=5.
+    // The old `n > largest` rule needed n=9: a whole node's worth, so `auto` never bound.
+    var node: usize = 0;
+    while (node < 2) : (node += 1) {
+        var cpu: usize = 0;
+        while (cpu < 8) : (cpu += 1) _ = try cfg.addCpuToNode(node, node * 8 + cpu);
+    }
+    try std.testing.expectEqual(true, cfg.nodes.items.len == 2);
+
+    try std.testing.expectEqual(false, cfg.suggestsBindingThreads(1)); // never bind one
+    try std.testing.expectEqual(false, cfg.suggestsBindingThreads(4)); // 4 > 4 is false
+    try std.testing.expectEqual(true, cfg.suggestsBindingThreads(5)); // 5 > 4  -> bind
+    try std.testing.expectEqual(true, cfg.suggestsBindingThreads(8)); // 8 >= 2*4 -> bind
+}
+
+test "numa: a single node never suggests binding" {
+    const a = std.testing.allocator;
+    var cfg = NumaConfig.empty(a);
+    defer cfg.deinit();
+    var cpu: usize = 0;
+    while (cpu < 16) : (cpu += 1) _ = try cfg.addCpuToNode(0, cpu);
+    // `&& nodes.size() > 1` -- the guard the old rule lacked entirely.
+    try std.testing.expectEqual(false, cfg.suggestsBindingThreads(16));
 }
