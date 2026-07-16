@@ -785,10 +785,13 @@ pub fn build(b: *std.Build) void {
     uci_run.step.dependOn(&net_cmd.step);
     uci_run.setCwd(b.path("net"));
     uci_run.setStdIn(.{ .bytes = "uci\nquit\n" });
-    // Check the handshake on stderr, not stdout: the engine routes UCI output to stderr
-    // (same convention as the bench signature).
-    uci_run.expectStdErrMatch("id name Stockfish");
-    uci_run.expectStdErrMatch("uciok");
+    // Check the handshake on stdout: it is protocol, and a conforming GUI reads stdout.
+    // This asserted stderr until the handshake was fixed to use the output sink -- the
+    // engine really did emit it on stderr, so the gate passed while a GUI got nothing.
+    // `bench` output IS on stderr (upstream does that too), but the handshake is not;
+    // conflating the two is what let the defect look like a convention.
+    uci_run.expectStdOutMatch("id name Stockfish");
+    uci_run.expectStdOutMatch("uciok");
 
     const uci_step = b.step(
         "uci",

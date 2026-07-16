@@ -148,10 +148,18 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             const options_ptr = option_port.renderOptions() orelse return .{ .should_quit = 0 };
             defer freeMaybeCString(options_ptr);
 
-            std.debug.print(
-                "id name {s}\n{s}\nuciok\n",
+            // Emit through the output sink, not std.debug.print: the handshake is
+            // protocol, so it belongs on stdout where the GUI reads it. std.debug.print
+            // writes to stderr, which also skipped the `Debug Log File` tee and the
+            // write_mutex. Build the block once so it reaches the GUI as one unit,
+            // matching upstream's single `sync_cout << ... << sync_endl`.
+            const block = std.fmt.allocPrint(
+                std.heap.c_allocator,
+                "id name {s}\n{s}\nuciok",
                 .{ std.mem.span(info_ptr), std.mem.span(options_ptr) },
-            );
+            ) catch return .{ .should_quit = 0 };
+            defer std.heap.c_allocator.free(block);
+            uci_output.printLine(block.ptr, block.len);
             return .{ .should_quit = 0 };
         },
         .setoption => {
@@ -195,7 +203,16 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
         .eval => {
             const text_ptr = engine_mod.traceEvalEngine(engine) orelse return .{ .should_quit = 0 };
             defer freeMaybeCString(text_ptr);
-            std.debug.print("\n{s}\n", .{std.mem.span(text_ptr)});
+            // Same reason as `uci`: the trace is user-facing output, so route it to
+            // stdout through the sink. Keep the leading blank line (printLine supplies
+            // the trailing newline), so the emitted bytes are unchanged.
+            const block = std.fmt.allocPrint(
+                std.heap.c_allocator,
+                "\n{s}",
+                .{std.mem.span(text_ptr)},
+            ) catch return .{ .should_quit = 0 };
+            defer std.heap.c_allocator.free(block);
+            uci_output.printLine(block.ptr, block.len);
             return .{ .should_quit = 0 };
         },
         .compiler => {

@@ -482,21 +482,33 @@ fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 }
 
 // uci-options: capture the `uci` handshake option list -- the compatibility surface a GUI reads.
-// std.debug.print emits the 19 `option name ...` lines (stderr); the id name / id author
-// lines and the startup banner carry the git sha + date (misc.zig) and are volatile every
-// commit, so pin ONLY the `option name` lines. Their defaults and min/max are static
-// constants -> machine/OS-invariant (Threads max is a fixed 1024, not the core count; Hash
-// max is fixed), except EvalFile's default which is the net name (regenerate on a net bump,
-// like the other goldens). Complement the option-model unit test (option_model.zig) by
-// covering the command -> rendered-output wiring end to end.
+// The `uci` handshake is protocol: it MUST reach the GUI on stdout. Read it from stdout
+// and assert stderr carries none of it -- this gate previously read stderr, which is where
+// a std.debug.print bug was putting the whole handshake, so the gate passed while a
+// conforming GUI (which reads stdout) got nothing and hung. Pinning the stream is the
+// contract; a regression to stderr must fail here, not in a GUI.
+//
+// The id name / id author lines and the startup banner carry the git sha + date (misc.zig)
+// and are volatile every commit, so pin ONLY the `option name` lines. Their defaults and
+// min/max are static constants -> machine/OS-invariant (Threads max is a fixed 1024, not the
+// core count; Hash max is fixed), except EvalFile's default which is the net name
+// (regenerate on a net bump, like the other goldens). Complement the option-model unit test
+// (option_model.zig) by covering the command -> rendered-output wiring end to end.
 fn buildUciOptions(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var cap = try runEngine(gpa, io, bin, &.{}, "uci\nquit\n");
     defer cap.deinit(gpa);
 
+    // Pin the stream, not just the content: uciok and the option list belong on stdout.
+    var eli = lines(cap.stderr);
+    while (eli.next()) |line| {
+        if (startsWith(line, "option name ") or std.mem.eql(u8, line, "uciok"))
+            fail("uci-options: handshake line on STDERR, must be stdout: '{s}'", .{line});
+    }
+
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
     var n: usize = 0;
-    var li = lines(cap.stderr);
+    var li = lines(cap.stdout);
     while (li.next()) |line| {
         if (startsWith(line, "option name ")) {
             try out.appendSlice(gpa, line);
