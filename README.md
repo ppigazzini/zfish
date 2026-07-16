@@ -5,13 +5,16 @@ shipped engine is **pure Zig** — the default `zig build` compiles zero C++ —
 **bit-exact** to upstream: it reproduces the identical `bench` node signature. Like
 Stockfish, it is a UCI engine, not a GUI.
 
+The port covers the whole runtime, including the Syzygy endgame tablebase prober —
+no bindings to an external library. See [docs/](docs/0-README.md).
+
 ## Build
 
 Requires **Zig 0.16.0**, no other dependencies.
 
 ```
 zig build          # build the engine (ReleaseFast) -> zig-out/bin/stockfish
-zig build net      # download the external NNUE network (~50 MB) into net/
+zig build net      # download the external NNUE network into net/
 zig build bench    # run bench and print the node signature
 ```
 

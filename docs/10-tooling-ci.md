@@ -13,7 +13,7 @@ no globbing and no auto-discovery — the module graph is data in the build scri
 the zones it encodes are described in [1-architecture.md](1-architecture.md). The
 build script is also the only place the ISA tier, the target OS, and the
 `build_options` feature flags are chosen; the engine reads them at comptime (see
-[7-idiomatic-zig.md](7-idiomatic-zig.md)).
+[9-idiomatic-zig.md](9-idiomatic-zig.md)).
 
 Zig 0.16.0 is the required toolchain. No C++ is vendored or compiled.
 
@@ -136,7 +136,7 @@ cycles, unused import edges, and unregistered hooks alike.
 | Tool | Step | Invariant |
 | --- | --- | --- |
 | `tools/hook_lint.zig` | `hook-lint` | The cycle-break hooks are bounded and classified. |
-| `tools/arch_report.zig` | `arch-report` | The module graph is a DAG; file cycles are declared; no engine → platform/shell edge. |
+| `tools/arch_report.zig` | `arch-report` | The module graph is a DAG; every file cycle is declared. |
 | `tools/loc_lint.sh` | `loc` | No new god-file. |
 | `tools/headless_lint.sh` | `headless` | `engine/` imports only `engine/`. |
 | `tools/src_free.sh` | `src-free` | Zero C++ in the shipped binary. |
@@ -157,8 +157,9 @@ while searching a different tree.
 graph and the file graph, which disagree — and always labels which graph a number came
 from. It **reports**, never gates, on the numbers: zfish compiles as one LLVM module,
 so a cycle costs no compile time and importing a C++-calibrated threshold would be
-cargo cult. It **gates** on the binary properties: the module graph is acyclic, file
-cycles are declared, and no engine module imports platform or shell. It parses the
+cargo cult. It **gates** on the binary properties: the module graph is acyclic and every
+file cycle is declared. (The zone rule — no engine module importing platform or shell
+— is `headless_lint.sh`'s.) It parses the
 `addImport` call sites, not just the `module_edges` table — the table is data, the
 wiring is the graph, and `main.zig` (the composition root the architecture rests on)
 is not in the table at all.

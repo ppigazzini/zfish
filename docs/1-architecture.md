@@ -3,7 +3,7 @@
 How the code is structured: the zones, how they depend on each other, and how one
 search flows through them. For building, the bench gate, and the validation
 commands, see [README](../README.md) and [CONTRIBUTING](../CONTRIBUTING.md); for the Zig
-patterns behind the hot path, see [docs/idiomatic-zig.md](7-idiomatic-zig.md).
+patterns behind the hot path, see [docs/idiomatic-zig.md](9-idiomatic-zig.md).
 Per-module detail lives in each file's `//!` header.
 
 This page states structure, not numbers. Where a count would date it (edges,

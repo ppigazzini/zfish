@@ -4,9 +4,11 @@ The board subsystem owns the chess representation and everything that can be
 decided from it alone: the `Position` object, bitboard attack tables, legal move
 generation, Zobrist hashing, draw detection, and FEN. It lives in
 `src/engine/board/` at the bottom of the engine zone — it imports nothing outside
-`engine/`, and nothing in it reaches for the search, the NNUE, or the OS. See
+`engine/`, and nothing in it reaches for the NNUE or the OS. The one edge upward
+is `position.zig`'s `@import("search")`, declared at the top of the file and
+unused in its body. See
 [1-architecture.md](1-architecture.md) for the zones and the module graph; the Zig
-patterns behind the hot path are in [7-idiomatic-zig.md](7-idiomatic-zig.md);
+patterns behind the hot path are in [9-idiomatic-zig.md](9-idiomatic-zig.md);
 build and gate commands are in [CONTRIBUTING](../CONTRIBUTING.md).
 
 ## Modules
@@ -36,6 +38,9 @@ other leaves, so the board graph is a DAG with `position` at its root.
 | `move_do_threats.zig` | `updatePieceThreats` — the dirty-threat deltas the NNUE threat features consume |
 | `movegen.zig` | the staged pseudo-legal generators plus `generateLegal` |
 | `legality.zig` | `legal`, `pseudoLegal`, `givesCheck`, `seeGe`, `attackersTo`, `attackersToExist` |
+| **Hashing and draws** | |
+| `zobrist.zig` | the process-global `zob_*` tables and the cuckoo tables, built by `init()` |
+| `repetition.zig` | `isDraw`, `isRepetition`, `hasRepeated`, `upcomingRepetition` |
 | **Text** | |
 | `fen_parse.zig` | `setPosition` — FEN → live `Position` |
 | `fen.zig` | `formatFen`, `flipFen`, `buildEndgameFen` — the encode side (pure, no `Position`) |
@@ -132,7 +137,7 @@ occupancy; `by_type_bb[pt]` and `by_color_bb[c]` are intersected to select piece
 position setup or search runs:
 
 1. `board_core.initPawnAttacks()` — the `[2][64]` pawn attack table.
-2. `bitboard.initSliderMagics()` — the magic tables, then the derived tables.
+2. `bitboard.initSliderMagics()` — the magics, leaper tables, then derived tables.
 3. `zobrist.init()` — the Zobrist and cuckoo tables (the cuckoo build calls
    `bitboard.attacks()`, so it must come last).
 
@@ -144,8 +149,8 @@ the only writer.
 `initMagics` searches, per square and per slider type, a magic multiplier such
 that `((occupied & mask) * magic) >> shift` indexes a collision-free slot in a
 shared attack table (`rook_magic_attacks`, `bishop_magic_attacks`). Each entry is
-filled from the `slidingAttack` ray-cast reference, so `attacks()` returns
-bit-identical sets while replacing the per-node direction loop with one
+filled from the `slidingAttack` ray-cast reference, so the table holds the same
+attack sets the ray-cast reference computes, reached by one
 mask/multiply/shift/load. `attacks(pt, sq, occupied)` dispatches: knights and
 kings read a leaper table, bishops and rooks go through the magics, queens OR the
 two.
@@ -259,9 +264,11 @@ endgame code such as `KQvK`.
 
 ## The snapshot hooks
 
-`movegen.zig`, `movepick`, the NNUE, and `uci_move.zig` all need to ask the board
-a question — *fill me a snapshot*, *is this move legal* — but `position.zig`
-imports **them**. Importing back would cycle.
+`movegen.zig`, `uci_move.zig`, the NNUE (`nnue_accumulator.zig`,
+`nnue_acc_update.zig`), and `root_move_build.zig` all need to ask the board a
+question — *fill me a snapshot*, *is this move legal*. `position.zig` imports
+`movegen`, so importing back would cycle; the others sit in zones above `board/`
+that the board does not import downward.
 
 `position_snapshot.zig` is the shared leaf they all already import, so it declares
 the seam:
@@ -304,8 +311,9 @@ just the board path (`initRuntime` → `setPosition` → `generateLegal` →
 | **Compilation** | `refAllDecls` over `position`, `movegen`, and `worker_layout` |
 
 `fuzz_targets.zig` is a separate artifact wired to `zig build fuzz`, deliberately
-outside `zig build test`, and built under `ReleaseSafe` so a discovered crash trips
-a Zig safety check. Its targets are coverage-guided rather than random:
+outside `zig build test`. It honours `-Doptimize`, so request
+`-Doptimize=ReleaseSafe` for a discovered crash to trip a Zig safety check. Its
+targets are coverage-guided rather than random:
 
 | Target | Asserts |
 | --- | --- |

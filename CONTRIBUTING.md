@@ -5,17 +5,17 @@ upstream. This guide covers the essentials.
 
 ## Building
 
-See the [README](README.md#building): install **Zig 0.16.0** and run `zig build`
+See the [README](README.md#build): install **Zig 0.16.0** and run `zig build`
 (then `zig build net` for the NNUE network). There are no other dependencies.
 
 ## The golden rule: preserve the bench signature
 
 The shipped engine must reproduce upstream Stockfish's exact `bench` node count
-(`2466447` at the current sync). Any change that touches engine behavior must hold
+for the current sync. Any change that touches engine behavior must hold
 that signature, proven by the gates:
 
 ```
-zig build signature -Dsignature-ref=2466447
+zig build signature
 zig build parity          # signature + in-repo golden gates
 zig build upstream-parity # differential vs pristine upstream (worktree oracle)
 zig build test            # Zig unit tests
@@ -30,7 +30,7 @@ aarch64 (see the CI parity workflow).
 
 - **Upstream sync** — port a real upstream change (a bench-mover or NNUE-arch
   change) and land bit-exact at that commit's `Bench:`. See
-  `zig_build/tools/upstream/`.
+  `tools/upstream/`.
 - **Zig debt** — improve reviewability or maintainability with the bench signature
   unchanged.
 - **CI / tooling** — strengthen a gate without weakening an existing one.
@@ -48,7 +48,7 @@ git config blame.ignoreRevsFile .git-blame-ignore-revs
 
 ## Scope
 
-The owned runtime target is Linux x86-64 and aarch64. zfish does not add chess
+The owned runtime targets are Linux, Windows, and macOS on x86-64 and aarch64. zfish does not add chess
 features; it reproduces Stockfish's behavior. Engine strength and the NNUE
 networks come from the [Stockfish project][stockfish].
 

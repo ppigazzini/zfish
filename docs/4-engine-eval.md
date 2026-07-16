@@ -30,7 +30,7 @@ for the same position.
 | `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`) and `transformBucket` — the clipped-ReLU transform plus the NNZ bitset |
 | **inference** | |
 | `nnue_inference.zig` | the forward pass: the affine layers, the activations, bucket selection, and the psqt/positional split |
-| `evaluate.zig` | `computeValue` — blending the network output with optimism, material, and the 50-move counter into the final score |
+| `evaluate.zig` | `computeValue` — blending the network output with optimism, material, and the 50-move counter into the final score — and `formatTrace`, the `eval` command's trace renderer (built by the file-local `formatTraceAlloc`) |
 | `nnue_misc.zig` | the `eval` command's per-bucket contribution table |
 
 ## The network
@@ -57,9 +57,9 @@ reads the whole file into an arena and hands the bytes to `loadNetworkBytes`, wh
 walks header → feature transformer → the eight layer stacks and requires the
 consumed byte count to equal the file length exactly.
 
-**The net is an external runtime input, not a build artifact.** The build defines
-`NNUE_EMBEDDING_OFF`, so the "embedded" net is a one-byte stub that always fails to
-parse; the real net must be found on disk. Because the whole search depends on it,
+**The net is an external runtime input, not a build artifact.** The "embedded" net is
+an unconditional one-byte stub (`network.zig`) that always fails to parse, so the real
+net must be found on disk. Because the whole search depends on it,
 its absence is reported where it is required rather than left to surface as a
 crash: `src/shell/engine/nnue.zig` (`requireNetworkLoaded`) checks
 `network.ftPtr()` at startup, prints the file sought and every directory searched to
@@ -81,13 +81,15 @@ The parse is the *sole* source of weights: it writes straight into the arenas ow
 by `nnue_weight_storage.zig`, and inference reads from that same memory. Those
 arenas come from `page_alloc.alloc` (`src/engine/state/page_alloc.zig`) — the
 injected large-block seam the platform backs with huge pages, and which falls back
-to a page-backed allocator in a headless build. `nnue_weight_storage.zig` sits below
+to a page-backed allocator in a headless build; see [7-platform.md](7-platform.md). `nnue_weight_storage.zig` sits below
 both `network.zig` and `nnue_inference.zig` so the I/O half and the compute half
 share an owner without importing each other.
 
 ## Architecture of the net
 
-The net has **two feature sets**, both defined in `nnue_feature.zig`:
+The net has **two feature sets**. Their dimensions are pinned in
+`nnue_acc_layout.zig` (and re-pinned file-locally by `nnue_ft.zig` and
+`nnue_parse.zig`, which lay out the blob); `nnue_feature.zig` owns the indexing:
 
 | Feature set | Dimensions | Index | Weights |
 | --- | --- | --- | --- |
@@ -113,10 +115,11 @@ material: `bucket = (piece_count - 1) / 4` (`nnue_inference.evaluate`). Each sta
 fc_0 (1024 -> 32) -> ac_sqr_0 | ac_0 -> fc_1 (64 -> 32) -> ac_sqr_1 | ac_1 -> fc_2 (128 -> 1)
 ```
 
-Output scaling is integer throughout: the layers use `WeightScaleBits = 6`, the
-forward output is `fc_2[0] + (fc_0[30] - fc_0[31])` scaled by `600*16 / (128*64*2)`,
-and `evaluate` divides both the psqt and positional halves by
-`output_scale = 16` before returning.
+Output scaling is integer throughout. The activation shifts are fixed per layer:
+`fc_0`'s outputs go through `sqrClippedReLU(21)` and `clippedReLU(7)`, `fc_1`'s
+through `sqrClippedReLU(19)` and `clippedReLU(6)`. The forward output is
+`fc_2[0] + (fc_0[30] - fc_0[31])` scaled by `600*16 / (128*64*2)`, and `evaluate`
+divides both the psqt and positional halves by `output_scale = 16` before returning.
 
 ## The accumulator
 
@@ -160,7 +163,7 @@ changed-feature index lists from the stored diffs, splits them into removed/adde
 one pass: `nnue_acc_rowops.applyCombinedDelta` tiles the accumulator, holds each
 tile in a register, and walks the weight rows *inside* the tile — so the accumulator
 is loaded and stored once per tile rather than once per row. The PSQT delta
-(`applyCombinedPsqtDelta`) stays scalar; 8 buckets is too small to vectorise.
+(`applyCombinedPsqtDelta`) stays scalar.
 
 **Refresh.** A full refresh never rebuilds from an empty board. The refresh cache
 (`nnue_refresh_cache.zig`) holds one entry per (king square, perspective) — the
@@ -218,20 +221,20 @@ The hot path — the row ops, the transform, the affine layers — is portable
 `@Vector`: one kernel per operation, lowered by LLVM per target, with arch-specific
 choices as `comptime` branches rather than forked source. Because the eval is
 integer-exact it is also arch-invariant, so every ISA tier must agree on the
-signature. See [7-idiomatic-zig.md](7-idiomatic-zig.md) for the pattern and the
+signature. See [9-idiomatic-zig.md](9-idiomatic-zig.md) for the pattern and the
 gates that hold it.
 
-Two vector widths are tuned independently and must not be folded into one knob:
+Two vector widths are independent knobs and must not be folded into one:
 `nnue_acc_layout.transform_vec_width` (the transform's clipped-ReLU pass) and
-`nnue_acc_rowops.row_tile_width` (the weight-row tile). They touch different loops
-and sweep to different optima.
+`row_tile_width` (the weight-row tile, file-local to `nnue_acc_rowops.zig`). They
+touch different loops.
 
 ## Invariants
 
 | Invariant | Held by |
 | --- | --- |
 | The evaluation is **integer-exact** — no floating point anywhere on the path from features to score. | `computeValue` in `i64`; every kernel integer |
-| The evaluation is **arch-invariant**: every `-Darch` tier yields the same score. All four `affineDpbusd` paths are bit-identical dots. | the per-path scalar-reference test in `nnue_inference.zig`; the cross-tier bench signature |
+| The evaluation is **arch-invariant**: every `-Darch` tier yields the same score. All three `affineDpbusd` paths are bit-identical dots. | the per-path scalar-reference test in `nnue_inference.zig`; the cross-tier bench signature |
 | An **incremental update equals a full refresh**. Integer add/sub commute under two's-complement `i16` wrap, so applying rows in any order, tiled or not, forward or backward, yields the same accumulator. | `applyCombinedDelta`; the refresh/incremental split in `evaluateSide` |
 | The combined accumulator always equals `psq + threat`, and both feature sets refresh together — a threat refresh is a subset of a PSQ refresh. | `findLastUsable` keyed on the PSQ condition only |
 | The parse is the **sole source of weights**, and it must consume the file exactly. | the `offset != bytes.len` check in `loadNetworkBytes`; the structure-hash check |

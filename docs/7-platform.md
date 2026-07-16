@@ -22,14 +22,14 @@ For the zones and the module graph, see [1-architecture.md](1-architecture.md).
 | `numa/replication.zig` | `NumaReplicationContext` / `NumaReplicatedBase`: the replica registry |
 | `tablebase.zig` | the Syzygy facade the engine's `tb_source` seam binds to |
 | `syzygy/tables.zig` | file discovery: scan `SyzygyPath`, count `.rtbw`/`.rtbz`, report cardinality |
-| `syzygy/registry.zig` | material key → `TBTable`, lazy file load, `set` / `set_dtz_map` parsing |
+| `syzygy/registry.zig` | material key → `TBTable`, lazy file load, `set` / `setDtzMap` parsing |
 | `syzygy/probe.zig` | the probe data model (`PairsData`, `LR` btree) + `setGroups` / `setSymLen` |
 | `syzygy/encode.zig` | position → index geometry (binomials, lead-pawn tables) |
 | `syzygy/decode.zig` | file header parsing + the RE-PAIR / canonical-Huffman decoder |
-| `syzygy/wdl.zig` | the probe algorithm: `do_probe_table`, `probe_wdl`, `probe_dtz`, `map_score` |
+| `syzygy/wdl.zig` | the probe algorithm: `doProbeTable`, `probeTable`, `searchWdl`, `probeDtz`, `mapScoreDtz`, and the surfaces `probeFen` / `probeWdlPos` |
 | `clock.zig` | the monotonic millisecond clock |
 | `libc.zig` | the thin libc binding (`malloc`, `free`, `exit`) |
-| `runtime_hooks.zig` | the lifecycle hook registry (worker build/destroy/clear, setup-state handoff) |
+| `runtime_hooks.zig` | the lifecycle hook registry (worker build/destroy/clear, setup-state handoff, `shared_state_clear_histories` / `shared_state_insert_history`, `verify_thread_graph`) |
 
 ## Threads
 
@@ -43,12 +43,9 @@ code in the thread stack: a wait/wake-on-address seam —
 sequence-counter `Condition`; both are platform-independent, and every caller
 re-checks a predicate, so spurious wakeups are harmless.
 
-A `ThreadRuntime` owns one `std.Thread` running `idleLoop`. The loop sets
-`searching = false`, broadcasts, and parks on `!searching and !exit`. `runCustomJob`
-stores a callback plus context, sets `searching = true`, and broadcasts;
-`waitForSearchFinished` blocks until the job returns; `deinit` sets `exit`,
-broadcasts, and joins. `exit` is part of the park predicate precisely so a
-`deinit` racing the loop between iterations can never be missed.
+A `ThreadRuntime` owns one `std.Thread` running `idleLoop` on top of that seam. The
+idle loop, the job handshake, and the jobs that ride it are covered in
+[5-multithreading.md](5-multithreading.md).
 
 ### The thread
 
@@ -57,75 +54,15 @@ at offset 0, the `worker` handle at **offset 8**, the heap `ThreadRuntime` point
 and the thread index. `worker@8` is the one field other code reads off a live
 thread by offset (`worker_layout.Thread`), and an `@offsetOf` test guards it.
 
-`startSearching` submits `searchJob` with the `Worker` pointer as context.
-`searchJob` calls through `searchEntry`, a function pointer `thread.zig` installs at
-search start — `search_thread` must not import `position`, since `position` imports
-the thread stack for its pool ops. `clearWorker` submits the `worker_clear` hook as
-a job. `deinit` joins the runtime **first**, then frees the attached Worker through
-`worker_destroy`.
+`startSearching` and `clearWorker` submit jobs to the runtime. The worker lifecycle
+those jobs drive is covered in [5-multithreading.md](5-multithreading.md).
 
-### The pool
+### The pool and the worker lifecycle
 
-`thread_pool.zig` owns the `worker_layout.ThreadPool` footprint: the `stop` and
-`increase_depth` flags, the `threads` slice of `Thread*` addresses, and the
-`bound` slice of per-thread NUMA-node indices. `set` allocates the vector, creates
-and spawns each `SearchThread`, and calls a `ThreadBuilder` callback per index to
-attach the Worker — injected, so the footprint bookkeeping is testable without the
-engine graph. `clear` waits for every in-flight search **before** tearing threads
-down: the teardown path runs with `stop` already set, so an in-flight search bails
-and emits its bestmove rather than racing the exit flag. `boundNodesAssign` lays,
-reassigns, and frees the bound slice.
-
-### Building a Worker
-
-The builder the pool calls is the `worker_build` lifecycle hook. Its implementation
-lives in the composition root, which large-page-allocates `worker_layout.worker_size`
-bytes, mints the `SearchManager`, calls `worker_construct.constructFull`, and writes
-the result to `worker@8`. `constructFull` zeroes the block, writes the constructor
-field set (the shared-history / threads / TT reference slots, the manager pointer,
-the NUMA identity scalars, one live `AccumulatorStack` slot), then runs the reset
-pieces: worker histories, shared history, reductions, and the NNUE refresh cache.
-
-### Reconfigure
-
-`thread.reconfigure` is the whole sizing path: wait for the main thread, clear the
-pool, read the requested thread count and NUMA policy from the option model, decide
-binding, distribute threads among nodes and assign the bound slice, clear the shared
-histories and insert one per populated node, build the threads, clear the fresh
-pool, and finally call `verify_thread_graph` — a read-only check that panics if the
-built pool drifts from the model.
-
-### Starting a search
-
-`thread.startThinking` waits for the main thread, resets ponder / `stop` /
-`increase_depth`, takes the setup states (handoff or adopt-from-slot), generates the
-legal moves and filters `searchmoves` against them, builds the root FEN, root moves,
-and TB config, then dispatches `applyRootSetup` as a job on **every** thread —
-copying limits, root moves, root position, root state, and TB config into each
-Worker — waits for all of them, and starts thread 0. Thread 0's driver starts the
-siblings (`search_thread.startPoolSiblings`).
-
-`thread_vote.zig` closes the loop: it summarises each thread's first root move
-(PV move, score, bound flags, root depth), runs the integer vote, and returns the
-winning thread's index or Worker. It stays a leaf on `worker_layout` because both
-`thread.zig` and the search driver need it, and the driver cannot import `thread`.
-
-```mermaid
-flowchart TD
-    R["reconfigure — option Threads, NUMA policy"]
-    SP["thread_pool.set — spawn SearchThread"]
-    B["worker_build hook — large-page alloc + constructFull"]
-    I["idleLoop — parked on !searching and !exit"]
-    J["runCustomJob — applyRootSetup / clearWorker / searchJob"]
-    S["startThinking — root setup, then thread 0 searches"]
-    W["waitForSearchFinished"]
-    D["thread_pool.clear — drain, deinit runtime, worker_destroy"]
-
-    R --> SP --> B --> I
-    S --> J
-    I --> J --> W --> I
-    W --> D
-```
+`thread_pool.zig` owns the `worker_layout.ThreadPool` footprint, `thread.reconfigure`
+is the sizing path, and `thread.startThinking` dispatches a search across the pool.
+Those, the `worker_build` / `worker_clear` / `worker_destroy` lifecycle hooks, and
+what the workers share are covered in [5-multithreading.md](5-multithreading.md).
 
 ## Memory
 
@@ -167,41 +104,17 @@ otherwise only when the threads cannot fit the largest node.
 `numa/replication.zig` is the replica registry. `NumaReplicationContext` owns a
 `NumaConfig` and tracks `NumaReplicatedBase` hooks — a plain function pointer
 embedded in each replicated wrapper, no vtable. `setNumaConfig` swaps the config and
-notifies every tracked object to re-replicate. The shell's engine graph owns the
-context. The NNUE weights are always resident rather than replicated per node, so
-`thread.ensureNetworkReplicated` is a no-op.
+notifies every tracked object to re-replicate. The registry is exercised by the typed
+`src/shell/engine/graph.zig` model and its unit tests; the live `EngineObject` holds a
+stub `numa_context` handle instead. See [5-multithreading.md](5-multithreading.md).
 
 ## Tablebases
 
-`tablebase.zig` is the facade: discovery and cardinality from `syzygy/tables.zig`,
-the probes from `syzygy/wdl.zig`. `ProbeResult` is re-exported from the engine's
-`tb_source`, because the result is a search-facing value the seam owns.
-
-`syzygy/tables.zig` scans `SyzygyPath`, enumerates every King-vs-King material
-configuration up to 7 men, builds the canonical stem (`KQK` → `KQvK`), and counts a
-table by file existence — the magic header is validated at probe time, not here.
-With no path set, `maxCardinality` is 0 and the search never probes.
-
-`syzygy/registry.zig` owns the material key → `TBTable` map, the lazy `.rtbw` /
-`.rtbz` load into a 64-byte-aligned buffer, and the `set` / `set_dtz_map` parsing of
-each `(side, file)` `PairsData` record. Keys are computed from per-color piece
-counts through the engine's material-key routine, so a registry key is bit-identical
-to a probed position's `st.material_key`. The load is POSIX-only; on Windows it
-yields null and the probe reports unavailable.
-
-The probe path splits by role: `probe.zig` holds the data model and the pure
-`setGroups` / `setSymLen` helpers, `encode.zig` the position→index geometry,
-`decode.zig` the header parse plus `decompress_pairs`, and `wdl.zig` the algorithm —
-`do_probe_table` (position → unique index → value), the `probe_wdl` capture
-recursion, `probe_dtz`, and `map_score`. `wdl.zig` imports `registry.zig` downward
-and never the reverse, so neither is a god-file. `wdl.zig` also crosses the
-platform→engine down-edge for a scratch `Position`, its bitboards, and legal-capture
-movegen.
-
-The engine reaches all of it through `src/engine/search/tb_source.zig`:
-`maxCardinality`, `probeFen`, and `probeWdlPos` are function pointers the
-composition root binds to the facade. Unregistered they report "no tablebases",
-which is exactly true when no prober is attached.
+`tablebase.zig` and `syzygy/` hold the Syzygy prober: discovery and cardinality, the
+lazy table load, and the WDL/DTZ probe path. The engine reaches it through the
+`tb_source` seam. The whole vertical — the tables, the probe path, root and in-search
+probing, and the UCI options that gate it — is covered in
+[6-tablebases.md](6-tablebases.md).
 
 ## The clock
 
@@ -215,8 +128,8 @@ and the composition root points it at `clock.now`. The default is a per-call
 monotonic counter: a valid clock in the wrong unit, which keeps a headless build
 deterministic and is read by no time-limited root.
 
-`libc.zig` is the companion: the handful of genuinely-libc entry points the port
-still calls (`malloc`, `free`, `exit`), declared directly as `extern "c"`. Stdio is
+`libc.zig` is the companion: the entry points the code calls (`malloc`, `free`,
+`exit`), declared directly as `extern "c"`. Stdio is
 deliberately excluded — file reads, stdout/stderr writes, the stdin loop, the cwd
 lookup, and every numeric format go through `std.Io` / `std.fmt`.
 
@@ -238,7 +151,7 @@ count and requires each hook to declare its failure mode when unregistered. Life
 hooks are structurally safe — they cannot become per-query without the design
 changing shape — unlike the service seams (`page_alloc`, `time_source`, `tb_source`),
 whose `//! hook-class:` headers state the same contract from the engine side. See
-[8-tooling-ci.md](8-tooling-ci.md) for the gate itself.
+[10-tooling-ci.md](10-tooling-ci.md) for the gate itself.
 
 ## Invariants
 

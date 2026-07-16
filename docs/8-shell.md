@@ -5,7 +5,7 @@ the engine object that owns the run. It is the top zone — it may import `engin
 `platform/`, and nothing imports it. For the zones and the module graph see
 [1-architecture.md](1-architecture.md); for what the shell drives, see
 [3-engine-search.md](3-engine-search.md), [4-engine-eval.md](4-engine-eval.md), and
-[5-platform.md](5-platform.md).
+[7-platform.md](7-platform.md).
 
 ## Modules
 
@@ -89,7 +89,7 @@ token into a `CommandKind`, and hands the rest to the engine face:
 | `setoption` | parse, apply to the model, fire the on-change callback |
 | `position` | parse the FEN and move list, set the position |
 | `go` | emit the NUMA/thread info lines, then perft or `startThinking` |
-| `stop` / `ponderhit` | signal the pool; `stop` also clears ponder |
+| `stop` / `ponderhit` | `stop` stops the engine and **sets** the main manager's ponder flag (`setPonderhitEngine(engine, 1)`); `ponderhit` **clears** it (`setPonderhitEngine(engine, 0)`) — `setPonderhit(x)` calls `setPonder(x != 0)` |
 | `ucinewgame` | clear the search state |
 | `quit` | stop the pool and leave the loop |
 | `flip` | read the live FEN, flip it, re-set the position |
@@ -104,10 +104,16 @@ Anything else prints an unknown-command line. `go` builds a `LimitsType` and sta
 `start_time` at the earliest point, so the info-line elapsed and nps are honest;
 `searchmoves` records are owned in Zig and freed once `startThinking` has read them.
 
-Every line the process emits goes through `uci_output.printLine` — one `std.Io` handle,
-one mutex, so the line and its newline are one indivisible pair and a search info line
-can never tear against the UCI listener. The engine writes through this same funnel
-without importing the shell: `main` registers it on the `output_sink` seam.
+The search and UCI lines — `info`, `bestmove`, the option listing's neighbours, the
+`info string` reports — go through `uci_output.printLine`: one `std.Io` handle, one
+mutex, so the line and its newline are one indivisible pair and a search info line can
+never tear against the UCI listener. The engine writes through this same funnel without
+importing the shell: `main` registers it on the `output_sink` seam.
+
+Not everything the process emits takes that route. `uci.zig` prints the `uci` response
+and the `eval` trace with `std.debug.print` — stderr, unmutexed — as do `uci_bench.zig`,
+`benchmark.zig`, `thread_construct.zig`, `engine/nnue.zig`, and `debug_counters.zig`.
+Those exits bypass the sink's mutex, its log tee, and quiet mode.
 
 ## The option model
 
@@ -133,7 +139,7 @@ the normalized value to `session.optionOnChange`, which dispatches:
 | `Threads` | resize the threads, report the allocation |
 | `Hash` | resize the transposition table |
 | `Clear Hash` | clear the search state |
-| `SyzygyPath` | re-init the tablebases and report what was found |
+| `SyzygyPath` | re-init the tablebases and report what was found ([6-tablebases.md](6-tablebases.md)) |
 | `EvalFile` | load the network |
 
 The engine never imports `option.zig`. `main` injects the readers onto the
@@ -144,17 +150,19 @@ page allocator, the tablebase prober, the thread-pool ops, and the output sink.
 ## The engine object and the session
 
 `engine/object.zig` defines `EngineObject`, a plain Zig struct that `main` allocates a
-buffer for and reinterprets. It is an **ownership container**: every member is an
-explicitly freed heap object reached through a typed accessor, never a byte offset.
+buffer for and reinterprets. It is an **ownership container**: every heap member is
+explicitly freed, and the rest are inline slots — each reached through a typed accessor,
+never a byte offset.
 
 | Member | Note |
 | --- | --- |
-| `numa_context` | a never-dereferenced single-node handle (a static byte address) |
+| `numa_context` | a never-dereferenced single-node stub handle (a static byte address), freed as nothing |
 | `states` | the fallback root `StateList` |
 | `threads` | the `ThreadPool` |
 | `binary_directory` | owned string; the net load resolves against it |
 | `cli_argc` / `cli_argv` | the CLI |
-| `update_context` | inline slot the search binds for the main thread's manager |
+| `update_context` | inline byte-array slot the search binds for the main thread's manager |
+| `on_verify_network` | inline byte-array slot holding the network-verify callback |
 
 Position, TT, and the shared-histories map are file-scope side storage whose accessors
 ignore the engine pointer — the object does not own them. `constructMembers` builds the
@@ -180,7 +188,8 @@ referent type, and a graph root cannot be in a cycle).
 each leaf. The reconfigure chain — `resizeThreadsEngine` → `resizeThreads` — waits for
 the search, rebuilds the live `SharedState` from the threads/TT/shared-histories
 handles, reconfigures the pool, sizes the TT from the `Hash` option, and replicates the
-network. It is the one place a thread-pool OOM or spawn failure is handled.
+network. It is the one place a thread-pool OOM or spawn failure is handled; the pool it
+drives is described in [5-multithreading.md](5-multithreading.md).
 
 `engine/graph.zig` states the same object graph as a fully typed `EngineGraph` —
 concrete members, vtable-free and callback-free, with its own `sharedState` and
