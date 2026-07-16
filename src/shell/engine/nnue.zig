@@ -104,10 +104,20 @@ pub fn loadNetworkEngine(engine_ptr: *engine_object.EngineObject, evalfile_path:
     network_port.load(bdir_slice.ptr, bdir_slice.len, evalfile_path.ptr, evalfile_path.len);
 }
 
+// Report the outcome, as upstream does: `sync_cout << (saved ? "Network saved
+// successfully to " + name : "Failed to export a net")` (nnue/network.cpp:133). save()
+// already builds exactly that message -- the result was simply discarded with `_ =`, so
+// `export_net` completed silently AND leaked the message allocMessage had built. Print it
+// as a plain line (upstream does not prefix it with `info string`).
 pub fn saveNetworkEngine(filename_opt: ?[]const u8) void {
     const has_filename: u8 = if (filename_opt != null) 1 else 0;
     const filename = filename_opt orelse "";
-    _ = network_port.save(has_filename, filename.ptr, filename.len);
+    const result = network_port.save(has_filename, filename.ptr, filename.len);
+    if (result.message) |message_ptr| {
+        defer std.heap.c_allocator.free(std.mem.span(message_ptr));
+        const line = std.mem.span(message_ptr);
+        uci_output.printLine(line.ptr, line.len);
+    }
 }
 
 test {
