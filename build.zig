@@ -1443,12 +1443,17 @@ pub fn build(b: *std.Build) void {
     // that matters: an unregistered hook does not crash, it ANSWERS, so a wiring bug
     // ships as a wrong bench rather than a signal. Source lint (no engine needed), so
     // it runs on the host and joins the portable aggregate.
+    // .Debug on purpose: these lints run in ~0.03s, so the optimizer buys nothing --
+    // but Debug's checking allocator catches allocator misuse in EVERY lane. Built
+    // ReleaseFast, arch_report shipped a size-mismatched double free that Linux and
+    // Windows tolerated silently and macOS trapped on, AFTER printing "OK". A lint that
+    // corrupts the heap while reporting success is worse than no lint.
     const hook_lint_exe = b.addExecutable(.{
         .name = "hook_lint",
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/hook_lint.zig"),
             .target = b.graph.host,
-            .optimize = .ReleaseFast,
+            .optimize = .Debug,
         }),
     });
     const hook_lint_cmd = b.addRunArtifact(hook_lint_exe);
@@ -1458,6 +1463,29 @@ pub fn build(b: *std.Build) void {
         "Cycle-break hooks: ratcheted at 30, each declaring a failure mode + class, all registered",
     );
     hook_lint_step.dependOn(&hook_lint_cmd.step);
+
+    // arch-report: Lakos coupling at BOTH granularities + the two tripwires the
+    // compiler will not give (G1). REPORT the numbers, never gate them -- Lakos's
+    // NCCD ~1.0 assumes cycles cost compile time, and zfish compiles as one LLVM
+    // module where they cost nothing measurable. The GATEABLE properties are binary:
+    // the module graph is a DAG (Zig permits cycles -- spike), and every file SCC is
+    // a declared component. Unused declared edges are reported, not gated.
+    // .Debug: see hook_lint_exe above -- the checking allocator is the point.
+    const arch_report_exe = b.addExecutable(.{
+        .name = "arch_report",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/arch_report.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+    const arch_report_cmd = b.addRunArtifact(arch_report_exe);
+    arch_report_cmd.setCwd(b.path("."));
+    const arch_report_step = b.step(
+        "arch-report",
+        "Coupling report (module + file graphs) + DAG / undeclared-SCC tripwires",
+    );
+    arch_report_step.dependOn(&arch_report_cmd.step);
 
     // Engine-only build/test target: compile the entire engine module graph in
     // isolation via src/engine/headless.zig, which imports every engine-zone module.
@@ -1766,6 +1794,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&ponder_cmd.step);
     parity_step.dependOn(&net_missing_cmd.step);
     parity_step.dependOn(&hook_lint_cmd.step);
+    parity_step.dependOn(&arch_report_cmd.step);
     parity_step.dependOn(&bench_matrix_cmd.step);
     parity_step.dependOn(&tb_init_cmd.step);
     parity_step.dependOn(&tb_wdl_cmd.step);
@@ -1814,6 +1843,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&ponder_cmd.step);
     parity_portable_step.dependOn(&net_missing_cmd.step);
     parity_portable_step.dependOn(&hook_lint_cmd.step);
+    parity_portable_step.dependOn(&arch_report_cmd.step);
     // The concurrency + timing gates -- the cross-OS payoff: these exercise the
     // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
     // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.

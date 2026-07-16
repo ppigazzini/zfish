@@ -1,3 +1,9 @@
+// COMPONENT: search_back.zig + search_main.zig are ONE component, deliberately.
+// The other half of the file graph's only import cycle -- the alpha-beta recursion
+// itself (runBack <-> searchImpl), not a layering defect. See search_main.zig's
+// header for the full rationale; `zig build arch-report` lists this SCC as KNOWN so a
+// NEW one cannot hide behind it. Do not break this cycle.
+//
 // The move loop + node finalization (Steps 13-21) of searchImpl. Takes the
 // pre-loop node state as an anytype `nd` struct (Steps 1-12 invariants); the
 // loop's mutable running state + scratch are local here. It recurses into
