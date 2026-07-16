@@ -23,7 +23,10 @@ const sq_none_u8: u8 = 64;
 const piece_to_char = " PNBRQK  pnbrqk";
 
 const pawn_pt = board_core.pawn_pt;
+const knight_pt = board_core.knight_pt;
+const bishop_pt = board_core.bishop_pt;
 const rook_pt = board_core.rook_pt;
+const queen_pt = board_core.queen_pt;
 const king_pt = board_core.king_pt;
 const color_white = board_core.color_white;
 const color_black = board_core.color_black;
@@ -54,6 +57,16 @@ fn pieceCharIndex(token: u8) ?u8 {
 }
 fn setErr(comptime msg: []const u8) ?[*:0]u8 {
     return allocCString(msg) catch null;
+}
+
+// Render an error that quotes the offending input, as upstream does with
+// `std::string("...") + std::string(1, token)`. Every interpolated FEN diagnostic dropped
+// its value here, so `position fen not_a_fen` reported "Invalid piece." where upstream
+// reports "Invalid piece: o" -- the message named the rule but not what broke it.
+fn setErrFmt(comptime fmt: []const u8, args: anytype) ?[*:0]u8 {
+    var buf: [160]u8 = undefined;
+    const rendered = std.fmt.bufPrint(&buf, fmt, args) catch return setErr("Invalid FEN.");
+    return allocCString(rendered) catch null;
 }
 
 const FenCursor = struct {
@@ -104,7 +117,8 @@ pub fn setPosition(
             if (rank < 0) return setErr("Invalid FEN. Invalid rank reached.");
         } else {
             if (file >= 8) return setErr("Invalid FEN. Invalid file reached.");
-            const idx = pieceCharIndex(token) orelse return setErr("Invalid FEN. Invalid piece.");
+            const idx = pieceCharIndex(token) orelse
+                return setErrFmt("Invalid FEN. Invalid piece: {c}", .{token});
             num_pieces += 1;
             if (num_pieces > 32) return setErr("Invalid FEN. More than 32 pieces on the board.");
             putPiece(pos, idx, makeSquare(@intCast(file), @intCast(rank)));
@@ -118,9 +132,34 @@ pub fn setPosition(
     if (countPt(pos, color_white, king_pt) != 1 or countPt(pos, color_black, king_pt) != 1)
         return setErr("Unsupported position. Incorrect number of kings.");
 
+    // Reject piece counts no legal game can reach (upstream position.cpp:279-290). Both
+    // checks were absent, so zfish ACCEPTED positions upstream refuses: a side with 9
+    // pawns, or with more promoted material than its missing pawns can account for. The
+    // NNUE feature space assumes reachable counts, so accepting these is not merely a
+    // laxer diagnostic.
+    for ([_]u8{ color_white, color_black }) |c| {
+        const pawns = countPt(pos, c, pawn_pt);
+        if (pawns > 8)
+            return setErrFmt("Unsupported position. {s} has more than 8 pawns.", .{
+                if (c == color_white) "WHITE" else "BLACK",
+            });
+
+        // Count promotions the position implies: each piece beyond the initial complement
+        // must come from a pawn, so they cannot exceed the pawns this side is missing.
+        const extra = @max(@as(i32, @intCast(countPt(pos, c, knight_pt))) - 2, 0) +
+            @max(@as(i32, @intCast(countPt(pos, c, bishop_pt))) - 2, 0) +
+            @max(@as(i32, @intCast(countPt(pos, c, rook_pt))) - 2, 0) +
+            @max(@as(i32, @intCast(countPt(pos, c, queen_pt))) - 1, 0);
+        if (extra > 8 - @as(i32, @intCast(pawns)))
+            return setErrFmt("Unsupported position. Too many pieces for {s}", .{
+                if (c == color_white) "WHITE." else "BLACK.",
+            });
+    }
+
     // 2. Active color
     const active = cur.next() orelse return setErr("Invalid FEN. Unexpected end of stream.");
-    if (active != 'w' and active != 'b') return setErr("Invalid FEN. Invalid side to move.");
+    if (active != 'w' and active != 'b')
+        return setErrFmt("Invalid FEN. Invalid side to move: {c}", .{active});
     pos.side_to_move = if (active == 'w') color_white else color_black;
     const stm = pos.side_to_move;
     const them = stm ^ 1;
@@ -171,7 +210,7 @@ pub fn setPosition(
                 if (pos.board[@intCast(sq)] == king) ksq = sq;
                 sq += 1;
             }
-        } else return setErr("Invalid FEN. Expected castling rights.");
+        } else return setErrFmt("Invalid FEN. Expected castling rights. Got: {c}", .{token});
 
         if (ksq != -1 and rsq != -1) setCastlingRight(pos_ptr, c, @intCast(rsq));
     }
