@@ -5,7 +5,7 @@
 // object it points at, so member teardown is explicit and ordered here.
 //
 // Members:
-//   numa_context     static-byte-address handle (single node; never dereferenced)
+//   numa_context     *NumaReplicationContext (owns the NumaConfig + replica registry)
 //   states           StateList (the fallback root list)
 //   threads          value-initialized ThreadPool buffer (the thread vector)
 //   network          single-node NNUE holder
@@ -22,17 +22,26 @@ const misc_port = @import("misc");
 const state_list_port = @import("state_list"); // StateList
 const network_port = @import("network");
 const position_types = @import("position_types");
+const numa = @import("numa");
 
 // ---- the member allocators -------
-// Back numa_context with a never-dereferenced non-null handle -> a module-static byte address
-// (no alloc/free). Create threads as a typed ThreadPool through the Allocator interface.
-// Take worker_layout.thread_pool_size (48) as the ThreadPool buffer size.
-// Treat numa_context as a single-node, never-dereferenced handle -- a distinct non-null pointer
-// identity for the C-ABI, not a real allocation. Use the address of a module-static byte
-// (TigerBeetle: no alloc, no free) instead of malloc(1)/free.
-var numa_ctx_placeholder: u8 = 0;
+// Create threads as a typed ThreadPool through the Allocator interface. Take
+// worker_layout.thread_pool_size (48) as the ThreadPool buffer size.
+//
+// numa_context was the address of a module-static byte -- a non-null identity that was
+// "never dereferenced". Nothing behind it meant the whole NUMA facade HAD to be stubbed:
+// suggestsBindingThreads could only answer a constant, and NumaConfig.fromSystem (built by
+// the unused EngineGraph) was orphaned. So `NumaPolicy auto`, the default, could never
+// bind on any host, and the topology model was dead code. Own a real
+// NumaReplicationContext here instead; the facade now has something to ask.
 fn memberNumaContextNew() ?*anyopaque {
-    return @ptrCast(&numa_ctx_placeholder);
+    const ctx = std.heap.c_allocator.create(numa.NumaReplicationContext) catch return null;
+    const cfg = numa.NumaConfig.fromSystem(std.heap.c_allocator) catch {
+        std.heap.c_allocator.destroy(ctx);
+        return null;
+    };
+    ctx.* = numa.NumaReplicationContext.init(std.heap.c_allocator, cfg);
+    return @ptrCast(ctx);
 }
 fn memberThreadpoolNew() ?*worker_layout.ThreadPool {
     // Create a typed, default-initialized ThreadPool via the Allocator interface. @sizeOf ==
@@ -208,7 +217,12 @@ pub fn destructMembers(buf: *anyopaque) void {
     // Free threads through the same interface -- it was allocator.create'd.
     if (e.threads) |t| std.heap.c_allocator.destroy(t);
     e.threads = null;
-    e.numa_context = null; // static placeholder -- nothing to free
+    if (e.numa_context) |raw| {
+        const ctx: *numa.NumaReplicationContext = @ptrCast(@alignCast(raw));
+        ctx.deinit(); // frees the NumaConfig + the replica registry
+        std.heap.c_allocator.destroy(ctx);
+    }
+    e.numa_context = null;
     if (e.binary_directory) |bd| std.heap.c_allocator.free(std.mem.span(bd));
     e.binary_directory = null;
 }
