@@ -410,13 +410,17 @@ fn setStartPosition(engine_ptr: *engine_object.EngineObject) void {
 
 // Run the flip command: read the live FEN, flip it, re-set the position. Keep it all
 // engine-local (engine fen + position flipFen + setPosition).
-pub fn flipEngine(engine_ptr: *engine_object.EngineObject) void {
-    const fen_c = fen(engine_ptr.positionPtr()) orelse return;
+// Return the position error rather than swallowing it, mirroring upstream's
+// `std::optional<PositionSetError> Engine::flip()` (engine.cpp:339). The error was
+// obtained from setPositionEngine and then FREED AND DISCARDED, so a flip that produced
+// an unusable position reported nothing and left the engine on the old board. The caller
+// terminates on it, as upstream's uci.cpp:147 does.
+pub fn flipEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
+    const fen_c = fen(engine_ptr.positionPtr()) orelse return null;
     defer freeCString(fen_c);
     const fen_text = std.mem.span(fen_c);
-    const flipped_c = position_port.flipFen(fen_text.ptr, fen_text.len) orelse return;
+    const flipped_c = position_port.flipFen(fen_text.ptr, fen_text.len) orelse return null;
     defer freeCString(flipped_c);
     const flipped = std.mem.span(flipped_c);
-    if (setPositionEngine(engine_ptr, flipped.ptr, flipped.len, null, 0)) |err|
-        freeCString(err);
+    return setPositionEngine(engine_ptr, flipped.ptr, flipped.len, null, 0);
 }

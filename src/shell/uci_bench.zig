@@ -58,7 +58,7 @@ pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, disp
                 defer freeMaybeCString(limits.searchmoves);
 
                 if (limits.perft != 0) {
-                    nodes += engine_mod.perftEngine(engine_ptr, limits.perft);
+                    nodes += engine_mod.perftEngine(engine_ptr, limits.perft).nodes;
                 } else {
                     uci_output.resetLastNodesSearched();
                     dispatch(uci_ptr, command);
