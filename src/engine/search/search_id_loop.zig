@@ -259,10 +259,23 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             const high_best_move_effort = fclamp(0.924 + (0.71 - 0.924) * (hbme_x - 79219.0) / (101822.0 - 79219.0), 0.71, 0.924);
 
             var total_time = @as(f64, @floatFromInt(id.tm_optimum)) * falling_eval * reduction * best_move_instability * high_best_move_effort;
-            if (id.root_moves_count == 1) total_time = @min(561.7, total_time);
+            // Cap used time to 0.5s for a better viewer experience (search.cpp:592-594).
+            if (id.root_moves_count == 1) total_time = @min(500.0, total_time);
+
+            // Stop once there is nothing better to find: a mate in <=3 for us, or a forced
+            // mate against us in 2 (search.cpp:600-601). Both disjuncts were missing, so a
+            // found mate did not end the iteration -- the score then stops moving, no time
+            // heuristic fires, and the loop grinds to the MAX_PLY ceiling: on a mate-in-1
+            // under `go wtime`, upstream stops at depth 1 / 17 nodes while zfish reached
+            // depth 245 / 4165. Read the scores after the pv loop has written this
+            // iteration's values, matching upstream's placement.
+            const mate_in_3: c_int = sv.value_mate - 3;
+            const mated_in_2: c_int = -sv.value_mate + 2;
+            const found_mate = id.root_moves[multi_pv - 1].score >= mate_in_3 or
+                id.root_moves[0].score == mated_in_2;
 
             const elapsed_time = @as(f64, @floatFromInt(idElapsed(&id)));
-            if (elapsed_time > @min(total_time, @as(f64, @floatFromInt(id.tm_maximum)))) {
+            if (elapsed_time > @min(total_time, @as(f64, @floatFromInt(id.tm_maximum))) or found_mate) {
                 if (@atomicLoad(u8, id.ponder, .monotonic) != 0) id.stop_on_ponderhit.* = 1 else @atomicStore(u8, id.stop, 1, .monotonic);
             } else {
                 const inc: u8 = if (@atomicLoad(u8, id.ponder, .monotonic) != 0 or elapsed_time <= total_time * 0.50) 1 else 0;
