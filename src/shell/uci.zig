@@ -185,7 +185,11 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             return .{ .should_quit = 0 };
         },
         .flip => {
-            engine_mod.flipEngine(engine);
+            // Terminate on a flip that yields an unusable position (upstream uci.cpp:147).
+            if (engine_mod.flipEngine(engine)) |err_ptr| {
+                defer freeMaybeCString(err_ptr);
+                terminateOnCriticalError(std.mem.span(err_ptr));
+            }
             return .{ .should_quit = 0 };
         },
         .bench => {
@@ -338,7 +342,12 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     }
 
     if (limits.perft != 0) {
-        _ = engine_mod.perftEngine(engine_ptr, limits.perft);
+        // Terminate on a perft over an unusable position (upstream uci.cpp:478).
+        const perft_result = engine_mod.perftEngine(engine_ptr, limits.perft);
+        if (perft_result.err) |err_ptr| {
+            defer freeMaybeCString(err_ptr);
+            terminateOnCriticalError(std.mem.span(err_ptr));
+        }
         return;
     }
 
