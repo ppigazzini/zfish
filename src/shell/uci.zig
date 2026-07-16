@@ -129,11 +129,16 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             return .{ .should_quit = 1 };
         },
         .stop => {
+            // Raise the stop flag only. The search's busy-wait is
+            // `!stop and (ponder or infinite)`, so stop alone releases a pondering or
+            // infinite search; `ponder` stays as `go` set it and the next `go` rewrites
+            // it from ponderMode.
             engine_mod.stopEngine(engine);
-            engine_mod.setPonderhitEngine(engine, 1);
             return .{ .should_quit = 0 };
         },
         .ponderhit => {
+            // Switch a ponder search to a normal one: clear ponder so the busy-wait
+            // releases and time management stops treating the search as pondering.
             engine_mod.setPonderhitEngine(engine, 0);
             return .{ .should_quit = 0 };
         },
