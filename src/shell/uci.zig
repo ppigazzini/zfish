@@ -11,6 +11,9 @@ const engine_object = @import("engine_object");
 // Keep the bench / benchmark command runners in their own leaf (uci passes it a
 // void wrapper over dispatchCommand, so the leaf has no cycle back into the loop).
 const uci_bench = @import("uci_bench.zig");
+// Own the critical-error termination path (currentCmd + terminate_on_critical_error).
+const uci_critical = @import("uci_critical.zig");
+const terminateOnCriticalError = uci_critical.terminateOnCriticalError;
 const worker_layout = @import("worker_layout");
 const clock = @import("clock");
 const uci_strings = @import("uci_strings");
@@ -118,6 +121,7 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
     const trimmed = trimAsciiWhitespace(input);
     if (trimmed.len == 0 or trimmed[0] == '#')
         return .{ .should_quit = 0 };
+    uci_critical.setCurrentCmd(trimmed);
 
     var token_iter = std.mem.tokenizeAny(u8, trimmed, " \t\r\n");
     const token = token_iter.next() orelse return .{ .should_quit = 0 };
@@ -148,11 +152,9 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             const options_ptr = option_port.renderOptions() orelse return .{ .should_quit = 0 };
             defer freeMaybeCString(options_ptr);
 
-            // Emit through the output sink, not std.debug.print: the handshake is
-            // protocol, so it belongs on stdout where the GUI reads it. std.debug.print
-            // writes to stderr, which also skipped the `Debug Log File` tee and the
-            // write_mutex. Build the block once so it reaches the GUI as one unit,
-            // matching upstream's single `sync_cout << ... << sync_endl`.
+            // Emit through the sink: the handshake is protocol and belongs on stdout.
+            // std.debug.print went to stderr, skipping the log tee and write_mutex.
+            // Build one block, as upstream's single sync_cout does.
             const block = std.fmt.allocPrint(
                 std.heap.c_allocator,
                 "id name {s}\n{s}\nuciok",
@@ -203,9 +205,8 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
         .eval => {
             const text_ptr = engine_mod.traceEvalEngine(engine) orelse return .{ .should_quit = 0 };
             defer freeMaybeCString(text_ptr);
-            // Same reason as `uci`: the trace is user-facing output, so route it to
-            // stdout through the sink. Keep the leading blank line (printLine supplies
-            // the trailing newline), so the emitted bytes are unchanged.
+            // Same as `uci`: route to stdout through the sink. Keep the leading blank
+            // line (printLine adds the trailing one), so emitted bytes are unchanged.
             const block = std.fmt.allocPrint(
                 std.heap.c_allocator,
                 "\n{s}",
@@ -307,15 +308,22 @@ fn applyPosition(engine: *engine_object.EngineObject, trimmed: []const u8) void 
     );
     if (err) |err_ptr| {
         defer freeMaybeCString(err_ptr);
-        const critical = formatCriticalError("position", std.mem.span(err_ptr)) orelse return;
-        defer freeMaybeCString(critical);
-        putsLine(critical);
+        terminateOnCriticalError(std.mem.span(err_ptr));
     }
 }
 
 fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     const limits = parseLimits(trimmed);
     defer freeMaybeCString(limits.searchmoves);
+
+    // Mirror upstream's `if (is.fail())` check (uci.cpp:226-227), before any search
+    // setup: upstream fails during parsing and never reaches the search. Keeping the
+    // previous value made `go depth abc` silently search at depth 0 instead of refusing.
+    if (limits.bad_token) |bad| {
+        var buf: [64]u8 = undefined; // longest keyword is "movestogo"
+        const msg = std.fmt.bufPrint(&buf, "Invalid argument for '{s}'", .{bad}) catch "Invalid argument";
+        terminateOnCriticalError(msg);
+    }
 
     const engine_ptr = engine;
 

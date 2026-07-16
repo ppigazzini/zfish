@@ -14,11 +14,15 @@
 //     run bench and assert `Nodes searched` == expected (the 2466447 arch/OS invariant).
 // Mirror the scripts' exit codes: 0 pass, 1 golden mismatch, 2 crash / parse failure / usage.
 //
-// Route the streams (empirically verified, identical on every OS because the engine's print
-// paths are the same): the interactive `d`/`go perft`/`go`/bestmove lines go to STDOUT; the
-// bench `Position:`/`Nodes searched` banners and the `eval` NNUE trace go to STDERR. Capture
-// both streams separately in each check and read the one(s) it needs, so no fragile
-// stderr->stdout merge (bash `2>&1`) is reconstructed.
+// Route the streams (empirically verified against upstream, identical on every OS because
+// the engine's print paths are the same): the `uci` handshake, the `eval` NNUE trace, and
+// the interactive `d`/`go perft`/`go`/bestmove lines go to STDOUT; only the bench
+// `Position:`/`Nodes searched` banners go to STDERR -- upstream puts bench there too, so
+// that one is faithful, not a bug. Capture both streams separately in each check and read
+// the one(s) it needs, so no fragile stderr->stdout merge (bash `2>&1`) is reconstructed.
+// Where a check reads a stream, it should PIN it: the handshake gate asserts stdout AND
+// asserts stderr is clean, because reading the wrong stream is exactly how a real defect
+// (the whole handshake on stderr) passed every gate here for months.
 
 const std = @import("std");
 const Io = std.Io;
