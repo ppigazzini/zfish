@@ -301,7 +301,7 @@ test "flipFen is an involution" {
 
 test "formatFen renders the start position from primitives" {
     // The engine's piece codes: 1..6 = W P/N/B/R/Q/K, 9..14 = B p/n/b/r/q/k.
-    var board = [_]u8{0} ** 64;
+    var board: [64]u8 = @splat(0);
     const back = [_]u8{ 4, 2, 3, 5, 6, 3, 2, 4 }; // R N B Q K B N R
     for (0..8) |f| {
         board[f] = back[f]; // rank 1 (white back rank)

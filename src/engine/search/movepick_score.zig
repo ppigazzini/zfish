@@ -171,7 +171,7 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
     const history = loadHistorySnapshot(context);
     const side_to_move = pos.side_to_move;
 
-    var threat_by_lesser: [7]u64 = [_]u64{0} ** 7;
+    var threat_by_lesser: [7]u64 = @splat(0);
     if (kind == quiets) {
         const them = otherColor(side_to_move);
         threat_by_lesser[pawn] = 0;

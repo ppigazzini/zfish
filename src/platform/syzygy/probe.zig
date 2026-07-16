@@ -53,10 +53,10 @@ pub const PairsData = struct {
     data: ?[*]const u8 = null,
     base64: []u64 = &.{},
     symlen: []u8 = &.{},
-    pieces: [tb_pieces]u8 = [_]u8{0} ** tb_pieces,
-    group_idx: [tb_pieces + 1]u64 = [_]u64{0} ** (tb_pieces + 1),
-    group_len: [tb_pieces + 1]i32 = [_]i32{0} ** (tb_pieces + 1),
-    map_idx: [4]u16 = [_]u16{0} ** 4,
+    pieces: [tb_pieces]u8 = @splat(0),
+    group_idx: [tb_pieces + 1]u64 = @splat(0),
+    group_len: [tb_pieces + 1]i32 = @splat(0),
+    map_idx: [4]u16 = @splat(0),
 };
 
 // The per-table metadata (built at init from the material config); PairsData is filled lazily.

@@ -41,17 +41,17 @@ pub const TBTable = struct {
     has_unique_pieces: bool,
     pawn_count: [2]u8,
     sides: usize, // WDL: 2 when key != key2, else 1. DTZ is always one-sided (1 side).
-    stem: [8]u8 = [_]u8{0} ** 8, // canonical file stem, e.g. "KQvK"
+    stem: [8]u8 = @splat(0), // canonical file stem, e.g. "KQvK"
     stem_len: usize = 0,
     // WDL (.rtbw): two sides x up to four files.
     ready: bool = false,
     base: ?[]const u8 = null, // whole .rtbw bytes (64-aligned base), null if load failed
-    items: [2][4]PairsData = [_][4]PairsData{[_]PairsData{.{}} ** 4} ** 2,
+    items: [2][4]PairsData = @splat(@splat(.{})),
     // DTZ (.rtbz): one side x up to four files, plus the value-remap table base.
     dtz_ready: bool = false,
     dtz_base: ?[]const u8 = null,
     dtz_map: ?[*]const u8 = null, // set_dtz_map: base of the DTZ value maps
-    dtz_items: [1][4]PairsData = [_][4]PairsData{[_]PairsData{.{}} ** 4} ** 1,
+    dtz_items: [1][4]PairsData = @splat(@splat(.{})),
 
     fn info(self: *const TBTable) EntryInfo {
         return .{
@@ -75,8 +75,8 @@ const hash_mask = hash_size - 1;
 
 var arena_state: ?std.heap.ArenaAllocator = null;
 var tables: std.ArrayListUnmanaged(*TBTable) = .empty;
-var hash_keys: [hash_size]u64 = [_]u64{0} ** hash_size;
-var hash_tabs: [hash_size]?*TBTable = [_]?*TBTable{null} ** hash_size;
+var hash_keys: [hash_size]u64 = @splat(0);
+var hash_tabs: [hash_size]?*TBTable = @splat(null);
 var reg_path: []const u8 = "";
 var geometry_ready = false;
 
@@ -127,12 +127,12 @@ pub fn register(pieces: []const u8) void {
     var k2: usize = 1;
     while (k2 < pieces.len and pieces[k2] != king_pt) k2 += 1;
 
-    var counts = [_]c_int{0} ** 16;
+    var counts: [16]c_int = @splat(0);
     for (pieces[0..k2]) |pt| counts[pt] += 1; // white byte = pt
     for (pieces[k2..]) |pt| counts[@as(usize, pt) | 8] += 1; // black byte = 8|pt
 
     const key = position.computeMaterialKey(&counts, 16);
-    var counts2 = [_]c_int{0} ** 16;
+    var counts2: [16]c_int = @splat(0);
     for (0..16) |i| counts2[i ^ 8] = counts[i]; // color-swap
     const key2 = position.computeMaterialKey(&counts2, 16);
 

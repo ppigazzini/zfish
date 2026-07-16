@@ -314,7 +314,7 @@ test "fuzz: parseSetOption survives random and adversarial input" {
         "setoption name",                                        "setoption name  value ",
         "setoption value x name y",                              "setoption name value",
         "\x00\xff\x00",                                          "   \t\r\n  ",
-        "setoption name Hash value 999999999999999999999999999", "setoption name " ++ "A" ** 300 ++ " value " ++ "B" ** 300,
+        "setoption name Hash value 999999999999999999999999999", "setoption name " ++ @as([300]u8, @splat('A')) ++ " value " ++ @as([300]u8, @splat('B')),
     };
     for (cases) |case| {
         const parsed = parseSetOption(case);

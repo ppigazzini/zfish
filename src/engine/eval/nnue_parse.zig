@@ -40,7 +40,7 @@ pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count:
                     const mask = ~((@as(u32, 1) << @intCast(shift)) - 1);
                     result |= mask;
                 }
-                const UnsignedT = std.meta.Int(.unsigned, @bitSizeOf(IntType));
+                const UnsignedT = @Int(.unsigned, @bitSizeOf(IntType));
                 out[i] = @bitCast(@as(UnsignedT, @truncate(result)));
                 break;
             }

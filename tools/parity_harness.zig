@@ -1603,7 +1603,22 @@ const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"sea
 // `orelse return`s on the null feature-transformer pointer, leaves the Worker zeroed,
 // and the clear job null-unwraps on a worker thread -- a SIGSEGV naming nothing.
 // Asserted here: a NAMED diagnostic and a clean non-zero exit, never a signal.
-fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
+    // Absolutize the binary path before spawning. This gate sets cwd to a scratch dir
+    // (every other gate keeps cwd = net/), so a path relative to the harness's own cwd
+    // would not resolve from there. Resolve a possibly-relative incoming arg against the
+    // harness cwd.
+    const bin: []const u8 = if (std.fs.path.isAbsolute(bin_arg))
+        bin_arg
+    else abs: {
+        var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
+        var threaded = std.Io.Threaded.init_single_threaded;
+        const n = std.process.currentPath(threaded.io(), &cwd_buf) catch
+            fail("net-missing: cannot resolve cwd to absolutize the binary path", .{});
+        break :abs std.fs.path.resolve(gpa, &.{ cwd_buf[0..n], bin_arg }) catch
+            fail("net-missing: cannot resolve the binary path", .{});
+    };
+
     // A scratch cwd with no net in it. Deliberately not under net/.
     const dir_path = "net_missing_tmp";
     Io.Dir.cwd().createDirPath(io, dir_path) catch

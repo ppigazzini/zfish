@@ -176,7 +176,7 @@ test "MapPawns encodes a2-h7 to 0..47 (a2=47, a3=45, h7=0-ish edge)" {
     try std.testing.expectEqual(@as(i32, 45), map_pawns[makeSquare(0, 2)]); // A3
     try std.testing.expectEqual(@as(i32, 46), map_pawns[makeSquare(7, 1)]); // H2 (flip of A2)
     // every a2..h7 square gets a distinct value in 0..47
-    var seen = [_]bool{false} ** 48;
+    var seen: [48]bool = @splat(false);
     var f: usize = 0;
     while (f < 8) : (f += 1) {
         var r: usize = 1;
@@ -195,7 +195,7 @@ test "MapKK assigns exactly 462 legal king-pair encodings" {
 
 test "MapA1D1D4 covers the 10 triangle squares 0..9" {
     initGeometry();
-    var seen = [_]bool{false} ** 10;
+    var seen: [10]bool = @splat(false);
     var s: usize = 0;
     while (s <= sq_d4) : (s += 1) {
         if (fileOf(s) <= 3 and offA1H8(s) <= 0) {

@@ -424,7 +424,7 @@ fn openFileForWrite(io: std.Io, path: []const u8) !std.Io.File {
 }
 
 fn writeHeader(writer: *std.Io.Writer, hash_value: u32, description: []const u8) !void {
-    var header = [_]u8{0} ** 12;
+    var header: [12]u8 = @splat(0);
     writeU32LeInto(header[0..4], network_version);
     writeU32LeInto(header[4..8], hash_value);
     writeU32LeInto(header[8..12], @intCast(description.len));

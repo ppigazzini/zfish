@@ -211,7 +211,7 @@ const MockBuild = struct {
 };
 
 test "Pool lays the ThreadPool footprint and reads back the thread vector" {
-    var footprint: [64]u8 align(8) = [_]u8{0} ** 64; // zeroed = default-constructed pool
+    var footprint: [64]u8 align(8) = @splat(0); // zeroed = default-constructed pool
     var mb = MockBuild{};
     var pool = Pool.init(testing.allocator, &footprint);
     defer pool.clear();
@@ -243,7 +243,7 @@ test "boundNodesAssign lays/reads/reassigns/clears the bound slice (leak-checked
     // Standalone footprint -- no threads needed, just the bound slice contract that the
     // multi-node reconfigure path drives (and that single-node runs never populate, so
     // this is its ONLY gate). testing.allocator flags any missed free.
-    var footprint: [worker_layout.thread_pool_size]u8 align(8) = [_]u8{0} ** worker_layout.thread_pool_size;
+    var footprint: [worker_layout.thread_pool_size]u8 align(8) = @splat(0);
     const tp = poolOf(&footprint);
     tp.* = .{};
 
@@ -275,7 +275,7 @@ test "boundNodesAssign unwinds leak-free on allocation failure" {
     // frees the prior buffer and returns the error leak-free.
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
-            var footprint: [worker_layout.thread_pool_size]u8 align(8) = [_]u8{0} ** worker_layout.thread_pool_size;
+            var footprint: [worker_layout.thread_pool_size]u8 align(8) = @splat(0);
             const tp = poolOf(&footprint);
             tp.* = .{};
             defer boundNodesAssign(tp, a, null) catch {}; // free any live buffer
@@ -287,7 +287,7 @@ test "boundNodesAssign unwinds leak-free on allocation failure" {
 }
 
 test "Pool set(0) clears the vector; resize re-lays it" {
-    var footprint: [64]u8 align(8) = [_]u8{0} ** 64;
+    var footprint: [64]u8 align(8) = @splat(0);
     var mb = MockBuild{};
     var pool = Pool.init(testing.allocator, &footprint);
     defer pool.clear();

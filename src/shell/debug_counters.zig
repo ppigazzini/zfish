@@ -9,13 +9,13 @@ const std = @import("std");
 
 const max_debug_slots: usize = 32;
 
-var dbg_hit: [max_debug_slots][2]i64 = .{.{ 0, 0 }} ** max_debug_slots;
-var dbg_mean: [max_debug_slots][2]i64 = .{.{ 0, 0 }} ** max_debug_slots;
-var dbg_stdev: [max_debug_slots][3]i64 = .{.{ 0, 0, 0 }} ** max_debug_slots;
-var dbg_correl: [max_debug_slots][6]i64 = .{.{ 0, 0, 0, 0, 0, 0 }} ** max_debug_slots;
-var dbg_extremes_count: [max_debug_slots]i64 = [_]i64{0} ** max_debug_slots;
-var dbg_extremes_max: [max_debug_slots]i64 = [_]i64{std.math.minInt(i64)} ** max_debug_slots;
-var dbg_extremes_min: [max_debug_slots]i64 = [_]i64{std.math.maxInt(i64)} ** max_debug_slots;
+var dbg_hit: [max_debug_slots][2]i64 = @splat(.{ 0, 0 });
+var dbg_mean: [max_debug_slots][2]i64 = @splat(.{ 0, 0 });
+var dbg_stdev: [max_debug_slots][3]i64 = @splat(.{ 0, 0, 0 });
+var dbg_correl: [max_debug_slots][6]i64 = @splat(.{ 0, 0, 0, 0, 0, 0 });
+var dbg_extremes_count: [max_debug_slots]i64 = @splat(0);
+var dbg_extremes_max: [max_debug_slots]i64 = @splat(std.math.minInt(i64));
+var dbg_extremes_min: [max_debug_slots]i64 = @splat(std.math.maxInt(i64));
 
 fn slotIndex(slot: c_int) usize {
     std.debug.assert(slot >= 0 and slot < max_debug_slots);
