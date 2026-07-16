@@ -12,18 +12,20 @@ text.
 
 ## Reach for `@Vector` before hand-written SIMD
 
-The NNUE hot path — the feature transformer and the affine layers — is written once
-in portable `@Vector` code. LLVM lowers it to AVX-512, AVX2, or SSE on x86 and to
-NEON on aarch64, with no per-arch source.
+The NNUE feature transformer is written once in portable `@Vector` code. LLVM lowers
+it to AVX-512, AVX2, or SSE on x86 and to NEON on aarch64. Reach for an intrinsic only
+where the portable form leaves measurable throughput behind: the affine layers add
+comptime x86 specializations (`nnue_inference.zig`) over the same `@Vector` fallback,
+and every path is bit-identical.
 
 ```zig
 const V = @Vector(16, i16);
 const acc: V = a + b; // vpaddw on AVX2, vaddw on NEON — the backend's job
 ```
 
-The integer-exact eval is arch-invariant, so the one kernel must yield the same
-bench on every tier. `zig build parity` runs the signature across tiers to assert
-the specializations agree.
+The integer-exact eval is arch-invariant, so every specialization must yield the same
+bench. `tools/arch_determinism.sh` runs the real bench on each tier the host can
+execute and asserts they agree — `zig build parity` gates the single arch it is given.
 
 ## Dispatch ISA tiers at comptime, from one source
 
@@ -72,16 +74,24 @@ a future break surfaces early instead of at the next toolchain bump.
 
 ## Reserve computed-goto for unpredictable dispatch
 
-A labeled `switch` (computed goto) fits a *data-driven* state machine whose next
-state the branch predictor cannot guess. It **pessimizes** a predictable linear one:
-when the stages advance in order, the predictor already had them and the computed
-goto only defeats it. Leave predictable stage machines as plain control flow.
+`movepick.nextMove` is the engine's hottest dispatcher: a plain `switch` on
+`state.stage`. It stays a plain switch on purpose. A labeled `switch` (computed goto)
+pays off when the next state is data-driven and the branch predictor cannot guess it;
+a staged move picker advances through its stages in order, so the predictor already
+has them and the computed goto only defeats it. Nothing in this tree uses a labeled
+switch — that is the decision, not an omission.
 
 ## Measure differentially, before attributing
 
-To claim a component is the bottleneck, ablate it — stub it out, hold everything
-else fixed, measure the delta. To compare two builds, interleave the runs and take
-the median; machine temperature and startup jitter otherwise dominate. Control the
-confounds first (inlining across a comparison boundary, and comparing the same tree,
-not two different ones), and label a hypothesis as a hypothesis. A performance claim
-ships with the command that produced it.
+`tools/perf_counters.zig` is the local A/B gate over CPU hardware counters, and it
+encodes the method: interleave the two builds and take the median of the per-round
+paired ratios (not the ratio of the medians — they disagree), pin the run, and assert
+the node counts match so the comparison is the same work. It refuses to report when
+those preconditions fail.
+
+Follow the same discipline by hand: to claim a component is the bottleneck, ablate it
+— stub it out, hold everything else fixed, measure the delta. Control the confounds
+first (inlining across a comparison boundary; comparing the same search tree rather
+than two different ones). Label a hypothesis as a hypothesis. A performance claim
+ships with the command that produced it. It is a LOCAL gate — perf counters are not
+available in CI, so it never runs there.

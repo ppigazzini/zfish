@@ -19,11 +19,11 @@ function-pointer seams. For the zones and the module graph, see
 | `search_id.zig` | The ID loop's primitives: `ssContext`/`searchIdState` snapshots, `ssTmInit`, thread start/wait/vote wrappers, root-move sort/move-to-front, `skillLevel`/`skillPickBest`, nodestime advance |
 | `search_setup.zig` | `buildCtx` — fetches the stable per-search worker state once and assembles the `QCtx` threaded through the recursion |
 | `search_emit.zig` | The UCI reporting side: `info` line building, the MultiPV walk (`searchPv`), `currmove`, `bestmove`, the no-moves line |
-| `search_manager.zig` | `SearchManager` (main-thread bookkeeping, `is_main` branch instead of a vtable) and `UpdateContext` (the four output callbacks) |
-| `root_move_build.zig` | Builds the `go`-path root-move list and ranks it by DTZ/WDL when tablebases are loaded; owns `TbConfig` |
+| `search_manager.zig` | `SearchManager` (main-thread bookkeeping, `is_main` branch, no vtable) and `UpdateContext` (the four output callbacks) |
+| `root_move_build.zig` | Builds the `go`-path root-move list and ranks it by DTZ/WDL when tablebases are loaded; owns `TbConfig` — see [6-tablebases.md](6-tablebases.md) |
 | `headless_search.zig` | An engine-zone-only "search this FEN at depth N" root: builds one worker, a one-thread pool, a small TT, and drives `iterativeDeepening` with no platform attached |
 | **Alpha-beta** | |
-| `search_main.zig` | `searchImpl` — a node's Steps 1–12: TT probe, static eval, razoring, futility, null move, IIR, ProbCut |
+| `search_main.zig` | `searchImpl` — a node's Steps 1–12: TT probe, the tablebase probe (Step 6, see [6-tablebases.md](6-tablebases.md)), static eval, razoring, futility, null move, IIR, ProbCut |
 | `search_back.zig` | `runBack` — the move loop and node finalization, Steps 13–21: pruning, singular extensions, LMR, best-move update, TT store, correction-history update |
 | `search_qsearch.zig` | `qsearchImpl` plus the primitives shared with the main search: `pvUpdate`, `qCorrectionValue`, `adjustKey50`, `ssAdd`/`ssSub`, `posCapture`, `isShuffling` |
 | `search_control.zig` | `checkTime`, `rootUpdate`, `rootTtMove`, `rootInList`, `searchStopped`, `inLastIterPv` |
@@ -89,8 +89,9 @@ flowchart TD
 `iterativeDeepening` and return. The main thread additionally initializes time
 management (`ssTmInit`, which also bumps the TT generation), starts the siblings,
 runs its own `iterativeDeepening`, busy-waits while pondering or on `go infinite`,
-sets the stop flag, waits for the siblings, picks the vote-winning thread, and emits
-the final PV and `bestmove`.
+sets the stop flag, waits for the siblings, picks the vote-winning thread (only when
+no depth limit is set and skill is disabled — otherwise it keeps its own result), and
+emits the final PV and `bestmove`.
 
 `iterativeDeepening` allocates the `SearchStack` array on the Zig stack — sized
 `max_ply + 10` with seven sentinel plies below the root, so `ss-1 .. ss-7` are always
@@ -100,14 +101,10 @@ high/low (`search.aspirationDeltaGrow`) until the score lands inside the window.
 
 `searchImpl` handles one node's pre-loop work and then tail-calls `runBack` with the
 node state as an `anytype` struct. `runBack`'s move loop recurses back into
-`searchImpl` for every child. **These two files form the file graph's only import
-cycle, and it is deliberate**: the cycle *is* the alpha-beta recursion, and splitting
-the file did not split it. Both headers name it as one component; `zig build
-arch-report` lists the SCC as known, so a *new* file cycle shows up as undeclared
-instead of hiding behind this one. See
-[1-architecture.md](1-architecture.md#the-module-graph). Breaking it — by inverting an
-import or threading a function pointer — would buy nothing and cost an optimizer
-barrier on the hottest path in the engine.
+`searchImpl` for every child. The two files form a declared SCC — the cycle *is* the
+alpha-beta recursion — and `zig build arch-report` lists it as known, so a *new* file
+cycle shows up as undeclared instead of hiding behind this one. See
+[1-architecture.md](1-architecture.md#the-module-graph).
 
 `qsearchImpl` is a call-graph leaf: it self-recurses and never calls `searchImpl`.
 `searchImpl` dives into it at `depth <= 0` and on razoring.
@@ -274,9 +271,10 @@ Two mechanisms stop a search.
 `searchImpl` node but is a no-op off the main thread (`calls_cnt` is null there). It
 decrements a counter and only does real work when it hits zero, then re-arms it —
 scaled down from 512 when a node limit is set, so a node-limited search overshoots by
-a bounded amount. It raises the shared stop flag when the elapsed time exceeds
-`maximum_time`, `stop_on_ponderhit` is set, a `movetime` limit is reached, or the node
-limit is hit. It never stops while pondering.
+a bounded amount. It raises the shared stop flag when `use_time_management` is on and
+either the elapsed time exceeds `maximum_time` or `stop_on_ponderhit` is set, when a
+`movetime` limit is reached, or when the node limit is hit. It never stops while
+pondering.
 
 **The per-iteration decision.** At the end of each depth the main thread computes
 whether to start another iteration, from the falling-eval trend, the depth since the
@@ -299,37 +297,14 @@ time-limited search reproducible.
 All wall-clock reads go through `time_source.now`, so the engine never calls an OS
 clock directly.
 
-## Parallel search (Lazy-SMP)
+## Parallel search
 
-Every worker searches the same root independently, sharing only the transposition
-table and the per-NUMA-node correction/pawn histories. There is no work splitting and
-no synchronization inside the tree; workers diverge because they hit different TT
-states and because `search.aspirationInitialDelta` seeds the window from the thread
-index. Threads and their scheduling are the platform's — see [5-platform.md](5-platform.md).
-
-The engine drives the pool only through `thread_ops.zig`:
-
-| Hook | Called from |
-| --- | --- |
-| `startSiblings` | `ssThreadsStart`, before the main thread's own ID loop |
-| `waitSiblings` | `ssWaitFinished`, after the stop flag is set |
-| `waitThread` | while a TT resize clears the table |
-| `bestThreadWorker` | `ssGetBestThread`, to pick whose move is reported |
-
-**Thread voting.** When the search is neither depth-limited nor skill-limited, the
-reported move is not necessarily the main thread's. `bestThreadWorker` — implemented
-in `src/platform/thread_vote.zig`, a leaf over `worker_layout` — sums a per-thread
-voting value over every thread proposing the same first move, weighting each thread's
-score margin by its reached root depth, with decisive scores handled separately. The
-winner's worker supplies the final PV and `bestmove`; the main thread emits them.
-
-What crosses threads: the TT (lock-free, shared), the shared correction and pawn
-histories (shared, unsynchronized), the `stop` and `increase_depth` flags (monotonic
-atomics on the pool), each worker's `best_move_changes` counter (summed and reset per
-iteration by `searchIdCollectBmc`), and the per-thread node/TB-hit counters aggregated
-by `worker_layout.poolNodesSearched` / `poolTbHits`. Everything else — the histories in
-`WorkerHistories`, the root moves, the accumulator stack, the search stack — is
-per-worker.
+Every worker searches the same root independently, sharing the transposition table
+and the per-NUMA-node histories; the engine drives the pool only through the
+`thread_ops` seam, and the reported move is chosen by thread voting. The pool, the
+worker lifecycle, the shared-vs-per-worker split, NUMA replication, and what is
+deterministic under threads are covered in
+[5-multithreading.md](5-multithreading.md).
 
 ## The engine seams
 
@@ -345,9 +320,9 @@ See [1-architecture.md](1-architecture.md#the-composition-root-and-the-cycle-bre
 
 | Seam | Reached for | Default when unregistered |
 | --- | --- | --- |
-| `option_source.zig` | `MultiPV`, `Skill Level`, `UCI_Elo`, `nodestime`, `Move Overhead`, `Ponder`, `UCI_ShowWDL`, the Syzygy settings | 0 / false — **search-affecting** |
+| `option_source.zig` | `MultiPV`, `Skill Level`, `UCI_Elo`, `UCI_LimitStrength`, `nodestime`, `Move Overhead`, `Ponder`, `UCI_ShowWDL`, the Syzygy settings | 0 / false — **search-affecting** |
 | `output_sink.zig` | every `info` and `bestmove` line | drop the line — **degraded**: right move, no answer |
-| `tb_source.zig` | Step 6's WDL probe, root ranking | "no tablebases" — genuinely safe |
+| `tb_source.zig` | Step 6's WDL probe, root ranking — see [6-tablebases.md](6-tablebases.md) | "no tablebases" — genuinely safe |
 | `time_source.zig` | time management, elapsed, the skill RNG seed | a monotonic counter — safe, but in ticks |
 | `thread_ops.zig` | start/wait siblings, best-thread vote | single-threaded — **search-affecting** |
 

@@ -13,14 +13,15 @@ The repository holds three things:
 - **The engine** — the whole runtime in Zig, split into three zones: `engine/` (the
   chess library: board, search, NNUE evaluation), `platform/` (the OS/HW runtime:
   threads, memory, NUMA, Syzygy), and `shell/` (the process: UCI, options, `main`).
-  The NNUE hot path is portable `@Vector` SIMD that LLVM lowers per target, so there
-  is no per-architecture source.
+  The NNUE feature transformer is portable `@Vector` SIMD that LLVM lowers per
+  target; the affine layers add comptime x86 intrinsic specializations, all
+  bit-identical.
 - **The tooling** — `build.zig` is a hand-declared module graph, and `tools/` holds
   the pure-Zig gate battery (the bench signature, golden-diff, metamorphic and
   liveness gates), the structural linters, and the upstream-sync tooling. No
   Stockfish C++ is vendored; the differential check against real upstream builds
   vanilla Stockfish in a throwaway git worktree.
-- **The CI** — every push runs the parity battery across Linux x86-64/aarch64,
+- **The CI** — every push to `main` runs the parity battery across Linux x86-64/aarch64,
   Windows, and macOS, plus valgrind, formatting, and a non-blocking Zig-master
   compatibility lane; fuzzing and upstream-drift detection run on a schedule.
 
@@ -30,13 +31,15 @@ The repository holds three things:
 |---|---|---|---|
 | 1 | [1-architecture.md](1-architecture.md) | All contributors | The three zones, the module graph, the composition root and cycle-break hooks, how a search flows |
 | 2 | [2-engine-board.md](2-engine-board.md) | Engine contributors | Position and state, bitboards and magics, move generation, legality, Zobrist, repetition, FEN |
-| 3 | [3-engine-search.md](3-engine-search.md) | Engine contributors | Iterative deepening, alpha-beta and qsearch, move ordering, the transposition table and history, time management, Lazy-SMP |
+| 3 | [3-engine-search.md](3-engine-search.md) | Engine contributors | Iterative deepening, alpha-beta and qsearch, move ordering, the transposition table and history, time management |
 | 4 | [4-engine-eval.md](4-engine-eval.md) | Engine contributors | NNUE: the network and its load path, the feature transformer, the incremental accumulator, inference |
-| 5 | [5-platform.md](5-platform.md) | Platform contributors | Threads and the pool, memory and NUMA, Syzygy tablebases, the clock, the lifecycle hooks |
-| 6 | [6-shell.md](6-shell.md) | Shell contributors | `main` as the composition root, the UCI surface, the option model, the engine object and session, bench |
-| 7 | [7-idiomatic-zig.md](7-idiomatic-zig.md) | Hot-path and build contributors | Portable `@Vector` SIMD, comptime ISA dispatch, static allocation, dependency injection, cross-version shims, the measurement discipline |
-| 8 | [8-tooling-ci.md](8-tooling-ci.md) | All developers | The build targets, the gate battery, the structural linters, upstream tracking, the CI lanes |
-| 9 | [9-references.md](9-references.md) | All developers | Stockfish, Zig, chess-domain, and design references |
+| 5 | [5-multithreading.md](5-multithreading.md) | Engine and platform contributors | Lazy-SMP: the pool and worker lifecycle, shared vs per-worker state, thread voting, NUMA replication, determinism |
+| 6 | [6-tablebases.md](6-tablebases.md) | Engine and platform contributors | Syzygy: WDL and DTZ, the registry and probe path, root and in-search probing, the UCI options |
+| 7 | [7-platform.md](7-platform.md) | Platform contributors | Memory and NUMA, the thread runtime primitives, the clock, the lifecycle hooks |
+| 8 | [8-shell.md](8-shell.md) | Shell contributors | `main` as the composition root, the UCI surface, the option model, the engine object and session, bench |
+| 9 | [9-idiomatic-zig.md](9-idiomatic-zig.md) | Hot-path and build contributors | Portable `@Vector` SIMD, comptime ISA dispatch, static allocation, dependency injection, cross-version shims, the measurement discipline |
+| 10 | [10-tooling-ci.md](10-tooling-ci.md) | All developers | The build targets, the gate battery, the structural linters, upstream tracking, the CI lanes |
+| 11 | [11-references.md](11-references.md) | All developers | Stockfish, Zig, chess-domain, and design references |
 
 For building, the bench gate, and the contribution workflow, see the root
 [README](../README.md) and [CONTRIBUTING](../CONTRIBUTING.md).
@@ -66,7 +69,7 @@ not embedded in the binary.
 | Evaluation | NNUE, external network file |
 | Endgames | Syzygy tablebases |
 | Protocol | UCI |
-| C surface | none — no `export fn`, `callconv(.c)`, `extern var`, or `[*c]` |
+| C surface | no exported C ABI — no `export fn`, `callconv(.c)`, `extern var`, or `[*c]`; imports only `malloc`/`free`/`exit` from libc |
 
 ## Project layout
 
