@@ -84,18 +84,21 @@ fn appendIntLine(
     value: c_int,
     suffix: []const u8,
 ) !void {
-    // Reproduce C `%+15d`: force a leading sign then space-pad to width 15. std.fmt has
-    // no force-sign flag, so emit the sign explicitly, format the magnitude, then pad the
-    // resulting string (string padding adds no sign of its own). Stay byte-identical to C.
+    // Emit `showpos` + the value, UNPADDED. This is not C's `%+15d`: upstream is C++
+    // iostreams, and its `<< std::setw(15)` (evaluate.cpp:87) is a ONE-SHOT manipulator
+    // consumed by the very next insertion -- the "NNUE evaluation          " literal, which
+    // is already 25 chars, so it pads nothing and resets the width to 0 before the value is
+    // inserted. Padding the value to 15 (the old reading) inserted 12 extra spaces:
+    //   upstream: `NNUE evaluation          +10`
+    //   zfish:    `NNUE evaluation                      +10`
+    // std.fmt has no force-sign flag, so emit the sign explicitly.
     var signed: [32]u8 = undefined;
     const body = std.fmt.bufPrint(&signed, "{c}{d}", .{
         @as(u8, if (value < 0) '-' else '+'),
         @abs(value),
     }) catch unreachable;
-    var numeric: [64]u8 = undefined;
-    const rendered = std.fmt.bufPrint(&numeric, "{s: >15}", .{body}) catch unreachable;
     try buffer.appendSlice(std.heap.c_allocator, prefix);
-    try buffer.appendSlice(std.heap.c_allocator, rendered);
+    try buffer.appendSlice(std.heap.c_allocator, body);
     try buffer.appendSlice(std.heap.c_allocator, suffix);
 }
 
@@ -105,21 +108,20 @@ fn appendFloatLine(
     value: f64,
     suffix: []const u8,
 ) !void {
-    // Reproduce `%+15.2f`: forced sign, 2 decimals, right-padded to width 15. std.fmt is
-    // byte-identical to C `%.2f` here because `value` is always centipawns*0.01 -- a value
-    // on the 2-decimal grid, so no third decimal exists and C's round-half-to-even can
-    // never disagree with std.fmt's round-half-away. Proven byte-exact for every cp in
-    // [-2_000_000, 2_000_000] (60x the mate-bounded eval range). std.fmt has no force-sign
-    // flag, so emit the sign explicitly and pad the resulting string (no sign semantics).
+    // Forced sign + 2 decimals, UNPADDED -- see appendIntLine: upstream's one-shot
+    // `std::setw(15)` is consumed by the preceding string literal, never by the value, so
+    // `%+15.2f` was the wrong model. std.fmt is byte-identical to C `%.2f` here because
+    // `value` is always centipawns*0.01 -- a value on the 2-decimal grid, so no third
+    // decimal exists and C's round-half-to-even can never disagree with std.fmt's
+    // round-half-away. Proven byte-exact for every cp in [-2_000_000, 2_000_000] (60x the
+    // mate-bounded eval range). std.fmt has no force-sign flag, so emit the sign explicitly.
     var digits: [32]u8 = undefined;
     const body = std.fmt.bufPrint(&digits, "{c}{d:.2}", .{
         @as(u8, if (value < 0) '-' else '+'),
         @abs(value),
     }) catch unreachable;
-    var numeric: [64]u8 = undefined;
-    const rendered = std.fmt.bufPrint(&numeric, "{s: >15}", .{body}) catch unreachable;
     try buffer.appendSlice(std.heap.c_allocator, prefix);
-    try buffer.appendSlice(std.heap.c_allocator, rendered);
+    try buffer.appendSlice(std.heap.c_allocator, body);
     try buffer.appendSlice(std.heap.c_allocator, suffix);
 }
 

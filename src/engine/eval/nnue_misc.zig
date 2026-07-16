@@ -33,15 +33,17 @@ fn formatTraceAlloc(input: NnueTraceInput) ![*:0]u8 {
     var bucket: usize = 0;
     while (bucket < input.bucket_count) : (bucket += 1) {
         var bucket_buffer: [64]u8 = undefined;
-        // Match `%zu` (no width here) with `{d}` byte-for-byte.
-        const bucket_text = std.fmt.bufPrint(&bucket_buffer, "|  {d}        |  ", .{bucket}) catch unreachable;
+        // Match `"|  " << bucket << "        " << " |  "` (nnue_misc.cpp:78-79) byte-for-
+        // byte: upstream closes each cell with `"  " << " |  "`, i.e. THREE spaces before
+        // the pipe, not two. Every column was one space narrow.
+        const bucket_text = std.fmt.bufPrint(&bucket_buffer, "|  {d}         |  ", .{bucket}) catch unreachable;
         try buffer.appendSlice(allocator, bucket_text);
         try appendAlignedDot(&buffer, input.psqt_cp[bucket]);
-        try buffer.appendSlice(allocator, "  |  ");
+        try buffer.appendSlice(allocator, "   |  ");
         try appendAlignedDot(&buffer, input.positional_cp[bucket]);
-        try buffer.appendSlice(allocator, "  |  ");
+        try buffer.appendSlice(allocator, "   |  ");
         try appendAlignedDot(&buffer, input.psqt_cp[bucket] + input.positional_cp[bucket]);
-        try buffer.appendSlice(allocator, "  |");
+        try buffer.appendSlice(allocator, "   |");
         if (bucket == input.correct_bucket) {
             try buffer.appendSlice(allocator, " <-- this bucket is used");
         }
