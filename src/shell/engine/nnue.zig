@@ -33,7 +33,8 @@ pub fn printInfoString(str: []const u8) void {
     }
 }
 
-// Treat the external net as a RUNTIME input, not a build-time one (NNUE_EMBEDDING_OFF):
+// Treat the external net as a RUNTIME input, not a build-time one: network.zig's
+// embedded net is an unconditional 1-byte stub, so the real net must come from disk.
 // `network.load` resolves EvalFile against the cwd and the binary directory, and
 // reports nothing when every candidate misses. Worker construction then reads the
 // feature-transformer biases (worker_construct.constructFull), which `orelse return`s

@@ -228,7 +228,7 @@ fn sharedStateInsertHistory(shared_state: *const anyopaque, numa_config: *const 
     _ = do_bind;
     try engine_port.sharedHistoriesInsert(engine_port.SharedState.fromPtr(shared_state).shared_histories, numa_index, size);
 }
-// Note that with NNUE_EMBEDDING_OFF the embedded net is the 1-byte {0x0} stub; loadNetworkBytes
+// Note that the embedded net is an unconditional 1-byte {0x0} stub; loadNetworkBytes
 // fails on it and falls back to the on-disk EvalFile (bench validates the file net).
 // Keep set_loaded_state a no-op: the load owns the EvalFile state (nn_current/
 // nn_description, set just before these calls), so there is nothing more to record.
