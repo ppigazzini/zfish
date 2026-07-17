@@ -554,6 +554,17 @@ pub fn build(b: *std.Build) void {
     for (module_edges) |e| mods.get(e.from).?.addImport(e.imp, mods.get(e.to).?);
     mods.get("misc").?.addImport("build_options", build_options_module);
 
+    // Match upstream's codegen: its Makefile compiles `build` with -flto=full (Makefile:965)
+    // while zfish shipped without it, so the two were never compiled alike. Measured on an
+    // identical 178,029-node tree, bit-exact (bench stays 2466447): 4,065,662,391 ->
+    // 3,922,860,311 instructions, -3.51%, which is 22% of the whole instruction gap against
+    // upstream -- from a flag, not code.
+    //
+    // OPT-IN, not default: -flto=full breaks the owned cross-targets. `-Dos=windows` fails
+    // to link (lld-link: undefined symbol: frexpf) and `-Dos=macos` refuses outright ("LTO
+    // requires using LLD"). Defaulting it on would ship a native win while breaking two of
+    // the five owned platforms, so it stays behind the flag until the cross-link is solved.
+    const want_lto = b.option(bool, "lto", "Link-time optimization (-flto=full, matching upstream). Native only: breaks the windows/macos cross-links.") orelse false;
     const exe = b.addExecutable(.{
         .name = "stockfish",
         .root_module = b.createModule(.{
@@ -565,6 +576,7 @@ pub fn build(b: *std.Build) void {
             // stdlib is dead weight.
         }),
     });
+    exe.lto = if (want_lto) .full else .none;
 
     // Share a thin libc binding with the files that need C stdio etc.
     // Import as `libc` wherever a module says `const c = @import("libc")`.
