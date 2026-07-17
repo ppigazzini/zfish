@@ -51,6 +51,22 @@ graph** — a `module_edges` table of `.{ .from, .imp, .to }` triples wired by
 `addImport`, and the authoritative statement of what may depend on what. A module
 cannot reach a peer it was not handed.
 
+**A declared edge is a permission, not a fact.** `addImport` grants the right to reach a
+module; it does not oblige anyone to use it. So the table is always a superset of the real
+dependencies, and `arch-report` reports the difference — for the composition root it prints
+`main.zig: wired N, @imports M -> N-M DECLARED-BUT-UNUSED edges` and names each one. Those
+are not errors, and the count is expected to be non-zero.
+
+They are also not free. A dead declared edge is a **pre-granted permission**: while it
+stands, a stray `@import` of that module compiles silently; delete it and the same import
+becomes a compile error. That is the only enforcement — the compiler will not otherwise stop
+a module reaching a peer the design never intended it to touch. So prune an edge when its
+last real use goes, and treat a growing unused list as permissions accumulating faster than
+anyone is spending them.
+
+Read the counts from `zig build arch-report`, never from prose: they move with every added or
+deleted import, and any number written here is stale by the next commit.
+
 The module graph is a **DAG**. The file graph (relative `@import` inside a module)
 holds exactly one cycle, `search_main.zig ↔ search_back.zig` — the alpha-beta
 recursion itself (`searchImpl ↔ runBack`), declared as one component in both file
