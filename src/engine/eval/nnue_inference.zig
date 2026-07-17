@@ -271,27 +271,58 @@ inline fn affineDpbusd(
         break :blk m;
     };
     var acc: Vo = biases[0..OUT].*;
-    var it = GroupIter(sparse){ .nnz = nnz, .groups = input.len / 4 };
-    while (it.next()) |g| {
-        const in4: @Vector(4, i16) = .{
-            @intCast(input[g * 4]),     @intCast(input[g * 4 + 1]),
-            @intCast(input[g * 4 + 2]), @intCast(input[g * 4 + 3]),
-        };
-        const inpat: Vi16 = @shuffle(i16, in4, @as(@Vector(4, i16), undefined), rep_mask);
-        const wq: @Vector(N, i8) = weights[g * N ..][0..N].*;
-        const w16: Vi16 = wq; // widen i8 -> i16
-        const Vh = @Vector(N2, i32);
-        // Run Stage 1 = vpmaddwd(inpat, w16): the deinterleave+widen+mul+add folds into a
-        // single pmaddwd per register (products are exact: |in|<=127, |w|<=128).
-        const in_e: @Vector(N2, i16) = @shuffle(i16, inpat, @as(Vi16, undefined), even_n);
-        const in_o: @Vector(N2, i16) = @shuffle(i16, inpat, @as(Vi16, undefined), odd_n);
-        const w_e: @Vector(N2, i16) = @shuffle(i16, w16, @as(Vi16, undefined), even_n);
-        const w_o: @Vector(N2, i16) = @shuffle(i16, w16, @as(Vi16, undefined), odd_n);
-        const madd: Vh = @as(Vh, in_e) * @as(Vh, w_e) + @as(Vh, in_o) * @as(Vh, w_o);
-        // Sum output j's two i32 partials (Stage 2).
-        const m_e: Vo = @shuffle(i32, madd, @as(Vh, undefined), even_out);
-        const m_o: Vo = @shuffle(i32, madd, @as(Vh, undefined), odd_out);
-        acc += m_e + m_o;
+    const Vh = @Vector(N2, i32);
+    const groups = input.len / 4;
+    // Hoist the input/weight base per 64-group nnz word and pop bits with a LOCAL index
+    // (affine_transform_sparse_input.h), rather than GroupIter's absolute re-scale per group. The
+    // body is inlined into both branches (not factored behind a `&acc` helper: taking the
+    // accumulator's address spills it out of registers -- D8). The deinterleave+widen+mul+add
+    // folds into pmaddwd per register (exact: |in|<=127, |w|<=128).
+    if (sparse) {
+        var k: usize = 0;
+        while (k * 64 < groups) : (k += 1) {
+            var bits = nnz[k];
+            const in_base = input.ptr + k * 64 * 4;
+            const w_base = weights + k * 64 * N;
+            while (bits != 0) {
+                const i: usize = @ctz(bits);
+                bits &= bits - 1;
+                const in4: @Vector(4, i16) = .{
+                    @intCast(in_base[i * 4]),     @intCast(in_base[i * 4 + 1]),
+                    @intCast(in_base[i * 4 + 2]), @intCast(in_base[i * 4 + 3]),
+                };
+                const inpat: Vi16 = @shuffle(i16, in4, @as(@Vector(4, i16), undefined), rep_mask);
+                const wq: @Vector(N, i8) = (w_base + i * N)[0..N].*;
+                const w16: Vi16 = wq;
+                const in_e: @Vector(N2, i16) = @shuffle(i16, inpat, @as(Vi16, undefined), even_n);
+                const in_o: @Vector(N2, i16) = @shuffle(i16, inpat, @as(Vi16, undefined), odd_n);
+                const w_e: @Vector(N2, i16) = @shuffle(i16, w16, @as(Vi16, undefined), even_n);
+                const w_o: @Vector(N2, i16) = @shuffle(i16, w16, @as(Vi16, undefined), odd_n);
+                const madd: Vh = @as(Vh, in_e) * @as(Vh, w_e) + @as(Vh, in_o) * @as(Vh, w_o);
+                const m_e: Vo = @shuffle(i32, madd, @as(Vh, undefined), even_out);
+                const m_o: Vo = @shuffle(i32, madd, @as(Vh, undefined), odd_out);
+                acc += m_e + m_o;
+            }
+        }
+    } else {
+        var g: usize = 0;
+        while (g < groups) : (g += 1) {
+            const in4: @Vector(4, i16) = .{
+                @intCast(input[g * 4]),     @intCast(input[g * 4 + 1]),
+                @intCast(input[g * 4 + 2]), @intCast(input[g * 4 + 3]),
+            };
+            const inpat: Vi16 = @shuffle(i16, in4, @as(@Vector(4, i16), undefined), rep_mask);
+            const wq: @Vector(N, i8) = weights[g * N ..][0..N].*;
+            const w16: Vi16 = wq;
+            const in_e: @Vector(N2, i16) = @shuffle(i16, inpat, @as(Vi16, undefined), even_n);
+            const in_o: @Vector(N2, i16) = @shuffle(i16, inpat, @as(Vi16, undefined), odd_n);
+            const w_e: @Vector(N2, i16) = @shuffle(i16, w16, @as(Vi16, undefined), even_n);
+            const w_o: @Vector(N2, i16) = @shuffle(i16, w16, @as(Vi16, undefined), odd_n);
+            const madd: Vh = @as(Vh, in_e) * @as(Vh, w_e) + @as(Vh, in_o) * @as(Vh, w_o);
+            const m_e: Vo = @shuffle(i32, madd, @as(Vh, undefined), even_out);
+            const m_o: Vo = @shuffle(i32, madd, @as(Vh, undefined), odd_out);
+            acc += m_e + m_o;
+        }
     }
     out.* = acc;
 }
