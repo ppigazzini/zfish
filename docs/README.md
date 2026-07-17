@@ -40,6 +40,7 @@ The repository holds three things:
 | [08-idiomatic-zig.md](08-idiomatic-zig.md) | Hot-path and build contributors | Portable `@Vector` SIMD, comptime ISA dispatch, static allocation, dependency injection, cross-version shims, the measurement discipline |
 | [09-tooling-ci.md](09-tooling-ci.md) | All developers | The build targets, the gate battery, the structural linters, upstream tracking, the CI lanes |
 | [10-references.md](10-references.md) | All developers | Stockfish, Zig, chess-domain, and design references |
+| [11-writing.md](11-writing.md) | Anyone editing these docs | How the set is organised, the writing rules, what `docs-lint` does and does not check |
 
 For building, the bench gate, and the contribution workflow, see the root
 [README](../README.md) and [CONTRIBUTING](../CONTRIBUTING.md).
