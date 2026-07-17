@@ -3,8 +3,16 @@
 zfish is a pure-Zig port of Stockfish. The default `zig build` compiles zero C++ and the
 binary is **bit-exact** to upstream: same nodes, same move.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [docs/](docs/README.md) for how
-the code works. This file is only what those don't say and an agent gets wrong.
+**Read [docs/](docs/README.md) before changing code** — the architecture, each subsystem, the
+tooling. [CONTRIBUTING.md](CONTRIBUTING.md) has the workflow. This file is only what an agent
+gets wrong before it has read either.
+
+**Docs are part of the change, not after it.** Each zone's page is a live claim about the code
+you are touching — [docs/11-writing.md](docs/11-writing.md) maps every page to the source it
+owns and marks which run hot. Change hot code, re-read its page and fix it in the SAME commit:
+a doc is wrong from the moment the code lands, and every false claim ever found here got there
+that way. `zig build docs-lint` catches a dead link, path or anchor; it cannot tell you a
+sentence has become false. That part is yours.
 
 ## Setup
 
@@ -18,9 +26,8 @@ SIGSEGVs on a null net. **Do** run it from `net/`, or use `zig build bench`.
 
 ## The anchor
 
-`bench` prints a node count. It must equal `signature_reference` in `build.zig` — today
-`2466447`, but **read it from build.zig, never from memory or a doc**: it moves on every
-bench-moving upstream sync.
+`bench` prints a node count that must equal `signature_reference` in `build.zig`. **Read it
+from build.zig, never from memory or a doc** — it moves on every bench-moving upstream sync.
 
 **A byte-changing edit is not done until a gate says so.**
 
@@ -29,40 +36,22 @@ zig build parity           # the aggregate — run before calling anything done
 zig build signature        # just the anchor
 ```
 
-## Goldens are photographs of us, not references
+Cross-compile before committing anything under `src/platform/`, `std.Io`, or startup:
+`zig build -Dos=windows` and `-Dos=macos`. CI has caught an eager `File.stdout()` here.
 
-Nearly every gate records zfish's own output, so a golden pins a defect as faithfully as
-correct behaviour — the gate then passes *because* the engine is wrong. This has happened:
-`driver.golden` pinned a MultiPV tree upstream never searches.
+## Traps that cost real time
 
-**Don't** run `zig build <gate>-update` to make a red gate green. **Do** drive the upstream
-oracle first and match its bytes:
+Pointers, not explanations — each is documented where it belongs.
 
-```sh
-bash tools/upstream_oracle.sh --verify    # --verify is NOT optional: it checks the built
-                                          # binary against the commit's declared `Bench:`
-```
-
-## Measuring against upstream
-
-Two oracles, different jobs. **Don't** take an instruction/cost ratio from
-`upstream_oracle.sh` — it builds `COMP=gcc` while zfish is LLVM, so the ratio measures the
-compiler. **Do** build the perf oracle with `zig c++` and match zfish's `-Darch`; the full
-sequence is in [docs/09-tooling-ci.md](docs/09-tooling-ci.md#measuring-against-upstream-the-runnable-process).
-
-nps cannot resolve anything under ~5% on this hardware — use `tools/perf_callgrind.sh` and
-attribute with `tools/perf_fingerprint.py compare` (it sums across origin files and
-reconciles; reading one profile line per side is a lie).
-
-## Gotchas
-
-- **Never pin a number a gate computes** (module/edge/hook counts, the anchor). Quote
-  `zig build arch-report` / `hook-lint` / `signature` instead — such figures go stale in days.
-- `zig fmt --check` is CI's first gate; a deletion often leaves a blank line it rejects.
-- Valgrind must be arch-pinned (`-Darch=x86-64`); the default AVX-512 build SIGILLs under it.
+| trap | where |
+|---|---|
+| A golden can pin a **defect**: `<gate>-update` on a red gate launders a bug. Drive the oracle, match its bytes. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| Two oracles. A cost ratio off the `COMP=gcc` one measures **the compiler**, not zfish. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| nps cannot resolve <5%; callgrind cost must be summed across origin files. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
+| Comments are **imperative mood**; never pin a number a gate computes. | [docs/11-writing.md](docs/11-writing.md) |
 
 ## Commits
 
-Conventional subject ≤72 chars, blank line, body wrapped at 80 with the evidence: the gate
-output and exit code, not "should work". **Don't** `git push` — commit locally and stop
-unless asked. **Don't** add co-author or generated-by trailers.
+Conventional subject ≤72 chars, blank line, body wrapped at 80 carrying the evidence: gate
+output and exit code, not "should work". **Don't** `git push` — commit locally and stop unless
+asked. **Don't** add co-author or generated-by trailers.
