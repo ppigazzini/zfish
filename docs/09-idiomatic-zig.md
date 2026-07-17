@@ -48,7 +48,7 @@ Decide memory at startup, not per operation.
 Zig permits import cycles, so a strict DAG is a choice. Make it with a composition
 root and dependency injection through function pointers rather than a shared
 mega-module — the structure is described in
-[ARCHITECTURE](1-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+[ARCHITECTURE](01-architecture.md#the-composition-root-and-the-cycle-break-hooks).
 The price is real: a function pointer is an optimizer barrier and its erased
 `*anyopaque` context costs type safety, so `zig build hook-lint` bounds the hooks.
 Reach for this to invert a *specific* upward dependency, not as a default.

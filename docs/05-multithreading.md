@@ -16,16 +16,16 @@ The vertical spans all three zones:
 * **engine** — owns the search each thread runs, and reaches the pool only through
   function-pointer seams (`src/engine/search/thread_ops.zig`).
 
-For the search algorithm itself see [3-engine-search.md](3-engine-search.md); for the
-memory, futex, and NUMA primitives see [7-platform.md](7-platform.md); for the zones and
-the hook pattern see [1-architecture.md](1-architecture.md).
+For the search algorithm itself see [03-engine-search.md](03-engine-search.md); for the
+memory, futex, and NUMA primitives see [07-platform.md](07-platform.md); for the zones and
+the hook pattern see [01-architecture.md](01-architecture.md).
 
 ## Modules
 
 | File | Owns |
 | --- | --- |
 | **platform — threads** | |
-| `src/platform/thread_runtime.zig` | The job runner: `ThreadRuntime` — one `std.Thread` running `idleLoop`, plus `runCustomJob` / `waitForSearchFinished` / `deinit`, over the OS primitives [7-platform.md](7-platform.md) owns |
+| `src/platform/thread_runtime.zig` | The job runner: `ThreadRuntime` — one `std.Thread` running `idleLoop`, plus `runCustomJob` / `waitForSearchFinished` / `deinit`, over the OS primitives [07-platform.md](07-platform.md) owns |
 | `src/platform/search_thread.zig` | `SearchThread` — the vehicle: the `worker` handle, the heap `ThreadRuntime`, the thread index; `startSearching`, `clearWorker`, and the pool-level `startPoolSiblings` / `waitPoolSiblings` |
 | `src/platform/thread_pool.zig` | The `worker_layout.ThreadPool` footprint writer: `set` (spawn + attach a Worker per index via an injected `ThreadBuilder`), `clear` (drain, join, free), `waitThread`, `boundNodesAssign` |
 | `src/platform/thread.zig` | The pool policy layer: `reconfigure`, `startThinking`, `clear`, `startSearching`, `waitForSearchFinished`, `nodesSearched` / `tbHits`, `ensureNetworkReplicated`, `nextPowerOfTwo` |
@@ -120,7 +120,7 @@ boundary.
 
 The three lifecycle seams — `worker_build`, `worker_clear`, `worker_destroy` — are
 `runtime_hooks` function pointers registered by `src/shell/main.zig`; see
-[1-architecture.md](1-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+[01-architecture.md](01-architecture.md#the-composition-root-and-the-cycle-break-hooks).
 `worker_build` mints a `SearchManager` (main-thread flag for index 0), large-page-allocs
 the Worker block, runs `worker_construct.constructFull`, and writes the Worker into the
 thread's `worker` slot. `worker_clear` runs as a job *on* the thread, so each worker
@@ -242,7 +242,7 @@ What remains single-node is **discovery**, not wiring: `NumaConfig.fromSystem` e
 every online CPU onto one node rather than reading `/sys/devices/system/node`, so `system`
 and `hardware` cannot differ on this host. The map, the `bound` slice, the per-node sizing
 math, and the replica registry are real and unit-tested against multi-node inputs. The memory
-and NUMA primitives are described in [7-platform.md](7-platform.md).
+and NUMA primitives are described in [07-platform.md](07-platform.md).
 
 ## The seams
 
