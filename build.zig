@@ -560,11 +560,16 @@ pub fn build(b: *std.Build) void {
     // 3,922,860,311 instructions, -3.51%, which is 22% of the whole instruction gap against
     // upstream -- from a flag, not code.
     //
-    // OPT-IN, not default: -flto=full breaks the owned cross-targets. `-Dos=windows` fails
-    // to link (lld-link: undefined symbol: frexpf) and `-Dos=macos` refuses outright ("LTO
-    // requires using LLD"). Defaulting it on would ship a native win while breaking two of
-    // the five owned platforms, so it stays behind the flag until the cross-link is solved.
-    const want_lto = b.option(bool, "lto", "Link-time optimization (-flto=full, matching upstream). Native only: breaks the windows/macos cross-links.") orelse false;
+    // Default ON for Linux, OFF elsewhere, because the Zig 0.16 toolchain cannot link it
+    // on the other owned targets -- not a zfish limit, and not fixable from here:
+    //   -Dos=macos            "LTO requires using LLD", and forcing use_lld then gives
+    //                         "using LLD to link macho files is unsupported". Both paths refuse.
+    //   -Dos=windows          mingw long-double math is unresolved under LTO (frexpl, atanl,
+    //                         copysignl, __isnanl ...), 39 undefined symbols.
+    // Linux is where every gate and the CI parity lane run, so it gets the win; the
+    // cross-targets keep linking. -Dlto=false/true overrides either way.
+    const lto_default = os_choice == .linux;
+    const want_lto = b.option(bool, "lto", "Link-time optimization (-flto=full, matching upstream). Default on for Linux; the macos/windows toolchain paths cannot link it.") orelse lto_default;
     const exe = b.addExecutable(.{
         .name = "stockfish",
         .root_module = b.createModule(.{
