@@ -48,7 +48,7 @@ Decide memory at startup, not per operation.
 Zig permits import cycles, so a strict DAG is a choice. Make it with a composition
 root and dependency injection through function pointers rather than a shared
 mega-module — the structure is described in
-[ARCHITECTURE](01-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+[ARCHITECTURE](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
 The price is real: a function pointer is an optimizer barrier and its erased
 `*anyopaque` context costs type safety, so `zig build hook-lint` bounds the hooks.
 Reach for this to invert a *specific* upward dependency, not as a default.
@@ -96,7 +96,7 @@ appears as many lines and its true cost is the sum across all of them. C++ is hi
 than Zig because upstream's work lives in headers. Reading one line per side once turned a
 real 0.99x parity into a reported "1.87x, the worst component". The tool sums each group
 and reconciles against callgrind's own `PROGRAM TOTALS`, so it fails loudly instead of
-printing a plausible lie. `docs/10-tooling-ci.md` has the runnable sequence.
+printing a plausible lie. `docs/09-tooling-ci.md` has the runnable sequence.
 
 Follow the same discipline by hand: to claim a component is the bottleneck, ablate it
 — stub it out, hold everything else fixed, measure the delta. Control the confounds

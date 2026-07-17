@@ -5,9 +5,9 @@ limits, it returns a best move. It lives entirely in `src/engine/search/` — an
 engine-zone subtree that imports no platform or shell module and reaches the clock,
 the UCI options, the output stream, the tablebases, and the thread pool only through
 function-pointer seams. For the zones and the module graph, see
-[01-architecture.md](01-architecture.md); for the leaf evaluation, see
-[04-engine-eval.md](04-engine-eval.md); for move generation and legality, see
-[02-engine-board.md](02-engine-board.md).
+[00-architecture.md](00-architecture.md); for the leaf evaluation, see
+[03-engine-eval.md](03-engine-eval.md); for move generation and legality, see
+[01-engine-board.md](01-engine-board.md).
 
 ## Modules
 
@@ -20,10 +20,10 @@ function-pointer seams. For the zones and the module graph, see
 | `search_setup.zig` | `buildCtx` — fetches the stable per-search worker state once and assembles the `QCtx` threaded through the recursion |
 | `search_emit.zig` | The UCI reporting side: `info` line building, the MultiPV walk (`searchPv`), `currmove`, `bestmove`, the no-moves line |
 | `search_manager.zig` | `SearchManager` (main-thread bookkeeping, `is_main` branch, no vtable) and `UpdateContext` (the four output callbacks) |
-| `root_move_build.zig` | Builds the `go`-path root-move list and ranks it by DTZ/WDL when tablebases are loaded; owns `TbConfig` — see [06-tablebases.md](06-tablebases.md) |
+| `root_move_build.zig` | Builds the `go`-path root-move list and ranks it by DTZ/WDL when tablebases are loaded; owns `TbConfig` — see [05-tablebases.md](05-tablebases.md) |
 | `headless_search.zig` | An engine-zone-only "search this FEN at depth N" root: builds one worker, a one-thread pool, a small TT, and drives `iterativeDeepening` with no platform attached |
 | **Alpha-beta** | |
-| `search_main.zig` | `searchImpl` — a node's Steps 1–12: TT probe, the tablebase probe (Step 6, see [06-tablebases.md](06-tablebases.md)), static eval, razoring, futility, null move, IIR, ProbCut |
+| `search_main.zig` | `searchImpl` — a node's Steps 1–12: TT probe, the tablebase probe (Step 6, see [05-tablebases.md](05-tablebases.md)), static eval, razoring, futility, null move, IIR, ProbCut |
 | `search_back.zig` | `runBack` — the move loop and node finalization, Steps 13–21: pruning, singular extensions, LMR, best-move update, TT store, correction-history update |
 | `search_qsearch.zig` | `qsearchImpl` plus the primitives shared with the main search: `pvUpdate`, `qCorrectionValue`, `adjustKey50`, `ssAdd`/`ssSub`, `posCapture`, `isShuffling` |
 | `search_control.zig` | `checkTime`, `rootUpdate`, `rootTtMove`, `rootInList`, `searchStopped`, `inLastIterPv` |
@@ -104,7 +104,7 @@ node state as an `anytype` struct. `runBack`'s move loop recurses back into
 `searchImpl` for every child. The two files form a declared SCC — the cycle *is* the
 alpha-beta recursion — and `zig build arch-report` lists it as known, so a *new* file
 cycle shows up as undeclared instead of hiding behind this one. See
-[01-architecture.md](01-architecture.md#the-module-graph).
+[00-architecture.md](00-architecture.md#the-module-graph).
 
 `qsearchImpl` is a call-graph leaf: it self-recurses and never calls `searchImpl`.
 `searchImpl` dives into it at `depth <= 0` and on razoring.
@@ -308,7 +308,7 @@ and the per-NUMA-node histories; the engine drives the pool only through the
 `thread_ops` seam, and the reported move is chosen by thread voting. The pool, the
 worker lifecycle, the shared-vs-per-worker split, NUMA replication, and what is
 deterministic under threads are covered in
-[05-multithreading.md](05-multithreading.md).
+[04-multithreading.md](04-multithreading.md).
 
 ## The engine seams
 
@@ -320,13 +320,13 @@ the zone stack and create a cycle.
 
 Each is instead a **hook**: a `pub var` function pointer in an engine leaf, defaulted
 to a headless-correct implementation, that the composition root overwrites at startup.
-See [01-architecture.md](01-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+See [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
 
 | Seam | Reached for | Default when unregistered |
 | --- | --- | --- |
 | `option_source.zig` | `MultiPV`, `Skill Level`, `UCI_Elo`, `UCI_LimitStrength`, `nodestime`, `Move Overhead`, `Ponder`, `UCI_ShowWDL`, the Syzygy settings | 0 / false — **search-affecting** |
 | `output_sink.zig` | every `info` and `bestmove` line | drop the line — **degraded**: right move, no answer |
-| `tb_source.zig` | Step 6's WDL probe, root ranking — see [06-tablebases.md](06-tablebases.md) | "no tablebases" — genuinely safe |
+| `tb_source.zig` | Step 6's WDL probe, root ranking — see [05-tablebases.md](05-tablebases.md) | "no tablebases" — genuinely safe |
 | `time_source.zig` | time management, elapsed, the skill RNG seed | a monotonic counter — safe, but in ticks |
 | `thread_ops.zig` | start/wait siblings, best-thread vote | single-threaded — **search-affecting** |
 

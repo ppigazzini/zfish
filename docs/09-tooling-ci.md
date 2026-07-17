@@ -10,10 +10,10 @@ run before a commit, see [CONTRIBUTING](../CONTRIBUTING.md).
 `build.zig` declares the whole program by hand: each source file that other files
 import is a named module, and every import edge is an explicit `addImport`. There is
 no globbing and no auto-discovery — the module graph is data in the build script, and
-the zones it encodes are described in [01-architecture.md](01-architecture.md). The
+the zones it encodes are described in [00-architecture.md](00-architecture.md). The
 build script is also the only place the ISA tier, the target OS, and the
 `build_options` feature flags are chosen; the engine reads them at comptime (see
-[09-idiomatic-zig.md](09-idiomatic-zig.md)).
+[08-idiomatic-zig.md](08-idiomatic-zig.md)).
 
 Zig 0.16.0 is the required toolchain. No C++ is vendored or compiled.
 

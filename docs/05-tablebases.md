@@ -7,15 +7,15 @@ answers the game-theoretic result outright and the search returns it as a score.
 The vertical spans three zones:
 
 - **shell** — the `SyzygyPath` option and the load callback that (re)initialises the
-  prober ([08-shell.md](08-shell.md)).
+  prober ([07-shell.md](07-shell.md)).
 - **platform** — file discovery, the table registry, the file format decoder, and the
-  probe algorithm ([07-platform.md](07-platform.md)).
+  probe algorithm ([06-platform.md](06-platform.md)).
 - **engine** — the `tb_source` seam plus the two consumers: the in-search WDL probe and
-  the root-move ranking ([03-engine-search.md](03-engine-search.md)).
+  the root-move ranking ([02-engine-search.md](02-engine-search.md)).
 
 The engine never imports the platform prober. It declares function pointers, the
 composition root binds them, and a build with no prober attached simply never probes —
-see [01-architecture.md](01-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
 
 ## Modules
 
@@ -309,7 +309,7 @@ one. A headless engine build therefore needs no registration for correctness, un
 `option_source` / `thread_ops` hooks whose defaults are correct only because every root is
 accounted for.
 
-See [01-architecture.md](01-architecture.md#the-composition-root-and-the-cycle-break-hooks)
+See [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-break-hooks)
 for the pattern. `zig build hook-lint` bounds the seams: it ratchets the hook count and
 requires every hook to declare a failure mode and a class, and to be registered.
 
@@ -343,5 +343,5 @@ the a1-d1-d4 and MapPawns coverage), `probe.zig` checks `LR` unpacking, `setGrou
 `setSymLen` on a synthetic btree, `decode.zig` checks the `flag_single_value` path, and
 `tables.zig` checks the stem builder and the empty-path init.
 
-See [10-tooling-ci.md](10-tooling-ci.md) for the gate battery and
+See [09-tooling-ci.md](09-tooling-ci.md) for the gate battery and
 [CONTRIBUTING](../CONTRIBUTING.md) for what to run before a commit.
