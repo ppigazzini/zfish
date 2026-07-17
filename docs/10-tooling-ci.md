@@ -57,7 +57,7 @@ returned tier name to its feature set and macros.
 | `upstream-parity` | Assert the Zig bench == pristine upstream at `UPSTREAM_BASE` (git worktree, no vendored C++). |
 | `arch-report` | Coupling report (module + file graphs) + DAG / undeclared-SCC tripwires. |
 | `hook-lint` | Cycle-break hooks: ratcheted, each declaring a failure mode + class, all registered. |
-| `src-free` / `headless` / `loc` | The structural gates (see below). |
+| `src-free` / `headless` / `loc` / `docs-lint` | The structural gates (see below). |
 
 Every golden gate is a pair: `<gate>` checks the live fingerprint against the
 committed golden, `<gate>-update` regenerates that golden from the current binary.
@@ -152,6 +152,18 @@ The gates fall into kinds:
 | `hook-lint`, `arch-report`, `headless`, `loc` | See below. |
 
 ## The structural gates
+
+`docs-lint` gates this documentation set against the tree it describes. Docs are accurate
+when written and rot where the code moves under them, so it settles the three rot classes a
+machine can: every internal link resolves, every `src/…` or `tools/…` path named in prose
+exists, and any bench signature quoted in docs equals `build.zig`'s `signature_reference` —
+the anchor moves on every bench-moving upstream sync, and a doc quoting a dead one is worse
+than a doc omitting it.
+
+It does **not** check whether a sentence is true, and cannot: *"numa_context is a
+never-dereferenced stub handle"* parsed, linked, and was false for weeks. Only reading the
+code finds that. The gate buys the cheap half so review can spend its attention on the
+expensive half.
 
 These gate properties the compiler will not: Zig compiles, links, and runs module
 cycles, unused import edges, and unregistered hooks alike.

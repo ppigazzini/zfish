@@ -1437,6 +1437,23 @@ pub fn build(b: *std.Build) void {
     );
     loc_step.dependOn(&loc_cmd.step);
 
+    // Gate docs/ against the tree it describes. Docs are accurate when written and rot where
+    // the code moves under them: a hostile audit found a path pointing at a split-away module,
+    // the bench anchor quoted as 2067208 in five places while build.zig said 2466447, and link
+    // targets that broke on a renumber. All three are mechanical, and all three shipped because
+    // nothing checked. This does NOT check whether a sentence is true -- "numa_context is a
+    // never-dereferenced stub handle" parsed, linked, and was false for weeks; only reading the
+    // code finds that. It buys the cheap half so review can spend attention on the expensive half.
+    const docs_cmd = b.addSystemCommand(&.{
+        "bash",
+        repoPath(b, "tools/docs_lint.sh"),
+    });
+    const docs_step = b.step(
+        "docs-lint",
+        "docs rot gate: every link resolves, every named src/tools path exists, the bench anchor matches build.zig",
+    );
+    docs_step.dependOn(&docs_cmd.step);
+
     // Run the cycle-break mechanism's ratchet + classifier (hook-lint; G2).
     // The module DAG is a DESIGN outcome, not a language guarantee -- Zig compiles and
     // runs import cycles at both granularities -- and it is bought with 30 function-
@@ -1812,6 +1829,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&src_free_cmd.step);
     parity_step.dependOn(&headless_cmd.step);
     parity_step.dependOn(&loc_cmd.step);
+    parity_step.dependOn(&docs_cmd.step);
 
     // Assemble the cross-OS aggregate: the platform-independent subset of `parity` -- bench,
     // the UCI handshake, the bench signature, and all six golden checks, every one driven by
