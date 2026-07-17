@@ -7,8 +7,8 @@ generation, Zobrist hashing, draw detection, and FEN. It lives in
 `engine/`, and nothing in it reaches for the NNUE or the OS. The one edge upward
 is `position.zig`'s `@import("search")`, declared at the top of the file and
 unused in its body. See
-[01-architecture.md](01-architecture.md) for the zones and the module graph; the Zig
-patterns behind the hot path are in [09-idiomatic-zig.md](09-idiomatic-zig.md);
+[00-architecture.md](00-architecture.md) for the zones and the module graph; the Zig
+patterns behind the hot path are in [08-idiomatic-zig.md](08-idiomatic-zig.md);
 build and gate commands are in [CONTRIBUTING](../CONTRIBUTING.md).
 
 ## Modules
@@ -282,7 +282,7 @@ pub var move_is_legal_fn: *const fn (pos: *const Position, raw_move: u16) bool =
 (`position_query.fillSnapshot` and `legality.legal`) before anything else runs.
 These are the **only two hooks in the tree not registered by the composition
 root** — every other one is installed by `main.zig`; see
-[the composition root and the cycle-break hooks](01-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+[the composition root and the cycle-break hooks](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
 
 Both hooks are non-optional and default to a named panic stub rather than `null`,
 so an unregistered hook fails fast naming itself instead of tripping an opaque
