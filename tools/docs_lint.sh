@@ -29,7 +29,7 @@ fail=0
 # Renaming the set 0-N -> 00-N rewrote 124 references; a typo in any of them is a dead link a
 # reader hits and we never do.
 broken=0
-for f in docs/*.md README.md CONTRIBUTING.md; do
+for f in docs/*.md README.md CONTRIBUTING.md AGENTS.md; do
     [ -e "$f" ] || continue
     dir=$(dirname "$f")
     while IFS= read -r target; do
@@ -49,8 +49,8 @@ done
 # rename silently invalidates the reference; the prose still reads plausibly.
 missing=0
 while IFS= read -r p; do
-    [ -e "$p" ] || { echo "docs-lint: DEAD PATH    $p (named in docs/, not in the tree)"; missing=$((missing + 1)); }
-done < <(grep -ohE '`(src|tools)/[A-Za-z0-9_/.-]+\.(zig|sh|py|golden)`' docs/*.md \
+    [ -e "$p" ] || { echo "docs-lint: DEAD PATH    $p (named in a shipped doc, not in the tree)"; missing=$((missing + 1)); }
+done < <(grep -ohE '`(src|tools)/[A-Za-z0-9_/.-]+\.(zig|sh|py|golden)`' docs/*.md AGENTS.md \
          | tr -d '`' | sort -u)
 [ "$missing" -eq 0 ] || fail=1
 
@@ -67,12 +67,12 @@ else
         [ "$num" = "$anchor" ] && continue
         echo "docs-lint: STALE ANCHOR $file quotes $num, build.zig says $anchor"
         stale=$((stale + 1))
-    done < <(grep -oHE '\b2[0-9]{6}\b' docs/*.md | sed 's/:\(.*\)$/:\1/')
+    done < <(grep -oHE '\b2[0-9]{6}\b' docs/*.md AGENTS.md | sed 's/:\(.*\)$/:\1/')
     [ "$stale" -eq 0 ] || fail=1
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs: links resolve, paths exist, anchor == $anchor)"
+    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths exist, anchor == $anchor)"
 else
     echo "docs-lint: FAIL -- a doc contradicts the tree (see above)."
 fi
