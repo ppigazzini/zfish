@@ -270,8 +270,27 @@ tables that are never fetched in CI.
 Every step below exists because skipping it produced a wrong number. Run them in order;
 none is optional.
 
+**Two different oracles. Do not mix them up.**
+
+| oracle | built by | compiler | use it for |
+|---|---|---|---|
+| **bench-parity** | `tools/upstream_oracle.sh --verify` | `COMP=gcc` | node counts / `upstream-parity`. Node counts are compiler-independent, so gcc is fine. |
+| **perf** | the `zig c++` recipe below | `COMP=clang COMPCXX=<zig c++>` | **any instruction/cost ratio.** |
+
+Using the bench-parity oracle for a perf ratio measures **gcc vs LLVM**, not zfish vs
+Stockfish. It has produced badly wrong conclusions here: against the gcc oracle the
+non-NNUE search code read `0.776x` ("zfish is 177M instructions ahead"); on the same
+backend it is `1.223x` — zfish is *behind*. The entire claim was gcc's codegen.
+
 ```sh
-# 1. Build the oracle. --verify is NOT optional: without it the script builds but does
+# 0. PERF ONLY -- build the reference with zig c++ so the LLVM backend is held constant.
+#    `make clean` FIRST or stale objects fail to link when the ARCH changes.
+printf '#!/bin/sh\nexec %s c++ "$@"\n' "$(which zig)" > /tmp/zigcxx && chmod +x /tmp/zigcxx
+cd <oracle>/src && make clean && \
+  make -j4 build ARCH=x86-64-sse41-popcnt COMP=clang COMPCXX=/tmp/zigcxx EXE=sf_sse41
+<oracle>/src/sf_sse41 bench     # anchor it yourself: must equal the commit's Bench:
+
+# 1. BENCH-PARITY ONLY -- the gcc oracle. --verify is NOT optional: without it the script builds but does
 #    NOT check the binary against the commit's own declared `Bench:` line. A stale or
 #    locally-edited worktree then benches wrong and every later number is fiction --
 #    that has happened here (a leftover eval stub made upstream bench 3461914 instead of
@@ -292,15 +311,19 @@ cd net && ../tools/nps_ab.sh /tmp/zf/bin/stockfish <oracle-binary> 12
 
 # 5. Under ~5%? nps CANNOT resolve it (L1). Use callgrind -- deterministic.
 cd net && ../tools/perf_callgrind.sh /tmp/zf/bin/stockfish 16 1 8   # OUT=zf.out
-cd net && ../tools/perf_callgrind.sh <oracle-binary>        16 1 8   # OUT=up.out
+cd net && ../tools/perf_callgrind.sh <oracle>/src/sf_sse41  16 1 8   # OUT=up.out
+#    ^ the zig-c++ oracle from step 0, NOT the gcc one from step 1.
 
 # 6. Attribute the cost. NEVER read one line per side: callgrind emits one entry per
 #    (origin-file, function) pair, so a function's true cost is the SUM over origin
 #    files. This tool sums each group and reconciles against callgrind's PROGRAM TOTALS,
 #    failing loudly rather than printing a plausible lie.
+#    Group on the symbols that EXIST in YOUR build: clang inlines `propagate` into
+#    `Network::evaluate`, so a regex written against gcc's symbols matches nothing and
+#    the group silently reads 0. Check the names first: perf_fingerprint.py costs up.out
 python3 tools/perf_fingerprint.py compare zf.out up.out \
-    --group affine='evaluateBucketRaw|propagate|affine' \
-    --group accumulator='applyCombined|apply_combined|evaluateSide' \
+    --group nnue_forward='evaluateBucketRaw|Network::evaluate|propagate|affine' \
+    --group accumulator='applyCombined|apply_combined|evaluateSide|evaluate_side' \
     --group movepick='scoreList|nextMove|next_move'
 
 # 7. Subtract startup before quoting a SEARCH ratio. On a shallow bench the net load,
