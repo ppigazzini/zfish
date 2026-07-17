@@ -4,7 +4,7 @@ How zfish turns a position into a score: an NNUE network whose input transformer
 updated incrementally as the search makes and unmakes moves, and a small stack of
 integer affine layers over the transformed features. Everything here lives in
 `src/engine/eval/` — inside the **engine** zone, importable by no zone above it
-(see [1-architecture.md](1-architecture.md)). The eval is pure integer arithmetic,
+(see [01-architecture.md](01-architecture.md)). The eval is pure integer arithmetic,
 so it is bit-exact and arch-invariant: every ISA tier must produce the same score
 for the same position.
 
@@ -81,7 +81,7 @@ The parse is the *sole* source of weights: it writes straight into the arenas ow
 by `nnue_weight_storage.zig`, and inference reads from that same memory. Those
 arenas come from `page_alloc.alloc` (`src/engine/state/page_alloc.zig`) — the
 injected large-block seam the platform backs with huge pages, and which falls back
-to a page-backed allocator in a headless build; see [7-platform.md](7-platform.md). `nnue_weight_storage.zig` sits below
+to a page-backed allocator in a headless build; see [07-platform.md](07-platform.md). `nnue_weight_storage.zig` sits below
 both `network.zig` and `nnue_inference.zig` so the I/O half and the compute half
 share an owner without importing each other.
 
@@ -134,8 +134,8 @@ The search drives it from `src/engine/search/search_acc.zig`: `doMoveAcc` calls
 records to `doMove`, which records the move's changed features while making it;
 `undoMoveAcc` calls `stackPop`. Nothing is computed on the way down — states are
 pushed uncomputed, and `evaluateAcc` triggers the work only when a node actually
-needs a score. See [3-engine-search.md](3-engine-search.md) for the search side and
-[2-engine-board.md](2-engine-board.md) for how the board fills the dirty records.
+needs a score. See [03-engine-search.md](03-engine-search.md) for the search side and
+[02-engine-board.md](02-engine-board.md) for how the board fills the dirty records.
 
 `evaluateSide` (`nnue_acc_update.zig`) runs once per perspective.
 `findLastUsable` walks back from the top of the stack for the nearest state that is
@@ -221,7 +221,7 @@ The hot path — the row ops, the transform, the affine layers — is portable
 `@Vector`: one kernel per operation, lowered by LLVM per target, with arch-specific
 choices as `comptime` branches rather than forked source. Because the eval is
 integer-exact it is also arch-invariant, so every ISA tier must agree on the
-signature. See [9-idiomatic-zig.md](9-idiomatic-zig.md) for the pattern and the
+signature. See [09-idiomatic-zig.md](09-idiomatic-zig.md) for the pattern and the
 gates that hold it.
 
 Two vector widths are independent knobs and must not be folded into one:

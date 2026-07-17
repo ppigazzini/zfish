@@ -16,18 +16,18 @@ its structure.
 | Reference | Use |
 |---|---|
 | [Zig language reference](https://ziglang.org/documentation/0.16.0/) | `comptime`, `@Vector`, `@splat`, builtins, and the semantics the hot path relies on. |
-| [Zig build system](https://ziglang.org/learn/build-system/) | Modules, `addImport`, per-module tests — the artefact `build.zig` is. See [1-architecture.md](1-architecture.md). |
+| [Zig build system](https://ziglang.org/learn/build-system/) | Modules, `addImport`, per-module tests — the artefact `build.zig` is. See [01-architecture.md](01-architecture.md). |
 | [Zig standard library source](https://github.com/ziglang/zig/tree/master/lib/std) | The authority when an API differs across supported versions. Read the std source, not a changelog. |
 | [Ghostty — useful Zig patterns](https://mitchellh.com/writing/ghostty-and-useful-zig-patterns) | Comptime interfaces for platform/arch dispatch, and the caveat that CI must build every option or a configuration rots. |
-| [TigerBeetle `TIGER_STYLE.md`](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md) | Static allocation and near-zero dependencies — the hot-path discipline in [9-idiomatic-zig.md](9-idiomatic-zig.md). |
+| [TigerBeetle `TIGER_STYLE.md`](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md) | Static allocation and near-zero dependencies — the hot-path discipline in [09-idiomatic-zig.md](09-idiomatic-zig.md). |
 
 ## Chess domain
 
 | Reference | Use |
 |---|---|
-| [UCI protocol](https://backscattering.de/chess/uci/) | The command and option surface the shell implements — see [8-shell.md](8-shell.md). |
-| [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) | Alpha-beta, transposition tables, move ordering, magic bitboards, SEE — the algorithms in [2-engine-board.md](2-engine-board.md) and [3-engine-search.md](3-engine-search.md). |
-| [NNUE (Chess Programming Wiki)](https://www.chessprogramming.org/NNUE) | The efficiently-updatable network architecture in [4-engine-eval.md](4-engine-eval.md). |
+| [UCI protocol](https://backscattering.de/chess/uci/) | The command and option surface the shell implements — see [08-shell.md](08-shell.md). |
+| [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) | Alpha-beta, transposition tables, move ordering, magic bitboards, SEE — the algorithms in [02-engine-board.md](02-engine-board.md) and [03-engine-search.md](03-engine-search.md). |
+| [NNUE (Chess Programming Wiki)](https://www.chessprogramming.org/NNUE) | The efficiently-updatable network architecture in [04-engine-eval.md](04-engine-eval.md). |
 | [Leela Chess Zero training data](https://storage.lczero.org/files/training_data) | The data the NNUE networks are trained on, under the [ODbL](https://opendatacommons.org/licenses/odbl/odbl-10.txt). |
 
 ## Design
@@ -35,5 +35,5 @@ its structure.
 | Reference | Use |
 |---|---|
 | John Lakos, *Large-Scale C++ Software Design* (1996) / *Volume I* (2019) | Physical design: components, levelization, escalation for breaking cycles, and the CCD/ACD/NCCD coupling `zig build arch-report` prints. |
-| [Mark Seemann — Composition Root](https://blog.ploeh.dk/2011/07/28/CompositionRoot/) | The pattern `main.zig` implements: one place that may reference everything, referenced by nothing, wiring implementations into the leaves at startup. See [1-architecture.md](1-architecture.md#the-composition-root-and-the-cycle-break-hooks). |
+| [Mark Seemann — Composition Root](https://blog.ploeh.dk/2011/07/28/CompositionRoot/) | The pattern `main.zig` implements: one place that may reference everything, referenced by nothing, wiring implementations into the leaves at startup. See [01-architecture.md](01-architecture.md#the-composition-root-and-the-cycle-break-hooks). |
 | David L. Parnas, *On the Criteria To Be Used in Decomposing Systems into Modules* (CACM 15(12), 1972) | Information hiding — the criterion the zone split meets. |

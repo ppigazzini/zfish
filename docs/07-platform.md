@@ -5,7 +5,7 @@ huge-page memory, NUMA topology, Syzygy tablebases, and the monotonic clock. It 
 not a layer beneath the engine — it depends **on** engine, because it builds,
 drives, clears, and tears down the `Worker` objects the search runs in. The engine
 reaches back the other way only through function-pointer seams it declares itself.
-For the zones and the module graph, see [1-architecture.md](1-architecture.md).
+For the zones and the module graph, see [01-architecture.md](01-architecture.md).
 
 ## Modules
 
@@ -45,7 +45,7 @@ re-checks a predicate, so spurious wakeups are harmless.
 
 A `ThreadRuntime` owns one `std.Thread` running `idleLoop` on top of that seam. The
 idle loop, the job handshake, and the jobs that ride it are covered in
-[5-multithreading.md](5-multithreading.md).
+[05-multithreading.md](05-multithreading.md).
 
 ### The thread
 
@@ -55,14 +55,14 @@ and the thread index. `worker@8` is the one field other code reads off a live
 thread by offset (`worker_layout.Thread`), and an `@offsetOf` test guards it.
 
 `startSearching` and `clearWorker` submit jobs to the runtime. The worker lifecycle
-those jobs drive is covered in [5-multithreading.md](5-multithreading.md).
+those jobs drive is covered in [05-multithreading.md](05-multithreading.md).
 
 ### The pool and the worker lifecycle
 
 `thread_pool.zig` owns the `worker_layout.ThreadPool` footprint, `thread.reconfigure`
 is the sizing path, and `thread.startThinking` dispatches a search across the pool.
 Those, the `worker_build` / `worker_clear` / `worker_destroy` lifecycle hooks, and
-what the workers share are covered in [5-multithreading.md](5-multithreading.md).
+what the workers share are covered in [05-multithreading.md](05-multithreading.md).
 
 ## Memory
 
@@ -116,7 +116,7 @@ embedded in each replicated wrapper, no vtable. `setNumaConfig` swaps the config
 notifies every tracked object to re-replicate. The registry is exercised by the typed
 `src/shell/engine/graph.zig` model and its unit tests. `EngineObject` owns the live
 `NumaReplicationContext`: `constructMembers` builds one over `NumaConfig.fromSystem`, and the
-teardown `deinit`s and frees it. See [5-multithreading.md](5-multithreading.md).
+teardown `deinit`s and frees it. See [05-multithreading.md](05-multithreading.md).
 
 ## Tablebases
 
@@ -124,7 +124,7 @@ teardown `deinit`s and frees it. See [5-multithreading.md](5-multithreading.md).
 lazy table load, and the WDL/DTZ probe path. The engine reaches it through the
 `tb_source` seam. The whole vertical — the tables, the probe path, root and in-search
 probing, and the UCI options that gate it — is covered in
-[6-tablebases.md](6-tablebases.md).
+[06-tablebases.md](06-tablebases.md).
 
 ## The clock
 
@@ -152,7 +152,7 @@ verifier. The implementations live in the composition root because they need
 callers (`thread`, `search_thread`, `thread_pool`), so the callers cannot import
 back to reach them. The root installs the pointers at startup and the callers invoke
 through here. See
-[the composition root and the cycle-break hooks](1-architecture.md#the-composition-root-and-the-cycle-break-hooks).
+[the composition root and the cycle-break hooks](01-architecture.md#the-composition-root-and-the-cycle-break-hooks).
 
 The fields are non-optional, each defaulting to a named panic stub, so callers
 invoke them directly with no null-unwrap and a hook that was never registered fails
@@ -184,4 +184,4 @@ the `page_alloc` seam must honour it.
 reads the requested thread count and the NUMA policy mode straight from the shell's
 option model. That single edge is the only thing keeping the zone graph from a
 strict DAG; every other cross-zone need is met by a hook seam. See
-[1-architecture.md](1-architecture.md).
+[01-architecture.md](01-architecture.md).

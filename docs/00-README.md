@@ -29,15 +29,15 @@ The repository holds three things:
 
 | # | Document | Audience | Description |
 |---|---|---|---|
-| 1 | [1-architecture.md](1-architecture.md) | All contributors | The three zones, the module graph, the composition root and cycle-break hooks, how a search flows |
-| 2 | [2-engine-board.md](2-engine-board.md) | Engine contributors | Position and state, bitboards and magics, move generation, legality, Zobrist, repetition, FEN |
-| 3 | [3-engine-search.md](3-engine-search.md) | Engine contributors | Iterative deepening, alpha-beta and qsearch, move ordering, the transposition table and history, time management |
-| 4 | [4-engine-eval.md](4-engine-eval.md) | Engine contributors | NNUE: the network and its load path, the feature transformer, the incremental accumulator, inference |
-| 5 | [5-multithreading.md](5-multithreading.md) | Engine and platform contributors | Lazy-SMP: the pool and worker lifecycle, shared vs per-worker state, thread voting, NUMA replication, determinism |
-| 6 | [6-tablebases.md](6-tablebases.md) | Engine and platform contributors | Syzygy: WDL and DTZ, the registry and probe path, root and in-search probing, the UCI options |
-| 7 | [7-platform.md](7-platform.md) | Platform contributors | Memory and NUMA, the thread runtime primitives, the clock, the lifecycle hooks |
-| 8 | [8-shell.md](8-shell.md) | Shell contributors | `main` as the composition root, the UCI surface, the option model, the engine object and session, bench |
-| 9 | [9-idiomatic-zig.md](9-idiomatic-zig.md) | Hot-path and build contributors | Portable `@Vector` SIMD, comptime ISA dispatch, static allocation, dependency injection, cross-version shims, the measurement discipline |
+| 1 | [01-architecture.md](01-architecture.md) | All contributors | The three zones, the module graph, the composition root and cycle-break hooks, how a search flows |
+| 2 | [02-engine-board.md](02-engine-board.md) | Engine contributors | Position and state, bitboards and magics, move generation, legality, Zobrist, repetition, FEN |
+| 3 | [03-engine-search.md](03-engine-search.md) | Engine contributors | Iterative deepening, alpha-beta and qsearch, move ordering, the transposition table and history, time management |
+| 4 | [04-engine-eval.md](04-engine-eval.md) | Engine contributors | NNUE: the network and its load path, the feature transformer, the incremental accumulator, inference |
+| 5 | [05-multithreading.md](05-multithreading.md) | Engine and platform contributors | Lazy-SMP: the pool and worker lifecycle, shared vs per-worker state, thread voting, NUMA replication, determinism |
+| 6 | [06-tablebases.md](06-tablebases.md) | Engine and platform contributors | Syzygy: WDL and DTZ, the registry and probe path, root and in-search probing, the UCI options |
+| 7 | [07-platform.md](07-platform.md) | Platform contributors | Memory and NUMA, the thread runtime primitives, the clock, the lifecycle hooks |
+| 8 | [08-shell.md](08-shell.md) | Shell contributors | `main` as the composition root, the UCI surface, the option model, the engine object and session, bench |
+| 9 | [09-idiomatic-zig.md](09-idiomatic-zig.md) | Hot-path and build contributors | Portable `@Vector` SIMD, comptime ISA dispatch, static allocation, dependency injection, cross-version shims, the measurement discipline |
 | 10 | [10-tooling-ci.md](10-tooling-ci.md) | All developers | The build targets, the gate battery, the structural linters, upstream tracking, the CI lanes |
 | 11 | [11-references.md](11-references.md) | All developers | Stockfish, Zig, chess-domain, and design references |
 
