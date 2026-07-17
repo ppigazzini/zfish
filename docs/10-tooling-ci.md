@@ -61,8 +61,31 @@ returned tier name to its feature set and macros.
 
 Every golden gate is a pair: `<gate>` checks the live fingerprint against the
 committed golden, `<gate>-update` regenerates that golden from the current binary.
-Regeneration is a deliberate act — it belongs to an upstream resync, not to a
-failing gate.
+
+**A golden is not a reference — it is a photograph of ourselves.** Almost every gate here
+records zfish's own output, so a golden can pin a *defect* just as faithfully as it pins
+correct behaviour, and the gate will then pass *because* the engine is wrong. Three examples
+live in this repo's history: the `eval` golden pinned a trace layout that padded every value
+12 spaces wider than upstream; `chess960` pinned the same padding; `driver` pinned a MultiPV
+tree (`nodes 2184`, `seldepth 8`, `score cp 28`) that upstream does not search.
+
+So there are two legitimate reasons to regenerate, and one forbidden one:
+
+| situation | regenerate? |
+|---|---|
+| an upstream resync moved the reference | **yes** — that is what a resync is |
+| a fidelity fix made our output *more* like upstream's, so the golden is now the stale one | **yes** |
+| the gate is red and you want it green | **no** — that is laundering a bug into the reference |
+
+**The test that separates them: drive the upstream oracle and match it.** Never re-bless a
+golden from ourselves — that only records the bug more firmly. For the `driver` case above,
+upstream emits `nodes 2498`, `seldepth 10`, `score cp 16`; the regenerated golden reproduces
+those bytes, which is what makes the regeneration a correction rather than a capitulation.
+`upstream_oracle.sh --verify` gives you that reference (see *Tracking upstream*).
+
+Where a gate can pin the *stream* as well as the bytes, it should: `buildUciOptions` asserts
+the handshake on stdout **and fails if any handshake line appears on stderr**, because
+reading the wrong stream is how a whole broken handshake passed for months.
 
 ## The gate battery
 
