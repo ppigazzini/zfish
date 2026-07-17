@@ -180,14 +180,40 @@ inline fn affineSsse3(
 ) void {
     var acc: [OUT]i32 = biases[0..OUT].*;
     const ones: @Vector(8, i16) = @splat(1);
-    var it = GroupIter(sparse){ .nnz = nnz, .groups = input.len / 4 };
-    while (it.next()) |g| {
-        const in4: [4]u8 = input[g * 4 ..][0..4].*;
-        const inpat: @Vector(16, i8) = @bitCast(@as(@Vector(4, u32), @splat(@as(u32, @bitCast(in4)))));
-        inline for (0..OUT / 4) |c| {
-            const w: @Vector(16, i8) = weights[g * OUT * 4 + c * 16 ..][0..16].*;
-            const p: @Vector(4, i32) = pmaddwd128(pmaddubsw128(inpat, w), ones);
-            acc[c * 4 ..][0..4].* = @as(@Vector(4, i32), acc[c * 4 ..][0..4].*) + p;
+    const groups = input.len / 4;
+    if (sparse) {
+        // Walk the nnz bitset in upstream's shape (affine_transform_sparse_input.h): load a whole
+        // 64-group word, hoist the input/weight base pointers ONCE per word, then pop set bits with
+        // a LOCAL index. GroupIter instead returned the ABSOLUTE group and re-scaled it by `*4` /
+        // `*OUT*4` per group -- the per-group re-indexing the profile charged to the iterator
+        // (~7 instr/group vs upstream's ~3). Single chain here, so no per-group branch is added.
+        var k: usize = 0;
+        while (k * 64 < groups) : (k += 1) {
+            var bits = nnz[k];
+            const in_base = input.ptr + k * 64 * 4;
+            const w_base = weights + k * 64 * OUT * 4;
+            while (bits != 0) {
+                const i: usize = @ctz(bits);
+                bits &= bits - 1;
+                const in4: [4]u8 = in_base[i * 4 ..][0..4].*;
+                const inpat: @Vector(16, i8) = @bitCast(@as(@Vector(4, u32), @splat(@as(u32, @bitCast(in4)))));
+                inline for (0..OUT / 4) |c| {
+                    const w: @Vector(16, i8) = w_base[i * OUT * 4 + c * 16 ..][0..16].*;
+                    const p: @Vector(4, i32) = pmaddwd128(pmaddubsw128(inpat, w), ones);
+                    acc[c * 4 ..][0..4].* = @as(@Vector(4, i32), acc[c * 4 ..][0..4].*) + p;
+                }
+            }
+        }
+    } else {
+        var g: usize = 0;
+        while (g < groups) : (g += 1) {
+            const in4: [4]u8 = input[g * 4 ..][0..4].*;
+            const inpat: @Vector(16, i8) = @bitCast(@as(@Vector(4, u32), @splat(@as(u32, @bitCast(in4)))));
+            inline for (0..OUT / 4) |c| {
+                const w: @Vector(16, i8) = weights[g * OUT * 4 + c * 16 ..][0..16].*;
+                const p: @Vector(4, i32) = pmaddwd128(pmaddubsw128(inpat, w), ones);
+                acc[c * 4 ..][0..4].* = @as(@Vector(4, i32), acc[c * 4 ..][0..4].*) + p;
+            }
         }
     }
     out.* = acc;
