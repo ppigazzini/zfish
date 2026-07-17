@@ -188,7 +188,13 @@ pub fn optionOnChange(
             break :blk null;
         },
         option_callback_numa_policy => blk: {
-            setNumaConfigFromOptionEngine(engine_ptr, value);
+            // Report the refusal in upstream's words (engine.cpp:78-79) and emit no
+            // topology lines -- the option did not take effect.
+            if (!setNumaConfigFromOptionEngine(engine_ptr, value))
+                break :blk allocMessage(
+                    "NumaPolicy: invalid value '{s}', keeping previous config.",
+                    .{value},
+                );
 
             const numa_info_ptr = numaConfigInformationEngine(engine_ptr) orelse break :blk null;
             defer freeCString(numa_info_ptr);
@@ -334,7 +340,12 @@ pub fn goEngine(engine_ptr: *engine_object.EngineObject, limits_ptr: *const work
     ) catch @panic("OOM: search setup failed");
 }
 
-pub fn setNumaConfigFromOptionEngine(engine_ptr: *engine_object.EngineObject, option_text: []const u8) void {
+// Install the topology the NumaPolicy option names; report whether it was usable. Mirror
+// upstream's `bool Engine::set_numa_config_from_option` (engine.cpp:219): a custom string
+// that will not parse is REFUSED -- return false WITHOUT touching the config and WITHOUT
+// resizing the threads, so the previous topology stays live. This returned void and
+// resized unconditionally, so an unparseable policy silently became a binding policy.
+pub fn setNumaConfigFromOptionEngine(engine_ptr: *engine_object.EngineObject, option_text: []const u8) bool {
     const numa_context = engine_ptr.numaContextPtr();
 
     if (std.mem.eql(u8, option_text, "auto") or std.mem.eql(u8, option_text, "system")) {
@@ -343,11 +354,12 @@ pub fn setNumaConfigFromOptionEngine(engine_ptr: *engine_object.EngineObject, op
         numa.contextSetHardware(numa_context);
     } else if (std.mem.eql(u8, option_text, "none")) {
         numa.contextSetNone(numa_context);
-    } else {
-        numa.setFromString(numa_context, option_text.ptr, option_text.len);
+    } else if (!numa.setFromString(numa_context, option_text.ptr, option_text.len)) {
+        return false; // reject: keep the previous config, do not resize
     }
 
     resizeThreadsEngine(engine_ptr);
+    return true;
 }
 
 pub fn resizeThreads(

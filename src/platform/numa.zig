@@ -161,14 +161,17 @@ pub fn contextCpusInNode(numa_context: *const anyopaque, node: usize) usize {
     return cfg.nodes.items[node].items.len;
 }
 
-// Parse an explicit "NumaPolicy" topology ("0-3,8:4-7") and install it. This was empty, so
-// a user-supplied node list was accepted, echoed back by `uci`, and then had no effect --
-// the engine kept its startup topology and bound as if the string had never been given.
+// Parse an explicit "NumaPolicy" topology ("0-3,8:4-7") and install it. Report whether it
+// parsed: upstream's from_string returns nullopt on a bad string and the caller REFUSES the
+// option (engine.cpp:236-237), leaving the previous config in place. Swallowing the error
+// here meant an unparseable policy was accepted, so numaPolicyMode() saw a non-auto/none
+// string and bound the pool from a topology that had never been installed.
 // fromString sets custom_affinity, which upstream honours by always binding (numa.h:768).
-pub fn setFromString(numa_context: *anyopaque, ptr: [*]const u8, len: usize) void {
+pub fn setFromString(numa_context: *anyopaque, ptr: [*]const u8, len: usize) bool {
     const ctx = mutCtx(numa_context);
-    const cfg = NumaConfig.fromString(std.heap.c_allocator, ptr[0..len]) catch return;
+    const cfg = NumaConfig.fromString(std.heap.c_allocator, ptr[0..len]) catch return false;
     ctx.setNumaConfig(cfg);
+    return true;
 }
 
 test {
