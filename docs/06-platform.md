@@ -107,8 +107,11 @@ four per not-small node (a node holding ≤60% of the largest is ignored as smal
 when there is more than one node**.
 
 **The one real limit: `fromSystem` does not read the host topology.** It enumerates every
-online CPU onto a single node, so on this machine `system` and `hardware` cannot differ. The
-gap is topology *discovery* (`/sys/devices/system/node`), not the wiring above.
+online CPU onto a single node, so `system`, `hardware`, and `auto` collapse to one node on
+**any** host — including a real multi-socket machine, where upstream (whose `from_system`
+reads `/sys/devices/system/node`) would report the true nodes and bind across them. Only an
+explicit `NumaPolicy` topology string (`0-23:24-47`) reaches the multi-node distribution and
+binding paths here. The gap is topology *discovery*, not the wiring above.
 
 `numa/replication.zig` is the replica registry. `NumaReplicationContext` owns a
 `NumaConfig` and tracks `NumaReplicatedBase` hooks — a plain function pointer

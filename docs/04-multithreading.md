@@ -240,8 +240,10 @@ driven on a single-node host matches upstream, including a two-node string
 
 What remains single-node is **discovery**, not wiring: `NumaConfig.fromSystem` enumerates
 every online CPU onto one node rather than reading `/sys/devices/system/node`, so `system`
-and `hardware` cannot differ on this host. The map, the `bound` slice, the per-node sizing
-math, and the replica registry are real and unit-tested against multi-node inputs. The memory
+and `hardware` cannot differ on **any** host — auto-detection collapses even a real
+multi-socket machine to one node, and only an explicit `NumaPolicy` topology string reaches
+the multi-node paths. The map, the `bound` slice, the per-node sizing math, and the replica
+registry are real and unit-tested against multi-node inputs. The memory
 and NUMA primitives are described in [06-platform.md](06-platform.md).
 
 ## The seams
