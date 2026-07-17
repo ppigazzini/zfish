@@ -264,3 +264,47 @@ shared, thermally-uncontrolled CPU cannot carry a performance verdict. The same 
 for the other local scripts (`nps_ab.sh`, `perf_callgrind.sh`,
 `perf_fingerprint.py`) and for the local-only `tb-cursed` gate, which needs 5-man
 tables that are never fetched in CI.
+
+### Measuring against upstream: the runnable process
+
+Every step below exists because skipping it produced a wrong number. Run them in order;
+none is optional.
+
+```sh
+# 1. Build the oracle. It pins ARCH=x86-64-sse41-popcnt and REFUSES a binary whose bench
+#    does not match the commit's declared `Bench:`. Never hand-run a binary past it.
+bash tools/upstream_oracle.sh                      # -> prints the verified binary path
+
+# 2. Build zfish at the SAME ARCH. Comparing a native AVX-512 zfish against the SSE4.1
+#    oracle measures the ARCH, not the code.
+zig build -Darch=x86-64-sse41-popcnt -p /tmp/zf
+
+# 3. Let the machine idle. NEVER build inside a benchmark command (nps_ab.sh refuses to
+#    help you break this); a hot machine has read 934k next to a 2.5M neighbour.
+
+# 4. The headline speed ratio: interleaved, paired, core-pinned, node-count-asserted.
+cd net && ../tools/nps_ab.sh /tmp/zf/bin/stockfish <oracle-binary> 12
+
+# 5. Under ~5%? nps CANNOT resolve it (L1). Use callgrind -- deterministic.
+cd net && ../tools/perf_callgrind.sh /tmp/zf/bin/stockfish 16 1 8   # OUT=zf.out
+cd net && ../tools/perf_callgrind.sh <oracle-binary>        16 1 8   # OUT=up.out
+
+# 6. Attribute the cost. NEVER read one line per side: callgrind emits one entry per
+#    (origin-file, function) pair, so a function's true cost is the SUM over origin
+#    files. This tool sums each group and reconciles against callgrind's PROGRAM TOTALS,
+#    failing loudly rather than printing a plausible lie.
+python3 tools/perf_fingerprint.py compare zf.out up.out \
+    --group affine='evaluateBucketRaw|propagate|affine' \
+    --group accumulator='applyCombined|apply_combined|evaluateSide' \
+    --group movepick='scoreList|nextMove|next_move'
+
+# 7. Subtract startup before quoting a SEARCH ratio. On a shallow bench the net load,
+#    magic init and large-page memset are ~1.4-1.7 GB of refs -- 42% of the profile.
+```
+
+**Same tree or nothing.** Every comparison above requires both engines to report the
+identical node count. A different count is a different workload and the ratio is void;
+`nps_ab.sh` asserts this and refuses to run otherwise.
+
+**Call counts, not costs, are the parity test.** `perf_fingerprint.py calls` answers "do
+we run Stockfish's algorithm?" -- call counts are inlining-immune, costs are not.

@@ -89,6 +89,15 @@ paired ratios (not the ratio of the medians — they disagree), pin the run, and
 the node counts match so the comparison is the same work. It refuses to report when
 those preconditions fail.
 
+**Attribute cost with `tools/perf_fingerprint.py compare`, never by reading a profile
+line.** callgrind emits one entry per *(origin-file, function)* pair -- inlined code is
+attributed to the file it came from, under the caller's name -- so one logical function
+appears as many lines and its true cost is the sum across all of them. C++ is hit harder
+than Zig because upstream's work lives in headers. Reading one line per side once turned a
+real 0.99x parity into a reported "1.87x, the worst component". The tool sums each group
+and reconciles against callgrind's own `PROGRAM TOTALS`, so it fails loudly instead of
+printing a plausible lie. `docs/10-tooling-ci.md` has the runnable sequence.
+
 Follow the same discipline by hand: to claim a component is the bottleneck, ablate it
 — stub it out, hold everything else fixed, measure the delta. Control the confounds
 first (inlining across a comparison boundary; comparing the same search tree rather
