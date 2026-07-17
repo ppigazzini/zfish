@@ -271,9 +271,14 @@ Every step below exists because skipping it produced a wrong number. Run them in
 none is optional.
 
 ```sh
-# 1. Build the oracle. It pins ARCH=x86-64-sse41-popcnt and REFUSES a binary whose bench
-#    does not match the commit's declared `Bench:`. Never hand-run a binary past it.
-bash tools/upstream_oracle.sh                      # -> prints the verified binary path
+# 1. Build the oracle. --verify is NOT optional: without it the script builds but does
+#    NOT check the binary against the commit's own declared `Bench:` line. A stale or
+#    locally-edited worktree then benches wrong and every later number is fiction --
+#    that has happened here (a leftover eval stub made upstream bench 3461914 instead of
+#    2466447, and the "divergence" it produced was reported as a zfish defect).
+#    It pins ARCH=x86-64-sse41-popcnt. Never hand-run an oracle binary past this script.
+bash tools/upstream_oracle.sh --verify             # -> "bench OK (N, matches commit Bench:)"
+                                                   #    then prints the binary path
 
 # 2. Build zfish at the SAME ARCH. Comparing a native AVX-512 zfish against the SSE4.1
 #    oracle measures the ARCH, not the code.
