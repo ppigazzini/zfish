@@ -110,10 +110,18 @@ mutex, so the line and its newline are one indivisible pair and a search info li
 never tear against the UCI listener. The engine writes through this same funnel without
 importing the shell: `main` registers it on the `output_sink` seam.
 
-Not everything the process emits takes that route. `uci.zig` prints the `uci` response
-and the `eval` trace with `std.debug.print` — stderr, unmutexed — as do `uci_bench.zig`,
-`benchmark.zig`, `thread_construct.zig`, `engine/nnue.zig`, and `debug_counters.zig`.
-Those exits bypass the sink's mutex, its log tee, and quiet mode.
+Not everything the process emits takes that route. `uci_bench.zig`, `benchmark.zig`,
+`thread_construct.zig`, `engine/nnue.zig`, and `debug_counters.zig` still print with
+`std.debug.print` — stderr, unmutexed — bypassing the sink's mutex, its log tee, and quiet
+mode. For `engine/nnue.zig` that is deliberate: a fatal net-missing diagnostic must not be
+swallowed by a quiet bench run.
+
+`uci.zig` does not. The `uci` handshake and the `eval` trace are protocol, so each builds its
+block once and emits it through `uci_output.printLine` — stdout, mutexed, tee'd to
+`Debug Log File` — matching upstream's single `sync_cout << … << sync_endl`. A GUI reads
+stdout, so the stream is part of the contract, and the gates pin it: `build.zig` asserts the
+handshake on stdout, and `buildUciOptions` **fails** if any handshake line appears on
+stderr.
 
 ## The option model
 
@@ -156,7 +164,7 @@ never a byte offset.
 
 | Member | Note |
 | --- | --- |
-| `numa_context` | a never-dereferenced single-node stub handle (a static byte address), freed as nothing |
+| `numa_context` | a `*NumaReplicationContext` (config + replica registry), built over `NumaConfig.fromSystem` and freed in the teardown |
 | `states` | the fallback root `StateList` |
 | `threads` | the `ThreadPool` |
 | `binary_directory` | owned string; the net load resolves against it |

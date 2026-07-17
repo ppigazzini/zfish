@@ -230,14 +230,19 @@ Two things are replicated per node:
 | Object | Registry | Notes |
 | --- | --- | --- |
 | `SharedHistories` (correction + pawn) | `shared_histories_map` — a NUMA-index → entry map with construct/free hooks | Built by `reconfigure`, one entry per populated node, sized for that node's thread count |
-| The NNUE network | `numa/replication.zig` — `NumaReplicationContext` tracks each `NumaReplicatedBase` hook and re-notifies on a config change | Neither registry is live: the weights are always resident, so `thread.ensureNetworkReplicated` is a no-op, and `network_holder.NetworkHolder` models the per-node replica pointers for its unit tests only |
+| The NNUE network | `numa/replication.zig` — `NumaReplicationContext` tracks each `NumaReplicatedBase` hook and re-notifies on a config change | The context is live (it owns the `NumaConfig` the engine binds from), but **replication is not**: `thread.ensureNetworkReplicated` is still `_ = pool;`, the weights are always resident, and `network_holder.NetworkHolder` models the per-node replica pointers for its unit tests only. Upstream shares one net across processes via `shm`; zfish allocates a private copy per process (measured: **+106 MiB per process**, PSS 286 vs 505 for two engines) |
 
-zfish runs single-node today: `numa.configNodeCount` is 1,
-`distributeThreadsAmongNodes` maps every thread to node 0, and `worker_build` resolves
-every Worker's shared history to node 0. The map, the `bound` slice, the per-node sizing
-math, and the replica registry are all real and unit-tested against multi-node inputs —
-only the topology surface is stubbed. The memory and NUMA primitives themselves are
-described in [7-platform.md](7-platform.md).
+The topology surface is live: `numa.configNodeCount` reports the config's real node count,
+`distributeThreadsAmongNodes` calls `NumaConfig.distributeThreads`, and
+`suggestsBindingThreads` evaluates upstream's rule. Every `NumaPolicy` value that can be
+driven on a single-node host matches upstream, including a two-node string
+(`0-7:8-15` → `2/8` on both) and the refusal of an unparseable one.
+
+What remains single-node is **discovery**, not wiring: `NumaConfig.fromSystem` enumerates
+every online CPU onto one node rather than reading `/sys/devices/system/node`, so `system`
+and `hardware` cannot differ on this host. The map, the `bound` slice, the per-node sizing
+math, and the replica registry are real and unit-tested against multi-node inputs. The memory
+and NUMA primitives are described in [7-platform.md](7-platform.md).
 
 ## The seams
 

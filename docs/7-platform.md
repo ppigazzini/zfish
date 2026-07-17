@@ -86,27 +86,37 @@ headless engine build allocates correctly and loses only the huge pages.
 
 ## NUMA
 
-`numa.zig` is the topology surface. zfish runs single-node: `suggestsBindingThreads`
-returns false, `distributeThreadsAmongNodes` maps every thread to node 0,
-`configNodeCount` is 1, and `executeOnNode` runs the callback inline. `configString`
-is real work — on Linux it renders the process's `sched_getaffinity` mask as
-comma-joined CPU ranges; elsewhere it reports the full range. Keeping this a real
-module means the engine and thread paths call it as ordinary Zig.
+`numa.zig` is the topology surface, and it delegates: every function resolves the erased
+`numa_context` to the `NumaReplicationContext` that owns the `NumaConfig` and asks it.
+`suggestsBindingThreads` evaluates the real rule, `configNodeCount` and `contextCpusInNode`
+report the config's node count and per-node CPU count, `distributeThreadsAmongNodes` calls
+`NumaConfig.distributeThreads`, and `contextSetSystem`/`Hardware`/`None` plus `setFromString`
+install a new topology through `setNumaConfig` (which re-notifies replicated objects).
+`setFromString` returns whether the string parsed: an unparseable `NumaPolicy` is refused and
+the previous config stays live, matching upstream. `executeOnNode` runs the callback inline.
+`configString` renders the process's `sched_getaffinity` mask as comma-joined CPU ranges on
+Linux; elsewhere it reports the full range.
 
-`numa/config.zig` holds the model those stubs would drive: `NumaConfig` is a list of
-nodes, each an ascending unique CPU set, plus a CPU→node index and the
-`custom_affinity` flag. `fromString` parses the user `NumaPolicy` syntax
-(`"0-3,8:4-7"`) and forces binding; `fromSystem` builds one node holding every
-online CPU. `distributeThreads` balances threads across nodes by fill ratio, and
-`suggestsBindingThreads` binds on user-set affinity, never for a single thread, and
-otherwise only when the threads cannot fit the largest node.
+`numa/config.zig` is the model it drives. `NumaConfig` is a list of nodes, each an ascending
+unique CPU set, plus a CPU→node index and the `custom_affinity` flag. `fromString` parses the
+user `NumaPolicy` syntax (`"0-3,8:4-7"`), forces binding, and rejects a CPU claimed by two
+nodes. `distributeThreads` balances threads across nodes by fill ratio.
+`suggestsBindingThreads` mirrors upstream: bind on user-set affinity; never for a single
+thread; otherwise bind when the thread count exceeds half the largest node **or** reaches
+four per not-small node (a node holding ≤60% of the largest is ignored as small) — **and only
+when there is more than one node**.
+
+**The one real limit: `fromSystem` does not read the host topology.** It enumerates every
+online CPU onto a single node, so on this machine `system` and `hardware` cannot differ. The
+gap is topology *discovery* (`/sys/devices/system/node`), not the wiring above.
 
 `numa/replication.zig` is the replica registry. `NumaReplicationContext` owns a
 `NumaConfig` and tracks `NumaReplicatedBase` hooks — a plain function pointer
 embedded in each replicated wrapper, no vtable. `setNumaConfig` swaps the config and
 notifies every tracked object to re-replicate. The registry is exercised by the typed
-`src/shell/engine/graph.zig` model and its unit tests; the live `EngineObject` holds a
-stub `numa_context` handle instead. See [5-multithreading.md](5-multithreading.md).
+`src/shell/engine/graph.zig` model and its unit tests. `EngineObject` owns the live
+`NumaReplicationContext`: `constructMembers` builds one over `NumaConfig.fromSystem`, and the
+teardown `deinit`s and frees it. See [5-multithreading.md](5-multithreading.md).
 
 ## Tablebases
 

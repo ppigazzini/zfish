@@ -254,8 +254,12 @@ the same slot. `adjustKey50` (`search_qsearch.zig`) perturbs the key near the 50
 boundary so positions differing only in rule50 hash apart. Values are mate-distance
 corrected on the way in and out (`search.valueToTt` / `valueFromTt`). The generation
 advances once per search in `ssTmInit`; `entryPenalize` decrements a stored depth when
-a TT entry's window bound is the only reason a cutoff was refused. The table is shared
-across all workers and accessed without locks.
+a TT entry's window bound is the only reason a cutoff was refused. That decrement — and the
+secondary aging in `entrySave` — **saturates at zero** (`depthSaturatingSub`), never wraps.
+The table is shared across all workers and accessed without locks, so the subtraction is
+racy by design: `depth8` is a `u8` and `depth8 != 0` is the occupancy test, so a wrapping
+decrement would turn a penalised shallow entry into the deepest entry in the table and make
+a cleared slot read as occupied. The clamp is what makes the lock-free write safe.
 
 ## Time management and stopping
 
