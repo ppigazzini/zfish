@@ -334,6 +334,49 @@ fn searchBestmoveLine(gpa: std.mem.Allocator, io: Io, bin: []const u8, seq: []co
     return owned;
 }
 
+// fen-errors: pin the FEN-validation diagnostics restored in fen_parse.zig (the piece-char,
+// pawn/piece-count, side-to-move, castling, en-passant, king-count, and board-length rules that
+// upstream enforces at position.cpp). Each malformed `position fen` is a CRITICAL command error
+// that ABORTS the engine, so every case runs in its own process and the follow-up `isready`
+// must produce NO `readyok` -- that flag pins the terminate-on-critical-error behaviour. The
+// `Reason: ...` text, its quoted offending token, and the stdout routing all match the upstream
+// oracle byte-for-byte (verified against sf_sse41); regenerate the golden on an upstream sync,
+// exactly like the search/tb goldens.
+const FenErrorCase = struct { label: []const u8, fen: []const u8 };
+const fen_error_cases = [_]FenErrorCase{
+    .{ .label = "invalid-piece   ", .fen = "not_a_fen" },
+    .{ .label = "too-many-pawns  ", .fen = "8/pppppppp/p7/8/8/8/8/K6k w - - 0 1" },
+    .{ .label = "too-many-pieces ", .fen = "QQQQQQQQ/QQQQQQQQ/8/8/8/8/8/K6k w - - 0 1" },
+    .{ .label = "bad-side-to-move", .fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1" },
+    .{ .label = "bad-castling    ", .fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w XQkq - 0 1" },
+    .{ .label = "bad-en-passant  ", .fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq z9 0 1" },
+    .{ .label = "no-kings        ", .fen = "8/8/8/8/8/8/8/8 w - - 0 1" },
+    .{ .label = "short-board     ", .fen = "rnbqkbnr/pppppppp/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" },
+};
+
+fn buildFenErrors(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    for (fen_error_cases) |c| {
+        const stdin_bytes = try std.fmt.allocPrint(gpa, "position fen {s}\nisready\nquit\n", .{c.fen});
+        defer gpa.free(stdin_bytes);
+        var cap = try runEngine(gpa, io, bin, &.{}, stdin_bytes);
+        defer cap.deinit(gpa);
+        var reason: []const u8 = "";
+        var readyok = false;
+        var li = lines(cap.stdout);
+        while (li.next()) |line| {
+            if (std.mem.indexOf(u8, line, "CRITICAL ERROR:") != null) {
+                if (std.mem.indexOf(u8, line, "Reason: ")) |r| reason = line[r + "Reason: ".len ..];
+            } else if (startsWith(line, "readyok")) readyok = true;
+        }
+        if (reason.len == 0) fail("fen-errors: {s}: no CRITICAL ERROR line on stdout (crash?)", .{c.label});
+        // terminated == the engine aborted before reaching `isready` (no readyok leaked).
+        try out.print(gpa, "{s} terminated={} {s}\n", .{ c.label, !readyok, reason });
+    }
+    return out.toOwnedSlice(gpa);
+}
+
 // perft: emit a `== label ==` header, then SORTED divide lines (byte order == C locale), then the
 // `Nodes searched` total, per position. Divide + total are on stdout.
 fn buildPerft(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
@@ -1607,7 +1650,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
-const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root", @"tb-search", @"tb-cursed" };
+const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", @"fen-errors", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root", @"tb-search", @"tb-cursed" };
 
 // net-missing: exercise the ONLY gate that runs the installed binary from a cwd the build
 // does not pin. Every other gate sets cwd to net/ (build.zig `run.setCwd(b.path("net"))`),
@@ -1722,6 +1765,7 @@ pub fn main(init: std.process.Init) !void {
         .@"driver-golden" => try buildDriverGolden(gpa, io, bin),
         .@"search-parity" => try buildSearchParity(gpa, io, bin),
         .@"search-modes" => try buildSearchModes(gpa, io, bin),
+        .@"fen-errors" => try buildFenErrors(gpa, io, bin),
         .perft => try buildPerft(gpa, io, bin),
         .eval => try buildEval(gpa, io, bin),
         .misc => try buildMisc(gpa, io, bin),

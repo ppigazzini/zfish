@@ -869,6 +869,27 @@ pub fn build(b: *std.Build) void {
     );
     search_modes_update_step.dependOn(&search_modes_update_cmd.step);
 
+    // Pin the FEN-validation diagnostics (piece/pawn/king counts, side-to-move, castling,
+    // en-passant, board length) and the terminate-on-critical-error behaviour -- byte-exact
+    // with upstream's position.cpp messages. Regenerate on an upstream sync.
+    const fen_errors_golden = repoPath(b, "tools/fen_errors.golden");
+
+    const fen_errors_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "fen-errors", fen_errors_golden, "check");
+
+    const fen_errors_step = b.step(
+        "fen-errors",
+        "Diff the FEN-validation error diagnostics against the committed golden",
+    );
+    fen_errors_step.dependOn(&fen_errors_cmd.step);
+
+    const fen_errors_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "fen-errors", fen_errors_golden, "update");
+
+    const fen_errors_update_step = b.step(
+        "fen-errors-update",
+        "Regenerate tools/fen_errors.golden from the current binary",
+    );
+    fen_errors_update_step.dependOn(&fen_errors_update_cmd.step);
+
     // Assert via the worktree-based upstream oracle gate that the default (Zig)
     // bench == the PRISTINE upstream Stockfish at UPSTREAM_BASE, built in a persistent
     // git worktree with ZERO vendored C++. It pins to the exact upstream sha we claim to
@@ -1815,6 +1836,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&signature_cmd.step);
     parity_step.dependOn(&search_parity_cmd.step);
     parity_step.dependOn(&search_modes_cmd.step);
+    parity_step.dependOn(&fen_errors_cmd.step);
     parity_step.dependOn(&output_golden_cmd.step);
     parity_step.dependOn(&driver_golden_cmd.step);
     parity_step.dependOn(&perft_cmd.step);
@@ -1862,6 +1884,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&signature_cmd.step);
     parity_portable_step.dependOn(&search_parity_cmd.step);
     parity_portable_step.dependOn(&search_modes_cmd.step);
+    parity_portable_step.dependOn(&fen_errors_cmd.step);
     parity_portable_step.dependOn(&output_golden_cmd.step);
     // Include driver-golden: it is node-deterministic (its depth-limited info/bestmove lines are
     // bit-exact like bench, not wall-clock-gated), so it is OS/arch-invariant like the other
