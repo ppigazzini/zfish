@@ -13,29 +13,11 @@ const engine_object = @import("engine_object");
 const uci_bench = @import("uci_bench.zig");
 // Own the critical-error termination path (currentCmd + terminate_on_critical_error).
 const uci_critical = @import("uci_critical.zig");
+const uci_input = @import("uci_input.zig");
 const terminateOnCriticalError = uci_critical.terminateOnCriticalError;
 const worker_layout = @import("worker_layout");
 const clock = @import("clock");
 const uci_strings = @import("uci_strings");
-
-// Hold a blocking std.Io handle for stdin, plus a persistent line reader (replacing libc
-// fgets). `init_single_threaded` spawns no threads and installs no signal handlers, so
-// input reading, like output, never touches the engine's thread pool. Keep the reader's
-// 4096-byte buffer across calls (its state must not move, so it lives in a
-// module var recovered by @fieldParentPtr); it bounds one command line -- UCI commands
-// are short, and a longer line reports error.StreamTooLong, handled as end-of-input.
-var stdin_threaded = std.Io.Threaded.init_single_threaded;
-var stdin_buffer: [4096]u8 = undefined;
-var stdin_reader: std.Io.File.Reader = undefined;
-var stdin_ready = false;
-
-fn stdinInterface() *std.Io.Reader {
-    if (!stdin_ready) {
-        stdin_reader = std.Io.File.stdin().reader(stdin_threaded.io(), &stdin_buffer);
-        stdin_ready = true;
-    }
-    return &stdin_reader.interface;
-}
 
 pub const DispatchResult = struct {
     should_quit: u8,
@@ -400,7 +382,7 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
     }
 
     while (true) {
-        const command = readCommandLineAlloc() catch {
+        const command = uci_input.readCommandLineAlloc() catch {
             _ = dispatchCommand(e, "quit");
             return;
         };
@@ -415,22 +397,6 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
             return;
         }
     }
-}
-
-fn readCommandLineAlloc() !?[]u8 {
-    const reader = stdinInterface();
-    // Take the next line via takeDelimiter, without the '\n' (and the final unterminated
-    // line before EOF, then null) -- exactly fgets' line-at-a-time behaviour. Treat an
-    // over-long line or a read failure as end-of-input, as a closed stdin was.
-    const raw = reader.takeDelimiter('\n') catch return null;
-    const line = raw orelse return null;
-
-    var end = line.len;
-    while (end > 0 and (line[end - 1] == '\n' or line[end - 1] == '\r')) {
-        end -= 1;
-    }
-
-    return try std.heap.c_allocator.dupe(u8, line[0..end]);
 }
 
 // Keep the bench/benchmark runners in uci_bench.zig; let these thin wrappers hold the
