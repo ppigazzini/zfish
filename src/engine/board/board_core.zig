@@ -35,7 +35,7 @@ pub const mt_en_passant: u16 = 2 << 14;
 pub const mt_castling: u16 = 3 << 14;
 
 // List the non-pawn material value by piece type (index by piece & 7); pawn/none = 0.
-pub const piece_value_by_type = [8]c_int{ 0, 208, 781, 825, 1276, 2538, 0, 0 };
+pub const piece_value_by_type = [8]i32{ 0, 208, 781, 825, 1276, 2538, 0, 0 };
 
 pub inline fn sqBb(s: u8) u64 {
     return @as(u64, 1) << @intCast(s);

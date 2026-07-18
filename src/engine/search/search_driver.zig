@@ -212,17 +212,17 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 // network_evaluate runs the bucketed network and returns the scaled psqt/positional
 // halves; eval_compute_value applies the optimism/material/rule50 blend.
 const EvalOutput = struct {
-    psqt: c_int,
-    positional: c_int,
+    psqt: i32,
+    positional: i32,
 };
 const EvalInput = struct {
-    psqt: c_int,
-    positional: c_int,
-    optimism: c_int,
-    material: c_int,
-    rule50_count: c_int,
-    value_tb_loss_in_max_ply: c_int,
-    value_tb_win_in_max_ply: c_int,
+    psqt: i32,
+    positional: i32,
+    optimism: i32,
+    material: i32,
+    rule50_count: i32,
+    value_tb_loss_in_max_ply: i32,
+    value_tb_win_in_max_ply: i32,
 };
 
 // Fetch the SearchManager check-time inputs once per search tree in worker_state.

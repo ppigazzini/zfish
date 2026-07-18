@@ -24,7 +24,7 @@ pub fn isChess960(pos: *const Position) bool {
     return pos.chess960;
 }
 
-pub fn gamePly(pos: *const Position) c_int {
+pub fn gamePly(pos: *const Position) i32 {
     return pos.game_ply;
 }
 
@@ -35,7 +35,7 @@ pub fn hasCheckers(pos: *const Position) bool {
 // Count the WDL-model material (src/uci.cpp): pawns + 3*(knights+bishops) +
 // 5*rooks + 9*queens, both colours. piece_count is indexed by piece
 // (white type at 1..5, black type at 9..13).
-pub fn wdlMaterial(pos: *const Position) c_int {
+pub fn wdlMaterial(pos: *const Position) i32 {
     const pc = pos.piece_count;
     return (pc[1] + pc[9]) + 3 * (pc[2] + pc[10]) + 3 * (pc[3] + pc[11]) +
         5 * (pc[4] + pc[12]) + 9 * (pc[5] + pc[13]);

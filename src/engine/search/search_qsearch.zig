@@ -99,17 +99,17 @@ pub fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
     pv.length = n + 1;
 }
 
-pub fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchStack) c_int {
+pub fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchStack) i32 {
     const shared = sharedOf(w);
     const us = pos.side_to_move;
-    const pcv: c_int = corrBundle(shared, pos.st.pawn_key)[us].pawn;
-    const micv: c_int = corrBundle(shared, pos.st.minor_piece_key)[us].minor;
-    const wnpcv: c_int = corrBundle(shared, pos.st.non_pawn_key[0])[us].nonpawn_white;
-    const bnpcv: c_int = corrBundle(shared, pos.st.non_pawn_key[1])[us].nonpawn_black;
+    const pcv: i32 = corrBundle(shared, pos.st.pawn_key)[us].pawn;
+    const micv: i32 = corrBundle(shared, pos.st.minor_piece_key)[us].minor;
+    const wnpcv: i32 = corrBundle(shared, pos.st.non_pawn_key[0])[us].nonpawn_white;
+    const bnpcv: i32 = corrBundle(shared, pos.st.non_pawn_key[1])[us].nonpawn_black;
     const ss1: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
     const m = ss1.current_move;
-    var cch2: c_int = 0;
-    var cch4: c_int = 0;
+    var cch2: i32 = 0;
+    var cch4: i32 = 0;
     const m_ok = moveIsOk(m);
     if (m_ok) {
         const to = moveTo(m);
@@ -133,7 +133,7 @@ pub inline fn adjustKey50(pos: *const Position) u64 {
 
 /// Mirror upstream `template<NodeType> qsearch<PV>/<NonPV>`: the node type is comptime, and
 /// there is no cut_node.
-pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta: c_int, comptime pv_node: bool) c_int {
+pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: i32, beta: i32, comptime pv_node: bool) i32 {
     const w: *WorkerHistories = workerHistories(ctx.worker);
     const pos = pos_ptr;
     const ss = ss_ptr;
@@ -152,7 +152,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
 
     var best_move: u16 = 0;
     ss.in_check = pos.st.checkers_bb != 0;
-    var move_count: c_int = 0;
+    var move_count: i32 = 0;
 
     // Step 1. Initialize node (PV).
     if (pv_node) {
@@ -173,10 +173,10 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
     const tt_hit = probe.found != 0;
     ss.tt_hit = tt_hit;
     const tt_move: u16 = if (tt_hit) probe.data.move16 else 0;
-    const tt_value: c_int = if (tt_hit) search.valueFromTt(probe.data.value16, ss.ply, pos.st.rule50) else q_value_none;
-    const tt_depth: c_int = probe.data.depth;
+    const tt_value: i32 = if (tt_hit) search.valueFromTt(probe.data.value16, ss.ply, pos.st.rule50) else q_value_none;
+    const tt_depth: i32 = probe.data.depth;
     const tt_bound: u8 = probe.data.bound;
-    const tt_eval: c_int = probe.data.eval16;
+    const tt_eval: i32 = probe.data.eval16;
     const pv_hit = tt_hit and probe.data.is_pv != 0;
     const writer = probe.writer_ptr.?;
 
@@ -185,9 +185,9 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
         return tt_value;
 
     // Step 4. Compute the static evaluation.
-    var unadjusted_static_eval: c_int = q_value_none;
-    var best_value: c_int = undefined;
-    var futility_base: c_int = -q_value_inf;
+    var unadjusted_static_eval: i32 = q_value_none;
+    var best_value: i32 = undefined;
+    var futility_base: i32 = -q_value_inf;
     if (ss.in_check) {
         best_value = -q_value_inf;
     } else {
@@ -219,7 +219,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
     }
 
     var cont_hist = [1]?*const worker_histories.PieceToHistory{ss1.continuation_history};
-    const prev_sq: c_int = if (moveIsOk(ss1.current_move)) @intCast(moveTo(ss1.current_move)) else @as(c_int, sq_none);
+    const prev_sq: i32 = if (moveIsOk(ss1.current_move)) @intCast(moveTo(ss1.current_move)) else @as(i32, sq_none);
 
     // Step 5. Pick moves (captures, or evasions when in check).
     var mp_moves: [256]movepick.SortEntry = undefined;
@@ -260,7 +260,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
 
         // Step 6. Prune.
         if (!qIsLoss(best_value)) {
-            if (!gc and @as(c_int, moveTo(move)) != prev_sq and !qIsLoss(futility_base) and
+            if (!gc and @as(i32, moveTo(move)) != prev_sq and !qIsLoss(futility_base) and
                 moveTypeOf(move) != q_mt_promotion)
             {
                 if (move_count > 2) continue;
@@ -331,10 +331,10 @@ pub inline fn ssSub(ss: *SearchStack, n: usize) *SearchStack {
     return @ptrFromInt(@intFromPtr(ss) - n * @sizeOf(SearchStack));
 }
 
-pub inline fn ttMoveHistoryUpdate(w: *WorkerHistories, bonus: c_int) void {
+pub inline fn ttMoveHistoryUpdate(w: *WorkerHistories, bonus: i32) void {
     statsUpdate(&w.tt_move_history, bonus, 8192);
 }
 
-pub inline fn contVal(ss_ch: ?*const worker_histories.PieceToHistory, pc: u8, to: u8) c_int {
+pub inline fn contVal(ss_ch: ?*const worker_histories.PieceToHistory, pc: u8, to: u8) i32 {
     return ss_ch.?[@as(usize, pc) * 64 + to];
 }

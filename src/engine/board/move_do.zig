@@ -246,7 +246,7 @@ pub fn doMove(
         dp.remove_pc = captured;
         dp.remove_sq = capsq;
         k ^= psq[psqIdx(captured, capsq)];
-        const mat_slot: u8 = @intCast(8 + pos.piece_count[captured] - @as(c_int, if (mt != mt_en_passant) 1 else 0));
+        const mat_slot: u8 = @intCast(8 + pos.piece_count[captured] - @as(i32, if (mt != mt_en_passant) 1 else 0));
         pos.st.material_key ^= psq[psqIdx(captured, mat_slot)];
         pos.st.rule50 = 0;
     } else {
@@ -326,7 +326,7 @@ pub fn doMove(
     const end = @min(pos.st.rule50, pos.st.plies_from_null);
     if (end >= 4) {
         var stp = pos.st.previous.?.previous.?;
-        var i: c_int = 4;
+        var i: i32 = 4;
         while (i <= end) : (i += 2) {
             stp = stp.previous.?.previous.?;
             if (stp.key == pos.st.key) {

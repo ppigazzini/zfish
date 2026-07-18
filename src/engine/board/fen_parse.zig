@@ -43,7 +43,7 @@ const setCastlingRight = state_setup.setCastlingRight;
 const attackersTo = legality.attackersTo;
 const attackersToExist = legality.attackersToExist;
 
-inline fn countPt(pos: *const Position, c: u8, pt: u8) c_int {
+inline fn countPt(pos: *const Position, c: u8, pt: u8) i32 {
     return pos.piece_count[(c << 3) | pt];
 }
 inline fn pawnPush(c: u8) i16 {
@@ -100,7 +100,7 @@ pub fn setPosition(
     var cur = FenCursor{ .fen = fen_ptr[0..fen_len] };
 
     // 1. Piece placement
-    var num_pieces: c_int = 0;
+    var num_pieces: i32 = 0;
     var file: i32 = 0;
     var rank: i32 = 7;
     while (cur.next()) |token| {
@@ -168,7 +168,7 @@ pub fn setPosition(
         return setErr("Invalid FEN. Expected whitespace after side to move.");
 
     // 3. Castling availability
-    var num_castling: c_int = 0;
+    var num_castling: i32 = 0;
     while (cur.next()) |tok0| {
         var token = tok0;
         if (std.ascii.isWhitespace(token)) break;
@@ -252,7 +252,7 @@ pub fn setPosition(
     if (rule50 < 0 or rule50 > 32767) return setErr("Unsupported position. Rule50 counter out of range.");
     if (game_ply < 0 or game_ply > 100000) return setErr("Unsupported position. Game ply out of range.");
     pos.st.rule50 = rule50;
-    game_ply = @max(2 * (game_ply - 1), 0) + @as(c_int, if (stm == color_black) 1 else 0);
+    game_ply = @max(2 * (game_ply - 1), 0) + @as(i32, if (stm == color_black) 1 else 0);
     pos.game_ply = game_ply;
 
     pos.chess960 = is_chess960 != 0;
@@ -265,12 +265,12 @@ pub fn setPosition(
 }
 
 // Saturate rather than wrap. The caller range-checks the result (rule50 <= 32767, game_ply <=
-// 100000) but only AFTER the digits are consumed, so an unguarded accumulate overflows c_int on
+// 100000) but only AFTER the digits are consumed, so an unguarded accumulate overflows i32 on
 // a long digit run before that check can reject it. Stop at a ceiling above every legal counter
-// and below c_int's range: any saturated value still fails the caller's check.
+// and below i32's range: any saturated value still fails the caller's check.
 const fen_int_ceiling: i64 = 1_000_000;
 
-fn parseInt(cur: *FenCursor) ?c_int {
+fn parseInt(cur: *FenCursor) ?i32 {
     var val: i64 = 0;
     var any = false;
     var neg = false;

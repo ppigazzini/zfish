@@ -22,9 +22,9 @@ fn engineAddOption(
     option_kind: u8,
     default_ptr: [*]const u8,
     default_len: usize,
-    default_value: c_int,
-    min_value: c_int,
-    max_value: c_int,
+    default_value: i32,
+    min_value: i32,
+    max_value: i32,
     callback_kind: u8,
 ) void {
     _ = callback_kind;
@@ -69,9 +69,9 @@ pub fn addCheckOption(name: []const u8, default_value: u8) void {
 
 pub fn addSpinOption(
     name: []const u8,
-    default_value: c_int,
-    min_value: c_int,
-    max_value: c_int,
+    default_value: i32,
+    min_value: i32,
+    max_value: i32,
     callback_kind: u8,
 ) void {
     engineAddOption(

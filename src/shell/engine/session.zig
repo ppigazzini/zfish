@@ -127,18 +127,18 @@ const option_callback_eval_file: u8 = 7;
 // Single-source from network.zig via the "network" module (build.zig wires the
 // engine->network edge). Avoid the net-name-drift bug of two copies.
 const default_eval_file_name = network_port.default_eval_file_name;
-const default_skill_lowest_elo: c_int = 1320;
-const default_skill_highest_elo: c_int = 3190;
+const default_skill_lowest_elo: i32 = 1320;
+const default_skill_highest_elo: i32 = 3190;
 
 pub fn initBody(engine_ptr: *anyopaque) void {
     // Sit at the construction boundary: main hands the engine as a raw buffer; keep
     // the *anyopaque ABI and cast once here to drive the typed init entries below.
     const e: *engine_object.EngineObject = ne(engine_ptr);
-    const max_threads = @max(@as(c_int, 1024), 4 * misc_port.hardwareConcurrency());
-    const max_hash_mb: c_int = if (@sizeOf(usize) >= 8) 33554432 else 2048;
+    const max_threads = @max(@as(i32, 1024), 4 * misc_port.hardwareConcurrency());
+    const max_hash_mb: i32 = if (@sizeOf(usize) >= 8) 33554432 else 2048;
 
-    const lowest_elo: c_int = default_skill_lowest_elo;
-    const highest_elo: c_int = default_skill_highest_elo;
+    const lowest_elo: i32 = default_skill_lowest_elo;
+    const highest_elo: i32 = default_skill_highest_elo;
 
     addStringOption("Debug Log File", "", option_callback_debug_log_file);
     addStringOption("NumaPolicy", "auto", option_callback_numa_policy);
@@ -177,7 +177,7 @@ pub fn optionOnChange(
     callback_kind: u8,
     value_ptr: [*]const u8,
     value_len: usize,
-    int_value: c_int,
+    int_value: i32,
 ) ?[*:0]u8 {
     const value = value_ptr[0..value_len];
 
@@ -306,7 +306,7 @@ pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [
     if (res.accepted != 0 and res.callback_kind != 0) {
         var relay_buf: [32]u8 = undefined;
         var relay_value: []const u8 = "";
-        var relay_int: c_int = 0;
+        var relay_int: i32 = 0;
         if (res.kind == 1 or res.kind == 2) {
             relay_int = option_port.intByIndex(res.idx);
             relay_value = std.fmt.bufPrint(&relay_buf, "{d}", .{relay_int}) catch "";

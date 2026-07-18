@@ -358,7 +358,7 @@ fn fuzzNnueEval(_: void, smith: *std.testing.Smith) anyerror!void {
     nnue_acc.clearRefreshCache(cache, biases);
 
     const out = network.evaluate(&p, stack, cache);
-    const limit: c_int = 1 << 22;
+    const limit: i32 = 1 << 22;
     if (out.psqt > limit or out.psqt < -limit) return error.NnuePsqtOutOfRange;
     if (out.positional > limit or out.positional < -limit) return error.NnuePositionalOutOfRange;
 

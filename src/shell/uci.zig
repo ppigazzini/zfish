@@ -368,7 +368,7 @@ pub fn loopRuntime(uci_ptr: *anyopaque) void {
         var command = std.ArrayList(u8).empty;
         defer command.deinit(allocator);
 
-        var index: c_int = 1;
+        var index: i32 = 1;
         while (index < argc) : (index += 1) {
             const arg_ptr = e.cliArgAt(index) orelse continue;
             if (command.items.len != 0) {

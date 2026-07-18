@@ -112,7 +112,7 @@ const rootTtMove = search_control.rootTtMove;
 const rootInList = search_control.rootInList;
 const searchStopped = search_control.searchStopped;
 const inLastIterPv = search_control.inLastIterPv;
-const lmr_divisor = [16]c_int{ 3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782, 2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599 };
+const lmr_divisor = [16]i32{ 3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782, 2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599 };
 const search_qsearch = @import("search_qsearch.zig");
 pub const isShuffling = search_qsearch.isShuffling;
 const pvClear = search_qsearch.pvClear;
@@ -129,7 +129,7 @@ const contVal = search_qsearch.contVal;
 /// Mirror upstream `template<NodeType> search<Root>/<PV>/<NonPV>(..., bool cutNode)`: the node
 /// type is comptime, `cut_node` is runtime. Carry the comptime fields into `search_back.runBack`
 /// through its `nd: anytype`, specialising it per node type as well.
-pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: c_int, beta_in: c_int, depth_in: c_int, cut_node: bool, comptime pv_node: bool, comptime root_node: bool) c_int {
+pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: i32, beta_in: i32, depth_in: i32, cut_node: bool, comptime pv_node: bool, comptime root_node: bool) i32 {
     const all_node = !(pv_node or cut_node);
 
     // Dive into qsearch at depth 0.
@@ -158,8 +158,8 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     const prior_capture = pos.st.captured_piece != 0;
     const us = pos.side_to_move;
     ss.move_count = 0;
-    var best_value: c_int = -q_value_inf;
-    var max_value: c_int = q_value_inf;
+    var best_value: i32 = -q_value_inf;
+    var max_value: i32 = q_value_inf;
 
     ss.follow_pv = root_node or (ss1.follow_pv and inLastIterPv(ctx, ss.ply - 1, ss1.current_move));
 
@@ -180,7 +180,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         if (alpha >= beta) return alpha;
     }
 
-    const prev_sq: c_int = if (moveIsOk(ss1.current_move)) @intCast(moveTo(ss1.current_move)) else @as(c_int, sq_none);
+    const prev_sq: i32 = if (moveIsOk(ss1.current_move)) @intCast(moveTo(ss1.current_move)) else @as(i32, sq_none);
     const prior_reduction = ss1.reduction;
     ss1.reduction = 0;
     ss.stat_score = 0;
@@ -193,19 +193,19 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     const tt_hit = probe.found != 0;
     ss.tt_hit = tt_hit;
     const tt_move: u16 = if (root_node) rootTtMove(ctx) else if (tt_hit) probe.data.move16 else 0;
-    const tt_value: c_int = if (tt_hit) search.valueFromTt(probe.data.value16, ss.ply, pos.st.rule50) else q_value_none;
-    const tt_depth: c_int = probe.data.depth;
+    const tt_value: i32 = if (tt_hit) search.valueFromTt(probe.data.value16, ss.ply, pos.st.rule50) else q_value_none;
+    const tt_depth: i32 = probe.data.depth;
     const tt_bound: u8 = probe.data.bound;
-    const tt_eval: c_int = probe.data.eval16;
+    const tt_eval: i32 = probe.data.eval16;
     const tt_is_pv = tt_hit and probe.data.is_pv != 0;
     ss.tt_pv = if (excluded_move != 0) ss.tt_pv else (pv_node or tt_is_pv);
     const tt_capture = tt_move != 0 and captureStage(pos, tt_move);
     const writer = probe.writer_ptr.?;
 
     // Step 5. Compute the static evaluation.
-    var unadjusted_static_eval: c_int = q_value_none;
+    var unadjusted_static_eval: i32 = q_value_none;
     const correction_value = qCorrectionValue(w, pos, ss);
-    var eval: c_int = undefined;
+    var eval: i32 = undefined;
     if (ss.in_check) {
         ss.static_eval = ss2.static_eval;
         eval = ss2.static_eval;
@@ -234,14 +234,14 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     if (prior_reduction >= 2 and depth >= 2 and ss.static_eval + ss1.static_eval > 173) depth -= 1;
 
     // Cut off early on the TT (non-PV).
-    if (!pv_node and excluded_move == 0 and tt_depth > depth - @as(c_int, @intFromBool(tt_value <= beta)) and
+    if (!pv_node and excluded_move == 0 and tt_depth > depth - @as(i32, @intFromBool(tt_value <= beta)) and
         qIsValid(tt_value) and (tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0 and
         (cut_node == (tt_value >= beta) or depth > 4))
     {
         if (tt_move != 0 and tt_value >= beta) {
             if (!tt_capture)
                 updateQuietHistoriesWorker(ctx.worker, pos_ptr, ss_ptr, tt_move, @min(114 * depth, 724)); // upstream 73826352d
-            if (prev_sq != @as(c_int, sq_none) and ss1.move_count < 4 and !prior_capture)
+            if (prev_sq != @as(i32, sq_none) and ss1.move_count < 4 and !prior_capture)
                 updateContinuationHistories(ss1, pos.board[@intCast(prev_sq)], @intCast(prev_sq), -2187);
         }
         if (pos.st.rule50 < 96) {
@@ -250,7 +250,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 const next_key = adjustKey50(pos);
                 const probe_next = tt.probeTable(ctx.table, ctx.cluster_count, next_key, ctx.generation, q_depth_none);
                 verifyUndoMove(pos_ptr, tt_move);
-                const next_value: c_int = probe_next.data.value16;
+                const next_value: i32 = probe_next.data.value16;
                 if (!qIsValid(next_value)) return tt_value;
                 if ((tt_value >= beta) == (-next_value >= beta)) return tt_value;
             } else return tt_value;
@@ -259,7 +259,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     // upstream 319d61eff: take no cutoff, but if a window-bound mismatch is the only reason, penalize the
     // now-useless tte (decrement its stored depth).
     else if (!pv_node and excluded_move == 0 and
-        tt_depth > depth - @as(c_int, @intFromBool(tt_value <= beta)) and
+        tt_depth > depth - @as(i32, @intFromBool(tt_value <= beta)) and
         qIsValid(tt_value) and tt_bound != (q_bound_lower | q_bound_upper) and
         (tt_bound & (if (tt_value >= beta) q_bound_upper else q_bound_lower)) != 0 and depth > 5)
     {
@@ -273,10 +273,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     // build (and bench) never enters here and the node count is unchanged.
     if (!root_node and excluded_move == 0) {
         const tb_cfg = &ctx.worker.tb_config;
-        const cardinality: c_int = @as(*const c_int, @ptrCast(@alignCast(&tb_cfg[0]))).*;
+        const cardinality: i32 = @as(*const i32, @ptrCast(@alignCast(&tb_cfg[0]))).*;
         if (cardinality != 0) {
-            const pieces_count: c_int = @popCount(pos.by_type_bb[0]);
-            const probe_depth: c_int = @as(*const c_int, @ptrCast(@alignCast(&tb_cfg[8]))).*;
+            const pieces_count: i32 = @popCount(pos.by_type_bb[0]);
+            const probe_depth: i32 = @as(*const i32, @ptrCast(@alignCast(&tb_cfg[8]))).*;
             if (pieces_count <= cardinality and
                 (pieces_count < cardinality or depth >= probe_depth) and
                 pos.st.rule50 == 0 and pos.st.castling_rights == 0)
@@ -284,10 +284,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 const res = tb_source.probeWdlPos(pos_ptr);
                 if (res.available != 0) {
                     ctx.worker.tb_hits += 1;
-                    const draw_score: c_int = if (tb_cfg[5] != 0) 1 else 0;
-                    const tb_value: c_int = sv.value_tb - ss.ply;
+                    const draw_score: i32 = if (tb_cfg[5] != 0) 1 else 0;
+                    const tb_value: i32 = sv.value_tb - ss.ply;
                     const wdl = res.wdl;
-                    const value: c_int = if (wdl < -draw_score)
+                    const value: i32 = if (wdl < -draw_score)
                         -tb_value
                     else if (wdl > draw_score)
                         tb_value
@@ -391,7 +391,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 .shared_history = null,
                 .ply = 0,
             };
-            const probcut_depth = depth - 4 - @as(c_int, @intFromBool(improving)); // upstream d64835051
+            const probcut_depth = depth - 4 - @as(i32, @intFromBool(improving)); // upstream d64835051
             while (true) {
                 const move = movepick.nextMove(&pc_state, &pc_ctx);
                 if (move == 0) break;

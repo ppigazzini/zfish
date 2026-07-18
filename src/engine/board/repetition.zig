@@ -23,7 +23,7 @@ const moveTo = board_core.moveTo;
 const h1 = zobrist.h1;
 const h2 = zobrist.h2;
 
-pub fn upcomingRepetition(pos: *const Position, ply: c_int) bool {
+pub fn upcomingRepetition(pos: *const Position, ply: i32) bool {
     const cuckoo: [*]const u64 = &zobrist.cuckoo_tbl;
     const cuckoo_move: [*]const u16 = &zobrist.cuckoo_move_tbl;
     const end = @min(pos.st.rule50, pos.st.plies_from_null);
@@ -33,7 +33,7 @@ pub fn upcomingRepetition(pos: *const Position, ply: c_int) bool {
     var stp: *const StateInfo = pos.st.previous.?;
     var other = original_key ^ stp.key ^ zobrist.zob_side_val;
 
-    var i: c_int = 3;
+    var i: i32 = 3;
     while (i <= end) : (i += 2) {
         stp = stp.previous.?;
         other ^= stp.key ^ stp.previous.?.key ^ zobrist.zob_side_val;
@@ -58,7 +58,7 @@ pub fn upcomingRepetition(pos: *const Position, ply: c_int) bool {
     return false;
 }
 
-pub fn isDraw(pos: *const Position, ply: c_int) bool {
+pub fn isDraw(pos: *const Position, ply: i32) bool {
     if (pos.st.rule50 > 99) {
         if (pos.st.checkers_bb == 0) return true;
         var buf: [256]u16 = undefined;
@@ -67,7 +67,7 @@ pub fn isDraw(pos: *const Position, ply: c_int) bool {
     return isRepetition(pos, ply);
 }
 
-pub fn isRepetition(pos: *const Position, ply: c_int) bool {
+pub fn isRepetition(pos: *const Position, ply: i32) bool {
     const rep = pos.st.repetition;
     return rep != 0 and rep < ply;
 }

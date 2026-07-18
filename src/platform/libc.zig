@@ -18,5 +18,5 @@
 // <stdlib.h>
 pub extern "c" fn malloc(size: usize) ?*anyopaque;
 pub extern "c" fn free(ptr: ?*anyopaque) void;
-pub extern "c" fn exit(code: c_int) noreturn;
-pub const EXIT_FAILURE: c_int = 1;
+pub extern "c" fn exit(code: i32) noreturn;
+pub const EXIT_FAILURE: i32 = 1;

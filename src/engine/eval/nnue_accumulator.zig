@@ -175,7 +175,7 @@ pub fn transformBucket(
     stm: u8,
     output: [*]u8,
     nnz: *NnzBitset,
-) c_int {
+) i32 {
     evaluate(stack, pos, feature_transformer, cache);
 
     // Read the single combined (HalfKA + Threats) accumulator from the psq_feature slot.
@@ -187,7 +187,7 @@ pub fn transformBucket(
     const p1: usize = stm ^ 1;
 
     // (psq_diff + thr_diff)/2 == (combined_diff)/2 since combined = psq + threat.
-    const psqt: c_int = @divTrunc(comb_psqt[p0 * psqt_buckets + bucket] - comb_psqt[p1 * psqt_buckets + bucket], 2);
+    const psqt: i32 = @divTrunc(comb_psqt[p0 * psqt_buckets + bucket] - comb_psqt[p1 * psqt_buckets + bucket], 2);
 
     // Produce the pairwise squared-clipped-ReLU output (port of upstream FeatureTransformer::
     // transform). Per element: sum psq+threat accumulators (i16 wrap), ClippedReLU to

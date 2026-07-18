@@ -26,8 +26,8 @@ pub const OptionEntry = struct {
     kind: OptionKind,
     default_value: []u8,
     current_value: []u8,
-    min: c_int,
-    max: c_int,
+    min: i32,
+    max: i32,
     callback_kind: u8,
 };
 
@@ -66,8 +66,8 @@ pub const OptionsModel = struct {
         name: []const u8,
         kind: OptionKind,
         default_value: []const u8,
-        min: c_int,
-        max: c_int,
+        min: i32,
+        max: i32,
         callback_kind: u8,
     ) !usize {
         const idx = self.entries.items.len;
@@ -118,7 +118,7 @@ pub const OptionsModel = struct {
         return "";
     }
 
-    pub fn getInt(self: *const OptionsModel, name: []const u8) c_int {
+    pub fn getInt(self: *const OptionsModel, name: []const u8) i32 {
         if (self.findIndex(name)) |i| return self.intByIndex(i);
         return 0;
     }
@@ -134,7 +134,7 @@ pub const OptionsModel = struct {
         return "";
     }
 
-    pub fn intByIndex(self: *const OptionsModel, idx: usize) c_int {
+    pub fn intByIndex(self: *const OptionsModel, idx: usize) i32 {
         if (idx < self.entries.items.len) {
             const entry = self.entries.items[idx];
             if (entry.kind == .spin) return parseSignedInt(entry.current_value) orelse 0;
@@ -242,10 +242,10 @@ pub fn callbackKindForName(name: []const u8) u8 {
 }
 
 pub const StandardOptionParams = struct {
-    max_threads: c_int,
-    max_hash_mb: c_int,
-    skill_lowest_elo: c_int,
-    skill_highest_elo: c_int,
+    max_threads: i32,
+    max_hash_mb: i32,
+    skill_lowest_elo: i32,
+    skill_highest_elo: i32,
     eval_file: []const u8,
 };
 
@@ -285,11 +285,11 @@ test "options model stores defaults and reads typed values" {
     _ = try model.add("Ponder", .check, "false", 0, 0, 0);
     _ = try model.add("EvalFile", .string, "nn-x.nnue", 0, 0, 7);
 
-    try std.testing.expectEqual(@as(c_int, 1), model.getInt("Threads"));
-    try std.testing.expectEqual(@as(c_int, 0), model.getInt("Ponder"));
+    try std.testing.expectEqual(@as(i32, 1), model.getInt("Threads"));
+    try std.testing.expectEqual(@as(i32, 0), model.getInt("Ponder"));
     try std.testing.expectEqualStrings("nn-x.nnue", model.getString("EvalFile"));
     // Look up the name case-insensitively.
-    try std.testing.expectEqual(@as(c_int, 1), model.getInt("threads"));
+    try std.testing.expectEqual(@as(i32, 1), model.getInt("threads"));
 }
 
 test "options model validates and applies setValue" {
@@ -301,19 +301,19 @@ test "options model validates and applies setValue" {
     const ok = try model.setValue("Threads", "8");
     try std.testing.expect(ok.found and ok.accepted and ok.changed);
     try std.testing.expectEqual(@as(u8, 3), ok.callback_kind);
-    try std.testing.expectEqual(@as(c_int, 8), model.getInt("Threads"));
+    try std.testing.expectEqual(@as(i32, 8), model.getInt("Threads"));
 
     // Reject an out-of-range spin and leave the value untouched.
     const low = try model.setValue("Threads", "0");
     try std.testing.expect(low.found and !low.accepted);
-    try std.testing.expectEqual(@as(c_int, 8), model.getInt("Threads"));
+    try std.testing.expectEqual(@as(i32, 8), model.getInt("Threads"));
 
     // Reject a non-boolean check.
     const bad = try model.setValue("Ponder", "maybe");
     try std.testing.expect(bad.found and !bad.accepted);
     const good = try model.setValue("Ponder", "true");
     try std.testing.expect(good.accepted and good.changed);
-    try std.testing.expectEqual(@as(c_int, 1), model.getInt("Ponder"));
+    try std.testing.expectEqual(@as(i32, 1), model.getInt("Ponder"));
 
     // Reject an unknown option.
     const missing = try model.setValue("Nope", "1");
@@ -332,13 +332,13 @@ test "standard option set matches engine init" {
     });
 
     try std.testing.expectEqual(@as(usize, 19), model.count());
-    try std.testing.expectEqual(@as(c_int, 1), model.getInt("Threads"));
-    try std.testing.expectEqual(@as(c_int, 16), model.getInt("Hash"));
-    try std.testing.expectEqual(@as(c_int, 1), model.getInt("MultiPV"));
-    try std.testing.expectEqual(@as(c_int, 20), model.getInt("Skill Level"));
-    try std.testing.expectEqual(@as(c_int, 1320), model.getInt("UCI_Elo"));
-    try std.testing.expectEqual(@as(c_int, 0), model.getInt("Ponder"));
-    try std.testing.expectEqual(@as(c_int, 1), model.getInt("Syzygy50MoveRule"));
+    try std.testing.expectEqual(@as(i32, 1), model.getInt("Threads"));
+    try std.testing.expectEqual(@as(i32, 16), model.getInt("Hash"));
+    try std.testing.expectEqual(@as(i32, 1), model.getInt("MultiPV"));
+    try std.testing.expectEqual(@as(i32, 20), model.getInt("Skill Level"));
+    try std.testing.expectEqual(@as(i32, 1320), model.getInt("UCI_Elo"));
+    try std.testing.expectEqual(@as(i32, 0), model.getInt("Ponder"));
+    try std.testing.expectEqual(@as(i32, 1), model.getInt("Syzygy50MoveRule"));
     try std.testing.expectEqualStrings("nn-0ee0657fb25e.nnue", model.getString("EvalFile"));
     try std.testing.expectEqualStrings("auto", model.getString("NumaPolicy"));
 
@@ -366,11 +366,11 @@ test "options model index-keyed reads track current values" {
     try std.testing.expect(model.hasIndex(eval_idx));
     try std.testing.expect(!model.hasIndex(2));
 
-    try std.testing.expectEqual(@as(c_int, 1), model.intByIndex(threads_idx));
+    try std.testing.expectEqual(@as(i32, 1), model.intByIndex(threads_idx));
     try std.testing.expectEqualStrings("nn-x.nnue", model.currentByIndex(eval_idx));
 
     _ = try model.setValue("Threads", "12");
-    try std.testing.expectEqual(@as(c_int, 12), model.intByIndex(threads_idx));
+    try std.testing.expectEqual(@as(i32, 12), model.intByIndex(threads_idx));
     try std.testing.expectEqualStrings("12", model.currentByIndex(threads_idx));
 }
 

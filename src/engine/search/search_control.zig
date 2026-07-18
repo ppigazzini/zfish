@@ -57,8 +57,8 @@ pub fn checkTime(ctx: *const QCtx) void {
 // on a PV move store the score/bound flags/PV. Use C truncating division
 // (@divTrunc) and i32 arithmetic (no overflow: both squared terms are
 // < VALUE_INFINITE^2, sum < INT_MAX).
-const root_mean_sq_sentinel: c_int = -(q_value_inf * q_value_inf);
-pub fn rootUpdate(ctx: *const QCtx, move: u16, value: c_int, nodes_delta: u64, move_count: c_int, alpha: c_int, beta: c_int, child_pv: ?*const PVMoves) void {
+const root_mean_sq_sentinel: i32 = -(q_value_inf * q_value_inf);
+pub fn rootUpdate(ctx: *const QCtx, move: u16, value: i32, nodes_delta: u64, move_count: i32, alpha: i32, beta: i32, child_pv: ?*const PVMoves) void {
     var idx: usize = ctx.pv_idx.*;
     const last = ctx.pv_last.*;
     while (idx < last and ctx.root_moves[idx].pv.moves[0] != move) : (idx += 1) {}
@@ -143,7 +143,7 @@ pub inline fn searchStopped(ctx: *const QCtx) bool {
 
 // Compare the move directly against lastIterationPV for the follow-pv test;
 // lastIterationPV is an inline PVMoves member (fixed Move array + length).
-pub inline fn inLastIterPv(ctx: *const QCtx, ply_minus_1: c_int, move: u16) bool {
+pub inline fn inLastIterPv(ctx: *const QCtx, ply_minus_1: i32, move: u16) bool {
     const pv = ctx.last_iter_pv;
     const idx: usize = @intCast(ply_minus_1);
     return idx < pv.length and pv.moves[idx] == move;

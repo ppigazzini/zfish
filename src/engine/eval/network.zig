@@ -51,8 +51,8 @@ pub const VerifyInfo = struct {
     size_bytes: usize,
     input_dimensions: usize,
     transformed_dimensions: usize,
-    fc0_outputs: c_int,
-    fc1_outputs: c_int,
+    fc0_outputs: i32,
+    fc1_outputs: i32,
 };
 
 // Populate the Zig-owned inference storage from the NNUE parse, the sole source

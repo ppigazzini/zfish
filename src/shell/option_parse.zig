@@ -46,8 +46,8 @@ pub fn comboEquals(current: []const u8, query: []const u8) bool {
 pub fn validateAssignment(
     type_name: []const u8,
     value: []const u8,
-    min_value: c_int,
-    max_value: c_int,
+    min_value: i32,
+    max_value: i32,
     default_value: []const u8,
 ) AssignmentResult {
     return validateAssignmentAlloc(std.heap.c_allocator, type_name, value, min_value, max_value, default_value) catch .{
@@ -60,7 +60,7 @@ pub fn tuneNext(names: []const u8, pop: u8) TuneNextResult {
     return tuneNextAlloc(std.heap.c_allocator, names, pop) catch .{ .token = null, .remaining = null };
 }
 
-pub fn tuneShouldMakeOption(min_value: c_int, max_value: c_int) bool {
+pub fn tuneShouldMakeOption(min_value: i32, max_value: i32) bool {
     return min_value != max_value;
 }
 
@@ -106,8 +106,8 @@ fn validateAssignmentAlloc(
     allocator: std.mem.Allocator,
     type_name: []const u8,
     value: []const u8,
-    min_value: c_int,
-    max_value: c_int,
+    min_value: i32,
+    max_value: i32,
     default_value: []const u8,
 ) !AssignmentResult {
     if (!std.mem.eql(u8, type_name, "button") and !std.mem.eql(u8, type_name, "string") and value.len == 0) {
@@ -202,9 +202,9 @@ fn comboContains(options: []const u8, value: []const u8) bool {
     return false;
 }
 
-pub fn parseSignedInt(input: []const u8) ?c_int {
+pub fn parseSignedInt(input: []const u8) ?i32 {
     const trimmed = trimAsciiWhitespace(input);
-    return std.fmt.parseInt(c_int, trimmed, 10) catch null;
+    return std.fmt.parseInt(i32, trimmed, 10) catch null;
 }
 
 fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[*:0]u8 {
@@ -354,8 +354,8 @@ test "fuzz: validateAssignment / tuneNext never crash" {
         const vlen = rand.uintLessThan(usize, vbuf.len + 1);
         for (vbuf[0..vlen]) |*x| x.* = rand.int(u8);
         const val = vbuf[0..vlen];
-        const mn = rand.int(c_int);
-        const mx = rand.int(c_int);
+        const mn = rand.int(i32);
+        const mx = rand.int(i32);
         const res = validateAssignment(ty, val, mn, mx, val);
         freeCStr(res.normalized_value);
         const tn = tuneNext(val, rand.int(u8));

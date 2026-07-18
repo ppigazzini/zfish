@@ -127,12 +127,12 @@ pub fn register(pieces: []const u8) void {
     var k2: usize = 1;
     while (k2 < pieces.len and pieces[k2] != king_pt) k2 += 1;
 
-    var counts: [16]c_int = @splat(0);
+    var counts: [16]i32 = @splat(0);
     for (pieces[0..k2]) |pt| counts[pt] += 1; // white byte = pt
     for (pieces[k2..]) |pt| counts[@as(usize, pt) | 8] += 1; // black byte = 8|pt
 
     const key = position.computeMaterialKey(&counts, 16);
-    var counts2: [16]c_int = @splat(0);
+    var counts2: [16]i32 = @splat(0);
     for (0..16) |i| counts2[i ^ 8] = counts[i]; // color-swap
     const key2 = position.computeMaterialKey(&counts2, 16);
 

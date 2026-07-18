@@ -8,8 +8,8 @@ const BenchmarkPositions = bench_positions.BenchmarkPositions;
 
 // Define the benchmark data.
 pub const BenchmarkSetupOutput = struct {
-    tt_size: c_int,
-    threads: c_int,
+    tt_size: i32,
+    threads: i32,
     commands_ptr: ?[*:0]u8,
     original_invocation_ptr: ?[*:0]u8,
     filled_invocation_ptr: ?[*:0]u8,
@@ -19,7 +19,7 @@ pub fn setupBench(current_fen: []const u8, args: []const u8) ?[*:0]u8 {
     return setupBenchAlloc(current_fen, args) catch null;
 }
 
-pub fn setupBenchmark(args: []const u8, hardware_concurrency: c_int) BenchmarkSetupOutput {
+pub fn setupBenchmark(args: []const u8, hardware_concurrency: i32) BenchmarkSetupOutput {
     return setupBenchmarkAlloc(args, hardware_concurrency) catch .{
         .tt_size = 0,
         .threads = 0,
@@ -84,7 +84,7 @@ fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![*:0]u8 {
     return try allocCString(commands.items);
 }
 
-fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: c_int) !BenchmarkSetupOutput {
+fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: i32) !BenchmarkSetupOutput {
     var arena_impl = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena_impl.deinit();
     const arena = arena_impl.allocator();
@@ -95,21 +95,21 @@ fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: c_int) !Benchmark
     defer original_invocation.deinit(allocator);
 
     const parsed_threads = token_iter.next();
-    const threads: c_int = if (parsed_threads) |token| blk: {
+    const threads: i32 = if (parsed_threads) |token| blk: {
         try appendOriginalToken(&original_invocation, allocator, token);
-        break :blk try std.fmt.parseInt(c_int, token, 10);
-    } else @max(@as(c_int, 1), hardware_concurrency);
+        break :blk try std.fmt.parseInt(i32, token, 10);
+    } else @max(@as(i32, 1), hardware_concurrency);
 
     const parsed_tt_size = token_iter.next();
-    const tt_size: c_int = if (parsed_tt_size) |token| blk: {
+    const tt_size: i32 = if (parsed_tt_size) |token| blk: {
         try appendOriginalToken(&original_invocation, allocator, token);
-        break :blk try std.fmt.parseInt(c_int, token, 10);
+        break :blk try std.fmt.parseInt(i32, token, 10);
     } else 128 * threads;
 
     const parsed_desired_time = token_iter.next();
-    const desired_time_s: c_int = if (parsed_desired_time) |token| blk: {
+    const desired_time_s: i32 = if (parsed_desired_time) |token| blk: {
         try appendOriginalToken(&original_invocation, allocator, token);
-        break :blk try std.fmt.parseInt(c_int, token, 10);
+        break :blk try std.fmt.parseInt(i32, token, 10);
     } else 150;
 
     const filled_invocation = try std.fmt.allocPrint(
@@ -124,7 +124,7 @@ fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: c_int) !Benchmark
     for (games) |game| {
         var index: usize = 0;
         while (index < game.len) : (index += 1) {
-            total_time += @as(f32, @floatCast(getCorrectedTime(@as(c_int, @intCast(index + 1)))));
+            total_time += @as(f32, @floatCast(getCorrectedTime(@as(i32, @intCast(index + 1)))));
         }
     }
 
@@ -135,10 +135,10 @@ fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: c_int) !Benchmark
     for (games) |game| {
         try appendCommand(&commands, allocator, "ucinewgame");
 
-        var ply: c_int = 1;
+        var ply: i32 = 1;
         for (game) |fen| {
             try appendCommandFmt(&commands, allocator, "position fen {s}", .{fen});
-            const corrected_time = @as(c_int, @intFromFloat(
+            const corrected_time = @as(i32, @intFromFloat(
                 getCorrectedTime(ply) * @as(f64, @floatCast(time_scale_factor)),
             ));
             try appendCommandFmt(&commands, allocator, "go movetime {d}", .{corrected_time});
@@ -229,7 +229,7 @@ fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
     };
 }
 
-fn getCorrectedTime(ply: c_int) f64 {
+fn getCorrectedTime(ply: i32) f64 {
     return 50000.0 / (@as(f64, @floatFromInt(ply)) + 15.0);
 }
 

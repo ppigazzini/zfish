@@ -33,11 +33,11 @@ pub const ParsedLimits = struct {
     btime: i64,
     winc: i64,
     binc: i64,
-    movestogo: c_int,
-    depth: c_int,
-    mate: c_int,
-    perft: c_int,
-    infinite: c_int,
+    movestogo: i32,
+    depth: i32,
+    mate: i32,
+    perft: i32,
+    infinite: i32,
     movetime: i64,
     nodes: u64,
     ponder_mode: u8,
@@ -137,14 +137,14 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
                 break;
             }
         } else if (std.mem.eql(u8, token, "movestogo")) {
-            if (parseInt(c_int, iter.next())) |v| {
+            if (parseInt(i32, iter.next())) |v| {
                 result.movestogo = v;
             } else {
                 result.bad_token = "movestogo";
                 break;
             }
         } else if (std.mem.eql(u8, token, "depth")) {
-            if (parseInt(c_int, iter.next())) |v| {
+            if (parseInt(i32, iter.next())) |v| {
                 result.depth = v;
             } else {
                 result.bad_token = "depth";
@@ -165,14 +165,14 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
                 break;
             }
         } else if (std.mem.eql(u8, token, "mate")) {
-            if (parseInt(c_int, iter.next())) |v| {
+            if (parseInt(i32, iter.next())) |v| {
                 result.mate = v;
             } else {
                 result.bad_token = "mate";
                 break;
             }
         } else if (std.mem.eql(u8, token, "perft")) {
-            if (parseInt(c_int, iter.next())) |v| {
+            if (parseInt(i32, iter.next())) |v| {
                 result.perft = v;
             } else {
                 result.bad_token = "perft";
@@ -271,8 +271,8 @@ test "parseLimits reads the go parameters" {
     try testing.expectEqual(@as(i64, 2000), l.btime);
     try testing.expectEqual(@as(i64, 10), l.winc);
     try testing.expectEqual(@as(i64, 20), l.binc);
-    try testing.expectEqual(@as(c_int, 30), l.movestogo);
-    try testing.expectEqual(@as(c_int, 7), l.depth);
+    try testing.expectEqual(@as(i32, 30), l.movestogo);
+    try testing.expectEqual(@as(i32, 7), l.depth);
     try testing.expectEqual(@as(u64, 5000), l.nodes);
     try testing.expectEqual(@as(i64, 500), l.movetime);
     try testing.expectEqual(@as(u8, 1), l.infinite);

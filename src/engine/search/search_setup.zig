@@ -18,7 +18,7 @@ const SearchTimeState = search_ctx.SearchTimeState;
 // Fetch the Worker state the inlined search needs one-shot, all stable for the
 // duration of one search tree. Keep live (mutable) fields as pointers into the Worker;
 // null the main-thread-only time-management fields on helper threads.
-fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]c_int, out_nmp_min_ply: *?*c_int, out_sel_depth: *?*c_int, out_root_depth: *?*c_int, out_reductions: *?[*]const c_int, out_root_delta: *?*const c_int, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?[*]root_move.RootMove, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
+fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_acc.AccumulatorStack, out_nodes: *?*u64, out_cache: *?*nnue_acc.RefreshCache, out_optimism: *?*const [2]i32, out_nmp_min_ply: *?*i32, out_sel_depth: *?*i32, out_root_depth: *?*i32, out_reductions: *?[*]const i32, out_root_delta: *?*const i32, out_last_iter_pv: *?*const PVMoves, out_stop: *?*const u8, out_pv_idx: *?*const usize, out_root_moves: *?[*]root_move.RootMove, out_pv_last: *?*const usize, out_best_move_changes: *?*u64, out_time: *SearchTimeState) void {
     const stop = &wl.threads.stop;
 
     // Erase the NNUE arenas here -- raw byte buffers embedded in the worker; this is their
@@ -66,12 +66,12 @@ pub fn buildCtx(worker: *worker_layout.WorkerLayout, table: ?[*]tt_types.TtClust
     var acc_stack: ?*nnue_acc.AccumulatorStack = null;
     var nodes: ?*u64 = null;
     var cache: ?*nnue_acc.RefreshCache = null;
-    var optimism: ?*const [2]c_int = null;
-    var nmp_min_ply: ?*c_int = null;
-    var sel_depth: ?*c_int = null;
-    var root_depth: ?*c_int = null;
-    var reductions: ?[*]const c_int = null;
-    var root_delta: ?*const c_int = null;
+    var optimism: ?*const [2]i32 = null;
+    var nmp_min_ply: ?*i32 = null;
+    var sel_depth: ?*i32 = null;
+    var root_depth: ?*i32 = null;
+    var reductions: ?[*]const i32 = null;
+    var root_delta: ?*const i32 = null;
     var last_iter_pv: ?*const PVMoves = null;
     var stop: ?*const u8 = null;
     var pv_idx: ?*const usize = null;

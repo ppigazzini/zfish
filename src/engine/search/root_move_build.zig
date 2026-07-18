@@ -18,28 +18,28 @@ const position_snapshot = @import("position_snapshot");
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 const PendingStateStorage = state_list.PendingStateStorage;
 
-const value_draw: c_int = 0;
-const value_mate: c_int = 32000;
-const value_none: c_int = 32002;
-const value_infinite: c_int = 32001;
-const value_tb_win_in_max_ply: c_int = 31507;
-const value_tb_loss_in_max_ply: c_int = -31507;
-const max_ply: c_int = 246;
-const max_dtz: c_int = 1 << 18;
+const value_draw: i32 = 0;
+const value_mate: i32 = 32000;
+const value_none: i32 = 32002;
+const value_infinite: i32 = 32001;
+const value_tb_win_in_max_ply: i32 = 31507;
+const value_tb_loss_in_max_ply: i32 = -31507;
+const max_ply: i32 = 246;
+const max_dtz: i32 = 1 << 18;
 const square_count: usize = 64;
 const white_oo: u8 = 1;
 const white_ooo: u8 = 2;
 const black_oo: u8 = 4;
 const black_ooo: u8 = 8;
-const pawn_value: c_int = 208;
-const probe_fail: c_int = 0;
-const wdl_loss: c_int = -2;
-const wdl_blessed_loss: c_int = -1;
-const wdl_draw: c_int = 0;
-const wdl_cursed_win: c_int = 1;
-const wdl_win: c_int = 2;
+const pawn_value: i32 = 208;
+const probe_fail: i32 = 0;
+const wdl_loss: i32 = -2;
+const wdl_blessed_loss: i32 = -1;
+const wdl_draw: i32 = 0;
+const wdl_cursed_win: i32 = 1;
+const wdl_win: i32 = 2;
 
-const wdl_to_rank = [_]c_int{
+const wdl_to_rank = [_]i32{
     -max_dtz,
     -max_dtz + 101,
     0,
@@ -47,7 +47,7 @@ const wdl_to_rank = [_]c_int{
     max_dtz,
 };
 
-const wdl_to_value = [_]c_int{
+const wdl_to_value = [_]i32{
     -value_mate + max_ply + 1,
     value_draw - 2,
     value_draw,
@@ -56,10 +56,10 @@ const wdl_to_value = [_]c_int{
 };
 
 pub const TbConfig = struct {
-    cardinality: c_int,
+    cardinality: i32,
     root_in_tb: u8,
     use_rule50: u8,
-    probe_depth: c_int,
+    probe_depth: i32,
 };
 
 const TablebaseProbe = tb_source.ProbeResult;
@@ -67,8 +67,8 @@ const TablebaseProbe = tb_source.ProbeResult;
 const RankedRootMove = struct {
     raw_move: u16,
     reserved: u16,
-    tb_rank: c_int,
-    tb_score: c_int,
+    tb_rank: i32,
+    tb_score: i32,
 };
 
 // Build/destroy the RootMoves array: a plain `count`-element []RootMove, each
@@ -174,7 +174,7 @@ fn loadTbConfig(pos: *const position_port.Position) TbConfig {
         .probe_depth = option_port.syzygyProbeDepth(),
     };
 
-    const max_cardinality: c_int = @intCast(tb_source.maxCardinality());
+    const max_cardinality: i32 = @intCast(tb_source.maxCardinality());
     if (config.cardinality > max_cardinality) {
         config.cardinality = max_cardinality;
         config.probe_depth = 0;
@@ -193,7 +193,7 @@ fn probePosition(pos: *const position_port.Position) !TablebaseProbe {
     return tb_source.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }
 
-fn dtzBeforeZeroing(wdl: c_int) c_int {
+fn dtzBeforeZeroing(wdl: i32) i32 {
     return switch (wdl) {
         wdl_win => 1,
         wdl_cursed_win => 101,
@@ -232,20 +232,20 @@ fn rankRootMovesDtz(
     chess960: u8,
     rule50: bool,
     rank_dtz: bool,
-    root_rule50: c_int,
+    root_rule50: i32,
     root_has_repeated: bool,
     ranked_moves: []RankedRootMove,
 ) !DtzRankResult {
     var scratch = try ScratchPosition.init(root_fen, chess960);
     defer scratch.deinit();
 
-    const bound: c_int = if (rule50) @divTrunc(max_dtz, 2) - 100 else 1;
+    const bound: i32 = if (rule50) @divTrunc(max_dtz, 2) - 100 else 1;
 
     for (ranked_moves) |*ranked_move| {
         try scratch.reset(root_fen, chess960);
         try scratch.doMove(ranked_move.raw_move);
 
-        var dtz: c_int = 0;
+        var dtz: i32 = 0;
         if (loadPositionSnapshot(scratch.pos).rule50_count == 0) {
             const probe = try probePosition(scratch.pos);
             if (probe.wdl_state == probe_fail)
@@ -275,8 +275,8 @@ fn rankRootMovesDtz(
                 dtz = 1;
         }
 
-        const rank_term: c_int = if (rank_dtz) dtz else 0; // SF (rankDTZ ? dtz : 0)
-        const rank: c_int = if (dtz > 0)
+        const rank_term: i32 = if (rank_dtz) dtz else 0; // SF (rankDTZ ? dtz : 0)
+        const rank: i32 = if (dtz > 0)
             if (dtz + root_rule50 <= 99 and !root_has_repeated)
                 max_dtz - rank_term
             else
@@ -293,11 +293,11 @@ fn rankRootMovesDtz(
         ranked_move.tb_score = if (rank >= bound)
             value_mate - max_ply - 1
         else if (rank > 0)
-            @divTrunc(@max(@as(c_int, 3), rank - (@divTrunc(max_dtz, 2) - 200)) * pawn_value, 200)
+            @divTrunc(@max(@as(i32, 3), rank - (@divTrunc(max_dtz, 2) - 200)) * pawn_value, 200)
         else if (rank == 0)
             value_draw
         else if (rank > -bound)
-            @divTrunc(@min(@as(c_int, -3), rank + (@divTrunc(max_dtz, 2) - 200)) * pawn_value, 200)
+            @divTrunc(@min(@as(i32, -3), rank + (@divTrunc(max_dtz, 2) - 200)) * pawn_value, 200)
         else
             -value_mate + max_ply + 1;
     }
@@ -324,7 +324,7 @@ fn rankRootMovesWdl(
         try scratch.reset(root_fen, chess960);
         try scratch.doMove(ranked_move.raw_move);
 
-        var wdl: c_int = undefined;
+        var wdl: i32 = undefined;
         if (position_port.isDraw(scratch.pos, 1)) {
             wdl = wdl_draw;
         } else {
@@ -389,7 +389,7 @@ pub fn buildRootMoves(
     // SF: rank the root moves only when the root itself fits the TB and can't castle. Otherwise the
     // root is searched normally (cardinality kept, so Step 6 probes smaller in-tree positions).
     const root_snapshot0 = loadPositionSnapshot(pos);
-    if (tb_config.cardinality >= @as(c_int, @intCast(countPieces(pos))) and root_snapshot0.castling_rights == 0) {
+    if (tb_config.cardinality >= @as(i32, @intCast(countPieces(pos))) and root_snapshot0.castling_rights == 0) {
         const root_snapshot = root_snapshot0;
         const dtz_result = try rankRootMovesDtz(
             root_fen,

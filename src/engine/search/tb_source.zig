@@ -20,10 +20,10 @@ const position_types = @import("position_types");
 
 pub const ProbeResult = struct {
     available: u8,
-    wdl: c_int,
-    wdl_state: c_int,
-    dtz: c_int,
-    dtz_state: c_int,
+    wdl: i32,
+    wdl_state: i32,
+    dtz: i32,
+    dtz_state: i32,
 };
 
 fn noTablebases() usize {

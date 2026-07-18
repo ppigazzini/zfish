@@ -20,7 +20,7 @@ const perft_max_depth = 8;
 
 const StateBuf = position.StateInfo;
 
-fn perft(pos: *position.Position, depth: c_int, states: *[perft_max_depth]StateBuf, ply: usize) u64 {
+fn perft(pos: *position.Position, depth: i32, states: *[perft_max_depth]StateBuf, ply: usize) u64 {
     if (depth <= 0) return 1;
     var moves: [256]u16 = undefined;
     const n = movegen.generateLegal(pos, &moves);
@@ -35,7 +35,7 @@ fn perft(pos: *position.Position, depth: c_int, states: *[perft_max_depth]StateB
     return nodes;
 }
 
-fn perftFen(fen: []const u8, chess960: u8, depth: c_int) u64 {
+fn perftFen(fen: []const u8, chess960: u8, depth: i32) u64 {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, chess960, &st, position_size, state_info_size)) |err| {
