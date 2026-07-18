@@ -622,7 +622,6 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("engine_object", mods.get("engine_object").?);
     // Reach the search-history helpers directly from main.zig and its worker-construction helper.
     exe.root_module.addImport("search_driver", mods.get("search_driver").?);
-    exe.root_module.addImport("worker_histories", mods.get("worker_histories").?);
     exe.root_module.addImport("worker_construct", mods.get("worker_construct").?);
     // Single-source default_eval_file_name in engine.zig from network.zig
     // (network has no engine dep, so this edge is acyclic).
@@ -658,31 +657,21 @@ pub fn build(b: *std.Build) void {
     });
     addTestRun(b, graph_test_step, sh_map_test, cov_dir, &cov_idx);
 
-    exe.root_module.addImport("benchmark", mods.get("benchmark").?);
-    exe.root_module.addImport("bitboard", mods.get("bitboard").?);
     exe.root_module.addImport("engine", mods.get("engine").?);
-    exe.root_module.addImport("evaluate", mods.get("evaluate").?);
     exe.root_module.addImport("misc", mods.get("misc").?);
-    exe.root_module.addImport("movegen", mods.get("movegen").?);
-    exe.root_module.addImport("movepick", mods.get("movepick").?);
     exe.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
     exe.root_module.addImport("network", mods.get("network").?);
     exe.root_module.addImport("nnue_feature", mods.get("nnue_feature").?);
-    exe.root_module.addImport("nnue_misc", mods.get("nnue_misc").?);
     exe.root_module.addImport("state_list", mods.get("state_list").?);
-    exe.root_module.addImport("position_storage", mods.get("position_storage").?);
     exe.root_module.addImport("option", mods.get("option").?);
     exe.root_module.addImport("position", mods.get("position").?);
     exe.root_module.addImport("position_snapshot", mods.get("position_snapshot").?);
     exe.root_module.addImport("search", mods.get("search").?);
     exe.root_module.addImport("timeman", mods.get("timeman").?);
     exe.root_module.addImport("thread", mods.get("thread").?);
-    exe.root_module.addImport("tt", mods.get("tt").?);
     exe.root_module.addImport("uci", mods.get("uci").?);
-    exe.root_module.addImport("uci_move", mods.get("uci_move").?);
 
     // Import the thin libc binding as `const c = @import("libc")` in main.zig.
-    exe.root_module.addImport("libc", mods.get("libc").?);
 
     // Wire the direct callers of the aligned/large-page allocator.
     exe.root_module.addImport("memory", mods.get("memory").?);
@@ -690,8 +679,6 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("position_types", mods.get("position_types").?);
     exe.root_module.addImport("clock", mods.get("clock").?);
     exe.root_module.addImport("uci_output", mods.get("uci_output").?);
-    exe.root_module.addImport("uci_wdl", mods.get("uci_wdl").?);
-    exe.root_module.addImport("score", mods.get("score").?);
     // Keep network free of a position import: its two Position field reads go through the
     // leaf worker_layout, which frees position -> network for the direct eval call below.
 
