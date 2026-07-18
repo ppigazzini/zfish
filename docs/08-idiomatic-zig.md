@@ -53,6 +53,29 @@ The price is real: a function pointer is an optimizer barrier and its erased
 `*anyopaque` context costs type safety, so `zig build hook-lint` bounds the hooks.
 Reach for this to invert a *specific* upward dependency, not as a default.
 
+## Never assume a `@Vector`'s memory layout
+
+Zig leaves vector layout **target-defined**. `@bitCast`ing a `@Vector(N, bool)` to an
+`N`-bit integer looks like the obvious movemask, and `@bitSizeOf` agrees the sizes match — but
+it is only correct where bool vectors are bit-packed. LLVM packs them
+(`@sizeOf(@Vector(16, bool)) == 2`); Zig's C backend gives one byte per lane (`sizeof == 16`),
+an 8x disagreement that silently reads a few lanes' bytes as the whole mask.
+
+Build bool-vector results from `@select` and `@reduce`, which have defined semantics:
+
+```zig
+const nonzero = values != @as(V, @splat(0));
+const mask: Mask = @reduce(.Or, @select(Mask, nonzero, lane_bits, no_bits));
+```
+
+`std.simd` constructs every one of its bool-vector results this way — `firstTrue`,
+`lastTrue`, `countTrues` — and never bitcasts one. The engine's feature transformer did, and
+paid for it: the mask was correct under LLVM and wrong under any other lowering, which is a
+wrong evaluation rather than a crash. `tools/c_backend_check.sh`
+([09-tooling-ci.md](09-tooling-ci.md)) exists to catch that class. The defined form cost about
+1% of instructions on the hottest path in the engine, measured — cheap for not depending on a
+representation nobody promised.
+
 ## Write cross-version Zig with comptime shims
 
 Where a std API differs between supported Zig versions, one comptime branch reads
