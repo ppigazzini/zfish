@@ -59,11 +59,8 @@ pub fn ssSetStop(wl: *const worker_layout.WorkerLayout) void {
 
 // !threads.stop && (manager->ponder || limits.infinite).
 //
-// Load both flags atomically. The caller spins on this in an EMPTY loop, so a plain load is
-// loop-invariant and LLVM hoists it out and emits `jmp .` -- a real, shipped deadlock on any
-// search that leaves the ID loop on its DEPTH bound with stop still clear (`go ponder depth N`
-// then ponderhit, or `go depth N infinite` then stop). Plain `go infinite` masks it, because
-// there the loop exits with stop already set and the busywait is never entered.
+// Load both flags atomically: the caller spins on this in an empty loop, where a plain load is
+// loop-invariant and hoists out of the loop into `jmp .`.
 pub fn ssShouldBusywait(wl: *const worker_layout.WorkerLayout) u8 {
     if (@atomicLoad(u8, &workerThreadsPool(wl).stop, .monotonic) != 0) return 0;
     const ponder = @atomicLoad(u8, &workerManager(wl).?.ponder, .monotonic);
@@ -188,10 +185,10 @@ pub fn searchIdState(wl: *worker_layout.WorkerLayout, out: *ZfishIdState) void {
 
     if (is_main) {
         const smgr = wl.manager.?;
-        out.stop_on_ponderhit = @ptrCast(&smgr.stop_on_ponderhit);
-        out.ponder = @ptrCast(&smgr.ponder);
-        out.iter_value = @ptrCast(&smgr.iter_value);
-        out.previous_time_reduction = @ptrCast(&smgr.previous_time_reduction);
+        out.stop_on_ponderhit = &smgr.stop_on_ponderhit;
+        out.ponder = &smgr.ponder;
+        out.iter_value = &smgr.iter_value;
+        out.previous_time_reduction = &smgr.previous_time_reduction;
         out.tm_optimum = smgr.tm.optimum_time;
         out.tm_maximum = smgr.tm.maximum_time;
         out.tm_start_time = smgr.tm.start_time;
@@ -199,14 +196,12 @@ pub fn searchIdState(wl: *worker_layout.WorkerLayout, out: *ZfishIdState) void {
         out.best_previous_score = smgr.best_previous_score;
         out.best_previous_average_score = smgr.best_previous_average_score;
     } else {
-        // Leave these unused for non-main threads: they bail before the time-management
-        // block (`if (!main_thread) continue;`), so these SearchManager/TM pointer fields
-        // are never dereferenced. Since position's ZfishIdState types them non-optional,
-        // use the worker pointer as a harmless valid placeholder (otherwise null/unused).
-        out.stop_on_ponderhit = @ptrCast(wl);
-        out.ponder = @ptrCast(wl);
-        out.iter_value = @ptrCast(@alignCast(wl));
-        out.previous_time_reduction = @ptrCast(@alignCast(wl));
+        // Leave time management null for a helper: it has no SearchManager and bails at
+        // `if (!main_thread) continue;` before any of these is read.
+        out.stop_on_ponderhit = null;
+        out.ponder = null;
+        out.iter_value = null;
+        out.previous_time_reduction = null;
         out.tm_optimum = 0;
         out.tm_maximum = 0;
         out.tm_start_time = 0;

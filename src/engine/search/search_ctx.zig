@@ -90,10 +90,13 @@ pub const ZfishIdState = struct {
     nodes: *const u64,
     stop: *u8,
     increase_depth: *u8,
-    stop_on_ponderhit: *u8,
-    ponder: *const u8,
-    iter_value: *[4]c_int,
-    previous_time_reduction: *f64,
+    // Hold time management for the main thread only; it lives on the SearchManager and helpers
+    // have none. Null is the helper case: every deref sits behind `if (!main_thread) continue;`,
+    // so `.?` traps if that guard ever moves instead of writing through a stale pointer.
+    stop_on_ponderhit: ?*u8,
+    ponder: ?*const u8,
+    iter_value: ?*[4]c_int,
+    previous_time_reduction: ?*f64,
     last_iter_pv: *PVMoves,
     root_moves_count: usize,
     thread_idx: usize,

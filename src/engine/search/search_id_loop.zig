@@ -109,10 +109,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
 
     if (main_thread) {
         const fv: c_int = if (id.best_previous_score == q_value_inf) 0 else id.best_previous_score;
-        id.iter_value[0] = fv;
-        id.iter_value[1] = fv;
-        id.iter_value[2] = fv;
-        id.iter_value[3] = fv;
+        id.iter_value.?.* = @splat(fv);
     }
 
     var multi_pv: usize = id.multipv_option;
@@ -198,7 +195,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                     beta = alpha;
                     alpha = @max(best_value - delta, -q_value_inf);
                     failed_high_cnt = 0;
-                    if (main_thread) id.stop_on_ponderhit.* = 0;
+                    if (main_thread) id.stop_on_ponderhit.?.* = 0;
                 } else if (best_value >= beta) {
                     alpha = @max(beta - delta, alpha);
                     beta = @min(best_value + delta, q_value_inf);
@@ -329,17 +326,17 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
         tot_best_move_changes += searchIdCollectBmc(wl);
 
         // Manage time: decide whether we have time for the next iteration or can stop.
-        if (id.use_time_management != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and id.stop_on_ponderhit.* == 0) {
+        if (id.use_time_management != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and id.stop_on_ponderhit.?.* == 0) {
             const nodes_effort: u64 = @divTrunc(id.root_moves[0].effort * 100000, @max(@as(u64, 1), id.nodes.*));
 
             var falling_eval = (11.87 + 2.21 * @as(f64, @floatFromInt(id.best_previous_average_score - best_value)) +
-                1.0 * @as(f64, @floatFromInt(id.iter_value[iter_idx] - best_value))) / 100.0;
+                1.0 * @as(f64, @floatFromInt(id.iter_value.?[iter_idx] - best_value))) / 100.0;
             falling_eval = fclamp(falling_eval, 0.572, 1.708);
 
             const tr_x = @as(f64, @floatFromInt(id.root_depth.* - last_best_move_depth));
             time_reduction = fclamp(0.65 + (1.55 - 0.65) * (tr_x - 5.0) / (18.0 - 5.0), 0.65, 1.55);
 
-            const reduction = (1.48 + id.previous_time_reduction.*) / (2.157 * time_reduction);
+            const reduction = (1.48 + id.previous_time_reduction.?.*) / (2.157 * time_reduction);
             const best_move_instability = 1.096 + 2.29 * tot_best_move_changes / @as(f64, @floatFromInt(id.threads_size));
 
             const hbme_x = @as(f64, @floatFromInt(@as(i64, @intCast(nodes_effort))));
@@ -363,20 +360,20 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
 
             const elapsed_time = @as(f64, @floatFromInt(idElapsed(&id)));
             if (elapsed_time > @min(total_time, @as(f64, @floatFromInt(id.tm_maximum))) or found_mate) {
-                if (@atomicLoad(u8, id.ponder, .monotonic) != 0) id.stop_on_ponderhit.* = 1 else @atomicStore(u8, id.stop, 1, .monotonic);
+                if (@atomicLoad(u8, id.ponder.?, .monotonic) != 0) id.stop_on_ponderhit.?.* = 1 else @atomicStore(u8, id.stop, 1, .monotonic);
             } else {
-                const inc: u8 = if (@atomicLoad(u8, id.ponder, .monotonic) != 0 or elapsed_time <= total_time * 0.50) 1 else 0;
+                const inc: u8 = if (@atomicLoad(u8, id.ponder.?, .monotonic) != 0 or elapsed_time <= total_time * 0.50) 1 else 0;
                 @atomicStore(u8, id.increase_depth, inc, .monotonic);
             }
         }
 
-        id.iter_value[iter_idx] = best_value;
+        id.iter_value.?[iter_idx] = best_value;
         iter_idx = (iter_idx + 1) & 3;
     }
 
     if (!main_thread) return 0;
 
-    id.previous_time_reduction.* = time_reduction;
+    id.previous_time_reduction.?.* = time_reduction;
     // Swap the best PV line with the sub-optimal one if the skill level is enabled.
     if (id.skill_enabled != 0) {
         const sel = if (skill_best != 0) skill_best else skillPickBest(&id, multi_pv);
