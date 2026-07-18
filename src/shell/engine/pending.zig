@@ -16,7 +16,7 @@ const PendingStateEntry = struct {
 
 var pending_state_entries = std.ArrayListUnmanaged(PendingStateEntry).empty;
 
-pub fn ensurePendingStateStorage(states_slot: *anyopaque) ?*PendingStateStorage {
+pub fn ensurePendingStateStorage(states_slot: *?*state_list.StateList) ?*PendingStateStorage {
     const slot_key = @intFromPtr(states_slot);
 
     if (findPendingStateIndex(slot_key)) |index| {
@@ -66,12 +66,12 @@ fn findPendingStateIndex(slot_key: usize) ?usize {
     return null;
 }
 
-pub fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
+pub fn pendingStatesAvailable(states_slot: *?*state_list.StateList) u8 {
     const state_storage = lookupPendingStateStorage(@intFromPtr(states_slot)) orelse return 0;
     return @intFromBool(state_list.storageHasStates(state_storage));
 }
 
-pub fn handoffPendingStates(pool: *worker_layout.ThreadPool, states_slot: *anyopaque) u8 {
+pub fn handoffPendingStates(pool: *worker_layout.ThreadPool, states_slot: *?*state_list.StateList) u8 {
     const state_storage = lookupPendingStateStorage(@intFromPtr(states_slot)) orelse return 0;
     if (!state_list.storageHasStates(state_storage))
         return 0;
@@ -80,7 +80,7 @@ pub fn handoffPendingStates(pool: *worker_layout.ThreadPool, states_slot: *anyop
     return @intFromBool(pool.hasSetupStates());
 }
 
-pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
+pub fn releasePendingStateSlot(states_slot: *?*state_list.StateList) void {
     if (removePendingStateStorage(@intFromPtr(states_slot))) |state_storage| {
         state_list.storageDestroy(state_storage);
     }

@@ -142,14 +142,16 @@ fn workerClear(worker: *anyopaque) void {
 }
 
 fn pendingStatesAvailable(states_slot: *anyopaque) u8 {
-    return engine_port.pendingStatesAvailable(states_slot);
+    // Hook signature: the registry erases the context, so recover the slot's type here.
+    return engine_port.pendingStatesAvailable(@ptrCast(@alignCast(states_slot)));
 }
 
 fn handoffPendingStates(
     pool: *worker_layout.ThreadPool,
     states_slot: *anyopaque,
 ) u8 {
-    return engine_port.handoffPendingStates(pool, states_slot);
+    // Hook signature -- see pendingStatesAvailable.
+    return engine_port.handoffPendingStates(pool, @ptrCast(@alignCast(states_slot)));
 }
 
 // Install the runtime hooks: these impls live here because they need
@@ -353,6 +355,6 @@ fn engineDestructMembers(buf: *anyopaque) void {
     engine_object.destructMembers(buf);
 }
 
-pub fn releasePendingStateSlot(states_slot: *anyopaque) void {
+pub fn releasePendingStateSlot(states_slot: *?*state_list_port.StateList) void {
     return engine_port.releasePendingStateSlot(states_slot);
 }
