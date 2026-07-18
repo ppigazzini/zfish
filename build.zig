@@ -165,7 +165,6 @@ pub fn build(b: *std.Build) void {
         .{ .name = "shared_histories", .path = "src/engine/search/shared_histories.zig" },
         .{ .name = "headless_search", .path = "src/engine/search/headless_search.zig" },
         .{ .name = "shared_histories_map", .path = "src/engine/search/shared_histories_map.zig" },
-        .{ .name = "network_holder", .path = "src/engine/eval/network_holder.zig" },
         .{ .name = "worker_histories", .path = "src/engine/state/worker_histories.zig" },
         .{ .name = "position_types", .path = "src/engine/board/position_types.zig" },
         .{ .name = "fen", .path = "src/engine/board/fen.zig" },
@@ -666,7 +665,6 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("network", mods.get("network").?);
     exe.root_module.addImport("nnue_feature", mods.get("nnue_feature").?);
     exe.root_module.addImport("nnue_misc", mods.get("nnue_misc").?);
-    exe.root_module.addImport("network_holder", mods.get("network_holder").?);
     exe.root_module.addImport("state_list", mods.get("state_list").?);
     exe.root_module.addImport("position_storage", mods.get("position_storage").?);
     exe.root_module.addImport("option", mods.get("option").?);
@@ -1583,7 +1581,6 @@ pub fn build(b: *std.Build) void {
         mods.get("thread_ops").?,
         mods.get("output_sink").?,
         mods.get("tt").?,
-        mods.get("network_holder").?,
         mods.get("shared_histories").?,
         mods.get("search_thread").?,
         mods.get("thread_runtime").?,

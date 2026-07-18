@@ -24,7 +24,6 @@ comptime {
     _ = @import("movegen");
     _ = @import("movepick");
     _ = @import("network");
-    _ = @import("network_holder");
     _ = @import("nnue_acc_rowops");
     _ = @import("nnue_accumulator");
     _ = @import("nnue_feature");

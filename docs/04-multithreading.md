@@ -49,7 +49,6 @@ the hook pattern see [00-architecture.md](00-architecture.md).
 | `src/engine/state/worker_construct.zig` | `writeConstructorFields` / `constructFull` — bind a fresh Worker's SharedState references and NUMA identity scalars |
 | `src/engine/state/worker_histories.zig` | `WorkerHistories` — the per-worker tables plus the shared-history reference |
 | `src/engine/state/shared_state.zig` | `SharedStateOf` — the typed bundle (pool, TT, shared histories) handed to every Worker at construction |
-| `src/engine/eval/network_holder.zig` | `NetworkHolder` — the typed per-NUMA replica-pointer model, exercised only by its own unit tests |
 | **shell** | |
 | `src/shell/engine/session.zig` | `resizeThreads` / `resizeThreadsEngine` — the `Threads` / `NumaPolicy` reconfigure chain |
 | `src/shell/main.zig` | The composition root: registers the lifecycle hooks and the four pool ops |
@@ -230,7 +229,7 @@ Two things are replicated per node:
 | Object | Registry | Notes |
 | --- | --- | --- |
 | `SharedHistories` (correction + pawn) | `shared_histories_map` — a NUMA-index → entry map with construct/free hooks | Built by `reconfigure`, one entry per populated node, sized for that node's thread count |
-| The NNUE network | `numa/replication.zig` — `NumaReplicationContext` tracks each `NumaReplicatedBase` hook and re-notifies on a config change | The context is live (it owns the `NumaConfig` the engine binds from), but **replication is not**: `thread.ensureNetworkReplicated` is still `_ = pool;`, the weights are always resident, and `network_holder.NetworkHolder` models the per-node replica pointers for its unit tests only. Upstream shares one net across processes via `shm`; zfish allocates a private copy per process (measured: **+106 MiB per process**, PSS 286 vs 505 for two engines) |
+| The NNUE network | `numa/replication.zig` — `NumaReplicationContext` tracks each `NumaReplicatedBase` hook and re-notifies on a config change | The context is live (it owns the `NumaConfig` the engine binds from), but **replication is not**: `thread.ensureNetworkReplicated` is still `_ = pool;`, the weights are always resident. Upstream shares one net across processes via `shm`; zfish allocates a private copy per process (measured: **+106 MiB per process**, PSS 286 vs 505 for two engines) |
 
 The topology surface is live: `numa.configNodeCount` reports the config's real node count,
 `distributeThreadsAmongNodes` calls `NumaConfig.distributeThreads`, and
