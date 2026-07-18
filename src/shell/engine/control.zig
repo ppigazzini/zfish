@@ -53,12 +53,12 @@ pub fn searchClear(threads: *worker_layout.ThreadPool, tt: *worker_layout.Transp
 }
 
 pub fn searchClearEngine(engine_ptr: *engine_object.EngineObject) void {
-    const syzygy_ptr = option_port.dupSyzygyPath() orelse return;
-    defer freeCString(syzygy_ptr);
+    // Borrow the model's own storage: setValue installs a new value before dispatching the
+    // on-change callback, so a callback that lands here reads the installed one.
     searchClear(
         engine_ptr.threadsPtr(),
         engine_ptr.ttPtr(),
-        std.mem.span(syzygy_ptr),
+        option_port.strByName("SyzygyPath"),
     );
 }
 

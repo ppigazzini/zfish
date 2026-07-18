@@ -50,9 +50,8 @@ pub fn printInfoString(str: []const u8) void {
 pub fn requireNetworkLoaded(engine_ptr: *engine_object.EngineObject) void {
     if (network_port.ftPtr() != null) return;
 
-    const evalfile_ptr = option_port.dupEvalFile();
-    defer if (evalfile_ptr) |p| std.heap.c_allocator.free(std.mem.span(p));
-    const evalfile: []const u8 = if (evalfile_ptr) |p| std.mem.span(p) else network_port.default_eval_file_name;
+    const named = option_port.strByName("EvalFile");
+    const evalfile: []const u8 = if (named.len != 0) named else network_port.default_eval_file_name;
 
     const bdir: [*:0]const u8 = engine_ptr.binary_directory orelse "";
     // Same cwd accessor misc.zig uses (its Io vtable wraps POSIX getcwd /
@@ -78,9 +77,7 @@ pub fn requireNetworkLoaded(engine_ptr: *engine_object.EngineObject) void {
 }
 
 pub fn verifyNetwork() void {
-    const evalfile_ptr = option_port.dupEvalFile() orelse return;
-    defer std.heap.c_allocator.free(std.mem.span(evalfile_ptr));
-    const evalfile = std.mem.span(evalfile_ptr);
+    const evalfile = option_port.strByName("EvalFile");
 
     const result = network_port.verify(evalfile.ptr, evalfile.len);
     if (result.message) |message_ptr| {
