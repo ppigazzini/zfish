@@ -208,6 +208,19 @@ pub fn transformBucket(
     const groups_per_step = V / 4;
     const Vg = @Vector(groups_per_step, u32);
     const GMask = @Int(.unsigned, groups_per_step);
+    const Vgm = @Vector(groups_per_step, GMask);
+    // Weight each lane by its bit position, so @select + @reduce(.Or) builds the movemask from
+    // defined operations. @bitCast of the @Vector(N, bool) would be shorter, but it assumes the
+    // bit-packed layout LLVM gives <N x i1>, and Zig leaves vector memory layout target-defined
+    // -- a backend using one byte per lane reads a few lanes' bytes as the whole mask, which
+    // corrupts the nnz bitset into a wrong POSITIONAL eval rather than a crash. std.simd builds
+    // every bool-vector result this way for the same reason.
+    const lane_bits: Vgm = comptime blk: {
+        var w: [groups_per_step]GMask = undefined;
+        for (&w, 0..) |*bit, i| bit.* = @as(GMask, 1) << @intCast(i);
+        break :blk w;
+    };
+    const no_bits: Vgm = @splat(0);
     @memset(nnz, 0);
     var p: usize = 0;
     while (p < 2) : (p += 1) {
@@ -226,7 +239,8 @@ pub fn transformBucket(
             output[offset + j ..][0..V].* = bytes;
             // Record which 4-byte chunks are non-zero while they are still in a register:
             // a vector compare plus a movemask, no reload of what was just stored.
-            const mask: GMask = @bitCast(@as(Vg, @bitCast(bytes)) != @as(Vg, @splat(0)));
+            const nonzero = @as(Vg, @bitCast(bytes)) != @as(Vg, @splat(0));
+            const mask: GMask = @reduce(.Or, @select(GMask, nonzero, lane_bits, no_bits));
             const bit = (offset + j) / 4;
             nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
         }
