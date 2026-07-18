@@ -272,7 +272,7 @@ pub fn startThinking(
     pool: *worker_layout.ThreadPool,
     pos: *position_port.Position,
     limits: *const worker_layout.LimitsType,
-    states_slot: *anyopaque,
+    states_slot: *?*state_list.StateList,
 ) !void {
     search_thread.searchEntry = &workerSearchEntry;
     waitMainThread(pool);
@@ -284,11 +284,14 @@ pub fn startThinking(
     tp.setStop(false);
     tp.setIncreaseDepth(true);
 
-    if (runtime_hooks.pending_states_available(states_slot) != 0) {
-        if (runtime_hooks.handoff_pending_states(pool, states_slot) == 0)
+    // Erase at the hook boundary only: the registry's fn-pointer types are *anyopaque by
+    // design (it is what breaks the upward dependency), so the slot's type stops here.
+    const slot_erased: *anyopaque = @ptrCast(states_slot);
+    if (runtime_hooks.pending_states_available(slot_erased) != 0) {
+        if (runtime_hooks.handoff_pending_states(pool, slot_erased) == 0)
             @panic("failed to hand off pending setup states");
     } else {
-        runtime_hooks.setup_states_adopt_from_slot(pool, states_slot);
+        runtime_hooks.setup_states_adopt_from_slot(pool, slot_erased);
         if (!pool.hasSetupStates())
             @panic("missing setup states");
     }

@@ -227,7 +227,7 @@ pub fn optionOnChange(
 
 pub fn setPosition(
     pos: *position_port.Position,
-    states_slot: *anyopaque,
+    states_slot: *?*state_list.StateList,
     chess960_enabled: u8,
     fen_ptr: [*]const u8,
     fen_len: usize,
@@ -397,8 +397,7 @@ pub fn resizeThreadsEngine(engine_ptr: *engine_object.EngineObject) void {
 
 // Provide TT lifecycle + engine setup helpers, reached through the typed
 // TranspositionTable view + the tt/state_list modules this module already imports.
-fn statesSlotReset(slot_ptr: *anyopaque) void {
-    const slot: *?*state_list.StateList = @ptrCast(@alignCast(slot_ptr));
+fn statesSlotReset(slot: *?*state_list.StateList) void {
     if (slot.*) |list| {
         state_list.destroyStateList(std.heap.c_allocator, list);
         slot.* = null;

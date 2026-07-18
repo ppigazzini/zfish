@@ -104,8 +104,8 @@ pub const EngineObject = struct {
     pub fn numaContextPtr(self: *EngineObject) *numa.NumaReplicationContext {
         return self.numa_context.?;
     }
-    pub fn statesSlotPtr(self: *EngineObject) *anyopaque {
-        return @ptrCast(&self.states);
+    pub fn statesSlotPtr(self: *EngineObject) *?*state_list_port.StateList {
+        return &self.states;
     }
     pub fn threadsPtr(self: *EngineObject) *worker_layout.ThreadPool {
         return self.threads.?;
