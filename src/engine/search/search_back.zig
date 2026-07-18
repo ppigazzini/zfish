@@ -124,7 +124,7 @@ pub fn runBack(nd: anytype) c_int {
         .main_history = @ptrCast(&nd.w.main_history),
         .low_ply_history = @ptrCast(&nd.w.low_ply_history),
         .capture_history = @ptrCast(&nd.w.capture_history),
-        .continuation_history = @ptrCast(&cont_hist),
+        .continuation_history = movepick.contHistSlice(&cont_hist),
         .shared_history = nd.w.shared_history,
         .ply = nd.ss.ply,
     };

@@ -10,6 +10,8 @@ const CaptureHistoryRow = movepick_history.CaptureHistoryRow;
 const PieceToHistoryRow = movepick_history.PieceToHistoryRow;
 const PawnHistoryRow = movepick_history.PawnHistoryRow;
 const ContHistSlot = movepick_history.ContHistSlot;
+// Re-export for the search callers that build the contHist array and must keep its length.
+pub const contHistSlice = movepick_history.contHistSlice;
 const fillHistorySnapshot = movepick_history.fillHistorySnapshot;
 const mainHistoryScore = movepick_history.mainHistoryScore;
 const lowPlyHistoryScore = movepick_history.lowPlyHistoryScore;
