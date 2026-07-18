@@ -68,12 +68,12 @@ pub const Pool = struct {
 
         // Treat the footprint's threads slice as the backing buffer itself -- a []usize of
         // Thread* addresses; clear() recovers it straight from tp.threads (see its note).
-        const vec = try self.allocator.alloc(usize, count);
+        const vec = try self.allocator.alloc(*worker_layout.Thread, count);
         var built: usize = 0;
         errdefer {
             var i: usize = 0;
             while (i < built) : (i += 1) {
-                const t: *SearchThread = @ptrFromInt(vec[i]);
+                const t: *SearchThread = @ptrCast(@alignCast(vec[i]));
                 t.deinit(self.allocator);
                 self.allocator.destroy(t);
             }
@@ -85,7 +85,7 @@ pub const Pool = struct {
             thread.* = .{};
             try thread.spawn(self.allocator, idx);
             try builder.build(builder.ctx, idx, @ptrCast(thread)); // attach the Worker (writes worker@8)
-            slotptr.* = @intFromPtr(thread);
+            slotptr.* = @ptrCast(thread);
             built += 1;
         }
         tp.threads = vec;
@@ -108,12 +108,12 @@ pub const Pool = struct {
             // -> a lost bestmove (deterministic for `go ...; quit` back-to-back).
             // Idle threads return immediately. Wait for every in-flight search to
             // finish, as upstream does before deleting threads.
-            for (buf) |addr| {
-                const t: *SearchThread = @ptrFromInt(addr);
+            for (buf) |thread| {
+                const t: *SearchThread = @ptrCast(@alignCast(thread));
                 t.waitForSearchFinished();
             }
-            for (buf) |addr| {
-                const t: *SearchThread = @ptrFromInt(addr);
+            for (buf) |thread| {
+                const t: *SearchThread = @ptrCast(@alignCast(thread));
                 t.deinit(self.allocator);
                 self.allocator.destroy(t);
             }
@@ -171,7 +171,7 @@ pub fn clear(pool: *worker_layout.ThreadPool) void {
 pub fn waitThread(pool: *worker_layout.ThreadPool, thread_id: usize) void {
     const tp = poolOf(@ptrCast(pool));
     if (tp.threads.len == 0) return;
-    const thread: *SearchThread = @ptrFromInt(tp.threadAt(thread_id));
+    const thread: *SearchThread = @ptrCast(@alignCast(tp.threadAt(thread_id)));
     thread.waitForSearchFinished();
 }
 
@@ -233,7 +233,7 @@ test "Pool lays the ThreadPool footprint and reads back the thread vector" {
     // Verify each threads[i] is a live SearchThread with the right idx and worker@8 slot.
     var i: usize = 0;
     while (i < 4) : (i += 1) {
-        const t: *SearchThread = @ptrFromInt(tp.threadAt(i));
+        const t: *SearchThread = @ptrCast(@alignCast(tp.threadAt(i)));
         try testing.expectEqual(i, t.idx);
         // Read the offset-8 worker (null here; a real builder would set it).
         try testing.expectEqual(@as(usize, 8), @offsetOf(SearchThread, "worker"));

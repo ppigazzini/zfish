@@ -271,7 +271,7 @@ fn rankRootMovesDtz(
 
         if (loadPositionSnapshot(scratch.pos).checkers != 0 and dtz == 2) {
             var legal_moves: [256]u16 = undefined;
-            if (movegen_port.generateLegal(scratch.pos, legal_moves[0..].ptr) == 0)
+            if (movegen_port.generateLegal(scratch.pos, legal_moves[0..]) == 0)
                 dtz = 1;
         }
 

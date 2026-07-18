@@ -132,7 +132,7 @@ pub fn bestThreadIndex(pool: *worker_layout.ThreadPool) usize {
 pub fn bestThreadWorker(pool: *worker_layout.ThreadPool) *worker_layout.WorkerLayout {
     const idx = bestThreadIndex(pool);
     const thread = pool.threadAt(idx);
-    return worker_layout.Thread.fromAddr(thread).worker.?;
+    return thread.worker.?;
 }
 
 test {

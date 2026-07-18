@@ -222,7 +222,7 @@ pub const ThreadPool = struct {
     stop: u8 = 0, // atomic_bool
     increase_depth: u8 = 0, // atomic_bool
     setup_states: ?*state_list.StateList = null, // the `states` StateListPtr
-    threads: []usize = &.{}, // Thread* addresses
+    threads: []*Thread = &.{},
     bound: []usize = &.{}, // per-thread NUMA node bindings
 
     pub inline fn fromPtr(p: *anyopaque) *ThreadPool {
@@ -234,14 +234,13 @@ pub const ThreadPool = struct {
     pub inline fn numThreads(self: *const ThreadPool) usize {
         return self.threads.len;
     }
-    /// Return the i-th `Thread*` (loaded slot value) in the threads slice.
-    pub inline fn threadAt(self: *const ThreadPool, i: usize) usize {
+    /// Return the i-th pool Thread.
+    pub inline fn threadAt(self: *const ThreadPool, i: usize) *Thread {
         return self.threads[i];
     }
-    /// Return the i-th pool Thread as a typed pointer. The threads vector stores Thread
-    /// addresses as usize, so this is the single @ptrFromInt over that slot.
+    /// Alias kept for call sites that read as "the typed thread"; the slice is typed now.
     pub inline fn threadTyped(self: *const ThreadPool, i: usize) *Thread {
-        return @ptrFromInt(self.threadAt(i));
+        return self.threads[i];
     }
     pub inline fn boundCount(self: *const ThreadPool) usize {
         return self.bound.len;
