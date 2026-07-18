@@ -264,8 +264,14 @@ pub fn setPosition(
     return null;
 }
 
+// Saturate rather than wrap. The caller range-checks the result (rule50 <= 32767, game_ply <=
+// 100000) but only AFTER the digits are consumed, so an unguarded accumulate overflows c_int on
+// a long digit run before that check can reject it. Stop at a ceiling above every legal counter
+// and below c_int's range: any saturated value still fails the caller's check.
+const fen_int_ceiling: i64 = 1_000_000;
+
 fn parseInt(cur: *FenCursor) ?c_int {
-    var val: c_int = 0;
+    var val: i64 = 0;
     var any = false;
     var neg = false;
     if (cur.i < cur.fen.len and (cur.fen[cur.i] == '-' or cur.fen[cur.i] == '+')) {
@@ -273,12 +279,12 @@ fn parseInt(cur: *FenCursor) ?c_int {
         cur.i += 1;
     }
     while (cur.i < cur.fen.len and cur.fen[cur.i] >= '0' and cur.fen[cur.i] <= '9') {
-        val = val * 10 + @as(c_int, cur.fen[cur.i] - '0');
+        val = @min(val * 10 + @as(i64, cur.fen[cur.i] - '0'), fen_int_ceiling);
         cur.i += 1;
         any = true;
     }
     if (!any) return null;
-    return if (neg) -val else val;
+    return @intCast(if (neg) -val else val);
 }
 
 fn allocCString(value: []const u8) ![*:0]u8 {
