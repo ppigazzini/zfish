@@ -644,6 +644,11 @@ pub fn build(b: *std.Build) void {
     // Add the search_manager dependency explicitly: engine_graph.zig imports it by name, but this
     // standalone test builds it as a fresh root module (outside the module-edge table).
     graph_test.root_module.addImport("search_manager", mods.get("search_manager").?);
+    // Same reason: graph.zig names the concrete types of its options / network /
+    // shared_histories members, so this root needs their modules too.
+    graph_test.root_module.addImport("option", mods.get("option").?);
+    graph_test.root_module.addImport("network", mods.get("network").?);
+    graph_test.root_module.addImport("shared_history", mods.get("shared_history").?);
     const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
     addTestRun(b, graph_test_step, graph_test, cov_dir, &cov_idx);
     // Test the sharedHists map container (std-only generic) with a mock
