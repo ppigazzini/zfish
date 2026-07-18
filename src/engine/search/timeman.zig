@@ -9,8 +9,8 @@ pub const TimemanInput = struct {
     available_nodes: i64,
     current_optimum_time: i64,
     current_maximum_time: i64,
-    movestogo: c_int,
-    ply: c_int,
+    movestogo: i32,
+    ply: i32,
     original_time_adjust: f64,
     ponder: u8,
 };

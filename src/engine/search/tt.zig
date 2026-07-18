@@ -10,9 +10,9 @@ const bound_mask: u8 = 0b11 << bound_shift;
 const pv_shift: u8 = bound_shift + 2;
 const pv_mask: u8 = 1 << pv_shift;
 // Define the is_decisive threshold (VALUE_TB_WIN_IN_MAX_PLY); used by secondary TT aging.
-const value_tb_win_in_max_ply: c_int = 31507;
+const value_tb_win_in_max_ply: i32 = 31507;
 // Define VALUE_INFINITE; secondary aging excludes |value| == VALUE_INFINITE.
-const value_infinite: c_int = 32001;
+const value_infinite: i32 = 32001;
 
 // Subtract from a stored depth, saturating at 0 -- upstream's
 // `std::max(int(depth8) - n, 0)` with the comment "guard against racy underflows, default
@@ -32,7 +32,7 @@ pub const TtReadOutput = struct {
     move16: u16,
     value16: i16,
     eval16: i16,
-    depth: c_int,
+    depth: i32,
     bound: u8,
     is_pv: u8,
 };
@@ -122,13 +122,13 @@ pub fn clearState(
 pub fn entrySave(
     entry: *TtEntry,
     key: u64,
-    value: c_int,
+    value: i32,
     pv: u8,
     bound: u8,
-    depth: c_int,
-    depth_none: c_int,
+    depth: i32,
+    depth_none: i32,
     move16: u16,
-    eval: c_int,
+    eval: i32,
     curr_generation: u8,
 ) void {
     const key16: u16 = @truncate(key);
@@ -138,7 +138,7 @@ pub fn entrySave(
     }
 
     if (bound == 3 or key16 != entry.key16 or
-        depth - depth_none + 2 * @as(c_int, pv) > @as(c_int, entry.depth8) - 4 or
+        depth - depth_none + 2 * @as(i32, pv) > @as(i32, entry.depth8) - 4 or
         entryRelativeAge(entry, curr_generation) != 0)
     {
         entry.key16 = key16;
@@ -149,7 +149,7 @@ pub fn entrySave(
     }
     // upstream 94beadffb: apply secondary aging. Matters for elementary mate finding. Age a deep,
     // decisive, non-exact entry that we are NOT overwriting. (depth8 + DEPTH_NONE >= 5; DEPTH_NONE = depth_none = -3.)
-    else if (@as(c_int, entry.depth8) + depth_none >= 5 and
+    else if (@as(i32, entry.depth8) + depth_none >= 5 and
         ((entry.gen_bound8 & bound_mask) >> bound_shift) != 3)
     {
         // Mirror upstream's inner test exactly (tt.cpp:120): `std::abs(v16) <
@@ -157,7 +157,7 @@ pub fn entrySave(
         // missing, so an entry holding +/-VALUE_INFINITE was aged here and is not
         // upstream. Keep it a nested `if`, as upstream does, rather than folding it into
         // the else-if chain: the two guards are not the same condition.
-        const v16: c_int = @as(c_int, entry.value16);
+        const v16: i32 = @as(i32, entry.value16);
         if (@abs(v16) < value_infinite and
             (v16 >= value_tb_win_in_max_ply or v16 <= -value_tb_win_in_max_ply))
         {
@@ -173,12 +173,12 @@ pub fn entryPenalize(entry: *TtEntry, penalty: u8) void {
     entry.depth8 = depthSaturatingSub(entry.depth8, penalty);
 }
 
-pub fn entryRead(entry: *const TtEntry, depth_none: c_int) TtReadOutput {
+pub fn entryRead(entry: *const TtEntry, depth_none: i32) TtReadOutput {
     return .{
         .move16 = entry.move16,
         .value16 = entry.value16,
         .eval16 = entry.eval16,
-        .depth = depth_none + @as(c_int, entry.depth8),
+        .depth = depth_none + @as(i32, entry.depth8),
         .bound = (entry.gen_bound8 & bound_mask) >> bound_shift,
         .is_pv = if ((entry.gen_bound8 & pv_mask) != 0) 1 else 0,
     };
@@ -196,9 +196,9 @@ pub fn hashfull(
     clusters: [*]const TtCluster,
     cluster_count: usize,
     generation: u8,
-    max_age: c_int,
-) c_int {
-    var count: c_int = 0;
+    max_age: i32,
+) i32 {
+    var count: i32 = 0;
     var cluster_index: usize = 0;
     const limit = @min(cluster_count, 1000);
 
@@ -227,7 +227,7 @@ pub fn probe(
     cluster: *const TtCluster,
     key: u64,
     generation: u8,
-    depth_none: c_int,
+    depth_none: i32,
 ) TtProbeOutput {
     const key16: u16 = @truncate(key);
 
@@ -248,8 +248,8 @@ pub fn probe(
     while (candidate_index < cluster_size) : (candidate_index += 1) {
         const replace_entry = &cluster.entry[replace_index];
         const candidate_entry = &cluster.entry[candidate_index];
-        const replace_score = @as(c_int, replace_entry.depth8) - 8 * @as(c_int, entryRelativeAge(replace_entry, generation));
-        const candidate_score = @as(c_int, candidate_entry.depth8) - 8 * @as(c_int, entryRelativeAge(candidate_entry, generation));
+        const replace_score = @as(i32, replace_entry.depth8) - 8 * @as(i32, entryRelativeAge(replace_entry, generation));
+        const candidate_score = @as(i32, candidate_entry.depth8) - 8 * @as(i32, entryRelativeAge(candidate_entry, generation));
         if (replace_score > candidate_score) {
             replace_index = candidate_index;
         }
@@ -274,7 +274,7 @@ pub fn probeTable(
     cluster_count: usize,
     key: u64,
     generation: u8,
-    depth_none: c_int,
+    depth_none: i32,
 ) TtProbeTableOutput {
     if (table == null or cluster_count == 0) {
         return .{
@@ -321,7 +321,7 @@ pub const TranspositionTable = struct {
     pub fn firstEntry(self: *const TranspositionTable, key: u64) usize {
         return firstEntryIndex(key, self.cluster_count);
     }
-    pub fn hashfullPermille(self: *const TranspositionTable, max_age: c_int) c_int {
+    pub fn hashfullPermille(self: *const TranspositionTable, max_age: i32) i32 {
         return hashfull(self.table.?, self.cluster_count, self.generation8, max_age);
     }
 };

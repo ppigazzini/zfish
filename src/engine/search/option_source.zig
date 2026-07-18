@@ -24,10 +24,10 @@
 
 const std = @import("std");
 
-fn zeroInt() c_int {
+fn zeroInt() i32 {
     return 0;
 }
-fn zeroIntByName(_: []const u8) c_int {
+fn zeroIntByName(_: []const u8) i32 {
     return 0;
 }
 fn falseRule() bool {
@@ -38,20 +38,20 @@ fn falseRule() bool {
 /// failure: silent — 0 for every option, which is the correct answer for a headless
 /// depth-only search with no UCI model attached (headless_search.zig registers its own).
 /// SEARCH-AFFECTING in a shipped build; main.zig:68 registers it before main.zig:79.
-pub var intByName: *const fn (name: []const u8) c_int = &zeroIntByName;
+pub var intByName: *const fn (name: []const u8) i32 = &zeroIntByName;
 /// Read the Syzygy tablebase probe settings.
 /// failure: silent — 0 probe depth, which reads as "never probe". Correct headless:
 /// no tablebases are loaded there either, so not probing is the right search.
-pub var syzygyProbeDepth: *const fn () c_int = &zeroInt;
+pub var syzygyProbeDepth: *const fn () i32 = &zeroInt;
 /// failure: silent — 0 probe limit, i.e. no position is probed. Same reason.
-pub var syzygyProbeLimit: *const fn () c_int = &zeroInt;
+pub var syzygyProbeLimit: *const fn () i32 = &zeroInt;
 /// failure: silent — false, i.e. the 50-move rule is not applied to TB scores. Only
 /// reachable with tablebases, which a headless root never loads, so it cannot be read.
 pub var syzygy50MoveRule: *const fn () bool = &falseRule;
 
 test {
     // Confirm the headless defaults are neutral.
-    try std.testing.expectEqual(@as(c_int, 0), intByName("MultiPV"));
-    try std.testing.expectEqual(@as(c_int, 0), syzygyProbeLimit());
+    try std.testing.expectEqual(@as(i32, 0), intByName("MultiPV"));
+    try std.testing.expectEqual(@as(i32, 0), syzygyProbeLimit());
     try std.testing.expectEqual(false, syzygy50MoveRule());
 }

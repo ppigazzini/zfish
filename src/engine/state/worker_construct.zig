@@ -27,7 +27,7 @@ const off = worker_layout.worker_off;
 // Use the FT pointer (network.zig-owned inference storage) to let the full
 // constructor fill the histories exactly as the worker-clear reset.
 
-// Treat reductions as the [256]c_int table in WorkerLayout (the layout no longer
+// Treat reductions as the [256]i32 table in WorkerLayout (the layout no longer
 // puts it immediately before `manager`, so take the fixed element count directly).
 const reductions_count: usize = 256;
 

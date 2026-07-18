@@ -80,7 +80,7 @@ pub const EngineObject = struct {
     states: ?*state_list_port.StateList = null,
     threads: ?*worker_layout.ThreadPool = null,
     binary_directory: ?[*:0]u8 = null,
-    cli_argc: c_int = 0,
+    cli_argc: i32 = 0,
     cli_argv: ?[*]const [*:0]u8 = null,
     update_context: [update_context_size]u8 align(8) = @splat(0),
     on_verify_network: [verify_network_fn_size]u8 align(8) = @splat(0),
@@ -93,10 +93,10 @@ pub const EngineObject = struct {
     }
 
     // Access the members.
-    pub fn cliArgc(self: *const EngineObject) c_int {
+    pub fn cliArgc(self: *const EngineObject) i32 {
         return self.cli_argc;
     }
-    pub fn cliArgAt(self: *const EngineObject, index: c_int) ?[*:0]const u8 {
+    pub fn cliArgAt(self: *const EngineObject, index: i32) ?[*:0]const u8 {
         if (index < 0 or index >= self.cli_argc) return null;
         const argv = self.cli_argv orelse return null;
         return argv[@intCast(index)];
@@ -174,7 +174,7 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
 }
 
 /// Store the CLI argc/argv (the cli sub-object the engine object subsumes).
-pub fn setCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
+pub fn setCli(buf: *anyopaque, argc: i32, argv: [*]const [*:0]u8) void {
     const e = EngineObject.fromBuffer(buf);
     e.cli_argc = argc;
     e.cli_argv = argv;

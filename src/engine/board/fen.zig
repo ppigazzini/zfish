@@ -92,8 +92,8 @@ pub fn formatFen(
     black_oo_rook_square: u8,
     black_ooo_rook_square: u8,
     ep_square: u8,
-    rule50: c_int,
-    game_ply: c_int,
+    rule50: i32,
+    game_ply: i32,
 ) ?[*:0]u8 {
     return formatFenAlloc(
         board_ptr[0..64],
@@ -144,8 +144,8 @@ fn formatFenAlloc(
     black_oo_rook_square: u8,
     black_ooo_rook_square: u8,
     ep_square: u8,
-    rule50: c_int,
-    game_ply: c_int,
+    rule50: i32,
+    game_ply: i32,
 ) ![*:0]u8 {
     var builder = std.ArrayList(u8).empty;
     defer builder.deinit(std.heap.c_allocator);
@@ -214,7 +214,7 @@ fn formatFenAlloc(
 
     try appendInt(&builder, rule50);
     try builder.append(std.heap.c_allocator, ' ');
-    const side_offset: c_int = if (side_to_move == black) 1 else 0;
+    const side_offset: i32 = if (side_to_move == black) 1 else 0;
     const fullmove = 1 + @divTrunc(game_ply - side_offset, 2);
     try appendInt(&builder, fullmove);
 
@@ -232,7 +232,7 @@ fn appendSquare(builder: *std.ArrayList(u8), square: u8) !void {
     try builder.append(std.heap.c_allocator, '1' + rankOf(square));
 }
 
-fn appendInt(builder: *std.ArrayList(u8), value: c_int) !void {
+fn appendInt(builder: *std.ArrayList(u8), value: i32) !void {
     var buffer: [32]u8 = undefined;
     const text = try std.fmt.bufPrint(&buffer, "{d}", .{value});
     try builder.appendSlice(std.heap.c_allocator, text);

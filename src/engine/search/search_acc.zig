@@ -33,25 +33,25 @@ const givesCheck = legality.givesCheck;
 
 // Bound the TB win-in-max-ply eval clamp (VALUE_TB_WIN_IN_MAX_PLY):
 // q_value_mate(32000) - q_max_ply(246) - 1 - q_max_ply(246).
-const q_value_tb_win: c_int = 31507;
+const q_value_tb_win: i32 = 31507;
 
-pub inline fn updateSelDepth(ctx: *const QCtx, ply: c_int) void {
+pub inline fn updateSelDepth(ctx: *const QCtx, ply: i32) void {
     if (ctx.sel_depth.* < ply + 1) ctx.sel_depth.* = ply + 1;
 }
 
 // Compute the LMR reduction step: the LMR base reduction from the per-thread reductions
 // table, the root delta, and the improving flag. Use truncating integer division.
-pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: c_int, mn: c_int, delta: c_int) c_int {
+pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: i32, mn: i32, delta: i32) i32 {
     const reduction_scale = ctx.reductions[@intCast(d)] * ctx.reductions[@intCast(mn)];
     return reduction_scale - @divTrunc(delta * 617, ctx.root_delta.*) +
-        @divTrunc(@as(c_int, @intFromBool(!i)) * reduction_scale * 194, 512) + 1027;
+        @divTrunc(@as(i32, @intFromBool(!i)) * reduction_scale * 194, 512) + 1027;
 }
 
 // Run the evaluate step: the NNUE forward pass on the current position,
 // then apply the eval scaling. Material is 534 * pawn count (both colours) +
 // non-pawn material, optimism is indexed by the side to move, and the TB clamp
 // bounds are +/-VALUE_TB_WIN_IN_MAX_PLY.
-pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) c_int {
+pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     const pos = pos_ptr;
     const out = network_port.evaluate(pos_ptr, ctx.acc_stack, ctx.cache);
     const pawns = pos.piece_count[1] + pos.piece_count[9];

@@ -17,7 +17,7 @@ var dbg_extremes_count: [max_debug_slots]i64 = @splat(0);
 var dbg_extremes_max: [max_debug_slots]i64 = @splat(std.math.minInt(i64));
 var dbg_extremes_min: [max_debug_slots]i64 = @splat(std.math.maxInt(i64));
 
-fn slotIndex(slot: c_int) usize {
+fn slotIndex(slot: i32) usize {
     std.debug.assert(slot >= 0 and slot < max_debug_slots);
     return @intCast(slot);
 }
@@ -26,7 +26,7 @@ fn asFloat(value: i64) f64 {
     return @as(f64, @floatFromInt(value));
 }
 
-pub fn dbgHitOn(cond: bool, slot: c_int) void {
+pub fn dbgHitOn(cond: bool, slot: i32) void {
     const index = slotIndex(slot);
     _ = @atomicRmw(i64, &dbg_hit[index][0], .Add, 1, .seq_cst);
     if (cond) {
@@ -34,20 +34,20 @@ pub fn dbgHitOn(cond: bool, slot: c_int) void {
     }
 }
 
-pub fn dbgMeanOf(value: i64, slot: c_int) void {
+pub fn dbgMeanOf(value: i64, slot: i32) void {
     const index = slotIndex(slot);
     _ = @atomicRmw(i64, &dbg_mean[index][0], .Add, 1, .seq_cst);
     _ = @atomicRmw(i64, &dbg_mean[index][1], .Add, value, .seq_cst);
 }
 
-pub fn dbgStdevOf(value: i64, slot: c_int) void {
+pub fn dbgStdevOf(value: i64, slot: i32) void {
     const index = slotIndex(slot);
     _ = @atomicRmw(i64, &dbg_stdev[index][0], .Add, 1, .seq_cst);
     _ = @atomicRmw(i64, &dbg_stdev[index][1], .Add, value, .seq_cst);
     _ = @atomicRmw(i64, &dbg_stdev[index][2], .Add, value * value, .seq_cst);
 }
 
-pub fn dbgExtremesOf(value: i64, slot: c_int) void {
+pub fn dbgExtremesOf(value: i64, slot: i32) void {
     const index = slotIndex(slot);
     _ = @atomicRmw(i64, &dbg_extremes_count[index], .Add, 1, .seq_cst);
 
@@ -70,7 +70,7 @@ pub fn dbgExtremesOf(value: i64, slot: c_int) void {
     }
 }
 
-pub fn dbgCorrelOf(value1: i64, value2: i64, slot: c_int) void {
+pub fn dbgCorrelOf(value1: i64, value2: i64, slot: i32) void {
     const index = slotIndex(slot);
     _ = @atomicRmw(i64, &dbg_correl[index][0], .Add, 1, .seq_cst);
     _ = @atomicRmw(i64, &dbg_correl[index][1], .Add, value1, .seq_cst);

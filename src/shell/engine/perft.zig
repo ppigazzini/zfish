@@ -23,7 +23,7 @@ const fen = engine_trace.fen;
 const perft_max_depth = 64;
 const PerftStateBuf = position_port.StateInfo;
 
-fn perftCount(pos_ptr: *position_port.Position, depth: c_int, states: *[perft_max_depth]PerftStateBuf, ply: usize) u64 {
+fn perftCount(pos_ptr: *position_port.Position, depth: i32, states: *[perft_max_depth]PerftStateBuf, ply: usize) u64 {
     if (depth <= 0) return 1;
     var moves: [256]u16 = undefined;
     const n = movegen_port.generateLegal(pos_ptr, &moves);
@@ -38,7 +38,7 @@ fn perftCount(pos_ptr: *position_port.Position, depth: c_int, states: *[perft_ma
     return nodes;
 }
 
-fn perftSubtree(pos_ptr: *position_port.Position, depth: c_int) u64 {
+fn perftSubtree(pos_ptr: *position_port.Position, depth: i32) u64 {
     const capped = if (depth > perft_max_depth) perft_max_depth else depth;
     var states: [perft_max_depth]PerftStateBuf align(64) = undefined;
     return perftCount(pos_ptr, capped, &states, 0);
@@ -53,7 +53,7 @@ pub const PerftResult = struct {
     err: ?[*:0]u8 = null,
 };
 
-pub fn perftEngine(engine_ptr: *engine_object.EngineObject, depth: c_int) PerftResult {
+pub fn perftEngine(engine_ptr: *engine_object.EngineObject, depth: i32) PerftResult {
     verifyNetwork();
     const fen_ptr = fen(engine_ptr.positionPtr()) orelse @panic("perft: null fen");
     const fen_text = std.mem.span(fen_ptr);

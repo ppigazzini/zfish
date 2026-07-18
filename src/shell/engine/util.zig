@@ -42,7 +42,7 @@ pub fn appendHexKey(buffer: *std.ArrayList(u8), key: u64) !void {
     try buffer.appendSlice(std.heap.c_allocator, rendered);
 }
 
-pub fn appendPaddedInt(buffer: *std.ArrayList(u8), value: c_int) !void {
+pub fn appendPaddedInt(buffer: *std.ArrayList(u8), value: i32) !void {
     // Emulate C `%4d` = space-pad the decimal to width 4, right-aligned. std.fmt emits a `+`
     // when a width is applied directly to a signed int (`{d:4}` -> "+5"), so render the
     // digits first, then pad the *string* -- string padding carries no sign semantics.

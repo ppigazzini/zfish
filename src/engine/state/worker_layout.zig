@@ -63,20 +63,20 @@ pub const WorkerLayout = struct {
     nodes: u64,
     tb_hits: u64,
     best_move_changes: u64,
-    sel_depth: c_int,
-    nmp_min_ply: c_int,
-    optimism: [2]c_int,
+    sel_depth: i32,
+    nmp_min_ply: i32,
+    optimism: [2]i32,
     root_pos: position_types.Position align(8), // the worker's root Position
     root_state: position_types.StateInfo align(8), // its root StateInfo
     root_moves: []root_move.RootMove, // the worker's rootMoves
-    root_depth: c_int,
-    root_delta: c_int,
+    root_depth: i32,
+    root_delta: i32,
     last_iteration_pv: PVMoves,
     thread_idx: usize,
     numa_thread_idx: usize,
     numa_total: usize,
     numa_access_token: usize,
-    reductions: [256]c_int,
+    reductions: [256]i32,
     manager: ?*SearchManager, // the worker's SearchManager (null before build / after free)
     tb_config: [16]u8 align(8), // {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32} — read as i32, keep aligned
     threads: *ThreadPool,
@@ -325,13 +325,13 @@ pub const Worker = struct {
         wl.nmp_min_ply = 0;
         wl.root_depth = 0;
     }
-    pub inline fn setTbConfig(self: Worker, cardinality: c_int, root_in_tb: bool, use_rule50: bool, probe_depth: c_int) void {
+    pub inline fn setTbConfig(self: Worker, cardinality: i32, root_in_tb: bool, use_rule50: bool, probe_depth: i32) void {
         // Treat tb_config as a 16-byte blob {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32}.
         const b = &self.layout().tb_config;
-        @as(*c_int, @ptrCast(@alignCast(&b[0]))).* = cardinality;
+        @as(*i32, @ptrCast(@alignCast(&b[0]))).* = cardinality;
         b[4] = @intFromBool(root_in_tb);
         b[5] = @intFromBool(use_rule50);
-        @as(*c_int, @ptrCast(@alignCast(&b[8]))).* = probe_depth;
+        @as(*i32, @ptrCast(@alignCast(&b[8]))).* = probe_depth;
     }
     pub inline fn setRootState(self: Worker, src: *const position_types.StateInfo) void {
         // Copy root_state as a typed StateInfo: a struct copy, not a byte memcpy.
@@ -343,7 +343,7 @@ pub const Worker = struct {
     pub inline fn rootStatePtr(self: Worker) *position_types.StateInfo {
         return &self.layout().root_state;
     }
-    pub inline fn rootDepth(self: Worker) c_int {
+    pub inline fn rootDepth(self: Worker) i32 {
         return self.layout().root_depth;
     }
     /// Return &rootMoves[0] as a typed RootMove.

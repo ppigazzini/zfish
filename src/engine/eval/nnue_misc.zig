@@ -4,8 +4,8 @@ pub const NnueTraceInput = struct {
     side_to_move_white: u8,
     bucket_count: usize,
     correct_bucket: usize,
-    psqt_cp: [*]const c_int,
-    positional_cp: [*]const c_int,
+    psqt_cp: [*]const i32,
+    positional_cp: [*]const i32,
 };
 
 pub fn formatTrace(input: NnueTraceInput) ?[*:0]u8 {
@@ -57,7 +57,7 @@ fn formatTraceAlloc(input: NnueTraceInput) ![*:0]u8 {
     return result.ptr;
 }
 
-fn appendAlignedDot(buffer: *std.ArrayList(u8), cp_value: c_int) !void {
+fn appendAlignedDot(buffer: *std.ArrayList(u8), cp_value: i32) !void {
     const sign: u8 = if (cp_value < 0)
         '-'
     else if (cp_value > 0)
@@ -78,14 +78,14 @@ fn appendAlignedDot(buffer: *std.ArrayList(u8), cp_value: c_int) !void {
     try buffer.appendSlice(std.heap.c_allocator, rendered);
 }
 
-fn absInt(value: c_int) c_int {
+fn absInt(value: i32) i32 {
     return if (value < 0) -value else value;
 }
 
 // --- tests --------------------------------------------------------------
 test "formatTrace: side line, bucket row, and the %c%6.2f float cells" {
-    const psqt = [_]c_int{22}; // +0.22
-    const positional = [_]c_int{-76}; // -0.76 ; total -54 -> -0.54
+    const psqt = [_]i32{22}; // +0.22
+    const positional = [_]i32{-76}; // -0.76 ; total -54 -> -0.54
     const s = formatTrace(.{
         .side_to_move_white = 1,
         .bucket_count = 1,
@@ -105,7 +105,7 @@ test "formatTrace: side line, bucket row, and the %c%6.2f float cells" {
 }
 
 test "formatTrace: black-to-move header" {
-    const z = [_]c_int{0};
+    const z = [_]i32{0};
     const s = formatTrace(.{
         .side_to_move_white = 0,
         .bucket_count = 1,

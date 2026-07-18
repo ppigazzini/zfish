@@ -166,13 +166,13 @@ pub fn hasLargePages() bool {
     return memory.hasLargePages();
 }
 
-pub fn hardwareConcurrency() c_int {
+pub fn hardwareConcurrency() i32 {
     // Return the number of hardware threads (Stockfish's get_hardware_concurrency).
     // Use std.Thread.getCpuCount(), the cross-platform equivalent -- sysconf(_SC_NPROCESSORS_ONLN)
     // on POSIX, GetSystemInfo on Windows -- so it matches the prior Linux glibc behavior while
     // also working on the owned Windows/macOS tiers. Clamp an error to 0.
     const n = std.Thread.getCpuCount() catch return 0;
-    return std.math.cast(c_int, n) orelse 0;
+    return std.math.cast(i32, n) orelse 0;
 }
 
 fn readFileToStringAlloc(path: []const u8) ![*:0]u8 {

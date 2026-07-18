@@ -49,7 +49,7 @@ var g_ready = false;
 // Provide a deterministic option source: Skill Level 20 turns skill mode OFF
 // (skill_enabled = level < 20), MultiPV 1 keeps a single principal variation. Every
 // other option reads 0, which is the correct headless default for a depth-only search.
-fn deterministicIntByName(name: []const u8) c_int {
+fn deterministicIntByName(name: []const u8) i32 {
     if (std.mem.eql(u8, name, "Skill Level")) return 20;
     if (std.mem.eql(u8, name, "MultiPV")) return 1;
     return 0;

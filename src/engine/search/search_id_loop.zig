@@ -84,9 +84,9 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     // Remember the best score alongside its PV (upstream's `lastBestMoveScore`,
     // search.cpp:277). The rollback restored root_moves[0].previous_score instead, which
     // is this iteration's saved score -- not the score that belongs to last_best_move_pv.
-    var last_best_move_score: c_int = -q_value_inf;
-    var last_best_move_depth: c_int = 0;
-    var best_value: c_int = -q_value_inf;
+    var last_best_move_score: i32 = -q_value_inf;
+    var last_best_move_depth: i32 = 0;
+    var best_value: i32 = -q_value_inf;
     const us: usize = @intCast(sideToMove(id.root_pos));
     var time_reduction: f64 = 1;
     var tot_best_move_changes: f64 = 0;
@@ -108,7 +108,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     }
 
     if (main_thread) {
-        const fv: c_int = if (id.best_previous_score == q_value_inf) 0 else id.best_previous_score;
+        const fv: i32 = if (id.best_previous_score == q_value_inf) 0 else id.best_previous_score;
         id.iter_value.?.* = @splat(fv);
     }
 
@@ -120,7 +120,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     fillLowPlyHistory(wl);
     ageMainHistory(wl);
 
-    var search_again_counter: c_int = 0;
+    var search_again_counter: i32 = 0;
     var uci_pv_sent = false;
 
     // Run the iterative deepening loop.
@@ -178,9 +178,9 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             id.optimism[us] = search.optimism(avg);
             id.optimism[us ^ 1] = -id.optimism[us];
 
-            var failed_high_cnt: c_int = 0;
+            var failed_high_cnt: i32 = 0;
             while (true) {
-                const adjusted_depth = @max(@as(c_int, 1), id.root_depth.* - failed_high_cnt - @divTrunc(3 * (search_again_counter + 1), 4));
+                const adjusted_depth = @max(@as(i32, 1), id.root_depth.* - failed_high_cnt - @divTrunc(3 * (search_again_counter + 1), 4));
                 id.root_delta.* = beta - alpha;
                 best_value = searchImpl(&ctx, id.root_pos, &stack[7], alpha, beta, adjusted_depth, false, true, true);
 
@@ -353,8 +353,8 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             // under `go wtime`, upstream stops at depth 1 / 17 nodes while zfish reached
             // depth 245 / 4165. Read the scores after the pv loop has written this
             // iteration's values, matching upstream's placement.
-            const mate_in_3: c_int = sv.value_mate - 3;
-            const mated_in_2: c_int = -sv.value_mate + 2;
+            const mate_in_3: i32 = sv.value_mate - 3;
+            const mated_in_2: i32 = -sv.value_mate + 2;
             const found_mate = id.root_moves[multi_pv - 1].score >= mate_in_3 or
                 id.root_moves[0].score == mated_in_2;
 

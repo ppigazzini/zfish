@@ -7,18 +7,18 @@
 
 const worker_layout = @import("worker_layout");
 
-const value_none: c_int = 32002;
-const value_infinite: c_int = 32001;
-const value_tb_win_in_max_ply: c_int = 31507;
-const value_tb_loss_in_max_ply: c_int = -31507;
+const value_none: i32 = 32002;
+const value_infinite: i32 = 32001;
+const value_tb_win_in_max_ply: i32 = 31507;
+const value_tb_loss_in_max_ply: i32 = -31507;
 const max_thread_summaries: usize = 1024;
 
 pub const ThreadSummary = struct {
     pv0_raw: u16,
     score_is_bound: u8,
     pv_has_more_than_two: u8,
-    score: c_int,
-    root_depth: c_int,
+    score: i32,
+    root_depth: i32,
 };
 
 fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
@@ -31,8 +31,8 @@ fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
     out.root_depth = w.rootDepth();
 }
 
-fn voteForMove(summaries: [*]const ThreadSummary, count: usize, move_raw: u16, min_score: c_int) c_int {
-    var vote: c_int = 0;
+fn voteForMove(summaries: [*]const ThreadSummary, count: usize, move_raw: u16, min_score: i32) i32 {
+    var vote: i32 = 0;
     var index: usize = 0;
     while (index < count) : (index += 1) {
         if (summaries[index].pv0_raw == move_raw)
@@ -41,29 +41,29 @@ fn voteForMove(summaries: [*]const ThreadSummary, count: usize, move_raw: u16, m
     return vote;
 }
 
-fn threadVotingValue(summary: ThreadSummary, min_score: c_int) c_int {
+fn threadVotingValue(summary: ThreadSummary, min_score: i32) i32 {
     return (summary.score - min_score + 14) * summary.root_depth;
 }
 
-fn isWin(score: c_int) bool {
+fn isWin(score: i32) bool {
     return score >= value_tb_win_in_max_ply;
 }
-fn isLoss(score: c_int) bool {
+fn isLoss(score: i32) bool {
     return score <= value_tb_loss_in_max_ply;
 }
-fn isDecisive(score: c_int) bool {
+fn isDecisive(score: i32) bool {
     return isWin(score) or isLoss(score);
 }
 fn isDecisiveBest(summary: ThreadSummary) bool {
     return summary.score != -value_infinite and isDecisive(summary.score) and summary.score_is_bound == 0;
 }
-fn absInt(value: c_int) c_int {
+fn absInt(value: i32) i32 {
     return if (value < 0) -value else value;
 }
 
 fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
     var best_index: usize = 0;
-    var min_score: c_int = value_none;
+    var min_score: i32 = value_none;
 
     var index: usize = 0;
     while (index < count) : (index += 1) {
@@ -80,7 +80,7 @@ fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
         const best_decisive = isDecisiveBest(best);
         const current_decisive = isDecisiveBest(current);
         const better_voting_value =
-            threadVotingValue(current, min_score) * @as(c_int, current.pv_has_more_than_two) > threadVotingValue(best, min_score) * @as(c_int, best.pv_has_more_than_two);
+            threadVotingValue(current, min_score) * @as(i32, current.pv_has_more_than_two) > threadVotingValue(best, min_score) * @as(i32, best.pv_has_more_than_two);
 
         if (best_decisive) {
             if (current_decisive and absInt(current.score) > absInt(best.score)) {

@@ -10,7 +10,7 @@ const std = @import("std");
 const WinRateParams = struct { a: f64, b: f64 };
 
 // Return the UCI_WinRateModel params for the given non-pawn material (clamped 17..78).
-fn winRateParams(material: c_int) WinRateParams {
+fn winRateParams(material: i32) WinRateParams {
     const clamped = std.math.clamp(material, 17, 78);
     const m = @as(f64, @floatFromInt(clamped)) / 58.0;
     const as = [_]f64{ -72.32565836, 185.93832038, -144.58862193, 416.44950446 };
@@ -20,34 +20,34 @@ fn winRateParams(material: c_int) WinRateParams {
     return .{ .a = a, .b = b };
 }
 
-fn winRateModel(value: c_int, material: c_int) c_int {
+fn winRateModel(value: i32, material: i32) i32 {
     const params = winRateParams(material);
     return @intFromFloat(0.5 + 1000.0 / (1.0 + std.math.exp((params.a - @as(f64, @floatFromInt(value))) / params.b)));
 }
 
 // Convert internal eval -> centipawns (UCI::to_cp): normalise value by the win-rate `a` param.
-pub fn toCp(value: c_int, material: c_int) c_int {
+pub fn toCp(value: i32, material: i32) i32 {
     const params = winRateParams(material);
     return @intFromFloat(@round(100.0 * @as(f64, @floatFromInt(value)) / params.a));
 }
 
 // Allocate the "win draw loss" permille triple (c_allocator; caller frees). null on OOM.
-pub fn wdl(value: c_int, material: c_int) ?[:0]u8 {
+pub fn wdl(value: i32, material: i32) ?[:0]u8 {
     return allocWdl(value, material) catch null;
 }
 
 // Allocate the UCI score text: kind 0 -> "mate N", kind 1 -> TB "cp N", else "cp N".
-pub fn formatScore(kind: u8, value: c_int, extra: c_int) ?[:0]u8 {
+pub fn formatScore(kind: u8, value: i32, extra: i32) ?[:0]u8 {
     return allocScore(kind, value, extra) catch null;
 }
-fn allocScore(kind: u8, value: c_int, extra: c_int) !?[:0]u8 {
+fn allocScore(kind: u8, value: i32, extra: i32) !?[:0]u8 {
     return switch (kind) {
         0 => blk: {
             const mate = @divTrunc(if (value > 0) value + 1 else value, 2);
             break :blk try allocFormatted("mate {d}", .{mate});
         },
         1 => blk: {
-            const tb_cp: c_int = 20000;
+            const tb_cp: i32 = 20000;
             const score = (if (extra != 0) tb_cp else -tb_cp) - value;
             break :blk try allocFormatted("cp {d}", .{score});
         },
@@ -55,7 +55,7 @@ fn allocScore(kind: u8, value: c_int, extra: c_int) !?[:0]u8 {
     };
 }
 
-fn allocWdl(value: c_int, material: c_int) !?[:0]u8 {
+fn allocWdl(value: i32, material: i32) !?[:0]u8 {
     const win = winRateModel(value, material);
     const loss = winRateModel(-value, material);
     const draw = 1000 - win - loss;
@@ -84,15 +84,15 @@ fn appendFormatted(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: a
 }
 
 // Format "info depth D score S" for the no-legal-moves (mate/stalemate) case.
-pub fn formatInfoNoMoves(depth: c_int, score_text: []const u8) ?[:0]u8 {
+pub fn formatInfoNoMoves(depth: i32, score_text: []const u8) ?[:0]u8 {
     return allocFormatted("info depth {d} score {s}", .{ depth, score_text }) catch null;
 }
 
 // Format the full per-PV info line (depth/seldepth/multipv/score/[bound]/[wdl]/nodes/nps/
 // hashfull/tbhits/time/pv).
 pub fn formatInfoFull(
-    depth: c_int,
-    sel_depth: c_int,
+    depth: i32,
+    sel_depth: i32,
     multi_pv: usize,
     score_text: []const u8,
     bound_text: []const u8,
@@ -100,7 +100,7 @@ pub fn formatInfoFull(
     show_wdl: u8,
     nodes: usize,
     nps: usize,
-    hashfull: c_int,
+    hashfull: i32,
     tb_hits: usize,
     time_ms: usize,
     pv: []const u8,
@@ -142,7 +142,7 @@ pub fn formatInfoFull(
 }
 
 // Format "info depth D currmove M currmovenumber N".
-pub fn formatInfoIter(depth: c_int, currmove: []const u8, currmove_number: c_int) ?[:0]u8 {
+pub fn formatInfoIter(depth: i32, currmove: []const u8, currmove_number: i32) ?[:0]u8 {
     return allocFormatted("info depth {d} currmove {s} currmovenumber {d}", .{ depth, currmove, currmove_number }) catch null;
 }
 
@@ -158,7 +158,7 @@ pub fn formatBestmove(bestmove: []const u8, ponder: []const u8) ?[:0]u8 {
 const test_alloc = std.heap.c_allocator;
 
 test "toCp: zero-centred and sign-preserving" {
-    try std.testing.expectEqual(@as(c_int, 0), toCp(0, 50));
+    try std.testing.expectEqual(@as(i32, 0), toCp(0, 50));
     try std.testing.expect(toCp(300, 50) > 0);
     try std.testing.expect(toCp(-300, 50) < 0);
     // check the odd symmetry of the model: toCp(-v) == -toCp(v)
@@ -166,7 +166,7 @@ test "toCp: zero-centred and sign-preserving" {
 }
 
 test "wdl: the permille triple always sums to 1000" {
-    for ([_]c_int{ -800, -100, 0, 100, 800 }) |v| {
+    for ([_]i32{ -800, -100, 0, 100, 800 }) |v| {
         const s = wdl(v, 50).?;
         defer test_alloc.free(s);
         var it = std.mem.tokenizeScalar(u8, s, ' ');

@@ -69,12 +69,12 @@ pub fn fillHistorySnapshot(
     }
 }
 
-pub fn mainHistoryScore(history_snapshot: *const HistorySnapshot, side_to_move: u8, raw_move: u16) c_int {
+pub fn mainHistoryScore(history_snapshot: *const HistorySnapshot, side_to_move: u8, raw_move: u16) i32 {
     const history = history_snapshot.main_base orelse unreachable;
     return history[@as(usize, side_to_move)][@as(usize, raw_move)].value;
 }
 
-pub fn lowPlyHistoryScore(history_snapshot: *const HistorySnapshot, ply: c_int, raw_move: u16) c_int {
+pub fn lowPlyHistoryScore(history_snapshot: *const HistorySnapshot, ply: i32, raw_move: u16) i32 {
     const history = history_snapshot.low_ply_base orelse unreachable;
     return history[@as(usize, @intCast(ply))][@as(usize, raw_move)].value;
 }
@@ -84,7 +84,7 @@ pub fn captureHistoryScore(
     piece: u8,
     square: u8,
     captured_piece_type: u8,
-) c_int {
+) i32 {
     const history = history_snapshot.capture_base orelse unreachable;
     return history[@as(usize, piece)][@as(usize, square)][@as(usize, captured_piece_type)].value;
 }
@@ -94,7 +94,7 @@ pub fn continuationHistoryScore(
     slot: usize,
     piece: u8,
     square: u8,
-) c_int {
+) i32 {
     const history = history_snapshot.continuation_base[slot] orelse unreachable;
     return history[@as(usize, piece)][@as(usize, square)].value;
 }
@@ -104,7 +104,7 @@ pub fn pawnHistoryScore(
     pawn_key: u64,
     piece: u8,
     square: u8,
-) c_int {
+) i32 {
     const history = history_snapshot.pawn_table orelse return 0;
     // Index pawn history [(pawn_key & mask) * PIECE_NB + piece][square]
     const index: usize = @intCast(pawn_key & history_snapshot.pawn_mask);

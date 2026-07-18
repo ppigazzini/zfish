@@ -24,7 +24,7 @@ const north_east: i8 = 9;
 const north_west: i8 = 7;
 const south_east: i8 = -7;
 const south_west: i8 = -9;
-const piece_values = [_]c_int{
+const piece_values = [_]i32{
     0, 208, 781, 825, 1276, 2538, 0, 0,
     0, 208, 781, 825, 1276, 2538, 0, 0,
 };

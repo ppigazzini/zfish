@@ -15,7 +15,7 @@ const affineDpbusd = nnue_affine.affineDpbusd;
 
 const Position = position_types.Position;
 
-const output_scale: c_int = 16;
+const output_scale: i32 = 16;
 const layer_stacks: usize = 8;
 const cache_line_size: usize = 64;
 const transformed_feature_bytes: usize = 1024;
@@ -26,13 +26,13 @@ const layerPtr = weight_storage.layerPtr;
 const ftPtr = weight_storage.ftPtr;
 
 pub const EvalOutput = struct {
-    psqt: c_int,
-    positional: c_int,
+    psqt: i32,
+    positional: i32,
 };
 
 pub const TraceOutput = struct {
-    psqt: [layer_stacks]c_int,
-    positional: [layer_stacks]c_int,
+    psqt: [layer_stacks]i32,
+    positional: [layer_stacks]i32,
     correct_bucket: usize,
 };
 
@@ -82,7 +82,7 @@ inline fn clippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void
     }
 }
 
-fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_accumulator_port.NnzBitset) c_int {
+fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_accumulator_port.NnzBitset) i32 {
     // Read the affine-layer weights from the Zig-owned storage. The parse
     // writes this storage and is the sole source, so the eval is bench-verified.
     const fc0_b = layerBiases(bucket, 0);
@@ -198,7 +198,7 @@ fn networkTransformBucket(
     bucket: usize,
     transformed_ptr: [*]u8,
     nnz: *nnue_accumulator_port.NnzBitset,
-) c_int {
+) i32 {
     const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(ftPtr() orelse @panic("feature-transformer storage not initialized"));
     const stm = pos.side_to_move;
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr, nnz);

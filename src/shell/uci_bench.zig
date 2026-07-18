@@ -146,11 +146,11 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
     var total_time: i64 = 0;
     var total_nodes: u64 = 0;
     var position_index: usize = 1;
-    var hashfull_reads: c_int = 0;
-    var total_hashfull_single: c_int = 0;
-    var total_hashfull_game: c_int = 0;
-    var max_hashfull_single: c_int = 0;
-    var max_hashfull_game: c_int = 0;
+    var hashfull_reads: i32 = 0;
+    var total_hashfull_single: i32 = 0;
+    var total_hashfull_game: i32 = 0;
+    var max_hashfull_single: i32 = 0;
+    var max_hashfull_game: i32 = 0;
 
     line_iter = std.mem.splitScalar(u8, commands, '\n');
     while (line_iter.next()) |command| {

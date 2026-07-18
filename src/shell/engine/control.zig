@@ -62,7 +62,7 @@ pub fn searchClearEngine(engine_ptr: *engine_object.EngineObject) void {
     );
 }
 
-pub fn hashfullEngine(engine_ptr: *engine_object.EngineObject, max_age: c_int) c_int {
+pub fn hashfullEngine(engine_ptr: *engine_object.EngineObject, max_age: i32) i32 {
     const tp = engine_ptr.ttPtr();
     const table = tp.table orelse return 0;
     return tt_port.hashfull(@ptrCast(@alignCast(table)), tp.cluster_count, tp.generation8, max_age);

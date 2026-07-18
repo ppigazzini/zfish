@@ -26,7 +26,7 @@ const hasCheckers = position_query.hasCheckers;
 const wdlMaterial = position_query.wdlMaterial;
 
 // Provide trivial accessors; both are one-line reads of the Worker graph.
-fn optInt(name: []const u8) c_int {
+fn optInt(name: []const u8) i32 {
     return option_port.intByName(name);
 }
 fn workerRootMove0(wl: *const worker_layout.WorkerLayout) *worker_layout.RootMove {
@@ -39,12 +39,12 @@ fn workerRootMoveAt(wl: *const worker_layout.WorkerLayout, index: usize) usize {
     // Return the i-th element's address (stride root_move_size); root_moves is a typed slice.
     return @intFromPtr(wl.root_moves.ptr) + index * worker_layout.root_move_size;
 }
-fn workerRootDepthOf(wl: *const worker_layout.WorkerLayout) c_int {
+fn workerRootDepthOf(wl: *const worker_layout.WorkerLayout) i32 {
     return wl.root_depth;
 }
 
 // Format the score text (mate/tb-cp/cp) via the score classifier + the leaf uci_wdl formatters.
-fn scoreTextAlloc(v: c_int, material: c_int) ?[:0]u8 {
+fn scoreTextAlloc(v: i32, material: i32) ?[:0]u8 {
     const sc = score_port.classify(v, 31507, 31753, 32000);
     return switch (sc.kind) {
         2 => uci_wdl.formatScore(0, sc.plies, 0),
@@ -55,7 +55,7 @@ fn scoreTextAlloc(v: c_int, material: c_int) ?[:0]u8 {
 
 // Build + print one "info depth ... pv ..." line.
 // Publish the whole-search node count to the shared leaf; no-op in quiet mode.
-fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, move_index: usize, depth: c_int, sel_depth: c_int, multipv: usize, v: c_int, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: c_int, time_ms: u64) void {
+fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, move_index: usize, depth: i32, sel_depth: i32, multipv: usize, v: i32, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: i32, time_ms: u64) void {
     _ = manager;
     uci_output.setLastNodesSearched(nodes);
     if (uci_output.isQuiet()) return;
@@ -113,7 +113,7 @@ pub fn ssEmitNoMoves(worker: ?*worker_layout.WorkerLayout) void {
     const w = worker.?;
     const ca = std.heap.c_allocator;
     const root_pos = &w.root_pos;
-    const v: c_int = if (hasCheckers(root_pos)) -32000 else 0;
+    const v: i32 = if (hasCheckers(root_pos)) -32000 else 0;
     const material = wdlMaterial(root_pos);
 
     const score_c = scoreTextAlloc(v, material) orelse return;
@@ -154,14 +154,14 @@ pub fn ssEmitBestmove(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layou
 }
 
 // Emit "info depth D currmove M currmovenumber N" (main thread, past the node threshold).
-pub fn searchCbRootOnIter(wl: *const worker_layout.WorkerLayout, depth: c_int, move: u16, move_count: c_int) void {
+pub fn searchCbRootOnIter(wl: *const worker_layout.WorkerLayout, depth: i32, move: u16, move_count: i32) void {
     if (wl.thread_idx != 0) return;
     if (uci_output.isQuiet()) return;
     const root_pos = &wl.root_pos;
     const chess960 = isChess960(root_pos);
     var mbuf: [5]u8 = undefined;
     const currmove = uci_move_port.renderMoveText(&mbuf, move, chess960);
-    const currmovenumber: c_int = move_count + @as(c_int, @intCast(wl.pv_idx));
+    const currmovenumber: i32 = move_count + @as(i32, @intCast(wl.pv_idx));
     const line_c = uci_wdl.formatInfoIter(depth, currmove, currmovenumber) orelse return;
     defer std.heap.c_allocator.free(line_c);
     uci_output.printLine(line_c.ptr, line_c.len);
@@ -185,7 +185,7 @@ const PvContext = struct {
     chess960: u8,
     nodes: u64,
     tb_hits: u64,
-    hashfull: c_int,
+    hashfull: i32,
     elapsed_ms: u64,
 };
 // Build the per-PV-emit context: root-move span, MultiPV/WDL options, chess960, pool nodes/tbhits,
@@ -219,7 +219,7 @@ fn searchCbPvContext(manager: ?*worker_layout.SearchManager, worker: ?*worker_la
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
 
-pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, threads: *worker_layout.ThreadPool, tt_ptr: *worker_layout.TranspositionTable, depth: c_int) void {
+pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, threads: *worker_layout.ThreadPool, tt_ptr: *worker_layout.TranspositionTable, depth: i32) void {
     const value_infinite: i32 = 32001;
     var ctx: PvContext = undefined;
     searchCbPvContext(manager, worker, threads, tt_ptr, &ctx);
@@ -228,7 +228,7 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
         const rm = &ctx.root_moves[i];
         const use_prev = rm.score == -value_infinite;
         if (depth == 1 and use_prev and i > 0) continue;
-        const d: c_int = if (use_prev) @max(@as(c_int, 1), depth - 1) else depth;
+        const d: i32 = if (use_prev) @max(@as(i32, 1), depth - 1) else depth;
         var v: i32 = if (use_prev) rm.previous_score else rm.uci_score;
         if (v == -value_infinite) v = 0;
         // SF: when the root is in a tablebase and the score isn't a real mate, show the exact
@@ -261,7 +261,7 @@ pub fn ssEmitPv(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layout.Work
         workerRootDepthOf(best.?),
     );
 }
-pub fn searchIdPv(worker: *worker_layout.WorkerLayout, depth: c_int) void {
+pub fn searchIdPv(worker: *worker_layout.WorkerLayout, depth: i32) void {
     const wl = worker;
     searchPv(
         wl.manager,

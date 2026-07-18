@@ -16,9 +16,9 @@ pub const PositionSnapshot = struct {
     board: [64]u8,
     pawn_key: u64,
     key: u64,
-    material_value: c_int,
-    rule50_count: c_int,
-    game_ply: c_int,
+    material_value: i32,
+    rule50_count: i32,
+    game_ply: i32,
     is_chess960: u8,
 };
 

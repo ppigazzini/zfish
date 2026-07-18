@@ -256,7 +256,7 @@ fn uciEngineDestructAt(storage: *anyopaque) void {
     engineDestructMembers(storage);
 }
 
-fn optInt(name: []const u8) c_int {
+fn optInt(name: []const u8) i32 {
     return option_port.intByName(name);
 }
 
@@ -329,14 +329,14 @@ pub fn engineInitBody(engine: *anyopaque) void {
 fn engineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     return engine_object.constructMembers(buf, argv0);
 }
-fn engineSetCli(buf: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
+fn engineSetCli(buf: *anyopaque, argc: i32, argv: [*]const [*:0]u8) void {
     engine_object.setCli(buf, argc, argv);
 }
 // Construct the engine object. Verify the object-graph footprint, build the heap members +
 // inline sub-objects, store argc/argv, then run init_body (register options, set start
 // position, size threads) — the same post-member work the engine constructor runs. Drop
 // Tune (SPSA) here: it is INERT in a release build (no live TUNE() macros → empty list).
-fn engineConstructAt(storage: *anyopaque, argc: c_int, argv: [*]const [*:0]u8) void {
+fn engineConstructAt(storage: *anyopaque, argc: i32, argv: [*]const [*:0]u8) void {
     worker_layout.verifyLayouts();
     if (!engineConstructMembers(storage, argv[0]))
         @panic("engine construct: member allocation failed");

@@ -53,11 +53,11 @@ const white_ooo: u8 = 2;
 const black_oo: u8 = 4;
 const black_ooo: u8 = 8;
 const sq_none: u8 = 64;
-const max_ply: c_int = 246;
-const value_mate: c_int = 32000;
-const value_tb: c_int = value_mate - max_ply - 1;
-const value_tb_win_in_max_ply: c_int = value_tb - max_ply;
-const value_tb_loss_in_max_ply: c_int = -value_tb_win_in_max_ply;
+const max_ply: i32 = 246;
+const value_mate: i32 = 32000;
+const value_tb: i32 = value_mate - max_ply - 1;
+const value_tb_win_in_max_ply: i32 = value_tb - max_ply;
+const value_tb_loss_in_max_ply: i32 = -value_tb_win_in_max_ply;
 
 const PositionSnapshot = position_snapshot.PositionSnapshot;
 
@@ -65,47 +65,47 @@ pub const PositionSummary = struct {
     side_to_move_white: u8,
     checkers: u64,
     key: u64,
-    material: c_int,
-    rule50_count: c_int,
+    material: i32,
+    rule50_count: i32,
 };
 
 pub const TablebaseProbe = tablebase.ProbeResult;
 
 pub const EvalInput = struct {
-    psqt: c_int,
-    positional: c_int,
-    optimism: c_int,
-    material: c_int,
-    rule50_count: c_int,
-    value_tb_loss_in_max_ply: c_int,
-    value_tb_win_in_max_ply: c_int,
+    psqt: i32,
+    positional: i32,
+    optimism: i32,
+    material: i32,
+    rule50_count: i32,
+    value_tb_loss_in_max_ply: i32,
+    value_tb_win_in_max_ply: i32,
 };
 
 pub const EvalOutput = struct {
-    psqt: c_int,
-    positional: c_int,
+    psqt: i32,
+    positional: i32,
 };
 
 pub const TraceOutput = struct {
-    psqt: [layer_stacks]c_int,
-    positional: [layer_stacks]c_int,
+    psqt: [layer_stacks]i32,
+    positional: [layer_stacks]i32,
     correct_bucket: usize,
 };
 
 pub const EvalTraceInput = struct {
     inner_trace_ptr: [*]const u8,
     inner_trace_len: usize,
-    nnue_internal_value: c_int,
-    nnue_white_cp: c_int,
-    final_white_cp: c_int,
+    nnue_internal_value: i32,
+    nnue_white_cp: i32,
+    final_white_cp: i32,
 };
 
 pub const NnueTraceInput = struct {
     side_to_move_white: u8,
     bucket_count: usize,
     correct_bucket: usize,
-    psqt_cp: [*]const c_int,
-    positional_cp: [*]const c_int,
+    psqt_cp: [*]const i32,
+    positional_cp: [*]const i32,
 };
 
 // ======================================================================== //
@@ -277,8 +277,8 @@ fn buildNnueTrace(
     nnue_acc.stackReset(accumulators);
 
     const trace = network_port.traceEvaluate(pos, accumulators, caches);
-    var psqt_cp: [layer_stacks]c_int = undefined;
-    var positional_cp: [layer_stacks]c_int = undefined;
+    var psqt_cp: [layer_stacks]i32 = undefined;
+    var positional_cp: [layer_stacks]i32 = undefined;
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {

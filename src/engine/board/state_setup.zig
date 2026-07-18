@@ -45,9 +45,9 @@ pub fn setCastlingRight(pos_ptr: *Position, c: u8, rfrom: u8) void {
     const color_castling: u8 = if (c == color_white) 3 else 12; // WHITE_CASTLING : BLACK_CASTLING
     const cr: u8 = color_castling & side_mask;
 
-    pos.st.castling_rights |= @as(c_int, cr);
-    pos.castling_rights_mask[kfrom] |= @as(c_int, cr);
-    pos.castling_rights_mask[rfrom] |= @as(c_int, cr);
+    pos.st.castling_rights |= @as(i32, cr);
+    pos.castling_rights_mask[kfrom] |= @as(i32, cr);
+    pos.castling_rights_mask[rfrom] |= @as(i32, cr);
     pos.castling_rook_square[cr] = rfrom;
 
     const king_side = (cr & 5) != 0;
@@ -146,7 +146,7 @@ pub fn setCheckInfo(pos_ptr: *const Position) void {
     pos.st.check_squares[king_pt] = 0;
 }
 
-pub fn computeMaterialKey(piece_counts_ptr: [*]const c_int, piece_count_len: usize) u64 {
+pub fn computeMaterialKey(piece_counts_ptr: [*]const i32, piece_count_len: usize) u64 {
     const piece_counts = piece_counts_ptr[0..piece_count_len];
     var key: u64 = 0;
 

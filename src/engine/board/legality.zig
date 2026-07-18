@@ -91,14 +91,14 @@ pub fn legal(pos: *const Position, m: u16) bool {
         (bitboard.line(from, orig_to) & (pos.by_color_bb[us] & pos.by_type_bb[king_pt])) != 0;
 }
 
-pub fn seeGe(pos_ptr: *const Position, m: u16, threshold: c_int) bool {
+pub fn seeGe(pos_ptr: *const Position, m: u16, threshold: i32) bool {
     const pos = pos_ptr;
     if (moveTypeOf(m) != mt_normal) return 0 >= threshold;
 
     const from = moveFrom(m);
     const to = moveTo(m);
 
-    var swap: c_int = piece_value_by_type[pos.board[to] & 7] - threshold;
+    var swap: i32 = piece_value_by_type[pos.board[to] & 7] - threshold;
     if (swap < 0) return false;
     swap = piece_value_by_type[pos.board[from] & 7] - swap;
     if (swap <= 0) return true;
@@ -106,7 +106,7 @@ pub fn seeGe(pos_ptr: *const Position, m: u16, threshold: c_int) bool {
     var occupied = pos.by_type_bb[0] ^ sqBb(from) ^ sqBb(to);
     var stm = pos.side_to_move;
     var attackers = attackersTo(pos_ptr, to, occupied);
-    var res: c_int = 1;
+    var res: i32 = 1;
 
     const bishops_queens = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
     const rooks_queens = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];

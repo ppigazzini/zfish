@@ -41,7 +41,7 @@ pub fn updateQuietHistoriesWorker(
     pos_ptr: *const Position,
     ss_ptr: *const SearchStack,
     move: u16,
-    bonus: c_int,
+    bonus: i32,
 ) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const pos = pos_ptr;
@@ -79,7 +79,7 @@ pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: u8
 pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     for (&w.main_history) |*e| {
-        const v: c_int = e.*;
+        const v: i32 = e.*;
         e.* = @intCast(@divTrunc(v * 789, 1024)); // upstream 3c858c19e: drop the +5
     }
 }
@@ -117,7 +117,7 @@ pub fn updateQuietHistories(
     ss_ptr: *const SearchStack,
     pc: u8,
     to: u8,
-    bonus: c_int,
+    bonus: i32,
 ) void {
     statsUpdate(main_entry, bonus, 7183);
     if (lowply_entry) |e| statsUpdate(e, search.quietLowPlyScale(bonus), 7183);
@@ -125,15 +125,15 @@ pub fn updateQuietHistories(
     statsUpdate(pawn_entry, search.quietPawnScale(bonus), 8192);
 }
 
-const ConthistBonus = struct { i: u8, w: c_int };
+const ConthistBonus = struct { i: u8, w: i32 };
 const conthist_bonuses = [6]ConthistBonus{
     .{ .i = 1, .w = 1040 }, .{ .i = 2, .w = 780 }, .{ .i = 3, .w = 300 },
     .{ .i = 4, .w = 537 },  .{ .i = 5, .w = 129 }, .{ .i = 6, .w = 423 },
 };
 
-pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, bonus: c_int) void {
+pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, bonus: i32) void {
     const ss = ss_ptr;
-    var positive_count: c_int = 0;
+    var positive_count: i32 = 0;
     for (conthist_bonuses) |b| {
         if (ss.in_check and b.i > 2) break;
         const ssi: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @as(usize, b.i) * @sizeOf(SearchStack));
@@ -152,12 +152,12 @@ pub fn updateAllStats(
     pos_ptr: *const Position,
     ss_ptr: *const SearchStack,
     best_move: u16,
-    prev_sq: c_int,
+    prev_sq: i32,
     quiets: [*]const u16,
     n_quiets: usize,
     captures: [*]const u16,
     n_captures: usize,
-    depth: c_int,
+    depth: i32,
     tt_move: u16,
     pv_node: u8,
 ) void {
@@ -182,7 +182,7 @@ pub fn updateAllStats(
 
     if (!captureStage(pos, best_move)) {
         updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, best_move, @divTrunc(bonus * 824, 1024));
-        var actual_malus: c_int = @divTrunc(malus * 1136, 1024);
+        var actual_malus: i32 = @divTrunc(malus * 1136, 1024);
         var i: usize = 0;
         while (i < n_quiets) : (i += 1) {
             actual_malus = @divTrunc(actual_malus * 956, 1024);
@@ -196,8 +196,8 @@ pub fn updateAllStats(
         statsUpdate(ce, @divTrunc(bonus * 1366, 1024), 10692);
     }
 
-    if (prev_sq != @as(c_int, sq_none) and
-        ss_prev.move_count == 1 + @as(c_int, @intFromBool(ss_prev.tt_hit)) and
+    if (prev_sq != @as(i32, sq_none) and
+        ss_prev.move_count == 1 + @as(i32, @intFromBool(ss_prev.tt_hit)) and
         pos.st.captured_piece == 0)
     {
         const psq: u8 = @intCast(prev_sq);
@@ -215,7 +215,7 @@ pub fn updateAllStats(
     }
 }
 
-const correction_history_limit: c_int = 1024;
+const correction_history_limit: i32 = 1024;
 
 // update_correction_history: nudge the four shared correction tables plus the
 // (ss-2)/(ss-4) continuation correction entries toward the search/static-eval
@@ -226,7 +226,7 @@ pub fn updateCorrectionHistory(
     worker_ptr: *WorkerLayout,
     pos_ptr: *const Position,
     ss_ptr: *const SearchStack,
-    bonus: c_int,
+    bonus: i32,
 ) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const pos = pos_ptr;

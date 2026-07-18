@@ -34,14 +34,14 @@ pub inline fn moveIsOk(m: u16) bool {
 }
 
 // Update by gravity toward [-D, D].
-pub inline fn statsUpdate(entry: *i16, bonus: c_int, comptime d: c_int) void {
+pub inline fn statsUpdate(entry: *i16, bonus: i32, comptime d: i32) void {
     const clamped = @max(-d, @min(d, bonus));
-    const val: c_int = entry.*;
+    const val: i32 = entry.*;
     const abs_clamped = if (clamped < 0) -clamped else clamped;
     entry.* = @intCast(val + clamped - @divTrunc(val * abs_clamped, d));
 }
 
-pub inline fn captVal(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) c_int {
+pub inline fn captVal(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) i32 {
     return w.capture_history[@as(usize, pc) * 512 + @as(usize, to) * 8 + captured_type];
 }
 pub inline fn captEntry(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) *i16 {

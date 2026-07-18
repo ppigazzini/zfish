@@ -1,24 +1,24 @@
 const std = @import("std");
 
 pub const EvalInput = struct {
-    psqt: c_int,
-    positional: c_int,
-    optimism: c_int,
-    material: c_int,
-    rule50_count: c_int,
-    value_tb_loss_in_max_ply: c_int,
-    value_tb_win_in_max_ply: c_int,
+    psqt: i32,
+    positional: i32,
+    optimism: i32,
+    material: i32,
+    rule50_count: i32,
+    value_tb_loss_in_max_ply: i32,
+    value_tb_win_in_max_ply: i32,
 };
 
 pub const EvalTraceInput = struct {
     inner_trace_ptr: [*]const u8,
     inner_trace_len: usize,
-    nnue_internal_value: c_int,
-    nnue_white_cp: c_int,
-    final_white_cp: c_int,
+    nnue_internal_value: i32,
+    nnue_white_cp: i32,
+    final_white_cp: i32,
 };
 
-pub fn computeValue(input: EvalInput) c_int {
+pub fn computeValue(input: EvalInput) i32 {
     var nnue = @as(i64, input.psqt) + @as(i64, input.positional); // upstream 6088838: yeet psqt weights
 
     const nnue_complexity = absInt(@as(i64, input.psqt) - @as(i64, input.positional));
@@ -81,7 +81,7 @@ fn formatTraceAlloc(input: EvalTraceInput) ![*:0]u8 {
 fn appendIntLine(
     buffer: *std.ArrayList(u8),
     prefix: []const u8,
-    value: c_int,
+    value: i32,
     suffix: []const u8,
 ) !void {
     // Emit `showpos` + the value, UNPADDED. This is not C's `%+15d`: upstream is C++
@@ -131,7 +131,7 @@ fn absInt(value: i64) i64 {
 
 // --- tests --------------------------------------------------------------
 test "computeValue: zeros -> 0; equal psqt/positional passes through" {
-    try std.testing.expectEqual(@as(c_int, 0), computeValue(.{
+    try std.testing.expectEqual(@as(i32, 0), computeValue(.{
         .psqt = 0,
         .positional = 0,
         .optimism = 0,
@@ -141,7 +141,7 @@ test "computeValue: zeros -> 0; equal psqt/positional passes through" {
         .value_tb_win_in_max_ply = 30000,
     }));
     // psqt == positional -> zero complexity, zero optimism -> value == psqt+positional
-    try std.testing.expectEqual(@as(c_int, 200), computeValue(.{
+    try std.testing.expectEqual(@as(i32, 200), computeValue(.{
         .psqt = 100,
         .positional = 100,
         .optimism = 0,
@@ -153,7 +153,7 @@ test "computeValue: zeros -> 0; equal psqt/positional passes through" {
 }
 
 test "computeValue: clamps to the tb bounds" {
-    try std.testing.expectEqual(@as(c_int, 30000 - 1), computeValue(.{
+    try std.testing.expectEqual(@as(i32, 30000 - 1), computeValue(.{
         .psqt = 100000,
         .positional = 100000,
         .optimism = 0,

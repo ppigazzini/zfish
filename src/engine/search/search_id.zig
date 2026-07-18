@@ -22,9 +22,9 @@ const ZfishIdState = search_ctx.ZfishIdState;
 const RootMove = worker_layout.RootMove;
 
 // Define the value bounds the ID loop's mate/TB checks read (search.h constants).
-const q_value_inf: c_int = 32001;
-const q_value_mate_in_max: c_int = 31754; // q_value_mate(32000) - q_max_ply(246)
-const q_value_tb_win: c_int = 31507; // q_value_tb(31753) - q_max_ply(246)
+const q_value_inf: i32 = 32001;
+const q_value_mate_in_max: i32 = 31754; // q_value_mate(32000) - q_max_ply(246)
+const q_value_tb_win: i32 = 31507; // q_value_tb(31753) - q_max_ply(246)
 pub const id_nodes_limit_output: u64 = 10_000_000;
 const workerThreadsPool = search_ctx.workerThreadsPool;
 const workerManager = search_ctx.workerManager;
@@ -75,14 +75,14 @@ pub fn ssSetPrevScores(wl: *const worker_layout.WorkerLayout, best: *const worke
     sm.best_previous_average_score = rmv.average_score;
 }
 
-pub fn optInt(name: []const u8) c_int {
+pub fn optInt(name: []const u8) i32 {
     return option_port.intByName(name);
 }
 
 // Read the per-search context flags off the worker graph + the OptionsModel.
 pub fn ssContext(wl: *const worker_layout.WorkerLayout, out: *SsCtx) void {
     const limit_strength = optInt("UCI_LimitStrength") != 0;
-    const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
+    const uci_elo: i32 = if (limit_strength) optInt("UCI_Elo") else 0;
     const skill_level = optInt("Skill Level");
     const skill_enabled = uci_elo != 0 or skill_level < 20;
 
@@ -140,7 +140,7 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
 // else the raw Skill Level option.
 pub fn skillLevel() f64 {
     const limit_strength = optInt("UCI_LimitStrength") != 0;
-    const uci_elo: c_int = if (limit_strength) optInt("UCI_Elo") else 0;
+    const uci_elo: i32 = if (limit_strength) optInt("UCI_Elo") else 0;
     if (uci_elo != 0) {
         const e = @as(f64, @floatFromInt(uci_elo - 1320)) / @as(f64, 3190 - 1320);
         const raw = (((37.2473 * e - 40.8525) * e + 22.2943) * e - 0.311438);
@@ -240,13 +240,13 @@ pub fn ssNpmsecAdvance(wl: *const worker_layout.WorkerLayout) void {
 // (iterativeDeepening, which stays in search_driver because it calls the node
 // recursion) uses them via search_driver aliases.
 
-pub inline fn idIsLoss(v: c_int) bool {
+pub inline fn idIsLoss(v: i32) bool {
     return v <= -q_value_tb_win;
 }
-pub inline fn idIsMate(v: c_int) bool {
+pub inline fn idIsMate(v: i32) bool {
     return v >= q_value_mate_in_max;
 }
-pub inline fn idIsMated(v: c_int) bool {
+pub inline fn idIsMated(v: i32) bool {
     return v <= -q_value_mate_in_max;
 }
 // Order RootMoves descending by (score, previousScore).
@@ -284,7 +284,7 @@ pub inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
 
 // Handicap strength (skill). Treat 0 as the none-move. Match misc.h's
 // xorshift* for the PRNG, seeded once from now() on first use (non-deterministic by design).
-const skill_pawn_value: c_int = 208;
+const skill_pawn_value: i32 = 208;
 var skill_rng_state: u64 = 0;
 fn skillRand64() u64 {
     if (skill_rng_state == 0) skill_rng_state = @bitCast(time_source.now());
@@ -295,24 +295,24 @@ fn skillRand64() u64 {
     skill_rng_state = s;
     return s *% 2685821657736338717;
 }
-pub inline fn skillTimeToPick(level: f64, depth: c_int) bool {
-    return depth == 1 + @as(c_int, @intFromFloat(level));
+pub inline fn skillTimeToPick(level: f64, depth: i32) bool {
+    return depth == 1 + @as(i32, @intFromFloat(level));
 }
 // Pick the skill best move by a statistical rule over the (descending-sorted) rootMoves.
 pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
     const top_score = id.root_moves[0].score;
     const span = top_score - id.root_moves[multi_pv - 1].score;
-    const delta: c_int = if (span < skill_pawn_value) span else skill_pawn_value;
+    const delta: i32 = if (span < skill_pawn_value) span else skill_pawn_value;
     const weakness: f64 = 120.0 - 2.0 * id.skill_level;
     const modw: u32 = @intFromFloat(weakness);
-    var max_score: c_int = -q_value_inf;
+    var max_score: i32 = -q_value_inf;
     var best: u16 = 0;
     var i: usize = 0;
     while (i < multi_pv) : (i += 1) {
         const r: u32 = @truncate(skillRand64());
         const term1 = weakness * @as(f64, @floatFromInt(top_score - id.root_moves[i].score));
-        const term2: c_int = delta * @as(c_int, @intCast(r % modw));
-        const push = @divTrunc(@as(c_int, @intFromFloat(term1 + @as(f64, @floatFromInt(term2)))), 128);
+        const term2: i32 = delta * @as(i32, @intCast(r % modw));
+        const push = @divTrunc(@as(i32, @intFromFloat(term1 + @as(f64, @floatFromInt(term2)))), 128);
         if (id.root_moves[i].score + push >= max_score) {
             max_score = id.root_moves[i].score + push;
             best = id.root_moves[i].pv.moves[0];

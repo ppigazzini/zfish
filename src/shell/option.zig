@@ -10,27 +10,27 @@ fn ensureModel() *OptionsModel {
     return &(global_model.?);
 }
 
-pub fn addOption(name: []const u8, kind: u8, default: []const u8, min: c_int, max: c_int) usize {
+pub fn addOption(name: []const u8, kind: u8, default: []const u8, min: i32, max: i32) usize {
     const model = ensureModel();
     const resolved: OptionKind = @enumFromInt(if (kind > 3) @as(u8, 0) else kind);
     return model.add(name, resolved, default, min, max, callbackKindForName(name)) catch
         std.math.maxInt(usize);
 }
 
-pub fn intByIndex(idx: usize) c_int {
+pub fn intByIndex(idx: usize) i32 {
     return ensureModel().intByIndex(idx);
 }
 
 // Read an option's integer value by name (0 if absent). Serve callers
 // that carry an option name (e.g. the search driver's MultiPV / UCI_ShowWDL).
 /// Read an integer option by name from the option model.
-pub fn intByName(name: []const u8) c_int {
+pub fn intByName(name: []const u8) i32 {
     return ensureModel().getInt(name);
 }
-pub fn syzygyProbeDepth() c_int {
+pub fn syzygyProbeDepth() i32 {
     return intByName("SyzygyProbeDepth");
 }
-pub fn syzygyProbeLimit() c_int {
+pub fn syzygyProbeLimit() i32 {
     return intByName("SyzygyProbeLimit");
 }
 pub fn syzygy50MoveRule() bool {
