@@ -426,9 +426,12 @@ test "readLebSection rejects a count that outruns its own section" {
 }
 
 test "parseFeatureTransformer rejects a blob shorter than its component hash" {
-    var dst = [_]u8{0} ** 64;
+    // Size these with @splat, not the `**` repeat operator: Zig 0.17 no longer accepts `**`,
+    // and @splat compiles on both the pinned toolchain and master.
+    var dst: [64]u8 = @splat(0);
+    const filler: [3]u8 = @splat(0xAB);
     for ([_]usize{ 0, 1, 3 }) |n| {
-        const short = ([_]u8{0xAB} ** 3)[0..n];
+        const short = filler[0..n];
         try testing.expectEqual(@as(?usize, null), parseFeatureTransformer(short, &dst));
     }
 }
