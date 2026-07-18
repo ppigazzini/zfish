@@ -79,23 +79,29 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
     p += 1;
     d.lowest_sym = buf[p..].ptr; // Sym[] in the file
 
+    // Both symbol lengths are raw file bytes. Reject an inverted or oversized pair before the
+    // arithmetic below: max < min underflows the u8 subtraction, and a length at 64 or beyond
+    // drives the right-pad shift negative. Neither is representable, so a corrupt table must be
+    // refused here rather than trapping (ReleaseSafe) or shifting by garbage (ReleaseFast).
+    if (d.min_sym_len > d.max_sym_len or d.max_sym_len >= 64) return error.CorruptTable;
+
     const base64_size: usize = @as(usize, d.max_sym_len - d.min_sym_len) + 1;
     d.base64 = try gpa.alloc(u64, base64_size);
 
     // Build canonical Huffman: base64[i] >= base64[i+1] (see SF). base64[last] starts at 0.
     d.base64[base64_size - 1] = 0;
-    var i: i32 = @as(i32, @intCast(base64_size)) - 2;
-    while (i >= 0) : (i -= 1) {
-        const ui: usize = @intCast(i);
-        d.base64[ui] = (d.base64[ui + 1] +
-            @as(u64, rdSym(d.lowest_sym.? + ui * 2)) -
-            @as(u64, rdSym(d.lowest_sym.? + (ui + 1) * 2))) / 2;
+    var i = base64_size - 1;
+    while (i > 0) {
+        i -= 1;
+        d.base64[i] = (d.base64[i + 1] +
+            @as(u64, rdSym(d.lowest_sym.? + i * 2)) -
+            @as(u64, rdSym(d.lowest_sym.? + (i + 1) * 2))) / 2;
     }
-    i = 0;
-    while (i < @as(i32, @intCast(base64_size))) : (i += 1) {
-        const ui: usize = @intCast(i);
-        const shift: u6 = @intCast(64 - i - @as(i32, d.min_sym_len));
-        d.base64[ui] <<= shift; // right-pad to 64 bits
+    // Right-pad to 64 bits. base64_size <= max_sym_len - min_sym_len + 1 and max_sym_len < 64,
+    // so 64 - k - min_sym_len stays in 1..64 and the shift width is in range.
+    for (d.base64, 0..) |*value, k| {
+        const shift: u6 = @intCast(64 - k - d.min_sym_len);
+        value.* <<= shift;
     }
 
     p += base64_size * 2; // sizeof(Sym)
@@ -187,4 +193,22 @@ test "decompressPairs SingleValue returns the stored value" {
     d.min_sym_len = 3; // e.g. WDL value stored directly
     try std.testing.expectEqual(@as(i32, 3), decompressPairs(&d, 0));
     try std.testing.expectEqual(@as(i32, 3), decompressPairs(&d, 12345));
+}
+
+test "setSizes refuses an inverted or oversized symbol-length pair" {
+    const a = std.testing.allocator;
+    // [flags][sizeof_block log][span log][padding][blocks_num u32][max_sym_len][min_sym_len]
+    var buf = [_]u8{ 0, 6, 6, 0, 1, 0, 0, 0, 3, 9 };
+
+    // max < min underflows the u8 subtraction that sizes base64.
+    var d = PairsData{};
+    var pos: usize = 0;
+    try std.testing.expectError(error.CorruptTable, setSizes(a, &d, &buf, &pos));
+
+    // A length at 64 or beyond drives the right-pad shift negative.
+    buf[8] = 70;
+    buf[9] = 64;
+    d = PairsData{};
+    pos = 0;
+    try std.testing.expectError(error.CorruptTable, setSizes(a, &d, &buf, &pos));
 }
