@@ -38,7 +38,9 @@ pub fn checkTime(ctx: *const QCtx) void {
     else
         time_source.now() - ts.tm_start_time;
 
-    if (ts.ponder.?.* != 0) return;
+    // Load atomically: the UCI thread clears this on ponderhit, and missing that store leaves
+    // checkTime permanently early-returning, so no time limit is ever enforced.
+    if (@atomicLoad(u8, ts.ponder.?, .monotonic) != 0) return;
 
     const ns: u64 = pool_nodes;
     if ((ts.use_time_management != 0 and (elapsed > ts.tm_maximum_time or ts.stop_on_ponderhit.?.* != 0)) or
