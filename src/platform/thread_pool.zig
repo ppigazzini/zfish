@@ -122,6 +122,14 @@ pub const Pool = struct {
             self.allocator.free(buf);
         }
         tp.threads = &.{};
+
+        // Free the NUMA bound-node buffer here too. boundNodesAssign is the only other free
+        // site and teardown never calls it, so without this the buffer leaks twice over: once
+        // per reconfigure (set() calls clear() and then drops the slice) and once for good at
+        // quit. Only the custom-affinity NumaPolicy path allocates it, which is why CI's
+        // single-node valgrind lane never sees it.
+        if (tp.bound.len != 0) self.allocator.free(tp.bound);
+        tp.bound = &.{};
     }
 
     pub fn numThreads(self: *const Pool) usize {
