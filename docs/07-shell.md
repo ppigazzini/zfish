@@ -16,6 +16,7 @@ the engine object that owns the run. It is the top zone — it may import `engin
 | `thread_construct.zig` | the `verify_thread_graph` hook — asserts a freshly built `ThreadPool`/`Thread` graph against the pinned model |
 | **UCI** | |
 | `uci.zig` | the command loop and dispatch: read a line, classify the token, call the engine |
+| `uci_input.zig` | the persistent stdin reader: one command line per call, stitched across buffer refills so a long `position ... moves` line is not truncated |
 | `uci_parse.zig` | the `go` / `position` / `setoption` token parsers and their `Parsed*` results |
 | `uci_format.zig` | the live output strings: `info string`, help, unknown-command, critical-error |
 | `uci_strings.zig` | the shared C-string alloc / format / trim primitives |
