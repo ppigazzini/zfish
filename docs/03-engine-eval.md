@@ -17,7 +17,6 @@ for the same position.
 | `nnue_parse.zig` | the `.nnue` byte format: signed LEB128 (`COMPRESSED_LEB128` sections), the feature-transformer blob layout/offsets, `weightIndexScrambled`, and the `write_parameters` serializer |
 | `nnue_weight_storage.zig` | the weight arenas (`ftStorage`, `layerStorage`) and the loaded-net identity (`nnCurrent`, `nnDescription`) |
 | `nnue_hash.zig` | the net-identity hashes: `hashBytes` (MurmurHash2-64A), the feature-transformer / architecture / network hash values, and the content hashes |
-| `network_holder.zig` | the per-NUMA replica holder (`NetworkHolder`) and the replica-count reader |
 | **feature transformer** | |
 | `nnue_feature.zig` | feature indexing for both feature sets: `halfMakeIndex`, `fullMakeIndex`, the changed/active index lists, and the refresh predicates |
 | `nnue_feature_bb.zig` | the bitboard/attack math and comptime index tables `nnue_feature.zig` builds on |
