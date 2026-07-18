@@ -57,7 +57,7 @@ pub fn setCastlingRight(pos_ptr: *Position, c: u8, rfrom: u8) void {
         ~(sqBb(kfrom) | sqBb(rfrom));
 }
 
-pub fn updateSliderBlockers(pos_ptr: *const Position, c: u8) void {
+pub fn updateSliderBlockers(pos_ptr: *Position, c: u8) void {
     const pos = pos_ptr;
     const ksq = kingSquare(pos, c);
     const nc = c ^ 1;
@@ -83,7 +83,7 @@ pub fn updateSliderBlockers(pos_ptr: *const Position, c: u8) void {
     }
 }
 
-pub fn setState(pos_ptr: *const Position) void {
+pub fn setState(pos_ptr: *Position) void {
     const psq: [*]const u64 = &zobrist.zob_psq;
     const enpassant: [*]const u64 = &zobrist.zob_enpassant;
     const castling: [*]const u64 = &zobrist.zob_castling;
@@ -130,7 +130,7 @@ pub fn setState(pos_ptr: *const Position) void {
     st.material_key = computeMaterialKey(&pos.piece_count, 16);
 }
 
-pub fn setCheckInfo(pos_ptr: *const Position) void {
+pub fn setCheckInfo(pos_ptr: *Position) void {
     const pos = pos_ptr;
     updateSliderBlockers(pos_ptr, color_white);
     updateSliderBlockers(pos_ptr, color_black);
