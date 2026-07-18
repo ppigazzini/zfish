@@ -54,13 +54,19 @@ pub fn searchIdCollectBmc(wl: *const worker_layout.WorkerLayout) f64 {
 }
 
 pub fn ssSetStop(wl: *const worker_layout.WorkerLayout) void {
-    workerThreadsPool(wl).stop = 1;
+    @atomicStore(u8, &workerThreadsPool(wl).stop, 1, .monotonic);
 }
 
 // !threads.stop && (manager->ponder || limits.infinite).
+//
+// Load both flags atomically. The caller spins on this in an EMPTY loop, so a plain load is
+// loop-invariant and LLVM hoists it out and emits `jmp .` -- a real, shipped deadlock on any
+// search that leaves the ID loop on its DEPTH bound with stop still clear (`go ponder depth N`
+// then ponderhit, or `go depth N infinite` then stop). Plain `go infinite` masks it, because
+// there the loop exits with stop already set and the busywait is never entered.
 pub fn ssShouldBusywait(wl: *const worker_layout.WorkerLayout) u8 {
-    if (workerThreadsPool(wl).stop != 0) return 0;
-    const ponder = workerManager(wl).?.ponder;
+    if (@atomicLoad(u8, &workerThreadsPool(wl).stop, .monotonic) != 0) return 0;
+    const ponder = @atomicLoad(u8, &workerManager(wl).?.ponder, .monotonic);
     const infinite = wl.limits.infinite;
     return if (ponder != 0 or infinite != 0) 1 else 0;
 }
