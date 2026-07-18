@@ -90,7 +90,7 @@ const white_ooo: u8 = 2;
 const black_oo: u8 = 4;
 const black_ooo: u8 = 8;
 const black: u8 = 1;
-const sq_none: u8 = 64;
+const sq_none = board_core.sq_none;
 
 // Keep StateInfo/Position and their POD scratch members in the position_types leaf
 // module so worker_layout can embed typed root_pos/root_state without a
@@ -122,7 +122,7 @@ comptime {
     std.debug.assert(@sizeOf(Position) <= worker_layout.position_size);
 }
 
-const sq_none_u8: u8 = 64;
+const sq_none_u8 = board_core.sq_none;
 
 // Build the Zobrist + cuckoo tables in initRuntime with an xorshift64* PRNG seeded
 // with 1070372.

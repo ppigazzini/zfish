@@ -29,7 +29,7 @@ const black_ooo: u8 = 8;
 const white_castling: u8 = white_oo | white_ooo;
 const black_castling: u8 = black_oo | black_ooo;
 
-const sq_none: u8 = 64;
+const sq_none = board_core.sq_none;
 
 const north: i8 = 8;
 const east: i8 = 1;

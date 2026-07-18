@@ -65,7 +65,7 @@ const legal = legality.legal;
 const seeGe = legality.seeGe;
 const pseudoLegal = legality.pseudoLegal;
 const givesCheck = legality.givesCheck;
-const sq_none: u8 = 64;
+const sq_none = board_core.sq_none;
 comptime {
     // Assert the opaque byte regions worker_layout.WorkerLayout uses for these
     // position-module sub-blocks match the real struct sizes so worker_off stays correct.

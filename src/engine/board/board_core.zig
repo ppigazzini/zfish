@@ -43,6 +43,12 @@ pub inline fn sqBb(s: u8) u64 {
 pub inline fn lsbBb(bb: u64) u64 {
     return bb & (~bb +% 1);
 }
+// Mark "no square" in-band, as upstream does: 64 is one past the last real square, so it fits
+// the u8 the board and StateInfo already store and needs no widening. Single-source it -- every
+// `1 << square` shift is guarded against exactly this value, and a second definition drifting
+// would silently unguard one of them.
+pub const sq_none: u8 = 64;
+
 pub inline fn moveFrom(m: u16) u8 {
     return @intCast((m >> 6) & 0x3F);
 }

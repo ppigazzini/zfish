@@ -19,7 +19,7 @@ const position_types = @import("position_types");
 const Position = position_types.Position;
 const StateInfo = position_types.StateInfo;
 
-const sq_none_u8: u8 = 64;
+const sq_none_u8 = board_core.sq_none;
 const piece_to_char = " PNBRQK  pnbrqk";
 
 const pawn_pt = board_core.pawn_pt;

@@ -34,7 +34,7 @@ const moveFrom = board_core.moveFrom;
 const moveTo = board_core.moveTo;
 const pieceTypeOn = board_core.pieceTypeOn;
 
-const sq_none: u8 = 64;
+const sq_none = board_core.sq_none;
 
 pub fn updateQuietHistoriesWorker(
     worker_ptr: *WorkerLayout,

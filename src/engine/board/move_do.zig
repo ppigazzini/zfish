@@ -22,7 +22,7 @@ const StateInfo = position_types.StateInfo;
 const DirtyPiece = position_types.DirtyPiece;
 const DirtyThreats = position_types.DirtyThreats;
 
-const sq_none_u8: u8 = 64;
+const sq_none_u8 = board_core.sq_none;
 const max_u64: u64 = 0xFFFFFFFFFFFFFFFF;
 
 const pawn_pt = board_core.pawn_pt;
