@@ -310,6 +310,41 @@ for the other local scripts (`nps_ab.sh`, `perf_callgrind.sh`,
 `perf_fingerprint.py`) and for the local-only `tb-cursed` gate, which needs 5-man
 tables that are never fetched in CI.
 
+### The C backend as a correctness oracle
+
+`tools/c_backend_check.sh` builds the engine through Zig's C backend
+(`zig build -Demit-c=true -Dlto=false`), compiles the emitted C back with `zig cc`, and
+re-checks the bench anchor. It takes about 80 seconds.
+
+It exists because Zig leaves the in-memory layout of `@Vector` **target-defined**. Code that
+depends on a particular representation is correct only by the grace of the backend it was
+compiled with — and every other gate here runs through LLVM, so a wrong assumption is
+invisible to all of them. The C backend lowers those constructs differently, which makes it
+the one cheap way to expose the class from outside.
+
+It has already caught one. The feature transformer built its non-zero-chunk mask with
+`@bitCast(@Vector(N, bool))` → `uN`, a movemask that is only correct when bool vectors are
+bit-packed. LLVM packs them (`@sizeOf(@Vector(16, bool)) == 2`); the C backend gives one byte
+per lane (`sizeof == 16`). Through LLVM the engine benched the anchor and every gate passed.
+Through C it benched 3062314, with the startpos eval one centipawn out and every positional
+bucket wrong while psqt stayed exact — a wrong number, not a crash, which is why nothing
+downstream noticed.
+
+A mismatch here is a divergence between two lowerings of one source, so read it as **our**
+bug first — a reliance on something the language does not guarantee — not a backend bug.
+`eval` on a fixed position narrows it in one command: psqt correct with positional wrong
+points at the transform or the affine.
+
+Two frictions are inherent, not defects. The C backend cannot use LLD, so `-Dlto=false` is
+required. And it emits LLVM target intrinsics as extern symbols whose asm name *is* the
+intrinsic, which clang cannot select; the script strips that mangling and supplies
+`immintrin` implementations, and stops with a named error if it meets one it has no
+implementation for.
+
+**It is not a performance path.** The emitted C carries no vector types — the backend renders
+`@Vector` as a struct of scalars — so the result runs about 1.9x the instructions of the LLVM
+build. Use it to answer "is this correct", never "is this fast".
+
 ### Measuring against upstream: the runnable process
 
 Every step below exists because skipping it produced a wrong number. Run them in order;
