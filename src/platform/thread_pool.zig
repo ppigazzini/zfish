@@ -1,10 +1,8 @@
 // Thread pool.
 //
-// Own the search threads and write the ThreadPool's observable 56-byte footprint
-// so the accessors keep working unchanged:
-//   stop@0 (atomic_bool), increaseDepth@1 (atomic_bool),
-//   threads slice {ptr@16, len@24}  (of Thread* == SearchThread* addresses),
-//   boundThreadToNumaNode slice {ptr@32, len@40}  (per-thread NUMA node).
+// Own the search threads. The footprint is worker_layout.ThreadPool, whose size is asserted
+// there (worker_layout.thread_pool_size) rather than restated here -- an earlier copy of the
+// numbers in this comment drifted to 56 bytes and omitted setup_states entirely.
 // num_threads == threads.len; threads[i] == the i-th slice element (a Thread* addr).
 //
 // LIFECYCLE NOTE: route teardown through the pool's clear() path -- the threads-slice
@@ -36,7 +34,7 @@ inline fn poolOf(slot: [*]u8) *ThreadPool {
 pub const ThreadBuilder = struct {
     ctx: ?*anyopaque = null,
     // Pass thread opaque so the worker-builder can write worker@8 directly.
-    build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) void,
+    build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) error{OutOfMemory}!void,
 };
 
 // Represent the thread pool; `slot` points at the 64-byte ThreadPool footprint
@@ -86,7 +84,7 @@ pub const Pool = struct {
             errdefer self.allocator.destroy(thread);
             thread.* = .{};
             try thread.spawn(self.allocator, idx);
-            builder.build(builder.ctx, idx, @ptrCast(thread)); // attach the Worker (writes worker@8)
+            try builder.build(builder.ctx, idx, @ptrCast(thread)); // attach the Worker (writes worker@8)
             slotptr.* = @intFromPtr(thread);
             built += 1;
         }
@@ -203,7 +201,7 @@ const testing = std.testing;
 // Mock builder: count Worker attachments, leave worker null (no graph here).
 const MockBuild = struct {
     attached: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-    fn build(ctx: ?*anyopaque, idx: usize, thread_ptr: *anyopaque) void {
+    fn build(ctx: ?*anyopaque, idx: usize, thread_ptr: *anyopaque) error{OutOfMemory}!void {
         _ = idx;
         const self: *MockBuild = @ptrCast(@alignCast(ctx.?));
         _ = self.attached.fetchAdd(1, .monotonic);

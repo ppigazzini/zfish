@@ -21,8 +21,20 @@ pub const ThreadSummary = struct {
     root_depth: i32,
 };
 
+// Write a neutral record for a thread with no Worker rather than leaving the caller's slot
+// untouched: the slot would stay `undefined` and pickBestThread reads .score/.root_depth out
+// of it, making best-thread selection depend on stack garbage.
 fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
-    const w = worker_layout.Worker.fromThread(thread) orelse return;
+    const w = worker_layout.Worker.fromThread(thread) orelse {
+        out.* = .{
+            .pv0_raw = 0,
+            .score_is_bound = 1,
+            .pv_has_more_than_two = 0,
+            .score = value_none,
+            .root_depth = 0,
+        };
+        return;
+    };
     const rmv = w.rootMovesFirst();
     out.pv0_raw = rmv.pv.moves[0];
     out.score_is_bound = @intFromBool(rmv.score_lowerbound or rmv.score_upperbound);
@@ -31,10 +43,10 @@ fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
     out.root_depth = w.rootDepth();
 }
 
-fn voteForMove(summaries: [*]const ThreadSummary, count: usize, move_raw: u16, min_score: i32) i32 {
+fn voteForMove(summaries: []const ThreadSummary, move_raw: u16, min_score: i32) i32 {
     var vote: i32 = 0;
     var index: usize = 0;
-    while (index < count) : (index += 1) {
+    while (index < summaries.len) : (index += 1) {
         if (summaries[index].pv0_raw == move_raw)
             vote += threadVotingValue(summaries[index], min_score);
     }
@@ -61,22 +73,22 @@ fn absInt(value: i32) i32 {
     return if (value < 0) -value else value;
 }
 
-fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
+fn pickBestThread(summaries: []const ThreadSummary) usize {
     var best_index: usize = 0;
     var min_score: i32 = value_none;
 
     var index: usize = 0;
-    while (index < count) : (index += 1) {
+    while (index < summaries.len) : (index += 1) {
         if (summaries[index].score < min_score)
             min_score = summaries[index].score;
     }
 
     index = 0;
-    while (index < count) : (index += 1) {
+    while (index < summaries.len) : (index += 1) {
         const best = summaries[best_index];
         const current = summaries[index];
-        const best_vote = voteForMove(summaries, count, best.pv0_raw, min_score);
-        const current_vote = voteForMove(summaries, count, current.pv0_raw, min_score);
+        const best_vote = voteForMove(summaries, best.pv0_raw, min_score);
+        const current_vote = voteForMove(summaries, current.pv0_raw, min_score);
         const best_decisive = isDecisiveBest(best);
         const current_decisive = isDecisiveBest(current);
         const better_voting_value =
@@ -101,14 +113,18 @@ fn pickBestThread(summaries: [*]const ThreadSummary, count: usize) usize {
 pub fn bestThreadIndex(pool: *worker_layout.ThreadPool) usize {
     const thread_count = pool.numThreads();
     if (thread_count == 0) return 0;
-    if (thread_count > max_thread_summaries) @panic("thread summary buffer too small");
 
+    // Vote over the threads that fit the fixed buffer. The Threads option advertises
+    // @max(1024, 4 * hardwareConcurrency()), so a host with more than 256 logical CPUs can
+    // legally exceed this bound; aborting mid-search on a value the engine itself accepted is
+    // the wrong answer, and the vote is a heuristic that a subset still answers.
+    const voting = @min(thread_count, max_thread_summaries);
     var summaries: [max_thread_summaries]ThreadSummary = undefined;
     var index: usize = 0;
-    while (index < thread_count) : (index += 1) {
+    while (index < voting) : (index += 1) {
         fillThreadSummary(pool.threadTyped(index), &summaries[index]);
     }
-    return pickBestThread(&summaries, thread_count);
+    return pickBestThread(summaries[0..voting]);
 }
 
 // Return the worker of the vote-winning thread -- the value the search driver picks as
