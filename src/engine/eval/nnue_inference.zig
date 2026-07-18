@@ -41,11 +41,11 @@ pub const TraceOutput = struct {
 // -> fc_2 (affine 128->1), plus the fwdOut skip term. Bit-exact with the
 // SSSE3 integer path. Weights are int8 in the SSSE3-scrambled layout;
 // biases int32 linear. WeightScaleBits=6.
-fn layerBiases(bucket: usize, idx: c_int) [*]const i32 {
-    return @ptrCast(@alignCast(layerPtr(bucket, idx, 0) orelse unreachable));
+fn layerBiases(bucket: usize, idx: usize) [*]const i32 {
+    return @ptrCast(@alignCast(layerPtr(bucket, idx, .biases) orelse unreachable));
 }
-fn layerWeights(bucket: usize, idx: c_int) [*]const i8 {
-    return @ptrCast(@alignCast(layerPtr(bucket, idx, 1) orelse unreachable));
+fn layerWeights(bucket: usize, idx: usize) [*]const i8 {
+    return @ptrCast(@alignCast(layerPtr(bucket, idx, .weights) orelse unreachable));
 }
 
 /// Compute upstream's SqrClippedReLU: min(127, (x*x) >> shift), over 32 outputs.

@@ -67,11 +67,11 @@ fn networkEmbeddedBytes() ByteView {
 // sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,128}.
 const layer_biases_bytes = [3]usize{ 128, 128, 4 };
 const layer_weights_bytes = [3]usize{ 32768, 2048, 128 };
-fn layerBiasesBytes(idx: c_int) usize {
-    return layer_biases_bytes[@intCast(idx)];
+fn layerBiasesBytes(idx: usize) usize {
+    return layer_biases_bytes[idx];
 }
-fn layerWeightsBytes(idx: c_int) usize {
-    return layer_weights_bytes[@intCast(idx)];
+fn layerWeightsBytes(idx: usize) usize {
+    return layer_weights_bytes[idx];
 }
 
 pub fn load(
@@ -240,13 +240,11 @@ fn loadInternal() void {
 fn layerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
     var b: [3][]const u8 = undefined;
     var w: [3][]const u8 = undefined;
-    var idx: c_int = 0;
-    while (idx < 3) : (idx += 1) {
-        const ui: usize = @intCast(idx);
-        const bp: [*]const u8 = @ptrCast(layerPtr(bucket, idx, 0) orelse return null);
-        const wp: [*]const u8 = @ptrCast(layerPtr(bucket, idx, 1) orelse return null);
-        b[ui] = bp[0..layerBiasesBytes(idx)];
-        w[ui] = wp[0..layerWeightsBytes(idx)];
+    for (0..3) |idx| {
+        const bp = layerPtr(bucket, idx, .biases) orelse return null;
+        const wp = layerPtr(bucket, idx, .weights) orelse return null;
+        b[idx] = bp[0..layerBiasesBytes(idx)];
+        w[idx] = wp[0..layerWeightsBytes(idx)];
     }
     return .{ .b = b, .w = w };
 }
@@ -363,8 +361,9 @@ fn loadFt(blob: []const u8) usize {
     const dst_ptr = ftStorage(nnue_parse.ft_total_bytes) orelse
         @panic("feature-transformer storage allocation failed");
     const dst = dst_ptr[0..nnue_parse.ft_total_bytes];
-    return nnue_parse.parseFeatureTransformer(blob, dst) orelse
-        @panic("feature-transformer parse failed");
+    // Report a malformed net as 0 consumed rather than aborting: the file is user input, and
+    // readFeatureTransformer already treats 0 as "reject this net".
+    return nnue_parse.parseFeatureTransformer(blob, dst) orelse 0;
 }
 
 fn readFeatureTransformer(bytes: []const u8, offset: *usize) bool {
@@ -382,17 +381,19 @@ fn readFeatureTransformer(bytes: []const u8, offset: *usize) bool {
 // consumed. The parse is the sole source.
 fn loadLayer(bucket: usize, blob: []const u8) usize {
     var pos: usize = 4; // architecture component hash
-    var idx: c_int = 0;
-    while (idx < 3) : (idx += 1) {
+    // A blob too short to hold the hash cannot be sliced past it; reject rather than trap.
+    if (blob.len < pos) return 0;
+    for (0..3) |idx| {
         const wb = layerWeightsBytes(idx);
         const bb = layerBiasesBytes(idx);
-        const bdst = layerStorage(bucket, idx, 0, bb) orelse
+        const bdst = layerStorage(bucket, idx, .biases, bb) orelse
             @panic("affine-layer storage allocation failed");
-        const wdst = layerStorage(bucket, idx, 1, wb) orelse
+        const wdst = layerStorage(bucket, idx, .weights, wb) orelse
             @panic("affine-layer storage allocation failed");
-        const used = nnue_parse.parseLayer(blob[pos..], bdst[0..bb], wdst[0..wb]) orelse
-            @panic("affine-layer parse failed");
+        // Report a malformed net as 0 consumed; readLayer already treats that as a reject.
+        const used = nnue_parse.parseLayer(blob[pos..], bdst[0..bb], wdst[0..wb]) orelse return 0;
         pos += used;
+        if (pos > blob.len) return 0;
     }
     return pos;
 }

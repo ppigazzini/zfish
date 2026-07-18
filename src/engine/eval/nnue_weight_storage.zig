@@ -74,18 +74,25 @@ var layer_w: [layer_stacks_n][layers_per_stack]?[*]u8 =
 var layer_b: [layer_stacks_n][layers_per_stack]?[*]u8 =
     @splat(.{ null, null, null });
 
-pub fn layerStorage(bucket: usize, idx: c_int, is_weights: c_int, n: usize) ?[*]u8 {
-    if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack or n == 0) return null;
-    const ui: usize = @intCast(idx);
-    const slot = if (is_weights != 0) &layer_w[bucket][ui] else &layer_b[bucket][ui];
+// Name the two arrays an affine layer stores, so a call site reads as `.biases` rather than 0.
+pub const LayerPart = enum { biases, weights };
+
+pub fn layerStorage(bucket: usize, idx: usize, part: LayerPart, n: usize) ?[*]u8 {
+    if (bucket >= layer_stacks_n or idx >= layers_per_stack or n == 0) return null;
+    const slot = switch (part) {
+        .weights => &layer_w[bucket][idx],
+        .biases => &layer_b[bucket][idx],
+    };
     if (slot.* == null) slot.* = @ptrCast(page_alloc.alloc(n) orelse return null);
     return slot.*.?;
 }
 
-pub fn layerPtr(bucket: usize, idx: c_int, is_weights: c_int) ?[*]const u8 {
-    if (bucket >= layer_stacks_n or idx < 0 or idx >= layers_per_stack) return null;
-    const ui: usize = @intCast(idx);
-    return if (is_weights != 0) layer_w[bucket][ui] else layer_b[bucket][ui];
+pub fn layerPtr(bucket: usize, idx: usize, part: LayerPart) ?[*]const u8 {
+    if (bucket >= layer_stacks_n or idx >= layers_per_stack) return null;
+    return switch (part) {
+        .weights => layer_w[bucket][idx],
+        .biases => layer_b[bucket][idx],
+    };
 }
 
 test {
