@@ -200,9 +200,11 @@ handles, reconfigures the pool, sizes the TT from the `Hash` option, and replica
 network. It is the one place a thread-pool OOM or spawn failure is handled; the pool it
 drives is described in [04-multithreading.md](04-multithreading.md).
 
-`engine/graph.zig` states the same object graph as a fully typed `EngineGraph` —
-concrete members, vtable-free and callback-free, with its own `sharedState` and
-`makeManager`. `engine.zig` force-compiles it so its layout asserts are build-verified
+`engine/graph.zig` states the same object graph as an `EngineGraph` — vtable-free and
+callback-free, with its own `sharedState` and `makeManager`. Most slots are concrete
+members owning their types (`numa_context`, `position`, `states`, `threads`, `tt`); three
+— `options`, `network`, `shared_histories` — are still `*anyopaque` handles, so the graph
+is typed but not yet fully typed. `engine.zig` force-compiles it so its layout asserts are build-verified
 rather than dead source; the live path builds its `SharedState` in the driver.
 
 ## Bench
