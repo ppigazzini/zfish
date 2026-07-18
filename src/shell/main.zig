@@ -72,14 +72,18 @@ pub fn main(init: std.process.Init) !void {
     // destruct-in-place then free (defers run LIFO, so destruct precedes free).
     const eng_align = engine_object.alignofEngine();
     const eng_size = engine_object.sizeofEngine();
-    const engine = memory_port.stdAlignedAlloc(eng_align, eng_size) orelse
+    const engine_storage = memory_port.stdAlignedAlloc(eng_align, eng_size) orelse
         return error.OutOfMemory;
-    defer memory_port.stdAlignedFree(engine);
+    defer memory_port.stdAlignedFree(engine_storage);
 
-    engineConstructAt(engine, @intCast(argc), argv.ptr);
+    engineConstructAt(engine_storage, @intCast(argc), argv.ptr);
+    // Cross the erasure once, here: the allocator hands back raw storage, and placement
+    // construction is what makes it an EngineObject. Everything downstream takes the typed
+    // handle, so no later hop has to re-derive it.
+    const engine = engine_object.EngineObject.fromPtr(engine_storage);
     defer freeSideTt(); // free the side tt AFTER the engine destruct (LIFO)
     defer engine_port.freeSharedHistories(); // free the side sharedHistories map (after destruct)
-    defer uciEngineDestructAt(engine);
+    defer uciEngineDestructAt(engine_storage);
 
     uci_port.loopRuntime(engine);
 }
@@ -320,7 +324,7 @@ fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
     worker_layout.Thread.fromPtr(thread).worker = @ptrCast(@alignCast(raw));
 }
 
-pub fn engineInitBody(engine: *anyopaque) void {
+pub fn engineInitBody(engine: *engine_object.EngineObject) void {
     return engine_port.initBody(engine);
 }
 
@@ -341,7 +345,9 @@ fn engineConstructAt(storage: *anyopaque, argc: i32, argv: [*]const [*:0]u8) voi
     if (!engineConstructMembers(storage, argv[0]))
         @panic("engine construct: member allocation failed");
     engineSetCli(storage, argc, argv);
-    engineInitBody(storage);
+    // Members are constructed by here, so the storage IS an EngineObject; hand initBody the
+    // typed handle rather than making it re-derive one.
+    engineInitBody(engine_object.EngineObject.fromPtr(storage));
 }
 fn engineDestructMembers(buf: *anyopaque) void {
     engine_object.destructMembers(buf);

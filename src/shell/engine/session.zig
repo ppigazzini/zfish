@@ -70,11 +70,6 @@ fn freeCString(ptr: [*:0]u8) void {
     std.heap.c_allocator.free(std.mem.span(ptr));
 }
 
-// Cast an engine handle to the container.
-inline fn ne(p: *const anyopaque) *engine_object.EngineObject {
-    return engine_object.EngineObject.fromPtr(@constCast(p));
-}
-
 // Instantiate the ONE concrete SharedState bundle. The driver is a graph
 // root that sees all referent types (nothing imports the shell facade, so this can't
 // be in a cycle); shared_state.zig stays a pure std leaf via the injected comptime
@@ -130,10 +125,7 @@ const default_eval_file_name = network_port.default_eval_file_name;
 const default_skill_lowest_elo: i32 = 1320;
 const default_skill_highest_elo: i32 = 3190;
 
-pub fn initBody(engine_ptr: *anyopaque) void {
-    // Sit at the construction boundary: main hands the engine as a raw buffer; keep
-    // the *anyopaque ABI and cast once here to drive the typed init entries below.
-    const e: *engine_object.EngineObject = ne(engine_ptr);
+pub fn initBody(e: *engine_object.EngineObject) void {
     const max_threads = @max(@as(i32, 1024), 4 * misc_port.hardwareConcurrency());
     const max_hash_mb: i32 = if (@sizeOf(usize) >= 8) 33554432 else 2048;
 
@@ -362,7 +354,7 @@ pub fn setNumaConfigFromOptionEngine(engine_ptr: *engine_object.EngineObject, op
 }
 
 pub fn resizeThreads(
-    numa_context: *const anyopaque,
+    numa_context: *const numa.NumaReplicationContext,
     threads: *worker_layout.ThreadPool,
     tt: *worker_layout.TranspositionTable,
     shared_hists: *search_driver.SharedHistoriesMap,
@@ -379,7 +371,7 @@ pub fn resizeThreads(
 
     try thread_port.reconfigure(
         threads,
-        numa.contextConfig(numa_context),
+        numa_context,
         shared_state,
         update_context,
     );

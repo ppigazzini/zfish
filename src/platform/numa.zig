@@ -66,12 +66,8 @@ pub fn configString() ?[*:0]u8 {
 // option was accepted and then ignored: `system`, `hardware` and `none` all left whatever
 // config the engine started with. setNumaConfig also notifies the replicated objects
 // (replication.zig:68), which the stubs skipped entirely.
-fn mutCtx(numa_context: *anyopaque) *NumaReplicationContext {
-    return @ptrCast(@alignCast(numa_context));
-}
-
-pub fn contextSetSystem(numa_context: *anyopaque) void {
-    const ctx = mutCtx(numa_context);
+pub fn contextSetSystem(numa_context: *NumaReplicationContext) void {
+    const ctx = numa_context;
     const cfg = NumaConfig.fromSystem(std.heap.c_allocator) catch return;
     ctx.setNumaConfig(cfg);
 }
@@ -81,33 +77,25 @@ pub fn contextSetSystem(numa_context: *anyopaque) void {
 // 1/16 on this host where we report 1/1: the remaining gap is topology DISCOVERY
 // (numa.h's from_system reading /sys/devices/system/node), not this wiring. Left explicit
 // rather than silently aliased.
-pub fn contextSetHardware(numa_context: *anyopaque) void {
+pub fn contextSetHardware(numa_context: *NumaReplicationContext) void {
     contextSetSystem(numa_context);
 }
 
-pub fn contextSetNone(numa_context: *anyopaque) void {
-    const ctx = mutCtx(numa_context);
+pub fn contextSetNone(numa_context: *NumaReplicationContext) void {
+    const ctx = numa_context;
     // "none" means one node holding every processor: bind nothing, replicate from node 0.
     const cfg = NumaConfig.fromSystem(std.heap.c_allocator) catch return;
     ctx.setNumaConfig(cfg);
 }
 
 /// Return the NumaConfig for a context — identity here (the context is its own config).
-pub fn contextConfig(numa_context: *const anyopaque) *const anyopaque {
-    return numa_context;
-}
-
 // Resolve the erased engine handle to the context that owns the topology. The handle used
 // to be the address of a module-static byte ("never dereferenced"), which is why every
 // function here was forced to answer a constant. It is a real NumaReplicationContext now.
-fn ctxOf(numa_context: *const anyopaque) *const NumaReplicationContext {
-    return @ptrCast(@alignCast(numa_context));
-}
-
 // Ask the real model (numa/config.zig), which mirrors upstream numa.h:756. Answering
 // `false` unconditionally made `NumaPolicy auto` -- the DEFAULT -- never bind on any host.
-pub fn suggestsBindingThreads(numa_context: *const anyopaque, num_threads: usize) bool {
-    return ctxOf(numa_context).config.suggestsBindingThreads(num_threads);
+pub fn suggestsBindingThreads(numa_context: *const NumaReplicationContext, num_threads: usize) bool {
+    return numa_context.config.suggestsBindingThreads(num_threads);
 }
 
 /// Assign every requested thread to node 0; return the node count used (1).
@@ -115,8 +103,8 @@ pub fn suggestsBindingThreads(numa_context: *const anyopaque, num_threads: usize
 // NumaConfig::distribute_threads_among_numa_nodes). This pinned every thread to node 0 and
 // reported one node, so even an explicit `NumaPolicy system` bound the whole pool to node
 // 0 -- the exact outcome upstream's binding exists to avoid.
-pub fn distributeThreadsAmongNodes(numa_context: *const anyopaque, requested: usize, out_nodes: [*]usize) usize {
-    const cfg = &ctxOf(numa_context).config;
+pub fn distributeThreadsAmongNodes(numa_context: *const NumaReplicationContext, requested: usize, out_nodes: [*]usize) usize {
+    const cfg = &numa_context.config;
     const ns = cfg.distributeThreads(std.heap.c_allocator, requested) catch {
         // Degrade to node 0 rather than abort a search on OOM.
         var i: usize = 0;
@@ -141,13 +129,13 @@ pub fn executeOnNode(
 // pointers are the single-node stubs.
 // Report the real node count (upstream NumaConfig::num_numa_nodes). This answered a
 // hard-coded 1, so every caller believed the host was single-node regardless of topology.
-pub fn configNodeCount(numa_context: *const anyopaque) usize {
-    return ctxOf(numa_context).config.nodes.items.len;
+pub fn configNodeCount(numa_context: *const NumaReplicationContext) usize {
+    return numa_context.config.nodes.items.len;
 }
 
 // Implement NumaReplicationContext's get_numa_config().num_numa_nodes() — config is the
 // context's first member, so delegate to configNodeCount.
-pub fn contextNodeCount(numa_context: *const anyopaque) usize {
+pub fn contextNodeCount(numa_context: *const NumaReplicationContext) usize {
     return configNodeCount(numa_context);
 }
 
@@ -155,8 +143,8 @@ pub fn contextNodeCount(numa_context: *const anyopaque) usize {
 // so the `info string ... NUMA node thread binding` line reported every node as holding a
 // single CPU: this 16-CPU host printed 1/1 where upstream prints 1/16. The node's CPU
 // count was known all along -- the constant, not the topology, was the gap.
-pub fn contextCpusInNode(numa_context: *const anyopaque, node: usize) usize {
-    const cfg = &ctxOf(numa_context).config;
+pub fn contextCpusInNode(numa_context: *const NumaReplicationContext, node: usize) usize {
+    const cfg = &numa_context.config;
     if (node >= cfg.nodes.items.len) return 0;
     return cfg.nodes.items[node].items.len;
 }
@@ -167,8 +155,8 @@ pub fn contextCpusInNode(numa_context: *const anyopaque, node: usize) usize {
 // here meant an unparseable policy was accepted, so numaPolicyMode() saw a non-auto/none
 // string and bound the pool from a topology that had never been installed.
 // fromString sets custom_affinity, which upstream honours by always binding (numa.h:768).
-pub fn setFromString(numa_context: *anyopaque, ptr: [*]const u8, len: usize) bool {
-    const ctx = mutCtx(numa_context);
+pub fn setFromString(numa_context: *NumaReplicationContext, ptr: [*]const u8, len: usize) bool {
+    const ctx = numa_context;
     const cfg = NumaConfig.fromString(std.heap.c_allocator, ptr[0..len]) catch return false;
     ctx.setNumaConfig(cfg);
     return true;
