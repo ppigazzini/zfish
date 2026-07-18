@@ -24,9 +24,9 @@ pub fn workerManager(wl: *const worker_layout.WorkerLayout) ?*worker_layout.Sear
     return wl.manager;
 }
 pub fn workerRootMove0(wl: *const worker_layout.WorkerLayout) *worker_layout.RootMove {
-    // Return the typed first RootMove via the graph adapter; root_moves[0] is the
-    // first element's address.
-    return @ptrCast(wl.root_moves.ptr);
+    // root_moves[0] is the first element's address; index it rather than casting .ptr, so
+    // an empty list trips the bounds check instead of handing back a dangling pointer.
+    return &wl.root_moves[0];
 }
 pub fn workerTT(wl: *const worker_layout.WorkerLayout) *worker_layout.TranspositionTable {
     return wl.tt;

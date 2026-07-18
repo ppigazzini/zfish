@@ -47,9 +47,9 @@ fn workerRootDepthOf(wl: *const worker_layout.WorkerLayout) i32 {
 fn scoreTextAlloc(v: i32, material: i32) ?[:0]u8 {
     const sc = score_port.classify(v, 31507, 31753, 32000);
     return switch (sc.kind) {
-        2 => uci_wdl.formatScore(0, sc.plies, 0),
-        1 => uci_wdl.formatScore(1, sc.plies, sc.win),
-        else => uci_wdl.formatScore(2, uci_wdl.toCp(v, material), 0),
+        .mate => uci_wdl.formatScore(0, sc.plies, 0),
+        .tablebase => uci_wdl.formatScore(1, sc.plies, @intFromBool(sc.win)),
+        .non_decisive => uci_wdl.formatScore(2, uci_wdl.toCp(v, material), 0),
     };
 }
 
