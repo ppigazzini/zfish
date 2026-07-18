@@ -3,6 +3,8 @@
 // they use.
 
 const std = @import("std");
+const shared_history_types = @import("shared_history_types");
+const SharedHistories = shared_history_types.SharedHistories;
 
 const movepick_history = @import("movepick_history.zig");
 const HistorySnapshot = movepick_history.HistorySnapshot;
@@ -134,7 +136,7 @@ pub const MovePickerContext = struct {
     low_ply_history: ?[*]const LowPlyHistoryRow,
     capture_history: ?[*]const CaptureHistoryRow,
     continuation_history: ?[]const ContHistSlot,
-    shared_history: ?*const anyopaque,
+    shared_history: ?*const SharedHistories,
     ply: c_int,
 };
 

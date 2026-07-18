@@ -3,6 +3,8 @@
 // value snapshots; std only.
 
 const std = @import("std");
+const shared_history_types = @import("shared_history_types");
+const SharedHistories = shared_history_types.SharedHistories;
 
 const square_nb: usize = 64;
 const piece_type_nb: usize = 8;
@@ -47,7 +49,7 @@ pub fn fillHistorySnapshot(
     low_ply_history: ?[*]const LowPlyHistoryRow,
     capture_history: ?[*]const CaptureHistoryRow,
     continuation_history: ?[]const ContHistSlot,
-    shared_history: ?*const anyopaque,
+    shared_history: ?*const SharedHistories,
     out: *HistorySnapshot,
 ) void {
     out.main_base = main_history;
@@ -57,11 +59,10 @@ pub fn fillHistorySnapshot(
     if (continuation_history) |ch| {
         for (ch, 0..) |page, slot| out.continuation_base[slot] = page;
     }
-    if (shared_history) |sh_ptr| {
-        const sh: [*]const u8 = @ptrCast(sh_ptr);
-        const pawn_size = @as(*const usize, @ptrCast(@alignCast(sh + 16))).*;
-        out.pawn_table = if (pawn_size != 0) @as(*const ?[*]const PawnHistoryRow, @ptrCast(@alignCast(sh + 24))).* else null;
-        out.pawn_mask = @as(*const u64, @ptrCast(@alignCast(sh + 40))).*;
+    if (shared_history) |sh| {
+        // View the shared pawn table as rows; the shared side stores it flat.
+        out.pawn_table = if (sh.pawn_size != 0) @as([*]const PawnHistoryRow, @ptrCast(sh.pawn_data)) else null;
+        out.pawn_mask = sh.pawn_hist_size_minus1;
     } else {
         out.pawn_table = null;
         out.pawn_mask = 0;
