@@ -1,17 +1,14 @@
-// Read UCI command lines from stdin, split out of uci.zig. Owns the persistent std.Io stdin
-// reader and nothing else: no command dispatch, no engine state, so it sits below the command
-// loop and can be reasoned about (and broken) on its own.
+// Read UCI command lines from stdin. Own the persistent std.Io reader and nothing else -- no
+// command dispatch, no engine state -- so the command loop imports this without a cycle back.
 
 const std = @import("std");
 
 // Hold a blocking std.Io handle for stdin, plus a persistent line reader (replacing libc
-// fgets). `init_single_threaded` spawns no threads and installs no signal handlers, so
-// input reading, like output, never touches the engine's thread pool. Keep the reader's
-// 4096-byte buffer across calls (its state must not move, so it lives in a
-// module var recovered by @fieldParentPtr). It bounds one REFILL, not one command line:
-// `position startpos moves ...` passes 4096 bytes in a ~450-move game, and match runners
-// resend the whole line every move, so readCommandLineAlloc stitches a longer line across
-// refills rather than truncating it.
+// fgets). `init_single_threaded` spawns no threads and installs no signal handlers, so input
+// reading, like output, never touches the engine's thread pool. Keep the reader's buffer
+// across calls -- its state must not move, so it lives in a module var recovered by
+// @fieldParentPtr. The buffer bounds one REFILL, not one command line; a line that spans
+// several is stitched in readCommandLineAlloc.
 var stdin_threaded = std.Io.Threaded.init_single_threaded;
 var stdin_buffer: [4096]u8 = undefined;
 var stdin_reader: std.Io.File.Reader = undefined;
@@ -31,15 +28,12 @@ pub fn readCommandLineAlloc() !?[]u8 {
     const reader = stdinInterface();
     const gpa = std.heap.c_allocator;
 
-    // Take the next line via takeDelimiter, without the '\n' (and the final unterminated
-    // line before EOF, then null) -- exactly fgets' line-at-a-time behaviour. Treat a read
-    // failure as end-of-input, as a closed stdin was.
+    // Take the next line via takeDelimiter, without the '\n' (and the final unterminated line
+    // before EOF, then null) -- exactly fgets' line-at-a-time behaviour.
     //
-    // Do NOT treat error.StreamTooLong that way: it only means the line outran one buffer
-    // refill, and conflating it with EOF made the loop dispatch `quit` and exit 0 with no
-    // diagnostic -- the engine vanishing mid-game on a legal 450-move `position ... moves`
-    // line, which every match runner resends each move. Stitch the pieces instead; upstream's
-    // getline is unbounded and must not be the more robust of the two.
+    // Report end-of-input for ReadFailed and EOF only. error.StreamTooLong means the line
+    // outran one buffer refill, not that input ended; returning null for it makes the caller
+    // dispatch `quit`, so a long `position ... moves` line exits the engine instead.
     var carry: std.ArrayList(u8) = .empty;
     errdefer carry.deinit(gpa);
     var stitching = false;

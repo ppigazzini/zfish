@@ -192,9 +192,8 @@ pub const SearchManager = struct {
     pub inline fn resetPreviousTimeReduction(self: *SearchManager) void {
         self.previous_time_reduction = 0.85;
     }
-    // Store atomically: the search threads poll this concurrently, so a plain store here plus a
-    // plain load there is mixed access to one location -- UB, and it has already produced a
-    // hoisted-load deadlock in `ssShouldBusywait`.
+    // Store atomically: search threads poll this while the UCI thread writes it, and a plain
+    // store against their atomic loads is mixed access to one location.
     pub inline fn setPonder(self: *SearchManager, v: bool) void {
         @atomicStore(u8, &self.ponder, @intFromBool(v), .monotonic);
     }
@@ -254,8 +253,7 @@ pub const ThreadPool = struct {
     pub inline fn boundAt(self: *const ThreadPool, i: usize) usize {
         return self.bound[i];
     }
-    // Store atomically -- see setPonder. The UCI thread writes this while every search thread
-    // polls it.
+    // Store atomically -- see setPonder.
     pub inline fn setStop(self: *ThreadPool, v: bool) void {
         @atomicStore(u8, &self.stop, @intFromBool(v), .monotonic);
     }
