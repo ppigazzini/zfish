@@ -20,7 +20,7 @@ fn freeCString(ptr: [*:0]u8) void {
 }
 
 pub fn threadBindingInformation(
-    numa_context: *const anyopaque,
+    numa_context: *const numa.NumaReplicationContext,
     threads: *worker_layout.ThreadPool,
 ) ?[*:0]u8 {
     const bound_count = threads.boundCount();
@@ -56,7 +56,7 @@ pub fn threadBindingInformation(
 }
 
 pub fn threadAllocationInformation(
-    numa_context: *const anyopaque,
+    numa_context: *const numa.NumaReplicationContext,
     threads: *worker_layout.ThreadPool,
 ) ?[*:0]u8 {
     const binding_ptr = threadBindingInformation(numa_context, threads) orelse return null;

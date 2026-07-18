@@ -170,7 +170,7 @@ pub fn nextPowerOfTwo(count: u64) usize {
 
 pub fn reconfigure(
     pool: *worker_layout.ThreadPool,
-    numa_config: *const anyopaque,
+    numa_config: *const numa.NumaReplicationContext,
     shared_state: *const anyopaque,
     update_context: *const anyopaque,
 ) !void {

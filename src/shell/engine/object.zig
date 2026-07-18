@@ -34,7 +34,7 @@ const numa = @import("numa");
 // the unused EngineGraph) was orphaned. So `NumaPolicy auto`, the default, could never
 // bind on any host, and the topology model was dead code. Own a real
 // NumaReplicationContext here instead; the facade now has something to ask.
-fn memberNumaContextNew() ?*anyopaque {
+fn memberNumaContextNew() ?*numa.NumaReplicationContext {
     const ctx = std.heap.c_allocator.create(numa.NumaReplicationContext) catch return null;
     const cfg = numa.NumaConfig.fromSystem(std.heap.c_allocator) catch {
         std.heap.c_allocator.destroy(ctx);
@@ -76,7 +76,7 @@ pub const verify_network_fn_size: usize = 64;
 /// is no C-ABI or cross-language contract that would need `extern`. Reach every access below
 /// through a typed member accessor, never a byte offset.
 pub const EngineObject = struct {
-    numa_context: ?*anyopaque = null,
+    numa_context: ?*numa.NumaReplicationContext = null,
     states: ?*state_list_port.StateList = null,
     threads: ?*worker_layout.ThreadPool = null,
     binary_directory: ?[*:0]u8 = null,
@@ -101,7 +101,7 @@ pub const EngineObject = struct {
         const argv = self.cli_argv orelse return null;
         return argv[@intCast(index)];
     }
-    pub fn numaContextPtr(self: *EngineObject) *anyopaque {
+    pub fn numaContextPtr(self: *EngineObject) *numa.NumaReplicationContext {
         return self.numa_context.?;
     }
     pub fn statesSlotPtr(self: *EngineObject) *anyopaque {

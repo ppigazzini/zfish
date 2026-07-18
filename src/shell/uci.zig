@@ -357,10 +357,7 @@ fn isHelpToken(token: []const u8) bool {
         std.mem.eql(u8, token, "license");
 }
 
-pub fn loopRuntime(uci_ptr: *anyopaque) void {
-    // Cross a single erasure boundary: main hands the engine as *anyopaque; the whole UCI
-    // dispatch below runs on the typed *EngineObject handle.
-    const e: *engine_object.EngineObject = engine_object.EngineObject.fromPtr(uci_ptr);
+pub fn loopRuntime(e: *engine_object.EngineObject) void {
     const allocator = std.heap.c_allocator;
     const argc = e.cliArgc();
 
