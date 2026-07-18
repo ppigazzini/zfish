@@ -74,8 +74,9 @@ side shared-histories map, free the side TT, free the buffer.
 
 ## The UCI surface
 
-`uci.loopRuntime` takes the engine as `*anyopaque` and casts it once — every command
-below runs on the typed handle. With arguments, it joins argv into one command,
+`uci.loopRuntime` takes the typed `*EngineObject`: `main` crosses the erasure once, where
+the allocator's raw storage is placement-constructed, and hands the handle on. With
+arguments, it joins argv into one command,
 dispatches it, and returns; otherwise it reads stdin line by line through a persistent
 `std.Io` reader and dispatches each line until `quit`. A closed stdin, an over-long
 line, or a read failure is end-of-input and dispatches `quit`.
@@ -200,11 +201,10 @@ handles, reconfigures the pool, sizes the TT from the `Hash` option, and replica
 network. It is the one place a thread-pool OOM or spawn failure is handled; the pool it
 drives is described in [04-multithreading.md](04-multithreading.md).
 
-`engine/graph.zig` states the same object graph as an `EngineGraph` — vtable-free and
-callback-free, with its own `sharedState` and `makeManager`. Most slots are concrete
-members owning their types (`numa_context`, `position`, `states`, `threads`, `tt`); three
-— `options`, `network`, `shared_histories` — are still `*anyopaque` handles, so the graph
-is typed but not yet fully typed. `engine.zig` force-compiles it so its layout asserts are build-verified
+`engine/graph.zig` states the same object graph as a fully typed `EngineGraph` — every
+slot a concrete member owning its type, vtable-free and callback-free, with its own
+`sharedState` and `makeManager`. `network` is an `opaque {}` handle, which is a distinct
+type the compiler checks, not an erasure. `engine.zig` force-compiles it so its layout asserts are build-verified
 rather than dead source; the live path builds its `SharedState` in the driver.
 
 ## Bench

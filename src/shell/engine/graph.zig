@@ -27,7 +27,10 @@ const SearchManager = sm.SearchManager;
 // instantiates its own view. Use engine.SharedState on the live engine path.
 // Bind the three live references the worker needs in the SharedState bundle
 // (threads/tt/sharedHistories); options/network are NOT in the bundle (never read).
-const SharedState = @import("shared_state").SharedStateOf(ThreadPool, TranspositionTable, anyopaque);
+const OptionsModel = @import("option").OptionsModel;
+const Network = @import("network").Network;
+const SharedHistoriesMap = @import("shared_history").SharedHistoriesMap;
+const SharedState = @import("shared_state").SharedStateOf(ThreadPool, TranspositionTable, SharedHistoriesMap);
 pub const StateList = @import("state_list").StateList;
 pub const NumaConfig = @import("numa").NumaConfig;
 pub const NumaReplicationContext = @import("numa").NumaReplicationContext;
@@ -39,26 +42,26 @@ pub const PositionStorage = @import("position_storage").PositionStorage;
 //   numa_context      -> *NumaReplicationContext    [config + replica registry]
 //   position          -> *PositionStorage           [owns the 1032B Position block]
 //   states            -> *StateList                 [the StateInfo list]
-//   options           -> *anyopaque (OptionsModel)  [opaque handle]
+//   options           -> *OptionsModel
 //   threads           -> *ThreadPool
 //   tt                -> TranspositionTable
-//   network           -> *anyopaque (NNUE network)  [opaque handle]
+//   network           -> *Network                  [opaque{} handle, a real type]
 //   update_context    -> UpdateContext
-//   shared_histories  -> *anyopaque                 [opaque handle]
+//   shared_histories  -> *SharedHistoriesMap
 //
-// Reach *anyopaque slots through an opaque handle; concrete-typed
-// members own their types directly. Take this as the complete definition of the
+// Every member owns its type; `network` is an `opaque {}` handle, which is a real type the
+// compiler distinguishes rather than an erasure. Take this as the complete definition of the
 // Engine graph.
 pub const EngineGraph = struct {
     binary_directory: []const u8,
     numa_context: *NumaReplicationContext, // NUMA context: config + replica registry
     position: *PositionStorage, // owner of the 1032B Position block
     states: *StateList, // the StateInfo list
-    options: *anyopaque, // OptionsModel
+    options: *OptionsModel,
     threads: *ThreadPool,
     tt: TranspositionTable,
-    network: *anyopaque, // NNUE network (opaque handle)
-    shared_histories: *anyopaque,
+    network: *Network,
+    shared_histories: *SharedHistoriesMap,
     update_context: UpdateContext,
 
     // Build the SharedState handed to every Worker, bound to this graph's own
@@ -88,10 +91,10 @@ pub const EngineGraph = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         binary_directory: []const u8,
-        options: *anyopaque,
+        options: *OptionsModel,
         threads: *ThreadPool,
-        network: *anyopaque,
-        shared_histories: *anyopaque,
+        network: *Network,
+        shared_histories: *SharedHistoriesMap,
         update_context: UpdateContext,
     ) error{OutOfMemory}!EngineGraph {
         const states = try allocator.create(StateList);
@@ -154,10 +157,12 @@ fn testUpdateContext() UpdateContext {
 }
 
 test "EngineGraph hands a SharedState bound to its own subsystems" {
-    var options: u32 = 0xAA;
-    var network: u32 = 0xBB;
+    var options = OptionsModel.init(testing.allocator);
+    defer options.deinit();
+    var network_storage: u32 = 0xBB;
+    const network: *Network = @ptrCast(&network_storage);
     var position = PositionStorage.zeroed();
-    var hists: u32 = 0xDD;
+    var hists: SharedHistoriesMap = undefined; // identity-only: compared by address, never read
     var pool: ThreadPool = undefined;
     var states = try StateList.init(testing.allocator);
     defer states.deinit();
@@ -172,7 +177,7 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
         .options = &options,
         .threads = &pool,
         .tt = .{ .cluster_count = 4096 },
-        .network = &network,
+        .network = network,
         .shared_histories = &hists,
         .update_context = testUpdateContext(),
     };
@@ -189,7 +194,11 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
 
 test "EngineGraph mints main and null managers without a vtable" {
     var pool: ThreadPool = undefined;
-    var dummy: u32 = 0;
+    var dummy_options = OptionsModel.init(testing.allocator);
+    defer dummy_options.deinit();
+    var dummy_network_storage: u32 = 0;
+    const dummy_network: *Network = @ptrCast(&dummy_network_storage);
+    var dummy_hists: SharedHistoriesMap = undefined; // identity-only: compared by address, never read
     var states = try StateList.init(testing.allocator);
     defer states.deinit();
     var numa = NumaReplicationContext.init(testing.allocator, NumaConfig.empty(testing.allocator));
@@ -200,11 +209,11 @@ test "EngineGraph mints main and null managers without a vtable" {
         .numa_context = &numa,
         .position = &position,
         .states = &states,
-        .options = &dummy,
+        .options = &dummy_options,
         .threads = &pool,
         .tt = .{},
-        .network = &dummy,
-        .shared_histories = &dummy,
+        .network = dummy_network,
+        .shared_histories = &dummy_hists,
         .update_context = testUpdateContext(),
     };
 
@@ -217,9 +226,11 @@ test "EngineGraph mints main and null managers without a vtable" {
 
 test "EngineGraph.init builds+owns states/numa/position; deinit frees them" {
     var pool: ThreadPool = undefined;
-    var options: u32 = 0;
-    var network: u32 = 0;
-    var hists: u32 = 0;
+    var options = OptionsModel.init(testing.allocator);
+    defer options.deinit();
+    var network_storage: u32 = 0;
+    const network: *Network = @ptrCast(&network_storage);
+    var hists: SharedHistoriesMap = undefined; // identity-only: compared by address, never read
 
     // Rely on testing.allocator failing the test on any leak, so a clean deinit proves the
     // owned members are all freed.
@@ -228,7 +239,7 @@ test "EngineGraph.init builds+owns states/numa/position; deinit frees them" {
         "/usr/bin",
         &options,
         &pool,
-        &network,
+        network,
         &hists,
         testUpdateContext(),
     );
@@ -241,7 +252,7 @@ test "EngineGraph.init builds+owns states/numa/position; deinit frees them" {
     try testing.expectEqual(@as(usize, 0), @intFromPtr(graph.position.ptr()) % 8); // aligned
     try testing.expectEqual(@as(usize, 0), graph.tt.cluster_count); // empty until resize
     // Confirm the referenced subsystems are bound, not owned
-    try testing.expectEqual(@as(*anyopaque, &options), graph.options);
+    try testing.expectEqual(&options, graph.options);
     try testing.expectEqual(@as(*ThreadPool, &pool), graph.threads);
     try testing.expectEqualStrings("/usr/bin", graph.binary_directory);
 }
