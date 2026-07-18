@@ -25,7 +25,6 @@ const worker_layout = @import("worker_layout");
 const tablebase = @import("tablebase");
 const option_port = @import("option");
 const state_list = @import("state_list");
-const tt_port = @import("tt");
 const numa = @import("numa");
 const uci_output = @import("uci_output");
 const engine_object = @import("engine_object");
@@ -81,9 +80,13 @@ inline fn ne(p: *const anyopaque) *engine_object.EngineObject {
 // be in a cycle); shared_state.zig stays a pure std leaf via the injected comptime
 // types. Give the bundle's typed pointers a fixed layout the worker-build reinterpret
 // relies on (asserted by the @sizeOf check below).
+// Bind the TT as worker_layout.TranspositionTable -- the type the storage is actually
+// constructed as (main.zig). tt.TranspositionTable declares the same three fields in a
+// different order, and both are auto-layout, so `table` and `cluster_count` swap places
+// between them: reading one through the other returns the pointer as the count.
 pub const SharedState = shared_state_mod.SharedStateOf(
     worker_layout.ThreadPool,
-    tt_port.TranspositionTable,
+    worker_layout.TranspositionTable,
     search_driver.SharedHistoriesMap,
 );
 
@@ -104,11 +107,7 @@ fn sharedStateCreate(
     tt: *worker_layout.TranspositionTable,
     shared_histories: *search_driver.SharedHistoriesMap,
 ) *anyopaque {
-    live_shared_state = SharedState.init(
-        threads,
-        @ptrCast(@alignCast(tt)),
-        shared_histories,
-    );
+    live_shared_state = SharedState.init(threads, tt, shared_histories);
     return @ptrCast(&live_shared_state);
 }
 
