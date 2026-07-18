@@ -304,13 +304,16 @@ const WorkerBuildCtx = struct {
     update_context: ?*const anyopaque,
     total: usize,
 };
-fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) void {
+fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) error{OutOfMemory}!void {
     const ctx: *WorkerBuildCtx = @ptrCast(@alignCast(ctx_ptr.?));
     const ss = engine_port.SharedState.fromPtr(ctx.shared_state.?);
+    // Report OOM instead of aborting: Pool.set carries a full errdefer unwind (destroy every
+    // thread already built, free the vector) and reconfigure propagates the error, so the
+    // engine can keep the previous thread count. Panicking here made that unwind unreachable.
     const manager = makeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
-        @panic("worker build: SearchManager OOM");
+        return error.OutOfMemory;
     const raw = memory_port.alignedLargePagesAlloc(worker_layout.worker_size) orelse
-        @panic("worker build: large-page OOM");
+        return error.OutOfMemory;
     const shared_history = engine_port.sharedHistoriesAt(ss.shared_histories, 0);
     worker_construct.constructFull(
         raw,

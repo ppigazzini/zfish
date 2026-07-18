@@ -25,9 +25,9 @@ fn hookPanic(comptime name: []const u8) noreturn {
 }
 
 /// failure: loud — hookPanic naming the hook. These 11 are LIFECYCLE (worker build/destroy/clear, setup-state handoff): structurally safe, since they cannot become per-query without the design changing shape.
-pub var worker_build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) void =
+pub var worker_build: *const fn (ctx: ?*anyopaque, idx: usize, thread: *anyopaque) error{OutOfMemory}!void =
     struct {
-        fn stub(_: ?*anyopaque, _: usize, _: *anyopaque) void {
+        fn stub(_: ?*anyopaque, _: usize, _: *anyopaque) error{OutOfMemory}!void {
             hookPanic("worker_build");
         }
     }.stub;

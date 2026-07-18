@@ -17,19 +17,28 @@ pub const NumaReplicatedBase = @import("numa/replication.zig").NumaReplicatedBas
 pub fn configString() ?[*:0]u8 {
     const a = std.heap.c_allocator;
 
-    if (builtin.os.tag != .linux) {
-        const n = std.Thread.getCpuCount() catch 1;
-        const owned = if (n <= 1)
-            std.fmt.allocPrintSentinel(a, "0", .{}, 0) catch return null
-        else
-            std.fmt.allocPrintSentinel(a, "0-{d}", .{n - 1}, 0) catch return null;
-        return owned.ptr;
-    }
+    // Report every CPU as the fallback: used off Linux, and on Linux when the affinity
+    // syscall is unavailable (a seccomp sandbox or a filtered container).
+    const fullRange = struct {
+        fn f(alloc: std.mem.Allocator) ?[*:0]u8 {
+            const n = std.Thread.getCpuCount() catch 1;
+            const owned = if (n <= 1)
+                std.fmt.allocPrintSentinel(alloc, "0", .{}, 0) catch return null
+            else
+                std.fmt.allocPrintSentinel(alloc, "0-{d}", .{n - 1}, 0) catch return null;
+            return owned.ptr;
+        }
+    }.f;
+
+    if (builtin.os.tag != .linux) return fullRange(a);
 
     const linux = std.os.linux;
     var set: linux.cpu_set_t = undefined;
     @memset(std.mem.asBytes(&set), 0);
-    _ = linux.sched_getaffinity(0, @sizeOf(linux.cpu_set_t), &set);
+    // Check the return: dropping it leaves the mask all-zero, and the bit-walk below then
+    // reports an EMPTY cpu set as if the process were bound to nothing.
+    const rc = linux.sched_getaffinity(0, @sizeOf(linux.cpu_set_t), &set);
+    if (linux.errno(rc) != .SUCCESS) return fullRange(a);
 
     var buf = std.ArrayList(u8).empty;
     defer buf.deinit(a);
