@@ -32,16 +32,21 @@ pub const PieceToHistoryRow = [square_nb]HistoryEntry;
 pub const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 
 // Hold one continuation-history slot: a PieceToHistory page viewed as [piece][square].
-// The context holds a many-pointer to these slots -- the source array is [1] on the
-// qsearch path and [6] in the main search, so a bounded array type won't fit both.
 pub const ContHistSlot = ?[*]const PieceToHistoryRow;
+
+// View a caller's contHist array as slots. The source is [1] on the qsearch path and [6] in
+// the main search, so keep the length: the snapshot fills only the slots that exist, and a
+// bare many-pointer would let qsearch's single slot be read as six.
+pub inline fn contHistSlice(arr: anytype) []const ContHistSlot {
+    return @as([*]const ContHistSlot, @ptrCast(arr))[0..arr.len];
+}
 
 // Pack the history-table base pointers into a HistorySnapshot.
 pub fn fillHistorySnapshot(
     main_history: ?[*]const MainHistoryRow,
     low_ply_history: ?[*]const LowPlyHistoryRow,
     capture_history: ?[*]const CaptureHistoryRow,
-    continuation_history: ?[*]const ContHistSlot,
+    continuation_history: ?[]const ContHistSlot,
     shared_history: ?*const anyopaque,
     out: *HistorySnapshot,
 ) void {
@@ -50,8 +55,7 @@ pub fn fillHistorySnapshot(
     out.capture_base = capture_history;
     out.continuation_base = .{ null, null, null, null, null, null };
     if (continuation_history) |ch| {
-        var slot: usize = 0;
-        while (slot < 6) : (slot += 1) out.continuation_base[slot] = ch[slot];
+        for (ch, 0..) |page, slot| out.continuation_base[slot] = page;
     }
     if (shared_history) |sh_ptr| {
         const sh: [*]const u8 = @ptrCast(sh_ptr);

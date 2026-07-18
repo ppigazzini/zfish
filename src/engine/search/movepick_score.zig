@@ -133,7 +133,7 @@ pub const MovePickerContext = struct {
     main_history: ?[*]const MainHistoryRow,
     low_ply_history: ?[*]const LowPlyHistoryRow,
     capture_history: ?[*]const CaptureHistoryRow,
-    continuation_history: ?[*]const ContHistSlot,
+    continuation_history: ?[]const ContHistSlot,
     shared_history: ?*const anyopaque,
     ply: c_int,
 };

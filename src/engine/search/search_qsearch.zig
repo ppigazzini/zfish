@@ -243,7 +243,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
         .main_history = @ptrCast(&w.main_history),
         .low_ply_history = @ptrCast(&w.low_ply_history),
         .capture_history = @ptrCast(&w.capture_history),
-        .continuation_history = @ptrCast(&cont_hist),
+        .continuation_history = movepick.contHistSlice(&cont_hist),
         .shared_history = w.shared_history,
         .ply = ss.ply,
     };
