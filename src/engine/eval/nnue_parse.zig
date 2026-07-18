@@ -19,10 +19,14 @@ const std = @import("std");
 // is visible and a future wide-SIMD target can swap it.
 pub const packus_epi16_order_sse41 = [8]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
 
-// Decode `count` signed-LEB128 values from `src` into `out`, returning the
-// number of source bytes consumed. Mirrors read_leb_128_detail: 7 bits per byte,
+// Decode `count` signed-LEB128 values from `src` into `out`, returning the number of source
+// bytes consumed, or null if `src` runs out first. Mirror read_leb_128_detail: 7 bits per byte,
 // shift masked to 32, sign-extend when the final shift < 32 and bit 0x40 is set.
-pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count: usize) usize {
+//
+// The bound is load-bearing: a .nnue file states its section length and its value count
+// independently, so a corrupt one can promise more values than it carries. ReleaseFast checks
+// neither the slice nor the count, so without this the decode walks off the section.
+pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count: usize) ?usize {
     std.debug.assert(out.len >= count);
     var pos: usize = 0;
     var i: usize = 0;
@@ -30,6 +34,7 @@ pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count:
         var result: u32 = 0;
         var shift: u6 = 0;
         while (true) {
+            if (pos >= src.len) return null;
             const byte = src[pos];
             pos += 1;
             result |= @as(u32, byte & 0x7f) << @intCast(@as(u32, shift) % 32);
@@ -115,7 +120,9 @@ fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
     const count = std.mem.readInt(u32, blob[leb_magic.len..][0..4], .little);
     const data = blob[leb_magic.len + 4 ..];
     if (data.len < count) return null;
-    if (decodeLeb(T, data, out, out.len) != count) return null;
+    // Hand the decoder the section, not the rest of the blob, so its bound is the section's.
+    const used = decodeLeb(T, data[0..count], out, out.len) orelse return null;
+    if (used != count) return null;
     return leb_magic.len + 4 + count;
 }
 
@@ -126,8 +133,9 @@ fn readLebSection2(comptime T: type, blob: []const u8, out1: []T, out2: []T) ?us
     const count = std.mem.readInt(u32, blob[leb_magic.len..][0..4], .little);
     const data = blob[leb_magic.len + 4 ..];
     if (data.len < count) return null;
-    const used1 = decodeLeb(T, data, out1, out1.len);
-    const used2 = decodeLeb(T, data[used1..], out2, out2.len);
+    const section = data[0..count];
+    const used1 = decodeLeb(T, section, out1, out1.len) orelse return null;
+    const used2 = decodeLeb(T, section[used1..], out2, out2.len) orelse return null;
     if (used1 + used2 != count) return null;
     return leb_magic.len + 4 + count;
 }
@@ -136,7 +144,9 @@ fn readLebSection2(comptime T: type, blob: []const u8, out1: []T, out2: []T) ?us
 // layout). No permute -- PackusEpi16Order is the identity on the SSE4.1 target.
 // Return the number of blob bytes consumed, or null on malformed input.
 pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
-    // Skip the leading u32 component hash (Detail::read_parameters).
+    // Skip the leading u32 component hash (Detail::read_parameters). Check it is there first:
+    // a file shorter than the hash would make the very first section slice out of range.
+    if (blob.len < 4) return null;
     var pos: usize = 4;
     // Follow the read order (upstream 7c7fe322e merge): biases, threatWeights, threatPsqtWeights, weights,
     // psqtWeights -- each i32 PSQT array is now its OWN leb section (base packed both into one,
@@ -332,7 +342,7 @@ test "signed LEB128 decode round-trips i16 and i32" {
     for (vals16) |v| try encodeOne(i16, v, &buf, a);
 
     var out: [vals16.len]i16 = undefined;
-    const consumed = decodeLeb(i16, buf.items, &out, vals16.len);
+    const consumed = decodeLeb(i16, buf.items, &out, vals16.len).?;
     try testing.expectEqual(buf.items.len, consumed);
     try testing.expectEqualSlices(i16, &vals16, &out);
 
@@ -341,7 +351,7 @@ test "signed LEB128 decode round-trips i16 and i32" {
     defer buf2.deinit(a);
     for (vals32) |v| try encodeOne(i32, v, &buf2, a);
     var out2: [vals32.len]i32 = undefined;
-    _ = decodeLeb(i32, buf2.items, &out2, vals32.len);
+    _ = decodeLeb(i32, buf2.items, &out2, vals32.len).?;
     try testing.expectEqualSlices(i32, &vals32, &out2);
 }
 
@@ -380,4 +390,45 @@ test "feature transformer layout offsets match the FeatureTransformer format" {
     try testing.expectEqual(@as(usize, 108316672), psqt_weights_off);
     try testing.expectEqual(@as(usize, 109037568), threat_psqt_weights_off);
     try testing.expectEqual(@as(usize, 110980608), ft_total_bytes);
+}
+
+test "decodeLeb reports exhaustion instead of reading past its slice" {
+    const a = testing.allocator;
+    var buf = std.ArrayList(u8).empty;
+    defer buf.deinit(a);
+    for ([_]i16{ 1, 2, 3 }) |v| try encodeOne(i16, v, &buf, a);
+
+    // Ask for more values than the source carries: the corrupt-file shape, where the section
+    // length and the value count disagree.
+    var out: [8]i16 = undefined;
+    try testing.expectEqual(@as(?usize, null), decodeLeb(i16, buf.items, &out, 8));
+
+    // Truncating mid-stream must also report exhaustion, not decode a short value.
+    try testing.expectEqual(@as(?usize, null), decodeLeb(i16, buf.items[0..2], &out, 3));
+
+    // An empty source with work to do is exhausted immediately; with no work it consumes zero.
+    try testing.expectEqual(@as(?usize, null), decodeLeb(i16, &.{}, &out, 1));
+    try testing.expectEqual(@as(?usize, 0), decodeLeb(i16, &.{}, &out, 0));
+
+    // The exact-fit case still succeeds, so the bound did not cost a legal decode.
+    try testing.expectEqual(@as(?usize, buf.items.len), decodeLeb(i16, buf.items, &out, 3));
+}
+
+test "readLebSection rejects a count that outruns its own section" {
+    var out: [4]i16 = undefined;
+    // [magic][count=1][one byte] -- the section is well-formed but promises 4 values to decode.
+    var blob = std.ArrayList(u8).empty;
+    defer blob.deinit(testing.allocator);
+    try blob.appendSlice(testing.allocator, leb_magic);
+    try blob.appendSlice(testing.allocator, &[_]u8{ 1, 0, 0, 0 });
+    try blob.append(testing.allocator, 0x01);
+    try testing.expectEqual(@as(?usize, null), readLebSection(i16, blob.items, &out));
+}
+
+test "parseFeatureTransformer rejects a blob shorter than its component hash" {
+    var dst = [_]u8{0} ** 64;
+    for ([_]usize{ 0, 1, 3 }) |n| {
+        const short = ([_]u8{0xAB} ** 3)[0..n];
+        try testing.expectEqual(@as(?usize, null), parseFeatureTransformer(short, &dst));
+    }
 }
