@@ -329,7 +329,7 @@ fn searchWdl(pos: *Position, storage: *state_list.PendingStateStorage, comptime 
     var best: i32 = wdl_loss;
     var move_count: usize = 0;
     var buf: [256]u16 = undefined;
-    const total = movegen.generateLegal(pos, buf[0..].ptr);
+    const total = movegen.generateLegal(pos, buf[0..]);
 
     const st = state_list.storagePush(storage) catch return .{ .value = 0, .state = probe_fail };
 
@@ -397,7 +397,7 @@ fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state:
     // Resolve CHANGE_STM: the DTZ is stored for the other side; do a 1-ply search minimizing DTZ.
     var min_dtz: i32 = 0xFFFF;
     var buf: [256]u16 = undefined;
-    const total = movegen.generateLegal(pos, buf[0..].ptr);
+    const total = movegen.generateLegal(pos, buf[0..]);
     const node = state_list.storagePush(storage) catch {
         out_state.* = probe_fail;
         return 0;
@@ -418,7 +418,7 @@ fn probeDtz(pos: *Position, storage: *state_list.PendingStateStorage, out_state:
         }
         // Give a mating move DTZ 1 (child is in check with no legal reply).
         var mbuf: [256]u16 = undefined;
-        if (d == 1 and pos.st.checkers_bb != 0 and movegen.generateLegal(pos, mbuf[0..].ptr) == 0)
+        if (d == 1 and pos.st.checkers_bb != 0 and movegen.generateLegal(pos, mbuf[0..]) == 0)
             min_dtz = 1;
         if (!zeroing) d += signOf(d); // correct for the 1-ply search
         if (d < min_dtz and signOf(d) == signOf(wdl)) min_dtz = d;

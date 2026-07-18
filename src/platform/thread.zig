@@ -300,7 +300,7 @@ pub fn startThinking(
         @panic("missing setup state");
 
     var legal_move_buffer: [256]u16 = undefined;
-    const legal_move_count = movegen_port.generateLegal(pos, legal_move_buffer[0..].ptr);
+    const legal_move_count = movegen_port.generateLegal(pos, legal_move_buffer[0..]);
     const legal_moves = legal_move_buffer[0..legal_move_count];
     const none_raw = uci_move.noneRaw();
 

@@ -30,7 +30,7 @@ fn noopPool(_: *ThreadPool) void {}
 fn noopWaitThread(_: *ThreadPool, _: usize) void {}
 // Return thread 0 (the main worker) as the single-threaded default best thread.
 fn mainWorker(pool: *ThreadPool) *WorkerLayout {
-    return worker_layout.Thread.fromAddr(pool.threadAt(0)).worker.?;
+    return pool.threadAt(0).worker.?;
 }
 
 /// Start the sibling search threads (index 1..).

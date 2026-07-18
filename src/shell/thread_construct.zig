@@ -47,8 +47,7 @@ pub fn verifyThreadGraph(pool: *const worker_layout.ThreadPool, requested: usize
     var i: usize = 0;
     while (i < count) : (i += 1) {
         const thread = tp.threadAt(i);
-        if (thread == 0) fail("ThreadPool.threads[i] is null");
-        if (worker_layout.Thread.fromAddr(thread).worker == null) fail("Thread[i].worker (LargePagePtr) is null");
+        if (thread.worker == null) fail("Thread[i].worker (LargePagePtr) is null");
     }
 }
 

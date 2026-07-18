@@ -40,7 +40,7 @@ pub const Result = struct {
 var g_worker: [worker_layout.worker_size]u8 align(worker_layout.worker_align) = undefined;
 var g_pool: worker_layout.ThreadPool = .{};
 var g_thread: worker_layout.Thread = undefined;
-var g_thread_addr: [1]usize = undefined;
+var g_thread_addr: [1]*worker_layout.Thread = undefined;
 var g_manager: worker_layout.SearchManager = .{};
 var g_tt: worker_layout.TranspositionTable = .{};
 var g_shared: search_driver.SharedHistories = undefined;
@@ -75,7 +75,7 @@ fn ensureReady() bool {
 
     // Build a one-thread pool whose sole Thread points at the Worker block.
     g_thread = .{ ._lo = 0, .worker = WorkerLayout.fromPtr(&g_worker) };
-    g_thread_addr[0] = @intFromPtr(&g_thread);
+    g_thread_addr[0] = &g_thread;
     g_pool.threads = g_thread_addr[0..];
 
     // Construct the Worker: zero the block, wire the reference members, clear the

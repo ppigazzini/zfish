@@ -167,9 +167,9 @@ fn scoreValue(comptime kind: u8, input: ScoreInput) i32 {
 pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: [*]SortEntry) usize {
     var move_list: [max_moves]u16 = undefined;
     const count = switch (kind) {
-        captures => movegen.generateCaptures(context.pos, move_list[0..].ptr),
-        quiets => movegen.generateQuiets(context.pos, move_list[0..].ptr),
-        evasions => movegen.generateEvasions(context.pos, move_list[0..].ptr),
+        captures => movegen.generateCaptures(context.pos, move_list[0..]),
+        quiets => movegen.generateQuiets(context.pos, move_list[0..]),
+        evasions => movegen.generateEvasions(context.pos, move_list[0..]),
         else => unreachable,
     };
 

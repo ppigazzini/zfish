@@ -34,7 +34,7 @@ pub fn noneRaw() u16 {
 
 pub fn toMoveRaw(pos: *const Position, text: []const u8) u16 {
     var move_buffer: [max_moves]u16 = undefined;
-    const count = movegen_port.generateLegal(pos, move_buffer[0..].ptr);
+    const count = movegen_port.generateLegal(pos, move_buffer[0..]);
     var snapshot = std.mem.zeroes(PositionSnapshot);
     position_snapshot.fill(pos, &snapshot);
     const chess960 = snapshot.is_chess960 != 0;

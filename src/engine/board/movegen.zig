@@ -61,32 +61,35 @@ const GenType = enum {
 };
 
 const MoveWriter = struct {
-    moves: [*]u16,
+    moves: []u16,
     len: usize = 0,
 
+    // Keep the caller's length: every caller passes a [256]u16 and 218 is the true legal
+    // maximum, but a many-pointer means no build mode -- including the ReleaseSafe fuzz
+    // artifact that exists for this class -- can trap a generator that over-emits.
     fn push(self: *MoveWriter, raw: u16) void {
         self.moves[self.len] = raw;
         self.len += 1;
     }
 };
 
-pub fn generateCaptures(pos: *const Position, move_list: [*]u16) usize {
+pub fn generateCaptures(pos: *const Position, move_list: []u16) usize {
     return generate(.captures, pos, move_list);
 }
 
-pub fn generateQuiets(pos: *const Position, move_list: [*]u16) usize {
+pub fn generateQuiets(pos: *const Position, move_list: []u16) usize {
     return generate(.quiets, pos, move_list);
 }
 
-pub fn generateEvasions(pos: *const Position, move_list: [*]u16) usize {
+pub fn generateEvasions(pos: *const Position, move_list: []u16) usize {
     return generate(.evasions, pos, move_list);
 }
 
-pub fn generateNonEvasions(pos: *const Position, move_list: [*]u16) usize {
+pub fn generateNonEvasions(pos: *const Position, move_list: []u16) usize {
     return generate(.non_evasions, pos, move_list);
 }
 
-pub fn generateLegal(pos: *const Position, move_list: [*]u16) usize {
+pub fn generateLegal(pos: *const Position, move_list: []u16) usize {
     const count = if (pos.st.checkers_bb != 0)
         generateFor(.evasions, pos, move_list)
     else
@@ -95,14 +98,14 @@ pub fn generateLegal(pos: *const Position, move_list: [*]u16) usize {
     return filterLegalMoves(pos, move_list, count);
 }
 
-fn generate(comptime kind: GenType, pos: *const Position, move_list: [*]u16) usize {
+fn generate(comptime kind: GenType, pos: *const Position, move_list: []u16) usize {
     return generateFor(kind, pos, move_list);
 }
 
 fn generateFor(
     comptime kind: GenType,
     pos: *const Position,
-    move_list: [*]u16,
+    move_list: []u16,
 ) usize {
     var writer = MoveWriter{ .moves = move_list };
     switch (pos.side_to_move) {
@@ -351,7 +354,7 @@ fn squareBb(square: u8) u64 {
 
 fn filterLegalMoves(
     pos: *const Position,
-    move_list: [*]u16,
+    move_list: []u16,
     count: usize,
 ) usize {
     const us = pos.side_to_move;
