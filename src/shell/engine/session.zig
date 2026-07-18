@@ -303,10 +303,7 @@ pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [
             relay_int = option_port.intByIndex(res.idx);
             relay_value = std.fmt.bufPrint(&relay_buf, "{d}", .{relay_int}) catch "";
         } else if (res.kind == 0) {
-            const len = option_port.currentLen(res.idx);
-            if (len != 0) {
-                if (option_port.currentPtr(res.idx)) |p| relay_value = p[0..len];
-            }
+            relay_value = option_port.currentByIndex(res.idx);
         }
         const ret = optionOnChange(engine_ptr, res.callback_kind, relay_value.ptr, relay_value.len, relay_int);
         if (ret) |msg| {

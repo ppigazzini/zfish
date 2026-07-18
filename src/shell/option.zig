@@ -48,21 +48,6 @@ pub fn optionThreads() usize {
 pub fn uciChess960() bool {
     return intByName("UCI_Chess960") != 0;
 }
-/// Make a NUL-terminated copy of a string option (caller frees; c_allocator is libc-backed
-/// so the existing c.free still pairs), or null on OOM. Use allocSentinel, the
-/// idiomatic NUL-terminated allocation -- it sizes len+1 and writes the sentinel.
-pub fn dupCString(name: []const u8) ?[*:0]u8 {
-    const s = strByName(name);
-    const buf = std.heap.c_allocator.allocSentinel(u8, s.len, 0) catch return null;
-    @memcpy(buf[0..s.len], s);
-    return buf.ptr;
-}
-pub fn dupEvalFile() ?[*:0]u8 {
-    return dupCString("EvalFile");
-}
-pub fn dupSyzygyPath() ?[*:0]u8 {
-    return dupCString("SyzygyPath");
-}
 pub fn numaPolicyMode() u8 {
     const policy = strByName("NumaPolicy");
     if (std.mem.eql(u8, policy, "none")) return 0;
@@ -70,13 +55,8 @@ pub fn numaPolicyMode() u8 {
     return 2;
 }
 
-pub fn currentLen(idx: usize) usize {
-    return ensureModel().currentByIndex(idx).len;
-}
-
-pub fn currentPtr(idx: usize) ?[*]const u8 {
-    const current = ensureModel().currentByIndex(idx);
-    return if (current.len == 0) null else current.ptr;
+pub fn currentByIndex(idx: usize) []const u8 {
+    return ensureModel().currentByIndex(idx);
 }
 
 pub const ModelSetResult = struct {
