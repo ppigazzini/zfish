@@ -84,6 +84,30 @@ pub const threat_array_bytes = threat_state_stride * max_stack_size;
 pub const stack_size_offset = threat_array_offset + threat_array_bytes;
 pub const threat_refresh_diff_offset = threat_diff_offset + @sizeOf(DirtyThreatListView);
 
+// Assert what the accessors' @alignCasts assume. Every state base is reached as
+// `base + stride * index`, so each stride must carry the arena's 64-byte alignment forward or
+// the i16/i32 views below are unaligned -- which x86 tolerates and aarch64 does not. These are
+// arithmetic facts today; pin them so a change to half_dimensions, psqt_buckets or
+// max_stack_size fails the build instead of the target.
+comptime {
+    if (psq_state_stride % nnue_align != 0)
+        @compileError("psq_state_stride must keep the arena's nnue_align");
+    if (threat_state_stride % nnue_align != 0)
+        @compileError("threat_state_stride must keep the arena's nnue_align");
+    if (threat_array_offset % nnue_align != 0)
+        @compileError("threat_array_offset must keep the arena's nnue_align");
+    if (threat_diff_offset % @alignOf(ThreatDiffView) != 0)
+        @compileError("threat_diff_offset must satisfy ThreatDiffView's alignment");
+    // psq_diff_offset is deliberately NOT rounded: HalfDiff is all-u8, so it needs no
+    // alignment. Pin that, since rounding it would silently move every psq diff.
+    if (@alignOf(HalfDiff) != 1)
+        @compileError("HalfDiff must stay alignment-free for the unrounded psq_diff_offset");
+    // threatRequiresRefresh reads us/prev_ksq/ksq at threat_refresh_diff_offset + 0/1/2, so
+    // that offset must land on ThreatDiffView's trailing scalars, not inside its list.
+    if (threat_refresh_diff_offset - threat_diff_offset != @offsetOf(ThreatDiffView, "us"))
+        @compileError("threat_refresh_diff_offset must address ThreatDiffView.us");
+}
+
 pub fn findLastUsable(feature_kind: u8, stack: *const AccumulatorStack, perspective: u8) usize {
     const size = stackSize(stack);
     var current = size - 1;
