@@ -23,6 +23,8 @@ const white_ooo: u8 = 2;
 const black_oo: u8 = 4;
 const black_ooo: u8 = 8;
 const black: u8 = 1;
+// Keep a local copy: fen.zig is a standalone unit-test root (build.zig) and must build
+// against std alone, so it cannot reach board_core.sq_none.
 const sq_none: u8 = 64;
 
 pub fn flipFen(fen_ptr: [*]const u8, fen_len: usize) ?[*:0]u8 {
