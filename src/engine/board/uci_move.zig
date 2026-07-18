@@ -1,4 +1,10 @@
 const std = @import("std");
+const board_core = @import("board_core");
+// Single-source the move-word decoders; legality.zig aliases the same set.
+const moveFrom = board_core.moveFrom;
+const moveTo = board_core.moveTo;
+const moveType = board_core.moveTypeOf;
+const promotionType = board_core.movePromotionType;
 const movegen_port = @import("movegen");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
@@ -11,7 +17,6 @@ const Position = position_types.Position;
 const normal_move: u16 = 0;
 const promotion_move: u16 = 1 << 14;
 const castling_move: u16 = 3 << 14;
-const move_type_mask: u16 = 3 << 14;
 const knight: u8 = 2;
 const bishop: u8 = 3;
 const rook: u8 = 4;
@@ -113,22 +118,6 @@ fn fileOf(square: u8) u8 {
 
 fn rankOf(square: u8) u8 {
     return square >> 3;
-}
-
-fn moveFrom(raw_move: u16) u8 {
-    return @intCast((raw_move >> 6) & 0x3F);
-}
-
-fn moveTo(raw_move: u16) u8 {
-    return @intCast(raw_move & 0x3F);
-}
-
-fn moveType(raw_move: u16) u16 {
-    return raw_move & move_type_mask;
-}
-
-fn promotionType(raw_move: u16) u8 {
-    return @intCast(((raw_move >> 12) & 0x3) + knight);
 }
 
 // --- tests--------------------------------------------------------------
