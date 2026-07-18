@@ -1,4 +1,8 @@
 const std = @import("std");
+const board_core = @import("board_core");
+// Single-source the move-word decoders; legality.zig aliases the same set.
+const moveFrom = board_core.moveFrom;
+const moveType = board_core.moveTypeOf;
 const bitboard = @import("bitboard");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
@@ -39,7 +43,6 @@ const north_west: i8 = north + west;
 const promotion: u16 = 1 << 14;
 const en_passant: u16 = 2 << 14;
 const castling: u16 = 3 << 14;
-const move_type_mask: u16 = 3 << 14;
 
 const file_a_bb: u64 = 0x0101010101010101;
 const file_h_bb: u64 = file_a_bb << 7;
@@ -387,14 +390,6 @@ fn filterLegalMoves(
 fn requiresLegalCheck(raw_move: u16, pinned: u64, king_square: u8) bool {
     const from = moveFrom(raw_move);
     return ((pinned & squareBb(from)) != 0) or from == king_square or moveType(raw_move) == en_passant;
-}
-
-fn moveFrom(raw_move: u16) u8 {
-    return @intCast((raw_move >> 6) & 0x3f);
-}
-
-fn moveType(raw_move: u16) u16 {
-    return raw_move & move_type_mask;
 }
 
 fn lsb(bb: u64) u8 {

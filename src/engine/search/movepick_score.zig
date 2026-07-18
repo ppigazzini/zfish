@@ -3,6 +3,11 @@
 // they use.
 
 const std = @import("std");
+const board_core = @import("board_core");
+// Single-source the move-word decoders; legality.zig aliases the same set.
+const moveFrom = board_core.moveFrom;
+const moveTo = board_core.moveTo;
+const moveType = board_core.moveTypeOf;
 const shared_history_types = @import("shared_history_types");
 const SharedHistories = shared_history_types.SharedHistories;
 
@@ -88,7 +93,6 @@ const normal_move: u16 = 0;
 const promotion_move: u16 = 1 << 14;
 const en_passant_move: u16 = 2 << 14;
 const castling_move: u16 = 3 << 14;
-const move_type_mask: u16 = 3 << 14;
 
 const piece_values = [_]c_int{
     0, 208, 781, 825, 1276, 2538, 0, 0,
@@ -284,18 +288,6 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
     }
 
     return count;
-}
-
-fn moveFrom(raw_move: u16) u8 {
-    return @intCast((raw_move >> 6) & 0x3F);
-}
-
-fn moveTo(raw_move: u16) u8 {
-    return @intCast(raw_move & 0x3F);
-}
-
-fn moveType(raw_move: u16) u16 {
-    return raw_move & move_type_mask;
 }
 
 fn typeOf(piece: u8) u8 {
