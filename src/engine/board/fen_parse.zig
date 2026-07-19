@@ -163,9 +163,14 @@ pub fn setPosition(
     pos.side_to_move = if (active == 'w') color_white else color_black;
     const stm = pos.side_to_move;
     const them = stm ^ 1;
-    const ws = cur.next();
-    if (ws == null or !std.ascii.isWhitespace(ws.?) or cur.i >= cur.fen.len)
-        return setErr("Invalid FEN. Expected whitespace after side to move.");
+    // Accept a FEN that stops here. Upstream reads the remaining fields with `ss >> token`, so an
+    // exhausted stream simply leaves the castling loop unentered, `col` at its '-' initializer and
+    // the two counters at 0 -- "8/8/8/8/8/4k3/8/R3K3 w" sets as "... w - - 0 1". Only a non-space
+    // separator is an error.
+    if (cur.next()) |ws| {
+        if (!std.ascii.isWhitespace(ws))
+            return setErr("Invalid FEN. Expected whitespace after side to move.");
+    }
 
     // 3. Castling availability
     var num_castling: i32 = 0;
@@ -245,10 +250,18 @@ pub fn setPosition(
     if (!enpassant_ok or !legal_ep) pos.st.ep_square = sq_none_u8;
 
     // 5-6. Halfmove clock and fullmove number
+    // Read both counters through one failure state, as `ss >> st->rule50 >> gamePly` does: a
+    // failed extraction leaves the stream in fail state, so the second read cannot succeed after
+    // the first has failed and both stay 0. Reading them independently lets a malformed halfmove
+    // field hand the fullmove field's digits to rule50.
     cur.skipWs();
-    const rule50 = parseInt(&cur) orelse 0;
-    cur.skipWs();
-    var game_ply = parseInt(&cur) orelse 0;
+    var game_ply: i32 = 0;
+    var rule50: i32 = 0;
+    if (parseInt(&cur)) |half| {
+        rule50 = half;
+        cur.skipWs();
+        game_ply = parseInt(&cur) orelse 0;
+    }
     if (rule50 < 0 or rule50 > 32767) return setErr("Unsupported position. Rule50 counter out of range.");
     if (game_ply < 0 or game_ply > 100000) return setErr("Unsupported position. Game ply out of range.");
     pos.st.rule50 = rule50;

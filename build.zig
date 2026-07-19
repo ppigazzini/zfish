@@ -1097,6 +1097,16 @@ pub fn build(b: *std.Build) void {
     );
     repeat_go_step.dependOn(&repeat_go_cmd.step);
 
+    // Assert a FEN missing trailing fields SETS with upstream's defaults (fen-truncated; literal
+    // expectations, no golden -- a golden here could be regenerated green over the defect).
+    const fen_trunc_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "fen-truncated", "-", "check");
+
+    const fen_trunc_step = b.step(
+        "parity-fen-truncated",
+        "A FEN missing trailing fields sets with upstream's defaults instead of failing",
+    );
+    fen_trunc_step.dependOn(&fen_trunc_cmd.step);
+
     // Exercise the ponder handshake (ponder; no golden -- N-time). `go ... ponder` then `ponderhit` must
     // emit a legal bestmove, `stop` during ponder must emit the best-so-far, and the process must
     // exit cleanly. Liveness + legality, platform-agnostic, so it joins the portable aggregate.
@@ -1874,6 +1884,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&reset_cmd.step);
     parity_step.dependOn(&skill_cmd.step);
     parity_step.dependOn(&repeat_go_cmd.step);
+    parity_step.dependOn(&fen_trunc_cmd.step);
     parity_step.dependOn(&ponder_cmd.step);
     parity_step.dependOn(&net_missing_cmd.step);
     parity_step.dependOn(&hook_lint_cmd.step);
@@ -1926,6 +1937,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&reset_cmd.step);
     parity_portable_step.dependOn(&skill_cmd.step);
     parity_portable_step.dependOn(&repeat_go_cmd.step);
+    parity_portable_step.dependOn(&fen_trunc_cmd.step);
     parity_portable_step.dependOn(&ponder_cmd.step);
     parity_portable_step.dependOn(&net_missing_cmd.step);
     parity_portable_step.dependOn(&hook_lint_cmd.step);
