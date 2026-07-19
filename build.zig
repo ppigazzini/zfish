@@ -1595,6 +1595,22 @@ pub fn build(b: *std.Build) void {
     // Print the host's best ARCH tier, from the same pure-Zig detector the build uses to resolve
     // `-Darch=native` (tools/native_arch.zig). arch_determinism.sh reads this to pick its host
     // sweep tier, so the sweep and the build agree on one detector.
+    // ThreadSanitizer race gate. Needs -Dtsan (and -Dlto=false, which -Dtsan forces): the engine
+    // races its TT, shared history and per-Worker counters BY DESIGN, and upstream keeps that
+    // defined by typing those fields RelaxedAtomic. A missed atomic is undefined behaviour no
+    // node-count gate can see, so TSan is the only instrument that covers it. Kept OUT of the
+    // `parity` aggregate: it needs its own instrumented build.
+    const tsan_race_cmd = b.addSystemCommand(&.{ "bash", repoPath(b, "tools/tsan_race.sh") });
+    tsan_race_cmd.addArtifactArg(exe);
+    tsan_race_cmd.step.dependOn(install_step);
+    tsan_race_cmd.step.dependOn(&net_cmd.step);
+    tsan_race_cmd.step.dependOn(&tb_cmd.step);
+    const tsan_race_step = b.step(
+        "tsan-race",
+        "ThreadSanitizer race gate over 4 concurrency workloads (build with -Dtsan)",
+    );
+    tsan_race_step.dependOn(&tsan_race_cmd.step);
+
     const host_arch_step = b.step("host-arch", "Print the host's best ARCH tier (the -Darch=native resolution)");
     host_arch_step.dependOn(&b.addSystemCommand(&.{ "printf", "%s", native_arch.detectArchFromCpu(b.graph.host.result.cpu) }).step);
 

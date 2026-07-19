@@ -178,8 +178,10 @@ pub fn runBack(nd: anytype) i32 {
                 if ((alpha >= q_value_draw or nd.pos.st.non_pawn_material[nd.us] != q_piece_value[moved_piece]) and !seeGe(nd.pos_ptr, move, -margin)) continue;
             } else if (!nd.ss.follow_pv or !nd.pv_node) {
                 const d_index: usize = @intCast(@min(depth, @as(i32, lmr_divisor.len)) - 1);
+                // Relaxed on the pawn-table read: the row is shared across workers and written
+                // concurrently by statsUpdate.
                 var history = contVal(cont_hist[0], moved_piece, to) + contVal(cont_hist[1], moved_piece, to) +
-                    pawnEntryRow(sharedOf(nd.w), nd.pos)[@as(usize, moved_piece) * 64 + to];
+                    @atomicLoad(i16, &pawnEntryRow(sharedOf(nd.w), nd.pos)[@as(usize, moved_piece) * 64 + to], .monotonic);
                 if (history < search.historyPruneThreshold(depth)) continue;
                 history += @divTrunc(69 * @as(i32, nd.w.main_history[@as(usize, nd.us) * hist_uint16 + move]), 32);
                 lmr_depth += @divTrunc(history, lmr_divisor[d_index]);

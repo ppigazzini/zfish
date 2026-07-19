@@ -46,7 +46,12 @@ pub fn setPonderhitEngine(engine_ptr: *engine_object.EngineObject, ponder: u8) v
 }
 
 pub fn searchClear(threads: *worker_layout.ThreadPool, tt: *worker_layout.TranspositionTable, syzygy_path: []const u8) void {
-    thread_port.waitForSearchFinished(threads);
+    // Wait on the MAIN thread, as upstream's Engine::search_clear does through
+    // `threads.main_thread()->wait_for_search_finished()` (engine.cpp). The pool-level wait skips
+    // thread 0 -- it is the "wait for the helpers" primitive -- and the main thread outlives them:
+    // it stops the helpers, joins them, then emits the PV and bestmove. Clearing the TT while it
+    // is still in that tail races its reads.
+    thread_port.waitThread(threads, 0);
     ttClear(tt, threads);
     thread_port.clear(threads);
     tablebase.init(syzygy_path.ptr, syzygy_path.len);
