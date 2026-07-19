@@ -285,6 +285,30 @@ Declared in `src/shell/option_model.zig` and `src/shell/engine/session.zig`; rea
 engine through `option_source.zig` (`syzygyProbeDepth`, `syzygyProbeLimit`,
 `syzygy50MoveRule`), which the composition root binds to `src/shell/option.zig`.
 
+### Extending the reported PV
+
+A root move whose score came from the tablebase gets its PV rewritten before it is reported.
+`tb_extend.zig`'s `syzygyExtendPv` — upstream `syzygy_extend_pv` — runs in two steps over a
+scratch position walked forward from the root:
+
+1. **Truncate.** Re-rank the legal moves at each ply and keep the PV only while its move still
+   holds the best available rank. A repetition, or a drawing move while `Syzygy50MoveRule` is on,
+   also ends it. What survives is the prefix whose game outcome is verified.
+2. **Extend.** Keep playing the top-ranked move — minimal DTZ, with opponent mobility as the
+   tie-break — until mate. The mate is optimal only for simple endgames such as KRvK; DTZ
+   minimises the distance to the next zeroing move, not to mate.
+
+The walk carries the state history, because both `isDraw` and `isRepetition` read it; a position
+rebuilt from a FEN would answer them wrongly. When a clock is running the walk stops once it has
+spent half the `Move Overhead`, reports what it verified, and prints
+`info string Syzygy based PV extension requires more time, increase Move Overhead as needed.`
+A walk that ends in a draw corrects the reported score to `VALUE_DRAW`, which is reachable when
+the position was set up with a non-optimal 50-move counter.
+
+`search_emit.zig` sits above `search_driver`, which `position` imports, so it cannot reach the
+position machinery directly. It calls through `tb_extend_source.zig`, a seam the composition root
+binds to `tb_extend.syzygyExtendPv`; unbound, the PV and score pass through unchanged.
+
 ## The tb_source seam
 
 `src/engine/search/tb_source.zig` declares three function pointers and the result type:

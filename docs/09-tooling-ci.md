@@ -132,6 +132,7 @@ The gates fall into kinds:
 | --- | --- |
 | `parity-reset` | `ucinewgame` and `Clear Hash` restore engine state, and TT reuse is live — the same position searched again after a reset gives the same result. |
 | `parity-skill` | Skill Level 20 is deterministic; Skill Level 0 is random and always legal. |
+| `parity-repeat-go` | Consecutive `go` with no intervening `position` yields a bestmove each time and a clean exit. Every golden gate re-sends `position`, so none of them covers the setup-state handoff this drives. |
 | `parity-mt` | Threads {2,4} land in a score band around the single-thread golden. |
 
 **Liveness and timing** — the paths a bench never reaches.

@@ -20,7 +20,9 @@ function-pointer seams. For the zones and the module graph, see
 | `search_setup.zig` | `buildCtx` — fetches the stable per-search worker state once and assembles the `QCtx` threaded through the recursion |
 | `search_emit.zig` | The UCI reporting side: `info` line building, the MultiPV walk (`searchPv`), `currmove`, `bestmove`, the no-moves line |
 | `search_manager.zig` | `SearchManager` (main-thread bookkeeping, `is_main` branch, no vtable) and `UpdateContext` (the four output callbacks) |
-| `root_move_build.zig` | Builds the `go`-path root-move list and ranks it by DTZ/WDL when tablebases are loaded; owns `TbConfig` — see [05-tablebases.md](05-tablebases.md) |
+| `root_move_build.zig` | Builds the `go`-path root-move list and ranks it by DTZ/WDL when tablebases are loaded; owns `TbConfig`, the scratch position and `rankMovesAt` — see [05-tablebases.md](05-tablebases.md) |
+| `tb_extend.zig` | `syzygyExtendPv` — truncates a tablebase-scored PV to the part that holds the outcome, then walks it toward mate on minimal DTZ — see [05-tablebases.md](05-tablebases.md) |
+| `tb_extend_source.zig` | The seam the reporter calls to reach `tb_extend`; defaults to returning the PV unchanged |
 | `headless_search.zig` | An engine-zone-only "search this FEN at depth N" root: builds one worker, a one-thread pool, a small TT, and drives `iterativeDeepening` with no platform attached |
 | **Alpha-beta** | |
 | `search_main.zig` | `searchImpl` — a node's Steps 1–12: TT probe, the tablebase probe (Step 6, see [05-tablebases.md](05-tablebases.md)), static eval, razoring, futility, null move, IIR, ProbCut |

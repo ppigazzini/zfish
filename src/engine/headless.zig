@@ -42,6 +42,8 @@ comptime {
     _ = @import("repetition");
     _ = @import("root_move");
     _ = @import("root_move_build");
+    _ = @import("tb_extend");
+    _ = @import("tb_extend_source");
     _ = @import("score");
     _ = @import("search");
     _ = @import("search_acc");

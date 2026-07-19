@@ -19,6 +19,7 @@ const uci_move_port = @import("uci_move");
 const position_query = @import("position_query");
 const option_port = @import("option_source");
 const search_types = @import("search_types");
+const tb_extend_port = @import("tb_extend_source");
 
 const RootMove = search_types.RootMove;
 const isChess960 = position_query.isChess960;
@@ -55,10 +56,9 @@ fn scoreTextAlloc(v: i32, material: i32) ?[:0]u8 {
 
 // Build + print one "info depth ... pv ..." line.
 // Publish the whole-search node count to the shared leaf; no-op in quiet mode.
-// Select `previous_pv` for a root move carrying a previous-iteration score, matching
-// upstream's `usePreviousScore ? rootMoves[i].previousPV : rootMoves[i].pv`
-// (search.cpp:2262): a move not yet searched this iteration has a stale `pv`, and
-// emitting it reports a line the current iteration never verified.
+// Report `previous_pv` for a root move carrying a previous-iteration score, and `pv` otherwise:
+// upstream's `usePreviousScore ? rootMoves[i].previousPV : rootMoves[i].pv` (search.cpp:2262).
+// A move not yet searched this iteration holds a `pv` the iteration never verified.
 fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, move_index: usize, use_prev: bool, depth: i32, sel_depth: i32, multipv: usize, v: i32, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: i32, time_ms: u64) void {
     _ = manager;
     uci_output.setLastNodesSearched(nodes);
@@ -174,6 +174,13 @@ pub fn searchCbRootOnIter(wl: *const worker_layout.WorkerLayout, depth: i32, mov
 
 // Mirror SF is_mate_or_mated: |v| >= VALUE_MATE_IN_MAX_PLY (a real mate, not a TB win). Use it to decide
 // whether the root-TB tbScore override applies (it does NOT override a genuine mate score).
+// Mirror search_values.isDecisive. search_values.zig belongs to the search_driver module, so this
+// file cannot path-import it; isMateOrMated is local for the same reason.
+fn isDecisive(v: i32) bool {
+    const value_tb_win: i32 = 31507; // VALUE_TB_WIN_IN_MAX_PLY
+    return v >= value_tb_win or v <= -value_tb_win;
+}
+
 fn isMateOrMated(v: i32) bool {
     const value_mate_in_max_ply: i32 = 32000 - 246; // VALUE_MATE - MAX_PLY
     return v >= value_mate_in_max_ply or v <= -value_mate_in_max_ply;
@@ -224,6 +231,28 @@ fn searchCbPvContext(manager: ?*worker_layout.SearchManager, worker: ?*worker_la
     out.elapsed_ms = @intCast(@max(@as(i64, 1), elapsed));
 }
 
+// Extend root move `index` through the tablebase seam and return the corrected score.
+fn extendPvSyzygy(ctx: *const PvContext, index: usize, v: i32) i32 {
+    const wl = ctx.worker orelse return v;
+    const rmv = worker_layout.RootMove.fromAddr(workerRootMoveAt(wl, index));
+
+    const use_time_management = wl.limits.time[0] != 0 or wl.limits.time[1] != 0;
+    const res = tb_extend_port.extendPv(
+        &wl.root_pos,
+        ctx.chess960,
+        rmv.pv.moves[0..],
+        rmv.pv.length,
+        v,
+        use_time_management,
+    );
+    rmv.pv.length = res.pv_len;
+    if (res.timed_out)
+        uci_output.printLine(extend_timeout_msg.ptr, extend_timeout_msg.len);
+    return res.value;
+}
+
+const extend_timeout_msg = "info string Syzygy based PV extension requires more time, increase Move Overhead as needed.";
+
 pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, threads: *worker_layout.ThreadPool, tt_ptr: *worker_layout.TranspositionTable, depth: i32) void {
     const value_infinite: i32 = 32001;
     var ctx: PvContext = undefined;
@@ -241,6 +270,15 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
         // so non-TB searches (incl. bench) are unaffected.
         const is_tb_score = ctx.root_in_tb and !isMateOrMated(v);
         if (is_tb_score) v = rm.tb_score;
+
+        // Correct and extend a tablebase-scored PV, and with it v. A previous-iteration PV is
+        // already extended, and a bound flag marks the PV unreliable -- unless the score came from
+        // the tablebase, which is exact whatever the search's bound says. Upstream search.cpp:2256.
+        if (isDecisive(v) and !isMateOrMated(v) and !use_prev and
+            (!rm.scoreIsBound() or is_tb_score))
+        {
+            v = extendPvSyzygy(&ctx, i, v);
+        }
         var bound_kind: u8 = 0;
         // Treat TB scores as exact even if the root move's bound flags say otherwise.
         if (!use_prev and !is_tb_score) {
