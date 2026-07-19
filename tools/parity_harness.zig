@@ -1524,8 +1524,8 @@ fn runRepeatGo(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
         if (!s.fillUntil("bestmove"))
             fail("repeat-go: `go` #{d} produced no bestmove -- the engine died on a repeated go with no intervening `position` (setup-state handoff)", .{i + 1});
     }
-    const clean_exit = s.finish();
-
+    // Scan BEFORE finish(): finish() calls mr.deinit(), which frees the buffer `buffered()`
+    // returns. Reading it afterwards is a use-after-free that happens to survive on some hosts.
     var seen: usize = 0;
     var li = lines(s.buffered());
     while (li.next()) |raw| {
@@ -1538,6 +1538,7 @@ fn runRepeatGo(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     }
     if (seen != rounds)
         fail("repeat-go: expected {d} bestmoves from {d} consecutive `go`s, got {d}", .{ rounds, rounds, seen });
+    const clean_exit = s.finish();
     if (!clean_exit)
         fail("repeat-go: engine did not exit cleanly after {d} consecutive `go`s -- a panic/abort here kills the process for any GUI", .{rounds});
 
@@ -1575,8 +1576,7 @@ fn runFenTruncated(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
         if (!s.fillUntil("Checkers:"))
             fail("fen-truncated: `position fen {s}` produced no board -- a FEN missing trailing fields must set, not fail", .{tc.fen});
     }
-    _ = s.finish();
-
+    // Scan BEFORE finish(): finish() deinits the reader and frees this buffer.
     var idx: usize = 0;
     var li = lines(s.buffered());
     while (li.next()) |raw| {
@@ -1589,6 +1589,7 @@ fn runFenTruncated(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
             fail("fen-truncated: `{s}`\n  want: {s}\n  got : {s}", .{ tc.fen, tc.want, got });
         idx += 1;
     }
+    _ = s.finish();
     if (idx != fen_truncated_cases.len)
         fail("fen-truncated: {d} of {d} cases produced a Fen line", .{ idx, fen_truncated_cases.len });
 
@@ -1625,8 +1626,7 @@ fn runFlipChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
         if (!s.fillUntil("Checkers:"))
             fail("flip-chess960: `flip` produced no board", .{});
     }
-    _ = s.finish();
-
+    // Scan BEFORE finish(): finish() deinits the reader and frees this buffer.
     var idx: usize = 0;
     var li = lines(s.buffered());
     while (li.next()) |raw| {
@@ -1638,6 +1638,7 @@ fn runFlipChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
             fail("flip-chess960: case {d}\n  want: {s}\n  got : {s}\n  -- flip re-parsed the board under the live UCI_Chess960 option instead of the board's own variant", .{ idx, flip_cases[idx].want, got });
         idx += 1;
     }
+    _ = s.finish();
     if (idx != flip_cases.len)
         fail("flip-chess960: {d} of {d} cases produced a Fen line", .{ idx, flip_cases.len });
 
