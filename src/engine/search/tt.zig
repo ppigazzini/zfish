@@ -133,35 +133,35 @@ pub fn entrySave(
 ) void {
     const key16: u16 = @truncate(key);
 
-    if (move16 != 0 or key16 != entry.key16) {
-        entry.move16 = move16;
+    if (move16 != 0 or key16 != rlx(u16, &entry.key16)) {
+        setRlx(u16, &entry.move16, move16);
     }
 
-    if (bound == 3 or key16 != entry.key16 or
-        depth - depth_none + 2 * @as(i32, pv) > @as(i32, entry.depth8) - 4 or
+    if (bound == 3 or key16 != rlx(u16, &entry.key16) or
+        depth - depth_none + 2 * @as(i32, pv) > @as(i32, rlx(u8, &entry.depth8)) - 4 or
         entryRelativeAge(entry, curr_generation) != 0)
     {
-        entry.key16 = key16;
-        entry.depth8 = @intCast(depth - depth_none);
-        entry.gen_bound8 = curr_generation | (bound << bound_shift) | (pv << pv_shift);
-        entry.value16 = @intCast(value);
-        entry.eval16 = @intCast(eval);
+        setRlx(u16, &entry.key16, key16);
+        setRlx(u8, &entry.depth8, @intCast(depth - depth_none));
+        setRlx(u8, &entry.gen_bound8, curr_generation | (bound << bound_shift) | (pv << pv_shift));
+        setRlx(i16, &entry.value16, @intCast(value));
+        setRlx(i16, &entry.eval16, @intCast(eval));
     }
     // upstream 94beadffb: apply secondary aging. Matters for elementary mate finding. Age a deep,
     // decisive, non-exact entry that we are NOT overwriting. (depth8 + DEPTH_NONE >= 5; DEPTH_NONE = depth_none = -3.)
-    else if (@as(i32, entry.depth8) + depth_none >= 5 and
-        ((entry.gen_bound8 & bound_mask) >> bound_shift) != 3)
+    else if (@as(i32, rlx(u8, &entry.depth8)) + depth_none >= 5 and
+        ((rlx(u8, &entry.gen_bound8) & bound_mask) >> bound_shift) != 3)
     {
         // Mirror upstream's inner test exactly (tt.cpp:120): `std::abs(v16) <
         // VALUE_INFINITE && is_decisive(v16)`. The `abs < VALUE_INFINITE` half was
         // missing, so an entry holding +/-VALUE_INFINITE was aged here and is not
         // upstream. Keep it a nested `if`, as upstream does, rather than folding it into
         // the else-if chain: the two guards are not the same condition.
-        const v16: i32 = @as(i32, entry.value16);
+        const v16: i32 = @as(i32, rlx(i16, &entry.value16));
         if (@abs(v16) < value_infinite and
             (v16 >= value_tb_win_in_max_ply or v16 <= -value_tb_win_in_max_ply))
         {
-            entry.depth8 = depthSaturatingSub(entry.depth8, 1);
+            setRlx(u8, &entry.depth8, depthSaturatingSub(rlx(u8, &entry.depth8), 1));
         }
     }
 }
@@ -170,22 +170,38 @@ pub fn entrySave(
 // (tt.cpp:146) -- a wrapping subtract turned a penalised shallow entry into the deepest
 // entry in the table.
 pub fn entryPenalize(entry: *TtEntry, penalty: u8) void {
-    entry.depth8 = depthSaturatingSub(entry.depth8, penalty);
+    setRlx(u8, &entry.depth8, depthSaturatingSub(rlx(u8, &entry.depth8), penalty));
 }
 
 pub fn entryRead(entry: *const TtEntry, depth_none: i32) TtReadOutput {
+    // Take one load of gen_bound8 for both the bound and the pv flag: they are two fields of the
+    // same byte, so a single read keeps them mutually consistent and spares a second atomic load
+    // the compiler is not allowed to fold away.
+    const gb = rlx(u8, &entry.gen_bound8);
     return .{
-        .move16 = entry.move16,
-        .value16 = entry.value16,
-        .eval16 = entry.eval16,
-        .depth = depth_none + @as(i32, entry.depth8),
-        .bound = (entry.gen_bound8 & bound_mask) >> bound_shift,
-        .is_pv = if ((entry.gen_bound8 & pv_mask) != 0) 1 else 0,
+        .move16 = rlx(u16, &entry.move16),
+        .value16 = rlx(i16, &entry.value16),
+        .eval16 = rlx(i16, &entry.eval16),
+        .depth = depth_none + @as(i32, rlx(u8, &entry.depth8)),
+        .bound = (gb & bound_mask) >> bound_shift,
+        .is_pv = if ((gb & pv_mask) != 0) 1 else 0,
     };
 }
 
+// Read and write every TT field as a RELAXED atomic, mirroring upstream's RelaxedAtomic<T>
+// accessors (misc.h:351-370). tt.h states that racy concurrent updates between threads are
+// intended; relaxed is what makes that race defined rather than undefined, forbidding the
+// compiler to tear a field or rematerialise a load after the key comparison it was checked
+// against. It is NOT ordering: no field is ordered against any other, exactly as upstream.
+inline fn rlx(comptime T: type, p: *const T) T {
+    return @atomicLoad(T, p, .monotonic);
+}
+inline fn setRlx(comptime T: type, p: *T, v: T) void {
+    @atomicStore(T, p, v, .monotonic);
+}
+
 pub fn entryRelativeAge(entry: *const TtEntry, curr_generation: u8) u8 {
-    return (curr_generation -% entry.gen_bound8) & generation_mask;
+    return (curr_generation -% rlx(u8, &entry.gen_bound8)) & generation_mask;
 }
 
 pub fn generationNext(curr_generation: u8) u8 {
@@ -206,7 +222,7 @@ pub fn hashfull(
         var entry_index: usize = 0;
         while (entry_index < cluster_size) : (entry_index += 1) {
             const entry = &clusters[cluster_index].entry[entry_index];
-            if (entry.depth8 != 0 and entryRelativeAge(entry, generation) <= max_age) {
+            if (rlx(u8, &entry.depth8) != 0 and entryRelativeAge(entry, generation) <= max_age) {
                 count += 1;
             }
         }
@@ -234,9 +250,9 @@ pub fn probe(
     var entry_index: usize = 0;
     while (entry_index < cluster_size) : (entry_index += 1) {
         const entry = &cluster.entry[entry_index];
-        if (entry.key16 == key16) {
+        if (rlx(u16, &entry.key16) == key16) {
             return .{
-                .found = if (entry.depth8 != 0) 1 else 0,
+                .found = if (rlx(u8, &entry.depth8) != 0) 1 else 0,
                 .writer_index = @intCast(entry_index),
                 .data = entryRead(entry, depth_none),
             };
@@ -248,8 +264,8 @@ pub fn probe(
     while (candidate_index < cluster_size) : (candidate_index += 1) {
         const replace_entry = &cluster.entry[replace_index];
         const candidate_entry = &cluster.entry[candidate_index];
-        const replace_score = @as(i32, replace_entry.depth8) - 8 * @as(i32, entryRelativeAge(replace_entry, generation));
-        const candidate_score = @as(i32, candidate_entry.depth8) - 8 * @as(i32, entryRelativeAge(candidate_entry, generation));
+        const replace_score = @as(i32, rlx(u8, &replace_entry.depth8)) - 8 * @as(i32, entryRelativeAge(replace_entry, generation));
+        const candidate_score = @as(i32, rlx(u8, &candidate_entry.depth8)) - 8 * @as(i32, entryRelativeAge(candidate_entry, generation));
         if (replace_score > candidate_score) {
             replace_index = candidate_index;
         }
