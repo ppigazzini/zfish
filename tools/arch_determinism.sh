@@ -12,7 +12,7 @@
 #
 # Only tiers the HOST can execute are run -- you cannot bench instructions the CPU
 # lacks. avx2 and bmi2 are gated on their /proc/cpuinfo flags; the host's own best
-# tier (scripts/get_native_properties.sh, the detector the build itself uses) is by
+# tier (`zig build host-arch`, the same pure-Zig detector the build itself uses) is by
 # definition runnable. A dev box reporting avx512icl runs {avx2,bmi2,avx512icl}; a
 # CI runner without AVX-512 just runs {avx2,bmi2}. sse41 is left to `zig build
 # parity`. NOT wrapped in a `zig build` step: it invokes `zig build` per tier, and
@@ -45,7 +45,7 @@ run_tier() {  # $1 = arch tier
 
 grep -qw avx2 "$CPUINFO" 2>/dev/null && run_tier x86-64-avx2
 grep -qw bmi2 "$CPUINFO" 2>/dev/null && run_tier x86-64-bmi2
-HOST="$(sh "$REPO/scripts/get_native_properties.sh" 2>/dev/null)"
+HOST="$(cd "$REPO" && zig build host-arch 2>/dev/null)"
 case "$HOST" in
     x86-64-*) run_tier "$HOST" ;;
     *) echo "arch-determinism: host tier '${HOST:-?}' is not an x86-64 tier -- skipping host sweep" ;;

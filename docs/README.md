@@ -90,9 +90,8 @@ zfish/
 |-- docs/                -- this documentation
 |-- net/                 -- the fetched NNUE network and Syzygy tablebases (untracked)
 |-- .github/workflows/   -- CI: parity matrix, fuzz, upstream drift
-|-- tests/, scripts/     -- upstream Stockfish mirrors, kept for the rebase path
 `-- Copying.txt, AUTHORS -- GPL v3; Stockfish attribution
 ```
 
 `src/`, `tools/`, `build.zig`, the `zfish_*` workflows, and the tracked `*.md` are
-zfish-owned. `tests/` and `scripts/` are upstream mirrors and are not edited here.
+Everything in the tree is zfish-owned; there are no upstream mirrors to leave alone.
