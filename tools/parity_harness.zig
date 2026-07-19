@@ -1545,6 +1545,57 @@ fn runRepeatGo(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
+// fen-truncated: a FEN missing trailing fields must SET, not fail. Upstream reads them with
+// `ss >> token`, so an exhausted stream leaves the castling loop unentered, the en-passant char at
+// its '-' initializer, and `ss >> rule50 >> gamePly` failing into 0/0. A malformed halfmove field
+// puts the stream in fail state, so the fullmove field cannot be read into rule50 either.
+//
+// The expectations are LITERAL, not a regenerable golden: each was verified against the pristine
+// upstream oracle at the tracked sha. A golden here could be regenerated green over a defect,
+// which is the failure mode this gate exists to prevent.
+const FenCase = struct { fen: []const u8, want: []const u8 };
+const fen_truncated_cases = [_]FenCase{
+    // Stops after the side to move: castling, ep and both counters default.
+    .{ .fen = "8/8/8/8/8/4k3/8/R3K3 w", .want = "8/8/8/8/8/4k3/8/R3K3 w - - 0 1" },
+    // Stops after castling.
+    .{ .fen = "8/8/8/8/8/4k3/8/R3K3 w -", .want = "8/8/8/8/8/4k3/8/R3K3 w - - 0 1" },
+    // `-` where the halfmove belongs: the stream fails, so the trailing 7 is NOT read as rule50.
+    // `KQ` drops to `Q` because no rook stands on h1.
+    .{ .fen = "8/8/8/8/8/4k3/8/R3K3 w KQ - - 7", .want = "8/8/8/8/8/4k3/8/R3K3 w Q - 0 1" },
+};
+
+fn runFenTruncated(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    var s: Interactive = undefined;
+    s.init(io, gpa, bin) catch fail("fen-truncated: spawn failed", .{});
+
+    for (fen_truncated_cases) |tc| {
+        s.send("position fen ");
+        s.send(tc.fen);
+        s.send("\nd\n");
+        if (!s.fillUntil("Checkers:"))
+            fail("fen-truncated: `position fen {s}` produced no board -- a FEN missing trailing fields must set, not fail", .{tc.fen});
+    }
+    _ = s.finish();
+
+    var idx: usize = 0;
+    var li = lines(s.buffered());
+    while (li.next()) |raw| {
+        const line = trimCR(raw);
+        if (!startsWith(line, "Fen: ")) continue;
+        if (idx >= fen_truncated_cases.len) break;
+        const got = std.mem.trim(u8, line["Fen: ".len..], " ");
+        const tc = fen_truncated_cases[idx];
+        if (!std.mem.eql(u8, got, tc.want))
+            fail("fen-truncated: `{s}`\n  want: {s}\n  got : {s}", .{ tc.fen, tc.want, got });
+        idx += 1;
+    }
+    if (idx != fen_truncated_cases.len)
+        fail("fen-truncated: {d} of {d} cases produced a Fen line", .{ idx, fen_truncated_cases.len });
+
+    std.debug.print("fen-truncated: OK ({d} truncated/malformed FENs set with upstream's defaults)\n", .{idx});
+    std.process.exit(0);
+}
+
 fn runSkill(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     var s: Interactive = undefined;
     s.init(io, gpa, bin) catch fail("skill: spawn failed", .{});
@@ -1797,6 +1848,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, check_name, "time-mgmt")) runTimeMgmt(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "reset-determinism")) runResetDeterminism(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "skill")) runSkill(gpa, io, bin);
+    if (std.mem.eql(u8, check_name, "fen-truncated")) runFenTruncated(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "repeat-go")) runRepeatGo(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "ponder")) runPonder(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "net-missing")) runNetMissing(gpa, io, bin);
