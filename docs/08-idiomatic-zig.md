@@ -29,29 +29,86 @@ execute and asserts they agree — `zig build parity` gates the single arch it i
 
 ## Translate an intrinsic instead of reaching for one
 
-Upstream writes its hot kernels in x86 intrinsics, one path per ISA. Most of them have a
-portable Zig form that lowers to the same instruction, so the intrinsic is the last
-resort, not the first. The mapping worth knowing before touching a kernel:
+Upstream writes its hot kernels in x86 intrinsics, one path per ISA. Most have a portable Zig
+form that lowers to the same instruction, so an intrinsic declaration is the last resort. The
+mapping worth knowing before touching a kernel:
 
-| C++ intrinsic | Zig | lowers to |
+**Memory.** Alignment is a property of the pointer, not the operation:
+
+| C++ | Zig | note |
 | --- | --- | --- |
-| `_mm256_load_si256` / `_mm256_store_si256` | `ptr[d..][0..V].*` — a typed slice copy | `vmovdqa` |
-| `_mm256_setzero_si256` | `@splat(0)` | `vpxor` |
-| `_mm512_set1_epi16` | `@splat(x)` | `vpbroadcastw` |
-| `_mm256_add_epi32` / `_mm256_sub_epi16` | `a + b` / `a - b` | `vpaddd` / `vpsubw` |
-| `_mm_min_epi16` + `_mm_max_epi16` | `@max(lo, @min(hi, v))` | `vpminsw` / `vpmaxsw` |
-| `_mm_srai_epi16` | `v >> @as(@Vector(V, u4), @splat(n))` | `vpsraw` |
-| `_mm_packs_epi16` | `@intCast` to a narrower lane type | `packsswb` |
-| `_mm_unpacklo_epi8` / `_mm_shuffle_epi32` | `@shuffle` with comptime indices | `punpcklbw` / `pshufd` |
-| `_mm256_movemask_epi8` | `@select` + `@reduce(.Or, …)` — see the layout section below | `pmovmskb` |
-| `_mm_mulhi_epi16` | `@intCast((@as(Vu32, a << s7) * @as(Vu32, b)) >> s16)` | `pmulhuw` |
-| `_tzcnt_u64` / `__builtin_popcountll` | `@ctz` / `@popCount` | `tzcnt` / `popcnt` |
-| `template<int N>` | a `comptime` parameter | full specialization |
-| `#pragma unroll` | `inline for` | unrolled, index comptime |
+| `_mm256_load_si256` / `_mm256_store_si256` | `ptr[d..][0..V].*` on an `align(64)` buffer | aligned move |
+| `_mm256_loadu_si256` / `_mm_loadu_si128` | the same expression on an unaligned pointer | unaligned move; there is no separate spelling |
+| `_mm_loadl_epi64` | `@as(@Vector(8, u8), buf[i..][0..8].*)` | partial load |
+| `_mm_cvtsi32_si128` / `_mm_cvtsi128_si32` | `@bitCast` between a scalar and a 1-lane vector, or `v[0]` | scalar/vector move |
 
-Two of these are worth spelling out, because they read as ordinary code and are not.
+**Constants and reinterpretation.** All free — type-level, no instruction:
 
-**A typed slice copy is a vector load.** There is no intrinsic and no cast:
+| C++ | Zig |
+| --- | --- |
+| `_mm256_setzero_si256` / `_mm512_setzero_epi32` | `@splat(0)` |
+| `_mm512_set1_epi8` / `_epi16` / `_epi32` | `@splat(x)` — the lane type comes from the destination |
+| `_mm256_castsi256_ps`, `_mm256_castsi256_si512` | `@bitCast` between equal-width vectors |
+| `_mm256_extracti128_si256`, `_mm512_inserti64x4` | `@shuffle` with comptime indices |
+
+**Arithmetic.** Note the saturating forms — Zig has dedicated operators, and using the plain
+one instead is a silent correctness change:
+
+| C++ | Zig |
+| --- | --- |
+| `_mm256_add_epi16` / `_epi32`, `_mm256_sub_epi16` / `_epi32` | `a + b`, `a - b` |
+| `_mm_adds_epi8` / `_mm_subs_epi8` (saturating) | `a +| b`, `a -| b` |
+| wrapping scalar arithmetic (2's-complement) | `a +% b`, `a -% b`, `a *% b` |
+| `_mm_mulhi_epi16` | `@intCast((@as(Vu32, a << s7) * @as(Vu32, b)) >> s16)` — LLVM matches the mulhu pattern |
+| `_mm_madd_epi16`, `_mm_maddubs_epi16`, `_mm512_dpbusd_epi32` | `extern fn @"llvm.x86…"` declarations — no portable form |
+| `_mm_min_epi16` + `_mm_max_epi16` (ClippedReLU) | `@max(lo, @min(hi, v))` |
+| `_mm512_reduce_add_epi32` | `@reduce(.Add, v)` |
+
+**Shifts.** The shift amount is a vector whose lane type is sized to the shifted width — `u4`
+for 16-bit lanes, `u5` for 32-bit. A wrong width is a compile error, not a slow path:
+
+| C++ | Zig |
+| --- | --- |
+| `_mm_slli_epi16` / `_mm_srli_epi16` | `v << s`, `v >> s` on unsigned lanes |
+| `_mm_srai_epi16` (arithmetic) | `v >> s` on **signed** lanes — signedness picks the instruction |
+
+**Width conversion.** Widening and narrowing are `@intCast`; the saturating narrows are
+distinct instructions and Zig reaches them by casting from a saturated value:
+
+| C++ | Zig |
+| --- | --- |
+| `_mm_cvtepi8_epi16` (sign-extend widen) | `@intCast` to a wider signed lane |
+| `_mm_packs_epi16` / `_mm_packs_epi32` (signed saturate) | `@intCast` after `@max`/`@min` clamping |
+| `_mm_packus_epi16` / `_mm_packus_epi32` (unsigned saturate) | same, clamped to the unsigned range |
+| `_mm512_cvtsepi32_epi16`, `_mm512_cvtsepi16_epi8` | `@intCast` on a clamped vector |
+| `_mm_unpacklo_epi8` / `_mm_unpackhi_epi8`, `_mm_shuffle_epi32`, `_mm_shufflelo_epi16` | `@shuffle` with comptime index vectors |
+
+**Comparison and masks.** Zig comparisons on vectors yield `@Vector(N, bool)`, which has no
+guaranteed memory layout — consume it with `@select`/`@reduce`, never `@bitCast` it (see below):
+
+| C++ | Zig |
+| --- | --- |
+| `_mm_cmpeq_epi8`, `_mm_cmpgt_epi8` / `_epi32` | `a == b`, `a > b` |
+| `_mm512_cmpgt_epi32_mask`, `_mm512_test_epi32_mask` | the same comparison; the mask is the bool vector |
+| `_mm256_movemask_epi8`, `_mm_movemask_ps` | `@reduce(.Or, @select(Mask, cond, lane_bits, zeros))` |
+
+**Bit and scalar:**
+
+| C++ | Zig |
+| --- | --- |
+| `_tzcnt_u64` / `__builtin_ctzll` | `@ctz` |
+| `__builtin_popcountll` | `@popCount` |
+| `alignas(64)` | `align(64)` |
+
+**No portable equivalent — the known gap.** `_mm512_maskz_compress_epi16` / `_epi32` and
+`_mm512_mask_compressstoreu_epi16` (`vpcompress`) have no Zig builtin and no pattern LLVM
+infers. Upstream uses them to compact its non-zero-chunk indices on AVX-512; this codebase has
+no equivalent path and walks a bitset on every tier instead. Anything needing lane compaction
+has to declare the intrinsic or restructure around it.
+
+Two entries above read as ordinary code and are not.
+
+**A typed slice copy is a vector load.** No intrinsic, no cast:
 
 ```zig
 const Vi16 = @Vector(V, i16);
@@ -64,8 +121,8 @@ target.ptr[d..][0..V].* = acc;             // one aligned store
 deref is a vector move rather than a loop.
 
 **Reach a specific instruction through an `extern` LLVM intrinsic, never inline assembly.**
-Inline asm is opaque to the optimizer and blocks inlining across the call; the declared
-intrinsic participates in normal optimization:
+Inline asm is opaque to the optimizer and blocks inlining across the call; a declared intrinsic
+participates in normal optimization:
 
 ```zig
 const vpdpbusd512 = struct {
@@ -75,8 +132,25 @@ const vpdpbusd512 = struct {
 }.@"llvm.x86.avx512.vpdpbusd.512";
 ```
 
-`@bitCast` between equal-width vectors costs nothing — it is a type-level reinterpret — so
-wrapping such an intrinsic in a typed helper is free.
+## Build tables and lane patterns at comptime
+
+Where C++ needs a `constexpr` function or a generated header, Zig computes the table in a
+`comptime` block beside its use, so the values and the code that consumes them cannot drift:
+
+```zig
+const lane_bits: Vgm = comptime blk: {
+    var w: [groups_per_step]GMask = undefined;
+    for (&w, 0..) |*bit, i| bit.* = @as(GMask, 1) << @intCast(i);
+    break :blk w;
+};
+```
+
+Three supporting builtins matter here. `@Int(.unsigned, N)` constructs an integer type of
+exactly `N` bits, so a mask type tracks a lane count instead of being hardcoded.
+`@setEvalBranchQuota` raises the comptime evaluation budget — the feature-index tables need it,
+and the failure without it is a compile error, not a wrong answer. `@compileError` in a
+`comptime` block rejects an invalid width or layout at build time rather than producing a
+kernel that silently computes the wrong thing.
 
 ## Keep unrolled accumulators comptime-indexed
 
