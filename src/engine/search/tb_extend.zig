@@ -144,20 +144,14 @@ pub fn syzygyExtendPv(
         }
 
         // Report a full PV only when all of it validated within the deadline.
-        if (config.root_in_tb != 0 and deadline.expired()) {
-            result.timed_out = true;
-            break;
-        }
+        if (config.root_in_tb != 0 and deadline.expired()) break;
     }
 
     result.pv_len = ply;
 
     // Step 2: extend toward mate by always taking the top-ranked move.
     while (!(rule50 and position_port.isDraw(scratch.pos, 0))) {
-        if (deadline.expired()) {
-            result.timed_out = true;
-            break;
-        }
+        if (deadline.expired()) break;
         if (result.pv_len >= pv_moves.len) break;
 
         var legal: [256]u16 = undefined;
@@ -194,6 +188,11 @@ pub fn syzygyExtendPv(
     // 50-move counter, which DTZ rounding cannot rank correctly (Stockfish issue 5175). Report the
     // score of the PV actually found.
     if (position_port.isDraw(scratch.pos, 0)) result.value = value_draw;
+
+    // Take the warning from one final reading of the clock, as upstream does after undoing the PV
+    // (search.cpp:2223). A walk that never tripped a break can still end over budget, and that
+    // case must warn too: the condition is "the extension ran out of time", not "a loop stopped".
+    result.timed_out = deadline.expired();
 
     return result;
 }
