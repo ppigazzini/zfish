@@ -300,8 +300,21 @@ pub inline fn skillTimeToPick(level: f64, depth: i32) bool {
 }
 // Pick the skill best move by a statistical rule over the (descending-sorted) rootMoves.
 pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
-    const top_score = id.root_moves[0].score;
-    const span = top_score - id.root_moves[multi_pv - 1].score;
+    // Scan for the score range explicitly rather than assuming rootMoves[0] and
+    // rootMoves[multiPV-1] bracket it. With tablebases at the root the moves are ordered
+    // by tbRank, not by score, so the ends are not the extremes and the span can go
+    // negative -- which drives `delta` negative and corrupts the push. Mirror upstream
+    // search.cpp Skill::pick_best.
+    var top_score = id.root_moves[0].score;
+    var min_score = id.root_moves[0].score;
+    {
+        var k: usize = 1;
+        while (k < multi_pv) : (k += 1) {
+            top_score = @max(top_score, id.root_moves[k].score);
+            min_score = @min(min_score, id.root_moves[k].score);
+        }
+    }
+    const span = top_score - min_score;
     const delta: i32 = if (span < skill_pawn_value) span else skill_pawn_value;
     const weakness: f64 = 120.0 - 2.0 * id.skill_level;
     const modw: u32 = @intFromFloat(weakness);

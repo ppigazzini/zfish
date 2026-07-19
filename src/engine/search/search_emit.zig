@@ -55,7 +55,11 @@ fn scoreTextAlloc(v: i32, material: i32) ?[:0]u8 {
 
 // Build + print one "info depth ... pv ..." line.
 // Publish the whole-search node count to the shared leaf; no-op in quiet mode.
-fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, move_index: usize, depth: i32, sel_depth: i32, multipv: usize, v: i32, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: i32, time_ms: u64) void {
+// Select `previous_pv` for a root move carrying a previous-iteration score, matching
+// upstream's `usePreviousScore ? rootMoves[i].previousPV : rootMoves[i].pv`
+// (search.cpp:2262): a move not yet searched this iteration has a stale `pv`, and
+// emitting it reports a line the current iteration never verified.
+fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.WorkerLayout, move_index: usize, use_prev: bool, depth: i32, sel_depth: i32, multipv: usize, v: i32, show_wdl: u8, bound_kind: u8, nodes: u64, tb_hits: u64, hashfull: i32, time_ms: u64) void {
     _ = manager;
     uci_output.setLastNodesSearched(nodes);
     if (uci_output.isQuiet()) return;
@@ -85,7 +89,8 @@ fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_l
     defer if (wdl_c) |wc| ca.free(wc);
 
     const rm = workerRootMoveAt(w, move_index);
-    const pv = &worker_layout.RootMove.fromAddr(rm).pv;
+    const rmv = worker_layout.RootMove.fromAddr(rm);
+    const pv = if (use_prev) &rmv.previous_pv else &rmv.pv;
     const pv_len = pv.length;
     var pv_buf: [4096]u8 = undefined;
     var pv_n: usize = 0;
@@ -245,7 +250,7 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
                 bound_kind = 2;
             }
         }
-        searchEmitInfoFull(ctx.manager, ctx.worker, i, d, @intCast(rm.sel_depth), i + 1, @intCast(v), ctx.show_wdl, bound_kind, ctx.nodes, ctx.tb_hits, ctx.hashfull, ctx.elapsed_ms);
+        searchEmitInfoFull(ctx.manager, ctx.worker, i, use_prev, d, @intCast(rm.sel_depth), i + 1, @intCast(v), ctx.show_wdl, bound_kind, ctx.nodes, ctx.tb_hits, ctx.hashfull, ctx.elapsed_ms);
     }
 }
 
