@@ -103,15 +103,49 @@ inline fn affineVnni(
     inline for (0..chunks) |c| acc[c] = biases[c * 16 ..][0..16].*;
     inline for (chunks..chunks * chains) |c| acc[c] = @splat(0);
 
-    var it = GroupIter(sparse){ .nnz = nnz, .groups = input.len / 4 };
-    outer: while (true) {
-        inline for (0..chains) |ch| {
-            const g = it.next() orelse break :outer;
-            const in4: [4]u8 = input[g * 4 ..][0..4].*;
-            const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
-            inline for (0..chunks) |c| {
-                const b: @Vector(64, i8) = weights[g * OUT * 4 + c * 64 ..][0..64].*;
-                acc[ch * chunks + c] = vpdpbusd16(acc[ch * chunks + c], a, b);
+    if (sparse) {
+        // Hoist the input/weight base pointers ONCE per 64-group nnz word and pop set bits with
+        // a LOCAL index, as the SSSE3 and portable paths do (5.99: measured -3.9% / -1.9% there;
+        // this path was the one left walking GroupIter's ABSOLUTE index). Keep the 3-chain split:
+        // `ch` still comes from an `inline for`, so every acc index stays comptime and the array
+        // stays in registers -- the rotation is guarded per group instead, and the guard's branch
+        // is taken only at word exhaustion. Chain ASSIGNMENT shifts at word boundaries relative
+        // to the continuous rotation this replaces; i32 wrapping adds commute, so the merged sum
+        // is bit-identical whatever the partition -- the signature is the proof.
+        for (nnz, 0..) |word, k| {
+            var bits = word;
+            if (bits == 0) continue;
+            // Form the bases only after the zero-word skip: the always-empty top words would
+            // put both offsets past their buffers, and an out-of-bounds pointer must not be
+            // formed even if never read.
+            const in_base = input.ptr + k * 64 * 4;
+            const w_base = weights + k * 64 * OUT * 4;
+            while (bits != 0) {
+                inline for (0..chains) |ch| {
+                    if (bits != 0) {
+                        const i: usize = @ctz(bits);
+                        bits &= bits - 1;
+                        const in4: [4]u8 = in_base[i * 4 ..][0..4].*;
+                        const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
+                        inline for (0..chunks) |c| {
+                            const b: @Vector(64, i8) = (w_base + i * OUT * 4 + c * 64)[0..64].*;
+                            acc[ch * chunks + c] = vpdpbusd16(acc[ch * chunks + c], a, b);
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        var it = GroupIter(false){ .nnz = nnz, .groups = input.len / 4 };
+        outer: while (true) {
+            inline for (0..chains) |ch| {
+                const g = it.next() orelse break :outer;
+                const in4: [4]u8 = input[g * 4 ..][0..4].*;
+                const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
+                inline for (0..chunks) |c| {
+                    const b: @Vector(64, i8) = weights[g * OUT * 4 + c * 64 ..][0..64].*;
+                    acc[ch * chunks + c] = vpdpbusd16(acc[ch * chunks + c], a, b);
+                }
             }
         }
     }
