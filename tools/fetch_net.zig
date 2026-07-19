@@ -3,7 +3,7 @@
 // ACTUALLY loads: read the name at runtime from the authoritative Zig constant
 // `default_eval_file_name` in src/engine/eval/network.zig (the single source of truth engine.zig imports),
 // NOT the stale upstream src/evaluate.h that scripts/net.sh keys on. build.zig runs this with
-// cwd = net/ and argv[1] = the path to network.zig.
+// cwd = resources/ and argv[1] = the path to network.zig.
 //
 // Mirror upstream's name<->contents contract: the file is named `nn-<first 12 hex of its
 // sha256>.nnue`, so validation recomputes the sha256 and compares. Download sources + order match
@@ -85,7 +85,7 @@ pub fn main(init: std.process.Init) !void {
     const name = parseNetName(src) orelse
         fatal("no default_eval_file_name in {s}", .{net_src_path});
 
-    // Assume cwd == net/ (set by build.zig). Skip the download if the net is already present and valid.
+    // Assume cwd == resources/ (set by build.zig). Skip the download if the net is already present and valid.
     if (Io.Dir.cwd().readFileAlloc(io, name, gpa, .unlimited)) |existing| {
         defer gpa.free(existing);
         if (validateBytes(name, existing)) {

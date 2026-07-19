@@ -1,6 +1,6 @@
 // Fetch the zfish Syzygy 3-man tablebases, in pure Zig (mirrors fetch_net.zig) -- no sh/curl.
 // Download the 5 three-man endgames (KPvK KNvK KBvK KRvK KQvK), WDL (.rtbw) + DTZ (.rtbz), into
-// `syzygy/` under the cwd (build.zig runs it with cwd = net/, so -> net/syzygy/). ~26 KB total;
+// `syzygy/` under the cwd (build.zig runs it with cwd = resources/, so -> resources/syzygy/). ~26 KB total;
 // never commit the tables (see .gitignore) -- fetch + cache them like the NNUE net. Only the
 // 3-man set is needed for the Syzygy CI gate (a KPvK/KQvK probe); verify each file's Syzygy
 // magic header so a mirror error page can't masquerade as a table. Skip files already present.

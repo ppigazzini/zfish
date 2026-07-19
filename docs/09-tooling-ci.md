@@ -43,9 +43,9 @@ returned tier name to its feature set and macros.
 | --- | --- |
 | `install` (default) | Build the engine binary into `zig-out/bin/stockfish`. |
 | `stockfish` | Build the Zig-owned Stockfish engine for Linux x86_64 / aarch64. |
-| `net` | Download the default NNUE net into `net/`. |
-| `tb` | Download the 3-man Syzygy tablebases into `net/syzygy/`. |
-| `bench` | Run `stockfish bench` from `net/`, fetching the net first. |
+| `net` | Download the default NNUE net into `resources/`. |
+| `tb` | Download the 3-man Syzygy tablebases into `resources/syzygy/`. |
+| `bench` | Run `stockfish bench` from `resources/`, fetching the net first. |
 | `uci` | Run a scripted UCI handshake against the built binary. |
 | `signature` | Verify the bench signature via the pure-Zig parity harness. |
 | `parity` | The full gate battery (see below). |
@@ -92,7 +92,7 @@ reading the wrong stream is how a whole broken handshake passed for months.
 `zig build parity` is the per-push aggregate. Almost all of it runs through
 `tools/parity_harness.zig`, a pure-Zig harness invoked as
 `parity_harness <check> <stockfish-bin> <golden-or-expected> [check|update]` with
-`cwd = net/` so the spawned engine finds the net. The harness drives the real binary
+`cwd = resources/` so the spawned engine finds the net. The harness drives the real binary
 over UCI, captures stdout and stderr separately (CR-stripped, so Windows text mode
 matches the LF goldens), extracts a deterministic fingerprint, and diffs it. It
 replaces the former bash golden scripts, which is why `parity-portable` runs
@@ -220,7 +220,7 @@ src-free binary that lost behavior cannot pass. Linux-only — it needs `nm`.
 ## The NNUE net and tablebases
 
 The NNUE net is an **external runtime input**, not an embedded blob: the engine loads
-it from disk at startup, which is why every harness run sets `cwd = net/`.
+it from disk at startup, which is why every harness run sets `cwd = resources/`.
 
 `tools/fetch_net.zig` (`zig build net`) fetches it in pure Zig — no `sh`, no
 curl/wget/sha256sum, so it works on every OS. It reads the net name at runtime from
@@ -231,7 +231,7 @@ compares. Sources and order mirror upstream's fetcher. It early-exits when the n
 already present; CI caches it keyed on `network.zig`, so a net bump busts the cache.
 
 `tools/fetch_tb.zig` (`zig build tb`) fetches the 3-man Syzygy set (KPvK KNvK KBvK
-KRvK KQvK, WDL + DTZ) into `net/syzygy/` — the tables the `tb-*` gates probe. It
+KRvK KQvK, WDL + DTZ) into `resources/syzygy/` — the tables the `tb-*` gates probe. It
 verifies each file's Syzygy magic header, so a mirror's error page cannot masquerade
 as a table. Neither the net nor the tables are committed.
 

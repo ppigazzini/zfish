@@ -21,11 +21,11 @@
 # of the refs here). Subtract it before quoting a search-only ratio; perf_fingerprint.py costs
 # will show the offenders by name.
 #
-# Usage: perf_callgrind.sh <binary> [bench-args...]     (CWD must be net/ so the net loads)
+# Usage: perf_callgrind.sh <binary> [bench-args...]     (CWD must be resources/ so the net loads)
 #        OUT=path/to.out perf_callgrind.sh ./stockfish 16 1 11
 set -u
 
-BIN="${1:?usage: perf_callgrind.sh <binary> [bench-args...]  (run with CWD=net/)}"
+BIN="${1:?usage: perf_callgrind.sh <binary> [bench-args...]  (run with CWD=resources/)}"
 shift
 BENCH_ARGS=("${@:-16 1 11}")
 OUT="${OUT:-callgrind.out}"

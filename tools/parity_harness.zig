@@ -7,7 +7,7 @@
 // sed/grep/sort, and process substitution, none of which hold across the three).
 //
 // Contract (matches the bash scripts, invoked by build.zig):
-//   parity_harness <check> <stockfish-bin> <golden-path> [check|update]   (cwd = net/)
+//   parity_harness <check> <stockfish-bin> <golden-path> [check|update]   (cwd = resources/)
 //     check  (default): rebuild the live fingerprint, diff vs the golden, exit 1 on drift.
 //     update:           (re)write the golden from the live run.
 //   parity_harness signature <stockfish-bin> <expected-nodes>
@@ -604,7 +604,7 @@ fn buildBenchMatrix(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 }
 
 // tb-init: capture the Syzygy load report. Point SyzygyPath at the fetched 3-man set (syzygy/,
-// relative to the net/ cwd) and pin the `info string Found N WDL and N DTZ tablebase files (up to
+// relative to the resources/ cwd) and pin the `info string Found N WDL and N DTZ tablebase files (up to
 // M-man)` line -- the discovery half of the Syzygy port, matched to the upstream oracle. Find the
 // message on stdout (printInfoString). Synchronous, so the feed-all-then-quit path is safe.
 fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
@@ -643,7 +643,7 @@ const tb_probe_runs = [_]struct { label: []const u8, fen: []const u8 }{
 };
 
 // Run the `d`-command probe battery, pinning the `Tablebases <prefix>: N (state)` line ==
-// upstream oracle for each position. Operate in net/ cwd so "syzygy" resolves to the fetch dir.
+// upstream oracle for each position. Operate in resources/ cwd so "syzygy" resolves to the fetch dir.
 fn buildTbProbe(gpa: std.mem.Allocator, io: Io, bin: []const u8, prefix: []const u8, tag: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
@@ -722,7 +722,7 @@ fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 // bigger than the 3-man tables, so the root is searched normally and Step 6 probes the 3-man
 // nodes reached in the tree). Pin the node count WITH SyzygyPath (Step 6 cutting the tree) and
 // WITHOUT (Step 6 off) both == the upstream oracle -- bit-exact node-count parity. bench writes the
-// count to stderr; the EPD is written transiently into the net/ cwd. Both counts are deterministic.
+// count to stderr; the EPD is written transiently into the resources/ cwd. Both counts are deterministic.
 fn benchNodes(gpa: std.mem.Allocator, io: Io, bin: []const u8, input: []const u8) !u64 {
     var cap = try runEngine(gpa, io, bin, &.{}, input);
     defer cap.deinit(gpa);
@@ -765,8 +765,8 @@ fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 // WDL + DTZ == the upstream oracle for a KNNvKP cursed win (WDL +1, DTZ 122 -- a win that is a draw
 // under the 50-move rule) and its blessed-loss mirror (WDL -1, DTZ -115). Exercise the cursed
 // branches of map_score<DTZ> (x2 plies) and probe_dtz (the dtz+100*cursed*sign arithmetic). NOT in
-// the `parity` aggregate: it requires ~40 MB of 5-man tables staged into net/syzygy5/ locally,
-// e.g. (from net/):  for t in KNNvKP KNNvK KNNvKQ KNNvKR KNNvKB KNNvKN KNvKP KNvKQ KNvKR KNvKB KNvKN
+// the `parity` aggregate: it requires ~40 MB of 5-man tables staged into resources/syzygy5/ locally,
+// e.g. (from resources/):  for t in KNNvKP KNNvK KNNvKQ KNNvKR KNNvKB KNNvKN KNvKP KNvKQ KNvKR KNvKB KNvKN
 //   KPvKN KQvKN KRvKN KBvKN; do for e in wdl:rtbw dtz:rtbz; do curl -s -o syzygy5/$t.${e#*:} \
 //   https://tablebase.lichess.ovh/tables/standard/3-4-5-${e%:*}/$t.${e#*:}; done; done
 fn buildTbCursed(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
@@ -788,7 +788,7 @@ fn buildTbCursed(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
             if (startsWithIgnoreCase(line, "Tablebases WDL:")) wdl_line = line;
             if (startsWithIgnoreCase(line, "Tablebases DTZ:")) dtz_line = line;
         }
-        const wl = wdl_line orelse fail("tb-cursed: {s}: no WDL line (5-man tables missing from net/syzygy5/? see the fn comment)", .{r.label});
+        const wl = wdl_line orelse fail("tb-cursed: {s}: no WDL line (5-man tables missing from resources/syzygy5/? see the fn comment)", .{r.label});
         const dl = dtz_line orelse fail("tb-cursed: {s}: no DTZ line (5-man tables missing?)", .{r.label});
         try out.print(gpa, "{s} | {s} | {s}\n", .{ r.label, wl, dl });
     }
@@ -813,7 +813,7 @@ fn fnv1a64(data: []const u8) u64 {
 // check authored against the pristine oracle (see tools/upstream_parity.sh): a matching
 // hash means zfish's export == upstream's export == the distributed net. `export_net` is
 // synchronous (it runs to completion in the command handler, no async search), so the
-// feed-all-then-quit runEngine path is safe here. Write a temp net in cwd (net/), hash
+// feed-all-then-quit runEngine path is safe here. Write a temp net in cwd (resources/), hash
 // it, and remove it.
 fn buildExportNet(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const tmp = "parity_export.tmp.nnue";
@@ -1797,7 +1797,7 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
 const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"search-modes", @"fen-errors", perft, eval, misc, @"export-net", nodestime, @"uci-options", mate, chess960, @"bench-matrix", @"tb-init", @"tb-wdl", @"tb-dtz", @"tb-root", @"tb-search", @"tb-cursed" };
 
 // net-missing: exercise the ONLY gate that runs the installed binary from a cwd the build
-// does not pin. Every other gate sets cwd to net/ (build.zig `run.setCwd(b.path("net"))`),
+// does not pin. Every other gate sets cwd to resources/ (build.zig `run.setCwd(b.path("resources"))`),
 // which supplies the very precondition the binary must check -- so none of them can
 // see a startup that fails without the net.
 //
@@ -1808,7 +1808,7 @@ const Check = enum { @"output-golden", @"driver-golden", @"search-parity", @"sea
 // Assert here a NAMED diagnostic and a clean non-zero exit, never a signal.
 fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
     // Absolutize the binary path before spawning -- this gate sets cwd to a scratch dir
-    // (every other gate keeps cwd = net/), so a path relative to the harness's own cwd
+    // (every other gate keeps cwd = resources/), so a path relative to the harness's own cwd
     // would not resolve from there. Resolve a possibly-relative incoming arg against the
     // harness cwd.
     const bin: []const u8 = if (std.fs.path.isAbsolute(bin_arg))
@@ -1822,7 +1822,7 @@ fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
             fail("net-missing: cannot resolve the binary path", .{});
     };
 
-    // Make a scratch cwd with no net in it. Deliberately not under net/.
+    // Make a scratch cwd with no net in it. Deliberately not under resources/.
     const dir_path = "net_missing_tmp";
     Io.Dir.cwd().createDirPath(io, dir_path) catch
         fail("net-missing: cannot create scratch dir {s}", .{dir_path});

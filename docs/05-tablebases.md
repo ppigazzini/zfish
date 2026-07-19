@@ -340,10 +340,10 @@ requires every hook to declare a failure mode and a class, and to be registered.
 ## Testing
 
 `zig build tb` runs `tools/fetch_tb.zig`, which downloads the **3-man set** — `KPvK`,
-`KNvK`, `KBvK`, `KRvK`, `KQvK`, both `.rtbw` and `.rtbz` — into `net/syzygy/` in pure Zig
+`KNvK`, `KBvK`, `KRvK`, `KQvK`, both `.rtbw` and `.rtbz` — into `resources/syzygy/` in pure Zig
 (no `sh`/curl). It verifies each file's Syzygy magic header, so a mirror's error page
 cannot masquerade as a table, and skips files already present. The tables are never
-committed. Every `tb-*` gate depends on this step and runs with `cwd = net/`, so
+committed. Every `tb-*` gate depends on this step and runs with `cwd = resources/`, so
 `setoption name SyzygyPath value syzygy` resolves to the fetched set.
 
 The gates live in `tools/parity_harness.zig`, each diffed against a golden in `tools/`:
@@ -355,7 +355,7 @@ The gates live in `tools/parity_harness.zig`, each diffed against a golden in `t
 | `tb-dtz` | `tools/tb_dtz.golden` | the same battery, pinning the `Tablebases DTZ:` line — including the `change_stm` 1-ply path via KQvK with black to move. |
 | `tb-root` | `tools/tb_root.golden` | root DTZ ranking: `go` on a TB win, pinning the emitted **score** and **tbhits** == oracle. Deliberately *not* pinned: the bestmove and node count — the oracle early-returns on a `root_in_tb` decisive win while zfish still searches, so among equally-optimal TB moves it may pick a different (also winning) one; gating that would be fake parity. |
 | `tb-search` | `tools/tb_search.golden` | the in-search Step 6 probe: bench one 4-man position per file (each bigger than the 3-man tables, so the root searches normally and Step 6 fires at the 3-man nodes captures reach), pinning the node count **with** `SyzygyPath` and **without** — both == oracle. Bit-exact node-count parity for the in-tree probe. |
-| `tb-cursed` | `tools/tb_cursed.golden` | **local-only**: cursed-win / blessed-loss WDL+DTZ on real DTZ>100 positions, exercising the cursed branches of `mapScoreDtz` and `probeDtz`. Needs ~40 MB of 5-man tables staged into `net/syzygy5/`, which the 3-man CI set never contains, so it is not in the `parity` aggregate (see the `tb-cursed` step in `build.zig` for the fetch). |
+| `tb-cursed` | `tools/tb_cursed.golden` | **local-only**: cursed-win / blessed-loss WDL+DTZ on real DTZ>100 positions, exercising the cursed branches of `mapScoreDtz` and `probeDtz`. Needs ~40 MB of 5-man tables staged into `resources/syzygy5/`, which the 3-man CI set never contains, so it is not in the `parity` aggregate (see the `tb-cursed` step in `build.zig` for the fetch). |
 
 `tb-init`, `tb-wdl`, `tb-dtz`, `tb-root`, and `tb-search` are all wired into the `parity`
 aggregate. Each has a matching `-update` step that regenerates its golden from the current

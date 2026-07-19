@@ -51,7 +51,7 @@ jobs:
       # Cache the downloaded NNUE network (~50 MB) keyed on the net name the Zig
       # binary actually loads -- the `default_eval_file_name` constant in
       # src/engine/eval/network.zig -- so a Zig-only net bump busts the cache. The
-      # net is fetched into and read from net/ (the runtime cwd; src/ is gone).
+      # net is fetched into and read from resources/ (the runtime cwd; src/ is gone).
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -64,7 +64,7 @@ jobs:
       - name: Cache Syzygy tablebases
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: net/syzygy
+          path: resources/syzygy
           key: syzygy-3man-${{ hashFiles('tools/fetch_tb.zig') }}
 
       # Pin the ARCH instead of `native`: GitHub runners have modern CPUs whose
@@ -158,7 +158,7 @@ jobs:
       - name: Cache Syzygy tablebases
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: net/syzygy
+          path: resources/syzygy
           key: syzygy-3man-${{ hashFiles('tools/fetch_tb.zig') }}
 
       - run: zig version
@@ -194,7 +194,7 @@ jobs:
       - name: Build aarch64 (armv8-dotprod) + bench (native)
         run: |
           zig build -Darch=armv8-dotprod
-          cd net
+          cd resources
           out="$(../zig-out/bin/stockfish bench 2>&1)"
           printf '%s\n' "$out" | tail -6
           printf '%s\n' "$out" | grep -qE 'Nodes searched[[:space:]]*:[[:space:]]*2792255([^0-9]|$)' \
