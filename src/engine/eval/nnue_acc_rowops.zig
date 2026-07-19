@@ -112,37 +112,37 @@ pub fn applyPsqtDelta(
     }
 }
 
+// Keep the tile in ONE register across all rows, as the fused combined path below does: the
+// 8-bucket i32 row is a single vector, and the scalar 8-step inner loop these replaced stays
+// scalar forever -- the toolchain does not auto-vectorize integer loops. Per-row op order is
+// unchanged (removed then added), so ReleaseSafe sees identical intermediates.
 pub fn applyPsqtDeltaInPlace(
     target: []i32,
     removed: []const u32,
     added: []const u32,
     weights: [*]const i32,
 ) void {
+    const V = @Vector(psqt_buckets, i32);
+    var acc: V = target[0..psqt_buckets].*;
     for (removed) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] -= weights[row_offset + bucket];
-        }
+        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        acc -= w;
     }
-
     for (added) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] += weights[row_offset + bucket];
-        }
+        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        acc += w;
     }
+    target[0..psqt_buckets].* = acc;
 }
 
 pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i32) void {
+    const V = @Vector(psqt_buckets, i32);
+    var acc: V = target[0..psqt_buckets].*;
     for (rows) |index| {
-        const row_offset = @as(usize, index) * psqt_buckets;
-        var bucket: usize = 0;
-        while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] += weights[row_offset + bucket];
-        }
+        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        acc += w;
     }
+    target[0..psqt_buckets].* = acc;
 }
 
 // Port (hand-vectorized) upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
