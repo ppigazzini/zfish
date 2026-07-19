@@ -471,7 +471,11 @@ pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult 
 // it exactly (undoMove), and doMoveState touches only the board + StateInfo (never the NNUE
 // accumulator stack), so the search's position/eval state is intact on return. A persistent probe
 // storage (reset per call) supplies the recursion's StateInfo nodes. Same WDL as the FEN path.
-var probe_pos_storage: ?*state_list.PendingStateStorage = null;
+// Keep the recursion's StateInfo storage per thread. Upstream's `search()` holds `StateInfo st`
+// as a stack local (tbprobe.cpp:1333), so every probing thread owns its nodes. One shared storage
+// lets a reset on one thread destroy blocks another is writing through in doMoveState, and lets
+// two threads mutate the block list at once.
+threadlocal var probe_pos_storage: ?*state_list.PendingStateStorage = null;
 
 pub fn probeWdlPos(pos: *Position) ProbeResult {
     const empty = ProbeResult{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 };
