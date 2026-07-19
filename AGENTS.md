@@ -18,11 +18,11 @@ sentence has become false. That part is yours.
 
 ```sh
 zig build                  # binary is `stockfish` (NOT `zfish`), at zig-out/bin/
-zig build bench            # fetches the NNUE net into net/, runs from there
+zig build bench            # fetches the NNUE net into resources/, runs from there
 ```
 
 The net is a runtime input, not embedded. **Don't** run the binary from the repo root — it
-SIGSEGVs on a null net. **Do** run it from `net/`, or use `zig build bench`.
+SIGSEGVs on a null net. **Do** run it from `resources/`, or use `zig build bench`.
 
 ## The anchor
 

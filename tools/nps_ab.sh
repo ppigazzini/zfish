@@ -22,11 +22,11 @@
 # Node counts are asserted equal up front: different trees mean different workloads and the
 # ratio would be meaningless.
 #
-# Usage: nps_ab.sh <binA> <binB> [rounds] [bench-args...]   (CWD must be net/)
+# Usage: nps_ab.sh <binA> <binB> [rounds] [bench-args...]   (CWD must be resources/)
 #        nps_ab.sh ./zf ./sf 10 16 1 13
 set -u
 
-A="${1:?usage: nps_ab.sh <binA> <binB> [rounds] [bench-args...]  (run with CWD=net/)}"
+A="${1:?usage: nps_ab.sh <binA> <binB> [rounds] [bench-args...]  (run with CWD=resources/)}"
 B="${2:?usage: nps_ab.sh <binA> <binB> [rounds] [bench-args...]}"
 ROUNDS="${3:-8}"
 shift 3 2>/dev/null || shift $#

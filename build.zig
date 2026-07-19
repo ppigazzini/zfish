@@ -622,7 +622,7 @@ pub fn build(b: *std.Build) void {
 
     // Hold the bench positions (Defaults) and benchmark-command games (BenchmarkPositions)
     // as Zig arrays in benchmark.zig. Fetch the only external artifact, the NNUE net,
-    // into net/.
+    // into resources/.
     // Keep StateList in its own module so engine_graph.zig can hold it as a typed member.
     // Own the numaContext member as NumaConfig.
     // Own the `numa_context` member as NumaReplicationContext.
@@ -760,19 +760,19 @@ pub fn build(b: *std.Build) void {
     });
     const net_cmd = b.addRunArtifact(fetch_net_exe);
     net_cmd.addFileArg(b.path("src/engine/eval/network.zig"));
-    net_cmd.setCwd(b.path("net"));
+    net_cmd.setCwd(b.path("resources"));
     // Always run (the tool is idempotent: it validates an existing net and no-ops), so a deleted or
     // corrupt net is re-fetched.
     net_cmd.has_side_effects = true;
 
     const net_step = b.step(
         "net",
-        "Download the default NNUE net into net/ for external-net Zig parity",
+        "Download the default NNUE net into resources/ for external-net Zig parity",
     );
     net_step.dependOn(&net_cmd.step);
 
     // Fetch the 3-man Syzygy tablebases (tools/fetch_tb.zig): download the ~26 KB 3-man set into
-    // net/syzygy/ for the Syzygy load/probe gates. The tables are NEVER committed (see .gitignore);
+    // resources/syzygy/ for the Syzygy load/probe gates. The tables are NEVER committed (see .gitignore);
     // like the net they are fetched + cached. link_libc: it uses libc mkdir (Io.Dir has no makeDir).
     const fetch_tb_exe = b.addExecutable(.{
         .name = "fetch_tb",
@@ -784,11 +784,11 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const tb_cmd = b.addRunArtifact(fetch_tb_exe);
-    tb_cmd.setCwd(b.path("net"));
+    tb_cmd.setCwd(b.path("resources"));
     tb_cmd.has_side_effects = true; // idempotent: skips files already present
     const tb_step = b.step(
         "tb",
-        "Download the 3-man Syzygy tablebases into net/syzygy/ (for the Syzygy gates)",
+        "Download the 3-man Syzygy tablebases into resources/syzygy/ (for the Syzygy gates)",
     );
     tb_step.dependOn(&tb_cmd.step);
 
@@ -810,20 +810,20 @@ pub fn build(b: *std.Build) void {
     const bench_run = b.addRunArtifact(exe);
     bench_run.step.dependOn(install_step);
     bench_run.step.dependOn(&net_cmd.step);
-    bench_run.setCwd(b.path("net"));
+    bench_run.setCwd(b.path("resources"));
     bench_run.addArg("bench");
     bench_run.expectStdErrMatch("Nodes searched  : ");
 
     const bench_step = b.step(
         "bench",
-        "Run stockfish bench from net/ after fetching the default external NNUE net",
+        "Run stockfish bench from resources/ after fetching the default external NNUE net",
     );
     bench_step.dependOn(&bench_run.step);
 
     const uci_run = b.addRunArtifact(exe);
     uci_run.step.dependOn(install_step);
     uci_run.step.dependOn(&net_cmd.step);
-    uci_run.setCwd(b.path("net"));
+    uci_run.setCwd(b.path("resources"));
     uci_run.setStdIn(.{ .bytes = "uci\nquit\n" });
     // Check the handshake on stdout: it is protocol, and a conforming GUI reads stdout.
     // This asserted stderr until the handshake was fixed to use the output sink -- the
@@ -1000,7 +1000,7 @@ pub fn build(b: *std.Build) void {
     valgrind_cmd.addArtifactArg(exe);
     valgrind_cmd.step.dependOn(install_step);
     valgrind_cmd.step.dependOn(&net_cmd.step);
-    valgrind_cmd.setCwd(b.path("net"));
+    valgrind_cmd.setCwd(b.path("resources"));
 
     const valgrind_step = b.step(
         "parity-valgrind",
@@ -1046,7 +1046,7 @@ pub fn build(b: *std.Build) void {
     teardown_cmd.addArtifactArg(exe);
     teardown_cmd.step.dependOn(install_step);
     teardown_cmd.step.dependOn(&net_cmd.step);
-    teardown_cmd.setCwd(b.path("net"));
+    teardown_cmd.setCwd(b.path("resources"));
 
     const teardown_step = b.step(
         "parity-teardown",
@@ -1138,7 +1138,7 @@ pub fn build(b: *std.Build) void {
     ponder_step.dependOn(&ponder_cmd.step);
 
     // Exercise the binary WITHOUT the net beside it -- the ONLY gate that does (net-missing).
-    // Every other gate here runs with cwd=net/ (addHarnessRun's setCwd), which hands the
+    // Every other gate here runs with cwd=resources/ (addHarnessRun's setCwd), which hands the
     // engine the very precondition it must check -- so a startup that dies without a net
     // is invisible to all of them, and did ship that way. The harness spawns the child in
     // a scratch subdir holding no net and asserts a named diagnostic + a clean non-zero
@@ -1343,7 +1343,7 @@ pub fn build(b: *std.Build) void {
     bench_matrix_update_step.dependOn(&bench_matrix_update_cmd.step);
 
     // Pin the Syzygy load report (tb-init golden; M-SZ-1). Set SyzygyPath to the fetched 3-man set
-    // (net/syzygy/) and pin the `info string Found N WDL and N DTZ ... (up to M-man)` line ==
+    // (resources/syzygy/) and pin the `info string Found N WDL and N DTZ ... (up to M-man)` line ==
     // upstream oracle. Depend on the `tb` fetch too. Keep Linux-only (`parity`, not portable): the
     // fetched tables + libc file-check are verified on Linux; cross-OS Syzygy comes with M-SZ-4.
     const tb_init_golden = repoPath(b, "tools/tb_init.golden");
@@ -1365,7 +1365,7 @@ pub fn build(b: *std.Build) void {
     );
     tb_init_update_step.dependOn(&tb_init_update_cmd.step);
 
-    // Pin the Syzygy WDL probe (tb-wdl golden; M-SZ-2c). Set SyzygyPath to net/syzygy and pin the
+    // Pin the Syzygy WDL probe (tb-wdl golden; M-SZ-2c). Set SyzygyPath to resources/syzygy and pin the
     // `d`-command `Tablebases WDL: N (state)` line == upstream oracle for a curated 3-man battery
     // (all five piece types, win/loss/draw, wtm/btm, pawn + blackStronger flips, and the
     // search<false> capture recursion). Keep Linux-only (like tb-init); depend on the `tb` fetch.
@@ -1454,7 +1454,7 @@ pub fn build(b: *std.Build) void {
     tb_search_update_step.dependOn(&tb_search_update_cmd.step);
 
     // Pin cursed-win / blessed-loss / 50-move (tb-cursed golden; M-SZ-5). Run LOCAL ONLY -- needs ~40 MB of
-    // 5-man tables staged into net/syzygy5/ (see buildTbCursed's comment), which the 3-man CI set
+    // 5-man tables staged into resources/syzygy5/ (see buildTbCursed's comment), which the 3-man CI set
     // never contains, so this is NOT wired into `parity`. Pin WDL+DTZ of a KNNvKP cursed win
     // (+1/122) and its blessed-loss mirror (-1/-115) == the upstream oracle.
     const tb_cursed_golden = repoPath(b, "tools/tb_cursed.golden");
@@ -1462,7 +1462,7 @@ pub fn build(b: *std.Build) void {
 
     const tb_cursed_step = b.step(
         "tb-cursed",
-        "LOCAL: diff cursed-win/blessed-loss WDL+DTZ (needs net/syzygy5/ 5-man tables) vs golden",
+        "LOCAL: diff cursed-win/blessed-loss WDL+DTZ (needs resources/syzygy5/ 5-man tables) vs golden",
     );
     tb_cursed_step.dependOn(&tb_cursed_cmd.step);
 
@@ -1484,7 +1484,7 @@ pub fn build(b: *std.Build) void {
     src_free_cmd.addArtifactArg(exe);
     src_free_cmd.step.dependOn(install_step);
     src_free_cmd.step.dependOn(&net_cmd.step);
-    src_free_cmd.setCwd(b.path("net"));
+    src_free_cmd.setCwd(b.path("resources"));
 
     const src_free_step = b.step(
         "src-free",
@@ -2003,7 +2003,7 @@ fn addTestRun(b: *std.Build, step: *std.Build.Step, artifact: *std.Build.Step.Co
 }
 
 // Wire one pure-Zig parity-harness invocation: run the harness (host) with the
-// engine binary, golden path, and mode, from net/ so the spawned engine finds the net.
+// engine binary, golden path, and mode, from resources/ so the spawned engine finds the net.
 // Resolve a repo-root-relative path to an absolute string. Read the build root from
 // whichever field the running std.Build exposes -- 0.16 build_root: Cache.Directory,
 // 0.17 root: Cache.Path -- so this compiles on both; the comptime @hasField branch
@@ -2033,7 +2033,7 @@ fn addHarnessRun(
     run.addArg(check_name);
     run.addArtifactArg(stockfish);
     run.addArgs(&.{ golden_or_expected, mode });
-    run.setCwd(b.path("net"));
+    run.setCwd(b.path("resources"));
     run.step.dependOn(install_step);
     run.step.dependOn(net_step);
     return run;

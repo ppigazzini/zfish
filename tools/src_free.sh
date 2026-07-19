@@ -12,7 +12,7 @@
 # The bench reference tracks the current upstream sync (like the goldens); bump it
 # alongside them on an upstream resync.
 #
-# Usage: src_free.sh <stockfish-bin>   (run with cwd = net/ so bench finds the net)
+# Usage: src_free.sh <stockfish-bin>   (run with cwd = resources/ so bench finds the net)
 set -u
 
 BIN="$1"

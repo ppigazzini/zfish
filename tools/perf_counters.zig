@@ -48,7 +48,7 @@
 //! Keep this a LOCAL gate. perf_event_open can be refused inside CI containers (poop#17), so it
 //! is deliberately not wired into `zig build parity`; run it before committing perf work.
 //!
-//! Usage (CWD must be net/ so the net loads):
+//! Usage (CWD must be resources/ so the net loads):
 //!   zig run tools/perf_counters.zig -- ./zf_sse41 $ORACLE/sf_sse41 8 bench 16 1 13
 //!   MAX_INSTR_RATIO=1.36 perf_counters ./zf_sse41 $ORACLE/sf_sse41 8 bench 16 1 13
 //!
@@ -202,7 +202,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (av.len < 4) {
         std.debug.print(
-            \\usage: perf_counters <binA> <binB> <rounds> [bench-args...]   (CWD must be net/)
+            \\usage: perf_counters <binA> <binB> <rounds> [bench-args...]   (CWD must be resources/)
             \\   e.g: perf_counters ./zf_sse41 ../oracle/sf_sse41 8 bench 16 1 13
             \\
             \\Interleaved paired A/B over hardware counters. Reports instructions (the work) and
@@ -249,7 +249,7 @@ pub fn main(init: std.process.Init) !void {
             first_b = b;
             if (a.nodes == 0 or b.nodes == 0) {
                 std.debug.print("error: could not parse a node count (A={d}, B={d}).\n" ++
-                    "       Run from net/ so the net loads, and use a `bench` command.\n", .{ a.nodes, b.nodes });
+                    "       Run from resources/ so the net loads, and use a `bench` command.\n", .{ a.nodes, b.nodes });
                 return;
             }
             if (a.nodes != b.nodes) {

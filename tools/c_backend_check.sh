@@ -113,8 +113,8 @@ if ! (cd "$WORK" && zig cc -O3 -flto -msse2 -msse3 -mssse3 -msse4.1 -mpopcnt \
     exit 1
 fi
 
-# 5. Bench from net/ so the NNUE net resolves, and compare against the anchor.
-GOT="$(cd "$REPO/net" && "$WORK/stockfish-c" bench 2>&1 |
+# 5. Bench from resources/ so the NNUE net resolves, and compare against the anchor.
+GOT="$(cd "$REPO/resources" && "$WORK/stockfish-c" bench 2>&1 |
        sed -n 's/^Nodes searched  *: *\([0-9][0-9]*\).*/\1/p' | head -1)"
 if [ "$GOT" != "$ANCHOR" ]; then
     echo "c-backend: MISMATCH -- C lowering benched $GOT, anchor is $ANCHOR" >&2

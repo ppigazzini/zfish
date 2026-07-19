@@ -23,7 +23,7 @@ sig() { ( cd "$2" && "$1" bench ) 2>&1 | sed -n 's/^Nodes searched  *: *\([0-9][
 # Build/locate the pristine oracle at SHA.
 ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" "$SHA")" || { echo "upstream-parity: oracle build failed" >&2; exit 2; }
 
-ours="$(sig "$OUR_BIN" "$REPO/net")"
+ours="$(sig "$OUR_BIN" "$REPO/resources")"
 theirs="$(sig "$ORACLE_BIN" "$ORACLE_DIR/src")"
 
 [ -z "$ours" ]   && { echo "upstream-parity: our binary produced no signature ($OUR_BIN)" >&2; exit 2; }

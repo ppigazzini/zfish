@@ -14,7 +14,7 @@ Requires **Zig 0.16.0**, no other dependencies.
 
 ```
 zig build          # build the engine (ReleaseFast) -> zig-out/bin/stockfish
-zig build net      # download the external NNUE network into net/
+zig build net      # download the external NNUE network into resources/
 zig build bench    # run bench and print the node signature
 ```
 
