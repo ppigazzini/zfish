@@ -19,6 +19,7 @@ const decode = @import("decode.zig");
 const encode = @import("encode.zig");
 const position = @import("position");
 const board_core = @import("board_core");
+const thread_runtime = @import("thread_runtime");
 
 const PairsData = probe.PairsData;
 const EntryInfo = probe.EntryInfo;
@@ -341,29 +342,51 @@ pub inline fn rdU16(p: [*]const u8) u16 {
     return std.mem.readInt(u16, @ptrCast(p), .little);
 }
 
+// Serialise the one-time load of every table, as upstream does with a function-local
+// `static std::mutex` shared by both probes (tbprobe.cpp:1271).
+var table_load_mutex: thread_runtime.Mutex = .{};
+
 // Load + parse lazily on first probe. Return true if the WDL table is usable.
+//
+// Publish `ready` with a RELEASE store only after `set()` has filled the PairsData, and read it
+// with ACQUIRE, so a thread taking the fast path either sees no table or sees one fully parsed.
+// Announcing readiness before the load lets a concurrent probe read a null base as "table absent"
+// or walk half-written PairsData. Upstream's mutex plus release-after-set forbids both.
 pub fn mapped(t: *TBTable) bool {
-    if (t.ready) return t.base != null;
-    t.ready = true;
+    if (@atomicLoad(bool, &t.ready, .acquire)) return t.base != null;
+
+    table_load_mutex.lock();
+    defer table_load_mutex.unlock();
+    // Re-check under the lock: another thread may have loaded it while this one waited.
+    if (@atomicLoad(bool, &t.ready, .monotonic)) return t.base != null;
+
     const buf = loadFile(t, ".rtbw", wdl_magic) orelse {
         t.base = null;
+        @atomicStore(bool, &t.ready, true, .release);
         return false;
     };
     t.base = buf;
     set(t, false, buf);
+    @atomicStore(bool, &t.ready, true, .release);
     return true;
 }
 
-// Load + parse the DTZ (.rtbz) file lazily on first DTZ probe.
+// Load + parse the DTZ (.rtbz) file lazily on first DTZ probe. Same publication order as mapped().
 pub fn mappedDtz(t: *TBTable) bool {
-    if (t.dtz_ready) return t.dtz_base != null;
-    t.dtz_ready = true;
+    if (@atomicLoad(bool, &t.dtz_ready, .acquire)) return t.dtz_base != null;
+
+    table_load_mutex.lock();
+    defer table_load_mutex.unlock();
+    if (@atomicLoad(bool, &t.dtz_ready, .monotonic)) return t.dtz_base != null;
+
     const buf = loadFile(t, ".rtbz", dtz_magic) orelse {
         t.dtz_base = null;
+        @atomicStore(bool, &t.dtz_ready, true, .release);
         return false;
     };
     t.dtz_base = buf;
     set(t, true, buf);
+    @atomicStore(bool, &t.dtz_ready, true, .release);
     return true;
 }
 

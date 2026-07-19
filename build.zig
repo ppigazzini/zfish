@@ -253,6 +253,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "tablebase", .imp = "state_list", .to = "state_list" },
         .{ .from = "tablebase", .imp = "movegen", .to = "movegen" },
         .{ .from = "tablebase", .imp = "board_core", .to = "board_core" },
+        .{ .from = "tablebase", .imp = "thread_runtime", .to = "thread_runtime" },
         .{ .from = "root_move_build", .imp = "option_source", .to = "option_source" },
         .{ .from = "root_move_build", .imp = "movegen", .to = "movegen" },
         .{ .from = "root_move_build", .imp = "position_snapshot", .to = "position_snapshot" },
