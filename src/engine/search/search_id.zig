@@ -46,9 +46,11 @@ pub fn searchIdCollectBmc(wl: *const worker_layout.WorkerLayout) f64 {
     var i: usize = 0;
     while (i < count) : (i += 1) {
         const wkr = tp.threadTyped(i).worker.?;
+        // Read and clear another worker's counter while it is running, as upstream does through
+        // RelaxedAtomic (search.cpp:563-564).
         const bmc = &wkr.best_move_changes;
-        tot += @floatFromInt(bmc.*);
-        bmc.* = 0;
+        tot += @floatFromInt(@atomicLoad(u64, bmc, .monotonic));
+        @atomicStore(u64, bmc, 0, .monotonic);
     }
     return tot;
 }

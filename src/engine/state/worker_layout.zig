@@ -292,12 +292,12 @@ pub const Thread = struct {
     /// Return this thread's Worker cumulative node count (0 if no worker attached).
     pub inline fn nodesSearched(self: *const Thread) u64 {
         const w = self.worker orelse return 0;
-        return w.nodes;
+        return @atomicLoad(u64, &w.nodes, .monotonic);
     }
     /// Return this thread's Worker cumulative tablebase-hit count.
     pub inline fn tbHits(self: *const Thread) u64 {
         const w = self.worker orelse return 0;
-        return w.tb_hits;
+        return @atomicLoad(u64, &w.tb_hits, .monotonic);
     }
 };
 
