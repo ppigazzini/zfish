@@ -1,3 +1,3 @@
 mate1-backrank    score=mate 1 bestmove=a1a8 ponder=
-mate2-tworooks    score=mate 2 bestmove=a1a7 ponder=g8h8
+mate2-tworooks    score=mate 2 bestmove=a1a7 ponder=g8f8
 mate3-rook+bishop score=mate 3 bestmove=f6a6 ponder=f7f6

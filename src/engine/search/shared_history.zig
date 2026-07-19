@@ -34,7 +34,7 @@ inline fn dynRange(size: usize, thread_idx: usize, numa_total: usize) struct { s
 }
 
 // Clear a SharedHistories: fill correctionHistory entries (each [2]CorrectionBundle, 8 int16)
-// to -6 and pawnHistory pages (each a [16][64] int16 page) to -1262, over
+// to -5 and pawnHistory pages (each a [16][64] int16 page) to -1338, over
 // this thread's numa partition.
 pub fn clearSharedHistory(shared: *SharedHistories, thread_idx: usize, numa_total: usize) void {
     const corr_entry_i16: usize = @sizeOf([2]CorrectionBundle) / @sizeOf(i16);
@@ -43,13 +43,13 @@ pub fn clearSharedHistory(shared: *SharedHistories, thread_idx: usize, numa_tota
         const base: [*]i16 = @ptrCast(@alignCast(shared.corr_data));
         var i = r.start * corr_entry_i16;
         const stop = r.end * corr_entry_i16;
-        while (i < stop) : (i += 1) base[i] = -6;
+        while (i < stop) : (i += 1) base[i] = -5;
     }
     {
         const r = dynRange(shared.pawn_size, thread_idx, numa_total);
         var i = r.start * hist_pieceto;
         const stop = r.end * hist_pieceto;
-        while (i < stop) : (i += 1) shared.pawn_data[i] = -1262;
+        while (i < stop) : (i += 1) shared.pawn_data[i] = -1338;
     }
 }
 

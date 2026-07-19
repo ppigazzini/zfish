@@ -15,7 +15,7 @@ const Position = position_types.Position;
 // boundary. Passing a small `extern struct` BY VALUE
 // across is mis-marshaled by Zig 0.16 on aarch64 (the 4-byte
 // HalfThreatParams / 7-byte HalfDiff arrive scrambled), which silently corrupted
-// the psq feature indices off-x86 (bench diverged: 6860970 vs 2466447). A direct
+// the psq feature indices off-x86 (the bench diverged from the anchor). A direct
 // Zig call has no C-ABI marshaling, so it is correct on every target and bit-
 // identical on x86.
 const nnue_feature = @import("nnue_feature");
@@ -195,7 +195,7 @@ pub fn transformBucket(
     // SF's mulhi identity  (c0*c1) >> 9  ==  ((c0<<7) * c1) >> 16  ==  pmulhuw(c0<<7, c1),
     // which avoids the i32 widening so each vector register holds twice the lanes. The
     // scaled product 128*c0*c1 is exact and >>16 is floor, so this is bit-identical to
-    // the i32 clamp*mul>>9 path (integer, no rounding): signature 2466447.
+    // the i32 clamp*mul>>9 path (integer, no rounding): signature 2792255.
     const half = half_dimensions / 2;
     const V = transform_vec_width;
     const Vi16 = @Vector(V, i16);

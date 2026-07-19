@@ -1,6 +1,6 @@
 // Provide the bitboard geometry + magic-index helpers: the pure square/file/rank math
 // and from-scratch attack generators used to build the runtime tables. std-only,
-// no table state -- bitboard.zig aliases these back. Identical behaviour (bench 2466447).
+// no table state -- bitboard.zig aliases these back. Identical behaviour (bench 2792255).
 
 const std = @import("std");
 

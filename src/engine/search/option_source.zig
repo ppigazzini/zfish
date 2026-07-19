@@ -14,7 +14,7 @@
 //!
 //! Treat these 4 as SEARCH-AFFECTING when unregistered: they answer rather than abort, so
 //! a missing registration is a wrong search, not a crash -- the one failure shape
-//! bench=2466447 cannot catch. That is tolerated only because both roots are
+//! bench=2792255 cannot catch. That is tolerated only because both roots are
 //! accounted for, and the hook-lint REGISTERED rule is what keeps it true:
 //!   * shipped exe -- main.zig:68 installRuntimeHooks registers all 4, before the
 //!     engine is first reachable at main.zig:79. No shipped path can read a default.

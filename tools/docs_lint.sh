@@ -7,7 +7,7 @@
 #
 # Every check here was paid for. A hostile audit of docs/ found, in one session, that:
 #   * a file path in prose pointed at a module that had been split away;
-#   * the bench anchor was quoted as 2067208 in five places while build.zig said 2466447
+#   * the bench anchor was quoted as 2067208 in five places while build.zig said 2792255
 #     (the anchor MOVES on every bench-moving upstream sync; PROMPT.md warns about exactly
 #     this and its own sibling doc had drifted anyway);
 #   * link targets broke silently when the doc set was renumbered.

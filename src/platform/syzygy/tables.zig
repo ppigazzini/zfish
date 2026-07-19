@@ -3,7 +3,7 @@
 //! `TBTables::add`: enumerate every King-vs-King material configuration up to 7 men, build the
 //! canonical file name, and count a table by FILE EXISTENCE (`is_open()` -- the magic header is
 //! validated later, at probe time, not here). Do no probing yet: this is load + init only, so with
-//! no path set the engine behaves exactly as before (bench 2466447 unchanged).
+//! no path set the engine behaves exactly as before (bench 2792255 unchanged).
 //!
 //! Keep this in the platform layer: file I/O is a platform service, and this slice touches no engine types.
 

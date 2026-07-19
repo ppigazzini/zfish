@@ -329,18 +329,18 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
         if (id.use_time_management != 0 and @atomicLoad(u8, id.stop, .monotonic) == 0 and id.stop_on_ponderhit.?.* == 0) {
             const nodes_effort: u64 = @divTrunc(id.root_moves[0].effort * 100000, @max(@as(u64, 1), id.nodes.*));
 
-            var falling_eval = (11.87 + 2.21 * @as(f64, @floatFromInt(id.best_previous_average_score - best_value)) +
-                1.0 * @as(f64, @floatFromInt(id.iter_value.?[iter_idx] - best_value))) / 100.0;
-            falling_eval = fclamp(falling_eval, 0.572, 1.708);
+            var falling_eval = (11.48 + 2.30 * @as(f64, @floatFromInt(id.best_previous_average_score - best_value)) +
+                1.1 * @as(f64, @floatFromInt(id.iter_value.?[iter_idx] - best_value))) / 100.0;
+            falling_eval = fclamp(falling_eval, 0.576, 1.728);
 
             const tr_x = @as(f64, @floatFromInt(id.root_depth.* - last_best_move_depth));
-            time_reduction = fclamp(0.65 + (1.55 - 0.65) * (tr_x - 5.0) / (18.0 - 5.0), 0.65, 1.55);
+            time_reduction = fclamp(0.639 + (1.712 - 0.639) * (tr_x - 4.96) / (18.79 - 4.96), 0.629, 1.544);
 
-            const reduction = (1.48 + id.previous_time_reduction.?.*) / (2.157 * time_reduction);
-            const best_move_instability = 1.096 + 2.29 * tot_best_move_changes / @as(f64, @floatFromInt(id.threads_size));
+            const reduction = (1.468 + id.previous_time_reduction.?.*) / (2.284 * time_reduction);
+            const best_move_instability = 1.077 + 2.229 * tot_best_move_changes / @as(f64, @floatFromInt(id.threads_size));
 
             const hbme_x = @as(f64, @floatFromInt(@as(i64, @intCast(nodes_effort))));
-            const high_best_move_effort = fclamp(0.924 + (0.71 - 0.924) * (hbme_x - 79219.0) / (101822.0 - 79219.0), 0.71, 0.924);
+            const high_best_move_effort = fclamp(0.969 + (0.714 - 0.969) * (hbme_x - 75800.0) / (104510.0 - 75800.0), 0.693, 0.838);
 
             var total_time = @as(f64, @floatFromInt(id.tm_optimum)) * falling_eval * reduction * best_move_instability * high_best_move_effort;
             // Cap used time to 0.5s for a better viewer experience (search.cpp:592-594).

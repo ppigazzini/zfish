@@ -17,7 +17,7 @@
 //!                   correct unregistered>`. A silent default with no stated reason is
 //!                   the defect: 8 search-affecting hooks return 0/false/single-threaded
 //!                   and the engine keeps playing chess, which in an engine whose whole
-//!                   contract is bench=2466447 is the worst possible failure.
+//!                   contract is bench=2792255 is the worst possible failure.
 //!   3. CLASS        every file declaring hooks states `//! hook-class: lifecycle` or
 //!                   `service` in its header. Lifecycle hooks are structurally safe;
 //!                   service hooks are the live risk, because a CALLER decides how often

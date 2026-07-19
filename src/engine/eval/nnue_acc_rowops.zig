@@ -5,7 +5,7 @@
 // weight rows, depending only on the two network dimensions (duplicated as tiny
 // consts). No *anyopaque, no position_snapshot / nnue_feature, so no cycle. The
 // accumulator core imports this and aliases the kernels. Bit-exact: vector +/- is
-// the same element-wise i16 op as the scalar loop it replaces (bench 2466447).
+// the same element-wise i16 op as the scalar loop it replaces (bench 2792255).
 
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
@@ -152,7 +152,7 @@ pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i3
 // separate load/store round-trips (one per feature) of the split-accumulator design.
 // Integer add/sub commute under 2's-complement i16 wrap, so the final tile value equals
 // source + Σpsq_added − Σpsq_removed + Σthr_added − Σthr_removed regardless of order:
-// bit-exact with the prior two-accumulator path (signature 2466447).
+// bit-exact with the prior two-accumulator path (signature 2792255).
 pub fn applyCombinedDelta(
     target: []i16,
     source: []const i16,

@@ -43,8 +43,8 @@ pub inline fn updateSelDepth(ctx: *const QCtx, ply: i32) void {
 // table, the root delta, and the improving flag. Use truncating integer division.
 pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: i32, mn: i32, delta: i32) i32 {
     const reduction_scale = ctx.reductions[@intCast(d)] * ctx.reductions[@intCast(mn)];
-    return reduction_scale - @divTrunc(delta * 617, ctx.root_delta.*) +
-        @divTrunc(@as(i32, @intFromBool(!i)) * reduction_scale * 194, 512) + 1027;
+    return reduction_scale - @divTrunc(delta * 577, ctx.root_delta.*) +
+        @divTrunc(@as(i32, @intFromBool(!i)) * reduction_scale * 197, 512) + 982;
 }
 
 // Run the evaluate step: the NNUE forward pass on the current position,

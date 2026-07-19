@@ -2,7 +2,7 @@
 // the feature-transformer and per-bucket affine-layer weights from the shared
 // nnue_weight_storage leaf and runs the accumulator transform + affine layers.
 // No file I/O and no dependency on network.zig, so it sits below the I/O half.
-// Bench-verified bit-exact (node signature 2466447 on every arch).
+// Bench-verified bit-exact (node signature 2792255 on every arch).
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -206,7 +206,7 @@ fn networkTransformBucket(
 
 // Cover affineDpbusd's four codegen paths (portable pmaddwd; pmaddubsw+pmaddwd intrinsics on
 // the SSSE3 tier; vpdpbusd on VNNI; and the OUT==1 fallback), selected at comptime by the
-// -Darch tier. The whole-engine bench (2466447) proves the composite is right but cannot
+// -Darch tier. The whole-engine bench (2792255) proves the composite is right but cannot
 // localize which path broke, and it only exercises the input distribution the search happens
 // to produce. This pins every path against a scalar reference over random inputs -- run it at
 // each -Darch to cover the tier that arch selects.

@@ -1,7 +1,7 @@
 // Hold the bench / benchmark position tables (extracted from benchmark.zig).
 //
 // Run the fixed position set `Defaults` for the `bench` command -- its FENs pin the
-// bench signature 2466447, so bench itself is this data's regression gate.
+// bench signature 2792255, so bench itself is this data's regression gate.
 // Drive the richer `benchmark` command with `BenchmarkPositions`. Keep pure data, std-only.
 
 const std = @import("std");
@@ -334,7 +334,7 @@ pub const BenchmarkPositions = [_][]const []const u8{
     },
 };
 
-// ---- tests (data integrity; bench 2466447 is the behavioural gate for Defaults) ----
+// ---- tests (data integrity; bench 2792255 is the behavioural gate for Defaults) ----
 
 const testing = std.testing;
 

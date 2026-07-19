@@ -80,7 +80,7 @@ pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     for (&w.main_history) |*e| {
         const v: i32 = e.*;
-        e.* = @intCast(@divTrunc(v * 789, 1024)); // upstream 3c858c19e: drop the +5
+        e.* = @intCast(@divTrunc(v * 729, 1024)); // upstream 3c858c19e: drop the +5
     }
 }
 
@@ -88,7 +88,7 @@ pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
 // over the whole [5][65536] table.
 pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
-    for (&w.low_ply_history) |*e| e.* = 100;
+    for (&w.low_ply_history) |*e| e.* = 102;
 }
 
 // Clear the Worker: reset the per-Worker histories (the shared correction/pawn clear_range
@@ -98,10 +98,10 @@ pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
 pub fn clearWorkerHistories(wl: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(wl);
     for (&w.main_history) |*e| e.* = -5;
-    for (&w.capture_history) |*e| e.* = -699;
+    for (&w.capture_history) |*e| e.* = -742;
     w.tt_move_history = 0;
     for (&w.continuation_correction_history) |*e| e.* = 5;
-    for (&w.continuation_history) |*e| e.* = -552;
+    for (&w.continuation_history) |*e| e.* = -586;
 }
 
 // Find captureStage / moveIsOk / statsUpdate / captVal / captEntry / workerHistories
@@ -127,8 +127,8 @@ pub fn updateQuietHistories(
 
 const ConthistBonus = struct { i: u8, w: i32 };
 const conthist_bonuses = [6]ConthistBonus{
-    .{ .i = 1, .w = 1040 }, .{ .i = 2, .w = 780 }, .{ .i = 3, .w = 300 },
-    .{ .i = 4, .w = 537 },  .{ .i = 5, .w = 129 }, .{ .i = 6, .w = 423 },
+    .{ .i = 1, .w = 1040 }, .{ .i = 2, .w = 780 }, .{ .i = 3, .w = 290 },
+    .{ .i = 4, .w = 502 },  .{ .i = 5, .w = 132 }, .{ .i = 6, .w = 418 },
 };
 
 pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, bonus: i32) void {
@@ -181,11 +181,11 @@ pub fn updateAllStats(
     }
 
     if (!captureStage(pos, best_move)) {
-        updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, best_move, @divTrunc(bonus * 824, 1024));
-        var actual_malus: i32 = @divTrunc(malus * 1136, 1024);
+        updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, best_move, @divTrunc(bonus * 899, 1024));
+        var actual_malus: i32 = @divTrunc(malus * 1159, 1024);
         var i: usize = 0;
         while (i < n_quiets) : (i += 1) {
-            actual_malus = @divTrunc(actual_malus * 956, 1024);
+            actual_malus = @divTrunc(actual_malus * 921, 1024);
             updateQuietHistoriesWorker(worker_ptr, pos_ptr, ss_ptr, quiets[i], -actual_malus);
         }
     } else {
@@ -193,7 +193,7 @@ pub fn updateAllStats(
         const to = moveTo(best_move);
         const captured_pt = pieceTypeOn(pos, to);
         const ce = &capture_base[@as(usize, moved_pc) * 512 + @as(usize, to) * 8 + captured_pt];
-        statsUpdate(ce, @divTrunc(bonus * 1366, 1024), 10692);
+        statsUpdate(ce, @divTrunc(bonus * 1427, 1024), 10692);
     }
 
     if (prev_sq != @as(i32, sq_none) and
@@ -201,7 +201,7 @@ pub fn updateAllStats(
         pos.st.captured_piece == 0)
     {
         const psq: u8 = @intCast(prev_sq);
-        updateContinuationHistories(ss_prev, pos.board[psq], psq, @divTrunc(-malus * 683, 1024));
+        updateContinuationHistories(ss_prev, pos.board[psq], psq, @divTrunc(-malus * 713, 1024));
     }
 
     var j: usize = 0;
@@ -211,7 +211,7 @@ pub fn updateAllStats(
         const to = moveTo(move);
         const captured_pt = pieceTypeOn(pos, to);
         const ce = &capture_base[@as(usize, moved_pc) * 512 + @as(usize, to) * 8 + captured_pt];
-        statsUpdate(ce, @divTrunc(-malus * 1518, 1024), 10692);
+        statsUpdate(ce, @divTrunc(-malus * 1489, 1024), 10692);
     }
 }
 
@@ -239,7 +239,7 @@ pub fn updateCorrectionHistory(
     const npb_entry = &corrBundle(shared, pos.st.non_pawn_key[1])[us].nonpawn_black;
 
     statsUpdate(pawn_entry, bonus, correction_history_limit);
-    statsUpdate(minor_entry, @divTrunc(bonus * 152, 128), correction_history_limit);
+    statsUpdate(minor_entry, @divTrunc(bonus * 150, 128), correction_history_limit);
     statsUpdate(npw_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
     statsUpdate(npb_entry, @divTrunc(bonus * 186, 128), correction_history_limit);
 
@@ -254,8 +254,8 @@ pub fn updateCorrectionHistory(
         const ss4: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 4 * @sizeOf(SearchStack));
         const cc2 = ss2.continuation_correction_history.?;
         const cc4 = ss4.continuation_correction_history.?;
-        statsUpdate(&cc2[idx], @divTrunc(bonus * 136, 128), correction_history_limit);
-        statsUpdate(&cc4[idx], @divTrunc(bonus * 68, 128), correction_history_limit);
+        statsUpdate(&cc2[idx], @divTrunc(bonus * 130, 128), correction_history_limit);
+        statsUpdate(&cc4[idx], @divTrunc(bonus * 70, 128), correction_history_limit);
     }
 }
 

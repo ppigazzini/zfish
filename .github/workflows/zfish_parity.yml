@@ -98,7 +98,7 @@ jobs:
       - run: zig build fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
       # Safety-checked full engine: the ENTIRE parity suite rebuilt under
-      # -Doptimize=ReleaseSafe. Supersets the safety-checked bench (signature 2466447)
+      # -Doptimize=ReleaseSafe. Supersets the safety-checked bench (signature 2792255)
       # and additionally drives the multi-thread (mt-sanity), Lazy-SMP go/stop stress,
       # transposition-table, NNUE-eval, time-management, and every UCI-output golden
       # path with Zig's runtime safety checks ON -- the paths the property tests and a
@@ -109,11 +109,11 @@ jobs:
       # Arch-variant determinism: the
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
       # codegen change must not perturb the integer-exact eval. This sweep asserts
-      # signature == 2466447 on every tier THIS runner can execute (avx2, bmi2/PEXT,
+      # signature == 2792255 on every tier THIS runner can execute (avx2, bmi2/PEXT,
       # and its best AVX-512 tier), not just avx2 -- the wider tiers are where the
       # @Vector NNUE kernels could break bit-exactness while
       # sse41/avx2 stay green. Runs the real bench per tier, so it is not hollow.
-      - run: bash tools/arch_determinism.sh 2466447
+      - run: bash tools/arch_determinism.sh 2792255
 
       # (Wall-clock time management, multi-thread sanity, the go/stop stress gate, the TT/history
       # reset-determinism metamorphic gate, the Skill Level metamorphic gate, and the ponder
@@ -131,7 +131,7 @@ jobs:
   #
   # The snapshot is PINNED (not floating "master") for reproducibility and bumped by hand
   # -- same value z47 audits. Today the port is master-clean on the Linux host (build +
-  # bench 2466447 + all 31 parity gates), achieved via cross-version idioms: @splat for
+  # bench 2792255 + all 31 parity gates), achieved via cross-version idioms: @splat for
   # array-repeat (0.17 rejects `**` after `}`), @Int for the removed std.meta.Int, and a
   # comptime repoPath shim + addArtifactArg for the removed b.pathFromRoot / getInstallPath.
   zig-master-compat:
@@ -169,7 +169,7 @@ jobs:
   # Cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
   # with no source changes -- where upstream needs hand-written NEON intrinsics per
   # its own src/nnue/**. The integer-exact eval is arch-invariant, so the ARM bench must be
-  # exactly 2466447; x86 CI cannot see an ARM-only codegen or C-ABI regression. We run
+  # exactly 2792255; x86 CI cannot see an ARM-only codegen or C-ABI regression. We run
   # on a NATIVE GitHub arm64 runner (free for public repos) instead of qemu-user: it
   # exercises real NEON hardware and native codegen, is far faster than emulation, and
   # needs no cross-libc.
@@ -198,9 +198,9 @@ jobs:
           cd net
           out="$(../zig-out/bin/stockfish bench 2>&1)"
           printf '%s\n' "$out" | tail -6
-          printf '%s\n' "$out" | grep -qE 'Nodes searched[[:space:]]*:[[:space:]]*2466447([^0-9]|$)' \
-            || { echo 'arm-native: FAIL -- aarch64 bench != 2466447'; exit 1; }
-          echo 'arm-native: OK -- aarch64 bench == 2466447 on a native arm64 runner'
+          printf '%s\n' "$out" | grep -qE 'Nodes searched[[:space:]]*:[[:space:]]*2792255([^0-9]|$)' \
+            || { echo 'arm-native: FAIL -- aarch64 bench != 2792255'; exit 1; }
+          echo 'arm-native: OK -- aarch64 bench == 2792255 on a native arm64 runner'
 
   # Cross-OS gate. The same pure-Zig source builds for the other two owned runtime
   # OSes -- Windows and macOS -- across their x86_64 and aarch64 tiers, behind the platform
@@ -286,7 +286,7 @@ jobs:
         shell: bash
         run: zig build net
 
-      # Full cross-OS parity: bench signature (2466447) + the seven golden gates, all via the
+      # Full cross-OS parity: bench signature (2792255) + the seven golden gates, all via the
       # pure-Zig harness. `shell: bash` for the same emulated-lane PATH reason as the fetch step.
       - name: Build + parity-portable (native, ${{ matrix.arch }})
         shell: bash

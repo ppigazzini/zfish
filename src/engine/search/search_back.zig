@@ -77,7 +77,7 @@ const search_control = @import("search_control.zig");
 const rootUpdate = search_control.rootUpdate;
 const rootInList = search_control.rootInList;
 const searchStopped = search_control.searchStopped;
-const lmr_divisor = [16]i32{ 3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782, 2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599 };
+const lmr_divisor = [16]i32{ 3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762, 2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542 };
 const search_qsearch = @import("search_qsearch.zig");
 pub const isShuffling = search_qsearch.isShuffling;
 const pvClear = search_qsearch.pvClear;
@@ -161,7 +161,7 @@ pub fn runBack(nd: anytype) i32 {
         var new_depth = depth - 1;
         const delta = nd.beta - alpha;
         var r = reductionAcc(nd.ctx, nd.improving, depth, move_count, delta);
-        if (nd.ss.tt_pv) r += 1006;
+        if (nd.ss.tt_pv) r += 929;
 
         // Step 14. Prune at shallow depth.
         if (!nd.root_node and nd.pos.st.non_pawn_material[nd.us] != 0 and !qIsLoss(best_value)) {
@@ -170,7 +170,7 @@ pub fn runBack(nd: anytype) i32 {
             if (capture or gc) {
                 const captured = nd.pos.board[to];
                 const capt_hist = captVal(nd.w, moved_piece, to, captured & 7);
-                if (!gc and lmr_depth < 7) {
+                if (!gc and lmr_depth < 8) {
                     const fv = search.captureFutilityValue(nd.ss.static_eval, lmr_depth, q_piece_value[captured], capt_hist);
                     if (fv <= alpha) continue;
                 }
@@ -181,7 +181,7 @@ pub fn runBack(nd: anytype) i32 {
                 var history = contVal(cont_hist[0], moved_piece, to) + contVal(cont_hist[1], moved_piece, to) +
                     pawnEntryRow(sharedOf(nd.w), nd.pos)[@as(usize, moved_piece) * 64 + to];
                 if (history < search.historyPruneThreshold(depth)) continue;
-                history += @divTrunc(64 * @as(i32, nd.w.main_history[@as(usize, nd.us) * hist_uint16 + move]), 32);
+                history += @divTrunc(69 * @as(i32, nd.w.main_history[@as(usize, nd.us) * hist_uint16 + move]), 32);
                 lmr_depth += @divTrunc(history, lmr_divisor[d_index]);
                 const fv = search.quietFutilityValue(nd.ss.static_eval, best_move == 0, lmr_depth, nd.ss.static_eval > alpha);
                 if (!nd.ss.in_check and lmr_depth < 12 and fv <= alpha) {
@@ -227,16 +227,16 @@ pub fn runBack(nd: anytype) i32 {
 
         if (nd.ss.tt_pv)
             r -= search.lmrTtpvReduction(nd.pv_node, nd.tt_value > alpha, nd.tt_depth >= depth, nd.cut_node);
-        r += 714;
-        r -= move_count * 62;
+        r += 697;
+        r -= move_count * 65;
         r -= search.lmrCorrReduction(nd.correction_value);
-        if (nd.cut_node) r += 3995 + 1059 * @as(i32, @intFromBool(nd.tt_move == 0));
+        if (nd.cut_node) r += 4026 + 933 * @as(i32, @intFromBool(nd.tt_move == 0));
         if (ssAdd(nd.ss, 1).cutoff_cnt > 1) {
-            r += 236 + 1079 * @as(i32, @intFromBool(ssAdd(nd.ss, 1).cutoff_cnt > 2)) + 1143 * @as(i32, @intFromBool(nd.all_node));
+            r += 264 + 1095 * @as(i32, @intFromBool(ssAdd(nd.ss, 1).cutoff_cnt > 2)) + 1138 * @as(i32, @intFromBool(nd.all_node));
         } else if (move == nd.tt_move) {
-            r -= 2016; // upstream 924d29d3c: simplify the first-picked-move (ttMove) reduction
+            r -= 2179; // upstream 924d29d3c: simplify the first-picked-move (ttMove) reduction
         }
-        if (nd.tt_capture) r += 1039;
+        if (nd.tt_capture) r += 1079;
 
         if (capture)
             nd.ss.stat_score = search.captureStatScore(q_piece_value[nd.pos.st.captured_piece], captVal(nd.w, moved_piece, to, nd.pos.st.captured_piece & 7))
@@ -253,16 +253,16 @@ pub fn runBack(nd: anytype) i32 {
             value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, d, true, false, false);
             nd.ss.reduction = 0;
             if (value > alpha) {
-                const do_deeper = d < new_depth and value > best_value + 52;
-                const do_shallower = value < best_value + 9;
+                const do_deeper = d < new_depth and value > best_value + 53;
+                const do_shallower = value < best_value + 8;
                 new_depth += @as(i32, @intFromBool(do_deeper)) - @as(i32, @intFromBool(do_shallower));
                 if (new_depth > d)
                     value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, new_depth, !nd.cut_node, false, false);
-                updateContinuationHistories(nd.ss, moved_piece, to, 1415);
+                updateContinuationHistories(nd.ss, moved_piece, to, 1334);
             }
         } else if (!nd.pv_node or move_count > 1) {
-            if (nd.tt_move == 0) r += 1085;
-            value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, new_depth - @as(i32, @intFromBool(r > 5039)) - @as(i32, @intFromBool(r > 5223 and new_depth > 2)), !nd.cut_node, false, false);
+            if (nd.tt_move == 0) r += 1127;
+            value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, new_depth - @as(i32, @intFromBool(r > 5234)) - @as(i32, @intFromBool(r > 5487 and new_depth > 2)), !nd.cut_node, false, false);
         }
 
         if (nd.pv_node and (move_count == 1 or value > alpha)) {
@@ -305,7 +305,7 @@ pub fn runBack(nd: anytype) i32 {
                     nd.ss.cutoff_cnt += @intFromBool(extension < 2 or nd.pv_node);
                     break;
                 }
-                if (depth > 2 and depth < 13 and !qIsDecisive(value)) depth -= 2;
+                if (depth > 3 and depth < 12 and !qIsDecisive(value)) depth -= 3;
                 alpha = value;
             }
         }
@@ -332,7 +332,7 @@ pub fn runBack(nd: anytype) i32 {
         if (!nd.pv_node) ttMoveHistoryUpdate(nd.w, search.ttMoveHistoryMatchBonus(best_move == nd.tt_move));
     } else if (!nd.prior_capture and nd.prev_sq != @as(i32, sq_none)) {
         const psq: u8 = @intCast(nd.prev_sq);
-        const bonus_scale = search.priorBonusScale(nd.ss1.stat_score, depth, nd.ss1.move_count > 8, !nd.ss.in_check and best_value <= nd.ss.static_eval - 103, !nd.ss1.in_check and best_value <= -nd.ss1.static_eval - 78);
+        const bonus_scale = search.priorBonusScale(nd.ss1.stat_score, depth, nd.ss1.move_count > 9, !nd.ss.in_check and best_value <= nd.ss.static_eval - 106, !nd.ss1.in_check and best_value <= -nd.ss1.static_eval - 68);
         const scaled_bonus = search.priorScaledBonusBase(depth) * bonus_scale;
         updateContinuationHistories(nd.ss1, nd.pos.board[psq], psq, search.priorConthistScale(scaled_bonus));
         statsUpdate(&nd.w.main_history[@as(usize, nd.us ^ 1) * hist_uint16 + nd.ss1.current_move], search.priorMainhistScale(scaled_bonus), 7183);
@@ -342,7 +342,7 @@ pub fn runBack(nd: anytype) i32 {
         }
     } else if (nd.prior_capture and nd.prev_sq != @as(i32, sq_none)) {
         const psq: u8 = @intCast(nd.prev_sq);
-        statsUpdate(captEntry(nd.w, nd.pos.board[psq], psq, nd.pos.st.captured_piece & 7), 901, 10692);
+        statsUpdate(captEntry(nd.w, nd.pos.board[psq], psq, nd.pos.st.captured_piece & 7), 892, 10692);
     }
 
     if (nd.pv_node) best_value = @min(best_value, nd.max_value);
