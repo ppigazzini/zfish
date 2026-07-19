@@ -8,8 +8,7 @@
 # Every check here was paid for. A hostile audit of docs/ found, in one session, that:
 #   * a file path in prose pointed at a module that had been split away;
 #   * the bench anchor was quoted as 2067208 in five places while build.zig said 2792255
-#     (the anchor MOVES on every bench-moving upstream sync; PROMPT.md warns about exactly
-#     this and its own sibling doc had drifted anyway);
+#     (the anchor MOVES on every bench-moving upstream sync, and a doc that pins it drifts);
 #   * link targets broke silently when the doc set was renumbered.
 # Each is mechanical. Each shipped anyway, because nothing checked.
 #
@@ -71,8 +70,19 @@ else
     [ "$stale" -eq 0 ] || fail=1
 fi
 
+# The shipped tree must not reference __DEV. __DEV/ is internal and gitignored, so a clone has
+# no such file: a shipped doc or source comment pointing there is a dangling reference for every
+# reader outside this working copy. Duplicating the CONTENT is fine -- naming the location is not.
+leak=0
+while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    echo "docs-lint: __DEV REFERENCE IN SHIPPED TREE $hit"
+    leak=$((leak + 1))
+done < <(grep -rlE '__DEV/|REPORT-[0-9]|4-PERFORMANCE-REFERENCES|00-CONTRACT|PROMPT\.md'              --exclude=docs_lint.sh docs/ src/ tools/ README.md CONTRIBUTING.md AGENTS.md CLAUDE.md build.zig 2>/dev/null || true)
+[ "$leak" -eq 0 ] || fail=1
+
 if [ "$fail" -eq 0 ]; then
-    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths exist, anchor == $anchor)"
+    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths exist, anchor == $anchor, no __DEV refs)"
 else
     echo "docs-lint: FAIL -- a doc contradicts the tree (see above)."
 fi

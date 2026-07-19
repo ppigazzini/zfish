@@ -27,6 +27,85 @@ The integer-exact eval is arch-invariant, so every specialization must yield the
 bench. `tools/arch_determinism.sh` runs the real bench on each tier the host can
 execute and asserts they agree — `zig build parity` gates the single arch it is given.
 
+## Translate an intrinsic instead of reaching for one
+
+Upstream writes its hot kernels in x86 intrinsics, one path per ISA. Most of them have a
+portable Zig form that lowers to the same instruction, so the intrinsic is the last
+resort, not the first. The mapping worth knowing before touching a kernel:
+
+| C++ intrinsic | Zig | lowers to |
+| --- | --- | --- |
+| `_mm256_load_si256` / `_mm256_store_si256` | `ptr[d..][0..V].*` — a typed slice copy | `vmovdqa` |
+| `_mm256_setzero_si256` | `@splat(0)` | `vpxor` |
+| `_mm512_set1_epi16` | `@splat(x)` | `vpbroadcastw` |
+| `_mm256_add_epi32` / `_mm256_sub_epi16` | `a + b` / `a - b` | `vpaddd` / `vpsubw` |
+| `_mm_min_epi16` + `_mm_max_epi16` | `@max(lo, @min(hi, v))` | `vpminsw` / `vpmaxsw` |
+| `_mm_srai_epi16` | `v >> @as(@Vector(V, u4), @splat(n))` | `vpsraw` |
+| `_mm_packs_epi16` | `@intCast` to a narrower lane type | `packsswb` |
+| `_mm_unpacklo_epi8` / `_mm_shuffle_epi32` | `@shuffle` with comptime indices | `punpcklbw` / `pshufd` |
+| `_mm256_movemask_epi8` | `@select` + `@reduce(.Or, …)` — see the layout section below | `pmovmskb` |
+| `_mm_mulhi_epi16` | `@intCast((@as(Vu32, a << s7) * @as(Vu32, b)) >> s16)` | `pmulhuw` |
+| `_tzcnt_u64` / `__builtin_popcountll` | `@ctz` / `@popCount` | `tzcnt` / `popcnt` |
+| `template<int N>` | a `comptime` parameter | full specialization |
+| `#pragma unroll` | `inline for` | unrolled, index comptime |
+
+Two of these are worth spelling out, because they read as ordinary code and are not.
+
+**A typed slice copy is a vector load.** There is no intrinsic and no cast:
+
+```zig
+const Vi16 = @Vector(V, i16);
+var acc: Vi16 = source.ptr[d..][0..V].*;   // one aligned load
+acc -= (weights + row)[d..][0..V].*;       // one subtract
+target.ptr[d..][0..V].* = acc;             // one aligned store
+```
+
+`[0..V]` is what does it: fixing the length at comptime makes the result a `*[V]T`, so the
+deref is a vector move rather than a loop.
+
+**Reach a specific instruction through an `extern` LLVM intrinsic, never inline assembly.**
+Inline asm is opaque to the optimizer and blocks inlining across the call; the declared
+intrinsic participates in normal optimization:
+
+```zig
+const vpdpbusd512 = struct {
+    extern fn @"llvm.x86.avx512.vpdpbusd.512"(
+        @Vector(16, i32), @Vector(16, i32), @Vector(16, i32),
+    ) @Vector(16, i32);
+}.@"llvm.x86.avx512.vpdpbusd.512";
+```
+
+`@bitCast` between equal-width vectors costs nothing — it is a type-level reinterpret — so
+wrapping such an intrinsic in a typed helper is free.
+
+## Keep unrolled accumulators comptime-indexed
+
+The affine kernel splits its dot product into several independent dependency chains, because
+a single accumulator serialises the layer behind one high-latency instruction. The chains
+live in an array of vectors, and **the index into that array must be `comptime`**:
+
+```zig
+inline for (0..chains) |ch| {           // comptime — stays in registers
+    inline for (0..chunks) |c| {
+        acc[ch * chunks + c] = dot(acc[ch * chunks + c], a, b);
+    }
+}
+```
+
+Written with a runtime counter instead, `acc` needs an address, so it spills to memory and
+every accumulator round-trips per group — which costs more than the chains win. This is why
+the loop is unrolled rather than counted, and it constrains any rewrite: a restructuring that
+makes the chain index runtime is not a refactor, it is a regression.
+
+## Set vector width deliberately, per tier
+
+`@Vector(N, T)` is `N * @sizeOf(T)` bytes on every target — the width does not adapt. A
+512-bit vector is one register on AVX-512 and **four registers plus lane-repacking shuffles**
+on SSE. Widths here are hand-set constants, and the right value differs by tier and by loop:
+the feature transform and the accumulator row ops each carry their own, because sweeping them
+independently found different optima. Treat a width constant as tuned for the tier it was
+measured on, and re-measure before assuming it transfers.
+
 ## Dispatch ISA tiers at comptime, from one source
 
 The `-Darch` tiers build from the same code; arch-specific choices are `comptime`

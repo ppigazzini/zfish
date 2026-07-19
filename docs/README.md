@@ -37,7 +37,7 @@ The repository holds three things:
 | [05-tablebases.md](05-tablebases.md) | Engine and platform contributors | Syzygy: WDL and DTZ, the registry and probe path, root and in-search probing, the UCI options |
 | [06-platform.md](06-platform.md) | Platform contributors | Memory and NUMA, the thread runtime primitives, the clock, the lifecycle hooks |
 | [07-shell.md](07-shell.md) | Shell contributors | `main` as the composition root, the UCI surface, the option model, the engine object and session, bench |
-| [08-idiomatic-zig.md](08-idiomatic-zig.md) | Hot-path and build contributors | Portable `@Vector` SIMD, comptime ISA dispatch, static allocation, dependency injection, cross-version shims, the measurement discipline |
+| [08-idiomatic-zig.md](08-idiomatic-zig.md) | Hot-path and build contributors | Portable `@Vector` SIMD and the C++-intrinsic-to-Zig translation, comptime ISA dispatch, register-resident unrolled accumulators, vector-width choice, static allocation, dependency injection, cross-version shims, the measurement discipline |
 | [09-tooling-ci.md](09-tooling-ci.md) | All developers | The build targets, the gate battery, the structural linters, upstream tracking, the CI lanes |
 | [10-references.md](10-references.md) | All developers | Stockfish, Zig, chess-domain, and design references |
 | [11-writing.md](11-writing.md) | Anyone editing these docs | How the set is organised, the writing rules, what `docs-lint` does and does not check |

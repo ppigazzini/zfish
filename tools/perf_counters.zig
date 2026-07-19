@@ -1,5 +1,4 @@
-//! Run interleaved paired A/B over CPU HARDWARE COUNTERS. The tool REPORT-18 spent five audits
-//! saying it could not have.
+//! Run interleaved paired A/B over CPU HARDWARE COUNTERS.
 //!
 //! WHY THIS EXISTS. The report's §3-P1 declared the campaign "blocked" because "WSL2 has no
 //! `perf`", leaving callgrind as the only profiler -- and callgrind SIGILLs on avx512, so every
@@ -52,7 +51,8 @@
 //!   zig run tools/perf_counters.zig -- ./zf_sse41 $ORACLE/sf_sse41 8 bench 16 1 13
 //!   MAX_INSTR_RATIO=1.36 perf_counters ./zf_sse41 $ORACLE/sf_sse41 8 bench 16 1 13
 //!
-//! See __DEV/4-PERFORMANCE-REFERENCES.md sections 1-2 for the laws this encodes.
+//! The protocol it encodes -- interleaved pairs, core pinning, median of per-round paired
+//! ratios -- is the one docs/08-idiomatic-zig.md requires for any speed claim.
 
 const std = @import("std");
 const linux = std.os.linux;
