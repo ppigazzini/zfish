@@ -202,6 +202,8 @@ pub fn build(b: *std.Build) void {
         // lets their location change without touching the importers.
         .{ .name = "search_manager", .path = "src/engine/search/search_manager.zig" },
         .{ .name = "root_move_build", .path = "src/engine/search/root_move_build.zig" },
+        .{ .name = "tb_extend_source", .path = "src/engine/search/tb_extend_source.zig" },
+        .{ .name = "tb_extend", .path = "src/engine/search/tb_extend.zig" },
     };
     var mods = std.StringHashMap(*std.Build.Module).init(b.allocator);
     for (module_specs) |spec| {
@@ -254,6 +256,13 @@ pub fn build(b: *std.Build) void {
         .{ .from = "root_move_build", .imp = "option_source", .to = "option_source" },
         .{ .from = "root_move_build", .imp = "movegen", .to = "movegen" },
         .{ .from = "root_move_build", .imp = "position_snapshot", .to = "position_snapshot" },
+        .{ .from = "tb_extend_source", .imp = "position_types", .to = "position_types" },
+        .{ .from = "tb_extend", .imp = "position", .to = "position" },
+        .{ .from = "tb_extend", .imp = "movegen", .to = "movegen" },
+        .{ .from = "tb_extend", .imp = "option_source", .to = "option_source" },
+        .{ .from = "tb_extend", .imp = "time_source", .to = "time_source" },
+        .{ .from = "tb_extend", .imp = "tb_extend_source", .to = "tb_extend_source" },
+        .{ .from = "tb_extend", .imp = "root_move_build", .to = "root_move_build" },
         // Import the owning search modules directly from consumers: search_driver's public
         // face, and the RootMove type in search_types.
         .{ .from = "engine", .imp = "search_driver", .to = "search_driver" },
@@ -400,6 +409,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_emit", .imp = "position_query", .to = "position_query" },
         .{ .from = "search_emit", .imp = "option_source", .to = "option_source" },
         .{ .from = "search_emit", .imp = "search_types", .to = "search_types" },
+        .{ .from = "search_emit", .imp = "tb_extend_source", .to = "tb_extend_source" },
         .{ .from = "history", .imp = "search", .to = "search" },
         .{ .from = "history", .imp = "search_common", .to = "search_common" },
         .{ .from = "history", .imp = "shared_history", .to = "shared_history" },
@@ -617,6 +627,8 @@ pub fn build(b: *std.Build) void {
     // binds the ThreadPool and TranspositionTable.
     exe.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     exe.root_module.addImport("time_source", mods.get("time_source").?);
+    exe.root_module.addImport("tb_extend_source", mods.get("tb_extend_source").?);
+    exe.root_module.addImport("tb_extend", mods.get("tb_extend").?);
     exe.root_module.addImport("page_alloc", mods.get("page_alloc").?);
     exe.root_module.addImport("option_source", mods.get("option_source").?);
     exe.root_module.addImport("tb_source", mods.get("tb_source").?);
@@ -1072,6 +1084,18 @@ pub fn build(b: *std.Build) void {
     );
     skill_step.dependOn(&skill_cmd.step);
 
+    // Drive consecutive `go` with NO intervening `position` (repeat-go; no golden -- liveness).
+    // Upstream guards the setup-state transfer, so the pool reuses the list it already owns;
+    // zfish freed it and stored null, and the second `go` panicked in the shipped binary. Every
+    // other gate re-sends `position` before each `go`, so none of them could see it.
+    const repeat_go_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "repeat-go", "-", "check");
+
+    const repeat_go_step = b.step(
+        "parity-repeat-go",
+        "Repeated `go` with no intervening `position` yields a bestmove each time, clean exit",
+    );
+    repeat_go_step.dependOn(&repeat_go_cmd.step);
+
     // Exercise the ponder handshake (ponder; no golden -- N-time). `go ... ponder` then `ponderhit` must
     // emit a legal bestmove, `stop` during ponder must emit the best-so-far, and the process must
     // exit cleanly. Liveness + legality, platform-agnostic, so it joins the portable aggregate.
@@ -1517,7 +1541,7 @@ pub fn build(b: *std.Build) void {
     hook_lint_cmd.setCwd(b.path("."));
     const hook_lint_step = b.step(
         "hook-lint",
-        "Cycle-break hooks: ratcheted at 30, each declaring a failure mode + class, all registered",
+        "Cycle-break hooks: ratcheted, each declaring a failure mode + class, all registered",
     );
     hook_lint_step.dependOn(&hook_lint_cmd.step);
 
@@ -1848,6 +1872,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&chess960_cmd.step);
     parity_step.dependOn(&reset_cmd.step);
     parity_step.dependOn(&skill_cmd.step);
+    parity_step.dependOn(&repeat_go_cmd.step);
     parity_step.dependOn(&ponder_cmd.step);
     parity_step.dependOn(&net_missing_cmd.step);
     parity_step.dependOn(&hook_lint_cmd.step);
@@ -1899,6 +1924,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&chess960_cmd.step);
     parity_portable_step.dependOn(&reset_cmd.step);
     parity_portable_step.dependOn(&skill_cmd.step);
+    parity_portable_step.dependOn(&repeat_go_cmd.step);
     parity_portable_step.dependOn(&ponder_cmd.step);
     parity_portable_step.dependOn(&net_missing_cmd.step);
     parity_portable_step.dependOn(&hook_lint_cmd.step);

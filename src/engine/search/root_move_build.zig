@@ -64,7 +64,7 @@ pub const TbConfig = struct {
 
 const TablebaseProbe = tb_source.ProbeResult;
 
-const RankedRootMove = struct {
+pub const RankedRootMove = struct {
     raw_move: u16,
     reserved: u16,
     tb_rank: i32,
@@ -116,11 +116,11 @@ pub fn buildRootFen(pos: *const position_port.Position) ?[*:0]u8 {
     );
 }
 
-const ScratchPosition = struct {
+pub const ScratchPosition = struct {
     pos: *position_port.Position,
     storage: *PendingStateStorage,
 
-    fn init(root_fen: []const u8, chess960: u8) !ScratchPosition {
+    pub fn init(root_fen: []const u8, chess960: u8) !ScratchPosition {
         const pos = position_port.create() orelse return error.OutOfMemory;
         errdefer position_port.destroy(pos);
 
@@ -132,12 +132,12 @@ const ScratchPosition = struct {
         return scratch;
     }
 
-    fn deinit(self: *ScratchPosition) void {
+    pub fn deinit(self: *ScratchPosition) void {
         state_list.storageDestroy(self.storage);
         position_port.destroy(self.pos);
     }
 
-    fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) error{OutOfMemory}!void {
+    pub fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) error{OutOfMemory}!void {
         const root_state = try state_list.storageReset(self.storage);
         if (position_port.setPositionState(self.pos, root_fen.ptr, root_fen.len, chess960, root_state)) |err| {
             defer std.heap.c_allocator.free(std.mem.span(err));
@@ -145,7 +145,7 @@ const ScratchPosition = struct {
         }
     }
 
-    fn doMove(self: *ScratchPosition, raw_move: u16) error{OutOfMemory}!void {
+    pub fn doMove(self: *ScratchPosition, raw_move: u16) error{OutOfMemory}!void {
         const next_state = try state_list.storagePush(self.storage);
         position_port.doMoveState(self.pos, raw_move, next_state);
     }
@@ -351,7 +351,7 @@ fn rankRootMovesWdl(
     return true;
 }
 
-fn stableSortRankedMovesByTbRank(ranked_moves: []RankedRootMove) void {
+pub fn stableSortRankedMovesByTbRank(ranked_moves: []RankedRootMove) void {
     var index: usize = 1;
     while (index < ranked_moves.len) : (index += 1) {
         const current = ranked_moves[index];
@@ -362,6 +362,56 @@ fn stableSortRankedMovesByTbRank(ranked_moves: []RankedRootMove) void {
         }
         ranked_moves[insert_at] = current;
     }
+}
+
+// Rank `ranked_moves` at `pos` -- upstream Tablebases::rank_root_moves (tbprobe.cpp:1780). Serve
+// any position, not just the root, so the PV extender ranks each step of its walk.
+//
+// Own the sort and the failure cleanup. Zeroing every tbRank on a failed probe is required, not
+// tidiness: a DTZ pass that bails to WDL has already written ranks for the moves it reached, and
+// a WDL pass that then fails leaves those ranks describing a probe that did not succeed.
+pub fn rankMovesAt(
+    pos: *const position_port.Position,
+    pos_fen: []const u8,
+    chess960: u8,
+    rank_dtz_in: bool,
+    ranked_moves: []RankedRootMove,
+) !TbConfig {
+    var config = loadTbConfig(pos);
+    if (ranked_moves.len == 0) return config;
+
+    var dtz_available = true;
+    const snapshot = loadPositionSnapshot(pos);
+
+    if (config.cardinality >= @as(i32, @intCast(countPieces(pos))) and snapshot.castling_rights == 0) {
+        // SF: rankDTZ = rankDTZ || pos.dtz_is_dtm()
+        const rank_dtz = rank_dtz_in or dtzIsDtm(pos);
+        switch (try rankRootMovesDtz(
+            pos_fen,
+            chess960,
+            config.use_rule50 != 0,
+            rank_dtz,
+            snapshot.rule50_count,
+            position_port.hasRepeated(pos),
+            ranked_moves,
+        )) {
+            .success => config.root_in_tb = 1,
+            .fallback_to_wdl => {
+                dtz_available = false;
+                if (try rankRootMovesWdl(pos_fen, chess960, config.use_rule50 != 0, ranked_moves))
+                    config.root_in_tb = 1;
+            },
+        }
+    }
+
+    if (config.root_in_tb != 0) {
+        stableSortRankedMovesByTbRank(ranked_moves);
+        if (dtz_available or ranked_moves[0].tb_score <= value_draw)
+            config.cardinality = 0;
+    } else {
+        for (ranked_moves) |*m| m.tb_rank = 0;
+    }
+    return config;
 }
 
 pub fn buildRootMoves(
@@ -383,40 +433,10 @@ pub fn buildRootMoves(
         };
     }
 
-    var tb_config = loadTbConfig(pos);
-    var dtz_available = true;
-
-    // SF: rank the root moves only when the root itself fits the TB and can't castle. Otherwise the
-    // root is searched normally (cardinality kept, so Step 6 probes smaller in-tree positions).
-    const root_snapshot0 = loadPositionSnapshot(pos);
-    if (tb_config.cardinality >= @as(i32, @intCast(countPieces(pos))) and root_snapshot0.castling_rights == 0) {
-        const root_snapshot = root_snapshot0;
-        const dtz_result = try rankRootMovesDtz(
-            root_fen,
-            chess960,
-            tb_config.use_rule50 != 0,
-            dtzIsDtm(pos), // SF: rankDTZ = false || pos.dtz_is_dtm()
-            root_snapshot.rule50_count,
-            position_port.hasRepeated(pos),
-            ranked_moves,
-        );
-
-        switch (dtz_result) {
-            .success => tb_config.root_in_tb = 1,
-            .fallback_to_wdl => {
-                dtz_available = false;
-                if (try rankRootMovesWdl(root_fen, chess960, tb_config.use_rule50 != 0, ranked_moves)) {
-                    tb_config.root_in_tb = 1;
-                }
-            },
-        }
-    }
-
-    if (tb_config.root_in_tb != 0) {
-        stableSortRankedMovesByTbRank(ranked_moves);
-        if (dtz_available or ranked_moves[0].tb_score <= value_draw)
-            tb_config.cardinality = 0;
-    }
+    // Rank the root moves only when the root fits the TB and cannot castle; otherwise search the
+    // root normally, keeping cardinality so Step 6 still probes smaller in-tree positions.
+    // rankMovesAt ORs `pos.dtz_is_dtm()` into the rankDTZ passed here.
+    const tb_config = try rankMovesAt(pos, root_fen, chess960, false, ranked_moves);
 
     const root_moves = rootMovesCreateRanked(ranked_moves.ptr, ranked_moves.len) orelse
         return error.OutOfMemory;

@@ -8,6 +8,8 @@ const position_types = @import("position_types");
 const runtime_hooks = @import("runtime_hooks");
 const clock = @import("clock");
 const time_source = @import("time_source");
+const tb_extend_source = @import("tb_extend_source");
+const tb_extend = @import("tb_extend");
 const page_alloc = @import("page_alloc");
 const option_source = @import("option_source");
 const tb_source = @import("tb_source");
@@ -112,9 +114,15 @@ fn threadpoolSetupStatesAdoptFromStorage(pool: *worker_layout.ThreadPool, storag
     freeSetupStatesIfAny(pool);
     poolSetupStatesSlot(pool).* = @as(*PendingStateStorage, @ptrCast(@alignCast(storage))).moveOut();
 }
+// Adopt from the engine's raw slot only when the slot holds a list; otherwise keep the pool's
+// existing setupStates. Upstream guards the same transfer -- `assert(states.get() ||
+// setupStates.get()); if (states.get()) setupStates = std::move(states);` (thread.cpp:316-321).
+// A `go` issued with no intervening `position` finds the slot empty, and the pool must reuse the
+// list it already owns: freeing it here leaves thread.zig's `hasSetupStates` false and panics.
 fn threadpoolSetupStatesAdoptFromSlot(pool: *worker_layout.ThreadPool, slot_ptr: *anyopaque) void {
-    freeSetupStatesIfAny(pool);
     const src: *?*StateList = @ptrCast(@alignCast(slot_ptr));
+    if (src.* == null) return;
+    freeSetupStatesIfAny(pool);
     poolSetupStatesSlot(pool).* = src.*;
     src.* = null;
 }
@@ -170,6 +178,9 @@ fn installRuntimeHooks() void {
     runtime_hooks.pending_states_available = &pendingStatesAvailable;
     runtime_hooks.handoff_pending_states = &handoffPendingStates;
     runtime_hooks.verify_thread_graph = &thread_construct.verifyThreadGraph;
+    // Inject the DTZ walk into the reporter's tablebase seam, so the UCI reporter extends a
+    // tablebase-scored PV without importing the position machinery that would close a cycle.
+    tb_extend_source.extendPv = &tb_extend.syzygyExtendPv;
     // Inject the platform monotonic clock into the engine's time-source seam, so
     // the search reads the OS clock without importing a platform module.
     time_source.now = &clock.now;

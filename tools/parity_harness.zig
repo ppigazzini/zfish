@@ -1502,6 +1502,49 @@ fn skillMove(s: *Interactive) []const u8 {
     return "";
 }
 
+// repeat-go: drive consecutive `go` commands with NO intervening `position`, the most ordinary
+// sequence a GUI issues (analyse, stop, analyse again). Upstream guards the setup-state transfer
+// -- `if (states.get()) setupStates = std::move(states)` (thread.cpp:316-321) -- so the pool
+// reuses the list it already owns when the engine's slot is empty. zfish freed that list and
+// stored null instead, so the SECOND `go` panicked and dumped core in the shipped ReleaseFast
+// binary. Every other gate re-sends `position` before each `go`, which is precisely why a
+// process-killing defect was invisible to all of them.
+//
+// Liveness, not a snapshot: N `go`s must produce N well-formed bestmoves and a clean exit.
+fn runRepeatGo(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    const rounds = 4;
+
+    var s: Interactive = undefined;
+    s.init(io, gpa, bin) catch fail("repeat-go: spawn failed", .{});
+
+    s.send("position startpos\n");
+    var i: usize = 0;
+    while (i < rounds) : (i += 1) {
+        s.send("go depth 6\n");
+        if (!s.fillUntil("bestmove"))
+            fail("repeat-go: `go` #{d} produced no bestmove -- the engine died on a repeated go with no intervening `position` (setup-state handoff)", .{i + 1});
+    }
+    const clean_exit = s.finish();
+
+    var seen: usize = 0;
+    var li = lines(s.buffered());
+    while (li.next()) |raw| {
+        const line = trimCR(raw);
+        if (parseBestmove(line)) |b| {
+            if (!wellFormedMove(b.bestmove))
+                fail("repeat-go: malformed bestmove '{s}' on go #{d}", .{ b.bestmove, seen + 1 });
+            seen += 1;
+        }
+    }
+    if (seen != rounds)
+        fail("repeat-go: expected {d} bestmoves from {d} consecutive `go`s, got {d}", .{ rounds, rounds, seen });
+    if (!clean_exit)
+        fail("repeat-go: engine did not exit cleanly after {d} consecutive `go`s -- a panic/abort here kills the process for any GUI", .{rounds});
+
+    std.debug.print("repeat-go: OK ({d} consecutive `go` with no intervening `position`, {d} legal bestmoves, clean exit)\n", .{ rounds, seen });
+    std.process.exit(0);
+}
+
 fn runSkill(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     var s: Interactive = undefined;
     s.init(io, gpa, bin) catch fail("skill: spawn failed", .{});
@@ -1754,6 +1797,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, check_name, "time-mgmt")) runTimeMgmt(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "reset-determinism")) runResetDeterminism(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "skill")) runSkill(gpa, io, bin);
+    if (std.mem.eql(u8, check_name, "repeat-go")) runRepeatGo(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "ponder")) runPonder(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "net-missing")) runNetMissing(gpa, io, bin);
 
