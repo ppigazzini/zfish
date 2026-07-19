@@ -10,6 +10,31 @@ one command decides whether behaviour moved. See the golden rule in
 [CONTRIBUTING](../CONTRIBUTING.md). Judge every gate by its exit code, not its log
 text.
 
+## Vectorize integer hot loops by hand — the toolchain will not
+
+A scalar integer loop stays scalar. Measured on this toolchain, an `i32` reduction —
+`for (a) |v| s += v` — emits **zero** vector instructions, where the same loop through
+`zig c++` emits a full AVX2 reduction. It is not aliasing (a read-only dot product
+fails identically) and not the overflow flags (the emitted IR carries `add nsw`); the
+loop is unrolled but never widened. Every form behaves the same: pointer or slice,
+`+` or `+%`, signed or unsigned. Floats are no different without `@setFloatMode`.
+
+A chess engine is integer math end to end, so this is the load-bearing rule of the hot
+path: **any per-element integer loop that should be SIMD must be written as `@Vector`,
+because nothing downstream will do it for you.** The measured cost is real — fusing the
+8-bucket psqt accumulator update from a scalar loop into one `@Vector(8, i32)` cut its
+instructions, and the scalar form would have stayed scalar forever.
+
+```zig
+// Not this — stays scalar, one lane per iteration:
+for (removed) |i| { var b: usize = 0; while (b < 8) : (b += 1) acc_mem[b] -= w[i * 8 + b]; }
+
+// This — one 256-bit register, all rows applied in-register:
+var acc: @Vector(8, i32) = target[0..8].*;
+for (removed) |i| acc -= @as(@Vector(8, i32), (w + i * 8)[0..8].*);
+target[0..8].* = acc;
+```
+
 ## Reach for `@Vector` before hand-written SIMD
 
 The NNUE feature transformer is written once in portable `@Vector` code. LLVM lowers
