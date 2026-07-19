@@ -15,6 +15,7 @@ const option_port = @import("option");
 const network_port = @import("network");
 const uci_output = @import("uci_output");
 const engine_object = @import("engine_object");
+const thread_port = @import("thread");
 
 pub fn printInfoString(str: []const u8) void {
     var it = std.mem.splitScalar(u8, str, '\n');
@@ -99,6 +100,12 @@ pub fn loadNetworkEngine(engine_ptr: *engine_object.EngineObject, evalfile_path:
     const bdir: [*:0]const u8 = e.binary_directory orelse "";
     const bdir_slice = std.mem.span(bdir);
     network_port.load(bdir_slice.ptr, bdir_slice.len, evalfile_path.ptr, evalfile_path.len);
+    // A different net invalidates every history table and the main thread's carried-over
+    // scores, so drop them with the pool clear upstream performs here (engine.cpp:313-314).
+    // `clear` returns immediately on an empty pool, which is what the startup load finds.
+    const threads = e.threadsPtr();
+    thread_port.clear(threads);
+    thread_port.ensureNetworkReplicated(threads);
 }
 
 // Report the outcome, as upstream does: `sync_cout << (saved ? "Network saved
