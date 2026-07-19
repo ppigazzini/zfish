@@ -55,7 +55,7 @@ fn layerWeights(bucket: usize, idx: usize) [*]const i8 {
 /// That is the same property upstream's saturating `packs_epi32` relies on before its
 /// `mulhi_epi16`.
 inline fn sqrClippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void {
-    const V = 8;
+    const V = if (@import("builtin").cpu.arch == .x86_64) 16 else 8;
     const lo: @Vector(V, i32) = @splat(-32768);
     const hi: @Vector(V, i32) = @splat(32767);
     const cap: @Vector(V, i32) = @splat(127);
@@ -71,7 +71,7 @@ inline fn sqrClippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) v
 
 /// Compute upstream's ClippedReLU: clamp(x >> shift, 0, 127), over 32 outputs.
 inline fn clippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void {
-    const V = 8;
+    const V = if (@import("builtin").cpu.arch == .x86_64) 16 else 8;
     const zero: @Vector(V, i32) = @splat(0);
     const cap: @Vector(V, i32) = @splat(127);
     const sh: @Vector(V, u5) = @splat(shift);
