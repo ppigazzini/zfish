@@ -1107,6 +1107,16 @@ pub fn build(b: *std.Build) void {
     );
     fen_trunc_step.dependOn(&fen_trunc_cmd.step);
 
+    // Assert `flip` re-parses the board under ITS OWN chess960 variant, not the live option
+    // (flip-chess960; literal expectations verified against the oracle, no golden).
+    const flip960_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "flip-chess960", "-", "check");
+
+    const flip960_step = b.step(
+        "parity-flip-chess960",
+        "`flip` keeps the board's own chess960 variant when UCI_Chess960 is toggled",
+    );
+    flip960_step.dependOn(&flip960_cmd.step);
+
     // Exercise the ponder handshake (ponder; no golden -- N-time). `go ... ponder` then `ponderhit` must
     // emit a legal bestmove, `stop` during ponder must emit the best-so-far, and the process must
     // exit cleanly. Liveness + legality, platform-agnostic, so it joins the portable aggregate.
@@ -1885,6 +1895,7 @@ pub fn build(b: *std.Build) void {
     parity_step.dependOn(&skill_cmd.step);
     parity_step.dependOn(&repeat_go_cmd.step);
     parity_step.dependOn(&fen_trunc_cmd.step);
+    parity_step.dependOn(&flip960_cmd.step);
     parity_step.dependOn(&ponder_cmd.step);
     parity_step.dependOn(&net_missing_cmd.step);
     parity_step.dependOn(&hook_lint_cmd.step);
@@ -1938,6 +1949,7 @@ pub fn build(b: *std.Build) void {
     parity_portable_step.dependOn(&skill_cmd.step);
     parity_portable_step.dependOn(&repeat_go_cmd.step);
     parity_portable_step.dependOn(&fen_trunc_cmd.step);
+    parity_portable_step.dependOn(&flip960_cmd.step);
     parity_portable_step.dependOn(&ponder_cmd.step);
     parity_portable_step.dependOn(&net_missing_cmd.step);
     parity_portable_step.dependOn(&hook_lint_cmd.step);
