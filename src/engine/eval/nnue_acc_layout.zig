@@ -34,8 +34,15 @@ pub const psqt_buckets: usize = 8;
 /// 2792255-node tree: 64 beats 32 by 1.4% instructions on avx512icl and 1.0% on sse41; 16 loses
 /// 4.1%. Non-x86 keeps 32, the value it has always run -- no aarch64 measurement exists, and a
 /// width is tuned for the tier it was measured on, not a property of the algorithm.
-pub const transform_vec_width: usize =
-    if (@import("builtin").cpu.arch == .x86_64) 64 else 32;
+pub const transform_vec_width: usize = blk: {
+    const b = @import("builtin");
+    if (b.cpu.arch == .x86_64) {
+        // 128 on avx512 (measured -1.1% cycles, IPC flat), 64 on the rest of x86 (the {16,32,64}
+        // sweep's winner; 16 loses 4.1%). aarch64 keeps 32, unmeasured.
+        break :blk if (@import("std").Target.x86.featureSetHas(b.cpu.features, .avx512f)) 128 else 64;
+    }
+    break :blk 32;
+};
 pub const dirty_threat_capacity: usize = 96;
 pub const psq_index_capacity: usize = 32;
 pub const threat_index_capacity: usize = 128;
