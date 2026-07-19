@@ -13,11 +13,16 @@ text.
 ## Vectorize integer hot loops by hand — the toolchain will not
 
 A scalar integer loop stays scalar. Measured on this toolchain, an `i32` reduction —
-`for (a) |v| s += v` — emits **zero** vector instructions, where the same loop through
-`zig c++` emits a full AVX2 reduction. It is not aliasing (a read-only dot product
-fails identically) and not the overflow flags (the emitted IR carries `add nsw`); the
-loop is unrolled but never widened. Every form behaves the same: pointer or slice,
-`+` or `+%`, signed or unsigned. Floats are no different without `@setFloatMode`.
+`for (a) |v| s += v` — emits **zero** vector instructions, where the identical loop
+compiled from C through `zig cc` emits a full AVX2 reduction. Same bundled LLVM, same
+`-mavx2`. It is not aliasing (a read-only dot product fails identically) and not the
+overflow flags (the emitted IR carries `add nsw`); the loop is unrolled but never
+widened. Every form behaves the same: pointer or slice, `+` or `+%`, signed or
+unsigned.
+
+The cause is not a flag you can flip: running clang's own `-O3` pipeline on the LLVM IR
+that `zig build-obj` *emits* still produces zero vector ops. Zig emits IR the loop
+vectorizer will not take, so no build option enables it and re-optimizing does not help.
 
 A chess engine is integer math end to end, so this is the load-bearing rule of the hot
 path: **any per-element integer loop that should be SIMD must be written as `@Vector`,
@@ -34,6 +39,25 @@ var acc: @Vector(8, i32) = target[0..8].*;
 for (removed) |i| acc -= @as(@Vector(8, i32), (w + i * 8)[0..8].*);
 target[0..8].* = acc;
 ```
+
+The same rule catches **fills**, which are easy to overlook. `@memset` covers a zero
+or byte-repeating fill, but a table cleared to a non-zero `i16` (a history default like
+`-5`) is not a byte pattern, so `for (dst) |*e| e.* = -5` stays a scalar store loop. A
+broadcast `@Vector` store vectorizes it — and it is race-free wherever the fill is an
+exclusive phase (a per-worker or striped clear), so it needs no atomics even if the
+table is atomic during search:
+
+```zig
+const V = 32;
+const vv: @Vector(V, i16) = @splat(-5);
+var i: usize = 0;
+while (i + V <= dst.len) : (i += V) dst[i..][0..V].* = vv;
+while (i < dst.len) : (i += 1) dst[i] = -5; // scalar tail
+```
+
+Note a corollary: making a shared table `@atomic` for search-time races also makes its
+*clear* scalar, because an atomic store never vectorizes. Keep the clear on a plain
+view of the same memory when it runs in an exclusive phase.
 
 ## Reach for `@Vector` before hand-written SIMD
 
