@@ -27,9 +27,15 @@ pub const color_count: usize = 2;
 pub const half_dimensions: usize = 1024;
 pub const psqt_buckets: usize = 8;
 /// Set the lane count for transformBucket's clipped-ReLU pass. Independent of nnue_acc_rowops's
-/// row_tile_width -- they touch different loops, and a sweep of each (16/32/64 here; 32/64/128/256
-/// there) finds different optima. Do not fold them into one knob.
-pub const transform_vec_width: usize = 32;
+/// row_tile_width -- they touch different loops, and a sweep of each finds different optima. Do
+/// not fold them into one knob.
+///
+/// 64 on x86-64, from a paired hardware-counter sweep of {16, 32, 64} on the identical
+/// 2792255-node tree: 64 beats 32 by 1.4% instructions on avx512icl and 1.0% on sse41; 16 loses
+/// 4.1%. Non-x86 keeps 32, the value it has always run -- no aarch64 measurement exists, and a
+/// width is tuned for the tier it was measured on, not a property of the algorithm.
+pub const transform_vec_width: usize =
+    if (@import("builtin").cpu.arch == .x86_64) 64 else 32;
 pub const dirty_threat_capacity: usize = 96;
 pub const psq_index_capacity: usize = 32;
 pub const threat_index_capacity: usize = 128;
