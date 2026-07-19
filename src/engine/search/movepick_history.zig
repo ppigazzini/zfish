@@ -109,7 +109,8 @@ pub fn pawnHistoryScore(
     // Index pawn history [(pawn_key & mask) * PIECE_NB + piece][square]
     const index: usize = @intCast(pawn_key & history_snapshot.pawn_mask);
     const row_index = index * piece_nb + @as(usize, piece);
-    return history[row_index][@as(usize, square)].value;
+    // Relaxed: the pawn table is shared by every worker and written concurrently by statsUpdate.
+    return @atomicLoad(i16, &history[row_index][@as(usize, square)].value, .monotonic);
 }
 
 test {

@@ -34,11 +34,18 @@ pub inline fn moveIsOk(m: u16) bool {
 }
 
 // Update by gravity toward [-D, D].
+//
+// Load and store RELAXED. The pawn and correction tables are shared by every worker, and upstream
+// types their slots `RelaxedAtomic<i16>` (history.h:63 via `std::conditional_t<Shared, ...>`) so
+// this read-modify-write is a defined relaxed load followed by a relaxed store. A plain access is
+// a data race: `val` is read once but used twice, and if the compiler rematerialises the second
+// use after a sibling thread's store, the result can leave [-D, D] and trap the @intCast in
+// ReleaseSafe -- which is what CI builds.
 pub inline fn statsUpdate(entry: *i16, bonus: i32, comptime d: i32) void {
     const clamped = @max(-d, @min(d, bonus));
-    const val: i32 = entry.*;
+    const val: i32 = @atomicLoad(i16, entry, .monotonic);
     const abs_clamped = if (clamped < 0) -clamped else clamped;
-    entry.* = @intCast(val + clamped - @divTrunc(val * abs_clamped, d));
+    @atomicStore(i16, entry, @intCast(val + clamped - @divTrunc(val * abs_clamped, d)), .monotonic);
 }
 
 pub inline fn captVal(w: *WorkerHistories, pc: u8, to: u8, captured_type: u8) i32 {

@@ -591,6 +591,13 @@ pub fn build(b: *std.Build) void {
     // cross-targets keep linking. -Dlto=false/true overrides either way.
     const lto_default = os_choice == .linux;
     const want_lto = b.option(bool, "lto", "Link-time optimization (-flto=full, matching upstream). Default on for Linux; the macos/windows toolchain paths cannot link it.") orelse lto_default;
+    // Build under ThreadSanitizer. The engine's cross-thread state -- the TT, the shared history
+    // tables, the per-Worker counters, the Syzygy table registry -- is raced BY DESIGN, and upstream
+    // makes that race defined by typing every such field RelaxedAtomic. A missed atomic is not a
+    // crash: it is undefined behaviour the compiler may exploit, invisible to every node-count gate.
+    // TSan is the instrument that sees it.
+    const want_tsan = b.option(bool, "tsan", "Build with ThreadSanitizer (for the parity-tsan race gate)") orelse false;
+
     const exe = b.addExecutable(.{
         .name = "stockfish",
         .root_module = b.createModule(.{
@@ -598,11 +605,12 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .link_libc = true,
+            .sanitize_thread = want_tsan,
             // Omit .link_libcpp: the engine compiles zero C++ TUs (TU=0), so the C++
             // stdlib is dead weight.
         }),
     });
-    exe.lto = if (want_lto) .full else .none;
+    exe.lto = if (want_tsan) .none else (if (want_lto) .full else .none);
 
     // Share a thin libc binding with the files that need C stdio etc.
     // Import as `libc` wherever a module says `const c = @import("libc")`.
