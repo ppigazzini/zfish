@@ -444,6 +444,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "engine_nnue", .imp = "libc", .to = "libc" },
         .{ .from = "engine_nnue", .imp = "option", .to = "option" },
         .{ .from = "engine_nnue", .imp = "network", .to = "network" },
+        .{ .from = "engine_nnue", .imp = "thread", .to = "thread" },
         .{ .from = "engine_nnue", .imp = "uci_output", .to = "uci_output" },
         .{ .from = "engine_nnue", .imp = "engine_object", .to = "engine_object" },
         .{ .from = "engine", .imp = "engine_trace", .to = "engine_trace" },
