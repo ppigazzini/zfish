@@ -267,13 +267,29 @@ pub fn setPositionEngine(
     moves_ptr: ?[*]const ByteView,
     move_count: usize,
 ) ?[*:0]u8 {
+    return setPositionEngineAs(engine_ptr, @intFromBool(option_port.uciChess960()), fen_ptr, fen_len, moves_ptr, move_count);
+}
+
+// Set the position under an explicit chess960 flag. `position` takes the flag from the live
+// UCI_Chess960 option; `flip` takes it from the board it is re-setting, because upstream ends
+// Position::flip with `set(f, is_chess960(), st)` (position.cpp:1626) -- the variant is the
+// board's own property, and a toggle of the option between `position` and `flip` must not
+// reinterpret castling rights that were parsed under the other variant.
+pub fn setPositionEngineAs(
+    engine_ptr: *engine_object.EngineObject,
+    chess960: u8,
+    fen_ptr: [*]const u8,
+    fen_len: usize,
+    moves_ptr: ?[*]const ByteView,
+    move_count: usize,
+) ?[*:0]u8 {
     const states_slot = engine_ptr.statesSlotPtr();
     statesSlotReset(states_slot);
 
     return setPosition(
         engine_ptr.positionPtr(),
         states_slot,
-        @intFromBool(option_port.uciChess960()),
+        chess960,
         fen_ptr,
         fen_len,
         moves_ptr,
@@ -421,5 +437,6 @@ pub fn flipEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
     const flipped_c = position_port.flipFen(fen_text.ptr, fen_text.len) orelse return null;
     defer freeCString(flipped_c);
     const flipped = std.mem.span(flipped_c);
-    return setPositionEngine(engine_ptr, flipped.ptr, flipped.len, null, 0);
+    const chess960: u8 = @intFromBool(position_port.isChess960(engine_ptr.positionPtr()));
+    return setPositionEngineAs(engine_ptr, chess960, flipped.ptr, flipped.len, null, 0);
 }

@@ -1596,6 +1596,55 @@ fn runFenTruncated(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
+// flip-chess960: `flip` re-sets the board from its own FEN, and must re-parse it under the
+// variant the board already has. Upstream ends Position::flip with `set(f, is_chess960(), st)`
+// (position.cpp:1626), so toggling UCI_Chess960 between `position` and `flip` cannot reinterpret
+// castling rights that were parsed under the other variant.
+//
+// Both directions are pinned: a 960 board keeps its file-letter rights after the option is turned
+// OFF, and a standard board still reports KQkq. Expectations are LITERAL, each verified against
+// the pristine oracle -- a regenerable golden could be rewritten green over the defect.
+const FlipCase = struct { setup: []const u8, want: []const u8 };
+const flip_cases = [_]FlipCase{
+    .{
+        .setup = "setoption name UCI_Chess960 value true\nposition fen bqnbnrkr/pppppppp/8/8/8/8/PPPPPPPP/BQNBNRKR w HFhf - 0 1\nsetoption name UCI_Chess960 value false\nflip\nd\n",
+        .want = "bqnbnrkr/pppppppp/8/8/8/8/PPPPPPPP/BQNBNRKR b HFhf - 0 1",
+    },
+    .{
+        .setup = "setoption name UCI_Chess960 value false\nposition startpos\nflip\nd\n",
+        .want = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1",
+    },
+};
+
+fn runFlipChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    var s: Interactive = undefined;
+    s.init(io, gpa, bin) catch fail("flip-chess960: spawn failed", .{});
+
+    for (flip_cases) |fc| {
+        s.send(fc.setup);
+        if (!s.fillUntil("Checkers:"))
+            fail("flip-chess960: `flip` produced no board", .{});
+    }
+    _ = s.finish();
+
+    var idx: usize = 0;
+    var li = lines(s.buffered());
+    while (li.next()) |raw| {
+        const line = trimCR(raw);
+        if (!startsWith(line, "Fen: ")) continue;
+        if (idx >= flip_cases.len) break;
+        const got = std.mem.trim(u8, line["Fen: ".len..], " ");
+        if (!std.mem.eql(u8, got, flip_cases[idx].want))
+            fail("flip-chess960: case {d}\n  want: {s}\n  got : {s}\n  -- flip re-parsed the board under the live UCI_Chess960 option instead of the board's own variant", .{ idx, flip_cases[idx].want, got });
+        idx += 1;
+    }
+    if (idx != flip_cases.len)
+        fail("flip-chess960: {d} of {d} cases produced a Fen line", .{ idx, flip_cases.len });
+
+    std.debug.print("flip-chess960: OK ({d} flips re-parsed under the board's own variant)\n", .{idx});
+    std.process.exit(0);
+}
+
 fn runSkill(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     var s: Interactive = undefined;
     s.init(io, gpa, bin) catch fail("skill: spawn failed", .{});
@@ -1849,6 +1898,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, check_name, "reset-determinism")) runResetDeterminism(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "skill")) runSkill(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "fen-truncated")) runFenTruncated(gpa, io, bin);
+    if (std.mem.eql(u8, check_name, "flip-chess960")) runFlipChess960(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "repeat-go")) runRepeatGo(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "ponder")) runPonder(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "net-missing")) runNetMissing(gpa, io, bin);
