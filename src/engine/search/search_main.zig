@@ -283,7 +283,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             {
                 const res = tb_source.probeWdlPos(pos_ptr);
                 if (res.available != 0) {
-                    ctx.worker.tb_hits += 1;
+                    @atomicStore(u64, &ctx.worker.tb_hits, @atomicLoad(u64, &ctx.worker.tb_hits, .monotonic) + 1, .monotonic);
                     const draw_score: i32 = if (tb_cfg[5] != 0) 1 else 0;
                     const tb_value: i32 = sv.value_tb - ss.ply;
                     const wdl = res.wdl;

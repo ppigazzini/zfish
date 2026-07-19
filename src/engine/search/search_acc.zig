@@ -75,7 +75,12 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     const pos = pos_ptr;
     const ss = ss_ptr;
     const capture = captureStage(pos, move);
-    ctx.nodes.* +%= 1;
+    // Relaxed load-then-store, as upstream's RelaxedAtomic operator++ does (misc.h:378): the
+    // main thread sums this counter across workers while they increment it. A plain access there
+    // is a data race, and relaxed is what forbids the compiler tearing or rematerialising it --
+    // NOT an atomic read-modify-write, which would put a lock-prefixed op on the hottest counter
+    // in the engine.
+    @atomicStore(u64, ctx.nodes, @atomicLoad(u64, ctx.nodes, .monotonic) +% 1, .monotonic);
     const out = nnue_acc.stackPush(ctx.acc_stack);
     doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats);
     const dp: *const DirtyPiece = out.dirty_piece;
