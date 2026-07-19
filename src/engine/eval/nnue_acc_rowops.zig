@@ -200,9 +200,32 @@ pub fn applyCombinedPsqtDelta(
     psq_weights: [*]const i32,
     thr_weights: [*]const i32,
 ) void {
-    @memcpy(target, source);
-    applyPsqtDeltaInPlace(target, psq_removed, psq_added, psq_weights);
-    applyPsqtDeltaInPlace(target, thr_removed, thr_added, thr_weights);
+    // Fuse as upstream's apply_combined does for the psqt tile (nnue_accumulator.cpp:248-268):
+    // load the 8-bucket row into ONE register, apply both feature sets' removed/added columns
+    // in-register, store once. PSQTBuckets x i32 is a single 256-bit vector, so the update has
+    // no memory round-trip -- where a memcpy plus two in-memory passes wrote the row three
+    // times, and the auto-vectorizer leaves such integer loops scalar. The operation ORDER
+    // (psq removed, psq added, thr removed, thr added) is exactly the two-pass order it
+    // replaces, so every intermediate value matches and ReleaseSafe sees the identical run.
+    const V = @Vector(psqt_buckets, i32);
+    var acc: V = source[0..psqt_buckets].*;
+    for (psq_removed) |index| {
+        const w: V = (psq_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        acc -= w;
+    }
+    for (psq_added) |index| {
+        const w: V = (psq_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        acc += w;
+    }
+    for (thr_removed) |index| {
+        const w: V = (thr_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        acc -= w;
+    }
+    for (thr_added) |index| {
+        const w: V = (thr_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        acc += w;
+    }
+    target[0..psqt_buckets].* = acc;
 }
 
 test {
