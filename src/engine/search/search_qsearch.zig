@@ -102,10 +102,11 @@ pub fn pvUpdate(pv: *PVMoves, move: u16, child: ?*PVMoves) void {
 pub fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchStack) i32 {
     const shared = sharedOf(w);
     const us = pos.side_to_move;
-    const pcv: i32 = corrBundle(shared, pos.st.pawn_key)[us].pawn;
-    const micv: i32 = corrBundle(shared, pos.st.minor_piece_key)[us].minor;
-    const wnpcv: i32 = corrBundle(shared, pos.st.non_pawn_key[0])[us].nonpawn_white;
-    const bnpcv: i32 = corrBundle(shared, pos.st.non_pawn_key[1])[us].nonpawn_black;
+    // Relaxed: the correction bundles are shared across workers and updated concurrently.
+    const pcv: i32 = @atomicLoad(i16, &corrBundle(shared, pos.st.pawn_key)[us].pawn, .monotonic);
+    const micv: i32 = @atomicLoad(i16, &corrBundle(shared, pos.st.minor_piece_key)[us].minor, .monotonic);
+    const wnpcv: i32 = @atomicLoad(i16, &corrBundle(shared, pos.st.non_pawn_key[0])[us].nonpawn_white, .monotonic);
+    const bnpcv: i32 = @atomicLoad(i16, &corrBundle(shared, pos.st.non_pawn_key[1])[us].nonpawn_black, .monotonic);
     const ss1: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
     const m = ss1.current_move;
     var cch2: i32 = 0;
