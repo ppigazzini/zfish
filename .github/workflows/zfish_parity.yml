@@ -32,8 +32,7 @@ jobs:
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.16.0
-      # Owned Zig only (src/, tools/, build.zig); tests/ and scripts/ are
-      # imported upstream mirrors and are not zfish-formatted.
+      # The whole owned tree: src/, tools/, build.zig.
       - run: zig fmt --check src/ tools/ build.zig
 
   parity:

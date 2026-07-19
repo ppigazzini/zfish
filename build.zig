@@ -1592,6 +1592,12 @@ pub fn build(b: *std.Build) void {
     });
     const arch_report_cmd = b.addRunArtifact(arch_report_exe);
     arch_report_cmd.setCwd(b.path("."));
+    // Print the host's best ARCH tier, from the same pure-Zig detector the build uses to resolve
+    // `-Darch=native` (tools/native_arch.zig). arch_determinism.sh reads this to pick its host
+    // sweep tier, so the sweep and the build agree on one detector.
+    const host_arch_step = b.step("host-arch", "Print the host's best ARCH tier (the -Darch=native resolution)");
+    host_arch_step.dependOn(&b.addSystemCommand(&.{ "printf", "%s", native_arch.detectArchFromCpu(b.graph.host.result.cpu) }).step);
+
     const arch_report_step = b.step(
         "arch-report",
         "Coupling report (module + file graphs) + DAG / undeclared-SCC tripwires",
