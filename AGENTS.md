@@ -36,6 +36,15 @@ zig build parity           # the aggregate — run before calling anything done
 zig build signature        # just the anchor
 ```
 
+Touching anything more than one thread reads or writes — the TT, the shared histories, the
+per-Worker counters, the Syzygy registry, the pool lifecycle — also needs the race gate. `parity`
+cannot see a data race: bench is single-threaded, so every golden agrees with the oracle while the
+race is present.
+
+```sh
+zig build tsan-race -Dtsan -Dlto=false   # ThreadSanitizer, must report ZERO races
+```
+
 Cross-compile before committing anything under `src/platform/`, `std.Io`, or startup:
 `zig build -Dos=windows` and `-Dos=macos`. CI has caught an eager `File.stdout()` here.
 

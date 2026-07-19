@@ -143,6 +143,32 @@ The gates fall into kinds:
 | `parity-time` | Wall-clock `go movetime` / `wtime` budgets and the clock-scaling invariants hold. |
 | `parity-ponder` | `go ponder` → `ponderhit`/`stop` yields a legal bestmove and a clean exit. |
 | `parity-valgrind` / `parity-teardown` | Valgrind memcheck across thread counts, and the searchmoves/rootMoves + Worker-clear lifecycle: no definite leak, invalid access, or bad free. Not in `parity` (memcheck is ~20-50x slower); CI runs them in their own job. |
+| `tsan-race` | ThreadSanitizer over four concurrency workloads: **zero** data races. Not in `parity` — it needs its own instrumented build (`zig build tsan-race -Dtsan -Dlto=false`). |
+
+### The race gate
+
+The engine races its shared state **by design**: the transposition table, the shared pawn and
+correction histories, and the per-Worker `nodes`/`tbHits`/`bestMoveChanges` counters are all read
+and written by several threads with no lock. Upstream keeps that defined by typing every such field
+`RelaxedAtomic<T>`, whose accessors are relaxed load/store. Relaxed is not ordering — it buys
+exactly one thing: the compiler may not tear the access, invent it, or rematerialise it later.
+
+A field that should be relaxed and is not is therefore **not** a crash and **not** a wrong node
+count. It is undefined behaviour that the current compiler happens to lower the way you intended,
+until it does not. No signature, golden or node-count gate can see it, because the bench is
+single-threaded and every one of these gates agrees with the oracle while the race is present.
+
+`zig build tsan-race -Dtsan -Dlto=false` is the instrument that does see it. It drives four
+workloads chosen to reach different shared state — a deep search with a 1 MB hash and many threads
+(TT and history collisions), tablebases with MultiPV (the Syzygy registry and the PV emitter),
+`go`/`stop` churn across thread counts (pool lifecycle, and a TT clear racing a live search), and
+`ucinewgame` between searches — and requires **zero** reports.
+
+`-Dtsan` forces LTO off, which ThreadSanitizer requires.
+
+Treat a report as a real defect, not as sanitizer noise. Read the two halves: TSan names both the
+access and the previous conflicting one, and a race between an *atomic* write and a plain read
+means one side was missed. Both sides of a shared field have to be relaxed.
 
 **Structural and diagnostic**.
 

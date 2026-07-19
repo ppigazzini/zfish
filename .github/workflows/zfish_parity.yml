@@ -218,6 +218,28 @@ jobs:
   # July-2026 standard runner labels: windows-2025 (x64), windows-11-arm (arm64),
   # macos-26 (Apple silicon arm64), macos-26-intel (x64). fail-fast off so one OS failing
   # still reports the others.
+  # ThreadSanitizer race gate. The engine races its TT, shared histories and per-Worker counters
+  # BY DESIGN; upstream keeps that defined by typing those fields RelaxedAtomic. A missed atomic is
+  # undefined behaviour that no node-count gate can see, because bench is single-threaded. Its own
+  # job: the instrumented build is separate (-Dtsan forces LTO off) and TSan is slow.
+  tsan-race:
+    name: Linux TSan race gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29
+        with:
+          version: 0.16.0
+      - name: Cache NNUE network
+        uses: actions/cache@v4
+        with:
+          path: resources/*.nnue
+          key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
+      - name: Fetch the NNUE net
+        run: zig build net
+      - name: TSan race gate (4 concurrency workloads, zero races)
+        run: zig build tsan-race -Darch=x86-64 -Dtsan -Dlto=false
+
   native-os:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
