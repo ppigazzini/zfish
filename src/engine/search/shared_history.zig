@@ -36,20 +36,28 @@ inline fn dynRange(size: usize, thread_idx: usize, numa_total: usize) struct { s
 // Clear a SharedHistories: fill correctionHistory entries (each [2]CorrectionBundle, 8 int16)
 // to -5 and pawnHistory pages (each a [16][64] int16 page) to -1338, over
 // this thread's numa partition.
+// Broadcast-store fill of a flat int16 range. The clear is striped (disjoint per worker) so a
+// plain store is race-free, but the non-zero fill value is not a byte-memset and the toolchain
+// leaves a scalar `dst[i] = v` loop scalar (L13). An explicit @Vector broadcast store vectorizes
+// it -- this is the whole cost of workerClear, and the fill is bit-identical.
+inline fn fillI16(dst: [*]i16, start: usize, stop: usize, comptime val: i16) void {
+    const V = 32;
+    const vv: @Vector(V, i16) = @splat(val);
+    var i = start;
+    while (i + V <= stop) : (i += V) dst[i..][0..V].* = vv;
+    while (i < stop) : (i += 1) dst[i] = val;
+}
+
 pub fn clearSharedHistory(shared: *SharedHistories, thread_idx: usize, numa_total: usize) void {
     const corr_entry_i16: usize = @sizeOf([2]CorrectionBundle) / @sizeOf(i16);
     {
         const r = dynRange(shared.corr_size, thread_idx, numa_total);
         const base: [*]i16 = @ptrCast(@alignCast(shared.corr_data));
-        var i = r.start * corr_entry_i16;
-        const stop = r.end * corr_entry_i16;
-        while (i < stop) : (i += 1) base[i] = -5;
+        fillI16(base, r.start * corr_entry_i16, r.end * corr_entry_i16, -5);
     }
     {
         const r = dynRange(shared.pawn_size, thread_idx, numa_total);
-        var i = r.start * hist_pieceto;
-        const stop = r.end * hist_pieceto;
-        while (i < stop) : (i += 1) shared.pawn_data[i] = -1338;
+        fillI16(shared.pawn_data, r.start * hist_pieceto, r.end * hist_pieceto, -1338);
     }
 }
 
