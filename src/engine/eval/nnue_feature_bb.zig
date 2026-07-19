@@ -1,7 +1,7 @@
 // Compute the NNUE feature-index bitboard math: the pure square/piece/attack helpers +
 // the two per-piece index-table generators, split out of nnue_feature.zig so the
 // feature core stays under the file-size budget. std-only, no NNUE state -- the
-// parent aliases these back in. Behaviour is identical (bench 2466447).
+// parent aliases these back in. Behaviour is identical (bench 2792255).
 
 const std = @import("std");
 

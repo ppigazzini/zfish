@@ -1,4 +1,4 @@
-startpos   score cp 35 nodes 31326 bestmove e2e4
-open       score cp 45 nodes 33052 bestmove b5a4
-endgame    score cp 0 nodes 2870 bestmove f4g5
-queens     score cp 26 nodes 34711 bestmove g1f3
+startpos   score cp 34 nodes 11101 bestmove e2e4
+open       score cp 33 nodes 69937 bestmove b5a4
+endgame    score cp 0 nodes 4795 bestmove f4g5
+queens     score cp 25 nodes 30636 bestmove c1g5

@@ -281,7 +281,7 @@ verified locally. Its value is early warning on the road to the next toolchain b
 
 What the lane does **not** prove is speed. It gates on the node signature, and that
 signature is codegen-independent by construction: a toolchain that emits far worse code
-still benches 2466447 and still passes green. Measured locally with
+still benches 2792255 and still passes green. Measured locally with
 `tools/perf_counters.zig`, `0.17.0-dev.1417+20befa4e6` against `0.16.0`, identical tree,
 core-pinned: **+16.8%** instructions on sse41, **+23.6%** on avx2, **+10.4%** on avx512,
 and **+6117%** on vnni512 — there `nnue_inference.evaluateBucketRaw` loses its vector
@@ -374,8 +374,8 @@ cd <oracle>/src && make clean && \
 # 1. BENCH-PARITY ONLY -- the gcc oracle. --verify is NOT optional: without it the script builds but does
 #    NOT check the binary against the commit's own declared `Bench:` line. A stale or
 #    locally-edited worktree then benches wrong and every later number is fiction --
-#    that has happened here (a leftover eval stub made upstream bench 3461914 instead of
-#    2466447, and the "divergence" it produced was reported as a zfish defect).
+#    that has happened here: a leftover eval stub made the oracle bench a value the commit
+#    never declared, and the "divergence" it produced was reported as a zfish defect.
 #    It pins ARCH=x86-64-sse41-popcnt. Never hand-run an oracle binary past this script.
 bash tools/upstream_oracle.sh --verify             # -> "bench OK (N, matches commit Bench:)"
                                                    #    then prints the binary path

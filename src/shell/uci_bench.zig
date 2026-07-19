@@ -4,7 +4,7 @@
 // INJECTED dispatch function pointer (DispatchFn) rather than importing uci.zig's
 // command loop back -- uci passes a thin wrapper over dispatchCommand, so this leaf
 // carries no cycle. Keep behaviour byte-identical; `stockfish bench` (which pins signature
-// 2466447) exercises benchRuntime directly.
+// 2792255) exercises benchRuntime directly.
 
 const std = @import("std");
 const clock = @import("clock");

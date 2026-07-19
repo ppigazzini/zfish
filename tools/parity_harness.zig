@@ -11,7 +11,7 @@
 //     check  (default): rebuild the live fingerprint, diff vs the golden, exit 1 on drift.
 //     update:           (re)write the golden from the live run.
 //   parity_harness signature <stockfish-bin> <expected-nodes>
-//     run bench and assert `Nodes searched` == expected (the 2466447 arch/OS invariant).
+//     run bench and assert `Nodes searched` == expected (the 2792255 arch/OS invariant).
 // Mirror the scripts' exit codes: 0 pass, 1 golden mismatch, 2 crash / parse failure / usage.
 //
 // Route the streams (empirically verified against upstream, identical on every OS because
@@ -569,13 +569,13 @@ fn buildUciOptions(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 
 // bench-matrix: collect bench node counts for non-default configs (hash size / shallow depth
 // / node limit / bench-perft), each a distinct deterministic code path the default bench
-// (16/1/depth-13 -> 2466447) never exercises. Verify equal to the pristine upstream oracle
+// (16/1/depth-13 -> 2792255) never exercises. Verify equal to the pristine upstream oracle
 // and bit-exact across build modes (the node-limited config needed the conthistDelta i32-wrap
 // fix -- deep searches otherwise overflow under ReleaseSafe). Use the feed-all-then-quit path
 // safely -- `bench` is synchronous. Regenerate on an upstream/net bump, like the signature.
 const bench_matrix_configs = [_][]const u8{
     "16 1 8", // shallow depth
-    "128 1 13", // hash size (2561648 != the default 2466447 -> the TT-sizing path)
+    "128 1 13", // hash size (2561648 != the default 2792255 -> the TT-sizing path)
     "16 1 200000 default nodes", // node-limit path
     "16 1 3 default perft", // bench-perft path
 };
@@ -1019,7 +1019,7 @@ fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// signature: assert bench reports the exact node count (the 2466447 arch/OS invariant).
+// signature: assert bench reports the exact node count (the 2792255 arch/OS invariant).
 fn runSignature(gpa: std.mem.Allocator, io: Io, bin: []const u8, expected: []const u8) noreturn {
     var cap = runEngine(gpa, io, bin, &.{"bench"}, null) catch fail("signature: engine run failed", .{});
     defer cap.deinit(gpa);

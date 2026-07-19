@@ -112,7 +112,7 @@ const rootTtMove = search_control.rootTtMove;
 const rootInList = search_control.rootInList;
 const searchStopped = search_control.searchStopped;
 const inLastIterPv = search_control.inLastIterPv;
-const lmr_divisor = [16]i32{ 3307, 2930, 2874, 2818, 3215, 3225, 3224, 2782, 2858, 2919, 3088, 3275, 3180, 2868, 3006, 3599 };
+const lmr_divisor = [16]i32{ 3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762, 2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542 };
 const search_qsearch = @import("search_qsearch.zig");
 pub const isShuffling = search_qsearch.isShuffling;
 const pvClear = search_qsearch.pvClear;
@@ -231,7 +231,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
 
     // Apply the hindsight reduction adjustments.
     if (prior_reduction >= 3 and !opponent_worsening) depth += 1;
-    if (prior_reduction >= 2 and depth >= 2 and ss.static_eval + ss1.static_eval > 173) depth -= 1;
+    if (prior_reduction >= 2 and depth >= 2 and ss.static_eval + ss1.static_eval > 166) depth -= 1;
 
     // Cut off early on the TT (non-PV).
     if (!pv_node and excluded_move == 0 and tt_depth > depth - @as(i32, @intFromBool(tt_value <= beta)) and
@@ -240,9 +240,9 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     {
         if (tt_move != 0 and tt_value >= beta) {
             if (!tt_capture)
-                updateQuietHistoriesWorker(ctx.worker, pos_ptr, ss_ptr, tt_move, @min(114 * depth, 724)); // upstream 73826352d
-            if (prev_sq != @as(i32, sq_none) and ss1.move_count < 4 and !prior_capture)
-                updateContinuationHistories(ss1, pos.board[@intCast(prev_sq)], @intCast(prev_sq), -2187);
+                updateQuietHistoriesWorker(ctx.worker, pos_ptr, ss_ptr, tt_move, @min(112 * depth, 695)); // upstream 73826352d
+            if (prev_sq != @as(i32, sq_none) and ss1.move_count < 5 and !prior_capture)
+                updateContinuationHistories(ss1, pos.board[@intCast(prev_sq)], @intCast(prev_sq), -2210);
         }
         if (pos.st.rule50 < 96) {
             if (depth >= 7 and tt_move != 0 and pseudoLegal(pos_ptr, tt_move) and legal(pos_ptr, tt_move) and !qIsDecisive(tt_value)) {
@@ -320,7 +320,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         // Order quiets by static-eval difference.
         if (moveIsOk(ss1.current_move) and !ss1.in_check and !prior_capture) {
             const eval_diff = search.evalDiff(ss1.static_eval, ss.static_eval);
-            statsUpdate(&w.main_history[@as(usize, us ^ 1) * hist_uint16 + ss1.current_move], eval_diff * 10, 7183);
+            statsUpdate(&w.main_history[@as(usize, us ^ 1) * hist_uint16 + ss1.current_move], eval_diff * 11, 7183);
             if (!tt_hit and (pos.board[@intCast(prev_sq)] & 7) != pawn_pt and moveTypeOf(ss1.current_move) != q_mt_promotion) {
                 const psq: u8 = @intCast(prev_sq);
                 const row = pawnEntryRow(sharedOf(w), pos);
@@ -333,7 +333,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha, beta, false);
 
         // Step 8. Prune by futility.
-        if (!ss.tt_pv and depth < 17 and eval >= beta and (tt_move == 0 or tt_capture) and !qIsLoss(beta) and !qIsWin(eval)) {
+        if (!ss.tt_pv and depth < 19 and eval >= beta and (tt_move == 0 or tt_capture) and !qIsLoss(beta) and !qIsWin(eval)) {
             const fm = search.futilityMargin(depth, ss.tt_hit, improving, opponent_worsening, correction_value);
             if (eval - fm >= beta) return search.futilityReturn(beta, eval);
         }
@@ -391,7 +391,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 .shared_history = null,
                 .ply = 0,
             };
-            const probcut_depth = depth - 4 - @as(i32, @intFromBool(improving)); // upstream d64835051
+            const probcut_depth = depth - (if (improving) @as(i32, 5) else 3); // upstream d64835051
             while (true) {
                 const move = movepick.nextMove(&pc_state, &pc_ctx);
                 if (move == 0) break;

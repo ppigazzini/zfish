@@ -90,111 +90,111 @@ pub fn futilityMargin(
     opponent_worsening: bool,
     correction_value: i32,
 ) i32 {
-    var futility_mult: i32 = @min(40 + depth * 4, 80);
+    var futility_mult: i32 = @min(45 + depth * 4, 85);
     futility_mult -= 20 * @as(i32, @intFromBool(!tt_hit));
     const imp: i32 = @intFromBool(improving);
     const opp: i32 = @intFromBool(opponent_worsening);
     const abs_corr: i32 = if (correction_value < 0) -correction_value else correction_value;
     return futility_mult * depth -
-        @divTrunc((2934 * imp + 343 * opp) * futility_mult, 1024) +
-        @divTrunc(abs_corr, 182069);
+        @divTrunc((2789 * imp + 335 * opp) * futility_mult, 1024) +
+        @divTrunc(abs_corr, 198435);
 }
 
 pub fn futilityReturn(beta: i32, eval: i32) i32 {
-    return @divTrunc(716 * beta + 308 * eval, 1024);
+    return @divTrunc(661 * beta + 363 * eval, 1024);
 }
 
 // Prune quiet moves in the move loop: continuation-history prune threshold,
 // parent-node futility value, and the negative-SEE margin.
 pub fn historyPruneThreshold(depth: i32) i32 {
-    return -4313 * depth;
+    return -4136 * depth;
 }
 
 pub fn quietFutilityValue(static_eval: i32, no_best_move: bool, lmr_depth: i32, eval_gt_alpha: bool) i32 {
-    return static_eval + 40 + 138 * @as(i32, @intFromBool(no_best_move)) +
-        117 * lmr_depth + 90 * @as(i32, @intFromBool(eval_gt_alpha));
+    return static_eval + 39 + 127 * @as(i32, @intFromBool(no_best_move)) +
+        119 * lmr_depth + 90 * @as(i32, @intFromBool(eval_gt_alpha));
 }
 
 pub fn quietSeeMargin(lmr_depth: i32) i32 {
-    return 25 * lmr_depth * lmr_depth;
+    return 23 * lmr_depth * lmr_depth;
 }
 
 // Compute the post-search bonus formulas (ttMoveHistory updates and the prior-countermove
 // fail-low bonus).
 pub fn ttMoveHistoryDepthBonus(depth: i32) i32 {
-    return -442 - 108 * depth;
+    return -421 - 110 * depth;
 }
 
 pub fn ttMoveHistoryMatchBonus(best_is_tt: bool) i32 {
-    return if (best_is_tt) 792 else -779;
+    return if (best_is_tt) 918 else -747;
 }
 
 pub fn priorBonusScale(prev_stat_score: i32, depth: i32, prev_movecount_gt8: bool, cond_a: bool, cond_b: bool) i32 {
-    var s: i32 = -245;
+    var s: i32 = -241;
     s -= @divTrunc(prev_stat_score, 98);
-    s += @min(59 * depth, 430);
-    s += 191 * @as(i32, @intFromBool(prev_movecount_gt8));
-    s += 143 * @as(i32, @intFromBool(cond_a));
-    s += 151 * @as(i32, @intFromBool(cond_b));
+    s += @min(59 * depth, 420);
+    s += 186 * @as(i32, @intFromBool(prev_movecount_gt8));
+    s += 142 * @as(i32, @intFromBool(cond_a));
+    s += 159 * @as(i32, @intFromBool(cond_b));
     return @max(s, 0);
 }
 
 pub fn priorScaledBonusBase(depth: i32) i32 {
-    return @min(141 * depth - 82, 1472);
+    return @min(150 * depth - 85, 1337);
 }
 
 // Adjust the LMR reduction (r) before the reduced search.
 pub fn lmrTtpvReduction(pv_node: bool, value_gt_alpha: bool, depth_ge: bool, cut_node: bool) i32 {
-    return 2766 + @as(i32, @intFromBool(pv_node)) * 1017 +
-        @as(i32, @intFromBool(value_gt_alpha)) * 838 +
-        @as(i32, @intFromBool(depth_ge)) * (923 + @as(i32, @intFromBool(cut_node)) * 955);
+    return 3023 + @as(i32, @intFromBool(pv_node)) * 1004 +
+        @as(i32, @intFromBool(value_gt_alpha)) * 885 +
+        @as(i32, @intFromBool(depth_ge)) * (816 + @as(i32, @intFromBool(cut_node)) * 940);
 }
 
 pub fn lmrCorrReduction(correction_value: i32) i32 {
     const a: i32 = if (correction_value < 0) -correction_value else correction_value;
-    return @divTrunc(a, 26131);
+    return @divTrunc(a, 26310);
 }
 
 pub fn lmrStatScoreReduction(stat_score: i32) i32 {
-    return @divTrunc(stat_score * 445, 4096);
+    return @divTrunc(stat_score * 439, 4096);
 }
 
 pub fn lmrAllNodeScale(r: i32, depth: i32) i32 {
-    return @divTrunc(r * 272, 256 * depth + 285);
+    return @divTrunc(r * 276, 256 * depth + 268);
 }
 
-// Compute the singular extension margins. corrValAdj = abs(correctionValue)/194822 is
+// Compute the singular extension margins. corrValAdj = abs(correctionValue)/198368 is
 // shared by both margins.
 fn corrValAdj(correction_value: i32) i32 {
     const a: i32 = if (correction_value < 0) -correction_value else correction_value;
-    return @divTrunc(a, 194822);
+    return @divTrunc(a, 198368);
 }
 
 pub fn singularBeta(tt_value: i32, ttpv_and_not_pv: bool, depth: i32) i32 {
-    return tt_value - @divTrunc((60 + 70 * @as(i32, @intFromBool(ttpv_and_not_pv))) * depth, 59);
+    return tt_value - @divTrunc((59 + 66 * @as(i32, @intFromBool(ttpv_and_not_pv))) * depth, 63);
 }
 
 pub fn singularDoubleMargin(pv_node: bool, not_tt_capture: bool, correction_value: i32, tt_move_history: i32, ply_gt_root: bool) i32 {
-    return -3 + 201 * @as(i32, @intFromBool(pv_node)) - 157 * @as(i32, @intFromBool(not_tt_capture)) -
-        corrValAdj(correction_value) - @divTrunc(1081 * tt_move_history, 117824) -
-        @as(i32, @intFromBool(ply_gt_root)) * 41;
+    return -2 + 204 * @as(i32, @intFromBool(pv_node)) - 152 * @as(i32, @intFromBool(not_tt_capture)) -
+        corrValAdj(correction_value) - @divTrunc(1175 * tt_move_history, 114178) -
+        @as(i32, @intFromBool(ply_gt_root)) * 38;
 }
 
 pub fn singularTripleMargin(pv_node: bool, not_tt_capture: bool, ttpv: bool, correction_value: i32, ply_gt_root: bool) i32 {
-    return 72 + 306 * @as(i32, @intFromBool(pv_node)) - 188 * @as(i32, @intFromBool(not_tt_capture)) +
-        84 * @as(i32, @intFromBool(ttpv)) - corrValAdj(correction_value) -
-        @as(i32, @intFromBool(ply_gt_root)) * 45;
+    return 70 + 279 * @as(i32, @intFromBool(pv_node)) - 188 * @as(i32, @intFromBool(not_tt_capture)) +
+        81 * @as(i32, @intFromBool(ttpv)) - corrValAdj(correction_value) -
+        @as(i32, @intFromBool(ply_gt_root)) * 43;
 }
 
 // Prune captures in the move loop: futility value (piece_value is the
 // piece-value lookup, passed in) and the SEE pruning margin.
 pub fn captureFutilityValue(static_eval: i32, lmr_depth: i32, piece_value: i32, capt_hist: i32) i32 {
-    return static_eval + 231 + 232 * lmr_depth + piece_value + @divTrunc(131 * capt_hist, 1024);
+    return static_eval + 234 + 247 * lmr_depth + piece_value + @divTrunc(134 * capt_hist, 1024);
 }
 
 pub fn captureSeeMargin(depth: i32, capt_hist: i32) i32 {
     // upstream e4a635486: drop the max(..,0) clamp.
-    return 175 * depth + @divTrunc(capt_hist * 34, 1024);
+    return 177 * depth + @divTrunc(capt_hist * 34, 1024);
 }
 
 // Prune by late move count: skip quiets once moveCount reaches this limit.
@@ -204,7 +204,7 @@ pub fn moveCountLimit(depth: i32, improving: bool) i32 {
 
 // Compute the Step 11 ProbCut beta thresholds (shallow probcut and the deep TT cutoff).
 pub fn probCutBeta(beta: i32, improving: bool) i32 {
-    return beta + 214 - 59 * @as(i32, @intFromBool(improving));
+    return beta + 241 - 64 * @as(i32, @intFromBool(improving));
 }
 
 pub fn probCutBetaDeep(beta: i32) i32 {
@@ -214,7 +214,7 @@ pub fn probCutBetaDeep(beta: i32) i32 {
 // Prune with the null move (Step 9): static-eval cutoff threshold, dynamic reduction R,
 // and the verification-search nmpMinPly.
 pub fn nullMoveThreshold(beta: i32, depth: i32, improving: bool) i32 {
-    return beta - 14 * depth - 45 * @as(i32, @intFromBool(improving)) + 374;
+    return beta - 13 * depth - 47 * @as(i32, @intFromBool(improving)) + 365;
 }
 
 pub fn nullMoveReduction(depth: i32) i32 {
@@ -227,58 +227,58 @@ pub fn nmpMinPly(ply: i32, depth: i32, r: i32) i32 {
 
 // Compute the Step 7 razoring threshold subtracted from alpha (search()).
 pub fn razorMargin(depth: i32) i32 {
-    return 465 + 300 * depth * depth;
+    return 483 + 318 * depth * depth;
 }
 
 // Blend the qsearch beta-trend: when a non-decisive bestValue clears beta it is
 // pulled partway toward beta. Step 4 stand-pat uses 467/557; the pre-TT-store
 // fail-high path uses 481/543. Both divide by 1024 with toward-zero truncation.
 pub fn qsearchStandPatBlend(best_value: i32, beta: i32) i32 {
-    return @divTrunc(467 * best_value + 557 * beta, 1024);
+    return @divTrunc(441 * best_value + 583 * beta, 1024);
 }
 
 pub fn qsearchFailHighBlend(best_value: i32, beta: i32) i32 {
-    return @divTrunc(481 * best_value + 543 * beta, 1024);
+    return @divTrunc(462 * best_value + 562 * beta, 1024);
 }
 
 // Order quiets by static-eval difference (search(), after the moves_loop check
 // guard): clamp the negated sum of the previous and current static evals into
 // [-183, 180] and bias by 62. The caller scales it (*10, *13) into history.
 pub fn evalDiff(prev_static_eval: i32, static_eval: i32) i32 {
-    return @max(@as(i32, -183), @min(@as(i32, 180), -(prev_static_eval + static_eval))) + 62;
+    return @max(@as(i32, -189), @min(@as(i32, 194), -(prev_static_eval + static_eval))) + 60;
 }
 
 // Compute the qsearch futility base = static eval plus a fixed margin. The move loop later
 // adds the captured piece value to this base.
 pub fn qsearchFutilityBase(static_eval: i32) i32 {
-    return static_eval + 335;
+    return static_eval + 306;
 }
 
 // Scale the prior-countermove fail-low bonus (search() POST_BONUS block): fan the
 // scaledBonus out into the continuation, main, and pawn history
 // tables with distinct tuned divisors, each truncated toward zero.
 pub fn priorConthistScale(scaled_bonus: i32) i32 {
-    return @divTrunc(scaled_bonus * 236, 16384);
+    return @divTrunc(scaled_bonus * 263, 16384);
 }
 
 pub fn priorMainhistScale(scaled_bonus: i32) i32 {
-    return @divTrunc(scaled_bonus * 234, 32768);
+    return @divTrunc(scaled_bonus * 215, 32768);
 }
 
 pub fn priorPawnhistScale(scaled_bonus: i32) i32 {
-    return @divTrunc(scaled_bonus * 322, 8192);
+    return @divTrunc(scaled_bonus * 324, 8192);
 }
 
 // Assemble the Step 17 LMR stat-score (search()). The caller reads the relevant
 // history-table entries and passes their values; this owns the tuned weighting.
-// Capture: 809*pieceValue/128 plus capture history. Quiet: 2*main plus the two
-// continuation-history entries.
+// Capture: 873*pieceValue/128 plus capture history. Quiet: a weighted sum of main and the
+// two continuation-history entries, scaled by 1024.
 pub fn captureStatScore(piece_value: i32, capture_hist: i32) i32 {
-    return @divTrunc(809 * piece_value, 128) + capture_hist;
+    return @divTrunc(873 * piece_value, 128) + capture_hist;
 }
 
 pub fn quietStatScore(main_hist: i32, cont0: i32, cont1: i32) i32 {
-    return 2 * main_hist + cont0 + cont1;
+    return @divTrunc(2252 * main_hist + 1126 * cont0 + 1093 * cont1, 1024);
 }
 
 // Compute the end-of-search correction-history bonus (search()): scale the static-eval
@@ -289,7 +289,7 @@ pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) 
     const w: i32 = if (has_best_move) 12 else 18;
     const raw = @divTrunc(eval_delta * depth * w, 128);
     const clamped = @max(@as(i32, -256), @min(@as(i32, 256), raw));
-    return @divTrunc(1114 * clamped, 1024);
+    return @divTrunc(1061 * clamped, 1024);
 }
 
 // Size the aspiration window in iterative_deepening(). The starting half-width
@@ -298,38 +298,38 @@ pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) 
 pub fn aspirationInitialDelta(thread_idx: usize, mean_squared_score: i32) i32 {
     const tmod: i32 = @intCast(thread_idx % 8);
     const abs_mss = if (mean_squared_score < 0) -mean_squared_score else mean_squared_score;
-    return 5 + tmod + @divTrunc(abs_mss, 10588);
+    return 5 + tmod + @divTrunc(abs_mss, 10193);
 }
 
 pub fn aspirationDeltaGrow(delta: i32) i32 {
-    return delta + @divTrunc(44 * delta, 128);
+    return delta + @divTrunc(47 * delta, 128);
 }
 
 // Compute eval optimism from the root move's average score (iterative_deepening()):
 // a saturating 137*avg/(|avg|+81). The caller mirrors it for the opponent.
 pub fn optimism(avg: i32) i32 {
     const abs_avg = if (avg < 0) -avg else avg;
-    return @divTrunc(137 * avg, abs_avg + 81);
+    return @divTrunc(114 * avg, abs_avg + 85);
 }
 
 // Scale the quiet-history bonus (update_quiet_histories). Each is bonus*N/1024
 // with toward-zero division; the pawn-history scale picks its weight by sign.
 pub fn quietLowPlyScale(bonus: i32) i32 {
-    return @divTrunc(bonus * 663, 1024);
+    return @divTrunc(bonus * 712, 1024);
 }
 
 pub fn quietContScale(bonus: i32) i32 {
-    return @divTrunc(bonus * 820, 1024);
+    return @divTrunc(bonus * 750, 1024);
 }
 
 pub fn quietPawnScale(bonus: i32) i32 {
-    const weight: i32 = if (bonus > -7) 1038 else 525;
+    const weight: i32 = if (bonus > -4) 1104 else 459;
     return @divTrunc(bonus * weight, 1024);
 }
 
 // Index the continuation-history positive-consistency multipliers by the
 // running positiveCount in update_continuation_histories.
-const cmhc_multipliers = [_]i32{ 96, 113, 101, 105, 127, 121, 126 };
+const cmhc_multipliers = [_]i32{ 94, 103, 110, 106, 119, 126, 121 };
 
 // Compute the per-entry continuation-history update delta: own the multiplier table
 // and the bonus*weight*multiplier/131072 formula. bonus*weight*multiplier
@@ -342,7 +342,7 @@ pub fn conthistDelta(bonus: i32, weight: i32, positive_count: i32, i: i32) i32 {
     // (the shipped ReleaseFast build already wrapped here; this only stops ReleaseSafe's
     // overflow trap from aborting on deep searches -- the value is unchanged).
     return @divTrunc(bonus *% weight *% multiplier, 131072) +
-        71 * @as(i32, @intFromBool(i < 2));
+        73 * @as(i32, @intFromBool(i < 2));
 }
 
 // Blend the weighted correction history (correction_value). Inputs are the raw
@@ -357,20 +357,20 @@ pub fn correctionValue(
     cch4: i32,
     m_ok: bool,
 ) i32 {
-    const cntcv: i32 = if (m_ok) 8363 * (cch2 + cch4) else 64549;
-    return 13345 * pcv + 9280 * micv + 11840 * (wnpcv + bnpcv) + cntcv;
+    const cntcv: i32 = if (m_ok) 8761 * (cch2 + cch4) else 64049;
+    return 15341 * pcv + 10569 * micv + 12906 * (wnpcv + bnpcv) + cntcv;
 }
 
 // Compute the base stat bonus/malus formulas applied at the end of search() when a
 // bestMove is found (update_all_stats).
 pub fn statBonus(depth: i32, is_tt_move: bool, prev_stat_score: i32) i32 {
-    return @min(134 * depth - 79, 1572) +
-        382 * @as(i32, @intFromBool(is_tt_move)) +
-        @divTrunc(prev_stat_score, 30);
+    return @min(133 * depth - 81, 1487) +
+        364 * @as(i32, @intFromBool(is_tt_move)) +
+        @divTrunc(prev_stat_score, 28);
 }
 
 pub fn statMalus(depth: i32) i32 {
-    return @min(1005 * depth - 205, 2218);
+    return @min(968 * depth - 235, 2244);
 }
 
 // Populate the reductions[] lookup table: reductions[i] = int(2834/128.0 * ln i)
@@ -379,7 +379,7 @@ pub fn fillReductions(reductions_ptr: [*]i32, count: usize) void {
     var i: usize = 1;
     while (i < count) : (i += 1) {
         const logv = @log(@as(f64, @floatFromInt(i)));
-        reductions_ptr[i] = @intFromFloat(2834.0 / 128.0 * logv);
+        reductions_ptr[i] = @intFromFloat(2872.0 / 128.0 * logv);
     }
 }
 
@@ -394,7 +394,7 @@ pub fn reduction(
     const depth_index: usize = @intCast(depth);
     const move_index: usize = @intCast(move_number);
     const reduction_scale = reductions_ptr[depth_index] * reductions_ptr[move_index];
-    return reduction_scale - @divTrunc(delta * 617, root_delta) + (if (!improving) @divTrunc(reduction_scale * 194, 512) else 0) + 1027;
+    return reduction_scale - @divTrunc(delta * 577, root_delta) + (if (!improving) @divTrunc(reduction_scale * 197, 512) else 0) + 982;
 }
 
 // --- tests --------------------------------------------------------------

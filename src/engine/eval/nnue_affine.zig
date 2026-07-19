@@ -2,7 +2,7 @@
 // forward driver stays under the god-file line. Pure compute: the int8 weight dot-product over a
 // scrambled layout, honouring the sparse-input skip. Three arch-tiered paths -- vpdpbusd (VNNI),
 // pmaddubsw+pmaddwd (SSSE3), and a portable vpmaddwd deinterleave -- all bit-identical integer
-// dots, selected at comptime by the target features. Bench-verified bit-exact (2466447 on every
+// dots, selected at comptime by the target features. Bench-verified bit-exact (2792255 on every
 // arch); the scalar-reference unit test in nnue_inference.zig pins every path.
 
 const std = @import("std");
