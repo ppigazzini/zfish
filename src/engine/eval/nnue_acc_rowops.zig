@@ -13,7 +13,13 @@ const psqt_buckets: usize = 8;
 /// Set the lane count for the FT weight-row add/sub tile. Swept as the only variable (5c93ad7fe): 64
 /// beats 32 by +3.4%/+4.7%, 128 is flat, 256 spills. Independent of nnue_acc_layout's
 /// transform_vec_width.
-const row_tile_width: usize = 64;
+// Lane count for the combined accumulator row apply. Target-aware: 128 on avx512 (measured
+// -7.5% instr / -1.8% cycles vs 64 -- the 32 zmm registers hold the 4-register accumulator
+// live across all four column loops), but 64 everywhere else. A paired HW-counter check found
+// 128 REGRESSES sse41 (+1.4% instr, +4.1% cycles): with only 16 xmm the wider tile spills.
+// aarch64 keeps 64, unmeasured. Distinct from the transform's width knob (nnue_acc_layout).
+const row_tile_width: usize = if (@import("builtin").cpu.arch == .x86_64 and
+    @import("std").Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512f)) 128 else 64;
 comptime {
     if (half_dimensions % row_tile_width != 0)
         @compileError("half_dimensions must be a multiple of row_tile_width");
