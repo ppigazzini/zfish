@@ -35,11 +35,7 @@ fn addDirtyThreat(dts: *DirtyThreats, put_piece: bool, pc: u8, threatened: u8, s
     dts.list_size += 1;
 }
 
-fn pawnPushOrAttacks(c: u8, s: u8) u64 {
-    const b = sqBb(s);
-    const push = if (c == color_white) b << 8 else b >> 8;
-    return push | pawnAttacks(c, s);
-}
+const pawnPushOrAttacks = board_core.pawnPushOrAttacks;
 
 fn processSliders(
     pos: *const Position,
