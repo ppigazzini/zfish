@@ -158,7 +158,7 @@ fn refreshCombined(
 
     const latest_index = stackSize(stack) - 1;
     var active: nnue_feature.FullAppendResult = undefined;
-    nnue_feature.fullAppendActive(&active, perspective, king_square, &pos.board);
+    nnue_feature.fullAppendActive(&active, perspective, king_square, &pos.board, &pos.by_type_bb, &pos.by_color_bb);
     accumulateRowsI8(
         stateAccumulationMut(psq_feature, latest_index, stack, perspective),
         active.indices[0..active.len],

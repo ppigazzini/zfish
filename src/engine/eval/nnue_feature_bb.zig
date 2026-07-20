@@ -92,40 +92,6 @@ pub fn attacksBb(piece_type: u8, square: usize, occupied: u64) u64 {
     };
 }
 
-pub fn piecesOfExact(pieces: []const u8, wanted: u8) u64 {
-    var bitboard: u64 = 0;
-    var square: usize = 0;
-    while (square < pieces.len) : (square += 1) {
-        if (pieces[square] == wanted) {
-            bitboard |= squareBb(square);
-        }
-    }
-    return bitboard;
-}
-
-pub fn piecesOfType(pieces: []const u8, wanted_type: u8) u64 {
-    var bitboard: u64 = 0;
-    var square: usize = 0;
-    while (square < pieces.len) : (square += 1) {
-        const piece = pieces[square];
-        if (piece != no_piece and typeOf(piece) == wanted_type) {
-            bitboard |= squareBb(square);
-        }
-    }
-    return bitboard;
-}
-
-pub fn occupiedFromPieces(pieces: []const u8) u64 {
-    var bitboard: u64 = 0;
-    var square: usize = 0;
-    while (square < pieces.len) : (square += 1) {
-        if (pieces[square] != no_piece) {
-            bitboard |= squareBb(square);
-        }
-    }
-    return bitboard;
-}
-
 pub fn pawnSinglePush(color: u8, bitboard: u64) u64 {
     return if (color == white)
         shift(north, bitboard)
