@@ -38,7 +38,15 @@ jobs:
   parity:
     name: Linux x86-64 parity
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # This lane is COMPILE-bound, not test-bound: the suite itself runs in ~1.5s (warm-cache
+    # re-run measured), but the job compiles six full build variants back to back -- debug
+    # parity, debug test, ReleaseSafe test, ReleaseSafe fuzz, ReleaseSafe parity, and the
+    # arch-determinism tier sweep. On a WARM setup-zig cache that is ~13 min; on a COLD cache
+    # (GitHub evicts on the 10 GB LRU / 7-day rule) every variant recompiles from scratch and
+    # the run needs ~30+ min. At timeout-minutes:30 the cold case had zero margin and timed out
+    # commit-independently (docs-only pushes tripped it too). 45 covers the cold path. If this
+    # keeps timing out, split the debug-test and ReleaseSafe-test steps into parallel jobs.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
