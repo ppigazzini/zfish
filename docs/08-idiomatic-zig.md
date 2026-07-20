@@ -247,6 +247,22 @@ history stats, NNUE weights) are allocated once at setup through a single inject
 allocator and reused; the per-node path touches only stack and pre-sized buffers.
 Decide memory at startup, not per operation.
 
+## Return large hot-path structs by pointer or out-param, not by value
+
+This toolchain does not apply return-value optimization across a non-inlined call: a
+function that builds a large struct in a local and returns it by value compiles to a
+`memcpy` of the whole struct into the caller's slot, once per call. On the per-node
+path that is a per-node copy, and it hides in a profile as a `memcpy` symbol rather
+than a hot function. Return a `*const T` for a view into memory that already outlives
+the call, or fill a caller-owned `result: *T` out-param for a freshly built one — the
+NNUE feature and threat path (`nnue_feature.zig`, `nnue_acc_layout.zig`) returns both
+ways. Removing two such returns cut the bench's `memcpy` from 3.4% of instructions to
+0.8%. The gate is the signature — the returned bytes are unchanged — plus a
+`perf_callgrind.sh` `costs` sweep to confirm `memcpy` actually fell; see
+[09-tooling-ci](09-tooling-ci.md). The mirror caveat is real: a by-value return that
+the optimizer inlines costs nothing, so verify the returner is a live symbol in the
+profile before rewriting it.
+
 ## Break import cycles with a composition root, not a god module
 
 Zig permits import cycles, so a strict DAG is a choice. Make it with a composition
