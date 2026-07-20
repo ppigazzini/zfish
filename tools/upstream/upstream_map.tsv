@@ -4,45 +4,45 @@
 # so order most-specific first. fnmatch globs (use * ).
 #
 # src-glob	zig-owner	risk
-src/nnue/*	src/eval/nnue_accumulator.zig,nnue_feature.zig,nnue_hash.zig,nnue_misc.zig,nnue_parse.zig,network.zig	HIGH
-src/evaluate.cpp	src/eval/evaluate.zig	HIGH
-src/evaluate.h	src/eval/evaluate.zig,network.zig	HIGH
-src/search.cpp	src/support/search.zig,search_manager.zig	HIGH
-src/search.h	src/support/search.zig,search_manager.zig	HIGH
-src/movepick.cpp	src/support/movepick.zig	MED
-src/movepick.h	src/support/movepick.zig	MED
-src/history.h	src/support/shared_histories.zig,search.zig	MED
-src/position.cpp	src/board/position.zig	MED
-src/position.h	src/board/position.zig,state_info.zig	MED
-src/movegen.cpp	src/board/movegen.zig	MED
-src/movegen.h	src/board/movegen.zig	MED
-src/tt.cpp	src/support/tt.zig	MED
-src/tt.h	src/support/tt.zig	MED
-src/thread.cpp	src/support/thread.zig,thread_runtime.zig,native_thread.zig	MED
-src/thread.h	src/support/thread.zig	MED
-src/timeman.cpp	src/time/timeman.zig	LOW
-src/timeman.h	src/time/timeman.zig	LOW
-src/bitboard.cpp	src/board/bitboard.zig	LOW
-src/bitboard.h	src/board/bitboard.zig	LOW
-src/attacks.cpp	src/board/bitboard.zig	LOW
-src/attacks.h	src/board/bitboard.zig	LOW
-src/types.h	src/score.zig	MED
-src/uci.cpp	src/uci/uci.zig	LOW
-src/uci.h	src/uci/uci.zig	LOW
-src/ucioption.cpp	src/uci/option.zig	LOW
-src/ucioption.h	src/uci/option.zig	LOW
-src/misc.cpp	src/support/misc.zig	LOW
-src/misc.h	src/support/misc.zig	LOW
-src/engine.cpp	src/support/engine.zig,engine_graph.zig	MED
-src/engine.h	src/support/engine.zig	MED
-src/score.cpp	src/score.zig	LOW
-src/score.h	src/score.zig	LOW
-src/memory.cpp	src/memory.zig	LOW
-src/memory.h	src/memory.zig	LOW
-src/benchmark.cpp	src/bench/benchmark.cpp,benchmark.zig	LOW
-src/tune.*	src/uci/option.zig	LOW
+src/nnue/*	src/engine/eval/nnue_accumulator.zig,nnue_feature.zig,nnue_hash.zig,nnue_misc.zig,nnue_parse.zig,network.zig	HIGH
+src/evaluate.cpp	src/engine/eval/evaluate.zig	HIGH
+src/evaluate.h	src/engine/eval/evaluate.zig,network.zig	HIGH
+src/search.cpp	src/engine/search/search.zig,search_manager.zig	HIGH
+src/search.h	src/engine/search/search.zig,search_manager.zig	HIGH
+src/movepick.cpp	src/engine/search/movepick.zig	MED
+src/movepick.h	src/engine/search/movepick.zig	MED
+src/history.h	src/engine/search/shared_histories.zig,history.zig,search.zig	MED
+src/position.cpp	src/engine/board/position.zig	MED
+src/position.h	src/engine/board/position.zig,position_types.zig	MED
+src/movegen.cpp	src/engine/board/movegen.zig	MED
+src/movegen.h	src/engine/board/movegen.zig	MED
+src/tt.cpp	src/engine/search/tt.zig	MED
+src/tt.h	src/engine/search/tt.zig	MED
+src/thread.cpp	src/platform/thread.zig,thread_runtime.zig,search_thread.zig	MED
+src/thread.h	src/platform/thread.zig	MED
+src/timeman.cpp	src/engine/search/timeman.zig	LOW
+src/timeman.h	src/engine/search/timeman.zig	LOW
+src/bitboard.cpp	src/engine/board/bitboard.zig	LOW
+src/bitboard.h	src/engine/board/bitboard.zig	LOW
+src/attacks.cpp	src/engine/board/bitboard.zig	LOW
+src/attacks.h	src/engine/board/bitboard.zig	LOW
+src/types.h	src/engine/board/score.zig	MED
+src/uci.cpp	src/shell/uci.zig	LOW
+src/uci.h	src/shell/uci.zig	LOW
+src/ucioption.cpp	src/shell/option.zig	LOW
+src/ucioption.h	src/shell/option.zig	LOW
+src/misc.cpp	src/shell/misc.zig	LOW
+src/misc.h	src/shell/misc.zig	LOW
+src/engine.cpp	src/shell/engine.zig,src/shell/engine/graph.zig	MED
+src/engine.h	src/shell/engine.zig	MED
+src/score.cpp	src/engine/board/score.zig	LOW
+src/score.h	src/engine/board/score.zig	LOW
+src/memory.cpp	src/platform/memory.zig	LOW
+src/memory.h	src/platform/memory.zig	LOW
+src/benchmark.cpp	src/shell/benchmark.zig,bench_positions.zig	LOW
+src/tune.*	src/shell/option.zig	LOW
 src/*.nnue	(net file — swap + bump EvalFileDefaultName)	LOW
-src/syzygy/*	(tbprobe — still legacy C++; not yet ported)	MED
+src/syzygy/*	src/platform/syzygy/probe.zig,registry.zig,decode.zig,encode.zig,tables.zig,wdl.zig,src/engine/search/tb_extend.zig	MED
 # --- platform / build / CI: not needed for the x86-64-sse41-popcnt native target -> SKIP ---
 src/Makefile	(make — SKIP, build.zig is independent)	SKIP
 src/arm/*	(arch — SKIP for sse41 target)	SKIP
