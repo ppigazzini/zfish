@@ -147,9 +147,9 @@ The gates fall into kinds:
 
 ### The race gate
 
-The engine races its shared state **by design**: the transposition table, the shared pawn and
-correction histories, and the per-Worker `nodes`/`tbHits`/`bestMoveChanges` counters are all read
-and written by several threads with no lock. Upstream keeps that defined by typing every such field
+The engine races its shared state **by design**: the transposition table, the shared pawn,
+correction, and continuation histories, and the per-Worker `nodes`/`tbHits`/`bestMoveChanges`
+counters are all read and written by several threads with no lock. Upstream keeps that defined by typing every such field
 `RelaxedAtomic<T>`, whose accessors are relaxed load/store. Relaxed is not ordering — it buys
 exactly one thing: the compiler may not tear the access, invent it, or rematerialise it later.
 

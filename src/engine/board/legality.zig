@@ -209,7 +209,7 @@ pub fn pseudoLegal(pos_ptr: *const Position, m: u16) bool {
         return false;
     }
 
-    // upstream position.cpp:754 -- `if (checkers() && type_of(pc) != KING)`: for a KING move
+    // upstream position.cpp:748 -- `if (checkers() && type_of(pc) != KING)`: for a KING move
     // while in check, pseudo_legal does nothing (the destination-safety is left to legal()),
     // so do NOT reject a king landing on an attacked square here.
     const checkers = pos.st.checkers_bb;

@@ -6,17 +6,21 @@
 //   * decodeLebI16 / decodeLebI32 -- signed LEB128 with the same sign-extension
 //     and 32-bit shift masking as read_leb_128_detail (nnue_common.h).
 //   * permuteBlocks -- the byte-block reorder of permute<> (nnue_feature_
-//     transformer.h). For the SSE4.1 target PackusEpi16Order is the identity
-//     {0..7}, so permute_weights is a no-op here; the routine is kept general
-//     and exercised with a non-trivial order in tests.
+//     transformer.h). zfish's feature transform writes its int8 output in natural
+//     chunk order (nnue_accumulator.transformBucket), never the arch-specific packus
+//     lane-interleave that upstream's permute<> compensates for, so the FT weights
+//     need NO reorder on ANY tier (the AVX512 build is bit-exact unpermuted).
+//     permuteBlocks is therefore unused by the live parse -- kept for structural
+//     parity and exercised only in tests.
 //   * weightIndexScrambled -- get_weight_index_scrambled (affine_transform.h),
 //     the SSSE3 weight index permutation the layer parse writes through and the
 //     Zig propagate already reads back.
 
 const std = @import("std");
 
-// Define the SSE4.1 PackusEpi16Order as identity. Keep it explicit so the assumption
-// is visible and a future wide-SIMD target can swap it.
+// The SSE4.1 packus lane order (which happens to be the identity {0..7}). A test fixture for
+// permuteBlocks only: the live parse never permutes on any tier (see the header), so no target
+// swaps this -- it does not gate correctness.
 pub const packus_epi16_order_sse41 = [8]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
 
 // Decode `count` signed-LEB128 values from `src` into `out`, returning the number of source
@@ -130,7 +134,7 @@ fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
 }
 
 // Parse the feature-transformer blob into `dst` (the FeatureTransformer memory
-// layout). No permute -- PackusEpi16Order is the identity on the SSE4.1 target.
+// layout). No permute -- the transform reads FT weights in natural order on every tier.
 // Return the number of blob bytes consumed, or null on malformed input.
 pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
     // Skip the leading u32 component hash (Detail::read_parameters). Check it is there first:
@@ -247,7 +251,8 @@ fn encodeLebSection(
 }
 
 // Serialize FeatureTransformer::write_parameters preceded by Detail::write_parameters'
-// u32 hash. PackusEpi16Order is the identity, so unpermute is a no-op. Member
+// u32 hash. The live parse never permutes on any tier (see the header), so there is no
+// unpermute. Member
 // write order MUST mirror parseFeatureTransformer (the file / upstream layout):
 // biases (LEB i16), threatWeights (raw i8), threatPsqtWeights (LEB i32),
 // weights (LEB i16), psqtWeights (LEB i32). Note threatPsqt and psqt are SEPARATE

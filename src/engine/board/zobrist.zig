@@ -68,7 +68,7 @@ pub fn init() void {
     var cuckoo_count: usize = 0;
     for (init_pieces) |pc| {
         const pt = pc & 7;
-        if (pt == board_core.pawn_pt) continue; // upstream position.cpp:145: pawns contribute no reversible move
+        if (pt == board_core.pawn_pt) continue; // upstream position.cpp:147: pawns contribute no reversible move
         var s1: u8 = 0;
         while (s1 < 64) : (s1 += 1) {
             var s2: u8 = s1 + 1;
@@ -92,7 +92,7 @@ pub fn init() void {
             }
         }
     }
-    // Every reversible non-pawn move contributes one entry (upstream position.cpp:161).
+    // Every reversible non-pawn move contributes one entry (upstream position.cpp:162).
     std.debug.assert(cuckoo_count == 3668);
 }
 
