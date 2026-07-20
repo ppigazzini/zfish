@@ -65,13 +65,16 @@ pub fn init() void {
 
     @memset(&cuckoo_tbl, 0);
     @memset(&cuckoo_move_tbl, 0);
+    var cuckoo_count: usize = 0;
     for (init_pieces) |pc| {
         const pt = pc & 7;
+        if (pt == board_core.pawn_pt) continue; // upstream position.cpp:145: pawns contribute no reversible move
         var s1: u8 = 0;
         while (s1 < 64) : (s1 += 1) {
             var s2: u8 = s1 + 1;
             while (s2 < 64) : (s2 += 1) {
                 if ((bitboard.attacks(pt, s1, 0) & sqBb(s2)) != 0) {
+                    cuckoo_count += 1;
                     var move: u16 = (@as(u16, s1) << 6) | s2;
                     var key = zob_psq[psqIdx(pc, s1)] ^ zob_psq[psqIdx(pc, s2)] ^ zob_side_val;
                     var i = h1(key);
@@ -89,6 +92,8 @@ pub fn init() void {
             }
         }
     }
+    // Every reversible non-pawn move contributes one entry (upstream position.cpp:161).
+    std.debug.assert(cuckoo_count == 3668);
 }
 
 test {

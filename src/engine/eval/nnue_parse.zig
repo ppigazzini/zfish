@@ -126,20 +126,6 @@ fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
     return leb_magic.len + 4 + count;
 }
 
-// Read two arrays packed in one LEB section (read_leb_128(a, b)).
-fn readLebSection2(comptime T: type, blob: []const u8, out1: []T, out2: []T) ?usize {
-    if (blob.len < leb_magic.len + 4) return null;
-    if (!std.mem.eql(u8, blob[0..leb_magic.len], leb_magic)) return null;
-    const count = std.mem.readInt(u32, blob[leb_magic.len..][0..4], .little);
-    const data = blob[leb_magic.len + 4 ..];
-    if (data.len < count) return null;
-    const section = data[0..count];
-    const used1 = decodeLeb(T, section, out1, out1.len) orelse return null;
-    const used2 = decodeLeb(T, section[used1..], out2, out2.len) orelse return null;
-    if (used1 + used2 != count) return null;
-    return leb_magic.len + 4 + count;
-}
-
 // Parse the feature-transformer blob into `dst` (the FeatureTransformer memory
 // layout). No permute -- PackusEpi16Order is the identity on the SSE4.1 target.
 // Return the number of blob bytes consumed, or null on malformed input.
