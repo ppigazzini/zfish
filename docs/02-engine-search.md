@@ -295,10 +295,11 @@ atomics (`searchStopped`, `ssSetStop`). Every node checks it; `runBack` returns
 `value_draw` immediately when it is set, and the ID loop discards the aborted line.
 
 **nodestime** replaces the clock with the node counter. When `tm.use_nodes_time` is
-set, both `checkTime` and `idElapsed` read `ctx.nodes.*` instead of `time_source.now()`,
-`timeman.init` converts the time budget into a node budget, and `ssNpmsecAdvance`
-debits the pool's node count from `tm.available_nodes` after the search. This makes a
-time-limited search reproducible.
+set, both `checkTime` and `idElapsed` read the **pool's** node count
+(`poolNodesSearched`, summed across the node's workers — upstream's
+`threads.nodes_searched()`) instead of `time_source.now()`, `timeman.init` converts the
+time budget into a node budget, and `ssNpmsecAdvance` debits that pool node count from
+`tm.available_nodes` after the search. This makes a time-limited search reproducible.
 
 All wall-clock reads go through `time_source.now`, so the engine never calls an OS
 clock directly.

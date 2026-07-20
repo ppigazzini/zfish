@@ -100,12 +100,14 @@ mapping worth knowing before touching a kernel:
 | `_mm256_castsi256_ps`, `_mm256_castsi256_si512` | `@bitCast` between equal-width vectors |
 | `_mm256_extracti128_si256`, `_mm512_inserti64x4` | `@shuffle` with comptime indices |
 
-**Arithmetic.** Note the saturating forms — Zig has dedicated operators, and using the plain
-one instead is a silent correctness change:
+**Arithmetic.** The vector add/sub intrinsics **wrap** (2's-complement); the `_adds_`/`_subs_`
+forms **saturate**. Zig has a dedicated operator for each, and using the plain `+`/`-` instead
+is a silent correctness change — a ReleaseSafe overflow panic (ReleaseFast UB) where the
+intrinsic would wrap:
 
 | C++ | Zig |
 | --- | --- |
-| `_mm256_add_epi16` / `_epi32`, `_mm256_sub_epi16` / `_epi32` | `a + b`, `a - b` |
+| `_mm256_add_epi16` / `_epi32`, `_mm256_sub_epi16` / `_epi32` (wrapping) | `a +% b`, `a -% b` |
 | `_mm_adds_epi8` / `_mm_subs_epi8` (saturating) | `a +| b`, `a -| b` |
 | wrapping scalar arithmetic (2's-complement) | `a +% b`, `a -% b`, `a *% b` |
 | `_mm_mulhi_epi16` | `@intCast((@as(Vu32, a << s7) * @as(Vu32, b)) >> s16)` — LLVM matches the mulhu pattern |
