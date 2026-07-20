@@ -124,7 +124,7 @@ fn activationContentHash() usize {
 pub fn architectureHashValue() u32 {
     var hv: u32 = 0xEC42E90D;
     hv ^= @as(u32, nnue_parse.half_dimensions) * 2; // TransformedFeatureDimensions*2
-    hv = affineHashValue(hv, 32); // fc_0, OutputDimensions = FC_0_OUTPUTS + 1
+    hv = affineHashValue(hv, 32); // fc_0, OutputDimensions = FC_0_OUTPUTS = 32
     hv = clipped_base +% hv; // ac_0
     hv = affineHashValue(hv, 32); // fc_1, FC_1_OUTPUTS
     hv = clipped_base +% hv; // ac_1
@@ -133,7 +133,7 @@ pub fn architectureHashValue() u32 {
 }
 
 // Compute NetworkArchitecture::get_content_hash for one layer stack. Per-layer dims:
-// fc_0 1024->32, fc_1 62->32, fc_2 32->1.
+// fc_0 1024->32, fc_1 64->32, fc_2 128->1.
 pub fn layerStackContentHash(
     fc0_biases: []const u8,
     fc0_weights: []const u8,
