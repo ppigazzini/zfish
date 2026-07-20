@@ -4,8 +4,9 @@
 // nnue_accumulator.zig. Fully self-contained: pure @Vector math over the FT
 // weight rows, depending only on the two network dimensions (duplicated as tiny
 // consts). No *anyopaque, no position_snapshot / nnue_feature, so no cycle. The
-// accumulator core imports this and aliases the kernels. Bit-exact: vector +/- is
-// the same element-wise i16 op as the scalar loop it replaces (bench 2792255).
+// accumulator core imports this and aliases the kernels. Bit-exact: the wrapping
+// vector +%/-% is the same element-wise op as the scalar loop it replaces, and
+// mirrors upstream's `_mm*_add/sub_epi16` (2's-complement wrap) (bench 2792255).
 
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
@@ -31,8 +32,9 @@ comptime {
 /// which is what a row-outer loop costs, since each row streams all half_dimensions of it
 /// through memory.
 ///
-/// Order per element is unchanged, and i16 wrap-around addition is associative regardless, so
-/// this is bit-identical to applying the rows one at a time.
+/// Order per element is unchanged, and i16 wrap-around (`+%`/`-%`, matching upstream's
+/// `_mm*_add/sub_epi16`) is associative regardless, so this is bit-identical to applying
+/// the rows one at a time.
 inline fn accRows(
     comptime WT: type,
     comptime add: bool,
@@ -48,7 +50,7 @@ inline fn accRows(
         for (rows) |index| {
             const wraw: @Vector(V, WT) = (weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
             const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
-            acc = if (add) acc + w else acc - w;
+            acc = if (add) acc +% w else acc -% w;
         }
         target.ptr[d..][0..V].* = acc;
     }
@@ -105,7 +107,7 @@ pub fn applyPsqtDelta(
         const row_offset = @as(usize, index) * psqt_buckets;
         var bucket: usize = 0;
         while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] -= weights[row_offset + bucket];
+            target[bucket] -%= weights[row_offset + bucket];
         }
     }
 
@@ -113,7 +115,7 @@ pub fn applyPsqtDelta(
         const row_offset = @as(usize, index) * psqt_buckets;
         var bucket: usize = 0;
         while (bucket < psqt_buckets) : (bucket += 1) {
-            target[bucket] += weights[row_offset + bucket];
+            target[bucket] +%= weights[row_offset + bucket];
         }
     }
 }
@@ -132,11 +134,11 @@ pub fn applyPsqtDeltaInPlace(
     var acc: V = target[0..psqt_buckets].*;
     for (removed) |index| {
         const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
-        acc -= w;
+        acc -%= w;
     }
     for (added) |index| {
         const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
-        acc += w;
+        acc +%= w;
     }
     target[0..psqt_buckets].* = acc;
 }
@@ -146,7 +148,7 @@ pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i3
     var acc: V = target[0..psqt_buckets].*;
     for (rows) |index| {
         const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
-        acc += w;
+        acc +%= w;
     }
     target[0..psqt_buckets].* = acc;
 }
@@ -156,7 +158,8 @@ pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i3
 // with both feature sets' removed/added weight rows applied in-register (psq int16 rows
 // via i16 add/sub, threat int8 rows widened to i16), then stored ONCE. Replaces the two
 // separate load/store round-trips (one per feature) of the split-accumulator design.
-// Integer add/sub commute under 2's-complement i16 wrap, so the final tile value equals
+// Integer +%/-% commute under 2's-complement i16 wrap (upstream `_mm*_add/sub_epi16`), so
+// the final tile value equals
 // source + Σpsq_added − Σpsq_removed + Σthr_added − Σthr_removed regardless of order:
 // bit-exact with the prior two-accumulator path (signature 2792255).
 pub fn applyCombinedDelta(
@@ -176,19 +179,19 @@ pub fn applyCombinedDelta(
         var acc: Vi16 = source.ptr[d..][0..V].*;
         for (psq_removed) |index| {
             const w: Vi16 = (psq_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
-            acc -= w;
+            acc -%= w;
         }
         for (psq_added) |index| {
             const w: Vi16 = (psq_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
-            acc += w;
+            acc +%= w;
         }
         for (thr_removed) |index| {
             const wraw: @Vector(V, i8) = (thr_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
-            acc -= @as(Vi16, wraw); // i8 -> i16 widen
+            acc -%= @as(Vi16, wraw); // i8 -> i16 widen
         }
         for (thr_added) |index| {
             const wraw: @Vector(V, i8) = (thr_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
-            acc += @as(Vi16, wraw);
+            acc +%= @as(Vi16, wraw);
         }
         target.ptr[d..][0..V].* = acc;
     }
@@ -217,19 +220,19 @@ pub fn applyCombinedPsqtDelta(
     var acc: V = source[0..psqt_buckets].*;
     for (psq_removed) |index| {
         const w: V = (psq_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
-        acc -= w;
+        acc -%= w;
     }
     for (psq_added) |index| {
         const w: V = (psq_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
-        acc += w;
+        acc +%= w;
     }
     for (thr_removed) |index| {
         const w: V = (thr_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
-        acc -= w;
+        acc -%= w;
     }
     for (thr_added) |index| {
         const w: V = (thr_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
-        acc += w;
+        acc +%= w;
     }
     target[0..psqt_buckets].* = acc;
 }
