@@ -25,6 +25,43 @@ The repository holds three things:
   Windows, and macOS, plus valgrind, formatting, and a non-blocking Zig-master
   compatibility lane; fuzzing and upstream-drift detection run on a schedule.
 
+## Where zfish diverges from Stockfish
+
+zfish reproduces Stockfish's *behaviour* exactly — same nodes, same move, on every
+target — but is built on a different engineering principle. State it plainly:
+
+**One portable source, lowered per target — not a per-architecture fork.** The hot
+path (the NNUE feature transformer, the accumulator row ops, the activations) is
+written once as portable Zig `@Vector` code that LLVM lowers to SSE, AVX2, AVX-512,
+or NEON. Stockfish keeps hand-written intrinsic blocks per ISA — its `simd.h` carries
+separate `_mm_…`, `_mm256_…`, and `_mm512_…` paths behind `#if defined(USE_AVX2)` and
+friends. zfish selects the tier with `comptime` from one body of code, and the bench
+signature (2792255) is bit-identical on every tier: the portability is *proven by a
+gate*, not asserted.
+
+**But portable does not mean less hand-work — here it means the opposite.** Zig does
+**not auto-vectorize integer loops**; the C++ compiler does. The wide integer SIMD
+that Stockfish gets for free from `-O3` on a plain `for` loop, zfish must write by
+hand as an explicit `@Vector`. Most of zfish's performance work is exactly that:
+find a hot scalar integer loop and hand-widen it to the vector the C auto-vectorizer
+would have produced. The portability lives in the *source* — one `@Vector` runs
+everywhere — not in the *effort*.
+
+**Where LLVM will not lower a portable pattern, zfish still reaches per-arch
+intrinsics — tiered at `comptime`.** A few instructions (the NNUE int8 dot:
+`vpdpbusd` on AVX-512 VNNI, `vpmaddubsw` on AVX2, `pmaddubsw` on SSSE3) LLVM will not
+synthesize from a portable `@Vector`. There zfish declares the LLVM intrinsic
+directly and dispatches on the target at `comptime` — the same per-ISA shape as
+Stockfish's `simd.h`, chosen by `comptime` rather than `#if`. So the divergence is a
+*default*, not an absolute: one portable source first, explicit intrinsics only where
+the compiler cannot deliver the instruction.
+
+The consequences run through the whole tree — bit-exactness is a hard invariant one
+gate enforces on every arch, performance work reads as "hand-write the `@Vector` Zig
+would not auto-generate" rather than "add another `#if` block", and the measurement
+discipline in [08-idiomatic-zig.md](08-idiomatic-zig.md) exists because the gap to
+close is precisely the auto-vectorization Zig withholds.
+
 ## Documents
 
 | Document | Audience | Description |
