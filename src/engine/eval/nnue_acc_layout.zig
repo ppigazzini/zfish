@@ -236,8 +236,11 @@ pub fn psqDiff(bytes: [*]const u8) HalfDiff {
     return @as(*const HalfDiff, @ptrCast(@alignCast(bytes + psq_diff_offset))).*;
 }
 
-pub fn threatDiff(bytes: [*]const u8) ThreatDiffView {
-    return @as(*const ThreatDiffView, @ptrCast(@alignCast(bytes + threat_diff_offset))).*;
+// Return a POINTER into the (stable) accumulator state bytes, not a by-value copy: the view
+// embeds a [96]DirtyThreatRaw list (~392 B), so `.*` was a per-node compiler_rt memcpy (776k/
+// search). Callers only read, and the state bytes outlive the read, so the pointer is safe.
+pub fn threatDiff(bytes: [*]const u8) *const ThreatDiffView {
+    return @ptrCast(@alignCast(bytes + threat_diff_offset));
 }
 
 pub fn zeroDiff(bytes: [*]u8, feature_kind: u8, index: usize, len: usize) void {
