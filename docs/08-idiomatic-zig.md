@@ -275,8 +275,13 @@ Zig permits import cycles, so a strict DAG is a choice. Make it with a compositi
 root and dependency injection through function pointers rather than a shared
 mega-module — the structure is described in
 [ARCHITECTURE](00-architecture.md#the-composition-root-and-the-cycle-break-hooks).
-The price is real: a function pointer is an optimizer barrier and its erased
-`*anyopaque` context costs type safety, so `zig build hook-lint` bounds the hooks.
+The price is real but bounded: a function pointer is an optimizer barrier and its
+erased `*anyopaque` context costs type safety, so `zig build hook-lint` bounds the
+hooks. The barrier only costs *where the pointer is called*, so the discipline is to
+keep every hook off the per-node path — measured, none sit there, and the DAG is free
+on the hot path (Zig is whole-module, so `@import` is not an inlining boundary; this
+does not even need LTO). See
+[Does the DAG cost performance?](00-architecture.md#does-the-dag-cost-performance).
 Reach for this to invert a *specific* upward dependency, not as a default.
 
 ## Never assume a `@Vector`'s memory layout
