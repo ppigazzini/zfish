@@ -163,7 +163,10 @@ const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
 /// Set one bit per 4-byte output chunk when that chunk is non-zero. Upstream's NNZInfo
 /// (nnz_helper.h), recorded here rather than re-derived by a later pass: the values are
 /// already in a register at the point they are packed.
-pub const nnz_word_count: usize = half_dimensions * 2 / 4 / 64;
+// half_dimensions output bytes / 4 (bytes per chunk) / 64 (bits per word): the transform
+// emits half_dimensions bytes = half_dimensions/4 non-zero-chunk bits, so 4 u64 words cover
+// the 256 chunks. (The former `* 2` sized it for 2048 output bytes, twice the real width.)
+pub const nnz_word_count: usize = half_dimensions / 4 / 64;
 pub const NnzBitset = [nnz_word_count]u64;
 
 pub fn transformBucket(
