@@ -16,13 +16,20 @@ const nnue_accumulator_port = @import("nnue_accumulator");
 const has_vnni = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
 
-// Handle the SSSE3 tier (no AVX2): the pmaddwd reduction is 128-bit and widens the u8 inputs to i16;
+// Handle the AVX2 tier (no VNNI): the same maddubs dot as SSSE3 but 256-bit, so 8 outputs per
+// step. Without it an AVX2 target with no VNNI falls to the portable vpmaddwd deinterleave, which
+// measured +32% instructions in evaluateBucketRaw over the SSSE3 maddubs path (the affine went
+// 2.55B sse41 -> 3.38B avx2). mcfish tiers the dot the same way: vpdpbusd / vpmaddubsw / pmaddubsw.
+const use_avx2_madd = builtin.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+
+// Handle the SSSE3 tier: the pmaddwd reduction is 128-bit and widens the u8 inputs to i16;
 // pmaddubsw multiplies u8*i8 directly, twice the lanes per register. Reach it through the
 // LLVM intrinsic rather than inline asm: asm is an optimization barrier LLVM cannot
-// schedule or reorder across, the intrinsic it can.
+// schedule or reorder across, the intrinsic it can. Serves as the AVX2 fallback for an OUT the
+// 256-bit path cannot tile (OUT % 8 != 0 but OUT % 4 == 0); the dispatch prefers the wider path.
 const use_maddubs = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .ssse3) and
-    !std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+    std.Target.x86.featureSetHas(builtin.cpu.features, .ssse3);
 
 const pmaddubsw128 = struct {
     extern fn @"llvm.x86.ssse3.pmadd.ub.sw.128"(@Vector(16, i8), @Vector(16, i8)) @Vector(8, i16);
@@ -35,6 +42,15 @@ const vpdpbusd512 = struct {
 const pmaddwd128 = struct {
     extern fn @"llvm.x86.sse2.pmadd.wd"(@Vector(8, i16), @Vector(8, i16)) @Vector(4, i32);
 }.@"llvm.x86.sse2.pmadd.wd";
+
+// AVX2 widens the SSSE3 maddubs dot to 256 bits: 8 outputs per pmaddubsw+pmaddwd step, not 4.
+const pmaddubsw256 = struct {
+    extern fn @"llvm.x86.avx2.pmadd.ub.sw"(@Vector(32, i8), @Vector(32, i8)) @Vector(16, i16);
+}.@"llvm.x86.avx2.pmadd.ub.sw";
+
+const pmaddwd256 = struct {
+    extern fn @"llvm.x86.avx2.pmadd.wd"(@Vector(16, i16), @Vector(16, i16)) @Vector(8, i32);
+}.@"llvm.x86.avx2.pmadd.wd";
 
 // acc(i32x16) += the 4-way int8 dot of a(u8x64) and b(i8x64) over its 16 groups of 4.
 inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i8)) @Vector(16, i32) {
@@ -211,6 +227,57 @@ inline fn affineSsse3(
     out.* = acc;
 }
 
+// Widen affineSsse3 to 256 bits for the AVX2 tier: each chunk (32 weight bytes = 8 outputs' 4
+// sublanes) is one 256-bit pmaddubsw of the group's 4 input bytes (broadcast x8), then pmaddwd
+// against ones folds each output's two i16 partials into its i32. Same non-saturation argument
+// as the SSSE3 path (a pair sums inside i16), so it is bit-identical -- signature 2792255 holds.
+inline fn affineAvx2(
+    comptime OUT: usize,
+    comptime sparse: bool,
+    out: *[OUT]i32,
+    biases: [*]const i32,
+    weights: [*]const i8,
+    input: []const u8,
+    nnz: *const nnue_accumulator_port.NnzBitset,
+) void {
+    var acc: [OUT]i32 = biases[0..OUT].*;
+    const ones: @Vector(16, i16) = @splat(1);
+    const groups = input.len / 4;
+    if (sparse) {
+        // Same nnz-word hoist as affineSsse3: load a 64-group word, hoist the input/weight bases
+        // once, pop set bits with a LOCAL index (affine_transform_sparse_input.h).
+        var k: usize = 0;
+        while (k * 64 < groups) : (k += 1) {
+            var bits = nnz[k];
+            const in_base = input.ptr + k * 64 * 4;
+            const w_base = weights + k * 64 * OUT * 4;
+            while (bits != 0) {
+                const i: usize = @ctz(bits);
+                bits &= bits - 1;
+                const in4: [4]u8 = in_base[i * 4 ..][0..4].*;
+                const inpat: @Vector(32, i8) = @bitCast(@as(@Vector(8, u32), @splat(@as(u32, @bitCast(in4)))));
+                inline for (0..OUT / 8) |c| {
+                    const w: @Vector(32, i8) = w_base[i * OUT * 4 + c * 32 ..][0..32].*;
+                    const p: @Vector(8, i32) = pmaddwd256(pmaddubsw256(inpat, w), ones);
+                    acc[c * 8 ..][0..8].* = @as(@Vector(8, i32), acc[c * 8 ..][0..8].*) + p;
+                }
+            }
+        }
+    } else {
+        var g: usize = 0;
+        while (g < groups) : (g += 1) {
+            const in4: [4]u8 = input[g * 4 ..][0..4].*;
+            const inpat: @Vector(32, i8) = @bitCast(@as(@Vector(8, u32), @splat(@as(u32, @bitCast(in4)))));
+            inline for (0..OUT / 8) |c| {
+                const w: @Vector(32, i8) = weights[g * OUT * 4 + c * 32 ..][0..32].*;
+                const p: @Vector(8, i32) = pmaddwd256(pmaddubsw256(inpat, w), ones);
+                acc[c * 8 ..][0..8].* = @as(@Vector(8, i32), acc[c * 8 ..][0..8].*) + p;
+            }
+        }
+    }
+    out.* = acc;
+}
+
 pub inline fn affineDpbusd(
     comptime OUT: usize,
     comptime sparse: bool,
@@ -222,6 +289,10 @@ pub inline fn affineDpbusd(
 ) void {
     if (comptime (has_vnni and OUT % 16 == 0)) {
         affineVnni(OUT, sparse, out, biases, weights, input, nnz);
+        return;
+    }
+    if (comptime (use_avx2_madd and OUT % 8 == 0)) {
+        affineAvx2(OUT, sparse, out, biases, weights, input, nnz);
         return;
     }
     if (comptime (use_maddubs and OUT % 4 == 0)) {
