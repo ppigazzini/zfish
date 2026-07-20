@@ -65,7 +65,11 @@ pub const PositionSummary = struct {
     side_to_move_white: u8,
     checkers: u64,
     key: u64,
+    // material: the eval blend's material (534*pawns + non_pawn_material) for computeValue.
+    // wdl_material: the win-rate model's material (pawns + 3N + 3B + 5R + 9Q, uci.cpp:526) for
+    // toCp/wdl -- a DIFFERENT quantity. They coincide only where both clamp to 78.
     material: i32,
+    wdl_material: i32,
     rule50_count: i32,
 };
 
@@ -196,8 +200,8 @@ pub fn evalTrace(pos: *const position_port.Position) ?[*:0]u8 {
         .inner_trace_ptr = inner_trace.ptr,
         .inner_trace_len = inner_trace.len,
         .nnue_internal_value = nnue_value,
-        .nnue_white_cp = uci_wdl.toCp(nnue_white_side, summary.material),
-        .final_white_cp = uci_wdl.toCp(final_white_side, summary.material),
+        .nnue_white_cp = uci_wdl.toCp(nnue_white_side, summary.wdl_material),
+        .final_white_cp = uci_wdl.toCp(final_white_side, summary.wdl_material),
     });
 }
 
@@ -277,21 +281,31 @@ fn buildNnueTrace(
     nnue_acc.stackReset(accumulators);
 
     const trace = network_port.traceEvaluate(pos, accumulators, caches);
+    var psqt_raw: [layer_stacks]i32 = undefined;
+    var positional_raw: [layer_stacks]i32 = undefined;
     var psqt_cp: [layer_stacks]i32 = undefined;
     var positional_cp: [layer_stacks]i32 = undefined;
+    var total_cp: [layer_stacks]i32 = undefined;
 
     var bucket: usize = 0;
     while (bucket < layer_stacks) : (bucket += 1) {
-        psqt_cp[bucket] = uci_wdl.toCp(trace.psqt[bucket], summary.material);
-        positional_cp[bucket] = uci_wdl.toCp(trace.positional[bucket], summary.material);
+        psqt_raw[bucket] = trace.psqt[bucket];
+        positional_raw[bucket] = trace.positional[bucket];
+        psqt_cp[bucket] = uci_wdl.toCp(trace.psqt[bucket], summary.wdl_material);
+        positional_cp[bucket] = uci_wdl.toCp(trace.positional[bucket], summary.wdl_material);
+        // Total cp is to_cp of the raw sum, not the sum of the two rounded cp values.
+        total_cp[bucket] = uci_wdl.toCp(trace.psqt[bucket] + trace.positional[bucket], summary.wdl_material);
     }
 
     return nnue_misc_mod.formatTrace(.{
         .side_to_move_white = summary.side_to_move_white,
         .bucket_count = layer_stacks,
         .correct_bucket = trace.correct_bucket,
+        .psqt_raw = &psqt_raw,
+        .positional_raw = &positional_raw,
         .psqt_cp = &psqt_cp,
         .positional_cp = &positional_cp,
+        .total_cp = &total_cp,
     });
 }
 
@@ -302,6 +316,7 @@ fn positionSummary(pos: *const position_port.Position) PositionSummary {
         .checkers = snapshot.checkers,
         .key = snapshot.key,
         .material = snapshot.material_value,
+        .wdl_material = position_port.wdlMaterial(pos),
         .rule50_count = snapshot.rule50_count,
     };
 }
