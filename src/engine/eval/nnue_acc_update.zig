@@ -157,7 +157,8 @@ fn refreshCombined(
     refreshLatestPsq(perspective, king_square, stack, pos, feature_transformer, cache);
 
     const latest_index = stackSize(stack) - 1;
-    const active = nnue_feature.fullAppendActive(perspective, king_square, &pos.board);
+    var active: nnue_feature.FullAppendResult = undefined;
+    nnue_feature.fullAppendActive(&active, perspective, king_square, &pos.board);
     accumulateRowsI8(
         stateAccumulationMut(psq_feature, latest_index, stack, perspective),
         active.indices[0..active.len],
@@ -266,7 +267,8 @@ fn applyCombined(
     else
         psqDiff(stateBytesConst(psq_feature, computed_index, stack));
 
-    const psq_append = nnue_feature.halfAppendChanged(perspective, king_square, .{
+    var psq_append: nnue_feature.HalfAppendResult = undefined;
+    nnue_feature.halfAppendChanged(&psq_append, perspective, king_square, .{
         .from = psq_diff.from,
         .to = psq_diff.to,
         .pc = psq_diff.pc,
@@ -302,7 +304,9 @@ fn applyCombined(
     else
         threatDiff(stateBytesConst(threat_feature, computed_index, stack));
 
-    const thr_append = nnue_feature.fullAppendChanged(
+    var thr_append: nnue_feature.FullAppendResult = undefined;
+    nnue_feature.fullAppendChanged(
+        &thr_append,
         perspective,
         king_square,
         @ptrCast(&thr_diff.list.values),

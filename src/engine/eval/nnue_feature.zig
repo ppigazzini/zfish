@@ -79,19 +79,18 @@ pub fn halfMakeIndex(params: HalfThreatParams) u32 {
     return (@as(u32, params.square) ^ orient_tbl_half[params.king_square] ^ flip) + piece_square_index[params.perspective][params.piece] + king_buckets[params.king_square ^ params.perspective * 56];
 }
 
-pub fn halfAppendChanged(perspective: u8, king_square: u8, diff: HalfDiff) HalfAppendResult {
-    var result: HalfAppendResult = .{ .len = 0, .indices = undefined };
-    appendHalfIndex(&result, perspective, diff.from, diff.pc, king_square);
+pub fn halfAppendChanged(result: *HalfAppendResult, perspective: u8, king_square: u8, diff: HalfDiff) void {
+    result.len = 0;
+    appendHalfIndex(result, perspective, diff.from, diff.pc, king_square);
     if (diff.to != sq_none) {
-        appendHalfIndex(&result, perspective, diff.to, diff.pc, king_square);
+        appendHalfIndex(result, perspective, diff.to, diff.pc, king_square);
     }
     if (diff.remove_sq != sq_none) {
-        appendHalfIndex(&result, perspective, diff.remove_sq, diff.remove_pc, king_square);
+        appendHalfIndex(result, perspective, diff.remove_sq, diff.remove_pc, king_square);
     }
     if (diff.add_sq != sq_none) {
-        appendHalfIndex(&result, perspective, diff.add_sq, diff.add_pc, king_square);
+        appendHalfIndex(result, perspective, diff.add_sq, diff.add_pc, king_square);
     }
-    return result;
 }
 
 pub fn halfRequiresRefresh(diff: HalfDiff, perspective: u8) bool {
@@ -109,19 +108,22 @@ pub fn fullMakeIndex(params: FullThreatParams) u32 {
     return index_lut1[attacker_oriented][attacked_oriented][less] + offsets[attacker_oriented][from_oriented] + index_lut2[attacker_oriented][from_oriented][to_oriented];
 }
 
+// Fill `result` in place rather than returning it: FullAppendResult is 520 B ({len,[128]u32})
+// and the by-value return was a per-node compiler_rt memcpy the caller's stack slot could own.
 pub fn fullAppendChanged(
+    result: *FullAppendResult,
     perspective: u8,
     king_square: u8,
     list_ptr: [*]const DirtyThreatRaw,
     list_len: usize,
-) FullAppendResult {
-    var result: FullAppendResult = .{ .len = 0, .indices = undefined };
+) void {
+    result.len = 0;
     var index: usize = 0;
     while (index < list_len) : (index += 1) {
         const dirty = list_ptr[index].data;
         const threat = decodeThreat(dirty);
         appendFullIndex(
-            &result,
+            result,
             perspective,
             threat.attacker,
             threat.from_sq,
@@ -130,24 +132,24 @@ pub fn fullAppendChanged(
             king_square,
         );
     }
-    return result;
 }
 
 pub fn fullAppendActive(
+    result: *FullAppendResult,
     perspective: u8,
     king_square: u8,
     piece_array: [*]const u8,
-) FullAppendResult {
+) void {
     const pieces = piece_array[0..square_count];
     const occupied = occupiedFromPieces(pieces);
     const pawns = piecesOfType(pieces, pawn_piece_type);
 
-    var result: FullAppendResult = .{ .len = 0, .indices = undefined };
+    result.len = 0;
     var color_index: u8 = 0;
 
     while (color_index < 2) : (color_index += 1) {
         const color = perspective ^ color_index;
-        appendActivePawnThreats(&result, pieces, occupied, pawns, perspective, color, king_square);
+        appendActivePawnThreats(result, pieces, occupied, pawns, perspective, color, king_square);
 
         var piece_type: u8 = knight_piece_type;
         while (piece_type < king_piece_type) : (piece_type += 1) {
@@ -158,13 +160,11 @@ pub fn fullAppendActive(
                 var attacks = attacksBb(piece_type, from, occupied) & occupied;
                 while (attacks != 0) {
                     const to = popLsb(&attacks);
-                    appendFullActiveIndex(&result, perspective, attacker, from, to, pieces[to], king_square);
+                    appendFullActiveIndex(result, perspective, attacker, from, to, pieces[to], king_square);
                 }
             }
         }
     }
-
-    return result;
 }
 
 pub fn fullRequiresRefresh(diff: FullDiff, perspective: u8) bool {
