@@ -198,8 +198,6 @@ const magic_seeds = [_][8]u64{
     .{ 728, 10316, 55013, 32803, 12281, 15100, 16645, 255 },
 };
 
-const magic_is_64bit_index = false;
-
 fn initMagics(pt: PieceType, table: []u64, magics: *[64][2]Magic) void {
     var occupancy: [4096]u64 = undefined;
     var epoch: [4096]i32 = @splat(0);
