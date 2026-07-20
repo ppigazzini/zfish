@@ -103,7 +103,10 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
     const trimmed = trimAsciiWhitespace(input);
     if (trimmed.len == 0 or trimmed[0] == '#')
         return .{ .should_quit = 0 };
-    uci_critical.setCurrentCmd(trimmed);
+    // Echo the RAW line (upstream keeps the getline'd `cmd`, uci.cpp:102), so the critical-error
+    // and unknown-command messages preserve any leading/trailing whitespace. Tokenizing still
+    // uses `trimmed`.
+    uci_critical.setCurrentCmd(input);
 
     var token_iter = std.mem.tokenizeAny(u8, trimmed, " \t\r\n");
     const token = token_iter.next() orelse return .{ .should_quit = 0 };
@@ -222,7 +225,7 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             return .{ .should_quit = 0 };
         },
         .unknown => {
-            const unknown_ptr = formatUnknownCommand(trimmed) orelse return .{ .should_quit = 0 };
+            const unknown_ptr = formatUnknownCommand(input) orelse return .{ .should_quit = 0 };
             defer freeMaybeCString(unknown_ptr);
             putsLine(unknown_ptr);
             return .{ .should_quit = 0 };
