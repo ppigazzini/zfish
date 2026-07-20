@@ -71,7 +71,7 @@ Nothing synchronizes inside the tree. Workers diverge because:
   different history of stores;
 * `search.aspirationInitialDelta` seeds the aspiration window from `thread_idx % 8`, so
   the threads start each iteration with different window widths;
-* they share the correction and pawn histories of their NUMA node, again unsynchronized.
+* they share the correction, pawn, and continuation histories of their NUMA node, again unsynchronized.
 
 The only cross-thread control signals are two `u8` atomics on `worker_layout.ThreadPool`,
 both read by every worker's ID loop through `ZfishIdState`:
@@ -170,7 +170,7 @@ lets `deinit`'s `exit` flag race the idle loop and drop a just-queued search job
 
 | State | Scope | Where |
 | --- | --- | --- |
-| History tables: main / low-ply / capture / continuation / continuation-correction / tt-move | Per-worker | `WorkerLayout.histories` (`worker_histories.WorkerHistories`) |
+| History tables: main / low-ply / capture / continuation-correction / tt-move | Per-worker | `WorkerLayout.histories` (`worker_histories.WorkerHistories`) |
 | Accumulator stack, refresh table | Per-worker | `WorkerLayout.accumulator_stack`, `.refresh_table` |
 | Reductions table | Per-worker | `WorkerLayout.reductions` |
 | Root position, root state, root moves, PV, `last_iteration_pv` | Per-worker | `WorkerLayout.root_pos` / `.root_state` / `.root_moves` / `.last_iteration_pv` |
@@ -179,7 +179,7 @@ lets `deinit`'s `exit` flag race the idle loop and drop a just-queued search job
 | `SearchManager` (time management, `ponder`, `stop_on_ponderhit`) | Per-worker, meaningful only on thread 0 | `WorkerLayout.manager` |
 | `thread_idx`, `numa_thread_idx`, `numa_total`, `numa_access_token` | Per-worker identity | `WorkerLayout`, written by `worker_construct` |
 | Transposition table | **Shared, unsynchronized** | `WorkerLayout.tt` → `SharedState.tt` |
-| Correction + pawn histories | **Shared per NUMA node** | `WorkerHistories.shared_history` → `SharedState.shared_histories` (`shared_histories_map`, one `SharedHistories` per node) |
+| Correction + pawn + continuation histories | **Shared per NUMA node** | `WorkerHistories.shared_history` → `SharedState.shared_histories` (`shared_histories_map`, one `SharedHistories` per node; continuation entries relaxed-atomic) |
 | `stop`, `increase_depth`, `setup_states`, the threads and bound slices | **Shared** | `worker_layout.ThreadPool` |
 | NNUE network weights | **Shared, always resident** — not replicated per node | `engine/eval/` network storage |
 

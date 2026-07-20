@@ -97,7 +97,7 @@ fn pickBestThread(summaries: []const ThreadSummary) usize {
             }
         } else if (current_decisive or
             (!isLoss(current.score) and
-                // upstream thread.cpp:395 -- tie broken by the raw PV length, not a voting value.
+                // upstream thread.cpp:396 -- tie broken by the raw PV length, not a voting value.
                 (current_vote > best_vote or (current_vote == best_vote and current.pv_length > best.pv_length))))
         {
             best_index = index;
