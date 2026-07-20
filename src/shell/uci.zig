@@ -302,17 +302,11 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     const limits = parseLimits(trimmed);
     defer freeMaybeCString(limits.searchmoves);
 
-    // Mirror upstream's `if (is.fail())` check (uci.cpp:226-227), before any search
-    // setup: upstream fails during parsing and never reaches the search. Keeping the
-    // previous value made `go depth abc` silently search at depth 0 instead of refusing.
-    if (limits.bad_token) |bad| {
-        var buf: [64]u8 = undefined; // longest keyword is "movestogo"
-        const msg = std.fmt.bufPrint(&buf, "Invalid argument for '{s}'", .{bad}) catch "Invalid argument";
-        terminateOnCriticalError(msg);
-    }
-
     const engine_ptr = engine;
 
+    // Emit the numa/thread info strings FIRST, as upstream's `go` handler does
+    // (uci.cpp:128-134) before it calls go() -> parse_limits: a malformed `go` still
+    // prints them before terminating inside the parse.
     if (engine_mod.numaConfigInformationEngine(engine_ptr)) |numa_info_ptr| {
         defer freeMaybeCString(numa_info_ptr);
         emitInfoString(std.mem.span(numa_info_ptr));
@@ -321,6 +315,15 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     if (engine_mod.threadAllocationInformationEngine(engine_ptr)) |thread_info_ptr| {
         defer freeMaybeCString(thread_info_ptr);
         emitInfoString(std.mem.span(thread_info_ptr));
+    }
+
+    // Mirror upstream's `if (is.fail())` check (uci.cpp:226-227), before any search
+    // setup: upstream fails during parsing and never reaches the search. Keeping the
+    // previous value made `go depth abc` silently search at depth 0 instead of refusing.
+    if (limits.bad_token) |bad| {
+        var buf: [64]u8 = undefined; // longest keyword is "movestogo"
+        const msg = std.fmt.bufPrint(&buf, "Invalid argument for '{s}'", .{bad}) catch "Invalid argument";
+        terminateOnCriticalError(msg);
     }
 
     if (limits.perft != 0) {

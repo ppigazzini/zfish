@@ -32,13 +32,16 @@ pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count:
     var i: usize = 0;
     while (i < count) : (i += 1) {
         var result: u32 = 0;
-        var shift: u6 = 0;
+        // Unbounded shift like upstream's `usize shift` (nnue_common.h:200): a u6 wraps at 64,
+        // so past 9 continuation bytes `shift < 32` would wrongly re-enable sign-extension.
+        // Valid (canonical) LEB is <=5 bytes, so this only differs on malformed input.
+        var shift: usize = 0;
         while (true) {
             if (pos >= src.len) return null;
             const byte = src[pos];
             pos += 1;
-            result |= @as(u32, byte & 0x7f) << @intCast(@as(u32, shift) % 32);
-            shift +%= 7;
+            result |= @as(u32, byte & 0x7f) << @intCast(shift % 32);
+            shift += 7;
             if (byte & 0x80 == 0) {
                 if (shift < 32 and (byte & 0x40) != 0) {
                     // sign-extend: result | ~((1 << shift) - 1)
