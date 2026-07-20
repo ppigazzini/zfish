@@ -337,5 +337,7 @@ pub inline fn ttMoveHistoryUpdate(w: *WorkerHistories, bonus: i32) void {
 }
 
 pub inline fn contVal(ss_ch: ?*const worker_histories.PieceToHistory, pc: u8, to: u8) i32 {
-    return ss_ch.?[@as(usize, pc) * 64 + to];
+    // Relaxed-atomic read: continuationHistory is shared across a node's workers, so this
+    // races the atomic statsUpdate writes (upstream's PieceToHistory is AtomicStats).
+    return @atomicLoad(i16, &ss_ch.?[@as(usize, pc) * 64 + to], .monotonic);
 }

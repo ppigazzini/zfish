@@ -96,7 +96,9 @@ pub fn continuationHistoryScore(
     square: u8,
 ) i32 {
     const history = history_snapshot.continuation_base[slot] orelse unreachable;
-    return history[@as(usize, piece)][@as(usize, square)].value;
+    // Relaxed-atomic load: continuationHistory is shared across a node's workers (upstream's
+    // PieceToHistory is AtomicStats), so this read races the atomic statsUpdate writes.
+    return @atomicLoad(i16, &history[@as(usize, piece)][@as(usize, square)].value, .monotonic);
 }
 
 pub fn pawnHistoryScore(

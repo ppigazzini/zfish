@@ -59,6 +59,12 @@ pub fn clearSharedHistory(shared: *SharedHistories, thread_idx: usize, numa_tota
         const r = dynRange(shared.pawn_size, thread_idx, numa_total);
         fillI16(shared.pawn_data, r.start * hist_pieceto, r.end * hist_pieceto, -1338);
     }
+    {
+        // continuationHistory is the shared table's fixed-size member (not thread-scaled);
+        // stripe its flat int16 range across this node's workers -- upstream fills it to -586.
+        const r = dynRange(worker_histories.continuation_history_len, thread_idx, numa_total);
+        fillI16(shared.cont_data, r.start, r.end, -586);
+    }
 }
 
 // Construct one node's SharedHistories. Allocate the two DynStats arrays
@@ -73,9 +79,16 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
     const corr_bytes = sizes.corr * @sizeOf([2]CorrectionBundle);
     const pawn_bytes = sizes.pawn * hist_pieceto * @sizeOf(i16);
 
+    const cont_bytes = worker_histories.continuation_history_len * @sizeOf(i16);
+
     const corr_ptr = page_alloc.alloc(corr_bytes) orelse return error.OutOfMemory;
     const pawn_ptr = page_alloc.alloc(pawn_bytes) orelse {
         page_alloc.free(corr_ptr); // don't leak corr if pawn alloc fails
+        return error.OutOfMemory;
+    };
+    const cont_ptr = page_alloc.alloc(cont_bytes) orelse {
+        page_alloc.free(corr_ptr); // don't leak corr/pawn if cont alloc fails
+        page_alloc.free(pawn_ptr);
         return error.OutOfMemory;
     };
 
@@ -84,6 +97,7 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
         .corr_data = @ptrCast(@alignCast(corr_ptr)),
         .pawn_size = sizes.pawn,
         .pawn_data = @ptrCast(@alignCast(pawn_ptr)),
+        .cont_data = @ptrCast(@alignCast(cont_ptr)),
         .size_minus1 = sizes.corr - 1,
         .pawn_hist_size_minus1 = sizes.pawn - 1,
     };
@@ -94,6 +108,7 @@ pub fn constructSharedHistories(thread_count: usize) error{OutOfMemory}!SharedHi
 pub fn deinitSharedHistories(sh: *SharedHistories) void {
     page_alloc.free(@ptrCast(sh.corr_data));
     page_alloc.free(@ptrCast(sh.pawn_data));
+    page_alloc.free(@ptrCast(sh.cont_data));
     sh.* = undefined;
 }
 
