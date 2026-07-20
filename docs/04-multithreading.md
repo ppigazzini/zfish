@@ -200,19 +200,18 @@ driver need the vote, and the driver cannot import `thread`, so the pure graph-r
 integer arithmetic lives in its own module.
 
 `bestThreadIndex` first fills one `ThreadSummary` per thread from its worker's first root
-move: the PV's first move, whether the score is a bound, whether the PV is longer than
-two moves, the score, and the reached root depth. Then:
+move: the PV's first move, whether the score is a bound, the score, and the PV length. Then:
 
 1. `min_score` is the lowest score across all threads.
-2. `threadVotingValue(summary) = (score - min_score + 14) * root_depth`.
-3. `voteForMove(m)` sums that value over every thread whose PV starts with `m`.
+2. `threadVotingValue(summary) = score - min_score + 14` (no depth weighting).
+3. `voteForMove(m)` sums that value — in `i64`, as upstream's vote map does — over every
+   thread whose PV starts with `m`.
 4. The winner is chosen by a linear scan against the current best:
    * if the current best is a **decisive** best (a non-bound TB-win/TB-loss score),
      only another decisive candidate with a larger absolute score displaces it;
    * otherwise a candidate wins if it is decisive, or if it is not a loss and either its
-     move's vote exceeds the best's, or the votes tie and its own voting value beats the
-     best's — each side's value first multiplied by its own "PV longer than two moves"
-     flag.
+     move's vote exceeds the best's, or the votes tie and its own PV is longer than the
+     best's.
 
 The winner's Worker supplies the final PV and `bestmove`; the main thread still emits
 them, and re-emits the PV when the winner is not itself.

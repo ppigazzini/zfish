@@ -16,35 +16,33 @@ const max_thread_summaries: usize = 1024;
 pub const ThreadSummary = struct {
     pv0_raw: u16,
     score_is_bound: u8,
-    pv_has_more_than_two: u8,
     score: i32,
-    root_depth: i32,
+    pv_length: usize,
 };
 
 // Write a neutral record for a thread with no Worker rather than leaving the caller's slot
-// untouched: the slot would stay `undefined` and pickBestThread reads .score/.root_depth out
+// untouched: the slot would stay `undefined` and pickBestThread reads .score/.pv_length out
 // of it, making best-thread selection depend on stack garbage.
 fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
     const w = worker_layout.Worker.fromThread(thread) orelse {
         out.* = .{
             .pv0_raw = 0,
             .score_is_bound = 1,
-            .pv_has_more_than_two = 0,
             .score = value_none,
-            .root_depth = 0,
+            .pv_length = 0,
         };
         return;
     };
     const rmv = w.rootMovesFirst();
     out.pv0_raw = rmv.pv.moves[0];
     out.score_is_bound = @intFromBool(rmv.score_lowerbound or rmv.score_upperbound);
-    out.pv_has_more_than_two = @intFromBool(rmv.pv.length > 2);
     out.score = rmv.score;
-    out.root_depth = w.rootDepth();
+    out.pv_length = rmv.pv.length;
 }
 
-fn voteForMove(summaries: []const ThreadSummary, move_raw: u16, min_score: i32) i32 {
-    var vote: i32 = 0;
+// Accumulate in i64 to match upstream's `unordered_map<Move, i64>` vote tally (thread.cpp:355).
+fn voteForMove(summaries: []const ThreadSummary, move_raw: u16, min_score: i32) i64 {
+    var vote: i64 = 0;
     var index: usize = 0;
     while (index < summaries.len) : (index += 1) {
         if (summaries[index].pv0_raw == move_raw)
@@ -53,8 +51,9 @@ fn voteForMove(summaries: []const ThreadSummary, move_raw: u16, min_score: i32) 
     return vote;
 }
 
-fn threadVotingValue(summary: ThreadSummary, min_score: i32) i32 {
-    return (summary.score - min_score + 14) * summary.root_depth;
+// upstream thread.cpp:363 -- `score - minScore + 14`, no depth weighting.
+fn threadVotingValue(summary: ThreadSummary, min_score: i32) i64 {
+    return @as(i64, summary.score - min_score + 14);
 }
 
 fn isWin(score: i32) bool {
@@ -91,8 +90,6 @@ fn pickBestThread(summaries: []const ThreadSummary) usize {
         const current_vote = voteForMove(summaries, current.pv0_raw, min_score);
         const best_decisive = isDecisiveBest(best);
         const current_decisive = isDecisiveBest(current);
-        const better_voting_value =
-            threadVotingValue(current, min_score) * @as(i32, current.pv_has_more_than_two) > threadVotingValue(best, min_score) * @as(i32, best.pv_has_more_than_two);
 
         if (best_decisive) {
             if (current_decisive and absInt(current.score) > absInt(best.score)) {
@@ -100,7 +97,8 @@ fn pickBestThread(summaries: []const ThreadSummary) usize {
             }
         } else if (current_decisive or
             (!isLoss(current.score) and
-                (current_vote > best_vote or (current_vote == best_vote and better_voting_value))))
+                // upstream thread.cpp:395 -- tie broken by the raw PV length, not a voting value.
+                (current_vote > best_vote or (current_vote == best_vote and current.pv_length > best.pv_length))))
         {
             best_index = index;
         }
