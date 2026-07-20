@@ -82,7 +82,7 @@ pub fn valueFromTt(v: i32, ply: i32, r50c: i32) i32 {
     return v;
 }
 
-// Prune child-node futility (Step 8): futilityMult = min(40 + depth*4, 80).
+// Prune child-node futility (Step 8): futilityMult = min(45 + depth*4, 85).
 pub fn futilityMargin(
     depth: i32,
     tt_hit: bool,
@@ -129,11 +129,11 @@ pub fn ttMoveHistoryMatchBonus(best_is_tt: bool) i32 {
     return if (best_is_tt) 918 else -747;
 }
 
-pub fn priorBonusScale(prev_stat_score: i32, depth: i32, prev_movecount_gt8: bool, cond_a: bool, cond_b: bool) i32 {
+pub fn priorBonusScale(prev_stat_score: i32, depth: i32, prev_movecount_gt9: bool, cond_a: bool, cond_b: bool) i32 {
     var s: i32 = -241;
     s -= @divTrunc(prev_stat_score, 98);
     s += @min(59 * depth, 420);
-    s += 186 * @as(i32, @intFromBool(prev_movecount_gt8));
+    s += 186 * @as(i32, @intFromBool(prev_movecount_gt9));
     s += 142 * @as(i32, @intFromBool(cond_a));
     s += 159 * @as(i32, @intFromBool(cond_b));
     return @max(s, 0);
@@ -231,8 +231,8 @@ pub fn razorMargin(depth: i32) i32 {
 }
 
 // Blend the qsearch beta-trend: when a non-decisive bestValue clears beta it is
-// pulled partway toward beta. Step 4 stand-pat uses 467/557; the pre-TT-store
-// fail-high path uses 481/543. Both divide by 1024 with toward-zero truncation.
+// pulled partway toward beta. Step 4 stand-pat uses 441/583; the pre-TT-store
+// fail-high path uses 462/562. Both divide by 1024 with toward-zero truncation.
 pub fn qsearchStandPatBlend(best_value: i32, beta: i32) i32 {
     return @divTrunc(441 * best_value + 583 * beta, 1024);
 }
@@ -243,7 +243,7 @@ pub fn qsearchFailHighBlend(best_value: i32, beta: i32) i32 {
 
 // Order quiets by static-eval difference (search(), after the moves_loop check
 // guard): clamp the negated sum of the previous and current static evals into
-// [-183, 180] and bias by 62. The caller scales it (*10, *13) into history.
+// [-189, 194] and bias by 60. The caller scales it (*10, *13) into history.
 pub fn evalDiff(prev_static_eval: i32, static_eval: i32) i32 {
     return @max(@as(i32, -189), @min(@as(i32, 194), -(prev_static_eval + static_eval))) + 60;
 }
@@ -284,7 +284,7 @@ pub fn quietStatScore(main_hist: i32, cont0: i32, cont1: i32) i32 {
 // Compute the end-of-search correction-history bonus (search()): scale the static-eval
 // error by depth and a best-move-dependent weight (12 with a best move, 18
 // without), clamp into +/- CORRECTION_HISTORY_LIMIT/4 (=256), then apply the
-// final 1114/1024 scale passed to update_correction_history.
+// final 1061/1024 scale passed to update_correction_history.
 pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) i32 {
     const w: i32 = if (has_best_move) 12 else 18;
     const raw = @divTrunc(eval_delta * depth * w, 128);
@@ -294,7 +294,7 @@ pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) 
 
 // Size the aspiration window in iterative_deepening(). The starting half-width
 // mixes a base, a per-thread stagger, and the root move's mean-squared score;
-// on each fail high/low it grows by 44/128.
+// on each fail high/low it grows by 47/128.
 pub fn aspirationInitialDelta(thread_idx: usize, mean_squared_score: i32) i32 {
     const tmod: i32 = @intCast(thread_idx % 8);
     const abs_mss = if (mean_squared_score < 0) -mean_squared_score else mean_squared_score;
@@ -306,14 +306,14 @@ pub fn aspirationDeltaGrow(delta: i32) i32 {
 }
 
 // Compute eval optimism from the root move's average score (iterative_deepening()):
-// a saturating 137*avg/(|avg|+81). The caller mirrors it for the opponent.
+// a saturating 114*avg/(|avg|+85). The caller mirrors it for the opponent.
 pub fn optimism(avg: i32) i32 {
     const abs_avg = if (avg < 0) -avg else avg;
     return @divTrunc(114 * avg, abs_avg + 85);
 }
 
 // Scale the quiet-history bonus (update_quiet_histories). Each is bonus*N/1024
-// with toward-zero division; the pawn-history scale picks its weight by sign.
+// with toward-zero division; the pawn-history scale picks its weight by whether bonus > -4.
 pub fn quietLowPlyScale(bonus: i32) i32 {
     return @divTrunc(bonus * 712, 1024);
 }
@@ -373,7 +373,7 @@ pub fn statMalus(depth: i32) i32 {
     return @min(968 * depth - 235, 2244);
 }
 
-// Populate the reductions[] lookup table: reductions[i] = int(2834/128.0 * ln i)
+// Populate the reductions[] lookup table: reductions[i] = int(2872/128.0 * ln i)
 // for i in [1, count). Index 0 is left untouched, matching upstream clear().
 pub fn fillReductions(reductions_ptr: [*]i32, count: usize) void {
     var i: usize = 1;
@@ -381,20 +381,6 @@ pub fn fillReductions(reductions_ptr: [*]i32, count: usize) void {
         const logv = @log(@as(f64, @floatFromInt(i)));
         reductions_ptr[i] = @intFromFloat(2872.0 / 128.0 * logv);
     }
-}
-
-pub fn reduction(
-    reductions_ptr: [*]const i32,
-    depth: i32,
-    move_number: i32,
-    delta: i32,
-    root_delta: i32,
-    improving: bool,
-) i32 {
-    const depth_index: usize = @intCast(depth);
-    const move_index: usize = @intCast(move_number);
-    const reduction_scale = reductions_ptr[depth_index] * reductions_ptr[move_index];
-    return reduction_scale - @divTrunc(delta * 577, root_delta) + (if (!improving) @divTrunc(reduction_scale * 197, 512) else 0) + 982;
 }
 
 // --- tests --------------------------------------------------------------

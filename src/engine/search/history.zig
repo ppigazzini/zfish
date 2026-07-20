@@ -74,7 +74,7 @@ pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: u8
         @ptrCast(&w.continuation_correction_history[cc_block * hist_pieceto]);
 }
 
-// Decay the main history per iterative_deepening() iteration: (v + 5) * 789 / 1024
+// Decay the main history per iterative_deepening() iteration: v * 729 / 1024
 // toward zero over the whole table.
 pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
@@ -84,7 +84,7 @@ pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     }
 }
 
-// Reset lowPlyHistory per iterative_deepening() search: lowPlyHistory.fill(100)
+// Reset lowPlyHistory per iterative_deepening() search: lowPlyHistory.fill(102)
 // over the whole [5][65536] table.
 pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
@@ -93,8 +93,8 @@ pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
 
 // Clear the Worker: reset the per-Worker histories (the shared correction/pawn clear_range
 // is handled separately by clearSharedHistory for its numa partitioning, and the NNUE
-// refreshTable is untouched). mainHistory=-5, captureHistory=-699, ttMoveHistory=0,
-// continuationCorrectionHistory=5, continuationHistory=-552.
+// refreshTable is untouched). mainHistory=-5, captureHistory=-742, ttMoveHistory=0,
+// continuationCorrectionHistory=5, continuationHistory=-586.
 pub fn clearWorkerHistories(wl: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(wl);
     for (&w.main_history) |*e| e.* = -5;
