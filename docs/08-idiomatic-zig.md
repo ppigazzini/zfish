@@ -30,6 +30,12 @@ because nothing downstream will do it for you.** The measured cost is real — f
 8-bucket psqt accumulator update from a scalar loop into one `@Vector(8, i32)` cut its
 instructions, and the scalar form would have stayed scalar forever.
 
+This is the single biggest way zfish diverges from Stockfish. Upstream leaves these
+loops scalar in the source and the C++ compiler widens them at `-O3`; zfish must widen
+them by hand. So the performance grind is not "add another intrinsic" — it is closing
+exactly the auto-vectorization gap the toolchain withholds. See
+[the philosophy note](README.md#where-zfish-diverges-from-stockfish).
+
 ```zig
 // Not this — stays scalar, one lane per iteration:
 for (removed) |i| { var b: usize = 0; while (b < 8) : (b += 1) acc_mem[b] -= w[i * 8 + b]; }
