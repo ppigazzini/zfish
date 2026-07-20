@@ -99,7 +99,9 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     // Build SFNNv15 concat[128] = [ac_sqr_0(32) | ac_0(32) | ac_sqr_1(32) | ac_1(32)].
     // ac_sqr_0 / ac_0 over all FC_0_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits+1 = 7:
     // SqrClippedReLU shift = 2*7+7 = 21, ClippedReLU shift = 7.
-    var concat: [128]u8 = @splat(0);
+    // The four activations write all 128 bytes (concat[0..32], [32..64], [64..96], [96..128])
+    // before fc_1 reads [0..64] and fc_2 reads [0..128], so the zero-init was a dead store.
+    var concat: [128]u8 = undefined;
     sqrClippedReLU(21, &fc0_out, concat[0..32]);
     clippedReLU(7, &fc0_out, concat[32..64]);
 

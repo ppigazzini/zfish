@@ -32,7 +32,6 @@ const movepick_snapshot = @import("movepick_snapshot.zig");
 const seeGe = @import("legality").seeGe;
 const pieceAt = movepick_snapshot.pieceAt;
 const attacksBy = movepick_snapshot.attacksBy;
-const checkSquares = movepick_snapshot.checkSquares;
 const bitboard = @import("bitboard");
 const position_types = @import("position_types");
 const Position = position_types.Position;
@@ -244,7 +243,10 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
                     continuationHistoryScore(&history, 3, piece, to) +
                     continuationHistoryScore(&history, 5, piece, to);
                 input.check_bonus = @intFromBool(
-                    (checkSquares(pos, piece_type) & squareMask(to)) != 0 and
+                    // Read the cached enemy-king check rings (set_check_info, state_setup.zig:141)
+                    // instead of rebuilding the slider rings from magics on every quiet move --
+                    // the recompute also carried a per-type switch (an indirect-branch mispredictor).
+                    (pos.st.check_squares[piece_type] & squareMask(to)) != 0 and
                         seeGe(pos, raw_move, -75),
                 );
                 input.from_threatened = @intFromBool(
