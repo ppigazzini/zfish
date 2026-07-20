@@ -309,15 +309,18 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
 
     // Emit the numa/thread info strings FIRST, as upstream's `go` handler does
     // (uci.cpp:128-134) before it calls go() -> parse_limits: a malformed `go` still
-    // prints them before terminating inside the parse.
-    if (engine_mod.numaConfigInformationEngine(engine_ptr)) |numa_info_ptr| {
-        defer freeMaybeCString(numa_info_ptr);
-        emitInfoString(std.mem.span(numa_info_ptr));
-    }
+    // prints them before terminating inside the parse. Skip during a `bench` loop --
+    // upstream's bench calls engine.go() directly, bypassing this handler (uci.cpp:261-284).
+    if (!uci_output.benchGoActive()) {
+        if (engine_mod.numaConfigInformationEngine(engine_ptr)) |numa_info_ptr| {
+            defer freeMaybeCString(numa_info_ptr);
+            emitInfoString(std.mem.span(numa_info_ptr));
+        }
 
-    if (engine_mod.threadAllocationInformationEngine(engine_ptr)) |thread_info_ptr| {
-        defer freeMaybeCString(thread_info_ptr);
-        emitInfoString(std.mem.span(thread_info_ptr));
+        if (engine_mod.threadAllocationInformationEngine(engine_ptr)) |thread_info_ptr| {
+            defer freeMaybeCString(thread_info_ptr);
+            emitInfoString(std.mem.span(thread_info_ptr));
+        }
     }
 
     // Mirror upstream's `if (is.fail())` check (uci.cpp:226-227), before any search

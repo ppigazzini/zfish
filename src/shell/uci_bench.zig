@@ -25,6 +25,11 @@ pub const DispatchFn = *const fn (*engine_object.EngineObject, []const u8) void;
 pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, dispatch: DispatchFn) void {
     const engine_ptr = uci_ptr;
 
+    // Route each position's `go` through dispatch, but suppress the per-go numa/thread info
+    // strings: upstream's bench calls engine.go() directly, not the interactive `go` handler.
+    uci_output.setBenchGoActive(true);
+    defer uci_output.setBenchGoActive(false);
+
     const current_fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
     defer freeMaybeCString(current_fen_ptr);
 
