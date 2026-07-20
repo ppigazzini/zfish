@@ -87,17 +87,26 @@ pub inline fn isEmpty(pos: *const Position, s: u8) bool {
 // Hold the pawn attack table -- upstream's PawnAttacks[c][s]. position.initRuntime calls
 // initPawnAttacks() before any position setup or search.
 var pawn_attacks_bb: [2][64]u64 = undefined;
+// Single push OR pawn attacks, per color/square (upstream PawnPushOrAttacks, attacks.h:250) --
+// the NNUE threat update reads this once instead of recomputing (b<<8|b>>8) | attacks per pawn.
+var pawn_push_or_attacks_bb: [2][64]u64 = undefined;
 
 pub fn initPawnAttacks() void {
     for (0..64) |sq| {
         const b: u64 = @as(u64, 1) << @intCast(sq);
         pawn_attacks_bb[color_white][sq] = ((b & ~file_h_bb) << 9) | ((b & ~file_a_bb) << 7);
         pawn_attacks_bb[color_black][sq] = ((b & ~file_h_bb) >> 7) | ((b & ~file_a_bb) >> 9);
+        pawn_push_or_attacks_bb[color_white][sq] = (b << 8) | pawn_attacks_bb[color_white][sq];
+        pawn_push_or_attacks_bb[color_black][sq] = (b >> 8) | pawn_attacks_bb[color_black][sq];
     }
 }
 
 pub fn pawnAttacks(color: u8, sq: u8) u64 {
     return pawn_attacks_bb[color][sq];
+}
+
+pub fn pawnPushOrAttacks(color: u8, sq: u8) u64 {
+    return pawn_push_or_attacks_bb[color][sq];
 }
 
 pub inline fn kingSquare(pos: *const Position, c: u8) u8 {
