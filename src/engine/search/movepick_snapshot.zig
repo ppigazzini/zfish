@@ -70,30 +70,6 @@ pub fn attacksBy(pos: *const Position, color: u8, piece_type: u8) u64 {
     return result;
 }
 
-pub fn checkSquares(pos: *const Position, piece_type: u8) u64 {
-    const them = otherColor(pos.side_to_move);
-    const them_king_square: u8 = @intCast(@ctz(pos.by_color_bb[them] & pos.by_type_bb[king]));
-
-    return switch (piece_type) {
-        pawn => pawnAttackersTo(them_king_square, pos.side_to_move),
-        knight => bitboard.attacks(knight, them_king_square, pos.by_type_bb[0]),
-        bishop => bitboard.attacks(bishop, them_king_square, pos.by_type_bb[0]),
-        rook => bitboard.attacks(rook, them_king_square, pos.by_type_bb[0]),
-        queen => bitboard.attacks(bishop, them_king_square, pos.by_type_bb[0]) |
-            bitboard.attacks(rook, them_king_square, pos.by_type_bb[0]),
-        king => 0,
-        else => 0,
-    };
-}
-
-pub fn pawnAttackersTo(square: u8, color: u8) u64 {
-    const target = squareMask(square);
-    return if (color == white)
-        shift(south_west, target) | shift(south_east, target)
-    else
-        shift(north_west, target) | shift(north_east, target);
-}
-
 pub fn leastSignificantSquareBb(bitboard_value: u64) u64 {
     return bitboard_value & (~bitboard_value +% 1);
 }
