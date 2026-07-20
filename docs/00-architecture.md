@@ -98,6 +98,41 @@ self-registers the two it owns. `zig build hook-lint` bounds them: it ratchets t
 count and requires each to declare its failure mode when unregistered. See
 `src/platform/runtime_hooks.zig` and the `//! hook-class:` headers.
 
+### Does the DAG cost performance?
+
+No — the DAG and its hooks are a *source-level* structure (for cycle-freedom, the
+standalone `engine/` library, and testability), not compilation-unit boundaries, and
+they do not tax the search. Three reasons, each measured against a full bench:
+
+- **Zig is whole-module.** Every `@import` lowers into one LLVM module, so the
+  compiler inlines across module boundaries exactly as it would within a single file
+  — a C codebase splits into translation units the linker must reconcile; zfish does
+  not. Proven by building `-Dlto=false`: every hot cross-module call stays inlined, no
+  small accessor (`sqBb`, `kingSquare`, `pawnAttacks`) shows up as its own symbol, and
+  the profile's top functions are unchanged.
+- **The hooks are wired at startup and stay off the hot path.** A function pointer is
+  an optimizer barrier only *where it is called*. In the call graph over a full bench,
+  every per-node symbol is a direct engine call; the one hook reached inside the
+  search is the clock (`time_source.now`), which `checkTime`'s counter throttles to
+  about one call per 512 nodes. Eval reads the network as startup-loaded data through
+  a direct call, not a hook, and the per-node path allocates nothing.
+- **Comptime replaces runtime indirection where it would be hot.** The search and the
+  move scorer are specialized at `comptime` on node type and generator kind, so those
+  dispatches resolve at compile time.
+
+So the architecture costs **startup wiring**, not nps. It would only cost the search
+if a hook were placed on the per-node path un-throttled — which is exactly what the
+measurement discipline and `hook-lint` guard against.
+
+**Is LTO required for this?** No. The whole-module inlining above is independent of
+LTO — it is why the macOS and Windows builds ship with `-Dlto=false` permanently and
+stay bit-exact. LTO (default on for Linux, matching upstream's `-flto=full`) buys a
+separate ~4% by optimizing across the one boundary Zig does not compile itself: the
+`compiler_rt` / libc runtime (`memcpy` / `memset` in the accumulator). The pure-Zig
+affine kernel is bit-identical in instructions with LTO on or off; only the
+libc-touching paths move. LTO is a codegen win to match upstream, not the thing that
+makes the module graph free.
+
 ## How a search flows
 
 ```mermaid
