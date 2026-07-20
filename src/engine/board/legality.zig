@@ -209,16 +209,15 @@ pub fn pseudoLegal(pos_ptr: *const Position, m: u16) bool {
         return false;
     }
 
+    // upstream position.cpp:754 -- `if (checkers() && type_of(pc) != KING)`: for a KING move
+    // while in check, pseudo_legal does nothing (the destination-safety is left to legal()),
+    // so do NOT reject a king landing on an attacked square here.
     const checkers = pos.st.checkers_bb;
-    if (checkers != 0) {
-        if ((pc & 7) != king_pt) {
-            if ((checkers & (checkers -% 1)) != 0) return false; // double check
-            const ksq = kingSquare(pos, us);
-            const checker_sq: u8 = @intCast(@ctz(checkers));
-            if ((bitboard.between(ksq, checker_sq) & sqBb(to)) == 0) return false;
-        } else if (attackersToExist(pos_ptr, to, all ^ sqBb(from), them)) {
-            return false;
-        }
+    if (checkers != 0 and (pc & 7) != king_pt) {
+        if ((checkers & (checkers -% 1)) != 0) return false; // double check
+        const ksq = kingSquare(pos, us);
+        const checker_sq: u8 = @intCast(@ctz(checkers));
+        if ((bitboard.between(ksq, checker_sq) & sqBb(to)) == 0) return false;
     }
 
     return true;
