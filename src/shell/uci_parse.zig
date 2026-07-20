@@ -151,7 +151,7 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
                 break;
             }
         } else if (std.mem.eql(u8, token, "nodes")) {
-            if (parseInt(u64, iter.next())) |v| {
+            if (parseU64Wrapping(iter.next())) |v| {
                 result.nodes = v;
             } else {
                 result.bad_token = "nodes";
@@ -248,6 +248,18 @@ fn parseI64(token: ?[]const u8) ?i64 {
 fn parseInt(comptime T: type, token: ?[]const u8) ?T {
     const text = token orelse return null;
     return std.fmt.parseInt(T, text, 10) catch null;
+}
+
+// Parse a u64 the way upstream's `is >> uint64_t` (strtoull) does: a leading `-` is not an
+// error but a modular negation, so `go nodes -5` yields 2^64 - 5 and searches rather than
+// terminating. `parseInt(u64)` rejects the sign, so handle it explicitly.
+fn parseU64Wrapping(token: ?[]const u8) ?u64 {
+    const text = token orelse return null;
+    if (text.len != 0 and text[0] == '-') {
+        const mag = std.fmt.parseInt(u64, text[1..], 10) catch return null;
+        return 0 -% mag;
+    }
+    return std.fmt.parseInt(u64, text, 10) catch null;
 }
 
 const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
