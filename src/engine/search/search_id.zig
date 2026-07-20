@@ -167,6 +167,7 @@ pub fn searchIdState(wl: *worker_layout.WorkerLayout, out: *ZfishIdState) void {
     out.root_delta = &wl.root_delta;
     out.optimism = &wl.optimism;
     out.nodes = &wl.nodes;
+    out.threads = tp;
     out.stop = &tp.stop;
     out.increase_depth = &tp.increase_depth;
     // Coerce mut->const without a cast: wl.last_iteration_pv and ZfishIdState's field
@@ -278,7 +279,11 @@ pub fn moveToFront(rm: [*]RootMove, count: usize, target: u16) void {
     rm[0] = tmp;
 }
 pub inline fn idElapsed(id: *const ZfishIdState) i64 {
-    return if (id.tm_use_nodes_time != 0) @intCast(id.nodes.*) else time_source.now() - id.tm_start_time;
+    if (id.tm_use_nodes_time == 0) return time_source.now() - id.tm_start_time;
+    // Read the POOL's node count, not this worker's -- upstream Worker::elapsed() gates
+    // nodestime on threads.nodes_searched() (search.cpp:1863), the same rule checkTime uses.
+    const pool_nodes: u64 = if (id.threads) |tp| worker_layout.poolNodesSearched(tp) else id.nodes.*;
+    return @intCast(pool_nodes);
 }
 pub inline fn fclamp(v: f64, lo: f64, hi: f64) f64 {
     return @max(lo, @min(v, hi));

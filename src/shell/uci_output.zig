@@ -67,6 +67,17 @@ pub fn isQuiet() bool {
     return quiet_mode;
 }
 
+// Track the `bench` command's go loop: upstream's bench calls engine.go() directly, bypassing
+// the interactive `go` handler's numa/thread `info string` emission (uci.cpp:261-284 vs 131-132),
+// so those lines must NOT be re-emitted per bench position. Set around benchRuntime's loop.
+var bench_go_active: bool = false;
+pub fn setBenchGoActive(active: bool) void {
+    bench_go_active = active;
+}
+pub fn benchGoActive() bool {
+    return bench_go_active;
+}
+
 // Write `line` then a newline to `file`. Both writes happen while the caller holds
 // write_mutex, so no other printLine can interleave between them -- the line stays
 // whole even though it is two syscalls. writeStreamingAll issues the write(2) directly

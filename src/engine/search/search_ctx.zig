@@ -88,6 +88,9 @@ pub const ZfishIdState = struct {
     root_delta: *i32,
     optimism: *[2]i32,
     nodes: *const u64,
+    // The pool, for the nodestime elapsed() total (poolNodesSearched), matching checkTime and
+    // upstream Worker::elapsed() -> threads.nodes_searched(). Null only in the headless case.
+    threads: ?*worker_layout.ThreadPool,
     stop: *u8,
     increase_depth: *u8,
     // Hold time management for the main thread only; it lives on the SearchManager and helpers
