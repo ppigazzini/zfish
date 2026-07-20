@@ -29,11 +29,15 @@ pub const WorkerHistories = struct {
     main_history: [hist_color_nb * hist_uint16]i16, // ButterflyHistory [2][65536]
     low_ply_history: [hist_low_ply * hist_uint16]i16, // LowPlyHistory [5][65536]
     capture_history: [hist_piece_nb * hist_square_nb * hist_piece_type_nb]i16, // [16][64][8]
-    continuation_history: [2 * 2 * hist_pieceto * hist_pieceto]i16, // [2][2] of [16][64]->[16][64]
     continuation_correction_history: [hist_pieceto * hist_pieceto]i16, // [16][64]->[16][64]
     tt_move_history: i16,
     shared_history: ?*shared_history_types.SharedHistories,
 };
+
+// Element count of the shared continuationHistory table: [2][2] of PieceToHistory pages.
+// Held in SharedHistories (shared per NUMA node, atomic entries) to match upstream
+// search.h:342 / history.h:244 -- not per-Worker, so lazy-SMP threads share the updates.
+pub const continuation_history_len: usize = 2 * 2 * hist_pieceto * hist_pieceto;
 
 // Compute the offset of the shared_history reference WITHIN WorkerHistories (a Zig-owned
 // struct, so Zig's choice); the constructor + clear path address it through the typed field,

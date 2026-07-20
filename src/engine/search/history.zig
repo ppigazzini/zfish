@@ -68,7 +68,7 @@ pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: u8
     const ss = ss_ptr;
     const ch_block = (@as(usize, in_check) * 2 + capture) * hist_pieceto +
         @as(usize, pc) * hist_square_nb + to;
-    ss.continuation_history = @ptrCast(&w.continuation_history[ch_block * hist_pieceto]);
+    ss.continuation_history = @ptrCast(&sharedOf(w).cont_data[ch_block * hist_pieceto]);
     const cc_block = @as(usize, pc) * hist_square_nb + to;
     ss.continuation_correction_history =
         @ptrCast(&w.continuation_correction_history[cc_block * hist_pieceto]);
@@ -91,17 +91,16 @@ pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
     for (&w.low_ply_history) |*e| e.* = 102;
 }
 
-// Clear the Worker: reset the per-Worker histories (the shared correction/pawn clear_range
-// is handled separately by clearSharedHistory for its numa partitioning, and the NNUE
-// refreshTable is untouched). mainHistory=-5, captureHistory=-742, ttMoveHistory=0,
-// continuationCorrectionHistory=5, continuationHistory=-586.
+// Clear the Worker: reset the per-Worker histories (the shared correction/pawn/continuation
+// clear_range is handled separately by clearSharedHistory for its numa partitioning, and the
+// NNUE refreshTable is untouched). mainHistory=-5, captureHistory=-742, ttMoveHistory=0,
+// continuationCorrectionHistory=5. continuationHistory (=-586) is shared, cleared there.
 pub fn clearWorkerHistories(wl: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(wl);
     for (&w.main_history) |*e| e.* = -5;
     for (&w.capture_history) |*e| e.* = -742;
     w.tt_move_history = 0;
     for (&w.continuation_correction_history) |*e| e.* = 5;
-    for (&w.continuation_history) |*e| e.* = -586;
 }
 
 // Find captureStage / moveIsOk / statsUpdate / captVal / captEntry / workerHistories
@@ -140,7 +139,7 @@ pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, b
         if (moveIsOk(ssi.current_move)) {
             const cont = ssi.continuation_history.?;
             const entry = &cont[@as(usize, pc) * 64 + to]; // PieceToHistory[pc][to]
-            if (entry.* > 0) positive_count += 1;
+            if (@atomicLoad(i16, entry, .monotonic) > 0) positive_count += 1; // shared table: relaxed read
             const delta = search.conthistDelta(bonus, b.w, positive_count, @intCast(b.i));
             statsUpdate(entry, delta, 30000);
         }
