@@ -136,9 +136,9 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
 
         // Save the last iteration's scores before the first PV line is searched and all
         // the move scores except the (new) PV are set to -VALUE_INFINITE. Mirror upstream
-        // search.cpp:346-351: the PV and its exactness are saved alongside the score.
-        // Only previous_score was saved before, so previousPV did not exist and the
-        // follow-PV memory had to borrow rootMoves[0].pv -- see last_iteration_pv below.
+        // search.cpp:346-351: save the PV and its exactness alongside the score, so the
+        // follow-PV memory has its own copy rather than borrowing rootMoves[0].pv -- see
+        // last_iteration_pv below.
         var ri: usize = 0;
         while (ri < id.root_moves_count) : (ri += 1) {
             id.root_moves[ri].previous_score = id.root_moves[ri].score;
@@ -209,10 +209,10 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             // scores from a completed search in an earlier PV line. Guard against an
             // aborted pvIdx line overtaking pvIdx - 1 when pvIdx - 1 is a proven loss.
             // Moreover, do not trust an exact loss score from an aborted search.
-            // Port upstream search.cpp:443-489 faithfully; the previous code was an older
-            // revision that merged both arms into a min(), so it could not restore the
-            // previous PV, always cleared both bound flags, and never marked the later
-            // lines. It needed previousPV / previousScoreExact, which did not exist.
+            // Port upstream search.cpp:443-489 faithfully: keep the two arms distinct (a
+            // merged min() cannot restore the previous PV, would clear both bound flags,
+            // and would never mark the later lines) -- which is why RootMove carries
+            // previousPV and previousScoreExact.
             if (@atomicLoad(u8, id.stop, .monotonic) != 0 and id.pv_idx.* != 0) {
                 const cur = &id.root_moves[id.pv_idx.*];
                 const prev_line = &id.root_moves[id.pv_idx.* - 1];
@@ -268,7 +268,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
         }
 
         // Detect a mate score found in an earlier iteration that this iteration failed to
-        // recover -- upstream's `forgottenMate` (search.cpp:504-507), which was absent.
+        // recover -- upstream's `forgottenMate` (search.cpp:504-507).
         // It fires when the remembered best score is a mate/mated and the new score is
         // either shorter-in-absolute-terms or merely a bound. Note it is NOT conditioned
         // on `stop`: a COMPLETED iteration that forgets a mate is rolled back too.

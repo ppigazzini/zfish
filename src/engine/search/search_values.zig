@@ -3,8 +3,8 @@
 // main search (searchImpl) and quiescence (qsearchImpl). Mirror the
 // canonical constants in support/search.zig; keep one authoritative copy
 // here to let both search bodies alias them instead of re-declaring the magic
-// numbers (the old `q_*` spelling was a misnomer — the main search uses them
-// too). Stay pure, std-only; import by path so the build graph is unchanged.
+// numbers (both the main search and qsearch use them, so the names carry no
+// `q_` prefix). Stay pure, std-only; import by path so the build graph is unchanged.
 
 const std = @import("std");
 

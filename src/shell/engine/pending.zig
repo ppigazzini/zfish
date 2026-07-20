@@ -23,8 +23,8 @@ pub fn ensurePendingStateStorage(states_slot: *?*state_list.StateList) ?*Pending
         return pending_state_entries.items[index].storage;
     }
 
-    // Return null on OOM (was `@panic("OOM")`); setPosition reports it as a UCI error
-    // message through its existing `?[*:0]u8` channel instead of crashing.
+    // Return null on OOM; setPosition reports it as a UCI error message through its
+    // existing `?[*:0]u8` channel instead of crashing.
     const state_storage = state_list.storageCreate() orelse return null;
     pending_state_entries.append(std.heap.c_allocator, .{
         .slot_key = slot_key,

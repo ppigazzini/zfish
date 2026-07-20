@@ -105,9 +105,8 @@ pub const RootMove = struct {
 
 comptime {
     // Let Zig own the field order, but keep the element size equal to the strided
-    // rootMoves vector element. Grew from 552 when previousPV (504) + previousScoreExact
-    // were restored -- upstream's RootMove carries both, so the smaller footprint was a
-    // missing field, not a saving.
+    // rootMoves vector element. The footprint includes previousPV and previousScoreExact,
+    // which upstream's RootMove also carries; the assert catches a dropped field.
     std.debug.assert(@sizeOf(RootMove) == root_move_footprint);
 }
 
