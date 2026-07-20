@@ -188,10 +188,11 @@ target and shares one scalar-equivalent contract:
 | Tier | Kernel | Why |
 | --- | --- | --- |
 | AVX-512 VNNI | `affineVnni` — `vpdpbusd` via the LLVM intrinsic, split into 3 dependency chains | LLVM will not lower the portable `@Vector` int8-dot pattern to `vpdpbusd`; the high-latency op needs independent accumulators merged at the end |
-| SSSE3 without AVX2 | `affineSsse3` — `pmaddubsw` + `pmaddwd` intrinsics | `pmaddubsw` multiplies `u8 × i8` directly: twice the lanes per register |
+| AVX2 | `affineAvx2` — 256-bit `pmaddubsw` + `pmaddwd`, 8 outputs per step | the same maddubs dot as SSSE3 at twice the width; without it AVX2 fell to the portable path and the affine ran +64% instructions |
+| SSSE3 | `affineSsse3` — 128-bit `pmaddubsw` + `pmaddwd`, 4 outputs per step | `pmaddubsw` multiplies `u8 × i8` directly: twice the lanes per register; also the AVX2 fallback for an `OUT` the 256-bit path cannot tile |
 | everything else | portable `@Vector` two-stage `pmaddwd` reduction | one source, lowered per target |
 
-All three are pure integer dots over the same scrambled layout, so they are
+All four are pure integer dots over the same scrambled layout, so they are
 bit-identical; a unit test in the file pins every path against a scalar reference at
 each `-Darch`.
 

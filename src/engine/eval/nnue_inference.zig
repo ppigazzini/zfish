@@ -202,12 +202,12 @@ fn networkTransformBucket(
     return nnue_accumulator_port.transformBucket(accumulator_stack, pos, ft, cache, bucket, stm, transformed_ptr, nnz);
 }
 
-// Cover affineDpbusd's four codegen paths (portable pmaddwd; pmaddubsw+pmaddwd intrinsics on
-// the SSSE3 tier; vpdpbusd on VNNI; and the OUT==1 fallback), selected at comptime by the
-// -Darch tier. The whole-engine bench (2792255) proves the composite is right but cannot
-// localize which path broke, and it only exercises the input distribution the search happens
-// to produce. This pins every path against a scalar reference over random inputs -- run it at
-// each -Darch to cover the tier that arch selects.
+// Cover affineDpbusd's codegen paths (portable pmaddwd; 128-bit pmaddubsw+pmaddwd on the SSSE3
+// tier; 256-bit pmaddubsw+pmaddwd on AVX2; vpdpbusd on VNNI; and the OUT==1 fallback), selected
+// at comptime by the -Darch tier. The whole-engine bench (2792255) proves the composite is
+// right but cannot localize which path broke, and it only exercises the input distribution the
+// search happens to produce. This pins every path against a scalar reference over random
+// inputs -- run it at each -Darch to cover the tier that arch selects.
 test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
     const testing = std.testing;
     var prng = std.Random.DefaultPrng.init(0x9E3779B97F4A7C15);
