@@ -11,9 +11,6 @@ const shift = nnue_feature_bb.shift;
 const pawnPushOrAttacks = nnue_feature_bb.pawnPushOrAttacks;
 const safeDestination = nnue_feature_bb.safeDestination;
 const attacksBb = nnue_feature_bb.attacksBb;
-const piecesOfExact = nnue_feature_bb.piecesOfExact;
-const piecesOfType = nnue_feature_bb.piecesOfType;
-const occupiedFromPieces = nnue_feature_bb.occupiedFromPieces;
 const pawnSinglePush = nnue_feature_bb.pawnSinglePush;
 const popLsb = nnue_feature_bb.popLsb;
 const slidingAttack = nnue_feature_bb.slidingAttack;
@@ -139,22 +136,28 @@ pub fn fullAppendActive(
     perspective: u8,
     king_square: u8,
     piece_array: [*]const u8,
+    by_type: *const [8]u64,
+    by_color: *const [2]u64,
 ) void {
+    // Read the Position's cached bitboards instead of rebuilding ~10 of them with 64-square
+    // board[] scans on every refresh: the nnue piece/square encoding matches the engine's, so
+    // all-pieces == by_type[0], all-pawns == by_type[PAWN], and (color,type) sets ==
+    // by_color[color] & by_type[type]. board[] is still read for the per-target attacked piece.
     const pieces = piece_array[0..square_count];
-    const occupied = occupiedFromPieces(pieces);
-    const pawns = piecesOfType(pieces, pawn_piece_type);
+    const occupied = by_type[0];
+    const pawns = by_type[pawn_piece_type];
 
     result.len = 0;
     var color_index: u8 = 0;
 
     while (color_index < 2) : (color_index += 1) {
         const color = perspective ^ color_index;
-        appendActivePawnThreats(result, pieces, occupied, pawns, perspective, color, king_square);
+        appendActivePawnThreats(result, pieces, occupied, pawns, by_color[color] & pawns, perspective, color, king_square);
 
         var piece_type: u8 = knight_piece_type;
         while (piece_type < king_piece_type) : (piece_type += 1) {
             const attacker = makePiece(color, piece_type);
-            var attackers = piecesOfExact(pieces, attacker);
+            var attackers = by_color[color] & by_type[piece_type];
             while (attackers != 0) {
                 const from = popLsb(&attackers);
                 var attacks = attacksBb(piece_type, from, occupied) & occupied;
@@ -206,12 +209,12 @@ fn appendActivePawnThreats(
     pieces: []const u8,
     occupied: u64,
     pawns: u64,
+    color_pawns: u64,
     perspective: u8,
     color: u8,
     king_square: u8,
 ) void {
     const attacker = makePiece(color, pawn_piece_type);
-    const color_pawns = piecesOfExact(pieces, attacker);
     const pushers = pawnSinglePush(color ^ 1, pawns) & color_pawns;
 
     if (color == white) {

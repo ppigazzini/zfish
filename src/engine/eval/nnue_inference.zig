@@ -182,13 +182,9 @@ fn evaluateBucketRaw(
 }
 
 fn pieceCount(pos: *const Position) usize {
-    const board = &pos.board; // Position.board [64]u8
-    var count: usize = 0;
-    var sq: usize = 0;
-    while (sq < square_count) : (sq += 1) {
-        if (board[sq] != no_piece) count += 1;
-    }
-    return count;
+    // popcount the cached all-pieces bitboard, as upstream reads count<ALL_PIECES>()
+    // (network.cpp:152), rather than scanning all 64 board squares every eval.
+    return @popCount(pos.by_type_bb[0]);
 }
 
 fn networkTransformBucket(
