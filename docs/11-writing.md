@@ -89,7 +89,7 @@ moment the code lands, and nobody knows which claim broke better than the person
 | [02-engine-search](02-engine-search.md) | `src/engine/search/` | hot |
 | [03-engine-eval](03-engine-eval.md) | `src/engine/eval/` | hot |
 | [04-multithreading](04-multithreading.md) | `src/engine/state/`, the thread/NUMA path | hot |
-| [05-tablebases](05-tablebases.md) | `src/engine/tablebase/` | hot |
+| [05-tablebases](05-tablebases.md) | `src/platform/syzygy/`, `src/engine/search/tb_*.zig` | hot |
 | [06-platform](06-platform.md) | `src/platform/` | hot |
 | [07-shell](07-shell.md) | `src/shell/` | hot |
 | [09-tooling-ci](09-tooling-ci.md) | `build.zig` steps, `tools/`, `.github/workflows/` | hot |
@@ -106,7 +106,8 @@ usually been wrong for a long time.
 
 ## Code comments
 
-Same rules, plus these. The tree is clean of violations today — keep it that way.
+Same rules, plus these. Apply them to every comment you write or touch — no gate
+enforces comment style, so the tree stays clean only by review.
 
 **Imperative mood, leading with a verb.** "Resolve the path", not "Returns the path", "This
 resolves…", or "Function to resolve…". PEP 257's rule, applied to Zig: a comment is an order

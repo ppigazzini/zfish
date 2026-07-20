@@ -186,7 +186,7 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
     try testing.expectEqual(&pool, ss.threads); // typed *ThreadPool
     try testing.expectEqual(&graph.tt, ss.tt); // typed *TranspositionTable, the graph's own TT
     // Keep options/network as the graph's own members (opaque handles),
-    // no longer bound into the 3-reference SharedState bundle.
+    // not bound into the SharedState reference bundle.
     // Treat the states member as the StateList, non-empty at construction
     try testing.expect(graph.states.hasStates());
     try testing.expectEqual(@as(usize, 1), graph.states.len());

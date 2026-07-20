@@ -144,10 +144,7 @@ pub const NumaConfig = struct {
     // first NUMA node: unbound threads can only use replicated objects from node 0, so we
     // lose performance once the OS schedules elsewhere. Also advise it when there are
     // enough threads to spread across nodes with minimal disparity. Ignore small nodes,
-    // in particular empty ones. Mirror upstream numa.h:756-794 exactly; the previous
-    // `num_threads > largest` was a different (and far stricter) rule -- it never fired on
-    // a 2-node host until the thread count exceeded a WHOLE node, so binding was
-    // effectively unreachable.
+    // in particular empty ones. Mirror upstream numa.h:756-794 exactly.
     pub fn suggestsBindingThreads(self: *const NumaConfig, num_threads: usize) bool {
         // A mismatch between the user's affinity and the OS's means binding is required
         // to keep threads on the correct processors.
@@ -251,8 +248,6 @@ test "suggestsBindingThreads: custom affinity binds; a single node never does" {
     try testing.expect(!sys.suggestsBindingThreads(4));
     // Upstream ends the rule with `&& nodes.size() > 1` (numa.h:793): with ONE node there
     // is nothing to distribute across, so binding is never suggested at any thread count.
-    // This case asserted `true` here, pinning the old `num_threads > largest` rule --
-    // the test encoded the divergence it should have caught.
     try testing.expect(!sys.suggestsBindingThreads(5));
     try testing.expect(!sys.suggestsBindingThreads(64));
 }
