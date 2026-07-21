@@ -17,6 +17,7 @@ const movegen = @import("movegen");
 const position_types = @import("position_types");
 const search_types = @import("search_types");
 const search_ctx = @import("search_ctx");
+const tt = @import("tt");
 
 const Position = position_types.Position;
 const StateInfo = position_types.StateInfo;
@@ -74,6 +75,10 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
 pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr: *StateInfo, gives_check: u8, ss_ptr: *SearchStack) void {
     const pos = pos_ptr;
     const ss = ss_ptr;
+    // Preload the child position's TT cluster while the make below and the accumulator push
+    // run, so the line is resident by the probe at the next node (upstream search.cpp:642).
+    // The key is approximate; the hint changes no value.
+    tt.prefetch(ctx.table, ctx.cluster_count, move_do.prefetchKey(pos, move));
     const capture = captureStage(pos, move);
     // Relaxed load-then-store, as upstream's RelaxedAtomic operator++ does (misc.h:378): the
     // main thread sums this counter across workers while they increment it. A plain access there

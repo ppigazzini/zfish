@@ -339,6 +339,28 @@ pub fn doMove(
     dts.ksq = kingSquare(pos, us);
 }
 
+// Approximate the key the position would have AFTER M, cheaply enough to prefetch its TT
+// cluster before the make runs (upstream Position::prefetch_key). Model the from/to/captured
+// psq toggles and the side flip only: castling, en passant and promotion keys are left wrong,
+// so for those rare moves the prefetch lands on an unused line -- harmless, it is only a hint.
+// zob_psq[NO_PIECE] is all-zero, so the captured toggle is unconditional (a no-op on a quiet
+// move). Apply the rule50 key mix for the post-move counter (upstream adjust_key50<true>:
+// threshold 14-1=13, pre-move rule50), which pawn moves and captures zero and so skip.
+pub inline fn prefetchKey(pos: *const Position, m: u16) u64 {
+    const from = moveFrom(m);
+    const to = moveTo(m);
+    const pc = pos.board[from];
+    const captured = pos.board[to];
+
+    var k = pos.st.key ^ zobrist.zob_side_val;
+    k ^= zobrist.zob_psq[psqIdx(captured, to)] ^ zobrist.zob_psq[psqIdx(pc, to)] ^ zobrist.zob_psq[psqIdx(pc, from)];
+
+    if (captured != 0 or (pc & 7) == pawn_pt) return k;
+    if (pos.st.rule50 < 13) return k;
+    const seed: u64 = @intCast(@divTrunc(pos.st.rule50 - 13, 8));
+    return k ^ (seed *% 6364136223846793005 +% 1442695040888963407);
+}
+
 pub fn undoMove(pos_ptr: *Position, m: u16) void {
     const pos = pos_ptr;
     pos.side_to_move ^= 1;
