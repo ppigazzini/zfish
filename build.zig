@@ -373,6 +373,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_acc", .imp = "position_types", .to = "position_types" },
         .{ .from = "search_acc", .imp = "search_types", .to = "search_types" },
         .{ .from = "search_acc", .imp = "search_ctx", .to = "search_ctx" },
+        .{ .from = "search_acc", .imp = "tt", .to = "tt" },
         .{ .from = "search_id", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_id", .imp = "option_source", .to = "option_source" },
         .{ .from = "search_id", .imp = "timeman", .to = "timeman" },

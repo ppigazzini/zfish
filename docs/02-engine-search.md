@@ -253,7 +253,12 @@ packs a 16-bit key, depth, a generation/bound/is-PV byte, the move, the value, a
 static eval. `probeTable` returns the hit data *and* a writer pointer — the entry to
 replace, chosen by depth and relative age — so a node probes once and stores through
 the same slot. `adjustKey50` (`search_qsearch.zig`) perturbs the key near the 50-move
-boundary so positions differing only in rule50 hash apart. Values are mate-distance
+boundary so positions differing only in rule50 hash apart. `doMoveAcc` issues a
+`tt.prefetch` for the child cluster before making the move — keyed by
+`move_do.prefetchKey`, an approximate post-move key (from/to/captured psq toggles, side
+flip, and the rule50 mix; castling/en-passant/promotion left wrong, so those rare moves
+prefetch an unused line) reached through the same `firstEntryIndex` the probe uses — so
+the miss latency hides behind the make and accumulator push. Values are mate-distance
 corrected on the way in and out (`search.valueToTt` / `valueFromTt`). The generation
 advances once per search in `ssTmInit`; `entryPenalize` decrements a stored depth when
 a TT entry's window bound is the only reason a cutoff was refused. That decrement — and the

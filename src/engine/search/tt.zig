@@ -239,6 +239,18 @@ pub fn firstEntryIndex(key: u64, cluster_count: usize) usize {
     return @intCast((@as(u128, key) * @as(u128, cluster_count)) >> 64);
 }
 
+// Preload the cluster KEY maps onto, a non-blocking read hint issued a few instructions
+// ahead of the matching probeTable so the line is arriving by the time the probe reads it
+// (upstream tt.cpp first_entry, called from the search do_move). A no-op before the table
+// exists; the hint changes no value, only when the line lands. Uses the SAME mul_hi64 index
+// the probe uses. Read hint (rw=.read), highest temporal locality (locality=3): the cluster
+// is about to be probed and re-read on a hit.
+pub inline fn prefetch(table: ?[*]TtCluster, cluster_count: usize, key: u64) void {
+    const clusters = table orelse return;
+    if (cluster_count == 0) return;
+    @prefetch(&clusters[firstEntryIndex(key, cluster_count)], .{ .rw = .read, .locality = 3, .cache = .data });
+}
+
 pub fn probe(
     cluster: *const TtCluster,
     key: u64,
