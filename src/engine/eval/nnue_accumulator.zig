@@ -257,7 +257,9 @@ pub fn stackReset(stack: *AccumulatorStack) void {
     clearComputed(bytes, psq_feature, 0);
     zeroDiff(bytes, psq_feature, 0, @sizeOf(HalfDiff));
 
-    clearComputed(bytes, threat_feature, 0);
+    // No clearComputed for threat_feature: its computed flags are write-only (nothing reads
+    // stateComputed(threat_feature)), and after threat_diff_offset=0 that slot no longer has a
+    // computed region -- writing one would be out of bounds. See nnue_acc_layout.zig.
     zeroDiff(bytes, threat_feature, 0, @sizeOf(ThreatDiffView));
 
     setStackSize(bytes, 1);
@@ -269,7 +271,7 @@ pub fn stackPush(stack: *AccumulatorStack) StackPushOutput {
     std.debug.assert(index < max_stack_size);
 
     clearComputed(bytes, psq_feature, index);
-    clearComputed(bytes, threat_feature, index);
+    // threat_feature computed is write-only dead (see stackReset) -- no clear, no region.
 
     const dirty_threats: *ThreatDiffView = @ptrCast(@alignCast(diffBytesMut(threat_feature, index, stack)));
     dirty_threats.list.size_ = 0;
