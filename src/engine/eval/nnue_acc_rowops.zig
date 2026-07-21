@@ -16,16 +16,36 @@ const psqt_buckets: usize = 8;
 /// vnni512, perf_counters 10-round paired) -- it drops the 1024-wide row from 8 tiles to 4,
 /// matching upstream SIMDTiling's 2-tile shape and cutting the inner-loop setup. Independent of
 /// nnue_acc_layout's transform_vec_width.
-// Lane count for the combined accumulator row apply. Target-aware: 256 on avx512 (16 zmm hold the
-// 4-register accumulator live across all four column loops; 512 would need 32 zmm and spill), but
-// 64 everywhere else. A paired HW-counter check found 128 REGRESSES sse41 (+1.4% instr, +4.1%
-// cycles): with only 16 xmm even 128 spills. aarch64 keeps 64, unmeasured. Distinct from the
-// transform's width knob (nnue_acc_layout).
-const row_tile_width: usize = if (@import("builtin").cpu.arch == .x86_64 and
-    @import("std").Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512f)) 256 else 64;
+// Lane count for the single-@Vector row ops -- the refresh dual-store and the additive/split
+// row helpers (accRows, applyAccumulatorDeltaDualStoreI16). Target-aware: 256 on avx512, 64
+// everywhere else. A paired HW-counter check found 128 REGRESSES sse41 (+1.4% instr, +4.1%
+// cycles): with only 16 xmm even 128 spills. aarch64 keeps 64, unmeasured. The hot combined
+// apply uses its own register-array knob (apply_num_regs) instead. Distinct from the transform's
+// width knob (nnue_acc_layout).
+const is_avx512 = @import("builtin").cpu.arch == .x86_64 and
+    @import("std").Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512f);
+
+const row_tile_width: usize = if (is_avx512) 256 else 64;
 comptime {
     if (half_dimensions % row_tile_width != 0)
         @compileError("half_dimensions must be a multiple of row_tile_width");
+}
+
+/// Shape the combined-apply tile as upstream's SIMDTiling does: an ARRAY of `apply_num_regs`
+/// SIMD registers, each `apply_reg_lanes` i16 wide, widening the threat i8 rows one register at a
+/// time -- never materializing the whole widened tile at once. That per-register widen is what
+/// lets the tile reach 512 (upstream's 2-tile shape over the 1024 row) on avx512: a single
+/// @Vector(512,i16) needs 16 zmm live and a transient 16-zmm i16 result during the whole-tile
+/// i8->i16 widen, which spills; widening one 32-lane register at a time keeps only the 16 acc
+/// registers live plus a single transient. Non-avx512 keeps num_regs=1, so the kernel stays
+/// byte-identical to the prior single-@Vector form (a [1]@Vector(64,i16) unrolls to the same
+/// code). The `k` index MUST stay comptime (`inline for`) or the acc array spills to memory (D8).
+const apply_reg_lanes: usize = if (is_avx512) 32 else 64;
+const apply_num_regs: usize = if (is_avx512) 16 else 1;
+const apply_tile_h: usize = apply_reg_lanes * apply_num_regs;
+comptime {
+    if (half_dimensions % apply_tile_h != 0)
+        @compileError("half_dimensions must be a multiple of apply_tile_h");
 }
 
 /// Apply a whole row list to the accumulator, upstream's `apply_combined` way: tile the
@@ -212,10 +232,11 @@ pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i3
 }
 
 // Port (hand-vectorized) upstream Stockfish's `apply_combined` (nnue_accumulator.cpp):
-// one combined accumulator (HalfKA + Threats), loaded per tile ONCE into a register,
-// with both feature sets' removed/added weight rows applied in-register (psq int16 rows
-// via i16 add/sub, threat int8 rows widened to i16), then stored ONCE. Replaces the two
-// separate load/store round-trips (one per feature) of the split-accumulator design.
+// one combined accumulator (HalfKA + Threats), loaded per tile ONCE into a register array
+// (`acc[apply_num_regs]`, upstream's SIMDTiling shape), with both feature sets' removed/added
+// weight rows applied in-register (psq int16 rows via i16 add/sub, threat int8 rows widened to
+// i16 one register at a time), then stored ONCE. Replaces the two separate load/store
+// round-trips (one per feature) of the split-accumulator design.
 // Integer +%/-% commute under 2's-complement i16 wrap (upstream `_mm*_add/sub_epi16`), so
 // the final tile value equals
 // source + Σpsq_added − Σpsq_removed + Σthr_added − Σthr_removed regardless of order:
@@ -230,28 +251,50 @@ pub fn applyCombinedDelta(
     psq_weights: [*]const i16,
     thr_weights: [*]const i8,
 ) void {
-    const V = row_tile_width;
-    const Vi16 = @Vector(V, i16);
-    var d: usize = 0;
-    while (d < half_dimensions) : (d += V) {
-        var acc: Vi16 = source.ptr[d..][0..V].*;
+    const L = apply_reg_lanes;
+    const N = apply_num_regs;
+    const RegI16 = @Vector(L, i16);
+    const RegI8 = @Vector(L, i8);
+    var t: usize = 0;
+    while (t < half_dimensions) : (t += L * N) {
+        // Hold the whole tile as N registers, mirroring upstream `vec_t acc[NumRegs]`. The k
+        // index is comptime (`inline for`), so the array lives in registers across every column
+        // loop (D8); the runtime `index` only picks the weight row's base.
+        var acc: [N]RegI16 = undefined;
+        inline for (0..N) |k| {
+            acc[k] = source.ptr[t + k * L ..][0..L].*;
+        }
         for (psq_removed) |index| {
-            const w: Vi16 = (psq_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
-            acc -%= w;
+            const base = @as(usize, index) * half_dimensions + t;
+            inline for (0..N) |k| {
+                const w: RegI16 = (psq_weights + base + k * L)[0..L].*;
+                acc[k] -%= w;
+            }
         }
         for (psq_added) |index| {
-            const w: Vi16 = (psq_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
-            acc +%= w;
+            const base = @as(usize, index) * half_dimensions + t;
+            inline for (0..N) |k| {
+                const w: RegI16 = (psq_weights + base + k * L)[0..L].*;
+                acc[k] +%= w;
+            }
         }
         for (thr_removed) |index| {
-            const wraw: @Vector(V, i8) = (thr_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
-            acc -%= @as(Vi16, wraw); // i8 -> i16 widen
+            const base = @as(usize, index) * half_dimensions + t;
+            inline for (0..N) |k| {
+                const wraw: RegI8 = (thr_weights + base + k * L)[0..L].*;
+                acc[k] -%= @as(RegI16, wraw); // per-register i8 -> i16 widen, one vpmovsxbw
+            }
         }
         for (thr_added) |index| {
-            const wraw: @Vector(V, i8) = (thr_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
-            acc +%= @as(Vi16, wraw);
+            const base = @as(usize, index) * half_dimensions + t;
+            inline for (0..N) |k| {
+                const wraw: RegI8 = (thr_weights + base + k * L)[0..L].*;
+                acc[k] +%= @as(RegI16, wraw);
+            }
         }
-        target.ptr[d..][0..V].* = acc;
+        inline for (0..N) |k| {
+            target.ptr[t + k * L ..][0..L].* = acc[k];
+        }
     }
 }
 
