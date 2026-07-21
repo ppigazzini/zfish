@@ -94,6 +94,62 @@ pub fn accumulateRowsI8(target: []i16, rows: []const u32, weights: [*]const i8) 
     accRows(i8, true, target, rows, weights);
 }
 
+/// Apply the removed/added row lists to `cache` and write the result to BOTH `cache`
+/// (the finny-table entry, updated in place) and `state` (the stack's refreshed copy)
+/// in ONE tiled pass. Ports upstream's refresh, which stores the tiled accumulation
+/// straight into the accumulator AND the cache entry -- so the cache-to-state copy is a
+/// second register store, not a separate compiler_rt @memcpy of the whole 1024-wide row.
+/// Bit-exact: the stored value is source -Σremoved +Σadded, the same as the prior
+/// two-pass in-place delta followed by a copy (i16 +%/-% commute), and both targets get
+/// exactly that value, so ReleaseSafe sees the identical run.
+pub fn applyAccumulatorDeltaDualStoreI16(
+    cache: []i16,
+    state: []i16,
+    removed: []const u32,
+    added: []const u32,
+    weights: [*]const i16,
+) void {
+    const V = row_tile_width;
+    const Vi16 = @Vector(V, i16);
+    var d: usize = 0;
+    while (d < half_dimensions) : (d += V) {
+        var acc: Vi16 = cache.ptr[d..][0..V].*;
+        for (removed) |index| {
+            const w: Vi16 = (weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            acc -%= w;
+        }
+        for (added) |index| {
+            const w: Vi16 = (weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            acc +%= w;
+        }
+        cache.ptr[d..][0..V].* = acc;
+        state.ptr[d..][0..V].* = acc;
+    }
+}
+
+/// The psqt half of applyAccumulatorDeltaDualStoreI16: apply both column lists to the
+/// single 8-bucket i32 vector and store it to both the cache entry and the stack state.
+pub fn applyPsqtDeltaDualStore(
+    cache: []i32,
+    state: []i32,
+    removed: []const u32,
+    added: []const u32,
+    weights: [*]const i32,
+) void {
+    const V = @Vector(psqt_buckets, i32);
+    var acc: V = cache[0..psqt_buckets].*;
+    for (removed) |index| {
+        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        acc -%= w;
+    }
+    for (added) |index| {
+        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        acc +%= w;
+    }
+    cache[0..psqt_buckets].* = acc;
+    state[0..psqt_buckets].* = acc;
+}
+
 pub fn applyPsqtDelta(
     target: []i32,
     source: []const i32,
