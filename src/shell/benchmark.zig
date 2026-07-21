@@ -41,6 +41,13 @@ fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![*:0]u8 {
     const limit = token_iter.next() orelse "13";
     const fen_file = token_iter.next() orelse "default";
     const limit_type = token_iter.next() orelse "depth";
+    // Sixth token: repeat count for the `setup` workload (ignored otherwise). Repeating the
+    // position list amortises the fixed one-time startup (net load, magic init, large-page
+    // zero-fill) so the recurring per-search / per-refresh setup work dominates the profile.
+    const setup_repeat: usize = blk: {
+        const tok = token_iter.next() orelse break :blk 20;
+        break :blk std.fmt.parseInt(usize, tok, 10) catch 20;
+    };
 
     const go = if (std.mem.eql(u8, limit_type, "eval"))
         "eval"
@@ -58,6 +65,25 @@ fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![*:0]u8 {
         const defaults: []const []const u8 = &Defaults;
         for (defaults) |line| {
             try appendBenchmarkLine(&commands, allocator, line, go);
+        }
+    } else if (std.mem.eql(u8, fen_file, "setup")) {
+        // Setup/refresh-weighted workload: emit `ucinewgame` before EACH default position.
+        // A standard bench issues one `ucinewgame` and amortises the per-search setup (the
+        // low-ply / worker-history fills, and the refresh-cache clear + full accumulator
+        // refresh) over a deep node-dominated tree, so those costs fall below the measurement
+        // floor. Firing `ucinewgame` per position instead recurs the worker-history clear and
+        // the finny-cache reset ~50x and forces every position's first eval to refresh from an
+        // emptied cache -- run it at a SHALLOW depth (e.g. `bench 16 1 2 setup`) so the setup
+        // work dominates the node work. Deterministic (fixed positions/depth, resets between);
+        // a SEPARATE workload that leaves the `bench 16 1 13` anchor untouched.
+        const defaults: []const []const u8 = &Defaults;
+        var rep: usize = 0;
+        while (rep < setup_repeat) : (rep += 1) {
+            for (defaults) |line| {
+                if (std.mem.indexOf(u8, line, "setoption") == null)
+                    try appendCommand(&commands, allocator, "ucinewgame");
+                try appendBenchmarkLine(&commands, allocator, line, go);
+            }
         }
     } else if (std.mem.eql(u8, fen_file, "current")) {
         try appendBenchmarkLine(&commands, allocator, current_fen, go);
