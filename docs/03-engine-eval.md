@@ -149,7 +149,7 @@ flowchart TD
     B --> C{"is that state computed?"}
     C -->|yes| D["applyCombined forward,<br/>last_usable+1 .. top"]
     C -->|no| E["refreshCombined at the top of the stack"]
-    E --> E1["refreshLatestPsq: diff the cache entry's<br/>board against the real one -> removed/added,<br/>update the entry in place, copy it out"]
+    E --> E1["refreshLatestPsq: diff the cache entry's<br/>board against the real one -> removed/added,<br/>apply once, storing to the entry AND the state"]
     E1 --> E2["fullAppendActive: add every threat<br/>row on top (additive, no zeroing)"]
     E2 --> F["applyCombined backward,<br/>top-1 .. last_usable"]
     D --> G["state computed for this perspective"]
@@ -167,9 +167,11 @@ is loaded and stored once per tile rather than once per row. The PSQT delta
 **Refresh.** A full refresh never rebuilds from an empty board. The refresh cache
 (`nnue_refresh_cache.zig`) holds one entry per (king square, perspective) — the
 accumulation, the PSQT values, and the board that produced them. `refreshLatestPsq`
-diffs the entry's stored board against the current one, applies just that difference
-to the entry in place, copies the result into the stack state, and stores the new
-board back. `clearRefreshCache` seeds every entry with the feature-transformer
+diffs the entry's stored board against the current one, then applies that difference
+in one tiled pass whose store writes the refreshed row into both the entry (in place,
+for next time) and the stack state — no separate copy, mirroring upstream, which
+stores the tiled refresh straight into the accumulator. It then stores the new board
+back. `clearRefreshCache` seeds every entry with the feature-transformer
 biases — the empty-board accumulator — and is called at worker construction. The
 threat features are then accumulated on top of the refreshed PSQ result, additively,
 which is what makes the single slot hold `psq + threat`.

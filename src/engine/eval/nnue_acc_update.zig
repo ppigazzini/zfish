@@ -14,9 +14,9 @@ const nnue_feature = @import("nnue_feature");
 // Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
 // so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
-const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
+const applyAccumulatorDeltaDualStoreI16 = nnue_acc_rowops.applyAccumulatorDeltaDualStoreI16;
 const accumulateRowsI8 = nnue_acc_rowops.accumulateRowsI8;
-const applyPsqtDeltaInPlace = nnue_acc_rowops.applyPsqtDeltaInPlace;
+const applyPsqtDeltaDualStore = nnue_acc_rowops.applyPsqtDeltaDualStore;
 const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
 const applyCombinedDelta = nnue_acc_rowops.applyCombinedDelta;
 const applyCombinedPsqtDelta = nnue_acc_rowops.applyCombinedPsqtDelta;
@@ -36,9 +36,7 @@ const nnue_refresh_cache = @import("nnue_refresh_cache");
 pub const RefreshCache = nnue_refresh_cache.RefreshCache;
 pub const clearRefreshCache = nnue_refresh_cache.clearRefreshCache;
 const cacheEntry = nnue_refresh_cache.cacheEntry;
-const cacheEntryAccumulationConst = nnue_refresh_cache.cacheEntryAccumulationConst;
 const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;
-const cacheEntryPsqtConst = nnue_refresh_cache.cacheEntryPsqtConst;
 const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
@@ -218,14 +216,20 @@ fn refreshLatestPsq(
         }
     }
 
-    applyAccumulatorDeltaInPlaceI16(
+    // Apply the finny-cache delta and write the refreshed row into BOTH the cache entry
+    // (in place, for next time) and the stack state (the copy this ply needs) in one
+    // tiled pass -- upstream stores the tiled refresh straight into the accumulator, so
+    // the cache-to-state copy is a register store, not a separate compiler_rt @memcpy.
+    applyAccumulatorDeltaDualStoreI16(
         cacheEntryAccumulationMut(entry_ptr),
+        stateAccumulationMut(psq_feature, latest_index, stack, perspective),
         removed[0..removed_len],
         added[0..added_len],
         featureTransformerPsqWeights(feature_transformer),
     );
-    applyPsqtDeltaInPlace(
+    applyPsqtDeltaDualStore(
         cacheEntryPsqtMut(entry_ptr),
+        statePsqtMut(psq_feature, latest_index, stack, perspective),
         removed[0..removed_len],
         added[0..added_len],
         featureTransformerPsqPsqtWeights(feature_transformer),
@@ -234,14 +238,6 @@ fn refreshLatestPsq(
     @memcpy(entry_pieces, pos.board[0..]);
     setCacheEntryPieceBb(entry_ptr, pos.by_type_bb[0]);
 
-    @memcpy(
-        stateAccumulationMut(psq_feature, latest_index, stack, perspective),
-        cacheEntryAccumulationConst(entry_ptr),
-    );
-    @memcpy(
-        statePsqtMut(psq_feature, latest_index, stack, perspective),
-        cacheEntryPsqtConst(entry_ptr),
-    );
     stateBytesMut(psq_feature, latest_index, stack)[computed_offset + perspective] = 1;
 }
 
