@@ -187,10 +187,14 @@ fn refreshLatestPsq(
     var added_len: usize = 0;
     var square: usize = 0;
 
+    // One pass over the squares: load entry/board and test old != new once, then route
+    // the changed square to removed and/or added. Both lists stay in ascending-square
+    // order, so the applied delta is identical to the prior two-scan form.
     while (square < square_count) : (square += 1) {
         const old_piece = entry_pieces[square];
         const new_piece = pos.board[square];
-        if (old_piece != new_piece and old_piece != no_piece) {
+        if (old_piece == new_piece) continue;
+        if (old_piece != no_piece) {
             removed[removed_len] = nnue_feature.halfMakeIndex(.{
                 .perspective = perspective,
                 .square = @intCast(square),
@@ -199,13 +203,7 @@ fn refreshLatestPsq(
             });
             removed_len += 1;
         }
-    }
-
-    square = 0;
-    while (square < square_count) : (square += 1) {
-        const old_piece = entry_pieces[square];
-        const new_piece = pos.board[square];
-        if (old_piece != new_piece and new_piece != no_piece) {
+        if (new_piece != no_piece) {
             added[added_len] = nnue_feature.halfMakeIndex(.{
                 .perspective = perspective,
                 .square = @intCast(square),
