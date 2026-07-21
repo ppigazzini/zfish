@@ -155,6 +155,15 @@ mask/multiply/shift/load. `attacks(pt, sq, occupied)` dispatches: knights and
 kings read a leaper table, bishops and rooks go through the magics, queens OR the
 two.
 
+`computeMagicIndex` has two forms, chosen at comptime by the BMI2 target feature.
+On BMI2 targets it drops the multiply and per-square shift for a single
+`@pext(occupied, mask)` — the mask bits compact into a dense `[0, 2^popcount)`
+index directly, upstream's PEXT layout. `initMagics` fills the table by that same
+index, so both forms are collision-free and return the bit-identical attack set;
+the fixed-shift multiply/shift form stays for non-BMI2 targets. Because the pext
+fill never collides, the magic search on a BMI2 build validates on its first
+candidate, so it costs almost nothing at startup.
+
 ### Derived geometry
 
 `initDerivedTables` builds three square-pair tables from the magics:

@@ -1,4 +1,18 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
+// Gate the PEXT slider-index path on the BMI2 target feature. This tracks the arch matrix's
+// USE_PEXT macro 1:1 (every USE_PEXT tier sets .bmi2 in target_features and no other tier
+// does), and unlike @import("build_options") it is also visible when this file is compiled as
+// a standalone unit-test root -- matching how nnue_affine.zig gates its ISA kernels.
+const use_pext = builtin.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .bmi2);
+
+// LLVM's BMI2 parallel-bit-extract (PEXT). Referenced only on the use_pext path, behind
+// the comptime gate in computeMagicIndex, so non-BMI2 targets never analyse or lower it.
+const pext64 = struct {
+    extern fn @"llvm.x86.bmi.pext.64"(u64, u64) u64;
+}.@"llvm.x86.bmi.pext.64";
 
 // Alias back the geometry/magic-index helpers, which now live in a std-only
 // leaf (top-level decls are order-independent).
@@ -262,7 +276,16 @@ fn attacksBb(pt: PieceType, square: usize, occupied: u64, magics: *[64][2]Magic)
     return magic_ref.attacks[computeMagicIndex(magic_ref, occupied)];
 }
 
+// Index the shared magic attack table. On BMI2 targets (use_pext) upstream drops the magic
+// multiply and per-square shift entirely: @pext(occupied, mask) compacts the masked-occupancy
+// bits into a dense [0, 2^popcount(mask)) index directly -- fewer per-node instructions.
+// initMagics fills the table by this same index, so both paths return the bit-identical attack
+// set (the bench signature is unchanged on every tier). Non-BMI2 targets keep the fixed-shift
+// magic multiply.
 fn computeMagicIndex(magic_ref: Magic, occupied: u64) usize {
+    if (comptime use_pext) {
+        return @intCast(pext64(occupied, magic_ref.mask));
+    }
     return @intCast(((occupied & magic_ref.mask) *% magic_ref.magic) >> @as(u6, @intCast(magic_ref.shift)));
 }
 
