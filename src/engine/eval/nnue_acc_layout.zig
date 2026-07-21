@@ -88,7 +88,15 @@ pub const accumulator_bytes = color_count * half_dimensions * @sizeOf(i16) + col
 pub const computed_offset = color_count * half_dimensions * @sizeOf(i16) + color_count * psqt_buckets * @sizeOf(i32);
 pub const accumulator_state_bytes = roundUp(accumulator_bytes, nnue_align);
 pub const psq_diff_offset = accumulator_bytes;
-pub const threat_diff_offset = roundUp(accumulator_bytes, @alignOf(ThreatDiffView));
+// The combined accumulator lives in the psq_feature slot (see nnue_acc_update.zig), so the
+// threat slot holds ONLY its per-ply diff -- there is no threat accumulator to reserve a
+// prefix for. Place the diff at offset 0: that sheds ~4160 B of dead padding per slot (threat
+// stride ~4608 -> ~448), halving the per-thread accumulator arena and shrinking the DTLB reach
+// of the N-ply incremental-replay walk. The threat `computed` flags that used to sit in that
+// prefix are write-only (nothing reads stateComputed(threat_feature)), so their clears are
+// dropped with it (stackReset/stackPush). Port of mcfish fa04404. 0 satisfies any alignment,
+// and the slot base is nnue_align'd, so the ThreatDiffView load stays aligned.
+pub const threat_diff_offset = 0;
 pub const psq_state_stride = accumulator_state_bytes;
 pub const threat_state_stride = roundUp(threat_diff_offset + @sizeOf(ThreatDiffView), nnue_align);
 pub const psq_array_bytes = psq_state_stride * max_stack_size;
