@@ -11,16 +11,18 @@
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
 
-/// Set the lane count for the FT weight-row add/sub tile. Swept as the only variable (5c93ad7fe): 64
-/// beats 32 by +3.4%/+4.7%, 128 is flat, 256 spills. Independent of nnue_acc_layout's
-/// transform_vec_width.
-// Lane count for the combined accumulator row apply. Target-aware: 128 on avx512 (measured
-// -7.5% instr / -1.8% cycles vs 64 -- the 32 zmm registers hold the 4-register accumulator
-// live across all four column loops), but 64 everywhere else. A paired HW-counter check found
-// 128 REGRESSES sse41 (+1.4% instr, +4.1% cycles): with only 16 xmm the wider tile spills.
-// aarch64 keeps 64, unmeasured. Distinct from the transform's width knob (nnue_acc_layout).
+/// Set the lane count for the FT weight-row add/sub tile. Sweep it as the only variable: on sse41
+/// 64 beats 32 by +3.4%/+4.7%; on avx512 256 beats 128 (measured -3.6% instr / -2.5% cycles at
+/// vnni512, perf_counters 10-round paired) -- it drops the 1024-wide row from 8 tiles to 4,
+/// matching upstream SIMDTiling's 2-tile shape and cutting the inner-loop setup. Independent of
+/// nnue_acc_layout's transform_vec_width.
+// Lane count for the combined accumulator row apply. Target-aware: 256 on avx512 (16 zmm hold the
+// 4-register accumulator live across all four column loops; 512 would need 32 zmm and spill), but
+// 64 everywhere else. A paired HW-counter check found 128 REGRESSES sse41 (+1.4% instr, +4.1%
+// cycles): with only 16 xmm even 128 spills. aarch64 keeps 64, unmeasured. Distinct from the
+// transform's width knob (nnue_acc_layout).
 const row_tile_width: usize = if (@import("builtin").cpu.arch == .x86_64 and
-    @import("std").Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512f)) 128 else 64;
+    @import("std").Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512f)) 256 else 64;
 comptime {
     if (half_dimensions % row_tile_width != 0)
         @compileError("half_dimensions must be a multiple of row_tile_width");
