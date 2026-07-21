@@ -160,12 +160,9 @@ flowchart TD
 changed-feature index lists from the stored diffs, splits them into removed/added
 (inverted when stepping backward), and applies all four lists to the accumulator in
 one pass: `nnue_acc_rowops.applyCombinedDelta` tiles the accumulator, holds each
-tile in a *register array* (upstream's SIMDTiling `acc[NumRegs]` shape — 16 registers
-of 32 `i16` on AVX-512, so the tile spans 512 lanes in two passes over the 1024 row),
-and walks the weight rows *inside* the tile, widening each threat `i8` row one register
-at a time — so the accumulator is loaded and stored once per tile rather than once per
-row, and the tile can exceed a single register's width without a whole-tile widen spill.
-The PSQT delta (`applyCombinedPsqtDelta`) stays scalar.
+tile in a register, and walks the weight rows *inside* the tile — so the accumulator
+is loaded and stored once per tile rather than once per row. The PSQT delta
+(`applyCombinedPsqtDelta`) stays scalar.
 
 **Refresh.** A full refresh never rebuilds from an empty board. The refresh cache
 (`nnue_refresh_cache.zig`) holds one entry per (king square, perspective) — the
@@ -230,12 +227,10 @@ integer-exact it is also arch-invariant, so every ISA tier must agree on the
 signature. See [08-idiomatic-zig.md](08-idiomatic-zig.md) for the pattern and the
 gates that hold it.
 
-Three vector-shape knobs are independent and must not be folded into one:
-`nnue_acc_layout.transform_vec_width` (the transform's clipped-ReLU pass),
-`row_tile_width` (the single-`@Vector` weight-row tile for the refresh dual-store and
-the additive/split row ops), and `apply_num_regs`/`apply_reg_lanes` (the combined
-apply's register-array tile). The latter two are file-local to `nnue_acc_rowops.zig`;
-all three touch different loops.
+Two vector widths are independent knobs and must not be folded into one:
+`nnue_acc_layout.transform_vec_width` (the transform's clipped-ReLU pass) and
+`row_tile_width` (the weight-row tile, file-local to `nnue_acc_rowops.zig`). They
+touch different loops.
 
 ## Invariants
 
