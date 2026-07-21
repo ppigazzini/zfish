@@ -243,7 +243,18 @@ pub fn transformBucket(
             // Record which 4-byte chunks are non-zero while they are still in a register:
             // a vector compare plus a movemask, no reload of what was just stored.
             const nonzero = @as(Vg, @bitCast(bytes)) != @as(Vg, @splat(0));
-            const mask: GMask = @reduce(.Or, @select(GMask, nonzero, lane_bits, no_bits));
+            // On x86 the <N x i1> compare result lives in a mask register (vptestmd -> k, avx512)
+            // or maps to pmovmskb (sse/avx2), so bitcasting it to the N-bit integer IS the
+            // movemask: lane i -> bit i, matching the @select+@reduce weighting exactly. That
+            // avoids LLVM rebuilding a value vector and running a ~14-op horizontal OR-reduce to
+            // collapse @reduce(.Or) back to a scalar (disasm-confirmed: vptestmd then vpord +
+            // vextracti + vpshufd chain). Guarded to x86, where the i1-vector packing is
+            // bit-per-lane; other backends keep the portable path (the layout note above). The
+            // signature pins that the two produce the identical mask. Port of mcfish be1d576.
+            const mask: GMask = if (comptime @import("builtin").cpu.arch == .x86_64)
+                @bitCast(nonzero)
+            else
+                @reduce(.Or, @select(GMask, nonzero, lane_bits, no_bits));
             const bit = (offset + j) / 4;
             nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
         }
