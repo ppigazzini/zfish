@@ -278,6 +278,54 @@ inline fn affineAvx2(
     out.* = acc;
 }
 
+// Compute the OUT==1 affine as one contiguous int8 dot. For a single output the scrambled
+// weight layout is the identity (weight[i] pairs with input[i]), so fc_2 (128->1) is a plain
+// dot upstream vectorises with vpdpbusd/maddubs + a horizontal add -- zfish's OUT==1 otherwise
+// falls to the portable per-group deinterleave (measured ~116 M Ir at avx2, the 2nd-largest
+// affine cost). Dense only: fc_2 is the sole OUT==1 layer and always passes sparse=false. A pure
+// integer dot, so the reduction order is irrelevant and it stays bit-exact (signature 2792255);
+// pmaddubsw never saturates here (u8*i8 in [-16256,16129], a pair sums inside i16).
+inline fn affineOut1(
+    out: *[1]i32,
+    bias: i32,
+    weights: [*]const i8,
+    input: []const u8,
+) void {
+    const n = input.len;
+    var sum: i32 = bias;
+    var i: usize = 0;
+    if (comptime has_vnni) {
+        var acc: @Vector(16, i32) = @splat(0);
+        while (i + 64 <= n) : (i += 64) {
+            const a: @Vector(64, u8) = input[i..][0..64].*;
+            const b: @Vector(64, i8) = weights[i..][0..64].*;
+            acc = vpdpbusd16(acc, a, b);
+        }
+        sum += @reduce(.Add, acc);
+    } else if (comptime use_avx2_madd) {
+        const ones: @Vector(16, i16) = @splat(1);
+        var acc: @Vector(8, i32) = @splat(0);
+        while (i + 32 <= n) : (i += 32) {
+            const a: @Vector(32, i8) = @bitCast(@as(@Vector(32, u8), input[i..][0..32].*));
+            const b: @Vector(32, i8) = weights[i..][0..32].*;
+            acc += pmaddwd256(pmaddubsw256(a, b), ones);
+        }
+        sum += @reduce(.Add, acc);
+    } else {
+        const ones: @Vector(8, i16) = @splat(1);
+        var acc: @Vector(4, i32) = @splat(0);
+        while (i + 16 <= n) : (i += 16) {
+            const a: @Vector(16, i8) = @bitCast(@as(@Vector(16, u8), input[i..][0..16].*));
+            const b: @Vector(16, i8) = weights[i..][0..16].*;
+            acc += pmaddwd128(pmaddubsw128(a, b), ones);
+        }
+        sum += @reduce(.Add, acc);
+    }
+    // Add any inputs the vector step could not cover (fc_2 is 128, so the tail is empty).
+    while (i < n) : (i += 1) sum += @as(i32, input[i]) * @as(i32, weights[i]);
+    out[0] = sum;
+}
+
 pub inline fn affineDpbusd(
     comptime OUT: usize,
     comptime sparse: bool,
@@ -287,6 +335,10 @@ pub inline fn affineDpbusd(
     input: []const u8,
     nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {
+    if (comptime (OUT == 1 and !sparse and use_maddubs)) {
+        affineOut1(out, biases[0], weights, input);
+        return;
+    }
     if (comptime (has_vnni and OUT % 16 == 0)) {
         affineVnni(OUT, sparse, out, biases, weights, input, nnz);
         return;
