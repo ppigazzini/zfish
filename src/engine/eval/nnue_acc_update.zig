@@ -187,30 +187,41 @@ fn refreshLatestPsq(
     var added_len: usize = 0;
     var square: usize = 0;
 
-    // One pass over the squares: load entry/board and test old != new once, then route
-    // the changed square to removed and/or added. Both lists stay in ascending-square
-    // order, so the applied delta is identical to the prior two-scan form.
-    while (square < square_count) : (square += 1) {
-        const old_piece = entry_pieces[square];
-        const new_piece = pos.board[square];
-        if (old_piece == new_piece) continue;
-        if (old_piece != no_piece) {
-            removed[removed_len] = nnue_feature.halfMakeIndex(.{
-                .perspective = perspective,
-                .square = @intCast(square),
-                .piece = old_piece,
-                .king_square = king_square,
-            });
-            removed_len += 1;
-        }
-        if (new_piece != no_piece) {
-            added[added_len] = nnue_feature.halfMakeIndex(.{
-                .perspective = perspective,
-                .square = @intCast(square),
-                .piece = new_piece,
-                .king_square = king_square,
-            });
-            added_len += 1;
+    // Find the changed squares upstream's way (get_changed_pieces): compare 8 squares at a
+    // time as one u64 and skip a fully-unchanged chunk with a single test, instead of eight
+    // per-square compares. After a refresh most of the 64 squares match the cache, so nearly
+    // every chunk skips; only a chunk that holds a change falls to the per-square routing.
+    // Bit-identical to the scalar scan -- the per-square logic and ascending-square order are
+    // unchanged, the u64 guard only elides squares proven equal. square_count (64) is a
+    // multiple of 8, so the chunk loop covers the board exactly.
+    while (square < square_count) : (square += 8) {
+        const old8: u64 = @bitCast(entry_pieces[square..][0..8].*);
+        const new8: u64 = @bitCast(pos.board[square..][0..8].*);
+        if (old8 == new8) continue;
+        inline for (0..8) |k| {
+            const sq = square + k;
+            const old_piece = entry_pieces[sq];
+            const new_piece = pos.board[sq];
+            if (old_piece != new_piece) {
+                if (old_piece != no_piece) {
+                    removed[removed_len] = nnue_feature.halfMakeIndex(.{
+                        .perspective = perspective,
+                        .square = @intCast(sq),
+                        .piece = old_piece,
+                        .king_square = king_square,
+                    });
+                    removed_len += 1;
+                }
+                if (new_piece != no_piece) {
+                    added[added_len] = nnue_feature.halfMakeIndex(.{
+                        .perspective = perspective,
+                        .square = @intCast(sq),
+                        .piece = new_piece,
+                        .king_square = king_square,
+                    });
+                    added_len += 1;
+                }
+            }
         }
     }
 
