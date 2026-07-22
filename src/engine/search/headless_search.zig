@@ -34,7 +34,7 @@ pub const Result = struct {
     nodes: u64,
 };
 
-// Hold the process-static search context (one search at a time). The 13.2 MB Worker block is a
+// Hold the process-static search context (one search at a time). The ~4.5 MB Worker block is a
 // BSS static; the small scaffolding structs sit beside it. All are referenced by the
 // Worker via pointers, so they must outlive the search -- statics guarantee that.
 var g_worker: [worker_layout.worker_size]u8 align(worker_layout.worker_align) = undefined;

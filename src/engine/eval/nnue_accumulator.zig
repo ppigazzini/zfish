@@ -82,6 +82,7 @@ const DirtyThreatRaw = layout.DirtyThreatRaw;
 const DirtyThreatListView = layout.DirtyThreatListView;
 const ThreatDiffView = layout.ThreatDiffView;
 pub const AccumulatorStack = layout.AccumulatorStack;
+pub const arena_bytes = layout.arena_bytes;
 const BridgePositionSnapshot = layout.BridgePositionSnapshot;
 const accumulator_bytes = layout.accumulator_bytes;
 const computed_offset = layout.computed_offset;
