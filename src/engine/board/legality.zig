@@ -69,9 +69,8 @@ pub fn legal(pos: *const Position, m: u16) bool {
     const from = moveFrom(m);
     const orig_to = moveTo(m);
 
-    // Compute the occupancy and opponent operands inside the branches that need them,
-    // as upstream does: the dominant not-pinned exit below reads neither, and LLVM
-    // measurably does not sink the hoisted loads past the early returns.
+    // Compute the occupancy and opponent operands inside the branches that need them;
+    // the not-pinned exit below reads neither.
     if (moveTypeOf(m) == mt_castling) {
         const them = us ^ 1;
         const all = pos.by_type_bb[0];
@@ -233,9 +232,8 @@ pub fn givesCheck(pos_ptr: *const Position, m: u16) bool {
     const from = moveFrom(m);
     const to = moveTo(m);
 
-    // Detect a direct check. Compute the move type, occupancy and king bitboard lazily
-    // in the branches below, as upstream does: this hit and the mt_normal fall-through
-    // dominate, need none of them, and LLVM measurably does not sink the hoisted loads.
+    // Detect a direct check. Compute the move type, occupancy and king bitboard in the
+    // branches below; this hit and the mt_normal fall-through need none of them.
     if ((pos.st.check_squares[pieceTypeOn(pos, from)] & sqBb(to)) != 0) return true;
 
     // Detect a discovered check.

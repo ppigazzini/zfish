@@ -34,9 +34,9 @@ const sideToMove = position_query.sideToMove;
 const gamePly = position_query.gamePly;
 
 comptime {
-    // Pin the Worker's embedded arena to the eval zone's layout: a drift strands dead
-    // bytes AND parks worker_construct's size-sentinel write (arena end - 64) off the
-    // live size field, which stackReset here would then mask until a pre-reset read.
+    // Pin the Worker's embedded arena size to the eval zone's layout, so the
+    // constructor's size-sentinel write (arena end - 64) lands on the arena's live
+    // size field.
     if (worker_layout.accumulator_stack_size != nnue_acc.arena_bytes)
         @compileError("worker_layout.accumulator_stack_size must equal nnue_acc_layout.arena_bytes");
 }
