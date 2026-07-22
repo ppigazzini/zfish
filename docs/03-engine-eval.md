@@ -52,9 +52,11 @@ three candidates in order:
 | `root_directory` | the binary's own directory |
 
 Each candidate is skipped once a net of that name is already current. `loadUserNet`
-reads the whole file into an arena and hands the bytes to `loadNetworkBytes`, which
-walks header → feature transformer → the eight layer stacks and requires the
-consumed byte count to equal the file length exactly.
+maps the file read-only (POSIX `mmap`; Windows and an unmappable filesystem fall
+back to a whole-file read into an arena) and hands the bytes to `loadNetworkBytes`,
+which walks header → feature transformer → the eight layer stacks and requires the
+consumed byte count to equal the file length exactly. The parse copies every weight
+into the Zig-owned storage, so the mapping is released as soon as it returns.
 
 **The net is an external runtime input, not a build artifact.** The "embedded" net is
 an unconditional one-byte stub (`network.zig`) that always fails to parse, so the real

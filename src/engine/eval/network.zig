@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const nnue_parse = @import("nnue_parse.zig");
 const nnue_hash = @import("nnue_hash.zig");
 const weight_storage = @import("nnue_weight_storage.zig");
@@ -222,6 +223,24 @@ fn loadUserNet(dir: []const u8, evalfile_path: []const u8) void {
     defer file.close(io);
 
     const stat = file.stat(io) catch return;
+
+    // Map the blob instead of read-then-copy where the OS can (POSIX): the parse
+    // walks every byte exactly once and copies the weights into the Zig-owned
+    // storage, so a read-only MAP_PRIVATE view faults the shared page-cache pages
+    // in as the parse reaches them -- no transient heap buffer the size of the
+    // net and no second full pass over its bytes. Windows and an unmappable
+    // filesystem fall back to the buffered read below.
+    if (builtin.os.tag != .windows and stat.size > 0) {
+        const len: usize = @intCast(stat.size);
+        const raw = std.c.mmap(null, len, .{ .READ = true }, .{ .TYPE = .PRIVATE }, file.handle, 0);
+        if (raw != std.c.MAP_FAILED) {
+            defer _ = std.c.munmap(@alignCast(raw), len);
+            const mapped: [*]const u8 = @ptrCast(raw);
+            _ = loadNetworkBytes(mapped[0..len], evalfile_path);
+            return;
+        }
+    }
+
     var reader_buffer: [4096]u8 = undefined;
     var reader = file.reader(io, &reader_buffer);
 
