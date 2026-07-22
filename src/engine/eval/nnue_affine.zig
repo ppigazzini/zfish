@@ -52,6 +52,16 @@ const pmaddwd256 = struct {
     extern fn @"llvm.x86.avx2.pmadd.wd"(@Vector(16, i16), @Vector(16, i16)) @Vector(8, i32);
 }.@"llvm.x86.avx2.pmadd.wd";
 
+/// Load one 16/32/64-byte weight chunk asserting alignment `A` on the load itself: a
+/// runtime-offset slice of a many-pointer degrades to align(1), and non-VEX SSE folds a
+/// load into pmaddubsw's m128 operand only when >=16-byte alignment is provable. The
+/// scrambled layout keeps every chunk offset a multiple of its width, and the weight
+/// tables are 64-aligned allocations, so the assert holds (ReleaseSafe checks it).
+inline fn loadW(comptime N: usize, comptime A: usize, p: [*]const i8, off: usize) @Vector(N, i8) {
+    const ap: *align(A) const [N]i8 = @ptrCast(@alignCast(p + off));
+    return ap.*;
+}
+
 // acc(i32x16) += the 4-way int8 dot of a(u8x64) and b(i8x64) over its 16 groups of 4.
 inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i8)) @Vector(16, i32) {
     return vpdpbusd512(acc, @bitCast(a), @bitCast(b));
@@ -99,8 +109,8 @@ inline fn affineVnni(
     comptime OUT: usize,
     comptime sparse: bool,
     out: *[OUT]i32,
-    biases: [*]const i32,
-    weights: [*]const i8,
+    biases: [*]align(64) const i32,
+    weights: [*]align(64) const i8,
     input: []const u8,
     nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {
@@ -144,7 +154,7 @@ inline fn affineVnni(
                         const in4: [4]u8 = in_base[i * 4 ..][0..4].*;
                         const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
                         inline for (0..chunks) |c| {
-                            const b: @Vector(64, i8) = (w_base + i * OUT * 4 + c * 64)[0..64].*;
+                            const b: @Vector(64, i8) = loadW(64, 64, w_base, i * OUT * 4 + c * 64);
                             acc[ch * chunks + c] = vpdpbusd16(acc[ch * chunks + c], a, b);
                         }
                     }
@@ -159,7 +169,7 @@ inline fn affineVnni(
                 const in4: [4]u8 = input[g * 4 ..][0..4].*;
                 const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
                 inline for (0..chunks) |c| {
-                    const b: @Vector(64, i8) = weights[g * OUT * 4 + c * 64 ..][0..64].*;
+                    const b: @Vector(64, i8) = loadW(64, 64, weights, g * OUT * 4 + c * 64);
                     acc[ch * chunks + c] = vpdpbusd16(acc[ch * chunks + c], a, b);
                 }
             }
@@ -181,8 +191,8 @@ inline fn affineSsse3(
     comptime OUT: usize,
     comptime sparse: bool,
     out: *[OUT]i32,
-    biases: [*]const i32,
-    weights: [*]const i8,
+    biases: [*]align(64) const i32,
+    weights: [*]align(64) const i8,
     input: []const u8,
     nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {
@@ -206,7 +216,7 @@ inline fn affineSsse3(
                 const in4: [4]u8 = in_base[i * 4 ..][0..4].*;
                 const inpat: @Vector(16, i8) = @bitCast(@as(@Vector(4, u32), @splat(@as(u32, @bitCast(in4)))));
                 inline for (0..OUT / 4) |c| {
-                    const w: @Vector(16, i8) = w_base[i * OUT * 4 + c * 16 ..][0..16].*;
+                    const w: @Vector(16, i8) = loadW(16, 16, w_base, i * OUT * 4 + c * 16);
                     const p: @Vector(4, i32) = pmaddwd128(pmaddubsw128(inpat, w), ones);
                     acc[c * 4 ..][0..4].* = @as(@Vector(4, i32), acc[c * 4 ..][0..4].*) + p;
                 }
@@ -218,7 +228,7 @@ inline fn affineSsse3(
             const in4: [4]u8 = input[g * 4 ..][0..4].*;
             const inpat: @Vector(16, i8) = @bitCast(@as(@Vector(4, u32), @splat(@as(u32, @bitCast(in4)))));
             inline for (0..OUT / 4) |c| {
-                const w: @Vector(16, i8) = weights[g * OUT * 4 + c * 16 ..][0..16].*;
+                const w: @Vector(16, i8) = loadW(16, 16, weights, g * OUT * 4 + c * 16);
                 const p: @Vector(4, i32) = pmaddwd128(pmaddubsw128(inpat, w), ones);
                 acc[c * 4 ..][0..4].* = @as(@Vector(4, i32), acc[c * 4 ..][0..4].*) + p;
             }
@@ -235,8 +245,8 @@ inline fn affineAvx2(
     comptime OUT: usize,
     comptime sparse: bool,
     out: *[OUT]i32,
-    biases: [*]const i32,
-    weights: [*]const i8,
+    biases: [*]align(64) const i32,
+    weights: [*]align(64) const i8,
     input: []const u8,
     nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {
@@ -257,7 +267,7 @@ inline fn affineAvx2(
                 const in4: [4]u8 = in_base[i * 4 ..][0..4].*;
                 const inpat: @Vector(32, i8) = @bitCast(@as(@Vector(8, u32), @splat(@as(u32, @bitCast(in4)))));
                 inline for (0..OUT / 8) |c| {
-                    const w: @Vector(32, i8) = w_base[i * OUT * 4 + c * 32 ..][0..32].*;
+                    const w: @Vector(32, i8) = loadW(32, 32, w_base, i * OUT * 4 + c * 32);
                     const p: @Vector(8, i32) = pmaddwd256(pmaddubsw256(inpat, w), ones);
                     acc[c * 8 ..][0..8].* = @as(@Vector(8, i32), acc[c * 8 ..][0..8].*) + p;
                 }
@@ -269,7 +279,7 @@ inline fn affineAvx2(
             const in4: [4]u8 = input[g * 4 ..][0..4].*;
             const inpat: @Vector(32, i8) = @bitCast(@as(@Vector(8, u32), @splat(@as(u32, @bitCast(in4)))));
             inline for (0..OUT / 8) |c| {
-                const w: @Vector(32, i8) = weights[g * OUT * 4 + c * 32 ..][0..32].*;
+                const w: @Vector(32, i8) = loadW(32, 32, weights, g * OUT * 4 + c * 32);
                 const p: @Vector(8, i32) = pmaddwd256(pmaddubsw256(inpat, w), ones);
                 acc[c * 8 ..][0..8].* = @as(@Vector(8, i32), acc[c * 8 ..][0..8].*) + p;
             }
@@ -288,7 +298,7 @@ inline fn affineAvx2(
 inline fn affineOut1(
     out: *[1]i32,
     bias: i32,
-    weights: [*]const i8,
+    weights: [*]align(64) const i8,
     input: []const u8,
 ) void {
     const n = input.len;
@@ -298,7 +308,7 @@ inline fn affineOut1(
         var acc: @Vector(16, i32) = @splat(0);
         while (i + 64 <= n) : (i += 64) {
             const a: @Vector(64, u8) = input[i..][0..64].*;
-            const b: @Vector(64, i8) = weights[i..][0..64].*;
+            const b: @Vector(64, i8) = loadW(64, 64, weights, i);
             acc = vpdpbusd16(acc, a, b);
         }
         sum += @reduce(.Add, acc);
@@ -307,7 +317,7 @@ inline fn affineOut1(
         var acc: @Vector(8, i32) = @splat(0);
         while (i + 32 <= n) : (i += 32) {
             const a: @Vector(32, i8) = @bitCast(@as(@Vector(32, u8), input[i..][0..32].*));
-            const b: @Vector(32, i8) = weights[i..][0..32].*;
+            const b: @Vector(32, i8) = loadW(32, 32, weights, i);
             acc += pmaddwd256(pmaddubsw256(a, b), ones);
         }
         sum += @reduce(.Add, acc);
@@ -316,7 +326,7 @@ inline fn affineOut1(
         var acc: @Vector(4, i32) = @splat(0);
         while (i + 16 <= n) : (i += 16) {
             const a: @Vector(16, i8) = @bitCast(@as(@Vector(16, u8), input[i..][0..16].*));
-            const b: @Vector(16, i8) = weights[i..][0..16].*;
+            const b: @Vector(16, i8) = loadW(16, 16, weights, i);
             acc += pmaddwd128(pmaddubsw128(a, b), ones);
         }
         sum += @reduce(.Add, acc);
@@ -330,8 +340,8 @@ pub inline fn affineDpbusd(
     comptime OUT: usize,
     comptime sparse: bool,
     out: *[OUT]i32,
-    biases: [*]const i32,
-    weights: [*]const i8,
+    biases: [*]align(64) const i32,
+    weights: [*]align(64) const i8,
     input: []const u8,
     nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {

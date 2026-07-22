@@ -162,7 +162,12 @@ changed-feature index lists from the stored diffs, splits them into removed/adde
 one pass: `nnue_acc_rowops.applyCombinedDelta` tiles the accumulator, holds each
 tile in a register, and walks the weight rows *inside* the tile — so the accumulator
 is loaded and stored once per tile rather than once per row. The PSQT delta
-(`applyCombinedPsqtDelta`) stays scalar.
+(`applyCombinedPsqtDelta`) holds the 8-bucket i32 row as one vector the same way.
+Every weight pointer these kernels take carries `align(64)` and each row load asserts
+its alignment at the load site (`loadVec`/`loadW`): a runtime-offset slice of a
+many-pointer degrades to the element alignment, and non-VEX SSE folds a load into an
+op's `m128` operand only when 16-byte alignment is provable — without the assert the
+sse41 tier pays a separate `movdqu` per 16 weight bytes.
 
 **Refresh.** A full refresh never rebuilds from an empty board. The refresh cache
 (`nnue_refresh_cache.zig`) holds one entry per (king square, perspective) — the
