@@ -33,6 +33,24 @@ pub fn stdAlignedFree(ptr: ?*anyopaque) void {
     }
 }
 
+// Return whether the MADV_HUGEPAGE hint is worth issuing on this kernel. WSL kernels
+// accept the advisory but never back the region with huge pages, so the hint only
+// costs cycles there; detect WSL by the kernel release string and skip it. The probe
+// is idempotent and cached after the first call.
+var thp_hint_decided: bool = false;
+var thp_hint_useful: bool = false;
+
+fn thpHintUseful() bool {
+    if (!thp_hint_decided) {
+        const uts = std.posix.uname();
+        const release = std.mem.sliceTo(&uts.release, 0);
+        thp_hint_useful = std.mem.indexOf(u8, release, "microsoft") == null and
+            std.mem.indexOf(u8, release, "Microsoft") == null;
+        thp_hint_decided = true;
+    }
+    return thp_hint_useful;
+}
+
 pub fn alignedLargePagesAlloc(alloc_size: usize) ?*anyopaque {
     const alignment: usize = 2 * 1024 * 1024;
     const rounded_size = if (alloc_size == 0)
@@ -50,10 +68,11 @@ pub fn alignedLargePagesAlloc(alloc_size: usize) ?*anyopaque {
         // fresh-page allocation gives -- and lets the Worker construction rely on
         // zero-fill.
         @memset(@as([*]u8, @ptrCast(ptr))[0..rounded_size], 0);
-        // Hint transparent huge pages, a Linux advisory (madvise MADV_HUGEPAGE). macOS/Windows
-        // have no equivalent advisory call; the allocation is already 2 MiB-aligned, so
-        // the OS is free to back it with large pages on its own.
-        if (builtin.os.tag == .linux and rounded_size != 0) {
+        // Hint transparent huge pages (madvise MADV_HUGEPAGE), a Linux-only advisory,
+        // skipped where the kernel never backs it (thpHintUseful). macOS/Windows have no
+        // equivalent call; the allocation is already 2 MiB-aligned, so the OS is free to
+        // back it with large pages on its own.
+        if (builtin.os.tag == .linux and rounded_size != 0 and thpHintUseful()) {
             _ = std.c.madvise(@ptrCast(@alignCast(ptr)), rounded_size, std.c.MADV.HUGEPAGE);
         }
     }
