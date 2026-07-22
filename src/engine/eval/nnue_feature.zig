@@ -45,11 +45,6 @@ pub const FullDiff = struct {
     ksq: u8,
 };
 
-pub const HalfAppendResult = struct {
-    len: usize,
-    indices: [32]u32,
-};
-
 pub const FullAppendResult = struct {
     len: usize,
     indices: [128]u32,
@@ -74,20 +69,6 @@ pub const FullThreatParams = struct {
 pub fn halfMakeIndex(params: HalfThreatParams) u32 {
     const flip: u32 = 56 * params.perspective;
     return (@as(u32, params.square) ^ orient_tbl_half[params.king_square] ^ flip) + piece_square_index[params.perspective][params.piece] + king_buckets[params.king_square ^ params.perspective * 56];
-}
-
-pub fn halfAppendChanged(result: *HalfAppendResult, perspective: u8, king_square: u8, diff: HalfDiff) void {
-    result.len = 0;
-    appendHalfIndex(result, perspective, diff.from, diff.pc, king_square);
-    if (diff.to != sq_none) {
-        appendHalfIndex(result, perspective, diff.to, diff.pc, king_square);
-    }
-    if (diff.remove_sq != sq_none) {
-        appendHalfIndex(result, perspective, diff.remove_sq, diff.remove_pc, king_square);
-    }
-    if (diff.add_sq != sq_none) {
-        appendHalfIndex(result, perspective, diff.add_sq, diff.add_pc, king_square);
-    }
 }
 
 pub fn halfRequiresRefresh(diff: HalfDiff, perspective: u8) bool {
@@ -162,16 +143,6 @@ pub fn fullAppendActive(
 
 pub fn fullRequiresRefresh(diff: FullDiff, perspective: u8) bool {
     return perspective == diff.us and (((@as(i8, @bitCast(diff.ksq)) & 0b100) != (@as(i8, @bitCast(diff.prev_ksq)) & 0b100)));
-}
-
-fn appendHalfIndex(result: *HalfAppendResult, perspective: u8, square: u8, piece: u8, king_square: u8) void {
-    result.indices[result.len] = halfMakeIndex(.{
-        .perspective = perspective,
-        .square = square,
-        .piece = piece,
-        .king_square = king_square,
-    });
-    result.len += 1;
 }
 
 fn appendActivePawnThreats(
