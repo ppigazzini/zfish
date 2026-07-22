@@ -103,11 +103,9 @@ pub const psq_array_bytes = psq_state_stride * max_stack_size;
 pub const threat_array_offset = psq_array_bytes;
 pub const threat_array_bytes = threat_state_stride * max_stack_size;
 pub const stack_size_offset = threat_array_offset + threat_array_bytes;
-// The arena's total footprint: both state arrays, the trailing size field, rounded to the
-// arena alignment. The Worker embeds a buffer of exactly this many bytes -- search_id
-// cross-asserts worker_layout.accumulator_stack_size against this so the two layouts
-// cannot drift apart again (the threat-slot shrink left the old reservation behind once,
-// parking the constructor's size-sentinel write in dead space).
+// The arena's total footprint: both state arrays plus the trailing size field, rounded
+// to the arena alignment. The Worker embeds a buffer of exactly this many bytes;
+// search_id comptime-asserts worker_layout.accumulator_stack_size against this.
 pub const arena_bytes = roundUp(stack_size_offset + @sizeOf(usize), nnue_align);
 pub const threat_refresh_diff_offset = threat_diff_offset + @sizeOf(DirtyThreatListView);
 
