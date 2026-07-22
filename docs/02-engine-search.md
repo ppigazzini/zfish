@@ -101,9 +101,11 @@ readable — then loops on depth. Each depth runs the MultiPV lines; each line r
 aspiration window around the root move's `average_score`, widening on every fail
 high/low (`search.aspirationDeltaGrow`) until the score lands inside the window.
 
-`searchImpl` handles one node's pre-loop work and then tail-calls `runBack` with the
-node state as an `anytype` struct. `runBack`'s move loop recurses back into
-`searchImpl` for every child. The two files form a declared SCC — the cycle *is* the
+`searchImpl` handles one node's pre-loop work and then hands `runBack` the node
+state as an `anytype` struct. `runBack` is an `inline fn`, so the pair compiles to
+one function per node type — upstream's single `search<NodeType>` shape — instead
+of re-loading the node-state struct across a real call. `runBack`'s move loop
+recurses back into `searchImpl` for every child. The two files form a declared SCC — the cycle *is* the
 alpha-beta recursion — and `zig build arch-report` lists it as known, so a *new* file
 cycle shows up as undeclared instead of hiding behind this one. See
 [00-architecture.md](00-architecture.md#the-module-graph).

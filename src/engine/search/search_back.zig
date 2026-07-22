@@ -90,7 +90,12 @@ const contVal = search_qsearch.contVal;
 
 const searchImpl = @import("search_main.zig").searchImpl;
 
-pub fn runBack(nd: anytype) i32 {
+// Inline into searchImpl, restoring upstream's single search<NodeType> function at
+// codegen: as a real call, every `nd.*` read in the move loop is a memory load LLVM
+// must conservatively repeat (no TBAA), and the ~27-field node-state struct is
+// rebuilt per node. Semantic inlining, not speed-by-annotation -- measured
+// instructions 0.990 / cycles 0.966 (perf_counters 8-round paired, avx512icl).
+pub inline fn runBack(nd: anytype) i32 {
     var alpha = nd.alpha;
     var depth = nd.depth;
     var best_value = nd.best_value;
