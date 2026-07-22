@@ -28,6 +28,17 @@ comptime {
         @compileError("half_dimensions must be a multiple of row_tile_width");
 }
 
+/// Load one V-lane vector from `p + off` (elements), asserting alignment `A` (bytes) on the
+/// load itself. Slicing a many-pointer at a runtime offset degrades the load to the element
+/// alignment in Zig's type system, and the backend folds a load into a non-VEX SSE op's m128
+/// operand only when >=16-byte alignment is provable -- an align(1) load costs a separate
+/// movdqu per chunk on the sse41 tier. Every caller's offset is a multiple of A by layout
+/// (row stride x element size), which ReleaseSafe's @alignCast check pins.
+inline fn loadVec(comptime T: type, comptime V: usize, comptime A: usize, p: [*]const T, off: usize) @Vector(V, T) {
+    const ap: *align(A) const [V]T = @ptrCast(@alignCast(p + off));
+    return ap.*;
+}
+
 /// Apply a whole row list to the accumulator, upstream's `apply_combined` way: tile the
 /// accumulator, hold the tile in a register, and walk the rows INSIDE. The rows are the inner
 /// loop, so the accumulator is loaded and stored once per tile rather than once per row --
@@ -42,7 +53,7 @@ inline fn accRows(
     comptime add: bool,
     target: []i16,
     rows: []const u32,
-    weights: [*]const WT,
+    weights: [*]align(64) const WT,
 ) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
@@ -50,7 +61,7 @@ inline fn accRows(
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = target.ptr[d..][0..V].*;
         for (rows) |index| {
-            const wraw: @Vector(V, WT) = (weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            const wraw: @Vector(V, WT) = loadVec(WT, V, 64, weights, @as(usize, index) * half_dimensions + d);
             const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
             acc = if (add) acc +% w else acc -% w;
         }
@@ -63,7 +74,7 @@ pub fn applyAccumulatorDeltaI16(
     source: []const i16,
     removed: []const u32,
     added: []const u32,
-    weights: [*]const i16,
+    weights: [*]align(64) const i16,
 ) void {
     @memcpy(target, source);
     accRows(i16, false, target, removed, weights);
@@ -74,7 +85,7 @@ pub fn applyAccumulatorDeltaInPlaceI16(
     target: []i16,
     removed: []const u32,
     added: []const u32,
-    weights: [*]const i16,
+    weights: [*]align(64) const i16,
 ) void {
     accRows(i16, false, target, removed, weights);
     accRows(i16, true, target, added, weights);
@@ -85,14 +96,14 @@ pub fn applyAccumulatorDeltaI8(
     source: []const i16,
     removed: []const u32,
     added: []const u32,
-    weights: [*]const i8,
+    weights: [*]align(64) const i8,
 ) void {
     @memcpy(target, source);
     accRows(i8, false, target, removed, weights);
     accRows(i8, true, target, added, weights);
 }
 
-pub fn accumulateRowsI8(target: []i16, rows: []const u32, weights: [*]const i8) void {
+pub fn accumulateRowsI8(target: []i16, rows: []const u32, weights: [*]align(64) const i8) void {
     accRows(i8, true, target, rows, weights);
 }
 
@@ -109,7 +120,7 @@ pub fn applyAccumulatorDeltaDualStoreI16(
     state: []i16,
     removed: []const u32,
     added: []const u32,
-    weights: [*]const i16,
+    weights: [*]align(64) const i16,
 ) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
@@ -117,11 +128,11 @@ pub fn applyAccumulatorDeltaDualStoreI16(
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = cache.ptr[d..][0..V].*;
         for (removed) |index| {
-            const w: Vi16 = (weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            const w: Vi16 = loadVec(i16, V, 64, weights, @as(usize, index) * half_dimensions + d);
             acc -%= w;
         }
         for (added) |index| {
-            const w: Vi16 = (weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            const w: Vi16 = loadVec(i16, V, 64, weights, @as(usize, index) * half_dimensions + d);
             acc +%= w;
         }
         cache.ptr[d..][0..V].* = acc;
@@ -136,16 +147,16 @@ pub fn applyPsqtDeltaDualStore(
     state: []i32,
     removed: []const u32,
     added: []const u32,
-    weights: [*]const i32,
+    weights: [*]align(64) const i32,
 ) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = cache[0..psqt_buckets].*;
     for (removed) |index| {
-        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
         acc -%= w;
     }
     for (added) |index| {
-        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
         acc +%= w;
     }
     cache[0..psqt_buckets].* = acc;
@@ -157,7 +168,7 @@ pub fn applyPsqtDelta(
     source: []const i32,
     removed: []const u32,
     added: []const u32,
-    weights: [*]const i32,
+    weights: [*]align(64) const i32,
 ) void {
     @memcpy(target, source);
 
@@ -186,26 +197,26 @@ pub fn applyPsqtDeltaInPlace(
     target: []i32,
     removed: []const u32,
     added: []const u32,
-    weights: [*]const i32,
+    weights: [*]align(64) const i32,
 ) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = target[0..psqt_buckets].*;
     for (removed) |index| {
-        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
         acc -%= w;
     }
     for (added) |index| {
-        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
         acc +%= w;
     }
     target[0..psqt_buckets].* = acc;
 }
 
-pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]const i32) void {
+pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]align(64) const i32) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = target[0..psqt_buckets].*;
     for (rows) |index| {
-        const w: V = (weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
         acc +%= w;
     }
     target[0..psqt_buckets].* = acc;
@@ -227,8 +238,8 @@ pub fn applyCombinedDelta(
     psq_added: []const u32,
     thr_removed: []const u32,
     thr_added: []const u32,
-    psq_weights: [*]const i16,
-    thr_weights: [*]const i8,
+    psq_weights: [*]align(64) const i16,
+    thr_weights: [*]align(64) const i8,
 ) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
@@ -236,19 +247,19 @@ pub fn applyCombinedDelta(
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = source.ptr[d..][0..V].*;
         for (psq_removed) |index| {
-            const w: Vi16 = (psq_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
             acc -%= w;
         }
         for (psq_added) |index| {
-            const w: Vi16 = (psq_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
             acc +%= w;
         }
         for (thr_removed) |index| {
-            const wraw: @Vector(V, i8) = (thr_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
             acc -%= @as(Vi16, wraw); // i8 -> i16 widen
         }
         for (thr_added) |index| {
-            const wraw: @Vector(V, i8) = (thr_weights + @as(usize, index) * half_dimensions)[d..][0..V].*;
+            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
             acc +%= @as(Vi16, wraw);
         }
         target.ptr[d..][0..V].* = acc;
@@ -264,8 +275,8 @@ pub fn applyCombinedPsqtDelta(
     psq_added: []const u32,
     thr_removed: []const u32,
     thr_added: []const u32,
-    psq_weights: [*]const i32,
-    thr_weights: [*]const i32,
+    psq_weights: [*]align(64) const i32,
+    thr_weights: [*]align(64) const i32,
 ) void {
     // Fuse as upstream's apply_combined does for the psqt tile (nnue_accumulator.cpp:248-268):
     // load the 8-bucket row into ONE register, apply both feature sets' removed/added columns
@@ -277,19 +288,19 @@ pub fn applyCombinedPsqtDelta(
     const V = @Vector(psqt_buckets, i32);
     var acc: V = source[0..psqt_buckets].*;
     for (psq_removed) |index| {
-        const w: V = (psq_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
         acc -%= w;
     }
     for (psq_added) |index| {
-        const w: V = (psq_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
         acc +%= w;
     }
     for (thr_removed) |index| {
-        const w: V = (thr_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
         acc -%= w;
     }
     for (thr_added) |index| {
-        const w: V = (thr_weights + @as(usize, index) * psqt_buckets)[0..psqt_buckets].*;
+        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
         acc +%= w;
     }
     target[0..psqt_buckets].* = acc;

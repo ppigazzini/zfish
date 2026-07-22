@@ -182,8 +182,11 @@ pub fn transformBucket(
     evaluate(stack, pos, feature_transformer, cache);
 
     // Read the single combined (HalfKA + Threats) accumulator from the psq_feature slot.
+    // Carry the state's 64-byte alignment (arena base + nnue_align'd strides, pinned by
+    // nnue_acc_layout's comptime asserts) in the type: non-VEX SSE folds the accumulator
+    // loads into pminsw's m128 operand only when 16-byte alignment is provable.
     const comb_bytes: [*]const u8 = stackLatestPsq(stack);
-    const comb_acc: [*]const i16 = @ptrCast(@alignCast(comb_bytes));
+    const comb_acc: [*]align(nnue_align) const i16 = @ptrCast(@alignCast(comb_bytes));
     const comb_psqt: [*]const i32 = @ptrCast(@alignCast(comb_bytes + state_psqt_offset));
 
     const p0: usize = stm;
@@ -232,8 +235,14 @@ pub fn transformBucket(
         const base = pp * half_dimensions;
         var j: usize = 0;
         while (j < half) : (j += V) {
-            const s0i: Vi16 = comb_acc[base + j ..][0..V].*;
-            const s1i: Vi16 = comb_acc[base + j + half ..][0..V].*;
+            // Assert the state's alignment on the loads themselves (a runtime-offset slice
+            // degrades to align(2)): base, j and half are all multiples of V lanes, so each
+            // load's byte offset is a multiple of min(64, V*2) from the 64-aligned state and
+            // non-VEX SSE can fold it into pminsw's m128. Derive the assert from V so a
+            // narrower sweep of transform_vec_width stays sound rather than tripping it.
+            const A = comptime @min(64, V * @sizeOf(i16));
+            const s0i: Vi16 = @as(*align(A) const [V]i16, @ptrCast(@alignCast(comb_acc + base + j))).*;
+            const s1i: Vi16 = @as(*align(A) const [V]i16, @ptrCast(@alignCast(comb_acc + base + j + half))).*;
             const c0: Vu16 = @intCast(@max(zero, @min(c255, s0i))); // ClippedReLU [0,255]
             const c1: Vu16 = @intCast(@max(zero, @min(c255, s1i)));
             // pmulhuw(c0<<7, c1) == (c0*c1) >> 9

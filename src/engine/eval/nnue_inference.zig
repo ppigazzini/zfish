@@ -41,10 +41,14 @@ pub const TraceOutput = struct {
 // -> fc_2 (affine 128->1), plus the fwdOut skip term. Bit-exact with the
 // SSSE3 integer path. Weights are int8 in the SSSE3-scrambled layout;
 // biases int32 linear. WeightScaleBits=6.
-fn layerBiases(bucket: usize, idx: usize) [*]const i32 {
+// Return the layer arrays with their true 64-byte alignment (each is its own
+// page_alloc block, >=64-aligned by contract): the affine kernels need the
+// alignment in the type so non-VEX SSE can fold weight loads into pmaddubsw's
+// m128 operand instead of paying a separate movdqu per chunk.
+fn layerBiases(bucket: usize, idx: usize) [*]align(cache_line_size) const i32 {
     return @ptrCast(@alignCast(layerPtr(bucket, idx, .biases) orelse unreachable));
 }
-fn layerWeights(bucket: usize, idx: usize) [*]const i8 {
+fn layerWeights(bucket: usize, idx: usize) [*]align(cache_line_size) const i8 {
     return @ptrCast(@alignCast(layerPtr(bucket, idx, .weights) orelse unreachable));
 }
 
@@ -227,9 +231,9 @@ test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
                 // Draw from the ClippedReLU output range, with ~half zeroed so the sparse skip is hit.
                 v.* = if (rnd.boolean()) 0 else rnd.intRangeAtMost(u8, 0, 127);
             }
-            var weights: [IN * OUT]i8 = undefined;
+            var weights: [IN * OUT]i8 align(64) = undefined;
             for (&weights) |*w| w.* = rnd.intRangeAtMost(i8, -128, 127);
-            var biases: [OUT]i32 = undefined;
+            var biases: [OUT]i32 align(64) = undefined;
             for (&biases) |*b| b.* = rnd.intRangeAtMost(i32, -100000, 100000);
 
             // Compute the scalar reference over the scrambled layout: weight of output j, group g,
