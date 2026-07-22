@@ -66,12 +66,15 @@ pub fn attackersTo(pos_ptr: *const Position, s: u8, occupied: u64) u64 {
 
 pub fn legal(pos: *const Position, m: u16) bool {
     const us = pos.side_to_move;
-    const them = us ^ 1;
     const from = moveFrom(m);
     const orig_to = moveTo(m);
-    const all = pos.by_type_bb[0];
 
+    // Compute the occupancy and opponent operands inside the branches that need them,
+    // as upstream does: the dominant not-pinned exit below reads neither, and LLVM
+    // measurably does not sink the hoisted loads past the early returns.
     if (moveTypeOf(m) == mt_castling) {
+        const them = us ^ 1;
+        const all = pos.by_type_bb[0];
         const king_dest_rel: u8 = if (orig_to > from) 6 else 2; // SQ_G1 : SQ_C1
         const to = relativeSquare(us, king_dest_rel);
         const step: i8 = if (to > from) -1 else 1; // WEST : EAST
@@ -84,7 +87,7 @@ pub fn legal(pos: *const Position, m: u16) bool {
     }
 
     if (pieceTypeOn(pos, from) == king_pt) {
-        return !attackersToExist(pos, orig_to, all ^ sqBb(from), them);
+        return !attackersToExist(pos, orig_to, pos.by_type_bb[0] ^ sqBb(from), us ^ 1);
     }
 
     return (pos.st.blockers_for_king[us] & sqBb(from)) == 0 or
@@ -229,25 +232,25 @@ pub fn givesCheck(pos_ptr: *const Position, m: u16) bool {
     const them = stm ^ 1;
     const from = moveFrom(m);
     const to = moveTo(m);
-    const mt = moveTypeOf(m);
-    const all = pos.by_type_bb[0];
-    const their_king_bb = pos.by_color_bb[them] & pos.by_type_bb[king_pt];
 
-    // Detect a direct check.
+    // Detect a direct check. Compute the move type, occupancy and king bitboard lazily
+    // in the branches below, as upstream does: this hit and the mt_normal fall-through
+    // dominate, need none of them, and LLVM measurably does not sink the hoisted loads.
     if ((pos.st.check_squares[pieceTypeOn(pos, from)] & sqBb(to)) != 0) return true;
 
     // Detect a discovered check.
     if ((pos.st.blockers_for_king[them] & sqBb(from)) != 0) {
-        return (bitboard.line(from, to) & their_king_bb) == 0 or mt == mt_castling;
+        const their_king_bb = pos.by_color_bb[them] & pos.by_type_bb[king_pt];
+        return (bitboard.line(from, to) & their_king_bb) == 0 or moveTypeOf(m) == mt_castling;
     }
 
-    switch (mt) {
+    switch (moveTypeOf(m)) {
         mt_normal => return false,
-        mt_promotion => return (bitboard.attacks(movePromotionType(m), to, all ^ sqBb(from)) &
-            their_king_bb) != 0,
+        mt_promotion => return (bitboard.attacks(movePromotionType(m), to, pos.by_type_bb[0] ^ sqBb(from)) &
+            (pos.by_color_bb[them] & pos.by_type_bb[king_pt])) != 0,
         mt_en_passant => {
             const capsq = makeSquare(fileOf(to), rankOf(from));
-            const b = (all ^ sqBb(from) ^ sqBb(capsq)) | sqBb(to);
+            const b = (pos.by_type_bb[0] ^ sqBb(from) ^ sqBb(capsq)) | sqBb(to);
             const ksq = kingSquare(pos, them);
             const our = pos.by_color_bb[stm];
             const our_qr = our & (pos.by_type_bb[queen_pt] | pos.by_type_bb[rook_pt]);
