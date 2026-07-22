@@ -307,23 +307,23 @@ fn applyCombined(
     else
         threatDiff(stateBytesConst(threat_feature, computed_index, stack));
 
-    var thr_append: nnue_feature.FullAppendResult = undefined;
-    nnue_feature.fullAppendChanged(
-        &thr_append,
-        perspective,
-        king_square,
-        @ptrCast(&thr_diff.list.values),
-        thr_diff.list.size_,
-    );
-
     var thr_removed: [threat_index_capacity]u32 = undefined;
     var thr_added: [threat_index_capacity]u32 = undefined;
     var thr_removed_len: usize = 0;
     var thr_added_len: usize = 0;
 
-    for (thr_append.indices[0..thr_append.len], 0..) |index, list_index| {
+    // Route each dirty threat's feature index into removed/added as it is computed --
+    // upstream append_changed_indices' `insert = add ? added : removed` shape -- instead
+    // of materialising a FullAppendResult and re-walking it. The one-pass form drops the
+    // scratch store/reload per entry and, with plain local arrays and lengths, keeps both
+    // length counters in registers (the out-param struct forced its `len` through memory
+    // on every append: the indices stores may alias it). Same walk order and the same
+    // `< threat_dimensions` filter, so both lists are byte-identical to the two-pass form.
+    for (thr_diff.list.values[0..thr_diff.list.size_]) |raw_entry| {
+        const raw = raw_entry.data;
+        const index = nnue_feature.fullMakeIndexFromDirty(raw, perspective, king_square);
         if (index >= threat_dimensions) continue;
-        const is_add = (thr_diff.list.values[list_index].data >> 31) != 0;
+        const is_add = (raw >> 31) != 0;
         if (is_add == forward) {
             thr_added[thr_added_len] = index;
             thr_added_len += 1;

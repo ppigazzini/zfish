@@ -105,30 +105,20 @@ pub fn fullMakeIndex(params: FullThreatParams) u32 {
     return index_lut1[attacker_oriented][attacked_oriented][less] + offsets[attacker_oriented][from_oriented] + index_lut2[attacker_oriented][from_oriented][to_oriented];
 }
 
-// Fill `result` in place rather than returning it: FullAppendResult is 520 B ({len,[128]u32})
-// and the by-value return was a per-node compiler_rt memcpy the caller's stack slot could own.
-pub fn fullAppendChanged(
-    result: *FullAppendResult,
-    perspective: u8,
-    king_square: u8,
-    list_ptr: [*]const DirtyThreatRaw,
-    list_len: usize,
-) void {
-    result.len = 0;
-    var index: usize = 0;
-    while (index < list_len) : (index += 1) {
-        const dirty = list_ptr[index].data;
-        const threat = decodeThreat(dirty);
-        appendFullIndex(
-            result,
-            perspective,
-            threat.attacker,
-            threat.from_sq,
-            threat.to_sq,
-            threat.attacked,
-            king_square,
-        );
-    }
+/// Compute one dirty-threat record's feature index. Decode the packed record and
+/// index it; the caller routes the result into its removed/added list as it is
+/// produced (upstream append_changed_indices' `insert = add ? added : removed`
+/// shape), so no intermediate index array exists.
+pub fn fullMakeIndexFromDirty(raw: u32, perspective: u8, king_square: u8) u32 {
+    const threat = decodeThreat(raw);
+    return fullMakeIndex(.{
+        .perspective = perspective,
+        .attacker = threat.attacker,
+        .from_sq = threat.from_sq,
+        .to_sq = threat.to_sq,
+        .attacked = threat.attacked,
+        .king_square = king_square,
+    });
 }
 
 pub fn fullAppendActive(
@@ -179,26 +169,6 @@ fn appendHalfIndex(result: *HalfAppendResult, perspective: u8, square: u8, piece
         .perspective = perspective,
         .square = square,
         .piece = piece,
-        .king_square = king_square,
-    });
-    result.len += 1;
-}
-
-fn appendFullIndex(
-    result: *FullAppendResult,
-    perspective: u8,
-    attacker: u8,
-    from_sq: u8,
-    to_sq: u8,
-    attacked: u8,
-    king_square: u8,
-) void {
-    result.indices[result.len] = fullMakeIndex(.{
-        .perspective = perspective,
-        .attacker = attacker,
-        .from_sq = from_sq,
-        .to_sq = to_sq,
-        .attacked = attacked,
         .king_square = king_square,
     });
     result.len += 1;
