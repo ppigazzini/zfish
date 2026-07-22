@@ -39,7 +39,6 @@ const cacheEntry = nnue_refresh_cache.cacheEntry;
 const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;
 const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
-const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 
 // Alias back the accumulator-stack layout + accessors, which live in the
 // nnue_acc_layout leaf now, so the facade + update call sites are unqualified
@@ -245,7 +244,6 @@ fn refreshLatestPsq(
     );
 
     @memcpy(entry_pieces, pos.board[0..]);
-    setCacheEntryPieceBb(entry_ptr, pos.by_type_bb[0]);
 
     stateBytesMut(psq_feature, latest_index, stack)[computed_offset + perspective] = 1;
 }
