@@ -416,6 +416,12 @@ pub fn waitThread(pool: *worker_layout.ThreadPool, thread_id: usize) void {
     thread_pool.waitThread(pool, thread_id);
 }
 
+// Submit a job to one pool thread's idle loop and return immediately (thread pool op);
+// pair with waitThread. Serve thread_ops.runThread for the parallel TT clear.
+pub fn runThreadJob(pool: *worker_layout.ThreadPool, thread_id: usize, job: ThreadCallback, ctx: ?*anyopaque) void {
+    threadRunJob(pool.threadTyped(thread_id), job, ctx);
+}
+
 // Join+free the threads and null the pool's threads slice (engine teardown).
 // Wrap thread_pool for main.zig, which doesn't import it directly.
 pub fn threadPoolClear(pool: *worker_layout.ThreadPool) void {

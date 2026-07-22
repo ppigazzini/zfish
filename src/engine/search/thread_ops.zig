@@ -11,8 +11,11 @@
 //!
 //! hook-class: service — a leaf answering a query it must not import the answer for.
 //!
-//! Treat these 4 as SEARCH-AFFECTING when unregistered: unregistered they answer rather
-//! than abort, so the engine searches single-threaded and still reports a legal move.
+//! Treat the 4 search-coordination hooks (startSiblings / waitSiblings / waitThread /
+//! bestThreadWorker) as SEARCH-AFFECTING when unregistered: unregistered they answer
+//! rather than abort, so the engine searches single-threaded and still reports a legal
+//! move. runThread is not search-affecting: its inline default executes the job
+//! serially, byte-identically.
 //! Tolerate this only because both roots are accounted for, which the hook-lint REGISTERED
 //! rule keeps true:
 //!   * shipped exe -- main.zig:68 registers all 4 before the engine is reachable
@@ -43,6 +46,17 @@ pub var waitSiblings: *const fn (pool: *ThreadPool) void = &noopPool;
 /// Wait for one thread's in-flight job (used while a TT resize clears the table).
 /// failure: silent — no wait, correct when no pool means no in-flight job exists.
 pub var waitThread: *const fn (pool: *ThreadPool, thread_id: usize) void = &noopWaitThread;
+/// Run a job on one pool thread and return without waiting; pair each dispatch with
+/// waitThread. Serve the parallel TT clear (upstream TranspositionTable::clear runs
+/// one zeroing job per thread via run_on_thread).
+/// failure: silent — runs the job inline on the calling thread: with no pool attached
+/// there is no thread to dispatch to, and the serial clear is the correct
+/// single-threaded execution of the same job.
+pub var runThread: *const fn (pool: *ThreadPool, thread_id: usize, job: *const fn (?*anyopaque) void, ctx: ?*anyopaque) void = &inlineRunThread;
+
+fn inlineRunThread(_: *ThreadPool, _: usize, job: *const fn (?*anyopaque) void, ctx: ?*anyopaque) void {
+    job(ctx);
+}
 /// Return the worker of the vote-winning thread -- the thread whose move the search reports.
 /// failure: silent — the main worker, which IS the vote winner when it is the only
 /// searching thread. Correct single-threaded; wrong the moment siblings exist.

@@ -39,7 +39,7 @@ the hook pattern see [00-architecture.md](00-architecture.md).
 | `src/engine/search/search_ctx.zig` | The per-iteration snapshots the ID loop reads through, including `ZfishIdState` (`stop`, `increase_depth`) |
 | `src/engine/search/search_id_loop.zig` | The per-thread ID loop: the thread-indexed aspiration seed, the main thread's `increase_depth` / `stop` decisions |
 | `src/engine/search/search_emit.zig` | The reporting side — only the main thread emits `info` and `bestmove` |
-| `src/engine/search/tt.zig` | The shared transposition table; `waitThread` while a resize clears it |
+| `src/engine/search/tt.zig` | The shared transposition table; a resize/`ucinewgame` clear zeroes one disjoint span per pool thread via `thread_ops.runThread`, then `waitThread`s each (upstream `TranspositionTable::clear`) |
 | `src/engine/search/shared_history.zig` | One NUMA node's `SharedHistories` arena: construct / free / clear / verify, and the accessors |
 | `src/engine/search/shared_histories.zig` | The element-count math for the two shared arrays |
 | `src/engine/search/shared_histories_map.zig` | The generic NUMA-index → entry map (`tryEmplace`, `at`, `clear`) with construct/free hooks |

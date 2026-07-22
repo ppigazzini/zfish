@@ -56,8 +56,9 @@ fn reportAllocFailure(mb: usize) noreturn {
     std.debug.print("Failed to allocate {d}MB for transposition table.\n", .{mb});
     std.process.exit(1);
 }
-// Zero a [start_cluster, start_cluster+cluster_len) span of the TT (single-node: the
-// per-thread parallel-clear NUMA split is a no-op here).
+// Zero a [start_cluster, start_cluster+cluster_len) span of the TT -- one thread's share
+// of the parallel clear (single-node: upstream's NUMA-sorted dispatch order is a no-op
+// here, so the spans go out in plain thread order).
 fn zeroTtSlice(table_ptr: ?[*]TtCluster, start_cluster: usize, cluster_len: usize) void {
     if (cluster_len == 0) return;
     const table = table_ptr orelse return;
@@ -88,6 +89,19 @@ pub fn resizeState(
     clearState(table, cluster_count, generation_ptr, threads);
 }
 
+// Carry one thread's clear span to its zeroing job; the array outlives the dispatch
+// because clearState waits on every thread before returning.
+const ClearSliceCtx = struct {
+    table: ?[*]TtCluster,
+    start: usize,
+    len: usize,
+};
+
+fn zeroTtSliceJob(raw: ?*anyopaque) void {
+    const ctx: *const ClearSliceCtx = @ptrCast(@alignCast(raw.?));
+    zeroTtSlice(ctx.table, ctx.start, ctx.len);
+}
+
 pub fn clearState(
     table: ?[*]TtCluster,
     cluster_count: usize,
@@ -101,8 +115,18 @@ pub fn clearState(
         return;
     }
 
-    var thread_index: usize = 0;
-    while (thread_index < thread_count) : (thread_index += 1) {
+    // Zero each thread's contiguous span ON that thread, as upstream's
+    // TranspositionTable::clear does via run_on_thread (tt.cpp): a serial clear of a
+    // multi-GB table is the dominant `ucinewgame` / Hash-resize latency, and the spans
+    // are disjoint so the parallel writes need no ordering. Fall back to the calling
+    // thread when the per-thread contexts cannot be allocated -- same bytes, serially.
+    const ctxs = std.heap.c_allocator.alloc(ClearSliceCtx, thread_count) catch {
+        zeroTtSlice(table, 0, cluster_count);
+        return;
+    };
+    defer std.heap.c_allocator.free(ctxs);
+
+    for (ctxs, 0..) |*ctx, thread_index| {
         const stride = cluster_count / thread_count;
         const start = stride * thread_index;
         const len = if (thread_index + 1 != thread_count)
@@ -110,11 +134,11 @@ pub fn clearState(
         else
             cluster_count - start;
 
-        zeroTtSlice(table, start, len);
+        ctx.* = .{ .table = table, .start = start, .len = len };
+        thread_ops.runThread(threads, thread_index, &zeroTtSliceJob, ctx);
     }
 
-    thread_index = 0;
-    while (thread_index < thread_count) : (thread_index += 1) {
+    for (0..thread_count) |thread_index| {
         thread_ops.waitThread(threads, thread_index);
     }
 }

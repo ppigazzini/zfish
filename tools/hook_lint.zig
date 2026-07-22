@@ -33,7 +33,7 @@
 const std = @import("std");
 const Io = std.Io;
 
-const baseline: usize = 31;
+const baseline: usize = 32;
 
 // List the shipped registration sites. main.zig is the composition root (it may import
 // everything and nothing imports it, which is what lets it hand implementations

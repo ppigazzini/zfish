@@ -204,6 +204,7 @@ fn installRuntimeHooks() void {
     thread_ops.startSiblings = &search_thread.startPoolSiblings;
     thread_ops.waitSiblings = &search_thread.waitPoolSiblings;
     thread_ops.waitThread = &thread_port.waitThread;
+    thread_ops.runThread = &thread_port.runThreadJob;
     thread_ops.bestThreadWorker = &thread_vote.bestThreadWorker;
     // Inject the shell UCI output writer into the engine's output-sink seam, so the
     // search emits its info/bestmove lines without importing a shell module.
