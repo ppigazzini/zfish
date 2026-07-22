@@ -54,7 +54,6 @@ const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;
 const cacheEntryPsqtConst = nnue_refresh_cache.cacheEntryPsqtConst;
 const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
-const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 
 // Alias back the accumulator-stack layout + accessors, which live in the
 // nnue_acc_layout leaf now, so the facade + update call sites are unqualified
