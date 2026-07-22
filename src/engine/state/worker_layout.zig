@@ -25,7 +25,12 @@ pub const search_manager_size: usize = 120;
 pub const position_size: usize = 1032;
 pub const state_info_size: usize = 192;
 pub const transposition_table_size: usize = 24;
-pub const accumulator_stack_size: usize = 2181568;
+// Match the eval zone's arena exactly (nnue_acc_layout.arena_bytes: both state arrays +
+// the trailing size field, 64-rounded); search_id comptime-asserts the equality, so a
+// layout change over there fails the build here instead of stranding this reservation.
+// The size-sentinel convention below (arena end - 64) then lands the constructor's write
+// on the arena's live size field.
+pub const accumulator_stack_size: usize = 1154048;
 pub const accumulator_caches_size: usize = 278528;
 pub const root_move_size: usize = root_move.root_move_footprint;
 
@@ -84,7 +89,7 @@ pub const WorkerLayout = struct {
     accumulator_stack: [accumulator_stack_size]u8 align(64),
     refresh_table: [refresh_table_bytes]u8 align(64),
 
-    /// Return a typed view over the 13.2 MB worker block. The block is a 64-aligned large-page
+    /// Return a typed view over the ~4.5 MB worker block. The block is a 64-aligned large-page
     /// allocation, so this reinterpret is sound and reads each scalar field at its
     /// @offsetOf -- the same address worker_off yields, so it is bench-invariant.
     pub inline fn fromPtr(p: *anyopaque) *WorkerLayout {
@@ -301,7 +306,7 @@ pub const Thread = struct {
     }
 };
 
-// Provide a cursor over the ~13 MB Worker: the base address plus typed accessors for the few
+// Provide a cursor over the ~4.5 MB Worker: the base address plus typed accessors for the few
 // fields the search-driver reads/writes. Each accessor reinterprets the base as a
 // *WorkerLayout (via layout()) and touches the field directly -- typing the *access*
 // over a raw Worker base address.

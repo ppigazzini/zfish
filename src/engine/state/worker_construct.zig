@@ -1,6 +1,6 @@
 // Worker field constructor.
 //
-// Note that the Worker's 13.2 MB storage is already Zig-allocated (aligned_large_pages),
+// Note that the Worker's ~4.5 MB storage is already Zig-allocated (aligned_large_pages),
 // its POD fill is Zig (the worker-clear reset). Write the non-history members the
 // constructor owns: the five
 // SharedState reference slots, the NUMA scalars, the manager pointer, and the one
