@@ -103,24 +103,22 @@ pub fn applyAccumulatorDeltaI8(
     accRows(i8, true, target, added, weights);
 }
 
-pub fn accumulateRowsI8(target: []i16, rows: []const u32, weights: [*]align(64) const i8) void {
-    accRows(i8, true, target, rows, weights);
-}
-
-/// Apply the removed/added row lists to `cache` and write the result to BOTH `cache`
-/// (the finny-table entry, updated in place) and `state` (the stack's refreshed copy)
-/// in ONE tiled pass. Ports upstream's refresh, which stores the tiled accumulation
-/// straight into the accumulator AND the cache entry -- so the cache-to-state copy is a
-/// second register store, not a separate compiler_rt @memcpy of the whole 1024-wide row.
-/// Bit-exact: the stored value is source -Σremoved +Σadded, the same as the prior
-/// two-pass in-place delta followed by a copy (i16 +%/-% commute), and both targets get
-/// exactly that value, so ReleaseSafe sees the identical run.
-pub fn applyAccumulatorDeltaDualStoreI16(
+/// Refresh in ONE tiled pass -- upstream update_accumulator_refresh_cache's loop shape:
+/// load the finny-cache tile, apply the HalfKA removed/added rows, store the psq-only
+/// tile back to `cache`, then KEEP ADDING the active Threat rows in the same registers
+/// and store the combined tile to `state`. Replaces the dual-store pass plus a separate
+/// accumulateRowsI8 pass, which reloaded and rewrote the whole 2 KB row it had just
+/// stored. Per element the wrapping-add order (psq removed, psq added, threat active)
+/// and both stored values are unchanged, so cache and state hold byte-identical results
+/// and ReleaseSafe sees the identical run.
+pub fn applyRefreshFusedI16(
     cache: []i16,
     state: []i16,
     removed: []const u32,
     added: []const u32,
-    weights: [*]align(64) const i16,
+    active: []const u32,
+    psq_weights: [*]align(64) const i16,
+    thr_weights: [*]align(64) const i8,
 ) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
@@ -128,38 +126,48 @@ pub fn applyAccumulatorDeltaDualStoreI16(
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = cache.ptr[d..][0..V].*;
         for (removed) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, weights, @as(usize, index) * half_dimensions + d);
+            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
             acc -%= w;
         }
         for (added) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, weights, @as(usize, index) * half_dimensions + d);
+            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
             acc +%= w;
         }
         cache.ptr[d..][0..V].* = acc;
+        for (active) |index| {
+            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
+            acc +%= @as(Vi16, wraw); // i8 -> i16 widen
+        }
         state.ptr[d..][0..V].* = acc;
     }
 }
 
-/// The psqt half of applyAccumulatorDeltaDualStoreI16: apply both column lists to the
-/// single 8-bucket i32 vector and store it to both the cache entry and the stack state.
-pub fn applyPsqtDeltaDualStore(
+/// The psqt half of applyRefreshFusedI16: one 8-bucket i32 vector; `cache` receives the
+/// psq-only value, `state` receives psq plus the active threat psqt rows.
+pub fn applyRefreshFusedPsqt(
     cache: []i32,
     state: []i32,
     removed: []const u32,
     added: []const u32,
-    weights: [*]align(64) const i32,
+    active: []const u32,
+    psq_weights: [*]align(64) const i32,
+    thr_weights: [*]align(64) const i32,
 ) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = cache[0..psqt_buckets].*;
     for (removed) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
+        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
         acc -%= w;
     }
     for (added) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
+        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
         acc +%= w;
     }
     cache[0..psqt_buckets].* = acc;
+    for (active) |index| {
+        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
+        acc +%= w;
+    }
     state[0..psqt_buckets].* = acc;
 }
 
@@ -206,16 +214,6 @@ pub fn applyPsqtDeltaInPlace(
         acc -%= w;
     }
     for (added) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
-        acc +%= w;
-    }
-    target[0..psqt_buckets].* = acc;
-}
-
-pub fn accumulatePsqtRows(target: []i32, rows: []const u32, weights: [*]align(64) const i32) void {
-    const V = @Vector(psqt_buckets, i32);
-    var acc: V = target[0..psqt_buckets].*;
-    for (rows) |index| {
         const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
         acc +%= w;
     }

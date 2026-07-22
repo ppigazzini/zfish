@@ -26,10 +26,8 @@ const nnue_acc_rowops = @import("nnue_acc_rowops");
 const applyAccumulatorDeltaI16 = nnue_acc_rowops.applyAccumulatorDeltaI16;
 const applyAccumulatorDeltaInPlaceI16 = nnue_acc_rowops.applyAccumulatorDeltaInPlaceI16;
 const applyAccumulatorDeltaI8 = nnue_acc_rowops.applyAccumulatorDeltaI8;
-const accumulateRowsI8 = nnue_acc_rowops.accumulateRowsI8;
 const applyPsqtDelta = nnue_acc_rowops.applyPsqtDelta;
 const applyPsqtDeltaInPlace = nnue_acc_rowops.applyPsqtDeltaInPlace;
-const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
 
 // Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
 // for the refresh/apply-delta core.

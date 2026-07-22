@@ -1,6 +1,6 @@
 // Run the NNUE accumulator update algorithm, split out of nnue_accumulator.zig: the
-// per-side refresh + incremental step machinery (evaluateSide, refreshLatest*,
-// incrementalStep*, apply*Delta, appendHalfChange) and its append-diff record
+// per-side refresh + incremental step machinery (evaluateSide, refreshCombined,
+// applyCombined, appendHalfChange) and its append-diff record
 // types. Reads/writes accumulator states through the nnue_acc_layout accessors
 // and the ft/rowops/refresh-cache/feature leaves; the facade calls evaluateSide,
 // never the reverse, so this stays a one-way leaf.
@@ -14,10 +14,8 @@ const nnue_feature = @import("nnue_feature");
 // Alias the vectorized FT weight-row add/sub kernels from the nnue_acc_rowops leaf
 // so the refresh/incremental core stays unqualified.
 const nnue_acc_rowops = @import("nnue_acc_rowops");
-const applyAccumulatorDeltaDualStoreI16 = nnue_acc_rowops.applyAccumulatorDeltaDualStoreI16;
-const accumulateRowsI8 = nnue_acc_rowops.accumulateRowsI8;
-const applyPsqtDeltaDualStore = nnue_acc_rowops.applyPsqtDeltaDualStore;
-const accumulatePsqtRows = nnue_acc_rowops.accumulatePsqtRows;
+const applyRefreshFusedI16 = nnue_acc_rowops.applyRefreshFusedI16;
+const applyRefreshFusedPsqt = nnue_acc_rowops.applyRefreshFusedPsqt;
 const applyCombinedDelta = nnue_acc_rowops.applyCombinedDelta;
 const applyCombinedPsqtDelta = nnue_acc_rowops.applyCombinedPsqtDelta;
 
@@ -139,36 +137,13 @@ pub fn evaluateSide(
     }
 }
 
-// Perform the fused refresh: PSQ (HalfKA) via the finny refresh cache fills the combined
-// accumulation + psqt and sets computed; the Threat features are then ADDED on top
-// (additive accumulate, no zeroing), so the combined = psq + threat -- the refresh
-// half of apply_combined.
+// Perform the fused refresh -- upstream's update_accumulator_refresh_cache: compute the
+// HalfKA changed rows against the finny cache entry and the active Threat rows, then
+// apply everything in ONE tiled pass. The cache entry receives the psq-only
+// accumulation (in place, for next time) and the stack state receives psq + threats
+// (the combined accumulator), with no second pass over the 2 KB row and no
+// cache-to-state @memcpy.
 fn refreshCombined(
-    perspective: u8,
-    king_square: u8,
-    stack: *AccumulatorStack,
-    pos: *const Position,
-    feature_transformer: *const FeatureTransformer,
-    cache: *RefreshCache,
-) void {
-    refreshLatestPsq(perspective, king_square, stack, pos, feature_transformer, cache);
-
-    const latest_index = stackSize(stack) - 1;
-    var active: nnue_feature.FullAppendResult = undefined;
-    nnue_feature.fullAppendActive(&active, perspective, king_square, &pos.board, &pos.by_type_bb, &pos.by_color_bb);
-    accumulateRowsI8(
-        stateAccumulationMut(psq_feature, latest_index, stack, perspective),
-        active.indices[0..active.len],
-        featureTransformerThreatWeights(feature_transformer),
-    );
-    accumulatePsqtRows(
-        statePsqtMut(psq_feature, latest_index, stack, perspective),
-        active.indices[0..active.len],
-        featureTransformerThreatPsqtWeights(feature_transformer),
-    );
-}
-
-fn refreshLatestPsq(
     perspective: u8,
     king_square: u8,
     stack: *AccumulatorStack,
@@ -224,23 +199,29 @@ fn refreshLatestPsq(
         }
     }
 
-    // Apply the finny-cache delta and write the refreshed row into BOTH the cache entry
-    // (in place, for next time) and the stack state (the copy this ply needs) in one
-    // tiled pass -- upstream stores the tiled refresh straight into the accumulator, so
-    // the cache-to-state copy is a register store, not a separate compiler_rt @memcpy.
-    applyAccumulatorDeltaDualStoreI16(
+    var active: nnue_feature.FullAppendResult = undefined;
+    nnue_feature.fullAppendActive(&active, perspective, king_square, &pos.board, &pos.by_type_bb, &pos.by_color_bb);
+
+    // Apply the finny-cache delta and the active threat rows in one tiled pass: the
+    // cache entry gets the psq-only tile stored back mid-pass, the stack state gets
+    // psq + threats -- no reload of the 2 KB row a separate accumulate pass would cost.
+    applyRefreshFusedI16(
         cacheEntryAccumulationMut(entry_ptr),
         stateAccumulationMut(psq_feature, latest_index, stack, perspective),
         removed[0..removed_len],
         added[0..added_len],
+        active.indices[0..active.len],
         featureTransformerPsqWeights(feature_transformer),
+        featureTransformerThreatWeights(feature_transformer),
     );
-    applyPsqtDeltaDualStore(
+    applyRefreshFusedPsqt(
         cacheEntryPsqtMut(entry_ptr),
         statePsqtMut(psq_feature, latest_index, stack, perspective),
         removed[0..removed_len],
         added[0..added_len],
+        active.indices[0..active.len],
         featureTransformerPsqPsqtWeights(feature_transformer),
+        featureTransformerThreatPsqtWeights(feature_transformer),
     );
 
     @memcpy(entry_pieces, pos.board[0..]);
