@@ -1,7 +1,6 @@
 // Run the NNUE accumulator update algorithm, split out of nnue_accumulator.zig: the
 // per-side refresh + incremental step machinery (evaluateSide, refreshCombined,
-// applyCombined, appendHalfChange) and its append-diff record
-// types. Reads/writes accumulator states through the nnue_acc_layout accessors
+// applyCombined, appendHalfChange). Reads/writes accumulator states through the nnue_acc_layout accessors
 // and the ft/rowops/refresh-cache/feature leaves; the facade calls evaluateSide,
 // never the reverse, so this stays a one-way leaf.
 
@@ -67,43 +66,9 @@ const statePsqtMut = layout.statePsqtMut;
 const psqDiff = layout.psqDiff;
 const threatDiff = layout.threatDiff;
 
-const HalfAppendDiff = struct {
-    from: u8,
-    to: u8,
-    pc: u8,
-    remove_sq: u8,
-    add_sq: u8,
-    remove_pc: u8,
-    add_pc: u8,
-};
-
-const FullAppendDiff = struct {
-    us: u8,
-    prev_ksq: u8,
-    ksq: u8,
-};
-
-const HalfMakeIndexParams = struct {
-    perspective: u8,
-    square: u8,
-    piece: u8,
-    king_square: u8,
-};
-
-const HalfAppendResult = struct {
-    len: usize,
-    indices: [psq_index_capacity]u32,
-};
-
-const FullAppendResult = struct {
-    len: usize,
-    indices: [threat_index_capacity]u32,
-};
-
-// Call the half-KA make-index / append-changed helpers directly as
-// nnue_feature.halfMakeIndex / halfAppendChanged (see the import note above); a
-// direct Zig call avoids the by-value struct passing that is mis-marshaled on aarch64.
-// Call nnue_feature directly for full-threats append (changed/active).
+// Call nnue_feature.halfMakeIndex per changed square and nnue_feature directly for the
+// full-threats active append; index parameters pass as an anonymous struct literal, which
+// a direct Zig call marshals correctly on every ABI (see the import note above).
 
 // Walk the stack once per perspective over the combined HalfKA + Threats accumulator --
 // a direct port of upstream Stockfish's AccumulatorStack::evaluate_side. The single
@@ -251,35 +216,43 @@ fn applyCombined(
     else
         psqDiff(stateBytesConst(psq_feature, computed_index, stack));
 
-    var psq_append: nnue_feature.HalfAppendResult = undefined;
-    nnue_feature.halfAppendChanged(&psq_append, perspective, king_square, .{
-        .from = psq_diff.from,
-        .to = psq_diff.to,
-        .pc = psq_diff.pc,
-        .remove_sq = psq_diff.remove_sq,
-        .add_sq = psq_diff.add_sq,
-        .remove_pc = psq_diff.remove_pc,
-        .add_pc = psq_diff.add_pc,
-    });
-
     var psq_removed: [psq_index_capacity]u32 = undefined;
     var psq_added: [psq_index_capacity]u32 = undefined;
     var psq_removed_len: usize = 0;
     var psq_added_len: usize = 0;
-    var cursor: usize = 0;
 
-    appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, psq_append.indices[cursor], forward);
-    cursor += 1;
+    // Route each changed square's feature index straight into removed/added at its
+    // routing site -- upstream append_changed_indices' shape: each diff condition is
+    // tested once, with no intermediate index buffer. Same per-list order.
+    appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, nnue_feature.halfMakeIndex(.{
+        .perspective = perspective,
+        .square = psq_diff.from,
+        .piece = psq_diff.pc,
+        .king_square = king_square,
+    }), forward);
     if (psq_diff.to != sq_none) {
-        appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, psq_append.indices[cursor], !forward);
-        cursor += 1;
+        appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, nnue_feature.halfMakeIndex(.{
+            .perspective = perspective,
+            .square = psq_diff.to,
+            .piece = psq_diff.pc,
+            .king_square = king_square,
+        }), !forward);
     }
     if (psq_diff.remove_sq != sq_none) {
-        appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, psq_append.indices[cursor], forward);
-        cursor += 1;
+        appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, nnue_feature.halfMakeIndex(.{
+            .perspective = perspective,
+            .square = psq_diff.remove_sq,
+            .piece = psq_diff.remove_pc,
+            .king_square = king_square,
+        }), forward);
     }
     if (psq_diff.add_sq != sq_none) {
-        appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, psq_append.indices[cursor], !forward);
+        appendHalfChange(&psq_removed, &psq_removed_len, &psq_added, &psq_added_len, nnue_feature.halfMakeIndex(.{
+            .perspective = perspective,
+            .square = psq_diff.add_sq,
+            .piece = psq_diff.add_pc,
+            .king_square = king_square,
+        }), !forward);
     }
 
     // --- Threat changed-feature indices ---
