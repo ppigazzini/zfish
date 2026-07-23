@@ -121,10 +121,11 @@ pub const ZfishIdState = struct {
 
 // Carry the hot per-node context through the qsearch/search recursion: the Worker graph +
 // the pointers into it the node bodies read/write. `table` is the typed TT cluster
-// base; `acc_stack`/`cache` are the NNUE arena opaque handles (B4 idiom).
+// base, non-optional: a search runs only on a sized table, so the per-node TT reads
+// carry no null guard. `acc_stack`/`cache` are the NNUE arena opaque handles (B4 idiom).
 pub const QCtx = struct {
     worker: *worker_layout.WorkerLayout,
-    table: ?[*]tt_types.TtCluster,
+    table: [*]tt_types.TtCluster,
     cluster_count: usize,
     generation: u8,
     acc_stack: *nnue_acc.AccumulatorStack,

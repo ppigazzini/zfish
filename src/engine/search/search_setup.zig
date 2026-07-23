@@ -62,7 +62,7 @@ fn searchCbWorkerState(wl: *worker_layout.WorkerLayout, out_acc_stack: *?*nnue_a
     }
 }
 
-pub fn buildCtx(worker: *worker_layout.WorkerLayout, table: ?[*]tt_types.TtCluster, cc: usize, gen: u8) QCtx {
+pub fn buildCtx(worker: *worker_layout.WorkerLayout, table: [*]tt_types.TtCluster, cc: usize, gen: u8) QCtx {
     var acc_stack: ?*nnue_acc.AccumulatorStack = null;
     var nodes: ?*u64 = null;
     var cache: ?*nnue_acc.RefreshCache = null;

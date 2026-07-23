@@ -69,7 +69,11 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     var cc: usize = 0;
     var gen: u8 = 0;
     searchCbTtContext(wl, &table, &cc, &gen);
-    const ctx = buildCtx(wl, table, cc, gen);
+    // Unwrap once for the whole search: the engine sizes the TT before any search
+    // (options Hash default / headless setup), and an unsized table could not
+    // complete a single node anyway (the first entrySave writes through the
+    // probe's writer pointer). This trap fires at setup instead.
+    const ctx = buildCtx(wl, table.?, cc, gen);
 
     var pv: PVMoves = undefined;
     pv.length = 0;
