@@ -48,6 +48,29 @@ zig build tsan-race -Dtsan -Dlto=false   # ThreadSanitizer, must report ZERO rac
 Cross-compile before committing anything under `src/platform/`, `std.Io`, or startup:
 `zig build -Dos=windows` and `-Dos=macos`. CI has caught an eager `File.stdout()` here.
 
+**Check the gate's EXIT CODE, never a piped fragment.** `zig build parity | tail`
+shows green golden lines while a later gate (loc_lint, docs-lint) is red — this
+laundered a red aggregate twice in one session. `zig build parity; echo $?` or
+redirect to a log and test `$?`. A gate parity SKIPPED for a missing tool proves
+nothing — never report it as a pass.
+
+## Fleets and subagents
+
+Multi-agent perf/refactor fleets are a standing pattern here. Every rule below was
+paid for:
+
+- **Never `git stash`** — the stash is repo-wide across worktrees; parallel agents
+  racing it corrupt each other. Recover by SHA instead.
+- **Charter disjoint FILES, not just disjoint metrics** — two agents once shipped
+  the same port of the same upstream function from opposite charters.
+- **Unique scratch filenames + md5-pin every measured binary** — a shared scratchpad
+  collision (`cand-sse41`) once turned a SIGILL-dead half-run into a fake 20% win.
+  Reject any callgrind output missing its `Nodes searched` line.
+- **Worktree agents cannot write the local dev notebook** (the gitignored ledger
+  directory) — ledger rows travel in the final report; the integrator lands them.
+- **Subagents are not re-woken by their own background jobs** — wait on
+  measurements with a foreground `until` loop, or the agent stalls silently.
+
 ## Traps that cost real time
 
 Pointers, not explanations — each is documented where it belongs.
@@ -55,11 +78,19 @@ Pointers, not explanations — each is documented where it belongs.
 | trap | where |
 |---|---|
 | A golden can pin a **defect**: `<gate>-update` on a red gate launders a bug. Drive the oracle, match its bytes. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
-| Two oracles. A cost ratio off the `COMP=gcc` one measures **the compiler**, not zfish. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| Two oracles. A cost ratio off the `COMP=gcc` one measures **the compiler**, not zfish — and the gcc build can be genuinely faster than the zig-c++ one at a tier; Elo vs the gcc build and counters vs the zig-c++ build answer different questions. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | nps cannot resolve <5%; callgrind cost must be summed across origin files. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
+| Serial cycle A/B on this box has a **±1% run-to-run floor and a +0.65% A/A bias** — a sub-1% single-tier cycle claim is unmeasurable; adjudicate with the deterministic instruction axis, or with fastchess Elo (concurrency 4, idle box, `Timeouts:` near zero — a background build forfeits games exactly like SMT oversubscription). | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
+| callgrind is **blind to software prefetch** on both engines — no callgrind bar can certify a prefetch change. An instruction win can still be a cycle **loss** (three recurrences); cycles at the tier that runs decide. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
+| loc_lint god-file regression: **split the file**; raising `LOC_BASELINE` is laundering. A bit-exact slice can still redden the aggregate this way. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| Bit-exactness ≠ faithfulness: the bench is a fixed position list, so a divergence off those positions is invisible to the anchor. `tools/upstream_nodes.sh` drives both engines over random-legal positions and is not fooled. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| A perf-symbol group regex is a **hypothesis** (upstream `do_move`'s signature contains `TranspositionTable const*`; inlining differs per side) — verify per-symbol before trusting any component ratio. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | Comments are **imperative mood**; never pin a number a gate computes. | [docs/11-writing.md](docs/11-writing.md) |
 
 ## Commits
+
+**One logical change per commit** — a commit that touches three modules cannot be
+bisected when the node count moves.
 
 Conventional subject ≤72 chars, blank line, body wrapped at 80 carrying the evidence: gate
 output and exit code, not "should work". **Don't** `git push` — commit locally and stop unless
