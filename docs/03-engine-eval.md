@@ -134,7 +134,10 @@ through `sqrClippedReLU(19)` and `clippedReLU(6)`. On the plain-AVX2 tier
 `USE_AVX2_PAIR_ACTIVATIONS`) `sqrClipPair` fuses each layer's two activations,
 sharing the loads and the signed saturating packs; the packs' per-128-bit-lane
 interleave is folded into the `fc_1`/`fc_2` weight parse instead of a restoring
-permute, so the values — and every tier's eval — are unchanged. The forward output is
+permute, so the values — and every tier's eval — are unchanged. The 128-bit
+SSSE3-class tier (`sse_pair_activations` — SSSE3 without AVX2) runs the same fused
+shape as `sqrClipPair128`; its packs concatenate in order, so the bytes land in
+natural order and the weight parse stays the identity. The forward output is
 `fc_2[0] + (fc_0[30] - fc_0[31])` scaled by `600*16 / (128*64*2)`, and `evaluate`
 divides both the psqt and positional halves by `output_scale = 16` before returning.
 
