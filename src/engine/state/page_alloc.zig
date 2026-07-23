@@ -7,21 +7,25 @@
 //! startup; default to a std page-backed allocator so a headless engine build
 //! (unit tests, fuzzing) can still allocate with no platform attached.
 //!
-//! Honor this contract (matches the platform allocator): `alloc(size)` returns a zeroed
-//! block whose payload is at least 64-byte aligned, or null on failure; `free(ptr)` takes
-//! only the pointer. Have the default record the block length in a header word placed
-//! before the payload so free() needs no size. Note that in the shipped engine the platform
-//! injects its 2 MiB huge-page allocator, so production allocation is the platform's,
-//! including the zero-fill the worker construction relies on.
+//! Honor this contract (matches the platform allocator): `alloc(size)` returns an
+//! UNINITIALIZED block whose payload is at least 64-byte aligned, or null on failure;
+//! `free(ptr)` takes only the pointer. Every consumer fully initializes what it reads
+//! (the TT via clearState, the shared-history arenas via the worker stripe fills, the
+//! NNUE arenas via the parse plus an explicit padding zero) -- do NOT add a consumer
+//! that assumes a zeroed block. Have the default record the block length in a header
+//! word placed before the payload so free() needs no size. Note that in the shipped
+//! engine the platform injects its 2 MiB huge-page allocator, so production allocation
+//! is the platform's.
 //!
 //! hook-class: service — a leaf answering a query it must not import the answer for.
 //!
 //! Treat these 2 as GENUINELY SAFE unregistered: the default is a REAL page-backed
-//! allocator honouring the same contract (zeroed, >=64-aligned, size-free `free`), not
-//! a stub that returns a plausible-looking answer. Allocate correctly in a headless build
-//! with no platform attached; lose only the huge-page optimisation.
+//! allocator honouring the same contract (uninitialized, >=64-aligned, size-free
+//! `free`), not a stub that returns a plausible-looking answer. Allocate correctly in a
+//! headless build with no platform attached; lose only the huge-page optimisation.
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 // Reserve one 64-byte unit before the payload: keep the payload 64-aligned (page
 // memory is already 4096-aligned) and hold the block length for free().
@@ -31,7 +35,10 @@ fn defaultAlloc(size: usize) ?*anyopaque {
     if (size == 0) return null;
     const total = payload_offset + size;
     const raw = std.heap.page_allocator.alloc(u8, total) catch return null;
-    @memset(raw, 0);
+    // Poison in Debug, mirroring the platform allocator: fresh mmap pages happen to
+    // be zero, which would let a read-before-write consumer pass every test while
+    // being heap-dependent in production. The poison makes that bug fail here.
+    if (builtin.mode == .Debug) @memset(raw[payload_offset..], 0xAA);
     std.mem.writeInt(usize, raw[0..@sizeOf(usize)], total, .little);
     return @ptrCast(raw.ptr + payload_offset);
 }
@@ -43,11 +50,11 @@ fn defaultFree(ptr: ?*anyopaque) void {
     std.heap.page_allocator.free(raw[0..total]);
 }
 
-/// Return a zeroed, >=64-aligned block of `size` bytes, or null. Let the platform
-/// register it; default to the std page-backed allocator above.
+/// Return an uninitialized, >=64-aligned block of `size` bytes, or null. Let the
+/// platform register it; default to the std page-backed allocator above.
 /// failure: silent — a real page-backed allocator meeting the full contract, not a
 /// stub. Correct unregistered; the platform's huge pages are an optimisation, not a
-/// requirement. (The zero-fill IS required -- worker construction depends on it.)
+/// requirement. Consumers own initialization -- see the module comment.
 pub var alloc: *const fn (size: usize) ?*anyopaque = &defaultAlloc;
 
 /// Free a block from `alloc`. Pointer only; the size is the allocator's business.
@@ -56,11 +63,14 @@ pub var alloc: *const fn (size: usize) ?*anyopaque = &defaultAlloc;
 pub var free: *const fn (ptr: ?*anyopaque) void = &defaultFree;
 
 test {
-    // Round-trip a zeroed, aligned block headless through the default.
+    // Round-trip an aligned block headless through the default; the contents are
+    // uninitialized (Debug poisons them), so only write-then-read is contractual.
     const p = alloc(4096) orelse return error.OutOfMemory;
     const bytes: [*]u8 = @ptrCast(p);
     try std.testing.expectEqual(@as(usize, 0), @intFromPtr(p) % 64);
-    try std.testing.expectEqual(@as(u8, 0), bytes[0]);
-    try std.testing.expectEqual(@as(u8, 0), bytes[4095]);
+    bytes[0] = 0x5A;
+    bytes[4095] = 0xA5;
+    try std.testing.expectEqual(@as(u8, 0x5A), bytes[0]);
+    try std.testing.expectEqual(@as(u8, 0xA5), bytes[4095]);
     free(p);
 }

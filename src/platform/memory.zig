@@ -60,15 +60,17 @@ pub fn alignedLargePagesAlloc(alloc_size: usize) ?*anyopaque {
 
     const mem = stdAlignedAlloc(alignment, rounded_size);
     if (mem) |ptr| {
-        // Zero the block. posix_memalign / _aligned_malloc return uninitialized
-        // memory; fresh OS pages happen to be zero, but reused blocks (thread resize,
-        // search clear) carry stale data. The historic consumer of this fill was the
-        // Worker's read-before-write slice headers (root_moves, limits.searchmoves);
-        // worker_construct.writeConstructorFields now initializes those explicitly
-        // and constructFull zeroes the whole Worker block itself, so the Worker no
-        // longer depends on this memset. What still does is the page_alloc contract:
-        // its consumers may treat a fresh block as zeroed (see page_alloc.zig).
-        @memset(@as([*]u8, @ptrCast(ptr))[0..rounded_size], 0);
+        // Hand the block out UNINITIALIZED, as upstream's aligned_large_pages_alloc
+        // does: every consumer fully initializes what it reads (the TT via clearState,
+        // the shared-history arenas via the worker stripe fills, the NNUE arenas via
+        // the parse plus an explicit padding zero, the Worker via constructFull) --
+        // proven by a 0xAA poison audit of each path. Blanket-zeroing here re-wrote
+        // ~100 MB the consumers immediately overwrite. In Debug builds poison the
+        // block instead, so a regressed read-before-write consumer fails loudly
+        // rather than riding whatever the heap happens to hold.
+        if (builtin.mode == .Debug) {
+            @memset(@as([*]u8, @ptrCast(ptr))[0..rounded_size], 0xAA);
+        }
         // Hint transparent huge pages (madvise MADV_HUGEPAGE), a Linux-only advisory,
         // skipped where the kernel never backs it (thpHintUseful). macOS/Windows have no
         // equivalent call; the allocation is already 2 MiB-aligned, so the OS is free to

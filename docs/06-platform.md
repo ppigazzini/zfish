@@ -16,7 +16,7 @@ For the zones and the module graph, see [00-architecture.md](00-architecture.md)
 | `thread_runtime.zig` | the OS primitives: the futex seam, `Mutex`, `Condition`, `ThreadRuntime` idle loop |
 | `search_thread.zig` | the `SearchThread` vehicle: worker handle, job submission, the search job |
 | `thread_vote.zig` | the Lazy-SMP vote picking the best thread's move |
-| `memory.zig` | the aligned / huge-page allocator and its zero-fill |
+| `memory.zig` | the aligned / huge-page allocator (uninitialized blocks; Debug poison) |
 | `numa.zig` | the NUMA topology surface (config, binding, execute-on-node) |
 | `numa/config.zig` | `NumaConfig`: nodes, CPU sets, `NumaPolicy` parsing, thread distribution |
 | `numa/replication.zig` | `NumaReplicationContext` / `NumaReplicatedBase`: the replica registry |
@@ -175,16 +175,18 @@ returns `EFAULT`, the wait returns immediately, and the predicate loop busy-spin
 The engine still produces correct results, so no unit test catches it — only the
 CPU burn shows.
 
-**Large-page blocks are zero-filled.** `alignedLargePagesAlloc` `@memset`s the block
-to 0. `posix_memalign` / `_aligned_malloc` return uninitialized memory; fresh OS
-pages happen to be zero, but reused blocks (thread resize, search clear) carry stale
-data. The Worker's historic dependence on this fill is gone: the two
-read-before-write fields it was pinning (`root_moves`, `limits.searchmoves`) are
-initialized explicitly by `worker_construct.writeConstructorFields`, and
+**Large-page blocks arrive uninitialized — consumers own their fill.**
+`alignedLargePagesAlloc` matches upstream's `aligned_large_pages_alloc`: no zero-fill
+(in Debug it poisons the block with 0xAA so a read-before-write consumer fails loudly
+instead of riding heap history). The historic blanket zero existed for the Worker's
+two read-before-write slice headers (`root_moves`, `limits.searchmoves`); those are
+now initialized explicitly by `worker_construct.writeConstructorFields`, and
 `constructFull` zeroes the whole Worker block itself — proven by a 0xAA poison-fill
-audit that held bench and every deterministic mode. What remains is the `page_alloc`
-contract: consumers may treat a fresh block as zeroed, and any allocator registered
-over that seam must honour it.
+audit that held bench and every deterministic mode. Every other consumer initializes
+what it reads: the TT via `clearState`, the shared-history arenas via the worker
+stripe fills, the NNUE arenas via the gapless parse (comptime-asserted in
+`nnue_parse`) plus a one-time layer-arena zero. Do not add a `page_alloc` consumer
+that assumes a zeroed block.
 
 **`thread.zig` importing `option` is the one platform→shell edge.** `reconfigure`
 reads the requested thread count and the NUMA policy mode straight from the shell's
