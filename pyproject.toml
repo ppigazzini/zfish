@@ -5,7 +5,7 @@
 [project]
 name = "zfish-internal-python-tools"
 version = "0.0.0"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 
 [dependency-groups]
 dev = [
@@ -15,7 +15,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 src = ["tools"]
 # House style wraps prose-heavy tool comments at ~100, not ruff's default 88.
 line-length = 100
@@ -29,7 +29,7 @@ line-length = 100
 select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ty.environment]
-python-version = "3.12"
+python-version = "3.14"
 
 [tool.ty.src]
 # Scope to the repo-owned scripts: agent worktrees under the untracked .claude/
