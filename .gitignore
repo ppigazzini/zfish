@@ -9,8 +9,6 @@ __pycache__
 *.pyc
 *.pyo
 *.pyd
-pyproject.toml
-.pre-commit-config.yaml
 uv.lock
 
 # Files from build

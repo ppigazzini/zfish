@@ -41,8 +41,16 @@ FENS = [
     "fen 8/8/8/8/8/8/8/8 w - - 0 1",
     "fen invalid/board/here w KQkq - 0 1",
 ]
-OPTIONS = ["Hash", "Threads", "MultiPV", "SyzygyPath", "Ponder", "Move Overhead",
-           "NoSuchOption", ""]
+OPTIONS = [
+    "Hash",
+    "Threads",
+    "MultiPV",
+    "SyzygyPath",
+    "Ponder",
+    "Move Overhead",
+    "NoSuchOption",
+    "",
+]
 MOVES = ["e2e4", "e7e5", "g1f3", "e1g1", "e7e8q", "a2a1n", "0000", "zzzz", "e2e9"]
 
 
@@ -68,35 +76,67 @@ def stream(rng: random.Random) -> str:
         kind = rng.random()
         if kind < 0.25:
             moves = " ".join(rng.choices(MOVES, k=rng.randrange(0, 6)))
-            lines.append((f"position {rng.choice(FENS)}"
-                          + (f" moves {moves}" if moves else ""), True))
+            lines.append(
+                (f"position {rng.choice(FENS)}" + (f" moves {moves}" if moves else ""), True)
+            )
         elif kind < 0.45:
-            lines.append((f"setoption name {rng.choice(OPTIONS)} value "
-                          + rng.choice(["1", "0", "-1", "99999999", "true", "x" * 300, ""]),
-                          True))
+            lines.append(
+                (
+                    f"setoption name {rng.choice(OPTIONS)} value "
+                    + rng.choice(["1", "0", "-1", "99999999", "true", "x" * 300, ""]),
+                    True,
+                )
+            )
         elif kind < 0.70:
             # The shell searches asynchronously, so `go infinite` joins the
             # bounded forms: the paired `stop` releases it, and even a stream
             # whose stop is lost still terminates through the closing quit.
-            lines.append((rng.choice([
-                f"go depth {rng.randrange(1, 6)}",
-                f"go nodes {rng.choice([1, 1000, 10**6])}",
-                f"go movetime {rng.randrange(1, 30)}",
-                f"go perft {rng.randrange(1, 4)}",
-                "go infinite",
-            ]), False))
+            lines.append(
+                (
+                    rng.choice(
+                        [
+                            f"go depth {rng.randrange(1, 6)}",
+                            f"go nodes {rng.choice([1, 1000, 10**6])}",
+                            f"go movetime {rng.randrange(1, 30)}",
+                            f"go perft {rng.randrange(1, 4)}",
+                            "go infinite",
+                        ]
+                    ),
+                    False,
+                )
+            )
             lines.append(("stop", False))
         elif kind < 0.85:
-            lines.append((rng.choice(["ucinewgame", "isready", "stop", "ponderhit", "d",
-                                      "bench 1 1 2", "eval", "flip", "compiler", "help"]),
-                          True))
+            lines.append(
+                (
+                    rng.choice(
+                        [
+                            "ucinewgame",
+                            "isready",
+                            "stop",
+                            "ponderhit",
+                            "d",
+                            "bench 1 1 2",
+                            "eval",
+                            "flip",
+                            "compiler",
+                            "help",
+                        ]
+                    ),
+                    True,
+                )
+            )
         else:
             # Mangle position/setoption commands only; go lines stay whole (see
             # the note on the verbatim go forms above).
-            lines.append((mangle(rng, rng.choice(["position startpos",
-                                                  "setoption name Hash value 1"])), True))
+            lines.append(
+                (
+                    mangle(rng, rng.choice(["position startpos", "setoption name Hash value 1"])),
+                    True,
+                )
+            )
     lines.append(("quit", False))
-    return "\n".join(mangle(rng, l) if fuzz else l for l, fuzz in lines) + "\n"
+    return "\n".join(mangle(rng, text) if fuzz else text for text, fuzz in lines) + "\n"
 
 
 def main() -> None:
@@ -114,13 +154,18 @@ def main() -> None:
     while time.monotonic() < deadline:
         payload = stream(rng)
         try:
-            proc = subprocess.run([args.binary], input=payload.encode("utf-8", "surrogateescape"),
-                                  capture_output=True, timeout=120)
+            proc = subprocess.run(
+                [args.binary],
+                input=payload.encode("utf-8", "surrogateescape"),
+                capture_output=True,
+                timeout=120,
+            )
         except subprocess.TimeoutExpired:
             # Every stream ends with a verbatim `quit`, so a timeout is a real
             # hang -- report it like any other failure.
-            sys.stderr.write(f"FUZZ HANG at run {runs} (seed {args.seed})\n"
-                             "---- input ----\n" + payload)
+            sys.stderr.write(
+                f"FUZZ HANG at run {runs} (seed {args.seed})\n---- input ----\n" + payload
+            )
             sys.exit(1)
         out = proc.stdout.decode(errors="replace")
         err = proc.stderr.decode(errors="replace")
@@ -132,8 +177,9 @@ def main() -> None:
         ok_exit = proc.returncode == 0 or (proc.returncode == 1 and "CRITICAL ERROR" in out)
         bad = not ok_exit or "panic" in err
         if bad:
-            sys.stderr.write(f"FUZZ FAILURE at run {runs} (seed {args.seed}, "
-                             f"exit {proc.returncode})\n")
+            sys.stderr.write(
+                f"FUZZ FAILURE at run {runs} (seed {args.seed}, exit {proc.returncode})\n"
+            )
             sys.stderr.write("---- input ----\n" + payload + "\n---- stderr ----\n" + err)
             sys.exit(1)
         runs += 1

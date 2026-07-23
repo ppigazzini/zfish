@@ -1,0 +1,52 @@
+# Pre-commit hooks: file hygiene, Python lint/format/type-check, zig fmt.
+# Install once with `pre-commit install`; run everything with
+# `pre-commit run --all-files`. CI does not run these -- the parity workflow's
+# own gates (zig fmt --check first) stay the authority; this catches the same
+# classes before the commit exists.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+        # Never touch byte-exact comparison inputs: goldens are matched against
+        # engine output verbatim (misc.golden carries a trailing space today),
+        # and .epd/.nnue are data.
+        exclude: '\.(golden|epd|nnue)$'
+      - id: trailing-whitespace
+        exclude: '\.(golden|epd|nnue)$'
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.22
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/astral-sh/ty-pre-commit
+    rev: v0.0.62
+    hooks:
+      # The hook's own entry checks the whole project (ty's cross-file
+      # diagnostics make per-filename invocation wrong); tools/ is the only
+      # Python in the tree, and [tool.ty] in pyproject.toml pins the env.
+      - id: ty
+  - repo: local
+    hooks:
+      # zig fmt is CI's first gate and blocks everything after it; run it on the
+      # staged .zig files here so a deletion's leftover blank line never reaches
+      # CI. Local hook, not a wrapper repo: the entry is one pinned-toolchain
+      # command, and a third-party mirror would add a supply-chain edge for it.
+      - id: zig-fmt
+        name: zig fmt --check
+        entry: zig fmt --check
+        language: system
+        types: [zig]
+      # Docs are part of the change (AGENTS.md): a doc edit that breaks a link,
+      # names a dead path, or contradicts the bench anchor should fail here, not
+      # in CI.
+      - id: docs-lint
+        name: zig build docs-lint
+        entry: zig build docs-lint
+        language: system
+        files: '\.md$'
+        pass_filenames: false
