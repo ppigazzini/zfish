@@ -1,0 +1,8 @@
+# Upstream files not applicable to this port BY DESIGN, with the reason.
+# Format: <upstream path> <TAB> <reason>. Anything else uncovered is either
+# unported surface or ported code missing its upstream citation -- both are debt
+# the map report exists to show, so keep this list to true design decisions.
+src/tune.cpp	SPSA tuning framework: not ported by design; tuned values are transcribed constants
+src/tune.h	companion of tune.cpp
+src/incbin/incbin.h	net embedding machinery: zfish loads the net at runtime by design (NNUE_EMBEDDING_OFF)
+src/thread_win32_osx.h	upstream's win/osx threading shim: zfish owns its thread runtime in src/platform/
