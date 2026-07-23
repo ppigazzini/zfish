@@ -136,6 +136,11 @@ pub inline fn runBack(nd: anytype) i32 {
         .ply = nd.ss.ply,
     };
 
+    // Gather the pawn-history row Step 14 reads once: the make/unmake pair restores
+    // nd.pos.st before every iteration, so the row is loop-invariant. Upstream
+    // recomputes pawn_entry(pos) per move; the value is the same.
+    const pawn_row = pawnEntryRow(sharedOf(nd.w), nd.pos);
+
     var value: i32 = best_value;
     var move_count: i32 = 0;
     var quiets_searched: [32]u16 = undefined;
@@ -188,7 +193,7 @@ pub inline fn runBack(nd: anytype) i32 {
                 // Relaxed on the pawn-table read: the row is shared across workers and written
                 // concurrently by statsUpdate.
                 var history = contVal(cont_hist[0], moved_piece, to) + contVal(cont_hist[1], moved_piece, to) +
-                    @atomicLoad(i16, &pawnEntryRow(sharedOf(nd.w), nd.pos)[@as(usize, moved_piece) * 64 + to], .monotonic);
+                    @atomicLoad(i16, &pawn_row[@as(usize, moved_piece) * 64 + to], .monotonic);
                 if (history < search.historyPruneThreshold(depth)) continue;
                 history += @divTrunc(69 * @as(i32, nd.w.main_history[@as(usize, nd.us) * hist_uint16 + move]), 32);
                 lmr_depth += @divTrunc(history, lmr_divisor[d_index]);
