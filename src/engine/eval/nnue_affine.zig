@@ -250,7 +250,15 @@ inline fn affineAvx2(
     input: []const u8,
     nnz: *const nnue_accumulator_port.NnzBitset,
 ) void {
-    var acc: [OUT]i32 = biases[0..OUT].*;
+    // Split the accumulator into two dependency chains, mcfish's measured optimum at plain
+    // AVX2 (0aafad9: three chains held 12 of 16 ymm live and spilled, one lost the
+    // maddubs->madd->add overlap; two converts). Chain indices come from an `inline for`,
+    // so every acc index is comptime and the block stays in registers; i32 wrapping adds
+    // commute, so the end merge is bit-identical whatever the group partition.
+    const chains = 2;
+    var acc: [chains][OUT]i32 = undefined;
+    acc[0] = biases[0..OUT].*;
+    inline for (0..OUT / 8) |c| acc[1][c * 8 ..][0..8].* = @as(@Vector(8, i32), @splat(0));
     const ones: @Vector(16, i16) = @splat(1);
     const groups = input.len / 4;
     if (sparse) {
@@ -262,30 +270,41 @@ inline fn affineAvx2(
             const in_base = input.ptr + k * 64 * 4;
             const w_base = weights + k * 64 * OUT * 4;
             while (bits != 0) {
-                const i: usize = @ctz(bits);
-                bits &= bits - 1;
-                const in4: [4]u8 = in_base[i * 4 ..][0..4].*;
-                const inpat: @Vector(32, i8) = @bitCast(@as(@Vector(8, u32), @splat(@as(u32, @bitCast(in4)))));
-                inline for (0..OUT / 8) |c| {
-                    const w: @Vector(32, i8) = loadW(32, 32, w_base, i * OUT * 4 + c * 32);
-                    const p: @Vector(8, i32) = pmaddwd256(pmaddubsw256(inpat, w), ones);
-                    acc[c * 8 ..][0..8].* = @as(@Vector(8, i32), acc[c * 8 ..][0..8].*) + p;
+                inline for (0..chains) |ch| {
+                    if (bits != 0) {
+                        const i: usize = @ctz(bits);
+                        bits &= bits - 1;
+                        const in4: [4]u8 = in_base[i * 4 ..][0..4].*;
+                        const inpat: @Vector(32, i8) = @bitCast(@as(@Vector(8, u32), @splat(@as(u32, @bitCast(in4)))));
+                        inline for (0..OUT / 8) |c| {
+                            const w: @Vector(32, i8) = loadW(32, 32, w_base, i * OUT * 4 + c * 32);
+                            const p: @Vector(8, i32) = pmaddwd256(pmaddubsw256(inpat, w), ones);
+                            acc[ch][c * 8 ..][0..8].* = @as(@Vector(8, i32), acc[ch][c * 8 ..][0..8].*) + p;
+                        }
+                    }
                 }
             }
         }
     } else {
         var g: usize = 0;
-        while (g < groups) : (g += 1) {
-            const in4: [4]u8 = input[g * 4 ..][0..4].*;
-            const inpat: @Vector(32, i8) = @bitCast(@as(@Vector(8, u32), @splat(@as(u32, @bitCast(in4)))));
-            inline for (0..OUT / 8) |c| {
-                const w: @Vector(32, i8) = loadW(32, 32, weights, g * OUT * 4 + c * 32);
-                const p: @Vector(8, i32) = pmaddwd256(pmaddubsw256(inpat, w), ones);
-                acc[c * 8 ..][0..8].* = @as(@Vector(8, i32), acc[c * 8 ..][0..8].*) + p;
+        outer: while (true) {
+            inline for (0..chains) |ch| {
+                if (g >= groups) break :outer;
+                const in4: [4]u8 = input[g * 4 ..][0..4].*;
+                g += 1;
+                const inpat: @Vector(32, i8) = @bitCast(@as(@Vector(8, u32), @splat(@as(u32, @bitCast(in4)))));
+                inline for (0..OUT / 8) |c| {
+                    const w: @Vector(32, i8) = loadW(32, 32, weights, (g - 1) * OUT * 4 + c * 32);
+                    const p: @Vector(8, i32) = pmaddwd256(pmaddubsw256(inpat, w), ones);
+                    acc[ch][c * 8 ..][0..8].* = @as(@Vector(8, i32), acc[ch][c * 8 ..][0..8].*) + p;
+                }
             }
         }
     }
-    out.* = acc;
+    inline for (0..OUT / 8) |c| {
+        const merged = @as(@Vector(8, i32), acc[0][c * 8 ..][0..8].*) + @as(@Vector(8, i32), acc[1][c * 8 ..][0..8].*);
+        out[c * 8 ..][0..8].* = merged;
+    }
 }
 
 // Compute the OUT==1 affine as one contiguous int8 dot. For a single output the scrambled
