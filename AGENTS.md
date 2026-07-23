@@ -78,7 +78,7 @@ Pointers, not explanations — each is documented where it belongs.
 | trap | where |
 |---|---|
 | A golden can pin a **defect**: `<gate>-update` on a red gate launders a bug. Drive the oracle, match its bytes. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
-| Two oracles. A cost ratio off the `COMP=gcc` one measures **the compiler**, not zfish — and the gcc build can be genuinely faster than the zig-c++ one at a tier; Elo vs the gcc build and counters vs the zig-c++ build answer different questions. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| **The oracle is ALWAYS the zig-c++ build** (`tools/upstream_oracle.sh` defaults to it via `tools/zigcxx`) — for ratios AND matches. A `COMP=gcc` build measures **gcc**, not zfish (+7.4% instructions on identical source, measured); reach for it only to study gcc itself, via `ORACLE_COMP=gcc`, and label the result as such. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | nps cannot resolve <5%; callgrind cost must be summed across origin files. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | Serial cycle A/B on this box has a **±1% run-to-run floor and a +0.65% A/A bias** — a sub-1% single-tier cycle claim is unmeasurable; adjudicate with the deterministic instruction axis, or with fastchess Elo (concurrency 4, idle box, `Timeouts:` near zero — a background build forfeits games exactly like SMT oversubscription). | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | callgrind is **blind to software prefetch** on both engines — no callgrind bar can certify a prefetch change. An instruction win can still be a cycle **loss** (three recurrences); cycles at the tier that runs decide. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |

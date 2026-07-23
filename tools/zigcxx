@@ -1,0 +1,6 @@
+#!/bin/sh
+# Compile C++ with Zig's bundled clang. Hand this to the oracle build as
+# COMPCXX so every zfish-vs-upstream ratio compares source/codegen against the
+# SAME LLVM backend zfish uses -- a COMP=gcc oracle measures gcc, not zfish
+# (measured 2026-07-23: gcc emits +7.4% instructions on identical source).
+exec zig c++ "$@"
