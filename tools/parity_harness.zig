@@ -744,6 +744,11 @@ fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     // in-tree Step 6 probe fires at the 3-man nodes captures reach. Bench ONE per file (a
     // multi-position bench carries the TT between positions), so both the no-tb baseline and the
     // Step 6 delta are per-position bit-exact vs the oracle. Both draws (KNNvK, KRvKR).
+    //
+    // The third column pins the check-time CADENCE, not just the tree: every TB probe zeroes the
+    // time-check counter (upstream search.cpp:917), so a node-limited stop lands on a different
+    // node when that reset is missing. Use N >= 524288 so the counter reseeds the full 512 and
+    // the reset is the only cadence input; a depth-limited bench is blind to this whole axis.
     const rows = [_]struct { label: []const u8, fen: []const u8 }{
         .{ .label = "KNNvK", .fen = "8/8/8/8/3k4/8/1N1NK3/8 w - - 0 1" },
         .{ .label = "KNvKN", .fen = "8/8/8/8/3k4/8/1N1nK3/8 w - - 0 1" },
@@ -755,7 +760,8 @@ fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         try Io.Dir.cwd().writeFile(io, .{ .sub_path = "tb_search_tmp.epd", .data = r.fen });
         const with_tb = try benchNodes(gpa, io, bin, "setoption name SyzygyPath value syzygy\nbench 16 1 10 tb_search_tmp.epd depth\nquit\n");
         const no_tb = try benchNodes(gpa, io, bin, "bench 16 1 10 tb_search_tmp.epd depth\nquit\n");
-        try out.print(gpa, "{s} no-tb={d} with-tb={d}\n", .{ r.label, no_tb, with_tb });
+        const nodes_tb = try benchNodes(gpa, io, bin, "setoption name SyzygyPath value syzygy\nbench 16 1 600000 tb_search_tmp.epd nodes\nquit\n");
+        try out.print(gpa, "{s} no-tb={d} with-tb={d} nodes-tb={d}\n", .{ r.label, no_tb, with_tb, nodes_tb });
     }
     return out.toOwnedSlice(gpa);
 }

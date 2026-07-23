@@ -126,6 +126,15 @@ const ssSub = search_qsearch.ssSub;
 const ttMoveHistoryUpdate = search_qsearch.ttMoveHistoryUpdate;
 const contVal = search_qsearch.contVal;
 
+// Force a check of time on the next occasion after a TB probe (search.cpp:917);
+// calls_cnt is null off the main thread, mirroring upstream's is_mainthread()
+// guard. Keep the store out of line: the TB block never runs on a default build
+// (cardinality == 0), and an inline write to the counter perturbs the node
+// body's register allocation.
+noinline fn tbForceTimeCheck(ctx: *const QCtx) void {
+    if (ctx.time_state.calls_cnt) |cc| cc.* = 0;
+}
+
 /// Mirror upstream `template<NodeType> search<Root>/<PV>/<NonPV>(..., bool cutNode)`: the node
 /// type is comptime, `cut_node` is runtime. Carry the comptime fields into `search_back.runBack`
 /// through its `nd: anytype`, specialising it per node type as well.
@@ -288,6 +297,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 pos.st.rule50 == 0 and pos.st.castling_rights == 0)
             {
                 const res = tb_source.probeWdlPos(pos_ptr);
+                tbForceTimeCheck(ctx);
                 if (res.available != 0) {
                     @atomicStore(u64, &ctx.worker.tb_hits, @atomicLoad(u64, &ctx.worker.tb_hits, .monotonic) + 1, .monotonic);
                     const draw_score: i32 = if (tb_cfg[5] != 0) 1 else 0;

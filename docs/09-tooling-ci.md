@@ -124,7 +124,7 @@ The gates fall into kinds:
 | `mate` | `go mate N`: mate distance + move. |
 | `chess960` | `UCI_Chess960` search + castling + eval. |
 | `bench-matrix` | Non-default bench configs (hash/depth/nodes/perft). Linux-only. |
-| `tb-init`, `tb-wdl`, `tb-dtz`, `tb-root`, `tb-search` | The Syzygy load report, WDL/DTZ probes, root DTZ ranking, and the in-search Step-6 node count == the upstream oracle. Linux-only. |
+| `tb-init`, `tb-wdl`, `tb-dtz`, `tb-root`, `tb-search` | The Syzygy load report, WDL/DTZ probes, root DTZ ranking, and the in-search Step-6 node count == the upstream oracle — depth-limited for the tree shape, node-limited for the per-probe time-check counter reset (a depth stop is blind to check-time cadence). Linux-only. |
 
 **Metamorphic** — a property relating two runs, not a fixed value.
 

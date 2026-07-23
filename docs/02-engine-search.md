@@ -290,7 +290,9 @@ scaled down from 512 when a node limit is set, so a node-limited search overshoo
 a bounded amount. It raises the shared stop flag when `use_time_management` is on and
 either the elapsed time exceeds `maximum_time` or `stop_on_ponderhit` is set, when a
 `movetime` limit is reached, or when the node limit is hit. It never stops while
-pondering.
+pondering. A Step-6 tablebase probe zeroes the counter (`tbForceTimeCheck`, upstream
+search.cpp:917), forcing the next `checkTime` to do real work — probes touch disk, so
+elapsed time is re-read promptly after each one.
 
 **The per-iteration decision.** At the end of each depth the main thread computes
 whether to start another iteration, from the falling-eval trend, the depth since the
