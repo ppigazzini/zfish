@@ -18,13 +18,22 @@ const psqt_buckets: usize = 8;
 /// vnni512, perf_counters 10-round paired) -- it drops the 1024-wide row from 8 tiles to 4,
 /// matching upstream SIMDTiling's 2-tile shape and cutting the inner-loop setup. Independent of
 /// nnue_acc_layout's transform_vec_width.
-// Lane count for the combined accumulator row apply. Target-aware: 256 on avx512 (16 zmm hold the
-// 4-register accumulator live across all four column loops; 512 would need 32 zmm and spill), but
-// 64 everywhere else. A paired HW-counter check found 128 REGRESSES sse41 (+1.4% instr, +4.1%
-// cycles): with only 16 xmm even 128 spills. aarch64 keeps 64, unmeasured. Distinct from the
-// transform's width knob (nnue_acc_layout).
-const row_tile_width: usize = if (@import("builtin").cpu.arch == .x86_64 and
-    @import("std").Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512f)) 256 else 64;
+// Lane count for the combined accumulator row apply. Target-aware, upstream's
+// BestRegisterCount shape (8 native registers per tile at every x86 tier): 256 on
+// avx512 (16 zmm hold the 4-register accumulator live across all four column loops;
+// 512 would need 32 zmm and spill), 128 on plain avx2 (8 ymm -- upstream's
+// TileHeight; halves the per-tile row-list walks that a 64-lane tile pays twice),
+// 64 on sse. A paired HW-counter check found 128 REGRESSES sse41 (+1.4% instr,
+// +4.1% cycles): with only 16 xmm even 128 spills. aarch64 keeps 64, unmeasured.
+// Distinct from the transform's width knob (nnue_acc_layout).
+const row_tile_width: usize = blk: {
+    const b = @import("builtin");
+    if (b.cpu.arch == .x86_64) {
+        if (@import("std").Target.x86.featureSetHas(b.cpu.features, .avx512f)) break :blk 256;
+        if (@import("std").Target.x86.featureSetHas(b.cpu.features, .avx2)) break :blk 128;
+    }
+    break :blk 64;
+};
 comptime {
     if (half_dimensions % row_tile_width != 0)
         @compileError("half_dimensions must be a multiple of row_tile_width");
