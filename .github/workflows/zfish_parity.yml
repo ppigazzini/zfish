@@ -63,7 +63,7 @@ jobs:
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: net/nn-*.nnue
+          path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
       # Cache the ~26 KB 3-man Syzygy tablebases (fetched by `zig build tb`, which the tb-init /
@@ -160,7 +160,7 @@ jobs:
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: net/nn-*.nnue
+          path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
       - name: Cache Syzygy tablebases
@@ -193,7 +193,7 @@ jobs:
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: net/nn-*.nnue
+          path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
       - name: Fetch the NNUE net
@@ -241,7 +241,7 @@ jobs:
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: resources/*.nnue
+          path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
       - name: Fetch the NNUE net
         run: zig build net
@@ -302,7 +302,7 @@ jobs:
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: net/nn-*.nnue
+          path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
 
       # Pre-fetch the net so it is cached before the build. `zig build net` runs the pure-Zig
@@ -342,7 +342,7 @@ jobs:
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: net/nn-*.nnue
+          path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
       - name: Fetch the NNUE net
         run: zig build net
