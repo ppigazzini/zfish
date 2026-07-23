@@ -208,13 +208,10 @@ pub fn optionOnChange(
             break :blk null;
         },
         option_callback_syzygy_path => blk: {
-            tablebase.init(value.ptr, value.len);
-            // Print this whenever a path is set (even when 0 found), matching SF `Tablebases::init`.
-            if (value.len != 0) {
-                var buf: [96]u8 = undefined;
-                const msg = std.fmt.bufPrint(&buf, "Found {d} WDL and {d} DTZ tablebase files (up to {d}-man).", .{ tablebase.foundWdl(), tablebase.foundDtz(), tablebase.discoveredMax() }) catch break :blk null;
-                printInfoString(msg);
-            }
+            // Init + the "Found ..." info string live together in tbInit so the
+            // ucinewgame / Clear Hash re-init path prints identically (upstream
+            // emits it from inside Tablebases::init for every caller).
+            engine_control.tbInit(value.ptr[0..value.len]);
             break :blk null;
         },
         option_callback_eval_file => blk: {

@@ -12,6 +12,7 @@ const tt_port = @import("tt");
 const thread_port = @import("thread");
 const option_port = @import("option");
 const tablebase = @import("tablebase");
+const engine_nnue = @import("engine_nnue");
 
 // Free a c_allocator-allocated NUL-terminated string through the Allocator
 // interface (M-MEM.B), exact for these tightly-sized sentinel allocations.
@@ -54,7 +55,21 @@ pub fn searchClear(threads: *worker_layout.ThreadPool, tt: *worker_layout.Transp
     thread_port.waitThread(threads, 0);
     ttClear(tt, threads);
     thread_port.clear(threads);
-    tablebase.init(syzygy_path.ptr, syzygy_path.len);
+    tbInit(syzygy_path);
+}
+
+// (Re)initialize the tablebases and report the discovery, as upstream's
+// Tablebases::init does through TBTables.info() (tbprobe.cpp:1558): the info
+// string fires on EVERY init with a usable path -- setoption, ucinewgame and
+// Clear Hash alike -- and only the empty-path early return stays silent.
+pub fn tbInit(path: []const u8) void {
+    tablebase.init(path.ptr, path.len);
+    if (path.len == 0) return;
+    var buf: [96]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, "Found {d} WDL and {d} DTZ tablebase files (up to {d}-man).", .{
+        tablebase.foundWdl(), tablebase.foundDtz(), tablebase.discoveredMax(),
+    }) catch return;
+    engine_nnue.printInfoString(msg);
 }
 
 pub fn searchClearEngine(engine_ptr: *engine_object.EngineObject) void {
