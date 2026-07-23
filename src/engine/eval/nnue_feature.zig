@@ -83,7 +83,8 @@ pub fn fullMakeIndex(params: FullThreatParams) u32 {
     const attacker_oriented: usize = params.attacker ^ swap;
     const attacked_oriented: usize = params.attacked ^ swap;
     const less: usize = @intFromBool(from_oriented < to_oriented);
-    return index_lut1[attacker_oriented][attacked_oriented][less] + offsets[attacker_oriented][from_oriented] + index_lut2[attacker_oriented][from_oriented][to_oriented];
+    const block = &threat_route_blocks[attacker_oriented];
+    return block.lut1[attacked_oriented * 2 + less] + block.comb[from_oriented * 64 + to_oriented];
 }
 
 pub const FullAppendChangedLens = struct {
@@ -134,10 +135,11 @@ pub noinline fn fullAppendChanged(
         // the low bit away -- so [attacked2 + less] indexes index_lut1's
         // flattened [16][2]u32 rows without a separate scale.
         const attacked2: usize = (x >> 15) & 0x1e;
-        const from: u32 = x & 0xff;
-        const to: u32 = (x >> 8) & 0xff;
+        const from: usize = x & 0xff;
+        const to: usize = (x >> 8) & 0xff;
         const less: usize = @intFromBool(from < to);
-        const index = index_lut1_flat[attacker][attacked2 + less] + offsets[attacker][from] + index_lut2[attacker][from][to];
+        const block = &threat_route_blocks[attacker];
+        const index = block.lut1[attacked2 + less] + block.comb[(from << 6) | to];
         if (index >= full_dimensions) continue;
         if ((x >> 31) != 0) {
             added_out[added_len] = index;
@@ -402,11 +404,38 @@ const helper_offsets_and_offsets = initThreatOffsets();
 const helper_offsets = helper_offsets_and_offsets.first;
 const offsets = helper_offsets_and_offsets.second;
 const index_lut1 = initIndexLuts();
-// View index_lut1's [16][2] rows flat, so [attacked * 2 + less] addresses one
-// element with one scaled index -- the layout is identical, only the type
-// changes.
-const index_lut1_flat: [16][32]u32 = @bitCast(index_lut1);
 const index_lut2 = indexLut2Array();
+
+// Colocate one attacker's whole lookup state -- its flattened index_lut1 row
+// ([attacked * 2 + less] addresses one element with one scaled index) and a
+// merged u16 `offsets[from] + index_lut2[from][to]` plane -- so a threat index
+// costs one block base plus two loads instead of three loads behind three
+// separately scaled bases. The merge fits u16 with a wide margin: the largest
+// per-from offset (queen, 1455) plus the largest within-from index still sits
+// far below 65535, and the builder asserts every sum. The source tables above
+// remain the comptime input; only the blocks are referenced at runtime.
+const ThreatRouteBlock = extern struct {
+    lut1: [32]u32,
+    comb: [64 * 64]u16,
+};
+
+fn buildThreatRouteBlocks() [16]ThreatRouteBlock {
+    @setEvalBranchQuota(4000000);
+    var blocks = std.mem.zeroes([16]ThreatRouteBlock);
+    for (&blocks, 0..) |*block, attacker| {
+        block.lut1 = @bitCast(index_lut1[attacker]);
+        for (0..64) |from| {
+            for (0..64) |to| {
+                const merged: u32 = offsets[attacker][from] + index_lut2[attacker][from][to];
+                std.debug.assert(merged <= std.math.maxInt(u16));
+                block.comb[from * 64 + to] = @intCast(merged);
+            }
+        }
+    }
+    return blocks;
+}
+
+const threat_route_blocks = buildThreatRouteBlocks();
 
 const ps_nb: u32 = 11 * 64;
 const full_dimensions: u32 = 60720;
