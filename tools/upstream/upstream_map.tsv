@@ -1,52 +1,59 @@
 # Blast-radius manifest — routes an upstream src/ change to the Zig file(s) that must
 # absorb it, plus a risk tier. Used by upstream_router.py to classify each upstream commit mechanically.
 # Format:  <src-glob>\t<zig-owner(s)>\t<risk>     risk ∈ {SKIP,LOW,MED,HIGH}.  First matching rule wins,
-# so order most-specific first. fnmatch globs (use * ).
+# so order most-specific first. fnmatch globs (use * ). Owner cells are FULL repo paths — a relative
+# cell is invisible to upstream_map_derive.py --audit, which is what keeps this file honest.
+# Tightened 2026-07-23 against the comment-derived map (upstream_map_derive.py): the campaign splits
+# had grown most blast radii — search.cpp alone from 2 owners to 13.
 #
 # src-glob	zig-owner	risk
-src/nnue/*	src/engine/eval/nnue_accumulator.zig,nnue_feature.zig,nnue_hash.zig,nnue_misc.zig,nnue_parse.zig,network.zig	HIGH
+src/nnue/*	src/engine/eval/network.zig,src/engine/eval/nnue_acc_layout.zig,src/engine/eval/nnue_acc_rowops.zig,src/engine/eval/nnue_acc_update.zig,src/engine/eval/nnue_accumulator.zig,src/engine/eval/nnue_affine.zig,src/engine/eval/nnue_feature.zig,src/engine/eval/nnue_feature_bb.zig,src/engine/eval/nnue_feature_luts.zig,src/engine/eval/nnue_ft.zig,src/engine/eval/nnue_hash.zig,src/engine/eval/nnue_inference.zig,src/engine/eval/nnue_leb.zig,src/engine/eval/nnue_misc.zig,src/engine/eval/nnue_parse.zig,src/engine/eval/nnue_refresh_cache.zig,src/engine/eval/nnue_weight_storage.zig,src/shell/engine/nnue.zig	HIGH
 src/evaluate.cpp	src/engine/eval/evaluate.zig	HIGH
-src/evaluate.h	src/engine/eval/evaluate.zig,network.zig	HIGH
-src/search.cpp	src/engine/search/search.zig,search_manager.zig	HIGH
-src/search.h	src/engine/search/search.zig,search_manager.zig	HIGH
-src/movepick.cpp	src/engine/search/movepick.zig	MED
-src/movepick.h	src/engine/search/movepick.zig	MED
-src/history.h	src/engine/search/shared_histories.zig,history.zig,search.zig	MED
-src/position.cpp	src/engine/board/position.zig	MED
-src/position.h	src/engine/board/position.zig,position_types.zig	MED
+src/evaluate.h	src/engine/eval/evaluate.zig,src/engine/eval/network.zig	HIGH
+src/search.cpp	src/engine/search/search.zig,src/engine/search/search_manager.zig,src/engine/search/search_acc.zig,src/engine/search/search_back.zig,src/engine/search/search_control.zig,src/engine/search/search_ctx.zig,src/engine/search/search_driver.zig,src/engine/search/search_emit.zig,src/engine/search/search_id.zig,src/engine/search/search_id_loop.zig,src/engine/search/search_main.zig,src/engine/search/search_qsearch.zig,src/engine/search/search_setup.zig,src/engine/search/tb_extend.zig,src/engine/state/root_move.zig	HIGH
+src/search.h	src/engine/search/search.zig,src/engine/search/search_manager.zig,src/engine/state/root_move.zig,src/engine/state/shared_history_types.zig,src/engine/state/worker_histories.zig	HIGH
+src/movepick.cpp	src/engine/search/movepick.zig,src/engine/search/movepick_score.zig,src/engine/search/movepick_history.zig,src/engine/search/movepick_snapshot.zig	MED
+src/movepick.h	src/engine/search/movepick.zig,src/engine/search/movepick_score.zig,src/engine/search/movepick_history.zig	MED
+src/history.h	src/engine/search/shared_histories.zig,src/engine/search/history.zig,src/engine/search/search.zig,src/engine/search/search_common.zig,src/engine/state/worker_histories.zig	MED
+src/position.cpp	src/engine/board/position.zig,src/engine/board/fen_parse.zig,src/engine/board/legality.zig,src/engine/board/zobrist.zig,src/engine/board/move_do.zig,src/engine/board/move_do_threats.zig,src/engine/board/state_setup.zig,src/shell/engine/session.zig	MED
+src/position.h	src/engine/board/position.zig,src/engine/board/position_types.zig,src/engine/board/position_query.zig	MED
 src/movegen.cpp	src/engine/board/movegen.zig	MED
 src/movegen.h	src/engine/board/movegen.zig	MED
 src/tt.cpp	src/engine/search/tt.zig	MED
-src/tt.h	src/engine/search/tt.zig	MED
-src/thread.cpp	src/platform/thread.zig,thread_runtime.zig,search_thread.zig	MED
+src/tt.h	src/engine/search/tt.zig,src/engine/state/tt_types.zig	MED
+src/thread.cpp	src/platform/thread.zig,src/platform/thread_runtime.zig,src/platform/search_thread.zig,src/platform/thread_vote.zig,src/shell/main.zig	MED
 src/thread.h	src/platform/thread.zig	MED
 src/timeman.cpp	src/engine/search/timeman.zig	LOW
 src/timeman.h	src/engine/search/timeman.zig	LOW
 src/bitboard.cpp	src/engine/board/bitboard.zig	LOW
 src/bitboard.h	src/engine/board/bitboard.zig	LOW
 src/attacks.cpp	src/engine/board/bitboard.zig	LOW
-src/attacks.h	src/engine/board/bitboard.zig	LOW
+src/attacks.h	src/engine/board/bitboard.zig,src/engine/board/board_core.zig	LOW
 src/types.h	src/engine/board/score.zig	MED
-src/uci.cpp	src/shell/uci.zig	LOW
+src/uci.cpp	src/shell/uci.zig,src/shell/uci_critical.zig,src/shell/uci_output.zig,src/shell/uci_parse.zig,src/shell/engine/perft.zig,src/shell/engine/session.zig,src/shell/engine/trace.zig,src/engine/board/position_query.zig	LOW
 src/uci.h	src/shell/uci.zig	LOW
 src/ucioption.cpp	src/shell/option.zig	LOW
 src/ucioption.h	src/shell/option.zig	LOW
-src/misc.cpp	src/shell/misc.zig	LOW
-src/misc.h	src/shell/misc.zig	LOW
-src/engine.cpp	src/shell/engine.zig,src/shell/engine/graph.zig	MED
-src/engine.h	src/shell/engine.zig	MED
+src/misc.cpp	src/shell/misc.zig,src/engine/eval/nnue_hash.zig	LOW
+src/misc.h	src/shell/misc.zig,src/engine/search/search_acc.zig,src/engine/search/tt.zig	LOW
+src/engine.cpp	src/shell/engine.zig,src/shell/engine/graph.zig,src/shell/engine/control.zig,src/shell/engine/nnue.zig,src/shell/engine/session.zig,src/platform/numa.zig	MED
+src/engine.h	src/shell/engine.zig,src/shell/engine/perft.zig	MED
+src/main.cpp	src/shell/main.zig	LOW
+src/perft.h	src/shell/engine/perft.zig	LOW
+src/benchmark.cpp	src/shell/benchmark.zig,src/shell/bench_positions.zig	LOW
+src/benchmark.h	src/shell/benchmark.zig	LOW
 src/score.cpp	src/engine/board/score.zig	LOW
 src/score.h	src/engine/board/score.zig	LOW
 src/memory.cpp	src/platform/memory.zig	LOW
 src/memory.h	src/platform/memory.zig	LOW
-src/benchmark.cpp	src/shell/benchmark.zig,bench_positions.zig	LOW
 src/tune.*	src/shell/option.zig	LOW
 src/*.nnue	(net file — swap + bump EvalFileDefaultName)	LOW
-src/syzygy/*	src/platform/syzygy/probe.zig,registry.zig,decode.zig,encode.zig,tables.zig,wdl.zig,src/engine/search/tb_extend.zig	MED
+src/syzygy/*	src/platform/syzygy/probe.zig,src/platform/syzygy/registry.zig,src/platform/syzygy/decode.zig,src/platform/syzygy/encode.zig,src/platform/syzygy/tables.zig,src/platform/syzygy/wdl.zig,src/engine/search/tb_extend.zig,src/engine/search/root_move_build.zig,src/shell/engine/control.zig	MED
 # --- platform / build / CI: not needed for the x86-64-sse41-popcnt native target -> SKIP ---
 src/Makefile	(make — SKIP, build.zig is independent)	SKIP
 src/arm/*	(arch — SKIP for sse41 target)	SKIP
 src/incbin/*	(net embedding — SKIP, we load net at runtime)	SKIP
+src/universal/*	(fat-binary entry shims + net embed — SKIP, one binary per arch, runtime net)	SKIP
 .github/*	(CI — SKIP)	SKIP
 *.yml	(CI/config — SKIP)	SKIP
 *.md	(docs — SKIP)	SKIP

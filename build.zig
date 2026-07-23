@@ -1547,6 +1547,24 @@ pub fn build(b: *std.Build) void {
     );
     docs_step.dependOn(&docs_cmd.step);
 
+    // Audit the upstream blast-radius map against the comment-derived correspondence
+    // (rot = declared owner missing from the tree; drift is advisory) and ratchet the
+    // uncovered-surface count. LOCAL-ONLY, not in the parity aggregate: it reads the
+    // pinned upstream tree from this clone's git objects, which a CI checkout of
+    // origin does not carry. Lower the baseline as citations are added; never raise it.
+    const upstream_map_cmd = b.addSystemCommand(&.{
+        "python3",
+        repoPath(b, "tools/upstream_map_derive.py"),
+        "--audit",
+        "--baseline",
+        "36",
+    });
+    const upstream_map_step = b.step(
+        "upstream-map",
+        "upstream map gate (local): declared-map rot fails, uncovered surface ratcheted at 36",
+    );
+    upstream_map_step.dependOn(&upstream_map_cmd.step);
+
     // Run the cycle-break mechanism's ratchet + classifier (hook-lint; G2).
     // The module DAG is a DESIGN outcome, not a language guarantee -- Zig compiles and
     // runs import cycles at both granularities -- and it is bought with 30 function-

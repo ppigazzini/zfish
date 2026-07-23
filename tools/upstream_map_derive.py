@@ -190,10 +190,22 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="coverage summary only")
     ap.add_argument("--audit", action="store_true", help="declared-map rot/drift report")
+    ap.add_argument("--baseline", type=int, default=None,
+                    help="fail if the uncovered count exceeds this ratchet")
     args = ap.parse_args()
 
     if args.audit:
-        sys.exit(1 if audit() else 0)
+        failures = audit()
+        if failures:
+            sys.exit(1)
+        if args.baseline is not None:
+            _, uncovered, _ = build_map()
+            if len(uncovered) > args.baseline:
+                print(f"RATCHET: uncovered {len(uncovered)} > baseline {args.baseline} "
+                      f"-- new upstream surface without an owner citation or exception")
+                sys.exit(1)
+            print(f"ratchet: uncovered {len(uncovered)} <= baseline {args.baseline}")
+        sys.exit(0)
 
     mapped, uncovered, phantoms = build_map()
     total = len(mapped) + len(uncovered)
