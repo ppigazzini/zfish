@@ -151,7 +151,13 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         if (alpha >= beta) return alpha;
     }
 
+    // Share one StateInfo and one move-sort buffer across the whole node: the
+    // step-4 verify / null-move / ProbCut uses each finish (do..undo) before the
+    // move loop begins, so runBack reuses the same slots. Two live copies doubled
+    // the frame (6328 vs upstream's 2936 bytes) and with it the recursion's stack
+    // working set; upstream gets the same sharing from block-scope stack coloring.
     var st: StateInfo = undefined;
+    var mp_moves: [256]movepick.SortEntry = undefined;
 
     // Step 1. Initialize node.
     ss.in_check = pos.st.checkers_bb != 0;
@@ -368,7 +374,6 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         // Step 11. Run ProbCut.
         const probcut_beta = search.probCutBeta(beta, improving);
         if (depth >= 3 and !qIsDecisive(beta) and !(qIsValid(tt_value) and tt_value < probcut_beta)) {
-            var mp_moves2: [256]movepick.SortEntry = undefined;
             var pc_state = movepick.MovePickerState{
                 .tt_move_raw = tt_move,
                 .stage = movepick.initProbcutStage(tt_move != 0 and captureStage(pos, tt_move) and pseudoLegal(pos_ptr, tt_move)),
@@ -380,7 +385,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 .end_bad_captures = 0,
                 .end_captures = 0,
                 .end_generated = 0,
-                .moves = &mp_moves2,
+                .moves = &mp_moves,
             };
             const pc_ctx = movepick.MovePickerContext{
                 .pos = pos_ptr,
@@ -419,6 +424,8 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         .ctx = ctx,
         .pos_ptr = pos_ptr,
         .ss_ptr = ss_ptr,
+        .st_ptr = &st,
+        .mp_moves = &mp_moves,
         .pos = pos,
         .ss = ss,
         .ss1 = ss1,

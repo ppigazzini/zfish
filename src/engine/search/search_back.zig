@@ -100,7 +100,10 @@ pub inline fn runBack(nd: anytype) i32 {
     var depth = nd.depth;
     var best_value = nd.best_value;
     var best_move: u16 = 0;
-    var st: StateInfo = undefined;
+    // Reuse searchImpl's StateInfo and move-sort buffer (nd.st_ptr / nd.mp_moves):
+    // their pre-loop uses are complete, and a second live copy of each doubled the
+    // per-node frame.
+    const st = nd.st_ptr;
     var pv: PVMoves = undefined;
 
     // Build contHist[6] = {(nd.ss-1)..(nd.ss-6)}.continuation_history.
@@ -110,7 +113,6 @@ pub inline fn runBack(nd: anytype) i32 {
         ssSub(nd.ss, 5).continuation_history, ssSub(nd.ss, 6).continuation_history,
     };
 
-    var mp_moves: [256]movepick.SortEntry = undefined;
     var mp_state = movepick.MovePickerState{
         .tt_move_raw = nd.tt_move,
         .stage = movepick.initMainStage(nd.pos.st.checkers_bb != 0, nd.tt_move != 0 and pseudoLegal(nd.pos_ptr, nd.tt_move), depth),
@@ -122,7 +124,7 @@ pub inline fn runBack(nd: anytype) i32 {
         .end_bad_captures = 0,
         .end_captures = 0,
         .end_generated = 0,
-        .moves = &mp_moves,
+        .moves = nd.mp_moves,
     };
     const mp_ctx = movepick.MovePickerContext{
         .pos = nd.pos_ptr,
@@ -229,7 +231,7 @@ pub inline fn runBack(nd: anytype) i32 {
         const node_count: u64 = if (nd.root_node) nd.ctx.nodes.* else 0;
 
         // Step 16. Make the move.
-        doMoveAcc(nd.ctx, nd.pos_ptr, move, &st, @intFromBool(gc), nd.ss_ptr);
+        doMoveAcc(nd.ctx, nd.pos_ptr, move, st, @intFromBool(gc), nd.ss_ptr);
         new_depth += extension;
 
         if (nd.ss.tt_pv)
