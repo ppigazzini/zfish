@@ -60,13 +60,14 @@ pub fn alignedLargePagesAlloc(alloc_size: usize) ?*anyopaque {
 
     const mem = stdAlignedAlloc(alignment, rounded_size);
     if (mem) |ptr| {
-        // Zero the block. posix_memalign / _aligned_malloc return uninitialized memory;
-        // fresh OS pages happen to be zero, but reused blocks (thread resize, search
-        // clear) carry stale data, and the Worker has a field read during multipv search
-        // that neither its constructor nor clear() initializes, leaving it heap-layout-
-        // dependent. Zeroing makes that field deterministically 0 -- the same value a
-        // fresh-page allocation gives -- and lets the Worker construction rely on
-        // zero-fill.
+        // Zero the block. posix_memalign / _aligned_malloc return uninitialized
+        // memory; fresh OS pages happen to be zero, but reused blocks (thread resize,
+        // search clear) carry stale data. The historic consumer of this fill was the
+        // Worker's read-before-write slice headers (root_moves, limits.searchmoves);
+        // worker_construct.writeConstructorFields now initializes those explicitly
+        // and constructFull zeroes the whole Worker block itself, so the Worker no
+        // longer depends on this memset. What still does is the page_alloc contract:
+        // its consumers may treat a fresh block as zeroed (see page_alloc.zig).
         @memset(@as([*]u8, @ptrCast(ptr))[0..rounded_size], 0);
         // Hint transparent huge pages (madvise MADV_HUGEPAGE), a Linux-only advisory,
         // skipped where the kernel never backs it (thpHintUseful). macOS/Windows have no

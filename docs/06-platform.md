@@ -178,10 +178,13 @@ CPU burn shows.
 **Large-page blocks are zero-filled.** `alignedLargePagesAlloc` `@memset`s the block
 to 0. `posix_memalign` / `_aligned_malloc` return uninitialized memory; fresh OS
 pages happen to be zero, but reused blocks (thread resize, search clear) carry stale
-data, and a Worker field read during multipv search is initialized by neither the
-constructor nor `clear()`. The zero-fill makes it deterministically 0. Worker
-construction depends on this — do not remove it, and any allocator registered over
-the `page_alloc` seam must honour it.
+data. The Worker's historic dependence on this fill is gone: the two
+read-before-write fields it was pinning (`root_moves`, `limits.searchmoves`) are
+initialized explicitly by `worker_construct.writeConstructorFields`, and
+`constructFull` zeroes the whole Worker block itself — proven by a 0xAA poison-fill
+audit that held bench and every deterministic mode. What remains is the `page_alloc`
+contract: consumers may treat a fresh block as zeroed, and any allocator registered
+over that seam must honour it.
 
 **`thread.zig` importing `option` is the one platform→shell edge.** `reconfigure`
 reads the requested thread count and the NUMA policy mode straight from the shell's
