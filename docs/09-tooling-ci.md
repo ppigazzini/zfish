@@ -279,6 +279,8 @@ their Zig owner and a risk tier). `tools/upstream/README.md` is the workflow.
 | `upstream_oracle.sh` | Builds **vanilla** upstream at a sha into a detached git worktree and prints the binary path. |
 | `upstream_parity.sh` | Asserts the native Zig bench == the pristine oracle's bench at the target sha. |
 | `upstream_router.py`, `upstream_benchmap.sh`, `upstream_nodes.sh`, `upstream_net.sh` | Classify a commit by Zig owner + risk; list per-commit bench checkpoints; localize which position/commit first diverges; place a bumped net in each worktree. |
+| `upstream_map_derive.py` | Derive the upstream↔zfish file map from the source comments' upstream citations (zfish ships no C/C++, so every `.cpp`/`.h` citation is upstream); report coverage, uncovered surface, phantom citations, and — `--audit` — rot/drift in the hand-maintained `upstream_map.tsv` (the router's risk model). By-design exclusions carry reasons in `upstream/upstream_map.exceptions`. Adapted from the sibling ports' correspondence-manifest system. |
+| `resync_worklist.py` | The pin-advance payoff: diff two upstream SHAs in this repo's own git objects, join every changed file through both maps, rank by churn; flags drift per file and ABSENCE (changed surface with no owner and no exception). Run alongside `upstream_map_derive.py --audit` for the divergence leg. |
 
 **Fidelity is three probes, not one.** (1) The bench **anchor** proves the fixed
 position list. (2) A **position probe** (`upstream_nodes.sh` over a FEN suite)
