@@ -123,6 +123,12 @@ pub fn layerStorage(bucket: usize, idx: usize, part: LayerPart, n: usize) ?[*]u8
     if (n != expected) return null;
     if (layer_arena == null) {
         layer_arena = @ptrCast(page_alloc.alloc(stack_stride * layer_stacks_n) orelse return null);
+        // Zero the arena once: page_alloc hands it out uninitialized, the parse writes
+        // only the exact bias/weight part lengths, and alignPart opens padding gaps
+        // between parts (fc_2's 4-byte biases in a 64-byte slot). The zero keeps the
+        // gap bytes deterministic. ~283 KB once, vs the ~106 MB FT arena the parse
+        // tiles gaplessly (comptime-asserted in nnue_parse) and needs no fill for.
+        @memset(layer_arena.?[0 .. stack_stride * layer_stacks_n], 0);
     }
     return layer_arena.? + bucket * stack_stride + part_offsets[idx][@intFromEnum(part)];
 }

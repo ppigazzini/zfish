@@ -17,7 +17,7 @@
 # far fewer branches than upstream while still being slower -- so D refs and misses are printed
 # alongside: a gap in time with no gap in Ir is a memory-traffic or IPC gap, not extra work.
 #
-# Startup contaminates a shallow bench (net load, magic init, large-page memset are ~1.4-1.7 GB
+# Startup contaminates a shallow bench (net load, magic init and the startup fills are ~1.4-1.7 GB
 # of the refs here). Subtract it before quoting a search-only ratio; perf_fingerprint.py costs
 # will show the offenders by name.
 #

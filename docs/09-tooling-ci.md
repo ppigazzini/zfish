@@ -434,7 +434,7 @@ python3 tools/perf_fingerprint.py compare zf.out up.out \
     --group movepick='scoreList|nextMove|next_move'
 
 # 7. Subtract startup before quoting a SEARCH ratio. On a shallow bench the net load,
-#    magic init and large-page memset are ~1.4-1.7 GB of refs -- 42% of the profile.
+#    magic init and the startup fills (TT clear, history stripes) dominate a d11 run.
 ```
 
 **Same tree or nothing.** Every comparison above requires both engines to report the

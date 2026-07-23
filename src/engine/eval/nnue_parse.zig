@@ -106,6 +106,18 @@ pub const psqt_weights_off = roundUp(threat_weights_off + threat_weights_count *
 pub const threat_psqt_weights_off = roundUp(psqt_weights_off + psqt_weights_count * 4, cache_line);
 pub const ft_total_bytes = roundUp(threat_psqt_weights_off + threat_psqt_weights_count * 4, cache_line);
 
+comptime {
+    // Require the five regions to tile ft_total_bytes with no padding. The parse is
+    // the arena's only initializer (page_alloc hands the block out uninitialized), so
+    // a dims change that opened an alignment gap would leak uninitialized bytes into
+    // the weight image; fail the build instead.
+    std.debug.assert(weights_off == biases_off + biases_count * 2);
+    std.debug.assert(threat_weights_off == weights_off + psq_weights_count * 2);
+    std.debug.assert(psqt_weights_off == threat_weights_off + threat_weights_count * 1);
+    std.debug.assert(threat_psqt_weights_off == psqt_weights_off + psqt_weights_count * 4);
+    std.debug.assert(ft_total_bytes == threat_psqt_weights_off + threat_psqt_weights_count * 4);
+}
+
 fn dstSlice(comptime T: type, dst: []u8, off: usize, count: usize) []T {
     const bytes: []align(@alignOf(T)) u8 = @alignCast(dst[off .. off + count * @sizeOf(T)]);
     return std.mem.bytesAsSlice(T, bytes);

@@ -63,12 +63,15 @@ fn ensureReady() bool {
 
     g_shared = search_driver.constructSharedHistories(1) catch return false;
 
-    // Allocate the TT clusters directly through the page_alloc default (zeroed, 64-aligned,
-    // no libc / huge pages). Bypass tt.resizeState because it clears in parallel over a
-    // *ThreadPool; a fresh zeroed block needs no clear, and the store path only requires a
+    // Allocate the TT clusters directly through the page_alloc default (64-aligned, no
+    // libc / huge pages) and zero them here: page_alloc hands the block out
+    // uninitialized, and an unzeroed TT is a garbage probe table. Bypass tt.resizeState
+    // because it clears in parallel over a *ThreadPool; the store path only requires a
     // non-null table with cluster_count > 0.
     const tt_clusters: usize = 1 << 15; // ~1 MB of clusters; any positive count is valid
-    const raw = page_alloc.alloc(tt_clusters * @sizeOf(tt_types.TtCluster)) orelse return false;
+    const tt_bytes = tt_clusters * @sizeOf(tt_types.TtCluster);
+    const raw = page_alloc.alloc(tt_bytes) orelse return false;
+    @memset(@as([*]u8, @ptrCast(raw))[0..tt_bytes], 0);
     g_tt.table = @ptrCast(@alignCast(raw));
     g_tt.cluster_count = tt_clusters;
     g_tt.generation8 = 0;
