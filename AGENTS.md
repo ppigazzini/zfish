@@ -85,6 +85,10 @@ Pointers, not explanations — each is documented where it belongs.
 | loc_lint god-file regression: **split the file**; raising `LOC_BASELINE` is laundering. A bit-exact slice can still redden the aggregate this way. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | Bit-exactness ≠ faithfulness: the bench is a fixed position list, so a divergence off those positions is invisible to the anchor. `tools/upstream_nodes.sh` drives both engines over random-legal positions and is not fooled. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | A perf-symbol group regex is a **hypothesis** (upstream `do_move`'s signature contains `TranspositionTable const*`; inlining differs per side) — verify per-symbol before trusting any component ratio. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
+| `tools/perft.golden` counts are **facts about chess**, not a golden: a mismatch is always a movegen bug, never an update candidate. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| Run `zig build test -Doptimize=ReleaseSafe` locally — CI runs it, and deep node-limited searches have tripped latent i32 overflows the default build can't see. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| A warm cache lies: `zig build test` can pass on stale state while CI's arch-pinned fresh compile catches a module-resolution break. Gate refactors with a fresh `-Darch=x86-64-sse41-popcnt` build. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| `zig fmt --check` is CI's first gate and blocks everything after it; deletions leave blank lines fmt rejects. Run it every commit. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | Comments are **imperative mood**; never pin a number a gate computes. | [docs/11-writing.md](docs/11-writing.md) |
 
 ## Commits
