@@ -6,3 +6,7 @@ src/tune.cpp	SPSA tuning framework: not ported by design; tuned values are trans
 src/tune.h	companion of tune.cpp
 src/incbin/incbin.h	net embedding machinery: zfish loads the net at runtime by design (NNUE_EMBEDDING_OFF)
 src/thread_win32_osx.h	upstream's win/osx threading shim: zfish owns its thread runtime in src/platform/
+src/universal/entry_x86.cpp	fat-binary entry shim: zfish builds one binary per arch
+src/universal/entry_arm64.cpp	fat-binary entry shim: zfish builds one binary per arch
+src/universal/entry_riscv64.cpp	fat-binary entry shim: zfish builds one binary per arch
+src/universal/nnue_embed.cpp	net embedding machinery: zfish loads the net at runtime by design
