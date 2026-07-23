@@ -66,8 +66,8 @@ paid for:
 - **Unique scratch filenames + md5-pin every measured binary** — a shared scratchpad
   collision (`cand-sse41`) once turned a SIGILL-dead half-run into a fake 20% win.
   Reject any callgrind output missing its `Nodes searched` line.
-- **Worktree agents cannot write the local dev notebook** (the gitignored ledger
-  directory) — ledger rows travel in the final report; the integrator lands them.
+- **Agents write nothing outside their own worktree** — measurement results and
+  ledger rows travel in the final report; the integrator records them.
 - **Subagents are not re-woken by their own background jobs** — wait on
   measurements with a foreground `until` loop, or the agent stalls silently.
 - **Worktree commits are candidates, not integrations** — the integrator
@@ -78,14 +78,15 @@ paid for:
 
 ## Performance work
 
-The perf playbook and ledger live in the local dev notebook (gitignored): the
-performance-references page — measurement laws, tools, every landed and
-FALSIFIED axis. **Read the refuted lists before optimizing anything**: most
-"obvious" levers here were measured dead (prefetch-as-addition, PGO/BOLT,
-labeled-switch dispatch, noalias on the hot kernels, value-hoisting AND
-cold-body outlining in the search body). A perf commit that does not carry its
-measured evidence in the body is incomplete. If the notebook is absent (fresh
-clone), the ledger lives in the `perf(...)` commit bodies.
+The measurement laws and instrument blind spots are in
+[docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) — read them before any
+perf work. **Read the falsified list before optimizing anything.** Measured
+dead here, do not retry without new evidence: prefetch-as-addition, PGO/BOLT,
+labeled-switch dispatch, `noalias` on the hot kernels, and live-value reshaping
+of the search body in either direction (field hoisting AND cold-body
+outlining). A perf commit that does not carry its measured evidence (tool,
+rounds, ratio, node count) in the body is incomplete — the `perf(...)` commit
+bodies are the durable ledger a fresh clone gets.
 
 ## Traps that cost real time
 

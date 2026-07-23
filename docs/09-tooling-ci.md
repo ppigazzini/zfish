@@ -344,7 +344,11 @@ counters** via `perf_event_open` directly — the `perf` binary is absent under 
 the syscall is not, so it works on every tier including AVX-512, where callgrind
 SIGILLs. It reports instructions (the work) and cycles/IPC/cache-misses (the
 efficiency) at native speed, which neither wall-clock A/B (thermally noisy) nor
-callgrind (deterministic instructions, sse41 only, ~50x slowdown) can do together.
+callgrind (deterministic instructions, ~50x slowdown) can do together. callgrind's
+SIGILL is **AVX-512-only**: sse41 AND avx2 profile fine — measure avx2 directly
+rather than extrapolating from sse41. `tools/perf_stalls.zig` extends the same
+syscall to Zen4 stall-class PMCs (frontend/backend slots, PRF/scheduler/queue
+tokens, TLB) for localizing an IPC gap the aggregate counters can only report.
 
 It is a **local gate, not CI**: it measures the host it runs on, and a hosted runner's
 shared, thermally-uncontrolled CPU cannot carry a performance verdict. The same holds
