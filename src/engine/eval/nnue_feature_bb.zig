@@ -82,14 +82,70 @@ pub fn safeDestination(square: usize, step: i8) u64 {
     return squareBb(@intCast(target));
 }
 
-pub fn attacksBb(piece_type: u8, square: usize, occupied: u64) u64 {
+pub fn attacksBb(comptime piece_type: u8, square: usize, occupied: u64) u64 {
     return switch (piece_type) {
-        knight_piece_type => knightAttack(square),
-        bishop_piece_type => slidingAttack(bishop_piece_type, square, occupied),
-        rook_piece_type => slidingAttack(rook_piece_type, square, occupied),
-        queen_piece_type => slidingAttack(queen_piece_type, square, occupied),
+        knight_piece_type => knight_attacks_table[square],
+        bishop_piece_type => classicalAttack(&bishop_dirs, square, occupied),
+        rook_piece_type => classicalAttack(&rook_dirs, square, occupied),
+        queen_piece_type => classicalAttack(&queen_dirs, square, occupied),
         else => 0,
     };
+}
+
+// One empty-board ray per (direction, square), exclusive of the square itself; built at
+// comptime from the same step walk the comptime table generators use, so the runtime
+// classical lookup and the comptime pseudo-attack builders share one geometry.
+const ray_table: [8][64]u64 = blk: {
+    @setEvalBranchQuota(200000);
+    var out: [8][64]u64 = undefined;
+    for (queen_dirs, 0..) |dir, d| {
+        for (0..64) |sq| {
+            var ray: u64 = 0;
+            var current = sq;
+            while (true) {
+                const dest = safeDestination(current, dir);
+                if (dest == 0) break;
+                ray |= dest;
+                current = @ctz(dest);
+            }
+            out[d][sq] = ray;
+        }
+    }
+    break :blk out;
+};
+
+const knight_attacks_table: [64]u64 = blk: {
+    @setEvalBranchQuota(200000);
+    var out: [64]u64 = undefined;
+    for (0..64) |sq| out[sq] = knightAttack(sq);
+    break :blk out;
+};
+
+// Compute a slider's attacks with the classical ray method instead of walking squares:
+// per direction, mask the empty-board ray with the occupancy and clear everything past
+// the first blocker by XORing the blocker square's own ray. Branch-free -- the square-walk
+// form mispredicts its bounds and first-blocker tests once per ray, per attacker, per
+// active-feature refresh. When a positive ray has no blocker, bit 63 backstops @ctz at
+// square 63, whose ray is empty for every positive direction (nothing lies north/east of
+// h8); bit 0 backstops @clz likewise for the negative directions.
+fn classicalAttack(comptime dirs: []const i8, square: usize, occupied: u64) u64 {
+    var attacks: u64 = 0;
+    inline for (dirs) |dir| {
+        const d = comptime blk: {
+            for (queen_dirs, 0..) |qd, i| {
+                if (qd == dir) break :blk i;
+            }
+            unreachable;
+        };
+        const ray = ray_table[d][square];
+        const blockers = ray & occupied;
+        const stop: usize = if (comptime dir > 0)
+            @ctz(blockers | (@as(u64, 1) << 63))
+        else
+            63 - @clz(blockers | 1);
+        attacks |= ray ^ ray_table[d][stop];
+    }
+    return attacks;
 }
 
 pub fn pawnSinglePush(color: u8, bitboard: u64) u64 {
