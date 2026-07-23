@@ -1,3 +1,3 @@
-KNNvK no-tb=62172 with-tb=51886
-KNvKN no-tb=9475 with-tb=3469
-KPvKN no-tb=9414 with-tb=3679
+KNNvK no-tb=62172 with-tb=51886 nodes-tb=600121
+KNvKN no-tb=9475 with-tb=3469 nodes-tb=600029
+KPvKN no-tb=9414 with-tb=3679 nodes-tb=600077
