@@ -230,7 +230,11 @@ is not in the table at all.
 ratchets: the gate fails if the count exceeds the baseline (a new god-file appeared,
 or one grew past the line) and nudges if it drops. A small waived set of cohesive
 files stays allowed — splitting a cohesive file into coupled micro-files is the
-anti-pattern, not the fix.
+anti-pattern, not the fix. When the gate reddens, split at the **cold seam**:
+parsers, table builders and init paths move out; judge a file's length by its cold
+lines and leave one long specialized hot body alone. (zfish compiles as one LLVM
+module, so a split can never un-inline anything — the seam choice is about
+cohesion, not codegen.)
 
 **`headless_lint.sh`** resolves every `@import` in an engine source file to its zone
 via `build.zig`'s module table and reports each engine → {platform, shell} up-edge.
@@ -275,6 +279,17 @@ their Zig owner and a risk tier). `tools/upstream/README.md` is the workflow.
 | `upstream_oracle.sh` | Builds **vanilla** upstream at a sha into a detached git worktree and prints the binary path. |
 | `upstream_parity.sh` | Asserts the native Zig bench == the pristine oracle's bench at the target sha. |
 | `upstream_router.py`, `upstream_benchmap.sh`, `upstream_nodes.sh`, `upstream_net.sh` | Classify a commit by Zig owner + risk; list per-commit bench checkpoints; localize which position/commit first diverges; place a bumped net in each worktree. |
+
+**Fidelity is three probes, not one.** (1) The bench **anchor** proves the fixed
+position list. (2) A **position probe** (`upstream_nodes.sh` over a FEN suite)
+proves positions the anchor never visits — but only the suite you feed it; a
+random-walk driver over both engines is the stronger form (mcfish ships one;
+zfish does not yet). (3) A **suite run under one process** (`bench-matrix` vs the
+oracle's totals) proves cross-position *warm-state*: both engines can be
+bit-exact on every position in isolation while a persisted counter or TT
+interaction drifts across the suite — that exact shape produced a +51-node
+drift in mcfish and the conthistDelta overflow here. To bisect a probe-3 drift,
+checksum each shared structure per `go` on both engines and diff the streams.
 
 The differential check builds **real upstream** rather than comparing against a
 vendored copy: `upstream_oracle.sh` checks the target sha out into a throwaway git
@@ -381,28 +396,33 @@ none is optional.
 
 | oracle | built by | compiler | use it for |
 |---|---|---|---|
-| **bench-parity** | `tools/upstream_oracle.sh --verify` | `COMP=gcc` | node counts / `upstream-parity`. Node counts are compiler-independent, so gcc is fine. |
-| **perf** | the `zig c++` recipe below | `COMP=clang COMPCXX=<zig c++>` | **any instruction/cost ratio.** |
+| **default** | `tools/upstream_oracle.sh --verify` | `COMP=clang COMPCXX=tools/zigcxx` (the script's default) | node counts, `upstream-parity`, **and every instruction/cost ratio and match** — same LLVM backend zfish uses. |
+| **gcc study** | `ORACLE_COMP=gcc tools/upstream_oracle.sh` | `COMP=gcc` | studying gcc itself, only. Label any number from it as a gcc build. |
 
-Using the bench-parity oracle for a perf ratio measures **gcc vs LLVM**, not zfish vs
+Using a gcc build for a perf ratio measures **gcc vs LLVM**, not zfish vs
 Stockfish. It has produced badly wrong conclusions here: against the gcc oracle the
 non-NNUE search code read `0.776x` ("zfish is 177M instructions ahead"); on the same
 backend it is `1.223x` — zfish is *behind*. The entire claim was gcc's codegen.
+Measured on identical source: gcc emits **+7.4% instructions / +7–12% cycles** at
+vnni512, so a gcc opponent also flatters zfish in matches.
+
+**Verify provenance at measurement time, before quoting any ratio** — a mislabeled
+binary of unknown compiler has faked a standing-table row before (mcfish incident):
 
 ```sh
-# 0. PERF ONLY -- build the reference with zig c++ so the LLVM backend is held constant.
-#    `make clean` FIRST or stale objects fail to link when the ARCH changes.
-printf '#!/bin/sh\nexec %s c++ "$@"\n' "$(which zig)" > /tmp/zigcxx && chmod +x /tmp/zigcxx
-cd <oracle>/src && make clean && \
-  make -j4 build ARCH=x86-64-sse41-popcnt COMP=clang COMPCXX=/tmp/zigcxx EXE=sf_sse41
-<oracle>/src/sf_sse41 bench     # anchor it yourself: must equal the commit's Bench:
+readelf -p .comment zig-out/bin/stockfish <oracle-binary> | grep clang
+# both must print the SAME clang version; the oracle script's stamp only covers
+# what IT built, not a binary something else left behind.
+```
 
-# 1. BENCH-PARITY ONLY -- the gcc oracle. --verify is NOT optional: without it the script builds but does
+```sh
+# 1. Build the reference. --verify is NOT optional: without it the script builds but does
 #    NOT check the binary against the commit's own declared `Bench:` line. A stale or
 #    locally-edited worktree then benches wrong and every later number is fiction --
 #    that has happened here: a leftover eval stub made the oracle bench a value the commit
 #    never declared, and the "divergence" it produced was reported as a zfish defect.
-#    It pins ARCH=x86-64-sse41-popcnt. Never hand-run an oracle binary past this script.
+#    Defaults: ARCH=x86-64-sse41-popcnt, COMP=clang COMPCXX=tools/zigcxx (stamp-guarded
+#    clean on any compiler/ARCH switch). Never hand-run an oracle binary past this script.
 bash tools/upstream_oracle.sh --verify             # -> "bench OK (N, matches commit Bench:)"
                                                    #    then prints the binary path
 
