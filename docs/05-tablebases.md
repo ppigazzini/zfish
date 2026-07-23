@@ -40,8 +40,8 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | `src/engine/search/uci_wdl.zig` | `formatScore` — renders a TB-band score as `cp` |
 | **shell** | |
 | `src/shell/option_model.zig` | the four Syzygy option declarations |
-| `src/shell/engine/session.zig` | the `SyzygyPath` callback: `tablebase.init` + the load report |
-| `src/shell/engine/control.zig` | `searchClear` — re-inits the tablebases on `ucinewgame` / `Clear Hash` |
+| `src/shell/engine/session.zig` | the `SyzygyPath` callback — delegates to `control.tbInit` |
+| `src/shell/engine/control.zig` | `tbInit` (init + load report, every caller) and `searchClear` — re-inits on `ucinewgame` / `Clear Hash` |
 | `src/shell/engine/trace.zig` | the `d` command's `Tablebases WDL:` / `Tablebases DTZ:` lines |
 
 `wdl.zig` imports `registry.zig` downward and never the reverse, so neither is a
@@ -83,14 +83,17 @@ through `dtz_state` while WDL still reports.
 
 Loading is driven entirely by the `SyzygyPath` UCI option. `option_model.zig` declares it
 as a string option with `callback_syzygy_path`; `session.zig` dispatches that callback to
-`tablebase.init(value)` and, whenever a non-empty path is set, prints the load report:
+`control.zig`'s `tbInit`, which runs `tablebase.init(value)` and, whenever the path is
+non-empty, prints the load report:
 
 ```
 info string Found N WDL and N DTZ tablebase files (up to M-man).
 ```
 
-from `foundWdl()`, `foundDtz()`, and `discoveredMax()`. `control.zig`'s `searchClear`
-re-runs `tablebase.init` with the stored path, so `ucinewgame` rebuilds the registry.
+from `foundWdl()`, `foundDtz()`, and `discoveredMax()`. `searchClear` re-runs the SAME
+`tbInit` with the stored path, so `ucinewgame` / `Clear Hash` rebuild the registry AND
+print the report again — upstream emits it from inside `Tablebases::init`
+(tbprobe.cpp), so every init with a usable path reports, whoever the caller is.
 
 `tables.init` copies the path and calls `registry.reset`, then enumerates **every
 King-vs-King material configuration up to 7 men** and calls `add` on each. The path is
