@@ -81,6 +81,18 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     wl.numa_total = in.numa_total;
     wl.numa_access_token = in.numa_access_token;
 
+    // Initialize the two slice headers that are READ before any per-search write --
+    // the fields the historic "zero the large-page block" fix (2f30856f) pinned
+    // implicitly. Make the dependency explicit here so it does not hide in a memset:
+    //   * root_moves: workerSetRootMoves and workerDestroy free the old buffer
+    //     whenever .len != 0, and ssContext reads .len for root_moves_empty -- a
+    //     garbage header is a free() of a wild pointer on the first `go`.
+    //   * limits.searchmoves: workerSetLimits deliberately copies only the POD
+    //     limits fields and never writes this slice, so the worker's own copy must
+    //     start empty or searchmoveCount reads a garbage length forever.
+    wl.root_moves = &.{};
+    wl.limits.searchmoves = &.{};
+
     // Start the AccumulatorStack with one live slot (size_t at the size field, inside
     // the accumulator_stack region so still addressed by offset).
     writePtr(worker, accumulator_stack_size_off, 1);
@@ -143,7 +155,11 @@ const testing = std.testing;
 test "writeConstructorFields lands every member at its worker_off slot" {
     const buf = try testing.allocator.alignedAlloc(u8, .@"64", worker_layout.worker_size);
     defer testing.allocator.free(buf);
-    @memset(buf, 0);
+    // Poison the block instead of zeroing it: the constructor must pin every
+    // read-before-write field itself (root_moves, limits.searchmoves), not
+    // inherit a zero from the caller's fill. A 0xAA image makes an implicit
+    // zero-dependency fail here instead of as a wild free() on the first `go`.
+    @memset(buf, 0xAA);
 
     // Align sentinels to each destination pointer's @alignOf: they are stored
     // via @ptrFromInt into typed pointer fields (*ThreadPool, *SearchManager, ...) and
@@ -177,4 +193,11 @@ test "writeConstructorFields lands every member at its worker_off slot" {
     try testing.expectEqual(@as(usize, 9), readPtr(buf.ptr, numa_total_off));
     try testing.expectEqual(@as(usize, 10), readPtr(buf.ptr, numa_access_token_off));
     try testing.expectEqual(@as(usize, 1), readPtr(buf.ptr, accumulator_stack_size_off));
+
+    // Pin the read-before-write slice headers to empty: workerSetRootMoves /
+    // workerDestroy free root_moves whenever .len != 0, and workerSetLimits never
+    // writes searchmoves, so both must leave the constructor empty.
+    const wl = worker_layout.WorkerLayout.fromPtr(buf.ptr);
+    try testing.expectEqual(@as(usize, 0), wl.root_moves.len);
+    try testing.expectEqual(@as(usize, 0), wl.limits.searchmoves.len);
 }
