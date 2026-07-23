@@ -173,9 +173,12 @@ sse41 tier pays a separate `movdqu` per 16 weight bytes.
 
 **Refresh.** A full refresh never rebuilds from an empty board. The refresh cache
 (`nnue_refresh_cache.zig`) holds one entry per (king square, perspective) — the
-accumulation, the PSQT values, and the board that produced them. `refreshCombined`
-diffs the entry's stored board against the current one into removed/added HalfKA
-rows, collects every active threat row (`fullAppendActive`), and applies everything
+accumulation, the PSQT values, and the board (plus its occupancy bitboard) that
+produced them. `refreshCombined` diffs the entry's stored board against the current
+one with two 32-byte vector compares into a changed-square bitboard, splits it into
+removed/added HalfKA rows by the cached and current occupancy (upstream's
+`get_changed_pieces` shape), collects every active threat row (`fullAppendActive`),
+and applies everything
 in one tiled pass (`nnue_acc_rowops.applyRefreshFusedI16`): the pass loads the entry
 tile, applies the psq rows, stores the psq-only tile back to the entry (in place,
 for next time), keeps adding the threat rows in the same registers, and stores the
