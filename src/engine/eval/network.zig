@@ -408,7 +408,14 @@ fn loadLayer(bucket: usize, blob: []const u8) usize {
         const wdst = layerStorage(bucket, idx, .weights, wb) orelse
             @panic("affine-layer storage allocation failed");
         // Report a malformed net as 0 consumed; readLayer already treats that as a reject.
-        const used = nnue_parse.parseLayer(blob[pos..], bdst[0..bb], wdst[0..wb]) orelse return 0;
+        // fc_1/fc_2 (idx > 0) read paired-activation output on the pair tier, so their
+        // weights take the extra input interleave (serializeLayer inverts the same flag).
+        const used = nnue_parse.parseLayer(
+            blob[pos..],
+            bdst[0..bb],
+            wdst[0..wb],
+            nnue_parse.pair_activations and idx > 0,
+        ) orelse return 0;
         pos += used;
         if (pos > blob.len) return 0;
     }

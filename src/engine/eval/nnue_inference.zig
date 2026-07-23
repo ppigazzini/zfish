@@ -10,6 +10,7 @@ const position_types = @import("position_types");
 const nnue_accumulator_port = @import("nnue_accumulator");
 const weight_storage = @import("nnue_weight_storage.zig");
 const nnue_affine = @import("nnue_affine.zig");
+const nnue_parse = @import("nnue_parse.zig");
 
 const affineDpbusd = nnue_affine.affineDpbusd;
 
@@ -73,6 +74,45 @@ inline fn sqrClippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) v
     }
 }
 
+// Run both activations of one layer on the AVX2 pair tier with upstream's
+// SqrClippedReLU::propagate_pair (sqr_clipped_relu.h): share the input loads and the
+// signed 32->16 saturating packs, compute the square via pmulhw and the clip via
+// max+shift at i16 width, then narrow each with one saturating vpacksswb. The packs
+// work per 128-bit lane, so the output bytes land interleaved by 4-byte chunk
+// (k -> (k%2)*4 + k/2 within each 32-byte block); the fc_1/fc_2 weight parse folds
+// that interleave into the weight index (nnue_parse.pair_activations -- the SAME
+// comptime condition, and the bench signature pins that the two agree), so no
+// lane-restoring permute is issued anywhere. Values are bit-identical to the split
+// sqrClippedReLU/clippedReLU pair: the saturating pack equals their i16-range clamp,
+// pmulhw>>N equals (x*x)>>(16+N) for the non-negative square, and vpacksswb's signed
+// saturation equals their min(127, .) on these non-negative inputs.
+const packssdw256 = struct {
+    extern fn @"llvm.x86.avx2.packssdw"(@Vector(8, i32), @Vector(8, i32)) @Vector(16, i16);
+}.@"llvm.x86.avx2.packssdw";
+const packsswb256 = struct {
+    extern fn @"llvm.x86.avx2.packsswb"(@Vector(16, i16), @Vector(16, i16)) @Vector(32, i8);
+}.@"llvm.x86.avx2.packsswb";
+const pmulhw256 = struct {
+    extern fn @"llvm.x86.avx2.pmulh.w"(@Vector(16, i16), @Vector(16, i16)) @Vector(16, i16);
+}.@"llvm.x86.avx2.pmulh.w";
+
+inline fn sqrClipPair(comptime scale_bits: comptime_int, in: *const [32]i32, sqr_out: *[32]u8, clip_out: *[32]u8) void {
+    // MulHi strips 16 of the 2*scale_bits+7 square-shift bits; shift out the rest.
+    const sqr_shift: @Vector(16, u4) = @splat(2 * scale_bits + 7 - 16);
+    const clip_shift: @Vector(16, u4) = @splat(scale_bits);
+    const zero: @Vector(16, i16) = @splat(0);
+    const words0 = packssdw256(in[0..8].*, in[8..16].*);
+    const words1 = packssdw256(in[16..24].*, in[24..32].*);
+    const sqr0: @Vector(16, i16) = @bitCast(@as(@Vector(16, u16), @bitCast(pmulhw256(words0, words0))) >> sqr_shift);
+    const sqr1: @Vector(16, i16) = @bitCast(@as(@Vector(16, u16), @bitCast(pmulhw256(words1, words1))) >> sqr_shift);
+    sqr_out.* = @bitCast(packsswb256(sqr0, sqr1));
+    const relu0: @Vector(16, i16) = @max(words0, zero);
+    const relu1: @Vector(16, i16) = @max(words1, zero);
+    const clip0: @Vector(16, i16) = @bitCast(@as(@Vector(16, u16), @bitCast(relu0)) >> clip_shift);
+    const clip1: @Vector(16, i16) = @bitCast(@as(@Vector(16, u16), @bitCast(relu1)) >> clip_shift);
+    clip_out.* = @bitCast(packsswb256(clip0, clip1));
+}
+
 /// Compute upstream's ClippedReLU: clamp(x >> shift, 0, 127), over 32 outputs.
 inline fn clippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void {
     const V = if (@import("builtin").cpu.arch == .x86_64) 16 else 8;
@@ -105,9 +145,15 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     // SqrClippedReLU shift = 2*7+7 = 21, ClippedReLU shift = 7.
     // The four activations write all 128 bytes (concat[0..32], [32..64], [64..96], [96..128])
     // before fc_1 reads [0..64] and fc_2 reads [0..128], so the zero-init was a dead store.
+    // On the pair tier each block is written chunk-interleaved and the fc_1/fc_2 weights
+    // compensate (see sqrClipPair); the dots, and every value below, are unchanged.
     var concat: [128]u8 = undefined;
-    sqrClippedReLU(21, &fc0_out, concat[0..32]);
-    clippedReLU(7, &fc0_out, concat[32..64]);
+    if (comptime nnue_parse.pair_activations) {
+        sqrClipPair(7, &fc0_out, concat[0..32], concat[32..64]);
+    } else {
+        sqrClippedReLU(21, &fc0_out, concat[0..32]);
+        clippedReLU(7, &fc0_out, concat[32..64]);
+    }
 
     // Run fc_1: affine 64 -> 32 over [ac_sqr_0 | ac_0].
     var fc1_out: [32]i32 = undefined;
@@ -115,8 +161,12 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
 
     // Apply ac_sqr_1 / ac_1 over FC_1_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits = 6:
     // SqrClippedReLU shift = 2*6+7 = 19, ClippedReLU shift = 6. Written into concat[64..128].
-    sqrClippedReLU(19, &fc1_out, concat[64..96]);
-    clippedReLU(6, &fc1_out, concat[96..128]);
+    if (comptime nnue_parse.pair_activations) {
+        sqrClipPair(6, &fc1_out, concat[64..96], concat[96..128]);
+    } else {
+        sqrClippedReLU(19, &fc1_out, concat[64..96]);
+        clippedReLU(6, &fc1_out, concat[96..128]);
+    }
 
     // Run fc_2: affine 128 -> 1 over the full concat (OUT=1 -> identity scramble).
     var fc2_out: [1]i32 = undefined;
@@ -259,6 +309,44 @@ test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
             var got: [OUT]i32 = undefined;
             affineDpbusd(OUT, SPARSE, &got, &biases, &weights, input[0..IN], &nnz);
             try testing.expectEqualSlices(i32, &ref, &got);
+        }
+    }
+}
+
+// Pin the paired activations against the split reference THROUGH the parse-side index
+// map: sqrClipPair must put the value of input i exactly where weightIndexScrambled's
+// pair interleave expects it, or the fused packs and the weight scramble disagree and
+// the dots silently change. Random inputs cover both i16-saturating magnitudes and the
+// negative range (the max(0) side of the clip).
+test "sqrClipPair matches the split activations through the pair interleave" {
+    if (comptime !nnue_parse.pair_activations) return error.SkipZigTest;
+    const testing = std.testing;
+    var prng = std.Random.DefaultPrng.init(0xA1B2C3D4E5F60718);
+    const rnd = prng.random();
+
+    var iter: usize = 0;
+    while (iter < 256) : (iter += 1) {
+        var in: [32]i32 = undefined;
+        for (&in) |*v| {
+            v.* = switch (rnd.intRangeAtMost(u8, 0, 3)) {
+                0 => rnd.intRangeAtMost(i32, -300000, 300000),
+                1 => rnd.intRangeAtMost(i32, -40000, 40000),
+                else => rnd.intRangeAtMost(i32, -5000, 5000),
+            };
+        }
+        inline for (.{ 7, 6 }) |sb| {
+            var ref_sqr: [32]u8 = undefined;
+            var ref_clip: [32]u8 = undefined;
+            sqrClippedReLU(2 * sb + 7, &in, &ref_sqr);
+            clippedReLU(sb, &in, &ref_clip);
+            var got_sqr: [32]u8 = undefined;
+            var got_clip: [32]u8 = undefined;
+            sqrClipPair(sb, &in, &got_sqr, &got_clip);
+            for (0..32) |i| {
+                const pos = nnue_parse.weightIndexScrambled(i, 32, 1, true);
+                try testing.expectEqual(ref_sqr[i], got_sqr[pos]);
+                try testing.expectEqual(ref_clip[i], got_clip[pos]);
+            }
         }
     }
 }

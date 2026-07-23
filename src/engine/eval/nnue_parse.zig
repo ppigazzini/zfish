@@ -14,9 +14,13 @@
 //     parity and exercised only in tests.
 //   * weightIndexScrambled -- get_weight_index_scrambled (affine_transform.h),
 //     the SSSE3 weight index permutation the layer parse writes through and the
-//     Zig propagate already reads back.
+//     Zig propagate already reads back. On the AVX2 pair-activation tier
+//     (`pair_activations`) the fc_1/fc_2 parse additionally folds the 128-bit-lane
+//     interleave of the paired activation packs into the weight index, exactly as
+//     upstream's ScrambledInput branch of the same function.
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 // The SSE4.1 packus lane order (which happens to be the identity {0..7}). A test fixture for
 // permuteBlocks only: the live parse never permutes on any tier (see the header), so no target
@@ -79,9 +83,32 @@ pub fn permuteBlocks(data: []u8, block_size: usize, order: []const usize, scratc
     }
 }
 
+/// Mirror upstream's USE_AVX2_PAIR_ACTIVATIONS tier condition (simd.h:54): plain AVX2,
+/// no VNNI of either width, no AVX512. The activation kernel in nnue_inference.zig keys
+/// its paired packs off the SAME condition; the bench signature pins that the two agree.
+pub const pair_activations = builtin.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .avx2) and
+    !std.Target.x86.featureSetHas(builtin.cpu.features, .avx512f) and
+    !std.Target.x86.featureSetHas(builtin.cpu.features, .avxvnni) and
+    !std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
+
+// Map an input index to where the paired activation packs put its value: vpackssdw +
+// vpacksswb operate per 128-bit lane, so within each 32-byte block the eight 4-byte
+// chunks land interleaved (chunk k -> position (k%2)*4 + k/2). Rearrange the next
+// layer's weights by this map instead of issuing a lane-restoring VPERMD in the packs
+// (upstream get_weight_index_scrambled's ScrambledInput branch, affine_transform.h).
+fn pairScrambledInputIndex(input_index: usize) usize {
+    const block = input_index / 32;
+    const chunk = (input_index % 32) / 4;
+    return block * 32 + ((chunk % 2) * 4 + chunk / 2) * 4 + input_index % 4;
+}
+
 // Compute get_weight_index_scrambled(i): the SSSE3 affine weight index permutation.
-pub fn weightIndexScrambled(i: usize, padded_input: usize, output_dims: usize) usize {
-    return (i / 4) % (padded_input / 4) * output_dims * 4 + i / padded_input * 4 + i % 4;
+// `scrambled_input` adds the pair-activation lane interleave to the input index first
+// (upstream's ScrambledInput template flag -- fc_1/fc_2 on the pair tier only).
+pub fn weightIndexScrambled(i: usize, padded_input: usize, output_dims: usize, scrambled_input: bool) usize {
+    const input_index = if (scrambled_input) pairScrambledInputIndex(i % padded_input) else i % padded_input;
+    return input_index / 4 * output_dims * 4 + i / padded_input * 4 + input_index % 4;
 }
 
 // ---- feature transformer parse ---------------------------------------------
@@ -186,10 +213,11 @@ pub fn verifyFeatureTransformer(blob: []const u8, reference: []const u8, scratch
 
 // Parse one affine layer's parameters at the start of `blob`: biases
 // (OutputDimensions int32, little-endian, linear) then weights (int8, written
-// through the SSSE3 scramble). OutputDimensions and PaddedInputDimensions are
+// through the SSSE3 scramble -- plus the pair-activation input interleave when
+// `scrambled_input` is set). OutputDimensions and PaddedInputDimensions are
 // derived from the destination sizes (biases_dst.len/4 and weights_dst.len /
 // OutputDimensions). Returns the bytes consumed.
-pub fn parseLayer(blob: []const u8, biases_dst: []u8, weights_dst: []u8) ?usize {
+pub fn parseLayer(blob: []const u8, biases_dst: []u8, weights_dst: []u8, scrambled_input: bool) ?usize {
     const output_dims = biases_dst.len / @sizeOf(i32);
     if (output_dims == 0) return null;
     if (blob.len < biases_dst.len + weights_dst.len) return null;
@@ -200,7 +228,7 @@ pub fn parseLayer(blob: []const u8, biases_dst: []u8, weights_dst: []u8) ?usize 
     const padded_input = n / output_dims;
     var i: usize = 0;
     while (i < n) : (i += 1) {
-        weights_dst[weightIndexScrambled(i, padded_input, output_dims)] = blob[pos + i];
+        weights_dst[weightIndexScrambled(i, padded_input, output_dims, scrambled_input)] = blob[pos + i];
     }
     pos += n;
     return pos;
@@ -278,20 +306,24 @@ pub fn serializeFeatureTransformer(
 }
 
 // Serialize AffineTransform::write_parameters: biases (int32 LE) then weights in the file's
-// linear order, recovered from the scrambled storage via get_weight_index.
-fn serializeLayerOne(biases: []const u8, weights: []const u8, out: *Bytes, a: std.mem.Allocator) !void {
+// linear order, recovered from the scrambled storage via get_weight_index. Reading back
+// through the SAME index map the parse wrote through inverts it, so `scrambled_input`
+// must match the parse's flag for the layer.
+fn serializeLayerOne(biases: []const u8, weights: []const u8, scrambled_input: bool, out: *Bytes, a: std.mem.Allocator) !void {
     try out.appendSlice(a, biases);
     const output_dims = biases.len / @sizeOf(i32);
     const n = weights.len;
     const padded_input = n / output_dims;
     var i: usize = 0;
     while (i < n) : (i += 1) {
-        try out.append(a, weights[weightIndexScrambled(i, padded_input, output_dims)]);
+        try out.append(a, weights[weightIndexScrambled(i, padded_input, output_dims, scrambled_input)]);
     }
 }
 
 // Serialize NetworkArchitecture::write_parameters preceded by Detail's u32 hash. The
-// activations carry no parameters, so only fc_0/fc_1/fc_2 are written.
+// activations carry no parameters, so only fc_0/fc_1/fc_2 are written. fc_1/fc_2 read
+// paired-activation output on the pair tier, so their stored weights carry the extra
+// interleave and are exported back through it -- the emitted bytes stay tier-invariant.
 pub fn serializeLayer(
     hash_value: u32,
     biases: [3][]const u8,
@@ -304,7 +336,7 @@ pub fn serializeLayer(
     try out.appendSlice(a, &hdr);
     var idx: usize = 0;
     while (idx < 3) : (idx += 1) {
-        try serializeLayerOne(biases[idx], weights[idx], out, a);
+        try serializeLayerOne(biases[idx], weights[idx], pair_activations and idx > 0, out, a);
     }
 }
 
@@ -369,12 +401,36 @@ test "permuteBlocks reorders blocks per a non-trivial order" {
 
 test "weightIndexScrambled matches the upstream weight-scramble formula" {
     // Model fc_0-like: PaddedInputDimensions=1024, OutputDimensions=32.
-    try testing.expectEqual(@as(usize, 0), weightIndexScrambled(0, 1024, 32));
-    try testing.expectEqual(@as(usize, 1), weightIndexScrambled(1, 1024, 32));
+    try testing.expectEqual(@as(usize, 0), weightIndexScrambled(0, 1024, 32, false));
+    try testing.expectEqual(@as(usize, 1), weightIndexScrambled(1, 1024, 32, false));
     // i=4 -> (1)%256*128 + 0 + 0 = 128
-    try testing.expectEqual(@as(usize, 128), weightIndexScrambled(4, 1024, 32));
+    try testing.expectEqual(@as(usize, 128), weightIndexScrambled(4, 1024, 32, false));
     // i=1024 -> (256)%256*128 + 4 + 0 = 0 + 4 = 4
-    try testing.expectEqual(@as(usize, 4), weightIndexScrambled(1024, 1024, 32));
+    try testing.expectEqual(@as(usize, 4), weightIndexScrambled(1024, 1024, 32, false));
+}
+
+test "weightIndexScrambled's pair interleave matches the upstream ScrambledInput branch" {
+    // Model fc_1-like: PaddedInputDimensions=64, OutputDimensions=32. Chunk k of a
+    // 32-byte block moves to position (k%2)*4 + k/2 before the base formula.
+    // i=0: chunk 0 -> 0, so index 0*128 + 0 + 0.
+    try testing.expectEqual(@as(usize, 0), weightIndexScrambled(0, 64, 32, true));
+    // i=4: chunk 1 -> position 4, input_index 16 -> 4*128 + 0 + 0.
+    try testing.expectEqual(@as(usize, 512), weightIndexScrambled(4, 64, 32, true));
+    // i=8: chunk 2 -> position 1, input_index 4 -> 1*128.
+    try testing.expectEqual(@as(usize, 128), weightIndexScrambled(8, 64, 32, true));
+    // i=28: chunk 7 -> position 7 (fixed point), same as the unscrambled index.
+    try testing.expectEqual(weightIndexScrambled(28, 64, 32, false), weightIndexScrambled(28, 64, 32, true));
+    // i=33: block 1 is interleaved independently; sublane and output offsets ride along.
+    try testing.expectEqual(@as(usize, 32 / 4 * 128 + 1), weightIndexScrambled(33, 64, 32, true));
+
+    // The map is a bijection on every input index (weights neither collide nor drop).
+    var seen = [_]bool{false} ** 128;
+    var i: usize = 0;
+    while (i < 128) : (i += 1) {
+        const idx = weightIndexScrambled(i, 128, 1, true);
+        try testing.expect(!seen[idx]);
+        seen[idx] = true;
+    }
 }
 
 test "feature transformer layout offsets match the FeatureTransformer format" {

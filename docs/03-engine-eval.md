@@ -75,7 +75,9 @@ stream order — biases (LEB `i16`), threat weights (raw `i8`), threat PSQT weig
 (LEB `i32`), psq weights (LEB `i16`), psq PSQT weights (LEB `i32`) — each written
 into its fixed, 64-byte-aligned offset in the destination blob. Affine layers are
 `i32` little-endian biases followed by `i8` weights, permuted on the way in through
-`weightIndexScrambled` (the SSSE3 layout the inference reads back). `serializeFeatureTransformer` /
+`weightIndexScrambled` (the SSSE3 layout the inference reads back; on the
+pair-activation tier `fc_1`/`fc_2` additionally fold in the paired packs' lane
+interleave). `serializeFeatureTransformer` /
 `serializeLayer` invert this exactly, so an exported net round-trips byte-for-byte.
 
 The parse is the *sole* source of weights: it writes straight into the arenas owned
@@ -124,7 +126,12 @@ fc_0 (1024 -> 32) -> ac_sqr_0 | ac_0 -> fc_1 (64 -> 32) -> ac_sqr_1 | ac_1 -> fc
 
 Output scaling is integer throughout. The activation shifts are fixed per layer:
 `fc_0`'s outputs go through `sqrClippedReLU(21)` and `clippedReLU(7)`, `fc_1`'s
-through `sqrClippedReLU(19)` and `clippedReLU(6)`. The forward output is
+through `sqrClippedReLU(19)` and `clippedReLU(6)`. On the plain-AVX2 tier
+(`nnue_parse.pair_activations` — AVX2 with neither VNNI nor AVX-512, upstream's
+`USE_AVX2_PAIR_ACTIVATIONS`) `sqrClipPair` fuses each layer's two activations,
+sharing the loads and the signed saturating packs; the packs' per-128-bit-lane
+interleave is folded into the `fc_1`/`fc_2` weight parse instead of a restoring
+permute, so the values — and every tier's eval — are unchanged. The forward output is
 `fc_2[0] + (fc_0[30] - fc_0[31])` scaled by `600*16 / (128*64*2)`, and `evaluate`
 divides both the psqt and positional halves by `output_scale = 16` before returning.
 
