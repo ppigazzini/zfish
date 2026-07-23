@@ -45,6 +45,11 @@ run_tier() {  # $1 = arch tier
 
 grep -qw avx2 "$CPUINFO" 2>/dev/null && run_tier x86-64-avx2
 grep -qw bmi2 "$CPUINFO" 2>/dev/null && run_tier x86-64-bmi2
+# Sweep the wide AVX-512 tiers explicitly: the host-best line below covers only
+# ONE of them (avx512icl on this box), leaving vnni512 -- the tier every perf
+# table measures -- otherwise un-gated (mcfish 1014d69 caught the same hole).
+grep -qw avx512bw "$CPUINFO" 2>/dev/null && run_tier x86-64-avx512
+grep -qw avx512_vnni "$CPUINFO" 2>/dev/null && run_tier x86-64-vnni512
 HOST="$(cd "$REPO" && zig build host-arch 2>/dev/null)"
 case "$HOST" in
     x86-64-*) run_tier "$HOST" ;;
