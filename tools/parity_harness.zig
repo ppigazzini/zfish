@@ -798,6 +798,25 @@ fn buildTbCursed(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         const dl = dtz_line orelse fail("tb-cursed: {s}: no DTZ line (5-man tables missing?)", .{r.label});
         try out.print(gpa, "{s} | {s} | {s}\n", .{ r.label, wl, dl });
     }
+    // Node-limited legs at the SAME dual-path config: pin the search total where
+    // 5-man probes (cursed-win rule50 semantics included) fire mid-search. Only a
+    // node-limited run can see the per-probe time-check reset (upstream
+    // search.cpp:917) on this table set -- the display legs above are static and
+    // the tb-search legs probe the 3-man path only. Non-round limits land the
+    // stop mid-reseed-phase, sharpening the discriminator. Derive golden values
+    // from the oracle UNDER THIS EXACT SyzygyPath: a golden derived at a
+    // different path config pins a different probe stream (paid for in mcfish).
+    const node_runs = [_]struct { label: []const u8, limit: u32, fen: []const u8 }{
+        .{ .label = "nodes-tb-cursed-win  ", .limit = 123457, .fen = "8/8/8/3k4/p7/8/2N5/N3K3 w - - 0 1" },
+        .{ .label = "nodes-tb-blessed-loss", .limit = 234567, .fen = "n3k3/2n5/8/3K4/P7/8/8/8 w - - 0 1" },
+    };
+    for (node_runs) |r| {
+        try Io.Dir.cwd().writeFile(io, .{ .sub_path = "tb_cursed_tmp.epd", .data = r.fen });
+        const input = try std.fmt.allocPrint(gpa, "setoption name SyzygyPath value syzygy5:syzygy\nbench 16 1 {d} tb_cursed_tmp.epd nodes\nquit\n", .{r.limit});
+        defer gpa.free(input);
+        const nodes_tb = try benchNodes(gpa, io, bin, input);
+        try out.print(gpa, "{s} nodes-tb={d}\n", .{ r.label, nodes_tb });
+    }
     return out.toOwnedSlice(gpa);
 }
 

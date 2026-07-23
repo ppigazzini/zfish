@@ -354,7 +354,12 @@ It is a **local gate, not CI**: it measures the host it runs on, and a hosted ru
 shared, thermally-uncontrolled CPU cannot carry a performance verdict. The same holds
 for the other local scripts (`nps_ab.sh`, `perf_callgrind.sh`,
 `perf_fingerprint.py`) and for the local-only `tb-cursed` gate, which needs 5-man
-tables that are never fetched in CI.
+tables that are never fetched in CI. `tb-cursed` pins both the static WDL/DTZ
+display and node-limited search totals at the dual `syzygy5:syzygy` path — the
+node legs see the per-probe time-check reset on the 5-man/cursed table set that
+`tb-search`'s 3-man legs cannot reach, and their golden values are derived from
+the oracle under that exact path config (a golden derived at a different
+SyzygyPath pins a different probe stream).
 
 ### The C backend as a correctness oracle
 
