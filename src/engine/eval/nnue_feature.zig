@@ -168,22 +168,33 @@ pub fn fullAppendActive(
     const occupied = by_type[0];
     const pawns = by_type[pawn_piece_type];
 
+    // Restrict each attacker's targets to the piece types its full_map row can
+    // ever index in range -- upstream append_active_indices' pawnTargets /
+    // minorSliderTargets / queenTargets -- so no fullMakeIndex call is spent on
+    // a target the `< full_dimensions` filter would discard (kings are never
+    // targets; pawns never threaten bishops or queens; bishops and rooks never
+    // threaten queens). The filter still catches the pair-specific exclusions.
+    const pawn_targets = pawns | by_type[knight_piece_type] | by_type[rook_piece_type];
+    const minor_slider_targets = pawn_targets | by_type[bishop_piece_type];
+    const queen_targets = minor_slider_targets | by_type[queen_piece_type];
+
     result.len = 0;
     var color_index: u8 = 0;
 
     while (color_index < 2) : (color_index += 1) {
         const color = perspective ^ color_index;
-        appendActivePawnThreats(result, pieces, occupied, pawns, by_color[color] & pawns, perspective, color, king_square);
+        appendActivePawnThreats(result, pieces, pawn_targets, pawns, by_color[color] & pawns, perspective, color, king_square);
 
         // Unroll the piece types at comptime so each attacksBb call resolves to its own
         // attack kernel directly -- the runtime-typed form dispatched through a jump
         // table once per attacker, an indirect branch the predictor keeps missing.
         inline for ([_]u8{ knight_piece_type, bishop_piece_type, rook_piece_type, queen_piece_type }) |piece_type| {
             const attacker = makePiece(color, piece_type);
+            const targets = if (piece_type == knight_piece_type or piece_type == queen_piece_type) queen_targets else minor_slider_targets;
             var attackers = by_color[color] & by_type[piece_type];
             while (attackers != 0) {
                 const from = popLsb(&attackers);
-                var attacks = attacksBb(piece_type, from, occupied) & occupied;
+                var attacks = attacksBb(piece_type, from, occupied) & targets;
                 while (attacks != 0) {
                     const to = popLsb(&attacks);
                     appendFullActiveIndex(result, perspective, attacker, from, to, pieces[to], king_square);
@@ -200,7 +211,7 @@ pub fn fullRequiresRefresh(diff: FullDiff, perspective: u8) bool {
 fn appendActivePawnThreats(
     result: *FullAppendResult,
     pieces: []const u8,
-    occupied: u64,
+    pawn_targets: u64,
     pawns: u64,
     color_pawns: u64,
     perspective: u8,
@@ -211,12 +222,12 @@ fn appendActivePawnThreats(
     const pushers = pawnSinglePush(color ^ 1, pawns) & color_pawns;
 
     if (color == white) {
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_east, color_pawns) & occupied, north_east);
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_west, color_pawns) & occupied, north_west);
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_east, color_pawns) & pawn_targets, north_east);
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_west, color_pawns) & pawn_targets, north_west);
         processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north, pushers), north);
     } else {
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_west, color_pawns) & occupied, south_west);
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_east, color_pawns) & occupied, south_east);
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_west, color_pawns) & pawn_targets, south_west);
+        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_east, color_pawns) & pawn_targets, south_east);
         processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south, pushers), south);
     }
 }
