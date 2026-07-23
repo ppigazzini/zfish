@@ -1,2 +1,4 @@
 cursed-win   | Tablebases WDL:    1 (1) | Tablebases DTZ:  122 (1)
 blessed-loss | Tablebases WDL:   -1 (1) | Tablebases DTZ: -115 (1)
+nodes-tb-cursed-win   nodes-tb=123540
+nodes-tb-blessed-loss nodes-tb=234650
