@@ -36,7 +36,7 @@ jobs:
       - name: Cache NNUE network
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: net/nn-*.nnue
+          path: resources/nn-*.nnue
           key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
       - name: Fetch the NNUE net
         run: zig build net
@@ -59,3 +59,36 @@ jobs:
           fi
           echo "fuzz: a target crashed or the fuzzer errored (exit $ec)" >&2
           exit "$ec"
+
+  # The board targets above never feed the COMMAND LOOP hostile input; this job
+  # does, with tools/uci_fuzz.py against a ReleaseSafe build for a bounded budget.
+  # The seed defaults to the wall clock, so successive nights walk fresh input
+  # space; the harness prints it first, so a red run names its one-flag
+  # reproducer at the top of the log.
+  uci-fuzz:
+    name: UCI command-loop fuzz (bounded)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      - name: Cache NNUE network
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: resources/nn-*.nnue
+          key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
+      - name: Fetch the NNUE net
+        run: zig build net
+
+      - name: Build (ReleaseSafe)
+        run: zig build -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
+
+      # ~10 min of streams; the harness bounds every stream itself (verbatim
+      # closing quit + a per-stream timeout), so no outer timeout wrapper.
+      - name: Fuzz the UCI loop (bounded, ~10 min)
+        working-directory: resources
+        run: python3 ../tools/uci_fuzz.py --seconds 600
