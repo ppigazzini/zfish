@@ -36,6 +36,8 @@ const cacheEntry = nnue_refresh_cache.cacheEntry;
 const cacheEntryAccumulationMut = nnue_refresh_cache.cacheEntryAccumulationMut;
 const cacheEntryPsqtMut = nnue_refresh_cache.cacheEntryPsqtMut;
 const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
+const cacheEntryPieceBb = nnue_refresh_cache.cacheEntryPieceBb;
+const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 
 // Alias back the accumulator-stack layout + accessors, which live in the
 // nnue_acc_layout leaf now, so the facade + update call sites are unqualified
@@ -43,7 +45,6 @@ const cacheEntryPiecesMut = nnue_refresh_cache.cacheEntryPiecesMut;
 const layout = @import("nnue_acc_layout.zig");
 const psq_feature = layout.psq_feature;
 const threat_feature = layout.threat_feature;
-const no_piece = layout.no_piece;
 const sq_none = layout.sq_none;
 const square_count = layout.square_count;
 const psq_index_capacity = layout.psq_index_capacity;
@@ -124,44 +125,60 @@ fn refreshCombined(
     var added: [psq_index_capacity]u32 = undefined;
     var removed_len: usize = 0;
     var added_len: usize = 0;
-    var square: usize = 0;
 
-    // Find the changed squares upstream's way (get_changed_pieces): compare 8 squares at a
-    // time as one u64 and skip a fully-unchanged chunk with a single test, instead of eight
-    // per-square compares. After a refresh most of the 64 squares match the cache, so nearly
-    // every chunk skips; only a chunk that holds a change falls to the per-square routing.
-    // Bit-identical to the scalar scan -- the per-square logic and ascending-square order are
-    // unchanged, the u64 guard only elides squares proven equal. square_count (64) is a
-    // multiple of 8, so the chunk loop covers the board exactly.
-    while (square < square_count) : (square += 8) {
-        const old8: u64 = @bitCast(entry_pieces[square..][0..8].*);
-        const new8: u64 = @bitCast(pos.board[square..][0..8].*);
-        if (old8 == new8) continue;
-        inline for (0..8) |k| {
-            const sq = square + k;
-            const old_piece = entry_pieces[sq];
-            const new_piece = pos.board[sq];
-            if (old_piece != new_piece) {
-                if (old_piece != no_piece) {
-                    removed[removed_len] = nnue_feature.halfMakeIndex(.{
-                        .perspective = perspective,
-                        .square = @intCast(sq),
-                        .piece = old_piece,
-                        .king_square = king_square,
-                    });
-                    removed_len += 1;
-                }
-                if (new_piece != no_piece) {
-                    added[added_len] = nnue_feature.halfMakeIndex(.{
-                        .perspective = perspective,
-                        .square = @intCast(sq),
-                        .piece = new_piece,
-                        .king_square = king_square,
-                    });
-                    added_len += 1;
-                }
-            }
-        }
+    // Build the changed-square bitboard upstream's way (get_changed_pieces): compare 32
+    // board bytes at a time against the cached pieces, movemask each compare into 32 mask
+    // bits, and OR the two halves into one u64 -- no per-square loop touches an unchanged
+    // square. On x86 the <32 x i1> compare result maps to pmovmskb, so bitcasting it to
+    // u32 IS the movemask (lane i -> bit i); other backends keep the defined-ops
+    // @select + @reduce form (vector memory layout is target-defined -- see the nnz mask
+    // note in nnue_accumulator.zig).
+    var changed_bb: u64 = 0;
+    inline for (0..2) |chunk| {
+        const off = chunk * 32;
+        const old_v: @Vector(32, u8) = entry_pieces[off..][0..32].*;
+        const new_v: @Vector(32, u8) = pos.board[off..][0..32].*;
+        const differs = old_v != new_v;
+        const mask: u32 = if (comptime @import("builtin").cpu.arch == .x86_64)
+            @bitCast(differs)
+        else blk: {
+            const lane_bits: @Vector(32, u32) = comptime bits: {
+                var w: [32]u32 = undefined;
+                for (&w, 0..) |*bit, i| bit.* = @as(u32, 1) << @intCast(i);
+                break :bits w;
+            };
+            break :blk @reduce(.Or, @select(u32, differs, lane_bits, @as(@Vector(32, u32), @splat(0))));
+        };
+        changed_bb |= @as(u64, mask) << (chunk * 32);
+    }
+
+    // Split changed into removed/added by occupancy -- upstream's
+    // `removedBB = changedBB & entry.pieceBB` / `addedBB = changedBB & pos.pieces()` --
+    // then pop only the set bits: no piece-vs-no_piece branch per square, and a square
+    // whose piece changed type or color lands in both lists. Each pop_lsb loop visits
+    // squares in ascending order, so both lists match the retired per-square scan
+    // byte-for-byte.
+    var removed_bb = changed_bb & cacheEntryPieceBb(entry_ptr);
+    var added_bb = changed_bb & pos.by_type_bb[0];
+    while (removed_bb != 0) : (removed_bb &= removed_bb - 1) {
+        const sq: u8 = @intCast(@ctz(removed_bb));
+        removed[removed_len] = nnue_feature.halfMakeIndex(.{
+            .perspective = perspective,
+            .square = sq,
+            .piece = entry_pieces[sq],
+            .king_square = king_square,
+        });
+        removed_len += 1;
+    }
+    while (added_bb != 0) : (added_bb &= added_bb - 1) {
+        const sq: u8 = @intCast(@ctz(added_bb));
+        added[added_len] = nnue_feature.halfMakeIndex(.{
+            .perspective = perspective,
+            .square = sq,
+            .piece = pos.board[sq],
+            .king_square = king_square,
+        });
+        added_len += 1;
     }
 
     var active: nnue_feature.FullAppendResult = undefined;
@@ -190,6 +207,7 @@ fn refreshCombined(
     );
 
     @memcpy(entry_pieces, pos.board[0..]);
+    setCacheEntryPieceBb(entry_ptr, pos.by_type_bb[0]);
 
     stateBytesMut(psq_feature, latest_index, stack)[computed_offset + perspective] = 1;
 }

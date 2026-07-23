@@ -2,7 +2,7 @@
 //
 // Model the per-(king-square, perspective) AccumulatorRefreshTable: the entry byte
 // layout, the typed accessors into each entry (accumulation i16 / psqt i32 /
-// pieces), and clearRefreshCache which seeds every entry from the FT
+// pieces / pieceBB), and clearRefreshCache which seeds every entry from the FT
 // biases. Split out of nnue_accumulator.zig; pure pointer-offset math over the
 // cache blob, no module deps -- the dimension consts + roundUp
 // are duplicated locally. The accumulator core imports this and aliases the
@@ -22,12 +22,13 @@ fn roundUp(value: usize, alignment: usize) usize {
 
 const cache_entry_psqt_offset = half_dimensions * @sizeOf(i16);
 const cache_entry_pieces_offset = cache_entry_psqt_offset + psqt_buckets * @sizeOf(i32);
-// Store only the cached PIECE ARRAY, not a redundant occupancy bitboard: the
-// per-square refresh diff reads `entry_pieces[sq]` for exactly the "was a piece
-// here" test upstream derives from `changedBB & entry.pieceBB`, so a stored
-// bitboard would be written and never read. The entry size is unchanged (the 8
-// bytes fall inside the 64-byte round-up).
-const cache_entry_bytes = roundUp(cache_entry_pieces_offset + square_count * @sizeOf(u8), nnue_align);
+// Store the cached board's occupancy bitboard next to the piece array: the vector
+// refresh diff splits its changed-square bitboard into removed/added via
+// `changedBB & entry.pieceBB` / `changedBB & pos.pieces()` (upstream's shape), so
+// the occupancy must persist with the pieces it describes. The entry size is
+// unchanged (the 8 bytes fall inside the 64-byte round-up).
+const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
+const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
 
 /// Expose opaque handles. The refresh cache is a raw byte arena (the
 /// per-(king-square,perspective) finny table); its entries are byte slots within it.
@@ -43,7 +44,7 @@ pub fn cacheEntry(cache: *RefreshCache, king_square: u8, perspective: u8) *Cache
 
 // Clear the AccumulatorRefreshTable: initialize every (king_square, perspective)
 // refresh entry to the empty board -- accumulation = the feature-transformer
-// biases, and the rest of the entry (psqt, pieces) zeroed.
+// biases, and the rest of the entry (psqt, pieces, pieceBB) zeroed.
 // The biases pointer is passed in by the caller.
 pub fn clearRefreshCache(cache: *RefreshCache, biases: [*]const i16) void {
     const biases_bytes: [*]const u8 = @ptrCast(biases);
@@ -88,6 +89,16 @@ pub fn cacheEntryPsqtMut(entry: *CacheEntry) []i32 {
 
 pub fn cacheEntryPiecesMut(entry: *CacheEntry) []u8 {
     return (cacheEntryBytesMut(entry) + cache_entry_pieces_offset)[0..square_count];
+}
+
+// Read/write the cached occupancy through byte-array bitcasts so the module stays
+// std-free and no alignment is assumed; both sides use the same native byte order.
+pub fn cacheEntryPieceBb(entry: *const CacheEntry) u64 {
+    return @bitCast((@as([*]const u8, @ptrCast(entry)) + cache_entry_piece_bb_offset)[0..8].*);
+}
+
+pub fn setCacheEntryPieceBb(entry: *CacheEntry, piece_bb: u64) void {
+    (cacheEntryBytesMut(entry) + cache_entry_piece_bb_offset)[0..8].* = @as([8]u8, @bitCast(piece_bb));
 }
 
 test {
