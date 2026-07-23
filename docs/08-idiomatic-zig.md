@@ -358,3 +358,22 @@ first (inlining across a comparison boundary; comparing the same search tree rat
 than two different ones). Label a hypothesis as a hypothesis. A performance claim
 ships with the command that produced it. It is a LOCAL gate — perf counters are not
 available in CI, so it never runs there.
+
+**Know each instrument's blind spots before trusting its verdict.**
+
+- The serial cycle axis has a measured **±1% run-to-run floor and a +0.65%
+  first-position bias** (two A/A controls of the same binary against itself) — a
+  sub-1% single-tier cycle claim cannot be certified here, at any round count.
+  Adjudicate small deltas on the deterministic instruction axis, or with a
+  fastchess Elo match (concurrency = physical cores, idle box, `Timeouts:` near
+  zero — a concurrent build forfeits games exactly like SMT oversubscription).
+- callgrind's simulation **ignores software prefetch on both engines** — the
+  `@prefetch`/`_mm_prefetch` lines carry Ir but zero data refs, so no callgrind
+  bar can certify a prefetch change, for or against.
+- An instruction-count win can still be a cycle **loss** (recurred three times:
+  register-pressure spills, memory-traffic growth, layout resampling). Cycles at
+  the tier that actually runs decide, subject to the floor above.
+- A profile-group regex is a **hypothesis about symbol names**: upstream
+  `do_move`'s signature contains `TranspositionTable const*`, and inlining puts
+  the same logic under different symbols per side. Verify group membership
+  per-symbol before trusting any component ratio.
