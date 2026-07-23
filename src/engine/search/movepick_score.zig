@@ -12,7 +12,6 @@ const shared_history_types = @import("shared_history_types");
 const SharedHistories = shared_history_types.SharedHistories;
 
 const movepick_history = @import("movepick_history.zig");
-const HistorySnapshot = movepick_history.HistorySnapshot;
 const HistoryEntry = movepick_history.HistoryEntry;
 const AtomicHistoryEntry = movepick_history.AtomicHistoryEntry;
 const MainHistoryRow = movepick_history.MainHistoryRow;
@@ -21,12 +20,9 @@ const CaptureHistoryRow = movepick_history.CaptureHistoryRow;
 const PieceToHistoryRow = movepick_history.PieceToHistoryRow;
 const PawnHistoryRow = movepick_history.PawnHistoryRow;
 const ContHistSlot = movepick_history.ContHistSlot;
-const fillHistorySnapshot = movepick_history.fillHistorySnapshot;
-const mainHistoryScore = movepick_history.mainHistoryScore;
-const lowPlyHistoryScore = movepick_history.lowPlyHistoryScore;
-const captureHistoryScore = movepick_history.captureHistoryScore;
-const continuationHistoryScore = movepick_history.continuationHistoryScore;
-const pawnHistoryScore = movepick_history.pawnHistoryScore;
+const pawnHistoryBlock = movepick_history.pawnHistoryBlock;
+const pawnHistoryRead = movepick_history.pawnHistoryRead;
+const continuationHistoryRead = movepick_history.continuationHistoryRead;
 
 const movepick_snapshot = @import("movepick_snapshot.zig");
 const seeGe = @import("legality").seeGe;
@@ -173,11 +169,50 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
     };
 
     const pos = context.pos;
-    const history = loadHistorySnapshot(context);
     const side_to_move = pos.side_to_move;
 
+    // Hoist every loop-invariant scalar and table base into locals BEFORE the scoring
+    // loop: Zig has no type-based alias analysis, so the outputs[] store forces LLVM to
+    // re-load anything still read through context/pos on every iteration, while a local
+    // cannot alias the store and stays in a register. Upstream's compiler hoists the
+    // same loads via TBAA. Each kind unwraps only the tables it reads — ProbCut passes
+    // null for everything but the capture history.
+    const capture_base: [*]const CaptureHistoryRow = if (kind == captures)
+        (context.capture_history orelse unreachable)
+    else
+        undefined;
+
+    const need_main = kind == quiets or kind == evasions;
+    const main_row: *const MainHistoryRow = if (need_main)
+        &(context.main_history orelse unreachable)[@as(usize, side_to_move)]
+    else
+        undefined;
+    const cont_slots: []const ContHistSlot = if (need_main)
+        (context.continuation_history orelse unreachable)
+    else
+        undefined;
+    const cont0: [*]const PieceToHistoryRow = if (need_main)
+        (cont_slots[0] orelse unreachable)
+    else
+        undefined;
+
+    const ply = context.ply;
+    var cont1: [*]const PieceToHistoryRow = undefined;
+    var cont2: [*]const PieceToHistoryRow = undefined;
+    var cont3: [*]const PieceToHistoryRow = undefined;
+    var cont5: [*]const PieceToHistoryRow = undefined;
+    var pawn_block: ?[*]const PawnHistoryRow = null;
+    var lowply_row: *const LowPlyHistoryRow = undefined;
     var threat_by_lesser: [7]u64 = @splat(0);
     if (kind == quiets) {
+        cont1 = cont_slots[1] orelse unreachable;
+        cont2 = cont_slots[2] orelse unreachable;
+        cont3 = cont_slots[3] orelse unreachable;
+        cont5 = cont_slots[5] orelse unreachable;
+        pawn_block = pawnHistoryBlock(context.shared_history, pos.st.pawn_key);
+        if (ply < low_ply_history_size)
+            lowply_row = &(context.low_ply_history orelse unreachable)[@as(usize, @intCast(ply))];
+
         const them = otherColor(side_to_move);
         threat_by_lesser[pawn] = 0;
         threat_by_lesser[knight] = attacksBy(pos, them, pawn);
@@ -216,32 +251,19 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
 
         switch (kind) {
             captures => {
-                input.capture_history = captureHistoryScore(
-                    &history,
-                    piece,
-                    to,
-                    typeOf(captured_piece),
-                );
+                input.capture_history =
+                    capture_base[@as(usize, piece)][@as(usize, to)][@as(usize, typeOf(captured_piece))].value;
                 input.captured_piece_value = piece_values[@as(usize, captured_piece)];
             },
             quiets => {
-                input.main_history = mainHistoryScore(
-                    &history,
-                    side_to_move,
-                    raw_move,
-                );
-                input.pawn_history = pawnHistoryScore(
-                    &history,
-                    pos.st.pawn_key,
-                    piece,
-                    to,
-                );
+                input.main_history = main_row[@as(usize, raw_move)].value;
+                input.pawn_history = pawnHistoryRead(pawn_block, piece, to);
                 input.continuation_sum =
-                    continuationHistoryScore(&history, 0, piece, to) +
-                    continuationHistoryScore(&history, 1, piece, to) +
-                    continuationHistoryScore(&history, 2, piece, to) +
-                    continuationHistoryScore(&history, 3, piece, to) +
-                    continuationHistoryScore(&history, 5, piece, to);
+                    continuationHistoryRead(cont0, piece, to) +
+                    continuationHistoryRead(cont1, piece, to) +
+                    continuationHistoryRead(cont2, piece, to) +
+                    continuationHistoryRead(cont3, piece, to) +
+                    continuationHistoryRead(cont5, piece, to);
                 input.check_bonus = @intFromBool(
                     // Read the cached enemy-king check rings (set_check_info, state_setup.zig:141)
                     // instead of rebuilding the slider rings from magics on every quiet move --
@@ -257,29 +279,16 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
                 );
                 input.piece_value = piece_values[@as(usize, piece_type)];
 
-                if (context.ply < low_ply_history_size) {
+                if (ply < low_ply_history_size) {
                     input.low_ply_bonus = @divTrunc(
-                        8 * lowPlyHistoryScore(
-                            &history,
-                            context.ply,
-                            raw_move,
-                        ),
-                        1 + context.ply,
+                        8 * @as(i32, lowply_row[@as(usize, raw_move)].value),
+                        1 + ply,
                     );
                 }
             },
             evasions => {
-                input.main_history = mainHistoryScore(
-                    &history,
-                    side_to_move,
-                    raw_move,
-                );
-                input.continuation_sum = continuationHistoryScore(
-                    &history,
-                    0,
-                    piece,
-                    to,
-                );
+                input.main_history = main_row[@as(usize, raw_move)].value;
+                input.continuation_sum = continuationHistoryRead(cont0, piece, to);
                 input.captured_piece_value = piece_values[@as(usize, captured_piece)];
                 input.capture_stage = @intFromBool(captureStage(pos, raw_move));
             },
@@ -298,19 +307,6 @@ fn typeOf(piece: u8) u8 {
 
 fn squareMask(square: u8) u64 {
     return @as(u64, 1) << @intCast(square);
-}
-
-fn loadHistorySnapshot(context: *const MovePickerContext) HistorySnapshot {
-    var snapshot = std.mem.zeroes(HistorySnapshot);
-    fillHistorySnapshot(
-        context.main_history,
-        context.low_ply_history,
-        context.capture_history,
-        context.continuation_history,
-        context.shared_history,
-        &snapshot,
-    );
-    return snapshot;
 }
 
 fn captureStage(pos: *const Position, raw_move: u16) bool {

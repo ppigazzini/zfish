@@ -1,23 +1,8 @@
 const std = @import("std");
 
 const movepick_history = @import("movepick_history.zig");
-const HistorySnapshot = movepick_history.HistorySnapshot;
-const HistoryEntry = movepick_history.HistoryEntry;
-const AtomicHistoryEntry = movepick_history.AtomicHistoryEntry;
-const MainHistoryRow = movepick_history.MainHistoryRow;
-const LowPlyHistoryRow = movepick_history.LowPlyHistoryRow;
-const CaptureHistoryRow = movepick_history.CaptureHistoryRow;
-const PieceToHistoryRow = movepick_history.PieceToHistoryRow;
-const PawnHistoryRow = movepick_history.PawnHistoryRow;
-const ContHistSlot = movepick_history.ContHistSlot;
 // Re-export for the search callers that build the contHist array and must keep its length.
 pub const contHistSlice = movepick_history.contHistSlice;
-const fillHistorySnapshot = movepick_history.fillHistorySnapshot;
-const mainHistoryScore = movepick_history.mainHistoryScore;
-const lowPlyHistoryScore = movepick_history.lowPlyHistoryScore;
-const captureHistoryScore = movepick_history.captureHistoryScore;
-const continuationHistoryScore = movepick_history.continuationHistoryScore;
-const pawnHistoryScore = movepick_history.pawnHistoryScore;
 
 const seeGe = @import("legality").seeGe;
 const bitboard = @import("bitboard");
