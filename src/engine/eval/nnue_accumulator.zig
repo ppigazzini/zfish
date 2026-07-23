@@ -167,52 +167,13 @@ const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
 pub const nnz_word_count: usize = half_dimensions / 4 / 64;
 pub const NnzBitset = [nnz_word_count]u64;
 
-// Run the transform's clip-multiply-narrow at i16 width on the 256-bit tiers with
-// upstream's packus body (nnue_feature_transformer.h): clamp only the FIRST half's
-// operand to [0,255] and shift it left 7; the second half gets min(255, .) alone, no
-// max -- a negative second operand keeps its sign through the SIGNED vpmulhw, drives
-// the product negative, and the saturating vpackuswb zeroes it on pack, which is
-// exactly the max(0, .) the generic path pays a vpmaxsw for (upstream: "saves one max
-// operation per pair"). One byte shuffle (vpermq) undoes the pack's 128-bit-lane
-// interleave, so the output bytes, the nnz bitset and everything downstream are
-// unchanged. Positive products never saturate: (255<<7)*255 >> 16 == 127.
-const use_packus_avx2 = @import("builtin").cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx2) and
-    !std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512f);
-
-const packuswb256 = struct {
-    extern fn @"llvm.x86.avx2.packuswb"(@Vector(16, i16), @Vector(16, i16)) @Vector(32, u8);
-}.@"llvm.x86.avx2.packuswb";
-const transform_pmulhw256 = struct {
-    extern fn @"llvm.x86.avx2.pmulh.w"(@Vector(16, i16), @Vector(16, i16)) @Vector(16, i16);
-}.@"llvm.x86.avx2.pmulh.w";
-
-// Compute 32 output bytes from the two halves' i16 accumulator lanes (a = first half,
-// b = second): per element min(127, (clamp(a,0,255) * clamp(b,0,255)) >> 9), in natural
-// element order. The scalar-reference unit test pins the packus trick's equivalence.
-inline fn packusTransform32(a: [2]@Vector(16, i16), b: [2]@Vector(16, i16)) @Vector(32, u8) {
-    const c255: @Vector(16, i16) = @splat(255);
-    const zero: @Vector(16, i16) = @splat(0);
-    const sh7: @Vector(16, u4) = @splat(7);
-    const clamped0: @Vector(16, i16) = @max(@min(a[0], c255), zero);
-    const clamped1: @Vector(16, i16) = @max(@min(a[1], c255), zero);
-    const sum0a: @Vector(16, i16) = clamped0 << sh7;
-    const sum0b: @Vector(16, i16) = clamped1 << sh7;
-    const sum1a: @Vector(16, i16) = @min(b[0], c255);
-    const sum1b: @Vector(16, i16) = @min(b[1], c255);
-    const packed_bytes = packuswb256(
-        transform_pmulhw256(sum0a, sum1a),
-        transform_pmulhw256(sum0b, sum1b),
-    );
-    // Undo the pack's per-128-bit-lane interleave (one vpermq): natural byte order out.
-    const natural_fix: @Vector(32, i32) = comptime blk: {
-        const src_quads = [4]usize{ 0, 2, 1, 3 };
-        var m: [32]i32 = undefined;
-        for (&m, 0..) |*e, i| e.* = @intCast(src_quads[i / 8] * 8 + i % 8);
-        break :blk m;
-    };
-    return @shuffle(u8, packed_bytes, undefined, natural_fix);
-}
+// Alias the transform's packus clip-multiply-narrow kernels and their comptime
+// gates from the nnue_acc_rowops leaf (split there with the row kernels; the
+// scalar-reference unit tests pinning the packus trick live beside them).
+const use_packus_avx2 = nnue_acc_rowops.use_packus_avx2;
+const use_packus_sse = nnue_acc_rowops.use_packus_sse;
+const packusTransform32 = nnue_acc_rowops.packusTransform32;
+const packusTransform16 = nnue_acc_rowops.packusTransform16;
 
 pub fn transformBucket(
     stack: *AccumulatorStack,
@@ -309,6 +270,32 @@ pub fn transformBucket(
                 nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
                 continue;
             }
+            if (comptime use_packus_sse) {
+                // Run the packus body per 16 elements (4 xmm in, 1 xmm out): upstream's
+                // SSE2 shape drops the second half's max(0, .) -- the signed pmulhw
+                // carries the sign and packuswb zeroes the negative product on pack --
+                // where the generic path below pays a pmaxsw per operand. V is a
+                // multiple of 16 on every x86 tier this gate selects.
+                var mask: GMask = 0;
+                inline for (0..V / 16) |s| {
+                    const off = base + j + s * 16;
+                    const packed16 = packusTransform16(.{
+                        @as(*align(16) const [8]i16, @ptrCast(@alignCast(comb_acc + off))).*,
+                        @as(*align(16) const [8]i16, @ptrCast(@alignCast(comb_acc + off + 8))).*,
+                    }, .{
+                        @as(*align(16) const [8]i16, @ptrCast(@alignCast(comb_acc + off + half))).*,
+                        @as(*align(16) const [8]i16, @ptrCast(@alignCast(comb_acc + off + half + 8))).*,
+                    });
+                    output[offset + j + s * 16 ..][0..16].* = packed16;
+                    // Compare SIGNED > 0, upstream's vec_nnz: every output byte is
+                    // <= 127, so each u32 group is non-negative and > 0 iff non-zero
+                    // -- one pcmpgtd, where != 0 needs a pcmpeqd plus an invert.
+                    const nz = @as(@Vector(4, i32), @bitCast(packed16)) > @as(@Vector(4, i32), @splat(0));
+                    mask |= @as(GMask, @as(u4, @bitCast(nz))) << (4 * s);
+                }
+                nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
+                continue;
+            }
             const s0i: Vi16 = @as(*align(A) const [V]i16, @ptrCast(@alignCast(comb_acc + base + j))).*;
             const s1i: Vi16 = @as(*align(A) const [V]i16, @ptrCast(@alignCast(comb_acc + base + j + half))).*;
             const c0: Vu16 = @intCast(@max(zero, @min(c255, s0i))); // ClippedReLU [0,255]
@@ -376,42 +363,6 @@ pub fn stackPop(stack: *AccumulatorStack) void {
     const size = stackSize(stack);
     std.debug.assert(size > 1);
     setStackSize(bytes, size - 1);
-}
-
-// Pin the packus trick against the scalar transform identity over the full i16 range:
-// the dropped second-half max(0, .) must be exactly reproduced by the signed vpmulhw's
-// sign carry plus vpackuswb's low-side saturation, and the vpermq must restore natural
-// byte order. Edge values cover both saturating clamps and the negative pass-through.
-test "packusTransform32 equals the scalar transform identity" {
-    if (comptime !use_packus_avx2) return error.SkipZigTest;
-    const testing = std.testing;
-    var prng = std.Random.DefaultPrng.init(0x5DEECE66D2C03579);
-    const rnd = prng.random();
-    const edges = [_]i16{ -32768, -256, -255, -1, 0, 1, 127, 128, 255, 256, 32767 };
-
-    var iter: usize = 0;
-    while (iter < 512) : (iter += 1) {
-        var a: [32]i16 = undefined;
-        var b: [32]i16 = undefined;
-        for (0..32) |i| {
-            a[i] = if (rnd.boolean()) edges[rnd.uintLessThan(usize, edges.len)] else rnd.int(i16);
-            b[i] = if (rnd.boolean()) edges[rnd.uintLessThan(usize, edges.len)] else rnd.int(i16);
-        }
-        var expected: [32]u8 = undefined;
-        for (0..32) |i| {
-            const c0: i32 = @max(0, @min(255, @as(i32, a[i])));
-            const c1: i32 = @max(0, @min(255, @as(i32, b[i])));
-            expected[i] = @intCast((c0 * c1) >> 9);
-        }
-        const got: [32]u8 = packusTransform32(.{
-            a[0..16].*,
-            a[16..32].*,
-        }, .{
-            b[0..16].*,
-            b[16..32].*,
-        });
-        try testing.expectEqualSlices(u8, &expected, &got);
-    }
 }
 
 test {
