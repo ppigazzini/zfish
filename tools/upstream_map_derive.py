@@ -48,6 +48,7 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 PIN_FILE = REPO / "tools" / "upstream" / "UPSTREAM_TARGET"
 DECLARED = REPO / "tools" / "upstream" / "upstream_map.tsv"
 EXCEPTIONS = REPO / "tools" / "upstream" / "upstream_map.exceptions"
+BASELINE = REPO / "tools" / "upstream" / "upstream_map.baseline"
 
 CPP_REF = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*\.cpp)(?::\d+)?\b")
 H_LINE_REF = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*\.h):\d+\b")
@@ -191,20 +192,27 @@ def main() -> None:
     ap.add_argument("--check", action="store_true", help="coverage summary only")
     ap.add_argument("--audit", action="store_true", help="declared-map rot/drift report")
     ap.add_argument("--baseline", type=int, default=None,
-                    help="fail if the uncovered count exceeds this ratchet")
+                    help="fail if the uncovered count exceeds this ratchet "
+                         "(default: tools/upstream/upstream_map.baseline)")
     args = ap.parse_args()
 
     if args.audit:
         failures = audit()
         if failures:
             sys.exit(1)
-        if args.baseline is not None:
+        # Single-source the ratchet: build.zig's `upstream-map` step and the weekly
+        # CI lane both run bare `--audit`, so the number lives in one file. Lower it
+        # as citations land; never raise it.
+        baseline = args.baseline
+        if baseline is None and BASELINE.exists():
+            baseline = int(BASELINE.read_text().strip())
+        if baseline is not None:
             _, uncovered, _ = build_map()
-            if len(uncovered) > args.baseline:
-                print(f"RATCHET: uncovered {len(uncovered)} > baseline {args.baseline} "
+            if len(uncovered) > baseline:
+                print(f"RATCHET: uncovered {len(uncovered)} > baseline {baseline} "
                       f"-- new upstream surface without an owner citation or exception")
                 sys.exit(1)
-            print(f"ratchet: uncovered {len(uncovered)} <= baseline {args.baseline}")
+            print(f"ratchet: uncovered {len(uncovered)} <= baseline {baseline}")
         sys.exit(0)
 
     mapped, uncovered, phantoms = build_map()

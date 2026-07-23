@@ -1,9 +1,14 @@
-# Scheduled upstream-sync DETECTION.
+# Scheduled upstream-sync detection and map health.
 #
-# Judgment-free: fetch official-stockfish/master and print how many commits the
-# port is behind its UPSTREAM_BASE marker, so a net-format / bench change can't
-# silently bundle up between sessions. Porting stays a deliberate, human-gated
-# session -- this job only DETECTS, it never attempts a port.
+# Two halves. DETECTION is judgment-free: fetch official-stockfish/master and
+# print how many commits the port is behind its UPSTREAM_BASE marker, so a
+# net-format / bench change can't silently bundle up between sessions. Porting
+# stays a deliberate, human-gated session -- that half only detects, it never
+# attempts a port. The GATING half runs `zig build upstream-map` -- the
+# declared-vs-derived map audit (rot fails) plus the uncovered-surface ratchet
+# -- which the parity workflow cannot run because a plain checkout of origin
+# does not carry the pinned upstream tree; here the detection half's fetch of
+# the upstream remote has already brought those objects in.
 name: zfish upstream check
 
 on:
@@ -54,3 +59,28 @@ jobs:
             echo ""
             echo "Porting is human-gated: run \`tools/upstream_sync.sh\` locally for the worklist."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The map gate proper. The drift step's fetch pulled the upstream remote's
+      # objects into this clone, so the pinned tree at UPSTREAM_TARGET is now
+      # readable and the audit runs exactly as it does locally: declared-map rot
+      # fails, drift is advisory, and the uncovered count is ratcheted against
+      # tools/upstream/upstream_map.baseline. This one IS a gate -- a red run
+      # means the blast-radius map no longer matches the tree.
+      - name: Audit the upstream map (rot + ratchet)
+        run: |
+          # Capture without tripping `bash -e` on a red audit: the summary must
+          # publish exactly when the gate fails.
+          if out="$(python3 tools/upstream_map_derive.py --audit)"; then
+            status=0
+          else
+            status=$?
+          fi
+          echo "$out"
+          {
+            echo "## Upstream map audit"
+            echo ""
+            echo '```'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
