@@ -274,231 +274,63 @@ fn appendFullActiveIndex(
     }
 }
 
-fn indexLut2Array() [16][64][64]u8 {
-    @setEvalBranchQuota(200000);
-    const knight_attacks = makePieceIndicesType(knight_piece_type);
-    const bishop_attacks = makePieceIndicesType(bishop_piece_type);
-    const rook_attacks = makePieceIndicesType(rook_piece_type);
-    const queen_attacks = makePieceIndicesType(queen_piece_type);
-    const king_attacks = makePieceIndicesType(king_piece_type);
-
-    var indices = std.mem.zeroes([16][64][64]u8);
-    indices[w_pawn] = makePieceIndicesPawn(w_pawn);
-    indices[b_pawn] = makePieceIndicesPawn(b_pawn);
-    indices[w_knight] = knight_attacks;
-    indices[b_knight] = knight_attacks;
-    indices[w_bishop] = bishop_attacks;
-    indices[b_bishop] = bishop_attacks;
-    indices[w_rook] = rook_attacks;
-    indices[b_rook] = rook_attacks;
-    indices[w_queen] = queen_attacks;
-    indices[b_queen] = queen_attacks;
-    indices[w_king] = king_attacks;
-    indices[b_king] = king_attacks;
-    return indices;
-}
-
-const HelperOffsets = struct {
-    cumulative_piece_offset: u32,
-    cumulative_offset: u32,
-};
-
-fn initThreatOffsets() struct { first: [16]HelperOffsets, second: [16][64]u32 } {
-    @setEvalBranchQuota(200000);
-    var indices = std.mem.zeroes([16]HelperOffsets);
-    var local_offsets = std.mem.zeroes([16][64]u32);
-    var cumulative_offset: u32 = 0;
-    var piece_index: usize = 0;
-    while (piece_index < all_pieces.len) : (piece_index += 1) {
-        const piece = all_pieces[piece_index];
-        var cumulative_piece_offset: u32 = 0;
-        var from: usize = 0;
-        while (from < 64) : (from += 1) {
-            local_offsets[piece][from] = cumulative_piece_offset;
-            if (typeOf(piece) != pawn_piece_type) {
-                cumulative_piece_offset += constexprPopcount(pseudoAttacks(typeOf(piece), from));
-            } else if (from >= sq_a2 and from <= sq_h7) {
-                const attacks = if (piece < 8) pawnPushOrAttacks(white, from) else pawnPushOrAttacks(black, from);
-                cumulative_piece_offset += constexprPopcount(attacks);
-            }
-        }
-        indices[piece] = .{
-            .cumulative_piece_offset = cumulative_piece_offset,
-            .cumulative_offset = cumulative_offset,
-        };
-        cumulative_offset += @as(u32, num_valid_targets[piece]) * cumulative_piece_offset;
-    }
-    return .{ .first = indices, .second = local_offsets };
-}
-
-fn initIndexLuts() [16][16][2]u32 {
-    @setEvalBranchQuota(200000);
-    var indices = std.mem.zeroes([16][16][2]u32);
-    var attacker_idx: usize = 0;
-    while (attacker_idx < all_pieces.len) : (attacker_idx += 1) {
-        const attacker = all_pieces[attacker_idx];
-        var attacked_idx: usize = 0;
-        while (attacked_idx < all_pieces.len) : (attacked_idx += 1) {
-            const attacked = all_pieces[attacked_idx];
-            const enemy = (attacker ^ attacked) == 8;
-            const attacker_type = typeOf(attacker);
-            const attacked_type = typeOf(attacked);
-            const map_value = full_map[attacker_type - 1][attacked_type - 1];
-            const semi_excluded = attacker_type == attacked_type and (enemy or attacker_type != pawn_piece_type);
-            const excluded = map_value < 0;
-            if (excluded) {
-                indices[attacker][attacked][0] = full_dimensions;
-                indices[attacker][attacked][1] = full_dimensions;
-                continue;
-            }
-
-            const feature_slot: u32 = @intCast(colorOf(attacked) * (num_valid_targets[attacker] / 2) + map_value);
-            const feature = helper_offsets[attacker].cumulative_offset + feature_slot * helper_offsets[attacker].cumulative_piece_offset;
-
-            indices[attacker][attacked][0] = feature;
-            indices[attacker][attacked][1] = if (semi_excluded) full_dimensions else feature;
-        }
-    }
-    return indices;
-}
-
-const piece_square_index = [2][16]u32{
-    .{ 0, 0, 128, 256, 384, 512, 640, 0, 0, 64, 192, 320, 448, 576, 640, 0 },
-    .{ 0, 64, 192, 320, 448, 576, 640, 0, 0, 0, 128, 256, 384, 512, 640, 0 },
-};
-
-const king_buckets = [64]u32{
-    28 * ps_nb, 29 * ps_nb, 30 * ps_nb, 31 * ps_nb, 31 * ps_nb, 30 * ps_nb, 29 * ps_nb, 28 * ps_nb,
-    24 * ps_nb, 25 * ps_nb, 26 * ps_nb, 27 * ps_nb, 27 * ps_nb, 26 * ps_nb, 25 * ps_nb, 24 * ps_nb,
-    20 * ps_nb, 21 * ps_nb, 22 * ps_nb, 23 * ps_nb, 23 * ps_nb, 22 * ps_nb, 21 * ps_nb, 20 * ps_nb,
-    16 * ps_nb, 17 * ps_nb, 18 * ps_nb, 19 * ps_nb, 19 * ps_nb, 18 * ps_nb, 17 * ps_nb, 16 * ps_nb,
-    12 * ps_nb, 13 * ps_nb, 14 * ps_nb, 15 * ps_nb, 15 * ps_nb, 14 * ps_nb, 13 * ps_nb, 12 * ps_nb,
-    8 * ps_nb,  9 * ps_nb,  10 * ps_nb, 11 * ps_nb, 11 * ps_nb, 10 * ps_nb, 9 * ps_nb,  8 * ps_nb,
-    4 * ps_nb,  5 * ps_nb,  6 * ps_nb,  7 * ps_nb,  7 * ps_nb,  6 * ps_nb,  5 * ps_nb,  4 * ps_nb,
-    0 * ps_nb,  1 * ps_nb,  2 * ps_nb,  3 * ps_nb,  3 * ps_nb,  2 * ps_nb,  1 * ps_nb,  0 * ps_nb,
-};
-
-const orient_tbl_half = [64]u32{
-    7, 7, 7, 7, 0, 0, 0, 0,
-    7, 7, 7, 7, 0, 0, 0, 0,
-    7, 7, 7, 7, 0, 0, 0, 0,
-    7, 7, 7, 7, 0, 0, 0, 0,
-    7, 7, 7, 7, 0, 0, 0, 0,
-    7, 7, 7, 7, 0, 0, 0, 0,
-    7, 7, 7, 7, 0, 0, 0, 0,
-    7, 7, 7, 7, 0, 0, 0, 0,
-};
-
-const orient_tbl_full = [64]i8{
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-    0, 0, 0, 0, 7, 7, 7, 7,
-};
-
-const num_valid_targets = [16]i32{ 0, 6, 10, 8, 8, 10, 0, 0, 0, 6, 10, 8, 8, 10, 0, 0 };
-
-const full_map = [6][6]i32{
-    .{ 0, 1, -1, 2, -1, -1 },
-    .{ 0, 1, 2, 3, 4, -1 },
-    .{ 0, 1, 2, 3, -1, -1 },
-    .{ 0, 1, 2, 3, -1, -1 },
-    .{ 0, 1, 2, 3, 4, -1 },
-    .{ -1, -1, -1, -1, -1, -1 },
-};
-
-const helper_offsets_and_offsets = initThreatOffsets();
-const helper_offsets = helper_offsets_and_offsets.first;
-const offsets = helper_offsets_and_offsets.second;
-const index_lut1 = initIndexLuts();
-const index_lut2 = indexLut2Array();
-
-// Colocate one attacker's whole lookup state -- its flattened index_lut1 row
-// ([attacked * 2 + less] addresses one element with one scaled index) and a
-// merged u16 `offsets[from] + index_lut2[from][to]` plane -- so a threat index
-// costs one block base plus two loads instead of three loads behind three
-// separately scaled bases. The merge fits u16 with a wide margin: the largest
-// per-from offset (queen, 1455) plus the largest within-from index still sits
-// far below 65535, and the builder asserts every sum. The source tables above
-// remain the comptime input; only the blocks are referenced at runtime.
-const ThreatRouteBlock = extern struct {
-    lut1: [32]u32,
-    comb: [64 * 64]u16,
-};
-
-fn buildThreatRouteBlocks() [16]ThreatRouteBlock {
-    @setEvalBranchQuota(4000000);
-    var blocks = std.mem.zeroes([16]ThreatRouteBlock);
-    for (&blocks, 0..) |*block, attacker| {
-        block.lut1 = @bitCast(index_lut1[attacker]);
-        for (0..64) |from| {
-            for (0..64) |to| {
-                const merged: u32 = offsets[attacker][from] + index_lut2[attacker][from][to];
-                std.debug.assert(merged <= std.math.maxInt(u16));
-                block.comb[from * 64 + to] = @intCast(merged);
-            }
-        }
-    }
-    return blocks;
-}
-
-const threat_route_blocks = buildThreatRouteBlocks();
-
-const ps_nb: u32 = 11 * 64;
-const full_dimensions: u32 = 60720;
-
-const white: u8 = 0;
-const black: u8 = 1;
-
-const pawn_piece_type: u8 = 1;
-const knight_piece_type: u8 = 2;
-const bishop_piece_type: u8 = 3;
-const rook_piece_type: u8 = 4;
-const queen_piece_type: u8 = 5;
-const king_piece_type: u8 = 6;
-
-const w_pawn: usize = 1;
-const w_knight: usize = 2;
-const w_bishop: usize = 3;
-const w_rook: usize = 4;
-const w_queen: usize = 5;
-const w_king: usize = 6;
-const b_pawn: usize = 9;
-const b_knight: usize = 10;
-const b_bishop: usize = 11;
-const b_rook: usize = 12;
-const b_queen: usize = 13;
-const b_king: usize = 14;
-
-const all_pieces = [_]usize{ w_pawn, w_knight, w_bishop, w_rook, w_queen, w_king, b_pawn, b_knight, b_bishop, b_rook, b_queen, b_king };
-
-const no_piece: u8 = 0;
-const sq_none: u8 = 64;
-const square_count: usize = 64;
-const sq_a2: usize = 8;
-const sq_h7: usize = 55;
-
-const file_a_bb: u64 = 0x0101010101010101;
-const file_h_bb: u64 = file_a_bb << 7;
-
-const north: i8 = 8;
-const east: i8 = 1;
-const south: i8 = -8;
-const west: i8 = -1;
-const north_east: i8 = 9;
-const north_west: i8 = 7;
-const south_east: i8 = -7;
-const south_west: i8 = -9;
-
-const rook_dirs = [_]i8{ north, south, east, west };
-const bishop_dirs = [_]i8{ north_east, south_east, south_west, north_west };
-const queen_dirs = [_]i8{ north, south, east, west, north_east, south_east, south_west, north_west };
-const knight_steps = [_]i8{ -17, -15, -10, -6, 6, 10, 15, 17 };
-const king_steps = [_]i8{ -9, -8, -7, -1, 1, 7, 8, 9 };
+// Re-import the split-out LUT tables and shared constants (nnue_feature_luts.zig).
+const luts = @import("nnue_feature_luts.zig");
+const piece_square_index = luts.piece_square_index;
+const king_buckets = luts.king_buckets;
+const orient_tbl_half = luts.orient_tbl_half;
+const orient_tbl_full = luts.orient_tbl_full;
+const num_valid_targets = luts.num_valid_targets;
+const full_map = luts.full_map;
+const helper_offsets = luts.helper_offsets;
+const offsets = luts.offsets;
+const index_lut1 = luts.index_lut1;
+const index_lut2 = luts.index_lut2;
+const ThreatRouteBlock = luts.ThreatRouteBlock;
+const threat_route_blocks = luts.threat_route_blocks;
+const ps_nb = luts.ps_nb;
+const full_dimensions = luts.full_dimensions;
+const white = luts.white;
+const black = luts.black;
+const pawn_piece_type = luts.pawn_piece_type;
+const knight_piece_type = luts.knight_piece_type;
+const bishop_piece_type = luts.bishop_piece_type;
+const rook_piece_type = luts.rook_piece_type;
+const queen_piece_type = luts.queen_piece_type;
+const king_piece_type = luts.king_piece_type;
+const w_pawn = luts.w_pawn;
+const w_knight = luts.w_knight;
+const w_bishop = luts.w_bishop;
+const w_rook = luts.w_rook;
+const w_queen = luts.w_queen;
+const w_king = luts.w_king;
+const b_pawn = luts.b_pawn;
+const b_knight = luts.b_knight;
+const b_bishop = luts.b_bishop;
+const b_rook = luts.b_rook;
+const b_queen = luts.b_queen;
+const b_king = luts.b_king;
+const all_pieces = luts.all_pieces;
+const no_piece = luts.no_piece;
+const sq_none = luts.sq_none;
+const square_count = luts.square_count;
+const sq_a2 = luts.sq_a2;
+const sq_h7 = luts.sq_h7;
+const file_a_bb = luts.file_a_bb;
+const file_h_bb = luts.file_h_bb;
+const north = luts.north;
+const east = luts.east;
+const south = luts.south;
+const west = luts.west;
+const north_east = luts.north_east;
+const north_west = luts.north_west;
+const south_east = luts.south_east;
+const south_west = luts.south_west;
+const rook_dirs = luts.rook_dirs;
+const bishop_dirs = luts.bishop_dirs;
+const queen_dirs = luts.queen_dirs;
+const knight_steps = luts.knight_steps;
+const king_steps = luts.king_steps;
 
 test {
     @import("std").testing.refAllDecls(@This());
