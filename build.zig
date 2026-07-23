@@ -1549,19 +1549,19 @@ pub fn build(b: *std.Build) void {
 
     // Audit the upstream blast-radius map against the comment-derived correspondence
     // (rot = declared owner missing from the tree; drift is advisory) and ratchet the
-    // uncovered-surface count. LOCAL-ONLY, not in the parity aggregate: it reads the
-    // pinned upstream tree from this clone's git objects, which a CI checkout of
-    // origin does not carry. Lower the baseline as citations are added; never raise it.
+    // uncovered-surface count (baseline in tools/upstream/upstream_map.baseline --
+    // lower it as citations are added, never raise it). Not in the parity aggregate:
+    // it reads the pinned upstream tree from git objects a plain CI checkout of
+    // origin does not carry. The weekly upstream-check workflow runs it after
+    // fetching the upstream remote, which brings those objects in.
     const upstream_map_cmd = b.addSystemCommand(&.{
         "python3",
         repoPath(b, "tools/upstream_map_derive.py"),
         "--audit",
-        "--baseline",
-        "36",
     });
     const upstream_map_step = b.step(
         "upstream-map",
-        "upstream map gate (local): declared-map rot fails, uncovered surface ratcheted at 36",
+        "upstream map gate: declared-map rot fails, uncovered surface ratcheted",
     );
     upstream_map_step.dependOn(&upstream_map_cmd.step);
 
