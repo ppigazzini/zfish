@@ -66,14 +66,16 @@ def main() -> None:
             continue
         churn = (0 if add_s == "-" else int(add_s)) + (0 if del_s == "-" else int(del_s))
         derived = set(mapped.get(path, {}))
-        declared, glob = declared_for(path)
+        declared, _glob = declared_for(path)
         if not derived and not declared and path not in excused:
             absent.append((churn, path))
             continue
         drift = len(derived - declared) if declared else 0
         rows.append((churn, path, sorted(derived | declared), drift))
 
-    print(f"resync worklist {sha_a[:9]} -> {sha_b[:9]} ({len(rows)} owned, {len(absent)} unowned)\n")
+    print(
+        f"resync worklist {sha_a[:9]} -> {sha_b[:9]} ({len(rows)} owned, {len(absent)} unowned)\n"
+    )
     for churn, path, owners, drift in sorted(rows, reverse=True):
         mark = f"  drift=+{drift}" if drift else ""
         print(f"{churn:6d}  {path}{mark}")

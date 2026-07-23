@@ -1,0 +1,38 @@
+# Python tooling config for the repo-owned scripts under tools/. There is no
+# Python package to build -- this file exists so ruff/ty/pre-commit share one
+# config, the same shape the sibling ports use.
+
+[project]
+name = "zfish-internal-python-tools"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+    "ruff>=0.15.22",
+    "ty>=0.0.62",
+]
+
+[tool.ruff]
+target-version = "py312"
+src = ["tools"]
+# House style wraps prose-heavy tool comments at ~100, not ruff's default 88.
+line-length = 100
+
+[tool.ruff.lint]
+# Curated GATING set, deliberately not ALL: these are operator tools, so print
+# IS their output (T201), subprocess IS their job (S603/S607), and annotation/
+# docstring ceremony (ANN/D) buys nothing an operator reads. A rule family the
+# tools violate by design would force --exit-zero, and an advisory hook is a
+# laundered gate.
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+# Scope to the repo-owned scripts: agent worktrees under the untracked .claude/
+# carry stale tool copies, and a whole-project walk once re-flagged fixed
+# diagnostics from one of them.
+include = ["tools"]

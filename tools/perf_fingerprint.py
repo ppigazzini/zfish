@@ -52,7 +52,9 @@ def _annotate(path, show="Ir"):
     try:
         r = subprocess.run(
             ["callgrind_annotate", f"--show={show}", "--threshold=99.99", path],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
     except FileNotFoundError:
         sys.exit("error: callgrind_annotate not found (install valgrind)")
@@ -88,7 +90,7 @@ def _reconcile(per_fn, total, path):
     miss = 1.0 - (s / total) if total else 1.0
     if miss > 0.05:
         sys.exit(
-            f"error: per-function sum {s:,} accounts for only {100*s/total:.1f}% of "
+            f"error: per-function sum {s:,} accounts for only {100 * s / total:.1f}% of "
             f"PROGRAM TOTALS {total:,} in {path}.\n"
             "       Entries are being dropped -- every ratio derived from this would be "
             "fiction. Fix the parser before trusting output."
@@ -135,10 +137,17 @@ def main():
     p = sub.add_parser("compare")
     p.add_argument("zfish")
     p.add_argument("upstream")
-    p.add_argument("--group", action="append", required=True,
-                   help="NAME=REGEX; regex may match several symbols, which are summed")
-    p.add_argument("--calls", action="store_true",
-                   help="compare CALL COUNTS (the algorithm-parity test) instead of Ir")
+    p.add_argument(
+        "--group",
+        action="append",
+        required=True,
+        help="NAME=REGEX; regex may match several symbols, which are summed",
+    )
+    p.add_argument(
+        "--calls",
+        action="store_true",
+        help="compare CALL COUNTS (the algorithm-parity test) instead of Ir",
+    )
 
     a = ap.parse_args()
 
@@ -146,9 +155,8 @@ def main():
         per_fn, total = costs(a.out)
         s = _reconcile(per_fn, total, a.out)
         for fn, ir in sorted(per_fn.items(), key=lambda kv: -kv[1])[: a.top]:
-            print(f"{ir:14,d}  ({100*ir/total:5.2f}%)  {fn[:76]}")
-        print(f"{s:14,d}  == summed;  {total:,} PROGRAM TOTALS "
-              f"({100*s/total:.1f}% accounted)")
+            print(f"{ir:14,d}  ({100 * ir / total:5.2f}%)  {fn[:76]}")
+        print(f"{s:14,d}  == summed;  {total:,} PROGRAM TOTALS ({100 * s / total:.1f}% accounted)")
         return
 
     if a.cmd == "calls":
@@ -190,11 +198,15 @@ def main():
         if a.calls:
             mark = "  EXACT" if z == s else "  <-- DIFFERS: not the same call sequence"
         print(f"{name:<22}{z:>16,}{s:>16,}{ratio:>9.3f}{mark}")
-    if not a.calls:
+    # Narrow on the totals themselves (None exactly when --calls ran): same runtime
+    # behaviour as `if not a.calls`, and the type checker can see the division is safe.
+    if zt is not None and st is not None:
         print("-" * 63)
-        print(f"{'TOTAL':<22}{zt:>16,}{st:>16,}{zt/st:>9.3f}")
-        print(f"\n({label} summed across all origin files; see this file's docstring "
-              "for why one line per side is a lie.)")
+        print(f"{'TOTAL':<22}{zt:>16,}{st:>16,}{zt / st:>9.3f}")
+        print(
+            f"\n({label} summed across all origin files; see this file's docstring "
+            "for why one line per side is a lie.)"
+        )
 
 
 if __name__ == "__main__":

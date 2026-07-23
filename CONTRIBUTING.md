@@ -40,6 +40,12 @@ aarch64 (see the CI parity workflow).
 Zig code is formatted with `zig fmt`. The repo vendors no Stockfish C++; parity
 against upstream is a pristine git-worktree build (`zig build upstream-parity`).
 
+The Python scripts under `tools/` are linted and formatted by ruff and
+type-checked by ty, configured in `pyproject.toml`. `pre-commit install` wires
+all of it (plus `zig fmt --check` and the docs lint) to run on each commit;
+`pre-commit run --all-files` runs the same set on demand. CI does not run
+pre-commit — the parity workflow's own gates stay the authority.
+
 For git blame, ignore the formatting-only revisions:
 
 ```

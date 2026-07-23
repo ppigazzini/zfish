@@ -146,10 +146,11 @@ def declared_rules() -> list[tuple[str, list[str]]]:
         for cell in cols[1].split(","):
             cell = cell.strip()
             # Owner cells mix paths with prose annotations; keep only path-shaped
-            # entries (the audit is about files, not the prose).
+            # src/ entries (the audit is about files, not the prose).
             if not cell or "(" in cell or " " in cell:
                 continue
-            owners.append(cell if cell.startswith("src/") else None)
+            if cell.startswith("src/"):
+                owners.append(cell)
         rules.append((cols[0], owners))
     return rules
 
@@ -163,8 +164,6 @@ def audit() -> int:
     # Rot: declared owner paths that no longer exist in the tree.
     for glob, owners in rules:
         for owner in owners:
-            if owner is None:
-                continue
             if owner not in tracked:
                 print(f"ROT: {glob} declares owner {owner} which is not in the tree")
                 failures += 1
@@ -176,7 +175,7 @@ def audit() -> int:
         rule_owners: set[str] = set()
         for glob, owners in rules:
             if fnmatch.fnmatch(path, glob):
-                rule_owners = {o for o in owners if o}
+                rule_owners = set(owners)
                 break
         if not rule_owners:
             continue
@@ -191,9 +190,13 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="coverage summary only")
     ap.add_argument("--audit", action="store_true", help="declared-map rot/drift report")
-    ap.add_argument("--baseline", type=int, default=None,
-                    help="fail if the uncovered count exceeds this ratchet "
-                         "(default: tools/upstream/upstream_map.baseline)")
+    ap.add_argument(
+        "--baseline",
+        type=int,
+        default=None,
+        help="fail if the uncovered count exceeds this ratchet "
+        "(default: tools/upstream/upstream_map.baseline)",
+    )
     args = ap.parse_args()
 
     if args.audit:
@@ -209,8 +212,10 @@ def main() -> None:
         if baseline is not None:
             _, uncovered, _ = build_map()
             if len(uncovered) > baseline:
-                print(f"RATCHET: uncovered {len(uncovered)} > baseline {baseline} "
-                      f"-- new upstream surface without an owner citation or exception")
+                print(
+                    f"RATCHET: uncovered {len(uncovered)} > baseline {baseline} "
+                    f"-- new upstream surface without an owner citation or exception"
+                )
                 sys.exit(1)
             print(f"ratchet: uncovered {len(uncovered)} <= baseline {baseline}")
         sys.exit(0)
