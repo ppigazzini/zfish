@@ -167,6 +167,25 @@ const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
 pub const nnz_word_count: usize = half_dimensions / 4 / 64;
 pub const NnzBitset = [nnz_word_count]u64;
 
+// Store each transform step's non-zero mask with a plain byte-offset store, upstream's
+// bytewise NNZCursor (nnz_helper.h `*out++ = m1 + (m2 << 4)`): on a little-endian
+// target the GMask's bytes at offset bit/8 land exactly where the u64 word's bits
+// bit..bit+N-1 live, so the store IS the word-shift OR against a zero seed -- minus
+// the load, the variable-cl shift and the read-modify-write. Big-endian targets keep
+// the endian-independent word RMW (and the @memset seed it needs).
+const nnz_bytewise = @import("builtin").target.cpu.arch.endian() == .little;
+
+inline fn nnzRecord(comptime GMask: type, nnz: *NnzBitset, bit: usize, mask: GMask) void {
+    if (comptime nnz_bytewise) {
+        comptime std.debug.assert(@bitSizeOf(GMask) % 8 == 0);
+        std.debug.assert(bit % 8 == 0);
+        const bytes: [*]u8 = @ptrCast(nnz);
+        bytes[bit / 8 ..][0..@sizeOf(GMask)].* = @bitCast(mask);
+    } else {
+        nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
+    }
+}
+
 // Alias the transform's packus clip-multiply-narrow kernels and their comptime
 // gates from the nnue_acc_rowops leaf (split there with the row kernels; the
 // scalar-reference unit tests pinning the packus trick live beside them).
@@ -233,7 +252,10 @@ pub fn transformBucket(
         break :blk w;
     };
     const no_bits: Vgm = @splat(0);
-    @memset(nnz, 0);
+    // The loop stores every bitset byte exactly once ((2*half)/4 bits == the whole
+    // NnzBitset), so the bytewise path needs no zero seed; only the word-RMW path
+    // ORs into one.
+    if (comptime !nnz_bytewise) @memset(nnz, 0);
     var p: usize = 0;
     while (p < 2) : (p += 1) {
         const pp: usize = if (p == 0) p0 else p1;
@@ -267,7 +289,7 @@ pub fn transformBucket(
                     const nz = @as(@Vector(8, u32), @bitCast(packed32)) != @as(@Vector(8, u32), @splat(0));
                     mask |= @as(GMask, @as(u8, @bitCast(nz))) << (8 * s);
                 }
-                nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
+                nnzRecord(GMask, nnz, bit, mask);
                 continue;
             }
             if (comptime use_packus_sse) {
@@ -293,7 +315,7 @@ pub fn transformBucket(
                     const nz = @as(@Vector(4, i32), @bitCast(packed16)) > @as(@Vector(4, i32), @splat(0));
                     mask |= @as(GMask, @as(u4, @bitCast(nz))) << (4 * s);
                 }
-                nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
+                nnzRecord(GMask, nnz, bit, mask);
                 continue;
             }
             const s0i: Vi16 = @as(*align(A) const [V]i16, @ptrCast(@alignCast(comb_acc + base + j))).*;
@@ -319,7 +341,7 @@ pub fn transformBucket(
                 @bitCast(nonzero)
             else
                 @reduce(.Or, @select(GMask, nonzero, lane_bits, no_bits));
-            nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
+            nnzRecord(GMask, nnz, bit, mask);
         }
     }
     return psqt;
