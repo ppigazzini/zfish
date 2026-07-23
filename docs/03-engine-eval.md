@@ -177,7 +177,12 @@ flowchart TD
 **Incremental step.** `applyCombined` builds this ply's PSQ and threat
 changed-feature index lists from the stored diffs, splits them into removed/added
 (inverted when stepping backward), and applies all four lists to the accumulator in
-one pass: `nnue_acc_rowops.applyCombinedDelta` tiles the accumulator, holds each
+one pass. The threat list routing lives out of line in
+`nnue_feature.fullAppendChanged` (upstream's `append_changed_indices` keeps the same
+boundary): each packed record is oriented by one xor with a per-walk mask —
+`threatRouteMask` folds the orientation, the color swap and the walk direction into
+it, so the record's sign bit alone routes the index into removed or added. The
+apply itself: `nnue_acc_rowops.applyCombinedDelta` tiles the accumulator, holds each
 tile in a register, and walks the weight rows *inside* the tile — so the accumulator
 is loaded and stored once per tile rather than once per row. The PSQT delta
 (`applyCombinedPsqtDelta`) holds the 8-bucket i32 row as one vector the same way.
