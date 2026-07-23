@@ -21,7 +21,7 @@ Zig 0.16.0 is the required toolchain. No C++ is vendored or compiled.
 
 | Option | Values | Purpose |
 | --- | --- | --- |
-| `-Darch=` | a Stockfish ARCH name (`x86-64`, `x86-64-sse41-popcnt`, `x86-64-avx2`, `x86-64-bmi2`, `x86-64-avx512`, `armv8-dotprod`, `apple-silicon`, …), or `native` (default) | Selects the ISA tier: the CPU feature set and the `USE_*` macros the NNUE kernels dispatch on. |
+| `-Darch=` | a Stockfish ARCH name (`x86-64`, `x86-64-sse41-popcnt`, `x86-64-avx2`, `x86-64-bmi2`, `x86-64-avx512`, `x86-64-vnni512`, `x86-64-avx512icl`, `armv8-dotprod`, `apple-silicon`, …), or `native` (default) | Selects the ISA tier: the CPU feature set and the `USE_*` macros the NNUE kernels dispatch on. In any RECORDED measurement or table, name the resolved tier (`zig build host-arch` prints it), never `native` — "native" moves between machines and has hidden a whole tier before. |
 | `-Dos=` | `linux` (default), `windows`, `macos` | Cross-target the owned runtimes. Orthogonal to `-Darch=`: any tier can target any OS. |
 | `-Doptimize=` | `Debug`, `ReleaseSafe`, `ReleaseFast` (default), `ReleaseSmall` | Standard Zig modes. `ReleaseSafe` turns on the bounds/overflow/alignment/null checks the safety lanes rely on. |
 | `-Dsignature-ref=` | a node count | Override the bench signature the `signature` step asserts. |
