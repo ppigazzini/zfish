@@ -374,6 +374,13 @@ available in CI, so it never runs there.
   **one instruction regardless of size** — memset/memcpy work is invisible to
   `perf_counters`' instruction axis. Gate memset-sensitive changes (large-page
   fills, TT clears) on callgrind Ir, which counts the expansion.
+- Stall-class token counters (PRF/scheduler, `tools/perf_stalls.zig`) carry a
+  **±6.5% A/A floor** — far wider than cycles. Only deltas ≥15% are decidable
+  at 12 rounds; run an A/A control for every new counter set before trusting
+  any A/B delta on it.
+- callgrind's SIGILL is **AVX-512-only** — sse41 and avx2 both profile fine.
+  Do not extrapolate avx2 conclusions from sse41 profiles when the avx2 tier
+  can be measured directly.
 - An instruction-count win can still be a cycle **loss** (recurred three times:
   register-pressure spills, memory-traffic growth, layout resampling). Cycles at
   the tier that actually runs decide, subject to the floor above.
