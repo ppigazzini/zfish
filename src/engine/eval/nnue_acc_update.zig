@@ -88,17 +88,22 @@ pub fn evaluateSide(
     const size = stackSize(stack);
     const king_square = kingSquare(pos, perspective);
 
+    // Build the threat route mask once per walk (it depends only on
+    // perspective, king square and direction), so no per-ply step re-derives
+    // the orientation.
     if (stateComputed(stack, psq_feature, last_usable, perspective)) {
+        const route_mask = nnue_feature.threatRouteMask(perspective, king_square, true);
         var next = last_usable + 1;
         while (next < size) : (next += 1) {
-            applyCombined(stack, perspective, feature_transformer, king_square, next, next - 1, true);
+            applyCombined(stack, perspective, feature_transformer, king_square, route_mask, next, next - 1, true);
         }
     } else {
         refreshCombined(perspective, king_square, stack, pos, feature_transformer, cache);
 
+        const route_mask = nnue_feature.threatRouteMask(perspective, king_square, false);
         var computed_index = size - 1;
         while (computed_index > last_usable) : (computed_index -= 1) {
-            applyCombined(stack, perspective, feature_transformer, king_square, computed_index - 1, computed_index, false);
+            applyCombined(stack, perspective, feature_transformer, king_square, route_mask, computed_index - 1, computed_index, false);
         }
     }
 }
@@ -221,6 +226,7 @@ fn applyCombined(
     perspective: u8,
     feature_transformer: *const FeatureTransformer,
     king_square: u8,
+    route_mask: u32,
     target_index: usize,
     computed_index: usize,
     forward: bool,
@@ -281,29 +287,20 @@ fn applyCombined(
 
     var thr_removed: [threat_index_capacity]u32 = undefined;
     var thr_added: [threat_index_capacity]u32 = undefined;
-    var thr_removed_len: usize = 0;
-    var thr_added_len: usize = 0;
 
     // Route each dirty threat's feature index into removed/added as it is computed --
-    // upstream append_changed_indices' `insert = add ? added : removed` shape -- instead
-    // of materialising a FullAppendResult and re-walking it. The one-pass form drops the
-    // scratch store/reload per entry and, with plain local arrays and lengths, keeps both
-    // length counters in registers (the out-param struct forced its `len` through memory
-    // on every append: the indices stores may alias it). Same walk order and the same
-    // `< threat_dimensions` filter, so both lists are byte-identical to the two-pass form.
-    for (thr_diff.list.values[0..thr_diff.list.size_]) |raw_entry| {
-        const raw = raw_entry.data;
-        const index = nnue_feature.fullMakeIndexFromDirty(raw, perspective, king_square);
-        if (index >= threat_dimensions) continue;
-        const is_add = (raw >> 31) != 0;
-        if (is_add == forward) {
-            thr_added[thr_added_len] = index;
-            thr_added_len += 1;
-        } else {
-            thr_removed[thr_removed_len] = index;
-            thr_removed_len += 1;
-        }
-    }
+    // upstream append_changed_indices' `insert = add ? added : removed` shape -- with
+    // the routing loop out of line exactly as upstream keeps it (see
+    // fullAppendChanged for why inlining it here costs more than the call). The
+    // records are single-u32 DirtyThreatRaw wrappers; pass them as the bare words.
+    const thr_lens = nnue_feature.fullAppendChanged(
+        @as([*]const u32, @ptrCast(&thr_diff.list.values))[0..thr_diff.list.size_],
+        route_mask,
+        &thr_removed,
+        &thr_added,
+    );
+    const thr_removed_len = thr_lens.removed;
+    const thr_added_len = thr_lens.added;
 
     // --- fused apply onto the ONE combined accumulator (psq_feature slot) ---
     applyCombinedDelta(

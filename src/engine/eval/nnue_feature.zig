@@ -86,20 +86,68 @@ pub fn fullMakeIndex(params: FullThreatParams) u32 {
     return index_lut1[attacker_oriented][attacked_oriented][less] + offsets[attacker_oriented][from_oriented] + index_lut2[attacker_oriented][from_oriented][to_oriented];
 }
 
-/// Compute one dirty-threat record's feature index. Decode the packed record and
-/// index it; the caller routes the result into its removed/added list as it is
-/// produced (upstream append_changed_indices' `insert = add ? added : removed`
-/// shape), so no intermediate index array exists.
-pub fn fullMakeIndexFromDirty(raw: u32, perspective: u8, king_square: u8) u32 {
-    const threat = decodeThreat(raw);
-    return fullMakeIndex(.{
-        .perspective = perspective,
-        .attacker = threat.attacker,
-        .from_sq = threat.from_sq,
-        .to_sq = threat.to_sq,
-        .attacked = threat.attacked,
-        .king_square = king_square,
-    });
+pub const FullAppendChangedLens = struct {
+    removed: usize,
+    added: usize,
+};
+
+/// Build the mask that orients a whole dirty-threat record in ONE xor: every
+/// oriented operand of fullMakeIndex is a per-field xor whose field never
+/// crosses its byte lane -- from^orientation (bits 0-7), to^orientation
+/// (8-15), attacked^swap (16-19), attacker^swap (20-23) -- so broadcasting
+/// orientation and swap onto their field offsets folds the per-entry work to
+/// `record ^ mask`. Bit 31 carries the routing polarity: xor it with !forward
+/// so a set sign bit always means "append to added" (upstream
+/// append_changed_indices' `insert = add ? added : removed` becomes one sign
+/// test). The mask is per (perspective, king square, direction) -- invariant
+/// across one evaluateSide walk -- so the caller builds it once per walk, not
+/// per ply.
+pub fn threatRouteMask(perspective: u8, king_square: u8, forward: bool) u32 {
+    const orientation: u32 = @as(u8, @bitCast(orient_tbl_full[king_square])) ^ (56 * @as(u32, perspective));
+    const swap: u32 = 8 * @as(u32, perspective);
+    return orientation * 0x0101 | (swap << 16) | (swap << 20) |
+        (if (forward) 0 else @as(u32, 0x8000_0000));
+}
+
+/// Route one ply's dirty-threat records into removed/added feature-index lists
+/// -- upstream FullThreats::append_changed_indices, and like upstream's it
+/// stays OUT of line: inlining this loop into the caller's SIMD apply pass
+/// measurably re-shuffles the whole function's register allocation (+35.6 M
+/// no-line-info glue Ir at d11), costing more than the call.
+///
+/// Tables, sum and walk order match the decode-then-index form exactly (see
+/// threatRouteMask for the one-xor orientation), so both output lists are
+/// byte-identical to it.
+pub noinline fn fullAppendChanged(
+    values: []const u32,
+    route_mask: u32,
+    removed_out: [*]u32,
+    added_out: [*]u32,
+) FullAppendChangedLens {
+    const mask = route_mask;
+    var removed_len: usize = 0;
+    var added_len: usize = 0;
+    for (values) |raw| {
+        const x = raw ^ mask;
+        const attacker: usize = (x >> 20) & 0xf;
+        // Read the attacked field pre-doubled -- shift one bit less and mask
+        // the low bit away -- so [attacked2 + less] indexes index_lut1's
+        // flattened [16][2]u32 rows without a separate scale.
+        const attacked2: usize = (x >> 15) & 0x1e;
+        const from: u32 = x & 0xff;
+        const to: u32 = (x >> 8) & 0xff;
+        const less: usize = @intFromBool(from < to);
+        const index = index_lut1_flat[attacker][attacked2 + less] + offsets[attacker][from] + index_lut2[attacker][from][to];
+        if (index >= full_dimensions) continue;
+        if ((x >> 31) != 0) {
+            added_out[added_len] = index;
+            added_len += 1;
+        } else {
+            removed_out[removed_len] = index;
+            removed_len += 1;
+        }
+    }
+    return .{ .removed = removed_len, .added = added_len };
 }
 
 pub fn fullAppendActive(
@@ -211,22 +259,6 @@ fn appendFullActiveIndex(
         result.indices[result.len] = index;
         result.len += 1;
     }
-}
-
-const DecodedThreat = struct {
-    attacker: u8,
-    attacked: u8,
-    from_sq: u8,
-    to_sq: u8,
-};
-
-fn decodeThreat(raw: u32) DecodedThreat {
-    return .{
-        .attacker = @intCast((raw >> dirty_threat_pc_offset) & 0xf),
-        .attacked = @intCast((raw >> dirty_threatened_pc_offset) & 0xf),
-        .to_sq = @intCast((raw >> dirty_threatened_sq_offset) & 0xff),
-        .from_sq = @intCast((raw >> dirty_threat_pc_sq_offset) & 0xff),
-    };
 }
 
 fn indexLut2Array() [16][64][64]u8 {
@@ -370,6 +402,10 @@ const helper_offsets_and_offsets = initThreatOffsets();
 const helper_offsets = helper_offsets_and_offsets.first;
 const offsets = helper_offsets_and_offsets.second;
 const index_lut1 = initIndexLuts();
+// View index_lut1's [16][2] rows flat, so [attacked * 2 + less] addresses one
+// element with one scaled index -- the layout is identical, only the type
+// changes.
+const index_lut1_flat: [16][32]u32 = @bitCast(index_lut1);
 const index_lut2 = indexLut2Array();
 
 const ps_nb: u32 = 11 * 64;
@@ -423,11 +459,6 @@ const bishop_dirs = [_]i8{ north_east, south_east, south_west, north_west };
 const queen_dirs = [_]i8{ north, south, east, west, north_east, south_east, south_west, north_west };
 const knight_steps = [_]i8{ -17, -15, -10, -6, 6, 10, 15, 17 };
 const king_steps = [_]i8{ -9, -8, -7, -1, 1, 7, 8, 9 };
-
-const dirty_threat_pc_sq_offset: u5 = 0;
-const dirty_threatened_sq_offset: u5 = 8;
-const dirty_threatened_pc_offset: u5 = 16;
-const dirty_threat_pc_offset: u5 = 20;
 
 test {
     @import("std").testing.refAllDecls(@This());
