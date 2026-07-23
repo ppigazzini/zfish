@@ -125,8 +125,10 @@ pub fn fullAppendActive(
         const color = perspective ^ color_index;
         appendActivePawnThreats(result, pieces, occupied, pawns, by_color[color] & pawns, perspective, color, king_square);
 
-        var piece_type: u8 = knight_piece_type;
-        while (piece_type < king_piece_type) : (piece_type += 1) {
+        // Unroll the piece types at comptime so each attacksBb call resolves to its own
+        // attack kernel directly -- the runtime-typed form dispatched through a jump
+        // table once per attacker, an indirect branch the predictor keeps missing.
+        inline for ([_]u8{ knight_piece_type, bishop_piece_type, rook_piece_type, queen_piece_type }) |piece_type| {
             const attacker = makePiece(color, piece_type);
             var attackers = by_color[color] & by_type[piece_type];
             while (attackers != 0) {
