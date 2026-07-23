@@ -36,9 +36,49 @@ pub const packus_epi16_order_sse41 = [8]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
 // neither the slice nor the count, so without this the decode walks off the section.
 pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count: usize) ?usize {
     std.debug.assert(out.len >= count);
+    const UnsignedT = @Int(.unsigned, @bitSizeOf(IntType));
+    // A value of IntType terminates within max_len bytes unless the stream is malformed.
+    const max_len = (@bitSizeOf(IntType) + 6) / 7;
+    // Sign-extension masks per encoded length: ~((1 << 7*len) - 1) while 7*len < 32,
+    // matching the loop's `shift < 32` guard (a full-width value carries its sign bit).
+    const sign_masks: [max_len + 1]u32 = comptime blk: {
+        var m: [max_len + 1]u32 = undefined;
+        m[0] = 0;
+        for (1..max_len + 1) |len| {
+            const shift = 7 * len;
+            m[len] = if (shift < 32) ~((@as(u32, 1) << shift) - 1) else 0;
+        }
+        break :blk m;
+    };
     var pos: usize = 0;
     var i: usize = 0;
     while (i < count) : (i += 1) {
+        // Decode a value that fits two bytes branch-free: select the second byte's
+        // contribution and the encoded length by the first byte's continuation bit
+        // arithmetically instead of testing it -- that test is the one data-dependent
+        // branch of the whole parse (the 1-vs-2-byte encoding mix is noise to the
+        // predictor; measured 4.49M mispredicts over the net load, 11% of the bench's
+        // total). Chaining ALL max_len lanes this way loses: it pays every lane on
+        // every value (+202M instructions, +2.1%) where the loop exits after ~1.2
+        // bytes. Two lanes cover the near-universal case, and the fall-through test to
+        // the loop stays a branch precisely because it is skewed enough to predict.
+        // The byte math is the loop's exactly, so any value the loop decodes within
+        // two bytes decodes to the same bits and length here.
+        if (pos + 2 <= src.len) {
+            const b0 = src[pos];
+            const b1 = src[pos + 1];
+            const cont: u32 = b0 >> 7;
+            if ((cont & (b1 >> 7)) == 0) {
+                var result: u32 = @as(u32, b0 & 0x7f);
+                result |= (@as(u32, b1 & 0x7f) << 7) & (0 -% cont);
+                const len: usize = 1 + cont;
+                const sign_byte = src[pos + len - 1];
+                result |= sign_masks[len] & (0 -% (@as(u32, sign_byte >> 6) & 1));
+                out[i] = @bitCast(@as(UnsignedT, @truncate(result)));
+                pos += len;
+                continue;
+            }
+        }
         var result: u32 = 0;
         // Unbounded shift like upstream's `usize shift` (nnue_common.h:200): a u6 wraps at 64,
         // so past 9 continuation bytes `shift < 32` would wrongly re-enable sign-extension.
@@ -56,7 +96,6 @@ pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count:
                     const mask = ~((@as(u32, 1) << @intCast(shift)) - 1);
                     result |= mask;
                 }
-                const UnsignedT = @Int(.unsigned, @bitSizeOf(IntType));
                 out[i] = @bitCast(@as(UnsignedT, @truncate(result)));
                 break;
             }
