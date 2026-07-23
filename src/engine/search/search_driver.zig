@@ -129,7 +129,8 @@ fn ssPvOneAndPonder(wl: *worker_layout.WorkerLayout, best: *const worker_layout.
     const pv = &workerRootMove0(best).pv;
     if (pv.length != 1) return 0;
     const tp = workerTT(wl);
-    return extractPonderFromTt(pv, tp.table, tp.cluster_count, tp.generation8, &wl.root_pos);
+    // A completed search implies a sized table (the QCtx invariant); unwrap here.
+    return extractPonderFromTt(pv, tp.table.?, tp.cluster_count, tp.generation8, &wl.root_pos);
 }
 
 const ssContext = search_id.ssContext;
@@ -251,7 +252,7 @@ const legalContains = search_acc.legalContains;
 // stored there, append it to the PV if it is a legal move, unmake. Return
 // whether a ponder move was found (pv length > 1). The tt context (table base,
 // cluster count, generation) is handed over by the caller.
-pub fn extractPonderFromTt(pv: *PVMoves, table: ?[*]tt.TtCluster, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
+pub fn extractPonderFromTt(pv: *PVMoves, table: [*]tt.TtCluster, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
     const move = pv.moves[0];
     var st: StateInfo = undefined;
     verifyDoMove(pos_ptr, move, &st);

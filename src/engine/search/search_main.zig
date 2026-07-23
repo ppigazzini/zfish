@@ -206,7 +206,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     const tt_is_pv = tt_hit and probe.data.is_pv != 0;
     ss.tt_pv = if (excluded_move != 0) ss.tt_pv else (pv_node or tt_is_pv);
     const tt_capture = tt_move != 0 and captureStage(pos, tt_move);
-    const writer = probe.writer_ptr.?;
+    const writer = probe.writer_ptr;
 
     // Step 5. Compute the static evaluation.
     var unadjusted_static_eval: i32 = q_value_none;

@@ -179,7 +179,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
     const tt_bound: u8 = probe.data.bound;
     const tt_eval: i32 = probe.data.eval16;
     const pv_hit = tt_hit and probe.data.is_pv != 0;
-    const writer = probe.writer_ptr.?;
+    const writer = probe.writer_ptr;
 
     if (!pv_node and tt_depth >= q_depth_qs and qIsValid(tt_value) and
         (tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0)

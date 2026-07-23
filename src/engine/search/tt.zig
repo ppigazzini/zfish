@@ -45,7 +45,7 @@ pub const TtProbeOutput = struct {
 
 pub const TtProbeTableOutput = struct {
     found: u8,
-    writer_ptr: ?*TtEntry,
+    writer_ptr: *TtEntry,
     data: TtReadOutput,
 };
 
@@ -256,22 +256,19 @@ pub fn hashfull(
 }
 
 pub fn firstEntryIndex(key: u64, cluster_count: usize) usize {
-    if (cluster_count == 0) {
-        return 0;
-    }
-
+    // mul_hi64 of anything with 0 is 0, so an unsized table indexes cluster 0 with
+    // no branch; the search path never runs unsized (probeTable's contract below).
     return @intCast((@as(u128, key) * @as(u128, cluster_count)) >> 64);
 }
 
 // Preload the cluster KEY maps onto, a non-blocking read hint issued a few instructions
 // ahead of the matching probeTable so the line is arriving by the time the probe reads it
-// (upstream tt.cpp first_entry, called from the search do_move). A no-op before the table
-// exists; the hint changes no value, only when the line lands. Uses the SAME mul_hi64 index
-// the probe uses. Read hint (rw=.read), highest temporal locality (locality=3): the cluster
-// is about to be probed and re-read on a hit.
-pub inline fn prefetch(table: ?[*]TtCluster, cluster_count: usize, key: u64) void {
-    const clusters = table orelse return;
-    if (cluster_count == 0) return;
+// (upstream tt.cpp first_entry, called from the search do_move). The hint changes no
+// value, only when the line lands. Uses the SAME mul_hi64 index the probe uses. Read
+// hint (rw=.read), highest temporal locality (locality=3): the cluster is about to be
+// probed and re-read on a hit. Take the table non-null, per probeTable's contract:
+// the guard branches ran once per do_move against a table the search cannot lack.
+pub inline fn prefetch(clusters: [*]TtCluster, cluster_count: usize, key: u64) void {
     @prefetch(&clusters[firstEntryIndex(key, cluster_count)], .{ .rw = .read, .locality = 3, .cache = .data });
 }
 
@@ -321,30 +318,19 @@ pub fn probe(
     };
 }
 
+// Probe the sized table. Contract: the table exists and cluster_count > 0 -- every
+// caller runs inside a search, and a search cannot run on an unsized table (the very
+// first entrySave would write through the writer pointer). The old per-probe null/zero
+// guard paid two loads and two branches per node for a case that could only crash
+// later anyway; the QCtx now carries the non-optional pointer.
 pub fn probeTable(
-    table: ?[*]TtCluster,
+    clusters: [*]TtCluster,
     cluster_count: usize,
     key: u64,
     generation: u8,
     depth_none: i32,
 ) TtProbeTableOutput {
-    if (table == null or cluster_count == 0) {
-        return .{
-            .found = 0,
-            .writer_ptr = null,
-            .data = .{
-                .move16 = 0,
-                .value16 = value_none,
-                .eval16 = value_none,
-                .depth = depth_none,
-                .bound = 0,
-                .is_pv = 0,
-            },
-        };
-    }
-
     const cluster_index = firstEntryIndex(key, cluster_count);
-    const clusters: [*]TtCluster = table.?;
     const result = probe(&clusters[cluster_index], key, generation, depth_none);
 
     const writer_ptr: *TtEntry = &clusters[cluster_index].entry[result.writer_index];
