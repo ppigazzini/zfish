@@ -370,6 +370,10 @@ available in CI, so it never runs there.
 - callgrind's simulation **ignores software prefetch on both engines** — the
   `@prefetch`/`_mm_prefetch` lines carry Ir but zero data refs, so no callgrind
   bar can certify a prefetch change, for or against.
+- The hardware instruction counter retires an ERMS `rep stosb`/`rep movsb` as
+  **one instruction regardless of size** — memset/memcpy work is invisible to
+  `perf_counters`' instruction axis. Gate memset-sensitive changes (large-page
+  fills, TT clears) on callgrind Ir, which counts the expansion.
 - An instruction-count win can still be a cycle **loss** (recurred three times:
   register-pressure spills, memory-traffic growth, layout resampling). Cycles at
   the tier that actually runs decide, subject to the floor above.

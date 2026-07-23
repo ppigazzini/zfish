@@ -23,6 +23,11 @@
 #
 # Usage: perf_callgrind.sh <binary> [bench-args...]     (CWD must be resources/ so the net loads)
 #        OUT=path/to.out perf_callgrind.sh ./stockfish 16 1 11
+#
+# Pass bench ARGS ONLY -- this script prepends `bench` itself. Passing `bench`
+# again makes the engine parse it as a filename, exit early, and produce a
+# plausible-looking STARTUP-ONLY profile (the mcfish twin of this script caught
+# exactly that failure).
 set -u
 
 BIN="${1:?usage: perf_callgrind.sh <binary> [bench-args...]  (run with CWD=resources/)}"

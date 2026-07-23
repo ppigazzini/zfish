@@ -70,6 +70,22 @@ paid for:
   directory) — ledger rows travel in the final report; the integrator lands them.
 - **Subagents are not re-woken by their own background jobs** — wait on
   measurements with a foreground `until` loop, or the agent stalls silently.
+- **Worktree commits are candidates, not integrations** — the integrator
+  cherry-picks onto clean HEAD, re-runs the full gates there, and owns the
+  evidence; an agent never touches main.
+- **A worktree starts where its branch last was, not at your HEAD** — reset it
+  to the intended base and verify with `git log` before building any baseline.
+
+## Performance work
+
+The perf playbook and ledger live in the local dev notebook (gitignored): the
+performance-references page — measurement laws, tools, every landed and
+FALSIFIED axis. **Read the refuted lists before optimizing anything**: most
+"obvious" levers here were measured dead (prefetch-as-addition, PGO/BOLT,
+labeled-switch dispatch, noalias on the hot kernels, value-hoisting AND
+cold-body outlining in the search body). A perf commit that does not carry its
+measured evidence in the body is incomplete. If the notebook is absent (fresh
+clone), the ledger lives in the `perf(...)` commit bodies.
 
 ## Traps that cost real time
 
@@ -83,7 +99,7 @@ Pointers, not explanations — each is documented where it belongs.
 | Serial cycle A/B on this box has a **±1% run-to-run floor and a +0.65% A/A bias** — a sub-1% single-tier cycle claim is unmeasurable; adjudicate with the deterministic instruction axis, or with fastchess Elo (concurrency 4, idle box, `Timeouts:` near zero — a background build forfeits games exactly like SMT oversubscription). | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | callgrind is **blind to software prefetch** on both engines — no callgrind bar can certify a prefetch change. An instruction win can still be a cycle **loss** (three recurrences); cycles at the tier that runs decide. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | loc_lint god-file regression: **split the file**; raising `LOC_BASELINE` is laundering. A bit-exact slice can still redden the aggregate this way. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
-| Bit-exactness ≠ faithfulness: the bench is a fixed position list, so a divergence off those positions is invisible to the anchor. `tools/upstream_nodes.sh` drives both engines over random-legal positions and is not fooled. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| Bit-exactness ≠ faithfulness: the bench is a fixed position list, so a divergence off those positions is invisible to the anchor. `tools/upstream_nodes.sh` localizes a divergence over a FEN suite you give it — it does NOT random-walk; positions no suite covers stay unprobed (mcfish's `upstream_nodes.py` random-walk mode is the missing counterpart). | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | A perf-symbol group regex is a **hypothesis** (upstream `do_move`'s signature contains `TranspositionTable const*`; inlining differs per side) — verify per-symbol before trusting any component ratio. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | `tools/perft.golden` counts are **facts about chess**, not a golden: a mismatch is always a movegen bug, never an update candidate. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | Run `zig build test -Doptimize=ReleaseSafe` locally — CI runs it, and deep node-limited searches have tripped latent i32 overflows the default build can't see. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
