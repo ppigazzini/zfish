@@ -1,6 +1,5 @@
-// Provide the move-ordering history heuristics: the HistorySnapshot (typed views
-// over the worker's history tables) + the five history-score lookups. Pure reads of
-// value snapshots; std only.
+// Provide the move-ordering history heuristics: the typed row/page views over the
+// worker's history tables + the per-table read helpers. Pure reads; std only.
 
 const std = @import("std");
 const shared_history_types = @import("shared_history_types");
@@ -9,15 +8,6 @@ const SharedHistories = shared_history_types.SharedHistories;
 const square_nb: usize = 64;
 const piece_type_nb: usize = 8;
 const piece_nb: usize = 16;
-
-pub const HistorySnapshot = struct {
-    main_base: ?[*]const MainHistoryRow,
-    low_ply_base: ?[*]const LowPlyHistoryRow,
-    capture_base: ?[*]const CaptureHistoryRow,
-    continuation_base: [6]ContHistSlot,
-    pawn_table: ?[*]const PawnHistoryRow,
-    pawn_mask: u64,
-};
 
 pub const HistoryEntry = struct {
     value: i16,
@@ -37,82 +27,34 @@ pub const PawnHistoryRow = [square_nb]AtomicHistoryEntry;
 pub const ContHistSlot = ?[*]const PieceToHistoryRow;
 
 // View a caller's contHist array as slots. The source is [1] on the qsearch path and [6] in
-// the main search, so keep the length: the snapshot fills only the slots that exist, and a
-// bare many-pointer would let qsearch's single slot be read as six.
+// the main search, so keep the length: scoreList unwraps only the slots its kind reads, and
+// a bare many-pointer would let qsearch's single slot be read as six.
 pub inline fn contHistSlice(arr: anytype) []const ContHistSlot {
     return @as([*]const ContHistSlot, @ptrCast(arr))[0..arr.len];
 }
 
-// Pack the history-table base pointers into a HistorySnapshot.
-pub fn fillHistorySnapshot(
-    main_history: ?[*]const MainHistoryRow,
-    low_ply_history: ?[*]const LowPlyHistoryRow,
-    capture_history: ?[*]const CaptureHistoryRow,
-    continuation_history: ?[]const ContHistSlot,
-    shared_history: ?*const SharedHistories,
-    out: *HistorySnapshot,
-) void {
-    out.main_base = main_history;
-    out.low_ply_base = low_ply_history;
-    out.capture_base = capture_history;
-    out.continuation_base = .{ null, null, null, null, null, null };
-    if (continuation_history) |ch| {
-        for (ch, 0..) |page, slot| out.continuation_base[slot] = page;
-    }
-    if (shared_history) |sh| {
-        // View the shared pawn table as rows; the shared side stores it flat.
-        out.pawn_table = if (sh.pawn_size != 0) @as([*]const PawnHistoryRow, @ptrCast(sh.pawn_data)) else null;
-        out.pawn_mask = sh.pawn_hist_size_minus1;
-    } else {
-        out.pawn_table = null;
-        out.pawn_mask = 0;
-    }
+// Resolve the pawn-history block for one position: the PIECE_NB consecutive rows at
+// [(pawn_key & mask) * PIECE_NB]. Resolve it ONCE per move list — the key is fixed for
+// the whole list — and index the block per move with pawnHistoryRead.
+pub fn pawnHistoryBlock(shared_history: ?*const SharedHistories, pawn_key: u64) ?[*]const PawnHistoryRow {
+    const sh = shared_history orelse return null;
+    if (sh.pawn_size == 0) return null;
+    // View the shared pawn table as rows; the shared side stores it flat.
+    const table: [*]const PawnHistoryRow = @ptrCast(sh.pawn_data);
+    const index: usize = @intCast(pawn_key & sh.pawn_hist_size_minus1);
+    return table + index * piece_nb;
 }
 
-pub fn mainHistoryScore(history_snapshot: *const HistorySnapshot, side_to_move: u8, raw_move: u16) i32 {
-    const history = history_snapshot.main_base orelse unreachable;
-    return history[@as(usize, side_to_move)][@as(usize, raw_move)].value;
+pub fn pawnHistoryRead(block: ?[*]const PawnHistoryRow, piece: u8, square: u8) i32 {
+    const rows = block orelse return 0;
+    // Relaxed: the pawn table is shared by every worker and written concurrently by statsUpdate.
+    return @atomicLoad(i16, &rows[@as(usize, piece)][@as(usize, square)].value, .monotonic);
 }
 
-pub fn lowPlyHistoryScore(history_snapshot: *const HistorySnapshot, ply: i32, raw_move: u16) i32 {
-    const history = history_snapshot.low_ply_base orelse unreachable;
-    return history[@as(usize, @intCast(ply))][@as(usize, raw_move)].value;
-}
-
-pub fn captureHistoryScore(
-    history_snapshot: *const HistorySnapshot,
-    piece: u8,
-    square: u8,
-    captured_piece_type: u8,
-) i32 {
-    const history = history_snapshot.capture_base orelse unreachable;
-    return history[@as(usize, piece)][@as(usize, square)][@as(usize, captured_piece_type)].value;
-}
-
-pub fn continuationHistoryScore(
-    history_snapshot: *const HistorySnapshot,
-    slot: usize,
-    piece: u8,
-    square: u8,
-) i32 {
-    const history = history_snapshot.continuation_base[slot] orelse unreachable;
+pub fn continuationHistoryRead(page: [*]const PieceToHistoryRow, piece: u8, square: u8) i32 {
     // Relaxed-atomic load: continuationHistory is shared across a node's workers (upstream's
     // PieceToHistory is AtomicStats), so this read races the atomic statsUpdate writes.
-    return @atomicLoad(i16, &history[@as(usize, piece)][@as(usize, square)].value, .monotonic);
-}
-
-pub fn pawnHistoryScore(
-    history_snapshot: *const HistorySnapshot,
-    pawn_key: u64,
-    piece: u8,
-    square: u8,
-) i32 {
-    const history = history_snapshot.pawn_table orelse return 0;
-    // Index pawn history [(pawn_key & mask) * PIECE_NB + piece][square]
-    const index: usize = @intCast(pawn_key & history_snapshot.pawn_mask);
-    const row_index = index * piece_nb + @as(usize, piece);
-    // Relaxed: the pawn table is shared by every worker and written concurrently by statsUpdate.
-    return @atomicLoad(i16, &history[row_index][@as(usize, square)].value, .monotonic);
+    return @atomicLoad(i16, &page[@as(usize, piece)][@as(usize, square)].value, .monotonic);
 }
 
 test {

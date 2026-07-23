@@ -35,7 +35,7 @@ function-pointer seams. For the zones and the module graph, see
 | **Move ordering** | |
 | `movepick.zig` | The staged generator: `initMainStage`/`initProbcutStage`, `nextMove`, the stage selectors, `partialInsertionSort` |
 | `movepick_score.zig` | `MovePickerState`/`MovePickerContext`/`SortEntry`, `scoreList`, `scoreValue` |
-| `movepick_history.zig` | `HistorySnapshot` — typed views over the history tables — and the five score lookups |
+| `movepick_history.zig` | The typed row/page views over the history tables and their read helpers |
 | `movepick_snapshot.zig` | The read-only board queries and SEE shared by scoring and pruning |
 | **Tables** | |
 | `history.zig` | The history *writers*: `updateAllStats`, `updateQuietHistories*`, `updateContinuationHistories`, `updateCorrectionHistory`, `setContHist`, and the per-iteration decay/clear |
@@ -203,10 +203,13 @@ term uses per-piece-type "attacked by a lesser piece" bitboards built once per l
 from `attacksBy`; the check bonus requires both a check square and `seeGe`; the
 low-ply bonus applies only below `low_ply_history_size` (`movepick.zig`).
 
-The tables reached are packed into a `HistorySnapshot` (`movepick_history.zig`) from
-the `MovePickerContext` the caller fills in — main, low-ply, capture, up to six
-continuation pages, and the shared pawn history. The ProbCut context deliberately
-passes only capture history; the rest are null.
+The tables come from the `MovePickerContext` the caller fills in — main, low-ply,
+capture, up to six continuation pages, and the shared pawn history
+(`movepick_history.zig` holds the typed row/page views and read helpers).
+`scoreList` unwraps each kind's tables into locals once per list, before the scoring
+loop: Zig has no type-based alias analysis, so anything still read through the
+context would be re-loaded on every iteration after the `outputs` store. The ProbCut
+context deliberately passes only capture history; the rest are null.
 
 ## Heuristics and tables
 
