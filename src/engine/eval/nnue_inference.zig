@@ -96,6 +96,53 @@ const pmulhw256 = struct {
     extern fn @"llvm.x86.avx2.pmulh.w"(@Vector(16, i16), @Vector(16, i16)) @Vector(16, i16);
 }.@"llvm.x86.avx2.pmulh.w";
 
+// Run both activations of one layer on the 128-bit SSSE3-class tier with the same
+// packs+mulhi shape upstream emits there (sqr_clipped_relu.h / clipped_relu.h lower to
+// packssdw+pmulhw+psrlw+packsswb at SSE): share the input loads and the signed 32->16
+// saturating packs, square via pmulhw and clip via max+shift at i16 width, then narrow
+// each with one saturating packsswb. The 128-bit packs concatenate their two operands in
+// order -- no cross-lane interleave exists at this width -- so the bytes land in natural
+// order and the fc_1/fc_2 weight parse stays the identity (unlike the avx2 pair tier's
+// compensating scramble). The split sqrClippedReLU/clippedReLU pair instead runs the
+// square at i32 width: pmulld is 2 uops on this tier and every clamp/shift/pack step
+// pays 4 xmm ops per 16 outputs, ~3x the instructions of the pack shape for the same
+// values. Values are bit-identical by sqrClipPair's argument: the saturating pack equals
+// the i16-range clamp, pmulhw>>N equals (x*x)>>(16+N) for the non-negative square, and
+// packsswb's signed saturation equals min(127, .) on these non-negative inputs.
+const sse_pair_activations = builtin.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .ssse3) and
+    !std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+
+const packssdw128 = struct {
+    extern fn @"llvm.x86.sse2.packssdw.128"(@Vector(4, i32), @Vector(4, i32)) @Vector(8, i16);
+}.@"llvm.x86.sse2.packssdw.128";
+const packsswb128 = struct {
+    extern fn @"llvm.x86.sse2.packsswb.128"(@Vector(8, i16), @Vector(8, i16)) @Vector(16, i8);
+}.@"llvm.x86.sse2.packsswb.128";
+const pmulhw128 = struct {
+    extern fn @"llvm.x86.sse2.pmulh.w"(@Vector(8, i16), @Vector(8, i16)) @Vector(8, i16);
+}.@"llvm.x86.sse2.pmulh.w";
+
+inline fn sqrClipPair128(comptime scale_bits: comptime_int, in: *const [32]i32, sqr_out: *[32]u8, clip_out: *[32]u8) void {
+    // MulHi strips 16 of the 2*scale_bits+7 square-shift bits; shift out the rest.
+    const sqr_shift: @Vector(8, u4) = @splat(2 * scale_bits + 7 - 16);
+    const clip_shift: @Vector(8, u4) = @splat(scale_bits);
+    const zero: @Vector(8, i16) = @splat(0);
+    inline for (0..2) |half| {
+        const base = half * 16;
+        const words0 = packssdw128(in[base..][0..4].*, in[base + 4 ..][0..4].*);
+        const words1 = packssdw128(in[base + 8 ..][0..4].*, in[base + 12 ..][0..4].*);
+        const sqr0: @Vector(8, i16) = @bitCast(@as(@Vector(8, u16), @bitCast(pmulhw128(words0, words0))) >> sqr_shift);
+        const sqr1: @Vector(8, i16) = @bitCast(@as(@Vector(8, u16), @bitCast(pmulhw128(words1, words1))) >> sqr_shift);
+        sqr_out[base..][0..16].* = @bitCast(packsswb128(sqr0, sqr1));
+        const relu0: @Vector(8, i16) = @max(words0, zero);
+        const relu1: @Vector(8, i16) = @max(words1, zero);
+        const clip0: @Vector(8, i16) = @bitCast(@as(@Vector(8, u16), @bitCast(relu0)) >> clip_shift);
+        const clip1: @Vector(8, i16) = @bitCast(@as(@Vector(8, u16), @bitCast(relu1)) >> clip_shift);
+        clip_out[base..][0..16].* = @bitCast(packsswb128(clip0, clip1));
+    }
+}
+
 inline fn sqrClipPair(comptime scale_bits: comptime_int, in: *const [32]i32, sqr_out: *[32]u8, clip_out: *[32]u8) void {
     // MulHi strips 16 of the 2*scale_bits+7 square-shift bits; shift out the rest.
     const sqr_shift: @Vector(16, u4) = @splat(2 * scale_bits + 7 - 16);
@@ -150,6 +197,8 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     var concat: [128]u8 = undefined;
     if (comptime nnue_parse.pair_activations) {
         sqrClipPair(7, &fc0_out, concat[0..32], concat[32..64]);
+    } else if (comptime sse_pair_activations) {
+        sqrClipPair128(7, &fc0_out, concat[0..32], concat[32..64]);
     } else {
         sqrClippedReLU(21, &fc0_out, concat[0..32]);
         clippedReLU(7, &fc0_out, concat[32..64]);
@@ -163,6 +212,8 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     // SqrClippedReLU shift = 2*6+7 = 19, ClippedReLU shift = 6. Written into concat[64..128].
     if (comptime nnue_parse.pair_activations) {
         sqrClipPair(6, &fc1_out, concat[64..96], concat[96..128]);
+    } else if (comptime sse_pair_activations) {
+        sqrClipPair128(6, &fc1_out, concat[64..96], concat[96..128]);
     } else {
         sqrClippedReLU(19, &fc1_out, concat[64..96]);
         clippedReLU(6, &fc1_out, concat[96..128]);
@@ -347,6 +398,40 @@ test "sqrClipPair matches the split activations through the pair interleave" {
                 try testing.expectEqual(ref_sqr[i], got_sqr[pos]);
                 try testing.expectEqual(ref_clip[i], got_clip[pos]);
             }
+        }
+    }
+}
+
+// Pin the 128-bit paired activations against the split reference in natural order: the
+// 128-bit packs concatenate their operands, so byte i of each output must equal the split
+// functions' byte i exactly -- no index map. Random inputs cover the i16-saturating
+// magnitudes and the negative range (the max(0) side of the clip).
+test "sqrClipPair128 matches the split activations in natural order" {
+    if (comptime !sse_pair_activations) return error.SkipZigTest;
+    const testing = std.testing;
+    var prng = std.Random.DefaultPrng.init(0xC0FFEE1234567890);
+    const rnd = prng.random();
+
+    var iter: usize = 0;
+    while (iter < 256) : (iter += 1) {
+        var in: [32]i32 = undefined;
+        for (&in) |*v| {
+            v.* = switch (rnd.intRangeAtMost(u8, 0, 3)) {
+                0 => rnd.intRangeAtMost(i32, -300000, 300000),
+                1 => rnd.intRangeAtMost(i32, -40000, 40000),
+                else => rnd.intRangeAtMost(i32, -5000, 5000),
+            };
+        }
+        inline for (.{ 7, 6 }) |sb| {
+            var ref_sqr: [32]u8 = undefined;
+            var ref_clip: [32]u8 = undefined;
+            sqrClippedReLU(2 * sb + 7, &in, &ref_sqr);
+            clippedReLU(sb, &in, &ref_clip);
+            var got_sqr: [32]u8 = undefined;
+            var got_clip: [32]u8 = undefined;
+            sqrClipPair128(sb, &in, &got_sqr, &got_clip);
+            try testing.expectEqualSlices(u8, &ref_sqr, &got_sqr);
+            try testing.expectEqualSlices(u8, &ref_clip, &got_clip);
         }
     }
 }
