@@ -10,13 +10,19 @@
 # fork edits.
 #
 # Usage:  upstream_oracle.sh [<sha>]        # sha defaults to tools/upstream/UPSTREAM_TARGET
-#         ARCH=... ZFISH_ORACLE_DIR=...     # overridable
+#         ARCH=... ZFISH_ORACLE_DIR=... ORACLE_COMP=gcc    # overridable
 #   --verify   after building, run bench and assert it equals the commit's own "Bench: NNNN" line
+#
+# The oracle compiles with ZIG C++ (tools/zigcxx) unless ORACLE_COMP=gcc is set
+# explicitly: every ratio against it must compare source/codegen on the SAME
+# LLVM backend zfish uses. A gcc oracle measures gcc (+7.4% instructions on
+# identical source, measured) -- reach for it only to study gcc itself.
 set -euo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
 ARCH="${ARCH:-x86-64-sse41-popcnt}"
+ORACLE_COMP="${ORACLE_COMP:-zigcxx}"
 
 VERIFY=0
 SHA_ARG=""
@@ -44,7 +50,20 @@ else
 fi
 
 echo "upstream-oracle: building vanilla Stockfish @ $(git -C "$REPO" rev-parse --short "$SHA") (ARCH=$ARCH)" >&2
-make -C "$ORACLE_DIR/src" -j build ARCH="$ARCH" COMP=gcc >/tmp/upstream_oracle_build.log 2>&1 || {
+if [ "$ORACLE_COMP" = "gcc" ]; then
+    COMP_ARGS=(COMP=gcc)
+else
+    COMP_ARGS=(COMP=clang COMPCXX="$REPO/tools/zigcxx")
+fi
+# Object files from a different compiler (or ARCH) do not link -- clean when the
+# stamp disagrees, keep the incremental fast path when it matches.
+STAMP="$ORACLE_DIR/src/.zfish_oracle_stamp"
+WANT_STAMP="$ORACLE_COMP $ARCH"
+if [ "$(cat "$STAMP" 2>/dev/null)" != "$WANT_STAMP" ]; then
+    make -C "$ORACLE_DIR/src" clean >/dev/null 2>&1 || true
+    printf '%s' "$WANT_STAMP" >"$STAMP"
+fi
+make -C "$ORACLE_DIR/src" -j build ARCH="$ARCH" "${COMP_ARGS[@]}" >/tmp/upstream_oracle_build.log 2>&1 || {
     echo "upstream-oracle: BUILD FAILED -- tail of /tmp/upstream_oracle_build.log:" >&2
     tail -20 /tmp/upstream_oracle_build.log >&2
     exit 1
