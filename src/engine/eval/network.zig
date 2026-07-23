@@ -63,16 +63,14 @@ fn networkEmbeddedBytes() ByteView {
     return .{ .ptr = &embedded_nnue_stub, .len = 1 };
 }
 
-// Fix the affine-layer byte sizes by the NNUE architecture (SFNNv15)
-// (fc_0 1024->32, fc_1 64->32, fc_2 128->1; biases int32 linear, weights int8 SSSE3-scrambled).
-// sizeof(AffineTransform.biases/weights): {128,128,4} / {32768,2048,128}.
-const layer_biases_bytes = [3]usize{ 128, 128, 4 };
-const layer_weights_bytes = [3]usize{ 32768, 2048, 128 };
+// Read the affine-layer byte sizes from the weight-storage owner, which lays the
+// per-bucket arena out from the same table -- one source, so the parse destination
+// and the arena layout cannot disagree.
 fn layerBiasesBytes(idx: usize) usize {
-    return layer_biases_bytes[idx];
+    return weight_storage.layer_biases_bytes[idx];
 }
 fn layerWeightsBytes(idx: usize) usize {
-    return layer_weights_bytes[idx];
+    return weight_storage.layer_weights_bytes[idx];
 }
 
 pub fn load(
