@@ -84,7 +84,13 @@ arenas come from `page_alloc.alloc` (`src/engine/state/page_alloc.zig`) — the
 injected large-block seam the platform backs with huge pages, and which falls back
 to a page-backed allocator in a headless build; see [06-platform.md](06-platform.md). `nnue_weight_storage.zig` sits below
 both `network.zig` and `nnue_inference.zig` so the I/O half and the compute half
-share an owner without importing each other.
+share an owner without importing each other. There are exactly two arenas: the
+feature-transformer blob, and ONE contiguous block holding all eight buckets'
+fc_0/fc_1/fc_2 biases+weights at comptime offsets — mirroring upstream's in-line
+`NetworkArchitecture network[LayerStacks]` member. Keep it one block: splitting the
+layer stack into per-part huge-page allocations puts every part at the same address
+bits modulo the huge-page alignment, aliasing the inference weights into a handful
+of last-level cache sets (measured as ~5 extra LL misses per eval).
 
 ## Architecture of the net
 
