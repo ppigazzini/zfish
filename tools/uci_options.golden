@@ -16,4 +16,4 @@ option name SyzygyPath type string default <empty>
 option name SyzygyProbeDepth type spin default 1 min 1 max 100
 option name Syzygy50MoveRule type check default true
 option name SyzygyProbeLimit type spin default 7 min 0 max 7
-option name EvalFile type string default nn-0ee0657fb25e.nnue
+option name EvalFile type string default nn-89cb98a217f7.nnue

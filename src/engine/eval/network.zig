@@ -16,7 +16,7 @@ const none_name = "None";
 // Name the embedded net's default (EvalFileDefaultName, evaluate.h), a build
 // constant. Keep a single source of truth: engine.zig imports this via the
 // "network" module rather than re-declaring it (a net bump edits one line).
-pub const default_eval_file_name = "nn-0ee0657fb25e.nnue";
+pub const default_eval_file_name = "nn-89cb98a217f7.nnue";
 
 /// Expose an opaque handle to the network subsystem. The NNUE weights live in this
 /// module's globals (ft_ptr_storage &c.), so there is no struct to point at --
@@ -164,8 +164,8 @@ pub fn verify(
     // FeatureTransformer + NetworkArchitecture*LayerStacks; the static InputDimensions /
     // TransformedFeatureDimensions / FC_0_OUTPUTS / FC_1_OUTPUTS). Fixed constants.
     const info = VerifyInfo{
-        .size_bytes = 111263232,
-        .input_dimensions = 83248,
+        .size_bytes = 115115520,
+        .input_dimensions = 86896,
         .transformed_dimensions = 1024,
         .fc0_outputs = 32,
         .fc1_outputs = 32,

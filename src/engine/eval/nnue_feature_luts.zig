@@ -13,6 +13,7 @@ const constexprPopcount = nnue_feature_bb.constexprPopcount;
 const typeOf = nnue_feature_bb.typeOf;
 const colorOf = nnue_feature_bb.colorOf;
 const pawnPushOrAttacks = nnue_feature_bb.pawnPushOrAttacks;
+const pawnAttacksOnly = nnue_feature_bb.pawnAttacksOnly;
 const pseudoAttacks = nnue_feature_bb.pseudoAttacks;
 const makePieceIndicesType = nnue_feature_bb.makePieceIndicesType;
 const makePieceIndicesPawn = nnue_feature_bb.makePieceIndicesPawn;
@@ -60,7 +61,7 @@ fn initThreatOffsets() struct { first: [16]HelperOffsets, second: [16][64]u32 } 
             if (typeOf(piece) != pawn_piece_type) {
                 cumulative_piece_offset += constexprPopcount(pseudoAttacks(typeOf(piece), from));
             } else if (from >= sq_a2 and from <= sq_h7) {
-                const attacks = if (piece < 8) pawnPushOrAttacks(white, from) else pawnPushOrAttacks(black, from);
+                const attacks = if (piece < 8) pawnAttacksOnly(white, from) else pawnAttacksOnly(black, from);
                 cumulative_piece_offset += constexprPopcount(attacks);
             }
         }
@@ -142,10 +143,15 @@ pub const orient_tbl_full = [64]i8{
     0, 0, 0, 0, 7, 7, 7, 7,
 };
 
-pub const num_valid_targets = [16]i32{ 0, 6, 10, 8, 8, 10, 0, 0, 0, 6, 10, 8, 8, 10, 0, 0 };
+// Pawn diagonal threats target only knights and rooks now (pawn-pawn relationships moved
+// to the PP_3Wide feature set), so a pawn has 4 valid targets (2 types x 2 colors) instead
+// of 6. Upstream SFNNv16 numValidTargets.
+pub const num_valid_targets = [16]i32{ 0, 4, 10, 8, 8, 10, 0, 0, 0, 4, 10, 8, 8, 10, 0, 0 };
 
+// map[attackerType-1][attackedType-1]. The pawn row (attacker PAWN) now maps only KNIGHT
+// (slot 0) and ROOK (slot 1); PAWN/BISHOP/QUEEN/KING are excluded (-1).
 pub const full_map = [6][6]i32{
-    .{ 0, 1, -1, 2, -1, -1 },
+    .{ -1, 0, -1, 1, -1, -1 },
     .{ 0, 1, 2, 3, 4, -1 },
     .{ 0, 1, 2, 3, -1, -1 },
     .{ 0, 1, 2, 3, -1, -1 },
@@ -191,7 +197,35 @@ fn buildThreatRouteBlocks() [16]ThreatRouteBlock {
 pub const threat_route_blocks = buildThreatRouteBlocks();
 
 pub const ps_nb: u32 = 11 * 64;
-pub const full_dimensions: u32 = 60720;
+// FullThreats::Dimensions (SFNNv16): the threat feature count, also PP_3Wide's IndexBase.
+pub const full_dimensions: u32 = 59808;
+
+// ---- PP_3Wide (pawn-pair) feature set ---------------------------------------
+// Pawn ids run over ranks 2-7 (48 squares) per color: id = 48*color + (square - SQ_A2).
+pub const pp_pawn_ids: u32 = 2 * 48;
+// Dimensions = C(PawnIds, 2): every unordered pair of pawn ids.
+pub const pp_dimensions: u32 = pp_pawn_ids * (pp_pawn_ids - 1) / 2;
+// Pair features are concatenated onto threats in the shared weight array; the first pair
+// feature sits at index full_dimensions (== ThreatFeatureSet::Dimensions).
+pub const pp_index_base: u32 = full_dimensions;
+pub const threat_and_pp_dimensions: u32 = full_dimensions + pp_dimensions;
+
+pub const rank1_bb: u64 = 0xff;
+pub const rank8_bb: u64 = rank1_bb << (8 * 7);
+
+// PawnPairBB[s]: the squares that can host a pawn forming a pair with a pawn on s -- own
+// file plus the two adjacent files, restricted to ranks 2-7, excluding s. Color-independent.
+// Upstream bitboard.h PawnPairBB; built here since it is consumed only by the PP feature set.
+pub const pawn_pair_bb: [64]u64 = blk: {
+    @setEvalBranchQuota(200000);
+    var out: [64]u64 = undefined;
+    for (0..64) |s| {
+        const file = file_a_bb << @intCast(s % 8);
+        const files = file | ((file & ~file_h_bb) << 1) | ((file & ~file_a_bb) >> 1);
+        out[s] = files & ~(rank1_bb | rank8_bb) & ~(@as(u64, 1) << @intCast(s));
+    }
+    break :blk out;
+};
 
 pub const white: u8 = 0;
 pub const black: u8 = 1;

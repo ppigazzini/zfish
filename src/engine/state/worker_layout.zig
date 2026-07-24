@@ -22,7 +22,7 @@ pub const engine_size: usize = 1680;
 pub const uci_engine_size: usize = 1696;
 pub const shared_state_size: usize = 40;
 pub const search_manager_size: usize = 120;
-pub const position_size: usize = 1032;
+pub const position_size: usize = 1064;
 pub const state_info_size: usize = 192;
 pub const transposition_table_size: usize = 24;
 // Equal nnue_acc_layout.arena_bytes (both state arrays + the trailing size field,

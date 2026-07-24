@@ -35,8 +35,6 @@ fn addDirtyThreat(dts: *DirtyThreats, put_piece: bool, pc: u8, threatened: u8, s
     dts.list_size += 1;
 }
 
-const pawnPushOrAttacks = board_core.pawnPushOrAttacks;
-
 fn processSliders(
     pos: *const Position,
     dts: *DirtyThreats,
@@ -110,23 +108,17 @@ pub fn updatePieceThreats(
     var threatened = (if ((pc & 7) == pawn_pt) pawnAttacks(pc >> 3, s) else bitboard.attacks(pc & 7, s, occupied)) & occupied_no_k;
     var incoming = bitboard.attacks(knight_pt, s, 0) & knights;
 
-    var pawn_threats: u64 = 0;
-    if ((pc & 7) == pawn_pt) {
-        const white_attacks = pawnPushOrAttacks(color_white, s);
-        const black_attacks = pawnPushOrAttacks(color_black, s);
-        threatened |= (if ((pc >> 3) == color_white) white_attacks else black_attacks) & pos.by_type_bb[pawn_pt];
-        pawn_threats = (white_attacks & black_pawns) | (black_attacks & white_pawns);
-    } else {
-        pawn_threats = (pawnAttacks(color_white, s) & black_pawns) | (pawnAttacks(color_black, s) & white_pawns);
-    }
-
     // Restrict both directions to the (attacker, attacked) pairs the threat feature set
     // actually encodes -- upstream rejects the rest here rather than letting the feature
-    // indexer drop them later.
+    // indexer drop them later. With SFNNv16 pawn-pawn relationships moved to the PP_3Wide
+    // feature set, so a pawn is no longer a threat target, and incoming pawn threats are
+    // recorded only for knights and rooks (the pusher block is gone entirely).
     const pt = pc & 7;
-    if (pt == pawn_pt or pt == knight_pt or pt == rook_pt) incoming |= pawn_threats;
+    if (pt == knight_pt or pt == rook_pt) {
+        incoming |= (pawnAttacks(color_white, s) & black_pawns) | (pawnAttacks(color_black, s) & white_pawns);
+    }
     switch (pt) {
-        pawn_pt => threatened &= pos.by_type_bb[pawn_pt] | pos.by_type_bb[knight_pt] | pos.by_type_bb[rook_pt],
+        pawn_pt => threatened &= pos.by_type_bb[knight_pt] | pos.by_type_bb[rook_pt],
         bishop_pt, rook_pt => threatened &= pos.by_type_bb[pawn_pt] | pos.by_type_bb[knight_pt] |
             pos.by_type_bb[bishop_pt] | pos.by_type_bb[rook_pt],
         else => {},

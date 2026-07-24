@@ -45,6 +45,9 @@ const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 const layout = @import("nnue_acc_layout.zig");
 const psq_feature = layout.psq_feature;
 const threat_feature = layout.threat_feature;
+const white = layout.white;
+const black = layout.black;
+const pawn_piece_type = layout.pawn_piece_type;
 const sq_none = layout.sq_none;
 const square_count = layout.square_count;
 const psq_index_capacity = layout.psq_index_capacity;
@@ -188,6 +191,11 @@ fn refreshCombined(
 
     var active: nnue_feature.FullAppendResult = undefined;
     nnue_feature.fullAppendActive(&active, perspective, king_square, &pos.board, &pos.by_type_bb, &pos.by_color_bb);
+    // Append the pawn-pair (PP_3Wide) active rows onto the same list -- they index the shared
+    // threatAndPp weight rows, so the one tiled apply pass below covers both feature sets.
+    const white_pawns = pos.by_color_bb[white] & pos.by_type_bb[pawn_piece_type];
+    const black_pawns = pos.by_color_bb[black] & pos.by_type_bb[pawn_piece_type];
+    nnue_feature.ppAppendActive(&active, perspective, king_square, white_pawns, black_pawns);
 
     // Apply the finny-cache delta and the active threat rows in one tiled pass: the
     // cache entry gets the psq-only tile stored back mid-pass, the stack state gets
@@ -299,8 +307,23 @@ fn applyCombined(
         &thr_removed,
         &thr_added,
     );
-    const thr_removed_len = thr_lens.removed;
-    const thr_added_len = thr_lens.added;
+
+    // Append the pawn-pair (PP_3Wide) changed rows onto the SAME lists -- they index the
+    // shared threatAndPp weight rows. ppAppendChanged puts appearing pairs into its "added"
+    // out-list and disappearing pairs into its "removed" out-list; for a backward walk the
+    // two out-lists swap (mirroring upstream's swapped append_changed_indices arguments), so
+    // the appearing pairs land in thr_removed and the disappearing ones in thr_added.
+    var thr_removed_len = thr_lens.removed;
+    var thr_added_len = thr_lens.added;
+    if (forward) {
+        const pp = nnue_feature.ppAppendChanged(perspective, king_square, &thr_diff.pp_before, &thr_diff.pp_after, &thr_removed, thr_removed_len, &thr_added, thr_added_len);
+        thr_removed_len = pp.removed;
+        thr_added_len = pp.added;
+    } else {
+        const pp = nnue_feature.ppAppendChanged(perspective, king_square, &thr_diff.pp_before, &thr_diff.pp_after, &thr_added, thr_added_len, &thr_removed, thr_removed_len);
+        thr_added_len = pp.removed;
+        thr_removed_len = pp.added;
+    }
 
     // --- fused apply onto the ONE combined accumulator (psq_feature slot) ---
     applyCombinedDelta(

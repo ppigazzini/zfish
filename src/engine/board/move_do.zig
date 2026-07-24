@@ -224,6 +224,12 @@ pub fn doMove(
     dts.us = us;
     dts.prev_ksq = kingSquare(pos, us);
 
+    // Snapshot the pawn bitboards before any piece moves for the PP_3Wide (pawn-pair) diff;
+    // the after-snapshot is taken once all mutations are applied (below). Upstream
+    // Position::do_move fills Dirties.dirtyPawnPairs the same way.
+    dts.pp_before[color_white] = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
+    dts.pp_before[color_black] = pos.by_color_bb[color_black] & pos.by_type_bb[pawn_pt];
+
     if (mt == mt_castling) {
         const r = doCastlingDo(pos, us, from, to, dp, dts);
         to = r.to; // do_castling takes `to` by reference and sets it to the king's destination
@@ -337,6 +343,10 @@ pub fn doMove(
     }
 
     dts.ksq = kingSquare(pos, us);
+
+    // Snapshot the pawn bitboards after all mutations for the PP_3Wide (pawn-pair) diff.
+    dts.pp_after[color_white] = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
+    dts.pp_after[color_black] = pos.by_color_bb[color_black] & pos.by_type_bb[pawn_pt];
 }
 
 // Approximate the key the position would have AFTER M, cheaply enough to prefetch its TT

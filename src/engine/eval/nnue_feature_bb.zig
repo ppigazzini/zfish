@@ -1,7 +1,7 @@
 // Compute the NNUE feature-index bitboard math: the pure square/piece/attack helpers +
 // the two per-piece index-table generators, split out of nnue_feature.zig so the
 // feature core stays under the file-size budget. std-only, no NNUE state -- the
-// parent aliases these back in. Behaviour is identical (bench 2792255).
+// parent aliases these back in. Behaviour is identical (bench 2718396).
 
 const std = @import("std");
 
@@ -66,6 +66,18 @@ pub fn pawnPushOrAttacks(color: u8, square: usize) u64 {
         shift(north, one) | shift(north_west, one) | shift(north_east, one)
     else
         shift(south, one) | shift(south_west, one) | shift(south_east, one);
+}
+
+// Diagonal pawn attacks only (no single push) -- upstream's PseudoAttacks[color][sq] after
+// the "Optimize attacks" refactor. The SFNNv16 threat feature set enumerates a pawn's
+// targets over these two squares, not the three of pawnPushOrAttacks: the pawn-in-front
+// (pusher) input was removed once pawn-pawn interactions moved to the PP_3Wide feature set.
+pub fn pawnAttacksOnly(color: u8, square: usize) u64 {
+    const one = squareBb(square);
+    return if (color == white)
+        shift(north_west, one) | shift(north_east, one)
+    else
+        shift(south_west, one) | shift(south_east, one);
 }
 
 pub fn safeDestination(square: usize, step: i8) u64 {
@@ -233,7 +245,7 @@ pub fn makePieceIndicesPawn(comptime piece: u8) [64][64]u8 {
     const color = colorOf(piece);
     var from: usize = 0;
     while (from < 64) : (from += 1) {
-        const attacks = pawnPushOrAttacks(color, from);
+        const attacks = pawnAttacksOnly(color, from);
         var to: usize = 0;
         while (to < 64) : (to += 1) {
             out[from][to] = constexprPopcount(((squareBb(to) - 1) & attacks));

@@ -83,28 +83,44 @@ const cache_line = 64;
 
 pub const half_dimensions: usize = 1024;
 pub const psq_feature_dimensions: usize = 22528;
-pub const threat_dimensions: usize = 60720;
+// FullThreats::Dimensions (SFNNv16). The threat weight rows are followed in memory by the
+// PP_3Wide rows (upstream's single threatAndPpWeights array), so the "threat" weight/psqt
+// regions are sized for the concatenation of both feature sets.
+pub const threat_dimensions: usize = 59808;
+pub const pp_dimensions: usize = 96 * 95 / 2; // 4560 = C(2*48, 2)
+pub const threat_and_pp_dimensions: usize = threat_dimensions + pp_dimensions;
 pub const psqt_buckets: usize = 8;
 
 fn roundUp(x: usize, a: usize) usize {
     return (x + a - 1) / a * a;
 }
 
-// Count the elements of the five feature-transformer arrays.
+// Count the elements of the feature-transformer arrays. The threat weight/psqt regions hold
+// the FullThreats rows followed by the PP_3Wide rows (one contiguous array each).
 pub const biases_count = half_dimensions; // i16
 pub const psq_weights_count = half_dimensions * psq_feature_dimensions; // i16
-pub const threat_weights_count = half_dimensions * threat_dimensions; // i8
+pub const threat_weights_count = half_dimensions * threat_and_pp_dimensions; // i8 (threat ++ pp)
 pub const psqt_weights_count = psq_feature_dimensions * psqt_buckets; // i32
-pub const threat_psqt_weights_count = threat_dimensions * psqt_buckets; // i32
+pub const threat_psqt_weights_count = threat_and_pp_dimensions * psqt_buckets; // i32 (threat ++ pp)
+
+// The stream splits the two concatenated regions back into separate sections (threat, then
+// pp), each framed on its own; these are the per-section element counts.
+pub const threat_only_weights_count = half_dimensions * threat_dimensions; // i8
+pub const pp_only_weights_count = half_dimensions * pp_dimensions; // i8
+pub const threat_only_psqt_count = threat_dimensions * psqt_buckets; // i32
+pub const pp_only_psqt_count = pp_dimensions * psqt_buckets; // i32
 
 // Lay out the in-memory byte offsets (member order, each alignas(64)): biases, weights(psq),
-// threatWeights, psqtWeights, threatPsqtWeights.
+// threatAndPpWeights, psqtWeights, threatAndPpPsqtWeights.
 pub const biases_off = 0;
 pub const weights_off = roundUp(biases_count * 2, cache_line);
 pub const threat_weights_off = roundUp(weights_off + psq_weights_count * 2, cache_line);
 pub const psqt_weights_off = roundUp(threat_weights_off + threat_weights_count * 1, cache_line);
 pub const threat_psqt_weights_off = roundUp(psqt_weights_off + psqt_weights_count * 4, cache_line);
 pub const ft_total_bytes = roundUp(threat_psqt_weights_off + threat_psqt_weights_count * 4, cache_line);
+// Byte offsets of the pp sub-regions within the concatenated threat regions.
+pub const pp_weights_off = threat_weights_off + threat_only_weights_count * 1;
+pub const pp_psqt_weights_off = threat_psqt_weights_off + threat_only_psqt_count * 4;
 
 comptime {
     // Require the five regions to tile ft_total_bytes with no padding. The parse is
@@ -145,20 +161,27 @@ pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
     // a file shorter than the hash would make the very first section slice out of range.
     if (blob.len < 4) return null;
     var pos: usize = 4;
-    // Follow the read order (upstream 7c7fe322e merge): biases, threatWeights, threatPsqtWeights, weights,
-    // psqtWeights -- each i32 PSQT array is now its OWN leb section (base packed both into one,
-    // after weights). Storage offsets are unchanged; only the stream order/framing moved.
+    // Follow the SFNNv16 read order: biases, threatWeights, threatPsqtWeights, ppWeights,
+    // ppPsqtWeights, weights, psqtWeights. The threat and pp weight/psqt sections are framed
+    // separately in the stream but written into the two contiguous threatAndPp regions (pp
+    // right after threat), so a single index addresses either at runtime.
     // 1. Read biases (LEB i16)
     pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, biases_off, biases_count)) orelse return null;
-    // 2. Copy threatWeights (raw little-endian i8)
-    if (blob.len < pos + threat_weights_count) return null;
-    @memcpy(dst[threat_weights_off .. threat_weights_off + threat_weights_count], blob[pos .. pos + threat_weights_count]);
-    pos += threat_weights_count;
-    // 3. Read threatPsqtWeights (LEB i32, own section)
-    pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, threat_psqt_weights_off, threat_psqt_weights_count)) orelse return null;
-    // 4. Read weights / psq weights (LEB i16)
+    // 2. Copy threatWeights (raw little-endian i8) into the head of the threatAndPp region
+    if (blob.len < pos + threat_only_weights_count) return null;
+    @memcpy(dst[threat_weights_off .. threat_weights_off + threat_only_weights_count], blob[pos .. pos + threat_only_weights_count]);
+    pos += threat_only_weights_count;
+    // 3. Read threatPsqtWeights (LEB i32, own section) into the head of the threatAndPp psqt region
+    pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, threat_psqt_weights_off, threat_only_psqt_count)) orelse return null;
+    // 4. Copy ppWeights (raw little-endian i8) into the tail of the threatAndPp region
+    if (blob.len < pos + pp_only_weights_count) return null;
+    @memcpy(dst[pp_weights_off .. pp_weights_off + pp_only_weights_count], blob[pos .. pos + pp_only_weights_count]);
+    pos += pp_only_weights_count;
+    // 5. Read ppPsqtWeights (LEB i32, own section) into the tail of the threatAndPp psqt region
+    pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, pp_psqt_weights_off, pp_only_psqt_count)) orelse return null;
+    // 6. Read weights / psq weights (LEB i16)
     pos += readLebSection(i16, blob[pos..], dstSlice(i16, dst, weights_off, psq_weights_count)) orelse return null;
-    // 5. Read psqtWeights (LEB i32, own section)
+    // 7. Read psqtWeights (LEB i32, own section)
     pos += readLebSection(i32, blob[pos..], dstSlice(i32, dst, psqt_weights_off, psqt_weights_count)) orelse return null;
     return pos;
 }
@@ -260,11 +283,11 @@ fn encodeLebSection(
 // unpermute. Member
 // write order MUST mirror parseFeatureTransformer (the file / upstream layout):
 // biases (LEB i16), threatWeights (raw i8), threatPsqtWeights (LEB i32),
-// weights (LEB i16), psqtWeights (LEB i32). Note threatPsqt and psqt are SEPARATE
-// sections on opposite sides of `weights` -- they are NOT a single combined i32
-// section (an earlier version wrote weights before threatPsqt and merged
-// threatPsqt++psqt, producing a 21-byte-short, non-round-trippable export that
-// diverged from upstream at the weights-section boundary).
+// ppWeights (raw i8), ppPsqtWeights (LEB i32), weights (LEB i16), psqtWeights (LEB i32).
+// The threat and pp weight/psqt sections are stored contiguously (pp after threat) but
+// framed as separate stream sections, and each i32 PSQT array is its own section -- they
+// are NOT merged (an earlier version merged threatPsqt++psqt, producing a non-round-trippable
+// export that diverged from upstream at the weights-section boundary).
 pub fn serializeFeatureTransformer(
     ft: []const u8,
     hash_value: u32,
@@ -276,8 +299,10 @@ pub fn serializeFeatureTransformer(
     try out.appendSlice(a, &hdr);
 
     try encodeLebSection(i16, constSlice(i16, ft, biases_off, biases_count), &.{}, out, a);
-    try out.appendSlice(a, ft[threat_weights_off .. threat_weights_off + threat_weights_count]);
-    try encodeLebSection(i32, constSlice(i32, ft, threat_psqt_weights_off, threat_psqt_weights_count), &.{}, out, a);
+    try out.appendSlice(a, ft[threat_weights_off .. threat_weights_off + threat_only_weights_count]);
+    try encodeLebSection(i32, constSlice(i32, ft, threat_psqt_weights_off, threat_only_psqt_count), &.{}, out, a);
+    try out.appendSlice(a, ft[pp_weights_off .. pp_weights_off + pp_only_weights_count]);
+    try encodeLebSection(i32, constSlice(i32, ft, pp_psqt_weights_off, pp_only_psqt_count), &.{}, out, a);
     try encodeLebSection(i16, constSlice(i16, ft, weights_off, psq_weights_count), &.{}, out, a);
     try encodeLebSection(i32, constSlice(i32, ft, psqt_weights_off, psqt_weights_count), &.{}, out, a);
 }
@@ -379,9 +404,9 @@ test "feature transformer layout offsets match the FeatureTransformer format" {
     try testing.expectEqual(@as(usize, 0), biases_off);
     try testing.expectEqual(@as(usize, 2048), weights_off);
     try testing.expectEqual(@as(usize, 46139392), threat_weights_off);
-    try testing.expectEqual(@as(usize, 108316672), psqt_weights_off);
-    try testing.expectEqual(@as(usize, 109037568), threat_psqt_weights_off);
-    try testing.expectEqual(@as(usize, 110980608), ft_total_bytes);
+    try testing.expectEqual(@as(usize, 112052224), psqt_weights_off);
+    try testing.expectEqual(@as(usize, 112773120), threat_psqt_weights_off);
+    try testing.expectEqual(@as(usize, 114832896), ft_total_bytes);
 }
 
 test "readLebSection rejects a count that outruns its own section" {
