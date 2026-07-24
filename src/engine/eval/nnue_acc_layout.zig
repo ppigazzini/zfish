@@ -31,7 +31,7 @@ pub const psqt_buckets: usize = 8;
 /// not fold them into one knob.
 ///
 /// 64 on x86-64, from a paired hardware-counter sweep of {16, 32, 64} on the identical
-/// 2792255-node tree: 64 beats 32 by 1.4% instructions on avx512icl and 1.0% on sse41; 16 loses
+/// 2718396-node tree: 64 beats 32 by 1.4% instructions on avx512icl and 1.0% on sse41; 16 loses
 /// 4.1%. Non-x86 keeps 32, the value it has always run -- no aarch64 measurement exists, and a
 /// width is tuned for the tier it was measured on, not a property of the algorithm.
 pub const transform_vec_width: usize = blk: {
@@ -45,8 +45,11 @@ pub const transform_vec_width: usize = blk: {
 };
 pub const dirty_threat_capacity: usize = 96;
 pub const psq_index_capacity: usize = 32;
-pub const threat_index_capacity: usize = 128;
-pub const threat_dimensions: u32 = 60720;
+// Holds the per-ply threat AND pawn-pair changed-feature indices (both index the shared
+// threatAndPp weight rows). Upstream's IndexList is ValueList<u16, 256>.
+pub const threat_index_capacity: usize = 256;
+// FullThreats::Dimensions (SFNNv16); also PP_3Wide's IndexBase.
+pub const threat_dimensions: u32 = 59808;
 pub const psq_feature_dimensions: usize = 22528;
 
 pub const HalfDiff = struct {
@@ -59,17 +62,25 @@ pub const HalfDiff = struct {
     add_pc: u8,
 };
 
-pub const DirtyThreatRaw = struct {
+pub const DirtyThreatRaw = extern struct {
     data: u32,
 };
 
-pub const DirtyThreatListView = struct {
+pub const DirtyThreatListView = extern struct {
     values: [dirty_threat_capacity]DirtyThreatRaw,
     size_: usize,
 };
 
-pub const ThreatDiffView = struct {
+// The per-ply threat diff plus the pawn-pair diff (before/after pawn bitboards per color),
+// upstream's Dirties.dirtyThreats + Dirties.dirtyPawnPairs stored together in the threat
+// slot (both feature sets refresh as a unit). Byte-layout-identical to
+// position_types.DirtyThreats -- do_move writes through that alias; keep the two in sync.
+// extern (C declaration-order layout), byte-identical to position_types.DirtyThreats -- see
+// the note there. A cross-struct comptime assert below re-checks the two agree.
+pub const ThreatDiffView = extern struct {
     list: DirtyThreatListView,
+    pp_before: [2]u64,
+    pp_after: [2]u64,
     us: u8,
     prev_ksq: u8,
     ksq: u8,
@@ -107,7 +118,10 @@ pub const stack_size_offset = threat_array_offset + threat_array_bytes;
 // to the arena alignment. The Worker embeds a buffer of exactly this many bytes;
 // search_id comptime-asserts worker_layout.accumulator_stack_size against this.
 pub const arena_bytes = roundUp(stack_size_offset + @sizeOf(usize), nnue_align);
-pub const threat_refresh_diff_offset = threat_diff_offset + @sizeOf(DirtyThreatListView);
+// Derive the us/prev_ksq/ksq offset from the field itself, not from @sizeOf(list): the added
+// align-8 pp_before/pp_after fields may sort ahead of the u8 scalars, so the scalars no
+// longer sit immediately after the list.
+pub const threat_refresh_diff_offset = threat_diff_offset + @offsetOf(ThreatDiffView, "us");
 
 // Assert what the accessors' @alignCasts assume. Every state base is reached as
 // `base + stride * index`, so each stride must carry the arena's 64-byte alignment forward or
@@ -131,6 +145,24 @@ comptime {
     // that offset must land on ThreatDiffView's trailing scalars, not inside its list.
     if (threat_refresh_diff_offset - threat_diff_offset != @offsetOf(ThreatDiffView, "us"))
         @compileError("threat_refresh_diff_offset must address ThreatDiffView.us");
+    // The threat records are read at the slot's diff offset as the raw list -- list must lead.
+    if (@offsetOf(ThreatDiffView, "list") != 0)
+        @compileError("ThreatDiffView.list must be at offset 0");
+    // us/prev_ksq/ksq must stay a contiguous 3-byte run (threatRequiresRefresh reads +0/1/2).
+    if (@offsetOf(ThreatDiffView, "prev_ksq") != @offsetOf(ThreatDiffView, "us") + 1 or
+        @offsetOf(ThreatDiffView, "ksq") != @offsetOf(ThreatDiffView, "us") + 2)
+        @compileError("ThreatDiffView us/prev_ksq/ksq must be contiguous");
+    // ThreatDiffView must be byte-layout-identical to position_types.DirtyThreats -- do_move
+    // writes the pawn-pair diff through that alias, applyCombined reads it back through this
+    // view. If Zig lays the two out differently the pp diff is silently corrupted (refresh is
+    // unaffected, so only the incremental path would diverge).
+    if (@sizeOf(ThreatDiffView) != @sizeOf(position_types.DirtyThreats))
+        @compileError("ThreatDiffView / DirtyThreats size mismatch");
+    if (@offsetOf(ThreatDiffView, "pp_before") != @offsetOf(position_types.DirtyThreats, "pp_before") or
+        @offsetOf(ThreatDiffView, "pp_after") != @offsetOf(position_types.DirtyThreats, "pp_after") or
+        @offsetOf(ThreatDiffView, "us") != @offsetOf(position_types.DirtyThreats, "us") or
+        @offsetOf(ThreatDiffView, "list") != @offsetOf(position_types.DirtyThreats, "list_values"))
+        @compileError("ThreatDiffView / DirtyThreats field offsets mismatch");
 }
 
 pub fn findLastUsable(feature_kind: u8, stack: *const AccumulatorStack, perspective: u8) usize {

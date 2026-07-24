@@ -27,10 +27,21 @@ pub const DirtyPiece = struct {
 };
 
 // Hold the per-move threat deltas the NNUE update consumes (Position.scratch_dts):
-// a bounded 96-slot DirtyThreat list plus the from/to king-square bookkeeping.
-pub const DirtyThreats = struct {
+// a bounded 96-slot DirtyThreat list plus the from/to king-square bookkeeping, plus the
+// pawn-pair diff (before/after pawn bitboards per color) the PP_3Wide feature set consumes.
+// Byte-layout-identical to nnue_acc_layout.ThreatDiffView -- do_move writes through this
+// alias of the accumulator slot's diff bytes; keep the field order in sync with it.
+// extern (C declaration-order layout) so this stays byte-identical to
+// nnue_acc_layout.ThreatDiffView regardless of Zig's field-reordering heuristics -- the two
+// alias the same accumulator-slot bytes (do_move writes here, applyCombined reads there). A
+// plain struct reorders the align-4 list_values differently from ThreatDiffView's nested
+// align-8 list once the align-8 pp fields are present, silently corrupting the incremental
+// path; extern pins both to declaration order. A cross-struct comptime assert re-checks it.
+pub const DirtyThreats = extern struct {
     list_values: [96]u32, // the DirtyThreat values (bounded 96)
     list_size: usize, // the DirtyThreat list length
+    pp_before: [2]u64, // pawn bitboards [WHITE, BLACK] before the move
+    pp_after: [2]u64, // pawn bitboards [WHITE, BLACK] after the move
     us: u8,
     prev_ksq: u8,
     ksq: u8,
@@ -60,7 +71,7 @@ pub const StateInfo = struct {
 
 // Define the full Position object: the leading data members plus the trailing NNUE
 // scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
-// members the struct is the whole 1032-byte object, so the graph owns and
+// members the struct is the whole 1064-byte object, so the graph owns and
 // allocates a Position outright.
 pub const Position = struct {
     board: [64]u8,
@@ -83,7 +94,7 @@ comptime {
     // position_size / state_info_size). These self-contained size asserts keep the
     // slot contract local to the type definition (worker_layout re-asserts the tie to
     // its constants). Field order is Zig's to choose; only the sizes are contractual.
-    std.debug.assert(@sizeOf(Position) == 1032);
+    std.debug.assert(@sizeOf(Position) == 1064);
     std.debug.assert(@alignOf(Position) == 8);
     std.debug.assert(@sizeOf(StateInfo) == 192);
     std.debug.assert(@alignOf(StateInfo) == 8);
@@ -94,7 +105,7 @@ comptime {
 const testing = std.testing;
 
 test "Position/StateInfo hold their contractual Worker-block slot widths" {
-    try testing.expectEqual(@as(usize, 1032), @sizeOf(Position));
+    try testing.expectEqual(@as(usize, 1064), @sizeOf(Position));
     try testing.expectEqual(@as(usize, 192), @sizeOf(StateInfo));
 }
 

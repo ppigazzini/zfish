@@ -1,6 +1,6 @@
-search frc-start depth=17 score=cp 29 nodes=300220 bestmove=e2e4
-search frc-mid   depth=20 score=cp 25 nodes=300366 bestmove=c2c3
+search frc-start depth=18 score=cp 16 nodes=300083 bestmove=f2f3
+search frc-mid   depth=18 score=cp 4 nodes=300263 bestmove=c2c3
 castle-OO Fen: qbrnnkrb/pppppppp/8/8/8/8/PPPPPPPP/QBRNNRKB b g - 1 1
 castle-OO Key: 2261F8BCBD142D44
-eval frc-start Final evaluation      +0.11 (white side) [with scaled NNUE, ...]
-eval frc-mid   Final evaluation      +0.20 (white side) [with scaled NNUE, ...]
+eval frc-start Final evaluation      +0.17 (white side) [with scaled NNUE, ...]
+eval frc-mid   Final evaluation      +0.31 (white side) [with scaled NNUE, ...]

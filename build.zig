@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
     const signature_ref = b.option(
         []const u8,
         "signature-ref",
-        "Expected bench signature for the `signature` step; defaults to the 2792255 invariant",
+        "Expected bench signature for the `signature` step; defaults to the 2718396 invariant",
     );
     const requested_arch = b.option(
         []const u8,
@@ -61,7 +61,7 @@ pub fn build(b: *std.Build) void {
     // seam), aligned/large-page allocation (memory.zig), the steady clock and CPU-affinity
     // string (main.zig). Windows uses the self-contained mingw (gnu) ABI so no MSVC/SDK is
     // needed; macOS uses its native ABI. The integer-exact NNUE eval is arch/OS-invariant,
-    // so bench must be 2792255 on every (arch, os) tier -- the parity lanes assert it.
+    // so bench must be 2718396 on every (arch, os) tier -- the parity lanes assert it.
     const os_choice = b.option(TargetOs, "os", "Target OS: linux (default), windows, or macos") orelse .linux;
     const os_tag: std.Target.Os.Tag = switch (os_choice) {
         .linux => .linux,
@@ -578,7 +578,7 @@ pub fn build(b: *std.Build) void {
 
     // Match upstream's codegen: its Makefile compiles `build` with -flto=full (Makefile:965)
     // while zfish shipped without it, so the two were never compiled alike. Measured on an
-    // identical 178,029-node tree, bit-exact (bench stays 2792255): 4,065,662,391 ->
+    // identical 178,029-node tree, bit-exact (bench stays 2718396): 4,065,662,391 ->
     // 3,922,860,311 instructions, -3.51%, which is 22% of the whole instruction gap against
     // upstream -- from a flag, not code.
     //
@@ -842,13 +842,13 @@ pub fn build(b: *std.Build) void {
 
     // Verify the bench signature with the pure-Zig parity harness (tools/parity_harness.zig
     // `signature` check), not tests/signature.sh -- one cross-OS gate instead of a bash wrapper that
-    // only ran on Linux. Default to the 2792255 arch/OS invariant; -Dsignature-ref overrides.
-    const signature_reference = signature_ref orelse "2792255";
+    // only ran on Linux. Default to the 2718396 arch/OS invariant; -Dsignature-ref overrides.
+    const signature_reference = signature_ref orelse "2718396";
     const signature_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "signature", signature_reference, "check");
 
     const signature_step = b.step(
         "signature",
-        "Verify the Zig-built Stockfish bench signature (== 2792255 by default; -Dsignature-ref to override) via the pure-Zig parity harness",
+        "Verify the Zig-built Stockfish bench signature (== 2718396 by default; -Dsignature-ref to override) via the pure-Zig parity harness",
     );
     signature_step.dependOn(&signature_cmd.step);
 
@@ -1322,7 +1322,7 @@ pub fn build(b: *std.Build) void {
 
     // Pin bench node counts for non-default configs (bench-matrix golden; hash size / shallow
     // depth / node limit / bench-perft) -- distinct deterministic code paths the default
-    // signature (2792255) never exercises, each verified equal to the upstream oracle.
+    // signature (2718396) never exercises, each verified equal to the upstream oracle.
     // Keep Linux-only (`parity`, not `parity-portable`): verified bit-exact on x86 in both build
     // modes, but the node-limited config's cross-arch equality is not locally verifiable, and
     // the default bench already gates cross-OS signature. Regenerate on an upstream bump.
@@ -1476,7 +1476,7 @@ pub fn build(b: *std.Build) void {
 
     // Assert via the src-free / TU=0 structural gate that the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
-    // benches 2792255. Keep it a permanent invariant in the `parity` aggregate below, guarding
+    // benches 2718396. Keep it a permanent invariant in the `parity` aggregate below, guarding
     // against any C++ TU being reintroduced into the default binary.
     const src_free_cmd = b.addSystemCommand(&.{
         "bash",
@@ -1532,7 +1532,7 @@ pub fn build(b: *std.Build) void {
 
     // Gate docs/ against the tree it describes. Docs are accurate when written and rot where
     // the code moves under them: a hostile audit found a path pointing at a split-away module,
-    // the bench anchor quoted as 2067208 in five places while build.zig said 2792255, and link
+    // the bench anchor quoted as 2067208 in five places while build.zig said 2718396, and link
     // targets that broke on a renumber. All three are mechanical, and all three shipped because
     // nothing checked. This does NOT check whether a sentence is true -- "numa_context is a
     // never-dereferenced stub handle" parsed, linked, and was false for weeks; only reading the
@@ -1920,11 +1920,11 @@ pub fn build(b: *std.Build) void {
         "Run the current bench, UCI, and signature checks through the Zig build entry",
     );
     // Assemble the per-push `parity` aggregate: whole-engine regression is caught by `signature`
-    // (== 2792255) and the GOLDEN gates (output-golden / perft / eval-trace / misc /
+    // (== 2718396) and the GOLDEN gates (output-golden / perft / eval-trace / misc /
     // search-parity / search-modes), all in-repo. The authoritative
     // differential-vs-real-upstream check is `upstream-parity` (worktree oracle), run at
     // sync time where upstream is already fetched -- per push it would only re-assert the
-    // same 2792255 the signature checks.
+    // same 2718396 the signature checks.
     parity_step.dependOn(&bench_run.step);
     parity_step.dependOn(&uci_run.step);
     parity_step.dependOn(&signature_cmd.step);
@@ -1971,7 +1971,7 @@ pub fn build(b: *std.Build) void {
     // the UCI handshake, the bench signature, and all six golden checks, every one driven by
     // the pure-Zig harness (no bash / no nm). This is what the Windows and macOS lanes run;
     // the Linux-only structural gates (src-free via `nm`, arch-determinism) stay in `parity`.
-    // Reuse the same harness `signature_cmd` `parity` uses for the bench signature (2792255 invariant).
+    // Reuse the same harness `signature_cmd` `parity` uses for the bench signature (2718396 invariant).
     const parity_portable_step = b.step(
         "parity-portable",
         "Cross-OS parity via the pure-Zig harness: signature + seven golden gates + mt/stress/time",
@@ -2428,7 +2428,7 @@ fn archConfigFor(arch_name: []const u8) ArchConfig {
     // Map the non-x86 tiers. The pure-Zig @Vector NNUE lowers to NEON with no source
     // changes, so these just map the aarch64 CPU features to a Zig aarch64 target.
     // NEON is mandatory in AArch64 (baseline has it); dotprod (sdot) is added where
-    // present. Runtime-validated under qemu-user in CI (bench == 2792255), matching
+    // present. Runtime-validated under qemu-user in CI (bench == 2718396), matching
     // upstream's arm_compilation.yml.
     if (std.mem.eql(u8, arch_name, "armv8"))
         return .{

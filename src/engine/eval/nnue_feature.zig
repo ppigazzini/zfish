@@ -47,7 +47,9 @@ pub const FullDiff = struct {
 
 pub const FullAppendResult = struct {
     len: usize,
-    indices: [128]u32,
+    // Holds threats AND pawn-pair active indices for one perspective's refresh (both feed
+    // the shared threatAndPp weight rows). Upstream's IndexList is ValueList<u16, 256>.
+    indices: [256]u32,
 };
 
 pub const HalfThreatParams = struct {
@@ -172,10 +174,11 @@ pub fn fullAppendActive(
     // ever index in range -- upstream append_active_indices' pawnTargets /
     // minorSliderTargets / queenTargets -- so no fullMakeIndex call is spent on
     // a target the `< full_dimensions` filter would discard (kings are never
-    // targets; pawns never threaten bishops or queens; bishops and rooks never
-    // threaten queens). The filter still catches the pair-specific exclusions.
-    const pawn_targets = pawns | by_type[knight_piece_type] | by_type[rook_piece_type];
-    const minor_slider_targets = pawn_targets | by_type[bishop_piece_type];
+    // targets; pawns now threaten only knights and rooks -- pawn-pawn pairs moved
+    // to the PP_3Wide feature set; bishops and rooks never threaten queens). The
+    // filter still catches the pair-specific exclusions.
+    const pawn_targets = by_type[knight_piece_type] | by_type[rook_piece_type];
+    const minor_slider_targets = pawns | by_type[knight_piece_type] | by_type[bishop_piece_type] | by_type[rook_piece_type];
     const queen_targets = minor_slider_targets | by_type[queen_piece_type];
 
     result.len = 0;
@@ -183,7 +186,7 @@ pub fn fullAppendActive(
 
     while (color_index < 2) : (color_index += 1) {
         const color = perspective ^ color_index;
-        appendActivePawnThreats(result, pieces, pawn_targets, pawns, by_color[color] & pawns, perspective, color, king_square);
+        appendActivePawnThreats(result, pieces, pawn_targets, by_color[color] & pawns, perspective, color, king_square);
 
         // Unroll the piece types at comptime so each attacksBb call resolves to its own
         // attack kernel directly -- the runtime-typed form dispatched through a jump
@@ -212,23 +215,21 @@ fn appendActivePawnThreats(
     result: *FullAppendResult,
     pieces: []const u8,
     pawn_targets: u64,
-    pawns: u64,
     color_pawns: u64,
     perspective: u8,
     color: u8,
     king_square: u8,
 ) void {
+    // Only the two diagonal pawn attacks now: the pusher (pawn-in-front) input was removed
+    // with SFNNv16 -- pawn-pawn relationships live in the PP_3Wide feature set.
     const attacker = makePiece(color, pawn_piece_type);
-    const pushers = pawnSinglePush(color ^ 1, pawns) & color_pawns;
 
     if (color == white) {
         processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_east, color_pawns) & pawn_targets, north_east);
         processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_west, color_pawns) & pawn_targets, north_west);
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north, pushers), north);
     } else {
         processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_west, color_pawns) & pawn_targets, south_west);
         processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_east, color_pawns) & pawn_targets, south_east);
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south, pushers), south);
     }
 }
 
@@ -274,6 +275,125 @@ fn appendFullActiveIndex(
     }
 }
 
+// ---- PP_3Wide (pawn-pair) feature set ---------------------------------------
+// A second threat-adjacent feature set (upstream Features::PP_3Wide): every pair of pawns
+// on the same or an adjacent file (ranks 2-7) is one feature. Its indices are concatenated
+// onto the threats -- base pp_index_base -- so they share the threatAndPp weight rows and
+// merge into the same removed/added/active index lists the threat kernels consume.
+
+// make_pawn_id: 48*color + (square - SQ_A2). Pawns live on the 48 squares of ranks 2-7.
+fn makePawnId(color: u32, square: u32) u32 {
+    return 48 * color + square - @as(u32, sq_a2);
+}
+
+// PP_3Wide::make_index -- the triangular index of the unordered pawn-id pair, plus the base.
+pub fn ppMakeIndex(perspective: u8, color: u8, from: u8, to: u8, paired_color: u8, king_square: u8) u32 {
+    const orientation: u8 = @as(u8, @bitCast(orient_tbl_full[king_square])) ^ (56 *% @as(u8, perspective));
+    const from_o: u32 = @as(u32, from ^ orientation);
+    const to_o: u32 = @as(u32, to ^ orientation);
+    const color_o: u32 = color ^ perspective;
+    const paired_o: u32 = paired_color ^ perspective;
+    const id_a = makePawnId(color_o, from_o);
+    const id_b = makePawnId(paired_o, to_o);
+    const hi = @max(id_a, id_b);
+    const lo = @min(id_a, id_b);
+    return hi * (hi - 1) / 2 + lo + pp_index_base;
+}
+
+// PP_3Wide::append_active_indices -- every pawn pair, once, into the shared active list.
+pub fn ppAppendActive(result: *FullAppendResult, perspective: u8, king_square: u8, white_pawns: u64, black_pawns: u64) void {
+    var bb = white_pawns;
+    while (bb != 0) {
+        const from: u8 = @intCast(@ctz(bb));
+        bb &= bb - 1;
+        const band = pawn_pair_bb[from];
+        var ww = band & bb; // remaining white pawns -> each white-white pair once
+        while (ww != 0) {
+            const to: u8 = @intCast(@ctz(ww));
+            ww &= ww - 1;
+            result.indices[result.len] = ppMakeIndex(perspective, white, from, to, white, king_square);
+            result.len += 1;
+        }
+        var wb = band & black_pawns;
+        while (wb != 0) {
+            const to: u8 = @intCast(@ctz(wb));
+            wb &= wb - 1;
+            result.indices[result.len] = ppMakeIndex(perspective, white, from, to, black, king_square);
+            result.len += 1;
+        }
+    }
+    bb = black_pawns;
+    while (bb != 0) {
+        const from: u8 = @intCast(@ctz(bb));
+        bb &= bb - 1;
+        const band = pawn_pair_bb[from];
+        var bk = band & bb; // remaining black pawns -> each black-black pair once
+        while (bk != 0) {
+            const to: u8 = @intCast(@ctz(bk));
+            bk &= bk - 1;
+            result.indices[result.len] = ppMakeIndex(perspective, black, from, to, black, king_square);
+            result.len += 1;
+        }
+    }
+}
+
+// The generate() lambda from PP_3Wide::append_changed_indices (non-AVX512 path): emit every
+// pair touching a changed pawn -- partners drawn from the unchanged pawns plus the not-yet-
+// processed changed pawns (so an updated-updated pair is emitted exactly once).
+fn ppGenerate(perspective: u8, king_square: u8, updated_w: u64, updated_b: u64, pawns_w: u64, pawns_b: u64, out: [*]u32, len_in: usize) usize {
+    var len = len_in;
+    const unchanged = (pawns_w | pawns_b) & ~(updated_w | updated_b);
+    var u = updated_w | updated_b;
+    while (u != 0) {
+        const a: u8 = @intCast(@ctz(u));
+        u &= u - 1;
+        const mask = pawn_pair_bb[a] & (unchanged | u);
+        const a_col: u8 = if ((pawns_b & squareBb(a)) != 0) black else white;
+        var pb = pawns_b & mask;
+        while (pb != 0) {
+            const to: u8 = @intCast(@ctz(pb));
+            pb &= pb - 1;
+            out[len] = ppMakeIndex(perspective, a_col, a, to, black, king_square);
+            len += 1;
+        }
+        var pw = pawns_w & mask;
+        while (pw != 0) {
+            const to: u8 = @intCast(@ctz(pw));
+            pw &= pw - 1;
+            out[len] = ppMakeIndex(perspective, a_col, a, to, white, king_square);
+            len += 1;
+        }
+    }
+    return len;
+}
+
+// PP_3Wide::append_changed_indices -- append the pawn-pair delta onto the SAME removed/added
+// lists the threat delta already filled (both index the shared threatAndPp weight rows).
+// added <- pairs that appear (after&~before, drawn against the after pawns);
+// removed <- pairs that disappear (before&~after, against the before pawns). The caller
+// swaps the two out-lists for a backward walk, exactly as upstream swaps the arguments.
+pub fn ppAppendChanged(
+    perspective: u8,
+    king_square: u8,
+    before: *const [2]u64,
+    after: *const [2]u64,
+    removed_out: [*]u32,
+    removed_len_in: usize,
+    added_out: [*]u32,
+    added_len_in: usize,
+) FullAppendChangedLens {
+    const white_before = before[white];
+    const black_before = before[black];
+    const white_after = after[white];
+    const black_after = after[black];
+    if (white_before == white_after and black_before == black_after)
+        return .{ .removed = removed_len_in, .added = added_len_in };
+
+    const added_len = ppGenerate(perspective, king_square, white_after & ~white_before, black_after & ~black_before, white_after, black_after, added_out, added_len_in);
+    const removed_len = ppGenerate(perspective, king_square, white_before & ~white_after, black_before & ~black_after, white_before, black_before, removed_out, removed_len_in);
+    return .{ .removed = removed_len, .added = added_len };
+}
+
 // Re-import the split-out LUT tables and shared constants (nnue_feature_luts.zig).
 const luts = @import("nnue_feature_luts.zig");
 const piece_square_index = luts.piece_square_index;
@@ -290,6 +410,8 @@ const ThreatRouteBlock = luts.ThreatRouteBlock;
 const threat_route_blocks = luts.threat_route_blocks;
 const ps_nb = luts.ps_nb;
 const full_dimensions = luts.full_dimensions;
+const pp_index_base = luts.pp_index_base;
+const pawn_pair_bb = luts.pawn_pair_bb;
 const white = luts.white;
 const black = luts.black;
 const pawn_piece_type = luts.pawn_piece_type;

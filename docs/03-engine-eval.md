@@ -70,10 +70,14 @@ non-zero. For fetching the net and running the gates, see
 
 ### Parsing and storage
 
-`nnue_parse.zig` owns the format. The feature transformer is five arrays read in
+`nnue_parse.zig` owns the format. The feature transformer is seven sections read in
 stream order — biases (LEB `i16`), threat weights (raw `i8`), threat PSQT weights
-(LEB `i32`), psq weights (LEB `i16`), psq PSQT weights (LEB `i32`) — each written
-into its fixed, 64-byte-aligned offset in the destination blob. Affine layers are
+(LEB `i32`), pawn-pair weights (raw `i8`), pawn-pair PSQT weights (LEB `i32`), psq
+weights (LEB `i16`), psq PSQT weights (LEB `i32`) — each written into its fixed,
+64-byte-aligned offset in the destination blob. The threat and pawn-pair weight (and
+PSQT) sections are framed separately in the stream but land in **one contiguous
+region each** — pawn-pair rows right after the threat rows — so a single index
+addresses either feature set's row (upstream's `threatAndPpWeights`). Affine layers are
 `i32` little-endian biases followed by `i8` weights, permuted on the way in through
 `weightIndexScrambled` (the SSSE3 layout the inference reads back; on the
 pair-activation tier `fc_1`/`fc_2` additionally fold in the paired packs' lane
@@ -96,20 +100,26 @@ of last-level cache sets (measured as ~5 extra LL misses per eval).
 
 ## Architecture of the net
 
-The net has **two feature sets**. Their dimensions are pinned in
+The net has **three feature sets**. Their dimensions are pinned in
 `nnue_acc_layout.zig` (and re-pinned file-locally by `nnue_ft.zig` and
 `nnue_parse.zig`, which lay out the blob); `nnue_feature.zig` owns the indexing:
 
 | Feature set | Dimensions | Index | Weights |
 | --- | --- | --- | --- |
 | PSQ (HalfKA v2, king-bucketed / horizontally mirrored) | `psq_feature_dimensions = 22528` | `halfMakeIndex` — oriented square + `piece_square_index` + `king_buckets` | `i16` |
-| Threats (full threats: attacker × attacked × from × to) | `threat_dimensions = 60720` | `fullMakeIndex` — LUT over the oriented attacker/attacked pair and move | `i8` |
+| Threats (full threats: attacker × attacked × from × to) | `threat_dimensions = 59808` | `fullMakeIndex` — LUT over the oriented attacker/attacked pair and move | `i8` |
+| Pawn pairs (PP_3Wide: pairs of pawns on the same or an adjacent file, ranks 2–7) | `pp_dimensions = 4560` | `ppMakeIndex` — triangular index of the two oriented pawn ids, base `pp_index_base = 59808` | `i8` |
 
-Together they are the net's 83248 input dimensions (`network.verify`). Both feed
-one shared **feature transformer** whose layout `nnue_ft.zig` fixes: biases, psq
-weights, threat weights, and two `i32` PSQT tables (`psqt_buckets = 8` per feature),
-each region 64-byte aligned. It produces `half_dimensions = 1024` accumulated values
-per perspective.
+Together they are the net's 86896 input dimensions (`network.verify`). The threat and
+pawn-pair sets are **concatenated** — pawn-pair indices continue past the last threat
+index (`pp_index_base == threat_dimensions`) — so they share one weight region and one
+changed/active index list; the SFNNv16 change moved pawn-pawn interactions out of the
+threat inputs (which lost the pawn-pusher input and pawns as threat targets) and into
+this set. All three feed one shared **feature transformer** whose layout `nnue_ft.zig`
+fixes: biases, psq weights, the combined threat+pawn-pair weights, and two `i32` PSQT
+tables (`psqt_buckets = 8`; the threat+pawn-pair PSQT is likewise combined), each
+region 64-byte aligned. It produces `half_dimensions = 1024` accumulated values per
+perspective.
 
 `nnue_accumulator.transformBucket` turns the two perspectives' accumulators into the
 network input: per element, clamp to `[0,255]` and multiply the two halves with a
@@ -148,11 +158,12 @@ divides both the psqt and positional halves by `output_scale = 16` before return
 in each `Worker` — one state per ply, `max_stack_size = 247`. A state holds both
 perspectives' `i16` accumulation and `i32` PSQT values, a per-perspective `computed`
 flag, and the ply's diff records. There is **one combined accumulator** (HalfKA +
-Threats summed), living in the `psq_feature` storage slot.
+Threats + PawnPairs summed), living in the `psq_feature` storage slot.
 
 The search drives it from `src/engine/search/search_acc.zig`: `doMoveAcc` calls
 `stackPush` to claim the next slot and hands its `DirtyPiece` / `DirtyThreats`
-records to `doMove`, which records the move's changed features while making it;
+records to `doMove`, which records the move's changed features while making it
+(`DirtyThreats` also carries the before/after pawn bitboards the pawn-pair set diffs);
 `undoMoveAcc` calls `stackPop`. Nothing is computed on the way down — states are
 pushed uncomputed, and `evaluateAcc` triggers the work only when a node actually
 needs a score. See [02-engine-search.md](02-engine-search.md) for the search side and
@@ -172,7 +183,7 @@ flowchart TD
     C -->|yes| D["applyCombined forward,<br/>last_usable+1 .. top"]
     C -->|no| E["refreshCombined at the top of the stack"]
     E --> E1["diff the cache entry's board against the<br/>real one -> removed/added; fullAppendActive<br/>-> every active threat row"]
-    E1 --> E2["ONE tiled pass: apply psq rows, store the<br/>entry mid-pass, add threat rows, store the state"]
+    E1 --> E2["ONE tiled pass: apply psq rows, store the<br/>entry mid-pass, add threat+pawn-pair rows, store the state"]
     E2 --> F["applyCombined backward,<br/>top-1 .. last_usable"]
     D --> G["state computed for this perspective"]
     F --> G
@@ -185,7 +196,12 @@ one pass. The threat list routing lives out of line in
 `nnue_feature.fullAppendChanged` (upstream's `append_changed_indices` keeps the same
 boundary): each packed record is oriented by one xor with a per-walk mask —
 `threatRouteMask` folds the orientation, the color swap and the walk direction into
-it, so the record's sign bit alone routes the index into removed or added. The
+it, so the record's sign bit alone routes the index into removed or added.
+`nnue_feature.ppAppendChanged` then appends the pawn-pair delta — the pairs touching a
+changed pawn, computed from the ply's before/after pawn bitboards — onto the **same**
+removed/added lists (their indices continue past the threats into the shared weight
+region; the two out-lists swap for a backward walk, mirroring upstream's swapped
+`append_changed_indices` arguments). The
 apply itself: `nnue_acc_rowops.applyCombinedDelta` tiles the accumulator, holds each
 tile in a register, and walks the weight rows *inside* the tile — so the accumulator
 is loaded and stored once per tile rather than once per row. The PSQT delta
@@ -204,12 +220,12 @@ one with two 32-byte vector compares into a changed-square bitboard, splits it i
 removed/added HalfKA rows by the cached and current occupancy (upstream's
 `get_changed_pieces` shape), collects every active threat row (`fullAppendActive`,
 with each attacker's targets pre-restricted to the piece types its map row can
-index — upstream's `pawnTargets`/`minorSliderTargets`/`queenTargets`), and applies
-everything
+index — upstream's `pawnTargets`/`minorSliderTargets`/`queenTargets`) plus every
+active pawn-pair row (`ppAppendActive`) onto the same list, and applies everything
 in one tiled pass (`nnue_acc_rowops.applyRefreshFusedI16`): the pass loads the entry
 tile, applies the psq rows, stores the psq-only tile back to the entry (in place,
-for next time), keeps adding the threat rows in the same registers, and stores the
-combined `psq + threat` tile to the stack state — mirroring upstream's
+for next time), keeps adding the threat and pawn-pair rows in the same registers, and
+stores the combined `psq + threat + pawn-pair` tile to the stack state — mirroring upstream's
 `update_accumulator_refresh_cache`, with no second pass over the 2 KB row. It then
 stores the new board back. `clearRefreshCache` seeds every entry with the
 feature-transformer biases — the empty-board accumulator — and is called at worker
@@ -278,7 +294,7 @@ touch different loops.
 | The evaluation is **integer-exact** — no floating point anywhere on the path from features to score. | `computeValue` in `i64`; every kernel integer |
 | The evaluation is **arch-invariant**: every `-Darch` tier yields the same score. All three `affineDpbusd` paths are bit-identical dots. | the per-path scalar-reference test in `nnue_inference.zig`; the cross-tier bench signature |
 | An **incremental update equals a full refresh**. Integer add/sub commute under two's-complement `i16` wrap, so applying rows in any order, tiled or not, forward or backward, yields the same accumulator. | `applyCombinedDelta`; the refresh/incremental split in `evaluateSide` |
-| The combined accumulator always equals `psq + threat`, and both feature sets refresh together — a threat refresh is a subset of a PSQ refresh. | `findLastUsable` keyed on the PSQ condition only |
+| The combined accumulator always equals `psq + threat + pawn-pair`, and all three feature sets refresh together — a threat/pawn-pair refresh is a subset of a PSQ refresh. | `findLastUsable` keyed on the PSQ condition only |
 | The parse is the **sole source of weights**, and it must consume the file exactly. | the `offset != bytes.len` check in `loadNetworkBytes`; the structure-hash check |
 | The accumulator-stack and refresh-cache footprints are **pinned**: `accumulator_stack_size` and `refresh_table_bytes` in `worker_layout.zig` must match what the layout constants here imply. Drift surfaces as a bench/parity failure, not a silent overrun. | `src/engine/state/worker_layout.zig` |
 | The refresh cache is seeded from the FT biases before first use. | `clearRefreshCache`, called from `worker_construct.zig` |

@@ -2,7 +2,7 @@
 // forward driver stays under the god-file line. Pure compute: the int8 weight dot-product over a
 // scrambled layout, honouring the sparse-input skip. Three arch-tiered paths -- vpdpbusd (VNNI),
 // pmaddubsw+pmaddwd (SSSE3), and a portable vpmaddwd deinterleave -- all bit-identical integer
-// dots, selected at comptime by the target features. Bench-verified bit-exact (2792255 on every
+// dots, selected at comptime by the target features. Bench-verified bit-exact (2718396 on every
 // arch); the scalar-reference unit test in nnue_inference.zig pins every path.
 
 const std = @import("std");
@@ -240,7 +240,7 @@ inline fn affineSsse3(
 // Widen affineSsse3 to 256 bits for the AVX2 tier: each chunk (32 weight bytes = 8 outputs' 4
 // sublanes) is one 256-bit pmaddubsw of the group's 4 input bytes (broadcast x8), then pmaddwd
 // against ones folds each output's two i16 partials into its i32. Same non-saturation argument
-// as the SSSE3 path (a pair sums inside i16), so it is bit-identical -- signature 2792255 holds.
+// as the SSSE3 path (a pair sums inside i16), so it is bit-identical -- signature 2718396 holds.
 inline fn affineAvx2(
     comptime OUT: usize,
     comptime sparse: bool,
@@ -312,7 +312,7 @@ inline fn affineAvx2(
 // dot upstream vectorises with vpdpbusd/maddubs + a horizontal add -- zfish's OUT==1 otherwise
 // falls to the portable per-group deinterleave (measured ~116 M Ir at avx2, the 2nd-largest
 // affine cost). Dense only: fc_2 is the sole OUT==1 layer and always passes sparse=false. A pure
-// integer dot, so the reduction order is irrelevant and it stays bit-exact (signature 2792255);
+// integer dot, so the reduction order is irrelevant and it stays bit-exact (signature 2718396);
 // pmaddubsw never saturates here (u8*i8 in [-16256,16129], a pair sums inside i16).
 inline fn affineOut1(
     out: *[1]i32,

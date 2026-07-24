@@ -36,7 +36,7 @@ written once as portable Zig `@Vector` code that LLVM lowers to SSE, AVX2, AVX-5
 or NEON. Stockfish keeps hand-written intrinsic blocks per ISA — its `simd.h` carries
 separate `_mm_…`, `_mm256_…`, and `_mm512_…` paths behind `#if defined(USE_AVX2)` and
 friends. zfish selects the tier with `comptime` from one body of code, and the bench
-signature (2792255) is bit-identical on every tier: the portability is *proven by a
+signature (2718396) is bit-identical on every tier: the portability is *proven by a
 gate*, not asserted.
 
 **But portable does not mean less hand-work — here it means the opposite.** Zig does

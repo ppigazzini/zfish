@@ -11,7 +11,12 @@ const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
 const nnue_align: usize = 64;
 const psq_feature_dimensions: usize = 22528;
-const threat_dimensions: u32 = 60720;
+// The threat weight rows now hold FullThreats (59808) AND PP_3Wide (4560) concatenated --
+// upstream's single threatAndPpWeights array. The pp indices (>= 59808) address the tail of
+// this same region, so the threat weight accessor covers both feature sets.
+const threat_dimensions: u32 = 59808;
+const pp_dimensions: u32 = 96 * 95 / 2; // 4560 = C(2*48, 2)
+const threat_and_pp_dimensions: u32 = threat_dimensions + pp_dimensions;
 
 fn roundUp(value: usize, alignment: usize) usize {
     return ((value + alignment - 1) / alignment) * alignment;
@@ -19,7 +24,7 @@ fn roundUp(value: usize, alignment: usize) usize {
 
 const feature_transformer_biases_bytes = half_dimensions * @sizeOf(i16);
 const feature_transformer_psq_weights_bytes = half_dimensions * psq_feature_dimensions * @sizeOf(i16);
-const feature_transformer_threat_weights_bytes = half_dimensions * @as(usize, threat_dimensions) * @sizeOf(i8);
+const feature_transformer_threat_weights_bytes = half_dimensions * @as(usize, threat_and_pp_dimensions) * @sizeOf(i8);
 const feature_transformer_psqt_weights_bytes = psq_feature_dimensions * psqt_buckets * @sizeOf(i32);
 const feature_transformer_weights_offset = roundUp(feature_transformer_biases_bytes, nnue_align);
 const feature_transformer_threat_weights_offset = roundUp(feature_transformer_weights_offset + feature_transformer_psq_weights_bytes, nnue_align);
