@@ -54,7 +54,23 @@ const king_piece: u8 = 6;
 // ~860 KB total; the single-threaded startup init is the only writer.
 var rook_magic_attacks: [0x19000]u64 = undefined;
 var bishop_magic_attacks: [0x1480]u64 = undefined;
-var slider_magics: [64][2]Magic = undefined;
+// Align the table to a cache line, as upstream declares it (`alignas(64) Magic
+// Magics[SQUARE_NB][2]`, attacks.cpp). @sizeOf(Magic) is 32, so a square's bishop/rook
+// pair is exactly one line -- but only if the array starts on one. At the natural
+// alignment of 8 that holds only by placement luck; land it at offset 16 and every
+// probe of both sliders from one square straddles two lines, because `magic` and
+// `shift` of the second entry fall past the boundary. Those two fields are read on the
+// non-PEXT path, i.e. the sse41 tier.
+var slider_magics: [64][2]Magic align(64) = undefined;
+
+comptime {
+    // Keep the two facts joined: the alignment above buys a single-line probe only while
+    // a square's bishop/rook pair still fits in one line, so widening Magic must fail the
+    // build rather than silently undo it.
+    std.debug.assert(@sizeOf([2]Magic) == 64);
+    // `align(64)` sits on the declaration, not the type, so read it off the pointer.
+    std.debug.assert(@typeInfo(@TypeOf(&slider_magics)).pointer.alignment == 64);
+}
 
 // Hold the derived square-pair geometry, built once from the magics at startup and read-only during
 // search -- the same tables upstream keeps (LineBB / BetweenBB / ray-pass). Without them

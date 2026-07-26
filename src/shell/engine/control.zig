@@ -13,8 +13,6 @@ const option_port = @import("option");
 const tablebase = @import("tablebase");
 const engine_nnue = @import("engine_nnue");
 
-// Free a c_allocator-allocated NUL-terminated string through the Allocator
-// interface (M-MEM.B), exact for these tightly-sized sentinel allocations.
 fn ttResize(tt_ptr: *worker_layout.TranspositionTable, mb: usize, threads: *worker_layout.ThreadPool) void {
     const tp = tt_ptr;
     tt_port.resizeState(&tp.table, &tp.cluster_count, &tp.generation8, mb, threads);
