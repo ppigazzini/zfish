@@ -17,7 +17,6 @@ const uci_parse = @import("uci_parse");
 const uci_strings = @import("uci_strings");
 
 const parseLimits = uci_parse.parseLimits;
-const freeMaybeCString = uci_strings.freeMaybeCString;
 
 /// Dispatch per command, injected by uci.zig (a void wrapper over dispatchCommand).
 pub const DispatchFn = *const fn (*engine_object.EngineObject, []const u8) void;
@@ -33,9 +32,8 @@ pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, disp
     const current_fen = engine_mod.fenEngine(engine_ptr) orelse return;
     defer std.heap.c_allocator.free(current_fen);
 
-    const commands_ptr = benchmark_port.setupBench(current_fen, args) orelse return;
-    defer freeMaybeCString(commands_ptr);
-    const commands = std.mem.span(commands_ptr);
+    const commands = benchmark_port.setupBench(current_fen, args) orelse return;
+    defer std.heap.c_allocator.free(commands);
 
     const total_positions = countBenchPositions(commands);
     var nodes: u64 = 0;
@@ -60,7 +58,7 @@ pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, disp
 
             if (std.mem.eql(u8, token, "go")) {
                 const limits = parseLimits(command);
-                defer freeMaybeCString(limits.searchmoves);
+                defer uci_strings.freeMaybe(std.heap.c_allocator, limits.searchmoves);
 
                 if (limits.perft != 0) {
                     nodes += engine_mod.perftEngine(engine_ptr, limits.perft).nodes;
@@ -104,12 +102,11 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
     defer uci_output.setQuietMode(false);
 
     const setup = benchmark_port.setupBenchmark(args, misc_port.hardwareConcurrency());
-    defer freeMaybeCString(setup.commands_ptr);
-    defer freeMaybeCString(setup.original_invocation_ptr);
-    defer freeMaybeCString(setup.filled_invocation_ptr);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, setup.commands_ptr);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, setup.original_invocation_ptr);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, setup.filled_invocation_ptr);
 
-    const commands_ptr = setup.commands_ptr orelse return;
-    const commands = std.mem.span(commands_ptr);
+    const commands = setup.commands_ptr orelse return;
     const total_go_commands = countGoCommands(commands);
 
     const threads_command = std.fmt.allocPrint(std.heap.c_allocator, "setoption name Threads value {d}", .{setup.threads}) catch return;
@@ -204,8 +201,8 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
     defer std.heap.c_allocator.free(binding_text);
 
     const binding = if (binding_text.len == 0) "none" else binding_text;
-    const original_invocation = if (setup.original_invocation_ptr) |ptr| std.mem.span(ptr) else "";
-    const filled_invocation = if (setup.filled_invocation_ptr) |ptr| std.mem.span(ptr) else "";
+    const original_invocation = setup.original_invocation_ptr orelse "";
+    const filled_invocation = setup.filled_invocation_ptr orelse "";
     const average_hashfull_single = if (hashfull_reads == 0) 0 else @divTrunc(total_hashfull_single, hashfull_reads);
     const average_hashfull_game = if (hashfull_reads == 0) 0 else @divTrunc(total_hashfull_game, hashfull_reads);
     const total_time_u64: u64 = @intCast(total_time);

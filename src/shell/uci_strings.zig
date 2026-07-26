@@ -31,12 +31,6 @@ pub fn freeMaybe(gpa: std.mem.Allocator, value: ?[]u8) void {
     if (value) |slice| gpa.free(slice);
 }
 
-/// Keep a NUL-terminated copy for the surfaces that still cross a C-string boundary.
-pub fn freeMaybeCString(value: ?[*:0]u8) void {
-    if (value) |ptr|
-        std.heap.c_allocator.free(std.mem.span(ptr));
-}
-
 pub fn trimAsciiWhitespace(input: []const u8) []const u8 {
     var start: usize = 0;
     var end: usize = input.len;

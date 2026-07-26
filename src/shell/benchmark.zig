@@ -10,12 +10,12 @@ const BenchmarkPositions = bench_positions.BenchmarkPositions;
 pub const BenchmarkSetupOutput = struct {
     tt_size: i32,
     threads: i32,
-    commands_ptr: ?[*:0]u8,
-    original_invocation_ptr: ?[*:0]u8,
-    filled_invocation_ptr: ?[*:0]u8,
+    commands_ptr: ?[]u8,
+    original_invocation_ptr: ?[]u8,
+    filled_invocation_ptr: ?[]u8,
 };
 
-pub fn setupBench(current_fen: []const u8, args: []const u8) ?[*:0]u8 {
+pub fn setupBench(current_fen: []const u8, args: []const u8) ?[]u8 {
     return setupBenchAlloc(current_fen, args) catch null;
 }
 
@@ -29,7 +29,7 @@ pub fn setupBenchmark(args: []const u8, hardware_concurrency: i32) BenchmarkSetu
     };
 }
 
-fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![*:0]u8 {
+fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![]u8 {
     var arena_impl = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena_impl.deinit();
     const arena = arena_impl.allocator();
@@ -173,13 +173,13 @@ fn setupBenchmarkAlloc(args: []const u8, hardware_concurrency: i32) !BenchmarkSe
     }
 
     const commands_ptr = try allocCString(commands.items);
-    errdefer std.heap.c_allocator.free(std.mem.span(commands_ptr));
+    errdefer std.heap.c_allocator.free(commands_ptr);
 
     const original_invocation_ptr = try allocCString(original_invocation.items);
-    errdefer std.heap.c_allocator.free(std.mem.span(original_invocation_ptr));
+    errdefer std.heap.c_allocator.free(original_invocation_ptr);
 
     const filled_invocation_ptr = try allocCString(filled_invocation);
-    errdefer std.heap.c_allocator.free(std.mem.span(filled_invocation_ptr));
+    errdefer std.heap.c_allocator.free(filled_invocation_ptr);
 
     return .{
         .tt_size = tt_size,
@@ -234,11 +234,8 @@ fn appendOriginalToken(
     try buffer.appendSlice(allocator, token);
 }
 
-fn allocCString(value: []const u8) ![*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const result = try allocator.allocSentinel(u8, value.len, 0);
-    @memcpy(result[0..value.len], value);
-    return result.ptr;
+fn allocCString(value: []const u8) ![]u8 {
+    return std.heap.c_allocator.dupe(u8, value);
 }
 
 fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8) ![]u8 {

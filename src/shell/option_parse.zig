@@ -7,18 +7,18 @@
 const std = @import("std");
 
 pub const ParsedSetOption = struct {
-    name: ?[*:0]u8,
-    value: ?[*:0]u8,
+    name: ?[]u8,
+    value: ?[]u8,
 };
 
 pub const AssignmentResult = struct {
     accepted: u8,
-    normalized_value: ?[*:0]u8,
+    normalized_value: ?[]u8,
 };
 
 pub const TuneNextResult = struct {
-    token: ?[*:0]u8,
-    remaining: ?[*:0]u8,
+    token: ?[]u8,
+    remaining: ?[]u8,
 };
 
 pub fn caseInsensitiveLess(left: []const u8, right: []const u8) bool {
@@ -97,7 +97,7 @@ fn parseSetOptionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedS
     // Allocate both result strings; if the second fails, the first must be freed
     // (it isn't owned by anything yet) -- else it leaks on OOM.
     const name_c = try allocCString(allocator, name.items);
-    errdefer if (name_c) |n| allocator.free(std.mem.span(n));
+    errdefer if (name_c) |n| allocator.free(n);
     const value_c = try allocCString(allocator, value.items);
     return .{ .name = name_c, .value = value_c };
 }
@@ -187,7 +187,7 @@ fn tuneNextAlloc(allocator: std.mem.Allocator, names: []const u8, pop: u8) !Tune
 
     // As in parseSetOptionAlloc: free the first result if the second alloc fails.
     const token_c = try allocCString(allocator, token.items);
-    errdefer if (token_c) |t| allocator.free(std.mem.span(t));
+    errdefer if (token_c) |t| allocator.free(t);
     const remaining_c = try allocCString(allocator, next_remaining);
     return .{ .token = token_c, .remaining = remaining_c };
 }
@@ -207,10 +207,10 @@ pub fn parseSignedInt(input: []const u8) ?i32 {
     return std.fmt.parseInt(i32, trimmed, 10) catch null;
 }
 
-fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[*:0]u8 {
-    const result = try allocator.allocSentinel(u8, value.len, 0);
-    @memcpy(result[0..value.len], value);
-    return result.ptr;
+// Copy `value` into an owned slice; injecting the allocator makes the parsers' OOM
+// paths reachable by checkAllAllocationFailures.
+fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[]u8 {
+    return try allocator.dupe(u8, value);
 }
 
 fn trimAsciiWhitespace(input: []const u8) []const u8 {
@@ -253,8 +253,8 @@ test "parseSetOptionAlloc unwinds leak-free on every allocation failure" {
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
             const parsed = try parseSetOptionAlloc(a, "name Threads value 8");
-            if (parsed.name) |n| a.free(std.mem.span(n));
-            if (parsed.value) |v| a.free(std.mem.span(v));
+            if (parsed.name) |n| a.free(n);
+            if (parsed.value) |v| a.free(v);
         }
     };
     try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
@@ -264,7 +264,7 @@ test "validateAssignmentAlloc unwinds leak-free on every allocation failure" {
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
             const res = try validateAssignmentAlloc(a, "spin", "8", 1, 1024, "1");
-            if (res.normalized_value) |v| a.free(std.mem.span(v));
+            if (res.normalized_value) |v| a.free(v);
         }
     };
     try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
@@ -274,8 +274,8 @@ test "tuneNextAlloc unwinds leak-free on every allocation failure" {
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
             const res = try tuneNextAlloc(a, "a(1),b(2),c(3)", 1);
-            if (res.token) |t| a.free(std.mem.span(t));
-            if (res.remaining) |r| a.free(std.mem.span(r));
+            if (res.token) |t| a.free(t);
+            if (res.remaining) |r| a.free(r);
         }
     };
     try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
@@ -293,8 +293,8 @@ test {
 
 const testing = std.testing;
 
-fn freeCStr(p: ?[*:0]u8) void {
-    if (p) |ptr| std.heap.c_allocator.free(std.mem.span(ptr));
+fn freeCStr(p: ?[]u8) void {
+    if (p) |slice| std.heap.c_allocator.free(slice);
 }
 
 test "fuzz: parseSetOption survives random and adversarial input" {

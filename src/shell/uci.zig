@@ -69,8 +69,7 @@ fn goParsed(engine_ptr: *engine_object.EngineObject, parsed: ParsedLimits) void 
     limits.nodes = parsed.nodes;
     limits.ponder_mode = parsed.ponder_mode;
 
-    if (parsed.searchmoves) |sm_ptr| {
-        const sm = std.mem.span(sm_ptr);
+    if (parsed.searchmoves) |sm| {
         var count: usize = 0;
         var it = std.mem.splitScalar(u8, sm, '\n');
         while (it.next()) |tok| {
@@ -135,8 +134,8 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             const info_line = misc_port.engineInfoText(std.heap.c_allocator, true) orelse
                 return .{ .should_quit = 0 };
             defer std.heap.c_allocator.free(info_line);
-            const options_ptr = option_port.renderOptions() orelse return .{ .should_quit = 0 };
-            defer freeMaybeCString(options_ptr);
+            const options_text = option_port.renderOptions() orelse return .{ .should_quit = 0 };
+            defer std.heap.c_allocator.free(options_text);
 
             // Emit through the sink: the handshake is protocol and belongs on stdout.
             // std.debug.print went to stderr, skipping the log tee and write_mutex.
@@ -144,7 +143,7 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             const block = std.fmt.allocPrint(
                 std.heap.c_allocator,
                 "id name {s}\n{s}\nuciok",
-                .{ info_line, std.mem.span(options_ptr) },
+                .{ info_line, options_text },
             ) catch return .{ .should_quit = 0 };
             defer std.heap.c_allocator.free(block);
             uci_output.printLine(block);
@@ -259,12 +258,11 @@ fn classifyCommandToken(token: []const u8) CommandKind {
 
 fn applySetoption(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     const parsed = option_port.parseSetOption(trimmed);
-    defer freeMaybeCString(parsed.name);
-    defer freeMaybeCString(parsed.value);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, parsed.name);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, parsed.value);
 
-    const name_ptr = parsed.name orelse return;
-    const name = std.mem.span(name_ptr);
-    const value = if (parsed.value) |ptr| std.mem.span(ptr) else "";
+    const name = parsed.name orelse return;
+    const value = parsed.value orelse "";
     const has_value: u8 = if (parsed.value != null and value.len != 0) 1 else 0;
 
     engine_mod.applySetOptionEngine(
@@ -279,16 +277,15 @@ fn applySetoption(engine: *engine_object.EngineObject, trimmed: []const u8) void
 
 fn applyPosition(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     const parsed = parsePosition(trimmed);
-    defer freeMaybeCString(parsed.fen);
-    defer freeMaybeCString(parsed.moves);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, parsed.fen);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, parsed.moves);
 
     if (parsed.ok == 0) {
         return;
     }
 
-    const fen_ptr = parsed.fen orelse return;
-    const fen = std.mem.span(fen_ptr);
-    var move_views = parseMoveViews(if (parsed.moves) |ptr| std.mem.span(ptr) else "") catch return;
+    const fen = parsed.fen orelse return;
+    var move_views = parseMoveViews(parsed.moves orelse "") catch return;
     defer move_views.deinit(std.heap.c_allocator);
 
     const err = engine_mod.setPositionEngine(
@@ -306,7 +303,7 @@ fn applyPosition(engine: *engine_object.EngineObject, trimmed: []const u8) void 
 
 fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     const limits = parseLimits(trimmed);
-    defer freeMaybeCString(limits.searchmoves);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, limits.searchmoves);
 
     const engine_ptr = engine;
 
@@ -446,7 +443,6 @@ fn parseMoveViews(moves_text: []const u8) !std.ArrayList(ByteView) {
 
 // Keep the string helpers in the uci_strings base leaf; alias them so the
 // bodies throughout this file stay unqualified.
-const freeMaybeCString = uci_strings.freeMaybeCString;
 const trimAsciiWhitespace = uci_strings.trimAsciiWhitespace;
 const asciiLower = uci_strings.asciiLower;
 const isSpaceByte = uci_strings.isSpaceByte;

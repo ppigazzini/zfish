@@ -14,18 +14,18 @@ const asciiLower = uci_strings.asciiLower;
 // Provide a local allocator-taking allocCString (uci_strings.allocCString hardcodes
 // std.heap.c_allocator and has ~25 callers, so it is left alone); injecting the
 // allocator here makes the parsers' OOM paths reachable by checkAllAllocationFailures.
-fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[*:0]u8 {
-    const result = try allocator.allocSentinel(u8, value.len, 0);
-    @memcpy(result[0..value.len], value);
-    return result.ptr;
+// Copy `value` into an owned slice; injecting the allocator makes the parsers' OOM
+// paths reachable by checkAllAllocationFailures.
+fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[]u8 {
+    return try allocator.dupe(u8, value);
 }
 
 // ======================================================================== //
 // Parser cluster, moved verbatim from uci.zig.                       //
 // ======================================================================== //
 pub const ParsedSetOption = struct {
-    name: ?[*:0]u8,
-    value: ?[*:0]u8,
+    name: ?[]u8,
+    value: ?[]u8,
 };
 
 pub const ParsedLimits = struct {
@@ -41,7 +41,7 @@ pub const ParsedLimits = struct {
     movetime: i64,
     nodes: u64,
     ponder_mode: u8,
-    searchmoves: ?[*:0]u8,
+    searchmoves: ?[]u8,
     // Name the keyword whose argument would not parse, mirroring upstream's `is.fail()`
     // check after the token if-chain (uci.cpp:226). Upstream reports the KEYWORD, not the
     // offending value: `go depth abc` -> "Invalid argument for 'depth'". Null means every
@@ -51,8 +51,8 @@ pub const ParsedLimits = struct {
 
 pub const ParsedPosition = struct {
     ok: u8,
-    fen: ?[*:0]u8,
-    moves: ?[*:0]u8,
+    fen: ?[]u8,
+    moves: ?[]u8,
 };
 
 pub fn parseLimits(input: []const u8) ParsedLimits {
@@ -228,7 +228,7 @@ fn parsePositionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedPo
 
     // Free the first result if the second alloc fails (else it leaks on OOM).
     const fen_c = try allocCString(allocator, fen.items);
-    errdefer if (fen_c) |f| allocator.free(std.mem.span(f));
+    errdefer if (fen_c) |f| allocator.free(f);
     const moves_c = try allocCString(allocator, moves.items);
     return .{ .ok = 1, .fen = fen_c, .moves = moves_c };
 }
@@ -269,11 +269,11 @@ const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const testing = std.testing;
 
 fn freeLimits(l: ParsedLimits) void {
-    if (l.searchmoves) |s| std.heap.c_allocator.free(std.mem.span(s));
+    if (l.searchmoves) |s| std.heap.c_allocator.free(s);
 }
 fn freePosition(pp: ParsedPosition) void {
-    if (pp.fen) |f| std.heap.c_allocator.free(std.mem.span(f));
-    if (pp.moves) |m| std.heap.c_allocator.free(std.mem.span(m));
+    if (pp.fen) |f| std.heap.c_allocator.free(f);
+    if (pp.moves) |m| std.heap.c_allocator.free(m);
 }
 
 test "parseLimits reads the go parameters" {
@@ -295,14 +295,14 @@ test "parsePosition handles startpos and fen with moves" {
     const sp = parsePosition("position startpos moves e2e4 e7e5");
     defer freePosition(sp);
     try testing.expectEqual(@as(u8, 1), sp.ok);
-    try testing.expectEqualStrings(start_fen, std.mem.span(sp.fen.?));
-    try testing.expectEqualStrings("e2e4\ne7e5", std.mem.span(sp.moves.?));
+    try testing.expectEqualStrings(start_fen, sp.fen.?);
+    try testing.expectEqualStrings("e2e4\ne7e5", sp.moves.?);
 
     const fp = parsePosition("position fen 4k3/8/8/8/8/8/8/4K3 w - - 0 1 moves e1e2");
     defer freePosition(fp);
     try testing.expectEqual(@as(u8, 1), fp.ok);
-    try testing.expectEqualStrings("4k3/8/8/8/8/8/8/4K3 w - - 0 1", std.mem.span(fp.fen.?));
-    try testing.expectEqualStrings("e1e2", std.mem.span(fp.moves.?));
+    try testing.expectEqualStrings("4k3/8/8/8/8/8/8/4K3 w - - 0 1", fp.fen.?);
+    try testing.expectEqualStrings("e1e2", fp.moves.?);
 }
 
 // Fuzz to prove neither parser crashes / OOBs on arbitrary input -- it returns a struct
@@ -331,7 +331,7 @@ test "parseLimitsAlloc unwinds leak-free on every allocation failure" {
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
             const l = try parseLimitsAlloc(a, "searchmoves e2e4 d2d4 g1f3 wtime 1000 depth 7");
-            if (l.searchmoves) |s| a.free(std.mem.span(s));
+            if (l.searchmoves) |s| a.free(s);
         }
     };
     try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
@@ -341,8 +341,8 @@ test "parsePositionAlloc unwinds leak-free on every allocation failure" {
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
             const pp = try parsePositionAlloc(a, "position startpos moves e2e4 e7e5 g1f3 b8c6");
-            if (pp.fen) |f| a.free(std.mem.span(f));
-            if (pp.moves) |m| a.free(std.mem.span(m));
+            if (pp.fen) |f| a.free(f);
+            if (pp.moves) |m| a.free(m);
         }
     };
     try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
