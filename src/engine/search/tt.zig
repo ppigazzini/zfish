@@ -37,13 +37,11 @@ pub const TtReadOutput = struct {
     is_pv: u8,
 };
 
+// Carry the probe result the way upstream's `std::tuple<bool, TTData, TTWriter>` does: the
+// writer is the ENTRY POINTER the walk already held, not an index into the cluster. An index
+// makes the caller re-derive `base + i * 10` (two `lea`s the walk had already computed), and
+// LLVM cannot fold that back through the struct return.
 pub const TtProbeOutput = struct {
-    found: u8,
-    writer_index: u8,
-    data: TtReadOutput,
-};
-
-pub const TtProbeTableOutput = struct {
     found: u8,
     writer_ptr: *TtEntry,
     data: TtReadOutput,
@@ -273,7 +271,7 @@ pub inline fn prefetch(clusters: [*]TtCluster, cluster_count: usize, key: u64) v
 }
 
 pub fn probe(
-    cluster: *const TtCluster,
+    cluster: *TtCluster,
     key: u64,
     generation: u8,
     depth_none: i32,
@@ -286,27 +284,26 @@ pub fn probe(
         if (rlx(u16, &entry.key16) == key16) {
             return .{
                 .found = if (rlx(u8, &entry.depth8) != 0) 1 else 0,
-                .writer_index = @intCast(entry_index),
+                .writer_ptr = entry,
                 .data = entryRead(entry, depth_none),
             };
         }
     }
 
-    var replace_index: usize = 0;
+    var replace: *TtEntry = &cluster.entry[0];
     var candidate_index: usize = 1;
     while (candidate_index < cluster_size) : (candidate_index += 1) {
-        const replace_entry = &cluster.entry[replace_index];
         const candidate_entry = &cluster.entry[candidate_index];
-        const replace_score = @as(i32, rlx(u8, &replace_entry.depth8)) - 8 * @as(i32, entryRelativeAge(replace_entry, generation));
+        const replace_score = @as(i32, rlx(u8, &replace.depth8)) - 8 * @as(i32, entryRelativeAge(replace, generation));
         const candidate_score = @as(i32, rlx(u8, &candidate_entry.depth8)) - 8 * @as(i32, entryRelativeAge(candidate_entry, generation));
         if (replace_score > candidate_score) {
-            replace_index = candidate_index;
+            replace = candidate_entry;
         }
     }
 
     return .{
         .found = 0,
-        .writer_index = @intCast(replace_index),
+        .writer_ptr = replace,
         .data = .{
             .move16 = 0,
             .value16 = value_none,
@@ -329,17 +326,8 @@ pub fn probeTable(
     key: u64,
     generation: u8,
     depth_none: i32,
-) TtProbeTableOutput {
-    const cluster_index = firstEntryIndex(key, cluster_count);
-    const result = probe(&clusters[cluster_index], key, generation, depth_none);
-
-    const writer_ptr: *TtEntry = &clusters[cluster_index].entry[result.writer_index];
-
-    return .{
-        .found = result.found,
-        .writer_ptr = writer_ptr,
-        .data = result.data,
-    };
+) TtProbeOutput {
+    return probe(&clusters[firstEntryIndex(key, cluster_count)], key, generation, depth_none);
 }
 
 // Hold the TranspositionTable handle: a 24-byte object holding a TtCluster* table, the
