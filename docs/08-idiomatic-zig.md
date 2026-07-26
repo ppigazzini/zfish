@@ -157,11 +157,19 @@ guaranteed memory layout — consume it with `@select`/`@reduce`, never `@bitCas
 | `__builtin_popcountll` | `@popCount` |
 | `alignas(64)` | `align(64)` |
 
-**No portable equivalent — the known gap.** `_mm512_maskz_compress_epi16` / `_epi32` and
-`_mm512_mask_compressstoreu_epi16` (`vpcompress`) have no Zig builtin and no pattern LLVM
-infers. Upstream uses them to compact its non-zero-chunk indices on AVX-512; this codebase has
-no equivalent path and walks a bitset on every tier instead. Anything needing lane compaction
-has to declare the intrinsic or restructure around it.
+**No portable equivalent — and here, deliberately not reached for.**
+`_mm512_maskz_compress_epi16` / `_epi32` and `_mm512_mask_compressstoreu_epi16`
+(`vpcompress`) have no Zig builtin and no pattern LLVM infers, so reaching them needs a
+declared intrinsic like the dot-product ones above. Upstream uses them to compact its
+non-zero-chunk indices into a flat `u16` list on AVX-512. This codebase records a bitset
+instead and pops it with `@ctz`, and that is a measured choice rather than an unclosed gap:
+the affine kernels hoist the input and weight base pointers once per 64-group word and index
+with a word-local offset, which a flat list of absolute indices undoes. Building the list at
+the transform was implemented and measured as an instruction *regression*, because the
+per-chunk compress, store and popcount bookkeeping costs more than a flat consumer read
+saves against the hoisted walk. Upstream has no hoisted alternative, which is why the same
+shape pays for it and not for us. Anything needing lane compaction still has to declare the
+intrinsic — but check whether the consumer already has a cheaper access pattern first.
 
 Two entries above read as ordinary code and are not.
 
