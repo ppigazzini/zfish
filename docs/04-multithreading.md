@@ -45,7 +45,7 @@ the hook pattern see [00-architecture.md](00-architecture.md).
 | `src/engine/search/shared_histories_map.zig` | The generic NUMA-index → entry map (`tryEmplace`, `at`, `clear`) with construct/free hooks |
 | `src/engine/search/history.zig` | The per-worker history writers and the per-iteration decay/clear |
 | **engine — state** | |
-| `src/engine/state/worker_layout.zig` | `WorkerLayout` (the Worker block), `ThreadPool`, `Thread`, `poolNodesSearched` / `poolTbHits`, `verifyLayouts` |
+| `src/engine/state/worker_layout.zig` | `WorkerLayout` (the Worker block), `ThreadPool`, `Thread`, `SearchManager`, `poolNodesSearched` / `poolTbHits` |
 | `src/engine/state/worker_construct.zig` | `writeConstructorFields` / `constructFull` — bind a fresh Worker's SharedState references and NUMA identity scalars |
 | `src/engine/state/worker_histories.zig` | `WorkerHistories` — the per-worker tables plus the shared-history reference |
 | `src/engine/state/shared_state.zig` | `SharedStateOf` — the typed bundle (pool, TT, shared histories) handed to every Worker at construction |
