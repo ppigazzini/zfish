@@ -128,7 +128,7 @@ fn openCounter(ev: Event, pid: linux.pid_t) !i32 {
 /// Parse "Nodes searched  : N" out of the child's bench output; the L5 gate needs it.
 fn parseNodes(text: []const u8) ?u64 {
     const marker = "Nodes searched";
-    const at = std.mem.indexOf(u8, text, marker) orelse return null;
+    const at = std.mem.find(u8, text, marker) orelse return null;
     var i = at + marker.len;
     while (i < text.len and (text[i] == ' ' or text[i] == ':')) i += 1;
     var end = i;

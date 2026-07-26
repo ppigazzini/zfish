@@ -250,9 +250,9 @@ pub fn main(init: std.process.Init) !void {
         var it = std.mem.splitSequence(u8, build_src, ".{ .name = \"");
         _ = it.next();
         while (it.next()) |chunk| {
-            const end = std.mem.indexOfScalar(u8, chunk, '"') orelse continue;
+            const end = std.mem.findScalar(u8, chunk, '"') orelse continue;
             const rest = chunk[end..];
-            if (std.mem.indexOf(u8, rest[0..@min(rest.len, 24)], ".path = \"") == null) continue;
+            if (std.mem.find(u8, rest[0..@min(rest.len, 24)], ".path = \"") == null) continue;
             try names.append(gpa, try gpa.dupe(u8, chunk[0..end]));
             try adj.append(gpa, .empty);
             declared += 1;
@@ -270,12 +270,12 @@ pub fn main(init: std.process.Init) !void {
         var it = std.mem.splitSequence(u8, build_src, ".{ .from = \"");
         _ = it.next();
         while (it.next()) |chunk| {
-            const fe = std.mem.indexOfScalar(u8, chunk, '"') orelse continue;
+            const fe = std.mem.findScalar(u8, chunk, '"') orelse continue;
             const from = chunk[0..fe];
             const to_key = ".to = \"";
-            const ti = std.mem.indexOf(u8, chunk, to_key) orelse continue;
+            const ti = std.mem.find(u8, chunk, to_key) orelse continue;
             const trest = chunk[ti + to_key.len ..];
-            const te = std.mem.indexOfScalar(u8, trest, '"') orelse continue;
+            const te = std.mem.findScalar(u8, trest, '"') orelse continue;
             const to = trest[0..te];
             const fi = g.idx(from) orelse continue;
             const tid = g.idx(to) orelse continue;
@@ -291,19 +291,19 @@ pub fn main(init: std.process.Init) !void {
         var line_it = std.mem.splitScalar(u8, build_src, '\n');
         while (line_it.next()) |line| {
             const key = ".addImport(\"";
-            const ki = std.mem.indexOf(u8, line, key) orelse continue;
+            const ki = std.mem.find(u8, line, key) orelse continue;
             const t = std.mem.trimStart(u8, line, " ");
             if (std.mem.startsWith(u8, t, "//")) continue;
             const rest = line[ki + key.len ..];
-            const ne = std.mem.indexOfScalar(u8, rest, '"') orelse continue;
+            const ne = std.mem.findScalar(u8, rest, '"') orelse continue;
             const imported = rest[0..ne];
             const owner: []const u8 = if (std.mem.startsWith(u8, t, "exe.root_module"))
                 "main"
-            else if (std.mem.indexOf(u8, line, "mods.get(\"") != null and std.mem.indexOf(u8, line, "\").?.addImport") != null) blk: {
+            else if (std.mem.find(u8, line, "mods.get(\"") != null and std.mem.find(u8, line, "\").?.addImport") != null) blk: {
                 const ok = "mods.get(\"";
-                const oi = std.mem.indexOf(u8, line, ok).?;
+                const oi = std.mem.find(u8, line, ok).?;
                 const orest = line[oi + ok.len ..];
-                const oe = std.mem.indexOfScalar(u8, orest, '"') orelse continue;
+                const oe = std.mem.findScalar(u8, orest, '"') orelse continue;
                 break :blk orest[0..oe];
             } else continue;
             const fi = g.idx(owner) orelse continue;
@@ -338,7 +338,7 @@ pub fn main(init: std.process.Init) !void {
     for (adj.items[main_i].items) |t| {
         const needle = try std.fmt.allocPrint(gpa, "@import(\"{s}\")", .{g.names[t]});
         defer gpa.free(needle);
-        if (std.mem.indexOf(u8, main_src, needle) == null) try unused.append(gpa, g.names[t]);
+        if (std.mem.find(u8, main_src, needle) == null) try unused.append(gpa, g.names[t]);
     }
     std.debug.print("\n  main.zig: wired {d}, @imports {d} -> {d} DECLARED-BUT-UNUSED edges\n", .{
         wired_main, wired_main - unused.items.len, unused.items.len,
@@ -366,7 +366,7 @@ pub fn main(init: std.process.Init) !void {
         var it = std.mem.splitSequence(u8, body, "@import(\"");
         _ = it.next();
         while (it.next()) |chunk| {
-            const e = std.mem.indexOfScalar(u8, chunk, '"') orelse continue;
+            const e = std.mem.findScalar(u8, chunk, '"') orelse continue;
             const imp = chunk[0..e];
             if (!std.mem.endsWith(u8, imp, ".zig")) continue;
             const joined = try std.fs.path.join(gpa, &.{ dirname, imp });
@@ -411,8 +411,8 @@ pub fn main(init: std.process.Init) !void {
     var unknown_scc = false;
     if (fm.sccs > 0) {
         var known: usize = 0;
-        if (std.mem.indexOf(u8, fscc_text.items, known_scc) != null or
-            std.mem.indexOf(u8, fscc_text.items, known_scc_rev) != null) known = 1;
+        if (std.mem.find(u8, fscc_text.items, known_scc) != null or
+            std.mem.find(u8, fscc_text.items, known_scc_rev) != null) known = 1;
         if (fm.sccs > known) unknown_scc = true;
     }
     if (unknown_scc) {

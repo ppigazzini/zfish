@@ -352,7 +352,7 @@ test "standard option set matches engine init" {
     const listing = try model.renderAlloc();
     defer std.testing.allocator.free(listing);
     try std.testing.expect(std.mem.startsWith(u8, listing, "\noption name Debug Log File type string default <empty>"));
-    try std.testing.expect(std.mem.indexOf(u8, listing, "\noption name Threads type spin default 1 min 1 max 1024") != null);
+    try std.testing.expect(std.mem.find(u8, listing, "\noption name Threads type spin default 1 min 1 max 1024") != null);
     try std.testing.expect(std.mem.endsWith(u8, listing, "\noption name EvalFile type string default nn-89cb98a217f7.nnue"));
 }
 

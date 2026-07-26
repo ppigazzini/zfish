@@ -10,11 +10,11 @@
 
 const std = @import("std");
 
-const Node = std.ArrayListUnmanaged(usize); // hold ascending, unique CPU indices
+const Node = std.ArrayList(usize); // hold ascending, unique CPU indices
 
 pub const NumaConfig = struct {
     allocator: std.mem.Allocator,
-    nodes: std.ArrayListUnmanaged(Node),
+    nodes: std.ArrayList(Node),
     node_by_cpu: std.AutoHashMapUnmanaged(usize, usize),
     /// Flag that the topology came from a user "NumaPolicy" string rather than the
     /// system; force thread binding.
@@ -181,7 +181,7 @@ fn insertSorted(node: *Node, allocator: std.mem.Allocator, cpu: usize) error{Out
 }
 
 fn parseRange(range: []const u8) error{BadNuma}!struct { usize, usize } {
-    if (std.mem.indexOfScalar(u8, range, '-')) |dash| {
+    if (std.mem.findScalar(u8, range, '-')) |dash| {
         const lo = std.fmt.parseInt(usize, range[0..dash], 10) catch return error.BadNuma;
         const hi = std.fmt.parseInt(usize, range[dash + 1 ..], 10) catch return error.BadNuma;
         if (hi < lo) return error.BadNuma;

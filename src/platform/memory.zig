@@ -44,8 +44,8 @@ fn thpHintUseful() bool {
     if (!thp_hint_decided) {
         const uts = std.posix.uname();
         const release = std.mem.sliceTo(&uts.release, 0);
-        thp_hint_useful = std.mem.indexOf(u8, release, "microsoft") == null and
-            std.mem.indexOf(u8, release, "Microsoft") == null;
+        thp_hint_useful = std.mem.find(u8, release, "microsoft") == null and
+            std.mem.find(u8, release, "Microsoft") == null;
         thp_hint_decided = true;
     }
     return thp_hint_useful;

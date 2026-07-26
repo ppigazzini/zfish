@@ -108,12 +108,12 @@ test "formatTrace: side line, bucket row, and the %c%6.2f float cells" {
     defer std.heap.c_allocator.free(std.mem.span(s));
     const out = std.mem.span(s);
 
-    try std.testing.expect(std.mem.indexOf(u8, out, "White to move)") != null);
+    try std.testing.expect(std.mem.find(u8, out, "White to move)") != null);
     // Pin the sign + width-6 float format (centipawns*0.01) byte-for-byte:
-    try std.testing.expect(std.mem.indexOf(u8, out, "+  0.22") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "-  0.76") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "-  0.54") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "<-- this bucket is used") != null);
+    try std.testing.expect(std.mem.find(u8, out, "+  0.22") != null);
+    try std.testing.expect(std.mem.find(u8, out, "-  0.76") != null);
+    try std.testing.expect(std.mem.find(u8, out, "-  0.54") != null);
+    try std.testing.expect(std.mem.find(u8, out, "<-- this bucket is used") != null);
 }
 
 test "formatTrace: black-to-move header" {
@@ -130,7 +130,7 @@ test "formatTrace: black-to-move header" {
     }).?;
     defer std.heap.c_allocator.free(std.mem.span(s));
     const out = std.mem.span(s);
-    try std.testing.expect(std.mem.indexOf(u8, out, "Black to move)") != null);
-    try std.testing.expect(std.mem.indexOf(u8, out, "  0.00") != null); // zero -> space sign
-    try std.testing.expect(std.mem.indexOf(u8, out, "<-- this bucket is used") == null);
+    try std.testing.expect(std.mem.find(u8, out, "Black to move)") != null);
+    try std.testing.expect(std.mem.find(u8, out, "  0.00") != null); // zero -> space sign
+    try std.testing.expect(std.mem.find(u8, out, "<-- this bucket is used") == null);
 }

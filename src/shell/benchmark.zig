@@ -80,7 +80,7 @@ fn setupBenchAlloc(current_fen: []const u8, args: []const u8) ![*:0]u8 {
         var rep: usize = 0;
         while (rep < setup_repeat) : (rep += 1) {
             for (defaults) |line| {
-                if (std.mem.indexOf(u8, line, "setoption") == null)
+                if (std.mem.find(u8, line, "setoption") == null)
                     try appendCommand(&commands, allocator, "ucinewgame");
                 try appendBenchmarkLine(&commands, allocator, line, go);
             }
@@ -214,7 +214,7 @@ fn appendBenchmarkLine(
     line: []const u8,
     go: []const u8,
 ) !void {
-    if (std.mem.indexOf(u8, line, "setoption") != null) {
+    if (std.mem.find(u8, line, "setoption") != null) {
         try appendCommand(buffer, allocator, line);
         return;
     }

@@ -63,9 +63,9 @@ const Hook = struct {
 fn hookNameOf(line: []const u8) ?[]const u8 {
     const decl = "pub var ";
     if (!std.mem.startsWith(u8, line, decl)) return null;
-    if (std.mem.indexOf(u8, line, ": *const fn") == null) return null;
+    if (std.mem.find(u8, line, ": *const fn") == null) return null;
     const rest = line[decl.len..];
-    const colon = std.mem.indexOfScalar(u8, rest, ':') orelse return null;
+    const colon = std.mem.findScalar(u8, rest, ':') orelse return null;
     return std.mem.trim(u8, rest[0..colon], " ");
 }
 
@@ -127,7 +127,7 @@ pub fn main(init: std.process.Init) !void {
         defer gpa.free(path);
         const body = try Io.Dir.cwd().readFileAlloc(io, path, gpa, .unlimited);
         defer gpa.free(body);
-        if (std.mem.indexOf(u8, body, ": *const fn") == null) continue;
+        if (std.mem.find(u8, body, ": *const fn") == null) continue;
 
         var file_has_hook = false;
         var prev_doc: std.ArrayList([]const u8) = .empty;
@@ -148,14 +148,14 @@ pub fn main(init: std.process.Init) !void {
                 var loud = false;
                 var declared = false;
                 for (prev_doc.items) |d| {
-                    if (std.mem.indexOf(u8, d, "failure: loud") != null) {
+                    if (std.mem.find(u8, d, "failure: loud") != null) {
                         loud = true;
                         declared = true;
-                    } else if (std.mem.indexOf(u8, d, "failure: silent") != null) {
+                    } else if (std.mem.find(u8, d, "failure: silent") != null) {
                         declared = true;
                         // Require a silent default to say WHY it is correct unregistered.
                         const marker = "failure: silent";
-                        const idx = std.mem.indexOf(u8, d, marker).?;
+                        const idx = std.mem.find(u8, d, marker).?;
                         const why = std.mem.trim(u8, d[idx + marker.len ..], " -—:");
                         if (why.len < 12)
                             report(
@@ -183,8 +183,8 @@ pub fn main(init: std.process.Init) !void {
 
         // Rule 3: require the file to state its class.
         if (file_has_hook) {
-            const lifecycle = std.mem.indexOf(u8, body, "hook-class: lifecycle") != null;
-            const service = std.mem.indexOf(u8, body, "hook-class: service") != null;
+            const lifecycle = std.mem.find(u8, body, "hook-class: lifecycle") != null;
+            const service = std.mem.find(u8, body, "hook-class: service") != null;
             if (!lifecycle and !service)
                 report(
                     "{s}: declares hooks but no '//! hook-class: lifecycle|service' header. " ++
@@ -204,7 +204,7 @@ pub fn main(init: std.process.Init) !void {
         defer gpa.free(needle);
         var found = false;
         for (registrar_src.items) |s| {
-            if (std.mem.indexOf(u8, s, needle) != null) found = true;
+            if (std.mem.find(u8, s, needle) != null) found = true;
         }
         if (!found)
             report(

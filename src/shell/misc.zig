@@ -206,7 +206,7 @@ fn getBinaryDirectoryAlloc(argv0: []const u8) ![*:0]u8 {
     defer binary_directory.deinit(allocator);
     try binary_directory.appendSlice(allocator, argv0);
 
-    const separator_index = std.mem.lastIndexOfAny(u8, binary_directory.items, "\\/");
+    const separator_index = std.mem.findLastAny(u8, binary_directory.items, "\\/");
     if (separator_index) |index| {
         binary_directory.shrinkRetainingCapacity(index + 1);
     } else {

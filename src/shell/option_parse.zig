@@ -150,7 +150,7 @@ fn tuneNextAlloc(allocator: std.mem.Allocator, names: []const u8, pop: u8) !Tune
     defer token.deinit(allocator);
 
     while (true) {
-        const comma_index = std.mem.indexOfScalar(u8, remaining, ',') orelse remaining.len;
+        const comma_index = std.mem.findScalar(u8, remaining, ',') orelse remaining.len;
         const segment = trimAsciiWhitespace(remaining[0..comma_index]);
         try token.appendSlice(allocator, segment);
 
@@ -166,7 +166,7 @@ fn tuneNextAlloc(allocator: std.mem.Allocator, names: []const u8, pop: u8) !Tune
     }
 
     const next_remaining = if (pop != 0) blk: {
-        const comma_index = std.mem.indexOfScalar(u8, names, ',') orelse names.len;
+        const comma_index = std.mem.findScalar(u8, names, ',') orelse names.len;
         if (comma_index == names.len) {
             break :blk "";
         }
@@ -175,7 +175,7 @@ fn tuneNextAlloc(allocator: std.mem.Allocator, names: []const u8, pop: u8) !Tune
         var local_token = std.ArrayList(u8).empty;
         defer local_token.deinit(allocator);
         while (true) {
-            const index = std.mem.indexOfScalar(u8, balance_names, ',') orelse balance_names.len;
+            const index = std.mem.findScalar(u8, balance_names, ',') orelse balance_names.len;
             const segment = trimAsciiWhitespace(balance_names[0..index]);
             try local_token.appendSlice(allocator, segment);
             if (countChar(local_token.items, '(') == countChar(local_token.items, ')') or index == balance_names.len) {
