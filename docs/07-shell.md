@@ -203,7 +203,7 @@ drives is described in [04-multithreading.md](04-multithreading.md).
 
 `engine/graph.zig` states the same object graph as a fully typed `EngineGraph` — every
 slot a concrete member owning its type, vtable-free and callback-free, with its own
-`sharedState` and `makeManager`. `network` is an `opaque {}` handle, which is a distinct
+`sharedState`. `network` is an `opaque {}` handle, which is a distinct
 type the compiler checks, not an erasure. `engine.zig` force-compiles it so its layout asserts are build-verified
 rather than dead source; the live path builds its `SharedState` in the driver.
 

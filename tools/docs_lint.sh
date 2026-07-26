@@ -81,8 +81,51 @@ while IFS= read -r hit; do
 done < <(grep -rlE '__DEV/|REPORT-[0-9]|4-PERFORMANCE-REFERENCES|00-CONTRACT|PROMPT\.md'              --exclude=docs_lint.sh docs/ src/ tools/ README.md CONTRIBUTING.md AGENTS.md CLAUDE.md build.zig 2>/dev/null || true)
 [ "$leak" -eq 0 ] || fail=1
 
+# --- 4. every backticked identifier names something in the tree -----------------------------
+# Prose names Zig symbols constantly. A rename or a deletion leaves the sentence reading
+# plausibly while pointing at nothing -- 07-shell named `makeManager` for a whole session
+# after the function was deleted, and checks 1-3 all passed over it.
+#
+# Read the code spans DIRECTLY. Do not filter the pages through any "strip noise" helper
+# first: a helper that removes inline code spans leaves this check scanning nothing and
+# passing everything, which is how the same gate failed its own negative test in the C port.
+#
+# Judge only IDENTIFIER-SHAPED tokens (snake_case, or camelCase with an inner capital), and
+# only ones in zfish's own namespace. The exclusions are namespaces the tree deliberately
+# names without defining:
+#   _mm*/_tzcnt*/__builtin*  upstream's C++ intrinsics, in 08's translation dictionary
+#   Zig std/builtin names    firstTrue, ReleaseSmall, ... documented, not ours to define
+#   *_ci                     CI branch/ref names, not symbols
+foreign='^(_mm|_tzcnt|_adds|_subs|__builtin)|^(firstTrue|lastTrue|countTrues|ReleaseSmall|ReleaseFast|ReleaseSafe)$|_ci$'
+unknown=0
+while IFS= read -r tok; do
+    printf '%s' "$tok" | grep -qE '_|[a-z][A-Z]' || continue      # identifier-shaped only
+    printf '%s' "$tok" | grep -qE "$foreign" && continue          # foreign namespace
+    # Exclude this file: its own comments name the examples, and a gate that finds its own
+    # documentation passes on the very claim it exists to catch (verified: `makeManager` was
+    # a live dead symbol and the first cut of this check reported clean because of it).
+    grep -rqF --exclude=docs_lint.sh -- "$tok" src tools build.zig 2>/dev/null || {
+        echo "docs-lint: DEAD SYMBOL  \`$tok\` (named in a shipped doc, defined nowhere in the tree)"
+        unknown=$((unknown + 1))
+    }
+done < <(grep -ohE '`[A-Za-z_][A-Za-z0-9_]*`' docs/*.md AGENTS.md README.md CONTRIBUTING.md \
+         | tr -d '`' | sort -u)
+[ "$unknown" -eq 0 ] || fail=1
+
+# --- 5. every build step is documented somewhere -------------------------------------------
+# 09-tooling-ci's job is to say what each step proves. A step nothing mentions is a gate a
+# contributor cannot find, which is the same as not having it.
+undoc=0
+while IFS= read -r step; do
+    grep -rqF -- "$step" docs/*.md AGENTS.md README.md CONTRIBUTING.md || {
+        echo "docs-lint: UNDOCUMENTED STEP  \`zig build $step\` exists, no shipped page mentions it"
+        undoc=$((undoc + 1))
+    }
+done < <(grep -ohE 'b\.step\(\s*"[a-z0-9-]+"' build.zig | sed 's/.*"\(.*\)"/\1/' | sort -u)
+[ "$undoc" -eq 0 ] || fail=1
+
 if [ "$fail" -eq 0 ]; then
-    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths exist, anchor == $anchor, no __DEV refs)"
+    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths exist, symbols and steps exist, anchor == $anchor, no __DEV refs)"
 else
     echo "docs-lint: FAIL -- a doc contradicts the tree (see above)."
 fi

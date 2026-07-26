@@ -68,10 +68,19 @@ inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i
 }
 
 /// Yield the input groups a layer must accumulate: every group when dense, only the
-/// non-zero ones when sparse. Sparse walks upstream's NNZ bitset -- recorded by the feature
-/// transformer, which had the values in a register -- so the per-group data-dependent test
-/// does not exist. Indices ascend either way, so the accumulation order, and the result, is
-/// unchanged.
+/// non-zero ones when sparse. Sparse walks a BITSET the feature transformer records while
+/// the mask is still in a register, so the per-group data-dependent test does not exist.
+/// Indices ascend either way, so the accumulation order, and the result, is unchanged.
+///
+/// This is a DELIBERATE divergence from upstream's shape, not a missing port. Upstream
+/// builds an explicit `u16` index list with `vpcompressw` and reads it flat; zfish keeps the
+/// bitset because the callers hoist the input/weight base pointers once per 64-group word
+/// and pop bits with a WORD-LOCAL index, and a flat list of absolute indices destroys that
+/// hoist. Building the index list producer-side was implemented and measured: it cost
+/// instructions rather than saving them, because the per-chunk compress + store + popcount
+/// bookkeeping exceeds what a flat consumer read saves over the hoisted walk. Upstream has
+/// no hoisted alternative to compare against, which is why the same shape pays there.
+/// Do not "fix" this to match upstream without re-measuring both halves.
 ///
 /// It yields an index rather than taking the accumulator, so the accumulator stays a local
 /// the caller can keep in registers.
