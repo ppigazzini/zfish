@@ -66,10 +66,11 @@ var slider_magics: [64][2]Magic align(64) = undefined;
 comptime {
     // Keep the two facts joined: the alignment above buys a single-line probe only while
     // a square's bishop/rook pair still fits in one line, so widening Magic must fail the
-    // build rather than silently undo it.
+    // build rather than silently undo it. Assert the SIZE only -- the compiler already
+    // enforces the `align(64)` on the declaration, and reading it back by reflection is
+    // not portable: `@typeInfo(...).pointer.alignment` exists in 0.16 and moved under
+    // `.attrs` in 0.17, which broke the non-blocking Zig-master lane.
     std.debug.assert(@sizeOf([2]Magic) == 64);
-    // `align(64)` sits on the declaration, not the type, so read it off the pointer.
-    std.debug.assert(@typeInfo(@TypeOf(&slider_magics)).pointer.alignment == 64);
 }
 
 // Hold the derived square-pair geometry, built once from the magics at startup and read-only during
