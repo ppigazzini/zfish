@@ -224,7 +224,7 @@ test "headless search: startpos to a shallow depth yields a legal move + finite 
     // Skip cleanly if the weights are unavailable in this environment.
     if (network.ftPtr() == null) {
         const dir = "net/";
-        network.load(dir, dir.len, "", 0);
+        network.load(dir, "");
     }
     if (network.ftPtr() == null) return error.SkipZigTest; // net unavailable -> skip cleanly
 
@@ -265,7 +265,7 @@ test "headless search: searchPosition over many random legal lines stays crash-f
     position.initRuntime();
     if (network.ftPtr() == null) {
         const dir = "net/";
-        network.load(dir, dir.len, "", 0);
+        network.load(dir, "");
     }
     if (network.ftPtr() == null) return error.SkipZigTest;
 

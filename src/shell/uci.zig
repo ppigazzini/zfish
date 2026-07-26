@@ -345,14 +345,6 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     goParsed(engine_ptr, limits);
 }
 
-// Print a NUL-terminated line to stdout through the shared output funnel (replacing
-// libc puts): printLine adds the newline and the tear-proof lock, and tees to the log
-// like Stockfish's full-cout tee. Drop the sentinel via the span; keep the bytes unchanged.
-fn putsLine(ptr: [*:0]const u8) void {
-    const s = std.mem.span(ptr);
-    uci_output.printLine(s);
-}
-
 fn emitInfoString(text: []const u8) void {
     const rendered = formatInfoString(std.heap.c_allocator, text) orelse return;
     defer std.heap.c_allocator.free(rendered);
@@ -368,19 +360,17 @@ fn isHelpToken(token: []const u8) bool {
 
 pub fn loopRuntime(e: *engine_object.EngineObject) void {
     const allocator = std.heap.c_allocator;
-    const argc = e.cliArgc();
+    const args = e.cliArgs();
 
-    if (argc != 1) {
+    if (args.len != 1) {
         var command = std.ArrayList(u8).empty;
         defer command.deinit(allocator);
 
-        var index: i32 = 1;
-        while (index < argc) : (index += 1) {
-            const arg_ptr = e.cliArgAt(index) orelse continue;
+        for (args[@min(1, args.len)..]) |arg| {
             if (command.items.len != 0) {
                 command.append(allocator, ' ') catch return;
             }
-            command.appendSlice(allocator, std.mem.span(arg_ptr)) catch return;
+            command.appendSlice(allocator, arg) catch return;
         }
 
         _ = dispatchCommand(e, command.items);

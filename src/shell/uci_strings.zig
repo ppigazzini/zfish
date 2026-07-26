@@ -7,8 +7,8 @@
 // their bodies stay unqualified.
 //
 // Every producer here returns an owned SLICE. A rendered string has a length the
-// renderer already knows, so handing back a bare `[*:0]u8` throws it away and forces
-// every consumer to walk the bytes again with `std.mem.span`.
+// renderer already knows, so handing back a bare sentinel pointer throws it away and
+// forces every consumer to walk the bytes again to get it back.
 
 const std = @import("std");
 

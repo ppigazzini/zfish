@@ -45,18 +45,17 @@ pub fn main(init: std.process.Init) !void {
     // Decode cross-platform argv: initAllocator handles Windows/WASI, where argv must be
     // decoded from the raw command line into an owned buffer (on POSIX it is a no-op view of
     // the kernel-provided vector). Keep the iterator alive (deinit deferred) for all of main,
-    // since it owns the arg strings -- argv points into its buffer. Collect it once into a
-    // C-style [*:0]u8 vector for the engine constructor.
+    // since it owns the arg strings -- the collected slices point into its buffer. The
+    // iterator already yields sentinel SLICES, so collect them as they come.
     var arg_iter = try std.process.Args.Iterator.initAllocator(init.minimal.args, init.gpa);
     defer arg_iter.deinit();
 
-    var argv_list = std.ArrayList([*:0]u8).empty;
+    var argv_list = std.ArrayList([:0]const u8).empty;
     defer argv_list.deinit(init.gpa);
     while (arg_iter.next()) |arg| {
-        try argv_list.append(init.gpa, @constCast(arg.ptr));
+        try argv_list.append(init.gpa, arg);
     }
     const argv = argv_list.items;
-    const argc = argv.len;
 
     const info_line = misc_port.engineInfoText(init.gpa, false) orelse return error.OutOfMemory;
     defer init.gpa.free(info_line);
@@ -77,7 +76,7 @@ pub fn main(init: std.process.Init) !void {
         return error.OutOfMemory;
     defer memory_port.stdAlignedFree(engine_storage);
 
-    engineConstructAt(engine_storage, @intCast(argc), argv.ptr);
+    engineConstructAt(engine_storage, argv);
     // Cross the erasure once, here: the allocator hands back raw storage, and placement
     // construction is what makes it an EngineObject. Everything downstream takes the typed
     // handle, so no later hop has to re-derive it.
@@ -344,20 +343,20 @@ pub fn engineInitBody(engine: *engine_object.EngineObject) void {
 
 // Construct/destruct the engine object container: build the heap members + inline sub-objects
 // of the EngineObject, and store argc/argv.
-fn engineConstructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
+fn engineConstructMembers(buf: *anyopaque, argv0: []const u8) bool {
     return engine_object.constructMembers(buf, argv0);
 }
-fn engineSetCli(buf: *anyopaque, argc: i32, argv: [*]const [*:0]u8) void {
-    engine_object.setCli(buf, argc, argv);
+fn engineSetCli(buf: *anyopaque, argv: []const [:0]const u8) void {
+    engine_object.setCli(buf, argv);
 }
 // Construct the engine object. Verify the object-graph footprint, build the heap members +
 // inline sub-objects, store argc/argv, then run init_body (register options, set start
 // position, size threads) — the same post-member work the engine constructor runs. Drop
 // Tune (SPSA) here: it is INERT in a release build (no live TUNE() macros → empty list).
-fn engineConstructAt(storage: *anyopaque, argc: i32, argv: [*]const [*:0]u8) void {
+fn engineConstructAt(storage: *anyopaque, argv: []const [:0]const u8) void {
     if (!engineConstructMembers(storage, argv[0]))
         @panic("engine construct: member allocation failed");
-    engineSetCli(storage, argc, argv);
+    engineSetCli(storage, argv);
     // Members are constructed by here, so the storage IS an EngineObject; hand initBody the
     // typed handle rather than making it re-derive one.
     engineInitBody(engine_object.EngineObject.fromPtr(storage));

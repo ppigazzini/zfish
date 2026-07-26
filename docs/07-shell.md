@@ -19,7 +19,7 @@ the engine object that owns the run. It is the top zone — it may import `engin
 | `uci_input.zig` | the persistent stdin reader: one command line per call, stitched across buffer refills so a long `position ... moves` line is not truncated |
 | `uci_parse.zig` | the `go` / `position` / `setoption` token parsers and their `Parsed*` results |
 | `uci_format.zig` | the live output strings: `info string`, help, unknown-command, critical-error |
-| `uci_strings.zig` | the shared C-string alloc / format / trim primitives |
+| `uci_strings.zig` | the shared string alloc / format / trim primitives |
 | `uci_output.zig` | the output sink: one mutex-guarded `printLine` funnel, the log-file tee, quiet mode, the last-nodes-searched cell |
 | **Options** | |
 | `option.zig` | the facade over the process-global option store; the readers the engine reaches through the `option_source` seam |
@@ -169,8 +169,8 @@ never a byte offset.
 | `numa_context` | a `*NumaReplicationContext` (config + replica registry), built over `NumaConfig.fromSystem` and freed in the teardown |
 | `states` | the fallback root `StateList` |
 | `threads` | the `ThreadPool` |
-| `binary_directory` | owned string; the net load resolves against it |
-| `cli_argc` / `cli_argv` | the CLI |
+| `binary_directory` | owned `[]u8`; the net load resolves against it |
+| `cli_args` | the process argv as `[]const [:0]const u8`, owned by `main`'s arg iterator |
 | `update_context` | inline byte-array slot the search binds for the main thread's manager |
 | `on_verify_network` | inline byte-array slot holding the network-verify callback |
 

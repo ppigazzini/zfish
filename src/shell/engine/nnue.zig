@@ -54,7 +54,7 @@ pub fn requireNetworkLoaded(engine_ptr: *engine_object.EngineObject) void {
     const named = option_port.strByName("EvalFile");
     const evalfile: []const u8 = if (named.len != 0) named else network_port.default_eval_file_name;
 
-    const bdir: [*:0]const u8 = engine_ptr.binary_directory orelse "";
+    const bdir: []const u8 = engine_ptr.binary_directory orelse "";
     // Same cwd accessor misc.zig uses (its Io vtable wraps POSIX getcwd /
     // NT RtlGetCurrentDirectory); single-threaded blocking handle, no signal handlers.
     var threaded = std.Io.Threaded.init_single_threaded;
@@ -73,18 +73,18 @@ pub fn requireNetworkLoaded(engine_ptr: *engine_object.EngineObject) void {
         \\ERROR: The default net can be downloaded from: https://tests.stockfishchess.org/api/nn/{s}
         \\ERROR: The engine will be terminated now.
         \\
-    , .{ evalfile, cwd, std.mem.span(bdir), network_port.default_eval_file_name });
+    , .{ evalfile, cwd, bdir, network_port.default_eval_file_name });
     c.exit(1);
 }
 
 pub fn verifyNetwork() void {
     const evalfile = option_port.strByName("EvalFile");
 
-    const result = network_port.verify(evalfile.ptr, evalfile.len);
-    if (result.message) |message_ptr| {
-        defer std.heap.c_allocator.free(std.mem.span(message_ptr));
+    const result = network_port.verify(evalfile);
+    if (result.message) |message| {
+        defer std.heap.c_allocator.free(message);
         // Follow onVerifyNetwork: interactive -> print as "info string ..."; quiet -> no-op.
-        if (!uci_output.isQuiet()) printInfoString(std.mem.span(message_ptr));
+        if (!uci_output.isQuiet()) printInfoString(message);
     }
 
     if (result.should_exit != 0) {
@@ -97,9 +97,7 @@ pub fn verifyNetwork() void {
 // trip to main is needed. Mirror the startup load in engine_object.constructMembers.
 pub fn loadNetworkEngine(engine_ptr: *engine_object.EngineObject, evalfile_path: []const u8) void {
     const e = engine_ptr;
-    const bdir: [*:0]const u8 = e.binary_directory orelse "";
-    const bdir_slice = std.mem.span(bdir);
-    network_port.load(bdir_slice.ptr, bdir_slice.len, evalfile_path.ptr, evalfile_path.len);
+    network_port.load(e.binary_directory orelse "", evalfile_path);
     // A different net invalidates every history table and the main thread's carried-over
     // scores, so drop them with the pool clear upstream performs here (engine.cpp:313-314).
     // `clear` returns immediately on an empty pool, which is what the startup load finds.
@@ -114,13 +112,10 @@ pub fn loadNetworkEngine(engine_ptr: *engine_object.EngineObject, evalfile_path:
 // `export_net` completed silently AND leaked the message allocMessage had built. Print it
 // as a plain line (upstream does not prefix it with `info string`).
 pub fn saveNetworkEngine(filename_opt: ?[]const u8) void {
-    const has_filename: u8 = if (filename_opt != null) 1 else 0;
-    const filename = filename_opt orelse "";
-    const result = network_port.save(has_filename, filename.ptr, filename.len);
-    if (result.message) |message_ptr| {
-        defer std.heap.c_allocator.free(std.mem.span(message_ptr));
-        const line = std.mem.span(message_ptr);
-        uci_output.printLine(line);
+    const result = network_port.save(filename_opt);
+    if (result.message) |message| {
+        defer std.heap.c_allocator.free(message);
+        uci_output.printLine(message);
     }
 }
 

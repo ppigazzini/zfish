@@ -16,8 +16,8 @@ pub const dbgClear = debug_counters.dbgClear;
 const version = "dev";
 const fallback_build_date = computeFallbackBuildDate();
 
-pub fn getBinaryDirectory(argv0: []const u8) ?[*:0]u8 {
-    return getBinaryDirectoryAlloc(argv0) catch null;
+pub fn getBinaryDirectory(gpa: std.mem.Allocator, argv0: []const u8) ?[]u8 {
+    return getBinaryDirectoryAlloc(gpa, argv0) catch null;
 }
 
 // The three banner renderers hand back an owned SLICE; the caller frees it with the
@@ -73,14 +73,14 @@ pub fn hardwareConcurrency() i32 {
     return std.math.cast(i32, n) orelse 0;
 }
 
-fn getBinaryDirectoryAlloc(argv0: []const u8) ![*:0]u8 {
-    const allocator = std.heap.c_allocator;
+fn getBinaryDirectoryAlloc(gpa: std.mem.Allocator, argv0: []const u8) ![]u8 {
+    const allocator = gpa;
     const path_separator = "/";
-    const working_directory = try takeOwnedString(try getWorkingDirectoryAlloc());
+    const working_directory = try getWorkingDirectoryAlloc(allocator);
     defer allocator.free(working_directory);
 
     var binary_directory = std.ArrayList(u8).empty;
-    defer binary_directory.deinit(allocator);
+    errdefer binary_directory.deinit(allocator);
     try binary_directory.appendSlice(allocator, argv0);
 
     const separator_index = std.mem.findLastAny(u8, binary_directory.items, "\\/");
@@ -94,16 +94,16 @@ fn getBinaryDirectoryAlloc(argv0: []const u8) ![*:0]u8 {
 
     if (std.mem.startsWith(u8, binary_directory.items, "." ++ path_separator)) {
         var resolved = std.ArrayList(u8).empty;
-        defer resolved.deinit(allocator);
+        errdefer resolved.deinit(allocator);
         try resolved.appendSlice(allocator, working_directory);
         try resolved.appendSlice(allocator, binary_directory.items[1..]);
-        return try allocCString(resolved.items);
+        return try resolved.toOwnedSlice(allocator);
     }
 
-    return try allocCString(binary_directory.items);
+    return try binary_directory.toOwnedSlice(allocator);
 }
 
-fn getWorkingDirectoryAlloc() ![*:0]u8 {
+fn getWorkingDirectoryAlloc(gpa: std.mem.Allocator) ![]u8 {
     // Look up the cwd the idiomatic-Zig way, replacing libc getcwd. Use std.process.currentPath,
     // the cross-platform accessor (its Io vtable wraps POSIX getcwd / NT RtlGetCurrentDirectory);
     // rely on `init_single_threaded`, the same blocking, no-thread, no-signal-handler handle used
@@ -112,9 +112,9 @@ fn getWorkingDirectoryAlloc() ![*:0]u8 {
     const io = threaded.io();
     var buffer: [40000]u8 = undefined;
     const length = std.process.currentPath(io, &buffer) catch {
-        return try allocCString("");
+        return try gpa.dupe(u8, "");
     };
-    return try allocCString(buffer[0..length]);
+    return try gpa.dupe(u8, buffer[0..length]);
 }
 
 fn engineVersionOwned(allocator: std.mem.Allocator) ![]u8 {
@@ -204,20 +204,4 @@ fn computeFallbackBuildDate() [8]u8 {
     // (injected by build.zig) as the authoritative build date; Zig exposes no compile-time
     // date, so keep this fallback -- used only when git metadata is absent -- a fixed placeholder.
     return .{ '0', '0', '0', '0', '0', '0', '0', '0' };
-}
-
-fn allocCString(value: []const u8) ![*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const result = try allocator.allocSentinel(u8, value.len, 0);
-    @memcpy(result[0..value.len], value);
-    return result.ptr;
-}
-
-fn takeOwnedString(pointer: [*:0]u8) ![]u8 {
-    const slice = std.mem.span(pointer);
-    const allocator = std.heap.c_allocator;
-    const owned = try allocator.alloc(u8, slice.len);
-    @memcpy(owned, slice);
-    std.heap.c_allocator.free(std.mem.span(pointer));
-    return owned;
 }
