@@ -29,9 +29,15 @@ from __future__ import annotations
 
 import argparse
 import random
+import re
 import subprocess
 import sys
 import time
+
+# The transposition table's allocation-failure contract, verbatim from tt.zig
+# reportAllocFailure (upstream tt.cpp:181). Anchored to the whole line so an
+# unrelated exit(1) that merely mentions an allocation still reads as a finding.
+TT_ALLOC_FAILURE = re.compile(r"^Failed to allocate \d+MB for transposition table\.$", re.M)
 
 FENS = [
     "startpos",
@@ -169,12 +175,19 @@ def main() -> None:
             sys.exit(1)
         out = proc.stdout.decode(errors="replace")
         err = proc.stderr.decode(errors="replace")
-        # Two clean outcomes: exit 0, or the documented CRITICAL ERROR contract --
-        # an unusable position terminates the process with exit(1) after
-        # announcing itself (uci_critical.zig, upstream uci.cpp:684). Anything
-        # else -- a Zig safety panic aborts with a signal, so its returncode is
-        # negative here -- is a finding, as is any panic text on stderr.
-        ok_exit = proc.returncode == 0 or (proc.returncode == 1 and "CRITICAL ERROR" in out)
+        # Three clean outcomes: exit 0, or either documented exit(1) contract.
+        # An unusable position announces CRITICAL ERROR on stdout before exiting
+        # (uci_critical.zig, upstream uci.cpp:684); a Hash the box cannot back
+        # reports the refused size on stderr before exiting (tt.zig
+        # reportAllocFailure, upstream tt.cpp:181). Both engines accept Hash up
+        # to 33554432 MB, so an in-range-but-unbackable size is the allocator's
+        # verdict, not a parser bug -- and the generator reaches it by
+        # construction, since truncating `Hash value 99999999` leaves a request
+        # far past any runner's memory. Anything else -- a Zig safety panic
+        # aborts with a signal, so its returncode is negative here -- is a
+        # finding, as is any panic text on stderr.
+        documented = "CRITICAL ERROR" in out or TT_ALLOC_FAILURE.search(err) is not None
+        ok_exit = proc.returncode == 0 or (proc.returncode == 1 and documented)
         bad = not ok_exit or "panic" in err
         if bad:
             sys.stderr.write(
