@@ -312,8 +312,7 @@ var eval_caches_buf: [worker_layout.accumulator_caches_size]u8 align(64) = undef
 // than a spurious failure in an environment without the weights.
 fn ensureNetLoaded() bool {
     if (network.ftPtr() != null) return true;
-    const dir = "net/";
-    network.load(dir, dir.len, "", 0);
+    network.load("net/", "");
     return network.ftPtr() != null;
 }
 
