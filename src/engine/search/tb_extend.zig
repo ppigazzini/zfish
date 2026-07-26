@@ -134,7 +134,7 @@ pub fn syzygyExtendPv(
         scratch.doMove(pv_move) catch break;
 
         // Reject a repetition or drawing move inside the TB regime.
-        if (config.root_in_tb != 0 and
+        if (config.root_in_tb and
             ((rule50 and position_port.isDraw(scratch.pos, @intCast(ply))) or
                 position_port.isRepetition(scratch.pos, @intCast(ply))))
         {
@@ -144,7 +144,7 @@ pub fn syzygyExtendPv(
         }
 
         // Report a full PV only when all of it validated within the deadline.
-        if (config.root_in_tb != 0 and deadline.expired()) break;
+        if (config.root_in_tb and deadline.expired()) break;
     }
 
     result.pv_len = ply;
@@ -176,7 +176,7 @@ pub fn syzygyExtendPv(
         std.heap.c_allocator.free(fen_text);
 
         // Without DTZ there may be no mate to reach.
-        if (config.root_in_tb == 0 or config.cardinality > 0) break;
+        if (!config.root_in_tb or config.cardinality > 0) break;
 
         const pv_move = ranked[0].raw_move;
         pv_moves[result.pv_len] = pv_move;

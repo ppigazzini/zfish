@@ -33,7 +33,8 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | **engine** | |
 | `src/engine/search/tb_source.zig` | the seam: `ProbeResult`, `maxCardinality`, `probeFen`, `probeWdlPos` |
 | `src/engine/search/search_main.zig` | Step 6 — the in-search WDL probe and its score/bound handling |
-| `src/engine/search/root_move_build.zig` | `TbConfig`, the root DTZ/WDL ranking, and the ranked `RootMoves` array |
+| `src/engine/state/tb_config.zig` | `TbConfig` — the std-only leaf both the Worker layout and the root-move builder name |
+| `src/engine/search/root_move_build.zig` | `loadTbConfig`, the root DTZ/WDL ranking, and the ranked `RootMoves` array |
 | `src/engine/search/search_values.zig` | `value_tb`, `value_tb_win` — the TB score band |
 | `src/engine/board/score.zig` | `classify` — the pure non-decisive / tablebase / mate score classifier |
 | `src/engine/search/search_emit.zig` | the info-line emit: the `tbScore` override and the `tbhits` count |
