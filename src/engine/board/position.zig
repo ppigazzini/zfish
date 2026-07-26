@@ -117,8 +117,8 @@ pub const givesCheck = legality.givesCheck;
 comptime {
     // Let Zig own the field order (plain-data struct). The network now
     // reads board/side through a typed *const Position, so no field-offset
-    // pin remains -- only assert Position still fits the 1032-byte slot the Worker
-    // (worker_off.root_pos) and side storage reserve for it.
+    // pin remains -- only assert Position still fits the slot width the Worker's
+    // root_pos and the engine's side storage reserve for it.
     std.debug.assert(@sizeOf(Position) <= worker_layout.position_size);
 }
 
