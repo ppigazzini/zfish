@@ -89,18 +89,18 @@ fn writeLineLocked(the_io: std.Io, file: std.Io.File, line: []const u8) void {
 }
 
 // Write one line to stdout (and, if open, tee it to the log file).
-pub fn printLine(str: [*]const u8, len: usize) void {
+pub fn printLine(line: []const u8) void {
     const the_io = io();
     write_mutex.lockUncancelable(the_io);
     defer write_mutex.unlock(the_io);
-    writeLineLocked(the_io, resolveOut(), str[0..len]);
-    if (log_file) |f| writeLineLocked(the_io, f, str[0..len]);
+    writeLineLocked(the_io, resolveOut(), line);
+    if (log_file) |f| writeLineLocked(the_io, f, line);
 }
 
 // Open/close the log destination (printLine tees output to it). Close any current log
 // on an empty name; (re)open for writing on a non-empty name. Guard with the
 // same mutex as printLine so a concurrent emit never sees a half-swapped log_file.
-pub fn startLogger(name_ptr: [*]const u8, name_len: usize) void {
+pub fn startLogger(name: []const u8) void {
     const the_io = io();
     write_mutex.lockUncancelable(the_io);
     defer write_mutex.unlock(the_io);
@@ -108,8 +108,8 @@ pub fn startLogger(name_ptr: [*]const u8, name_len: usize) void {
         f.close(the_io);
         log_file = null;
     }
-    if (name_len == 0 or name_len >= 4095) return;
-    log_file = std.Io.Dir.cwd().createFile(the_io, name_ptr[0..name_len], .{}) catch null;
+    if (name.len == 0 or name.len >= 4095) return;
+    log_file = std.Io.Dir.cwd().createFile(the_io, name, .{}) catch null;
 }
 
 // Assert the property: with many threads hammering printLine, every line lands whole -- the mutex
@@ -132,7 +132,7 @@ test "printLine: concurrent callers never tear a line" {
     const Worker = struct {
         fn run(l: []const u8, n: usize) void {
             var i: usize = 0;
-            while (i < n) : (i += 1) printLine(l.ptr, l.len);
+            while (i < n) : (i += 1) printLine(l);
         }
     };
     var pool: [threads_n]std.Thread = undefined;

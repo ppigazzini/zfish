@@ -109,7 +109,7 @@ fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_l
     const nps: usize = if (time_ms != 0) @intCast(nodes * 1000 / time_ms) else 0;
     const line_c = uci_wdl.formatInfoFull(depth, sel_depth, multipv, score_text, bound_text, wdl_text, show_wdl, @intCast(nodes), nps, hashfull, @intCast(tb_hits), @intCast(time_ms), pv_buf[0..pv_n]) orelse return;
     defer ca.free(line_c);
-    uci_output.printLine(line_c.ptr, line_c.len);
+    uci_output.printLine(line_c);
 }
 
 // Emit for a checkmated/stalemated root: "info depth 0 score ..." + "bestmove (none)".
@@ -125,10 +125,10 @@ pub fn ssEmitNoMoves(worker: ?*worker_layout.WorkerLayout) void {
     defer ca.free(score_c);
     const line_c = uci_wdl.formatInfoNoMoves(0, score_c) orelse return;
     defer ca.free(line_c);
-    uci_output.printLine(line_c.ptr, line_c.len);
+    uci_output.printLine(line_c);
 
     const bm = "bestmove (none)";
-    uci_output.printLine(bm.ptr, bm.len);
+    uci_output.printLine(bm);
 }
 
 // Emit "bestmove X[ ponder Y]" from best's first RootMove PV. No-op in quiet mode.
@@ -155,7 +155,7 @@ pub fn ssEmitBestmove(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layou
         @memcpy(line[n..][0..ponder.len], ponder);
         n += ponder.len;
     }
-    uci_output.printLine(line[0..n].ptr, n);
+    uci_output.printLine(line[0..n]);
 }
 
 // Emit "info depth D currmove M currmovenumber N" (main thread, past the node threshold).
@@ -169,7 +169,7 @@ pub fn searchCbRootOnIter(wl: *const worker_layout.WorkerLayout, depth: i32, mov
     const currmovenumber: i32 = move_count + @as(i32, @intCast(wl.pv_idx));
     const line_c = uci_wdl.formatInfoIter(depth, currmove, currmovenumber) orelse return;
     defer std.heap.c_allocator.free(line_c);
-    uci_output.printLine(line_c.ptr, line_c.len);
+    uci_output.printLine(line_c);
 }
 
 // Mirror SF is_mate_or_mated: |v| >= VALUE_MATE_IN_MAX_PLY (a real mate, not a TB win). Use it to decide
@@ -247,7 +247,7 @@ fn extendPvSyzygy(ctx: *const PvContext, index: usize, v: i32) i32 {
     );
     rmv.pv.length = res.pv_len;
     if (res.timed_out)
-        uci_output.printLine(extend_timeout_msg.ptr, extend_timeout_msg.len);
+        uci_output.printLine(extend_timeout_msg);
     return res.value;
 }
 

@@ -175,7 +175,7 @@ pub fn optionOnChange(
 
     return switch (callback_kind) {
         option_callback_debug_log_file => blk: {
-            uci_output.startLogger(value.ptr, value.len);
+            uci_output.startLogger(value);
             break :blk null;
         },
         option_callback_numa_policy => blk: {
@@ -305,7 +305,7 @@ pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [
     if (res.found == 0) {
         var buf: [256]u8 = undefined;
         const out = std.fmt.bufPrint(&buf, "No such option: {s}", .{name_ptr[0..name_len]}) catch return;
-        uci_output.printLine(out.ptr, out.len);
+        uci_output.printLine(out);
         return;
     }
     if (res.accepted != 0 and res.callback_kind != 0) {

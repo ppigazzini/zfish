@@ -132,8 +132,9 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             return .{ .should_quit = 0 };
         },
         .uci => {
-            const info_ptr = misc_port.engineInfoText(1) orelse return .{ .should_quit = 0 };
-            defer freeMaybeCString(info_ptr);
+            const info_line = misc_port.engineInfoText(std.heap.c_allocator, true) orelse
+                return .{ .should_quit = 0 };
+            defer std.heap.c_allocator.free(info_line);
             const options_ptr = option_port.renderOptions() orelse return .{ .should_quit = 0 };
             defer freeMaybeCString(options_ptr);
 
@@ -143,10 +144,10 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             const block = std.fmt.allocPrint(
                 std.heap.c_allocator,
                 "id name {s}\n{s}\nuciok",
-                .{ std.mem.span(info_ptr), std.mem.span(options_ptr) },
+                .{ info_line, std.mem.span(options_ptr) },
             ) catch return .{ .should_quit = 0 };
             defer std.heap.c_allocator.free(block);
-            uci_output.printLine(block.ptr, block.len);
+            uci_output.printLine(block);
             return .{ .should_quit = 0 };
         },
         .setoption => {
@@ -166,7 +167,7 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             return .{ .should_quit = 0 };
         },
         .isready => {
-            putsLine("readyok");
+            uci_output.printLine("readyok");
             return .{ .should_quit = 0 };
         },
         .flip => {
@@ -202,13 +203,14 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
                 .{std.mem.span(text_ptr)},
             ) catch return .{ .should_quit = 0 };
             defer std.heap.c_allocator.free(block);
-            uci_output.printLine(block.ptr, block.len);
+            uci_output.printLine(block);
             return .{ .should_quit = 0 };
         },
         .compiler => {
-            const compiler_ptr = misc_port.compilerInfoText() orelse return .{ .should_quit = 0 };
-            defer freeMaybeCString(compiler_ptr);
-            putsLine(compiler_ptr);
+            const compiler = misc_port.compilerInfoText(std.heap.c_allocator) orelse
+                return .{ .should_quit = 0 };
+            defer std.heap.c_allocator.free(compiler);
+            uci_output.printLine(compiler);
             return .{ .should_quit = 0 };
         },
         .export_net => {
@@ -219,15 +221,16 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             return .{ .should_quit = 0 };
         },
         .help => {
-            const help_ptr = helpText() orelse return .{ .should_quit = 0 };
-            defer freeMaybeCString(help_ptr);
-            putsLine(help_ptr);
+            const help = helpText(std.heap.c_allocator) orelse return .{ .should_quit = 0 };
+            defer std.heap.c_allocator.free(help);
+            uci_output.printLine(help);
             return .{ .should_quit = 0 };
         },
         .unknown => {
-            const unknown_ptr = formatUnknownCommand(input) orelse return .{ .should_quit = 0 };
-            defer freeMaybeCString(unknown_ptr);
-            putsLine(unknown_ptr);
+            const unknown = formatUnknownCommand(std.heap.c_allocator, input) orelse
+                return .{ .should_quit = 0 };
+            defer std.heap.c_allocator.free(unknown);
+            uci_output.printLine(unknown);
             return .{ .should_quit = 0 };
         },
     }
@@ -350,13 +353,13 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
 // like Stockfish's full-cout tee. Drop the sentinel via the span; keep the bytes unchanged.
 fn putsLine(ptr: [*:0]const u8) void {
     const s = std.mem.span(ptr);
-    uci_output.printLine(s.ptr, s.len);
+    uci_output.printLine(s);
 }
 
 fn emitInfoString(text: []const u8) void {
-    const rendered = formatInfoString(text) orelse return;
-    defer freeMaybeCString(rendered);
-    putsLine(rendered);
+    const rendered = formatInfoString(std.heap.c_allocator, text) orelse return;
+    defer std.heap.c_allocator.free(rendered);
+    uci_output.printLine(rendered);
 }
 
 fn isHelpToken(token: []const u8) bool {
@@ -441,11 +444,8 @@ fn parseMoveViews(moves_text: []const u8) !std.ArrayList(ByteView) {
     return views;
 }
 
-// Keep the C-string helpers in the uci_strings base leaf; alias them so the
+// Keep the string helpers in the uci_strings base leaf; alias them so the
 // bodies throughout this file stay unqualified.
-const appendFormatted = uci_strings.appendFormatted;
-const allocFormatted = uci_strings.allocFormatted;
-const allocCString = uci_strings.allocCString;
 const freeMaybeCString = uci_strings.freeMaybeCString;
 const trimAsciiWhitespace = uci_strings.trimAsciiWhitespace;
 const asciiLower = uci_strings.asciiLower;

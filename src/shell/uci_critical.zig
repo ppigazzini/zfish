@@ -10,7 +10,6 @@
 const std = @import("std");
 const uci_format = @import("uci_format");
 const uci_output = @import("uci_output");
-const uci_strings = @import("uci_strings");
 
 // Hold the command line being dispatched so the error path can echo it whole, as
 // upstream's `currentCmd = cmd` does -- hence ``Command `position fen not_a_fen` failed``
@@ -27,10 +26,10 @@ pub fn setCurrentCmd(cmd: []const u8) void {
 // `go` searched a stale board and answered with a plausible bestmove for the wrong
 // position. Route the line through the output sink (stdout + `Debug Log File` tee).
 pub fn terminateOnCriticalError(message: []const u8) noreturn {
-    if (uci_format.formatCriticalError(current_cmd, message)) |ptr| {
-        defer uci_strings.freeMaybeCString(ptr);
-        const line = std.mem.span(ptr);
-        uci_output.printLine(line.ptr, line.len);
+    const gpa = std.heap.c_allocator;
+    if (uci_format.formatCriticalError(gpa, current_cmd, message)) |line| {
+        defer gpa.free(line);
+        uci_output.printLine(line);
     }
     std.process.exit(1);
 }

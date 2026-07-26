@@ -20,36 +20,32 @@ pub fn getBinaryDirectory(argv0: []const u8) ?[*:0]u8 {
     return getBinaryDirectoryAlloc(argv0) catch null;
 }
 
-pub fn engineVersionInfoText() ?[*:0]u8 {
-    if (!std.mem.eql(u8, version, "dev")) {
-        return allocFormattedCString("Stockfish {s}", .{version}) catch null;
-    }
+// The three banner renderers hand back an owned SLICE; the caller frees it with the
+// allocator it passed in.
 
-    return allocFormattedCString(
-        "Stockfish {s}-{s}-{s}",
-        .{ version, gitDateText(), gitShaText() },
-    ) catch null;
+pub fn engineVersionInfoText(gpa: std.mem.Allocator) ?[]u8 {
+    return engineVersionOwned(gpa) catch null;
 }
 
-pub fn engineInfoText(to_uci: u8) ?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const version_text = engineVersionOwned(allocator) catch return null;
-    defer allocator.free(version_text);
+pub fn engineInfoText(gpa: std.mem.Allocator, to_uci: bool) ?[]u8 {
+    const version_text = engineVersionOwned(gpa) catch return null;
+    defer gpa.free(version_text);
 
-    return allocFormattedCString(
+    return std.fmt.allocPrint(
+        gpa,
         "{s}{s}the Stockfish developers (see AUTHORS file)",
-        .{ version_text, if (to_uci != 0) "\nid author " else " by " },
+        .{ version_text, if (to_uci) "\nid author " else " by " },
     ) catch null;
 }
 
-pub fn compilerInfoText() ?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const compiler_name = compilerNameOwned(allocator) catch return null;
-    defer allocator.free(compiler_name);
-    const settings = compilationSettingsOwned(allocator) catch return null;
-    defer allocator.free(settings);
+pub fn compilerInfoText(gpa: std.mem.Allocator) ?[]u8 {
+    const compiler_name = compilerNameOwned(gpa) catch return null;
+    defer gpa.free(compiler_name);
+    const settings = compilationSettingsOwned(gpa) catch return null;
+    defer gpa.free(settings);
 
-    return allocFormattedCString(
+    return std.fmt.allocPrint(
+        gpa,
         "\nCompiled by                : {s}{s}\n" ++
             "Compilation architecture   : {s}\n" ++
             "Compilation settings       : {s}\n" ++
@@ -119,13 +115,6 @@ fn getWorkingDirectoryAlloc() ![*:0]u8 {
         return try allocCString("");
     };
     return try allocCString(buffer[0..length]);
-}
-
-fn allocFormattedCString(comptime fmt: []const u8, args: anytype) ![*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const rendered = try std.fmt.allocPrint(allocator, fmt, args);
-    defer allocator.free(rendered);
-    return try allocCString(rendered);
 }
 
 fn engineVersionOwned(allocator: std.mem.Allocator) ![]u8 {

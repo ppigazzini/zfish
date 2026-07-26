@@ -30,7 +30,7 @@ pub fn printInfoString(str: []const u8) void {
         if (all_ws) continue;
         var buf: [1024]u8 = undefined;
         const out = std.fmt.bufPrint(&buf, "info string {s}", .{line}) catch continue;
-        uci_output.printLine(out.ptr, out.len);
+        uci_output.printLine(out);
     }
 }
 
@@ -120,7 +120,7 @@ pub fn saveNetworkEngine(filename_opt: ?[]const u8) void {
     if (result.message) |message_ptr| {
         defer std.heap.c_allocator.free(std.mem.span(message_ptr));
         const line = std.mem.span(message_ptr);
-        uci_output.printLine(line.ptr, line.len);
+        uci_output.printLine(line);
     }
 }
 
