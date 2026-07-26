@@ -1,13 +1,12 @@
-// Define SearchManager + UpdateContext.
+// Define the search's UCI-reporting seam.
 //
-//   * UpdateContext: hold a plain function pointer plus an opaque context pointer.
-//     Bind the four UCI-output callbacks (no-moves / full / iteration / bestmove),
-//     `*const fn (...) void` fields, to whatever owns
-//     the output sink (the UCIEngine).
+// Hold a plain function pointer plus an opaque context pointer. Bind the four
+// UCI-output callbacks (no-moves / full / iteration / bestmove), `*const fn (...) void`
+// fields, to whatever owns the output sink (the UCIEngine), plus the three Info
+// payload records they carry.
 //
-//   * SearchManager: define a single struct with an `is_main` flag. Give non-main
-//     workers a manager that does nothing on check_time; use no vtable,
-//     just a branch. Dispatch a direct Zig call, resolved at the call site.
+// The manager object those callbacks are reached from is `worker_layout.SearchManager`,
+// embedded in the object graph the Worker points at; only the reporting seam lives here.
 //
 // Build and unit-test this module standalone.
 
@@ -65,39 +64,6 @@ pub const UpdateContext = struct {
     }
     pub fn bestmove(self: *const UpdateContext, best: [*:0]const u8, ponder: [*:0]const u8) void {
         self.on_bestmove(self.ctx, best, ponder);
-    }
-};
-
-// Give the main thread a manager with is_main = true and
-// a bound UpdateContext; give non-main threads one with is_main = false whose
-// check_time is a no-op. Use no vtable -- a single branch in check_time.
-pub const SearchManager = struct {
-    is_main: bool,
-    updates: *const UpdateContext,
-
-    // Track the main-thread search bookkeeping.
-    original_time_adjust: f64 = 0,
-    calls_cnt: i32 = 0,
-    ponder: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    iter_value: [4]i32 = .{ 0, 0, 0, 0 },
-    previous_time_reduction: f64 = 0,
-    best_previous_score: i32 = 0,
-    best_previous_average_score: i32 = 0,
-    stop_on_ponderhit: bool = false,
-    id: usize = 0,
-
-    pub fn initMain(updates: *const UpdateContext, id: usize) SearchManager {
-        return .{ .is_main = true, .updates = updates, .id = id };
-    }
-
-    pub fn initNull(updates: *const UpdateContext) SearchManager {
-        return .{ .is_main = false, .updates = updates };
-    }
-
-    // Do nothing for non-main managers; run the supplied CheckBody for main managers.
-    pub fn checkTime(self: *SearchManager, comptime CheckBody: type) void {
-        if (!self.is_main) return;
-        CheckBody.run(self);
     }
 };
 
@@ -166,34 +132,4 @@ test "UpdateContext dispatches through function pointers" {
 
     ctx.bestmove("d2d4", "g8f6");
     try testing.expectEqualStrings("d2d4", Captured.bestmove_seen[0..Captured.bestmove_len]);
-}
-
-test "non-main manager skips check_time (no vtable, just a branch)" {
-    const ctx = testContext();
-    const Body = struct {
-        var ran: bool = false;
-        fn run(_: *SearchManager) void {
-            ran = true;
-        }
-    };
-
-    var main_mgr = SearchManager.initMain(&ctx, 0);
-    var null_mgr = SearchManager.initNull(&ctx);
-
-    Body.ran = false;
-    null_mgr.checkTime(Body);
-    try testing.expect(!Body.ran); // non-main manager: no-op
-
-    Body.ran = false;
-    main_mgr.checkTime(Body);
-    try testing.expect(Body.ran); // run the time check on the main thread
-}
-
-test "SearchManager carries the main-thread bookkeeping" {
-    const ctx = testContext();
-    var mgr = SearchManager.initMain(&ctx, 7);
-    try testing.expect(mgr.is_main);
-    try testing.expectEqual(@as(usize, 7), mgr.id);
-    mgr.ponder.store(true, .release);
-    try testing.expect(mgr.ponder.load(.acquire));
 }

@@ -21,7 +21,6 @@ const tt_mod = @import("tt");
 const TranspositionTable = tt_mod.TranspositionTable;
 const sm = @import("search_manager");
 const UpdateContext = sm.UpdateContext;
-const SearchManager = sm.SearchManager;
 // Treat shared_state as the generic SharedStateOf; this scaffolding binds its own referents
 // (ThreadPool + TranspositionTable typed, the rest erased here), so it
 // instantiates its own view. Use engine.SharedState on the live engine path.
@@ -72,15 +71,6 @@ pub const EngineGraph = struct {
             &self.tt,
             self.shared_histories,
         );
-    }
-
-    // Bind this graph's UpdateContext for the main thread's manager; give others a
-    // null manager. No vtable, no callback.
-    pub fn makeManager(self: *EngineGraph, is_main: bool, id: usize) SearchManager {
-        return if (is_main)
-            SearchManager.initMain(&self.update_context, id)
-        else
-            SearchManager.initNull(&self.update_context);
     }
 
     // Construct the graph's OWNED members (states, numaContext,
@@ -190,38 +180,6 @@ test "EngineGraph hands a SharedState bound to its own subsystems" {
     // Treat the states member as the StateList, non-empty at construction
     try testing.expect(graph.states.hasStates());
     try testing.expectEqual(@as(usize, 1), graph.states.len());
-}
-
-test "EngineGraph mints main and null managers without a vtable" {
-    var pool: ThreadPool = undefined;
-    var dummy_options = OptionsModel.init(testing.allocator);
-    defer dummy_options.deinit();
-    var dummy_network_storage: u32 = 0;
-    const dummy_network: *Network = @ptrCast(&dummy_network_storage);
-    var dummy_hists: SharedHistoriesMap = undefined; // identity-only: compared by address, never read
-    var states = try StateList.init(testing.allocator);
-    defer states.deinit();
-    var numa = NumaReplicationContext.init(testing.allocator, NumaConfig.empty(testing.allocator));
-    defer numa.deinit();
-    var position = PositionStorage.zeroed();
-    var graph = EngineGraph{
-        .binary_directory = "",
-        .numa_context = &numa,
-        .position = &position,
-        .states = &states,
-        .options = &dummy_options,
-        .threads = &pool,
-        .tt = .{},
-        .network = dummy_network,
-        .shared_histories = &dummy_hists,
-        .update_context = testUpdateContext(),
-    };
-
-    const main_mgr = graph.makeManager(true, 0);
-    const null_mgr = graph.makeManager(false, 0);
-    try testing.expect(main_mgr.is_main);
-    try testing.expect(!null_mgr.is_main);
-    try testing.expectEqual(&graph.update_context, main_mgr.updates);
 }
 
 test "EngineGraph.init builds+owns states/numa/position; deinit frees them" {
