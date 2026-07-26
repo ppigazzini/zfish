@@ -81,10 +81,18 @@ pub const layer_weights_bytes = [layers_per_stack]usize{ 32768, 2048, 128 };
 // Lay every bucket's layer stack out in ONE arena, mirroring upstream's in-line
 // `NetworkArchitecture network[LayerStacks]` member: consecutive buckets adjacent,
 // parts in traversal order (fc_0 b/w, fc_1 b/w, fc_2 b/w), each part rounded up to a
-// cache line so the SIMD kernels keep their 64-byte alignment. One allocation is the
-// point, not a convenience: 48 separate huge-page blocks put every part at the same
-// address bits modulo 2 MiB, so the whole layer stack aliased a handful of LL cache
-// sets and paid ~5 LL misses per eval that upstream does not.
+// cache line so the SIMD kernels keep their 64-byte alignment. One arena is the point,
+// not a convenience: 48 separate huge-page blocks put every part at the same address
+// bits modulo 2 MiB, so the whole layer stack aliased a handful of LL cache sets.
+//
+// Keep the arena in static storage rather than a huge-page block, for the same reason.
+// The size is fixed by the architecture, so nothing has to be allocated; and the large
+// -block allocator hands out 2 MiB-aligned pages, which is what put the whole stack at
+// page offset 0 -- the SAME offset as the feature-transformer blob and the accumulator
+// arenas. Address bits below 2 MiB survive translation on huge pages, so three hot
+// regions sharing page offset 0 land on one set range in a physically indexed LL. A
+// static array's link-time address carries no such alignment, exactly as upstream's
+// stacks sit at `featureTransformer`'s end inside one `Network` object.
 const part_align = 64;
 fn alignPart(n: usize) usize {
     return (n + part_align - 1) & ~@as(usize, part_align - 1);
@@ -110,7 +118,12 @@ const part_offsets: [layers_per_stack][2]usize = blk: {
     break :blk offsets;
 };
 
-var layer_arena: ?[*]u8 = null;
+// Zero-initialize the arena, so it lands in .bss and the loader supplies the fill. The
+// parse writes only the exact bias/weight part lengths, and alignPart opens padding gaps
+// between parts (fc_2's 4-byte biases in a 64-byte slot); the zero keeps those gap bytes
+// deterministic across a reload.
+var layer_arena: [stack_stride * layer_stacks_n]u8 align(part_align) = @splat(0);
+var layer_arena_written: bool = false;
 
 pub fn layerStorage(bucket: usize, idx: usize, part: LayerPart, n: usize) ?[*]u8 {
     if (bucket >= layer_stacks_n or idx >= layers_per_stack or n == 0) return null;
@@ -121,22 +134,14 @@ pub fn layerStorage(bucket: usize, idx: usize, part: LayerPart, n: usize) ?[*]u8
         .weights => layer_weights_bytes[idx],
     };
     if (n != expected) return null;
-    if (layer_arena == null) {
-        layer_arena = @ptrCast(page_alloc.alloc(stack_stride * layer_stacks_n) orelse return null);
-        // Zero the arena once: page_alloc hands it out uninitialized, the parse writes
-        // only the exact bias/weight part lengths, and alignPart opens padding gaps
-        // between parts (fc_2's 4-byte biases in a 64-byte slot). The zero keeps the
-        // gap bytes deterministic. ~283 KB once, vs the ~106 MB FT arena the parse
-        // tiles gaplessly (comptime-asserted in nnue_parse) and needs no fill for.
-        @memset(layer_arena.?[0 .. stack_stride * layer_stacks_n], 0);
-    }
-    return layer_arena.? + bucket * stack_stride + part_offsets[idx][@intFromEnum(part)];
+    layer_arena_written = true;
+    return @as([*]u8, &layer_arena) + bucket * stack_stride + part_offsets[idx][@intFromEnum(part)];
 }
 
 pub fn layerPtr(bucket: usize, idx: usize, part: LayerPart) ?[*]const u8 {
     if (bucket >= layer_stacks_n or idx >= layers_per_stack) return null;
-    const arena = layer_arena orelse return null;
-    return arena + bucket * stack_stride + part_offsets[idx][@intFromEnum(part)];
+    if (!layer_arena_written) return null;
+    return @as([*]const u8, &layer_arena) + bucket * stack_stride + part_offsets[idx][@intFromEnum(part)];
 }
 
 test {
