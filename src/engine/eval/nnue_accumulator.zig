@@ -188,13 +188,14 @@ inline fn nnzRecord(comptime GMask: type, nnz: *NnzBitset, bit: usize, mask: GMa
     }
 }
 
-// Alias the transform's packus clip-multiply-narrow kernels and their comptime
-// gates from the nnue_acc_rowops leaf (split there with the row kernels; the
-// scalar-reference unit tests pinning the packus trick live beside them).
-const use_packus_avx2 = nnue_acc_rowops.use_packus_avx2;
-const use_packus_sse = nnue_acc_rowops.use_packus_sse;
-const packusTransform32 = nnue_acc_rowops.packusTransform32;
-const packusTransform16 = nnue_acc_rowops.packusTransform16;
+// Alias the transform's packus clip-multiply-narrow kernels and their comptime gates
+// from the nnue_transform_packus leaf (this function is their only consumer; the
+// scalar-reference unit tests pinning the packus trick live beside them there).
+const packus = @import("nnue_transform_packus.zig");
+const use_packus_avx2 = packus.use_packus_avx2;
+const use_packus_sse = packus.use_packus_sse;
+const packusTransform32 = packus.packusTransform32;
+const packusTransform16 = packus.packusTransform16;
 
 pub fn transformBucket(
     stack: *AccumulatorStack,

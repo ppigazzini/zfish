@@ -24,7 +24,8 @@ for the same position.
 | **accumulator** | |
 | `nnue_acc_layout.zig` | the accumulator-stack byte layout: strides, diff records, the `AccumulatorStack` handle, and every state/diff accessor |
 | `nnue_acc_update.zig` | the update algorithm: `evaluateSide`, the refresh path, and the fused incremental step |
-| `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels (`applyCombinedDelta`, `accRows`, the PSQT deltas) and the transform's packus pack kernels (`packusTransform32`/`packusTransform16`) |
+| `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `accRows`, the refresh-fused passes and the PSQT deltas |
+| `nnue_transform_packus.zig` | the transform's packus clip-multiply-narrow kernels, one per x86 vector width (`packusTransform32`/`packusTransform16`), and the scalar-reference tests that pin them |
 | `nnue_refresh_cache.zig` | the per-(king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
 | `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`) and `transformBucket` — the clipped-ReLU transform plus the NNZ bitset |
 | **inference** | |
@@ -134,9 +135,9 @@ perspective.
 `nnue_accumulator.transformBucket` turns the two perspectives' accumulators into the
 network input: per element, clamp to `[0,255]` and multiply the two halves with a
 `>> 9` — the pairwise squared-clipped-ReLU — yielding 1024 `u8`. On the AVX2 and
-pre-AVX2 x86 tiers `packusTransform32` / `packusTransform16` (`nnue_acc_rowops.zig`)
-compute the same values with upstream's packus body: the second
-half skips its `max(0, ·)` because the signed `pmulhw` carries the sign into the
+pre-AVX2 x86 tiers `packusTransform32` / `packusTransform16`
+(`nnue_transform_packus.zig`) compute the same values with upstream's packus body: the
+second half skips its `max(0, ·)` because the signed `pmulhw` carries the sign into the
 product and the saturating `packuswb` zeroes it on pack. It records which
 4-byte chunks are non-zero into an `NnzBitset` in the same pass, while the values are
 still in registers, and returns the perspective-differenced PSQT value for the bucket.
