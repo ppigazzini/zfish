@@ -146,7 +146,7 @@ pub fn searchFen(fen: []const u8, chess960: u8, depth: i32) ?Result {
         worker_layout.position_size,
         worker_layout.state_info_size,
     )) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg));
+        std.heap.c_allocator.free(msg);
         return null; // illegal FEN
     }
     return searchCore(wl, fen, chess960, depth);

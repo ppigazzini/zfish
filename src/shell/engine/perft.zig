@@ -50,13 +50,12 @@ fn perftSubtree(pos_ptr: *position_port.Position, depth: i32) u64 {
 // not been populated. Callers terminate on `err`, as upstream's uci.cpp:478 does.
 pub const PerftResult = struct {
     nodes: u64 = 0,
-    err: ?[*:0]u8 = null,
+    err: ?[]u8 = null,
 };
 
 pub fn perftEngine(engine_ptr: *engine_object.EngineObject, depth: i32) PerftResult {
     verifyNetwork();
-    const fen_ptr = fen(engine_ptr.positionPtr()) orelse @panic("perft: null fen");
-    const fen_text = std.mem.span(fen_ptr);
+    const fen_text = fen(engine_ptr.positionPtr()) orelse @panic("perft: null fen");
     const chess960 = option_port.intByName("UCI_Chess960") != 0;
 
     // Allocate scope-local Position/StateInfo via the Allocator interface (c_allocator
@@ -100,7 +99,7 @@ pub fn perftEngine(engine_ptr: *engine_object.EngineObject, depth: i32) PerftRes
         uci_output.printLine(out);
     }
 
-    std.heap.c_allocator.free(std.mem.span(fen_ptr));
+    std.heap.c_allocator.free(fen_text);
 
     var nbuf: [64]u8 = undefined;
     const nout = std.fmt.bufPrint(&nbuf, "\nNodes searched: {d}\n", .{nodes}) catch unreachable;

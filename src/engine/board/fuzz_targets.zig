@@ -46,7 +46,7 @@ fn fuzzSetPosition(_: void, smith: *std.testing.Smith) anyerror!void {
     var st: position.StateInfo align(16) = undefined;
     const err = position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size);
     if (err) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg));
+        std.heap.c_allocator.free(msg);
         return; // rejected -- fine
     }
     var moves: [256]u16 = undefined;
@@ -78,7 +78,7 @@ fn fuzzRandomGame(_: void, smith: *std.testing.Smith) anyerror!void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg));
+        std.heap.c_allocator.free(msg);
         return; // start position is always legal, but stay defensive
     }
 
@@ -117,7 +117,7 @@ fn fuzzKeyStability(_: void, smith: *std.testing.Smith) anyerror!void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg));
+        std.heap.c_allocator.free(msg);
         return;
     }
     const key0 = positionKey(&p);
@@ -156,7 +156,7 @@ fn fuzzAllMovesKeyStability(_: void, smith: *std.testing.Smith) anyerror!void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg));
+        std.heap.c_allocator.free(msg);
         return;
     }
     // Diversify the starting board with a shallow random line.
@@ -206,7 +206,7 @@ fn fuzzLegalMoveWellFormedness(_: void, smith: *std.testing.Smith) anyerror!void
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg));
+        std.heap.c_allocator.free(msg);
         return;
     }
     var chain: [choices.len]position.StateInfo align(16) = undefined;
@@ -257,7 +257,7 @@ fn fuzzMoveCountStability(_: void, smith: *std.testing.Smith) anyerror!void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg));
+        std.heap.c_allocator.free(msg);
         return;
     }
     var chain: [choices.len]position.StateInfo align(16) = undefined;
@@ -332,7 +332,7 @@ fn fuzzNnueEval(_: void, smith: *std.testing.Smith) anyerror!void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg));
+        std.heap.c_allocator.free(msg);
         return;
     }
     var chain: [choices.len]position.StateInfo align(16) = undefined;
@@ -388,7 +388,7 @@ fn fuzzShallowSearch(_: void, smith: *std.testing.Smith) anyerror!void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, start_fen, start_fen.len, 0, &st, position_size, state_info_size)) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg));
+        std.heap.c_allocator.free(msg);
         return;
     }
     var chain: [choices.len]position.StateInfo align(16) = undefined;

@@ -322,9 +322,8 @@ pub fn startThinking(
         try selected_moves.appendSlice(std.heap.c_allocator, legal_moves);
     }
 
-    const root_fen = buildRootFen(pos) orelse return error.OutOfMemory;
-    defer std.heap.c_allocator.free(std.mem.span(root_fen));
-    const root_fen_text = std.mem.span(root_fen);
+    const root_fen_text = buildRootFen(pos) orelse return error.OutOfMemory;
+    defer std.heap.c_allocator.free(root_fen_text);
     const chess960 = loadPositionSnapshot(pos).is_chess960;
     const root_setup = try buildRootMoves(
         std.heap.c_allocator,
@@ -349,7 +348,7 @@ pub fn startThinking(
             .input = .{
                 .limits = limits,
                 .root_moves = root_moves,
-                .fen_ptr = root_fen,
+                .fen_ptr = root_fen_text.ptr,
                 .fen_len = root_fen_text.len,
                 .setup_state = setup_state,
                 .chess960 = chess960,

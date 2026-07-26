@@ -172,9 +172,9 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
         },
         .flip => {
             // Terminate on a flip that yields an unusable position (upstream uci.cpp:147).
-            if (engine_mod.flipEngine(engine)) |err_ptr| {
-                defer freeMaybeCString(err_ptr);
-                terminateOnCriticalError(std.mem.span(err_ptr));
+            if (engine_mod.flipEngine(engine)) |err_text| {
+                defer std.heap.c_allocator.free(err_text);
+                terminateOnCriticalError(err_text);
             }
             return .{ .should_quit = 0 };
         },
@@ -187,20 +187,20 @@ pub fn dispatchCommand(engine: *engine_object.EngineObject, input: []const u8) D
             return .{ .should_quit = 0 };
         },
         .visualize => {
-            const text_ptr = engine_mod.visualizeEngine(engine) orelse return .{ .should_quit = 0 };
-            defer freeMaybeCString(text_ptr);
-            putsLine(text_ptr);
+            const text = engine_mod.visualizeEngine(engine) orelse return .{ .should_quit = 0 };
+            defer std.heap.c_allocator.free(text);
+            uci_output.printLine(text);
             return .{ .should_quit = 0 };
         },
         .eval => {
-            const text_ptr = engine_mod.traceEvalEngine(engine) orelse return .{ .should_quit = 0 };
-            defer freeMaybeCString(text_ptr);
+            const text = engine_mod.traceEvalEngine(engine) orelse return .{ .should_quit = 0 };
+            defer std.heap.c_allocator.free(text);
             // Same as `uci`: route to stdout through the sink. Keep the leading blank
             // line (printLine adds the trailing one), so emitted bytes are unchanged.
             const block = std.fmt.allocPrint(
                 std.heap.c_allocator,
                 "\n{s}",
-                .{std.mem.span(text_ptr)},
+                .{text},
             ) catch return .{ .should_quit = 0 };
             defer std.heap.c_allocator.free(block);
             uci_output.printLine(block);
@@ -298,9 +298,9 @@ fn applyPosition(engine: *engine_object.EngineObject, trimmed: []const u8) void 
         if (move_views.items.len == 0) null else move_views.items.ptr,
         move_views.items.len,
     );
-    if (err) |err_ptr| {
-        defer freeMaybeCString(err_ptr);
-        terminateOnCriticalError(std.mem.span(err_ptr));
+    if (err) |err_text| {
+        defer std.heap.c_allocator.free(err_text);
+        terminateOnCriticalError(err_text);
     }
 }
 
@@ -315,14 +315,14 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     // prints them before terminating inside the parse. Skip during a `bench` loop --
     // upstream's bench calls engine.go() directly, bypassing this handler (uci.cpp:261-284).
     if (!uci_output.benchGoActive()) {
-        if (engine_mod.numaConfigInformationEngine(engine_ptr)) |numa_info_ptr| {
-            defer freeMaybeCString(numa_info_ptr);
-            emitInfoString(std.mem.span(numa_info_ptr));
+        if (engine_mod.numaConfigInformationEngine(engine_ptr)) |numa_info| {
+            defer std.heap.c_allocator.free(numa_info);
+            emitInfoString(numa_info);
         }
 
-        if (engine_mod.threadAllocationInformationEngine(engine_ptr)) |thread_info_ptr| {
-            defer freeMaybeCString(thread_info_ptr);
-            emitInfoString(std.mem.span(thread_info_ptr));
+        if (engine_mod.threadAllocationInformationEngine(engine_ptr)) |thread_info| {
+            defer std.heap.c_allocator.free(thread_info);
+            emitInfoString(thread_info);
         }
     }
 
@@ -338,9 +338,9 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     if (limits.perft != 0) {
         // Terminate on a perft over an unusable position (upstream uci.cpp:478).
         const perft_result = engine_mod.perftEngine(engine_ptr, limits.perft);
-        if (perft_result.err) |err_ptr| {
-            defer freeMaybeCString(err_ptr);
-            terminateOnCriticalError(std.mem.span(err_ptr));
+        if (perft_result.err) |err_text| {
+            defer std.heap.c_allocator.free(err_text);
+            terminateOnCriticalError(err_text);
         }
         return;
     }

@@ -447,7 +447,7 @@ pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult 
     defer state_list.storageDestroy(storage);
     const root_state = state_list.storageReset(storage) catch return empty;
     if (position.setPositionState(pos, fen_ptr, fen_len, chess960, root_state)) |err| {
-        std.heap.c_allocator.free(std.mem.span(err));
+        std.heap.c_allocator.free(err);
         return empty;
     }
 

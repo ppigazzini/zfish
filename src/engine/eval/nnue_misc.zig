@@ -15,14 +15,14 @@ pub const NnueTraceInput = struct {
     total_cp: [*]const i32,
 };
 
-pub fn formatTrace(input: NnueTraceInput) ?[*:0]u8 {
+pub fn formatTrace(input: NnueTraceInput) ?[]u8 {
     return formatTraceAlloc(input) catch null;
 }
 
-fn formatTraceAlloc(input: NnueTraceInput) ![*:0]u8 {
+fn formatTraceAlloc(input: NnueTraceInput) ![]u8 {
     const allocator = std.heap.c_allocator;
     var buffer = std.ArrayList(u8).empty;
-    defer buffer.deinit(allocator);
+    errdefer buffer.deinit(allocator);
 
     try buffer.appendSlice(
         allocator,
@@ -59,9 +59,7 @@ fn formatTraceAlloc(input: NnueTraceInput) ![*:0]u8 {
 
     try buffer.appendSlice(allocator, "+------------+------------+------------+------------+\n");
 
-    const result = try allocator.allocSentinel(u8, buffer.items.len, 0);
-    @memcpy(result[0..buffer.items.len], buffer.items);
-    return result.ptr;
+    return buffer.toOwnedSlice(allocator);
 }
 
 fn appendAlignedDot(buffer: *std.ArrayList(u8), sign_value: i32, cp_value: i32) !void {
@@ -105,8 +103,8 @@ test "formatTrace: side line, bucket row, and the %c%6.2f float cells" {
         .positional_cp = &positional,
         .total_cp = &total,
     }).?;
-    defer std.heap.c_allocator.free(std.mem.span(s));
-    const out = std.mem.span(s);
+    defer std.heap.c_allocator.free(s);
+    const out = s;
 
     try std.testing.expect(std.mem.find(u8, out, "White to move)") != null);
     // Pin the sign + width-6 float format (centipawns*0.01) byte-for-byte:
@@ -128,8 +126,8 @@ test "formatTrace: black-to-move header" {
         .positional_cp = &z,
         .total_cp = &z,
     }).?;
-    defer std.heap.c_allocator.free(std.mem.span(s));
-    const out = std.mem.span(s);
+    defer std.heap.c_allocator.free(s);
+    const out = s;
     try std.testing.expect(std.mem.find(u8, out, "Black to move)") != null);
     try std.testing.expect(std.mem.find(u8, out, "  0.00") != null); // zero -> space sign
     try std.testing.expect(std.mem.find(u8, out, "<-- this bucket is used") == null);

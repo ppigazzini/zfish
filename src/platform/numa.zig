@@ -11,22 +11,21 @@ pub const NumaConfig = @import("numa/config.zig").NumaConfig;
 pub const NumaReplicationContext = @import("numa/replication.zig").NumaReplicationContext;
 pub const NumaReplicatedBase = @import("numa/replication.zig").NumaReplicatedBase;
 
-/// Return the affinity CPU-range string (e.g. "0-15"), malloc'd + NUL-terminated (caller frees). On
-/// Linux render the process's sched_getaffinity mask as comma-joined ranges; elsewhere
-/// return the full "0-{ncpu-1}" range.
-pub fn configString() ?[*:0]u8 {
-    const a = std.heap.c_allocator;
+/// Return the affinity CPU-range string (e.g. "0-15") as an owned slice the caller frees
+/// with `gpa`. On Linux render the process's sched_getaffinity mask as comma-joined
+/// ranges; elsewhere return the full "0-{ncpu-1}" range.
+pub fn configString(gpa: std.mem.Allocator) ?[]u8 {
+    const a = gpa;
 
     // Report every CPU as the fallback: used off Linux, and on Linux when the affinity
     // syscall is unavailable (a seccomp sandbox or a filtered container).
     const fullRange = struct {
-        fn f(alloc: std.mem.Allocator) ?[*:0]u8 {
+        fn f(alloc: std.mem.Allocator) ?[]u8 {
             const n = std.Thread.getCpuCount() catch 1;
-            const owned = if (n <= 1)
-                std.fmt.allocPrintSentinel(alloc, "0", .{}, 0) catch return null
+            return if (n <= 1)
+                alloc.dupe(u8, "0") catch null
             else
-                std.fmt.allocPrintSentinel(alloc, "0-{d}", .{n - 1}, 0) catch return null;
-            return owned.ptr;
+                std.fmt.allocPrint(alloc, "0-{d}", .{n - 1}) catch null;
         }
     }.f;
 
@@ -41,7 +40,7 @@ pub fn configString() ?[*:0]u8 {
     if (linux.errno(rc) != .SUCCESS) return fullRange(a);
 
     var buf = std.ArrayList(u8).empty;
-    defer buf.deinit(a);
+    errdefer buf.deinit(a);
 
     const bits = @bitSizeOf(usize);
     const total = set.len * bits;
@@ -66,9 +65,7 @@ pub fn configString() ?[*:0]u8 {
         i = j + 1;
     }
 
-    const owned = a.allocSentinel(u8, buf.items.len, 0) catch return null;
-    @memcpy(owned[0..buf.items.len], buf.items);
-    return owned.ptr;
+    return buf.toOwnedSlice(a) catch null;
 }
 
 // Replace the context's topology when NumaPolicy changes. setNumaConfig also notifies the
