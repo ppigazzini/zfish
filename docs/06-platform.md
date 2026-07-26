@@ -18,7 +18,8 @@ For the zones and the module graph, see [00-architecture.md](00-architecture.md)
 | `thread_vote.zig` | the Lazy-SMP vote picking the best thread's move |
 | `memory.zig` | the aligned / huge-page allocator (uninitialized blocks; Debug poison) |
 | `numa.zig` | the NUMA topology surface (config, binding, execute-on-node) |
-| `numa/config.zig` | `NumaConfig`: nodes, CPU sets, `NumaPolicy` parsing, thread distribution |
+| `numa/config.zig` | `NumaConfig`: nodes, CPU sets, the system topology, `toString`, thread distribution |
+| `numa/policy.zig` | `parse` — the `NumaPolicy` string reader, over `str_to_size_t`'s rule |
 | `numa/replication.zig` | `NumaReplicationContext` / `NumaReplicatedBase`: the replica registry |
 | `tablebase.zig` | the Syzygy facade the engine's `tb_source` seam binds to |
 | `syzygy/tables.zig` | file discovery: scan `SyzygyPath`, count `.rtbw`/`.rtbz`, report cardinality |
@@ -94,13 +95,22 @@ report the config's node count and per-node CPU count, `distributeThreadsAmongNo
 install a new topology through `setNumaConfig` (which re-notifies replicated objects).
 `setFromString` returns whether the string parsed: an unparseable `NumaPolicy` is refused and
 the previous config stays live, matching upstream. `executeOnNode` runs the callback inline.
-`configString` renders the process's `sched_getaffinity` mask as comma-joined CPU ranges on
-Linux; elsewhere it reports the full range.
+`contextConfigString` renders the live topology — the config, not the affinity mask, because
+once a `NumaPolicy` string installs a topology the mask no longer describes what the engine
+runs on. It is what the engine reports as `Available processors`.
 
 `numa/config.zig` is the model it drives. `NumaConfig` is a list of nodes, each an ascending
-unique CPU set, plus a CPU→node index and the `custom_affinity` flag. `fromString` parses the
-user `NumaPolicy` syntax (`"0-3,8:4-7"`), forces binding, and rejects a CPU claimed by two
-nodes. `distributeThreads` balances threads across nodes by fill ratio.
+unique CPU set, plus a CPU→node index and the `custom_affinity` flag. `fromSystem` names the
+CPUs the process may run on, taking their indices from the affinity mask rather than counting
+them, so a process pinned to `4-7` is a node of {4,5,6,7}. `toString` renders a config back to
+the `NumaPolicy` syntax, collapsing consecutive runs. `distributeThreads` balances threads
+across nodes by fill ratio.
+
+`numa/policy.zig` reads the user `NumaPolicy` syntax (`"0-3,8:4-7"`) into a config and forces
+binding. It follows upstream element for element: a malformed element is dropped rather than
+fatal, an index is read by `str_to_size_t`'s rule (leading whitespace skipped, a numeric
+prefix ending at whitespace accepted), a range span is bounded so a huge one cannot be walked,
+and a CPU claimed twice rejects the whole string.
 `suggestsBindingThreads` mirrors upstream: bind on user-set affinity; never for a single
 thread; otherwise bind when the thread count exceeds half the largest node **or** reaches
 four per not-small node (a node holding ≤60% of the largest is ignored as small) — **and only

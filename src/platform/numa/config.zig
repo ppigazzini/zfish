@@ -9,6 +9,7 @@
 // leave a multi-node /sys topology read + BundledL3 split unimplemented.
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 const Node = std.ArrayList(usize); // hold ascending, unique CPU indices
 
@@ -68,83 +69,80 @@ pub const NumaConfig = struct {
         return true;
     }
 
-    /// Parse a "NumaPolicy" string: nodes separated by ':', each a comma list of
-    /// CPU indices or ranges, e.g. "0-3,8:4-7" -> node0 {0,1,2,3,8}, node1 {4,5,6,7}.
-    ///
-    /// Port upstream's `from_string` + `indices_from_shortened_string` (numa.h) shape for
-    /// shape, because the two disagree on more than the happy path:
-    ///   * a MALFORMED element is skipped, not fatal -- "0,x,2" is node {0,2};
-    ///   * a node string that yields no index leaves the node index unadvanced;
-    ///   * only a repeated CPU (`addCpuToNode` false) rejects the whole string;
-    ///   * parsing nothing at all (no node advanced) rejects it too.
-    pub fn fromString(allocator: std.mem.Allocator, s: []const u8) error{ OutOfMemory, BadNuma }!NumaConfig {
-        var cfg = NumaConfig.empty(allocator);
-        errdefer cfg.deinit();
+    /// Render the topology the way the "NumaPolicy" string that would produce it is
+    /// written: nodes joined by ':', each an ascending comma list whose runs of
+    /// consecutive CPUs collapse to `first-last`. Port upstream's `NumaConfig::to_string`
+    /// (numa.h) -- it is what the engine reports as "Available processors", so a
+    /// divergence here is a divergence in the UCI transcript. Hand the caller an owned
+    /// slice.
+    pub fn toString(self: *const NumaConfig, gpa: std.mem.Allocator) error{OutOfMemory}![]u8 {
+        var out = std.ArrayList(u8).empty;
+        errdefer out.deinit(gpa);
 
-        var node: usize = 0;
-        var node_it = std.mem.splitScalar(u8, s, ':');
-        while (node_it.next()) |node_str| {
-            if (try cfg.addShortenedIndices(node, node_str)) node += 1;
-        }
-        if (node == 0) return error.BadNuma; // parsed no node at all
-        cfg.custom_affinity = true;
-        return cfg;
-    }
+        for (self.nodes.items, 0..) |cpus, node_index| {
+            if (node_index != 0) try out.append(gpa, ':');
 
-    /// Add every CPU index a node string names, and report whether it named any (which is
-    /// what advances the node index). Port `indices_from_shortened_string`: walk the comma
-    /// list, read each element as one index or a `lo-hi` range, and DROP any element that
-    /// does not parse instead of failing the string.
-    fn addShortenedIndices(self: *NumaConfig, node: usize, node_str: []const u8) error{ OutOfMemory, BadNuma }!bool {
-        // Bound one range element, as upstream does verbatim ("prevent oom"). Without it
-        // `NumaPolicy 0-99999999999` walks 1e11 indices and the engine never answers.
-        const max_indices: usize = 1 << 20;
+            var i: usize = 0;
+            var first_set = true;
+            while (i < cpus.items.len) {
+                // Extend the run while the next CPU is exactly one higher.
+                var last = i;
+                while (last + 1 < cpus.items.len and
+                    cpus.items[last + 1] == cpus.items[last] + 1) : (last += 1)
+                {}
 
-        var any = false;
-        var element_it = std.mem.splitScalar(u8, node_str, ',');
-        while (element_it.next()) |element| {
-            if (element.len == 0) continue;
+                if (!first_set) try out.append(gpa, ',');
+                first_set = false;
 
-            // Split on '-' the way upstream does: exactly one part is a lone index, exactly
-            // two a range, and anything else ("1-2-3") is dropped.
-            var part_it = std.mem.splitScalar(u8, element, '-');
-            const first = part_it.next().?;
-            const second = part_it.next();
-            if (part_it.next() != null) continue; // three or more parts
-
-            var lo: usize = undefined;
-            var hi: usize = undefined;
-            if (second) |last_part| {
-                lo = strToSizeT(first) orelse continue;
-                hi = strToSizeT(last_part) orelse continue;
-                // Compare with wrapping subtraction, as the C unsigned expression does: a
-                // reversed range wraps past max_indices and is dropped, not an error.
-                if (hi -% lo >= max_indices) continue;
-            } else {
-                lo = strToSizeT(first) orelse continue;
-                hi = lo;
-            }
-
-            var cpu = lo;
-            while (cpu <= hi) : (cpu += 1) {
-                if (!try self.addCpuToNode(node, cpu)) return error.BadNuma;
-                any = true;
-                if (cpu == std.math.maxInt(usize)) break; // do not wrap the loop counter
+                if (last != i) {
+                    try out.print(gpa, "{d}-{d}", .{ cpus.items[i], cpus.items[last] });
+                } else {
+                    try out.print(gpa, "{d}", .{cpus.items[i]});
+                }
+                i = last + 1;
             }
         }
-        return any;
+
+        return out.toOwnedSlice(gpa);
     }
 
-    /// Build the topology from the system. Fall back to a single node (the only path the
-    /// WSL2/CI gate target takes — its /sys exposes no NUMA nodes): one node holding
-    /// every online CPU, not custom-affinity. Leave a multi-node /sys read + BundledL3
-    /// split unimplemented (it only matters on real multi-socket hosts).
+    /// Build the topology from the system: one node holding every CPU the process may run
+    /// on, not custom-affinity. Take the CPU INDICES from the affinity mask rather than
+    /// counting them and numbering 0..n-1 — upstream's `from_system_numa` respects the
+    /// process affinity, so a process pinned to `4-7` is a node of {4,5,6,7}, and
+    /// numbering from zero would report a topology the engine is not running on. Fall
+    /// back to 0..n-1 where there is no mask to read: off Linux, and on Linux when the
+    /// syscall is refused (a seccomp sandbox or a filtered container). Leave a multi-node
+    /// /sys read + BundledL3 split unimplemented (it only matters on real multi-socket
+    /// hosts, and the WSL2/CI gate target exposes no NUMA nodes).
     pub fn fromSystem(allocator: std.mem.Allocator) error{OutOfMemory}!NumaConfig {
         var cfg = NumaConfig.empty(allocator);
         errdefer cfg.deinit();
-        const count = std.Thread.getCpuCount() catch 1;
+
+        if (builtin.os.tag == .linux) {
+            const linux = std.os.linux;
+            var set: linux.cpu_set_t = undefined;
+            @memset(std.mem.asBytes(&set), 0);
+            // Check the return: on failure the mask stays all-zero and the bit walk below
+            // would report an EMPTY cpu set as if the process were bound to nothing.
+            const rc = linux.sched_getaffinity(0, @sizeOf(linux.cpu_set_t), &set);
+            if (linux.errno(rc) == .SUCCESS) {
+                const bits = @bitSizeOf(usize);
+                const total = set.len * bits;
+                var found = false;
+                var i: usize = 0;
+                while (i < total) : (i += 1) {
+                    if ((set[i / bits] >> @as(u6, @intCast(i % bits))) & 1 == 0) continue;
+                    if (!try cfg.addCpuToNode(0, i)) unreachable;
+                    found = true;
+                }
+                if (found) return cfg;
+            }
+        }
+
+        const count = @max(std.Thread.getCpuCount() catch 1, 1);
         var c: usize = 0;
-        while (c < @max(count, 1)) : (c += 1) {
+        while (c < count) : (c += 1) {
             if (!try cfg.addCpuToNode(0, c)) unreachable;
         }
         return cfg;
@@ -225,10 +223,6 @@ fn insertSorted(node: *Node, allocator: std.mem.Allocator, cpu: usize) error{Out
 
 /// Match C's `isspace` for the default locale, which is what `strtoull` skips and what
 /// upstream's accept test calls.
-fn isSpaceByte(b: u8) bool {
-    return b == ' ' or b == '\t' or b == '\n' or b == 0x0b or b == 0x0c or b == '\r';
-}
-
 /// Port upstream's `str_to_size_t` (misc.cpp) exactly, including the parts that read as
 /// accidents but are load-bearing:
 ///
@@ -245,37 +239,6 @@ fn isSpaceByte(b: u8) bool {
 ///
 /// Overflow is ERANGE, i.e. a reject. `usize` is 64-bit here, so upstream's separate
 /// `value > numeric_limits<usize>::max()` test cannot fire and has no counterpart.
-fn strToSizeT(s: []const u8) ?usize {
-    if (s.len == 0 or s[0] == '-') return null;
-
-    var i: usize = 0;
-    while (i < s.len and isSpaceByte(s[i])) i += 1;
-
-    var negate = false;
-    if (i < s.len and (s[i] == '+' or s[i] == '-')) {
-        negate = s[i] == '-';
-        i += 1;
-    }
-
-    var value: usize = 0;
-    var digits: usize = 0;
-    var overflow = false;
-    while (i < s.len and s[i] >= '0' and s[i] <= '9') : (i += 1) {
-        digits += 1;
-        const mul = @mulWithOverflow(value, 10);
-        const add = @addWithOverflow(mul[0], s[i] - '0');
-        if (mul[1] != 0 or add[1] != 0) overflow = true;
-        value = add[0];
-    }
-
-    if (overflow) return null; // ERANGE
-    // No digit converted: endptr stays at the original start, so test s[0], not s[i].
-    const end = if (digits == 0) 0 else i;
-    if (end < s.len and !isSpaceByte(s[end])) return null;
-    if (digits == 0) return 0;
-
-    return if (negate) 0 -% value else value;
-}
 
 // ---- tests ------------------------------------------------------------------
 
@@ -302,88 +265,64 @@ test "addCpuToNode keeps nodes ascending/unique and one node per cpu" {
     try testing.expect(!(try cfg.addCpuToNode(1, 5)));
 }
 
-test "fromString parses ranges and lists into ordered nodes" {
-    var cfg = try NumaConfig.fromString(testing.allocator, "0-3,8:4-7");
-    defer cfg.deinit();
+test "toString collapses consecutive runs and joins nodes with ':'" {
+    // Build each shape by hand rather than through the policy parser: this file owns the
+    // renderer, and policy.zig imports it, so a fixture that parsed would put the two in
+    // a cycle. Each case pairs the node layout with the string it must render as.
+    const Case = struct { nodes: []const []const usize, want: []const u8 };
+    const cases = [_]Case{
+        .{ .nodes = &.{&.{ 0, 1, 2, 3 }}, .want = "0-3" }, // one run
+        .{ .nodes = &.{&.{ 0, 2, 4, 6 }}, .want = "0,2,4,6" }, // all singletons
+        .{ .nodes = &.{&.{ 5, 7, 9 }}, .want = "5,7,9" },
+        .{ .nodes = &.{&.{7}}, .want = "7" }, // a lone cpu is not a range
+        .{ .nodes = &.{ &.{ 0, 1 }, &.{ 2, 3 } }, .want = "0-1:2-3" }, // two nodes
+        .{ .nodes = &.{ &.{ 0, 1, 2, 3, 8 }, &.{ 4, 5, 6, 7 } }, .want = "0-3,8:4-7" }, // run + gap
+    };
+    for (cases) |case_entry| {
+        var cfg = NumaConfig.empty(testing.allocator);
+        defer cfg.deinit();
+        for (case_entry.nodes, 0..) |cpus, node| {
+            for (cpus) |cpu| try testing.expect(try cfg.addCpuToNode(node, cpu));
+        }
+        const rendered = try cfg.toString(testing.allocator);
+        defer testing.allocator.free(rendered);
+        try testing.expectEqualStrings(case_entry.want, rendered);
+    }
 
-    try testing.expectEqual(@as(usize, 2), cfg.numNodes());
-    try testing.expectEqualSlices(usize, &.{ 0, 1, 2, 3, 8 }, cfg.nodes.items[0].items);
-    try testing.expectEqualSlices(usize, &.{ 4, 5, 6, 7 }, cfg.nodes.items[1].items);
-    try testing.expectEqual(@as(usize, 9), cfg.numCpus());
-    try testing.expect(cfg.custom_affinity);
+    // Render an empty config as the empty string, as upstream's loop does.
+    var none = NumaConfig.empty(testing.allocator);
+    defer none.deinit();
+    const empty_str = try none.toString(testing.allocator);
+    defer testing.allocator.free(empty_str);
+    try testing.expectEqualStrings("", empty_str);
 }
 
-test "fromString skips empty node segments without advancing the node index" {
-    var cfg = try NumaConfig.fromString(testing.allocator, "0-1::2-3");
+test "fromSystem names the CPUs the process may run on, not 0..n-1" {
+    var cfg = try NumaConfig.fromSystem(testing.allocator);
     defer cfg.deinit();
-    try testing.expectEqual(@as(usize, 2), cfg.numNodes());
-    try testing.expectEqualSlices(usize, &.{ 0, 1 }, cfg.nodes.items[0].items);
-    try testing.expectEqualSlices(usize, &.{ 2, 3 }, cfg.nodes.items[1].items);
-}
 
-test "strToSizeT reproduces strtoull, including the no-conversion endptr rule" {
-    // Plain, and the trailing whitespace b4ea9205 allowed (the sysfs "\n" shape).
-    try testing.expectEqual(@as(?usize, 7), strToSizeT("7"));
-    try testing.expectEqual(@as(?usize, 7), strToSizeT("7 "));
-    try testing.expectEqual(@as(?usize, 7), strToSizeT("7\n"));
-    try testing.expectEqual(@as(?usize, 7), strToSizeT(" 7"));
-    try testing.expectEqual(@as(?usize, 7), strToSizeT("+7"));
-    // A numeric prefix followed by whitespace is the value; followed by anything else it
-    // is a reject -- this is the pair the old parseInt call collapsed into one reject.
-    try testing.expectEqual(@as(?usize, 7), strToSizeT("7 8"));
-    try testing.expectEqual(@as(?usize, null), strToSizeT("7x"));
-    // No conversion: endptr stays at byte 0, so the accept test reads s[0].
-    try testing.expectEqual(@as(?usize, 0), strToSizeT(" x"));
-    try testing.expectEqual(@as(?usize, null), strToSizeT("x"));
-    // Rejected up front, before strtoull ever runs.
-    try testing.expectEqual(@as(?usize, null), strToSizeT(""));
-    try testing.expectEqual(@as(?usize, null), strToSizeT("-5"));
-    // Overflow is ERANGE.
-    try testing.expectEqual(@as(?usize, null), strToSizeT("99999999999999999999999"));
-}
-
-test "fromString drops a malformed element instead of failing the whole string" {
-    // Upstream keeps parsing past an element str_to_size_t rejects.
-    var cfg = try NumaConfig.fromString(testing.allocator, "0,x,2");
-    defer cfg.deinit();
+    // One node, non-empty, and every index it holds is one this process can be scheduled
+    // on -- the property that makes the reported topology the one actually in use.
     try testing.expectEqual(@as(usize, 1), cfg.numNodes());
-    try testing.expectEqualSlices(usize, &.{ 0, 2 }, cfg.nodes.items[0].items);
+    try testing.expect(cfg.numCpus() >= 1);
+    try testing.expect(!cfg.custom_affinity);
+    try testing.expectEqual(cfg.numCpus(), cfg.numCpusInNode(0));
 
-    // Interior whitespace: upstream reads the numeric prefix, so "0 1" is 0.
-    var interior = try NumaConfig.fromString(testing.allocator, "0 1,2");
-    defer interior.deinit();
-    try testing.expectEqualSlices(usize, &.{ 0, 2 }, interior.nodes.items[0].items);
-
-    // Three or more '-' parts is neither an index nor a range: dropped.
-    var three = try NumaConfig.fromString(testing.allocator, "0,1-2-3");
-    defer three.deinit();
-    try testing.expectEqualSlices(usize, &.{0}, three.nodes.items[0].items);
-}
-
-test "fromString rejects a repeated cpu, an all-malformed string, and a reversed range" {
-    // A repeat is fatal even onto the same node (upstream's is_cpu_assigned test).
-    try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "0,0"));
-    // Nothing parsed at all -> no node advanced -> reject.
-    try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "x"));
-    try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "1-2-3"));
-    // hi < lo wraps past max_indices, so the element is dropped and nothing is parsed.
-    try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "3-0"));
-}
-
-test "fromString bounds a huge range instead of walking it" {
-    // Upstream's `constexpr usize MaxIndices = 1 << 20;  // prevent oom`. Without it this
-    // call walks 1e11 indices and never returns -- the engine stops answering `isready`.
-    try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "0-99999999999"));
-    // The bound is on the SPAN, so a large-but-in-range window still parses.
-    var ok = try NumaConfig.fromString(testing.allocator, "1000000-1000003");
-    defer ok.deinit();
-    try testing.expectEqualSlices(usize, &.{ 1000000, 1000001, 1000002, 1000003 }, ok.nodes.items[0].items);
+    // Hold the node ascending and unique, which toString's run-collapsing relies on.
+    const cpus = cfg.nodes.items[0].items;
+    var prev: ?usize = null;
+    for (cpus) |cpu| {
+        if (prev) |p| try testing.expect(cpu > p);
+        prev = cpu;
+    }
 }
 
 test "suggestsBindingThreads: custom affinity binds; a single node never does" {
     // bind always for user-set affinity
-    var custom = try NumaConfig.fromString(testing.allocator, "0-3");
+    var custom = NumaConfig.empty(testing.allocator);
     defer custom.deinit();
+    for (0..4) |c| try testing.expect(try custom.addCpuToNode(0, c));
+    custom.custom_affinity = true;
     try testing.expect(custom.suggestsBindingThreads(1)); // let custom affinity override the <=1 rule
 
     // build a system-style single node of 4 cpus
@@ -396,11 +335,6 @@ test "suggestsBindingThreads: custom affinity binds; a single node never does" {
     // is nothing to distribute across, so binding is never suggested at any thread count.
     try testing.expect(!sys.suggestsBindingThreads(5));
     try testing.expect(!sys.suggestsBindingThreads(64));
-}
-
-test "fromString rejects malformed input" {
-    try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "3-1")); // reject hi<lo
-    try testing.expectError(error.BadNuma, NumaConfig.fromString(testing.allocator, "x"));
 }
 
 test "fromSystem yields a single non-empty node, not custom affinity" {
@@ -445,21 +379,15 @@ test "distributeThreads: multi-node places every thread and favors the larger no
 // two-slice distributeThreads, whose errdefer/deinit chains must hold on any partial
 // failure. Confirm the container-owned allocations here need no per-item errdefer
 // (the state_list gate found a real leak this way).
-test "NumaConfig.fromString unwinds leak-free on every allocation failure" {
-    const T = struct {
-        fn run(a: std.mem.Allocator) !void {
-            var cfg = try NumaConfig.fromString(a, "0-3,8:4-7");
-            cfg.deinit();
-        }
-    };
-    try testing.checkAllAllocationFailures(testing.allocator, T.run, .{});
-}
 
 test "NumaConfig.distributeThreads unwinds leak-free on every allocation failure" {
     const T = struct {
         fn run(a: std.mem.Allocator) !void {
-            var cfg = try NumaConfig.fromString(a, "0-1:2-5"); // force the alloc path with 2 nodes
+            // Force the alloc path with two nodes.
+            var cfg = NumaConfig.empty(a);
             defer cfg.deinit();
+            for (0..2) |c| _ = try cfg.addCpuToNode(0, c);
+            for (2..6) |c| _ = try cfg.addCpuToNode(1, c);
             const ns = try cfg.distributeThreads(a, 4);
             a.free(ns);
         }

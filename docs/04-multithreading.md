@@ -31,7 +31,7 @@ the hook pattern see [00-architecture.md](00-architecture.md).
 | `src/platform/thread.zig` | The pool policy layer: `reconfigure`, `startThinking`, `clear`, `startSearching`, `waitForSearchFinished`, `nodesSearched` / `tbHits`, `ensureNetworkReplicated`, `nextPowerOfTwo` |
 | `src/platform/thread_vote.zig` | `ThreadSummary`, `bestThreadIndex`, `bestThreadWorker` — the Lazy-SMP vote |
 | `src/platform/runtime_hooks.zig` | The lifecycle hook registry (`worker_build`, `worker_clear`, `worker_destroy`, the setup-state handoff, the shared-history insert/clear, `verify_thread_graph`) |
-| `src/platform/numa.zig`, `numa/config.zig`, `numa/replication.zig` | The topology surface, the `NumaConfig` model + thread distribution, and the replica registry |
+| `src/platform/numa.zig`, `numa/config.zig`, `numa/policy.zig`, `numa/replication.zig` | The topology surface, the `NumaConfig` model + thread distribution, the `NumaPolicy` string reader, and the replica registry |
 | **engine — the search side** | |
 | `src/engine/search/thread_ops.zig` | The pool-op seam: `startSiblings`, `waitSiblings`, `waitThread`, `bestThreadWorker` |
 | `src/engine/search/search_driver.zig` | `workerStartSearching` — the per-worker entry: main-thread branch, sibling start/wait, best-thread pick, final emit |
