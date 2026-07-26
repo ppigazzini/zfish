@@ -14,44 +14,48 @@
 const std = @import("std");
 const uci_strings = @import("uci_strings");
 
-const allocCString = uci_strings.allocCString;
 const allocFormatted = uci_strings.allocFormatted;
 const trimAsciiWhitespace = uci_strings.trimAsciiWhitespace;
 
-pub fn formatInfoString(input: []const u8) ?[*:0]u8 {
-    return allocInfoString(input) catch null;
+// Every renderer here hands back an owned SLICE; the caller frees it with the same
+// allocator it passed in.
+
+pub fn formatInfoString(gpa: std.mem.Allocator, input: []const u8) ?[]u8 {
+    return allocInfoString(gpa, input) catch null;
 }
 
-fn allocInfoString(input: []const u8) !?[*:0]u8 {
+fn allocInfoString(gpa: std.mem.Allocator, input: []const u8) ![]u8 {
     var builder = std.ArrayList(u8).empty;
-    defer builder.deinit(std.heap.c_allocator);
+    errdefer builder.deinit(gpa);
     var line_iter = std.mem.splitScalar(u8, input, '\n');
     while (line_iter.next()) |line| {
         if (trimAsciiWhitespace(line).len == 0) {
             continue;
         }
         if (builder.items.len != 0) {
-            try builder.append(std.heap.c_allocator, '\n');
+            try builder.append(gpa, '\n');
         }
-        try builder.appendSlice(std.heap.c_allocator, "info string ");
-        try builder.appendSlice(std.heap.c_allocator, line);
+        try builder.appendSlice(gpa, "info string ");
+        try builder.appendSlice(gpa, line);
     }
 
-    return try allocCString(builder.items);
+    return builder.toOwnedSlice(gpa);
 }
 
-pub fn helpText() ?[*:0]u8 {
-    return allocCString(
+pub fn helpText(gpa: std.mem.Allocator) ?[]u8 {
+    return gpa.dupe(
+        u8,
         "\nStockfish is a powerful chess engine for playing and analyzing.\n" ++ "It is released as free software licensed under the GNU GPLv3 License.\n" ++ "Stockfish is normally used with a graphical user interface (GUI) and implements\n" ++ "the Universal Chess Interface (UCI) protocol to communicate with a GUI, an API, etc.\n" ++ "For any further information, visit https://github.com/official-stockfish/Stockfish#readme\n" ++ "or read the corresponding README.md and Copying.txt files distributed along with this program.\n",
     ) catch null;
 }
 
-pub fn formatUnknownCommand(command: []const u8) ?[*:0]u8 {
-    return allocFormatted("Unknown command: '{s}'. Type help for more information.", .{command}) catch null;
+pub fn formatUnknownCommand(gpa: std.mem.Allocator, command: []const u8) ?[]u8 {
+    return allocFormatted(gpa, "Unknown command: '{s}'. Type help for more information.", .{command}) catch null;
 }
 
-pub fn formatCriticalError(command: []const u8, message: []const u8) ?[*:0]u8 {
+pub fn formatCriticalError(gpa: std.mem.Allocator, command: []const u8, message: []const u8) ?[]u8 {
     return allocFormatted(
+        gpa,
         "info string CRITICAL ERROR: Command `{s}` failed. Reason: {s}\n",
         .{ command, message },
     ) catch null;
@@ -59,15 +63,26 @@ pub fn formatCriticalError(command: []const u8, message: []const u8) ?[*:0]u8 {
 
 // --- tests--------------------------------------------------------------
 test "uci_format: help / unknown / info-string / critical render" {
-    const help = helpText().?;
-    defer std.heap.c_allocator.free(std.mem.span(help));
-    try std.testing.expect(std.mem.find(u8, std.mem.span(help), "Universal Chess Interface") != null);
+    // Run on the testing allocator, which the C-string form could not: it now leak-checks
+    // every renderer here.
+    const gpa = std.testing.allocator;
 
-    const unk = formatUnknownCommand("foo").?;
-    defer std.heap.c_allocator.free(std.mem.span(unk));
-    try std.testing.expectEqualStrings("Unknown command: 'foo'. Type help for more information.", std.mem.span(unk));
+    const help = helpText(gpa).?;
+    defer gpa.free(help);
+    try std.testing.expect(std.mem.find(u8, help, "Universal Chess Interface") != null);
 
-    const info = formatInfoString("hello\nworld").?;
-    defer std.heap.c_allocator.free(std.mem.span(info));
-    try std.testing.expectEqualStrings("info string hello\ninfo string world", std.mem.span(info));
+    const unk = formatUnknownCommand(gpa, "foo").?;
+    defer gpa.free(unk);
+    try std.testing.expectEqualStrings("Unknown command: 'foo'. Type help for more information.", unk);
+
+    const info = formatInfoString(gpa, "hello\nworld").?;
+    defer gpa.free(info);
+    try std.testing.expectEqualStrings("info string hello\ninfo string world", info);
+
+    const crit = formatCriticalError(gpa, "position fen x", "bad fen").?;
+    defer gpa.free(crit);
+    try std.testing.expectEqualStrings(
+        "info string CRITICAL ERROR: Command `position fen x` failed. Reason: bad fen\n",
+        crit,
+    );
 }

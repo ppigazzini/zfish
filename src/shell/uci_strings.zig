@@ -1,34 +1,37 @@
-// Provide the UCI C-string helpers.
+// Provide the UCI string helpers.
 //
-// Share the std-only C-string alloc / format / trim primitives across uci.zig's
-// formatter, parser, dispatch, and runtime clusters. Split into a base leaf so
-// those clusters can move into their own modules (uci_format / uci_parse / ...)
-// without duplicating these helpers. Depend only on std; uci.zig and the leaves
-// import it and alias the names so their bodies stay unqualified.
+// Share the std-only alloc / format / trim primitives across uci.zig's formatter,
+// parser, dispatch, and runtime clusters. Split into a base leaf so those clusters can
+// move into their own modules (uci_format / uci_parse / ...) without duplicating these
+// helpers. Depend only on std; uci.zig and the leaves import it and alias the names so
+// their bodies stay unqualified.
+//
+// Every producer here returns an owned SLICE. A rendered string has a length the
+// renderer already knows, so handing back a bare `[*:0]u8` throws it away and forces
+// every consumer to walk the bytes again with `std.mem.span`.
 
 const std = @import("std");
 
-pub fn appendFormatted(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
-    const allocator = std.heap.c_allocator;
-    const formatted = try std.fmt.allocPrint(allocator, fmt, args);
-    defer allocator.free(formatted);
-    try buffer.appendSlice(allocator, formatted);
+pub fn appendFormatted(
+    gpa: std.mem.Allocator,
+    buffer: *std.ArrayList(u8),
+    comptime fmt: []const u8,
+    args: anytype,
+) !void {
+    try buffer.print(gpa, fmt, args);
 }
 
-pub fn allocFormatted(comptime fmt: []const u8, args: anytype) !?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const formatted = try std.fmt.allocPrint(allocator, fmt, args);
-    defer allocator.free(formatted);
-    return try allocCString(formatted);
+/// Render `fmt` into a fresh owned slice.
+pub fn allocFormatted(gpa: std.mem.Allocator, comptime fmt: []const u8, args: anytype) ![]u8 {
+    return std.fmt.allocPrint(gpa, fmt, args);
 }
 
-pub fn allocCString(value: []const u8) !?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const result = try allocator.allocSentinel(u8, value.len, 0);
-    @memcpy(result[0..value.len], value);
-    return result.ptr;
+/// Free an optional owned slice, for the `orelse return null` producers below.
+pub fn freeMaybe(gpa: std.mem.Allocator, value: ?[]u8) void {
+    if (value) |slice| gpa.free(slice);
 }
 
+/// Keep a NUL-terminated copy for the surfaces that still cross a C-string boundary.
 pub fn freeMaybeCString(value: ?[*:0]u8) void {
     if (value) |ptr|
         std.heap.c_allocator.free(std.mem.span(ptr));
@@ -68,9 +71,15 @@ test "asciiLower / isSpaceByte" {
     try std.testing.expect(!isSpaceByte('x') and !isSpaceByte('0'));
 }
 
-test "allocCString: NUL-terminated exact copy" {
-    const s = (try allocCString("abc")).?;
-    defer std.heap.c_allocator.free(std.mem.span(s));
-    try std.testing.expectEqualStrings("abc", std.mem.span(s));
-    try std.testing.expectEqual(@as(u8, 0), s[3]);
+test "allocFormatted renders into an owned slice with a known length" {
+    const gpa = std.testing.allocator;
+    const s = try allocFormatted(gpa, "a{d}c", .{7});
+    defer gpa.free(s);
+    try std.testing.expectEqualStrings("a7c", s);
+}
+
+test "freeMaybe accepts null and frees a slice" {
+    const gpa = std.testing.allocator;
+    freeMaybe(gpa, null);
+    freeMaybe(gpa, try gpa.dupe(u8, "owned"));
 }

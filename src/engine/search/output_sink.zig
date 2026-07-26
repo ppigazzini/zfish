@@ -19,7 +19,7 @@
 //! main.zig:68 registers all 3 before the engine is reachable (main.zig:79), and the
 //! hook-lint REGISTERED rule keeps that true.
 
-fn dropLine(_: [*]const u8, _: usize) void {}
+fn dropLine(_: []const u8) void {}
 fn notQuiet() bool {
     return false;
 }
@@ -28,7 +28,7 @@ fn ignoreNodes(_: u64) void {}
 /// Write one already-formatted UCI line.
 /// failure: silent — DEGRADED, not safe: drops every line including `bestmove`, so a
 /// headless build produces no output with no shell attached. Right move, no answer.
-pub var printLine: *const fn (str: [*]const u8, len: usize) void = &dropLine;
+pub var printLine: *const fn (line: []const u8) void = &dropLine;
 /// Report whether output is suppressed (bench / quiet mode).
 /// failure: silent — not-quiet, deliberately: the formatting still runs, so the fuzz
 /// roots exercise the whole line-building path even though the lines are dropped.
@@ -40,7 +40,7 @@ pub var setLastNodesSearched: *const fn (nodes: u64) void = &ignoreNodes;
 
 test {
     // Verify the defaults are safe headless no-ops.
-    printLine("x", 1);
+    printLine("x");
     setLastNodesSearched(0);
     try @import("std").testing.expectEqual(false, isQuiet());
 }

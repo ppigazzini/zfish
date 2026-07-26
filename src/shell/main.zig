@@ -58,11 +58,10 @@ pub fn main(init: std.process.Init) !void {
     const argv = argv_list.items;
     const argc = argv.len;
 
-    const info = misc_port.engineInfoText(0) orelse return error.OutOfMemory;
-    defer std.heap.c_allocator.free(std.mem.span(info));
+    const info_line = misc_port.engineInfoText(init.gpa, false) orelse return error.OutOfMemory;
+    defer init.gpa.free(info_line);
 
-    const info_line = std.mem.span(info);
-    uci_output.printLine(info_line.ptr, info_line.len);
+    uci_output.printLine(info_line);
 
     // Compute slider attacks from magic-bitboard tables; compute between/line rays on
     // the fly (bitboard.zig). Set both up via position_port.initRuntime().

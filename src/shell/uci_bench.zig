@@ -194,10 +194,10 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
     misc_port.dbgPrint();
     std.debug.print("\n", .{});
 
-    const version_ptr = misc_port.engineVersionInfoText() orelse return;
-    defer freeMaybeCString(version_ptr);
-    const compiler_ptr = misc_port.compilerInfoText() orelse return;
-    defer freeMaybeCString(compiler_ptr);
+    const version_text = misc_port.engineVersionInfoText(std.heap.c_allocator) orelse return;
+    defer std.heap.c_allocator.free(version_text);
+    const compiler_text = misc_port.compilerInfoText(std.heap.c_allocator) orelse return;
+    defer std.heap.c_allocator.free(compiler_text);
     const numa_ptr = engine_mod.numaConfigStringEngine(engine_ptr) orelse return;
     defer freeMaybeCString(numa_ptr);
     const binding_ptr = engine_mod.threadBindingInformationEngine(engine_ptr) orelse return;
@@ -227,8 +227,8 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
             "Total search time [s]      : {}\n" ++
             "Nodes/second               : {d}\n",
         .{
-            std.mem.span(version_ptr),
-            std.mem.span(compiler_ptr),
+            version_text,
+            compiler_text,
             if (misc_port.hasLargePages()) "yes" else "no",
             original_invocation,
             filled_invocation,
