@@ -20,11 +20,19 @@ const psqt_buckets: usize = 8;
 /// nnue_acc_layout's transform_vec_width.
 // Lane count for the combined accumulator row apply. Target-aware, upstream's
 // BestRegisterCount shape (8 native registers per tile at every x86 tier): 256 on
-// avx512 (16 zmm hold the 4-register accumulator live across all four column loops;
-// 512 would need 32 zmm and spill), 128 on plain avx2 (8 ymm -- upstream's
+// avx512 (16 zmm hold the 4-register accumulator live across all four column loops),
+// 128 on plain avx2 (8 ymm -- upstream's
 // TileHeight; halves the per-tile row-list walks that a 64-lane tile pays twice),
 // 64 on sse. A paired HW-counter check found 128 REGRESSES sse41 (+1.4% instr,
 // +4.1% cycles): with only 16 xmm even 128 spills. aarch64 keeps 64, unmeasured.
+//
+// 256 is HALF upstream's avx512 TileHeight, which its SIMDTiling arithmetic puts at 512
+// (NumRegs 16 -> two tiles of the 1024-wide row); zfish matches upstream at avx2 and sse
+// and diverges only here. 512 was swept at avx512icl and is a real -3.4% instruction win
+// that does NOT land: it needs 16 zmm (not 32) and does NOT spill, but removing the spare
+// registers stops LLVM unrolling the row loop by 2, and the resulting body is +51% larger
+// in applyCombined -- an instruction win paid for in instruction FETCH. Re-measure the
+// front end, not just the instruction axis, before revisiting.
 // Distinct from the transform's width knob (nnue_acc_layout).
 const row_tile_width: usize = blk: {
     const b = @import("builtin");
