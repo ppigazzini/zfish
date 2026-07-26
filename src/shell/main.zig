@@ -286,7 +286,7 @@ fn optInt(name: []const u8) i32 {
 //   * destroy: free the rootMoves vector buffer + the manager by offset, then return the
 //     large-page block. accumulatorStack/refreshTable are POD array members (no teardown),
 //     so manager + rootMoves are the ONLY heap members the worker frees.
-fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*anyopaque {
+fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*worker_layout.SearchManager {
     // Create a typed SearchManager via the Allocator interface (c_allocator, libc-backed).
     const sm = std.heap.c_allocator.create(worker_layout.SearchManager) catch return null;
     @memset(@as([*]u8, @ptrCast(sm))[0..@sizeOf(worker_layout.SearchManager)], 0);
@@ -327,17 +327,16 @@ fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) error{OutOf
     const raw = memory_port.alignedLargePagesAlloc(worker_layout.worker_size) orelse
         return error.OutOfMemory;
     const shared_history = engine_port.sharedHistoriesAt(ss.shared_histories, 0);
-    worker_construct.constructFull(
-        raw,
-        @intFromPtr(shared_history),
-        @intFromPtr(ss.threads),
-        @intFromPtr(ss.tt),
-        @intFromPtr(manager),
-        idx,
-        idx,
-        ctx.total,
-        0,
-    );
+    worker_construct.constructFull(raw, .{
+        .shared_history = shared_history,
+        .threads = ss.threads,
+        .tt = ss.tt,
+        .manager = manager,
+        .thread_idx = idx,
+        .numa_thread_idx = idx,
+        .numa_total = ctx.total,
+        .numa_access_token = 0,
+    });
     worker_layout.Thread.fromPtr(thread).worker = @ptrCast(@alignCast(raw));
 }
 

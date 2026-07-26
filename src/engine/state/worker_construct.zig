@@ -9,9 +9,9 @@
 //
 // Write only the constructor-set fields here; fill the histories, reductions,
 // refresh cache, and shared history afterwards through the existing
-// worker-clear reset path. Route writes through typed worker_layout.WorkerLayout fields,
-// keeping worker_off only for the two sub-region slots (shared-history pointer,
-// AccumulatorStack size).
+// worker-clear reset path. Route every write through a typed
+// worker_layout.WorkerLayout field or the owning module's accessor, so no member is
+// addressed by an offset from the block base.
 
 const std = @import("std");
 const worker_layout = @import("worker_layout");
@@ -31,30 +31,15 @@ const off = worker_layout.worker_off;
 // count directly rather than deriving it from the neighbouring field offsets.
 const reductions_count: usize = 256;
 
-// Place the NUMA scalars after threadIdx in constructor order (threadIdx,
-// numaThreadIdx, numaTotal, numaAccessToken), each a size_t-wide slot, filling
-// the 32-byte gap to `reductions`.
-const numa_thread_idx_off = off.numa_thread_idx;
-const numa_total_off = off.numa_total;
-const numa_access_token_off = off.numa_access_token;
-
-// Locate AccumulatorStack::size (size_t == 1 at construction) 64 bytes before the
-// refresh table -- its last real member plus trailing alignment padding.
-const accumulator_stack_size_off = off.accumulator_stack_size_field;
-
-fn writePtr(base: [*]u8, offset: usize, value: usize) void {
-    const p: *usize = @ptrCast(@alignCast(base + offset));
-    p.* = value;
-}
-
 // Collect the inputs the Worker constructor receives, unpacked from the SharedState
-// plus the thread parameters. Point each pointer at the exact referent its reference
-// member must bind to (the SharedState members).
+// plus the thread parameters. Point each reference member at the exact referent it
+// must bind to (the SharedState members), as a typed pointer: the referent types are
+// all reachable from here, so the seam needs no integer round-trip.
 pub const WorkerCtorInputs = struct {
-    shared_history: usize, // &sharedState.sharedHistories.at(numa)
-    threads: usize, // &sharedState.threads
-    tt: usize, // &sharedState.tt
-    manager: usize, // released ISearchManager / SearchManager
+    shared_history: *search_driver.SharedHistories, // sharedState.sharedHistories.at(numa)
+    threads: *worker_layout.ThreadPool, // sharedState.threads
+    tt: *worker_layout.TranspositionTable, // sharedState.tt
+    manager: *worker_layout.SearchManager, // the moved-in ISearchManager
     thread_idx: usize,
     numa_thread_idx: usize,
     numa_total: usize,
@@ -68,13 +53,13 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     const wl = worker_layout.WorkerLayout.fromPtr(worker);
 
     // Bind the sharedHistories reference: now a typed field of the embedded WorkerHistories.
-    wl.histories.shared_history = @ptrFromInt(in.shared_history);
+    wl.histories.shared_history = in.shared_history;
     // Bind the live SharedState reference members (threads + tt) + the moved-in manager.
     // Drop options/network — vestigial pass-through (never read -- the search reads the
     // global OptionsModel / FT storage).
-    wl.threads = @ptrFromInt(in.threads);
-    wl.tt = @ptrFromInt(in.tt);
-    wl.manager = @ptrFromInt(in.manager);
+    wl.threads = in.threads;
+    wl.tt = in.tt;
+    wl.manager = in.manager;
     // Write the NUMA identity scalars.
     wl.thread_idx = in.thread_idx;
     wl.numa_thread_idx = in.numa_thread_idx;
@@ -93,26 +78,22 @@ pub fn writeConstructorFields(worker: [*]u8, in: WorkerCtorInputs) void {
     wl.root_moves = &.{};
     wl.limits.searchmoves = &.{};
 
-    // Start the AccumulatorStack with one live slot (size_t at the size field, inside
-    // the accumulator_stack region so still addressed by offset).
-    writePtr(worker, accumulator_stack_size_off, 1);
+    // Start the AccumulatorStack with one live slot. Write it through the arena's own
+    // accessor, so the size field's placement stays nnue_acc_layout's to choose rather
+    // than a second offset derived here.
+    nnue_acc.setStackSize(&wl.accumulator_stack, 1);
 }
 
 // Construct a full Worker into a caller-owned, zeroed buffer: write the
 // constructor field set, then run the worker-clear reset pieces (histories,
-// shared history, reductions, refresh cache). Pass `shared_obj` as the SharedHistories
-// the thread clears its range of, and
-// `biases` as the network feature-transformer bias array.
-fn constructWorkerInto(
-    buf: [*]u8,
-    in: WorkerCtorInputs,
-    shared_obj: *search_driver.SharedHistories,
-    biases: [*]const i16,
-) void {
+// shared history, reductions, refresh cache). The SharedHistories the thread clears
+// its range of is `in.shared_history` -- the same referent the reference member binds
+// to. Pass `biases` as the network feature-transformer bias array.
+fn constructWorkerInto(buf: [*]u8, in: WorkerCtorInputs, biases: [*]const i16) void {
     const wl = worker_layout.WorkerLayout.fromPtr(buf);
     writeConstructorFields(buf, in);
     search_driver.clearWorkerHistories(wl);
-    search_driver.clearSharedHistory(shared_obj, in.numa_thread_idx, in.numa_total);
+    search_driver.clearSharedHistory(in.shared_history, in.numa_thread_idx, in.numa_total);
     search_port.fillReductions(&wl.reductions, reductions_count);
     nnue_acc.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
@@ -120,32 +101,12 @@ fn constructWorkerInto(
 // Enter production: construct a complete Worker into `buf` (a large-page
 // block of at least worker_size bytes). Zero the block, write the constructor
 // field set, and run the worker-clear reset pieces, called by the engine graph.
-// Pass `manager` as the moved ISearchManager pointer; source the feature-transformer
-// biases from the network.
-pub fn constructFull(
-    buf: ?*anyopaque,
-    shared_history: usize,
-    threads: usize,
-    tt: usize,
-    manager: usize,
-    thread_idx: usize,
-    numa_thread_idx: usize,
-    numa_total: usize,
-    numa_access_token: usize,
-) void {
+// Source the feature-transformer biases from the network.
+pub fn constructFull(buf: ?*anyopaque, in: WorkerCtorInputs) void {
     const base: [*]u8 = @ptrCast(buf orelse return);
     @memset(base[0..worker_layout.worker_size], 0);
     const biases: [*]const i16 = @ptrCast(@alignCast(network_port.ftPtr() orelse return));
-    constructWorkerInto(base, .{
-        .shared_history = shared_history,
-        .threads = threads,
-        .tt = tt,
-        .manager = manager,
-        .thread_idx = thread_idx,
-        .numa_thread_idx = numa_thread_idx,
-        .numa_total = numa_total,
-        .numa_access_token = numa_access_token,
-    }, @ptrFromInt(shared_history), biases);
+    constructWorkerInto(base, in, biases);
 }
 
 // ---- tests ------------------------------------------------------------------
@@ -161,15 +122,18 @@ test "writeConstructorFields lands every member at its worker_off slot" {
     // zero-dependency fail here instead of as a wild free() on the first `go`.
     @memset(buf, 0xAA);
 
-    // Align sentinels to each destination pointer's @alignOf: they are stored
-    // via @ptrFromInt into typed pointer fields (*ThreadPool, *SearchManager, ...) and
-    // ReleaseSafe validates the integer's alignment. Choose page-aligned values to satisfy any
-    // field alignment while staying distinct and recognizable in the byte image.
+    // Point each reference member at a real, distinct object of its own type, so the
+    // recorded slot can be compared against the referent's actual address. Only the
+    // addresses are read back here -- nothing dereferences them.
+    var sentinel_shared: search_driver.SharedHistories = undefined;
+    var sentinel_threads: worker_layout.ThreadPool = .{};
+    var sentinel_tt: worker_layout.TranspositionTable = .{};
+    var sentinel_manager: worker_layout.SearchManager = .{};
     const in = WorkerCtorInputs{
-        .shared_history = 0x1000,
-        .threads = 0x3000,
-        .tt = 0x4000,
-        .manager = 0x6000,
+        .shared_history = &sentinel_shared,
+        .threads = &sentinel_threads,
+        .tt = &sentinel_tt,
+        .manager = &sentinel_manager,
         .thread_idx = 7,
         .numa_thread_idx = 8,
         .numa_total = 9,
@@ -184,15 +148,15 @@ test "writeConstructorFields lands every member at its worker_off slot" {
         }
     }.read;
 
-    try testing.expectEqual(@as(usize, 0x1000), readPtr(buf.ptr, off.histories + worker_histories.worker_shared_history_off));
-    try testing.expectEqual(@as(usize, 0x3000), readPtr(buf.ptr, off.threads));
-    try testing.expectEqual(@as(usize, 0x4000), readPtr(buf.ptr, off.tt));
-    try testing.expectEqual(@as(usize, 0x6000), readPtr(buf.ptr, off.manager));
+    try testing.expectEqual(@intFromPtr(&sentinel_shared), readPtr(buf.ptr, off.histories + worker_histories.worker_shared_history_off));
+    try testing.expectEqual(@intFromPtr(&sentinel_threads), readPtr(buf.ptr, off.threads));
+    try testing.expectEqual(@intFromPtr(&sentinel_tt), readPtr(buf.ptr, off.tt));
+    try testing.expectEqual(@intFromPtr(&sentinel_manager), readPtr(buf.ptr, off.manager));
     try testing.expectEqual(@as(usize, 7), readPtr(buf.ptr, off.thread_idx));
-    try testing.expectEqual(@as(usize, 8), readPtr(buf.ptr, numa_thread_idx_off));
-    try testing.expectEqual(@as(usize, 9), readPtr(buf.ptr, numa_total_off));
-    try testing.expectEqual(@as(usize, 10), readPtr(buf.ptr, numa_access_token_off));
-    try testing.expectEqual(@as(usize, 1), readPtr(buf.ptr, accumulator_stack_size_off));
+    try testing.expectEqual(@as(usize, 8), readPtr(buf.ptr, off.numa_thread_idx));
+    try testing.expectEqual(@as(usize, 9), readPtr(buf.ptr, off.numa_total));
+    try testing.expectEqual(@as(usize, 10), readPtr(buf.ptr, off.numa_access_token));
+    try testing.expectEqual(@as(usize, 1), readPtr(buf.ptr, off.accumulator_stack_size_field));
 
     // Pin the read-before-write slice headers to empty: workerSetRootMoves /
     // workerDestroy free root_moves whenever .len != 0, and workerSetLimits never
