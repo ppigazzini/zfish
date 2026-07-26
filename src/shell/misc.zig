@@ -1,7 +1,6 @@
 const builtin = @import("builtin");
 const build_options = @import("build_options");
 const std = @import("std");
-const c = @import("libc");
 const memory = @import("memory");
 // Keep the dbg_* debug statistics counters in their own std-only leaf now.
 // Re-export them so the existing misc.dbg* API (misc.dbgPrint from uci.zig) is unchanged.
@@ -17,105 +16,8 @@ pub const dbgClear = debug_counters.dbgClear;
 const version = "dev";
 const fallback_build_date = computeFallbackBuildDate();
 
-pub fn hashBytes(data: []const u8) u64 {
-    const m: u64 = 0xc6a4a7935bd1e995;
-    const r: u6 = 47;
-
-    var hash: u64 = @as(u64, data.len) *% m;
-    const aligned_end = data.len & ~@as(usize, 7);
-
-    var index: usize = 0;
-    while (index < aligned_end) : (index += 8) {
-        var k = std.mem.readInt(u64, data[index..][0..8], .little);
-        k *%= m;
-        k ^= k >> r;
-        k *%= m;
-
-        hash ^= k;
-        hash *%= m;
-    }
-
-    if ((data.len & 7) != 0) {
-        var k: u64 = 0;
-        var tail_index = data.len & 7;
-        while (tail_index != 0) {
-            tail_index -= 1;
-            k = (k << 8) | data[aligned_end + tail_index];
-        }
-        hash ^= k;
-        hash *%= m;
-    }
-
-    hash ^= hash >> r;
-    hash *%= m;
-    hash ^= hash >> r;
-
-    return hash;
-}
-
-pub fn strToSizeT(input: []const u8) usize {
-    var index: usize = 0;
-    while (index < input.len and isSpaceByte(input[index])) : (index += 1) {}
-
-    if (index < input.len and input[index] == '+') {
-        index += 1;
-    }
-
-    const digits_start = index;
-    var value: u64 = 0;
-    while (index < input.len) : (index += 1) {
-        const byte = input[index];
-        if (byte < '0' or byte > '9') {
-            break;
-        }
-
-        const digit = @as(u64, byte - '0');
-        const multiplied = @mulWithOverflow(value, @as(u64, 10));
-        if (multiplied[1] != 0) {
-            c.exit(c.EXIT_FAILURE);
-        }
-
-        const next_value = @addWithOverflow(multiplied[0], digit);
-        if (next_value[1] != 0) {
-            c.exit(c.EXIT_FAILURE);
-        }
-
-        value = next_value[0];
-    }
-
-    if (digits_start == index) {
-        c.exit(c.EXIT_FAILURE);
-    }
-
-    if (value > std.math.maxInt(usize)) {
-        c.exit(c.EXIT_FAILURE);
-    }
-    return @intCast(value);
-}
-
-pub fn readFileToString(path: []const u8) ?[*:0]u8 {
-    return readFileToStringAlloc(path) catch null;
-}
-
-pub fn removeWhitespace(input: []const u8) ?[*:0]u8 {
-    return removeWhitespaceAlloc(input) catch null;
-}
-
-pub fn isWhitespace(input: []const u8) bool {
-    for (input) |byte| {
-        if (!isSpaceByte(byte)) {
-            return false;
-        }
-    }
-    return true;
-}
-
 pub fn getBinaryDirectory(argv0: []const u8) ?[*:0]u8 {
     return getBinaryDirectoryAlloc(argv0) catch null;
-}
-
-pub fn getWorkingDirectory() ?[*:0]u8 {
-    return getWorkingDirectoryAlloc() catch null;
 }
 
 pub fn engineVersionInfoText() ?[*:0]u8 {
@@ -173,27 +75,6 @@ pub fn hardwareConcurrency() i32 {
     // also working on the owned Windows/macOS tiers. Clamp an error to 0.
     const n = std.Thread.getCpuCount() catch return 0;
     return std.math.cast(i32, n) orelse 0;
-}
-
-fn readFileToStringAlloc(path: []const u8) ![*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const contents = try readFileAlloc(allocator, path);
-    defer allocator.free(contents);
-    return try allocCString(contents);
-}
-
-fn removeWhitespaceAlloc(input: []const u8) ![*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    var buffer = std.ArrayList(u8).empty;
-    defer buffer.deinit(allocator);
-
-    for (input) |byte| {
-        if (!isSpaceByte(byte)) {
-            try buffer.append(allocator, byte);
-        }
-    }
-
-    return try allocCString(buffer.items);
 }
 
 fn getBinaryDirectoryAlloc(argv0: []const u8) ![*:0]u8 {
@@ -350,22 +231,4 @@ fn takeOwnedString(pointer: [*:0]u8) ![]u8 {
     @memcpy(owned, slice);
     std.heap.c_allocator.free(std.mem.span(pointer));
     return owned;
-}
-
-fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    // Read the whole file the idiomatic-Zig way, replacing the libc fopen/fseek/ftell/fread/fclose
-    // dance. Rely on `init_single_threaded`, a BLOCKING std.Io handle: it spawns no threads and
-    // installs no signal handlers (`have_signal_handler = false`), so this startup read has
-    // zero interaction with the engine's own threadpool. Collapse non-OOM failures to the
-    // caller's existing FileOpenFailed, keeping the error set {FileOpenFailed, OutOfMemory}.
-    var threaded = std.Io.Threaded.init_single_threaded;
-    const io = threaded.io();
-    return std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .unlimited) catch |err| switch (err) {
-        error.OutOfMemory => error.OutOfMemory,
-        else => error.FileOpenFailed,
-    };
-}
-
-fn isSpaceByte(byte: u8) bool {
-    return byte == ' ' or byte == '\t' or byte == '\n' or byte == '\r' or byte == 0x0b or byte == 0x0c;
 }
