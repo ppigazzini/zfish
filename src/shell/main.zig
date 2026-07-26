@@ -279,10 +279,9 @@ fn optInt(name: []const u8) i32 {
 }
 
 // Construct the SearchManager + tear down the Worker:
-//   * make: allocate a raw search_manager_size buffer, zeroed — the manager's data fields are
-//     written by the reset shims (smReset*) + tm_init before every search, and
-//     updates@112 is set to the engine UpdateContext for the main thread. No vtable,
-//     no constructor; check_time is dead.
+//   * make: create a zeroed SearchManager — its data fields are written by the reset
+//     shims (smReset*) + tm_init before every search, and `updates` is set to the engine
+//     UpdateContext for the main thread. No vtable, no constructor; check_time is dead.
 //   * destroy: free the rootMoves vector buffer + the manager by offset, then return the
 //     large-page block. accumulatorStack/refreshTable are POD array members (no teardown),
 //     so manager + rootMoves are the ONLY heap members the worker frees.
@@ -357,7 +356,6 @@ fn engineSetCli(buf: *anyopaque, argc: i32, argv: [*]const [*:0]u8) void {
 // position, size threads) — the same post-member work the engine constructor runs. Drop
 // Tune (SPSA) here: it is INERT in a release build (no live TUNE() macros → empty list).
 fn engineConstructAt(storage: *anyopaque, argc: i32, argv: [*]const [*:0]u8) void {
-    worker_layout.verifyLayouts();
     if (!engineConstructMembers(storage, argv[0]))
         @panic("engine construct: member allocation failed");
     engineSetCli(storage, argc, argv);
