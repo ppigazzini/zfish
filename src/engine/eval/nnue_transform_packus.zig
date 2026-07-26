@@ -20,7 +20,7 @@ const std = @import("std");
 // unchanged. Positive products never saturate: (255<<7)*255 >> 16 == 127.
 pub const use_packus_avx2 = @import("builtin").cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx2) and
-    !std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512f);
+    !std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512bw);
 
 const packuswb256 = struct {
     extern fn @"llvm.x86.avx2.packuswb"(@Vector(16, i16), @Vector(16, i16)) @Vector(32, u8);
@@ -28,6 +28,23 @@ const packuswb256 = struct {
 const transform_pmulhw256 = struct {
     extern fn @"llvm.x86.avx2.pmulh.w"(@Vector(16, i16), @Vector(16, i16)) @Vector(16, i16);
 }.@"llvm.x86.avx2.pmulh.w";
+
+// Run the same packus body at zmm width, which is the arm upstream's transform takes on
+// AVX-512 too: its `#else` covers every x86 tier, and only NEON, LSX/LASX and wasm branch
+// away. zfish gated the trick to `avx2 and !avx512f`, leaving the 512-bit tiers on the
+// widen-free mulhi-UNSIGNED path -- which pays, per 64 output bytes, two vpmaxsw for the
+// second half plus two vpmovwb and a vinserti64x4 to narrow, where packus narrows in one
+// op and its saturation supplies the max. vpmulhw and vpackuswb are AVX512BW, so gate on
+// that; a hypothetical avx512f-without-bw target keeps the generic path.
+pub const use_packus_avx512 = @import("builtin").cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512bw);
+
+const packuswb512 = struct {
+    extern fn @"llvm.x86.avx512.packuswb.512"(@Vector(32, i16), @Vector(32, i16)) @Vector(64, u8);
+}.@"llvm.x86.avx512.packuswb.512";
+const transform_pmulhw512 = struct {
+    extern fn @"llvm.x86.avx512.pmulh.w.512"(@Vector(32, i16), @Vector(32, i16)) @Vector(32, i16);
+}.@"llvm.x86.avx512.pmulh.w.512";
 
 // Run the same packus body at xmm width on the pre-AVX2 x86 tiers (upstream's SSE2
 // transform shape). The saturation argument is width-independent, and the 128-bit
@@ -85,6 +102,70 @@ pub inline fn packusTransform32(a: [2]@Vector(16, i16), b: [2]@Vector(16, i16)) 
         break :blk m;
     };
     return @shuffle(u8, packed_bytes, undefined, natural_fix);
+}
+
+// Compute 64 output bytes from the two halves' i16 accumulator lanes (a = first half,
+// b = second): per element min(127, (clamp(a,0,255) * clamp(b,0,255)) >> 9), in natural
+// element order. The scalar-reference unit test pins the packus trick's equivalence.
+pub inline fn packusTransform64(a: [2]@Vector(32, i16), b: [2]@Vector(32, i16)) @Vector(64, u8) {
+    const c255: @Vector(32, i16) = @splat(255);
+    const zero: @Vector(32, i16) = @splat(0);
+    const sh7: @Vector(32, u4) = @splat(7);
+    const sum0a: @Vector(32, i16) = (@max(@min(a[0], c255), zero)) << sh7;
+    const sum0b: @Vector(32, i16) = (@max(@min(a[1], c255), zero)) << sh7;
+    const sum1a: @Vector(32, i16) = @min(b[0], c255);
+    const sum1b: @Vector(32, i16) = @min(b[1], c255);
+    const packed_bytes = packuswb512(
+        transform_pmulhw512(sum0a, sum1a),
+        transform_pmulhw512(sum0b, sum1b),
+    );
+    // Undo the pack's per-128-bit-lane interleave (one vpermq over the 8 qwords): the
+    // result's qwords run a0 b0 a1 b1 a2 b2 a3 b3, so gathering 0,2,4,6,1,3,5,7 restores
+    // natural order -- the same permutation upstream folds into the weights at load time
+    // (`PackusEpi16Order`, nnue_feature_transformer.h) rather than paying at runtime.
+    const natural_fix: @Vector(64, i32) = comptime blk: {
+        const src_quads = [8]usize{ 0, 2, 4, 6, 1, 3, 5, 7 };
+        var m: [64]i32 = undefined;
+        for (&m, 0..) |*e, i| e.* = @intCast(src_quads[i / 8] * 8 + i % 8);
+        break :blk m;
+    };
+    return @shuffle(u8, packed_bytes, undefined, natural_fix);
+}
+
+// Pin the 512-bit packus trick against the same scalar identity: the dropped second-half
+// max(0, .) must be reproduced by the signed vpmulhw's sign carry plus vpackuswb's
+// low-side saturation, and the qword permute must restore natural byte order across all
+// four 128-bit lanes.
+test "packusTransform64 equals the scalar transform identity" {
+    if (comptime !use_packus_avx512) return error.SkipZigTest;
+    const testing = std.testing;
+    var prng = std.Random.DefaultPrng.init(0x5DEECE66D2C03579);
+    const rnd = prng.random();
+    const edges = [_]i16{ -32768, -256, -255, -1, 0, 1, 127, 128, 255, 256, 32767 };
+
+    var iter: usize = 0;
+    while (iter < 512) : (iter += 1) {
+        var a: [64]i16 = undefined;
+        var b: [64]i16 = undefined;
+        for (0..64) |i| {
+            a[i] = if (rnd.boolean()) edges[rnd.uintLessThan(usize, edges.len)] else rnd.int(i16);
+            b[i] = if (rnd.boolean()) edges[rnd.uintLessThan(usize, edges.len)] else rnd.int(i16);
+        }
+        var expected: [64]u8 = undefined;
+        for (0..64) |i| {
+            const c0: i32 = @max(0, @min(255, @as(i32, a[i])));
+            const c1: i32 = @max(0, @min(255, @as(i32, b[i])));
+            expected[i] = @intCast((c0 * c1) >> 9);
+        }
+        const got: [64]u8 = packusTransform64(.{
+            a[0..32].*,
+            a[32..64].*,
+        }, .{
+            b[0..32].*,
+            b[32..64].*,
+        });
+        try testing.expectEqualSlices(u8, &expected, &got);
+    }
 }
 
 // Pin the packus trick against the scalar transform identity over the full i16 range:
