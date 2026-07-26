@@ -192,8 +192,10 @@ inline fn nnzRecord(comptime GMask: type, nnz: *NnzBitset, bit: usize, mask: GMa
 // from the nnue_transform_packus leaf (this function is their only consumer; the
 // scalar-reference unit tests pinning the packus trick live beside them there).
 const packus = @import("nnue_transform_packus.zig");
+const use_packus_avx512 = packus.use_packus_avx512;
 const use_packus_avx2 = packus.use_packus_avx2;
 const use_packus_sse = packus.use_packus_sse;
+const packusTransform64 = packus.packusTransform64;
 const packusTransform32 = packus.packusTransform32;
 const packusTransform16 = packus.packusTransform16;
 
@@ -273,6 +275,30 @@ pub fn transformBucket(
             // narrower sweep of transform_vec_width stays sound rather than tripping it.
             const A = comptime @min(64, V * @sizeOf(i16));
             const bit = (offset + j) / 4;
+            if (comptime use_packus_avx512) {
+                // Run the packus body per 64 elements (2 zmm in, 1 zmm out) and fold each
+                // pack's 16-group non-zero mask into one GMask for the step; V is a
+                // multiple of 64 on every tier this gate selects. The nnz bitcast is the
+                // same guarded x86 movemask as the generic path below -- at 512 bits the
+                // <16 x i1> compare already lives in a k register (vptestmd), so the cast
+                // is free.
+                var mask: GMask = 0;
+                inline for (0..V / 64) |s| {
+                    const off = base + j + s * 64;
+                    const packed64 = packusTransform64(.{
+                        @as(*align(64) const [32]i16, @ptrCast(@alignCast(comb_acc + off))).*,
+                        @as(*align(64) const [32]i16, @ptrCast(@alignCast(comb_acc + off + 32))).*,
+                    }, .{
+                        @as(*align(64) const [32]i16, @ptrCast(@alignCast(comb_acc + off + half))).*,
+                        @as(*align(64) const [32]i16, @ptrCast(@alignCast(comb_acc + off + half + 32))).*,
+                    });
+                    output[offset + j + s * 64 ..][0..64].* = packed64;
+                    const nz = @as(@Vector(16, u32), @bitCast(packed64)) != @as(@Vector(16, u32), @splat(0));
+                    mask |= @as(GMask, @as(u16, @bitCast(nz))) << (16 * s);
+                }
+                nnzRecord(GMask, nnz, bit, mask);
+                continue;
+            }
             if (comptime use_packus_avx2) {
                 // Run the i16-width packus body per 32 elements (2 ymm in, 1 ymm out) and
                 // fold each pack's 8-group non-zero mask into one GMask for the step; V is
