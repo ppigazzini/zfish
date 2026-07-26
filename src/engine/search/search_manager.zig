@@ -37,15 +37,14 @@ pub const InfoIteration = struct {
     currmovenumber: usize,
 };
 
-// UpdateContext: hold four callbacks plus the opaque
-// sink they write through (the UCIEngine output side). Make each callback a
-// C-ABI function pointer so the same vtable-free dispatch works whether the sink
-// is implemented in Zig or handed across a C boundary.
+// UpdateContext: hold four callbacks plus the opaque sink they write through (the
+// UCIEngine output side). Each is a plain Zig function pointer over slices; dispatch
+// stays vtable-free.
 pub const UpdateContext = struct {
     pub const NoMovesFn = *const fn (ctx: ?*anyopaque, info: *const InfoShort) void;
     pub const FullFn = *const fn (ctx: ?*anyopaque, info: *const InfoFull) void;
     pub const IterFn = *const fn (ctx: ?*anyopaque, info: *const InfoIteration) void;
-    pub const BestmoveFn = *const fn (ctx: ?*anyopaque, bestmove: [*:0]const u8, ponder: [*:0]const u8) void;
+    pub const BestmoveFn = *const fn (ctx: ?*anyopaque, bestmove: []const u8, ponder: []const u8) void;
 
     ctx: ?*anyopaque,
     on_update_no_moves: NoMovesFn,
@@ -62,7 +61,7 @@ pub const UpdateContext = struct {
     pub fn iter(self: *const UpdateContext, info: *const InfoIteration) void {
         self.on_iter(self.ctx, info);
     }
-    pub fn bestmove(self: *const UpdateContext, best: [*:0]const u8, ponder: [*:0]const u8) void {
+    pub fn bestmove(self: *const UpdateContext, best: []const u8, ponder: []const u8) void {
         self.on_bestmove(self.ctx, best, ponder);
     }
 };
@@ -89,12 +88,11 @@ const Captured = struct {
         _ = ctx;
         _ = info;
     }
-    fn onBestmove(ctx: ?*anyopaque, best: [*:0]const u8, ponder: [*:0]const u8) void {
+    fn onBestmove(ctx: ?*anyopaque, best: []const u8, ponder: []const u8) void {
         _ = ctx;
         _ = ponder;
-        const s = std.mem.span(best);
-        @memcpy(bestmove_seen[0..s.len], s);
-        bestmove_len = s.len;
+        @memcpy(bestmove_seen[0..best.len], best);
+        bestmove_len = best.len;
     }
 };
 

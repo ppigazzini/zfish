@@ -1,9 +1,8 @@
 // Control the engine runtime, split out of engine.zig: TT resize/clear plus the
 // transposition-size / ponderhit / search-clear / hashfull entry points and
 // their *Engine unwrappers. Operate on the ThreadPool / TranspositionTable /
-// EngineObject graph through the tt/thread/option/tablebase ports. Duplicate
-// freeCString here (a 3-line sentinel free) so the leaf needs no engine.zig
-// import -- the edge stays one-way (engine.zig re-exports these).
+// EngineObject graph through the tt/thread/option/tablebase ports; the leaf needs no
+// engine.zig import, so the edge stays one-way (engine.zig re-exports these).
 
 const std = @import("std");
 const worker_layout = @import("worker_layout");
@@ -16,10 +15,6 @@ const engine_nnue = @import("engine_nnue");
 
 // Free a c_allocator-allocated NUL-terminated string through the Allocator
 // interface (M-MEM.B), exact for these tightly-sized sentinel allocations.
-fn freeCString(ptr: [*:0]u8) void {
-    std.heap.c_allocator.free(std.mem.span(ptr));
-}
-
 fn ttResize(tt_ptr: *worker_layout.TranspositionTable, mb: usize, threads: *worker_layout.ThreadPool) void {
     const tp = tt_ptr;
     tt_port.resizeState(&tp.table, &tp.cluster_count, &tp.generation8, mb, threads);

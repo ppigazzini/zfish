@@ -40,12 +40,12 @@ pub const ByteView = struct {
 
 pub const SaveResult = struct {
     saved: u8,
-    message: ?[*:0]u8,
+    message: ?[]u8,
 };
 
 pub const VerifyResult = struct {
     should_exit: u8,
-    message: ?[*:0]u8,
+    message: ?[]u8,
 };
 
 pub const VerifyInfo = struct {
@@ -73,18 +73,9 @@ fn layerWeightsBytes(idx: usize) usize {
     return weight_storage.layer_weights_bytes[idx];
 }
 
-pub fn load(
-    root_directory_ptr: [*]const u8,
-    root_directory_len: usize,
-    evalfile_path_ptr: [*]const u8,
-    evalfile_path_len: usize,
-) void {
-    const root_directory = root_directory_ptr[0..root_directory_len];
+pub fn load(root_directory: []const u8, requested_path: []const u8) void {
     const default_name = default_eval_file_name;
-    const evalfile_path = if (evalfile_path_len == 0)
-        default_name
-    else
-        evalfile_path_ptr[0..evalfile_path_len];
+    const evalfile_path = if (requested_path.len == 0) default_name else requested_path;
     const dirs = [_][]const u8{ internal_dir, "", root_directory };
 
     for (dirs) |directory| {
@@ -100,17 +91,15 @@ pub fn load(
     }
 }
 
-pub fn save(
-    has_filename: u8,
-    filename_ptr: [*]const u8,
-    filename_len: usize,
-) SaveResult {
+/// Export the loaded net. `filename` is null when the `export_net` command carried no
+/// argument, which is the only case where the default name may be substituted.
+pub fn save(filename: ?[]const u8) SaveResult {
     const default_name = default_eval_file_name;
     const current_name = nnCurrent();
 
     var actual_filename: []const u8 = undefined;
-    if (has_filename != 0) {
-        actual_filename = filename_ptr[0..filename_len];
+    if (filename) |given| {
+        actual_filename = given;
     } else {
         if (!std.mem.eql(u8, current_name, default_name)) {
             return .{
@@ -135,16 +124,10 @@ pub fn save(
     };
 }
 
-pub fn verify(
-    evalfile_path_ptr: [*]const u8,
-    evalfile_path_len: usize,
-) VerifyResult {
+pub fn verify(requested_path: []const u8) VerifyResult {
     const default_name = default_eval_file_name;
     const current_name = nnCurrent();
-    const evalfile_path = if (evalfile_path_len == 0)
-        default_name
-    else
-        evalfile_path_ptr[0..evalfile_path_len];
+    const evalfile_path = if (requested_path.len == 0) default_name else requested_path;
 
     if (!std.mem.eql(u8, current_name, evalfile_path)) {
         return .{
@@ -482,13 +465,8 @@ fn boolToU8(value: bool) u8 {
     return if (value) 1 else 0;
 }
 
-fn allocMessage(comptime fmt: []const u8, args: anytype) ?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const rendered = std.fmt.allocPrint(allocator, fmt, args) catch return null;
-    defer allocator.free(rendered);
-    const owned = allocator.allocSentinel(u8, rendered.len, 0) catch return null;
-    @memcpy(owned[0..rendered.len], rendered);
-    return owned.ptr;
+fn allocMessage(comptime fmt: []const u8, args: anytype) ?[]u8 {
+    return std.fmt.allocPrint(std.heap.c_allocator, fmt, args) catch null;
 }
 
 test {

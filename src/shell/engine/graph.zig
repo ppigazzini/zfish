@@ -134,7 +134,7 @@ const testing = std.testing;
 fn noopNoMoves(_: ?*anyopaque, _: *const sm.InfoShort) void {}
 fn noopFull(_: ?*anyopaque, _: *const sm.InfoFull) void {}
 fn noopIter(_: ?*anyopaque, _: *const sm.InfoIteration) void {}
-fn noopBest(_: ?*anyopaque, _: [*:0]const u8, _: [*:0]const u8) void {}
+fn noopBest(_: ?*anyopaque, _: []const u8, _: []const u8) void {}
 
 fn testUpdateContext() UpdateContext {
     return .{

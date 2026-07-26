@@ -10,7 +10,7 @@
 //   threads          value-initialized ThreadPool buffer (the thread vector)
 //   network          single-node NNUE holder
 //   update_context   inline UpdateContext slot
-//   binary_directory owned C string                  (misc getBinaryDirectory)
+//   binary_directory owned slice                     (misc getBinaryDirectory)
 //   cli              argc/argv
 // Keep pos / tt / sharedHists as Zig-side globals (side_pos_storage / side_tt_storage
 // here, side_shared_histories) whose accessors ignore the engine pointer, so the
@@ -55,8 +55,8 @@ fn memberThreadpoolNew() ?*worker_layout.ThreadPool {
 // Trigger the NNUE load into the Zig-owned storage. There is no engine
 // `network` member -- the worker network resolver / eval / verify read the
 // global FT storage directly.
-fn loadNetwork(binary_dir: [*:0]const u8, binary_dir_len: usize) void {
-    network_port.load(binary_dir, binary_dir_len, binary_dir, 0);
+fn loadNetwork(binary_dir: []const u8) void {
+    network_port.load(binary_dir, "");
 }
 // Hold updateContext + onVerifyNetwork INLINE in the engine object (stable address
 // for the worker managers / verify emit to bind via accessor), placement-constructed.
@@ -79,9 +79,8 @@ pub const EngineObject = struct {
     numa_context: ?*numa.NumaReplicationContext = null,
     states: ?*state_list_port.StateList = null,
     threads: ?*worker_layout.ThreadPool = null,
-    binary_directory: ?[*:0]u8 = null,
-    cli_argc: i32 = 0,
-    cli_argv: ?[*]const [*:0]u8 = null,
+    binary_directory: ?[]u8 = null,
+    cli_args: []const [:0]const u8 = &.{},
     update_context: [update_context_size]u8 align(8) = @splat(0),
     on_verify_network: [verify_network_fn_size]u8 align(8) = @splat(0),
 
@@ -93,13 +92,9 @@ pub const EngineObject = struct {
     }
 
     // Access the members.
-    pub fn cliArgc(self: *const EngineObject) i32 {
-        return self.cli_argc;
-    }
-    pub fn cliArgAt(self: *const EngineObject, index: i32) ?[*:0]const u8 {
-        if (index < 0 or index >= self.cli_argc) return null;
-        const argv = self.cli_argv orelse return null;
-        return argv[@intCast(index)];
+    /// Return the process argv as slices (argv[0] included), owned by main's iterator.
+    pub fn cliArgs(self: *const EngineObject) []const [:0]const u8 {
+        return self.cli_args;
     }
     pub fn numaContextPtr(self: *EngineObject) *numa.NumaReplicationContext {
         return self.numa_context.?;
@@ -145,13 +140,12 @@ pub fn sideTtReset() void {
 /// position, thread/worker sizing) after this, in init_body.
 ///
 /// Return false on any allocation failure (caller aborts loudly — startup only).
-pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
+pub fn constructMembers(buf: *anyopaque, argv0: []const u8) bool {
     const e = EngineObject.fromBuffer(buf);
     e.* = .{};
 
-    // Set binaryDirectory (owned C string) — get_default_network loads the .nnue from it.
-    const argv0_slice = std.mem.span(argv0);
-    e.binary_directory = misc_port.getBinaryDirectory(argv0_slice);
+    // Set binaryDirectory (an owned slice) — get_default_network loads the .nnue from it.
+    e.binary_directory = misc_port.getBinaryDirectory(std.heap.c_allocator, argv0);
 
     e.numa_context = memberNumaContextNew() orelse return false;
     // Build the states slot: a StateList (the fallback root list).
@@ -163,8 +157,7 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
     e.states = states_list;
     e.threads = memberThreadpoolNew() orelse return false;
 
-    const bdir: [*:0]const u8 = e.binary_directory orelse "";
-    loadNetwork(bdir, std.mem.span(bdir).len);
+    loadNetwork(e.binary_directory orelse "");
 
     // Rely on the field initializers above to zero the update_context / on_verify_network
     // slots. The search binds engine_graph's UpdateContext and the verify
@@ -174,10 +167,9 @@ pub fn constructMembers(buf: *anyopaque, argv0: [*:0]const u8) bool {
 }
 
 /// Store the CLI argc/argv (the cli sub-object the engine object subsumes).
-pub fn setCli(buf: *anyopaque, argc: i32, argv: [*]const [*:0]u8) void {
+pub fn setCli(buf: *anyopaque, argv: []const [:0]const u8) void {
     const e = EngineObject.fromBuffer(buf);
-    e.cli_argc = argc;
-    e.cli_argv = argv;
+    e.cli_args = argv;
 }
 
 /// Free the engine's heap members in reverse construction / dependency order. The caller
@@ -223,7 +215,7 @@ pub fn destructMembers(buf: *anyopaque) void {
         std.heap.c_allocator.destroy(ctx);
     }
     e.numa_context = null;
-    if (e.binary_directory) |bd| std.heap.c_allocator.free(std.mem.span(bd));
+    if (e.binary_directory) |bd| std.heap.c_allocator.free(bd);
     e.binary_directory = null;
 }
 
