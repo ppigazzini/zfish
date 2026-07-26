@@ -91,15 +91,9 @@ pub fn setByName(name: []const u8, value: []const u8, out: *ModelSetResult) void
     };
 }
 
-// Render the UCI option listing from the Zig model, as a malloc-backed C string
-// the caller frees.
-pub fn renderOptions() ?[*:0]u8 {
-    const model = ensureModel();
-    const listing = model.renderAlloc() catch return null;
-    defer std.heap.c_allocator.free(listing);
-    const buf = std.heap.c_allocator.allocSentinel(u8, listing.len, 0) catch return null;
-    @memcpy(buf[0..listing.len], listing);
-    return buf.ptr;
+// Render the UCI option listing from the Zig model as an owned slice the caller frees.
+pub fn renderOptions() ?[]u8 {
+    return ensureModel().renderAlloc() catch null;
 }
 
 // Keep UCI option-string parsing in the option_parse leaf now; re-export the
