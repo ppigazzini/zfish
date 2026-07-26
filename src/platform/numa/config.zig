@@ -215,30 +215,28 @@ pub const NumaConfig = struct {
 };
 
 fn insertSorted(node: *Node, allocator: std.mem.Allocator, cpu: usize) error{OutOfMemory}!void {
-    var i: usize = 0;
-    while (i < node.items.len and node.items[i] < cpu) : (i += 1) {}
-    if (i < node.items.len and node.items[i] == cpu) return; // keep unique
-    try node.insert(allocator, i, cpu);
-}
+    // Append when the CPU is already the highest, which is what a `lo-hi` range element and
+    // the /sys affinity walk both produce. Scanning from the front instead costs O(n) per
+    // insert, so a node built in ascending order was quadratic: `NumaPolicy 0-1048575` --
+    // ONE element, sized exactly at upstream's own MaxIndices bound -- took over 30 s and
+    // left the engine unable to answer `isready`. Upstream holds a node in a
+    // `std::set<CpuIndex>`, a tree, and pays O(log n); this must not be worse.
+    if (node.items.len == 0 or cpu > node.items[node.items.len - 1]) {
+        try node.append(allocator, cpu);
+        return;
+    }
 
-/// Match C's `isspace` for the default locale, which is what `strtoull` skips and what
-/// upstream's accept test calls.
-/// Port upstream's `str_to_size_t` (misc.cpp) exactly, including the parts that read as
-/// accidents but are load-bearing:
-///
-///   * an empty string, or one whose FIRST byte is '-', is rejected up front;
-///   * otherwise apply `strtoull`'s rule -- skip leading whitespace, take an optional
-///     sign, consume base-10 digits -- and accept only when the first UNCONSUMED byte is
-///     the terminator or whitespace (this is the trailing-whitespace allowance upstream
-///     added in b4ea9205 so a sysfs read ending in '\n' still parses);
-///   * on NO conversion `strtoull` leaves endptr at the ORIGINAL start, so the accept test
-///     reads byte 0 rather than the position the whitespace skip reached. " x" is
-///     therefore accepted as 0, and "x" is rejected. Reproduce that, or the two engines
-///     answer differently on the same policy string;
-///   * a sign that survives the byte-0 guard (" -5") wraps, as unsigned negation does.
-///
-/// Overflow is ERANGE, i.e. a reject. `usize` is 64-bit here, so upstream's separate
-/// `value > numeric_limits<usize>::max()` test cannot fire and has no counterpart.
+    // Otherwise binary-search the slot, so an out-of-order insert also costs O(log n) to
+    // locate. The list stays ascending and unique, which toString's run-collapsing needs.
+    var lo: usize = 0;
+    var hi: usize = node.items.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        if (node.items[mid] < cpu) lo = mid + 1 else hi = mid;
+    }
+    if (lo < node.items.len and node.items[lo] == cpu) return; // keep unique
+    try node.insert(allocator, lo, cpu);
+}
 
 // ---- tests ------------------------------------------------------------------
 
@@ -295,6 +293,30 @@ test "toString collapses consecutive runs and joins nodes with ':'" {
     const empty_str = try none.toString(testing.allocator);
     defer testing.allocator.free(empty_str);
     try testing.expectEqualStrings("", empty_str);
+}
+
+test "insertSorted stays fast on an ascending node, not quadratic" {
+    // Build a node the way a `lo-hi` range element does -- ascending, at upstream's own
+    // MaxIndices bound. A front-scanning insert makes this ~5e11 comparisons; the append
+    // fast path makes it linear. The assertion is the CONTENTS; the point of the case is
+    // that it completes at all, which a quadratic insert does not within a test run.
+    const n = 1 << 20;
+    var cfg = NumaConfig.empty(testing.allocator);
+    defer cfg.deinit();
+    for (0..n) |cpu| try testing.expect(try cfg.addCpuToNode(0, cpu));
+
+    try testing.expectEqual(@as(usize, n), cfg.numCpus());
+    try testing.expectEqual(@as(usize, 1), cfg.numNodes());
+    const cpus = cfg.nodes.items[0].items;
+    try testing.expectEqual(@as(usize, 0), cpus[0]);
+    try testing.expectEqual(@as(usize, n - 1), cpus[n - 1]);
+
+    // Insert out of order too, so the binary-search path is exercised and the list stays
+    // ascending and unique -- which is what toString's run-collapsing depends on.
+    var mixed = NumaConfig.empty(testing.allocator);
+    defer mixed.deinit();
+    for ([_]usize{ 9, 3, 7, 1, 3, 5 }) |cpu| _ = try mixed.addCpuToNode(0, cpu);
+    try testing.expectEqualSlices(usize, &.{ 1, 3, 5, 7, 9 }, mixed.nodes.items[0].items);
 }
 
 test "fromSystem names the CPUs the process may run on, not 0..n-1" {
