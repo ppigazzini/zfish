@@ -83,17 +83,16 @@ fn ensureReady() bool {
 
     // Construct the Worker: zero the block, wire the reference members, clear the
     // histories / reductions / refresh cache from the loaded net.
-    worker_construct.constructFull(
-        &g_worker,
-        @intFromPtr(&g_shared), // shared_history
-        @intFromPtr(&g_pool), // threads
-        @intFromPtr(&g_tt), // tt
-        @intFromPtr(&g_manager), // manager
-        0, // thread_idx  (0 => main thread => the depth cap applies)
-        0, // numa_thread_idx
-        1, // numa_total
-        0, // numa_access_token
-    );
+    worker_construct.constructFull(&g_worker, .{
+        .shared_history = &g_shared,
+        .threads = &g_pool,
+        .tt = &g_tt,
+        .manager = &g_manager,
+        .thread_idx = 0, // 0 => main thread => the depth cap applies
+        .numa_thread_idx = 0,
+        .numa_total = 1,
+        .numa_access_token = 0,
+    });
 
     option_source.intByName = &deterministicIntByName;
     g_ready = true;

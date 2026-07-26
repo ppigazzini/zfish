@@ -101,7 +101,9 @@ const roundUp = layout.roundUp;
 const stackBytes = layout.stackBytes;
 const stackBytesMut = layout.stackBytesMut;
 const stackSize = layout.stackSize;
-const setStackSize = layout.setStackSize;
+// Expose the arena size-field writer: the Worker constructor seeds the embedded stack
+// with one live slot through it, so the field placement stays nnue_acc_layout's alone.
+pub const setStackSize = layout.setStackSize;
 const stateComputed = layout.stateComputed;
 const clearComputed = layout.clearComputed;
 const stateRequiresRefresh = layout.stateRequiresRefresh;
