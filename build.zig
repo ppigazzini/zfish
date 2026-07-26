@@ -501,6 +501,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "thread", .imp = "numa", .to = "numa" },
         .{ .from = "engine", .imp = "tt", .to = "tt" },
         .{ .from = "engine", .imp = "state_list", .to = "state_list" },
+        .{ .from = "position_storage", .imp = "position_types", .to = "position_types" },
         .{ .from = "engine", .imp = "position_storage", .to = "position_storage" },
         .{ .from = "engine", .imp = "network", .to = "network" },
         .{ .from = "engine", .imp = "nnue_accumulator", .to = "nnue_accumulator" },

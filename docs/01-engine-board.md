@@ -65,13 +65,15 @@ and `previous`.
 
 ### The pinned footprints
 
-`position_types.zig` asserts `@sizeOf(Position) == 1032`, `@alignOf(Position) == 8`,
+`position_types.zig` asserts `@sizeOf(Position) == 1064`, `@alignOf(Position) == 8`,
 `@sizeOf(StateInfo) == 192`, `@alignOf(StateInfo) == 8`. These are not cosmetic:
-`src/engine/state/worker_layout.zig` pins the same values as `position_size` /
-`state_info_size` and embeds `root_pos` / `root_state` as typed fields in the
-`Worker` block, and `src/engine/state/position_storage.zig` owns the engine's
-`pos` member as one aligned, zeroed block of exactly `position_size` bytes.
-`position.zig` re-asserts `@sizeOf(Position) <= worker_layout.position_size`;
+`src/engine/state/worker_layout.zig` pins the two widths as `position_size` /
+`state_info_size` — the slot widths `setPosition` is handed — and embeds `root_pos` /
+`root_state` as typed fields in the `Worker` block. `src/engine/state/position_storage.zig`
+owns the engine's `pos` member as one aligned, zeroed block, sized with
+`@sizeOf(position_types.Position)` rather than a literal so the block cannot end up
+narrower than the object it holds. `position.zig` re-asserts
+`@sizeOf(Position) <= worker_layout.position_size`;
 `legality.zig` and `state_setup.zig` each re-assert the `StateInfo` width so a
 layout change is caught where the type is read and written, not only where it is
 defined.

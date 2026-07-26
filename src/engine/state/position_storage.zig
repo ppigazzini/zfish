@@ -1,21 +1,19 @@
 // Own the engine's `pos` member's storage. The Position ALGORITHMS live in
-// board/position.zig (which operates on a Position by offset); this provides
-// OWNERSHIP of the 1032-byte Position object the engine holds by value. Serve as
-// that storage: one aligned, zeroed block the runtime hands to the position ops as
-// the live Position.
+// board/position.zig; this provides OWNERSHIP of the Position object the engine holds
+// by value. Serve as that storage: one aligned, zeroed block the runtime hands to the
+// position ops as the live Position.
 //
-// Treat as opaque bytes (Position internals are written/read by position.zig).
-//
-// ALIGNMENT NOTE: rely on worker_layout.zig to pin sizeof(Position) == 1032.
-// Do not separately probe alignof(Position); 8 covers its u64/pointer members. If
-// a future upstream Position gains an over-aligned (SIMD) member, the layout
-// verifier must bump this — flagged there, harmless until then.
+// Treat as opaque bytes (Position internals are written/read by position.zig), but size
+// and align the block from `position_types.Position` itself rather than a pinned
+// literal: a hand-pinned width is silently wrong the moment the type grows, and this
+// block is handed out as a whole Position.
 
 const std = @import("std");
+const position_types = @import("position_types");
 
-/// Pin sizeof(Position), matching worker_layout.zig (= 1032).
-pub const position_size: usize = 1032;
-pub const position_align: usize = 8;
+/// Take the block's footprint from the type it stores, so the two cannot diverge.
+pub const position_size: usize = @sizeOf(position_types.Position);
+pub const position_align: usize = @alignOf(position_types.Position);
 
 pub const PositionStorage = struct {
     bytes: [position_size]u8 align(position_align),
@@ -36,11 +34,11 @@ pub const PositionStorage = struct {
 
 const testing = std.testing;
 
-test "PositionStorage is a zeroed 1032-byte block at its base address" {
+test "PositionStorage is a zeroed Position-sized block at its base address" {
     var pos = PositionStorage.zeroed();
-    try testing.expectEqual(@as(usize, 1032), @sizeOf([position_size]u8));
+    // Assert against the type, not a literal: the block must hold a whole Position.
+    try testing.expectEqual(@sizeOf(position_types.Position), @sizeOf([position_size]u8));
     try testing.expectEqual(@as(*anyopaque, @ptrCast(&pos.bytes)), pos.ptr());
     for (pos.bytes) |b| try testing.expectEqual(@as(u8, 0), b);
-    // Verify the 8-byte aligned base (Position holds u64/pointer members)
     try testing.expectEqual(@as(usize, 0), @intFromPtr(pos.ptr()) % position_align);
 }
