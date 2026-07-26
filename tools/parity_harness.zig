@@ -125,7 +125,7 @@ fn startsWithIgnoreCase(line: []const u8, prefix: []const u8) bool {
 
 // Remove the first " <field> <digits>" run from a line (sed 's/ field [0-9]+//').
 fn removeField(gpa: std.mem.Allocator, line: []const u8, field: []const u8) ![]u8 {
-    const idx = std.mem.indexOf(u8, line, field) orelse return gpa.dupe(u8, line);
+    const idx = std.mem.find(u8, line, field) orelse return gpa.dupe(u8, line);
     var end = idx + field.len;
     while (end < line.len and std.ascii.isDigit(line[end])) end += 1;
     if (end == idx + field.len) return gpa.dupe(u8, line); // no digits -> not the field
@@ -324,9 +324,9 @@ fn searchBestmoveLine(gpa: std.mem.Allocator, io: Io, bin: []const u8, seq: []co
     _ = s.fillUntil("\nbestmove");
     const buf = s.buffered();
     var result: []const u8 = "";
-    if (std.mem.lastIndexOf(u8, buf, "\nbestmove")) |pos| {
+    if (std.mem.findLast(u8, buf, "\nbestmove")) |pos| {
         const start = pos + 1;
-        const nl = std.mem.indexOfScalarPos(u8, buf, start, '\n') orelse buf.len;
+        const nl = std.mem.findScalarPos(u8, buf, start, '\n') orelse buf.len;
         result = trimCR(buf[start..nl]);
     }
     const owned = try gpa.dupe(u8, result);
@@ -366,8 +366,8 @@ fn buildFenErrors(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         var readyok = false;
         var li = lines(cap.stdout);
         while (li.next()) |line| {
-            if (std.mem.indexOf(u8, line, "CRITICAL ERROR:") != null) {
-                if (std.mem.indexOf(u8, line, "Reason: ")) |r| reason = line[r + "Reason: ".len ..];
+            if (std.mem.find(u8, line, "CRITICAL ERROR:") != null) {
+                if (std.mem.find(u8, line, "Reason: ")) |r| reason = line[r + "Reason: ".len ..];
             } else if (startsWith(line, "readyok")) readyok = true;
         }
         if (reason.len == 0) fail("fen-errors: {s}: no CRITICAL ERROR line on stdout (crash?)", .{c.label});
@@ -444,7 +444,7 @@ fn isDivideLine(line: []const u8) bool {
     i += 1;
     if (line[i] < '1' or line[i] > '8') return false;
     i += 1;
-    if (i < line.len and std.mem.indexOfScalar(u8, "qrbnQRBN", line[i]) != null) i += 1;
+    if (i < line.len and std.mem.findScalar(u8, "qrbnQRBN", line[i]) != null) i += 1;
     if (i + 1 >= line.len or line[i] != ':' or line[i + 1] != ' ') return false;
     i += 2;
     if (i >= line.len or !std.ascii.isDigit(line[i])) return false;
@@ -478,7 +478,7 @@ fn buildEval(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         inline for (.{ cap.stderr, cap.stdout }) |buf| {
             var li = lines(buf);
             while (li.next()) |line| {
-                if (std.mem.indexOf(u8, line, "NNUE network contributions") != null) f = true;
+                if (std.mem.find(u8, line, "NNUE network contributions") != null) f = true;
                 if (f) {
                     try out.appendSlice(gpa, line);
                     try out.append(gpa, '\n');
@@ -616,7 +616,7 @@ fn buildTbInit(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     var found = false;
     var li = lines(cap.stdout);
     while (li.next()) |line| {
-        if (std.mem.indexOf(u8, line, "Found") != null and std.mem.indexOf(u8, line, "tablebase") != null) {
+        if (std.mem.find(u8, line, "Found") != null and std.mem.find(u8, line, "tablebase") != null) {
             try out.appendSlice(gpa, line);
             try out.append(gpa, '\n');
             found = true;
@@ -1101,7 +1101,7 @@ fn wellFormedMove(m: []const u8) bool {
     if (m.len < 4 or m.len > 5) return false;
     if (m[0] < 'a' or m[0] > 'h' or m[2] < 'a' or m[2] > 'h') return false;
     if (m[1] < '1' or m[1] > '8' or m[3] < '1' or m[3] > '8') return false;
-    if (m.len == 5 and std.mem.indexOfScalar(u8, "qrbn", m[4]) == null) return false;
+    if (m.len == 5 and std.mem.findScalar(u8, "qrbn", m[4]) == null) return false;
     return true;
 }
 
@@ -1172,12 +1172,12 @@ const Interactive = struct {
     // Read more stdout until the NEXT `needle` appears (past prior matches); false at EOF.
     fn fillUntil(self: *Interactive, needle: []const u8) bool {
         while (true) {
-            if (std.mem.indexOfPos(u8, self.buffered(), self.scanned, needle)) |pos| {
+            if (std.mem.findPos(u8, self.buffered(), self.scanned, needle)) |pos| {
                 self.scanned = pos + needle.len;
                 return true;
             }
             self.mr.fill(4096, .none) catch {
-                if (std.mem.indexOfPos(u8, self.buffered(), self.scanned, needle)) |pos| {
+                if (std.mem.findPos(u8, self.buffered(), self.scanned, needle)) |pos| {
                     self.scanned = pos + needle.len;
                     return true;
                 }
@@ -1739,7 +1739,7 @@ fn ponderMoveLegal(gpa: std.mem.Allocator, io: Io, bin: []const u8, position: []
     var li = lines(cap.stdout);
     while (li.next()) |line| {
         if (isDivideLine(line)) {
-            const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+            const colon = std.mem.findScalar(u8, line, ':') orelse continue;
             if (std.mem.eql(u8, line[0..colon], move)) return true;
         }
     }
@@ -1891,10 +1891,10 @@ fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
 
     // 2. Require the diagnostic to name the file sought. A non-zero exit that explains nothing
     //    is not the contract; the whole point is that the cause is visible.
-    const said = if (std.mem.indexOf(u8, err_out, "nn-") != null) err_out else out;
-    if (std.mem.indexOf(u8, said, "nn-") == null)
+    const said = if (std.mem.find(u8, err_out, "nn-") != null) err_out else out;
+    if (std.mem.find(u8, said, "nn-") == null)
         fail("net-missing: exit was clean but no diagnostic named the net file", .{});
-    if (std.mem.indexOf(u8, said, dir_path) == null)
+    if (std.mem.find(u8, said, dir_path) == null)
         fail("net-missing: diagnostic does not name the directory searched", .{});
 
     std.debug.print("net-missing: OK (no net in cwd -> named diagnostic + clean exit, no signal)\n", .{});

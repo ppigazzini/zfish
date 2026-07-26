@@ -75,7 +75,7 @@ const hash_size = 1 << 12; // 4K, indexed by key's low bits (SF TBTables::Size)
 const hash_mask = hash_size - 1;
 
 var arena_state: ?std.heap.ArenaAllocator = null;
-var tables: std.ArrayListUnmanaged(*TBTable) = .empty;
+var tables: std.ArrayList(*TBTable) = .empty;
 var hash_keys: [hash_size]u64 = @splat(0);
 var hash_tabs: [hash_size]?*TBTable = @splat(null);
 var reg_path: []const u8 = "";
@@ -204,7 +204,7 @@ fn loadFile(t: *TBTable, ext: []const u8, magic: [4]u8) ?[]const u8 {
         defer _ = std.c.close(fd);
 
         // Read the whole file (glibc has no plain `fstat` symbol, so grow a buffer to EOF).
-        var acc: std.ArrayListUnmanaged(u8) = .empty;
+        var acc: std.ArrayList(u8) = .empty;
         var chunk: [1 << 16]u8 = undefined;
         while (true) {
             const r = std.c.read(fd, &chunk, chunk.len);

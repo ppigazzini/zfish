@@ -36,9 +36,9 @@ fn isValidNetName(name: []const u8) bool {
 /// `pub const default_eval_file_name = "nn-<12 hex>.nnue";`. Mirror fetch_net.sh's sed capture.
 fn parseNetName(src: []const u8) ?[]const u8 {
     const key = "default_eval_file_name = \"";
-    const kpos = std.mem.indexOf(u8, src, key) orelse return null;
+    const kpos = std.mem.find(u8, src, key) orelse return null;
     const start = kpos + key.len;
-    const end = std.mem.indexOfScalarPos(u8, src, start, '"') orelse return null;
+    const end = std.mem.findScalarPos(u8, src, start, '"') orelse return null;
     const name = src[start..end];
     return if (isValidNetName(name)) name else null;
 }

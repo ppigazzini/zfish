@@ -113,10 +113,10 @@ pub fn formatFen(
 fn buildEndgameFenAlloc(code: []const u8, color: u8) ![*:0]u8 {
     std.debug.assert(code.len > 0 and code[0] == 'K');
 
-    const second_king = std.mem.indexOfScalarPos(u8, code, 1, 'K') orelse unreachable;
+    const second_king = std.mem.findScalarPos(u8, code, 1, 'K') orelse unreachable;
     // Fall back to the second-king index when 'v' is absent, as upstream's
     // std::min(code.find('v'), code.find('K', 1)) does (find returns npos, not a panic).
-    const versus = std.mem.indexOfScalar(u8, code, 'v') orelse code.len;
+    const versus = std.mem.findScalar(u8, code, 'v') orelse code.len;
     const strong_end = @min(second_king, versus);
 
     const weak_side = code[second_king..];

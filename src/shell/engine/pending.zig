@@ -14,7 +14,7 @@ const PendingStateEntry = struct {
     storage: *PendingStateStorage,
 };
 
-var pending_state_entries = std.ArrayListUnmanaged(PendingStateEntry).empty;
+var pending_state_entries = std.ArrayList(PendingStateEntry).empty;
 
 pub fn ensurePendingStateStorage(states_slot: *?*state_list.StateList) ?*PendingStateStorage {
     const slot_key = @intFromPtr(states_slot);

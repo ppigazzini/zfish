@@ -35,7 +35,7 @@ comptime {
 pub const StateList = struct {
     allocator: std.mem.Allocator,
     /// Allocate one heap block per StateInfo → addresses are stable for the block's lifetime.
-    blocks: std.ArrayListUnmanaged(*StateInfo),
+    blocks: std.ArrayList(*StateInfo),
 
     /// Construct with a single zeroed root StateInfo.
     pub fn init(allocator: std.mem.Allocator) error{OutOfMemory}!StateList {

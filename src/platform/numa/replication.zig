@@ -21,7 +21,7 @@ pub const NumaReplicationContext = struct {
     config: NumaConfig,
     /// Track replicated objects as a pointer set;
     /// keep membership unique. Rely on a small list (the engine tracks one: network).
-    tracked: std.ArrayListUnmanaged(*NumaReplicatedBase) = .empty,
+    tracked: std.ArrayList(*NumaReplicatedBase) = .empty,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, config: NumaConfig) NumaReplicationContext {

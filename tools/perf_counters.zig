@@ -89,7 +89,7 @@ fn openCounter(config: u64, pid: linux.pid_t) !i32 {
 /// the tool would happily compare two different trees.
 fn parseNodes(text: []const u8) ?u64 {
     const marker = "Nodes searched";
-    const at = std.mem.indexOf(u8, text, marker) orelse return null;
+    const at = std.mem.find(u8, text, marker) orelse return null;
     var i = at + marker.len;
     while (i < text.len and (text[i] == ' ' or text[i] == ':')) i += 1;
     var end = i;
