@@ -68,13 +68,11 @@ pub fn threadAllocationInformation(
 const engine_gpa = std.heap.c_allocator;
 
 pub fn numaConfigStringEngine(engine_ptr: *engine_object.EngineObject) ?[]u8 {
-    _ = engine_ptr;
-    return numa.configString(engine_gpa);
+    return numa.contextConfigString(engine_ptr.numaContextPtr(), engine_gpa);
 }
 
 pub fn numaConfigInformationEngine(engine_ptr: *engine_object.EngineObject) ?[]u8 {
-    _ = engine_ptr;
-    const config = numa.configString(engine_gpa) orelse return null;
+    const config = numaConfigStringEngine(engine_ptr) orelse return null;
     defer engine_gpa.free(config);
     return formatNumaInfo(engine_gpa, config);
 }
