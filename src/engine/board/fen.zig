@@ -7,7 +7,7 @@
 // cycle and position.zig re-exports the three public entry points
 // (flipFen / formatFen / buildEndgameFen).
 //
-// Duplicate here (kept intentionally tiny) a few one-line primitives (allocCString,
+// Duplicate here (kept intentionally tiny) a few one-line primitives (digitChar,
 // fileOf, rankOf) and the piece/castling constants that also exist in position.zig,
 // where other clusters still use them, rather than sharing them through a
 // back-import, which would reintroduce a cycle.
@@ -27,11 +27,11 @@ const black: u8 = 1;
 // against std alone, so it cannot reach board_core.sq_none.
 const sq_none: u8 = 64;
 
-pub fn flipFen(fen_ptr: [*]const u8, fen_len: usize) ?[*:0]u8 {
-    return flipFenAlloc(fen_ptr[0..fen_len]) catch null;
+pub fn flipFen(fen: []const u8) ?[]u8 {
+    return flipFenAlloc(fen) catch null;
 }
 
-fn flipFenAlloc(fen: []const u8) ![*:0]u8 {
+fn flipFenAlloc(fen: []const u8) ![]u8 {
     const alloc = std.heap.c_allocator;
     var it = std.mem.tokenizeScalar(u8, fen, ' ');
     const placement = it.next() orelse return error.BadFen;
@@ -41,7 +41,7 @@ fn flipFenAlloc(fen: []const u8) ![*:0]u8 {
     const rest = it.rest(); // half/full move counters
 
     var out = std.ArrayList(u8).empty;
-    defer out.deinit(alloc);
+    errdefer out.deinit(alloc);
 
     // Emit the piece placement with the rank order reversed (vertical mirror).
     var ranks: [8][]const u8 = undefined;
@@ -75,15 +75,15 @@ fn flipFenAlloc(fen: []const u8) ![*:0]u8 {
     try out.append(alloc, ' ');
     try out.appendSlice(alloc, rest);
 
-    return try allocCString(out.items);
+    return try out.toOwnedSlice(alloc);
 }
 
-pub fn buildEndgameFen(code_ptr: [*]const u8, code_len: usize, color: u8) ?[*:0]u8 {
-    return buildEndgameFenAlloc(code_ptr[0..code_len], color) catch null;
+pub fn buildEndgameFen(code: []const u8, color: u8) ?[]u8 {
+    return buildEndgameFenAlloc(code, color) catch null;
 }
 
 pub fn formatFen(
-    board_ptr: [*]const u8,
+    board: *const [64]u8,
     side_to_move: u8,
     chess960: u8,
     castling_rights: u8,
@@ -94,9 +94,9 @@ pub fn formatFen(
     ep_square: u8,
     rule50: i32,
     game_ply: i32,
-) ?[*:0]u8 {
+) ?[]u8 {
     return formatFenAlloc(
-        board_ptr[0..64],
+        board,
         side_to_move,
         chess960 != 0,
         castling_rights,
@@ -110,7 +110,7 @@ pub fn formatFen(
     ) catch null;
 }
 
-fn buildEndgameFenAlloc(code: []const u8, color: u8) ![*:0]u8 {
+fn buildEndgameFenAlloc(code: []const u8, color: u8) ![]u8 {
     std.debug.assert(code.len > 0 and code[0] == 'K');
 
     const second_king = std.mem.findScalarPos(u8, code, 1, 'K') orelse unreachable;
@@ -123,7 +123,7 @@ fn buildEndgameFenAlloc(code: []const u8, color: u8) ![*:0]u8 {
     const strong_side = code[0..strong_end];
 
     var builder = std.ArrayList(u8).empty;
-    defer builder.deinit(std.heap.c_allocator);
+    errdefer builder.deinit(std.heap.c_allocator);
 
     try builder.appendSlice(std.heap.c_allocator, "8/");
     try appendSide(&builder, weak_side, color == 0);
@@ -133,7 +133,7 @@ fn buildEndgameFenAlloc(code: []const u8, color: u8) ![*:0]u8 {
     try builder.append(std.heap.c_allocator, digitChar(@as(u8, @intCast(8 - strong_side.len))));
     try builder.appendSlice(std.heap.c_allocator, "/8 w - - 0 10");
 
-    return try allocCString(builder.items);
+    return try builder.toOwnedSlice(std.heap.c_allocator);
 }
 
 fn formatFenAlloc(
@@ -148,9 +148,9 @@ fn formatFenAlloc(
     ep_square: u8,
     rule50: i32,
     game_ply: i32,
-) ![*:0]u8 {
+) ![]u8 {
     var builder = std.ArrayList(u8).empty;
-    defer builder.deinit(std.heap.c_allocator);
+    errdefer builder.deinit(std.heap.c_allocator);
 
     var rank: i32 = 7;
     while (rank >= 0) : (rank -= 1) {
@@ -220,7 +220,7 @@ fn formatFenAlloc(
     const fullmove = 1 + @divTrunc(game_ply - side_offset, 2);
     try appendInt(&builder, fullmove);
 
-    return try allocCString(builder.items);
+    return try builder.toOwnedSlice(std.heap.c_allocator);
 }
 
 fn appendSide(builder: *std.ArrayList(u8), side: []const u8, lower: bool) !void {
@@ -238,13 +238,6 @@ fn appendInt(builder: *std.ArrayList(u8), value: i32) !void {
     var buffer: [32]u8 = undefined;
     const text = try std.fmt.bufPrint(&buffer, "{d}", .{value});
     try builder.appendSlice(std.heap.c_allocator, text);
-}
-
-// Duplicated from position.zig (kept minimal to avoid a back-import cycle).
-fn allocCString(value: []const u8) ![*:0]u8 {
-    const result = try std.heap.c_allocator.allocSentinel(u8, value.len, 0);
-    @memcpy(result[0..value.len], value);
-    return result.ptr;
 }
 
 fn digitChar(value: u8) u8 {
@@ -273,13 +266,13 @@ const testing = std.testing;
 
 test "flipFen vertically mirrors and swaps colors" {
     const src = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    const out = flipFen(src.ptr, src.len).?;
-    defer std.heap.c_allocator.free(std.mem.span(out));
+    const out = flipFen(src).?;
+    defer std.heap.c_allocator.free(out);
     // Verify the vertical rank mirror + full case-swap: the symmetric start position returns
     // to the same placement, black to move, castling case-swapped (KQkq -> kqKQ).
     try testing.expectEqualStrings(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b kqKQ - 0 1",
-        std.mem.span(out),
+        out,
     );
 }
 
@@ -294,12 +287,11 @@ test "flipFen is an involution" {
         "r3k2r/8/8/8/8/8/8/R3K2R w Kq - 5 12",
     };
     for (cases) |fen| {
-        const once = flipFen(fen.ptr, fen.len).?;
-        defer std.heap.c_allocator.free(std.mem.span(once));
-        const once_slice = std.mem.span(once);
-        const twice = flipFen(once_slice.ptr, once_slice.len).?;
-        defer std.heap.c_allocator.free(std.mem.span(twice));
-        try testing.expectEqualStrings(fen, std.mem.span(twice));
+        const once = flipFen(fen).?;
+        defer std.heap.c_allocator.free(once);
+        const twice = flipFen(once).?;
+        defer std.heap.c_allocator.free(twice);
+        try testing.expectEqualStrings(fen, twice);
     }
 }
 
@@ -314,16 +306,16 @@ test "formatFen renders the start position from primitives" {
         board[56 + f] = back[f] + 8; // rank 8 black back rank
     }
     const out = formatFen(&board, 0, 0, 0x0F, 7, 0, 63, 56, sq_none, 0, 0).?;
-    defer std.heap.c_allocator.free(std.mem.span(out));
+    defer std.heap.c_allocator.free(out);
     try testing.expectEqualStrings(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        std.mem.span(out),
+        out,
     );
 }
 
 test "buildEndgameFen places both kings and the extra piece" {
     const code = "KQvK";
-    const out = buildEndgameFen(code.ptr, code.len, 0).?;
-    defer std.heap.c_allocator.free(std.mem.span(out));
-    try testing.expectEqualStrings("8/k7/8/8/8/8/KQ6/8 w - - 0 10", std.mem.span(out));
+    const out = buildEndgameFen(code, 0).?;
+    defer std.heap.c_allocator.free(out);
+    try testing.expectEqualStrings("8/k7/8/8/8/8/KQ6/8 w - - 0 10", out);
 }

@@ -15,11 +15,8 @@
 const std = @import("std");
 const c = @import("libc");
 
-// Free a c_allocator string through the Allocator interface (M-MEM.B); the raw
-// std.c.malloc AccumulatorStack/RefreshCache blocks below stay on std.c.free.
-fn freeCString(ptr: [*:0]u8) void {
-    std.heap.c_allocator.free(std.mem.span(ptr));
-}
+// The raw std.c.malloc AccumulatorStack/RefreshCache blocks below stay on std.c.free;
+// every rendered string here is an owned slice freed through the Allocator interface.
 const position_snapshot = @import("position_snapshot");
 const position_port = @import("position");
 const uci_move = @import("uci_move");
@@ -143,13 +140,12 @@ fn accumulatorCachesDestroy(caches: ?*nnue_acc.RefreshCache) void {
     _ = caches; // static buffer -- nothing to free
 }
 
-pub fn traceEvalEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
+pub fn traceEvalEngine(engine_ptr: *engine_object.EngineObject) ?[]u8 {
     verifyNetwork();
 
     const source_pos = engine_ptr.positionPtr();
-    const fen_ptr = fen(source_pos) orelse return null;
-    defer freeCString(fen_ptr);
-    const fen_text = std.mem.span(fen_ptr);
+    const fen_text = fen(source_pos) orelse return null;
+    defer std.heap.c_allocator.free(fen_text);
 
     const trace_pos = position_port.create() orelse return null;
     defer position_port.destroy(trace_pos);
@@ -159,24 +155,23 @@ pub fn traceEvalEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
     const state = state_list.storageReset(state_storage) catch return null;
 
     if (position_port.setPositionState(trace_pos, fen_text.ptr, fen_text.len, @intFromBool(option_port.uciChess960()), state)) |err| {
-        defer freeCString(err);
+        defer std.heap.c_allocator.free(err);
         return null;
     }
 
     return evalTrace(trace_pos);
 }
 
-pub fn evalTrace(pos: *const position_port.Position) ?[*:0]u8 {
+pub fn evalTrace(pos: *const position_port.Position) ?[]u8 {
     const summary = positionSummary(pos);
     if (summary.checkers != 0)
-        return allocMessage("Final evaluation: none (in check)", .{});
+        return allocMessage(std.heap.c_allocator, "Final evaluation: none (in check)", .{});
 
     const caches = accumulatorCachesCreate() orelse return null;
     defer accumulatorCachesDestroy(caches);
 
-    const inner_trace_ptr = buildNnueTrace(pos, summary, caches) orelse return null;
-    defer freeCString(inner_trace_ptr);
-    const inner_trace = std.mem.span(inner_trace_ptr);
+    const inner_trace = buildNnueTrace(pos, summary, caches) orelse return null;
+    defer std.heap.c_allocator.free(inner_trace);
 
     const accumulators = accumulatorStackCreate() orelse return null;
     defer accumulatorStackDestroy(accumulators);
@@ -205,23 +200,22 @@ pub fn evalTrace(pos: *const position_port.Position) ?[*:0]u8 {
     });
 }
 
-pub fn fen(pos: *const position_port.Position) ?[*:0]u8 {
+pub fn fen(pos: *const position_port.Position) ?[]u8 {
     return positionFen(pos, null);
 }
 
-pub fn fenEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
+pub fn fenEngine(engine_ptr: *engine_object.EngineObject) ?[]u8 {
     return fen(engine_ptr.positionPtr());
 }
 
-pub fn visualize(pos: *const position_port.Position) ?[*:0]u8 {
+pub fn visualize(pos: *const position_port.Position) ?[]u8 {
     const allocator = std.heap.c_allocator;
     var pieces: [square_count]u8 = @splat(0);
     position_port.accumulatorSnapshot(pos, &pieces);
 
     const summary = positionSummary(pos);
-    const fen_ptr = positionFen(pos, &pieces) orelse return null;
-    defer freeCString(fen_ptr);
-    const fen_text = std.mem.span(fen_ptr);
+    const fen_text = positionFen(pos, &pieces) orelse return null;
+    defer std.heap.c_allocator.free(fen_text);
 
     var buffer = std.ArrayList(u8).empty;
     defer buffer.deinit(allocator);
@@ -240,6 +234,7 @@ pub fn visualize(pos: *const position_port.Position) ?[*:0]u8 {
         }
 
         appendFormat(
+            std.heap.c_allocator,
             &buffer,
             " | {d}\n +---+---+---+---+---+---+---+---+\n",
             .{rank + 1},
@@ -257,17 +252,15 @@ pub fn visualize(pos: *const position_port.Position) ?[*:0]u8 {
     if (tb.available != 0) {
         buffer.appendSlice(allocator, "\nTablebases WDL: ") catch return null;
         appendPaddedInt(&buffer, tb.wdl) catch return null;
-        appendFormat(&buffer, " ({d})\nTablebases DTZ: ", .{tb.wdl_state}) catch return null;
+        appendFormat(std.heap.c_allocator, &buffer, " ({d})\nTablebases DTZ: ", .{tb.wdl_state}) catch return null;
         appendPaddedInt(&buffer, tb.dtz) catch return null;
-        appendFormat(&buffer, " ({d})", .{tb.dtz_state}) catch return null;
+        appendFormat(std.heap.c_allocator, &buffer, " ({d})", .{tb.dtz_state}) catch return null;
     }
 
-    const owned = allocator.allocSentinel(u8, buffer.items.len, 0) catch return null;
-    @memcpy(owned[0..buffer.items.len], buffer.items);
-    return owned.ptr;
+    return buffer.toOwnedSlice(allocator) catch null;
 }
 
-pub fn visualizeEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
+pub fn visualizeEngine(engine_ptr: *engine_object.EngineObject) ?[]u8 {
     return visualize(engine_ptr.positionPtr());
 }
 
@@ -275,7 +268,7 @@ fn buildNnueTrace(
     pos: *const position_port.Position,
     summary: PositionSummary,
     caches: *nnue_acc.RefreshCache,
-) ?[*:0]u8 {
+) ?[]u8 {
     const accumulators = accumulatorStackCreate() orelse return null;
     defer accumulatorStackDestroy(accumulators);
     nnue_acc.stackReset(accumulators);
@@ -321,7 +314,7 @@ fn positionSummary(pos: *const position_port.Position) PositionSummary {
     };
 }
 
-fn positionFen(pos: *const position_port.Position, pieces_opt: ?*const [square_count]u8) ?[*:0]u8 {
+fn positionFen(pos: *const position_port.Position, pieces_opt: ?*const [square_count]u8) ?[]u8 {
     const snapshot = loadPositionSnapshot(pos);
     var pieces_storage: [square_count]u8 = undefined;
     const pieces: *const [square_count]u8 = if (pieces_opt) |provided|
@@ -364,9 +357,8 @@ fn probeTablebases(pos: *const position_port.Position, pieces_opt: ?*const [squa
         return emptyTablebaseProbe();
     }
 
-    const fen_ptr = positionFen(pos, pieces) orelse return emptyTablebaseProbe();
-    defer freeCString(fen_ptr);
-    const fen_text = std.mem.span(fen_ptr);
+    const fen_text = positionFen(pos, pieces) orelse return emptyTablebaseProbe();
+    defer std.heap.c_allocator.free(fen_text);
     return tablebase.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }
 

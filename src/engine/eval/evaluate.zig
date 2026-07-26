@@ -41,14 +41,14 @@ pub fn computeValue(input: EvalInput) i32 {
     return @intCast(value);
 }
 
-pub fn formatTrace(input: EvalTraceInput) ?[*:0]u8 {
+pub fn formatTrace(input: EvalTraceInput) ?[]u8 {
     return formatTraceAlloc(input) catch null;
 }
 
-fn formatTraceAlloc(input: EvalTraceInput) ![*:0]u8 {
+fn formatTraceAlloc(input: EvalTraceInput) ![]u8 {
     const allocator = std.heap.c_allocator;
     var buffer = std.ArrayList(u8).empty;
-    defer buffer.deinit(allocator);
+    errdefer buffer.deinit(allocator);
 
     try buffer.append(allocator, '\n');
     try buffer.appendSlice(allocator, input.inner_trace_ptr[0..input.inner_trace_len]);
@@ -73,9 +73,7 @@ fn formatTraceAlloc(input: EvalTraceInput) ![*:0]u8 {
         " (white side) [with scaled NNUE, ...]\n",
     );
 
-    const result = try allocator.allocSentinel(u8, buffer.items.len, 0);
-    @memcpy(result[0..buffer.items.len], buffer.items);
-    return result.ptr;
+    return buffer.toOwnedSlice(allocator);
 }
 
 fn appendIntLine(

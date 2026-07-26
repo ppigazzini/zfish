@@ -158,14 +158,14 @@ pub fn rayPass(s1: u8, s2: u8) u64 {
     return ray_pass_bb[s1][s2];
 }
 
-pub fn pretty(bitboard: u64) ?[*:0]u8 {
+pub fn pretty(bitboard: u64) ?[]u8 {
     return prettyAlloc(bitboard) catch null;
 }
 
-fn prettyAlloc(bitboard: u64) !?[*:0]u8 {
+fn prettyAlloc(bitboard: u64) ![]u8 {
     const allocator = std.heap.c_allocator;
     var buffer = std.ArrayList(u8).empty;
-    defer buffer.deinit(allocator);
+    errdefer buffer.deinit(allocator);
 
     try buffer.appendSlice(allocator, "+---+---+---+---+---+---+---+---+\n");
 
@@ -186,7 +186,7 @@ fn prettyAlloc(bitboard: u64) !?[*:0]u8 {
     }
 
     try buffer.appendSlice(allocator, "  a   b   c   d   e   f   g   h\n");
-    return try allocCString(buffer.items);
+    return try buffer.toOwnedSlice(allocator);
 }
 
 const file_a_bb: u64 = 0x0101010101010101;
@@ -307,13 +307,6 @@ fn slidingAttack(pt: PieceType, square: usize, occupied: u64) u64 {
         }
     }
     return result;
-}
-
-fn allocCString(value: []const u8) !?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const result = try allocator.allocSentinel(u8, value.len, 0);
-    @memcpy(result[0..value.len], value);
-    return result.ptr;
 }
 
 const Prng = struct {

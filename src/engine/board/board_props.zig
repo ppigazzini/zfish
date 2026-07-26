@@ -39,7 +39,7 @@ fn perftFen(fen: []const u8, chess960: u8, depth: i32) u64 {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, chess960, &st, position_size, state_info_size)) |err| {
-        std.heap.c_allocator.free(std.mem.span(err));
+        std.heap.c_allocator.free(err);
         @panic("perftFen: setPosition failed on a known-legal FEN");
     }
     var states: [perft_max_depth]StateBuf align(64) = undefined;
@@ -100,7 +100,7 @@ fn checkRoundTrip(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
-        std.heap.c_allocator.free(std.mem.span(err));
+        std.heap.c_allocator.free(err);
         @panic("checkRoundTrip: setPosition failed on a known-legal FEN");
     }
     const pos = &p;
@@ -143,7 +143,7 @@ fn checkFenRoundTrip(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
-        std.heap.c_allocator.free(std.mem.span(err));
+        std.heap.c_allocator.free(err);
         @panic("checkFenRoundTrip: setPosition failed on a known-legal FEN");
     }
     const pos = &p;
@@ -160,8 +160,8 @@ fn checkFenRoundTrip(fen: []const u8) !void {
         pos.st.rule50,
         pos.game_ply,
     ) orelse @panic("checkFenRoundTrip: formatFen returned null");
-    defer std.heap.c_allocator.free(std.mem.span(out));
-    try std.testing.expectEqualStrings(fen, std.mem.span(out));
+    defer std.heap.c_allocator.free(out);
+    try std.testing.expectEqualStrings(fen, out);
 }
 
 test "FEN parse -> format round-trips" {
@@ -179,7 +179,7 @@ fn checkMoveGenLegalityAgree(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
-        std.heap.c_allocator.free(std.mem.span(err));
+        std.heap.c_allocator.free(err);
         @panic("checkMoveGenLegalityAgree: setPosition failed on a known-legal FEN");
     }
     const pp = &p;
@@ -211,7 +211,7 @@ fn checkGivesCheck(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
-        std.heap.c_allocator.free(std.mem.span(err));
+        std.heap.c_allocator.free(err);
         @panic("checkGivesCheck: setPosition failed on a known-legal FEN");
     }
     const pp = &p;
@@ -245,7 +245,7 @@ fn checkNullMoveRoundTrip(fen: []const u8) !void {
     var p: position.Position align(64) = undefined;
     var st: position.StateInfo align(16) = undefined;
     if (position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size)) |err| {
-        std.heap.c_allocator.free(std.mem.span(err));
+        std.heap.c_allocator.free(err);
         @panic("checkNullMoveRoundTrip: setPosition failed on a known-legal FEN");
     }
     const pos = &p;
@@ -311,7 +311,7 @@ fn expectRejected(fen: []const u8) !void {
     var st: position.StateInfo align(16) = undefined;
     const err = position.setPosition(&p, fen.ptr, fen.len, 0, &st, position_size, state_info_size);
     if (err) |msg| {
-        std.heap.c_allocator.free(std.mem.span(msg)); // rejected as expected
+        std.heap.c_allocator.free(msg); // rejected as expected
     } else {
         std.debug.print("FEN was accepted but should have been rejected: {s}\n", .{fen});
         return error.TestUnexpectedResult;
@@ -354,7 +354,7 @@ test "fuzz: setPosition tolerates arbitrary input without crashing" {
         var st: position.StateInfo align(16) = undefined;
         const err = position.setPosition(&p, &buf, len, 0, &st, position_size, state_info_size);
         if (err) |msg| {
-            std.heap.c_allocator.free(std.mem.span(msg));
+            std.heap.c_allocator.free(msg);
             continue; // rejected -- fine
         }
         // Run legal-move generation + one round-trip on the accepted legal position; it
@@ -388,7 +388,7 @@ test "isDraw honours the fifty-move rule" {
 
 fn setup(p: *position.Position, st: *position.StateInfo, fen: []const u8) void {
     if (position.setPosition(p, fen.ptr, fen.len, 0, st, position_size, state_info_size)) |err| {
-        std.heap.c_allocator.free(std.mem.span(err));
+        std.heap.c_allocator.free(err);
         @panic("setup: setPosition failed on a known-legal FEN");
     }
 }

@@ -19,20 +19,18 @@ pub const CountPair = struct {
     total: usize,
 };
 
-pub fn allocMessage(comptime fmt: []const u8, args: anytype) ?[*:0]u8 {
-    const allocator = std.heap.c_allocator;
-    const rendered = std.fmt.allocPrint(allocator, fmt, args) catch return null;
-    defer allocator.free(rendered);
-    const owned = allocator.allocSentinel(u8, rendered.len, 0) catch return null;
-    @memcpy(owned[0..rendered.len], rendered);
-    return owned.ptr;
+/// Render `fmt` into an owned slice the caller frees with `gpa`.
+pub fn allocMessage(gpa: std.mem.Allocator, comptime fmt: []const u8, args: anytype) ?[]u8 {
+    return std.fmt.allocPrint(gpa, fmt, args) catch null;
 }
 
-pub fn appendFormat(buffer: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
-    const allocator = std.heap.c_allocator;
-    const rendered = try std.fmt.allocPrint(allocator, fmt, args);
-    defer allocator.free(rendered);
-    try buffer.appendSlice(allocator, rendered);
+pub fn appendFormat(
+    gpa: std.mem.Allocator,
+    buffer: *std.ArrayList(u8),
+    comptime fmt: []const u8,
+    args: anytype,
+) !void {
+    try buffer.print(gpa, fmt, args);
 }
 
 pub fn appendHexKey(buffer: *std.ArrayList(u8), key: u64) !void {

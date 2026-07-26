@@ -55,18 +55,21 @@ fn pieceCharIndex(token: u8) ?u8 {
     }
     return null;
 }
-fn setErr(comptime msg: []const u8) ?[*:0]u8 {
-    return allocCString(msg) catch null;
+// Every diagnostic below is an owned SLICE the caller frees; a parse error already knows
+// its own length, so there is no reason to hand back a bare pointer and make the caller
+// re-scan for the NUL.
+fn setErr(comptime msg: []const u8) ?[]u8 {
+    return std.heap.c_allocator.dupe(u8, msg) catch null;
 }
 
 // Render an error that quotes the offending input, as upstream does with
 // `std::string("...") + std::string(1, token)`. Every interpolated FEN diagnostic dropped
 // its value here, so `position fen not_a_fen` reported "Invalid piece." where upstream
 // reports "Invalid piece: o" -- the message named the rule but not what broke it.
-fn setErrFmt(comptime fmt: []const u8, args: anytype) ?[*:0]u8 {
+fn setErrFmt(comptime fmt: []const u8, args: anytype) ?[]u8 {
     var buf: [160]u8 = undefined;
     const rendered = std.fmt.bufPrint(&buf, fmt, args) catch return setErr("Invalid FEN.");
-    return allocCString(rendered) catch null;
+    return std.heap.c_allocator.dupe(u8, rendered) catch null;
 }
 
 const FenCursor = struct {
@@ -91,7 +94,7 @@ pub fn setPosition(
     st_ptr: *StateInfo,
     pos_size: usize,
     st_size: usize,
-) ?[*:0]u8 {
+) ?[]u8 {
     const pos = pos_ptr;
     @memset(@as([*]u8, @ptrCast(pos))[0..pos_size], 0);
     @memset(@as([*]u8, @ptrCast(st_ptr))[0..st_size], 0);
@@ -298,12 +301,6 @@ fn parseInt(cur: *FenCursor) ?i32 {
     }
     if (!any) return null;
     return @intCast(if (neg) -val else val);
-}
-
-fn allocCString(value: []const u8) ![*:0]u8 {
-    const result = try std.heap.c_allocator.allocSentinel(u8, value.len, 0);
-    @memcpy(result[0..value.len], value);
-    return result.ptr;
 }
 
 test {

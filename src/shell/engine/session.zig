@@ -11,8 +11,7 @@
 //! Depend only on the engine-graph named modules + the `shell/engine/` leaves; nothing
 //! imports the shell facade (the headless invariant keeps every edge one-way), so the
 //! SharedState instantiation here -- which must see all five referent types -- cannot be
-//! in a cycle. Duplicate `freeCString` (a 3-line sentinel free) so the driver needs
-//! no engine.zig import, keeping the face->driver edge one-way.
+//! in a cycle.
 
 const std = @import("std");
 
@@ -63,12 +62,6 @@ const addCheckOption = engine_options.addCheckOption;
 const addSpinOption = engine_options.addSpinOption;
 const addButtonOption = engine_options.addButtonOption;
 const fen = engine_trace.fen;
-
-// Free a c_allocator-allocated NUL-terminated string through the Allocator
-// interface, exact for these tightly-sized sentinel allocations.
-fn freeCString(ptr: [*:0]u8) void {
-    std.heap.c_allocator.free(std.mem.span(ptr));
-}
 
 // Instantiate the ONE concrete SharedState bundle. The driver is a graph
 // root that sees all referent types (nothing imports the shell facade, so this can't
@@ -170,7 +163,7 @@ pub fn optionOnChange(
     value_ptr: [*]const u8,
     value_len: usize,
     int_value: i32,
-) ?[*:0]u8 {
+) ?[]u8 {
     const value = value_ptr[0..value_len];
 
     return switch (callback_kind) {
@@ -183,17 +176,18 @@ pub fn optionOnChange(
             // topology lines -- the option did not take effect.
             if (!setNumaConfigFromOptionEngine(engine_ptr, value))
                 break :blk allocMessage(
+                    std.heap.c_allocator,
                     "NumaPolicy: invalid value '{s}', keeping previous config.",
                     .{value},
                 );
 
             const numa_info_ptr = numaConfigInformationEngine(engine_ptr) orelse break :blk null;
-            defer freeCString(numa_info_ptr);
+            defer std.heap.c_allocator.free(numa_info_ptr);
 
             const thread_info_ptr = threadAllocationInformationEngine(engine_ptr) orelse break :blk null;
-            defer freeCString(thread_info_ptr);
+            defer std.heap.c_allocator.free(thread_info_ptr);
 
-            break :blk allocMessage("{s}\n{s}", .{ std.mem.span(numa_info_ptr), std.mem.span(thread_info_ptr) });
+            break :blk allocMessage(std.heap.c_allocator, "{s}\n{s}", .{ numa_info_ptr, thread_info_ptr });
         },
         option_callback_threads => blk: {
             resizeThreadsEngine(engine_ptr);
@@ -230,10 +224,10 @@ pub fn setPosition(
     fen_len: usize,
     moves_ptr: ?[*]const ByteView,
     move_count: usize,
-) ?[*:0]u8 {
+) ?[]u8 {
     const state_storage = ensurePendingStateStorage(states_slot) orelse
-        return allocMessage("out of memory", .{});
-    const root_state = state_storage.reset() catch return allocMessage("out of memory", .{});
+        return allocMessage(std.heap.c_allocator, "out of memory", .{});
+    const root_state = state_storage.reset() catch return allocMessage(std.heap.c_allocator, "out of memory", .{});
 
     if (position_port.setPositionState(pos, fen_ptr, fen_len, chess960_enabled, root_state)) |err| {
         return err;
@@ -247,10 +241,10 @@ pub fn setPosition(
         const move_raw = if (view.ptr) |ptr| uci_move.toMoveRaw(pos, ptr[0..view.len]) else none_raw;
 
         if (move_raw == none_raw) {
-            return allocMessage("Illegal move: {s}", .{move_text});
+            return allocMessage(std.heap.c_allocator, "Illegal move: {s}", .{move_text});
         }
 
-        const next_state = state_storage.push() catch return allocMessage("out of memory", .{});
+        const next_state = state_storage.push() catch return allocMessage(std.heap.c_allocator, "out of memory", .{});
         position_port.doMoveState(pos, move_raw, next_state);
     }
 
@@ -263,7 +257,7 @@ pub fn setPositionEngine(
     fen_len: usize,
     moves_ptr: ?[*]const ByteView,
     move_count: usize,
-) ?[*:0]u8 {
+) ?[]u8 {
     return setPositionEngineAs(engine_ptr, @intFromBool(option_port.uciChess960()), fen_ptr, fen_len, moves_ptr, move_count);
 }
 
@@ -279,7 +273,7 @@ pub fn setPositionEngineAs(
     fen_len: usize,
     moves_ptr: ?[*]const ByteView,
     move_count: usize,
-) ?[*:0]u8 {
+) ?[]u8 {
     const states_slot = engine_ptr.statesSlotPtr();
     statesSlotReset(states_slot);
 
@@ -320,8 +314,8 @@ pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [
         }
         const ret = optionOnChange(engine_ptr, res.callback_kind, relay_value.ptr, relay_value.len, relay_int);
         if (ret) |msg| {
-            printInfoString(std.mem.span(msg));
-            freeCString(msg);
+            printInfoString(msg);
+            std.heap.c_allocator.free(msg);
         }
     }
 }
@@ -427,13 +421,11 @@ fn setStartPosition(engine_ptr: *engine_object.EngineObject) void {
 // obtained from setPositionEngine and then FREED AND DISCARDED, so a flip that produced
 // an unusable position reported nothing and left the engine on the old board. The caller
 // terminates on it, as upstream's uci.cpp:147 does.
-pub fn flipEngine(engine_ptr: *engine_object.EngineObject) ?[*:0]u8 {
-    const fen_c = fen(engine_ptr.positionPtr()) orelse return null;
-    defer freeCString(fen_c);
-    const fen_text = std.mem.span(fen_c);
-    const flipped_c = position_port.flipFen(fen_text.ptr, fen_text.len) orelse return null;
-    defer freeCString(flipped_c);
-    const flipped = std.mem.span(flipped_c);
+pub fn flipEngine(engine_ptr: *engine_object.EngineObject) ?[]u8 {
+    const fen_text = fen(engine_ptr.positionPtr()) orelse return null;
+    defer std.heap.c_allocator.free(fen_text);
+    const flipped = position_port.flipFen(fen_text) orelse return null;
+    defer std.heap.c_allocator.free(flipped);
     const chess960: u8 = @intFromBool(position_port.isChess960(engine_ptr.positionPtr()));
     return setPositionEngineAs(engine_ptr, chess960, flipped.ptr, flipped.len, null, 0);
 }

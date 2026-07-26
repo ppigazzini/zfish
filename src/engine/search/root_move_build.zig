@@ -94,13 +94,13 @@ pub fn rootMovesDestroy(rm: []search_types.RootMove) void {
     if (rm.len != 0) std.heap.c_allocator.free(rm);
 }
 
-pub fn buildRootFen(pos: *const position_port.Position) ?[*:0]u8 {
+pub fn buildRootFen(pos: *const position_port.Position) ?[]u8 {
     var pieces: [square_count]u8 = undefined;
     position_port.accumulatorSnapshot(pos, &pieces);
     const snapshot = loadPositionSnapshot(pos);
 
     return position_port.formatFen(
-        @ptrCast(&pieces),
+        &pieces,
         snapshot.side_to_move,
         snapshot.is_chess960,
         snapshot.castling_rights,
@@ -138,7 +138,7 @@ pub const ScratchPosition = struct {
     pub fn reset(self: *ScratchPosition, root_fen: []const u8, chess960: u8) error{OutOfMemory}!void {
         const root_state = try state_list.storageReset(self.storage);
         if (position_port.setPositionState(self.pos, root_fen.ptr, root_fen.len, chess960, root_state)) |err| {
-            defer std.heap.c_allocator.free(std.mem.span(err));
+            defer std.heap.c_allocator.free(err);
             @panic("scratch position set failed");
         }
     }
@@ -185,9 +185,8 @@ fn loadTbConfig(pos: *const position_port.Position) TbConfig {
 
 fn probePosition(pos: *const position_port.Position) !TablebaseProbe {
     const snapshot = loadPositionSnapshot(pos);
-    const fen_ptr = buildRootFen(pos) orelse return error.OutOfMemory;
-    defer std.heap.c_allocator.free(std.mem.span(fen_ptr));
-    const fen_text = std.mem.span(fen_ptr);
+    const fen_text = buildRootFen(pos) orelse return error.OutOfMemory;
+    defer std.heap.c_allocator.free(fen_text);
     return tb_source.probeFen(fen_text.ptr, fen_text.len, snapshot.is_chess960);
 }
 

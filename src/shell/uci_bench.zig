@@ -30,10 +30,10 @@ pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, disp
     uci_output.setBenchGoActive(true);
     defer uci_output.setBenchGoActive(false);
 
-    const current_fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
-    defer freeMaybeCString(current_fen_ptr);
+    const current_fen = engine_mod.fenEngine(engine_ptr) orelse return;
+    defer std.heap.c_allocator.free(current_fen);
 
-    const commands_ptr = benchmark_port.setupBench(std.mem.span(current_fen_ptr), args) orelse return;
+    const commands_ptr = benchmark_port.setupBench(current_fen, args) orelse return;
     defer freeMaybeCString(commands_ptr);
     const commands = std.mem.span(commands_ptr);
 
@@ -50,11 +50,11 @@ pub fn benchRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, disp
         }
 
         if (std.mem.eql(u8, token, "go") or std.mem.eql(u8, token, "eval")) {
-            const fen_ptr = engine_mod.fenEngine(engine_ptr) orelse return;
-            defer freeMaybeCString(fen_ptr);
+            const fen_text = engine_mod.fenEngine(engine_ptr) orelse return;
+            defer std.heap.c_allocator.free(fen_text);
             std.debug.print(
                 "\nPosition: {d}/{d} ({s})\n",
-                .{ current_position, total_positions, std.mem.span(fen_ptr) },
+                .{ current_position, total_positions, fen_text },
             );
             current_position += 1;
 
@@ -198,12 +198,12 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
     defer std.heap.c_allocator.free(version_text);
     const compiler_text = misc_port.compilerInfoText(std.heap.c_allocator) orelse return;
     defer std.heap.c_allocator.free(compiler_text);
-    const numa_ptr = engine_mod.numaConfigStringEngine(engine_ptr) orelse return;
-    defer freeMaybeCString(numa_ptr);
-    const binding_ptr = engine_mod.threadBindingInformationEngine(engine_ptr) orelse return;
-    defer freeMaybeCString(binding_ptr);
+    const numa_text = engine_mod.numaConfigStringEngine(engine_ptr) orelse return;
+    defer std.heap.c_allocator.free(numa_text);
+    const binding_text = engine_mod.threadBindingInformationEngine(engine_ptr) orelse return;
+    defer std.heap.c_allocator.free(binding_text);
 
-    const binding = if (std.mem.span(binding_ptr).len == 0) "none" else std.mem.span(binding_ptr);
+    const binding = if (binding_text.len == 0) "none" else binding_text;
     const original_invocation = if (setup.original_invocation_ptr) |ptr| std.mem.span(ptr) else "";
     const filled_invocation = if (setup.filled_invocation_ptr) |ptr| std.mem.span(ptr) else "";
     const average_hashfull_single = if (hashfull_reads == 0) 0 else @divTrunc(total_hashfull_single, hashfull_reads);
@@ -232,7 +232,7 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
             if (misc_port.hasLargePages()) "yes" else "no",
             original_invocation,
             filled_invocation,
-            std.mem.span(numa_ptr),
+            numa_text,
             setup.threads,
             binding,
             setup.tt_size,

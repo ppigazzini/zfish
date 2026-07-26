@@ -82,8 +82,7 @@ pub fn syzygyExtendPv(
     var result = ExtendPvResult{ .pv_len = pv_len_in, .value = value_in, .timed_out = false };
     if (pv_len_in == 0) return result;
 
-    const root_fen_c = buildRootFen(pos) orelse return result;
-    const root_fen = std.mem.span(root_fen_c);
+    const root_fen = buildRootFen(pos) orelse return result;
     defer std.heap.c_allocator.free(root_fen);
 
     const deadline = ExtendDeadline{
@@ -106,8 +105,7 @@ pub fn syzygyExtendPv(
     while (ply < result.pv_len) {
         const pv_move = pv_moves[ply];
 
-        const fen_c = buildRootFen(scratch.pos) orelse break;
-        const fen_text = std.mem.span(fen_c);
+        const fen_text = buildRootFen(scratch.pos) orelse break;
         var legal: [256]u16 = undefined;
         const legal_count = movegen_port.generateLegal(scratch.pos, legal[0..]);
         if (legal_count == 0) {
@@ -167,8 +165,7 @@ pub fn syzygyExtendPv(
         // secondary key among moves of equal DTZ.
         stableSortRankedMovesByTbRank(ranked[0..legal_count]);
 
-        const fen_c = buildRootFen(scratch.pos) orelse break;
-        const fen_text = std.mem.span(fen_c);
+        const fen_text = buildRootFen(scratch.pos) orelse break;
         const config = rankMovesAt(scratch.pos, fen_text, chess960, true, ranked[0..legal_count]) catch {
             std.heap.c_allocator.free(fen_text);
             break;
