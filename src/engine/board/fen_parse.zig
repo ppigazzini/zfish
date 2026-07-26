@@ -106,7 +106,15 @@ pub fn setPosition(
     var num_pieces: i32 = 0;
     var file: i32 = 0;
     var rank: i32 = 7;
-    while (cur.next()) |token| {
+    // Check for end-of-input INSIDE the loop, as upstream's `for (;;)` does: running out of
+    // input while still in the placement field is "Unexpected end of stream", a different
+    // diagnostic from a field that ended early but well-formed. A `while (cur.next())`
+    // exits silently at EOF and falls through to the rank/file test below, which reported
+    // "Board state encoding ended but cursor not at end." for every truncated FEN --
+    // including the empty one `position fen` produces.
+    while (true) {
+        const token = cur.next() orelse
+            return setErr("Invalid FEN. Unexpected end of stream.");
         if (std.ascii.isWhitespace(token)) break;
         if (token >= '0' and token <= '9') {
             const diff: i32 = token - '0';

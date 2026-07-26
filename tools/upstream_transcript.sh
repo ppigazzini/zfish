@@ -54,7 +54,12 @@ normalise() {
 #   so even a single replica could not honestly print "Shared memory."). Emitting the line
 #   with a fabricated status would put a false statement in the transcript, which is worse
 #   than the gap. Implementing it is a platform feature, not a reporting fix.
-KNOWN_RE='^[<>] info string Network replica [0-9]+: '
+#
+#   The `compiler` banner -- zfish compiles no C++, so it reports the Zig toolchain where
+#   upstream reports clang/gcc, and the two are built at different -Darch/ARCH tiers.
+#   Reporting the toolchain that actually built the binary is correct, not a gap;
+#   docs/07-shell.md states it, and matching upstream's text would be a lie.
+KNOWN_RE='^[<>] (info string Network replica [0-9]+: |(Compiled by|Compilation architecture|Compilation settings|Compiler __VERSION__ macro) +:)'
 
 pass=0; fail=0; known=0
 
@@ -99,6 +104,162 @@ run_case 'uci' 'uci
 quit
 '
 run_case 'isready before anything' 'isready
+quit
+'
+
+printf 'command surface: dispatch, comments, unknown tokens\n'
+# Upstream's fallthrough is `!token.empty() && token[0] != '#'`, so a blank line and a
+# `#` line are silently ignored while anything else is an Unknown-command report. The
+# token set below is upstream's complete top-level dispatch chain (uci.cpp:107-181).
+run_case 'comment line'        '# a comment
+isready
+quit
+'
+run_case 'comment with args'   '#setoption name Hash value 4
+isready
+quit
+'
+run_case 'empty line'          '
+isready
+quit
+'
+# Build the blank-but-not-empty line with ANSI-C quoting: written literally it is trailing
+# whitespace, which the repo's pre-commit hook strips -- silently turning this case into a
+# duplicate of the empty-line one above.
+ws_only=$'   \t '
+run_case 'whitespace-only'     "$ws_only
+isready
+quit
+"
+run_case 'unknown token'       'frobnicate
+isready
+quit
+'
+run_case 'unknown with args'   'frobnicate a b c
+isready
+quit
+'
+run_case 'leading spaces'      '   isready
+quit
+'
+run_case 'tab-separated'       'setoption	name	Hash	value	4
+isready
+quit
+'
+run_case 'uppercase token'     'ISREADY
+isready
+quit
+'
+run_case 'stop, no search'     'stop
+isready
+quit
+'
+run_case 'ponderhit, no search' 'ponderhit
+isready
+quit
+'
+for helptok in help license --help --license; do
+    run_case "$helptok" "$helptok
+quit
+"
+done
+run_case 'export_net no arg'   'export_net
+quit
+'
+run_case 'd before a position' 'd
+quit
+'
+run_case 'compiler'            'compiler
+quit
+'
+
+printf 'go sub-tokens (parse_limits)\n'
+for limit in 'depth 4' 'nodes 5000' 'movetime 40' 'mate 2' 'perft 3' \
+             'wtime 400 btime 400 winc 10 binc 10' 'wtime 400 btime 400 movestogo 20' \
+             'depth 3 searchmoves e2e4 d2d4'; do
+    run_case "go $limit" "setoption name Threads value 1
+position startpos
+go $limit
+quit
+"
+done
+# Malformed arguments: upstream names the KEYWORD, not the value, and terminates.
+for bad in 'depth abc' 'nodes xyz' 'movetime -' 'wtime q'; do
+    run_case "go $bad (malformed)" "position startpos
+go $bad
+quit
+"
+done
+
+printf 'position sub-tokens and error paths\n'
+run_case 'position alone'      'position
+isready
+quit
+'
+run_case 'startpos'            'position startpos
+d
+quit
+'
+run_case 'startpos moves'      'position startpos moves e2e4 e7e5
+d
+quit
+'
+run_case 'fen only'            'position fen 4k3/8/8/8/8/8/8/4K3 w - - 0 1
+d
+quit
+'
+run_case 'fen + moves'         'position fen 4k3/8/8/8/8/8/8/4K3 w - - 0 1 moves e1e2
+d
+quit
+'
+run_case 'bad fen'             'position fen not_a_fen
+d
+quit
+'
+run_case 'fen missing'         'position fen
+d
+quit
+'
+run_case 'illegal move in list' 'position startpos moves e2e5
+d
+quit
+'
+
+printf 'setoption edge cases\n'
+run_case 'setoption alone'     'setoption
+isready
+quit
+'
+run_case 'name, no value'      'setoption name Hash
+isready
+quit
+'
+run_case 'value, no name'      'setoption value 4
+isready
+quit
+'
+run_case 'unknown option'      'setoption name Nope value 1
+isready
+quit
+'
+run_case 'button option'       'setoption name Clear Hash
+isready
+quit
+'
+run_case 'multi-word name'     'setoption name Skill Level value 5
+isready
+quit
+'
+run_case 'bool true/false'     'setoption name UCI_Chess960 value true
+setoption name UCI_Chess960 value false
+setoption name Ponder value true
+isready
+quit
+'
+run_case 'out-of-range spin'   'setoption name Hash value 0
+setoption name Hash value 999999999
+setoption name MultiPV value 0
+isready
 quit
 '
 
