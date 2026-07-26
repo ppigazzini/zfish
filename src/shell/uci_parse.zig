@@ -206,14 +206,18 @@ fn parsePositionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedPo
         try fen.appendSlice(allocator, start_fen);
         _ = iter.next();
     } else if (std.mem.eql(u8, token, "fen")) {
+        // Append a TRAILING space after every token, as upstream's `fen += token + " "`
+        // does (uci.cpp), rather than joining with separators. The two agree on a complete
+        // FEN and disagree on a truncated one: `position fen rnbq` hands the parser
+        // "rnbq " here and "rnbq" with a separator join, so the placement loop ends on
+        // whitespace in one case and on end-of-input in the other -- two different
+        // diagnostics for the same input.
         while (iter.next()) |fen_token| {
             if (std.mem.eql(u8, fen_token, "moves")) {
                 break;
             }
-            if (fen.items.len != 0) {
-                try fen.append(allocator, ' ');
-            }
             try fen.appendSlice(allocator, fen_token);
+            try fen.append(allocator, ' ');
         }
     } else {
         return .{ .ok = 0, .fen = null, .moves = null };
@@ -301,8 +305,16 @@ test "parsePosition handles startpos and fen with moves" {
     const fp = parsePosition("position fen 4k3/8/8/8/8/8/8/4K3 w - - 0 1 moves e1e2");
     defer freePosition(fp);
     try testing.expectEqual(@as(u8, 1), fp.ok);
-    try testing.expectEqualStrings("4k3/8/8/8/8/8/8/4K3 w - - 0 1", fp.fen.?);
+    // Note the TRAILING space: upstream builds the FEN with `fen += token + " "`, and the
+    // difference is load-bearing on a truncated FEN -- see the comment at the assembly.
+    try testing.expectEqualStrings("4k3/8/8/8/8/8/8/4K3 w - - 0 1 ", fp.fen.?);
     try testing.expectEqualStrings("e1e2", fp.moves.?);
+
+    // A truncated placement field must end at the trailing space, not at end-of-input, so
+    // the parser reports upstream's "cursor not at end" rather than "end of stream".
+    const trunc = parsePosition("position fen rnbq");
+    defer freePosition(trunc);
+    try testing.expectEqualStrings("rnbq ", trunc.fen.?);
 }
 
 // Fuzz to prove neither parser crashes / OOBs on arbitrary input -- it returns a struct

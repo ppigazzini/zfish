@@ -66,6 +66,16 @@ pub fn tuneShouldMakeOption(min_value: i32, max_value: i32) bool {
 
 fn parseSetOptionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedSetOption {
     var token_iter = std.mem.tokenizeAny(u8, input, " \t\r\n");
+    _ = token_iter.next(); // "setoption"
+
+    // Consume the next token WITHOUT checking it, exactly as upstream's
+    // `OptionsMap::setoption` does: its `is >> token;  // Consume the "name" token`
+    // (ucioption.cpp) discards whatever is there. Testing for a literal "name" instead
+    // looks tidier and is a different parser -- it makes `setoption Hash value 4` set Hash
+    // where upstream reports `No such option: ` (it discarded "Hash", then stopped the name
+    // loop at "value" with an empty name), makes `setoption value 4` report an empty name
+    // where upstream reports `4`, and rejects `setoption nAmE Hash value 4` which upstream
+    // accepts. The blind consume is the behaviour, not an oversight to correct.
     _ = token_iter.next();
 
     var name = std.ArrayList(u8).empty;
@@ -75,15 +85,11 @@ fn parseSetOptionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedS
 
     var in_value = false;
     while (token_iter.next()) |token| {
+        // Case-sensitive, and checked at EVERY name position -- upstream's name loop runs
+        // `while (is >> token && token != "value")`. Everything after the first "value"
+        // belongs to the value, including a further "value" token.
         if (!in_value and std.mem.eql(u8, token, "value")) {
             in_value = true;
-            continue;
-        }
-
-        // Follow the UCI grammar: `setoption name <id…> value <val…>`. The first token ("setoption") was
-        // skipped above; skip the leading "name" keyword too, else it is captured as part of the
-        // option id and every lookup fails with "No such option: name <id>".
-        if (!in_value and name.items.len == 0 and std.mem.eql(u8, token, "name")) {
             continue;
         }
 
