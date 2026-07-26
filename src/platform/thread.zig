@@ -151,7 +151,7 @@ fn applyRootSetup(context_ptr: ?*anyopaque) void {
             worker_layout.state_info_size,
         );
         w.setRootState(context.input.setup_state);
-        w.setTbConfig(cfg.cardinality, cfg.root_in_tb != 0, cfg.use_rule50 != 0, cfg.probe_depth);
+        w.setTbConfig(cfg);
     }
 }
 

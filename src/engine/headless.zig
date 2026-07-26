@@ -68,6 +68,7 @@ comptime {
     _ = @import("timeman");
     _ = @import("tt");
     _ = @import("tt_types");
+    _ = @import("tb_config");
     _ = @import("uci_move");
     _ = @import("uci_wdl");
     _ = @import("headless_search");

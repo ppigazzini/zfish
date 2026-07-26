@@ -219,8 +219,8 @@ fn searchCbPvContext(manager: ?*worker_layout.SearchManager, worker: ?*worker_la
     out.chess960 = if (isChess960(root_pos)) 1 else 0;
     out.nodes = worker_layout.poolNodesSearched(threads);
     // SF: reported tbHits == pool hits + (rootInTB ? rootMoves.size() : 0). Count the root-ranking
-    // probes as one hit per root move at emit time (tb_config byte[4] = root_in_tb).
-    out.root_in_tb = wl.tb_config[4] != 0;
+    // probes as one hit per root move at emit time.
+    out.root_in_tb = wl.tb_config.root_in_tb;
     out.tb_hits = worker_layout.poolTbHits(threads) + (if (out.root_in_tb) rm_count else 0);
 
     const tp = tt_ptr;

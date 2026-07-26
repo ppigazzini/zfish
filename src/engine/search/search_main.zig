@@ -288,10 +288,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     // build (and bench) never enters here and the node count is unchanged.
     if (!root_node and excluded_move == 0) {
         const tb_cfg = &ctx.worker.tb_config;
-        const cardinality: i32 = @as(*const i32, @ptrCast(@alignCast(&tb_cfg[0]))).*;
+        const cardinality = tb_cfg.cardinality;
         if (cardinality != 0) {
             const pieces_count: i32 = @popCount(pos.by_type_bb[0]);
-            const probe_depth: i32 = @as(*const i32, @ptrCast(@alignCast(&tb_cfg[8]))).*;
+            const probe_depth = tb_cfg.probe_depth;
             if (pieces_count <= cardinality and
                 (pieces_count < cardinality or depth >= probe_depth) and
                 pos.st.rule50 == 0 and pos.st.castling_rights == 0)
@@ -300,7 +300,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 tbForceTimeCheck(ctx);
                 if (res.available != 0) {
                     @atomicStore(u64, &ctx.worker.tb_hits, @atomicLoad(u64, &ctx.worker.tb_hits, .monotonic) + 1, .monotonic);
-                    const draw_score: i32 = if (tb_cfg[5] != 0) 1 else 0;
+                    const draw_score: i32 = if (tb_cfg.use_rule50) 1 else 0;
                     const tb_value: i32 = sv.value_tb - ss.ply;
                     const wdl = res.wdl;
                     const value: i32 = if (wdl < -draw_score)

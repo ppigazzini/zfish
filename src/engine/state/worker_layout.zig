@@ -12,6 +12,7 @@ const limits_type = @import("limits_type");
 const root_move = @import("root_move");
 const tt_types = @import("tt_types");
 const state_list = @import("state_list");
+const tb_config_types = @import("tb_config");
 
 // Pin the canonical footprint in bytes (x86-64, ARCH=x86-64-sse41-popcnt).
 pub const worker_size: usize = @sizeOf(WorkerLayout);
@@ -81,7 +82,7 @@ pub const WorkerLayout = struct {
     numa_access_token: usize,
     reductions: [256]i32,
     manager: ?*SearchManager, // the worker's SearchManager (null before build / after free)
-    tb_config: [16]u8 align(8), // {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32} — read as i32, keep aligned
+    tb_config: TbConfig, // the root tablebase decision the in-search WDL probe is gated on
     threads: *ThreadPool,
     tt: *TranspositionTable,
     accumulator_stack: [accumulator_stack_size]u8 align(64),
@@ -327,13 +328,8 @@ pub const Worker = struct {
         wl.nmp_min_ply = 0;
         wl.root_depth = 0;
     }
-    pub inline fn setTbConfig(self: Worker, cardinality: i32, root_in_tb: bool, use_rule50: bool, probe_depth: i32) void {
-        // Treat tb_config as a 16-byte blob {cardinality:i32, root_in_tb:u8, use_rule50:u8, _, probe_depth:i32}.
-        const b = &self.layout().tb_config;
-        @as(*i32, @ptrCast(@alignCast(&b[0]))).* = cardinality;
-        b[4] = @intFromBool(root_in_tb);
-        b[5] = @intFromBool(use_rule50);
-        @as(*i32, @ptrCast(@alignCast(&b[8]))).* = probe_depth;
+    pub inline fn setTbConfig(self: Worker, cfg: TbConfig) void {
+        self.layout().tb_config = cfg;
     }
     pub inline fn setRootState(self: Worker, src: *const position_types.StateInfo) void {
         // Copy root_state as a typed StateInfo: a struct copy, not a byte memcpy.
@@ -394,6 +390,10 @@ pub const TranspositionTable = struct {
 // contractual slot is asserted in limits_type.zig).
 pub const SearchMoveText = limits_type.SearchMoveText;
 pub const LimitsType = limits_type.LimitsType;
+
+// Re-export TbConfig from its std-only leaf, so the Worker's embedded field and the
+// root-move builder that produces the value name one type.
+pub const TbConfig = tb_config_types.TbConfig;
 
 pub fn verifyLayouts() void {
     // Trust the pinned layout constants directly; any drift surfaces as a

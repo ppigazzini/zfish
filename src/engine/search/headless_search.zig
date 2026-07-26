@@ -193,12 +193,7 @@ fn searchCore(wl: *WorkerLayout, root_fen: []const u8, chess960: u8, depth: i32)
     // Reset the Worker per search, mirroring applyRootSetup + startThinking.
     const worker = worker_layout.Worker{ .base = wl };
     worker.resetRootSetupState();
-    worker.setTbConfig(
-        built.tb_config.cardinality,
-        built.tb_config.root_in_tb != 0,
-        built.tb_config.use_rule50 != 0,
-        built.tb_config.probe_depth,
-    );
+    worker.setTbConfig(built.tb_config);
     wl.limits = makeLimits(depth);
     wl.thread_idx = 0;
     g_pool.stop = 0;

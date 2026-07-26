@@ -7,6 +7,7 @@
 // dependency, so the OOM paths here are unit-testable in isolation.
 
 const std = @import("std");
+const tb_config_types = @import("tb_config");
 const position_port = @import("position");
 const search_types = @import("search_types");
 const state_list = @import("state_list");
@@ -55,12 +56,9 @@ const wdl_to_value = [_]i32{
     value_mate - max_ply - 1,
 };
 
-pub const TbConfig = struct {
-    cardinality: i32,
-    root_in_tb: u8,
-    use_rule50: u8,
-    probe_depth: i32,
-};
+// Re-export TbConfig from its std-only leaf: the Worker embeds one, this module
+// produces it, and neither should own the definition the other reads.
+pub const TbConfig = tb_config_types.TbConfig;
 
 const TablebaseProbe = tb_source.ProbeResult;
 
@@ -169,8 +167,8 @@ fn loadTbConfig(pos: *const position_port.Position) TbConfig {
     _ = pos;
     var config = TbConfig{
         .cardinality = option_port.syzygyProbeLimit(),
-        .root_in_tb = 0,
-        .use_rule50 = @intFromBool(option_port.syzygy50MoveRule()),
+        .root_in_tb = false,
+        .use_rule50 = option_port.syzygy50MoveRule(),
         .probe_depth = option_port.syzygyProbeDepth(),
     };
 
@@ -389,22 +387,22 @@ pub fn rankMovesAt(
         switch (try rankRootMovesDtz(
             pos_fen,
             chess960,
-            config.use_rule50 != 0,
+            config.use_rule50,
             rank_dtz,
             snapshot.rule50_count,
             position_port.hasRepeated(pos),
             ranked_moves,
         )) {
-            .success => config.root_in_tb = 1,
+            .success => config.root_in_tb = true,
             .fallback_to_wdl => {
                 dtz_available = false;
-                if (try rankRootMovesWdl(pos_fen, chess960, config.use_rule50 != 0, ranked_moves))
-                    config.root_in_tb = 1;
+                if (try rankRootMovesWdl(pos_fen, chess960, config.use_rule50, ranked_moves))
+                    config.root_in_tb = true;
             },
         }
     }
 
-    if (config.root_in_tb != 0) {
+    if (config.root_in_tb) {
         stableSortRankedMovesByTbRank(ranked_moves);
         if (dtz_available or ranked_moves[0].tb_score <= value_draw)
             config.cardinality = 0;
