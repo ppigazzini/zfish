@@ -347,9 +347,11 @@ runs natively, so the harness validates the signature on real arm64 hardware.
 `tools/perf_counters.zig` runs interleaved paired A/B measurement over CPU **hardware
 counters** via `perf_event_open` directly — the `perf` binary is absent under WSL2 but
 the syscall is not, so it works on every tier including AVX-512, where callgrind
-SIGILLs. It reports instructions (the work) and cycles/IPC/cache-misses (the
-efficiency) at native speed, which neither wall-clock A/B (thermally noisy) nor
-callgrind (deterministic instructions, ~50x slowdown) can do together. callgrind's
+SIGILLs. It reports instructions (the work) and cycles/IPC/cache-misses/branch-misses
+(the efficiency) at native speed, which neither wall-clock A/B (thermally noisy) nor
+callgrind (deterministic instructions, ~50x slowdown) can do together. Read the last
+two ratios as a decomposition of the IPC residue: branch misses move for a
+**prediction** change, cache misses for a **data** one, neither for code **footprint**. callgrind's
 SIGILL is **AVX-512-only**: sse41 AND avx2 profile fine — measure avx2 directly
 rather than extrapolating from sse41. `tools/perf_stalls.zig` extends the same
 syscall to Zen4 stall-class PMCs (frontend/backend slots, PRF/scheduler/queue

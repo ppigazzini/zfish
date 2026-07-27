@@ -12,9 +12,12 @@
 //!     511,286 and 581,024 nps, a 13.6% swing from thermal state alone).
 //!   * perf_callgrind.sh gives deterministic INSTRUCTIONS, but ONLY on sse41 (callgrind SIGILLs
 //!     on avx512) and at ~50x slowdown. It also cannot see cycles/IPC at all.
-//!   * Give BOTH: instructions (the work) AND cycles/IPC/cache-misses (the efficiency),
-//!     at native speed, on EVERY tier. It is the only tool here that can SEE an IPC/memory gap
-//!     rather than infer one -- §0.11 xxii inferred exactly such a component and never could.
+//!   * Give BOTH: instructions (the work) AND cycles/IPC/cache-misses/branch-misses (the
+//!     efficiency), at native speed, on EVERY tier. It is the only tool here that can SEE an
+//!     IPC/memory gap rather than infer one -- §0.11 xxii inferred exactly such a component and
+//!     never could. Report the branch-miss ratio: the counter was already opened and read into
+//!     Counters, and then dropped, so a change that moved only PREDICTION read as pure noise --
+//!     which is the axis both the movepick dispatch and the NNZ walk live on.
 //!
 //! WHAT IT FOUND ON FIRST USE (2026-07-15, identical 904,097-node tree, zfish/SF):
 //!            instructions   cycles    IPC    cache-misses
@@ -237,6 +240,8 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(r_ipc);
     var r_cache = try gpa.alloc(f64, rounds);
     defer gpa.free(r_cache);
+    var r_branch = try gpa.alloc(f64, rounds);
+    defer gpa.free(r_branch);
 
     var first_a: Counters = .{};
     var first_b: Counters = .{};
@@ -267,6 +272,7 @@ pub fn main(init: std.process.Init) !void {
         r_cyc[i] = ratio(a.cycles, b.cycles);
         r_ipc[i] = if (b.ipc() > 0) a.ipc() / b.ipc() else 0;
         r_cache[i] = ratio(a.cache_misses, b.cache_misses);
+        r_branch[i] = ratio(a.branch_misses, b.branch_misses);
         std.debug.print("  {d:>5} {d:>16} {d:>16} {d:>9.3} {d:>8.3} {d:>8.3}\n", .{ i + 1, a.instructions, b.instructions, r_instr[i], a.ipc(), b.ipc() });
     }
 
@@ -275,11 +281,14 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("#   cycles       : {d:.3}   <- the TIME. carries thermal noise.\n", .{median(r_cyc)});
     std.debug.print("#   IPC          : {d:.3}   <- the EFFICIENCY. <1 means A retires fewer instr/cycle.\n", .{median(r_ipc)});
     std.debug.print("#   cache misses : {d:.3}\n", .{median(r_cache)});
+    std.debug.print("#   branch misses: {d:.3}   <- the FRONT END. flat under a footprint change.\n", .{median(r_branch)});
     std.debug.print(
         \\#
         \\# READ IT THIS WAY: cycles ~= instructions / IPC. If A's cycle ratio is worse than its
         \\# instruction ratio, the residue is an IPC/memory gap -- A does similar work but retires
-        \\# it slower -- and NO amount of instruction-count reduction closes that half.
+        \\# it slower -- and NO amount of instruction-count reduction closes that half. Split that
+        \\# residue with the last two lines: branch misses move when the change is a PREDICTION
+        \\# one, cache misses when it is a DATA one, and neither moves when it is code FOOTPRINT.
         \\
     , .{});
 
