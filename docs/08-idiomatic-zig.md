@@ -398,6 +398,63 @@ available in CI, so it never runs there.
   sse41 and avx2 sit at 0.981/0.987, and avx2 instead carries the cache-miss outlier
   (1.112). So the residue behind a flat cycle ratio is not one thing — it is a
   different thing per tier.
+- **Exclude startup before reading any callgrind total.** A whole-process run of
+  `bench 16 1 3000` is roughly half startup: `readLebSection` alone is ~32% of zfish's
+  instructions and `read_parameters` ~34% of the oracle's, with magic-table init and
+  `memset` behind them. A total taken that way says zfish parses the net faster than
+  C++ iostreams, which earns no Elo, and it inverted the sign of a search comparison
+  here twice in one session. Toggle collection on the search entry instead:
+
+  ```sh
+  valgrind --tool=callgrind --cache-sim=yes --collect-atstart=no \
+    --toggle-collect='search_id_loop.iterativeDeepening' \
+    ./stockfish bench 16 1 3000 default nodes
+  # oracle: --toggle-collect='Stockfish::Search::Worker::iterative_deepening()'
+  ```
+
+  Verify the two runs searched one tree (same nodes at every depth) before comparing.
+- **A stall deficit can be layout, not code — and alignment is invisible to every other
+  axis.** Search-only, startup excluded, zfish once trailed the oracle by 20.6% on LL
+  data misses and 53% on LL write misses while executing 1.7% *fewer* instructions.
+  The cause was `WorkerLayout.histories` declaring `align(8)`, which let the block sit
+  24 bytes into a cache line; `align(64)` cut LL write misses 63.3% and LL data misses
+  12.1% with the instruction count moving 0.0003%. Alignment removes no work, so the
+  signature, every golden, `perf_counters`' instruction axis and callgrind's Ir column
+  all read identical across the fix. When cycles disagree with instructions, probe
+  layout with a comptime offset check before hunting for code:
+
+  ```zig
+  comptime { @compileError(std.fmt.comptimePrint("{d}", .{ @offsetOf(T, "f") % 64 })); }
+  ```
+
+  Attribute such a win to cache-set conflict unless a control says otherwise: aligning
+  the tables *inside* an already-aligned block bought 0.13%, so line straddling was not
+  the mechanism — relocating the block was.
+- **TBD — the LL instruction-miss gap, and what is not known about it.** On the
+  search-only profile above, zfish takes ~3.7× the oracle's LL instruction misses
+  (166 385 vs 45 109) while taking *fewer* L1I misses (4.29 M vs 5.58 M), and neither
+  alignment fix moved it. That is the largest remaining outlier in the profile.
+
+  What is measured: those counts, at x86-64-avx2, on one 147 106-node workload,
+  single-threaded, on one tree. Nothing else.
+
+  What is **not** measured, and must not be asserted until it is:
+
+  - whether it costs any cycles at all. No cycle or Elo measurement attributes anything
+    to it. "Fewer L1I misses but more reaching DRAM implies scattered hot code" is a
+    hypothesis with a plausible story, not a finding.
+  - whether callgrind's cache model applies. It simulates a fixed two-level hierarchy,
+    not this box's cache, and it models no prefetcher. Every LL figure in this section —
+    including the ones justifying the alignment fix — inherits that caveat. The
+    alignment fix carries an independent wall-clock check; this gap carries none.
+  - whether it explains the wide tiers' deficit attributed per tier above. Those tier
+    numbers come from `perf_counters` on whole-bench totals, a different instrument on a
+    different workload. Treat that attribution as provisional.
+
+  PGO and BOLT are already falsified here, so a fix would have to be source-level
+  ordering. Before anyone attempts one: get a cycle-level attribution that this gap
+  costs something. Absent that, the honest statement is that zfish misses instruction
+  cache more often than the oracle in one simulator, on one tier, for unknown cost.
 - **Do not promote a bench-metric ratio over the instruction axis for predicting Elo.**
   A 4-tier × 3-TC matrix against the pinned oracle (12 000 games) ranks the tiers by
   Elo in exactly the order of their instruction ratios (Spearman +1.00); branch misses
