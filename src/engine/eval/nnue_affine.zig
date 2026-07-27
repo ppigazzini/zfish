@@ -76,11 +76,21 @@ inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i
 /// builds an explicit `u16` index list with `vpcompressw` and reads it flat; zfish keeps the
 /// bitset because the callers hoist the input/weight base pointers once per 64-group word
 /// and pop bits with a WORD-LOCAL index, and a flat list of absolute indices destroys that
-/// hoist. Building the index list producer-side was implemented and measured: it cost
-/// instructions rather than saving them, because the per-chunk compress + store + popcount
-/// bookkeeping exceeds what a flat consumer read saves over the hoisted walk. Upstream has
-/// no hoisted alternative to compare against, which is why the same shape pays there.
-/// Do not "fix" this to match upstream without re-measuring both halves.
+/// hoist. Upstream has no hoisted alternative to compare against, which is why the same shape
+/// pays there. BOTH placements of the index build have now been implemented and measured, and
+/// both lost; do not "fix" this to match upstream without new evidence on a new machine.
+///
+///   * PRODUCER-side (build the list in the transform, delete the bitset): +1.2% instructions
+///     at avx512icl. The per-chunk compress + store + popcount bookkeeping exceeds what a flat
+///     consumer read saves over the hoisted walk.
+///   * CONSUMER-side (keep the bitset, expand it here, then run upstream's three-at-a-time
+///     cursor): instructions 0.998 and branch misses 0.949 -- but cycles 1.005..1.010 and IPC
+///     0.988..0.993, adverse in both orientations of two independent paired runs. The branch
+///     axis is real and large; it is bought with an IPC loss that is larger, because expand
+///     and consume sit back to back and the cursor's first loads hit stores still in the store
+///     buffer. Upstream does not pay that: its list is built in the transform, far enough
+///     ahead that the stores have drained. So the two failures share no mechanism, and
+///     the producer-side result does NOT already cover this one.
 ///
 /// It yields an index rather than taking the accumulator, so the accumulator stays a local
 /// the caller can keep in registers.
