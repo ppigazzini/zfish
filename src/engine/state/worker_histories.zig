@@ -25,8 +25,23 @@ pub const hist_pieceto: usize = hist_piece_nb * hist_square_nb; // PieceToHistor
 // search stack's continuation_history points at one such page (indexed pc*64+to).
 pub const PieceToHistory = [hist_pieceto]i16;
 
-pub const WorkerHistories = struct {
-    main_history: [hist_color_nb * hist_uint16]i16, // ButterflyHistory [2][65536]
+// Fix the field order with `extern`: this file's contract is that the i16 tables form a
+// contiguous prefix with mainHistory at offset 0, and a plain Zig struct does not honour that --
+// it orders by descending alignment, so the 8-byte `shared_history` pointer is placed among the
+// tables and skews every one after it off the cache line. `extern` pins declaration order, so
+// the four tables sit back to back; each size is a multiple of 64, so all four stay line-aligned
+// behind main_history's align(64). Size is unchanged (3031104): the trailing pointer fits in the
+// padding the block already carried.
+pub const WorkerHistories = extern struct {
+    // Pin the first table to a cache line so the whole run of tables is line-aligned. This is a
+    // plain Zig struct, so the layout is Zig's: it orders by descending alignment, which floats
+    // the 8-byte `shared_history` pointer to offset 0 and pushes every i16 table to offset 8 --
+    // 8 bytes into a line, for the life of the process. That also silently broke this file's own
+    // "mainHistory is at offset 0" invariant. Giving the first table align(64) makes it the
+    // highest-alignment field, so it lands at offset 0 and the rest follow it: every table size
+    // here (262144 / 655360 / 16384) is a multiple of 64, so one align fixes all four. The struct
+    // size is unchanged -- the tail padding it would have taken anyway absorbs the pointer.
+    main_history: [hist_color_nb * hist_uint16]i16 align(64), // ButterflyHistory [2][65536]
     low_ply_history: [hist_low_ply * hist_uint16]i16, // LowPlyHistory [5][65536]
     capture_history: [hist_piece_nb * hist_square_nb * hist_piece_type_nb]i16, // [16][64][8]
     continuation_correction_history: [hist_pieceto * hist_pieceto]i16, // [16][64]->[16][64]
