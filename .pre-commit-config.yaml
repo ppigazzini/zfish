@@ -13,10 +13,11 @@ repos:
       - id: end-of-file-fixer
         # Never touch byte-exact comparison inputs: goldens are matched against
         # engine output verbatim (misc.golden carries a trailing space today),
-        # and .epd/.nnue are data.
-        exclude: '\.(golden|epd|nnue)$'
+        # .epd/.nnue are data, and a .patch is a diff whose context lines begin
+        # with a space -- stripping that is how a patch silently stops applying.
+        exclude: '\.(golden|epd|nnue|patch)$'
       - id: trailing-whitespace
-        exclude: '\.(golden|epd|nnue)$'
+        exclude: '\.(golden|epd|nnue|patch)$'
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.22
     hooks:

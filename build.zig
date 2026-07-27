@@ -75,6 +75,11 @@ pub fn build(b: *std.Build) void {
     };
     const git_info = readGitInfo(b);
     const build_options = b.addOptions();
+    // Spine isolation: swap the NNUE forward pass + eval blend for material alone, in BOTH
+    // engines (tools/material_eval.sh drives it and patches the oracle to match). Changes the
+    // bench node count by construction, so it is never part of a parity run -- the gate it
+    // answers to is "do the two engines still search the SAME tree", not the anchor.
+    const stub_eval = b.option(bool, "stub-eval", "Replace the NNUE eval with material count (spine isolation; NOT bit-exact, bench moves)") orelse false;
     build_options.addOption([]const u8, "arch_name", arch.name);
     build_options.addOption([]const u8, "git_sha", git_info.sha orelse "");
     build_options.addOption([]const u8, "git_date", git_info.date orelse "");
@@ -89,6 +94,7 @@ pub fn build(b: *std.Build) void {
     build_options.addOption(bool, "use_neon", hasMacro(arch.macros, "USE_NEON"));
     build_options.addOption(bool, "use_popcnt", hasMacro(arch.macros, "USE_POPCNT"));
     build_options.addOption(bool, "use_pext", hasMacro(arch.macros, "USE_PEXT"));
+    build_options.addOption(bool, "stub_eval", stub_eval);
     build_options.addOption(bool, "has_ndebug", true);
     const build_options_module = build_options.createModule();
 
@@ -578,6 +584,10 @@ pub fn build(b: *std.Build) void {
     };
     for (module_edges) |e| mods.get(e.from).?.addImport(e.imp, mods.get(e.to).?);
     mods.get("misc").?.addImport("build_options", build_options_module);
+    // search_acc reads build_options.stub_eval to swap the NNUE forward pass for the material
+    // stub at comptime (spine isolation, tools/material_eval.sh). Default false, so the shipped
+    // build resolves the branch away and is unchanged.
+    mods.get("search_acc").?.addImport("build_options", build_options_module);
 
     // Match upstream's codegen: its Makefile compiles `build` with -flto=full (Makefile:965)
     // while zfish shipped without it, so the two were never compiled alike. Measured on an

@@ -26,6 +26,7 @@ Zig 0.16.0 is the required toolchain. No C++ is vendored or compiled.
 | `-Doptimize=` | `Debug`, `ReleaseSafe`, `ReleaseFast` (default), `ReleaseSmall` | Standard Zig modes. `ReleaseSafe` turns on the bounds/overflow/alignment/null checks the safety lanes rely on. |
 | `-Dsignature-ref=` | a node count | Override the bench signature the `signature` step asserts. |
 | `-Dtest-coverage` | bool | Run the unit tests under `kcov` into `./kcov-out`. Local only. |
+| `-Dstub-eval` | bool | Replace the NNUE evaluation with a material count, for spine isolation. **Not bit-exact — the bench node count moves by construction**, so it is never part of a parity run. Drive it via `tools/material_eval.sh`, which stubs the oracle to match. Default off and comptime, so the shipped build is unchanged. |
 
 `-Darch=native` is resolved in pure Zig by `tools/native_arch.zig`: it takes the host
 CPU that Zig's build graph already resolved via cpuid and walks the tier table
@@ -356,6 +357,30 @@ SIGILL is **AVX-512-only**: sse41 AND avx2 profile fine — measure avx2 directl
 rather than extrapolating from sse41. `tools/perf_stalls.zig` extends the same
 syscall to Zen4 stall-class PMCs (frontend/backend slots, PRF/scheduler/queue
 tokens, TLB) for localizing an IPC gap the aggregate counters can only report.
+
+### Spine isolation — measuring the search without the evaluation
+
+`tools/material_eval.sh` builds **both** engines with the NNUE evaluation replaced by a
+material count, so a zfish/upstream ratio measures the search spine alone. zfish takes
+the stub from `zig build -Dstub-eval` (comptime, default off — the shipped binary is
+unchanged and still benches the anchor); the oracle takes
+`tools/upstream/material_eval.patch`, which the script applies and reverts on exit,
+including on failure. The two stubs are line-for-line equivalents: the same five piece
+values, the same side-to-move perspective, and no optimism, complexity blend, rule50
+damping or TB clamp on either side.
+
+**Its gate is not the anchor — it is tree equality.** A stubbed build does not bench
+2718396 and is not meant to; a different evaluation is a different tree. What must hold
+is that the two engines score every position identically, so they search *one* tree and
+the ratio is one workload. The script benches both and **refuses to report unless the
+node counts match**, because the failure it exists to prevent has already happened once
+in this tree: an earlier attempt stubbed the two sides differently, compared two
+different workloads, and concluded "the spine, not the NNUE, is the gap" — which was
+wrong. A mismatch is never something to compare anyway; it means the stubs disagree.
+
+Both engines still push and pop their accumulator stacks under the stub — only the
+forward pass and the blend are skipped — so that bookkeeping stays on both sides of the
+ratio rather than being silently removed from one.
 
 It is a **local gate, not CI**: it measures the host it runs on, and a hosted runner's
 shared, thermally-uncontrolled CPU cannot carry a performance verdict. The same holds
