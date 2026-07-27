@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 // Type the dirty-piece / dirty-threats slots that stackPush hands to doMove as the
@@ -160,33 +161,18 @@ pub fn stackLatestThreat(stack: *const AccumulatorStack) [*]const u8 {
 // in int16 before the [0,255] clamp; the pairwise product is /512.
 const state_psqt_offset: usize = color_count * half_dimensions * @sizeOf(i16);
 
-/// Set one bit per 4-byte output chunk when that chunk is non-zero. Upstream's NNZInfo
-/// (nnz_helper.h), recorded here rather than re-derived by a later pass: the values are
-/// already in a register at the point they are packed.
-// half_dimensions output bytes / 4 (bytes per chunk) / 64 (bits per word): the transform
-// emits half_dimensions bytes = half_dimensions/4 non-zero-chunk bits, so 4 u64 words cover
-// the 256 chunks. (The former `* 2` sized it for 2048 output bytes, twice the real width.)
-pub const nnz_word_count: usize = half_dimensions / 4 / 64;
-pub const NnzBitset = [nnz_word_count]u64;
-
-// Store each transform step's non-zero mask with a plain byte-offset store, upstream's
-// bytewise NNZCursor (nnz_helper.h `*out++ = m1 + (m2 << 4)`): on a little-endian
-// target the GMask's bytes at offset bit/8 land exactly where the u64 word's bits
-// bit..bit+N-1 live, so the store IS the word-shift OR against a zero seed -- minus
-// the load, the variable-cl shift and the read-modify-write. Big-endian targets keep
-// the endian-independent word RMW (and the @memset seed it needs).
-const nnz_bytewise = @import("builtin").target.cpu.arch.endian() == .little;
-
-inline fn nnzRecord(comptime GMask: type, nnz: *NnzBitset, bit: usize, mask: GMask) void {
-    if (comptime nnz_bytewise) {
-        comptime std.debug.assert(@bitSizeOf(GMask) % 8 == 0);
-        std.debug.assert(bit % 8 == 0);
-        const bytes: [*]u8 = @ptrCast(nnz);
-        bytes[bit / 8 ..][0..@sizeOf(GMask)].* = @bitCast(mask);
-    } else {
-        nnz[bit / 64] |= @as(u64, mask) << @intCast(bit % 64);
-    }
-}
+// Alias the transform's non-zero-chunk record from the nnue_nnz leaf (this function is its
+// only writer). Re-export the shapes and the tier gate: the affine consumer and the
+// scalar-reference test reach them through this facade, not through the leaf.
+const nnue_nnz = @import("nnue_nnz.zig");
+pub const nnz_word_count = nnue_nnz.nnz_word_count;
+pub const NnzBitset = nnue_nnz.NnzBitset;
+pub const nnz_group_capacity = nnue_nnz.nnz_group_capacity;
+pub const NnzIndexList = nnue_nnz.NnzIndexList;
+pub const NnzOut = nnue_nnz.NnzOut;
+pub const use_nnz_index_list = nnue_nnz.use_nnz_index_list;
+const nnzRecord = nnue_nnz.nnzRecord;
+const nnzReset = nnue_nnz.nnzReset;
 
 // Alias the transform's packus clip-multiply-narrow kernels and their comptime gates
 // from the nnue_transform_packus leaf (this function is their only consumer; the
@@ -207,7 +193,7 @@ pub fn transformBucket(
     bucket: usize,
     stm: u8,
     output: [*]u8,
-    nnz: *NnzBitset,
+    nnz: *NnzOut,
 ) i32 {
     evaluate(stack, pos, feature_transformer, cache);
 
@@ -257,10 +243,7 @@ pub fn transformBucket(
         break :blk w;
     };
     const no_bits: Vgm = @splat(0);
-    // The loop stores every bitset byte exactly once ((2*half)/4 bits == the whole
-    // NnzBitset), so the bytewise path needs no zero seed; only the word-RMW path
-    // ORs into one.
-    if (comptime !nnz_bytewise) @memset(nnz, 0);
+    nnzReset(nnz);
     var p: usize = 0;
     while (p < 2) : (p += 1) {
         const pp: usize = if (p == 0) p0 else p1;

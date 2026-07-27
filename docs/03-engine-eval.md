@@ -27,9 +27,13 @@ for the same position.
 | `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `accRows`, the refresh-fused passes and the PSQT deltas |
 | `nnue_transform_packus.zig` | the transform's packus clip-multiply-narrow kernels, one per x86 vector width (`packusTransform64`/`32`/`16`), and the scalar-reference tests that pin them |
 | `nnue_refresh_cache.zig` | the per-(king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
-| `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`) and `transformBucket` — the clipped-ReLU transform plus the NNZ bitset |
+| `nnue_nnz.zig` | the transform's non-zero-chunk record: the two shapes (`NnzIndexList` on the AVX-512 VNNI tiers, `NnzBitset` elsewhere), the tier gate `use_nnz_index_list`, and `nnzRecord`/`nnzReset` |
+| `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`) and `transformBucket` — the clipped-ReLU transform, which writes the NNZ record as it packs |
 | **inference** | |
 | `nnue_inference.zig` | the forward pass: the affine layers, the activations, bucket selection, and the psqt/positional split |
+| `nnue_affine.zig` | `affineDpbusd` and the non-VNNI affine kernels: the AVX2/SSSE3 maddubs dots, the `OUT == 1` contiguous dot, the portable reduction, and `GroupIter` |
+| `nnue_affine_vnni.zig` | the AVX-512 VNNI kernel `affineVnni` — `vpdpbusd` plus the two sparse walks (index-list cursor under VBMI2, hoisted bitset otherwise) |
+| `nnue_affine_load.zig` | `loadW`, the alignment-asserting weight-chunk load both affine files share |
 | `evaluate.zig` | `computeValue` — blending the network output with optimism, material, and the 50-move counter into the final score — and `formatTrace`, the `eval` command's trace renderer (built by the file-local `formatTraceAlloc`) |
 | `nnue_misc.zig` | the `eval` command's per-bucket contribution table |
 
@@ -257,11 +261,36 @@ All of them are pure integer dots over the same scrambled layout, so they are
 bit-identical; a unit test in the file pins every path against a scalar reference at
 each `-Darch`.
 
-The **sparse path** is the transformer's NNZ bitset, not a re-derived test.
-`GroupIter(sparse)` yields only the input groups whose 4 bytes are non-zero,
-iterating the bitset the transform already recorded. `fc_0` is sparse (its 1024 inputs
-are mostly zero after the clipped ReLU); `fc_1` and `fc_2` are dense. Indices ascend
-either way, so the accumulation order — and the result — is unchanged.
+The **sparse path** reads what the transformer recorded, never a re-derived test.
+`fc_0` is sparse (its 1024 inputs are mostly zero after the clipped ReLU); `fc_1` and
+`fc_2` are dense. Indices ascend either way, so the accumulation order — and the
+result — is unchanged.
+
+The record has two shapes, and which one the transform writes is decided by what the
+tier's consumer can read (`nnue_nnz.use_nnz_index_list`, gated on `avx512vnni` so it
+agrees with `nnue_affine_vnni`'s `has_vnni`, **and** on `avx512vbmi2`):
+
+- **index list**, on `avx512icl` and better — upstream's `NNZInfo` at `USE_AVX512`
+  (`nnz_helper.h`), which never builds a bitset. `nnzRecord` compresses each transform
+  step's non-zero chunk indices with one `vpcompressw`, and `affineVnni` reads three per
+  iteration off a straight-line cursor whose only branch is the loop back-edge.
+- **bitset**, everywhere else — one bit per 4-byte chunk, walked with `@ctz`/`blsr`
+  against a hoisted per-word base pointer.
+
+The VBMI2 half of that gate is measured, not defensive. VBMI2 compresses 32 `u16` lanes
+per instruction, which is exactly one transform step's mask; without it a step needs two
+`vpcompressd` plus two narrowing stores, and that doubled producer cost flips the
+instruction axis — `x86-64-vnni512` measured 1.003 against where `avx512icl` measured
+0.998 for the identical patch, while both gained 0.934 on branch misses. Two tiers,
+opposite verdicts on the axis that is deterministic, so only one takes the list.
+
+The placement is upstream's and it is the one that does least: the compress runs in the
+transform where the mask is already in a register, and the bitset store disappears
+rather than being kept and expanded later. Building the same list at the *consumer*
+measures the same two wins but retains that store on top of the expansion, so it is not
+taken — `nnue_affine.zig` records both, and records which axes on this box are too noisy
+to separate them (cycles, IPC and cache misses all fail an A/A calibration at this
+magnitude; instructions and branch misses pass it).
 
 Activations are `sqrClippedReLU` (`min(127, (x*x) >> shift)`) and `clippedReLU`
 (`clamp(x >> shift, 0, 127)`), written into a 128-byte `concat` that `fc_1` and
