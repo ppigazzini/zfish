@@ -173,7 +173,7 @@ inline fn clippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void
     }
 }
 
-fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_accumulator_port.NnzBitset) i32 {
+fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_accumulator_port.NnzOut) i32 {
     // Read the affine-layer weights from the Zig-owned storage. The parse
     // writes this storage and is the sole source, so the eval is bench-verified.
     const fc0_b = layerBiases(bucket, 0);
@@ -273,7 +273,7 @@ fn evaluateBucketRaw(
     bucket: usize,
 ) EvalOutput {
     var transformed: [transformed_feature_bytes]u8 align(cache_line_size) = undefined;
-    var nnz: nnue_accumulator_port.NnzBitset = undefined;
+    var nnz: nnue_accumulator_port.NnzOut = undefined;
 
     return .{
         .psqt = networkTransformBucket(
@@ -300,7 +300,7 @@ fn networkTransformBucket(
     cache: *nnue_accumulator_port.RefreshCache,
     bucket: usize,
     transformed_ptr: [*]u8,
-    nnz: *nnue_accumulator_port.NnzBitset,
+    nnz: *nnue_accumulator_port.NnzOut,
 ) i32 {
     const ft: *const nnue_accumulator_port.FeatureTransformer = @ptrCast(ftPtr() orelse @panic("feature-transformer storage not initialized"));
     const stm = pos.side_to_move;
@@ -349,12 +349,29 @@ test "affineDpbusd == scalar reference (all layer shapes, sparse and dense)" {
                 }
             }
 
-            // Build the bitset here to match what the transform records in the engine.
-            var nnz: nnue_accumulator_port.NnzBitset = @splat(0);
-            if (SPARSE) {
-                const in32: [*]const u32 = @ptrCast(@alignCast(&input));
-                for (0..groups) |g| {
-                    if (in32[g] != 0) nnz[g / 64] |= @as(u64, 1) << @intCast(g % 64);
+            // Build here, SCALARLY, whatever the transform records in the engine on this tier
+            // -- an index list where the AVX-512 consumer reads one, a bitset elsewhere. Writing
+            // it the slow obvious way is the point: this is the gate that catches the vectorized
+            // producer disagreeing with its consumer about which chunks are non-zero.
+            var nnz: nnue_accumulator_port.NnzOut = undefined;
+            if (comptime nnue_accumulator_port.use_nnz_index_list) {
+                nnz.count = 0;
+                if (SPARSE) {
+                    const in32: [*]const u32 = @ptrCast(@alignCast(&input));
+                    for (0..groups) |g| {
+                        if (in32[g] != 0) {
+                            nnz.list[nnz.count] = @intCast(g);
+                            nnz.count += 1;
+                        }
+                    }
+                }
+            } else {
+                nnz = @splat(0);
+                if (SPARSE) {
+                    const in32: [*]const u32 = @ptrCast(@alignCast(&input));
+                    for (0..groups) |g| {
+                        if (in32[g] != 0) nnz[g / 64] |= @as(u64, 1) << @intCast(g % 64);
+                    }
                 }
             }
             var got: [OUT]i32 = undefined;

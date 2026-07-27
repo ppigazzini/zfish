@@ -9,12 +9,13 @@ const std = @import("std");
 const builtin = @import("builtin");
 const nnue_accumulator_port = @import("nnue_accumulator");
 
-// Work around LLVM's refusal to lower the portable @Vector int8-dot pattern to `vpdpbusd`:
-// on an AVX-512-VNNI target the affine reaches the instruction through the vpdpbusd512
-// LLVM intrinsic below. Every tier computes the same pure integer dot, so all paths are
-// bit-identical and the bench signature holds on each.
-const has_vnni = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
+// Alias the AVX-512 VNNI tier from its own leaf: the vpdpbusd kernel, its feature gate and the
+// dot helper the OUT==1 path shares with it.
+const nnue_affine_vnni = @import("nnue_affine_vnni.zig");
+const has_vnni = nnue_affine_vnni.has_vnni;
+const vpdpbusd16 = nnue_affine_vnni.vpdpbusd16;
+const affineVnni = nnue_affine_vnni.affineVnni;
+const loadW = @import("nnue_affine_load.zig").loadW;
 
 // Handle the AVX2 tier (no VNNI): the same maddubs dot as SSSE3 but 256-bit, so 8 outputs per
 // step. Without it an AVX2 target with no VNNI falls to the portable vpmaddwd deinterleave, which
@@ -35,10 +36,6 @@ const pmaddubsw128 = struct {
     extern fn @"llvm.x86.ssse3.pmadd.ub.sw.128"(@Vector(16, i8), @Vector(16, i8)) @Vector(8, i16);
 }.@"llvm.x86.ssse3.pmadd.ub.sw.128";
 
-const vpdpbusd512 = struct {
-    extern fn @"llvm.x86.avx512.vpdpbusd.512"(@Vector(16, i32), @Vector(16, i32), @Vector(16, i32)) @Vector(16, i32);
-}.@"llvm.x86.avx512.vpdpbusd.512";
-
 const pmaddwd128 = struct {
     extern fn @"llvm.x86.sse2.pmadd.wd"(@Vector(8, i16), @Vector(8, i16)) @Vector(4, i32);
 }.@"llvm.x86.sse2.pmadd.wd";
@@ -52,51 +49,39 @@ const pmaddwd256 = struct {
     extern fn @"llvm.x86.avx2.pmadd.wd"(@Vector(16, i16), @Vector(16, i16)) @Vector(8, i32);
 }.@"llvm.x86.avx2.pmadd.wd";
 
-/// Load one 16/32/64-byte weight chunk asserting alignment `A` on the load itself: a
-/// runtime-offset slice of a many-pointer degrades to align(1), and non-VEX SSE folds a
-/// load into pmaddubsw's m128 operand only when >=16-byte alignment is provable. The
-/// scrambled layout keeps every chunk offset a multiple of its width, and the weight
-/// tables are 64-aligned allocations, so the assert holds (ReleaseSafe checks it).
-inline fn loadW(comptime N: usize, comptime A: usize, p: [*]const i8, off: usize) @Vector(N, i8) {
-    const ap: *align(A) const [N]i8 = @ptrCast(@alignCast(p + off));
-    return ap.*;
-}
-
-// acc(i32x16) += the 4-way int8 dot of a(u8x64) and b(i8x64) over its 16 groups of 4.
-inline fn vpdpbusd16(acc: @Vector(16, i32), a: @Vector(64, u8), b: @Vector(64, i8)) @Vector(16, i32) {
-    return vpdpbusd512(acc, @bitCast(a), @bitCast(b));
-}
-
 /// Yield the input groups a layer must accumulate: every group when dense, only the
 /// non-zero ones when sparse. Sparse walks a BITSET the feature transformer records while
 /// the mask is still in a register, so the per-group data-dependent test does not exist.
 /// Indices ascend either way, so the accumulation order, and the result, is unchanged.
 ///
-/// This is a DELIBERATE divergence from upstream's shape, not a missing port. Upstream
-/// builds an explicit `u16` index list with `vpcompressw` and reads it flat; zfish keeps the
-/// bitset because the callers hoist the input/weight base pointers once per 64-group word
-/// and pop bits with a WORD-LOCAL index, and a flat list of absolute indices destroys that
-/// hoist. Upstream has no hoisted alternative to compare against, which is why the same shape
-/// pays there. BOTH placements of the index build have now been implemented and measured, and
-/// both lost; do not "fix" this to match upstream without new evidence on a new machine.
+/// This is the shape the tiers WITHOUT upstream's AVX-512 cursor use; where `has_vnni` holds,
+/// the transform writes an index list instead (nnue_nnz.zig) and the sparse walk below never
+/// runs. Popping a bitset is upstream's own non-AVX-512 spelling, so the two agree tier for
+/// tier; what is local to zfish is the hoist -- the callers form the input/weight base
+/// pointers once per 64-group word and pop bits with a WORD-LOCAL index.
 ///
-///   * PRODUCER-side (build the list in the transform, delete the bitset): +1.2% instructions
-///     at avx512icl. The per-chunk compress + store + popcount bookkeeping exceeds what a flat
-///     consumer read saves over the hoisted walk.
-///   * CONSUMER-side (keep the bitset, expand it here, then run upstream's three-at-a-time
-///     cursor): instructions 0.998 and branch misses 0.949 -- but cycles 1.005..1.010 and IPC
-///     0.988..0.993, adverse in both orientations of two independent paired runs. The branch
-///     axis is real and large; it is bought with an IPC loss that is larger, because expand
-///     and consume sit back to back and the cursor's first loads hit stores still in the store
-///     buffer. Upstream does not pay that: its list is built in the transform, far enough
-///     ahead that the stores have drained. So the two failures share no mechanism, and
-///     the producer-side result does NOT already cover this one.
+/// WHERE the index list is built decides whether it pays:
+///
+///   * PRODUCER-side (in the transform, no bitset at all) is what ships on avx512icl:
+///     instructions 0.998 (deterministic, -32.9M absolute) and branch misses 0.945.
+///   * CONSUMER-side (keep the bitset, expand it here, then run the same cursor) is NOT taken.
+///     It measured the same two wins -- instructions 0.998, branch misses 0.949 -- so the case
+///     against it is not a measured deficit: it is that it does strictly more work for them. It
+///     retains the bitset store the producer-side build deletes, and adds the expansion on top,
+///     and it is not the placement upstream uses. Prefer the one that removes a pass.
+///
+/// Do NOT reach for cycles, IPC or cache misses to separate these two, in either direction.
+/// A/A calibration on this box -- one binary against ITSELF, 20 rounds, both orientations --
+/// reads cycles 0.986/0.999, IPC 1.014/1.001 and cache misses 0.983/1.014. Those three axes
+/// cannot resolve anything near a percent here, so any such reading about a change this size is
+/// the instrument, not the change. Instructions and branch misses can: their A/A floors are
+/// exact and 0.997/1.001 respectively.
 ///
 /// It yields an index rather than taking the accumulator, so the accumulator stays a local
 /// the caller can keep in registers.
 fn GroupIter(comptime sparse: bool) type {
     return struct {
-        nnz: *const nnue_accumulator_port.NnzBitset,
+        nnz: *const nnue_accumulator_port.NnzOut,
         groups: usize,
         w: usize = 0,
         bits: u64 = 0,
@@ -121,86 +106,6 @@ fn GroupIter(comptime sparse: bool) type {
     };
 }
 
-// Compute the VNNI affine: the scrambled layout stores each group's OUT*4 weights contiguously, so a
-// 16-output chunk is one vpdpbusd with the group's 4 input bytes broadcast across the 16
-// outputs. Honor the sparse-input skip.
-inline fn affineVnni(
-    comptime OUT: usize,
-    comptime sparse: bool,
-    out: *[OUT]i32,
-    biases: [*]align(64) const i32,
-    weights: [*]align(64) const i8,
-    input: []const u8,
-    nnz: *const nnue_accumulator_port.NnzBitset,
-) void {
-    const chunks = OUT / 16;
-    // Split into dependency chains because vpdpbusd is high-latency: one accumulator serialises
-    // the whole layer, each group's dot waits on the previous group's. Upstream splits into
-    // independent chains and merges at the end (affine_transform_sparse_input.h: "If we're
-    // using high-latency dot product instructions, split the accumulators into separate
-    // dependency chains and merge at the end", NumRegs = 3 * NumAccums under VNNI).
-    //
-    // Derive `ch` from an `inline for`, so every acc index is comptime and the array stays in
-    // registers. A runtime chain counter spills it, which is the whole reason this is unrolled
-    // rather than rotated. Integer adds commute, so the merge is bit-identical.
-    const chains = 3;
-    var acc: [chunks * chains]@Vector(16, i32) = undefined;
-    inline for (0..chunks) |c| acc[c] = biases[c * 16 ..][0..16].*;
-    inline for (chunks..chunks * chains) |c| acc[c] = @splat(0);
-
-    if (sparse) {
-        // Hoist the input/weight base pointers ONCE per 64-group nnz word and pop set bits with
-        // a LOCAL index, as the SSSE3 and portable paths do (5.99: measured -3.9% / -1.9% there;
-        // this path was the one left walking GroupIter's ABSOLUTE index). Keep the 3-chain split:
-        // `ch` still comes from an `inline for`, so every acc index stays comptime and the array
-        // stays in registers -- the rotation is guarded per group instead, and the guard's branch
-        // is taken only at word exhaustion. Chain ASSIGNMENT shifts at word boundaries relative
-        // to the continuous rotation this replaces; i32 wrapping adds commute, so the merged sum
-        // is bit-identical whatever the partition -- the signature is the proof.
-        for (nnz, 0..) |word, k| {
-            var bits = word;
-            if (bits == 0) continue;
-            // Form the bases only after the zero-word skip: the always-empty top words would
-            // put both offsets past their buffers, and an out-of-bounds pointer must not be
-            // formed even if never read.
-            const in_base = input.ptr + k * 64 * 4;
-            const w_base = weights + k * 64 * OUT * 4;
-            while (bits != 0) {
-                inline for (0..chains) |ch| {
-                    if (bits != 0) {
-                        const i: usize = @ctz(bits);
-                        bits &= bits - 1;
-                        const in4: [4]u8 = in_base[i * 4 ..][0..4].*;
-                        const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
-                        inline for (0..chunks) |c| {
-                            const b: @Vector(64, i8) = loadW(64, 64, w_base, i * OUT * 4 + c * 64);
-                            acc[ch * chunks + c] = vpdpbusd16(acc[ch * chunks + c], a, b);
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        var it = GroupIter(false){ .nnz = nnz, .groups = input.len / 4 };
-        outer: while (true) {
-            inline for (0..chains) |ch| {
-                const g = it.next() orelse break :outer;
-                const in4: [4]u8 = input[g * 4 ..][0..4].*;
-                const a: @Vector(64, u8) = @bitCast(@as(@Vector(16, u32), @splat(@as(u32, @bitCast(in4)))));
-                inline for (0..chunks) |c| {
-                    const b: @Vector(64, i8) = loadW(64, 64, weights, g * OUT * 4 + c * 64);
-                    acc[ch * chunks + c] = vpdpbusd16(acc[ch * chunks + c], a, b);
-                }
-            }
-        }
-    }
-    inline for (0..chunks) |c| {
-        var sum = acc[c];
-        inline for (1..chains) |ch| sum += acc[ch * chunks + c];
-        out[c * 16 ..][0..16].* = sum;
-    }
-}
-
 // Compute the SSSE3 affine via the LLVM pmaddubsw/pmaddwd intrinsics: each 128-bit weight chunk (16
 // bytes = 4 outputs' 4 sublanes) is one pmaddubsw of the group's 4 input bytes (broadcast
 // x4), then pmaddwd against ones folds each output's two i16 partials into its i32.
@@ -213,7 +118,7 @@ inline fn affineSsse3(
     biases: [*]align(64) const i32,
     weights: [*]align(64) const i8,
     input: []const u8,
-    nnz: *const nnue_accumulator_port.NnzBitset,
+    nnz: *const nnue_accumulator_port.NnzOut,
 ) void {
     var acc: [OUT]i32 = biases[0..OUT].*;
     const ones: @Vector(8, i16) = @splat(1);
@@ -267,7 +172,7 @@ inline fn affineAvx2(
     biases: [*]align(64) const i32,
     weights: [*]align(64) const i8,
     input: []const u8,
-    nnz: *const nnue_accumulator_port.NnzBitset,
+    nnz: *const nnue_accumulator_port.NnzOut,
 ) void {
     // Split the accumulator into two dependency chains, mcfish's measured optimum at plain
     // AVX2 (0aafad9: three chains held 12 of 16 ymm live and spilled, one lost the
@@ -381,7 +286,7 @@ pub inline fn affineDpbusd(
     biases: [*]align(64) const i32,
     weights: [*]align(64) const i8,
     input: []const u8,
-    nnz: *const nnue_accumulator_port.NnzBitset,
+    nnz: *const nnue_accumulator_port.NnzOut,
 ) void {
     if (comptime (OUT == 1 and !sparse and use_maddubs)) {
         affineOut1(out, biases[0], weights, input);
