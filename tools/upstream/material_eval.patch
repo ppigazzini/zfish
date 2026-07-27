@@ -1,0 +1,35 @@
+diff --git a/src/evaluate.cpp b/src/evaluate.cpp
+index 03727b89..615e15a3 100644
+--- a/src/evaluate.cpp
++++ b/src/evaluate.cpp
+@@ -47,6 +47,30 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
+ 
+     assert(!pos.checkers());
+ 
++    // SPINE ISOLATION: replace the NNUE forward pass and the eval blend with material alone.
++    // This MUST stay a line-for-line match of zfish's -Dstub-eval stub
++    // (src/engine/eval/evaluate.zig stubMaterialValue): the same five piece values, the same
++    // side-to-move perspective, and no optimism / complexity / rule50 damping / TB clamp on
++    // either side. If the two ever disagree by one centipawn the engines search DIFFERENT
++    // TREES and every ratio taken from them is meaningless -- tools/material_eval.sh refuses
++    // to report unless the two bench node counts are equal.
++    {
++        constexpr int V[5] = {100, 300, 300, 500, 900};
++
++        int w = V[0] * pos.count<PAWN>(WHITE) + V[1] * pos.count<KNIGHT>(WHITE)
++              + V[2] * pos.count<BISHOP>(WHITE) + V[3] * pos.count<ROOK>(WHITE)
++              + V[4] * pos.count<QUEEN>(WHITE);
++        int b = V[0] * pos.count<PAWN>(BLACK) + V[1] * pos.count<KNIGHT>(BLACK)
++              + V[2] * pos.count<BISHOP>(BLACK) + V[3] * pos.count<ROOK>(BLACK)
++              + V[4] * pos.count<QUEEN>(BLACK);
++
++        (void) network;
++        (void) accumulators;
++        (void) caches;
++        (void) optimism;
++        return Value(pos.side_to_move() == WHITE ? w - b : b - w);
++    }
++
+     auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
+ 
+     Value nnue = psqt + positional;

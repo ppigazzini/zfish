@@ -5,6 +5,7 @@
 // recursion, so this is a std-free leaf over the board/eval leaves + the search_ctx
 // QCtx; search_driver imports it one-way.
 
+const build_options = @import("build_options");
 const network_port = @import("network");
 const evaluate_mod = @import("evaluate");
 const nnue_acc = @import("nnue_accumulator");
@@ -54,6 +55,24 @@ pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: i32, mn: i32, delta: i3
 // bounds are +/-VALUE_TB_WIN_IN_MAX_PLY.
 pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     const pos = pos_ptr;
+    // SPINE ISOLATION (-Dstub-eval): replace the whole NNUE forward pass and the eval blend
+    // with material alone, to measure the search spine with the evaluation cost removed. The
+    // oracle takes the identical stub via tools/upstream/material_eval.patch, so both engines
+    // score every position the same and search ONE tree -- tools/material_eval.sh gates on
+    // that by refusing to report unless the two bench node counts match. Off by default and
+    // comptime, so the shipped binary is unchanged (the anchor still reads 2718396).
+    if (comptime build_options.stub_eval) {
+        const pc = pos.piece_count;
+        var w: [5]i32 = undefined;
+        var b: [5]i32 = undefined;
+        // Piece codes are 1..5 = pawn..queen for white, +8 for black (movepick's piece_values
+        // table is laid out on the same encoding).
+        inline for (0..5) |i| {
+            w[i] = @intCast(pc[1 + i]);
+            b[i] = @intCast(pc[9 + i]);
+        }
+        return evaluate_mod.stubMaterialValue(w, b, pos.side_to_move == 0);
+    }
     const out = network_port.evaluate(pos_ptr, ctx.acc_stack, ctx.cache);
     const pawns = pos.piece_count[1] + pos.piece_count[9];
     const material = 534 * pawns + pos.st.non_pawn_material[0] + pos.st.non_pawn_material[1];

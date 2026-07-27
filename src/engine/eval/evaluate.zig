@@ -18,6 +18,29 @@ pub const EvalTraceInput = struct {
     final_white_cp: i32,
 };
 
+/// Piece values for the SPINE-ISOLATION stub eval, in the order pawn, knight, bishop, rook,
+/// queen. Deliberately round numbers with no relation to either engine's real tables: the only
+/// property that matters is that upstream's patched `Eval::evaluate` uses the SAME five, so both
+/// engines score every position identically and therefore search the SAME TREE. A stub that
+/// diverged by one centipawn would produce two different node counts, and the whole comparison
+/// would be two different workloads -- which is exactly how an earlier attempt at this
+/// experiment concluded "the spine, not the NNUE, is the gap" and was wrong.
+pub const stub_piece_values = [5]i32{ 100, 300, 300, 500, 900 };
+
+/// Score a position by material alone, from the side to move's perspective. Counts are indexed
+/// pawn..queen. No optimism, no complexity blend, no 50-move damping and no TB clamp -- the
+/// clamp would be a no-op here anyway (max material is far inside the TB bounds), and leaving
+/// all four out of BOTH engines keeps the two stubs a line-for-line match.
+pub fn stubMaterialValue(white: [5]i32, black: [5]i32, side_to_move_is_white: bool) i32 {
+    var w: i32 = 0;
+    var b: i32 = 0;
+    for (stub_piece_values, 0..) |v, i| {
+        w += v * white[i];
+        b += v * black[i];
+    }
+    return if (side_to_move_is_white) w - b else b - w;
+}
+
 pub fn computeValue(input: EvalInput) i32 {
     var nnue = @as(i64, input.psqt) + @as(i64, input.positional); // upstream 6088838: yeet psqt weights
 
