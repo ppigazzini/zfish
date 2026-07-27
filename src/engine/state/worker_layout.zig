@@ -60,7 +60,18 @@ pub const refresh_table_bytes: usize = 278528; // FT refresh cache
 // worker_off exists only so the constructor's cross-check test can address the same
 // slots by byte offset.
 pub const WorkerLayout = struct {
-    histories: worker_histories.WorkerHistories align(8), // the typed per-Worker history tables
+    // Align the history block to a CACHE LINE, not to its i16 element. These are the largest
+    // randomly-indexed structures the search touches -- every node probes them and every update
+    // writes them -- so where the block starts decides how many lines each probe pulls. At
+    // align(8) Zig placed it at offset 1433880, i.e. 24 bytes into a line, skewing every table
+    // inside it (a 2048-byte PieceToHistory page included) for the life of the process and
+    // splitting probes across two lines that would otherwise sit in one. The NNUE arenas below
+    // already take align(64) for the same reason; the histories were the omission.
+    //
+    // This is invisible to every gate in the repo: alignment changes no value and no instruction
+    // count, so the bench signature, all goldens and the callgrind instruction axis are identical
+    // before and after. It shows up only on the cache axis.
+    histories: worker_histories.WorkerHistories align(64), // the typed per-Worker history tables
     limits: LimitsType,
     pv_idx: usize,
     pv_last: usize,
