@@ -116,8 +116,8 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
     const us: usize = sideToMove(root_pos);
 
     const input = timeman_port.TimemanInput{
-        .time_us = lim.time[us],
-        .inc_us = lim.inc[us],
+        .time_ms = lim.time[us],
+        .inc_ms = lim.inc[us],
         .start_time = lim.start_time,
         .npmsec = optInt("nodestime"),
         .move_overhead = optInt("Move Overhead"),
@@ -138,8 +138,8 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
     tm.available_nodes = out.available_nodes;
     tm.use_nodes_time = out.use_nodes_time;
     smgr.original_time_adjust = out.original_time_adjust;
-    lim.time[us] = out.time_us;
-    lim.inc[us] = out.inc_us;
+    lim.time[us] = out.time_ms;
+    lim.inc[us] = out.inc_ms;
     lim.npmsec = out.npmsec;
 
     const gen = &wl.tt.generation8;
