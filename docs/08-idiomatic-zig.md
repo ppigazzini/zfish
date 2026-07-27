@@ -369,12 +369,42 @@ available in CI, so it never runs there.
 
 **Know each instrument's blind spots before trusting its verdict.**
 
-- The serial cycle axis has a measured **±1% run-to-run floor and a +0.65%
-  first-position bias** (two A/A controls of the same binary against itself) — a
-  sub-1% single-tier cycle claim cannot be certified here, at any round count.
-  Adjudicate small deltas on the deterministic instruction axis, or with a
-  fastchess Elo match (concurrency = physical cores, idle box, `Timeouts:` near
-  zero — a concurrent build forfeits games exactly like SMT oversubscription).
+- **Each of `perf_counters`' five axes has its own floor, and three of them cannot
+  resolve a percent.** Measured by A/A control — the icl build against a byte-identical
+  copy of itself, 20 rounds, both orientations, reported as the same `sqrt(fwd/swp)`
+  a real comparison would use:
+
+  | axis | A/A reading | usable below 1%? |
+  | --- | --- | --- |
+  | instructions | exact, 1.000 | **yes** — spread ~6k in 14.5 billion |
+  | branch misses | 0.997 / 1.001 → 0.999 | **yes** — floor ~0.2% |
+  | cycles | 0.986 / 0.999 → 0.9935 | no |
+  | IPC | 1.014 / 1.001 → 1.0065 | no |
+  | cache misses | 0.983 / 1.014 → 0.9846 | no — widest of the five |
+
+  Swapping orientations does **not** rescue the cycle axis: an A/A pair still reads
+  0.9935 after cancellation, so the bias correction removes the position effect and
+  leaves the run-to-run floor untouched. A sub-1% cycle, IPC or cache-miss claim cannot
+  be certified here at any round count — quote it as "not resolvable", not as a result,
+  and do not read a sign off it. Adjudicate small deltas on instructions or branch
+  misses, or with a fastchess Elo match (concurrency = physical cores, idle box,
+  `Timeouts:` near zero — a concurrent build forfeits games exactly like SMT
+  oversubscription).
+- The branch-miss axis is the newest — `perf_counters` collected the counter for a long
+  time without printing it, so any conclusion in this tree dated before that fix saw
+  four axes, not five. It is where the **wide tiers' deficit against the oracle shows
+  up**: on identical trees zfish leads on instructions at every tier (0.961–0.979) yet
+  trails on branch misses at the AVX-512 ones (vnni512 1.154, avx512icl 1.192) while
+  sse41 and avx2 sit at 0.981/0.987, and avx2 instead carries the cache-miss outlier
+  (1.112). So the residue behind a flat cycle ratio is not one thing — it is a
+  different thing per tier.
+- **Do not promote a bench-metric ratio over the instruction axis for predicting Elo.**
+  A 4-tier × 3-TC matrix against the pinned oracle (12 000 games) ranks the tiers by
+  Elo in exactly the order of their instruction ratios (Spearman +1.00); branch misses
+  and cycles rank at +0.80, IPC and cache misses at +0.40. That is n = 4 and a perfect
+  rank happens by chance 1 time in 24, and the tier-to-tier Elo gaps are themselves
+  only 1–1.6σ — so treat it as "no axis has earned the right to displace instructions",
+  not as a law.
 - callgrind's simulation **ignores software prefetch on both engines** — the
   `@prefetch`/`_mm_prefetch` lines carry Ir but zero data refs, so no callgrind
   bar can certify a prefetch change, for or against.
