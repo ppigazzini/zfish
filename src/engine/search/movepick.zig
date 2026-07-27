@@ -134,53 +134,67 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
                 state.stage += 1;
                 continue;
             },
-            good_capture => {
-                if (selectGoodCapture(state, context)) |move| {
-                    return move;
-                }
-
-                state.stage += 1;
-                continue;
-            },
-            quiet_init => {
-                if (!skipQuiets(state)) {
-                    const count = scoreList(quiets, context, state.moves + state.cur);
-
-                    state.end_cur = state.cur + count;
-                    state.end_generated = state.end_cur;
-                    partialInsertionSort(
-                        state.moves + state.cur,
-                        count,
-                        -3560 * state.depth,
-                    );
-                }
-
-                state.stage += 1;
-                continue;
-            },
-            good_quiet => {
-                if (!skipQuiets(state)) {
-                    if (selectGoodQuiet(state)) |move| {
+            // Advance through the five main-search stages WITHOUT re-dispatching. Each of these
+            // transitions has exactly one successor, so upstream spells them as `[[fallthrough]]`
+            // and re-dispatches only at the shared *_INIT block below, via its `goto top`
+            // (movepick.cpp). Spelling them as `stage += 1; continue;` instead sent every one of
+            // them back through the jump table.
+            //
+            // Zig has no `[[fallthrough]]`, so the chain is a cascade of stage tests instead. The
+            // stages are contiguous and only ever advance, so entering at any of the five runs
+            // the rest in order and re-entry after a returned move resumes at the same stage,
+            // exactly as the re-dispatching form did.
+            //
+            // Take this for the SHAPE, not for speed, and do not re-derive a speed case from the
+            // branch counts: they look far better than they are. The dispatch drops from eleven
+            // indirect jump sites to three and nextMove's executed indirect branches fall 18.9%,
+            // but only 4.7% of the ones removed were ever mispredicted -- LLVM tail-duplicates
+            // the jump table, so each single-successor site had its own BTB entry with one
+            // target and already predicted near-perfectly. Measured flat end to end; the numbers
+            // are in this commit's message.
+            good_capture, quiet_init, good_quiet, bad_capture, bad_quiet => {
+                if (state.stage == good_capture) {
+                    if (selectGoodCapture(state, context)) |move| {
                         return move;
                     }
-                }
 
-                state.cur = 0;
-                state.end_cur = state.end_bad_captures;
-                state.stage += 1;
-                continue;
-            },
-            bad_capture => {
-                if (selectAny(state)) |move| {
-                    return move;
+                    state.stage = quiet_init;
                 }
+                if (state.stage == quiet_init) {
+                    if (!skipQuiets(state)) {
+                        const count = scoreList(quiets, context, state.moves + state.cur);
 
-                state.cur = state.end_captures;
-                state.end_cur = state.end_generated;
-                state.stage += 1;
-                continue;
-            },
-            bad_quiet => {
+                        state.end_cur = state.cur + count;
+                        state.end_generated = state.end_cur;
+                        partialInsertionSort(
+                            state.moves + state.cur,
+                            count,
+                            -3560 * state.depth,
+                        );
+                    }
+
+                    state.stage = good_quiet;
+                }
+                if (state.stage == good_quiet) {
+                    if (!skipQuiets(state)) {
+                        if (selectGoodQuiet(state)) |move| {
+                            return move;
+                        }
+                    }
+
+                    state.cur = 0;
+                    state.end_cur = state.end_bad_captures;
+                    state.stage = bad_capture;
+                }
+                if (state.stage == bad_capture) {
+                    if (selectAny(state)) |move| {
+                        return move;
+                    }
+
+                    state.cur = state.end_captures;
+                    state.end_cur = state.end_generated;
+                    state.stage = bad_quiet;
+                }
                 if (!skipQuiets(state)) {
                     if (selectBadQuiet(state)) |move| {
                         return move;
@@ -189,18 +203,20 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
 
                 return 0;
             },
-            evasion_init => {
-                state.cur = 0;
+            // The evasion chain is the same shape with one link: EVASION_INIT falls through to
+            // EVASION upstream. QCAPTURE shares the selector and is reached from QCAPTURE_INIT's
+            // re-dispatch, so it enters here with the init test already false.
+            evasion_init, evasion, qcapture => {
+                if (state.stage == evasion_init) {
+                    state.cur = 0;
 
-                const count = scoreList(evasions, context, state.moves + state.cur);
+                    const count = scoreList(evasions, context, state.moves + state.cur);
 
-                state.end_cur = state.cur + count;
-                state.end_generated = state.end_cur;
-                partialInsertionSort(state.moves + state.cur, count, min_sort_limit);
-                state.stage += 1;
-                continue;
-            },
-            evasion, qcapture => {
+                    state.end_cur = state.cur + count;
+                    state.end_generated = state.end_cur;
+                    partialInsertionSort(state.moves + state.cur, count, min_sort_limit);
+                    state.stage = evasion;
+                }
                 if (selectAny(state)) |move| {
                     return move;
                 }
