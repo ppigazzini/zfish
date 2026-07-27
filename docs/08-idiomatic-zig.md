@@ -451,10 +451,9 @@ available in CI, so it never runs there.
     numbers come from `perf_counters` on whole-bench totals, a different instrument on a
     different workload. Treat that attribution as provisional.
 
-  PGO and BOLT are already falsified here, so a fix would have to be source-level
-  ordering. Before anyone attempts one: get a cycle-level attribution that this gap
-  costs something. Absent that, the honest statement is that zfish misses instruction
-  cache more often than the oracle in one simulator, on one tier, for unknown cost.
+  Before anyone attempts a fix: get a cycle-level attribution that this gap costs
+  something. Absent that, the honest statement is that zfish misses instruction cache
+  more often than the oracle in one simulator, on one tier, for unknown cost.
 - **Do not promote a bench-metric ratio over the instruction axis for predicting Elo.**
   A 4-tier × 3-TC matrix against the pinned oracle (12 000 games) ranks the tiers by
   Elo in exactly the order of their instruction ratios (Spearman +1.00); branch misses
