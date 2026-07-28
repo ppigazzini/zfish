@@ -23,12 +23,13 @@ const givesCheck = legality.givesCheck;
 const setPosition = fen_parse.setPosition;
 
 // Do a move with fresh dirty-piece/threats scratch (the perft/setup path, which
-// does not thread an accumulator delta through).
+// does not thread an accumulator delta through). Not a search make, so it passes no
+// PrefetchBank (perft, root building, tablebase walks and tests all reach here).
 pub fn doMoveState(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     var dp: DirtyPiece = undefined;
     var dts: DirtyThreats = undefined;
     dts.list_size = 0;
-    doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
+    doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts, null);
 }
 
 /// Allocate a zeroed Position block via the Allocator interface. c_allocator

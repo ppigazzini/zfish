@@ -1,13 +1,14 @@
 // Run quiescence search + provide the PV/low-level primitives shared with the main search.
 // Keep qsearchImpl a call-graph leaf (only self-recurses, never calls
 // searchImpl); house the shared primitives (isShuffling/pvClear/pvUpdate/
-// qCorrectionValue/adjustKey50/ssAdd/ssSub/posCapture/ttMoveHistoryUpdate/
-// contVal) here.
+// qCorrectionValue/ssAdd/ssSub/posCapture/ttMoveHistoryUpdate/contVal) here.
+// adjustKey50 lives in the board zone (move_do.zig) and is re-exported below.
 
 const std = @import("std");
 const worker_layout = @import("worker_layout");
 const movegen = @import("movegen");
 const tt = @import("tt");
+const move_do = @import("move_do");
 const movepick = @import("movepick");
 const search = @import("search");
 const worker_histories = @import("worker_histories");
@@ -125,12 +126,11 @@ pub fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchSt
     return search.correctionValue(pcv, micv, wnpcv, bnpcv, cch2, cch4, m_ok);
 }
 
-pub inline fn adjustKey50(pos: *const Position) u64 {
-    const k = pos.st.key;
-    if (pos.st.rule50 < 14) return k;
-    const seed: u64 = @intCast(@divTrunc(pos.st.rule50 - 14, 8));
-    return k ^ (seed *% 6364136223846793005 +% 1442695040888963407);
-}
+// Live in the board zone now (move_do.adjustKey50): upstream keeps adjust_key50 on
+// Position itself (position.h:322), and doMove's own exact-key TT prefetch needs it
+// without reaching into search. Re-exported here so this file's and search_main.zig's/
+// search_driver.zig's existing `search_qsearch.adjustKey50` call sites are unchanged.
+pub const adjustKey50 = move_do.adjustKey50;
 
 /// Mirror upstream `template<NodeType> qsearch<PV>/<NonPV>`: the node type is comptime, and
 /// there is no cut_node.
