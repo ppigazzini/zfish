@@ -54,8 +54,14 @@ other leaves, so the board graph is a DAG with `position` at its root.
 `Position` is the whole board object: the 64-square piece `board`, the
 `by_type_bb` / `by_color_bb` bitboards, `piece_count`, the castling tables, a
 pointer `st` to the current `StateInfo`, `game_ply`, `side_to_move`, `chess960`,
-and the trailing NNUE scratch (`scratch_dp`, `scratch_dts`). Field order is Zig's
-to choose; only the footprint is contractual.
+and the trailing NNUE scratch (`scratch_dp`, `scratch_dts`). `Position` is
+`extern`, pinning declaration order: `board` is Piece[64], exactly one cache
+line, and it is declared first so `piece_on()` — read by movepick scoring, SEE,
+`givesCheck`, legality and every make/unmake — touches a single line, matching
+upstream's layout. A plain struct would let Zig sort fields by descending
+alignment instead, which pushes `board` well past offset 0 and off a single
+line. `StateInfo`'s field order is still Zig's to choose; only its footprint is
+contractual.
 
 `StateInfo` carries the per-ply state: the Zobrist keys (`key`, `pawn_key`,
 `material_key`, `minor_piece_key`, `non_pawn_key`), `non_pawn_material`,
