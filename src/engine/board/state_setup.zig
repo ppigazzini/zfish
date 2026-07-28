@@ -140,8 +140,10 @@ pub fn setCheckInfo(pos_ptr: *Position) void {
     const all = pos.by_type_bb[0];
     pos.st.check_squares[pawn_pt] = pawnAttacks(them, ksq);
     pos.st.check_squares[knight_pt] = bitboard.attacks(knight_pt, ksq, 0);
-    pos.st.check_squares[bishop_pt] = bitboard.attacks(bishop_pt, ksq, all);
-    pos.st.check_squares[rook_pt] = bitboard.attacks(rook_pt, ksq, all);
+    // One pass for both, as upstream's set_check_info does (position.cpp:473).
+    const king_slider = bitboard.bothAttacks(ksq, all);
+    pos.st.check_squares[bishop_pt] = king_slider.bishop;
+    pos.st.check_squares[rook_pt] = king_slider.rook;
     pos.st.check_squares[queen_pt] = pos.st.check_squares[bishop_pt] | pos.st.check_squares[rook_pt];
     pos.st.check_squares[king_pt] = 0;
 }

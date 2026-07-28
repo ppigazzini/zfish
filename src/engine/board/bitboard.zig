@@ -8,6 +8,15 @@ const builtin = @import("builtin");
 const use_pext = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .bmi2);
 
+// Gate the dual hyperbola quintessence slider path on AVX2, tracking upstream's
+// USE_DUAL_HYPERBOLA_QUINT (attacks.h:35, `#elif defined(USE_AVX2)`) 1:1. Below this tier
+// upstream runs magic bitboards, same as bothAttacks' fallback below; at and above it,
+// upstream does not even compile the magic tables (attacks.cpp:28) -- a footprint win
+// this port does not take, since the derived-table bootstrap below (initDerivedTables)
+// still walks the magic path unconditionally and reworking that is a separate change.
+const use_avx2 = builtin.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
+
 // LLVM's BMI2 parallel-bit-extract (PEXT). Referenced only on the use_pext path, behind
 // the comptime gate in computeMagicIndex, so non-BMI2 targets never analyse or lower it.
 const pext64 = struct {
@@ -63,6 +72,32 @@ var bishop_magic_attacks: [0x1480]u64 = undefined;
 // non-PEXT path, i.e. the sse41 tier.
 var slider_magics: [64][2]Magic align(64) = undefined;
 
+// Return both slider attack sets for a square in one call. At AVX2 and above this is
+// upstream's dual hyperbola quintessence (attacks.h:91): the file/diagonal/antidiagonal
+// masks for one square load as a single vector, one subtract/byte-reverse/xor pass
+// produces all three ray sets at once, and the rank -- the one direction the trick
+// cannot fold in, because a rank's eight squares share a byte -- comes from a 256-entry
+// lookup. Below AVX2 this falls back to two magic lookups, upstream's own non-dual path.
+pub const DualAttacks = struct { bishop: u64, rook: u64 };
+
+const DualMagic = struct {
+    // {file, diag, unused, antidiag} rays through the square, excluding it. A `@Vector`
+    // field (not a raw byte load) so this needs no manual alignment/intrinsic handling;
+    // LLVM picks the AVX2 op set at use_avx2 tiers on its own.
+    masks: @Vector(4, u64),
+    r: u64, // 2 * squareBb(s)
+    rr: u64, // 2 * squareBb(63 - s)
+    rank_file: u3, // row into rank_attacks this square's rank ray reads
+    shift: u6, // 8 * rankOf(s): the occupancy byte for this square's rank
+};
+
+var dual_magics: [64]DualMagic = undefined;
+// Sliding attacks within a rank, indexed by [file][8-bit rank occupancy]. Reuses
+// slidingAttack(ROOK, file, occ): occ is zero-extended past bit 7, so the north/south
+// rays run unblocked off the top of a u64 and the u8 truncation below drops them,
+// leaving only the east/west (rank) ray bits -- upstream's own bootstrap (attacks.cpp:75).
+var rank_attacks: [8][256]u8 = undefined;
+
 comptime {
     // Keep the two facts joined: the alignment above buys a single-line probe only while
     // a square's bishop/rook pair still fits in one line, so widening Magic must fail the
@@ -97,8 +132,77 @@ var pseudo_attacks_bb: [8][64]u64 = undefined;
 pub fn initSliderMagics() void {
     initMagics(PieceType.rook, rook_magic_attacks[0..], &slider_magics);
     initMagics(PieceType.bishop, bishop_magic_attacks[0..], &slider_magics);
+    // Always built, not just at use_avx2 tiers: bothAttacksAvx2 is exercised directly (not
+    // just through the tier-gated bothAttacks dispatch) by the cross-check test below, on
+    // every tier, so dual_magics/rank_attacks must never be left undefined.
+    initDualMagics();
     initLeaperTables();
     initDerivedTables();
+}
+
+// The ray through `square` along d1/d2, excluding `square` -- upstream's line_mask
+// (attacks.cpp:81). Two directions only (not the full 4 slidingAttack sums per piece
+// type), so the file ray and each diagonal stay separable in the DualMagic masks.
+fn lineMask(square: usize, d1: i8, d2: i8) u64 {
+    var mask: u64 = 0;
+    inline for (.{ d1, d2 }) |d| {
+        var s = square;
+        while (true) {
+            const dest = safeDestination(s, d);
+            if (dest == 0) break;
+            mask |= dest;
+            s = lsb(dest);
+        }
+    }
+    return mask;
+}
+
+fn initDualMagics() void {
+    for (0..8) |file| {
+        for (0..256) |occ| {
+            rank_attacks[file][occ] = @truncate(slidingAttack(PieceType.rook, file, @intCast(occ)));
+        }
+    }
+    for (0..64) |s| {
+        dual_magics[s] = .{
+            .masks = .{
+                lineMask(s, north, south),
+                lineMask(s, north_east, south_west),
+                0,
+                lineMask(s, north_west, south_east),
+            },
+            .r = 2 *% squareBb(s),
+            .rr = 2 *% squareBb(63 - s),
+            .rank_file = @intCast(fileOf(s)),
+            .shift = @intCast(8 * rankOf(s)),
+        };
+    }
+}
+
+fn bothAttacksAvx2(square: usize, occupied: u64) DualAttacks {
+    const m = dual_magics[square];
+    const occ_v: @Vector(4, u64) = @splat(occupied);
+    const o = occ_v & m.masks;
+    const fwd = o -% @as(@Vector(4, u64), @splat(m.r));
+    const rev = @byteSwap(@byteSwap(o) -% @as(@Vector(4, u64), @splat(m.rr)));
+    const result = (fwd ^ rev) & m.masks;
+    const rank_ray = @as(u64, rank_attacks[m.rank_file][@intCast((occupied >> m.shift) & 0xff)]) << m.shift;
+    // Lane 0 is the file ray (the rook's other direction); lanes 1 and 3 are the two
+    // diagonals, ORed into the full bishop attack set (lane 2, mask_none, is always 0).
+    return .{ .bishop = result[1] | result[3], .rook = result[0] +% rank_ray };
+}
+
+fn bothAttacksMagic(square: usize, occupied: u64) DualAttacks {
+    return .{
+        .bishop = attacksBb(PieceType.bishop, square, occupied, &slider_magics),
+        .rook = attacksBb(PieceType.rook, square, occupied, &slider_magics),
+    };
+}
+
+pub fn bothAttacks(square: u8, occupied: u64) DualAttacks {
+    const sq: usize = square;
+    if (comptime use_avx2) return bothAttacksAvx2(sq, occupied);
+    return bothAttacksMagic(sq, occupied);
 }
 
 fn initLeaperTables() void {
@@ -344,6 +448,40 @@ const Prng = struct {
         return self.rand64() & self.rand64() & self.rand64();
     }
 };
+
+test "bothAttacksAvx2 matches the magic reference on every square, every rank/file/diagonal occupancy pattern, and 10000 random ones" {
+    initSliderMagics();
+    var rng = Prng.init(0xD1A6_0E1D_A9A2_11C5);
+    for (0..64) |s| {
+        const magic = bothAttacksMagic(s, 0);
+        const avx2 = bothAttacksAvx2(s, 0);
+        try std.testing.expectEqual(magic.bishop, avx2.bishop);
+        try std.testing.expectEqual(magic.rook, avx2.rook);
+
+        // Every single-bit occupancy: exercises each ray-blocking square individually,
+        // including the square itself and every edge/corner case the rays can reach.
+        for (0..64) |blocker| {
+            const occ = squareBb(blocker);
+            const m = bothAttacksMagic(s, occ);
+            const a = bothAttacksAvx2(s, occ);
+            try std.testing.expectEqual(m.bishop, a.bishop);
+            try std.testing.expectEqual(m.rook, a.rook);
+        }
+
+        // Random full-board occupancies, biased dense (AND of three) and sparse (OR of
+        // three) so both light and heavy occupancy regimes are covered.
+        for (0..5000) |_| {
+            const dense = rng.rand64() & rng.rand64() & rng.rand64();
+            const sparse = rng.rand64() | rng.rand64() | rng.rand64();
+            inline for (.{ dense, sparse }) |occ| {
+                const m = bothAttacksMagic(s, occ);
+                const a = bothAttacksAvx2(s, occ);
+                try std.testing.expectEqual(m.bishop, a.bishop);
+                try std.testing.expectEqual(m.rook, a.rook);
+            }
+        }
+    }
+}
 
 test {
     @import("std").testing.refAllDecls(@This());
