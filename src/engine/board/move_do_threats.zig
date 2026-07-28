@@ -12,6 +12,7 @@
 const bitboard = @import("bitboard");
 const board_core = @import("board_core");
 const position_types = @import("position_types");
+const threats_write_avx512 = @import("threats_write_avx512.zig");
 
 const Position = position_types.Position;
 const DirtyThreats = position_types.DirtyThreats;
@@ -126,22 +127,44 @@ pub fn updatePieceThreats(
         else => {},
     }
 
-    while (threatened != 0) {
-        const tsq: u8 = @intCast(@ctz(threatened));
-        threatened &= threatened - 1;
-        addDirtyThreat(dts, put_piece, pc, pos.board[tsq], s, tsq);
-    }
+    if (comptime threats_write_avx512.use_avx512_threats) {
+        // Outgoing: PC on S threatens the piece on each square of `threatened`. The
+        // template fixes add/pc/pc_sq; the threatened square and piece vary
+        // (upstream position.cpp:1269).
+        const outgoing_template: u32 = (@as(u32, @intFromBool(put_piece)) << 31) |
+            (@as(u32, pc) << 20) | @as(u32, s);
+        threats_write_avx512.writeMultipleDirties(pos, threatened, outgoing_template, 8, 16, dts);
 
-    if (compute_ray) {
-        processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, r_attacks, b_attacks, occupied_no_k, true);
+        // Incoming: the piece on each square threatens PC on S. Fold the direct
+        // sliders in HERE, unconditionally (not only on the !compute_ray branch the
+        // scalar path below takes), and tell processSliders not to emit them again --
+        // the control-flow half of this port, matching upstream position.cpp:1273/1293.
+        const all_attackers = direct_sliders | incoming;
+        const incoming_template: u32 = (@as(u32, @intFromBool(put_piece)) << 31) |
+            (@as(u32, pc) << 16) | (@as(u32, s) << 8);
+        threats_write_avx512.writeMultipleDirties(pos, all_attackers, incoming_template, 0, 20, dts);
+
+        if (compute_ray) {
+            processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, r_attacks, b_attacks, occupied_no_k, false);
+        }
     } else {
-        incoming |= direct_sliders;
-    }
+        while (threatened != 0) {
+            const tsq: u8 = @intCast(@ctz(threatened));
+            threatened &= threatened - 1;
+            addDirtyThreat(dts, put_piece, pc, pos.board[tsq], s, tsq);
+        }
 
-    while (incoming != 0) {
-        const src_sq: u8 = @intCast(@ctz(incoming));
-        incoming &= incoming - 1;
-        addDirtyThreat(dts, put_piece, pos.board[src_sq], pc, src_sq, s);
+        if (compute_ray) {
+            processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, r_attacks, b_attacks, occupied_no_k, true);
+        } else {
+            incoming |= direct_sliders;
+        }
+
+        while (incoming != 0) {
+            const src_sq: u8 = @intCast(@ctz(incoming));
+            incoming &= incoming - 1;
+            addDirtyThreat(dts, put_piece, pos.board[src_sq], pc, src_sq, s);
+        }
     }
 }
 
