@@ -8,15 +8,17 @@
 // in a leaf, worker_layout can embed a *typed* Position/StateInfo in the Worker
 // block instead of an opaque [N]u8 region.
 //
-// Let Zig own the field order (plain-data structs). The only external
-// layout contracts are the fixed struct sizes (asserted below) that the Worker
-// block reserves a slot for, plus the board/side_to_move offsets the NNUE eval
-// reads (asserted against worker_layout in position.zig, which sees both).
+// StateInfo lets Zig own the field order (plain struct); Position is extern, pinning
+// `board` to offset 0 (see the comment on Position below). The only external layout
+// contracts are the fixed struct sizes (asserted below) that the Worker block reserves
+// a slot for -- the network reads board/side_to_move through a typed *const Position,
+// not a raw offset, so no other pin is needed.
 
 const std = @import("std");
 
 // Hold the per-move dirty state the NNUE incremental update consumes (Position.scratch_dp).
-pub const DirtyPiece = struct {
+// extern so it stays legal as a Position field once Position itself is extern (below).
+pub const DirtyPiece = extern struct {
     pc: u8,
     from: u8,
     to: u8,
@@ -73,7 +75,14 @@ pub const StateInfo = struct {
 // scratch (scratch_dp/scratch_dts) that completes the object. With the scratch
 // members the struct is the whole 1064-byte object, so the graph owns and
 // allocates a Position outright.
-pub const Position = struct {
+//
+// extern (declaration-order layout): `board` is Piece[64], exactly one cache line, and
+// upstream declares it first so piece_on() -- read by movepick scoring, SEE, gives_check,
+// legality and every make/unmake -- touches a single line. A plain struct lets Zig sort
+// fields by descending alignment instead, which pushed board to offset 972, straddling
+// two lines. Declaration order already sums to the contractual 1064 bytes with board
+// first (verified by the size assert below), so pinning it costs nothing.
+pub const Position = extern struct {
     board: [64]u8,
     by_type_bb: [8]u64,
     by_color_bb: [2]u64,
