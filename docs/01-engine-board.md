@@ -142,6 +142,42 @@ and flips the side.
 `DirtyPiece` / `DirtyThreats` scratch and computes `gives_check` itself, for
 callers that thread no accumulator delta.
 
+### Dirty threats
+
+`move_do_threats.updatePieceThreats` records the (attacker, attacked) pairs a
+piece landing on or leaving a square changes, as packed `u32` `DirtyThreat` words
+(`DirtyThreats.list_values`) the NNUE threat features later consume: bit 31 is
+the add/remove flag, bits 20-23 the attacker's piece, bits 16-19 the attacked
+piece, bits 8-15 the attacked square, bits 0-7 the attacker's square. Two calls
+per update — outgoing (PC on S threatens each square in `threatened`) and
+incoming (each square in `sliders`/`incoming` threatens PC on S) — plus
+`processSliders` for the discovered-threat half when `compute_ray` is set.
+
+At `use_avx512_threats` (AVX512VBMI + AVX512VBMI2 — `threats_write_avx512.zig`)
+both calls run through `writeMultipleDirties` instead of a `pop_lsb`-then-append
+scalar loop: the whole 64-square `Position.board` is one 64-byte vector register,
+`compress` (`llvm.x86.avx512.mask.compress.v64i8`) turns the threat bitboard into
+a packed square list in one instruction, `permute`
+(`llvm.x86.avx512.permvar.qi.512`, masked by a separate `@select`) looks up all 16
+pieces from the board register with no memory access, and one ternary-logic op
+(`llvm.x86.avx512.pternlog.d.512`, truth table 254 = `A|B|C`) ORs a fixed template
+word together with the two fields that vary (the square list and the piece
+lookup, each shifted into its packed position). The store writes all 16 words
+(64 bytes) unconditionally — `DirtyThreats.list_values` is `DIRTY_THREAT_MAX`
+(96) wide with a 16-slot tail past ordinary usage precisely so this cannot run
+off the end; only the first `popCount(mask)` words are meaningful, and
+`list_size` advances by exactly that many.
+
+This is not a drop-in replacement for the scalar loop alone: upstream also folds
+the direct sliders into the incoming mask unconditionally (the scalar path only
+folds them in on the `!compute_ray` branch) and tells `processSliders` not to
+re-emit them, so both call sites change shape together with the write. Verified
+against an independent scalar reference over 20 000 random boards/masks (not
+against `updatePieceThreats`/`writeMultipleDirties` itself, so the test cannot
+pass by both sides sharing a bug), and by the bench signature and `eval`/
+`search-parity` goldens being unchanged on every ISA tier — a wrong dirty-threat
+list changes the NNUE evaluation and therefore the node count.
+
 ## Bitboards
 
 A bitboard is a `u64`, one bit per square, index 0 = a1. `by_type_bb[0]` is total
