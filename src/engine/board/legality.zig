@@ -56,8 +56,10 @@ pub fn attackersTo(pos_ptr: *const Position, s: u8, occupied: u64) u64 {
     const bishop_queen = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
     const white_pawns = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
     const black_pawns = pos.by_color_bb[color_black] & pos.by_type_bb[pawn_pt];
-    return (bitboard.attacks(rook_pt, s, occupied) & rook_queen) |
-        (bitboard.attacks(bishop_pt, s, occupied) & bishop_queen) |
+    // Both ray sets in one pass, as upstream's attackers_to does (position.cpp:645).
+    const slider = bitboard.bothAttacks(s, occupied);
+    return (slider.rook & rook_queen) |
+        (slider.bishop & bishop_queen) |
         (pawnAttacks(color_black, s) & white_pawns) |
         (pawnAttacks(color_white, s) & black_pawns) |
         (bitboard.attacks(knight_pt, s, 0) & pos.by_type_bb[knight_pt]) |
@@ -161,8 +163,12 @@ pub fn seeGe(pos_ptr: *const Position, m: u16, threshold: i32) bool {
         }) {
             swap = 2538 - swap;
             occupied ^= lsbBb(bb);
-            attackers |= (bitboard.attacks(bishop_pt, to, occupied) & bishops_queens) |
-                (bitboard.attacks(rook_pt, to, occupied) & rooks_queens);
+            // Both ray sets in one pass, as upstream does here (position.cpp:1505). Only
+            // this branch needs both: the pawn/bishop branches above uncover diagonals
+            // alone and the rook branch files alone, so they stay single-ray, exactly
+            // as upstream leaves them.
+            const slider = bitboard.bothAttacks(to, occupied);
+            attackers |= (slider.bishop & bishops_queens) | (slider.rook & rooks_queens);
         } else {
             // Reverse the result on a king capture if the opponent still has attackers.
             return if ((attackers & ~pos.by_color_bb[stm]) != 0) (res ^ 1) != 0 else res != 0;
@@ -253,8 +259,9 @@ pub fn givesCheck(pos_ptr: *const Position, m: u16) bool {
             const our = pos.by_color_bb[stm];
             const our_qr = our & (pos.by_type_bb[queen_pt] | pos.by_type_bb[rook_pt]);
             const our_qb = our & (pos.by_type_bb[queen_pt] | pos.by_type_bb[bishop_pt]);
-            return ((bitboard.attacks(rook_pt, ksq, b) & our_qr) |
-                (bitboard.attacks(bishop_pt, ksq, b) & our_qb)) != 0;
+            // One pass for both, as upstream's gives_check does (position.cpp:796).
+            const slider = bitboard.bothAttacks(ksq, b);
+            return ((slider.rook & our_qr) | (slider.bishop & our_qb)) != 0;
         },
         else => { // castling
             const rto = relativeSquare(stm, if (to > from) 5 else 3); // SQ_F1 : SQ_D1

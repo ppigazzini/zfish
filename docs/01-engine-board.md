@@ -25,7 +25,7 @@ other leaves, so the board graph is a DAG with `position` at its root.
 | `score.zig` | `classify()` — score → non-decisive / tablebase / mate, in plies |
 | **Bitboards** | |
 | `bitboard_geom.zig` | pure square/file/rank math and the from-scratch attack generators used to build the tables |
-| `bitboard.zig` | the runtime magic-bitboard slider tables, leaper and pseudo-attack tables, `between` / `line` / `rayPass` |
+| `bitboard.zig` | the runtime magic-bitboard slider tables, the AVX2 dual-hyperbola-quintessence tables and `bothAttacks`, leaper and pseudo-attack tables, `between` / `line` / `rayPass` |
 | **Position** | |
 | `position.zig` | the facade: re-exports, `initRuntime()`, self-registration of the two snapshot hooks |
 | `position_query.zig` | read-only accessors (`sideToMove`, `gamePly`, `hasCheckers`, `wdlMaterial`) and the snapshot fills |
@@ -177,6 +177,44 @@ index, so both forms are collision-free and return the bit-identical attack set;
 the fixed-shift multiply/shift form stays for non-BMI2 targets. Because the pext
 fill never collides, the magic search on a BMI2 build validates on its first
 candidate, so it costs almost nothing at startup.
+
+### Dual hyperbola quintessence
+
+`bothAttacks(sq, occupied)` returns a `DualAttacks{ bishop, rook }` in one call, for
+the five sites that want both ray sets from the same square/occupancy: `attackersTo`
+(board), `setCheckInfo` (board), `updatePieceThreats` (board), `givesCheck`'s
+en-passant case and `seeGe`'s queen branch (both legality). Sites that want only one
+ray — `attackersToExist`'s short-circuit, `seeGe`'s pawn/bishop/rook branches — stay
+on plain `attacks()`, matching upstream exactly (`Position::attackers_to_exist` /
+`see_ge`'s non-queen branches keep a single `attacks_bb` too).
+
+At `use_avx2` (comptime, tracking upstream's `USE_DUAL_HYPERBOLA_QUINT`,
+`#elif defined(USE_AVX2)`) `bothAttacks` runs upstream's dual hyperbola quintessence
+instead of two magic lookups. Per square, `DualMagic` holds the file/diagonal/
+antidiagonal rays as one `@Vector(4, u64)` (the fourth lane always 0 — there is no
+fourth ray, it exists only so the vector has a clean width), plus `r = 2*squareBb(s)`
+and `rr = 2*squareBb(63-s)`. One pass computes all three rays together:
+`fwd = (occupied & masks) - r`, `rev = byteSwap(byteSwap(occupied & masks) - rr)`,
+`result = (fwd ^ rev) & masks` — the classic o-2r hyperbola-quintessence identity,
+run on 3 lanes at once instead of one ray at a time. The rank ray is the one
+direction the trick cannot fold in (a rank's 8 squares share a byte under a
+per-lane byte-reversal), so it comes from `rank_attacks[file][occupancy_byte]`, a
+256-entry-per-file lookup built once from `slidingAttack(ROOK, file, occ)` — `occ`
+zero-extends past bit 7, so the north/south rays run unblocked off the top of the
+`u64` and the `u8` truncation drops them, leaving only the rank bits. Below
+`use_avx2`, `bothAttacks` is exactly `{ attacksBb(bishop), attacksBb(rook) }` — two
+magic lookups, upstream's own non-dual path. Both forms are asserted bit-identical
+by a dedicated cross-check test (every square, every single-bit occupancy, 10 000
+random ones) and by the bench signature and `perft`, which are unchanged on every
+ISA tier: `dual_magics`/`rank_attacks` are built unconditionally (not just at
+`use_avx2`) so that test can call the AVX2 form directly on any tier.
+
+This is a port of upstream's algorithm SWITCH, not an addition: upstream does not
+compile its magic tables at all above sse41. This tree keeps them compiled at every
+tier regardless (`initDerivedTables` below still bootstraps `line`/`between`/
+`rayPass` through the magic path), trading upstream's footprint win for not touching
+that bootstrap — the runtime per-node dispatch, which is what the algorithm choice
+actually costs or saves, is unaffected either way.
 
 ### Derived geometry
 

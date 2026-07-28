@@ -87,8 +87,10 @@ pub fn updatePieceThreats(
     const occupied = pos.by_type_bb[0];
     const rook_queens = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
     const bishop_queens = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
-    const r_attacks = bitboard.attacks(rook_pt, s, occupied);
-    const b_attacks = bitboard.attacks(bishop_pt, s, occupied);
+    // Both ray sets in one pass, as upstream's update_piece_threats does (position.cpp:1203).
+    const slider = bitboard.bothAttacks(s, occupied);
+    const r_attacks = slider.rook;
+    const b_attacks = slider.bishop;
     const kings = pos.by_type_bb[king_pt];
     const occupied_no_k = occupied ^ kings;
     const sliders = (rook_queens & r_attacks) | (bishop_queens & b_attacks);
