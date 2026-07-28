@@ -72,7 +72,6 @@ pub const WorkerLayout = struct {
     // count, so the bench signature, all goldens and the callgrind instruction axis are identical
     // before and after. It shows up only on the cache axis.
     histories: worker_histories.WorkerHistories align(64), // the typed per-Worker history tables
-    limits: LimitsType,
     pv_idx: usize,
     pv_last: usize,
     nodes: u64,
@@ -81,12 +80,8 @@ pub const WorkerLayout = struct {
     sel_depth: i32,
     nmp_min_ply: i32,
     optimism: [2]i32,
-    root_pos: position_types.Position align(8), // the worker's root Position
-    root_state: position_types.StateInfo align(8), // its root StateInfo
-    root_moves: []root_move.RootMove, // the worker's rootMoves
     root_depth: i32,
     root_delta: i32,
-    last_iteration_pv: PVMoves,
     thread_idx: usize,
     numa_thread_idx: usize,
     numa_total: usize,
@@ -96,6 +91,23 @@ pub const WorkerLayout = struct {
     tb_config: TbConfig, // the root tablebase decision the in-search WDL probe is gated on
     threads: *ThreadPool,
     tt: *TranspositionTable,
+    // Force these four into the SAME (very high) alignment class as the arenas above, out of
+    // the plain align(8)/align(4) classes the per-node scalars above sort into. Upstream's
+    // Worker keeps big/cold members (the root Position, its history tables) at one end and
+    // its per-node scalars (nodes, sel_depth, optimism, ...) adjacent; a plain Zig struct
+    // sorted these four in among the scalars by their own natural alignment, splitting
+    // nodes/tb_hits/best_move_changes (needed every node) from sel_depth/optimism/root_depth/
+    // root_delta/reductions (also needed every node) by ~1.8 KB -- root_pos (1064B) and
+    // root_state (192B) alone sat between them. align(64) opts each field out of its natural
+    // class instead, so the scalar fields above and below this block close the gap. Costs
+    // nothing: none of these four is read inside the node recursion (root_pos/root_state are
+    // read once per search via rootPosPtr/rootStatePtr; root_moves and last_iteration_pv are
+    // root/iteration-boundary only), so their own placement is free to move.
+    root_pos: position_types.Position align(64), // the worker's root Position
+    root_state: position_types.StateInfo align(64), // its root StateInfo
+    root_moves: []root_move.RootMove align(64), // the worker's rootMoves
+    limits: LimitsType align(64),
+    last_iteration_pv: PVMoves align(64),
     accumulator_stack: [accumulator_stack_size]u8 align(64),
     refresh_table: [refresh_table_bytes]u8 align(64),
 
