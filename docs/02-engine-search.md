@@ -35,6 +35,7 @@ function-pointer seams. For the zones and the module graph, see
 | **Move ordering** | |
 | `movepick.zig` | The staged generator: `initMainStage`/`initProbcutStage`, `nextMove`, the stage selectors, `partialInsertionSort` |
 | `movepick_score.zig` | `MovePickerState`/`MovePickerContext`/`SortEntry`, `scoreList`, `scoreValue` |
+| `movepick_sort_avx512.zig` | `MoveSorter` — the AVX512F+AVX512DQ vector fast path for `partialInsertionSort`'s leading run |
 | `movepick_history.zig` | The typed row/page views over the history tables and their read helpers |
 | `movepick_snapshot.zig` | The read-only board queries and SEE shared by scoring and pruning |
 | **Tables** | |
@@ -188,6 +189,21 @@ entries at or above a depth-scaled limit, leaving the tail unordered — so
 `good_quiet` walks the sorted head and `bad_quiet` sweeps the remainder after the bad
 captures. `skip_quiets`, set by the caller's move-count pruning, short-circuits both
 quiet stages.
+
+At `use_avx512_sort` (AVX512F + AVX512DQ — `movepick_sort_avx512.zig`),
+`partialInsertionSort` sorts its leading run of up to 16 qualifying moves in two
+parallel 512-bit registers (`MoveSorter.sorted_moves` / `.sorted_values`) instead of
+shifting elements one at a time: each insertion is one masked-expand instruction per
+register (`llvm.x86.avx512.mask.expand.v16i32`, gated by a mask built from
+`llvm.x86.avx512.kadd.w`), and `write` reassembles the 8-byte `SortEntry` pairs with
+`llvm.x86.avx512.vpermi2var.d.512`. The scalar loop finishes anything past the
+16-move cap or below the AVX512DQ tier, and the two must agree bit-for-bit — a
+different tie-break order changes the move loop and therefore the search tree, which
+is why `SortEntry` is `extern` (pinning `raw_move`+`reserved` as the 4-byte "move"
+lane at offset 0, `value` as the lane at offset 4 — a plain struct sorts by
+descending alignment and puts `value` first) and why the module carries its own
+cross-check test against an independent scalar reference, not just against
+`partialInsertionSort` itself.
 
 `movepick_score.scoreList` scores a whole generated list in one pass, specialized at
 comptime on the kind (`captures` / `quiets` / `evasions`):

@@ -1887,6 +1887,7 @@ pub fn build(b: *std.Build) void {
         .{ .path = "src/engine/eval/nnue_weight_storage.zig", .deps = &.{"page_alloc"} },
         .{ .path = "src/engine/eval/nnue_inference.zig", .deps = &.{ "page_alloc", "nnue_accumulator", "position_types" } },
         .{ .path = "src/engine/search/movepick_score.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types", "shared_history_types" } },
+        .{ .path = "src/engine/search/movepick_sort_avx512.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types", "shared_history_types" } },
         .{ .path = "src/engine/search/search_control.zig", .deps = &.{ "time_source", "search_ctx", "search_types" } },
         .{ .path = "src/shell/engine/control.zig", .deps = &.{ "libc", "worker_layout", "engine_object", "tt", "thread", "option", "tablebase", "engine_nnue" } },
     }) |dt| {
