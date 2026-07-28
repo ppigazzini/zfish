@@ -101,7 +101,7 @@ pool and nulls the wrapper, so a later `destroy()` frees nothing.
 
 ### do_move / undo_move
 
-`doMove(pos, m, new_st, gives_check, dp, dts)` copies the carried prefix of the
+`doMove(pos, m, new_st, gives_check, dp, dts, bank)` copies the carried prefix of the
 current `StateInfo` into `new_st` field by field (not as a byte prefix), links
 `new_st.previous = pos.st`, and re-points `pos.st` at it. It then incrementally
 updates the keys and material, mutates the bitboards and board through the
@@ -110,6 +110,12 @@ capturable, recomputes `checkers_bb` and the check info, flips `side_to_move`,
 and walks the `previous` chain to fill `st.repetition`. The trailing block
 (`checkers_bb`, `blockers_for_king`, `pinners`, `check_squares`, `repetition`) is
 recomputed, never copied.
+
+The optional `bank: ?PrefetchBank` is issued right after every key this move touches
+is final, before the checkers scan / `setCheckInfo` / repetition walk that follow it —
+so those give the six prefetch lines (the exact-key TT cluster, the four correction
+bundles, the pawn-history row) free lead time before anything reads them. `null` for
+every caller that is not the real search move-maker (see [02-engine-search.md](02-engine-search.md)).
 
 `undoMove(pos, m)` reverses the board mutation and then simply pops
 `pos.st = pos.st.previous`. The popped record is still owned by the state list, so

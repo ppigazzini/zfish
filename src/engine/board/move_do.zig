@@ -3,7 +3,8 @@
 // Own the mutating side of the board: applying and reverting moves on a live
 // Position -- do/undo-null, doMove/undoMove, the board+DirtyThreats mutators, and
 // putPiece. Every dependency is a leaf (board_core primitives, the zobrist keys,
-// state_setup.setCheckInfo, legality.attackersTo), so move_do imports no
+// state_setup.setCheckInfo, legality.attackersTo, plus the tt_types/shared_history_types/
+// worker_histories POD leaves doMove's optional PrefetchBank reads), so move_do imports no
 // position.zig -- no cycle. position.zig re-exports the public entry points
 // (doMove/undoMove/doNullMove/undoNullMove/putPiece) so the search + FEN-setup
 // callers resolve through the position surface.
@@ -16,6 +17,9 @@ const state_setup = @import("state_setup");
 const legality = @import("legality");
 const move_do_threats = @import("move_do_threats.zig");
 const position_types = @import("position_types");
+const tt_types = @import("tt_types");
+const shared_history_types = @import("shared_history_types");
+const worker_histories = @import("worker_histories");
 
 const Position = position_types.Position;
 const StateInfo = position_types.StateInfo;
@@ -172,6 +176,52 @@ fn doCastlingDo(pos: *Position, us: u8, from: u8, to_in: u8, dp: *DirtyPiece, dt
     return .{ .to = to, .rfrom = rfrom, .rto = rto };
 }
 
+// Compute the EXACT rule50-adjusted Zobrist key a completed move leaves behind (upstream
+// Position::adjust_key50<AfterMove=true>, position.h:322). Lives in the board zone -- not
+// search, which would cycle back into it -- because upstream keeps it on Position itself;
+// search_qsearch.adjustKey50 re-exports this so its existing callers (search_main.zig,
+// search_driver.zig) keep resolving unchanged. Threshold 14 (post-move rule50) is one past
+// prefetchKey's pre-move threshold of 13, matching the AfterMove template parameter.
+pub inline fn adjustKey50(pos: *const Position) u64 {
+    const k = pos.st.key;
+    if (pos.st.rule50 < 14) return k;
+    const seed: u64 = @intCast(@divTrunc(pos.st.rule50 - 14, 8));
+    return k ^ (seed *% 6364136223846793005 +% 1442695040888963407);
+}
+
+// Mirror tt.firstEntryIndex's mul-hi64 sharding without importing tt.zig itself: tt.zig
+// depends on worker_layout (for its resize/clear paths), so an import here would reach
+// back toward the board zone through it. The formula is one line and load-bearing only in
+// the sense that it must keep matching tt.zig's -- both are asserted bit-identical by the
+// bench signature, which reads the real probe through tt.firstEntryIndex.
+inline fn ttFirstEntryIndex(key: u64, cluster_count: usize) usize {
+    return @intCast((@as(u128, key) * @as(u128, cluster_count)) >> 64);
+}
+
+// Bundle the prefetch-only handles doMove issues from inside the make, mirroring upstream's
+// `Position::do_move(m, newSt, givesCheck, tt, historyBank)` (position.cpp:987). Null means
+// "not a search make": doMoveState (perft, the root builder, tablebase walks, tests) and the
+// qsearch TT-move verification make (search_acc.verifyDoMove, matching upstream's own
+// no-prefetch overload at search.cpp:882) all pass null and skip the six prefetches below.
+// Only the real search move-maker (search_acc.doMoveAcc) passes one.
+pub const PrefetchBank = struct {
+    table: [*]tt_types.TtCluster,
+    cluster_count: usize,
+    shared: *shared_history_types.SharedHistories,
+};
+
+inline fn issuePrefetches(pos: *const Position, bank: PrefetchBank) void {
+    const hint: std.builtin.PrefetchOptions = .{ .rw = .read, .locality = 3, .cache = .data };
+    @prefetch(&bank.table[ttFirstEntryIndex(adjustKey50(pos), bank.cluster_count)], hint);
+    const mask = bank.shared.size_minus1;
+    @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.pawn_key & mask))], hint);
+    @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.minor_piece_key & mask))], hint);
+    @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.non_pawn_key[0] & mask))], hint);
+    @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.non_pawn_key[1] & mask))], hint);
+    const pawn_idx: usize = @intCast(pos.st.pawn_key & @as(u64, bank.shared.pawn_hist_size_minus1));
+    @prefetch(bank.shared.pawn_data + pawn_idx * worker_histories.hist_pieceto, hint);
+}
+
 pub fn doMove(
     pos_ptr: *Position,
     m: u16,
@@ -179,6 +229,7 @@ pub fn doMove(
     gives_check: u8,
     dp_ptr: *DirtyPiece,
     dts_ptr: *DirtyThreats,
+    bank: ?PrefetchBank,
 ) void {
     const psq: [*]const u64 = &zobrist.zob_psq;
     const enpassant: [*]const u64 = &zobrist.zob_enpassant;
@@ -320,6 +371,18 @@ pub fn doMove(
     }
 
     pos.st.key = k;
+
+    // Prefetch the child's TT cluster on its EXACT key, plus its four correction bundles
+    // and its pawn-history row, from the point every key this move touches (material_key,
+    // pawn_key, minor_piece_key, non_pawn_key are all already final above) is settled --
+    // mirroring upstream's do_move (position.cpp:1006-1010). The checkers scan,
+    // setCheckInfo and the repetition walk still run below, which is free lead time for
+    // these lines to arrive by the time the next node's probe/eval reads them. The
+    // pre-make APPROXIMATE-key TT hint (search_acc.doMoveAcc, upstream search.cpp:642) is
+    // issued separately and earlier, and is deliberately wrong for castling/en passant/
+    // promotion; this one is exact.
+    if (bank) |b| issuePrefetches(pos, b);
+
     pos.st.captured_piece = captured;
     pos.st.checkers_bb = if (gives_check != 0)
         attackersTo(pos_ptr, kingSquare(pos, them), pos.by_type_bb[0]) & pos.by_color_bb[us]

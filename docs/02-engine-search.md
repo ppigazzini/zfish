@@ -257,21 +257,35 @@ of `TtCluster`, each holding `cluster_size` `TtEntry` records plus padding. An e
 packs a 16-bit key, depth, a generation/bound/is-PV byte, the move, the value, and the
 static eval. `probeTable` returns the hit data *and* a writer pointer — the entry to
 replace, chosen by depth and relative age — so a node probes once and stores through
-the same slot. `adjustKey50` (`search_qsearch.zig`) perturbs the key near the 50-move
-boundary so positions differing only in rule50 hash apart. `doMoveAcc` issues a
-`tt.prefetch` for the child cluster before making the move — keyed by
-`move_do.prefetchKey`, an approximate post-move key (from/to/captured psq toggles, side
-flip, and the rule50 mix; castling/en-passant/promotion left wrong, so those rare moves
-prefetch an unused line) reached through the same `firstEntryIndex` the probe uses — so
-the miss latency hides behind the make and accumulator push. Values are mate-distance
-corrected on the way in and out (`search.valueToTt` / `valueFromTt`). The generation
-advances once per search in `ssTmInit`; `entryPenalize` decrements a stored depth when
-a TT entry's window bound is the only reason a cutoff was refused. That decrement — and the
-secondary aging in `entrySave` — **saturates at zero** (`depthSaturatingSub`), never wraps.
-The table is shared across all workers and accessed without locks, so the subtraction is
-racy by design: `depth8` is a `u8` and `depth8 != 0` is the occupancy test, so a wrapping
-decrement would turn a penalised shallow entry into the deepest entry in the table and make
-a cleared slot read as occupied. The clamp is what makes the lock-free write safe.
+the same slot. `adjustKey50` (`board/move_do.zig`, re-exported as `search_qsearch.adjustKey50`
+for its existing callers) perturbs the key near the 50-move boundary so positions
+differing only in rule50 hash apart; it lives in the board zone because `doMove` needs it
+too (below), matching upstream keeping `adjust_key50` on `Position` itself.
+
+Two TT prefetches bracket every move, at different precision because they run at
+different points. `doMoveAcc` issues a `tt.prefetch` for the child cluster *before* making
+the move — keyed by `move_do.prefetchKey`, an approximate post-move key (from/to/captured
+psq toggles, side flip, and the rule50 mix; castling/en-passant/promotion left wrong, so
+those rare moves prefetch an unused line) reached through the same `firstEntryIndex` the
+probe uses. `doMove` itself then issues a second, EXACT round of prefetches once the
+child's key and correction-history keys are all final — `pos.st.key` (via `adjustKey50`)
+for the TT cluster, plus the four correction bundles (`pawn_key`, `minor_piece_key`,
+`non_pawn_key[0]`, `non_pawn_key[1]`) and the pawn-history row (`pawn_key` again, into
+`SharedHistories.pawn_data`) — with the checkers scan, `setCheckInfo` and the repetition
+walk still to run as free lead time before any of these lines are read. This second round
+takes an optional `move_do.PrefetchBank` (table + cluster count + the shared-history
+pointer): `null` for every non-search make (`doMoveState` — perft, root building,
+tablebase walks, tests — and `search_acc.verifyDoMove`'s TT-move verification make, which
+is unmade before any node runs on it); only `doMoveAcc`, the real search move-maker,
+builds one. Values are mate-distance corrected on the way in and out (`search.valueToTt` /
+`valueFromTt`). The generation advances once per search in `ssTmInit`; `entryPenalize`
+decrements a stored depth when a TT entry's window bound is the only reason a cutoff was
+refused. That decrement — and the secondary aging in `entrySave` — **saturates at zero**
+(`depthSaturatingSub`), never wraps. The table is shared across all workers and accessed
+without locks, so the subtraction is racy by design: `depth8` is a `u8` and `depth8 != 0`
+is the occupancy test, so a wrapping decrement would turn a penalised shallow entry into
+the deepest entry in the table and make a cleared slot read as occupied. The clamp is what
+makes the lock-free write safe.
 
 ## Time management and stopping
 

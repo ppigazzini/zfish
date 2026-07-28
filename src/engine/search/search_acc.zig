@@ -19,6 +19,7 @@ const position_types = @import("position_types");
 const search_types = @import("search_types");
 const search_ctx = @import("search_ctx");
 const tt = @import("tt");
+const shared_history = @import("shared_history");
 
 const Position = position_types.Position;
 const StateInfo = position_types.StateInfo;
@@ -106,7 +107,14 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     // in the engine.
     @atomicStore(u64, ctx.nodes, @atomicLoad(u64, ctx.nodes, .monotonic) +% 1, .monotonic);
     const out = nnue_acc.stackPush(ctx.acc_stack);
-    doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats);
+    // The real search make: pass a PrefetchBank so doMove issues the exact-key TT and
+    // correction/pawn-history prefetches from inside the make (move_do.issuePrefetches).
+    const bank = move_do.PrefetchBank{
+        .table = ctx.table,
+        .cluster_count = ctx.cluster_count,
+        .shared = shared_history.sharedOf(search_common.workerHistories(ctx.worker)),
+    };
+    doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats, bank);
     const dp: *const DirtyPiece = out.dirty_piece;
     ss.current_move = move;
     setContHist(ctx.worker, ss_ptr, @intFromBool(ss.in_check), @intFromBool(capture), dp.pc, moveTo(move));
@@ -122,11 +130,14 @@ pub inline fn undoMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16) void 
 // gives_check is computed here, a fresh DirtyThreats list and a throwaway
 // DirtyPiece are passed as scratch (no accumulator slot is pushed, so the dirty
 // state doMove writes is never consumed). undo is the plain Position-level unmake.
+// No PrefetchBank: this make is immediately unmade without a node ever running on the
+// resulting position, matching upstream's own no-prefetch overload for this exact
+// verification make (search.cpp:882).
 pub inline fn verifyDoMove(pos_ptr: *Position, move: u16, st_ptr: *StateInfo) void {
     var dp: DirtyPiece = undefined;
     var dts: DirtyThreats = undefined;
     dts.list_size = 0;
-    doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts);
+    doMove(pos_ptr, move, st_ptr, @intFromBool(givesCheck(pos_ptr, move)), &dp, &dts, null);
 }
 
 pub inline fn verifyUndoMove(pos_ptr: *Position, move: u16) void {
