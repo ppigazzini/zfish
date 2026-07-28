@@ -73,6 +73,7 @@ const piece_values = [_]i32{
 };
 
 const movepick_score = @import("movepick_score.zig");
+const movepick_sort_avx512 = @import("movepick_sort_avx512.zig");
 pub const SortEntry = movepick_score.SortEntry;
 pub const MovePickerState = movepick_score.MovePickerState;
 pub const MovePickerContext = movepick_score.MovePickerContext;
@@ -99,6 +100,23 @@ pub fn partialInsertionSort(entries: [*]SortEntry, count: usize, limit: i32) voi
 
     var sorted_end: usize = 0;
     var scan: usize = 1;
+
+    // Vector pass over the leading run, then the scalar loop below finishes the tail --
+    // upstream's shape at movepick.cpp:114. entries[scan] is left untouched by the break
+    // below (move_sorter_insert/sorted_end bump run AFTER the fullness check), so the
+    // scalar loop picks up exactly where the vector pass left off.
+    if (comptime movepick_sort_avx512.use_avx512_sort) {
+        var sorter = movepick_sort_avx512.MoveSorter.init(entries[0]);
+        while (scan < count) : (scan += 1) {
+            if (entries[scan].value >= limit) {
+                if (sorted_end + 1 >= movepick_sort_avx512.max) break; // sorter full
+                sorter.insert(entries[scan]);
+                sorted_end += 1;
+                entries[scan] = entries[sorted_end];
+            }
+        }
+        sorter.write(entries, sorted_end + 1);
+    }
 
     while (scan < count) : (scan += 1) {
         if (entries[scan].value >= limit) {

@@ -109,11 +109,23 @@ pub const ScoreInput = struct {
     low_ply_bonus: i32,
 };
 
-pub const SortEntry = struct {
+// extern to pin declaration order: raw_move+reserved form the 4-byte "move" lane at
+// offset 0, value the 4-byte lane at offset 4 -- matching upstream's ExtMove{move,value}
+// and what movepick_sort_avx512's vectorized reassembly assumes. A plain struct sorts by
+// descending alignment (i32 before u16), which put value at offset 0 -- harmless while
+// every reader used named fields, but wrong for the SIMD path, which loads/stores the
+// two 4-byte halves by position.
+pub const SortEntry = extern struct {
     raw_move: u16,
     reserved: u16,
     value: i32,
 };
+
+comptime {
+    std.debug.assert(@offsetOf(SortEntry, "raw_move") == 0);
+    std.debug.assert(@offsetOf(SortEntry, "value") == 4);
+    std.debug.assert(@sizeOf(SortEntry) == 8);
+}
 
 pub const MovePickerState = struct {
     tt_move_raw: u16,
