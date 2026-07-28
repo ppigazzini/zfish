@@ -430,6 +430,21 @@ available in CI, so it never runs there.
   Attribute such a win to cache-set conflict unless a control says otherwise: aligning
   the tables *inside* an already-aligned block bought 0.13%, so line straddling was not
   the mechanism — relocating the block was.
+- **A plain struct's field order is not yours to reason about, and a big embedded array
+  can split a scalar cluster you never touched.** `WorkerLayout` interleaved `nodes` /
+  `tb_hits` / `best_move_changes` (written every node) with `sel_depth` / `optimism` /
+  `root_depth` / `root_delta` (read every node) — not because either group moved, but
+  because Zig's descending-alignment sort placed `root_pos` (1064 B) and `root_state`
+  (192 B) between them, ~1.8 KB of nothing either scalar cluster needs. Giving `root_pos`,
+  `root_state`, `root_moves`, `limits` and `last_iteration_pv` their own `align(64)`
+  (matching the arenas' existing tier) opts each out of the plain `align(8)`/`align(4)`
+  classes the scalars sort into, so the two scalar clusters close the gap without moving
+  either by name. Verified by reading `@offsetOf` for every field off a built binary's
+  DWARF info, not by inspecting source order — a plain struct's declared order and its
+  memory order are unrelated facts. No measured cycle claim is attached (mcfish's own
+  port of this exact fix reported the same: direction not established at its sample
+  size) — this is a fidelity fix, done on the same footing as the `histories` alignment
+  above: it makes the layout deterministic instead of a compiler ordering choice.
 - **TBD — the LL instruction-miss gap, and what is not known about it.** On the
   search-only profile above, zfish takes ~3.7× the oracle's LL instruction misses
   (166 385 vs 45 109) while taking *fewer* L1I misses (4.29 M vs 5.58 M), and neither
