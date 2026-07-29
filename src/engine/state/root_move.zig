@@ -10,8 +10,9 @@ pub const value_infinite = 32001; // VALUE_INFINITE
 pub const Move = u16; // raw Move word
 pub const move_none: Move = 0;
 
-// Hold PVMoves: a fixed Move[MAX_PLY+1] buffer plus a length.
-pub const PVMoves = struct {
+// Hold PVMoves: a fixed Move[MAX_PLY+1] buffer plus a length. extern so it stays legal
+// as a field of the extern RootMove below.
+pub const PVMoves = extern struct {
     moves: [max_ply + 1]Move,
     length: usize,
 
@@ -46,7 +47,13 @@ comptime {
 // previousPV) at 504 each, plus the scalar head.
 pub const root_move_footprint: usize = 1056;
 
-pub const RootMove = struct {
+// extern, in upstream's exact declared order (search.h:126-153): effort, then all the
+// hot per-sort scalars together, then pv/previousPV last. A plain struct sorts by
+// descending alignment, which put the two ~504B PVMoves fields in the SAME alignment
+// class as `effort` (both align-8), floating `effort` away from the score cluster
+// upstream declares it beside -- the same "hot scalar pulled into a cold field's
+// alignment class" bug already found and fixed in WorkerLayout.
+pub const RootMove = extern struct {
     effort: u64 = 0,
     score: i32 = -value_infinite,
     previous_score: i32 = -value_infinite,
@@ -55,18 +62,20 @@ pub const RootMove = struct {
     uci_score: i32 = -value_infinite,
     score_lowerbound: bool = false,
     score_upperbound: bool = false,
+    // Mirror upstream's `bool previousScoreExact` (search.h:149), declared beside the
+    // other two bound flags as upstream does. Gates the aborted-MultiPV score repair
+    // (search.cpp:456).
+    previous_score_exact: bool = false,
     sel_depth: i32 = 0,
     tb_rank: i32 = 0,
     tb_score: i32 = 0,
-    pv: PVMoves,
-    // Mirror upstream's `PVMoves pv, previousPV;` (search.h:153) and
-    // `bool previousScoreExact` (search.h:149). Both were absent, and their absence is
-    // what collapsed the two distinct PV memories into one: the follow-PV heuristic needs
+    // Mirror upstream's `PVMoves pv, previousPV;` (search.h:153), placed last as
+    // upstream declares them. Both were absent once, and their absence is what
+    // collapsed the two distinct PV memories into one: the follow-PV heuristic needs
     // THIS line's PV from the previous iteration (rootMoves[pvIdx].previousPV), which
-    // rootMoves[0].pv cannot supply once MultiPV > 1. previous_score_exact additionally
-    // gates the aborted-MultiPV score repair (search.cpp:456).
+    // rootMoves[0].pv cannot supply once MultiPV > 1.
+    pv: PVMoves,
     previous_pv: PVMoves,
-    previous_score_exact: bool = false,
 
     // Push m onto the pv in init(m).
     pub fn init(m: Move) RootMove {
@@ -104,9 +113,10 @@ pub const RootMove = struct {
 };
 
 comptime {
-    // Let Zig own the field order, but keep the element size equal to the strided
-    // rootMoves vector element. The footprint includes previousPV and previousScoreExact,
-    // which upstream's RootMove also carries; the assert catches a dropped field.
+    // extern pins declaration order to upstream's; this assert keeps the element size
+    // equal to the strided rootMoves vector element regardless. The footprint includes
+    // previousPV and previousScoreExact, which upstream's RootMove also carries; the
+    // assert catches a dropped field.
     std.debug.assert(@sizeOf(RootMove) == root_move_footprint);
 }
 
