@@ -382,6 +382,17 @@ pub fn ppAppendChanged(
     return .{ .removed = removed_len, .added = added_len };
 }
 
+// Re-export the AVX512VBMI+VBMI2 vector fast path for the refresh-time HalfKAv2_hm
+// index write (nnue_feature_write_avx512.zig), so nnue_acc_update.zig -- which
+// already imports this module by name -- reaches it without a second relative import
+// of the same file: nnue_feature_write_avx512.zig also relative-imports
+// nnue_feature_luts.zig below, and Zig requires every relative-imported file belong
+// to exactly one module, so nnue_acc_update.zig (a different module, "nnue_accumulator")
+// cannot import it directly without that file ending up claimed by two modules at once.
+const nnue_feature_write_avx512 = @import("nnue_feature_write_avx512.zig");
+pub const use_avx512_nnue_feature = nnue_feature_write_avx512.use_avx512_nnue_feature;
+pub const writeIndicesAvx512 = nnue_feature_write_avx512.writeIndices;
+
 // Re-import the split-out LUT tables and shared constants (nnue_feature_luts.zig).
 const luts = @import("nnue_feature_luts.zig");
 const piece_square_index = luts.piece_square_index;

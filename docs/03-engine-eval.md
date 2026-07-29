@@ -19,6 +19,7 @@ for the same position.
 | `nnue_hash.zig` | the net-identity hashes: `hashBytes` (MurmurHash2-64A), the feature-transformer / architecture / network hash values, and the content hashes |
 | **feature transformer** | |
 | `nnue_feature.zig` | feature indexing for both feature sets: `halfMakeIndex`, `fullMakeIndex`, the changed/active index lists, and the refresh predicates |
+| `nnue_feature_write_avx512.zig` | `writeIndices` — the AVX512VBMI+VBMI2 vector fast path for the refresh-time HalfKA removed/added index write |
 | `nnue_feature_bb.zig` | the bitboard/attack math and comptime index tables `nnue_feature.zig` builds on |
 | `nnue_ft.zig` | the `FeatureTransformer` weight-blob layout: byte offsets plus the four typed weight accessors |
 | **accumulator** | |
@@ -225,7 +226,18 @@ accumulation, the PSQT values, and the board (plus its occupancy bitboard) that
 produced them. `refreshCombined` diffs the entry's stored board against the current
 one with two 32-byte vector compares into a changed-square bitboard, splits it into
 removed/added HalfKA rows by the cached and current occupancy (upstream's
-`get_changed_pieces` shape), collects every active threat row (`fullAppendActive`,
+`get_changed_pieces` shape). At `nnue_feature.use_avx512_nnue_feature` (AVX512VBMI +
+AVX512VBMI2 — `nnue_feature_write_avx512.zig`) both removed/added index lists are
+written in one vector pass, as upstream's `HalfKAv2_hm::write_indices` does: since
+`piece_square_index` and `king_buckets` are both multiples of 64 while `orient` and
+the square only ever use the low 6 bits, no carry crosses bit 6, so
+`(square ^ orient) + psi[pc] + bucket == square ^ (psi[pc] + bucket + orient)` —
+`compress` packs the changed squares/pieces into 32-lane vectors, a 16-bit
+`permutexvar` gathers each active feature's `psi[pc] + bucket + orient` from a
+per-piece table built once per call, and one XOR against the compressed squares
+produces every index at once. Below that tier, the scalar loop calls
+`halfMakeIndex` per changed square, upstream's own non-vector path. `refreshCombined`
+then collects every active threat row (`fullAppendActive`,
 with each attacker's targets pre-restricted to the piece types its map row can
 index — upstream's `pawnTargets`/`minorSliderTargets`/`queenTargets`) plus every
 active pawn-pair row (`ppAppendActive`) onto the same list, and applies everything

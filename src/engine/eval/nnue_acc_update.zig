@@ -166,27 +166,44 @@ fn refreshCombined(
     // whose piece changed type or color lands in both lists. Each pop_lsb loop visits
     // squares in ascending order, so both lists match the retired per-square scan
     // byte-for-byte.
-    var removed_bb = changed_bb & cacheEntryPieceBb(entry_ptr);
-    var added_bb = changed_bb & pos.by_type_bb[0];
-    while (removed_bb != 0) : (removed_bb &= removed_bb - 1) {
-        const sq: u8 = @intCast(@ctz(removed_bb));
-        removed[removed_len] = nnue_feature.halfMakeIndex(.{
-            .perspective = perspective,
-            .square = sq,
-            .piece = entry_pieces[sq],
-            .king_square = king_square,
-        });
-        removed_len += 1;
-    }
-    while (added_bb != 0) : (added_bb &= added_bb - 1) {
-        const sq: u8 = @intCast(@ctz(added_bb));
-        added[added_len] = nnue_feature.halfMakeIndex(.{
-            .perspective = perspective,
-            .square = sq,
-            .piece = pos.board[sq],
-            .king_square = king_square,
-        });
-        added_len += 1;
+    const removed_bb = changed_bb & cacheEntryPieceBb(entry_ptr);
+    const added_bb = changed_bb & pos.by_type_bb[0];
+    if (comptime nnue_feature.use_avx512_nnue_feature) {
+        const result = nnue_feature.writeIndicesAvx512(
+            entry_pieces,
+            &pos.board,
+            removed_bb,
+            added_bb,
+            perspective,
+            king_square,
+            &removed,
+            &added,
+        );
+        removed_len = result.removed_len;
+        added_len = result.added_len;
+    } else {
+        var removed_scan = removed_bb;
+        var added_scan = added_bb;
+        while (removed_scan != 0) : (removed_scan &= removed_scan - 1) {
+            const sq: u8 = @intCast(@ctz(removed_scan));
+            removed[removed_len] = nnue_feature.halfMakeIndex(.{
+                .perspective = perspective,
+                .square = sq,
+                .piece = entry_pieces[sq],
+                .king_square = king_square,
+            });
+            removed_len += 1;
+        }
+        while (added_scan != 0) : (added_scan &= added_scan - 1) {
+            const sq: u8 = @intCast(@ctz(added_scan));
+            added[added_len] = nnue_feature.halfMakeIndex(.{
+                .perspective = perspective,
+                .square = sq,
+                .piece = pos.board[sq],
+                .king_square = king_square,
+            });
+            added_len += 1;
+        }
     }
 
     var active: nnue_feature.FullAppendResult = undefined;
