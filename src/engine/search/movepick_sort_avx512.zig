@@ -38,10 +38,30 @@ extern fn @"llvm.x86.avx512.mask.expand.v16i32"(a: V16i32, src: V16i32, mask: V1
 extern fn @"llvm.x86.avx512.kadd.w"(a: V16mask, b: V16mask) V16mask;
 extern fn @"llvm.x86.avx512.vpermi2var.d.512"(a: V16i32, idx: V16i32, b: V16i32) V16i32;
 
+// Compose and decompose the two 4-byte lanes field by field rather than @bitCast'ing
+// the struct: raw_move+reserved (offset 0) is the "move" lane, value (offset 4) the
+// "value" lane, and SortEntry is extern to pin exactly that order. Zig 0.17 rejects
+// @bitCast on an extern struct outright -- its padding bits are not defined by the
+// language even where a comptime assert proves the layout has none -- so the explicit
+// form is what compiles on both supported compilers. It costs nothing: the shift/or
+// pair folds into the same 8-byte move the bitcast emitted.
+comptime {
+    // The lane packing below is the little-endian byte order; every tier this file
+    // gates on is x86-64, but assert it rather than leave it implied.
+    std.debug.assert(builtin.cpu.arch.endian() == .little);
+}
+
 inline fn entryLanes(e: SortEntry) [2]i32 {
-    // raw_move+reserved (offset 0) is the "move" lane, value (offset 4) the "value"
-    // lane -- SortEntry is extern specifically so this bitcast is well-defined.
-    return @bitCast(e);
+    const move_lane: u32 = @as(u32, e.raw_move) | (@as(u32, e.reserved) << 16);
+    return .{ @bitCast(move_lane), e.value };
+}
+
+inline fn entryFromPair(pair: u64) SortEntry {
+    return .{
+        .raw_move = @truncate(pair),
+        .reserved = @truncate(pair >> 16),
+        .value = @bitCast(@as(u32, @truncate(pair >> 32))),
+    };
 }
 
 pub const MoveSorter = struct {
@@ -100,7 +120,7 @@ pub const MoveSorter = struct {
             const store_count = @min(count - offset, 8);
             var j: usize = 0;
             while (j < store_count) : (j += 1) {
-                entries[offset + j] = @bitCast(packed_pairs[j]);
+                entries[offset + j] = entryFromPair(packed_pairs[j]);
             }
         }
     }
