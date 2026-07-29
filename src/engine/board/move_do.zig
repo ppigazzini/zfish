@@ -210,7 +210,7 @@ pub const PrefetchBank = struct {
     shared: *shared_history_types.SharedHistories,
 };
 
-inline fn issuePrefetches(pos: *const Position, bank: PrefetchBank) void {
+inline fn issuePrefetches(pos: *const Position, pc: u8, to: u8, bank: PrefetchBank) void {
     const hint: std.builtin.PrefetchOptions = .{ .rw = .read, .locality = 3, .cache = .data };
     @prefetch(&bank.table[ttFirstEntryIndex(adjustKey50(pos), bank.cluster_count)], hint);
     const mask = bank.shared.size_minus1;
@@ -218,8 +218,15 @@ inline fn issuePrefetches(pos: *const Position, bank: PrefetchBank) void {
     @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.minor_piece_key & mask))], hint);
     @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.non_pawn_key[0] & mask))], hint);
     @prefetch(&bank.shared.corr_data[@as(usize, @intCast(pos.st.non_pawn_key[1] & mask))], hint);
+    // The specific [pc][to] slot the next node's quiet-history update reads
+    // (history.zig:56: `pawnEntryRow(...)[pc * hist_square_nb + to]`), not the row
+    // base -- upstream prefetches the same slot (position.cpp:1014:
+    // `&history->pawn_entry(*this)[pc][to]`). The row is 1024 entries (2 KiB, 32
+    // lines); prefetching offset 0 instead of this slot lands on the wrong line for
+    // any (pc, to) whose slot index isn't within the first line.
     const pawn_idx: usize = @intCast(pos.st.pawn_key & @as(u64, bank.shared.pawn_hist_size_minus1));
-    @prefetch(bank.shared.pawn_data + pawn_idx * worker_histories.hist_pieceto, hint);
+    const pawn_slot = pawn_idx * worker_histories.hist_pieceto + @as(usize, pc) * 64 + to;
+    @prefetch(bank.shared.pawn_data + pawn_slot, hint);
 }
 
 pub fn doMove(
@@ -373,15 +380,17 @@ pub fn doMove(
     pos.st.key = k;
 
     // Prefetch the child's TT cluster on its EXACT key, plus its four correction bundles
-    // and its pawn-history row, from the point every key this move touches (material_key,
-    // pawn_key, minor_piece_key, non_pawn_key are all already final above) is settled --
+    // and the [pc][to] slot of its pawn-history row (the slot the NEXT node's quiet-
+    // history update reads, history.zig:56 -- not the row base), from the point every
+    // key this move touches (material_key, pawn_key, minor_piece_key, non_pawn_key are
+    // all already final above) is settled --
     // mirroring upstream's do_move (position.cpp:1006-1010). The checkers scan,
     // setCheckInfo and the repetition walk still run below, which is free lead time for
     // these lines to arrive by the time the next node's probe/eval reads them. The
     // pre-make APPROXIMATE-key TT hint (search_acc.doMoveAcc, upstream search.cpp:642) is
     // issued separately and earlier, and is deliberately wrong for castling/en passant/
     // promotion; this one is exact.
-    if (bank) |b| issuePrefetches(pos, b);
+    if (bank) |b| issuePrefetches(pos, pc, to, b);
 
     pos.st.captured_piece = captured;
     pos.st.checkers_bb = if (gives_check != 0)
