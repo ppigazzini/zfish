@@ -189,6 +189,40 @@ scale with `nextPowerOfTwo(threads on the node)`, and their index masks are the 
 minus one. `clearSharedHistory` is partitioned by `thread_idx` / `numa_total`, so every
 worker on a node clears a disjoint slice of the node's shared arrays in parallel.
 
+## Memory ordering
+
+Almost every shared access in the engine is **relaxed** (`.monotonic`), and that is a
+decision, not an omission. Lazy SMP shares the TT and the histories precisely so workers
+can see each other's partial results; a race there is the mechanism, not a bug. Relaxed is
+what makes such a race *defined* rather than undefined — it forbids the compiler tearing a
+field or rematerialising a load after the check it was validated against, while ordering
+nothing against anything else. Reaching for a stronger order would buy no correctness and
+would cost the sharing its point.
+
+What makes that safe is that **no relaxed reader trusts what it reads**. A TT entry is
+validated by its `key16`; a TT move is re-checked with `pseudoLegal` before it is played;
+a history value is a heuristic score with no legality meaning. The invariant to preserve
+when adding shared state is that one, not the ordering: a relaxed read must be checkable
+by the reader, or it needs a different mechanism.
+
+Stronger orders appear in exactly two places, both **publications** rather than shared
+counters:
+
+| Site | Pattern |
+| --- | --- |
+| `platform/syzygy/registry.zig` | A table is parsed, then `ready` is set with a **release** store and read with **acquire**. A thread on the fast path therefore sees either no table or a fully parsed one — announcing readiness first would let a concurrent probe read a null base as "table absent" or walk half-written `PairsData`. The double-checked path re-reads `ready` relaxed *under the lock*, where the mutex already supplies the ordering |
+| `platform/thread_runtime.zig` | The futex mutex and condition primitives themselves — acquire on lock, release on unlock. This is where the ordering the rest of the runtime borrows is actually built |
+
+The two cross-thread control signals (`stop`, `increase_depth`) are plain `u8` atomics read
+and written monotonically: they are one-way flags whose worst case is one extra node
+searched, so no ordering is needed to make them correct.
+
+`zig build tsan-race -Dtsan -Dlto=false` is what holds this. It must report **zero** races
+across all four workloads. Note what it cannot see: `zig build parity` runs a
+single-threaded bench, so every golden agrees with the oracle while a race is present —
+touching anything more than one thread reads or writes means running the race gate, because
+the aggregate is blind to it by construction.
+
 ## Thread voting
 
 `search_driver.workerStartSearching` reports the main thread's move whenever the search
