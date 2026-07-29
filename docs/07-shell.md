@@ -19,6 +19,7 @@ the engine object that owns the run. It is the top zone — it may import `engin
 | `uci_input.zig` | the persistent stdin reader: one command line per call, stitched across buffer refills so a long `position ... moves` line is not truncated |
 | `uci_parse.zig` | the `go` / `position` / `setoption` token parsers and their `Parsed*` results |
 | `uci_format.zig` | the live output strings: `info string`, help, unknown-command, critical-error |
+| `uci_critical.zig` | `terminateOnCriticalError` and the `setCurrentCmd` cell it echoes: report the failed command whole, then `exit(1)` |
 | `uci_strings.zig` | the shared string alloc / format / trim primitives |
 | `uci_output.zig` | the output sink: one mutex-guarded `printLine` funnel, the log-file tee, quiet mode, the last-nodes-searched cell |
 | **Options** | |
@@ -102,9 +103,20 @@ token into a `CommandKind`, and hands the rest to the engine face:
 | `export_net` | save the network, optionally to a named file |
 | `help` / `--help` / `license` / `--license` | print the help text |
 
-Anything else prints an unknown-command line. `go` builds a `LimitsType` and stamps
+Anything else prints an unknown-command line. `go` builds a `LimitsType`
+(`state/limits_type.zig` — the `searchmoves` list, the seven `TimePoint` fields, the
+`movestogo`/`depth`/`mate`/`perft`/`infinite` mode ints, `nodes`, and `ponderMode`;
+`worker_layout` re-exports it so the `go` call chain resolves one name) and stamps
 `start_time` at the earliest point, so the info-line elapsed and nps are honest;
 `searchmoves` records are owned in Zig and freed once `startThinking` has read them.
+
+A command that fails does **not** leave the engine running: `uci_critical.zig` prints
+the whole failed command line through the output sink and calls `exit(1)`. That is the
+invariant, not a style choice — printing and continuing left the *previous* position
+live, so the next `go` searched a stale board and returned a plausible bestmove for the
+wrong position. `setCurrentCmd` holds the line being dispatched so the report reads
+``Command `position fen not_a_fen` failed`` rather than naming the bare verb; the UCI
+listener is single-threaded, so that cell is a plain global, as upstream's member is.
 
 The search and UCI lines — `info`, `bestmove`, the option listing's neighbours, the
 `info string` reports — go through `uci_output.printLine`: one `std.Io` handle, one
