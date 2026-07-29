@@ -286,8 +286,12 @@ those rare moves prefetch an unused line) reached through the same `firstEntryIn
 probe uses. `doMove` itself then issues a second, EXACT round of prefetches once the
 child's key and correction-history keys are all final — `pos.st.key` (via `adjustKey50`)
 for the TT cluster, plus the four correction bundles (`pawn_key`, `minor_piece_key`,
-`non_pawn_key[0]`, `non_pawn_key[1]`) and the pawn-history row (`pawn_key` again, into
-`SharedHistories.pawn_data`) — with the checkers scan, `setCheckInfo` and the repetition
+`non_pawn_key[0]`, `non_pawn_key[1]`) and the specific `[pc][to]` slot of the pawn-history
+row (`pawn_key` into `SharedHistories.pawn_data`, then `pc * hist_square_nb + to` within
+that row — the exact slot `history.zig`'s quiet-history update reads, not the row base;
+`pc`/`to` are the mover's identity and destination, matching upstream's own locals at the
+same point, including their reassignment to the king's square for castling) — with the
+checkers scan, `setCheckInfo` and the repetition
 walk still to run as free lead time before any of these lines are read. This second round
 takes an optional `move_do.PrefetchBank` (table + cluster count + the shared-history
 pointer): `null` for every non-search make (`doMoveState` — perft, root building,
