@@ -36,16 +36,30 @@ inline fn dynRange(size: usize, thread_idx: usize, numa_total: usize) struct { s
 // Clear a SharedHistories: fill correctionHistory entries (each [2]CorrectionBundle, 8 int16)
 // to -5 and pawnHistory pages (each a [16][64] int16 page) to -1338, over
 // this thread's numa partition.
+// Lane count for every int16 history broadcast fill: 32 lanes == 512 bits, which LLVM lowers to
+// one store per iteration on AVX-512 and to a short unrolled run of narrower stores below that.
+// A width is tuned for the tier it was measured on -- re-measure before changing it.
+const fill_i16_lanes = 32;
+
 // Broadcast-store fill of a flat int16 range. The clear is striped (disjoint per worker) so a
 // plain store is race-free, but the non-zero fill value is not a byte-memset and the toolchain
 // leaves a scalar `dst[i] = v` loop scalar (L13). An explicit @Vector broadcast store vectorizes
 // it -- this is the whole cost of workerClear, and the fill is bit-identical.
-inline fn fillI16(dst: [*]i16, start: usize, stop: usize, comptime val: i16) void {
-    const V = 32;
+//
+// Shared with the per-Worker table clears in `history`, which fill the same element type to
+// their own non-zero defaults; keep one broadcast-width choice for every int16 history fill.
+pub inline fn fillI16(dst: [*]i16, start: usize, stop: usize, comptime val: i16) void {
+    const V = fill_i16_lanes;
     const vv: @Vector(V, i16) = @splat(val);
     var i = start;
     while (i + V <= stop) : (i += V) dst[i..][0..V].* = vv;
     while (i < stop) : (i += 1) dst[i] = val;
+}
+
+// Fill a whole int16 table. The per-Worker clears own their tables outright (no numa
+// striping), so they want the range-free spelling.
+pub inline fn fillI16Slice(dst: []i16, comptime val: i16) void {
+    fillI16(dst.ptr, 0, dst.len, val);
 }
 
 pub fn clearSharedHistory(shared: *SharedHistories, thread_idx: usize, numa_total: usize) void {
