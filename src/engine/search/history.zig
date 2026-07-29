@@ -28,6 +28,11 @@ const statsUpdate = search_common.statsUpdate;
 const captureStage = search_common.captureStage;
 const moveIsOk = search_common.moveIsOk;
 const sharedOf = shared_history.sharedOf;
+const fillI16Slice = shared_history.fillI16Slice;
+
+// Lane count for the main-history decay: 32 i16 in, two 512-bit i32 halves through the scale
+// and divide. Tuned for the tier it was measured on -- re-measure before changing it.
+const age_lanes = 32;
 const pawnEntryRow = shared_history.pawnEntryRow;
 const corrBundle = shared_history.corrBundle;
 const moveFrom = board_core.moveFrom;
@@ -76,11 +81,33 @@ pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: u8
 
 // Decay the main history per iterative_deepening() iteration: v * 729 / 1024
 // toward zero over the whole table.
+//
+// Widen the decay by hand. This is a per-element integer loop over 131072 entries and the
+// toolchain will not auto-vectorize one (L13), so the scalar spelling stays one lane per
+// iteration for the life of the process. Sign-extend a block of i16 to i32, scale, and
+// truncate-divide in registers; @divTrunc by a power of two is the SAME rounding the scalar
+// form had (toward zero, not toward -inf), and LLVM lowers the constant divisor to the
+// bias-and-arithmetic-shift sequence rather than a real division. The written values are
+// bit-identical, so the bench signature holds.
 pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
-    for (&w.main_history) |*e| {
-        const v: i32 = e.*;
-        e.* = @intCast(@divTrunc(v * 729, 1024)); // upstream 3c858c19e: drop the +5
+    const V = age_lanes;
+    const Vi16 = @Vector(V, i16);
+    const Vi32 = @Vector(V, i32);
+    const mul: Vi32 = @splat(729); // upstream 3c858c19e: drop the +5
+    const div: Vi32 = @splat(1024);
+
+    const dst: []i16 = &w.main_history;
+    var i: usize = 0;
+    while (i + V <= dst.len) : (i += V) {
+        const src: Vi16 = dst[i..][0..V].*;
+        const scaled: Vi32 = @as(Vi32, src) * mul;
+        const decayed: Vi16 = @intCast(@divTrunc(scaled, div));
+        dst[i..][0..V].* = decayed;
+    }
+    while (i < dst.len) : (i += 1) {
+        const v: i32 = dst[i];
+        dst[i] = @intCast(@divTrunc(v * 729, 1024));
     }
 }
 
@@ -88,19 +115,22 @@ pub fn ageMainHistory(worker_ptr: *WorkerLayout) void {
 // over the whole [5][65536] table.
 pub fn fillLowPlyHistory(worker_ptr: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
-    for (&w.low_ply_history) |*e| e.* = 102;
+    fillI16Slice(&w.low_ply_history, 102);
 }
 
 // Clear the Worker: reset the per-Worker histories (the shared correction/pawn/continuation
 // clear_range is handled separately by clearSharedHistory for its numa partitioning, and the
 // NNUE refreshTable is untouched). mainHistory=-5, captureHistory=-742, ttMoveHistory=0,
 // continuationCorrectionHistory=5. continuationHistory (=-586) is shared, cleared there.
+// Each table's default is a non-zero int16, so none of these is a byte-pattern @memset and a
+// scalar `e.* = v` loop stays scalar (L13) -- fillI16Slice broadcast-stores them instead. The
+// Worker owns these tables outright at clear time, so the stores need no atomics.
 pub fn clearWorkerHistories(wl: *WorkerLayout) void {
     const w: *WorkerHistories = workerHistories(wl);
-    for (&w.main_history) |*e| e.* = -5;
-    for (&w.capture_history) |*e| e.* = -742;
+    fillI16Slice(&w.main_history, -5);
+    fillI16Slice(&w.capture_history, -742);
     w.tt_move_history = 0;
-    for (&w.continuation_correction_history) |*e| e.* = 5;
+    fillI16Slice(&w.continuation_correction_history, 5);
 }
 
 // Find captureStage / moveIsOk / statsUpdate / captVal / captEntry / workerHistories

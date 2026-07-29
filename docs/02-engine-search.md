@@ -254,6 +254,15 @@ size by `nextPowerOfTwo(threads on the node)` — so indexing is `key & mask`.
 `shared_histories_map.zig` maps NUMA index → block with construct/free hooks, and
 `clearSharedHistory` clears only this thread's partition of the arrays.
 
+Every one of these tables resets to a **non-zero** `i16` default — `-5`, `102`, `-742`,
+`5`, `-1338`, `-586` — so none of the clears is a byte-pattern `@memset` and a scalar
+store loop would stay scalar (see [the hand-vectorization rule](08-idiomatic-zig.md#vectorize-integer-hot-loops-by-hand--the-toolchain-will-not)).
+`shared_history.fillI16` broadcast-stores them instead, and both the shared clear and the
+per-worker clears in `history.zig` go through it, so there is one width to tune. The
+per-iteration `ageMainHistory` decay is hand-widened the same way: sign-extend a block of
+`i16`, scale, and truncate-divide in registers. Each clear runs in an exclusive phase —
+per-worker, or striped disjointly by `thread_idx` — so the plain stores need no atomics.
+
 All history entries update by the same gravity rule, `search_common.statsUpdate`:
 `v += clamped - v * |clamped| / D`, which pulls the entry toward `[-D, D]`.
 `history.zig` owns every write. `updateAllStats` credits the best move and debits the
