@@ -160,7 +160,7 @@ fn vectorSort(entries: []SortEntry, limit: i32) void {
 }
 
 test "vectorSort matches referenceSort, random inputs up to and beyond the 16-move sorter cap" {
-    if (!use_avx512_sort) return error.SkipZigTest;
+    if (comptime !use_avx512_sort) return error.SkipZigTest;
     var rng = std.Random.DefaultPrng.init(0x5EED_C0FF_EE00_1234);
     const random = rng.random();
     var trial: usize = 0;
@@ -199,5 +199,10 @@ test "vectorSort matches referenceSort, random inputs up to and beyond the 16-mo
 }
 
 test {
-    std.testing.refAllDecls(@This());
+    // Gate refAllDecls too, not just the cross-check test above: refAllDecls forces
+    // analysis of every declaration in this file regardless of runtime reachability,
+    // which would still try to codegen the AVX-512 intrinsic calls inside MoveSorter's methods on
+    // a target that can't lower them -- a comptime guard on the call site alone (the
+    // test above) does not stop that.
+    if (comptime use_avx512_sort) std.testing.refAllDecls(@This());
 }
