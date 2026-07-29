@@ -44,6 +44,39 @@ inside `engine/`. It compiles and tests standalone — `zig build engine`, roote
 (`platform/thread.zig` importing `shell/option`) is the only edge keeping the zone
 graph from a strict DAG; the engine avoids the same import through a hook seam.
 
+## What the library boundary buys
+
+The zone rule is not tidiness — it is what lets the engine be *driven* with no process
+around it. Upstream is a UCI binary and does not claim otherwise: `Search::Worker` holds
+`const OptionsMap&` and `ThreadPool&` as members and `evaluate.cpp` includes `uci.h`, so
+linking its search means linking the frontend and the thread pool. Here the same
+dependencies are hook seams that **self-default headless**, and `zig build headless`
+proves the boundary at the compiler and linker rather than by inspection.
+
+**In use today:**
+
+| Use | Owner | What the boundary supplies |
+| --- | --- | --- |
+| Compile and unit-test the whole engine with no runtime attached | `src/engine/headless.zig`, `zig build engine` | One root referencing every engine module; the `headless` gate ratchets engine → platform/shell up-edges toward zero |
+| Coverage-guided fuzzing of the **real search** | `board/fuzz_targets.zig`'s `fuzzShallowSearch` → `search/headless_search.zig`, `zig build fuzz --fuzz` | A Worker, a one-thread pool, a TT and a `SharedHistories` stood up in-process. The fuzz root imports engine modules only, so a mutation drives move ordering, the TT, pruning, qsearch, the accumulator and the eval under ReleaseSafe — with no thread orchestrator to construct per iteration |
+| Gates that test the **algorithm** rather than the protocol | `driver-golden`, `search-modes` | The search driver and its emit callback are callable directly. A gate that pipes `go` at the binary tests the command loop; one that drives `iterativeDeepening` tests the search |
+| A reproducible search under a substituted platform | the seams' headless defaults | A depth-capped search needs no clock, no UCI option model and no pool: `headless_search` registers one deterministic option source (Skill off, MultiPV 1) and nothing else |
+| Porting to a new OS | `src/platform/` | The engine issues no OS call, so a new target is a platform-zone change; the `@Vector` NNUE lowers to NEON with no source change |
+
+**What the boundary makes possible and nobody has built.** These are capabilities the
+invariant preserves, not features of this tree — describe them that way when quoting one:
+
+- **Embedding the engine.** An analysis backend, an NNUE training-data generator, or a
+  wasm build could link `engine/` with no threading runtime and no OS services. Nothing
+  in this repo does.
+- **A random-walk differential driver.** `tools/upstream_nodes.sh` localizes a divergence
+  only over a FEN suite it is handed, so positions no suite covers stay unprobed — see
+  [09-tooling-ci](09-tooling-ci.md). A driver that walks both engines from random
+  positions is the stronger form, and `headless_search`'s "search one position at depth
+  N" entry is what a Zig-side one would call.
+- **In-process parameter search.** That same entry is the shape an SPSA or sweep harness
+  would drive, without a UCI round trip per evaluation.
+
 ## The module graph
 
 `build.zig` is not a script that discovers files. It is a **hand-declared module
@@ -101,9 +134,10 @@ count and requires each to declare its failure mode when unregistered. See
 
 ### Does the DAG cost performance?
 
-No — the DAG and its hooks are a *source-level* structure (for cycle-freedom, the
-standalone `engine/` library, and testability), not compilation-unit boundaries, and
-they do not tax the search. Three reasons, each measured against a full bench:
+Not measurably, on the workload the gates cover — but read the limit at the end of this
+section before quoting that. The DAG and its hooks are a *source-level* structure (for
+cycle-freedom, the standalone `engine/` library, and testability), not compilation-unit
+boundaries. Three **observations** against a full bench, none of them an A/B ablation:
 
 - **Zig is whole-module.** Every `@import` lowers into one LLVM module, so the
   compiler inlines across module boundaries exactly as it would within a single file
@@ -121,9 +155,19 @@ they do not tax the search. Three reasons, each measured against a full bench:
   move scorer are specialized at `comptime` on node type and generator kind, so those
   dispatches resolve at compile time.
 
-So the architecture costs **startup wiring**, not nps. It would only cost the search
-if a hook were placed on the per-node path un-throttled — which is exactly what the
-measurement discipline and `hook-lint` guard against.
+So on bench the architecture costs **startup wiring**, not nps. It would cost the search
+if a hook sat on the per-node path un-throttled.
+
+**The limit — one seam does sit there, and no gate can see it.** `search_main`'s Step 6
+tablebase probe calls `tb_source.probeWdlPos` through a hook, guarded by
+`worker.tb_config.cardinality != 0`. That is 0 without a `SyzygyPath`, so bench and every
+golden run with the call short-circuited — the coverage is a property of the *workload*,
+not of the seam. With tablebases loaded it becomes a live per-node indirect call where
+upstream makes a direct one, and nothing here has measured it. The three observations
+above bound the hooks bench reaches; they say nothing about this one. Treat "the DAG is
+free" as unproven for a Syzygy-loaded search until an ablation says otherwise, and note
+that the aggregate instruction ratio against the oracle bounds *all* structural overhead
+together — it does not isolate the hooks from anything else.
 
 **Is LTO required for this?** No. The whole-module inlining above is independent of
 LTO — it is why the macOS and Windows builds ship with `-Dlto=false` permanently and
