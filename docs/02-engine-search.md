@@ -97,8 +97,15 @@ no depth limit is set and skill is disabled — otherwise it keeps its own resul
 emits the final PV and `bestmove`.
 
 `iterativeDeepening` allocates the `SearchStack` array on the Zig stack — sized
-`max_ply + 10` with seven sentinel plies below the root, so `ss-1 .. ss-7` are always
-readable — then loops on depth. Each depth runs the MultiPV lines; each line runs an
+`max_ply + 10`, with the root at index 7 and **seven sentinel frames beneath it** — then
+loops on depth. The sentinels are not padding: a node reads its ancestors unconditionally,
+without a ply test. `updateContinuationHistories` walks `ss-1 … ss-6`, and the correction
+path reads `ss-2` and `ss-4`, so a node at ply 0 or 1 would index below the array if the
+frames were not there. Each sentinel is initialized the way a real frame would be if
+nothing had been played — `setContHist` with all-`NO_PIECE` indices, which resolves to the
+table bases, and `static_eval = value_none` — so the reads return a defined "no prior move"
+rather than whatever the stack happened to hold. Removing a frame does not crash; it
+silently reads a neighbouring `SearchStack`, which moves the node count. Each depth runs the MultiPV lines; each line runs an
 aspiration window around the root move's `average_score`, widening on every fail
 high/low (`search.aspirationDeltaGrow`) until the score lands inside the window.
 
@@ -155,6 +162,81 @@ takes its node state as `anytype`, so it specializes per node type too.
 The PV is a fixed `PVMoves` buffer per node. A child's PV is spliced into the parent's
 by `pvUpdate` only when that move ran a real PV search; the child pointer is optional
 and null means "the PV is just this move".
+
+### The steps
+
+Upstream numbers a node's work Step 1–21 and the port keeps the numbering in comments, so
+a step is greppable across both trees. Steps 1–12 are `searchImpl`, 13–21 `runBack`.
+
+| Step | Does |
+| --- | --- |
+| 1–3 | Initialize the node; bail on an aborted search, an immediate draw, or `max_ply`; clamp `alpha`/`beta` by mate distance |
+| 4 | Probe the TT. A non-PV node cuts on a stored value whose bound covers the window and whose depth suffices |
+| 5 | Compute the static eval, correct it (below), and derive `improving` / `opponent_worsening` |
+| 6 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [05-tablebases.md](05-tablebases.md) |
+| 7 | **Razoring**: a non-PV node whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch |
+| 8 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, below depth 19, off the TT-PV path |
+| 9 | **Null move** (below) |
+| 10 | **Internal iterative reduction**: with no TT move, off the PV, not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
+| 11–12 | **ProbCut**: a shallow search at a raised beta to prove a capture refutes the node; then the deep-ProbCut TT idea |
+| 13 | The move loop — `movepick.nextMove` per move (below) |
+| 14 | Prune at shallow depth: late-move, futility, SEE and history pruning per move |
+| 15 | **Singular extension**: re-search excluding the TT move to test whether it is the only move that holds |
+| 16–19 | Make, search (LMR then full-depth on a fail-high), unmake |
+| 20–21 | Record a new best move; resolve mate/stalemate and the fail-high bookkeeping |
+
+**Null move** (Step 9) is the one step whose mechanics differ visibly from an ordinary
+child. It runs only on a cut-node whose static eval clears `nullMoveThreshold`, with no
+excluded move, with non-pawn material for the side to move, and at or above
+`ctx.nmp_min_ply`. `doNullMove` touches **no accumulator** — passing is not a move, so
+there is no feature delta to apply — and the stack records the move as `65` with the
+all-`NO_PIECE` continuation-history page, so `ss-1` resolves to the table base rather than
+to a real `(piece, to)` page. Above depth 16 a fail-high is not trusted directly: the code
+arms `nmp_min_ply`, re-searches at the reduced depth without null move, and only returns
+the null value if that verification also fails high. `nmp_min_ply` is what stops the
+verification search from recursing into another null move.
+
+The **aspiration window** wraps each MultiPV line. `delta` starts from
+`aspirationInitialDelta(thread_idx, mean_squared_score)` — seeded per thread, so helper
+threads search different windows — and the window opens around the root move's
+`average_score`, not its last score. A fail low pulls `alpha` down and resets
+`failed_high_cnt`; a fail high pushes `beta` up and increments it, and `adjusted_depth`
+sheds a ply per failed-high so a node that keeps failing high is not re-searched at full
+depth. `aspirationDeltaGrow` widens `delta` each time round. `root_delta` is republished
+every iteration because Step 14's pruning margins scale with the window width.
+
+## Quiescence
+
+`search_qsearch.qsearchImpl` resolves the tactics at a leaf so the eval is never taken in
+the middle of a capture sequence. It is a **call-graph leaf**: it self-recurses and never
+re-enters `searchImpl`, which is why the pair `searchImpl ↔ runBack` is the only file
+cycle in the tree. `searchImpl` enters it at `depth <= 0` and from razoring.
+
+Its own steps are numbered 1–9, and the shape differs from the main search in four ways
+that matter:
+
+- **One depth, not many.** Every qsearch node runs at the `depth_qs` sentinel, so the TT
+  cutoff at Step 3 tests `tt_depth >= depth_qs` rather than a real depth, and a qsearch
+  store writes `depth_unsearched`. That is what keeps a qsearch entry from ever satisfying
+  a main-search probe.
+- **Stand pat.** Not in check, the static eval is a lower bound on the node — the side to
+  move may simply decline every capture. If it already clears `beta` the node returns
+  immediately, blended by `qsearchStandPatBlend` when the value is not decisive, and stores
+  a lower-bound entry when the probe missed. Otherwise it raises `alpha`. **In check there
+  is no stand pat**: `best_value` starts at `-value_inf`, because declining is not legal
+  and every evasion must be searched or the node would claim a bound it has not proved.
+- **Captures only, evasions when in check.** `initMainStage` is handed `depth_qs`, which
+  selects the qsearch entry stage (`qsearch_tt` → `qcapture_init` → `qcapture`) or the
+  evasion chain when there are checkers.
+- **Futility per move.** With `futility_base` set from the static eval, a non-checking
+  move that neither recaptures on `prev_sq` nor promotes is dropped once `move_count > 2`,
+  or when `futility_base + piece_value[captured] <= alpha` — the capture cannot lift the
+  node into the window even if it wins the piece outright.
+
+Step 9 resolves mate: with no legal move found **and in check**, the node is mate and
+returns `matedIn(ply)`. Outside check it cannot conclude stalemate, because it only ever
+generated captures — so it returns `best_value`, which stand pat has already made a valid
+lower bound.
 
 ## Move ordering
 
@@ -278,11 +360,42 @@ continuation-correction entries and applies `search.correctionValue`;
 delta — only when the node is not in check and the best move is not a capture.
 
 **The transposition table** (`tt.zig`, layout in `state/tt_types.zig`) is a flat array
-of `TtCluster`, each holding `cluster_size` `TtEntry` records plus padding. An entry
-packs a 16-bit key, depth, a generation/bound/is-PV byte, the move, the value, and the
-static eval. `probeTable` returns the hit data *and* a writer pointer — the entry to
-replace, chosen by depth and relative age — so a node probes once and stores through
-the same slot. `adjustKey50` (`board/move_do.zig`, re-exported as `search_qsearch.adjustKey50`
+of `TtCluster`, each holding `cluster_size` `TtEntry` records plus padding. Both structs
+are `extern`, and that is load-bearing twice over: a plain Zig struct leaves field order
+unspecified and this toolchain *does* reorder it, which would break upstream's stated
+"fields in the order `probe()` accesses them" property, and would let a future compiler
+change the cluster stride that the table sizing arithmetic depends on. A comptime block
+asserts every `@offsetOf` plus upstream's own `sizeof(Cluster) == 32`.
+
+| Field | Width | Holds |
+| --- | --- | --- |
+| `key16` | `u16` | the low 16 bits of the position key — the cluster is found by the *high* bits, so these are what disambiguates within it |
+| `depth8` | `u8` | the depth, **biased** by the `depth_none` offset so the unsearched value maps to 0 |
+| `gen_bound8` | `u8` | three fields in one byte: generation in bits 0–4, bound in bits 5–6, is-PV in bit 7 |
+| `move16`, `value16`, `eval16` | | the stored move, the mate-corrected value, the raw static eval |
+
+`depth8` being biased is what makes `depth8 != 0` the occupancy test, and that single fact
+is why the saturating subtraction below is not optional.
+
+`probeTable` walks the cluster comparing `key16`, and returns the hit data *and* a writer
+pointer — so a node probes once and stores through the same slot, rather than re-deriving
+the address. On a miss the writer is the **replacement victim**, chosen by minimising
+`depth8 - 8 * relativeAge`: depth is worth keeping, but each generation of staleness is
+worth eight plies of it, so a deep entry from an old search loses to a shallow fresh one.
+`entryRelativeAge` subtracts modulo the 5-bit generation field, so the counter wrapping is
+correct rather than merely tolerated.
+
+**Every field is read and written as a relaxed atomic.** Upstream states that racy
+concurrent updates between threads are intended; relaxed is what makes that race *defined*
+instead of undefined, and it forbids the compiler tearing a field or rematerialising a
+load after the key comparison it was checked against. It is not ordering — no field is
+ordered against any other, exactly as upstream. A torn entry is therefore possible and
+harmless: the key check rejects it, and a wrong-but-legal move is filtered by
+`pseudoLegal` before it is ever played.
+
+`hashfull` samples the first 1000 clusters and counts entries that are occupied *and*
+within `max_age` generations, so the figure reports the table's useful occupancy rather
+than how much of it has ever been touched. `adjustKey50` (`board/move_do.zig`, re-exported as `search_qsearch.adjustKey50`
 for its existing callers) perturbs the key near the 50-move boundary so positions
 differing only in rule50 hash apart; it lives in the board zone because `doMove` needs it
 too (below), matching upstream keeping `adjust_key50` on `Position` itself.
@@ -306,8 +419,15 @@ takes an optional `move_do.PrefetchBank` (table + cluster count + the shared-his
 pointer): `null` for every non-search make (`doMoveState` — perft, root building,
 tablebase walks, tests — and `search_acc.verifyDoMove`'s TT-move verification make, which
 is unmade before any node runs on it); only `doMoveAcc`, the real search move-maker,
-builds one. Values are mate-distance corrected on the way in and out (`search.valueToTt` /
-`valueFromTt`). The generation advances once per search in `ssTmInit`; `entryPenalize`
+builds one. **Mate scores are re-based across the table boundary** (`search.valueToTt` /
+`valueFromTt`). A mate score in the search means "mate in N plies **from the root**", but
+an entry is reachable at a different ply than the one that stored it, so storing that
+number directly would make the mate appear nearer or further the second time the position
+is reached. `valueToTt` converts to plies-from-*this node* on the way in (`v + ply` for a
+win, `v - ply` for a loss) and `valueFromTt` converts back on the way out. The read
+direction additionally takes `rule50`, because a mate score is only true if the 50-move
+counter does not intervene first — a stored win near the boundary is downgraded rather
+than believed. The generation advances once per search in `ssTmInit`; `entryPenalize`
 decrements a stored depth when a TT entry's window bound is the only reason a cutoff was
 refused. That decrement — and the secondary aging in `entrySave` — **saturates at zero**
 (`depthSaturatingSub`), never wraps. The table is shared across all workers and accessed

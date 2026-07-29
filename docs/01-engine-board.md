@@ -50,6 +50,34 @@ other leaves, so the board graph is a DAG with `position` at its root.
 | `board_props.zig` | the property tests (perft, round-trips, cross-checks) |
 | `fuzz_targets.zig` | the coverage-guided `std.testing.fuzz` targets |
 
+## The move word
+
+A move is a bare `u16` everywhere in the tree — never a struct. `board_core.zig` owns the
+encoding and every accessor is `inline`:
+
+| Bits | Field | Accessor |
+| --- | --- | --- |
+| 0–5 | destination square | `moveTo` — `m & 0x3F` |
+| 6–11 | origin square | `moveFrom` — `(m >> 6) & 0x3F` |
+| 12–13 | promotion piece | `movePromotionType` — `((m >> 12) & 3) + 2`, biased so 0 reads as knight |
+| 14–15 | move type | `moveTypeOf` — `mt_normal`, `mt_promotion`, `mt_en_passant`, `mt_castling` |
+
+Two values are reserved and are **not** moves. `0` is "none" and `65` is the null move;
+`search_common.moveIsOk` rejects exactly those two. Neither can collide with a real move,
+because both encode `from == to`, which no legal move does — that is what lets the search
+store a null move in `ss.current_move` and still have the ancestor walk read it correctly.
+The promotion bias is why a `mt_normal` move's bits 12–13 are meaningless rather than
+wrong: nothing reads them unless the type says promotion.
+
+**Castling is encoded king-to-own-rook, not king-to-destination.** `movegen` emits
+`makeSpecialMove(castling, ksq, castlingRookSquare(...))`, so `moveTo` on a castling move
+returns the **rook's** square. This is upstream's Chess960-general form — in a shuffled
+start position the king's destination is not derivable from a direction, but the rook it
+castles with is unambiguous. `doCastlingDo` rewrites `to` to the king's real destination
+during the make. Any code that reads `moveTo` without first checking `moveTypeOf` will
+therefore be wrong on exactly castling moves, and only in Chess960 will the error be
+visible as an illegal move rather than a merely odd one.
+
 ## Position and state
 
 `Position` is the whole board object: the 64-square piece `board`, the
