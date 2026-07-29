@@ -29,6 +29,15 @@ its structure.
 | [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page) | Alpha-beta, transposition tables, move ordering, magic bitboards, SEE — the algorithms in [01-engine-board.md](01-engine-board.md) and [02-engine-search.md](02-engine-search.md). |
 | [NNUE (Chess Programming Wiki)](https://www.chessprogramming.org/NNUE) | The efficiently-updatable network architecture in [03-engine-eval.md](03-engine-eval.md). |
 | [Leela Chess Zero training data](https://storage.lczero.org/files/training_data) | The data the NNUE networks are trained on, under the [ODbL](https://opendatacommons.org/licenses/odbl/odbl-10.txt). |
+| [Syzygy tablebases](https://github.com/syzygy1/tb) | The WDL/DTZ format and the probing rules — the reference behind [05-tablebases.md](05-tablebases.md). The file layout is not self-describing, so the format notes are the authority when a probe disagrees with the oracle. |
+| [Stockfish's Syzygy prober](https://github.com/official-stockfish/Stockfish/blob/master/src/syzygy/tbprobe.cpp) | The golden for the port. The `tb-*` gates diff against a real upstream build, so this is what a divergence is read against. |
+| [Chess960](https://www.chessprogramming.org/Chess960) | Why castling is encoded king-to-own-rook rather than by direction — see [01-engine-board.md](01-engine-board.md#the-move-word). |
+
+## Licensing
+
+| Reference | Use |
+|---|---|
+| [GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.html) | zfish is a derivative of Stockfish and inherits its licence. See [Copying.txt](../Copying.txt) and [AUTHORS](../AUTHORS). This is not optional housekeeping: the port reproduces upstream's search and evaluation behaviour, so it is a derived work regardless of the source language. |
 
 ## Design
 

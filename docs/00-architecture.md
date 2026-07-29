@@ -78,6 +78,59 @@ invariant preserves, not features of this tree — describe them that way when q
   pipe and the `bestmove` handshake on our half — worth it only if the walk ever becomes a
   bottleneck, which at ~6 s for 40 positions it is not.
 
+## What is actually in the binary
+
+**There is no dependency scanner and no wildcard.** `build.zig` enumerates everything, and
+a `.zig` file enters the build exactly three ways:
+
+- as a **declared module** — a `module_specs` entry mapping a module name to a path, wired
+  to its permitted peers by `module_edges`;
+- as a **relative import** — `@import("sibling.zig")` from a file already in the build, the
+  file-graph edges `arch-report` reports separately from the module graph;
+- as a **compile root** — a `root_source_file`: the exe (`shell/main.zig`), the engine test
+  root (`engine/headless.zig`), the fuzz and property-test roots, the `tools/` binaries.
+
+A file in none of the three is compiled by nothing. It is not in the binary, not tested,
+not reached by any gate — and it rots silently against the files that do move, which is the
+worst version of the problem because it still *looks* maintained. Adding a file therefore
+means adding it to `build.zig`, not just to the directory.
+
+For the engine zone this is **gated**: `headless` asserts that `headless.zig` references
+every engine module, so an engine module nobody added is a red build rather than a quiet
+omission. `platform/` and `shell/` have no equivalent, so re-establish them with the check
+rather than trusting this paragraph:
+
+```sh
+comm -23 <(find src -name '*.zig' | sort) <( \
+  { grep -oE '"src/[A-Za-z0-9_/.-]+\.zig"' build.zig | tr -d '"'
+    for f in $(find src -name '*.zig'); do d=$(dirname "$f")
+      grep -ohE '@import\("[A-Za-z0-9_/.-]+\.zig"\)' "$f" \
+        | sed 's/@import("\(.*\)")/\1/' \
+        | while read -r r; do realpath -m --relative-to=. "$d/$r"; done
+    done
+  } | sort -u)
+```
+
+Empty output means every file under `src/` is compiled by something. It is empty today.
+
+## How the zone rule is enforced
+
+The zone rule is not a convention anyone remembers — five gates hold different halves of
+it, and each fails on a different mistake. Run them together with `zig build parity`.
+
+| Gate | Fails when |
+| --- | --- |
+| `headless` | an `engine/` file imports a `platform/` or `shell/` module. Resolves every `@import` through `build.zig`'s module table, so it sees the real edge, not a naming convention. Ratcheted — the count may only fall |
+| `headless.zig` + `zig build engine` | the engine graph stops compiling and testing on its own. This is the compiler-and-linker half: the lint proves no *declared* up-edge, this proves the result actually links with nothing else attached |
+| `arch-report` | the module graph gains a cycle, or the file graph gains one that is not the declared `search_main ↔ search_back` |
+| `hook-lint` | a cycle-break hook is added without declaring its failure mode, or the composition root forgets to register one. The second is the dangerous case: an unregistered hook does not crash, it *answers* |
+| `src-free` | a C++ Stockfish or libc++ symbol reaches the shipped binary |
+
+The division matters. A lint over imports cannot prove the engine links standalone, and a
+standalone link cannot prove no *unused* up-edge was declared — a dead declared edge is a
+pre-granted permission that makes a stray `@import` compile silently. Neither alone is the
+invariant; the pair is.
+
 ## The module graph
 
 `build.zig` is not a script that discovers files. It is a **hand-declared module
