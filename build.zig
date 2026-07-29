@@ -35,6 +35,11 @@ pub fn build(b: *std.Build) void {
         "signature-ref",
         "Expected bench signature for the `signature` step; defaults to the 2718396 invariant",
     );
+    const walk_args = b.option(
+        []const u8,
+        "walk-args",
+        "Extra flags for the `upstream-walk` step, space separated (e.g. \"--positions 40 --depth 13\")",
+    );
     const requested_arch = b.option(
         []const u8,
         "arch",
@@ -1590,11 +1595,18 @@ pub fn build(b: *std.Build) void {
     // aggregate for the same reason as upstream-map -- it needs the pinned upstream tree,
     // and it builds the oracle. Depend on the exe and the net: it drives the built binary
     // from resources/.
+    // Take the tool's flags through a -D option rather than `zig build ... -- args`:
+    // `b.args` is a 0.16 field that Zig master removed, and the passthrough has no
+    // cross-version spelling. A -D option behaves identically on both compilers and
+    // `zig build --help` lists it, where `--` args are invisible.
     const upstream_walk_cmd = b.addSystemCommand(&.{
         "python3",
         repoPath(b, "tools/upstream_walk.py"),
     });
-    if (b.args) |args| upstream_walk_cmd.addArgs(args);
+    if (walk_args) |wa| {
+        var it = std.mem.tokenizeScalar(u8, wa, ' ');
+        while (it.next()) |tok| upstream_walk_cmd.addArg(tok);
+    }
     upstream_walk_cmd.step.dependOn(install_step);
     upstream_walk_cmd.step.dependOn(&net_cmd.step);
     const upstream_walk_step = b.step(
