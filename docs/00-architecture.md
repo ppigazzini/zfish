@@ -69,13 +69,14 @@ invariant preserves, not features of this tree — describe them that way when q
 - **Embedding the engine.** An analysis backend, an NNUE training-data generator, or a
   wasm build could link `engine/` with no threading runtime and no OS services. Nothing
   in this repo does.
-- **A random-walk differential driver.** `tools/upstream_nodes.sh` localizes a divergence
-  only over a FEN suite it is handed, so positions no suite covers stay unprobed — see
-  [09-tooling-ci](09-tooling-ci.md). A driver that walks both engines from random
-  positions is the stronger form, and `headless_search`'s "search one position at depth
-  N" entry is what a Zig-side one would call.
-- **In-process parameter search.** That same entry is the shape an SPSA or sweep harness
-  would drive, without a UCI round trip per evaluation.
+- **In-process parameter search.** `headless_search`'s "search one position at depth N"
+  entry is the shape an SPSA or sweep harness would drive, without a UCI round trip per
+  evaluation.
+- **A headless differential driver.** `tools/upstream_walk.py` already diffs both engines
+  over a random walk, but it drives two *processes* over UCI pipes, because the oracle has
+  no other interface. A Zig-side driver calling `headless_search` directly would lose the
+  pipe and the `bestmove` handshake on our half — worth it only if the walk ever becomes a
+  bottleneck, which at ~6 s for 40 positions it is not.
 
 ## The module graph
 

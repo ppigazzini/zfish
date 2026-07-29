@@ -1582,6 +1582,27 @@ pub fn build(b: *std.Build) void {
     );
     upstream_map_step.dependOn(&upstream_map_cmd.step);
 
+    // Diff node counts against the pristine oracle over a RANDOM WALK from the start
+    // position, per depth. The bench anchor covers a fixed position list, so a port can
+    // be nudged toward that number without becoming faithful; `upstream_nodes.sh` narrows
+    // that hole but only over a FEN suite it is handed. This closes it by reaching
+    // positions that appear in no bench list, no golden and no test. Outside the parity
+    // aggregate for the same reason as upstream-map -- it needs the pinned upstream tree,
+    // and it builds the oracle. Depend on the exe and the net: it drives the built binary
+    // from resources/.
+    const upstream_walk_cmd = b.addSystemCommand(&.{
+        "python3",
+        repoPath(b, "tools/upstream_walk.py"),
+    });
+    if (b.args) |args| upstream_walk_cmd.addArgs(args);
+    upstream_walk_cmd.step.dependOn(install_step);
+    upstream_walk_cmd.step.dependOn(&net_cmd.step);
+    const upstream_walk_step = b.step(
+        "upstream-walk",
+        "upstream random-walk gate: node counts == pristine oracle, per depth, on unchosen positions",
+    );
+    upstream_walk_step.dependOn(&upstream_walk_cmd.step);
+
     // Run the cycle-break mechanism's ratchet + classifier (hook-lint; G2).
     // The module DAG is a DESIGN outcome, not a language guarantee -- Zig compiles and
     // runs import cycles at both granularities -- and it is bought with 30 function-

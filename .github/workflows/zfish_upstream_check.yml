@@ -31,7 +31,10 @@ jobs:
   upstream-check:
     name: Detect upstream drift
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Detection and the map audit are seconds. The walk step dominates: on a cold cache it
+    # builds the oracle from source and downloads two nets (~50 MB ours, ~90 MB upstream's)
+    # before searching anything. The search itself is ~6 s for 40 positions at depth 13.
+    timeout-minutes: 30
     steps:
       # Full history so `git rev-list BASE..upstream/master` can count the gap
       # (a shallow checkout may not contain UPSTREAM_BASE).
@@ -87,6 +90,45 @@ jobs:
             echo ""
             echo '```'
             echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      # Installs Zig 0.16.0 and caches the build cache. Needed for two things here:
+      # the zfish binary under test, and tools/zigcxx -- the oracle compiles with ZIG
+      # C++ so both sides share one LLVM backend.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      # The random-walk fidelity gate. The bench anchor covers a FIXED position list, so
+      # a port can be nudged toward that number without becoming faithful; this reaches
+      # positions by playing random legal moves from the start, so they are in no bench
+      # list, no golden and no test, and diffs both engines' node counts PER DEPTH.
+      #
+      # It lives in this workflow and not in parity for the same reason the map audit
+      # does: it needs the pinned upstream tree, which a plain checkout of origin does
+      # not carry and the drift step's fetch has already brought in. The step builds the
+      # oracle itself (a detached worktree at UPSTREAM_TARGET); point it at the runner's
+      # temp dir, since the script's default is a developer-machine path.
+      #
+      # The seed is FIXED, not the wall clock: a red weekly run has to be reproducible
+      # from the log with one flag. Widening coverage is --positions, not a fresh seed.
+      - name: Node-for-node vs upstream over a random walk
+        env:
+          ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
+        run: |
+          if out="$(zig build upstream-walk -- --positions 40 --depth 13 2>&1)"; then
+            status=0
+          else
+            status=$?
+          fi
+          echo "$out"
+          {
+            echo "## Random-walk node parity"
+            echo ""
+            echo '```'
+            echo "$out" | tail -20
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
