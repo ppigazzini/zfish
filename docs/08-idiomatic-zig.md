@@ -334,6 +334,27 @@ std wrapper), and prefer the modern form even when the old one still parses
 (`@splat(0)` over `[_]u8{0} ** N`). A non-blocking CI lane builds under Zig master so
 a future break surfaces early instead of at the next toolchain bump.
 
+**Never `@bitCast` an `extern struct`.** An extern struct's padding bits are not defined
+by the language, so the newer compiler rejects the cast outright — and it rejects it even
+where a `comptime` block asserts every `@offsetOf` and the `@sizeOf`, because the rule is
+about the type, not the instance. `extern` is still the right way to *pin field order* for
+a layout a SIMD kernel loads by position; what it does not buy is a whole-struct bitcast.
+Compose and decompose the lanes field by field instead — it costs nothing, since the shift
+and or fold into the same move the bitcast emitted:
+
+```zig
+// Not this — pins the layout correctly, then casts in a way only one compiler accepts:
+return @bitCast(e);
+
+// This — same instruction, same bytes, accepted by both:
+const move_lane: u32 = @as(u32, e.raw_move) | (@as(u32, e.reserved) << 16);
+return .{ @bitCast(move_lane), e.value };
+```
+
+The field-by-field form is byte-order-dependent where the bitcast was not, so assert the
+endianness in a `comptime` block rather than leaving it implied. Arrays are unaffected —
+`@bitCast` between `[8]u8` and a `u64` stays legal.
+
 ## Reserve computed-goto for unpredictable dispatch
 
 `movepick.nextMove` is the engine's hottest dispatcher: a plain `switch` on
