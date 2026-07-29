@@ -108,7 +108,7 @@ fn referenceMoves(from: u8, moves: []u16, to_bb_in: u64) usize {
 }
 
 test "splatPawnMoves/splatMoves match scalar references over random masks" {
-    if (!use_avx512_movegen) return error.SkipZigTest;
+    if (comptime !use_avx512_movegen) return error.SkipZigTest;
     var rng = std.Random.DefaultPrng.init(0xF00D_BABE_1234_5678);
     const random = rng.random();
 
@@ -178,5 +178,10 @@ test "splatPawnMoves/splatMoves match scalar references over random masks" {
 }
 
 test {
-    std.testing.refAllDecls(@This());
+    // Gate refAllDecls too, not just the cross-check test above: refAllDecls forces
+    // analysis of every declaration in this file regardless of runtime reachability,
+    // which would still try to codegen the AVX-512 intrinsic calls inside splatPawnMoves/splatMoves on
+    // a target that can't lower them -- a comptime guard on the call site alone (the
+    // test above) does not stop that.
+    if (comptime use_avx512_movegen) std.testing.refAllDecls(@This());
 }

@@ -129,7 +129,7 @@ fn randomPosition(random: std.Random) Position {
 }
 
 test "writeMultipleDirties matches a scalar reference over random boards/masks/shifts" {
-    if (!use_avx512_threats) return error.SkipZigTest;
+    if (comptime !use_avx512_threats) return error.SkipZigTest;
     var rng = std.Random.DefaultPrng.init(0xDEAD_BEEF_CAFE_F00D);
     const random = rng.random();
 
@@ -182,5 +182,10 @@ test "writeMultipleDirties matches a scalar reference over random boards/masks/s
 }
 
 test {
-    std.testing.refAllDecls(@This());
+    // Gate refAllDecls too, not just the cross-check test above: refAllDecls forces
+    // analysis of every declaration in this file regardless of runtime reachability,
+    // which would still try to codegen the AVX-512 intrinsic calls inside writeMultipleDirties on
+    // a target that can't lower them -- a comptime guard on the call site alone (the
+    // test above) does not stop that.
+    if (comptime use_avx512_threats) std.testing.refAllDecls(@This());
 }

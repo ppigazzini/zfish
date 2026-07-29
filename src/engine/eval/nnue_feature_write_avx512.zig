@@ -66,6 +66,16 @@ pub const WriteResult = struct { removed_len: usize, added_len: usize };
 // position -- the store is unmasked, upstream's own shape (half_ka_v2_hm.cpp:73-79);
 // only the first popCount(removed_bb)/popCount(added_bb) of the 32 written words are
 // meaningful.
+//
+// The real body is gated on `use_avx512_nnue_feature` INSIDE the function, not just at
+// its call sites: nnue_feature.zig re-exports this function by value
+// (`writeIndicesAvx512`), and that file's own (unconditional) `refAllDecls` reaches the
+// re-export regardless of target -- a comptime guard on the call site alone doesn't
+// stop refAllDecls from forcing this body to compile on a target that can't lower the
+// AVX-512 intrinsics inside it. Gating the body itself means the function is safe to
+// reference from anywhere, on any target: the `unreachable` arm has no intrinsics to
+// lower, and it is provably never taken (every real call site also checks
+// `use_avx512_nnue_feature` before calling, per this branch's established pattern).
 pub fn writeIndices(
     old_pieces: []const u8,
     new_pieces: []const u8,
@@ -76,6 +86,8 @@ pub fn writeIndices(
     removed_out: [*]u32,
     added_out: [*]u32,
 ) WriteResult {
+    if (comptime !use_avx512_nnue_feature) unreachable;
+
     const removed_len: usize = @popCount(removed_bb);
     const added_len: usize = @popCount(added_bb);
 
@@ -147,7 +159,7 @@ fn referenceWrite(old_pieces: []const u8, new_pieces: []const u8, removed_bb_in:
 }
 
 test "writeIndices matches an independent scalar reference over random boards/masks" {
-    if (!use_avx512_nnue_feature) return error.SkipZigTest;
+    if (comptime !use_avx512_nnue_feature) return error.SkipZigTest;
     var rng = std.Random.DefaultPrng.init(0xFEED_FACE_0BAD_C0DE);
     const random = rng.random();
 
@@ -210,5 +222,10 @@ test "writeIndices matches an independent scalar reference over random boards/ma
 }
 
 test {
-    std.testing.refAllDecls(@This());
+    // Gate refAllDecls too, not just the cross-check test above: refAllDecls forces
+    // analysis of every declaration in this file regardless of runtime reachability,
+    // which would still try to codegen the AVX-512 intrinsic calls inside writeIndices on
+    // a target that can't lower them -- a comptime guard on the call site alone (the
+    // test above) does not stop that.
+    if (comptime use_avx512_nnue_feature) std.testing.refAllDecls(@This());
 }
