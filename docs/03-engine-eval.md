@@ -15,12 +15,14 @@ for the same position.
 | **network load / parse / storage** | |
 | `network.zig` | the `Network` handle, the `load`/`save`/`verify` entry points, the file header, and the directory search; re-exports the inference surface |
 | `nnue_parse.zig` | the `.nnue` byte format: signed LEB128 (`COMPRESSED_LEB128` sections), the feature-transformer blob layout/offsets, `weightIndexScrambled`, and the `write_parameters` serializer |
+| `nnue_leb.zig` | `decodeLeb` — the signed-LEB128 primitive alone, with its own reference encoder and bound tests; the one parse step that knows nothing of the section layout |
 | `nnue_weight_storage.zig` | the weight arenas (`ftStorage`, `layerStorage`) and the loaded-net identity (`nnCurrent`, `nnDescription`) |
 | `nnue_hash.zig` | the net-identity hashes: `hashBytes` (MurmurHash2-64A), the feature-transformer / architecture / network hash values, and the content hashes |
 | **feature transformer** | |
 | `nnue_feature.zig` | feature indexing for both feature sets: `halfMakeIndex`, `fullMakeIndex`, the changed/active index lists, and the refresh predicates |
 | `nnue_feature_write_avx512.zig` | `writeIndices` — the AVX512VBMI+VBMI2 vector fast path for the refresh-time HalfKA removed/added index write |
 | `nnue_feature_bb.zig` | the bitboard/attack math and comptime index tables `nnue_feature.zig` builds on |
+| `nnue_feature_luts.zig` | the full-threat feature set's threat-index lookup tables — `index_lut1`/`index_lut2`, their offsets, the colocated `ThreatRouteBlock` planes, and the piece/square constants the index formulas share; all comptime-built |
 | `nnue_ft.zig` | the `FeatureTransformer` weight-blob layout: byte offsets plus the four typed weight accessors |
 | **accumulator** | |
 | `nnue_acc_layout.zig` | the accumulator-stack byte layout: strides, diff records, the `AccumulatorStack` handle, and every state/diff accessor |
@@ -76,8 +78,15 @@ non-zero. For fetching the net and running the gates, see
 
 ### Parsing and storage
 
-`nnue_parse.zig` owns the format. The feature transformer is seven sections read in
-stream order — biases (LEB `i16`), threat weights (raw `i8`), threat PSQT weights
+`nnue_parse.zig` owns the format, over the `decodeLeb` primitive in `nnue_leb.zig`
+(7 bits per byte, shift masked to 32, sign-extend when the final shift is under 32 and
+bit `0x40` is set — upstream's `read_leb_128`). **`decodeLeb`'s bound is load-bearing,
+not defensive tidiness**: a `.nnue` file states a section's byte length and its value
+count independently, so a corrupt or hostile one can promise more values than it
+carries, and ReleaseFast checks neither the slice nor the count. It returns `null`
+rather than walking off the section, and every caller must treat that as a failed load.
+
+The feature transformer is seven sections read in stream order — biases (LEB `i16`), threat weights (raw `i8`), threat PSQT weights
 (LEB `i32`), pawn-pair weights (raw `i8`), pawn-pair PSQT weights (LEB `i32`), psq
 weights (LEB `i16`), psq PSQT weights (LEB `i32`) — each written into its fixed,
 64-byte-aligned offset in the destination blob. The threat and pawn-pair weight (and

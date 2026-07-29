@@ -115,8 +115,12 @@ recomputed, never copied.
 The optional `bank: ?PrefetchBank` is issued right after every key this move touches
 is final, before the checkers scan / `setCheckInfo` / repetition walk that follow it —
 so those give the six prefetch lines (the exact-key TT cluster, the four correction
-bundles, the pawn-history row) free lead time before anything reads them. `null` for
-every caller that is not the real search move-maker (see [02-engine-search.md](02-engine-search.md)).
+bundles, and the pawn-history entry) free lead time before anything reads them. The
+pawn-history line is the specific `[pc][to]` **slot** the next node's quiet-history
+update reads, not the row base: a row is 1024 entries (2 KiB, 32 lines), so prefetching
+offset 0 lands on the wrong line for any `(pc, to)` whose slot is past the first one.
+`null` for every caller that is not the real search move-maker (see
+[02-engine-search.md](02-engine-search.md)).
 
 `undoMove(pos, m)` reverses the board mutation and then simply pops
 `pos.st = pos.st.previous`. The popped record is still owned by the state list, so

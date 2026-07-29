@@ -52,10 +52,11 @@ graph** — a `module_edges` table of `.{ .from, .imp, .to }` triples wired by
 cannot reach a peer it was not handed.
 
 **A declared edge is a permission, not a fact.** `addImport` grants the right to reach a
-module; it does not oblige anyone to use it. So the table is always a superset of the real
+module; it does not oblige anyone to use it. So the table may be a superset of the real
 dependencies, and `arch-report` reports the difference — for the composition root it prints
-`main.zig: wired N, @imports M -> N-M DECLARED-BUT-UNUSED edges` and names each one. Those
-are not errors, and the count is expected to be non-zero.
+`main.zig: wired N, @imports M -> N-M DECLARED-BUT-UNUSED edges` and names each one. An
+unused edge is **not an error**: the report prints the list, and nothing gates on its
+length. Read the current count from the report, not from here.
 
 They are also not free. A dead declared edge is a **pre-granted permission**: while it
 stands, a stray `@import` of that module compiles silently; delete it and the same import
