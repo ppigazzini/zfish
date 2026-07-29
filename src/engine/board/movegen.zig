@@ -6,6 +6,7 @@ const moveType = board_core.moveTypeOf;
 const bitboard = @import("bitboard");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
+const movegen_splat_avx512 = @import("movegen_splat_avx512.zig");
 
 // Thread the board's typed Position as `pos` through every generator:
 // each function hands it to position_snapshot.moveIsLegal(), which takes it as
@@ -273,6 +274,11 @@ fn makePromotions(
 }
 
 fn splatPawnMoves(writer: *MoveWriter, comptime offset: i8, to_bb: u64) void {
+    if (comptime movegen_splat_avx512.use_avx512_movegen) {
+        const count = movegen_splat_avx512.splatPawnMoves(offset, writer.moves.ptr + writer.len, to_bb);
+        writer.len += count;
+        return;
+    }
     var targets = to_bb;
     while (targets != 0) {
         const to = popLsb(&targets);
@@ -281,6 +287,11 @@ fn splatPawnMoves(writer: *MoveWriter, comptime offset: i8, to_bb: u64) void {
 }
 
 fn splatMoves(writer: *MoveWriter, from: u8, to_bb: u64) void {
+    if (comptime movegen_splat_avx512.use_avx512_movegen) {
+        const count = movegen_splat_avx512.splatMoves(from, writer.moves.ptr + writer.len, to_bb);
+        writer.len += count;
+        return;
+    }
     var targets = to_bb;
     while (targets != 0) {
         writer.push(makeMove(from, popLsb(&targets)));
