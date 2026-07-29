@@ -37,6 +37,7 @@ other leaves, so the board graph is a DAG with `position` at its root.
 | `move_do.zig` | `doMove` / `undoMove` / `doNullMove` / `undoNullMove`, `putPiece`, the board mutators |
 | `move_do_threats.zig` | `updatePieceThreats` — the dirty-threat deltas the NNUE threat features consume |
 | `movegen.zig` | the staged pseudo-legal generators plus `generateLegal` |
+| `movegen_splat_avx512.zig` | `splatPawnMoves`/`splatMoves` — the AVX512VBMI+VBMI2 vector fast path for packing a destination bitboard into move words |
 | `legality.zig` | `legal`, `pseudoLegal`, `givesCheck`, `seeGe`, `attackersTo`, `attackersToExist` |
 | **Hashing and draws** | |
 | `zobrist.zig` | the process-global `zob_*` tables and the cuckoo tables, built by `init()` |
@@ -285,6 +286,18 @@ bits 12–13, the move type in bits 14–15 (`normal` / `promotion` / `en_passan
 color and kind branches vanish. It emits pawn moves, then knight/bishop/rook/queen
 moves, then king moves, then castling (quiets and non-evasions only, gated on
 `castling_rights` and an unimpeded `castling_path`).
+
+`splatPawnMoves`/`splatMoves` pack a destination bitboard into move words. At
+`use_avx512_movegen` (AVX512VBMI + AVX512VBMI2 — `movegen_splat_avx512.zig`) both do
+it in one vector pass, as upstream's `splat_pawn_moves`/`splat_moves` do
+(movegen.cpp:36-84): `compress` (the same `llvm.x86.avx512.mask.compress.v64i8` call
+`threats_write_avx512.zig` uses) turns the destination bitboard into a packed square
+list, widened to `i16`, packed into `Move` words with a saturating subtract (pawn
+pushes, `to - offset` for every destination) or a fixed `from` (piece moves), and
+stored unmasked (8 or 32 words) — `MoveWriter`'s shared `[256]u16` scratch buffer
+always has the headroom (true legal-move max is 218) the unmasked store needs past
+the true count. Below that tier, both fall back to the scalar `pop_lsb`-then-pack
+loop, upstream's own non-vector path.
 
 ### Legality
 
