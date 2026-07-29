@@ -118,7 +118,7 @@ jobs:
         env:
           ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
         run: |
-          if out="$(zig build upstream-walk -- --positions 40 --depth 13 2>&1)"; then
+          if out="$(zig build upstream-walk -Dwalk-args="--positions 40 --depth 13" 2>&1)"; then
             status=0
           else
             status=$?
