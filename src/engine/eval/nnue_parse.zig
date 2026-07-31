@@ -135,6 +135,7 @@ comptime {
 }
 
 fn dstSlice(comptime T: type, dst: []u8, off: usize, count: usize) []T {
+    @setRuntimeSafety(true); // check the @alignCast and the arena bound, not just the offsets
     const bytes: []align(@alignOf(T)) u8 = @alignCast(dst[off .. off + count * @sizeOf(T)]);
     return std.mem.bytesAsSlice(T, bytes);
 }
@@ -142,6 +143,7 @@ fn dstSlice(comptime T: type, dst: []u8, off: usize, count: usize) []T {
 // Parse one COMPRESSED_LEB128 section ([magic][u32 count][data]) of `out.len`
 // values into `out`; return total section bytes consumed, or null if malformed.
 fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
+    @setRuntimeSafety(true); // untrusted file, startup-only -- see parseFeatureTransformer
     if (blob.len < leb_magic.len + 4) return null;
     if (!std.mem.eql(u8, blob[0..leb_magic.len], leb_magic)) return null;
     const count = std.mem.readInt(u32, blob[leb_magic.len..][0..4], .little);
@@ -157,6 +159,13 @@ fn readLebSection(comptime T: type, blob: []const u8, out: []T) ?usize {
 // layout). No permute -- the transform reads FT weights in natural order on every tier.
 // Return the number of blob bytes consumed, or null on malformed input.
 pub fn parseFeatureTransformer(blob: []const u8, dst: []u8) ?usize {
+    // Keep runtime safety on here even in ReleaseFast. `blob` is whatever bytes the file
+    // named by EvalFile happened to contain, and the shipped build otherwise checks no
+    // slice bound, cast or overflow at all. The parse runs once at startup and never on
+    // the per-node path, so the checks cost no search throughput. They are a backstop,
+    // not the contract: every `blob.len < ...` test below rejects a malformed file
+    // gracefully, and only a bound this function failed to state can reach a trap.
+    @setRuntimeSafety(true);
     // Skip the leading u32 component hash (Detail::read_parameters). Check it is there first:
     // a file shorter than the hash would make the very first section slice out of range.
     if (blob.len < 4) return null;
@@ -218,6 +227,7 @@ pub fn verifyFeatureTransformer(blob: []const u8, reference: []const u8, scratch
 // derived from the destination sizes (biases_dst.len/4 and weights_dst.len /
 // OutputDimensions). Returns the bytes consumed.
 pub fn parseLayer(blob: []const u8, biases_dst: []u8, weights_dst: []u8, scrambled_input: bool) ?usize {
+    @setRuntimeSafety(true); // untrusted file, startup-only -- see parseFeatureTransformer
     const output_dims = biases_dst.len / @sizeOf(i32);
     if (output_dims == 0) return null;
     if (blob.len < biases_dst.len + weights_dst.len) return null;
