@@ -26,7 +26,8 @@ For the zones and the module graph, see [00-architecture.md](00-architecture.md)
 | `syzygy/registry.zig` | material key → `TBTable`, lazy file load, `set` / `setDtzMap` parsing |
 | `syzygy/probe.zig` | the probe data model (`PairsData`, `LR` btree) + `setGroups` / `setSymLen` |
 | `syzygy/encode.zig` | position → index geometry (binomials, lead-pawn tables) |
-| `syzygy/decode.zig` | file header parsing + the RE-PAIR / canonical-Huffman decoder |
+| `syzygy/decode.zig` | the RE-PAIR / canonical-Huffman decoder (probe-time) |
+| `syzygy/decode_header.zig` | the file header parse + bounded region carve (load-time) |
 | `syzygy/wdl.zig` | the probe algorithm: `doProbeTable`, `probeTable`, `searchWdl`, `probeDtz`, `mapScoreDtz`, and the surfaces `probeFen` / `probeWdlPos` |
 | `clock.zig` | the monotonic millisecond clock |
 | `libc.zig` | the thin libc binding (`malloc`, `free`, `exit`) |

@@ -15,6 +15,7 @@
 
 const std = @import("std");
 const decode = @import("decode.zig");
+const decode_header = @import("decode_header.zig");
 const probe = @import("probe.zig");
 
 // Give the PairsData the group state setSizes reads (`group_len` terminator -> `group_idx`
@@ -44,7 +45,7 @@ fn fuzzSetSizes(_: void, smith: *std.testing.Smith) anyerror!void {
 
     const a = std.testing.allocator;
     var pos: usize = 0;
-    decode.setSizes(a, &d, buf, &pos) catch |err| {
+    decode_header.setSizes(a, &d, buf, &pos) catch |err| {
         // Only CorruptTable and OutOfMemory are contractual; anything else is a new failure
         // mode the caller in registry.set does not know how to treat.
         if (err != error.CorruptTable and err != error.OutOfMemory) return err;
@@ -99,7 +100,7 @@ fn fuzzDecompressPairs(_: void, smith: *std.testing.Smith) anyerror!void {
     const a = std.testing.allocator;
     var pos: usize = 0;
     const header_len = @as(usize, raw[0]) % raw.len;
-    decode.setSizes(a, &d, raw[0..header_len], &pos) catch return;
+    decode_header.setSizes(a, &d, raw[0..header_len], &pos) catch return;
     defer {
         a.free(d.base64);
         a.free(d.symlen);

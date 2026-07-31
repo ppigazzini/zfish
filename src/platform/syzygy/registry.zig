@@ -16,6 +16,7 @@ const builtin = @import("builtin");
 
 const probe = @import("probe.zig");
 const decode = @import("decode.zig");
+const decode_header = @import("decode_header.zig");
 const encode = @import("encode.zig");
 const position = @import("position");
 const board_core = @import("board_core");
@@ -284,7 +285,7 @@ fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
     while (f <= max_file) : (f += 1) {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
-            decode.setSizes(arena(), t.get(dtz, i, f), buf, &pos) catch return false;
+            decode_header.setSizes(arena(), t.get(dtz, i, f), buf, &pos) catch return false;
         }
     }
 
@@ -358,6 +359,14 @@ fn takeAtMost(buf: []const u8, pos: *usize, n: usize) ?[]const u8 {
 // before it is skipped, so the cursor is entirely file-driven here too.
 fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, max_file: usize) bool {
     @setRuntimeSafety(true); // untrusted input, once per table -- see decode.setSizes
+    // Test the cursor on ENTRY, before anything derives a width from it. setSizes word-aligns
+    // past the btree (`p += symlen_size & 1`) without demanding that pad byte exist, so a
+    // successful parse can leave the cursor exactly one past the end -- deliberately, since
+    // requiring the byte would reject a table whose btree ends on the last one, which upstream
+    // accepts. Every path out of this function happens to reject such a table anyway, but that
+    // is a property of the control flow, not of the value, and the value is what bounds
+    // wdl.mapScoreDtz (mcfish 4b240ec8).
+    if (pos.* > buf.len) return false;
     const map_base = pos.*;
     var f: usize = 0;
     while (f <= max_file) : (f += 1) {
