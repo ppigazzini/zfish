@@ -100,16 +100,26 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
     while (term < probe.tb_pieces and d.group_len[term] != 0) term += 1;
     const tb_size: u64 = d.group_idx[term];
 
+    // Both are stored as log2 and used as SHIFT WIDTHS, so a raw file byte reaches the shift
+    // amount directly: anything at 64 or beyond does not fit the u6 it is cast to. Found by
+    // src/platform/syzygy/fuzz_targets.zig, which panicked here on the first fuzzed header.
+    // Before the parse raised runtime safety this cast was silent in ReleaseFast, and
+    // sizeof_block then carried garbage into the data-region size below.
+    if (buf[p] >= 64 or buf[p + 1] >= 64) return error.CorruptTable;
     d.sizeof_block = @as(usize, 1) << @intCast(buf[p]);
     p += 1;
     d.span = @as(usize, 1) << @intCast(buf[p]);
     p += 1;
-    d.sparse_index_size = (tb_size + d.span - 1) / d.span; // round up
+    // Saturate the round-up: span is bounded above but still large enough that `tb_size + span`
+    // can wrap u64, and a wrapped size would understate the sparse index rather than reject it.
+    d.sparse_index_size = (tb_size +| d.span -| 1) / d.span;
     const padding: u8 = buf[p];
     p += 1;
     d.blocks_num = rdU32(buf[p..]);
     p += 4;
-    d.block_length_size = d.blocks_num + padding;
+    // blocks_num is a full u32 straight out of the file, so this sum can overflow u32.
+    d.block_length_size = std.math.add(u32, d.blocks_num, padding) catch
+        return error.CorruptTable;
     d.max_sym_len = buf[p];
     p += 1;
     d.min_sym_len = buf[p];
@@ -145,10 +155,16 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
     // Build canonical Huffman: base64[i] >= base64[i+1] (see SF). base64[last] starts at 0.
     d.base64[base64_size - 1] = 0;
     var i = base64_size - 1;
+    // Wrap, do not trap. Upstream's recurrence is `uint64_t`, whose overflow is DEFINED to wrap,
+    // and the two symbol reads are raw file bytes: on a corrupt table the subtrahend routinely
+    // exceeds the sum, which a plain `-` reports as an integer overflow. The fuzz target found
+    // exactly that. Wrapping keeps zfish bit-identical to upstream on every valid table and
+    // yields a garbage-but-defined base64 on an invalid one, which the btree validation and the
+    // probe-time bounds below then contain.
     while (i > 0) {
         i -= 1;
-        d.base64[i] = (d.base64[i + 1] +
-            @as(u64, rdSym(d.lowest_sym[i * 2 ..])) -
+        d.base64[i] = (d.base64[i + 1] +%
+            @as(u64, rdSym(d.lowest_sym[i * 2 ..])) -%
             @as(u64, rdSym(d.lowest_sym[(i + 1) * 2 ..]))) / 2;
     }
     // Right-pad to 64 bits. base64_size <= max_sym_len - min_sym_len + 1, max_sym_len < 64 and
@@ -326,6 +342,33 @@ test "setSizes refuses an inverted, oversized or zero symbol-length pair" {
     buf[9] = 0;
     d = PairsData{};
     pos = 0;
+    try std.testing.expectError(error.CorruptTable, setSizes(a, &d, &buf, &pos));
+}
+
+test "setSizes refuses out-of-range block/span shift widths" {
+    const a = std.testing.allocator;
+    // [flags][sizeof_block log][span log][padding][blocks_num u32][max_sym_len][min_sym_len]
+    // Both log fields are raw file bytes used as SHIFT WIDTHS, so 64 and beyond does not fit
+    // the u6 they are cast to.
+    var d = probe.PairsData{};
+    var pos: usize = 0;
+    var buf = [_]u8{ 0, 64, 6, 0, 1, 0, 0, 0, 9, 1 };
+    try std.testing.expectError(error.CorruptTable, setSizes(a, &d, &buf, &pos));
+
+    buf[1] = 6;
+    buf[2] = 255;
+    d = probe.PairsData{};
+    pos = 0;
+    try std.testing.expectError(error.CorruptTable, setSizes(a, &d, &buf, &pos));
+}
+
+test "setSizes refuses a blocks_num + padding that overflows u32" {
+    const a = std.testing.allocator;
+    var buf = [_]u8{ 0, 6, 6, 0, 0, 0, 0, 0, 9, 1 };
+    buf[3] = 1; // padding
+    std.mem.writeInt(u32, buf[4..8], 0xFFFF_FFFF, .little); // blocks_num
+    var d = probe.PairsData{};
+    var pos: usize = 0;
     try std.testing.expectError(error.CorruptTable, setSizes(a, &d, &buf, &pos));
 }
 

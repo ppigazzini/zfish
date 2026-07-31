@@ -292,13 +292,16 @@ fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
 
     // Carve the three file-backed regions with a bound each. Their sizes come from the header
     // fields parsed above, so each is a promise the file makes about itself; `take` refuses the
-    // ones the file cannot keep instead of handing the probe a slice past the end.
+    // ones the file cannot keep instead of handing the probe a slice past the end. The widths
+    // multiply SATURATINGLY: blocks_num is a full u32 from the file, so an ordinary `*` can wrap
+    // usize and turn an absurd promise into a small, satisfiable one. Saturating keeps it absurd,
+    // and `take` then rejects it.
     f = 0;
     while (f <= max_file) : (f += 1) {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
             const d = t.get(dtz, i, f);
-            d.sparse_index = take(buf, &pos, d.sparse_index_size * @sizeOf(probe.SparseEntry)) orelse
+            d.sparse_index = take(buf, &pos, d.sparse_index_size *| @sizeOf(probe.SparseEntry)) orelse
                 return false;
         }
     }
@@ -307,7 +310,7 @@ fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
             const d = t.get(dtz, i, f);
-            d.block_length = take(buf, &pos, @as(usize, d.block_length_size) * 2) orelse
+            d.block_length = take(buf, &pos, @as(usize, d.block_length_size) *| 2) orelse
                 return false;
         }
     }
@@ -317,7 +320,7 @@ fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
         while (i < sides) : (i += 1) {
             pos = (pos + 0x3F) & ~@as(usize, 0x3F); // 64-byte alignment
             const d = t.get(dtz, i, f);
-            d.data = takeAtMost(buf, &pos, @as(usize, d.blocks_num) * d.sizeof_block) orelse
+            d.data = takeAtMost(buf, &pos, @as(usize, d.blocks_num) *| d.sizeof_block) orelse
                 return false;
         }
     }
