@@ -1810,6 +1810,19 @@ pub fn build(b: *std.Build) void {
     const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
     fuzz_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
 
+    // Fuzz the Syzygy file parse on the same step. A .rtbw/.rtbz is the only attacker-supplyable
+    // BINARY input the engine parses, and decode/probe/encode depend on std alone, so this root
+    // needs no module imports -- it path-imports the decoder cluster directly.
+    const tb_fuzz_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/platform/syzygy/fuzz_targets.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    fuzz_step.dependOn(&b.addRunArtifact(tb_fuzz_test).step);
+
     // Build standalone test artifacts for the tested sub-files that were
     // path-imported into larger modules (so their `test {}` blocks never ran in
     // the aggregate). These depend only on std (+ libc for c_allocator) or on a
