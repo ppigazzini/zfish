@@ -1823,6 +1823,29 @@ pub fn build(b: *std.Build) void {
     });
     fuzz_step.dependOn(&b.addRunArtifact(tb_fuzz_test).step);
 
+    // Report what the fuzzer actually EXECUTED. `zig build fuzz --fuzz` exits 0 whether it ran
+    // half a billion inputs or three, and prints no total, so a lane that stopped fuzzing reads
+    // exactly like one that found nothing. This reads the per-artifact execution counters the
+    // Zig fuzzer keeps in `<cache>/v` and prints them; the nightly workflow runs the same tool
+    // in `check` mode against a pre-run snapshot to gate on them. Local, read-only, no build
+    // dependency -- run it right after a `--fuzz` session to see the budget you actually got.
+    const fuzz_report_exe = b.addExecutable(.{
+        .name = "fuzz_report",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/fuzz_report.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+    const fuzz_report_cmd = b.addRunArtifact(fuzz_report_exe);
+    fuzz_report_cmd.setCwd(b.path("."));
+    fuzz_report_cmd.addArgs(&.{ ".zig-cache", "report" });
+    const fuzz_report_step = b.step(
+        "fuzz-report",
+        "Print how many inputs each fuzz artifact has executed (reads the fuzzer's counters)",
+    );
+    fuzz_report_step.dependOn(&fuzz_report_cmd.step);
+
     // Build standalone test artifacts for the tested sub-files that were
     // path-imported into larger modules (so their `test {}` blocks never ran in
     // the aggregate). These depend only on std (+ libc for c_allocator) or on a

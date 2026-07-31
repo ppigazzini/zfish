@@ -2,12 +2,18 @@
 #
 # The `zig build fuzz` SMOKE (one iteration per target) runs on every push inside
 # the parity workflow; this job runs the CONTINUOUS Zig fuzzer for a bounded budget
-# each night. `zig build fuzz --fuzz` mutates toward new coverage over the
-# FEN-parse -> generateLegal -> make/unmake targets (src/board/fuzz_targets.zig),
-# built under -Doptimize=ReleaseSafe so a discovered input that trips a Zig safety
-# check -- out-of-bounds, integer overflow, pointer misalignment, null-unwrap --
-# crashes the run with the reproducer instead of reading garbage. The fuzzer
-# catches such bugs before they reach the bench/parity goldens.
+# each night. `zig build fuzz --fuzz` mutates toward new coverage over BOTH fuzz
+# roots -- the FEN-parse -> generateLegal -> make/unmake -> eval -> search targets
+# (src/engine/board/fuzz_targets.zig) and the Syzygy file parse
+# (src/platform/syzygy/fuzz_targets.zig) -- built under -Doptimize=ReleaseSafe so a
+# discovered input that trips a Zig safety check -- out-of-bounds, integer overflow,
+# pointer misalignment, null-unwrap -- crashes the run with the reproducer instead of
+# reading garbage. The fuzzer catches such bugs before they reach the bench/parity
+# goldens.
+#
+# A clean run means "no crash was FOUND in that budget", which is only worth
+# publishing if the budget was actually spent: see the execution-counter gate at the
+# end of the fuzz job.
 name: zfish fuzz (nightly)
 
 on:
@@ -41,6 +47,13 @@ jobs:
       - name: Fetch the NNUE net
         run: zig build net
 
+      # Record each artifact's execution counter BEFORE the run. The counters in
+      # .zig-cache/v are cumulative, so the gate below diffs against this to measure
+      # what THIS run did. An absent file (fresh checkout) reads as all-zero, which
+      # is the right baseline.
+      - name: Snapshot the fuzzer's execution counters
+        run: zig run tools/fuzz_report.zig -- .zig-cache snapshot /tmp/fuzz-baseline.txt
+
       # Fuzz for a fixed ~15 min budget. `--fuzz` fuzzes continuously (and serves a
       # monitoring web UI we ignore headless). SIGINT it at the budget: an interrupt
       # with no crash exits 130 (PASS -- no bug in the window); a target crash exits
@@ -59,6 +72,20 @@ jobs:
           fi
           echo "fuzz: a target crashed or the fuzzer errored (exit $ec)" >&2
           exit "$ec"
+
+      # THE STEP ABOVE CANNOT DISTINGUISH "found nothing" FROM "fuzzed nothing".
+      # It exits 0 on the SIGINT whether the fuzzer executed half a billion inputs or
+      # three, and the Zig fuzzer prints no total, so an idle lane reads exactly like a
+      # clean one. The sibling port shipped that failure live -- its search fuzzer was
+      # managing three inputs per ninety seconds behind a green lane (mcfish 05914e99).
+      # Read the execution counters the fuzzer keeps in .zig-cache/v and require BOTH
+      # artifacts (the board/eval/search targets and the Syzygy file parse) to have
+      # executed at least a million inputs each, since they share one wall-clock budget
+      # and one soaking it would otherwise hide the other going idle. Measured locally:
+      # a 150s run cleared 16.4M and 42.2M, so a 900s budget clears the floor by orders
+      # of magnitude; this fires on a broken lane, not a slow runner.
+      - name: Assert the fuzzer actually executed
+        run: zig run tools/fuzz_report.zig -- .zig-cache check /tmp/fuzz-baseline.txt 1000000 2
 
   # The board targets above never feed the COMMAND LOOP hostile input; this job
   # does, with tools/uci_fuzz.py against a ReleaseSafe build for a bounded budget.
