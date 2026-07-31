@@ -86,6 +86,20 @@ count independently, so a corrupt or hostile one can promise more values than it
 carries, and ReleaseFast checks neither the slice nor the count. It returns `null`
 rather than walking off the section, and every caller must treat that as a failed load.
 
+**The section framing raises runtime safety; the LEB inner loop deliberately does not.**
+The shipped binary is ReleaseFast, so no bound, cast or overflow is checked anywhere by
+default — over a file the engine did not write, that is the wrong default. So
+`readLebSection`, `parseFeatureTransformer`, `parseLayer` and `dstSlice` each open with
+`@setRuntimeSafety(true)`: they do the offset arithmetic, they run once at startup, and
+the checks are a backstop under the explicit `blob.len < …` rejections rather than a
+replacement for them. `decodeLeb` is the exception, and the reason is measured rather
+than assumed — it is the per-byte loop of the whole net load, and raising safety over it
+cost **+22.8%** of the entire `bench 16 1 5` instruction count (`tools/perf_counters.zig`,
+8 rounds, identical 45 597-node tree), where the framing alone costs +0.1%. Its every
+access is already bounded by a test it states itself (`pos + 2 <= src.len`,
+`pos >= src.len`, `out.len >= count`), so the check is redundancy over a proven bound —
+paid for at the one place in the parse that cannot afford it.
+
 The feature transformer is seven sections read in stream order — biases (LEB `i16`), threat weights (raw `i8`), threat PSQT weights
 (LEB `i32`), pawn-pair weights (raw `i8`), pawn-pair PSQT weights (LEB `i32`), psq
 weights (LEB `i16`), psq PSQT weights (LEB `i32`) — each written into its fixed,

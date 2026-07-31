@@ -16,6 +16,14 @@ const std = @import("std");
 // independently, so a corrupt one can promise more values than it carries. ReleaseFast checks
 // neither the slice nor the count, so without this the decode walks off the section.
 pub fn decodeLeb(comptime IntType: type, src: []const u8, out: []IntType, count: usize) ?usize {
+    // Do NOT raise runtime safety over this loop, unlike the section framing in
+    // nnue_parse.zig. Every access here is bounded by a test this function states itself --
+    // `pos + 2 <= src.len` on the fast lane, `pos >= src.len` on the slow one, and
+    // `out.len >= count` asserted on entry -- so a bounds check is pure redundancy over an
+    // already-proven bound. It is not free redundancy: measured, it costs +22.8% of the
+    // whole `bench 16 1 5` instruction count (perf_counters, 8 rounds, 45597-node tree),
+    // because this is the per-byte loop of the entire net load. Bound the framing, which
+    // does the offset arithmetic, and leave the proven inner loop alone.
     std.debug.assert(out.len >= count);
     const UnsignedT = @Int(.unsigned, @bitSizeOf(IntType));
     // A value of IntType terminates within max_len bytes unless the stream is malformed.
