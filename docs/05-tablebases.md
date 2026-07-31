@@ -28,7 +28,8 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | `src/platform/syzygy/registry.zig` | the material-key → `TBTable` map, the lazy `.rtbw` / `.rtbz` load into a 64-byte-aligned buffer, and the `set` / `setDtzMap` parse of each `(side, file)` `PairsData` record |
 | `src/platform/syzygy/probe.zig` | the data model (`LR`, `SparseEntry`, `PairsData`, `EntryInfo`) plus the pure helpers `setGroups` and `setSymLen` |
 | `src/platform/syzygy/encode.zig` | the position→index geometry: `binomial`, `map_kk`, `map_a1d1d4`, `map_b1h1h7`, `map_pawns`, `lead_pawn_idx`, `lead_pawns_size` |
-| `src/platform/syzygy/decode.zig` | the file header parse (`setSizes`) and the RE-PAIR / canonical-Huffman decoder (`decompressPairs`); the `TBFlag` bits |
+| `src/platform/syzygy/decode.zig` | the PROBE-time half: the RE-PAIR / canonical-Huffman decoder (`decompressPairs`), the unaligned byte readers, the `TBFlag` bits |
+| `src/platform/syzygy/decode_header.zig` | the LOAD-time half: the file header parse (`setSizes`) and the bounded region carve (`take`) |
 | `src/platform/syzygy/wdl.zig` | the algorithm: `doProbeTable`, `probeTable`, `searchWdl`, `probeDtz`, `mapScoreDtz`, and the two probe surfaces `probeFen` / `probeWdlPos` |
 | **engine** | |
 | `src/engine/search/tb_source.zig` | the seam: `ProbeResult`, `maxCardinality`, `probeFen`, `probeWdlPos` |
@@ -141,7 +142,7 @@ reports unavailable.
 
 `registry.set` then parses the file, generic over WDL/DTZ: per `(side, file)` it reads the
 group `order` nibbles and the piece sequence, calls `probe.setGroups`, then
-`decode.setSizes`, and finally carves each `PairsData`'s `sparse_index`, `block_length`
+`decode_header.setSizes`, and finally carves each `PairsData`'s `sparse_index`, `block_length`
 and `data` region out of the file bytes (each `data` section 64-byte aligned). For DTZ,
 `setDtzMap` reads the four per-WDL-class value-remap tables between the size headers and
 the sparse indices.
@@ -153,11 +154,11 @@ things hold the line, and they are worth keeping distinct:
 
 | Where | What it guarantees |
 | --- | --- |
-| `registry.set` / `setDtzMap` / `decode.setSizes` return failure | Every region is carved with a `take` bound, so a file that cannot keep its own size promises is refused. `mapped`/`mappedDtz` then null the base and the probe reports the table **exactly as missing** — never half-parsed and reachable. |
+| `registry.set` / `setDtzMap` / `decode_header.setSizes` return failure | Every region is carved with a `take` bound, so a file that cannot keep its own size promises is refused. `mapped`/`mappedDtz` then null the base and the probe reports the table **exactly as missing** — never half-parsed and reachable. |
 | `PairsData`'s file-backed fields are **slices, not `[*]`** | A many-item pointer carries no length for anyone to check against; the slice records what the file actually provided, which is what makes the bound above expressible at all. |
-| `decode.setSizes` validates the btree **before** `probe.setSymLen` walks it | Both child fields are 12 bits of the file, so a corrupt entry can name a symbol past the tree, and `setSymLen` writes `d.symlen[child]` — an out-of-bounds *write*. One O(n) pass at load makes the walk in-bounds by construction and leaves the probe path free of the check. |
+| `decode_header.setSizes` validates the btree **before** `probe.setSymLen` walks it | Both child fields are 12 bits of the file, so a corrupt entry can name a symbol past the tree, and `setSymLen` writes `d.symlen[child]` — an out-of-bounds *write*. One O(n) pass at load makes the walk in-bounds by construction and leaves the probe path free of the check. |
 
-`setSizes` additionally refuses `min_sym_len == 0` (it would make the `k == 0` right-pad
+`decode_header.setSizes` additionally refuses `min_sym_len == 0` (it would make the `k == 0` right-pad
 shift exactly 64, which does not fit the `u6` it is cast to) alongside the inverted and
 oversized pairs it already rejected. Rejections release `base64`/`symlen` through
 `errdefer`: the shipped caller passes the registry arena and would not care, but the unit
@@ -174,12 +175,12 @@ load-bearing for a valid table, but bailing out on them changes decoded values.
 
 ### The compressed format, as implemented
 
-The decoder implements exactly what `decode.zig` and `probe.zig` contain:
+The decoder implements exactly what `decode.zig`, `decode_header.zig` and `probe.zig` contain:
 
 | Layer | What the code does |
 | --- | --- |
 | **Symbols / btree** | `probe.LR` is a 3-byte entry packing two 12-bit symbols (left, right child). `right() == 0xFFF` marks a leaf, whose `left()` is the stored value. `probe.setSymLen` fills `d.symlen`, each entry holding the number of values its symbol represents **minus one** — a leaf is 0, and an internal symbol is `symlen[left] + symlen[right] + 1`. |
-| **Canonical Huffman** | `decode.setSizes` builds `d.base64` from `d.lowest_sym` (`base64[i] >= base64[i+1]`, right-padded to 64 bits) and records `min_sym_len` / `max_sym_len`. |
+| **Canonical Huffman** | `decode_header.setSizes` builds `d.base64` from `d.lowest_sym` (`base64[i] >= base64[i+1]`, right-padded to 64 bits) and records `min_sym_len` / `max_sym_len`. |
 | **Indices** | `probe.SparseEntry` is 6 bytes (`block[4]`, `offset[2]`, read LE at access). `sparse_index_size = ceil(tb_size / span)`; `block_length_size = blocks_num + padding`. |
 | **Pairs data** | `decode.decompressPairs(d, idx)` locates the block via the sparse index, walks `block_length[]` to the exact block, reads that block's bitstream in big-endian 64-bit windows, decodes the symbol, then descends the btree to the leaf value. |
 | **Single value** | When `flag_single_value` is set the table stores one value in `min_sym_len` and `decompressPairs` returns it for any index. |
