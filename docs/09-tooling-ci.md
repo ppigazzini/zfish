@@ -84,6 +84,16 @@ upstream emits `nodes 2498`, `seldepth 10`, `score cp 16`; the regenerated golde
 those bytes, which is what makes the regeneration a correction rather than a capitulation.
 `upstream_oracle.sh --verify` gives you that reference (see *Tracking upstream*).
 
+**A resync must refresh every golden it moves, including the ones CI cannot run.** The
+node-limited legs of `tb-cursed` went stale for exactly one week this way: the SFNNv16
+sync (`f2299c47`) refreshed `tb_search.golden` alongside the anchor and left
+`tb_cursed.golden` behind, because `tb-cursed` is local-only — it needs 5-man tables CI
+never fetches, so nothing went red and nobody was told. A gate outside `parity` has no
+alarm; its golden ages silently until someone runs it by hand, and then it looks exactly
+like a regression they just caused. So when a sync moves node counts, re-derive the
+local-only goldens in the SAME commit, and when one of them is red, establish whether it
+was *already* red before assuming your change did it.
+
 Where a gate can pin the *stream* as well as the bytes, it should: `buildUciOptions` asserts
 the handshake on stdout **and fails if any handshake line appears on stderr**, because
 reading the wrong stream is how a whole broken handshake passed for months.

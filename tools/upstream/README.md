@@ -34,8 +34,18 @@ zig build signature -Darch=x86-64-sse41-popcnt      # must equal <sha>'s Bench (
 # net bump?  cp the new .nnue + bump default_eval_file_name (engine.zig + network.zig), then upstream_net.sh
 # stuck on a multi-commit gap?  upstream_nodes.sh <sha> to localize which position/commit diverges
 tools/upstream_parity.sh                  # whole-engine gate; expect OK at HEAD
-# then reharden + merge:
+# then reharden + merge. Do NOT regenerate blind: `parity` first, and for each RED golden
+# drive the oracle and match its bytes (docs/09-tooling-ci.md, "a golden is a photograph of
+# ourselves"). A resync moving the reference is a legitimate reason to regenerate; a red gate
+# you want green is not.
+zig build parity                                    # the red set names what the sync moved
 zig build output-golden-update eval-trace-update search-parity-update search-modes-update parity-mt-update
+#   ...plus whichever of bench-matrix / chess960 / driver-golden / mate / nodestime /
+#   tb-search / export-net / uci-options -update the sync actually moved.
+# LOCAL-ONLY GATES ARE NOT IN parity AND NOT IN CI -- they go stale SILENTLY. Run them by hand
+# every sync, or nobody learns their golden aged until it reads as somebody's regression:
+zig build tb-cursed                                 # needs the 5-man set in resources/syzygy5
+zig build tb-cursed-update                          # only after the oracle agrees, at the SAME SyzygyPath
 zig build signature output-golden eval-trace perft misc parity-mt parity-valgrind parity-teardown  # all OK
 cp UPSTREAM_TARGET UPSTREAM_BASE ; git commit ; git merge --ff-only <branch> ; git tag -f synced-upstream-<sha>
 ```
