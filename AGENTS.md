@@ -107,6 +107,7 @@ Pointers, not explanations — each is documented where it belongs.
 | A warm cache lies: `zig build test` can pass on stale state while CI's arch-pinned fresh compile catches a module-resolution break. Gate refactors with a fresh `-Darch=x86-64-sse41-popcnt` build. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | `zig fmt --check` is CI's first gate and blocks everything after it; deletions leave blank lines fmt rejects. Run it every commit. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | Comments are **imperative mood**; never pin a number a gate computes. | [docs/11-writing.md](docs/11-writing.md) |
+| The shipped binary is ReleaseFast: **no bound, cast, overflow or alignment is checked anywhere**. Code that parses the `.nnue` or a Syzygy file is reading bytes zfish did not write — place `@setRuntimeSafety(true)`, carve slices not `[*]`, and port C's wrapping arithmetic as `+%`/`*|`. Price the placement first: safety over one per-byte loop cost +22.8% of a bench. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 
 ## Commits
 

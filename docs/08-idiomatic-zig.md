@@ -261,6 +261,45 @@ history stats, NNUE weights) are allocated once at setup through a single inject
 allocator and reused; the per-node path touches only stack and pre-sized buffers.
 Decide memory at startup, not per operation.
 
+## Keep memory safety where the input is not yours
+
+Zig gives spatial safety through bounds-checked slices and temporal safety through a
+checking allocator — but **the shipped binary is ReleaseFast, so by default it checks
+nothing**: no bound, no cast, no overflow, no alignment. That is the right default for a
+per-node search kernel and the wrong one everywhere the bytes came from outside. The rule
+is therefore not "turn safety on" or "leave it off", it is: *safety is a property you
+place, and every placement needs a reason and a gate.*
+
+Two inputs are not zfish's: the `.nnue` file named by `EvalFile`, and the Syzygy
+`.rtbw`/`.rtbz` files under `SyzygyPath`. Both are parsed with cursors advanced by values
+read out of the files themselves. Everything below follows from that.
+
+| Rule | How this tree holds it | Gate |
+| --- | --- | --- |
+| **Raise `@setRuntimeSafety(true)` over untrusted parses.** The scope is lexical — it does not follow calls, so it goes on each function. | The `.nnue` section framing (`readLebSection`, `parseFeatureTransformer`, `parseLayer`, `dstSlice`) and the Syzygy header parse (`registry.set`, `setDtzMap`, `decode.setSizes`). | `signature` (bytes unchanged) |
+| **…and price it before you place it.** A check on a per-byte loop is not free. | `decodeLeb` is deliberately excluded: +22.8% of a whole `bench 16 1 5` instruction count versus +0.1% for the framing, and its every access is bounded by a test it states itself. | `perf_counters.zig` |
+| **Prefer slices to `[*]` at every input boundary.** A many-item pointer carries no length, so neither the producer nor the consumer can check one. | `PairsData`'s file-backed fields are slices; the parse carves them with a bounded `take`. The ~220 remaining `[*]` are hot NNUE/search kernels where the pointer is the calling convention, plus the erased hook seams — none of them reads a file. | `tb-*` goldens |
+| **Validate once at load, not once per use.** | `setSizes` checks every btree child in one O(n) pass, which makes `probe.setSymLen`'s writes in-bounds by construction and leaves the probe path free of the check. | `decode.zig` unit tests |
+| **Check what the header could not pin, at the point of use.** | `block` and `sym` in `decompressPairs` are decoded from the payload, so the header cannot bound them; they are checked there and bail to 0. | Syzygy fuzz target |
+| **Port C's wrapping arithmetic as wrapping.** `+`/`-` trap in safe modes where upstream's `uint64_t` is defined to wrap; on corrupt input that difference is a crash, not a hardening. | The canonical-Huffman recurrence uses `+%`/`-%`; the region widths use `*|` so an absurd size stays absurd instead of wrapping into a satisfiable one. | Syzygy fuzz target |
+| **Poison uninitialized arenas in the safe modes.** | `memory.poison_uninitialized` fills large-page blocks with `0xAA` in Debug **and ReleaseSafe** — Debug alone is dead code here, because `zig build -Doptimize=Debug` SEGVs the Zig 0.16 compiler. | ReleaseSafe engine benches 2718396 |
+| **Let a checking allocator own the error paths.** | `std.testing.allocator` and `checkAllAllocationFailures` (19 sites). It earns this: the leak on every `error.CorruptTable` path in `setSizes` was found the moment a corrupt-table test existed, not by reading the code. | `test`, `parity-valgrind` |
+| **Fuzz the boundary, and assert the boundary — not the answer.** | `src/platform/syzygy/fuzz_targets.zig` asserts every region stays inside its buffer; a garbage table is *allowed* to decode to garbage. Built ReleaseSafe so a missed bound trips a check. | `zig build fuzz --fuzz` |
+| **Keep `catch unreachable` to provable cases.** | All 12 sites are `std.fmt.bufPrint` into a fixed local buffer whose size dominates the formatted output. Anything with a runtime-sized input takes the error. | review |
+
+The order matters. Bounds that are checkable from a header belong at load, where they cost
+nothing and can *reject*; only what the payload decides belongs at the point of use, where
+the best available answer is to refuse. A trap is the floor, not the goal — panicking on a
+malformed tablebase is better than reading past it, and worse than reporting the table as
+missing, which is what `mapped`/`mappedDtz` now do.
+
+**What is deliberately not done.** `std.valgrind` client requests are absent: the shipped
+allocator is `posix_memalign`, which memcheck already tracks, so annotating the headless
+`page_alloc` fallback would gate nothing the `parity-valgrind` lane does not. Search
+threads take `std.Thread`'s default stack; recursion is bounded by `MAX_PLY`, and a guard
+page catches the overflow Zig's absent stack probes would not. Neither is a gap someone
+should close without new evidence.
+
 ## Return large hot-path structs by pointer or out-param, not by value
 
 This toolchain does not apply return-value optimization across a non-inlined call: a
