@@ -141,10 +141,36 @@ reports unavailable.
 
 `registry.set` then parses the file, generic over WDL/DTZ: per `(side, file)` it reads the
 group `order` nibbles and the piece sequence, calls `probe.setGroups`, then
-`decode.setSizes`, and finally walks the file assigning each `PairsData` its
-`sparse_index`, `block_length`, and `data` pointers (each `data` section 64-byte aligned).
-For DTZ, `setDtzMap` reads the four per-WDL-class value-remap tables between the size
-headers and the sparse indices.
+`decode.setSizes`, and finally carves each `PairsData`'s `sparse_index`, `block_length`
+and `data` region out of the file bytes (each `data` section 64-byte aligned). For DTZ,
+`setDtzMap` reads the four per-WDL-class value-remap tables between the size headers and
+the sparse indices.
+
+**A table file is untrusted input, and the parse is bounded accordingly.** Every offset
+`set` advances comes out of the file itself, so a truncated or hostile `.rtbw`/`.rtbz` can
+drive the cursor past the end — which the shipped ReleaseFast build does not check. Three
+things hold the line, and they are worth keeping distinct:
+
+| Where | What it guarantees |
+| --- | --- |
+| `registry.set` / `setDtzMap` / `decode.setSizes` return failure | Every region is carved with a `take` bound, so a file that cannot keep its own size promises is refused. `mapped`/`mappedDtz` then null the base and the probe reports the table **exactly as missing** — never half-parsed and reachable. |
+| `PairsData`'s file-backed fields are **slices, not `[*]`** | A many-item pointer carries no length for anyone to check against; the slice records what the file actually provided, which is what makes the bound above expressible at all. |
+| `decode.setSizes` validates the btree **before** `probe.setSymLen` walks it | Both child fields are 12 bits of the file, so a corrupt entry can name a symbol past the tree, and `setSymLen` writes `d.symlen[child]` — an out-of-bounds *write*. One O(n) pass at load makes the walk in-bounds by construction and leaves the probe path free of the check. |
+
+`setSizes` additionally refuses `min_sym_len == 0` (it would make the `k == 0` right-pad
+shift exactly 64, which does not fit the `u6` it is cast to) alongside the inverted and
+oversized pairs it already rejected. Rejections release `base64`/`symlen` through
+`errdefer`: the shipped caller passes the registry arena and would not care, but the unit
+tests and fuzz target pass a checking allocator, and that is what surfaced the leak.
+
+What the header cannot pin is block **content**. `block` and `sym` are decoded from the
+compressed bitstream, so `decompressPairs` checks those two itself and returns 0 rather
+than reading off the table. Its 64- and 32-bit windows read *ahead* of the symbol being
+decoded, which on a final block reaches past the stored data — upstream lands in the
+mmap's page padding, and zfish used to land in `loadFile`'s 63-byte alignment slack.
+`windowBe` zero-fills that tail instead, so the bits are defined rather than whatever the
+arena held. Refusing the read is **not** an equivalent choice: the bits are never
+load-bearing for a valid table, but bailing out on them changes decoded values.
 
 ### The compressed format, as implemented
 

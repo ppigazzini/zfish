@@ -35,8 +35,11 @@ comptime {
     std.debug.assert(@sizeOf(SparseEntry) == 6);
 }
 
-// Hold low-level indexing/decompression state for one (side, file) of a table. The `[*]`-typed fields
-// point into the mmap'd file and are filled by registry.set; the slices are owned.
+// Hold low-level indexing/decompression state for one (side, file) of a table. The file-backed
+// fields are SLICES into the loaded table bytes, not `[*]` pointers: the table is an untrusted
+// external file, and a many-item pointer carries no length for either the parse or the decoder to
+// check against. registry.set fills them by carving `buf` with a bound (`take`), so a truncated
+// file is rejected at load; the remaining slices are owned allocations.
 pub const PairsData = struct {
     flags: u8 = 0,
     max_sym_len: u8 = 0,
@@ -44,13 +47,13 @@ pub const PairsData = struct {
     blocks_num: u32 = 0,
     sizeof_block: usize = 0,
     span: usize = 0,
-    lowest_sym: ?[*]const u8 = null, // Sym[] in the file (unaligned LE)
+    lowest_sym: []const u8 = &.{}, // Sym[] in the file (unaligned LE)
     btree: []const LR = &.{},
-    block_length: ?[*]const u8 = null, // u16[] in the file
+    block_length: []const u8 = &.{}, // u16[] in the file
     block_length_size: u32 = 0,
-    sparse_index: ?[*]const u8 = null, // SparseEntry[] in the file
+    sparse_index: []const u8 = &.{}, // SparseEntry[] in the file
     sparse_index_size: usize = 0,
-    data: ?[*]const u8 = null,
+    data: []const u8 = &.{},
     base64: []u64 = &.{},
     symlen: []u8 = &.{},
     pieces: [tb_pieces]u8 = @splat(0),
@@ -120,7 +123,15 @@ pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: usize) void {
 // Port SF `set_symlen`: expand btree symbol `s` into its children until the leaves, returning the
 // number of values it represents (minus 1). Recurse; the tree is acyclic so `visited` guards
 // re-entry. Fill d.symlen[].
+//
+// PRECONDITION, and it is load-bearing: every non-leaf btree entry's two child symbols index
+// inside d.btree / d.symlen / visited. Both children are 12-bit fields of the FILE, so a corrupt
+// table can name a symbol past the tree -- and `d.symlen[sl] = ...` below would then be an
+// out-of-bounds WRITE, which ReleaseFast does not check. decode.setSizes validates the whole
+// btree before calling here, so this walk is in-bounds by construction rather than by trust; the
+// asserts restate that where ReleaseSafe (tests, fuzz) can see it.
 pub fn setSymLen(d: *PairsData, s: Sym, visited: []bool) u8 {
+    std.debug.assert(s < d.btree.len and s < d.symlen.len and s < visited.len);
     visited[s] = true; // safe now: the tree is acyclic
     const sr = d.btree[s].right();
     if (sr == 0xFFF) return 0; // leaf

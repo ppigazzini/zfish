@@ -229,10 +229,14 @@ fn mapScoreDtz(t: *TBTable, d: *const PairsData, value_in: i32, wdl: i32) i32 {
     if (flags & decode.flag_mapped != 0) {
         const mi: usize = d.map_idx[wdl_map[@intCast(wdl + 2)]];
         const off = mi + @as(usize, @intCast(value));
+        // `value` is decoded from the compressed payload, so `off` is not bounded by anything
+        // the header stated -- only the map region itself is (registry.setDtzMap carves it).
+        // Leave the raw value unmapped rather than read past the map on a corrupt table.
+        const map = t.dtz_map;
         if (flags & decode.flag_wide != 0) {
-            value = registry.rdU16(t.dtz_map.? + off * 2);
+            if (off * 2 + 2 <= map.len) value = registry.rdU16(map[off * 2 ..]);
         } else {
-            value = t.dtz_map.?[off];
+            if (off < map.len) value = map[off];
         }
     }
     if ((wdl == wdl_win and flags & decode.flag_win_plies == 0) or
