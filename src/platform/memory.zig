@@ -14,6 +14,11 @@ const builtin = @import("builtin");
 extern "c" fn _aligned_malloc(size: usize, alignment: usize) ?*anyopaque;
 extern "c" fn _aligned_free(ptr: ?*anyopaque) void;
 
+/// Poison freshly handed-out blocks with 0xAA wherever safety checks are on, so a consumer that
+/// reads before it writes fails on an obviously wrong value instead of on heap residue. Both safe
+/// modes, not Debug alone -- see alignedLargePagesAlloc for why Debug alone is unreachable here.
+pub const poison_uninitialized = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
+
 pub fn stdAlignedAlloc(alignment: usize, size: usize) ?*anyopaque {
     if (builtin.os.tag == .windows) {
         return _aligned_malloc(size, alignment);
@@ -65,10 +70,18 @@ pub fn alignedLargePagesAlloc(alloc_size: usize) ?*anyopaque {
         // the shared-history arenas via the worker stripe fills, the NNUE arenas via
         // the parse plus an explicit padding zero, the Worker via constructFull) --
         // proven by a 0xAA poison audit of each path. Blanket-zeroing here re-wrote
-        // ~100 MB the consumers immediately overwrite. In Debug builds poison the
+        // ~100 MB the consumers immediately overwrite. In the SAFE modes poison the
         // block instead, so a regressed read-before-write consumer fails loudly
         // rather than riding whatever the heap happens to hold.
-        if (builtin.mode == .Debug) {
+        //
+        // ReleaseSafe is in that set deliberately, and it is the half that runs: a
+        // Debug build of the exe SEGVs the Zig 0.16 compiler itself (deterministic,
+        // `zig build -Doptimize=Debug` -> "process terminated with signal SEGV"), so a
+        // Debug-only poison could never execute in the engine at all. ReleaseSafe is
+        // what `zig build test -Doptimize=ReleaseSafe` and `zig build fuzz` build, so
+        // gating on `builtin.mode` rather than on Debug alone is what makes the audit
+        // reachable. The shipped ReleaseFast binary prunes the branch at comptime.
+        if (poison_uninitialized) {
             @memset(@as([*]u8, @ptrCast(ptr))[0..rounded_size], 0xAA);
         }
         // Hint transparent huge pages (madvise MADV_HUGEPAGE), a Linux-only advisory,

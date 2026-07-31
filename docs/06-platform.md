@@ -16,7 +16,7 @@ For the zones and the module graph, see [00-architecture.md](00-architecture.md)
 | `thread_runtime.zig` | the OS primitives: the futex seam, `Mutex`, `Condition`, `ThreadRuntime` idle loop |
 | `search_thread.zig` | the `SearchThread` vehicle: worker handle, job submission, the search job |
 | `thread_vote.zig` | the Lazy-SMP vote picking the best thread's move |
-| `memory.zig` | the aligned / huge-page allocator (uninitialized blocks; Debug poison) |
+| `memory.zig` | the aligned / huge-page allocator (uninitialized blocks; safe-mode 0xAA poison) |
 | `numa.zig` | the NUMA topology surface (config, binding, execute-on-node) |
 | `numa/config.zig` | `NumaConfig`: nodes, CPU sets, the system topology, `toString`, thread distribution |
 | `numa/policy.zig` | `parse` — the `NumaPolicy` string reader, over `str_to_size_t`'s rule |
@@ -74,9 +74,11 @@ and the macOS SDK headers do not cross-compile. `stdAlignedAlloc` is
 be released with `_aligned_free`, never plain `free`).
 
 `alignedLargePagesAlloc` rounds the request up to a 2 MiB multiple, allocates it
-2 MiB-aligned, **zeroes it**, and on Linux hints transparent huge pages via
-`madvise(MADV_HUGEPAGE)`. macOS and Windows have no equivalent advisory call; the
-alignment alone lets the OS back the block with large pages.
+2 MiB-aligned, hands it out **uninitialized**, and on Linux hints transparent huge pages
+via `madvise(MADV_HUGEPAGE)` (skipped on WSL kernels, which accept the advisory without
+ever backing it). macOS and Windows have no equivalent advisory call; the alignment alone
+lets the OS back the block with large pages. The blanket zero-fill this paragraph once
+described was removed — see [Invariants](#invariants) below for what replaced it and why.
 
 The engine never calls this directly — that would stop it being a standalone
 library. It declares the `page_alloc` seam (`src/engine/state/page_alloc.zig`) for
@@ -187,8 +189,15 @@ CPU burn shows.
 
 **Large-page blocks arrive uninitialized — consumers own their fill.**
 `alignedLargePagesAlloc` matches upstream's `aligned_large_pages_alloc`: no zero-fill
-(in Debug it poisons the block with 0xAA so a read-before-write consumer fails loudly
-instead of riding heap history). The historic blanket zero existed for the Worker's
+(in the **safe modes** it poisons the block with 0xAA so a read-before-write consumer
+fails loudly instead of riding heap history). ReleaseSafe is in that set on purpose and
+is the half that actually runs: `zig build -Doptimize=Debug` SEGVs the Zig 0.16 compiler
+itself, so a Debug-only poison could never execute inside the engine — it lived only in
+unit tests. `memory.poison_uninitialized` names the predicate, `page_alloc.zig` restates
+it (engine code cannot import platform), and the shipped ReleaseFast binary prunes both
+branches at comptime. The audit is therefore a runnable claim: a ReleaseSafe engine with
+every arena poisoned still benches **2718396**, and survives a 4-thread search plus a
+`Hash` resize and `ucinewgame` churn. The historic blanket zero existed for the Worker's
 two read-before-write slice headers (`root_moves`, `limits.searchmoves`); those are
 now initialized explicitly by `worker_construct.writeConstructorFields`, and
 `constructFull` zeroes the whole Worker block itself — proven by a 0xAA poison-fill
