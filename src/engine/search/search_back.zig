@@ -225,6 +225,12 @@ pub inline fn runBack(nd: anytype) i32 {
                 depth += 1;
             } else if (value >= nd.beta and !qIsDecisive(value)) {
                 ttMoveHistoryUpdate(nd.w, search.ttMoveHistoryDepthBonus(depth));
+
+                if (!nd.ss.in_check and value > nd.ss.static_eval) {
+                    const bonus = search.multiCutCorrectionBonus(value - nd.ss.static_eval, singular_depth);
+                    updateCorrectionHistory(nd.ctx.worker, nd.pos_ptr, nd.ss_ptr, bonus);
+                }
+
                 return value;
             } else if (nd.tt_value >= nd.beta) {
                 extension = -3;
