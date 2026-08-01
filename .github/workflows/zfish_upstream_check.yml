@@ -195,6 +195,10 @@ jobs:
         env:
           ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
         run: |
+          # Refresh the index first: the runner image ships a stale one, and apt 404s
+          # on a libc6-dbg the mirror has already superseded (exit 100, before the gate
+          # below ever runs). zfish_parity.yml's valgrind step pairs them for this reason.
+          sudo apt-get update
           sudo apt-get install -y --no-install-recommends valgrind
           if out="$(bash tools/upstream_fingerprint.sh 2>&1)"; then
             status=0
