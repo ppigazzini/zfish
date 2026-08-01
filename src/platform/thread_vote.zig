@@ -136,3 +136,113 @@ pub fn bestThreadWorker(pool: *worker_layout.ThreadPool) *worker_layout.WorkerLa
 test {
     @import("std").testing.refAllDecls(@This());
 }
+
+// ---- pickBestThread ---------------------------------------------------------
+//
+// This function chooses the move actually PLAYED whenever Threads > 1, and nothing else
+// in the tree can see it: bench is single-threaded, so the loop trivially returns 0 and
+// every value gate agrees no matter what the vote arithmetic does. refAllDecls above
+// compiles it and exercises nothing. The cases below are derived from upstream's
+// `ThreadPool::get_best_thread` (thread.cpp:349) by hand, not from this implementation --
+// a test read off the code under test would pin whatever it already does.
+
+const testing = @import("std").testing;
+
+fn ts(pv0: u16, score: i32, pv_len: usize, bound: u8) ThreadSummary {
+    return .{ .pv0_raw = pv0, .score_is_bound = bound, .score = score, .pv_length = pv_len };
+}
+
+test "pickBestThread: two agreeing threads outvote one scoring higher" {
+    // The `+ 14` floor is what makes agreement count. min = 10, so move A scores
+    // (0+14)+(0+14) = 28 and move B scores (2+14) = 16: agreement wins despite B's
+    // higher score. Drop the floor and A collects 0 while B collects 2, flipping it.
+    const s = [_]ThreadSummary{
+        ts(100, 10, 2, 0),
+        ts(100, 10, 2, 0),
+        ts(200, 12, 2, 0),
+    };
+    try testing.expectEqual(@as(usize, 0), pickBestThread(&s));
+}
+
+test "pickBestThread: a lone thread far enough ahead still wins" {
+    // min = 10 -> votes A 14, B 104. The floor biases toward agreement, it does not
+    // override a real score gap.
+    const s = [_]ThreadSummary{
+        ts(100, 10, 2, 0),
+        ts(200, 100, 2, 0),
+    };
+    try testing.expectEqual(@as(usize, 1), pickBestThread(&s));
+}
+
+test "pickBestThread: an equal vote is broken by the longer PV" {
+    // upstream thread.cpp:396 -- `newThreadMove.pv.size() > bestThreadMove.pv.size()`,
+    // the RAW length, not a voting value.
+    const longer = [_]ThreadSummary{
+        ts(100, 10, 3, 0),
+        ts(200, 10, 5, 0),
+    };
+    try testing.expectEqual(@as(usize, 1), pickBestThread(&longer));
+
+    const shorter = [_]ThreadSummary{
+        ts(100, 10, 5, 0),
+        ts(200, 10, 3, 0),
+    };
+    try testing.expectEqual(@as(usize, 0), pickBestThread(&shorter));
+}
+
+test "pickBestThread: between two decisive threads the shorter mate wins" {
+    // Both decisive -> take the LARGER absolute score, which is the shorter mate.
+    const s = [_]ThreadSummary{
+        ts(100, 31900, 2, 0),
+        ts(200, 31950, 2, 0),
+    };
+    try testing.expectEqual(@as(usize, 1), pickBestThread(&s));
+
+    // ...and the deeper mate does not displace the shorter one.
+    const reversed = [_]ThreadSummary{
+        ts(100, 31950, 2, 0),
+        ts(200, 31900, 2, 0),
+    };
+    try testing.expectEqual(@as(usize, 0), pickBestThread(&reversed));
+}
+
+test "pickBestThread: a decisive thread is not displaced on votes alone" {
+    // best is decisive, so the ONLY thing that can replace it is a shorter decisive
+    // score -- a non-decisive thread cannot, however the vote falls.
+    const s = [_]ThreadSummary{
+        ts(100, 31900, 2, 0),
+        ts(200, 20, 9, 0),
+        ts(200, 20, 9, 0),
+    };
+    try testing.expectEqual(@as(usize, 0), pickBestThread(&s));
+}
+
+test "pickBestThread: a bound score does not count as decisive" {
+    // upstream guards decisiveness with `!score_is_bound()`: an aborted search can report
+    // an inexact win. Thread 0 holds the larger mate score but it is a BOUND, so it is not
+    // decisive and thread 1's genuine mate takes it. Were the bound flag ignored, thread 0
+    // would count as decisive and keep the pick, since |31900| < |31950| -- so this case
+    // separates the two readings.
+    const s = [_]ThreadSummary{
+        ts(100, 31950, 2, 1),
+        ts(200, 31900, 2, 0),
+    };
+    try testing.expectEqual(@as(usize, 1), pickBestThread(&s));
+}
+
+test "pickBestThread: a losing thread cannot take the pick on votes" {
+    // Both scores are losses and both are bounds, so neither is decisive and the vote
+    // branch is the one that runs. `!is_loss(newThreadMove.score)` blocks the swap even
+    // though thread 1 outvotes thread 0 (114 against 14) -- drop that guard and the engine
+    // plays the move it believes loses faster.
+    const s = [_]ThreadSummary{
+        ts(100, -31700, 2, 1),
+        ts(200, -31600, 2, 1),
+    };
+    try testing.expectEqual(@as(usize, 0), pickBestThread(&s));
+}
+
+test "pickBestThread: a single thread is its own winner" {
+    const s = [_]ThreadSummary{ts(100, 42, 3, 0)};
+    try testing.expectEqual(@as(usize, 0), pickBestThread(&s));
+}
