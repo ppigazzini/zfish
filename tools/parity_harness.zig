@@ -575,7 +575,7 @@ fn buildUciOptions(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
 // safely -- `bench` is synchronous. Regenerate on an upstream/net bump, like the signature.
 const bench_matrix_configs = [_][]const u8{
     "16 1 8", // shallow depth
-    "128 1 13", // hash size (2561648 != the default 2508687 -> the TT-sizing path)
+    "128 1 13", // hash size (a different count from the default depth-13 run -> the TT-sizing path)
     "16 1 200000 default nodes", // node-limit path
     "16 1 3 default perft", // bench-perft path
 };

@@ -30,10 +30,12 @@ pub const psqt_buckets: usize = 8;
 /// row_tile_width -- they touch different loops, and a sweep of each finds different optima. Do
 /// not fold them into one knob.
 ///
-/// 64 on x86-64, from a paired hardware-counter sweep of {16, 32, 64} on the identical
-/// 2508687-node tree: 64 beats 32 by 1.4% instructions on avx512icl and 1.0% on sse41; 16 loses
-/// 4.1%. Non-x86 keeps 32, the value it has always run -- no aarch64 measurement exists, and a
-/// width is tuned for the tier it was measured on, not a property of the algorithm.
+/// 64 on x86-64, from a paired hardware-counter sweep of {16, 32, 64} over the identical tree
+/// on each arm: 64 beats 32 by 1.4% instructions on avx512icl and 1.0% on sse41; 16 loses 4.1%.
+/// What makes the ratio meaningful is that both arms searched the SAME tree, not which tree --
+/// naming the then-current anchor here only guarantees a false sentence after the next sync.
+/// Non-x86 keeps 32, the value it has always run -- no aarch64 measurement exists, and a width
+/// is tuned for the tier it was measured on, not a property of the algorithm.
 pub const transform_vec_width: usize = blk: {
     const b = @import("builtin");
     if (b.cpu.arch == .x86_64) {
