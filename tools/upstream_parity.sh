@@ -18,16 +18,52 @@ OUR_BIN="${1:-$REPO/zig-out/bin/stockfish}"
 SHA="${2:-$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")}"
 ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
 
-sig() { ( cd "$2" && "$1" bench ) 2>&1 | sed -n 's/^Nodes searched  *: *\([0-9][0-9]*\).*/\1/p' | head -1; }
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+# Run one binary's bench from its own net directory, echo its node count, and leave the
+# raw output in $WORK/<tag>.log plus the exit status in $WORK/<tag>.rc. Assigning globals
+# would not survive the caller's command substitution, so the evidence travels on disk.
+sig() {
+    local tag="$1" bin="$2" dir="$3"
+    ( cd "$dir" && "$bin" bench ) >"$WORK/$tag.log" 2>&1
+    echo $? >"$WORK/$tag.rc"
+    sed -n 's/^Nodes searched  *: *\([0-9][0-9]*\).*/\1/p' "$WORK/$tag.log" | head -1
+}
+
+# Explain an empty signature instead of merely naming it. An empty node count means "no
+# node-count line", which a crash, a missing net and a usage error all produce alike --
+# and a silent one cost a whole debugging detour once already.
+die_no_sig() {
+    local tag="$1" who="$2" what="$3"
+    local rc; rc="$(cat "$WORK/$tag.rc" 2>/dev/null || echo 0)"
+    echo "upstream-parity: $who produced no signature ($what)" >&2
+    if [ "$rc" -ne 0 ]; then
+        if [ "$rc" -gt 128 ]; then
+            echo "upstream-parity:   bench died on signal $((rc - 128)) (exit $rc)" >&2
+        else
+            echo "upstream-parity:   bench exited $rc" >&2
+        fi
+        if [ "$tag" = oracle ]; then
+            echo "upstream-parity:   a crashing oracle is usually a stale incremental build --" >&2
+            echo "upstream-parity:   objects from the previous sha relinked against reshaped headers." >&2
+            echo "upstream-parity:   Force a clean one:" >&2
+            echo "upstream-parity:     rm -f '$ORACLE_DIR/src/.zfish_oracle_stamp' && tools/upstream_oracle.sh" >&2
+        fi
+    fi
+    echo "upstream-parity:   last lines of its output:" >&2
+    tail -5 "$WORK/$tag.log" 2>/dev/null | sed 's/^/upstream-parity:   | /' >&2
+    exit 2
+}
 
 # Build/locate the pristine oracle at SHA.
 ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" "$SHA")" || { echo "upstream-parity: oracle build failed" >&2; exit 2; }
 
-ours="$(sig "$OUR_BIN" "$REPO/resources")"
-theirs="$(sig "$ORACLE_BIN" "$ORACLE_DIR/src")"
+ours="$(sig ours "$OUR_BIN" "$REPO/resources")"
+theirs="$(sig oracle "$ORACLE_BIN" "$ORACLE_DIR/src")"
 
-[ -z "$ours" ]   && { echo "upstream-parity: our binary produced no signature ($OUR_BIN)" >&2; exit 2; }
-[ -z "$theirs" ] && { echo "upstream-parity: oracle produced no signature" >&2; exit 2; }
+[ -z "$ours" ]   && die_no_sig ours   "our binary" "$OUR_BIN"
+[ -z "$theirs" ] && die_no_sig oracle "oracle"     "$ORACLE_BIN"
 
 short="$(git -C "$REPO" rev-parse --short "$SHA")"
 if [ "$ours" = "$theirs" ]; then
