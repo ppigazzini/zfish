@@ -16,9 +16,10 @@
 //   * weightIndexScrambled -- get_weight_index_scrambled (affine_transform.h),
 //     the SSSE3 weight index permutation the layer parse writes through and the
 //     Zig propagate already reads back. On the AVX2 pair-activation tier
-//     (`pair_activations`) the fc_1/fc_2 parse additionally folds the 128-bit-lane
+//     (`scrambled_activations`) the fc_1/fc_2 parse additionally folds the 128-bit-lane
 //     interleave of the paired activation packs into the weight index, exactly as
-//     upstream's ScrambledInput branch of the same function.
+//     upstream's ScrambledInput branch of the same function. The AVX-512 pair tier does
+//     NOT scramble -- its narrows are in-order -- which is why the two flags are split.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -49,13 +50,31 @@ pub fn permuteBlocks(data: []u8, block_size: usize, order: []const usize, scratc
 }
 
 /// Mirror upstream's USE_AVX2_PAIR_ACTIVATIONS tier condition (simd.h:54): plain AVX2,
-/// no VNNI of either width, no AVX512. The activation kernel in nnue_inference.zig keys
-/// its paired packs off the SAME condition; the bench signature pins that the two agree.
-pub const pair_activations = builtin.cpu.arch == .x86_64 and
+/// no VNNI of either width, no AVX512.
+const avx2_pair_activations = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx2) and
     !std.Target.x86.featureSetHas(builtin.cpu.features, .avx512f) and
     !std.Target.x86.featureSetHas(builtin.cpu.features, .avxvnni) and
     !std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
+
+const avx512_activations = builtin.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .avx512f);
+
+/// Mirror upstream's USE_PAIR_ACTIVATIONS (simd.h:58) -- AVX512 **or** the AVX2 pair
+/// tier. This chooses the paired activation KERNEL in nnue_inference.zig, which produces
+/// the squared and linear activations together off shared loads.
+pub const pair_activations = avx512_activations or avx2_pair_activations;
+
+/// Mirror upstream's USE_SCRAMBLED_ACTIVATIONS (simd.h:62) -- the AVX2 pair tier ALONE.
+///
+/// The split is load-bearing and inverting it silently corrupts the fc_1/fc_2 weights.
+/// Pairing and scrambling are separate consequences: AVX2 pairs with vpackssdw/vpacksswb,
+/// which narrow per 128-bit LANE, so the output bytes land interleaved and the next
+/// layer's weights must be permuted to match. AVX-512 pairs with vpmovsdw, which narrows
+/// the whole register IN ORDER -- so it wants the paired kernel and NO permutation at
+/// all. The parse keys the weight index off this flag; the kernel keys off
+/// `pair_activations`; the bench signature pins that the two agree.
+pub const scrambled_activations = avx2_pair_activations;
 
 // Map an input index to where the paired activation packs put its value: vpackssdw +
 // vpacksswb operate per 128-bit lane, so within each 32-byte block the eight 4-byte
@@ -348,7 +367,7 @@ pub fn serializeLayer(
     try out.appendSlice(a, &hdr);
     var idx: usize = 0;
     while (idx < 3) : (idx += 1) {
-        try serializeLayerOne(biases[idx], weights[idx], pair_activations and idx > 0, out, a);
+        try serializeLayerOne(biases[idx], weights[idx], scrambled_activations and idx > 0, out, a);
     }
 }
 

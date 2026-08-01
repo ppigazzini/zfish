@@ -397,7 +397,7 @@ fn loadLayer(bucket: usize, blob: []const u8) usize {
             blob[pos..],
             bdst[0..bb],
             wdst[0..wb],
-            nnue_parse.pair_activations and idx > 0,
+            nnue_parse.scrambled_activations and idx > 0,
         ) orelse return 0;
         pos += used;
         if (pos > blob.len) return 0;
