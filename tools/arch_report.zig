@@ -236,6 +236,11 @@ pub fn main(init: std.process.Init) !void {
 
     const build_src = try Io.Dir.cwd().readFileAlloc(io, "build.zig", gpa, .unlimited);
     defer gpa.free(build_src);
+    // The two graph TABLES moved to build/modules.zig; the addImport CALL SITES did not.
+    // Read both and scan each for what it actually holds -- pointing every scan at one file
+    // would silently report an empty graph and still exit 0.
+    const graph_src = try Io.Dir.cwd().readFileAlloc(io, "build/modules.zig", gpa, .unlimited);
+    defer gpa.free(graph_src);
 
     var failed = false;
 
@@ -247,7 +252,7 @@ pub fn main(init: std.process.Init) !void {
 
     var declared: usize = 0;
     {
-        var it = std.mem.splitSequence(u8, build_src, ".{ .name = \"");
+        var it = std.mem.splitSequence(u8, graph_src, ".{ .name = \"");
         _ = it.next();
         while (it.next()) |chunk| {
             const end = std.mem.findScalar(u8, chunk, '"') orelse continue;
@@ -267,7 +272,7 @@ pub fn main(init: std.process.Init) !void {
 
     var table_edges: usize = 0;
     {
-        var it = std.mem.splitSequence(u8, build_src, ".{ .from = \"");
+        var it = std.mem.splitSequence(u8, graph_src, ".{ .from = \"");
         _ = it.next();
         while (it.next()) |chunk| {
             const fe = std.mem.findScalar(u8, chunk, '"') orelse continue;

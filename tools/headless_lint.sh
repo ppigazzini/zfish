@@ -23,21 +23,41 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="$ROOT/build.zig"
+# The {name, path} module table moved out of build()'s 2085 lines into build/modules.zig.
+# A miss here is SILENT, not loud: an empty ZONE map makes every up-edge test vacuous and
+# the gate still exits 0, so the existence check below is load-bearing.
+GRAPH="$ROOT/build/modules.zig"
 BASELINE="${HEADLESS_BASELINE:-0}"
 
 [ -f "$BUILD" ] || { echo "headless: cannot find build.zig at $BUILD" >&2; exit 2; }
+[ -f "$GRAPH" ] || { echo "headless: cannot find the module table at $GRAPH" >&2; exit 2; }
 
 # module name -> zone, from module_specs { .name = "x", .path = "src/<zone>/..." }.
 declare -A ZONE
+# Count explicitly rather than with ${#ZONE[@]}: under `set -u` an EMPTY associative array
+# reads as an unbound variable, so the very case this counter exists to catch would blow up
+# in the guard instead of reporting it.
+zone_count=0
 while IFS=$'\t' read -r name path; do
+    zone_count=$((zone_count + 1))
     case "$path" in
         src/engine/*)   ZONE["$name"]=engine ;;
         src/platform/*) ZONE["$name"]=platform ;;
         src/shell/*)    ZONE["$name"]=shell ;;
         *)              ZONE["$name"]=root ;;
     esac
-done < <(grep -oE '\.name = "[a-z_]+", \.path = "[^"]+"' "$BUILD" \
+done < <(grep -oE '\.name = "[a-z_]+", \.path = "[^"]+"' "$GRAPH" \
          | sed -E 's/\.name = "([a-z_]+)", \.path = "([^"]+)"/\1\t\2/')
+
+# A PRESENT-BUT-UNPARSEABLE table is the dangerous case, and the -f test above cannot see
+# it: with ZONE empty every loop below iterates zero times, reports zero up-edges and zero
+# missing modules, and exits 0 -- a gate that passes because it checked nothing. Assert the
+# map was actually built, so a reshaped literal fails LOUDLY instead.
+if [ "$zone_count" -lt 50 ]; then
+    echo "headless: only $zone_count modules parsed from $GRAPH -- the table moved or its" >&2
+    echo "headless: literal shape changed. Refusing to report on an empty map." >&2
+    exit 2
+fi
 
 # Scan every engine source file for imports that resolve to a down-zone module.
 violations=0
