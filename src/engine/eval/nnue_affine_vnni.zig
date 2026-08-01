@@ -97,6 +97,15 @@ pub inline fn affineVnni(
         // stays in registers -- the rotation is guarded per group instead. Chain ASSIGNMENT
         // shifts at word boundaries; i32 wrapping adds commute, so the merged sum is
         // bit-identical whatever the partition -- the signature is the proof.
+        //
+        // FALSIFIED, do not retry without new evidence: peeling `popCount(bits) / chains` full
+        // rounds off the front to drop the per-lane guard from the hot loop does cut retired
+        // branches (paired A/B vs this shape: branches 0.955, landing vnni512 exactly on
+        // avx512icl's 1.040 against upstream). It does not pay. The peeled loop's trip count is
+        // data-dependent where the guard it replaces is usually-taken, so the branches that
+        // remain predict WORSE -- branch misses 1.022, miss rate 5.84% against 5.42% -- and it
+        // costs +0.5% instructions for the popCount. Net cycles 0.997, inside this box's noise
+        // floor. Fewer branches is not the same as fewer mispredicts.
         for (nnz, 0..) |word, k| {
             var bits = word;
             if (bits == 0) continue;
