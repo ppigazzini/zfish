@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const clock = @import("clock");
+const search_timing = @import("search_timing");
 const benchmark_port = @import("benchmark");
 const misc_port = @import("misc");
 const engine_mod = @import("engine");
@@ -145,7 +146,9 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
 
     engine_mod.searchClearEngine(engine_ptr);
 
-    var total_time: i64 = 0;
+    // Drop the warmup searches' intervals; from here the engine stamps its own timing.
+    search_timing.reset();
+
     var total_nodes: u64 = 0;
     var position_index: usize = 1;
     var hashfull_reads: i32 = 0;
@@ -165,11 +168,9 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
             std.debug.print("\rPosition {d}/{d}", .{ position_index, total_go_commands });
             position_index += 1;
 
-            const started = nowMillis();
             dispatch(uci_ptr, command);
             engine_mod.waitForSearchFinishedEngine(engine_ptr);
 
-            total_time += nowMillis() - started;
             total_nodes += uci_output.lastNodesSearched();
 
             hashfull_reads += 1;
@@ -184,6 +185,10 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
         }
     }
 
+    // Read the engine's own bracket: search start (past time-management init) to bestmove,
+    // summed over the measured positions. Excludes the UCI dispatch, the thread wakeup and
+    // the lazy network verification the old wall-clock around `dispatch` charged to nps.
+    var total_time: i64 = search_timing.totalMs();
     if (total_time <= 0) {
         total_time = 1;
     }

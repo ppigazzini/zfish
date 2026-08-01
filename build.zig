@@ -204,6 +204,7 @@ pub fn build(b: *std.Build) void {
         .{ .name = "search_driver", .path = "src/engine/search/search_driver.zig" },
         .{ .name = "search_emit", .path = "src/engine/search/search_emit.zig" },
         .{ .name = "time_source", .path = "src/engine/search/time_source.zig" },
+        .{ .name = "search_timing", .path = "src/engine/search/search_timing.zig" },
         .{ .name = "position_lifecycle", .path = "src/engine/board/position_lifecycle.zig" },
         .{ .name = "shared_history", .path = "src/engine/search/shared_history.zig" },
         .{ .name = "search_common", .path = "src/engine/search/search_common.zig" },
@@ -401,6 +402,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_id", .imp = "nnue_accumulator", .to = "nnue_accumulator" },
         .{ .from = "search_id", .imp = "position_query", .to = "position_query" },
         .{ .from = "search_id", .imp = "time_source", .to = "time_source" },
+        .{ .from = "search_id", .imp = "search_timing", .to = "search_timing" },
         .{ .from = "search_id", .imp = "search_ctx", .to = "search_ctx" },
         .{ .from = "search_ctx", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_ctx", .imp = "position_types", .to = "position_types" },
@@ -420,6 +422,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "search_driver", .imp = "history", .to = "history" },
         .{ .from = "search_driver", .imp = "search_emit", .to = "search_emit" },
         .{ .from = "search_emit", .imp = "time_source", .to = "time_source" },
+        .{ .from = "search_emit", .imp = "search_timing", .to = "search_timing" },
         .{ .from = "search_emit", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "search_emit", .imp = "tt", .to = "tt" },
         .{ .from = "search_emit", .imp = "score", .to = "score" },
@@ -563,6 +566,7 @@ pub fn build(b: *std.Build) void {
         .{ .from = "uci", .imp = "engine_object", .to = "engine_object" },
         .{ .from = "uci", .imp = "worker_layout", .to = "worker_layout" },
         .{ .from = "uci", .imp = "clock", .to = "clock" },
+        .{ .from = "uci", .imp = "search_timing", .to = "search_timing" },
         .{ .from = "engine", .imp = "uci_wdl", .to = "uci_wdl" },
         .{ .from = "tt", .imp = "page_alloc", .to = "page_alloc" },
         .{ .from = "tt", .imp = "tt_types", .to = "tt_types" },
@@ -660,6 +664,7 @@ pub fn build(b: *std.Build) void {
     // binds the ThreadPool and TranspositionTable.
     exe.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     exe.root_module.addImport("time_source", mods.get("time_source").?);
+    exe.root_module.addImport("search_timing", mods.get("search_timing").?);
     exe.root_module.addImport("tb_extend_source", mods.get("tb_extend_source").?);
     exe.root_module.addImport("tb_extend", mods.get("tb_extend").?);
     exe.root_module.addImport("page_alloc", mods.get("page_alloc").?);
@@ -1722,6 +1727,7 @@ pub fn build(b: *std.Build) void {
         mods.get("position_storage").?,
         mods.get("state_list").?,
         mods.get("time_source").?,
+        mods.get("search_timing").?,
         mods.get("page_alloc").?,
         mods.get("option_source").?,
         mods.get("tb_source").?,
