@@ -33,13 +33,6 @@ pub const FullDiff = struct {
     ksq: u8,
 };
 
-pub const FullAppendResult = struct {
-    len: usize,
-    // Holds threats AND pawn-pair active indices for one perspective's refresh (both feed
-    // the shared threatAndPp weight rows). Upstream's IndexList is ValueList<u16, 256>.
-    indices: [256]u32,
-};
-
 pub const HalfThreatParams = struct {
     perspective: u8,
     square: u8,
@@ -76,11 +69,6 @@ pub fn fullMakeIndex(params: FullThreatParams) u32 {
     const block = &threat_route_blocks[attacker_oriented];
     return block.lut1[attacked_oriented * 2 + less] + block.comb[from_oriented * 64 + to_oriented];
 }
-
-pub const FullAppendChangedLens = struct {
-    removed: usize,
-    added: usize,
-};
 
 /// Build the mask that orients a whole dirty-threat record in ONE xor: every
 /// oriented operand of fullMakeIndex is a per-field xor whose field never
@@ -140,6 +128,68 @@ pub noinline fn fullAppendChanged(
         }
     }
     return .{ .removed = removed_len, .added = added_len };
+}
+
+/// Decode each dirty-threat record ONCE and index it for both perspectives --
+/// FullThreats::append_changed_indices_both. The record's fields (from, to, attacker,
+/// attacked) and its add/remove polarity are perspective-independent; only the
+/// orientation each is read under is not, which is exactly what the two route masks
+/// carry. So load `raw` once and xor it twice.
+///
+/// The routing bit is shared and that is not an accident: bit 31 of a mask is set only
+/// for a BACKWARD walk, and the shared walk is forward-only, so `x >> 31 == raw >> 31`
+/// on both sides. Each index still gets its OWN bound test -- one perspective can drop
+/// a record the other keeps, so the two lists need not be the same length.
+pub noinline fn fullAppendChangedBoth(
+    values: []const u32,
+    white_mask: u32,
+    black_mask: u32,
+    w_removed_out: [*]u32,
+    w_added_out: [*]u32,
+    b_removed_out: [*]u32,
+    b_added_out: [*]u32,
+) struct { w: FullAppendChangedLens, b: FullAppendChangedLens } {
+    var w_removed_len: usize = 0;
+    var w_added_len: usize = 0;
+    var b_removed_len: usize = 0;
+    var b_added_len: usize = 0;
+    for (values) |raw| {
+        const to_added = (raw >> 31) != 0;
+
+        const xw = raw ^ white_mask;
+        const wblock = &threat_route_blocks[(xw >> 20) & 0xf];
+        const wfrom: usize = xw & 0xff;
+        const wto: usize = (xw >> 8) & 0xff;
+        const w_index = wblock.lut1[((xw >> 15) & 0x1e) + @intFromBool(wfrom < wto)] + wblock.comb[(wfrom << 6) | wto];
+        if (w_index < full_dimensions) {
+            if (to_added) {
+                w_added_out[w_added_len] = w_index;
+                w_added_len += 1;
+            } else {
+                w_removed_out[w_removed_len] = w_index;
+                w_removed_len += 1;
+            }
+        }
+
+        const xb = raw ^ black_mask;
+        const bblock = &threat_route_blocks[(xb >> 20) & 0xf];
+        const bfrom: usize = xb & 0xff;
+        const bto: usize = (xb >> 8) & 0xff;
+        const b_index = bblock.lut1[((xb >> 15) & 0x1e) + @intFromBool(bfrom < bto)] + bblock.comb[(bfrom << 6) | bto];
+        if (b_index < full_dimensions) {
+            if (to_added) {
+                b_added_out[b_added_len] = b_index;
+                b_added_len += 1;
+            } else {
+                b_removed_out[b_removed_len] = b_index;
+                b_removed_len += 1;
+            }
+        }
+    }
+    return .{
+        .w = .{ .removed = w_removed_len, .added = w_added_len },
+        .b = .{ .removed = b_removed_len, .added = b_added_len },
+    };
 }
 
 pub fn fullAppendActive(
@@ -263,125 +313,6 @@ fn appendFullActiveIndex(
     }
 }
 
-// ---- PP_3Wide (pawn-pair) feature set ---------------------------------------
-// A second threat-adjacent feature set (upstream Features::PP_3Wide): every pair of pawns
-// on the same or an adjacent file (ranks 2-7) is one feature. Its indices are concatenated
-// onto the threats -- base pp_index_base -- so they share the threatAndPp weight rows and
-// merge into the same removed/added/active index lists the threat kernels consume.
-
-// make_pawn_id: 48*color + (square - SQ_A2). Pawns live on the 48 squares of ranks 2-7.
-fn makePawnId(color: u32, square: u32) u32 {
-    return 48 * color + square - @as(u32, sq_a2);
-}
-
-// PP_3Wide::make_index -- the triangular index of the unordered pawn-id pair, plus the base.
-pub fn ppMakeIndex(perspective: u8, color: u8, from: u8, to: u8, paired_color: u8, king_square: u8) u32 {
-    const orientation: u8 = @as(u8, @bitCast(orient_tbl_full[king_square])) ^ (56 *% @as(u8, perspective));
-    const from_o: u32 = @as(u32, from ^ orientation);
-    const to_o: u32 = @as(u32, to ^ orientation);
-    const color_o: u32 = color ^ perspective;
-    const paired_o: u32 = paired_color ^ perspective;
-    const id_a = makePawnId(color_o, from_o);
-    const id_b = makePawnId(paired_o, to_o);
-    const hi = @max(id_a, id_b);
-    const lo = @min(id_a, id_b);
-    return hi * (hi - 1) / 2 + lo + pp_index_base;
-}
-
-// PP_3Wide::append_active_indices -- every pawn pair, once, into the shared active list.
-pub fn ppAppendActive(result: *FullAppendResult, perspective: u8, king_square: u8, white_pawns: u64, black_pawns: u64) void {
-    var bb = white_pawns;
-    while (bb != 0) {
-        const from: u8 = @intCast(@ctz(bb));
-        bb &= bb - 1;
-        const band = pawn_pair_bb[from];
-        var ww = band & bb; // remaining white pawns -> each white-white pair once
-        while (ww != 0) {
-            const to: u8 = @intCast(@ctz(ww));
-            ww &= ww - 1;
-            result.indices[result.len] = ppMakeIndex(perspective, white, from, to, white, king_square);
-            result.len += 1;
-        }
-        var wb = band & black_pawns;
-        while (wb != 0) {
-            const to: u8 = @intCast(@ctz(wb));
-            wb &= wb - 1;
-            result.indices[result.len] = ppMakeIndex(perspective, white, from, to, black, king_square);
-            result.len += 1;
-        }
-    }
-    bb = black_pawns;
-    while (bb != 0) {
-        const from: u8 = @intCast(@ctz(bb));
-        bb &= bb - 1;
-        const band = pawn_pair_bb[from];
-        var bk = band & bb; // remaining black pawns -> each black-black pair once
-        while (bk != 0) {
-            const to: u8 = @intCast(@ctz(bk));
-            bk &= bk - 1;
-            result.indices[result.len] = ppMakeIndex(perspective, black, from, to, black, king_square);
-            result.len += 1;
-        }
-    }
-}
-
-// The generate() lambda from PP_3Wide::append_changed_indices (non-AVX512 path): emit every
-// pair touching a changed pawn -- partners drawn from the unchanged pawns plus the not-yet-
-// processed changed pawns (so an updated-updated pair is emitted exactly once).
-fn ppGenerate(perspective: u8, king_square: u8, updated_w: u64, updated_b: u64, pawns_w: u64, pawns_b: u64, out: [*]u32, len_in: usize) usize {
-    var len = len_in;
-    const unchanged = (pawns_w | pawns_b) & ~(updated_w | updated_b);
-    var u = updated_w | updated_b;
-    while (u != 0) {
-        const a: u8 = @intCast(@ctz(u));
-        u &= u - 1;
-        const mask = pawn_pair_bb[a] & (unchanged | u);
-        const a_col: u8 = if ((pawns_b & squareBb(a)) != 0) black else white;
-        var pb = pawns_b & mask;
-        while (pb != 0) {
-            const to: u8 = @intCast(@ctz(pb));
-            pb &= pb - 1;
-            out[len] = ppMakeIndex(perspective, a_col, a, to, black, king_square);
-            len += 1;
-        }
-        var pw = pawns_w & mask;
-        while (pw != 0) {
-            const to: u8 = @intCast(@ctz(pw));
-            pw &= pw - 1;
-            out[len] = ppMakeIndex(perspective, a_col, a, to, white, king_square);
-            len += 1;
-        }
-    }
-    return len;
-}
-
-// PP_3Wide::append_changed_indices -- append the pawn-pair delta onto the SAME removed/added
-// lists the threat delta already filled (both index the shared threatAndPp weight rows).
-// added <- pairs that appear (after&~before, drawn against the after pawns);
-// removed <- pairs that disappear (before&~after, against the before pawns). The caller
-// swaps the two out-lists for a backward walk, exactly as upstream swaps the arguments.
-pub fn ppAppendChanged(
-    perspective: u8,
-    king_square: u8,
-    before: *const [2]u64,
-    after: *const [2]u64,
-    removed_out: [*]u32,
-    removed_len_in: usize,
-    added_out: [*]u32,
-    added_len_in: usize,
-) FullAppendChangedLens {
-    const white_before = before[white];
-    const black_before = before[black];
-    const white_after = after[white];
-    const black_after = after[black];
-    if (white_before == white_after and black_before == black_after)
-        return .{ .removed = removed_len_in, .added = added_len_in };
-
-    const added_len = ppGenerate(perspective, king_square, white_after & ~white_before, black_after & ~black_before, white_after, black_after, added_out, added_len_in);
-    const removed_len = ppGenerate(perspective, king_square, white_before & ~white_after, black_before & ~black_after, white_before, black_before, removed_out, removed_len_in);
-    return .{ .removed = removed_len, .added = added_len };
-}
-
 // Re-export the AVX512VBMI+VBMI2 vector fast path for the refresh-time HalfKAv2_hm
 // index write (nnue_feature_write_avx512.zig), so nnue_acc_update.zig -- which
 // already imports this module by name -- reaches it without a second relative import
@@ -389,6 +320,14 @@ pub fn ppAppendChanged(
 // nnue_feature_luts.zig below, and Zig requires every relative-imported file belong
 // to exactly one module, so nnue_acc_update.zig (a different module, "nnue_accumulator")
 // cannot import it directly without that file ending up claimed by two modules at once.
+// Re-export the PP_3Wide (pawn-pair) feature set, which lives in its own leaf now
+// (nnue_feature_pp.zig). Callers reach it through this module exactly as before.
+const nnue_feature_pp = @import("nnue_feature_pp.zig");
+pub const ppMakeIndex = nnue_feature_pp.ppMakeIndex;
+pub const ppAppendActive = nnue_feature_pp.ppAppendActive;
+pub const ppAppendChanged = nnue_feature_pp.ppAppendChanged;
+pub const ppAppendChangedBoth = nnue_feature_pp.ppAppendChangedBoth;
+
 const nnue_feature_write_avx512 = @import("nnue_feature_write_avx512.zig");
 pub const use_avx512_nnue_feature = nnue_feature_write_avx512.use_avx512_nnue_feature;
 pub const writeIndicesAvx512 = nnue_feature_write_avx512.writeIndices;
@@ -402,6 +341,8 @@ const orient_tbl_full = luts.orient_tbl_full;
 const ThreatRouteBlock = luts.ThreatRouteBlock;
 const threat_route_blocks = luts.threat_route_blocks;
 const full_dimensions = luts.full_dimensions;
+pub const FullAppendResult = luts.FullAppendResult;
+pub const FullAppendChangedLens = luts.FullAppendChangedLens;
 const pp_index_base = luts.pp_index_base;
 const pawn_pair_bb = luts.pawn_pair_bb;
 const white = luts.white;

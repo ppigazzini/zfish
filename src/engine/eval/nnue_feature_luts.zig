@@ -7,6 +7,21 @@
 // in the move.
 
 const std = @import("std");
+
+// Hold the two result shapes BOTH feature sets return. They are not lookup tables, but
+// this is the leaf every feature file already imports, and duplicating a struct across
+// files that must agree on it is how the two silently drift apart.
+pub const FullAppendChangedLens = struct {
+    removed: usize,
+    added: usize,
+};
+
+pub const FullAppendResult = struct {
+    len: usize,
+    // Holds threats AND pawn-pair active indices for one perspective's refresh (both feed
+    // the shared threatAndPp weight rows). Upstream's IndexList is ValueList<u16, 256>.
+    indices: [256]u32,
+};
 const nnue_feature_bb = @import("nnue_feature_bb.zig");
 const makePiece = nnue_feature_bb.makePiece;
 const constexprPopcount = nnue_feature_bb.constexprPopcount;

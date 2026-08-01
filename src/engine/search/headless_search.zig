@@ -295,18 +295,19 @@ test "headless search: searchPosition over many random legal lines stays crash-f
 
 // Assert each accumulator update route RUNS, not only that the routes agree.
 //
-// evaluateSide has three ways to bring the top slot up to date -- walk forward from a
-// computed slot, refresh from the board, and fill the slots below a refreshed top by
-// walking back down -- and they all produce the same numbers. That is precisely what
-// makes a dead one invisible: a route that stops running is answered correctly by the
-// route that replaces it, so no value moves, the tree is identical, and the node count
-// does not budge. bench, every UCI golden, arch-determinism and the upstream node
-// differential are all VALUE gates; none of them can see a whole branch go unreachable.
+// The accumulator has five ways to bring the top slot up to date -- the shared
+// both-perspectives walk, a per-side forward walk, a refresh from the board, the
+// backward fill below a refreshed top, and the hybrid same-half king move -- and they
+// all produce the same numbers. That is precisely what makes a dead one invisible: a
+// route that stops running is answered correctly by the route that replaces it, so no
+// value moves, the tree is identical, and the node count does not budge. bench, every
+// UCI golden, arch-determinism and the upstream node differential are all VALUE gates;
+// none of them can see a whole branch go unreachable.
 //
-// A real search is what exercises all three: the forward walk is the common case, and
-// the refresh plus its backward fill happen whenever a king move invalidates the
-// perspective's bucket. So drive one deep enough to contain king moves and assert the
-// counters moved. The counters exist only under `builtin.is_test` -- the shipped binary
+// A real search is what exercises all of them: the shared walk is the common case, the
+// per-side forward walk covers a lagging perspective, and the refresh, its backward fill
+// and the hybrid step happen when a king move invalidates a bucket. So drive one deep
+// enough to contain king moves and assert every counter moved. The counters exist only under `builtin.is_test` -- the shipped binary
 // carries no increment in the engine's hottest function.
 test "headless search: every accumulator update route is exercised" {
     position.initRuntime();
@@ -329,4 +330,5 @@ test "headless search: every accumulator update route is exercised" {
     try std.testing.expect(counts.refresh > 0);
     try std.testing.expect(counts.backward > 0);
     try std.testing.expect(counts.hybrid > 0);
+    try std.testing.expect(counts.shared > 0);
 }

@@ -44,6 +44,9 @@ const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 // Alias back the accumulator-stack layout + accessors, which live in the
 // nnue_acc_layout leaf now, so the facade + update call sites are unqualified
 // (AccumulatorStack re-exported pub for external callers).
+const nnue_acc_both = @import("nnue_acc_both.zig");
+const applyCombinedBoth = nnue_acc_both.applyCombinedBoth;
+
 const nnue_acc_entry = @import("nnue_acc_entry.zig");
 const entryDiffIndices = nnue_acc_entry.entryDiffIndices;
 const hybridApplicable = nnue_acc_entry.hybridApplicable;
@@ -88,7 +91,7 @@ const threatDiff = layout.threatDiff;
 // accumulation slot is now unused); find_last_usable uses ONLY the PSQ (HalfKA)
 // refresh condition, because a threat refresh (king move across the center) is a
 // subset of a HalfKA refresh, so the combined accumulator always refreshes together.
-/// Count which route to the top slot each walk took. The three routes AGREE on every
+/// Count which route to the top slot each walk took. Every route AGREES on every
 /// value they produce -- that is the whole point of them -- and it is exactly what makes
 /// a dead one invisible: a route that stops running is answered correctly by the route
 /// that replaces it, so the values never move and neither does the node count. The bench
@@ -106,6 +109,8 @@ pub const PathCounts = struct {
     backward: u64 = 0,
     /// A same-half king move, taken off the previous slot instead of refreshed.
     hybrid: u64 = 0,
+    /// A ply of the common suffix, taken for both perspectives in one step.
+    shared: u64 = 0,
 };
 pub var path_counts: PathCounts = .{};
 
@@ -118,14 +123,71 @@ inline fn countPath(comptime field: std.meta.FieldEnum(PathCounts)) void {
     @field(path_counts, @tagName(field)) += 1;
 }
 
+/// Bring BOTH perspectives up to date -- upstream AccumulatorStack::evaluate. When
+/// neither side needs a refresh the whole update is a forward walk, and above the later
+/// of the two starting points the two walks visit the same plies. Catch the lagging side
+/// up alone, then take that common suffix once, reading each ply's diff a single time.
+pub fn evaluate(
+    stack: *AccumulatorStack,
+    pos: *const Position,
+    feature_transformer: *const FeatureTransformer,
+    cache: *RefreshCache,
+) void {
+    const last_white = findLastUsable(psq_feature, stack, white);
+    const last_black = findLastUsable(psq_feature, stack, black);
+
+    if (stateComputed(stack, psq_feature, last_white, white) and
+        stateComputed(stack, psq_feature, last_black, black))
+    {
+        forwardUpdateBoth(stack, pos, feature_transformer, last_white, last_black);
+        return;
+    }
+    evaluateSide(white, stack, pos, feature_transformer, cache, last_white);
+    evaluateSide(black, stack, pos, feature_transformer, cache, last_black);
+}
+
+// Catch the lagging perspective up on its own, then walk the shared suffix once.
+fn forwardUpdateBoth(
+    stack: *AccumulatorStack,
+    pos: *const Position,
+    feature_transformer: *const FeatureTransformer,
+    white_begin: usize,
+    black_begin: usize,
+) void {
+    const size = stackSize(stack);
+    const white_ksq = kingSquare(pos, white);
+    const black_ksq = kingSquare(pos, black);
+    const shared_begin = @max(white_begin, black_begin);
+
+    const white_mask = nnue_feature.threatRouteMask(white, white_ksq, true);
+    const black_mask = nnue_feature.threatRouteMask(black, black_ksq, true);
+
+    var next = white_begin + 1;
+    while (next <= shared_begin) : (next += 1) {
+        countPath(.forward);
+        applyCombined(stack, white, feature_transformer, white_ksq, white_mask, next, next - 1, true);
+    }
+    next = black_begin + 1;
+    while (next <= shared_begin) : (next += 1) {
+        countPath(.forward);
+        applyCombined(stack, black, feature_transformer, black_ksq, black_mask, next, next - 1, true);
+    }
+
+    next = shared_begin + 1;
+    while (next < size) : (next += 1) {
+        countPath(.shared);
+        applyCombinedBoth(stack, feature_transformer, white_ksq, black_ksq, white_mask, black_mask, next, next - 1);
+    }
+}
+
 pub fn evaluateSide(
     perspective: u8,
     stack: *AccumulatorStack,
     pos: *const Position,
     feature_transformer: *const FeatureTransformer,
     cache: *RefreshCache,
+    last_usable: usize,
 ) void {
-    const last_usable = findLastUsable(psq_feature, stack, perspective);
     const size = stackSize(stack);
     const king_square = kingSquare(pos, perspective);
 
