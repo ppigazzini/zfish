@@ -6,9 +6,15 @@
 # compares `go depth <depth>` node counts for our native build vs that oracle, on one or more FENs.
 # Bisect <sha> over the suspect commits: the first sha whose node count diverges localizes the bug.
 #
-# NB: an apples-to-apples node compare requires our build to load the SAME net as oracle@<sha>. If <sha>
-# uses a different net than our current default, point our EvalFile at it first (or run on a sha sharing
-# our net). For the common case (oracle@<sha> uses our current default net) this just works.
+# An apples-to-apples node compare requires our build to load the SAME net as oracle@<sha>, and this
+# REFUSES TO RUN when it does not. A comment used to say so, which is worth nothing here: a stale
+# ORACLE_DIR left from an earlier session, or a resources/ missing its net, makes every position diverge
+# from the first ply -- indistinguishable from the search bug this script exists to localize, and it is
+# reached for at exactly the moment you are already expecting a divergence. Both engines print
+# `NNUE evaluation using <file>.nnue` before the first search, so the check costs nothing.
+#
+# If <sha> genuinely uses a different net from our current default, point our EvalFile at it first (or
+# bisect over a sha sharing our net).
 #
 # Usage:
 #   upstream_nodes.sh <sha> [depth] [fen...]
@@ -45,8 +51,26 @@ run_go() { # $1=cwd $2=bin $3=fen  -> full (slept) go output
 }
 nodes_of() { printf '%s\n' "$1" | grep -E "^info depth $DEPTH " | grep -oE 'nodes [0-9]+' | tail -1 | grep -oE '[0-9]+'; }
 bm_of() { printf '%s\n' "$1" | sed -n 's/^bestmove \([a-h0-9nbrq]*\).*/\1/p' | tail -1; }
+net_of() { printf '%s\n' "$1" | sed -n 's/.*NNUE evaluation using \([^ ]*\.nnue\).*/\1/p' | tail -1; }
 
+# Refuse the comparison unless both engines loaded the SAME net. The net is reported LAZILY, on first
+# use, so this has to come from a run that actually searched -- a bare `uci`/`isready` prints nothing.
 short="$(git -C "$REPO" rev-parse --short "$SHA")"
+probe_ours="$(run_go "$REPO/resources" "$OUR_BIN" "startpos")"
+probe_oracle="$(run_go "$ORACLE_DIR/src" "$ORACLE_BIN" "startpos")"
+net_ours="$(net_of "$probe_ours")"
+net_oracle="$(net_of "$probe_oracle")"
+if [ -z "$net_ours" ] || [ -z "$net_oracle" ] || [ "$net_ours" != "$net_oracle" ]; then
+    echo "nodes: REFUSING to compare -- the two engines did not load the same net." >&2
+    echo "nodes:   ours          : ${net_ours:-<none loaded>}   (cwd $REPO/resources)" >&2
+    echo "nodes:   oracle@$short : ${net_oracle:-<none loaded>}   (cwd $ORACLE_DIR/src)" >&2
+    echo "nodes: Node counts across different nets are meaningless -- every position would diverge" >&2
+    echo "nodes: from the first ply, which looks exactly like the bug you are hunting. Fix the net" >&2
+    echo "nodes: (zig build net, or point EvalFile at the one oracle@$short uses) and re-run." >&2
+    exit 2
+fi
+printf "nodes: both engines on %s\n" "$net_ours"
+
 printf "go depth %s (sleep %ss) : ours vs oracle@%s\n" "$DEPTH" "$SLEEP" "$short"
 printf "%14s %14s  %-6s %-7s %s\n" "OURS(nodes)" "ORACLE(nodes)" "bm-ok" "n-ok" "FEN"
 bad=0
