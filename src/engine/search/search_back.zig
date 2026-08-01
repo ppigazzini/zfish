@@ -232,10 +232,10 @@ pub inline fn runBack(nd: anytype) i32 {
                 }
 
                 return value;
-            } else if (nd.tt_value >= nd.beta) {
+            } else if (nd.tt_value >= nd.beta or nd.cut_node) {
+                // Reduce the ttMove in favour of the others when it is assumed to
+                // fail high over the current beta, or when this is a cutNode.
                 extension = -3;
-            } else if (nd.cut_node) {
-                extension = -2;
             }
         }
 
