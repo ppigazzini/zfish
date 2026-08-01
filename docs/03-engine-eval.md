@@ -111,9 +111,9 @@ PSQT) sections are framed separately in the stream but land in **one contiguous
 region each** — pawn-pair rows right after the threat rows — so a single index
 addresses either feature set's row (upstream's `threatAndPpWeights`). Affine layers are
 `i32` little-endian biases followed by `i8` weights, permuted on the way in through
-`weightIndexScrambled` (the SSSE3 layout the inference reads back; on the
+`weightIndexScrambled` (the SSSE3 layout the inference reads back; on the **AVX2**
 pair-activation tier `fc_1`/`fc_2` additionally fold in the paired packs' lane
-interleave). `serializeFeatureTransformer` /
+interleave — see the flag split below). `serializeFeatureTransformer` /
 `serializeLayer` invert this exactly, so an exported net round-trips byte-for-byte.
 
 The parse is the *sole* source of weights: it writes straight into the arenas owned
@@ -357,6 +357,29 @@ target and shares one scalar-equivalent contract:
 All of them are pure integer dots over the same scrambled layout, so they are
 bit-identical; a unit test in the file pins every path against a scalar reference at
 each `-Darch`.
+
+### Paired activations, and why pairing and scrambling are two flags
+
+Between the affine layers sit the squared and linear clipped ReLUs. Three tiers compute
+them **together** off shared input loads rather than in two passes — `sqrClipPair512`
+(AVX-512), `sqrClipPair` (AVX2) and `sqrClipPair128` (SSSE3) — narrowing once to `i16`,
+squaring via mulhi and clipping via max+shift at that width, then narrowing to bytes.
+
+Whether a tier pairs and whether it must **scramble** are separate questions, and
+`nnue_parse.zig` carries them as two flags because upstream does
+(`USE_PAIR_ACTIVATIONS` vs `USE_SCRAMBLED_ACTIVATIONS`):
+
+| Tier | `pair_activations` | `scrambled_activations` | Narrowing |
+| --- | --- | --- | --- |
+| AVX-512 | yes | **no** | `vpmovsdw` narrows the whole register **in order** |
+| AVX2 (no VNNI, no AVX512) | yes | **yes** | `vpackssdw`/`vpacksswb` narrow per 128-bit **lane**, interleaving the bytes |
+| SSSE3 | (own kernel) | no | the 128-bit packs concatenate in order — no cross-lane interleave exists at that width |
+
+`scrambled_activations` alone drives `weightIndexScrambled`'s extra permutation of the
+`fc_1`/`fc_2` weights. **Inverting the two silently corrupts those weights** — the values
+stay plausible and only the node count moves — so the kernel keys off `pair_activations`,
+the parse keys off `scrambled_activations`, and the bench signature is what pins that the
+two agree on every tier.
 
 The **sparse path** reads what the transformer recorded, never a re-derived test.
 `fc_0` is sparse (its 1024 inputs are mostly zero after the clipped ReLU); `fc_1` and

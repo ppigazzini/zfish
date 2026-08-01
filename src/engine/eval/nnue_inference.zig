@@ -12,6 +12,17 @@ const weight_storage = @import("nnue_weight_storage.zig");
 const nnue_affine = @import("nnue_affine.zig");
 const nnue_parse = @import("nnue_parse.zig");
 
+// Take the layer activations from their own leaf (nnue_activations.zig): the squared and
+// linear clipped ReLUs, in every shape upstream emits for them.
+const nnue_activations = @import("nnue_activations.zig");
+const sqrClippedReLU = nnue_activations.sqrClippedReLU;
+const clippedReLU = nnue_activations.clippedReLU;
+const sqrClipPair = nnue_activations.sqrClipPair;
+const sqrClipPair128 = nnue_activations.sqrClipPair128;
+const sqrClipPair512 = nnue_activations.sqrClipPair512;
+const avx512_pair_activations = nnue_activations.avx512_pair_activations;
+const sse_pair_activations = nnue_activations.sse_pair_activations;
+
 const affineDpbusd = nnue_affine.affineDpbusd;
 
 const Position = position_types.Position;
@@ -53,126 +64,6 @@ fn layerWeights(bucket: usize, idx: usize) [*]align(cache_line_size) const i8 {
     return @ptrCast(@alignCast(layerPtr(bucket, idx, .weights) orelse unreachable));
 }
 
-/// Compute upstream's SqrClippedReLU: min(127, (x*x) >> shift), over 32 outputs.
-///
-/// Clamping x into i16 first is what keeps the square inside i32 (32767^2 < 2^31), and it is
-/// exact rather than an approximation: any x outside i16 squares past the 127 clamp regardless.
-/// That is the same property upstream's saturating `packs_epi32` relies on before its
-/// `mulhi_epi16`.
-inline fn sqrClippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void {
-    const V = if (@import("builtin").cpu.arch == .x86_64) 16 else 8;
-    const lo: @Vector(V, i32) = @splat(-32768);
-    const hi: @Vector(V, i32) = @splat(32767);
-    const cap: @Vector(V, i32) = @splat(127);
-    const sh: @Vector(V, u5) = @splat(shift);
-    var i: usize = 0;
-    while (i < 32) : (i += V) {
-        const x: @Vector(V, i32) = in[i..][0..V].*;
-        const clamped = @max(lo, @min(hi, x));
-        const q = @min(cap, (clamped * clamped) >> sh);
-        out[i..][0..V].* = @as(@Vector(V, u8), @intCast(q));
-    }
-}
-
-// Run both activations of one layer on the AVX2 pair tier with upstream's
-// SqrClippedReLU::propagate_pair (sqr_clipped_relu.h): share the input loads and the
-// signed 32->16 saturating packs, compute the square via pmulhw and the clip via
-// max+shift at i16 width, then narrow each with one saturating vpacksswb. The packs
-// work per 128-bit lane, so the output bytes land interleaved by 4-byte chunk
-// (k -> (k%2)*4 + k/2 within each 32-byte block); the fc_1/fc_2 weight parse folds
-// that interleave into the weight index (nnue_parse.pair_activations -- the SAME
-// comptime condition, and the bench signature pins that the two agree), so no
-// lane-restoring permute is issued anywhere. Values are bit-identical to the split
-// sqrClippedReLU/clippedReLU pair: the saturating pack equals their i16-range clamp,
-// pmulhw>>N equals (x*x)>>(16+N) for the non-negative square, and vpacksswb's signed
-// saturation equals their min(127, .) on these non-negative inputs.
-const packssdw256 = struct {
-    extern fn @"llvm.x86.avx2.packssdw"(@Vector(8, i32), @Vector(8, i32)) @Vector(16, i16);
-}.@"llvm.x86.avx2.packssdw";
-const packsswb256 = struct {
-    extern fn @"llvm.x86.avx2.packsswb"(@Vector(16, i16), @Vector(16, i16)) @Vector(32, i8);
-}.@"llvm.x86.avx2.packsswb";
-const pmulhw256 = struct {
-    extern fn @"llvm.x86.avx2.pmulh.w"(@Vector(16, i16), @Vector(16, i16)) @Vector(16, i16);
-}.@"llvm.x86.avx2.pmulh.w";
-
-// Run both activations of one layer on the 128-bit SSSE3-class tier with the same
-// packs+mulhi shape upstream emits there (sqr_clipped_relu.h / clipped_relu.h lower to
-// packssdw+pmulhw+psrlw+packsswb at SSE): share the input loads and the signed 32->16
-// saturating packs, square via pmulhw and clip via max+shift at i16 width, then narrow
-// each with one saturating packsswb. The 128-bit packs concatenate their two operands in
-// order -- no cross-lane interleave exists at this width -- so the bytes land in natural
-// order and the fc_1/fc_2 weight parse stays the identity (unlike the avx2 pair tier's
-// compensating scramble). The split sqrClippedReLU/clippedReLU pair instead runs the
-// square at i32 width: pmulld is 2 uops on this tier and every clamp/shift/pack step
-// pays 4 xmm ops per 16 outputs, ~3x the instructions of the pack shape for the same
-// values. Values are bit-identical by sqrClipPair's argument: the saturating pack equals
-// the i16-range clamp, pmulhw>>N equals (x*x)>>(16+N) for the non-negative square, and
-// packsswb's signed saturation equals min(127, .) on these non-negative inputs.
-const sse_pair_activations = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .ssse3) and
-    !std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
-
-const packssdw128 = struct {
-    extern fn @"llvm.x86.sse2.packssdw.128"(@Vector(4, i32), @Vector(4, i32)) @Vector(8, i16);
-}.@"llvm.x86.sse2.packssdw.128";
-const packsswb128 = struct {
-    extern fn @"llvm.x86.sse2.packsswb.128"(@Vector(8, i16), @Vector(8, i16)) @Vector(16, i8);
-}.@"llvm.x86.sse2.packsswb.128";
-const pmulhw128 = struct {
-    extern fn @"llvm.x86.sse2.pmulh.w"(@Vector(8, i16), @Vector(8, i16)) @Vector(8, i16);
-}.@"llvm.x86.sse2.pmulh.w";
-
-inline fn sqrClipPair128(comptime scale_bits: comptime_int, in: *const [32]i32, sqr_out: *[32]u8, clip_out: *[32]u8) void {
-    // MulHi strips 16 of the 2*scale_bits+7 square-shift bits; shift out the rest.
-    const sqr_shift: @Vector(8, u4) = @splat(2 * scale_bits + 7 - 16);
-    const clip_shift: @Vector(8, u4) = @splat(scale_bits);
-    const zero: @Vector(8, i16) = @splat(0);
-    inline for (0..2) |half| {
-        const base = half * 16;
-        const words0 = packssdw128(in[base..][0..4].*, in[base + 4 ..][0..4].*);
-        const words1 = packssdw128(in[base + 8 ..][0..4].*, in[base + 12 ..][0..4].*);
-        const sqr0: @Vector(8, i16) = @bitCast(@as(@Vector(8, u16), @bitCast(pmulhw128(words0, words0))) >> sqr_shift);
-        const sqr1: @Vector(8, i16) = @bitCast(@as(@Vector(8, u16), @bitCast(pmulhw128(words1, words1))) >> sqr_shift);
-        sqr_out[base..][0..16].* = @bitCast(packsswb128(sqr0, sqr1));
-        const relu0: @Vector(8, i16) = @max(words0, zero);
-        const relu1: @Vector(8, i16) = @max(words1, zero);
-        const clip0: @Vector(8, i16) = @bitCast(@as(@Vector(8, u16), @bitCast(relu0)) >> clip_shift);
-        const clip1: @Vector(8, i16) = @bitCast(@as(@Vector(8, u16), @bitCast(relu1)) >> clip_shift);
-        clip_out[base..][0..16].* = @bitCast(packsswb128(clip0, clip1));
-    }
-}
-
-inline fn sqrClipPair(comptime scale_bits: comptime_int, in: *const [32]i32, sqr_out: *[32]u8, clip_out: *[32]u8) void {
-    // MulHi strips 16 of the 2*scale_bits+7 square-shift bits; shift out the rest.
-    const sqr_shift: @Vector(16, u4) = @splat(2 * scale_bits + 7 - 16);
-    const clip_shift: @Vector(16, u4) = @splat(scale_bits);
-    const zero: @Vector(16, i16) = @splat(0);
-    const words0 = packssdw256(in[0..8].*, in[8..16].*);
-    const words1 = packssdw256(in[16..24].*, in[24..32].*);
-    const sqr0: @Vector(16, i16) = @bitCast(@as(@Vector(16, u16), @bitCast(pmulhw256(words0, words0))) >> sqr_shift);
-    const sqr1: @Vector(16, i16) = @bitCast(@as(@Vector(16, u16), @bitCast(pmulhw256(words1, words1))) >> sqr_shift);
-    sqr_out.* = @bitCast(packsswb256(sqr0, sqr1));
-    const relu0: @Vector(16, i16) = @max(words0, zero);
-    const relu1: @Vector(16, i16) = @max(words1, zero);
-    const clip0: @Vector(16, i16) = @bitCast(@as(@Vector(16, u16), @bitCast(relu0)) >> clip_shift);
-    const clip1: @Vector(16, i16) = @bitCast(@as(@Vector(16, u16), @bitCast(relu1)) >> clip_shift);
-    clip_out.* = @bitCast(packsswb256(clip0, clip1));
-}
-
-/// Compute upstream's ClippedReLU: clamp(x >> shift, 0, 127), over 32 outputs.
-inline fn clippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u8) void {
-    const V = if (@import("builtin").cpu.arch == .x86_64) 16 else 8;
-    const zero: @Vector(V, i32) = @splat(0);
-    const cap: @Vector(V, i32) = @splat(127);
-    const sh: @Vector(V, u5) = @splat(shift);
-    var i: usize = 0;
-    while (i < 32) : (i += V) {
-        const x: @Vector(V, i32) = in[i..][0..V].*;
-        out[i..][0..V].* = @as(@Vector(V, u8), @intCast(@max(zero, @min(cap, x >> sh))));
-    }
-}
-
 fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_accumulator_port.NnzOut) i32 {
     // Read the affine-layer weights from the Zig-owned storage. The parse
     // writes this storage and is the sole source, so the eval is bench-verified.
@@ -195,7 +86,9 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     // On the pair tier each block is written chunk-interleaved and the fc_1/fc_2 weights
     // compensate (see sqrClipPair); the dots, and every value below, are unchanged.
     var concat: [128]u8 = undefined;
-    if (comptime nnue_parse.pair_activations) {
+    if (comptime avx512_pair_activations) {
+        sqrClipPair512(7, &fc0_out, concat[0..32], concat[32..64]);
+    } else if (comptime nnue_parse.pair_activations) {
         sqrClipPair(7, &fc0_out, concat[0..32], concat[32..64]);
     } else if (comptime sse_pair_activations) {
         sqrClipPair128(7, &fc0_out, concat[0..32], concat[32..64]);
@@ -210,7 +103,9 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
 
     // Apply ac_sqr_1 / ac_1 over FC_1_OUTPUTS=32 with WeightScaleBitsLocal = WeightScaleBits = 6:
     // SqrClippedReLU shift = 2*6+7 = 19, ClippedReLU shift = 6. Written into concat[64..128].
-    if (comptime nnue_parse.pair_activations) {
+    if (comptime avx512_pair_activations) {
+        sqrClipPair512(6, &fc1_out, concat[64..96], concat[96..128]);
+    } else if (comptime nnue_parse.pair_activations) {
         sqrClipPair(6, &fc1_out, concat[64..96], concat[96..128]);
     } else if (comptime sse_pair_activations) {
         sqrClipPair128(6, &fc1_out, concat[64..96], concat[96..128]);
