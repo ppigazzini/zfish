@@ -282,6 +282,32 @@ counters compile in under `builtin.is_test` alone, so the shipped binary carries
 increment in the engine's hottest function — the branch folds away at comptime. Verified
 by mutation: disabling the forward route fails that test and nothing else.
 
+### And separately: do they pay?
+
+"The route fires" and "the route is worth having" fail independently, and the counters
+above answer only the first. A hot-path restructure can run, produce the right values,
+and still cost time — an avx2 tile measured here once came in at −7.4% instructions and
+**+1.9% cycles**.
+
+Measured by ablation, which is clean precisely *because* every route agrees on every
+value: disable the hybrid step and the shared walk together, and both binaries bench the
+same node count (`zig build signature`), so it is one tree with two amounts of work, and
+startup is identical on both sides and cancels.
+
+| tier | instructions | per-node | cycles |
+|---|---|---|---|
+| avx2 | 0.995 | 6768 against 6800 | 0.935 |
+| vnni512 | 0.983 | 5171 against 5259 | 0.979 |
+
+So both ports pay as well as being faithful — ~1.7% of whole-process instructions at
+vnni512, and more than that in the search alone, since startup dilutes a whole-process
+figure. The sibling C port measured the same pair independently at 0.981, which is close
+enough to be worth stating: two ports, two codebases, one conclusion.
+
+**Read the cycles column as agreement in direction only.** This box was not idle when
+these ran, and the documented serial-cycle floor here is ±1%; the instruction axis is
+near-deterministic under load, which is why the claim rests on it.
+
 **Incremental step.** `applyCombined` builds this ply's PSQ and threat
 changed-feature index lists from the stored diffs, splits them into removed/added
 (inverted when stepping backward), and applies all four lists to the accumulator in
