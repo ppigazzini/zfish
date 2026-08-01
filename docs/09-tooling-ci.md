@@ -83,7 +83,25 @@ So there are two legitimate reasons to regenerate, and one forbidden one:
 golden from ourselves — that only records the bug more firmly. For the `driver` case above,
 upstream emits `nodes 2498`, `seldepth 10`, `score cp 16`; the regenerated golden reproduces
 those bytes, which is what makes the regeneration a correction rather than a capitulation.
-`upstream_oracle.sh --verify` gives you that reference (see *Tracking upstream*).
+
+`tools/upstream_golden_audit.sh` runs that test for you, on every golden at once. Each one
+is built from UCI-observable behaviour and `parity_harness` takes the engine as an argument,
+so the same builder points at the pristine oracle unchanged — the audit runs each `<gate>`
+check with upstream's binary in place of ours and passes only when our committed golden is
+what upstream itself produces. Run it after any reharden; `--list` prints the gate set and a
+gate name limits the run.
+
+```sh
+tools/upstream_golden_audit.sh                    # all of them
+tools/upstream_golden_audit.sh tb-search eval     # just these
+```
+
+**The audit runs from `resources/`, and running it anywhere else reads as a divergence.**
+That directory is where the net lives *and* where `syzygy/` and `syzygy5/` are fetched. Point
+the oracle at its own worktree instead and `SyzygyPath value syzygy` resolves to upstream's
+*source* directory (`src/syzygy/tbprobe.cpp`), no tablebase loads, and `tb-search` reports
+`with-tb == no-tb` on every row — a rig with no tablebases, not a disagreement. Re-bless a
+tablebase golden only from an oracle at the same `SyzygyPath`.
 
 **A resync must refresh every golden it moves, including the ones CI cannot run.** The
 node-limited legs of `tb-cursed` went stale for exactly one week this way: the SFNNv16
@@ -288,8 +306,9 @@ their Zig owner and a risk tier). `tools/upstream/README.md` is the workflow.
 | Script | What it does |
 | --- | --- |
 | `upstream_sync.sh` | The driver: fetch, compute the behind-count from `UPSTREAM_BASE`, print the worklist + tiered backlog and per-commit bench targets. `--check` prints one terse line for a poll. |
-| `upstream_oracle.sh` | Builds **vanilla** upstream at a sha into a detached git worktree and prints the binary path. |
-| `upstream_parity.sh` | Asserts the native Zig bench == the pristine oracle's bench at the target sha. |
+| `upstream_oracle.sh` | Builds **vanilla** upstream at a sha into a detached git worktree and prints the binary path. Its `.zfish_oracle_stamp` carries compiler, ARCH **and sha**, and a disagreement forces `make clean`. The sha belongs there even though `make` tracks mtimes: a checkout that reshapes a header's types relinks stale objects into a binary that builds clean and then core dumps on `bench`. A sync moves the sha once, so the full rebuild costs one build and the steady-state same-sha check stays the incremental no-op it was designed to be. |
+| `upstream_parity.sh` | Asserts the native Zig bench == the pristine oracle's bench at the target sha. An empty node count is what a crash, a missing net and a usage error all look like from outside, so it keeps each bench's output and exit status and reports a signal death as such. |
+| `upstream_golden_audit.sh` | Re-runs every golden's `<gate>` check with the **pristine oracle** as the engine, proving each committed golden is what upstream itself produces rather than what we produced. See *Goldens* above for the `resources/` cwd requirement. |
 | `upstream_transcript.sh` | Diffs the **whole UCI transcript** against the pristine oracle over ~50 command scripts (handshake and option listing, every `NumaPolicy` shape, affinity masks, position setup, the reporters). The bench signature proves the two search the same tree; this proves they print the same bytes. Known divergences are declared by regex so a new one cannot hide behind them. Search is compared at `Threads 1` only — lazy SMP is nondeterministic on both sides. |
 | `upstream_router.py`, `upstream_benchmap.sh`, `upstream_nodes.sh`, `upstream_net.sh` | Classify a commit by Zig owner + risk; list per-commit bench checkpoints; localize which position/commit first diverges; place a bumped net in each worktree. |
 | `upstream_map_derive.py` | Derive the upstream↔zfish file map from the source comments' upstream citations (zfish ships no C/C++, so every `.cpp`/`.h` citation is upstream); report coverage, uncovered surface, phantom citations, and — `--audit` — rot/drift in the hand-maintained `upstream_map.tsv` (the router's risk model). By-design exclusions carry reasons in `upstream/upstream_map.exceptions`. Adapted from the sibling ports' correspondence-manifest system. |

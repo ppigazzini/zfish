@@ -54,6 +54,7 @@ function-pointer seams. For the zones and the module graph, see
 | `option_source.zig` | UCI option reads (`intByName`, the Syzygy settings) |
 | `output_sink.zig` | The UCI output sink (`printLine`, `isQuiet`, `setLastNodesSearched`) |
 | `time_source.zig` | The monotonic clock (`now`) |
+| `search_timing.zig` | The `speedtest` interval: `markStart` / `markBestmove` / `reset` / `totalMs` |
 | `tb_source.zig` | The Syzygy probe (`probeWdlPos`, `probeFen`, `maxCardinality`) and `ProbeResult` |
 | `thread_ops.zig` | The pool operations (`startSiblings`, `waitSiblings`, `waitThread`, `bestThreadWorker`) |
 
@@ -181,14 +182,18 @@ a step is greppable across both trees. Steps 1–12 are `searchImpl`, 13–21 `r
 | 11–12 | **ProbCut**: a shallow search at a raised beta to prove a capture refutes the node; then the deep-ProbCut TT idea |
 | 13 | The move loop — `movepick.nextMove` per move (below) |
 | 14 | Prune at shallow depth: late-move, futility, SEE and history pruning per move |
-| 15 | **Singular extension**: re-search excluding the TT move to test whether it is the only move that holds |
+| 15 | **Singular extension**: re-search excluding the TT move to test whether it is the only move that holds; a probe that instead fails high over beta multi-cuts the node (below) |
 | 16–19 | Make, search (LMR then full-depth on a fail-high), unmake |
 | 20–21 | Record a new best move; resolve mate/stalemate and the fail-high bookkeeping |
 
 **Null move** (Step 9) is the one step whose mechanics differ visibly from an ordinary
 child. It runs only on a cut-node whose static eval clears `nullMoveThreshold`, with no
-excluded move, with non-pawn material for the side to move, and at or above
-`ctx.nmp_min_ply`. `doNullMove` touches **no accumulator** — passing is not a move, so
+excluded move, with non-pawn material for the side to move, at or above
+`ctx.nmp_min_ply`, and with `nullMoveBetaOk(beta)` — a flat `beta >= -2000` floor rather
+than the `!isLoss(beta)` test the other steps use. The stricter floor is load-bearing:
+`nullMoveReduction` scales `R` with how far the static eval clears beta, and without it
+that deeper reduction costs mate finds when beta is already in decisive territory.
+`doNullMove` touches **no accumulator** — passing is not a move, so
 there is no feature delta to apply — and the stack records the move as `65` with the
 all-`NO_PIECE` continuation-history page, so `ss-1` resolves to the table base rather than
 to a real `(piece, to)` page. Above depth 16 a fail-high is not trusted directly: the code
@@ -358,6 +363,13 @@ continuation-correction entries and applies `search.correctionValue`;
 `search.toCorrectedStaticEval` folds the result into the eval. After the move loop,
 `updateCorrectionHistory` nudges all six back toward the observed search/static-eval
 delta — only when the node is not in check and the best move is not a capture.
+
+There are **two** writers, not one. The Step 15 multi-cut return (`search_back.zig`)
+writes as well: when the singular probe fails high over beta the node returns
+immediately, and that return would otherwise discard a proof that the static eval was
+too low, so it nudges the same tables by `search.multiCutCorrectionBonus` first — again
+only off-check, and only when the probe's value actually exceeds `ss.static_eval`. Both
+writers clamp into ±`CORRECTION_HISTORY_LIMIT/4`.
 
 **The transposition table** (`tt.zig`, layout in `state/tt_types.zig`) is a flat array
 of `TtCluster`, each holding `cluster_size` `TtEntry` records plus padding. Both structs
