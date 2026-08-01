@@ -328,4 +328,5 @@ test "headless search: every accumulator update route is exercised" {
     try std.testing.expect(counts.forward > 0);
     try std.testing.expect(counts.refresh > 0);
     try std.testing.expect(counts.backward > 0);
+    try std.testing.expect(counts.hybrid > 0);
 }

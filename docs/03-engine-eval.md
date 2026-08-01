@@ -27,7 +27,8 @@ for the same position.
 | **accumulator** | |
 | `nnue_acc_layout.zig` | the accumulator-stack byte layout: strides, diff records, the `AccumulatorStack` handle, and every state/diff accessor |
 | `nnue_acc_update.zig` | the update algorithm: `evaluateSide`, the refresh path, and the fused incremental step |
-| `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `accRows`, the refresh-fused passes and the PSQT deltas |
+| `nnue_acc_entry.zig` | the two steps that start from a refresh-cache ENTRY: the entry diff both of them share, and `updateHybrid`, the same-half king move |
+| `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `accRows`, the refresh-fused and hybrid passes, and the PSQT deltas |
 | `nnue_transform_packus.zig` | the transform's packus clip-multiply-narrow kernels, one per x86 vector width (`packusTransform64`/`32`/`16`), and the scalar-reference tests that pin them |
 | `nnue_refresh_cache.zig` | the per-(king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
 | `nnue_nnz.zig` | the transform's non-zero-chunk record: the two shapes (`NnzIndexList` on the AVX-512 VNNI tiers, `NnzBitset` elsewhere), the tier gate `use_nnz_index_list`, and `nnzRecord`/`nnzReset` |
@@ -220,19 +221,44 @@ flowchart TD
     F --> G
 ```
 
-**All three routes produce the same numbers, and that is what makes a dead one
+**Hybrid.** A king move rebuckets every HalfKA index, so it would normally force a full
+refresh — but the threat and pawn-pair orientation depends only on which **half** of the
+board the king stands on. A king move that stays on its half therefore keeps that whole
+accumulation, and only the HalfKA half has to change buckets. Both buckets are reachable
+from the refresh cache, so the step is
+
+```
+target = computed − <old-bucket HalfKA> + <new-bucket HalfKA> + <this ply's threat/pp delta>
+```
+
+`nnue_acc_entry.zig` owns it (`updateHybrid`), together with the entry diff that the
+refresh path shares. The old bucket's board is the position *before* the move, which
+exists nowhere: the step reconstructs it by undoing the king move on a copy of the piece
+array — the only board the accumulator builds rather than reads, and the reason the step
+is bounded below by `MIN_PC_COUNT_HYBRID = 15` pieces. Below that, summing the threat and
+pair features outright beats reconstructing the source bucket. Castling is excluded
+because it relocates a rook as well.
+
+`hybridApplicable`'s conditions are not all the same kind, and the bench separates them.
+Dropping the same-half test **moves the node count**; so does allowing castling — both are
+correctness conditions, and the step computes a different accumulator without them.
+Dropping the piece-count bound leaves the count **unchanged**: that one is purely the cost
+threshold it is described as. Re-derive this rather than trusting it — mutate the
+predicate and run `zig build signature`.
+
+**All four routes produce the same numbers, and that is what makes a dead one
 invisible.** Which route runs changes only how much work the update costs, so a route
 that stops running is answered correctly by the route that replaces it: the values never
 move, the tree is identical, and the node count does not budge. bench, every UCI golden,
 `arch-determinism` and the upstream node differential are all *value* gates — none of
 them can see a whole branch go unreachable.
 
-Only a counter can. `nnue_acc_update.PathCounts` counts the forward walk, the refresh and
-the backward fill, and `headless_search.zig`'s *"every accumulator update route is
-exercised"* test drives a real depth-8 search and asserts all three moved. The counters
-compile in under `builtin.is_test` alone, so the shipped binary carries no increment in
-the engine's hottest function — the branch folds away at comptime. Verified by mutation:
-disabling the forward route fails that test and nothing else.
+Only a counter can. `nnue_acc_update.PathCounts` counts the forward walk, the refresh, the
+backward fill and the hybrid step, and `headless_search.zig`'s *"every accumulator update
+route is exercised"* test drives a real depth-8 search and asserts all four moved. The
+counters compile in under `builtin.is_test` alone, so the shipped binary carries no
+increment in the engine's hottest function — the branch folds away at comptime. Verified
+by mutation: disabling the forward route fails that test and nothing else.
 
 **Incremental step.** `applyCombined` builds this ply's PSQ and threat
 changed-feature index lists from the stored diffs, splits them into removed/added
