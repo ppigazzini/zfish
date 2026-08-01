@@ -97,6 +97,13 @@ stops being a port:
 | `7b550409` | `applyCombinedBoth` (nnue_acc_both.zig) -- when neither perspective needs a refresh, catch the lagging one up and walk the common suffix once, decoding each ply's diff a single time. |
 | `453f2207` | `sqrClipPair512` (nnue_activations.zig) plus the flag split: `pair_activations` (AVX512 **or** AVX2-pair) chooses the kernel, `scrambled_activations` (AVX2-pair alone) drives the weight permutation. Inverting the two silently corrupts the fc_1/fc_2 weights. |
 
+**They pay, and that is a separate measurement.** Ablating the hybrid step and the shared
+walk together (both routes off, same node count, so one tree with two amounts of work)
+costs instructions 1.005 at avx2 and 1.017 at vnni512 -- so the two ports are worth
+1.7% of whole-process instructions at the top tier, and more in the search alone.
+docs/03-engine-eval.md carries the table. The sibling port measured the same pair
+independently at 0.981 against zfish's 0.983.
+
 **A bit-exact bench does NOT prove one of these ran.** Every accumulator route produces
 the same values by construction, so a route that never fires is answered correctly by its
 fallback and the anchor, the goldens, arch-determinism and the node differential all stay
