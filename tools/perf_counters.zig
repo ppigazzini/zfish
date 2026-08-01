@@ -18,6 +18,10 @@
 //!     never could. Report the branch-miss ratio: the counter was already opened and read into
 //!     Counters, and then dropped, so a change that moved only PREDICTION read as pure noise --
 //!     which is the axis both the movepick dispatch and the NNZ walk live on.
+//!   * Report RETIRED BRANCHES beside the misses, so the miss RATE is readable. A miss count
+//!     alone cannot say whether a surplus is more branches or worse prediction of the same
+//!     ones, and those two call for opposite fixes -- reshape the code, or break a data
+//!     dependence.
 //!
 //! WHAT IT FOUND ON FIRST USE (2026-07-15, identical 904,097-node tree, zfish/SF):
 //!            instructions   cycles    IPC    cache-misses
@@ -65,11 +69,20 @@ const Counters = struct {
     cycles: u64 = 0,
     cache_misses: u64 = 0,
     branch_misses: u64 = 0,
+    branches: u64 = 0,
     nodes: u64 = 0,
 
     fn ipc(self: Counters) f64 {
         if (self.cycles == 0) return 0;
         return @as(f64, @floatFromInt(self.instructions)) / @as(f64, @floatFromInt(self.cycles));
+    }
+
+    // Report misses per retired branch. A miss COUNT cannot say whether a surplus is more
+    // branches or worse prediction of the same ones, and those two call for opposite fixes:
+    // one is a code-shape problem, the other a data-dependence problem.
+    fn branchMissRate(self: Counters) f64 {
+        if (self.branches == 0) return 0;
+        return @as(f64, @floatFromInt(self.branch_misses)) / @as(f64, @floatFromInt(self.branches));
     }
 };
 
@@ -141,8 +154,10 @@ fn runOnce(gpa: std.mem.Allocator, argv: []const [*:0]const u8, core: usize) !Co
     defer _ = linux.close(c_cyc);
     const c_cache = openCounter(@intFromEnum(linux.PERF.COUNT.HW.CACHE_MISSES), pid) catch -1;
     const c_branch = openCounter(@intFromEnum(linux.PERF.COUNT.HW.BRANCH_MISSES), pid) catch -1;
+    // Retired branches, so the miss RATE is readable and not just the miss count.
+    const c_branch_all = openCounter(@intFromEnum(linux.PERF.COUNT.HW.BRANCH_INSTRUCTIONS), pid) catch -1;
 
-    const fds = [_]i32{ c_instr, c_cyc, c_cache, c_branch };
+    const fds = [_]i32{ c_instr, c_cyc, c_cache, c_branch, c_branch_all };
     for (fds) |fd| if (fd >= 0) {
         _ = linux.ioctl(fd, linux.PERF.EVENT_IOC.RESET, 0);
         _ = linux.ioctl(fd, linux.PERF.EVENT_IOC.ENABLE, 0);
@@ -179,6 +194,10 @@ fn runOnce(gpa: std.mem.Allocator, argv: []const [*:0]const u8, core: usize) !Co
     if (c_branch >= 0) {
         _ = linux.read(c_branch, std.mem.asBytes(&result.branch_misses), 8);
         _ = linux.close(c_branch);
+    }
+    if (c_branch_all >= 0) {
+        _ = linux.read(c_branch_all, std.mem.asBytes(&result.branches), 8);
+        _ = linux.close(c_branch_all);
     }
     result.nodes = parseNodes(out.items) orelse 0;
     return result;
@@ -242,6 +261,12 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(r_cache);
     var r_branch = try gpa.alloc(f64, rounds);
     defer gpa.free(r_branch);
+    var r_branch_all = try gpa.alloc(f64, rounds);
+    defer gpa.free(r_branch_all);
+    var rate_a = try gpa.alloc(f64, rounds);
+    defer gpa.free(rate_a);
+    var rate_b = try gpa.alloc(f64, rounds);
+    defer gpa.free(rate_b);
 
     var first_a: Counters = .{};
     var first_b: Counters = .{};
@@ -273,6 +298,9 @@ pub fn main(init: std.process.Init) !void {
         r_ipc[i] = if (b.ipc() > 0) a.ipc() / b.ipc() else 0;
         r_cache[i] = ratio(a.cache_misses, b.cache_misses);
         r_branch[i] = ratio(a.branch_misses, b.branch_misses);
+        r_branch_all[i] = ratio(a.branches, b.branches);
+        rate_a[i] = a.branchMissRate();
+        rate_b[i] = b.branchMissRate();
         std.debug.print("  {d:>5} {d:>16} {d:>16} {d:>9.3} {d:>8.3} {d:>8.3}\n", .{ i + 1, a.instructions, b.instructions, r_instr[i], a.ipc(), b.ipc() });
     }
 
@@ -282,13 +310,21 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("#   IPC          : {d:.3}   <- the EFFICIENCY. <1 means A retires fewer instr/cycle.\n", .{median(r_ipc)});
     std.debug.print("#   cache misses : {d:.3}\n", .{median(r_cache)});
     std.debug.print("#   branch misses: {d:.3}   <- the FRONT END. flat under a footprint change.\n", .{median(r_branch)});
+    std.debug.print("#   branches     : {d:.3}   <- how MANY, not how well predicted.\n", .{median(r_branch_all)});
+    std.debug.print("#   miss rate    : A {d:.3}%  B {d:.3}%   <- misses per retired branch.\n", .{ median(rate_a) * 100.0, median(rate_b) * 100.0 });
     std.debug.print(
         \\#
         \\# READ IT THIS WAY: cycles ~= instructions / IPC. If A's cycle ratio is worse than its
         \\# instruction ratio, the residue is an IPC/memory gap -- A does similar work but retires
         \\# it slower -- and NO amount of instruction-count reduction closes that half. Split that
-        \\# residue with the last two lines: branch misses move when the change is a PREDICTION
+        \\# residue with the miss lines: branch misses move when the change is a PREDICTION
         \\# one, cache misses when it is a DATA one, and neither moves when it is code FOOTPRINT.
+        \\#
+        \\# SPLIT THE MISSES with the branch COUNT beside them. A miss ratio alone cannot say
+        \\# whether A missed more because it EXECUTES more branches or because it PREDICTS the
+        \\# same ones worse, and those call for opposite fixes -- reshape the code, or break a
+        \\# data dependence. Read the branch ratio against the miss ratio: equal miss RATES with
+        \\# a high branch ratio is branch DENSITY, not misprediction.
         \\
     , .{});
 
