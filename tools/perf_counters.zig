@@ -230,13 +230,60 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print(
             \\usage: perf_counters <binA> <binB> <rounds> [bench-args...]   (CWD must be resources/)
             \\   e.g: perf_counters ./zf_sse41 ../oracle/sf_sse41 8 bench 16 1 13
+            \\       perf_counters --budget ./stockfish 5 bench 16 1 8
             \\
             \\Interleaved paired A/B over hardware counters. Reports instructions (the work) and
             \\cycles/IPC/cache-misses (the efficiency). Works on EVERY arch, incl. avx512/vnni512
             \\where callgrind SIGILLs. Refuses to report if node counts differ (different tree =
             \\different workload = meaningless ratio).
             \\
+            \\--budget takes ONE binary and prints its own median retired-instruction count
+            \\instead of a ratio, for the absolute budget gate (tools/perf_budget.sh).
+            \\
         , .{});
+        return;
+    }
+
+    // Single-binary mode. Every ratio above cancels the absolute out, so a REGRESSION that
+    // moves both sides equally -- or that has no second side to compare against, which is the
+    // usual case on a working branch -- is invisible to them. Print the absolute instead and
+    // let the caller hold it to a committed budget.
+    if (std.mem.eql(u8, std.mem.span(av[1]), "--budget")) {
+        if (av.len < 4) {
+            std.debug.print("usage: perf_counters --budget <bin> <rounds> [bench-args...]\n", .{});
+            return;
+        }
+        const bin = av[2];
+        const rounds_b = std.fmt.parseInt(usize, std.mem.span(av[3]), 10) catch 5;
+        var argv_b1: std.ArrayList([*:0]const u8) = .empty;
+        defer argv_b1.deinit(gpa);
+        try argv_b1.append(gpa, bin);
+        for (av[4..]) |a| try argv_b1.append(gpa, a);
+
+        const samples = try gpa.alloc(f64, rounds_b);
+        defer gpa.free(samples);
+        var nodes: u64 = 0;
+        var round: usize = 0;
+        while (round < rounds_b) : (round += 1) {
+            const c = try runOnce(gpa, argv_b1.items, 0);
+            // Pin the workload with the tree size, the same guard the A/B path applies: a
+            // count taken over a different node total is not a datum this gate can use.
+            if (nodes == 0) nodes = c.nodes;
+            if (c.nodes != nodes) {
+                std.debug.print(
+                    "budget: node count moved between rounds ({d} then {d}) -- refusing\n",
+                    .{ nodes, c.nodes },
+                );
+                std.process.exit(2);
+            }
+            samples[round] = @floatFromInt(c.instructions);
+        }
+        const med = median(samples);
+        // One machine-readable line; the shell gate parses this and nothing else.
+        std.debug.print(
+            "budget nodes={d} rounds={d} instructions={d}\n",
+            .{ nodes, rounds_b, @as(u64, @intFromFloat(med)) },
+        );
         return;
     }
 
