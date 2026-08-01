@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const time_source = @import("time_source");
+const search_timing = @import("search_timing");
 const worker_layout = @import("worker_layout");
 const tt = @import("tt");
 const score_port = @import("score");
@@ -114,6 +115,8 @@ fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_l
 
 // Emit for a checkmated/stalemated root: "info depth 0 score ..." + "bestmove (none)".
 pub fn ssEmitNoMoves(worker: ?*worker_layout.WorkerLayout) void {
+    // A checkmate/stalemate root still ends a search, so close its interval too.
+    search_timing.markBestmove(time_source.now());
     if (uci_output.isQuiet()) return;
     const w = worker.?;
     const ca = std.heap.c_allocator;
@@ -133,6 +136,9 @@ pub fn ssEmitNoMoves(worker: ?*worker_layout.WorkerLayout) void {
 
 // Emit "bestmove X[ ponder Y]" from best's first RootMove PV. No-op in quiet mode.
 pub fn ssEmitBestmove(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layout.WorkerLayout) void {
+    // Close the speedtest interval BEFORE the quiet-mode return: speedtest is exactly the
+    // caller that silences output, so stamping after it would never run.
+    search_timing.markBestmove(time_source.now());
     if (uci_output.isQuiet()) return;
     const pv = &workerRootMove0(best.?).pv;
     const root_pos = &worker.?.root_pos;

@@ -15,6 +15,7 @@ const thread_ops = @import("thread_ops");
 const nnue_acc = @import("nnue_accumulator");
 const position_query = @import("position_query");
 const time_source = @import("time_source");
+const search_timing = @import("search_timing");
 const search_ctx = @import("search_ctx");
 
 const SsCtx = search_ctx.SsCtx;
@@ -144,6 +145,11 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
 
     const gen = &wl.tt.generation8;
     gen.* = tt.generationNext(gen.*);
+
+    // Open the speedtest interval here, past time-management init and the TT generation
+    // bump: everything upstream of this point is per-command setup (UCI parse, thread
+    // wakeup, lazy net verification) that would otherwise be charged to the search.
+    search_timing.markStart(time_source.now());
 }
 
 // Compute the skill level as a float: from UCI_Elo (interpolated) when UCI_LimitStrength is set,
