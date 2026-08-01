@@ -870,12 +870,24 @@ const NodestimeRow = struct { label: []const u8, cmds: []const u8 };
 fn buildNodestime(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const end = "position fen 8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
+    // Black to move, with the two clocks far apart: every row above is white to move, so
+    // all of them read `wtime` and none of them can tell the side-selection apart from a
+    // constant. An engine that always read wtime would pass the whole gate while playing
+    // black on the wrong budget -- the deepest search here is the one with 60s on the
+    // clock it must NOT be reading.
+    const blk = "position fen rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
     const rows = [_]NodestimeRow{
         .{ .label = "sudden-death ", .cmds = sp ++ "\ngo wtime 10000 btime 10000" },
         .{ .label = "movestogo    ", .cmds = sp ++ "\ngo wtime 10000 btime 10000 movestogo 30" },
         .{ .label = "with-inc     ", .cmds = sp ++ "\ngo wtime 10000 btime 10000 winc 100 binc 100" },
         .{ .label = "endgame-sd   ", .cmds = end ++ "\ngo wtime 5000 btime 5000" },
         .{ .label = "movetime     ", .cmds = sp ++ "\ngo movetime 500" },
+        .{ .label = "black-asym   ", .cmds = blk ++ "\ngo wtime 60000 btime 1000" },
+        .{ .label = "white-asym   ", .cmds = sp ++ "\ngo wtime 1000 btime 60000" },
+        .{ .label = "black-mtg    ", .cmds = blk ++ "\ngo wtime 60000 btime 2000 movestogo 5" },
+        // movestogo 1 is the last move before the control, the branch that hands the whole
+        // remaining budget to one search rather than dividing it.
+        .{ .label = "movestogo-1  ", .cmds = sp ++ "\ngo wtime 10000 btime 10000 movestogo 1" },
     };
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);

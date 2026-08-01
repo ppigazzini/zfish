@@ -3,3 +3,7 @@ movestogo    depth=19 score=cp 29 nodes=211210 bestmove=e2e4 ponder=c7c5
 with-inc     depth=20 score=cp 33 nodes=349120 bestmove=e2e4 ponder=e7e5
 endgame-sd   depth=15 score=cp 34 nodes=229396 bestmove=b4f4 ponder=h4g3
 movetime     depth=6 score=cp 32 nodes=753 bestmove=e2e4 ponder=e7e5
+black-asym   depth=14 score=cp -29 nodes=15485 bestmove=c7c5 ponder=g1f3
+white-asym   depth=13 score=cp 25 nodes=11914 bestmove=e2e4 ponder=c7c5
+black-mtg    depth=18 score=cp -25 nodes=381238 bestmove=e7e5 ponder=g1f3
+movestogo-1  depth=32 score=cp 27 nodes=5264337 bestmove=e2e4 ponder=e7e5
