@@ -173,3 +173,40 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # Assert zfish CALLS what upstream calls, as often -- the only check here that can see
+      # a state divergence which does not move a node count.
+      #
+      # Every other differential in this repo compares VALUES: the bench anchor, the UCI
+      # goldens, arch-determinism, the random-position node differential above. Each one
+      # passes over a defect that happens not to change a node count on the positions it
+      # drives. The sibling C port had two real bugs living behind exactly that all-green
+      # wall -- a `ucinewgame` that discarded the position, and a mate/stalemate root that
+      # skipped the per-worker reset -- and BOTH surfaced as one call of difference in
+      # set_check_info. zfish has neither, and this is what proves that rather than someone
+      # having read two files carefully.
+      #
+      # It belongs in THIS workflow for the same reason the map audit and the random walk
+      # do: it needs the pinned upstream tree the drift step's fetch brought in, and it
+      # builds the oracle. It runs under callgrind at ~50x, which is why it is not in
+      # `zig build parity` -- but callgrind SIMULATES rather than samples, so unlike every
+      # cycles reading here the result is deterministic and a loaded runner cannot flap it.
+      - name: Call-count fingerprint vs upstream
+        env:
+          ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
+        run: |
+          sudo apt-get install -y --no-install-recommends valgrind
+          if out="$(bash tools/upstream_fingerprint.sh 2>&1)"; then
+            status=0
+          else
+            status=$?
+          fi
+          echo "$out"
+          {
+            echo "## Call-count fingerprint vs upstream"
+            echo ""
+            echo '```'
+            echo "$out" | tail -20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

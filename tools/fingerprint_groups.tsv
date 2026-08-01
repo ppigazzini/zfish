@@ -1,0 +1,38 @@
+# Call-count fingerprint groups: NAME <TAB> REGEX
+#
+# One regex per logical component, matched against the symbol names in BOTH engines'
+# callgrind profiles and the matches summed. Each row is the claim "zfish calls this as
+# often as Stockfish does" -- a claim about the ALGORITHM, not about cost, and immune to
+# inlining as long as the symbol survives on both sides.
+#
+# WHAT THIS CATCHES THAT NOTHING ELSE HERE DOES. Every other differential in this tree
+# compares VALUES -- the bench anchor, the UCI goldens, arch-determinism, upstream-walk --
+# and each one passes over a state divergence that happens not to move a node count on the
+# positions it drives. The sibling C port had two real defects living behind that all-green
+# wall (a `ucinewgame` that discarded the position, and a mate/stalemate root that skipped
+# the per-worker reset), and BOTH surfaced here as one call of difference in set_check_info.
+# zfish reads 165,082 -- upstream's value, so it has neither -- but the check is what
+# proves that rather than the reading of two files.
+#
+# CHOOSE SYMBOLS THAT SURVIVE INLINING ON BOTH SIDES. A group whose regex matches nothing
+# on one side is a MISS and fails, because a silent zero would read as agreement forever.
+# If a compiler change inlines a symbol away, fix the row rather than deleting the check,
+# and prefer a callee too big to inline over its caller. `isDraw` has no row for exactly
+# this reason: zfish inlines it away entirely, so there is nothing to compare.
+#
+# MATCH ONE SYMBOL PER SIDE, AND VERIFY IT. A loose regex silently sums symbols that are
+# not the same thing: `Position::do_move` alone also catches upstream's delegating 4-arg
+# overload (250 calls) and reads as a 250-call divergence that is not there. Check a new
+# row with `perf_fingerprint.py calls <out> --match ...` before trusting it.
+
+movepick	movepick\.nextMove$|MovePicker::next_move
+legal	legality\.legal$|Position::legal
+gives_check	legality\.givesCheck$|Position::gives_check
+see_ge	legality\.seeGe$|Position::see_ge
+set_check_info	state_setup\.setCheckInfo$|Position::set_check_info
+do_move	move_do\.doMove$|Position::do_move\(Stockfish::Move, Stockfish::StateInfo&, bool
+undo_move	move_do\.undoMove$|Position::undo_move
+do_null_move	move_do\.doNullMove$|Position::do_null_move
+threats	updatePieceThreats|update_piece_threats
+acc_apply	applyCombinedDelta$|namespace\)::apply_combined
+acc_side	nnue_acc_update\.evaluateSide$|AccumulatorStack::evaluate_side
