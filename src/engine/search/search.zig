@@ -303,6 +303,15 @@ pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) 
     return @divTrunc(1061 * clamped, 1024);
 }
 
+// Compute the multi-cut correction-history bonus (Step 15): when the singular
+// probe itself fails high above beta it has proven the static eval too low, so
+// nudge the correction tables by the scaled error. Clamp into
+// +/- CORRECTION_HISTORY_LIMIT/4 (=256) like every other correction bonus.
+pub fn multiCutCorrectionBonus(eval_delta: i32, singular_depth: i32) i32 {
+    const raw = @divTrunc(eval_delta * singular_depth * 177, 1024);
+    return @max(@as(i32, -256), @min(@as(i32, 256), raw));
+}
+
 // Size the aspiration window in iterative_deepening(). The starting half-width
 // mixes a base, a per-thread stagger, and the root move's mean-squared score;
 // on each fail high/low it grows by 47/128.
