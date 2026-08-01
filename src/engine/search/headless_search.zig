@@ -220,10 +220,11 @@ fn searchCore(wl: *WorkerLayout, root_fen: []const u8, chess960: u8, depth: i32)
 
 test "headless search: startpos to a shallow depth yields a legal move + finite score" {
     position.initRuntime();
-    // Load the net from the repo (cwd is the build root; "net/" reaches the default file).
+    // Load the net from the repo (cwd is the build root; "resources/" is where build.zig
+    // fetches it -- net_cmd.setCwd(b.path("resources"))).
     // Skip cleanly if the weights are unavailable in this environment.
     if (network.ftPtr() == null) {
-        const dir = "net/";
+        const dir = "resources/";
         network.load(dir, "");
     }
     if (network.ftPtr() == null) return error.SkipZigTest; // net unavailable -> skip cleanly
@@ -264,7 +265,7 @@ test "headless search: startpos to a shallow depth yields a legal move + finite 
 test "headless search: searchPosition over many random legal lines stays crash-free" {
     position.initRuntime();
     if (network.ftPtr() == null) {
-        const dir = "net/";
+        const dir = "resources/";
         network.load(dir, "");
     }
     if (network.ftPtr() == null) return error.SkipZigTest;
@@ -290,4 +291,41 @@ test "headless search: searchPosition over many random legal lines stays crash-f
         const depth: i32 = @intCast(rand.intRangeAtMost(usize, 1, 4));
         _ = searchPosition(&p, 0, depth);
     }
+}
+
+// Assert each accumulator update route RUNS, not only that the routes agree.
+//
+// evaluateSide has three ways to bring the top slot up to date -- walk forward from a
+// computed slot, refresh from the board, and fill the slots below a refreshed top by
+// walking back down -- and they all produce the same numbers. That is precisely what
+// makes a dead one invisible: a route that stops running is answered correctly by the
+// route that replaces it, so no value moves, the tree is identical, and the node count
+// does not budge. bench, every UCI golden, arch-determinism and the upstream node
+// differential are all VALUE gates; none of them can see a whole branch go unreachable.
+//
+// A real search is what exercises all three: the forward walk is the common case, and
+// the refresh plus its backward fill happen whenever a king move invalidates the
+// perspective's bucket. So drive one deep enough to contain king moves and assert the
+// counters moved. The counters exist only under `builtin.is_test` -- the shipped binary
+// carries no increment in the engine's hottest function.
+test "headless search: every accumulator update route is exercised" {
+    position.initRuntime();
+    if (network.ftPtr() == null) {
+        const dir = "resources/";
+        network.load(dir, "");
+    }
+    if (network.ftPtr() == null) return error.SkipZigTest;
+
+    nnue_acc.resetPathCounts();
+
+    // A middlegame position with both kings free to move, so the refresh route is reached
+    // rather than merely possible. Depth 8 puts king moves well inside the tree.
+    const fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 10";
+    const r = searchFen(fen, 0, 8) orelse return error.SearchReturnedNull;
+    try std.testing.expect(r.nodes > 0);
+
+    const counts = nnue_acc.path_counts.*;
+    try std.testing.expect(counts.forward > 0);
+    try std.testing.expect(counts.refresh > 0);
+    try std.testing.expect(counts.backward > 0);
 }
