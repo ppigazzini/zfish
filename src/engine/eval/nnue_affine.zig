@@ -179,6 +179,12 @@ inline fn affineAvx2(
     // maddubs->madd->add overlap; two converts). Chain indices come from an `inline for`,
     // so every acc index is comptime and the block stays in registers; i32 wrapping adds
     // commute, so the end merge is bit-identical whatever the group partition.
+    //
+    // Upstream uses ONE chain here (NumRegs = NumAccums at plain AVX2, splitting only for the
+    // high-latency dot instructions under VNNI/dotprod), so matching it was worth a try when
+    // hunting this tier's +13.5% forward pass. It changes nothing: bit-exact, and a paired A/B
+    // of 1 chain against 2 reads instructions 1.001 -- +9 Ir/node on 6768, which is the merge
+    // loop and nothing else. The chain count is not where the avx2 forward-pass gap lives.
     const chains = 2;
     var acc: [chains][OUT]i32 = undefined;
     acc[0] = biases[0..OUT].*;
