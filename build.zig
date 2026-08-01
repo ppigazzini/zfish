@@ -664,7 +664,6 @@ pub fn build(b: *std.Build) void {
     // binds the ThreadPool and TranspositionTable.
     exe.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
     exe.root_module.addImport("time_source", mods.get("time_source").?);
-    exe.root_module.addImport("search_timing", mods.get("search_timing").?);
     exe.root_module.addImport("tb_extend_source", mods.get("tb_extend_source").?);
     exe.root_module.addImport("tb_extend", mods.get("tb_extend").?);
     exe.root_module.addImport("page_alloc", mods.get("page_alloc").?);

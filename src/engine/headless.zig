@@ -54,6 +54,7 @@ comptime {
     _ = @import("search_id");
     _ = @import("search_manager");
     _ = @import("search_setup");
+    _ = @import("search_timing");
     _ = @import("search_types");
     _ = @import("shared_histories");
     _ = @import("shared_histories_map");

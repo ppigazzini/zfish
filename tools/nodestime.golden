@@ -1,5 +1,5 @@
-sudden-death depth=19 score=cp 32 nodes=315237 bestmove=e2e4 ponder=e7e6
-movestogo    depth=20 score=cp 38 nodes=285087 bestmove=e2e4 ponder=e7e5
-with-inc     depth=20 score=cp 37 nodes=450037 bestmove=e2e4 ponder=e7e5
-endgame-sd   depth=13 score=cp 25 nodes=188166 bestmove=b4f4 ponder=h4g3
-movetime     depth=5 score=cp 21 nodes=764 bestmove=e2e4 ponder=e7e5
+sudden-death depth=18 score=cp 25 nodes=227085 bestmove=e2e4 ponder=c7c5
+movestogo    depth=19 score=cp 29 nodes=211210 bestmove=e2e4 ponder=c7c5
+with-inc     depth=20 score=cp 33 nodes=349120 bestmove=e2e4 ponder=e7e5
+endgame-sd   depth=15 score=cp 34 nodes=229396 bestmove=b4f4 ponder=h4g3
+movetime     depth=6 score=cp 32 nodes=753 bestmove=e2e4 ponder=e7e5
