@@ -161,6 +161,130 @@ pub fn applyRefreshFusedI16(
     }
 }
 
+/// Take a same-half king move incrementally -- upstream's update_accumulator_hybrid
+/// (nnue_accumulator.cpp). A king move rebuckets every HalfKA index, but the threat and
+/// pawn-pair orientation depends only on which HALF of the board the king stands on, so a
+/// king move that stays on its half keeps that whole accumulation. Only the HalfKA half
+/// has to change buckets, and both buckets are reachable from the refresh cache:
+///
+///   target = computed - <old-bucket HalfKA> + <new-bucket HalfKA> + <this ply's thr/pp delta>
+///
+/// One register per tile carries the destination-entry refresh, the bucket swap and the
+/// threat delta, so the 2 KB row is loaded once. `new_entry` is refreshed in place
+/// mid-pass (it is the bucket the next ply will read), exactly as the refresh kernel
+/// stores its own entry back.
+///
+/// Order matters for the entry store, not for the value: every step is a wrapping i16
+/// add/sub, which commutes -- but `new_entry` must be stored BEFORE `computed` is folded
+/// in, or the cache entry keeps the accumulated position instead of the bucket.
+pub fn applyHybridDelta(
+    target: []i16,
+    computed: []const i16,
+    new_entry: []i16,
+    old_entry: []const i16,
+    new_removed: []const u32,
+    new_added: []const u32,
+    old_removed: []const u32,
+    old_added: []const u32,
+    thr_removed: []const u32,
+    thr_added: []const u32,
+    psq_weights: [*]align(64) const i16,
+    thr_weights: [*]align(64) const i8,
+) void {
+    const V = row_tile_width;
+    const Vi16 = @Vector(V, i16);
+    var d: usize = 0;
+    while (d < half_dimensions) : (d += V) {
+        // Refresh the DESTINATION bucket from its cache entry.
+        var acc: Vi16 = new_entry.ptr[d..][0..V].*;
+        for (new_removed) |index| {
+            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
+            acc -%= w;
+        }
+        for (new_added) |index| {
+            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
+            acc +%= w;
+        }
+        new_entry.ptr[d..][0..V].* = acc;
+
+        // Fold in the computed accumulator -- which brings (most of) the threat and pawn-pair
+        // weights along -- then take back the psq accumulation it carries for the OLD bucket.
+        acc +%= @as(Vi16, computed.ptr[d..][0..V].*);
+        acc -%= @as(Vi16, old_entry.ptr[d..][0..V].*);
+
+        // The old entry is a cache state, not the pre-move position, so undo its own diff:
+        // its removed rows are re-added and its added rows taken back out.
+        for (old_removed) |index| {
+            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
+            acc +%= w;
+        }
+        for (old_added) |index| {
+            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
+            acc -%= w;
+        }
+
+        // This ply's threat/pawn-pair change, at the new king square.
+        for (thr_removed) |index| {
+            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
+            acc -%= @as(Vi16, wraw);
+        }
+        for (thr_added) |index| {
+            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
+            acc +%= @as(Vi16, wraw);
+        }
+        target.ptr[d..][0..V].* = acc;
+    }
+}
+
+/// The psqt half of applyHybridDelta: one 8-bucket i32 vector, same term order.
+pub fn applyHybridPsqtDelta(
+    target: []i32,
+    computed: []const i32,
+    new_entry: []i32,
+    old_entry: []const i32,
+    new_removed: []const u32,
+    new_added: []const u32,
+    old_removed: []const u32,
+    old_added: []const u32,
+    thr_removed: []const u32,
+    thr_added: []const u32,
+    psq_weights: [*]align(64) const i32,
+    thr_weights: [*]align(64) const i32,
+) void {
+    const V = @Vector(psqt_buckets, i32);
+    var acc: V = new_entry[0..psqt_buckets].*;
+    for (new_removed) |index| {
+        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
+        acc -%= w;
+    }
+    for (new_added) |index| {
+        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
+        acc +%= w;
+    }
+    new_entry[0..psqt_buckets].* = acc;
+
+    acc +%= @as(V, computed[0..psqt_buckets].*);
+    acc -%= @as(V, old_entry[0..psqt_buckets].*);
+
+    for (old_removed) |index| {
+        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
+        acc +%= w;
+    }
+    for (old_added) |index| {
+        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
+        acc -%= w;
+    }
+    for (thr_removed) |index| {
+        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
+        acc -%= w;
+    }
+    for (thr_added) |index| {
+        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
+        acc +%= w;
+    }
+    target[0..psqt_buckets].* = acc;
+}
+
 /// The psqt half of applyRefreshFusedI16: one 8-bucket i32 vector; `cache` receives the
 /// psq-only value, `state` receives psq plus the active threat psqt rows.
 pub fn applyRefreshFusedPsqt(

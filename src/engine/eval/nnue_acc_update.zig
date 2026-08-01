@@ -17,6 +17,8 @@ const applyRefreshFusedI16 = nnue_acc_rowops.applyRefreshFusedI16;
 const applyRefreshFusedPsqt = nnue_acc_rowops.applyRefreshFusedPsqt;
 const applyCombinedDelta = nnue_acc_rowops.applyCombinedDelta;
 const applyCombinedPsqtDelta = nnue_acc_rowops.applyCombinedPsqtDelta;
+const applyHybridDelta = nnue_acc_rowops.applyHybridDelta;
+const applyHybridPsqtDelta = nnue_acc_rowops.applyHybridPsqtDelta;
 
 // Alias the FeatureTransformer weight-blob layout + accessors from the nnue_ft leaf
 // for the refresh/apply-delta core.
@@ -42,6 +44,11 @@ const setCacheEntryPieceBb = nnue_refresh_cache.setCacheEntryPieceBb;
 // Alias back the accumulator-stack layout + accessors, which live in the
 // nnue_acc_layout leaf now, so the facade + update call sites are unqualified
 // (AccumulatorStack re-exported pub for external callers).
+const nnue_acc_entry = @import("nnue_acc_entry.zig");
+const entryDiffIndices = nnue_acc_entry.entryDiffIndices;
+const hybridApplicable = nnue_acc_entry.hybridApplicable;
+const updateHybrid = nnue_acc_entry.updateHybrid;
+
 const layout = @import("nnue_acc_layout.zig");
 const psq_feature = layout.psq_feature;
 const threat_feature = layout.threat_feature;
@@ -49,6 +56,7 @@ const white = layout.white;
 const black = layout.black;
 const pawn_piece_type = layout.pawn_piece_type;
 const sq_none = layout.sq_none;
+const no_piece = layout.no_piece;
 const square_count = layout.square_count;
 const psq_index_capacity = layout.psq_index_capacity;
 const threat_index_capacity = layout.threat_index_capacity;
@@ -96,6 +104,8 @@ pub const PathCounts = struct {
     refresh: u64 = 0,
     /// Slots below a refreshed top, filled by walking back down.
     backward: u64 = 0,
+    /// A same-half king move, taken off the previous slot instead of refreshed.
+    hybrid: u64 = 0,
 };
 pub var path_counts: PathCounts = .{};
 
@@ -130,6 +140,16 @@ pub fn evaluateSide(
             applyCombined(stack, perspective, feature_transformer, king_square, route_mask, next, next - 1, true);
         }
     } else {
+        // A king move that stayed on its half of the board keeps the whole threat and
+        // pawn-pair accumulation, so it can be taken incrementally off the previous slot
+        // instead of refreshed from the board.
+        const latest_index = size - 1;
+        if (size >= 2 and hybridApplicable(stack, pos, perspective, latest_index)) {
+            countPath(.hybrid);
+            updateHybrid(perspective, king_square, stack, pos, feature_transformer, cache, latest_index);
+            return;
+        }
+
         countPath(.refresh);
         refreshCombined(perspective, king_square, stack, pos, feature_transformer, cache);
 
@@ -162,80 +182,18 @@ fn refreshCombined(
 
     var removed: [psq_index_capacity]u32 = undefined;
     var added: [psq_index_capacity]u32 = undefined;
-    var removed_len: usize = 0;
-    var added_len: usize = 0;
-
-    // Build the changed-square bitboard upstream's way (get_changed_pieces): compare 32
-    // board bytes at a time against the cached pieces, movemask each compare into 32 mask
-    // bits, and OR the two halves into one u64 -- no per-square loop touches an unchanged
-    // square. On x86 the <32 x i1> compare result maps to pmovmskb, so bitcasting it to
-    // u32 IS the movemask (lane i -> bit i); other backends keep the defined-ops
-    // @select + @reduce form (vector memory layout is target-defined -- see the nnz mask
-    // note in nnue_accumulator.zig).
-    var changed_bb: u64 = 0;
-    inline for (0..2) |chunk| {
-        const off = chunk * 32;
-        const old_v: @Vector(32, u8) = entry_pieces[off..][0..32].*;
-        const new_v: @Vector(32, u8) = pos.board[off..][0..32].*;
-        const differs = old_v != new_v;
-        const mask: u32 = if (comptime @import("builtin").cpu.arch == .x86_64)
-            @bitCast(differs)
-        else blk: {
-            const lane_bits: @Vector(32, u32) = comptime bits: {
-                var w: [32]u32 = undefined;
-                for (&w, 0..) |*bit, i| bit.* = @as(u32, 1) << @intCast(i);
-                break :bits w;
-            };
-            break :blk @reduce(.Or, @select(u32, differs, lane_bits, @as(@Vector(32, u32), @splat(0))));
-        };
-        changed_bb |= @as(u64, mask) << (chunk * 32);
-    }
-
-    // Split changed into removed/added by occupancy -- upstream's
-    // `removedBB = changedBB & entry.pieceBB` / `addedBB = changedBB & pos.pieces()` --
-    // then pop only the set bits: no piece-vs-no_piece branch per square, and a square
-    // whose piece changed type or color lands in both lists. Each pop_lsb loop visits
-    // squares in ascending order, so both lists match the retired per-square scan
-    // byte-for-byte.
-    const removed_bb = changed_bb & cacheEntryPieceBb(entry_ptr);
-    const added_bb = changed_bb & pos.by_type_bb[0];
-    if (comptime nnue_feature.use_avx512_nnue_feature) {
-        const result = nnue_feature.writeIndicesAvx512(
-            entry_pieces,
-            &pos.board,
-            removed_bb,
-            added_bb,
-            perspective,
-            king_square,
-            &removed,
-            &added,
-        );
-        removed_len = result.removed_len;
-        added_len = result.added_len;
-    } else {
-        var removed_scan = removed_bb;
-        var added_scan = added_bb;
-        while (removed_scan != 0) : (removed_scan &= removed_scan - 1) {
-            const sq: u8 = @intCast(@ctz(removed_scan));
-            removed[removed_len] = nnue_feature.halfMakeIndex(.{
-                .perspective = perspective,
-                .square = sq,
-                .piece = entry_pieces[sq],
-                .king_square = king_square,
-            });
-            removed_len += 1;
-        }
-        while (added_scan != 0) : (added_scan &= added_scan - 1) {
-            const sq: u8 = @intCast(@ctz(added_scan));
-            added[added_len] = nnue_feature.halfMakeIndex(.{
-                .perspective = perspective,
-                .square = sq,
-                .piece = pos.board[sq],
-                .king_square = king_square,
-            });
-            added_len += 1;
-        }
-    }
+    const diff = entryDiffIndices(
+        entry_pieces,
+        cacheEntryPieceBb(entry_ptr),
+        &pos.board,
+        pos.by_type_bb[0],
+        perspective,
+        king_square,
+        &removed,
+        &added,
+    );
+    const removed_len = diff.removed_len;
+    const added_len = diff.added_len;
 
     var active: nnue_feature.FullAppendResult = undefined;
     nnue_feature.fullAppendActive(&active, perspective, king_square, &pos.board, &pos.by_type_bb, &pos.by_color_bb);
