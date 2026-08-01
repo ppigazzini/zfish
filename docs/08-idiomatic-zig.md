@@ -458,6 +458,14 @@ available in CI, so it never runs there.
   sse41 and avx2 sit at 0.981/0.987, and avx2 instead carries the cache-miss outlier
   (1.112). So the residue behind a flat cycle ratio is not one thing — it is a
   different thing per tier.
+- **A branch-miss ratio does not say WHY, so read it against the branch count.**
+  `perf_counters` now reports retired branches and the miss rate beside the misses. More
+  misses can mean the code executes more branches or predicts the same ones worse, and
+  those call for opposite fixes — reshape the code, or break a data dependence. Equal
+  miss *rates* with a high branch ratio is branch **density**, not misprediction, and
+  reaching for a prediction fix there is wasted work. The counters are stable enough to
+  read: an A/A run of the same binary gives a branch ratio of 1.000 and rates of 0.914%
+  against 0.918%.
 - **Exclude startup before reading any callgrind total.** A whole-process run of
   `bench 16 1 3000` is roughly half startup: `readLebSection` alone is ~32% of zfish's
   instructions and `read_parameters` ~34% of the oracle's, with magic-table init and
