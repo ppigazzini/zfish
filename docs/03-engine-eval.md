@@ -220,6 +220,20 @@ flowchart TD
     F --> G
 ```
 
+**All three routes produce the same numbers, and that is what makes a dead one
+invisible.** Which route runs changes only how much work the update costs, so a route
+that stops running is answered correctly by the route that replaces it: the values never
+move, the tree is identical, and the node count does not budge. bench, every UCI golden,
+`arch-determinism` and the upstream node differential are all *value* gates — none of
+them can see a whole branch go unreachable.
+
+Only a counter can. `nnue_acc_update.PathCounts` counts the forward walk, the refresh and
+the backward fill, and `headless_search.zig`'s *"every accumulator update route is
+exercised"* test drives a real depth-8 search and asserts all three moved. The counters
+compile in under `builtin.is_test` alone, so the shipped binary carries no increment in
+the engine's hottest function — the branch folds away at comptime. Verified by mutation:
+disabling the forward route fails that test and nothing else.
+
 **Incremental step.** `applyCombined` builds this ply's PSQ and threat
 changed-feature index lists from the stored diffs, splits them into removed/added
 (inverted when stepping backward), and applies all four lists to the accumulator in

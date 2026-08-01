@@ -128,6 +128,11 @@ const kingPiece = layout.kingPiece;
 // now; the facade calls evaluateSide (4x from evaluate).
 const nnue_acc_update = @import("nnue_acc_update.zig");
 const evaluateSide = nnue_acc_update.evaluateSide;
+// Re-export the update-route counters so a search-zone test can assert each route was
+// TAKEN, not merely that they agree (see nnue_acc_update.PathCounts).
+pub const PathCounts = nnue_acc_update.PathCounts;
+pub const path_counts = &nnue_acc_update.path_counts;
+pub const resetPathCounts = nnue_acc_update.resetPathCounts;
 pub const StackPushOutput = struct {
     dirty_piece: *DirtyPiece,
     dirty_threats: *DirtyThreats,

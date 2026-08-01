@@ -80,6 +80,34 @@ const threatDiff = layout.threatDiff;
 // accumulation slot is now unused); find_last_usable uses ONLY the PSQ (HalfKA)
 // refresh condition, because a threat refresh (king move across the center) is a
 // subset of a HalfKA refresh, so the combined accumulator always refreshes together.
+/// Count which route to the top slot each walk took. The three routes AGREE on every
+/// value they produce -- that is the whole point of them -- and it is exactly what makes
+/// a dead one invisible: a route that stops running is answered correctly by the route
+/// that replaces it, so the values never move and neither does the node count. The bench
+/// anchor, every UCI golden, arch-determinism and the upstream node differential all stay
+/// green while a whole branch is unreachable. Only a counter can see it.
+///
+/// Compiled in under `builtin.is_test` only, so the shipped ReleaseFast binary carries no
+/// increment in the hottest function in the engine -- the branch folds away at comptime.
+pub const PathCounts = struct {
+    /// The last usable slot was computed: walk forward applying each ply's diff.
+    forward: u64 = 0,
+    /// It was not: rebuild the top slot from the board through the refresh cache.
+    refresh: u64 = 0,
+    /// Slots below a refreshed top, filled by walking back down.
+    backward: u64 = 0,
+};
+pub var path_counts: PathCounts = .{};
+
+pub fn resetPathCounts() void {
+    path_counts = .{};
+}
+
+inline fn countPath(comptime field: std.meta.FieldEnum(PathCounts)) void {
+    if (comptime !@import("builtin").is_test) return;
+    @field(path_counts, @tagName(field)) += 1;
+}
+
 pub fn evaluateSide(
     perspective: u8,
     stack: *AccumulatorStack,
@@ -98,14 +126,17 @@ pub fn evaluateSide(
         const route_mask = nnue_feature.threatRouteMask(perspective, king_square, true);
         var next = last_usable + 1;
         while (next < size) : (next += 1) {
+            countPath(.forward);
             applyCombined(stack, perspective, feature_transformer, king_square, route_mask, next, next - 1, true);
         }
     } else {
+        countPath(.refresh);
         refreshCombined(perspective, king_square, stack, pos, feature_transformer, cache);
 
         const route_mask = nnue_feature.threatRouteMask(perspective, king_square, false);
         var computed_index = size - 1;
         while (computed_index > last_usable) : (computed_index -= 1) {
+            countPath(.backward);
             applyCombined(stack, perspective, feature_transformer, king_square, route_mask, computed_index - 1, computed_index, false);
         }
     }

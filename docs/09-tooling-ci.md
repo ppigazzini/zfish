@@ -295,6 +295,16 @@ KRvK KQvK, WDL + DTZ) into `resources/syzygy/` — the tables the `tb-*` gates p
 verifies each file's Syzygy magic header, so a mirror's error page cannot masquerade
 as a table. Neither the net nor the tables are committed.
 
+**A unit test that needs the net must name `resources/`, and one that skips without it
+skips silently.** `zig build test` runs from the build root, so the net is at
+`resources/` — the directory `net_cmd.setCwd(b.path("resources"))` fetches into. The
+headless-search tests looked for `net/`, a directory that has never existed, and
+`return error.SkipZigTest` is indistinguishable from a pass in the summary line: they
+skipped for their entire lifetime, and the suite stayed green the whole time. If you add
+a test guarded on a fixture, check the skipped COUNT moved the way you expected — a
+fixture-guarded test that never runs is worth less than no test, because it reads as
+coverage.
+
 ## Tracking upstream
 
 `tools/upstream/` holds the state: `UPSTREAM_BASE` (the sha of the last fully-ported
