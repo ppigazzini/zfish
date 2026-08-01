@@ -1,5 +1,10 @@
+# Normalize line endings for all text files, so a Linux and a Windows checkout hold the
+# same bytes. The cross-OS parity lanes build and run the SAME sources on three platforms;
+# a CRLF-rewritten shell script or Zig file is a difference nothing else in the tree checks.
+* text=auto eol=lf
+
 # Parity goldens are compared byte-for-byte by tools/parity_harness.zig against the
-# engine's LF output. Pin them to LF so a Windows checkout (core.autocrlf) can't rewrite
-# them to CRLF and break the cross-OS parity lanes. The harness also CR-normalizes on read,
-# so this is defense in depth (and keeps local diffs clean).
+# engine's LF output. Subsumed by the rule above, but kept explicit: these are the files
+# where a CRLF rewrite fails a gate rather than merely churning a diff. The harness also
+# CR-normalizes on read, so this is defense in depth.
 tools/*.golden text eol=lf
