@@ -148,6 +148,7 @@ The gates fall into kinds:
 | `perft` | `do_move`/`undo_move`/movegen: perft divide counts + totals. |
 | `eval-trace` | The NNUE eval trace block (the `buildNnueTrace` path). |
 | `misc` | `d`/`flip`: Fen/Key/Checkers — fen, flip, zobrist, gives_check. |
+| `fen-errors` | The FEN-validation diagnostics: which positions the parser REFUSES, and the exact message and exit status each refusal produces. Upstream treats an unusable `position` as fatal, so this pins a terminating path — the complement of `parity-fen-truncated`, which pins what is accepted. |
 | `export-net` | The `export_net` (`write_parameters`) serializer fingerprint. |
 | `nodestime` | The `nodestime` time-management node budget. |
 | `uci-options` | The `uci` option-list handshake. |
@@ -164,6 +165,8 @@ The gates fall into kinds:
 | `parity-skill` | Skill Level 20 is deterministic; Skill Level 0 is random and always legal. |
 | `parity-repeat-go` | Consecutive `go` with no intervening `position` yields a bestmove each time and a clean exit. Every golden gate re-sends `position`, so none of them covers the setup-state handoff this drives. |
 | `parity-mt` | Threads {2,4} land in a score band around the single-thread golden. |
+| `parity-fen-truncated` | A FEN missing its trailing fields SETS, filling upstream's defaults, instead of being rejected. The `fen-errors` golden pins what upstream refuses; this pins what it accepts, and the two edges move independently. |
+| `parity-flip-chess960` | `flip` keeps the board's own chess960 variant when `UCI_Chess960` is toggled, so the castling-rights encoding cannot be re-read under the wrong convention. |
 
 **Liveness and timing** — the paths a bench never reaches.
 
