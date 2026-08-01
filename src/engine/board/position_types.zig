@@ -98,6 +98,22 @@ pub const Position = extern struct {
     scratch_dts: DirtyThreats,
 };
 
+/// Mix the rule50 counter into a raw Zobrist key, as upstream's
+/// `Position::adjust_key50<AfterMove>` does (position.h:322). Take the counter as a
+/// parameter rather than reading `pos.st`: the two instantiations differ only in whether
+/// the counter has already been incremented, so a caller holding a post-move key and a
+/// pre-move counter passes `rule50 + 1` instead of needing a second copy of the formula.
+///
+/// Live here, on the type that owns rule50, because upstream keeps it on Position itself
+/// and because BOTH zones need it: move_do computes the TT probe key, and position_query
+/// answers `d`'s Key line. A second copy is how those two silently drifted before -- the
+/// display read the raw key for every position whose counter had reached 14.
+pub inline fn adjustKey50(key: u64, rule50: i32) u64 {
+    if (rule50 < 14) return key;
+    const seed: u64 = @intCast(@divTrunc(rule50 - 14, 8));
+    return key ^ (seed *% 6364136223846793005 +% 1442695040888963407);
+}
+
 comptime {
     // Assert the fixed-width slot the Worker block reserves for each of these (worker_layout's
     // position_size / state_info_size). These self-contained size asserts keep the
@@ -116,6 +132,20 @@ const testing = std.testing;
 test "Position/StateInfo hold their contractual Worker-block slot widths" {
     try testing.expectEqual(@as(usize, 1064), @sizeOf(Position));
     try testing.expectEqual(@as(usize, 192), @sizeOf(StateInfo));
+}
+
+test "adjustKey50 is identity below 14 and mixes in steps of 8 above it" {
+    const key: u64 = 0x8F8F01D4562F59FB;
+    // Below the threshold the key is returned untouched, which is why every golden and
+    // every bench position agreed while the `d` display was reading the raw key.
+    try testing.expectEqual(key, adjustKey50(key, 0));
+    try testing.expectEqual(key, adjustKey50(key, 13));
+    // At and above it the mix is keyed by (rule50 - 14) / 8, so 14..21 share one seed.
+    try testing.expect(adjustKey50(key, 14) != key);
+    try testing.expectEqual(adjustKey50(key, 14), adjustKey50(key, 21));
+    try testing.expect(adjustKey50(key, 14) != adjustKey50(key, 22));
+    // The exact value upstream prints for the rule50=999 position this was found on.
+    try testing.expectEqual(@as(u64, 0x0CEACC969514C215), adjustKey50(key, 999));
 }
 
 test "StateInfo chains through previous" {
