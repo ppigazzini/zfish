@@ -146,8 +146,40 @@ while IFS= read -r step; do
         fi
         undoc=$((undoc + 1))
     }
-done < <(tr '\n' ' ' < build.zig | grep -oE 'b\.step\(\s*"[a-z0-9-]+"' | sed 's/.*"\(.*\)"/\1/' | sort -u)
+done < <({
+    tr '\n' ' ' < build.zig | grep -oE 'b\.step\(\s*"[a-z0-9-]+"' | sed 's/.*"\(.*\)"/\1/'
+    # The 21 golden gates are a TABLE now, not 21 hand-written b.step() calls, so their 42
+    # names live here instead. Missing this file does not fail the gate -- it shrinks it,
+    # silently, which is the same way the line-anchored grep above used to cover 6%.
+    # Steps live in build.zig AND in the build/ package: tables in gates.zig /
+    # structural.zig, plain b.step() calls in tests.zig. Scan both forms across both places
+    # -- missing one does not fail this check, it SHRINKS it, which is how it once covered 6%.
+    for f in build/*.zig; do
+        [ -f "$f" ] || continue
+        tr '\n' ' ' < "$f" | grep -oE 'b\.step\(\s*"[a-z0-9-]+"' | sed 's/.*"\(.*\)"/\1/'
+        grep -oE '\.(step|update_step) = "[a-z0-9-]+"' "$f" | sed 's/.*"\(.*\)"/\1/'
+    done
+} | sort -u)
 [ "$undoc" -eq 0 ] || fail=1
+
+# Guard the EXTRACTION, not just its verdict. Every failure this check has had was a
+# shrinking subject rather than a wrong answer, and a shrunk subject reports OK.
+step_total=$( {
+    tr '\n' ' ' < build.zig | grep -oE 'b\.step\(\s*"[a-z0-9-]+"' | sed 's/.*"\(.*\)"/\1/'
+    # Steps live in build.zig AND in the build/ package: tables in gates.zig /
+    # structural.zig, plain b.step() calls in tests.zig. Scan both forms across both places
+    # -- missing one does not fail this check, it SHRINKS it, which is how it once covered 6%.
+    for f in build/*.zig; do
+        [ -f "$f" ] || continue
+        tr '\n' ' ' < "$f" | grep -oE 'b\.step\(\s*"[a-z0-9-]+"' | sed 's/.*"\(.*\)"/\1/'
+        grep -oE '\.(step|update_step) = "[a-z0-9-]+"' "$f" | sed 's/.*"\(.*\)"/\1/'
+    done
+} | sort -u | wc -l)
+if [ "$step_total" -lt 70 ]; then
+    echo "docs-lint: only $step_total build steps found (expected ~77) -- the extraction lost"
+    echo "docs-lint: its subject; a step table moved or changed shape. Refusing to report OK."
+    fail=1
+fi
 
 if [ "$fail" -eq 0 ]; then
     echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths exist, symbols and steps exist, anchor == $anchor, no __DEV refs)"

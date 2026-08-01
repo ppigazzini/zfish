@@ -1,24 +1,27 @@
 const std = @import("std");
-const graph = @import("build/modules.zig");
-
-const Macro = struct {
-    name: []const u8,
-    value: []const u8,
-};
+// One import for the whole build package (build/main.zig re-exports it), so the
+// package can be reorganised without touching this list.
+const buildpkg = @import("build/main.zig");
+// Shared by the few test artifacts still wired here and by build/tests.zig.
+const addTestRun = buildpkg.tests.addTestRun;
+// One definition, in build/gates.zig -- build.zig kept a byte-identical copy after the
+// gate table moved, which is how two implementations of one helper start.
+const addHarnessRun = buildpkg.gates.addHarnessRun;
+const runAndTrimOrNull = buildpkg.config.runAndTrimOrNull;
+const repoPath = buildpkg.config.repoPath;
+const graph = buildpkg.modules;
+const arch_cfg = buildpkg.arch;
+const Macro = arch_cfg.Macro;
+const ArchConfig = arch_cfg.ArchConfig;
+const applyMacros = arch_cfg.applyMacros;
+const resolveArch = arch_cfg.resolveArch;
+const archConfigFor = arch_cfg.archConfigFor;
+const hasMacro = arch_cfg.hasMacro;
+const native_arch = arch_cfg.native_arch;
 
 // Enumerate the owned runtime OSes. Select with -Dos=; each maps to an (os_tag, abi) pair
 // in build(). Keep orthogonal to -Darch= (the ISA tier), so any arch tier can target any OS.
 const TargetOs = enum { linux, windows, macos };
-
-const ArchConfig = struct {
-    name: []const u8,
-    flags: []const []const u8,
-    macros: []const Macro,
-    target_features: std.Target.Cpu.Feature.Set,
-    // Default the owned runtime to x86_64; non-x86 tiers set this so the pure
-    // Zig @Vector NNUE cross-compiles to that ISA (LLVM lowers to NEON/etc).
-    cpu_arch: std.Target.Cpu.Arch = .x86_64,
-};
 
 const GitInfo = struct {
     sha: ?[]const u8,
@@ -26,27 +29,20 @@ const GitInfo = struct {
 };
 
 pub fn build(b: *std.Build) void {
-    const optimize = b.option(
-        std.builtin.OptimizeMode,
-        "optimize",
-        "Prioritize performance, safety, or binary size",
-    ) orelse .ReleaseFast;
-    const signature_ref = b.option(
-        []const u8,
-        "signature-ref",
-        "Expected bench signature for the `signature` step; defaults to the 2508687 invariant",
-    );
-    const walk_args = b.option(
-        []const u8,
-        "walk-args",
-        "Extra flags for the `upstream-walk` step, space separated (e.g. \"--positions 40 --depth 13\")",
-    );
-    const requested_arch = b.option(
-        []const u8,
-        "arch",
-        "Stockfish ARCH value (e.g. x86-64-avx2), or 'native' to auto-detect the host CPU tier in Zig",
-    ) orelse "native";
-    const arch = resolveArch(b, requested_arch);
+    // Resolve every -D option, the ISA tier and the target (build/config.zig) before any
+    // module or step exists.
+    const cfg = buildpkg.config.resolve(b);
+    const optimize = cfg.optimize;
+    const target = cfg.target;
+    const arch = cfg.arch;
+    const os_choice = cfg.os_choice;
+    const os_tag = cfg.os_tag;
+    const git_info = cfg.git_info;
+    const signature_ref = cfg.signature_ref;
+    const walk_args = cfg.walk_args;
+    const build_options_module = cfg.build_options_module;
+    // Coverage bookkeeping stays in build(): every test artifact registered here and in
+    // build/tests.zig shares the one counter, so each kcov run gets its own output dir.
     // Run each unit-test binary under kcov when `-Dtest-coverage` is set, merging line coverage
     // into ./kcov-out (one subdir per test artifact -> no parallel-write race). kcov
     // instruments the ELF at runtime, so no coverage rebuild flags are needed; default off
@@ -57,66 +53,8 @@ pub fn build(b: *std.Build) void {
         "test-coverage",
         "Run the unit tests under kcov, merging line coverage into ./kcov-out (needs kcov on PATH)",
     ) orelse false;
-    // Use a relative "kcov-out" (not b.pathFromRoot): the Run step's default cwd is the build root, so
-    // kcov writes there -- and a plain string stays valid across Zig 0.16/0.17 (pathFromRoot was
-    // removed in 0.17), which keeps the non-blocking nightly lane building instead of tripping here.
     const cov_dir: ?[]const u8 = if (test_coverage) "kcov-out" else null;
     var cov_idx: usize = 0;
-    // Target the owned runtimes: Linux (default), Windows, and macOS. The pure-Zig
-    // engine is OS-portable behind a thin platform seam -- sync (thread_runtime.zig futex
-    // seam), aligned/large-page allocation (memory.zig), the steady clock and CPU-affinity
-    // string (main.zig). Windows uses the self-contained mingw (gnu) ABI so no MSVC/SDK is
-    // needed; macOS uses its native ABI. The integer-exact NNUE eval is arch/OS-invariant,
-    // so bench must be 2508687 on every (arch, os) tier -- the parity lanes assert it.
-    const os_choice = b.option(TargetOs, "os", "Target OS: linux (default), windows, or macos") orelse .linux;
-    const os_tag: std.Target.Os.Tag = switch (os_choice) {
-        .linux => .linux,
-        .windows => .windows,
-        .macos => .macos,
-    };
-    const abi: std.Target.Abi = switch (os_choice) {
-        .linux => .gnu,
-        .windows => .gnu, // mingw: self-contained, ships with Zig (no Visual Studio / Windows SDK)
-        .macos => .none, // Take macOS's single system ABI (libSystem); no gnu/musl split
-    };
-    const git_info = readGitInfo(b);
-    const build_options = b.addOptions();
-    // Spine isolation: swap the NNUE forward pass + eval blend for material alone, in BOTH
-    // engines (tools/material_eval.sh drives it and patches the oracle to match). Changes the
-    // bench node count by construction, so it is never part of a parity run -- the gate it
-    // answers to is "do the two engines still search the SAME tree", not the anchor.
-    const stub_eval = b.option(bool, "stub-eval", "Replace the NNUE eval with material count (spine isolation; NOT bit-exact, bench moves)") orelse false;
-    build_options.addOption([]const u8, "arch_name", arch.name);
-    build_options.addOption([]const u8, "git_sha", git_info.sha orelse "");
-    build_options.addOption([]const u8, "git_date", git_info.date orelse "");
-    build_options.addOption(bool, "use_avx512icl", hasMacro(arch.macros, "USE_AVX512ICL"));
-    build_options.addOption(bool, "use_vnni", hasMacro(arch.macros, "USE_VNNI"));
-    build_options.addOption(bool, "use_avx512", hasMacro(arch.macros, "USE_AVX512"));
-    build_options.addOption(bool, "use_avx2", hasMacro(arch.macros, "USE_AVX2"));
-    build_options.addOption(bool, "use_sse41", hasMacro(arch.macros, "USE_SSE41"));
-    build_options.addOption(bool, "use_ssse3", hasMacro(arch.macros, "USE_SSSE3"));
-    build_options.addOption(bool, "use_sse2", hasMacro(arch.macros, "USE_SSE2"));
-    build_options.addOption(bool, "use_neon_dotprod", hasMacro(arch.macros, "USE_NEON_DOTPROD"));
-    build_options.addOption(bool, "use_neon", hasMacro(arch.macros, "USE_NEON"));
-    build_options.addOption(bool, "use_popcnt", hasMacro(arch.macros, "USE_POPCNT"));
-    build_options.addOption(bool, "use_pext", hasMacro(arch.macros, "USE_PEXT"));
-    build_options.addOption(bool, "stub_eval", stub_eval);
-    build_options.addOption(bool, "has_ndebug", true);
-    const build_options_module = build_options.createModule();
-
-    // Emit C instead of an object, for the correctness oracle in docs/09-tooling-ci.md. The C
-    // backend lowers @Vector and friends differently from LLVM, so a construct that depends on
-    // a representation Zig leaves target-defined diverges here and nowhere else. Requires
-    // -Dlto=false (the C backend cannot use LLD).
-    const emit_c = b.option(bool, "emit-c", "Emit C source instead of a binary (correctness oracle; needs -Dlto=false)") orelse false;
-    const target = b.resolveTargetQuery(.{
-        .ofmt = if (emit_c) .c else null,
-        .cpu_arch = arch.cpu_arch,
-        .cpu_model = .baseline,
-        .cpu_features_add = arch.target_features,
-        .os_tag = os_tag,
-        .abi = abi,
-    });
 
     // Model the module graph as data. Both tables -- the {name, path} specs and the import
     // edges -- live in build/modules.zig: they are pure data, they were ~480 lines of this
@@ -218,42 +156,6 @@ pub fn build(b: *std.Build) void {
     // Single-source default_eval_file_name in engine.zig from network.zig
     // (network has no engine dep, so this edge is acyclic).
 
-    // Run the EngineGraph + member-module unit tests (construction,
-    // lifetime, SharedState binding) with their module deps. `zig build test-graph`.
-    const graph_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/shell/engine/graph.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    graph_test.root_module.addImport("thread", mods.get("thread").?);
-    graph_test.root_module.addImport("tt", mods.get("tt").?);
-    graph_test.root_module.addImport("shared_state", mods.get("shared_state").?);
-    graph_test.root_module.addImport("state_list", mods.get("state_list").?);
-    graph_test.root_module.addImport("numa", mods.get("numa").?);
-    graph_test.root_module.addImport("position_storage", mods.get("position_storage").?);
-    // Add the search_manager dependency explicitly: engine_graph.zig imports it by name, but this
-    // standalone test builds it as a fresh root module (outside the module-edge table).
-    graph_test.root_module.addImport("search_manager", mods.get("search_manager").?);
-    // Same reason: graph.zig names the concrete types of its options / network /
-    // shared_histories members, so this root needs their modules too.
-    graph_test.root_module.addImport("option", mods.get("option").?);
-    graph_test.root_module.addImport("network", mods.get("network").?);
-    graph_test.root_module.addImport("shared_history", mods.get("shared_history").?);
-    const graph_test_step = b.step("test-graph", "Run the native-graph (cut) unit tests");
-    addTestRun(b, graph_test_step, graph_test, cov_dir, &cov_idx);
-    // Test the sharedHists map container (std-only generic) with a mock
-    // entry. board/position.zig instantiates it with the real SharedHistories.
-    const sh_map_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/engine/search/shared_histories_map.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    addTestRun(b, graph_test_step, sh_map_test, cov_dir, &cov_idx);
-
     exe.root_module.addImport("engine", mods.get("engine").?);
     exe.root_module.addImport("misc", mods.get("misc").?);
     exe.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
@@ -276,8 +178,6 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("position_types", mods.get("position_types").?);
     exe.root_module.addImport("clock", mods.get("clock").?);
     exe.root_module.addImport("uci_output", mods.get("uci_output").?);
-    // Keep network free of a position import: its two Position field reads go through the
-    // leaf worker_layout, which frees position -> network for the direct eval call below.
 
     // Keep these addCMacro calls even though the engine compiles zero C++ TUs (TU=0), so they
     // are dead (no C TU consumes them) but harmless.
@@ -307,54 +207,10 @@ pub fn build(b: *std.Build) void {
 
     const install_step = b.getInstallStep();
 
-    // Fetch the net the Zig binary actually loads (network.zig's default_eval_file_name -- the single
-    // source of truth engine.zig imports), not the net named in the stale upstream src/evaluate.h. After
-    // an upstream net bump the two diverge, and the upstream scripts/net.sh would fetch the wrong file ->
-    // the binary can't load its net and crashes.
-    // Compile the fetcher as a Zig tool (tools/fetch_net.zig), not a `sh` script -- it
-    // reads the net name from network.zig's authoritative constant, sha256-validates, and downloads
-    // via std.http.Client. Build it for the host (it runs at build time). argv[1] = the net-name source.
-    const fetch_net_exe = b.addExecutable(.{
-        .name = "fetch_net",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tools/fetch_net.zig"),
-            .target = b.graph.host,
-            .optimize = .ReleaseFast,
-        }),
-    });
-    const net_cmd = b.addRunArtifact(fetch_net_exe);
-    net_cmd.addFileArg(b.path("src/engine/eval/network.zig"));
-    net_cmd.setCwd(b.path("resources"));
-    // Always run (the tool is idempotent: it validates an existing net and no-ops), so a deleted or
-    // corrupt net is re-fetched.
-    net_cmd.has_side_effects = true;
-
-    const net_step = b.step(
-        "net",
-        "Download the default NNUE net into resources/ for external-net Zig parity",
-    );
-    net_step.dependOn(&net_cmd.step);
-
-    // Fetch the 3-man Syzygy tablebases (tools/fetch_tb.zig): download the ~26 KB 3-man set into
-    // resources/syzygy/ for the Syzygy load/probe gates. The tables are NEVER committed (see .gitignore);
-    // like the net they are fetched + cached. link_libc: it uses libc mkdir (Io.Dir has no makeDir).
-    const fetch_tb_exe = b.addExecutable(.{
-        .name = "fetch_tb",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tools/fetch_tb.zig"),
-            .target = b.graph.host,
-            .optimize = .ReleaseFast,
-            .link_libc = true,
-        }),
-    });
-    const tb_cmd = b.addRunArtifact(fetch_tb_exe);
-    tb_cmd.setCwd(b.path("resources"));
-    tb_cmd.has_side_effects = true; // idempotent: skips files already present
-    const tb_step = b.step(
-        "tb",
-        "Download the 3-man Syzygy tablebases into resources/syzygy/ (for the Syzygy gates)",
-    );
-    tb_step.dependOn(&tb_cmd.step);
+    // Fetch the runtime inputs (build/fetch.zig): the NNUE net and the 3-man Syzygy set.
+    const fetches = buildpkg.fetch.register(b);
+    const net_cmd = fetches.net;
+    const tb_cmd = fetches.tb;
 
     // Drive the built engine over UCI with the pure-Zig parity harness and diff the
     // deterministic fingerprints against the committed goldens -- the cross-platform
@@ -417,64 +273,26 @@ pub fn build(b: *std.Build) void {
 
     // Run the per-position search-fingerprint differential harness. Localize a
     // bench-signature mismatch to a single position + drifted field.
-    const search_parity_golden = repoPath(b, "tools/search_parity.golden");
 
-    const search_parity_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "search-parity", search_parity_golden, "check");
-
-    const search_parity_step = b.step(
-        "search-parity",
-        "Diff per-position bench search fingerprints against the committed golden",
-    );
-    search_parity_step.dependOn(&search_parity_cmd.step);
-
-    const search_parity_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "search-parity", search_parity_golden, "update");
-
-    const search_parity_update_step = b.step(
-        "search-parity-update",
-        "Regenerate tools/search_parity.golden from the current binary",
-    );
-    search_parity_update_step.dependOn(&search_parity_update_cmd.step);
+    // Register every golden gate from build/gates.zig's table: 21 rows, each a check+update
+    // pair. Each row carries its own rationale as a comment there; this is the single loop
+    // that turns the table into steps.
+    const gate_runs = buildpkg.gates.register(.{
+        .b = b,
+        .harness = harness_exe,
+        .stockfish = exe,
+        .install_step = install_step,
+        .net_step = &net_cmd.step,
+        .tb_step = &tb_cmd.step,
+        .goldenPath = repoPath,
+    });
 
     // Run the deterministic non-bench search-mode harness (node-limit / MultiPV /
     // searchmoves) -- validate iterative_deepening control flow beyond bench.
-    const search_modes_golden = repoPath(b, "tools/search_modes.golden");
-
-    const search_modes_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "search-modes", search_modes_golden, "check");
-
-    const search_modes_step = b.step(
-        "search-modes",
-        "Diff deterministic non-bench search modes against the committed golden",
-    );
-    search_modes_step.dependOn(&search_modes_cmd.step);
-
-    const search_modes_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "search-modes", search_modes_golden, "update");
-
-    const search_modes_update_step = b.step(
-        "search-modes-update",
-        "Regenerate tools/search_modes.golden from the current binary",
-    );
-    search_modes_update_step.dependOn(&search_modes_update_cmd.step);
 
     // Pin the FEN-validation diagnostics (piece/pawn/king counts, side-to-move, castling,
     // en-passant, board length) and the terminate-on-critical-error behaviour -- byte-exact
     // with upstream's position.cpp messages. Regenerate on an upstream sync.
-    const fen_errors_golden = repoPath(b, "tools/fen_errors.golden");
-
-    const fen_errors_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "fen-errors", fen_errors_golden, "check");
-
-    const fen_errors_step = b.step(
-        "fen-errors",
-        "Diff the FEN-validation error diagnostics against the committed golden",
-    );
-    fen_errors_step.dependOn(&fen_errors_cmd.step);
-
-    const fen_errors_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "fen-errors", fen_errors_golden, "update");
-
-    const fen_errors_update_step = b.step(
-        "fen-errors-update",
-        "Regenerate tools/fen_errors.golden from the current binary",
-    );
-    fen_errors_update_step.dependOn(&fen_errors_update_cmd.step);
 
     // Assert via the worktree-based upstream oracle gate that the default (Zig)
     // bench == the PRISTINE upstream Stockfish at UPSTREAM_BASE, built in a persistent
@@ -485,6 +303,11 @@ pub fn build(b: *std.Build) void {
         "cat",
         repoPath(b, "tools/upstream/UPSTREAM_BASE"),
     }) orelse "";
+
+    // NOT a build/structural.zig row, deliberately: this gate takes a SECOND argument (the
+    // upstream base sha) that no other script gate does, and the table has no axis for it.
+    // Table-driving it dropped that argument silently -- the script still ran, still exited
+    // 0, against the wrong base. Kept longhand so the extra arg is visible at the call.
     const upstream_parity_cmd = b.addSystemCommand(&.{
         "bash",
         repoPath(b, "tools/upstream_parity.sh"),
@@ -501,76 +324,24 @@ pub fn build(b: *std.Build) void {
         "Assert default (Zig) bench == pristine upstream@UPSTREAM_BASE (git worktree, no vendored C++)",
     );
     upstream_parity_step.dependOn(&upstream_parity_cmd.step);
-
-    // Pin the stripped bench info+bestmove text against a committed golden (the full-output
-    // GOLDEN gate).
-    const output_golden = repoPath(b, "tools/output_parity.golden");
-    const output_golden_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "output-golden", output_golden, "check");
-
-    const output_golden_step = b.step(
-        "output-golden",
-        "Assert the default (Zig) bench info-line output matches the committed golden",
-    );
-    output_golden_step.dependOn(&output_golden_cmd.step);
-
-    const output_golden_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "output-golden", output_golden, "update");
-
-    const output_golden_update_step = b.step(
-        "output-golden-update",
-        "Regenerate tools/output_parity.golden from the current binary",
-    );
-    output_golden_update_step.dependOn(&output_golden_update_cmd.step);
-
-    // Pin the search-manager driver + its emit callbacks bit-exact (driver-golden;
-    // multipv/wdl/ponder/no-moves).
-    const driver_golden = repoPath(b, "tools/driver.golden");
-    const driver_golden_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "check");
-    const driver_golden_step = b.step(
-        "driver-golden",
-        "Assert the search-driver + emit-callback UCI output matches the committed golden",
-    );
-    driver_golden_step.dependOn(&driver_golden_cmd.step);
-
-    const driver_golden_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "driver-golden", driver_golden, "update");
-    const driver_golden_update_step = b.step(
-        "driver-golden-update",
-        "Regenerate tools/driver.golden from the current binary",
-    );
-    driver_golden_update_step.dependOn(&driver_golden_update_cmd.step);
-
-    // Stress the thread runtime for liveness.
-    // Hammer (ucinewgame -> setoption Threads -> go/stop) cycles across thread
-    // counts + a construct/destroy churn, under a wall-clock watchdog. Gate on liveness
-    // (no hang / crash / lost search), not determinism. Keep it out
-    // of the core `parity` aggregate (slower, wall-clock-timed); run explicitly
-    // for any thread-runtime slice.
-    const stress_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "stress", "-", "check");
-
-    const stress_step = b.step(
-        "parity-stress",
-        "Thread-runtime stress/liveness: go/stop storms + construct/destroy churn",
-    );
-    stress_step.dependOn(&stress_cmd.step);
-
-    // Gate memory errors / leaks: run Valgrind memcheck
-    // over short multi-thread sessions, asserting no invalid access / bad free /
-    // definite leak (uninit-value checking off -- NNUE SIMD makes it false-noisy).
-    // Provide the ASan/LSan-equivalent net for the Worker/large-page lifecycle. Keep out of the
-    // core `parity` aggregate (slow).
-    const valgrind_cmd = b.addSystemCommand(&.{
-        "bash",
-        repoPath(b, "tools/valgrind.sh"),
+    // Register every "run a shell script" gate from build/structural.zig's table.
+    const script_runs = buildpkg.structural.register(.{
+        .b = b,
+        .stockfish = exe,
+        .install_step = install_step,
+        .net_step = &net_cmd.step,
+        .repoPath = repoPath,
     });
-    valgrind_cmd.addArtifactArg(exe);
-    valgrind_cmd.step.dependOn(install_step);
-    valgrind_cmd.step.dependOn(&net_cmd.step);
-    valgrind_cmd.setCwd(b.path("resources"));
 
-    const valgrind_step = b.step(
-        "parity-valgrind",
-        "Valgrind memcheck (leak / invalid-access / bad-free) across thread counts",
-    );
-    valgrind_step.dependOn(&valgrind_cmd.step);
+    // Register the liveness / metamorphic checks (build/checks.zig): nine gates that assert
+    // a property rather than diff a golden.
+    const check_runs = buildpkg.checks.register(.{
+        .b = b,
+        .harness = harness_exe,
+        .stockfish = exe,
+        .install_step = install_step,
+        .net_step = &net_cmd.step,
+    });
 
     // Check multi-thread search sanity. Multi-threaded
     // search is non-deterministic (Lazy SMP), so this is a tolerance gate, not a
@@ -579,631 +350,11 @@ pub fn build(b: *std.Build) void {
     // cp band of the deterministic single-thread reference. Catch a runtime that
     // runs but corrupts result aggregation. Keep out of the core `parity` aggregate
     // (non-deterministic, sleep-paced).
-    const mt_golden = repoPath(b, "tools/mt_sanity.golden");
 
-    const mt_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "mt-sanity", mt_golden, "check");
+    // Register the two upstream-differential gates (build/structural.zig): bespoke argv
+    // shapes, so a function rather than a table row.
+    buildpkg.structural.registerUpstream(b, install_step, &net_cmd.step, walk_args, repoPath);
 
-    const mt_step = b.step(
-        "parity-mt",
-        "Multi-thread search sanity: Threads {2,4} score-band vs single-thread golden",
-    );
-    mt_step.dependOn(&mt_cmd.step);
-
-    const mt_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "mt-sanity", mt_golden, "update");
-
-    const mt_update_step = b.step(
-        "parity-mt-update",
-        "Regenerate tools/mt_sanity.golden (single-thread reference)",
-    );
-    mt_update_step.dependOn(&mt_update_cmd.step);
-
-    // Gate leaks for the searchmoves / rootMoves vector lifecycle:
-    // run Valgrind memcheck over a `go searchmoves` + ucinewgame churn, asserting no
-    // definite leak / bad free of limits.searchmoves and worker.rootMoves -- the
-    // path bench never exercises. Read the verdict from valgrind's summary and
-    // tolerate the known post-exit thread-join hang under memcheck. Keep out of the
-    // core `parity` aggregate (slow).
-    const teardown_cmd = b.addSystemCommand(&.{
-        "bash",
-        repoPath(b, "tools/teardown.sh"),
-    });
-    teardown_cmd.addArtifactArg(exe);
-    teardown_cmd.step.dependOn(install_step);
-    teardown_cmd.step.dependOn(&net_cmd.step);
-    teardown_cmd.setCwd(b.path("resources"));
-
-    const teardown_step = b.step(
-        "parity-teardown",
-        "Valgrind leak gate for searchmoves/rootMoves vector lifecycle + Worker clear",
-    );
-    teardown_step.dependOn(&teardown_cmd.step);
-
-    // Check wall-clock time-management sanity: the ONLY gate over `go
-    // movetime` / `go wtime` / TimeManagement.startTime -- the whole rest of the
-    // battery is depth/node-limited and never consults the clock, which is how the
-    // startTime=0 bug (fbcefd0d6) shipped. Base it on invariants (no golden): reported
-    // elapsed must track the movetime budget and scale with it. Keep it its own step
-    // (like parity-mt) since it is non-deterministic and sleep-paced, outside the core
-    // deterministic `parity` aggregate; the CI workflow runs it explicitly.
-    const time_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "time-mgmt", "-", "check");
-
-    const time_step = b.step(
-        "parity-time",
-        "Wall-clock time management: go movetime/wtime budget + clock-scaling invariants",
-    );
-    time_step.dependOn(&time_cmd.step);
-
-    // Gate metamorphic TT/history reset (reset-determinism; no golden -- assert internal
-    // relations in one process): a second no-reset search reuses the TT (node count changes),
-    // Clear Hash removes that reuse, and ucinewgame restores the exact clean search (no stale
-    // state bleed). Single-thread deterministic, so it joins the portable aggregate.
-    const reset_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "reset-determinism", "-", "check");
-
-    const reset_step = b.step(
-        "parity-reset",
-        "Metamorphic TT/history reset: ucinewgame + Clear Hash restore state, TT reuse is live",
-    );
-    reset_step.dependOn(&reset_cmd.step);
-
-    // Gate the metamorphic Skill Level (skill; no golden -- the path is RNG-seeded). Skill 20 is
-    // deterministic (handicap off -> one move), Skill 0 varies (>= 2 distinct, all legal). The
-    // PRNG persists per process, so K searches in one process give robust variance (measured
-    // min 3 over 25 seeds). Single-thread, relations are platform-agnostic, so it joins the
-    // portable aggregate.
-    const skill_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "skill", "-", "check");
-
-    const skill_step = b.step(
-        "parity-skill",
-        "Metamorphic Skill Level gate: Skill 20 deterministic, Skill 0 random + legal",
-    );
-    skill_step.dependOn(&skill_cmd.step);
-
-    // Drive consecutive `go` with NO intervening `position` (repeat-go; no golden -- liveness).
-    // Upstream guards the setup-state transfer, so the pool reuses the list it already owns;
-    // zfish freed it and stored null, and the second `go` panicked in the shipped binary. Every
-    // other gate re-sends `position` before each `go`, so none of them could see it.
-    const repeat_go_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "repeat-go", "-", "check");
-
-    const repeat_go_step = b.step(
-        "parity-repeat-go",
-        "Repeated `go` with no intervening `position` yields a bestmove each time, clean exit",
-    );
-    repeat_go_step.dependOn(&repeat_go_cmd.step);
-
-    // Assert a FEN missing trailing fields SETS with upstream's defaults (fen-truncated; literal
-    // expectations, no golden -- a golden here could be regenerated green over the defect).
-    const fen_trunc_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "fen-truncated", "-", "check");
-
-    const fen_trunc_step = b.step(
-        "parity-fen-truncated",
-        "A FEN missing trailing fields sets with upstream's defaults instead of failing",
-    );
-    fen_trunc_step.dependOn(&fen_trunc_cmd.step);
-
-    // Assert `flip` re-parses the board under ITS OWN chess960 variant, not the live option
-    // (flip-chess960; literal expectations verified against the oracle, no golden).
-    const flip960_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "flip-chess960", "-", "check");
-
-    const flip960_step = b.step(
-        "parity-flip-chess960",
-        "`flip` keeps the board's own chess960 variant when UCI_Chess960 is toggled",
-    );
-    flip960_step.dependOn(&flip960_cmd.step);
-
-    // Exercise the ponder handshake (ponder; no golden -- N-time). `go ... ponder` then `ponderhit` must
-    // emit a legal bestmove, `stop` during ponder must emit the best-so-far, and the process must
-    // exit cleanly. Liveness + legality, platform-agnostic, so it joins the portable aggregate.
-    const ponder_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "ponder", "-", "check");
-
-    const ponder_step = b.step(
-        "parity-ponder",
-        "Ponder handshake: go ponder -> ponderhit/stop yields a legal bestmove, clean exit",
-    );
-    ponder_step.dependOn(&ponder_cmd.step);
-
-    // Exercise the binary WITHOUT the net beside it -- the ONLY gate that does (net-missing).
-    // Every other gate here runs with cwd=resources/ (addHarnessRun's setCwd), which hands the
-    // engine the very precondition it must check -- so a startup that dies without a net
-    // is invisible to all of them, and did ship that way. The harness spawns the child in
-    // a scratch subdir holding no net and asserts a named diagnostic + a clean non-zero
-    // exit, never a signal. Startup contract only, no search: portable, so it joins the
-    // portable aggregate.
-    const net_missing_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "net-missing", "-", "check");
-
-    const net_missing_step = b.step(
-        "parity-net-missing",
-        "Missing-net startup: a named diagnostic + clean non-zero exit, never a signal",
-    );
-    net_missing_step.dependOn(&net_missing_cmd.step);
-
-    // Diff perft against a golden -- the ONLY gate over
-    // do_move/undo_move + the legal movegen + the UCI move formatter (bench never runs
-    // perft; search-modes only checks bestmoves), pinned against the committed golden.
-    const perft_golden = repoPath(b, "tools/perft.golden");
-    const perft_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "perft", perft_golden, "check");
-
-    const perft_step = b.step(
-        "perft",
-        "Diff perft divide counts + totals against the committed golden (do_move/undo_move/movegen)",
-    );
-    perft_step.dependOn(&perft_cmd.step);
-
-    const perft_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "perft", perft_golden, "update");
-
-    const perft_update_step = b.step(
-        "perft-update",
-        "Regenerate tools/perft.golden from the current binary",
-    );
-    perft_update_step.dependOn(&perft_update_cmd.step);
-
-    // Pin the NNUE `eval` trace block against a golden
-    // (buildNnueTrace + the network-ptr / accumulator-cache trace path) — bench covers the eval
-    // value but not this formatting path.
-    const eval_golden = repoPath(b, "tools/eval.golden");
-    const eval_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "eval", eval_golden, "check");
-
-    const eval_step = b.step(
-        "eval-trace",
-        "Diff the NNUE eval trace block against the committed golden (buildNnueTrace path)",
-    );
-    eval_step.dependOn(&eval_cmd.step);
-
-    const eval_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "eval", eval_golden, "update");
-
-    const eval_update_step = b.step(
-        "eval-trace-update",
-        "Regenerate tools/eval.golden from the current binary",
-    );
-    eval_update_step.dependOn(&eval_update_cmd.step);
-
-    // Gate the UCI misc commands (coverage tail): d/flip Fen+Key+Checkers — the
-    // Position fen/flip/zobrist/gives_check read paths no other gate touches.
-    const misc_golden = repoPath(b, "tools/misc.golden");
-    const misc_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "misc", misc_golden, "check");
-
-    const misc_step = b.step(
-        "misc",
-        "Diff d/flip (Fen/Key/Checkers) against the committed golden (fen/flip/zobrist/gives_check)",
-    );
-    misc_step.dependOn(&misc_cmd.step);
-
-    const misc_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "misc", misc_golden, "update");
-
-    const misc_update_step = b.step(
-        "misc-update",
-        "Regenerate tools/misc.golden from the current binary",
-    );
-    misc_update_step.dependOn(&misc_update_cmd.step);
-
-    // Pin the length + FNV-1a of the net produced by `export_net` (export-net golden). The
-    // serializer (write_parameters) must reproduce the canonical .nnue byte-for-byte;
-    // upstream round-trips to the input net exactly, so a matching hash is a
-    // differential-vs-upstream check (zfish export == oracle export == distributed net).
-    // The net bytes are arch/OS-invariant, so the golden is portable. Regenerate on a net
-    // bump alongside the other goldens.
-    const export_net_golden = repoPath(b, "tools/export_net.golden");
-    const export_net_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "export-net", export_net_golden, "check");
-
-    const export_net_step = b.step(
-        "export-net",
-        "Diff the export_net (write_parameters) net fingerprint against the committed golden",
-    );
-    export_net_step.dependOn(&export_net_cmd.step);
-
-    const export_net_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "export-net", export_net_golden, "update");
-
-    const export_net_update_step = b.step(
-        "export-net-update",
-        "Regenerate tools/export_net.golden from the current binary",
-    );
-    export_net_update_step.dependOn(&export_net_update_cmd.step);
-
-    // Pin the nodestime allocation (nodestime golden): `nodestime` converts wall-clock budgets into a NODE budget, so the
-    // time-management allocation path is deterministic (bit-exact) rather than the reported-ms
-    // band the `parity-time` gate checks. Pin depth/score/nodes/bestmove across the allocation
-    // branches (sudden-death / movestogo / increment / movetime). Node budgets are
-    // arch/OS-invariant, so the golden is portable.
-    const nodestime_golden = repoPath(b, "tools/nodestime.golden");
-    const nodestime_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "nodestime", nodestime_golden, "check");
-
-    const nodestime_step = b.step(
-        "nodestime",
-        "Diff the nodestime time-management allocation (node budget) against the committed golden",
-    );
-    nodestime_step.dependOn(&nodestime_cmd.step);
-
-    const nodestime_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "nodestime", nodestime_golden, "update");
-
-    const nodestime_update_step = b.step(
-        "nodestime-update",
-        "Regenerate tools/nodestime.golden from the current binary",
-    );
-    nodestime_update_step.dependOn(&nodestime_update_cmd.step);
-
-    // Pin the `uci` handshake `option name ...` lines (uci-options golden; the GUI compatibility
-    // surface). Pin only the option lines -- the id name / author + banner carry the
-    // git sha/date and are volatile. Defaults/min/max are static constants (machine-invariant),
-    // so the golden is portable; EvalFile's default is the net name, regenerated on a net bump.
-    const uci_options_golden = repoPath(b, "tools/uci_options.golden");
-    const uci_options_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "uci-options", uci_options_golden, "check");
-
-    const uci_options_step = b.step(
-        "uci-options",
-        "Diff the `uci` option-list handshake against the committed golden",
-    );
-    uci_options_step.dependOn(&uci_options_cmd.step);
-
-    const uci_options_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "uci-options", uci_options_golden, "update");
-
-    const uci_options_update_step = b.step(
-        "uci-options-update",
-        "Regenerate tools/uci_options.golden from the current binary",
-    );
-    uci_options_update_step.dependOn(&uci_options_update_cmd.step);
-
-    // Pin `go mate N` (mate golden; mate-distance search mode). Pin the reported mate DISTANCE
-    // (score mate N) and the mating move+ponder across three verified forced mates (mate in
-    // 1/2/3) -- a bestmove-only check would miss a wrong-distance regression. Single-thread and
-    // mate-distance-deterministic, so arch/OS-invariant and portable.
-    const mate_golden = repoPath(b, "tools/mate.golden");
-    const mate_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "mate", mate_golden, "check");
-
-    const mate_step = b.step(
-        "mate",
-        "Diff `go mate N` (mate distance + move) against the committed golden",
-    );
-    mate_step.dependOn(&mate_cmd.step);
-
-    const mate_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "mate", mate_golden, "update");
-
-    const mate_update_step = b.step(
-        "mate-update",
-        "Regenerate tools/mate.golden from the current binary",
-    );
-    mate_update_step.dependOn(&mate_update_cmd.step);
-
-    // Pin UCI_Chess960 search + castling encoding + eval (chess960 golden). perft covers FRC
-    // movegen counts; this pins FRC castling made/unmade in a real search, the played
-    // king-to-rook-square castling move (f1g1 = O-O) via `d`, and the NNUE eval on FRC king
-    // placements. Single-thread + node budget -> arch/OS-invariant, so the golden is portable.
-    const chess960_golden = repoPath(b, "tools/chess960.golden");
-    const chess960_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "chess960", chess960_golden, "check");
-
-    const chess960_step = b.step(
-        "chess960",
-        "Diff UCI_Chess960 search + castling + eval against the committed golden",
-    );
-    chess960_step.dependOn(&chess960_cmd.step);
-
-    const chess960_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "chess960", chess960_golden, "update");
-
-    const chess960_update_step = b.step(
-        "chess960-update",
-        "Regenerate tools/chess960.golden from the current binary",
-    );
-    chess960_update_step.dependOn(&chess960_update_cmd.step);
-
-    // Pin bench node counts for non-default configs (bench-matrix golden; hash size / shallow
-    // depth / node limit / bench-perft) -- distinct deterministic code paths the default
-    // signature (2508687) never exercises, each verified equal to the upstream oracle.
-    // Keep Linux-only (`parity`, not `parity-portable`): verified bit-exact on x86 in both build
-    // modes, but the node-limited config's cross-arch equality is not locally verifiable, and
-    // the default bench already gates cross-OS signature. Regenerate on an upstream bump.
-    const bench_matrix_golden = repoPath(b, "tools/bench_matrix.golden");
-    const bench_matrix_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "bench-matrix", bench_matrix_golden, "check");
-
-    const bench_matrix_step = b.step(
-        "bench-matrix",
-        "Diff non-default bench node counts (hash/depth/nodes/perft configs) against the golden",
-    );
-    bench_matrix_step.dependOn(&bench_matrix_cmd.step);
-
-    const bench_matrix_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "bench-matrix", bench_matrix_golden, "update");
-
-    const bench_matrix_update_step = b.step(
-        "bench-matrix-update",
-        "Regenerate tools/bench_matrix.golden from the current binary",
-    );
-    bench_matrix_update_step.dependOn(&bench_matrix_update_cmd.step);
-
-    // Pin the Syzygy load report (tb-init golden; M-SZ-1). Set SyzygyPath to the fetched 3-man set
-    // (resources/syzygy/) and pin the `info string Found N WDL and N DTZ ... (up to M-man)` line ==
-    // upstream oracle. Depend on the `tb` fetch too. Keep Linux-only (`parity`, not portable): the
-    // fetched tables + libc file-check are verified on Linux; cross-OS Syzygy comes with M-SZ-4.
-    const tb_init_golden = repoPath(b, "tools/tb_init.golden");
-    const tb_init_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-init", tb_init_golden, "check");
-    tb_init_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_init_step = b.step(
-        "tb-init",
-        "Diff the Syzygy load report (Found N WDL/DTZ, up to M-man) against the golden",
-    );
-    tb_init_step.dependOn(&tb_init_cmd.step);
-
-    const tb_init_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-init", tb_init_golden, "update");
-    tb_init_update_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_init_update_step = b.step(
-        "tb-init-update",
-        "Regenerate tools/tb_init.golden from the current binary",
-    );
-    tb_init_update_step.dependOn(&tb_init_update_cmd.step);
-
-    // Pin the Syzygy WDL probe (tb-wdl golden; M-SZ-2c). Set SyzygyPath to resources/syzygy and pin the
-    // `d`-command `Tablebases WDL: N (state)` line == upstream oracle for a curated 3-man battery
-    // (all five piece types, win/loss/draw, wtm/btm, pawn + blackStronger flips, and the
-    // search<false> capture recursion). Keep Linux-only (like tb-init); depend on the `tb` fetch.
-    const tb_wdl_golden = repoPath(b, "tools/tb_wdl.golden");
-    const tb_wdl_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-wdl", tb_wdl_golden, "check");
-    tb_wdl_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_wdl_step = b.step(
-        "tb-wdl",
-        "Diff the Syzygy WDL probe (KQvK/KPvK/... == oracle) against the golden",
-    );
-    tb_wdl_step.dependOn(&tb_wdl_cmd.step);
-
-    const tb_wdl_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-wdl", tb_wdl_golden, "update");
-    tb_wdl_update_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_wdl_update_step = b.step(
-        "tb-wdl-update",
-        "Regenerate tools/tb_wdl.golden from the current binary",
-    );
-    tb_wdl_update_step.dependOn(&tb_wdl_update_cmd.step);
-
-    // Pin the Syzygy DTZ probe (tb-dtz golden; M-SZ-3a). Reuse the tb-wdl 3-man battery but pin the
-    // `d`-command `Tablebases DTZ: N (state)` line == upstream oracle -- exercising do_probe_table
-    // <DTZ>, the DTZ value map, and the CHANGE_STM 1-ply search (KQvK-btm). Keep Linux-only; needs `tb`.
-    const tb_dtz_golden = repoPath(b, "tools/tb_dtz.golden");
-    const tb_dtz_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-dtz", tb_dtz_golden, "check");
-    tb_dtz_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_dtz_step = b.step(
-        "tb-dtz",
-        "Diff the Syzygy DTZ probe (KQvK/KPvK/... == oracle) against the golden",
-    );
-    tb_dtz_step.dependOn(&tb_dtz_cmd.step);
-
-    const tb_dtz_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-dtz", tb_dtz_golden, "update");
-    tb_dtz_update_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_dtz_update_step = b.step(
-        "tb-dtz-update",
-        "Regenerate tools/tb_dtz.golden from the current binary",
-    );
-    tb_dtz_update_step.dependOn(&tb_dtz_update_cmd.step);
-
-    // Pin the Syzygy root DTZ ranking (tb-root golden; M-SZ-3b). Run `go` on TB wins and pin
-    // bestmove + tbScore + tbHits == upstream oracle, first-validating rankRootMovesDtz end to end.
-    const tb_root_golden = repoPath(b, "tools/tb_root.golden");
-    const tb_root_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-root", tb_root_golden, "check");
-    tb_root_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_root_step = b.step(
-        "tb-root",
-        "Diff the Syzygy root DTZ ranking (bestmove/score/tbhits == oracle) against the golden",
-    );
-    tb_root_step.dependOn(&tb_root_cmd.step);
-
-    const tb_root_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-root", tb_root_golden, "update");
-    tb_root_update_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_root_update_step = b.step(
-        "tb-root-update",
-        "Regenerate tools/tb_root.golden from the current binary",
-    );
-    tb_root_update_step.dependOn(&tb_root_update_cmd.step);
-
-    // Pin the in-search Step 6 WDL probe (tb-search golden; M-SZ-4). Bench a 4-man EPD; the node
-    // count with Step 6 on (SyzygyPath set) and off both pin == upstream oracle -- bit-exact
-    // node-count parity that the in-tree probe shapes. Keep Linux-only; depend on the `tb` fetch.
-    const tb_search_golden = repoPath(b, "tools/tb_search.golden");
-    const tb_search_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-search", tb_search_golden, "check");
-    tb_search_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_search_step = b.step(
-        "tb-search",
-        "Diff the in-search Step 6 node count (with/without TB == oracle) against the golden",
-    );
-    tb_search_step.dependOn(&tb_search_cmd.step);
-
-    const tb_search_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-search", tb_search_golden, "update");
-    tb_search_update_cmd.step.dependOn(&tb_cmd.step);
-
-    const tb_search_update_step = b.step(
-        "tb-search-update",
-        "Regenerate tools/tb_search.golden from the current binary",
-    );
-    tb_search_update_step.dependOn(&tb_search_update_cmd.step);
-
-    // Pin cursed-win / blessed-loss / 50-move (tb-cursed golden; M-SZ-5). Run LOCAL ONLY -- needs ~40 MB of
-    // 5-man tables staged into resources/syzygy5/ (see buildTbCursed's comment), which the 3-man CI set
-    // never contains, so this is NOT wired into `parity`. Pin WDL+DTZ of a KNNvKP cursed win
-    // (+1/122) and its blessed-loss mirror (-1/-115) == the upstream oracle.
-    const tb_cursed_golden = repoPath(b, "tools/tb_cursed.golden");
-    const tb_cursed_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-cursed", tb_cursed_golden, "check");
-
-    const tb_cursed_step = b.step(
-        "tb-cursed",
-        "LOCAL: diff cursed-win/blessed-loss WDL+DTZ (needs resources/syzygy5/ 5-man tables) vs golden",
-    );
-    tb_cursed_step.dependOn(&tb_cursed_cmd.step);
-
-    const tb_cursed_update_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "tb-cursed", tb_cursed_golden, "update");
-    const tb_cursed_update_step = b.step(
-        "tb-cursed-update",
-        "LOCAL: regenerate tools/tb_cursed.golden from the current binary",
-    );
-    tb_cursed_update_step.dependOn(&tb_cursed_update_cmd.step);
-
-    // Assert via the src-free / TU=0 structural gate that the
-    // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
-    // benches 2508687. Keep it a permanent invariant in the `parity` aggregate below, guarding
-    // against any C++ TU being reintroduced into the default binary.
-    const src_free_cmd = b.addSystemCommand(&.{
-        "bash",
-        repoPath(b, "tools/src_free.sh"),
-    });
-    src_free_cmd.addArtifactArg(exe);
-    src_free_cmd.step.dependOn(install_step);
-    src_free_cmd.step.dependOn(&net_cmd.step);
-    src_free_cmd.setCwd(b.path("resources"));
-
-    const src_free_step = b.step(
-        "src-free",
-        "src-free structural gate: zero C++ Stockfish/libc++ symbols in the shipped binary",
-    );
-    src_free_step.dependOn(&src_free_cmd.step);
-
-    // Gate the headless engine structurally: src/engine/ must import only engine/ modules,
-    // never platform/ or shell/. The seams are injected one at a time, so the up-edge
-    // count only ratchets down; the baseline is the currently-allowed maximum and the
-    // gate fails if the real count exceeds it. Lower it as each seam is severed; at 0
-    // the engine is a standalone search+eval library.
-    const headless_baseline = "0";
-    const headless_cmd = b.addSystemCommand(&.{
-        "bash",
-        repoPath(b, "tools/headless_lint.sh"),
-    });
-    headless_cmd.setEnvironmentVariable("HEADLESS_BASELINE", headless_baseline);
-    const headless_step = b.step(
-        "headless",
-        "headless-engine structural gate: engine/ imports only engine/ (ratchets to 0)",
-    );
-    headless_step.dependOn(&headless_cmd.step);
-
-    // Gate god-files structurally: ratchet on the count of .zig files >= 500 lines across ALL
-    // repo-owned code (src/ + build.zig + tools/), so the "no god-files" property is enforced
-    // repo-wide, not just claimed. An earlier src/-only scan was blind to the two LARGEST files:
-    // build.zig (2245, the declarative module graph) and tools/parity_harness.zig (1888, the gate
-    // driver). Both are cohesive-not-god (a build script, a test harness), so they are waived at
-    // baseline 2 -- but a THIRD (or growth of a smaller file past the line) fails the gate. Two
-    // earlier splits ratcheted this down: syzygy/wdl.zig 832 -> wdl 490 + registry 371, and
-    // shell/engine.zig 505 -> the engine.zig face (116) + engine/session.zig driver (413).
-    const loc_baseline = "2";
-    const loc_cmd = b.addSystemCommand(&.{
-        "bash",
-        repoPath(b, "tools/loc_lint.sh"),
-    });
-    loc_cmd.setEnvironmentVariable("LOC_BASELINE", loc_baseline);
-    const loc_step = b.step(
-        "loc",
-        "god-file structural gate: no new .zig file >= 500 lines (ratchets down)",
-    );
-    loc_step.dependOn(&loc_cmd.step);
-
-    // Gate docs/ against the tree it describes. Docs are accurate when written and rot where
-    // the code moves under them: a hostile audit found a path pointing at a split-away module,
-    // the bench anchor quoted as 2067208 in five places while build.zig said otherwise, and link
-    // targets that broke on a renumber. All three are mechanical, and all three shipped because
-    // nothing checked. This does NOT check whether a sentence is true -- "numa_context is a
-    // never-dereferenced stub handle" parsed, linked, and was false for weeks; only reading the
-    // code finds that. It buys the cheap half so review can spend attention on the expensive half.
-    const docs_cmd = b.addSystemCommand(&.{
-        "bash",
-        repoPath(b, "tools/docs_lint.sh"),
-    });
-    const docs_step = b.step(
-        "docs-lint",
-        "docs rot gate: every link resolves, every named src/tools path exists, the bench anchor matches build.zig",
-    );
-    docs_step.dependOn(&docs_cmd.step);
-
-    // Audit the upstream blast-radius map against the comment-derived correspondence
-    // (rot = declared owner missing from the tree; drift is advisory) and ratchet the
-    // uncovered-surface count (baseline in tools/upstream/upstream_map.baseline --
-    // lower it as citations are added, never raise it). Not in the parity aggregate:
-    // it reads the pinned upstream tree from git objects a plain CI checkout of
-    // origin does not carry. The weekly upstream-check workflow runs it after
-    // fetching the upstream remote, which brings those objects in.
-    const upstream_map_cmd = b.addSystemCommand(&.{
-        "python3",
-        repoPath(b, "tools/upstream_map_derive.py"),
-        "--audit",
-    });
-    const upstream_map_step = b.step(
-        "upstream-map",
-        "upstream map gate: declared-map rot fails, uncovered surface ratcheted",
-    );
-    upstream_map_step.dependOn(&upstream_map_cmd.step);
-
-    // Diff node counts against the pristine oracle over a RANDOM WALK from the start
-    // position, per depth. The bench anchor covers a fixed position list, so a port can
-    // be nudged toward that number without becoming faithful; `upstream_nodes.sh` narrows
-    // that hole but only over a FEN suite it is handed. This closes it by reaching
-    // positions that appear in no bench list, no golden and no test. Outside the parity
-    // aggregate for the same reason as upstream-map -- it needs the pinned upstream tree,
-    // and it builds the oracle. Depend on the exe and the net: it drives the built binary
-    // from resources/.
-    // Take the tool's flags through a -D option rather than `zig build ... -- args`:
-    // `b.args` is a 0.16 field that Zig master removed, and the passthrough has no
-    // cross-version spelling. A -D option behaves identically on both compilers and
-    // `zig build --help` lists it, where `--` args are invisible.
-    const upstream_walk_cmd = b.addSystemCommand(&.{
-        "python3",
-        repoPath(b, "tools/upstream_walk.py"),
-    });
-    if (walk_args) |wa| {
-        var it = std.mem.tokenizeScalar(u8, wa, ' ');
-        while (it.next()) |tok| upstream_walk_cmd.addArg(tok);
-    }
-    upstream_walk_cmd.step.dependOn(install_step);
-    upstream_walk_cmd.step.dependOn(&net_cmd.step);
-    const upstream_walk_step = b.step(
-        "upstream-walk",
-        "upstream random-walk gate: node counts == pristine oracle, per depth, on unchosen positions",
-    );
-    upstream_walk_step.dependOn(&upstream_walk_cmd.step);
-
-    // Run the cycle-break mechanism's ratchet + classifier (hook-lint; G2).
-    // The module DAG is a DESIGN outcome, not a language guarantee -- Zig compiles and
-    // runs import cycles at both granularities -- and it is bought with 30 function-
-    // pointer hooks. Nothing counted them, recorded which fail loud vs answer silently,
-    // or noticed a hook the composition root forgot to register. The last is the one
-    // that matters: an unregistered hook does not crash, it ANSWERS, so a wiring bug
-    // ships as a wrong bench rather than a signal. Run it as a source lint (no engine needed), so
-    // it runs on the host and joins the portable aggregate.
-    // Choose .Debug on purpose: these lints run in ~0.03s, so the optimizer buys nothing --
-    // but Debug's checking allocator catches allocator misuse in EVERY lane. Built
-    // ReleaseFast, arch_report shipped a size-mismatched double free that Linux and
-    // Windows tolerated silently and macOS trapped on, AFTER printing "OK". A lint that
-    // corrupts the heap while reporting success is worse than no lint.
-    const hook_lint_exe = b.addExecutable(.{
-        .name = "hook_lint",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tools/hook_lint.zig"),
-            .target = b.graph.host,
-            .optimize = .Debug,
-        }),
-    });
-    const hook_lint_cmd = b.addRunArtifact(hook_lint_exe);
-    hook_lint_cmd.setCwd(b.path("."));
-    const hook_lint_step = b.step(
-        "hook-lint",
-        "Cycle-break hooks: ratcheted, each declaring a failure mode + class, all registered",
-    );
-    hook_lint_step.dependOn(&hook_lint_cmd.step);
-
-    // Report Lakos coupling at BOTH granularities + the two tripwires the
-    // compiler will not give (arch-report; G1). REPORT the numbers, never gate them -- Lakos's
-    // NCCD ~1.0 assumes cycles cost compile time, and zfish compiles as one LLVM
-    // module where they cost nothing measurable. The GATEABLE properties are binary:
-    // the module graph is a DAG (Zig permits cycles -- spike), and every file SCC is
-    // a declared component. Report unused declared edges, do not gate them.
-    // Choose .Debug: see hook_lint_exe above -- the checking allocator is the point.
-    const arch_report_exe = b.addExecutable(.{
-        .name = "arch_report",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tools/arch_report.zig"),
-            .target = b.graph.host,
-            .optimize = .Debug,
-        }),
-    });
-    const arch_report_cmd = b.addRunArtifact(arch_report_exe);
-    arch_report_cmd.setCwd(b.path("."));
-    // Print the host's best ARCH tier, from the same pure-Zig detector the build uses to resolve
-    // `-Darch=native` (tools/native_arch.zig). arch_determinism.sh reads this to pick its host
     // sweep tier, so the sweep and the build agree on one detector.
     // ThreadSanitizer race gate. Needs -Dtsan (and -Dlto=false, which -Dtsan forces): the engine
     // races its TT, shared history and per-Worker counters BY DESIGN, and upstream keeps that
@@ -1224,11 +375,8 @@ pub fn build(b: *std.Build) void {
     const host_arch_step = b.step("host-arch", "Print the host's best ARCH tier (the -Darch=native resolution)");
     host_arch_step.dependOn(&b.addSystemCommand(&.{ "printf", "%s", native_arch.detectArchFromCpu(b.graph.host.result.cpu) }).step);
 
-    const arch_report_step = b.step(
-        "arch-report",
-        "Coupling report (module + file graphs) + DAG / undeclared-SCC tripwires",
-    );
-    arch_report_step.dependOn(&arch_report_cmd.step);
+    // Register the Zig-written lints (build/structural.zig): hook-lint and arch-report.
+    const lint_runs = buildpkg.structural.registerLints(b);
 
     // Compile the entire engine module graph in isolation as the engine-only build/test target
     // via src/engine/headless.zig, which imports every engine-zone module.
@@ -1250,299 +398,17 @@ pub fn build(b: *std.Build) void {
     const engine_step = b.step("engine", "Build + test the engine module graph headless (no platform/shell)");
     addTestRun(b, engine_step, engine_test, cov_dir, &cov_idx);
 
-    // Run the in-tree `test {}` blocks of every named module that has them as the
-    // aggregate unit-test step, reusing the already-wired modules so their
-    // imports resolve, plus the engine-graph tests. Mind the reachability
-    // caveat: tests in a path-imported sub-file run only when a module built here
-    // imports it; a file with no test-reachable importer is not yet covered.
-    const test_step = b.step("test", "Run the Zig unit tests");
-    test_step.dependOn(graph_test_step);
-    // Compile + test the engine graph standalone too (the headless invariant).
-    test_step.dependOn(engine_step);
-    inline for (.{
-        mods.get("position_storage").?,
-        mods.get("state_list").?,
-        mods.get("time_source").?,
-        mods.get("search_timing").?,
-        mods.get("page_alloc").?,
-        mods.get("option_source").?,
-        mods.get("tb_source").?,
-        mods.get("thread_ops").?,
-        mods.get("output_sink").?,
-        mods.get("tt").?,
-        mods.get("shared_histories").?,
-        mods.get("search_thread").?,
-        mods.get("thread_runtime").?,
-    }) |unit_module| {
-        const unit_test = b.addTest(.{ .root_module = unit_module });
-        addTestRun(b, test_step, unit_test, cov_dir, &cov_idx);
-    }
-    // Cover the NUMA surface: numa.zig (configString uses c_allocator -> needs libc) plus the
-    // config + replication types it owns via platform/numa/ (path-imported, same module),
-    // so this one test covers the whole numa cluster.
-    const numa_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/platform/numa.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
+    // Register the test + fuzz artifacts (build/tests.zig): the in-tree `test {}` aggregate,
+    // the property tests, the fuzz targets and every standalone test root.
+    buildpkg.tests.register(.{
+        .b = b,
+        .target = target,
+        .optimize = optimize,
+        .mods = &mods,
+        .cov_dir = cov_dir,
+        .cov_idx = &cov_idx,
+        .engine_step = engine_step,
     });
-    addTestRun(b, test_step, numa_test, cov_dir, &cov_idx);
-
-    // Link libc for option.zig's standalone test build: it uses std.heap.c_allocator
-    // (in the exe the libc linkage comes from the root module). It has no module deps.
-    const option_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/shell/option.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    addTestRun(b, test_step, option_test, cov_dir, &cov_idx);
-
-    // Run the board property tests (perft to known node counts) -- needs libc
-    // (position uses c_allocator) + the board module graph.
-    const board_props_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/engine/board/board_props.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    board_props_test.root_module.addImport("position", mods.get("position").?);
-    board_props_test.root_module.addImport("movegen", mods.get("movegen").?);
-    board_props_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
-    addTestRun(b, test_step, board_props_test, cov_dir, &cov_idx);
-
-    // Run the uci_parse property + fuzz tests (needs libc for c_allocator + the
-    // uci_strings base leaf).
-    const uci_parse_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/shell/uci_parse.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    uci_parse_test.root_module.addImport("uci_strings", mods.get("uci_strings").?);
-    addTestRun(b, test_step, uci_parse_test, cov_dir, &cov_idx);
-
-    // Build the coverage-guided fuzz targets (std.testing.fuzz). Wire them to their OWN
-    // `zig build fuzz` step, deliberately NOT test_step -- these are meant to be run
-    // with `zig build fuzz --fuzz` (the fuzzer), and run once as a smoke otherwise.
-    // Build under -Doptimize=ReleaseSafe so a found crash trips a safety check.
-    const fuzz_targets_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/engine/board/fuzz_targets.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    fuzz_targets_test.root_module.addImport("position", mods.get("position").?);
-    fuzz_targets_test.root_module.addImport("movegen", mods.get("movegen").?);
-    fuzz_targets_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
-    fuzz_targets_test.root_module.addImport("position_snapshot", mods.get("position_snapshot").?);
-    fuzz_targets_test.root_module.addImport("network", mods.get("network").?);
-    fuzz_targets_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
-    fuzz_targets_test.root_module.addImport("headless_search", mods.get("headless_search").?);
-    const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
-    fuzz_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
-
-    // Fuzz the Syzygy file parse on the same step. A .rtbw/.rtbz is the only attacker-supplyable
-    // BINARY input the engine parses, and decode/probe/encode depend on std alone, so this root
-    // needs no module imports -- it path-imports the decoder cluster directly.
-    const tb_fuzz_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/platform/syzygy/fuzz_targets.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    fuzz_step.dependOn(&b.addRunArtifact(tb_fuzz_test).step);
-
-    // Report what the fuzzer actually EXECUTED. `zig build fuzz --fuzz` exits 0 whether it ran
-    // half a billion inputs or three, and prints no total, so a lane that stopped fuzzing reads
-    // exactly like one that found nothing. This reads the per-artifact execution counters the
-    // Zig fuzzer keeps in `<cache>/v` and prints them; the nightly workflow runs the same tool
-    // in `check` mode against a pre-run snapshot to gate on them. Local, read-only, no build
-    // dependency -- run it right after a `--fuzz` session to see the budget you actually got.
-    const fuzz_report_exe = b.addExecutable(.{
-        .name = "fuzz_report",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tools/fuzz_report.zig"),
-            .target = b.graph.host,
-            .optimize = .Debug,
-        }),
-    });
-    const fuzz_report_cmd = b.addRunArtifact(fuzz_report_exe);
-    fuzz_report_cmd.setCwd(b.path("."));
-    fuzz_report_cmd.addArgs(&.{ ".zig-cache", "report" });
-    const fuzz_report_step = b.step(
-        "fuzz-report",
-        "Print how many inputs each fuzz artifact has executed (reads the fuzzer's counters)",
-    );
-    fuzz_report_step.dependOn(&fuzz_report_cmd.step);
-
-    // Build standalone test artifacts for the tested sub-files that were
-    // path-imported into larger modules (so their `test {}` blocks never ran in
-    // the aggregate). These depend only on std (+ libc for c_allocator) or on a
-    // sibling path import, so they build in isolation.
-    inline for (.{
-        "src/engine/board/position_types.zig",
-        "src/engine/board/fen.zig",
-        "src/engine/board/board_core.zig",
-        "src/engine/state/root_move.zig",
-        "src/engine/search/search_manager.zig",
-        "src/engine/state/shared_state.zig",
-        "src/engine/eval/nnue_parse.zig",
-        "src/engine/eval/nnue_hash.zig",
-        "src/shell/debug_counters.zig",
-        "src/shell/bench_positions.zig",
-        "src/shell/uci_output.zig",
-        "src/engine/search/uci_wdl.zig",
-        "src/engine/board/score.zig",
-        "src/shell/uci_strings.zig",
-        "src/shell/engine/util.zig",
-        "src/engine/search/timeman.zig",
-        "src/engine/eval/nnue_misc.zig",
-        "src/engine/eval/evaluate.zig",
-        "src/engine/search/search.zig",
-        "src/engine/board/bitboard.zig",
-        "src/engine/state/correction_bundle.zig",
-        "src/engine/state/limits_type.zig",
-        "src/engine/eval/nnue_acc_rowops.zig",
-        "src/engine/eval/nnue_feature.zig",
-        "src/engine/eval/nnue_ft.zig",
-        "src/engine/eval/nnue_refresh_cache.zig",
-        "src/platform/memory.zig",
-        "src/platform/clock.zig",
-        "src/platform/numa.zig",
-        "src/engine/state/tt_types.zig",
-        "src/engine/eval/nnue_feature_bb.zig",
-        "src/engine/board/bitboard_geom.zig",
-        "src/engine/search/search_values.zig",
-        "src/shell/option_parse.zig",
-        "src/shell/option_model.zig",
-        "tools/native_arch.zig",
-        "tools/fetch_net.zig",
-        "tools/parity_harness.zig",
-    }) |src_path| {
-        const file_test = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(src_path),
-                .target = target,
-                .optimize = optimize,
-                .link_libc = true,
-            }),
-        });
-        addTestRun(b, test_step, file_test, cov_dir, &cov_idx);
-    }
-
-    // Build isolated unit tests for the NAMED modules whose in-tree `test {}` blocks need their
-    // imports wired to compile standalone. Derive the import set from module_edges
-    // (single-source): the exe wiring IS the test wiring, so adding a module_edges edge
-    // auto-covers the isolated test -- there is no second list to keep in sync. These 32
-    // modules previously re-declared their imports in the DepTest table below; that
-    // duplication was a proven foot-gun (a new edge silently skipped the standalone test,
-    // e.g. the Syzygy `tb_source` wiring). Listing a module name here is the whole opt-in.
-    const module_unit_test_names = [_][]const u8{
-        "tablebase",         "uci_format",       "engine_infofmt",       "engine_options",
-        "position_snapshot", "worker_histories", "shared_history_types", "thread_vote",
-        "runtime_hooks",     "search_types",     "position_query",       "zobrist",
-        "uci_move",          "benchmark",        "movegen",              "network",
-        "legality",          "search_common",    "movepick",             "position_lifecycle",
-        "search_setup",      "fen_parse",        "search_ctx",           "repetition",
-        "state_setup",       "worker_layout",    "move_do",              "nnue_accumulator",
-        "engine_object",     "engine_nnue",      "shared_history",       "history",
-        "worker_construct",  "headless_search",
-    };
-    for (module_unit_test_names) |name| {
-        const spec_path = blk: {
-            for (module_specs) |s| {
-                if (std.mem.eql(u8, s.name, name)) break :blk s.path;
-            }
-            @panic("module_unit_test_names references an unknown module");
-        };
-        // Create a fresh module (not the shared exe module) so the test artifact links libc for
-        // the c_allocator-using `test {}` blocks without mutating the exe module.
-        const tm = b.createModule(.{
-            .root_source_file = b.path(spec_path),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        });
-        for (module_edges) |e| {
-            if (std.mem.eql(u8, e.from, name)) tm.addImport(e.imp, mods.get(e.to).?);
-        }
-        const tm_test = b.addTest(.{ .root_module = tm });
-        addTestRun(b, test_step, tm_test, cov_dir, &cov_idx);
-    }
-
-    // Cover PATH-LEAF files (NOT named modules, so they have no module_edges row) whose
-    // `test {}` / refAllDecls need a few module imports to compile. Their deps are genuinely
-    // their own data -- there is nothing to derive them from but the file's own `@import`
-    // lines -- so each lists its DIRECT imports explicitly. The modules in `mods` already
-    // carry their own transitive imports.
-    const DepTest = struct { path: []const u8, deps: []const []const u8 };
-    for ([_]DepTest{
-        .{ .path = "src/engine/eval/nnue_acc_layout.zig", .deps = &.{ "position_snapshot", "position_types" } },
-        .{ .path = "src/engine/eval/nnue_acc_update.zig", .deps = &.{ "position_snapshot", "position_types", "nnue_feature", "nnue_acc_rowops", "nnue_ft", "nnue_refresh_cache" } },
-        .{ .path = "src/shell/thread_construct.zig", .deps = &.{"worker_layout"} },
-        .{ .path = "src/engine/search/movepick_snapshot.zig", .deps = &.{ "bitboard", "position_types" } },
-        .{ .path = "src/engine/search/movepick_history.zig", .deps = &.{ "position_snapshot", "shared_history_types" } },
-        .{ .path = "src/engine/eval/nnue_weight_storage.zig", .deps = &.{"page_alloc"} },
-        .{ .path = "src/engine/eval/nnue_inference.zig", .deps = &.{ "page_alloc", "nnue_accumulator", "position_types" } },
-        .{ .path = "src/engine/search/movepick_score.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types", "shared_history_types" } },
-        .{ .path = "src/engine/search/movepick_sort_avx512.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types", "shared_history_types" } },
-        .{ .path = "src/engine/search/search_control.zig", .deps = &.{ "time_source", "search_ctx", "search_types" } },
-        .{ .path = "src/shell/engine/control.zig", .deps = &.{ "libc", "worker_layout", "engine_object", "tt", "thread", "option", "tablebase", "engine_nnue" } },
-    }) |dt| {
-        const t = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(dt.path),
-                .target = target,
-                .optimize = optimize,
-                .link_libc = true,
-            }),
-        });
-        for (dt.deps) |d| t.root_module.addImport(d, mods.get(d).?);
-        addTestRun(b, test_step, t, cov_dir, &cov_idx);
-    }
-
-    // Wire the position_types module for state_list.zig's standalone test: it holds a typed
-    // StateInfo (unlike the std-only files in the loop above).
-    const state_list_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/engine/board/state_list.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    state_list_test.root_module.addImport("position_types", mods.get("position_types").?);
-    addTestRun(b, test_step, state_list_test, cov_dir, &cov_idx);
-
-    // Build thread_pool.zig as a standalone test artifact (spawns real SearchThreads -> link_libc):
-    // it is path-imported into the (untested) `thread` module, so its Pool footprint +
-    // bound-slice lifecycle `test {}` blocks never ran in any step -- run it here
-    // so `zig build test` actually exercises the ThreadPool-footprint writer/accessors.
-    const thread_pool_test = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/platform/thread_pool.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    thread_pool_test.root_module.addImport("search_thread", mods.get("search_thread").?);
-    thread_pool_test.root_module.addImport("worker_layout", mods.get("worker_layout").?);
-    thread_pool_test.root_module.addImport("runtime_hooks", mods.get("runtime_hooks").?);
-    addTestRun(b, test_step, thread_pool_test, cov_dir, &cov_idx);
 
     const parity_step = b.step(
         "parity",
@@ -1554,47 +420,29 @@ pub fn build(b: *std.Build) void {
     // differential-vs-real-upstream check is `upstream-parity` (worktree oracle), run at
     // sync time where upstream is already fetched -- per push it would only re-assert the
     // same 2508687 the signature checks.
+    // Aggregate membership is a property of the ROW, not of a hand-kept list here: a gate
+    // added to build/gates.zig joins the aggregates by its own flags.
+    for (buildpkg.gates.golden) |g| {
+        if (g.in_parity) parity_step.dependOn(&gate_runs.get(g.check).?.step);
+    }
+    // No script gate is in the portable subset today (every one is Linux-shaped: bash,
+    // valgrind, or a path that loads the net), so only the parity edge is wired here. The
+    // row keeps an `in_portable` flag so adding one is a field, not a new loop.
+    for (buildpkg.structural.script_gates) |g| {
+        if (g.in_parity) parity_step.dependOn(&script_runs.get(g.step).?.step);
+    }
+    for (buildpkg.structural.lint_tools) |l| {
+        if (l.in_parity) parity_step.dependOn(&lint_runs.get(l.step).?.step);
+    }
+    for (buildpkg.checks.checks) |c| {
+        if (c.in_parity) parity_step.dependOn(&check_runs.get(c.check).?.step);
+    }
     parity_step.dependOn(&bench_run.step);
     parity_step.dependOn(&uci_run.step);
     parity_step.dependOn(&signature_cmd.step);
-    parity_step.dependOn(&search_parity_cmd.step);
-    parity_step.dependOn(&search_modes_cmd.step);
-    parity_step.dependOn(&fen_errors_cmd.step);
-    parity_step.dependOn(&output_golden_cmd.step);
-    parity_step.dependOn(&driver_golden_cmd.step);
-    parity_step.dependOn(&perft_cmd.step);
-    parity_step.dependOn(&eval_cmd.step);
-    parity_step.dependOn(&misc_cmd.step);
-    parity_step.dependOn(&export_net_cmd.step);
-    parity_step.dependOn(&nodestime_cmd.step);
-    parity_step.dependOn(&uci_options_cmd.step);
-    parity_step.dependOn(&mate_cmd.step);
-    parity_step.dependOn(&chess960_cmd.step);
-    parity_step.dependOn(&reset_cmd.step);
-    parity_step.dependOn(&skill_cmd.step);
-    parity_step.dependOn(&repeat_go_cmd.step);
-    parity_step.dependOn(&fen_trunc_cmd.step);
-    parity_step.dependOn(&flip960_cmd.step);
-    parity_step.dependOn(&ponder_cmd.step);
-    parity_step.dependOn(&net_missing_cmd.step);
-    parity_step.dependOn(&hook_lint_cmd.step);
-    parity_step.dependOn(&arch_report_cmd.step);
-    parity_step.dependOn(&bench_matrix_cmd.step);
-    parity_step.dependOn(&tb_init_cmd.step);
-    parity_step.dependOn(&tb_wdl_cmd.step);
-    parity_step.dependOn(&tb_dtz_cmd.step);
-    parity_step.dependOn(&tb_root_cmd.step);
-    parity_step.dependOn(&tb_search_cmd.step);
     // Join the interactive concurrency/timing gates to the core aggregate: they run in
     // the pure-Zig harness.
-    parity_step.dependOn(&mt_cmd.step);
-    parity_step.dependOn(&stress_cmd.step);
-    parity_step.dependOn(&time_cmd.step);
     // Gate every push on the permanent src-free structural invariant.
-    parity_step.dependOn(&src_free_cmd.step);
-    parity_step.dependOn(&headless_cmd.step);
-    parity_step.dependOn(&loc_cmd.step);
-    parity_step.dependOn(&docs_cmd.step);
 
     // Assemble the cross-OS aggregate: the platform-independent subset of `parity` -- bench,
     // the UCI handshake, the bench signature, and all six golden checks, every one driven by
@@ -1605,40 +453,24 @@ pub fn build(b: *std.Build) void {
         "parity-portable",
         "Cross-OS parity via the pure-Zig harness: signature + seven golden gates + mt/stress/time",
     );
+    for (buildpkg.gates.golden) |g| {
+        if (g.in_portable) parity_portable_step.dependOn(&gate_runs.get(g.check).?.step);
+    }
+    for (buildpkg.structural.lint_tools) |l| {
+        if (l.in_portable) parity_portable_step.dependOn(&lint_runs.get(l.step).?.step);
+    }
+    for (buildpkg.checks.checks) |c| {
+        if (c.in_portable) parity_portable_step.dependOn(&check_runs.get(c.check).?.step);
+    }
     parity_portable_step.dependOn(&bench_run.step);
     parity_portable_step.dependOn(&uci_run.step);
     parity_portable_step.dependOn(&signature_cmd.step);
-    parity_portable_step.dependOn(&search_parity_cmd.step);
-    parity_portable_step.dependOn(&search_modes_cmd.step);
-    parity_portable_step.dependOn(&fen_errors_cmd.step);
-    parity_portable_step.dependOn(&output_golden_cmd.step);
     // Include driver-golden: it is node-deterministic (its depth-limited info/bestmove lines are
     // bit-exact like bench, not wall-clock-gated), so it is OS/arch-invariant like the other
     // golden gates -- its earlier absence here was an oversight.
-    parity_portable_step.dependOn(&driver_golden_cmd.step);
-    parity_portable_step.dependOn(&perft_cmd.step);
-    parity_portable_step.dependOn(&eval_cmd.step);
-    parity_portable_step.dependOn(&misc_cmd.step);
-    parity_portable_step.dependOn(&export_net_cmd.step);
-    parity_portable_step.dependOn(&nodestime_cmd.step);
-    parity_portable_step.dependOn(&uci_options_cmd.step);
-    parity_portable_step.dependOn(&mate_cmd.step);
-    parity_portable_step.dependOn(&chess960_cmd.step);
-    parity_portable_step.dependOn(&reset_cmd.step);
-    parity_portable_step.dependOn(&skill_cmd.step);
-    parity_portable_step.dependOn(&repeat_go_cmd.step);
-    parity_portable_step.dependOn(&fen_trunc_cmd.step);
-    parity_portable_step.dependOn(&flip960_cmd.step);
-    parity_portable_step.dependOn(&ponder_cmd.step);
-    parity_portable_step.dependOn(&net_missing_cmd.step);
-    parity_portable_step.dependOn(&hook_lint_cmd.step);
-    parity_portable_step.dependOn(&arch_report_cmd.step);
     // Add the concurrency + timing gates -- the cross-OS payoff: these exercise the
     // sync primitives (futex / RtlWaitOnAddress / __ulock) under real threading and the
     // steady clock (QueryPerformanceCounter on Windows) on every OS, not just Linux.
-    parity_portable_step.dependOn(&mt_cmd.step);
-    parity_portable_step.dependOn(&stress_cmd.step);
-    parity_portable_step.dependOn(&time_cmd.step);
 
     const stockfish_step = b.step(
         "stockfish",
@@ -1653,480 +485,3 @@ pub fn build(b: *std.Build) void {
 // same directory -- and CI merges the subdirs afterwards. `--include-path=src` scopes coverage
 // to the owned source. Verified locally with a stub `kcov` (arg order + every artifact runs);
 // CI installs the real kcov.
-fn addTestRun(b: *std.Build, step: *std.Build.Step, artifact: *std.Build.Step.Compile, cov_dir: ?[]const u8, cov_idx: *usize) void {
-    if (cov_dir) |dir| {
-        const sub = b.fmt("{s}/cov-{d}", .{ dir, cov_idx.* });
-        cov_idx.* += 1;
-        const run = b.addSystemCommand(&.{ "kcov", "--include-path=src", sub });
-        run.addArtifactArg(artifact);
-        run.has_side_effects = true;
-        step.dependOn(&run.step);
-    } else {
-        step.dependOn(&b.addRunArtifact(artifact).step);
-    }
-}
-
-// Wire one pure-Zig parity-harness invocation: run the harness (host) with the
-// engine binary, golden path, and mode, from resources/ so the spawned engine finds the net.
-// Resolve a repo-root-relative path to an absolute string. Read the build root from
-// whichever field the running std.Build exposes -- 0.16 build_root: Cache.Directory,
-// 0.17 root: Cache.Path -- so this compiles on both; the comptime @hasField branch
-// prunes the absent field.
-fn repoPath(b: *std.Build, sub: []const u8) []const u8 {
-    const root: []const u8 = if (@hasField(std.Build, "build_root"))
-        (b.build_root.path orelse ".")
-    else
-        (b.root.root_dir.path orelse ".");
-    return b.pathResolve(&.{ root, sub });
-}
-
-fn addHarnessRun(
-    b: *std.Build,
-    harness: *std.Build.Step.Compile,
-    stockfish: *std.Build.Step.Compile,
-    install_step: *std.Build.Step,
-    net_step: *std.Build.Step,
-    check_name: []const u8,
-    golden_or_expected: []const u8,
-    mode: []const u8,
-) *std.Build.Step.Run {
-    const run = b.addRunArtifact(harness);
-    // Build the harness argv as <check> <engine binary> <golden-or-expected> <mode>.
-    // Pass the binary as an artifact arg (the build supplies its path), splitting it out
-    // of the surrounding string args.
-    run.addArg(check_name);
-    run.addArtifactArg(stockfish);
-    run.addArgs(&.{ golden_or_expected, mode });
-    run.setCwd(b.path("resources"));
-    run.step.dependOn(install_step);
-    run.step.dependOn(net_step);
-    return run;
-}
-
-fn applyMacros(module: *std.Build.Module, macros: []const Macro) void {
-    for (macros) |macro|
-        module.addCMacro(macro.name, macro.value);
-}
-
-// Map the native CPU -> best Stockfish ARCH tier in pure, unit-tested Zig (tools/native_arch.zig).
-// Use the host CPU features Zig's build graph already resolved via cpuid -- no
-// /proc/cpuinfo grep, no `sh`.
-const native_arch = @import("tools/native_arch.zig");
-
-fn resolveArch(b: *std.Build, requested_arch: []const u8) ArchConfig {
-    const arch_name = if (std.mem.eql(u8, requested_arch, "native"))
-        native_arch.detectArchFromCpu(b.graph.host.result.cpu)
-    else
-        requested_arch;
-
-    return archConfigFor(arch_name);
-}
-
-fn archConfigFor(arch_name: []const u8) ArchConfig {
-    if (std.mem.eql(u8, arch_name, "x86-64"))
-        return .{
-            .name = "x86-64",
-            .flags = &.{ "-msse", "-msse2" },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-            }),
-        };
-
-    if (std.mem.eql(u8, arch_name, "x86-64-sse3-popcnt"))
-        return .{
-            .name = "x86-64-sse3-popcnt",
-            .flags = &.{ "-msse", "-msse2", "-msse3", "-mpopcnt" },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-                .{ .name = "USE_POPCNT", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-                .sse3,
-                .popcnt,
-            }),
-        };
-
-    if (std.mem.eql(u8, arch_name, "x86-64-ssse3"))
-        return .{
-            .name = "x86-64-ssse3",
-            .flags = &.{ "-msse", "-msse2", "-mssse3" },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-                .{ .name = "USE_SSSE3", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-                .sse3,
-                .ssse3,
-            }),
-        };
-
-    if (std.mem.eql(u8, arch_name, "x86-64-modern") or
-        std.mem.eql(u8, arch_name, "x86-64-sse41-popcnt"))
-        return .{
-            .name = "x86-64-sse41-popcnt",
-            .flags = &.{
-                "-msse",
-                "-msse2",
-                "-msse3",
-                "-mpopcnt",
-                "-mssse3",
-                "-msse4.1",
-            },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-                .{ .name = "USE_POPCNT", .value = "1" },
-                .{ .name = "USE_SSSE3", .value = "1" },
-                .{ .name = "USE_SSE41", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-                .sse3,
-                .ssse3,
-                .sse4_1,
-                .popcnt,
-            }),
-        };
-
-    if (std.mem.eql(u8, arch_name, "x86-64-avx2"))
-        return .{
-            .name = "x86-64-avx2",
-            .flags = &.{
-                "-msse",
-                "-msse2",
-                "-msse3",
-                "-mpopcnt",
-                "-mssse3",
-                "-msse4.1",
-                "-mavx2",
-                "-mbmi",
-            },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-                .{ .name = "USE_POPCNT", .value = "1" },
-                .{ .name = "USE_SSSE3", .value = "1" },
-                .{ .name = "USE_SSE41", .value = "1" },
-                .{ .name = "USE_AVX2", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-                .sse3,
-                .ssse3,
-                .sse4_1,
-                .popcnt,
-                .avx2,
-                .bmi,
-            }),
-        };
-
-    if (std.mem.eql(u8, arch_name, "x86-64-bmi2"))
-        return .{
-            .name = "x86-64-bmi2",
-            .flags = &.{
-                "-msse",
-                "-msse2",
-                "-msse3",
-                "-mpopcnt",
-                "-mssse3",
-                "-msse4.1",
-                "-mavx2",
-                "-mbmi",
-                "-mbmi2",
-            },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-                .{ .name = "USE_POPCNT", .value = "1" },
-                .{ .name = "USE_SSSE3", .value = "1" },
-                .{ .name = "USE_SSE41", .value = "1" },
-                .{ .name = "USE_AVX2", .value = "1" },
-                .{ .name = "USE_PEXT", .value = "1" },
-                .{ .name = "USE_COMPTIME_ATTACKS", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-                .sse3,
-                .ssse3,
-                .sse4_1,
-                .popcnt,
-                .avx2,
-                .bmi,
-                .bmi2,
-            }),
-        };
-
-    if (std.mem.eql(u8, arch_name, "x86-64-avxvnni"))
-        return .{
-            .name = "x86-64-avxvnni",
-            .flags = &.{
-                "-msse",
-                "-msse2",
-                "-msse3",
-                "-mpopcnt",
-                "-mssse3",
-                "-msse4.1",
-                "-mavx2",
-                "-mbmi",
-                "-mavxvnni",
-                "-mbmi2",
-            },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-                .{ .name = "USE_POPCNT", .value = "1" },
-                .{ .name = "USE_SSSE3", .value = "1" },
-                .{ .name = "USE_SSE41", .value = "1" },
-                .{ .name = "USE_AVX2", .value = "1" },
-                .{ .name = "USE_VNNI", .value = "1" },
-                .{ .name = "USE_AVXVNNI", .value = "1" },
-                .{ .name = "USE_PEXT", .value = "1" },
-                .{ .name = "USE_COMPTIME_ATTACKS", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-                .sse3,
-                .ssse3,
-                .sse4_1,
-                .popcnt,
-                .avx2,
-                .bmi,
-                .bmi2,
-                .avxvnni,
-            }),
-        };
-
-    if (std.mem.eql(u8, arch_name, "x86-64-avx512"))
-        return .{
-            .name = "x86-64-avx512",
-            .flags = &.{
-                "-msse",
-                "-msse2",
-                "-msse3",
-                "-mpopcnt",
-                "-mssse3",
-                "-msse4.1",
-                "-mavx2",
-                "-mbmi",
-                "-mbmi2",
-                "-mavx512f",
-                "-mavx512bw",
-                "-mavx512dq",
-                "-mavx512vl",
-            },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-                .{ .name = "USE_POPCNT", .value = "1" },
-                .{ .name = "USE_SSSE3", .value = "1" },
-                .{ .name = "USE_SSE41", .value = "1" },
-                .{ .name = "USE_AVX2", .value = "1" },
-                .{ .name = "USE_AVX512", .value = "1" },
-                .{ .name = "USE_PEXT", .value = "1" },
-                .{ .name = "USE_COMPTIME_ATTACKS", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-                .sse3,
-                .ssse3,
-                .sse4_1,
-                .popcnt,
-                .avx2,
-                .bmi,
-                .bmi2,
-                .avx512f,
-                .avx512bw,
-                .avx512dq,
-                .avx512vl,
-            }),
-        };
-
-    if (std.mem.eql(u8, arch_name, "x86-64-vnni512"))
-        return .{
-            .name = "x86-64-vnni512",
-            .flags = &.{
-                "-msse",
-                "-msse2",
-                "-msse3",
-                "-mpopcnt",
-                "-mssse3",
-                "-msse4.1",
-                "-mavx2",
-                "-mbmi",
-                "-mbmi2",
-                "-mavx512f",
-                "-mavx512bw",
-                "-mavx512vnni",
-                "-mavx512dq",
-                "-mavx512vl",
-            },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-                .{ .name = "USE_POPCNT", .value = "1" },
-                .{ .name = "USE_SSSE3", .value = "1" },
-                .{ .name = "USE_SSE41", .value = "1" },
-                .{ .name = "USE_AVX2", .value = "1" },
-                .{ .name = "USE_AVX512", .value = "1" },
-                .{ .name = "USE_VNNI", .value = "1" },
-                .{ .name = "USE_PEXT", .value = "1" },
-                .{ .name = "USE_COMPTIME_ATTACKS", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-                .sse3,
-                .ssse3,
-                .sse4_1,
-                .popcnt,
-                .avx2,
-                .bmi,
-                .bmi2,
-                .avx512f,
-                .avx512bw,
-                .avx512dq,
-                .avx512vl,
-                .avx512vnni,
-            }),
-        };
-
-    if (std.mem.eql(u8, arch_name, "x86-64-avx512icl"))
-        return .{
-            .name = "x86-64-avx512icl",
-            .flags = &.{
-                "-msse",
-                "-msse2",
-                "-msse3",
-                "-mpopcnt",
-                "-mssse3",
-                "-msse4.1",
-                "-mavx2",
-                "-mbmi",
-                "-mbmi2",
-                "-mavx512f",
-                "-mavx512cd",
-                "-mavx512vl",
-                "-mavx512dq",
-                "-mavx512bw",
-                "-mavx512ifma",
-                "-mavx512vbmi",
-                "-mavx512vbmi2",
-                "-mavx512vpopcntdq",
-                "-mavx512bitalg",
-                "-mavx512vnni",
-                "-mvpclmulqdq",
-                "-mgfni",
-                "-mvaes",
-            },
-            .macros = &.{
-                .{ .name = "USE_SSE2", .value = "1" },
-                .{ .name = "USE_POPCNT", .value = "1" },
-                .{ .name = "USE_SSSE3", .value = "1" },
-                .{ .name = "USE_SSE41", .value = "1" },
-                .{ .name = "USE_AVX2", .value = "1" },
-                .{ .name = "USE_AVX512", .value = "1" },
-                .{ .name = "USE_VNNI", .value = "1" },
-                .{ .name = "USE_AVX512ICL", .value = "1" },
-                .{ .name = "USE_PEXT", .value = "1" },
-                .{ .name = "USE_COMPTIME_ATTACKS", .value = "1" },
-            },
-            .target_features = std.Target.x86.featureSet(&.{
-                .sse2,
-                .sse3,
-                .ssse3,
-                .sse4_1,
-                .popcnt,
-                .avx2,
-                .bmi,
-                .bmi2,
-                .avx512f,
-                .avx512cd,
-                .avx512vl,
-                .avx512dq,
-                .avx512bw,
-                .avx512ifma,
-                .avx512vbmi,
-                .avx512vbmi2,
-                .avx512vpopcntdq,
-                .avx512bitalg,
-                .avx512vnni,
-                .vpclmulqdq,
-                .gfni,
-                .vaes,
-            }),
-        };
-
-    // Map the non-x86 tiers. The pure-Zig @Vector NNUE lowers to NEON with no source
-    // changes, so these just map the aarch64 CPU features to a Zig aarch64 target.
-    // NEON is mandatory in AArch64 (baseline has it); dotprod (sdot) is added where
-    // present. Runtime-validated under qemu-user in CI (bench == 2508687), matching
-    // upstream's arm_compilation.yml.
-    if (std.mem.eql(u8, arch_name, "armv8"))
-        return .{
-            .name = "armv8",
-            .flags = &.{},
-            .macros = &.{.{ .name = "USE_NEON", .value = "8" }},
-            .target_features = std.Target.aarch64.featureSet(&.{.neon}),
-            .cpu_arch = .aarch64,
-        };
-
-    if (std.mem.eql(u8, arch_name, "armv8-dotprod") or
-        std.mem.eql(u8, arch_name, "apple-silicon"))
-        return .{
-            .name = arch_name,
-            .flags = &.{},
-            .macros = &.{
-                .{ .name = "USE_NEON", .value = "8" },
-                .{ .name = "USE_NEON_DOTPROD", .value = "1" },
-            },
-            .target_features = std.Target.aarch64.featureSet(&.{ .neon, .dotprod }),
-            .cpu_arch = .aarch64,
-        };
-
-    std.process.fatal(
-        "unsupported ARCH '{s}' (x86_64 tiers + aarch64 armv8/armv8-dotprod/apple-silicon)",
-        .{arch_name},
-    );
-}
-
-fn hasMacro(macros: []const Macro, name: []const u8) bool {
-    for (macros) |macro| {
-        if (std.mem.eql(u8, macro.name, name)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-fn readGitInfo(b: *std.Build) GitInfo {
-    const repo_root = repoPath(b, ".");
-
-    return .{
-        .sha = runAndTrimOrNull(b, &.{ "git", "-C", repo_root, "rev-parse", "--short=8", "HEAD" }),
-        .date = runAndTrimOrNull(
-            b,
-            &.{
-                "git",
-                "-C",
-                repo_root,
-                "show",
-                "-s",
-                "--date=format:%Y%m%d",
-                "--format=%cd",
-                "HEAD",
-            },
-        ),
-    };
-}
-
-fn runAndTrimOrNull(b: *std.Build, argv: []const []const u8) ?[]const u8 {
-    var code: u8 = undefined;
-    const output = b.runAllowFail(argv, &code, .ignore) catch return null;
-    const trimmed = trimOutput(output);
-    if (trimmed.len == 0)
-        return null;
-    return trimmed;
-}
-
-fn trimOutput(output: []const u8) []const u8 {
-    return std.mem.trim(u8, output, &std.ascii.whitespace);
-}

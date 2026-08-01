@@ -21,9 +21,10 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 THRESHOLD="${LOC_THRESHOLD:-500}"
-BASELINE="${LOC_BASELINE:-2}"
-# (build.zig passes LOC_BASELINE; the default here matches the current waived set:
-#  build.zig + tools/parity_harness.zig.)
+BASELINE="${LOC_BASELINE:-1}"
+# (build/structural.zig's loc row passes LOC_BASELINE; the default here matches the current
+#  waived set: tools/parity_harness.zig alone. build.zig came under the line when its four
+#  clusters moved into the build/ package.)
 
 count=0
 tmp="$(mktemp)"
