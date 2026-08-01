@@ -22,6 +22,10 @@
 //!     alone cannot say whether a surplus is more branches or worse prediction of the same
 //!     ones, and those two call for opposite fixes -- reshape the code, or break a data
 //!     dependence.
+//!   * Report PER-NODE ABSOLUTES beside every ratio, because a ratio with no base cannot say
+//!     whether it MATTERS. "cache misses 1.107" reads alarming and is +5.3 misses on a base of
+//!     54 per node, which the out-of-order engine hides -- the same tier's cycles sit at 1.018.
+//!     Size the thing before chasing it.
 //!
 //! WHAT IT FOUND ON FIRST USE (2026-07-15, identical 904,097-node tree, zfish/SF):
 //!            instructions   cycles    IPC    cache-misses
@@ -267,6 +271,18 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(rate_a);
     var rate_b = try gpa.alloc(f64, rounds);
     defer gpa.free(rate_b);
+    var pn_instr_a = try gpa.alloc(f64, rounds);
+    defer gpa.free(pn_instr_a);
+    var pn_instr_b = try gpa.alloc(f64, rounds);
+    defer gpa.free(pn_instr_b);
+    var pn_cache_a = try gpa.alloc(f64, rounds);
+    defer gpa.free(pn_cache_a);
+    var pn_cache_b = try gpa.alloc(f64, rounds);
+    defer gpa.free(pn_cache_b);
+    var pn_branch_a = try gpa.alloc(f64, rounds);
+    defer gpa.free(pn_branch_a);
+    var pn_branch_b = try gpa.alloc(f64, rounds);
+    defer gpa.free(pn_branch_b);
 
     var first_a: Counters = .{};
     var first_b: Counters = .{};
@@ -301,6 +317,13 @@ pub fn main(init: std.process.Init) !void {
         r_branch_all[i] = ratio(a.branches, b.branches);
         rate_a[i] = a.branchMissRate();
         rate_b[i] = b.branchMissRate();
+        const nodes_f: f64 = @floatFromInt(if (a.nodes == 0) 1 else a.nodes);
+        pn_instr_a[i] = @as(f64, @floatFromInt(a.instructions)) / nodes_f;
+        pn_instr_b[i] = @as(f64, @floatFromInt(b.instructions)) / nodes_f;
+        pn_cache_a[i] = @as(f64, @floatFromInt(a.cache_misses)) / nodes_f;
+        pn_cache_b[i] = @as(f64, @floatFromInt(b.cache_misses)) / nodes_f;
+        pn_branch_a[i] = @as(f64, @floatFromInt(a.branches)) / nodes_f;
+        pn_branch_b[i] = @as(f64, @floatFromInt(b.branches)) / nodes_f;
         std.debug.print("  {d:>5} {d:>16} {d:>16} {d:>9.3} {d:>8.3} {d:>8.3}\n", .{ i + 1, a.instructions, b.instructions, r_instr[i], a.ipc(), b.ipc() });
     }
 
@@ -312,6 +335,17 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("#   branch misses: {d:.3}   <- the FRONT END. flat under a footprint change.\n", .{median(r_branch)});
     std.debug.print("#   branches     : {d:.3}   <- how MANY, not how well predicted.\n", .{median(r_branch_all)});
     std.debug.print("#   miss rate    : A {d:.3}%  B {d:.3}%   <- misses per retired branch.\n", .{ median(rate_a) * 100.0, median(rate_b) * 100.0 });
+    // Size every ratio above. A ratio with no base cannot say whether it MATTERS: +12% on a
+    // miss count worth 1% of cycles is noise, and the same +12% on one worth 30% is the whole
+    // gap. Per-node figures, so two runs over different trees stay comparable.
+    std.debug.print(
+        "#   per node     : A {d:.0} instr, {d:.2} cache miss, {d:.0} branch\n" ++
+            "#                  B {d:.0} instr, {d:.2} cache miss, {d:.0} branch\n",
+        .{
+            median(pn_instr_a), median(pn_cache_a), median(pn_branch_a),
+            median(pn_instr_b), median(pn_cache_b), median(pn_branch_b),
+        },
+    );
     std.debug.print(
         \\#
         \\# READ IT THIS WAY: cycles ~= instructions / IPC. If A's cycle ratio is worse than its
