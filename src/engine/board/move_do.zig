@@ -176,17 +176,18 @@ fn doCastlingDo(pos: *Position, us: u8, from: u8, to_in: u8, dp: *DirtyPiece, dt
     return .{ .to = to, .rfrom = rfrom, .rto = rto };
 }
 
-// Compute the EXACT rule50-adjusted Zobrist key a completed move leaves behind (upstream
-// Position::adjust_key50<AfterMove=true>, position.h:322). Lives in the board zone -- not
-// search, which would cycle back into it -- because upstream keeps it on Position itself;
+// Compute the EXACT rule50-adjusted Zobrist key of the CURRENT position -- upstream's
+// `Position::key()`, which is `adjust_key50<AfterMove=false>(st->key)` (position.h:319).
+// The counter has already been incremented by the make, so the threshold is the unshifted
+// 14; prefetchKey below is the <true> instantiation, reading a pre-move counter against
+// 14-1=13. Naming them apart matters: this file carries both, and the citation here used
+// to claim <true> while implementing <false>.
+//
 // search_qsearch.adjustKey50 re-exports this so its existing callers (search_main.zig,
-// search_driver.zig) keep resolving unchanged. Threshold 14 (post-move rule50) is one past
-// prefetchKey's pre-move threshold of 13, matching the AfterMove template parameter.
+// search_driver.zig) keep resolving unchanged. The formula itself lives on
+// position_types, the type that owns rule50, because `d`'s Key line needs the same one.
 pub inline fn adjustKey50(pos: *const Position) u64 {
-    const k = pos.st.key;
-    if (pos.st.rule50 < 14) return k;
-    const seed: u64 = @intCast(@divTrunc(pos.st.rule50 - 14, 8));
-    return k ^ (seed *% 6364136223846793005 +% 1442695040888963407);
+    return position_types.adjustKey50(pos.st.key, pos.st.rule50);
 }
 
 // Mirror tt.firstEntryIndex's mul-hi64 sharding without importing tt.zig itself: tt.zig
@@ -438,9 +439,11 @@ pub inline fn prefetchKey(pos: *const Position, m: u16) u64 {
     k ^= zobrist.zob_psq[psqIdx(captured, to)] ^ zobrist.zob_psq[psqIdx(pc, to)] ^ zobrist.zob_psq[psqIdx(pc, from)];
 
     if (captured != 0 or (pc & 7) == pawn_pt) return k;
-    if (pos.st.rule50 < 13) return k;
-    const seed: u64 = @intCast(@divTrunc(pos.st.rule50 - 13, 8));
-    return k ^ (seed *% 6364136223846793005 +% 1442695040888963407);
+    // <AfterMove=true> against a pre-move counter R is <false> against R+1: the threshold
+    // 13 and the shift 13 each move by one with it. Spell it that way so both
+    // instantiations share one formula -- a private copy here would be gated by nothing,
+    // since a wrong prefetch address only costs a cache line and never moves the bench.
+    return position_types.adjustKey50(k, pos.st.rule50 + 1);
 }
 
 pub fn undoMove(pos_ptr: *Position, m: u16) void {

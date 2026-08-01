@@ -68,7 +68,11 @@ pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     }
 
     out.pawn_key = st.pawn_key;
-    out.key = st.key;
+    // The rule50-adjusted key, which is what `Position::key()` returns and therefore what
+    // upstream's `d` prints (position.cpp:83). The raw `st.key` differs from it on any
+    // position whose counter has reached 14 -- invisible to every golden here, because
+    // bench and case positions all sit below the threshold where the mix is identity.
+    out.key = position_types.adjustKey50(st.key, st.rule50);
     const pawns = pos.piece_count[1] + pos.piece_count[9];
     out.material_value = 534 * pawns + st.non_pawn_material[0] + st.non_pawn_material[1];
     out.rule50_count = st.rule50;
