@@ -19,13 +19,13 @@ repos:
       - id: trailing-whitespace
         exclude: '\.(golden|epd|nnue|patch)$'
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.22
+    rev: v0.16.1
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: v0.0.62
+    rev: v0.0.65
     hooks:
       # The hook's own entry checks the whole project (ty's cross-file
       # diagnostics make per-filename invocation wrong); tools/ is the only
