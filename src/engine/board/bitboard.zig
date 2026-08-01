@@ -76,7 +76,7 @@ var slider_magics: [64][2]Magic align(64) = undefined;
 // upstream's dual hyperbola quintessence (attacks.h:91): the file/diagonal/antidiagonal
 // masks for one square load as a single vector, one subtract/byte-reverse/xor pass
 // produces all three ray sets at once, and the rank -- the one direction the trick
-// cannot fold in, because a rank's eight squares share a byte -- comes from a 256-entry
+// cannot fold in, because a rank's eight squares share a byte -- comes from a small
 // lookup. Below AVX2 this falls back to two magic lookups, upstream's own non-dual path.
 pub const DualAttacks = struct { bishop: u64, rook: u64 };
 
@@ -92,11 +92,24 @@ const DualMagic = struct {
 };
 
 var dual_magics: [64]DualMagic = undefined;
-// Sliding attacks within a rank, indexed by [file][8-bit rank occupancy]. Reuses
-// slidingAttack(ROOK, file, occ): occ is zero-extended past bit 7, so the north/south
-// rays run unblocked off the top of a u64 and the u8 truncation below drops them,
-// leaving only the east/west (rank) ray bits -- upstream's own bootstrap (attacks.cpp:75).
-var rank_attacks: [8][256]u8 = undefined;
+// Sliding attacks within a rank, indexed by [file][6 INNER bits of the rank occupancy].
+// A piece on a1 or h1 blocks nothing a rook on that rank can reach past, so the two edge
+// bits never change the answer -- dropping them shrinks the table 4x, from 2 KB to 512 B,
+// and is what upstream's own index does (attacks.h:107). Reuses slidingAttack(ROOK, file,
+// occ6 << 1): occ is zero-extended past bit 7, so the north/south rays run unblocked off
+// the top of a u64 and the u8 truncation drops them, leaving only the east/west ray bits.
+//
+// Built at comptime, so it lands in .rodata rather than being filled at startup.
+const rank_attacks: [8][64]u8 = blk: {
+    @setEvalBranchQuota(200_000);
+    var table: [8][64]u8 = undefined;
+    for (0..8) |file| {
+        for (0..64) |occ6| {
+            table[file][occ6] = @truncate(slidingAttack(PieceType.rook, file, @as(u64, occ6) << 1));
+        }
+    }
+    break :blk table;
+};
 
 comptime {
     // Keep the two facts joined: the alignment above buys a single-line probe only while
@@ -134,7 +147,8 @@ pub fn initSliderMagics() void {
     initMagics(PieceType.bishop, bishop_magic_attacks[0..], &slider_magics);
     // Always built, not just at use_avx2 tiers: bothAttacksAvx2 is exercised directly (not
     // just through the tier-gated bothAttacks dispatch) by the cross-check test below, on
-    // every tier, so dual_magics/rank_attacks must never be left undefined.
+    // every tier, so dual_magics must never be left undefined. (rank_attacks needs no
+    // runtime init at all -- it is a comptime table.)
     initDualMagics();
     initLeaperTables();
     initDerivedTables();
@@ -158,11 +172,6 @@ fn lineMask(square: usize, d1: i8, d2: i8) u64 {
 }
 
 fn initDualMagics() void {
-    for (0..8) |file| {
-        for (0..256) |occ| {
-            rank_attacks[file][occ] = @truncate(slidingAttack(PieceType.rook, file, @intCast(occ)));
-        }
-    }
     for (0..64) |s| {
         dual_magics[s] = .{
             .masks = .{
@@ -186,7 +195,9 @@ fn bothAttacksAvx2(square: usize, occupied: u64) DualAttacks {
     const fwd = o -% @as(@Vector(4, u64), @splat(m.r));
     const rev = @byteSwap(@byteSwap(o) -% @as(@Vector(4, u64), @splat(m.rr)));
     const result = (fwd ^ rev) & m.masks;
-    const rank_ray = @as(u64, rank_attacks[m.rank_file][@intCast((occupied >> m.shift) & 0xff)]) << m.shift;
+    // Skip the dead edge bit: shift one further and keep 6 bits, matching the table above.
+    const inner_shift: u6 = m.shift + 1;
+    const rank_ray = @as(u64, rank_attacks[m.rank_file][@intCast((occupied >> inner_shift) & 0x3f)]) << m.shift;
     // Lane 0 is the file ray (the rook's other direction); lanes 1 and 3 are the two
     // diagonals, ORed into the full bishop attack set (lane 2, mask_none, is always 0).
     return .{ .bishop = result[1] | result[3], .rook = result[0] +% rank_ray };
