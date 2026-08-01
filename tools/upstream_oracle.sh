@@ -55,10 +55,17 @@ if [ "$ORACLE_COMP" = "gcc" ]; then
 else
     COMP_ARGS=(COMP=clang COMPCXX="$REPO/tools/zigcxx")
 fi
-# Object files from a different compiler (or ARCH) do not link -- clean when the
+# Object files from a different compiler, ARCH or SHA must not be reused -- clean when the
 # stamp disagrees, keep the incremental fast path when it matches.
+#
+# The SHA belongs in the stamp even though `make` tracks mtimes: a checkout that
+# reshapes a header's types (fd3c762f rewrote shm_linux.h's classes) relinks stale
+# objects into a binary that builds clean and then CORE DUMPS on `bench`, which
+# upstream_parity.sh can only report as "oracle produced no signature". A sync
+# changes the sha once, so paying one full rebuild there costs nothing and the
+# steady-state same-sha check stays the incremental no-op it was built to be.
 STAMP="$ORACLE_DIR/src/.zfish_oracle_stamp"
-WANT_STAMP="$ORACLE_COMP $ARCH"
+WANT_STAMP="$ORACLE_COMP $ARCH $SHA"
 if [ "$(cat "$STAMP" 2>/dev/null)" != "$WANT_STAMP" ]; then
     make -C "$ORACLE_DIR/src" clean >/dev/null 2>&1 || true
     printf '%s' "$WANT_STAMP" >"$STAMP"
