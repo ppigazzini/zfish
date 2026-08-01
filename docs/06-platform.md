@@ -197,7 +197,7 @@ itself, so a Debug-only poison could never execute inside the engine — it live
 unit tests. `memory.poison_uninitialized` names the predicate, `page_alloc.zig` restates
 it (engine code cannot import platform), and the shipped ReleaseFast binary prunes both
 branches at comptime. The audit is therefore a runnable claim: a ReleaseSafe engine with
-every arena poisoned still benches **2718396**, and survives a 4-thread search plus a
+every arena poisoned still benches **2508687**, and survives a 4-thread search plus a
 `Hash` resize and `ucinewgame` churn. The historic blanket zero existed for the Worker's
 two read-before-write slice headers (`root_moves`, `limits.searchmoves`); those are
 now initialized explicitly by `worker_construct.writeConstructorFields`, and

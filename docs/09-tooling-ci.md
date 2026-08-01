@@ -344,7 +344,7 @@ verified locally. Its value is early warning on the road to the next toolchain b
 
 What the lane does **not** prove is speed. It gates on the node signature, and that
 signature is codegen-independent by construction: a toolchain that emits far worse code
-still benches 2718396 and still passes green. Measured locally with
+still benches 2508687 and still passes green. Measured locally with
 `tools/perf_counters.zig`, `0.17.0-dev.1417+20befa4e6` against `0.16.0`, identical tree,
 core-pinned: **+16.8%** instructions on sse41, **+23.6%** on avx2, **+10.4%** on avx512,
 and **+6117%** on vnni512 — there `nnue_inference.evaluateBucketRaw` loses its vector
@@ -386,7 +386,7 @@ values, the same side-to-move perspective, and no optimism, complexity blend, ru
 damping or TB clamp on either side.
 
 **Its gate is not the anchor — it is tree equality.** A stubbed build does not bench
-2718396 and is not meant to; a different evaluation is a different tree. What must hold
+2508687 and is not meant to; a different evaluation is a different tree. What must hold
 is that the two engines score every position identically, so they search *one* tree and
 the ratio is one workload. The script benches both and **refuses to report unless the
 node counts match**, because the failure it exists to prevent has already happened once

@@ -7,8 +7,9 @@
 #
 # Every check here was paid for. A hostile audit of docs/ found, in one session, that:
 #   * a file path in prose pointed at a module that had been split away;
-#   * the bench anchor was quoted as 2067208 in five places while build.zig said 2718396
-#     (the anchor MOVES on every bench-moving upstream sync, and a doc that pins it drifts);
+#   * the bench anchor was quoted as 2067208 in five places while build.zig said something
+#     else entirely (the anchor MOVES on every bench-moving upstream sync, and a doc that
+#     pins it drifts -- so this sentence names the stale value only, never the live one);
 #   * link targets broke silently when the doc set was renumbered.
 # Each is mechanical. Each shipped anyway, because nothing checked.
 #

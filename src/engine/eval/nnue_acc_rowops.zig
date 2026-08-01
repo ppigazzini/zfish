@@ -6,7 +6,7 @@
 // consts). No *anyopaque, no position_snapshot / nnue_feature, so no cycle. The
 // accumulator core imports this and aliases the kernels. Bit-exact: the wrapping
 // vector +%/-% is the same element-wise op as the scalar loop it replaces, and
-// mirrors upstream's `_mm*_add/sub_epi16` (2's-complement wrap) (bench 2718396).
+// mirrors upstream's `_mm*_add/sub_epi16` (2's-complement wrap) (bench 2508687).
 
 const std = @import("std");
 
@@ -247,7 +247,7 @@ pub fn applyPsqtDeltaInPlace(
 // Integer +%/-% commute under 2's-complement i16 wrap (upstream `_mm*_add/sub_epi16`), so
 // the final tile value equals
 // source + Σpsq_added − Σpsq_removed + Σthr_added − Σthr_removed regardless of order:
-// bit-exact with the prior two-accumulator path (signature 2718396).
+// bit-exact with the prior two-accumulator path (signature 2508687).
 pub fn applyCombinedDelta(
     target: []i16,
     source: []const i16,
