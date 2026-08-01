@@ -356,9 +356,9 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
 
         // Step 9. Search the null move.
         if (cut_node and ss.static_eval >= search.nullMoveThreshold(beta, depth, improving) and
-            excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= ctx.nmp_min_ply.* and !qIsLoss(beta))
+            excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= ctx.nmp_min_ply.* and search.nullMoveBetaOk(beta))
         {
-            const r = search.nullMoveReduction(depth);
+            const r = search.nullMoveReduction(depth, ss.static_eval, beta);
             // Touch no accumulator for null moves: call pos.do_null_move, mark the
             // stack move as null (65), and set the all-NO_PIECE
             // continuation-history pointer.

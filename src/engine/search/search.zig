@@ -217,8 +217,19 @@ pub fn nullMoveThreshold(beta: i32, depth: i32, improving: bool) i32 {
     return beta - 13 * depth - 47 * @as(i32, @intFromBool(improving)) + 365;
 }
 
-pub fn nullMoveReduction(depth: i32) i32 {
-    return 7 + @divTrunc(depth, 3);
+// Deepen the null-move reduction when the static eval already towers over beta:
+// the more the position is winning, the less the null search needs to prove.
+// C++ `(ss->staticEval - beta) / 256` truncates toward zero, so use @divTrunc;
+// the clamp to 0 makes the two rounding directions agree anyway.
+pub fn nullMoveReduction(depth: i32, static_eval: i32, beta: i32) i32 {
+    return 7 + @divTrunc(depth, 3) + @max(@divTrunc(static_eval - beta, 256), 0);
+}
+
+// Gate Step 9 on beta being outside the decisive range. This margin is stricter
+// than `!is_loss(beta)` so that the static-eval-scaled reduction above cannot
+// cost a mate find.
+pub fn nullMoveBetaOk(beta: i32) bool {
+    return beta >= -2000;
 }
 
 pub fn nmpMinPly(ply: i32, depth: i32, r: i32) i32 {
