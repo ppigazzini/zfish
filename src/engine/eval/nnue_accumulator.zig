@@ -124,10 +124,10 @@ const psqRequiresRefresh = layout.psqRequiresRefresh;
 const threatRequiresRefresh = layout.threatRequiresRefresh;
 const kingPiece = layout.kingPiece;
 
-// Alias the refresh/incremental update algorithm from the nnue_acc_update leaf
-// now; the facade calls evaluateSide (4x from evaluate).
+// Alias the refresh/incremental update algorithm from the nnue_acc_update leaf; the
+// facade's evaluate delegates straight to its evaluate, which owns the choice between
+// the shared both-perspectives walk and a pass per side.
 const nnue_acc_update = @import("nnue_acc_update.zig");
-const evaluateSide = nnue_acc_update.evaluateSide;
 // Re-export the update-route counters so a search-zone test can assert each route was
 // TAKEN, not merely that they agree (see nnue_acc_update.PathCounts).
 pub const PathCounts = nnue_acc_update.PathCounts;
@@ -145,10 +145,10 @@ pub fn evaluate(
     cache: *RefreshCache,
 ) void {
     // Match upstream AccumulatorStack::evaluate: one combined (HalfKA + Threats) pass per
-    // perspective, not one per (feature, perspective). The combined accumulator lives
-    // in the psq_feature storage slot.
-    evaluateSide(white, stack, pos, feature_transformer, cache);
-    evaluateSide(black, stack, pos, feature_transformer, cache);
+    // perspective, not one per (feature, perspective) -- and when NEITHER perspective
+    // needs a refresh, one pass for both, sharing the common suffix. The combined
+    // accumulator lives in the psq_feature storage slot.
+    nnue_acc_update.evaluate(stack, pos, feature_transformer, cache);
 }
 
 pub fn stackLatestPsq(stack: *const AccumulatorStack) [*]const u8 {

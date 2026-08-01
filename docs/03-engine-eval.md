@@ -19,7 +19,8 @@ for the same position.
 | `nnue_weight_storage.zig` | the weight arenas (`ftStorage`, `layerStorage`) and the loaded-net identity (`nnCurrent`, `nnDescription`) |
 | `nnue_hash.zig` | the net-identity hashes: `hashBytes` (MurmurHash2-64A), the feature-transformer / architecture / network hash values, and the content hashes |
 | **feature transformer** | |
-| `nnue_feature.zig` | feature indexing for both feature sets: `halfMakeIndex`, `fullMakeIndex`, the changed/active index lists, and the refresh predicates |
+| `nnue_feature.zig` | the FullThreats feature set and HalfKA indexing: `halfMakeIndex`, `fullMakeIndex`, the changed/active index lists (including the both-perspectives producer), and the refresh predicates; re-exports the PP_3Wide surface |
+| `nnue_feature_pp.zig` | the PP_3Wide (pawn-pair) feature set: `ppMakeIndex`, its active/changed producers, and the both-perspectives topology walk |
 | `nnue_feature_write_avx512.zig` | `writeIndices` — the AVX512VBMI+VBMI2 vector fast path for the refresh-time HalfKA removed/added index write |
 | `nnue_feature_bb.zig` | the bitboard/attack math and comptime index tables `nnue_feature.zig` builds on |
 | `nnue_feature_luts.zig` | the full-threat feature set's threat-index lookup tables — `index_lut1`/`index_lut2`, their offsets, the colocated `ThreatRouteBlock` planes, and the piece/square constants the index formulas share; all comptime-built |
@@ -28,6 +29,7 @@ for the same position.
 | `nnue_acc_layout.zig` | the accumulator-stack byte layout: strides, diff records, the `AccumulatorStack` handle, and every state/diff accessor |
 | `nnue_acc_update.zig` | the update algorithm: `evaluateSide`, the refresh path, and the fused incremental step |
 | `nnue_acc_entry.zig` | the two steps that start from a refresh-cache ENTRY: the entry diff both of them share, and `updateHybrid`, the same-half king move |
+| `nnue_acc_both.zig` | `applyCombinedBoth` — one ply taken for BOTH perspectives, decoding each diff once |
 | `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `accRows`, the refresh-fused and hybrid passes, and the PSQT deltas |
 | `nnue_transform_packus.zig` | the transform's packus clip-multiply-narrow kernels, one per x86 vector width (`packusTransform64`/`32`/`16`), and the scalar-reference tests that pin them |
 | `nnue_refresh_cache.zig` | the per-(king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
@@ -201,7 +203,26 @@ pushed uncomputed, and `evaluateAcc` triggers the work only when a node actually
 needs a score. See [02-engine-search.md](02-engine-search.md) for the search side and
 [01-engine-board.md](01-engine-board.md) for how the board fills the dirty records.
 
-`evaluateSide` (`nnue_acc_update.zig`) runs once per perspective.
+`evaluate` (`nnue_acc_update.zig`) brings both perspectives up to date, and how it does
+that depends on whether either needs a refresh.
+
+**Shared walk.** When NEITHER side does, the whole update is a forward walk, and above the
+later of the two starting points both walks visit the same plies. So catch the lagging
+side up alone, then take that common suffix once (`nnue_acc_both.zig`,
+`applyCombinedBoth`). What is shared is what does not depend on the perspective: the
+dirty-threat records with their add/remove routing, and the pawn-pair topology — which
+squares changed, which partners each pairs with, in what order. What stays
+per-perspective is the orientation every index is read under, the HalfKA indices, and the
+accumulator arithmetic. Each list ends up holding exactly what its own separate walk
+produced, in the same order.
+
+Two details make that work. The threat routing bit is shared because bit 31 of a route
+mask is set only for a *backward* walk and the shared walk is forward-only — so both
+sides route identically off the raw record. But each index still gets its **own** bound
+test: one perspective can drop a record the other keeps, and the two lists need not be the
+same length.
+
+Otherwise `evaluateSide` runs once per perspective.
 `findLastUsable` walks back from the top of the stack for the nearest state that is
 either already computed or requires a refresh. It tests **only** the PSQ refresh
 condition (the moved piece is that perspective's king), because a threat refresh —
@@ -246,7 +267,7 @@ Dropping the piece-count bound leaves the count **unchanged**: that one is purel
 threshold it is described as. Re-derive this rather than trusting it — mutate the
 predicate and run `zig build signature`.
 
-**All four routes produce the same numbers, and that is what makes a dead one
+**All five routes produce the same numbers, and that is what makes a dead one
 invisible.** Which route runs changes only how much work the update costs, so a route
 that stops running is answered correctly by the route that replaces it: the values never
 move, the tree is identical, and the node count does not budge. bench, every UCI golden,
@@ -254,8 +275,9 @@ move, the tree is identical, and the node count does not budge. bench, every UCI
 them can see a whole branch go unreachable.
 
 Only a counter can. `nnue_acc_update.PathCounts` counts the forward walk, the refresh, the
-backward fill and the hybrid step, and `headless_search.zig`'s *"every accumulator update
-route is exercised"* test drives a real depth-8 search and asserts all four moved. The
+backward fill, the hybrid step and the shared walk, and `headless_search.zig`'s *"every
+accumulator update route is exercised"* test drives a real depth-8 search and asserts every
+one of them moved. The
 counters compile in under `builtin.is_test` alone, so the shipped binary carries no
 increment in the engine's hottest function — the branch folds away at comptime. Verified
 by mutation: disabling the forward route fails that test and nothing else.
