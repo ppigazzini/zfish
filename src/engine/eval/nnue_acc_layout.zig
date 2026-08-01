@@ -41,6 +41,14 @@ pub const transform_vec_width: usize = blk: {
     if (b.cpu.arch == .x86_64) {
         // 128 on avx512 (measured -1.1% cycles, IPC flat), 64 on the rest of x86 (the {16,32,64}
         // sweep's winner; 16 loses 4.1%). aarch64 keeps 32, unmeasured.
+        //
+        // That sweep ran at avx512icl and sse41 only. Swept at AVX2 since, hunting this tier's
+        // instruction gap, and 64 holds: against it, 32 reads instructions 1.003 and 128 reads
+        // 0.999 -- a -10 Ir/node win on 6768, which is real on the deterministic axis but sits
+        // under a cycles reading of 1.019 that this box cannot resolve (load 6+, and the
+        // documented serial-cycle floor here is +/-1%). Not landed for that reason, not because
+        // it lost. Re-run the pair on an idle box before deciding: if 128's cycles come back
+        // flat or better, take it.
         break :blk if (@import("std").Target.x86.featureSetHas(b.cpu.features, .avx512f)) 128 else 64;
     }
     break :blk 32;
