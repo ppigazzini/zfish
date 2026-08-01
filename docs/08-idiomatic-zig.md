@@ -411,6 +411,27 @@ paired ratios (not the ratio of the medians — they disagree), pin the run, and
 the node counts match so the comparison is the same work. It refuses to report when
 those preconditions fail.
 
+**A ratio needs a second binary; a budget does not.** `tools/perf_budget.sh` holds this
+tree's own retired-instruction count on `bench 16 1 8` to `tools/instr_budget.golden`,
+keyed by arch tier. It exists because the bench signature proves the same *node* count and
+says nothing about what those nodes cost, so a change can shed no nodes, keep all 36 gates
+green, and still run measurably slower — the one regression class nothing else here can
+fail on. Instructions are near-deterministic (measured spread 0.00063% over six runs),
+which is what makes an absolute budget gateable where a cycle count is not.
+
+The tolerance is 0.05%, about 50x that spread, and it was **not** chosen by feel: the first
+value tried was 0.20%, and mutation-testing rejected it — making the per-node `adjustKey50`
+call non-inline costs +0.0876% with the node signature still green, so the gate passed the
+exact regression it exists to catch. Pick a tolerance against a measured noise floor *and*
+a measured regression.
+
+It is LOCAL-ONLY and not in `zig build parity`: `perf_event_open` is refused in many CI
+containers, and the count is toolchain-specific, so a Zig upgrade legitimately moves it.
+Re-derive with `tools/perf_budget.sh update` and carry the measurement in the commit body.
+A skip exits **127**, never 0, so "could not measure" cannot be read as "did not regress" —
+and being local-only it carries the staleness failure mode `docs/09-tooling-ci.md` records
+for `tb-cursed`, so run it by hand after a toolchain bump or a perf commit.
+
 **Attribute cost with `tools/perf_fingerprint.py compare`, never by reading a profile
 line.** callgrind emits one entry per *(origin-file, function)* pair -- inlined code is
 attributed to the file it came from, under the caller's name -- so one logical function

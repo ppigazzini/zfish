@@ -1,0 +1,5 @@
+# zfish retired-instruction budget: median count over `bench 16 1 8`, per ARCH tier.
+# Deterministic to ~0.001%; TOOLCHAIN-specific -- re-derive on a Zig upgrade or an
+# intended perf change, and say which in the commit. A regression that leaves the node
+# signature untouched shows up ONLY here. One line per arch: <arch> <nodes> <count>.
+x86-64-sse41-popcnt 163081 2756228595
