@@ -93,6 +93,16 @@ tool, rounds, ratio and node count; none of these can be honestly landed inside 
 commit whose evidence is a bench signature. They cost nothing in correctness: all three are
 *No functional change*, so the anchor holds without them.
 
+The sibling C port has taken two of the three (mcfish `61adf2b3`, `19646370`), which is
+worth reading before starting either — but note what its evidence is and is not. Both
+commits prove the new path FIRES (counter builds: hybrid 2196 of 12109 refreshes; the
+shared walk carrying 47410 of 60830 evaluations) and that the node count is unchanged.
+Neither carries a cycle or instruction ratio. That is a reasonable bar for a faithfulness
+port and it is *not* the bar this tree sets for a hot-path restructure — an avx2 tile once
+measured −7.4% instructions and +1.9% cycles here, so "the path runs" does not imply "the
+change pays". `nnue_acc_update.PathCounts` is the coverage half of that instrument,
+already in this tree; `tools/perf_counters.zig` is the other half.
+
 | commit | what it needs | notes |
 |---|---|---|
 | `db98633b` Avoid recomputing threat/pp accumulation for some king moves | a new `update_accumulator_hybrid` (~375 lines upstream) | Since the threat and psq accumulators merged, any king move forces a full threat/pp recomputation even though those features only change when the king crosses board halves. The hybrid path rebuilds `new = prev − prev_psq + new_psq + threat/pp delta`, taking both psq terms from the Finny table, and applies only above `MIN_PC_COUNT_HYBRID = 15` pieces because below that summing threats from scratch is cheaper. Castling is deliberately excluded upstream. zfish has no equivalent — `grep hybrid src/engine/eval` is empty. |
