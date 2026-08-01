@@ -8,13 +8,14 @@
 //! initialised) and stopping it as the bestmove goes out; this leaf is where those two
 //! instants are recorded so the shell can read the difference.
 //!
-//! hook-class: service — a leaf answering a query it must not import the answer for.
-//! The engine stamps, the shell reads; neither imports the other.
+//! This is shared state, NOT a hook: it registers no function pointer and injects
+//! nothing. The engine stamps and the shell reads, so neither has to import the other --
+//! the same reason time_source next door is a seam, reached by the opposite means.
 //!
-//! Treat unregistered as GENUINELY SAFE: nobody stamping leaves the total at zero, and
-//! the only reader (`speedtest`) already clamps a non-positive total to 1 ms before
-//! dividing. A missing stamp costs a reported nps, never a search decision -- no engine
-//! path reads any of this back.
+//! Nobody stamping is safe rather than silent-wrong: the total stays zero, and the only
+//! reader (`speedtest`) already clamps a non-positive total to 1 ms before dividing. A
+//! missing stamp costs a reported nps and nothing else -- no engine path reads any of
+//! this back, so no search decision depends on it.
 //!
 //! Only the main thread stamps: `ssTmInit` and the bestmove emit both run there, after
 //! `ssWaitFinished` has joined the helpers. The atomics are for the shell's read on

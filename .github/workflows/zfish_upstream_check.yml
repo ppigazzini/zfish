@@ -132,3 +132,44 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # Prove every committed golden is what UPSTREAM produces, not merely what we produce.
+      # A golden is a photograph of ourselves, so `<gate>-update` on a red gate pins whatever
+      # the binary currently does -- bug included -- and nothing downstream can tell the
+      # difference afterwards. The audit re-runs each gate's check with the pristine oracle
+      # substituted for our binary, which is only possible because every golden is built from
+      # UCI-observable behaviour and parity_harness takes the engine as an argument.
+      #
+      # It belongs in THIS workflow, beside the map audit and the random walk, for the same
+      # reason they do: it needs the pinned upstream tree that the drift step's fetch brought
+      # in, and it builds the oracle, which the parity lane deliberately does not.
+      #
+      # `zig build tb-init` first, to populate resources/ -- it pulls the net and the 3-man
+      # Syzygy set, and the audit runs every gate from that directory (the tablebase gates
+      # resolve `SyzygyPath value syzygy` relative to it; run them anywhere else and they
+      # report with-tb == no-tb, which reads as a divergence and is not one).
+      #
+      # tb-cursed is skipped BY NAME, not by listing the other twenty: it needs the 5-man
+      # tables no CI lane fetches, and --skip keeps picking up gates added later, where a
+      # positional list would quietly stop covering them. It stays a local-only gate --
+      # docs/09-tooling-ci.md records that those go stale silently and must be run by hand
+      # each sync.
+      - name: Adjudicate the goldens against the pristine oracle
+        env:
+          ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
+        run: |
+          zig build tb-init
+          if out="$(bash tools/upstream_golden_audit.sh --skip tb-cursed 2>&1)"; then
+            status=0
+          else
+            status=$?
+          fi
+          echo "$out"
+          {
+            echo "## Golden adjudication vs upstream"
+            echo ""
+            echo '```'
+            echo "$out" | tail -30
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

@@ -267,16 +267,26 @@ and `rr = 2*squareBb(63-s)`. One pass computes all three rays together:
 `result = (fwd ^ rev) & masks` — the classic o-2r hyperbola-quintessence identity,
 run on 3 lanes at once instead of one ray at a time. The rank ray is the one
 direction the trick cannot fold in (a rank's 8 squares share a byte under a
-per-lane byte-reversal), so it comes from `rank_attacks[file][occupancy_byte]`, a
-256-entry-per-file lookup built once from `slidingAttack(ROOK, file, occ)` — `occ`
-zero-extends past bit 7, so the north/south rays run unblocked off the top of the
-`u64` and the `u8` truncation drops them, leaving only the rank bits. Below
-`use_avx2`, `bothAttacks` is exactly `{ attacksBb(bishop), attacksBb(rook) }` — two
+per-lane byte-reversal), so it comes from `rank_attacks[file][inner_occupancy]`, a
+64-entry-per-file `comptime` table built from `slidingAttack(ROOK, file, occ6 << 1)` —
+`occ` zero-extends past bit 7, so the north/south rays run unblocked off the top of the
+`u64` and the `u8` truncation drops them, leaving only the rank bits.
+
+The index is the **6 inner bits** of the rank's occupancy, not all 8: a blocker on the
+a- or h-file cannot shorten a ray that already stops at the board edge, so the two outer
+bits never change the answer. Dropping them is what makes the table 512 B rather than
+2 KB, and the lookup shifts one bit further (`occupied >> (shift + 1) & 0x3f`) while the
+result still shifts back by the original per-rank `shift`. Widening the index back to 8
+bits without also rebuilding the table from `occ` instead of `occ6 << 1` returns a ray
+for the wrong occupancy.
+
+Below `use_avx2`, `bothAttacks` is exactly `{ attacksBb(bishop), attacksBb(rook) }` — two
 magic lookups, upstream's own non-dual path. Both forms are asserted bit-identical
 by a dedicated cross-check test (every square, every single-bit occupancy, 10 000
 random ones) and by the bench signature and `perft`, which are unchanged on every
-ISA tier: `dual_magics`/`rank_attacks` are built unconditionally (not just at
-`use_avx2`) so that test can call the AVX2 form directly on any tier.
+ISA tier: `dual_magics` is built unconditionally (not just at `use_avx2`) so that test
+can call the AVX2 form directly on any tier, and `rank_attacks` needs no runtime init
+at all.
 
 This is a port of upstream's algorithm SWITCH, not an addition: upstream does not
 compile its magic tables at all above sse41. This tree keeps them compiled at every

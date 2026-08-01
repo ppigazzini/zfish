@@ -237,6 +237,20 @@ regression gate — editing a FEN moves the signature.
 `speedtest` runs quiet (the search info emitters no-op), sets Threads and Hash from the
 setup, warms up, clears the search, then measures.
 
+It does **not** wall-clock its own `dispatch` calls. The interval it reports comes from
+`search/search_timing.zig`, which the engine stamps at two points: `ssTmInit` opens it
+once time management is initialised, and the bestmove emit closes it. Everything between
+a `go` line and `ssTmInit` — the UCI parse, the thread wakeup, the lazy network
+verification — is per-command setup that does not scale with the position, so charging it
+to the search inflates nothing but the nps denominator. `speedtest` calls
+`search_timing.reset()` after its warmup so those searches stay out of the total, then
+reads `totalMs()` once at the end.
+
+Two placement constraints, both easy to undo by accident: the closing stamp sits *before*
+`ssEmitBestmove`'s quiet-mode early return, because `speedtest` is exactly the caller that
+silences output; and `ssEmitNoMoves` stamps too, so a mate or stalemate root closes its
+interval instead of leaking it into the next search.
+
 ## Invariants
 
 **The net loads before the threads are built.** Worker construction reads the

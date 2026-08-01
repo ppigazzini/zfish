@@ -15,8 +15,14 @@
 # Usage:
 #   upstream_golden_audit.sh                # audit every gate
 #   upstream_golden_audit.sh search-parity tb-search    # audit only these
+#   upstream_golden_audit.sh --skip tb-cursed           # audit every gate BUT these
 #   upstream_golden_audit.sh --list         # print the gate list and exit
 #   ORACLE_SHA=<sha>                        # adjudicate against another commit
+#
+# Prefer --skip over naming gates positionally when the reason is a MISSING FIXTURE rather
+# than a narrowed run: a positional list silently stops covering every gate added after it
+# was written, where --skip keeps picking new gates up. CI skips tb-cursed for exactly that
+# reason -- it needs the 5-man tables, which no CI lane fetches.
 #
 # CWD MATTERS, and getting it wrong reads as a divergence. Every gate runs from the repo's
 # resources/ -- that is where the net lives AND where syzygy/ + syzygy5/ are fetched. Run the
@@ -59,18 +65,45 @@ if [ "${1:-}" = "--list" ]; then
     exit 0
 fi
 
-# Keep only the gates named on the command line, if any.
-if [ "$#" -gt 0 ]; then
-    WANTED=()
-    for want in "$@"; do
-        hit=0
-        for g in "${GATES[@]}"; do
-            [ "${g%%:*}" = "$want" ] && { WANTED+=("$g"); hit=1; }
-        done
-        [ "$hit" = 0 ] && { echo "golden-audit: unknown gate '$want' (see --list)" >&2; exit 2; }
+# Reject an unknown gate name rather than quietly auditing nothing: a typo in a CI --skip
+# would otherwise read as a clean run over a set that never excluded what it meant to.
+known() {
+    for g in "${GATES[@]}"; do [ "${g%%:*}" = "$1" ] && return 0; done
+    echo "golden-audit: unknown gate '$1' (see --list)" >&2
+    exit 2
+}
+
+SKIPPED_BY_REQUEST=()
+WANTED=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --skip)
+            [ "$#" -ge 2 ] || { echo "golden-audit: --skip needs a gate name" >&2; exit 2; }
+            known "$2"; SKIPPED_BY_REQUEST+=("$2"); shift 2 ;;
+        -*) echo "golden-audit: unknown flag '$1'" >&2; exit 2 ;;
+        *)  known "$1"; WANTED+=("$1"); shift ;;
+    esac
+done
+
+FILTERED=()
+for g in "${GATES[@]}"; do
+    gate="${g%%:*}"
+    skip=0
+    for s in ${SKIPPED_BY_REQUEST+"${SKIPPED_BY_REQUEST[@]}"}; do
+        [ "$s" = "$gate" ] && skip=1
     done
-    GATES=("${WANTED[@]}")
-fi
+    [ "$skip" = 1 ] && continue
+    if [ "${#WANTED[@]}" -gt 0 ]; then
+        keep=0
+        for w in "${WANTED[@]}"; do [ "$w" = "$gate" ] && keep=1; done
+        [ "$keep" = 0 ] && continue
+    fi
+    FILTERED+=("$g")
+done
+GATES=(${FILTERED+"${FILTERED[@]}"})
+[ "${#GATES[@]}" -eq 0 ] && { echo "golden-audit: no gates selected" >&2; exit 2; }
+[ "${#SKIPPED_BY_REQUEST[@]:-0}" -gt 0 ] \
+    && echo "golden-audit: skipping by request: ${SKIPPED_BY_REQUEST[*]}"
 
 ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" ${ORACLE_SHA:+"$ORACLE_SHA"})" \
     || { echo "golden-audit: oracle build failed" >&2; exit 2; }
