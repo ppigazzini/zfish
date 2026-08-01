@@ -217,7 +217,7 @@ pub fn transformBucket(
     // SF's mulhi identity  (c0*c1) >> 9  ==  ((c0<<7) * c1) >> 16  ==  pmulhuw(c0<<7, c1),
     // which avoids the i32 widening so each vector register holds twice the lanes. The
     // scaled product 128*c0*c1 is exact and >>16 is floor, so this is bit-identical to
-    // the i32 clamp*mul>>9 path (integer, no rounding): signature 2718396.
+    // the i32 clamp*mul>>9 path (integer, no rounding): signature 2508687.
     const half = half_dimensions / 2;
     const V = transform_vec_width;
     const Vi16 = @Vector(V, i16);
