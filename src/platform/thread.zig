@@ -299,27 +299,31 @@ pub fn startThinking(
     const setup_state = runtime_hooks.setup_state_back(pool) orelse
         @panic("missing setup state");
 
-    var legal_move_buffer: [256]u16 = undefined;
-    const legal_move_count = movegen_port.generateLegal(pos, legal_move_buffer[0..]);
-    const legal_moves = legal_move_buffer[0..legal_move_count];
     const none_raw = uci_move.noneRaw();
 
     var selected_moves = std.ArrayList(u16).empty;
     defer selected_moves.deinit(std.heap.c_allocator);
 
+    // Trust toMoveRaw's legality: it resolves the text against generateLegal and
+    // returns none for anything it cannot match, so a non-none result is already a
+    // legal move. Re-checking it against a second legal list only repeats the work.
     const searchmove_count = limits.searchmoveCount();
     var index: usize = 0;
     while (index < searchmove_count) : (index += 1) {
         const move_text = limitsSearchmoveText(limits, index);
         const text_ptr = move_text.ptr orelse continue;
         const move_raw = uci_move.toMoveRaw(pos, text_ptr[0..move_text.len]);
-        if (move_raw != none_raw and containsMove(legal_moves, move_raw)) {
+        if (move_raw != none_raw) {
             try selected_moves.append(std.heap.c_allocator, move_raw);
         }
     }
 
+    // Generate the full legal list only where it is actually consumed -- no
+    // searchmoves, or none of them resolved.
+    var legal_move_buffer: [256]u16 = undefined;
     if (selected_moves.items.len == 0) {
-        try selected_moves.appendSlice(std.heap.c_allocator, legal_moves);
+        const legal_move_count = movegen_port.generateLegal(pos, legal_move_buffer[0..]);
+        try selected_moves.appendSlice(std.heap.c_allocator, legal_move_buffer[0..legal_move_count]);
     }
 
     const root_fen_text = buildRootFen(pos) orelse return error.OutOfMemory;
@@ -439,14 +443,4 @@ pub fn ensureNetworkReplicated(pool: *worker_layout.ThreadPool) void {
     // Note that the NNUE weights are always resident (no per-node Network replica), so the
     // per-worker ensure_network_replicated is a no-op.
     _ = pool;
-}
-
-fn containsMove(moves: []const u16, target: u16) bool {
-    for (moves) |move_raw| {
-        if (move_raw == target) {
-            return true;
-        }
-    }
-
-    return false;
 }
