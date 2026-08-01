@@ -292,24 +292,32 @@ pub fn quietStatScore(main_hist: i32, cont0: i32, cont1: i32) i32 {
     return @divTrunc(2252 * main_hist + 1126 * cont0 + 1093 * cont1, 1024);
 }
 
+// Bound every correction-history entry (upstream's CORRECTION_HISTORY_LIMIT). It lives
+// here, in the std-only formula leaf, because both the writers in history.zig and the
+// bonus clamps below have to agree on it: every bonus is clamped to a QUARTER of it, and
+// a limit retuned in one place while the clamps kept a hardcoded 256 would silently stop
+// being a quarter of anything.
+pub const correction_history_limit: i32 = 1024;
+const correction_bonus_clamp: i32 = @divTrunc(correction_history_limit, 4);
+
 // Compute the end-of-search correction-history bonus (search()): scale the static-eval
 // error by depth and a best-move-dependent weight (12 with a best move, 18
-// without), clamp into +/- CORRECTION_HISTORY_LIMIT/4 (=256), then apply the
+// without), clamp into +/- CORRECTION_HISTORY_LIMIT/4, then apply the
 // final 1061/1024 scale passed to update_correction_history.
 pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) i32 {
     const w: i32 = if (has_best_move) 12 else 18;
     const raw = @divTrunc(eval_delta * depth * w, 128);
-    const clamped = @max(@as(i32, -256), @min(@as(i32, 256), raw));
+    const clamped = @max(-correction_bonus_clamp, @min(correction_bonus_clamp, raw));
     return @divTrunc(1061 * clamped, 1024);
 }
 
 // Compute the multi-cut correction-history bonus (Step 15): when the singular
 // probe itself fails high above beta it has proven the static eval too low, so
 // nudge the correction tables by the scaled error. Clamp into
-// +/- CORRECTION_HISTORY_LIMIT/4 (=256) like every other correction bonus.
+// +/- CORRECTION_HISTORY_LIMIT/4 like every other correction bonus.
 pub fn multiCutCorrectionBonus(eval_delta: i32, singular_depth: i32) i32 {
     const raw = @divTrunc(eval_delta * singular_depth * 177, 1024);
-    return @max(@as(i32, -256), @min(@as(i32, 256), raw));
+    return @max(-correction_bonus_clamp, @min(correction_bonus_clamp, raw));
 }
 
 // Size the aspiration window in iterative_deepening(). The starting half-width
@@ -414,6 +422,55 @@ test "toCorrectedStaticEval: correction is a >>17 add, then clamp" {
     try std.testing.expectEqual(@as(i32, 300), toCorrectedStaticEval(300, 0));
     try std.testing.expectEqual(@as(i32, 301), toCorrectedStaticEval(300, 131072)); // +1
     try std.testing.expectEqual(@as(i32, 300), toCorrectedStaticEval(300, 131071)); // <131072 -> +0
+}
+
+// Pin the two Step 9 / Step 15 margins at the boundaries their formulas turn on. Both are
+// pure integer functions carrying upstream's tuned constants, and until now the only thing
+// holding either was the bench node count -- which moves when they move, but cannot say
+// WHICH term moved, and cannot tell a transcription slip from an intended retune at all.
+test "nullMoveReduction: the excess is measured from beta and steps every 256" {
+    // R = 7 + depth/3 + max((static_eval - beta) / 256, 0); depth 9 -> 7 + 3 = 10.
+    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, 0, 0));
+    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, 255, 0)); // under the step
+    try std.testing.expectEqual(@as(i32, 11), nullMoveReduction(9, 256, 0)); // exactly one step
+
+    // The excess is relative to beta, not to zero: 700 - 100 = 600 -> +2.
+    try std.testing.expectEqual(@as(i32, 12), nullMoveReduction(9, 700, 100));
+
+    // A static eval BELOW beta must never shorten R. @divTrunc would hand back a negative
+    // term here, so the @max(.., 0) is what stops a losing node from being searched deeper
+    // than an equal one.
+    try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, -5000, 0));
+}
+
+test "multiCutCorrectionBonus: clamps at a quarter of the correction-history limit" {
+    const quarter = @divTrunc(correction_history_limit, 4);
+
+    try std.testing.expectEqual(@as(i32, 0), multiCutCorrectionBonus(0, 8)); // no delta, no bonus
+
+    // Pin the 177 weight itself. Pick delta*singular_depth == 1024 so the /1024 divides
+    // out and the answer IS the weight -- at a smaller product the truncation swallows a
+    // one-off change to it (64*4*177/1024 and 64*4*178/1024 are both 44).
+    try std.testing.expectEqual(@as(i32, 177), multiCutCorrectionBonus(64, 16));
+
+    try std.testing.expectEqual(quarter, multiCutCorrectionBonus(30000, 60));
+    try std.testing.expectEqual(-quarter, multiCutCorrectionBonus(-30000, 60));
+}
+
+test "correction bonuses track the limit they are a quarter of" {
+    // Both clamps derive from correction_history_limit rather than repeating 256, so a
+    // retuned limit moves them together. Assert the relationship, not the number.
+    //
+    // Stay inside the domain the callers can actually reach: both bodies multiply three
+    // i32 terms before dividing, so a delta beyond a non-decisive score (~32k) times a
+    // plausible depth overflows i32 and the clamp reports the WRONG sign. That is a
+    // property of the formula, not of these inputs -- the same shape as the conthistDelta
+    // overflow ReleaseSafe caught. Callers bound the delta: the multi-cut site is guarded
+    // by `!qIsDecisive(value)`, and the end-of-search site by a real eval difference.
+    const quarter = @divTrunc(correction_history_limit, 4);
+    try std.testing.expectEqual(quarter, multiCutCorrectionBonus(30000, 60));
+    // correctionHistoryBonus clamps to the same quarter, then applies its 1061/1024 scale.
+    try std.testing.expectEqual(@divTrunc(1061 * quarter, 1024), correctionHistoryBonus(30000, 64, true));
 }
 
 test "fillReductions: log-scaled, index 0 untouched, monotonic from 1" {

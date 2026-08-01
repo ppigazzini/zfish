@@ -244,7 +244,9 @@ pub fn updateAllStats(
     }
 }
 
-const correction_history_limit: i32 = 1024;
+// Single-source the entry bound with the bonus clamps that are meant to be a quarter of
+// it (search.zig owns both, being the std-only formula leaf this file already imports).
+const correction_history_limit: i32 = search.correction_history_limit;
 
 // update_correction_history: nudge the four shared correction tables plus the
 // (ss-2)/(ss-4) continuation correction entries toward the search/static-eval
