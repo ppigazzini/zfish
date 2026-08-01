@@ -116,13 +116,37 @@ done < <(grep -ohE '`[A-Za-z_][A-Za-z0-9_]*`' docs/*.md AGENTS.md README.md CONT
 # --- 5. every build step is documented somewhere -------------------------------------------
 # 09-tooling-ci's job is to say what each step proves. A step nothing mentions is a gate a
 # contributor cannot find, which is the same as not having it.
+# READ THE WHOLE FILE, NOT LINE BY LINE. build.zig writes most steps across three lines
+#
+#     const nodestime_step = b.step(
+#         "nodestime",
+#         "...",
+#     );
+#
+# so a line-anchored grep saw the name only where it happened to share a line with
+# `b.step(`. That was 5 steps of 77, and the 72 it skipped included 24 with no shipped
+# mention at all -- this check reported OK for as long as it has existed while covering
+# 6% of its subject. Collapse newlines first so the extraction sees every step.
+#
+# `<gate>-update` is covered by its BASE gate: the pairing is a documented convention
+# ("Every golden gate is a pair", 09-tooling-ci.md), so 21 near-identical names do not each
+# need their own prose. Requiring the base keeps that honest -- an update step whose gate
+# nobody documented still fails.
 undoc=0
 while IFS= read -r step; do
-    grep -rqF -- "$step" docs/*.md AGENTS.md README.md CONTRIBUTING.md || {
-        echo "docs-lint: UNDOCUMENTED STEP  \`zig build $step\` exists, no shipped page mentions it"
+    target="$step"
+    case "$step" in
+    *-update) target="${step%-update}" ;;
+    esac
+    grep -rqF -- "$target" docs/*.md AGENTS.md README.md CONTRIBUTING.md || {
+        if [ "$target" = "$step" ]; then
+            echo "docs-lint: UNDOCUMENTED STEP  \`zig build $step\` exists, no shipped page mentions it"
+        else
+            echo "docs-lint: UNDOCUMENTED STEP  \`zig build $step\` exists, and its base gate \`$target\` is undocumented too"
+        fi
         undoc=$((undoc + 1))
     }
-done < <(grep -ohE 'b\.step\(\s*"[a-z0-9-]+"' build.zig | sed 's/.*"\(.*\)"/\1/' | sort -u)
+done < <(tr '\n' ' ' < build.zig | grep -oE 'b\.step\(\s*"[a-z0-9-]+"' | sed 's/.*"\(.*\)"/\1/' | sort -u)
 [ "$undoc" -eq 0 ] || fail=1
 
 if [ "$fail" -eq 0 ]; then
