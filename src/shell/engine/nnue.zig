@@ -77,6 +77,22 @@ pub fn requireNetworkLoaded(engine_ptr: *engine_object.EngineObject) void {
     c.exit(1);
 }
 
+// Report how each network replica is backed, the line upstream prints after the net
+// summary in `Engine::verify_network` (engine.cpp:271-299). Upstream reads a status per
+// replica off a system-wide shared allocation and prints "No allocation." / "Local
+// memory." / "Shared memory." / "Unknown status."; the oracle on a single-node box says
+// `Network replica 1: Shared memory.` because it maps the weights through shm.
+//
+// zfish holds ONE network in ordinary process memory -- it has no system-wide shared
+// mapping to report -- so one line, and "Local memory." is the honest status rather than
+// upstream's byte. That is a deliberate CONTENT difference on a line whose SHAPE and
+// count now match; the alternative is printing a claim about the allocation that is
+// false. Emitting nothing, which is what zfish did, was the worse third option: a GUI
+// parsing the announcement block saw one fewer line than every other Stockfish.
+fn printNetworkReplicaStatus() void {
+    printInfoString("Network replica 1: Local memory.");
+}
+
 pub fn verifyNetwork() void {
     const evalfile = option_port.strByName("EvalFile");
 
@@ -84,7 +100,10 @@ pub fn verifyNetwork() void {
     if (result.message) |message| {
         defer std.heap.c_allocator.free(message);
         // Follow onVerifyNetwork: interactive -> print as "info string ..."; quiet -> no-op.
-        if (!uci_output.isQuiet()) printInfoString(message);
+        if (!uci_output.isQuiet()) {
+            printInfoString(message);
+            printNetworkReplicaStatus();
+        }
     }
 
     if (result.should_exit != 0) {
