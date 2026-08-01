@@ -108,10 +108,17 @@ GATES=(${FILTERED+"${FILTERED[@]}"})
 ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" ${ORACLE_SHA:+"$ORACLE_SHA"})" \
     || { echo "golden-audit: oracle build failed" >&2; exit 2; }
 
-# parity_harness is a build artifact; build it the same way the gates do, then find it.
-zig build --build-file "$REPO/build.zig" parity-harness >/dev/null 2>&1 || true
-HARNESS="$(find "$REPO/.zig-cache/o" -name parity_harness -type f -newer "$REPO/tools/parity_harness.zig" 2>/dev/null | head -1)"
-[ -z "$HARNESS" ] && HARNESS="$(find "$REPO/.zig-cache/o" -name parity_harness -type f 2>/dev/null | head -1)"
+# parity_harness is a build artifact with no step of its own; `signature` is the cheapest
+# step that produces it, and it also leaves resources/ holding the net every gate needs.
+# `tb-init` additionally fetches the 3-man Syzygy set the tablebase gates read.
+( cd "$REPO" && zig build signature tb-init ) >/dev/null 2>&1 \
+    || { echo "golden-audit: 'zig build signature tb-init' failed -- fix the build first" >&2; exit 2; }
+
+# Take the newest build, not the first `find` happens to return: .zig-cache/o keeps one
+# directory per harness BUILD, so a stale binary from an older tools/parity_harness.zig sits
+# there forever and would audit the goldens with the wrong builder.
+HARNESS="$(find "$REPO/.zig-cache/o" -name parity_harness -type f -printf '%T@ %p\n' 2>/dev/null \
+    | sort -rn | head -1 | cut -d' ' -f2-)"
 [ -z "$HARNESS" ] && { echo "golden-audit: no parity_harness in .zig-cache -- run 'zig build parity' once first" >&2; exit 2; }
 
 echo "golden-audit: adjudicating $(printf '%s' "${#GATES[@]}") golden(s) against $ORACLE_BIN"
