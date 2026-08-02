@@ -84,7 +84,13 @@ perf work. **Read the falsified list before optimizing anything.** Measured
 dead here, do not retry without new evidence: prefetch-as-addition, PGO/BOLT,
 labeled-switch dispatch, `noalias` on the hot kernels, and live-value reshaping
 of the search body in either direction (field hoisting AND cold-body
-outlining). A perf commit that does not carry its measured evidence (tool,
+outlining). Measured the other way, so do not "simplify" it away: the
+incremental accumulator is worth 26.1% of whole-process instructions against a
+rebuild-per-evaluation design, and `do_move`'s dirty-threat recording that pays
+for it costs 1.44% (`-Dacc-refresh-only`, `-Dno-threat-record`;
+[docs/03-engine-eval.md](docs/03-engine-eval.md)).
+
+A perf commit that does not carry its measured evidence (tool,
 rounds, ratio, node count) in the body is incomplete — the `perf(...)` commit
 bodies are the durable ledger a fresh clone gets.
 
