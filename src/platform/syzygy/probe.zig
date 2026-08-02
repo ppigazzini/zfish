@@ -70,10 +70,25 @@ pub const EntryInfo = struct {
     pawn_count: [2]u8, // [lead color, other color]
 };
 
+// Report the geometry-table row a group length may index, or null when the piece sequence has
+// produced a group no real table has. `binomial` and `lead_pawns_size` are sized for the longest
+// group a legal material configuration can make (5 -- seven men, two of them kings); the piece
+// sequence they are indexed by is a run of raw file NIBBLES, so a corrupt table can make a group
+// longer than that and read off the end of the array. Upstream indexes both unchecked, its own
+// writer having produced the file.
+fn geometryRow(len: i32, rows: usize) ?usize {
+    if (len < 0 or @as(usize, @intCast(len)) >= rows) return null;
+    return @intCast(len);
+}
+
 // Port SF `set_groups`: from the piece sequence in d.pieces, fill group_len[] (0-terminated) and
 // group_idx[] (the multiplicative start index of each group). `order` + `f` come from the file
 // header. Use encode.binomial / encode.lead_pawns_size.
-pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: usize) void {
+//
+// Return false when the sequence indexes past either geometry table, so the caller refuses the
+// table at LOAD -- the one point where a corrupt file can still be answered with "no table"
+// instead of a probe reading off the end of the arrays.
+pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: usize) bool {
     var n: usize = 0;
     var first_len: i32 = if (e.has_pawns) 0 else if (e.has_unique_pieces) 3 else 2;
     d.group_len[0] = 1;
@@ -100,24 +115,29 @@ pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: usize) void {
     while (@as(usize, @intCast(next)) < n or k == order[0] or k == order[1]) : (k += 1) {
         if (k == order[0]) { // leading pawns or pieces
             d.group_idx[0] = idx;
-            const mult: u64 = if (e.has_pawns)
-                @intCast(encode.lead_pawns_size[@intCast(d.group_len[0])][f])
-            else if (e.has_unique_pieces)
+            const mult: u64 = if (e.has_pawns) blk: {
+                const row = geometryRow(d.group_len[0], encode.lead_pawns_size.len) orelse
+                    return false;
+                break :blk @intCast(encode.lead_pawns_size[row][f]);
+            } else if (e.has_unique_pieces)
                 31332
             else
                 462;
             idx *= mult;
         } else if (k == order[1]) { // remaining pawns
             d.group_idx[1] = idx;
-            idx *= @intCast(encode.binomial[@intCast(d.group_len[1])][@intCast(48 - d.group_len[0])]);
+            const row = geometryRow(d.group_len[1], encode.binomial.len) orelse return false;
+            idx *= @intCast(encode.binomial[row][@intCast(48 - d.group_len[0])]);
         } else { // remaining pieces
             d.group_idx[next] = idx;
-            idx *= @intCast(encode.binomial[@intCast(d.group_len[next])][@intCast(free_squares)]);
+            const row = geometryRow(d.group_len[next], encode.binomial.len) orelse return false;
+            idx *= @intCast(encode.binomial[row][@intCast(free_squares)]);
             free_squares -= d.group_len[next];
             next += 1;
         }
     }
     d.group_idx[n] = idx;
+    return true;
 }
 
 // Port SF `set_symlen`: expand btree symbol `s` into its children until the leaves, returning the
@@ -158,7 +178,7 @@ test "setGroups splits distinct pieces like SF (KRKN -> (3,1), 3-man -> (3))" {
     // 4 distinct pieces (e.g. KRKN): hasUnique, no pawns -> group_len (3,1,0).
     var d = PairsData{};
     d.pieces = .{ 6, 4, 6, 2, 0, 0, 0 }; // K R K N (values distinct enough)
-    setGroups(&d, .{ .has_pawns = false, .has_unique_pieces = true, .piece_count = 4, .pawn_count = .{ 0, 0 } }, .{ 0, 15 }, 0);
+    try std.testing.expect(setGroups(&d, .{ .has_pawns = false, .has_unique_pieces = true, .piece_count = 4, .pawn_count = .{ 0, 0 } }, .{ 0, 15 }, 0));
     try std.testing.expectEqual(@as(i32, 3), d.group_len[0]);
     try std.testing.expectEqual(@as(i32, 1), d.group_len[1]);
     try std.testing.expectEqual(@as(i32, 0), d.group_len[2]); // zero-terminated
@@ -167,9 +187,36 @@ test "setGroups splits distinct pieces like SF (KRKN -> (3,1), 3-man -> (3))" {
     // 3-man KRvK: K R K -> single group (3).
     var d3 = PairsData{};
     d3.pieces = .{ 6, 4, 6, 0, 0, 0, 0 };
-    setGroups(&d3, .{ .has_pawns = false, .has_unique_pieces = true, .piece_count = 3, .pawn_count = .{ 0, 0 } }, .{ 0, 15 }, 0);
+    try std.testing.expect(setGroups(&d3, .{ .has_pawns = false, .has_unique_pieces = true, .piece_count = 3, .pawn_count = .{ 0, 0 } }, .{ 0, 15 }, 0));
     try std.testing.expectEqual(@as(i32, 3), d3.group_len[0]);
     try std.testing.expectEqual(@as(i32, 0), d3.group_len[1]);
+}
+
+test "setGroups refuses a piece run longer than any geometry row" {
+    encode.initGeometry();
+    // Seven identical pawn nibbles: the leading group swallows the whole sequence, so
+    // group_len[0] is 7 where LeadPawnsSize has six rows. A legal 7-man configuration cannot
+    // reach it (two of the seven men are kings), a corrupt file can.
+    var d = PairsData{};
+    d.pieces = @splat(1);
+    try std.testing.expect(!setGroups(
+        &d,
+        .{ .has_pawns = true, .has_unique_pieces = false, .piece_count = 7, .pawn_count = .{ 5, 0 } },
+        .{ 0, 15 },
+        0,
+    ));
+
+    // The second group indexes Binomial, which has six rows: one leading pawn and six of the
+    // other colour's overruns it. Pawns on both sides (pawn_count[1] != 0) is what routes the
+    // group through order[1] at all.
+    var d2 = PairsData{};
+    d2.pieces = .{ 1, 9, 9, 9, 9, 9, 9 };
+    try std.testing.expect(!setGroups(
+        &d2,
+        .{ .has_pawns = true, .has_unique_pieces = false, .piece_count = 7, .pawn_count = .{ 1, 6 } },
+        .{ 0, 1 },
+        0,
+    ));
 }
 
 test "setSymLen expands a synthetic RE-PAIR btree" {

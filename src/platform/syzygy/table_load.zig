@@ -16,6 +16,7 @@ const probe = @import("probe.zig");
 const decode = @import("decode.zig");
 const decode_header = @import("decode_header.zig");
 const registry = @import("registry.zig");
+const board_core = @import("board_core");
 const thread_runtime = @import("thread_runtime");
 
 const TBTable = registry.TBTable;
@@ -24,6 +25,8 @@ const rdU16 = decode.rdU16;
 const wdl_magic = registry.wdl_magic;
 const dtz_magic = registry.dtz_magic;
 const sep_char = registry.sep_char;
+
+const pawn_pt = board_core.pawn_pt;
 
 // Read <stem><ext> from the first SyzygyPath dir that has it into a 64-byte-aligned buffer,
 // verifying `magic`. Return the whole file (magic included) or null on any failure. The
@@ -112,9 +115,19 @@ fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
             }
             pos += 1;
         }
+        // A pawnful table LEADS with the lead colour's pawns, and do_probe_table picks that
+        // colour straight off `entry->get(0, 0)->pieces[0]` (tbprobe.cpp:1174) -- the one view
+        // the probe reads, whichever side or file it is really probing. The nibble is raw file
+        // data, so a corrupt table can name a piece that is not a pawn, or a pawn of the colour
+        // that has none: the leading group is then EMPTY, and the probe sorts `squares[1..0]`
+        // and indexes LeadPawnIdx[0][squares[0]] with a square it never wrote. Refuse the file
+        // here, at load, where the answer can still be "no table"; upstream reads the same byte
+        // unchecked, its own writer having produced the file.
+        if (t.has_pawns and f == 0 and
+            t.get(dtz, 0, 0).pieces[0] != (t.lead_color << 3) | pawn_pt) return false;
         i = 0;
         while (i < sides) : (i += 1) {
-            probe.setGroups(t.get(dtz, i, f), e, order[i], f);
+            if (!probe.setGroups(t.get(dtz, i, f), e, order[i], f)) return false;
         }
     }
 
@@ -298,4 +311,49 @@ pub fn mappedDtz(t: *TBTable) bool {
 
 test {
     std.testing.refAllDecls(@This());
+}
+
+// Build a three-man KPvK entry and the first nine bytes of its `.rtbw`: the magic, the
+// split/has-pawns flags byte, the group order, and one nibble pair per man. Upstream's own file
+// carries `11 66 ee` there -- pawn, king, king -- for both side views.
+fn kpvkStub(pieces0: u8) struct { table: TBTable, buf: [64]u8 } {
+    var buf: [64]u8 = @splat(0);
+    @memcpy(buf[0..4], &wdl_magic);
+    buf[4] = 0x03; // Split | HasPawns
+    buf[5] = 0x21; // group order
+    buf[6] = pieces0;
+    buf[7] = 0x66; // K
+    buf[8] = 0xEE; // k
+    return .{
+        .table = .{
+            .key = 0,
+            .key2 = 0,
+            .piece_count = 3,
+            .has_pawns = true,
+            .has_unique_pieces = true,
+            .pawn_count = .{ 1, 0 },
+            .lead_color = 0, // white leads: it is the side with the pawn
+            .sides = 1,
+        },
+        .buf = buf,
+    };
+}
+
+test "set refuses a pawnful table whose leading piece is not the lead colour's pawn" {
+    registry.reset(""); // the arena setSizes allocates from, and the encoding geometry setGroups reads
+    // 0x99 is a BLACK pawn where the lead colour is white, so the leading group would be empty
+    // and the probe would sort `squares[1..0]` and index LeadPawnIdx[0] with a square it never
+    // wrote. One flipped nibble in a downloaded file reaches it.
+    var corrupt = kpvkStub(0x99);
+    try std.testing.expect(!set(&corrupt.table, false, &corrupt.buf));
+    // Refused BEFORE the groups were built, which is what says the leading-piece check fired
+    // rather than one of the length checks further down.
+    try std.testing.expectEqual(@as(i32, 0), corrupt.table.items[0][0].group_len[0]);
+
+    // The control: upstream's own nibble is accepted and the leading pawn becomes group 0. The
+    // parse still fails later -- these 64 bytes carry no symbol tables -- so only the group
+    // state distinguishes the two.
+    var good = kpvkStub(0x11);
+    _ = set(&good.table, false, &good.buf);
+    try std.testing.expectEqual(@as(i32, 1), good.table.items[0][0].group_len[0]);
 }
