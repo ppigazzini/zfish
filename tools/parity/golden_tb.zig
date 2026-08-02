@@ -120,7 +120,7 @@ pub fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         try s.init(io, gpa, bin);
         s.send("setoption name SyzygyPath value syzygy\nsetoption name Threads value 1\n");
         var cmdbuf: [256]u8 = undefined;
-        s.send(std.fmt.bufPrint(&cmdbuf, "position fen {s}\ngo depth {d}\n", .{ r.fen, r.depth }) catch unreachable);
+        s.send(std.fmt.bufPrint(&cmdbuf, "position fen {s}\ngo depth {d}\n", .{ r.fen, r.depth }) catch fail("golden_tb: command buffer too small for the case table", .{}));
         _ = s.fillUntil("\nbestmove");
         const buf = s.buffered();
 
@@ -179,6 +179,10 @@ pub fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     };
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
+    // Remove the scratch EPD on the way out. `export_net`'s builder already did this for its
+    // temp; these two did not, so every run left a file behind in the engine's own runtime
+    // directory -- where the next `bench <file>` reads whatever an interrupted run left.
+    defer Io.Dir.cwd().deleteFile(io, "tb_search_tmp.epd") catch {};
     for (rows) |r| {
         try Io.Dir.cwd().writeFile(io, .{ .sub_path = "tb_search_tmp.epd", .data = r.fen });
         const with_tb = try benchNodes(gpa, io, bin, "setoption name SyzygyPath value syzygy\nbench 16 1 10 tb_search_tmp.epd depth\nquit\n");
@@ -233,6 +237,7 @@ pub fn buildTbCursed(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         .{ .label = "nodes-tb-cursed-win  ", .limit = 123457, .fen = "8/8/8/3k4/p7/8/2N5/N3K3 w - - 0 1" },
         .{ .label = "nodes-tb-blessed-loss", .limit = 234567, .fen = "n3k3/2n5/8/3K4/P7/8/8/8 w - - 0 1" },
     };
+    defer Io.Dir.cwd().deleteFile(io, "tb_cursed_tmp.epd") catch {};
     for (node_runs) |r| {
         try Io.Dir.cwd().writeFile(io, .{ .sub_path = "tb_cursed_tmp.epd", .data = r.fen });
         const input = try std.fmt.allocPrint(gpa, "setoption name SyzygyPath value syzygy5:syzygy\nbench 16 1 {d} tb_cursed_tmp.epd nodes\nquit\n", .{r.limit});

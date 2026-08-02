@@ -133,7 +133,7 @@ pub fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     var buf: [128]u8 = undefined;
     for (0..stress_cycles) |i| {
         const tc = threads[i % threads.len];
-        s.send(std.fmt.bufPrint(&buf, "setoption name Threads value {d}\nucinewgame\n", .{tc}) catch unreachable);
+        s.send(std.fmt.bufPrint(&buf, "setoption name Threads value {d}\nucinewgame\n", .{tc}) catch fail("gate_runtime: command buffer too small for the case table", .{}));
         if (i % 3 == 0) {
             // stop-handshake path: start an unbounded search, wait for it to actually spin up,
             // then stop -- this is what exercises the sync-primitive wakeup under contention.
@@ -154,7 +154,7 @@ pub fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.debug.print("stress: phase B -- {d} construct/destroy iterations\n", .{stress_churn});
     for (0..stress_churn) |j| {
         const tc = threads[j % threads.len];
-        const cmds = std.fmt.bufPrint(&buf, "setoption name Threads value {d}\nucinewgame\nposition startpos\ngo depth 8\n", .{tc}) catch unreachable;
+        const cmds = std.fmt.bufPrint(&buf, "setoption name Threads value {d}\nucinewgame\nposition startpos\ngo depth 8\n", .{tc}) catch fail("gate_runtime: command buffer too small for the case table", .{});
         const o = runSearch(io, gpa, bin, cmds) catch fail("stress: phase B iter {d} spawn/run failed", .{j});
         if (!o.got_bestmove) fail("stress: phase B iter {d} (Threads={d}) produced no bestmove", .{ j, tc });
         if (!o.exited_clean) fail("stress: phase B iter {d} (Threads={d}) did not exit cleanly", .{ j, tc });
@@ -172,7 +172,7 @@ pub fn runTimeMgmt(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     const budgets = [_]i64{ 300, 900 };
     for (budgets, 0..) |t, idx| {
         var cmdbuf: [64]u8 = undefined;
-        const cmds = std.fmt.bufPrint(&cmdbuf, "position startpos\ngo movetime {d}\n", .{t}) catch unreachable;
+        const cmds = std.fmt.bufPrint(&cmdbuf, "position startpos\ngo movetime {d}\n", .{t}) catch fail("gate_runtime: command buffer too small for the case table", .{});
         const o = runSearch(io, gpa, bin, cmds) catch fail("time-mgmt: engine run failed", .{});
         if (!o.got_bestmove or !wellFormedMove(o.bestmove())) fail("time-mgmt: movetime {d}: no legal bestmove", .{t});
         const n = o.time_ms orelse fail("time-mgmt: movetime {d}: engine reported no 'time' field", .{t});

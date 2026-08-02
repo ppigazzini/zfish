@@ -322,7 +322,7 @@ pub fn buildMate(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         try s.init(io, gpa, bin);
         s.send("setoption name Threads value 1\n");
         var cmdbuf: [256]u8 = undefined;
-        s.send(std.fmt.bufPrint(&cmdbuf, "position fen {s}\ngo mate {d}\n", .{ r.fen, r.n }) catch unreachable);
+        s.send(std.fmt.bufPrint(&cmdbuf, "position fen {s}\ngo mate {d}\n", .{ r.fen, r.n }) catch fail("golden_search: command buffer too small for the case table", .{}));
         _ = s.fillUntil("\nbestmove");
         const buf = s.buffered();
 
@@ -370,7 +370,7 @@ pub fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         try s.init(io, gpa, bin);
         s.send("setoption name Threads value 1\nsetoption name UCI_Chess960 value true\n");
         var cb: [160]u8 = undefined;
-        s.send(std.fmt.bufPrint(&cb, "position fen {s}\ngo nodes 300000\n", .{p.fen}) catch unreachable);
+        s.send(std.fmt.bufPrint(&cb, "position fen {s}\ngo nodes 300000\n", .{p.fen}) catch fail("golden_search: command buffer too small for the case table", .{}));
         _ = s.fillUntil("\nbestmove");
         const buf = s.buffered();
         var info: ?InfoLine = null;
