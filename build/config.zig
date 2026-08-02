@@ -132,6 +132,14 @@ pub fn resolve(b: *std.Build) Config {
     // bench node count by construction, so it is never part of a parity run -- the gate it
     // answers to is "do the two engines still search the SAME tree", not the anchor.
     const stub_eval = b.option(bool, "stub-eval", "Replace the NNUE eval with material count (spine isolation; NOT bit-exact, bench moves)") orelse false;
+    // Two accumulator-architecture ablations, for measuring what the incremental path is
+    // worth against a rebuild-per-evaluation design (the shape the Rust sibling port uses).
+    // Both stay BIT-EXACT -- a refresh from the board and an incremental chain compute the
+    // same accumulator, which is the invariant the whole design rests on -- so the node
+    // count is unchanged and the two builds are the same work, which is the precondition
+    // `tools/perf_counters.zig` enforces before it will report a ratio.
+    const acc_refresh_only = b.option(bool, "acc-refresh-only", "Ablation: refresh the accumulator from the board every evaluation, never incrementally (bit-exact; measures what the incremental path buys)") orelse false;
+    const no_threat_record = b.option(bool, "no-threat-record", "Ablation: compile out do_move's dirty-threat recording. Only sound WITH -Dacc-refresh-only, which never reads the records") orelse false;
     build_options.addOption([]const u8, "arch_name", arch.name);
     build_options.addOption([]const u8, "git_sha", git_info.sha orelse "");
     build_options.addOption([]const u8, "git_date", git_info.date orelse "");
@@ -147,6 +155,8 @@ pub fn resolve(b: *std.Build) Config {
     build_options.addOption(bool, "use_popcnt", hasMacro(arch.macros, "USE_POPCNT"));
     build_options.addOption(bool, "use_pext", hasMacro(arch.macros, "USE_PEXT"));
     build_options.addOption(bool, "stub_eval", stub_eval);
+    build_options.addOption(bool, "acc_refresh_only", acc_refresh_only);
+    build_options.addOption(bool, "no_threat_record", no_threat_record);
     build_options.addOption(bool, "has_ndebug", true);
     const build_options_module = build_options.createModule();
 

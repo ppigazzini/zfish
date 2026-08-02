@@ -221,3 +221,65 @@ pub fn registerUpstream(
     );
     upstream_walk_step.dependOn(&upstream_walk_cmd.step);
 }
+
+/// Register `upstream-parity`: assert the default (Zig) bench == the PRISTINE upstream
+/// Stockfish at UPSTREAM_BASE, built in a persistent git worktree with ZERO vendored C++.
+///
+/// NOT a table row, deliberately: it takes a SECOND argument -- the upstream base sha -- that
+/// no other script gate does, and the table has no axis for it. Table-driving it dropped that
+/// argument silently; the script still ran, still exited 0, against the wrong base. Longhand
+/// keeps the extra arg visible at the call.
+pub fn registerUpstreamParity(
+    b: *std.Build,
+    stockfish: *std.Build.Step.Compile,
+    install_step: *std.Build.Step,
+    net_step: *std.Build.Step,
+    repoPath: *const fn (*std.Build, []const u8) []const u8,
+) void {
+    // Read the pin with std, not by spawning `cat`: there is no `cat` on Windows, and the read
+    // FAILS SOFT to "" -- an empty base runs the differential against the wrong upstream and
+    // still exits 0, the same silent-wrong-argument failure the note above records.
+    const base_sha = blk: {
+        const raw = b.build_root.handle.readFileAlloc(
+            b.graph.io,
+            "tools/upstream/UPSTREAM_BASE",
+            b.allocator,
+            .limited(64),
+        ) catch break :blk "";
+        break :blk std.mem.trim(u8, raw, &std.ascii.whitespace);
+    };
+    const cmd = b.addSystemCommand(&.{ "bash", repoPath(b, "tools/upstream_parity.sh") });
+    // The engine binary is an artifact arg (the build supplies its path), so it cannot live in
+    // the string array above; the base sha follows it.
+    cmd.addArtifactArg(stockfish);
+    cmd.addArg(base_sha);
+    cmd.step.dependOn(install_step);
+    cmd.step.dependOn(net_step);
+    const step = b.step(
+        "upstream-parity",
+        "Assert default (Zig) bench == pristine upstream@UPSTREAM_BASE (git worktree, no vendored C++)",
+    );
+    step.dependOn(&cmd.step);
+}
+
+/// Register `tsan-race`. Needs -Dtsan (which forces -Dlto=false): the engine races its TT,
+/// shared history and per-Worker counters BY DESIGN, and upstream keeps that defined by typing
+/// those fields RelaxedAtomic. A missed atomic is undefined behaviour no node-count gate can
+/// see, so TSan is the only instrument that covers it. OUT of the `parity` aggregate -- it
+/// needs its own instrumented build.
+pub fn registerTsanRace(
+    b: *std.Build,
+    stockfish: *std.Build.Step.Compile,
+    install_step: *std.Build.Step,
+    net_step: *std.Build.Step,
+    tb_step: *std.Build.Step,
+    repoPath: *const fn (*std.Build, []const u8) []const u8,
+) void {
+    const cmd = b.addSystemCommand(&.{ "bash", repoPath(b, "tools/tsan_race.sh") });
+    cmd.addArtifactArg(stockfish);
+    cmd.step.dependOn(install_step);
+    cmd.step.dependOn(net_step);
+    cmd.step.dependOn(tb_step);
+    const step = b.step("tsan-race", "ThreadSanitizer race gate over 4 concurrency workloads (build with -Dtsan)");
+    step.dependOn(&cmd.step);
+}

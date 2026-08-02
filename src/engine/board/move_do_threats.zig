@@ -9,6 +9,7 @@
 // here are exactly those the feature indexer encodes, so the filters are not an
 // approximation -- rejecting the rest early is what upstream does too.
 
+const build_options = @import("build_options");
 const bitboard = @import("bitboard");
 const board_core = @import("board_core");
 const position_types = @import("position_types");
@@ -85,6 +86,14 @@ pub fn updatePieceThreats(
     dts: *DirtyThreats,
     no_rays: u64,
 ) void {
+    // Ablation (-Dno-threat-record): drop the recording entirely. Sound ONLY together with
+    // -Dacc-refresh-only, which rebuilds from the board and never reads a record; without it
+    // the incremental step would apply an empty delta and the evaluation would be wrong.
+    if (comptime build_options.no_threat_record) {
+        if (comptime !build_options.acc_refresh_only)
+            @compileError("-Dno-threat-record needs -Dacc-refresh-only: the incremental path reads the records this drops");
+        return;
+    }
     const occupied = pos.by_type_bb[0];
     const rook_queens = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
     const bishop_queens = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];

@@ -68,6 +68,11 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         })) catch @panic("OOM building module graph");
     }
+    // Publish build_options through the same map the modules live in, so the standalone test
+    // roots pick it up from one place. Adding it imperatively to the exe only is what left
+    // `move_do` and `nnue_accumulator`'s own test roots without it.
+    mods.put("build_options", build_options_module) catch @panic("OOM building module graph");
+
     const module_edges = graph.edges;
     // Name the edge rather than unwrapping blind: both ends are strings in a 380-row table, so a
     // typo is a panic with no operand unless the message carries one.
@@ -81,6 +86,11 @@ pub fn build(b: *std.Build) void {
     // stub at comptime (spine isolation, tools/material_eval.sh). Default false, so the shipped
     // build resolves the branch away and is unchanged.
     mods.get("search_acc").?.addImport("build_options", build_options_module);
+    // The two accumulator ablations (-Dacc-refresh-only, -Dno-threat-record) are read at
+    // comptime by the update core and by do_move's recording, so both modules need the
+    // options. Default false on each, so the shipped build resolves the branch away.
+    mods.get("nnue_accumulator").?.addImport("build_options", build_options_module);
+    mods.get("move_do").?.addImport("build_options", build_options_module);
 
     // Match upstream's codegen: its Makefile compiles `build` with -flto=full (Makefile:965)
     // while zfish shipped without it, so the two were never compiled alike. Measured on an
@@ -300,45 +310,10 @@ pub fn build(b: *std.Build) void {
         .goldenPath = repoPath,
     });
 
-    // Assert via the worktree-based upstream oracle gate that the default (Zig)
-    // bench == the PRISTINE upstream Stockfish at UPSTREAM_BASE, built in a persistent
-    // git worktree with ZERO vendored C++. It pins to the exact upstream sha we claim to
-    // be at, and the oracle build is a cached no-op in steady state (upstream_oracle.sh
-    // only rebuilds when BASE moves). Run standalone at sync time.
-    // Read the pin with std, not by spawning `cat`: there is no `cat` on Windows, and this
-    // read FAILS SOFT into "" -- an empty base makes the gate run against the wrong upstream
-    // while still exiting 0, which is the same silent-wrong-argument failure the comment below
-    // records for the table-driven version.
-    const upstream_base_sha = blk: {
-        const raw = b.build_root.handle.readFileAlloc(
-            b.graph.io,
-            "tools/upstream/UPSTREAM_BASE",
-            b.allocator,
-            .limited(64),
-        ) catch break :blk "";
-        break :blk std.mem.trim(u8, raw, &std.ascii.whitespace);
-    };
-
-    // NOT a build/structural.zig row, deliberately: this gate takes a SECOND argument (the
-    // upstream base sha) that no other script gate does, and the table has no axis for it.
-    // Table-driving it dropped that argument silently -- the script still ran, still exited
-    // 0, against the wrong base. Kept longhand so the extra arg is visible at the call.
-    const upstream_parity_cmd = b.addSystemCommand(&.{
-        "bash",
-        repoPath(b, "tools/upstream_parity.sh"),
-    });
-    // Pass the engine binary as an artifact arg (the build supplies its path), then the
-    // upstream base sha. Keep the binary out of the string array above -- an artifact arg
-    // cannot live in it.
-    upstream_parity_cmd.addArtifactArg(exe);
-    upstream_parity_cmd.addArg(upstream_base_sha);
-    upstream_parity_cmd.step.dependOn(install_step);
-    upstream_parity_cmd.step.dependOn(&net_cmd.step);
-    const upstream_parity_step = b.step(
-        "upstream-parity",
-        "Assert default (Zig) bench == pristine upstream@UPSTREAM_BASE (git worktree, no vendored C++)",
-    );
-    upstream_parity_step.dependOn(&upstream_parity_cmd.step);
+    // The two bespoke gates -- an upstream-oracle bench differential and the ThreadSanitizer
+    // race lane -- register from build/structural.zig, which already owns the gates whose argv
+    // shape resists the table.
+    buildpkg.structural.registerUpstreamParity(b, exe, install_step, &net_cmd.step, repoPath);
     // Register every "run a shell script" gate from build/structural.zig's table.
     const script_runs = buildpkg.structural.register(.{
         .b = b,
@@ -362,21 +337,7 @@ pub fn build(b: *std.Build) void {
     // shapes, so a function rather than a table row.
     buildpkg.structural.registerUpstream(b, install_step, &net_cmd.step, walk_args, repoPath);
 
-    // ThreadSanitizer race gate. Needs -Dtsan (and -Dlto=false, which -Dtsan forces): the engine
-    // races its TT, shared history and per-Worker counters BY DESIGN, and upstream keeps that
-    // defined by typing those fields RelaxedAtomic. A missed atomic is undefined behaviour no
-    // node-count gate can see, so TSan is the only instrument that covers it. Kept OUT of the
-    // `parity` aggregate: it needs its own instrumented build.
-    const tsan_race_cmd = b.addSystemCommand(&.{ "bash", repoPath(b, "tools/tsan_race.sh") });
-    tsan_race_cmd.addArtifactArg(exe);
-    tsan_race_cmd.step.dependOn(install_step);
-    tsan_race_cmd.step.dependOn(&net_cmd.step);
-    tsan_race_cmd.step.dependOn(&tb_cmd.step);
-    const tsan_race_step = b.step(
-        "tsan-race",
-        "ThreadSanitizer race gate over 4 concurrency workloads (build with -Dtsan)",
-    );
-    tsan_race_step.dependOn(&tsan_race_cmd.step);
+    buildpkg.structural.registerTsanRace(b, exe, install_step, &net_cmd.step, &tb_cmd.step, repoPath);
 
     const host_arch_step = b.step("host-arch", "Print the host's best ARCH tier (the -Darch=native resolution)");
     host_arch_step.dependOn(&b.addSystemCommand(&.{ "printf", "%s", native_arch.detectArchFromCpu(b.graph.host.result.cpu) }).step);

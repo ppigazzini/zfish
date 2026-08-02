@@ -328,6 +328,11 @@ pub fn register(ctx: Context) void {
         for (module_edges) |e| {
             if (std.mem.eql(u8, e.from, name)) tm.addImport(e.imp, mods.get(e.to).?);
         }
+        // build_options is attached imperatively in build.zig, not through module_edges (it is
+        // not a spec'd source file), so it has no edge to derive from. Hand it to every root:
+        // an unused module import costs nothing, and a missing one is a compile error in the
+        // root that happens to read a flag.
+        if (mods.get("build_options")) |bo| tm.addImport("build_options", bo);
         const tm_test = b.addTest(.{ .root_module = tm });
         addTestRun(b, test_step, tm_test, cov_dir, cov_idx);
     }
@@ -360,6 +365,7 @@ pub fn register(ctx: Context) void {
             }),
         });
         for (dt.deps) |d| t.root_module.addImport(d, mods.get(d).?);
+        if (mods.get("build_options")) |bo| t.root_module.addImport("build_options", bo);
         addTestRun(b, test_step, t, cov_dir, cov_idx);
     }
 
