@@ -128,6 +128,27 @@ matches the LF goldens), extracts a deterministic fingerprint, and diffs it. It
 replaces the former bash golden scripts, which is why `parity-portable` runs
 identically on Linux, Windows, and macOS: no `sh`, no coreutils, no GNU-vs-BSD `sed`.
 
+The harness file itself is the DISPATCHER — the check name to builder mapping, the golden
+read/write/compare, and `net-missing`, the one gate that must run from a cwd the build does
+not pin. Every gate body lives in the `tools/parity/` package, which
+`tools/parity/main.zig` re-exports, so the root's import list does not move when the package
+is reshaped (the shape `build/main.zig` already uses):
+
+| File | Owns |
+| --- | --- |
+| `tools/parity/run.zig` | spawn the engine and capture both streams, the line helpers that replaced the bash `sed`/`grep`, and `fail`. Imports std alone — the leaves need these and the ROOT imports the leaves, so a helper left in the root would close a cycle. |
+| `tools/parity/structured_diff.zig` | parse an `info`/`bestmove` line into a typed record, report WHICH field drifted, print the golden diff. The one unit-testable file here; the rest drive a real engine. |
+| `tools/parity/session.zig` | hold one engine as a live process and read to a mark, for every gate that must not truncate its own search. |
+| `tools/parity/golden_shell.zig` | the goldens for what the shell prints: bench info lines, driver emits, search modes, FEN refusals, `d`/`flip`, the `uci` option list, `export_net`. |
+| `tools/parity/golden_search.zig` | the goldens for what the search and board compute: search fingerprints, perft, the eval trace, nodestime, `go mate N`, Chess960, the bench matrix. |
+| `tools/parity/golden_tb.zig` | the Syzygy goldens (see [05-tablebases](05-tablebases.md)). |
+| `tools/parity/gate_runtime.zig` | the gates needing real threads and a real clock: `mt-sanity`, `stress`, `time-mgmt`, and `signature`. |
+| `tools/parity/gate_state.zig` | the metamorphic gates, which relate two runs instead of pinning a value. |
+
+Nothing in the package decides its own correctness: a builder that returns a different
+fingerprint fails its committed golden, so reshaping one is gated by `zig build parity`
+rather than by review.
+
 The gates fall into kinds:
 
 **Signature** — the whole-engine invariant.

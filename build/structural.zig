@@ -61,14 +61,12 @@ pub const script_gates = [_]ScriptGate{
     // Gate god-files structurally: ratchet on the count of .zig files >= 500 lines across ALL
     // repo-owned code (src/ + build.zig + tools/), so the "no god-files" property is enforced
     // repo-wide, not just claimed. An earlier src/-only scan was blind to the two largest files,
-    // build.zig and tools/parity_harness.zig -- the build script and the gate driver. build.zig
-    // has since come under the line: its module graph, ISA table, gate tables, checks and test
-    // artifacts moved into the build/ package, and the baseline ratcheted 2 -> 1 rather than
-    // being waived. tools/parity_harness.zig is the one left, waived at
-    // baseline 2 -- but a THIRD (or growth of a smaller file past the line) fails the gate. Two
-    // earlier splits ratcheted this down: syzygy/wdl.zig 832 -> wdl 490 + registry 371, and
-    // shell/engine.zig 505 -> the engine.zig face (116) + engine/session.zig driver (413).
-    .{ .step = "loc", .script = "tools/loc_lint.sh", .desc = "god-file structural gate: no new .zig file >= 500 lines (ratchets down)", .env_name = "LOC_BASELINE", .env_value = "1", .in_parity = true },
+    // build.zig and tools/parity_harness.zig -- the build script and the gate driver. Both have
+    // since come under the line into packages the scan still reaches (`find tools -name '*.zig'`
+    // is recursive, so a subdirectory hides nothing), and the baseline ratcheted 2 -> 1 -> 0
+    // rather than either being waived. At 0 the gate is absolute: ANY file reaching 500 lines
+    // fails it, which is the state to defend rather than the one to argue an exception into.
+    .{ .step = "loc", .script = "tools/loc_lint.sh", .desc = "god-file structural gate: no .zig file >= 500 lines", .env_name = "LOC_BASELINE", .env_value = "0", .in_parity = true },
     // Gate docs/ against the tree it describes. Docs are accurate when written and rot where
     // the code moves under them: a hostile audit found a path pointing at a split-away module,
     // the bench anchor quoted as 2067208 in five places while build.zig said otherwise, and link

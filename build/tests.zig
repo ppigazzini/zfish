@@ -277,7 +277,9 @@ pub fn register(ctx: Context) void {
         "src/shell/option_model.zig",
         "tools/native_arch.zig",
         "tools/fetch_net.zig",
-        "tools/parity_harness.zig",
+        // The parity harness's pure half: the info/bestmove parse and the field diff. The
+        // gate builders around it drive a real engine, so only this file is unit-testable.
+        "tools/parity/structured_diff.zig",
     }) |src_path| {
         const file_test = b.addTest(.{
             .root_module = b.createModule(.{

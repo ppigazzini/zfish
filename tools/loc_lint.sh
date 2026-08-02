@@ -4,8 +4,8 @@
 # The invariant: no repo-owned .zig file should grow into a god-file. An earlier decomposition
 # reached "0 files >= 500 lines"; later-grown files (the Syzygy prober wdl.zig, the session
 # facade engine.zig) re-crossed it, and nothing gated the property -- so it drifted back. This
-# is that gate. Both were since split back under the line; the remaining waived files are the
-# build script and the parity harness (cohesive-not-god).
+# is that gate, and the baseline is back at 0: the last two waivers, the build script and the
+# parity harness, each became a package (build/, tools/parity/) instead of an exception.
 #
 # It counts .zig files with >= LOC_THRESHOLD (default 500) lines and ratchets like
 # the headless gate: LOC_BASELINE is the currently-allowed count; the gate FAILS if
@@ -21,10 +21,11 @@ set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 THRESHOLD="${LOC_THRESHOLD:-500}"
-BASELINE="${LOC_BASELINE:-1}"
-# (build/structural.zig's loc row passes LOC_BASELINE; the default here matches the current
-#  waived set: tools/parity_harness.zig alone. build.zig came under the line when its four
-#  clusters moved into the build/ package.)
+BASELINE="${LOC_BASELINE:-0}"
+# (build/structural.zig's loc row passes LOC_BASELINE; the default here matches it. Both
+#  former waivers came under the line by moving their clusters into a package -- build.zig
+#  into build/, the parity harness into tools/parity/ -- which this scan still reaches, since
+#  `find` recurses.)
 
 count=0
 tmp="$(mktemp)"
