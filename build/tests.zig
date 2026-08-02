@@ -196,6 +196,22 @@ pub fn register(ctx: Context) void {
     });
     fuzz_step.dependOn(&b.addRunArtifact(tb_fuzz_test).step);
 
+    // Fuzz the same file END TO END: parse an image into a registered TBTable and probe it, which
+    // is the only way to reach an invariant the header parse accepts and the PROBE relies on. This
+    // root DOES need the module graph -- the same imports `tablebase` carries, since it drives
+    // registry/table_load/wdl rather than the decoder cluster alone.
+    const tb_probe_fuzz_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/platform/syzygy/fuzz_probe.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    for ([_][]const u8{ "tb_source", "position", "state_list", "movegen", "board_core", "thread_runtime" }) |name|
+        tb_probe_fuzz_test.root_module.addImport(name, mods.get(name).?);
+    fuzz_step.dependOn(&b.addRunArtifact(tb_probe_fuzz_test).step);
+
     // Report what the fuzzer actually EXECUTED. `zig build fuzz --fuzz` exits 0 whether it ran
     // half a billion inputs or three, and prints no total, so a lane that stopped fuzzing reads
     // exactly like one that found nothing. This reads the per-artifact execution counters the

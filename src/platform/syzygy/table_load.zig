@@ -80,7 +80,10 @@ fn loadFile(t: *TBTable, ext: []const u8, magic: [4]u8) ?[]const u8 {
 // or hostile table can drive every offset past the end -- which ReleaseFast does not check. The
 // caller must then treat the table exactly as a missing one; a half-parsed table left reachable
 // hands the probe empty regions and, before this bound existed, a null `[*]` deref.
-fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
+// `pub` for the fuzz target (fuzz_probe.zig), which parses an image into a registered TBTable and
+// publishes it by hand -- reaching the probe without a filesystem. `mapped`/`mappedDtz` below are
+// the only other callers, and the only ones the shipped binary has.
+pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
     // Untrusted input, once per table, never on the probe path -- see decode.setSizes.
     @setRuntimeSafety(true);
     const e = t.info();

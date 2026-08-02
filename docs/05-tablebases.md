@@ -27,6 +27,8 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | `src/platform/syzygy/tables.zig` | discovery: scan `SyzygyPath`, enumerate every material configuration up to 7 men, build the canonical stem, count files, set `maxCardinality` |
 | `src/platform/syzygy/registry.zig` | the material-key → `TBTable` map and the arena behind it — everything derived from the material configuration, and nothing a file said |
 | `src/platform/syzygy/table_load.zig` | the lazy `.rtbw` / `.rtbz` load into a 64-byte-aligned buffer, and the `set` / `setDtzMap` parse of each `(side, file)` `PairsData` record |
+| `src/platform/syzygy/fuzz_targets.zig` | the unit fuzz targets: `setSizes` over arbitrary header bytes, `decompressPairs` over a fuzzer-built table |
+| `src/platform/syzygy/fuzz_probe.zig` | the end-to-end fuzz target: parse an image into a registered `TBTable` and probe it, with no file and no fixture |
 | `src/platform/syzygy/probe.zig` | the data model (`LR`, `SparseEntry`, `PairsData`, `EntryInfo`) plus the pure helpers `setGroups` and `setSymLen` |
 | `src/platform/syzygy/encode.zig` | the position→index geometry: `binomial`, `map_kk`, `map_a1d1d4`, `map_b1h1h7`, `map_pawns`, `lead_pawn_idx`, `lead_pawns_size` |
 | `src/platform/syzygy/decode.zig` | the PROBE-time half: the RE-PAIR / canonical-Huffman decoder (`decompressPairs`), the unaligned byte readers, the `TBFlag` bits |
