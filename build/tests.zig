@@ -315,7 +315,7 @@ pub fn register(ctx: Context) void {
             for (module_specs) |s| {
                 if (std.mem.eql(u8, s.name, name)) break :blk s.path;
             }
-            @panic("module_unit_test_names references an unknown module");
+            std.debug.panic("module_unit_test_names names '{s}', which build/modules.zig specs does not declare", .{name});
         };
         // Create a fresh module (not the shared exe module) so the test artifact links libc for
         // the c_allocator-using `test {}` blocks without mutating the exe module.

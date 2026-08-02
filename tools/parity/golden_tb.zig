@@ -182,6 +182,10 @@ pub fn buildTbSearch(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     // Remove the scratch EPD on the way out. `export_net`'s builder already did this for its
     // temp; these two did not, so every run left a file behind in the engine's own runtime
     // directory -- where the next `bench <file>` reads whatever an interrupted run left.
+    //
+    // The name is fixed, so two of THIS gate running at once in one checkout would race it.
+    // Left fixed on purpose: `zig build` already serialises a step against itself, and two
+    // concurrent builds in one tree collide on .zig-cache long before they reach here.
     defer Io.Dir.cwd().deleteFile(io, "tb_search_tmp.epd") catch {};
     for (rows) |r| {
         try Io.Dir.cwd().writeFile(io, .{ .sub_path = "tb_search_tmp.epd", .data = r.fen });
