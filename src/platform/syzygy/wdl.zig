@@ -15,6 +15,7 @@
 const std = @import("std");
 
 const registry = @import("registry.zig");
+const table_load = @import("table_load.zig");
 const probe = @import("probe.zig");
 const decode = @import("decode.zig");
 const encode = @import("encode.zig");
@@ -230,11 +231,11 @@ fn mapScoreDtz(t: *TBTable, d: *const PairsData, value_in: i32, wdl: i32) i32 {
         const mi: usize = d.map_idx[wdl_map[@intCast(wdl + 2)]];
         const off = mi + @as(usize, @intCast(value));
         // `value` is decoded from the compressed payload, so `off` is not bounded by anything
-        // the header stated -- only the map region itself is (registry.setDtzMap carves it).
+        // the header stated -- only the map region itself is (table_load.setDtzMap carves it).
         // Leave the raw value unmapped rather than read past the map on a corrupt table.
         const map = t.dtz_map;
         if (flags & decode.flag_wide != 0) {
-            if (off * 2 + 2 <= map.len) value = registry.rdU16(map[off * 2 ..]);
+            if (off * 2 + 2 <= map.len) value = decode.rdU16(map[off * 2 ..]);
         } else {
             if (off < map.len) value = map[off];
         }
@@ -292,7 +293,7 @@ fn probeTable(pos: *const Position, comptime dtz: bool, wdl_score: i32, out_stat
         out_state.* = probe_fail;
         return 0;
     };
-    const ok = if (dtz) registry.mappedDtz(t) else registry.mapped(t);
+    const ok = if (dtz) table_load.mappedDtz(t) else table_load.mapped(t);
     if (!ok) {
         out_state.* = probe_fail;
         return 0;

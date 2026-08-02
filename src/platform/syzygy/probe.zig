@@ -38,7 +38,7 @@ comptime {
 // Hold low-level indexing/decompression state for one (side, file) of a table. The file-backed
 // fields are SLICES into the loaded table bytes, not `[*]` pointers: the table is an untrusted
 // external file, and a many-item pointer carries no length for either the parse or the decoder to
-// check against. registry.set fills them by carving `buf` with a bound (`take`), so a truncated
+// check against. table_load.set fills them by carving `buf` with a bound (`take`), so a truncated
 // file is rejected at load; the remaining slices are owned allocations.
 pub const PairsData = struct {
     flags: u8 = 0,
