@@ -10,6 +10,13 @@
 //! __ulock) and the ported steady clock under real concurrency and wall-clock timing. Every
 //! gate that must not truncate builds on `Interactive`; the one-shot capture in `run.zig` is
 //! for everything that can be fed a whole script and read afterwards.
+//!
+//! LIMIT, and it is deliberate: `fillUntil` blocks until the marker or EOF, with NO deadline.
+//! An engine that never answers wedges the gate until the CI job's own timeout kills it,
+//! with no diagnostic. A watchdog would trade that for a worse failure -- a slow runner
+//! crossing the deadline turns a correct engine red, and a flaky gate is not evidence. The
+//! hang itself is covered from the other side: `parity-stress` drives go/stop storms and
+//! construct/destroy churn precisely to make one happen where it can be attributed.
 const std = @import("std");
 const Io = std.Io;
 const run = @import("run.zig");

@@ -119,7 +119,20 @@ fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
     std.process.exit(0);
 }
 
-pub fn main(init: std.process.Init) !void {
+// EXIT 1 MEANS "THE GOLDEN MOVED", AND NOTHING ELSE. A `!void` main hands an error to Zig's
+// default handler, which prints `error: FileNotFound` and exits 1 -- the same status a real
+// drift produces, from a harness that never reached the comparison. Catch here instead and
+// route every failure through `fail`, which is exit 2: a caller can then tell "the engine's
+// output changed" from "the harness could not run the engine at all", which is the whole
+// point of having two statuses.
+pub fn main(init: std.process.Init) void {
+    fallibleMain(init) catch |err| fail(
+        "parity_harness: {s} before any comparison -- a harness failure, not a golden mismatch",
+        .{@errorName(err)},
+    );
+}
+
+fn fallibleMain(init: std.process.Init) !void {
     const io = init.io;
     const gpa = init.gpa;
 
