@@ -65,6 +65,18 @@ Note a corollary: making a shared table `@atomic` for search-time races also mak
 *clear* scalar, because an atomic store never vectorizes. Keep the clear on a plain
 view of the same memory when it runs in an exclusive phase.
 
+A **decay** is the same shape with a correctness step attached. `ageMainHistory`'s
+`v * 729 / 1024` stays scalar for the reason above; widening it means sign-extending a
+block of `i16` to `i32`, scaling, and truncate-dividing in registers. What makes that
+rewrite legal is the rounding: `@divTrunc` by a power of two rounds toward zero exactly as
+the scalar form does — not toward negative infinity — and LLVM lowers a constant divisor
+to bias-and-shift rather than a division, so the written values are bit-identical. Make
+that argument explicitly before widening a decay — a rounding-mode slip is a behaviour
+change, not a speedup, and it is the one thing this rewrite can silently get wrong.
+
+Route every such fill through `shared_history.fillI16Slice` rather than re-spelling the
+loop per table. One lane width to tune, and a new table cannot silently stay scalar.
+
 ## Reach for `@Vector` before hand-written SIMD
 
 The NNUE feature transformer is written once in portable `@Vector` code. LLVM lowers
@@ -140,6 +152,19 @@ distinct instructions and Zig reaches them by casting from a saturated value:
 | `_mm512_cvtsepi32_epi16`, `_mm512_cvtsepi16_epi8` | `@intCast` on a clamped vector |
 | `_mm_unpacklo_epi8` / `_mm_unpackhi_epi8`, `_mm_shuffle_epi32`, `_mm_shufflelo_epi16` | `@shuffle` with comptime index vectors |
 
+Pick the narrow whose **saturation subsumes a clamp you are already paying for**. The
+feature transform owes its output a `max(0, ·)` and a narrow, and one `vpackuswb`
+(`nnue_transform_packus.zig`) supplies both, because saturating to zero *is* the clamp —
+worth two `vpmaxsw`, two `vpmovwb` and a `vinserti64x4` per 64 output bytes, an emitted
+loop of 96 operations per perspective instead of 120, and a 5.8% smaller
+`evaluateBucketRaw`. Both axes matter: the body shrinks as well as the work.
+Two conditions make that legal to do. State the bit-exactness argument (here: a signed
+`vpmulhw` carries the sign into the product, `vpackuswb` saturates it to zero, and a
+positive product never saturates since `(255 << 7) * 255 >> 16 == 127`) and pin it with a
+scalar-reference test over the edge values. And gate on **the CPU feature that owns the
+instruction** — `avx512bw`, not the tier name — since a tier gate that happens to imply it
+today is a gate on the wrong thing.
+
 **Comparison and masks.** Zig comparisons on vectors yield `@Vector(N, bool)`, which has no
 guaranteed memory layout — consume it with `@select`/`@reduce`, never `@bitCast` it (see below):
 
@@ -197,6 +222,38 @@ const vpdpbusd512 = struct {
 }.@"llvm.x86.avx512.vpdpbusd.512";
 ```
 
+## Assert alignment at the load site, not on the declaration
+
+Alignment is a property of the pointer — and Zig loses it at the first runtime offset.
+Slicing a many-item pointer degrades the result to the **element** alignment, so
+`(weights + row)[d..][0..V].*` on a `[*]const i16` is an `align(2)` load in the type
+system however the buffer was allocated. That is free on AVX2 and AVX-512, whose VEX and
+EVEX encodings fold an unaligned operand — and expensive on the 128-bit tier, where a
+non-VEX SSE op folds a load into its `m128` operand only when 16-byte alignment is
+*provable*. The whole `sse41` tier paid a separate `movdqu` per 16 weight bytes where
+upstream's `alignas(64)` weights fold straight into every `pmaddubsw`/`paddw`/`pminsw`.
+
+Declaring `align(64)` on the parameter does not survive the offset. Restore it at each
+load instead — `nnue_acc_rowops.zig`'s `loadVec` and `nnue_affine.zig`'s `loadW`:
+
+```zig
+const q: *align(A) const [V]i16 = @alignCast(@ptrCast(p + off));
+return q.*;
+```
+
+The cast costs nothing in ReleaseFast and is a **checked** assertion in ReleaseSafe,
+which is what keeps it honest: every caller's offset is a multiple of `A` by layout, and
+the safe build proves it rather than the comment claiming it.
+
+The limit is which tier pays. On a `perf_callgrind.sh` run over one tree, restoring the
+alignment moves whole-program Ir **−6.04%** at `x86-64-sse41-popcnt` — ratio against the
+oracle 1.062 to 0.998 — and nothing at avx2 or avx512, which read flat to four decimal
+places. So a whole-program ratio that looks healthy on three tiers can carry a
+six-percent defect on the fourth, and no ratio names which one: diff the disassembly of
+the kernel per tier, where upstream's `pmaddubsw 0x80(%rdx,%r8,1)` reads against zfish's
+`movdqu`+`movdqa`+`pmaddubsw`. **The addressing mode is part of the kernel — read the
+operands, not just the mnemonics.**
+
 ## Build tables and lane patterns at comptime
 
 Where C++ needs a `constexpr` function or a generated header, Zig computes the table in a
@@ -245,6 +302,31 @@ the feature transform and the accumulator row ops each carry their own, because 
 independently found different optima. Treat a width constant as tuned for the tier it was
 measured on, and re-measure before assuming it transfers.
 
+**The chain count is the same kind of knob.** How many independent accumulator chains the
+affine splits into is tuned per ISA exactly like a width — three at AVX-512-VNNI, where
+`vpdpbusd`'s latency needs them, and two at AVX2, whose narrower accumulators are cheaper
+to keep live (measured −16.7M instructions there, with the other tiers comptime-untouched
+because they never instantiate that arm).
+
+**Wider is not monotone, and the failure modes differ by direction.** Above the tuned
+value the tile stops fitting: 256 lanes at AVX2 measured as an instruction win and a
+**cycle loss**, because 16 `ymm` cannot hold the tile plus the widen transient and the
+extra memory traffic outweighs the removed instructions. Above that again the cost moves
+to the front end: a 512-lane row tile at AVX-512 is a real −3.4% instruction win that does
+**not** land, because using 16 `zmm` instead of 32 leaves LLVM no registers to unroll the
+row loop by two and `applyCombined`'s body grows 51% — an instruction win paid for in
+instruction *fetch*. Sweep a width on cycles at the tier that runs, and read the emitted
+body size, not only the instruction axis.
+
+**A falsified width is falsified in a context, so re-take one only when you can name what
+moved.** The AVX2 apply tile carries 128 lanes against two `perf_counters` sweeps of that
+same knob that read against it, and what separates the readings is the register and
+traffic pressure around the tile — the arena, the routing and the transform body all
+changed between them — not the sweep. The rule that makes this safe rather than a
+licence: state the context change first, predict the direction, and require the result to
+clear the noise floor by a margin (this one reads instructions 0.937, six times the
+floor). "Try it again" is not a method.
+
 ## Dispatch ISA tiers at comptime, from one source
 
 The `-Darch` tiers build from the same code; arch-specific choices are `comptime`
@@ -260,6 +342,31 @@ The busy files — `search_driver`, `search_main`, `movepick`, `move_do`,
 history stats, NNUE weights) are allocated once at setup through a single injected
 allocator and reused; the per-node path touches only stack and pre-sized buffers.
 Decide memory at startup, not per operation.
+
+## Leave a fully-written buffer `undefined`
+
+A zero-init the producer overwrites is a dead store, and the optimizer removes it only
+where it can see the writer — across a call, through a pointer, or into an arena it
+cannot, so the write is real work. Both scales cost real instructions on the bench. Per
+node: the accumulator update's scratch is `undefined`, worth 4.18% of instructions, and
+`evaluateBucketRaw`'s 128-byte `concat` likewise, because the four activations fill every
+byte before `fc_1` reads one. At startup: `memory` hands out large-page blocks
+uninitialized, since the net parse, `resizeState`'s clear and worker construction rewrite
+them — which holds the bench's `memset` self-cost at 107.8 M instructions rather than
+424.6 M (`perf_callgrind.sh`, one tree).
+
+The condition is `undefined` **where a producer provably writes every byte before any
+read**, and it is the proof that makes it safe rather than the pattern: the feature-
+transformer arena is tiled gaplessly by the parse, pinned by a `comptime` assertion in
+`nnue_parse.zig` so a dimension change cannot open a padding gap. Where a fill is
+load-bearing it stays — `resizeState` must clear the table it resizes, and no gate here
+can see otherwise, none of them having a clock; the sibling port that dropped it measured
+roughly 90–118 Elo.
+
+The limit: reading `undefined` is Illegal Behaviour and the shipped ReleaseFast build
+checks nothing, so the detector lives in the safe modes. `memory.poison_uninitialized`
+fills those blocks with `0xAA` in Debug and ReleaseSafe, so a read-before-write fails
+loudly instead of riding whatever the heap held.
 
 ## Keep memory safety where the input is not yours
 
@@ -405,6 +512,34 @@ pays off when the next state is data-driven and the branch predictor cannot gues
 a staged move picker advances through its stages in order, so the predictor already
 has them and the computed goto only defeats it. Nothing in this tree uses a labeled
 switch — that is the decision, not an omission.
+
+## Treat `@prefetch` as a cycles-only lever, and hint the exact slot
+
+`@prefetch` moves no work: it retires as one instruction and changes no value. So every
+deterministic gate here is structurally blind to it — the signature, perft and every eval
+golden read identical across a prefetch that hints the **wrong address**, and callgrind
+models no prefetcher on either engine. Instructions and nps can only show a correct
+prefetch as a small loss, never as a win. Adjudicate one on `perf_counters` cycles at the
+tier that runs, or on a fastchess Elo match, and treat any Ir or nps reading of it as the
+instrument rather than the change.
+
+Two placement rules, both mirroring upstream's `position.cpp:1006-1010`:
+
+- **Issue it where the address becomes final, not where the consumer sits.** The hints
+  live *inside* `doMove` (`move_do.zig`), at the point the child's keys are final —
+  between there and the end of the make there is still the checkers scan, `setCheckInfo`
+  and the repetition walk to cover. A hint issued after the make returns has none of that
+  lead time, which is the whole value of the hint.
+- **Hint the slot the consumer indexes, not the row base.** A pawn-history row is 2 KiB,
+  32 cache lines, so hinting `&row[0]` lands on the wrong line for every `(pc, to)`
+  outside the first; the address to pass is the one the consumer computes, `pc * 64 + to`
+  in i16 units (`history.zig`). Only a cache profile can see this wrong — every
+  deterministic gate above is blind to it by construction.
+
+The limit, and it binds hard: more prefetching is not better. A faithful port of
+upstream's full seven-hint block reproduces its cache-miss improvement, costs 0.5–0.9%
+instructions, and reads **−10.1 ±18.2 Elo** over 1000 self-play games — certain cost,
+unproven benefit. Each site earns its place on its own measurement.
 
 ## Measure differentially, before attributing
 
