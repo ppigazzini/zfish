@@ -149,6 +149,14 @@ Nothing in the package decides its own correctness: a builder that returns a dif
 fingerprint fails its committed golden, so reshaping one is gated by `zig build parity`
 rather than by review.
 
+**Read the harness's exit code, not its log.** `0` passed, `1` means the golden moved and
+nothing else, `2` means the harness never reached the comparison — a missing binary, an
+unreadable golden, a spawn that failed. Keeping `1` for drift alone is why `main` catches
+its own errors instead of returning them: Zig's default handler exits 1, which would make
+a dead harness indistinguishable from a real regression. The binary is built ReleaseSafe
+for the same reason — it decides whether the engine is correct, and it spawns a subprocess
+and waits, so a safety check costs nothing it can measure.
+
 The gates fall into kinds:
 
 **Signature** — the whole-engine invariant.
@@ -282,9 +290,13 @@ is not in the table at all.
 
 **`loc_lint.sh`** counts repo-owned `.zig` files at or above a line threshold and
 ratchets: the gate fails if the count exceeds the baseline (a new god-file appeared,
-or one grew past the line) and nudges if it drops. A small waived set of cohesive
-files stays allowed — splitting a cohesive file into coupled micro-files is the
-anti-pattern, not the fix. When the gate reddens, split at the **cold seam**:
+or one grew past the line) and nudges if it drops. **The baseline is 0 — there is no
+waived file left to cite.** Both that ever existed became packages rather than
+exceptions: `build.zig` → `build/`, and the parity harness → `tools/parity/` (`find`
+recurses, so a subdirectory hides nothing from the scan). Splitting a cohesive file
+into coupled micro-files is still the anti-pattern; the answer that worked twice was a
+package with a stated layering, not a scatter. When the gate reddens, split at the
+**cold seam**:
 parsers, table builders and init paths move out; judge a file's length by its cold
 lines and leave one long specialized hot body alone. (zfish compiles as one LLVM
 module, so a split can never un-inline anything — the seam choice is about

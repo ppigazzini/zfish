@@ -23,12 +23,15 @@ For the zones and the module graph, see [00-architecture.md](00-architecture.md)
 | `numa/replication.zig` | `NumaReplicationContext` / `NumaReplicatedBase`: the replica registry |
 | `tablebase.zig` | the Syzygy facade the engine's `tb_source` seam binds to |
 | `syzygy/tables.zig` | file discovery: scan `SyzygyPath`, count `.rtbw`/`.rtbz`, report cardinality |
-| `syzygy/registry.zig` | material key → `TBTable`, lazy file load, `set` / `setDtzMap` parsing |
+| `syzygy/registry.zig` | material key → `TBTable`, the record itself, and the arena — everything derived from the material configuration, and nothing a file said |
+| `syzygy/table_load.zig` | the lazy `.rtbw`/`.rtbz` load and the `set` / `setDtzMap` parse of what the file says |
 | `syzygy/probe.zig` | the probe data model (`PairsData`, `LR` btree) + `setGroups` / `setSymLen` |
 | `syzygy/encode.zig` | position → index geometry (binomials, lead-pawn tables) |
 | `syzygy/decode.zig` | the RE-PAIR / canonical-Huffman decoder (probe-time) |
 | `syzygy/decode_header.zig` | the file header parse + bounded region carve (load-time) |
 | `syzygy/wdl.zig` | the probe algorithm: `doProbeTable`, `probeTable`, `searchWdl`, `probeDtz`, `mapScoreDtz`, and the surfaces `probeFen` / `probeWdlPos` |
+| `syzygy/fuzz_targets.zig` | the unit fuzz targets: `setSizes` over header bytes, `decompressPairs` over a fuzzer-built table |
+| `syzygy/fuzz_probe.zig` | the end-to-end fuzz target: parse an image into a registered `TBTable` and probe it, with no file and no fixture |
 | `clock.zig` | the monotonic millisecond clock |
 | `libc.zig` | the thin libc binding (`malloc`, `free`, `exit`) |
 | `runtime_hooks.zig` | the lifecycle hook registry (worker build/destroy/clear, setup-state handoff, `shared_state_clear_histories` / `shared_state_insert_history`, `verify_thread_graph`) |
@@ -137,7 +140,9 @@ teardown `deinit`s and frees it. See [04-multithreading.md](04-multithreading.md
 ## Tablebases
 
 `tablebase.zig` and `syzygy/` hold the Syzygy prober: discovery and cardinality, the
-lazy table load, and the WDL/DTZ probe path. The engine reaches it through the
+lazy table load, and the WDL/DTZ probe path. The load half splits on what a claim comes
+FROM — `registry.zig` owns what the material configuration implies, `table_load.zig` owns
+what the file says, and the second is validated against the first. The engine reaches it through the
 `tb_source` seam. The whole vertical — the tables, the probe path, root and in-search
 probing, and the UCI options that gate it — is covered in
 [05-tablebases.md](05-tablebases.md).
