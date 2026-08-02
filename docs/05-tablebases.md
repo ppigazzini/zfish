@@ -385,7 +385,7 @@ cannot masquerade as a table, and skips files already present. The tables are ne
 committed. Every `tb-*` gate depends on this step and runs with `cwd = resources/`, so
 `setoption name SyzygyPath value syzygy` resolves to the fetched set.
 
-The gates live in `tools/parity_harness.zig`, each diffed against a golden in `tools/`:
+The gates live in `tools/parity/golden_tb.zig`, each diffed against a golden in `tools/`:
 
 | Gate | Golden | Asserts |
 | --- | --- | --- |

@@ -325,7 +325,7 @@ everything else is measured against. Multi-thread runs cannot be snapshot-compar
 all, so the gates assert a *band* and a set of well-formedness properties instead of
 equality.
 
-`tools/parity_harness.zig` drives both (see [09-tooling-ci.md](09-tooling-ci.md) for how
+`tools/parity/gate_runtime.zig` drives both (see [09-tooling-ci.md](09-tooling-ci.md) for how
 the gates are wired into `zig build`, and [CONTRIBUTING](../CONTRIBUTING.md) for what to
 run before a commit):
 
