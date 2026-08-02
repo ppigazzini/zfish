@@ -100,8 +100,10 @@ pub const Interactive = struct {
     }
 
     pub fn send(self: *Interactive, bytes: []const u8) void {
-        self.fw.interface.writeAll(bytes) catch {};
-        self.fw.interface.flush() catch {};
+        // Report a failed write. Swallowing it makes a DEAD ENGINE look like a gate that
+        // timed out reading, which sends the next reader after the wrong bug.
+        self.fw.interface.writeAll(bytes) catch fail("session: write to the engine failed (it exited early?)", .{});
+        self.fw.interface.flush() catch fail("session: flush to the engine failed (it exited early?)", .{});
     }
 
     pub fn buffered(self: *Interactive) []const u8 {
@@ -142,7 +144,7 @@ pub const Interactive = struct {
 };
 
 // Scan a captured transcript for the last score/time before the first bestmove, and the move.
-pub fn parseOutcome(text: []const u8) Outcome {
+fn parseOutcome(text: []const u8) Outcome {
     var out = Outcome{};
     var li = lines(text);
     while (li.next()) |raw| {

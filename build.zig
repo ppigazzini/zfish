@@ -7,7 +7,6 @@ const addTestRun = buildpkg.tests.addTestRun;
 // One definition, in build/gates.zig -- build.zig kept a byte-identical copy after the
 // gate table moved, which is how two implementations of one helper start.
 const addHarnessRun = buildpkg.gates.addHarnessRun;
-const runAndTrimOrNull = buildpkg.config.runAndTrimOrNull;
 const repoPath = buildpkg.config.repoPath;
 const graph = buildpkg.modules;
 const arch_cfg = buildpkg.arch;
@@ -70,7 +69,13 @@ pub fn build(b: *std.Build) void {
         })) catch @panic("OOM building module graph");
     }
     const module_edges = graph.edges;
-    for (module_edges) |e| mods.get(e.from).?.addImport(e.imp, mods.get(e.to).?);
+    // Name the edge rather than unwrapping blind: both ends are strings in a 380-row table, so a
+    // typo is a panic with no operand unless the message carries one.
+    for (module_edges) |e| {
+        const from = mods.get(e.from) orelse std.debug.panic("module edge names unknown module '{s}'", .{e.from});
+        const to = mods.get(e.to) orelse std.debug.panic("module edge '{s}' names unknown module '{s}'", .{ e.from, e.to });
+        from.addImport(e.imp, to);
+    }
     mods.get("misc").?.addImport("build_options", build_options_module);
     // search_acc reads build_options.stub_eval to swap the NNUE forward pass for the material
     // stub at comptime (spine isolation, tools/material_eval.sh). Default false, so the shipped
@@ -218,12 +223,17 @@ pub fn build(b: *std.Build) void {
     // perft/eval/misc), so `zig build parity` runs identically on Linux/Windows/macOS with
     // no shell/coreutils dependency. Build it for the HOST (it spawns the engine as a
     // subprocess): in CI each lane builds natively so host == the engine's target.
+    // ReleaseSafe, not ReleaseFast: this binary DECIDES whether the engine is correct, and its
+    // own runtime is one subprocess spawn plus a wait, so optimization buys nothing measurable.
+    // With safety off, a bound the harness slips reads garbage and reports a plausible verdict;
+    // with it on, the same slip is a panic naming the line. A gate that can be quietly wrong is
+    // worse than one that is slow.
     const harness_exe = b.addExecutable(.{
         .name = "parity_harness",
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/parity_harness.zig"),
             .target = b.graph.host,
-            .optimize = .ReleaseFast,
+            .optimize = .ReleaseSafe,
         }),
     });
 
@@ -265,14 +275,17 @@ pub fn build(b: *std.Build) void {
     const signature_reference = signature_ref orelse "2508687";
     const signature_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "signature", signature_reference, "check");
 
+    // Interpolate the reference rather than repeating it: a second copy in the help text is a
+    // number an upstream sync must remember to move, and the one it forgets is the one a reader
+    // trusts.
     const signature_step = b.step(
         "signature",
-        "Verify the Zig-built Stockfish bench signature (== 2508687 by default; -Dsignature-ref to override) via the pure-Zig parity harness",
+        b.fmt(
+            "Verify the Zig-built Stockfish bench signature (== {s} by default; -Dsignature-ref to override) via the pure-Zig parity harness",
+            .{signature_reference},
+        ),
     );
     signature_step.dependOn(&signature_cmd.step);
-
-    // Run the per-position search-fingerprint differential harness. Localize a
-    // bench-signature mismatch to a single position + drifted field.
 
     // Register every golden gate from build/gates.zig's table: 21 rows, each a check+update
     // pair. Each row carries its own rationale as a comment there; this is the single loop
@@ -287,22 +300,24 @@ pub fn build(b: *std.Build) void {
         .goldenPath = repoPath,
     });
 
-    // Run the deterministic non-bench search-mode harness (node-limit / MultiPV /
-    // searchmoves) -- validate iterative_deepening control flow beyond bench.
-
-    // Pin the FEN-validation diagnostics (piece/pawn/king counts, side-to-move, castling,
-    // en-passant, board length) and the terminate-on-critical-error behaviour -- byte-exact
-    // with upstream's position.cpp messages. Regenerate on an upstream sync.
-
     // Assert via the worktree-based upstream oracle gate that the default (Zig)
     // bench == the PRISTINE upstream Stockfish at UPSTREAM_BASE, built in a persistent
     // git worktree with ZERO vendored C++. It pins to the exact upstream sha we claim to
     // be at, and the oracle build is a cached no-op in steady state (upstream_oracle.sh
     // only rebuilds when BASE moves). Run standalone at sync time.
-    const upstream_base_sha = runAndTrimOrNull(b, &.{
-        "cat",
-        repoPath(b, "tools/upstream/UPSTREAM_BASE"),
-    }) orelse "";
+    // Read the pin with std, not by spawning `cat`: there is no `cat` on Windows, and this
+    // read FAILS SOFT into "" -- an empty base makes the gate run against the wrong upstream
+    // while still exiting 0, which is the same silent-wrong-argument failure the comment below
+    // records for the table-driven version.
+    const upstream_base_sha = blk: {
+        const raw = b.build_root.handle.readFileAlloc(
+            b.graph.io,
+            "tools/upstream/UPSTREAM_BASE",
+            b.allocator,
+            .limited(64),
+        ) catch break :blk "";
+        break :blk std.mem.trim(u8, raw, &std.ascii.whitespace);
+    };
 
     // NOT a build/structural.zig row, deliberately: this gate takes a SECOND argument (the
     // upstream base sha) that no other script gate does, and the table has no axis for it.
@@ -343,19 +358,10 @@ pub fn build(b: *std.Build) void {
         .net_step = &net_cmd.step,
     });
 
-    // Check multi-thread search sanity. Multi-threaded
-    // search is non-deterministic (Lazy SMP), so this is a tolerance gate, not a
-    // bit-exact golden: at fixed depth on calm positions, Threads {2,4} must emit
-    // a well-formed bestmove and a score of the same kind/sign within a generous
-    // cp band of the deterministic single-thread reference. Catch a runtime that
-    // runs but corrupts result aggregation. Keep out of the core `parity` aggregate
-    // (non-deterministic, sleep-paced).
-
     // Register the two upstream-differential gates (build/structural.zig): bespoke argv
     // shapes, so a function rather than a table row.
     buildpkg.structural.registerUpstream(b, install_step, &net_cmd.step, walk_args, repoPath);
 
-    // sweep tier, so the sweep and the build agree on one detector.
     // ThreadSanitizer race gate. Needs -Dtsan (and -Dlto=false, which -Dtsan forces): the engine
     // races its TT, shared history and per-Worker counters BY DESIGN, and upstream keeps that
     // defined by typing those fields RelaxedAtomic. A missed atomic is undefined behaviour no

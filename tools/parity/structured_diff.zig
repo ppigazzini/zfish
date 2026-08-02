@@ -20,9 +20,9 @@ pub const ScoreKind = enum { none, cp, mate };
 // diffs, parse both sides into a typed record and report the exact field(s) that changed -- so a
 // score/nodes/pv regression is localized to one field instead of eyeballed out of a byte diff.
 
-pub const Tokenizer = std.mem.TokenIterator(u8, .scalar);
+const Tokenizer = std.mem.TokenIterator(u8, .scalar);
 
-pub fn nextInt(t: *Tokenizer) ?i64 {
+fn nextInt(t: *Tokenizer) ?i64 {
     const tok = t.next() orelse return null;
     return std.fmt.parseInt(i64, tok, 10) catch null;
 }
@@ -96,7 +96,7 @@ pub fn optEql(a: ?i64, b: ?i64) bool {
     return a.? == b.?;
 }
 
-pub fn diffIntField(name: []const u8, g: ?i64, l: ?i64) bool {
+fn diffIntField(name: []const u8, g: ?i64, l: ?i64) bool {
     if (optEql(g, l)) return false;
     std.debug.print("    {s}: golden={?d} live={?d}\n", .{ name, g, l });
     return true;
@@ -104,7 +104,7 @@ pub fn diffIntField(name: []const u8, g: ?i64, l: ?i64) bool {
 
 // Provide pure predicates (no I/O -> unit-testable): does any parsed field differ? structuredFieldDiff
 // prints the per-field breakdown for the same decision, so these mirror its "any differ" result.
-pub fn infoLinesDiffer(g: InfoLine, l: InfoLine) bool {
+fn infoLinesDiffer(g: InfoLine, l: InfoLine) bool {
     return !optEql(g.depth, l.depth) or !optEql(g.seldepth, l.seldepth) or
         !optEql(g.multipv, l.multipv) or g.score_kind != l.score_kind or
         !optEql(g.score_val, l.score_val) or !optEql(g.nodes, l.nodes) or
@@ -112,7 +112,7 @@ pub fn infoLinesDiffer(g: InfoLine, l: InfoLine) bool {
         !std.mem.eql(u8, g.pv, l.pv);
 }
 
-pub fn bestmoveLinesDiffer(g: BestmoveLine, l: BestmoveLine) bool {
+fn bestmoveLinesDiffer(g: BestmoveLine, l: BestmoveLine) bool {
     return !std.mem.eql(u8, g.bestmove, l.bestmove) or !std.mem.eql(u8, g.ponder, l.ponder);
 }
 
@@ -120,7 +120,7 @@ pub fn bestmoveLinesDiffer(g: BestmoveLine, l: BestmoveLine) bool {
 // recognized (info / bestmove) shape AND at least one PARSED field differs -- if the lines
 // differ only in an un-parsed field (wdl / time / nps), return false so the caller keeps the
 // raw `< / >` fallback rather than claiming "no field differs".
-pub fn structuredFieldDiff(golden_line: []const u8, live_line: []const u8) bool {
+fn structuredFieldDiff(golden_line: []const u8, live_line: []const u8) bool {
     if (parseInfoLine(golden_line)) |g| {
         const l = parseInfoLine(live_line) orelse return false;
         var any = false;

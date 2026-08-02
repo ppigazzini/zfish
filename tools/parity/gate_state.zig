@@ -410,7 +410,7 @@ pub fn runPonder(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     {
         var cmdbuf: [96]u8 = undefined;
         const mark = s.buffered().len;
-        s.send(std.fmt.bufPrint(&cmdbuf, "position startpos moves {s} {s}\ngo wtime 3000 btime 3000 ponder\n", .{ x, y }) catch unreachable);
+        s.send(std.fmt.bufPrint(&cmdbuf, "position startpos moves {s} {s}\ngo wtime 3000 btime 3000 ponder\n", .{ x, y }) catch fail("gate_state: command buffer too small for the case table", .{}));
         if (!s.fillUntil("\ninfo depth")) fail("ponder: ponder search never started (no info)", .{});
         s.send("ponderhit\n");
         if (!s.fillUntil("\nbestmove")) fail("ponder: ponderhit produced no bestmove (hang?)", .{});
@@ -440,7 +440,7 @@ pub fn runPonder(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     if (!wellFormedMove(z)) fail("ponder: ponderhit bestmove '{s}' is malformed", .{z});
     if (!wellFormedMove(w)) fail("ponder: stop bestmove '{s}' is malformed", .{w});
     var posbuf: [96]u8 = undefined;
-    const pos_xy = std.fmt.bufPrint(&posbuf, "position startpos moves {s} {s}", .{ x, y }) catch unreachable;
+    const pos_xy = std.fmt.bufPrint(&posbuf, "position startpos moves {s} {s}", .{ x, y }) catch fail("gate_state: command buffer too small for the case table", .{});
     if (!ponderMoveLegal(gpa, io, bin, pos_xy, z)) fail("ponder: ponderhit move '{s}' is illegal after {s} {s}", .{ z, x, y });
     if (!ponderMoveLegal(gpa, io, bin, "position startpos moves e2e4", w)) fail("ponder: stop move '{s}' is illegal after e2e4", .{w});
 
