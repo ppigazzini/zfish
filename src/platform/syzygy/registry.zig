@@ -39,6 +39,9 @@ pub const TBTable = struct {
     has_pawns: bool,
     has_unique_pieces: bool,
     pawn_count: [2]u8,
+    // Colour whose pawns lead the encoding (SF's `c` in the TBTable ctor), 0 = white. Only
+    // meaningful when has_pawns; `set` checks the file's own leading piece against it.
+    lead_color: u8,
     sides: usize, // WDL: keep 2 when key != key2, else 1. Treat DTZ as always one-sided (1 side).
     stem: [8]u8 = @splat(0), // canonical file stem, e.g. "KQvK"
     stem_len: usize = 0,
@@ -164,6 +167,7 @@ pub fn register(pieces: []const u8) void {
             @intCast(if (lead_white) wp else bp),
             @intCast(if (lead_white) bp else wp),
         },
+        .lead_color = if (lead_white) 0 else 1,
         .sides = if (key != key2) 2 else 1,
     };
     buildStem(pieces, t);

@@ -153,7 +153,7 @@ the sparse indices.
 
 **A table file is untrusted input, and the parse is bounded accordingly.** Every offset
 `set` advances comes out of the file itself, so a truncated or hostile `.rtbw`/`.rtbz` can
-drive the cursor past the end — which the shipped ReleaseFast build does not check. Three
+drive the cursor past the end — which the shipped ReleaseFast build does not check. Five
 things hold the line, and they are worth keeping distinct:
 
 | Where | What it guarantees |
@@ -161,6 +161,8 @@ things hold the line, and they are worth keeping distinct:
 | `table_load.set` / `setDtzMap` / `decode_header.setSizes` return failure | Every region is carved with a `take` bound, so a file that cannot keep its own size promises is refused. `mapped`/`mappedDtz` then null the base and the probe reports the table **exactly as missing** — never half-parsed and reachable. |
 | `PairsData`'s file-backed fields are **slices, not `[*]`** | A many-item pointer carries no length for anyone to check against; the slice records what the file actually provided, which is what makes the bound above expressible at all. |
 | `decode_header.setSizes` validates the btree **before** `probe.setSymLen` walks it | Both child fields are 12 bits of the file, so a corrupt entry can name a symbol past the tree, and `setSymLen` writes `d.symlen[child]` — an out-of-bounds *write*. One O(n) pass at load makes the walk in-bounds by construction and leaves the probe path free of the check. |
+| `table_load.set` checks the pawnful table's **leading piece** against the registry's lead colour | `doProbeTable` picks the leading pawns' colour off `get(0, 0).pieces[0]`, a raw file nibble. Name a piece that is not a pawn, or a pawn of the colour that has none, and the leading group is EMPTY: the probe then sorts `squares[1..0]` and indexes `lead_pawn_idx[0][squares[0]]` with a square it never wrote. One flipped nibble in a downloaded `.rtbw` reaches it. |
+| `probe.setGroups` returns false on a **group longer than any geometry row** | The group lengths index `lead_pawns_size` and `binomial`, both sized for the longest group a legal material configuration makes. The lengths are runs over the same file nibbles, so a corrupt sequence makes a longer one and reads off the end of the array. |
 
 `decode_header.setSizes` additionally refuses `min_sym_len == 0` (it would make the `k == 0` right-pad
 shift exactly 64, which does not fit the `u6` it is cast to) alongside the inverted and
