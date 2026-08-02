@@ -308,6 +308,43 @@ enough to be worth stating: two ports, two codebases, one conclusion.
 these ran, and the documented serial-cycle floor here is ±1%; the instruction axis is
 near-deterministic under load, which is why the claim rests on it.
 
+### And the architecture above them: does the delta beat a rebuild?
+
+Those two rows price the *routes*. The design underneath them — keep dirty records and
+step incrementally, rather than rebuild the accumulator from the board every evaluation —
+is priced by two comptime ablations, both bit-exact, so all three builds search the same
+tree:
+
+```sh
+zig build -Darch=x86-64-sse41-popcnt                                        # A, shipped
+zig build -Darch=x86-64-sse41-popcnt -Dacc-refresh-only                     # B
+zig build -Darch=x86-64-sse41-popcnt -Dacc-refresh-only -Dno-threat-record  # C
+cd resources && perf_counters --budget <bin> 5 bench 16 1 8
+```
+
+| build | instructions | vs shipped |
+|---|---|---|
+| A incremental + recording | 2,756,229,512 | 1.0000x |
+| B rebuild every evaluation + recording | 3,785,329,102 | 1.3734x |
+| C rebuild every evaluation, no recording | 3,731,454,159 | 1.3538x |
+
+`B − C` is what `do_move`'s dirty-threat recording costs: **53.9M**, 1.44% of the rebuild
+baseline. `C − A` is what the delta is worth: **975.2M**, so the incremental design is
+**26.1% cheaper** than rebuilding.
+
+**The recording is not the variable, and that is the transferable part.** The Rust sibling
+port measured the same architecture and got the opposite verdict — its delta came in 7.1%
+*dearer* than its rebuild, on a recording costing a comparable 4.14% of its baseline. The
+difference is what the delta gets to SKIP. zfish applies dirty records straight into the
+accumulator rows and materialises a feature set only on a refresh, so the delta skips the
+whole active-set construction. A design whose live state IS a materialised set must derive
+the child's set on the delta path too, to have it for later plies — so it pays the
+rebuild's dominant cost either way and is left contesting the fold alone. Two ports, one
+architecture, opposite signs, and the pivot is the data model rather than the language.
+
+`-Dno-threat-record` refuses to compile without `-Dacc-refresh-only`, because the
+incremental step reads the records it drops.
+
 **Incremental step.** `applyCombined` builds this ply's PSQ and threat
 changed-feature index lists from the stored diffs, splits them into removed/added
 (inverted when stepping backward), and applies all four lists to the accumulator in

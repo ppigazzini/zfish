@@ -447,7 +447,15 @@ Follow the same discipline by hand: to claim a component is the bottleneck, abla
 — stub it out, hold everything else fixed, measure the delta. Control the confounds
 first (inlining across a comparison boundary; comparing the same search tree rather
 than two different ones). Label a hypothesis as a hypothesis. A performance claim
-ships with the command that produced it. It is a LOCAL gate — perf counters are not
+ships with the command that produced it.
+
+**An ablation must reach every entry point, and the node count is what tells you it
+did.** Pricing the incremental accumulator meant forcing a refresh in `evaluateSide` —
+which left the shared-suffix route (`forwardUpdateBoth`) still walking incrementally, so
+the records the companion ablation dropped were still being read on that path. The
+instruction count came back plausible either way; the node count came back 162,860
+instead of 163,081, and that is the only reason the hole was visible. Ablate behind a
+`comptime` flag and re-assert the signature, not just the delta. It is a LOCAL gate — perf counters are not
 available in CI, so it never runs there.
 
 **Know each instrument's blind spots before trusting its verdict.**

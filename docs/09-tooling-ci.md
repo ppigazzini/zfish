@@ -27,6 +27,8 @@ Zig 0.16.0 is the required toolchain. No C++ is vendored or compiled.
 | `-Dsignature-ref=` | a node count | Override the bench signature the `signature` step asserts. |
 | `-Dtest-coverage` | bool | Run the unit tests under `kcov` into `./kcov-out`. Local only. |
 | `-Dstub-eval` | bool | Replace the NNUE evaluation with a material count, for spine isolation. **Not bit-exact — the bench node count moves by construction**, so it is never part of a parity run. Drive it via `tools/material_eval.sh`, which stubs the oracle to match. Default off and comptime, so the shipped build is unchanged. |
+| `-Dacc-refresh-only` | bool | Refresh the accumulator from the board every evaluation, never incrementally. **Bit-exact** — a refresh and an incremental chain compute the same accumulator, which is the invariant the design rests on — so the node count holds and the two builds are the same work. Prices the incremental architecture; see [03-engine-eval.md](03-engine-eval.md#and-the-architecture-above-them-does-the-delta-beat-a-rebuild). |
+| `-Dno-threat-record` | bool | Compile out `do_move`'s dirty-threat recording, to price it. Refuses to compile without `-Dacc-refresh-only`, which is the only path that reads no record. |
 
 `-Darch=native` is resolved in pure Zig by `tools/native_arch.zig`: it takes the host
 CPU that Zig's build graph already resolved via cpuid and walks the tier table
