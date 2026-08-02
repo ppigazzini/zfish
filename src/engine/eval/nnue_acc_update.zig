@@ -5,6 +5,7 @@
 // never the reverse, so this stays a one-way leaf.
 
 const std = @import("std");
+const build_options = @import("build_options");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 const Position = position_types.Position;
@@ -136,11 +137,16 @@ pub fn evaluate(
     const last_white = findLastUsable(psq_feature, stack, white);
     const last_black = findLastUsable(psq_feature, stack, black);
 
-    if (stateComputed(stack, psq_feature, last_white, white) and
-        stateComputed(stack, psq_feature, last_black, black))
-    {
-        forwardUpdateBoth(stack, pos, feature_transformer, last_white, last_black);
-        return;
+    // The shared-suffix route walks incrementally without reaching evaluateSide, so the
+    // refresh-only ablation has to skip it here as well -- gating one entry point and not
+    // the other leaves the records live on this path, which the node count catches.
+    if (comptime !build_options.acc_refresh_only) {
+        if (stateComputed(stack, psq_feature, last_white, white) and
+            stateComputed(stack, psq_feature, last_black, black))
+        {
+            forwardUpdateBoth(stack, pos, feature_transformer, last_white, last_black);
+            return;
+        }
     }
     evaluateSide(white, stack, pos, feature_transformer, cache, last_white);
     evaluateSide(black, stack, pos, feature_transformer, cache, last_black);
@@ -190,6 +196,16 @@ pub fn evaluateSide(
 ) void {
     const size = stackSize(stack);
     const king_square = kingSquare(pos, perspective);
+
+    // Ablation (-Dacc-refresh-only): rebuild from the board every evaluation. Bit-exact by
+    // the invariant the incremental chain rests on -- a refresh and a walk compute the same
+    // accumulator -- so the node count is unchanged and the two builds are the same work.
+    // Measures what the incremental path is worth, and, with -Dno-threat-record, what
+    // do_move's recording costs: the records are dead on this path.
+    if (comptime build_options.acc_refresh_only) {
+        refreshCombined(perspective, king_square, stack, pos, feature_transformer, cache);
+        return;
+    }
 
     // Build the threat route mask once per walk (it depends only on
     // perspective, king square and direction), so no per-ply step re-derives
