@@ -2,10 +2,11 @@
 #
 # The `zig build fuzz` SMOKE (one iteration per target) runs on every push inside
 # the parity workflow; this job runs the CONTINUOUS Zig fuzzer for a bounded budget
-# each night. `zig build fuzz --fuzz` mutates toward new coverage over BOTH fuzz
+# each night. `zig build fuzz --fuzz` mutates toward new coverage over ALL THREE fuzz
 # roots -- the FEN-parse -> generateLegal -> make/unmake -> eval -> search targets
-# (src/engine/board/fuzz_targets.zig) and the Syzygy file parse
-# (src/platform/syzygy/fuzz_targets.zig) -- built under -Doptimize=ReleaseSafe so a
+# (src/engine/board/fuzz_targets.zig), the Syzygy file parse as units
+# (src/platform/syzygy/fuzz_targets.zig) and the same parse driven end to end through
+# a probe (src/platform/syzygy/fuzz_probe.zig) -- built under -Doptimize=ReleaseSafe so a
 # discovered input that trips a Zig safety check -- out-of-bounds, integer overflow,
 # pointer misalignment, null-unwrap -- crashes the run with the reproducer instead of
 # reading garbage. The fuzzer catches such bugs before they reach the bench/parity
