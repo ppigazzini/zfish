@@ -33,7 +33,8 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | `src/platform/syzygy/encode.zig` | the position→index geometry: `binomial`, `map_kk`, `map_a1d1d4`, `map_b1h1h7`, `map_pawns`, `lead_pawn_idx`, `lead_pawns_size` |
 | `src/platform/syzygy/decode.zig` | the PROBE-time half: the RE-PAIR / canonical-Huffman decoder (`decompressPairs`), the unaligned byte readers, the `TBFlag` bits |
 | `src/platform/syzygy/decode_header.zig` | the LOAD-time half: the file header parse (`setSizes`) and the bounded region carve (`take`) |
-| `src/platform/syzygy/wdl.zig` | the algorithm: `doProbeTable`, `probeTable`, `searchWdl`, `probeDtz`, `mapScoreDtz`, and the two probe surfaces `probeFen` / `probeWdlPos` |
+| `src/platform/syzygy/probe_index.zig` | position -> unique table index (`doProbeTable`) and `mapScoreDtz`: pure geometry, and every bound the FILE cannot be checked against at load |
+| `src/platform/syzygy/wdl.zig` | the algorithm: `probeTable`, `searchWdl`, `probeDtz`, and the two probe surfaces `probeFen` / `probeWdlPos` |
 | **engine** | |
 | `src/engine/search/tb_source.zig` | the seam: `ProbeResult`, `maxCardinality`, `probeFen`, `probeWdlPos` |
 | `src/engine/search/search_main.zig` | Step 6 — the in-search WDL probe and its score/bound handling |

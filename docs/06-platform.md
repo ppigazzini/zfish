@@ -29,7 +29,8 @@ For the zones and the module graph, see [00-architecture.md](00-architecture.md)
 | `syzygy/encode.zig` | position → index geometry (binomials, lead-pawn tables) |
 | `syzygy/decode.zig` | the RE-PAIR / canonical-Huffman decoder (probe-time) |
 | `syzygy/decode_header.zig` | the file header parse + bounded region carve (load-time) |
-| `syzygy/wdl.zig` | the probe algorithm: `doProbeTable`, `probeTable`, `searchWdl`, `probeDtz`, `mapScoreDtz`, and the surfaces `probeFen` / `probeWdlPos` |
+| `syzygy/probe_index.zig` | position -> unique table index (`doProbeTable`) + `mapScoreDtz` |
+| `syzygy/wdl.zig` | the probe algorithm: `probeTable`, `searchWdl`, `probeDtz`, and the surfaces `probeFen` / `probeWdlPos` |
 | `syzygy/fuzz_targets.zig` | the unit fuzz targets: `setSizes` over header bytes, `decompressPairs` over a fuzzer-built table |
 | `syzygy/fuzz_probe.zig` | the end-to-end fuzz target: parse an image into a registered `TBTable` and probe it, with no file and no fixture |
 | `clock.zig` | the monotonic millisecond clock |
