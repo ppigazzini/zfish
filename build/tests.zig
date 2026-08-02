@@ -164,12 +164,19 @@ pub fn register(ctx: Context) void {
     // Build the coverage-guided fuzz targets (std.testing.fuzz). Wire them to their OWN
     // `zig build fuzz` step, deliberately NOT test_step -- these are meant to be run
     // with `zig build fuzz --fuzz` (the fuzzer), and run once as a smoke otherwise.
+    //
+    // FORCE ReleaseSafe, never the build's `optimize`. The whole value of these targets is
+    // that a bad index or cast TRAPS instead of reading garbage, and inheriting the default
+    // made `zig build fuzz` a ReleaseFast run locally while CI passed -Doptimize=ReleaseSafe --
+    // a local gate weaker than the blocking lane, which is how a real `@intCast` overflow in
+    // the tablebase group walk reached main green.
+    const fuzz_optimize: std.builtin.OptimizeMode = .ReleaseSafe;
     // Build under -Doptimize=ReleaseSafe so a found crash trips a safety check.
     const fuzz_targets_test = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/engine/board/fuzz_targets.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = fuzz_optimize,
             .link_libc = true,
         }),
     });
@@ -190,7 +197,7 @@ pub fn register(ctx: Context) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/platform/syzygy/fuzz_targets.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = fuzz_optimize,
             .link_libc = true,
         }),
     });
@@ -204,7 +211,7 @@ pub fn register(ctx: Context) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/platform/syzygy/fuzz_probe.zig"),
             .target = target,
-            .optimize = optimize,
+            .optimize = fuzz_optimize,
             .link_libc = true,
         }),
     });

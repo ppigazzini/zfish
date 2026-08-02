@@ -10,6 +10,7 @@ const probe = @import("syzygy/probe.zig"); // Provide the probe data model + pur
 const decode = @import("syzygy/decode.zig"); // Parse files + run the RE-PAIR decoder; test-referenced
 const registry = @import("syzygy/registry.zig"); // Register TBTables and own the arena
 const table_load = @import("syzygy/table_load.zig"); // Load a table file and run SF `set`; test-referenced
+const probe_index = @import("syzygy/probe_index.zig"); // Position -> table index; test-referenced
 const wdl = @import("syzygy/wdl.zig"); // Probe WDL/DTZ
 
 // Re-export the probe result type -- a search-facing value owned by the engine tb_source seam --
