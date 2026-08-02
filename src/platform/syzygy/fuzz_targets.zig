@@ -47,7 +47,7 @@ fn fuzzSetSizes(_: void, smith: *std.testing.Smith) anyerror!void {
     var pos: usize = 0;
     decode_header.setSizes(a, &d, buf, &pos) catch |err| {
         // Only CorruptTable and OutOfMemory are contractual; anything else is a new failure
-        // mode the caller in registry.set does not know how to treat.
+        // mode the caller in table_load.set does not know how to treat.
         if (err != error.CorruptTable and err != error.OutOfMemory) return err;
         return;
     };

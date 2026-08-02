@@ -25,7 +25,8 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | `src/platform/tablebase.zig` | the facade: re-exports `init` / `maxCardinality` / `discoveredMax` / `foundWdl` / `foundDtz` from `syzygy/tables.zig` and `probeFen` / `probeWdlPos` from `syzygy/wdl.zig`; re-exports `ProbeResult` from the engine's `tb_source` |
 | **platform: syzygy** | |
 | `src/platform/syzygy/tables.zig` | discovery: scan `SyzygyPath`, enumerate every material configuration up to 7 men, build the canonical stem, count files, set `maxCardinality` |
-| `src/platform/syzygy/registry.zig` | the material-key → `TBTable` map, the lazy `.rtbw` / `.rtbz` load into a 64-byte-aligned buffer, and the `set` / `setDtzMap` parse of each `(side, file)` `PairsData` record |
+| `src/platform/syzygy/registry.zig` | the material-key → `TBTable` map and the arena behind it — everything derived from the material configuration, and nothing a file said |
+| `src/platform/syzygy/table_load.zig` | the lazy `.rtbw` / `.rtbz` load into a 64-byte-aligned buffer, and the `set` / `setDtzMap` parse of each `(side, file)` `PairsData` record |
 | `src/platform/syzygy/probe.zig` | the data model (`LR`, `SparseEntry`, `PairsData`, `EntryInfo`) plus the pure helpers `setGroups` and `setSymLen` |
 | `src/platform/syzygy/encode.zig` | the position→index geometry: `binomial`, `map_kk`, `map_a1d1d4`, `map_b1h1h7`, `map_pawns`, `lead_pawn_idx`, `lead_pawns_size` |
 | `src/platform/syzygy/decode.zig` | the PROBE-time half: the RE-PAIR / canonical-Huffman decoder (`decompressPairs`), the unaligned byte readers, the `TBFlag` bits |
@@ -46,10 +47,13 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | `src/shell/engine/control.zig` | `tbInit` (init + load report, every caller) and `searchClear` — re-inits on `ucinewgame` / `Clear Hash` |
 | `src/shell/engine/trace.zig` | the `d` command's `Tablebases WDL:` / `Tablebases DTZ:` lines |
 
-`wdl.zig` imports `registry.zig` downward and never the reverse, so neither is a
-god-file. Both cross the platform→engine down-edge: `wdl.zig` for a scratch `Position`,
-its bitboards, and `movegen.generateLegal` (it generates all legal moves and filters the
-captures itself), `registry.zig` for the material-key computation.
+`wdl.zig` imports `table_load.zig`, which imports `registry.zig`, and never the reverse,
+so no file here is a god-file. The split between the last two is the one the safety rules
+already follow: `registry.zig` holds what the material configuration says, `table_load.zig`
+holds what a FILE says, and the second validates itself against the first. Two of the three
+cross the platform→engine down-edge: `wdl.zig` for a scratch `Position`, its bitboards, and
+`movegen.generateLegal` (it generates all legal moves and filters the captures itself),
+`registry.zig` for the material-key computation.
 
 ## What the files are
 
@@ -58,8 +62,8 @@ them as two distinct tables on one `TBTable`:
 
 | File | Answers | Read by |
 | --- | --- | --- |
-| `.rtbw` (WDL) | the game-theoretic result from the side-to-move's view: win / cursed win / draw / blessed loss / loss (`wdl_win` … `wdl_loss`, raw value − 2) | `registry.mapped`, `probeTable(dtz=false)` |
-| `.rtbz` (DTZ) | the distance, in plies, to the next **zeroing** move (capture or pawn move) along an optimal line | `registry.mappedDtz`, `probeTable(dtz=true)` |
+| `.rtbw` (WDL) | the game-theoretic result from the side-to-move's view: win / cursed win / draw / blessed loss / loss (`wdl_win` … `wdl_loss`, raw value − 2) | `table_load.mapped`, `probeTable(dtz=false)` |
+| `.rtbz` (DTZ) | the distance, in plies, to the next **zeroing** move (capture or pawn move) along an optimal line | `table_load.mappedDtz`, `probeTable(dtz=true)` |
 
 The two answer different questions, and the engine uses each where it needs that answer:
 
@@ -100,7 +104,7 @@ print the report again — upstream emits it from inside `Tablebases::init`
 `tables.init` copies the path and calls `registry.reset`, then enumerates **every
 King-vs-King material configuration up to 7 men** and calls `add` on each. The path is
 split on the platform separator (`;` on Windows, `:` elsewhere) per lookup, in
-`tbFileExists` and `registry.loadFile`. `add`:
+`tbFileExists` and `table_load.loadFile`. `add`:
 
 1. builds the canonical **stem** with `buildName` — concatenate `PieceToChar` per piece
    type, then insert `v` before the second `K`: `{K,Q,K}` → `KQK` → **`KQvK`**;
@@ -127,7 +131,7 @@ a default build — and `bench`, which never sets a path — takes no tablebase 
 
 ## Probing
 
-`registry.mapped` / `mappedDtz` load lazily on first probe. `loadFile` reads
+`table_load.mapped` / `mappedDtz` load lazily on first probe. `loadFile` reads
 `<stem><ext>` from the first path directory that has it into a **64-byte-aligned** buffer
 (the alignment makes `set`'s data-section rounding match an mmap base), rejects a file
 whose size fails the `size % 64 == 16` corruption check, and verifies the magic header:
@@ -140,7 +144,7 @@ whose size fails the `size % 64 == 16` corruption check, and verifies the magic 
 The load is **POSIX-only** (libc `open`/`read`); on Windows it yields null and the probe
 reports unavailable.
 
-`registry.set` then parses the file, generic over WDL/DTZ: per `(side, file)` it reads the
+`table_load.set` then parses the file, generic over WDL/DTZ: per `(side, file)` it reads the
 group `order` nibbles and the piece sequence, calls `probe.setGroups`, then
 `decode_header.setSizes`, and finally carves each `PairsData`'s `sparse_index`, `block_length`
 and `data` region out of the file bytes (each `data` section 64-byte aligned). For DTZ,
@@ -154,7 +158,7 @@ things hold the line, and they are worth keeping distinct:
 
 | Where | What it guarantees |
 | --- | --- |
-| `registry.set` / `setDtzMap` / `decode_header.setSizes` return failure | Every region is carved with a `take` bound, so a file that cannot keep its own size promises is refused. `mapped`/`mappedDtz` then null the base and the probe reports the table **exactly as missing** — never half-parsed and reachable. |
+| `table_load.set` / `setDtzMap` / `decode_header.setSizes` return failure | Every region is carved with a `take` bound, so a file that cannot keep its own size promises is refused. `mapped`/`mappedDtz` then null the base and the probe reports the table **exactly as missing** — never half-parsed and reachable. |
 | `PairsData`'s file-backed fields are **slices, not `[*]`** | A many-item pointer carries no length for anyone to check against; the slice records what the file actually provided, which is what makes the bound above expressible at all. |
 | `decode_header.setSizes` validates the btree **before** `probe.setSymLen` walks it | Both child fields are 12 bits of the file, so a corrupt entry can name a symbol past the tree, and `setSymLen` writes `d.symlen[child]` — an out-of-bounds *write*. One O(n) pass at load makes the walk in-bounds by construction and leaves the probe path free of the check. |
 
@@ -202,7 +206,7 @@ flowchart TD
   B --> C["wdl.probeTable<br/>KvK short-circuit"]
   C --> D["registry.hashGet(material_key)"]
   D -->|miss| F["state = FAIL"]
-  D -->|hit| E["registry.mapped / mappedDtz<br/>(lazy load + set)"]
+  D -->|hit| E["table_load.mapped / mappedDtz<br/>(lazy load + set)"]
   E -->|load failed| F
   E --> G["wdl.doProbeTable<br/>position -> unique index"]
   G --> H["encode.*: symmetry flips,<br/>group encoding, binomials"]
