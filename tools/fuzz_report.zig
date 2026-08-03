@@ -21,8 +21,8 @@
 //! artifacts each cleared the floor ON THEIR OWN and requires at least `expect` of them.
 //!
 //! PASS `expect` THE ARTIFACT COUNT, NEVER LESS. An `expect` left behind when a root is added
-//! stops being a gate and becomes a quota that a dark target can still satisfy: the nightly asked
-//! for 2 while the tree had 3 roots, so the artifact that never fuzzed at all was free.
+//! stops being a gate and becomes a quota a dark target satisfies for free -- the artifact that
+//! never fuzzed at all is exactly the one the shortfall pays for. Move it when a root lands.
 //!
 //! Counting the ones that cleared, rather than requiring every file to clear, is what makes this
 //! robust to a dirty cache: `<cache>/v` accumulates a file per artifact BUILD, so a tree that has

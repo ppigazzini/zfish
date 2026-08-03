@@ -177,8 +177,8 @@ def audit() -> tuple[int, int]:
     # the tree is one the router reads to decide what a sync must touch, and it silently
     # routes around whatever it omits. It is RATCHETED rather than failed outright, so
     # adding a citation never blocks the commit that adds it; the count has to come back
-    # down before the ratchet does. It reached 16 unread once, including five real
-    # AVX-512 ports under `src/nnue/*`, because nothing counted it.
+    # down before the ratchet does. Widen the rule in the same session -- an AVX-512 port
+    # cited under `src/nnue/*` and left out of that row is one a resync never reaches.
     for path in sorted(mapped):
         rule_owners: set[str] = set()
         for glob, owners in rules:

@@ -181,8 +181,8 @@ pub fn registerUpstream(
     // (upstream_map.baseline) and the drift, rows whose derived owners the declared rule
     // omits (upstream_map.drift_baseline). Lower either as citations are added, never
     // raise it. Drift is ratcheted rather than failed so adding a citation never blocks
-    // the commit that adds it -- but it reached 16 unread rows once, which is a blast
-    // radius the router silently routes around. Not in the parity aggregate:
+    // the commit that adds it; an unratcheted drift count is a blast radius that
+    // understates the tree and a router that routes around it. Not in the parity aggregate:
     // it reads the pinned upstream tree from git objects a plain CI checkout of
     // origin does not carry. The weekly upstream-check workflow runs it after
     // fetching the upstream remote, which brings those objects in.
