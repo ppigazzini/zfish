@@ -86,12 +86,43 @@ done
 # --- 2. every repo path named in prose exists ----------------------------------------------
 # Docs name owners constantly ("src/shell/uci.zig", "tools/parity_harness.zig"). A split or a
 # rename silently invalidates the reference; the prose still reads plausibly.
+#
+# The subject is every directory this repository OWNS and every extension it writes -- a claim
+# about `docs/`, `build/` or `.github/` rots exactly like one about `src/`, and 09-tooling-ci
+# names a workflow file per CI lane. `.cpp`/`.h` are excluded ON PURPOSE: `src/syzygy/
+# tbprobe.cpp` is UPSTREAM's path, a namespace these pages reference without owning, the same
+# exclusion check 4 makes for `_mm*` intrinsics. Scanning the two root pages check 4 already
+# reads (README, CONTRIBUTING) costs nothing and closes the same class there.
 missing=0
+path_claims=$(grep -ohE '`(src|tools|docs|build|\.github)/[A-Za-z0-9_/.-]+\.(zig|sh|py|golden|md|yml|yaml|zon|tsv|json)`' \
+              docs/*.md AGENTS.md README.md CONTRIBUTING.md | tr -d '`' | sort -u)
 while IFS= read -r p; do
+    [ -n "$p" ] || continue
     in_tree "$p" || { echo "docs-lint: DEAD PATH    $p (named in a shipped doc, not in the tree)"; missing=$((missing + 1)); }
-done < <(grep -ohE '`(src|tools)/[A-Za-z0-9_/.-]+\.(zig|sh|py|golden)`' docs/*.md AGENTS.md \
-         | tr -d '`' | sort -u)
+done <<< "$path_claims"
 [ "$missing" -eq 0 ] || fail=1
+
+# Guard the EXTRACTION, not just its verdict -- check 5's lesson, which covered 6% of its
+# subject while reporting OK. A typo in the regex above finds nothing and passes everything.
+path_total=$(printf '%s\n' "$path_claims" | grep -c .)
+if [ "$path_total" -lt 60 ]; then
+    echo "docs-lint: only $path_total path claims found (expected ~98) -- the extraction lost"
+    echo "docs-lint: its subject; the prose or the pattern changed shape. Refusing to report OK."
+    fail=1
+fi
+
+# A CI lane is named by its FILE, and docs/09 names each one bare rather than by path, so the
+# check above cannot see it. A renamed workflow leaves the lane table pointing at nothing.
+badflow=0
+while IFS= read -r wf; do
+    [ -n "$wf" ] || continue
+    in_tree ".github/workflows/$wf" || {
+        echo "docs-lint: DEAD WORKFLOW $wf (named in a shipped doc, not in .github/workflows/)"
+        badflow=$((badflow + 1))
+    }
+done < <(grep -ohE '`[A-Za-z0-9_-]+\.(yml|yaml)`' docs/*.md AGENTS.md README.md CONTRIBUTING.md \
+         | tr -d '`' | sort -u)
+[ "$badflow" -eq 0 ] || fail=1
 
 # --- 3. the bench anchor matches build.zig -------------------------------------------------
 # The anchor MOVES per upstream sync. build.zig is the single source (signature_reference);

@@ -147,10 +147,13 @@ whether it is a bug — that sentence is load-bearing for the next reader who mi
 `zig build docs-lint` (inside `zig build parity`) fails on:
 
 - a dead internal link,
-- a `src/…` or `tools/…` path named in prose that is not in the tree — `git ls-files`, not
-  your checkout, so a file a rename left behind fails here instead of in a fresh clone; a
-  path `.gitignore` names is exempt (a **bare** filename like `uci.zig` is not checked —
-  write the path if you want the gate to hold it),
+- a path named in prose that is not in the tree — any `src/`, `tools/`, `docs/`, `build/` or
+  `.github/` path, resolved against `git ls-files` rather than your checkout, so a file a
+  rename left behind fails here instead of in a fresh clone; a path `.gitignore` names is
+  exempt (a **bare** filename like `uci.zig` is not checked — write the path if you want the
+  gate to hold it, except for a `*.yml`, which is checked against `.github/workflows/`
+  because the CI lane table names its lanes bare). `.cpp`/`.h` are **not** checked: those
+  name upstream's tree, which these pages reference without owning,
 - a bench signature quoted here that disagrees with `build.zig`.
 
 **It cannot tell you a sentence is false.** *"`numa_context` is a never-dereferenced stub

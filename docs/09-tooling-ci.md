@@ -247,8 +247,10 @@ means one side was missed. Both sides of a shared field have to be relaxed.
 
 `docs-lint` gates this documentation set against the tree it describes. Docs are accurate
 when written and rot where the code moves under them, so it settles the three rot classes a
-machine can: every internal link resolves, every `src/…` or `tools/…` path named in prose is
-in the tree, and any bench signature quoted in docs equals `build.zig`'s `signature_reference` —
+machine can: every internal link resolves, every path named in prose is in the tree (`src/`,
+`tools/`, `docs/`, `build/`, `.github/`, plus a bare `*.yml` read as a CI lane — but not
+`.cpp`/`.h`, which name upstream), and any bench signature quoted in docs equals
+`build.zig`'s `signature_reference` —
 the anchor moves on every bench-moving upstream sync, and a doc quoting a dead one is worse
 than a doc omitting it.
 
