@@ -266,8 +266,9 @@ pub fn main(init: std.process.Init) !void {
         var round: usize = 0;
         while (round < rounds_b) : (round += 1) {
             const c = try runOnce(gpa, argv_b1.items, 0);
-            // Pin the workload with the tree size, the same guard the A/B path applies: a
-            // count taken over a different node total is not a datum this gate can use.
+            // Pin the workload with the tree size, the same guard the A/B path applies on
+            // every round: a count taken over a different node total is not a datum this
+            // gate can use.
             if (nodes == 0) nodes = c.nodes;
             if (c.nodes != nodes) {
                 std.debug.print(
@@ -343,7 +344,7 @@ pub fn main(init: std.process.Init) !void {
             if (a.nodes == 0 or b.nodes == 0) {
                 std.debug.print("error: could not parse a node count (A={d}, B={d}).\n" ++
                     "       Run from resources/ so the net loads, and use a `bench` command.\n", .{ a.nodes, b.nodes });
-                return;
+                std.process.exit(2);
             }
             if (a.nodes != b.nodes) {
                 std.debug.print(
@@ -351,10 +352,22 @@ pub fn main(init: std.process.Init) !void {
                     \\       Different trees = different workloads; every ratio would be meaningless.
                     \\
                 , .{ a.nodes, b.nodes });
-                return;
+                std.process.exit(2);
             }
             std.debug.print("# tree: {d} nodes (identical on both) | {d} rounds | core 0\n", .{ a.nodes, rounds });
             std.debug.print("# {s:>5} {s:>16} {s:>16} {s:>9} {s:>8} {s:>8}\n", .{ "round", "A instr", "B instr", "A/B instr", "A IPC", "B IPC" });
+        } else if (a.nodes != first_a.nodes or b.nodes != first_b.nodes) {
+            // HOLD THE WORKLOAD ON EVERY ROUND, not only the first. A ratio is a statement
+            // about equal amounts of work, and round 1 agreeing does not make round 7 agree:
+            // an engine that dies mid-run, a net that goes missing after the first launch, or
+            // an ablation that quietly searches a different tree all yield a plausible median
+            // that reads as a result. This is why `first_a`/`first_b` are kept.
+            std.debug.print(
+                \\error: node count moved between rounds (round 1 = A {d} / B {d}, round {d} = A {d} / B {d}).
+                \\       The workload changed underneath the measurement; every median would be meaningless.
+                \\
+            , .{ first_a.nodes, first_b.nodes, i + 1, a.nodes, b.nodes });
+            std.process.exit(2);
         }
         r_instr[i] = ratio(a.instructions, b.instructions);
         r_cyc[i] = ratio(a.cycles, b.cycles);
