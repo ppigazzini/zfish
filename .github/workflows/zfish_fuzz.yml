@@ -2,15 +2,16 @@
 #
 # The `zig build fuzz` SMOKE (one iteration per target) runs on every push inside
 # the parity workflow; this job runs the CONTINUOUS Zig fuzzer for a bounded budget
-# each night. `zig build fuzz --fuzz` mutates toward new coverage over ALL THREE fuzz
-# roots -- the FEN-parse -> generateLegal -> make/unmake -> eval -> search targets
-# (src/engine/board/fuzz_targets.zig), the Syzygy file parse as units
-# (src/platform/syzygy/fuzz_targets.zig) and the same parse driven end to end through
-# a probe (src/platform/syzygy/fuzz_probe.zig) -- built under -Doptimize=ReleaseSafe so a
-# discovered input that trips a Zig safety check -- out-of-bounds, integer overflow,
-# pointer misalignment, null-unwrap -- crashes the run with the reproducer instead of
-# reading garbage. The fuzzer catches such bugs before they reach the bench/parity
-# goldens.
+# each night. It mutates toward new coverage over ALL THREE fuzz roots -- the
+# FEN-parse -> generateLegal -> make/unmake -> eval -> search targets
+# (src/engine/board/fuzz_targets.zig, step `fuzz-board`), the Syzygy file parse as units
+# (src/platform/syzygy/fuzz_targets.zig, step `fuzz-tb`) and the same parse driven end to
+# end through a probe (src/platform/syzygy/fuzz_probe.zig, step `fuzz-tb-probe`) -- each
+# on its OWN per-target step, for the slot reason spelled out at that step. All are built
+# under -Doptimize=ReleaseSafe so a discovered input that trips a Zig safety check --
+# out-of-bounds, integer overflow, pointer misalignment, null-unwrap -- crashes the run
+# with the reproducer instead of reading garbage. The fuzzer catches such bugs before they
+# reach the bench/parity goldens.
 #
 # A clean run means "no crash was FOUND in that budget", which is only worth
 # publishing if the budget was actually spent: see the execution-counter gate at the
@@ -55,38 +56,52 @@ jobs:
       - name: Snapshot the fuzzer's execution counters
         run: zig run tools/fuzz_report.zig -- .zig-cache snapshot /tmp/fuzz-baseline.txt
 
-      # Fuzz for a fixed ~15 min budget. `--fuzz` fuzzes continuously (and serves a
-      # monitoring web UI we ignore headless). SIGINT it at the budget: an interrupt
-      # with no crash exits 130 (PASS -- no bug in the window); a target crash exits
-      # non-zero BEFORE the budget (FAIL, with the ReleaseSafe safety-check trace +
-      # the reproducing input in the log). A fresh corpus each night finds shallow
-      # regressions; corpus persistence for depth is a later enhancement.
-      - name: Fuzz (bounded, ~15 min, ReleaseSafe)
+      # Fuzz each artifact in ITS OWN session, ~5 min each, rather than one 15-min
+      # `zig build fuzz --fuzz` over all three.
+      #
+      # ONE SESSION CANNOT FUZZ THREE ARTIFACTS ON THIS RUNNER. `Fuzz.start` spawns a
+      # worker per artifact through `Io.Group.async`, and the build runner's `Io.Threaded`
+      # defaults `async_limit` to `cpu_count - 1` -- one slot already held by the coverage
+      # task. A fuzz worker never returns, so an N-core box only ever starts N-2 of them.
+      # ubuntu-latest is 4 cores: two artifacts fuzzed, the third never began and left no
+      # coverage file at all. Reproduced locally under `taskset -c 0-3`, where the same
+      # third artifact recorded zero. Per-target steps make each a single-worker session,
+      # so the slot arithmetic cannot starve any of them.
+      #
+      # SIGINT at each sub-budget: an interrupt with no crash exits 130 (PASS -- no bug in
+      # the window); a target crash exits non-zero BEFORE the budget (FAIL, with the
+      # ReleaseSafe safety-check trace + the reproducing input in the log). A fresh corpus
+      # each night finds shallow regressions; corpus persistence for depth is a later
+      # enhancement.
+      - name: Fuzz (bounded, ~5 min per target, ReleaseSafe)
         run: |
           set +e
-          timeout --preserve-status --signal=INT 900 \
-            zig build fuzz --fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
-          ec=$?
-          if [ "$ec" -eq 130 ] || [ "$ec" -eq 0 ]; then
-            echo "fuzz: no crash found in the ~15 min budget (exit $ec)"
-            exit 0
-          fi
-          echo "fuzz: a target crashed or the fuzzer errored (exit $ec)" >&2
-          exit "$ec"
+          for step in fuzz-board fuzz-tb fuzz-tb-probe; do
+            timeout --preserve-status --signal=INT 300 \
+              zig build "$step" --fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
+            ec=$?
+            if [ "$ec" -ne 130 ] && [ "$ec" -ne 0 ]; then
+              echo "fuzz: $step crashed or the fuzzer errored (exit $ec)" >&2
+              exit "$ec"
+            fi
+            echo "fuzz: $step -- no crash found in its ~5 min budget (exit $ec)"
+          done
 
       # THE STEP ABOVE CANNOT DISTINGUISH "found nothing" FROM "fuzzed nothing".
       # It exits 0 on the SIGINT whether the fuzzer executed half a billion inputs or
       # three, and the Zig fuzzer prints no total, so an idle lane reads exactly like a
       # clean one. The sibling port shipped that failure live -- its search fuzzer was
       # managing three inputs per ninety seconds behind a green lane (mcfish 05914e99).
-      # Read the execution counters the fuzzer keeps in .zig-cache/v and require BOTH
-      # artifacts (the board/eval/search targets and the Syzygy file parse) to have
-      # executed at least a million inputs each, since they share one wall-clock budget
-      # and one soaking it would otherwise hide the other going idle. Measured locally:
-      # a 150s run cleared 16.4M and 42.2M, so a 900s budget clears the floor by orders
-      # of magnitude; this fires on a broken lane, not a slow runner.
+      # Read the execution counters the fuzzer keeps in .zig-cache/v and require ALL THREE
+      # artifacts -- the board/eval/search targets, the Syzygy file parse as units, and the
+      # same parse driven through a probe -- to have executed at least a million inputs
+      # each. Expect the artifact count, never a smaller number: the floor was 2 while the
+      # tree already had 3 roots, so a target could go dark and still clear the gate.
+      # Measured locally, one 60s solo session per target: 13.2M (probe, the slowest),
+      # 14.7M and 52.7M. A 300s budget clears the floor by orders of magnitude; this fires
+      # on a broken lane, not a slow runner.
       - name: Assert the fuzzer actually executed
-        run: zig run tools/fuzz_report.zig -- .zig-cache check /tmp/fuzz-baseline.txt 1000000 2
+        run: zig run tools/fuzz_report.zig -- .zig-cache check /tmp/fuzz-baseline.txt 1000000 3
 
   # The board targets above never feed the COMMAND LOOP hostile input; this job
   # does, with tools/uci_fuzz.py against a ReleaseSafe build for a bounded budget.

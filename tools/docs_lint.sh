@@ -95,9 +95,11 @@ done < <(grep -rlE '__DEV/|REPORT-[0-9]|4-PERFORMANCE-REFERENCES|00-CONTRACT|PR
 # only ones in zfish's own namespace. The exclusions are namespaces the tree deliberately
 # names without defining:
 #   _mm*/_tzcnt*/__builtin*  upstream's C++ intrinsics, in 08's translation dictionary
-#   Zig std/builtin names    firstTrue, ReleaseSmall, ... documented, not ours to define
+#   Zig std/builtin names    firstTrue, ReleaseSmall, async_limit, ... documented, not ours
+#                            to define -- 09 has to name `async_limit` to explain why one
+#                            `--fuzz` session cannot start every fuzz artifact
 #   *_ci                     CI branch/ref names, not symbols
-foreign='^(_mm|_tzcnt|_adds|_subs|__builtin)|^(firstTrue|lastTrue|countTrues|ReleaseSmall|ReleaseFast|ReleaseSafe)$|_ci$'
+foreign='^(_mm|_tzcnt|_adds|_subs|__builtin)|^(firstTrue|lastTrue|countTrues|ReleaseSmall|ReleaseFast|ReleaseSafe|async_limit)$|_ci$'
 unknown=0
 while IFS= read -r tok; do
     printf '%s' "$tok" | grep -qE '_|[a-z][A-Z]' || continue      # identifier-shaped only

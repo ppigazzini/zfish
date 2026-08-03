@@ -14,11 +14,15 @@
 //! `n_runs`, `unique_runs`, `pcs_len`. `n_runs` is the execution counter the fuzzer bumps per
 //! input. Read it directly rather than parsing the fuzzer's stdout, which prints no total.
 //!
-//! WHY PER ARTIFACT, NOT A SUM. `zig build fuzz` builds several test artifacts (the board/eval/
-//! search targets and the Syzygy file parse), each with its own coverage file, all sharing one
-//! wall-clock budget. A total hides the case this gate is for: one artifact soaking the whole
-//! budget while another never runs. So the check counts how many artifacts each cleared the
-//! floor ON THEIR OWN and requires at least `expect` of them.
+//! WHY PER ARTIFACT, NOT A SUM. `zig build fuzz` builds three test artifacts -- the board/eval/
+//! search targets, the Syzygy file parse as units, and that parse driven through a probe -- each
+//! with its own coverage file. A total hides the case this gate is for: one artifact soaking the
+//! budget, or never starting, while the total still looks healthy. So the check counts how many
+//! artifacts each cleared the floor ON THEIR OWN and requires at least `expect` of them.
+//!
+//! PASS `expect` THE ARTIFACT COUNT, NEVER LESS. An `expect` left behind when a root is added
+//! stops being a gate and becomes a quota that a dark target can still satisfy: the nightly asked
+//! for 2 while the tree had 3 roots, so the artifact that never fuzzed at all was free.
 //!
 //! Counting the ones that cleared, rather than requiring every file to clear, is what makes this
 //! robust to a dirty cache: `<cache>/v` accumulates a file per artifact BUILD, so a tree that has
