@@ -57,6 +57,22 @@ check | update) ;;
     ;;
 esac
 
+# A ROW KEYED `native` IS A NUMBER ABOUT ONE MACHINE. `-Darch=native` is a valid build
+# option that resolves to a different tier per host, so a golden filed under that literal
+# string is one the next host compares its own, differently-compiled binary against -- and
+# the delta it prints is an ISA difference wearing a regression's clothes. The default here
+# is pinned, so this is reachable only by setting ARCH by hand, which the usage block above
+# invites. Refuse it in BOTH modes and name the concrete tier to use: `update` is what would
+# file the bad row, and `check` is what would read one. Ported from ../mcfish 0c37e1bb,
+# where the same key was the DEFAULT and the row went unnoticed for that reason.
+if [ "$ARCH" = "native" ]; then
+    echo "perf-budget: ARCH=native cannot key a golden row -- it names a different tier on" >&2
+    echo "             every host. Pass the concrete tier instead, e.g." >&2
+    echo "               ARCH=x86-64-avx512icl $0 $MODE" >&2
+    echo "             (\`zig build host-arch\` prints what native resolves to here.)" >&2
+    exit 2
+fi
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 

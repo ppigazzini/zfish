@@ -573,6 +573,13 @@ call non-inline costs +0.0876% with the node signature still green, so the gate 
 exact regression it exists to catch. Pick a tolerance against a measured noise floor *and*
 a measured regression.
 
+Rows are keyed by the ARCH tier, and `ARCH=native` is refused in both modes: it names a
+different ISA on every host, so a row filed under that literal string is one the next
+machine compares its own, differently-compiled binary against — an ISA difference that
+prints as a regression. `zig build host-arch` resolves native to the concrete tier to pass
+instead. The default is already pinned, so this only closes the hand-set path the usage
+block invites (../mcfish 0c37e1bb, where that key was the default).
+
 It is LOCAL-ONLY and not in `zig build parity`: `perf_event_open` is refused in many CI
 containers, and the count is toolchain-specific, so a Zig upgrade legitimately moves it.
 Re-derive with `tools/perf_budget.sh update` and carry the measurement in the commit body.
