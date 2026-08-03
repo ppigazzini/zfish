@@ -24,6 +24,11 @@ ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
 ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" "$SHA")" || {
     echo "upstream-transcript: oracle build failed" >&2; exit 2; }
 
+# The oracle's build is checked above; OUR side was taken on trust. Name a missing binary
+# here rather than letting every case run it and read the result as a transcript.
+[ -x "$OUR_BIN" ] || {
+    echo "upstream-transcript: no executable at $OUR_BIN -- run \`zig build\` first" >&2; exit 2; }
+
 # Each engine runs from its own directory so each finds its own net copy; the two nets are
 # byte-identical at the pin, so search output is comparable and is compared.
 OUR_DIR="$REPO/resources"
@@ -61,13 +66,27 @@ normalise() {
 #   docs/07-shell.md states it, and matching upstream's text would be a lie.
 KNOWN_RE='^[<>] (info string Network replica [0-9]+: |(Compiled by|Compilation architecture|Compilation settings|Compiler __VERSION__ macro) +:)'
 
-pass=0; fail=0; known=0
+pass=0; fail=0; known=0; rig=0
 
 run_case() {
     local label="$1" script="$2" prefix="${3:-}"
     local ours theirs delta unknown
     ours="$(cd "$OUR_DIR"   && printf '%s' "$script" | $prefix timeout 60 "$OUR_BIN"    2>&1 | normalise)"
     theirs="$(cd "$THEIR_DIR" && printf '%s' "$script" | $prefix timeout 60 "$ORACLE_BIN" 2>&1 | normalise)"
+
+    # TWO SILENCES ARE NOT AN AGREEMENT. Every path that blanks a side blanks it to the
+    # empty string -- a `cd` that fails short-circuits the `&&`, an engine that dies before
+    # its banner prints nothing, `timeout` kills both under load, and a `normalise` whose
+    # filter goes wrong eats both. The equality below then holds, and the case is counted
+    # `ok` having compared nothing. Refuse FIRST, and as a rig fault (exit 2) rather than a
+    # diff: no transcript this gate cares about is legitimately empty on both sides. ../mcfish
+    # 01e0b71c shipped the live version of this, where an unmatched `*.uci` glob fed both
+    # engines empty stdin and the gate reported the comparison it never made.
+    if [ -z "$ours" ] && [ -z "$theirs" ]; then
+        rig=$((rig + 1))
+        printf '  RIG   %s -- BOTH engines produced no output; nothing was compared\n' "$label"
+        return
+    fi
 
     if [ "$ours" = "$theirs" ]; then
         pass=$((pass + 1)); return
@@ -368,6 +387,17 @@ quit
 '
 
 echo
-printf 'upstream-transcript: %d ok, %d known-divergent, %d FAILED (oracle %s)\n' \
-    "$pass" "$known" "$fail" "${SHA:0:8}"
+# Print the DENOMINATOR, not just the tallies: "12 ok" is only legible against how many
+# cases ran, and a reader cannot infer that from three counters that all shrink together.
+printf 'upstream-transcript: %d ok, %d known-divergent, %d FAILED, %d rig (%d cases, oracle %s)\n' \
+    "$pass" "$known" "$fail" "$rig" "$((pass + known + fail + rig))" "${SHA:0:8}"
+# A rig fault is not a divergence, so it does not exit 1: 0 pass / 1 mismatch / 2 rig, the
+# split the parity driver already uses. Check it FIRST -- a run that compared nothing must
+# never report the verdict of the cases it did compare.
+[ "$rig" -eq 0 ] || {
+    echo "upstream-transcript: REFUSING -- $rig case(s) compared nothing at all." >&2
+    echo "                     Check that both binaries run: $OUR_BIN in $OUR_DIR," >&2
+    echo "                     $ORACLE_BIN in $THEIR_DIR." >&2
+    exit 2
+}
 [ "$fail" -eq 0 ] || exit 1
