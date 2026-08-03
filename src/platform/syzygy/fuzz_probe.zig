@@ -102,10 +102,10 @@ test "fuzz: a table built from arbitrary bytes probes without trapping" {
     // binary builds them at startup; a test root has no startup, and without this the first
     // generateLegal reads an unbuilt table and segfaults rather than reporting anything.
     //
-    // Build them ONCE, here, not per input. They are read-only afterwards, so a per-input rebuild
-    // buys nothing and costs everything: it held this target to 91 inputs/sec against the 220k/sec
-    // it reaches hoisted, three orders of magnitude below the nightly's execution floor, and that
-    // is what turned the lane red. Every other fuzz root in this tree hoists it the same way.
+    // Build them ONCE, here, not per input. They are read-only afterwards, so a per-input
+    // rebuild costs three orders of magnitude -- 91 inputs/sec against 220k/sec -- which puts
+    // this target under the nightly's per-artifact execution floor and stops it fuzzing in any
+    // sense the gate can use. Every fuzz root in this tree hoists it the same way.
     position.initRuntime();
     try std.testing.fuzz({}, fuzzProbeTable, .{});
 }

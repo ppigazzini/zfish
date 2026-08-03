@@ -79,9 +79,7 @@ run_case() {
     # its banner prints nothing, `timeout` kills both under load, and a `normalise` whose
     # filter goes wrong eats both. The equality below then holds, and the case is counted
     # `ok` having compared nothing. Refuse FIRST, and as a rig fault (exit 2) rather than a
-    # diff: no transcript this gate cares about is legitimately empty on both sides. ../mcfish
-    # 01e0b71c shipped the live version of this, where an unmatched `*.uci` glob fed both
-    # engines empty stdin and the gate reported the comparison it never made.
+    # diff: no transcript this gate cares about is legitimately empty on both sides.
     if [ -z "$ours" ] && [ -z "$theirs" ]; then
         rig=$((rig + 1))
         printf '  RIG   %s -- BOTH engines produced no output; nothing was compared\n' "$label"

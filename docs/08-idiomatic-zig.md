@@ -392,9 +392,9 @@ read out of the files themselves. Everything below follows from that.
 | **Port C's wrapping arithmetic as wrapping.** `+`/`-` trap in safe modes where upstream's `uint64_t` is defined to wrap; on corrupt input that difference is a crash, not a hardening. | The canonical-Huffman recurrence uses `+%`/`-%`; the region widths use `*|` so an absurd size stays absurd instead of wrapping into a satisfiable one. | Syzygy fuzz target |
 | **Poison uninitialized arenas in the safe modes.** | `memory.poison_uninitialized` fills large-page blocks with `0xAA` in Debug **and ReleaseSafe** — Debug alone is dead code here, because `zig build -Doptimize=Debug` SEGVs the Zig 0.16 compiler. | ReleaseSafe engine benches 2508687 |
 | **Let a checking allocator own the error paths.** | `std.testing.allocator` and `checkAllAllocationFailures` (19 sites). It earns this: the leak on every `error.CorruptTable` path in `setSizes` was found the moment a corrupt-table test existed, not by reading the code. | `test`, `parity-valgrind` |
-| **Fuzz the boundary, and assert the boundary — not the answer.** | `src/platform/syzygy/fuzz_targets.zig` asserts every region stays inside its buffer; a garbage table is *allowed* to decode to garbage. Built ReleaseSafe so a missed bound trips a check. | `zig build fuzz --fuzz` |
+| **Fuzz the boundary, and assert the boundary — not the answer.** | `src/platform/syzygy/fuzz_targets.zig` asserts every region stays inside its buffer; a garbage table is *allowed* to decode to garbage. Built ReleaseSafe so a missed bound trips a check. | `zig build fuzz-tb --fuzz` |
 | **Validate a file's claim against something derived WITHOUT the file.** A parse that only checks a header against itself accepts any self-consistent lie. | `table_load.set` tests the pawnful table's leading piece against the lead colour the registry derived from the material configuration — from the filename enumeration, never from a byte of the file. Without it a flipped nibble left the leading group empty and the probe indexed the pawn geometry with a square it never wrote. | `tb-*` goldens, `fuzz_probe.zig` |
-| **Fuzz the CONSUMER too, not only the parser.** A unit target cannot see an invariant that only the code downstream of it relies on: a header it accepts can still be one the probe cannot survive. | `fuzz_probe.zig` parses an image into a registered `TBTable`, publishes it by hand so no file is opened, and probes — fixture-free, because a target guarded on tables that are absent skips silently and reads exactly like a clean run. | `zig build fuzz --fuzz` |
+| **Fuzz the CONSUMER too, not only the parser.** A unit target cannot see an invariant that only the code downstream of it relies on: a header it accepts can still be one the probe cannot survive. | `fuzz_probe.zig` parses an image into a registered `TBTable`, publishes it by hand so no file is opened, and probes — fixture-free, because a target guarded on tables that are absent skips silently and reads exactly like a clean run. | `zig build fuzz-tb-probe --fuzz` |
 | **Keep `catch unreachable` to cases the CODE proves, not ones the current data happens to satisfy.** The parity harness had eight of them formatting FENs out of a case table into a hand-sized buffer: provable only for the table as written, so one longer FEN was a silent overrun. They report through `fail` now. What is left in `src/` formats values whose maximum width the type or the notation fixes — an integer, a hex key, a rendered move — into a buffer sized past it. | review, and ReleaseSafe on every tool that judges the engine |
 
 The order matters. Bounds that are checkable from a header belong at load, where they cost
@@ -550,14 +550,12 @@ the node counts match so the comparison is the same work. It refuses to report w
 those preconditions fail, exiting 2 rather than 0 — a refusal that exits clean is one a
 caller reads as a measurement.
 
-**The workload is held on EVERY round, not just the first.** Round 1 agreeing does not
-make round 7 agree: an engine that dies mid-run, a net that goes missing after the first
-launch, or an ablation quietly searching a different tree all produce a plausible median
-the gate would then compare as though nothing had moved. That check was in the `--budget`
-path and, until it was ported back from ../mcfish (8d24312d), only on round 0 of the A/B
-path — where `first_a`/`first_b` were recorded and never read. Measured pre-fix against a
-stand-in engine whose count drops after round 2: a full report published at ratio 0.615,
-exit 0. It now names the round and refuses.
+**Both modes hold the workload on EVERY round, not just the first.** Round 1 agreeing does
+not make round 7 agree: an engine that dies mid-run, a net that goes missing after the first
+launch, or an ablation quietly searching a different tree all leave a plausible median the
+gate would otherwise compare as though nothing had moved. `first_a`/`first_b` exist for that
+check and for nothing else — a round whose count leaves them is named and refused. Point the
+A/B path at a script that prints one `Nodes searched` and then a smaller one to see it fire.
 
 **A ratio needs a second binary; a budget does not.** `tools/perf_budget.sh` holds this
 tree's own retired-instruction count on `bench 16 1 8` to `tools/instr_budget.golden`,
@@ -574,11 +572,13 @@ exact regression it exists to catch. Pick a tolerance against a measured noise f
 a measured regression.
 
 Rows are keyed by the ARCH tier, and `ARCH=native` is refused in both modes: it names a
-different ISA on every host, so a row filed under that literal string is one the next
-machine compares its own, differently-compiled binary against — an ISA difference that
-prints as a regression. `zig build host-arch` resolves native to the concrete tier to pass
-instead. The default is already pinned, so this only closes the hand-set path the usage
-block invites (../mcfish 0c37e1bb, where that key was the default).
+different tier on every host, so a row filed under that literal string is one the next
+machine compares its own, differently-built binary against — an ISA difference that prints
+as a regression. `zig build host-arch` resolves native to the concrete tier to pass instead.
+The limit: `ARCH` defaults to a pinned tier, so this closes only the hand-set path the usage
+block invites. The keys stay honest because `-Darch=<tier>` fixes a `target_features` set in
+`build/arch.zig`, so the tier name determines the code emitted; a build whose flags came from
+the host CPU instead would need the resolved target-cpu in the key as well.
 
 It is LOCAL-ONLY and not in `zig build parity`: `perf_event_open` is refused in many CI
 containers, and the count is toolchain-specific, so a Zig upgrade legitimately moves it.

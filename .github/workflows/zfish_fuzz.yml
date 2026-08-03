@@ -63,10 +63,10 @@ jobs:
       # worker per artifact through `Io.Group.async`, and the build runner's `Io.Threaded`
       # defaults `async_limit` to `cpu_count - 1` -- one slot already held by the coverage
       # task. A fuzz worker never returns, so an N-core box only ever starts N-2 of them.
-      # ubuntu-latest is 4 cores: two artifacts fuzzed, the third never began and left no
-      # coverage file at all. Reproduced locally under `taskset -c 0-3`, where the same
-      # third artifact recorded zero. Per-target steps make each a single-worker session,
-      # so the slot arithmetic cannot starve any of them.
+      # ubuntu-latest is 4 cores and this tree has 3 roots, so one artifact would never
+      # begin and would leave no coverage file at all -- reproducible on any box with
+      # `taskset -c 0-3`. Per-target steps make each a single-worker session, so the slot
+      # arithmetic cannot starve any of them.
       #
       # SIGINT at each sub-budget: an interrupt with no crash exits 130 (PASS -- no bug in
       # the window); a target crash exits non-zero BEFORE the budget (FAIL, with the
@@ -95,8 +95,8 @@ jobs:
       # Read the execution counters the fuzzer keeps in .zig-cache/v and require ALL THREE
       # artifacts -- the board/eval/search targets, the Syzygy file parse as units, and the
       # same parse driven through a probe -- to have executed at least a million inputs
-      # each. Expect the artifact count, never a smaller number: the floor was 2 while the
-      # tree already had 3 roots, so a target could go dark and still clear the gate.
+      # each. Expect the artifact count, never a smaller number -- a quota short of the root
+      # count lets a target go dark and still clear the gate; move it when a root lands.
       # Measured locally, one 60s solo session per target: 13.2M (probe, the slowest),
       # 14.7M and 52.7M. A 300s budget clears the floor by orders of magnitude; this fires
       # on a broken lane, not a slow runner.
