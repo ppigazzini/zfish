@@ -94,15 +94,19 @@ fn fuzzProbeTable(_: void, smith: *std.testing.Smith) anyerror!void {
     var image: [1024]u8 align(64) = undefined;
     smith.bytesWithHash(&image, 2);
 
-    // The probe generates moves, so the slider magics and leaper tables have to exist. The shipped
-    // binary builds them at startup; a test root has no startup, and without this the first
-    // generateLegal reads an unbuilt table and segfaults rather than reporting anything.
-    position.initRuntime();
-
     _ = runOne(&image);
 }
 
 test "fuzz: a table built from arbitrary bytes probes without trapping" {
+    // The probe generates moves, so the slider magics and leaper tables have to exist. The shipped
+    // binary builds them at startup; a test root has no startup, and without this the first
+    // generateLegal reads an unbuilt table and segfaults rather than reporting anything.
+    //
+    // Build them ONCE, here, not per input. They are read-only afterwards, so a per-input rebuild
+    // buys nothing and costs everything: it held this target to 91 inputs/sec against the 220k/sec
+    // it reaches hoisted, three orders of magnitude below the nightly's execution floor, and that
+    // is what turned the lane red. Every other fuzz root in this tree hoists it the same way.
+    position.initRuntime();
     try std.testing.fuzz({}, fuzzProbeTable, .{});
 }
 

@@ -171,6 +171,16 @@ pub fn register(ctx: Context) void {
     // a local gate weaker than the blocking lane, which is how a real `@intCast` overflow in
     // the tablebase group walk reached main green.
     const fuzz_optimize: std.builtin.OptimizeMode = .ReleaseSafe;
+
+    // Give every artifact a PER-TARGET step as well as a place on the aggregate, because
+    // `zig build fuzz --fuzz` cannot actually fuzz them all at once. `Fuzz.start` spawns one
+    // worker per artifact through `Io.Group.async`, and the build runner's `Io.Threaded`
+    // defaults `async_limit` to `cpu_count - 1`, one slot of which the coverage task already
+    // holds. A fuzz worker never returns, so on an N-core box only N-2 artifacts EVER start:
+    // three artifacts on a 4-core runner means one is silently never fuzzed, and which one is
+    // scheduling order. Fuzz them one step at a time and each gets its own session.
+    const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
+
     // Build under -Doptimize=ReleaseSafe so a found crash trips a safety check.
     const fuzz_targets_test = b.addTest(.{
         .root_module = b.createModule(.{
@@ -187,7 +197,8 @@ pub fn register(ctx: Context) void {
     fuzz_targets_test.root_module.addImport("network", mods.get("network").?);
     fuzz_targets_test.root_module.addImport("nnue_accumulator", mods.get("nnue_accumulator").?);
     fuzz_targets_test.root_module.addImport("headless_search", mods.get("headless_search").?);
-    const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
+    const fuzz_board_step = b.step("fuzz-board", "Fuzz the board/eval/search targets alone");
+    fuzz_board_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
     fuzz_step.dependOn(&b.addRunArtifact(fuzz_targets_test).step);
 
     // Fuzz the Syzygy file parse on the same step. A .rtbw/.rtbz is the only attacker-supplyable
@@ -201,6 +212,8 @@ pub fn register(ctx: Context) void {
             .link_libc = true,
         }),
     });
+    const fuzz_tb_step = b.step("fuzz-tb", "Fuzz the Syzygy file parse as units, alone");
+    fuzz_tb_step.dependOn(&b.addRunArtifact(tb_fuzz_test).step);
     fuzz_step.dependOn(&b.addRunArtifact(tb_fuzz_test).step);
 
     // Fuzz the same file END TO END: parse an image into a registered TBTable and probe it, which
@@ -217,6 +230,8 @@ pub fn register(ctx: Context) void {
     });
     for ([_][]const u8{ "tb_source", "position", "state_list", "movegen", "board_core", "thread_runtime" }) |name|
         tb_probe_fuzz_test.root_module.addImport(name, mods.get(name).?);
+    const fuzz_tb_probe_step = b.step("fuzz-tb-probe", "Fuzz the Syzygy parse-then-probe path alone");
+    fuzz_tb_probe_step.dependOn(&b.addRunArtifact(tb_probe_fuzz_test).step);
     fuzz_step.dependOn(&b.addRunArtifact(tb_probe_fuzz_test).step);
 
     // Report what the fuzzer actually EXECUTED. `zig build fuzz --fuzz` exits 0 whether it ran
