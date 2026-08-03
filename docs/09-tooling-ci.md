@@ -247,10 +247,18 @@ means one side was missed. Both sides of a shared field have to be relaxed.
 
 `docs-lint` gates this documentation set against the tree it describes. Docs are accurate
 when written and rot where the code moves under them, so it settles the three rot classes a
-machine can: every internal link resolves, every `src/…` or `tools/…` path named in prose
-exists, and any bench signature quoted in docs equals `build.zig`'s `signature_reference` —
+machine can: every internal link resolves, every `src/…` or `tools/…` path named in prose is
+in the tree, and any bench signature quoted in docs equals `build.zig`'s `signature_reference` —
 the anchor moves on every bench-moving upstream sync, and a doc quoting a dead one is worse
 than a doc omitting it.
+
+**"In the tree" means the index, not your checkout.** A link target and a path claim are both
+resolved against `git ls-files`, because `-e` answers a question about one working directory:
+a file left behind by a rename passes locally and is dead for every reader. A path
+`.gitignore` names is exempt — the repository decided not to carry it, so a doc naming it
+documents the tool that writes it. That exemption is a hole with a shape: a dead *ignored*
+path is not checked by anything. Outside a git checkout the gate says so on stdout and falls
+back to the filesystem.
 
 It does **not** check whether a sentence is true, and cannot: *"numa_context is a
 never-dereferenced stub handle"* parsed, linked, and was false for weeks. Only reading the

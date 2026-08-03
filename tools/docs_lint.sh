@@ -25,6 +25,45 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 fail=0
 
+# --- resolve a claim against the TREE, not this working directory ---------------------------
+# `-e` answers "is the file HERE", which is not the question a doc asks -- a reader gets the
+# tree. The two failure modes it produces are opposite and both silent: a file left behind by
+# a rename is green here and DEAD in a fresh clone (../rfish took a red CI run on exactly
+# that), and a path .gitignore deliberately excludes can never be green anywhere.
+#
+# Ask git instead, and exempt an ignored path: one the repository decided not to carry is a
+# doc naming the tool that WRITES it, not a claim about a tracked file. State the hole that
+# leaves rather than hide it -- a dead IGNORED path stays unchecked. What this closes is the
+# "present in my checkout, absent from the tree" class, which reports OK instead of erroring.
+#
+# Take the index ONCE into a set and answer from it: this runs against every link target and
+# every path claim, and a `git` per lookup costs ~2.5s of a 6s gate. The two git calls below
+# are the miss path only -- `--error-unmatch` normalises the pathspec, which is what resolves
+# a link written `docs/../AGENTS.md` that a literal set lookup cannot match.
+#
+# Outside a checkout (a tarball export) there is no tree to ask. Fall back to the filesystem
+# and SAY so: a check that quietly changes what it proves is a skip reported as a pass.
+declare -A tracked_set=()
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    tree_backed=1
+    while IFS= read -r tracked_path; do
+        tracked_set["$tracked_path"]=1
+    done < <(git ls-files)
+else
+    tree_backed=0
+    echo "docs-lint: NOT A GIT CHECKOUT -- path claims fall back to the filesystem."
+fi
+
+in_tree() {
+    if [ "$tree_backed" -eq 0 ]; then
+        [ -e "$1" ]
+        return
+    fi
+    [ -n "${tracked_set[$1]+set}" ] && return 0
+    git ls-files --error-unmatch -- "$1" >/dev/null 2>&1 && return 0
+    git check-ignore -q -- "$1"
+}
+
 # --- 1. every internal link resolves -------------------------------------------------------
 # Renaming the set 0-N -> 00-N rewrote 124 references; a typo in any of them is a dead link a
 # reader hits and we never do.
@@ -36,7 +75,7 @@ for f in docs/*.md README.md CONTRIBUTING.md AGENTS.md; do
         case "$target" in http*|"") continue ;; esac
         path="${target%%#*}"                       # strip the #anchor
         [ -n "$path" ] || continue                 # a bare #anchor is intra-file
-        [ -e "$dir/$path" ] || [ -e "$path" ] || {
+        in_tree "$dir/$path" || in_tree "$path" || {
             echo "docs-lint: BROKEN LINK  $f -> $target"
             broken=$((broken + 1))
         }
@@ -49,7 +88,7 @@ done
 # rename silently invalidates the reference; the prose still reads plausibly.
 missing=0
 while IFS= read -r p; do
-    [ -e "$p" ] || { echo "docs-lint: DEAD PATH    $p (named in a shipped doc, not in the tree)"; missing=$((missing + 1)); }
+    in_tree "$p" || { echo "docs-lint: DEAD PATH    $p (named in a shipped doc, not in the tree)"; missing=$((missing + 1)); }
 done < <(grep -ohE '`(src|tools)/[A-Za-z0-9_/.-]+\.(zig|sh|py|golden)`' docs/*.md AGENTS.md \
          | tr -d '`' | sort -u)
 [ "$missing" -eq 0 ] || fail=1
@@ -184,7 +223,7 @@ if [ "$step_total" -lt 70 ]; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths exist, symbols and steps exist, anchor == $anchor, no __DEV refs)"
+    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths are in the tree, symbols and steps exist, anchor == $anchor, no __DEV refs)"
 else
     echo "docs-lint: FAIL -- a doc contradicts the tree (see above)."
 fi
