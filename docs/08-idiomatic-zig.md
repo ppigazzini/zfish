@@ -547,7 +547,17 @@ unproven benefit. Each site earns its place on its own measurement.
 encodes the method: interleave the two builds and take the median of the per-round
 paired ratios (not the ratio of the medians — they disagree), pin the run, and assert
 the node counts match so the comparison is the same work. It refuses to report when
-those preconditions fail.
+those preconditions fail, exiting 2 rather than 0 — a refusal that exits clean is one a
+caller reads as a measurement.
+
+**The workload is held on EVERY round, not just the first.** Round 1 agreeing does not
+make round 7 agree: an engine that dies mid-run, a net that goes missing after the first
+launch, or an ablation quietly searching a different tree all produce a plausible median
+the gate would then compare as though nothing had moved. That check was in the `--budget`
+path and, until it was ported back from ../mcfish (8d24312d), only on round 0 of the A/B
+path — where `first_a`/`first_b` were recorded and never read. Measured pre-fix against a
+stand-in engine whose count drops after round 2: a full report published at ratio 0.615,
+exit 0. It now names the round and refuses.
 
 **A ratio needs a second binary; a budget does not.** `tools/perf_budget.sh` holds this
 tree's own retired-instruction count on `bench 16 1 8` to `tools/instr_budget.golden`,
