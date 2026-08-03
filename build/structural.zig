@@ -176,9 +176,13 @@ pub fn registerUpstream(
     repoPath: *const fn (*std.Build, []const u8) []const u8,
 ) void {
     // Audit the upstream blast-radius map against the comment-derived correspondence
-    // (rot = declared owner missing from the tree; drift is advisory) and ratchet the
-    // uncovered-surface count (baseline in tools/upstream/upstream_map.baseline --
-    // lower it as citations are added, never raise it). Not in the parity aggregate:
+    // (rot = declared owner missing from the tree, which fails outright) and ratchet two
+    // counts, each from its own baseline file under tools/upstream/: the uncovered surface
+    // (upstream_map.baseline) and the drift, rows whose derived owners the declared rule
+    // omits (upstream_map.drift_baseline). Lower either as citations are added, never
+    // raise it. Drift is ratcheted rather than failed so adding a citation never blocks
+    // the commit that adds it -- but it reached 16 unread rows once, which is a blast
+    // radius the router silently routes around. Not in the parity aggregate:
     // it reads the pinned upstream tree from git objects a plain CI checkout of
     // origin does not carry. The weekly upstream-check workflow runs it after
     // fetching the upstream remote, which brings those objects in.
@@ -189,7 +193,7 @@ pub fn registerUpstream(
     });
     const upstream_map_step = b.step(
         "upstream-map",
-        "upstream map gate: declared-map rot fails, uncovered surface ratcheted",
+        "upstream map gate: declared-map rot fails, uncovered surface + drift ratcheted",
     );
     upstream_map_step.dependOn(&upstream_map_cmd.step);
 

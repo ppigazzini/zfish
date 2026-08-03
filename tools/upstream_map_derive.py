@@ -49,6 +49,7 @@ PIN_FILE = REPO / "tools" / "upstream" / "UPSTREAM_TARGET"
 DECLARED = REPO / "tools" / "upstream" / "upstream_map.tsv"
 EXCEPTIONS = REPO / "tools" / "upstream" / "upstream_map.exceptions"
 BASELINE = REPO / "tools" / "upstream" / "upstream_map.baseline"
+DRIFT_BASELINE = REPO / "tools" / "upstream" / "upstream_map.drift_baseline"
 
 CPP_REF = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*\.cpp)(?::\d+)?\b")
 H_LINE_REF = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*\.h):\d+\b")
@@ -155,11 +156,13 @@ def declared_rules() -> list[tuple[str, list[str]]]:
     return rules
 
 
-def audit() -> int:
+def audit() -> tuple[int, int]:
+    """Report rot and drift. Return (rot failures, drift findings)."""
     mapped, _, _ = build_map()
     rules = declared_rules()
     tracked = set(run(["git", "ls-files", "src"]).splitlines())
     failures = 0
+    drift = 0
 
     # Rot: declared owner paths that no longer exist in the tree.
     for glob, owners in rules:
@@ -168,9 +171,14 @@ def audit() -> int:
                 print(f"ROT: {glob} declares owner {owner} which is not in the tree")
                 failures += 1
 
-    # Drift: derived owners the declared glob's rule does not mention. Advisory --
-    # the declared map is a BLAST-RADIUS list, so extra derived owners mean the
-    # radius grew; report so the router's risk model catches up.
+    # Drift: derived owners the declared glob's rule does not mention. Not a rot --
+    # the declared map is a BLAST-RADIUS list, so extra derived owners mean the radius
+    # GREW and every row is still true as far as it goes. But a radius that understates
+    # the tree is one the router reads to decide what a sync must touch, and it silently
+    # routes around whatever it omits. It is RATCHETED rather than failed outright, so
+    # adding a citation never blocks the commit that adds it; the count has to come back
+    # down before the ratchet does. It reached 16 unread once, including five real
+    # AVX-512 ports under `src/nnue/*`, because nothing counted it.
     for path in sorted(mapped):
         rule_owners: set[str] = set()
         for glob, owners in rules:
@@ -183,7 +191,8 @@ def audit() -> int:
         missing = sorted(d for d in derived if d not in rule_owners)
         if missing:
             print(f"DRIFT: {path}: derived owners not in the declared rule: {', '.join(missing)}")
-    return failures
+            drift += 1
+    return failures, drift
 
 
 def main() -> None:
@@ -200,9 +209,22 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.audit:
-        failures = audit()
+        failures, drift = audit()
         if failures:
             sys.exit(1)
+        # Ratchet the drift the same way as the uncovered surface, and from its own file
+        # so lowering one never silently re-lets the other. Absent file = no ratchet, which
+        # is the right reading for a tree that has not adopted one.
+        if DRIFT_BASELINE.exists():
+            drift_baseline = int(DRIFT_BASELINE.read_text().strip())
+            if drift > drift_baseline:
+                print(
+                    f"DRIFT-RATCHET: {drift} drifted row(s) > baseline {drift_baseline} "
+                    f"-- widen the declared rule(s) above, or lower the baseline if a "
+                    f"citation was removed. Never raise it."
+                )
+                sys.exit(1)
+            print(f"drift ratchet: {drift} <= baseline {drift_baseline}")
         # Single-source the ratchet: build.zig's `upstream-map` step and the weekly
         # CI lane both run bare `--audit`, so the number lives in one file. Lower it
         # as citations land; never raise it.
