@@ -92,7 +92,7 @@ moment the code lands, and nobody knows which claim broke better than the person
 | [05-tablebases](05-tablebases.md) | `src/platform/syzygy/`, `src/engine/search/tb_*.zig` | hot |
 | [06-platform](06-platform.md) | `src/platform/` | hot |
 | [07-shell](07-shell.md) | `src/shell/` | hot |
-| [09-tooling-ci](09-tooling-ci.md) | `build.zig` steps, `tools/`, `.github/workflows/` | hot |
+| [09-tooling-ci](09-tooling-ci.md) | `build.zig` steps, `build/`, `tools/`, `.github/workflows/` | hot |
 | [08-idiomatic-zig](08-idiomatic-zig.md) | patterns and the measurement discipline | cold |
 | [10-references](10-references.md) | external links | cold |
 | this page | the rules | cold |
