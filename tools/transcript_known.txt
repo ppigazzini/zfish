@@ -1,0 +1,48 @@
+# Declared divergences for tools/upstream_transcript.sh.
+#
+# An entry here is a claim that zfish MAY differ from the pristine oracle on a line. That is
+# the strongest statement any file in this repo makes against a reference, so each one carries
+# a tag the gate enforces, and each is checked in BOTH directions:
+#
+#   EXPIRING    the divergence must STILL OCCUR. An entry matching nothing turns the gate red,
+#               so the line gets deleted rather than going on reading as accepted. This is the
+#               whole point: a filter that outlives its gap silently stops the gate comparing
+#               real output, and nobody learns that it has.
+#   PERMANENT   never retires -- the divergence is correct behaviour, not a gap, so it needs
+#               an argument rather than an expiry. Exempt from the match check, and that
+#               exemption is the only hole here.
+#   untagged    a FAILURE. The tag is the author deciding which of the two this is, and a
+#               pattern added without deciding is the case this file exists to prevent.
+#
+# ONE PATTERN PER SIDE, always. The gate diffs `<(theirs)` against `<(ours)`, so `<` is the
+# ORACLE and `>` is zfish -- read the diff invocation, not the intuition; getting this backwards
+# is what the first draft of this file did, and the per-side split caught it on the first run
+# where a both-sides pattern would have accepted it silently. A single both-sides pattern
+# swallows a real divergence: if it wildcards a value, our line saying one thing and upstream's
+# saying another BOTH match and the pair reads as accepted. That is not hypothetical -- the
+# entry below replaced exactly such a pattern, which wildcarded the replica COUNT on both
+# sides, so `replica 3` against `replica 1` would have been silently tolerated.
+#
+# Format: <TAG><tab><extended regex, matched against one diff line>
+
+# Upstream's Engine::verify_network reports the per-NUMA-node allocation status of the net
+# (engine.cpp). It needs two subsystems zfish does not have: NUMA replication of the network
+# (zfish keeps one global feature-transformer storage, so there are no per-node replicas to
+# report) and upstream's src/shm.h system-wide shared constant allocation (zfish loads the net
+# into process-local memory, so even a single replica could not honestly print "Shared
+# memory."). Emitting the line with a fabricated status would put a false statement in the
+# transcript, which is worse than the gap -- so zfish tells the truth about its own allocation
+# and the two lines differ in that one word.
+#
+# EXPIRING because it is a GAP: the day NUMA replication lands, zfish prints what upstream
+# prints, these stop matching, and the gate says so. Each side pins the word the other side
+# must not be saying, and the count is compared rather than wildcarded.
+EXPIRING	^< info string Network replica [0-9]+: Shared memory\.$
+EXPIRING	^> info string Network replica [0-9]+: Local memory\.$
+
+# zfish compiles no C++, so it reports the Zig toolchain where upstream reports clang/gcc, and
+# the two are built at different -Darch/ARCH tiers. Reporting the toolchain that ACTUALLY
+# built the binary is correct, not a gap; docs/07-shell.md states it, and matching upstream's
+# text would be a lie. PERMANENT: there is no future in which this retires, because the
+# divergence is the port being honest about itself.
+PERMANENT	^[<>] (Compiled by|Compilation architecture|Compilation settings|Compiler __VERSION__ macro) +:

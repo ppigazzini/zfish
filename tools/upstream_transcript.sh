@@ -47,24 +47,45 @@ normalise() {
            -e 's/^(Nodes\/second *: ).*/\1N/'
 }
 
-# Declare the divergences that are KNOWN and traced to an unimplemented subsystem, so they
-# are reported rather than silently tolerated -- and so a NEW one cannot hide behind them.
-# Each entry is an extended regex matched against a diff line.
+# Declare the divergences that are KNOWN, so they are reported rather than silently tolerated
+# and so a NEW one cannot hide behind them. The entries and the argument for each live in
+# tools/transcript_known.txt; this reads them and ENFORCES their tags.
 #
-#   Network replica N: ... -- upstream's Engine::verify_network reports the per-NUMA-node
-#   allocation status of the net (engine.cpp:266-299). It needs two subsystems zfish does
-#   not have: NUMA replication of the network (zfish keeps one global feature-transformer
-#   storage, so it has no per-node replicas to report) and upstream's 629-line src/shm.h
-#   system-wide shared constant allocation (zfish loads the net into process-local memory,
-#   so even a single replica could not honestly print "Shared memory."). Emitting the line
-#   with a fabricated status would put a false statement in the transcript, which is worse
-#   than the gap. Implementing it is a platform feature, not a reporting fix.
-#
-#   The `compiler` banner -- zfish compiles no C++, so it reports the Zig toolchain where
-#   upstream reports clang/gcc, and the two are built at different -Darch/ARCH tiers.
-#   Reporting the toolchain that actually built the binary is correct, not a gap;
-#   docs/07-shell.md states it, and matching upstream's text would be a lie.
-KNOWN_RE='^[<>] (info string Network replica [0-9]+: |(Compiled by|Compilation architecture|Compilation settings|Compiler __VERSION__ macro) +:)'
+# The list used to be one inline regex with no mechanical owner, which made every entry a
+# permanent grant: nothing could tell you when the gap it covered had been closed, and a
+# filter that outlives its gap quietly stops the gate comparing real output.
+KNOWN_FILE="$REPO/tools/transcript_known.txt"
+[ -r "$KNOWN_FILE" ] || {
+    echo "upstream-transcript: cannot read $KNOWN_FILE -- the declared-divergence list is the" >&2
+    echo "upstream-transcript: gate's only allowance; without it every case would read as a" >&2
+    echo "upstream-transcript: failure. Refusing." >&2; exit 2; }
+
+K_TAG=(); K_PAT=(); K_HIT=()
+while IFS=$'\t' read -r tag pat; do
+    case "$tag" in
+    '#'*|'') continue ;;
+    esac
+    if [ -z "${pat:-}" ]; then
+        echo "upstream-transcript: UNTAGGED entry '$tag' -- every line needs EXPIRING or" >&2
+        echo "upstream-transcript: PERMANENT and a tab before its pattern." >&2; exit 2
+    fi
+    case "$tag" in
+    EXPIRING|PERMANENT) ;;
+    *) echo "upstream-transcript: unknown tag '$tag' (want EXPIRING or PERMANENT)" >&2; exit 2 ;;
+    esac
+    K_TAG+=("$tag"); K_PAT+=("$pat"); K_HIT+=(0)
+done < "$KNOWN_FILE"
+
+# Guard the EXTRACTION, not just the verdict. A list read as empty makes every declared
+# divergence an unknown one, so the gate would fail loudly rather than pass -- but a list read
+# as empty because the FORMAT changed is a rig fault, and saying so beats 96 spurious diffs.
+[ "${#K_PAT[@]}" -gt 0 ] || {
+    echo "upstream-transcript: read 0 entries from $KNOWN_FILE -- the format changed and the" >&2
+    echo "upstream-transcript: extraction lost its subject. Refusing." >&2; exit 2; }
+
+# Join the patterns for the fast per-case filter; the per-entry accounting below is what
+# decides whether each one is still earning its place.
+KNOWN_RE="$(printf '%s|' "${K_PAT[@]}")"; KNOWN_RE="(${KNOWN_RE%|})"
 
 pass=0; fail=0; known=0; rig=0
 
@@ -91,6 +112,20 @@ run_case() {
     fi
 
     delta="$(diff <(printf '%s\n' "$theirs") <(printf '%s\n' "$ours") | grep -E '^[<>]')"
+    # Account each declared entry against the lines it actually covers. An entry that covers
+    # nothing across the whole matrix is stale, and only a per-entry count can see that -- the
+    # joined filter above is satisfied by any ONE alternative matching.
+    local line i
+    while IFS= read -r line; do
+        case "$line" in
+        '<'*|'>'*) ;;
+        *) continue ;;
+        esac
+        for i in "${!K_PAT[@]}"; do
+            [[ "$line" =~ ${K_PAT[$i]} ]] && K_HIT[$i]=$(( K_HIT[i] + 1 ))
+        done
+    done <<<"$delta"
+
     unknown="$(printf '%s\n' "$delta" | grep -Ev "$KNOWN_RE" | grep -E '^[<>]')"
 
     if [ -z "$unknown" ]; then
@@ -399,3 +434,26 @@ printf 'upstream-transcript: %d ok, %d known-divergent, %d FAILED, %d rig (%d ca
     exit 2
 }
 [ "$fail" -eq 0 ] || exit 1
+
+# EXPIRE THE ALLOWLIST. An EXPIRING entry that covered no line in the whole matrix is either a
+# gap that has been closed -- delete the line and let the gate compare that output again -- or
+# a pattern that has rotted, in which case it is no longer covering the divergence it names and
+# a NEW one could hide behind the entry unnoticed. Both cases want the same action: look.
+#
+# PERMANENT entries are exempt by construction (they describe correct behaviour, so there is no
+# day they retire), and every one of them carries its argument in transcript_known.txt.
+stale=0
+for i in "${!K_PAT[@]}"; do
+    [ "${K_TAG[$i]}" = "EXPIRING" ] || continue
+    [ "${K_HIT[$i]}" -gt 0 ] && continue
+    echo "upstream-transcript: STALE declared divergence -- matched NOTHING in $((pass + known + fail)) case(s):"
+    echo "                     ${K_PAT[$i]}"
+    echo "                     Either the gap closed (delete the line) or the pattern rotted"
+    echo "                     (fix it) -- while it sits there a NEW divergence can hide behind it."
+    stale=$((stale + 1))
+done
+if [ "$stale" -ne 0 ]; then
+    echo "upstream-transcript: $stale stale entr(ies) in tools/transcript_known.txt" >&2
+    exit 1
+fi
+printf 'upstream-transcript: %d declared entr(y/ies), every one still earning its place\n' "${#K_PAT[@]}"
