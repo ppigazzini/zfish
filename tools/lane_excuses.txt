@@ -1,0 +1,46 @@
+# Steps that run in no aggregate and no CI workflow, each with the argument for why.
+#
+# `tools/lane_coverage.zig` reads this. Format: <step> <reason>, one per line. A reason is
+# REQUIRED -- an excuse is an argument, not a name.
+#
+# THIS LIST IS THE HOLE IN THE GATE, so it expires in its own direction: an excused step that
+# turns out to run is a STALE EXCUSE and fails, and an excuse for a step that no longer exists
+# fails too. Both directions matter. A list written defensively goes on covering steps that
+# gained a lane long ago, and the day one loses its lane again the stale line absorbs it
+# silently -- which is the exact failure this gate exists to prevent, one level down.
+#
+# NOT LISTED HERE, because the gate derives them instead of taking a claim for them:
+#   * `<gate>-update` -- the regeneration half of a documented gate pair, which must never run
+#     in CI and now refuses by default. Accounted for by its base gate being laned, so an
+#     update step whose gate nobody runs still fails.
+#   * a step whose work sits entirely inside a laned step (`test-graph` inside `test`).
+
+# Dispatched by zfish_fuzz.yml, but through a shell loop variable:
+#   for step in fuzz-board fuzz-tb fuzz-tb-probe; do zig build "$step" --fuzz ...
+# The scanner will not resolve `$step`, deliberately: a pattern that guesses what a shell
+# variable expands to matches more than the question it asks. Deleting a target from that loop
+# leaves this line stale and visible, which is the coverage that matters.
+fuzz-board dispatched by zfish_fuzz.yml through a `for step in ...` loop variable the scanner will not resolve
+fuzz-tb dispatched by zfish_fuzz.yml through a `for step in ...` loop variable the scanner will not resolve
+fuzz-tb-probe dispatched by zfish_fuzz.yml through a `for step in ...` loop variable the scanner will not resolve
+
+# The nightly fuzz lane needs the execution counter in two modes against a baseline file
+# (`snapshot` then `check`), which the step's fixed argument list cannot express, so it runs
+# `zig run tools/fuzz_report.zig -- ...` directly. The step is the local one-shot reading of
+# the same tool.
+fuzz-report CI drives tools/fuzz_report.zig directly in snapshot/check modes; this step is the local one-shot reading
+
+# Needs the 5-man tables. No CI lane fetches them -- `tb` fetches the 3-man set only -- so this
+# pair is local-only by construction, and it went red for a week once because of exactly that:
+# a resync refreshed every golden a lane could reach and left this one behind. Run it by hand
+# after any sync. (docs/09, "A resync must refresh every golden it moves".)
+tb-cursed needs the 5-man Syzygy set that no CI lane fetches; local-only, run by hand every upstream sync
+tb-cursed-update regeneration half of the local-only tb-cursed gate
+
+# Prints the host's best ARCH tier and exits. It resolves `-Darch=native` for a human at a
+# prompt; there is no verdict for a lane to read.
+host-arch prints the resolved -Darch=native tier for a human; it asserts nothing a lane could gate on
+
+# Zig's own built-in step, registered by std.Build rather than by this repo. Nothing here
+# decides what it does, and a lane running it would be testing the build system.
+uninstall a std.Build built-in, not a step this repo registers

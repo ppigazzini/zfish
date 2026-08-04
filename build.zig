@@ -444,6 +444,20 @@ pub fn build(b: *std.Build) void {
         "Build the Zig-owned Stockfish engine for Linux x86_64 / aarch64",
     );
     stockfish_step.dependOn(install_step);
+
+    // Hold every step registered above to a lane. Register LAST: it classifies
+    // `b.top_level_steps`, so a step declared after this call would not be in the subject.
+    const lane_coverage_tool = b.addExecutable(.{
+        .name = "lane_coverage",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/lane_coverage.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+    // `register` joins `parity` itself, before classifying, so the gate is in its own
+    // subject -- see build/lanes.zig.
+    _ = buildpkg.lanes.register(b, lane_coverage_tool, &.{ parity_step, parity_portable_step });
 }
 
 // Wire a unit-test artifact into `step` for coverage. Without coverage this is the plain
