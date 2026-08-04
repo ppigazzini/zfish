@@ -20,6 +20,7 @@
 
 const std = @import("std");
 
+const decode = @import("decode.zig");
 const registry = @import("registry.zig");
 const table_load = @import("table_load.zig");
 const wdl = @import("wdl.zig");
@@ -55,20 +56,23 @@ fn materialKey(pieces: []const u8) u64 {
     return position.computeMaterialKey(&counts, 16);
 }
 
-// Require the parse-then-probe chain to refuse or answer, never to trap. The verdict is
-// unconstrained -- a table built out of fuzzer bytes decodes to nonsense -- so the property is
-// only that every index the chain takes stays inside what the file provided.
+// Report the PARSE's verdict beside the probe's. A test that counts only answers cannot tell "the
+// parse refused every image" from "the parse accepted and the probe then refused the value it
+// decoded" -- and since a table built from arbitrary bytes decodes a legitimate WDL score only
+// rarely, those two want different assertions below.
+const Run = struct { result: ProbeResult, parsed: bool };
+
 // Parse one image into a registered table, publish it, and probe -- the body both the fuzz target
 // and the coverage test below run. `image` must be 64-aligned: loadFile hands `set` a 64-aligned
 // base and the data-section rounding in `set` is written against that.
-fn runOne(image: *const [1024]u8) ProbeResult {
+fn runOne(image: *const [1024]u8) Run {
     const cfg = configs[image[0] % configs.len];
     const len = 16 + (@as(usize, image[1]) % (image.len - 16));
 
     registry.reset(""); // fresh arena and table map; no path, so nothing is ever opened
     registry.register(cfg.pieces);
     const t = registry.hashGet(materialKey(cfg.pieces)) orelse
-        return .{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 };
+        return .{ .result = .{ .available = 0, .wdl = 0, .wdl_state = 0, .dtz = 0, .dtz_state = 0 }, .parsed = false };
 
     // Keep the magic: the probe never reaches a decoder without it, and a fuzzer that has to
     // rediscover four constant bytes spends its whole budget there.
@@ -79,12 +83,13 @@ fn runOne(image: *const [1024]u8) ProbeResult {
 
     // Publish exactly as mapped()/mappedDtz() do: base only when the parse accepted the file, and
     // `ready` either way, so the probe treats a refused table as a missing one.
-    if (table_load.set(t, false, wdl_image[0..len])) t.base = wdl_image[0..len];
+    const parsed = table_load.set(t, false, wdl_image[0..len]);
+    if (parsed) t.base = wdl_image[0..len];
     t.ready = true;
     if (table_load.set(t, true, dtz_image[0..len])) t.dtz_base = dtz_image[0..len];
     t.dtz_ready = true;
 
-    return wdl.probeFen(cfg.fen.ptr, cfg.fen.len, 0);
+    return .{ .result = wdl.probeFen(cfg.fen.ptr, cfg.fen.len, 0), .parsed = parsed };
 }
 
 // Require the parse-then-probe chain to refuse or answer, never to trap. The verdict is
@@ -115,20 +120,69 @@ test "fuzz: a table built from arbitrary bytes probes without trapping" {
 // A fuzz target whose every input is REFUSED at the header still exits 0, and reads exactly like
 // one that exercised the decoder -- the failure mode this repository has already paid for once. So
 // sweep a fixed pseudo-random batch through the same body and require that a good fraction of it
-// parses AND probes: that is the half where an accepted-but-inconsistent header meets
-// doProbeTable, which is the whole reason this target exists.
+// PARSES, which is where an accepted-but-inconsistent header meets doProbeTable and the whole
+// reason this target exists, and that the probe still ANSWERS at least once. Count those two
+// separately: they differ by two orders of magnitude, so one number cannot gate both.
 test "the parse-then-probe path is reached, not just the refusals" {
     position.initRuntime();
     var prng = std.Random.DefaultPrng.init(0x5F17_D622);
     const rand = prng.random();
+    var parsed: usize = 0;
     var probed: usize = 0;
     const rounds = 4000;
     for (0..rounds) |_| {
         var image: [1024]u8 align(64) = undefined;
         rand.bytes(&image);
-        if (runOne(&image).available != 0) probed += 1;
+        const r = runOne(&image);
+        if (r.parsed) parsed += 1;
+        if (r.result.available != 0) {
+            probed += 1;
+            // Hold the answered score to the five outcomes a WDL file can hold. The probe reports
+            // this value AND indexes with it, so a table that invents one is a trap downstream,
+            // not merely a wrong answer -- see the regression below.
+            try std.testing.expect(r.result.wdl >= -2 and r.result.wdl <= 2);
+        }
     }
-    // Random bytes clear the header's own length checks about 4% of the time; require a tenth of
-    // that, so the assertion pins "the path runs" without pinning a rate the parse may move.
-    try std.testing.expect(probed > rounds / 250);
+    // Random bytes clear the header's own length checks about 4% of the time (172 of 4000 here);
+    // require a tenth of that, so the assertion pins "the path runs" without pinning a rate the
+    // parse may move.
+    try std.testing.expect(parsed > rounds / 250);
+    // ANSWERING is far rarer than parsing, and deliberately so: an accepted header still has to
+    // decode a value inside the five a WDL file can hold, which arbitrary bytes rarely do (3 of
+    // 4000 here). Require only that it still happens -- a floor near the measured count would
+    // pin a rate the decoder is free to move, while zero would mean the probe's answering half
+    // had gone dark behind a green sweep.
+    try std.testing.expect(probed > 0);
+}
+
+// Pin the one bound the sweep above cannot reach on purpose: the WDL score's DOMAIN.
+//
+// do_probe_table<WDL> returns "the decoded value minus 2", and setSizes' SingleValue branch
+// returns a raw header byte AS that value -- so a corrupt file could hand the probe a "WDL score"
+// of 253, which probeDtz then fed to wdl_map[wdl + 2], five entries wide. The fuzz target above
+// found it on the nightly lane; drive the same shape deterministically here rather than wait for
+// a mutation to rediscover it. Reach it without a file: register the table, publish a WDL
+// PairsData that is SingleValue over an impossible byte, and probe.
+test "a WDL value no file can hold is refused, not handed on as a score" {
+    position.initRuntime();
+    const cfg = configs[0]; // KQvK -- pawnless, so the index walk reaches the decoder off a bare table
+
+    registry.reset("");
+    registry.register(cfg.pieces);
+    const t = registry.hashGet(materialKey(cfg.pieces)) orelse return error.TableNotRegistered;
+
+    for (0..t.sides) |side| {
+        const d = t.get(false, side, 0);
+        d.flags = decode.flag_single_value;
+        d.min_sym_len = 200; // decompressPairs returns this verbatim, as the stored value
+    }
+    // Publish the WDL half only. Leaving dtz_base null keeps the DTZ probe out of it, so the
+    // refusal under test has to be the WDL one.
+    var image: [64]u8 align(64) = @splat(0);
+    t.base = image[0..];
+    t.ready = true;
+    t.dtz_ready = true;
+
+    const r = wdl.probeFen(cfg.fen.ptr, cfg.fen.len, 0);
+    try std.testing.expectEqual(@as(u8, 0), r.available);
 }

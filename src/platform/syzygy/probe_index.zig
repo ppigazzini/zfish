@@ -245,6 +245,16 @@ pub fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_s
 
     const raw = decode.decompressPairs(d, idx);
     if (dtz) return mapScoreDtz(t, d, raw, wdl_score);
+    // Bound the score to the five outcomes a WDL file can hold. `raw` is decoded from the
+    // PAYLOAD, and setSizes' SingleValue branch returns a raw header byte verbatim, so nothing
+    // before this point holds it to 0..4 -- while every caller downstream INDEXES with what it
+    // gets: mapScoreDtz reads wdl_map[wdl + 2], five entries wide. A SingleValue byte of 255
+    // reached that index as 255 (fuzz_probe.zig, on the nightly lane). Refuse the table here, as
+    // the group walk above refuses one whose groups the position cannot fill.
+    if (raw < 0 or raw > 4) {
+        out_state.* = probe_fail;
+        return 0;
+    }
     return raw - 2; // map_score<WDL> = value - 2
 }
 

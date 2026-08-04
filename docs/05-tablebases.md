@@ -182,6 +182,19 @@ mmap's page padding, and zfish used to land in `loadFile`'s 63-byte alignment sl
 arena held. Refusing the read is **not** an equivalent choice: the bits are never
 load-bearing for a valid table, but bailing out on them changes decoded values.
 
+A decoded value's **domain** is the same kind of claim one level up, and it is not academic.
+`doProbeTable<WDL>` returns `value - 2`, and its callers do not merely report that score — they
+**index** with it: `mapScoreDtz` reads `wdl_map[wdl + 2]`, five entries wide. Nothing before that
+return bounds the value. It comes out of the payload, and the `flag_single_value` branch returns
+`min_sym_len` — a raw header byte — verbatim, so a byte of 255 left the probe as a WDL score of
+253 and indexed that five-entry map with 255. `fuzz_probe.zig` found it on the nightly lane, on a
+header the unit targets accept and `table_load.set` has no reason to refuse. `doProbeTable` now
+refuses a WDL value outside `0..4`, the five outcomes a WDL file can hold; no well-formed table
+produces another, so the refusal is unreachable on real tables and the `tb-*` goldens are
+unmoved. Bound the value where it is born, not at each place that indexes with it — the score
+reaches `mapScoreDtz`, `dtzBeforeZeroing` and the in-search probe, and only the first of those
+happened to trap.
+
 ### The compressed format, as implemented
 
 The decoder implements exactly what `decode.zig`, `decode_header.zig` and `probe.zig` contain:
