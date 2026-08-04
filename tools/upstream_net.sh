@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Net-placement helper.
 #
-# The .nnue is gitignored and per-worktree, so a synced `refactor` won't run unless the target net is
-# present in EVERY worktree's src/. This resolves the net name for a commit (its EvalFileDefaultName),
-# locates the file (the pristine oracle's src/, which `make` already fetched), and copies it into every
-# git worktree's src/.
+# The .nnue is gitignored and per-worktree, so a synced worktree won't run unless the target net is
+# present in it. This resolves the net name for a commit (its EvalFileDefaultName), locates the file
+# (the pristine oracle's src/, which `make` already fetched), and copies it into every git worktree's
+# resources/.
+#
+# RESOURCES/, NOT SRC/. zfish loads the net as a runtime input from the cwd (NNUE_EMBEDDING_OFF), and
+# every gate sets that cwd to resources/ -- so a net in src/ is 91 MB that nothing ever reads, and the
+# worktree still will not run. This placed into src/ until 2026-08-04: the pre-migration location,
+# left behind because no lane invoked this script and nothing else could notice. It is the reason
+# tools_smoke.sh exists.
 #
 # Usage:  upstream_net.sh [sha]      # sha defaults to UPSTREAM_TARGET
 set -euo pipefail
@@ -33,8 +39,11 @@ echo "upstream-net: source = $SRC ($(du -h "$SRC" | cut -f1))"
 
 placed=0
 while IFS= read -r wt; do
-    [ -d "$wt/src" ] || continue
-    dst="$wt/src/$NET"
+    # Only zfish worktrees have a resources/ to fill; the pristine oracle is upstream's own
+    # tree and keeps its net beside its Makefile, which is where $SRC was just read from.
+    [ -d "$wt/src/engine" ] || continue
+    mkdir -p "$wt/resources"
+    dst="$wt/resources/$NET"
     if [ ! -f "$dst" ]; then
         cp "$SRC" "$dst"; echo "  placed -> $dst"; placed=$((placed+1))
     fi
