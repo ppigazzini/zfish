@@ -1,0 +1,144 @@
+# Nightly DEEP perft.
+#
+# Perft is the only TOTAL check on move generation: it counts every leaf of the legal tree,
+# so one move generated that should not be, or one filtered that should not have been,
+# changes the number. `zig build perft` runs on every push inside the parity aggregate, but
+# that gate is a GOLDEN over shallow depths (startpos d5, the CPW positions at d4/d6, FRC
+# d4) chosen so the aggregate stays under a minute -- and depth is exactly what perft
+# coverage is made of. The interactions that break a generator (an en-passant capture that
+# uncovers a pin along the fifth rank, a castling right lost to a rook capture several plies
+# earlier, an under-promotion that gives check) first appear a few plies below where the fast
+# gate stops. This lane spends the time the push lane cannot.
+#
+# It is a GATE, not a report. `tools/perft.golden` is a photograph of ourselves and can be
+# re-blessed with `zig build perft-update`; the counts BELOW cannot. They are the published
+# reference values for the standard positions -- facts about chess, with no search, no
+# evaluation, no heuristic and no time dependence in them. A mismatch here is a movegen bug,
+# full stop. Never edit a number to make this green (docs/09-tooling-ci.md).
+#
+# The FRC position the fast gate carries is deliberately absent: this lane only pins counts
+# published independently of us, and no Chess960 reference of that standing is in hand.
+# FRC movegen is adjudicated instead by `upstream_golden_audit.sh` in the weekly
+# upstream-check lane, which re-derives the whole perft golden from the pristine oracle.
+#
+# Every action is pinned BY COMMIT SHA with the tag in a trailing comment, as in the other
+# two lanes here and in the sibling ports.
+name: zfish perft (nightly)
+
+on:
+  schedule:
+    # 03:41 UTC daily -- off the hour, since the top of the hour is the busiest slot in
+    # GitHub's scheduler, and offset from the fuzz lane's 04:17 so the two nightlies do
+    # not contend for runners. Same slot the sibling ports use.
+    - cron: "41 3 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: this lane only reads the repository.
+permissions:
+  contents: read
+
+jobs:
+  deep-perft:
+    name: Deep perft (reference counts)
+    runs-on: ubuntu-latest
+    # The sweep below is ~4.7 billion leaves, measured at 22 s on a dev box (~150 M nodes/s
+    # from the ReleaseFast binary). The ceiling is generous against a slow or cold runner --
+    # the compile dominates the job, not the counting -- while still being low enough that a
+    # movegen change which makes perft pathological fails here instead of burning an hour of
+    # Actions time.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      # Perft never evaluates -- but the engine loads the net at STARTUP and terminates with
+      # an ERROR block if it is missing, printing no count at all. So this lane needs the net
+      # exactly as the signature lane does. Same cache key as the parity and fuzz workflows:
+      # `default_eval_file_name` in src/engine/eval/network.zig, so a Zig-only net bump busts it.
+      - name: Cache NNUE network
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: resources/nn-*.nnue
+          key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
+      - name: Fetch the NNUE net
+        run: zig build net
+
+      # Pin the ARCH rather than resolving `native`, as every lane here does: runner CPUs
+      # vary, and a gate must be CPU-independent. ReleaseFast (the default) is deliberate --
+      # this is the SHIPPED binary, and the check is a count, not a safety property; the
+      # fuzz lane and the ReleaseSafe steps in the parity lane own safety-check coverage,
+      # and an instrumented build at these depths would only buy runner minutes.
+      - name: Build (ReleaseFast, baseline tier)
+        run: zig build -Darch=x86-64-sse41-popcnt
+
+      # The committed gate first, exactly as the push lane runs it. If the pinned depths in
+      # tools/perft.golden are already wrong, that is the finding -- and a far cheaper one to
+      # read than a deep mismatch below.
+      - name: Fast gate (tools/perft.golden)
+        run: zig build perft -Darch=x86-64-sse41-popcnt
+
+      # Then the deep sweep. Positions are driven through the real UCI front end
+      # (`position fen` + `go perft`), the same path the golden gate uses, so the parser is
+      # exercised alongside the movegen.
+      #
+      # Run the engine FROM resources/, where the net is: anywhere else it prints its ERROR
+      # block and exits, `got` comes back empty, and the position reports as a mismatch.
+      # Collect every failure before exiting, so one bad position does not hide the rest.
+      - name: Deep perft sweep
+        working-directory: resources
+        run: |
+          set -uo pipefail
+
+          fails=0
+          run_perft() { # run_perft <name> <fen> <depth> <expected>
+            local name="$1" fen="$2" depth="$3" expected="$4"
+            local start elapsed got
+            start=$SECONDS
+            got=$(printf 'position fen %s\ngo perft %s\nquit\n' "$fen" "$depth" \
+                  | ../zig-out/bin/stockfish | sed -n 's/^Nodes searched: //p' | tr -d '[:space:]')
+            elapsed=$((SECONDS - start))
+            if [ "$got" = "$expected" ]; then
+              printf '  ok   %-9s depth %s  %14s nodes  (%ss)\n' "$name" "$depth" "$got" "$elapsed"
+            else
+              printf '  FAIL %-9s depth %s  expected %s, got %s\n' \
+                     "$name" "$depth" "$expected" "${got:-<none>}"
+              fails=$((fails + 1))
+            fi
+          }
+
+          # startpos -- the broad baseline; d7 is ~3.2e9 leaves and dominates the run.
+          run_perft startpos "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" 6 119060324
+          run_perft startpos "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" 7 3195901860
+
+          # Kiwipete -- dense middlegame: castling on both wings, pins, en passant.
+          run_perft kiwipete "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1" 5 193690690
+
+          # Position 3 -- rook-and-pawn endgame; catches horizontal-pin and
+          # en-passant-discovers-check mistakes, and is cheap per node.
+          run_perft pos3 "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1" 7 178633661
+
+          # Position 4 -- promotions, including under-promotion with check, over an
+          # asymmetric castling-rights state.
+          run_perft pos4 "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1" 6 706045033
+
+          # Position 5 -- the mirror-image catcher: a side-to-move asymmetry in the generator
+          # shows up here as a wrong count rather than a crash.
+          run_perft pos5 "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8" 5 89941194
+
+          # Position 6 -- quiet and highly symmetric; sensitive to ordering-independent
+          # errors in the piece attack tables.
+          run_perft pos6 "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10" 5 164075551
+
+          echo
+          if [ "$fails" -ne 0 ]; then
+            echo "deep perft: $fails position(s) FAILED -- this is a movegen bug, not a golden to update" >&2
+            exit 1
+          fi
+          echo "deep perft: all positions match the published reference counts"

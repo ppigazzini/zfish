@@ -449,7 +449,7 @@ just the board path (`initRuntime` → `setPosition` → `generateLegal` →
 
 | Invariant | Check |
 | --- | --- |
-| **Perft** | node counts to published Stockfish/CPW references, from the start position, Kiwipete, and CPW positions 3–5 — an end-to-end property over movegen *and* make/unmake together |
+| **Perft** | node counts to published Stockfish/CPW references, from the start position, Kiwipete, and CPW positions 3–5 — an end-to-end property over movegen *and* make/unmake together. Shallow, like the `perft` golden gate: the depths that catch a rare pin/en-passant/under-promotion interaction cost minutes, so they live in the nightly lane ([09-tooling-ci](09-tooling-ci.md)) |
 | **Make/unmake round-trip** | do then immediately undo every legal move; `key`, both bitboard arrays, `board`, and `piece_count` must be identical |
 | **Null-move round-trip** | side and key change, then both restore exactly |
 | **FEN round-trip** | `setPosition` then `formatFen` returns the input string |
