@@ -79,7 +79,13 @@ jobs:
         run: |
           # Capture without tripping `bash -e` on a red audit: the summary must
           # publish exactly when the gate fails.
-          if out="$(python3 tools/upstream_map_derive.py --audit)"; then
+          #
+          # Through the STEP, not through `python3 tools/upstream_map_derive.py --audit`
+          # directly: the step is that command and nothing else, so running the script here
+          # made two paths to one answer -- which is how they drift, and it had already left
+          # this workflow's own comment above claiming a step it did not dispatch. Verified
+          # byte-identical output and exit status before the switch.
+          if out="$(zig build upstream-map)"; then
             status=0
           else
             status=$?
@@ -170,6 +176,38 @@ jobs:
             echo ""
             echo '```'
             echo "$out" | tail -30
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      # The finish line: our default build's bench against the PRISTINE oracle's, one number
+      # carrying the whole claim of this port. It ran when a human remembered, which is not a
+      # lane -- and it is the LAST gate anyone would choose to leave un-dispatched.
+      #
+      # `signature` pins that number against a committed golden, so the two answer different
+      # questions: signature says "the tree still benches what it benched", upstream-parity
+      # says "what it benches is what UPSTREAM benches". A resync that moved the anchor and
+      # re-blessed the golden keeps signature green by construction; only this gate can tell
+      # you the new number is upstream's.
+      #
+      # Here rather than in `parity` for the reason docs/09 gives: it needs a full pristine
+      # upstream build, which the per-push lane deliberately does not do. By this point in the
+      # job the oracle is already built and the net already fetched, so it costs a bench.
+      - name: Assert the bench equals the pristine oracle
+        env:
+          ZFISH_ORACLE_DIR: ${{ runner.temp }}/zfish-upstream-oracle
+        run: |
+          if out="$(zig build upstream-parity 2>&1)"; then
+            status=0
+          else
+            status=$?
+          fi
+          echo "$out"
+          {
+            echo "## Bench vs the pristine oracle"
+            echo ""
+            echo '```'
+            echo "$out" | tail -20
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
