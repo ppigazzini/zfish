@@ -122,6 +122,24 @@ jobs:
       # sse41/avx2 stay green. Runs the real bench per tier, so it is not hollow.
       - run: bash tools/arch_determinism.sh 2508687
 
+      # THE GATE ON THE GATES. Everything above asserts the engine is correct; this asserts
+      # that those assertions can FAIL. One behavioural mutation per gate -- the razor margin
+      # scaled by one, knight under-promotions dropped from movegen, `d` rendering checkers a
+      # file off, a doc naming a path that is not in the tree -- each required to turn its gate
+      # red, then restored and required to pass again.
+      #
+      # Without it, every gate's detection power is an assumption re-checked by hand at the
+      # moment it was written and never again, and a gate that has quietly stopped being able
+      # to fail looks exactly like a gate that is passing.
+      #
+      # It is NOT `zig build negative-control`: the harness drives `zig build` itself, and a
+      # nested build inside a build step contends on the build cache (measured -- the same
+      # command exits 0 standalone and 1 from inside a step). It rebuilds the engine once per
+      # engine-level mutant, which is what the ~3 min costs; a rig fault (a mutation that did
+      # not apply, a mutant that outruns the bound, a gate already red) exits 2 and reports NO
+      # VERDICT rather than scoring itself.
+      - run: bash tools/negative_control.sh
+
       # (Wall-clock time management, multi-thread sanity, the go/stop stress gate, the TT/history
       # reset-determinism metamorphic gate, the Skill Level metamorphic gate, and the ponder
       # handshake gate run INSIDE `zig build parity` above, so they also run on the

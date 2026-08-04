@@ -372,8 +372,59 @@ laned step is covered by it — `test-graph` inside `test` is the worked example
 
 **What it cannot do**, stated here because a gate that does not name its own blind spot gets
 read as covering more than it does: it proves a step is *dispatched*, never that the check
-inside it is strong enough to fail. Whether a gate can detect a defect is a different
-question and needs a different instrument.
+inside it is strong enough to fail. That second question is `negative_control.sh`'s, below.
+
+### `negative_control.sh` — the gate on the gates
+
+Everything else here asserts the engine is correct. This asserts that those assertions can
+**fail**. Until it existed, every gate's power to detect a defect was an assumption, checked by
+hand at the moment the gate was written and never again — and a gate that has quietly stopped
+being able to fail looks exactly like a gate that is passing. A missing test shows up in a
+coverage discussion; a hollow one does not.
+
+One behavioural mutation per gate: apply it, require the gate to go red, restore the file,
+require it to go green again. One representative mutant rather than a mutant set — the
+competent-programmer hypothesis is what makes a single mutation worth gating on.
+
+```
+  ok    signature    razor margin 483->484                        red (1)
+  ok    perft        movegen omits knight under-promotion         red (1)
+  ok    misc         d renders checkers one file off              red (1)
+  ok    docs-lint    a doc names a path that is not in the tree   red (1)
+negative-control: 4 of 4 gate(s) detected their mutation, tree restored and green
+```
+
+The four are one per *instrument class*, not one per gate: the anchor (a value differential),
+the specified oracle (`perft`, whose reference is a fact about chess and cannot be re-blessed),
+a characterization golden over a print path, and a structural lint. A fifth gate in a class
+already covered would add a rebuild and prove little; a new class earns a row.
+
+**Perturb the value, do not remove the bound.** A mutant aimed at a search margin or an
+evaluation must leave the search a ceiling, or the experiment cannot end — and a gate that
+never returns is not a gate that failed. The sibling port paid for this rule: inverting an
+activation clamp removed the evaluation's ceiling and its gate ran past 900 s twice, once for
+over 25 minutes. Every row here scales a value or removes one generated move.
+
+**A rig that can lie must refuse, not score itself.** Four ways this one could, each verified
+by forcing it, each exiting 2 with *no verdict* rather than a pass or a fail:
+
+| forced condition | what it would otherwise have read as |
+|---|---|
+| the row's pattern has rotted and matches nothing | the gate failed to detect its mutation |
+| the mutant outruns the time bound | the gate failed to detect its mutation |
+| the gate was already red before any mutation | the mutation was detected |
+| the tree is not clean after restoring | every later gate judging a mutated tree |
+
+**It is not a build step.** The harness drives `zig build` itself, and a nested `zig build`
+inside a build step contends on the build cache — measured, not assumed: the identical command
+exits 0 standalone and 1 from inside a step. So it is invoked directly, by a human and by CI
+alike, which is also why `lane-coverage` never sees it.
+
+```sh
+tools/negative_control.sh              # every row, ~3 min (one engine rebuild per mutant)
+tools/negative_control.sh --list       # the rows and what each mutation means
+tools/negative_control.sh docs-lint    # one gate
+```
 
 ## The NNUE net and tablebases
 
