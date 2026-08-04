@@ -146,3 +146,55 @@ pub fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.debug.print(fmt ++ "\n", args);
     std.process.exit(2);
 }
+
+/// Name the env var that lets `<gate>-update` write a golden from THIS binary.
+pub const golden_update_override = "ZFISH_GOLDEN_UPDATE_FROM_ZFISH";
+
+/// Refuse to photograph the engine under test, unless the caller says that is the intent.
+///
+/// Every `-update` step drives zfish, so the golden it writes records whatever this binary
+/// does -- a defect exactly as faithfully as correct behaviour, after which the gate passes
+/// BECAUSE the engine is wrong. AGENTS.md states the rule ("drive the oracle, match its
+/// bytes") and `tools/upstream_golden_audit.sh --write` implements it, one keystroke away
+/// and producing a diff that looks identical. Make the wrong one harder to run than the
+/// right one rather than leaving the distinction to whoever is typing.
+///
+/// The override stays because a gate whose golden the oracle CANNOT adjudicate needs some
+/// way through (mt-sanity's thread-count banner is not upstream-observable), and a gate with
+/// no escape hatch gets worked around instead of argued with. It announces itself on every
+/// run so an override in a script is visible in that script's log.
+/// Query the override cross-platform: `getPosix` would answer `false` on Windows, which is
+/// the wrong direction for an escape hatch (it would make the gate unopenable there rather
+/// than merely unset). Treat an unreadable environment as "not set" -- refusing is the safe
+/// arm, and the message says how to proceed.
+pub fn refuseSelfMadeGolden(
+    gpa: std.mem.Allocator,
+    environ: std.process.Environ,
+    check_name: []const u8,
+    golden: []const u8,
+) void {
+    const overridden = environ.containsUnempty(gpa, golden_update_override) catch false;
+    if (overridden) {
+        std.debug.print(
+            "{s}: {s} is set -- writing a golden PHOTOGRAPHED FROM THIS BINARY, not adjudicated\n" ++
+                "{s}: by the oracle. It pins whatever this binary does, including a defect.\n",
+            .{ check_name, golden_update_override, check_name },
+        );
+        return;
+    }
+    std.debug.print(
+        \\{s}: REFUSING to write {s} from this binary.
+        \\
+        \\A golden written by the engine under test is a photograph of the engine: it pins a
+        \\defect as faithfully as correct behaviour, and the gate then passes BECAUSE the
+        \\engine is wrong. Drive the oracle and match its bytes instead:
+        \\
+        \\    tools/upstream_golden_audit.sh {s}
+        \\
+        \\If this golden genuinely cannot be adjudicated upstream, say so explicitly:
+        \\
+        \\    {s}=1 zig build <this gate>-update
+        \\
+    , .{ check_name, golden, check_name, golden_update_override });
+    std.process.exit(2);
+}

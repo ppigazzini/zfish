@@ -148,6 +148,13 @@ fn fallibleMain(init: std.process.Init) !void {
     const golden = args.items[3];
     const mode = if (args.items.len >= 5) args.items[4] else "check";
 
+    // Refuse BEFORE dispatching, so this covers every writer -- the golden-gate table below
+    // and mt-sanity's own update arm, which writes through a different path. Refusing here
+    // also refuses before the engine runs: there is nothing to learn from a capture that is
+    // not going to be written.
+    if (std.mem.eql(u8, mode, "update"))
+        run.refuseSelfMadeGolden(gpa, init.minimal.environ, check_name, golden);
+
     if (std.mem.eql(u8, check_name, "signature")) parity.gate_runtime.runSignature(gpa, io, bin, golden);
     if (std.mem.eql(u8, check_name, "mt-sanity")) parity.gate_runtime.runMtSanity(gpa, io, bin, golden, mode);
     if (std.mem.eql(u8, check_name, "stress")) parity.gate_runtime.runStress(gpa, io, bin);
