@@ -63,6 +63,7 @@ returned tier name to its feature set and macros.
 | `arch-report` | Coupling report (module + file graphs) + DAG / undeclared-SCC tripwires. |
 | `hook-lint` | Cycle-break hooks: ratcheted, each declaring a failure mode + class, all registered. |
 | `src-free` / `headless` / `loc` / `docs-lint` | The structural gates (see below). |
+| `lane-coverage` | Every step is in an aggregate, named by a workflow, or excused with an argument (see below). |
 
 Every golden gate is a pair: `<gate>` checks the live fingerprint against the
 committed golden, `<gate>-update` regenerates that golden from the current binary —
@@ -341,6 +342,38 @@ mangled `Stockfish::…` symbols and the libc++ runtime behind, while the Zig ru
 exports only `zfish_*` and opaque pointers. It refuses to pass a stripped binary
 (zero C++ symbols for the wrong reason) and re-asserts the bench signature, so a
 src-free binary that lost behavior cannot pass. Linux-only — it needs `nm`.
+
+**`lane-coverage`** asks the question none of the others can: *does anything run this?* A gate
+that is dispatched by nobody rots exactly like a doc nobody reads, and it rots invisibly —
+`zig build --list-steps` goes on printing it, so a reader sees coverage that stopped existing.
+Every step is held to one of three states: an aggregate reaches it, a CI workflow names it, or
+`tools/lane_excuses.txt` argues why neither does.
+
+It found `upstream-parity` — this port's finish line, its bench against the pristine oracle —
+running in no lane at all, and the map audit reaching its tool by a second path while this
+repo's own workflow claimed it used the step. Both now have lanes.
+
+**Two halves, because neither side can answer alone.** `build/lanes.zig` walks the *assembled
+dependency graph*: a step is covered when every step it depends on is already reachable from an
+aggregate. That deliberately does **not** re-read the `in_parity` / `in_portable` flags —
+`build()` assembles the aggregates *from* those flags, so a gate consulting them would agree
+with a row that had silently lost one, which `build/gates.zig` names as the single failure it
+can cause. The tool then supplies what the build script cannot see: what `.github/` dispatches.
+A step with no dependencies is never "covered" — reachability would call it covered vacuously,
+and an empty subject reporting OK is the failure this repo keeps paying for.
+
+**The excuse list is the hole, so it expires in both directions.** An excused step that turns
+out to run is a stale excuse and fails; an excuse naming a step that no longer exists fails; an
+excuse with no reason fails, because an excuse is an argument and not a name. Two classes are
+*derived* rather than excused, so nobody has to maintain a claim for them: `<gate>-update` is
+accounted for by its base gate being laned (the regeneration half of a documented pair, which
+must never run in CI and now refuses by default), and a step whose work sits entirely inside a
+laned step is covered by it — `test-graph` inside `test` is the worked example.
+
+**What it cannot do**, stated here because a gate that does not name its own blind spot gets
+read as covering more than it does: it proves a step is *dispatched*, never that the check
+inside it is strong enough to fail. Whether a gate can detect a defect is a different
+question and needs a different instrument.
 
 ## The NNUE net and tablebases
 

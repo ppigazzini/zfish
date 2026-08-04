@@ -23,3 +23,4 @@ pub const tests = @import("tests.zig");
 pub const checks = @import("checks.zig");
 pub const fetch = @import("fetch.zig");
 pub const config = @import("config.zig");
+pub const lanes = @import("lanes.zig");
