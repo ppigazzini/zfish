@@ -426,6 +426,32 @@ tools/negative_control.sh --list       # the rows and what each mutation means
 tools/negative_control.sh docs-lint    # one gate
 ```
 
+### `tools_smoke.sh` — the tools no lane invokes
+
+`lane-coverage` holds every build *step* to a lane. This asks the same question one level down,
+for the tools that are not build steps at all: a tool no workflow, no build step and no other
+tool ever calls rots exactly like a lane in no gate, and it rots while sitting in `tools/`
+looking maintained.
+
+The prediction was tested before the gate was written, and one of the six had rotted:
+`upstream_net.sh` was copying 91 MB into every worktree's `src/` — the location the net left
+when zfish moved to loading it from `resources/` — so the copy was useless *and* the problem
+the tool exists to solve was untouched. It runs in the weekly upstream lane, because three of
+its four rows read the pinned upstream tree out of git objects that a plain checkout of origin
+does not carry.
+
+**A usage refusal is a pass, and must be asserted as one.** `nps_ab.sh` with no arguments exits
+non-zero on purpose: a row requiring exit 0 would report it broken, and a row ignoring the exit
+code would pass over a tool that had stopped running entirely. Each row states the exit code it
+expects *and* a string its callers actually read.
+
+**What it does not check** is whether the tool's *answer* is right — that is the job of the gate
+the tool serves. And two of the six are covered by nothing at all: `upstream_net.sh` and
+`upstream_nodes.sh` need a built pristine oracle before they do anything. They are deliberately
+*not* given a conditional row, because a row that skipped when the oracle was absent would
+report OK over a tool it never ran — and `upstream_net.sh` is precisely the tool that rotted
+unobserved, so a silent skip on it would re-open the same hole.
+
 ## The NNUE net and tablebases
 
 The NNUE net is an **external runtime input**, not an embedded blob: the engine loads

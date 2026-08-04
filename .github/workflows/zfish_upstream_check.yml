@@ -180,6 +180,19 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
+      # The tools no lane invokes. `lane-coverage` holds every BUILD STEP to a lane; this is
+      # the same question one level down, for the tools that are not build steps at all. A
+      # tool nobody runs rots silently -- it sits in tools/ looking maintained -- and one of
+      # the six had: `upstream_net.sh` was copying 91 MB into every worktree's `src/`, the
+      # location the net left when zfish moved to loading it from `resources/`.
+      #
+      # It belongs in THIS workflow because three of its four rows read the pinned upstream
+      # tree out of git objects (the re-port worklist, the router's backlog, the bench map),
+      # which the drift step's fetch above has already brought in and a plain origin checkout
+      # does not carry. It runs no engine and builds nothing.
+      - name: Smoke the tools no lane invokes
+        run: bash tools/tools_smoke.sh
+
       # The finish line: our default build's bench against the PRISTINE oracle's, one number
       # carrying the whole claim of this port. It ran when a human remembered, which is not a
       # lane -- and it is the LAST gate anyone would choose to leave un-dispatched.
