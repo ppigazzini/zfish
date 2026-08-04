@@ -68,24 +68,41 @@ jobs:
       # `taskset -c 0-3`. Per-target steps make each a single-worker session, so the slot
       # arithmetic cannot starve any of them.
       #
-      # SIGINT at each sub-budget: an interrupt with no crash exits 130 (PASS -- no bug in
-      # the window); a target crash exits non-zero BEFORE the budget (FAIL, with the
-      # ReleaseSafe safety-check trace + the reproducing input in the log). A fresh corpus
+      # READ THE OUTPUT FOR THE CRASH, NEVER THE EXIT CODE. `zig build --fuzz` does not stop
+      # when a target crashes: it reports the failing test, saves the reproducing input, and
+      # keeps fuzzing, so the SIGINT at the sub-budget is still what sets the status and the
+      # run exits 130 exactly as a clean one does. This lane shipped the opposite claim and
+      # printed "no crash found" over a genuine out-of-bounds the fuzzer had just found
+      # (2026-08-04, fuzz-tb-probe, probe_index.mapScoreDtz); only the execution-counter gate
+      # below went red, and only because the crash had stopped that target early -- a crash
+      # late in a budget would have cleared the floor and reported the night clean. So grep
+      # for the fuzzer's own crash line, which it prints when it saves the input.
+      #
+      # An interrupt with no crash line is the PASS: no bug in that window. A fresh corpus
       # each night finds shallow regressions; corpus persistence for depth is a later
       # enhancement.
       - name: Fuzz (bounded, ~5 min per target, ReleaseSafe)
         run: |
           set +e
+          rc=0
           for step in fuzz-board fuzz-tb fuzz-tb-probe; do
+            log="$RUNNER_TEMP/$step.log"
             timeout --preserve-status --signal=INT 300 \
-              zig build "$step" --fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
-            ec=$?
+              zig build "$step" --fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe 2>&1 | tee "$log"
+            ec=${PIPESTATUS[0]}
+            if grep -q "input saved to '" "$log"; then
+              echo "fuzz: $step FOUND A CRASH -- safety-check trace and reproducing input above" >&2
+              rc=1
+              continue
+            fi
             if [ "$ec" -ne 130 ] && [ "$ec" -ne 0 ]; then
-              echo "fuzz: $step crashed or the fuzzer errored (exit $ec)" >&2
-              exit "$ec"
+              echo "fuzz: $step -- the fuzzer errored (exit $ec)" >&2
+              rc="$ec"
+              continue
             fi
             echo "fuzz: $step -- no crash found in its ~5 min budget (exit $ec)"
           done
+          exit "$rc"
 
       # THE STEP ABOVE CANNOT DISTINGUISH "found nothing" FROM "fuzzed nothing".
       # It exits 0 on the SIGINT whether the fuzzer executed half a billion inputs or
