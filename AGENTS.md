@@ -54,6 +54,21 @@ laundered a red aggregate twice in one session. `zig build parity; echo $?` or
 redirect to a log and test `$?`. A gate parity SKIPPED for a missing tool proves
 nothing — never report it as a pass.
 
+**Editing a gate, a lane or a tool is its own discipline**, because a broken gate
+reports success. Three meta-gates hold it, and each found a real defect on its first
+run — twice in the gate being written rather than the code it aimed at:
+
+```sh
+tools/negative_control.sh   # can each gate still FAIL? mutate, require red, restore
+zig build lane-coverage     # does anything dispatch each step? (in parity)
+tools/tools_smoke.sh        # do the tools no lane invokes still run?
+```
+
+A gate you add is not done when it passes — it is done when you have **seen it
+fail**, by mutation and not by argument. If it makes an allowance (an accepted
+divergence, a skip, an excuse), that allowance needs an owner that **expires** it:
+a filter outliving its gap silently stops the gate comparing real output.
+
 ## Fleets and subagents
 
 Multi-agent perf/refactor fleets are a standing pattern here. Every rule below was
@@ -100,7 +115,8 @@ Pointers, not explanations — each is documented where it belongs.
 
 | trap | where |
 |---|---|
-| A golden can pin a **defect**: `<gate>-update` on a red gate launders a bug. Drive the oracle, match its bytes. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| A golden can pin a **defect**: `<gate>-update` on a red gate launders a bug. It now REFUSES; `tools/upstream_golden_audit.sh` is the way through. Do not reach for the override to get past a red gate. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
+| A gate you added is not done when it passes — it is done when you have **seen it fail**. Same for a lane: a check nothing dispatches is a claim, not a check. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | **The oracle is ALWAYS the zig-c++ build** (`tools/upstream_oracle.sh` defaults to it via `tools/zigcxx`) — for ratios AND matches. A `COMP=gcc` build measures **gcc**, not zfish (+7.4% instructions on identical source, measured); reach for it only to study gcc itself, via `ORACLE_COMP=gcc`, and label the result as such. | [docs/09-tooling-ci.md](docs/09-tooling-ci.md) |
 | nps cannot resolve <5%; callgrind cost must be summed across origin files. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | Serial cycle A/B on this box has a **±1% run-to-run floor and a +0.65% A/A bias** — a sub-1% single-tier cycle claim is unmeasurable; adjudicate with the deterministic instruction axis, or with fastchess Elo (concurrency 4, idle box, `Timeouts:` near zero — a background build forfeits games exactly like SMT oversubscription). | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |

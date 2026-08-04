@@ -16,10 +16,22 @@ that signature, proven by the gates:
 
 ```
 zig build signature
-zig build parity          # signature + in-repo golden gates
+zig build parity          # signature + in-repo golden gates + the structural linters
 zig build upstream-parity # differential vs pristine upstream (worktree oracle)
 zig build test            # Zig unit tests
 ```
+
+**Read the exit code, not a piped fragment.** `zig build parity | tail` shows green
+golden lines while a later gate in the aggregate is red; that has laundered a red
+aggregate here more than once. And a gate that *skipped* for a missing tool proves
+nothing — never report it as a pass.
+
+A red gate is never regenerated past. `<gate>-update` writes a golden from the
+binary under test, so it pins a defect exactly as faithfully as correct behaviour;
+it now refuses unless you say that is what you meant, and
+`tools/upstream_golden_audit.sh` is the way through — it re-derives each golden from
+the pristine oracle, which is what makes a regeneration a correction rather than a
+capitulation.
 
 A byte-changing engine edit that cannot show a green `signature`/`parity` is not
 complete. Behavior drift in UCI, bench, NNUE, or Syzygy is not accepted. An
@@ -33,7 +45,18 @@ aarch64 (see the CI parity workflow).
   `tools/upstream/`.
 - **Zig debt** — improve reviewability or maintainability with the bench signature
   unchanged.
-- **CI / tooling** — strengthen a gate without weakening an existing one.
+- **CI / tooling** — strengthen a gate without weakening an existing one. A new
+  gate is not finished when it passes: **it has to be seen to fail.** Break the
+  thing it watches, watch it go red, put the tree back. `tools/negative_control.sh`
+  holds four representative gates to that standard on every push. Each of the three
+  meta-gates found something on its own first run that reading it had not, and two
+  of those three findings were defects in the gate being written rather than in the
+  code it was aimed at.
+- **A new gate also needs a lane and, if it makes an allowance, an expiry.** A
+  check nothing dispatches is a claim about the tree rather than a check on it
+  (`zig build lane-coverage`), and an entry that says "this divergence is accepted"
+  must go red once the divergence stops occurring — otherwise the filter outlives
+  its gap and quietly stops the gate comparing real output.
 
 ## Code style
 
