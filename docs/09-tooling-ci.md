@@ -65,7 +65,8 @@ returned tier name to its feature set and macros.
 | `src-free` / `headless` / `loc` / `docs-lint` | The structural gates (see below). |
 
 Every golden gate is a pair: `<gate>` checks the live fingerprint against the
-committed golden, `<gate>-update` regenerates that golden from the current binary.
+committed golden, `<gate>-update` regenerates that golden from the current binary —
+and **refuses to, unless you say that is what you meant** (below).
 
 **A golden is not a reference — it is a photograph of ourselves.** Almost every gate here
 records zfish's own output, so a golden can pin a *defect* just as faithfully as it pins
@@ -97,6 +98,21 @@ gate name limits the run.
 ```sh
 tools/upstream_golden_audit.sh                    # all of them
 tools/upstream_golden_audit.sh tb-search eval     # just these
+```
+
+**So `<gate>-update` refuses, and the audit is the way through.** The rule above was a
+paragraph on this page and a sentence in AGENTS.md — a process control where a mechanical one
+is available, and the two commands sit one keystroke apart producing diffs that look
+identical. `parity_harness` now exits 2 on `update` mode before it even runs the engine,
+naming `upstream_golden_audit.sh` for that gate. The escape hatch stays, because a gate with
+none gets worked around instead of argued with, and one gate genuinely has no upstream
+adjudicator — `mt-sanity`'s reference is zfish's own single-thread search, which upstream's
+binary cannot produce. It announces itself on every run, so an override buried in a script is
+visible in that script's log:
+
+```sh
+zig build misc-update                                   # exit 2, names the audit
+ZFISH_GOLDEN_UPDATE_FROM_ZFISH=1 zig build misc-update   # writes, and says it is a photograph
 ```
 
 **The audit runs from `resources/`, and running it anywhere else reads as a divergence.**
