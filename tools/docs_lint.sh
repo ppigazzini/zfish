@@ -144,12 +144,54 @@ fi
 # The shipped tree must not reference __DEV. __DEV/ is internal and gitignored, so a clone has
 # no such file: a shipped doc or source comment pointing there is a dangling reference for every
 # reader outside this working copy. Duplicating the CONTENT is fine -- naming the location is not.
+#
+# SWEEP EVERY TRACKED FILE, not a hand-written list of places to look. This read
+# `docs/ src/ tools/ README.md CONTRIBUTING.md AGENTS.md CLAUDE.md build.zig` -- so the whole
+# `build/` package, all of `.github/`, and every other root file could name __DEV and still
+# report clean. That is the shape of the bug this check exists for: the sibling port
+# established the same rule, verified it by hand, and had it broken twice within days by
+# commits that had no way to know, because the checker only read one class of file. A list of
+# directories rots; the index does not.
+#
+# EXACTLY TWO FILES MAY NAME IT, and both are structural rather than a claim about the tree:
+# `.gitignore` DECLARES the directory, and this script carries the pattern that finds it.
+# Anything else is a dangling reference for every reader but its author. An untracked working
+# copy is out of scope by construction, which is the point -- that directory is working state.
 leak=0
-while IFS= read -r hit; do
-    [ -n "$hit" ] || continue
-    echo "docs-lint: __DEV REFERENCE IN SHIPPED TREE $hit"
-    leak=$((leak + 1))
-done < <(grep -rlE '__DEV/|REPORT-[0-9]|4-PERFORMANCE-REFERENCES|00-CONTRACT|PROMPT\.md'              --exclude=docs_lint.sh docs/ src/ tools/ README.md CONTRIBUTING.md AGENTS.md CLAUDE.md build.zig 2>/dev/null || true)
+if [ "$tree_backed" -eq 1 ]; then
+    # Exempt the two files with a git PATHSPEC rather than filtering the results afterwards:
+    # the exclusion is then applied by git against the same index it is searching, so it cannot
+    # be defeated by a path spelled differently than the filter expects. (../mcfish's guard,
+    # which converged on this same rule independently, uses exactly this form.)
+    dev_hits="$(git grep -InE '__DEV|REPORT-[0-9]|4-PERFORMANCE-REFERENCES|00-CONTRACT|PROMPT\.md' \
+        -- . ':!.gitignore' ':!tools/docs_lint.sh' 2>/dev/null | cut -d: -f1,2 | sort -u)"
+    rc=$?
+    # `git grep` exits 1 for "no matches" and >1 for a real error. Only the first is a clean
+    # sweep -- an error reported as clean would be a check that had stopped checking.
+    if [ "$rc" -gt 1 ]; then
+        echo "docs-lint: the __DEV sweep could not read the index -- refusing to report it clean"
+        fail=1
+    else
+        while IFS= read -r hit; do
+            [ -n "$hit" ] || continue
+            echo "docs-lint: __DEV REFERENCE IN SHIPPED TREE $hit"
+            leak=$((leak + 1))
+        done <<<"$dev_hits"
+    fi
+else
+    # Outside a checkout there is no index to sweep, but the rule still holds -- and the
+    # previous version of this check ran on plain `grep -r`, so falling back to a SKIP here
+    # would quietly drop coverage a tarball export used to have. Walk the filesystem instead
+    # and say which subject was used: a check that changes what it proves must say so.
+    echo "docs-lint: NOT A GIT CHECKOUT -- the __DEV sweep reads the filesystem, not the index."
+    while IFS= read -r hit; do
+        [ -n "$hit" ] || continue
+        echo "docs-lint: __DEV REFERENCE IN SHIPPED TREE $hit"
+        leak=$((leak + 1))
+    done < <(grep -rInE '__DEV|REPORT-[0-9]|4-PERFORMANCE-REFERENCES|00-CONTRACT|PROMPT\.md' \
+        --exclude-dir=.git --exclude-dir=__DEV --exclude=.gitignore --exclude=docs_lint.sh . 2>/dev/null |
+        cut -d: -f1,2 | sort -u || true)
+fi
 [ "$leak" -eq 0 ] || fail=1
 
 # --- 4. every backticked identifier names something in the tree -----------------------------
