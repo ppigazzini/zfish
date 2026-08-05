@@ -3,20 +3,23 @@
 // Build the comptime byte-offset table into the loaded FeatureTransformer weight blob
 // plus the typed accessors that hand back [*]const pointers to each weight region
 // (psq i16, threat i8, and the two psqt i32 tables). Split out of
-// nnue_accumulator.zig; pure comptime layout math + pointer casts, std-free, no
-// module deps -- the dimension consts + roundUp are duplicated locally. The
-// accumulator core imports this and aliases the four accessors.
+// nnue_accumulator.zig; pure comptime layout math + pointer casts, std-free, with
+// roundUp and the transformer-only widths kept local and the two concatenated
+// feature-set counts taken from nnue_dimensions, which owns them. The accumulator
+// core imports this and aliases the four accessors.
+
+const dims = @import("nnue_dimensions");
 
 const half_dimensions: usize = 1024;
 const psqt_buckets: usize = 8;
 const nnue_align: usize = 64;
 const psq_feature_dimensions: usize = 22528;
-// The threat weight rows now hold FullThreats (59808) AND PP_3Wide (4560) concatenated --
-// upstream's single threatAndPpWeights array. The pp indices (>= 59808) address the tail of
-// this same region, so the threat weight accessor covers both feature sets.
-const threat_dimensions: u32 = 59808;
-const pp_dimensions: u32 = 96 * 95 / 2; // 4560 = C(2*48, 2)
-const threat_and_pp_dimensions: u32 = threat_dimensions + pp_dimensions;
+// The threat weight rows hold FullThreats AND PP_3Wide concatenated -- upstream's single
+// threatAndPpWeights array. A pp index is at or past the threat count and addresses the
+// tail of this same region, so the threat weight accessor covers both feature sets.
+const threat_dimensions: u32 = dims.threat_dimensions;
+const pp_dimensions: u32 = dims.pp_dimensions;
+const threat_and_pp_dimensions: u32 = dims.threat_and_pp_dimensions;
 
 fn roundUp(value: usize, alignment: usize) usize {
     return ((value + alignment - 1) / alignment) * alignment;

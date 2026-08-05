@@ -7,6 +7,7 @@
 // in the move.
 
 const std = @import("std");
+const dims = @import("nnue_dimensions");
 
 // Hold the two result shapes BOTH feature sets return. They are not lookup tables, but
 // this is the leaf every feature file already imports, and duplicating a struct across
@@ -213,17 +214,17 @@ pub const threat_route_blocks = buildThreatRouteBlocks();
 
 pub const ps_nb: u32 = 11 * 64;
 // FullThreats::Dimensions (SFNNv16): the threat feature count, also PP_3Wide's IndexBase.
-pub const full_dimensions: u32 = 59808;
+pub const full_dimensions: u32 = dims.threat_dimensions;
 
 // ---- PP_3Wide (pawn-pair) feature set ---------------------------------------
 // Pawn ids run over ranks 2-7 (48 squares) per color: id = 48*color + (square - SQ_A2).
-pub const pp_pawn_ids: u32 = 2 * 48;
+pub const pp_pawn_ids: u32 = dims.pp_pawn_ids;
 // Dimensions = C(PawnIds, 2): every unordered pair of pawn ids.
-pub const pp_dimensions: u32 = pp_pawn_ids * (pp_pawn_ids - 1) / 2;
+pub const pp_dimensions: u32 = dims.pp_dimensions;
 // Pair features are concatenated onto threats in the shared weight array; the first pair
 // feature sits at index full_dimensions (== ThreatFeatureSet::Dimensions).
-pub const pp_index_base: u32 = full_dimensions;
-pub const threat_and_pp_dimensions: u32 = full_dimensions + pp_dimensions;
+pub const pp_index_base: u32 = dims.pp_index_base;
+pub const threat_and_pp_dimensions: u32 = dims.threat_and_pp_dimensions;
 
 pub const rank1_bb: u64 = 0xff;
 pub const rank8_bb: u64 = rank1_bb << (8 * 7);

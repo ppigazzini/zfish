@@ -65,6 +65,7 @@ pub const specs = [_]ModuleSpec{
     .{ .name = "nnue_accumulator", .path = "src/engine/eval/nnue_accumulator.zig" },
     .{ .name = "nnue_acc_rowops", .path = "src/engine/eval/nnue_acc_rowops.zig" },
     .{ .name = "nnue_ft", .path = "src/engine/eval/nnue_ft.zig" },
+    .{ .name = "nnue_dimensions", .path = "src/engine/eval/nnue_dimensions.zig" },
     .{ .name = "nnue_refresh_cache", .path = "src/engine/eval/nnue_refresh_cache.zig" },
     .{ .name = "network", .path = "src/engine/eval/network.zig" },
     .{ .name = "nnue_misc", .path = "src/engine/eval/nnue_misc.zig" },
@@ -431,6 +432,12 @@ pub const edges = [_]Edge{
     .{ .from = "nnue_accumulator", .imp = "nnue_refresh_cache", .to = "nnue_refresh_cache" },
     .{ .from = "nnue_accumulator", .imp = "nnue_feature", .to = "nnue_feature" },
     .{ .from = "nnue_accumulator", .imp = "position_types", .to = "position_types" },
+    // Four modules address one weight array whose two feature blocks are concatenated;
+    // nnue_dimensions is the leaf that owns where the second block starts.
+    .{ .from = "nnue_accumulator", .imp = "nnue_dimensions", .to = "nnue_dimensions" },
+    .{ .from = "nnue_ft", .imp = "nnue_dimensions", .to = "nnue_dimensions" },
+    .{ .from = "nnue_feature", .imp = "nnue_dimensions", .to = "nnue_dimensions" },
+    .{ .from = "network", .imp = "nnue_dimensions", .to = "nnue_dimensions" },
     .{ .from = "position", .imp = "bitboard", .to = "bitboard" },
     .{ .from = "position", .imp = "movegen", .to = "movegen" },
     .{ .from = "engine", .imp = "movegen", .to = "movegen" },
