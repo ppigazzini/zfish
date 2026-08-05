@@ -64,6 +64,7 @@ returned tier name to its feature set and macros.
 | `hook-lint` | Cycle-break hooks: ratcheted, each declaring a failure mode + class, all registered. |
 | `src-free` / `headless` / `loc` / `docs-lint` | The structural gates (see below). |
 | `lane-coverage` | Every step is in an aggregate, named by a workflow, or excused with an argument (see below). |
+| `golden-coverage` | Every golden FILE in the tree is read by a gate, and every declared golden exists (see below). |
 
 Every golden gate is a pair: `<gate>` checks the live fingerprint against the
 committed golden, `<gate>-update` regenerates that golden from the current binary —
@@ -353,6 +354,34 @@ Every step is held to one of three states: an aggregate reaches it, a CI workflo
 It found `upstream-parity` — this port's finish line, its bench against the pristine oracle —
 running in no lane at all, and the map audit reaching its tool by a second path while this
 repo's own workflow claimed it used the step. Both now have lanes.
+
+**`golden-coverage`** asks the same question about the other half of the battery. A golden is
+a photograph, and a photograph nobody diffs is a file, not a check — and the failure is silent
+by construction, because the gate that stopped reading it is not the gate that goes red.
+Nothing could see it before: the 21 goldens are declared one by one in `build/gates.zig`, so a
+gate removed without its golden leaves a file every tool walks past.
+
+**The universe is globbed from the tree, never listed.** A second list of goldens would rot in
+exactly the way this gate exists to catch, which is also why `lane-coverage` derives its step
+set from the build graph. The declared side comes from the same `build/gates.zig` table the
+gates themselves are built from, passed in as arguments, so the declaration cannot drift from
+what runs. Both directions are asked: every declared path must exist (a gate whose golden is
+gone should fail here, in a lane needing no engine, rather than at run time), and every
+`tools/*.golden` found must be claimed.
+
+**The owner rows are the allowance, so they expire in three directions.** One golden is not a
+gates-table row — `instr_budget.golden`, which `perf_budget.sh` owns because a retired-
+instruction budget is local-only by design and has no build step to hang a row on. That row
+fails if the golden leaves the tree, fails as absorbed if the gates table later adopts it,
+fails if its owner never *names* the golden (an owner is a claim that something reads the
+file, and a claim nothing witnesses is a name), and fails if it carries no reason — the same
+argument `lane_excuses.txt` is held to.
+
+Seen to fail, each mutation reverted: an orphan `.golden` dropped in `tools/` (UNCLAIMED, exit
+1); a declared golden moved aside (DECLARED, MISSING, exit 1); the owner row pointed at a tool
+that never names it (UNWITNESSED, exit 1); its reason emptied (UNARGUED ROW, exit 1); the tool
+run with no declarations at all (RIG FAULT, exit **2** — no verdict, since an empty subject
+would otherwise report OK); and run against a tree holding one golden (floor refusal, exit 2).
 
 **Two halves, because neither side can answer alone.** `build/lanes.zig` walks the *assembled
 dependency graph*: a step is covered when every step it depends on is already reachable from an

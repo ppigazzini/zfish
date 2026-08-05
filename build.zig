@@ -445,6 +445,31 @@ pub fn build(b: *std.Build) void {
     );
     stockfish_step.dependOn(install_step);
 
+    // Hold every golden FILE to a gate that reads it -- the file-side counterpart of
+    // lane-coverage's step side. Pass the declared paths from the SAME table the gates are
+    // built from, so the declaration cannot drift from what runs; the tool globs the tree
+    // for the other direction rather than reading a second list. Source-only and engine-free,
+    // so it joins the portable aggregate too.
+    const golden_coverage_tool = b.addExecutable(.{
+        .name = "golden_coverage",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/golden_coverage.zig"),
+            .target = b.graph.host,
+            // .Debug for the checking allocator, as the other lints do (build/structural.zig).
+            .optimize = .Debug,
+        }),
+    });
+    const golden_coverage_run = b.addRunArtifact(golden_coverage_tool);
+    golden_coverage_run.setCwd(b.path("."));
+    for (buildpkg.gates.golden) |g| golden_coverage_run.addArg(g.golden);
+    const golden_coverage_step = b.step(
+        "golden-coverage",
+        "Every golden file in the tree is read by a gate; every declared golden exists",
+    );
+    golden_coverage_step.dependOn(&golden_coverage_run.step);
+    parity_step.dependOn(&golden_coverage_run.step);
+    parity_portable_step.dependOn(&golden_coverage_run.step);
+
     // Hold every step registered above to a lane. Register LAST: it classifies
     // `b.top_level_steps`, so a step declared after this call would not be in the subject.
     const lane_coverage_tool = b.addExecutable(.{
