@@ -64,7 +64,7 @@ pub fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_s
     var pieces_arr: [tb_pieces]u8 = undefined;
     var size: usize = 0;
     var lead_pawns_cnt: usize = 0;
-    var tb_file: usize = 0;
+    var tb_file: encode.TbFile = .ah;
 
     const material_key = pos.st.material_key;
     const stm_pos: usize = pos.side_to_move;
@@ -78,7 +78,7 @@ pub fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_s
 
     var lead_pawns: u64 = 0;
     if (t.has_pawns) {
-        const pc = t.get(dtz, 0, 0).pieces[0] ^ flip_color;
+        const pc = t.get(dtz, 0, .ah).pieces[0] ^ flip_color;
         const lead_color: usize = pc >> 3;
         lead_pawns = pos.by_color_bb[lead_color] & pos.by_type_bb[pawn_pt];
         var b = lead_pawns;
@@ -100,7 +100,7 @@ pub fn doProbeTable(pos: *const Position, t: *TBTable, comptime dtz: bool, wdl_s
         squares[0] = squares[maxi];
         squares[maxi] = tmp;
 
-        tb_file = encode.edgeDistance(fileOf(squares[0]));
+        tb_file = encode.TbFile.fromBoardFile(fileOf(squares[0]));
     }
 
     // Treat DTZ tables as one-sided: if the stored side is not the side to move, bail to a 1-ply

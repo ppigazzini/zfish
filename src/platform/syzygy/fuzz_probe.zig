@@ -172,7 +172,7 @@ test "a WDL value no file can hold is refused, not handed on as a score" {
     const t = registry.hashGet(materialKey(cfg.pieces)) orelse return error.TableNotRegistered;
 
     for (0..t.sides) |side| {
-        const d = t.get(false, side, 0);
+        const d = t.get(false, side, .ah);
         d.flags = decode.flag_single_value;
         d.min_sym_len = 200; // decompressPairs returns this verbatim, as the stored value
     }
