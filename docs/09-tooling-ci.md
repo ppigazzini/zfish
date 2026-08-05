@@ -374,6 +374,40 @@ laned step is covered by it — `test-graph` inside `test` is the worked example
 read as covering more than it does: it proves a step is *dispatched*, never that the check
 inside it is strong enough to fail. That second question is `negative_control.sh`'s, below.
 
+### `arch_determinism.sh` — build every tier, bench the ones the host can run
+
+The eval is integer-exact and therefore arch-invariant: every x86-64 tier must bench the same
+node count. The sweep asks that of the whole ladder `build/arch.zig` accepts above the sse41
+baseline — `avx2`, `bmi2`, `avxvnni`, `avx512`, `vnni512`, `avx512icl` — enumerated in the
+order `tools/native_arch.zig` resolves them. Enumerating it that way is the point: the earlier
+version assembled its list from `/proc/cpuinfo` probes, which yields *the tiers this box has*,
+and `avxvnni` sat outside it — a tier the build supports and `native` can resolve to, which
+nothing had ever compiled.
+
+**Building and benching are different questions.** Every tier is BUILT on every host, because
+a tier that stops compiling — a `@Vector` width the backend rejects, a stale feature macro —
+needs no ISA to catch. Only tiers the host can execute are BENCHED: a build at
+`-Darch=x86-64-vnni512` emits AVX-512 wherever it was built, so driving it on a runner without
+AVX-512 raises SIGILL, which is a fact about the runner. ../rfish's sweep died exactly there
+on its first CI run, having driven all five of its tiers on a hosted fleet that turned out to
+be mixed.
+
+**A tier the host cannot drive is named, not counted.** The anchor is unasserted for it, so the
+sweep prints the tier and the flags the host lacked, then exits **2** — SKIPPED, the same
+refusal `perf_budget.sh` makes, because "could not measure" must not read as "did not
+regress". `--host-tiers` accepts the reduced coverage and exits 0 while still printing every
+hole. The flag is the allowance's owner and it lives at the call site — `zfish_parity.yml`,
+where a reader meets it — rather than inside the script. It expires by itself: a runner that
+gains the missing features benches the whole ladder and the flag excuses nothing. It launders
+no failure either; a tier that builds and then benches the wrong number exits 1 with or
+without it.
+
+Seen to fail, each mutation reverted: a bogus tier spliced into the ladder (FAILED TO BUILD,
+exit 1); a wrong anchor with `--host-tiers` given (exit 1, the flag reaching nothing);
+`GP_CPUINFO=/dev/null`, i.e. a host with no features at all (all six built, none benched,
+exit 2); an unknown flag (exit 2, refused rather than read as the signature ref). On this
+AVX-512 box: 5 of 6 benched, `avxvnni` built and named.
+
 ### `negative_control.sh` — the gate on the gates
 
 Everything else here asserts the engine is correct. This asserts that those assertions can
@@ -535,7 +569,7 @@ Four workflows in `.github/workflows/`. Every lane pins the ARCH rather than usi
 
 | Workflow | Trigger | Lanes / what it gates |
 | --- | --- | --- |
-| `zfish_parity.yml` | push to `main`/`github_ci`, dispatch | `zig fmt --check` over `src/`, `tools/`, `build.zig` — cheap, first, blocks the rest. **Linux x86-64 parity**: `zig build parity`, `test`, `test -Doptimize=ReleaseSafe`, `fuzz` smoke, `parity -Doptimize=ReleaseSafe`, and `tools/arch_determinism.sh` (the same signature on every tier the runner can execute). **Linux aarch64 parity** on a native arm64 runner: the `@Vector` NNUE lowers to NEON with no source changes and must bench identically. **native-os matrix** (Windows x86-64, Windows aarch64, macOS aarch64, macOS x86-64): runs `zig build parity-portable` on the real OS, so the anchor is validated on native hardware. Three of the four build natively; **Windows aarch64 does not** — the native aarch64-windows Zig 0.16.0 segfaults on startup on that runner (a toolchain bug, not ours: the engine cross-compiles to a valid aarch64 PE). That lane runs the x86-64 Zig under Windows-on-ARM x64 emulation and cross-compiles to aarch64-windows; the produced binary still executes natively, so the signature is still proven on arm64 silicon. **Linux valgrind memcheck**: `parity-teardown` + `parity-valgrind`, pinned to the baseline tier. **Zig master compatibility**: non-blocking. |
+| `zfish_parity.yml` | push to `main`/`github_ci`, dispatch | `zig fmt --check` over `src/`, `tools/`, `build.zig` — cheap, first, blocks the rest. **Linux x86-64 parity**: `zig build parity`, `test`, `test -Doptimize=ReleaseSafe`, `fuzz` smoke, `parity -Doptimize=ReleaseSafe`, and `tools/arch_determinism.sh --host-tiers` (all six x86-64 tiers built, the same signature benched on every tier the runner can execute, the rest named). **Linux aarch64 parity** on a native arm64 runner: the `@Vector` NNUE lowers to NEON with no source changes and must bench identically. **native-os matrix** (Windows x86-64, Windows aarch64, macOS aarch64, macOS x86-64): runs `zig build parity-portable` on the real OS, so the anchor is validated on native hardware. Three of the four build natively; **Windows aarch64 does not** — the native aarch64-windows Zig 0.16.0 segfaults on startup on that runner (a toolchain bug, not ours: the engine cross-compiles to a valid aarch64 PE). That lane runs the x86-64 Zig under Windows-on-ARM x64 emulation and cross-compiles to aarch64-windows; the produced binary still executes natively, so the signature is still proven on arm64 silicon. **Linux valgrind memcheck**: `parity-teardown` + `parity-valgrind`, pinned to the baseline tier. **Zig master compatibility**: non-blocking. |
 | `zfish_fuzz.yml` | nightly schedule, dispatch | Two jobs. **Board targets**: `fuzz-board`, `fuzz-tb` and `fuzz-tb-probe` each `--fuzz`ed under `ReleaseSafe` for ~5 min of its own, mutating toward new coverage over FEN-parse → `generateLegal` → make/unmake and over the Syzygy parse; a SIGINT at each sub-budget with no crash passes. **A crash is read out of the OUTPUT, never the exit code**: `zig build --fuzz` does not stop when a target crashes — it reports the failing test, saves the reproducing input and keeps fuzzing — so the interrupt still sets the status and the run exits 130 exactly as a clean one does. This lane shipped the opposite claim and printed "no crash found" over a genuine out-of-bounds the fuzzer had just found (2026-08-04, `fuzz-tb-probe`); the only thing that went red was the execution-counter gate, and only because the crash had stopped that target early — a crash late in a budget would have cleared the floor and reported the night clean. The step now greps for the fuzzer's own "input saved to" line, and runs every target before failing, so one crash does not hide the others. **One session per target, not one over all three** — `Fuzz.start` spawns a worker per artifact via `Io.Group.async`, `Io.Threaded` caps `async_limit` at `cpu_count - 1`, and the coverage task holds a slot, so on the 4-core runner a single session only ever started two of the three and the third left no coverage file at all. The job then asserts the fuzzer **actually executed** — `tools/fuzz_report.zig check` against a pre-run snapshot, all three artifacts, 1M inputs each — because the step above cannot tell an idle lane from a clean one. **UCI command loop**: `tools/uci_fuzz.py` against a `ReleaseSafe` build for ~10 min, seed defaulting to the wall clock so successive nights walk fresh input space; the seed prints first, so a red run names its one-flag reproducer. |
 | `zfish_perft.yml` | nightly schedule, dispatch | **Deep perft against the published reference counts.** The `perft` gate inside `parity` is a GOLDEN over shallow depths, chosen so the aggregate stays under a minute; this lane drives the same standard positions several plies deeper — startpos d6 and d7, Kiwipete d5, CPW 3 d7, 4 d6, 5 d5, 6 d5 — through the real UCI front end. That is ~4.7e9 leaves, measured at 21 s locally, so the compile dominates the job and not the counting. What it pins is **not** a golden: `tools/perft.golden` is a photograph of ourselves and `perft-update` can re-bless it, whereas these counts are published facts about chess, so a mismatch here is a movegen bug and never an update candidate. It runs the committed fast gate first, so an already-wrong pinned depth surfaces as the cheaper finding. Perft never evaluates, but the engine loads the net at STARTUP and terminates without it printing no count at all — so the lane fetches the net and runs from `resources/`, and every position reports its own pass/fail before the job exits, so one bad count cannot hide the others. The FRC position the fast gate carries is deliberately absent: this lane only pins counts published independently of us, and FRC movegen is adjudicated instead by `upstream_golden_audit.sh` re-deriving the whole perft golden from the pristine oracle. |
 | `zfish_upstream_check.yml` | weekly schedule, dispatch | Three steps. **Drift detection**: fetches `official-stockfish/master` and prints how many commits the port is behind `UPSTREAM_BASE`, into the job summary — always exits 0, and porting stays a deliberate, human-gated session. **Map audit** (`upstream-map`) and **random-walk node parity** (`upstream-walk`) are gates, and both live here rather than in `parity` because they need the pinned upstream tree that a plain checkout of origin does not carry — the detection step's fetch is what brings those objects in. The walk builds the oracle into `runner.temp` and runs a **fixed** seed, so a red weekly run is reproducible from the log with one flag; widen coverage with `--positions`, never with a fresh seed. |
