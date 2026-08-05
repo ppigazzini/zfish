@@ -49,7 +49,7 @@ wasted session.
 
 ## The maps
 
-Five, because the families answer different questions and one diagram hides all five. A
+Six, because the families answer different questions and one diagram hides all six. A
 solid arrow is a **named function** — a value crosses a boundary by calling something, and
 the call is where a reader looks. A dashed arrow is a crossing the compiler still permits.
 
@@ -187,6 +187,47 @@ positionally. That is a *provenance* problem rather than an illegal-state one �
 its values are real — and it is left alone deliberately; see
 [the boundary](#what-a-compile-error-does-not-stop).
 
+### The clock: two quantities, one `i64`, and a flag that decides which
+
+```mermaid
+graph LR
+  NT["nodestime set?"] -->|"no"| W["elapsed = now() - start<br/>MILLISECONDS"]
+  NT -->|"yes"| N["elapsed = pool nodes searched<br/>NODE COUNTS"]
+  W --> STOP["the stop checks"]
+  N --> STOP
+  STOP -->|"unit-correct"| MAX["tm_maximum_time — converted by timeman"]
+  STOP -.->|"UPSTREAM QUIRK, reproduced"| MT["lim_movetime — always milliseconds"]
+  WALL["search_emit: now() - start, ALWAYS wall"] --> INFO["info time, nps"]
+```
+
+`nodestime` converts the whole clock model into node counts, so `elapsed`,
+`optimum_time` and `maximum_time` change *physical unit* under a flag stored beside them.
+All four are `i64` and nothing in the type system relates them.
+
+Two of the three crossings are right, and they are right **structurally rather than by
+type**:
+
+- `tm_maximum_time` is converted into the budget's unit by `timeman`, so the stop check
+  compares like with like.
+- Reporting has its own producer. `search_emit` computes `info time` and nps from
+  `now() - start_time` unconditionally, so a GUI is never told a search took N
+  milliseconds when the engine was counting nodes. That is a separate function rather
+  than a separate type, and it holds for the same reason: there is no path from the
+  budget's clock into the report.
+
+The dashed arrow is an **inherited quirk, not a defect**. Under `nodestime`, `elapsed` is
+a node count and `lim_movetime` is the UCI figure in milliseconds, and upstream compares
+them anyway — so `go movetime N` under `nodestime` stops after N *nodes*. The port
+reproduces it because the bench and every golden agree with upstream only while it does.
+It is marked at the comparison with upstream's own line quoted beside it.
+
+**Why this is documented rather than typed**, which is the honest half: making the bounds
+unreachable without their unit means putting them behind accessors, and they live in flat
+POD structs the search driver threads through — including one whose byte layout is
+comptime-asserted against the Worker arena. That restructuring is a larger change than
+the defect justifies, and *naming the flag alone would be a rename dressed as a
+guarantee*. See [Adding a type](#adding-a-type), step 3.
+
 ## Denotation: a type is a set of values
 
 The frame is the ordinary denotational one — `TbFile` denotes the four sub-tables,
@@ -293,6 +334,12 @@ rule on the neighbouring page, and this is the case that earned it.
 swappable — the welding stops a key/field mismatch, not one accessor for another. Only the
 bench signature catches that, and it did — the mutation moved the node count off the
 anchor by roughly fifteen per cent.
+
+**A physical unit.** `elapsed`, `optimum_time`, `maximum_time` and `lim_movetime` are all
+`i64`, and the first three change unit under `nodestime`. Nothing rejects a comparison
+between two of them in different units — upstream in fact requires one such comparison, which
+is reproduced and marked. What holds here is a separate *producer* for the wall clock, not a
+separate type.
 
 **Boolean provenance at a call site.** `cut_node` is still a bare `bool` passed
 positionally to `searchImpl`, and `setContHist(worker, ss, in_check, capture, pc, to)` takes
