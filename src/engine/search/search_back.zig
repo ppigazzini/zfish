@@ -25,6 +25,9 @@ const shared_history = @import("shared_history");
 const search_common = @import("search_common");
 const captureStage = search_common.captureStage;
 const statsUpdate = search_common.statsUpdate;
+const main_history_limit = search_common.main_history_limit;
+const pawn_history_limit = search_common.pawn_history_limit;
+const capture_history_limit = search_common.capture_history_limit;
 const captVal = search_common.captVal;
 const captEntry = search_common.captEntry;
 const history_mod = @import("history");
@@ -356,14 +359,14 @@ pub inline fn runBack(nd: anytype) i32 {
         const bonus_scale = search.priorBonusScale(nd.ss1.stat_score, depth, nd.ss1.move_count > 9, !nd.ss.in_check and best_value <= nd.ss.static_eval - 106, !nd.ss1.in_check and best_value <= -nd.ss1.static_eval - 68);
         const scaled_bonus = search.priorScaledBonusBase(depth) * bonus_scale;
         updateContinuationHistories(nd.ss1, nd.pos.board[psq], psq, search.priorConthistScale(scaled_bonus));
-        statsUpdate(&nd.w.main_history[@as(usize, nd.us ^ 1) * hist_uint16 + nd.ss1.current_move], search.priorMainhistScale(scaled_bonus), 7183);
+        statsUpdate(&nd.w.main_history[@as(usize, nd.us ^ 1) * hist_uint16 + nd.ss1.current_move], search.priorMainhistScale(scaled_bonus), main_history_limit);
         if ((nd.pos.board[psq] & 7) != pawn_pt and moveTypeOf(nd.ss1.current_move) != q_mt_promotion) {
             const row = pawnEntryRow(sharedOf(nd.w), nd.pos);
-            statsUpdate(&row[@as(usize, nd.pos.board[psq]) * 64 + psq], search.priorPawnhistScale(scaled_bonus), 8192);
+            statsUpdate(&row[@as(usize, nd.pos.board[psq]) * 64 + psq], search.priorPawnhistScale(scaled_bonus), pawn_history_limit);
         }
     } else if (nd.prior_capture and nd.prev_sq != @as(i32, sq_none)) {
         const psq: u8 = @intCast(nd.prev_sq);
-        statsUpdate(captEntry(nd.w, nd.pos.board[psq], psq, nd.pos.st.captured_piece & 7), 892, 10692);
+        statsUpdate(captEntry(nd.w, nd.pos.board[psq], psq, nd.pos.st.captured_piece & 7), 892, capture_history_limit);
     }
 
     if (nd.pv_node) best_value = @min(best_value, nd.max_value);

@@ -40,6 +40,8 @@ const workerHistories = search_common.workerHistories;
 const captureStage = search_common.captureStage;
 const moveIsOk = search_common.moveIsOk;
 const statsUpdate = search_common.statsUpdate;
+const main_history_limit = search_common.main_history_limit;
+const pawn_history_limit = search_common.pawn_history_limit;
 const captVal = search_common.captVal;
 const captEntry = search_common.captEntry;
 const history_mod = @import("history");
@@ -342,11 +344,11 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         // Order quiets by static-eval difference.
         if (moveIsOk(ss1.current_move) and !ss1.in_check and !prior_capture) {
             const eval_diff = search.evalDiff(ss1.static_eval, ss.static_eval);
-            statsUpdate(&w.main_history[@as(usize, us ^ 1) * hist_uint16 + ss1.current_move], eval_diff * 11, 7183);
+            statsUpdate(&w.main_history[@as(usize, us ^ 1) * hist_uint16 + ss1.current_move], eval_diff * 11, main_history_limit);
             if (!tt_hit and (pos.board[@intCast(prev_sq)] & 7) != pawn_pt and moveTypeOf(ss1.current_move) != q_mt_promotion) {
                 const psq: u8 = @intCast(prev_sq);
                 const row = pawnEntryRow(sharedOf(w), pos);
-                statsUpdate(&row[@as(usize, pos.board[psq]) * 64 + psq], eval_diff * 13, 8192);
+                statsUpdate(&row[@as(usize, pos.board[psq]) * 64 + psq], eval_diff * 13, pawn_history_limit);
             }
         }
 

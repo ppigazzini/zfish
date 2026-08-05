@@ -150,10 +150,29 @@ exhaustively on *mate / tablebase / ordinary* rather than on magic magnitudes wi
 `else`. A decisive score is a fact rather than an estimate, and the three variants make
 that visible where it is reported.
 
-`statsUpdate` is the other boundary and it is typed by a different instrument: its clamp is
-a `comptime` parameter, not an argument. A bonus and its limit were adjacent `i32`s in the
-sibling port and a swap there reshapes the gravity curve silently; here the limit is not a
-runtime value, so the transposition is not even expressible.
+`statsUpdate` is the other boundary, and it is the one place this page was wrong about
+its own guarantee. Its clamp is a `comptime` parameter, and that was recorded here as
+enough — "the limit is not a runtime value, so the transposition is not even
+expressible". It was expressible. Wherever the bonus is *itself* a literal, both
+arguments are compile-time known and the swap type-checks:
+`statsUpdate(captEntry(...), 892, 10692)` transposed to `(..., 10692, 892)` built with
+zero errors and benched off the anchor — the gravity curve reshaped, the move ordering
+changed, nothing refused it.
+
+`comptime` restricts WHEN a value is known, never WHAT it means, and the swap this needed
+guarding against is between two values that are both `i32` and both constant. So the
+clamp carries a type of its own: `HistLimit`, a one-field struct with one constant per
+table (`main_history_limit`, `capture_history_limit`, …, mirroring upstream's
+`Stats<i16, D, ...>` instantiations). Both directions are now refused — a transposition
+as `expected type 'i32', found 'search_common.HistLimit'`, and a bare `10692` as
+`expected type 'search_common.HistLimit', found 'comptime_int'`. It costs nothing: the
+parameter stays `comptime`, so the `.text` section is byte-identical across the change.
+
+An enum would not do here. Two pairs of tables share a value today
+(ButterflyHistory/LowPlyHistory at 7183, PawnHistory/TTMoveHistory at 8192), and Zig
+refuses duplicate enum values — while collapsing each pair to one name would make a sync
+that moves either tunable move both. A struct holds four distinct constants over two
+distinct values without saying they are the same fact.
 
 ### Node kinds: three states, and the fourth that used to be writeable
 
@@ -282,7 +301,10 @@ flow of a function large enough to dominate the profile.
 **The rule is about what a function HOLDS, not what it is parameterised by.** A `comptime`
 parameter occupies no register, so replacing two `comptime` booleans with a `comptime` enum
 is free even on the hottest function in the engine — the monomorphisation is unchanged and
-nothing new is live. Replacing a *runtime* boolean with a two-variant enum is a different
+nothing new is live. Wrapping a `comptime` scalar in a one-field struct is free for the
+same reason, and this one was checked rather than argued: `HistLimit` on `statsUpdate`,
+which every history update on the hot path calls, left the release binary's `.text`
+section byte-identical. Replacing a *runtime* boolean with a two-variant enum is a different
 change and is what the rule actually governs: measured elsewhere at +0.0025% on both tiers,
 which is small, real, and the reason `cut_node` here is still a `bool`.
 
@@ -307,8 +329,9 @@ Each has been made to fail on purpose, and the errors counted:
 - A non-exhaustive switch over `ScoreKind`.
 - A non-PV root, which has no variant to name it.
 - Entering quiescence at the root — `qsearchImpl` refuses `.root` by name.
-- A history bonus and its clamp transposed — not a type, but a `comptime` parameter, which
-  here is stronger.
+- A history bonus and its clamp transposed, or the clamp given as a bare integer —
+  `HistLimit`. This row spent time in the wrong section: `comptime` alone was recorded as
+  stronger than a type here, and it was not.
 
 ## What a compile error does NOT stop
 
