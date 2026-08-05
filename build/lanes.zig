@@ -20,6 +20,7 @@
 //! excuse like any other.
 
 const std = @import("std");
+const config = @import("config.zig");
 
 /// One step and the verdict the graph gives for it.
 pub const Classified = struct {
@@ -135,7 +136,9 @@ pub fn register(
     // net), so it costs the aggregate nothing.
     aggregates[0].dependOn(step);
 
-    cmd.addArg(b.build_root.path orelse ".");
+    // The build root, through the ONE shim that knows which std.Build field holds it.
+    // Naming `b.build_root` here is what took the 0.17 lane down at configure time.
+    cmd.addArg(config.repoPath(b, "."));
     cmd.addFileArg(b.path("tools/lane_excuses.txt"));
     // `<name>|<agg|->|<coverer,coverer,...>` -- see tools/lane_coverage.zig for the reading.
     for (classify(b, aggregates)) |row| {

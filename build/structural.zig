@@ -18,6 +18,7 @@
 //! longhand in build.zig.
 
 const std = @import("std");
+const config = @import("config.zig");
 
 pub const ScriptGate = struct {
     step: []const u8,
@@ -244,7 +245,7 @@ pub fn registerUpstreamParity(
     // FAILS SOFT to "" -- an empty base runs the differential against the wrong upstream and
     // still exits 0, the same silent-wrong-argument failure the note above records.
     const base_sha = blk: {
-        const raw = b.build_root.handle.readFileAlloc(
+        const raw = config.repoDir(b).readFileAlloc(
             b.graph.io,
             "tools/upstream/UPSTREAM_BASE",
             b.allocator,

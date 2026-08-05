@@ -201,6 +201,13 @@ jobs:
       - run: zig version
       # Same host arch/gates as the blocking Linux lane, under Zig master.
       - run: zig build parity -Darch=x86-64-sse41-popcnt
+      # `parity` builds the exe and the gate tools; it does NOT build the unit-test roots
+      # or the fuzz root, which are separate compilations with their own import sets. A
+      # master break in either is invisible to the step above, so this lane -- whose whole
+      # job is early warning -- has to reach them. Both verified green under the pin before
+      # being added; an unverifiable lane is worse than no lane.
+      - run: zig build test
+      - run: zig build fuzz
 
   # Cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
   # with no source changes -- where upstream needs hand-written NEON intrinsics per

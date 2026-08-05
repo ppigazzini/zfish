@@ -497,22 +497,59 @@ representation nobody promised.
 
 ## Write cross-version Zig with comptime shims
 
-Where a std API differs between supported Zig versions, one comptime branch reads
-whichever the running compiler exposes and prunes the other — a comptime-known `if`
-drops the untaken branch from analysis, so an absent field never trips a compile
-error:
+zfish builds on Zig **0.16.0**, the required toolchain, and a non-blocking CI lane builds
+it under a pinned Zig master snapshot so a future break surfaces early instead of at the
+next toolchain bump. Where a std API differs between the two, one comptime branch reads
+whichever the running compiler exposes and prunes the other — a comptime-known `if` drops
+the untaken branch from analysis, so an absent field never trips a compile error.
+
+**Every such branch lives in `build/config.zig`, and callers call it.** That is the rule,
+not a preference, and it is the one this repo learned by breaking. The shim below existed
+and was correct; two later sites re-derived it inline anyway — `lanes.zig` reached for
+`b.build_root.path`, `structural.zig` for `b.build_root.handle` — and both landed green,
+because 0.16 (the compiler every contributor runs) has that field. The master lane was red
+from the commit that added them.
 
 ```zig
-const root = if (@hasField(std.Build, "build_root"))
-    (b.build_root.path orelse ".")
-else
-    (b.root.root_dir.path orelse ".");
+// build/config.zig — the ONLY file that may name either field.
+pub fn repoPath(b: *std.Build, sub: []const u8) []const u8 { ... }  // a path
+pub fn repoDir(b: *std.Build) std.Io.Dir { ... }                    // a handle
 ```
 
-Two companions: prefer a builtin that survives renames (`@Int(.unsigned, n)` over a
-std wrapper), and prefer the modern form even when the old one still parses
-(`@splat(0)` over `[_]u8{0} ** N`). A non-blocking CI lane builds under Zig master so
-a future break surfaces early instead of at the next toolchain bump.
+Both shims answer the same 0.16-vs-master split (`build_root: Cache.Directory` against
+`root: Cache.Path`), so both belong to the same owner; a caller that needs the directory
+handle rather than the path must not open a second branch for it. `zig build
+build-version-lint` refuses a bypass, and runs inside `parity`.
+
+**A `std.Build` break is a CONFIGURE error, and that is what makes it expensive.**
+`build()` never finishes, so *every* step of that lane dies at once — exe, test, fuzz,
+every arch tier — and the log names a file nobody edited. There is no partial signal to
+read and no single step to bisect to. So **any `build.zig` or `build/` edit re-opens the
+master lane**, exactly the way a `src/platform/` edit forces a cross-compile: build it
+under the pinned snapshot before committing. Source-only edits are the cheap case; build
+edits are not.
+
+The APIs that differ, each with the spelling that works on both:
+
+| Instead of | Use | Why |
+| --- | --- | --- |
+| `b.build_root.path` / `b.root.root_dir.path` | `config.repoPath(b, sub)` | 0.16 and master disagree on the field |
+| `b.build_root.handle` | `config.repoDir(b)` | same split, and `handle` is an `Io.Dir` on both |
+| `b.pathFromRoot(x)` | `config.repoPath(b, x)` | removed |
+| `b.getInstallPath(.bin, …)` | `run.addArtifactArg(exe)` | removed. **Absolutize it** if the step re-spawns from another cwd: it yields an absolute path on 0.16 and a build-root-relative one on master |
+| `b.args` (the `zig build … -- args` passthrough) | a `-D` string option, tokenized | **There is no shim.** Master's `Build` has no equivalent field, so `@hasField`-guarding it compiles and then silently DROPS the flags while still exiting 0 — a step that runs at defaults and reports a pass over a smaller sample than its log claims |
+| `std.meta.Int(sign, bits)` | `@Int(sign, bits)` | a builtin survives std renames |
+| `[_]u8{0} ** N` | `@splat(0)` | master rejects `**` after `}`/`)` and its own `zig fmt` mangles it to `* *`. Nested: `@splat(.{...})`; a repeated string: `++ @as([N]u8, @splat('A'))` |
+
+**Pin the master snapshot; never float it.** A floating `master` makes the lane flap on
+upstream's in-flight work rather than on our regressions, and the lane is only worth
+having if a red means *us*. Bump the pin by hand after building under that exact compiler
+locally. Two things to expect while doing it: master carries genuine in-flight churn
+(the optimize-mode enum was being renamed from `ReleaseFast` to `fast` and moved out of
+`std.builtin` during this pin's lifetime), and at least one master breakage is not ours at
+all — cross-building `-Dos=windows` under master has ICEd the compiler itself
+(`Invalid bitcast`, no source location). That is why the lane is non-blocking; do not
+chase it.
 
 **Never `@bitCast` an `extern struct`.** An extern struct's padding bits are not defined
 by the language, so the newer compiler rejects the cast outright — and it rejects it even
