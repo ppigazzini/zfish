@@ -76,6 +76,13 @@ pub const script_gates = [_]ScriptGate{
     // never-dereferenced stub handle" parsed, linked, and was false for weeks; only reading the
     // code finds that. It buys the cheap half so review can spend attention on the expensive half.
     .{ .step = "docs-lint", .script = "tools/docs_lint.sh", .desc = "docs rot gate: every link resolves, every named src/tools path exists, the bench anchor matches build.zig", .in_parity = true },
+    // Gate the cross-version build shims structurally. `build/config.zig` owns one comptime
+    // branch per std.Build API that differs between 0.16 and master; the rest of the build is
+    // supposed to call it. Two sites reached past it for `b.build_root` instead, which 0.16
+    // has and master does not, and the master lane was red from the commit that added them --
+    // as a CONFIGURE error, so every step of that lane died at once and the log named files
+    // nobody had edited. A shim only has one owner if something says so.
+    .{ .step = "build-version-lint", .script = "tools/build_version_lint.sh", .desc = "cross-version gate: the 0.16/master std.Build shims in build/config.zig have no bypass", .in_parity = true },
 };
 
 pub const Context = struct {
