@@ -33,6 +33,12 @@ pub fn checkTime(ctx: *const QCtx) void {
     // pool is amortised, as it is upstream.
     const pool_nodes: u64 = search_ctx.timeStatePoolNodes(ts, ctx.nodes.*);
 
+    // Carry the budget's OWN unit, which `nodestime` changes: node counts when it is set,
+    // milliseconds otherwise. `tm_maximum_time` and `tm_optimum_time` are converted into the
+    // same unit by timeman, so comparing against them is unit-correct. This is NOT the wall
+    // clock, and nothing here may be reported as one -- search_emit computes `info time` and
+    // nps from `now() - start_time` unconditionally, which is why a GUI is never told a search
+    // took N milliseconds when the engine was counting nodes.
     const elapsed: i64 = if (ts.tm_use_nodes_time != 0)
         @intCast(pool_nodes)
     else
@@ -43,6 +49,17 @@ pub fn checkTime(ctx: *const QCtx) void {
     if (@atomicLoad(u8, ts.ponder.?, .monotonic) != 0) return;
 
     const ns: u64 = pool_nodes;
+    // Compare `elapsed` against `lim_movetime` in DIFFERENT UNITS under `nodestime`: the left
+    // side is a node count, `movetime` is the UCI figure in milliseconds. That is upstream's
+    // own behaviour and the port reproduces it deliberately (search.cpp):
+    //
+    //     || (worker.limits.movetime && elapsed >= worker.limits.movetime)
+    //
+    // Upstream converts the clock model to nodes and leaves this one bound unconverted, so
+    // `go movetime N` under `nodestime` stops after N NODES. Do not "fix" it -- the bench and
+    // every golden here agree with upstream because this line does. An inherited quirk,
+    // marked; ../rfish surfaced it by giving the two quantities different types, which refused
+    // the comparison until it was written down.
     if ((ts.use_time_management != 0 and (elapsed > ts.tm_maximum_time or ts.stop_on_ponderhit.?.* != 0)) or
         (ts.lim_movetime != 0 and elapsed >= ts.lim_movetime) or
         (ts.lim_nodes != 0 and ns >= ts.lim_nodes))

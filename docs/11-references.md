@@ -62,6 +62,7 @@ implements what the paper describes.**
 | Reference | Use |
 |---|---|
 | [Kennedy — Types for Units-of-Measure: Theory and Practice (CEFP 2009)](https://link.springer.com/chapter/10.1007/978-3-642-17685-2_8) | The system that makes a dimensioned quantity checkable, shipped in F#. Named because it is precisely what a `Depth` type would need and what Zig cannot express. |
+| [Kennedy — Types for Units-of-Measure, the F# implementation notes](https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/units-of-measure) | The shipped realisation, useful as the concrete picture of what a unit-carrying quantity looks like in a working language. zfish's clock is the case it would catch: `elapsed` is milliseconds or node counts depending on `nodestime`, and both are `i64`. Named as the reference, **not** as a candidate — see the sixth map in [09-type-design.md](09-type-design.md) for why that one is documented rather than typed. |
 | [Kennedy — Relational Parametricity and Units of Measure (POPL 1997)](https://people.mpi-sws.org/~dreyer/tor/papers/kennedy.pdf) | The theorem behind it — a function polymorphic in units cannot inspect the unit, so the discipline is free. **Unit polymorphism is the feature whose absence refutes `Depth`**: a depth-scaled product lands in six codomains and an operator has one result type. See [09-type-design.md](09-type-design.md#why-there-is-no-depth). |
 
 ### The typed index, as production compilers run it
