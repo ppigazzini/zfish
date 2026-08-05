@@ -192,7 +192,18 @@ pub fn buildFenErrors(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-// misc: capture the `d`-command Fen/Key/Checkers triple (on stdout), per sequence.
+// misc: capture the `d`-command BOARD plus its Fen/Key/Checkers triple (on stdout), per
+// sequence.
+//
+// The board rows are here because nothing else reads them. `d` renders each square through
+// `trace.zig`'s own copy of the piece->character table -- a third copy of the same bijection
+// `fen.zig` writes FENs with and `fen_parse.zig` parses them with. The other two are held:
+// mutating `fen.zig`'s copy reddens `flip-chess960`, because that gate round-trips the
+// writer's output back through the parser. `trace.zig`'s copy had no such reader -- this
+// gate captured Fen/Key/Checkers and filtered the diagram out, so changing its last
+// character to 'x' left every gate in the tree green while the `d` command printed a board
+// with no black king on it. Checked, not assumed: that mutation passed `misc` before this
+// change.
 pub fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
     const sp = "position startpos";
     const kiwi = "position fen r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
@@ -214,13 +225,21 @@ pub fn buildMisc(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         var cap = try runEngine(gpa, io, bin, &.{}, input);
         defer cap.deinit(gpa);
         var li = lines(cap.stdout);
+        var rows: usize = 0;
         while (li.next()) |line| {
-            if (startsWithIgnoreCase(line, "Fen:") or startsWithIgnoreCase(line, "Key:") or startsWithIgnoreCase(line, "Checkers:")) {
+            // The board rows and the rule between them both start with a space; the file/rank
+            // legend is the trailing "   a   b   ...". Take every line the diagram is made of.
+            const is_board = startsWith(line, " +---+") or startsWith(line, " | ") or startsWith(line, "   a   b");
+            if (is_board) rows += 1;
+            if (is_board or startsWithIgnoreCase(line, "Fen:") or startsWithIgnoreCase(line, "Key:") or startsWithIgnoreCase(line, "Checkers:")) {
                 try out.appendSlice(gpa, line);
                 try out.append(gpa, '\n');
                 if (startsWith(line, "Key:")) keys += 1;
             }
         }
+        // 9 rules + 8 rank rows + 1 legend. A filter that stops matching would silently
+        // shrink the subject back to what it was, and a shrunk subject reports OK.
+        if (rows != 18) fail("misc: {s}: captured {d} board lines, expected 18", .{ r.label, rows });
     }
     if (keys != 5) fail("misc: expected 5 Key lines, got {d} (crash?)", .{keys});
     return out.toOwnedSlice(gpa);
