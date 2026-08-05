@@ -97,9 +97,11 @@ The measurement laws and instrument blind spots are in
 [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) — read them before any
 perf work. **Read the falsified list before optimizing anything.** Measured
 dead here, do not retry without new evidence: prefetch-as-addition, PGO/BOLT,
-labeled-switch dispatch, `noalias` on the hot kernels, and live-value reshaping
+labeled-switch dispatch, `noalias` on the hot kernels, live-value reshaping
 of the search body in either direction (field hoisting AND cold-body
-outlining). Measured the other way, so do not "simplify" it away: the
+outlining), and outlining `nextMove`'s three stage setups — which shrank its
+frame 744 bytes to 24 and retired MORE instructions on both tiers, because a
+frame costs one `sub rsp` immediate here whatever its size. Measured the other way, so do not "simplify" it away: the
 incremental accumulator is worth 26.1% of whole-process instructions against a
 rebuild-per-evaluation design, and `do_move`'s dirty-threat recording that pays
 for it costs 1.44% (`-Dacc-refresh-only`, `-Dno-threat-record`;
