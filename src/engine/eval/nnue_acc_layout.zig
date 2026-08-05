@@ -23,7 +23,10 @@ pub const square_count: usize = 64;
 /// Match PieceType.king.
 const king_piece_type: u8 = 6;
 pub const max_stack_size: usize = 247;
-pub const nnue_align: usize = 64;
+// Align the accumulator arena on the same cache line the weight blob's regions use,
+// for the same SIMD reason. Derived, not restated: two independent spellings of 64
+// is the shape the feature-transformer layout was just pulled out of.
+pub const nnue_align: usize = dims.cache_line_bytes;
 pub const color_count: usize = 2;
 pub const half_dimensions: usize = 1024;
 pub const psqt_buckets: usize = 8;

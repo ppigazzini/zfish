@@ -14,7 +14,7 @@ for the same position.
 | --- | --- |
 | **network load / parse / storage** | |
 | `network.zig` | the `Network` handle, the `load`/`save`/`verify` entry points, the file header, and the directory search; re-exports the inference surface |
-| `nnue_parse.zig` | the `.nnue` byte format: signed LEB128 (`COMPRESSED_LEB128` sections), the feature-transformer blob layout/offsets, `weightIndexScrambled`, and the `write_parameters` serializer |
+| `nnue_parse.zig` | the `.nnue` byte format: signed LEB128 (`COMPRESSED_LEB128` sections), the section framing that writes each blob region at the offset `nnue_dimensions.zig` owns, `weightIndexScrambled`, and the `write_parameters` serializer |
 | `nnue_leb.zig` | `decodeLeb` — the signed-LEB128 primitive alone, with its own reference encoder and bound tests; the one parse step that knows nothing of the section layout |
 | `nnue_weight_storage.zig` | the weight arenas (`ftStorage`, `layerStorage`) and the loaded-net identity (`nnCurrent`, `nnDescription`) |
 | `nnue_hash.zig` | the net-identity hashes: `hashBytes` (MurmurHash2-64A), the feature-transformer / architecture / network hash values, and the content hashes |
@@ -24,7 +24,7 @@ for the same position.
 | `nnue_feature_write_avx512.zig` | `writeIndices` — the AVX512VBMI+VBMI2 vector fast path for the refresh-time HalfKA removed/added index write |
 | `nnue_feature_bb.zig` | the bitboard/attack math and comptime index tables `nnue_feature.zig` builds on |
 | `nnue_feature_luts.zig` | the full-threat feature set's threat-index lookup tables — `index_lut1`/`index_lut2`, their offsets, the colocated `ThreatRouteBlock` planes, and the piece/square constants the index formulas share; all comptime-built |
-| `nnue_ft.zig` | the `FeatureTransformer` weight-blob layout: byte offsets plus the four typed weight accessors |
+| `nnue_ft.zig` | the four typed `FeatureTransformer` weight accessors, over the byte offsets `nnue_dimensions.zig` owns — it derives none of its own |
 | **accumulator** | |
 | `nnue_acc_layout.zig` | the accumulator-stack byte layout: strides, diff records, the `AccumulatorStack` handle, and every state/diff accessor |
 | `nnue_acc_update.zig` | the update algorithm: `evaluateSide`, the refresh path, and the fused incremental step |
@@ -133,8 +133,8 @@ of last-level cache sets (measured as ~5 extra LL misses per eval).
 ## Architecture of the net
 
 The net has **three feature sets**. Their dimensions are pinned in
-`nnue_acc_layout.zig` (and re-pinned file-locally by `nnue_ft.zig` and
-`nnue_parse.zig`, which lay out the blob); `nnue_feature.zig` owns the indexing:
+`nnue_dimensions.zig`, which also derives the blob layout they determine;
+`nnue_feature.zig` owns the indexing:
 
 | Feature set | Dimensions | Index | Weights |
 | --- | --- | --- | --- |
@@ -152,11 +152,20 @@ and a sync moving it in three of the four would have left the fourth addressing 
 row of the wrong feature set — an evaluation that is a plausible number rather than a
 fault. The SFNNv16 change moved pawn-pawn interactions out of the
 threat inputs (which lost the pawn-pusher input and pawns as threat targets) and into
-this set. All three feed one shared **feature transformer** whose layout `nnue_ft.zig`
-fixes: biases, psq weights, the combined threat+pawn-pair weights, and two `i32` PSQT
-tables (`psqt_buckets = 8`; the threat+pawn-pair PSQT is likewise combined), each
-region 64-byte aligned. It produces `half_dimensions = 1024` accumulated values per
-perspective.
+this set. All three feed one shared **feature transformer** whose layout the same
+module fixes: biases, psq weights, the combined threat+pawn-pair weights, and two
+`i32` PSQT tables (`psqt_buckets = 8`; the threat+pawn-pair PSQT is likewise
+combined), each region 64-byte aligned. It produces `half_dimensions = 1024`
+accumulated values per perspective.
+
+That layout is derived **once**, for the same reason `pp_index_base` is. It used to be
+derived twice — `nnue_parse.zig` computed the offsets it *writes* each region at,
+`nnue_ft.zig` computed the offsets its accessors *read* them back from, with two
+round-up helpers and two independent spellings of 64 — and nothing related the two.
+Editing one side alone left the parser writing every weight where the accessors do not
+look: the net still loads, every gate still runs, and the evaluation is a plausible
+wrong number. Measured, not argued: on the pre-change tree, moving
+`psq_feature_dimensions` in `nnue_ft.zig` alone built clean and benched 4414749 nodes.
 
 `nnue_accumulator.transformBucket` turns the two perspectives' accumulators into the
 network input: per element, clamp to `[0,255]` and multiply the two halves with a

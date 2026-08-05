@@ -7,7 +7,7 @@
 // storage at load time. Matches src/nnue exactly.
 
 const std = @import("std");
-const nnue_parse = @import("nnue_parse.zig");
+const nnue_dims = @import("nnue_dimensions");
 
 const hash_combine_magic: usize = 0x9e3779b9;
 
@@ -73,14 +73,14 @@ fn combineHash(comptime hashes: []const u32) u32 {
 // OutputDimensions=HalfDimensions=1024. Combine order matches upstream:
 // {threat, pair, psq}.
 pub fn featureTransformerHashValue() u32 {
-    return combineHash(&.{ 0x2e6b9d04, 0x86f2b1dd, 0x7f234cb8 }) ^ (@as(u32, nnue_parse.half_dimensions) * 2);
+    return combineHash(&.{ 0x2e6b9d04, 0x86f2b1dd, 0x7f234cb8 }) ^ (@as(u32, nnue_dims.half_dimensions) * 2);
 }
 
 // Compute FeatureTransformer::get_content_hash. The raw-data hashes run in member-value
 // order: biases, weights, psqtWeights, threatAndPpWeights, threatAndPpPsqtWeights (each
 // threat region spans FullThreats' rows followed by PP_3Wide's).
 pub fn featureTransformerContentHash(ft: [*]const u8) usize {
-    const p = nnue_parse;
+    const p = nnue_dims;
     var h: usize = 0;
     rawDataHash(&h, ft[p.biases_off..][0 .. p.biases_count * 2]);
     rawDataHash(&h, ft[p.weights_off..][0 .. p.psq_weights_count * 2]);
@@ -126,7 +126,7 @@ fn activationContentHash() usize {
 // that threads prevHash through fc_0, ac_0, fc_1, ac_1, fc_2.
 pub fn architectureHashValue() u32 {
     var hv: u32 = 0xEC42E90D;
-    hv ^= @as(u32, nnue_parse.half_dimensions) * 2; // TransformedFeatureDimensions*2
+    hv ^= @as(u32, nnue_dims.half_dimensions) * 2; // TransformedFeatureDimensions*2
     hv = affineHashValue(hv, 32); // fc_0, OutputDimensions = FC_0_OUTPUTS = 32
     hv = clipped_base +% hv; // ac_0
     hv = affineHashValue(hv, 32); // fc_1, FC_1_OUTPUTS

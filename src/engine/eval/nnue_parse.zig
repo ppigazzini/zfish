@@ -99,60 +99,36 @@ pub fn weightIndexScrambled(i: usize, padded_input: usize, output_dims: usize, s
 // ---- feature transformer parse ---------------------------------------------
 
 pub const leb_magic = "COMPRESSED_LEB128";
-const cache_line = 64;
 
-pub const half_dimensions: usize = 1024;
-pub const psq_feature_dimensions: usize = 22528;
-// FullThreats::Dimensions (SFNNv16). The threat weight rows are followed in memory by the
-// PP_3Wide rows (upstream's single threatAndPpWeights array), so the "threat" weight/psqt
-// regions are sized for the concatenation of both feature sets.
-pub const threat_dimensions: usize = dims.threat_dimensions;
-pub const pp_dimensions: usize = dims.pp_dimensions;
-pub const threat_and_pp_dimensions: usize = dims.threat_and_pp_dimensions;
-pub const psqt_buckets: usize = 8;
+// Write each region where nnue_dimensions says it lives. The accessors in nnue_ft.zig read
+// it back from the same declarations, so the writer and the reader cannot drift apart --
+// see that module's header for what the two derivations used to risk.
+const half_dimensions = dims.half_dimensions;
+const psq_feature_dimensions = dims.psq_feature_dimensions;
+const threat_dimensions = dims.threat_dimensions;
+const pp_dimensions = dims.pp_dimensions;
+const threat_and_pp_dimensions = dims.threat_and_pp_dimensions;
+const psqt_buckets = dims.psqt_buckets;
 
-fn roundUp(x: usize, a: usize) usize {
-    return (x + a - 1) / a * a;
-}
+const biases_count = dims.biases_count;
+const psq_weights_count = dims.psq_weights_count;
+const threat_weights_count = dims.threat_weights_count;
+const psqt_weights_count = dims.psqt_weights_count;
+const threat_psqt_weights_count = dims.threat_psqt_weights_count;
 
-// Count the elements of the feature-transformer arrays. The threat weight/psqt regions hold
-// the FullThreats rows followed by the PP_3Wide rows (one contiguous array each).
-pub const biases_count = half_dimensions; // i16
-pub const psq_weights_count = half_dimensions * psq_feature_dimensions; // i16
-pub const threat_weights_count = half_dimensions * threat_and_pp_dimensions; // i8 (threat ++ pp)
-pub const psqt_weights_count = psq_feature_dimensions * psqt_buckets; // i32
-pub const threat_psqt_weights_count = threat_and_pp_dimensions * psqt_buckets; // i32 (threat ++ pp)
+const threat_only_weights_count = dims.threat_only_weights_count;
+const pp_only_weights_count = dims.pp_only_weights_count;
+const threat_only_psqt_count = dims.threat_only_psqt_count;
+const pp_only_psqt_count = dims.pp_only_psqt_count;
 
-// The stream splits the two concatenated regions back into separate sections (threat, then
-// pp), each framed on its own; these are the per-section element counts.
-pub const threat_only_weights_count = half_dimensions * threat_dimensions; // i8
-pub const pp_only_weights_count = half_dimensions * pp_dimensions; // i8
-pub const threat_only_psqt_count = threat_dimensions * psqt_buckets; // i32
-pub const pp_only_psqt_count = pp_dimensions * psqt_buckets; // i32
-
-// Lay out the in-memory byte offsets (member order, each alignas(64)): biases, weights(psq),
-// threatAndPpWeights, psqtWeights, threatAndPpPsqtWeights.
-pub const biases_off = 0;
-pub const weights_off = roundUp(biases_count * 2, cache_line);
-pub const threat_weights_off = roundUp(weights_off + psq_weights_count * 2, cache_line);
-pub const psqt_weights_off = roundUp(threat_weights_off + threat_weights_count * 1, cache_line);
-pub const threat_psqt_weights_off = roundUp(psqt_weights_off + psqt_weights_count * 4, cache_line);
-pub const ft_total_bytes = roundUp(threat_psqt_weights_off + threat_psqt_weights_count * 4, cache_line);
-// Byte offsets of the pp sub-regions within the concatenated threat regions.
-pub const pp_weights_off = threat_weights_off + threat_only_weights_count * 1;
-pub const pp_psqt_weights_off = threat_psqt_weights_off + threat_only_psqt_count * 4;
-
-comptime {
-    // Require the five regions to tile ft_total_bytes with no padding. The parse is
-    // the arena's only initializer (page_alloc hands the block out uninitialized), so
-    // a dims change that opened an alignment gap would leak uninitialized bytes into
-    // the weight image; fail the build instead.
-    std.debug.assert(weights_off == biases_off + biases_count * 2);
-    std.debug.assert(threat_weights_off == weights_off + psq_weights_count * 2);
-    std.debug.assert(psqt_weights_off == threat_weights_off + threat_weights_count * 1);
-    std.debug.assert(threat_psqt_weights_off == psqt_weights_off + psqt_weights_count * 4);
-    std.debug.assert(ft_total_bytes == threat_psqt_weights_off + threat_psqt_weights_count * 4);
-}
+const ft_total_bytes = dims.ft_total_bytes;
+const biases_off = dims.biases_off;
+const weights_off = dims.weights_off;
+const threat_weights_off = dims.threat_weights_off;
+const psqt_weights_off = dims.psqt_weights_off;
+const threat_psqt_weights_off = dims.threat_psqt_weights_off;
+const pp_weights_off = dims.pp_weights_off;
+const pp_psqt_weights_off = dims.pp_psqt_weights_off;
 
 fn dstSlice(comptime T: type, dst: []u8, off: usize, count: usize) []T {
     @setRuntimeSafety(true); // check the @alignCast and the arena bound, not just the offsets
