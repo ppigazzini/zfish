@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const nnue_parse = @import("nnue_parse.zig");
+const nnue_dims = @import("nnue_dimensions");
 const nnue_hash = @import("nnue_hash.zig");
 const weight_storage = @import("nnue_weight_storage.zig");
 const nnue_inference = @import("nnue_inference.zig");
@@ -254,7 +255,7 @@ fn layerArrays(bucket: usize) ?struct { b: [3][]const u8, w: [3][]const u8 } {
 fn emitFt(out: *std.ArrayList(u8), a: std.mem.Allocator) !void {
     const ft: [*]const u8 = @ptrCast(ftPtr() orelse return error.NoNetwork);
     try nnue_parse.serializeFeatureTransformer(
-        ft[0..nnue_parse.ft_total_bytes],
+        ft[0..nnue_dims.ft_total_bytes],
         nnue_hash.featureTransformerHashValue(),
         out,
         a,
@@ -358,9 +359,9 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
 // source (the eval gates verify the weights end-to-end, and the offset==bytes.len check
 // at the end of loadNetworkBytes verifies the consumed count).
 fn loadFt(blob: []const u8) usize {
-    const dst_ptr = ftStorage(nnue_parse.ft_total_bytes) orelse
+    const dst_ptr = ftStorage(nnue_dims.ft_total_bytes) orelse
         @panic("feature-transformer storage allocation failed");
-    const dst = dst_ptr[0..nnue_parse.ft_total_bytes];
+    const dst = dst_ptr[0..nnue_dims.ft_total_bytes];
     // Report a malformed net as 0 consumed rather than aborting: the file is user input, and
     // readFeatureTransformer already treats 0 as "reject this net".
     return nnue_parse.parseFeatureTransformer(blob, dst) orelse 0;

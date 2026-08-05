@@ -1,38 +1,23 @@
-// Lay out the NNUE feature-transformer weight blob.
+// Reach into the NNUE feature-transformer weight blob.
 //
-// Build the comptime byte-offset table into the loaded FeatureTransformer weight blob
-// plus the typed accessors that hand back [*]const pointers to each weight region
+// Hold the typed accessors that hand back [*]const pointers to each weight region
 // (psq i16, threat i8, and the two psqt i32 tables). Split out of
-// nnue_accumulator.zig; pure comptime layout math + pointer casts, std-free, with
-// roundUp and the transformer-only widths kept local and the two concatenated
-// feature-set counts taken from nnue_dimensions, which owns them. The accumulator
-// core imports this and aliases the four accessors.
+// nnue_accumulator.zig; pointer casts over the byte offsets, std-free. The offsets
+// themselves are NOT computed here: nnue_dimensions owns the layout, and nnue_parse
+// WRITES each region at those same declarations, so this reads back exactly where
+// the parse wrote. The accumulator core imports this and aliases the four accessors.
 
 const dims = @import("nnue_dimensions");
 
-const half_dimensions: usize = 1024;
-const psqt_buckets: usize = 8;
-const nnue_align: usize = 64;
-const psq_feature_dimensions: usize = 22528;
+const nnue_align: usize = dims.cache_line_bytes;
+
 // The threat weight rows hold FullThreats AND PP_3Wide concatenated -- upstream's single
 // threatAndPpWeights array. A pp index is at or past the threat count and addresses the
 // tail of this same region, so the threat weight accessor covers both feature sets.
-const threat_dimensions: u32 = dims.threat_dimensions;
-const pp_dimensions: u32 = dims.pp_dimensions;
-const threat_and_pp_dimensions: u32 = dims.threat_and_pp_dimensions;
-
-fn roundUp(value: usize, alignment: usize) usize {
-    return ((value + alignment - 1) / alignment) * alignment;
-}
-
-const feature_transformer_biases_bytes = half_dimensions * @sizeOf(i16);
-const feature_transformer_psq_weights_bytes = half_dimensions * psq_feature_dimensions * @sizeOf(i16);
-const feature_transformer_threat_weights_bytes = half_dimensions * @as(usize, threat_and_pp_dimensions) * @sizeOf(i8);
-const feature_transformer_psqt_weights_bytes = psq_feature_dimensions * psqt_buckets * @sizeOf(i32);
-const feature_transformer_weights_offset = roundUp(feature_transformer_biases_bytes, nnue_align);
-const feature_transformer_threat_weights_offset = roundUp(feature_transformer_weights_offset + feature_transformer_psq_weights_bytes, nnue_align);
-const feature_transformer_psqt_weights_offset = roundUp(feature_transformer_threat_weights_offset + feature_transformer_threat_weights_bytes, nnue_align);
-const feature_transformer_threat_psqt_weights_offset = roundUp(feature_transformer_psqt_weights_offset + feature_transformer_psqt_weights_bytes, nnue_align);
+const feature_transformer_weights_offset = dims.weights_off;
+const feature_transformer_threat_weights_offset = dims.threat_weights_off;
+const feature_transformer_psqt_weights_offset = dims.psqt_weights_off;
+const feature_transformer_threat_psqt_weights_offset = dims.threat_psqt_weights_off;
 
 /// Expose an opaque handle to the loaded feature-transformer weight blob. A raw
 /// large-page byte arena whose layout is fixed by the .nnue file + SIMD access, so
