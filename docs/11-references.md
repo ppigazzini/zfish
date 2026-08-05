@@ -49,6 +49,14 @@ implements what the paper describes.**
 | [Kiselyov & Shan — Lightweight Static Capabilities (ENTCS 2007)](https://okmij.org/ftp/Computation/lightweight-static-guarantees.html) | A capability type witnesses a checked property so downstream code need not re-check it. The lens for "this handle grants access to that table", which is what `AccumulatorStack` being an `opaque` handle rather than a bare pointer is doing. |
 | [Noonan — Ghosts of Departed Proofs (Haskell 2018)](https://kataskeue.com/gdp.pdf) | Preconditions carried as proofs in phantom type parameters, at no runtime cost. The diagnosis, not the machinery: the four correction accessors exist because the proof "this key selects this counter" was real, was written in a comment, and was carried by nothing. |
 
+### Boolean blindness, and states that should not be representable
+
+| Reference | Use |
+|---|---|
+| [Harper — Boolean Blindness (2011)](https://existentialtype.wordpress.com/2011/03/15/boolean-blindness/) | *"There is no information carried by a Boolean beyond its value; to make use of one you have to know its provenance."* The moment you branch on a `bool` the meaning of what was tested is gone. The canonical source for why `NodeKind` replaced two booleans, and for why `cut_node` remaining a `bool` is recorded as a known gap rather than a settled design. |
+| [Minsky — Effective ML, "make illegal states unrepresentable" (2010)](https://blog.janestreet.com/effective-ml-video/) | Where the slogan comes from. The concrete instance here: two independent booleans admit four states and the search means three, so the fourth was writeable until a three-variant enum replaced them. |
+| [Making invalid states unrepresentable: why boolean flags are bugs in disguise](https://blog.rafaelfernandez.dev/posts/making-invalid-states-unrepresentable-1-boolean-flags/) | The worked modern write-up of exactly that arithmetic — *n* independent flags give 2ⁿ states and a domain rarely has 2ⁿ meanings. Useful as the argument to make when proposing this kind of change. |
+
 ### Units, and the quantity that refused one
 
 | Reference | Use |

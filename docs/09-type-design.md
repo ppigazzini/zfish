@@ -37,6 +37,7 @@ Each of these compiled before its type or its accessor existed:
 | a board file where a Syzygy sub-table index belongs | a **confident wrong** tablebase verdict — a real sub-table of the wrong file |
 | the side-to-move and the table file, transposed | the same, by a different route |
 | a correction counter read from a row the wrong key chose | a real counter of the wrong kind, so a plausible wrong correction |
+| a non-PV root, in the hottest function's signature | nothing yet — an illegal state nobody had written, waiting |
 | a feature count drifting between its four declarations | a real row of the wrong feature set folded into the accumulator |
 
 None is hypothetical, and none was argued: each was applied to the tree, built, and the
@@ -48,7 +49,7 @@ wasted session.
 
 ## The maps
 
-Four, because the families answer different questions and one diagram hides all four. A
+Five, because the families answer different questions and one diagram hides all five. A
 solid arrow is a **named function** — a value crosses a boundary by calling something, and
 the call is where a reader looks. A dashed arrow is a crossing the compiler still permits.
 
@@ -154,6 +155,38 @@ a `comptime` parameter, not an argument. A bonus and its limit were adjacent `i3
 sibling port and a swap there reshapes the gravity curve silently; here the limit is not a
 runtime value, so the transposition is not even expressible.
 
+### Node kinds: three states, and the fourth that used to be writeable
+
+```mermaid
+graph LR
+  K["NodeKind — a comptime parameter"] --> R["root"]
+  K --> P["pv"]
+  K --> N["non_pv"]
+  R -->|"quiescent()"| P
+  P -->|"quiescent()"| P
+  N -->|"quiescent()"| N
+  X["non-PV root"] -.->|"no variant names it"| K
+  CUT["cut_node — still a bare bool"] -.-> SI["searchImpl"]
+```
+
+The search used to spell a node's kind as two independent `comptime` booleans. Four
+combinations, three meanings: a root is always searched on a full window, so a non-PV
+root names nothing, and no call site ever produced one. One `comptime NodeKind`
+parameter makes it unwriteable — there is no fourth variant.
+
+`quiescent()` carries a fact the code held only in a comment: dropping into quiescence
+loses rootness and keeps PV-ness, so the root's own quiescence node is an ordinary PV
+node rather than a second root. That is what lets `qsearchImpl` refuse `.root` outright.
+
+**Zig takes an enum as a `comptime` parameter directly**, which is why this needs no
+marker types or generic machinery. A sibling port in a language without that had to
+encode the same three kinds as a sealed trait over three zero-sized types.
+
+The dashed `cut_node` arrow is the honest part again: it is still a bare `bool`, passed
+positionally. That is a *provenance* problem rather than an illegal-state one — both of
+its values are real — and it is left alone deliberately; see
+[the boundary](#what-a-compile-error-does-not-stop).
+
 ## Denotation: a type is a set of values
 
 The frame is the ordinary denotational one — `TbFile` denotes the four sub-tables,
@@ -205,6 +238,13 @@ Free: index spaces carried in a slice and consumed one at a time, coordinates pa
 table lookup, every layout-preserving rename. Costly: a scalar threaded through the control
 flow of a function large enough to dominate the profile.
 
+**The rule is about what a function HOLDS, not what it is parameterised by.** A `comptime`
+parameter occupies no register, so replacing two `comptime` booleans with a `comptime` enum
+is free even on the hottest function in the engine — the monomorphisation is unchanged and
+nothing new is live. Replacing a *runtime* boolean with a two-variant enum is a different
+change and is what the rule actually governs: measured elsewhere at +0.0025% on both tiers,
+which is small, real, and the reason `cut_node` here is still a `bool`.
+
 **Diagnose it with the static instruction mix of the enclosing function, not a callgrind
 symbol diff.** A symbol diff reports "diffuse" and stops; the opcode histogram of the one
 function names the mechanism.
@@ -224,6 +264,8 @@ Each has been made to fail on purpose, and the errors counted:
 - A correction counter read through a field the row's key did not select.
 - A feature-set count declared twice and drifting.
 - A non-exhaustive switch over `ScoreKind`.
+- A non-PV root, which has no variant to name it.
+- Entering quiescence at the root — `qsearchImpl` refuses `.root` by name.
 - A history bonus and its clamp transposed — not a type, but a `comptime` parameter, which
   here is stronger.
 
@@ -251,6 +293,14 @@ rule on the neighbouring page, and this is the case that earned it.
 swappable — the welding stops a key/field mismatch, not one accessor for another. Only the
 bench signature catches that, and it did — the mutation moved the node count off the
 anchor by roughly fifteen per cent.
+
+**Boolean provenance at a call site.** `cut_node` is still a bare `bool` passed
+positionally to `searchImpl`, and `setContHist(worker, ss, in_check, capture, pc, to)` takes
+four adjacent `u8`s of which two are booleans — any pair of the four can be transposed and
+three of the six transpositions still select a real plane of the continuation table. Both
+values are legal in every combination, so this is provenance rather than an illegal state,
+and both sit on per-node paths where the cost rule predicts a real if small cost. Recorded
+as known, not fixed.
 
 **The four bug classes that have cost this port the most**, none of which is a typing
 problem: integer semantics under conversion, two generators emitting the same set in a
