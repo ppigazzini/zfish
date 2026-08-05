@@ -296,6 +296,7 @@ cycles, unused import edges, and unregistered hooks alike.
 | `tools/loc_lint.sh` | `loc` | No new god-file. |
 | `tools/headless_lint.sh` | `headless` | `engine/` imports only `engine/`. |
 | `tools/src_free.sh` | `src-free` | Zero C++ in the shipped binary. |
+| `tools/build_version_lint.sh` | `build-version-lint` | The 0.16/master `std.Build` shims have one owner. |
 
 **`hook_lint.zig`** bounds the mechanism that buys the DAG. Where an import cycle
 would exist, a leaf declares a `pub var` function pointer and the composition root
@@ -333,6 +334,17 @@ parsers, table builders and init paths move out; judge a file's length by its co
 lines and leave one long specialized hot body alone. (zfish compiles as one LLVM
 module, so a split can never un-inline anything — the seam choice is about
 cohesion, not codegen.)
+
+**`build_version_lint.sh`** holds the cross-version shims to one owner. `build/config.zig`
+carries a comptime `@hasField` branch per `std.Build` API that 0.16 and Zig master spell
+differently; every other build file is supposed to call it. Two did not — they named
+`b.build_root` directly, which 0.16 has and master does not — and the compatibility lane
+was red from the commit that added them, because the contributor-facing compiler is the one
+that still works. The lint refuses a field access to either spelling outside the owner, plus
+a short list of APIs one compiler has removed. It matters more than its size suggests: a
+`Build` break is a **configure** error, so it takes down every step of that lane at once and
+names a file nobody edited. See [08-idiomatic-zig.md](08-idiomatic-zig.md) for the table of
+spellings and the rule that any build edit re-opens the lane.
 
 **`headless_lint.sh`** resolves every `@import` in an engine source file to its zone
 via `build.zig`'s module table and reports each engine → {platform, shell} up-edge.
