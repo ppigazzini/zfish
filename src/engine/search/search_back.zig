@@ -17,6 +17,7 @@ const search = @import("search");
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
 const search_types = @import("search_types");
+const NodeKind = search_types.NodeKind;
 const search_acc = @import("search_acc");
 const board_core = @import("board_core");
 const legality = @import("legality");
@@ -215,7 +216,7 @@ pub inline fn runBack(nd: anytype) i32 {
             const singular_beta = search.singularBeta(nd.tt_value, nd.ss.tt_pv and !nd.pv_node, depth);
             const singular_depth = @divTrunc(new_depth, 2);
             nd.ss.excluded_move = move;
-            value = searchImpl(nd.ctx, nd.pos_ptr, nd.ss_ptr, singular_beta - 1, singular_beta, singular_depth, nd.cut_node, false, false);
+            value = searchImpl(nd.ctx, nd.pos_ptr, nd.ss_ptr, singular_beta - 1, singular_beta, singular_depth, nd.cut_node, .non_pv);
             nd.ss.excluded_move = 0;
             if (value < singular_beta) {
                 const ply_gt_root = nd.ss.ply > nd.ctx.root_depth.*;
@@ -270,19 +271,19 @@ pub inline fn runBack(nd: anytype) i32 {
         if (depth >= 2 and move_count > 1) {
             const d = @max(@as(i32, 1), @min(new_depth - @divTrunc(r, 1024), new_depth + 2)) + @as(i32, @intFromBool(nd.pv_node));
             nd.ss.reduction = new_depth - d;
-            value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, d, true, false, false);
+            value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, d, true, .non_pv);
             nd.ss.reduction = 0;
             if (value > alpha) {
                 const do_deeper = d < new_depth and value > best_value + 53;
                 const do_shallower = value < best_value + 8;
                 new_depth += @as(i32, @intFromBool(do_deeper)) - @as(i32, @intFromBool(do_shallower));
                 if (new_depth > d)
-                    value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, new_depth, !nd.cut_node, false, false);
+                    value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, new_depth, !nd.cut_node, .non_pv);
                 updateContinuationHistories(nd.ss, moved_piece, to, 1334);
             }
         } else if (!nd.pv_node or move_count > 1) {
             if (nd.tt_move == 0) r += 1127;
-            value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, new_depth - @as(i32, @intFromBool(r > 5234)) - @as(i32, @intFromBool(r > 5487 and new_depth > 2)), !nd.cut_node, false, false);
+            value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, new_depth - @as(i32, @intFromBool(r > 5234)) - @as(i32, @intFromBool(r > 5487 and new_depth > 2)), !nd.cut_node, .non_pv);
         }
 
         if (nd.pv_node and (move_count == 1 or value > alpha)) {
@@ -290,7 +291,7 @@ pub inline fn runBack(nd: anytype) i32 {
             pvClear(&pv);
             if (move == nd.tt_move and ((qIsValid(nd.tt_value) and qIsDecisive(nd.tt_value) and nd.tt_depth > 0) or nd.tt_depth > 1))
                 new_depth = @max(new_depth, 1);
-            value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -nd.beta, -alpha, new_depth, false, true, false);
+            value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -nd.beta, -alpha, new_depth, false, .pv);
         }
 
         // Step 19. Undo move.

@@ -14,6 +14,7 @@ const search = @import("search");
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
 const search_types = @import("search_types");
+const NodeKind = search_types.NodeKind;
 const search_ctx = @import("search_ctx");
 const search_acc = @import("search_acc");
 const board_core = @import("board_core");
@@ -137,7 +138,15 @@ pub const adjustKey50 = move_do.adjustKey50;
 
 /// Mirror upstream `template<NodeType> qsearch<PV>/<NonPV>`: the node type is comptime, and
 /// there is no cut_node.
-pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: i32, beta: i32, comptime pv_node: bool) i32 {
+pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: i32, beta: i32, comptime kind: NodeKind) i32 {
+    // Refuse the root outright. Quiescence is entered by dropping out of the main
+    // search, which loses rootness -- `NodeKind.quiescent` is the only producer of
+    // this argument that the search uses, and it never yields `.root`. Stating it
+    // here makes the property a compile error rather than a comment.
+    comptime {
+        if (kind == .root) @compileError("quiescence is never entered at the root");
+    }
+    const pv_node = comptime kind.isPv();
     const w: *WorkerHistories = workerHistories(ctx.worker);
     const pos = pos_ptr;
     const ss = ss_ptr;
@@ -285,7 +294,7 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
 
         // Step 7. Make and search the move.
         doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(gc), ss_ptr);
-        const value = -qsearchImpl(ctx, pos_ptr, ss_next, -beta, -alpha, pv_node);
+        const value = -qsearchImpl(ctx, pos_ptr, ss_next, -beta, -alpha, kind);
         undoMoveAcc(ctx, pos_ptr, move);
 
         // Step 8. Record a new best move.
