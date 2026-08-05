@@ -23,6 +23,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const dims = @import("nnue_dimensions");
 
 // The SSE4.1 packus lane order (which happens to be the identity {0..7}). A test fixture for
 // permuteBlocks only: the live parse never permutes on any tier (see the header), so no target
@@ -105,9 +106,9 @@ pub const psq_feature_dimensions: usize = 22528;
 // FullThreats::Dimensions (SFNNv16). The threat weight rows are followed in memory by the
 // PP_3Wide rows (upstream's single threatAndPpWeights array), so the "threat" weight/psqt
 // regions are sized for the concatenation of both feature sets.
-pub const threat_dimensions: usize = 59808;
-pub const pp_dimensions: usize = 96 * 95 / 2; // 4560 = C(2*48, 2)
-pub const threat_and_pp_dimensions: usize = threat_dimensions + pp_dimensions;
+pub const threat_dimensions: usize = dims.threat_dimensions;
+pub const pp_dimensions: usize = dims.pp_dimensions;
+pub const threat_and_pp_dimensions: usize = dims.threat_and_pp_dimensions;
 pub const psqt_buckets: usize = 8;
 
 fn roundUp(x: usize, a: usize) usize {

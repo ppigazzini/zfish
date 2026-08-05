@@ -6,6 +6,7 @@
 // foundation, so the split stays acyclic.
 
 const std = @import("std");
+const dims = @import("nnue_dimensions");
 const position_snapshot = @import("position_snapshot");
 const position_types = @import("position_types");
 const Position = position_types.Position;
@@ -59,7 +60,7 @@ pub const psq_index_capacity: usize = 32;
 // threatAndPp weight rows). Upstream's IndexList is ValueList<u16, 256>.
 pub const threat_index_capacity: usize = 256;
 // FullThreats::Dimensions (SFNNv16); also PP_3Wide's IndexBase.
-pub const threat_dimensions: u32 = 59808;
+pub const threat_dimensions: u32 = dims.threat_dimensions;
 pub const psq_feature_dimensions: usize = 22528;
 
 pub const HalfDiff = struct {

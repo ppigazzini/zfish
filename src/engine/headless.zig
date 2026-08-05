@@ -28,6 +28,7 @@ comptime {
     _ = @import("nnue_accumulator");
     _ = @import("nnue_feature");
     _ = @import("nnue_ft");
+    _ = @import("nnue_dimensions");
     _ = @import("nnue_misc");
     _ = @import("nnue_refresh_cache");
     _ = @import("option_source");
