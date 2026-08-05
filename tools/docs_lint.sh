@@ -88,7 +88,7 @@ done
 # rename silently invalidates the reference; the prose still reads plausibly.
 #
 # The subject is every directory this repository OWNS and every extension it writes -- a claim
-# about `docs/`, `build/` or `.github/` rots exactly like one about `src/`, and 09-tooling-ci
+# about `docs/`, `build/` or `.github/` rots exactly like one about `src/`, and 10-tooling-ci
 # names a workflow file per CI lane. `.cpp`/`.h` are excluded ON PURPOSE: `src/syzygy/
 # tbprobe.cpp` is UPSTREAM's path, a namespace these pages reference without owning, the same
 # exclusion check 4 makes for `_mm*` intrinsics. Scanning the two root pages check 4 already
@@ -228,7 +228,7 @@ done < <(grep -ohE '`[A-Za-z_][A-Za-z0-9_]*`' docs/*.md AGENTS.md README.md CONT
 [ "$unknown" -eq 0 ] || fail=1
 
 # --- 5. every build step is documented somewhere -------------------------------------------
-# 09-tooling-ci's job is to say what each step proves. A step nothing mentions is a gate a
+# 10-tooling-ci's job is to say what each step proves. A step nothing mentions is a gate a
 # contributor cannot find, which is the same as not having it.
 # READ THE WHOLE FILE, NOT LINE BY LINE. build.zig writes most steps across three lines
 #
@@ -243,7 +243,7 @@ done < <(grep -ohE '`[A-Za-z_][A-Za-z0-9_]*`' docs/*.md AGENTS.md README.md CONT
 # 6% of its subject. Collapse newlines first so the extraction sees every step.
 #
 # `<gate>-update` is covered by its BASE gate: the pairing is a documented convention
-# ("Every golden gate is a pair", 09-tooling-ci.md), so 21 near-identical names do not each
+# ("Every golden gate is a pair", 10-tooling-ci.md), so 21 near-identical names do not each
 # need their own prose. Requiring the base keeps that honest -- an update step whose gate
 # nobody documented still fails.
 undoc=0

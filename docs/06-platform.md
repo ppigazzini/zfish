@@ -183,7 +183,7 @@ count and requires each hook to declare its failure mode when unregistered. Life
 hooks are structurally safe — they cannot become per-query without the design
 changing shape — unlike the service seams (`page_alloc`, `time_source`, `tb_source`),
 whose `//! hook-class:` headers state the same contract from the engine side. See
-[09-tooling-ci.md](09-tooling-ci.md) for the gate itself.
+[10-tooling-ci.md](10-tooling-ci.md) for the gate itself.
 
 ## Invariants
 

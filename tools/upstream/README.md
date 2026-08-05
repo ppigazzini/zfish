@@ -41,7 +41,7 @@ zig build signature -Darch=x86-64-sse41-popcnt      # must equal <sha>'s Bench (
 # stuck on a multi-commit gap?  upstream_nodes.sh <sha> to localize which position/commit diverges
 tools/upstream_parity.sh                  # whole-engine gate; expect OK at HEAD
 # then reharden + merge. Do NOT regenerate blind: `parity` first, and for each RED golden
-# drive the oracle and match its bytes (docs/09-tooling-ci.md, "a golden is a photograph of
+# drive the oracle and match its bytes (docs/10-tooling-ci.md, "a golden is a photograph of
 # ourselves"). A resync moving the reference is a legitimate reason to regenerate; a red gate
 # you want green is not.
 zig build parity ; echo $?                          # the red set names what the sync moved

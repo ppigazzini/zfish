@@ -158,7 +158,7 @@ jobs:
       # tb-cursed is skipped BY NAME, not by listing the other twenty: it needs the 5-man
       # tables no CI lane fetches, and --skip keeps picking up gates added later, where a
       # positional list would quietly stop covering them. It stays a local-only gate --
-      # docs/09-tooling-ci.md records that those go stale silently and must be run by hand
+      # docs/10-tooling-ci.md records that those go stale silently and must be run by hand
       # each sync.
       - name: Adjudicate the goldens against the pristine oracle
         env:
