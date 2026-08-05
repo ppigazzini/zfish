@@ -441,6 +441,76 @@ does not even need LTO). See
 [Does the DAG cost performance?](00-architecture.md#does-the-dag-cost-performance).
 Reach for this to invert a *specific* upward dependency, not as a default.
 
+## Give an index space its own type — and know what that costs
+
+A sized enum is Zig's newtype over an integer. `enum(u2)` with four tags, or
+`enum(u32) { _ }` for an open space, is a distinct type with the layout of its tag,
+opened only by `@intFromEnum` and closed only by `@enumFromInt`. Nothing is added at
+runtime; what changes is that a value of that space can no longer be handed to a
+function expecting a different one.
+
+**The defect class this closes is the one this port is worst at detecting.** A swap
+between two same-typed quantities does not crash — the engine keeps running and
+answers wrong. Every value gate here compares output the same binary produced, so it
+agrees; only the bench signature moves, and it says *that* something changed, never
+*where*. `encode.TbFile` is the instance in the tree: a Syzygy table file is one of
+four sub-tables, a board file is one of eight, and while both were `usize` a board
+file could reach `TBTable.get` and the side-to-move could arrive transposed with the
+file. Neither faults. The prober returns a confident wrong verdict.
+
+**Zig's own constraints, both load-bearing:**
+
+- **There is no operator overloading.** A newtype over a quantity that is *computed
+  with* — a score, a depth, a bonus — means a method call at every arithmetic site,
+  which is a far larger and more diff-hostile change here than the same idea is in a
+  language with operator traits. That cost lands on top of the runtime cost below.
+- **There is no niche optimisation for optional enums.** `?E` is one byte wider than
+  `E` even when `E` leaves tag values unused, so wrapping a sentinel in an optional
+  costs space rather than saving it. `sq_none = 64` in
+  [board_core.zig](../src/engine/board/board_core.zig) stays an in-band sentinel for
+  that reason, matching upstream.
+- **A path-imported file belongs to exactly one module.** A type shared across module
+  boundaries must be a named module in [build/modules.zig](../build/modules.zig) with
+  an edge from each reader — `nnue_dimensions` is one. A path import from a second
+  module is a compile error, not a warning.
+
+### The cost rule
+
+Measured over fifteen type-shaped changes in ../rfish, at two tiers, and it
+contradicts the usual "a newtype is free":
+
+> A newtype over a scalar is free while the value is **carried** — produced, stored,
+> passed, indexed with. It can cost when many instances are **live at once inside one
+> large function**, because that is a register-allocation problem and the wrapper
+> perturbs it. The cost appears as extra `mov`, has no attributable symbol, and no
+> attribute addresses it.
+
+The free cases are index spaces carried in a slice and consumed one at a time, and
+coordinates passed to a table lookup. The costly case was a score type threaded
+through the alpha-beta node body, which holds a dozen live score locals at once:
++0.158% at the lower tier, diffuse inside `node`, and settled only by diffing the
+static instruction mix of the enclosing function — a symbol diff says "diffuse", the
+mix says "+103 `mov`".
+
+**Refuted there, and do not re-derive here without new evidence:** a score newtype
+(costs, unrecoverable), a `Depth` newtype (a depth-scaled product lands in six
+different codomains, so the type needs six output types and therefore needs none —
+which is why upstream spells it `using Depth = int`), and pushing a typed ply below
+the NNUE transformer's public boundary (+0.95% at the primary tier, one symbol, the
+inlined body simply got worse). The transformer takes slot indices; that boundary is
+measured, not an oversight.
+
+**Two rules that follow, and both were paid for in that campaign:**
+
+- **When a type split forces a loop to be rewritten, measure the split and the
+  rewrite separately.** They are different changes with different justifications, and
+  the rewrite is usually the entire movement — there, the types measured zero and the
+  loop rewrite they forced measured ±8M in opposite directions on two tiers.
+- **A type that has not been seen to reject something is a claim, not a guarantee.**
+  Apply the swap the type is meant to stop, build, and record the compile errors —
+  the same bar [09-tooling-ci.md](09-tooling-ci.md) sets for a gate. Arguing that it
+  would fail is not the same as watching it fail.
+
 ## Never assume a `@Vector`'s memory layout
 
 Zig leaves vector layout **target-defined**. `@bitCast`ing a `@Vector(N, bool)` to an
