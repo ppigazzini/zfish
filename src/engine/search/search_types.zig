@@ -40,6 +40,60 @@ pub const CorrectionBundle = correction_bundle.CorrectionBundle;
 pub const PVMoves = root_move.PVMoves;
 pub const RootMove = root_move.RootMove;
 
+/// Name the three kinds of node the search has -- upstream's `template<NodeType>`
+/// with `Root`, `PV` and `NonPV`.
+///
+/// The search used to carry this as two independent `comptime` booleans,
+/// `pv_node` and `root_node`, which admit FOUR combinations where the search
+/// means three. A root is always searched with a full window, so a non-PV root
+/// names nothing, and no call site ever produced one -- an illegal state that
+/// was representable in the signature of the hottest function in the engine.
+///
+/// One `comptime` parameter of this type makes it unwriteable: there is no
+/// fourth variant to name. Zig takes an enum as a `comptime` parameter
+/// directly, so this needs no marker types and no generic machinery.
+pub const NodeKind = enum {
+    root,
+    pv,
+    non_pv,
+
+    /// Report whether the node is searched on a full window. A root always is.
+    pub inline fn isPv(self: NodeKind) bool {
+        return self != .non_pv;
+    }
+
+    /// Report whether the node is the root of the search.
+    pub inline fn isRoot(self: NodeKind) bool {
+        return self == .root;
+    }
+
+    /// Name the kind of the quiescence node entered FROM this one. Dropping into
+    /// quiescence loses rootness and keeps PV-ness, so the root's own quiescence
+    /// node is an ordinary PV node rather than a second root. Carrying that here
+    /// is what lets `qsearchImpl` refuse `.root` outright.
+    pub inline fn quiescent(self: NodeKind) NodeKind {
+        return if (self.isPv()) .pv else .non_pv;
+    }
+};
+
+test "NodeKind: a root is a PV node, and quiescence is never a root" {
+    const testing = @import("std").testing;
+    try testing.expect(NodeKind.root.isPv());
+    try testing.expect(NodeKind.pv.isPv());
+    try testing.expect(!NodeKind.non_pv.isPv());
+
+    try testing.expect(NodeKind.root.isRoot());
+    try testing.expect(!NodeKind.pv.isRoot());
+
+    // Rootness is lost, PV-ness is kept.
+    try testing.expectEqual(NodeKind.pv, NodeKind.root.quiescent());
+    try testing.expectEqual(NodeKind.pv, NodeKind.pv.quiescent());
+    try testing.expectEqual(NodeKind.non_pv, NodeKind.non_pv.quiescent());
+    inline for (.{ NodeKind.root, NodeKind.pv, NodeKind.non_pv }) |k| {
+        try testing.expect(!k.quiescent().isRoot());
+    }
+}
+
 test {
     @import("std").testing.refAllDecls(@This());
 }

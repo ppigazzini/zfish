@@ -26,6 +26,7 @@ const search = @import("search");
 const worker_histories = @import("worker_histories");
 const position_types = @import("position_types");
 const search_types = @import("search_types");
+const NodeKind = search_types.NodeKind;
 const search_ctx = @import("search_ctx");
 const search_acc = @import("search_acc");
 const tb_source = @import("tb_source");
@@ -138,11 +139,16 @@ noinline fn tbForceTimeCheck(ctx: *const QCtx) void {
 /// Mirror upstream `template<NodeType> search<Root>/<PV>/<NonPV>(..., bool cutNode)`: the node
 /// type is comptime, `cut_node` is runtime. Carry the comptime fields into `search_back.runBack`
 /// through its `nd: anytype`, specialising it per node type as well.
-pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: i32, beta_in: i32, depth_in: i32, cut_node: bool, comptime pv_node: bool, comptime root_node: bool) i32 {
+pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, alpha_in: i32, beta_in: i32, depth_in: i32, cut_node: bool, comptime kind: NodeKind) i32 {
+    // Unpack the kind once. Both are comptime-known, so the ~40 uses below and the
+    // node-state literal handed to runBack are unchanged and fold exactly as before;
+    // what the kind buys is at the BOUNDARY, where a non-PV root can no longer be named.
+    const pv_node = comptime kind.isPv();
+    const root_node = comptime kind.isRoot();
     const all_node = !(pv_node or cut_node);
 
     // Dive into qsearch at depth 0.
-    if (depth_in <= 0) return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha_in, beta_in, pv_node);
+    if (depth_in <= 0) return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha_in, beta_in, comptime kind.quiescent());
 
     const w: *WorkerHistories = workerHistories(ctx.worker);
     const pos = pos_ptr;
@@ -346,7 +352,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
 
         // Step 7. Apply razoring.
         if (!pv_node and eval < alpha - search.razorMargin(depth))
-            return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha, beta, false);
+            return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha, beta, .non_pv);
 
         // Step 8. Prune by futility.
         if (!ss.tt_pv and depth < 19 and eval >= beta and (tt_move == 0 or tt_capture) and !qIsLoss(beta) and !qIsWin(eval)) {
@@ -365,12 +371,12 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             doNullMove(pos_ptr, &st);
             ss.current_move = 65;
             setContHist(ctx.worker, ss_ptr, 0, 0, 0, 0);
-            const null_value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -beta, -beta + 1, depth - r, false, false, false);
+            const null_value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -beta, -beta + 1, depth - r, false, .non_pv);
             undoNullMove(pos_ptr);
             if (null_value >= beta and !qIsWin(null_value)) {
                 if (ctx.nmp_min_ply.* != 0 or depth < 16) return null_value;
                 ctx.nmp_min_ply.* = search.nmpMinPly(ss.ply, depth, r);
-                const v = searchImpl(ctx, pos_ptr, ss_ptr, beta - 1, beta, depth - r, false, false, false);
+                const v = searchImpl(ctx, pos_ptr, ss_ptr, beta - 1, beta, depth - r, false, .non_pv);
                 ctx.nmp_min_ply.* = 0;
                 if (v >= beta) return null_value;
             }
@@ -412,9 +418,9 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
                 if (move == 0) break;
                 if (move == excluded_move or !legal(pos_ptr, move)) continue;
                 doMoveAcc(ctx, pos_ptr, move, &st, @intFromBool(givesCheck(pos_ptr, move)), ss_ptr);
-                var value = -qsearchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, false);
+                var value = -qsearchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, .non_pv);
                 if (value >= probcut_beta and probcut_depth > 0)
-                    value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, probcut_depth, !cut_node, false, false);
+                    value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -probcut_beta, -probcut_beta + 1, probcut_depth, !cut_node, .non_pv);
                 undoMoveAcc(ctx, pos_ptr, move);
                 if (value >= probcut_beta) {
                     tt.entrySave(writer, pos_key, search.valueToTt(value, ss.ply), @intFromBool(ss.tt_pv), q_bound_lower, probcut_depth + 1, q_depth_none, move, unadjusted_static_eval, ctx.generation);

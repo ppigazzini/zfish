@@ -186,7 +186,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             while (true) {
                 const adjusted_depth = @max(@as(i32, 1), id.root_depth.* - failed_high_cnt - @divTrunc(3 * (search_again_counter + 1), 4));
                 id.root_delta.* = beta - alpha;
-                best_value = searchImpl(&ctx, id.root_pos, &stack[7], alpha, beta, adjusted_depth, false, true, true);
+                best_value = searchImpl(&ctx, id.root_pos, &stack[7], alpha, beta, adjusted_depth, false, .root);
 
                 stableSortRoot(id.root_moves, id.pv_idx.*, id.pv_last.*);
 
