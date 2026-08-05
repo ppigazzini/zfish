@@ -26,7 +26,6 @@ const RootMove = worker_layout.RootMove;
 const q_value_inf: i32 = 32001;
 const q_value_mate_in_max: i32 = 31754; // q_value_mate(32000) - q_max_ply(246)
 const q_value_tb_win: i32 = 31507; // q_value_tb(31753) - q_max_ply(246)
-pub const id_nodes_limit_output: u64 = 10_000_000;
 const workerThreadsPool = search_ctx.workerThreadsPool;
 const workerManager = search_ctx.workerManager;
 const workerRootMove0 = search_ctx.workerRootMove0;

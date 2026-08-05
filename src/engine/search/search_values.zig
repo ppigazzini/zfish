@@ -30,6 +30,15 @@ pub const mt_promotion: u16 = 1 << 14;
 
 pub const piece_value = [16]i32{ 0, 208, 781, 825, 1276, 2538, 0, 0, 0, 208, 781, 825, 1276, 2538, 0, 0 };
 
+// Gate the verbose info output on the search being long enough to be worth narrating
+// (upstream's `nodes > 10000000` in both search() and Search::Worker::iterative_deepening).
+// Three call sites read it -- two in the ID loop, one in the root node body -- and they
+// used to read two unrelated declarations: this one, and a bare literal in
+// search_back.zig. Nothing related them, and no gate here could: the constant decides
+// which INFO LINES are printed, never which nodes are searched, so the bench signature
+// is blind to a sync that moves one and not the other.
+pub const id_nodes_limit_output: u64 = 10_000_000;
+
 pub inline fn isValid(v: i32) bool {
     return v != value_none;
 }
