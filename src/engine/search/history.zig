@@ -34,7 +34,10 @@ const fillI16Slice = shared_history.fillI16Slice;
 // and divide. Tuned for the tier it was measured on -- re-measure before changing it.
 const age_lanes = 32;
 const pawnEntryRow = shared_history.pawnEntryRow;
-const corrBundle = shared_history.corrBundle;
+const pawnCorrEntry = shared_history.pawnCorrEntry;
+const minorCorrEntry = shared_history.minorCorrEntry;
+const whiteNonPawnCorrEntry = shared_history.whiteNonPawnCorrEntry;
+const blackNonPawnCorrEntry = shared_history.blackNonPawnCorrEntry;
 const moveFrom = board_core.moveFrom;
 const moveTo = board_core.moveTo;
 const pieceTypeOn = board_core.pieceTypeOn;
@@ -264,10 +267,10 @@ pub fn updateCorrectionHistory(
     const shared = sharedOf(w);
     const us = pos.side_to_move;
 
-    const pawn_entry = &corrBundle(shared, pos.st.pawn_key)[us].pawn;
-    const minor_entry = &corrBundle(shared, pos.st.minor_piece_key)[us].minor;
-    const npw_entry = &corrBundle(shared, pos.st.non_pawn_key[0])[us].nonpawn_white;
-    const npb_entry = &corrBundle(shared, pos.st.non_pawn_key[1])[us].nonpawn_black;
+    const pawn_entry = pawnCorrEntry(shared, pos, us);
+    const minor_entry = minorCorrEntry(shared, pos, us);
+    const npw_entry = whiteNonPawnCorrEntry(shared, pos, us);
+    const npb_entry = blackNonPawnCorrEntry(shared, pos, us);
 
     statsUpdate(pawn_entry, bonus, correction_history_limit);
     statsUpdate(minor_entry, @divTrunc(bonus * 150, 128), correction_history_limit);
