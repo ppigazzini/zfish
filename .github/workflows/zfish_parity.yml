@@ -115,12 +115,23 @@ jobs:
 
       # Arch-variant determinism: the
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
-      # codegen change must not perturb the integer-exact eval. This sweep asserts
-      # signature == 2508687 on every tier THIS runner can execute (avx2, bmi2/PEXT,
-      # and its best AVX-512 tier), not just avx2 -- the wider tiers are where the
-      # @Vector NNUE kernels could break bit-exactness while
-      # sse41/avx2 stay green. Runs the real bench per tier, so it is not hollow.
-      - run: bash tools/arch_determinism.sh 2508687
+      # codegen change must not perturb the integer-exact eval. The sweep BUILDS all
+      # six x86-64 tiers above the sse41 baseline (a tier that stops compiling needs
+      # no ISA to catch) and BENCHES signature == 2508687 on each one this runner can
+      # execute. The wider tiers are where the @Vector NNUE kernels could break
+      # bit-exactness while sse41/avx2 stay green; it runs the real bench, not a hollow
+      # check.
+      #
+      # --host-tiers IS THE OWNER OF A KNOWN HOLE, and it belongs here rather than in
+      # the script: hosted runners are drawn from a mixed fleet, so the AVX-512 rungs
+      # are benched on some machines and only built on others. Without the flag the
+      # sweep exits 2 (SKIPPED, not a pass) whenever the host is short of a tier, which
+      # would make this lane red on the runner it happened to draw. The flag accepts
+      # that reduced coverage and still PRINTS every unasserted tier in the log; it
+      # expires by itself the moment a runner can drive the whole ladder, and it
+      # launders no failure -- a tier that builds and then benches the wrong number is
+      # exit 1 with or without it.
+      - run: bash tools/arch_determinism.sh 2508687 --host-tiers
 
       # THE GATE ON THE GATES. Everything above asserts the engine is correct; this asserts
       # that those assertions can FAIL. One behavioural mutation per gate -- the razor margin
