@@ -160,7 +160,7 @@ pub inline fn runBack(nd: anytype) i32 {
         move_count += 1;
         nd.ss.move_count = move_count;
 
-        if (nd.root_node and nd.ctx.nodes.* > 10_000_000)
+        if (nd.root_node and nd.ctx.nodes.* > sv.id_nodes_limit_output)
             searchCbRootOnIter(nd.ctx.worker, depth, move, move_count);
 
         if (nd.pv_node) ssAdd(nd.ss, 1).pv = null;
