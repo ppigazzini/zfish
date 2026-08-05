@@ -306,7 +306,7 @@ engine is reachable, and the headless roots (including
 `src/engine/search/headless_search.zig`) are genuinely single-threaded. `zig build
 hook-lint` enforces that ratchet — every hook declares a failure mode and a class, and
 the REGISTERED rule keeps the shipped-root claim true. See
-[09-tooling-ci.md](09-tooling-ci.md).
+[10-tooling-ci.md](10-tooling-ci.md).
 
 The lifecycle hooks in `src/platform/runtime_hooks.zig` take the opposite line: each
 defaults to a named `hookPanic`, so a root that skipped registration fails loudly and
@@ -325,7 +325,7 @@ everything else is measured against. Multi-thread runs cannot be snapshot-compar
 all, so the gates assert a *band* and a set of well-formedness properties instead of
 equality.
 
-`tools/parity/gate_runtime.zig` drives both (see [09-tooling-ci.md](09-tooling-ci.md) for how
+`tools/parity/gate_runtime.zig` drives both (see [10-tooling-ci.md](10-tooling-ci.md) for how
 the gates are wired into `zig build`, and [CONTRIBUTING](../CONTRIBUTING.md) for what to
 run before a commit):
 

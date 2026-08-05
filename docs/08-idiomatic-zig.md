@@ -422,7 +422,7 @@ NNUE feature and threat path (`nnue_feature.zig`, `nnue_acc_layout.zig`) returns
 ways. Removing two such returns cut the bench's `memcpy` from 3.4% of instructions to
 0.8%. The gate is the signature — the returned bytes are unchanged — plus a
 `perf_callgrind.sh` `costs` sweep to confirm `memcpy` actually fell; see
-[09-tooling-ci](09-tooling-ci.md). The mirror caveat is real: a by-value return that
+[10-tooling-ci](10-tooling-ci.md). The mirror caveat is real: a by-value return that
 the optimizer inlines costs nothing, so verify the returner is a live symbol in the
 profile before rewriting it.
 
@@ -441,85 +441,36 @@ does not even need LTO). See
 [Does the DAG cost performance?](00-architecture.md#does-the-dag-cost-performance).
 Reach for this to invert a *specific* upward dependency, not as a default.
 
-## Give an index space its own type, on a carried value
+## Reach for a sized enum, not a wrapper struct, when a space needs a type
 
-A sized enum is Zig's newtype over an integer: `enum(u2)` where the space is closed
-and the tag width is the array bound, `enum(u32) { _ }` where it is open. It has the
-layout of its tag, is opened by `@intFromEnum` and closed by `@enumFromInt`, and adds
-nothing at runtime. The one thing it changes is that a value of that space can no
-longer be handed to a function expecting a different one.
+Zig's newtype over an integer is a sized enum: `enum(u2)` where the space is closed and
+the tag width is the array bound, `enum(u32) { _ }` where it is open. It has the layout
+of its tag, is opened by `@intFromEnum` and closed by `@enumFromInt`, and adds nothing
+at runtime. `encode.TbFile` is the instance in the tree.
 
-**Type an index space when a swap between two same-typed quantities would not
-fault.** That is the defect class this port is worst at detecting: the engine keeps
-running and answers wrong, every value gate compares output this binary produced so
-they all agree, and only the bench signature moves — which says *that* something
-changed, never *where*. `encode.TbFile` is the instance in the tree: a Syzygy table
-file is one of four sub-tables and a board file is one of eight, and while both were
-`usize` a board file could reach `TBTable.get` and the side-to-move could arrive
-transposed with it. The prober returns a confident wrong verdict, and no `tb-*`
-golden can tell.
+**Which spaces deserve one, what it costs, and what it does not stop are the neighbouring
+page's subject — [09-type-design.md](09-type-design.md), including
+[the cost rule](09-type-design.md#the-cost-rule).** Read it before adding a type. What
+belongs here is the four mechanical facts about doing it in *this* language:
 
-**Do not type a quantity that is computed with.** Zig has no operator overloading, so
-a score, a depth or a bonus becomes a method call at every arithmetic site — a large,
-diff-hostile change on top of a runtime cost the rule below predicts. Refuted
-elsewhere and not to be re-derived here without new evidence: a score newtype
-(unrecoverable cost, register pressure in the node body), a `Depth` newtype (a
-depth-scaled product lands in six different codomains, so the type needs six output
-types and therefore needs none — upstream's own reason for `using Depth = int`), and
-pushing a typed ply below the NNUE transformer's public boundary (+0.95% at the
-primary tier; the transformer takes slot indices, and that boundary is measured
-rather than an oversight).
-
-### The cost rule
-
-> A newtype over a scalar is free while the value is **carried** — produced, stored,
-> passed, indexed with. It can cost when many instances are **live at once inside one
-> large function**, because that is a register-allocation problem and the wrapper
-> perturbs it. The cost appears as extra `mov`, has no attributable symbol, and no
-> attribute addresses it.
-
-Free: index spaces carried in a slice and consumed one at a time, coordinates passed
-to a table lookup, and every layout-preserving rename. Costly: a scalar threaded
-through the control flow of a function large enough to dominate the profile.
-
-**Diagnose it with the static instruction mix of the enclosing function, not a
-callgrind symbol diff.** A symbol diff reports "diffuse" and stops; the opcode
-histogram of the one function says "+103 `mov`" and names the mechanism. The rule is
-predictive, not exact — it has already mispredicted once inside the NNUE transform —
-so a type on a hot path is an experiment and is measured at both tiers whatever the
-prediction says.
-
-### Three rules that come with it
-
-- **When a type split forces a loop to be rewritten, measure the split and the
-  rewrite separately.** They are different changes with different justifications, and
-  the rewrite is usually the entire movement — a split measured at zero once carried a
-  forced loop rewrite worth millions in *opposite* directions on two tiers. Bundled,
-  that is unattributable.
-- **A type that has not been seen to reject something is a claim, not a guarantee.**
-  Apply the swap it exists to stop, build it, and record the compile errors — the same
-  bar [09-tooling-ci.md](09-tooling-ci.md) sets for a gate. Arguing that it would fail
-  is not watching it fail.
-- **Type at the boundary, or not at all.** A conversion the producer performs with
-  `@ptrCast` or a blanket `@enumFromInt` over a whole buffer puts an unchecked hop
-  back at exactly the line the type was for. If the producer cannot be typed — a
-  `@Vector` of enums does not exist, so a vectorized index writer cannot be — then the
-  guard has to be something other than a type, and a rename should not be shipped as
-  one.
-
-### Two Zig facts that decide the shape
-
-- **There is no niche packing for optional enums.** `?E` is one byte wider than `E`
-  even when `E` leaves tag values unused, so wrapping a sentinel in an optional costs
-  space rather than saving it. `sq_none = 64` in
-  [board_core.zig](../src/engine/board/board_core.zig) stays an in-band sentinel for
-  that reason, matching upstream.
+- **There is no operator overloading.** A newtype over a quantity that is computed with —
+  a score, a depth, a Zobrist key — becomes a method call at every arithmetic site. That
+  is a large, diff-hostile change on top of a runtime cost the cost rule predicts, so the
+  usual answer is to type the *accessor* instead of the value: `pawnCorrEntry` welds a key
+  to the counter it selects without wrapping the key at all.
+- **There is no niche packing for optional enums.** `?E` is one byte wider than `E` even
+  when `E` leaves tag values unused, so wrapping a sentinel in an optional costs space
+  rather than saving it. `sq_none = 64` in
+  [board_core.zig](../src/engine/board/board_core.zig) stays in-band for that reason,
+  matching upstream.
+- **`@enumFromInt` into an open enum is not range-checked.** The pattern stops a confusion,
+  never an intent, so it is not a substitute for a bound.
 - **A path-imported file belongs to exactly one module.** A type shared across module
-  boundaries must be a named module in [build/modules.zig](../build/modules.zig) with
-  an edge from each reader — `nnue_dimensions` is one — and then named in
+  boundaries must be a named module in [build/modules.zig](../build/modules.zig) with an
+  edge from each reader — `nnue_dimensions` is one — and then named in
   `src/engine/headless.zig` and declared as a dep on every standalone test root that
-  reaches it. A path import from a second module is a compile error, not a warning,
-  and `zig build parity` goes green on the other two while `zig build test` is red.
+  reaches it. A path import from a second module is a compile error, not a warning, and
+  `zig build parity` goes green on the other two while `zig build test` is red.
 
 ## Never assume a `@Vector`'s memory layout
 
@@ -540,7 +491,7 @@ const mask: Mask = @reduce(.Or, @select(Mask, nonzero, lane_bits, no_bits));
 `lastTrue`, `countTrues` — and never bitcasts one. The engine's feature transformer did, and
 paid for it: the mask was correct under LLVM and wrong under any other lowering, which is a
 wrong evaluation rather than a crash. `tools/c_backend_check.sh`
-([09-tooling-ci.md](09-tooling-ci.md)) exists to catch that class. The defined form cost about
+([10-tooling-ci.md](10-tooling-ci.md)) exists to catch that class. The defined form cost about
 1% of instructions on the hottest path in the engine, measured — cheap for not depending on a
 representation nobody promised.
 
@@ -693,7 +644,7 @@ It is LOCAL-ONLY and not in `zig build parity`: `perf_event_open` is refused in 
 containers, and the count is toolchain-specific, so a Zig upgrade legitimately moves it.
 Re-derive with `tools/perf_budget.sh update` and carry the measurement in the commit body.
 A skip exits **127**, never 0, so "could not measure" cannot be read as "did not regress" —
-and being local-only it carries the staleness failure mode `docs/09-tooling-ci.md` records
+and being local-only it carries the staleness failure mode `docs/10-tooling-ci.md` records
 for `tb-cursed`, so run it by hand after a toolchain bump or a perf commit.
 
 **Attribute cost with `tools/perf_fingerprint.py compare`, never by reading a profile
@@ -703,7 +654,7 @@ appears as many lines and its true cost is the sum across all of them. C++ is hi
 than Zig because upstream's work lives in headers. Reading one line per side once turned a
 real 0.99x parity into a reported "1.87x, the worst component". The tool sums each group
 and reconciles against callgrind's own `PROGRAM TOTALS`, so it fails loudly instead of
-printing a plausible lie. `docs/09-tooling-ci.md` has the runnable sequence.
+printing a plausible lie. `docs/10-tooling-ci.md` has the runnable sequence.
 
 Follow the same discipline by hand: to claim a component is the bottleneck, ablate it
 — stub it out, hold everything else fixed, measure the delta. Control the confounds

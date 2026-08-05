@@ -21,7 +21,7 @@
 #
 # Being local-only carries a known failure mode this repo has already paid for: tb-cursed
 # sat red for seven days on an UNMODIFIED binary because nothing ran it. Run this by hand
-# after a toolchain bump or a perf commit, the same discipline docs/09-tooling-ci.md asks
+# after a toolchain bump or a perf commit, the same discipline docs/10-tooling-ci.md asks
 # for the other local-only gates.
 #
 # A SKIP IS NOT A PASS. If perf_event_open is unavailable this exits 127, not 0, so a

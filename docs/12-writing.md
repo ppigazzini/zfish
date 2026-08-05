@@ -12,7 +12,7 @@ them.
 
 Each page owns one subsystem and names its **audience** in the index table. A page describes
 **what the codebase does** — not what upstream does, not what a chess engine does in general.
-Anything a reader could learn from Stockfish's wiki belongs in [10-references](10-references.md)
+Anything a reader could learn from Stockfish's wiki belongs in [11-references](11-references.md)
 as a link.
 
 ## The rules
@@ -69,7 +69,7 @@ trusting you.
 "Don't call X" leaves a reader stuck; "Don't call X — use Y, which holds the mutex" does not.
 
 **Cut anything that does not help implement or verify.** Background a reader could get from
-Stockfish's wiki belongs in [10-references](10-references.md) as a link. Length is not
+Stockfish's wiki belongs in [11-references](11-references.md) as a link. Length is not
 thoroughness; it is where rot hides.
 
 ## Hot and cold
@@ -92,9 +92,10 @@ moment the code lands, and nobody knows which claim broke better than the person
 | [05-tablebases](05-tablebases.md) | `src/platform/syzygy/`, `src/engine/search/tb_*.zig` | hot |
 | [06-platform](06-platform.md) | `src/platform/` | hot |
 | [07-shell](07-shell.md) | `src/shell/` | hot |
-| [09-tooling-ci](09-tooling-ci.md) | `build.zig` steps, `build/`, `tools/`, `.github/workflows/` | hot |
+| [10-tooling-ci](10-tooling-ci.md) | `build.zig` steps, `build/`, `tools/`, `.github/workflows/` | hot |
 | [08-idiomatic-zig](08-idiomatic-zig.md) | patterns and the measurement discipline | cold |
-| [10-references](10-references.md) | external links | cold |
+| [09-type-design](09-type-design.md) | the value domain: what the quantities mean and which are distinguishable | cold |
+| [11-references](11-references.md) | external links | cold |
 | this page | the rules | cold |
 
 The hot rows are where every false claim in this set has been found: a handler's output stream,

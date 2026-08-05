@@ -183,7 +183,7 @@ the failure mode rather than the frequency. Nothing here faults: the prober read
 **real** sub-table of the wrong file and returns a confident wrong verdict. Every
 `tb-*` golden compares verdicts this binary produced, so all of them agree while it
 is wrong. See the cost rule in
-[08-idiomatic-zig.md](08-idiomatic-zig.md#the-cost-rule) for when a type like this is
+[09-type-design.md](09-type-design.md#the-cost-rule) for when a type like this is
 free — a cold path carrying a value, as here — and when it is not.
 
 `decode_header.setSizes` additionally refuses `min_sym_len == 0` (it would make the `k == 0` right-pad
@@ -439,5 +439,5 @@ the a1-d1-d4 and MapPawns coverage), `probe.zig` checks `LR` unpacking, `setGrou
 `setSymLen` on a synthetic btree, `decode.zig` checks the `flag_single_value` path, and
 `tables.zig` checks the stem builder and the empty-path init.
 
-See [09-tooling-ci.md](09-tooling-ci.md) for the gate battery and
+See [10-tooling-ci.md](10-tooling-ci.md) for the gate battery and
 [CONTRIBUTING](../CONTRIBUTING.md) for what to run before a commit.

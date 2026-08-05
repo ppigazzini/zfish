@@ -78,7 +78,7 @@ ROWS=(
     "misc|src/shell/engine/util.zig|@as(u8, 'a') + @as(u8, @intCast(square % 8)),|@as(u8, 'b') + @as(u8, @intCast(square % 8)),|d renders checkers one file off"
     # The structural lint. Name a path that is not in the tree -- the rot class docs-lint
     # exists for, and the one no value gate can see.
-    "docs-lint|docs/09-tooling-ci.md|## The NNUE net and tablebases|Mutant claim about \`src/no_such_file_negative_control.zig\`.\n\n## The NNUE net and tablebases|a doc names a path that is not in the tree"
+    "docs-lint|docs/10-tooling-ci.md|## The NNUE net and tablebases|Mutant claim about \`src/no_such_file_negative_control.zig\`.\n\n## The NNUE net and tablebases|a doc names a path that is not in the tree"
     # The protocol invariant, on the path no golden can photograph. Answer an idle `stop`
     # with a bestmove: every value gate reads identically, because the transcripts they diff
     # never send a `stop` the engine is awake to hear.

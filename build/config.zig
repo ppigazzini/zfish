@@ -160,7 +160,7 @@ pub fn resolve(b: *std.Build) Config {
     build_options.addOption(bool, "has_ndebug", true);
     const build_options_module = build_options.createModule();
 
-    // Emit C instead of an object, for the correctness oracle in docs/09-tooling-ci.md. The C
+    // Emit C instead of an object, for the correctness oracle in docs/10-tooling-ci.md. The C
     // backend lowers @Vector and friends differently from LLVM, so a construct that depends on
     // a representation Zig leaves target-defined diverges here and nowhere else. Requires
     // -Dlto=false (the C backend cannot use LLD).

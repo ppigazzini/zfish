@@ -14,7 +14,7 @@
 # re-blessed with `zig build perft-update`; the counts BELOW cannot. They are the published
 # reference values for the standard positions -- facts about chess, with no search, no
 # evaluation, no heuristic and no time dependence in them. A mismatch here is a movegen bug,
-# full stop. Never edit a number to make this green (docs/09-tooling-ci.md).
+# full stop. Never edit a number to make this green (docs/10-tooling-ci.md).
 #
 # The FRC position the fast gate carries is deliberately absent: this lane only pins counts
 # published independently of us, and no Chess960 reference of that standing is in hand.
