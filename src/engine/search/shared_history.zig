@@ -148,10 +148,45 @@ pub inline fn pawnEntryRow(shared: *SharedHistories, pos: *const Position) [*]i1
     return shared.pawn_data + idx * hist_pieceto;
 }
 
-// Return the correctionHistory[key & sizeMinus1][us] bundle.
-pub inline fn corrBundle(shared: *SharedHistories, key: u64) *[2]CorrectionBundle {
+// Return the correctionHistory[key & sizeMinus1][us] bundle. Private on purpose -- see the
+// four accessors below, which are the only callers.
+inline fn corrRow(shared: *SharedHistories, key: u64) *[2]CorrectionBundle {
     const idx: usize = @intCast(key & @as(u64, shared.size_minus1));
     return &shared.corr_data[idx];
+}
+
+// Weld each correction key to the counter it selects.
+//
+// The four counters live in one bundle and are selected by four DIFFERENT Zobrist keys --
+// pawn, minor-piece, and one non-pawn key per colour. While the row lookup took a bare key
+// and the field was picked afterwards, the pairing was a convention held by nothing:
+//
+//     corrRow(shared, pos.st.pawn_key)[c].minor      // compiles
+//
+// and it does not fault. It returns a REAL counter of the wrong kind, from a row the wrong
+// key chose, so the correction is a plausible wrong number and every value gate agrees.
+// Eight call sites across two files each restated the pairing by hand.
+//
+// Give each pair one accessor that reads its own key AND its own field. Neither half is a
+// parameter any more, so the pairing IS the signature and there is nothing left to
+// transpose. A key newtype -- the sibling's route -- is the wrong instrument in Zig: a
+// Zobrist key is XORed on every `do_move`, so it is COMPUTED WITH, which is the shape
+// docs/08-idiomatic-zig.md's cost rule says not to wrap, and with no operator overloading
+// every XOR would become a method call.
+pub inline fn pawnCorrEntry(shared: *SharedHistories, pos: *const Position, c: usize) *i16 {
+    return &corrRow(shared, pos.st.pawn_key)[c].pawn;
+}
+
+pub inline fn minorCorrEntry(shared: *SharedHistories, pos: *const Position, c: usize) *i16 {
+    return &corrRow(shared, pos.st.minor_piece_key)[c].minor;
+}
+
+pub inline fn whiteNonPawnCorrEntry(shared: *SharedHistories, pos: *const Position, c: usize) *i16 {
+    return &corrRow(shared, pos.st.non_pawn_key[0])[c].nonpawn_white;
+}
+
+pub inline fn blackNonPawnCorrEntry(shared: *SharedHistories, pos: *const Position, c: usize) *i16 {
+    return &corrRow(shared, pos.st.non_pawn_key[1])[c].nonpawn_black;
 }
 
 test {

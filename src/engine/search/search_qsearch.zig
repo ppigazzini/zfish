@@ -53,7 +53,10 @@ comptime {
     std.debug.assert(worker_layout.state_info_size == @sizeOf(StateInfo));
 }
 const sharedOf = shared_history.sharedOf;
-const corrBundle = shared_history.corrBundle;
+const pawnCorrEntry = shared_history.pawnCorrEntry;
+const minorCorrEntry = shared_history.minorCorrEntry;
+const whiteNonPawnCorrEntry = shared_history.whiteNonPawnCorrEntry;
+const blackNonPawnCorrEntry = shared_history.blackNonPawnCorrEntry;
 const sv = @import("search_values.zig");
 const q_value_draw = sv.value_draw;
 const q_value_none = sv.value_none;
@@ -104,10 +107,10 @@ pub fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchSt
     const shared = sharedOf(w);
     const us = pos.side_to_move;
     // Relaxed: the correction bundles are shared across workers and updated concurrently.
-    const pcv: i32 = @atomicLoad(i16, &corrBundle(shared, pos.st.pawn_key)[us].pawn, .monotonic);
-    const micv: i32 = @atomicLoad(i16, &corrBundle(shared, pos.st.minor_piece_key)[us].minor, .monotonic);
-    const wnpcv: i32 = @atomicLoad(i16, &corrBundle(shared, pos.st.non_pawn_key[0])[us].nonpawn_white, .monotonic);
-    const bnpcv: i32 = @atomicLoad(i16, &corrBundle(shared, pos.st.non_pawn_key[1])[us].nonpawn_black, .monotonic);
+    const pcv: i32 = @atomicLoad(i16, pawnCorrEntry(shared, pos, us), .monotonic);
+    const micv: i32 = @atomicLoad(i16, minorCorrEntry(shared, pos, us), .monotonic);
+    const wnpcv: i32 = @atomicLoad(i16, whiteNonPawnCorrEntry(shared, pos, us), .monotonic);
+    const bnpcv: i32 = @atomicLoad(i16, blackNonPawnCorrEntry(shared, pos, us), .monotonic);
     const ss1: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
     const m = ss1.current_move;
     var cch2: i32 = 0;
