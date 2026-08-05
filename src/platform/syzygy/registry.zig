@@ -65,8 +65,10 @@ pub const TBTable = struct {
     }
 
     // Port SF entry->get(stm, f): WDL uses items[stm % sides][f], DTZ is one-sided (items[0][f]).
-    pub fn get(self: *TBTable, comptime dtz: bool, stm: usize, f: usize) *PairsData {
-        const file = if (self.has_pawns) f else 0;
+    // Take the file as a TbFile so it cannot arrive transposed with `stm`, which sat beside it
+    // as a second bare usize; a pawnless table has one sub-table, so fold every file onto it.
+    pub fn get(self: *TBTable, comptime dtz: bool, stm: usize, f: encode.TbFile) *PairsData {
+        const file = if (self.has_pawns) f.index() else 0;
         if (dtz) return &self.dtz_items[0][file];
         return &self.items[stm % self.sides][file];
     }

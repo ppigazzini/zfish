@@ -27,9 +27,41 @@ pub inline fn flipRank(sq: usize) usize {
 pub inline fn offA1H8(sq: usize) i32 {
     return @as(i32, @intCast(rankOf(sq))) - @as(i32, @intCast(fileOf(sq)));
 }
-pub inline fn edgeDistance(f: usize) usize {
-    return @min(f, 7 - f);
-}
+/// Name which of a pawnful table's four per-file sub-tables a position uses.
+///
+/// This is NOT a board file. A board file is one of eight; a table file is one of
+/// four, because a Syzygy pawnful table folds the mirrored file pairs (a/h, b/g,
+/// c/f, d/e) onto one sub-table. The two spaces used to be the same `usize`, and
+/// the conversion between them was an unannotated `usize -> usize` hop -- so a
+/// board file reaching `TBTable.get`, or the side-to-move and the file arriving
+/// transposed, both compiled. Neither faults: the probe reads a real sub-table of
+/// the wrong file and returns a CONFIDENT WRONG verdict, which is the worst answer
+/// a tablebase can give and the one no gate in `parity` distinguishes from a right
+/// one.
+///
+/// `fromBoardFile` is the only route between the spaces, and `all` is the only way
+/// to enumerate the four. The tag type is exactly as wide as the `[4]PairsData`
+/// arrays it indexes, so the bound is carried by the type rather than argued.
+pub const TbFile = enum(u2) {
+    ah = 0,
+    bg = 1,
+    cf = 2,
+    de = 3,
+
+    /// Fold a board file onto its sub-table -- upstream's `edge_distance(f)`.
+    pub inline fn fromBoardFile(f: usize) TbFile {
+        return @enumFromInt(@min(f, 7 - f));
+    }
+
+    /// Open the space back up at the one place it must be: an array subscript.
+    pub inline fn index(self: TbFile) usize {
+        return @intFromEnum(self);
+    }
+
+    /// List the four sub-tables in file order. A pawnless table has only the first,
+    /// so the loaders walk `all[0..1]` or `all[0..]` and never compare a bare index.
+    pub const all = [4]TbFile{ .ah, .bg, .cf, .de };
+};
 // Detect a king "touch": s2 == s1 or s2 is a king move from s1 (Chebyshev distance <= 1).
 inline fn kingTouch(s1: usize, s2: usize) bool {
     const df = @abs(@as(i32, @intCast(fileOf(s1))) - @as(i32, @intCast(fileOf(s2))));

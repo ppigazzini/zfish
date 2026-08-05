@@ -16,6 +16,7 @@ const probe = @import("probe.zig");
 const decode = @import("decode.zig");
 const decode_header = @import("decode_header.zig");
 const registry = @import("registry.zig");
+const encode = @import("encode.zig");
 const board_core = @import("board_core");
 const thread_runtime = @import("thread_runtime");
 
@@ -93,11 +94,12 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
 
     // Treat DTZ tables as one-sided; WDL split tables (key != key2) store both sides.
     const sides: usize = if (dtz) 1 else t.sides;
-    const max_file: usize = if (t.has_pawns) 3 else 0; // FILE_D or FILE_A
+    // Walk the sub-tables the table actually has: all four for a pawnful table, only the
+    // first for a pawnless one. `TbFile.all` is the only enumeration of the space.
+    const files: []const encode.TbFile = if (t.has_pawns) &encode.TbFile.all else encode.TbFile.all[0..1];
     const pp = t.has_pawns and t.pawn_count[1] != 0;
 
-    var f: usize = 0;
-    while (f <= max_file) : (f += 1) {
+    for (files) |f| {
         var i: usize = 0;
         while (i < sides) : (i += 1) t.get(dtz, i, f).* = .{};
 
@@ -126,8 +128,8 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
         // and indexes LeadPawnIdx[0][squares[0]] with a square it never wrote. Refuse the file
         // here, at load, where the answer can still be "no table"; upstream reads the same byte
         // unchecked, its own writer having produced the file.
-        if (t.has_pawns and f == 0 and
-            t.get(dtz, 0, 0).pieces[0] != (t.lead_color << 3) | pawn_pt) return false;
+        if (t.has_pawns and f == .ah and
+            t.get(dtz, 0, .ah).pieces[0] != (t.lead_color << 3) | pawn_pt) return false;
         i = 0;
         while (i < sides) : (i += 1) {
             if (!probe.setGroups(t.get(dtz, i, f), e, order[i], f)) return false;
@@ -136,15 +138,14 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
 
     pos += pos & 1; // word alignment (base is 64-aligned, so pos parity == address parity)
 
-    f = 0;
-    while (f <= max_file) : (f += 1) {
+    for (files) |f| {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
             decode_header.setSizes(arena(), t.get(dtz, i, f), buf, &pos) catch return false;
         }
     }
 
-    if (dtz and !setDtzMap(t, buf, &pos, max_file)) return false;
+    if (dtz and !setDtzMap(t, buf, &pos, files)) return false;
 
     // Carve the three file-backed regions with a bound each. Their sizes come from the header
     // fields parsed above, so each is a promise the file makes about itself; `take` refuses the
@@ -152,8 +153,7 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
     // multiply SATURATINGLY: blocks_num is a full u32 from the file, so an ordinary `*` can wrap
     // usize and turn an absurd promise into a small, satisfiable one. Saturating keeps it absurd,
     // and `take` then rejects it.
-    f = 0;
-    while (f <= max_file) : (f += 1) {
+    for (files) |f| {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
             const d = t.get(dtz, i, f);
@@ -161,8 +161,7 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
                 return false;
         }
     }
-    f = 0;
-    while (f <= max_file) : (f += 1) {
+    for (files) |f| {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
             const d = t.get(dtz, i, f);
@@ -170,8 +169,7 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
                 return false;
         }
     }
-    f = 0;
-    while (f <= max_file) : (f += 1) {
+    for (files) |f| {
         var i: usize = 0;
         while (i < sides) : (i += 1) {
             pos = (pos + 0x3F) & ~@as(usize, 0x3F); // 64-byte alignment
@@ -212,7 +210,7 @@ fn takeAtMost(buf: []const u8, pos: *usize, n: usize) ?[]const u8 {
 // each of the four WDL-class maps from `dtz_map` (u16 units when Wide, bytes otherwise, +1 as SF).
 // Return false when a map runs past the file. Each map's width is read from the file immediately
 // before it is skipped, so the cursor is entirely file-driven here too.
-fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, max_file: usize) bool {
+fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, files: []const encode.TbFile) bool {
     @setRuntimeSafety(true); // untrusted input, once per table -- see decode.setSizes
     // Test the cursor on ENTRY, before anything derives a width from it. setSizes word-aligns
     // past the btree (`p += symlen_size & 1`) without demanding that pad byte exist, so a
@@ -223,8 +221,7 @@ fn setDtzMap(t: *TBTable, buf: []const u8, pos: *usize, max_file: usize) bool {
     // wdl.mapScoreDtz (mcfish 4b240ec8).
     if (pos.* > buf.len) return false;
     const map_base = pos.*;
-    var f: usize = 0;
-    while (f <= max_file) : (f += 1) {
+    for (files) |f| {
         const d = t.get(true, 0, f);
         if (d.flags & decode.flag_mapped != 0) {
             if (d.flags & decode.flag_wide != 0) {
