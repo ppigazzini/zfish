@@ -513,6 +513,35 @@ a staged move picker advances through its stages in order, so the predictor alre
 has them and the computed goto only defeats it. Nothing in this tree uses a labeled
 switch — that is the decision, not an omission.
 
+## Do not outline a cold body to shrink a hot frame
+
+A frame is allocated by one `sub $N,%rsp`. The immediate is free, so a 744-byte frame and
+a 24-byte one cost the caller the same instruction — and a cold body inlined into a hot
+one is charged only where it is *executed*, not where its stack slots sit. Outlining it
+therefore buys nothing here and pays three call/ret pairs plus the argument setup and the
+post-call reloads for it.
+
+Measured, refuted, do not retry without new evidence. `movepick.nextMove` is entered
+1.27M times on `bench 16 1 8`; the three `*_init` stage setups in it run once per picker
+and inline a 256-entry move buffer each. Lifting all three into `noinline` helpers did
+exactly what it was meant to — `nextMove`'s frame fell from `sub $0x2e8` to `sub $0x18` —
+and retired **more** instructions on both tiers:
+
+| tier | before | after | delta |
+|---|---|---|---|
+| x86-64-sse41-popcnt | 2,756,228,595 | 2,756,803,577 | +0.0209% |
+| x86-64-avx2 | 2,188,826,932 | 2,189,157,170 | +0.0151% |
+
+Same sign on both tiers, 24–33x the 0.00063% run-to-run spread, so it is the change and
+not the instrument. LLVM had already merged the three buffers into ONE frame, and the
+prologue it emits is eight instructions of which exactly one is the allocation.
+
+This is where the port stops being a port. ../rfish took the same change and measured
+−0.81%/−0.50% on the same two tiers, because a Rust prologue there was 30 instructions —
+the cost it removed does not exist in this tree. **A perf change ported from a sibling is
+a hypothesis about THIS compiler's output; disassemble the prologue before believing the
+mechanism transferred, and re-measure before believing the win did.**
+
 ## Treat `@prefetch` as a cycles-only lever, and hint the exact slot
 
 `@prefetch` moves no work: it retires as one instruction and changes no value. So every
