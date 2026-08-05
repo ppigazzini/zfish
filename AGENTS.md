@@ -48,6 +48,14 @@ zig build tsan-race -Dtsan -Dlto=false   # ThreadSanitizer, must report ZERO rac
 Cross-compile before committing anything under `src/platform/`, `std.Io`, or startup:
 `zig build -Dos=windows` and `-Dos=macos`. CI has caught an eager `File.stdout()` here.
 
+**Any edit to `build.zig` or `build/` re-opens the Zig-master lane** — build it under the
+pinned snapshot before committing, the same way a platform edit forces a cross-compile.
+0.16 is the primary target and the compiler you are running, so a master-only API break
+lands green locally. It is a CONFIGURE error, so it takes down every step of that lane at
+once and names a file you did not edit. `build/config.zig` owns every version shim and
+`zig build build-version-lint` refuses a bypass; the spellings are in
+[docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md).
+
 **Check the gate's EXIT CODE, never a piped fragment.** `zig build parity | tail`
 shows green golden lines while a later gate (loc_lint, docs-lint) is red — this
 laundered a red aggregate twice in one session. `zig build parity; echo $?` or
