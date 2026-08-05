@@ -79,6 +79,10 @@ ROWS=(
     # The structural lint. Name a path that is not in the tree -- the rot class docs-lint
     # exists for, and the one no value gate can see.
     "docs-lint|docs/09-tooling-ci.md|## The NNUE net and tablebases|Mutant claim about \`src/no_such_file_negative_control.zig\`.\n\n## The NNUE net and tablebases|a doc names a path that is not in the tree"
+    # The protocol invariant, on the path no golden can photograph. Answer an idle `stop`
+    # with a bestmove: every value gate reads identically, because the transcripts they diff
+    # never send a `stop` the engine is awake to hear.
+    "parity-async|src/shell/uci.zig|        .stop => {\n|        .stop => {\n            uci_output.printLine(\"bestmove e2e4\");\n|an idle \`stop\` answers with a bestmove"
 )
 
 if [ "${1:-}" = "--list" ]; then

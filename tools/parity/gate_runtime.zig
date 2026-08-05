@@ -163,6 +163,114 @@ pub fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     std.process.exit(0);
 }
 
+// async: assert the two interrupted-search invariants nothing else in this battery reaches.
+//
+// NO GOLDEN CAN COVER THIS PATH. A command that lands inside a running search ends it
+// wherever the clock got to, so the final `info` line's node count moves run to run and
+// there is no value to photograph. These are properties of the UCI contract instead --
+// which is also why they carry no expectation authored here: the legal move list below is
+// read out of the engine's own `go perft 1`, and reading anything but the start position's
+// 20 root moves is a rig fault rather than a verdict.
+//
+// Two of the four ways a search is interrupted ARE already gated, and are deliberately not
+// repeated here: `stop` ending a live search is `parity-stress` phase A (a third of its 24
+// cycles are go-infinite -> stop), and `ponderhit` / `stop` during a ponder is
+// `parity-ponder`, which also checks the move it yields is legal. The other two had never
+// been driven at all.
+//
+// NO WATCHDOG, deliberately, for session.zig's reason: a deadline turns a slow runner into
+// a red gate, and a flaky gate is not evidence. An engine that ignores `quit` wedges here
+// until the CI job's own timeout, exactly as everywhere else in this battery -- the hang is
+// attributed from the other side, by `parity-stress`.
+pub fn runAsync(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
+    // 1. A `stop` with NO search running answers nothing, and leaves the engine up.
+    //
+    // The stray stop is the FIRST command of the session, so the engine is provably idle
+    // when it arrives, and the UCI loop reads commands in order: any answer it made must
+    // therefore already be on stdout by the time the search below reports a depth. That
+    // makes the count at THAT moment the assertion, with no timing in it.
+    var s: Interactive = undefined;
+    s.init(io, gpa, bin) catch fail("async: spawn failed", .{});
+    s.send("stop\n");
+    s.send("position startpos\ngo depth 8\n");
+    if (!s.fillUntil("\ninfo depth"))
+        fail("async: no search started after a stray `stop` -- the engine did not stay up", .{});
+    const stray = std.mem.count(u8, s.buffered(), "bestmove");
+    if (stray != 0)
+        fail("async: a `stop` with no search running answered with {d} bestmove line(s)", .{stray});
+
+    if (!s.fillUntil("\nbestmove"))
+        fail("async: the search after a stray `stop` produced no bestmove", .{});
+    var bm: [8]u8 = undefined;
+    var bm_len: usize = 0;
+    var pd: [8]u8 = undefined;
+    var pd_len: usize = 0;
+    if (!firstBestmove(s.buffered(), &bm, &bm_len, &pd, &pd_len))
+        fail("async: could not parse the bestmove after a stray `stop`", .{});
+    const idle_move = bm[0..bm_len];
+    if (!wellFormedMove(idle_move))
+        fail("async: malformed bestmove '{s}' after a stray `stop`", .{idle_move});
+    if (!s.finish())
+        fail("async: the engine did not exit cleanly after a stray `stop` + a search", .{});
+    if (!moveIsLegal(gpa, io, bin, "position startpos", idle_move))
+        fail("async: bestmove '{s}' after a stray `stop` is not legal from the start position", .{idle_move});
+
+    // 2. A `quit` arriving INSIDE an unbounded search exits, and exits cleanly.
+    //
+    // `finish()` sends the quit, drains stdout to EOF and reaps, so a clean exit here is
+    // exit code 0 and not a signal -- the failure this catches is a process that dies on
+    // the way out, or one that never leaves. Nothing is asserted about a bestmove: whether
+    // the interrupted search emits one on the way down is upstream's business, not an
+    // invariant of the contract, and pinning it would be an expectation authored here.
+    var q: Interactive = undefined;
+    q.init(io, gpa, bin) catch fail("async: spawn failed for the quit-during-search case", .{});
+    q.send("position startpos\ngo infinite\n");
+    if (!q.fillUntil("\ninfo depth"))
+        fail("async: the infinite search never started, so `quit` would not have landed inside one", .{});
+    if (!q.finish())
+        fail("async: `quit` during a running infinite search did not exit cleanly (signal or non-zero)", .{});
+
+    std.debug.print("async: OK (2 of 2 invariants: a stray `stop` answers nothing and stays up -> {s}; `quit` inside an infinite search exits clean)\n", .{idle_move});
+    std.process.exit(0);
+}
+
+// Report whether `move` is in the legal-move list of `position` (a "position ..." command),
+// read from the engine's own `go perft 1` -- whose divide lines ("<move>: <count>") enumerate
+// exactly the legal moves. The gate then holds no move list of its own to go stale.
+fn moveIsLegal(gpa: std.mem.Allocator, io: Io, bin: []const u8, position: []const u8, move: []const u8) bool {
+    const input = std.fmt.allocPrint(gpa, "{s}\ngo perft 1\nquit\n", .{position}) catch return false;
+    defer gpa.free(input);
+    var cap = runEngine(gpa, io, bin, &.{}, input) catch return false;
+    defer cap.deinit(gpa);
+    var li = lines(cap.stdout);
+    while (li.next()) |raw| {
+        const line = trimCR(raw);
+        if (isDivideLine(line)) {
+            const colon = std.mem.findScalar(u8, line, ':') orelse continue;
+            if (std.mem.eql(u8, line[0..colon], move)) return true;
+        }
+    }
+    return false;
+}
+
+// Copy the move and ponder tokens out of the first `bestmove` line in `seg`.
+fn firstBestmove(seg: []const u8, bm: []u8, bm_len: *usize, pd: []u8, pd_len: *usize) bool {
+    var li = lines(seg);
+    while (li.next()) |raw| {
+        const line = trimCR(raw);
+        if (parseBestmove(line)) |b| {
+            const n = @min(b.bestmove.len, bm.len);
+            @memcpy(bm[0..n], b.bestmove[0..n]);
+            bm_len.* = n;
+            const m = @min(b.ponder.len, pd.len);
+            @memcpy(pd[0..m], b.ponder[0..m]);
+            pd_len.* = m;
+            return true;
+        }
+    }
+    return false;
+}
+
 // time-mgmt: assert wall-clock invariants no depth/node gate covers (the startTime=0 class of bug).
 // BAND: `go movetime T` reports elapsed within [T/3, 3T+1500]. SCALE: it grows with the
 // budget. ALLOC: `go wtime/btime` picks a sane sub-budget. Exercise the ported steady

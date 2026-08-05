@@ -224,6 +224,7 @@ The gates fall into kinds:
 | `parity-stress` | go/stop storms + construct/destroy churn do not hang, race, or crash the thread runtime. |
 | `parity-time` | Wall-clock `go movetime` / `wtime` budgets and the clock-scaling invariants hold. |
 | `parity-ponder` | `go ponder` → `ponderhit`/`stop` yields a legal bestmove and a clean exit. |
+| `parity-async` | The interrupted-search invariants **no golden can cover**: a command landing inside a running search ends it wherever the clock got to, so there is no node count to pin. A `stop` with nothing running answers nothing and leaves the engine up (the next search still yields a legal move, read back from the engine's own `go perft 1`); a `quit` landing inside an unbounded search exits cleanly, not on a signal. Every other gate here reaches the interrupted path only where the command arrives too late to do anything — the transcript cases close the pipe, so their `stop` is read after the search has already ended. |
 | `parity-valgrind` / `parity-teardown` | Valgrind memcheck across thread counts, and the searchmoves/rootMoves + Worker-clear lifecycle: no definite leak, invalid access, or bad free. Not in `parity` (memcheck is ~20-50x slower); CI runs them in their own job. |
 | `tsan-race` | ThreadSanitizer over four concurrency workloads: **zero** data races. Not in `parity` — it needs its own instrumented build (`zig build tsan-race -Dtsan -Dlto=false`). |
 
@@ -425,13 +426,22 @@ competent-programmer hypothesis is what makes a single mutation worth gating on.
   ok    perft        movegen omits knight under-promotion         red (1)
   ok    misc         d renders checkers one file off              red (1)
   ok    docs-lint    a doc names a path that is not in the tree   red (1)
-negative-control: 4 of 4 gate(s) detected their mutation, tree restored and green
+  ok    parity-async an idle `stop` answers with a bestmove       red (1)
+negative-control: 5 of 5 gate(s) detected their mutation, tree restored and green
 ```
 
-The four are one per *instrument class*, not one per gate: the anchor (a value differential),
+The five are one per *instrument class*, not one per gate: the anchor (a value differential),
 the specified oracle (`perft`, whose reference is a fact about chess and cannot be re-blessed),
-a characterization golden over a print path, and a structural lint. A fifth gate in a class
-already covered would add a rebuild and prove little; a new class earns a row.
+a characterization golden over a print path, a structural lint, and a protocol invariant with
+no reference at all. A sixth gate in a class already covered would add a rebuild and prove
+little; a new class earns a row.
+
+The last row is the one the other four cannot stand in for. Every value gate above compares
+against something photographed earlier, so its mutant must move a NUMBER; `parity-async`
+asserts a property of the UCI contract on a path where there is no number to move — an idle
+`stop` that answers with a bestmove leaves every golden, every node count and the anchor
+byte-identical, because the transcripts they diff never send a `stop` the engine is awake to
+hear.
 
 **Perturb the value, do not remove the bound.** A mutant aimed at a search margin or an
 evaluation must leave the search a ceiling, or the experiment cannot end — and a gate that

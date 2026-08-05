@@ -1,9 +1,10 @@
 //! Own the liveness and metamorphic gates -- the ones with no golden to diff.
 //!
-//! Nine checks that assert a PROPERTY rather than a fingerprint: the runtime does not hang
+//! Ten checks that assert a PROPERTY rather than a fingerprint: the runtime does not hang
 //! under go/stop storms, a reset restores state, Skill Level 0 stays legal, a truncated FEN
-//! still sets. They pass "-" where a golden gate passes a file, because there is nothing to
-//! photograph -- the harness decides pass/fail itself.
+//! still sets, an interrupted search still honours the protocol. They pass "-" where a golden
+//! gate passes a file, because there is nothing to photograph -- the harness decides pass/fail
+//! itself.
 //!
 //! Same table+loop treatment as build/gates.zig, and they are MORE uniform than the golden
 //! gates were: one harness call, one step, no tablebase fetch, no per-gate argument. Every
@@ -72,6 +73,13 @@ pub const checks = [_]Check{
     // exit, never a signal. Startup contract only, no search: portable, so it joins the
     // portable aggregate.
     .{ .check = "net-missing", .step = "parity-net-missing", .desc = "Missing-net startup: a named diagnostic + clean non-zero exit, never a signal" },
+    // Assert the interrupted-search invariants no golden can cover (async; a command landing
+    // inside a running search ends it wherever the clock got to, so there is no node count to
+    // pin). A `stop` with nothing running must answer nothing and leave the engine up, and a
+    // `quit` inside an unbounded search must exit cleanly. Every other gate here reaches the
+    // interrupted path only where the command arrives too late to do anything. Liveness +
+    // legality, platform-agnostic, so it joins the portable aggregate.
+    .{ .check = "async", .step = "parity-async", .desc = "Interrupted-search invariants: a stray `stop` answers nothing, `quit` inside a search exits clean" },
 };
 
 pub const Context = struct {
