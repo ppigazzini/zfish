@@ -25,6 +25,11 @@ const hist_square_nb = worker_histories.hist_square_nb;
 const hist_pieceto = worker_histories.hist_pieceto;
 const workerHistories = search_common.workerHistories;
 const statsUpdate = search_common.statsUpdate;
+const main_history_limit = search_common.main_history_limit;
+const low_ply_history_limit = search_common.low_ply_history_limit;
+const pawn_history_limit = search_common.pawn_history_limit;
+const capture_history_limit = search_common.capture_history_limit;
+const continuation_history_limit = search_common.continuation_history_limit;
 const captureStage = search_common.captureStage;
 const moveIsOk = search_common.moveIsOk;
 const sharedOf = shared_history.sharedOf;
@@ -151,10 +156,10 @@ pub fn updateQuietHistories(
     to: u8,
     bonus: i32,
 ) void {
-    statsUpdate(main_entry, bonus, 7183);
-    if (lowply_entry) |e| statsUpdate(e, search.quietLowPlyScale(bonus), 7183);
+    statsUpdate(main_entry, bonus, main_history_limit);
+    if (lowply_entry) |e| statsUpdate(e, search.quietLowPlyScale(bonus), low_ply_history_limit);
     updateContinuationHistories(ss_ptr, pc, to, search.quietContScale(bonus));
-    statsUpdate(pawn_entry, search.quietPawnScale(bonus), 8192);
+    statsUpdate(pawn_entry, search.quietPawnScale(bonus), pawn_history_limit);
 }
 
 const ConthistBonus = struct { i: u8, w: i32 };
@@ -174,7 +179,7 @@ pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, b
             const entry = &cont[@as(usize, pc) * 64 + to]; // PieceToHistory[pc][to]
             if (@atomicLoad(i16, entry, .monotonic) > 0) positive_count += 1; // shared table: relaxed read
             const delta = search.conthistDelta(bonus, b.w, positive_count, @intCast(b.i));
-            statsUpdate(entry, delta, 30000);
+            statsUpdate(entry, delta, continuation_history_limit);
         }
     }
 }
@@ -225,7 +230,7 @@ pub fn updateAllStats(
         const to = moveTo(best_move);
         const captured_pt = pieceTypeOn(pos, to);
         const ce = &capture_base[@as(usize, moved_pc) * 512 + @as(usize, to) * 8 + captured_pt];
-        statsUpdate(ce, @divTrunc(bonus * 1427, 1024), 10692);
+        statsUpdate(ce, @divTrunc(bonus * 1427, 1024), capture_history_limit);
     }
 
     if (prev_sq != @as(i32, sq_none) and
@@ -243,13 +248,16 @@ pub fn updateAllStats(
         const to = moveTo(move);
         const captured_pt = pieceTypeOn(pos, to);
         const ce = &capture_base[@as(usize, moved_pc) * 512 + @as(usize, to) * 8 + captured_pt];
-        statsUpdate(ce, @divTrunc(-malus * 1489, 1024), 10692);
+        statsUpdate(ce, @divTrunc(-malus * 1489, 1024), capture_history_limit);
     }
 }
 
 // Single-source the entry bound with the bonus clamps that are meant to be a quarter of
 // it (search.zig owns both, being the std-only formula leaf this file already imports).
-const correction_history_limit: i32 = search.correction_history_limit;
+// Keep the correction limit an `i32`: search.zig divides it by four to derive the two
+// bonus clamps, and a quantity that is computed with must not be wrapped. Type the
+// clamp VIEW of it instead -- which is the parameter statsUpdate can confuse.
+const correction_history_limit: search_common.HistLimit = .{ .v = search.correction_history_limit };
 
 // update_correction_history: nudge the four shared correction tables plus the
 // (ss-2)/(ss-4) continuation correction entries toward the search/static-eval

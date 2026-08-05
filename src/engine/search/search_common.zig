@@ -41,7 +41,33 @@ pub inline fn moveIsOk(m: u16) bool {
 // a data race: `val` is read once but used twice, and if the compiler rematerialises the second
 // use after a sibling thread's store, the result can leave [-D, D] and trap the @intCast in
 // ReleaseSafe -- which is what CI builds.
-pub inline fn statsUpdate(entry: *i16, bonus: i32, comptime d: i32) void {
+/// Type the gravity clamp so it cannot be swapped with the bonus beside it.
+///
+/// The two used to be adjacent `i32`s across every call site, with the clamp a bare
+/// literal and five distinct values in use. A transposition does not fail: it clamps by
+/// one and divides by the other, so the gravity curve is a different shape and the move
+/// ordering changes. Only the bench signature notices, and it says that something moved,
+/// never where.
+///
+/// A one-field struct is what makes the swap unspellable in BOTH directions -- a bare
+/// `i32` parameter name would stop nothing, and an enum cannot hold the two pairs of
+/// tables whose tunables coincide today. It costs nothing: the parameter is `comptime`,
+/// so it occupies no register and the wrapper scalarises completely.
+pub const HistLimit = struct { v: i32 };
+
+// One constant per table, mirroring upstream's per-instantiation `Stats<i16, D, ...>`
+// (history.h). The two pairs that share a value keep separate names deliberately: they
+// are separate upstream tunables that coincide today, and one shared name would make a
+// sync moving either one move both.
+pub const main_history_limit: HistLimit = .{ .v = 7183 }; // ButterflyHistory
+pub const low_ply_history_limit: HistLimit = .{ .v = 7183 }; // LowPlyHistory
+pub const pawn_history_limit: HistLimit = .{ .v = 8192 }; // PawnHistory
+pub const tt_move_history_limit: HistLimit = .{ .v = 8192 }; // TTMoveHistory
+pub const capture_history_limit: HistLimit = .{ .v = 10692 }; // CapturePieceToHistory
+pub const continuation_history_limit: HistLimit = .{ .v = 30000 }; // PieceToHistory
+
+pub inline fn statsUpdate(entry: *i16, bonus: i32, comptime limit: HistLimit) void {
+    const d = limit.v;
     const clamped = @max(-d, @min(d, bonus));
     const val: i32 = @atomicLoad(i16, entry, .monotonic);
     const abs_clamped = if (clamped < 0) -clamped else clamped;

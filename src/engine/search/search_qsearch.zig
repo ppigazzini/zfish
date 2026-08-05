@@ -26,6 +26,7 @@ const workerHistories = search_common.workerHistories;
 const captureStage = search_common.captureStage;
 const moveIsOk = search_common.moveIsOk;
 const statsUpdate = search_common.statsUpdate;
+const tt_move_history_limit = search_common.tt_move_history_limit;
 const Position = position_types.Position;
 const StateInfo = position_types.StateInfo;
 const SearchStack = search_types.SearchStack;
@@ -345,7 +346,7 @@ pub inline fn ssSub(ss: *SearchStack, n: usize) *SearchStack {
 }
 
 pub inline fn ttMoveHistoryUpdate(w: *WorkerHistories, bonus: i32) void {
-    statsUpdate(&w.tt_move_history, bonus, 8192);
+    statsUpdate(&w.tt_move_history, bonus, tt_move_history_limit);
 }
 
 pub inline fn contVal(ss_ch: ?*const worker_histories.PieceToHistory, pc: u8, to: u8) i32 {
