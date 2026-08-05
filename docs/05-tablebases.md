@@ -167,6 +167,25 @@ things hold the line, and they are worth keeping distinct:
 | `table_load.set` checks the pawnful table's **leading piece** against the registry's lead colour | `doProbeTable` picks the leading pawns' colour off `get(0, 0).pieces[0]`, a raw file nibble. Name a piece that is not a pawn, or a pawn of the colour that has none, and the leading group is EMPTY: the probe then sorts `squares[1..0]` and indexes `lead_pawn_idx[0][squares[0]]` with a square it never wrote. One flipped nibble in a downloaded `.rtbw` reaches it. |
 | `probe.setGroups` returns false on a **group longer than any geometry row** | The group lengths index `lead_pawns_size` and `binomial`, both sized for the longest group a legal material configuration makes. The lengths are runs over the same file nibbles, so a corrupt sequence makes a longer one and reads off the end of the array. |
 
+**Which sub-table a position uses is a type, not an integer.** A pawnful table folds
+the mirrored file pairs — a/h, b/g, c/f, d/e — onto four per-file sub-tables, so
+upstream's `edge_distance(f) = min(f, 7 - f)` converts a *board* file (one of eight)
+into a *table* file (one of four). Those are two different spaces, and while both
+were `usize` the conversion between them was an unannotated hop: a board file could
+reach `TBTable.get`, and the side-to-move sat beside the file as a second bare
+`usize` so the two could arrive transposed. `encode.TbFile` is an `enum(u2)` whose
+tag width is exactly the bound of the `[4]PairsData` arrays it indexes;
+`TbFile.fromBoardFile` is the only route between the spaces and `TbFile.all` the only
+enumeration of them.
+
+This one is worth a type more than anything else in the zone, and the reason is in
+the failure mode rather than the frequency. Nothing here faults: the prober reads a
+**real** sub-table of the wrong file and returns a confident wrong verdict. Every
+`tb-*` golden compares verdicts this binary produced, so all of them agree while it
+is wrong. See the cost rule in
+[08-idiomatic-zig.md](08-idiomatic-zig.md#the-cost-rule) for when a type like this is
+free — a cold path carrying a value, as here — and when it is not.
+
 `decode_header.setSizes` additionally refuses `min_sym_len == 0` (it would make the `k == 0` right-pad
 shift exactly 64, which does not fit the `u6` it is cast to) alongside the inverted and
 oversized pairs it already rejected. Rejections release `base64`/`symlen` through

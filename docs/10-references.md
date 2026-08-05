@@ -20,6 +20,8 @@ its structure.
 | [Zig standard library source](https://github.com/ziglang/zig/tree/master/lib/std) | The authority when an API differs across supported versions. Read the std source, not a changelog. |
 | [Ghostty — useful Zig patterns](https://mitchellh.com/writing/ghostty-and-useful-zig-patterns) | Comptime interfaces for platform/arch dispatch, and the caveat that CI must build every option or a configuration rots. |
 | [TigerBeetle `TIGER_STYLE.md`](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md) | Static allocation and near-zero dependencies — the hot-path discipline in [08-idiomatic-zig.md](08-idiomatic-zig.md). |
+| [matklad — Newtype Index Pattern in Zig](https://matklad.github.io/2025/12/23/zig-newtype-index-pattern.html) | The sized-enum newtype (`enum(u32) { _ }`, `@intFromEnum`/`@enumFromInt`) that `encode.TbFile` is an instance of, and its stated limit: the conversion is open, so the pattern stops a confusion rather than an intent. |
+| [Zig issue 12524 — niche packing for optional enums](https://github.com/ziglang/zig/issues/12524) | Why `?E` is wider than `E` here even when the tag leaves values unused, and therefore why the board keeps in-band sentinels. |
 
 ## Chess domain
 

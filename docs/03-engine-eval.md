@@ -145,7 +145,12 @@ The net has **three feature sets**. Their dimensions are pinned in
 Together they are the net's 86896 input dimensions (`network.verify`). The threat and
 pawn-pair sets are **concatenated** — pawn-pair indices continue past the last threat
 index (`pp_index_base == threat_dimensions`) — so they share one weight region and one
-changed/active index list; the SFNNv16 change moved pawn-pawn interactions out of the
+changed/active index list. `nnue_dimensions.zig` owns all three cardinalities and
+*derives* `pp_index_base` from the threat count rather than restating it; four files
+used to declare that count independently, each under its own name and integer width,
+and a sync moving it in three of the four would have left the fourth addressing a real
+row of the wrong feature set — an evaluation that is a plausible number rather than a
+fault. The SFNNv16 change moved pawn-pawn interactions out of the
 threat inputs (which lost the pawn-pusher input and pawns as threat targets) and into
 this set. All three feed one shared **feature transformer** whose layout `nnue_ft.zig`
 fixes: biases, psq weights, the combined threat+pawn-pair weights, and two `i32` PSQT
