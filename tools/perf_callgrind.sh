@@ -18,8 +18,10 @@
 # alongside: a gap in time with no gap in Ir is a memory-traffic or IPC gap, not extra work.
 #
 # Startup contaminates a shallow bench (net load, magic init and the startup fills are ~1.4-1.7 GB
-# of the refs here). Subtract it before quoting a search-only ratio; perf_fingerprint.py costs
-# will show the offenders by name.
+# of the refs here). Subtract it before quoting a search-only ratio -- with
+# perf_callgrind_delta.py, which does the arithmetic over a deep/shallow pair per binary
+# rather than leaving it a recipe that gets skipped. perf_fingerprint.py costs will show
+# the offenders by name.
 #
 # Usage: perf_callgrind.sh <binary> [bench-args...]     (CWD must be resources/ so the net loads)
 #        OUT=path/to.out perf_callgrind.sh ./stockfish 16 1 11
@@ -39,9 +41,15 @@ command -v valgrind >/dev/null || { echo "error: valgrind not installed" >&2; ex
 [ -x "$BIN" ] || { echo "error: $BIN is not executable" >&2; exit 1; }
 
 echo "# callgrind: $BIN bench ${BENCH_ARGS[*]}  -> $OUT"
-valgrind --tool=callgrind --callgrind-out-file="$OUT" --cache-sim=yes --branch-sim=yes \
-  "$BIN" bench ${BENCH_ARGS[*]} 2>&1 |
-  grep -E "Nodes searched|I   refs|D   refs|D1  misses|LLd misses|D1  miss rate|Branches|Mispredicts"
+# Keep the raw run so the node count can be recorded beside the profile. The profile
+# itself carries no workload identity, and every ratio taken from it is void if the two
+# trees differ -- so `perf_callgrind_delta.py` reads this sidecar and refuses rather than
+# trusting the caller to have checked by eye.
+RAW=$(valgrind --tool=callgrind --callgrind-out-file="$OUT" --cache-sim=yes --branch-sim=yes \
+  "$BIN" bench ${BENCH_ARGS[*]} 2>&1)
+printf '%s\n' "$RAW" |
+  grep -E "Nodes searched|I   refs|I1  misses|D   refs|D1  misses|LLd misses|D1  miss rate|Branches|Mispredicts"
+printf '%s\n' "$RAW" | grep -oP 'Nodes searched\s*:\s*\K[0-9]+' > "$OUT.nodes" || true
 
 echo
 echo "# node count above MUST match the other engine's, or the trees differ and every"

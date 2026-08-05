@@ -81,6 +81,42 @@ smoke "upstream_router.py" 0 "backlog:" -- python3 tools/upstream_router.py --ba
 # consumer reads columns, and a header that stopped matching means the columns moved.
 smoke "upstream_benchmap.sh" 0 "SHA" -- bash tools/upstream_benchmap.sh
 
+# perf_callgrind_delta.py. THE REFUSALS ARE THE TOOL, so they are what gets smoked: it
+# subtracts startup from two engines' profiles, and every refusal below guards a way the
+# subtraction can be quoted over numbers that do not mean what the reader thinks. Running
+# it for real needs valgrind, two built engines and ~50x slowdown; synthetic profiles
+# exercise the same parse and the same guards in milliseconds.
+FIX="$(mktemp -d)"
+trap 'rm -rf "$FIX"' EXIT
+_profile() {  # _profile <path> <Ir> ; a callgrind summary is events: + summary:
+    printf 'events: Ir Dr Dw I1mr D1mr D1mw ILmr DLmr DLmw Bc Bcm Bi Bim\n' > "$1"
+    printf 'summary: %d 100 50 5 20 10 1 2 3 400 40 30 3\n' "$2" >> "$1"
+}
+_profile "$FIX/a_deep.out" 1000; printf '2508687\n' > "$FIX/a_deep.out.nodes"
+_profile "$FIX/a_shal.out"  100; printf '19\n'      > "$FIX/a_shal.out.nodes"
+_profile "$FIX/b_deep.out" 2000; printf '2508687\n' > "$FIX/b_deep.out.nodes"
+_profile "$FIX/b_shal.out"  200; printf '19\n'      > "$FIX/b_shal.out.nodes"
+
+smoke "perf_callgrind_delta" 1 "Usage" -- python3 tools/perf_callgrind_delta.py
+
+smoke "  ^ refuses no sidecar" 1 "re-run perf_callgrind.sh" -- \
+    python3 tools/perf_callgrind_delta.py "$FIX/a_deep.out" "$FIX/a_shal.out" \
+    "$FIX/b_deep.out" "$FIX/nope.out"
+
+_profile "$FIX/b_wrong.out" 2000; printf '999999\n' > "$FIX/b_wrong.out.nodes"
+smoke "  ^ refuses a differing tree" 1 "not the same workload" -- \
+    python3 tools/perf_callgrind_delta.py "$FIX/a_deep.out" "$FIX/a_shal.out" \
+    "$FIX/b_wrong.out" "$FIX/b_shal.out"
+
+printf 'events: Ir\n' > "$FIX/b_dead.out"; printf '2508687\n' > "$FIX/b_dead.out.nodes"
+smoke "  ^ refuses a dead run" 1 "did the run die?" -- \
+    python3 tools/perf_callgrind_delta.py "$FIX/a_deep.out" "$FIX/a_shal.out" \
+    "$FIX/b_dead.out" "$FIX/b_shal.out"
+
+smoke "  ^ subtracts when valid" 0 "startup-subtracted" -- \
+    python3 tools/perf_callgrind_delta.py "$FIX/a_deep.out" "$FIX/a_shal.out" \
+    "$FIX/b_deep.out" "$FIX/b_shal.out"
+
 if [ "$ran" -eq 0 ]; then
     printf 'tools-smoke: no rows ran -- the table is empty and this would report OK over\n'
     printf 'tools-smoke: nothing. Refusing.\n' >&2

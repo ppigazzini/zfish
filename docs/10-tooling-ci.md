@@ -680,7 +680,7 @@ ratio rather than being silently removed from one.
 It is a **local gate, not CI**: it measures the host it runs on, and a hosted runner's
 shared, thermally-uncontrolled CPU cannot carry a performance verdict. The same holds
 for the other local scripts (`nps_ab.sh`, `perf_callgrind.sh`,
-`perf_fingerprint.py`) and for the local-only `tb-cursed` gate, which needs 5-man
+`perf_callgrind_delta.py`, `perf_fingerprint.py`) and for the local-only `tb-cursed` gate, which needs 5-man
 tables that are never fetched in CI. `tb-cursed` pins both the static WDL/DTZ
 display and node-limited search totals at the dual `syzygy5:syzygy` path — the
 node legs see the per-probe time-check reset on the 5-man/cursed table set that
@@ -770,11 +770,11 @@ zig build -Darch=x86-64-sse41-popcnt -p /tmp/zf
 #    help you break this); a hot machine has read 934k next to a 2.5M neighbour.
 
 # 4. The headline speed ratio: interleaved, paired, core-pinned, node-count-asserted.
-cd net && ../tools/nps_ab.sh /tmp/zf/bin/stockfish <oracle-binary> 12
+cd resources && ../tools/nps_ab.sh /tmp/zf/bin/stockfish <oracle-binary> 12
 
 # 5. Under ~5%? nps CANNOT resolve it (L1). Use callgrind -- deterministic.
-cd net && ../tools/perf_callgrind.sh /tmp/zf/bin/stockfish 16 1 8   # OUT=zf.out
-cd net && ../tools/perf_callgrind.sh <oracle>/src/sf_sse41  16 1 8   # OUT=up.out
+cd resources && ../tools/perf_callgrind.sh /tmp/zf/bin/stockfish 16 1 8   # OUT=zf.out
+cd resources && ../tools/perf_callgrind.sh <oracle>/src/sf_sse41  16 1 8   # OUT=up.out
 #    ^ the zig-c++ oracle from step 0, NOT the gcc one from step 1.
 
 # 6. Attribute the cost. NEVER read one line per side: callgrind emits one entry per
@@ -789,8 +789,16 @@ python3 tools/perf_fingerprint.py compare zf.out up.out \
     --group accumulator='applyCombined|apply_combined|evaluateSide|evaluate_side' \
     --group movepick='scoreList|nextMove|next_move'
 
-# 7. Subtract startup before quoting a SEARCH ratio. On a shallow bench the net load,
-#    magic init and the startup fills (TT clear, history stripes) dominate a d11 run.
+# 7. Subtract startup before quoting a SEARCH ratio -- with the tool, not by hand. The
+#    net load, magic init and the startup fills (TT clear, history stripes) are 40% of
+#    the whole-process instructions of a `16 1 8` profile here, and the two engines'
+#    net parses differ, so a whole-process ratio is not a search ratio. Profile each
+#    binary TWICE, deep and shallow, and let the tool do the arithmetic:
+cd resources && OUT=zf_shal.out ../tools/perf_callgrind.sh /tmp/zf/bin/stockfish 16 1 1
+cd resources && OUT=up_shal.out ../tools/perf_callgrind.sh <oracle>/src/sf_sse41  16 1 1
+python3 tools/perf_callgrind_delta.py zf.out zf_shal.out up.out up_shal.out
+#    It REFUSES rather than guesses: a missing `<out>.nodes` sidecar, a profile with no
+#    summary line, and any node-count mismatch between the two engines each exit 1.
 ```
 
 **Same tree or nothing.** Every comparison above requires both engines to report the
