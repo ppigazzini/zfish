@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Arch-variant bench-determinism sweep.
+# Arch-variant determinism sweep: the bench signature AND the net round-trip, per tier.
 #
 # The pure-Zig eval is integer-exact, hence arch-INVARIANT: every x86-64 tier must
 # produce the same bench signature (node count) 2508687. Only sse41 (via
@@ -15,7 +15,7 @@
 # lost `x86-64-avxvnni` exactly that way -- a tier the build supports and `native` can
 # resolve to, which nothing here had ever compiled.
 #
-# BUILDING AND BENCHING ARE SEPARATE QUESTIONS, so ask them separately:
+# BUILDING, BENCHING AND ROUND-TRIPPING ARE SEPARATE QUESTIONS, so ask them separately:
 #
 #   BUILD   every tier, on every host. A tier that stops COMPILING -- a @Vector width the
 #           backend rejects, a feature macro gone stale -- needs no ISA to catch, so a
@@ -25,6 +25,11 @@
 #           a host without AVX-512 raises SIGILL -- a fact about the runner, not about
 #           determinism. ../rfish's 9564e86 died there when its own sweep first drew a
 #           mixed hosted fleet.
+#   EXPORT  the loaded net back out and require it byte-identical, wherever the tier runs.
+#           This is arch-variant for the opposite reason the bench is arch-INvariant: the
+#           weight permutation the parse applies differs by tier, so the writer has three
+#           distinct arms to invert and the `export-net` golden exercises one. See the
+#           roundtrip() comment below.
 #
 # A TIER THIS HOST CANNOT DRIVE IS NAMED, NOT COUNTED. The anchor is then unasserted for
 # it, so the sweep reports SKIPPED and exits 2 -- "could not measure" must not read as
@@ -100,8 +105,46 @@ missing_flags() {  # $1 = space-separated cpuinfo flags
     printf '%s' "$out"
 }
 
+# Locate the net the engine loads, so the round-trip below has something to compare AGAINST.
+# Absent (a checkout that never ran `zig build net`) is a rig fault, not a pass: the sweep would
+# silently drop the round-trip half and still report every tier OK.
+NET="$(ls "$REPO"/resources/nn-*.nnue 2>/dev/null | head -1)"
+if [ -z "$NET" ]; then
+    echo "arch-determinism: RIG FAULT -- no resources/nn-*.nnue; run 'zig build net' first." >&2
+    echo "arch-determinism: without it the net round-trip cannot run and would go unreported." >&2
+    exit 2
+fi
+
+# Export the loaded net and require the bytes back UNCHANGED.
+#
+# Why this is a per-TIER question and not a single golden. The affine weights are held under
+# `weightIndexScrambled`, and on the AVX2 pair tier ALONE (`scrambled_activations`) the parse
+# additionally folds the 128-bit-lane interleave of the paired activation packs into the weight
+# index -- the AVX-512 pair tier does not, because its narrows are in order. So the writer must
+# invert exactly the permutation ITS OWN tier applied, and there are three distinct arms. The
+# `export-net` golden runs at one tier, so two of the three shipped unexercised.
+#
+# The net is also the one artifact where a wrong answer is quiet: `export_net` is not on the eval
+# path, so a broken writer changes no bench, no golden and no search -- it only ruins the file a
+# user asked for.
+roundtrip() {  # $1 = tier
+    local tmp="arch_roundtrip.tmp.nnue" rc=0
+    ( cd "$REPO/resources" && printf 'export_net %s\nquit\n' "$tmp" | "$REPO/zig-out/bin/stockfish" >/dev/null 2>&1 )
+    if [ ! -s "$REPO/resources/$tmp" ]; then
+        echo "arch-determinism: $1 wrote no net (export_net failed / panicked?)" >&2
+        rc=1
+    elif ! cmp -s "$REPO/resources/$tmp" "$NET"; then
+        echo "arch-determinism: $1 EXPORTED A DIFFERENT NET -- the writer does not invert this" >&2
+        echo "arch-determinism: tier's weight permutation (cmp against $(basename "$NET"))" >&2
+        rc=1
+    fi
+    rm -f "$REPO/resources/$tmp"
+    return $rc
+}
+
 fail=0
 benched=0
+roundtripped=0
 UNRUNNABLE=()
 
 for i in "${!TIERS[@]}"; do
@@ -131,18 +174,27 @@ for i in "${!TIERS[@]}"; do
         printf '%s\n' "$out" | tail -6 >&2
         fail=1
     fi
+
+    # Same runnability rule as the bench: this executes the tier's own binary.
+    if roundtrip "$tier"; then
+        echo "arch-determinism: $tier net round-trip OK (export == input, byte for byte)"
+        roundtripped=$((roundtripped + 1))
+    else
+        fail=1
+    fi
 done
 
 # A mismatch outranks a hole and no flag reaches it: a tier that built and then benched
 # the wrong number is a broken invariant, not reduced coverage.
 if [ "$fail" -ne 0 ]; then
-    echo "arch-determinism: FAIL -- a tier did not build, or diverged from $REF" >&2
-    echo "arch-determinism: (arch-dependent codegen broke bit-exactness)" >&2
+    echo "arch-determinism: FAIL -- a tier did not build, diverged from $REF, or failed to" >&2
+    echo "arch-determinism: round-trip the net (arch-dependent codegen broke bit-exactness" >&2
+    echo "arch-determinism: or the writer stopped inverting its tier's weight permutation)" >&2
     exit 1
 fi
 
 if [ "${#UNRUNNABLE[@]}" -ne 0 ]; then
-    echo "arch-determinism: $benched of ${#TIERS[@]} tiers benched $REF; all ${#TIERS[@]} built."
+    echo "arch-determinism: $benched of ${#TIERS[@]} tiers benched $REF ($roundtripped round-tripped the net); all ${#TIERS[@]} built."
     echo "arch-determinism: unasserted on this host: ${UNRUNNABLE[*]}"
     if [ "$ACCEPT_PARTIAL" = "1" ]; then
         echo "arch-determinism: --host-tiers given; the hole above is accepted, not closed."
@@ -153,5 +205,5 @@ if [ "${#UNRUNNABLE[@]}" -ne 0 ]; then
     exit 2
 fi
 
-echo "arch-determinism: OK ($benched of ${#TIERS[@]} tiers built AND benched $REF)"
+echo "arch-determinism: OK ($benched of ${#TIERS[@]} tiers built AND benched $REF; $roundtripped round-tripped the net)"
 exit 0
