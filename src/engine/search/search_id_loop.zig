@@ -16,6 +16,7 @@ const search_setup = @import("search_setup");
 const position_query = @import("position_query");
 const history_mod = @import("history");
 pub const setContHist = history_mod.setContHist;
+pub const setContHistBasePlane = history_mod.setContHistBasePlane;
 pub const ageMainHistory = history_mod.ageMainHistory;
 pub const fillLowPlyHistory = history_mod.fillLowPlyHistory;
 const Position = position_types.Position;
@@ -102,7 +103,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     {
         var k: usize = 0;
         while (k < 7) : (k += 1) {
-            setContHist(wl, &stack[k], 0, 0, 0, 0); // sentinel (NO_PIECE)
+            setContHistBasePlane(wl, &stack[k]);
             stack[k].static_eval = q_value_none;
         }
         const ply_hi: usize = @intCast(q_max_ply + 2);

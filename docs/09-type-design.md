@@ -329,9 +329,37 @@ Each has been made to fail on purpose, and the errors counted:
 - A non-exhaustive switch over `ScoreKind`.
 - A non-PV root, which has no variant to name it.
 - Entering quiescence at the root — `qsearchImpl` refuses `.root` by name.
+- The continuation-history plane selectors `in_check` and `capture`, transposed — `InCheck` and `WasCapture`. A swap picked a different plane of the table: a valid entry of the wrong thing, visible only as a moved bench signature.
 - A history bonus and its clamp transposed, or the clamp given as a bare integer —
   `HistLimit`. This row spent time in the wrong section: `comptime` alone was recorded as
   stronger than a type here, and it was not.
+
+### An enum literal infers its way around the distinction
+
+Two two-variant enums are not two types at a call site that writes `.yes` / `.no`. An enum
+literal takes its type from the parameter it lands in, so
+
+```zig
+setContHist(w, ss, if (in_check) .yes else .no, if (capture) .yes else .no, pc, to);
+```
+
+still compiles after the two arguments are transposed — each literal simply adapts to its new
+position. That was built and confirmed, not reasoned about; the first version of `InCheck` and
+`WasCapture` stopped a bare `u1` and nothing else, which is the shape of a type-safety change
+that reviews as done and gates nothing.
+
+Name the type at the call site to fix it — a constructor (`InCheck.of(in_check)`) rather than a
+literal, so the transposition reads `expected type 'history.InCheck', found
+'history.WasCapture'`. **The general rule: when two adjacent parameters are the reason a type
+exists, the call site has to spell the type. A newtype whose values are only ever written as
+inferred literals is a comment.**
+
+It is also free here, which sharpens [the cost rule](#the-cost-rule) rather than contradicting
+it. These are *runtime* values on the `do_move` path, where replacing a bool is the change that
+was measured at +0.0025% elsewhere — and the release binary's `.text` section is byte-identical
+across this one. The difference is what the function does with the value: `cut_node` is held
+live across the whole search body, while these two are consumed immediately into an index. The
+rule is about what is HELD, and runtime-ness alone does not predict a cost.
 
 ## What a compile error does NOT stop
 

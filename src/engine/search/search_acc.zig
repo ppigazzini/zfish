@@ -29,6 +29,8 @@ const SearchStack = search_types.SearchStack;
 const QCtx = search_ctx.QCtx;
 const captureStage = search_common.captureStage;
 const setContHist = history_mod.setContHist;
+const InCheck = history_mod.InCheck;
+const WasCapture = history_mod.WasCapture;
 const moveTo = board_core.moveTo;
 const doMove = move_do.doMove;
 const undoMove = move_do.undoMove;
@@ -117,7 +119,7 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     doMove(pos_ptr, move, st_ptr, gives_check, out.dirty_piece, out.dirty_threats, bank);
     const dp: *const DirtyPiece = out.dirty_piece;
     ss.current_move = move;
-    setContHist(ctx.worker, ss_ptr, @intFromBool(ss.in_check), @intFromBool(capture), dp.pc, moveTo(move));
+    setContHist(ctx.worker, ss_ptr, InCheck.of(ss.in_check), WasCapture.of(capture), dp.pc, moveTo(move));
 }
 
 // Run the undo-move step: unmake the move, then drop the accumulator slot.

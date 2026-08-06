@@ -47,6 +47,7 @@ const captEntry = search_common.captEntry;
 const history_mod = @import("history");
 pub const updateQuietHistoriesWorker = history_mod.updateQuietHistoriesWorker;
 pub const setContHist = history_mod.setContHist;
+pub const setContHistBasePlane = history_mod.setContHistBasePlane;
 pub const updateContinuationHistories = history_mod.updateContinuationHistories;
 pub const updateAllStats = history_mod.updateAllStats;
 pub const updateCorrectionHistory = history_mod.updateCorrectionHistory;
@@ -372,7 +373,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             // continuation-history pointer.
             doNullMove(pos_ptr, &st);
             ss.current_move = 65;
-            setContHist(ctx.worker, ss_ptr, 0, 0, 0, 0);
+            setContHistBasePlane(ctx.worker, ss_ptr);
             const null_value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -beta, -beta + 1, depth - r, false, .non_pv);
             undoNullMove(pos_ptr);
             if (null_value >= beta and !qIsWin(null_value)) {
