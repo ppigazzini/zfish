@@ -49,6 +49,10 @@ const pieceTypeOn = board_core.pieceTypeOn;
 
 const sq_none = board_core.sq_none;
 
+// Upstream's NO_PIECE and SQ_A1, the two the base continuation plane is addressed by.
+const no_piece: u8 = 0;
+const sq_a1: u8 = 0;
+
 pub fn updateQuietHistoriesWorker(
     worker_ptr: *WorkerLayout,
     pos_ptr: *const Position,
@@ -70,21 +74,60 @@ pub fn updateQuietHistoriesWorker(
     updateQuietHistories(main_entry, lowply_entry, pawn_entry, ss_ptr, pc, to, bonus);
 }
 
+/// Name the two plane selectors, so they cannot be handed over in the other order.
+///
+/// They were adjacent `u8`s, and a swap does not fault: it selects a DIFFERENT PLANE of the
+/// continuation table -- a valid entry of the wrong thing. Nothing downstream can notice,
+/// because every plane holds the same shape of counter; only the bench signature moves, and
+/// it says that something changed, never what. These are the arguments, not the result: the
+/// page the function stores was already a distinct pointer type and that stopped nothing here.
+///
+/// Backed by `u8` and used only to index, so `@intFromEnum` is the value that was already
+/// being passed -- this is the accessor-typing case, not the "type a quantity that is computed
+/// with" case the cost rule refutes (see docs/09-type-design.md).
+/// Construct through `of`, never through a bare `.yes` / `.no`. An enum LITERAL infers its
+/// type from the parameter it lands in, so two `if (c) .yes else .no` arguments still compile
+/// after a transposition -- the literal simply adapts. Checked, not assumed: that swap built
+/// clean. Naming the type at the call site is what makes the swap a compile error.
+pub const InCheck = enum(u8) {
+    no = 0,
+    yes = 1,
+    pub fn of(v: bool) InCheck {
+        return if (v) .yes else .no;
+    }
+};
+pub const WasCapture = enum(u8) {
+    no = 0,
+    yes = 1,
+    pub fn of(v: bool) WasCapture {
+        return if (v) .yes else .no;
+    }
+};
+
 // Set up the do_move / do_null_move continuation-history pointer. Set the Stack's
 // continuation_history to &continuationHistory[in_check][capture][pc][to] (a
 // PieceToHistory page) and continuation_correction_history to
-// &continuationCorrectionHistory[pc][to]. The null move and the
-// iterative_deepening sentinels pass all-zero indices (NO_PIECE), which resolve
-// to the table bases.
-pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: u8, capture: u8, pc: u8, to: u8) void {
+// &continuationCorrectionHistory[pc][to].
+pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: InCheck, capture: WasCapture, pc: u8, to: u8) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const ss = ss_ptr;
-    const ch_block = (@as(usize, in_check) * 2 + capture) * hist_pieceto +
+    const ch_block = (@as(usize, @intFromEnum(in_check)) * 2 + @intFromEnum(capture)) * hist_pieceto +
         @as(usize, pc) * hist_square_nb + to;
     ss.continuation_history = @ptrCast(&sharedOf(w).cont_data[ch_block * hist_pieceto]);
     const cc_block = @as(usize, pc) * hist_square_nb + to;
     ss.continuation_correction_history =
         @ptrCast(&w.continuation_correction_history[cc_block * hist_pieceto]);
+}
+
+/// Select the base plane: the one a NO_PIECE "move" to a1 addresses, out of check and not a
+/// capture. That is `(0 * 2 + 0) * hist_pieceto + 0 * 64 + 0` -- zero, the table base.
+///
+/// The null-move path and the pre-root sentinel walk both spelled those four zeroes out, with a
+/// comment each explaining which constant they added up to. A name is what a comment was standing
+/// in for, and it is also where a reader could not tell which `0` was `in_check` and which was
+/// `capture`.
+pub fn setContHistBasePlane(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack) void {
+    setContHist(worker_ptr, ss_ptr, .no, .no, no_piece, sq_a1);
 }
 
 // Decay the main history per iterative_deepening() iteration: v * 729 / 1024
