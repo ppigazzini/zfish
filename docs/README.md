@@ -79,6 +79,7 @@ close is precisely the auto-vectorization Zig withholds.
 | [10-tooling-ci.md](10-tooling-ci.md) | All developers | The build targets, the gate battery, the structural linters, upstream tracking, the CI lanes — and the gates on the gates: what runs each check, and whether each check can fail |
 | [11-references.md](11-references.md) | All developers | Stockfish, Zig, chess-domain, and design references |
 | [12-writing.md](12-writing.md) | Anyone editing these docs | How the set is organised, the writing rules, what `docs-lint` does and does not check |
+| [13-glossary.md](13-glossary.md) | All developers | The words this set uses without defining them, in four tiers: upstream's vocabulary and the symbol carrying it, this repository's, the ones that mean two things here, and the testing field's |
 
 For building, the bench gate, and the contribution workflow, see the root
 [README](../README.md) and [CONTRIBUTING](../CONTRIBUTING.md).

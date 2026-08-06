@@ -6,7 +6,7 @@ does not check. Read it before adding or editing a page.
 ## The set
 
 `README.md` is the index — GitHub renders it for the folder, so it is what a reader lands on.
-The rest are `00-`…`11-`, numbered by **reading order**, not importance: a contributor works
+The rest are `00-`…`13-`, numbered by **reading order**, not importance: a contributor works
 down from the architecture into a zone. The prefix is the only ordinal; nothing else numbers
 them.
 
@@ -96,6 +96,7 @@ moment the code lands, and nobody knows which claim broke better than the person
 | [08-idiomatic-zig](08-idiomatic-zig.md) | patterns and the measurement discipline | cold |
 | [09-type-design](09-type-design.md) | the value domain: what the quantities mean and which are distinguishable | cold |
 | [11-references](11-references.md) | external links | cold |
+| [13-glossary](13-glossary.md) | the vocabulary, in tiers | cold — a definition outlives the file it points at, and the owners it cites are what can date |
 | this page | the rules | cold |
 
 The hot rows are where every false claim in this set has been found: a handler's output stream,
