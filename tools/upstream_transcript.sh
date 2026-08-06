@@ -89,11 +89,97 @@ KNOWN_RE="$(printf '%s|' "${K_PAT[@]}")"; KNOWN_RE="(${KNOWN_RE%|})"
 
 pass=0; fail=0; known=0; rig=0
 
+# Read a case's `# hold <seconds>` declaration, if it carries one. Both engines skip the line
+# as a comment (upstream uci.cpp:184 and this tree's own comment arm), so the budget lives
+# beside the search that needs it rather than in a table here.
+#
+# A header that does not parse answers UNPARSABLE rather than falling back to the default
+# close, which would silently truncate the one case it was written for.
+case_hold() {
+    local script="$1" line
+    while IFS= read -r line; do
+        case "$line" in '# hold'*) ;; *) continue ;; esac
+        if [[ "$line" =~ ^'# hold '([0-9]+)$ ]]; then printf '%s' "${BASH_REMATCH[1]}"; else printf 'UNPARSABLE'; fi
+        return
+    done <<<"$script"
+}
+
+# Drive ONE engine over one case script and leave its raw transcript in $6.
+#
+# WITHOUT a hold the pipe closes as soon as the script is written, which is what every case
+# that declares none wants: each ends in `quit`, and the `stop` and `ponderhit` cases need
+# the close to land while their first search is still running.
+#
+# WITH one the hold is a DEADLINE, not a sleep: the writer closes as soon as the engine has
+# answered, and sets DRIVE_LATE if the deadline arrived first. A flat sleep long enough for
+# the ten-million-node case would cost every other case the same wall clock, and a close that
+# arrives early is worse than slow -- each engine then stops wherever its own thread got to,
+# so the diff compares two truncations. `bestmove` cannot report that: closing stdin IS a
+# `quit`, and a stopped search announces a bestmove too, so the two truncations diff clean
+# and the case reads as agreement. DRIVE_LATE, not the `bestmove` line, is the signal.
+DRIVE_LATE=0
+drive() {
+    local dir="$1" bin="$2" script="$3" prefix="$4" hold="$5" out="$6"
+    DRIVE_LATE=0
+    : >"$out"
+
+    if [ -z "$hold" ]; then
+        (cd "$dir" && printf '%s' "$script" | $prefix timeout 60 "$bin" 2>&1) >"$out"
+        return
+    fi
+
+    local fifo line start rem
+    fifo="$(mktemp -u "${TMPDIR:-/tmp}/zfish-transcript.XXXXXX")"
+    mkfifo "$fifo" || return
+    # Give the engine a wall-clock ceiling above its own hold: the deadline below decides the
+    # verdict, and `timeout` is only here so a wedged engine cannot hold the fifo open forever.
+    exec 8< <(cd "$dir" && $prefix timeout "$((hold + 30))" "$bin" <"$fifo" 2>&1)
+    exec 9>"$fifo"
+    # Opening for write blocked until the reader opened, so both ends are held and the name
+    # is no longer needed.
+    rm -f "$fifo"
+
+    printf '%s' "$script" >&9
+    start=$SECONDS
+    while :; do
+        rem=$(( hold - (SECONDS - start) ))
+        [ "$rem" -gt 0 ] || { DRIVE_LATE=1; break; }
+        IFS= read -r -t "$rem" line <&8 || { DRIVE_LATE=1; break; }
+        printf '%s\n' "$line" >>"$out"
+        case "$line" in bestmove*) break ;; esac
+    done
+    exec 9>&-
+    while IFS= read -r line || [ -n "$line" ]; do printf '%s\n' "$line" >>"$out"; done <&8
+    exec 8<&-
+}
+
 run_case() {
     local label="$1" script="$2" prefix="${3:-}"
-    local ours theirs delta unknown
-    ours="$(cd "$OUR_DIR"   && printf '%s' "$script" | $prefix timeout 60 "$OUR_BIN"    2>&1 | normalise)"
-    theirs="$(cd "$THEIR_DIR" && printf '%s' "$script" | $prefix timeout 60 "$ORACLE_BIN" 2>&1 | normalise)"
+    local ours theirs delta unknown hold ours_raw theirs_raw ours_late theirs_late late
+
+    hold="$(case_hold "$script")"
+    if [ "$hold" = UNPARSABLE ]; then
+        rig=$((rig + 1))
+        printf '  RIG   %s -- unparsable `# hold` header; want `# hold <seconds>`\n' "$label"
+        return
+    fi
+
+    ours_raw="$(mktemp)"; theirs_raw="$(mktemp)"
+    drive "$OUR_DIR"   "$OUR_BIN"    "$script" "$prefix" "$hold" "$ours_raw";   ours_late=$DRIVE_LATE
+    drive "$THEIR_DIR" "$ORACLE_BIN" "$script" "$prefix" "$hold" "$theirs_raw"; theirs_late=$DRIVE_LATE
+    ours="$(normalise <"$ours_raw")"; theirs="$(normalise <"$theirs_raw")"
+    rm -f "$ours_raw" "$theirs_raw"
+
+    # A side that ran out of hold answered a truncation, and the diff below cannot tell.
+    if [ "$ours_late" = 1 ] || [ "$theirs_late" = 1 ]; then
+        if   [ "$ours_late" = 1 ] && [ "$theirs_late" = 1 ]; then late='both engines'
+        elif [ "$ours_late" = 1 ]; then late='zfish'
+        else late='the oracle'; fi
+        rig=$((rig + 1))
+        printf '  RIG   %s -- %s did not answer inside its %ss hold; the diff would compare truncations\n' \
+            "$label" "$late" "$hold"
+        return
+    fi
 
     # TWO SILENCES ARE NOT AN AGREEMENT. Every path that blanks a side blanks it to the
     # empty string -- a `cd` that fails short-circuits the `&&`, an engine that dies before
@@ -400,6 +486,21 @@ go depth 7
 quit
 '
 
+printf 'root currmove announcement\n'
+# `info depth D currmove M currmovenumber N` (search_emit.zig:167) is printed by no other gate
+# here. It fires only past ten million nodes: `bench` searches its whole suite in fewer, every
+# golden is a short scripted session, and each case above ends in seconds -- delete the call and
+# every one of them stays green. Reaching the threshold is the whole cost of this case, which is
+# what `# hold` exists for.
+#
+# The `wl.thread_idx != 0` guard stays uncovered: this runs at `Threads 1`, where dropping it
+# changes nothing, and a multi-threaded case is not diffable against the oracle at all.
+run_case 'root currmove (11M nodes)' '# hold 150
+setoption name Threads value 1
+position startpos
+go nodes 11000000
+'
+
 printf 'report commands\n'
 run_case 'd (board)' 'position startpos moves d2d4
 d
@@ -428,9 +529,10 @@ printf 'upstream-transcript: %d ok, %d known-divergent, %d FAILED, %d rig (%d ca
 # split the parity driver already uses. Check it FIRST -- a run that compared nothing must
 # never report the verdict of the cases it did compare.
 [ "$rig" -eq 0 ] || {
-    echo "upstream-transcript: REFUSING -- $rig case(s) compared nothing at all." >&2
+    echo "upstream-transcript: REFUSING -- $rig case(s) compared nothing trustworthy." >&2
     echo "                     Check that both binaries run: $OUR_BIN in $OUR_DIR," >&2
-    echo "                     $ORACLE_BIN in $THEIR_DIR." >&2
+    echo "                     $ORACLE_BIN in $THEIR_DIR; and that a case declaring a" >&2
+    echo "                     \`# hold\` declares one its search can finish inside." >&2
     exit 2
 }
 [ "$fail" -eq 0 ] || exit 1
