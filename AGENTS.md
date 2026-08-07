@@ -14,6 +14,44 @@ a doc is wrong from the moment the code lands, and every false claim ever found 
 that way. `zig build docs-lint` catches a dead link, path or anchor; it cannot tell you a
 sentence has become false. That part is yours.
 
+## Working here
+
+The rest of this file is about the code. This section is about you.
+
+**Deliver what was asked, at the scope intended.** Make the routine calls yourself and check
+in only where two readings of the request would produce materially different work. If the ask
+looks mistaken, say so in a sentence and build it anyway under a stated assumption — quietly
+narrowing, widening or transforming it is the failure mode. Finish the whole task; if one part
+is blocked, finish every other part and say plainly which one you left and why. Scaling the
+work down is the user's call.
+
+**The gates ARE the verification — do not invent a second one.** A byte-changing edit runs
+`parity`, a shared-state edit runs `tsan-race`, a `src/platform/` edit cross-compiles: those
+are not optional, and the exit code is the only evidence anyone reads. Re-running a gate that
+is already green, bolting a "final check" pass onto a finished task, or having something
+review your own diff proves nothing the gate did not.
+
+**Delegate only what is genuinely parallel and large.** A wide multi-file investigation, or a
+perf fleet with disjoint charters, earns subagents; work you can finish in a handful of tool
+calls does not, and nothing earns a subagent whose job is to check your work. If one agent can
+do it, use one. Past two, the fleet rules below bind.
+
+**Lead with the outcome.** One sentence before the first tool call saying what you are about
+to do, then quiet until something changes the plan, then a first sentence that answers what
+happened — the node count, the exit code, the ratio — with the detail after it for whoever
+wants it. The full evidence goes in the commit body, which is what a fresh clone gets; the
+reply is the summary of it.
+
+**Correct only what changes a decision.** If an earlier statement would send a reader to the
+wrong file or the wrong number, fix it in a sentence and carry on. For a slip that changes
+nothing, fix it and say nothing — a running tally of your own mistakes buries the correction
+that mattered.
+
+**Match a document's length to what it must carry**, whether it is a page in
+[docs/](docs/README.md) or a report in the reply. Cover the substance and stop: no restated
+summary, no recap of what a gate prints, no next-steps list nobody asked for. Length is not
+thoroughness; it is where rot hides ([docs/12-writing.md](docs/12-writing.md)).
+
 ## Setup
 
 ```sh
@@ -82,6 +120,9 @@ a filter outliving its gap silently stops the gate comparing real output.
 Multi-agent perf/refactor fleets are a standing pattern here. Every rule below was
 paid for:
 
+- **Charter a fleet only above the bar in *Working here*** — independent, sizeable
+  tracks. Below it one agent working end to end beats three coordinating, and a
+  fleet spawned to double-check a finished change buys nothing.
 - **Never `git stash`** — the stash is repo-wide across worktrees; parallel agents
   racing it corrupt each other. Recover by SHA instead.
 - **Charter disjoint FILES, not just disjoint metrics** — two agents once shipped
@@ -151,3 +192,8 @@ bisected when the node count moves.
 Conventional subject ≤72 chars, blank line, body wrapped at 80 carrying the evidence: gate
 output and exit code, not "should work". **Don't** `git push` — commit locally and stop unless
 asked. **Don't** add co-author or generated-by trailers.
+
+## Before you reply
+
+Keep it short and lead with the outcome: what moved, what the gate said, what is left. The
+long form belongs in the commit body.
