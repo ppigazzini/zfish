@@ -36,7 +36,8 @@ for the same position.
 | `nnue_nnz.zig` | the transform's non-zero-chunk record: the two shapes (`NnzIndexList` on the AVX-512 VNNI tiers, `NnzBitset` elsewhere), the tier gate `use_nnz_index_list`, and `nnzRecord`/`nnzReset` |
 | `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`) and `transformBucket` — the clipped-ReLU transform, which writes the NNZ record as it packs |
 | **inference** | |
-| `nnue_inference.zig` | the forward pass: the affine layers, the activations, bucket selection, and the psqt/positional split |
+| `nnue_inference.zig` | the forward pass: the affine layers, bucket selection, and the psqt/positional split — it drives the activations, it does not own them |
+| `nnue_activations.zig` | the layer activations in every shape upstream emits: `sqrClippedReLU`, `clippedReLU`, and the fused `sqrClipPair`/`128`/`512` that produce both outputs in one pass, behind the `avx512_pair_activations` and `sse_pair_activations` tier gates. The forward driver picks a shape at comptime; the anchor is what pins that all of them agree |
 | `nnue_affine.zig` | `affineDpbusd` and the non-VNNI affine kernels: the AVX2/SSSE3 maddubs dots, the `OUT == 1` contiguous dot, the portable reduction, and `GroupIter` |
 | `nnue_affine_vnni.zig` | the AVX-512 VNNI kernel `affineVnni` — `vpdpbusd` plus the two sparse walks (index-list cursor under VBMI2, hoisted bitset otherwise) |
 | `nnue_affine_load.zig` | `loadW`, the alignment-asserting weight-chunk load both affine files share |
