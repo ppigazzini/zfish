@@ -657,9 +657,9 @@ A/B path at a script that prints one `Nodes searched` and then a smaller one to 
 **A ratio needs a second binary; a budget does not.** `tools/perf_budget.sh` holds this
 tree's own retired-instruction count on `bench 16 1 8` to `tools/instr_budget.golden`,
 keyed by arch tier. It exists because the bench signature proves the same *node* count and
-says nothing about what those nodes cost, so a change can shed no nodes, keep all 36 gates
-green, and still run measurably slower — the one regression class nothing else here can
-fail on. Instructions are near-deterministic (measured spread 0.00063% over six runs),
+says nothing about what those nodes cost, so a change can shed no nodes, keep every gate
+`zig build parity` runs green, and still run measurably slower — the one regression class
+nothing else here can fail on. Instructions are near-deterministic (measured spread 0.00063% over six runs),
 which is what makes an absolute budget gateable where a cycle count is not.
 
 The tolerance is 0.05%, about 50x that spread, and it was **not** chosen by feel: the first
