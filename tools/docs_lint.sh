@@ -124,21 +124,39 @@ done < <(grep -ohE '`[A-Za-z0-9_-]+\.(yml|yaml)`' docs/*.md AGENTS.md README.md 
          | tr -d '`' | sort -u)
 [ "$badflow" -eq 0 ] || fail=1
 
-# --- 3. the bench anchor matches build.zig -------------------------------------------------
-# The anchor MOVES per upstream sync. build.zig is the single source (signature_reference);
-# any 7-digit node count in docs/ that is not it is a doc quoting a dead anchor.
+# --- 3. no doc pins the bench anchor at all -------------------------------------------------
+# 12-writing states the rule and names this number as its example: never pin a number a gate
+# computes. build.zig's `signature_reference` is the single source and `zig build signature`
+# is what asserts it, so a doc's job is to name the gate.
+#
+# THIS CHECK USED TO ALLOW THE LIVE VALUE and refuse only a stale one, which inverted what it
+# was for. Pinning was legal at the moment of writing, so six sites accumulated across four
+# pages; the check could only speak up AFTER the next upstream sync moved the anchor, at which
+# point every one of them reddens at once and the cheapest way to green is to rewrite the
+# numbers -- re-pinning them, and buying the same red again next sync. A rule enforced only
+# after it has been broken is a detector, not a gate.
+#
+# The pattern is the anchor's own text rather than a shape like `2[0-9]{6}`. That shape was
+# coupled to the leading digit: an anchor moving to 3-something would have made the sweep match
+# nothing and report OK over a doc set full of dead numbers. It also cannot false-positive on a
+# legitimate seven-digit figure -- there are two in the set today, both node counts of things
+# that are not the anchor.
+#
+# What this does NOT catch is a STALE anchor, and that is the deliberate trade: once no page
+# may write the live one, a dead one can only arrive by hand, and "is this sentence true" is
+# the half of the job this gate says up front that it does not do.
 anchor=$(grep -oE 'signature_ref orelse "[0-9]+"' build.zig | grep -oE '[0-9]+')
 if [ -z "$anchor" ]; then
     echo "docs-lint: cannot read signature_reference from build.zig"
     fail=1
 else
-    stale=0
-    while IFS=: read -r file num; do
-        [ "$num" = "$anchor" ] && continue
-        echo "docs-lint: STALE ANCHOR $file quotes $num, build.zig says $anchor"
-        stale=$((stale + 1))
-    done < <(grep -oHE '\b2[0-9]{6}\b' docs/*.md AGENTS.md | sed 's/:\(.*\)$/:\1/')
-    [ "$stale" -eq 0 ] || fail=1
+    pinned=0
+    while IFS= read -r hit; do
+        [ -n "$hit" ] || continue
+        echo "docs-lint: PINNED ANCHOR $hit -- quote \`zig build signature\`, not the number"
+        pinned=$((pinned + 1))
+    done < <(grep -nHE "\\b${anchor}\\b" docs/*.md AGENTS.md || true)
+    [ "$pinned" -eq 0 ] || fail=1
 fi
 
 # The shipped tree must not reference __DEV. __DEV/ is internal and gitignored, so a clone has
@@ -296,7 +314,7 @@ if [ "$step_total" -lt 70 ]; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths are in the tree, symbols and steps exist, anchor == $anchor, no __DEV refs)"
+    echo "docs-lint: OK ($(ls docs/*.md | wc -l | tr -d ' ') docs + AGENTS.md: links resolve, paths are in the tree, symbols and steps exist, no page pins the anchor, no __DEV refs)"
 else
     echo "docs-lint: FAIL -- a doc contradicts the tree (see above)."
 fi
