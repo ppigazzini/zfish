@@ -147,6 +147,55 @@ stderr because a comment called it *"the same convention as the bench signature"
 P0. If you are writing a sentence that makes a strange thing sound intended, stop and check
 whether it is a bug — that sentence is load-bearing for the next reader who might have fixed it.
 
+## Commit messages
+
+**The one surface where history is the subject rather than the contamination.** Two rules
+above send the before/after here; this is where it lands, and for the `perf(...)` bodies it is
+not a summary of the record — it *is* the record, and the only part of it a fresh clone gets.
+
+**Subject: a conventional type, an optional scope, and the claim. 72 characters.** The scope
+is the zone or module (`perf(nnue)`, `fix(syzygy)`, `refactor(history)`). State what is now
+true rather than which area was touched.
+
+**Body wrapped at 80, in three parts:** what the change is and why it is right, the witness,
+then the gates.
+
+**The witness is the part that has to be specific.** A behaviour claim is settled against the
+oracle, quoted both sides. A gate claim is settled by naming the mutant that reddened it, per
+`tools/negative_control.sh` — a gate is done when it has been *seen* to fail, and the body is
+where that is recorded. A cost claim carries tool, rounds, ratio and node count, and it carries
+them **per tier**: a change that moves one tier and not the other moved code layout, not work.
+Quote an instrument that can resolve the size of the claim — nps cannot see under ~5% here,
+and a sub-1% single-tier cycle figure sits inside this box's own run-to-run floor.
+
+**The gates block names the command and its exit code, read from the gate.** Not a pipe:
+`zig build parity | tail` prints green golden lines while a later step is red, and that
+laundered a red aggregate twice in one session. Name the gate the edit actually earns —
+`zig build parity` for a byte-changing one, `zig build tsan-race -Dtsan -Dlto=false` for
+anything a second thread reads or writes, a `-Dos=windows`/`-Dos=macos` cross-compile under
+`src/platform/`, and the pinned-snapshot build for `build.zig` or `build/`. **A gate skipped
+for a missing tool is not a pass**, and a body reporting it as one is worse than a body with
+no gates line at all.
+
+**Record what was falsified.** The falsified lists in
+[08-idiomatic-zig](08-idiomatic-zig.md) and AGENTS.md are assembled from commit bodies, and a
+reverted experiment whose measurement is deleted is a session the next contributor spends
+again. A commit that changes no code and writes down why is a legitimate commit here.
+
+**A commit body MAY quote the anchor, and it is the one place that may.** The rule against
+pinning a number a gate computes is about prose, which a reader takes as current; a commit is
+timestamped by construction, so an anchor in a gates block is a fact about that commit and
+cannot rot. Do not carry it back into a page.
+
+**One logical change per commit.** A commit touching three modules cannot be bisected when
+the node count moves. **No `Co-authored-by`, no generated-by trailers, and do not
+`git push`** — commit locally and stop unless asked.
+
+Upstream's own convention does not apply here and should not be copied across: its `Bench:` /
+"No functional change" trailer and its SPRT result blocks exist because that project decides
+functional changes on fishtest, which this port does not use. The equivalent evidence here is
+a gate on one machine, and it belongs in the gates block where a reader can re-run it.
+
 ## The gate
 
 `zig build docs-lint` (inside `zig build parity`) fails on:
