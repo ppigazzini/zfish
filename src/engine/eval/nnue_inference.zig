@@ -304,7 +304,12 @@ test "sqrClipPair matches the split activations through the pair interleave" {
             clippedReLU(sb, &in, &ref_clip);
             var got_sqr: [32]u8 = undefined;
             var got_clip: [32]u8 = undefined;
-            sqrClipPair(sb, &in, &got_sqr, &got_clip);
+            // Take the kernel the TIER runs: the two pack widths interleave differently,
+            // and each is pinned against its own arm of the same index map.
+            if (comptime avx512_pair_activations)
+                sqrClipPair512(sb, &in, &got_sqr, &got_clip)
+            else
+                sqrClipPair(sb, &in, &got_sqr, &got_clip);
             for (0..32) |i| {
                 const pos = nnue_parse.weightIndexScrambled(i, 32, 1, true);
                 try testing.expectEqual(ref_sqr[i], got_sqr[pos]);

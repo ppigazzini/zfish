@@ -47,6 +47,10 @@ pub inline fn sqrClippedReLU(comptime shift: u5, in: *const [32]i32, out: *[32]u
 pub const avx512_pair_activations = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx512f);
 
+const packssdw512 = struct {
+    extern fn @"llvm.x86.avx512.packssdw.512"(@Vector(16, i32), @Vector(16, i32)) @Vector(32, i16);
+}.@"llvm.x86.avx512.packssdw.512";
+
 const packssdw256 = struct {
     extern fn @"llvm.x86.avx2.packssdw"(@Vector(8, i32), @Vector(8, i32)) @Vector(16, i16);
 }.@"llvm.x86.avx2.packssdw";
@@ -124,20 +128,24 @@ pub inline fn sqrClipPair(comptime scale_bits: comptime_int, in: *const [32]i32,
 /// Pair the two activations on the AVX-512 tier -- upstream's USE_AVX512 arm of
 /// SqrClippedReLU::propagate_pair. Same shape as sqrClipPair above (share the input loads
 /// and the signed 32->16 narrowing, square via mulhi, clip via max+shift at i16 width),
-/// with ONE difference that decides the whole flag split: vpmovsdw/vpmovswb narrow the
-/// register IN ORDER, where AVX2's vpackssdw/vpacksswb interleave per 128-bit lane. So
-/// this tier needs no compensating weight scramble -- see nnue_parse.scrambled_activations.
+/// over the whole 32-value chunk at once.
 ///
-/// The narrows are written as clamp-then-@intCast rather than an intrinsic: that IS the
+/// The 32->16 narrow is ONE vpackssdw of the two input halves (upstream's
+/// `_mm512_packs_epi32`), where this used to issue two vpmovsdw and a vinserti64x4 to keep
+/// the words IN ORDER. The pack interleaves per 128-bit lane -- four of them at this width,
+/// so 4-byte chunk k lands at (k%4)*2 + k/4 -- and the fc_1/fc_2 weight parse folds exactly
+/// that map into the weight index (nnue_parse.pairScrambledInputIndex, whose AVX-512 arm is
+/// the SAME comptime condition), so no lane-restoring permute is issued anywhere. The byte
+/// narrow stays vpmovswb, which is in order and leaves the word order it is handed.
+///
+/// The byte narrow is written as clamp-then-@intCast rather than an intrinsic: that IS the
 /// definition of a signed saturating narrow, and it stays correct on a backend that
 /// lowers it differently. Values are bit-identical to the split
 /// sqrClippedReLU/clippedReLU pair by the same argument as sqrClipPair -- the saturating
 /// narrow equals their range clamp, mulhi>>N equals (x*x)>>(16+N) for the non-negative
 /// square, and the signed byte saturation equals min(127, .) on non-negative inputs.
 pub inline fn sqrClipPair512(comptime scale_bits: comptime_int, in: *const [32]i32, sqr_out: *[32]u8, clip_out: *[32]u8) void {
-    const lo: @Vector(32, i32) = @splat(-32768);
-    const hi: @Vector(32, i32) = @splat(32767);
-    const words: @Vector(32, i16) = @intCast(@min(@max(@as(@Vector(32, i32), in.*), lo), hi));
+    const words = packssdw512(in[0..16].*, in[16..32].*);
 
     // MulHi strips 16 of the 2*scale_bits+7 square-shift bits; shift out the rest.
     const sqr_shift: @Vector(32, u4) = @splat(2 * scale_bits + 7 - 16);

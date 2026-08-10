@@ -189,11 +189,11 @@ fc_0 (1024 -> 32) -> ac_sqr_0 | ac_0 -> fc_1 (64 -> 32) -> ac_sqr_1 | ac_1 -> fc
 
 Output scaling is integer throughout. The activation shifts are fixed per layer:
 `fc_0`'s outputs go through `sqrClippedReLU(21)` and `clippedReLU(7)`, `fc_1`'s
-through `sqrClippedReLU(19)` and `clippedReLU(6)`. On the plain-AVX2 tier
-(`nnue_parse.pair_activations` — AVX2 with neither VNNI nor AVX-512, upstream's
-`USE_AVX2_PAIR_ACTIVATIONS`) `sqrClipPair` fuses each layer's two activations,
-sharing the loads and the signed saturating packs; the packs' per-128-bit-lane
-interleave is folded into the `fc_1`/`fc_2` weight parse instead of a restoring
+through `sqrClippedReLU(19)` and `clippedReLU(6)`. On every AVX2-or-better tier
+(`nnue_parse.pair_activations`, upstream's `USE_PAIR_ACTIVATIONS`) `sqrClipPair` or
+`sqrClipPair512` fuses each layer's two activations, sharing the loads and the signed
+saturating packs; the packs' per-128-bit-lane interleave is folded into the
+`fc_1`/`fc_2` weight parse instead of a restoring
 permute, so the values — and every tier's eval — are unchanged. The 128-bit
 SSSE3-class tier (`sse_pair_activations` — SSSE3 without AVX2) runs the same fused
 shape as `sqrClipPair128`; its packs concatenate in order, so the bytes land in
@@ -443,21 +443,21 @@ them **together** off shared input loads rather than in two passes — `sqrClipP
 (AVX-512), `sqrClipPair` (AVX2) and `sqrClipPair128` (SSSE3) — narrowing once to `i16`,
 squaring via mulhi and clipping via max+shift at that width, then narrowing to bytes.
 
-Whether a tier pairs and whether it must **scramble** are separate questions, and
-`nnue_parse.zig` carries them as two flags because upstream does
-(`USE_PAIR_ACTIVATIONS` vs `USE_SCRAMBLED_ACTIVATIONS`):
+Every pairing tier scrambles, because every pack narrows per 128-bit **lane** — but the
+lane COUNT differs with the width, so the interleave each one needs is a different map:
 
-| Tier | `pair_activations` | `scrambled_activations` | Narrowing |
+| Tier | `pair_activations` | Narrowing | 4-byte chunk `k` lands at |
 | --- | --- | --- | --- |
-| AVX-512 | yes | **no** | `vpmovsdw` narrows the whole register **in order** |
-| AVX2 (no VNNI, no AVX512) | yes | **yes** | `vpackssdw`/`vpacksswb` narrow per 128-bit **lane**, interleaving the bytes |
-| SSSE3 | (own kernel) | no | the 128-bit packs concatenate in order — no cross-lane interleave exists at that width |
+| AVX-512 | yes | `vpackssdw` over four 128-bit lanes | `(k % 4) * 2 + k / 4` |
+| AVX2 (VNNI or not) | yes | `vpackssdw`/`vpacksswb` over two | `(k % 2) * 4 + k / 2` |
+| SSSE3 | (own kernel) | the 128-bit packs concatenate in order | `k` — no cross-lane interleave exists at that width |
 
-`scrambled_activations` alone drives `weightIndexScrambled`'s extra permutation of the
-`fc_1`/`fc_2` weights. **Inverting the two silently corrupts those weights** — the values
-stay plausible and only the node count moves — so the kernel keys off `pair_activations`,
-the parse keys off `scrambled_activations`, and the bench signature is what pins that the
-two agree on every tier.
+`scrambled_activations` (the same condition, kept as its own name for the reader) drives
+`weightIndexScrambled`'s extra permutation of the `fc_1`/`fc_2` weights. **Feeding a tier
+the other tier's map silently corrupts those weights** — the values stay plausible and only
+the node count moves — so the kernel and the parse derive the interleave from one place
+(`nnue_parse.pairScrambledInputIndex`), and the bench signature is what pins that they
+agree on every tier.
 
 The **sparse path** reads what the transformer recorded, never a re-derived test.
 `fc_0` is sparse (its 1024 inputs are mostly zero after the clipped ReLU); `fc_1` and
