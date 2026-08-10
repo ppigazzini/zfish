@@ -30,7 +30,8 @@ function-pointer seams. For the zones and the module graph, see
 | `search_qsearch.zig` | `qsearchImpl` plus the primitives shared with the main search: `pvUpdate`, `qCorrectionValue`, `adjustKey50`, `ssAdd`/`ssSub`, `posCapture`, `isShuffling` |
 | `search_control.zig` | `checkTime`, `rootUpdate`, `rootTtMove`, `rootInList`, `searchStopped`, `inLastIterPv` |
 | `search_acc.zig` | The per-node accumulator/do-move/eval primitives: `doMoveAcc`, `undoMoveAcc`, `evaluateAcc`, `reductionAcc`, `updateSelDepth` |
-| `search.zig` | The tuned formulas: margins, reductions, bonuses, aspiration deltas, `valueToTt`/`valueFromTt`, `correctionValue` |
+| `search.zig` | The tuned formulas a node prunes and reduces by: margins (incl. `futilityDepth`), reductions, singular thresholds, aspiration deltas, `valueToTt`/`valueFromTt` |
+| `search_stats.zig` | The formulas written back to the tables afterwards: the stat bonus/malus and their per-table scales, the prior-countermove fan-out, the LMR stat-score weighting, `correctionValue` and the correction bonuses with the limit they are a quarter of. Path-imported by `search.zig`, which re-exports it, so callers still read these off `search` |
 | `search_common.zig` | Shared low-level helpers: `workerHistories`, `captureStage`, `moveIsOk`, the `statsUpdate` gravity update, capture-history indexing |
 | **Move ordering** | |
 | `movepick.zig` | The staged generator: `initMainStage`/`initProbcutStage`, `nextMove`, the stage selectors, `partialInsertionSort` |
