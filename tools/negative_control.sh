@@ -68,7 +68,7 @@ trap restore_all EXIT INT TERM
 # than a silent pass.
 ROWS=(
     # The anchor. Scale the razoring threshold by one: the search still converges, it just
-    # searches a different tree, so the bench total moves off 2508687.
+    # searches a different tree, so the bench total moves off 2884956.
     "signature|src/engine/search/search.zig|    return 483 + 318 * depth * depth;|    return 484 + 318 * depth * depth;|razor margin 483->484"
     # The specified oracle. Stop generating knight under-promotions: perft counts are facts
     # about chess, so this is the one gate whose reference cannot be re-blessed past a bug.

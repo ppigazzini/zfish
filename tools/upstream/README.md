@@ -47,9 +47,15 @@ tools/upstream_parity.sh                  # whole-engine gate; expect OK at HEAD
 zig build parity ; echo $?                          # the red set names what the sync moved
 #   READ THE EXIT CODE, not the log. mt-sanity fails with "does not reproduce the golden"
 #   and never prints MISMATCH, so grepping for MISMATCH walks straight past it.
-zig build output-golden-update eval-trace-update search-parity-update search-modes-update parity-mt-update
+ZFISH_GOLDEN_UPDATE_FROM_ZFISH=1 zig build output-golden-update eval-trace-update \
+    search-parity-update search-modes-update parity-mt-update
 #   ...plus whichever of bench-matrix / chess960 / driver-golden / mate / nodestime /
 #   tb-search / export-net / uci-options -update the sync actually moved.
+#   THE ENV VAR IS REQUIRED and it is not a formality: every -update REFUSES to write a
+#   golden photographed from the engine under test. A resync is the one case where the
+#   reference genuinely moved -- upstream_parity above has already proven this binary
+#   bit-exact against the pristine oracle -- so saying so explicitly is the sanctioned
+#   path, and the audit below is what turns "we wrote it" into "upstream agrees".
 # LOCAL-ONLY GATES ARE NOT IN parity AND NOT IN CI -- they go stale SILENTLY. Run them by hand
 # every sync, or nobody learns their golden aged until it reads as somebody's regression:
 zig build tb-cursed                                 # needs the 5-man set in resources/syzygy5
@@ -87,15 +93,28 @@ construct zfish does not have:
 | `8e3b5b13` LSX/LASX NNUE paths | LoongArch SIMD. Its non-LoongArch half is the `UsePairedActivations` → `ScrambledInput` rename that belongs with `453f2207` below. |
 | `23cf5d82` Remove Unused Option Constructor | deletes a C++ ctor overload (`Option::Option(const OptionsMap*)`). zfish's option model has no such constructor. |
 | `fd3c762f` Improved Linux shared memory | rewrites `shm_linux.h` around `memfd_create` + Unix-socket fd passing. zfish implements no shared memory at all — nothing in `src/` mentions `memfd` or `shm_open` — so there is no counterpart to improve, only a subsystem to write. |
+| `d077f9a8` BSD/macOS shared memory, `1ef7f2fe` UniqueFd, `4c37700c` memfd_create check, `762dd1da` SIGPIPE, `9dec2ead` registry simplification | the same missing subsystem as `fd3c762f`: five more commits over `shm_unix.h`/`shm_win.h` and their registry. Nothing here to port until zfish grows shared memory of its own. |
+| `3647d524` Remove an incorrect AVX512 comment | deletes a comment about the last affine layer that was already false. zfish's `affineOut1` never carried it. |
+| `881e0b45` Class Default Member Initializers for Option | moves `min`/`max`/`idx = 0` out of five C++ constructor initializer lists. zfish's option model has one `OptionsModel.add`, and every caller passes min/max, so there is no initializer list to shorten. |
+| `358ab1bc` Cleanup FeatureTransformer Types | names the FT's region sizes and array types so `read_parameters`/`write_parameters` stop restating them. `nnue_dimensions.zig` already declares every count and offset once, and `nnue_parse`/`nnue_ft` read the SAME declarations to write and to read the blob — the property this commit buys, from a stronger direction. |
+| `439733ea` Fix rm.exe "Permission denied" on Windows | a Makefile clean rule. zfish builds with `zig build`. |
+| `1f711d49` Avoiding Redundant Calculations | hoists `from = to - D` out of `make_promotions`. `movegen.makePromotions` already computes `from` once (movegen.zig). |
+| `5062aee5` Place continuation history on large pages | wraps `continuationHistory` in `make_unique_large_page`. `constructSharedHistories` already allocates `cont_data` through `page_alloc` (2 MiB-aligned, `MADV_HUGEPAGE`), same as the correction and pawn arenas. |
 
-**Ported** — the three real speedups in this range. Skipping these silently is how a port
+**Ported** — the real changes in these ranges. Skipping these silently is how a port
 stops being a port:
 
 | commit | what landed |
 |---|---|
 | `db98633b` | `updateHybrid` (nnue_acc_entry.zig) -- a king move that stays on its half keeps the whole threat/pair accumulation, so only the HalfKA bucket swaps, both buckets coming from the refresh cache. Bounded by `MIN_PC_COUNT_HYBRID = 15`; castling excluded. |
 | `7b550409` | `applyCombinedBoth` (nnue_acc_both.zig) -- when neither perspective needs a refresh, catch the lagging one up and walk the common suffix once, decoding each ply's diff a single time. |
-| `453f2207` | `sqrClipPair512` (nnue_activations.zig) plus the flag split: `pair_activations` (AVX512 **or** AVX2-pair) chooses the kernel, `scrambled_activations` (AVX2-pair alone) drives the weight permutation. Inverting the two silently corrupts the fc_1/fc_2 weights. |
+| `453f2207` | `sqrClipPair512` (nnue_activations.zig) plus the flag split it introduced -- since superseded by `b52f0147` below, which made every AVX2-or-better tier scramble. |
+| `c85637b3` | the quiet futility value loses `39 + 127 * !bestMove` for a flat `164` (search.quietFutilityValue); the dead `no_best_move` parameter goes with it. Bench 2829394. |
+| `b0ee1440` | `tileRows`/`psqtRows` (nnue_acc_rowops.zig) -- the sign-and-weight-type-comptime row appliers upstream's three `always_inline` helpers are, with the combined, hybrid and refresh-fused kernels routed through them instead of carrying their own copies of the loop. |
+| `b52f0147` | AVX-512 narrows with one `vpackssdw` (`packssdw512`) instead of two `vpmovsdw` + insert, so it now scrambles too: `pairScrambledChunk` holds both maps as one formula over the lane count (four lanes at 512, two at 256), `scrambled_activations == pair_activations`, and AVXVNNI joins the paired kernel. |
+| `4150d22b` | `doMoveAcc` prefetches the child's two continuation-correction entries through `history.contCorrIndex`, the same derivation `setContHist` pages with. |
+| `de948f0f` | the eval blend drops material from the optimism weight: `(nnue * (91000 + material) + optimism * 7675) / 91000`. Bench 2119477. |
+| `fa8b6add` | `search.futilityDepth` -- step 8's cutoff steps 19 down to 13 through a six-threshold LUT as `abs(eval) + abs(beta)` grows, so mating lines stay searched. Bench 2884956. |
 
 **They pay, and that is a separate measurement.** Ablating the hybrid step and the shared
 walk together (both routes off, same node count, so one tree with two amounts of work)

@@ -378,7 +378,7 @@ pub fn archConfigFor(arch_name: []const u8) ArchConfig {
     // Map the non-x86 tiers. The pure-Zig @Vector NNUE lowers to NEON with no source
     // changes, so these just map the aarch64 CPU features to a Zig aarch64 target.
     // NEON is mandatory in AArch64 (baseline has it); dotprod (sdot) is added where
-    // present. Runtime-validated under qemu-user in CI (bench == 2508687), matching
+    // present. Runtime-validated under qemu-user in CI (bench == 2884956), matching
     // upstream's arm_compilation.yml.
     if (std.mem.eql(u8, arch_name, "armv8"))
         return .{

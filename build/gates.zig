@@ -39,7 +39,7 @@ pub const GoldenGate = struct {
 pub const golden = [_]GoldenGate{
     // Pin bench node counts for non-default configs (bench-matrix golden; hash size / shallow
     // depth / node limit / bench-perft) -- distinct deterministic code paths the default
-    // signature (2508687) never exercises, each verified equal to the upstream oracle.
+    // signature (2884956) never exercises, each verified equal to the upstream oracle.
     // Keep Linux-only (`parity`, not `parity-portable`): verified bit-exact on x86 in both build
     // modes, but the node-limited config's cross-arch equality is not locally verifiable, and
     // the default bench already gates cross-OS signature. Regenerate on an upstream bump.

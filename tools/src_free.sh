@@ -33,10 +33,10 @@ sig="$("$BIN" bench 2>&1 | sed -n 's/^Nodes searched  *: *\([0-9][0-9]*\).*/\1/p
 
 echo "src-free: C++ Stockfish symbols=$cpp_sf  libc++ runtime symbols=$cpp_std  bench=$sig"
 
-if [ "$cpp_sf" -eq 0 ] && [ "$cpp_std" -eq 0 ] && [ "$sig" = "2508687" ]; then
-    echo "src-free: OK — src-free (no C++ Stockfish/libc++ symbols in the shipped binary; bench 2508687)"
+if [ "$cpp_sf" -eq 0 ] && [ "$cpp_std" -eq 0 ] && [ "$sig" = "2884956" ]; then
+    echo "src-free: OK — src-free (no C++ Stockfish/libc++ symbols in the shipped binary; bench 2884956)"
     exit 0
 fi
 
-echo "src-free: REGRESSION — src-free invariant violated (want cpp_sf=0 cpp_std=0 bench=2508687)." >&2
+echo "src-free: REGRESSION — src-free invariant violated (want cpp_sf=0 cpp_std=0 bench=2884956)." >&2
 exit 1
