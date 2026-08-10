@@ -58,6 +58,42 @@ inline fn loadVec(comptime T: type, comptime V: usize, comptime A: usize, p: [*]
     return ap.*;
 }
 
+/// Apply one feature list to ONE accumulator tile -- upstream's `apply_psq_features` and
+/// `apply_threat_features` (b0ee1440), which differ only in the weight element type and the
+/// sign, both comptime here. `WT` is i16 for the HalfKA rows and i8 for the threat and
+/// pawn-pair rows, whose load widens to i16 the way upstream's `vec_convert_8_16` does.
+inline fn tileRows(
+    comptime WT: type,
+    comptime add: bool,
+    acc: *@Vector(row_tile_width, i16),
+    rows: []const u32,
+    weights: [*]align(64) const WT,
+    tile_off: usize,
+) void {
+    const V = row_tile_width;
+    const Vi16 = @Vector(V, i16);
+    for (rows) |index| {
+        const wraw: @Vector(V, WT) = loadVec(WT, V, 64, weights, @as(usize, index) * half_dimensions + tile_off);
+        const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
+        acc.* = if (add) acc.* +% w else acc.* -% w;
+    }
+}
+
+/// Apply one feature list to the psqt accumulator -- upstream's `apply_psqt` (b0ee1440). The
+/// 8-bucket i32 row is one whole vector here, so there is no tile index to pass.
+inline fn psqtRows(
+    comptime add: bool,
+    acc: *@Vector(psqt_buckets, i32),
+    rows: []const u32,
+    weights: [*]align(64) const i32,
+) void {
+    const V = @Vector(psqt_buckets, i32);
+    for (rows) |index| {
+        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
+        acc.* = if (add) acc.* +% w else acc.* -% w;
+    }
+}
+
 /// Apply a whole row list to the accumulator, upstream's `apply_combined` way: tile the
 /// accumulator, hold the tile in a register, and walk the rows INSIDE. The rows are the inner
 /// loop, so the accumulator is loaded and stored once per tile rather than once per row --
@@ -79,11 +115,7 @@ inline fn accRows(
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = target.ptr[d..][0..V].*;
-        for (rows) |index| {
-            const wraw: @Vector(V, WT) = loadVec(WT, V, 64, weights, @as(usize, index) * half_dimensions + d);
-            const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
-            acc = if (add) acc +% w else acc -% w;
-        }
+        tileRows(WT, add, &acc, rows, weights, d);
         target.ptr[d..][0..V].* = acc;
     }
 }
@@ -144,19 +176,10 @@ pub fn applyRefreshFusedI16(
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = cache.ptr[d..][0..V].*;
-        for (removed) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
-            acc -%= w;
-        }
-        for (added) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
-            acc +%= w;
-        }
+        tileRows(i16, false, &acc, removed, psq_weights, d);
+        tileRows(i16, true, &acc, added, psq_weights, d);
         cache.ptr[d..][0..V].* = acc;
-        for (active) |index| {
-            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
-            acc +%= @as(Vi16, wraw); // i8 -> i16 widen
-        }
+        tileRows(i8, true, &acc, active, thr_weights, d);
         state.ptr[d..][0..V].* = acc;
     }
 }
@@ -197,14 +220,8 @@ pub fn applyHybridDelta(
     while (d < half_dimensions) : (d += V) {
         // Refresh the DESTINATION bucket from its cache entry.
         var acc: Vi16 = new_entry.ptr[d..][0..V].*;
-        for (new_removed) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
-            acc -%= w;
-        }
-        for (new_added) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
-            acc +%= w;
-        }
+        tileRows(i16, false, &acc, new_removed, psq_weights, d);
+        tileRows(i16, true, &acc, new_added, psq_weights, d);
         new_entry.ptr[d..][0..V].* = acc;
 
         // Fold in the computed accumulator -- which brings (most of) the threat and pawn-pair
@@ -214,24 +231,12 @@ pub fn applyHybridDelta(
 
         // The old entry is a cache state, not the pre-move position, so undo its own diff:
         // its removed rows are re-added and its added rows taken back out.
-        for (old_removed) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
-            acc +%= w;
-        }
-        for (old_added) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
-            acc -%= w;
-        }
+        tileRows(i16, true, &acc, old_removed, psq_weights, d);
+        tileRows(i16, false, &acc, old_added, psq_weights, d);
 
         // This ply's threat/pawn-pair change, at the new king square.
-        for (thr_removed) |index| {
-            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
-            acc -%= @as(Vi16, wraw);
-        }
-        for (thr_added) |index| {
-            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
-            acc +%= @as(Vi16, wraw);
-        }
+        tileRows(i8, false, &acc, thr_removed, thr_weights, d);
+        tileRows(i8, true, &acc, thr_added, thr_weights, d);
         target.ptr[d..][0..V].* = acc;
     }
 }
@@ -253,35 +258,17 @@ pub fn applyHybridPsqtDelta(
 ) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = new_entry[0..psqt_buckets].*;
-    for (new_removed) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
-        acc -%= w;
-    }
-    for (new_added) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
-        acc +%= w;
-    }
+    psqtRows(false, &acc, new_removed, psq_weights);
+    psqtRows(true, &acc, new_added, psq_weights);
     new_entry[0..psqt_buckets].* = acc;
 
     acc +%= @as(V, computed[0..psqt_buckets].*);
     acc -%= @as(V, old_entry[0..psqt_buckets].*);
 
-    for (old_removed) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
-        acc +%= w;
-    }
-    for (old_added) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
-        acc -%= w;
-    }
-    for (thr_removed) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
-        acc -%= w;
-    }
-    for (thr_added) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
-        acc +%= w;
-    }
+    psqtRows(true, &acc, old_removed, psq_weights);
+    psqtRows(false, &acc, old_added, psq_weights);
+    psqtRows(false, &acc, thr_removed, thr_weights);
+    psqtRows(true, &acc, thr_added, thr_weights);
     target[0..psqt_buckets].* = acc;
 }
 
@@ -298,19 +285,10 @@ pub fn applyRefreshFusedPsqt(
 ) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = cache[0..psqt_buckets].*;
-    for (removed) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
-        acc -%= w;
-    }
-    for (added) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
-        acc +%= w;
-    }
+    psqtRows(false, &acc, removed, psq_weights);
+    psqtRows(true, &acc, added, psq_weights);
     cache[0..psqt_buckets].* = acc;
-    for (active) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
-        acc +%= w;
-    }
+    psqtRows(true, &acc, active, thr_weights);
     state[0..psqt_buckets].* = acc;
 }
 
@@ -352,14 +330,8 @@ pub fn applyPsqtDeltaInPlace(
 ) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = target[0..psqt_buckets].*;
-    for (removed) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
-        acc -%= w;
-    }
-    for (added) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, weights, @as(usize, index) * psqt_buckets);
-        acc +%= w;
-    }
+    psqtRows(false, &acc, removed, weights);
+    psqtRows(true, &acc, added, weights);
     target[0..psqt_buckets].* = acc;
 }
 
@@ -387,22 +359,10 @@ pub fn applyCombinedDelta(
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = source.ptr[d..][0..V].*;
-        for (psq_removed) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
-            acc -%= w;
-        }
-        for (psq_added) |index| {
-            const w: Vi16 = loadVec(i16, V, 64, psq_weights, @as(usize, index) * half_dimensions + d);
-            acc +%= w;
-        }
-        for (thr_removed) |index| {
-            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
-            acc -%= @as(Vi16, wraw); // i8 -> i16 widen
-        }
-        for (thr_added) |index| {
-            const wraw: @Vector(V, i8) = loadVec(i8, V, 64, thr_weights, @as(usize, index) * half_dimensions + d);
-            acc +%= @as(Vi16, wraw);
-        }
+        tileRows(i16, false, &acc, psq_removed, psq_weights, d);
+        tileRows(i16, true, &acc, psq_added, psq_weights, d);
+        tileRows(i8, false, &acc, thr_removed, thr_weights, d);
+        tileRows(i8, true, &acc, thr_added, thr_weights, d);
         target.ptr[d..][0..V].* = acc;
     }
 }
@@ -428,22 +388,10 @@ pub fn applyCombinedPsqtDelta(
     // replaces, so every intermediate value matches and ReleaseSafe sees the identical run.
     const V = @Vector(psqt_buckets, i32);
     var acc: V = source[0..psqt_buckets].*;
-    for (psq_removed) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
-        acc -%= w;
-    }
-    for (psq_added) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, psq_weights, @as(usize, index) * psqt_buckets);
-        acc +%= w;
-    }
-    for (thr_removed) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
-        acc -%= w;
-    }
-    for (thr_added) |index| {
-        const w: V = loadVec(i32, psqt_buckets, 32, thr_weights, @as(usize, index) * psqt_buckets);
-        acc +%= w;
-    }
+    psqtRows(false, &acc, psq_removed, psq_weights);
+    psqtRows(true, &acc, psq_added, psq_weights);
+    psqtRows(false, &acc, thr_removed, thr_weights);
+    psqtRows(true, &acc, thr_added, thr_weights);
     target[0..psqt_buckets].* = acc;
 }
 
