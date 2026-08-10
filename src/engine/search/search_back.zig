@@ -201,7 +201,7 @@ pub inline fn runBack(nd: anytype) i32 {
                 if (history < search.historyPruneThreshold(depth)) continue;
                 history += @divTrunc(69 * @as(i32, nd.w.main_history[@as(usize, nd.us) * hist_uint16 + move]), 32);
                 lmr_depth += @divTrunc(history, lmr_divisor[d_index]);
-                const fv = search.quietFutilityValue(nd.ss.static_eval, best_move == 0, lmr_depth, nd.ss.static_eval > alpha);
+                const fv = search.quietFutilityValue(nd.ss.static_eval, lmr_depth, nd.ss.static_eval > alpha);
                 if (!nd.ss.in_check and lmr_depth < 12 and fv <= alpha) {
                     if (best_value <= fv and !qIsDecisive(best_value) and !qIsWin(fv)) best_value = fv;
                     continue;
