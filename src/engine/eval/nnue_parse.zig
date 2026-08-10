@@ -18,8 +18,8 @@
 //     Zig propagate already reads back. On the AVX2 pair-activation tier
 //     (`scrambled_activations`) the fc_1/fc_2 parse additionally folds the 128-bit-lane
 //     interleave of the paired activation packs into the weight index, exactly as
-//     upstream's ScrambledInput branch of the same function. The AVX-512 pair tier does
-//     NOT scramble -- its narrows are in-order -- which is why the two flags are split.
+//     upstream's unconditional branch of the same function. The interleave is per vector
+//     WIDTH: the AVX-512 packs have four lanes where AVX2's have two.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -50,42 +50,47 @@ pub fn permuteBlocks(data: []u8, block_size: usize, order: []const usize, scratc
     }
 }
 
-/// Mirror upstream's USE_AVX2_PAIR_ACTIVATIONS tier condition (simd.h:54): plain AVX2,
-/// no VNNI of either width, no AVX512.
-const avx2_pair_activations = builtin.cpu.arch == .x86_64 and
-    std.Target.x86.featureSetHas(builtin.cpu.features, .avx2) and
-    !std.Target.x86.featureSetHas(builtin.cpu.features, .avx512f) and
-    !std.Target.x86.featureSetHas(builtin.cpu.features, .avxvnni) and
-    !std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vnni);
-
 const avx512_activations = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx512f);
 
-/// Mirror upstream's USE_PAIR_ACTIVATIONS (simd.h:58) -- AVX512 **or** the AVX2 pair
-/// tier. This chooses the paired activation KERNEL in nnue_inference.zig, which produces
-/// the squared and linear activations together off shared loads.
-pub const pair_activations = avx512_activations or avx2_pair_activations;
+/// Mirror upstream's USE_PAIR_ACTIVATIONS (simd.h, b52f0147) -- every AVX2-or-better x86
+/// tier, AVX-512 and AVXVNNI included, since all three pack their activations. This
+/// chooses the paired activation KERNEL in nnue_inference.zig, which produces the squared
+/// and linear activations together off shared loads.
+pub const pair_activations = builtin.cpu.arch == .x86_64 and
+    std.Target.x86.featureSetHas(builtin.cpu.features, .avx2);
 
-/// Mirror upstream's USE_SCRAMBLED_ACTIVATIONS (simd.h:62) -- the AVX2 pair tier ALONE.
-///
-/// The split is load-bearing and inverting it silently corrupts the fc_1/fc_2 weights.
-/// Pairing and scrambling are separate consequences: AVX2 pairs with vpackssdw/vpacksswb,
-/// which narrow per 128-bit LANE, so the output bytes land interleaved and the next
-/// layer's weights must be permuted to match. AVX-512 pairs with vpmovsdw, which narrows
-/// the whole register IN ORDER -- so it wants the paired kernel and NO permutation at
-/// all. The parse keys the weight index off this flag; the kernel keys off
-/// `pair_activations`; the bench signature pins that the two agree.
-pub const scrambled_activations = avx2_pair_activations;
+/// Scramble wherever the activations are paired: every packing kernel narrows per 128-bit
+/// LANE, so the output bytes land interleaved and the next layer's weights must be
+/// permuted to match. The two flags are one condition upstream (b52f0147 folded
+/// USE_SCRAMBLED_ACTIVATIONS into USE_PAIR_ACTIVATIONS); they stay separate names here
+/// because the parse keys the weight INDEX off this one and nnue_inference keys the KERNEL
+/// off the other, and the bench signature pins that the two agree. What the tier still
+/// decides is the interleave ITSELF -- see pairScrambledInputIndex.
+pub const scrambled_activations = pair_activations;
 
-// Map an input index to where the paired activation packs put its value: vpackssdw +
-// vpacksswb operate per 128-bit lane, so within each 32-byte block the eight 4-byte
-// chunks land interleaved (chunk k -> position (k%2)*4 + k/2). Rearrange the next
-// layer's weights by this map instead of issuing a lane-restoring VPERMD in the packs
-// (upstream get_weight_index_scrambled's ScrambledInput branch, affine_transform.h).
+// Map an input index to where the paired activation packs put its value, and rearrange the
+// next layer's weights by that map instead of issuing a lane-restoring permute in the packs
+// (upstream get_weight_index_scrambled, affine_transform.h). Both narrows work per 128-bit
+// lane, so within each 32-byte block the eight 4-byte chunks land interleaved -- but by a
+// DIFFERENT map per width, because the lane count differs: vpackssdw at 256 bits has two
+// lanes (chunk k -> (k%2)*4 + k/2), at 512 bits four (chunk k -> (k%4)*2 + k/4). Inverting
+// the two silently corrupts the fc_1/fc_2 weights.
 fn pairScrambledInputIndex(input_index: usize) usize {
     const block = input_index / 32;
     const chunk = (input_index % 32) / 4;
-    return block * 32 + ((chunk % 2) * 4 + chunk / 2) * 4 + input_index % 4;
+    return block * 32 + pairScrambledChunk(pair_lane_count, chunk) * 4 + input_index % 4;
+}
+
+/// 128-bit lanes per pack: four at AVX-512 width, two at AVX2's.
+const pair_lane_count: usize = if (avx512_activations) 4 else 2;
+
+/// Place 4-byte chunk `chunk` of a 32-byte block the way a `lanes`-lane pack does: the pack
+/// takes `8 / lanes` chunks from each operand per lane, so chunk k of the first operand ends
+/// up `8 / lanes` positions apart and the operand it came from picks the offset within the
+/// lane. Written once for both widths -- the tests walk each, whatever the host is.
+fn pairScrambledChunk(comptime lanes: usize, chunk: usize) usize {
+    return (chunk % lanes) * (8 / lanes) + chunk / lanes;
 }
 
 // Compute get_weight_index_scrambled(i): the SSSE3 affine weight index permutation.
@@ -380,16 +385,33 @@ test "weightIndexScrambled matches the upstream weight-scramble formula" {
     try testing.expectEqual(@as(usize, 4), weightIndexScrambled(1024, 1024, 32, false));
 }
 
+test "the pair interleave matches upstream's map at BOTH pack widths" {
+    // Both arms of upstream get_weight_index_scrambled, on every host: the chunk map is
+    // parameterised, so the tier the build targets decides only which one runs live.
+    // Two lanes (AVX2): chunk k -> (k%2)*4 + k/2, upstream's #else arm.
+    for ([8]usize{ 0, 4, 1, 5, 2, 6, 3, 7 }, 0..) |want, chunk|
+        try testing.expectEqual(want, pairScrambledChunk(2, chunk));
+    // Four lanes (AVX-512): chunk k -> (k%4)*2 + k/4, upstream's USE_AVX512 arm.
+    for ([8]usize{ 0, 2, 4, 6, 1, 3, 5, 7 }, 0..) |want, chunk|
+        try testing.expectEqual(want, pairScrambledChunk(4, chunk));
+}
+
 test "weightIndexScrambled's pair interleave matches the upstream ScrambledInput branch" {
     // Model fc_1-like: PaddedInputDimensions=64, OutputDimensions=32. Chunk k of a
-    // 32-byte block moves to position (k%2)*4 + k/2 before the base formula.
-    // i=0: chunk 0 -> 0, so index 0*128 + 0 + 0.
+    // 32-byte block moves to pairScrambledChunk(k) before the base formula; the
+    // expectations below follow the tier's own map.
+    const chunk_at = struct {
+        fn f(chunk: usize) usize {
+            return pairScrambledChunk(pair_lane_count, chunk);
+        }
+    }.f;
+    // i=0: chunk 0 -> 0 at either width, so index 0*128 + 0 + 0.
     try testing.expectEqual(@as(usize, 0), weightIndexScrambled(0, 64, 32, true));
-    // i=4: chunk 1 -> position 4, input_index 16 -> 4*128 + 0 + 0.
-    try testing.expectEqual(@as(usize, 512), weightIndexScrambled(4, 64, 32, true));
-    // i=8: chunk 2 -> position 1, input_index 4 -> 1*128.
-    try testing.expectEqual(@as(usize, 128), weightIndexScrambled(8, 64, 32, true));
-    // i=28: chunk 7 -> position 7 (fixed point), same as the unscrambled index.
+    // i=4: chunk 1 -> its mapped position, whose input_index is 4x that -> position*128.
+    try testing.expectEqual(chunk_at(1) * 128, weightIndexScrambled(4, 64, 32, true));
+    // i=8: chunk 2, same reading.
+    try testing.expectEqual(chunk_at(2) * 128, weightIndexScrambled(8, 64, 32, true));
+    // i=28: chunk 7 -> position 7 (a fixed point at both widths), same as unscrambled.
     try testing.expectEqual(weightIndexScrambled(28, 64, 32, false), weightIndexScrambled(28, 64, 32, true));
     // i=33: block 1 is interleaved independently; sublane and output offsets ride along.
     try testing.expectEqual(@as(usize, 32 / 4 * 128 + 1), weightIndexScrambled(33, 64, 32, true));
