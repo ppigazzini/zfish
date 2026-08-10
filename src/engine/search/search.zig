@@ -110,9 +110,8 @@ pub fn historyPruneThreshold(depth: i32) i32 {
     return -4136 * depth;
 }
 
-pub fn quietFutilityValue(static_eval: i32, no_best_move: bool, lmr_depth: i32, eval_gt_alpha: bool) i32 {
-    return static_eval + 39 + 127 * @as(i32, @intFromBool(no_best_move)) +
-        119 * lmr_depth + 90 * @as(i32, @intFromBool(eval_gt_alpha));
+pub fn quietFutilityValue(static_eval: i32, lmr_depth: i32, eval_gt_alpha: bool) i32 {
+    return static_eval + 119 * lmr_depth + 90 * @as(i32, @intFromBool(eval_gt_alpha)) + 164;
 }
 
 pub fn quietSeeMargin(lmr_depth: i32) i32 {
