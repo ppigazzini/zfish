@@ -417,7 +417,11 @@ different points. `doMoveAcc` issues a `tt.prefetch` for the child cluster *befo
 the move — keyed by `move_do.prefetchKey`, an approximate post-move key (from/to/captured
 psq toggles, side flip, and the rule50 mix; castling/en-passant/promotion left wrong, so
 those rare moves prefetch an unused line) reached through the same `firstEntryIndex` the
-probe uses. `doMove` itself then issues a second, EXACT round of prefetches once the
+probe uses. Beside it, and equally approximate, go the two continuation-correction entries
+the child will read: its `(ss-2)` and `(ss-4)` are this node's `ss-1` and `ss-3`, addressed
+by `history.contCorrIndex` — the same derivation `setContHist` pages with, so the hint
+cannot drift from the load — off the pre-move moved piece, which castling and promotion
+make approximate the same way. `doMove` itself then issues a second, EXACT round of prefetches once the
 child's key and correction-history keys are all final — `pos.st.key` (via `adjustKey50`)
 for the TT cluster, plus the four correction bundles (`pawn_key`, `minor_piece_key`,
 `non_pawn_key[0]`, `non_pawn_key[1]`) and the specific `[pc][to]` slot of the pawn-history

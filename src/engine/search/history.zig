@@ -114,9 +114,16 @@ pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: In
     const ch_block = (@as(usize, @intFromEnum(in_check)) * 2 + @intFromEnum(capture)) * hist_pieceto +
         @as(usize, pc) * hist_square_nb + to;
     ss.continuation_history = @ptrCast(&sharedOf(w).cont_data[ch_block * hist_pieceto]);
-    const cc_block = @as(usize, pc) * hist_square_nb + to;
     ss.continuation_correction_history =
-        @ptrCast(&w.continuation_correction_history[cc_block * hist_pieceto]);
+        @ptrCast(&w.continuation_correction_history[contCorrIndex(pc, to) * hist_pieceto]);
+}
+
+/// Index a continuation-correction plane by (piece, destination) -- both the page
+/// setContHist selects and, one level in, the element a child's correction read lands on.
+/// doMoveAcc prefetches through this same derivation, so the hint cannot drift from the
+/// load it hides.
+pub fn contCorrIndex(pc: u8, to: u8) usize {
+    return @as(usize, pc) * hist_square_nb + to;
 }
 
 /// Select the base plane: the one a NO_PIECE "move" to a1 addresses, out of check and not a
