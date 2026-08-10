@@ -85,10 +85,14 @@ fn pairScrambledInputIndex(input_index: usize) usize {
 /// 128-bit lanes per pack: four at AVX-512 width, two at AVX2's.
 const pair_lane_count: usize = if (avx512_activations) 4 else 2;
 
-/// Place 4-byte chunk `chunk` of a 32-byte block the way a `lanes`-lane pack does: the pack
-/// takes `8 / lanes` chunks from each operand per lane, so chunk k of the first operand ends
-/// up `8 / lanes` positions apart and the operand it came from picks the offset within the
-/// lane. Written once for both widths -- the tests walk each, whatever the host is.
+/// Place 4-byte chunk `chunk` of a 32-byte block where a `lanes`-lane narrowing puts it.
+///
+/// The closed form is shared but the two tiers REACH it differently, so read it as a result
+/// and not as a mechanism: AVX-512 runs one `vpackssdw` over both halves across four lanes
+/// and then an in-order `vpmovswb`, while AVX2 runs two `vpackssdw` and a `vpacksswb` across
+/// two lanes, and the composite of those three lands on the same shape one lane count down.
+/// What both preserve is that a chunk stays contiguous and keeps its internal order, which
+/// is what lets the caller pass `input_index % 4` straight through.
 fn pairScrambledChunk(comptime lanes: usize, chunk: usize) usize {
     return (chunk % lanes) * (8 / lanes) + chunk / lanes;
 }

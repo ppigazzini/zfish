@@ -119,6 +119,17 @@ pub fn valueFromTt(v: i32, ply: i32, r50c: i32) i32 {
 // |eval| + |beta| and is what stops the walk.
 const futility_depth_lut = [7]i32{ 1657, 2555, 3294, 4122, 5314, 8194, 2 * value_inf };
 
+comptime {
+    // Prove the sentinel stops the walk rather than assuming it. The caller's `eval` is a
+    // corrected static eval OR a transposition value, so only `abs(eval) <= value_mate`
+    // holds -- the `!isWin(eval)` guard at the call site bounds the positive side alone --
+    // and `beta` is a window bound, so `abs(beta) <= value_inf`. The shipped build checks no
+    // array bound, and the walk would read PAST the table rather than fault: a value model
+    // that outgrew this would come back as a plausible depth, which the anchor cannot see.
+    if (futility_depth_lut[futility_depth_lut.len - 1] <= value_mate + value_inf)
+        @compileError("futility_depth_lut needs a sentinel above the largest reachable abs(eval) + abs(beta)");
+}
+
 pub fn futilityDepth(eval: i32, beta: i32) i32 {
     const prob = absInt(eval) + absInt(beta);
     var depth: usize = 0;
@@ -348,6 +359,23 @@ test "nullMoveReduction: the excess is measured from beta and steps every 256" {
     // term here, so the @max(.., 0) is what stops a losing node from being searched deeper
     // than an equal one.
     try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, -5000, 0));
+}
+
+test "futilityDepth: 19 down to 13, and the extremes stay inside the table" {
+    // The steps themselves, read either side of each threshold.
+    try std.testing.expectEqual(@as(i32, 19), futilityDepth(0, 0));
+    try std.testing.expectEqual(@as(i32, 19), futilityDepth(1657, 0)); // the entry is the last <= it
+    try std.testing.expectEqual(@as(i32, 18), futilityDepth(1658, 0));
+    try std.testing.expectEqual(@as(i32, 13), futilityDepth(8195, 0));
+
+    // The sign of either argument must not matter -- the walk keys off magnitudes.
+    try std.testing.expectEqual(futilityDepth(3000, -1000), futilityDepth(-3000, 1000));
+
+    // Walk the worst input the call site can hand over: a mated transposition value against
+    // an infinite beta. Under ReleaseSafe this indexes the table and traps if the sentinel
+    // ever stops covering it, which is the half the shipped build cannot check for itself.
+    try std.testing.expectEqual(@as(i32, 13), futilityDepth(-value_mate, value_inf));
+    try std.testing.expectEqual(@as(i32, 13), futilityDepth(value_mate, -value_inf));
 }
 
 test "fillReductions: log-scaled, index 0 untouched, monotonic from 1" {
