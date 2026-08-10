@@ -42,6 +42,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Installs Zig 0.16.0 and caches the build cache. Needed for two things here:
+      # the zfish binary under test, and tools/zigcxx -- the oracle compiles with ZIG
+      # C++ so both sides share one LLVM backend.
+      #
+      # FIRST, beside the checkout, not beside the first step that needs a binary. It sat
+      # below the map audit while that step ran `python3`, and stayed there when the audit
+      # became `zig build upstream-map` -- so the weekly job died at `zig: command not
+      # found`, exit 127, four steps before anything was measured. Every other job in this
+      # repo installs the toolchain before it runs anything, and `lane-coverage` now holds
+      # all of them to it.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
       # The sync driver fetches from a remote named `upstream`; add it here (the
       # local dev clone adds it separately, CI adds its own).
       - name: Add upstream remote
@@ -99,13 +113,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
-
-      # Installs Zig 0.16.0 and caches the build cache. Needed for two things here:
-      # the zfish binary under test, and tools/zigcxx -- the oracle compiles with ZIG
-      # C++ so both sides share one LLVM backend.
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.16.0
 
       # The random-walk fidelity gate. The bench anchor covers a FIXED position list, so
       # a port can be nudged toward that number without becoming faithful; this reaches
