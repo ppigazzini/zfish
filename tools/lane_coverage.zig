@@ -21,14 +21,24 @@
 //     `zig build net-fetch`. Tokens are matched WHOLE against the known step set, never as
 //     prefixes, which is why the step universe is passed in rather than guessed from text.
 //
-// Exit: 0 every step laned or argued, 1 a step in no lane / a stale excuse, 2 a rig fault
-// (the classification arrived empty, the excuse file is unreadable).
+// A SECOND question about the same files, because reading them once is what makes it cheap:
+// does each job install the toolchain BEFORE it runs it? Dispatch is not enough -- the weekly
+// upstream job named its steps correctly and still died at `zig: command not found`, because
+// `setup-zig` sat three steps below the first `zig build`. See `auditToolchainOrder`.
+//
+// Exit: 0 every step laned or argued and every job's toolchain first, 1 a step in no lane /
+// a stale excuse / a job that runs zig before installing it, 2 a rig fault (the
+// classification arrived empty, the excuse file is unreadable, the YAML walk found no jobs).
 
 const std = @import("std");
 
 /// Refuse a classification that lost its subject. Every extraction failure this repo has had
 /// was a shrinking subject rather than a wrong answer, and a shrunk subject reports OK.
 const step_floor = 60;
+
+/// The same refusal for the ordering half below: a YAML walk that stops finding jobs would
+/// pass every workflow by having read none of them.
+const job_floor = 8;
 
 const State = struct {
     in_aggregate: bool = false,
@@ -86,6 +96,102 @@ fn scanLine(line: []const u8, steps: *std.StringHashMap(State)) void {
     }
 }
 
+/// Judge whether `content` runs the zig binary, at a command position.
+///
+/// The boundary before `zig` is what keeps `mlugg/setup-zig@sha` -- the line that INSTALLS
+/// it -- from reading as a use of it, and the lowercase letter after the space is what makes
+/// this a subcommand (`build`, `fmt`, `run`, `version`) rather than the word appearing in a
+/// sentence.
+fn invokesZig(content: []const u8) bool {
+    var rest = content;
+    while (std.mem.indexOf(u8, rest, "zig ")) |at| {
+        const before_ok = at == 0 or std.mem.indexOfScalar(u8, " \t(\"'`|&;", rest[at - 1]) != null;
+        const after = rest[at + "zig ".len ..];
+        if (before_ok and after.len > 0 and std.ascii.isLower(after[0])) return true;
+        rest = rest[at + 1 ..];
+    }
+    return false;
+}
+
+/// Hold every job to installing the toolchain before it runs it.
+///
+/// The weekly upstream job died at `zig: command not found` (exit 127) four steps before it
+/// measured anything: its map-audit step ran `python3` when it was written, was switched to
+/// `zig build upstream-map`, and `setup-zig` stayed where it had been -- three steps BELOW.
+/// Nothing could see it. `lane-coverage` above reads these same files and was satisfied,
+/// because a dispatched step is dispatched whether or not a compiler exists to serve it.
+///
+/// Position is TEXTUAL, so an `if:`-guarded install still counts (the Windows-arm job's
+/// action is guarded and its emulated fallback is a later `run:`); what is being checked is
+/// the order a reader and the runner both see. A job that never touches zig is not required
+/// to install it, and a job that touches it without installing it at all fails here too.
+///
+/// Only lines that RUN something are read: an inline `run:` and the body of a `run: |` block.
+/// The `fmt` job is named `zig fmt --check`, which is prose in a `name:` key and must not
+/// count as a use.
+fn auditToolchainOrder(wf: []const u8, body: []const u8, jobs: *usize) usize {
+    var findings: usize = 0;
+    var in_jobs = false;
+    var job: []const u8 = "";
+    var installed = false;
+    // Indent of the `run:` key whose block scalar we are inside, if any.
+    var block: ?usize = null;
+
+    var line_no: usize = 0;
+    var it = std.mem.splitScalar(u8, body, '\n');
+    while (it.next()) |raw| {
+        line_no += 1;
+        const line = std.mem.trimEnd(u8, raw, "\r");
+        const indent = line.len - std.mem.trimStart(u8, line, " ").len;
+        const trimmed = std.mem.trim(u8, line, " \t");
+        if (trimmed.len == 0) continue;
+
+        // A block scalar ends where the indentation returns to its key's level or above.
+        if (block) |b| if (indent <= b) {
+            block = null;
+        };
+
+        if (indent == 0) {
+            in_jobs = std.mem.eql(u8, trimmed, "jobs:");
+            job = "";
+            continue;
+        }
+        if (in_jobs and indent == 2 and trimmed[trimmed.len - 1] == ':') {
+            job = trimmed[0 .. trimmed.len - 1];
+            installed = false;
+            block = null;
+            jobs.* += 1;
+            continue;
+        }
+        if (trimmed[0] == '#') continue;
+        const content = if (std.mem.indexOf(u8, trimmed, " #")) |h| trimmed[0..h] else trimmed;
+
+        if (std.mem.indexOf(u8, content, "mlugg/setup-zig") != null) {
+            installed = true;
+            continue;
+        }
+
+        const inline_run = std.mem.startsWith(u8, content, "run:") or std.mem.startsWith(u8, content, "- run:");
+        if (inline_run) {
+            const val = std.mem.trim(u8, content[std.mem.indexOfScalar(u8, content, ':').? + 1 ..], " \t");
+            if (val.len > 0 and (val[0] == '|' or val[0] == '>')) block = indent;
+        }
+        if (!inline_run and block == null) continue;
+        if (installed or !invokesZig(content)) continue;
+
+        std.debug.print(
+            "lane-coverage: TOOLCHAIN AFTER USE  {s}:{d} job `{s}` runs zig before it installs it --\n" ++
+                "lane-coverage:                      `{s}`\n" ++
+                "lane-coverage:                      move the `mlugg/setup-zig` step above it\n",
+            .{ wf, line_no, job, content },
+        );
+        findings += 1;
+        // One finding per job: the rest of its steps would all report the same cause.
+        installed = true;
+    }
+    return findings;
+}
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const io = init.io;
@@ -124,6 +230,8 @@ pub fn main(init: std.process.Init) !void {
     defer wf_dir.close(io);
 
     var workflows: usize = 0;
+    var jobs: usize = 0;
+    var order_findings: usize = 0;
     var wf_it = wf_dir.iterate();
     while (try wf_it.next(io)) |entry| {
         if (entry.kind != .file) continue;
@@ -134,16 +242,20 @@ pub fn main(init: std.process.Init) !void {
         workflows += 1;
         var lines = std.mem.splitScalar(u8, body, '\n');
         while (lines.next()) |line| scanLine(line, &steps);
+        order_findings += auditToolchainOrder(entry.name, body, &jobs);
     }
     if (workflows == 0)
         fail("no workflow files read -- every step would read as unlaned. Refusing.", .{});
+    if (jobs < job_floor)
+        fail("only {d} job(s) parsed out of {d} workflow(s) (floor {d}) -- the ordering half\n" ++
+            "lane-coverage: read a SHRUNKEN subject, which reports OK over nothing. Refusing.", .{ jobs, workflows, job_floor });
 
     // --- what the tree has argued its way out of --------------------------------------
     const excuses_raw = Io.Dir.cwd().readFileAlloc(io, excuses_path, gpa, .unlimited) catch
         fail("cannot read the excuse list {s}", .{excuses_path});
     defer gpa.free(excuses_raw);
 
-    var fail_count: usize = 0;
+    var fail_count: usize = order_findings;
     var excused: usize = 0;
     var lines = std.mem.splitScalar(u8, excuses_raw, '\n');
     while (lines.next()) |raw| {
@@ -250,8 +362,8 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     }
     std.debug.print(
-        "lane-coverage: OK ({d} steps: {d} in a lane, {d} excused with a reason; {d} workflows read)\n",
-        .{ steps.count(), laned, excused, workflows },
+        "lane-coverage: OK ({d} steps: {d} in a lane, {d} excused with a reason; {d} workflows, {d} jobs read)\n",
+        .{ steps.count(), laned, excused, workflows, jobs },
     );
 }
 

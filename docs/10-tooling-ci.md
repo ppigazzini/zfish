@@ -63,7 +63,7 @@ returned tier name to its feature set and macros.
 | `arch-report` | Coupling report (module + file graphs) + DAG / undeclared-SCC tripwires. |
 | `hook-lint` | Cycle-break hooks: ratcheted, each declaring a failure mode + class, all registered. |
 | `src-free` / `headless` / `loc` / `docs-lint` | The structural gates (see below). |
-| `lane-coverage` | Every step is in an aggregate, named by a workflow, or excused with an argument (see below). |
+| `lane-coverage` | Every step is in an aggregate, named by a workflow, or excused with an argument; and every job installs the toolchain before it runs it (see below). |
 | `golden-coverage` | Every golden FILE in the tree is read by a gate, and every declared golden exists (see below). |
 
 Every golden gate is a pair: `<gate>` checks the live fingerprint against the
@@ -367,6 +367,20 @@ It found `upstream-parity` — this port's finish line, its bench against the pr
 running in no lane at all, and the map audit reaching its tool by a second path while this
 repo's own workflow claimed it used the step. Both now have lanes.
 
+**Dispatch is not enough: a second half holds each *job* to installing the toolchain before it
+runs it.** Being named by a workflow says the step is reached, not that a compiler exists when
+it is — and those come apart in one edit. The weekly upstream job ran `python3` in its map-audit
+step, the step was switched to `zig build upstream-map`, and `setup-zig` stayed three steps
+below, so the job died at `zig: command not found`, exit 127, before it measured anything;
+nothing in the tree could see it, because every step named there was still dispatched. The
+ordering is read TEXTUALLY, so an `if:`-guarded install still counts (the Windows-arm job's is
+guarded, and its emulated fallback is a later `run:`) — what is checked is the order the runner
+and a reader both see. Only lines that run something are read: an inline `run:` and the body of
+a `run: |` block, which is what keeps the `fmt` job's *name* — `zig fmt --check` — from reading
+as a use of zig three lines before its install. Seen to fail on the real defect before the fix
+landed (`TOOLCHAIN AFTER USE … :88`, exit 1), and refusing a YAML walk that finds fewer than
+eight jobs, since a walk that stopped parsing would pass every workflow by reading none.
+
 **`golden-coverage`** asks the same question about the other half of the battery. A golden is
 a photograph, and a photograph nobody diffs is a file, not a check — and the failure is silent
 by construction, because the gate that stopped reading it is not the gate that goes red.
@@ -483,17 +497,19 @@ competent-programmer hypothesis is what makes a single mutation worth gating on.
   ok    misc         d renders checkers one file off              red (1)
   ok    docs-lint    a doc names a path that is not in the tree   red (1)
   ok    parity-async an idle `stop` answers with a bestmove       red (1)
-negative-control: 5 of 5 gate(s) detected their mutation, tree restored and green
+  ok    lane-coverage a job runs zig one step above its install    red (1)
+negative-control: 6 of 6 gate(s) detected their mutation, tree restored and green
 ```
 
-The five are one per *instrument class*, not one per gate: the anchor (a value differential),
+The six are one per *instrument class*, not one per gate: the anchor (a value differential),
 the specified oracle (`perft`, whose reference is a fact about chess and cannot be re-blessed),
-a characterization golden over a print path, a structural lint, and a protocol invariant with
-no reference at all. A sixth gate in a class already covered would add a rebuild and prove
-little; a new class earns a row.
+a characterization golden over a print path, a structural lint, a protocol invariant with no
+reference at all, and a lint whose subject is the CI configuration rather than the engine —
+its mutant is the only one that never touches `src/`. Another gate in a class already covered
+would add a rebuild and prove little; a new class earns a row.
 
-The last row is the one the other four cannot stand in for. Every value gate above compares
-against something photographed earlier, so its mutant must move a NUMBER; `parity-async`
+The `parity-async` row is the one the value rows cannot stand in for. Every value gate above
+compares against something photographed earlier, so its mutant must move a NUMBER; it
 asserts a property of the UCI contract on a path where there is no number to move — an idle
 `stop` that answers with a bestmove leaves every golden, every node count and the anchor
 byte-identical, because the transcripts they diff never send a `stop` the engine is awake to
