@@ -50,8 +50,8 @@ pub fn computeValue(input: EvalInput) i32 {
     nnue -= @divTrunc(nnue * nnue_complexity, 18236);
 
     var value = @divTrunc(
-        nnue * (77871 + @as(i64, input.material)) + optimism * (7191 + @as(i64, input.material)),
-        77871,
+        nnue * (91000 + @as(i64, input.material)) + optimism * 7675,
+        91000,
     );
 
     value -= @divTrunc(value * @as(i64, input.rule50_count), 199);

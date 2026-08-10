@@ -498,7 +498,8 @@ transformer, `positional` from `propagateBucket` — and `evaluate` scales both 
 
 `evaluate.zig` blends them into the final score. `computeValue` folds
 `psqt + positional`, scales optimism by the psqt/positional disagreement
-(complexity), damps the net output by the same, weights by material, applies the
+(complexity), damps the net output by the same, weights the net term by material
+while optimism now rides a flat weight, applies the
 50-move-rule decay, and clamps inside the TB bounds — all in `i64` with truncating
 division. The search calls it through `search_acc.evaluateAcc`, which supplies
 material and the side-to-move optimism.
