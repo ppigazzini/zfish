@@ -83,6 +83,11 @@ ROWS=(
     # with a bestmove: every value gate reads identically, because the transcripts they diff
     # never send a `stop` the engine is awake to hear.
     "parity-async|src/shell/uci.zig|        .stop => {\n|        .stop => {\n            uci_output.printLine(\"bestmove e2e4\");\n|an idle \`stop\` answers with a bestmove"
+    # The lane lint, on the half that reads ORDER rather than presence. Run zig one step above
+    # the install: every step named in the job is still dispatched, so the older half of this
+    # gate and every value gate read identically -- which is exactly how the weekly upstream
+    # job came to die at exit 127 with nothing in the tree able to see it.
+    "lane-coverage|.github/workflows/zfish_perft.yml|      - uses: mlugg/setup-zig@|      - run: zig version\n      - uses: mlugg/setup-zig@|a job runs zig one step above its install"
 )
 
 if [ "${1:-}" = "--list" ]; then
