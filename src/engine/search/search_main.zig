@@ -357,8 +357,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         if (!pv_node and eval < alpha - search.razorMargin(depth))
             return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha, beta, .non_pv);
 
-        // Step 8. Prune by futility.
-        if (!ss.tt_pv and depth < 19 and eval >= beta and (tt_move == 0 or tt_capture) and !qIsLoss(beta) and !qIsWin(eval)) {
+        // Step 8. Prune by futility, below a cutoff depth that shrinks as the scores grow.
+        if (!ss.tt_pv and eval >= beta and (tt_move == 0 or tt_capture) and !qIsLoss(beta) and !qIsWin(eval) and
+            depth < search.futilityDepth(eval, beta))
+        {
             const fm = search.futilityMargin(depth, ss.tt_hit, improving, opponent_worsening, correction_value);
             if (eval - fm >= beta) return search.futilityReturn(beta, eval);
         }

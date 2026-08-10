@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const value_draw: i32 = 0;
+const value_inf: i32 = 32001;
 const value_none: i32 = 32002;
 const max_ply: i32 = 246;
 const value_mate: i32 = 32000;
@@ -80,6 +81,25 @@ pub fn valueFromTt(v: i32, ply: i32, r50c: i32) i32 {
     }
 
     return v;
+}
+
+// Look up the futility pruning cutoff depth (Step 8). The depth condition is what finds
+// mates, so it is not tunable: the LUT holds the thresholds where
+//     depth = 13 + int(0.5 + 6 / (1 + pow(abs(eval) + abs(beta), 3) / 50'000'000'000))
+// steps down, so a bigger score on either side of the window prunes shallower and leaves
+// the deep mating lines to be searched. The last entry is past any reachable
+// |eval| + |beta| and is what stops the walk.
+const futility_depth_lut = [7]i32{ 1657, 2555, 3294, 4122, 5314, 8194, 2 * value_inf };
+
+pub fn futilityDepth(eval: i32, beta: i32) i32 {
+    const prob = absInt(eval) + absInt(beta);
+    var depth: usize = 0;
+    while (futility_depth_lut[depth] < prob) depth += 1;
+    return 19 - @as(i32, @intCast(depth));
+}
+
+fn absInt(v: i32) i32 {
+    return if (v < 0) -v else v;
 }
 
 // Prune child-node futility (Step 8): futilityMult = min(45 + depth*4, 85).
