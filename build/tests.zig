@@ -279,6 +279,7 @@ pub fn register(ctx: Context) void {
         "src/engine/eval/nnue_misc.zig",
         "src/engine/eval/evaluate.zig",
         "src/engine/search/search.zig",
+        "src/engine/search/search_stats.zig",
         "src/engine/board/bitboard.zig",
         "src/engine/state/correction_bundle.zig",
         "src/engine/state/limits_type.zig",

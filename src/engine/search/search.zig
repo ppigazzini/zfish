@@ -1,5 +1,33 @@
 const std = @import("std");
 
+// Re-export the history and correction-table update formulas, which live in search_stats.zig
+// (path-imported, so it stays inside this module). The seam is what a formula is for: the
+// margins a node prunes and reduces by stay here, the numbers written back to the tables
+// afterwards live there. Callers keep reading them off `search`.
+const stats = @import("search_stats.zig");
+
+pub const ttMoveHistoryDepthBonus = stats.ttMoveHistoryDepthBonus;
+pub const ttMoveHistoryMatchBonus = stats.ttMoveHistoryMatchBonus;
+pub const priorBonusScale = stats.priorBonusScale;
+pub const priorScaledBonusBase = stats.priorScaledBonusBase;
+pub const priorConthistScale = stats.priorConthistScale;
+pub const priorMainhistScale = stats.priorMainhistScale;
+pub const priorPawnhistScale = stats.priorPawnhistScale;
+pub const captureStatScore = stats.captureStatScore;
+pub const quietStatScore = stats.quietStatScore;
+pub const correction_history_limit = stats.correction_history_limit;
+pub const correctionHistoryBonus = stats.correctionHistoryBonus;
+pub const multiCutCorrectionBonus = stats.multiCutCorrectionBonus;
+pub const quietLowPlyScale = stats.quietLowPlyScale;
+pub const quietContScale = stats.quietContScale;
+pub const quietPawnScale = stats.quietPawnScale;
+pub const conthistDelta = stats.conthistDelta;
+pub const correctionValue = stats.correctionValue;
+pub const statBonus = stats.statBonus;
+pub const statMalus = stats.statMalus;
+
+// Restate the value model rather than importing search_values.zig: Zig gives a file to ONE
+// module, and search_driver already path-imports that one. Keep the two in step by hand.
 const value_draw: i32 = 0;
 const value_inf: i32 = 32001;
 const value_none: i32 = 32002;
@@ -114,7 +142,7 @@ pub fn futilityMargin(
     futility_mult -= 20 * @as(i32, @intFromBool(!tt_hit));
     const imp: i32 = @intFromBool(improving);
     const opp: i32 = @intFromBool(opponent_worsening);
-    const abs_corr: i32 = if (correction_value < 0) -correction_value else correction_value;
+    const abs_corr = absInt(correction_value);
     return futility_mult * depth -
         @divTrunc((2789 * imp + 335 * opp) * futility_mult, 1024) +
         @divTrunc(abs_corr, 198435);
@@ -138,30 +166,6 @@ pub fn quietSeeMargin(lmr_depth: i32) i32 {
     return 23 * lmr_depth * lmr_depth;
 }
 
-// Compute the post-search bonus formulas (ttMoveHistory updates and the prior-countermove
-// fail-low bonus).
-pub fn ttMoveHistoryDepthBonus(depth: i32) i32 {
-    return -421 - 110 * depth;
-}
-
-pub fn ttMoveHistoryMatchBonus(best_is_tt: bool) i32 {
-    return if (best_is_tt) 918 else -747;
-}
-
-pub fn priorBonusScale(prev_stat_score: i32, depth: i32, prev_movecount_gt9: bool, cond_a: bool, cond_b: bool) i32 {
-    var s: i32 = -241;
-    s -= @divTrunc(prev_stat_score, 98);
-    s += @min(59 * depth, 420);
-    s += 186 * @as(i32, @intFromBool(prev_movecount_gt9));
-    s += 142 * @as(i32, @intFromBool(cond_a));
-    s += 159 * @as(i32, @intFromBool(cond_b));
-    return @max(s, 0);
-}
-
-pub fn priorScaledBonusBase(depth: i32) i32 {
-    return @min(150 * depth - 85, 1337);
-}
-
 // Adjust the LMR reduction (r) before the reduced search.
 pub fn lmrTtpvReduction(pv_node: bool, value_gt_alpha: bool, depth_ge: bool, cut_node: bool) i32 {
     return 3023 + @as(i32, @intFromBool(pv_node)) * 1004 +
@@ -170,7 +174,7 @@ pub fn lmrTtpvReduction(pv_node: bool, value_gt_alpha: bool, depth_ge: bool, cut
 }
 
 pub fn lmrCorrReduction(correction_value: i32) i32 {
-    const a: i32 = if (correction_value < 0) -correction_value else correction_value;
+    const a = absInt(correction_value);
     return @divTrunc(a, 26310);
 }
 
@@ -185,7 +189,7 @@ pub fn lmrAllNodeScale(r: i32, depth: i32) i32 {
 // Compute the singular extension margins. corrValAdj = abs(correctionValue)/198368 is
 // shared by both margins.
 fn corrValAdj(correction_value: i32) i32 {
-    const a: i32 = if (correction_value < 0) -correction_value else correction_value;
+    const a = absInt(correction_value);
     return @divTrunc(a, 198368);
 }
 
@@ -284,67 +288,12 @@ pub fn qsearchFutilityBase(static_eval: i32) i32 {
     return static_eval + 306;
 }
 
-// Scale the prior-countermove fail-low bonus (search() POST_BONUS block): fan the
-// scaledBonus out into the continuation, main, and pawn history
-// tables with distinct tuned divisors, each truncated toward zero.
-pub fn priorConthistScale(scaled_bonus: i32) i32 {
-    return @divTrunc(scaled_bonus * 263, 16384);
-}
-
-pub fn priorMainhistScale(scaled_bonus: i32) i32 {
-    return @divTrunc(scaled_bonus * 215, 32768);
-}
-
-pub fn priorPawnhistScale(scaled_bonus: i32) i32 {
-    return @divTrunc(scaled_bonus * 324, 8192);
-}
-
-// Assemble the Step 17 LMR stat-score (search()). The caller reads the relevant
-// history-table entries and passes their values; this owns the tuned weighting.
-// Capture: 873*pieceValue/128 plus capture history. Quiet: a weighted sum of main and the
-// two continuation-history entries, scaled by 1024.
-pub fn captureStatScore(piece_value: i32, capture_hist: i32) i32 {
-    return @divTrunc(873 * piece_value, 128) + capture_hist;
-}
-
-pub fn quietStatScore(main_hist: i32, cont0: i32, cont1: i32) i32 {
-    return @divTrunc(2252 * main_hist + 1126 * cont0 + 1093 * cont1, 1024);
-}
-
-// Bound every correction-history entry (upstream's CORRECTION_HISTORY_LIMIT). It lives
-// here, in the std-only formula leaf, because both the writers in history.zig and the
-// bonus clamps below have to agree on it: every bonus is clamped to a QUARTER of it, and
-// a limit retuned in one place while the clamps kept a hardcoded 256 would silently stop
-// being a quarter of anything.
-pub const correction_history_limit: i32 = 1024;
-const correction_bonus_clamp: i32 = @divTrunc(correction_history_limit, 4);
-
-// Compute the end-of-search correction-history bonus (search()): scale the static-eval
-// error by depth and a best-move-dependent weight (12 with a best move, 18
-// without), clamp into +/- CORRECTION_HISTORY_LIMIT/4, then apply the
-// final 1061/1024 scale passed to update_correction_history.
-pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) i32 {
-    const w: i32 = if (has_best_move) 12 else 18;
-    const raw = @divTrunc(eval_delta * depth * w, 128);
-    const clamped = @max(-correction_bonus_clamp, @min(correction_bonus_clamp, raw));
-    return @divTrunc(1061 * clamped, 1024);
-}
-
-// Compute the multi-cut correction-history bonus (Step 15): when the singular
-// probe itself fails high above beta it has proven the static eval too low, so
-// nudge the correction tables by the scaled error. Clamp into
-// +/- CORRECTION_HISTORY_LIMIT/4 like every other correction bonus.
-pub fn multiCutCorrectionBonus(eval_delta: i32, singular_depth: i32) i32 {
-    const raw = @divTrunc(eval_delta * singular_depth * 177, 1024);
-    return @max(-correction_bonus_clamp, @min(correction_bonus_clamp, raw));
-}
-
 // Size the aspiration window in iterative_deepening(). The starting half-width
 // mixes a base, a per-thread stagger, and the root move's mean-squared score;
 // on each fail high/low it grows by 47/128.
 pub fn aspirationInitialDelta(thread_idx: usize, mean_squared_score: i32) i32 {
     const tmod: i32 = @intCast(thread_idx % 8);
-    const abs_mss = if (mean_squared_score < 0) -mean_squared_score else mean_squared_score;
+    const abs_mss = absInt(mean_squared_score);
     return 5 + tmod + @divTrunc(abs_mss, 10193);
 }
 
@@ -355,69 +304,8 @@ pub fn aspirationDeltaGrow(delta: i32) i32 {
 // Compute eval optimism from the root move's average score (iterative_deepening()):
 // a saturating 114*avg/(|avg|+85). The caller mirrors it for the opponent.
 pub fn optimism(avg: i32) i32 {
-    const abs_avg = if (avg < 0) -avg else avg;
+    const abs_avg = absInt(avg);
     return @divTrunc(114 * avg, abs_avg + 85);
-}
-
-// Scale the quiet-history bonus (update_quiet_histories). Each is bonus*N/1024
-// with toward-zero division; the pawn-history scale picks its weight by whether bonus > -4.
-pub fn quietLowPlyScale(bonus: i32) i32 {
-    return @divTrunc(bonus * 712, 1024);
-}
-
-pub fn quietContScale(bonus: i32) i32 {
-    return @divTrunc(bonus * 750, 1024);
-}
-
-pub fn quietPawnScale(bonus: i32) i32 {
-    const weight: i32 = if (bonus > -4) 1104 else 459;
-    return @divTrunc(bonus * weight, 1024);
-}
-
-// Index the continuation-history positive-consistency multipliers by the
-// running positiveCount in update_continuation_histories.
-const cmhc_multipliers = [_]i32{ 94, 103, 110, 106, 119, 126, 121 };
-
-// Compute the per-entry continuation-history update delta: own the multiplier table
-// and the bonus*weight*multiplier/131072 formula. bonus*weight*multiplier
-// stays within i32 for the bonus magnitudes search produces.
-pub fn conthistDelta(bonus: i32, weight: i32, positive_count: i32, i: i32) i32 {
-    const multiplier = cmhc_multipliers[@intCast(positive_count)];
-    // Upstream (search.cpp: `bonus * weight * multiplier / 131072`) computes this in `int`,
-    // so the 3-way product overflows i32 for large bonuses and WRAPS (2's complement on
-    // x86 -- UB in C++ but relied upon). Match it with `*%` so the wrap is bit-identical
-    // (the shipped ReleaseFast build already wrapped here; this only stops ReleaseSafe's
-    // overflow trap from aborting on deep searches -- the value is unchanged).
-    return @divTrunc(bonus *% weight *% multiplier, 131072) +
-        73 * @as(i32, @intFromBool(i < 2));
-}
-
-// Blend the weighted correction history (correction_value). Inputs are the raw
-// correction entries; only the magic weights live here. All terms stay well
-// within i32 (entries clamped to +/-1024).
-pub fn correctionValue(
-    pcv: i32,
-    micv: i32,
-    wnpcv: i32,
-    bnpcv: i32,
-    cch2: i32,
-    cch4: i32,
-    m_ok: bool,
-) i32 {
-    const cntcv: i32 = if (m_ok) 8761 * (cch2 + cch4) else 64049;
-    return 15341 * pcv + 10569 * micv + 12906 * (wnpcv + bnpcv) + cntcv;
-}
-
-// Compute the base stat bonus/malus formulas applied at the end of search() when a
-// bestMove is found (update_all_stats).
-pub fn statBonus(depth: i32, is_tt_move: bool, prev_stat_score: i32) i32 {
-    return @min(133 * depth - 81, 1487) +
-        364 * @as(i32, @intFromBool(is_tt_move)) +
-        @divTrunc(prev_stat_score, 28);
-}
-
-pub fn statMalus(depth: i32) i32 {
-    return @min(968 * depth - 235, 2244);
 }
 
 // Populate the reductions[] lookup table: reductions[i] = int(2872/128.0 * ln i)
@@ -460,36 +348,6 @@ test "nullMoveReduction: the excess is measured from beta and steps every 256" {
     // term here, so the @max(.., 0) is what stops a losing node from being searched deeper
     // than an equal one.
     try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, -5000, 0));
-}
-
-test "multiCutCorrectionBonus: clamps at a quarter of the correction-history limit" {
-    const quarter = @divTrunc(correction_history_limit, 4);
-
-    try std.testing.expectEqual(@as(i32, 0), multiCutCorrectionBonus(0, 8)); // no delta, no bonus
-
-    // Pin the 177 weight itself. Pick delta*singular_depth == 1024 so the /1024 divides
-    // out and the answer IS the weight -- at a smaller product the truncation swallows a
-    // one-off change to it (64*4*177/1024 and 64*4*178/1024 are both 44).
-    try std.testing.expectEqual(@as(i32, 177), multiCutCorrectionBonus(64, 16));
-
-    try std.testing.expectEqual(quarter, multiCutCorrectionBonus(30000, 60));
-    try std.testing.expectEqual(-quarter, multiCutCorrectionBonus(-30000, 60));
-}
-
-test "correction bonuses track the limit they are a quarter of" {
-    // Both clamps derive from correction_history_limit rather than repeating 256, so a
-    // retuned limit moves them together. Assert the relationship, not the number.
-    //
-    // Stay inside the domain the callers can actually reach: both bodies multiply three
-    // i32 terms before dividing, so a delta beyond a non-decisive score (~32k) times a
-    // plausible depth overflows i32 and the clamp reports the WRONG sign. That is a
-    // property of the formula, not of these inputs -- the same shape as the conthistDelta
-    // overflow ReleaseSafe caught. Callers bound the delta: the multi-cut site is guarded
-    // by `!qIsDecisive(value)`, and the end-of-search site by a real eval difference.
-    const quarter = @divTrunc(correction_history_limit, 4);
-    try std.testing.expectEqual(quarter, multiCutCorrectionBonus(30000, 60));
-    // correctionHistoryBonus clamps to the same quarter, then applies its 1061/1024 scale.
-    try std.testing.expectEqual(@divTrunc(1061 * quarter, 1024), correctionHistoryBonus(30000, 64, true));
 }
 
 test "fillReductions: log-scaled, index 0 untouched, monotonic from 1" {
