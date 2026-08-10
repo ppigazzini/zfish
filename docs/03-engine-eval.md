@@ -443,8 +443,10 @@ them **together** off shared input loads rather than in two passes — `sqrClipP
 (AVX-512), `sqrClipPair` (AVX2) and `sqrClipPair128` (SSSE3) — narrowing once to `i16`,
 squaring via mulhi and clipping via max+shift at that width, then narrowing to bytes.
 
-Every pairing tier scrambles, because every pack narrows per 128-bit **lane** — but the
-lane COUNT differs with the width, so the interleave each one needs is a different map:
+Every tier under `pair_activations` scrambles, because its packs narrow per 128-bit
+**lane** — but the lane COUNT differs with the width, so the interleave each one needs is a
+different map. The SSSE3 kernel sits outside that flag and outside the scramble: at 128 bits
+there is only one lane, so its packs concatenate in order and the weights stay put.
 
 | Tier | `pair_activations` | Narrowing | 4-byte chunk `k` lands at |
 | --- | --- | --- | --- |
