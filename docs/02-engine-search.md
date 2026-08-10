@@ -176,7 +176,7 @@ a step is greppable across both trees. Steps 1–12 are `searchImpl`, 13–21 `r
 | 5 | Compute the static eval, correct it (below), and derive `improving` / `opponent_worsening` |
 | 6 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [05-tablebases.md](05-tablebases.md) |
 | 7 | **Razoring**: a non-PV node whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch |
-| 8 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, below depth 19, off the TT-PV path |
+| 8 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(eval, beta)` — a cutoff that steps down from 19 to 13 as `abs(eval) + abs(beta)` grows, so mating lines stay searched |
 | 9 | **Null move** (below) |
 | 10 | **Internal iterative reduction**: with no TT move, off the PV, not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
 | 11–12 | **ProbCut**: a shallow search at a raised beta to prove a capture refutes the node; then the deep-ProbCut TT idea |
