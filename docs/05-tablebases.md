@@ -167,6 +167,21 @@ things hold the line, and they are worth keeping distinct:
 | `table_load.set` checks the pawnful table's **leading piece** against the registry's lead colour | `doProbeTable` picks the leading pawns' colour off `get(0, 0).pieces[0]`, a raw file nibble. Name a piece that is not a pawn, or a pawn of the colour that has none, and the leading group is EMPTY: the probe then sorts `squares[1..0]` and indexes `lead_pawn_idx[0][squares[0]]` with a square it never wrote. One flipped nibble in a downloaded `.rtbw` reaches it. |
 | `probe.setGroups` returns false on a **group longer than any geometry row** | The group lengths index `lead_pawns_size` and `binomial`, both sized for the longest group a legal material configuration makes. The lengths are runs over the same file nibbles, so a corrupt sequence makes a longer one and reads off the end of the array. |
 
+**And `parity-malformed` is what keeps them.** Every row above was pinned by unit tests on
+the *decoder* and by nothing at all on the shipped loader — and a unit test that calls
+`setSizes` directly cannot see a loader that stopped calling it. `signature` stays green
+with the whole refusal set reverted, because the bench reads no file the engine did not
+ship with, and the fuzz targets above hunt input that is bad in a way nobody has described
+yet, on a nightly budget rather than as a merge gate. So nothing asked whether yesterday's
+refusal still holds today. The gate copies a real 3-man table, applies a committed
+byte-edit list, and requires all three parts of a refusal on each fixture: exit 0, a legal
+bestmove — a parser that takes the search down with it has not refused the file, it has
+been defeated by it — and no hang, which is the class a crash-oriented fuzzer reports as a
+timeout instead of a bug. The bar is **survival rather than a diagnostic**, and that is a
+different bar rather than a weaker one: the format records nothing that says which value
+was meant, so a reader cannot tell a mutated `lowestSym` from an intended one and must not
+pretend to. See [10-tooling-ci.md](10-tooling-ci.md) for the gate and its negative control.
+
 **Which sub-table a position uses is a type, not an integer.** A pawnful table folds
 the mirrored file pairs — a/h, b/g, c/f, d/e — onto four per-file sub-tables, so
 upstream's `edge_distance(f) = min(f, 7 - f)` converts a *board* file (one of eight)
