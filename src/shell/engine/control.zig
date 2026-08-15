@@ -93,6 +93,27 @@ pub fn waitForSearchFinishedEngine(engine_ptr: *engine_object.EngineObject) void
     thread_port.waitThread(engine_ptr.threadsPtr(), 0);
 }
 
+// Report whether a search is running that will NEVER end on its own -- the exact predicate the
+// main worker busy-waits on, `ponder or limits.infinite` (search_id.ssShouldBusywait).
+//
+// This is the one distinction a "stop before you wait" policy needs, and getting it wrong costs
+// either a wedge or a truncated search. A depth-, node- or time-limited search terminates by
+// itself, so waiting for it is a wait; an infinite or pondering one terminates only when someone
+// sets `stop`, and if the thread that would set it is the thread doing the waiting, the wait is
+// a deadlock. Reading the flags rather than assuming keeps a mid-script `setoption` from cutting
+// a bounded search short, which is what a piped UCI session and every driver golden depend on.
+//
+// Null before the workers exist (startup option registration) and false between searches, both
+// of which mean "nothing to stop".
+pub fn searchIsUnbounded(engine_ptr: *engine_object.EngineObject) bool {
+    const threads = engine_ptr.threadsPtr();
+    if (threads.numThreads() == 0) return false;
+    const worker = threads.threadTyped(0).worker orelse return false;
+    const manager = worker.manager orelse return false;
+    if (@atomicLoad(u8, &manager.ponder, .monotonic) != 0) return true;
+    return worker.limits.infinite != 0;
+}
+
 test {
     @import("std").testing.refAllDecls(@This());
 }

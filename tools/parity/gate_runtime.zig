@@ -172,11 +172,14 @@ pub fn runStress(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
 // read out of the engine's own `go perft 1`, and reading anything but the start position's
 // 20 root moves is a rig fault rather than a verdict.
 //
-// Two of the four ways a search is interrupted ARE already gated, and are deliberately not
+// Two of the five ways a search is interrupted ARE already gated, and are deliberately not
 // repeated here: `stop` ending a live search is `parity-stress` phase A (a third of its 24
 // cycles are go-infinite -> stop), and `ponderhit` / `stop` during a ponder is
-// `parity-ponder`, which also checks the move it yields is legal. The other two had never
-// been driven at all.
+// `parity-ponder`, which also checks the move it yields is legal. The other three had never
+// been driven at all, and the third of them -- a `setoption` landing inside a search -- was
+// a live wedge in this tree when the case was written: every gate stayed green while
+// `setoption name Hash value 32` during `go infinite` cost the engine its ability to answer
+// anything ever again. A command sequence nothing sends is a command sequence nothing checks.
 //
 // NO WATCHDOG, deliberately, for session.zig's reason: a deadline turns a slow runner into
 // a red gate, and a flaky gate is not evidence. An engine that ignores `quit` wedges here
@@ -230,7 +233,42 @@ pub fn runAsync(gpa: std.mem.Allocator, io: Io, bin: []const u8) noreturn {
     if (!q.finish())
         fail("async: `quit` during a running infinite search did not exit cleanly (signal or non-zero)", .{});
 
-    std.debug.print("async: OK (2 of 2 invariants: a stray `stop` answers nothing and stays up -> {s}; `quit` inside an infinite search exits clean)\n", .{idle_move});
+    // 3. A `setoption` arriving INSIDE an unbounded search leaves the engine answering.
+    //
+    // This is the wedge case, and it is the one shape a value gate can never see: applying an
+    // option waits for the search to finish, and the only thread that can END an unbounded
+    // search is the UCI reader -- the very thread doing the waiting. Get the order wrong and
+    // neither `stop` nor `quit` is ever read again: no bestmove, no exit, no diagnostic. The
+    // engine is simply gone, which from a GUI is indistinguishable from a slow one.
+    //
+    // Assert the LIVENESS rather than the option's effect. What must hold is that the search
+    // still answers and the process still exits; which value the option ends up holding is
+    // `parity-uci-options`' business. `Hash` is the option upstream's own reproducer uses, and
+    // it takes the heaviest path of the three (a TT resize) rather than the cheapest.
+    var m: Interactive = undefined;
+    m.init(io, gpa, bin) catch fail("async: spawn failed for the setoption-during-search case", .{});
+    m.send("setoption name Threads value 2\nposition startpos\ngo infinite\n");
+    if (!m.fillUntil("\ninfo depth"))
+        fail("async: the infinite search never started, so `setoption` would not have landed inside one", .{});
+    m.send("setoption name Hash value 32\n");
+    m.send("stop\n");
+    if (!m.fillUntil("\nbestmove"))
+        fail("async: `setoption` inside a running infinite search wedged it -- no bestmove after `stop`", .{});
+    var wm: [8]u8 = undefined;
+    var wm_len: usize = 0;
+    var wp: [8]u8 = undefined;
+    var wp_len: usize = 0;
+    if (!firstBestmove(m.buffered(), &wm, &wm_len, &wp, &wp_len))
+        fail("async: could not parse the bestmove after a mid-search `setoption`", .{});
+    const wedge_move = wm[0..wm_len];
+    if (!wellFormedMove(wedge_move))
+        fail("async: malformed bestmove '{s}' after a mid-search `setoption`", .{wedge_move});
+    if (!m.finish())
+        fail("async: the engine did not exit cleanly after a mid-search `setoption`", .{});
+    if (!moveIsLegal(gpa, io, bin, "position startpos", wedge_move))
+        fail("async: bestmove '{s}' after a mid-search `setoption` is not legal from the start position", .{wedge_move});
+
+    std.debug.print("async: OK (3 of 3 invariants: a stray `stop` answers nothing and stays up -> {s}; `quit` inside an infinite search exits clean; `setoption` inside one still answers -> {s})\n", .{ idle_move, wedge_move });
     std.process.exit(0);
 }
 

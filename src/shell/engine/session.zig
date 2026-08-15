@@ -51,6 +51,8 @@ const setTtSize = engine_control.setTtSize;
 const setTtSizeEngine = engine_control.setTtSizeEngine;
 const searchClearEngine = engine_control.searchClearEngine;
 const waitForSearchFinishedEngine = engine_control.waitForSearchFinishedEngine;
+const stopEngine = engine_control.stopEngine;
+const searchIsUnbounded = engine_control.searchIsUnbounded;
 const printInfoString = engine_nnue.printInfoString;
 const verifyNetwork = engine_nnue.verifyNetwork;
 const requireNetworkLoaded = engine_nnue.requireNetworkLoaded;
@@ -288,9 +290,33 @@ pub fn setPositionEngineAs(
     );
 }
 
-// Apply setoption: wait for the search, set into the OptionsModel, and run the
-// on-change callback (relaying string/spin/check values).
+// Apply setoption: end an UNBOUNDED search first, wait for the search, set into the
+// OptionsModel, and run the on-change callback (relaying string/spin/check values).
+//
+// Waiting without stopping is a deadlock rather than a wait whenever the running search is one
+// that never ends on its own. The main worker spins on `!stop and (ponder or infinite)`
+// (search_id.ssShouldBusywait) and the only thread that can set `stop` is the UCI reader --
+// which is the thread blocked inside this wait. Neither `stop` nor `quit` is read again: a
+// `setoption` arriving during `go infinite` or a ponder wedged the engine permanently, with no
+// bestmove and no way out but a kill. Upstream has the same shape at uci.cpp's `setoption` and
+// it is live there.
+//
+// Stop ONLY the unbounded case, which is narrower than upstream's fix and is the difference
+// between closing the wedge and inventing a truncation. A depth-, node- or time-limited search
+// ends by itself, so waiting for it is a real wait -- and `go` is asynchronous here, so a piped
+// session reaches the next `setoption` while the previous bounded search is still running.
+// Stopping unconditionally cuts that search short: driver-golden caught exactly that, its
+// kiwipete search collapsing to `nodes 0` because a later `setoption name MultiPV value 1` had
+// killed it. What a script means by a mid-stream setoption is "after this search", and what a
+// GUI means by one during a ponder is "instead of this search"; the busy-wait predicate is what
+// tells the two apart.
+//
+// For the ponder case that leaves a behaviour choice, and both spellings are visible to a GUI.
+// Stop first, because a GUI that pushes an option mid-ponder then gets the option applied AND a
+// bestmove, where refusing gives it neither and no way to tell which happened. The cost, stated
+// rather than discovered: an option arriving during a ponder ends that ponder.
 pub fn applySetOptionEngine(engine_ptr: *engine_object.EngineObject, name_ptr: [*]const u8, name_len: usize, value_ptr: [*]const u8, value_len: usize, has_value: u8) void {
+    if (searchIsUnbounded(engine_ptr)) stopEngine(engine_ptr);
     waitForSearchFinishedEngine(engine_ptr);
     const vlen: usize = if (has_value != 0) value_len else 0;
     const vptr: [*]const u8 = if (has_value != 0) value_ptr else name_ptr;
