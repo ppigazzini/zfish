@@ -323,7 +323,7 @@ pub fn build(b: *std.Build) void {
         .repoPath = repoPath,
     });
 
-    // Register the liveness / metamorphic checks (build/checks.zig): nine gates that assert
+    // Register the liveness / metamorphic checks (build/checks.zig): gates that assert
     // a property rather than diff a golden.
     const check_runs = buildpkg.checks.register(.{
         .b = b,
@@ -331,6 +331,7 @@ pub fn build(b: *std.Build) void {
         .stockfish = exe,
         .install_step = install_step,
         .net_step = &net_cmd.step,
+        .tb_step = &tb_cmd.step,
     });
 
     // Register the two upstream-differential gates (build/structural.zig): bespoke argv

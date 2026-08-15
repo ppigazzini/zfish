@@ -166,6 +166,7 @@ fn fallibleMain(init: std.process.Init) !void {
     if (std.mem.eql(u8, check_name, "repeat-go")) parity.gate_state.runRepeatGo(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "ponder")) parity.gate_state.runPonder(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "async")) parity.gate_runtime.runAsync(gpa, io, bin);
+    if (std.mem.eql(u8, check_name, "malformed")) parity.gate_malformed.runMalformed(gpa, io, bin);
     if (std.mem.eql(u8, check_name, "net-missing")) runNetMissing(gpa, io, bin);
 
     const check = std.meta.stringToEnum(Check, check_name) orelse
