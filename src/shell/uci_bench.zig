@@ -106,6 +106,15 @@ pub fn benchmarkRuntime(uci_ptr: *engine_object.EngineObject, args: []const u8, 
     defer uci_strings.freeMaybe(std.heap.c_allocator, setup.commands_ptr);
     defer uci_strings.freeMaybe(std.heap.c_allocator, setup.original_invocation_ptr);
     defer uci_strings.freeMaybe(std.heap.c_allocator, setup.filled_invocation_ptr);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, setup.clamp_notice_ptr);
+
+    // Report any argument the setup had to clamp. benchmark.zig owns the ranges but has no
+    // output edge, so the lines travel back as a string and are printed here, BEFORE the run --
+    // a correction that arrives after the numbers it changed is not a report.
+    if (setup.clamp_notice_ptr) |lines_text| {
+        var it = std.mem.splitScalar(u8, lines_text, '\n');
+        while (it.next()) |line| if (line.len != 0) uci_output.printLine(line);
+    }
 
     const commands = setup.commands_ptr orelse return;
     const total_go_commands = countGoCommands(commands);
