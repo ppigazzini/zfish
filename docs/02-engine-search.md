@@ -461,6 +461,25 @@ and the ponder flag, it returns `optimum_time` and `maximum_time`. `ssTmInit`
 `nodestime`, `Move Overhead`, and `Ponder` options, and writes the outputs back into
 the manager's `tm`.
 
+**Every budget a reader can reach carries a value this search wrote**, including on the
+early return. `init` returns early when `time[us]` is zero, and the readers are gated by
+`use_time_management` — which is `time[WHITE] or time[BLACK]` (`search_setup.zig`), so it
+is true whenever *either* side has a clock. `go btime N` with White to move therefore
+passes the guard and takes that return. Leaving the two members alone there is not "no
+time management", it is the **previous search's**: `go wtime 200 btime 200` followed by
+`go btime 1000` stopped at depth 6 in about a millisecond, spending a budget that belonged
+to the move before it, and on the first search of a process they were still zero — an
+instant move at depth 3. Neither is a decision anybody made, so the path writes
+`timeman.no_bound` (half of `i64`'s range, so the sums formed against `maximum` cannot
+overflow). The value chosen *is* the behaviour on that input: zero is an instant move,
+`no_bound` is a search that runs until something else stops it, and that is the answer
+that cannot lose a game on a clock the caller never sent. Upstream reads two
+*uninitialised* members here, so there is no upstream behaviour to be faithful to.
+
+`nodestime` and `movetime` reach the same return — both leave `time[us]` zero — and
+neither reads these members: `use_time_management` is false without a clock, and
+`lim_movetime` is compared separately in `checkTime`.
+
 Two mechanisms stop a search.
 
 **The per-node check.** `search_control.checkTime` runs at the top of every

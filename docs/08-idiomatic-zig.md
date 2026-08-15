@@ -747,6 +747,25 @@ available in CI, so it never runs there.
   reaching for a prediction fix there is wasted work. The counters are stable enough to
   read: an A/A run of the same binary gives a branch ratio of 1.000 and rates of 0.914%
   against 0.918%.
+- **callgrind's `--branch-sim` is a MODEL, and it does not decide a prediction question
+  — the hardware does.** The two instruments disagreed on a real change and the
+  simulator was the one that was wrong. `put_piece` as a `comptime` parameter, both arms
+  md5-pinned at `x86-64-sse41-popcnt`, node counts identical on every run:
+
+  | | callgrind | hardware counters, 9 interleaved rounds |
+  | --- | --- | --- |
+  | instructions | 8,811,385,603 → 8,795,907,833 (−0.176%) | 0.998 |
+  | branch misses | 32,616,068 → 33,201,896 (**+1.80%**) | **1.004**, miss rate 3.770% vs 3.769% |
+
+  The two instruction figures agree to the third decimal, which is what makes the branch
+  row a disagreement rather than two measurements of different things. Reading the
+  simulator would have killed a change that removes work on every compiler and tier.
+  callgrind models a static two-bit predictor with a fixed table; a modern core's is
+  neither, so the model tracks branch **count** well and branch **outcome** badly.
+  Instructions, data refs and call counts are what a callgrind run certifies — those are
+  counted, not simulated. For a miss claim, use `perf_counters` (its branch-miss axis
+  resolves ~0.2%, per the table above); the cache model carries the same caveat, already
+  noted below.
 - **Exclude startup before reading any callgrind total.** A whole-process run of
   `bench 16 1 3000` is roughly half startup: `readLebSection` alone is ~32% of zfish's
   instructions and `read_parameters` ~34% of the oracle's, with magic-table init and

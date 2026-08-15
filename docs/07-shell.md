@@ -110,6 +110,20 @@ Anything else prints an unknown-command line. `go` builds a `LimitsType`
 `start_time` at the earliest point, so the info-line elapsed and nps are honest;
 `searchmoves` records are owned in Zig and freed once `startThinking` has read them.
 
+**A clock is bounded where it enters, which is the only place that knows it came from
+outside.** `wtime`, `btime`, `winc`, `binc` and `movetime` reached timeman's arithmetic as
+raw `i64`s off the wire, and `go wtime 4000000000000000000 winc 4000000000000000000 btime
+1000` was an integer overflow inside the search worker — a panic in ReleaseSafe, a
+silently wrapped budget in the shipped build. `go wtime -50000000000` is the same defect
+facing the other way. It is not a defect in timeman: `time_left` multiplies a clock by up
+to 51, and no formula written in `i64` can hold an arbitrary `i64` times fifty.
+`parseLimits` clamps each to `[0, max_clock_ms]` — 1e12 ms, about 31 years, past any real
+time control and far enough below the top that every product timeman forms stays inside an
+`i64` — and reports the ones it moved. That report is **not** a `bad_token`: an unparsable
+argument refuses the whole `go` (below), where an out-of-range clock is bounded and the
+search runs, so the line is emitted after the refusal check and before the search, reaching
+the GUI ahead of the move it shaped.
+
 A command that fails does **not** leave the engine running: `uci_critical.zig` prints
 the whole failed command line through the output sink and calls `exit(1)`. That is the
 invariant, not a style choice — printing and continuing left the *previous* position
@@ -150,9 +164,10 @@ Options are declared from `session.initBody` through the `engine/options.zig` he
 Registration does not carry the callback kind: `option.addOption` derives it from the
 canonical name, so an option registered at runtime still fires its engine callback.
 
-On `setoption`, `applySetOptionEngine` waits for the search to finish, sets the value
-into the model, and — if the value was accepted and the option has a callback — relays
-the normalized value to `session.optionOnChange`, which dispatches:
+On `setoption`, `applySetOptionEngine` **ends an unbounded search, then** waits for the
+search to finish, sets the value into the model, and — if the value was accepted and the
+option has a callback — relays the normalized value to `session.optionOnChange`, which
+dispatches:
 
 | Option | On change |
 | --- | --- |
@@ -163,6 +178,25 @@ the normalized value to `session.optionOnChange`, which dispatches:
 | `Clear Hash` | clear the search state |
 | `SyzygyPath` | re-init the tablebases and report what was found ([05-tablebases.md](05-tablebases.md)) |
 | `EvalFile` | load the network |
+
+**Stop first, and only when the search would never stop itself.** Waiting for a search
+from the UCI reader thread is a deadlock whenever that search is unbounded: the main
+worker spins on `!stop and (ponder or infinite)` (`search_id.ssShouldBusywait`) and the
+only thread that can set `stop` is the one already blocked in the wait, so neither `stop`
+nor `quit` is read again. `control.searchIsUnbounded` reads that same predicate, and
+`applySetOptionEngine` stops only when it holds. Upstream carries the unconditional wait
+and the wedge with it.
+
+The narrowness is the point rather than caution. `go` is asynchronous here, so a piped
+session reaches the next `setoption` while the previous **bounded** search is still
+running — and a depth-, node- or time-limited search ends on its own, so waiting for it
+is a real wait. Stopping unconditionally truncates it: that shape was written first and
+`driver-golden` caught it at once, the kiwipete search collapsing to `nodes 0` with an
+empty pv because a later `setoption name MultiPV value 1` had killed it. A script means
+"after this search" and a GUI mid-ponder means "instead of this search"; the busy-wait
+flag is what tells them apart. The cost, stated rather than discovered: an option arriving
+during a ponder ends that ponder. Gated by `parity-async`'s third invariant, which is the
+only thing in the tree that sends the sequence.
 
 The engine never imports `option.zig`. `main` injects the readers onto the
 `option_source` seam at startup, so the search reads `MultiPV`, the Syzygy settings,
@@ -237,6 +271,23 @@ regression gate — editing a FEN moves the signature.
 `speedtest` runs quiet (the search info emitters no-op), sets Threads and Hash from the
 setup, warms up, clears the search, then measures.
 
+**Its three arguments are clamped to the ranges they feed, and every clamp is reported.**
+`benchmark.zig` does two multiplications on numbers a user typed — `desired_time_s * 1000`
+and `128 * threads` — and both were done in `i32`, where an overflow is illegal behaviour:
+silent garbage in the shipped ReleaseFast build and a hard panic in ReleaseSafe. Wrapped
+rather than trapped, the first hands every emitted `go movetime` a negative argument and
+the second emits a negative `Hash` the option layer rejects, leaving the run measuring
+whatever `Hash` was already set. The **thread ceiling is `hardwareConcurrency`, not the
+`Threads` option maximum**, and that is the safety of the clamp rather than a detail: a
+Worker costs about 15.5 MB, so clamping a mistyped `speedtest 100000000` up to the option
+maximum would trade an immediate panic for a multi-GB allocation. It is also the right
+bound on its own terms — speedtest measures this box, its own no-argument default is the
+core count, and more threads than cores measures nothing faster. `benchmark.zig` owns the
+ranges but has no output edge, so the report travels back in the setup struct and
+`uci_bench` prints it before the run. Gated on the pure setup function, never on the
+binary: it builds a command string and allocates, but starts no search and sizes no hash
+table, so the reproducers are safe there and are not safe against the engine.
+
 It does **not** wall-clock its own `dispatch` calls. The interval it reports comes from
 `search/search_timing.zig`, which the engine stamps at two points: `ssTmInit` opens it
 once time management is initialised, and the bestmove emit closes it. Everything between
@@ -269,4 +320,5 @@ pinned model.
 
 **One search at a time.** The live `SharedState` is a single static rebuilt per search
 and never aliased; workers only read it while a search runs. `setoption` and the
-reconfigure chain wait for the search to finish first.
+reconfigure chain wait for the search to finish first — and `setoption` ends an unbounded
+one before waiting, or the wait is a deadlock rather than a wait (above).

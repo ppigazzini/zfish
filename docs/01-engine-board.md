@@ -186,6 +186,22 @@ per update — outgoing (PC on S threatens each square in `threatened`) and
 incoming (each square in `sliders`/`incoming` threatens PC on S) — plus
 `processSliders` for the discovered-threat half when `compute_ray` is set.
 
+**Both of its flag parameters are `comptime`.** `compute_ray` always was; `put_piece`
+became one, and the tell was the profile rather than the source. All six call sites in
+`move_do.zig` pass a literal — `putPiece` true, `removePiece` false, `movePiece` and
+`swapPiece` false then true — and the parameter is read where it costs: inside
+`processSliders`' loop where both records take it, again in each of the two trailing
+loops, and stored into the template of every `DirtyThreat`, so it occupied a register
+across a function already holding the occupancy, both attack sets and the ray masks. A
+`comptime` parameter occupies none ([09-type-design.md](09-type-design.md): the cost rule
+is about what a function *holds*, not what it is *parameterised by*). Measured on
+`x86-64-sse41-popcnt` with both arms md5-pinned and the node counts identical: callgrind
+8,811,385,603 → 8,795,907,833 instructions (−0.176%), and nine interleaved core-pinned
+rounds of hardware counters agreeing at 0.998. Callgrind's branch simulator read
+mispredicts as +1.80% on the same pair and the hardware read them flat — miss rate 3.770%
+against 3.769% — which is the standing warning that a simulated branch model does not
+decide a prediction question.
+
 At `use_avx512_threats` (AVX512VBMI + AVX512VBMI2 — `threats_write_avx512.zig`)
 both calls run through `writeMultipleDirties` instead of a `pop_lsb`-then-append
 scalar loop: the whole 64-square `Position.board` is one 64-byte vector register,
