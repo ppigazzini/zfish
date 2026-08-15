@@ -29,7 +29,7 @@ const color_black = board_core.color_black;
 const sqBb = board_core.sqBb;
 const pawnAttacks = board_core.pawnAttacks;
 
-fn addDirtyThreat(dts: *DirtyThreats, put_piece: bool, pc: u8, threatened: u8, s: u8, threatened_sq: u8) void {
+fn addDirtyThreat(dts: *DirtyThreats, comptime put_piece: bool, pc: u8, threatened: u8, s: u8, threatened_sq: u8) void {
     const data: u32 = (@as(u32, @intFromBool(put_piece)) << 31) |
         (@as(u32, pc) << 20) | (@as(u32, threatened) << 16) |
         (@as(u32, threatened_sq) << 8) | @as(u32, s);
@@ -43,7 +43,7 @@ fn processSliders(
     sliders_in: u64,
     s: u8,
     pc: u8,
-    put_piece: bool,
+    comptime put_piece: bool,
     no_rays: u64,
     r_attacks: u64,
     b_attacks: u64,
@@ -81,7 +81,7 @@ pub fn updatePieceThreats(
     comptime compute_ray: bool,
     pos: *const Position,
     pc: u8,
-    put_piece: bool,
+    comptime put_piece: bool,
     s: u8,
     dts: *DirtyThreats,
     no_rays: u64,
