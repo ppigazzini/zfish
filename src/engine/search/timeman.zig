@@ -28,6 +28,11 @@ pub const TimemanInput = struct {
     ponder: u8,
 };
 
+// Stand for "no time bound" in the two budget members. Half of i64's range rather than all of
+// it, so the comparisons that add to a budget (`elapsed > maximum`, and the sums
+// search_id_loop forms from it) cannot overflow the way an actual maxInt would.
+pub const no_bound: i64 = std.math.maxInt(i64) / 2;
+
 pub const TimemanOutput = struct {
     time_ms: i64,
     inc_ms: i64,
@@ -53,7 +58,31 @@ pub fn init(input: TimemanInput) TimemanOutput {
         .use_nodes_time = if (input.npmsec != 0) 1 else 0,
     };
 
+    // No clock for the SIDE TO MOVE. Write both budgets anyway.
+    //
+    // The readers are gated by `use_time_management`, which is `time[WHITE] or time[BLACK]`
+    // (search_setup.zig) -- so it is true whenever EITHER side has a clock, and `go btime N`
+    // with White to move passes the guard while taking this early return. Leaving the two
+    // members alone is therefore not "no time management", it is the PREVIOUS search's:
+    // `go wtime 200 btime 200` followed by `go btime 1000` stopped at depth 6 in about a
+    // millisecond, spending a budget that belonged to the move before it. On the first search
+    // of a process they are still zero, which is an instant move at depth 3. Neither is a
+    // decision anybody made.
+    //
+    // NO_BOUND RATHER THAN ZERO, because the value chosen IS the behaviour on this input.
+    // Zero makes the case an instant move; no_bound makes it a search that runs until
+    // something else stops it -- `stop`, a node limit, or the caller -- and that is the answer
+    // that cannot lose a game on a clock the caller never sent. A real GUI sends both clocks;
+    // this states once what the malformed case means instead of letting it fall out of
+    // whatever the last search left behind.
+    //
+    // Upstream reads two uninitialised members here (memcheck reports both, at `check_time`'s
+    // `elapsed > tm.maximum()` and at iterative_deepening's `min(totalTime, tm.maximum())`),
+    // so there is no upstream behaviour to be faithful TO on this input -- which is why this
+    // costs the bench nothing: it is a path no bench, golden or differential reaches.
     if (input.time_ms == 0) {
+        output.optimum_time = no_bound;
+        output.maximum_time = no_bound;
         return output;
     }
 
@@ -152,15 +181,42 @@ const base = TimemanInput{
     .ponder = 0,
 };
 
-test "timeman: zero time is a pass-through" {
+test "timeman: no clock for the side to move yields no bound, not the last search's budget" {
+    // This test used to assert the pass-through -- that 111 and 222 came back out -- which
+    // PINNED the defect rather than the behaviour. The readers are gated by
+    // `use_time_management`, which is `time[WHITE] or time[BLACK]`, so `go btime N` with White
+    // to move passes the guard and takes this path; carrying the incoming values then spends
+    // the PREVIOUS search's budget on this one. Measured before the fix: `go wtime 200 btime
+    // 200` followed by `go btime 1000` stopped at depth 6 in about a millisecond.
     var in = base;
     in.time_ms = 0;
-    in.current_optimum_time = 111;
+    in.current_optimum_time = 111; // the previous search's budget, which must NOT survive
     in.current_maximum_time = 222;
     const out = init(in);
-    try std.testing.expectEqual(@as(i64, 111), out.optimum_time);
-    try std.testing.expectEqual(@as(i64, 222), out.maximum_time);
+    try std.testing.expectEqual(no_bound, out.optimum_time);
+    try std.testing.expectEqual(no_bound, out.maximum_time);
     try std.testing.expectEqual(@as(u8, 0), out.use_nodes_time);
+
+    // A fresh process carries zeros rather than a stale budget, and zero is the other wrong
+    // answer: an instant move at depth 3. The path must not distinguish the two.
+    var fresh = base;
+    fresh.time_ms = 0;
+    const out_fresh = init(fresh);
+    try std.testing.expectEqual(no_bound, out_fresh.optimum_time);
+    try std.testing.expectEqual(no_bound, out_fresh.maximum_time);
+
+    // no_bound must survive the arithmetic that reads it. search_id_loop forms sums against
+    // `maximum`, so half the range rather than all of it is what keeps those from overflowing.
+    try std.testing.expect(out.maximum_time > 0);
+    try std.testing.expect(out.maximum_time < std.math.maxInt(i64) - out.maximum_time);
+
+    // The side-to-move DOES have a clock: the ordinary path, which must still compute a real
+    // budget rather than the sentinel.
+    var real = base;
+    real.time_ms = 1000;
+    const out_real = init(real);
+    try std.testing.expect(out_real.maximum_time < no_bound);
+    try std.testing.expect(out_real.optimum_time > 0);
 }
 
 test "timeman: a real budget yields 0 < optimum <= maximum" {
