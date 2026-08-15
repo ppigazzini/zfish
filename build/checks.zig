@@ -21,6 +21,10 @@ pub const Check = struct {
     desc: []const u8,
     in_parity: bool = true,
     in_portable: bool = true,
+    /// Depend on the 3-man Syzygy fetch, as gates.zig's own `needs_tb` rows do. Only the
+    /// malformed-input battery needs it here: its fixtures are MUTATIONS of a real table, so
+    /// with no corpus there is nothing to mutate and the gate SKIPs rather than passing.
+    needs_tb: bool = false,
 };
 
 pub const checks = [_]Check{
@@ -73,6 +77,15 @@ pub const checks = [_]Check{
     // exit, never a signal. Startup contract only, no search: portable, so it joins the
     // portable aggregate.
     .{ .check = "net-missing", .step = "parity-net-missing", .desc = "Missing-net startup: a named diagnostic + clean non-zero exit, never a signal" },
+    // Assert a KNOWN-BAD tablebase file is still refused (malformed). The one gate here whose
+    // input is HOSTILE rather than merely unusual: every other check feeds the engine a legal
+    // command sequence and asks what it does, where this feeds it a file mutated byte by byte
+    // and asks whether the parser stays inside its arrays. `signature` is green with every
+    // bound in decode_header.zig reverted -- the bench reads no file the engine did not ship
+    // with -- and the fuzz targets hunt UNDESCRIBED input on a nightly budget, so neither
+    // asks whether yesterday's refusal still holds. Needs the 3-man corpus, because the
+    // fixtures are mutations of real tables rather than crafted blobs; SKIPs loudly without it.
+    .{ .check = "malformed", .step = "parity-malformed", .desc = "Mutated Syzygy tables are survived: clean exit + a legal bestmove, never a crash or a hang", .in_portable = false, .needs_tb = true },
     // Assert the interrupted-search invariants no golden can cover (async; a command landing
     // inside a running search ends it wherever the clock got to, so there is no node count to
     // pin). A `stop` with nothing running must answer nothing and leave the engine up, and a
@@ -88,6 +101,8 @@ pub const Context = struct {
     stockfish: *std.Build.Step.Compile,
     install_step: *std.Build.Step,
     net_step: *std.Build.Step,
+    /// The 3-man Syzygy fetch, depended on only by rows that set `needs_tb`.
+    tb_step: *std.Build.Step,
 };
 
 /// Register each check's step; return check-name -> run for the aggregates to wire.
@@ -97,6 +112,7 @@ pub fn register(ctx: Context) std.StringHashMap(*std.Build.Step.Run) {
         // "-" stands in for the golden path: these gates carry their verdict in the harness,
         // so there is no file to diff and nothing to regenerate -- hence no update step.
         const cmd = gates.addHarnessRun(ctx.b, ctx.harness, ctx.stockfish, ctx.install_step, ctx.net_step, c.check, "-", "check");
+        if (c.needs_tb) cmd.step.dependOn(ctx.tb_step);
         const step = ctx.b.step(c.step, c.desc);
         step.dependOn(&cmd.step);
         runs.put(c.check, cmd) catch @panic("OOM registering checks");

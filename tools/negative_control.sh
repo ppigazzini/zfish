@@ -88,6 +88,11 @@ ROWS=(
     # gate and every value gate read identically -- which is exactly how the weekly upstream
     # job came to die at exit 127 with nothing in the tree able to see it.
     "lane-coverage|.github/workflows/zfish_perft.yml|      - uses: mlugg/setup-zig@|      - run: zig version\n      - uses: mlugg/setup-zig@|a job runs zig one step above its install"
+    # The hostile-input battery. Take the shift-width refusal out of the tablebase header
+    # parse: a raw file byte then reaches `1 << n` with n up to 255. Every value gate reads
+    # identically, because the bench and every golden read only files the engine shipped with
+    # -- which is precisely why this class of bound had nothing gating it before.
+    "parity-malformed|src/platform/syzygy/decode_header.zig|    if (buf[p] >= 64 or buf[p + 1] >= 64) return error.CorruptTable;\n|:DELETE:|the tablebase shift-width refusal is removed"
 )
 
 if [ "${1:-}" = "--list" ]; then
