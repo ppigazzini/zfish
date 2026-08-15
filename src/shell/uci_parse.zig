@@ -47,7 +47,32 @@ pub const ParsedLimits = struct {
     // offending value: `go depth abc` -> "Invalid argument for 'depth'". Null means every
     // argument parsed. The caller terminates on it; parsing itself stays total.
     bad_token: ?[]const u8 = null,
+    // Carry the "I bounded your clock" lines back to the caller, which owns stdout. Null when
+    // every clock was already in range, so the common path allocates nothing. Freed like
+    // `searchmoves`. NOT a `bad_token`: an out-of-range clock is bounded and the search runs,
+    // where an unparsable one refuses.
+    clamp_notice: ?[]u8 = null,
 };
+
+// Bound a clock at the point it ENTERS, which is the only place that knows it came from
+// outside.
+//
+// wtime, btime, winc, binc and movetime used to reach timeman's arithmetic as raw i64s off the
+// wire, and that arithmetic is asked to hold a number the protocol never had a right to send.
+// Confirmed on this tree before the bound, ReleaseSafe:
+//
+//   go wtime 4000000000000000000 winc 4000000000000000000 btime 1000
+//     thread panic: integer overflow, inside the search worker
+//
+// Illegal behaviour in Zig, so the shipped ReleaseFast build wraps silently into a garbage
+// budget instead. Neither is a defect in timeman: `time_left` multiplies a clock by up to 51
+// (`inc * (mtg - 1)` and `overhead * (2 + mtg)`), and no formula written in i64 can hold an
+// arbitrary i64 times fifty.
+//
+// The bound is 1e12 ms -- about 31 years, past any real time control, and far enough below the
+// top that every product timeman forms stays inside an i64. A negative clock is bounded at 0
+// for the same reason: `go wtime -50000000000` underflows the same expression.
+pub const max_clock_ms: i64 = 1_000_000_000_000;
 
 pub const ParsedPosition = struct {
     ok: u8,
@@ -95,7 +120,26 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
     };
     var searchmoves = std.ArrayList(u8).empty;
     defer searchmoves.deinit(allocator);
+    var notice = std.ArrayList(u8).empty;
+    defer notice.deinit(allocator);
     var iter = std.mem.tokenizeAny(u8, input, " \t\r\n");
+
+    // Bound one clock into [0, max_clock_ms] and report it if it moved. See max_clock_ms.
+    const clampClock = struct {
+        fn f(n: *std.ArrayList(u8), a: std.mem.Allocator, what: []const u8, given: i64) !i64 {
+            const bounded = std.math.clamp(given, 0, max_clock_ms);
+            if (bounded != given) {
+                const line = try std.fmt.allocPrint(
+                    a,
+                    "{s} {d} is outside [0, {d}]; using {d}\n",
+                    .{ what, given, max_clock_ms, bounded },
+                );
+                defer a.free(line);
+                try n.appendSlice(a, line);
+            }
+            return bounded;
+        }
+    }.f;
 
     while (iter.next()) |token| {
         if (std.mem.eql(u8, token, "searchmoves")) {
@@ -110,28 +154,28 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
             break;
         } else if (std.mem.eql(u8, token, "wtime")) {
             if (parseI64(iter.next())) |v| {
-                result.wtime = v;
+                result.wtime = try clampClock(&notice, allocator, "wtime", v);
             } else {
                 result.bad_token = "wtime";
                 break;
             }
         } else if (std.mem.eql(u8, token, "btime")) {
             if (parseI64(iter.next())) |v| {
-                result.btime = v;
+                result.btime = try clampClock(&notice, allocator, "btime", v);
             } else {
                 result.bad_token = "btime";
                 break;
             }
         } else if (std.mem.eql(u8, token, "winc")) {
             if (parseI64(iter.next())) |v| {
-                result.winc = v;
+                result.winc = try clampClock(&notice, allocator, "winc", v);
             } else {
                 result.bad_token = "winc";
                 break;
             }
         } else if (std.mem.eql(u8, token, "binc")) {
             if (parseI64(iter.next())) |v| {
-                result.binc = v;
+                result.binc = try clampClock(&notice, allocator, "binc", v);
             } else {
                 result.bad_token = "binc";
                 break;
@@ -159,7 +203,7 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
             }
         } else if (std.mem.eql(u8, token, "movetime")) {
             if (parseI64(iter.next())) |v| {
-                result.movetime = v;
+                result.movetime = try clampClock(&notice, allocator, "movetime", v);
             } else {
                 result.bad_token = "movetime";
                 break;
@@ -186,6 +230,7 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
     }
 
     result.searchmoves = try allocCString(allocator, searchmoves.items);
+    if (notice.items.len != 0) result.clamp_notice = try allocCString(allocator, notice.items);
     return result;
 }
 
@@ -274,6 +319,7 @@ const testing = std.testing;
 
 fn freeLimits(l: ParsedLimits) void {
     if (l.searchmoves) |s| std.heap.c_allocator.free(s);
+    if (l.clamp_notice) |n| std.heap.c_allocator.free(n);
 }
 fn freePosition(pp: ParsedPosition) void {
     if (pp.fen) |f| std.heap.c_allocator.free(f);
@@ -293,6 +339,54 @@ test "parseLimits reads the go parameters" {
     try testing.expectEqual(@as(i64, 500), l.movetime);
     try testing.expectEqual(@as(u8, 1), l.infinite);
     try testing.expectEqual(@as(u8, 1), l.ponder_mode);
+}
+
+// Drive the clocks that reached timeman's arithmetic unbounded, on the PURE parser.
+//
+// The parser allocates and returns a struct; it starts no search and spawns no thread, so the
+// reproducers are safe here. Against the binary they are a panic in ReleaseSafe and a wrapped
+// garbage budget in ReleaseFast, which is the defect -- and the assertion that matters is the
+// VALUE the search would have been handed, which is exactly what this returns.
+test "parseLimits bounds a clock the protocol had no right to send" {
+    // The overflow pair, from upstream's own reproducers: timeman multiplies a clock by up to
+    // 51, so an arbitrary i64 cannot survive `inc * (mtg - 1)`.
+    {
+        const l = parseLimits("wtime 4000000000000000000 winc 4000000000000000000 btime 1000");
+        defer freeLimits(l);
+        try testing.expectEqual(max_clock_ms, l.wtime);
+        try testing.expectEqual(max_clock_ms, l.winc);
+        try testing.expectEqual(@as(i64, 1000), l.btime); // in range, untouched
+        const notice = l.clamp_notice orelse return error.TestExpectedClampNotice;
+        try testing.expect(std.mem.indexOf(u8, notice, "wtime 4000000000000000000 is outside") != null);
+        try testing.expect(std.mem.indexOf(u8, notice, "winc 4000000000000000000 is outside") != null);
+        try testing.expect(std.mem.indexOf(u8, notice, "btime") == null);
+    }
+
+    // The same defect facing the other way: a negative clock underflows the same expression.
+    {
+        const l = parseLimits("wtime -50000000000 btime 1000");
+        defer freeLimits(l);
+        try testing.expectEqual(@as(i64, 0), l.wtime);
+        try testing.expect(l.clamp_notice != null);
+    }
+
+    // movetime takes the same bound: it is compared against the same budgets.
+    {
+        const l = parseLimits("movetime 9000000000000000000");
+        defer freeLimits(l);
+        try testing.expectEqual(max_clock_ms, l.movetime);
+        try testing.expect(l.clamp_notice != null);
+    }
+
+    // A real time control must be untouched and must report nothing -- a clamp that fires on a
+    // legal `go` is a regression, and the silent path is every game ever played.
+    {
+        const l = parseLimits("wtime 300000 btime 300000 winc 2000 binc 2000");
+        defer freeLimits(l);
+        try testing.expectEqual(@as(?[]u8, null), l.clamp_notice);
+        try testing.expectEqual(@as(i64, 300000), l.wtime);
+        try testing.expectEqual(@as(i64, 2000), l.winc);
+    }
 }
 
 test "parsePosition handles startpos and fen with moves" {

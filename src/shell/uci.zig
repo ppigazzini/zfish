@@ -304,6 +304,7 @@ fn applyPosition(engine: *engine_object.EngineObject, trimmed: []const u8) void 
 fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
     const limits = parseLimits(trimmed);
     defer uci_strings.freeMaybe(std.heap.c_allocator, limits.searchmoves);
+    defer uci_strings.freeMaybe(std.heap.c_allocator, limits.clamp_notice);
 
     const engine_ptr = engine;
 
@@ -330,6 +331,14 @@ fn applyGo(engine: *engine_object.EngineObject, trimmed: []const u8) void {
         var buf: [64]u8 = undefined; // longest keyword is "movestogo"
         const msg = std.fmt.bufPrint(&buf, "Invalid argument for '{s}'", .{bad}) catch "Invalid argument";
         terminateOnCriticalError(msg);
+    }
+
+    // Report any clock the parser had to bound. After the refusal above and before the search,
+    // because this one does NOT refuse: an out-of-range clock is bounded and the search runs,
+    // so the line has to reach the GUI before the move it shaped.
+    if (limits.clamp_notice) |lines_text| {
+        var it = std.mem.splitScalar(u8, lines_text, '\n');
+        while (it.next()) |line| if (line.len != 0) emitInfoString(line);
     }
 
     if (limits.perft != 0) {
