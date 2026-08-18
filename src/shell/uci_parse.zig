@@ -116,15 +116,16 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
     defer notice.deinit(allocator);
     var iter = std.mem.tokenizeAny(u8, input, " \t\r\n");
 
-    // Bound one clock into [0, max_clock_ms] and report it if it moved. See max_clock_ms.
+    // Bound one clock into [lo, max_clock_ms] and report it if it moved. See max_clock_ms.
+    // `lo` is 0 for every clock but `movetime`, which takes 1 -- see there.
     const clampClock = struct {
-        fn f(n: *std.ArrayList(u8), a: std.mem.Allocator, what: []const u8, given: i64) !i64 {
-            const bounded = std.math.clamp(given, 0, max_clock_ms);
+        fn f(n: *std.ArrayList(u8), a: std.mem.Allocator, what: []const u8, given: i64, lo: i64) !i64 {
+            const bounded = std.math.clamp(given, lo, max_clock_ms);
             if (bounded != given) {
                 const line = try std.fmt.allocPrint(
                     a,
-                    "{s} {d} is outside [0, {d}]; using {d}\n",
-                    .{ what, given, max_clock_ms, bounded },
+                    "{s} {d} is outside [{d}, {d}]; using {d}\n",
+                    .{ what, given, lo, max_clock_ms, bounded },
                 );
                 defer a.free(line);
                 try n.appendSlice(a, line);
@@ -169,28 +170,28 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
             break;
         } else if (std.mem.eql(u8, token, "wtime")) {
             if (parseI64(iter.next())) |v| {
-                result.wtime = try clampClock(&notice, allocator, "wtime", v);
+                result.wtime = try clampClock(&notice, allocator, "wtime", v, 0);
             } else {
                 result.bad_token = "wtime";
                 break;
             }
         } else if (std.mem.eql(u8, token, "btime")) {
             if (parseI64(iter.next())) |v| {
-                result.btime = try clampClock(&notice, allocator, "btime", v);
+                result.btime = try clampClock(&notice, allocator, "btime", v, 0);
             } else {
                 result.bad_token = "btime";
                 break;
             }
         } else if (std.mem.eql(u8, token, "winc")) {
             if (parseI64(iter.next())) |v| {
-                result.winc = try clampClock(&notice, allocator, "winc", v);
+                result.winc = try clampClock(&notice, allocator, "winc", v, 0);
             } else {
                 result.bad_token = "winc";
                 break;
             }
         } else if (std.mem.eql(u8, token, "binc")) {
             if (parseI64(iter.next())) |v| {
-                result.binc = try clampClock(&notice, allocator, "binc", v);
+                result.binc = try clampClock(&notice, allocator, "binc", v, 0);
             } else {
                 result.bad_token = "binc";
                 break;
@@ -222,7 +223,19 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
             }
         } else if (std.mem.eql(u8, token, "movetime")) {
             if (parseI64(iter.next())) |v| {
-                result.movetime = try clampClock(&notice, allocator, "movetime", v);
+                // A movetime of ZERO is an unstoppable search, not an instant one. The stop
+                // condition is `lim_movetime != 0 and elapsed >= lim_movetime`
+                // (search_control.zig), so zero does not mean "stop at once", it means "there
+                // is no time limit" -- and for `bench`/`benchmark` the UCI thread is inside
+                // the wait while it runs, so neither `stop` nor `quit` is read again.
+                // Measured: `bench 16 1 0 default movetime` never finishes position 1.
+                //
+                // Bound it here, where the other clocks are bounded and where the number is
+                // known to have come from outside, rather than teaching check_time a second
+                // meaning for zero -- that test is shared with the nodestime path, whose
+                // unit-mismatch is deliberate and must not be touched (see search_control.zig).
+                // One millisecond is the smallest limit that still stops.
+                result.movetime = try clampClock(&notice, allocator, "movetime", v, 1);
             } else {
                 result.bad_token = "movetime";
                 break;
@@ -341,12 +354,34 @@ test "parseLimits bounds a clock the protocol had no right to send" {
         try testing.expect(l.clamp_notice != null);
     }
 
-    // movetime takes the same bound: it is compared against the same budgets.
+    // movetime takes the same UPPER bound: it is compared against the same budgets.
     {
         const l = parseLimits("movetime 9000000000000000000");
         defer freeLimits(l);
         try testing.expectEqual(max_clock_ms, l.movetime);
         try testing.expect(l.clamp_notice != null);
+    }
+
+    // ...and a LOWER bound of one, which the other clocks do not take. Zero is not an instant
+    // search but an unstoppable one: the stop condition is `lim_movetime != 0 and elapsed >=
+    // lim_movetime`, so zero disables the only limit the search has. Reached without anyone
+    // typing it -- `bench 16 1 0 default movetime` passes the figure through verbatim, and
+    // before this bound it never finished position 1; after it, 51 bestmoves and exit 0.
+    {
+        const l = parseLimits("movetime 0");
+        defer freeLimits(l);
+        try testing.expectEqual(@as(i64, 1), l.movetime);
+        const notice = l.clamp_notice orelse return error.TestExpectedClampNotice;
+        try testing.expect(std.mem.indexOf(u8, notice, "movetime 0 is outside [1,") != null);
+    }
+
+    // A clock of zero is NOT bounded up -- only movetime is. `go wtime 0` is a real thing to
+    // send, and turning it into 1 would be inventing time the caller did not give.
+    {
+        const l = parseLimits("wtime 0 btime 0");
+        defer freeLimits(l);
+        try testing.expectEqual(@as(i64, 0), l.wtime);
+        try testing.expectEqual(@as(?[]u8, null), l.clamp_notice);
     }
 
     // A real time control must be untouched and must report nothing -- a clamp that fires on a
