@@ -5,20 +5,22 @@
 // engine coupling -- the move-view parsing that needs engine_mod.ByteView stays
 // in uci.zig's dispatch code). uci.zig re-exports the structs + the two public
 // entry points (parseLimits / parsePosition) for its dispatch/runtime code.
+//
+// The `position` half lives in uci_parse_position.zig, split off on the 500-line lint along
+// the seam this file already had: the two commands share no state, and the one helper they
+// both wanted moved down into the uci_strings base leaf rather than being owned by either --
+// a helper owned by one half would make the pair a file cycle. ParsedPosition / parsePosition
+// are re-exported here, so uci.zig keeps importing one module for both commands.
 
 const std = @import("std");
 const uci_strings = @import("uci_strings");
 
 const asciiLower = uci_strings.asciiLower;
+const allocCString = uci_strings.allocOwned;
+const uci_parse_position = @import("uci_parse_position.zig");
 
-// Provide a local allocator-taking allocCString (uci_strings.allocCString hardcodes
-// std.heap.c_allocator and has ~25 callers, so it is left alone); injecting the
-// allocator here makes the parsers' OOM paths reachable by checkAllAllocationFailures.
-// Copy `value` into an owned slice; injecting the allocator makes the parsers' OOM
-// paths reachable by checkAllAllocationFailures.
-fn allocCString(allocator: std.mem.Allocator, value: []const u8) !?[]u8 {
-    return try allocator.dupe(u8, value);
-}
+pub const ParsedPosition = uci_parse_position.ParsedPosition;
+pub const parsePosition = uci_parse_position.parsePosition;
 
 // ======================================================================== //
 // Parser cluster, moved verbatim from uci.zig.                       //
@@ -74,12 +76,6 @@ pub const ParsedLimits = struct {
 // for the same reason: `go wtime -50000000000` underflows the same expression.
 pub const max_clock_ms: i64 = 1_000_000_000_000;
 
-pub const ParsedPosition = struct {
-    ok: u8,
-    fen: ?[]u8,
-    moves: ?[]u8,
-};
-
 pub fn parseLimits(input: []const u8) ParsedLimits {
     return parseLimitsAlloc(std.heap.c_allocator, input) catch .{
         .wtime = 0,
@@ -96,10 +92,6 @@ pub fn parseLimits(input: []const u8) ParsedLimits {
         .ponder_mode = 0,
         .searchmoves = null,
     };
-}
-
-pub fn parsePosition(input: []const u8) ParsedPosition {
-    return parsePositionAlloc(std.heap.c_allocator, input) catch .{ .ok = 0, .fen = null, .moves = null };
 }
 
 fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimits {
@@ -138,6 +130,29 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
                 try n.appendSlice(a, line);
             }
             return bounded;
+        }
+    }.f;
+
+    // Bound one COUNT into [0, hi] and report it if it moved. Neither `movestogo` nor `mate`
+    // means anything below zero, and both are bounded where they ENTER rather than where they
+    // overflow -- the same place, and the same shape, as the clocks above.
+    //
+    // Read as i64 before clamping, exactly as the clocks are. Parsing straight into i32 accepts
+    // every value that fits it, which is the whole hazard: -2147483648 is in range for the type
+    // and nonsense for the field.
+    const clampCount = struct {
+        fn f(n: *std.ArrayList(u8), a: std.mem.Allocator, what: []const u8, given: i64, hi: i64) !i32 {
+            const bounded = std.math.clamp(given, 0, hi);
+            if (bounded != given) {
+                const line = try std.fmt.allocPrint(
+                    a,
+                    "{s} {d} is outside [0, {d}]; using {d}\n",
+                    .{ what, given, hi, bounded },
+                );
+                defer a.free(line);
+                try n.appendSlice(a, line);
+            }
+            return @intCast(bounded);
         }
     }.f;
 
@@ -181,8 +196,12 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
                 break;
             }
         } else if (std.mem.eql(u8, token, "movestogo")) {
-            if (parseInt(i32, iter.next())) |v| {
-                result.movestogo = v;
+            if (parseI64(iter.next())) |v| {
+                // A negative movestogo does not overflow here -- timeman widens it to i64 --
+                // but it carries straight into the time scale: `mtg` goes negative, so
+                // `(0.88 + ply / 116.4) / mtg` is negative, the optimum time with it, and the
+                // engine answers from a depth-4 search on a full clock.
+                result.movestogo = try clampCount(&notice, allocator, "movestogo", v, std.math.maxInt(i32));
             } else {
                 result.bad_token = "movestogo";
                 break;
@@ -209,8 +228,12 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
                 break;
             }
         } else if (std.mem.eql(u8, token, "mate")) {
-            if (parseInt(i32, iter.next())) |v| {
-                result.mate = v;
+            if (parseI64(iter.next())) |v| {
+                // Halve the ceiling: the stop condition compares against `2 * limits_mate`
+                // (search_id_loop.zig), so an i32 at its own maximum wraps that product
+                // negative and the condition can never hold -- the search runs on past a mate
+                // it has already found. Bounded at maxInt/2, the doubling always fits.
+                result.mate = try clampCount(&notice, allocator, "mate", v, @divTrunc(std.math.maxInt(i32), 2));
             } else {
                 result.bad_token = "mate";
                 break;
@@ -232,54 +255,6 @@ fn parseLimitsAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedLimi
     result.searchmoves = try allocCString(allocator, searchmoves.items);
     if (notice.items.len != 0) result.clamp_notice = try allocCString(allocator, notice.items);
     return result;
-}
-
-fn parsePositionAlloc(allocator: std.mem.Allocator, input: []const u8) !ParsedPosition {
-    var iter = std.mem.tokenizeAny(u8, input, " \t\r\n");
-    const first = iter.next() orelse return .{ .ok = 0, .fen = null, .moves = null };
-    var token = first;
-    if (std.mem.eql(u8, token, "position")) {
-        token = iter.next() orelse return .{ .ok = 0, .fen = null, .moves = null };
-    }
-
-    var fen = std.ArrayList(u8).empty;
-    defer fen.deinit(allocator);
-    var moves = std.ArrayList(u8).empty;
-    defer moves.deinit(allocator);
-
-    if (std.mem.eql(u8, token, "startpos")) {
-        try fen.appendSlice(allocator, start_fen);
-        _ = iter.next();
-    } else if (std.mem.eql(u8, token, "fen")) {
-        // Append a TRAILING space after every token, as upstream's `fen += token + " "`
-        // does (uci.cpp), rather than joining with separators. The two agree on a complete
-        // FEN and disagree on a truncated one: `position fen rnbq` hands the parser
-        // "rnbq " here and "rnbq" with a separator join, so the placement loop ends on
-        // whitespace in one case and on end-of-input in the other -- two different
-        // diagnostics for the same input.
-        while (iter.next()) |fen_token| {
-            if (std.mem.eql(u8, fen_token, "moves")) {
-                break;
-            }
-            try fen.appendSlice(allocator, fen_token);
-            try fen.append(allocator, ' ');
-        }
-    } else {
-        return .{ .ok = 0, .fen = null, .moves = null };
-    }
-
-    while (iter.next()) |move| {
-        if (moves.items.len != 0) {
-            try moves.append(allocator, '\n');
-        }
-        try moves.appendSlice(allocator, move);
-    }
-
-    // Free the first result if the second alloc fails (else it leaks on OOM).
-    const fen_c = try allocCString(allocator, fen.items);
-    errdefer if (fen_c) |f| allocator.free(f);
-    const moves_c = try allocCString(allocator, moves.items);
-    return .{ .ok = 1, .fen = fen_c, .moves = moves_c };
 }
 
 fn lowerAlloc(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
@@ -311,19 +286,15 @@ fn parseU64Wrapping(token: ?[]const u8) ?u64 {
     return std.fmt.parseInt(u64, text, 10) catch null;
 }
 
-const start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
 // ---- tests ------------------------------------------------------------------
 
 const testing = std.testing;
 
+const freePosition = uci_parse_position.freePosition;
+
 fn freeLimits(l: ParsedLimits) void {
     if (l.searchmoves) |s| std.heap.c_allocator.free(s);
     if (l.clamp_notice) |n| std.heap.c_allocator.free(n);
-}
-fn freePosition(pp: ParsedPosition) void {
-    if (pp.fen) |f| std.heap.c_allocator.free(f);
-    if (pp.moves) |m| std.heap.c_allocator.free(m);
 }
 
 test "parseLimits reads the go parameters" {
@@ -389,26 +360,40 @@ test "parseLimits bounds a clock the protocol had no right to send" {
     }
 }
 
-test "parsePosition handles startpos and fen with moves" {
-    const sp = parsePosition("position startpos moves e2e4 e7e5");
-    defer freePosition(sp);
-    try testing.expectEqual(@as(u8, 1), sp.ok);
-    try testing.expectEqualStrings(start_fen, sp.fen.?);
-    try testing.expectEqualStrings("e2e4\ne7e5", sp.moves.?);
+test "parseLimits bounds movestogo and mate where they enter" {
+    // A negative movestogo does not overflow -- timeman widens it to i64 -- it poisons the time
+    // SCALE: mtg goes negative, so does `(0.88 + ply / 116.4) / mtg` and the optimum time with
+    // it, and the engine answers a full clock from a depth-4 search. Measured before the bound:
+    // `go wtime 60000 btime 60000 movestogo -2147483648` reached depth 4 in 2 ms; after it,
+    // depth 29 in 5.2 s.
+    {
+        const l = parseLimits("go wtime 60000 btime 60000 movestogo -2147483648");
+        defer freeLimits(l);
+        try testing.expectEqual(@as(i32, 0), l.movestogo);
+        const notice = l.clamp_notice orelse return error.TestExpectedClampNotice;
+        try testing.expect(std.mem.indexOf(u8, notice, "movestogo -2147483648 is outside") != null);
+    }
 
-    const fp = parsePosition("position fen 4k3/8/8/8/8/8/8/4K3 w - - 0 1 moves e1e2");
-    defer freePosition(fp);
-    try testing.expectEqual(@as(u8, 1), fp.ok);
-    // Note the TRAILING space: upstream builds the FEN with `fen += token + " "`, and the
-    // difference is load-bearing on a truncated FEN -- see the comment at the assembly.
-    try testing.expectEqualStrings("4k3/8/8/8/8/8/8/4K3 w - - 0 1 ", fp.fen.?);
-    try testing.expectEqualStrings("e1e2", fp.moves.?);
+    // `mate` is halved rather than merely floored, because the stop condition compares against
+    // `2 * limits_mate`: at i32's own maximum that product wraps negative, the condition can
+    // never hold, and the search runs on past a mate it already has.
+    {
+        const l = parseLimits("mate 2147483647");
+        defer freeLimits(l);
+        try testing.expectEqual(@divTrunc(@as(i32, std.math.maxInt(i32)), 2), l.mate);
+        try testing.expect(l.clamp_notice != null);
+        // The bound is what makes the doubling safe; state it as arithmetic, not as a hope.
+        try testing.expect(@as(i64, l.mate) * 2 <= std.math.maxInt(i32));
+    }
 
-    // A truncated placement field must end at the trailing space, not at end-of-input, so
-    // the parser reports upstream's "cursor not at end" rather than "end of stream".
-    const trunc = parsePosition("position fen rnbq");
-    defer freePosition(trunc);
-    try testing.expectEqualStrings("rnbq ", trunc.fen.?);
+    // Both in range: untouched, and silent.
+    {
+        const l = parseLimits("movestogo 30 mate 5");
+        defer freeLimits(l);
+        try testing.expectEqual(@as(?[]u8, null), l.clamp_notice);
+        try testing.expectEqual(@as(i32, 30), l.movestogo);
+        try testing.expectEqual(@as(i32, 5), l.mate);
+    }
 }
 
 // Fuzz to prove neither parser crashes / OOBs on arbitrary input -- it returns a struct
@@ -443,20 +428,10 @@ test "parseLimitsAlloc unwinds leak-free on every allocation failure" {
     try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
 }
 
-test "parsePositionAlloc unwinds leak-free on every allocation failure" {
-    const T = struct {
-        fn run(a: std.mem.Allocator) !void {
-            const pp = try parsePositionAlloc(a, "position startpos moves e2e4 e7e5 g1f3 b8c6");
-            if (pp.fen) |f| a.free(f);
-            if (pp.moves) |m| a.free(m);
-        }
-    };
-    try std.testing.checkAllAllocationFailures(std.testing.allocator, T.run, .{});
-}
-
 // refAllDecls the UCI parse surface + the uci_strings C-string base leaf, so every
 // pub decl compiles under `zig build test` even if the exe never reaches it.
 test "all public decls compile (uci_parse + uci_strings)" {
     std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(uci_parse_position);
     std.testing.refAllDecls(uci_strings);
 }
