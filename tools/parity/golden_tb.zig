@@ -138,6 +138,65 @@ pub fn buildTbRoot(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         });
         _ = s.finish();
     }
+
+    // --- The WDL FALLBACK ranking, which only runs when DTZ is unavailable, under both settings
+    // of Syzygy50MoveRule.
+    //
+    // rankRootMovesWdl once tested `isDraw` without the option, so with the rule off -- the
+    // setting whose whole meaning is that the halfmove clock does not end the game -- every root
+    // move became a draw once that clock crossed 99, rankMovesAt zeroed the cardinality, and the
+    // search stopped probing. Nothing above can see it: with DTZ present the fallback never runs,
+    // and at the default setting the two draw tests agree.
+    //
+    // Stage a WDL-ONLY corpus to force the fallback. The stems are the 3-man set the fetch
+    // installs, the same five tb-init pins the count of -- if that set ever changes, tb-init
+    // reddens before this does. Copied rather than linked so the path is a plain directory on
+    // every filesystem the gate runs on.
+    {
+        const wdl_dir = "tb_root_wdlonly_tmp";
+        const stems = [_][]const u8{ "KBvK", "KNvK", "KPvK", "KQvK", "KRvK" };
+        defer Io.Dir.cwd().deleteTree(io, wdl_dir) catch {};
+        Io.Dir.cwd().deleteTree(io, wdl_dir) catch {};
+        try Io.Dir.cwd().createDirPath(io, wdl_dir);
+        var dest = try Io.Dir.cwd().openDir(io, wdl_dir, .{});
+        defer dest.close(io);
+        var src = try Io.Dir.cwd().openDir(io, "syzygy", .{});
+        defer src.close(io);
+        for (stems) |stem| {
+            var nb: [64]u8 = undefined;
+            const name = std.fmt.bufPrint(&nb, "{s}.rtbw", .{stem}) catch unreachable;
+            src.copyFile(name, dest, name, io, .{}) catch
+                fail("tb-root: staging {s} into {s} failed (is resources/syzygy fetched?)", .{ name, wdl_dir });
+        }
+
+        // A KRvK win with the halfmove clock at 99. The reported SCORE does not move -- the
+        // search's own isDraw applies the fifty-move rule whatever the tablebase says -- so pin
+        // the NODE COUNT, which is where the zeroed cardinality shows.
+        const rule50_cases = [_]struct { label: []const u8, value: []const u8 }{
+            .{ .label = "wdl-only-rule50-on ", .value = "true" },
+            .{ .label = "wdl-only-rule50-off", .value = "false" },
+        };
+        for (rule50_cases) |c| {
+            var s: Interactive = undefined;
+            try s.init(io, gpa, bin);
+            var setup: [256]u8 = undefined;
+            s.send(std.fmt.bufPrint(&setup, "setoption name SyzygyPath value {s}\nsetoption name Threads value 1\nsetoption name Syzygy50MoveRule value {s}\n", .{ wdl_dir, c.value }) catch unreachable);
+            s.send("position fen 8/8/8/8/8/8/4k3/K6R w - - 99 100\ngo depth 12\n");
+            _ = s.fillUntil("\nbestmove");
+            var last: ?InfoLine = null;
+            var li2 = lines(s.buffered());
+            while (li2.next()) |raw| {
+                const line = trimCR(raw);
+                if (parseInfoLine(line)) |info| {
+                    if (info.nodes != null) last = info;
+                }
+            }
+            const got = last orelse fail("tb-root: {s}: no info line with nodes", .{c.label});
+            try out.print(gpa, "{s} nodes={?d} tbhits={?d}\n", .{ c.label, got.nodes, got.tbhits });
+            _ = s.finish();
+        }
+    }
+
     return out.toOwnedSlice(gpa);
 }
 
