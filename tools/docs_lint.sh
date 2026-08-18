@@ -22,7 +22,9 @@
 # Exit:   0 all checks pass, 1 a doc contradicts the tree.
 set -uo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# `|| exit` is not decoration: without it a failed cd leaves the lint running in the
+# CALLER's directory, where it finds no docs/ and no src/ and reports nothing wrong.
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 fail=0
 
 # --- resolve a claim against the TREE, not this working directory ---------------------------

@@ -22,7 +22,9 @@
 set -uo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
+# No ORACLE_DIR here: this script reaches the oracle through upstream_oracle.sh below,
+# which resolves ZFISH_ORACLE_DIR itself. A copy of that line sat here unread, looking
+# like a knob that did nothing.
 # NOT `GROUPS`: that is a bash built-in array of the caller's group IDs, and assigning to it
 # is silently ignored -- the script then reported "missing 1000", the primary gid.
 GROUPS_FILE="$REPO/tools/fingerprint_groups.tsv"
