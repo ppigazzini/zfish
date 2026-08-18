@@ -52,8 +52,7 @@ fn fuzzSetSizes(_: void, smith: *std.testing.Smith) anyerror!void {
         return;
     };
     defer {
-        a.free(d.base64);
-        a.free(d.symlen);
+        probe.freeOwned(&d, a);
     }
 
     // A successful parse must have consumed only bytes the file actually has, and must have
@@ -102,8 +101,7 @@ fn fuzzDecompressPairs(_: void, smith: *std.testing.Smith) anyerror!void {
     const header_len = @as(usize, raw[0]) % raw.len;
     decode_header.setSizes(a, &d, raw[0..header_len], &pos) catch return;
     defer {
-        a.free(d.base64);
-        a.free(d.symlen);
+        probe.freeOwned(&d, a);
     }
 
     // Carve the remaining bytes into the three file-backed regions the registry would supply.
