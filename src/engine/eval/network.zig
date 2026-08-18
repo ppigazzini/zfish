@@ -7,12 +7,20 @@ const weight_storage = @import("nnue_weight_storage.zig");
 const nnue_inference = @import("nnue_inference.zig");
 const position_types = @import("position_types");
 const nnue_accumulator_port = @import("nnue_accumulator");
+const network_parse = @import("network_parse.zig");
+
+// Take the .nnue READER from network_parse.zig, split off on the 500-line lint. The seam is
+// the file's own: everything that walks an untrusted file into the live weights lives there,
+// and what remains here is the option-facing face -- load / save / verify. The dependency runs
+// one way, network -> network_parse, so the pair is not a file cycle.
+const loadNetworkBytes = network_parse.loadNetworkBytes;
+const writeU32LeInto = network_parse.writeU32LeInto;
+const network_version = network_parse.network_version;
 
 const Position = position_types.Position;
 
 const layer_stacks: usize = 8;
 const internal_dir = "<internal>";
-const network_version: u32 = 0x6A448AFA; // upstream nnue_common.h Version (post-merge format)
 const none_name = "None";
 // Name the embedded net's default (EvalFileDefaultName, evaluate.h), a build
 // constant. Keep a single source of truth: engine.zig imports this via the
@@ -183,14 +191,6 @@ const layerStorage = weight_storage.layerStorage;
 const layerPtr = weight_storage.layerPtr;
 pub const ftPtr = weight_storage.ftPtr;
 
-// Hash the eval-file names from the Zig-owned EvalFile state (matches upstream's
-// net-identity hash).
-
-const Header = struct {
-    hash_value: u32,
-    description: []const u8,
-};
-
 fn loadUserNet(dir: []const u8, evalfile_path: []const u8) void {
     markInitialized();
 
@@ -303,119 +303,6 @@ fn saveNamed(filename: []const u8) bool {
     return true;
 }
 
-fn loadNetworkBytes(bytes: []const u8, current_name: []const u8) bool {
-    var offset: usize = 0;
-    const header = readHeader(bytes, &offset) orelse return false;
-    if (header.hash_value != nnue_hash.networkHashValue()) {
-        return false;
-    }
-
-    if (!readFeatureTransformer(bytes, &offset)) {
-        return false;
-    }
-
-    var bucket: usize = 0;
-    while (bucket < layer_stacks) : (bucket += 1) {
-        if (!readLayer(bucket, bytes, &offset)) {
-            return false;
-        }
-    }
-
-    if (offset != bytes.len) {
-        return false;
-    }
-
-    setLoadedState(current_name, header.description);
-    // Trust the parse as the sole source of weights; correctness is verified end-to-end
-    // by the eval gates (bench / search-parity), and the offset==bytes.len check above
-    // verifies the consumed-byte count.
-    return true;
-}
-
-fn readHeader(bytes: []const u8, offset: *usize) ?Header {
-    const version = readU32Le(bytes, offset) orelse return null;
-    const hash_value = readU32Le(bytes, offset) orelse return null;
-    const description_len_u32 = readU32Le(bytes, offset) orelse return null;
-    if (version != network_version) {
-        return null;
-    }
-
-    const description_len: usize = @intCast(description_len_u32);
-    if (offset.* + description_len > bytes.len) {
-        return null;
-    }
-
-    const description = bytes[offset.* .. offset.* + description_len];
-    offset.* += description_len;
-    return .{ .hash_value = hash_value, .description = description };
-}
-
-// Transform one output bucket (FT). Reads weights from the feature-transformer
-// storage above (always resident after a network load) and runs the Zig accumulator
-// transform.
-
-// Parse the feature transformer into the Zig-owned storage and return the bytes
-// consumed (leading component hash + the LEB-coded params). The parse is the sole
-// source (the eval gates verify the weights end-to-end, and the offset==bytes.len check
-// at the end of loadNetworkBytes verifies the consumed count).
-fn loadFt(blob: []const u8) usize {
-    const dst_ptr = ftStorage(nnue_dims.ft_total_bytes) orelse
-        @panic("feature-transformer storage allocation failed");
-    const dst = dst_ptr[0..nnue_dims.ft_total_bytes];
-    // Report a malformed net as 0 consumed rather than aborting: the file is user input, and
-    // readFeatureTransformer already treats 0 as "reject this net".
-    return nnue_parse.parseFeatureTransformer(blob, dst) orelse 0;
-}
-
-fn readFeatureTransformer(bytes: []const u8, offset: *usize) bool {
-    const remaining = bytes[offset.*..];
-    const consumed = loadFt(remaining);
-    if (consumed == 0 or consumed > remaining.len) {
-        return false;
-    }
-    offset.* += consumed;
-    return true;
-}
-
-// Parse this bucket's affine layers into the Zig-owned storage (skip the leading
-// architecture hash, then fc_0/fc_1/fc_2 biases+scrambled weights) and return the bytes
-// consumed. The parse is the sole source.
-fn loadLayer(bucket: usize, blob: []const u8) usize {
-    var pos: usize = 4; // architecture component hash
-    // A blob too short to hold the hash cannot be sliced past it; reject rather than trap.
-    if (blob.len < pos) return 0;
-    for (0..3) |idx| {
-        const wb = layerWeightsBytes(idx);
-        const bb = layerBiasesBytes(idx);
-        const bdst = layerStorage(bucket, idx, .biases, bb) orelse
-            @panic("affine-layer storage allocation failed");
-        const wdst = layerStorage(bucket, idx, .weights, wb) orelse
-            @panic("affine-layer storage allocation failed");
-        // Report a malformed net as 0 consumed; readLayer already treats that as a reject.
-        // fc_1/fc_2 (idx > 0) read paired-activation output on the pair tier, so their
-        // weights take the extra input interleave (serializeLayer inverts the same flag).
-        const used = nnue_parse.parseLayer(
-            blob[pos..],
-            bdst[0..bb],
-            wdst[0..wb],
-            nnue_parse.scrambled_activations and idx > 0,
-        ) orelse return 0;
-        pos += used;
-        if (pos > blob.len) return 0;
-    }
-    return pos;
-}
-
-fn readLayer(bucket: usize, bytes: []const u8, offset: *usize) bool {
-    const remaining = bytes[offset.*..];
-    const consumed = loadLayer(bucket, remaining);
-    if (consumed == 0 or consumed > remaining.len) {
-        return false;
-    }
-    offset.* += consumed;
-    return true;
-}
-
 fn openFileForRead(io: std.Io, path: []const u8) !std.Io.File {
     if (std.fs.path.isAbsolute(path)) {
         return std.Io.Dir.openFileAbsolute(io, path, .{});
@@ -439,23 +326,6 @@ fn writeHeader(writer: *std.Io.Writer, hash_value: u32, description: []const u8)
     writeU32LeInto(header[8..12], @intCast(description.len));
     try writer.writeAll(&header);
     try writer.writeAll(description);
-}
-
-fn readU32Le(bytes: []const u8, offset: *usize) ?u32 {
-    if (offset.* + 4 > bytes.len) {
-        return null;
-    }
-
-    const start = offset.*;
-    offset.* += 4;
-    return @as(u32, bytes[start]) | (@as(u32, bytes[start + 1]) << 8) | (@as(u32, bytes[start + 2]) << 16) | (@as(u32, bytes[start + 3]) << 24);
-}
-
-fn writeU32LeInto(bytes: []u8, value: u32) void {
-    bytes[0] = @intCast(value & 0xff);
-    bytes[1] = @intCast((value >> 8) & 0xff);
-    bytes[2] = @intCast((value >> 16) & 0xff);
-    bytes[3] = @intCast((value >> 24) & 0xff);
 }
 
 fn viewToSlice(view: ByteView) []const u8 {
