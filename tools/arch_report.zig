@@ -392,6 +392,62 @@ pub fn main(init: std.process.Init) !void {
             if (!dup) try fadj.items[i].append(gpa, tid);
         }
     }
+    // ---- reachability: is every file COMPILED by anything? -------------------
+    //
+    // The file graph above is built by WALKING src/, so a file nothing imports is a node with
+    // no in-edge, present in N and invisible in every other reading. That is not a cosmetic
+    // gap: a source the build never names is not compiled, not linked and not covered by any
+    // gate, while still looking maintained. Verified by spike -- a stray src/ file whose only
+    // declaration was `@compileError` passed the whole `parity` aggregate, because the error
+    // fires on ANALYSIS and nothing analysed it.
+    //
+    // The roots are the declared entry points, and ALL THREE build files have to be read for
+    // the set to be complete: build/modules.zig (the module table), build/tests.zig (the test
+    // and fuzz roots, which own files the shipped graph does not reach), and build.zig itself.
+    // The first run of this tripwire named src/engine/headless.zig, which is not an orphan at
+    // all -- it is the `zig build engine` root, declared in build.zig and nowhere else. A root
+    // reader that misses a root reports every file below it as dead, so the miss shows up as a
+    // finding rather than as silence, which is the way round to want it.
+    var reachable = try gpa.alloc(bool, fg.names.len);
+    defer gpa.free(reachable);
+    @memset(reachable, false);
+    var queue: std.ArrayList(usize) = .empty;
+    defer queue.deinit(gpa);
+    const tests_src = try Io.Dir.cwd().readFileAlloc(io, "build/tests.zig", gpa, .unlimited);
+    defer gpa.free(tests_src);
+    for ([_][]const u8{ graph_src, tests_src, build_src }) |decl| {
+        var it = std.mem.splitSequence(u8, decl, "\"src/");
+        _ = it.next();
+        while (it.next()) |chunk| {
+            const e = std.mem.findScalar(u8, chunk, '"') orelse continue;
+            if (!std.mem.endsWith(u8, chunk[0..e], ".zig")) continue;
+            const path = try std.fmt.allocPrint(gpa, "src/{s}", .{chunk[0..e]});
+            defer gpa.free(path);
+            const rid = fg.idx(path) orelse continue;
+            if (!reachable[rid]) {
+                reachable[rid] = true;
+                try queue.append(gpa, rid);
+            }
+        }
+    }
+    var qi: usize = 0;
+    while (qi < queue.items.len) : (qi += 1) {
+        for (fg.adj[queue.items[qi]].items) |t| {
+            if (!reachable[t]) {
+                reachable[t] = true;
+                try queue.append(gpa, t);
+            }
+        }
+    }
+    var orphans: std.ArrayList(u8) = .empty;
+    defer orphans.deinit(gpa);
+    var orphan_count: usize = 0;
+    for (fg.names, 0..) |path, i| {
+        if (reachable[i]) continue;
+        orphan_count += 1;
+        try orphans.print(gpa, "    ORPHAN: {s}\n", .{path});
+    }
+
     var fscc_text: std.ArrayList(u8) = .empty;
     defer fscc_text.deinit(gpa);
     const fm = try measure(gpa, &fg, &fscc_text);
@@ -424,6 +480,11 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("  FILE SCCs: an UNDECLARED file cycle exists. Either name it a component or break it.\n", .{});
         failed = true;
     } else std.debug.print("  FILE SCCs: {d} known (search_main <-> search_back: the alpha-beta recursion, one component)\n", .{fm.sccs});
+    if (orphan_count != 0) {
+        std.debug.print("  SOURCE REACH: {d} file(s) no declared root reaches -- compiled by NOTHING, gated by nothing.\n", .{orphan_count});
+        std.debug.print("{s}", .{orphans.items});
+        failed = true;
+    } else std.debug.print("  SOURCE REACH: every src/ file is reachable from a declared root\n", .{});
 
     std.debug.print("  UNUSED EDGES: {d} (reported, not gated)\n", .{unused.items.len});
 

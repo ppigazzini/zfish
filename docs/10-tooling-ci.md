@@ -60,7 +60,7 @@ returned tier name to its feature set and macros.
 | `fuzz-board`, `fuzz-tb`, `fuzz-tb-probe` | The same three targets, one artifact each, so `--fuzz` gives each its own single-worker session and no target can be starved of an async slot. |
 | `fuzz-report` | Print how many inputs each fuzz artifact has executed. A `--fuzz` session reports no total, so this is how you see the budget you actually got. |
 | `upstream-parity` | Assert the Zig bench == pristine upstream at `UPSTREAM_BASE` (git worktree, no vendored C++). |
-| `arch-report` | Coupling report (module + file graphs) + DAG / undeclared-SCC tripwires. |
+| `arch-report` | Coupling report (module + file graphs) + DAG / undeclared-SCC / unreachable-source tripwires. |
 | `hook-lint` | Cycle-break hooks: ratcheted, each declaring a failure mode + class, all registered. |
 | `src-free` / `headless` / `loc` / `docs-lint` | The structural gates (see below). |
 | `lane-coverage` | Every step is in an aggregate, named by a workflow, or excused with an argument; and every job installs the toolchain before it runs it (see below). |
