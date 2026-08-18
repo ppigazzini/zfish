@@ -47,3 +47,10 @@ __pycache__/
 # resumed. It is generated state, not configuration -- it carries the engine paths, the TC and
 # the running W/L/D of whatever match last ran.
 /config.json
+
+# perf_callgrind.sh writes its profile and the node sidecar beside the cwd it is run
+# from -- resources/ normally, the repo root if invoked from there. Neither is a source,
+# and an unignored artifact is one `git add -A` away from being committed.
+callgrind.out
+callgrind.out.nodes
+callgrind.out.*

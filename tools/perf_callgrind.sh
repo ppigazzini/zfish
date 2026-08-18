@@ -34,7 +34,11 @@ set -u
 
 BIN="${1:?usage: perf_callgrind.sh <binary> [bench-args...]  (run with CWD=resources/)}"
 shift
-BENCH_ARGS=("${@:-16 1 11}")
+# Build the default as THREE elements, not one. `("${@:-16 1 11}")` yields a single
+# element "16 1 11" when no argument is given, which only reached argv as three words
+# because the expansion below was unquoted -- so the quoting and the default were load
+# bearing for each other, and fixing either alone breaks the tool.
+if [ $# -eq 0 ]; then BENCH_ARGS=(16 1 11); else BENCH_ARGS=("$@"); fi
 OUT="${OUT:-callgrind.out}"
 
 command -v valgrind >/dev/null || { echo "error: valgrind not installed" >&2; exit 1; }
@@ -46,7 +50,7 @@ echo "# callgrind: $BIN bench ${BENCH_ARGS[*]}  -> $OUT"
 # trees differ -- so `perf_callgrind_delta.py` reads this sidecar and refuses rather than
 # trusting the caller to have checked by eye.
 RAW=$(valgrind --tool=callgrind --callgrind-out-file="$OUT" --cache-sim=yes --branch-sim=yes \
-  "$BIN" bench ${BENCH_ARGS[*]} 2>&1)
+  "$BIN" bench "${BENCH_ARGS[@]}" 2>&1)
 printf '%s\n' "$RAW" |
   grep -E "Nodes searched|I   refs|I1  misses|D   refs|D1  misses|LLd misses|D1  miss rate|Branches|Mispredicts"
 printf '%s\n' "$RAW" | grep -oP 'Nodes searched\s*:\s*\K[0-9]+' > "$OUT.nodes" || true

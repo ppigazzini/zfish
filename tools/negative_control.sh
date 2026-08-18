@@ -41,7 +41,8 @@
 set -uo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-cd "$REPO"
+# A failed cd would mutate paths relative to whatever directory the caller was in.
+cd "$REPO" || exit 2
 
 # Bound each gate run. The clean runs below measure well under this; the margin is for a cold
 # rebuild, which every engine mutation forces.

@@ -28,7 +28,8 @@
 set -uo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-cd "$REPO"
+# A failed cd would run every tool from the caller's directory instead of the repo.
+cd "$REPO" || exit 2
 
 TIMEOUT="${SMOKE_TIMEOUT:-300}"
 

@@ -31,6 +31,26 @@ repos:
       # diagnostics make per-filename invocation wrong); tools/ is the only
       # Python in the tree, and [tool.ty] in pyproject.toml pins the env.
       - id: ty
+  # 25 hand-written bash scripts decide most of what this repo claims, and until this
+  # landed nothing had read them. The config below already lints, formats and type-checks
+  # the Python; the language the GATES are written in had nothing -- and a gate with a bug
+  # reports success, which is the failure mode AGENTS.md names first.
+  #
+  # Severity is `warning`, held at zero, NOT `style`. The style class here is 22 findings
+  # dominated by SC2016 (awk and grep programs in single quotes, where `$1` is awk's field
+  # and expansion would be the bug) and SC2086 (word splitting that several tools rely on).
+  # Each needs a judgement, and a gate that invites mechanical fixes to those is a gate that
+  # breaks tools: the first `warning` fix here, perf_callgrind.sh, had a default argument
+  # and an unquoted expansion that were load-bearing for EACH OTHER, so quoting it alone
+  # would have passed `bench "16 1 11"` as one argv element.
+  #
+  # Its first run found five, three of them the same class in gate drivers -- a `cd` with no
+  # `|| exit`, which leaves the gate running in the caller's directory.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]
   - repo: local
     hooks:
       # zig fmt is CI's first gate and blocks everything after it; run it on the
