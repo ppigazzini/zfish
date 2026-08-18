@@ -4,3 +4,5 @@ castle-OO Fen: qbrnnkrb/pppppppp/8/8/8/8/PPPPPPPP/QBRNNRKB b g - 1 1
 castle-OO Key: 2261F8BCBD142D44
 eval frc-start Final evaluation      +0.18 (white side) [with scaled NNUE, ...]
 eval frc-mid   Final evaluation      +0.18 (white side) [with scaled NNUE, ...]
+sloppy-castling opt-off Nodes searched: 8 e1c1=false
+sloppy-castling opt-on  Nodes searched: 8 e1c1=false

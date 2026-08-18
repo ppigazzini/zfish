@@ -428,5 +428,38 @@ pub fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         try out.print(gpa, "eval {s} {s}\n", .{ p.label, std.mem.trim(u8, fl, " ") });
     }
 
+    // --- A sloppy castling FIELD, at both settings of the option. `set` does not require the
+    // castling token to agree with the pieces: for a `Q` it walks inward from the corner and
+    // adopts the first rook it meets, so this board records a 960 geometry while the option
+    // still says standard. `legal` must decide the castle on the ROOK'S geometry -- the rook on
+    // b1 is the only thing between the king on e1 and the queen on a1, so castling exposes the
+    // king and e1c1 is illegal. Gating that test on the option instead let it through, and
+    // playing it reaches "King can be captured".
+    //
+    // Both arms are pinned because the bug was ASYMMETRIC: the 960 arm was always right, so a
+    // golden covering only one of them cannot see the defect return. The counts must agree.
+    {
+        const sloppy = [_]struct { label: []const u8, setup: []const u8, fen: []const u8 }{
+            .{ .label = "opt-off", .setup = "setoption name UCI_Chess960 value false\n", .fen = "4k3/8/8/8/8/8/8/qR2K3 w Q - 0 1" },
+            .{ .label = "opt-on ", .setup = "setoption name UCI_Chess960 value true\n", .fen = "4k3/8/8/8/8/8/8/qR2K3 w B - 0 1" },
+        };
+        for (sloppy) |c| {
+            const input = try std.fmt.allocPrint(gpa, "{s}position fen {s}\ngo perft 1\nquit\n", .{ c.setup, c.fen });
+            defer gpa.free(input);
+            var cap = try runEngine(gpa, io, bin, &.{}, input);
+            defer cap.deinit(gpa);
+            var total: ?[]const u8 = null;
+            var saw_castle = false;
+            var li = lines(cap.stdout);
+            while (li.next()) |raw| {
+                const line = trimCR(raw);
+                if (startsWith(line, "Nodes searched:")) total = line;
+                if (startsWith(line, "e1c1")) saw_castle = true;
+            }
+            const t = total orelse fail("chess960: sloppy-castling {s}: no perft total", .{c.label});
+            try out.print(gpa, "sloppy-castling {s} {s} e1c1={}\n", .{ c.label, std.mem.trim(u8, t, " "), saw_castle });
+        }
+    }
+
     return out.toOwnedSlice(gpa);
 }
