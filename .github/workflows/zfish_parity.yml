@@ -269,6 +269,12 @@ jobs:
   tsan-race:
     name: Linux TSan race gate
     runs-on: ubuntu-latest
+    # The one job in this file that had no deadline, and the one most able to need it: a race
+    # gate drives go/stop churn across thread counts, so its failure mode is a hang rather than
+    # an assertion. Without a deadline that hang burns the workflow's own limit and reports as
+    # cancelled instead of as this job. 60, not 30: a TSan build is several times a plain one
+    # and the margin is the point -- a deadline that trips on a slow runner is a flaky gate.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
