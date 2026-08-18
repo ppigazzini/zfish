@@ -122,9 +122,21 @@ it, and each fails on a different mistake. Run them together with `zig build par
 | --- | --- |
 | `headless` | an `engine/` file imports a `platform/` or `shell/` module. Resolves every `@import` through `build.zig`'s module table, so it sees the real edge, not a naming convention. Ratcheted — the count may only fall |
 | `headless.zig` + `zig build engine` | the engine graph stops compiling and testing on its own. This is the compiler-and-linker half: the lint proves no *declared* up-edge, this proves the result actually links with nothing else attached |
-| `arch-report` | the module graph gains a cycle, or the file graph gains one that is not the declared `search_main ↔ search_back` |
+| `arch-report` | the module graph gains a cycle, or the file graph gains one that is not the declared `search_main ↔ search_back`, or a `src/` file is reachable from no declared root |
 | `hook-lint` | a cycle-break hook is added without declaring its failure mode, or the composition root forgets to register one. The second is the dangerous case: an unregistered hook does not crash, it *answers* |
 | `src-free` | a C++ Stockfish or libc++ symbol reaches the shipped binary |
+
+`arch-report`'s third tripwire is about a file being COMPILED at all. Its file graph is built
+by walking `src/`, so a source nothing imports is a node with no in-edge — present in the count
+and invisible in every other reading. That is not cosmetic: a file the build never names is not
+compiled, not linked and not covered by any gate, while still looking maintained. Verified by
+spike, and the spike is the way to re-verify it: a stray `src/` file whose only declaration is
+`@compileError` passes the whole `parity` aggregate, because the error fires on *analysis* and
+nothing analyses it. The roots are read from all three build files — `build/modules.zig`,
+`build/tests.zig` and `build.zig` — and the first run proved why all three are needed by naming
+`src/engine/headless.zig`, which is the `zig build engine` root and not an orphan at all. A root
+reader that misses a root reports everything below it as dead, so the miss surfaces as a finding
+rather than as silence.
 
 The division matters. A lint over imports cannot prove the engine links standalone, and a
 standalone link cannot prove no *unused* up-edge was declared — a dead declared edge is a
