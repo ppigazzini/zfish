@@ -83,7 +83,19 @@ pub fn legal(pos: *const Position, m: u16) bool {
         while (s != from) : (s = @intCast(@as(i16, s) + step)) {
             if (attackersToExist(pos, s, all, them)) return false;
         }
-        if (!pos.chess960) return true;
+        // Test the ROOK'S GEOMETRY, not the UCI_Chess960 option. The option is not evidence
+        // about the board: `set` does not require the castling field to agree with the pieces
+        // -- for a `K`/`Q` token it walks inward from the corner and adopts the first rook it
+        // meets -- so `... w Q ...` on a board with a rook on b1 and none on a1 records a 960
+        // geometry while the option still says standard. Short-circuiting on the option then
+        // declared the castle legal with an enemy slider on a1 screened only by that rook, and
+        // the illegal move is not merely generated: playing it reaches "King can be captured".
+        //
+        // Always running the test is CORRECT in standard geometry rather than merely harmless
+        // there -- a corner rook lies on no line between its own king and any slider, since
+        // rank 1 has nothing beyond a1 or h1 and neither square shares a file or diagonal with
+        // e1 -- so it can never be one of that king's blockers and the test was always going
+        // to pass. `orig_to` is the rook square under the king-takes-rook encoding.
         return (pos.st.blockers_for_king[us] & sqBb(orig_to)) == 0;
     }
 
