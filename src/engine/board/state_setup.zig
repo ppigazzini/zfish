@@ -45,6 +45,16 @@ pub fn setCastlingRight(pos_ptr: *Position, c: u8, rfrom: u8) void {
     const color_castling: u8 = if (c == color_white) 3 else 12; // WHITE_CASTLING : BLACK_CASTLING
     const cr: u8 = color_castling & side_mask;
 
+    // A right has ONE rook and the mask had two. castling_rook_square[cr] holds a single
+    // square, while castling_rights_mask carries the bit on every square ever named for cr --
+    // so a castling field with two tokens on the same side (`w AB`, both rooks left of the
+    // king) left the DISCARDED rook holding a bit the position no longer uses, and doMove
+    // clears the rights of whatever square a piece leaves. Moving that discarded rook then
+    // destroyed the right the surviving rook owns. Only a malformed field reaches this, and
+    // the position invariant check cannot see it.
+    if (pos.st.castling_rights & @as(i32, cr) != 0)
+        pos.castling_rights_mask[pos.castling_rook_square[cr]] &= ~@as(i32, cr);
+
     pos.st.castling_rights |= @as(i32, cr);
     pos.castling_rights_mask[kfrom] |= @as(i32, cr);
     pos.castling_rights_mask[rfrom] |= @as(i32, cr);

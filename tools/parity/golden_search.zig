@@ -461,5 +461,29 @@ pub fn buildChess960(gpa: std.mem.Allocator, io: Io, bin: []const u8) ![]u8 {
         }
     }
 
+    // --- Two castling tokens on the SAME side. `AB` puts both white rooks left of the king, so
+    // both resolve to the same CastlingRights: the second `setCastlingRight` overwrote
+    // castling_rook_square while the first rook kept its castling_rights_mask bit. doMove clears
+    // the rights of whatever square a piece leaves, so moving the rook the position had already
+    // DISCARDED destroyed the right the surviving rook owns. Pin both renderings -- the field as
+    // parsed, and the field after the discarded rook moves.
+    {
+        const input = "setoption name UCI_Chess960 value true\n" ++
+            "position fen 4k3/8/8/8/8/8/8/RR1K4 w AB - 0 1\nd\n" ++
+            "position fen 4k3/8/8/8/8/8/8/RR1K4 w AB - 0 1 moves a1a2\nd\nquit\n";
+        var cap = try runEngine(gpa, io, bin, &.{}, input);
+        defer cap.deinit(gpa);
+        var n: usize = 0;
+        var li = lines(cap.stdout);
+        while (li.next()) |raw| {
+            const line = trimCR(raw);
+            if (startsWithIgnoreCase(line, "Fen:")) {
+                try out.print(gpa, "dup-castling-token {d} {s}\n", .{ n, line });
+                n += 1;
+            }
+        }
+        if (n != 2) fail("chess960: dup-castling-token: {d} of 2 Fen lines", .{n});
+    }
+
     return out.toOwnedSlice(gpa);
 }
