@@ -454,6 +454,43 @@ The gates live in `tools/parity/golden_tb.zig`, each diffed against a golden in 
 aggregate. Each has a matching `-update` step that regenerates its golden from the current
 binary. They are Linux-only, matching the POSIX-only file load.
 
+### The bucket width is a knee, and three ways to improve it are already refused
+
+`len_tab` is a direct-mapped table from the stream's top `min(max_sym_len, 12)` bits, indexed at
+random by compressed data. The 12 is a measured knee rather than a round number. Measured here,
+over the 60 `PairsData` the 3-man and 5-man corpora build between them (largest `max_sym_len`
+20), as the share of buckets left holding the escape index:
+
+| index width | buckets | escape share |
+| --- | --- | --- |
+| 8 | 13,760 | 38.78% |
+| 10 | 46,528 | 21.81% |
+| **12** | **155,072** | **9.91%** |
+| 16 | 1,547,712 | 0.09% |
+
+Below 12 the escape share climbs fast, and an escape is the data-dependent scan the table exists
+to remove. Above it the table grows 10x for the last ten points, against a 32 KB L1d it already
+shares with `symlen[]` and `btree[]` — both also randomly indexed.
+
+Three restructurings of this loop were measured on the sibling C tree (`../Stockfish`, branch
+`refish`, under gcc) and all three cost more than they bought. They are
+recorded because two of them read as obvious improvements:
+
+| | change | result |
+| --- | --- | --- |
+| A | index width 12 → 8 | **+11.71%** search Ir — the escape rate is the whole trade |
+| B | 4-bit entries, two buckets per byte, bucket count unchanged | **+27.14%** — coverage preserved exactly, but the extract is ~4 instructions in a ~20-instruction body |
+| C | the three per-length arrays packed into one 4-byte entry | **+2.03%** — one more live 32-bit value in a loop already at the register file's limit, and gcc spills |
+
+**C is why `shift_tab`, `off_tab` and `real_len_tab` are three separate arrays here and must stay
+that way.** Packed into one record they read as tidier and cost a register in the hottest loop in
+the reader. Those are that tree's numbers under gcc, so they are hypotheses about this one — but
+they are hypotheses with a mechanism, and the mechanism is the same register pressure `decode.zig`
+already lives under. Re-measure before re-trying, do not re-derive.
+
+Reopen the width on a 6-man corpus and not before: that is where the working set genuinely exceeds
+L1 and the balance could invert. Neither corpus here reaches it.
+
 **None of those five carries the decoder.** Measured by mutation: a `buildDecodeTables`
 defect that moves 130 of 1422 probe values leaves `tb-wdl`, `tb-dtz`, `tb-root` and
 `tb-search` all green, and only `tb-cursed` goes red. The 3-man set the aggregate fetches
