@@ -167,8 +167,106 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
             d.symlen[sym] = probe.setSymLen(d, @intCast(sym), visited);
         };
 
+    try buildDecodeTables(gpa, d, base64_size, symlen_size);
+    errdefer {
+        gpa.free(@constCast(d.len_tab));
+        d.len_tab = &.{};
+    }
+
     p += symlen_size & 1;
     pos.* = p;
+}
+
+// Fill the tables the decode loop reads per symbol, and prove the alphabet the table declares.
+//
+// Three of the values the loop computed per symbol depend only on the symbol's LENGTH, of which
+// a table has at most 63: the right-pad shift, the lowest symbol of that length folded with the
+// base subtraction, and the real bit length the consumed word is shifted by. One entry each
+// turns five arithmetic operations and an unaligned read out of the mapping into three loads.
+//
+// The fold is an IDENTITY, not an approximation, and it holds on every input rather than only on
+// a well-formed one. base64[len] is right-padded by exactly `shift`, so its low `shift` bits are
+// zero, and the scan only stops where buf64 >= base64[len] -- so
+//
+//     (buf64 - base64[len]) >> shift  ==  (buf64 >> shift) - (base64[len] >> shift)
+//
+// with no borrow to lose. Truncating that difference to 16 bits and adding lowest_sym is the same
+// modular sum whichever order the terms are taken in, so the decoder's arithmetic is unchanged.
+//
+// `len_tab` answers the length SCAN, which is the single most expensive thing in the reader --
+// measured at 13.6% of a whole probing search on this tree, a data-dependent loop no predictor
+// learns. A code no longer than the index width owns a whole number of buckets of the word's top
+// bits, because base64[] is right-padded to 64 bits: the span runs from its own base to one below
+// the smallest base ahead of it, and both ends land on a bucket boundary while the length fits the
+// index. So a byte per bucket answers exactly what the scan searched for. A bucket no such length
+// covers holds only words longer than the index width, so it names the first index such a word can
+// occupy and the scan resumes there. The entry is never above the true length either way, which is
+// what lets the scan below it stand unchanged -- no sentinel, no branch.
+//
+// The alphabet proof replaces a bound the decoder used to carry per symbol. For each length the
+// scan can reach, the widest word reaching it is one below the smallest base ahead of it, and that
+// pins the largest symbol the length can name. A table naming one outside symlen[]'s domain is
+// refused here, once per table opened, rather than tested once per symbol decoded. It is computed
+// in u64 WITHOUT truncation, so it bounds a corrupt table too -- which is the whole point of
+// moving it off the probe path.
+fn buildDecodeTables(gpa: std.mem.Allocator, d: *PairsData, base64_size: usize, symlen_size: usize) !void {
+    @setRuntimeSafety(true);
+
+    // Per-length values. base64_size is at most 63 and the shift is in 1..63, both by the bounds
+    // setSizes has already enforced on min_sym_len and max_sym_len.
+    for (0..base64_size) |len| {
+        const shift: u6 = @intCast(64 - len - d.min_sym_len);
+        d.shift_tab[len] = shift;
+        d.real_len_tab[len] = @intCast(len + d.min_sym_len);
+        d.off_tab[len] = rdSym(d.lowest_sym[len * 2 ..]) -%
+            @as(u16, @truncate(d.base64[len] >> shift));
+    }
+
+    // Cap the index at 12 bits. Uncapped it wants 2^63 entries; capped, the table stays 1 <<
+    // max_sym_len bytes for a small alphabet and 4 KiB at most, and the buckets the stream reaches
+    // are the same either way -- so the cap costs cache lines, not answers.
+    const bits: u6 = @intCast(@min(d.max_sym_len, 12));
+    const tab_shift: u6 = @intCast(64 - @as(u32, bits));
+    // The first index a code longer than the table's width can occupy. Clamped into base64[]:
+    // when every length fits the index the value would run one past the last entry, and it is
+    // then never read, because no bucket is left uncovered.
+    const escape: u8 = if (d.min_sym_len > bits)
+        0
+    else
+        @intCast(@min(@as(usize, bits) + 1 - d.min_sym_len, base64_size - 1));
+
+    const tab = try gpa.alloc(u8, @as(usize, 1) << bits);
+    errdefer gpa.free(tab);
+    @memset(tab, escape);
+
+    // Walk the lengths once, carrying the smallest base AHEAD of the current one. The scan takes
+    // the FIRST base a word clears, so that running minimum -- not base64[len - 1] -- is what
+    // bounds a length's reachable span; a non-canonical table need not be descending, and this
+    // form answers for one without assuming it is.
+    var min_prev: u64 = std.math.maxInt(u64);
+    for (0..base64_size) |len| {
+        const reachable = len == 0 or (min_prev != 0 and d.base64[len] <= min_prev - 1);
+        if (reachable) {
+            const widest: u64 = if (len == 0) std.math.maxInt(u64) else min_prev - 1;
+
+            // The proof: the largest symbol this length can name must index symlen[].
+            const span = (widest - d.base64[len]) >> d.shift_tab[len];
+            if (span + rdSym(d.lowest_sym[len * 2 ..]) >= symlen_size) return error.CorruptTable;
+
+            // The buckets, for a length the index is wide enough to hold. Both ends are
+            // bucket-aligned: this base is right-padded past the index width, and `widest` is one
+            // below a base of a SHORTER length, which is padded further still.
+            if (len + d.min_sym_len <= bits) {
+                var bucket = d.base64[len] >> tab_shift;
+                const last = widest >> tab_shift;
+                while (bucket <= last) : (bucket += 1) tab[@intCast(bucket)] = @intCast(len);
+            }
+        }
+        min_prev = @min(min_prev, d.base64[len]);
+    }
+
+    d.len_tab = tab;
+    d.len_tab_shift = tab_shift;
 }
 
 // Carve `n` bytes out of `buf` at `pos.*`, advancing it, or null if the file is too short.

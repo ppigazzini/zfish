@@ -125,27 +125,32 @@ pub fn decompressPairs(d: *const PairsData, idx: u64) i32 {
     var sym: Sym = 0;
 
     while (true) {
-        // `len` needs no bound: setSizes sets base64[base64_size - 1] = 0 and the right-pad
-        // shift keeps it 0, so `buf64 < 0` is false for any u64 and the scan stops at
-        // base64_size - 1 at the latest. lowest_sym is carved to exactly that many entries.
-        var len: i32 = 0; // symbol length - min_sym_len
-        while (buf64 < d.base64[@intCast(len)]) len += 1;
+        // Start the length scan where the bucket table says the word cannot be shorter than,
+        // instead of at zero. The entry is exact for every code the index is wide enough to
+        // hold and a lower bound otherwise (decode_header.buildDecodeTables), so the loop below
+        // it is the SAME loop -- it simply has nothing left to do in the common case. The scan
+        // still needs no bound of its own: setSizes sets base64[base64_size - 1] = 0 and the
+        // right-pad shift keeps it 0, so `buf64 < 0` is false for any u64 and the scan stops at
+        // base64_size - 1 at the latest.
+        var len: usize = d.len_tab[@intCast(buf64 >> d.len_tab_shift)]; // symbol length - min_sym_len
+        while (buf64 < d.base64[len]) len += 1;
         // Narrow and add the way upstream's `Sym` arithmetic does -- a C implicit conversion
-        // to uint16_t truncates, and uint16_t addition wraps. The shift leaves up to
-        // max_sym_len (< 64) bits, so on a corrupt table the value exceeds u16: @intCast would
-        // be an illegal cast (ReleaseFast UB) where upstream simply truncates. Both forms agree
-        // on every valid table, where the canonical code guarantees the symbol fits.
-        sym = @truncate((buf64 - d.base64[@intCast(len)]) >>
-            @intCast(64 - len - @as(i32, d.min_sym_len)));
-        sym +%= rdSym(d.lowest_sym[@as(usize, @intCast(len)) * 2 ..]);
+        // to uint16_t truncates, and uint16_t addition wraps. The base subtraction is folded
+        // into off_tab at load, which is exact rather than approximate: base64[len]'s low shift
+        // bits are zero and the scan stops only above it, so the shifted difference loses no
+        // borrow, and a modular sum does not care in which order its terms are taken.
+        sym = @as(Sym, @truncate(buf64 >> d.shift_tab[len])) +% d.off_tab[len];
 
-        if (sym >= d.symlen.len) return 0; // decoded from the payload: not header-checkable
-        if (offset < @as(i32, d.symlen[sym]) + 1) break;
+        // No bound on `sym` here. setSizes proves at load that no length this table declares can
+        // name a symbol outside symlen[], and refuses the table when one can -- so the check
+        // that used to run once per symbol decoded now runs once per table opened.
+        const sym_len = d.symlen[sym];
+        if (offset < @as(i32, sym_len) + 1) break;
 
-        offset -= @as(i32, d.symlen[sym]) + 1;
-        len += d.min_sym_len; // real length
-        buf64 <<= @intCast(len);
-        buf64_size -= len;
+        offset -= @as(i32, sym_len) + 1;
+        const real_len = d.real_len_tab[len];
+        buf64 <<= @intCast(real_len);
+        buf64_size -= real_len;
         if (buf64_size <= 32) {
             buf64_size += 32;
             // Refuse a window the symbol lengths have driven out of range. A valid table never
@@ -198,6 +203,14 @@ const StubTable = struct {
 
     fn pairs(self: *@This()) PairsData {
         var d = PairsData{};
+        // Fill the per-length values the way setSizes would for this header (min_sym_len 1,
+        // max_sym_len 1, base64 = {0}), because the decode loop now reads them instead of
+        // deriving them. With min == max == 1 the bucket table is the default two-entry
+        // walk-from-zero, and the shift leaves the symbol in symlen[]'s two entries -- which
+        // is the same bound setSizes proves for a real table.
+        d.shift_tab[0] = 63;
+        d.real_len_tab[0] = 1;
+        d.off_tab[0] = 0;
         d.span = 64;
         d.sizeof_block = 64;
         d.min_sym_len = 1;
@@ -231,8 +244,11 @@ test "decompressPairs terminates on a btree child that does not shrink" {
     stub.btree[0] = .{ .lr = .{ 0, 0x00, 0x00 } }; // left = 0, right = 0 (not the 0xFFF leaf)
     stub.symlen[0] = 5;
     var d = stub.pairs();
-    // Any decode reaching the descent must return rather than spin.
-    try std.testing.expectEqual(@as(i32, 0), decompressPairs(&d, 0));
+    // Probe at HALF A SPAN, not at zero. `offset` starts at (idx % span) - span / 2, so index 0
+    // drives it negative and the backward block walk returns at `block == 0` -- before the
+    // bitstream is ever read. This test asserted the descent terminates while never reaching
+    // it; index 32 leaves offset at 0 and runs the decode loop and the descent for real.
+    try std.testing.expectEqual(@as(i32, 0), decompressPairs(&d, 32));
 }
 
 test "decompressPairs SingleValue returns the stored value" {

@@ -203,13 +203,19 @@ free — a cold path carrying a value, as here — and when it is not.
 
 `decode_header.setSizes` additionally refuses `min_sym_len == 0` (it would make the `k == 0` right-pad
 shift exactly 64, which does not fit the `u6` it is cast to) alongside the inverted and
-oversized pairs it already rejected. Rejections release `base64`/`symlen` through
+oversized pairs it already rejected. Rejections release `base64`/`symlen`/`len_tab` through
 `errdefer`: the shipped caller passes the registry arena and would not care, but the unit
-tests and fuzz target pass a checking allocator, and that is what surfaced the leak.
+tests and fuzz target pass a checking allocator, and that is what surfaced the leak. Those
+three are what `probe.freeOwned` releases; it skips a `len_tab` still pointing at the shared
+walk-from-zero default, which is static storage rather than an allocation.
 
-What the header cannot pin is block **content**. `block` and `sym` are decoded from the
-compressed bitstream, so `decompressPairs` checks those two itself and returns 0 rather
-than reading off the table. Its 64- and 32-bit windows read *ahead* of the symbol being
+What the header cannot pin is block **content**. `block` is decoded from the compressed
+bitstream, so `decompressPairs` checks it itself and returns 0 rather than reading off the
+table. `sym` is decoded from the bitstream too, but its bound is a property of the TABLE
+rather than of the payload: `buildDecodeTables` derives, for every length the scan can
+reach, the largest symbol that length can name, and refuses a table naming one outside
+`symlen[]`. That is the same guarantee the probe-time test gave, established once per table
+opened instead of once per symbol decoded. Its 64- and 32-bit windows read *ahead* of the symbol being
 decoded, which on a final block reaches past the stored data — upstream lands in the
 mmap's page padding, and zfish used to land in `loadFile`'s 63-byte alignment slack.
 `windowBe` zero-fills that tail instead, so the bits are defined rather than whatever the
@@ -236,7 +242,7 @@ The decoder implements exactly what `decode.zig`, `decode_header.zig` and `probe
 | Layer | What the code does |
 | --- | --- |
 | **Symbols / btree** | `probe.LR` is a 3-byte entry packing two 12-bit symbols (left, right child). `right() == 0xFFF` marks a leaf, whose `left()` is the stored value. `probe.setSymLen` fills `d.symlen`, each entry holding the number of values its symbol represents **minus one** — a leaf is 0, and an internal symbol is `symlen[left] + symlen[right] + 1`. |
-| **Canonical Huffman** | `decode_header.setSizes` builds `d.base64` from `d.lowest_sym` (`base64[i] >= base64[i+1]`, right-padded to 64 bits) and records `min_sym_len` / `max_sym_len`. |
+| **Canonical Huffman** | `decode_header.setSizes` builds `d.base64` from `d.lowest_sym` (`base64[i] >= base64[i+1]`, right-padded to 64 bits) and records `min_sym_len` / `max_sym_len`. `buildDecodeTables` then derives what the decode loop would otherwise recompute per symbol: `shift_tab` / `off_tab` / `real_len_tab` hold the three values that depend only on a symbol's length, and `len_tab` maps the word's top bits to a lower bound on that length so the scan resumes there instead of at zero. |
 | **Indices** | `probe.SparseEntry` is 6 bytes (`block[4]`, `offset[2]`, read LE at access). `sparse_index_size = ceil(tb_size / span)`; `block_length_size = blocks_num + padding`. |
 | **Pairs data** | `decode.decompressPairs(d, idx)` locates the block via the sparse index, walks `block_length[]` to the exact block, reads that block's bitstream in big-endian 64-bit windows, decodes the symbol, then descends the btree to the leaf value. |
 | **Single value** | When `flag_single_value` is set the table stores one value in `min_sym_len` and `decompressPairs` returns it for any index. |
@@ -447,6 +453,15 @@ The gates live in `tools/parity/golden_tb.zig`, each diffed against a golden in 
 `tb-init`, `tb-wdl`, `tb-dtz`, `tb-root`, and `tb-search` are all wired into the `parity`
 aggregate. Each has a matching `-update` step that regenerates its golden from the current
 binary. They are Linux-only, matching the POSIX-only file load.
+
+**None of those five carries the decoder.** Measured by mutation: a `buildDecodeTables`
+defect that moves 130 of 1422 probe values leaves `tb-wdl`, `tb-dtz`, `tb-root` and
+`tb-search` all green, and only `tb-cursed` goes red. The 3-man set the aggregate fetches
+cannot close that gap either — its codes fit the bucket index, so the escape path the
+mutation broke never fires on it, and the same mutation is invisible across all 1422
+positions when only `resources/syzygy` is loaded. `tb-cursed` is the sole carrier for
+`decompressPairs`, it is local-only, and it has already sat red for a week unnoticed once.
+Run it by hand after ANY edit to `decode.zig` or `decode_header.zig`.
 
 Unit tests run under `zig build test` without any table file: `encode.zig` checks the
 geometry against known mathematics (`Binomial[k][n] == C(n,k)`, 462 king-pair encodings,

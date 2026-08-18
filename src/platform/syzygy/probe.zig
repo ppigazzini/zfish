@@ -40,6 +40,11 @@ comptime {
 // external file, and a many-item pointer carries no length for either the parse or the decoder to
 // check against. table_load.set fills them by carving `buf` with a bound (`take`), so a truncated
 // file is rejected at load; the remaining slices are owned allocations.
+// Stand in for the bucket table on a PairsData nothing has filled -- the SingleValue branch,
+// a hand-built stub, a fuzzer's partial parse. Two entries and a shift of 63 index in range for
+// any word and name index 0, which is where the scan started before there was a table at all.
+const walk_from_zero: [2]u8 = .{ 0, 0 };
+
 pub const PairsData = struct {
     flags: u8 = 0,
     max_sym_len: u8 = 0,
@@ -56,11 +61,48 @@ pub const PairsData = struct {
     data: []const u8 = &.{},
     base64: []u64 = &.{},
     symlen: []u8 = &.{},
+    // Answer the decode loop's per-symbol questions from a load-time table instead of
+    // recomputing them per symbol. All four are filled by decode_header.setSizes and are
+    // indexed by `len` -- the base64[] index, i.e. the code length minus min_sym_len.
+    //
+    // `len_tab` maps the top `64 - len_tab_shift` bits of the bitstream word to a LOWER
+    // BOUND on that word's `len`, so the scan resumes there instead of at zero. A code no
+    // longer than the index width owns a whole number of buckets (base64[] is right-padded
+    // to 64 bits, so both ends of a length's span land on a bucket boundary), which makes
+    // the answer exact for those; a bucket no such length covers holds the first index a
+    // longer code can occupy. Either way the value never exceeds the true `len`, so the
+    // scan below it stays correct without a sentinel or a branch.
+    len_tab: []const u8 = &walk_from_zero,
+    len_tab_shift: u6 = 63,
+    // The three values the loop derives from `len` alone: the right-pad shift, the folded
+    // symbol offset (lowest_sym[len] minus base64[len] >> shift, mod 2^16 -- see the
+    // decoder), and the real code length the consumed word is shifted by. Inline rather
+    // than allocated: base64_size is at most 63, so all three fit beside the pointers and
+    // each index folds into its own load's addressing.
+    shift_tab: [64]u6 = @splat(0),
+    off_tab: [64]u16 = @splat(0),
+    real_len_tab: [64]u8 = @splat(0),
     pieces: [tb_pieces]u8 = @splat(0),
     group_idx: [tb_pieces + 1]u64 = @splat(0),
     group_len: [tb_pieces + 1]i32 = @splat(0),
     map_idx: [4]u16 = @splat(0),
 };
+
+// Release the allocations setSizes owns on this PairsData.
+//
+// Skip the bucket table when it is still the shared walk-from-zero default: that is static
+// storage, not an allocation, and a PairsData that never reached the table build -- the
+// SingleValue branch, a header refused before it -- still carries it. The shipped loader frees
+// through an arena and never calls this; the fuzz targets and any test holding a checking
+// allocator do.
+pub fn freeOwned(d: *PairsData, gpa: std.mem.Allocator) void {
+    gpa.free(d.base64);
+    gpa.free(d.symlen);
+    if (@intFromPtr(d.len_tab.ptr) != @intFromPtr(&walk_from_zero)) gpa.free(@constCast(d.len_tab));
+    d.base64 = &.{};
+    d.symlen = &.{};
+    d.len_tab = &walk_from_zero;
+}
 
 // Hold the per-table metadata (built at init from the material config); PairsData is filled lazily.
 pub const EntryInfo = struct {
