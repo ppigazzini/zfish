@@ -75,6 +75,19 @@ pub const script_gates = [_]ScriptGate{
     // nothing checked. This does NOT check whether a sentence is true -- "numa_context is a
     // never-dereferenced stub handle" parsed, linked, and was false for weeks; only reading the
     // code finds that. It buys the cheap half so review can spend attention on the expensive half.
+    // Gate the one defect class every other gate here is blind to: an engine that stops
+    // ANSWERING. Each golden gate compares a result, so a wedged engine reads to it as the
+    // harness timing out -- a rig fault, not a detection -- and four defects on this tree's
+    // register were exactly that: a `setoption` during `go infinite`, the same during ponder,
+    // `go movetime 0`, and `bench <tt> <thr> 0 default movetime`, which held the UCI thread
+    // inside its own wait where neither `stop` nor `quit` could reach it.
+    //
+    // The deadline lives HERE and not in tools/parity/session.zig, whose no-watchdog argument
+    // stands: a deadline on the shared driver would turn a slow runner red on gates whose whole
+    // subject is how long a search takes. These cases answer in milliseconds when they answer at
+    // all, so seconds of deadline is headroom rather than a race. Every case is mutation-proven
+    // to go red without its fix; one that could not was removed rather than kept as decoration.
+    .{ .step = "liveness", .script = "tools/liveness.sh", .desc = "hang gate: every mid-search command and self-limiting search still yields a bestmove", .needs_engine = true, .cwd_resources = true, .in_parity = true },
     .{ .step = "docs-lint", .script = "tools/docs_lint.sh", .desc = "docs rot gate: every link resolves, every named src/tools path exists, the bench anchor matches build.zig", .in_parity = true },
     // Gate the cross-version build shims structurally. `build/config.zig` owns one comptime
     // branch per std.Build API that differs between 0.16 and master; the rest of the build is
