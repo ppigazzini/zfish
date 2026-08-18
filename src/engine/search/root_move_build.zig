@@ -322,7 +322,20 @@ fn rankRootMovesWdl(
         try scratch.doMove(ranked_move.raw_move);
 
         var wdl: i32 = undefined;
-        if (position_port.isDraw(scratch.pos, 1)) {
+        // Take `rule50` on the CLOCK half of the draw test, exactly as rankRootMovesDtz above
+        // spells it. This test used to ignore the option, so with Syzygy50MoveRule false --
+        // the setting whose whole meaning is that the halfmove clock does not end the game --
+        // every root move became a draw the moment that clock crossed 99. rankMovesAt then
+        // sees every tb_rank equal with tb_score <= draw, zeroes the cardinality, and the
+        // search stops probing the tables at all: a won position, ranked as drawn, with the
+        // tablebases switched off under it.
+        //
+        // A repetition is a draw under EITHER setting, which is why only the clock half takes
+        // the flag. With the option on the two forms agree -- isDraw already covers
+        // repetition -- so nothing changes at the default.
+        if ((rule50 and position_port.isDraw(scratch.pos, 1)) or
+            position_port.isRepetition(scratch.pos, 1))
+        {
             wdl = wdl_draw;
         } else {
             const probe = try probePosition(scratch.pos);
