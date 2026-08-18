@@ -27,6 +27,17 @@ pub fn allocFormatted(gpa: std.mem.Allocator, comptime fmt: []const u8, args: an
 }
 
 /// Free an optional owned slice, for the `orelse return null` producers below.
+// Copy `value` into an owned slice, taking the allocator rather than hardcoding one -- which
+// is what makes the parsers' OOM paths reachable by checkAllAllocationFailures. Optional to
+// match the Parsed* fields it fills.
+//
+// It lives HERE, in the base leaf, rather than in either parser: both halves of the UCI parse
+// need it, and a helper owned by one half would make that pair a file cycle -- which is what
+// arch-report's FILE SCC tripwire caught when the `position` parser was split out.
+pub fn allocOwned(gpa: std.mem.Allocator, value: []const u8) !?[]u8 {
+    return try gpa.dupe(u8, value);
+}
+
 pub fn freeMaybe(gpa: std.mem.Allocator, value: ?[]u8) void {
     if (value) |slice| gpa.free(slice);
 }
