@@ -6,3 +6,5 @@ eval frc-start Final evaluation      +0.18 (white side) [with scaled NNUE, ...]
 eval frc-mid   Final evaluation      +0.18 (white side) [with scaled NNUE, ...]
 sloppy-castling opt-off Nodes searched: 8 e1c1=false
 sloppy-castling opt-on  Nodes searched: 8 e1c1=false
+dup-castling-token 0 Fen: 4k3/8/8/8/8/8/8/RR1K4 w B - 0 1
+dup-castling-token 1 Fen: 4k3/8/8/8/8/8/R7/1R1K4 b B - 1 1
