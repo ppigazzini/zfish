@@ -61,6 +61,7 @@ returned tier name to its feature set and macros.
 | `fuzz-report` | Print how many inputs each fuzz artifact has executed. A `--fuzz` session reports no total, so this is how you see the budget you actually got. |
 | `upstream-parity` | Assert the Zig bench == pristine upstream at `UPSTREAM_BASE` (git worktree, no vendored C++). |
 | `arch-report` | Coupling report (module + file graphs) + DAG / undeclared-SCC / unreachable-source tripwires. |
+| `liveness` | Every mid-search command and self-limiting search still yields a `bestmove`, inside a deadline the gate owns. |
 | `hook-lint` | Cycle-break hooks: ratcheted, each declaring a failure mode + class, all registered. |
 | `src-free` / `headless` / `loc` / `docs-lint` | The structural gates (see below). |
 | `lane-coverage` | Every step is in an aggregate, named by a workflow, or excused with an argument; and every job installs the toolchain before it runs it (see below). |
@@ -261,6 +262,7 @@ means one side was missed. Both sides of a shared field have to be relaxed.
 | --- | --- |
 | `src-free` | The shipped binary contains zero C++ Stockfish / libc++ symbols. |
 | `parity-net-missing` | Starting with no net produces a named diagnostic and a clean non-zero exit — never a signal. |
+| `liveness` | The engine still ANSWERS. Every other gate here compares a result, so a wedged engine reads to it as the *harness* timing out — a rig fault rather than a detection. Four defects on this tree's register were exactly that shape: a `setoption` during `go infinite`, the same during ponder, `go movetime 0`, and `bench <tt> <thr> 0 default movetime`, which holds the UCI thread inside its own wait where neither `stop` nor `quit` can reach it. The deadline lives in this gate and NOT in `tools/parity/session.zig`, whose no-watchdog argument stands: a deadline on the shared driver would redden a correct engine on a slow runner, on gates whose whole subject is how long a search takes. These cases answer in milliseconds when they answer at all. Each case is mutation-proven to go red without its fix; one that could not — a poisoned `movestogo`, which makes the engine answer too *fast* — was removed rather than kept as decoration, and is carried by a unit test instead. |
 | `hook-lint`, `arch-report`, `headless`, `loc` | See below. |
 
 ## The structural gates
