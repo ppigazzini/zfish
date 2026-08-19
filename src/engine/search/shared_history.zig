@@ -26,10 +26,28 @@ pub inline fn sharedOf(w: *const WorkerHistories) *SharedHistories {
     return w.shared_history.?;
 }
 
+// Name one worker's share of a striped table: which slice, and out of how many.
+//
+// ONE value rather than two adjacent `usize` parameters, and that is the whole reason it
+// exists. Transposed, `(index, total)` is still two counts and still type-checks, and the
+// damage is silent in the direction that matters: the stripes cover the whole array only if
+// every index asks exactly once against the same total. A swap breaks that with no bound and
+// no diagnostic in the way -- at a total of 8 and an index of 3 it computes a start of
+// `8 * size / 3`, past the end, and `fillI16` writes there; at the single-worker case the
+// bench runs, it divides by zero. Neither is checked in ReleaseFast.
+//
+// It costs nothing to carry: two usizes in a struct with no methods travel in the same two
+// registers the two parameters did, and this is off every hot path -- three calls per worker
+// clear, none of them per node.
+pub const WorkerShare = struct {
+    index: usize,
+    total: usize,
+};
+
 // Partition `size` entries by numa: [start, end).
-inline fn dynRange(size: usize, thread_idx: usize, numa_total: usize) struct { start: usize, end: usize } {
-    const start = thread_idx * size / numa_total;
-    const end = if (thread_idx + 1 == numa_total) size else (thread_idx + 1) * size / numa_total;
+inline fn dynRange(size: usize, share: WorkerShare) struct { start: usize, end: usize } {
+    const start = share.index * size / share.total;
+    const end = if (share.index + 1 == share.total) size else (share.index + 1) * size / share.total;
     return .{ .start = start, .end = end };
 }
 
@@ -62,21 +80,21 @@ pub inline fn fillI16Slice(dst: []i16, comptime val: i16) void {
     fillI16(dst.ptr, 0, dst.len, val);
 }
 
-pub fn clearSharedHistory(shared: *SharedHistories, thread_idx: usize, numa_total: usize) void {
+pub fn clearSharedHistory(shared: *SharedHistories, share: WorkerShare) void {
     const corr_entry_i16: usize = @sizeOf([2]CorrectionBundle) / @sizeOf(i16);
     {
-        const r = dynRange(shared.corr_size, thread_idx, numa_total);
+        const r = dynRange(shared.corr_size, share);
         const base: [*]i16 = @ptrCast(@alignCast(shared.corr_data));
         fillI16(base, r.start * corr_entry_i16, r.end * corr_entry_i16, -5);
     }
     {
-        const r = dynRange(shared.pawn_size, thread_idx, numa_total);
+        const r = dynRange(shared.pawn_size, share);
         fillI16(shared.pawn_data, r.start * hist_pieceto, r.end * hist_pieceto, -1338);
     }
     {
         // continuationHistory is the shared table's fixed-size member (not thread-scaled);
         // stripe its flat int16 range across this node's workers -- upstream fills it to -586.
-        const r = dynRange(worker_histories.continuation_history_len, thread_idx, numa_total);
+        const r = dynRange(worker_histories.continuation_history_len, share);
         fillI16(shared.cont_data, r.start, r.end, -586);
     }
 }
