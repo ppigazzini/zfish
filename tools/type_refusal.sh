@@ -167,6 +167,22 @@ export fn probe(x: u8) u8 {
 }
 '
 
+# --- WorkerShare: one value where two adjacent counts used to sit -------------
+check_row "workershare-bare     (a raw usize)  " src/engine/search \
+    "expected type 'shared_history.WorkerShare', found 'comptime_int'" \
+'const sh = @import("shared_history.zig");
+export fn probe() usize {
+    const s: sh.WorkerShare = 3;
+    return s.index;
+}
+' \
+'const sh = @import("shared_history.zig");
+export fn probe() usize {
+    const s: sh.WorkerShare = .{ .index = 3, .total = 8 };
+    return s.index;
+}
+'
+
 # NOT A ROW, and the omission is stated rather than left as silence:
 # `qsearchImpl`'s `@compileError("quiescence is never entered at the root")` cannot be
 # reached this way. Analysing it means analysing search_qsearch.zig, which imports
@@ -174,6 +190,15 @@ export fn probe(x: u8) u8 {
 # snippet fails with "no module named 'worker_layout'", which is a rig fault, not a
 # refusal. The adjacent property it guards is covered by the unit test
 # "NodeKind: a root is a PV node, and quiescence is never a root" in search_types.zig.
+#
+# The continuation-history quadrant is left out for TWO reasons, and the second is the one
+# that matters. `setContHist(w, ss, in_check, capture, pc, to)` already takes two distinct
+# one-bit enums, so the types are there -- but history.zig imports worker_layout by module
+# name, so the snippet cannot reach the call; and a row written as `setContHist(..., .yes,
+# .no, ...)` would prove NOTHING anyway, because a Zig enum literal coerces to whichever
+# parameter type it lands on. Only transposing two NAMED values of the two types is refused,
+# which is the enum-literal trap that made an earlier version of a sibling check hollow. A row
+# that cannot fail is worse than no row.
 
 echo
 if [ "$FAILED" -eq 0 ]; then

@@ -78,6 +78,7 @@ comptime {
 pub const SharedHistories = shared_history.SharedHistories;
 pub const SharedHistoriesMap = shared_history.SharedHistoriesMap;
 pub const clearSharedHistory = shared_history.clearSharedHistory;
+pub const WorkerShare = shared_history.WorkerShare;
 pub const constructSharedHistories = shared_history.constructSharedHistories;
 pub const deinitSharedHistories = shared_history.deinitSharedHistories;
 pub const verifySharedHistories = shared_history.verifySharedHistories;

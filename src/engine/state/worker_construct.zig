@@ -93,7 +93,7 @@ fn constructWorkerInto(buf: [*]u8, in: WorkerCtorInputs, biases: [*]const i16) v
     const wl = worker_layout.WorkerLayout.fromPtr(buf);
     writeConstructorFields(buf, in);
     search_driver.clearWorkerHistories(wl);
-    search_driver.clearSharedHistory(in.shared_history, in.numa_thread_idx, in.numa_total);
+    search_driver.clearSharedHistory(in.shared_history, .{ .index = in.numa_thread_idx, .total = in.numa_total });
     search_port.fillReductions(&wl.reductions, reductions_count);
     nnue_acc.clearRefreshCache(@ptrCast(&wl.refresh_table), biases);
 }
