@@ -168,6 +168,14 @@ as `expected type 'i32', found 'search_common.HistLimit'`, and a bare `10692` as
 `expected type 'search_common.HistLimit', found 'comptime_int'`. It costs nothing: the
 parameter stays `comptime`, so the `.text` section is byte-identical across the change.
 
+Those two sentences are quotations from a gate, not recollections. `zig build type-refusal`
+writes each mistake into a snippet beside the module and requires the compiler to reject it
+**with that message**, and requires the legal form to still compile — so a decl that was
+renamed away cannot score a pass by failing for a different reason. It exists because the
+paragraph above is where this page was wrong: the claim that a `comptime` parameter made the
+transposition inexpressible was written down, believed, and false. A refusal nobody has
+watched happen is an assumption.
+
 An enum would not do here. Two pairs of tables share a value today
 (ButterflyHistory/LowPlyHistory at 7183, PawnHistory/TTMoveHistory at 8192), and Zig
 refuses duplicate enum values — while collapsing each pair to one name would make a sync
@@ -191,7 +199,10 @@ graph LR
 The search used to spell a node's kind as two independent `comptime` booleans. Four
 combinations, three meanings: a root is always searched on a full window, so a non-PV
 root names nothing, and no call site ever produced one. One `comptime NodeKind`
-parameter makes it unwriteable — there is no fourth variant.
+parameter makes it unwriteable — there is no fourth variant, and `type-refusal` holds a row
+that tries to name one (`has no member named 'non_pv_root'`). Restoring the variant is also
+the gate's negative-control mutation: an unused enum variant moves no value, so the anchor
+and every golden stay green while the domain quietly widens.
 
 `quiescent()` carries a fact the code held only in a comment: dropping into quiescence
 loses rootness and keeps PV-ness, so the root's own quiescence node is an ordinary PV
