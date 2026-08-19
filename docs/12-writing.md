@@ -15,6 +15,18 @@ Each page owns one subsystem and names its **audience** in the index table. A pa
 Anything a reader could learn from Stockfish's wiki belongs in [11-references](11-references.md)
 as a link.
 
+**Two surfaces, and only one of them ships.** `docs/`, [README](../README.md),
+[CONTRIBUTING](../CONTRIBUTING.md) and [AGENTS.md](../AGENTS.md) are the shipped set, written
+for a contributor reading the tree cold. Beside them sits an internal, gitignored surface
+carrying the engineering contract, the campaign reports and the working notes a clone never
+receives. **Do not converge the two.** A shipped page must not carry campaign history, and an
+internal note must not be the only place a shipped fact lives. A shipped file must not name
+that surface's **location** either: `.gitignore` excludes it, so the reference dangles for
+every reader except the author who wrote it. `docs-lint` sweeps the whole tracked index for
+one — not a list of directories, which is how two commits broke the same rule days apart in a
+sibling port — because the path check beside it cannot help: an ignored path is exempt there
+by design.
+
 ## The rules
 
 Each one is here because breaking it shipped a defect in this repo.
@@ -53,6 +65,15 @@ how to tell a correction from laundering a bug. Say what the thing does *not* co
 quote `zig build arch-report`, `hook-lint`, `signature`. Every figure written into prose here
 went stale within days — several from the same session that wrote them.
 
+**Never pin a list a gate owns, either.** The gates `zig build parity` aggregates, the tiers,
+the lanes: a list that has drifted by one entry reads exactly like one that has not, and
+prose is where that drift is invisible. The parity aggregate has one owner — the `in_parity`
+flag on the gate tables in `build/checks.zig`, `build/gates.zig` and `build/structural.zig`,
+which `build.zig` reads to assemble the step and `build/lanes.zig` walks to hold every other
+step to it. Name that owner beside the claim instead of transcribing what it currently
+yields. Where a list is genuinely useful in prose — the CI lane table, the gate battery —
+write it knowing nothing checks it, and expect it to rot.
+
 **Separate upstream fact from zfish decision.** "Upstream does X" is checkable against a
 pinned sha; "zfish does Y because Z" is a choice someone must be able to revisit. Blur them
 and a reader cannot tell which they are allowed to change.
@@ -60,6 +81,16 @@ and a reader cannot tell which they are allowed to change.
 **No history.** "Used to be X", "fixed in Y", "previously a stub" is out of date the day after
 and tells a reader nothing about the code in front of them. The before/after belongs in the
 commit message — that, plus the code, is the durable record.
+
+**One exemption, and only for the part that is a ledger.** A refutation is a fact about this
+tree, not a story about the week it was measured: the "measured dead here" sections of
+[08-idiomatic-zig](08-idiomatic-zig.md) and the falsified list in [AGENTS.md](../AGENTS.md)
+exist so nobody re-derives them, and the accumulator's cost sections in
+[03-engine-eval](03-engine-eval.md) exist so nobody deletes a component that pays. Write each
+as the rule a reader applies now, with the number as its evidence — never as a narrative of
+what was tried. Everything above the measurement in those pages describes the code as it is
+and is bound by this rule like any other page; a ledger that grows upward through a
+description leaves a reader who wanted to know how the thing works reading a campaign diary.
 
 **Show the command.** "It is faster" is not a claim. `nps_ab.sh` output is. A performance or
 behaviour claim ships with what produced it, so the next reader can re-run it instead of
@@ -80,7 +111,8 @@ next-steps list nobody asked for.
 These pages do not age alike, and treating them the same is why they rot. A page is **hot**
 when it describes code that moves: it is a running claim about a tree someone is changing
 today. It is **cold** when what it describes barely moves — the rules here, external links,
-patterns.
+patterns. **Warm** is neither: the prose is stable, but a gate or a rename underneath it can
+date a row without anyone editing the page.
 
 **Change hot code, re-read its page in the same commit.** Not "later": a doc is wrong from the
 moment the code lands, and nobody knows which claim broke better than the person who broke it.
@@ -96,10 +128,10 @@ moment the code lands, and nobody knows which claim broke better than the person
 | [06-platform](06-platform.md) | `src/platform/` | hot |
 | [07-shell](07-shell.md) | `src/shell/` | hot |
 | [10-tooling-ci](10-tooling-ci.md) | `build.zig` steps, `build/`, `tools/`, `.github/workflows/` | hot |
+| [09-type-design](09-type-design.md) | the value domain: what the quantities mean and which are distinguishable | warm — the rules are cold, but `type-refusal` compiles what this page says is illegal, so a claim here that stops holding reddens a gate rather than merely rotting |
+| [13-glossary](13-glossary.md) | the vocabulary, in tiers | warm — a definition outlives the file it points at, but every entry names an owning symbol and a rename dates it |
 | [08-idiomatic-zig](08-idiomatic-zig.md) | patterns and the measurement discipline | cold |
-| [09-type-design](09-type-design.md) | the value domain: what the quantities mean and which are distinguishable | cold |
 | [11-references](11-references.md) | external links | cold |
-| [13-glossary](13-glossary.md) | the vocabulary, in tiers | cold — a definition outlives the file it points at, and the owners it cites are what can date |
 | this page | the rules | cold |
 
 The hot rows are where every false claim in this set has been found: a handler's output stream,
@@ -196,21 +228,46 @@ Upstream's own convention does not apply here and should not be copied across: i
 functional changes on fishtest, which this port does not use. The equivalent evidence here is
 a gate on one machine, and it belongs in the gates block where a reader can re-run it.
 
-## The gate
+## The gate, and what it cannot see
 
-`zig build docs-lint` (inside `zig build parity`) fails on:
+`zig build docs-lint` (inside `zig build parity`) reads every shipped `*.md` and fails on:
 
-- a dead internal link,
-- a path named in prose that is not in the tree — any `src/`, `tools/`, `docs/`, `build/` or
-  `.github/` path, resolved against `git ls-files` rather than your checkout, so a file a
-  rename left behind fails here instead of in a fresh clone; a path `.gitignore` names is
-  exempt (a **bare** filename like `uci.zig` is not checked — write the path if you want the
-  gate to hold it, except for a `*.yml`, which is checked against `.github/workflows/`
-  because the CI lane table names its lanes bare). `.cpp`/`.h` are **not** checked: those
-  name upstream's tree, which these pages reference without owning,
-- a bench signature quoted here that disagrees with `build.zig`.
+- **a dead internal link**, resolved against `git ls-files` rather than your checkout, so a
+  file a rename left behind fails here instead of in a fresh clone. A trailing `#anchor` is
+  stripped first and is **not** verified: a link to a heading that no longer exists passes.
+- **a path named in prose that is not in the tree** — any `src/`, `tools/`, `docs/`, `build/`
+  or `.github/` path; a path `.gitignore` names is exempt, since a doc naming the tool that
+  *writes* a file is not making a claim about a tracked one. A **bare** filename like
+  `uci.zig` is not checked — write the path if you want the gate to hold it, except for a
+  `*.yml`, which is checked against `.github/workflows/` because the CI lane table names its
+  lanes bare. `.cpp`/`.h` are **not** checked: those name upstream's tree, which these pages
+  reference without owning.
+- **the bench anchor, quoted at all** — the live value, not a stale one. Permitting the
+  current number was the inversion that let six pinnings accumulate across four pages: each
+  was legal the moment it was written, and they would all have reddened together at the next
+  sync, where the cheapest way back to green is to re-pin and buy the same red again. The
+  reverse is the deliberate hole — once no page may write the live number, a dead one can
+  only arrive by hand.
+- **a backticked identifier defined nowhere in the tree.** A deleted shell function's name
+  outlived it by a whole session in 07-shell, and the three checks above all passed over it —
+  which is also why this bullet does not quote the name: the gate reads its own page.
+- **a build step no shipped page mentions**, since a gate a contributor cannot find is a gate
+  this repo does not have.
+- **a reference to the internal surface** from any tracked file.
 
-**It cannot tell you a sentence is false.** *"`numa_context` is a never-dereferenced stub
+**Three classes stay out of its reach, and they are the common ones:**
+
+- **a real symbol attributed to the wrong file.** The symbol check asks whether the name
+  exists anywhere under `src/`, `tools/` or `build.zig` — never whether it lives where the
+  sentence puts it.
+- **a list with the wrong count or order** — every list the rule above names. Each lints
+  perfectly clean, and each has been wrong in this set.
+- **a behaviour described as absent from a build that has it**, which is how AGENTS.md came
+  to promise a SIGSEGV from a binary that names its missing net and exits 1.
+
+### It cannot tell you a sentence is false
+
+*"`numa_context` is a never-dereferenced stub
 handle"* parsed, linked, named no dead path — and was false for weeks, because the code had
 moved and the prose had not. The gate buys the mechanical half so review can spend its
 attention on the half that needs a reader.

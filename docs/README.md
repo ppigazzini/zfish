@@ -82,6 +82,18 @@ close is precisely the auto-vectorization Zig withholds.
 | [12-writing.md](12-writing.md) | Anyone editing these docs | How the set is organised, the writing rules, what `docs-lint` does and does not check |
 | [13-glossary.md](13-glossary.md) | All developers | The words this set uses without defining them, in four tiers: upstream's vocabulary and the symbol carrying it, this repository's, the ones that mean two things here, and the testing field's |
 
+Every page above is a live claim about code someone is about to touch, and it describes the
+tree **as it is** — where something is unimplemented, its page says so and says what the hole
+costs.
+
+## Docs are part of the change, not after it
+
+Change a zone, re-read its page and fix it **in the same commit**: a doc is wrong from the
+moment the code lands, and every false claim ever found in this set got there that way.
+[12-writing.md](12-writing.md) has the rules, says which pages run hot, and states what
+`zig build docs-lint` does and does not settle — it catches a dead link, a path or a symbol
+the tree no longer carries; it **cannot** tell you a sentence has become false.
+
 For building, the bench gate, and the contribution workflow, see the root
 [README](../README.md) and [CONTRIBUTING](../CONTRIBUTING.md).
 
