@@ -13,7 +13,8 @@ for the same position.
 | File | Owns |
 | --- | --- |
 | **network load / parse / storage** | |
-| `network.zig` | the `Network` handle, the `load`/`save`/`verify` entry points, the file header, and the directory search; re-exports the inference surface |
+| `network.zig` | the `Network` handle, the `load`/`save`/`verify` entry points and the directory search; re-exports the inference surface |
+| `network_parse.zig` | the READER: the file header, the feature transformer, the layer stacks — everything that walks an untrusted `.nnue` into the live weights. Split from `network.zig` on the 500-line lint along the seam that file already had, so what remains there is the option-facing face |
 | `nnue_parse.zig` | the `.nnue` byte format: signed LEB128 (`COMPRESSED_LEB128` sections), the section framing that writes each blob region at the offset `nnue_dimensions.zig` owns, `weightIndexScrambled`, and the `write_parameters` serializer |
 | `nnue_leb.zig` | `decodeLeb` — the signed-LEB128 primitive alone, with its own reference encoder and bound tests; the one parse step that knows nothing of the section layout |
 | `nnue_weight_storage.zig` | the weight arenas (`ftStorage`, `layerStorage`) and the loaded-net identity (`nnCurrent`, `nnDescription`) |

@@ -59,8 +59,18 @@ zig build                  # binary is `stockfish` (NOT `zfish`), at zig-out/bin
 zig build bench            # fetches the NNUE net into resources/, runs from there
 ```
 
-The net is a runtime input, not embedded. **Don't** run the binary from the repo root — it
-SIGSEGVs on a null net. **Do** run it from `resources/`, or use `zig build bench`.
+The net is a runtime input, not embedded, so the binary needs a cwd that holds it: run it from
+`resources/`, or use `zig build bench`. Started anywhere else it **names the missing net and
+exits 1** — it does not crash, and this page said it did for as long as the diagnostic has
+existed:
+
+```sh
+./zig-out/bin/stockfish bench; echo $?   # from the repo root: 1, after four ERROR lines
+```
+
+`parity-net-missing` is the gate that holds it to that — a named diagnostic and a clean
+non-zero exit, *never* a signal — so a page claiming a SIGSEGV was describing the defect the
+gate was added to close ([docs/10-tooling-ci.md](docs/10-tooling-ci.md)).
 
 ## The anchor
 
