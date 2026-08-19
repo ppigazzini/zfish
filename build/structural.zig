@@ -75,6 +75,15 @@ pub const script_gates = [_]ScriptGate{
     // nothing checked. This does NOT check whether a sentence is true -- "numa_context is a
     // never-dereferenced stub handle" parsed, linked, and was false for weeks; only reading the
     // code finds that. It buys the cheap half so review can spend attention on the expensive half.
+    // Watch the compiler refuse the mistakes docs/09-type-design.md says are unrepresentable.
+    // That page has already been WRONG about exactly this once: it recorded the statsUpdate
+    // clamp as safe because the parameter is comptime, and the transposition turned out to be
+    // expressible whenever the bonus was a literal too -- it type-checked, and the gravity
+    // curve reshaped with nothing refusing it. A type meant to make a mistake unrepresentable
+    // is an assumption until something writes the mistake and the compiler is watched
+    // rejecting it. Two-sided (the legal form must still build) and the error TEXT is matched,
+    // because a snippet can fail for a rig reason that reads exactly like a detection.
+    .{ .step = "type-refusal", .script = "tools/type_refusal.sh", .desc = "type gate: each documented illegal form is refused, and each legal one still compiles", .in_parity = true },
     // Gate the one defect class every other gate here is blind to: an engine that stops
     // ANSWERING. Each golden gate compares a result, so a wedged engine reads to it as the
     // harness timing out -- a rig fault, not a detection -- and four defects on this tree's
