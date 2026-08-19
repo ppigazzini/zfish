@@ -17,7 +17,8 @@ the engine object that owns the run. It is the top zone — it may import `engin
 | **UCI** | |
 | `uci.zig` | the command loop and dispatch: read a line, classify the token, call the engine |
 | `uci_input.zig` | the persistent stdin reader: one command line per call, stitched across buffer refills so a long `position ... moves` line is not truncated |
-| `uci_parse.zig` | the `go` / `position` / `setoption` token parsers and their `Parsed*` results |
+| `uci_parse.zig` | the `go` / `setoption` token parsers and their `Parsed*` results; re-exports the `position` half so `uci.zig` keeps one import |
+| `uci_parse_position.zig` | the `position` parser alone. Split on the 500-line lint; the one helper both halves wanted moved DOWN into `uci_strings.zig` rather than being owned by either, since a helper owned by one half makes the pair a file cycle — which `arch-report`'s FILE SCC tripwire caught on the first attempt |
 | `uci_format.zig` | the live output strings: `info string`, help, unknown-command, critical-error |
 | `uci_critical.zig` | `terminateOnCriticalError` and the `setCurrentCmd` cell it echoes: report the failed command whole, then `exit(1)` |
 | `uci_strings.zig` | the shared string alloc / format / trim primitives |
@@ -117,9 +118,15 @@ raw `i64`s off the wire, and `go wtime 4000000000000000000 winc 4000000000000000
 silently wrapped budget in the shipped build. `go wtime -50000000000` is the same defect
 facing the other way. It is not a defect in timeman: `time_left` multiplies a clock by up
 to 51, and no formula written in `i64` can hold an arbitrary `i64` times fifty.
-`parseLimits` clamps each to `[0, max_clock_ms]` — 1e12 ms, about 31 years, past any real
+`parseLimits` clamps each clock to `[0, max_clock_ms]` — 1e12 ms, about 31 years, past any real
 time control and far enough below the top that every product timeman forms stays inside an
-`i64` — and reports the ones it moved. That report is **not** a `bad_token`: an unparsable
+`i64` — and reports the ones it moved. **`movetime` is the one clock whose floor is 1, not 0**,
+and the difference is not cosmetic: `checkTime` reads `lim_movetime != 0`, so a zero there does
+not mean "stop at once", it means there is no limit at all — and `bench <tt> <thr> 0 default
+movetime` passes the figure straight through, where the UCI thread then sits inside its own
+wait with neither `stop` nor `quit` reachable. `movestogo` and `mate` are bounded here too, on
+the same principle of bounding a number where it ENTERS: `mate` at `maxInt(i32) / 2`, because
+the stop condition compares against `2 * limits_mate` and the doubling must fit. That report is **not** a `bad_token`: an unparsable
 argument refuses the whole `go` (below), where an out-of-range clock is bounded and the
 search runs, so the line is emitted after the refusal check and before the search, reaching
 the GUI ahead of the move it shaped.
