@@ -115,8 +115,8 @@ jobs:
 
       # Arch-variant determinism: the
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
-      # codegen change must not perturb the integer-exact eval. The sweep BUILDS all
-      # six x86-64 tiers above the sse41 baseline (a tier that stops compiling needs
+      # codegen change must not perturb the integer-exact eval. The sweep BUILDS every
+      # x86-64 tier above the sse41 baseline (a tier that stops compiling needs
       # no ISA to catch) and BENCHES signature == 2884956 on each one this runner can
       # execute. The wider tiers are where the @Vector NNUE kernels could break
       # bit-exactness while sse41/avx2 stay green; it runs the real bench, not a hollow
@@ -167,7 +167,7 @@ jobs:
   #
   # The snapshot is PINNED (not floating "master") for reproducibility and bumped by hand
   # -- same value z47 audits. Today the port is master-clean on the Linux host (build +
-  # bench 2884956 + all 31 parity gates), achieved via cross-version idioms: @splat for
+  # bench 2884956 + every gate `parity` aggregates), achieved via cross-version idioms: @splat for
   # array-repeat (0.17 rejects `**` after `}`), @Int for the removed std.meta.Int, and a
   # comptime repoPath shim + addArtifactArg for the removed b.pathFromRoot / getInstallPath.
   zig-master-compat:
@@ -357,7 +357,7 @@ jobs:
         shell: bash
         run: zig build net
 
-      # Full cross-OS parity: bench signature (2884956) + the seven golden gates, all via the
+      # Full cross-OS parity: bench signature (2884956) + the golden gates `parity-portable` aggregates, all via the
       # pure-Zig harness. `shell: bash` for the same emulated-lane PATH reason as the fetch step.
       - name: Build + parity-portable (native, ${{ matrix.arch }})
         shell: bash

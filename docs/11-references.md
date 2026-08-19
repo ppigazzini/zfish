@@ -11,6 +11,57 @@ its structure.
 | [Stockfish docs](https://official-stockfish.github.io/docs/stockfish-wiki/Home.html) | Engine behaviour, UCI options, and terminology. |
 | [Stockfish commit history](https://github.com/official-stockfish/Stockfish/commits/master) | The authority for a bench-moving change. A sync ports a real upstream commit and lands bit-exact at that commit's `Bench:`. |
 
+## The sibling ports
+
+Three trees carry the same engine beside this one, and a large share of the process rules in
+[AGENTS.md](../AGENTS.md) was paid for in one of them:
+
+| Tree | What it is |
+|---|---|
+| `../mcfish` | a C23 port of the same upstream, bit-exact against the same anchor. |
+| `../rfish` | a Rust port, the same. |
+| `../Stockfish`, branch `refish` | **not a port** — a refactoring branch of upstream's own C++, carrying a register of defects found in upstream `master`. Its findings are about the GOLDEN, so one it records may be a defect zfish holds *because* it was faithful — a different question from the one the two ports answer. |
+
+**None of them is a golden.** The differential reference is always upstream, built by
+`tools/upstream_oracle.sh`; a sibling agreeing with zfish says only that two ports made the
+same choice.
+
+### How to sweep them
+
+**A sibling's finding is a hypothesis about this tree, not a diff to apply**, and the first
+thing to read is the sibling's own attribution — a candidate is often this tree's own work
+coming home, and a sweep that skips that step spends its session re-porting itself.
+`tools/perf_counters.zig`'s workload guard is the shape to expect: `../mcfish` took the
+budget half of that check from here, then found that the A/B half had never had it, and what
+came back was the half zfish was missing rather than the idea it already had.
+
+**A measurement does not transfer, in either direction.** `../rfish` outlined its move
+picker's three stage setups and measured a win on both tiers. The identical change here, its
+mechanism reproduced exactly, retired **more** instructions on both — the prologue cost it
+removed does not exist in this tree
+([08-idiomatic-zig.md](08-idiomatic-zig.md#do-not-outline-a-cold-body-to-shrink-a-hot-frame)
+carries the numbers and the rule). Take the idea; price it here.
+
+**A sibling's GATE is a hypothesis about what this tree does not INSTRUMENT** — which is a
+different question from whether the same defect is here, and usually the more productive one.
+The gate with **no analogue** is worth more than the gate that is better. Four ported from
+`refish` in one window — a shell lint over the gate scripts, source reach, liveness and type
+refusal — and each found a real defect on its first run; the shell lint found five, three of
+them a `cd` with no `|| exit` inside the gate drivers themselves, which would have run the
+lint in the caller's directory and reported nothing wrong.
+
+**A defect register is swept per CLASS, not per entry.** An entry names a defect and the one
+site where it was found; grep the class and expect the second site to be in another zone. Nor
+does the sibling's reproducer carry over: upstream overflows `movestogo` at `mtg - 1`, which
+zfish widens to `i64` first, so that entry read as closed here — while a negative
+`movestogo` drove the same clock into a negative optimum and answered a full clock from a
+depth-4 search. The defect was real and had to be re-derived rather than replayed.
+
+**A register swept once is not a register swept.** The 2026-08-15 sweep read every `fix`
+commit on that branch and closed the register; a second campaign landed in the days after it,
+and the 2026-08-18 sweep found six more live defects plus a Syzygy decoder win in a tree the
+first had reported clean.
+
 ## Zig
 
 | Reference | Use |
