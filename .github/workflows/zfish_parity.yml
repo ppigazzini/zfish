@@ -380,7 +380,25 @@ jobs:
         with:
           version: 0.16.0
       - name: Install valgrind
-        run: sudo apt-get update && sudo apt-get install -y valgrind
+        run: |
+          # `apt-get update` is the fragile step here, not valgrind. On 2026-08-19 it retried
+          # an unreachable azure.archive.ubuntu.com for 29m58s and the job's own 30m deadline
+          # killed it before a single gate ran; the same step normally takes 14s. Bound it and
+          # retry, so a mirror outage costs minutes instead of the entire budget -- and so the
+          # failure reads as "apt could not reach a mirror" rather than as a zfish timeout.
+          #
+          # The update cannot simply be dropped: the runner image ships a stale index and the
+          # install then 404s on a libc6-dbg the mirror has superseded (exit 100), which is the
+          # reason it is here at all.
+          for i in 1 2 3; do
+            if sudo timeout 180 apt-get update; then break; fi
+            echo "apt-get update attempt $i failed or timed out; retrying"
+            sleep 10
+          done
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends valgrind
+          # Prove it is actually there: a silent install failure would otherwise surface much
+          # later as the gate's own "valgrind not installed" SKIP, which is not a pass.
+          valgrind --version
       - name: Cache NNUE network
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
