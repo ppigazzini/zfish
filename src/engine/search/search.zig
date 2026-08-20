@@ -279,7 +279,7 @@ pub fn nmpMinPly(ply: i32, depth: i32, r: i32) i32 {
 
 // Compute the Step 7 razoring threshold subtracted from alpha (search()).
 pub fn razorMargin(depth: i32) i32 {
-    return 483 + 318 * depth * depth;
+    return 482 * depth * depth;
 }
 
 // Blend the qsearch beta-trend: when a non-decisive bestValue clears beta it is
