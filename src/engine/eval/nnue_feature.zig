@@ -220,12 +220,20 @@ pub fn fullAppendActive(
     const queen_targets = minor_slider_targets | by_type[queen_piece_type];
 
     result.len = 0;
-    var color_index: u8 = 0;
 
-    while (color_index < 2) : (color_index += 1) {
-        const color = perspective ^ color_index;
-        appendActivePawnThreats(result, pieces, pawn_targets, by_color[color] & pawns, perspective, color, king_square);
+    // Both colours' pawn attacks first, one call per direction -- upstream 68f7925d. The
+    // per-colour direction pair was the only thing the old helper branched on, and lifting the
+    // four calls out states them once. The colour loop below is then absolute (WHITE, BLACK)
+    // rather than perspective-relative: the accumulator sums the rows this list names, so the
+    // order it names them in is not an observable.
+    appendActivePawnThreats(result, pieces, pawn_targets, by_color[white] & pawns, perspective, white, king_square, north_east);
+    appendActivePawnThreats(result, pieces, pawn_targets, by_color[white] & pawns, perspective, white, king_square, north_west);
+    appendActivePawnThreats(result, pieces, pawn_targets, by_color[black] & pawns, perspective, black, king_square, south_west);
+    appendActivePawnThreats(result, pieces, pawn_targets, by_color[black] & pawns, perspective, black, king_square, south_east);
 
+    var color: u8 = 0;
+
+    while (color < 2) : (color += 1) {
         // Unroll the piece types at comptime so each attacksBb call resolves to its own
         // attack kernel directly -- the runtime-typed form dispatched through a jump
         // table once per attacker, an indirect branch the predictor keeps missing.
@@ -249,6 +257,9 @@ pub fn fullRequiresRefresh(diff: FullDiff, perspective: u8) bool {
     return perspective == diff.us and (((@as(i8, @bitCast(diff.ksq)) & 0b100) != (@as(i8, @bitCast(diff.prev_ksq)) & 0b100)));
 }
 
+// Emit one colour's pawn threats in ONE direction. Only the two diagonal attacks exist now: the
+// pusher (pawn-in-front) input was removed with SFNNv16 -- pawn-pawn relationships live in the
+// PP_3Wide feature set.
 fn appendActivePawnThreats(
     result: *FullAppendResult,
     pieces: []const u8,
@@ -257,18 +268,10 @@ fn appendActivePawnThreats(
     perspective: u8,
     color: u8,
     king_square: u8,
+    attack_dir: i8,
 ) void {
-    // Only the two diagonal pawn attacks now: the pusher (pawn-in-front) input was removed
-    // with SFNNv16 -- pawn-pawn relationships live in the PP_3Wide feature set.
     const attacker = makePiece(color, pawn_piece_type);
-
-    if (color == white) {
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_east, color_pawns) & pawn_targets, north_east);
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(north_west, color_pawns) & pawn_targets, north_west);
-    } else {
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_west, color_pawns) & pawn_targets, south_west);
-        processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(south_east, color_pawns) & pawn_targets, south_east);
-    }
+    processPawnAttacks(result, perspective, attacker, king_square, pieces, shift(attack_dir, color_pawns) & pawn_targets, attack_dir);
 }
 
 fn processPawnAttacks(
