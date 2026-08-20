@@ -193,6 +193,13 @@ pub fn lmrStatScoreReduction(stat_score: i32) i32 {
     return @divTrunc(stat_score * 439, 4096);
 }
 
+// Reduce less when alpha sits far above the static eval -- upstream 5f7348f0. A loose
+// alpha window means the node is failing low by a wide margin, so the reduced search is
+// less trustworthy; skipped for captures and for decisive alphas.
+pub fn lmrLooseAlphaReduction(alpha: i32, eval: i32) i32 {
+    return 3 * std.math.clamp(alpha - eval, -64, 96);
+}
+
 pub fn lmrAllNodeScale(r: i32, depth: i32) i32 {
     return @divTrunc(r * 276, 256 * depth + 268);
 }

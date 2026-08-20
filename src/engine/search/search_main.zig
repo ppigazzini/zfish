@@ -469,6 +469,9 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         .all_node = all_node,
         .improving = improving,
         .unadjusted_static_eval = unadjusted_static_eval,
+        // Step 17 reduces by alpha - eval, which is the TT-refined `eval`, not
+        // ss.static_eval: a ttValue that beat the static eval replaced it above.
+        .eval = eval,
         .writer = writer,
         .pos_key = pos_key,
         .max_value = max_value,
