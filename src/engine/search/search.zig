@@ -193,6 +193,14 @@ pub fn lmrStatScoreReduction(stat_score: i32) i32 {
     return @divTrunc(stat_score * 439, 4096);
 }
 
+// Scale the reduction by how far alpha sits from the node's eval -- upstream 5f7348f0.
+// A larger r is a SHALLOWER search, so this reduces more when alpha is above the eval and
+// less when it is below, bounded at 3*96 and 3*64. Quiet moves only, and only while alpha
+// is non-decisive: inside the mate range the difference is not a margin.
+pub fn lmrLooseAlphaReduction(alpha: i32, eval: i32) i32 {
+    return 3 * std.math.clamp(alpha - eval, -64, 96);
+}
+
 pub fn lmrAllNodeScale(r: i32, depth: i32) i32 {
     return @divTrunc(r * 276, 256 * depth + 268);
 }

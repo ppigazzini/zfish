@@ -268,6 +268,7 @@ pub inline fn runBack(nd: anytype) i32 {
             nd.ss.stat_score = search.quietStatScore(nd.w.main_history[@as(usize, nd.us) * hist_uint16 + move], contVal(cont_hist[0], moved_piece, to), contVal(cont_hist[1], moved_piece, to));
 
         r -= search.lmrStatScoreReduction(nd.ss.stat_score);
+        if (!capture and !qIsDecisive(alpha)) r += search.lmrLooseAlphaReduction(alpha, nd.eval);
         if (nd.all_node) r += search.lmrAllNodeScale(r, depth);
 
         // Step 17/18. Run the LMR + full-depth search.
