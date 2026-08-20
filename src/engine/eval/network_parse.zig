@@ -113,9 +113,18 @@ fn readHeader(bytes: []const u8, offset: *usize) ?Header {
 // consumed (leading component hash + the LEB-coded params). The parse is the sole
 // source (the eval gates verify the weights end-to-end, and the offset==bytes.len check
 // at the end of loadNetworkBytes verifies the consumed count).
+// Refuse a failed weight-storage allocation with the byte count and a clean exit --
+// upstream's report_failed_allocation (memory.h). A signal is not a diagnosable refusal, and
+// this is the last frame that still knows what could not be allocated; tt.zig reports its own
+// failure the same way.
+fn reportFailedAllocation(bytes: usize) noreturn {
+    std.debug.print("Failed to allocate {d} bytes.\n", .{bytes});
+    std.process.exit(1);
+}
+
 fn loadFt(blob: []const u8) usize {
     const dst_ptr = ftStorage(nnue_dims.ft_total_bytes) orelse
-        @panic("feature-transformer storage allocation failed");
+        reportFailedAllocation(nnue_dims.ft_total_bytes);
     const dst = dst_ptr[0..nnue_dims.ft_total_bytes];
     // Report a malformed net as 0 consumed rather than aborting: the file is user input, and
     // readFeatureTransformer already treats 0 as "reject this net".
@@ -143,9 +152,9 @@ fn loadLayer(bucket: usize, blob: []const u8) usize {
         const wb = layerWeightsBytes(idx);
         const bb = layerBiasesBytes(idx);
         const bdst = layerStorage(bucket, idx, .biases, bb) orelse
-            @panic("affine-layer storage allocation failed");
+            reportFailedAllocation(bb);
         const wdst = layerStorage(bucket, idx, .weights, wb) orelse
-            @panic("affine-layer storage allocation failed");
+            reportFailedAllocation(wb);
         // Report a malformed net as 0 consumed; readLayer already treats that as a reject.
         // fc_1/fc_2 (idx > 0) read paired-activation output on the pair tier, so their
         // weights take the extra input interleave (serializeLayer inverts the same flag).
