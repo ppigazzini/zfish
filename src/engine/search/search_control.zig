@@ -49,17 +49,14 @@ pub fn checkTime(ctx: *const QCtx) void {
     if (@atomicLoad(u8, ts.ponder.?, .monotonic) != 0) return;
 
     const ns: u64 = pool_nodes;
-    // Compare `elapsed` against `lim_movetime` in DIFFERENT UNITS under `nodestime`: the left
-    // side is a node count, `movetime` is the UCI figure in milliseconds. That is upstream's
-    // own behaviour and the port reproduces it deliberately (search.cpp):
+    // Compare `elapsed` against `lim_movetime` in ONE unit. Under `nodestime` the left side is
+    // a node count, and timeman.init has already multiplied `limits.movetime` by npmsec to
+    // match (upstream ceb059eb) -- so this line reads the same way in both modes:
     //
     //     || (worker.limits.movetime && elapsed >= worker.limits.movetime)
     //
-    // Upstream converts the clock model to nodes and leaves this one bound unconverted, so
-    // `go movetime N` under `nodestime` stops after N NODES. Do not "fix" it -- the bench and
-    // every golden here agree with upstream because this line does. An inherited quirk,
-    // marked; ../rfish surfaced it by giving the two quantities different types, which refused
-    // the comparison until it was written down.
+    // The conversion belongs there, beside the clock and the increment it converts
+    // alongside; do not re-scale here.
     if ((ts.use_time_management != 0 and (elapsed > ts.tm_maximum_time or ts.stop_on_ponderhit.?.* != 0)) or
         (ts.lim_movetime != 0 and elapsed >= ts.lim_movetime) or
         (ts.lim_nodes != 0 and ns >= ts.lim_nodes))

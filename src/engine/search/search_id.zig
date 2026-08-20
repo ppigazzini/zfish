@@ -120,6 +120,7 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
         .inc_ms = lim.inc[us],
         .start_time = lim.start_time,
         .npmsec = optInt("nodestime"),
+        .movetime_ms = lim.movetime,
         .move_overhead = optInt("Move Overhead"),
         .available_nodes = tm.available_nodes,
         .current_optimum_time = tm.optimum_time,
@@ -141,6 +142,7 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
     lim.time[us] = out.time_ms;
     lim.inc[us] = out.inc_ms;
     lim.npmsec = out.npmsec;
+    lim.movetime = out.movetime_ms;
 
     const gen = &wl.tt.generation8;
     gen.* = tt.generationNext(gen.*);
