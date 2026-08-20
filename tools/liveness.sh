@@ -36,7 +36,7 @@ DEADLINE=${DEADLINE:-10}
 # from any other cwd (AGENTS.md). Everything below therefore names paths relative to it.
 cd "$ROOT/resources" 2>/dev/null || { echo "liveness: SKIPPED -- no resources/ dir" >&2; exit 2; }
 [ -x "$BIN" ] || { echo "liveness: SKIPPED -- no engine at $BIN" >&2; exit 2; }
-[ -f nn-ab28990d4ea3.nnue ] || { echo "liveness: SKIPPED -- no net in resources/ (run 'zig build bench')" >&2; exit 2; }
+[ -f nn-1a298aa575a0.nnue ] || { echo "liveness: SKIPPED -- no net in resources/ (run 'zig build bench')" >&2; exit 2; }
 
 PASSED=0
 HUNG=0
