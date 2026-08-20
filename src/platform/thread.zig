@@ -118,15 +118,29 @@ fn workerSetLimits(thread: *worker_layout.Thread, src_limits: *const worker_layo
 fn workerSetRootMoves(thread: *worker_layout.Thread, src: []const search_types.RootMove) void {
     const worker = thread.worker.?;
     if (src.len == 0) {
-        if (worker.root_moves.len != 0) std.heap.c_allocator.free(worker.root_moves);
-        worker.root_moves = &[_]search_types.RootMove{};
+        freeWorkerRootMoves(worker);
         return;
     }
     if (worker.root_moves.len != src.len) {
-        if (worker.root_moves.len != 0) std.heap.c_allocator.free(worker.root_moves);
+        freeWorkerRootMoves(worker);
         worker.root_moves = std.heap.c_allocator.alloc(search_types.RootMove, src.len) catch @panic("set_root_moves: OOM");
+        for (worker.root_moves) |*dst| dst.* = std.mem.zeroes(search_types.RootMove);
     }
-    @memcpy(worker.root_moves, src);
+    // Element-wise, NOT a @memcpy: each RootMove owns its two PV buffers, and a shallow copy
+    // would give every worker in the pool the same two buffers to write its own PV into.
+    // copyFrom keeps this worker's buffers and grows them to fit.
+    for (worker.root_moves, src) |*dst, *s| dst.copyFrom(s);
+}
+
+// Release a worker's root-move list, PV buffers included.
+fn freeWorkerRootMoves(worker: *worker_layout.WorkerLayout) void {
+    if (worker.root_moves.len == 0) {
+        worker.root_moves = &[_]search_types.RootMove{};
+        return;
+    }
+    for (worker.root_moves) |*rm| rm.deinit();
+    std.heap.c_allocator.free(worker.root_moves);
+    worker.root_moves = &[_]search_types.RootMove{};
 }
 const ThreadCallback = *const fn (?*anyopaque) void;
 

@@ -72,7 +72,13 @@ pub const RankedRootMove = struct {
 // Build/destroy the RootMoves array: a plain `count`-element []RootMove, each
 // element zeroed then initialised to the RootMove default (scores at -VALUE_INFINITE)
 // with the ranked tb fields and the single-move PV. The worker copies it into its own
-// slice-header buffer (workerSetRootMoves reads src.ptr/src.len). @sizeOf(RootMove)==552.
+// slice-header buffer (workerSetRootMoves reads src.ptr/src.len).
+//
+// Each element OWNS its two PV buffers, so this is the allocation site for them too, and
+// rootMovesDestroy below is the one release. Reserve max_ply + 1 up front rather than growing
+// on demand: that is the longest PV `rootUpdate` can assemble (its own move plus a full-depth
+// child PV), so no allocation happens on the search path -- only the tablebase walk, which runs
+// at emit time, can grow one further.
 fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?[]search_types.RootMove {
     if (count == 0) return &[_]search_types.RootMove{};
     const elems = std.heap.c_allocator.alloc(search_types.RootMove, count) catch return null;
@@ -85,13 +91,16 @@ fn rootMovesCreateRanked(items: [*]const RankedRootMove, count: usize) ?[]search
         rm.uci_score = -value_infinite;
         rm.tb_rank = items[i].tb_rank;
         rm.tb_score = items[i].tb_score;
-        rm.pv.moves[0] = items[i].raw_move;
-        rm.pv.length = 1;
+        rm.pv.reserve(@as(usize, @intCast(max_ply)) + 1);
+        rm.previous_pv.reserve(@as(usize, @intCast(max_ply)) + 1);
+        rm.pv.pushBack(items[i].raw_move);
     }
     return elems;
 }
 pub fn rootMovesDestroy(rm: []search_types.RootMove) void {
-    if (rm.len != 0) std.heap.c_allocator.free(rm);
+    if (rm.len == 0) return;
+    for (rm) |*elem| elem.deinit();
+    std.heap.c_allocator.free(rm);
 }
 
 pub fn buildRootFen(pos: *const position_port.Position) ?[]u8 {

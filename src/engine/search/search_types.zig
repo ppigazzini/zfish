@@ -38,6 +38,7 @@ pub const CorrectionBundle = correction_bundle.CorrectionBundle;
 // (handed over by worker_state) through these; the canonical def
 // carries the same field order/types/offsets plus the search's methods.
 pub const PVMoves = root_move.PVMoves;
+pub const RootPVMoves = root_move.RootPVMoves;
 pub const RootMove = root_move.RootMove;
 
 /// Name the three kinds of node the search has -- upstream's `template<NodeType>`

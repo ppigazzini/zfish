@@ -1,6 +1,7 @@
-// RootMove and PVMoves.
+// RootMove, PVMoves and RootPVMoves.
 //
-// Define the root-move list the search ranks and the per-line principal variation.
+// Define the root-move list the search ranks and the two principal-variation carriers: the
+// fixed one the search stack builds, and the growable one a root move owns.
 
 const std = @import("std");
 
@@ -31,6 +32,14 @@ pub const PVMoves = extern struct {
         return self.moves[0..self.length];
     }
 
+    /// Take a ROOT pv, truncated to what this buffer holds -- upstream's
+    /// `PVMoves& operator=(const RootPVMoves&)` (search.h:108), which is the only place the
+    /// two carriers meet. MAX_PLY, not MAX_PLY+1: upstream clamps at the ply count.
+    pub fn assignTruncated(self: *PVMoves, src: *const RootPVMoves) void {
+        self.length = @min(src.length, max_ply);
+        if (self.length != 0) @memcpy(self.moves[0..self.length], src.slice()[0..self.length]);
+    }
+
     /// Reinterpret a raw Worker-graph address as a *PVMoves (worker_layout re-exports
     /// this type).
     pub inline fn fromAddr(addr: usize) *PVMoves {
@@ -43,9 +52,97 @@ comptime {
     std.debug.assert(@sizeOf(PVMoves) == 504);
 }
 
-// Pin the RootMove element size the strided rootMoves vector uses. Two PVMoves (pv +
-// previousPV) at 504 each, plus the scalar head.
-pub const root_move_footprint: usize = 1056;
+// Report a failed PV allocation the way upstream's report_failed_allocation does (memory.h,
+// 7c37212e): name the byte count and exit, never a signal. Restated here rather than imported
+// because this file is a POD leaf with no dependency but std -- the same reason page_alloc
+// restates the platform allocator's poison predicate.
+fn reportFailedAllocation(bytes: usize) noreturn {
+    std.debug.print("Failed to allocate {d} bytes.\n", .{bytes});
+    std.process.exit(1);
+}
+
+/// Hold a ROOT move's principal variation, which can outgrow MAX_PLY.
+///
+/// syzygyExtendPv walks a tablebase mate line move by move, and that walk ends at mate, at a
+/// draw or at the clock -- never at a ply count. Upstream ee515ad9 gave the root its own
+/// growable carrier for exactly this (`struct RootPVMoves: public std::vector<Move>`,
+/// search.h:64) after the fixed buffer's bound fired as an assert; here the same walk stopped
+/// at the buffer instead and reported a mate line cut off at 247 plies.
+///
+/// OWNING, and singly: each RootMove holds its own buffer, so a swap or a rotate of the
+/// root-move list carries ownership with the element and needs no special case. Assignment is
+/// therefore never a struct copy -- `copyFrom` is the deep copy upstream's vector assignment
+/// is. extern so it stays legal as a field of the extern RootMove below.
+pub const RootPVMoves = extern struct {
+    items: ?[*]Move = null,
+    length: usize = 0,
+    capacity: usize = 0,
+
+    const allocator = std.heap.c_allocator;
+
+    /// Reserve at least `n` moves. The search path never reaches this: rootMovesCreate
+    /// reserves max_ply + 1 up front, which is the longest PV `rootUpdate` can assemble
+    /// (its own move plus a full-depth child PV), so only the tablebase walk can grow.
+    pub fn reserve(self: *RootPVMoves, n: usize) void {
+        if (n <= self.capacity) return;
+        const want = @max(n, self.capacity * 2);
+        const old: []Move = if (self.items) |p| p[0..self.capacity] else &[_]Move{};
+        const grown = allocator.realloc(old, want) catch reportFailedAllocation(want * @sizeOf(Move));
+        self.items = grown.ptr;
+        self.capacity = grown.len;
+    }
+
+    pub fn pushBack(self: *RootPVMoves, m: Move) void {
+        self.reserve(self.length + 1);
+        self.items.?[self.length] = m;
+        self.length += 1;
+    }
+
+    pub fn clear(self: *RootPVMoves) void {
+        self.length = 0;
+    }
+
+    /// Shrink to `n`, which upstream's `resize` asserts is no larger than the current length.
+    pub fn resize(self: *RootPVMoves, n: usize) void {
+        std.debug.assert(n <= self.length);
+        self.length = n;
+    }
+
+    pub fn isEmpty(self: *const RootPVMoves) bool {
+        return self.length == 0;
+    }
+
+    /// Read move `i`. Callers index pv[0] and pv[1] constantly (the best move and the ponder
+    /// move); type the ACCESSOR so no caller reaches for a raw buffer that may be null.
+    pub fn at(self: *const RootPVMoves, i: usize) Move {
+        std.debug.assert(i < self.length);
+        return self.items.?[i];
+    }
+
+    pub fn slice(self: *const RootPVMoves) []const Move {
+        if (self.items) |p| return p[0..self.length];
+        return &.{};
+    }
+
+    /// Deep-copy `src` over this list -- upstream's vector assignment. Keeps this list's own
+    /// buffer, growing it when the source is longer.
+    pub fn copyFrom(self: *RootPVMoves, src: *const RootPVMoves) void {
+        self.reserve(src.length);
+        if (src.length != 0) @memcpy(self.items.?[0..src.length], src.slice());
+        self.length = src.length;
+    }
+
+    pub fn deinit(self: *RootPVMoves) void {
+        if (self.items) |p| allocator.free(p[0..self.capacity]);
+        self.* = .{};
+    }
+};
+
+// Pin the RootMove element size the strided rootMoves vector uses: the scalar head plus two
+// RootPVMoves handles. The two PVs used to be 504-byte inline buffers here, which put an 1056-byte
+// stride under every rootMoves scan and every sort swap; owning the moves through a handle is what
+// upstream ee515ad9 bought alongside the unbounded root PV.
+pub const root_move_footprint: usize = 96;
 
 // extern, in upstream's exact declared order (search.h:126-153): effort, then all the
 // hot per-sort scalars together, then pv/previousPV last. A plain struct sorts by
@@ -69,19 +166,40 @@ pub const RootMove = extern struct {
     sel_depth: i32 = 0,
     tb_rank: i32 = 0,
     tb_score: i32 = 0,
-    // Mirror upstream's `PVMoves pv, previousPV;` (search.h:153), placed last as
+    // Mirror upstream's `RootPVMoves pv, previousPV;` (search.h:164), placed last as
     // upstream declares them. Both were absent once, and their absence is what
     // collapsed the two distinct PV memories into one: the follow-PV heuristic needs
     // THIS line's PV from the previous iteration (rootMoves[pvIdx].previousPV), which
     // rootMoves[0].pv cannot supply once MultiPV > 1.
-    pv: PVMoves,
-    previous_pv: PVMoves,
+    //
+    // OWNING: every RootMove that is built must be `deinit`ed, and a copy of one is a
+    // `copyPvFrom`, never a struct assignment -- two RootMoves must never name one buffer.
+    pv: RootPVMoves = .{},
+    previous_pv: RootPVMoves = .{},
 
     // Push m onto the pv in init(m).
     pub fn init(m: Move) RootMove {
-        var rm = RootMove{ .pv = PVMoves.empty(), .previous_pv = PVMoves.empty() };
+        var rm = RootMove{};
         rm.pv.pushBack(m);
         return rm;
+    }
+
+    /// Release both PV buffers. Every creator of a RootMove list owns this call.
+    pub fn deinit(self: *RootMove) void {
+        self.pv.deinit();
+        self.previous_pv.deinit();
+    }
+
+    /// Copy `src` onto this element, PV buffers included, without either sharing a buffer --
+    /// what the per-worker fan-out of the root-move list needs.
+    pub fn copyFrom(self: *RootMove, src: *const RootMove) void {
+        var pv = self.pv;
+        var previous_pv = self.previous_pv;
+        pv.copyFrom(&src.pv);
+        previous_pv.copyFrom(&src.previous_pv);
+        self.* = src.*;
+        self.pv = pv;
+        self.previous_pv = previous_pv;
     }
 
     pub fn scoreIsBound(self: *const RootMove) bool {
@@ -98,7 +216,7 @@ pub const RootMove = extern struct {
         return self.score != -value_infinite and is_loss and !self.scoreIsBound();
     }
     pub fn eqMove(self: *const RootMove, m: Move) bool {
-        return self.pv.moves[0] == m;
+        return self.pv.at(0) == m;
     }
     // Sort descending by score, then previousScore.
     pub fn lessThan(_: void, a: RootMove, b: RootMove) bool {
@@ -130,18 +248,51 @@ test "PVMoves and RootMove keep the strided element size" {
 }
 
 test "RootMove(Move) seeds the pv and defaults" {
-    const rm = RootMove.init(0x1234);
+    var rm = RootMove.init(0x1234);
+    defer rm.deinit();
     try testing.expectEqual(@as(usize, 1), rm.pv.length);
-    try testing.expectEqual(@as(Move, 0x1234), rm.pv.moves[0]);
+    try testing.expectEqual(@as(Move, 0x1234), rm.pv.at(0));
     try testing.expectEqual(@as(i32, -value_infinite), rm.score);
     try testing.expect(rm.eqMove(0x1234));
     try testing.expect(!rm.scoreIsBound());
+}
+
+test "the root pv grows past the fixed buffer, and PVMoves takes it truncated" {
+    // The tablebase walk ends at mate, a draw or the clock -- never at a ply count, which is
+    // why the root carrier grows. The stack carrier does not, and takes what fits.
+    var pv = RootPVMoves{};
+    defer pv.deinit();
+    var i: usize = 0;
+    while (i < max_ply + 100) : (i += 1) pv.pushBack(@intCast(i & 0xffff));
+    try testing.expectEqual(max_ply + 100, pv.length);
+    try testing.expectEqual(@as(Move, max_ply + 99), pv.at(pv.length - 1));
+
+    var fixed = PVMoves.empty();
+    fixed.assignTruncated(&pv);
+    try testing.expectEqual(@as(usize, max_ply), fixed.length);
+    try testing.expectEqual(@as(Move, 0), fixed.moves[0]);
+    try testing.expectEqual(@as(Move, max_ply - 1), fixed.moves[max_ply - 1]);
+}
+
+test "copyFrom deep-copies: the two lists never share a buffer" {
+    var a = RootMove.init(7);
+    defer a.deinit();
+    a.pv.pushBack(8);
+    var b = RootMove.init(1);
+    defer b.deinit();
+
+    b.copyFrom(&a);
+    try testing.expectEqual(@as(usize, 2), b.pv.length);
+    try testing.expect(b.pv.items.? != a.pv.items.?);
+    a.pv.items.?[1] = 99;
+    try testing.expectEqual(@as(Move, 8), b.pv.at(1));
 }
 
 test "RootMove sorts descending by score then previousScore" {
     var moves = [_]RootMove{
         RootMove.init(1), RootMove.init(2), RootMove.init(3),
     };
+    defer for (&moves) |*m| m.deinit();
     moves[0].score = 10;
     moves[0].previous_score = 5;
     moves[1].score = 50;
@@ -156,6 +307,7 @@ test "RootMove sorts descending by score then previousScore" {
 
 test "bound flags" {
     var rm = RootMove.init(0);
+    defer rm.deinit();
     rm.score_lowerbound = true;
     try testing.expect(rm.scoreIsBound());
     rm.unsetBoundFlags();
