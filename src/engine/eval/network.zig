@@ -25,7 +25,7 @@ const none_name = "None";
 // Name the embedded net's default (EvalFileDefaultName, evaluate.h), a build
 // constant. Keep a single source of truth: engine.zig imports this via the
 // "network" module rather than re-declaring it (a net bump edits one line).
-pub const default_eval_file_name = "nn-ab28990d4ea3.nnue";
+pub const default_eval_file_name = "nn-1a298aa575a0.nnue";
 
 /// Expose an opaque handle to the network subsystem. The NNUE weights live in this
 /// module's globals (ft_ptr_storage &c.), so there is no struct to point at --

@@ -134,10 +134,10 @@ pub fn main(init: std.process.Init) !void {
 test "parseNetName extracts the net filename from a network.zig snippet" {
     const src =
         \\pub const some_other = 1;
-        \\pub const default_eval_file_name = "nn-ab28990d4ea3.nnue";
+        \\pub const default_eval_file_name = "nn-1a298aa575a0.nnue";
         \\pub const tail = 2;
     ;
-    try std.testing.expectEqualStrings("nn-ab28990d4ea3.nnue", parseNetName(src).?);
+    try std.testing.expectEqualStrings("nn-1a298aa575a0.nnue", parseNetName(src).?);
 }
 
 test "parseNetName rejects a malformed name (wrong hex length)" {
