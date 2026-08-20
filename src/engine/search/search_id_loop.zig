@@ -37,6 +37,7 @@ const q_value_inf = sv.value_inf;
 const q_value_mate = sv.value_mate;
 const q_max_ply = sv.max_ply;
 pub const PVMoves = search_types.PVMoves;
+pub const RootPVMoves = search_types.RootPVMoves;
 const search_emit = @import("search_emit");
 const searchIdPv = search_emit.searchIdPv;
 const searchIdCollectBmc = search_id.searchIdCollectBmc;
@@ -79,13 +80,16 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     var pv: PVMoves = undefined;
     pv.length = 0;
 
-    // Keep the best move's PV in a LOCAL, as upstream does (`PVMoves lastBestMovePV;`,
-    // search.cpp:275). It is the abort-rollback memory and is written only when the best
+    // Keep the best move's PV in a LOCAL, as upstream does (`RootPVMoves lastBestMovePV;`,
+    // search.cpp:289). It is the abort-rollback memory and is written only when the best
     // move changes -- a different quantity, and a different lifetime, from the per-pvIdx
     // follow-PV memory in the Worker (last_iteration_pv). Sharing one buffer for both
     // conflated them.
-    var last_best_move_pv: PVMoves = undefined;
-    last_best_move_pv.length = 0;
+    //
+    // A ROOT carrier, because it holds rootMoves[0].pv, which the tablebase walk can grow past
+    // MAX_PLY; owning means this scope releases it.
+    var last_best_move_pv: RootPVMoves = .{};
+    defer last_best_move_pv.deinit();
     // Remember the best score alongside its PV (upstream's `lastBestMoveScore`,
     // search.cpp:277). The rollback restored root_moves[0].previous_score instead, which
     // is this iteration's saved score -- not the score that belongs to last_best_move_pv.
@@ -147,7 +151,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
         var ri: usize = 0;
         while (ri < id.root_moves_count) : (ri += 1) {
             id.root_moves[ri].previous_score = id.root_moves[ri].score;
-            id.root_moves[ri].previous_pv = id.root_moves[ri].pv;
+            id.root_moves[ri].previous_pv.copyFrom(&id.root_moves[ri].pv);
             id.root_moves[ri].previous_score_exact = ri < multi_pv;
         }
 
@@ -172,7 +176,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             // per-pvIdx value; it is NOT the best move's PV. zfish had one buffer doing
             // both jobs, so every MultiPV line followed rootMoves[0]'s PV and searched a
             // different tree once MultiPV > 1.
-            id.last_iter_pv.* = id.root_moves[id.pv_idx.*].previous_pv;
+            id.last_iter_pv.assignTruncated(&id.root_moves[id.pv_idx.*].previous_pv);
 
             id.sel_depth.* = 0;
 
@@ -234,7 +238,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                         cur.score = cur.previous_score;
                         cur.uci_score = cur.previous_score;
                         cur.previous_score = -q_value_inf;
-                        cur.pv = cur.previous_pv;
+                        cur.pv.copyFrom(&cur.previous_pv);
                         cur.unsetBoundFlags();
                     } else {
                         // Otherwise, if we can, cap the score to the best possible and mark
@@ -243,7 +247,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                             cur.score = prev_line.score;
                             cur.uci_score = prev_line.score;
                             cur.previous_score = -q_value_inf;
-                            cur.pv.length = 1;
+                            cur.pv.resize(1);
                             cur.score_upperbound = true;
                         } else {
                             cur.score_upperbound = false;
@@ -284,12 +288,12 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                 id.root_moves[0].scoreIsBound());
 
         if (!stopped) {
-            if (last_best_move_pv.length == 0 or id.root_moves[0].pv.moves[0] != last_best_move_pv.moves[0])
+            if (last_best_move_pv.isEmpty() or id.root_moves[0].pv.at(0) != last_best_move_pv.at(0))
                 last_best_move_depth = id.root_depth.*;
 
             // Do not replace (shorter) mate scores from a previous iteration.
             if (!forgotten_mate) {
-                last_best_move_pv = id.root_moves[0].pv;
+                last_best_move_pv.copyFrom(&id.root_moves[0].pv);
                 last_best_move_score = id.root_moves[0].score;
             }
         }
@@ -303,11 +307,11 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
         // recover a mate score found in a previous iteration.
         if (aborted_loss_search or (id.root_moves[0].score != -q_value_inf and forgotten_mate)) {
             // Bring the last best move to the front for best thread selection.
-            if (last_best_move_pv.length != 0) {
-                moveToFront(id.root_moves, id.root_moves_count, last_best_move_pv.moves[0]);
+            if (!last_best_move_pv.isEmpty()) {
+                moveToFront(id.root_moves, id.root_moves_count, last_best_move_pv.at(0));
                 id.root_moves[0].score = last_best_move_score;
                 id.root_moves[0].uci_score = last_best_move_score;
-                id.root_moves[0].pv = last_best_move_pv;
+                id.root_moves[0].pv.copyFrom(&last_best_move_pv);
                 id.root_moves[0].unsetBoundFlags();
                 if (main_thread) uci_pv_sent = false;
             } else if (aborted_loss_search) {

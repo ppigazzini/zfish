@@ -92,7 +92,8 @@ fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_l
     const rm = workerRootMoveAt(w, move_index);
     const rmv = worker_layout.RootMove.fromAddr(rm);
     const pv = if (use_prev) &rmv.previous_pv else &rmv.pv;
-    const pv_len = pv.length;
+    const pv_moves = pv.slice();
+    const pv_len = pv_moves.len;
     var pv_buf: [4096]u8 = undefined;
     var pv_n: usize = 0;
     var i: usize = 0;
@@ -102,7 +103,7 @@ fn searchEmitInfoFull(manager: ?*worker_layout.SearchManager, worker: ?*worker_l
             pv_n += 1;
         }
         var mbuf: [5]u8 = undefined;
-        const txt = uci_move_port.renderMoveText(&mbuf, pv.moves[i], chess960);
+        const txt = uci_move_port.renderMoveText(&mbuf, pv_moves[i], chess960);
         @memcpy(pv_buf[pv_n..][0..txt.len], txt);
         pv_n += txt.len;
     }
@@ -145,7 +146,7 @@ pub fn ssEmitBestmove(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layou
     const chess960 = isChess960(root_pos);
 
     var buf0: [5]u8 = undefined;
-    const bestmove = uci_move_port.renderMoveText(&buf0, pv.moves[0], chess960);
+    const bestmove = uci_move_port.renderMoveText(&buf0, pv.at(0), chess960);
 
     var line: [40]u8 = undefined;
     var n: usize = 0;
@@ -155,7 +156,7 @@ pub fn ssEmitBestmove(worker: ?*worker_layout.WorkerLayout, best: ?*worker_layou
     n += bestmove.len;
     if (pv.length > 1) {
         var buf1: [5]u8 = undefined;
-        const ponder = uci_move_port.renderMoveText(&buf1, pv.moves[1], chess960);
+        const ponder = uci_move_port.renderMoveText(&buf1, pv.at(1), chess960);
         @memcpy(line[n..][0..8], " ponder ");
         n += 8;
         @memcpy(line[n..][0..ponder.len], ponder);
@@ -243,15 +244,15 @@ fn extendPvSyzygy(ctx: *const PvContext, index: usize, v: i32) i32 {
     const rmv = worker_layout.RootMove.fromAddr(workerRootMoveAt(wl, index));
 
     const use_time_management = wl.limits.time[0] != 0 or wl.limits.time[1] != 0;
+    // Pass the LIST: the walk appends toward mate, and its own terminations -- mate, a draw,
+    // or the clock -- are the only bound on how far it goes.
     const res = tb_extend_port.extendPv(
         &wl.root_pos,
         ctx.chess960,
-        rmv.pv.moves[0..],
-        rmv.pv.length,
+        &rmv.pv,
         v,
         use_time_management,
     );
-    rmv.pv.length = res.pv_len;
     if (res.timed_out)
         uci_output.printLine(extend_timeout_msg);
     return res.value;

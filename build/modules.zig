@@ -162,6 +162,8 @@ pub const edges = [_]Edge{
     .{ .from = "root_move_build", .imp = "movegen", .to = "movegen" },
     .{ .from = "root_move_build", .imp = "position_snapshot", .to = "position_snapshot" },
     .{ .from = "tb_extend_source", .imp = "position_types", .to = "position_types" },
+    // The extension appends to a ROOT pv, which grows; root_move is the leaf that owns it.
+    .{ .from = "tb_extend_source", .imp = "root_move", .to = "root_move" },
     .{ .from = "tb_extend", .imp = "position", .to = "position" },
     .{ .from = "tb_extend", .imp = "movegen", .to = "movegen" },
     .{ .from = "tb_extend", .imp = "option_source", .to = "option_source" },

@@ -293,9 +293,12 @@ fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*worker_la
 fn workerDestroy(worker: ?*anyopaque) void {
     const w = worker orelse return;
     const wl = worker_layout.WorkerLayout.fromPtr(w);
-    // Free the rootMoves buffer: a []RootMove allocated by workerSetRootMoves -- free
-    // the slice directly.
-    if (wl.root_moves.len != 0) std.heap.c_allocator.free(wl.root_moves);
+    // Free the rootMoves buffer: a []RootMove allocated by workerSetRootMoves. Each element
+    // owns two PV buffers, so release those before the slice.
+    if (wl.root_moves.len != 0) {
+        for (wl.root_moves) |*rm| rm.deinit();
+        std.heap.c_allocator.free(wl.root_moves);
+    }
     // Destroy the SearchManager buffer (allocator.create'd by makeSearchManager; manager is typed).
     if (wl.manager) |m| std.heap.c_allocator.destroy(m);
     memory_port.alignedLargePagesFree(w);

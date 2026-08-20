@@ -34,7 +34,7 @@ fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
         return;
     };
     const rmv = w.rootMovesFirst();
-    out.pv0_raw = rmv.pv.moves[0];
+    out.pv0_raw = rmv.pv.at(0);
     out.score_is_bound = @intFromBool(rmv.score_lowerbound or rmv.score_upperbound);
     out.score = rmv.score;
     out.pv_length = rmv.pv.length;

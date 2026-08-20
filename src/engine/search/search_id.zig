@@ -286,7 +286,7 @@ pub fn stableSortRoot(rm: [*]RootMove, lo: usize, hi: usize) void {
 // Rotate the first RootMove whose pv[0]==target to front (move-to-front).
 pub fn moveToFront(rm: [*]RootMove, count: usize, target: u16) void {
     var fi: usize = 0;
-    while (fi < count and rm[fi].pv.moves[0] != target) : (fi += 1) {}
+    while (fi < count and rm[fi].pv.at(0) != target) : (fi += 1) {}
     if (fi >= count) return;
     const tmp = rm[fi];
     var z: usize = fi;
@@ -350,7 +350,7 @@ pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
         const push = @divTrunc(@as(i32, @intFromFloat(term1 + @as(f64, @floatFromInt(term2)))), 128);
         if (id.root_moves[i].score + push >= max_score) {
             max_score = id.root_moves[i].score + push;
-            best = id.root_moves[i].pv.moves[0];
+            best = id.root_moves[i].pv.at(0);
         }
     }
     return best;
@@ -358,7 +358,7 @@ pub fn skillPickBest(id: *const ZfishIdState, multi_pv: usize) u16 {
 // Swap rootMoves[0] with the RootMove whose pv[0]==move.
 pub fn skillSwapBest(id: *const ZfishIdState, move: u16) void {
     var i: usize = 0;
-    while (i < id.root_moves_count and id.root_moves[i].pv.moves[0] != move) : (i += 1) {}
+    while (i < id.root_moves_count and id.root_moves[i].pv.at(0) != move) : (i += 1) {}
     if (i >= id.root_moves_count or i == 0) return;
     const tmp = id.root_moves[0];
     id.root_moves[0] = id.root_moves[i];
