@@ -30,6 +30,9 @@ const en_passant_move_type: u16 = 2 << 14;
 // rank, truncate at the first move that does not, then walk toward mate on the top-ranked
 // (minimal-DTZ) move. The mate is optimal only for simple endgames such as KRvK.
 //
+// Write through the caller's ROOT PV list, which grows: a mate walk is bounded by mate, a draw
+// or the clock, never by a ply count.
+//
 // Walk one live position forward from the root. `isDraw`/`isRepetition` read the state history,
 // so a position rebuilt from a FEN answers both wrongly.
 pub const ExtendPvResult = tb_extend_port.ExtendPvResult;
@@ -74,13 +77,12 @@ fn isCaptureMove(pos: *const position_port.Position, raw_move: u16) bool {
 pub fn syzygyExtendPv(
     pos: *const position_port.Position,
     chess960: u8,
-    pv_moves: []u16,
-    pv_len_in: usize,
+    pv: *tb_extend_port.RootPVMoves,
     value_in: i32,
     use_time_management: bool,
 ) ExtendPvResult {
-    var result = ExtendPvResult{ .pv_len = pv_len_in, .value = value_in, .timed_out = false };
-    if (pv_len_in == 0) return result;
+    var result = ExtendPvResult{ .value = value_in, .timed_out = false };
+    if (pv.isEmpty()) return result;
 
     const root_fen = buildRootFen(pos) orelse return result;
     defer std.heap.c_allocator.free(root_fen);
@@ -96,14 +98,14 @@ pub fn syzygyExtendPv(
     defer scratch.deinit();
 
     // Step 0: play the root move uncorrected; MultiPV in TB requires it kept.
-    scratch.doMove(pv_moves[0]) catch return result;
+    scratch.doMove(pv.at(0)) catch return result;
     var ply: usize = 1;
 
     var ranked: [256]RankedRootMove = undefined;
 
     // Step 1: walk the PV while each move still holds the best available rank.
-    while (ply < result.pv_len) {
-        const pv_move = pv_moves[ply];
+    while (ply < pv.length) {
+        const pv_move = pv.at(ply);
 
         const fen_text = buildRootFen(scratch.pos) orelse break;
         var legal: [256]u16 = undefined;
@@ -145,12 +147,15 @@ pub fn syzygyExtendPv(
         if (config.root_in_tb and deadline.expired()) break;
     }
 
-    result.pv_len = ply;
+    pv.resize(ply);
 
-    // Step 2: extend toward mate by always taking the top-ranked move.
+    // Step 2: extend toward mate by always taking the top-ranked move. The list grows, so the
+    // only bounds are the walk's own: no legal move (mate), a draw under Syzygy50MoveRule, the
+    // deadline, or a position the tablebases do not cover. THAT IT TERMINATES rests on the
+    // caller: searchPv extends only a decisive score, so this is minimal-DTZ play in a won
+    // position, which converges to mate. There is no length cap behind that argument.
     while (!(rule50 and position_port.isDraw(scratch.pos, 0))) {
         if (deadline.expired()) break;
-        if (result.pv_len >= pv_moves.len) break;
 
         var legal: [256]u16 = undefined;
         const legal_count = movegen_port.generateLegal(scratch.pos, legal[0..]);
@@ -176,8 +181,7 @@ pub fn syzygyExtendPv(
         if (!config.root_in_tb or config.cardinality > 0) break;
 
         const pv_move = ranked[0].raw_move;
-        pv_moves[result.pv_len] = pv_move;
-        result.pv_len += 1;
+        pv.pushBack(pv_move);
         scratch.doMove(pv_move) catch break;
     }
 

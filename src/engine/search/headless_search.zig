@@ -187,7 +187,7 @@ fn searchCore(wl: *WorkerLayout, root_fen: []const u8, chess960: u8, depth: i32)
         chess960,
         legal[0..n],
     ) catch return null;
-    defer std.heap.c_allocator.free(built.root_moves);
+    defer root_move_build.rootMovesDestroy(built.root_moves);
     wl.root_moves = built.root_moves;
 
     // Reset the Worker per search, mirroring applyRootSetup + startThinking.
@@ -210,9 +210,9 @@ fn searchCore(wl: *WorkerLayout, root_fen: []const u8, chess960: u8, depth: i32)
     _ = search_driver.iterativeDeepening(wl);
 
     // Read the root moves, now sorted best-first after the search.
-    const best = wl.root_moves[0];
+    const best = &wl.root_moves[0];
     return .{
-        .best_move = best.pv.moves[0],
+        .best_move = best.pv.at(0),
         .score = best.score,
         .nodes = wl.nodes,
     };

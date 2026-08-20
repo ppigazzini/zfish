@@ -99,6 +99,7 @@ const sv = @import("search_values.zig");
 const q_depth_none = sv.depth_none;
 
 pub const PVMoves = search_types.PVMoves;
+pub const RootPVMoves = search_types.RootPVMoves;
 pub const RootMove = search_types.RootMove;
 
 // Alias the driver-facing emitters to keep call sites unqualified: the search
@@ -253,8 +254,8 @@ const legalContains = search_acc.legalContains;
 // stored there, append it to the PV if it is a legal move, unmake. Return
 // whether a ponder move was found (pv length > 1). The tt context (table base,
 // cluster count, generation) is handed over by the caller.
-pub fn extractPonderFromTt(pv: *PVMoves, table: [*]tt.TtCluster, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
-    const move = pv.moves[0];
+pub fn extractPonderFromTt(pv: *RootPVMoves, table: [*]tt.TtCluster, cluster_count: usize, generation: u8, pos_ptr: *Position) u8 {
+    const move = pv.at(0);
     var st: StateInfo = undefined;
     verifyDoMove(pos_ptr, move, &st);
     if (!isDraw(pos_ptr, 1)) {
@@ -263,8 +264,7 @@ pub fn extractPonderFromTt(pv: *PVMoves, table: [*]tt.TtCluster, cluster_count: 
         const probe = tt.probeTable(table, cluster_count, key, generation, q_depth_none);
         const ttm = probe.data.move16;
         if (probe.found != 0 and ttm != 0 and legalContains(pos_ptr, ttm)) {
-            pv.moves[pv.length] = ttm;
-            pv.length += 1;
+            pv.pushBack(ttm);
         }
     }
     verifyUndoMove(pos_ptr, move);
