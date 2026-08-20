@@ -45,8 +45,7 @@ fn processSliders(
     pc: u8,
     comptime put_piece: bool,
     no_rays: u64,
-    r_attacks: u64,
-    b_attacks: u64,
+    slider_attacks: u64,
     occupied_no_k: u64,
     add_direct: bool,
 ) void {
@@ -56,7 +55,7 @@ fn processSliders(
         sliders &= sliders - 1;
         const slider = pos.board[slider_sq];
         const ray = bitboard.rayPass(slider_sq, s);
-        const discovered = ray & (r_attacks | b_attacks) & occupied_no_k;
+        const discovered = ray & slider_attacks & occupied_no_k;
         if (discovered != 0 and (ray & no_rays) != no_rays) {
             const tsq: u8 = @intCast(@ctz(discovered));
             const tpc = pos.board[tsq];
@@ -95,46 +94,65 @@ pub fn updatePieceThreats(
         return;
     }
     const occupied = pos.by_type_bb[0];
-    const rook_queens = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
-    const bishop_queens = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
     // Both ray sets in one pass, as upstream's update_piece_threats does (position.cpp:1203).
     const slider = bitboard.bothAttacks(s, occupied);
     const r_attacks = slider.rook;
     const b_attacks = slider.bishop;
+    const slider_attacks = b_attacks | r_attacks;
     const kings = pos.by_type_bb[king_pt];
     const occupied_no_k = occupied ^ kings;
-    const sliders = (rook_queens & r_attacks) | (bishop_queens & b_attacks);
-    // Apply can_slider_threat in bitboard form: a threatened queen only counts against a queen.
-    const direct_sliders = if ((pc & 7) == queen_pt) sliders & pos.by_type_bb[queen_pt] else sliders;
+    const rook_queens = pos.by_type_bb[rook_pt] | pos.by_type_bb[queen_pt];
+    const bishop_queens = pos.by_type_bb[bishop_pt] | pos.by_type_bb[queen_pt];
+    const sliders = (bishop_queens & b_attacks) | (rook_queens & r_attacks);
+    const pt = pc & 7;
 
-    if ((pc & 7) == king_pt) {
+    // Kings emit no direct threats.
+    if (pt == king_pt) {
         if (compute_ray)
-            processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, r_attacks, b_attacks, occupied_no_k, false);
+            processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, slider_attacks, occupied_no_k, false);
         return;
     }
 
     const knights = pos.by_type_bb[knight_pt];
     const white_pawns = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
     const black_pawns = pos.by_color_bb[color_black] & pos.by_type_bb[pawn_pt];
+    // The knight table serves both directions: it is this piece's own attack set when pc is a
+    // knight, and the set of knights attacking s in every case.
+    const knight_pseudo = bitboard.attacks(knight_pt, s, 0);
 
-    var threatened = (if ((pc & 7) == pawn_pt) pawnAttacks(pc >> 3, s) else bitboard.attacks(pc & 7, s, occupied)) & occupied_no_k;
-    var incoming = bitboard.attacks(knight_pt, s, 0) & knights;
+    // Take this piece's attack set from the two ray sets already computed above rather than
+    // sliding again -- upstream 1b1b5f49. bothAttacks answered both rays for `s` before the
+    // switch, so a bishop/rook/queen re-slide was recomputing what it already held, and a
+    // knight or pawn never needed the occupancy at all.
+    const attack_set = switch (pt) {
+        bishop_pt => b_attacks,
+        rook_pt => r_attacks,
+        queen_pt => slider_attacks,
+        pawn_pt => pawnAttacks(pc >> 3, s),
+        else => knight_pseudo,
+    };
 
     // Restrict both directions to the (attacker, attacked) pairs the threat feature set
     // actually encodes -- upstream rejects the rest here rather than letting the feature
     // indexer drop them later. With SFNNv16 pawn-pawn relationships moved to the PP_3Wide
     // feature set, so a pawn is no longer a threat target, and incoming pawn threats are
-    // recorded only for knights and rooks (the pusher block is gone entirely).
-    const pt = pc & 7;
+    // recorded only for knights and rooks (the pusher block is gone entirely). Every target
+    // set below already excludes kings, so the old `& occupied_no_k` first pass was redundant.
+    const threat_targets = switch (pt) {
+        pawn_pt => pos.by_type_bb[knight_pt] | pos.by_type_bb[rook_pt],
+        bishop_pt, rook_pt => pos.by_type_bb[pawn_pt] | pos.by_type_bb[knight_pt] |
+            pos.by_type_bb[bishop_pt] | pos.by_type_bb[rook_pt],
+        else => occupied_no_k,
+    };
+    var threatened = attack_set & threat_targets;
+
+    var incoming = knight_pseudo & knights;
     if (pt == knight_pt or pt == rook_pt) {
         incoming |= (pawnAttacks(color_white, s) & black_pawns) | (pawnAttacks(color_black, s) & white_pawns);
     }
-    switch (pt) {
-        pawn_pt => threatened &= pos.by_type_bb[knight_pt] | pos.by_type_bb[rook_pt],
-        bishop_pt, rook_pt => threatened &= pos.by_type_bb[pawn_pt] | pos.by_type_bb[knight_pt] |
-            pos.by_type_bb[bishop_pt] | pos.by_type_bb[rook_pt],
-        else => {},
-    }
+
+    // Apply can_slider_threat in bitboard form: a threatened queen only counts against a queen.
+    const direct_sliders = if (pt == queen_pt) sliders & pos.by_type_bb[queen_pt] else sliders;
 
     if (comptime threats_write_avx512.use_avx512_threats) {
         // Outgoing: PC on S threatens the piece on each square of `threatened`. The
@@ -154,7 +172,7 @@ pub fn updatePieceThreats(
         threats_write_avx512.writeMultipleDirties(pos, all_attackers, incoming_template, 0, 20, dts);
 
         if (compute_ray) {
-            processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, r_attacks, b_attacks, occupied_no_k, false);
+            processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, slider_attacks, occupied_no_k, false);
         }
     } else {
         while (threatened != 0) {
@@ -164,7 +182,7 @@ pub fn updatePieceThreats(
         }
 
         if (compute_ray) {
-            processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, r_attacks, b_attacks, occupied_no_k, true);
+            processSliders(pos, dts, sliders, s, pc, put_piece, no_rays, slider_attacks, occupied_no_k, true);
         } else {
             incoming |= direct_sliders;
         }
