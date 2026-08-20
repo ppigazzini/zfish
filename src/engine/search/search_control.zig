@@ -75,7 +75,7 @@ const root_mean_sq_sentinel: i32 = -(q_value_inf * q_value_inf);
 pub fn rootUpdate(ctx: *const QCtx, move: u16, value: i32, nodes_delta: u64, move_count: i32, alpha: i32, beta: i32, child_pv: ?*const PVMoves) void {
     var idx: usize = ctx.pv_idx.*;
     const last = ctx.pv_last.*;
-    while (idx < last and ctx.root_moves[idx].pv.moves[0] != move) : (idx += 1) {}
+    while (idx < last and ctx.root_moves[idx].pv.at(0) != move) : (idx += 1) {}
     const rm = &ctx.root_moves[idx];
 
     rm.effort += nodes_delta;
@@ -122,11 +122,10 @@ pub fn rootUpdate(ctx: *const QCtx, move: u16, value: i32, nodes_delta: u64, mov
             rm.uci_score = alpha;
         }
         // Keep pv[0] (== move) with pv.resize(1), then append the child PV.
-        rm.pv.length = 1;
+        rm.pv.resize(1);
         if (child_pv) |c| {
             var j: usize = 0;
-            while (j < c.length) : (j += 1) rm.pv.moves[1 + j] = c.moves[j];
-            rm.pv.length = 1 + c.length;
+            while (j < c.length) : (j += 1) rm.pv.pushBack(c.moves[j]);
         }
         if (move_count > 1 and ctx.pv_idx.* == 0)
             _ = @atomicRmw(u64, ctx.best_move_changes, .Add, 1, .monotonic);
@@ -136,7 +135,7 @@ pub fn rootUpdate(ctx: *const QCtx, move: u16, value: i32, nodes_delta: u64, mov
 // Read the root TT move from the rootMoves array (a contiguous RootMove array)
 // handed over by worker_state.
 pub inline fn rootTtMove(ctx: *const QCtx) u16 {
-    return ctx.root_moves[ctx.pv_idx.*].pv.moves[0];
+    return ctx.root_moves[ctx.pv_idx.*].pv.at(0);
 }
 
 // Compare pv[0] against move over [pvIdx, pvLast).
@@ -144,7 +143,7 @@ pub inline fn rootInList(ctx: *const QCtx, move: u16) bool {
     var i: usize = ctx.pv_idx.*;
     const last = ctx.pv_last.*;
     while (i < last) : (i += 1) {
-        if (ctx.root_moves[i].pv.moves[0] == move) return true;
+        if (ctx.root_moves[i].pv.at(0) == move) return true;
     }
     return false;
 }

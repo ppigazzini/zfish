@@ -349,9 +349,10 @@ pub const Worker = struct {
 };
 
 // Re-export PVMoves + RootMove from the canonical definition in
-// support/root_move.zig. The Worker embeds `last_iteration_pv: PVMoves` and strides
-// its rootMoves vector by @sizeOf(RootMove); the size asserts below pin those
-// (504 / root_move_size).
+// support/root_move.zig. The Worker embeds `last_iteration_pv: PVMoves` -- the FIXED carrier,
+// which the follow-PV heuristic reads and which never grows -- and strides its rootMoves vector
+// by @sizeOf(RootMove), whose two PVs are the OWNING growable carrier. The size asserts below
+// pin both (504 / root_move_size).
 pub const PVMoves = root_move.PVMoves;
 pub const RootMove = root_move.RootMove;
 
