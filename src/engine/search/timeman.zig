@@ -18,6 +18,7 @@ pub const TimemanInput = struct {
     inc_ms: i64,
     start_time: i64,
     npmsec: i64,
+    movetime_ms: i64,
     move_overhead: i64,
     available_nodes: i64,
     current_optimum_time: i64,
@@ -38,6 +39,7 @@ pub const TimemanOutput = struct {
     inc_ms: i64,
     start_time: i64,
     npmsec: i64,
+    movetime_ms: i64,
     available_nodes: i64,
     optimum_time: i64,
     maximum_time: i64,
@@ -51,12 +53,21 @@ pub fn init(input: TimemanInput) TimemanOutput {
         .inc_ms = input.inc_ms,
         .start_time = input.start_time,
         .npmsec = input.npmsec,
+        .movetime_ms = input.movetime_ms,
         .available_nodes = input.available_nodes,
         .optimum_time = input.current_optimum_time,
         .maximum_time = input.current_maximum_time,
         .original_time_adjust = input.original_time_adjust,
         .use_nodes_time = if (input.npmsec != 0) 1 else 0,
     };
+
+    // Convert `movetime` into the unit the search compares it in. Under `nodestime` the
+    // search's `elapsed` is a NODE count, and checkTime tests `elapsed >= movetime` against
+    // the raw UCI figure -- so `go movetime N` used to stop after N nodes rather than after
+    // the N milliseconds' worth of nodes the caller asked for. Upstream ceb059eb scales the
+    // limit here instead, beside the clock and the increment, and does it BEFORE the
+    // no-clock early return so `go movetime N` alone is converted too.
+    if (output.use_nodes_time != 0) output.movetime_ms *= input.npmsec;
 
     // No clock for the SIDE TO MOVE. Write both budgets anyway.
     //
@@ -171,6 +182,7 @@ const base = TimemanInput{
     .inc_ms = 100, // feeds it. The old values were these three scaled by 1000, i.e. read as
     .start_time = 0, // microseconds; they described a 16-hour game and exercised a branch of the
     .npmsec = 0, // formula (scaled_time >= 1000) that a real bullet TC never takes.
+    .movetime_ms = 0,
     .move_overhead = 10,
     .available_nodes = -1,
     .current_optimum_time = 0,
@@ -264,6 +276,25 @@ test "timeman: sub-second budgets take the moves-to-go reduction (ms, not us)" {
     in.time_ms = 400;
     in.inc_ms = 4;
     try std.testing.expect(init(in).optimum_time > 1);
+}
+
+test "timeman: nodestime converts movetime into nodes" {
+    // checkTime compares `movetime` against a NODE count under nodestime, so the limit has to
+    // be scaled here or `go movetime N` stops after N nodes. Converted before the no-clock
+    // early return, so `go movetime N` with no clock at all is converted too.
+    var in = base;
+    in.npmsec = 600;
+    in.movetime_ms = 500;
+    try std.testing.expectEqual(@as(i64, 300_000), init(in).movetime_ms);
+
+    var no_clock = in;
+    no_clock.time_ms = 0;
+    try std.testing.expectEqual(@as(i64, 300_000), init(no_clock).movetime_ms);
+
+    // Without nodestime the figure passes through as the millisecond count it is.
+    var off = base;
+    off.movetime_ms = 500;
+    try std.testing.expectEqual(@as(i64, 500), init(off).movetime_ms);
 }
 
 test "timeman: npmsec != 0 enables nodes-time mode" {
