@@ -89,7 +89,15 @@ pub fn set(t: *TBTable, comptime dtz: bool, buf: []const u8) bool {
     @setRuntimeSafety(true);
     const e = t.info();
     var pos: usize = 4; // skip magic
-    // Skip the first byte after magic: Split(1)/HasPawns(2) flags (asserted in SF; we trust the file).
+    // The first byte after the magic carries Split(1)/HasPawns(2). Both bits restate what the
+    // FILENAME already told the registry, so a table whose header disagrees with the material
+    // key it was opened for is not the table the probe is about to index -- and every group
+    // width below is derived from the registry's answer, not the file's. Upstream asserted the
+    // pair and 5fd94536 turned both asserts into a rejection; the assert was compiled out in
+    // the shipped build, so the disagreement reached the encoder unread.
+    if (pos >= buf.len) return false;
+    if (t.has_pawns != (buf[pos] & 2 != 0)) return false;
+    if ((t.key != t.key2) != (buf[pos] & 1 != 0)) return false;
     pos += 1;
 
     // Treat DTZ tables as one-sided; WDL split tables (key != key2) store both sides.
@@ -327,7 +335,11 @@ fn kpvkStub(pieces0: u8) struct { table: TBTable, buf: [64]u8 } {
     return .{
         .table = .{
             .key = 0,
-            .key2 = 0,
+            // Split: the flags byte above sets it, and set() now refuses a header that
+            // disagrees with the entry it was opened for. A real KPvK is split -- one side has
+            // the pawn -- so distinct keys are what the file describes. `sides` stays 1 so the
+            // stub only has to carry side 0's nine bytes.
+            .key2 = 1,
             .piece_count = 3,
             .has_pawns = true,
             .has_unique_pieces = true,

@@ -192,16 +192,37 @@ pub fn setGroups(d: *PairsData, e: EntryInfo, order: [2]i32, f: encode.TbFile) b
 // out-of-bounds WRITE, which ReleaseFast does not check. decode.setSizes validates the whole
 // btree before calling here, so this walk is in-bounds by construction rather than by trust; the
 // asserts restate that where ReleaseSafe (tests, fuzz) can see it.
-pub fn setSymLen(d: *PairsData, s: Sym, visited: []bool) u8 {
-    std.debug.assert(s < d.btree.len and s < d.symlen.len and s < visited.len);
-    visited[s] = true; // safe now: the tree is acyclic
+// Colour a symbol during the btree walk. GREY is "on the current DFS path", so meeting one is a
+// CYCLE -- the property the old `visited` bool could not express: it marked a symbol before
+// recursing, so a cycle was silently read as "already computed" and left symlen[] holding zeros
+// it then summed. Upstream 5fd94536 replaced the same bool with the same three colours.
+pub const SymColour = enum(u8) { white, grey, black };
+
+pub fn setSymLen(d: *PairsData, s: Sym, colour: []SymColour, cyclic: *bool) u8 {
+    std.debug.assert(s < d.btree.len and s < d.symlen.len and s < colour.len);
+    colour[s] = .grey;
     const sr = d.btree[s].right();
-    if (sr == 0xFFF) return 0; // leaf
+    if (sr == 0xFFF) { // leaf
+        colour[s] = .black;
+        return 0;
+    }
 
     const sl = d.btree[s].left();
-    if (!visited[sl]) d.symlen[sl] = setSymLen(d, sl, visited);
-    if (!visited[sr]) d.symlen[sr] = setSymLen(d, sr, visited);
-    return d.symlen[sl] + d.symlen[sr] + 1;
+    // Either child still on the path closes a cycle: report it and stop descending. The caller
+    // refuses the whole table, so the value returned here is never read.
+    if (colour[sl] == .grey or colour[sr] == .grey) {
+        cyclic.* = true;
+        colour[s] = .black;
+        return 0;
+    }
+
+    if (colour[sl] == .white) d.symlen[sl] = setSymLen(d, sl, colour, cyclic);
+    if (colour[sr] == .white) d.symlen[sr] = setSymLen(d, sr, colour, cyclic);
+    colour[s] = .black;
+    // Wrap rather than trap. Upstream promotes both operands to int and truncates the sum back
+    // into the u8 return, which is defined; a valid table's lengths fit u8 by construction, so
+    // this is bit-identical there and only a corrupt tree can reach the wrap.
+    return d.symlen[sl] +% d.symlen[sr] +% 1;
 }
 
 // ---- unit tests (no live file) ---------------------------------------------
@@ -270,13 +291,32 @@ test "setSymLen expands a synthetic RE-PAIR btree" {
         pair(2, 0), // 3: (2,0)
     };
     var symlen = [_]u8{ 0, 0, 0, 0 };
-    var visited = [_]bool{ false, false, false, false };
+    var colour = [_]SymColour{ .white, .white, .white, .white };
+    var cyclic = false;
     var d = PairsData{ .btree = &btree, .symlen = &symlen };
     // Expect sym 2 to expand to leaves 0,1 -> 2 values -> symlen 1.
-    try std.testing.expectEqual(@as(u8, 1), setSymLen(&d, 2, &visited));
+    try std.testing.expectEqual(@as(u8, 1), setSymLen(&d, 2, &colour, &cyclic));
     // sym 3 = (2,0) -> symlen[2] + symlen[0] + 1 = 1 + 0 + 1 = 2.
-    var visited2 = [_]bool{ false, false, false, false };
-    try std.testing.expectEqual(@as(u8, 2), setSymLen(&d, 3, &visited2));
+    var colour2 = [_]SymColour{ .white, .white, .white, .white };
+    try std.testing.expectEqual(@as(u8, 2), setSymLen(&d, 3, &colour2, &cyclic));
+    try std.testing.expect(!cyclic);
+}
+
+test "setSymLen reports a cyclic btree instead of summing zeros" {
+    // 0 = leaf; 1 = pair(2, 0); 2 = pair(1, 0). Walking 1 descends to 2, which names 1 again --
+    // the case the `visited` bool read as "already computed", leaving symlen[1] at 0 and the
+    // table accepted. Upstream 5fd94536 refuses it; so does the caller here.
+    var btree = [_]LR{
+        .{ .lr = .{ 0, 0xF0, 0xFF } }, // 0: leaf
+        pair(2, 0), // 1: (2,0)
+        pair(1, 0), // 2: (1,0)
+    };
+    var symlen = [_]u8{ 0, 0, 0 };
+    var colour = [_]SymColour{ .white, .white, .white };
+    var cyclic = false;
+    var d = PairsData{ .btree = &btree, .symlen = &symlen };
+    _ = setSymLen(&d, 1, &colour, &cyclic);
+    try std.testing.expect(cyclic);
 }
 
 fn pair(l: Sym, r: Sym) LR {

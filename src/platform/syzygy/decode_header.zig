@@ -122,6 +122,12 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
         d.base64[i] = (d.base64[i + 1] +%
             @as(u64, rdSym(d.lowest_sym[i * 2 ..])) -%
             @as(u64, rdSym(d.lowest_sym[(i + 1) * 2 ..]))) / 2;
+        // Refuse a non-canonical code. A canonical Huffman table satisfies
+        // base64[i] * 2 >= base64[i + 1] at every step; upstream asserted it and 5fd94536 turned
+        // the assert into a rejection, because on an untrusted file the assert is compiled out
+        // and the decoder then walks an alphabet its own length scan cannot describe. Double
+        // with wrapping, as upstream's u64 does.
+        if (d.base64[i] *% 2 < d.base64[i + 1]) return error.CorruptTable;
     }
     // Right-pad to 64 bits. base64_size <= max_sym_len - min_sym_len + 1, max_sym_len < 64 and
     // min_sym_len >= 1, so 64 - k - min_sym_len stays in 1..63 and the shift width is in range.
@@ -158,14 +164,20 @@ pub fn setSizes(gpa: std.mem.Allocator, d: *PairsData, buf: []const u8, pos: *us
         d.symlen = &.{};
     }
     @memset(d.symlen, 0);
-    const visited = try gpa.alloc(bool, symlen_size);
-    defer gpa.free(visited);
-    @memset(visited, false);
+    // Three colours, not a visited bool: GREY marks a symbol still on the DFS path, so meeting
+    // one is a cycle. The bool marked a symbol BEFORE descending, which made a cycle read as
+    // "already computed" -- the walk terminated and the sums it returned were built on symlen[]
+    // entries still holding zero, so a cyclic tree was accepted with garbage lengths.
+    const colour = try gpa.alloc(probe.SymColour, symlen_size);
+    defer gpa.free(colour);
+    @memset(colour, .white);
+    var cyclic = false;
     var sym: usize = 0;
     while (sym < symlen_size) : (sym += 1)
-        if (!visited[sym]) {
-            d.symlen[sym] = probe.setSymLen(d, @intCast(sym), visited);
+        if (colour[sym] == .white) {
+            d.symlen[sym] = probe.setSymLen(d, @intCast(sym), colour, &cyclic);
         };
+    if (cyclic) return error.CorruptTable;
 
     try buildDecodeTables(gpa, d, base64_size, symlen_size);
     errdefer {
