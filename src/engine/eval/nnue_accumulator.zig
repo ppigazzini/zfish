@@ -215,6 +215,36 @@ pub fn transformBucket(
 
     // (psq_diff + thr_diff)/2 == (combined_diff)/2 since combined = psq + threat.
     const psqt: i32 = @divTrunc(comb_psqt[p0 * psqt_buckets + bucket] - comb_psqt[p1 * psqt_buckets + bucket], 2);
+    nnzReset(nnz);
+    // One call per perspective. The OUTPUT halves are ordered side-to-move first, so the
+    // accumulator half is resolved here and the transform below takes an output position.
+    // Re-assert the alignment across the stride: Zig drops it on pointer arithmetic (the
+    // result is align(2) whatever the base was), and the transform's loads fold into their
+    // memory operands only while it is provable. The comptime assert is what makes the
+    // @alignCast a fact rather than a promise.
+    comptime std.debug.assert(half_dimensions * @sizeOf(i16) % nnue_align == 0);
+    transformPerspective(@alignCast(comb_acc + p0 * half_dimensions), output, 0, nnz);
+    transformPerspective(@alignCast(comb_acc + p1 * half_dimensions), output, 1, nnz);
+    return psqt;
+}
+
+// Transform ONE perspective's accumulator half into its slice of the layer-0 input, and record
+// the non-zero chunk mask for it -- upstream's transform_perspective. The caller resolves
+// perspectives[p] and hands over that half, so nothing here needs to know which side is to move:
+// `perspective` is a position in the OUTPUT, the index space the offset is derived from, and
+// never a colour.
+//
+// Per element: sum psq+threat accumulators (i16 wrap), ClippedReLU to [0,255], multiply the two
+// halves and divide by 512 -> u8. Stays in 16-bit via SF's mulhi identity
+// (c0*c1) >> 9  ==  ((c0<<7) * c1) >> 16  ==  pmulhuw(c0<<7, c1), which avoids the i32 widening
+// so each vector register holds twice the lanes. The scaled product 128*c0*c1 is exact and >>16
+// is floor, so this is bit-identical to the i32 clamp*mul>>9 path (integer, no rounding).
+fn transformPerspective(
+    accumulation: [*]align(nnue_align) const i16,
+    output: [*]u8,
+    perspective: usize,
+    nnz: *NnzOut,
+) void {
 
     // Produce the pairwise squared-clipped-ReLU output (port of upstream FeatureTransformer::
     // transform). Per element: sum psq+threat accumulators (i16 wrap), ClippedReLU to
@@ -248,120 +278,113 @@ pub fn transformBucket(
         break :blk w;
     };
     const no_bits: Vgm = @splat(0);
-    nnzReset(nnz);
-    var p: usize = 0;
-    while (p < 2) : (p += 1) {
-        const pp: usize = if (p == 0) p0 else p1;
-        const offset = half * p;
-        const base = pp * half_dimensions;
-        var j: usize = 0;
-        while (j < half) : (j += V) {
-            // Assert the state's alignment on the loads themselves (a runtime-offset slice
-            // degrades to align(2)): base, j and half are all multiples of V lanes, so each
-            // load's byte offset is a multiple of min(64, V*2) from the 64-aligned state and
-            // non-VEX SSE can fold it into pminsw's m128. Derive the assert from V so a
-            // narrower sweep of transform_vec_width stays sound rather than tripping it.
-            const A = comptime @min(64, V * @sizeOf(i16));
-            const bit = (offset + j) / 4;
-            if (comptime use_packus_avx512) {
-                // Run the packus body per 64 elements (2 zmm in, 1 zmm out) and fold each
-                // pack's 16-group non-zero mask into one GMask for the step; V is a
-                // multiple of 64 on every tier this gate selects. The nnz bitcast is the
-                // same guarded x86 movemask as the generic path below -- at 512 bits the
-                // <16 x i1> compare already lives in a k register (vptestmd), so the cast
-                // is free.
-                var mask: GMask = 0;
-                inline for (0..V / 64) |s| {
-                    const off = base + j + s * 64;
-                    const packed64 = packusTransform64(.{
-                        @as(*align(64) const [32]i16, @ptrCast(@alignCast(comb_acc + off))).*,
-                        @as(*align(64) const [32]i16, @ptrCast(@alignCast(comb_acc + off + 32))).*,
-                    }, .{
-                        @as(*align(64) const [32]i16, @ptrCast(@alignCast(comb_acc + off + half))).*,
-                        @as(*align(64) const [32]i16, @ptrCast(@alignCast(comb_acc + off + half + 32))).*,
-                    });
-                    output[offset + j + s * 64 ..][0..64].* = packed64;
-                    const nz = @as(@Vector(16, u32), @bitCast(packed64)) != @as(@Vector(16, u32), @splat(0));
-                    mask |= @as(GMask, @as(u16, @bitCast(nz))) << (16 * s);
-                }
-                nnzRecord(GMask, nnz, bit, mask);
-                continue;
+    const offset = half * perspective;
+    var j: usize = 0;
+    while (j < half) : (j += V) {
+        // Assert the state's alignment on the loads themselves (a runtime-offset slice
+        // degrades to align(2)): base, j and half are all multiples of V lanes, so each
+        // load's byte offset is a multiple of min(64, V*2) from the 64-aligned state and
+        // non-VEX SSE can fold it into pminsw's m128. Derive the assert from V so a
+        // narrower sweep of transform_vec_width stays sound rather than tripping it.
+        const A = comptime @min(64, V * @sizeOf(i16));
+        const bit = (offset + j) / 4;
+        if (comptime use_packus_avx512) {
+            // Run the packus body per 64 elements (2 zmm in, 1 zmm out) and fold each
+            // pack's 16-group non-zero mask into one GMask for the step; V is a
+            // multiple of 64 on every tier this gate selects. The nnz bitcast is the
+            // same guarded x86 movemask as the generic path below -- at 512 bits the
+            // <16 x i1> compare already lives in a k register (vptestmd), so the cast
+            // is free.
+            var mask: GMask = 0;
+            inline for (0..V / 64) |s| {
+                const off = j + s * 64;
+                const packed64 = packusTransform64(.{
+                    @as(*align(64) const [32]i16, @ptrCast(@alignCast(accumulation + off))).*,
+                    @as(*align(64) const [32]i16, @ptrCast(@alignCast(accumulation + off + 32))).*,
+                }, .{
+                    @as(*align(64) const [32]i16, @ptrCast(@alignCast(accumulation + off + half))).*,
+                    @as(*align(64) const [32]i16, @ptrCast(@alignCast(accumulation + off + half + 32))).*,
+                });
+                output[offset + j + s * 64 ..][0..64].* = packed64;
+                const nz = @as(@Vector(16, u32), @bitCast(packed64)) != @as(@Vector(16, u32), @splat(0));
+                mask |= @as(GMask, @as(u16, @bitCast(nz))) << (16 * s);
             }
-            if (comptime use_packus_avx2) {
-                // Run the i16-width packus body per 32 elements (2 ymm in, 1 ymm out) and
-                // fold each pack's 8-group non-zero mask into one GMask for the step; V is
-                // a multiple of 32 on every x86 tier this gate selects. The nnz bitcast is
-                // the same guarded x86 movemask as the generic path below.
-                var mask: GMask = 0;
-                inline for (0..V / 32) |s| {
-                    const off = base + j + s * 32;
-                    const packed32 = packusTransform32(.{
-                        @as(*align(32) const [16]i16, @ptrCast(@alignCast(comb_acc + off))).*,
-                        @as(*align(32) const [16]i16, @ptrCast(@alignCast(comb_acc + off + 16))).*,
-                    }, .{
-                        @as(*align(32) const [16]i16, @ptrCast(@alignCast(comb_acc + off + half))).*,
-                        @as(*align(32) const [16]i16, @ptrCast(@alignCast(comb_acc + off + half + 16))).*,
-                    });
-                    output[offset + j + s * 32 ..][0..32].* = packed32;
-                    const nz = @as(@Vector(8, u32), @bitCast(packed32)) != @as(@Vector(8, u32), @splat(0));
-                    mask |= @as(GMask, @as(u8, @bitCast(nz))) << (8 * s);
-                }
-                nnzRecord(GMask, nnz, bit, mask);
-                continue;
-            }
-            if (comptime use_packus_sse) {
-                // Run the packus body per 16 elements (4 xmm in, 1 xmm out): upstream's
-                // SSE2 shape drops the second half's max(0, .) -- the signed pmulhw
-                // carries the sign and packuswb zeroes the negative product on pack --
-                // where the generic path below pays a pmaxsw per operand. V is a
-                // multiple of 16 on every x86 tier this gate selects.
-                var mask: GMask = 0;
-                inline for (0..V / 16) |s| {
-                    const off = base + j + s * 16;
-                    const packed16 = packusTransform16(.{
-                        @as(*align(16) const [8]i16, @ptrCast(@alignCast(comb_acc + off))).*,
-                        @as(*align(16) const [8]i16, @ptrCast(@alignCast(comb_acc + off + 8))).*,
-                    }, .{
-                        @as(*align(16) const [8]i16, @ptrCast(@alignCast(comb_acc + off + half))).*,
-                        @as(*align(16) const [8]i16, @ptrCast(@alignCast(comb_acc + off + half + 8))).*,
-                    });
-                    output[offset + j + s * 16 ..][0..16].* = packed16;
-                    // Compare SIGNED > 0, upstream's vec_nnz: every output byte is
-                    // <= 127, so each u32 group is non-negative and > 0 iff non-zero
-                    // -- one pcmpgtd, where != 0 needs a pcmpeqd plus an invert.
-                    const nz = @as(@Vector(4, i32), @bitCast(packed16)) > @as(@Vector(4, i32), @splat(0));
-                    mask |= @as(GMask, @as(u4, @bitCast(nz))) << (4 * s);
-                }
-                nnzRecord(GMask, nnz, bit, mask);
-                continue;
-            }
-            const s0i: Vi16 = @as(*align(A) const [V]i16, @ptrCast(@alignCast(comb_acc + base + j))).*;
-            const s1i: Vi16 = @as(*align(A) const [V]i16, @ptrCast(@alignCast(comb_acc + base + j + half))).*;
-            const c0: Vu16 = @intCast(@max(zero, @min(c255, s0i))); // ClippedReLU [0,255]
-            const c1: Vu16 = @intCast(@max(zero, @min(c255, s1i)));
-            // pmulhuw(c0<<7, c1) == (c0*c1) >> 9
-            const q: Vu16 = @intCast((@as(Vu32, c0 << shl7) * @as(Vu32, c1)) >> shr16);
-            const bytes: @Vector(V, u8) = @intCast(q);
-            output[offset + j ..][0..V].* = bytes;
-            // Record which 4-byte chunks are non-zero while they are still in a register:
-            // a vector compare plus a movemask, no reload of what was just stored.
-            const nonzero = @as(Vg, @bitCast(bytes)) != @as(Vg, @splat(0));
-            // On x86 the <N x i1> compare result lives in a mask register (vptestmd -> k, avx512)
-            // or maps to pmovmskb (sse/avx2), so bitcasting it to the N-bit integer IS the
-            // movemask: lane i -> bit i, matching the @select+@reduce weighting exactly. That
-            // avoids LLVM rebuilding a value vector and running a ~14-op horizontal OR-reduce to
-            // collapse @reduce(.Or) back to a scalar (disasm-confirmed: vptestmd then vpord +
-            // vextracti + vpshufd chain). Guarded to x86, where the i1-vector packing is
-            // bit-per-lane; other backends keep the portable path (the layout note above). The
-            // signature pins that the two produce the identical mask. Port of mcfish be1d576.
-            const mask: GMask = if (comptime @import("builtin").cpu.arch == .x86_64)
-                @bitCast(nonzero)
-            else
-                @reduce(.Or, @select(GMask, nonzero, lane_bits, no_bits));
             nnzRecord(GMask, nnz, bit, mask);
+            continue;
         }
+        if (comptime use_packus_avx2) {
+            // Run the i16-width packus body per 32 elements (2 ymm in, 1 ymm out) and
+            // fold each pack's 8-group non-zero mask into one GMask for the step; V is
+            // a multiple of 32 on every x86 tier this gate selects. The nnz bitcast is
+            // the same guarded x86 movemask as the generic path below.
+            var mask: GMask = 0;
+            inline for (0..V / 32) |s| {
+                const off = j + s * 32;
+                const packed32 = packusTransform32(.{
+                    @as(*align(32) const [16]i16, @ptrCast(@alignCast(accumulation + off))).*,
+                    @as(*align(32) const [16]i16, @ptrCast(@alignCast(accumulation + off + 16))).*,
+                }, .{
+                    @as(*align(32) const [16]i16, @ptrCast(@alignCast(accumulation + off + half))).*,
+                    @as(*align(32) const [16]i16, @ptrCast(@alignCast(accumulation + off + half + 16))).*,
+                });
+                output[offset + j + s * 32 ..][0..32].* = packed32;
+                const nz = @as(@Vector(8, u32), @bitCast(packed32)) != @as(@Vector(8, u32), @splat(0));
+                mask |= @as(GMask, @as(u8, @bitCast(nz))) << (8 * s);
+            }
+            nnzRecord(GMask, nnz, bit, mask);
+            continue;
+        }
+        if (comptime use_packus_sse) {
+            // Run the packus body per 16 elements (4 xmm in, 1 xmm out): upstream's
+            // SSE2 shape drops the second half's max(0, .) -- the signed pmulhw
+            // carries the sign and packuswb zeroes the negative product on pack --
+            // where the generic path below pays a pmaxsw per operand. V is a
+            // multiple of 16 on every x86 tier this gate selects.
+            var mask: GMask = 0;
+            inline for (0..V / 16) |s| {
+                const off = j + s * 16;
+                const packed16 = packusTransform16(.{
+                    @as(*align(16) const [8]i16, @ptrCast(@alignCast(accumulation + off))).*,
+                    @as(*align(16) const [8]i16, @ptrCast(@alignCast(accumulation + off + 8))).*,
+                }, .{
+                    @as(*align(16) const [8]i16, @ptrCast(@alignCast(accumulation + off + half))).*,
+                    @as(*align(16) const [8]i16, @ptrCast(@alignCast(accumulation + off + half + 8))).*,
+                });
+                output[offset + j + s * 16 ..][0..16].* = packed16;
+                // Compare SIGNED > 0, upstream's vec_nnz: every output byte is
+                // <= 127, so each u32 group is non-negative and > 0 iff non-zero
+                // -- one pcmpgtd, where != 0 needs a pcmpeqd plus an invert.
+                const nz = @as(@Vector(4, i32), @bitCast(packed16)) > @as(@Vector(4, i32), @splat(0));
+                mask |= @as(GMask, @as(u4, @bitCast(nz))) << (4 * s);
+            }
+            nnzRecord(GMask, nnz, bit, mask);
+            continue;
+        }
+        const s0i: Vi16 = @as(*align(A) const [V]i16, @ptrCast(@alignCast(accumulation + j))).*;
+        const s1i: Vi16 = @as(*align(A) const [V]i16, @ptrCast(@alignCast(accumulation + j + half))).*;
+        const c0: Vu16 = @intCast(@max(zero, @min(c255, s0i))); // ClippedReLU [0,255]
+        const c1: Vu16 = @intCast(@max(zero, @min(c255, s1i)));
+        // pmulhuw(c0<<7, c1) == (c0*c1) >> 9
+        const q: Vu16 = @intCast((@as(Vu32, c0 << shl7) * @as(Vu32, c1)) >> shr16);
+        const bytes: @Vector(V, u8) = @intCast(q);
+        output[offset + j ..][0..V].* = bytes;
+        // Record which 4-byte chunks are non-zero while they are still in a register:
+        // a vector compare plus a movemask, no reload of what was just stored.
+        const nonzero = @as(Vg, @bitCast(bytes)) != @as(Vg, @splat(0));
+        // On x86 the <N x i1> compare result lives in a mask register (vptestmd -> k, avx512)
+        // or maps to pmovmskb (sse/avx2), so bitcasting it to the N-bit integer IS the
+        // movemask: lane i -> bit i, matching the @select+@reduce weighting exactly. That
+        // avoids LLVM rebuilding a value vector and running a ~14-op horizontal OR-reduce to
+        // collapse @reduce(.Or) back to a scalar (disasm-confirmed: vptestmd then vpord +
+        // vextracti + vpshufd chain). Guarded to x86, where the i1-vector packing is
+        // bit-per-lane; other backends keep the portable path (the layout note above). The
+        // signature pins that the two produce the identical mask. Port of mcfish be1d576.
+        const mask: GMask = if (comptime @import("builtin").cpu.arch == .x86_64)
+            @bitCast(nonzero)
+        else
+            @reduce(.Or, @select(GMask, nonzero, lane_bits, no_bits));
+        nnzRecord(GMask, nnz, bit, mask);
     }
-    return psqt;
 }
 
 pub fn stackReset(stack: *AccumulatorStack) void {
