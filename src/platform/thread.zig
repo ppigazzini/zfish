@@ -72,10 +72,10 @@ pub const ByteView = struct {
 const RootSetupInput = struct {
     limits: *const worker_layout.LimitsType,
     root_moves: []const search_types.RootMove,
-    fen_ptr: [*]const u8,
-    fen_len: usize,
+    // The caller's live Position, copied into each worker's own root slot. It replaces the
+    // fen_ptr/fen_len pair every worker used to re-PARSE: see applyRootSetup.
+    root_pos: *const position_port.Position,
     setup_state: *const position_port.StateInfo,
-    chess960: u8,
     tb_config: TbConfig,
 };
 
@@ -156,16 +156,26 @@ fn applyRootSetup(context_ptr: ?*anyopaque) void {
     if (worker_layout.Worker.fromThread(context.thread)) |w| {
         w.resetRootSetupState();
         const cfg = context.input.tb_config;
-        _ = position_port.setPosition(
-            w.rootPosPtr(),
-            context.input.fen_ptr,
-            context.input.fen_len,
-            context.input.chess960,
-            w.rootStatePtr(),
-            worker_layout.position_size,
-            worker_layout.state_info_size,
-        );
+        // COPY the caller's root, do not round-trip it through a FEN.
+        //
+        // This built each worker's root by serialising the caller's Position to a FEN and
+        // parsing it back, once per worker per `go`, on the move-latency path before a
+        // single node is searched -- and the round trip bought nothing. `setPosition`
+        // recomputes a whole StateInfo (keys, checkers, blockers, pinners, check squares,
+        // non-pawn material) and the very next line overwrote all of it: `setRootState` is
+        // there for the three fields a FEN cannot carry -- `previous`, `plies_from_null`
+        // and `captured_piece` -- and it took the other fourteen with them. So the parse
+        // produced a board the source already held, and a state that was dead before it
+        // was read.
+        //
+        // `st` is repointed LAST and that is the whole hazard: the memberwise copy brings
+        // the SOURCE's `st` with it, so leaving it in place would give every worker a
+        // pointer into the caller's StateInfo -- the aliasing `searchPosition` in
+        // headless_search.zig repoints for the same reason.
+        const wl = worker_layout.WorkerLayout.fromPtr(w.base);
+        wl.root_pos = context.input.root_pos.*;
         w.setRootState(context.input.setup_state);
+        wl.root_pos.st = w.rootStatePtr();
         w.setTbConfig(cfg);
     }
 }
@@ -367,10 +377,8 @@ pub fn startThinking(
             .input = .{
                 .limits = limits,
                 .root_moves = root_moves,
-                .fen_ptr = root_fen_text.ptr,
-                .fen_len = root_fen_text.len,
+                .root_pos = pos,
                 .setup_state = setup_state,
-                .chess960 = chess960,
                 .tb_config = tb_config,
             },
         };
