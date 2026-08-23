@@ -219,6 +219,15 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
     var pawn_block: ?[*]const PawnHistoryRow = null;
     var lowply_row: *const LowPlyHistoryRow = undefined;
     var threat_by_lesser: [7]u64 = @splat(0);
+    // Hoist the check-square planes BESIDE the threat ones. The per-move read is
+    // `pos.st.check_squares[piece_type]`, behind an `st` the loop has no register left to
+    // hold -- the six history planes, the board, the move list and the trip count are
+    // already more live pointers than the machine has -- so `st` comes back off the stack
+    // once a move and the plane load hangs off it. Copied into a local, the read is one
+    // stack-relative load, which is what the neighbouring `threat_by_lesser` read already
+    // costs. The copy is paid once per generated list against one instruction saved per
+    // move in it, and a quiet list is dozens of moves.
+    var check_squares: [8]u64 = @splat(0);
     if (kind == quiets) {
         cont1 = cont_slots[1] orelse unreachable;
         cont2 = cont_slots[2] orelse unreachable;
@@ -238,6 +247,7 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
         threat_by_lesser[queen] = attacksBy(pos, them, rook) |
             threat_by_lesser[rook];
         threat_by_lesser[king] = 0;
+        check_squares = pos.st.check_squares;
     }
 
     var index: usize = 0;
@@ -287,7 +297,7 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
                     // Read the cached enemy-king check rings (set_check_info, state_setup.zig:141)
                     // instead of rebuilding the slider rings from magics on every quiet move --
                     // the recompute also carried a per-type switch (an indirect-branch mispredictor).
-                    (pos.st.check_squares[piece_type] & squareMask(to)) != 0 and
+                    (check_squares[piece_type] & squareMask(to)) != 0 and
                         seeGe(pos, raw_move, -75),
                 );
                 // Test the bit by its POSITION, not against a mask. `bb & (1 << s)` hands the
