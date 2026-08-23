@@ -49,7 +49,6 @@ const qcapture: i32 = 15;
 
 const max_moves: usize = 256;
 const good_quiet_threshold: i32 = -14000;
-const min_sort_limit: i32 = std.math.minInt(i32);
 const low_ply_history_size: i32 = 5;
 const low_ply_history_entries: usize = 5;
 const piece_nb: usize = 16;
@@ -92,6 +91,44 @@ pub fn initMainStage(has_checkers: bool, has_tt_move: bool, depth: i32) i32 {
 
 pub fn initProbcutStage(has_tt_move: bool) i32 {
     return probcut_tt + @as(i32, @intFromBool(!has_tt_move));
+}
+
+// Sort a list whose limit admits every move.
+//
+// Two of the three callers passed `minInt(i32)`, where no score can fail the scan: every
+// move qualifies, `sorted_end` advances on every iteration and therefore tracks `scan`
+// exactly -- which makes `entries[scan] = entries[sorted_end]` a copy of a slot onto
+// itself, and the test above it a constant. Naming that sort separately drops the limit,
+// the test, the copy and the second cursor; what is left is `scan` alone.
+//
+// The order out is the order in. The scalar ladder starts at `scan`, which is the slot
+// `sorted_end` named in the general form, and the vector prefix takes the same first
+// min(count, max) moves.
+//
+// `partialInsertionSort` survives for its one remaining caller, the quiet stage, which is
+// the only site that passes a real limit.
+pub fn sortAll(entries: [*]SortEntry, count: usize) void {
+    if (count == 0)
+        return;
+
+    var scan: usize = 1;
+
+    if (comptime movepick_sort_avx512.use_avx512_sort) {
+        var sorter = movepick_sort_avx512.MoveSorter.init(entries[0]);
+        while (scan < count and scan < movepick_sort_avx512.max) : (scan += 1) {
+            sorter.insert(entries[scan]);
+        }
+        sorter.write(entries, scan);
+    }
+
+    while (scan < count) : (scan += 1) {
+        const current = entries[scan];
+        var insert_at = scan;
+        while (insert_at != 0 and entries[insert_at - 1].value < current.value) : (insert_at -= 1) {
+            entries[insert_at] = entries[insert_at - 1];
+        }
+        entries[insert_at] = current;
+    }
 }
 
 pub fn partialInsertionSort(entries: [*]SortEntry, count: usize, limit: i32) void {
@@ -148,7 +185,7 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
 
                 state.end_cur = state.cur + count;
                 state.end_captures = state.end_cur;
-                partialInsertionSort(state.moves + state.cur, count, min_sort_limit);
+                sortAll(state.moves + state.cur, count);
                 state.stage += 1;
                 continue;
             },
@@ -240,7 +277,7 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
 
                     state.end_cur = state.cur + count;
                     state.end_generated = state.end_cur;
-                    partialInsertionSort(state.moves + state.cur, count, min_sort_limit);
+                    sortAll(state.moves + state.cur, count);
                     state.stage = evasion;
                 }
                 if (selectAny(state)) |move| {
