@@ -57,6 +57,37 @@ pub fn continuationHistoryRead(page: [*]const PieceToHistoryRow, piece: u8, squa
     return @atomicLoad(i16, &page[@as(usize, piece)][@as(usize, square)].value, .monotonic);
 }
 
+// A [piece][square] subscript pair as ONE element index into the same run.
+//
+// The six history planes a quiet move reads are all indexed at the same [piece][to], and
+// each `[piece][square]` lowers to a base displaced by `piece * 64` plus a scaled `square`:
+// the addressing mode carries one term and an add carries the other, six times per move.
+// Naming the element index once leaves `base + index * 2` and the add goes with it.
+//
+// Both rows are plain arrays of a two-byte entry, so a plane IS one contiguous run and the
+// pair is element `piece * square_nb + square` of it. The asserts below hold that -- a
+// padded row would make the flat index silently address the wrong entry, and a wrong
+// history read is a search change no gate reports as one.
+pub inline fn historyElemIndex(piece: u8, square: u8) usize {
+    return @as(usize, piece) * square_nb + @as(usize, square);
+}
+
+comptime {
+    std.debug.assert(@sizeOf(PieceToHistoryRow) == square_nb * @sizeOf(HistoryEntry));
+    std.debug.assert(@sizeOf(PawnHistoryRow) == square_nb * @sizeOf(AtomicHistoryEntry));
+}
+
+pub fn continuationHistoryReadAt(page: [*]const PieceToHistoryRow, index: usize) i32 {
+    const flat: [*]const HistoryEntry = @ptrCast(page);
+    return @atomicLoad(i16, &flat[index].value, .monotonic);
+}
+
+pub fn pawnHistoryReadAt(block: ?[*]const PawnHistoryRow, index: usize) i32 {
+    const rows = block orelse return 0;
+    const flat: [*]const AtomicHistoryEntry = @ptrCast(rows);
+    return @atomicLoad(i16, &flat[index].value, .monotonic);
+}
+
 test {
     @import("std").testing.refAllDecls(@This());
 }

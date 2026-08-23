@@ -23,6 +23,9 @@ const ContHistSlot = movepick_history.ContHistSlot;
 const pawnHistoryBlock = movepick_history.pawnHistoryBlock;
 const pawnHistoryRead = movepick_history.pawnHistoryRead;
 const continuationHistoryRead = movepick_history.continuationHistoryRead;
+const historyElemIndex = movepick_history.historyElemIndex;
+const pawnHistoryReadAt = movepick_history.pawnHistoryReadAt;
+const continuationHistoryReadAt = movepick_history.continuationHistoryReadAt;
 
 const movepick_snapshot = @import("movepick_snapshot.zig");
 const seeGe = @import("legality").seeGe;
@@ -268,14 +271,18 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
                 input.captured_piece_value = piece_values[@as(usize, captured_piece)];
             },
             quiets => {
+                // One element index for all six planes read at [piece][to]. Each of them is
+                // a base displaced by `piece * 64` plus a scaled `to`, so the subscript pair
+                // costs an add per plane per move; named once it costs one.
+                const hi = historyElemIndex(piece, to);
                 input.main_history = main_row[@as(usize, raw_move)].value;
-                input.pawn_history = pawnHistoryRead(pawn_block, piece, to);
+                input.pawn_history = pawnHistoryReadAt(pawn_block, hi);
                 input.continuation_sum =
-                    continuationHistoryRead(cont0, piece, to) +
-                    continuationHistoryRead(cont1, piece, to) +
-                    continuationHistoryRead(cont2, piece, to) +
-                    continuationHistoryRead(cont3, piece, to) +
-                    continuationHistoryRead(cont5, piece, to);
+                    continuationHistoryReadAt(cont0, hi) +
+                    continuationHistoryReadAt(cont1, hi) +
+                    continuationHistoryReadAt(cont2, hi) +
+                    continuationHistoryReadAt(cont3, hi) +
+                    continuationHistoryReadAt(cont5, hi);
                 input.check_bonus = @intFromBool(
                     // Read the cached enemy-king check rings (set_check_info, state_setup.zig:141)
                     // instead of rebuilding the slider rings from magics on every quiet move --
@@ -283,11 +290,15 @@ pub fn scoreList(comptime kind: u8, context: *const MovePickerContext, outputs: 
                     (pos.st.check_squares[piece_type] & squareMask(to)) != 0 and
                         seeGe(pos, raw_move, -75),
                 );
-                input.from_threatened = @intFromBool(
-                    (threat_by_lesser[piece_type] & squareMask(from)) != 0,
+                // Test the bit by its POSITION, not against a mask. `bb & (1 << s)` hands the
+                // backend a value and it materialises the mask in a register; `(bb >> s) & 1`
+                // hands it a bit position and it emits a `bt`. Both squares are tested against
+                // the same bitboard, so the mask form also kept a live register per square.
+                input.from_threatened = @truncate(
+                    (threat_by_lesser[piece_type] >> @intCast(from)) & 1,
                 );
-                input.to_threatened = @intFromBool(
-                    (threat_by_lesser[piece_type] & squareMask(to)) != 0,
+                input.to_threatened = @truncate(
+                    (threat_by_lesser[piece_type] >> @intCast(to)) & 1,
                 );
                 input.piece_value = piece_values[@as(usize, piece_type)];
 
