@@ -195,7 +195,15 @@ pub fn nextMove(state: *MovePickerState, context: *const MovePickerContext) u16 
                 }
                 if (state.stage == good_quiet) {
                     if (!skipQuiets(state)) {
-                        if (selectGoodQuiet(state)) |move| {
+                        // The sort limit is what makes the early stop sound, so ask it
+                        // rather than a depth: at or below the threshold, the tail cannot
+                        // hold a move the prefix has already ruled out.
+                        const sort_limit = -3560 * state.depth;
+                        const move_opt = if (sort_limit <= good_quiet_threshold)
+                            selectGoodQuiet(state, true)
+                        else
+                            selectGoodQuiet(state, false);
+                        if (move_opt) |move| {
                             return move;
                         }
                     }
@@ -293,10 +301,23 @@ fn selectGoodCapture(state: *MovePickerState, context: *const MovePickerContext)
     return null;
 }
 
-fn selectGoodQuiet(state: *MovePickerState) ?u16 {
+// Walk the good quiets. `bounded` decides whether the walk may stop at the first move that
+// fails the threshold instead of running to the end of the list.
+//
+// partialInsertionSort leaves the list in TWO pieces: a prefix that descends, and a tail
+// every member of which scores below the sort's own limit. So once the walk has seen one
+// move at or below the threshold, the rest of the prefix is at or below it by the ordering,
+// and the tail is below it by the limit -- there is nothing further to find.
+//
+// The tail half of that argument holds only while the LIMIT is at or below the THRESHOLD.
+// The limit is `-3560 * depth`, so below depth 4 it is above -14000 and a tail move can
+// still outscore the threshold; there the walk has to run to the end. The caller picks the
+// form on exactly that test rather than on a transcribed depth, so a change to either
+// constant moves the boundary with it.
+fn selectGoodQuiet(state: *MovePickerState, comptime bounded: bool) ?u16 {
     while (state.cur < state.end_cur) {
-        const index = state.cur;
-        const entry = state.moves[index];
+        const entry = state.moves[state.cur];
+        if (bounded and entry.value <= good_quiet_threshold) return null;
         state.cur += 1;
 
         if (entry.raw_move != state.tt_move_raw and entry.value > good_quiet_threshold) {
