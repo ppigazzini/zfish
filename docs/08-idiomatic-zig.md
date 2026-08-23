@@ -865,3 +865,64 @@ available in CI, so it never runs there.
   `do_move`'s signature contains `TranspositionTable const*`, and inlining puts
   the same logic under different symbols per side. Verify group membership
   per-symbol before trusting any component ratio.
+
+## Measure a long clock's workload on the warm-game axis, not on `bench`
+
+Every axis above drives `bench`, and `bench` is a **cold** search of a fixed position list
+at depth 8 or 13, against a transposition table the previous position barely warmed. A move
+at fishtest's 10+0.1 is a different workload in three ways at once: it runs at ply 40 of one
+game, on a table every earlier move has written end to end and on the history, pawn and
+correction banks those moves populated; it reaches depth 20 to 25; and the tree it searches
+is therefore far smaller per ply, because the move ordering it inherits is already good. A
+per-node ratio measured in the first regime does not transfer to the second — a change that
+only pays once the table is full reads as nothing on every gate listed above.
+
+`tools/ltc_ab.sh` measures the second regime, driving `tools/ltc_replay.py` over a recorded
+move list. Both are local-only: one depth-20 replay is tens of millions of nodes per side
+per round, and a hosted runner would measure the hypervisor and then time out.
+
+**The node total is the fidelity check, and it is a wider net than the anchor.** The move
+list is fixed input, every search is `go depth D`, and `Threads` is 1, so the node count is
+a function of the position and the table alone. Two binaries that search the same tree must
+report the same total. The anchor visits only its own thirteen positions from a cold table,
+which is the blind spot `docs/10-tooling-ci.md` records; this walks one game to depth 20 and
+sees a divergence there. A run whose totals differ is **void, not slow** — `ltc_ab.sh` exits
+1 and prints no ratio. Verified by mutation: `razorMargin`'s `482` changed to `481` moves
+the 20-ply depth-13 total from 390,947 to 398,988 and the run is refused.
+
+**Startup is subtracted per binary.** Two revisions do not pay the same price to map the
+binary and read the `.nnue`, and a raw counter total charges that difference to the search.
+`ltc_replay.py startup` opens the same session with the move loop removed, so what it
+measures is exactly what the replay carries beyond its nodes.
+
+**Which column carries a claim, measured here rather than assumed.** A/A control, byte-
+identical binaries (same md5), 60-ply list, depth 13, 3 rounds:
+
+| column | A/A reading | carries a claim? |
+| --- | --- | --- |
+| retired instructions | **1.00000** | yes |
+| retired branches | **1.00000** | yes |
+| branch misses | 0.99526 | only above ~0.5% |
+| cycles | 0.97919 | no |
+| cache misses | 0.94193 | no — widest of the five |
+
+That is the same ordering the `bench`-driven A/A in the table above reports, and it is the
+reason a warm-game verdict is quoted on instructions. Print the A/A beside any counter
+column that is quoted at all.
+
+**Pin the driver and the engine to different cores.** `perf_counters --wrap` pins the engine
+so both sides of a pair see one thermal state, but the replay driver is a separate process:
+landing both on core 0 cost the engine half its throughput here, 309 knps against 327, which
+leaves the cycle and wall columns describing the contention. The instruction column does not
+move either way, which is why it survives a box this script cannot quiet.
+
+**`--cold` is the control that prices the state, not a second workload.** It sends
+`ucinewgame` before every move, so everything but the accumulated table and history bank is
+identical. The difference between a `--cold` run and a warm one is what a game's own state
+is worth, in nodes, at a depth the long clock reaches.
+
+**`ltc_replay.py clock` removes the wall clock from a time-control question.** With
+`nodestime` set, `elapsed()` returns nodes and the budget is a bank the engine keeps itself,
+so a whole game is a deterministic function of the move list. A faster engine is then simply
+a larger `--npmsec`, and the depth it reaches is how much of that speed the time manager let
+it keep — a question that otherwise costs an SPRT.

@@ -68,6 +68,13 @@ printf 'tools-smoke: the tools no workflow, no build step and no other tool invo
 # is a human reading it. Needs nothing: no oracle, no engine, no upstream objects.
 smoke "nps_ab.sh" 1 "usage: nps_ab.sh" -- bash tools/nps_ab.sh
 
+# The warm-game axis. Two rows, because the pair has two independent failure modes and the
+# driver is the half that rots: ltc_ab.sh refuses without binaries, and ltc_replay.py must
+# still PARSE and present its modes -- a driver that stopped accepting `startup` would leave
+# the A/B silently comparing raw totals with no floor subtracted.
+smoke "ltc_ab.sh" 2 "Paired A/B in the regime" -- bash tools/ltc_ab.sh
+smoke "ltc_replay.py" 0 "record,replay,startup,clock" -- python3 tools/ltc_replay.py --help
+
 # Reads the pin pair out of this repo's own git objects and reports the re-port plan. Its
 # output shape is what a resync reads, so the "nothing to resync" / worklist line is the
 # interface. Needs the upstream objects, which a plain origin checkout does not carry.
@@ -93,9 +100,9 @@ _profile() {  # _profile <path> <Ir> ; a callgrind summary is events: + summary:
     printf 'events: Ir Dr Dw I1mr D1mr D1mw ILmr DLmr DLmw Bc Bcm Bi Bim\n' > "$1"
     printf 'summary: %d 100 50 5 20 10 1 2 3 400 40 30 3\n' "$2" >> "$1"
 }
-_profile "$FIX/a_deep.out" 1000; printf '2884956\n' > "$FIX/a_deep.out.nodes"
+_profile "$FIX/a_deep.out" 1000; printf '2516158\n' > "$FIX/a_deep.out.nodes"
 _profile "$FIX/a_shal.out"  100; printf '19\n'      > "$FIX/a_shal.out.nodes"
-_profile "$FIX/b_deep.out" 2000; printf '2884956\n' > "$FIX/b_deep.out.nodes"
+_profile "$FIX/b_deep.out" 2000; printf '2516158\n' > "$FIX/b_deep.out.nodes"
 _profile "$FIX/b_shal.out"  200; printf '19\n'      > "$FIX/b_shal.out.nodes"
 
 smoke "perf_callgrind_delta" 1 "Usage" -- python3 tools/perf_callgrind_delta.py
@@ -109,7 +116,7 @@ smoke "  ^ refuses a differing tree" 1 "not the same workload" -- \
     python3 tools/perf_callgrind_delta.py "$FIX/a_deep.out" "$FIX/a_shal.out" \
     "$FIX/b_wrong.out" "$FIX/b_shal.out"
 
-printf 'events: Ir\n' > "$FIX/b_dead.out"; printf '2884956\n' > "$FIX/b_dead.out.nodes"
+printf 'events: Ir\n' > "$FIX/b_dead.out"; printf '2516158\n' > "$FIX/b_dead.out.nodes"
 smoke "  ^ refuses a dead run" 1 "did the run die?" -- \
     python3 tools/perf_callgrind_delta.py "$FIX/a_deep.out" "$FIX/a_shal.out" \
     "$FIX/b_dead.out" "$FIX/b_shal.out"

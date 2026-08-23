@@ -68,144 +68,12 @@
 const std = @import("std");
 const linux = std.os.linux;
 
-const Counters = struct {
-    instructions: u64 = 0,
-    cycles: u64 = 0,
-    cache_misses: u64 = 0,
-    branch_misses: u64 = 0,
-    branches: u64 = 0,
-    nodes: u64 = 0,
-
-    fn ipc(self: Counters) f64 {
-        if (self.cycles == 0) return 0;
-        return @as(f64, @floatFromInt(self.instructions)) / @as(f64, @floatFromInt(self.cycles));
-    }
-
-    // Report misses per retired branch. A miss COUNT cannot say whether a surplus is more
-    // branches or worse prediction of the same ones, and those two call for opposite fixes:
-    // one is a code-shape problem, the other a data-dependence problem.
-    fn branchMissRate(self: Counters) f64 {
-        if (self.branches == 0) return 0;
-        return @as(f64, @floatFromInt(self.branch_misses)) / @as(f64, @floatFromInt(self.branches));
-    }
-};
-
-fn openCounter(config: u64, pid: linux.pid_t) !i32 {
-    var attr = std.mem.zeroes(linux.perf_event_attr);
-    attr.type = .HARDWARE;
-    attr.size = @sizeOf(linux.perf_event_attr);
-    attr.config = config;
-    attr.flags.disabled = true;
-    attr.flags.exclude_kernel = true;
-    attr.flags.exclude_hv = true;
-    attr.flags.inherit = true;
-    const rc = linux.perf_event_open(&attr, pid, -1, -1, 0);
-    const signed: isize = @bitCast(rc);
-    if (signed < 0) return error.PerfEventOpenFailed;
-    return @intCast(rc);
-}
-
-/// Parse "Nodes searched  : N" out of the child's bench output. Enforce the L5 gate: without it
-/// the tool would happily compare two different trees.
-fn parseNodes(text: []const u8) ?u64 {
-    const marker = "Nodes searched";
-    const at = std.mem.find(u8, text, marker) orelse return null;
-    var i = at + marker.len;
-    while (i < text.len and (text[i] == ' ' or text[i] == ':')) i += 1;
-    var end = i;
-    while (end < text.len and text[end] >= '0' and text[end] <= '9') end += 1;
-    if (end == i) return null;
-    return std.fmt.parseInt(u64, text[i..end], 10) catch null;
-}
-
-fn runOnce(gpa: std.mem.Allocator, argv: []const [*:0]const u8, core: usize) !Counters {
-    var pipe_fds: [2]i32 = undefined;
-    if (linux.pipe(&pipe_fds) != 0) return error.PipeFailed;
-
-    const pid: linux.pid_t = @intCast(linux.fork());
-    if (pid == 0) {
-        // Child: pin to one core so A and B see identical thermal/frequency state.
-        var set = std.mem.zeroes([16]u64);
-        set[core / 64] = @as(u64, 1) << @intCast(core % 64);
-        _ = linux.syscall3(.sched_setaffinity, 0, @sizeOf(@TypeOf(set)), @intFromPtr(&set));
-
-        _ = linux.close(pipe_fds[0]);
-        // Capture BOTH stdout and stderr: the engines print the bench summary (and thus the
-        // node count this tool gates on) to stderr, not stdout.
-        _ = linux.dup2(pipe_fds[1], 1);
-        _ = linux.dup2(pipe_fds[1], 2);
-        _ = linux.close(pipe_fds[1]);
-
-        _ = linux.ptrace(linux.PTRACE.TRACEME, 0, 0, 0, 0);
-        _ = linux.kill(@intCast(linux.getpid()), linux.SIG.STOP);
-
-        var child_argv: [64:null]?[*:0]const u8 = undefined;
-        for (argv, 0..) |a, i| child_argv[i] = a;
-        child_argv[argv.len] = null;
-        var envp = [_:null]?[*:0]const u8{};
-        _ = linux.execve(argv[0], &child_argv, &envp);
-        linux.exit(127);
-    }
-    _ = linux.close(pipe_fds[1]);
-    { // wait for the child's SIGSTOP: counters must be armed BEFORE it runs
-        var status: u32 = 0;
-        _ = linux.waitpid(pid, &status, 0);
-    }
-
-    const c_instr = try openCounter(@intFromEnum(linux.PERF.COUNT.HW.INSTRUCTIONS), pid);
-    defer _ = linux.close(c_instr);
-    const c_cyc = try openCounter(@intFromEnum(linux.PERF.COUNT.HW.CPU_CYCLES), pid);
-    defer _ = linux.close(c_cyc);
-    const c_cache = openCounter(@intFromEnum(linux.PERF.COUNT.HW.CACHE_MISSES), pid) catch -1;
-    const c_branch = openCounter(@intFromEnum(linux.PERF.COUNT.HW.BRANCH_MISSES), pid) catch -1;
-    // Retired branches, so the miss RATE is readable and not just the miss count.
-    const c_branch_all = openCounter(@intFromEnum(linux.PERF.COUNT.HW.BRANCH_INSTRUCTIONS), pid) catch -1;
-
-    const fds = [_]i32{ c_instr, c_cyc, c_cache, c_branch, c_branch_all };
-    for (fds) |fd| if (fd >= 0) {
-        _ = linux.ioctl(fd, linux.PERF.EVENT_IOC.RESET, 0);
-        _ = linux.ioctl(fd, linux.PERF.EVENT_IOC.ENABLE, 0);
-    };
-    _ = linux.ptrace(linux.PTRACE.DETACH, pid, 0, 0, 0);
-
-    // Drain stdout while the child runs, or a full pipe deadlocks it.
-    var out: std.ArrayList(u8) = .empty;
-    defer out.deinit(gpa);
-    var buf: [4096]u8 = undefined;
-    while (true) {
-        const n = linux.read(pipe_fds[0], &buf, buf.len);
-        const signed: isize = @bitCast(n);
-        if (signed <= 0) break;
-        try out.appendSlice(gpa, buf[0..@intCast(n)]);
-    }
-    _ = linux.close(pipe_fds[0]);
-    {
-        var status: u32 = 0;
-        _ = linux.waitpid(pid, &status, 0);
-    }
-
-    for (fds) |fd| if (fd >= 0) {
-        _ = linux.ioctl(fd, linux.PERF.EVENT_IOC.DISABLE, 0);
-    };
-
-    var result: Counters = .{};
-    _ = linux.read(c_instr, std.mem.asBytes(&result.instructions), 8);
-    _ = linux.read(c_cyc, std.mem.asBytes(&result.cycles), 8);
-    if (c_cache >= 0) {
-        _ = linux.read(c_cache, std.mem.asBytes(&result.cache_misses), 8);
-        _ = linux.close(c_cache);
-    }
-    if (c_branch >= 0) {
-        _ = linux.read(c_branch, std.mem.asBytes(&result.branch_misses), 8);
-        _ = linux.close(c_branch);
-    }
-    if (c_branch_all >= 0) {
-        _ = linux.read(c_branch_all, std.mem.asBytes(&result.branches), 8);
-        _ = linux.close(c_branch_all);
-    }
-    result.nodes = parseNodes(out.items) orelse 0;
-    return result;
-}
+// A relative import: this tool is built with `zig build-exe` from tools/, so the probe needs
+// no module wiring in build.zig to be reachable.
+const probe = @import("perf_counters_probe.zig");
+const Counters = probe.Counters;
+const runOnce = probe.runOnce;
+const runWrapped = probe.runWrapped;
 
 fn median(values: []f64) f64 {
     std.mem.sort(f64, values, {}, std.sort.asc(f64));
@@ -240,7 +108,64 @@ pub fn main(init: std.process.Init) !void {
             \\--budget takes ONE binary and prints its own median retired-instruction count
             \\instead of a ratio, for the absolute budget gate (tools/perf_budget.sh).
             \\
+            \\--wrap COUNTS A CHILD THIS TOOL DOES NOT DRIVE: it execs the argv after `--`
+            \\with stdin/stdout inherited, so a UCI session driven by tools/ltc_replay.py is
+            \\measured end to end, and writes one TSV line to the -o path. That is the only
+            \\way the warm-game axis (tools/ltc_ab.sh) reaches the counters -- `bench` is the
+            \\one workload the modes above can express, and it is a COLD search.
+            \\   perf_counters --wrap -o /tmp/c.tsv --core 0 -- ./stockfish
+            \\
         , .{});
+        return;
+    }
+
+    // Wrapper mode. The two modes below both OWN the child: they build its argv, run it to
+    // completion and read its stdout back. A warm-game replay is driven move by move from
+    // outside, so the child has to keep its own stdin and stdout, and the only thing this
+    // process contributes is the counter pair around it.
+    if (std.mem.eql(u8, std.mem.span(av[1]), "--wrap")) {
+        // -o is required rather than defaulted: the caller runs several of these per round
+        // and a shared default path is the collision docs/08-idiomatic-zig.md's fleet rules
+        // already charge for once.
+        if (av.len < 5 or !std.mem.eql(u8, std.mem.span(av[2]), "-o")) {
+            std.debug.print("usage: perf_counters --wrap -o <file> [--core N] -- <argv...>\n", .{});
+            std.process.exit(2);
+        }
+        const out_path = std.mem.span(av[3]);
+        var first: usize = 4;
+        // The core is selectable here where the modes below hard-code 0, because the child
+        // is driven by a SEPARATE process. Landing both on one core costs the engine half
+        // its throughput -- measured here, 309 knps against 148 -- which leaves the cycle
+        // and wall columns describing the contention rather than the engine. Instructions
+        // do not move, which is the column this axis gates on either way.
+        var core: usize = 0;
+        if (first + 1 < av.len and std.mem.eql(u8, std.mem.span(av[first]), "--core")) {
+            core = std.fmt.parseInt(usize, std.mem.span(av[first + 1]), 10) catch 0;
+            first += 2;
+        }
+        if (first < av.len and std.mem.eql(u8, std.mem.span(av[first]), "--")) first += 1;
+        if (first >= av.len) {
+            std.debug.print("perf_counters --wrap: no command after `--`\n", .{});
+            std.process.exit(2);
+        }
+        const c = try runWrapped(av[first..], core);
+        var buf: [256]u8 = undefined;
+        const line = try std.fmt.bufPrint(
+            &buf,
+            "counters instructions={d} cycles={d} cache_misses={d} branch_misses={d} branches={d}\n",
+            .{ c.instructions, c.cycles, c.cache_misses, c.branch_misses, c.branches },
+        );
+        // Write through the raw syscall the rest of this file already speaks, rather than
+        // threading an `Io` down for one line: everything above forks, ptraces and reads
+        // counter fds directly, and a second I/O vocabulary here would buy nothing.
+        const fd = linux.open(out_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
+        const fd_signed: isize = @bitCast(fd);
+        if (fd_signed < 0) {
+            std.debug.print("perf_counters --wrap: cannot write {s}\n", .{out_path});
+            std.process.exit(2);
+        }
+        _ = linux.write(@intCast(fd), line.ptr, line.len);
+        _ = linux.close(@intCast(fd));
         return;
     }
 
