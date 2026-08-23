@@ -948,6 +948,29 @@ out of `movepick.nextMove`'s dispatch is this tree's shape already, and this tre
 **flat** — against −1.6% under clang PGO in the sibling. Same edit, same compiler family,
 opposite verdicts.
 
+**Measured dead here, and do not retry without new evidence taken on this tree.** Each was
+ported in full, gated bit-exact, measured on the warm-game axis at depth 13 over 1,141,939
+nodes with identical node totals, and reverted:
+
+| change | Ir | what it was aimed at |
+| --- | --- | --- |
+| build the psq index lists before the threat lists | **1.00033** | statement order alone; the sibling reads 0.99589 |
+| answer the quiet sort's limit test with a masked `vpcmpq` block compare | **1.00079** | one branch per qualifying move instead of per move |
+| share the seven distinct threat `comb` planes behind a pointer | **1.00247** | 133 KB of table down to 57 KB |
+
+The first is a **null statement swap** — two builders writing disjoint lists, exchanged — and
+it costs a few instructions per node in whichever direction the register allocator happens to
+land. It bounds attribution rather than measurement: a change this size has not been shown to
+cost anything, and a sibling's opposite sign on it is not a result either.
+
+The second and third failed on their own stated mechanism, which is what makes them decided
+rather than merely negative. The `vpcmpq` block compare left **retired branches flat**
+(1.00002) where the sibling reads 0.983 — the branches it exists to remove were not there to
+remove. The shared plane did buy its footprint, and the cache-miss column shows it (0.973),
+but the extra load to reach the plane costs more than the miss it saves: keep the plane
+INLINE in the per-attacker block, which is what puts `lut1` and the plane behind one scaled
+base.
+
 **A reciprocal for a divide buys latency and costs instructions, so the instruction axis
 cannot adjudicate it.** Replacing a depth-indexed divide with a magic multiply retires *more*
 instructions (+0.06%) while removing half the engine's integer divides. The divider is not
