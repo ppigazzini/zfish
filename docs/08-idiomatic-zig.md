@@ -948,6 +948,25 @@ out of `movepick.nextMove`'s dispatch is this tree's shape already, and this tre
 **flat** — against −1.6% under clang PGO in the sibling. Same edit, same compiler family,
 opposite verdicts.
 
+**A narrow relaxed-atomic load costs a second instruction, and the fix is refused here.**
+LLVM has no sign-extending-load pattern for an atomic load: the node's result type is `i16`
+and the widening cannot fold into it, so an `@atomicLoad` of an `i16` feeding `i32` arithmetic
+lowers to `movzwl (mem)` plus a reg-reg `movswl`, where a plain `i16` load gets one
+`movswl (mem)`. The cost is per LOAD and the shared banks are read six times per quiet move
+scored. It is real here and not a hypothesis -- 59 of that exact pair in the shipped binary,
+counted with `objdump -d`.
+
+Naming the widening in inline asm is what removes it, and that is the reason not to: inline
+asm is invisible to ThreatSanitizer, so replacing the relaxed atomic on `SharedHistories`
+-- one bank per NUMA node, read and written by every worker on it -- would leave `tsan-race`
+still green and no longer watching the reads it exists to watch. A gate that stops looking
+is worse than the two instructions. Reopen only with something that keeps the load
+instrumented.
+
+The neighbouring half of that change needs nothing: `statsUpdate` already loads straight
+into `i32`, so there is no narrow local to truncate and re-widen between the load and the
+update.
+
 **Measured dead here, and do not retry without new evidence taken on this tree.** Each was
 ported in full, gated bit-exact, measured on the warm-game axis at depth 13 over 1,141,939
 nodes with identical node totals, and reverted:
