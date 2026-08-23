@@ -75,6 +75,7 @@ pub const PVMoves = search_types.PVMoves;
 const search_emit = @import("search_emit");
 const searchCbRootOnIter = search_emit.searchCbRootOnIter;
 const reductionAcc = search_acc.reductionAcc;
+const reductionWindowTerm = search_acc.reductionWindowTerm;
 const doMoveAcc = search_acc.doMoveAcc;
 const undoMoveAcc = search_acc.undoMoveAcc;
 const search_control = @import("search_control.zig");
@@ -101,6 +102,9 @@ const searchImpl = @import("search_main.zig").searchImpl;
 // instructions 0.990 / cycles 0.966 (perf_counters 8-round paired, avx512icl).
 pub inline fn runBack(nd: anytype) i32 {
     var alpha = nd.alpha;
+    // The reduction's window term, carried across the move loop: see reductionWindowTerm.
+    // Recomputed at the ONE site that raises alpha, and nowhere else.
+    var window_term = reductionWindowTerm(nd.ctx, nd.beta, alpha);
     var depth = nd.depth;
     var best_value = nd.best_value;
     var best_move: u16 = 0;
@@ -175,8 +179,7 @@ pub inline fn runBack(nd: anytype) i32 {
         const gc = givesCheck(nd.pos_ptr, move);
 
         var new_depth = depth - 1;
-        const delta = nd.beta - alpha;
-        var r = reductionAcc(nd.ctx, nd.improving, depth, move_count, delta);
+        var r = reductionAcc(nd.ctx, nd.improving, depth, move_count, window_term);
         if (nd.ss.tt_pv) r += 929;
 
         // Step 14. Prune at shallow depth.
@@ -332,6 +335,7 @@ pub inline fn runBack(nd: anytype) i32 {
                 }
                 if (depth > 3 and depth < 12 and !qIsDecisive(value)) depth -= 3;
                 alpha = value;
+                window_term = reductionWindowTerm(nd.ctx, nd.beta, alpha);
             }
         }
 
