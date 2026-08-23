@@ -45,7 +45,7 @@ src/benchmark.h	src/shell/benchmark.zig	LOW
 src/score.cpp	src/engine/board/score.zig	LOW
 src/score.h	src/engine/board/score.zig	LOW
 src/memory.cpp	src/platform/memory.zig	LOW
-src/memory.h	src/platform/memory.zig	LOW
+src/memory.h	src/engine/eval/network_parse.zig,src/engine/state/root_move.zig,src/platform/memory.zig	LOW
 src/tune.*	src/shell/option.zig	LOW
 src/*.nnue	(net file — swap + bump EvalFileDefaultName)	LOW
 src/syzygy/*	src/platform/syzygy/probe.zig,src/platform/syzygy/registry.zig,src/platform/syzygy/decode.zig,src/platform/syzygy/encode.zig,src/platform/syzygy/tables.zig,src/platform/syzygy/wdl.zig,src/engine/search/tb_extend.zig,src/engine/search/root_move_build.zig,src/shell/engine/control.zig,src/platform/syzygy/table_load.zig	MED
