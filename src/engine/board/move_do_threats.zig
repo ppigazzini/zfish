@@ -76,6 +76,13 @@ fn canSliderThreat(pc: u8, slider: u8) bool {
     return (pc & 7) != queen_pt or (slider & 7) == queen_pt;
 }
 
+/// Look the ray pair up for `s` -- the one input `updatePieceThreats` cannot derive from
+/// the board it is handed, and the only one a caller can share between two calls over the
+/// same square. See `move_do.swapPieceDts` for the case that shares it.
+pub fn threatRays(pos: *const Position, s: u8) bitboard.DualAttacks {
+    return bitboard.bothAttacks(s, pos.by_type_bb[0]);
+}
+
 pub fn updatePieceThreats(
     comptime compute_ray: bool,
     pos: *const Position,
@@ -84,6 +91,39 @@ pub fn updatePieceThreats(
     s: u8,
     dts: *DirtyThreats,
     no_rays: u64,
+) void {
+    updatePieceThreatsRays(compute_ray, pos, pc, put_piece, s, dts, no_rays, threatRays(pos, s));
+}
+
+/// `updatePieceThreats` with the ray pair supplied, for the one caller that runs two scans
+/// over the same square and can share the lookup between them. Every single-scan caller
+/// keeps the plain entry point, so none of them pays to carry a pair it cannot share.
+///
+/// WHAT A SHARING CALLER MAY DO, and why. Two scans over one square may run against ONE
+/// board even where the square's occupant differs between them -- which is what lets
+/// `move_do.swapPieceDts` put the new piece down ahead of both. Every set either scan reads
+/// is masked by an attack set computed FROM `s`: `attack_set`, `knight_pseudo`, the pawn
+/// tables, and `sliders`, which is already masked by this ray pair. No attack set from `s`
+/// contains `s`, so "s is empty" and "s holds pc" are the same board to both scans, and
+/// `pos.board[s]` is never among the squares either one walks.
+///
+/// THE LIMIT: that holds only while `compute_ray` is false. `processSliders` is the one
+/// reader of occupancy along a ray THROUGH `s`, and a ray extension past `s` does depend on
+/// what sits there. A sharing caller passing `compute_ray = true` would be wrong, and
+/// nothing here can catch it.
+///
+/// Adjacency alone does not reach the lookup: neither scan's result is available for
+/// common-subexpression elimination across the stores the first one makes into the
+/// dirty-threat list, so the shared pair has to be named and passed.
+pub fn updatePieceThreatsRays(
+    comptime compute_ray: bool,
+    pos: *const Position,
+    pc: u8,
+    comptime put_piece: bool,
+    s: u8,
+    dts: *DirtyThreats,
+    no_rays: u64,
+    slider: bitboard.DualAttacks,
 ) void {
     // Ablation (-Dno-threat-record): drop the recording entirely. Sound ONLY together with
     // -Dacc-refresh-only, which rebuilds from the board and never reads a record; without it
@@ -94,8 +134,8 @@ pub fn updatePieceThreats(
         return;
     }
     const occupied = pos.by_type_bb[0];
-    // Both ray sets in one pass, as upstream's update_piece_threats does (position.cpp:1203).
-    const slider = bitboard.bothAttacks(s, occupied);
+    // Both ray sets in one pass, as upstream's update_piece_threats does (position.cpp:1203)
+    // -- now taken from the caller, which is what lets a swap share one lookup.
     const r_attacks = slider.rook;
     const b_attacks = slider.bishop;
     const slider_attacks = b_attacks | r_attacks;

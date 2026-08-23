@@ -126,9 +126,13 @@ fn movePieceDts(pos: *Position, from: u8, to: u8, dts: *DirtyThreats) void {
 fn swapPieceDts(pos: *Position, s: u8, pc: u8, dts: *DirtyThreats) void {
     const old = pos.board[s];
     removePiece(pos, s); // dts=nullptr in swap_piece
-    move_do_threats.updatePieceThreats(false, pos, old, false, s, dts, max_u64);
+    // Put the piece down BEFORE both scans, so one ray lookup serves them both. Why the two
+    // scans cannot tell the boards apart is stated on `updatePieceThreatsRays`, which is the
+    // contract that permits it.
     putPiece(pos, pc, s);
-    move_do_threats.updatePieceThreats(false, pos, pc, true, s, dts, max_u64);
+    const rays = move_do_threats.threatRays(pos, s);
+    move_do_threats.updatePieceThreatsRays(false, pos, old, false, s, dts, max_u64, rays);
+    move_do_threats.updatePieceThreatsRays(false, pos, pc, true, s, dts, max_u64, rays);
 }
 
 fn removePiece(pos: *Position, s: u8) void {
