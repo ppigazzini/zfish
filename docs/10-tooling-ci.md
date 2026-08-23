@@ -730,6 +730,41 @@ rather than extrapolating from sse41. `tools/perf_stalls.zig` extends the same
 syscall to Zen4 stall-class PMCs (frontend/backend slots, PRF/scheduler/queue
 tokens, TLB) for localizing an IPC gap the aggregate counters can only report.
 
+### The warm-game axis — the workload a long clock reaches
+
+`tools/ltc_ab.sh` is the one speed axis here that does not drive `bench`. Every other
+local tool measures a **cold** search of a fixed position list at depth 8 or 13; a move at
+fishtest's 10+0.1 runs at ply 40 of one game, on a table and history banks that game filled,
+and reaches depth 20 to 25. `docs/08-idiomatic-zig.md` states why a per-node ratio does not
+carry between the two regimes, and which column carries a claim.
+
+It measures two already-built binaries and **never builds** — the rule `nps_ab.sh` states
+and enforces for the same reason. `tools/ltc_replay.py` is the driver and is usable alone:
+`record` produces a move list, `replay` walks it at a fixed depth, `startup` measures the
+floor the A/B subtracts, and `clock` plays one side on a node clock so a time-control
+question has a deterministic answer.
+
+**Its fidelity check is node-total equality, and it is wider than the anchor's.** The move
+list is fixed input, every search is `go depth D`, `Threads` is 1. Two binaries that search
+the same tree must report the same total at every ply — over one whole game, not over the
+anchor's thirteen cold positions. A run whose totals differ is **void, not slow**: exit 1,
+no ratio printed. Seen to fail, as a gate must be: `razorMargin`'s `482` changed to `481`
+moved a 20-ply depth-13 total from 390,947 to 398,988 and the run was refused.
+
+**Counter access can be refused, and a skip is not a pass.** It exits **2** when
+`perf_event_open` is unavailable, the same refusal `perf_budget.sh` makes and for the same
+reason. `perf_counters --wrap` is the mode that reaches it: the other modes own the child's
+argv and stdout, where a UCI session driven move by move needs its own, so `--wrap` execs an
+inherited-stdio child and writes the counter totals to `-o`. `--core` picks the engine's
+core, because the driver is a second process and sharing one core cost half the throughput.
+
+Local-only by construction: a depth-20 replay is tens of millions of nodes per side per
+round, and a hosted runner would measure the hypervisor and then time out. Neither half is a
+build step, so `lane-coverage` does not reach them and `lane_excuses.txt` is the wrong
+instrument; `tools_smoke.sh` is the one that does, and it carries a row for each — the A/B's
+usage refusal and the driver's mode list, because a driver that stopped accepting `startup`
+would leave the A/B comparing raw totals with no floor subtracted.
+
 ### Spine isolation — measuring the search without the evaluation
 
 `tools/material_eval.sh` builds **both** engines with the NNUE evaluation replaced by a
