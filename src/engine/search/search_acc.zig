@@ -48,10 +48,20 @@ pub inline fn updateSelDepth(ctx: *const QCtx, ply: i32) void {
 
 // Compute the LMR reduction step: the LMR base reduction from the per-thread reductions
 // table, the root delta, and the improving flag. Use truncating integer division.
+//
+// Hold the product and the improving term UNSIGNED. Both factors come from the reductions
+// table, which is a scaled logarithm with no negative entry (search.fillReductions), so the
+// product and everything built from it are non-negative -- but stored as i32 that is a fact
+// the backend cannot use, and `/ 512` then carries the round-toward-zero correction on every
+// move the search reduces: the dividend materialised twice, biased, sign-tested and selected
+// by a cmov, where an unsigned shift stands alone. The widths are the bound: 124 * 124 * 197
+// is 3,029,072, well inside u32.
 pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: i32, mn: i32, delta: i32) i32 {
-    const reduction_scale = ctx.reductions[@intCast(d)] * ctx.reductions[@intCast(mn)];
-    return reduction_scale - @divTrunc(delta * 577, ctx.root_delta.*) +
-        @divTrunc(@as(i32, @intFromBool(!i)) * reduction_scale * 197, 512) + 982;
+    const reduction_scale: u32 =
+        @as(u32, ctx.reductions[@intCast(d)]) * @as(u32, ctx.reductions[@intCast(mn)]);
+    const improving_term: u32 = @as(u32, @intFromBool(!i)) * reduction_scale * 197 / 512;
+    return @as(i32, @intCast(reduction_scale)) - @divTrunc(delta * 577, ctx.root_delta.*) +
+        @as(i32, @intCast(improving_term)) + 982;
 }
 
 // Run the evaluate step: the NNUE forward pass on the current position,
@@ -65,7 +75,7 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     // oracle takes the identical stub via tools/upstream/material_eval.patch, so both engines
     // score every position the same and search ONE tree -- tools/material_eval.sh gates on
     // that by refusing to report unless the two bench node counts match. Off by default and
-    // comptime, so the shipped binary is unchanged (the anchor still reads 2884956).
+    // comptime, so the shipped binary is unchanged (the anchor still reads 2516158).
     if (comptime build_options.stub_eval) {
         const pc = pos.piece_count;
         var w: [5]i32 = undefined;

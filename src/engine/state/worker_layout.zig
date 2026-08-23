@@ -86,7 +86,7 @@ pub const WorkerLayout = struct {
     numa_thread_idx: usize,
     numa_total: usize,
     numa_access_token: usize,
-    reductions: [256]i32,
+    reductions: [256]u16,
     manager: ?*SearchManager, // the worker's SearchManager (null before build / after free)
     tb_config: TbConfig, // the root tablebase decision the in-search WDL probe is gated on
     threads: *ThreadPool,
