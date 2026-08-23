@@ -133,7 +133,7 @@ fn threadpoolSetupStateBack(pool: *const worker_layout.ThreadPool) ?*const posit
 // Run the worker-clear reset: the per-search worker reset the clear_worker job runs on
 // its thread. Call the four clear helpers in declaration order: histories, the
 // shared-history page (sharedHistory ref + numaThreadIdx@thread_idx+8 /
-// numaTotal@+16), the reductions table (int[256], the 1024-byte slot before
+// numaTotal@+16), the reductions table (u16[256], the 512-byte slot before
 // manager), and the refresh cache (feature-transformer biases). Note all four
 // callees are gate-verified; only this orchestration is new.
 fn workerClear(worker: *anyopaque) void {

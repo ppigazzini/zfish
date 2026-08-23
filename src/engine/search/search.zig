@@ -329,7 +329,13 @@ pub fn optimism(avg: i32) i32 {
 
 // Populate the reductions[] lookup table: reductions[i] = int(2872/128.0 * ln i)
 // for i in [1, count). Index 0 is left untouched, matching upstream clear().
-pub fn fillReductions(reductions_ptr: [*]i32, count: usize) void {
+//
+// The entry is u16 rather than i32 because the table is a SCALED LOGARITHM and so has no
+// negative entry -- 22.4375 * ln(255) is 124, and there is nothing below it. Stored signed,
+// that range is a fact no backend can use, and `reductionAcc`'s divide by 512 then had to
+// allow for a negative dividend on every reduced move. See the comment there. The table also
+// halves, 1024 bytes to 512, which nothing here measures.
+pub fn fillReductions(reductions_ptr: [*]u16, count: usize) void {
     var i: usize = 1;
     while (i < count) : (i += 1) {
         const logv = @log(@as(f64, @floatFromInt(i)));
@@ -387,12 +393,28 @@ test "futilityDepth: 19 down to 13, and the extremes stay inside the table" {
 }
 
 test "fillReductions: log-scaled, index 0 untouched, monotonic from 1" {
-    var r: [64]i32 = undefined;
-    r[0] = -999;
+    var r: [64]u16 = undefined;
+    // A sentinel index 0 cannot be negative any more, which is the point of the retype --
+    // so pick one the fill would never write. It writes 0 at index 1 and rises from there.
+    r[0] = 999;
     fillReductions(&r, 64);
-    try std.testing.expectEqual(@as(i32, -999), r[0]); // loop starts at i=1
-    try std.testing.expectEqual(@as(i32, 0), r[1]); // log(1) == 0
+    try std.testing.expectEqual(@as(u16, 999), r[0]); // loop starts at i=1
+    try std.testing.expectEqual(@as(u16, 0), r[1]); // log(1) == 0
     try std.testing.expect(r[63] > r[2]);
     var i: usize = 2;
     while (i < 64) : (i += 1) try std.testing.expect(r[i] >= r[i - 1]);
+}
+
+test "fillReductions: no entry leaves u16, over the whole indexable range" {
+    // The retype rests on the table having no negative entry AND no entry past 65535: it is
+    // 2872/128 * ln(i), so the largest index the search can reach decides. Check the whole
+    // 256-entry table the worker holds rather than the 64 the test above uses -- the bound
+    // that matters is the one at MAX_MOVES, not at 64.
+    var r: [256]u16 = undefined;
+    fillReductions(&r, 256);
+    try std.testing.expectEqual(@as(u16, 124), r[255]);
+    // ... and that reductionAcc's product stays inside u32, which is what lets the
+    // improving term be an unsigned shift rather than a rounded signed divide.
+    const widest: u32 = @as(u32, r[255]) * @as(u32, r[255]) * 197;
+    try std.testing.expect(widest < std.math.maxInt(u32));
 }

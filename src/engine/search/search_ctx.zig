@@ -135,7 +135,7 @@ pub const QCtx = struct {
     nmp_min_ply: *i32,
     sel_depth: *i32,
     root_depth: *i32,
-    reductions: [*]const i32,
+    reductions: [*]const u16,
     root_delta: *const i32,
     last_iter_pv: *const PVMoves,
     stop: *const u8,
