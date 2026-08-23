@@ -927,38 +927,30 @@ so a whole game is a deterministic function of the move list. A faster engine is
 a larger `--npmsec`, and the depth it reaches is how much of that speed the time manager let
 it keep — a question that otherwise costs an SPRT.
 
-## What crosses from a sibling's perf branch, and what does not
+## Treat a sibling's perf commit as a hypothesis about THIS compiler
 
-Every sibling perf commit is a **hypothesis about this compiler**, not a result here — the
-rule `docs/09-type-design.md` records for a type change applies to a codegen one. The sweep
-of the `refish` branch on 2026-08-23 sorted its new `perf` work into three classes, and the
-classes are more reusable than the individual commits:
+A ported ratio is not a measurement. Four rules, each with the case that decides it, and all
+four are cheaper than the A/B they save.
 
-**Algorithmic, and it crosses.** Work removed is work removed whatever the backend. Three
-landed, each measured on both the warm-game axis and the cold `bench` lane and agreeing to
-three decimals: the flat history element index and shift-form bit tests in the quiet score
-(−0.31%), the `u16` reductions table that removes a signed-division fixup (−0.05%), and the
-early stop on the good-quiet walk (−0.18% instructions, −0.54% retired branches).
+**Read the sibling's own compiler grid before porting anything.** One lane moving while the
+other stays flat is that lane's codegen, not a change. Zig is LLVM, so the clang cell is the
+prediction: pinning a sparse-affine input broadcast reads −0.47% under gcc and **−0.0000%**
+under clang, and there is nothing here to collect.
 
-**Already closed here, usually by construction.** A defect that needs a signed value cannot
-be ported into code whose value is unsigned: refish's `(count - 1) / 4` eval-bucket shift has
-nothing to fix here because `pieceCount` returns `usize`, so the divide is already a shift —
-the same shape as the `hash_bytes` sign-extension, which a typed accessor made unrepresentable.
-Taking three list walks out of the move-picker's dispatch table is likewise already this
-tree's shape, and this tree's own measurement of that change recorded it as **flat**, against
-refish's −1.6% under clang PGO. The same edit, the same compiler family, opposite verdicts —
-which is the argument for measuring rather than porting a ratio.
+**Ask whether the defect is representable here before porting its fix.** A round-toward-zero
+correction exists only where the value is signed. `nnue_inference.pieceCount` returns `usize`,
+so the eval bucket's `(count - 1) / 4` is already a shift — the same reason a typed accessor
+makes a sign-extension in `nnue_hash.hashBytes` unrepresentable. Type the accessor and the
+fix has nothing to fix ([09-type-design.md](09-type-design.md)).
 
-**Aimed at a compiler this tree does not use.** A commit whose own evidence shows one lane
-moving and the other flat is describing that lane's codegen. Pinning the sparse-affine input
-broadcast reads −0.47% under gcc and **−0.0000%** under clang; Zig is LLVM, so the clang cell
-is the prediction and there is nothing to collect. Do not re-attempt these without new
-evidence taken here.
+**Measure it here even when both trees made the same edit.** Taking the three list-walk stages
+out of `movepick.nextMove`'s dispatch is this tree's shape already, and this tree measured it
+**flat** — against −1.6% under clang PGO in the sibling. Same edit, same compiler family,
+opposite verdicts.
 
-**A reciprocal for a divide is not free on the instruction axis, and its own measurement says
-so.** Replacing a depth-indexed divide with a magic multiply retires *more* instructions
-(+0.06% and +0.002% on the two refish measured) while removing half the engine's integer
-divides. The claim is latency on a non-pipelined divider, and the axis that prices it is
-cycles — which this box cannot resolve below its floor. Left unported for that reason: the
-evidence needed is a cycle measurement this tree cannot currently take, not a bigger
-instruction run.
+**A reciprocal for a divide buys latency and costs instructions, so the instruction axis
+cannot adjudicate it.** Replacing a depth-indexed divide with a magic multiply retires *more*
+instructions (+0.06%) while removing half the engine's integer divides. The divider is not
+pipelined, so the claim is cycles — and cycles do not resolve below this box's floor. That
+makes it a change this tree cannot currently decide, whatever length of instruction run is
+put behind it.
