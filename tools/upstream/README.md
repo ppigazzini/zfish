@@ -63,10 +63,34 @@ zig build tb-cursed-update                          # only after the oracle agre
 # THEN PROVE the reharden: every golden re-checked with the ORACLE as the engine. This is the
 # mechanical form of "drive the oracle and match its bytes" -- a golden that only agrees with
 # ourselves is a photograph of ourselves, bug and all.
-tools/upstream_golden_audit.sh                      # expect "N agree, 0 differ"
+tools/upstream_golden_audit.sh                      # expect "19 agree, 2 differ" (18 under
+#   --skip tb-cursed, which is what a run without the 5-man set can reach); the two differ are
+#   chess960 and tb-root, and "Divergences the audit reports" below is what owns them. Read
+#   that list before treating either as a finding: a THIRD differing gate, or a differing ROW
+#   the list does not name, is the finding.
 zig build signature output-golden eval-trace perft misc parity-mt parity-valgrind parity-teardown  # all OK
 cp UPSTREAM_TARGET UPSTREAM_BASE ; git commit ; git merge --ff-only <branch> ; git tag -f synced-upstream-<sha>
 ```
+
+## Divergences the audit reports
+
+`upstream_golden_audit.sh` drives the pristine oracle against our goldens, so a gate pinning
+behaviour where **zfish is deliberately more correct than upstream** reports DIFFERS forever.
+Each row below is a shipped fix with its own commit and its own reproduction; the golden pins
+zfish, and this table is what stops the next sync reading it as drift.
+
+Every one is Zone-A — reached only by a MALFORMED or sloppy input, or by a non-default option —
+so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 2516158 with all
+three in place.
+
+| gate / row | zfish vs upstream | owner | expires when |
+|---|---|---|---|
+| `chess960` `sloppy-castling opt-off` | 8 moves, `e1c1=false` vs upstream's 9 with `e1c1`. `legal` tests the castling ROOK's geometry instead of the UCI_Chess960 option, so a `Q` token over a rook on b1 no longer generates a castle that leaves the king capturable. | `8100d0ce` | upstream adopts it and the row AGREES |
+| `chess960` `dup-castling-token 1` | `... b B - 1 1` vs upstream's `... b - - 1 1`. Two tokens on one side resolve to one CastlingRights, and moving the DISCARDED rook no longer clears the surviving rook's right. | `cee6facd` | as above |
+| `tb-root` `wdl-only-rule50-off` | 156 nodes vs upstream's 192. `rankRootMovesWdl` takes Syzygy50MoveRule for its draw test the way `rankRootMovesDtz` already did, so a won position with the halfmove clock past 99 is no longer ranked a draw with the tables switched off under it. | `f329737a` | as above |
+
+Each commit body carries the before/after transcript, so a row that stops matching its stated
+numbers is a REGRESSION in that fix, not an upstream move.
 
 ## The oracle
 - **Pristine** (`upstream_oracle.sh`): vanilla upstream at any sha; the source of truth for `upstream_parity`
@@ -100,6 +124,15 @@ construct zfish does not have:
 | `439733ea` Fix rm.exe "Permission denied" on Windows | a Makefile clean rule. zfish builds with `zig build`. |
 | `1f711d49` Avoiding Redundant Calculations | hoists `from = to - D` out of `make_promotions`. `movegen.makePromotions` already computes `from` once (movegen.zig). |
 | `5062aee5` Place continuation history on large pages | wraps `continuationHistory` in `make_unique_large_page`. `constructSharedHistories` already allocates `cont_data` through `page_alloc` (2 MiB-aligned, `MADV_HUGEPAGE`), same as the correction and pawn arenas. |
+| `e37429bb` Simplify sliding_attack loop | folds the `dest` declaration into a C++ for-init so it stops outliving the outer loop. `bitboard.slidingAttack` already scopes `destination` inside, and walks with `lsb(destination)` where upstream walks with `s += d`. Nothing to fold. |
+| `d68041e3` Read hash_bytes tail bytes as unsigned | `u64(end[i])` sign-extended, because `char` is signed on x86. `nnue_hash.hashBytes` takes a `[]const u8`, so the widen was never a sign-extension -- the defect is not representable once the accessor is typed ([09-type-design.md](../../docs/09-type-design.md)). |
+| `92c90f41` Initialise time budgets on every path | already here: the no-clock return writes `timeman.no_bound` into both budgets rather than leaving the previous search's, which is the same fix (zfish b2b18cc3, upstreamed). |
+| `30290aa0` Clamp speedtest inputs to valid ranges | already here (zfish 7f31c19c, upstreamed) with **one deliberate divergence**: the thread ceiling is `hardwareConcurrency`, not upstream's `MaxThreads` (`max(1024, 4*hw)`). A mistyped `speedtest 100000000` clamped UP to 1024 threads is a ~16 GB allocation, which is a worse outcome than the overflow the clamp removes; `benchmark.zig` states the reasoning where the bound is declared. |
+| `49f8e667` Avoid UB decoding LEB128 | every part is already here, mostly by construction: `nnue_leb.decodeLeb` accumulates in `u32` (upstream's UB was `IntType result` shifted past its width), refuses a section that runs out of bytes (upstream's `buf_end == 0` failbit), and `nnue_parse.readLebSection` checks the magic and `used != count` where upstream had two asserts. The unbounded description read is bounded by `network_parse.readHeader` against the blob, which is what upstream's chunked read buys. |
+| `50221673` Initialize shared continuation history once per NUMA node | closed by a different mechanism: `clearSharedHistory` STRIPES the fixed-size `cont_data` across the node's workers (`dynRange`) instead of having every worker fill all of it, so the redundant work upstream removes by electing thread 0 does not exist here. Same values, and the fill stays parallel. |
+| `a3a8372b` More nnue_accumulator.cpp cleanup | unifies the vector / RVV / scalar copies of every accumulator kernel behind a `Tile` value type with `load_tile`/`store_tile`/`apply`. Zig's `@Vector` means there are no scalar and RVV copies to unify, and the shape it converges on -- tile the accumulator, hold the tile in a register, walk the row lists INSIDE, store once -- is already what `nnue_acc_rowops` does for the combined, hybrid, refresh-fused and psqt kernels (`b0ee1440` and the fused-kernel work that followed). |
+| `ae3db60f` Align and collapse shared NNUE mappings | `shm_unix.h`. The same missing subsystem as `fd3c762f` above. |
+| `229f6339` Update Release Creation | a GitHub Actions release workflow. |
 
 **Ported** — the real changes in these ranges. Skipping these silently is how a port
 stops being a port:
@@ -115,6 +148,16 @@ stops being a port:
 | `4150d22b` | `doMoveAcc` prefetches the child's two continuation-correction entries through `history.contCorrIndex`, the same derivation `setContHist` pages with. |
 | `de948f0f` | the eval blend drops material from the optimism weight: `(nnue * (91000 + material) + optimism * 7675) / 91000`. Bench 2119477. |
 | `fa8b6add` | `search.futilityDepth` -- step 8's cutoff steps 19 down to 13 through a six-threshold LUT as `abs(eval) + abs(beta)` grows, so mating lines stay searched. Bench 2884956. |
+| `f21610e5` | the default net becomes `nn-1a298aa575a0.nnue` (AdamW-trained). Name only -- same architecture, so the parser, the feature transformer and the hash are untouched. Bench 2522345. |
+| `5f7348f0` | `search.lmrLooseAlphaReduction` -- a quiet move in a loose alpha window reduces by `3 * clamp(alpha - eval, -64, 96)` more. The `eval` is the TT-refined one, not `ss.static_eval`, so `runBack` takes it as a node field. Bench 2132401. |
+| `6d215a03` | `search.razorMargin` folds to `482 * depth * depth`. Bench 2516158. |
+| `0c8c71f3` | `nnue_accumulator.transformPerspective` -- the per-perspective half of the transform, taking an accumulator half and an OUTPUT position rather than a side to move. |
+| `68f7925d` | `fullAppendActive`'s two pawn directions become four explicit calls ahead of an absolute-colour piece loop; the helper takes the direction instead of branching on the colour. |
+| `ee515ad9` | `RootPVMoves` (root_move.zig) -- the root's own growable, owning PV carrier, so a tablebase mate walk is bounded by mate, a draw or the clock rather than by the buffer. `PVMoves.assignTruncated` is where the two carriers meet, and `RootMove` drops from 1056 bytes to 96. |
+| `ceb059eb` | `timeman.init` scales `limits.movetime` by `npmsec` under `nodestime`, beside the clock and the increment, so `go movetime N` stops after N milliseconds' worth of nodes rather than after N of them. |
+| `7c37212e` | the three weight-storage allocation sites name the byte count and exit(1) instead of `@panic` -- upstream's `report_failed_allocation` shape, and the shape this tree wants for a diagnosable refusal. |
+| `1b1b5f49` | `updatePieceThreats` takes its direct-threat set from the two ray sets `bothAttacks` already answered instead of re-sliding, and drops the redundant `& occupiedNoK` first pass. |
+| `5fd94536` | three Syzygy refusals the loader lacked: a cyclic btree (three-colour DFS), a non-canonical Huffman code, and a header whose Split/HasPawns bits disagree with the registry. **Deliberate divergence:** upstream now `exit(EXIT_FAILURE)`s on a corrupt table; zfish refuses the table and keeps playing, which is what `parity-malformed` gates. |
 
 **They pay, and that is a separate measurement.** Ablating the hybrid step and the shared
 walk together (both routes off, same node count, so one tree with two amounts of work)

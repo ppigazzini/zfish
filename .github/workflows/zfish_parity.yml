@@ -105,7 +105,7 @@ jobs:
       - run: zig build fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
       # Safety-checked full engine: the ENTIRE parity suite rebuilt under
-      # -Doptimize=ReleaseSafe. Supersets the safety-checked bench (signature 2884956)
+      # -Doptimize=ReleaseSafe. Supersets the safety-checked bench (signature 2516158)
       # and additionally drives the multi-thread (mt-sanity), Lazy-SMP go/stop stress,
       # transposition-table, NNUE-eval, time-management, and every UCI-output golden
       # path with Zig's runtime safety checks ON -- the paths the property tests and a
@@ -117,7 +117,7 @@ jobs:
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
       # codegen change must not perturb the integer-exact eval. The sweep BUILDS every
       # x86-64 tier above the sse41 baseline (a tier that stops compiling needs
-      # no ISA to catch) and BENCHES signature == 2884956 on each one this runner can
+      # no ISA to catch) and BENCHES signature == 2516158 on each one this runner can
       # execute. The wider tiers are where the @Vector NNUE kernels could break
       # bit-exactness while sse41/avx2 stay green; it runs the real bench, not a hollow
       # check.
@@ -131,7 +131,7 @@ jobs:
       # expires by itself the moment a runner can drive the whole ladder, and it
       # launders no failure -- a tier that builds and then benches the wrong number is
       # exit 1 with or without it.
-      - run: bash tools/arch_determinism.sh 2884956 --host-tiers
+      - run: bash tools/arch_determinism.sh 2516158 --host-tiers
 
       # THE GATE ON THE GATES. Everything above asserts the engine is correct; this asserts
       # that those assertions can FAIL. One behavioural mutation per gate -- the razor margin
@@ -167,7 +167,7 @@ jobs:
   #
   # The snapshot is PINNED (not floating "master") for reproducibility and bumped by hand
   # -- same value z47 audits. Today the port is master-clean on the Linux host (build +
-  # bench 2884956 + every gate `parity` aggregates), achieved via cross-version idioms: @splat for
+  # bench 2516158 + every gate `parity` aggregates), achieved via cross-version idioms: @splat for
   # array-repeat (0.17 rejects `**` after `}`), @Int for the removed std.meta.Int, and a
   # comptime repoPath shim + addArtifactArg for the removed b.pathFromRoot / getInstallPath.
   zig-master-compat:
@@ -212,7 +212,7 @@ jobs:
   # Cross-ISA gate. The pure-Zig @Vector NNUE lowers to NEON on aarch64 (LLVM)
   # with no source changes -- where upstream needs hand-written NEON intrinsics per
   # its own src/nnue/**. The integer-exact eval is arch-invariant, so the ARM bench must be
-  # exactly 2884956; x86 CI cannot see an ARM-only codegen or C-ABI regression. We run
+  # exactly 2516158; x86 CI cannot see an ARM-only codegen or C-ABI regression. We run
   # on a NATIVE GitHub arm64 runner (free for public repos) instead of qemu-user: it
   # exercises real NEON hardware and native codegen, is far faster than emulation, and
   # needs no cross-libc.
@@ -241,9 +241,9 @@ jobs:
           cd resources
           out="$(../zig-out/bin/stockfish bench 2>&1)"
           printf '%s\n' "$out" | tail -6
-          printf '%s\n' "$out" | grep -qE 'Nodes searched[[:space:]]*:[[:space:]]*2884956([^0-9]|$)' \
-            || { echo 'arm-native: FAIL -- aarch64 bench != 2884956'; exit 1; }
-          echo 'arm-native: OK -- aarch64 bench == 2884956 on a native arm64 runner'
+          printf '%s\n' "$out" | grep -qE 'Nodes searched[[:space:]]*:[[:space:]]*2516158([^0-9]|$)' \
+            || { echo 'arm-native: FAIL -- aarch64 bench != 2516158'; exit 1; }
+          echo 'arm-native: OK -- aarch64 bench == 2516158 on a native arm64 runner'
 
   # Cross-OS gate. The same pure-Zig source builds for the other two owned runtime
   # OSes -- Windows and macOS -- across their x86_64 and aarch64 tiers, behind the platform
@@ -357,7 +357,7 @@ jobs:
         shell: bash
         run: zig build net
 
-      # Full cross-OS parity: bench signature (2884956) + the golden gates `parity-portable` aggregates, all via the
+      # Full cross-OS parity: bench signature (2516158) + the golden gates `parity-portable` aggregates, all via the
       # pure-Zig harness. `shell: bash` for the same emulated-lane PATH reason as the fetch step.
       - name: Build + parity-portable (native, ${{ matrix.arch }})
         shell: bash

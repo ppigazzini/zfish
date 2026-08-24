@@ -35,7 +35,7 @@ for the same position.
 | `nnue_transform_packus.zig` | the transform's packus clip-multiply-narrow kernels, one per x86 vector width (`packusTransform64`/`32`/`16`), and the scalar-reference tests that pin them |
 | `nnue_refresh_cache.zig` | the per-(king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
 | `nnue_nnz.zig` | the transform's non-zero-chunk record: the two shapes (`NnzIndexList` on the AVX-512 VNNI tiers, `NnzBitset` elsewhere), the tier gate `use_nnz_index_list`, and `nnzRecord`/`nnzReset` |
-| `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`) and `transformBucket` — the clipped-ReLU transform, which writes the NNZ record as it packs |
+| `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`), `transformBucket` and its per-perspective half `transformPerspective` — the clipped-ReLU transform, which writes the NNZ record as it packs |
 | **inference** | |
 | `nnue_inference.zig` | the forward pass: the affine layers, bucket selection, and the psqt/positional split — it drives the activations, it does not own them |
 | `nnue_activations.zig` | the layer activations in every shape upstream emits: `sqrClippedReLU`, `clippedReLU`, and the fused `sqrClipPair`/`128`/`512` that produce both outputs in one pass, behind the `avx512_pair_activations` and `sse_pair_activations` tier gates. The forward driver picks a shape at comptime; the anchor is what pins that all of them agree |
@@ -170,8 +170,11 @@ wrong number. Measured, not argued: on the pre-change tree, moving
 `psq_feature_dimensions` in `nnue_ft.zig` alone built clean and benched 4414749 nodes.
 
 `nnue_accumulator.transformBucket` turns the two perspectives' accumulators into the
-network input: per element, clamp to `[0,255]` and multiply the two halves with a
-`>> 9` — the pairwise squared-clipped-ReLU — yielding 1024 `u8`. On every x86 tier
+network input. It keeps only what is per-CALL — evaluate the stack, take the psqt
+difference, reset the NNZ record — and calls `transformPerspective` once per output half;
+that is where the colour stops mattering, so the extracted function takes an OUTPUT
+position rather than a side to move. Per element it clamps to `[0,255]` and multiplies the two halves
+with a `>> 9` — the pairwise squared-clipped-ReLU — yielding 1024 `u8`. On every x86 tier
 `packusTransform64` / `packusTransform32` / `packusTransform16`
 (`nnue_transform_packus.zig`) compute the same values with upstream's packus body: the
 second half skips its `max(0, ·)` because the signed `pmulhw` carries the sign into the

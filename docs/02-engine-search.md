@@ -48,7 +48,7 @@ function-pointer seams. For the zones and the module graph, see
 | `timeman.zig` | `init` — the pure time-budget computation: optimum/maximum time from clock, increment, movestogo, ply |
 | `uci_wdl.zig` | The win-rate polynomial, centipawn conversion, WDL, and the `info`/`bestmove` line formatters |
 | **Types** | |
-| `search_types.zig` | `SearchStack`; re-exports `PVMoves`, `RootMove`, `CorrectionBundle` |
+| `search_types.zig` | `SearchStack`; re-exports `PVMoves`, `RootPVMoves`, `RootMove`, `CorrectionBundle` |
 | `search_ctx.zig` | `QCtx`, `SsCtx`, `SearchTimeState`, `ZfishIdState`, and the worker-graph accessors |
 | `search_values.zig` | The value model: score sentinels, bound/depth enums, mate arithmetic, `isWin`/`isLoss`/`isDecisive` |
 | **Seams** | |
@@ -61,7 +61,7 @@ function-pointer seams. For the zones and the module graph, see
 
 Supporting state lives in `src/engine/state/`: `worker_layout.zig` (the `WorkerLayout`
 object graph, `ThreadPool`, `Thread`), `worker_histories.zig` (the per-worker tables),
-`root_move.zig` (`RootMove`, `PVMoves`), `tt_types.zig` (`TtEntry`, `TtCluster`), and
+`root_move.zig` (`RootMove`, `PVMoves`, `RootPVMoves`), `tt_types.zig` (`TtEntry`, `TtCluster`), and
 `correction_bundle.zig` (`CorrectionBundle`).
 
 ## The pipeline
@@ -164,6 +164,16 @@ takes its node state as `anytype`, so it specializes per node type too.
 The PV is a fixed `PVMoves` buffer per node. A child's PV is spliced into the parent's
 by `pvUpdate` only when that move ran a real PV search; the child pointer is optional
 and null means "the PV is just this move".
+
+A **root** move's PV is a different carrier. `RootPVMoves` grows and owns its buffer,
+because `syzygyExtendPv` walks a tablebase line toward mate and that walk ends at mate, a
+draw or the clock — never at a ply count ([05-tablebases.md](05-tablebases.md)). Each
+`RootMove` holds its own, so the three permutations of the root-move list in
+`search_id.zig` (`stableSortRoot`, `moveToFront`, `skillSwapBest`) carry ownership with
+the element and need no special case; a copy is `copyFrom`, never a struct assignment. The
+two carriers meet in exactly one place: `PVMoves.assignTruncated` takes a root PV clamped
+at `max_ply` for the follow-PV memory, which is upstream's
+`PVMoves::operator=(const RootPVMoves&)`.
 
 ### The steps
 
@@ -478,7 +488,11 @@ that cannot lose a game on a clock the caller never sent. Upstream reads two
 
 `nodestime` and `movetime` reach the same return — both leave `time[us]` zero — and
 neither reads these members: `use_time_management` is false without a clock, and
-`lim_movetime` is compared separately in `checkTime`.
+`lim_movetime` is compared separately in `checkTime`. `movetime` is nevertheless
+*converted* before that return: under `nodestime` `checkTime`'s `elapsed` is a node count,
+so `init` scales `limits.movetime` by `npmsec` beside the clock and the increment it
+already scales, and `go movetime N` stops after N milliseconds' worth of nodes rather than
+after N of them.
 
 Two mechanisms stop a search.
 
