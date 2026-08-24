@@ -102,7 +102,11 @@ for g in "${GATES[@]}"; do
 done
 GATES=(${FILTERED+"${FILTERED[@]}"})
 [ "${#GATES[@]}" -eq 0 ] && { echo "golden-audit: no gates selected" >&2; exit 2; }
-[ "${#SKIPPED_BY_REQUEST[@]:-0}" -gt 0 ] \
+# `${#arr[@]:-0}` is not a length with a default -- it is `${#arr[@]}` fed to `:-`, which
+# bash rejects as a bad substitution. It printed the error and skipped the line, so a --skip
+# run reported nothing about what it excluded: the one thing this echo exists to say. Take
+# the array's SET-ness the same way the expansions above do.
+[ "${SKIPPED_BY_REQUEST+set}" = set ] \
     && echo "golden-audit: skipping by request: ${SKIPPED_BY_REQUEST[*]}"
 
 ORACLE_BIN="$("$REPO/tools/upstream_oracle.sh" ${ORACLE_SHA:+"$ORACLE_SHA"})" \
