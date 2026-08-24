@@ -2,7 +2,7 @@
 # Arch-variant determinism sweep: the bench signature AND the net round-trip, per tier.
 #
 # The pure-Zig eval is integer-exact, hence arch-INVARIANT: every x86-64 tier must
-# produce the same bench signature (node count) 2884956. Only sse41 (via
+# produce the same bench signature (node count) 2516158. Only sse41 (via
 # `zig build parity`) and avx2 were gated before. This sweeps the wider tiers too
 # -- bmi2 (PEXT + comptime-attacks codegen) and the AVX-512 rungs -- which are exactly
 # where the @Vector NNUE kernels could silently break bit-exactness at a wider vector
@@ -43,7 +43,7 @@
 # NOT wrapped in a `zig build` step: it invokes `zig build` per tier, and nesting those
 # under an outer build would contend on the same cache lock.
 #
-# Usage: arch_determinism.sh [signature-ref] [--host-tiers]   (default 2884956)
+# Usage: arch_determinism.sh [signature-ref] [--host-tiers]   (default 2516158)
 set -u
 
 REF=""
@@ -58,7 +58,7 @@ for a in "$@"; do
         *) REF="$a" ;;
     esac
 done
-REF="${REF:-2884956}"
+REF="${REF:-2516158}"
 
 REPO="$(git rev-parse --show-toplevel)" || exit 1
 cd "$REPO" || exit 1

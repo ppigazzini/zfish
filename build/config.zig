@@ -110,7 +110,7 @@ pub fn resolve(b: *std.Build) Config {
     const signature_ref = b.option(
         []const u8,
         "signature-ref",
-        "Expected bench signature for the `signature` step; defaults to the 2884956 invariant",
+        "Expected bench signature for the `signature` step; defaults to the 2516158 invariant",
     );
     const walk_args = b.option(
         []const u8,
@@ -128,7 +128,7 @@ pub fn resolve(b: *std.Build) Config {
     // seam), aligned/large-page allocation (memory.zig), the steady clock and CPU-affinity
     // string (main.zig). Windows uses the self-contained mingw (gnu) ABI so no MSVC/SDK is
     // needed; macOS uses its native ABI. The integer-exact NNUE eval is arch/OS-invariant,
-    // so bench must be 2884956 on every (arch, os) tier -- the parity lanes assert it.
+    // so bench must be 2516158 on every (arch, os) tier -- the parity lanes assert it.
     const os_choice = b.option(TargetOs, "os", "Target OS: linux (default), windows, or macos") orelse .linux;
     const os_tag: std.Target.Os.Tag = switch (os_choice) {
         .linux => .linux,

@@ -50,7 +50,7 @@ pub const script_gates = [_]ScriptGate{
     .{ .step = "parity-teardown", .script = "tools/teardown.sh", .desc = "Valgrind leak gate for searchmoves/rootMoves vector lifecycle + Worker clear", .needs_engine = true, .cwd_resources = true },
     // Assert via the src-free / TU=0 structural gate that the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
-    // benches 2884956. Keep it a permanent invariant in the `parity` aggregate below, guarding
+    // benches 2516158. Keep it a permanent invariant in the `parity` aggregate below, guarding
     // against any C++ TU being reintroduced into the default binary.
     .{ .step = "src-free", .script = "tools/src_free.sh", .desc = "src-free structural gate: zero C++ Stockfish/libc++ symbols in the shipped binary", .needs_engine = true, .cwd_resources = true, .in_parity = true },
     // Gate the headless engine structurally: src/engine/ must import only engine/ modules,

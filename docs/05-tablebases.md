@@ -165,7 +165,16 @@ things hold the line, and they are worth keeping distinct:
 | `PairsData`'s file-backed fields are **slices, not `[*]`** | A many-item pointer carries no length for anyone to check against; the slice records what the file actually provided, which is what makes the bound above expressible at all. |
 | `decode_header.setSizes` validates the btree **before** `probe.setSymLen` walks it | Both child fields are 12 bits of the file, so a corrupt entry can name a symbol past the tree, and `setSymLen` writes `d.symlen[child]` — an out-of-bounds *write*. One O(n) pass at load makes the walk in-bounds by construction and leaves the probe path free of the check. |
 | `table_load.set` checks the pawnful table's **leading piece** against the registry's lead colour | `doProbeTable` picks the leading pawns' colour off `get(0, 0).pieces[0]`, a raw file nibble. Name a piece that is not a pawn, or a pawn of the colour that has none, and the leading group is EMPTY: the probe then sorts `squares[1..0]` and indexes `lead_pawn_idx[0][squares[0]]` with a square it never wrote. One flipped nibble in a downloaded `.rtbw` reaches it. |
+| `decode_header.setSizes` refuses a **cyclic** btree | `probe.setSymLen` marks a symbol before walking its subtree, so a two-state visited flag reads a cycle as "already computed": the walk terminates, but the sums it returns are built on `symlen[]` entries still holding zero and the table is accepted with garbage lengths. The third colour is what makes the cycle nameable — GREY means "on the current DFS path". |
+| `decode_header.setSizes` refuses a **non-canonical** code | A canonical Huffman table satisfies `base64[i] * 2 >= base64[i + 1]` at every step. Upstream asserts it, which a release build compiles out; a table breaking it hands the decoder an alphabet its own length scan cannot describe. |
+| `table_load.set` checks the header's **Split / HasPawns** bits against the registry | Both restate what the filename already told the registry, and every group width below is derived from the registry's answer — so a header that disagrees is not the table the probe is about to index. Another upstream assert. |
 | `probe.setGroups` returns false on a **group longer than any geometry row** | The group lengths index `lead_pawns_size` and `binomial`, both sized for the longest group a legal material configuration makes. The lengths are runs over the same file nibbles, so a corrupt sequence makes a longer one and reads off the end of the array. |
+
+Upstream refuses the same three and then **exits**: it prints `Corrupted table in file X`
+and returns `EXIT_FAILURE`. zfish refuses the table and keeps playing without it, which is
+the property `parity-malformed` gates — every mutated table answered with a clean exit and
+a legal bestmove. That divergence is deliberate, and `tools/upstream/README.md` records it
+so a later sync does not read it as drift.
 
 **And `parity-malformed` is what keeps them.** Every row above was pinned by unit tests on
 the *decoder* and by nothing at all on the shipped loader — and a unit test that calls
@@ -390,6 +399,13 @@ scratch position walked forward from the root:
 2. **Extend.** Keep playing the top-ranked move — minimal DTZ, with opponent mobility as the
    tie-break — until mate. The mate is optimal only for simple endgames such as KRvK; DTZ
    minimises the distance to the next zeroing move, not to mate.
+
+Step 2 is bounded by its own terminations — mate, a draw, or the clock — and by **nothing
+else**, which is why a root move's PV is the growable `RootPVMoves` and the
+`tb_extend_source` seam takes the list rather than a slice and a length: a bound is exactly
+what it must not have, since a fixed one truncates the mate line instead of limiting it.
+That it terminates rests on the caller: `searchPv` extends only a decisive score, so the
+walk is minimal-DTZ play in a won position, which converges to mate.
 
 The walk carries the state history, because both `isDraw` and `isRepetition` read it; a position
 rebuilt from a FEN would answer them wrongly. When a clock is running the walk stops once it has
