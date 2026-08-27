@@ -38,16 +38,25 @@ const en_passant_move_type: u16 = 2 << 14;
 pub const ExtendPvResult = tb_extend_port.ExtendPvResult;
 
 // Bound the walk to half the Move Overhead while a clock runs, so extending cannot spend the
-// move's time. Upstream: `2 * elapsed > moveOverhead`.
+// move's time. Upstream: `2 * multiPV * elapsed >= moveOverhead`.
+//
+// DIVIDE the budget by the number of PV lines rather than granting it to each: under MultiPV
+// every reported line is extended, so a per-line half-overhead let N lines spend N/2 of it and
+// lose on time. With the divisor, the whole report stays inside the same half.
+//
+// `use_deadline` is FALSE under `nodestime` even with a clock running, because the walk's cost
+// there is do_move calls the global node counter never sees -- the clock cannot advance from
+// them, so aborting on wall time only makes the reported PV nondeterministic.
 const ExtendDeadline = struct {
     start_ms: i64,
     move_overhead: i32,
-    use_time_management: bool,
+    use_deadline: bool,
+    multipv: usize,
 
     fn expired(self: ExtendDeadline) bool {
-        if (!self.use_time_management) return false;
+        if (!self.use_deadline) return false;
         const elapsed = time_source.now() - self.start_ms;
-        return 2 * elapsed > @as(i64, self.move_overhead);
+        return 2 * @as(i64, @intCast(self.multipv)) * elapsed >= @as(i64, self.move_overhead);
     }
 };
 
@@ -79,19 +88,26 @@ pub fn syzygyExtendPv(
     chess960: u8,
     pv: *tb_extend_port.RootPVMoves,
     value_in: i32,
-    use_time_management: bool,
+    use_deadline: bool,
+    multipv: usize,
 ) ExtendPvResult {
     var result = ExtendPvResult{ .value = value_in, .timed_out = false };
     if (pv.isEmpty()) return result;
 
-    const root_fen = buildRootFen(pos) orelse return result;
-    defer std.heap.c_allocator.free(root_fen);
-
     const deadline = ExtendDeadline{
         .start_ms = time_source.now(),
         .move_overhead = option_port.intByName("Move Overhead"),
-        .use_time_management = use_time_management,
+        .use_deadline = use_deadline,
+        .multipv = multipv,
     };
+
+    // Refuse before any work when the budget is already spent -- `Move Overhead 0` under a
+    // clock, where every later check would abort anyway and the walk would only pay to be
+    // thrown away.
+    if (deadline.expired()) return result;
+
+    const root_fen = buildRootFen(pos) orelse return result;
+    defer std.heap.c_allocator.free(root_fen);
     const rule50 = option_port.syzygy50MoveRule();
 
     var scratch = ScratchPosition.init(root_fen, chess960) catch return result;
