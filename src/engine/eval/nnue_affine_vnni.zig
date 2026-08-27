@@ -2,7 +2,7 @@
 // under the god-file line. One tier, two sparse shapes: this is the only kernel that can consume
 // upstream's non-zero INDEX LIST, and the only one that has a measured reason to prefer a
 // different sparse walk per sub-tier -- which is why it is the piece that grew past the split.
-// Bit-identical to every other tier's dot (2516158 on each); the scalar-reference unit test in
+// Bit-identical to every other tier's dot (2497913 on each); the scalar-reference unit test in
 // nnue_inference.zig pins this path too.
 
 const std = @import("std");

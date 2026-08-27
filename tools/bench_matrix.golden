@@ -1,4 +1,4 @@
-bench 16 1 8 nodes=182697
-bench 128 1 13 nodes=2497880
-bench 16 1 200000 default nodes nodes=9806160
+bench 16 1 8 nodes=170203
+bench 128 1 13 nodes=2769412
+bench 16 1 200000 default nodes nodes=9806827
 bench 16 1 3 default perft nodes=1872827

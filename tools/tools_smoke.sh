@@ -100,9 +100,9 @@ _profile() {  # _profile <path> <Ir> ; a callgrind summary is events: + summary:
     printf 'events: Ir Dr Dw I1mr D1mr D1mw ILmr DLmr DLmw Bc Bcm Bi Bim\n' > "$1"
     printf 'summary: %d 100 50 5 20 10 1 2 3 400 40 30 3\n' "$2" >> "$1"
 }
-_profile "$FIX/a_deep.out" 1000; printf '2516158\n' > "$FIX/a_deep.out.nodes"
+_profile "$FIX/a_deep.out" 1000; printf '2497913\n' > "$FIX/a_deep.out.nodes"
 _profile "$FIX/a_shal.out"  100; printf '19\n'      > "$FIX/a_shal.out.nodes"
-_profile "$FIX/b_deep.out" 2000; printf '2516158\n' > "$FIX/b_deep.out.nodes"
+_profile "$FIX/b_deep.out" 2000; printf '2497913\n' > "$FIX/b_deep.out.nodes"
 _profile "$FIX/b_shal.out"  200; printf '19\n'      > "$FIX/b_shal.out.nodes"
 
 smoke "perf_callgrind_delta" 1 "Usage" -- python3 tools/perf_callgrind_delta.py
@@ -116,7 +116,7 @@ smoke "  ^ refuses a differing tree" 1 "not the same workload" -- \
     python3 tools/perf_callgrind_delta.py "$FIX/a_deep.out" "$FIX/a_shal.out" \
     "$FIX/b_wrong.out" "$FIX/b_shal.out"
 
-printf 'events: Ir\n' > "$FIX/b_dead.out"; printf '2516158\n' > "$FIX/b_dead.out.nodes"
+printf 'events: Ir\n' > "$FIX/b_dead.out"; printf '2497913\n' > "$FIX/b_dead.out.nodes"
 smoke "  ^ refuses a dead run" 1 "did the run die?" -- \
     python3 tools/perf_callgrind_delta.py "$FIX/a_deep.out" "$FIX/a_shal.out" \
     "$FIX/b_dead.out" "$FIX/b_shal.out"
