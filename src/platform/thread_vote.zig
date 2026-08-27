@@ -15,7 +15,7 @@ const max_thread_summaries: usize = 1024;
 
 pub const ThreadSummary = struct {
     pv0_raw: u16,
-    score_is_bound: u8,
+    is_inexact: u8,
     score: i32,
     pv_length: usize,
 };
@@ -27,7 +27,7 @@ fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
     const w = worker_layout.Worker.fromThread(thread) orelse {
         out.* = .{
             .pv0_raw = 0,
-            .score_is_bound = 1,
+            .is_inexact = 1,
             .score = value_none,
             .pv_length = 0,
         };
@@ -35,7 +35,7 @@ fn fillThreadSummary(thread: *worker_layout.Thread, out: *ThreadSummary) void {
     };
     const rmv = w.rootMovesFirst();
     out.pv0_raw = rmv.pv.at(0);
-    out.score_is_bound = @intFromBool(rmv.score_lowerbound or rmv.score_upperbound);
+    out.is_inexact = @intFromBool(rmv.inexact_lower or rmv.inexact_upper);
     out.score = rmv.score;
     out.pv_length = rmv.pv.length;
 }
@@ -66,7 +66,7 @@ fn isDecisive(score: i32) bool {
     return isWin(score) or isLoss(score);
 }
 fn isDecisiveBest(summary: ThreadSummary) bool {
-    return summary.score != -value_infinite and isDecisive(summary.score) and summary.score_is_bound == 0;
+    return summary.score != -value_infinite and isDecisive(summary.score) and summary.is_inexact == 0;
 }
 fn absInt(value: i32) i32 {
     return if (value < 0) -value else value;
@@ -149,7 +149,7 @@ test {
 const testing = @import("std").testing;
 
 fn ts(pv0: u16, score: i32, pv_len: usize, bound: u8) ThreadSummary {
-    return .{ .pv0_raw = pv0, .score_is_bound = bound, .score = score, .pv_length = pv_len };
+    return .{ .pv0_raw = pv0, .is_inexact = bound, .score = score, .pv_length = pv_len };
 }
 
 test "pickBestThread: two agreeing threads outvote one scoring higher" {
@@ -217,10 +217,10 @@ test "pickBestThread: a decisive thread is not displaced on votes alone" {
     try testing.expectEqual(@as(usize, 0), pickBestThread(&s));
 }
 
-test "pickBestThread: a bound score does not count as decisive" {
-    // upstream guards decisiveness with `!score_is_bound()`: an aborted search can report
-    // an inexact win. Thread 0 holds the larger mate score but it is a BOUND, so it is not
-    // decisive and thread 1's genuine mate takes it. Were the bound flag ignored, thread 0
+test "pickBestThread: an inexact score does not count as decisive" {
+    // upstream guards decisiveness with `!is_inexact()`: an aborted search can report
+    // an inexact win. Thread 0 holds the larger mate score but it is INEXACT, so it is not
+    // decisive and thread 1's genuine mate takes it. Were the inexact flag ignored, thread 0
     // would count as decisive and keep the pick, since |31900| < |31950| -- so this case
     // separates the two readings.
     const s = [_]ThreadSummary{

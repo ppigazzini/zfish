@@ -219,7 +219,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             // aborted pvIdx line overtaking pvIdx - 1 when pvIdx - 1 is a proven loss.
             // Moreover, do not trust an exact loss score from an aborted search.
             // Port upstream search.cpp:443-489 faithfully: keep the two arms distinct (a
-            // merged min() cannot restore the previous PV, would clear both bound flags,
+            // merged min() cannot restore the previous PV, would clear both inexact flags,
             // and would never mark the later lines) -- which is why RootMove carries
             // previousPV and previousScoreExact.
             if (@atomicLoad(u8, id.stop, .monotonic) != 0 and id.pv_idx.* != 0) {
@@ -228,7 +228,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                 const prev_is_loss = idIsLoss(prev_line.score);
 
                 if ((prev_is_loss and rootLess(cur, prev_line)) or
-                    cur.scoreIsExactLoss(idIsLoss(cur.score)))
+                    cur.isExactLoss(idIsLoss(cur.score)))
                 {
                     // If previousScore is exact and worse than pvIdx - 1, we can safely
                     // use it. If it is equal, make sure it cannot overtake pvIdx - 1.
@@ -239,7 +239,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                         cur.uci_score = cur.previous_score;
                         cur.previous_score = -q_value_inf;
                         cur.pv.copyFrom(&cur.previous_pv);
-                        cur.unsetBoundFlags();
+                        cur.unsetInexact();
                     } else {
                         // Otherwise, if we can, cap the score to the best possible and mark
                         // it as a bound (also a valid excuse for the incomplete PV).
@@ -248,11 +248,11 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                             cur.uci_score = prev_line.score;
                             cur.previous_score = -q_value_inf;
                             cur.pv.resize(1);
-                            cur.score_upperbound = true;
+                            cur.inexact_upper = true;
                         } else {
-                            cur.score_upperbound = false;
+                            cur.inexact_upper = false;
                         }
-                        cur.score_lowerbound = !cur.score_upperbound;
+                        cur.inexact_lower = !cur.inexact_upper;
                     }
                 }
 
@@ -260,7 +260,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                 var li: usize = id.pv_idx.* + 1;
                 while (li < multi_pv) : (li += 1) {
                     const rm = &id.root_moves[li];
-                    if (rm.scoreIsExactLoss(idIsLoss(rm.score))) rm.score_lowerbound = true;
+                    if (rm.isExactLoss(idIsLoss(rm.score))) rm.inexact_lower = true;
                 }
             }
 
@@ -285,7 +285,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
         const forgotten_mate = last_best_move_score != -q_value_inf and
             (idIsMate(last_best_move_score) or idIsMated(last_best_move_score)) and
             (@abs(id.root_moves[0].score) < @abs(last_best_move_score) or
-                id.root_moves[0].scoreIsBound());
+                id.root_moves[0].isInexact());
 
         if (!stopped) {
             if (last_best_move_pv.isEmpty() or id.root_moves[0].pv.at(0) != last_best_move_pv.at(0))
@@ -299,7 +299,7 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
         }
 
         const aborted_loss_search = stopped and id.pv_idx.* == 0 and
-            id.root_moves[0].scoreIsExactLoss(idIsLoss(id.root_moves[0].score));
+            id.root_moves[0].isExactLoss(idIsLoss(id.root_moves[0].score));
 
         // An exact mated-in/TB-loss score from an aborted search cannot be trusted: the
         // loss could be delayed or refuted upon exploring the remaining root-moves. Roll
@@ -312,11 +312,11 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
                 id.root_moves[0].score = last_best_move_score;
                 id.root_moves[0].uci_score = last_best_move_score;
                 id.root_moves[0].pv.copyFrom(&last_best_move_pv);
-                id.root_moves[0].unsetBoundFlags();
+                id.root_moves[0].unsetInexact();
                 if (main_thread) uci_pv_sent = false;
             } else if (aborted_loss_search) {
                 // For an aborted d1 search label the loss score as a lower bound.
-                id.root_moves[0].score_lowerbound = true;
+                id.root_moves[0].inexact_lower = true;
             }
         }
 

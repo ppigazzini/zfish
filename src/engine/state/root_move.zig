@@ -166,10 +166,13 @@ pub const RootMove = extern struct {
     average_score: i32 = -value_infinite,
     mean_squared_score: i32 = -value_infinite * value_infinite,
     uci_score: i32 = -value_infinite,
-    score_lowerbound: bool = false,
-    score_upperbound: bool = false,
+    // Report a score the search could not pin down: a root score is EXACT by default,
+    // and one of these marks it a one-sided bound instead (upstream's `enum Bound` in
+    // types.h says the same thing for a TT entry). Never both -- the reporter asserts it.
+    inexact_lower: bool = false,
+    inexact_upper: bool = false,
     // Mirror upstream's `bool previousScoreExact` (search.h:163), declared beside the
-    // other two bound flags as upstream does. Gates the aborted-MultiPV score repair
+    // other two inexact flags as upstream does. Gates the aborted-MultiPV score repair
     // (search.cpp:470).
     previous_score_exact: bool = false,
     sel_depth: i32 = 0,
@@ -212,18 +215,18 @@ pub const RootMove = extern struct {
         self.previous_pv = previous_pv;
     }
 
-    pub fn scoreIsBound(self: *const RootMove) bool {
-        return self.score_lowerbound or self.score_upperbound;
+    pub fn isInexact(self: *const RootMove) bool {
+        return self.inexact_lower or self.inexact_upper;
     }
-    pub fn unsetBoundFlags(self: *RootMove) void {
-        self.score_lowerbound = false;
-        self.score_upperbound = false;
+    pub fn unsetInexact(self: *RootMove) void {
+        self.inexact_lower = false;
+        self.inexact_upper = false;
     }
-    // Report an exact (non-bound) proven loss, mirroring upstream's
-    // `score_is_exact_loss()` (search.h:145). Take is_loss as a parameter: the loss
+    // Report an exact (non-inexact) proven loss, mirroring upstream's
+    // `is_exact_loss()` (search.h:143). Take is_loss as a parameter: the loss
     // threshold lives in the search's value module, and this type stays free of it.
-    pub fn scoreIsExactLoss(self: *const RootMove, is_loss: bool) bool {
-        return self.score != -value_infinite and is_loss and !self.scoreIsBound();
+    pub fn isExactLoss(self: *const RootMove, is_loss: bool) bool {
+        return self.score != -value_infinite and is_loss and !self.isInexact();
     }
     pub fn eqMove(self: *const RootMove, m: Move) bool {
         return self.pv.at(0) == m;
@@ -264,7 +267,7 @@ test "RootMove(Move) seeds the pv and defaults" {
     try testing.expectEqual(@as(Move, 0x1234), rm.pv.at(0));
     try testing.expectEqual(@as(i32, -value_infinite), rm.score);
     try testing.expect(rm.eqMove(0x1234));
-    try testing.expect(!rm.scoreIsBound());
+    try testing.expect(!rm.isInexact());
 }
 
 test "the root pv grows past the fixed buffer, and PVMoves takes it truncated" {
@@ -328,11 +331,11 @@ test "RootMove sorts descending by score then previousScore" {
     try testing.expectEqual(@as(i32, 5), moves[2].previous_score);
 }
 
-test "bound flags" {
+test "inexact flags" {
     var rm = RootMove.init(0);
     defer rm.deinit();
-    rm.score_lowerbound = true;
-    try testing.expect(rm.scoreIsBound());
-    rm.unsetBoundFlags();
-    try testing.expect(!rm.scoreIsBound());
+    rm.inexact_lower = true;
+    try testing.expect(rm.isInexact());
+    rm.unsetInexact();
+    try testing.expect(!rm.isInexact());
 }

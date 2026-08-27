@@ -68,7 +68,7 @@ pub fn checkTime(ctx: *const QCtx) void {
 // Do the per-move root bookkeeping. Find the
 // RootMove for `move` in [pvIdx, pvLast) (unique, guaranteed present by the
 // rootInList filter), update its effort / averageScore / meanSquaredScore, and
-// on a PV move store the score/bound flags/PV. Use C truncating division
+// on a PV move store the score/inexact flags/PV. Use C truncating division
 // (@divTrunc) and i32 arithmetic (no overflow: both squared terms are
 // < VALUE_INFINITE^2, sum < INT_MAX).
 const root_mean_sq_sentinel: i32 = -(q_value_inf * q_value_inf);
@@ -112,13 +112,13 @@ pub fn rootUpdate(ctx: *const QCtx, move: u16, value: i32, nodes_delta: u64, mov
         rm.score = value;
         rm.uci_score = value;
         rm.sel_depth = ctx.sel_depth.*;
-        rm.score_lowerbound = false;
-        rm.score_upperbound = false;
+        rm.inexact_lower = false;
+        rm.inexact_upper = false;
         if (value >= beta) {
-            rm.score_lowerbound = true;
+            rm.inexact_lower = true;
             rm.uci_score = beta;
         } else if (value <= alpha) {
-            rm.score_upperbound = true;
+            rm.inexact_upper = true;
             rm.uci_score = alpha;
         }
         // Keep pv[0] (== move) with pv.resize(1), then append the child PV.
