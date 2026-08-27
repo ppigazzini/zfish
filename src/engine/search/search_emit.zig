@@ -279,19 +279,24 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
         if (is_tb_score) v = rm.tb_score;
 
         // Correct and extend a tablebase-scored PV, and with it v. A previous-iteration PV is
-        // already extended, and a bound flag marks the PV unreliable -- unless the score came from
+        // already extended, and an inexact flag marks the PV unreliable -- unless the score came from
         // the tablebase, which is exact whatever the search's bound says. Upstream search.cpp:2256.
         if (isDecisive(v) and !isMateOrMated(v) and !use_prev and
-            (!rm.scoreIsBound() or is_tb_score))
+            (!rm.isInexact() or is_tb_score))
         {
             v = extendPvSyzygy(&ctx, i, v);
         }
         var bound_kind: u8 = 0;
-        // Treat TB scores as exact even if the root move's bound flags say otherwise.
+        // Assert the two flags stay mutually exclusive, as upstream's output_pv does: a score
+        // is exact or it is ONE-sided, and the `else if` below reports `lowerbound` for a move
+        // carrying both rather than saying anything true. Compiled out of the shipped
+        // ReleaseFast binary; `zig build test -Doptimize=ReleaseSafe` is what runs it.
+        std.debug.assert(!(rm.inexact_lower and rm.inexact_upper));
+        // Treat TB scores as exact even if the root move's inexact flags say otherwise.
         if (!use_prev and !is_tb_score) {
-            if (rm.score_lowerbound) {
+            if (rm.inexact_lower) {
                 bound_kind = 1;
-            } else if (rm.score_upperbound) {
+            } else if (rm.inexact_upper) {
                 bound_kind = 2;
             }
         }
