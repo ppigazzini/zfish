@@ -412,17 +412,32 @@ pub fn resizeThreads(
 
 pub fn resizeThreadsEngine(engine_ptr: *engine_object.EngineObject) void {
     // Handle the resize chain's errors here (reconfigure -> thread_pool.set/boundNodesAssign):
-    // it now propagates OOM / thread-spawn errors as `!void`, and this is the engine's single
-    // handling boundary. A UCI Threads/NumaPolicy change or init that cannot allocate
-    // its thread pool is unrecoverable, so fail loudly here instead of scattering
-    // `catch @panic("OOM")` across every leaf allocation.
+    // it propagates OOM / thread-spawn errors as `!void`, and this is the engine's single
+    // handling boundary. A UCI Threads/NumaPolicy change or init that cannot build its thread
+    // pool is unrecoverable, so fail here instead of scattering `catch @panic` across every
+    // leaf allocation -- but NAME which failure it was and exit, never raise a signal. A
+    // panic reports the resize, not the cause: a host that refuses one more thread (the
+    // RLIMIT_NPROC / thread-quota case upstream's 3512dea6 diagnoses) and a host out of
+    // memory arrive at the same abort with the same "OOM" text, so the one message the
+    // operator sees names the wrong thing half the time.
     resizeThreads(
         engine_ptr.numaContextPtr(),
         engine_ptr.threadsPtr(),
         engine_ptr.ttPtr(),
         sharedHistoriesPtr(),
         engine_ptr.updateContextPtr(),
-    ) catch @panic("OOM: thread pool resize failed");
+    ) catch |err| reportThreadPoolFailure(err);
+}
+
+// Report a thread-pool build that could not complete, in upstream's report-and-exit shape
+// (thread.cpp's "Failed to create search thread" + EXIT_FAILURE) rather than as an abort.
+fn reportThreadPoolFailure(err: anyerror) noreturn {
+    if (err == error.ThreadSpawnFailed) {
+        std.debug.print("Failed to create search thread\n", .{});
+    } else {
+        std.debug.print("Failed to allocate the thread pool: {s}\n", .{@errorName(err)});
+    }
+    std.process.exit(1);
 }
 
 // Provide TT lifecycle + engine setup helpers, reached through the typed

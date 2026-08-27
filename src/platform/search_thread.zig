@@ -33,11 +33,16 @@ pub const SearchThread = struct {
 
     // Allocate + spawn the futex idle-loop runner. Attach the Worker later
     // (setWorker) via the ThreadPool construction that builds the Worker block.
+    // Separate a failed SPAWN from a failed allocation, so the handling boundary can name
+    // which one happened. Upstream ignored pthread_create's return and then waited forever on
+    // a searching flag no thread would clear (3512dea6); Zig's spawn already returns the
+    // failure, so what is left to port is the diagnostic -- and an OutOfMemory that reached
+    // the caller unlabelled would be reported as an arena the engine could not allocate.
     pub fn spawn(self: *SearchThread, allocator: std.mem.Allocator, idx: usize) !void {
         const runtime = try allocator.create(rt.ThreadRuntime);
         errdefer allocator.destroy(runtime);
         runtime.* = rt.ThreadRuntime{};
-        try runtime.start();
+        runtime.start() catch return error.ThreadSpawnFailed;
         self.* = .{ .worker = null, .runtime = runtime, .idx = idx };
     }
 
