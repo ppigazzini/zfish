@@ -21,7 +21,7 @@ src/movegen.cpp	src/engine/board/movegen.zig,src/engine/board/movegen_splat_avx5
 src/movegen.h	src/engine/board/movegen.zig	MED
 src/tt.cpp	src/engine/search/tt.zig,src/engine/state/tt_types.zig	MED
 src/tt.h	src/engine/search/tt.zig,src/engine/state/tt_types.zig	MED
-src/thread.cpp	src/platform/thread.zig,src/platform/thread_runtime.zig,src/platform/search_thread.zig,src/platform/thread_vote.zig,src/shell/main.zig	MED
+src/thread.cpp	src/platform/thread.zig,src/platform/thread_runtime.zig,src/platform/search_thread.zig,src/platform/thread_vote.zig,src/shell/main.zig,src/shell/engine/session.zig	MED
 src/thread.h	src/platform/thread.zig	MED
 src/timeman.cpp	src/engine/search/timeman.zig	LOW
 src/timeman.h	src/engine/search/timeman.zig	LOW
@@ -34,7 +34,7 @@ src/uci.cpp	src/engine/board/position_query.zig,src/shell/engine/perft.zig,src/s
 src/uci.h	src/shell/uci.zig	LOW
 src/ucioption.cpp	src/shell/option.zig,src/shell/option_parse.zig	LOW
 src/ucioption.h	src/shell/option.zig	LOW
-src/misc.cpp	src/shell/misc.zig,src/engine/eval/nnue_hash.zig,src/platform/numa/policy.zig	LOW
+src/misc.cpp	src/shell/misc.zig,src/engine/eval/nnue_hash.zig,src/platform/numa/policy.zig,src/platform/os_path.zig	LOW
 src/misc.h	src/shell/misc.zig,src/engine/search/search_acc.zig,src/engine/search/tt.zig	LOW
 src/engine.cpp	src/shell/engine.zig,src/shell/engine/graph.zig,src/shell/engine/control.zig,src/shell/engine/nnue.zig,src/shell/engine/session.zig,src/platform/numa.zig	MED
 src/engine.h	src/shell/engine.zig,src/shell/engine/perft.zig	MED
