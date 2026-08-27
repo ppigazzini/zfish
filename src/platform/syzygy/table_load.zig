@@ -43,7 +43,11 @@ fn loadFile(t: *TBTable, ext: []const u8, magic: [4]u8) ?[]const u8 {
         var zbuf: [4097]u8 = undefined;
         const full = std.fmt.bufPrint(&zbuf, "{s}/{s}{s}\x00", .{ dir, t.stem[0..t.stem_len], ext }) catch continue;
         const z: [*:0]const u8 = @ptrCast(full.ptr);
-        const fd = std.c.open(z, .{ .ACCMODE = .RDONLY });
+        // Open close-on-exec (upstream 22dfb404), as std.Io.Dir.openFile already does for the
+        // net: a table descriptor lives for the whole process, so anything this engine ever
+        // execs would inherit every one of them. Nothing here execs today, which is exactly
+        // why the raw std.c.open was the one file handle in the tree without the flag.
+        const fd = std.c.open(z, .{ .ACCMODE = .RDONLY, .CLOEXEC = true });
         if (fd < 0) continue;
         defer _ = std.c.close(fd);
 
