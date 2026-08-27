@@ -507,7 +507,10 @@ transformer, `positional` from `propagateBucket` — and `evaluate` scales both 
 (complexity), damps the net output by the same, weights the net term by material
 while optimism now rides a flat weight, applies the
 50-move-rule decay, and clamps inside the TB bounds — all in `i64` with truncating
-division. The search calls it through `search_acc.evaluateAcc`, which supplies
+division. The net term is added OUTSIDE that division (`nnue + (nnue * material +
+optimism * 7675) / 91000`), not folded into its numerator: the two are the same
+rational number and a different integer, because the truncation then runs over a
+numerator smaller by `91000 * nnue`. The search calls it through `search_acc.evaluateAcc`, which supplies
 material and the side-to-move optimism.
 
 ## SIMD

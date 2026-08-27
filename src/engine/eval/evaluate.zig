@@ -49,8 +49,12 @@ pub fn computeValue(input: EvalInput) i32 {
     optimism += @divTrunc(optimism * nnue_complexity, 476);
     nnue -= @divTrunc(nnue * nnue_complexity, 18236);
 
-    var value = @divTrunc(
-        nnue * (91000 + @as(i64, input.material)) + optimism * 7675,
+    // Blend the net's value with optimism, scaled by material. Upstream 2edd935b lifts `nnue`
+    // out of the numerator: `nnue * (91000 + material) / 91000` is `nnue` plus a remainder, and
+    // adding it OUTSIDE the division truncates once over a much smaller numerator instead of
+    // once over the whole thing. The i64 is kept for the product, as upstream keeps its cast.
+    var value = nnue + @divTrunc(
+        nnue * @as(i64, input.material) + optimism * 7675,
         91000,
     );
 
