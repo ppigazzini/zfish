@@ -243,15 +243,22 @@ fn extendPvSyzygy(ctx: *const PvContext, index: usize, v: i32) i32 {
     const wl = ctx.worker orelse return v;
     const rmv = worker_layout.RootMove.fromAddr(workerRootMoveAt(wl, index));
 
-    const use_time_management = wl.limits.time[0] != 0 or wl.limits.time[1] != 0;
+    // Fold upstream's `!limits.npmsec && limits.use_time_management()` here: the deadline
+    // struct holds no LimitsType, and this is where the clock is already read. Under
+    // `nodestime` the walk's do_move calls never reach the global node counter, so the clock
+    // it would abort against cannot advance from them -- aborting only makes the reported PV
+    // nondeterministic, which is what upstream 19a02f44 fixes.
+    const use_deadline = wl.limits.npmsec == 0 and (wl.limits.time[0] != 0 or wl.limits.time[1] != 0);
     // Pass the LIST: the walk appends toward mate, and its own terminations -- mate, a draw,
-    // or the clock -- are the only bound on how far it goes.
+    // or the clock -- are the only bound on how far it goes. `multipv` divides that clock
+    // budget, so N reported lines together stay inside the one half-overhead a single line got.
     const res = tb_extend_port.extendPv(
         &wl.root_pos,
         ctx.chess960,
         &rmv.pv,
         v,
-        use_time_management,
+        use_deadline,
+        ctx.multipv,
     );
     if (res.timed_out)
         uci_output.printLine(extend_timeout_msg);

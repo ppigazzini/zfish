@@ -33,6 +33,7 @@ fn keepPv(
     _: *RootPVMoves,
     value: i32,
     _: bool,
+    _: usize,
 ) ExtendPvResult {
     return .{ .value = value, .timed_out = false };
 }
@@ -47,7 +48,8 @@ pub var extendPv: *const fn (
     chess960: u8,
     pv: *RootPVMoves,
     value: i32,
-    use_time_management: bool,
+    use_deadline: bool,
+    multipv: usize,
 ) ExtendPvResult = &keepPv;
 
 test {
