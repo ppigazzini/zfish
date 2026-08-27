@@ -476,6 +476,7 @@ pub const edges = [_]Edge{
     .{ .from = "thread", .imp = "search_thread", .to = "search_thread" },
     .{ .from = "thread", .imp = "thread_runtime", .to = "thread_runtime" },
     .{ .from = "misc", .imp = "memory", .to = "memory" },
+    .{ .from = "memory", .imp = "thread_runtime", .to = "thread_runtime" },
     .{ .from = "tt", .imp = "worker_layout", .to = "worker_layout" },
     .{ .from = "tt", .imp = "thread_ops", .to = "thread_ops" },
     .{ .from = "thread", .imp = "worker_layout", .to = "worker_layout" },

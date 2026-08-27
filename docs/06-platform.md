@@ -75,7 +75,7 @@ what the workers share are covered in [04-multithreading.md](04-multithreading.m
 `memory.zig` is the aligned / huge-page allocator, written with no `@cImport` — the
 C entry points are declared directly, since `sys/mman.h` does not exist on Windows
 and the macOS SDK headers do not cross-compile. `stdAlignedAlloc` is
-`posix_memalign` on Linux/macOS and `_aligned_malloc` on Windows (whose blocks must
+`posix_memalign` on macOS and `_aligned_malloc` on Windows (whose blocks must
 be released with `_aligned_free`, never plain `free`).
 
 `alignedLargePagesAlloc` rounds the request up to a 2 MiB multiple, allocates it
@@ -84,6 +84,23 @@ via `madvise(MADV_HUGEPAGE)` (skipped on WSL kernels, which accept the advisory 
 ever backing it). macOS and Windows have no equivalent advisory call; the alignment alone
 lets the OS back the block with large pages. The blanket zero-fill this paragraph once
 described was removed — see [Invariants](#invariants) below for what replaced it and why.
+
+**On Linux the block comes from `mmap`, not from the libc allocator.** glibc would serve a
+request this size out of an arena, and an arena OUTLIVES the thread it was created for: a
+later thread bound to a different NUMA node reuses it, and the engine silently runs on
+remote memory — which is why setting `Threads` twice measured slower than setting it once
+(upstream 7ab49b9b). There is no aligned `mmap`, so `mmapHugeAligned` over-reserves by one
+alignment `PROT_NONE`, `MAP_FIXED`s the real mapping onto the aligned base inside that
+reservation, and gives the prefix and suffix back; a failure anywhere falls back to a plain
+unaligned `mmap`. `munmap` needs a length the caller does not carry, so a mutex-guarded
+registry maps base → mapped length and `alignedLargePagesFree` consults it first — a
+pointer it does not know is a `stdAlignedAlloc` block (the zero-size request), not a bug.
+
+That registry is also the leak gate for these blocks. `parity-valgrind` reports a missed
+free as a definite leak only for allocations memcheck tracks, and it does not track an
+`mmap`, so a dropped `alignedLargePagesFree` no longer reddens it. `liveLargePageBlocks()`
+is what says so instead, and `memory.zig`'s own unit test drives the three size classes
+through alloc/free and requires the count back at zero.
 
 The engine never calls this directly — that would stop it being a standalone
 library. It declares the `page_alloc` seam (`src/engine/state/page_alloc.zig`) for

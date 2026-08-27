@@ -403,9 +403,13 @@ the best available answer is to refuse. A trap is the floor, not the goal — pa
 malformed tablebase is better than reading past it, and worse than reporting the table as
 missing, which is what `mapped`/`mappedDtz` now do.
 
-**What is deliberately not done.** `std.valgrind` client requests are absent: the shipped
-allocator is `posix_memalign`, which memcheck already tracks, so annotating the headless
-`page_alloc` fallback would gate nothing the `parity-valgrind` lane does not. Search
+**What is deliberately not done.** `std.valgrind` client requests are absent: everything
+memcheck can see it already tracks, so annotating the headless `page_alloc` fallback would
+gate nothing the `parity-valgrind` lane does not. The one thing memcheck stopped seeing is
+the Linux large-page arena, which now comes from `mmap` rather than `posix_memalign`
+([06-platform.md](06-platform.md)); `memory.liveLargePageBlocks()` and its unit test carry
+that coverage instead, because a client request would only re-describe a mapping the
+allocator already has the length of. Search
 threads take `std.Thread`'s default stack; recursion is bounded by `MAX_PLY`, and a guard
 page catches the overflow Zig's absent stack probes would not. Neither is a gap someone
 should close without new evidence.

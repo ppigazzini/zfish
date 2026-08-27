@@ -285,7 +285,6 @@ pub fn register(ctx: Context) void {
         "src/engine/state/limits_type.zig",
         "src/engine/eval/nnue_acc_rowops.zig",
         "src/engine/eval/nnue_refresh_cache.zig",
-        "src/platform/memory.zig",
         "src/platform/clock.zig",
         "src/platform/numa.zig",
         "src/engine/state/tt_types.zig",
@@ -328,7 +327,7 @@ pub fn register(ctx: Context) void {
         "search_setup",      "fen_parse",        "search_ctx",           "repetition",
         "state_setup",       "worker_layout",    "move_do",              "nnue_accumulator",
         "engine_object",     "engine_nnue",      "shared_history",       "history",
-        "worker_construct",  "headless_search",
+        "worker_construct",  "headless_search",  "memory",
     };
     for (module_unit_test_names) |name| {
         const spec_path = blk: {
