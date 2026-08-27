@@ -526,21 +526,29 @@ require it to go green again. One representative mutant rather than a mutant set
 competent-programmer hypothesis is what makes a single mutation worth gating on.
 
 ```
-  ok    signature    razor margin 483->484                        red (1)
+  ok    signature    razor margin 482->483                        red (1)
   ok    perft        movegen omits knight under-promotion         red (1)
   ok    misc         d renders checkers one file off              red (1)
   ok    docs-lint    a doc names a path that is not in the tree   red (1)
   ok    parity-async an idle `stop` answers with a bestmove       red (1)
   ok    lane-coverage a job runs zig one step above its install    red (1)
-negative-control: 6 of 6 gate(s) detected their mutation, tree restored and green
+  ok    parity-malformed the tablebase shift-width refusal is removed red (1)
+  ok    liveness     a movetime of zero stops bounding the search red (1)
+  ok    type-refusal NodeKind regains the fourth variant it forbids red (1)
+  ok    test         a large-page arena is never given back       red (1)
+negative-control: 10 of 10 gate(s) detected their mutation, tree restored and green
 ```
 
-The six are one per *instrument class*, not one per gate: the anchor (a value differential),
-the specified oracle (`perft`, whose reference is a fact about chess and cannot be re-blessed),
-a characterization golden over a print path, a structural lint, a protocol invariant with no
-reference at all, and a lint whose subject is the CI configuration rather than the engine —
-its mutant is the only one that never touches `src/`. Another gate in a class already covered
-would add a rebuild and prove little; a new class earns a row.
+The ten are one per *instrument class*, not one per gate: the anchor (a value differential);
+the specified oracle (`perft`, whose reference is a fact about chess and cannot be re-blessed);
+a characterization golden over a print path; a structural lint; a protocol invariant with no
+reference at all; a lint whose subject is the CI configuration rather than the engine — its
+mutant is the only one that never touches `src/`; a hostile-input battery, whose mutant removes
+a bound on bytes the engine did not write; a hang gate, whose mutant produces no wrong output
+at all, only a search that never ends; a type gate, whose mutant widens a DOMAIN and so moves
+no value anywhere; and an arena-lifecycle row, whose mutant leaks memory **neither leak checker
+can see**. Another gate in a class already covered would add a rebuild and prove little; a new
+class earns a row.
 
 The last two are worth reading together, because both are gaps a value gate cannot express and
 one of them was opened by a change in this tree. `type-refusal`'s mutant adds an unused enum
