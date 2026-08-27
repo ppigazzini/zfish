@@ -18,6 +18,7 @@ pub const ModuleSpec = struct { name: []const u8, path: []const u8 };
 pub const specs = [_]ModuleSpec{
     .{ .name = "libc", .path = "src/platform/libc.zig" },
     .{ .name = "memory", .path = "src/platform/memory.zig" },
+    .{ .name = "os_path", .path = "src/platform/os_path.zig" },
     .{ .name = "tablebase", .path = "src/platform/tablebase.zig" },
     .{ .name = "clock", .path = "src/platform/clock.zig" },
     .{ .name = "uci_output", .path = "src/shell/uci_output.zig" },
@@ -477,6 +478,7 @@ pub const edges = [_]Edge{
     .{ .from = "thread", .imp = "thread_runtime", .to = "thread_runtime" },
     .{ .from = "misc", .imp = "memory", .to = "memory" },
     .{ .from = "memory", .imp = "thread_runtime", .to = "thread_runtime" },
+    .{ .from = "option", .imp = "os_path", .to = "os_path" },
     .{ .from = "tt", .imp = "worker_layout", .to = "worker_layout" },
     .{ .from = "tt", .imp = "thread_ops", .to = "thread_ops" },
     .{ .from = "thread", .imp = "worker_layout", .to = "worker_layout" },

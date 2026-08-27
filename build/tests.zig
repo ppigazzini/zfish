@@ -293,7 +293,6 @@ pub fn register(ctx: Context) void {
         "src/engine/board/bitboard_geom.zig",
         "src/engine/search/search_values.zig",
         "src/shell/option_parse.zig",
-        "src/shell/option_model.zig",
         "tools/native_arch.zig",
         "tools/fetch_net.zig",
         // The parity harness's pure half: the info/bestmove parse and the field diff. The
@@ -327,7 +326,7 @@ pub fn register(ctx: Context) void {
         "search_setup",      "fen_parse",        "search_ctx",           "repetition",
         "state_setup",       "worker_layout",    "move_do",              "nnue_accumulator",
         "engine_object",     "engine_nnue",      "shared_history",       "history",
-        "worker_construct",  "headless_search",  "memory",
+        "worker_construct",  "headless_search",  "memory",               "os_path",
     };
     for (module_unit_test_names) |name| {
         const spec_path = blk: {
@@ -378,6 +377,7 @@ pub fn register(ctx: Context) void {
         .{ .path = "src/engine/search/movepick_score.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types", "shared_history_types" } },
         .{ .path = "src/engine/search/movepick_sort_avx512.zig", .deps = &.{ "bitboard", "movegen", "position_snapshot", "position_types", "shared_history_types" } },
         .{ .path = "src/engine/search/search_control.zig", .deps = &.{ "time_source", "search_ctx", "search_types" } },
+        .{ .path = "src/shell/option_model.zig", .deps = &.{"os_path"} },
         .{ .path = "src/shell/engine/control.zig", .deps = &.{ "libc", "worker_layout", "engine_object", "tt", "thread", "option", "tablebase", "engine_nnue" } },
     }) |dt| {
         const t = b.addTest(.{
