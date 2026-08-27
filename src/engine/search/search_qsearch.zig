@@ -326,7 +326,8 @@ pub fn qsearchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, a
     if (!qIsDecisive(best_value) and best_value > beta)
         best_value = search.qsearchFailHighBlend(best_value, beta);
 
-    // Save to the transposition table.
+    // Step 10. Save to the transposition table. The static eval is stored as it was BEFORE
+    // correction history adjusted it.
     tt.entrySave(writer, pos_key, search.valueToTt(best_value, ss.ply), @intFromBool(pv_hit), if (best_value >= beta) q_bound_lower else q_bound_upper, q_depth_qs, q_depth_none, best_move, unadjusted_static_eval, ctx.generation);
 
     return best_value;

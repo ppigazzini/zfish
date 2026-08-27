@@ -4,8 +4,8 @@
 // header for the full rationale; `zig build arch-report` lists this SCC as KNOWN so a
 // NEW one cannot hide behind it. Do not break this cycle.
 //
-// Run the move loop + node finalization (Steps 13-21) of searchImpl. Take the
-// pre-loop node state as an anytype `nd` struct (Steps 1-12 invariants); the
+// Run the move loop + node finalization (Steps 14-24) of searchImpl. Take the
+// pre-loop node state as an anytype `nd` struct (Steps 1-13 invariants); the
 // loop's mutable running state + scratch are local here. Recurse into
 // search_main.searchImpl for child nodes.
 
@@ -144,7 +144,7 @@ pub inline fn runBack(nd: anytype) i32 {
         .ply = nd.ss.ply,
     };
 
-    // Gather the pawn-history row Step 14 reads once: the make/unmake pair restores
+    // Gather the pawn-history row Step 15 reads once: the make/unmake pair restores
     // nd.pos.st before every iteration, so the row is loop-invariant. Upstream
     // recomputes pawn_entry(pos) per move; the value is the same.
     const pawn_row = pawnEntryRow(sharedOf(nd.w), nd.pos);
@@ -156,7 +156,7 @@ pub inline fn runBack(nd: anytype) i32 {
     var captures_searched: [32]u16 = undefined;
     var n_captures: usize = 0;
 
-    // Step 13. Loop over moves.
+    // Step 14. Loop over moves.
     while (true) {
         const move = movepick.nextMove(&mp_state, &mp_ctx);
         if (move == 0) break;
@@ -182,7 +182,7 @@ pub inline fn runBack(nd: anytype) i32 {
         var r = reductionAcc(nd.ctx, nd.improving, depth, move_count, window_term);
         if (nd.ss.tt_pv) r += 929;
 
-        // Step 14. Prune at shallow depth.
+        // Step 15. Prune at shallow depth.
         if (!nd.root_node and nd.pos.st.non_pawn_material[nd.us] != 0 and !qIsLoss(best_value)) {
             if (move_count >= search.moveCountLimit(depth, nd.improving)) mp_state.skip_quiets = 1;
             var lmr_depth = new_depth - @divTrunc(r, 1024);
@@ -214,7 +214,7 @@ pub inline fn runBack(nd: anytype) i32 {
             }
         }
 
-        // Step 15. Extend (singular).
+        // Step 16. Extend (singular).
         if (!nd.root_node and move == nd.tt_move and nd.excluded_move == 0 and depth >= 6 + @as(i32, @intFromBool(nd.ss.tt_pv)) and
             qIsValid(nd.tt_value) and !qIsDecisive(nd.tt_value) and (nd.tt_bound & q_bound_lower) != 0 and
             nd.tt_depth >= depth - 3 and !isShuffling(nd.pos_ptr, nd.ss_ptr, move))
@@ -248,7 +248,7 @@ pub inline fn runBack(nd: anytype) i32 {
 
         const node_count: u64 = if (nd.root_node) nd.ctx.nodes.* else 0;
 
-        // Step 16. Make the move.
+        // Step 17. Make the move.
         doMoveAcc(nd.ctx, nd.pos_ptr, move, st, @intFromBool(gc), nd.ss_ptr);
         new_depth += extension;
 
@@ -274,7 +274,7 @@ pub inline fn runBack(nd: anytype) i32 {
         if (!capture and !qIsDecisive(alpha)) r += search.lmrLooseAlphaReduction(alpha, nd.eval);
         if (nd.all_node) r += search.lmrAllNodeScale(r, depth);
 
-        // Step 17/18. Run the LMR + full-depth search.
+        // Step 18/19. Run the LMR + full-depth search.
         if (depth >= 2 and move_count > 1) {
             const d = @max(@as(i32, 1), @min(new_depth - @divTrunc(r, 1024), new_depth + 2)) + @as(i32, @intFromBool(nd.pv_node));
             nd.ss.reduction = new_depth - d;
@@ -293,6 +293,7 @@ pub inline fn runBack(nd: anytype) i32 {
             value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, new_depth - @as(i32, @intFromBool(r > 5234)) - @as(i32, @intFromBool(r > 5487 and new_depth > 2)), !nd.cut_node, .non_pv);
         }
 
+        // Step 20. Search a PV node's first move, or one that just failed high, in full.
         if (nd.pv_node and (move_count == 1 or value > alpha)) {
             ssAdd(nd.ss, 1).pv = &pv;
             pvClear(&pv);
@@ -301,10 +302,10 @@ pub inline fn runBack(nd: anytype) i32 {
             value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -nd.beta, -alpha, new_depth, false, .pv);
         }
 
-        // Step 19. Undo move.
+        // Step 21. Undo move.
         undoMoveAcc(nd.ctx, nd.pos_ptr, move);
 
-        // Step 20. Check for a new best move.
+        // Step 22. Check for a new best move.
         if (searchStopped(nd.ctx)) return q_value_draw;
 
         if (nd.root_node) {
@@ -350,7 +351,7 @@ pub inline fn runBack(nd: anytype) i32 {
         }
     }
 
-    // Step 21. Adjust for mate / stalemate / fail-high.
+    // Step 23. Adjust for mate / stalemate / fail-high.
     if (best_value >= nd.beta and !qIsDecisive(best_value) and !qIsDecisive(alpha))
         best_value = @divTrunc(best_value * depth + nd.beta, depth + 1);
 
@@ -378,6 +379,8 @@ pub inline fn runBack(nd: anytype) i32 {
 
     if (best_value <= alpha) nd.ss.tt_pv = nd.ss.tt_pv or nd.ss1.tt_pv;
 
+    // Step 24. Write what was gathered to the transposition table. The static eval is stored
+    // as it was BEFORE correction history.
     if (nd.excluded_move == 0 and !(nd.root_node and nd.ctx.pv_idx.* != 0)) {
         const bound: u8 = if (best_value >= nd.beta) q_bound_lower else if (nd.pv_node and best_move != 0) q_bound_exact else q_bound_upper;
         const wdepth: i32 = if (move_count != 0) depth else @min(q_max_ply - 1, depth + 6);

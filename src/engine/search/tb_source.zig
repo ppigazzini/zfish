@@ -44,7 +44,7 @@ pub var maxCardinality: *const fn () usize = &noTablebases;
 /// failure: silent — `available = 0`, the encoding for "no result", which is the
 /// honest answer when no tablebases exist. Callers already handle it.
 pub var probeFen: *const fn (fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult = &unavailable;
-/// Probe the WDL in-search on the live search Position (Step 6); `available == 0` means FAIL/no result.
+/// Probe the WDL in-search on the live search Position (Step 7); `available == 0` means FAIL/no result.
 /// Do/undo on `pos` for the capture recursion and restore it exactly.
 /// failure: silent — `available = 0` (FAIL), the same "no result" the real prober
 /// returns for an uncovered position. Correct with no tablebases loaded.

@@ -111,7 +111,7 @@ pub fn valueFromTt(v: i32, ply: i32, r50c: i32) i32 {
     return v;
 }
 
-// Look up the futility pruning cutoff depth (Step 8). The depth condition is what finds
+// Look up the futility pruning cutoff depth (Step 9). The depth condition is what finds
 // mates, so it is not tunable: the LUT holds the thresholds where
 //     depth = 13 + int(0.5 + 6 / (1 + pow(abs(eval) + abs(beta), 3) / 50'000'000'000))
 // steps down, so a bigger score on either side of the window prunes shallower and leaves
@@ -141,7 +141,7 @@ fn absInt(v: i32) i32 {
     return if (v < 0) -v else v;
 }
 
-// Prune child-node futility (Step 8): futilityMult = min(45 + depth*4, 85).
+// Prune child-node futility (Step 9): futilityMult = min(45 + depth*4, 85).
 pub fn futilityMargin(
     depth: i32,
     tt_hit: bool,
@@ -244,7 +244,7 @@ pub fn moveCountLimit(depth: i32, improving: bool) i32 {
     return @divTrunc(3 + depth * depth, 2 - @as(i32, @intFromBool(improving)));
 }
 
-// Compute the Step 11 ProbCut beta thresholds (shallow probcut and the deep TT cutoff).
+// Compute the Step 12 ProbCut beta thresholds (shallow probcut and the deep TT cutoff).
 pub fn probCutBeta(beta: i32, improving: bool) i32 {
     return beta + 241 - 64 * @as(i32, @intFromBool(improving));
 }
@@ -253,7 +253,7 @@ pub fn probCutBetaDeep(beta: i32) i32 {
     return beta + 428;
 }
 
-// Prune with the null move (Step 9): static-eval cutoff threshold, dynamic reduction R,
+// Prune with the null move (Step 10): static-eval cutoff threshold, dynamic reduction R,
 // and the verification-search nmpMinPly.
 pub fn nullMoveThreshold(beta: i32, depth: i32, improving: bool) i32 {
     return beta - 13 * depth - 47 * @as(i32, @intFromBool(improving)) + 365;
@@ -267,7 +267,7 @@ pub fn nullMoveReduction(depth: i32, static_eval: i32, beta: i32) i32 {
     return 7 + @divTrunc(depth, 3) + @max(@divTrunc(static_eval - beta, 256), 0);
 }
 
-// Gate Step 9 on beta being outside the decisive range. This margin is stricter
+// Gate Step 10 on beta being outside the decisive range. This margin is stricter
 // than `!is_loss(beta)` so that the static-eval-scaled reduction above cannot
 // cost a mate find.
 pub fn nullMoveBetaOk(beta: i32) bool {
@@ -278,7 +278,7 @@ pub fn nmpMinPly(ply: i32, depth: i32, r: i32) i32 {
     return ply + @divTrunc(3 * (depth - r), 4);
 }
 
-// Compute the Step 7 razoring threshold subtracted from alpha (search()).
+// Compute the Step 8 razoring threshold subtracted from alpha (search()).
 pub fn razorMargin(depth: i32) i32 {
     return 482 * depth * depth;
 }
@@ -356,7 +356,7 @@ test "toCorrectedStaticEval: correction is a >>17 add, then clamp" {
     try std.testing.expectEqual(@as(i32, 300), toCorrectedStaticEval(300, 131071)); // <131072 -> +0
 }
 
-// Pin the two Step 9 / Step 15 margins at the boundaries their formulas turn on. Both are
+// Pin the two Step 10 / Step 16 margins at the boundaries their formulas turn on. Both are
 // pure integer functions carrying upstream's tuned constants, and until now the only thing
 // holding either was the bench node count -- which moves when they move, but cannot say
 // WHICH term moved, and cannot tell a transcription slip from an intended retune at all.

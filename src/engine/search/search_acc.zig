@@ -69,7 +69,7 @@ pub inline fn reductionAcc(ctx: *const QCtx, i: bool, d: i32, mn: i32, window_te
 // It is CARRIED across the move loop rather than recomputed per move. `root_delta` is fixed
 // for the whole search (search_id_loop writes it once per aspiration iteration) and `beta`
 // does not move inside a node, so the quotient can change only where `alpha` is raised --
-// the single assignment in step 20. At a non-PV node `alpha` is pinned to `beta - 1` and
+// the single assignment in step 22. At a non-PV node `alpha` is pinned to `beta - 1` and
 // cannot be raised at all, so there the divide ran once per move to produce the same
 // constant every time. This is a hardware integer division, on a divider that is not
 // pipelined.

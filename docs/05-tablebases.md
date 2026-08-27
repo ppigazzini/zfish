@@ -37,7 +37,7 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | `src/platform/syzygy/wdl.zig` | the algorithm: `probeTable`, `searchWdl`, `probeDtz`, and the two probe surfaces `probeFen` / `probeWdlPos` |
 | **engine** | |
 | `src/engine/search/tb_source.zig` | the seam: `ProbeResult`, `maxCardinality`, `probeFen`, `probeWdlPos` |
-| `src/engine/search/search_main.zig` | Step 6 — the in-search WDL probe and its score/bound handling |
+| `src/engine/search/search_main.zig` | Step 7 — the in-search WDL probe and its score/bound handling |
 | `src/engine/state/tb_config.zig` | `TbConfig` — the std-only leaf both the Worker layout and the root-move builder name |
 | `src/engine/search/root_move_build.zig` | `loadTbConfig`, the root DTZ/WDL ranking, and the ranked `RootMoves` array |
 | `src/engine/search/search_values.zig` | `value_tb`, `value_tb_win` — the TB score band |
@@ -70,7 +70,7 @@ them as two distinct tables on one `TBTable`:
 
 The two answer different questions, and the engine uses each where it needs that answer:
 
-- **In-search (`search_main.zig`, Step 6)** probes **WDL only**. Inside the tree the
+- **In-search (`search_main.zig`, Step 7)** probes **WDL only**. Inside the tree the
   search needs a value and a bound, not a move — WDL supplies both.
 - **At the root (`root_move_build.zig`)** probes **DTZ first**. Ranking root moves
   requires *progress*, not just the result: every winning move is a win, so WDL cannot
@@ -298,13 +298,13 @@ Two surfaces are exported:
 | Surface | Used by | Behaviour |
 | --- | --- | --- |
 | `probeFen(fen, len, chess960)` | root ranking, the `d` command | builds a scratch `Position` from the FEN, runs `searchWdl(pos, storage, false)` then `probeDtz`, returns both |
-| `probeWdlPos(pos)` | in-search Step 6 | probes WDL on the **live** search `Position` — no FEN round-trip. `doMoveState` touches only the board + `StateInfo`, never the NNUE accumulator stack, so search/eval state is intact on return |
+| `probeWdlPos(pos)` | in-search Step 7 | probes WDL on the **live** search `Position` — no FEN round-trip. `doMoveState` touches only the board + `StateInfo`, never the NNUE accumulator stack, so search/eval state is intact on return |
 
 Both early-out to `available = 0` when `registry.ready()` is false (no path set).
 
 ## Search integration
 
-### In-search: Step 6 (`search_main.zig`)
+### In-search: Step 7 (`search_main.zig`)
 
 Attempted for non-root, non-excluded nodes, gated on the worker's `tb_config`:
 
@@ -328,7 +328,7 @@ raises `best_value` / `alpha`; an upper bound caps `max_value`.
 
 `loadTbConfig` builds `TbConfig` from the options, then clamps `cardinality` to
 `tb_source.maxCardinality()` — and, when clamped, zeroes `probe_depth`. Cardinality is
-**not** zeroed for a root larger than the tables: it stays so Step 6 still probes smaller
+**not** zeroed for a root larger than the tables: it stays so Step 7 still probes smaller
 in-tree positions.
 
 `buildRootMoves` ranks the root moves only when the root itself fits
@@ -379,7 +379,7 @@ lines, probing through `probeFen` when the position has no castling rights and f
 | Option | Type | Default | Effect |
 | --- | --- | --- | --- |
 | `SyzygyPath` | string | *(empty)* | the search path; setting it runs `tablebase.init` and prints the load report. Empty ⇒ `maxCardinality() == 0` ⇒ never probe |
-| `SyzygyProbeDepth` | spin 1..100 | 1 | minimum depth for the Step 6 probe when `pieces == cardinality`; forced to 0 when cardinality is clamped to `maxCardinality` |
+| `SyzygyProbeDepth` | spin 1..100 | 1 | minimum depth for the Step 7 probe when `pieces == cardinality`; forced to 0 when cardinality is clamped to `maxCardinality` |
 | `SyzygyProbeLimit` | spin 0..7 | 7 | the requested cardinality, clamped down to what was discovered |
 | `Syzygy50MoveRule` | check | true | when true, a cursed win / blessed loss scores as a draw (`draw_score = 1`) and the root ranking bounds shift accordingly |
 
@@ -463,7 +463,7 @@ The gates live in `tools/parity/golden_tb.zig`, each diffed against a golden in 
 | `tb-wdl` | `tools/tb_wdl.golden` | the `d`-command `Tablebases WDL: N (state)` line == oracle over a curated 3-man battery: all five piece types, win/loss/draw, white/black to move, the pawn and blackStronger (lead pawn is black) flip paths, and the `searchWdl` capture recursion (the lone king captures into a KvK draw). |
 | `tb-dtz` | `tools/tb_dtz.golden` | the same battery, pinning the `Tablebases DTZ:` line — including the `change_stm` 1-ply path via KQvK with black to move. |
 | `tb-root` | `tools/tb_root.golden` | root DTZ ranking: `go` on a TB win, pinning the emitted **score** and **tbhits** == oracle. Deliberately *not* pinned: the bestmove and node count — the oracle early-returns on a `root_in_tb` decisive win while zfish still searches, so among equally-optimal TB moves it may pick a different (also winning) one; gating that would be fake parity. |
-| `tb-search` | `tools/tb_search.golden` | the in-search Step 6 probe: bench one 4-man position per file (each bigger than the 3-man tables, so the root searches normally and Step 6 fires at the 3-man nodes captures reach), pinning the node count **with** `SyzygyPath` and **without** — both == oracle. Bit-exact node-count parity for the in-tree probe. |
+| `tb-search` | `tools/tb_search.golden` | the in-search Step 7 probe: bench one 4-man position per file (each bigger than the 3-man tables, so the root searches normally and Step 7 fires at the 3-man nodes captures reach), pinning the node count **with** `SyzygyPath` and **without** — both == oracle. Bit-exact node-count parity for the in-tree probe. |
 | `tb-cursed` | `tools/tb_cursed.golden` | **local-only**: cursed-win / blessed-loss WDL+DTZ on real DTZ>100 positions, exercising the cursed branches of `mapScoreDtz` and `probeDtz`. Needs ~40 MB of 5-man tables staged into `resources/syzygy5/`, which the 3-man CI set never contains, so it is not in the `parity` aggregate (see the `tb-cursed` step in `build.zig` for the fetch). |
 
 `tb-init`, `tb-wdl`, `tb-dtz`, `tb-root`, and `tb-search` are all wired into the `parity`
