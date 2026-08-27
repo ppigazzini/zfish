@@ -2,7 +2,7 @@
 //
 // Form the file graph's only import cycle (searchImpl <-> runBack), and treat it as
 // not a layering defect to be fixed: it IS the alpha-beta recursion. searchImpl runs
-// a node's Steps 1-12, hands the node state to search_back's move loop (Steps 13-21),
+// a node's Steps 1-13, hands the node state to search_back's move loop (Steps 14-24),
 // and that loop recurses back into searchImpl for each child. Read the cycle as the
 // algorithm; splitting the file did not split the recursion. Per Lakos, answer a
 // legitimate cycle by NAMING the component, not breaking it -- so do not "fix"
@@ -257,7 +257,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     if (prior_reduction >= 3 and !opponent_worsening) depth += 1;
     if (prior_reduction >= 2 and depth >= 2 and ss.static_eval + ss1.static_eval > 166) depth -= 1;
 
-    // Cut off early on the TT (non-PV).
+    // Step 6. Cut off early on the TT (non-PV).
     if (!pv_node and excluded_move == 0 and tt_depth > depth - @as(i32, @intFromBool(tt_value <= beta)) and
         qIsValid(tt_value) and (tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0 and
         (cut_node == (tt_value >= beta) or depth > 4))
@@ -290,7 +290,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         tt.entryPenalize(writer, 1);
     }
 
-    // Step 6. Probe the tablebases. Port SF search.cpp faithfully: probe the WDL of the current
+    // Step 7. Probe the tablebases. Port SF search.cpp faithfully: probe the WDL of the current
     // (non-root, non-excluded) position when it is small enough, has a zeroed rule50 counter, and
     // no castling rights; on success score it in the VALUE_TB..VALUE_TB_WIN range and cut/adjust.
     // Gate on the worker's tb_config.cardinality, which is 0 without a SyzygyPath, so a default
@@ -353,11 +353,11 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             }
         }
 
-        // Step 7. Apply razoring.
+        // Step 8. Apply razoring.
         if (!pv_node and eval < alpha - search.razorMargin(depth))
             return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha, beta, .non_pv);
 
-        // Step 8. Prune by futility, below a cutoff depth that shrinks as the scores grow.
+        // Step 9. Prune by futility, below a cutoff depth that shrinks as the scores grow.
         if (!ss.tt_pv and eval >= beta and (tt_move == 0 or tt_capture) and !qIsLoss(beta) and !qIsWin(eval) and
             depth < search.futilityDepth(eval, beta))
         {
@@ -365,7 +365,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             if (eval - fm >= beta) return search.futilityReturn(beta, eval);
         }
 
-        // Step 9. Search the null move.
+        // Step 10. Search the null move.
         if (cut_node and ss.static_eval >= search.nullMoveThreshold(beta, depth, improving) and
             excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= ctx.nmp_min_ply.* and search.nullMoveBetaOk(beta))
         {
@@ -389,10 +389,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
 
         if (ss.static_eval >= beta) improving = true;
 
-        // Step 10. Apply internal iterative reductions.
+        // Step 11. Apply internal iterative reductions.
         if (!ss.follow_pv and !all_node and depth >= 6 and tt_move == 0) depth -= 1; // upstream b1053e60b: drop priorReduction<=3
 
-        // Step 11. Run ProbCut.
+        // Step 12. Run ProbCut.
         const probcut_beta = search.probCutBeta(beta, improving);
         if (depth >= 3 and !qIsDecisive(beta) and !(qIsValid(tt_value) and tt_value < probcut_beta)) {
             var pc_state = movepick.MovePickerState{
@@ -436,7 +436,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     }
 
     // moves_loop:
-    // Step 12. Apply the deep-probcut TT idea.
+    // Step 13. Apply the deep-probcut TT idea.
     const probcut_beta2 = search.probCutBetaDeep(beta);
     if ((tt_bound & q_bound_lower) != 0 and tt_depth >= depth - 4 and tt_value >= probcut_beta2 and
         !qIsDecisive(beta) and qIsValid(tt_value) and !qIsDecisive(tt_value)) return probcut_beta2;
@@ -470,7 +470,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         .improving = improving,
         .unadjusted_static_eval = unadjusted_static_eval,
         // Carry the TT-refined `eval`, not ss.static_eval: step 6 replaces it with a
-        // ttValue that beat it, and step 17's reduction reads the refined one.
+        // ttValue that beat it, and step 18's reduction reads the refined one.
         .eval = eval,
         .writer = writer,
         .pos_key = pos_key,

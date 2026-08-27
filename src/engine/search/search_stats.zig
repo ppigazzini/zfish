@@ -52,7 +52,7 @@ pub fn priorPawnhistScale(scaled_bonus: i32) i32 {
     return @divTrunc(scaled_bonus * 324, 8192);
 }
 
-// Assemble the Step 17 LMR stat-score (search()). The caller reads the relevant
+// Assemble the Step 18 LMR stat-score (search()). The caller reads the relevant
 // history-table entries and passes their values; this owns the tuned weighting.
 // Capture: 873*pieceValue/128 plus capture history. Quiet: a weighted sum of main and the
 // two continuation-history entries, scaled by 1024.
@@ -83,7 +83,7 @@ pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) 
     return @divTrunc(1061 * clamped, 1024);
 }
 
-// Compute the multi-cut correction-history bonus (Step 15): when the singular
+// Compute the multi-cut correction-history bonus (Step 16): when the singular
 // probe itself fails high above beta it has proven the static eval too low, so
 // nudge the correction tables by the scaled error. Clamp into
 // +/- CORRECTION_HISTORY_LIMIT/4 like every other correction bonus.

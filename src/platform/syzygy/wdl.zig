@@ -237,7 +237,7 @@ pub fn probeFen(fen_ptr: [*]const u8, fen_len: usize, chess960: u8) ProbeResult 
     };
 }
 
-// Probe WDL in-search: the search's Step 6 calls this on the LIVE search Position rather
+// Probe WDL in-search: the search's Step 7 calls this on the LIVE search Position rather
 // than round-tripping a FEN. searchWdl does do/undo on `pos` for its capture recursion and restores
 // it exactly (undoMove), and doMoveState touches only the board + StateInfo (never the NNUE
 // accumulator stack), so the search's position/eval state is intact on return. A persistent probe

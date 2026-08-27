@@ -224,7 +224,7 @@ boundaries. Three **observations** against a full bench, none of them an A/B abl
 So on bench the architecture costs **startup wiring**, not nps. It would cost the search
 if a hook sat on the per-node path un-throttled.
 
-**The limit — one seam does sit there, and no gate can see it.** `search_main`'s Step 6
+**The limit — one seam does sit there, and no gate can see it.** `search_main`'s Step 7
 tablebase probe calls `tb_source.probeWdlPos` through a hook, guarded by
 `worker.tb_config.cardinality != 0`. That is 0 without a `SyzygyPath`, so bench and every
 golden run with the call short-circuited — the coverage is a property of the *workload*,

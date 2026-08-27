@@ -186,7 +186,7 @@ fn loadTbConfig(pos: *const position_port.Position) TbConfig {
         config.probe_depth = 0;
     }
     // NOTE: SF does NOT zero cardinality for positions larger than the TB -- it keeps it so the
-    // in-search Step 6 probe fires at smaller (in-tree) positions. Whether the ROOT itself is
+    // in-search Step 7 probe fires at smaller (in-tree) positions. Whether the ROOT itself is
     // ranked is a separate `cardinality >= pieceCount && !castling` gate in buildRootMoves.
     return config;
 }
@@ -452,7 +452,7 @@ pub fn buildRootMoves(
     }
 
     // Rank the root moves only when the root fits the TB and cannot castle; otherwise search the
-    // root normally, keeping cardinality so Step 6 still probes smaller in-tree positions.
+    // root normally, keeping cardinality so Step 7 still probes smaller in-tree positions.
     // rankMovesAt ORs `pos.dtz_is_dtm()` into the rankDTZ passed here.
     const tb_config = try rankMovesAt(pos, root_fen, chess960, false, ranked_moves);
 

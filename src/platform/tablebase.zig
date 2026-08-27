@@ -27,7 +27,7 @@ pub const foundDtz = tables.foundDtz;
 // WDL/DTZ probe: parse the position's FEN, look up its material key in the registry, and return
 // the Syzygy WDL + DTZ. Report `available == 0` when no table serves the position.
 pub const probeFen = wdl.probeFen;
-// Probe WDL in-search on the live search Position (search Step 6).
+// Probe WDL in-search on the live search Position (search Step 7).
 pub const probeWdlPos = wdl.probeWdlPos;
 
 test {

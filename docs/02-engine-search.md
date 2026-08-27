@@ -25,7 +25,7 @@ function-pointer seams. For the zones and the module graph, see
 | `tb_extend_source.zig` | The seam the reporter calls to reach `tb_extend`; defaults to returning the PV unchanged |
 | `headless_search.zig` | An engine-zone-only "search this FEN at depth N" root: builds one worker, a one-thread pool, a small TT, and drives `iterativeDeepening` with no platform attached |
 | **Alpha-beta** | |
-| `search_main.zig` | `searchImpl` — a node's Steps 1–12: TT probe, the tablebase probe (Step 6, see [05-tablebases.md](05-tablebases.md)), static eval, razoring, futility, null move, IIR, ProbCut |
+| `search_main.zig` | `searchImpl` — a node's Steps 1–13: TT probe, TT cutoff, the tablebase probe (Step 7, see [05-tablebases.md](05-tablebases.md)), static eval, razoring, futility, null move, IIR, ProbCut |
 | `search_back.zig` | `runBack` — the move loop and node finalization, Steps 13–21: pruning, singular extensions, LMR, best-move update, TT store, correction-history update |
 | `search_qsearch.zig` | `qsearchImpl` plus the primitives shared with the main search: `pvUpdate`, `qCorrectionValue`, `adjustKey50`, `ssAdd`/`ssSub`, `posCapture`, `isShuffling` |
 | `search_control.zig` | `checkTime`, `rootUpdate`, `rootTtMove`, `rootInList`, `searchStopped`, `inLastIterPv` |
@@ -177,27 +177,28 @@ at `max_ply` for the follow-PV memory, which is upstream's
 
 ### The steps
 
-Upstream numbers a node's work Step 1–21 and the port keeps the numbering in comments, so
-a step is greppable across both trees. Steps 1–12 are `searchImpl`, 13–21 `runBack`.
+Upstream numbers a node's work Step 1–24 and the port keeps the numbering in comments, so
+a step is greppable across both trees. Steps 1–13 are `searchImpl`, 14–24 `runBack`.
 
 | Step | Does |
 | --- | --- |
 | 1–3 | Initialize the node; bail on an aborted search, an immediate draw, or `max_ply`; clamp `alpha`/`beta` by mate distance |
-| 4 | Probe the TT. A non-PV node cuts on a stored value whose bound covers the window and whose depth suffices |
+| 4 | Probe the TT |
 | 5 | Compute the static eval, correct it (below), and derive `improving` / `opponent_worsening` |
-| 6 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [05-tablebases.md](05-tablebases.md) |
-| 7 | **Razoring**: a non-PV node whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch |
-| 8 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(eval, beta)` — a cutoff that steps down from 19 to 13 as `abs(eval) + abs(beta)` grows, so mating lines stay searched |
-| 9 | **Null move** (below) |
-| 10 | **Internal iterative reduction**: with no TT move, off the PV, not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
-| 11–12 | **ProbCut**: a shallow search at a raised beta to prove a capture refutes the node; then the deep-ProbCut TT idea |
-| 13 | The move loop — `movepick.nextMove` per move (below) |
-| 14 | Prune at shallow depth: late-move, futility, SEE and history pruning per move |
-| 15 | **Singular extension**: re-search excluding the TT move to test whether it is the only move that holds; a probe that instead fails high over beta multi-cuts the node (below) |
-| 16–19 | Make, search (LMR then full-depth on a fail-high), unmake |
-| 20–21 | Record a new best move; resolve mate/stalemate and the fail-high bookkeeping |
+| 6 | Cut off early at a non-PV node on a stored value whose bound covers the window and whose depth suffices; a window-bound mismatch that was the cutoff's only obstacle penalizes the now-useless entry instead |
+| 7 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [05-tablebases.md](05-tablebases.md) |
+| 8 | **Razoring**: a non-PV node whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch |
+| 9 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(eval, beta)` — a cutoff that steps down from 19 to 13 as `abs(eval) + abs(beta)` grows, so mating lines stay searched |
+| 10 | **Null move** (below) |
+| 11 | **Internal iterative reduction**: with no TT move, off the PV, not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
+| 12–13 | **ProbCut**: a shallow search at a raised beta to prove a capture refutes the node; then the deep-ProbCut TT idea |
+| 14 | The move loop — `movepick.nextMove` per move (below) |
+| 15 | Prune at shallow depth: late-move, futility, SEE and history pruning per move |
+| 16 | **Singular extension**: re-search excluding the TT move to test whether it is the only move that holds; a probe that instead fails high over beta multi-cuts the node (below) |
+| 17–21 | Make; compute and apply LMR, then a full-depth search on a fail-high and a full-window PV search on the first move; unmake |
+| 22–24 | Record a new best move; resolve mate/stalemate and the fail-high bookkeeping; write the entry to the TT |
 
-**Null move** (Step 9) is the one step whose mechanics differ visibly from an ordinary
+**Null move** (Step 10) is the one step whose mechanics differ visibly from an ordinary
 child. It runs only on a cut-node whose static eval clears `nullMoveThreshold`, with no
 excluded move, with non-pawn material for the side to move, at or above
 `ctx.nmp_min_ply`, and with `nullMoveBetaOk(beta)` — a flat `beta >= -2000` floor rather
@@ -219,7 +220,7 @@ threads search different windows — and the window opens around the root move's
 `failed_high_cnt`; a fail high pushes `beta` up and increments it, and `adjusted_depth`
 sheds a ply per failed-high so a node that keeps failing high is not re-searched at full
 depth. `aspirationDeltaGrow` widens `delta` each time round. `root_delta` is republished
-every iteration because Step 14's pruning margins scale with the window width.
+every iteration because Step 15's pruning margins scale with the window width.
 
 ## Quiescence
 
@@ -228,7 +229,7 @@ the middle of a capture sequence. It is a **call-graph leaf**: it self-recurses 
 re-enters `searchImpl`, which is why the pair `searchImpl ↔ runBack` is the only file
 cycle in the tree. `searchImpl` enters it at `depth <= 0` and from razoring.
 
-Its own steps are numbered 1–9, and the shape differs from the main search in four ways
+Its own steps are numbered 1–10, and the shape differs from the main search in four ways
 that matter:
 
 - **One depth, not many.** Every qsearch node runs at the `depth_qs` sentinel, so the TT
@@ -375,7 +376,7 @@ continuation-correction entries and applies `search.correctionValue`;
 `updateCorrectionHistory` nudges all six back toward the observed search/static-eval
 delta — only when the node is not in check and the best move is not a capture.
 
-There are **two** writers, not one. The Step 15 multi-cut return (`search_back.zig`)
+There are **two** writers, not one. The Step 16 multi-cut return (`search_back.zig`)
 writes as well: when the singular probe fails high over beta the node returns
 immediately, and that return would otherwise discard a proof that the static eval was
 too low, so it nudges the same tables by `search.multiCutCorrectionBonus` first — again
@@ -554,7 +555,7 @@ See [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | --- | --- | --- |
 | `option_source.zig` | `MultiPV`, `Skill Level`, `UCI_Elo`, `UCI_LimitStrength`, `nodestime`, `Move Overhead`, `Ponder`, `UCI_ShowWDL`, the Syzygy settings | 0 / false — **search-affecting** |
 | `output_sink.zig` | every `info` and `bestmove` line | drop the line — **degraded**: right move, no answer |
-| `tb_source.zig` | Step 6's WDL probe, root ranking — see [05-tablebases.md](05-tablebases.md) | "no tablebases" — genuinely safe |
+| `tb_source.zig` | Step 7's WDL probe, root ranking — see [05-tablebases.md](05-tablebases.md) | "no tablebases" — genuinely safe |
 | `time_source.zig` | time management, elapsed, the skill RNG seed | a monotonic counter — safe, but in ticks |
 | `thread_ops.zig` | start/wait siblings, best-thread vote | single-threaded — **search-affecting** |
 
