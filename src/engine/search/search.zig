@@ -111,34 +111,24 @@ pub fn valueFromTt(v: i32, ply: i32, r50c: i32) i32 {
     return v;
 }
 
-// Look up the futility pruning cutoff depth (Step 9). The depth condition is what finds
-// mates, so it is not tunable: the LUT holds the thresholds where
-//     depth = 13 + int(0.5 + 6 / (1 + pow(abs(eval) + abs(beta), 3) / 50'000'000'000))
-// steps down, so a bigger score on either side of the window prunes shallower and leaves
-// the deep mating lines to be searched. The last entry is past any reachable
-// |eval| + |beta| and is what stops the walk.
-const futility_depth_lut = [7]i32{ 1657, 2555, 3294, 4122, 5314, 8194, 2 * value_inf };
-
-comptime {
-    // Prove the sentinel stops the walk rather than assuming it. The caller's `eval` is a
-    // corrected static eval OR a transposition value, so only `abs(eval) <= value_mate`
-    // holds -- the `!isWin(eval)` guard at the call site bounds the positive side alone --
-    // and `beta` is a window bound, so `abs(beta) <= value_inf`. The shipped build checks no
-    // array bound, and the walk would read PAST the table rather than fault: a value model
-    // that outgrew this would come back as a plausible depth, which the anchor cannot see.
-    if (futility_depth_lut[futility_depth_lut.len - 1] <= value_mate + value_inf)
-        @compileError("futility_depth_lut needs a sentinel above the largest reachable abs(eval) + abs(beta)");
-}
-
-pub fn futilityDepth(eval: i32, beta: i32) i32 {
-    const prob = absInt(eval) + absInt(beta);
-    var depth: usize = 0;
-    while (futility_depth_lut[depth] < prob) depth += 1;
-    return 19 - @as(i32, @intCast(depth));
+// Report whether the ROOT is already hunting a mate: at depth 16 or more with the current PV
+// line's score past 2000. The depth condition on Step 9 is what finds mates, so it is not
+// tunable -- but the question it was asked to answer, "is this line worth searching deep", is
+// answered better at the root than per node. A LUT over abs(eval) + abs(beta) used to step the
+// cutoff from 19 down to 13 (upstream fa8b6add); one root-level predicate that swaps 19 for 6
+// finds the same mates through a far smaller tree, and it is the same predicate that stops the
+// singular extension re-searching a line the root has already resolved.
+pub fn seekMate(root_depth: i32, root_move_score: i32) bool {
+    return root_depth >= 16 and absInt(root_move_score) >= 2000;
 }
 
 fn absInt(v: i32) i32 {
     return if (v < 0) -v else v;
+}
+
+// Bound Step 9's futility pruning: search to 6 while the root seeks a mate, 19 otherwise.
+pub fn futilityDepth(seek_mate: bool) i32 {
+    return if (seek_mate) 6 else 19;
 }
 
 // Prune child-node futility (Step 9): futilityMult = min(45 + depth*4, 85).
@@ -375,21 +365,23 @@ test "nullMoveReduction: the excess is measured from beta and steps every 256" {
     try std.testing.expectEqual(@as(i32, 10), nullMoveReduction(9, -5000, 0));
 }
 
-test "futilityDepth: 19 down to 13, and the extremes stay inside the table" {
-    // The steps themselves, read either side of each threshold.
-    try std.testing.expectEqual(@as(i32, 19), futilityDepth(0, 0));
-    try std.testing.expectEqual(@as(i32, 19), futilityDepth(1657, 0)); // the entry is the last <= it
-    try std.testing.expectEqual(@as(i32, 18), futilityDepth(1658, 0));
-    try std.testing.expectEqual(@as(i32, 13), futilityDepth(8195, 0));
+test "seekMate: both conditions bind, and the score is read by magnitude" {
+    // Each threshold, read either side of it.
+    try std.testing.expect(!seekMate(15, 2000));
+    try std.testing.expect(seekMate(16, 2000));
+    try std.testing.expect(!seekMate(16, 1999));
 
-    // The sign of either argument must not matter -- the walk keys off magnitudes.
-    try std.testing.expectEqual(futilityDepth(3000, -1000), futilityDepth(-3000, 1000));
+    // A root move being MATED counts the same as mating: the sign must not matter.
+    try std.testing.expect(seekMate(16, -2000));
+    try std.testing.expectEqual(seekMate(20, 3000), seekMate(20, -3000));
 
-    // Walk the worst input the call site can hand over: a mated transposition value against
-    // an infinite beta. Under ReleaseSafe this indexes the table and traps if the sentinel
-    // ever stops covering it, which is the half the shipped build cannot check for itself.
-    try std.testing.expectEqual(@as(i32, 13), futilityDepth(-value_mate, value_inf));
-    try std.testing.expectEqual(@as(i32, 13), futilityDepth(value_mate, -value_inf));
+    // A root move that has no score yet (-VALUE_INFINITE) reads as a mate hunt, which is
+    // upstream's behaviour: the first PV line is scored before depth ever reaches 16.
+    try std.testing.expect(seekMate(16, -value_inf));
+
+    // The two cutoffs Step 9 chooses between.
+    try std.testing.expectEqual(@as(i32, 19), futilityDepth(false));
+    try std.testing.expectEqual(@as(i32, 6), futilityDepth(true));
 }
 
 test "fillReductions: log-scaled, index 0 untouched, monotonic from 1" {
