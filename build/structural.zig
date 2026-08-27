@@ -227,6 +227,22 @@ pub fn registerUpstream(
     );
     upstream_map_step.dependOn(&upstream_map_cmd.step);
 
+    // Assert AUTHORS is still upstream's own file, byte for byte, at the pinned commit.
+    // It is a licence obligation carried as a verbatim copy, so "verbatim" is a claim a diff
+    // can settle -- and one nothing settled until it had drifted fifteen names over several
+    // syncs. Outside the parity aggregate for the same reason as upstream-map: it reads the
+    // pinned upstream tree from git objects a plain checkout of origin does not carry, and
+    // the weekly upstream-check workflow fetches them.
+    const authors_cmd = b.addSystemCommand(&.{
+        "bash",
+        repoPath(b, "tools/authors_lint.sh"),
+    });
+    const authors_step = b.step(
+        "authors-lint",
+        "attribution gate: AUTHORS must be upstream's file verbatim at the pinned commit",
+    );
+    authors_step.dependOn(&authors_cmd.step);
+
     // Diff node counts against the pristine oracle over a RANDOM WALK from the start
     // position, per depth. The bench anchor covers a fixed position list, so a port can
     // be nudged toward that number without becoming faithful; `upstream_nodes.sh` narrows

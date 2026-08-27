@@ -114,6 +114,26 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
+      - name: Check the AUTHORS attribution against the pinned upstream commit
+        # Runs here, not in the parity lane, for the same reason as the map audit above:
+        # it reads AUTHORS out of the pinned upstream tree, and only this job has fetched
+        # the upstream remote's objects. Through the STEP, for the same reason too.
+        run: |
+          if out="$(zig build authors-lint)"; then
+            status=0
+          else
+            status=$?
+          fi
+          echo "$out"
+          {
+            echo "## AUTHORS attribution"
+            echo ""
+            echo '```'
+            echo "$out"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
       # The random-walk fidelity gate. The bench anchor covers a FIXED position list, so
       # a port can be nudged toward that number without becoming faithful; this reaches
       # positions by playing random legal moves from the start, so they are in no bench
