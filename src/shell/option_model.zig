@@ -1,10 +1,12 @@
 // Own the UCI option data model in Zig, split out of option.zig: the option
 // kind/entry/outcome types, the OptionsModel store (add/setValue/getInt/render),
 // the name->callback-kind mapping, and the standard-option reference fixture.
-// Keep pure over std + the option_parse leaf (parseSignedInt / nameEquals); hold no global
-// state and no dependency on the facade, so option.zig imports it acyclically.
+// Keep pure over std, the option_parse leaf (parseSignedInt / nameEquals) and the os_path
+// path converter; hold no global state and no dependency on the facade, so option.zig
+// imports it acyclically.
 
 const std = @import("std");
+const os_path = @import("os_path");
 const testing = std.testing;
 const option_parse = @import("option_parse.zig");
 const parseSignedInt = option_parse.parseSignedInt;
@@ -163,6 +165,14 @@ pub const OptionsModel = struct {
 
         if (is_button) return try self.dup("");
         const normalized = if (is_string and std.mem.eql(u8, value, "<empty>")) "" else value;
+        // Store a STRING option as WTF-8. Every string option this engine has is a path
+        // (`EvalFile`, `SyzygyPath`, `Debug Log File`), and on Windows an old GUI sends one in
+        // the system ANSI code page -- which Zig's file APIs refuse with `error.BadPathName`
+        // before opening anything, so the net reads as missing on a path that exists
+        // (upstream 7d9276c6). Converting HERE rather than at each open is what makes one
+        // conversion cover all three: the model owns the storage, so no caller grows a
+        // lifetime. Off Windows, and for any value already valid WTF-8, this is `dup`.
+        if (is_string) return try os_path.toWtf8Alloc(self.allocator, normalized);
         return try self.dup(normalized);
     }
 

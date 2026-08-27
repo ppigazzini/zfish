@@ -17,6 +17,7 @@ For the zones and the module graph, see [00-architecture.md](00-architecture.md)
 | `search_thread.zig` | the `SearchThread` vehicle: worker handle, job submission, the search job |
 | `thread_vote.zig` | the Lazy-SMP vote picking the best thread's move |
 | `memory.zig` | the aligned / huge-page allocator (uninitialized blocks; safe-mode 0xAA poison) |
+| `os_path.zig` | `toWtf8Alloc` — a path the OS handed us, in the WTF-8 the file APIs take |
 | `numa.zig` | the NUMA topology surface (config, binding, execute-on-node) |
 | `numa/config.zig` | `NumaConfig`: nodes, CPU sets, the system topology, `toString`, thread distribution |
 | `numa/policy.zig` | `parse` — the `NumaPolicy` string reader, over `str_to_size_t`'s rule |
@@ -101,6 +102,23 @@ free as a definite leak only for allocations memcheck tracks, and it does not tr
 `mmap`, so a dropped `alignedLargePagesFree` no longer reddens it. `liveLargePageBlocks()`
 is what says so instead, and `memory.zig`'s own unit test drives the three size classes
 through alloc/free and requires the count back at zero.
+
+### Paths
+
+`os_path.toWtf8Alloc` owns upstream's `path_from_utf8`. On POSIX a path is bytes and it is a
+`dupe`. On Windows a path is UTF-16 and Zig's file APIs reach it by transcoding the WTF-8
+they are given, so a byte sequence that is not valid WTF-8 is refused with
+`error.BadPathName` before any file is opened — which is how an old GUI (Arena) sending an
+ANSI path in the system code page got the net reported as missing on a path that exists
+(upstream 7d9276c6). A path that fails WTF-8 validation is re-read through
+`MultiByteToWideChar(CP_ACP)`; one that fails to convert is handed back unchanged, so the
+fallback can never make an already-working path worse.
+
+`option_model.normalize` is the single caller, because every string option this engine has
+is a path (`EvalFile`, `SyzygyPath`, `Debug Log File`) and the model already owns the
+storage — converting there covers all three without any consumer growing a lifetime.
+Upstream instead converts at each open, which is the same set of paths reached one call
+site at a time.
 
 The engine never calls this directly — that would stop it being a standalone
 library. It declares the `page_alloc` seam (`src/engine/state/page_alloc.zig`) for
