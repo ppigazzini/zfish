@@ -12,7 +12,7 @@
 # identically. This script gates on exactly that: it benches both and REFUSES to report unless
 # the two node counts are equal. Do not paper over a mismatch by "just comparing anyway".
 #
-# The stubbed node count is NOT 2516158 and is not supposed to be -- a different eval is a
+# The stubbed node count is NOT 2497913 and is not supposed to be -- a different eval is a
 # different tree. The anchor does not apply here; the equality of the two sides is the anchor.
 #
 # Usage:  material_eval.sh [ARCH...]        # default: all four measured tiers

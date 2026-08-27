@@ -80,7 +80,7 @@ Each row below is a shipped fix with its own commit and its own reproduction; th
 zfish, and this table is what stops the next sync reading it as drift.
 
 Every one is Zone-A — reached only by a MALFORMED or sloppy input, or by a non-default option —
-so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 2516158 with all
+so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 2497913 with all
 three in place.
 
 | gate / row | zfish vs upstream | owner | expires when |
@@ -133,6 +133,18 @@ construct zfish does not have:
 | `a3a8372b` More nnue_accumulator.cpp cleanup | unifies the vector / RVV / scalar copies of every accumulator kernel behind a `Tile` value type with `load_tile`/`store_tile`/`apply`. Zig's `@Vector` means there are no scalar and RVV copies to unify, and the shape it converges on -- tile the accumulator, hold the tile in a register, walk the row lists INSIDE, store once -- is already what `nnue_acc_rowops` does for the combined, hybrid, refresh-fused and psqt kernels (`b0ee1440` and the fused-kernel work that followed). |
 | `ae3db60f` Align and collapse shared NNUE mappings | `shm_unix.h`. The same missing subsystem as `fd3c762f` above. |
 | `229f6339` Update Release Creation | a GitHub Actions release workflow. |
+| `bd85fb7f` Fix MSVC warning C4141 | moves `inline` into the `sf_always_inline` macro and drops it from every definition site, because `__forceinline` already implies it. Zig's `inline fn` is one keyword with one meaning; there is no pair of spellings to collide. |
+| `53804033` Fix valgrind harness for expected-failure tests | upstream's `tests/instrumented.py` treated `--error-exitcode=42` as the expected non-zero exit of a failure-path test and so masked its leak report. `tools/valgrind.sh` runs no expected-failure case: every session must exit 0, `--error-exitcode=99` is the only non-zero it names, and any other non-zero fails the gate by itself. The masking is not expressible. |
+| `7f73409c` Fix compile bug for Mac OS X 10.13.6 | `shm_unix.h` again -- `CMSG_SPACE()` is not a compile-time constant on some Unixes, so the message buffer becomes a vector. The same missing shared-memory subsystem as `fd3c762f` above. |
+| `81d2cee9` Cache qemu-user deb & syzygy in CI | GitHub Actions cache keys in upstream's matetrack / sanitizers / universal-compilation workflows. zfish's lanes fetch their own tablebases through `tools/fetch_tb.zig`. |
+| `d945b4d9` Update Top CPU Contributors | a text file. |
+
+The parts of `22dfb404` (*miscellaneous cleanups*) that did not need porting: `nodes[n].size() == 0`
+-> `empty()` and `threads.size() == 0` -> `empty()` name a C++ container idiom Zig has no
+second spelling for, and `upcoming_repetition`'s `int j` scoping -- pulling the declaration
+into the `if` so it stops outliving the loop -- is what `repetition.upcomingRepetition` already
+does with `var j = h1(move_key)` inside its own iteration. The `O_CLOEXEC`, the `is_inexact`
+rename and the step renumbering from that commit ARE ported, below.
 
 **Ported** — the real changes in these ranges. Skipping these silently is how a port
 stops being a port:
@@ -158,6 +170,13 @@ stops being a port:
 | `7c37212e` | the three weight-storage allocation sites name the byte count and exit(1) instead of `@panic` -- upstream's `report_failed_allocation` shape, and the shape this tree wants for a diagnosable refusal. |
 | `1b1b5f49` | `updatePieceThreats` takes its direct-threat set from the two ray sets `bothAttacks` already answered instead of re-sliding, and drops the redundant `& occupiedNoK` first pass. |
 | `5fd94536` | three Syzygy refusals the loader lacked: a cyclic btree (three-colour DFS), a non-canonical Huffman code, and a header whose Split/HasPawns bits disagree with the registry. **Deliberate divergence:** upstream now `exit(EXIT_FAILURE)`s on a corrupt table; zfish refuses the table and keeps playing, which is what `parity-malformed` gates. |
+| `3512dea6` | the diagnostic half of upstream's `pthread_create` check. Zig's `std.Thread.spawn` already returns a failed spawn and `thread_pool.set` propagates it, so the hang upstream fixes is not representable; what was missing is that every error in the resize chain arrived at one `@panic("OOM: thread pool resize failed")`. `SearchThread.spawn` now labels a failed start `error.ThreadSpawnFailed` and `resizeThreadsEngine` names which failure happened and exits 1. |
+| `22dfb404` | the vocabulary: `RootMove.inexact_lower` / `.inexact_upper` / `.isInexact()` / `.isExactLoss()` / `.unsetInexact()` (plus the reporter's mutual-exclusion assert), `O_CLOEXEC` on the Syzygy table open, and a node's step numbers renumbered to upstream's new 1-24. |
+| `7d9276c6` | `os_path.toWtf8Alloc` (a new `src/platform/` module) -- a path that fails WTF-8 validation is re-read through `MultiByteToWideChar(CP_ACP)`, so an old Windows GUI's ANSI path stops being refused with `error.BadPathName` before any file is opened. `option_model.normalize` is the single caller: every string option here is a path and the model owns the storage. The ANSI branch is compile-verified only. |
+| `598ae2c4` | `search.seekMate(root_depth, root_moves[pv_idx].score)` -- true at root depth >= 16 with the line scoring past 2000. Step 9's futility cutoff becomes 6 instead of 19 while it holds, and Step 16's singular extension stands down. `search.futilityDepth`'s six-threshold LUT (fa8b6add) goes with it. Bench 2502027. |
+| `19a02f44` | the tablebase PV extension's deadline: OFF under `nodestime` (its doMove calls never reach the global node counter, so aborting on wall time only made the reported PV nondeterministic), and the half-`Move Overhead` budget DIVIDED by MultiPV so N reported lines together stay inside the one budget a single line had. `>` becomes `>=`, and a budget already spent refuses before doing any work. |
+| `7ab49b9b` | `alignedLargePagesAlloc` goes straight to `mmap` on Linux instead of `posix_memalign`, because a glibc arena outlives the thread it was created for and a later thread on another NUMA node reuses it. `mmapHugeAligned` over-reserves by one alignment PROT_NONE and MAP_FIXEDs the real mapping onto the aligned base; a mutex-guarded base -> length registry is what `munmap` needs, and `liveLargePageBlocks()` restores the leak coverage memcheck loses when a block stops being a malloc. |
+| `2edd935b` | the optimism blend adds the net term OUTSIDE the division: `nnue + (nnue * material + optimism * 7675) / 91000`. The same rational number and a different integer -- the truncation now runs over a numerator smaller by `91000 * nnue`. Bench 2497913. |
 
 **They pay, and that is a separate measurement.** Ablating the hybrid step and the shared
 walk together (both routes off, same node count, so one tree with two amounts of work)

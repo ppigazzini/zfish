@@ -88,7 +88,7 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     // oracle takes the identical stub via tools/upstream/material_eval.patch, so both engines
     // score every position the same and search ONE tree -- tools/material_eval.sh gates on
     // that by refusing to report unless the two bench node counts match. Off by default and
-    // comptime, so the shipped binary is unchanged (the anchor still reads 2516158).
+    // comptime, so the shipped binary is unchanged (the anchor still reads 2497913).
     if (comptime build_options.stub_eval) {
         const pc = pos.piece_count;
         var w: [5]i32 = undefined;
