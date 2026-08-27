@@ -30,7 +30,7 @@ function-pointer seams. For the zones and the module graph, see
 | `search_qsearch.zig` | `qsearchImpl` plus the primitives shared with the main search: `pvUpdate`, `qCorrectionValue`, `adjustKey50`, `ssAdd`/`ssSub`, `posCapture`, `isShuffling` |
 | `search_control.zig` | `checkTime`, `rootUpdate`, `rootTtMove`, `rootInList`, `searchStopped`, `inLastIterPv` |
 | `search_acc.zig` | The per-node accumulator/do-move/eval primitives: `doMoveAcc`, `undoMoveAcc`, `evaluateAcc`, `reductionAcc`, `updateSelDepth` |
-| `search.zig` | The tuned formulas a node prunes and reduces by: margins (incl. `futilityDepth`), reductions, singular thresholds, aspiration deltas, `valueToTt`/`valueFromTt` |
+| `search.zig` | The tuned formulas a node prunes and reduces by: margins, reductions, singular thresholds, `seekMate`, aspiration deltas, `valueToTt`/`valueFromTt` |
 | `search_stats.zig` | The formulas written back to the tables afterwards: the stat bonus/malus and their per-table scales, the prior-countermove fan-out, the LMR stat-score weighting, `correctionValue` and the correction bonuses with the limit they are a quarter of. Path-imported by `search.zig`, which re-exports it, so callers still read these off `search` |
 | `search_common.zig` | Shared low-level helpers: `workerHistories`, `captureStage`, `moveIsOk`, the `statsUpdate` gravity update, capture-history indexing |
 | **Move ordering** | |
@@ -188,15 +188,24 @@ a step is greppable across both trees. Steps 1–13 are `searchImpl`, 14–24 `r
 | 6 | Cut off early at a non-PV node on a stored value whose bound covers the window and whose depth suffices; a window-bound mismatch that was the cutoff's only obstacle penalizes the now-useless entry instead |
 | 7 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [05-tablebases.md](05-tablebases.md) |
 | 8 | **Razoring**: a non-PV node whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch |
-| 9 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(eval, beta)` — a cutoff that steps down from 19 to 13 as `abs(eval) + abs(beta)` grows, so mating lines stay searched |
+| 9 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(seek_mate)` — 19 normally, 6 while `seekMate` holds, so mating lines stay searched |
 | 10 | **Null move** (below) |
 | 11 | **Internal iterative reduction**: with no TT move, off the PV, not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
 | 12–13 | **ProbCut**: a shallow search at a raised beta to prove a capture refutes the node; then the deep-ProbCut TT idea |
 | 14 | The move loop — `movepick.nextMove` per move (below) |
 | 15 | Prune at shallow depth: late-move, futility, SEE and history pruning per move |
-| 16 | **Singular extension**: re-search excluding the TT move to test whether it is the only move that holds; a probe that instead fails high over beta multi-cuts the node (below) |
+| 16 | **Singular extension**: re-search excluding the TT move to test whether it is the only move that holds; a probe that instead fails high over beta multi-cuts the node (below). Skipped while `seekMate` holds |
 | 17–21 | Make; compute and apply LMR, then a full-depth search on a fail-high and a full-window PV search on the first move; unmake |
 | 22–24 | Record a new best move; resolve mate/stalemate and the fail-high bookkeeping; write the entry to the TT |
+
+**`seekMate`** is the one predicate two steps share, and it is the only one read from the
+ROOT rather than from the node. `search.seekMate(root_depth, root_moves[pv_idx].score)`
+holds at root depth 16 or more once the line under examination scores past 2000 — a mate
+or a decisive win, in either direction. While it holds, Step 9's futility cutoff drops from
+depth 19 to 6 and Step 16's singular extension stands down entirely, so the tree stops
+re-proving the moves around a line the root has already resolved and collapses onto the
+line itself. The first PV line is scored before depth reaches 16, so an unscored root move
+(`-value_inf`) reading as a mate hunt is upstream's behaviour, not an edge case to guard.
 
 **Null move** (Step 10) is the one step whose mechanics differ visibly from an ordinary
 child. It runs only on a cut-node whose static eval clears `nullMoveThreshold`, with no

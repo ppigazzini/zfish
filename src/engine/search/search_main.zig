@@ -153,6 +153,14 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     // Dive into qsearch at depth 0.
     if (depth_in <= 0) return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha_in, beta_in, comptime kind.quiescent());
 
+    // Ask the ROOT, once per node, whether it is already hunting a mate. Steps 9 and 16 both
+    // read it: futility prunes to a much shallower depth and the singular extension stands
+    // down, so the tree collapses onto the mating line instead of re-proving the moves around
+    // it. Read AFTER the qsearch dive rather than beside the other node-kind constants where
+    // upstream declares it -- a leaf node returns before either reader, and this is two loads
+    // through ctx.
+    const seek_mate = search.seekMate(ctx.root_depth.*, ctx.root_moves[ctx.pv_idx.*].score);
+
     const w: *WorkerHistories = workerHistories(ctx.worker);
     const pos = pos_ptr;
     const ss = ss_ptr;
@@ -357,9 +365,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         if (!pv_node and eval < alpha - search.razorMargin(depth))
             return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha, beta, .non_pv);
 
-        // Step 9. Prune by futility, below a cutoff depth that shrinks as the scores grow.
-        if (!ss.tt_pv and eval >= beta and (tt_move == 0 or tt_capture) and !qIsLoss(beta) and !qIsWin(eval) and
-            depth < search.futilityDepth(eval, beta))
+        // Step 9. Prune by futility, below a cutoff depth that tightens while the root seeks
+        // a mate so the mating lines stay searched.
+        if (!ss.tt_pv and depth < search.futilityDepth(seek_mate) and eval >= beta and
+            (tt_move == 0 or tt_capture) and !qIsLoss(beta) and !qIsWin(eval))
         {
             const fm = search.futilityMargin(depth, ss.tt_hit, improving, opponent_worsening, correction_value);
             if (eval - fm >= beta) return search.futilityReturn(beta, eval);
@@ -477,5 +486,6 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         .max_value = max_value,
         .prev_sq = prev_sq,
         .prior_capture = prior_capture,
+        .seek_mate = seek_mate,
     });
 }

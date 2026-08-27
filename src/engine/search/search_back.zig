@@ -217,7 +217,7 @@ pub inline fn runBack(nd: anytype) i32 {
         // Step 16. Extend (singular).
         if (!nd.root_node and move == nd.tt_move and nd.excluded_move == 0 and depth >= 6 + @as(i32, @intFromBool(nd.ss.tt_pv)) and
             qIsValid(nd.tt_value) and !qIsDecisive(nd.tt_value) and (nd.tt_bound & q_bound_lower) != 0 and
-            nd.tt_depth >= depth - 3 and !isShuffling(nd.pos_ptr, nd.ss_ptr, move))
+            nd.tt_depth >= depth - 3 and !isShuffling(nd.pos_ptr, nd.ss_ptr, move) and !nd.seek_mate)
         {
             const singular_beta = search.singularBeta(nd.tt_value, nd.ss.tt_pv and !nd.pv_node, depth);
             const singular_depth = @divTrunc(new_depth, 2);
