@@ -105,6 +105,14 @@ ROWS=(
     # unused enum variant changes no value, so every golden, the anchor and the whole search
     # read identically. It is a widened DOMAIN, which is the class this gate was added for.
     "type-refusal|src/engine/search/search_types.zig|pub const NodeKind = enum {\n|pub const NodeKind = enum {\n    non_pv_root,\n|NodeKind regains the fourth variant it forbids"
+    # The arena lifecycle, on the surface BOTH leak checkers stopped seeing. Never give a
+    # large-page block back. memcheck reports a definite leak only for allocations it
+    # intercepts and an anonymous mapping is not one, so `parity-valgrind` and
+    # `parity-teardown` read identically over a build that releases no arena at all -- which
+    # is exactly the coverage the mmap port took away and `liveLargePageBlocks` gives back.
+    # A sibling made the same mutation a permanent row rather than a thing done once, which
+    # is the difference between a gate and a memory of having checked.
+    "test|src/platform/memory.zig|pub fn alignedLargePagesFree(ptr: ?*anyopaque) void {\n|pub fn alignedLargePagesFree(ptr: ?*anyopaque) void {\n    if (@import(\"builtin\").mode != .Debug) return;\n|a large-page arena is never given back"
 )
 
 if [ "${1:-}" = "--list" ]; then
