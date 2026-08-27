@@ -120,6 +120,16 @@ storage — converting there covers all three without any consumer growing a lif
 Upstream instead converts at each open, which is the same set of paths reached one call
 site at a time.
 
+**Say which half is gated.** The pass-through, the validation predicate and the whole file's
+cross-build for windows and macos are. The ANSI branch is **not**: it is unreachable off
+Windows by construction and no box here runs Windows, so it is compile-verified and nothing
+more. That is the honest state, and writing it down is what stops the next reader treating a
+green `zig build test` as evidence the fallback works. A sibling port reached the same limit
+from the other side — with no Win32 call available at all, it could only keep the SESSION
+alive past a non-UTF-8 line rather than open the path; the engine here survives that input
+too (the option takes the bytes, `isready` answers, the search returns a move), because a
+path is bytes on this platform and Zig's reader never decodes the line.
+
 The engine never calls this directly — that would stop it being a standalone
 library. It declares the `page_alloc` seam (`src/engine/state/page_alloc.zig`) for
 its big long-lived arenas (transposition table, shared-history stats, NNUE storage),

@@ -69,6 +69,14 @@ tools/upstream_golden_audit.sh                      # expect "19 agree, 2 differ
 #   that list before treating either as a finding: a THIRD differing gate, or a differing ROW
 #   the list does not name, is the finding.
 zig build signature output-golden eval-trace perft misc parity-mt parity-valgrind parity-teardown  # all OK
+# THE TWO GATES THAT READ THE UPSTREAM TREE. Neither is in `parity` (a plain checkout of
+# origin does not carry the objects) and both are dispatched only by the WEEKLY lane, so a
+# resync that skips them learns a week late, from a job nobody is watching. Run them here:
+zig build upstream-map      # a port that cites a new upstream file DRIFTS this map, and the
+#   router then routes the next sync around the owner it does not name. The 2edd935b resync
+#   drifted two rows this way (misc.cpp -> os_path.zig, thread.cpp -> session.zig).
+zig build authors-lint      # AUTHORS is upstream's file verbatim; porting the SOURCE half of
+#   a commit that also touched it is how it fell fifteen names behind.
 cp UPSTREAM_TARGET UPSTREAM_BASE ; git commit ; git merge --ff-only <branch> ; git tag -f synced-upstream-<sha>
 ```
 
@@ -175,7 +183,7 @@ stops being a port:
 | `7d9276c6` | `os_path.toWtf8Alloc` (a new `src/platform/` module) -- a path that fails WTF-8 validation is re-read through `MultiByteToWideChar(CP_ACP)`, so an old Windows GUI's ANSI path stops being refused with `error.BadPathName` before any file is opened. `option_model.normalize` is the single caller: every string option here is a path and the model owns the storage. The ANSI branch is compile-verified only. |
 | `598ae2c4` | `search.seekMate(root_depth, root_moves[pv_idx].score)` -- true at root depth >= 16 with the line scoring past 2000. Step 9's futility cutoff becomes 6 instead of 19 while it holds, and Step 16's singular extension stands down. `search.futilityDepth`'s six-threshold LUT (fa8b6add) goes with it. Bench 2502027. |
 | `19a02f44` | the tablebase PV extension's deadline: OFF under `nodestime` (its doMove calls never reach the global node counter, so aborting on wall time only made the reported PV nondeterministic), and the half-`Move Overhead` budget DIVIDED by MultiPV so N reported lines together stay inside the one budget a single line had. `>` becomes `>=`, and a budget already spent refuses before doing any work. |
-| `7ab49b9b` | `alignedLargePagesAlloc` goes straight to `mmap` on Linux instead of `posix_memalign`, because a glibc arena outlives the thread it was created for and a later thread on another NUMA node reuses it. `mmapHugeAligned` over-reserves by one alignment PROT_NONE and MAP_FIXEDs the real mapping onto the aligned base; a mutex-guarded base -> length registry is what `munmap` needs, and `liveLargePageBlocks()` restores the leak coverage memcheck loses when a block stops being a malloc. |
+| `7ab49b9b` | `alignedLargePagesAlloc` goes straight to `mmap` on Linux instead of `posix_memalign`, because a glibc arena outlives the thread it was created for and a later thread on another NUMA node reuses it. `mmapHugeAligned` over-reserves by one alignment PROT_NONE and MAP_FIXEDs the real mapping onto the aligned base; a mutex-guarded base -> length registry is what `munmap` needs, and `liveLargePageBlocks()` restores the leak coverage memcheck loses when a block stops being a malloc. **Deliberate divergence, and it is upstream's bug:** upstream's `mmap_huge_aligned` returns its final fallback `mmap` straight to a caller that tests `if (mem)`, so `MAP_FAILED` -- `(void*)-1`, not null -- registers as a live pointer and the next write to it segfaults. Zig's `std.posix.mmap` returns an error for `MAP_FAILED`, so `catch null` here is a real refusal and the port cannot inherit it. A sibling found this by watching its own allocation-refusal golden start crashing the oracle. |
 | `2edd935b` | the optimism blend adds the net term OUTSIDE the division: `nnue + (nnue * material + optimism * 7675) / 91000`. The same rational number and a different integer -- the truncation now runs over a numerator smaller by `91000 * nnue`. Bench 2497913. |
 
 **They pay, and that is a separate measurement.** Ablating the hybrid step and the shared
