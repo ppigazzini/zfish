@@ -127,6 +127,9 @@ fn absInt(v: i32) i32 {
 }
 
 // Bound Step 9's futility pruning: search to 6 while the root seeks a mate, 19 otherwise.
+// Leave BOTH bounds alone when tuning -- the depth condition is what lets the search find
+// mates at all, so a tuner that treats it as one more margin trades mates for Elo
+// (upstream 074b1eac).
 pub fn futilityDepth(seek_mate: bool) i32 {
     return if (seek_mate) 6 else 19;
 }
