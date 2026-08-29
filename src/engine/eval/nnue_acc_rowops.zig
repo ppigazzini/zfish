@@ -73,13 +73,50 @@ inline fn tileRows(
     weights: [*]align(64) const WT,
     tile_off: usize,
 ) void {
+    for (rows) |index| tileRow(WT, IT, add, acc, index, weights, tile_off);
+}
+
+/// Add or subtract ONE weight row into the tile -- the body of upstream's `apply<sign>`.
+inline fn tileRow(
+    comptime WT: type,
+    comptime IT: type,
+    comptime add: bool,
+    acc: *@Vector(row_tile_width, i16),
+    index: IT,
+    weights: [*]align(64) const WT,
+    tile_off: usize,
+) void {
     const V = row_tile_width;
     const Vi16 = @Vector(V, i16);
-    for (rows) |index| {
-        const wraw: @Vector(V, WT) = loadVec(WT, V, 64, weights, @as(usize, index) * half_dimensions + tile_off);
-        const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
-        acc.* = if (add) acc.* +% w else acc.* -% w;
-    }
+    const wraw: @Vector(V, WT) = loadVec(WT, V, 64, weights, @as(usize, index) * half_dimensions + tile_off);
+    const w: Vi16 = wraw; // i8 -> i16 widen; i16 identity
+    acc.* = if (add) acc.* +% w else acc.* -% w;
+}
+
+/// Apply a HalfKA list of KNOWN length one or two -- upstream's
+/// `apply_psq_features<sign, Incremental = true>` (8bc5caa2). A single ply's piece diff
+/// names at most two changed HalfKA squares per direction and always at least one (the
+/// moved piece leaves `from` and arrives at `to`; a capture or a promotion adds the second),
+/// so the counted loop's trip test is knowledge the caller already has. Peeling the first
+/// row hands it over: one unconditional apply, then one predicated one.
+///
+/// The precondition is upstream's own `assert(list.size() == 1 || list.size() == 2)`, and
+/// it holds for the same reason -- a null move pushes no accumulator state on either side,
+/// so nothing reaches here with an empty list. In ReleaseFast the assert is gone and
+/// `rows[0]` is unguarded, exactly as upstream's unguarded `list[0]` is; ReleaseSafe and
+/// the test builds are what check it.
+inline fn tileRowsIncremental(
+    comptime WT: type,
+    comptime IT: type,
+    comptime add: bool,
+    acc: *@Vector(row_tile_width, i16),
+    rows: []const IT,
+    weights: [*]align(64) const WT,
+    tile_off: usize,
+) void {
+    std.debug.assert(rows.len == 1 or rows.len == 2);
+    tileRow(WT, IT, add, acc, rows[0], weights, tile_off);
+    if (rows.len > 1) tileRow(WT, IT, add, acc, rows[1], weights, tile_off);
 }
 
 /// Apply one feature list to the psqt accumulator -- upstream's `apply_psqt` (b0ee1440). The
@@ -364,8 +401,8 @@ pub fn applyCombinedDelta(
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = source.ptr[d..][0..V].*;
-        tileRows(i16, u16, false, &acc, psq_removed, psq_weights, d);
-        tileRows(i16, u16, true, &acc, psq_added, psq_weights, d);
+        tileRowsIncremental(i16, u16, false, &acc, psq_removed, psq_weights, d);
+        tileRowsIncremental(i16, u16, true, &acc, psq_added, psq_weights, d);
         tileRows(i8, u32, false, &acc, thr_removed, thr_weights, d);
         tileRows(i8, u32, true, &acc, thr_added, thr_weights, d);
         target.ptr[d..][0..V].* = acc;
