@@ -100,6 +100,33 @@ pub fn kingAttacks(square: usize) u64 {
     return result;
 }
 
+const rook_directions = [_]i8{ north, south, east, west };
+const bishop_directions = [_]i8{ north_east, south_east, south_west, north_west };
+
+/// Walk `pt`'s four rays from `square`, stopping on the first occupied square of each and
+/// including it -- upstream's `sliding_attack`. The naive reference the magic search is
+/// built from and the dual-HQ path is checked against: it shares no table and no
+/// arithmetic with either, which is what makes it usable as an oracle for both.
+pub fn slidingAttack(pt: PieceType, square: usize, occupied: u64) u64 {
+    var result: u64 = 0;
+    const directions = if (pt == PieceType.rook) rook_directions[0..] else bishop_directions[0..];
+    for (directions) |direction| {
+        var current = square;
+        while (true) {
+            const destination = safeDestination(current, direction);
+            if (destination == 0) {
+                break;
+            }
+            result |= destination;
+            current = lsb(destination);
+            if ((occupied & destination) != 0) {
+                break;
+            }
+        }
+    }
+    return result;
+}
+
 pub fn squareAt(file: i32, rank: i32) u64 {
     if (file < 0 or file >= 8 or rank < 0 or rank >= 8) {
         return 0;
