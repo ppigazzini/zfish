@@ -16,6 +16,17 @@ const zobrist = @import("zobrist");
 const state_setup = @import("state_setup");
 const legality = @import("legality");
 const move_do_threats = @import("move_do_threats.zig");
+// The board-mutation primitives (put/remove/move/swap, with and without the dirty-threat
+// recording) live in their own leaf; this file is the move logic built on top of them.
+const move_do_pieces = @import("move_do_pieces.zig");
+const removePieceDts = move_do_pieces.removePieceDts;
+const putPieceDts = move_do_pieces.putPieceDts;
+const movePieceDts = move_do_pieces.movePieceDts;
+const swapPieceDts = move_do_pieces.swapPieceDts;
+const removePiece = move_do_pieces.removePiece;
+const movePieceQuiet = move_do_pieces.movePieceQuiet;
+const swapPiece = move_do_pieces.swapPiece;
+pub const putPiece = move_do_pieces.putPiece;
 const position_types = @import("position_types");
 const tt_types = @import("tt_types");
 const shared_history_types = @import("shared_history_types");
@@ -86,79 +97,6 @@ pub fn undoNullMove(pos_ptr: *Position) void {
     const pos = pos_ptr;
     pos.st = pos.st.previous.?;
     pos.side_to_move ^= 1;
-}
-
-fn removePieceDts(pos: *Position, s: u8, dts: *DirtyThreats) void {
-    const pc = pos.board[s];
-    move_do_threats.updatePieceThreats(true, pos, pc, false, s, dts, max_u64);
-    const bb = sqBb(s);
-    pos.by_type_bb[0] ^= bb;
-    pos.by_type_bb[pc & 7] ^= bb;
-    pos.by_color_bb[pc >> 3] ^= bb;
-    pos.board[s] = 0;
-    pos.piece_count[pc] -= 1;
-    pos.piece_count[(pc >> 3) << 3] -= 1;
-}
-
-fn putPieceDts(pos: *Position, pc: u8, s: u8, dts: *DirtyThreats) void {
-    const bb = sqBb(s);
-    pos.board[s] = pc;
-    pos.by_type_bb[pc & 7] |= bb;
-    pos.by_type_bb[0] |= pos.by_type_bb[pc & 7];
-    pos.by_color_bb[pc >> 3] |= bb;
-    pos.piece_count[pc] += 1;
-    pos.piece_count[(pc >> 3) << 3] += 1;
-    move_do_threats.updatePieceThreats(true, pos, pc, true, s, dts, max_u64);
-}
-
-fn movePieceDts(pos: *Position, from: u8, to: u8, dts: *DirtyThreats) void {
-    const pc = pos.board[from];
-    const from_to = sqBb(from) | sqBb(to);
-    move_do_threats.updatePieceThreats(true, pos, pc, false, from, dts, from_to);
-    pos.by_type_bb[0] ^= from_to;
-    pos.by_type_bb[pc & 7] ^= from_to;
-    pos.by_color_bb[pc >> 3] ^= from_to;
-    pos.board[from] = 0;
-    pos.board[to] = pc;
-    move_do_threats.updatePieceThreats(true, pos, pc, true, to, dts, from_to);
-}
-
-fn swapPieceDts(pos: *Position, s: u8, pc: u8, dts: *DirtyThreats) void {
-    const old = pos.board[s];
-    removePiece(pos, s); // dts=nullptr in swap_piece
-    // Put the piece down BEFORE both scans, so one ray lookup serves them both. Why the two
-    // scans cannot tell the boards apart is stated on `updatePieceThreatsRays`, which is the
-    // contract that permits it.
-    putPiece(pos, pc, s);
-    const rays = move_do_threats.threatRays(pos, s);
-    move_do_threats.updatePieceThreatsRays(false, pos, old, false, s, dts, max_u64, rays);
-    move_do_threats.updatePieceThreatsRays(false, pos, pc, true, s, dts, max_u64, rays);
-}
-
-fn removePiece(pos: *Position, s: u8) void {
-    const pc = pos.board[s];
-    const bb = sqBb(s);
-    pos.by_type_bb[0] ^= bb;
-    pos.by_type_bb[pc & 7] ^= bb;
-    pos.by_color_bb[pc >> 3] ^= bb;
-    pos.board[s] = 0;
-    pos.piece_count[pc] -= 1;
-    pos.piece_count[(pc >> 3) << 3] -= 1;
-}
-
-fn movePieceQuiet(pos: *Position, from: u8, to: u8) void {
-    const pc = pos.board[from];
-    const from_to = sqBb(from) | sqBb(to);
-    pos.by_type_bb[0] ^= from_to;
-    pos.by_type_bb[pc & 7] ^= from_to;
-    pos.by_color_bb[pc >> 3] ^= from_to;
-    pos.board[from] = 0;
-    pos.board[to] = pc;
-}
-
-fn swapPiece(pos: *Position, s: u8, pc: u8) void {
-    removePiece(pos, s);
-    putPiece(pos, pc, s);
 }
 
 const CastleSquares = struct { to: u8, rfrom: u8, rto: u8 };
@@ -482,16 +420,6 @@ pub fn undoMove(pos_ptr: *Position, m: u16) void {
 
     pos.st = pos.st.previous.?;
     pos.game_ply -= 1;
-}
-
-pub fn putPiece(pos: *Position, pc: u8, s: u8) void {
-    const bb = sqBb(s);
-    pos.board[s] = pc;
-    pos.by_type_bb[pc & 7] |= bb;
-    pos.by_type_bb[0] |= pos.by_type_bb[pc & 7];
-    pos.by_color_bb[pc >> 3] |= bb;
-    pos.piece_count[pc] += 1;
-    pos.piece_count[(pc >> 3) << 3] += 1; // make_piece(color, ALL_PIECES)
 }
 
 test {

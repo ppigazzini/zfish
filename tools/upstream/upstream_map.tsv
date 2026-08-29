@@ -15,7 +15,7 @@ src/search.h	src/engine/search/search.zig,src/engine/search/search_manager.zig,s
 src/movepick.cpp	src/engine/search/movepick.zig,src/engine/search/movepick_score.zig,src/engine/search/movepick_history.zig,src/engine/search/movepick_snapshot.zig,src/engine/search/movepick_sort_avx512.zig	MED
 src/movepick.h	src/engine/search/movepick.zig,src/engine/search/movepick_score.zig,src/engine/search/movepick_history.zig	MED
 src/history.h	src/engine/search/shared_histories.zig,src/engine/search/history.zig,src/engine/search/search.zig,src/engine/search/search_common.zig,src/engine/state/worker_histories.zig	MED
-src/position.cpp	src/engine/board/position.zig,src/engine/board/fen_parse.zig,src/engine/board/legality.zig,src/engine/board/zobrist.zig,src/engine/board/move_do.zig,src/engine/board/move_do_threats.zig,src/engine/board/state_setup.zig,src/shell/engine/session.zig,src/engine/board/position_query.zig,src/engine/board/threats_write_avx512.zig	MED
+src/position.cpp	src/engine/board/position.zig,src/engine/board/fen_parse.zig,src/engine/board/legality.zig,src/engine/board/zobrist.zig,src/engine/board/move_do.zig,src/engine/board/move_do_pieces.zig,src/engine/board/move_do_threats.zig,src/engine/board/state_setup.zig,src/shell/engine/session.zig,src/engine/board/position_query.zig,src/engine/board/threats_write_avx512.zig	MED
 src/position.h	src/engine/board/position.zig,src/engine/board/position_types.zig,src/engine/board/position_query.zig,src/engine/board/move_do.zig,src/engine/search/search_qsearch.zig	MED
 src/movegen.cpp	src/engine/board/movegen.zig,src/engine/board/movegen_splat_avx512.zig	MED
 src/movegen.h	src/engine/board/movegen.zig	MED
