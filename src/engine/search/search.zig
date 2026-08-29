@@ -21,6 +21,7 @@ pub const multiCutCorrectionBonus = stats.multiCutCorrectionBonus;
 pub const quietLowPlyScale = stats.quietLowPlyScale;
 pub const quietContScale = stats.quietContScale;
 pub const quietPawnScale = stats.quietPawnScale;
+pub const conthist_steps = stats.conthist_steps;
 pub const conthistDelta = stats.conthistDelta;
 pub const correctionValue = stats.correctionValue;
 pub const statBonus = stats.statBonus;

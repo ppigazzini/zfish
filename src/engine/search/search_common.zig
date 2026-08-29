@@ -67,9 +67,21 @@ pub const capture_history_limit: HistLimit = .{ .v = 10692 }; // CapturePieceToH
 pub const continuation_history_limit: HistLimit = .{ .v = 30000 }; // PieceToHistory
 
 pub inline fn statsUpdate(entry: *i16, bonus: i32, comptime limit: HistLimit) void {
+    statsUpdateValue(entry, @atomicLoad(i16, entry, .monotonic), bonus, limit);
+}
+
+/// Apply a bonus to a value the caller has ALREADY read out of this entry.
+///
+/// A caller that tests the counter and then updates it holds it in a register for the
+/// test, and on a shared table that read is a relaxed atomic load the compiler may not
+/// fold with a second one -- so `if (e > 0) ...; statsUpdate(e, ...)` loads the same
+/// address twice. Handing the value back in makes it one read (refish 56c6bfdd).
+///
+/// The two spellings are the same arithmetic: `statsUpdate` is this with the entry's own
+/// load as the argument, which is what a caller that has not read it wants.
+pub inline fn statsUpdateValue(entry: *i16, val: i32, bonus: i32, comptime limit: HistLimit) void {
     const d = limit.v;
     const clamped = @max(-d, @min(d, bonus));
-    const val: i32 = @atomicLoad(i16, entry, .monotonic);
     const abs_clamped = if (clamped < 0) -clamped else clamped;
     @atomicStore(i16, entry, @intCast(val + clamped - @divTrunc(val * abs_clamped, d)), .monotonic);
 }

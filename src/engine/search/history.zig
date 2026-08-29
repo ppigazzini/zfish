@@ -25,6 +25,7 @@ const hist_square_nb = worker_histories.hist_square_nb;
 const hist_pieceto = worker_histories.hist_pieceto;
 const workerHistories = search_common.workerHistories;
 const statsUpdate = search_common.statsUpdate;
+const statsUpdateValue = search_common.statsUpdateValue;
 const main_history_limit = search_common.main_history_limit;
 const low_ply_history_limit = search_common.low_ply_history_limit;
 const pawn_history_limit = search_common.pawn_history_limit;
@@ -212,24 +213,21 @@ pub fn updateQuietHistories(
     statsUpdate(pawn_entry, search.quietPawnScale(bonus), pawn_history_limit);
 }
 
-const ConthistBonus = struct { i: u8, w: i32 };
-const conthist_bonuses = [6]ConthistBonus{
-    .{ .i = 1, .w = 1040 }, .{ .i = 2, .w = 780 }, .{ .i = 3, .w = 290 },
-    .{ .i = 4, .w = 502 },  .{ .i = 5, .w = 132 }, .{ .i = 6, .w = 418 },
-};
-
 pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, bonus: i32) void {
     const ss = ss_ptr;
     var positive_count: i32 = 0;
-    for (conthist_bonuses) |b| {
-        if (ss.in_check and b.i > 2) break;
-        const ssi: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @as(usize, b.i) * @sizeOf(SearchStack));
+    for (search.conthist_steps, 0..) |ply, step| {
+        if (ss.in_check and ply > 2) break;
+        const ssi: *SearchStack = @ptrFromInt(@intFromPtr(ss) - @as(usize, ply) * @sizeOf(SearchStack));
         if (moveIsOk(ssi.current_move)) {
             const cont = ssi.continuation_history.?;
             const entry = &cont[@as(usize, pc) * 64 + to]; // PieceToHistory[pc][to]
-            if (@atomicLoad(i16, entry, .monotonic) > 0) positive_count += 1; // shared table: relaxed read
-            const delta = search.conthistDelta(bonus, b.w, positive_count, @intCast(b.i));
-            statsUpdate(entry, delta, continuation_history_limit);
+            // ONE relaxed read of the shared entry: the consistency test and the update
+            // want the same value, and the compiler may not fold two atomic loads of it.
+            const val: i32 = @atomicLoad(i16, entry, .monotonic);
+            if (val > 0) positive_count += 1;
+            const delta = search.conthistDelta(bonus, step, positive_count, @intCast(ply));
+            statsUpdateValue(entry, val, delta, continuation_history_limit);
         }
     }
 }
