@@ -265,7 +265,10 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     if (prior_reduction >= 3 and !opponent_worsening) depth += 1;
     if (prior_reduction >= 2 and depth >= 2 and ss.static_eval + ss1.static_eval > 166) depth -= 1;
 
-    // Step 6. Cut off early on the TT (non-PV).
+    // Step 6. Cut off early on the TT (non-PV). Test the value for validity on every
+    // path, not just on a miss: probeTable reads a cluster no lock protects, so a
+    // concurrent write can hand back an entry whose value never belonged to this key
+    // (upstream 074b1eac).
     if (!pv_node and excluded_move == 0 and tt_depth > depth - @as(i32, @intFromBool(tt_value <= beta)) and
         qIsValid(tt_value) and (tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0 and
         (cut_node == (tt_value >= beta) or depth > 4))
