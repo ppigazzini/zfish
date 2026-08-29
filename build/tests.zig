@@ -292,6 +292,7 @@ pub fn register(ctx: Context) void {
         "src/engine/eval/nnue_dimensions.zig",
         "src/engine/board/bitboard_geom.zig",
         "src/engine/board/bitboard_dual.zig",
+        "src/engine/board/move_do_pieces.zig",
         "src/engine/search/search_values.zig",
         "src/shell/option_parse.zig",
         "tools/native_arch.zig",
