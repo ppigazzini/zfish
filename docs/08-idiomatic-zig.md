@@ -980,6 +980,7 @@ nodes with identical node totals, and reverted:
 | build the psq index lists before the threat lists | **1.00033** | statement order alone; the sibling reads 0.99589 |
 | answer the quiet sort's limit test with a masked `vpcmpq` block compare | **1.00079** | one branch per qualifying move instead of per move |
 | share the seven distinct threat `comb` planes behind a pointer | **1.00247** | 133 KB of table down to 57 KB |
+| hand the accumulator's row loop an already-offset tile base | **0.999** | one `add` per row instead of per tile |
 
 The first is a **null statement swap** — two builders writing disjoint lists, exchanged — and
 it costs a few instructions per node in whichever direction the register allocator happens to
@@ -993,6 +994,15 @@ remove. The shared plane did buy its footprint, and the cache-miss column shows 
 but the extra load to reach the plane costs more than the miss it saves: keep the plane
 INLINE in the per-attacker block, which is what puts `lut1` and the plane behind one scaled
 base.
+
+The fourth is the clearest case of a sibling result being a hypothesis about the OTHER
+compiler. `tileRow` computes `index * half_dimensions + tile_off` as one expression, so
+LLVM already folds the whole thing into a scaled-index addressing mode; pre-adding
+`tile_off` to the weight base once per tile only adds the pointer arithmetic back, at
+**+3 Ir/node** (5121 -> 5124, native x86-64-avx512icl, paired perf_counters). The sibling
+reads clang -0.28% for it because its `apply` added the tile offset INSIDE the row loop,
+where there was something to hoist. Read a sibling's diff for what its base looked like
+before taking its ratio.
 
 **A reciprocal for a divide buys latency and costs instructions, so the instruction axis
 cannot adjudicate it.** Replacing a depth-indexed divide with a magic multiply retires *more*
