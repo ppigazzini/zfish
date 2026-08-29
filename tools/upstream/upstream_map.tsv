@@ -27,8 +27,8 @@ src/timeman.cpp	src/engine/search/timeman.zig	LOW
 src/timeman.h	src/engine/search/timeman.zig	LOW
 src/bitboard.cpp	src/engine/board/bitboard.zig	LOW
 src/bitboard.h	src/engine/board/bitboard.zig,src/engine/eval/nnue_feature_luts.zig	LOW
-src/attacks.cpp	src/engine/board/bitboard.zig	LOW
-src/attacks.h	src/engine/board/bitboard.zig,src/engine/board/board_core.zig	LOW
+src/attacks.cpp	src/engine/board/bitboard.zig,src/engine/board/bitboard_dual.zig	LOW
+src/attacks.h	src/engine/board/bitboard.zig,src/engine/board/bitboard_dual.zig,src/engine/board/board_core.zig	LOW
 src/types.h	src/engine/board/score.zig	MED
 src/uci.cpp	src/engine/board/position_query.zig,src/shell/engine/perft.zig,src/shell/engine/session.zig,src/shell/engine/trace.zig,src/shell/uci.zig,src/shell/uci_critical.zig,src/shell/uci_output.zig,src/shell/uci_parse.zig,src/shell/uci_parse_position.zig	LOW
 src/uci.h	src/shell/uci.zig	LOW
