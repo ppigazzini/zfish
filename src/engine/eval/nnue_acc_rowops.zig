@@ -62,11 +62,14 @@ inline fn loadVec(comptime T: type, comptime V: usize, comptime A: usize, p: [*]
 /// `apply_threat_features` (b0ee1440), which differ only in the weight element type and the
 /// sign, both comptime here. `WT` is i16 for the HalfKA rows and i8 for the threat and
 /// pawn-pair rows, whose load widens to i16 the way upstream's `vec_convert_8_16` does.
+/// `IT` is the list's element type -- u16 for the HalfKA indices (upstream d96c183f), u32
+/// for the threat and pawn-pair ones -- the same axis upstream's `apply_psqt` templates on.
 inline fn tileRows(
     comptime WT: type,
+    comptime IT: type,
     comptime add: bool,
     acc: *@Vector(row_tile_width, i16),
-    rows: []const u32,
+    rows: []const IT,
     weights: [*]align(64) const WT,
     tile_off: usize,
 ) void {
@@ -82,9 +85,10 @@ inline fn tileRows(
 /// Apply one feature list to the psqt accumulator -- upstream's `apply_psqt` (b0ee1440). The
 /// 8-bucket i32 row is one whole vector here, so there is no tile index to pass.
 inline fn psqtRows(
+    comptime IT: type,
     comptime add: bool,
     acc: *@Vector(psqt_buckets, i32),
-    rows: []const u32,
+    rows: []const IT,
     weights: [*]align(64) const i32,
 ) void {
     const V = @Vector(psqt_buckets, i32);
@@ -105,9 +109,10 @@ inline fn psqtRows(
 /// the rows one at a time.
 inline fn accRows(
     comptime WT: type,
+    comptime IT: type,
     comptime add: bool,
     target: []i16,
-    rows: []const u32,
+    rows: []const IT,
     weights: [*]align(64) const WT,
 ) void {
     const V = row_tile_width;
@@ -115,7 +120,7 @@ inline fn accRows(
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = target.ptr[d..][0..V].*;
-        tileRows(WT, add, &acc, rows, weights, d);
+        tileRows(WT, IT, add, &acc, rows, weights, d);
         target.ptr[d..][0..V].* = acc;
     }
 }
@@ -128,8 +133,8 @@ pub fn applyAccumulatorDeltaI16(
     weights: [*]align(64) const i16,
 ) void {
     @memcpy(target, source);
-    accRows(i16, false, target, removed, weights);
-    accRows(i16, true, target, added, weights);
+    accRows(i16, u32, false, target, removed, weights);
+    accRows(i16, u32, true, target, added, weights);
 }
 
 pub fn applyAccumulatorDeltaInPlaceI16(
@@ -138,8 +143,8 @@ pub fn applyAccumulatorDeltaInPlaceI16(
     added: []const u32,
     weights: [*]align(64) const i16,
 ) void {
-    accRows(i16, false, target, removed, weights);
-    accRows(i16, true, target, added, weights);
+    accRows(i16, u32, false, target, removed, weights);
+    accRows(i16, u32, true, target, added, weights);
 }
 
 pub fn applyAccumulatorDeltaI8(
@@ -150,8 +155,8 @@ pub fn applyAccumulatorDeltaI8(
     weights: [*]align(64) const i8,
 ) void {
     @memcpy(target, source);
-    accRows(i8, false, target, removed, weights);
-    accRows(i8, true, target, added, weights);
+    accRows(i8, u32, false, target, removed, weights);
+    accRows(i8, u32, true, target, added, weights);
 }
 
 /// Refresh in ONE tiled pass -- upstream update_accumulator_refresh_cache's loop shape:
@@ -165,8 +170,8 @@ pub fn applyAccumulatorDeltaI8(
 pub fn applyRefreshFusedI16(
     cache: []i16,
     state: []i16,
-    removed: []const u32,
-    added: []const u32,
+    removed: []const u16,
+    added: []const u16,
     active: []const u32,
     psq_weights: [*]align(64) const i16,
     thr_weights: [*]align(64) const i8,
@@ -176,10 +181,10 @@ pub fn applyRefreshFusedI16(
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = cache.ptr[d..][0..V].*;
-        tileRows(i16, false, &acc, removed, psq_weights, d);
-        tileRows(i16, true, &acc, added, psq_weights, d);
+        tileRows(i16, u16, false, &acc, removed, psq_weights, d);
+        tileRows(i16, u16, true, &acc, added, psq_weights, d);
         cache.ptr[d..][0..V].* = acc;
-        tileRows(i8, true, &acc, active, thr_weights, d);
+        tileRows(i8, u32, true, &acc, active, thr_weights, d);
         state.ptr[d..][0..V].* = acc;
     }
 }
@@ -205,10 +210,10 @@ pub fn applyHybridDelta(
     computed: []const i16,
     new_entry: []i16,
     old_entry: []const i16,
-    new_removed: []const u32,
-    new_added: []const u32,
-    old_removed: []const u32,
-    old_added: []const u32,
+    new_removed: []const u16,
+    new_added: []const u16,
+    old_removed: []const u16,
+    old_added: []const u16,
     thr_removed: []const u32,
     thr_added: []const u32,
     psq_weights: [*]align(64) const i16,
@@ -220,8 +225,8 @@ pub fn applyHybridDelta(
     while (d < half_dimensions) : (d += V) {
         // Refresh the DESTINATION bucket from its cache entry.
         var acc: Vi16 = new_entry.ptr[d..][0..V].*;
-        tileRows(i16, false, &acc, new_removed, psq_weights, d);
-        tileRows(i16, true, &acc, new_added, psq_weights, d);
+        tileRows(i16, u16, false, &acc, new_removed, psq_weights, d);
+        tileRows(i16, u16, true, &acc, new_added, psq_weights, d);
         new_entry.ptr[d..][0..V].* = acc;
 
         // Fold in the computed accumulator -- which brings (most of) the threat and pawn-pair
@@ -231,12 +236,12 @@ pub fn applyHybridDelta(
 
         // The old entry is a cache state, not the pre-move position, so undo its own diff:
         // its removed rows are re-added and its added rows taken back out.
-        tileRows(i16, true, &acc, old_removed, psq_weights, d);
-        tileRows(i16, false, &acc, old_added, psq_weights, d);
+        tileRows(i16, u16, true, &acc, old_removed, psq_weights, d);
+        tileRows(i16, u16, false, &acc, old_added, psq_weights, d);
 
         // This ply's threat/pawn-pair change, at the new king square.
-        tileRows(i8, false, &acc, thr_removed, thr_weights, d);
-        tileRows(i8, true, &acc, thr_added, thr_weights, d);
+        tileRows(i8, u32, false, &acc, thr_removed, thr_weights, d);
+        tileRows(i8, u32, true, &acc, thr_added, thr_weights, d);
         target.ptr[d..][0..V].* = acc;
     }
 }
@@ -247,10 +252,10 @@ pub fn applyHybridPsqtDelta(
     computed: []const i32,
     new_entry: []i32,
     old_entry: []const i32,
-    new_removed: []const u32,
-    new_added: []const u32,
-    old_removed: []const u32,
-    old_added: []const u32,
+    new_removed: []const u16,
+    new_added: []const u16,
+    old_removed: []const u16,
+    old_added: []const u16,
     thr_removed: []const u32,
     thr_added: []const u32,
     psq_weights: [*]align(64) const i32,
@@ -258,17 +263,17 @@ pub fn applyHybridPsqtDelta(
 ) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = new_entry[0..psqt_buckets].*;
-    psqtRows(false, &acc, new_removed, psq_weights);
-    psqtRows(true, &acc, new_added, psq_weights);
+    psqtRows(u16, false, &acc, new_removed, psq_weights);
+    psqtRows(u16, true, &acc, new_added, psq_weights);
     new_entry[0..psqt_buckets].* = acc;
 
     acc +%= @as(V, computed[0..psqt_buckets].*);
     acc -%= @as(V, old_entry[0..psqt_buckets].*);
 
-    psqtRows(true, &acc, old_removed, psq_weights);
-    psqtRows(false, &acc, old_added, psq_weights);
-    psqtRows(false, &acc, thr_removed, thr_weights);
-    psqtRows(true, &acc, thr_added, thr_weights);
+    psqtRows(u16, true, &acc, old_removed, psq_weights);
+    psqtRows(u16, false, &acc, old_added, psq_weights);
+    psqtRows(u32, false, &acc, thr_removed, thr_weights);
+    psqtRows(u32, true, &acc, thr_added, thr_weights);
     target[0..psqt_buckets].* = acc;
 }
 
@@ -277,18 +282,18 @@ pub fn applyHybridPsqtDelta(
 pub fn applyRefreshFusedPsqt(
     cache: []i32,
     state: []i32,
-    removed: []const u32,
-    added: []const u32,
+    removed: []const u16,
+    added: []const u16,
     active: []const u32,
     psq_weights: [*]align(64) const i32,
     thr_weights: [*]align(64) const i32,
 ) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = cache[0..psqt_buckets].*;
-    psqtRows(false, &acc, removed, psq_weights);
-    psqtRows(true, &acc, added, psq_weights);
+    psqtRows(u16, false, &acc, removed, psq_weights);
+    psqtRows(u16, true, &acc, added, psq_weights);
     cache[0..psqt_buckets].* = acc;
-    psqtRows(true, &acc, active, thr_weights);
+    psqtRows(u32, true, &acc, active, thr_weights);
     state[0..psqt_buckets].* = acc;
 }
 
@@ -330,8 +335,8 @@ pub fn applyPsqtDeltaInPlace(
 ) void {
     const V = @Vector(psqt_buckets, i32);
     var acc: V = target[0..psqt_buckets].*;
-    psqtRows(false, &acc, removed, weights);
-    psqtRows(true, &acc, added, weights);
+    psqtRows(u32, false, &acc, removed, weights);
+    psqtRows(u32, true, &acc, added, weights);
     target[0..psqt_buckets].* = acc;
 }
 
@@ -347,8 +352,8 @@ pub fn applyPsqtDeltaInPlace(
 pub fn applyCombinedDelta(
     target: []i16,
     source: []const i16,
-    psq_removed: []const u32,
-    psq_added: []const u32,
+    psq_removed: []const u16,
+    psq_added: []const u16,
     thr_removed: []const u32,
     thr_added: []const u32,
     psq_weights: [*]align(64) const i16,
@@ -359,10 +364,10 @@ pub fn applyCombinedDelta(
     var d: usize = 0;
     while (d < half_dimensions) : (d += V) {
         var acc: Vi16 = source.ptr[d..][0..V].*;
-        tileRows(i16, false, &acc, psq_removed, psq_weights, d);
-        tileRows(i16, true, &acc, psq_added, psq_weights, d);
-        tileRows(i8, false, &acc, thr_removed, thr_weights, d);
-        tileRows(i8, true, &acc, thr_added, thr_weights, d);
+        tileRows(i16, u16, false, &acc, psq_removed, psq_weights, d);
+        tileRows(i16, u16, true, &acc, psq_added, psq_weights, d);
+        tileRows(i8, u32, false, &acc, thr_removed, thr_weights, d);
+        tileRows(i8, u32, true, &acc, thr_added, thr_weights, d);
         target.ptr[d..][0..V].* = acc;
     }
 }
@@ -372,8 +377,8 @@ pub fn applyCombinedDelta(
 pub fn applyCombinedPsqtDelta(
     target: []i32,
     source: []const i32,
-    psq_removed: []const u32,
-    psq_added: []const u32,
+    psq_removed: []const u16,
+    psq_added: []const u16,
     thr_removed: []const u32,
     thr_added: []const u32,
     psq_weights: [*]align(64) const i32,
@@ -388,10 +393,10 @@ pub fn applyCombinedPsqtDelta(
     // replaces, so every intermediate value matches and ReleaseSafe sees the identical run.
     const V = @Vector(psqt_buckets, i32);
     var acc: V = source[0..psqt_buckets].*;
-    psqtRows(false, &acc, psq_removed, psq_weights);
-    psqtRows(true, &acc, psq_added, psq_weights);
-    psqtRows(false, &acc, thr_removed, thr_weights);
-    psqtRows(true, &acc, thr_added, thr_weights);
+    psqtRows(u16, false, &acc, psq_removed, psq_weights);
+    psqtRows(u16, true, &acc, psq_added, psq_weights);
+    psqtRows(u32, false, &acc, thr_removed, thr_weights);
+    psqtRows(u32, true, &acc, thr_added, thr_weights);
     target[0..psqt_buckets].* = acc;
 }
 
