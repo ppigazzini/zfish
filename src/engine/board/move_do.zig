@@ -204,11 +204,16 @@ pub fn doMove(
     new_st.plies_from_null = pos.st.plies_from_null;
     new_st.ep_square = pos.st.ep_square;
     new_st.previous = pos.st;
+    // From here `pos.st` IS `new_st`, and everything below writes the NEW state --
+    // so write it through `new_st`, whose address arrives in a register and stays
+    // there. `pos.st` is a field, and putPieceDts/removePieceDts/movePieceDts are
+    // opaque to whether they moved it, so every write through it costs a reload
+    // (refish 8fe0b92c).
     pos.st = new_st;
 
     pos.game_ply += 1;
-    pos.st.rule50 += 1;
-    pos.st.plies_from_null += 1;
+    new_st.rule50 += 1;
+    new_st.plies_from_null += 1;
 
     const us = pos.side_to_move;
     const them = us ^ 1;
@@ -228,14 +233,20 @@ pub fn doMove(
     // Snapshot the pawn bitboards before any piece moves for the PP_3Wide (pawn-pair) diff;
     // the after-snapshot is taken once all mutations are applied (below). Upstream
     // Position::do_move fills Dirties.dirtyPawnPairs the same way.
-    dts.pp_before[color_white] = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
-    dts.pp_before[color_black] = pos.by_color_bb[color_black] & pos.by_type_bb[pawn_pt];
+    // Read BOTH planes before storing either: `dts` is a pointer the compiler cannot
+    // prove disjoint from the position, so a store between the two reads makes it
+    // fetch by_type_bb[pawn] twice (refish 8fe0b92c).
+    const pawns_before = pos.by_type_bb[pawn_pt];
+    const white_pawns_before = pos.by_color_bb[color_white] & pawns_before;
+    const black_pawns_before = pos.by_color_bb[color_black] & pawns_before;
+    dts.pp_before[color_white] = white_pawns_before;
+    dts.pp_before[color_black] = black_pawns_before;
 
     if (mt == mt_castling) {
         const r = doCastlingDo(pos, us, from, to, dp, dts);
         to = r.to; // do_castling takes `to` by reference and sets it to the king's destination
         k ^= psq[psqIdx(captured, r.rfrom)] ^ psq[psqIdx(captured, r.rto)];
-        pos.st.non_pawn_key[us] ^= psq[psqIdx(captured, r.rfrom)] ^ psq[psqIdx(captured, r.rto)];
+        new_st.non_pawn_key[us] ^= psq[psqIdx(captured, r.rfrom)] ^ psq[psqIdx(captured, r.rto)];
         captured = 0;
     } else if (captured != 0) {
         var capsq = to;
@@ -244,32 +255,32 @@ pub fn doMove(
                 capsq = @intCast(@as(i16, to) - pawnPush(us));
                 removePieceDts(pos, capsq, dts);
             }
-            pos.st.pawn_key ^= psq[psqIdx(captured, capsq)];
+            new_st.pawn_key ^= psq[psqIdx(captured, capsq)];
         } else {
-            pos.st.non_pawn_material[them] -= piece_value_by_type[captured & 7];
-            pos.st.non_pawn_key[them] ^= psq[psqIdx(captured, capsq)];
-            if ((captured & 7) <= bishop_pt) pos.st.minor_piece_key ^= psq[psqIdx(captured, capsq)];
+            new_st.non_pawn_material[them] -= piece_value_by_type[captured & 7];
+            new_st.non_pawn_key[them] ^= psq[psqIdx(captured, capsq)];
+            if ((captured & 7) <= bishop_pt) new_st.minor_piece_key ^= psq[psqIdx(captured, capsq)];
         }
         dp.remove_pc = captured;
         dp.remove_sq = capsq;
         k ^= psq[psqIdx(captured, capsq)];
         const mat_slot: u8 = @intCast(8 + pos.piece_count[captured] - @as(i32, if (mt != mt_en_passant) 1 else 0));
-        pos.st.material_key ^= psq[psqIdx(captured, mat_slot)];
-        pos.st.rule50 = 0;
+        new_st.material_key ^= psq[psqIdx(captured, mat_slot)];
+        new_st.rule50 = 0;
     } else {
         dp.remove_sq = sq_none_u8;
     }
 
     k ^= psq[psqIdx(pc, from)] ^ psq[psqIdx(pc, to)];
 
-    if (pos.st.ep_square != sq_none_u8) {
-        k ^= enpassant[fileOf(pos.st.ep_square)];
-        pos.st.ep_square = sq_none_u8;
+    if (new_st.ep_square != sq_none_u8) {
+        k ^= enpassant[fileOf(new_st.ep_square)];
+        new_st.ep_square = sq_none_u8;
     }
 
-    k ^= castling[@intCast(pos.st.castling_rights)];
-    pos.st.castling_rights &= ~(pos.castling_rights_mask[from] | pos.castling_rights_mask[to]);
-    k ^= castling[@intCast(pos.st.castling_rights)];
+    k ^= castling[@intCast(new_st.castling_rights)];
+    new_st.castling_rights &= ~(pos.castling_rights_mask[from] | pos.castling_rights_mask[to]);
+    k ^= castling[@intCast(new_st.castling_rights)];
 
     if (mt != mt_castling) {
         var to_pc = pc;
@@ -292,10 +303,10 @@ pub fn doMove(
             const pawns = pawnAttacks(us, ep_sq) & their_pawns;
             if (pawns != 0) {
                 const ksq = kingSquare(pos, them);
-                const not_blockers = ~pos.st.previous.?.blockers_for_king[them];
+                const not_blockers = ~new_st.previous.?.blockers_for_king[them];
                 const no_discovery = (sqBb(from) & not_blockers) != 0 or fileOf(from) == fileOf(ksq);
                 if (no_discovery and (pawns & (not_blockers | bitboard.line(ep_sq, ksq))) != 0) {
-                    pos.st.ep_square = ep_sq;
+                    new_st.ep_square = ep_sq;
                     k ^= enpassant[fileOf(ep_sq)];
                 }
             }
@@ -308,19 +319,19 @@ pub fn doMove(
             k ^= psq[psqIdx(promotion, to)];
             const prom_slot: u8 = @intCast(8 + pos.piece_count[promotion] - 1);
             const pawn_slot: u8 = @intCast(8 + pos.piece_count[pc]);
-            pos.st.material_key ^= psq[psqIdx(promotion, prom_slot)] ^ psq[psqIdx(pc, pawn_slot)];
-            pos.st.non_pawn_key[us] ^= psq[psqIdx(promotion, to)];
-            if (pt <= bishop_pt) pos.st.minor_piece_key ^= psq[psqIdx(promotion, to)];
-            pos.st.non_pawn_material[us] += piece_value_by_type[pt];
+            new_st.material_key ^= psq[psqIdx(promotion, prom_slot)] ^ psq[psqIdx(pc, pawn_slot)];
+            new_st.non_pawn_key[us] ^= psq[psqIdx(promotion, to)];
+            if (pt <= bishop_pt) new_st.minor_piece_key ^= psq[psqIdx(promotion, to)];
+            new_st.non_pawn_material[us] += piece_value_by_type[pt];
         }
-        pos.st.pawn_key ^= psq[psqIdx(pc, from)] ^ psq[psqIdx(pc, to)];
-        pos.st.rule50 = 0;
+        new_st.pawn_key ^= psq[psqIdx(pc, from)] ^ psq[psqIdx(pc, to)];
+        new_st.rule50 = 0;
     } else {
-        pos.st.non_pawn_key[us] ^= psq[psqIdx(pc, from)] ^ psq[psqIdx(pc, to)];
-        if ((pc & 7) <= bishop_pt) pos.st.minor_piece_key ^= psq[psqIdx(pc, from)] ^ psq[psqIdx(pc, to)];
+        new_st.non_pawn_key[us] ^= psq[psqIdx(pc, from)] ^ psq[psqIdx(pc, to)];
+        if ((pc & 7) <= bishop_pt) new_st.minor_piece_key ^= psq[psqIdx(pc, from)] ^ psq[psqIdx(pc, to)];
     }
 
-    pos.st.key = k;
+    new_st.key = k;
 
     // Prefetch the child's TT cluster on its EXACT key, plus its four correction bundles
     // and the [pc][to] slot of its pawn-history row (the slot the NEXT node's quiet-
@@ -335,23 +346,23 @@ pub fn doMove(
     // promotion; this one is exact.
     if (bank) |b| issuePrefetches(pos, pc, to, b);
 
-    pos.st.captured_piece = captured;
-    pos.st.checkers_bb = if (gives_check != 0)
+    new_st.captured_piece = captured;
+    new_st.checkers_bb = if (gives_check != 0)
         attackersTo(pos_ptr, kingSquare(pos, them), pos.by_type_bb[0]) & pos.by_color_bb[us]
     else
         0;
     pos.side_to_move ^= 1;
     setCheckInfo(pos_ptr);
 
-    pos.st.repetition = 0;
-    const end = @min(pos.st.rule50, pos.st.plies_from_null);
+    new_st.repetition = 0;
+    const end = @min(new_st.rule50, new_st.plies_from_null);
     if (end >= 4) {
-        var stp = pos.st.previous.?.previous.?;
+        var stp = new_st.previous.?.previous.?;
         var i: i32 = 4;
         while (i <= end) : (i += 2) {
             stp = stp.previous.?.previous.?;
-            if (stp.key == pos.st.key) {
-                pos.st.repetition = if (stp.repetition != 0) -i else i;
+            if (stp.key == new_st.key) {
+                new_st.repetition = if (stp.repetition != 0) -i else i;
                 break;
             }
         }
@@ -360,8 +371,14 @@ pub fn doMove(
     dts.ksq = kingSquare(pos, us);
 
     // Snapshot the pawn bitboards after all mutations for the PP_3Wide (pawn-pair) diff.
-    dts.pp_after[color_white] = pos.by_color_bb[color_white] & pos.by_type_bb[pawn_pt];
-    dts.pp_after[color_black] = pos.by_color_bb[color_black] & pos.by_type_bb[pawn_pt];
+    // Read BOTH planes before storing either: `dts` is a pointer the compiler cannot
+    // prove disjoint from the position, so a store between the two reads makes it
+    // fetch by_type_bb[pawn] twice (refish 8fe0b92c).
+    const pawns_after = pos.by_type_bb[pawn_pt];
+    const white_pawns_after = pos.by_color_bb[color_white] & pawns_after;
+    const black_pawns_after = pos.by_color_bb[color_black] & pawns_after;
+    dts.pp_after[color_white] = white_pawns_after;
+    dts.pp_after[color_black] = black_pawns_after;
 }
 
 // Approximate the key the position would have AFTER M, cheaply enough to prefetch its TT
