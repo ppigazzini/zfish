@@ -981,6 +981,7 @@ nodes with identical node totals, and reverted:
 | answer the quiet sort's limit test with a masked `vpcmpq` block compare | **1.00079** | one branch per qualifying move instead of per move |
 | share the seven distinct threat `comb` planes behind a pointer | **1.00247** | 133 KB of table down to 57 KB |
 | hand the accumulator's row loop an already-offset tile base | **0.999** | one `add` per row instead of per tile |
+| carry a node's slider attack sets from its capture list to its quiet list | **0.999** | 0.5 slider attack computations a node |
 
 The first is a **null statement swap** — two builders writing disjoint lists, exchanged — and
 it costs a few instructions per node in whichever direction the register allocator happens to
@@ -1003,6 +1004,17 @@ LLVM already folds the whole thing into a scaled-index addressing mode; pre-addi
 reads clang -0.28% for it because its `apply` added the tile offset INSIDE the row loop,
 where there was something to hoist. Read a sibling's diff for what its base looked like
 before taking its ratio.
+
+The fifth failed on the same axis as the fourth, and for a reason worth stating: **what a
+cached value is worth depends on what recomputing it costs HERE.** A slider's attack set
+does not change between one node's capture list and its quiet list, so the second list can
+read what the first computed -- 0.5 attack computations a node, which the sibling prices at
+about twenty instructions each because it solves sliders with a four-lane hyperbola pass.
+`movegen` reaches them through `bitboard.attacks`, which is a PEXT and a table load; a
+store costs about the same as the lookup it saves, and every probcut and qsearch capture
+list fills a cache no quiet list ever reads. **+4 Ir/node**, reproduced at two depths
+(5109 -> 5113 at depth 13, 5151 -> 5155 at depth 14), bit-exact throughout -- which is
+itself the evidence that the positional correspondence the design rests on held.
 
 **A reciprocal for a divide buys latency and costs instructions, so the instruction axis
 cannot adjudicate it.** Replacing a depth-indexed divide with a magic multiply retires *more*
