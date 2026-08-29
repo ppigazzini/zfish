@@ -111,17 +111,40 @@ pub fn quietPawnScale(bonus: i32) i32 {
 // running positiveCount in update_continuation_histories.
 const cmhc_multipliers = [_]i32{ 94, 103, 110, 106, 119, 126, 121 };
 
-// Compute the per-entry continuation-history update delta: own the multiplier table
-// and the bonus*weight*multiplier/131072 formula. bonus*weight*multiplier
-// stays within i32 for the bonus magnitudes search produces.
-pub fn conthistDelta(bonus: i32, weight: i32, positive_count: i32, i: i32) i32 {
-    const multiplier = cmhc_multipliers[@intCast(positive_count)];
+// Ply offsets and per-step weights of update_continuation_histories' six steps -- the
+// source of truth a tuner edits. history.zig walks them.
+pub const conthist_steps = [6]u8{ 1, 2, 3, 4, 5, 6 };
+const conthist_weights = [6]i32{ 1040, 780, 290, 502, 132, 418 };
+
+// The step's WEIGHT and the consistency MULTIPLIER are ONE table, folded here at
+// comptime. The weight is a constant of the step and the multiplier a runtime index, so
+// their product never depends on the bonus -- the loop was buying it with an `imul` on
+// every step it took (refish 56c6bfdd).
+//
+// Regrouping `(bonus * weight) * multiplier` as `bonus * (weight * multiplier)` is
+// bit-identical, and the reason has to be stated because the product OVERFLOWS: the
+// fail-low arm passes a bonus reaching five figures, and bonus * 1040 * 126 does not fit
+// an i32 in either grouping. Multiplication wraps associatively mod 2^32, so both
+// groupings land on the same bits -- which is why `*%` below is load-bearing, not
+// decoration. The folded factor itself is at most 1040 * 126 = 131040 and cannot wrap.
+const conthist_scale: [6][cmhc_multipliers.len]i32 = blk: {
+    var table: [6][cmhc_multipliers.len]i32 = undefined;
+    for (conthist_weights, 0..) |weight, step| {
+        for (cmhc_multipliers, 0..) |multiplier, count| table[step][count] = weight * multiplier;
+    }
+    break :blk table;
+};
+
+// Compute the per-entry continuation-history update delta: own the folded weight table
+// and the bonus*scale/131072 formula. `step` indexes conthist_steps.
+pub fn conthistDelta(bonus: i32, step: usize, positive_count: i32, i: i32) i32 {
+    const multiplier = conthist_scale[step][@intCast(positive_count)];
     // Upstream (search.cpp: `bonus * weight * multiplier / 131072`) computes this in `int`,
     // so the 3-way product overflows i32 for large bonuses and WRAPS (2's complement on
     // x86 -- UB in C++ but relied upon). Match it with `*%` so the wrap is bit-identical
     // (the shipped ReleaseFast build already wrapped here; this only stops ReleaseSafe's
     // overflow trap from aborting on deep searches -- the value is unchanged).
-    return @divTrunc(bonus *% weight *% multiplier, 131072) +
+    return @divTrunc(bonus *% multiplier, 131072) +
         73 * @as(i32, @intFromBool(i < 2));
 }
 
