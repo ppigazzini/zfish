@@ -63,6 +63,7 @@ const sq_none = layout.sq_none;
 const no_piece = layout.no_piece;
 const square_count = layout.square_count;
 const psq_index_capacity = layout.psq_index_capacity;
+const PsqIndex = layout.PsqIndex;
 const threat_index_capacity = layout.threat_index_capacity;
 const threat_dimensions = layout.threat_dimensions;
 const HalfDiff = layout.HalfDiff;
@@ -258,8 +259,8 @@ fn refreshCombined(
     const entry_ptr = cacheEntry(cache, king_square, perspective);
     const entry_pieces = cacheEntryPiecesMut(entry_ptr);
 
-    var removed: [psq_index_capacity]u32 = undefined;
-    var added: [psq_index_capacity]u32 = undefined;
+    var removed: [psq_index_capacity]PsqIndex = undefined;
+    var added: [psq_index_capacity]PsqIndex = undefined;
     const diff = entryDiffIndices(
         entry_pieces,
         cacheEntryPieceBb(entry_ptr),
@@ -332,8 +333,8 @@ fn applyCombined(
     else
         psqDiff(stateBytesConst(psq_feature, computed_index, stack));
 
-    var psq_removed: [psq_index_capacity]u32 = undefined;
-    var psq_added: [psq_index_capacity]u32 = undefined;
+    var psq_removed: [psq_index_capacity]PsqIndex = undefined;
+    var psq_added: [psq_index_capacity]PsqIndex = undefined;
     var psq_removed_len: usize = 0;
     var psq_added_len: usize = 0;
 
@@ -434,18 +435,21 @@ fn applyCombined(
 }
 
 fn appendHalfChange(
-    removed: *[psq_index_capacity]u32,
+    removed: *[psq_index_capacity]PsqIndex,
     removed_len: *usize,
-    added: *[psq_index_capacity]u32,
+    added: *[psq_index_capacity]PsqIndex,
     added_len: *usize,
     index: u32,
     is_removed: bool,
 ) void {
+    // Narrow on the store, the way upstream's ValueList<u16> converts on push_back:
+    // halfMakeIndex computes in the full index space and the list holds PsqIndex.
+    const narrowed: PsqIndex = @intCast(index);
     if (is_removed) {
-        removed[removed_len.*] = index;
+        removed[removed_len.*] = narrowed;
         removed_len.* += 1;
     } else {
-        added[added_len.*] = index;
+        added[added_len.*] = narrowed;
         added_len.* += 1;
     }
 }

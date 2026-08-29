@@ -20,6 +20,13 @@ const std = @import("std");
 const builtin = @import("builtin");
 const luts = @import("nnue_feature_luts.zig");
 
+// HalfKA index element type -- upstream's `HalfKAv2_hm::IndexList` is ValueList<u16,32>
+// (d96c183f). Restated rather than imported: this file is a leaf of the nnue_feature
+// module and nnue_acc_layout (which owns `PsqIndex` and the comptime bound proving the
+// index space fits) imports the accumulator side. The two are pinned equal by the
+// callers, which pass a *[psq_index_capacity]PsqIndex straight into these pointers.
+const PsqIndex = u16;
+
 pub const use_avx512_nnue_feature = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vbmi) and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vbmi2);
@@ -63,7 +70,7 @@ fn widenLow32(bytes: V64u8) V32u16 {
 pub const WriteResult = struct { removed_len: usize, added_len: usize };
 
 // removed_out/added_out must have 32 slots of headroom past the caller's write
-// position -- the store is unmasked, upstream's own shape (half_ka_v2_hm.cpp:73-79);
+// position -- the store is unmasked, upstream's own shape (half_ka_v2_hm.cpp:73-74);
 // only the first popCount(removed_bb)/popCount(added_bb) of the 32 written words are
 // meaningful.
 //
@@ -83,8 +90,8 @@ pub fn writeIndices(
     added_bb: u64,
     perspective: u8,
     king_square: u8,
-    removed_out: [*]u32,
-    added_out: [*]u32,
+    removed_out: [*]PsqIndex,
+    added_out: [*]PsqIndex,
 ) WriteResult {
     if (comptime !use_avx512_nnue_feature) unreachable;
 
@@ -115,10 +122,13 @@ pub fn writeIndices(
     const removed_indices = removed_squares ^ @"llvm.x86.avx512.permvar.hi.512"(psi_plus_offset, removed_pieces);
     const added_indices = added_squares ^ @"llvm.x86.avx512.permvar.hi.512"(psi_plus_offset, added_pieces);
 
-    const removed_arr: [32]u16 = removed_indices;
-    const added_arr: [32]u16 = added_indices;
-    inline for (0..32) |i| removed_out[i] = removed_arr[i];
-    inline for (0..32) |i| added_out[i] = added_arr[i];
+    // Store the index words as they were computed -- one unmasked 512-bit store each,
+    // upstream d96c183f. The list element type IS the lane type now (PsqIndex == u16),
+    // so the two `_mm512_cvtepu16_epi32` widenings and the second pair of stores that
+    // paid for them are gone; the whole HalfKA index space fits in 16 bits, which
+    // nnue_acc_layout's comptime bound on PsqIndex pins.
+    removed_out[0..32].* = removed_indices;
+    added_out[0..32].* = added_indices;
 
     return .{ .removed_len = removed_len, .added_len = added_len };
 }
@@ -138,13 +148,13 @@ fn referenceIndex(perspective: u8, square: u8, piece: u8, king_square: u8) u32 {
         luts.piece_square_index[perspective][piece] + luts.king_buckets[king_square ^ perspective * 56];
 }
 
-fn referenceWrite(old_pieces: []const u8, new_pieces: []const u8, removed_bb_in: u64, added_bb_in: u64, perspective: u8, king_square: u8, removed_out: []u32, added_out: []u32) WriteResult {
+fn referenceWrite(old_pieces: []const u8, new_pieces: []const u8, removed_bb_in: u64, added_bb_in: u64, perspective: u8, king_square: u8, removed_out: []PsqIndex, added_out: []PsqIndex) WriteResult {
     var removed_bb = removed_bb_in;
     var n: usize = 0;
     while (removed_bb != 0) {
         const sq: u8 = @intCast(@ctz(removed_bb));
         removed_bb &= removed_bb - 1;
-        removed_out[n] = referenceIndex(perspective, sq, old_pieces[sq], king_square);
+        removed_out[n] = @intCast(referenceIndex(perspective, sq, old_pieces[sq], king_square));
         n += 1;
     }
     var added_bb = added_bb_in;
@@ -152,7 +162,7 @@ fn referenceWrite(old_pieces: []const u8, new_pieces: []const u8, removed_bb_in:
     while (added_bb != 0) {
         const sq: u8 = @intCast(@ctz(added_bb));
         added_bb &= added_bb - 1;
-        added_out[m] = referenceIndex(perspective, sq, new_pieces[sq], king_square);
+        added_out[m] = @intCast(referenceIndex(perspective, sq, new_pieces[sq], king_square));
         m += 1;
     }
     return .{ .removed_len = n, .added_len = m };
@@ -196,12 +206,12 @@ test "writeIndices matches an independent scalar reference over random boards/ma
         const perspective: u8 = @intCast(random.uintLessThan(u32, 2));
         const king_square: u8 = @intCast(random.uintLessThan(u32, 64));
 
-        var removed_ref: [32]u32 = undefined;
-        var added_ref: [32]u32 = undefined;
+        var removed_ref: [32]PsqIndex = undefined;
+        var added_ref: [32]PsqIndex = undefined;
         const ref_result = referenceWrite(&old_pieces, &new_pieces, removed_bb, added_bb, perspective, king_square, removed_ref[0..], added_ref[0..]);
 
-        var removed_vec: [32]u32 = undefined;
-        var added_vec: [32]u32 = undefined;
+        var removed_vec: [32]PsqIndex = undefined;
+        var added_vec: [32]PsqIndex = undefined;
         const vec_result = writeIndices(&old_pieces, &new_pieces, removed_bb, added_bb, perspective, king_square, &removed_vec, &added_vec);
 
         try testing.expectEqual(ref_result.removed_len, vec_result.removed_len);

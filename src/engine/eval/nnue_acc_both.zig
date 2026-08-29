@@ -31,6 +31,7 @@ const white = layout.white;
 const black = layout.black;
 const sq_none = layout.sq_none;
 const psq_index_capacity = layout.psq_index_capacity;
+const PsqIndex = layout.PsqIndex;
 const threat_index_capacity = layout.threat_index_capacity;
 const AccumulatorStack = layout.AccumulatorStack;
 const computed_offset = layout.computed_offset;
@@ -45,12 +46,15 @@ const threatDiff = layout.threatDiff;
 
 // Route one square's HalfKA index into removed or added. Forward only -- the shared walk
 // has no backward direction -- so `is_removed` reads literally.
-inline fn appendHalf(removed: [*]u32, removed_len: *usize, added: [*]u32, added_len: *usize, index: u32, is_removed: bool) void {
+inline fn appendHalf(removed: [*]PsqIndex, removed_len: *usize, added: [*]PsqIndex, added_len: *usize, index: u32, is_removed: bool) void {
+    // Narrow on the store, the way upstream's ValueList<u16> converts on push_back:
+    // halfMakeIndex computes in the full index space and the list holds PsqIndex.
+    const narrowed: PsqIndex = @intCast(index);
     if (is_removed) {
-        removed[removed_len.*] = index;
+        removed[removed_len.*] = narrowed;
         removed_len.* += 1;
     } else {
-        added[added_len.*] = index;
+        added[added_len.*] = narrowed;
         added_len.* += 1;
     }
 }
@@ -62,8 +66,8 @@ fn psqChangedIndices(
     diff: layout.HalfDiff,
     perspective: u8,
     king_square: u8,
-    removed: [*]u32,
-    added: [*]u32,
+    removed: [*]PsqIndex,
+    added: [*]PsqIndex,
 ) nnue_feature.FullAppendChangedLens {
     var removed_len: usize = 0;
     var added_len: usize = 0;
@@ -144,10 +148,10 @@ pub fn applyCombinedBoth(
     );
 
     const psq_diff = psqDiff(stateBytesConst(psq_feature, target_index, stack));
-    var w_psq_removed: [psq_index_capacity]u32 = undefined;
-    var w_psq_added: [psq_index_capacity]u32 = undefined;
-    var b_psq_removed: [psq_index_capacity]u32 = undefined;
-    var b_psq_added: [psq_index_capacity]u32 = undefined;
+    var w_psq_removed: [psq_index_capacity]PsqIndex = undefined;
+    var w_psq_added: [psq_index_capacity]PsqIndex = undefined;
+    var b_psq_removed: [psq_index_capacity]PsqIndex = undefined;
+    var b_psq_added: [psq_index_capacity]PsqIndex = undefined;
     const w_psq = psqChangedIndices(psq_diff, white, white_ksq, &w_psq_removed, &w_psq_added);
     const b_psq = psqChangedIndices(psq_diff, black, black_ksq, &b_psq_removed, &b_psq_added);
 
@@ -161,8 +165,8 @@ fn applySide(
     perspective: u8,
     target_index: usize,
     computed_index: usize,
-    psq_removed: []const u32,
-    psq_added: []const u32,
+    psq_removed: []const PsqIndex,
+    psq_added: []const PsqIndex,
     thr_removed: []const u32,
     thr_added: []const u32,
 ) void {

@@ -59,12 +59,25 @@ pub const transform_vec_width: usize = blk: {
 };
 pub const dirty_threat_capacity: usize = 96;
 pub const psq_index_capacity: usize = 32;
+// HalfKA changed/active index element type. u16 the way upstream's
+// `HalfKAv2_hm::IndexList` is (d96c183f), which is what lets the AVX-512 writer store its
+// 32 index words with one unmasked 512-bit store instead of widening them to u32 first.
+// The comptime assert below is what keeps the narrowing honest.
+pub const PsqIndex = u16;
 // Holds the per-ply threat AND pawn-pair changed-feature indices (both index the shared
 // threatAndPp weight rows). Upstream's IndexList is ValueList<u16, 256>.
 pub const threat_index_capacity: usize = 256;
 // FullThreats::Dimensions (SFNNv16); also PP_3Wide's IndexBase.
 pub const threat_dimensions: u32 = dims.threat_dimensions;
 pub const psq_feature_dimensions: usize = 22528;
+comptime {
+    // Every HalfKA index is < psq_feature_dimensions by construction (halfMakeIndex sums an
+    // oriented square, a piece-square base and a king bucket), so narrowing the lists to
+    // PsqIndex is lossless only while the whole index space fits. A future arch that grows
+    // the feature count past 65536 must widen PsqIndex with it.
+    if (psq_feature_dimensions > std.math.maxInt(PsqIndex) + 1)
+        @compileError("PsqIndex is too narrow for psq_feature_dimensions");
+}
 
 pub const HalfDiff = struct {
     pc: u8,

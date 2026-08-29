@@ -34,6 +34,7 @@ const threat_feature = layout.threat_feature;
 const sq_none = layout.sq_none;
 const no_piece = layout.no_piece;
 const psq_index_capacity = layout.psq_index_capacity;
+const PsqIndex = layout.PsqIndex;
 const threat_index_capacity = layout.threat_index_capacity;
 const AccumulatorStack = layout.AccumulatorStack;
 const computed_offset = layout.computed_offset;
@@ -58,8 +59,8 @@ pub fn entryDiffIndices(
     board_piece_bb: u64,
     perspective: u8,
     king_square: u8,
-    removed: *[psq_index_capacity]u32,
-    added: *[psq_index_capacity]u32,
+    removed: *[psq_index_capacity]PsqIndex,
+    added: *[psq_index_capacity]PsqIndex,
 ) struct { removed_len: usize, added_len: usize } {
     // Build the changed-square bitboard upstream's way (get_changed_pieces): compare 32
     // board bytes at a time against the cached pieces, movemask each compare into 32 mask
@@ -115,22 +116,22 @@ pub fn entryDiffIndices(
         var added_scan = added_bb;
         while (removed_scan != 0) : (removed_scan &= removed_scan - 1) {
             const sq: u8 = @intCast(@ctz(removed_scan));
-            removed[removed_len] = nnue_feature.halfMakeIndex(.{
+            removed[removed_len] = @intCast(nnue_feature.halfMakeIndex(.{
                 .perspective = perspective,
                 .square = sq,
                 .piece = entry_pieces[sq],
                 .king_square = king_square,
-            });
+            }));
             removed_len += 1;
         }
         while (added_scan != 0) : (added_scan &= added_scan - 1) {
             const sq: u8 = @intCast(@ctz(added_scan));
-            added[added_len] = nnue_feature.halfMakeIndex(.{
+            added[added_len] = @intCast(nnue_feature.halfMakeIndex(.{
                 .perspective = perspective,
                 .square = sq,
                 .piece = board[sq],
                 .king_square = king_square,
-            });
+            }));
             added_len += 1;
         }
     }
@@ -204,8 +205,8 @@ pub fn updateHybrid(
 
     // "Removed" is what must come OUT of the cache entry, "added" what must go IN, to turn
     // that entry into the accumulator we want -- for each bucket against its own board.
-    var old_removed: [psq_index_capacity]u32 = undefined;
-    var old_added: [psq_index_capacity]u32 = undefined;
+    var old_removed: [psq_index_capacity]PsqIndex = undefined;
+    var old_added: [psq_index_capacity]PsqIndex = undefined;
     const old_diff = entryDiffIndices(
         cacheEntryPiecesMut(old_entry_ptr),
         cacheEntryPieceBb(old_entry_ptr),
@@ -217,8 +218,8 @@ pub fn updateHybrid(
         &old_added,
     );
 
-    var new_removed: [psq_index_capacity]u32 = undefined;
-    var new_added: [psq_index_capacity]u32 = undefined;
+    var new_removed: [psq_index_capacity]PsqIndex = undefined;
+    var new_added: [psq_index_capacity]PsqIndex = undefined;
     const new_diff = entryDiffIndices(
         cacheEntryPiecesMut(new_entry_ptr),
         cacheEntryPieceBb(new_entry_ptr),
