@@ -108,7 +108,10 @@ pub fn init(input: TimemanInput) TimemanOutput {
     }
 
     const scale_factor: i64 = if (output.use_nodes_time != 0) input.npmsec else 1;
-    const scaled_time = @divTrunc(output.time_ms, scale_factor);
+    // Floor the scaled clock at 1. Under nodestime a budget smaller than `npmsec` divides to
+    // zero, and zero feeds `log10` below as -inf, which carries through `opt_constant` into an
+    // infinite `opt_scale` and an unrepresentable `@intFromFloat`.
+    const scaled_time = @max(@as(i64, 1), @divTrunc(output.time_ms, scale_factor));
 
     var mtg: i64 = if (input.movestogo != 0)
         @min(@as(i64, input.movestogo), 50)
@@ -292,6 +295,17 @@ test "timeman: a cyclic TC keeps movestogo as the horizon under one second" {
     var many = few;
     many.movestogo = 40;
     try std.testing.expect(init(few).optimum_time > init(many).optimum_time);
+}
+
+// Pin the nodestime floor: `available_nodes` below `npmsec` scales to a zero clock, and the
+// budget must stay a finite, ordered pair rather than the max(1.0, inf) the log10 produced.
+test "timeman: a scaled clock under 1 node-ms still yields a finite budget" {
+    var in = base;
+    in.npmsec = 600;
+    in.available_nodes = 100; // fewer nodes left than one node-millisecond buys
+    const out = init(in);
+    try std.testing.expect(out.optimum_time >= 1);
+    try std.testing.expect(out.maximum_time >= out.optimum_time);
 }
 
 test "timeman: nodestime converts movetime into nodes" {

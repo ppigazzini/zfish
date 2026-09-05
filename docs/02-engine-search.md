@@ -499,9 +499,15 @@ that cannot lose a game on a clock the caller never sent. Upstream reads two
 The **move horizon** `mtg` falls toward `scaled_time * 0.05` under one second, but only
 when the caller sent no `movestogo`: in a cyclic time control that token is the real
 number of moves before the clock is topped up, so shrinking the horizon below it budgets
-each move as though the session ended at the next control, and the engine flags. No gate
-in this repo runs a clock — the bench and every differential are node-limited — so
-`timeman.zig`'s own unit tests are what hold it.
+each move as though the session ended at the next control, and the engine flags.
+
+The **scaled clock** the horizon and the `log10` terms both read is floored at 1, because
+under `nodestime` a budget smaller than `npmsec` divides to zero, which reaches `log10` as
+`-inf` and leaves `optimum_time` an unrepresentable float.
+
+Neither path is reachable by any gate in this repo — the bench and every differential are
+node-limited, so nothing here runs a clock — which is why `timeman.zig`'s own unit tests
+are what hold them.
 
 `nodestime` and `movetime` reach the same return — both leave `time[us]` zero — and
 neither reads these members: `use_time_management` is false without a clock, and
