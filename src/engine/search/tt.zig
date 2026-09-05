@@ -222,6 +222,10 @@ inline fn setRlx(comptime T: type, p: *T, v: T) void {
     @atomicStore(T, p, v, .monotonic);
 }
 
+// Return the entry's age. Count generations the way a clock counts hours: `0 - 1` must be
+// 31, so the subtract WRAPS and the mask then discards the pv/bound bits the borrow ran
+// through. A saturating or checked subtract here would read every entry written just
+// before a wrap as the freshest in the table.
 pub fn entryRelativeAge(entry: *const TtEntry, curr_generation: u8) u8 {
     return (curr_generation -% rlx(u8, &entry.gen_bound8)) & generation_mask;
 }
