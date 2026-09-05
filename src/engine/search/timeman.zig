@@ -115,7 +115,11 @@ pub fn init(input: TimemanInput) TimemanOutput {
     else
         50;
 
-    if (scaled_time < 1000) {
+    // Reduce the horizon gradually under one second. Leave it alone in a CYCLIC time
+    // control: there `movestogo` is the real number of moves left before the clock is
+    // topped up, and shrinking it below that budgets each move as if the whole session
+    // ended at the next control -- which is how the engine flagged.
+    if (scaled_time < 1000 and input.movestogo == 0) {
         mtg = @intFromFloat(@as(f64, @floatFromInt(scaled_time)) * 0.05);
     }
 
@@ -274,6 +278,20 @@ test "timeman: sub-second budgets take the moves-to-go reduction (ms, not us)" {
     in.time_ms = 400;
     in.inc_ms = 4;
     try std.testing.expect(init(in).optimum_time > 1);
+}
+
+// Pin the cyclic-time-control horizon: with `movestogo` set, a sub-second budget must keep
+// the caller's move count instead of the `scaled_time * 0.05` reduction. Discriminate on two
+// different movestogo values at one clock -- the reduction ignores movestogo, so before the
+// fix both landed on the same mtg and produced the SAME optimum.
+test "timeman: a cyclic TC keeps movestogo as the horizon under one second" {
+    var few = base;
+    few.time_ms = 400;
+    few.inc_ms = 0;
+    few.movestogo = 2;
+    var many = few;
+    many.movestogo = 40;
+    try std.testing.expect(init(few).optimum_time > init(many).optimum_time);
 }
 
 test "timeman: nodestime converts movetime into nodes" {
