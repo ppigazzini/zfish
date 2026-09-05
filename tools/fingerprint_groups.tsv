@@ -20,6 +20,18 @@
 # and prefer a callee too big to inline over its caller. `isDraw` has no row for exactly
 # this reason: zfish inlines it away entirely, so there is nothing to compare.
 #
+# A THIRD FIELD SUBTRACTS. Some rows reach the same symbol through a path only ONE engine
+# has, and then the row is comparing the harness rather than the component. The optional
+# third field is a regex subtracted from that row on each side, so each engine nets out its
+# OWN count -- never a hard-coded difference, which would rot the moment the bench list
+# changed length. `set_check_info` is the case: see its row.
+#
+# NARROWING A ROW IS ALLOWED; SILENTLY SUMMING IS NOT. Where a compiler inlines one
+# instantiation away on one side only, the row must not go on adding the surviving symbols
+# against BOTH of the other side's -- that reads as a call-sequence divergence which is not
+# there. Narrow both sides to the instantiation that survives on both, and NAME the half
+# that is no longer covered, the way `isDraw` is named above. `threats` is that case.
+#
 # MATCH ONE SYMBOL PER SIDE, AND VERIFY IT. A loose regex silently sums symbols that are
 # not the same thing: `Position::do_move` alone also catches upstream's delegating 4-arg
 # overload (250 calls) and reads as a 250-call divergence that is not there. Check a new
@@ -29,10 +41,30 @@ movepick	movepick\.nextMove$|MovePicker::next_move
 legal	legality\.legal$|Position::legal
 gives_check	legality\.givesCheck$|Position::gives_check
 see_ge	legality\.seeGe$|Position::see_ge
-set_check_info	state_setup\.setCheckInfo$|Position::set_check_info
+# Upstream hands each worker its root by round-tripping the FEN -- `rootPos.set(pos.fen(), ..)`
+# (thread.cpp) -- so every `go` costs an extra `Position::set` -> `set_state` ->
+# `set_check_info`. zfish copies the Position struct and repoints `st` instead
+# (platform/thread.zig), which is why its own comment records the bug that re-parsing
+# caused. Same root, one fewer derivation: 103 setups against 52 at bench 16 1 8, and the
+# row read 172,552 vs 172,501 for that reason alone. Subtracting each side's OWN setup
+# count leaves the IN-SEARCH derivations, which is what this row is the canary for, and
+# they agree exactly: 172,449 == 172,449 (do_move 170,508 + do_null_move 1,941).
+set_check_info	state_setup\.setCheckInfo$|Position::set_check_info	state_setup\.setState$|Position::set_state
 do_move	move_do\.doMove$|Position::do_move\(Stockfish::Move, Stockfish::StateInfo&, bool
 undo_move	move_do\.undoMove$|Position::undo_move
 do_null_move	move_do\.doNullMove$|Position::do_null_move
-threats	updatePieceThreats|update_piece_threats
-acc_apply	applyCombinedDelta$|namespace\)::apply_combined
+# zfish makes `put_piece` comptime where upstream leaves it a runtime bool, so zfish's TWO
+# surviving symbols answer upstream's ONE `<true>` instantiation, and they sum to it exactly
+# (303,078 == 303,078 at bench 16 1 8). The `compute_ray=false` pair reaches
+# `updatePieceThreatsRays` directly and LLVM inlines it away entirely, so upstream's
+# `<false>` (81,022) has nothing here to compare against -- the `isDraw` case above. The row
+# used to sum zfish's two against upstream's two and report 0.789, which read as an
+# algorithm divergence that was never there.
+threats	move_do_threats\.updatePieceThreats__anon|update_piece_threats<true>
+# `applyCombinedDelta` still exists in nnue_acc_rowops.zig but LLVM inlines it away, so the
+# old row matched NOTHING here and read 0 against upstream's 150,323. Retargeted at the
+# callee that survives: `applyCombinedPsqtDelta` is called once beside it at both sites
+# (nnue_acc_update.zig, nnue_acc_both.zig), so it fires exactly once per upstream
+# `apply_combined` -- 150,323 == 150,323, verified per-symbol before this row was trusted.
+acc_apply	applyCombinedPsqtDelta$|namespace\)::apply_combined
 acc_side	nnue_acc_update\.evaluateSide$|AccumulatorStack::evaluate_side

@@ -144,6 +144,15 @@ def main():
         help="NAME=REGEX; regex may match several symbols, which are summed",
     )
     p.add_argument(
+        "--minus",
+        action="append",
+        default=[],
+        metavar="NAME=REGEX",
+        help="subtract this group's matches from NAME before comparing, per side. Use it when "
+        "each engine reaches the same symbol through a path the other does not have, so the "
+        "row compares the component rather than the harness around it.",
+    )
+    p.add_argument(
         "--calls",
         action="store_true",
         help="compare CALL COUNTS (the algorithm-parity test) instead of Ir",
@@ -174,6 +183,15 @@ def main():
         name, _, rx = g.partition("=")
         groups.append((name, rx))
 
+    minus = {}
+    for m in a.minus:
+        if "=" not in m:
+            sys.exit(f"error: --minus wants NAME=REGEX, got {m!r}")
+        name, _, rx = m.partition("=")
+        if name not in {n for n, _ in groups}:
+            sys.exit(f"error: --minus names no group: {name!r}")
+        minus[name] = rx
+
     if a.calls:
         zf, sf = calls(a.zfish), calls(a.upstream)
         zt = st = None
@@ -193,6 +211,17 @@ def main():
         if z == 0 and s == 0:
             print(f"{name:<22}{'-- no symbol matched either side --':>41}")
             continue
+        # A one-sided zero is a ROW fault, not a call-sequence finding: the regex stopped
+        # matching (a rename, or a compiler that inlined the symbol away on one side). Say
+        # which side, because "not the same call sequence" sends the reader hunting an
+        # engine bug that is not there.
+        if (z == 0) != (s == 0):
+            side = "zfish" if z == 0 else "upstream"
+            print(f"{name:<22}{z:>16,}{s:>16,}{'':>9}  <-- MISS: regex matched nothing on {side}")
+            continue
+        if name in minus:
+            z -= _sum_group(zf, minus[name])[0]
+            s -= _sum_group(sf, minus[name])[0]
         ratio = (z / s) if s else float("inf")
         mark = ""
         if a.calls:

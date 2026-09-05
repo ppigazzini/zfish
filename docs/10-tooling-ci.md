@@ -156,7 +156,7 @@ past it.**
 | Does it still agree with upstream? | `upstream-parity` | Anything off the bench's fixed position list. |
 | …on positions nobody chose? | `upstream-walk` | Time management, SMP, and Syzygy — none of which a random walk enters. |
 | Does it still PRINT what upstream prints? | `upstream_transcript.sh` | Whether the two searched the same tree; and it compares `Threads 1` only, because lazy SMP is nondeterministic on both sides. |
-| Does it CALL what upstream calls? | `upstream_fingerprint.sh` | Whether the result is right — it counts calls, not answers. Rebuild the oracle `-fno-inline` first or inlining fakes a divergence. |
+| Does it CALL what upstream calls? | `upstream_fingerprint.sh` | Whether the result is right — it counts calls, not answers. Rebuild the oracle `-fno-inline` first or inlining fakes a divergence; it faked two here, and a row whose symbol one side inlines away must be narrowed to what survives on both, never left summing. Where only one engine reaches a symbol through a path the other lacks, a row's third field subtracts each side's OWN count of it. |
 | Is the movegen right? | `perft` | Anything past move counts. Its numbers are facts about chess, so a mismatch is never a golden to update. |
 | Is there a data race? | `tsan-race` | A wrong value. And no other gate substitutes: `parity`'s bench is single-threaded, so every golden agrees with the oracle while a race is live. |
 | Does the engine still ANSWER? | `liveness` | A wrong answer. It owns a clock and reads nothing else. |
