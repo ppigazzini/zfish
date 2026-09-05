@@ -13,8 +13,8 @@ const WinRateParams = struct { a: f64, b: f64 };
 fn winRateParams(material: i32) WinRateParams {
     const clamped = std.math.clamp(material, 17, 78);
     const m = @as(f64, @floatFromInt(clamped)) / 58.0;
-    const as = [_]f64{ -72.32565836, 185.93832038, -144.58862193, 416.44950446 };
-    const bs = [_]f64{ 83.86794042, -136.06112997, 69.98820887, 47.62901433 };
+    const as = [_]f64{ -142.72052667, 372.35176398, -340.71073572, 415.23490212 };
+    const bs = [_]f64{ 5.93832785, 15.61267078, -30.57816876, 69.63866711 };
     const a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
     const b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
     return .{ .a = a, .b = b };

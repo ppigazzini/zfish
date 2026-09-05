@@ -1,73 +1,73 @@
-info depth 1 seldepth 2 multipv 1 score cp 22 wdl 48 943 9 nodes 66 hashfull 0 tbhits 0 pv d2d4
-info depth 1 seldepth 2 multipv 2 score cp 19 wdl 43 947 10 nodes 66 hashfull 0 tbhits 0 pv c2c4
-info depth 1 seldepth 2 multipv 3 score cp 17 wdl 40 949 11 nodes 66 hashfull 0 tbhits 0 pv e2e4
-info depth 2 seldepth 3 multipv 1 score cp 21 wdl 46 945 9 nodes 375 hashfull 0 tbhits 0 pv d2d4 d7d6
-info depth 2 seldepth 4 multipv 2 score cp 19 wdl 42 948 10 nodes 375 hashfull 0 tbhits 0 pv e2e3
-info depth 2 seldepth 3 multipv 3 score cp 18 wdl 42 947 11 nodes 375 hashfull 0 tbhits 0 pv e2e4
-info depth 3 seldepth 4 multipv 1 score cp 32 wdl 70 924 6 nodes 784 hashfull 0 tbhits 0 pv d2d4
-info depth 3 seldepth 6 multipv 2 score cp 21 wdl 46 945 9 nodes 784 hashfull 0 tbhits 0 pv e2e4 b8c6
-info depth 3 seldepth 5 multipv 3 score cp 20 wdl 44 946 10 nodes 784 hashfull 0 tbhits 0 pv c2c3 g8f6
-info depth 4 seldepth 10 multipv 1 score cp 22 wdl 48 943 9 nodes 4779 hashfull 1 tbhits 0 pv e2e4 c7c5 g1f3
-info depth 4 seldepth 7 multipv 2 score cp 5 wdl 25 957 18 nodes 4779 hashfull 1 tbhits 0 pv d2d4 g8f6 b1d2 d7d5 g1f3 c8f5
-info depth 4 seldepth 8 multipv 3 score cp 4 wdl 24 958 18 nodes 4779 hashfull 1 tbhits 0 pv c2c4 e7e6 d2d4 g8f6 b1c3 d7d5
-info depth 5 seldepth 9 multipv 1 score cp 22 wdl 47 944 9 nodes 6695 hashfull 2 tbhits 0 pv e2e4 e7e6
-info depth 5 seldepth 9 multipv 2 score cp 9 wdl 29 956 15 nodes 6695 hashfull 2 tbhits 0 pv d2d4 g8f6 c2c3 d7d5
-info depth 5 seldepth 8 multipv 3 score cp 5 wdl 26 957 17 nodes 6695 hashfull 2 tbhits 0 pv c2c4 e7e6 d2d4 d7d5
-info depth 6 seldepth 8 multipv 1 score cp 22 wdl 48 943 9 nodes 9858 hashfull 2 tbhits 0 pv e2e4 e7e6 d2d4 d7d5 e4e5
-info depth 6 seldepth 11 multipv 2 score cp 7 wdl 27 957 16 nodes 9858 hashfull 2 tbhits 0 pv d2d4 g8f6 c1f4 e7e6 b1c3
-info depth 6 seldepth 9 multipv 3 score cp 5 wdl 25 957 18 nodes 9858 hashfull 2 tbhits 0 pv c2c4 e7e6 b1c3
-info depth 7 seldepth 11 multipv 1 score cp 20 wdl 45 945 10 nodes 15298 hashfull 3 tbhits 0 pv e2e4 c7c5 g1f3 b8c6 c2c3 g8f6 e4e5
-info depth 7 seldepth 10 multipv 2 score cp 9 wdl 29 956 15 nodes 15298 hashfull 3 tbhits 0 pv g1f3 d7d5
-info depth 7 seldepth 10 multipv 3 score cp 6 wdl 27 956 17 nodes 15298 hashfull 3 tbhits 0 pv d2d4 d7d5
-info depth 8 seldepth 10 multipv 1 score cp 22 wdl 48 943 9 nodes 18898 hashfull 3 tbhits 0 pv e2e4 c7c5 d2d4 c5d4 g1f3 b8c6 f3d4
-info depth 8 seldepth 15 multipv 2 score cp 12 wdl 33 954 13 nodes 18898 hashfull 3 tbhits 0 pv d2d4 g8f6 g1f3
-info depth 8 seldepth 10 multipv 3 score cp 9 wdl 30 955 15 nodes 18898 hashfull 3 tbhits 0 pv g1f3 g8f6 c2c4 c7c5 e2e3 e7e6 d2d4 d7d5
-info depth 9 seldepth 15 multipv 1 score cp 19 wdl 43 947 10 nodes 27459 hashfull 4 tbhits 0 pv e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 d2d3 g8f6 e1g1 d7d6
-info depth 9 seldepth 14 multipv 2 score cp 12 wdl 33 953 14 nodes 27459 hashfull 4 tbhits 0 pv g1f3 g8f6 d2d4 e7e6 c2c4 f8b4 b1c3 e8g8 d1c2 c7c5 d4c5 b4c5 e2e4
-info depth 9 seldepth 11 multipv 3 score cp 10 wdl 31 955 14 nodes 27459 hashfull 4 tbhits 0 pv d2d4 g8f6 g1f3 e7e6 g2g3 d7d5 f1g2 c7c5
-info depth 10 seldepth 11 multipv 1 score cp 18 wdl 42 947 11 nodes 35798 hashfull 6 tbhits 0 pv e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 d2d3 g8f6 e1g1 e8g8
-info depth 10 seldepth 17 multipv 2 score cp 11 wdl 32 954 14 nodes 35798 hashfull 6 tbhits 0 pv g1f3 d7d5 d2d4 g8f6 e2e3 e7e6 c2c4 c7c5 c4d5 e6d5 f1b5 c8d7 b5d7 d8d7
-info depth 10 seldepth 16 multipv 3 score cp 11 wdl 32 954 14 nodes 35798 hashfull 6 tbhits 0 pv d2d4 g8f6 c2c4 e7e6 g1f3 d7d5 e2e3 c7c5 c4d5 e6d5 f1b5 c8d7 b5d7 d8d7
-info depth 11 seldepth 16 multipv 1 score cp 18 wdl 41 948 11 nodes 45824 hashfull 10 tbhits 0 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 g8f6 d4c6 b7c6 f1d3
-info depth 11 seldepth 16 multipv 2 score cp 11 wdl 32 954 14 nodes 45824 hashfull 10 tbhits 0 pv d2d4 d7d5 g1f3 g8f6 c2c4 e7e6 b1c3 f8b4 d1c2 c7c5 c4d5 e6d5 d4c5 b4c5
-info depth 11 seldepth 18 multipv 3 score cp 10 wdl 31 955 14 nodes 45824 hashfull 10 tbhits 0 pv g1f3 d7d5 d2d4 g8f6 c2c4 e7e6 b1c3 f8b4 e2e3 e8g8
-info depth 12 seldepth 18 multipv 1 score cp 22 wdl 48 943 9 nodes 53793 hashfull 11 tbhits 0 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 f8c5 d4c6 b7c6
-info depth 12 seldepth 16 multipv 2 score cp 13 wdl 34 953 13 nodes 53793 hashfull 11 tbhits 0 pv g1f3 g8f6 c2c4 e7e6 d2d4 d7d5 b1c3 f8b4 c1d2 e8g8 e2e3 c7c5 c4d5 e6d5
-info depth 12 seldepth 17 multipv 3 score cp 11 wdl 32 954 14 nodes 53793 hashfull 11 tbhits 0 pv d2d4 d7d5 g1f3 g8f6 c2c4 e7e6 b1c3 b8d7 e2e3 f8e7 a2a3 e8g8
+info depth 1 seldepth 2 multipv 1 score cp 30 wdl 58 936 6 nodes 66 hashfull 0 tbhits 0 pv d2d4
+info depth 1 seldepth 2 multipv 2 score cp 25 wdl 49 944 7 nodes 66 hashfull 0 tbhits 0 pv c2c4
+info depth 1 seldepth 2 multipv 3 score cp 23 wdl 45 948 7 nodes 66 hashfull 0 tbhits 0 pv e2e4
+info depth 2 seldepth 3 multipv 1 score cp 29 wdl 55 939 6 nodes 375 hashfull 0 tbhits 0 pv d2d4 d7d6
+info depth 2 seldepth 4 multipv 2 score cp 25 wdl 48 945 7 nodes 375 hashfull 0 tbhits 0 pv e2e3
+info depth 2 seldepth 3 multipv 3 score cp 25 wdl 48 945 7 nodes 375 hashfull 0 tbhits 0 pv e2e4
+info depth 3 seldepth 4 multipv 1 score cp 44 wdl 96 901 3 nodes 784 hashfull 0 tbhits 0 pv d2d4
+info depth 3 seldepth 6 multipv 2 score cp 29 wdl 55 939 6 nodes 784 hashfull 0 tbhits 0 pv e2e4 b8c6
+info depth 3 seldepth 5 multipv 3 score cp 26 wdl 51 943 6 nodes 784 hashfull 0 tbhits 0 pv c2c3 g8f6
+info depth 4 seldepth 10 multipv 1 score cp 30 wdl 58 936 6 nodes 4779 hashfull 1 tbhits 0 pv e2e4 c7c5 g1f3
+info depth 4 seldepth 7 multipv 2 score cp 6 wdl 24 962 14 nodes 4779 hashfull 1 tbhits 0 pv d2d4 g8f6 b1d2 d7d5 g1f3 c8f5
+info depth 4 seldepth 8 multipv 3 score cp 5 wdl 23 962 15 nodes 4779 hashfull 1 tbhits 0 pv c2c4 e7e6 d2d4 g8f6 b1c3 d7d5
+info depth 5 seldepth 9 multipv 1 score cp 29 wdl 57 937 6 nodes 6695 hashfull 2 tbhits 0 pv e2e4 e7e6
+info depth 5 seldepth 9 multipv 2 score cp 12 wdl 29 959 12 nodes 6695 hashfull 2 tbhits 0 pv d2d4 g8f6 c2c3 d7d5
+info depth 5 seldepth 8 multipv 3 score cp 7 wdl 24 962 14 nodes 6695 hashfull 2 tbhits 0 pv c2c4 e7e6 d2d4 d7d5
+info depth 6 seldepth 8 multipv 1 score cp 30 wdl 57 937 6 nodes 9858 hashfull 2 tbhits 0 pv e2e4 e7e6 d2d4 d7d5 e4e5
+info depth 6 seldepth 11 multipv 2 score cp 10 wdl 27 960 13 nodes 9858 hashfull 2 tbhits 0 pv d2d4 g8f6 c1f4 e7e6 b1c3
+info depth 6 seldepth 9 multipv 3 score cp 6 wdl 24 962 14 nodes 9858 hashfull 2 tbhits 0 pv c2c4 e7e6 b1c3
+info depth 7 seldepth 11 multipv 1 score cp 27 wdl 52 942 6 nodes 15298 hashfull 3 tbhits 0 pv e2e4 c7c5 g1f3 b8c6 c2c3 g8f6 e4e5
+info depth 7 seldepth 10 multipv 2 score cp 12 wdl 29 959 12 nodes 15298 hashfull 3 tbhits 0 pv g1f3 d7d5
+info depth 7 seldepth 10 multipv 3 score cp 8 wdl 26 961 13 nodes 15298 hashfull 3 tbhits 0 pv d2d4 d7d5
+info depth 8 seldepth 10 multipv 1 score cp 30 wdl 58 936 6 nodes 18898 hashfull 3 tbhits 0 pv e2e4 c7c5 d2d4 c5d4 g1f3 b8c6 f3d4
+info depth 8 seldepth 15 multipv 2 score cp 17 wdl 35 955 10 nodes 18898 hashfull 3 tbhits 0 pv d2d4 g8f6 g1f3
+info depth 8 seldepth 10 multipv 3 score cp 13 wdl 30 959 11 nodes 18898 hashfull 3 tbhits 0 pv g1f3 g8f6 c2c4 c7c5 e2e3 e7e6 d2d4 d7d5
+info depth 9 seldepth 15 multipv 1 score cp 26 wdl 50 943 7 nodes 27459 hashfull 4 tbhits 0 pv e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 d2d3 g8f6 e1g1 d7d6
+info depth 9 seldepth 14 multipv 2 score cp 16 wdl 34 956 10 nodes 27459 hashfull 4 tbhits 0 pv g1f3 g8f6 d2d4 e7e6 c2c4 f8b4 b1c3 e8g8 d1c2 c7c5 d4c5 b4c5 e2e4
+info depth 9 seldepth 11 multipv 3 score cp 14 wdl 31 958 11 nodes 27459 hashfull 4 tbhits 0 pv d2d4 g8f6 g1f3 e7e6 g2g3 d7d5 f1g2 c7c5
+info depth 10 seldepth 11 multipv 1 score cp 25 wdl 48 945 7 nodes 35798 hashfull 6 tbhits 0 pv e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 d2d3 g8f6 e1g1 e8g8
+info depth 10 seldepth 17 multipv 2 score cp 15 wdl 33 957 10 nodes 35798 hashfull 6 tbhits 0 pv g1f3 d7d5 d2d4 g8f6 e2e3 e7e6 c2c4 c7c5 c4d5 e6d5 f1b5 c8d7 b5d7 d8d7
+info depth 10 seldepth 16 multipv 3 score cp 15 wdl 33 957 10 nodes 35798 hashfull 6 tbhits 0 pv d2d4 g8f6 c2c4 e7e6 g1f3 d7d5 e2e3 c7c5 c4d5 e6d5 f1b5 c8d7 b5d7 d8d7
+info depth 11 seldepth 16 multipv 1 score cp 24 wdl 47 946 7 nodes 45824 hashfull 10 tbhits 0 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 g8f6 d4c6 b7c6 f1d3
+info depth 11 seldepth 16 multipv 2 score cp 15 wdl 33 957 10 nodes 45824 hashfull 10 tbhits 0 pv d2d4 d7d5 g1f3 g8f6 c2c4 e7e6 b1c3 f8b4 d1c2 c7c5 c4d5 e6d5 d4c5 b4c5
+info depth 11 seldepth 18 multipv 3 score cp 14 wdl 31 958 11 nodes 45824 hashfull 10 tbhits 0 pv g1f3 d7d5 d2d4 g8f6 c2c4 e7e6 b1c3 f8b4 e2e3 e8g8
+info depth 12 seldepth 18 multipv 1 score cp 30 wdl 57 937 6 nodes 53793 hashfull 11 tbhits 0 pv e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 f8c5 d4c6 b7c6
+info depth 12 seldepth 16 multipv 2 score cp 17 wdl 36 955 9 nodes 53793 hashfull 11 tbhits 0 pv g1f3 g8f6 c2c4 e7e6 d2d4 d7d5 b1c3 f8b4 c1d2 e8g8 e2e3 c7c5 c4d5 e6d5
+info depth 12 seldepth 17 multipv 3 score cp 15 wdl 33 957 10 nodes 53793 hashfull 11 tbhits 0 pv d2d4 d7d5 g1f3 g8f6 c2c4 e7e6 b1c3 b8d7 e2e3 f8e7 a2a3 e8g8
 bestmove e2e4 ponder e7e5
-info depth 1 seldepth 10 multipv 1 score cp -62 wdl 2 808 190 nodes 246 hashfull 0 tbhits 0 pv e2a6 e6d5
-info depth 1 seldepth 6 multipv 2 score cp -137 wdl 0 198 802 nodes 246 hashfull 0 tbhits 0 pv d5e6 e7e6 e2a6 e6e5
-info depth 1 seldepth 9 multipv 3 score cp -140 wdl 0 179 821 nodes 246 hashfull 0 tbhits 0 pv d2g5
-info depth 2 seldepth 4 multipv 1 score cp -62 wdl 2 808 190 nodes 1050 hashfull 0 tbhits 0 pv e2a6 e6d5
-info depth 2 seldepth 5 multipv 2 score cp -137 wdl 0 198 802 nodes 1050 hashfull 0 tbhits 0 pv d5e6 e7e6 e2a6 e6e5
-info depth 2 seldepth 7 multipv 3 score cp -229 wdl 0 7 993 nodes 1050 hashfull 0 tbhits 0 pv g2h3 e6d5 e2a6 e7e5
-info depth 3 seldepth 7 multipv 1 score cp -175 wdl 0 54 946 nodes 2517 hashfull 0 tbhits 0 pv d2g5 b4c3
-info depth 3 seldepth 8 multipv 2 score cp -184 wdl 0 38 962 nodes 2517 hashfull 0 tbhits 0 pv e2a6 e6d5 c3e2 e7e5 e4d5
-info depth 3 seldepth 12 multipv 3 score cp -198 wdl 0 23 977 nodes 2517 hashfull 0 tbhits 0 pv d5e6 b4c3 e6f7 e8d8
-info depth 4 seldepth 11 multipv 1 score cp -187 wdl 0 34 966 nodes 3345 hashfull 0 tbhits 0 pv e2a6 e6d5 e4d5 e7e5 e1f1
-info depth 4 seldepth 7 multipv 2 score cp -198 wdl 0 23 977 nodes 3345 hashfull 0 tbhits 0 pv d5e6
-info depth 4 seldepth 8 multipv 3 score cp -257 wdl 0 2 998 nodes 3345 hashfull 0 tbhits 0 pv d2g5 b4c3 e2a6 e6d5
-info depth 5 seldepth 9 multipv 1 score cp -136 wdl 0 201 799 nodes 4640 hashfull 0 tbhits 0 pv d5e6 e7e6 e2a6 e6e5 c3e2
-info depth 5 seldepth 7 multipv 2 score cp -226 wdl 0 8 992 nodes 4640 hashfull 0 tbhits 0 pv e2a6 e6d5 e4d5 b4c3 d2c3 f6d5
-info depth 5 seldepth 8 multipv 3 score cp -295 wdl 0 1 999 nodes 4640 hashfull 0 tbhits 0 pv c3b5
-info depth 6 seldepth 11 multipv 1 score cp -192 wdl 0 29 971 nodes 7227 hashfull 1 tbhits 0 pv e2a6 e6d5 e4d5 h3g2 f3g2 e7e5 e1f1 b4c3
-info depth 6 seldepth 7 multipv 2 score cp -263 wdl 0 2 998 nodes 7227 hashfull 1 tbhits 0 pv d5e6 e7e6 e2a6 e6e5 c3e2 f6e4
-info depth 6 seldepth 16 multipv 3 score cp -329 wdl 0 0 1000 nodes 7227 hashfull 1 tbhits 0 pv d2g5 b4c3 e2a6 e6d5 e5g4 e7e4 e1f1 e4f3 g4f6 g7f6
-info depth 7 seldepth 11 multipv 1 score cp -143 wdl 0 160 840 nodes 9048 hashfull 1 tbhits 0 pv e2a6 e6d5 e4d5 h3g2 f3g2 e7e5 e1f1
-info depth 7 seldepth 9 multipv 2 score cp -262 wdl 0 2 998 nodes 9048 hashfull 1 tbhits 0 pv d5e6 e7e6 e2a6 e6e5 c3b5 f6e4
-info depth 7 seldepth 14 multipv 3 score cp -350 wdl 0 0 1000 nodes 9048 hashfull 1 tbhits 0 pv d2g5 b4c3 e2a6 e6d5 e5g4 c3b2
-info depth 8 seldepth 9 multipv 1 score cp -156 wdl 0 106 894 nodes 12219 hashfull 2 tbhits 0 pv e2a6 e6d5 e4d5 h3g2 f3g2 e7e5 e1f1 e5d4
-info depth 8 seldepth 9 multipv 2 score cp -165 wdl 0 76 924 nodes 12219 hashfull 2 tbhits 0 pv d5e6 e7e6 e2a6 e6e5 c3e2 f6e4 d2b4
-info depth 8 seldepth 18 multipv 3 score cp -331 wdl 0 0 1000 nodes 12219 hashfull 2 tbhits 0 pv d2g5 b4c3 e2a6 e6d5 g5f6 g7f6 e5g4 f6d4
-info depth 9 seldepth 17 multipv 1 score cp -75 wdl 1 726 273 nodes 18952 hashfull 2 tbhits 0 pv d5e6 e7e6 e2a6 h3g2 f3g2 e6e5 f2f4 e5e7 c3b5 f6e4 b5c7 e8d8 c7a8
-info depth 9 seldepth 13 multipv 2 score cp -140 wdl 0 179 821 nodes 18952 hashfull 2 tbhits 0 pv e2a6 b4c3 d2c3 e6d5 e5g4 h3g2 f3g2
-info depth 9 seldepth 18 multipv 3 score cp -395 wdl 0 0 1000 nodes 18952 hashfull 2 tbhits 0 pv d2g5 b4c3 e5g4 c3b2 a1b1 h3g2
-info depth 10 seldepth 14 multipv 1 score cp -130 wdl 0 239 761 nodes 30312 hashfull 6 tbhits 0 pv e2a6 b4c3 d2c3 e6d5 e5g4 h3g2 h1g1 f6g4 c3g7 g4h2 f3g2 h8h4
-info depth 10 seldepth 19 multipv 2 score cp -149 wdl 0 133 867 nodes 30312 hashfull 6 tbhits 0 pv d5e6 a6e2 c3e2 e7e6 d2f4 h8h5 e2d4 e6e7 d4b5 h3g2 f3g2
-info depth 10 seldepth 15 multipv 3 score cp -333 wdl 0 0 1000 nodes 30312 hashfull 6 tbhits 0 pv d2g5 b4c3 e5g4 c3b2 a1b1 h3g2 h1g1 a6e2 g4f6 g7f6 f3f6
-info depth 11 seldepth 22 multipv 1 score cp -135 wdl 0 209 791 nodes 42294 hashfull 11 tbhits 0 pv e2a6 b4c3 d2c3 h3g2 h1g1 h8h4 d5e6 e7e6 f3g2 h4e4 e1f1
-info depth 11 seldepth 26 multipv 2 score cp -162 wdl 0 84 916 nodes 42294 hashfull 11 tbhits 0 pv d5e6 a6e2 c3e2 e7e6 d2f4 h3g2 f3g2 h8h5 e5d3 e6e4 g2e4 f6e4 f4c7 b6c4 e2f4
-info depth 11 seldepth 18 multipv 3 score cp -328 wdl 0 0 1000 nodes 42294 hashfull 11 tbhits 0 pv d2g5 b4c3 e5g4 c3b2 a1b1 a6e2 g4f6 g7f6 f3f6 e7f6 g5f6 h3g2 h1g1 h8h5 e1e2 e6d5
+info depth 1 seldepth 10 multipv 1 score cp -84 wdl 1 653 346 nodes 246 hashfull 0 tbhits 0 pv e2a6 e6d5
+info depth 1 seldepth 6 multipv 2 score cp -184 wdl 0 34 966 nodes 246 hashfull 0 tbhits 0 pv d5e6 e7e6 e2a6 e6e5
+info depth 1 seldepth 9 multipv 3 score cp -188 wdl 0 29 971 nodes 246 hashfull 0 tbhits 0 pv d2g5
+info depth 2 seldepth 4 multipv 1 score cp -84 wdl 1 653 346 nodes 1050 hashfull 0 tbhits 0 pv e2a6 e6d5
+info depth 2 seldepth 5 multipv 2 score cp -184 wdl 0 34 966 nodes 1050 hashfull 0 tbhits 0 pv d5e6 e7e6 e2a6 e6e5
+info depth 2 seldepth 7 multipv 3 score cp -309 wdl 0 0 1000 nodes 1050 hashfull 0 tbhits 0 pv g2h3 e6d5 e2a6 e7e5
+info depth 3 seldepth 7 multipv 1 score cp -236 wdl 0 4 996 nodes 2517 hashfull 0 tbhits 0 pv d2g5 b4c3
+info depth 3 seldepth 8 multipv 2 score cp -249 wdl 0 3 997 nodes 2517 hashfull 0 tbhits 0 pv e2a6 e6d5 c3e2 e7e5 e4d5
+info depth 3 seldepth 12 multipv 3 score cp -268 wdl 0 1 999 nodes 2517 hashfull 0 tbhits 0 pv d5e6 b4c3 e6f7 e8d8
+info depth 4 seldepth 11 multipv 1 score cp -252 wdl 0 2 998 nodes 3345 hashfull 0 tbhits 0 pv e2a6 e6d5 e4d5 e7e5 e1f1
+info depth 4 seldepth 7 multipv 2 score cp -268 wdl 0 1 999 nodes 3345 hashfull 0 tbhits 0 pv d5e6
+info depth 4 seldepth 8 multipv 3 score cp -347 wdl 0 0 1000 nodes 3345 hashfull 0 tbhits 0 pv d2g5 b4c3 e2a6 e6d5
+info depth 5 seldepth 9 multipv 1 score cp -184 wdl 0 35 965 nodes 4640 hashfull 0 tbhits 0 pv d5e6 e7e6 e2a6 e6e5 c3e2
+info depth 5 seldepth 7 multipv 2 score cp -305 wdl 0 0 1000 nodes 4640 hashfull 0 tbhits 0 pv e2a6 e6d5 e4d5 b4c3 d2c3 f6d5
+info depth 5 seldepth 8 multipv 3 score cp -398 wdl 0 0 1000 nodes 4640 hashfull 0 tbhits 0 pv c3b5
+info depth 6 seldepth 11 multipv 1 score cp -259 wdl 0 2 998 nodes 7227 hashfull 1 tbhits 0 pv e2a6 e6d5 e4d5 h3g2 f3g2 e7e5 e1f1 b4c3
+info depth 6 seldepth 7 multipv 2 score cp -354 wdl 0 0 1000 nodes 7227 hashfull 1 tbhits 0 pv d5e6 e7e6 e2a6 e6e5 c3e2 f6e4
+info depth 6 seldepth 16 multipv 3 score cp -444 wdl 0 0 1000 nodes 7227 hashfull 1 tbhits 0 pv d2g5 b4c3 e2a6 e6d5 e5g4 e7e4 e1f1 e4f3 g4f6 g7f6
+info depth 7 seldepth 11 multipv 1 score cp -193 wdl 0 24 976 nodes 9048 hashfull 1 tbhits 0 pv e2a6 e6d5 e4d5 h3g2 f3g2 e7e5 e1f1
+info depth 7 seldepth 9 multipv 2 score cp -354 wdl 0 0 1000 nodes 9048 hashfull 1 tbhits 0 pv d5e6 e7e6 e2a6 e6e5 c3b5 f6e4
+info depth 7 seldepth 14 multipv 3 score cp -473 wdl 0 0 1000 nodes 9048 hashfull 1 tbhits 0 pv d2g5 b4c3 e2a6 e6d5 e5g4 c3b2
+info depth 8 seldepth 9 multipv 1 score cp -210 wdl 0 12 988 nodes 12219 hashfull 2 tbhits 0 pv e2a6 e6d5 e4d5 h3g2 f3g2 e7e5 e1f1 e5d4
+info depth 8 seldepth 9 multipv 2 score cp -223 wdl 0 7 993 nodes 12219 hashfull 2 tbhits 0 pv d5e6 e7e6 e2a6 e6e5 c3e2 f6e4 d2b4
+info depth 8 seldepth 18 multipv 3 score cp -446 wdl 0 0 1000 nodes 12219 hashfull 2 tbhits 0 pv d2g5 b4c3 e2a6 e6d5 g5f6 g7f6 e5g4 f6d4
+info depth 9 seldepth 17 multipv 1 score cp -101 wdl 0 494 506 nodes 18952 hashfull 2 tbhits 0 pv d5e6 e7e6 e2a6 h3g2 f3g2 e6e5 f2f4 e5e7 c3b5 f6e4 b5c7 e8d8 c7a8
+info depth 9 seldepth 13 multipv 2 score cp -188 wdl 0 29 971 nodes 18952 hashfull 2 tbhits 0 pv e2a6 b4c3 d2c3 e6d5 e5g4 h3g2 f3g2
+info depth 9 seldepth 18 multipv 3 score cp -533 wdl 0 0 1000 nodes 18952 hashfull 2 tbhits 0 pv d2g5 b4c3 e5g4 c3b2 a1b1 h3g2
+info depth 10 seldepth 14 multipv 1 score cp -176 wdl 0 47 953 nodes 30312 hashfull 6 tbhits 0 pv e2a6 b4c3 d2c3 e6d5 e5g4 h3g2 h1g1 f6g4 c3g7 g4h2 f3g2 h8h4
+info depth 10 seldepth 19 multipv 2 score cp -201 wdl 0 18 982 nodes 30312 hashfull 6 tbhits 0 pv d5e6 a6e2 c3e2 e7e6 d2f4 h8h5 e2d4 e6e7 d4b5 h3g2 f3g2
+info depth 10 seldepth 15 multipv 3 score cp -450 wdl 0 0 1000 nodes 30312 hashfull 6 tbhits 0 pv d2g5 b4c3 e5g4 c3b2 a1b1 h3g2 h1g1 a6e2 g4f6 g7f6 f3f6
+info depth 11 seldepth 22 multipv 1 score cp -182 wdl 0 37 963 nodes 42294 hashfull 11 tbhits 0 pv e2a6 b4c3 d2c3 h3g2 h1g1 h8h4 d5e6 e7e6 f3g2 h4e4 e1f1
+info depth 11 seldepth 26 multipv 2 score cp -219 wdl 0 9 991 nodes 42294 hashfull 11 tbhits 0 pv d5e6 a6e2 c3e2 e7e6 d2f4 h3g2 f3g2 h8h5 e5d3 e6e4 g2e4 f6e4 f4c7 b6c4 e2f4
+info depth 11 seldepth 18 multipv 3 score cp -443 wdl 0 0 1000 nodes 42294 hashfull 11 tbhits 0 pv d2g5 b4c3 e5g4 c3b2 a1b1 a6e2 g4f6 g7f6 f3f6 e7f6 g5f6 h3g2 h1g1 h8h5 e1e2 e6d5
 bestmove e2a6 ponder b4c3
 info depth 0 score cp 0
 bestmove (none)
