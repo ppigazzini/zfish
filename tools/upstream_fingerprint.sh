@@ -60,11 +60,17 @@ fi
 echo "fingerprint: both engines search $zn nodes on bench $BENCH"
 
 # Build the --group arguments from the table, skipping comments and blanks.
+# A row may carry a THIRD field: a regex whose matches are subtracted from that row on each
+# side before the comparison. It is for the case where both engines reach the same symbol
+# through a path only one of them has -- the row then compares the component instead of the
+# harness around it, and it stays self-maintaining because each side subtracts its OWN count
+# rather than a hard-coded difference that would rot the moment the bench list changed.
 args=()
-while IFS=$'\t' read -r name regex; do
+while IFS=$'\t' read -r name regex minus; do
     case "$name" in ''|\#*) continue ;; esac
     [ -z "${regex:-}" ] && continue
     args+=(--group "$name=$regex")
+    [ -n "${minus:-}" ] && args+=(--minus "$name=$minus")
 done < "$GROUPS_FILE"
 [ "${#args[@]}" -eq 0 ] && { echo "fingerprint: no groups in $GROUPS_FILE" >&2; exit 2; }
 
