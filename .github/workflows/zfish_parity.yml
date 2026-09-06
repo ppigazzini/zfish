@@ -39,13 +39,20 @@ jobs:
     name: Linux x86-64 parity
     runs-on: ubuntu-latest
     # This lane is COMPILE-bound, not test-bound: the suite itself runs in ~1.5s (warm-cache
-    # re-run measured), but the job compiles six full build variants back to back -- debug
-    # parity, debug test, ReleaseSafe test, ReleaseSafe fuzz, ReleaseSafe parity, and the
-    # arch-determinism tier sweep. On a WARM setup-zig cache that is ~13 min; on a COLD cache
-    # (GitHub evicts on the 10 GB LRU / 7-day rule) every variant recompiles from scratch and
-    # the run needs ~30+ min. At timeout-minutes:30 the cold case had zero margin and timed out
-    # commit-independently (docs-only pushes tripped it too). 45 covers the cold path. If this
-    # keeps timing out, split the debug-test and ReleaseSafe-test steps into parallel jobs.
+    # re-run measured), but the job compiles a full build variant per step. On a WARM
+    # setup-zig cache that is minutes; on a COLD cache (GitHub evicts on the 10 GB LRU /
+    # 7-day rule) every variant recompiles from scratch.
+    #
+    # THE TWO `zig build test` STEPS NOW LIVE IN THEIR OWN JOB (`tests` below), which is
+    # what the previous version of this comment said to do if the lane kept timing out. It
+    # did: measured on the timed-out run 33995690559, the steps here cost parity 156s,
+    # ReleaseSafe parity 163s, fuzz 31s and arch-determinism 252s -- 602s together -- while
+    # the two test compiles cost 685s and 726s, 52% of a 45-minute budget, and
+    # `negative_control.sh` was killed at 691s having never been given room to finish. The
+    # ceiling had been reached on and off since 2026-08-27 (three cancelled runs before this
+    # sync touched anything), so raising the number again would only have moved the wall.
+    # Splitting runs the two halves in PARALLEL, so wall-clock falls rather than the budget
+    # rising to cover a serial sum that keeps growing.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -80,20 +87,6 @@ jobs:
       # signature / parity goldens were validated against so the gate is
       # reproducible and CPU-independent (sse41 runs on any runner).
       - run: zig build parity -Darch=x86-64-sse41-popcnt
-
-      # Unit + property tests: the module `test {}` blocks plus the
-      # board property suite (perft to reference counts, make/unmake & null-move
-      # round-trips, FEN round-trip/flip, movegen<->legality, SEE, givesCheck,
-      # repetition/50-move draw, malformed-FEN rejection, and a 50k-iter parse fuzz).
-      # These assert real invariants.
-      - run: zig build test -Darch=x86-64-sse41-popcnt
-
-      # Safety-checked (UBSan-equivalent) test run: the same unit + property suite
-      # rebuilt under -Doptimize=ReleaseSafe, so Zig's runtime safety checks --
-      # bounds, integer overflow, pointer alignment, null-unwrap, illegal cast --
-      # are ON across the board path the tests drive (incl. the 80k-iteration parser
-      # fuzz).
-      - run: zig build test -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
       # Coverage-guided fuzz-target SMOKE: `zig build fuzz` runs each
       # std.testing.fuzz target once (FEN-parse -> movegen -> make/unmake via the
@@ -155,6 +148,51 @@ jobs:
       # reset-determinism metamorphic gate, the Skill Level metamorphic gate, and the ponder
       # handshake gate run INSIDE `zig build parity` above, so they also run on the
       # Windows/macOS lanes.)
+
+  # The unit + property suite, split out of `parity` above so the two runs compile in
+  # PARALLEL with it rather than in series after it. Same runner, same pinned arch, same
+  # caches -- only the placement changed, so `lane-coverage` still sees both steps
+  # dispatched and no gate lost coverage.
+  tests:
+    name: Linux x86-64 tests
+    runs-on: ubuntu-latest
+    # 685s + 726s measured warm on run 33995690559; 45 covers the cold-cache case where both
+    # variants recompile from scratch, with the same margin the parity job keeps.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      # `zig build test` builds the engine, which loads the net, and drives the Syzygy
+      # gates' fixtures; cache both exactly as the parity job does or every run refetches.
+      - name: Cache NNUE network
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: resources/nn-*.nnue
+          key: nnue-${{ hashFiles('src/engine/eval/network.zig') }}
+
+      - name: Cache Syzygy tablebases
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: resources/syzygy
+          key: syzygy-3man-${{ hashFiles('tools/fetch_tb.zig') }}
+
+      # Unit + property tests: the module `test {}` blocks plus the
+      # board property suite (perft to reference counts, make/unmake & null-move
+      # round-trips, FEN round-trip/flip, movegen<->legality, SEE, givesCheck,
+      # repetition/50-move draw, malformed-FEN rejection, and a 50k-iter parse fuzz).
+      # These assert real invariants.
+      - run: zig build test -Darch=x86-64-sse41-popcnt
+
+      # Safety-checked (UBSan-equivalent) test run: the same unit + property suite
+      # rebuilt under -Doptimize=ReleaseSafe, so Zig's runtime safety checks --
+      # bounds, integer overflow, pointer alignment, null-unwrap, illegal cast --
+      # are ON across the board path the tests drive (incl. the 80k-iteration parser
+      # fuzz).
+      - run: zig build test -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
 
   # NON-BLOCKING Zig-master compatibility monitor.
   #
