@@ -157,11 +157,74 @@ done
 
 echo ""
 echo "golden-audit: $agree agree, $differ differ, $skipped skipped"
-if [ "$differ" -gt 0 ]; then
-    echo "golden-audit: NOT adjudicated: ${FAILED[*]}" >&2
+
+# Read the DECLARED divergences and enforce their tags. Without this the two gates that pin
+# zfish's own Zone-A fixes made the audit exit 1 forever, which is how the weekly lane came
+# to be red by construction while the README called that state expected.
+KNOWN_FILE="$REPO/tools/golden_audit_known.txt"
+[ -r "$KNOWN_FILE" ] || {
+    echo "golden-audit: cannot read $KNOWN_FILE -- the declared-divergence list is this" >&2
+    echo "golden-audit: gate's only allowance; without it every declared row would read as" >&2
+    echo "golden-audit: a finding. Refusing rather than guessing." >&2
+    exit 2; }
+
+declared_expiring=()
+declared_permanent=()
+while IFS=$'\t' read -r tag gate _reason; do
+    case "$tag" in ''|\#*) continue ;; esac
+    [ -n "${gate:-}" ] || continue
+    known "$gate"
+    case "$tag" in
+        EXPIRING)  declared_expiring+=("$gate") ;;
+        PERMANENT) declared_permanent+=("$gate") ;;
+        *) echo "golden-audit: $KNOWN_FILE: row for '$gate' has tag '$tag'; want EXPIRING or PERMANENT" >&2
+           exit 2 ;;
+    esac
+done < "$KNOWN_FILE"
+
+in_list() { local n="$1"; shift; local g; for g in "$@"; do [ "$g" = "$n" ] && return 0; done; return 1; }
+
+rc_final=0
+
+# An UNDECLARED gate that differs is the finding this audit exists to surface.
+undeclared=()
+for gate in "${FAILED[@]:-}"; do
+    [ -n "$gate" ] || continue
+    if ! in_list "$gate" "${declared_expiring[@]:-}" "${declared_permanent[@]:-}"; then
+        undeclared+=("$gate")
+    fi
+done
+if [ "${#undeclared[@]}" -gt 0 ]; then
+    echo "golden-audit: NOT adjudicated: ${undeclared[*]}" >&2
     echo "golden-audit: do NOT run <gate>-update on these -- a golden blessed past a real" >&2
     echo "golden-audit: divergence pins the divergence. Find out why upstream disagrees first." >&2
-    exit 1
+    echo "golden-audit: if it is a deliberate zfish fix, declare it in $KNOWN_FILE." >&2
+    rc_final=1
+fi
+
+# An EXPIRING row that no longer differs has outlived its cause: upstream adopted the fix.
+# Left in place it would go on granting an allowance for a gate the audit is no longer
+# adjudicating, which is the failure this tag exists to prevent.
+expired=()
+for gate in "${declared_expiring[@]:-}"; do
+    [ -n "$gate" ] || continue
+    in_list "$gate" "${SKIPPED_BY_REQUEST[@]:-}" && continue
+    in_list "$gate" "${FAILED[@]:-}" || expired+=("$gate")
+done
+if [ "${#expired[@]}" -gt 0 ]; then
+    echo "golden-audit: EXPIRED declaration(s): ${expired[*]}" >&2
+    echo "golden-audit: these are declared EXPIRING in $KNOWN_FILE but now AGREE with" >&2
+    echo "golden-audit: upstream -- the gap closed. DELETE the row; leaving it grants an" >&2
+    echo "golden-audit: allowance that stops this gate being adjudicated at all." >&2
+    rc_final=1
+fi
+
+[ "$rc_final" -ne 0 ] && exit "$rc_final"
+
+if [ "$differ" -gt 0 ]; then
+    echo "golden-audit: OK -- every golden matches upstream except ${#FAILED[@]} DECLARED"
+    echo "golden-audit: divergence(s) (${FAILED[*]}), each owned in $KNOWN_FILE"
+    exit 0
 fi
 echo "golden-audit: OK -- every golden matches what upstream itself produces"
 exit 0
