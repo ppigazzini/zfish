@@ -1,0 +1,32 @@
+# Declared divergences for tools/upstream_golden_audit.sh.
+#
+# The audit drives the PRISTINE ORACLE against our goldens, so a golden that pins behaviour
+# where zfish is deliberately more correct than upstream reports DIFFERS every single run.
+# Before this file existed the script exited 1 on that, which made the weekly lane red BY
+# CONSTRUCTION -- `tools/upstream/README.md` said "expect 19 agree, 2 differ" as the steady
+# state while the tool called that steady state a failure, so the one lane that adjudicates
+# our goldens against upstream could never be green and stopped being read.
+#
+# An entry here is a claim that a gate MAY differ from upstream. That is the strongest
+# statement this repo makes against the reference, so it carries a tag the audit enforces,
+# and it is checked in BOTH directions -- the same doctrine as tools/transcript_known.txt:
+#
+#   EXPIRING    the divergence must STILL OCCUR. A declared gate that AGREES turns the audit
+#               red, because the declaration has outlived its cause: upstream adopted the fix
+#               and the row must be DELETED rather than go on granting an allowance nobody
+#               needs. This is the whole point -- an allowance that outlives its gap silently
+#               stops the audit adjudicating that gate, and nobody learns it.
+#   PERMANENT   never retires; the divergence is correct behaviour rather than a gap, so it
+#               needs an argument instead of an expiry. Exempt from the still-occurs check,
+#               and that exemption is the only hole here.
+#   untagged    a FAILURE. The tag is the author deciding which of the two this is.
+#
+# A gate NOT listed here that differs is a FINDING and fails, exactly as before. Every row
+# below is Zone-A -- reached only by a malformed or sloppy input, or a non-default option --
+# so none of them costs the bit-exact bridge anything, and each has its own commit, its own
+# reproduction, and a row in "Divergences the audit reports" in tools/upstream/README.md.
+#
+# Format: <TAG><tab><gate><tab><reason>
+
+EXPIRING	chess960	8100d0ce sloppy-castling geometry + cee6facd duplicate castling token: `legal` tests the castling ROOK's geometry instead of the UCI_Chess960 option, and two tokens on one side resolve to one CastlingRights. Upstream generates a castle that leaves the king capturable, and clears the surviving rook's right when the DISCARDED rook moves.
+EXPIRING	tb-root	f329737a: `rankRootMovesWdl` takes Syzygy50MoveRule for its draw test the way `rankRootMovesDtz` already did, so a won position past the halfmove clock is no longer ranked a draw with the tables switched off under it.

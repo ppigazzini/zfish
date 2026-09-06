@@ -64,10 +64,11 @@ zig build tb-cursed-update                          # only after the oracle agre
 # mechanical form of "drive the oracle and match its bytes" -- a golden that only agrees with
 # ourselves is a photograph of ourselves, bug and all.
 tools/upstream_golden_audit.sh                      # expect "19 agree, 2 differ" (18 under
-#   --skip tb-cursed, which is what a run without the 5-man set can reach); the two differ are
-#   chess960 and tb-root, and "Divergences the audit reports" below is what owns them. Read
-#   that list before treating either as a finding: a THIRD differing gate, or a differing ROW
-#   the list does not name, is the finding.
+#   --skip tb-cursed, which is what a run without the 5-man set can reach) and EXIT 0: the two
+#   differ are chess960 and tb-root, declared in tools/golden_audit_known.txt, and the audit
+#   passes on a declared row while still failing on any other. A THIRD differing gate, or a
+#   differing ROW the declaration does not name, is the finding -- and so is a declared gate
+#   that has started to AGREE.
 zig build signature output-golden eval-trace perft misc parity-mt parity-valgrind parity-teardown  # all OK
 # THE TWO GATES THAT READ THE UPSTREAM TREE. Neither is in `parity` (a plain checkout of
 # origin does not carry the objects) and both are dispatched only by the WEEKLY lane, so a
@@ -86,6 +87,15 @@ cp UPSTREAM_TARGET UPSTREAM_BASE ; git commit ; git merge --ff-only <branch> ; g
 behaviour where **zfish is deliberately more correct than upstream** reports DIFFERS forever.
 Each row below is a shipped fix with its own commit and its own reproduction; the golden pins
 zfish, and this table is what stops the next sync reading it as drift.
+
+**The allowance is now MECHANICAL, not this prose.** `tools/golden_audit_known.txt` declares
+each row `EXPIRING`, and the audit enforces the tag in both directions: a declared gate may
+differ, an UNdeclared gate that differs is still a finding, and a declared gate that starts
+AGREEING turns the audit red so the row is deleted rather than left granting an allowance for
+a gate nobody is adjudicating any more. That is the `transcript_known.txt` doctrine, applied
+here because the audit used to `exit 1` on these two rows -- which made the weekly lane red by
+construction while this table called the same state expected, and a lane that is always red is
+a lane nobody reads.
 
 Every one is Zone-A — reached only by a MALFORMED or sloppy input, or by a non-default option —
 so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 2497913 with all
