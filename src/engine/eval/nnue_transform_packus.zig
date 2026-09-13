@@ -61,6 +61,45 @@ const transform_pmulhw128 = struct {
 }.@"llvm.x86.sse2.pmulh.w";
 
 // Compute 16 output bytes from the two halves' i16 accumulator lanes (a = first half,
+const packssdw256 = struct {
+    extern fn @"llvm.x86.avx2.packssdw"(@Vector(8, i32), @Vector(8, i32)) @Vector(16, i16);
+}.@"llvm.x86.avx2.packssdw";
+const packsswb256 = struct {
+    extern fn @"llvm.x86.avx2.packsswb"(@Vector(16, i16), @Vector(16, i16)) @Vector(32, i8);
+}.@"llvm.x86.avx2.packsswb";
+
+/// Fold FOUR packed output vectors into one 32-bit non-zero bitset -- upstream's `record4`.
+///
+/// The bitset asks one question per 4-byte chunk: is it non-zero. Asking it per vector costs
+/// a `vpcmpgtd` and a `vpmovmskps` each, four times, plus four byte stores. Narrowing the
+/// VALUES instead answers all 32 chunks with one compare and one mask: two `vpackssdw`, one
+/// `vpacksswb`, one `vpermd`, one `vpcmpgtb`, one `vpmovmskb`.
+///
+/// The narrowing is sound because every transform output byte is in [0,126] -- `mulhi` of a
+/// value clipped to 255 by a factor clipped to 255 cannot reach 127 -- so each chunk is a
+/// NON-NEGATIVE i32, and a saturating narrowing carries "non-zero" without carrying a sign:
+/// a non-zero chunk at worst saturates, and a saturated value is still non-zero. Zero stays
+/// zero. That is the whole correctness argument, and the test below drives it.
+///
+/// Both packs interleave their two 128-bit lanes, so the 32 bytes leave the second narrowing
+/// as chunk groups ordered 0 2 4 6 1 3 5 7. One `vpermd` with {0,4,1,5,2,6,3,7} undoes
+/// exactly that, and the byte order is then the bit order the bitset wants.
+pub inline fn nnzFold4(packs: [4]@Vector(32, u8)) u32 {
+    const lo = packssdw256(@bitCast(packs[0]), @bitCast(packs[1]));
+    const hi = packssdw256(@bitCast(packs[2]), @bitCast(packs[3]));
+    const narrowed8: @Vector(32, i8) = packsswb256(lo, hi);
+    const as_dwords: @Vector(8, u32) = @bitCast(narrowed8);
+    const in_order: @Vector(8, u32) = @shuffle(
+        u32,
+        as_dwords,
+        @as(@Vector(8, u32), undefined),
+        [8]i32{ 0, 4, 1, 5, 2, 6, 3, 7 },
+    );
+    const bytes: @Vector(32, i8) = @bitCast(in_order);
+    // Bit per lane, the same x86-guarded movemask the callers' own compares use.
+    return @bitCast(bytes > @as(@Vector(32, i8), @splat(0)));
+}
+
 // b = second): per element min(127, (clamp(a,0,255) * clamp(b,0,255)) >> 9), in natural
 // element order. The scalar-reference unit test pins the packus trick's equivalence.
 pub inline fn packusTransform16(a: [2]@Vector(8, i16), b: [2]@Vector(8, i16)) @Vector(16, u8) {
@@ -172,6 +211,32 @@ test "packusTransform64 equals the scalar transform identity" {
 // the dropped second-half max(0, .) must be exactly reproduced by the signed vpmulhw's
 // sign carry plus vpackuswb's low-side saturation, and the vpermq must restore natural
 // byte order. Edge values cover both saturating clamps and the negative pass-through.
+test "nnzFold4 equals the per-vector non-zero masks it replaces" {
+    if (comptime !use_packus_avx2) return error.SkipZigTest;
+    var rng = std.Random.DefaultPrng.init(0x4E4E_5A46_4F4C_4434);
+    const random = rng.random();
+    var trial: usize = 0;
+    while (trial < 4096) : (trial += 1) {
+        var packs: [4]@Vector(32, u8) = undefined;
+        var expected: u32 = 0;
+        for (&packs, 0..) |*pk, v| {
+            var bytes: [32]u8 = undefined;
+            for (&bytes) |*b| {
+                // The real producer's range, plus a heavy bias to zero so whole chunks vanish.
+                b.* = if (random.boolean()) 0 else random.uintAtMost(u8, 126);
+            }
+            pk.* = bytes;
+            // Scalar reference: one bit per 4-byte chunk, chunk index v*8 + g.
+            for (0..8) |g| {
+                const nz = bytes[g * 4] != 0 or bytes[g * 4 + 1] != 0 or
+                    bytes[g * 4 + 2] != 0 or bytes[g * 4 + 3] != 0;
+                if (nz) expected |= @as(u32, 1) << @intCast(v * 8 + g);
+            }
+        }
+        try std.testing.expectEqual(expected, nnzFold4(packs));
+    }
+}
+
 test "packusTransform32 equals the scalar transform identity" {
     if (comptime !use_packus_avx2) return error.SkipZigTest;
     const testing = std.testing;
