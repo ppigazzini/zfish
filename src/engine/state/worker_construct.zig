@@ -39,7 +39,7 @@ pub const WorkerCtorInputs = struct {
     shared_history: *search_driver.SharedHistories, // sharedState.sharedHistories.at(numa)
     threads: *worker_layout.ThreadPool, // sharedState.threads
     tt: *worker_layout.TranspositionTable, // sharedState.tt
-    manager: *worker_layout.SearchManager, // the moved-in ISearchManager
+    manager: ?*worker_layout.SearchManager, // the main thread's SearchManager; null on a helper
     thread_idx: usize,
     numa_thread_idx: usize,
     numa_total: usize,

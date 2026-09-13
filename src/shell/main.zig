@@ -276,18 +276,20 @@ fn optInt(name: []const u8) i32 {
     return option_port.intByName(name);
 }
 
-// Construct the SearchManager + tear down the Worker:
+// Construct the main thread's SearchManager + tear down the Worker:
 //   * make: create a zeroed SearchManager — its data fields are written by the reset
 //     shims (smReset*) + tm_init before every search, and `updates` is set to the engine
-//     UpdateContext for the main thread. No vtable, no constructor; check_time is dead.
+//     UpdateContext. No vtable, no constructor; check_time is dead. A HELPER thread gets
+//     no manager at all: `WorkerLayout.manager` is already optional, and every reader of
+//     it is behind `thread_idx == 0`, so the helper's copy was a Null Object nobody read.
 //   * destroy: free the rootMoves vector buffer + the manager by offset, then return the
 //     large-page block. accumulatorStack/refreshTable are POD array members (no teardown),
 //     so manager + rootMoves are the ONLY heap members the worker frees.
-fn makeSearchManager(update_context: ?*const anyopaque, is_main: u8) ?*worker_layout.SearchManager {
+fn makeSearchManager(update_context: ?*const anyopaque) error{OutOfMemory}!*worker_layout.SearchManager {
     // Create a typed SearchManager via the Allocator interface (c_allocator, libc-backed).
-    const sm = std.heap.c_allocator.create(worker_layout.SearchManager) catch return null;
+    const sm = try std.heap.c_allocator.create(worker_layout.SearchManager);
     @memset(@as([*]u8, @ptrCast(sm))[0..@sizeOf(worker_layout.SearchManager)], 0);
-    if (is_main != 0) sm.updates = update_context;
+    sm.updates = update_context;
     return sm;
 }
 fn workerDestroy(worker: ?*anyopaque) void {
@@ -322,8 +324,8 @@ fn workerBuild(ctx_ptr: ?*anyopaque, idx: usize, thread: *anyopaque) error{OutOf
     // Report OOM instead of aborting: Pool.set carries a full errdefer unwind (destroy every
     // thread already built, free the vector) and reconfigure propagates the error, so the
     // engine can keep the previous thread count. Panicking here made that unwind unreachable.
-    const manager = makeSearchManager(ctx.update_context, if (idx == 0) @as(u8, 1) else 0) orelse
-        return error.OutOfMemory;
+    const manager: ?*worker_layout.SearchManager =
+        if (idx == 0) try makeSearchManager(ctx.update_context) else null;
     const raw = memory_port.alignedLargePagesAlloc(worker_layout.worker_size) orelse
         return error.OutOfMemory;
     const shared_history = engine_port.sharedHistoriesAt(ss.shared_histories, 0);
