@@ -149,12 +149,18 @@ pub noinline fn fullAppendChangedBoth(
     b_removed_out: [*]u32,
     b_added_out: [*]u32,
 ) struct { w: FullAppendChangedLens, b: FullAppendChangedLens } {
-    var w_removed_len: usize = 0;
-    var w_added_len: usize = 0;
-    var b_removed_len: usize = 0;
-    var b_added_len: usize = 0;
+    // Index the two destination lists instead of branching to them. The added/removed flag
+    // is the record's sign bit and it is near-random across a ply's threat diff, so the two
+    // `if (to_added)` below were an UNPREDICTABLE branch taken twice per record. Selecting
+    // `{removed, added}[k]` makes the destination a load, and the flag stops reaching the
+    // predictor at all. The bound test on each index is a DIFFERENT branch and stays: one
+    // perspective can drop a record the other keeps.
+    var w_out = [2][*]u32{ w_removed_out, w_added_out };
+    var w_len = [2]usize{ 0, 0 };
+    var b_out = [2][*]u32{ b_removed_out, b_added_out };
+    var b_len = [2]usize{ 0, 0 };
     for (values) |raw| {
-        const to_added = (raw >> 31) != 0;
+        const k: usize = raw >> 31;
 
         const xw = raw ^ white_mask;
         const wblock = &threat_route_blocks[(xw >> 20) & 0xf];
@@ -162,13 +168,8 @@ pub noinline fn fullAppendChangedBoth(
         const wto: usize = (xw >> 8) & 0xff;
         const w_index = wblock.lut1[((xw >> 15) & 0x1e) + @intFromBool(wfrom < wto)] + wblock.comb[(wfrom << 6) | wto];
         if (w_index < full_dimensions) {
-            if (to_added) {
-                w_added_out[w_added_len] = w_index;
-                w_added_len += 1;
-            } else {
-                w_removed_out[w_removed_len] = w_index;
-                w_removed_len += 1;
-            }
+            w_out[k][w_len[k]] = w_index;
+            w_len[k] += 1;
         }
 
         const xb = raw ^ black_mask;
@@ -177,18 +178,13 @@ pub noinline fn fullAppendChangedBoth(
         const bto: usize = (xb >> 8) & 0xff;
         const b_index = bblock.lut1[((xb >> 15) & 0x1e) + @intFromBool(bfrom < bto)] + bblock.comb[(bfrom << 6) | bto];
         if (b_index < full_dimensions) {
-            if (to_added) {
-                b_added_out[b_added_len] = b_index;
-                b_added_len += 1;
-            } else {
-                b_removed_out[b_removed_len] = b_index;
-                b_removed_len += 1;
-            }
+            b_out[k][b_len[k]] = b_index;
+            b_len[k] += 1;
         }
     }
     return .{
-        .w = .{ .removed = w_removed_len, .added = w_added_len },
-        .b = .{ .removed = b_removed_len, .added = b_added_len },
+        .w = .{ .removed = w_len[0], .added = w_len[1] },
+        .b = .{ .removed = b_len[0], .added = b_len[1] },
     };
 }
 
