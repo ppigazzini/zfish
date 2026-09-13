@@ -980,8 +980,10 @@ nodes with identical node totals, and reverted:
 | build the psq index lists before the threat lists | **1.00033** | statement order alone; the sibling reads 0.99589 |
 | answer the quiet sort's limit test with a masked `vpcmpq` block compare | **1.00079** | one branch per qualifying move instead of per move |
 | share the seven distinct threat `comb` planes behind a pointer | **1.00247** | 133 KB of table down to 57 KB |
-| hand the accumulator's row loop an already-offset tile base | **0.999** | one `add` per row instead of per tile |
-| carry a node's slider attack sets from its capture list to its quiet list | **0.999** | 0.5 slider attack computations a node |
+| hand the accumulator's row loop an already-offset tile base | **1.00040** | one `add` per row instead of per tile |
+| carry a node's slider attack sets from its capture list to its quiet list | **1.00078** | 0.5 slider attack computations a node |
+| hoist `save`'s two `key16` reads into one local | **1.00016** | one load of the stored key instead of two |
+| widen the TT read output to `i32` at the load site | **1.00096** | the widen once, not at each consumer |
 
 The first is a **null statement swap** — two builders writing disjoint lists, exchanged — and
 it costs a few instructions per node in whichever direction the register allocator happens to
@@ -997,7 +999,8 @@ INLINE in the per-attacker block, which is what puts `lut1` and the plane behind
 base.
 
 The fourth is the clearest case of a sibling result being a hypothesis about the OTHER
-compiler. `tileRow` computes `index * half_dimensions + tile_off` as one expression, so
+compiler, and it is now refuted on TWO tiers: **1.00040** at native avx512icl and
+**1.00112** at avx2, where the sibling reads clang -0.28%. `tileRow` computes `index * half_dimensions + tile_off` as one expression, so
 LLVM already folds the whole thing into a scaled-index addressing mode; pre-adding
 `tile_off` to the weight base once per tile only adds the pointer arithmetic back, at
 **+3 Ir/node** (5121 -> 5124, native x86-64-avx512icl, paired perf_counters). The sibling
@@ -1015,6 +1018,35 @@ store costs about the same as the lookup it saves, and every probcut and qsearch
 list fills a cache no quiet list ever reads. **+4 Ir/node**, reproduced at two depths
 (5109 -> 5113 at depth 13, 5151 -> 5155 at depth 14), bit-exact throughout -- which is
 itself the evidence that the positional correspondence the design rests on held.
+
+The sixth and seventh are both the TT, and both are cases where **naming a value lengthens
+a live range across the very branch it was meant to serve.** `save`'s two `key16` reads
+bracket a short-circuit chain, so one named local has to stay live through it; the widened
+read output has to be carried in 32-bit form from `probe` to the four consumers that used to
+widen it themselves. The sibling reads clang -0.0728% and -0.03% respectively. The
+neighbouring half of the same commit -- reading the probed entry's `depth8` once instead of
+twice -- IS a win here, at -0.0039%, so the commit had to be split rather than taken or
+rejected whole.
+
+**An inline-asm load has no dependency on the stores that feed it, and that is not fixable
+by a constraint.** The one instruction LLVM will not emit on x86 is a sign-extending
+*atomic* load: `@as(i32, @atomicLoad(i16, p, .monotonic))` lowers to `movzwl` then `movswl`,
+and the sibling replaces the pair with an `asm ("movswl %[src], %[ret]" : ... : "m" (p.*))`.
+Taken here, **`zig build signature` went red** -- the tree searched a different
+shape entirely -- because a non-`volatile` asm reading an `m` operand
+is pure as far as LLVM is concerned, so it hoists and CSEs freely across the TT writes the
+search makes between probes. `volatile` plus a memory clobber fixes the correctness and
+costs more than the instruction it saves. Independently, inline asm is opaque to
+ThreadSanitizer, and the TT is the structure `tsan-race` exists to watch -- `builtin
+.sanitize_thread` can keep the instrumented build on the atomic load, but that only
+addresses the second objection, not the first.
+
+**A hoisted computation does not also want its divide spelled as a shift.** Once Step 15's
+quiet move-count ceiling is carried across the move loop, respelling
+`@divTrunc(3 + depth*depth, 2 - improving)` as `>> !improving` measures **1.000000 to six
+places** (+4,441 Ir in 8.96 billion). The divide now runs a few times per node instead of
+per move, and at that frequency LLVM's lowering costs nothing measurable -- so the
+`@divTrunc` spelling stays, because it documents the rounding the shift form assumes.
 
 **A reciprocal for a divide buys latency and costs instructions, so the instruction axis
 cannot adjudicate it.** Replacing a depth-indexed divide with a magic multiply retires *more*
