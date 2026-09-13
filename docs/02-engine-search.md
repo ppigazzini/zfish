@@ -188,7 +188,7 @@ a step is greppable across both trees. Steps 1–13 are `searchImpl`, 14–24 `r
 | 5 | Compute the static eval, correct it (below), and derive `improving` / `opponent_worsening` |
 | 6 | Cut off early at a non-PV node on a stored value whose bound covers the window and whose depth suffices; a window-bound mismatch that was the cutoff's only obstacle penalizes the now-useless entry instead |
 | 7 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [05-tablebases.md](05-tablebases.md) |
-| 8 | **Razoring**: a non-PV node whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch |
+| 8 | **Razoring**: a non-PV node whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch — stood down while `seekMate` holds, so a mate hunt is not razored away |
 | 9 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(seek_mate)` — 19 normally, 6 while `seekMate` holds, so mating lines stay searched |
 | 10 | **Null move** (below) |
 | 11 | **Internal iterative reduction**: with no TT move, off the PV, not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
