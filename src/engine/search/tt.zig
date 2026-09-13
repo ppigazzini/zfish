@@ -195,7 +195,10 @@ pub fn entryPenalize(entry: *TtEntry, penalty: u8) void {
     setRlx(u8, &entry.depth8, depthSaturatingSub(rlx(u8, &entry.depth8), penalty));
 }
 
-pub fn entryRead(entry: *const TtEntry, depth_none: i32) TtReadOutput {
+// Take `depth8` from the caller rather than loading it again: probe has already read that byte
+// to decide whether the entry is occupied, and a relaxed atomic load is one the compiler is not
+// allowed to fold away, so asking twice costs a second load of the same byte on every TT hit.
+pub fn entryRead(entry: *const TtEntry, depth_none: i32, depth8: u8) TtReadOutput {
     // Take one load of gen_bound8 for both the bound and the pv flag: they are two fields of the
     // same byte, so a single read keeps them mutually consistent and spares a second atomic load
     // the compiler is not allowed to fold away.
@@ -204,7 +207,7 @@ pub fn entryRead(entry: *const TtEntry, depth_none: i32) TtReadOutput {
         .move16 = rlx(u16, &entry.move16),
         .value16 = rlx(i16, &entry.value16),
         .eval16 = rlx(i16, &entry.eval16),
-        .depth = depth_none + @as(i32, rlx(u8, &entry.depth8)),
+        .depth = depth_none + @as(i32, depth8),
         .bound = (gb & bound_mask) >> bound_shift,
         .is_pv = if ((gb & pv_mask) != 0) 1 else 0,
     };
@@ -286,10 +289,11 @@ pub fn probe(
     while (entry_index < cluster_size) : (entry_index += 1) {
         const entry = &cluster.entry[entry_index];
         if (rlx(u16, &entry.key16) == key16) {
+            const depth8 = rlx(u8, &entry.depth8);
             return .{
-                .found = if (rlx(u8, &entry.depth8) != 0) 1 else 0,
+                .found = if (depth8 != 0) 1 else 0,
                 .writer_ptr = entry,
-                .data = entryRead(entry, depth_none),
+                .data = entryRead(entry, depth_none, depth8),
             };
         }
     }
