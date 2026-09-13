@@ -13,7 +13,7 @@ pub const dbgCorrelOf = debug_counters.dbgCorrelOf;
 pub const dbgPrint = debug_counters.dbgPrint;
 pub const dbgClear = debug_counters.dbgClear;
 
-const version = "19";
+const version = "dev";
 const fallback_build_date = computeFallbackBuildDate();
 
 pub fn getBinaryDirectory(gpa: std.mem.Allocator, argv0: []const u8) ?[]u8 {
