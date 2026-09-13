@@ -559,6 +559,13 @@ set, both `checkTime` and `idElapsed` read the **pool's** node count
 time budget into a node budget, and `ssNpmsecAdvance` debits that pool node count from
 `tm.available_nodes` after the search. This makes a time-limited search reproducible.
 
+A **cyclic** control (40/10 and friends) tops the clock up every N moves, which a real clock
+gets for free and a node budget does not: `timeman.init` therefore records what one cycle is
+worth (`tm.cyclic_budget`, the first limit MINUS the increment already inside it) and the
+`movestogo` the previous search saw (`tm.previous_movestogo`, reset by `clearTimeman`). When
+`movestogo` climbs back instead of counting down, one cycle is added to `available_nodes`.
+Without it the whole session was budgeted as a single cycle and the engine flagged.
+
 All wall-clock reads go through `time_source.now`, so the engine never calls an OS
 clock directly.
 

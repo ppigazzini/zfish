@@ -24,6 +24,10 @@ pub const TimemanInput = struct {
     movetime_ms: i64,
     move_overhead: i64,
     available_nodes: i64,
+    // Carry the two cyclic-nodestime members across searches: the budget one cycle is worth,
+    // and the `movestogo` the previous search saw. Both are meaningless off nodestime.
+    cyclic_budget: i64,
+    previous_movestogo: i32,
     current_optimum_time: i64,
     current_maximum_time: i64,
     movestogo: i32,
@@ -44,6 +48,8 @@ pub const TimemanOutput = struct {
     npmsec: i64,
     movetime_ms: i64,
     available_nodes: i64,
+    cyclic_budget: i64,
+    previous_movestogo: i32,
     optimum_time: i64,
     maximum_time: i64,
     original_time_adjust: f64,
@@ -58,6 +64,8 @@ pub fn init(input: TimemanInput) TimemanOutput {
         .npmsec = input.npmsec,
         .movetime_ms = input.movetime_ms,
         .available_nodes = input.available_nodes,
+        .cyclic_budget = input.cyclic_budget,
+        .previous_movestogo = input.previous_movestogo,
         .optimum_time = input.current_optimum_time,
         .maximum_time = input.current_maximum_time,
         .original_time_adjust = input.original_time_adjust,
@@ -102,8 +110,17 @@ pub fn init(input: TimemanInput) TimemanOutput {
 
     if (output.use_nodes_time != 0) {
         if (output.available_nodes == -1) {
+            // Only once at game start. The first limit includes the increment (both in ms),
+            // so a cycle is worth the clock MINUS it.
             output.available_nodes = input.npmsec * input.time_ms;
+            output.cyclic_budget = input.npmsec * (input.time_ms - input.inc_ms);
+        } else if (input.movestogo > 0 and input.movestogo > input.previous_movestogo and output.cyclic_budget > 0) {
+            // A cyclic control (40/10 and friends) tops the clock up when movestogo climbs
+            // back rather than counting down; under nodestime nothing else grants that
+            // top-up, so the engine budgeted the whole session as one cycle and flagged.
+            output.available_nodes += output.cyclic_budget;
         }
+        output.previous_movestogo = input.movestogo;
 
         output.time_ms = output.available_nodes;
         output.inc_ms *= input.npmsec;
@@ -207,6 +224,8 @@ const base = TimemanInput{
     .movetime_ms = 0,
     .move_overhead = 10,
     .available_nodes = -1,
+    .cyclic_budget = 0,
+    .previous_movestogo = 0,
     .current_optimum_time = 0,
     .current_maximum_time = 0,
     .movestogo = 0,
@@ -341,6 +360,40 @@ test "timeman: a cyclic TC keeps movestogo as the horizon under one second" {
     var many = few;
     many.movestogo = 40;
     try std.testing.expect(init(few).optimum_time > init(many).optimum_time);
+}
+
+// Pin the cyclic top-up under nodestime. A cyclic control tops the clock up when `movestogo`
+// climbs back instead of counting down; nothing else grants that under nodestime, so before
+// this the engine budgeted a whole 40/10 session as one cycle and flagged.
+test "timeman: a cyclic control tops the node budget up when movestogo climbs" {
+    var first = base;
+    first.npmsec = 600;
+    first.time_ms = 10_000;
+    first.inc_ms = 0;
+    first.movestogo = 40;
+    const after_first = init(first);
+    try std.testing.expectEqual(@as(i64, 600 * 10_000), after_first.available_nodes);
+    try std.testing.expectEqual(@as(i64, 600 * 10_000), after_first.cyclic_budget);
+    try std.testing.expectEqual(@as(i32, 40), after_first.previous_movestogo);
+
+    // Counting DOWN inside the cycle grants nothing.
+    var mid = first;
+    mid.movestogo = 39;
+    mid.available_nodes = 5_000_000;
+    mid.cyclic_budget = after_first.cyclic_budget;
+    mid.previous_movestogo = 40;
+    try std.testing.expectEqual(@as(i64, 5_000_000), init(mid).available_nodes);
+
+    // Climbing back to the top of the next cycle grants exactly one cycle.
+    var wrap = mid;
+    wrap.movestogo = 40;
+    wrap.previous_movestogo = 1;
+    try std.testing.expectEqual(@as(i64, 5_000_000 + 600 * 10_000), init(wrap).available_nodes);
+
+    // The increment is already inside the first limit, so a cycle is worth the clock minus it.
+    var with_inc = first;
+    with_inc.inc_ms = 100;
+    try std.testing.expectEqual(@as(i64, 600 * (10_000 - 100)), init(with_inc).cyclic_budget);
 }
 
 // Pin the nodestime floor: `available_nodes` below `npmsec` scales to a zero clock, and the
