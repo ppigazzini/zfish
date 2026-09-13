@@ -321,7 +321,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         }
 
         // Step 8. Apply razoring.
-        if (!pv_node and eval < alpha - search.razorMargin(depth))
+        if (!pv_node and eval < alpha - search.razorMargin(depth) and !seek_mate)
             return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha, beta, .non_pv);
 
         // Step 9. Prune by futility, below a cutoff depth that tightens while the root seeks
