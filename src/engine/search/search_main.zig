@@ -217,6 +217,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     ss1.reduction = 0;
     ss.stat_score = 0;
     ssAdd(ss, 2).cutoff_cnt = 0;
+    ssAdd(ss, 1).prior_nmp_fail_high = 0;
 
     // Step 4. Look up the transposition table.
     const excluded_move = ss.excluded_move;
@@ -378,7 +379,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         }
 
         // Step 10. Search the null move.
-        if (cut_node and ss.static_eval >= search.nullMoveThreshold(beta, depth, improving) and
+        if (cut_node and search.nullMoveEvalBonus(ss.static_eval, ss.prior_nmp_fail_high) >= search.nullMoveThreshold(beta, depth, improving) and
             excluded_move == 0 and pos.st.non_pawn_material[us] != 0 and ss.ply >= ctx.nmp_min_ply.* and search.nullMoveBetaOk(beta))
         {
             const r = search.nullMoveReduction(depth, ss.static_eval, beta);
@@ -391,11 +392,17 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             const null_value = -searchImpl(ctx, pos_ptr, ssAdd(ss, 1), -beta, -beta + 1, depth - r, false, .non_pv);
             undoNullMove(pos_ptr);
             if (null_value >= beta and !qIsWin(null_value)) {
-                if (ctx.nmp_min_ply.* != 0 or depth < 16) return null_value;
+                if (ctx.nmp_min_ply.* != 0 or depth < 16) {
+                    ss.prior_nmp_fail_high += 1;
+                    return null_value;
+                }
                 ctx.nmp_min_ply.* = search.nmpMinPly(ss.ply, depth, r);
                 const v = searchImpl(ctx, pos_ptr, ss_ptr, beta - 1, beta, depth - r, false, .non_pv);
                 ctx.nmp_min_ply.* = 0;
-                if (v >= beta) return null_value;
+                if (v >= beta) {
+                    ss.prior_nmp_fail_high += 1;
+                    return null_value;
+                }
             }
         }
 

@@ -27,6 +27,10 @@ pub const SearchStack = struct {
     follow_pv: bool,
     cutoff_cnt: i32,
     reduction: i32,
+    // Count the null-move fail-highs this ply has already produced under the current
+    // parent. The parent zeroes its child's counter on entry, so it measures how often
+    // Step 10 has cut at this ply while the parent walks its move list.
+    prior_nmp_fail_high: i32,
 };
 
 // Re-export CorrectionBundle from the correction_bundle module as the
