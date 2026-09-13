@@ -26,28 +26,37 @@ fn asFloat(value: i64) f64 {
     return @as(f64, @floatFromInt(value));
 }
 
-pub fn dbgHitOn(cond: bool, slot: i32) void {
+/// Count a condition and hand it straight back, so a branch under inspection reads
+/// `if (dbgHitOn(long_condition, 0))` instead of being evaluated twice -- once for the
+/// counter and once for the branch, which is wrong the moment evaluating it has an effect.
+pub fn dbgHitOn(cond: bool, slot: i32) bool {
     const index = slotIndex(slot);
     _ = @atomicRmw(i64, &dbg_hit[index][0], .Add, 1, .seq_cst);
     if (cond) {
         _ = @atomicRmw(i64, &dbg_hit[index][1], .Add, 1, .seq_cst);
     }
+    return cond;
 }
 
-pub fn dbgMeanOf(value: i64, slot: i32) void {
+/// Accumulate a mean and hand the value back -- see dbgHitOn.
+pub fn dbgMeanOf(value: i64, slot: i32) i64 {
     const index = slotIndex(slot);
     _ = @atomicRmw(i64, &dbg_mean[index][0], .Add, 1, .seq_cst);
     _ = @atomicRmw(i64, &dbg_mean[index][1], .Add, value, .seq_cst);
+    return value;
 }
 
-pub fn dbgStdevOf(value: i64, slot: i32) void {
+/// Accumulate a standard deviation and hand the value back -- see dbgHitOn.
+pub fn dbgStdevOf(value: i64, slot: i32) i64 {
     const index = slotIndex(slot);
     _ = @atomicRmw(i64, &dbg_stdev[index][0], .Add, 1, .seq_cst);
     _ = @atomicRmw(i64, &dbg_stdev[index][1], .Add, value, .seq_cst);
     _ = @atomicRmw(i64, &dbg_stdev[index][2], .Add, value * value, .seq_cst);
+    return value;
 }
 
-pub fn dbgExtremesOf(value: i64, slot: i32) void {
+/// Track the running extremes and hand the value back -- see dbgHitOn.
+pub fn dbgExtremesOf(value: i64, slot: i32) i64 {
     const index = slotIndex(slot);
     _ = @atomicRmw(i64, &dbg_extremes_count[index], .Add, 1, .seq_cst);
 
@@ -68,6 +77,7 @@ pub fn dbgExtremesOf(value: i64, slot: i32) void {
         }
         current_min = previous.?;
     }
+    return value;
 }
 
 pub fn dbgCorrelOf(value1: i64, value2: i64, slot: i32) void {
@@ -175,11 +185,13 @@ pub fn dbgClear() void {
 
 const testing = std.testing;
 
-test "dbgHitOn accumulates total and conditional hits per slot" {
+test "dbgHitOn accumulates total and conditional hits per slot, and passes the condition through" {
     dbgClear();
-    dbgHitOn(true, 0);
-    dbgHitOn(false, 0);
-    dbgHitOn(true, 0);
+    // Assert the pass-through at every call: that is the whole point of the return value,
+    // and Zig's must-use rule means a caller cannot silently drop it.
+    try testing.expect(dbgHitOn(true, 0));
+    try testing.expect(!dbgHitOn(false, 0));
+    try testing.expect(dbgHitOn(true, 0));
     try testing.expectEqual(@as(i64, 3), dbg_hit[0][0]); // total
     try testing.expectEqual(@as(i64, 2), dbg_hit[0][1]); // conditional hits
     try testing.expectEqual(@as(i64, 0), dbg_hit[1][0]); // untouched slot
@@ -187,18 +199,18 @@ test "dbgHitOn accumulates total and conditional hits per slot" {
 
 test "dbgMeanOf / dbgStdevOf / dbgExtremesOf accumulate; dbgClear resets" {
     dbgClear();
-    dbgMeanOf(10, 2);
-    dbgMeanOf(20, 2);
+    try testing.expectEqual(@as(i64, 10), dbgMeanOf(10, 2));
+    try testing.expectEqual(@as(i64, 20), dbgMeanOf(20, 2));
     try testing.expectEqual(@as(i64, 2), dbg_mean[2][0]);
     try testing.expectEqual(@as(i64, 30), dbg_mean[2][1]);
 
-    dbgStdevOf(4, 3);
+    try testing.expectEqual(@as(i64, 4), dbgStdevOf(4, 3));
     try testing.expectEqual(@as(i64, 1), dbg_stdev[3][0]);
     try testing.expectEqual(@as(i64, 4), dbg_stdev[3][1]);
     try testing.expectEqual(@as(i64, 16), dbg_stdev[3][2]);
 
-    dbgExtremesOf(-5, 4);
-    dbgExtremesOf(9, 4);
+    try testing.expectEqual(@as(i64, -5), dbgExtremesOf(-5, 4));
+    try testing.expectEqual(@as(i64, 9), dbgExtremesOf(9, 4));
     try testing.expectEqual(@as(i64, -5), dbg_extremes_min[4]);
     try testing.expectEqual(@as(i64, 9), dbg_extremes_max[4]);
 
