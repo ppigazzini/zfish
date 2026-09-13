@@ -229,7 +229,11 @@ threads search different windows — and the window opens around the root move's
 `average_score`, not its last score. A fail low pulls `alpha` down and resets
 `failed_high_cnt`; a fail high pushes `beta` up and increments it, and `adjusted_depth`
 sheds a ply per failed-high so a node that keeps failing high is not re-searched at full
-depth. `aspirationDeltaGrow` widens `delta` each time round. `root_delta` is republished
+depth. That shortening outlives the iteration: `fail_high_recovery` is set from the
+fail-high count when the first PV line finishes and sheds two plies per later iteration,
+so the depth climbs back gradually instead of snapping to full. Both the set and the decay
+are gated on `pv_idx == 0`, so the later MultiPV lines neither pay it nor reset it.
+`aspirationDeltaGrow` widens `delta` each time round. `root_delta` is republished
 every iteration because Step 15's pruning margins scale with the window width.
 
 ## Quiescence

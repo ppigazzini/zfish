@@ -130,6 +130,10 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
     ageMainHistory(wl);
 
     var search_again_counter: i32 = 0;
+    // Carry the fail-high recovery across iterations: an aspiration fail-high leaves the
+    // next depth shortened, and that shortening is paid back two plies at a time rather
+    // than dropped all at once.
+    var fail_high_recovery: i32 = 0;
     var uci_pv_sent = false;
 
     // Run the iterative deepening loop.
@@ -188,8 +192,9 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
             id.optimism[us ^ 1] = -id.optimism[us];
 
             var failed_high_cnt: i32 = 0;
+            if (id.pv_idx.* == 0) fail_high_recovery = @max(0, fail_high_recovery - 2);
             while (true) {
-                const adjusted_depth = @max(@as(i32, 1), id.root_depth.* - failed_high_cnt - @divTrunc(3 * (search_again_counter + 1), 4));
+                const adjusted_depth = @max(@as(i32, 1), id.root_depth.* - failed_high_cnt - fail_high_recovery - @divTrunc(3 * (search_again_counter + 1), 4));
                 id.root_delta.* = beta - alpha;
                 best_value = searchImpl(&ctx, id.root_pos, &stack[7], alpha, beta, adjusted_depth, false, .root);
 
@@ -213,6 +218,9 @@ pub fn iterativeDeepening(wl: *worker_layout.WorkerLayout) u8 {
 
                 delta = search.aspirationDeltaGrow(delta);
             }
+
+            // Climb back to full depth gradually after a reduced-depth search.
+            if (failed_high_cnt > 0 and id.pv_idx.* == 0) fail_high_recovery = @divTrunc(failed_high_cnt + 1, 2) + 2;
 
             // In multiPV analysis we do not let aborted searches spoil mated-in/TB loss
             // scores from a completed search in an earlier PV line. Guard against an
