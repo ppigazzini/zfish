@@ -328,7 +328,12 @@ fn transformPerspective(
                     @as(*align(32) const [16]i16, @ptrCast(@alignCast(accumulation + off + half + 16))).*,
                 });
                 output[offset + j + s * 32 ..][0..32].* = packed32;
-                const nz = @as(@Vector(8, u32), @bitCast(packed32)) != @as(@Vector(8, u32), @splat(0));
+                // Compare SIGNED > 0, upstream's vec_nnz and what the sse path below already
+                // does: every output byte is <= 127, so each u32 group is non-negative and
+                // > 0 iff non-zero -- one vpcmpgtd, where != 0 costs a vpcmpeqd plus an
+                // invert of the extracted mask. The avx512 branch above needs no such change:
+                // there the compare already lands in a k register whatever the predicate.
+                const nz = @as(@Vector(8, i32), @bitCast(packed32)) > @as(@Vector(8, i32), @splat(0));
                 mask |= @as(GMask, @as(u8, @bitCast(nz))) << (8 * s);
             }
             nnzRecord(GMask, nnz, bit, mask);
