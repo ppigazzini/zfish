@@ -338,7 +338,7 @@ test "standard option set matches engine init" {
         .max_hash_mb = 33554432,
         .skill_lowest_elo = 1320,
         .skill_highest_elo = 3190,
-        .eval_file = "nn-1a298aa575a0.nnue",
+        .eval_file = "nn-134a887f4c8f.nnue",
     });
 
     try std.testing.expectEqual(@as(usize, 19), model.count());
@@ -349,7 +349,7 @@ test "standard option set matches engine init" {
     try std.testing.expectEqual(@as(i32, 1320), model.getInt("UCI_Elo"));
     try std.testing.expectEqual(@as(i32, 0), model.getInt("Ponder"));
     try std.testing.expectEqual(@as(i32, 1), model.getInt("Syzygy50MoveRule"));
-    try std.testing.expectEqualStrings("nn-1a298aa575a0.nnue", model.getString("EvalFile"));
+    try std.testing.expectEqualStrings("nn-134a887f4c8f.nnue", model.getString("EvalFile"));
     try std.testing.expectEqualStrings("auto", model.getString("NumaPolicy"));
 
     // Verify the callback wiring survives registration.
@@ -363,7 +363,7 @@ test "standard option set matches engine init" {
     defer std.testing.allocator.free(listing);
     try std.testing.expect(std.mem.startsWith(u8, listing, "\noption name Debug Log File type string default <empty>"));
     try std.testing.expect(std.mem.find(u8, listing, "\noption name Threads type spin default 1 min 1 max 1024") != null);
-    try std.testing.expect(std.mem.endsWith(u8, listing, "\noption name EvalFile type string default nn-1a298aa575a0.nnue"));
+    try std.testing.expect(std.mem.endsWith(u8, listing, "\noption name EvalFile type string default nn-134a887f4c8f.nnue"));
 }
 
 test "options model index-keyed reads track current values" {
