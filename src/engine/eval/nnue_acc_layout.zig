@@ -43,17 +43,19 @@ pub const psqt_buckets: usize = 8;
 pub const transform_vec_width: usize = blk: {
     const b = @import("builtin");
     if (b.cpu.arch == .x86_64) {
-        // 128 on avx512 (measured -1.1% cycles, IPC flat), 64 on the rest of x86 (the {16,32,64}
-        // sweep's winner; 16 loses 4.1%). aarch64 keeps 32, unmeasured.
+        // 128 on avx512 (measured -1.1% cycles, IPC flat) and on AVX2; 64 on the rest of x86
+        // (the {16,32,64} sweep's winner; 16 loses 4.1%). aarch64 keeps 32, unmeasured.
         //
-        // That sweep ran at avx512icl and sse41 only. Swept at AVX2 since, hunting this tier's
-        // instruction gap, and 64 holds: against it, 32 reads instructions 1.003 and 128 reads
-        // 0.999 -- a -10 Ir/node win on 6768, which is real on the deterministic axis but sits
-        // under a cycles reading of 1.019 that this box cannot resolve (load 6+, and the
-        // documented serial-cycle floor here is +/-1%). Not landed for that reason, not because
-        // it lost. Re-run the pair on an idle box before deciding: if 128's cycles come back
-        // flat or better, take it.
-        break :blk if (@import("std").Target.x86.featureSetHas(b.cpu.features, .avx512f)) 128 else 64;
+        // The AVX2 value was 64 until the pair was re-run on an IDLE box, which is what the
+        // earlier note here asked for: the first AVX2 sweep read 128 at instructions 0.999 but
+        // sat under a cycles reading of 1.019 taken at load 6+, above this box's serial-cycle
+        // floor, so it was held. Re-measured at load 0.2 over 15 interleaved paired rounds:
+        // instructions 0.998583, cycles 0.998, IPC 1.000, branches 0.995 -- the deterministic
+        // axis doubled and the cycle reading came back flat, which was the stated condition.
+        // sse41 keeps 64: 128 has never been measured there, and a width is tuned for the tier
+        // it was measured on.
+        const has = @import("std").Target.x86.featureSetHas;
+        break :blk if (has(b.cpu.features, .avx512f) or has(b.cpu.features, .avx2)) 128 else 64;
     }
     break :blk 32;
 };
