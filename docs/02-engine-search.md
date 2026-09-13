@@ -25,7 +25,8 @@ function-pointer seams. For the zones and the module graph, see
 | `tb_extend_source.zig` | The seam the reporter calls to reach `tb_extend`; defaults to returning the PV unchanged |
 | `headless_search.zig` | An engine-zone-only "search this FEN at depth N" root: builds one worker, a one-thread pool, a small TT, and drives `iterativeDeepening` with no platform attached |
 | **Alpha-beta** | |
-| `search_main.zig` | `searchImpl` — a node's Steps 1–13: TT probe, TT cutoff, the tablebase probe (Step 7, see [05-tablebases.md](05-tablebases.md)), static eval, razoring, futility, null move, IIR, ProbCut |
+| `search_main.zig` | `searchImpl` — a node's Steps 1–13: TT probe, TT cutoff, static eval, razoring, futility, null move, IIR, ProbCut |
+| `search_tb_probe.zig` | Step 7's in-search WDL probe: the `tb_config` gate, the `VALUE_TB` scoring, the TT store on a cutoff, and the `Outcome` the node body applies — see [05-tablebases.md](05-tablebases.md). Path-imported by `search_main.zig` |
 | `search_back.zig` | `runBack` — the move loop and node finalization, Steps 13–21: pruning, singular extensions, LMR, best-move update, TT store, correction-history update |
 | `search_qsearch.zig` | `qsearchImpl` plus the primitives shared with the main search: `pvUpdate`, `qCorrectionValue`, `adjustKey50`, `ssAdd`/`ssSub`, `posCapture`, `isShuffling` |
 | `search_control.zig` | `checkTime`, `rootUpdate`, `rootTtMove`, `rootInList`, `searchStopped`, `inLastIterPv` |

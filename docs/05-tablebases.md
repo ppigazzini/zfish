@@ -37,7 +37,7 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 | `src/platform/syzygy/wdl.zig` | the algorithm: `probeTable`, `searchWdl`, `probeDtz`, and the two probe surfaces `probeFen` / `probeWdlPos` |
 | **engine** | |
 | `src/engine/search/tb_source.zig` | the seam: `ProbeResult`, `maxCardinality`, `probeFen`, `probeWdlPos` |
-| `src/engine/search/search_main.zig` | Step 7 — the in-search WDL probe and its score/bound handling |
+| `src/engine/search/search_tb_probe.zig` | Step 7 — the in-search WDL probe and its score/bound handling; `search_main.zig` applies the `Outcome` it returns |
 | `src/engine/state/tb_config.zig` | `TbConfig` — the std-only leaf both the Worker layout and the root-move builder name |
 | `src/engine/search/root_move_build.zig` | `loadTbConfig`, the root DTZ/WDL ranking, and the ranked `RootMoves` array |
 | `src/engine/search/search_values.zig` | `value_tb`, `value_tb_win` — the TB score band |
@@ -70,7 +70,7 @@ them as two distinct tables on one `TBTable`:
 
 The two answer different questions, and the engine uses each where it needs that answer:
 
-- **In-search (`search_main.zig`, Step 7)** probes **WDL only**. Inside the tree the
+- **In-search (`search_tb_probe.zig`, Step 7)** probes **WDL only**. Inside the tree the
   search needs a value and a bound, not a move — WDL supplies both.
 - **At the root (`root_move_build.zig`)** probes **DTZ first**. Ranking root moves
   requires *progress*, not just the result: every winning move is a win, so WDL cannot
@@ -304,7 +304,7 @@ Both early-out to `available = 0` when `registry.ready()` is false (no path set)
 
 ## Search integration
 
-### In-search: Step 7 (`search_main.zig`)
+### In-search: Step 7 (`search_tb_probe.zig`)
 
 Attempted for non-root, non-excluded nodes, gated on the worker's `tb_config`:
 
