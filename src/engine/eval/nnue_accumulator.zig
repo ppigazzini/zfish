@@ -188,6 +188,7 @@ const use_packus_avx2 = packus.use_packus_avx2;
 const use_packus_sse = packus.use_packus_sse;
 const packusTransform64 = packus.packusTransform64;
 const packusTransform32 = packus.packusTransform32;
+const nnzFold4 = packus.nnzFold4;
 const packusTransform16 = packus.packusTransform16;
 
 pub fn transformBucket(
@@ -317,26 +318,37 @@ fn transformPerspective(
             // fold each pack's 8-group non-zero mask into one GMask for the step; V is
             // a multiple of 32 on every x86 tier this gate selects. The nnz bitcast is
             // the same guarded x86 movemask as the generic path below.
-            var mask: GMask = 0;
+            var packs: [V / 32]@Vector(32, u8) = undefined;
             inline for (0..V / 32) |s| {
                 const off = j + s * 32;
-                const packed32 = packusTransform32(.{
+                packs[s] = packusTransform32(.{
                     @as(*align(32) const [16]i16, @ptrCast(@alignCast(accumulation + off))).*,
                     @as(*align(32) const [16]i16, @ptrCast(@alignCast(accumulation + off + 16))).*,
                 }, .{
                     @as(*align(32) const [16]i16, @ptrCast(@alignCast(accumulation + off + half))).*,
                     @as(*align(32) const [16]i16, @ptrCast(@alignCast(accumulation + off + half + 16))).*,
                 });
-                output[offset + j + s * 32 ..][0..32].* = packed32;
-                // Compare SIGNED > 0, upstream's vec_nnz and what the sse path below already
-                // does: every output byte is <= 127, so each u32 group is non-negative and
-                // > 0 iff non-zero -- one vpcmpgtd, where != 0 costs a vpcmpeqd plus an
-                // invert of the extracted mask. The avx512 branch above needs no such change:
-                // there the compare already lands in a k register whatever the predicate.
-                const nz = @as(@Vector(8, i32), @bitCast(packed32)) > @as(@Vector(8, i32), @splat(0));
-                mask |= @as(GMask, @as(u8, @bitCast(nz))) << (8 * s);
+                output[offset + j + s * 32 ..][0..32].* = packs[s];
             }
-            nnzRecord(GMask, nnz, bit, mask);
+            if (comptime V / 32 == 4) {
+                // Four vectors, one mask: nnzFold4 narrows the VALUES and asks once, instead
+                // of one compare and one movemask per vector. The step width has to be 128
+                // for four packs to exist at a time -- see transform_vec_width.
+                nnzRecord(GMask, nnz, bit, @as(GMask, nnzFold4(packs)));
+            } else {
+                // Any other step width keeps the per-vector shape. Compare SIGNED > 0,
+                // upstream's vec_nnz and what the sse path below already does: every output
+                // byte is <= 127, so each u32 group is non-negative and > 0 iff non-zero --
+                // one vpcmpgtd, where != 0 costs a vpcmpeqd plus an invert of the extracted
+                // mask. The avx512 branch above needs no such change: there the compare
+                // already lands in a k register whatever the predicate.
+                var mask: GMask = 0;
+                inline for (0..V / 32) |s| {
+                    const nz = @as(@Vector(8, i32), @bitCast(packs[s])) > @as(@Vector(8, i32), @splat(0));
+                    mask |= @as(GMask, @as(u8, @bitCast(nz))) << (8 * s);
+                }
+                nnzRecord(GMask, nnz, bit, mask);
+            }
             continue;
         }
         if (comptime use_packus_sse) {
