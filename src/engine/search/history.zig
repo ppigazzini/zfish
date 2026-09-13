@@ -213,7 +213,27 @@ pub fn updateQuietHistories(
     statsUpdate(pawn_entry, search.quietPawnScale(bonus), pawn_history_limit);
 }
 
+// Split the walk on whether the bonus is small enough that the per-entry clamp cannot fire.
+// `conthistDelta` is `bonus * multiplier / 65536 + 73` with `multiplier` a u16, so a bonus
+// inside +/-(limit - 73) can never leave the limit -- and with that stated, the six inlined
+// `statsUpdateValue` clamps fold away instead of costing a @max/@min pair each. The wide arm
+// is the SAME loop, out of line: it is reachable (nothing bounds the bonus upstream either)
+// and it must stay bit-identical, which it is, being the same code.
 pub fn updateContinuationHistories(ss_ptr: *const SearchStack, pc: u8, to: u8, bonus: i32) void {
+    const bound = continuation_history_limit.v - 73;
+    if (bonus >= -bound and bonus <= bound) {
+        conthistApply(ss_ptr, pc, to, bonus);
+    } else {
+        conthistApplyWide(ss_ptr, pc, to, bonus);
+    }
+}
+
+fn conthistApplyWide(ss_ptr: *const SearchStack, pc: u8, to: u8, bonus: i32) void {
+    @branchHint(.cold);
+    conthistApply(ss_ptr, pc, to, bonus);
+}
+
+inline fn conthistApply(ss_ptr: *const SearchStack, pc: u8, to: u8, bonus: i32) void {
     const ss = ss_ptr;
     var positive_count: i32 = 0;
     for (search.conthist_steps, 0..) |ply, step| {

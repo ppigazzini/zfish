@@ -128,10 +128,18 @@ const conthist_weights = [6]i32{ 520, 390, 145, 251, 66, 209 };
 // Multiplication wraps associatively mod 2^32, so both groupings land on the same bits
 // whether or not it happens -- which is why `*%` below is load-bearing, not decoration.
 // The folded factor itself is at most 520 * 126 = 65520 and cannot wrap.
-const conthist_scale: [6][cmhc_multipliers.len]i32 = blk: {
-    var table: [6][cmhc_multipliers.len]i32 = undefined;
+// Store the folded factor as u16, not i32. It is at most 520 * 126 = 65520 (asserted
+// below), and SAYING so is what lets the caller's clamp fold: with `multiplier < 65536`
+// and a bounded bonus, `bonus * multiplier / 65536` provably cannot leave the history
+// limit, so `statsUpdateValue`'s @max/@min collapse in the hot arm.
+const conthist_scale: [6][cmhc_multipliers.len]u16 = blk: {
+    var table: [6][cmhc_multipliers.len]u16 = undefined;
     for (conthist_weights, 0..) |weight, step| {
-        for (cmhc_multipliers, 0..) |multiplier, count| table[step][count] = weight * multiplier;
+        for (cmhc_multipliers, 0..) |multiplier, count| {
+            const folded = weight * multiplier;
+            if (folded < 0 or folded > 65535) @compileError("folded conthist factor does not fit u16");
+            table[step][count] = @intCast(folded);
+        }
     }
     break :blk table;
 };
@@ -139,7 +147,7 @@ const conthist_scale: [6][cmhc_multipliers.len]i32 = blk: {
 // Compute the per-entry continuation-history update delta: own the folded weight table
 // and the bonus*scale/65536 formula. `step` indexes conthist_steps.
 pub fn conthistDelta(bonus: i32, step: usize, positive_count: i32, i: i32) i32 {
-    const multiplier = conthist_scale[step][@intCast(positive_count)];
+    const multiplier: i32 = conthist_scale[step][@intCast(positive_count)];
     // Upstream (search.cpp: `bonus * weight * multiplier / 65536`) computes this in `int`,
     // so a large enough bonus still overflows i32 and WRAPS (2's complement on x86 -- UB in
     // C++ but relied upon). Match it with `*%` so the wrap is bit-identical (the shipped
