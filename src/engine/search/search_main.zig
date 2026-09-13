@@ -268,7 +268,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     {
         if (tt_move != 0 and tt_value >= beta) {
             if (!tt_capture)
-                updateQuietHistoriesWorker(ctx.worker, pos_ptr, ss_ptr, tt_move, @min(112 * depth, 695)); // upstream 73826352d
+                updateQuietHistoriesWorker(ctx.worker, pos_ptr, ss_ptr, tt_move, 131 * depth); // upstream e52ea9ac
             if (prev_sq != @as(i32, sq_none) and ss1.move_count < 5 and !prior_capture)
                 updateContinuationHistories(ss1, pos.board[@intCast(prev_sq)], @intCast(prev_sq), -2210);
         }
