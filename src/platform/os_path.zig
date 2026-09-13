@@ -51,7 +51,7 @@ pub fn toWtf8Alloc(gpa: std.mem.Allocator, path: []const u8) std.mem.Allocator.E
 
 test "a valid path is returned unchanged" {
     const gpa = std.testing.allocator;
-    for ([_][]const u8{ "", "nn-1a298aa575a0.nnue", "/opt/net/nn.nnue", "C:\\Nets\\né.nnue" }) |path| {
+    for ([_][]const u8{ "", "nn-134a887f4c8f.nnue", "/opt/net/nn.nnue", "C:\\Nets\\né.nnue" }) |path| {
         const out = try toWtf8Alloc(gpa, path);
         defer gpa.free(out);
         try std.testing.expectEqualStrings(path, out);

@@ -32,11 +32,15 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BIN=${1:-${BIN:-$ROOT/zig-out/bin/stockfish}}
 DEADLINE=${DEADLINE:-10}
 
-# Run from resources/: the net is a runtime input and the binary SIGSEGVs on a null net
-# from any other cwd (AGENTS.md). Everything below therefore names paths relative to it.
+# Run from resources/: the net is a runtime input, and started from any other cwd the binary
+# names the missing net and exits 1 (AGENTS.md). Everything below names paths relative to it.
+# Read the net's name out of its single owner rather than pinning it here -- the name changes
+# on every upstream net bump, and a stale literal makes this gate SKIP silently.
+NET="$(sed -n 's/.*default_eval_file_name = "\(.*\)";.*/\1/p' "$ROOT/src/engine/eval/network.zig")"
+[ -n "$NET" ] || { echo "liveness: SKIPPED -- cannot read the net name from network.zig" >&2; exit 2; }
 cd "$ROOT/resources" 2>/dev/null || { echo "liveness: SKIPPED -- no resources/ dir" >&2; exit 2; }
 [ -x "$BIN" ] || { echo "liveness: SKIPPED -- no engine at $BIN" >&2; exit 2; }
-[ -f nn-1a298aa575a0.nnue ] || { echo "liveness: SKIPPED -- no net in resources/ (run 'zig build bench')" >&2; exit 2; }
+[ -f "$NET" ] || { echo "liveness: SKIPPED -- no $NET in resources/ (run 'zig build bench')" >&2; exit 2; }
 
 PASSED=0
 HUNG=0
