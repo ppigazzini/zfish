@@ -40,16 +40,20 @@ pub fn priorScaledBonusBase(depth: i32) i32 {
 // Scale the prior-countermove fail-low bonus (search() POST_BONUS block): fan the
 // scaledBonus out into the continuation, main, and pawn history
 // tables with distinct tuned divisors, each truncated toward zero.
+// Shift, do not divide, in all three: `scaled_bonus` is `priorScaledBonusBase(depth) *
+// priorBonusScale(...)`, and the base is at least 65 at the depth >= 1 the move loop runs
+// at while the scale ends in `@max(s, 0)` -- so the dividend is never negative and
+// `@divTrunc` buys only a round-toward-zero fixup (lea/test/cmov/sar) nothing can reach.
 pub fn priorConthistScale(scaled_bonus: i32) i32 {
-    return @divTrunc(scaled_bonus * 263, 16384);
+    return scaled_bonus * 263 >> 14;
 }
 
 pub fn priorMainhistScale(scaled_bonus: i32) i32 {
-    return @divTrunc(scaled_bonus * 215, 32768);
+    return scaled_bonus * 215 >> 15;
 }
 
 pub fn priorPawnhistScale(scaled_bonus: i32) i32 {
-    return @divTrunc(scaled_bonus * 324, 8192);
+    return scaled_bonus * 324 >> 13;
 }
 
 // Assemble the Step 18 LMR stat-score (search()). The caller reads the relevant
@@ -57,7 +61,9 @@ pub fn priorPawnhistScale(scaled_bonus: i32) i32 {
 // Capture: 873*pieceValue/128 plus capture history. Quiet: a weighted sum of main and the
 // two continuation-history entries, scaled by 1024.
 pub fn captureStatScore(piece_value: i32, capture_hist: i32) i32 {
-    return @divTrunc(873 * piece_value, 128) + capture_hist;
+    // `piece_value` indexes search_values.piece_value, which has no negative entry, so the
+    // product cannot be negative and the divide is a shift.
+    return (873 * piece_value >> 7) + capture_hist;
 }
 
 pub fn quietStatScore(main_hist: i32, cont0: i32, cont1: i32) i32 {
