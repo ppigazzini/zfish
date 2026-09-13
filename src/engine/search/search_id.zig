@@ -117,6 +117,7 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
 
     const input = timeman_port.TimemanInput{
         .time_ms = lim.time[us],
+        .opp_time_ms = lim.time[us ^ 1],
         .inc_ms = lim.inc[us],
         .start_time = lim.start_time,
         .npmsec = optInt("nodestime"),

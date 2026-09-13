@@ -46,7 +46,7 @@ function-pointer seams. For the zones and the module graph, see
 | `shared_histories.zig` | The element-count math for the two shared arrays (pure `usize`, unit-tested standalone) |
 | `shared_histories_map.zig` | The generic NUMA-index → entry map with construct/free hooks |
 | `tt.zig` | The transposition table: `probeTable`, `entrySave`, `entryPenalize`, `hashfull`, resize/clear, generation |
-| `timeman.zig` | `init` — the pure time-budget computation: optimum/maximum time from clock, increment, movestogo, ply |
+| `timeman.zig` | `init` — the pure time-budget computation: optimum/maximum time from both clocks, increment, movestogo, ply |
 | `uci_wdl.zig` | The win-rate polynomial, centipawn conversion, WDL, and the `info`/`bestmove` line formatters |
 | **Types** | |
 | `search_types.zig` | `SearchStack`; re-exports `PVMoves`, `RootPVMoves`, `RootMove`, `CorrectionBundle` |
@@ -476,7 +476,7 @@ makes the lock-free write safe.
 
 ## Time management and stopping
 
-`timeman.init` is pure: given the clock, increment, `movestogo`, ply, move overhead,
+`timeman.init` is pure: given BOTH clocks, the increment, `movestogo`, ply, move overhead,
 and the ponder flag, it returns `optimum_time` and `maximum_time`. `ssTmInit`
 (`search_id.zig`) builds its input from the worker's limits and root position plus the
 `nodestime`, `Move Overhead`, and `Ponder` options, and writes the outputs back into
@@ -501,6 +501,15 @@ The **move horizon** `mtg` falls toward `scaled_time * 0.05` under one second, b
 when the caller sent no `movestogo`: in a cyclic time control that token is the real
 number of moves before the clock is topped up, so shrinking the horizon below it budgets
 each move as though the session ended at the next control, and the engine flags.
+
+A **clock deficit** shrinks the optimum budget: `opt_scale` is scaled by
+`1 + 0.9 * min(time_advantage, 0)`, where `time_advantage` is the signed clock difference over
+their sum, so being ahead changes nothing and being far behind cuts the budget toward a
+tenth. Two cases escape it, and both are load-bearing rather than tidy: under `nodestime`
+the opponent's node budget is not derivable deterministically (and `time[us]` has already
+been rewritten to a node count), and on `movestogo == 1` an opponent who has already moved
+carries the next cycle's increment while we do not, so the deficit reads far larger than it
+is and the cut would favour blunders.
 
 The **scaled clock** the horizon and the `log10` terms both read is floored at 1, because
 under `nodestime` a budget smaller than `npmsec` divides to zero, which reaches `log10` as

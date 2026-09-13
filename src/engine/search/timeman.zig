@@ -15,6 +15,9 @@ const std = @import("std");
 
 pub const TimemanInput = struct {
     time_ms: i64,
+    // Carry the OPPONENT's clock too: the time-disadvantage scaling below is the one
+    // formula that reads both sides. Unused when `movestogo == 1` or under nodestime.
+    opp_time_ms: i64,
     inc_ms: i64,
     start_time: i64,
     npmsec: i64,
@@ -159,6 +162,20 @@ pub fn init(input: TimemanInput) TimemanOutput {
         max_scale = 1.3 + 0.11 * @as(f64, @floatFromInt(mtg));
     }
 
+    // Spend less when behind on the clock. Skipped in two cases, and upstream marks both
+    // load-bearing:
+    //   - under `nodestime` the opponent's node budget is not derivable deterministically,
+    //     and `time_ms` has already been rewritten to a node count above;
+    //   - on the last move of a cyclic control (`movestogo == 1`) the advantage reads wildly
+    //     wrong, because an opponent who has already moved carries the next cycle's increment
+    //     and we do not -- the resulting cut favours blunders.
+    if (output.use_nodes_time == 0 and input.movestogo != 1) {
+        const ours: f64 = @floatFromInt(output.time_ms);
+        const theirs: f64 = @floatFromInt(input.opp_time_ms);
+        const time_advantage = (ours - theirs) / (1.0 + ours + theirs);
+        opt_scale *= 1 + 0.9 * @min(time_advantage, 0.0);
+    }
+
     output.optimum_time = @intFromFloat(@max(
         1.0,
         opt_scale * @as(f64, @floatFromInt(time_left)),
@@ -196,6 +213,10 @@ const base = TimemanInput{
     .ply = 20,
     .original_time_adjust = -1,
     .ponder = 0,
+    // Leave the opponent on zero so the time-disadvantage scaling is a no-op for every test
+    // that only moves OUR clock: the scaling never spends MORE, so an opponent with no time
+    // cannot perturb an assertion about the rest of the formula. It has its own test below.
+    .opp_time_ms = 0,
 };
 
 test "timeman: no clock for the side to move yields no bound, not the last search's budget" {
@@ -266,6 +287,31 @@ test "timeman: ponder boosts optimum by exactly 25%" {
 // `time_left` collapses from 256 to 76, and `optimum_time` bottoms out at the max(1.0, ...)
 // floor -- the engine budgets 1ms per move and plays the rest of the game on the increment.
 // Assert the floor is NOT hit, which is the symptom, rather than the internal mtg.
+// Pin the time-disadvantage scaling: a clock deficit shrinks the optimum budget, an equal or
+// winning clock leaves it alone, and the two documented escapes -- nodestime and the last move
+// of a cyclic control -- put it back. Upstream marks both escapes load-bearing.
+test "timeman: a clock deficit shrinks the optimum budget, and its two escapes restore it" {
+    var even = base;
+    even.opp_time_ms = even.time_ms;
+    const even_opt = init(even).optimum_time;
+
+    var behind = base;
+    behind.opp_time_ms = 10 * behind.time_ms;
+    try std.testing.expect(init(behind).optimum_time < even_opt);
+
+    var ahead = base;
+    ahead.opp_time_ms = @divTrunc(ahead.time_ms, 10);
+    try std.testing.expectEqual(even_opt, init(ahead).optimum_time);
+
+    // movestogo == 1: the opponent who has already moved carries the next cycle's increment,
+    // so the deficit reads wildly wrong and the scaling stands down.
+    var last_of_cycle = behind;
+    last_of_cycle.movestogo = 1;
+    var even_cycle = even;
+    even_cycle.movestogo = 1;
+    try std.testing.expectEqual(init(even_cycle).optimum_time, init(last_of_cycle).optimum_time);
+}
+
 test "timeman: sub-second budgets take the moves-to-go reduction (ms, not us)" {
     for ([_]struct { t: i64, i: i64 }{ .{ .t = 100, .i = 1 }, .{ .t = 400, .i = 4 }, .{ .t = 700, .i = 7 } }) |tc| {
         var in = base;
