@@ -111,8 +111,12 @@ fn doCastlingDo(pos: *Position, us: u8, from: u8, to_in: u8, dp: *DirtyPiece, dt
     dp.add_pc = (us << 3) | rook_pt;
     dp.remove_sq = rfrom;
     dp.add_sq = rto;
-    removePieceDts(pos, from, dts);
+    // Lift the ROOK before the king. Both removals still precede both puts, which is what
+    // the Chess960 square overlap requires, but with the king still on the board the sliders
+    // through it cannot report the rook as a discovered target one call before it is
+    // withdrawn -- and every such pair is two entries the NNUE diff walk then has to cancel.
     removePieceDts(pos, rfrom, dts);
+    removePieceDts(pos, from, dts);
     putPieceDts(pos, (us << 3) | king_pt, to, dts);
     putPieceDts(pos, (us << 3) | rook_pt, rto, dts);
     return .{ .to = to, .rfrom = rfrom, .rto = rto };
