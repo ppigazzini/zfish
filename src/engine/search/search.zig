@@ -253,6 +253,13 @@ pub fn nullMoveThreshold(beta: i32, depth: i32, improving: bool) i32 {
     return beta - 13 * depth - 47 * @as(i32, @intFromBool(improving)) + 365;
 }
 
+// Credit the static eval with every null-move fail-high this ply has already scored
+// under the current parent: a ply that keeps cutting is admitted to Step 10 on a
+// staler eval than one that never has.
+pub fn nullMoveEvalBonus(static_eval: i32, prior_nmp_fail_high: i32) i32 {
+    return static_eval + 50 * prior_nmp_fail_high;
+}
+
 // Deepen the null-move reduction when the static eval already towers over beta:
 // the more the position is winning, the less the null search needs to prove.
 // C++ `(ss->staticEval - beta) / 256` truncates toward zero, so use @divTrunc;
