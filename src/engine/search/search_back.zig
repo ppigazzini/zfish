@@ -106,6 +106,10 @@ pub inline fn runBack(nd: anytype) i32 {
     // Recomputed at the ONE site that raises alpha, and nowhere else.
     var window_term = reductionWindowTerm(nd.ctx, nd.beta, alpha);
     var depth = nd.depth;
+    // Step 15's quiet move-count ceiling, carried the same way: it reads only `depth` and
+    // the loop-invariant `improving`, so it moves where DEPTH moves -- the two writes below
+    // -- instead of being rebuilt for every move.
+    var quiet_move_count_limit = search.moveCountLimit(depth, nd.improving);
     var best_value = nd.best_value;
     var best_move: u16 = 0;
     // Reuse searchImpl's StateInfo and move-sort buffer (nd.st_ptr / nd.mp_moves):
@@ -184,7 +188,7 @@ pub inline fn runBack(nd: anytype) i32 {
 
         // Step 15. Prune at shallow depth.
         if (!nd.root_node and nd.pos.st.non_pawn_material[nd.us] != 0 and !qIsLoss(best_value)) {
-            if (move_count >= search.moveCountLimit(depth, nd.improving)) mp_state.skip_quiets = 1;
+            if (move_count >= quiet_move_count_limit) mp_state.skip_quiets = 1;
             var lmr_depth = new_depth - @divTrunc(r, 1024);
             if (capture or gc) {
                 const captured = nd.pos.board[to];
@@ -230,6 +234,7 @@ pub inline fn runBack(nd: anytype) i32 {
                 const triple_margin = search.singularTripleMargin(nd.pv_node, !nd.tt_capture, nd.ss.tt_pv, nd.correction_value, ply_gt_root);
                 extension = 1 + @as(i32, @intFromBool(value < singular_beta - double_margin)) + @as(i32, @intFromBool(value < singular_beta - triple_margin));
                 depth += 1;
+                quiet_move_count_limit = search.moveCountLimit(depth, nd.improving);
             } else if (value >= nd.beta and !qIsDecisive(value)) {
                 ttMoveHistoryUpdate(nd.w, search.ttMoveHistoryDepthBonus(depth));
 
@@ -334,7 +339,10 @@ pub inline fn runBack(nd: anytype) i32 {
                     nd.ss.cutoff_cnt += @intFromBool(extension < 2 or nd.pv_node);
                     break;
                 }
-                if (depth > 3 and depth < 12 and !qIsDecisive(value)) depth -= 3;
+                if (depth > 3 and depth < 12 and !qIsDecisive(value)) {
+                    depth -= 3;
+                    quiet_move_count_limit = search.moveCountLimit(depth, nd.improving);
+                }
                 alpha = value;
                 window_term = reductionWindowTerm(nd.ctx, nd.beta, alpha);
             }
