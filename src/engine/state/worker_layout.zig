@@ -169,6 +169,10 @@ pub const TimeManagement = struct {
     optimum_time: i64 = 0,
     maximum_time: i64 = 0,
     available_nodes: i64 = 0,
+    // Hold the cyclic-nodestime state between searches: what one cycle of the control is
+    // worth, and the `movestogo` the previous search was given. clear() resets the latter.
+    cyclic_budget: i64 = 0,
+    previous_movestogo: i32 = 0,
     use_nodes_time: u8 = 0, // bool
 };
 
@@ -215,6 +219,7 @@ pub const SearchManager = struct {
     }
     pub inline fn clearTimeman(self: *SearchManager) void {
         self.tm.available_nodes = -1;
+        self.tm.previous_movestogo = 0;
     }
 };
 

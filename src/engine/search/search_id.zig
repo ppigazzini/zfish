@@ -124,6 +124,8 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
         .movetime_ms = lim.movetime,
         .move_overhead = optInt("Move Overhead"),
         .available_nodes = tm.available_nodes,
+        .cyclic_budget = tm.cyclic_budget,
+        .previous_movestogo = tm.previous_movestogo,
         .current_optimum_time = tm.optimum_time,
         .current_maximum_time = tm.maximum_time,
         .movestogo = lim.movestogo,
@@ -138,6 +140,8 @@ pub fn ssTmInit(wl: *worker_layout.WorkerLayout) void {
     tm.optimum_time = out.optimum_time;
     tm.maximum_time = out.maximum_time;
     tm.available_nodes = out.available_nodes;
+    tm.cyclic_budget = out.cyclic_budget;
+    tm.previous_movestogo = out.previous_movestogo;
     tm.use_nodes_time = out.use_nodes_time;
     smgr.original_time_adjust = out.original_time_adjust;
     lim.time[us] = out.time_ms;
