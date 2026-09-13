@@ -129,15 +129,7 @@ const ssAdd = search_qsearch.ssAdd;
 const ssSub = search_qsearch.ssSub;
 const ttMoveHistoryUpdate = search_qsearch.ttMoveHistoryUpdate;
 const contVal = search_qsearch.contVal;
-
-// Force a check of time on the next occasion after a TB probe (search.cpp:917);
-// calls_cnt is null off the main thread, mirroring upstream's is_mainthread()
-// guard. Keep the store out of line: the TB block never runs on a default build
-// (cardinality == 0), and an inline write to the counter perturbs the node
-// body's register allocation.
-noinline fn tbForceTimeCheck(ctx: *const QCtx) void {
-    if (ctx.time_state.calls_cnt) |cc| cc.* = 0;
-}
+const search_tb_probe = @import("search_tb_probe.zig");
 
 /// Mirror upstream `template<NodeType> search<Root>/<PV>/<NonPV>(..., bool cutNode)`: the node
 /// type is comptime, `cut_node` is runtime. Carry the comptime fields into `search_back.runBack`
@@ -302,54 +294,17 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
         tt.entryPenalize(writer, 1);
     }
 
-    // Step 7. Probe the tablebases. Port SF search.cpp faithfully: probe the WDL of the current
-    // (non-root, non-excluded) position when it is small enough, has a zeroed rule50 counter, and
-    // no castling rights; on success score it in the VALUE_TB..VALUE_TB_WIN range and cut/adjust.
-    // Gate on the worker's tb_config.cardinality, which is 0 without a SyzygyPath, so a default
-    // build (and bench) never enters here and the node count is unchanged.
+    // Step 7. Probe the tablebases -- search_tb_probe owns the whole block (cold: a default
+    // build has cardinality 0, so bench never enters it).
     if (!root_node and excluded_move == 0) {
-        const tb_cfg = &ctx.worker.tb_config;
-        const cardinality = tb_cfg.cardinality;
-        if (cardinality != 0) {
-            const pieces_count: i32 = @popCount(pos.by_type_bb[0]);
-            const probe_depth = tb_cfg.probe_depth;
-            if (pieces_count <= cardinality and
-                (pieces_count < cardinality or depth >= probe_depth) and
-                pos.st.rule50 == 0 and pos.st.castling_rights == 0)
-            {
-                const res = tb_source.probeWdlPos(pos_ptr);
-                tbForceTimeCheck(ctx);
-                if (res.available != 0) {
-                    @atomicStore(u64, &ctx.worker.tb_hits, @atomicLoad(u64, &ctx.worker.tb_hits, .monotonic) + 1, .monotonic);
-                    const draw_score: i32 = if (tb_cfg.use_rule50) 1 else 0;
-                    const tb_value: i32 = sv.value_tb - ss.ply;
-                    const wdl = res.wdl;
-                    const value: i32 = if (wdl < -draw_score)
-                        -tb_value
-                    else if (wdl > draw_score)
-                        tb_value
-                    else
-                        q_value_draw + 2 * wdl * draw_score;
-                    const b: u8 = if (wdl < -draw_score)
-                        q_bound_upper
-                    else if (wdl > draw_score)
-                        q_bound_lower
-                    else
-                        q_bound_exact;
-                    if (b == q_bound_exact or (if (b == q_bound_lower) value >= beta else value <= alpha)) {
-                        tt.entrySave(writer, pos_key, search.valueToTt(value, ss.ply), @intFromBool(ss.tt_pv), b, @min(q_max_ply - 1, depth + 6), q_depth_none, 0, q_value_none, ctx.generation);
-                        return value;
-                    }
-                    if (pv_node) {
-                        if (b == q_bound_lower) {
-                            best_value = value;
-                            alpha = @max(alpha, best_value);
-                        } else {
-                            max_value = value;
-                        }
-                    }
-                }
-            }
+        switch (search_tb_probe.probeAtNode(ctx, pos_ptr, ss, pv_node, depth, alpha, beta, pos_key, writer)) {
+            .none => {},
+            .cutoff => |v| return v,
+            .raise_alpha => |v| {
+                best_value = v;
+                alpha = @max(alpha, best_value);
+            },
+            .cap_max => |v| max_value = v,
         }
     }
 
