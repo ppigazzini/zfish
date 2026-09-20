@@ -2,7 +2,7 @@
 # Docs rot gate.
 #
 # The invariant: docs/ must not make a claim the tree contradicts. Docs are accurate when
-# written and rot where the code moves under them, so this checks the three rot classes that
+# written and rot where the code moves under them, so this checks the rot classes that
 # a machine can settle. Everything else -- whether the prose is TRUE -- still needs a reader.
 #
 # Every check here was paid for. A hostile audit of docs/ found, in one session, that:
@@ -113,7 +113,7 @@ if [ "$path_total" -lt 60 ]; then
     fail=1
 fi
 
-# A CI lane is named by its FILE, and docs/09 names each one bare rather than by path, so the
+# A CI lane is named by its FILE, and docs/10 names each one bare rather than by path, so the
 # check above cannot see it. A renamed workflow leaves the lane table pointing at nothing.
 badflow=0
 while IFS= read -r wf; do
@@ -228,7 +228,7 @@ fi
 # names without defining:
 #   _mm*/_tzcnt*/__builtin*  upstream's C++ intrinsics, in 08's translation dictionary
 #   Zig std/builtin names    firstTrue, ReleaseSmall, async_limit, ... documented, not ours
-#                            to define -- 09 has to name `async_limit` to explain why one
+#                            to define -- 10 has to name `async_limit` to explain why one
 #                            `--fuzz` session cannot start every fuzz artifact
 #   *_ci                     CI branch/ref names, not symbols
 foreign='^(_mm|_tzcnt|_adds|_subs|__builtin)|^(firstTrue|lastTrue|countTrues|ReleaseSmall|ReleaseFast|ReleaseSafe|async_limit)$|_ci$'

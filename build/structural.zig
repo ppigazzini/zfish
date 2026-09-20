@@ -50,7 +50,7 @@ pub const script_gates = [_]ScriptGate{
     .{ .step = "parity-teardown", .script = "tools/teardown.sh", .desc = "Valgrind leak gate for searchmoves/rootMoves vector lifecycle + Worker clear", .needs_engine = true, .cwd_resources = true },
     // Assert via the src-free / TU=0 structural gate that the
     // shipped binary contains zero C++ TUs (no Stockfish:: / libc++ runtime symbols) and still
-    // benches 2497913. Keep it a permanent invariant in the `parity` aggregate below, guarding
+    // benches 1687572. Keep it a permanent invariant in the `parity` aggregate below, guarding
     // against any C++ TU being reintroduced into the default binary.
     .{ .step = "src-free", .script = "tools/src_free.sh", .desc = "src-free structural gate: zero C++ Stockfish/libc++ symbols in the shipped binary", .needs_engine = true, .cwd_resources = true, .in_parity = true },
     // Gate the headless engine structurally: src/engine/ must import only engine/ modules,
@@ -97,7 +97,7 @@ pub const script_gates = [_]ScriptGate{
     // all, so seconds of deadline is headroom rather than a race. Every case is mutation-proven
     // to go red without its fix; one that could not was removed rather than kept as decoration.
     .{ .step = "liveness", .script = "tools/liveness.sh", .desc = "hang gate: every mid-search command and self-limiting search still yields a bestmove", .needs_engine = true, .cwd_resources = true, .in_parity = true },
-    .{ .step = "docs-lint", .script = "tools/docs_lint.sh", .desc = "docs rot gate: every link resolves, every named src/tools path exists, the bench anchor matches build.zig", .in_parity = true },
+    .{ .step = "docs-lint", .script = "tools/docs_lint.sh", .desc = "docs rot gate: every link resolves, every named src/tools path exists, no page pins the bench anchor", .in_parity = true },
     // Gate the cross-version build shims structurally. `build/config.zig` owns one comptime
     // branch per std.Build API that differs between 0.16 and master; the rest of the build is
     // supposed to call it. Two sites reached past it for `b.build_root` instead, which 0.16
