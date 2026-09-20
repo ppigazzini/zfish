@@ -117,18 +117,22 @@ pub fn qCorrectionValue(w: *WorkerHistories, pos: *const Position, ss: *SearchSt
     const m = ss1.current_move;
     var cch2: i32 = 0;
     var cch4: i32 = 0;
+    var cch6: i32 = 0;
     const m_ok = moveIsOk(m);
     if (m_ok) {
         const to = moveTo(m);
         const idx = @as(usize, pos.board[to]) * 64 + to;
         const ss2: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 2 * @sizeOf(SearchStack));
         const ss4: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 4 * @sizeOf(SearchStack));
+        const ss6: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 6 * @sizeOf(SearchStack));
         const cc2 = ss2.continuation_correction_history.?;
         const cc4 = ss4.continuation_correction_history.?;
+        const cc6 = ss6.continuation_correction_history.?;
         cch2 = cc2[idx];
         cch4 = cc4[idx];
+        cch6 = cc6[idx];
     }
-    return search.correctionValue(pcv, micv, wnpcv, bnpcv, cch2, cch4, m_ok);
+    return search.correctionValue(pcv, micv, wnpcv, bnpcv, cch2, cch4, cch6, m_ok);
 }
 
 // Live in the board zone now (move_do.adjustKey50): upstream keeps adjust_key50 on

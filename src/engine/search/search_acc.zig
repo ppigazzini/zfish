@@ -127,9 +127,9 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
     // The key is approximate; the hint changes no value.
     tt.prefetch(ctx.table, ctx.cluster_count, move_do.prefetchKey(pos, move));
     const capture = captureStage(pos, move);
-    // Preload the two continuation-correction entries the CHILD reads (upstream
-    // search.cpp do_move): the child's (ss-2) and (ss-4) are this node's ss-1 and ss-3, and
-    // both are addressed by the moved piece and the destination square. Castling and
+    // Preload the three continuation-correction entries the CHILD reads (upstream
+    // search.cpp do_move): the child's (ss-2), (ss-4) and (ss-6) are this node's ss-1, ss-3
+    // and ss-5, and all three are addressed by the moved piece and the destination square. Castling and
     // promotion make the piece approximate, exactly as prefetchKey's own model does -- the
     // line then goes unused, and no value depends on it either way. ss-7..ss-1 carry the
     // pre-root sentinel planes, so neither pointer is null at any ply.
@@ -137,8 +137,10 @@ pub inline fn doMoveAcc(ctx: *const QCtx, pos_ptr: *Position, move: u16, st_ptr:
         const cc_index = contCorrIndex(pos.board[moveFrom(move)], moveTo(move));
         const ss_back1: *const SearchStack = @ptrFromInt(@intFromPtr(ss) - @sizeOf(SearchStack));
         const ss_back3: *const SearchStack = @ptrFromInt(@intFromPtr(ss) - 3 * @sizeOf(SearchStack));
+        const ss_back5: *const SearchStack = @ptrFromInt(@intFromPtr(ss) - 5 * @sizeOf(SearchStack));
         @prefetch(&ss_back1.continuation_correction_history.?[cc_index], .{ .rw = .read, .locality = 3, .cache = .data });
         @prefetch(&ss_back3.continuation_correction_history.?[cc_index], .{ .rw = .read, .locality = 3, .cache = .data });
+        @prefetch(&ss_back5.continuation_correction_history.?[cc_index], .{ .rw = .read, .locality = 3, .cache = .data });
     }
     // Relaxed load-then-store, as upstream's RelaxedAtomic operator++ does (misc.h:378): the
     // main thread sums this counter across workers while they increment it. A plain access there

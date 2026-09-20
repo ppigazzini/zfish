@@ -334,7 +334,7 @@ pub fn updateAllStats(
 const correction_history_limit: search_common.HistLimit = .{ .v = search.correction_history_limit };
 
 // update_correction_history: nudge the four shared correction tables plus the
-// (ss-2)/(ss-4) continuation correction entries toward the search/static-eval
+// (ss-2)/(ss-4)/(ss-6) continuation correction entries toward the search/static-eval
 // delta. Resolve all four key-masked, color-indexed correction entries from
 // SharedHistories (the Worker pointer gives the shared block) and apply the
 // bonus weighting, gravity, and the stack-relative continuation correction writes.
@@ -368,10 +368,13 @@ pub fn updateCorrectionHistory(
         const idx = @as(usize, pc) * 64 + to;
         const ss2: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 2 * @sizeOf(SearchStack));
         const ss4: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 4 * @sizeOf(SearchStack));
+        const ss6: *SearchStack = @ptrFromInt(@intFromPtr(ss) - 6 * @sizeOf(SearchStack));
         const cc2 = ss2.continuation_correction_history.?;
         const cc4 = ss4.continuation_correction_history.?;
+        const cc6 = ss6.continuation_correction_history.?;
         statsUpdate(&cc2[idx], @divTrunc(bonus * 130, 128), correction_history_limit);
         statsUpdate(&cc4[idx], @divTrunc(bonus * 70, 128), correction_history_limit);
+        statsUpdate(&cc6[idx], @divTrunc(bonus * 35, 128), correction_history_limit);
     }
 }
 
