@@ -281,7 +281,12 @@ pub inline fn runBack(nd: anytype) i32 {
 
         // Step 18/19. Run the LMR + full-depth search.
         if (depth >= 2 and move_count > 1) {
-            const d = @max(@as(i32, 1), @min(new_depth - @divTrunc(r, 1024), new_depth + 2)) + @as(i32, @intFromBool(nd.pv_node));
+            // Cap the LMR depth at new_depth, but let a negative reduction extend up to two
+            // plies past it -- and only while ss.ply stays inside twice root_depth, because an
+            // uninterrupted chain of such extensions otherwise recurses to MAX_PLY (upstream
+            // 1548538e).
+            const extension_cap: i32 = if (nd.ss.ply < 2 * nd.ctx.root_depth.*) 2 else 0;
+            const d = @max(@as(i32, 1), new_depth + @min(@divTrunc(-r, 1024), extension_cap)) + @as(i32, @intFromBool(nd.pv_node));
             nd.ss.reduction = new_depth - d;
             value = -searchImpl(nd.ctx, nd.pos_ptr, ssAdd(nd.ss, 1), -(alpha + 1), -alpha, d, true, .non_pv);
             nd.ss.reduction = 0;
