@@ -70,7 +70,7 @@ trap restore_all EXIT INT TERM
 ROWS=(
     # The anchor. Scale the razoring threshold by one: the search still converges, it just
     # searches a different tree, so the bench total moves off the signature reference.
-    "signature|src/engine/search/search.zig|    return 482 * depth;|    return 483 * depth;|razor margin 482->483"
+    "signature|src/engine/search/search.zig|    return 342 * depth;|    return 343 * depth;|razor margin 342->343"
     # The specified oracle. Stop generating knight under-promotions: perft counts are facts
     # about chess, so this is the one gate whose reference cannot be re-blessed past a bug.
     "perft|src/engine/board/movegen.zig|        writer.push(makeSpecialMove(promotion, from, to, knight));\n|:DELETE:|movegen omits knight under-promotion"
