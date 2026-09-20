@@ -34,7 +34,7 @@ for the same position.
 | `nnue_acc_rowops.zig` | the `@Vector` weight-row add/sub kernels: `applyCombinedDelta`, `accRows`, the refresh-fused and hybrid passes, and the PSQT deltas — all of them expressed through two sign-and-type-comptime row appliers, `tileRows` and `psqtRows` (upstream's `apply_psq_features`/`apply_threat_features`/`apply_psqt`) |
 | `nnue_transform_packus.zig` | the transform's packus clip-multiply-narrow kernels, one per x86 vector width (`packusTransform64`/`32`/`16`), and the scalar-reference tests that pin them |
 | `nnue_refresh_cache.zig` | the per-(king square, perspective) refresh cache ("finny tables") and `clearRefreshCache` |
-| `nnue_nnz.zig` | the transform's non-zero-chunk record: the two shapes (`NnzIndexList` on the AVX-512 VNNI tiers, `NnzBitset` elsewhere), the tier gate `use_nnz_index_list`, and `nnzRecord`/`nnzReset` |
+| `nnue_nnz.zig` | the transform's non-zero-chunk record: the two shapes (`NnzIndexList` on the AVX-512 tiers that also carry VBMI2, `NnzBitset` elsewhere), the tier gate `use_nnz_index_list`, and `nnzRecord`/`nnzReset` |
 | `nnue_accumulator.zig` | the stack facade (`stackPush`/`stackPop`/`stackReset`), `transformBucket` and its per-perspective half `transformPerspective` — the clipped-ReLU transform, which writes the NNZ record as it packs |
 | **inference** | |
 | `nnue_inference.zig` | the forward pass: the affine layers, bucket selection, and the psqt/positional split — it drives the activations, it does not own them |
@@ -49,9 +49,9 @@ for the same position.
 
 A net file is a flat binary: a 12-byte header (`u32` version, `u32` structure hash,
 `u32` description length) followed by the description, the feature-transformer blob,
-and then one blob per layer stack. `network.zig` pins the version
-(`network_version = 0x6A448AFA`) and rejects any file whose structure hash differs
-from `nnue_hash.networkHashValue()` — the hash is derived from the architecture
+and then one blob per layer stack. `network_parse.zig` pins the version
+(`network_version = 0x6A448AFA`) and, in `loadNetworkBytes`, rejects any file whose
+structure hash differs from `nnue_hash.networkHashValue()` — the hash is derived from the architecture
 constants, so a net built for a different architecture cannot load.
 
 `network.load` resolves the `EvalFile` name (defaulting to
@@ -113,9 +113,10 @@ PSQT) sections are framed separately in the stream but land in **one contiguous
 region each** — pawn-pair rows right after the threat rows — so a single index
 addresses either feature set's row (upstream's `threatAndPpWeights`). Affine layers are
 `i32` little-endian biases followed by `i8` weights, permuted on the way in through
-`weightIndexScrambled` (the SSSE3 layout the inference reads back; on the **AVX2**
-pair-activation tier `fc_1`/`fc_2` additionally fold in the paired packs' lane
-interleave — see the flag split below). `serializeFeatureTransformer` /
+`weightIndexScrambled` (the SSSE3 layout the inference reads back; on every pair-activation
+tier — AVX2 and above, since the flag is `x86_64 and avx2` — `fc_1`/`fc_2` additionally
+fold in the paired packs' lane interleave, by a different map per width; see the flag
+split below). `serializeFeatureTransformer` /
 `serializeLayer` invert this exactly, so an exported net round-trips byte-for-byte.
 
 The parse is the *sole* source of weights: it writes straight into the arenas owned
@@ -181,8 +182,8 @@ second half skips its `max(0, ·)` because the signed `pmulhw` carries the sign 
 product and the saturating `packuswb` zeroes it on pack. The 256- and 512-bit packs
 interleave their 128-bit lanes, so one shuffle restores natural byte order — the
 permutation upstream instead folds into the weights at load time. It records which
-4-byte chunks are non-zero into an `NnzBitset` in the same pass, while the values are
-still in registers, and returns the perspective-differenced PSQT value for the bucket.
+4-byte chunks are non-zero into the tier's NNZ record (`NnzOut` — the index list or the
+bitset, see below) in the same pass, while the values are still in registers, and returns the perspective-differenced PSQT value for the bucket.
 
 Above the transformer sit **8 layer stacks** (`layer_stacks = 8`), selected by
 material: `bucket = (piece_count - 1) / 4` (`nnue_inference.evaluate`). Each stack is
@@ -241,16 +242,17 @@ sides route identically off the raw record. But each index still gets its **own*
 test: one perspective can drop a record the other keeps, and the two lists need not be the
 same length.
 
-Otherwise `evaluateSide` runs once per perspective.
-`findLastUsable` walks back from the top of the stack for the nearest state that is
-either already computed or requires a refresh. It tests **only** the PSQ refresh
+Otherwise `evaluateSide` runs once per perspective. `evaluate` has already called
+`findLastUsable` (`nnue_acc_layout.zig`) once per perspective and passes the index in; it
+walks back from the top of the stack for the nearest state that is either already computed
+or requires a refresh. It tests **only** the PSQ refresh
 condition (the moved piece is that perspective's king), because a threat refresh —
 the king crossing the board's centre file — is a strict subset of it, so the
 combined accumulator always refreshes as a unit.
 
 ```mermaid
 flowchart TD
-    A["evaluateSide(perspective)"] --> B["findLastUsable — walk back to the<br/>nearest computed or refresh-requiring state"]
+    A["evaluate: findLastUsable per perspective —<br/>walk back to the nearest computed or refresh-requiring state"] --> B["evaluateSide(perspective, last_usable)"]
     B --> C{"is that state computed?"}
     C -->|yes| D["applyCombined forward,<br/>last_usable+1 .. top"]
     C -->|no| E["refreshCombined at the top of the stack"]
@@ -275,7 +277,7 @@ target = computed − <old-bucket HalfKA> + <new-bucket HalfKA> + <this ply's th
 refresh path shares. The old bucket's board is the position *before* the move, which
 exists nowhere: the step reconstructs it by undoing the king move on a copy of the piece
 array — the only board the accumulator builds rather than reads, and the reason the step
-is bounded below by `MIN_PC_COUNT_HYBRID = 15` pieces. Below that, summing the threat and
+is bounded below by `hybridApplicable`'s `min_pc_count_hybrid = 15` pieces. Below that, summing the threat and
 pair features outright beats reconstructing the source bucket. Castling is excluded
 because it relocates a rook as well.
 
@@ -496,7 +498,7 @@ taken — `nnue_affine.zig` records both, and records which axes on this box are
 to separate them (cycles, IPC and cache misses all fail an A/A calibration at this
 magnitude; instructions and branch misses pass it).
 
-Activations are `sqrClippedReLU` (`min(127, (x*x) >> shift)`) and `clippedReLU`
+Activations are `sqrClippedReLU` (`min(127, (clamp(x, -32768, 32767)^2) >> shift)` — the clamp before the square is what keeps the product in range) and `clippedReLU`
 (`clamp(x >> shift, 0, 127)`), written into a 128-byte `concat` that `fc_1` and
 `fc_2` read. `evaluateBucketRaw` returns the two halves — `psqt` from the
 transformer, `positional` from `propagateBucket` — and `evaluate` scales both by

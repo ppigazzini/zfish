@@ -128,7 +128,8 @@ not embedded in the binary.
 
 ```
 zfish/
-|-- build.zig            -- the hand-declared module graph and every build step
+|-- build.zig            -- the hand-declared module graph and the build entry point
+|-- build/               -- the gate, lane, arch and cross-version step tables
 |-- build.zig.zon        -- package manifest (no external dependencies)
 |-- src/
 |   |-- engine/          -- the chess library; imports nothing outside engine/
@@ -140,10 +141,9 @@ zfish/
 |   `-- shell/           -- main (composition root), UCI, options, the engine object
 |-- tools/               -- the gate harness, structural linters, upstream tooling
 |-- docs/                -- this documentation
-|-- net/                 -- the fetched NNUE network and Syzygy tablebases (untracked)
-|-- .github/workflows/   -- CI: parity matrix, fuzz, upstream drift
+|-- resources/          -- the fetched NNUE network and Syzygy tablebases (untracked)
+|-- .github/workflows/   -- CI: parity matrix, fuzz, deep perft, upstream drift
 `-- Copying.txt, AUTHORS -- GPL v3; Stockfish attribution
 ```
 
-`src/`, `tools/`, `build.zig`, the `zfish_*` workflows, and the tracked `*.md` are
 Everything in the tree is zfish-owned; there are no upstream mirrors to leave alone.

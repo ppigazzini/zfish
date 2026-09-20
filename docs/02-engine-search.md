@@ -27,7 +27,7 @@ function-pointer seams. For the zones and the module graph, see
 | **Alpha-beta** | |
 | `search_main.zig` | `searchImpl` — a node's Steps 1–13: TT probe, TT cutoff, static eval, razoring, futility, null move, IIR, ProbCut |
 | `search_tb_probe.zig` | Step 7's in-search WDL probe: the `tb_config` gate, the `VALUE_TB` scoring, the TT store on a cutoff, and the `Outcome` the node body applies — see [05-tablebases.md](05-tablebases.md). Path-imported by `search_main.zig` |
-| `search_back.zig` | `runBack` — the move loop and node finalization, Steps 13–21: pruning, singular extensions, LMR, best-move update, TT store, correction-history update |
+| `search_back.zig` | `runBack` — the move loop and node finalization, Steps 14–24: pruning, singular extensions, LMR, best-move update, TT store, correction-history update |
 | `search_qsearch.zig` | `qsearchImpl` plus the primitives shared with the main search: `pvUpdate`, `qCorrectionValue`, `adjustKey50`, `ssAdd`/`ssSub`, `posCapture`, `isShuffling` |
 | `search_control.zig` | `checkTime`, `rootUpdate`, `rootTtMove`, `rootInList`, `searchStopped`, `inLastIterPv` |
 | `search_acc.zig` | The per-node accumulator/do-move/eval primitives: `doMoveAcc`, `undoMoveAcc`, `evaluateAcc`, `reductionAcc`, `updateSelDepth` |
@@ -42,7 +42,7 @@ function-pointer seams. For the zones and the module graph, see
 | `movepick_snapshot.zig` | The read-only board queries and SEE shared by scoring and pruning |
 | **Tables** | |
 | `history.zig` | The history *writers*: `updateAllStats`, `updateQuietHistories*`, `updateContinuationHistories`, `updateCorrectionHistory`, `setContHist`, and the per-iteration decay/clear |
-| `shared_history.zig` | The shared-history *storage*: large-page arena construct/free/clear/verify and the `sharedOf`/`pawnEntryRow`/`corrBundle` accessors |
+| `shared_history.zig` | The shared-history *storage*: large-page arena construct/free/clear/verify and the `sharedOf`/`pawnEntryRow` accessors and the four `*CorrEntry` ones (`pawnCorrEntry`, `minorCorrEntry`, `whiteNonPawnCorrEntry`, `blackNonPawnCorrEntry`) |
 | `shared_histories.zig` | The element-count math for the two shared arrays (pure `usize`, unit-tested standalone) |
 | `shared_histories_map.zig` | The generic NUMA-index → entry map with construct/free hooks |
 | `tt.zig` | The transposition table: `probeTable`, `entrySave`, `entryPenalize`, `hashfull`, resize/clear, generation |
@@ -71,8 +71,8 @@ object graph, `ThreadPool`, `Thread`), `worker_histories.zig` (the per-worker ta
 flowchart TD
     W["search_driver.workerStartSearching<br/>prologue · TM init · start siblings"]
     ID["search_id_loop.iterativeDeepening<br/>depth loop · aspiration · MultiPV"]
-    SI["search_main.searchImpl<br/>Steps 1–12"]
-    RB["search_back.runBack<br/>Steps 13–21 (move loop)"]
+    SI["search_main.searchImpl<br/>Steps 1–13"]
+    RB["search_back.runBack<br/>Steps 14–24 (move loop)"]
     MP["movepick.nextMove"]
     QS["search_qsearch.qsearchImpl"]
     EV["search_acc.evaluateAcc → NNUE"]
@@ -122,7 +122,8 @@ cycle shows up as undeclared instead of hiding behind this one. See
 [00-architecture.md](00-architecture.md#the-module-graph).
 
 `qsearchImpl` is a call-graph leaf: it self-recurses and never calls `searchImpl`.
-`searchImpl` dives into it at `depth <= 0` and on razoring.
+`searchImpl` dives into it at `depth <= 0`, on razoring, and from Step 12's ProbCut
+verification.
 
 ## The node
 
@@ -149,17 +150,21 @@ live member pointers — the accumulator stack, the node counter, the refresh ca
 a `SearchTimeState`, whose main-thread-only fields are null on helper threads. Nothing
 in the recursion re-walks the worker graph.
 
-`search_values.zig` is the single source of truth for the value model: `value_mate`,
+`search_values.zig` is the value model both search bodies alias: `value_mate`,
 `value_inf`, `value_none`, `max_ply`, `value_tb`/`value_tb_win`, the `depth_qs` /
 `depth_unsearched` / `depth_none` sentinels, the four `bound_*` flags, `mateIn` /
 `matedIn`, and the `isValid`/`isWin`/`isLoss`/`isDecisive` predicates. Both search
-bodies alias it.
+bodies alias it. `search.zig` cannot: a Zig file belongs to exactly one module and
+`search_driver` already path-imports this one, so `search.zig` restates the same
+constants privately and the two are kept in step by hand.
 
 Bounds are the usual fail-soft alpha-beta: `alpha`/`beta` narrow through the tree,
 `best_value` may fall outside the window, and mate-distance pruning clamps them to
-`matedIn(ply)` / `mateIn(ply+1)`. The node type is **comptime** — `searchImpl` takes
-`comptime pv_node` and `comptime root_node`, mirroring upstream's
-`template<NodeType>`; only `cut_node` is runtime, and `all_node` is derived. `runBack`
+`matedIn(ply)` / `mateIn(ply+1)`. The node type is **comptime** — `searchImpl` takes one
+`comptime kind: NodeKind` (`.root` / `.pv` / `.non_pv`), which is upstream's
+`template<NodeType>` made unwriteable: the two-boolean form admitted a non-PV root, a
+fourth combination the search does not have. `pv_node` and `root_node` are derived from
+it; only `cut_node` is runtime, and `all_node` is derived. `runBack`
 takes its node state as `anytype`, so it specializes per node type too.
 
 The PV is a fixed `PVMoves` buffer per node. A child's PV is spliced into the parent's
@@ -191,7 +196,7 @@ a step is greppable across both trees. Steps 1–13 are `searchImpl`, 14–24 `r
 | 8 | **Razoring**: an allNode whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch — a fail-low cutoff, so it is taken at the node type opposite to null-move pruning's cutNode — stood down while `seekMate` holds, so a mate hunt is not razored away |
 | 9 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(seek_mate)` — 19 normally, 6 while `seekMate` holds, so mating lines stay searched |
 | 10 | **Null move** (below) |
-| 11 | **Internal iterative reduction**: with no TT move, off the PV, not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
+| 11 | **Internal iterative reduction**: with no TT move, off the followed PV (`!ss.follow_pv`), not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
 | 12–13 | **ProbCut**: a shallow search at a raised beta to prove a capture refutes the node; then the deep-ProbCut TT idea |
 | 14 | The move loop — `movepick.nextMove` per move (below) |
 | 15 | Prune at shallow depth: late-move, futility, SEE and history pruning per move |
@@ -218,7 +223,7 @@ that deeper reduction costs mate finds when beta is already in decisive territor
 `doNullMove` touches **no accumulator** — passing is not a move, so
 there is no feature delta to apply — and the stack records the move as `65` with the
 all-`NO_PIECE` continuation-history page, so `ss-1` resolves to the table base rather than
-to a real `(piece, to)` page. Above depth 16 a fail-high is not trusted directly: the code
+to a real `(piece, to)` page. At depth 16 or above a fail-high is not trusted directly: the code
 arms `nmp_min_ply`, re-searches at the reduced depth without null move, and only returns
 the null value if that verification also fails high. `nmp_min_ply` is what stops the
 verification search from recursing into another null move.
@@ -241,15 +246,16 @@ every iteration because Step 15's pruning margins scale with the window width.
 `search_qsearch.qsearchImpl` resolves the tactics at a leaf so the eval is never taken in
 the middle of a capture sequence. It is a **call-graph leaf**: it self-recurses and never
 re-enters `searchImpl`, which is why the pair `searchImpl ↔ runBack` is the only file
-cycle in the tree. `searchImpl` enters it at `depth <= 0` and from razoring.
+cycle in the tree. `searchImpl` enters it at `depth <= 0`, from razoring, and from Step 12's ProbCut probe.
 
 Its own steps are numbered 1–10, and the shape differs from the main search in four ways
 that matter:
 
 - **One depth, not many.** Every qsearch node runs at the `depth_qs` sentinel, so the TT
-  cutoff at Step 3 tests `tt_depth >= depth_qs` rather than a real depth, and a qsearch
-  store writes `depth_unsearched`. That is what keeps a qsearch entry from ever satisfying
-  a main-search probe.
+  cutoff at Step 3 tests `tt_depth >= depth_qs` rather than a real depth, and the Step-10
+  store writes `depth_qs` itself — never a real depth, which is what keeps a qsearch entry
+  from ever satisfying a main-search probe. `depth_unsearched` belongs to the stand-pat
+  early return, which searched nothing at all.
 - **Stand pat.** Not in check, the static eval is a lower bound on the node — the side to
   move may simply decline every capture. If it already clears `beta` the node returns
   immediately, blended by `qsearchStandPatBlend` when the value is not decisive, and stores
@@ -265,9 +271,11 @@ that matter:
   node into the window even if it wins the piece outright.
 
 Step 9 resolves mate: with no legal move found **and in check**, the node is mate and
-returns `matedIn(ply)`. Outside check it cannot conclude stalemate, because it only ever
-generated captures — so it returns `best_value`, which stand pat has already made a valid
-lower bound.
+returns `matedIn(ply)`. Outside check it normally cannot conclude stalemate, having generated only captures — so
+it returns `best_value`, which stand pat has already made a valid lower bound. The one
+exception is the case it can prove cheaply: no non-pawn material, every pawn push blocked
+and a captured piece of at least knight value on the previous ply, where Step 9 runs
+`movegen.generateLegal` once and returns `value_draw` on an empty list.
 
 ## Move ordering
 
@@ -330,7 +338,8 @@ comptime on the kind (`captures` / `quiets` / `evasions`):
 The quiet score reads the continuation history at slots 0, 1, 2, 3 and 5; the threat
 term uses per-piece-type "attacked by a lesser piece" bitboards built once per list
 from `attacksBy`; the check bonus requires both a check square and `seeGe`; the
-low-ply bonus applies only below `low_ply_history_size` (`movepick.zig`).
+low-ply bonus applies only below `low_ply_history_size` (the constant the scorer reads is
+`movepick_score.zig`'s; `movepick.zig` carries a second copy).
 
 The tables come from the `MovePickerContext` the caller fills in — main, low-ply,
 capture, up to six continuation pages, and the shared pawn history
@@ -350,7 +359,6 @@ contiguous `i16` prefix):
 | `main_history` (butterfly) | `[2][65536]` | side to move, raw move |
 | `low_ply_history` | `[5][65536]` | ply, raw move — refilled every search by `fillLowPlyHistory` |
 | `capture_history` | `[16][64][8]` | moved piece, to-square, captured type |
-| `continuation_history` | `[2][2]` of `[16][64] → [16][64]` | in-check, capture, then (piece, to) → (piece, to) |
 | `continuation_correction_history` | `[16][64] → [16][64]` | (piece, to) → (piece, to) |
 | `tt_move_history` | scalar | — |
 
@@ -361,14 +369,15 @@ allocated from large pages and pointed to by `WorkerHistories.shared_history`:
 | --- | --- | --- |
 | `correctionHistory` | `[2]CorrectionBundle` (pawn / minor / non-pawn white / non-pawn black) | Zobrist key & mask, then colour |
 | `pawnHistory` | a `[16][64]` `i16` page | pawn key & mask |
+| `continuationHistory` | `[2][2]` of `[16][64] → [16][64]`, relaxed-atomic entries | in-check, capture, then (piece, to) → (piece, to). A fixed-size block, not key-masked — and **shared**, so an edit to it needs `tsan-race`, not just `parity` |
 
 Both are power-of-two sized — `shared_histories.sharedHistoriesSizes` scales each base
 size by `nextPowerOfTwo(threads on the node)` — so indexing is `key & mask`.
 `shared_histories_map.zig` maps NUMA index → block with construct/free hooks, and
 `clearSharedHistory` clears only this thread's partition of the arrays.
 
-Every one of these tables resets to a **non-zero** `i16` default — `-5`, `102`, `-742`,
-`5`, `-1338`, `-586` — so none of the clears is a byte-pattern `@memset` and a scalar
+Every one of these tables but the scalar `tt_move_history` resets to a **non-zero** `i16`
+default — `-5`, `102`, `-742`, `5`, `-1338`, `-586` — so none of the clears is a byte-pattern `@memset` and a scalar
 store loop would stay scalar (see [the hand-vectorization rule](08-idiomatic-zig.md#vectorize-integer-hot-loops-by-hand--the-toolchain-will-not)).
 `shared_history.fillI16` broadcast-stores them instead, and both the shared clear and the
 per-worker clears in `history.zig` go through it, so there is one width to tune. The
@@ -388,7 +397,8 @@ weights, stopping after `ss-2` when in check.
 `ss-6` continuation-correction entries and applies `search.correctionValue`;
 `search.toCorrectedStaticEval` folds the result into the eval. After the move loop,
 `updateCorrectionHistory` nudges all seven back toward the observed search/static-eval
-delta — only when the node is not in check and the best move is not a capture.
+delta — only when the node is not in check, the best move is not a capture, and the sign
+of the eval error agrees with whether a best move was found.
 
 There are **two** writers, not one. The Step 16 multi-cut return (`search_back.zig`)
 writes as well: when the singular probe fails high over beta the node returns
@@ -541,7 +551,7 @@ scaled down from 512 when a node limit is set, so a node-limited search overshoo
 a bounded amount. It raises the shared stop flag when `use_time_management` is on and
 either the elapsed time exceeds `maximum_time` or `stop_on_ponderhit` is set, when a
 `movetime` limit is reached, or when the node limit is hit. It never stops while
-pondering. A Step-6 tablebase probe zeroes the counter (`tbForceTimeCheck`, upstream
+pondering. A Step-7 tablebase probe zeroes the counter (`tbForceTimeCheck`, upstream
 search.cpp:917), forcing the next `checkTime` to do real work — probes touch disk, so
 elapsed time is re-read promptly after each one.
 
