@@ -53,10 +53,11 @@ see [00-architecture.md](00-architecture.md#the-composition-root-and-the-cycle-b
 `wdl.zig` imports `table_load.zig`, which imports `registry.zig`, and never the reverse,
 so no file here is a god-file. The split between the last two is the one the safety rules
 already follow: `registry.zig` holds what the material configuration says, `table_load.zig`
-holds what a FILE says, and the second validates itself against the first. Two of the three
+holds what a FILE says, and the second validates itself against the first. All three
 cross the platform→engine down-edge: `wdl.zig` for a scratch `Position`, its bitboards, and
 `movegen.generateLegal` (it generates all legal moves and filters the captures itself),
-`registry.zig` for the material-key computation.
+`registry.zig` for the material-key computation, and `table_load.zig` for the pawn
+piece-type constant the lead-piece check compares against.
 
 ## What the files are
 
@@ -156,8 +157,8 @@ the sparse indices.
 
 **A table file is untrusted input, and the parse is bounded accordingly.** Every offset
 `set` advances comes out of the file itself, so a truncated or hostile `.rtbw`/`.rtbz` can
-drive the cursor past the end — which the shipped ReleaseFast build does not check. Five
-things hold the line, and they are worth keeping distinct:
+drive the cursor past the end — which the shipped ReleaseFast build does not check. Several
+things hold the line, and the table below is the owner of the list:
 
 | Where | What it guarantees |
 | --- | --- |
@@ -170,7 +171,8 @@ things hold the line, and they are worth keeping distinct:
 | `table_load.set` checks the header's **Split / HasPawns** bits against the registry | Both restate what the filename already told the registry, and every group width below is derived from the registry's answer — so a header that disagrees is not the table the probe is about to index. Another upstream assert. |
 | `probe.setGroups` returns false on a **group longer than any geometry row** | The group lengths index `lead_pawns_size` and `binomial`, both sized for the longest group a legal material configuration makes. The lengths are runs over the same file nibbles, so a corrupt sequence makes a longer one and reads off the end of the array. |
 
-Upstream refuses the same three and then **exits**: it prints `Corrupted table in file X`
+Upstream asserts the last three of these — the cyclic btree, the non-canonical code, and
+the Split/HasPawns disagreement — and then **exits**: it prints `Corrupted table in file X`
 and returns `EXIT_FAILURE`. zfish refuses the table and keeps playing without it, which is
 the property `parity-malformed` gates — every mutated table answered with a clean exit and
 a legal bestmove. That divergence is deliberate, and `tools/upstream/README.md` records it
@@ -210,8 +212,10 @@ is wrong. See the cost rule in
 [09-type-design.md](09-type-design.md#the-cost-rule) for when a type like this is
 free — a cold path carrying a value, as here — and when it is not.
 
-`decode_header.setSizes` additionally refuses `min_sym_len == 0` (it would make the `k == 0` right-pad
-shift exactly 64, which does not fit the `u6` it is cast to) alongside the inverted and
+`decode_header.setSizes` additionally refuses `min_sym_len == 0` on the CODED branch (it would
+make the `k == 0` right-pad shift exactly 64, which does not fit the `u6` it is cast to) —
+on the `flag_single_value` branch it is a stored value and stays legal, which is why the WDL
+domain check below has to exist alongside the inverted and
 oversized pairs it already rejected. Rejections release `base64`/`symlen`/`len_tab` through
 `errdefer`: the shipped caller passes the registry arena and would not care, but the unit
 tests and fuzz target pass a checking allocator, and that is what surfaced the leak. Those
@@ -275,7 +279,7 @@ flowchart TD
   D -->|miss| F["state = FAIL"]
   D -->|hit| E["table_load.mapped / mappedDtz<br/>(lazy load + set)"]
   E -->|load failed| F
-  E --> G["wdl.doProbeTable<br/>position -> unique index"]
+  E --> G["probe_index.doProbeTable<br/>position -> unique index"]
   G --> H["encode.*: symmetry flips,<br/>group encoding, binomials"]
   H --> I["decode.decompressPairs(idx)"]
   I --> J["score mapping:<br/>WDL = value - 2 | DTZ = mapScoreDtz"]
@@ -471,8 +475,8 @@ The gates live in `tools/parity/golden_tb.zig`, each diffed against a golden in 
 | `tb-wdl` | `tools/tb_wdl.golden` | the `d`-command `Tablebases WDL: N (state)` line == oracle over a curated 3-man battery: all five piece types, win/loss/draw, white/black to move, the pawn and blackStronger (lead pawn is black) flip paths, and the `searchWdl` capture recursion (the lone king captures into a KvK draw). |
 | `tb-dtz` | `tools/tb_dtz.golden` | the same battery, pinning the `Tablebases DTZ:` line — including the `change_stm` 1-ply path via KQvK with black to move. |
 | `tb-root` | `tools/tb_root.golden` | root DTZ ranking: `go` on a TB win, pinning the emitted **score** and **tbhits** == oracle. Deliberately *not* pinned: the bestmove and node count — the oracle early-returns on a `root_in_tb` decisive win while zfish still searches, so among equally-optimal TB moves it may pick a different (also winning) one; gating that would be fake parity. |
-| `tb-search` | `tools/tb_search.golden` | the in-search Step 7 probe: bench one 4-man position per file (each bigger than the 3-man tables, so the root searches normally and Step 7 fires at the 3-man nodes captures reach), pinning the node count **with** `SyzygyPath` and **without** — both == oracle. Bit-exact node-count parity for the in-tree probe. |
-| `tb-cursed` | `tools/tb_cursed.golden` | **local-only**: cursed-win / blessed-loss WDL+DTZ on real DTZ>100 positions, exercising the cursed branches of `mapScoreDtz` and `probeDtz`. Needs ~40 MB of 5-man tables staged into `resources/syzygy5/`, which the 3-man CI set never contains, so it is not in the `parity` aggregate (see the `tb-cursed` step in `build.zig` for the fetch). |
+| `tb-search` | `tools/tb_search.golden` | the in-search Step 7 probe: bench one 4-man position per file (each bigger than the 3-man tables, so the root searches normally and Step 7 fires at the 3-man nodes captures reach), pinning the node count **with** `SyzygyPath` and **without** — both == oracle — plus a third, node-limited count that pins the probe's time-check-counter reset, which a depth-limited bench cannot see. Bit-exact node-count parity for the in-tree probe. |
+| `tb-cursed` | `tools/tb_cursed.golden` | **local-only**: cursed-win / blessed-loss WDL+DTZ on real DTZ>100 positions, exercising the cursed branches of `mapScoreDtz` and `probeDtz`. Needs ~40 MB of 5-man tables staged into `resources/syzygy5/`, which the 3-man CI set never contains, so it is not in the `parity` aggregate (`in_parity = false` in `build/gates.zig`; the staging recipe is in `buildTbCursed`'s comment in `tools/parity/golden_tb.zig`). |
 
 `tb-init`, `tb-wdl`, `tb-dtz`, `tb-root`, and `tb-search` are all wired into the `parity`
 aggregate. Each has a matching `-update` step that regenerates its golden from the current

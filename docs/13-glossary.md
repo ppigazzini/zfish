@@ -31,7 +31,7 @@ Grep the symbol if a citation misses — the owners move faster than the definit
 | term | what carries it here |
 |---|---|
 | **bench** | the fixed position script the anchor is a fact about: `src/shell/bench_positions.zig`, upstream's `Defaults` list entry for entry, driven by `src/shell/benchmark.zig`. Changing an entry is a behaviour change that cannot be compared against upstream afterwards |
-| **the bench signature** | the node total that run prints, asserted by `zig build signature`. The *number* lives in `build.zig`'s `signature_reference` and in no page — `docs-lint` fails a page that quotes a different one |
+| **the bench signature** | the node total that run prints, asserted by `zig build signature`. The *number* lives in `build.zig`'s `signature_reference` and in no page — `docs-lint` fails a page that quotes the live one **at all**; a stale one is the hole it deliberately leaves |
 | **node** | one execution of a node body: `searchImpl` in `src/engine/search/search_main.zig` for alpha-beta and `qsearchImpl` in `src/engine/search/search_qsearch.zig` for quiescence, each specialized at `comptime` on `NodeKind`. **Not** a NUMA node; see Section 3 |
 | **`Value`, `Key`** | a score and a Zobrist word, each a plain integer rather than a distinct type. That is a decision with measurements behind it, not an omission: [09-type-design](09-type-design.md) says why a wrapper costs more here than it catches, and Zig has no operator overloading to soften it |
 | **depth** | a plain `i32`, for the same reason — a depth-scaled product feeds several codomains, so a type carrying its unit through one breaks the rest |
@@ -90,7 +90,7 @@ None of these appear in the Stockfish source. Where a tool owns the definition, 
 | **lane** | one CI job, or one target inside a step that drives several | one SIMD lane of a `@Vector`: one element position of the vector LLVM lowers to the tier's registers |
 | **source** | a `*_source.zig` hook seam, so a value the engine zone reads through an indirection | "the source" a port was made **from** — which no sibling is |
 | **sweep** | a class swept across the tree, or a sibling's log across a window | a gate's own pass over its inputs: the transcript loop over its cases, the arch gate over its tiers |
-| **budget** | the per-tier instruction budget `perf-budget` holds | the search's own time budget, which `src/engine/search/timeman.zig` resolves once per `go` |
+| **budget** | the per-tier instruction budget `tools/perf_budget.sh` holds (a script, not a build step) | the search's own time budget, which `src/engine/search/timeman.zig` resolves once per `go` |
 | **key** | a Zobrist word off the position | the material key a Syzygy probe hashes its table by, and the pawn and correction keys that select a history plane. [09-type-design](09-type-design.md) maps the family: one `u64`, several spaces, no shared arithmetic |
 | **stack** | the search's per-ply `SearchStack`, the `ss` every node body indexes | the NNUE accumulator stack, one slot per ply, pushed and popped by the make/unmake bracket |
 | **worker** | one `WorkerLayout` block: the per-thread search state | the OS thread the pool spawns and NUMA binds. One block per thread, and neither word implies the other |

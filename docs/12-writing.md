@@ -230,7 +230,8 @@ a gate on one machine, and it belongs in the gates block where a reader can re-r
 
 ## The gate, and what it cannot see
 
-`zig build docs-lint` (inside `zig build parity`) reads every shipped `*.md` and fails on:
+`zig build docs-lint` (inside `zig build parity`) reads `docs/`, `README.md`,
+`CONTRIBUTING.md` and `AGENTS.md` — not every tracked `*.md` — and fails on:
 
 - **a dead internal link**, resolved against `git ls-files` rather than your checkout, so a
   file a rename left behind fails here instead of in a fresh clone. A trailing `#anchor` is

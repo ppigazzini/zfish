@@ -80,8 +80,9 @@ side shared-histories map, free the side TT, free the buffer.
 the allocator's raw storage is placement-constructed, and hands the handle on. With
 arguments, it joins argv into one command,
 dispatches it, and returns; otherwise it reads stdin line by line through a persistent
-`std.Io` reader and dispatches each line until `quit`. A closed stdin, an over-long
-line, or a read failure is end-of-input and dispatches `quit`.
+`std.Io` reader and dispatches each line until `quit`. A closed stdin or a read failure is end-of-input and
+dispatches `quit`; an over-long line is stitched across buffer refills instead — returning
+null for it used to exit the engine on a long `position … moves` line.
 
 `dispatchCommand` trims the line, skips blanks and `#` comments, classifies the first
 token into a `CommandKind`, and hands the rest to the engine face:
@@ -93,7 +94,7 @@ token into a `CommandKind`, and hands the rest to the engine face:
 | `setoption` | parse, apply to the model, fire the on-change callback |
 | `position` | parse the FEN and move list, set the position |
 | `go` | emit the NUMA/thread info lines, then perft or `startThinking` |
-| `stop` / `ponderhit` | `stop` stops the engine and **sets** the main manager's ponder flag (`setPonderhitEngine(engine, 1)`); `ponderhit` **clears** it (`setPonderhitEngine(engine, 0)`) — `setPonderhit(x)` calls `setPonder(x != 0)` |
+| `stop` / `ponderhit` | `stop` raises the stop flag only (`stopEngine`), leaving `ponder` as `go` set it — the busy-wait is `!stop and (ponder or infinite)`, so stop alone releases it; `ponderhit` **clears** ponder (`setPonderhitEngine(engine, 0)`) — `setPonderhit(x)` calls `setPonder(x != 0)` |
 | `ucinewgame` | clear the search state |
 | `quit` | stop the pool and leave the loop |
 | `flip` | read the live FEN, flip it, re-set the position |
@@ -145,9 +146,10 @@ mutex, so the line and its newline are one indivisible pair and a search info li
 never tear against the UCI listener. The engine writes through this same funnel without
 importing the shell: `main` registers it on the `output_sink` seam.
 
-Not everything the process emits takes that route. `uci_bench.zig`, `benchmark.zig`,
-`thread_construct.zig`, `engine/nnue.zig`, and `debug_counters.zig` still print with
-`std.debug.print` — stderr, unmutexed — bypassing the sink's mutex, its log tee, and quiet
+Not everything the process emits takes that route. The OOM and spawn-failure diagnostics —
+in `uci_bench.zig`, `benchmark.zig`, `thread_construct.zig`, `engine/nnue.zig`,
+`engine/session.zig` and `debug_counters.zig`, and nothing gates that list — still print
+with `std.debug.print` — stderr, unmutexed — bypassing the sink's mutex, its log tee, and quiet
 mode. For `engine/nnue.zig` that is deliberate: a fatal net-missing diagnostic must not be
 swallowed by a quiet bench run.
 

@@ -344,6 +344,8 @@ Each has been made to fail on purpose, and the errors counted:
 - A history bonus and its clamp transposed, or the clamp given as a bare integer —
   `HistLimit`. This row spent time in the wrong section: `comptime` alone was recorded as
   stronger than a type here, and it was not.
+- A worker's share of the split given as a bare `usize` — `WorkerShare`, the one value that
+  replaced two adjacent counts, so there is no longer an index and a total to swap.
 
 ### An enum literal infers its way around the distinction
 
@@ -404,10 +406,10 @@ is reproduced and marked. What holds here is a separate *producer* for the wall 
 separate type.
 
 **Boolean provenance at a call site.** `cut_node` is still a bare `bool` passed
-positionally to `searchImpl`, and `setContHist(worker, ss, in_check, capture, pc, to)` takes
-four adjacent `u8`s of which two are booleans — any pair of the four can be transposed and
-three of the six transpositions still select a real plane of the continuation table. Both
-values are legal in every combination, so this is provenance rather than an illegal state,
+positionally to `searchImpl`. `setContHist(worker, ss, in_check, capture, pc, to)` no longer
+belongs beside it: its two selectors are `InCheck` and `WasCapture` now, and only the `pc`
+and `to` pair is still two adjacent `u8`s that transpose into a real plane of the wrong
+thing. `cut_node` is legal in either value, so this is provenance rather than an illegal state,
 and both sit on per-node paths where the cost rule predicts a real if small cost. Recorded
 as known, not fixed.
 

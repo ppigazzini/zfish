@@ -11,8 +11,8 @@ gets wrong before it has read either.
 you are touching — [docs/12-writing.md](docs/12-writing.md) maps every page to the source it
 owns and marks which run hot. Change hot code, re-read its page and fix it in the SAME commit:
 a doc is wrong from the moment the code lands, and every false claim ever found here got there
-that way. `zig build docs-lint` catches a dead link, path or anchor; it cannot tell you a
-sentence has become false. That part is yours.
+that way. `zig build docs-lint` catches a dead link, a dead path or a symbol the tree no longer
+carries — never a `#anchor`, which it strips, and never a false sentence. That part is yours.
 
 ## Working here
 
@@ -65,7 +65,7 @@ exits 1** — it does not crash, and this page said it did for as long as the di
 existed:
 
 ```sh
-./zig-out/bin/stockfish bench; echo $?   # from the repo root: 1, after four ERROR lines
+./zig-out/bin/stockfish bench; echo $?   # from the repo root: 1, after an ERROR block
 ```
 
 `parity-net-missing` is the gate that holds it to that — a named diagnostic and a clean
@@ -180,7 +180,7 @@ Pointers, not explanations — each is documented where it belongs.
 | A gate you added is not done when it passes — it is done when you have **seen it fail**. Same for a lane: a check nothing dispatches is a claim, not a check. | [docs/10-tooling-ci.md](docs/10-tooling-ci.md) |
 | **The oracle is ALWAYS the zig-c++ build** (`tools/upstream_oracle.sh` defaults to it via `tools/zigcxx`) — for ratios AND matches. A `COMP=gcc` build measures **gcc**, not zfish (+7.4% instructions on identical source, measured); reach for it only to study gcc itself, via `ORACLE_COMP=gcc`, and label the result as such. | [docs/10-tooling-ci.md](docs/10-tooling-ci.md) |
 | nps cannot resolve <5%; callgrind cost must be summed across origin files. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
-| Serial cycle A/B on this box has a **±1% run-to-run floor and a +0.65% A/A bias** — a sub-1% single-tier cycle claim is unmeasurable; adjudicate with the deterministic instruction axis, or with fastchess Elo (concurrency 4, idle box, `Timeouts:` near zero — a background build forfeits games exactly like SMT oversubscription). | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
+| Serial cycle A/B on this box has a **±1% run-to-run floor and a +0.65% A/A bias** — a sub-1% single-tier cycle claim is unmeasurable; adjudicate with the deterministic instruction axis, or with fastchess Elo (concurrency = physical cores, idle box, `Timeouts:` near zero — a background build forfeits games exactly like SMT oversubscription). | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | callgrind is **blind to software prefetch** on both engines — no callgrind bar can certify a prefetch change. An instruction win can still be a cycle **loss** (three recurrences); cycles at the tier that runs decide. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | callgrind's `--branch-sim` is a **model**, and it lost to the hardware on a real change: +1.80% mispredicts against a **flat** 1.004 on the counters, while both agreed on instructions to three decimals. It counts instructions and calls; it *simulates* prediction. Never adjudicate a miss claim on it. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | loc_lint god-file regression: **split the file**; raising `LOC_BASELINE` is laundering. A bit-exact slice can still redden the aggregate this way. | [docs/10-tooling-ci.md](docs/10-tooling-ci.md) |

@@ -95,9 +95,18 @@ those bytes, which is what makes the regeneration a correction rather than a cap
 `tools/upstream_golden_audit.sh` runs that test for you, on every golden at once. Each one
 is built from UCI-observable behaviour and `parity_harness` takes the engine as an argument,
 so the same builder points at the pristine oracle unchanged — the audit runs each `<gate>`
-check with upstream's binary in place of ours and passes only when our committed golden is
-what upstream itself produces. Run it after any reharden; `--list` prints the gate set and a
-gate name limits the run.
+check with upstream's binary in place of ours. Run it after any reharden; `--list` prints the
+gate set and a gate name limits the run.
+
+**It passes on agreement, or on a DECLARED divergence.** A gate can pin behaviour where zfish
+is deliberately more correct than upstream, and those rows would otherwise make the audit red
+by construction — a lane nobody reads. `tools/golden_audit_known.txt` declares each one under
+the same `EXPIRING`/`PERMANENT` doctrine `transcript_known.txt` uses, and the audit enforces
+the tag both ways: a declared gate may differ, an undeclared gate that differs is a finding,
+and a declared gate that starts AGREEING turns it red so the row is deleted rather than left
+granting an allowance nobody is adjudicating. Steady state is stated by the run itself, not
+here — the declared rows and what expires each are owned by
+[`tools/upstream/README.md`](../tools/upstream/README.md)'s divergence table.
 
 ```sh
 tools/upstream_golden_audit.sh                    # all of them
@@ -109,9 +118,7 @@ paragraph on this page and a sentence in AGENTS.md — a process control where a
 is available, and the two commands sit one keystroke apart producing diffs that look
 identical. `parity_harness` now exits 2 on `update` mode before it even runs the engine,
 naming `upstream_golden_audit.sh` for that gate. The escape hatch stays, because a gate with
-none gets worked around instead of argued with, and one gate genuinely has no upstream
-adjudicator — `mt-sanity`'s reference is zfish's own single-thread search, which upstream's
-binary cannot produce. It announces itself on every run, so an override buried in a script is
+none gets worked around instead of argued with. It announces itself on every run, so an override buried in a script is
 visible in that script's log:
 
 ```sh
@@ -120,7 +127,8 @@ ZFISH_GOLDEN_UPDATE_FROM_ZFISH=1 zig build misc-update   # writes, and says it i
 ```
 
 **The audit runs from `resources/`, and running it anywhere else reads as a divergence.**
-That directory is where the net lives *and* where `syzygy/` and `syzygy5/` are fetched. Point
+That directory is where the net lives, where `zig build tb` fetches `syzygy/`, and where the
+5-man `syzygy5/` set is staged by hand — no lane fetches that one. Point
 the oracle at its own worktree instead and `SyzygyPath value syzygy` resolves to upstream's
 *source* directory (`src/syzygy/tbprobe.cpp`), no tablebase loads, and `tb-search` reports
 `with-tb == no-tb` on every row — a rig with no tablebases, not a disagreement. Re-bless a
@@ -144,15 +152,15 @@ reading the wrong stream is how a whole broken handshake passed for months.
 
 ### Which gate answers which question
 
-Two dozen gates, and the page below describes them in the order they were built rather than
-the order a reader needs them. This table routes from a question to the gate; the third column
+There are more gates than a reader can hold, and the page below describes them in the order
+they were built rather than the order a reader needs them. `zig build --help` owns the list. This table routes from a question to the gate; the third column
 is the one that makes it worth having, and every entry in it is taken from that gate's own
 stated limit rather than restated from memory. **A gate quoted without its limit gets quoted
 past it.**
 
 | The question | The gate | What that gate CANNOT see |
 | --- | --- | --- |
-| Did the search change at all? | `signature` | How much those nodes COST. A refactor can shed no nodes and run measurably slower ([`perf_budget.sh`](#local-only-tooling) is the absolute-instruction answer, and it is local-only). |
+| Did the search change at all? | `signature` | How much those nodes COST. A refactor can shed no nodes and run measurably slower ([`perf_budget.sh`](08-idiomatic-zig.md) is the absolute-instruction answer, and it is local-only). |
 | Does it still agree with upstream? | `upstream-parity` | Anything off the bench's fixed position list. |
 | …on positions nobody chose? | `upstream-walk` | Time management, SMP, and Syzygy — none of which a random walk enters. |
 | Does it still PRINT what upstream prints? | `upstream_transcript.sh` | Whether the two searched the same tree; and it compares `Threads 1` only, because lazy SMP is nondeterministic on both sides. |
@@ -194,7 +202,8 @@ is reshaped (the shape `build/main.zig` already uses):
 | `tools/parity/golden_shell.zig` | the goldens for what the shell prints: bench info lines, driver emits, search modes, FEN refusals, `d`/`flip`, the `uci` option list, `export_net`. |
 | `tools/parity/golden_search.zig` | the goldens for what the search and board compute: search fingerprints, perft, the eval trace, nodestime, `go mate N`, Chess960, the bench matrix. |
 | `tools/parity/golden_tb.zig` | the Syzygy goldens (see [05-tablebases](05-tablebases.md)). |
-| `tools/parity/gate_runtime.zig` | the gates needing real threads and a real clock: `mt-sanity`, `stress`, `time-mgmt`, and `signature`. |
+| `tools/parity/gate_runtime.zig` | the gates needing real threads and a real clock: `mt-sanity`, `stress`, `time-mgmt`, `async`, and `signature`. |
+| `tools/parity/gate_malformed.zig` | the hostile-input battery behind `parity-malformed`: copy a real 3-man table, mutate named header fields and payload bytes, require a refusal rather than a crash. |
 | `tools/parity/gate_state.zig` | the metamorphic gates, which relate two runs instead of pinning a value. |
 
 Nothing in the package decides its own correctness: a builder that returns a different
@@ -302,10 +311,14 @@ means one side was missed. Both sides of a shared field have to be relaxed.
 when written and rot where the code moves under them, so it settles the three rot classes a
 machine can: every internal link resolves, every path named in prose is in the tree (`src/`,
 `tools/`, `docs/`, `build/`, `.github/`, plus a bare `*.yml` read as a CI lane — but not
-`.cpp`/`.h`, which name upstream), and any bench signature quoted in docs equals
-`build.zig`'s `signature_reference` —
-the anchor moves on every bench-moving upstream sync, and a doc quoting a dead one is worse
-than a doc omitting it.
+`.cpp`/`.h`, which name upstream), every backticked identifier and every build step still
+exists, no tracked file names the gitignored surface, and **no page pins the bench anchor at
+all**. That last one used to allow the live value and refuse a stale one, which inverted what
+it was for: pinning was legal the moment you wrote it, so the sites accumulated and all
+reddened together on the next sync, where the cheapest green was to re-pin them. `build.zig`'s
+`signature_reference` is the single owner and a doc names `zig build signature` instead. What
+that deliberately does NOT catch is a stale anchor — once no page may write the live one, a
+dead one can only arrive by hand.
 
 **"In the tree" means the index, not your checkout.** A link target and a path claim are both
 resolved against `git ls-files`, because `-e` answers a question about one working directory:
@@ -499,8 +512,8 @@ A missing `resources/nn-*.nnue` is a rig fault (exit 2) rather than a skipped ha
 
 **A tier the host cannot drive is named, not counted.** The anchor is unasserted for it, so the
 sweep prints the tier and the flags the host lacked, then exits **2** — SKIPPED, the same
-refusal `perf_budget.sh` makes, because "could not measure" must not read as "did not
-regress". `--host-tiers` accepts the reduced coverage and exits 0 while still printing every
+doctrine `perf_budget.sh` follows (though that one signals its skip with **127**), because
+"could not measure" must not read as "did not regress". `--host-tiers` accepts the reduced coverage and exits 0 while still printing every
 hole. The flag is the allowance's owner and it lives at the call site — `zfish_parity.yml`,
 where a reader meets it — rather than inside the script. It expires by itself: a runner that
 gains the missing features benches the whole ladder and the flag excuses nothing. It launders
@@ -606,7 +619,7 @@ The prediction was tested before the gate was written, and one of the six had ro
 `upstream_net.sh` was copying 91 MB into every worktree's `src/` — the location the net left
 when zfish moved to loading it from `resources/` — so the copy was useless *and* the problem
 the tool exists to solve was untouched. It runs in the weekly upstream lane, because three of
-its four rows read the pinned upstream tree out of git objects that a plain checkout of origin
+its rows read the pinned upstream tree out of git objects that a plain checkout of origin
 does not carry.
 
 **A usage refusal is a pass, and must be asserted as one.** `nps_ab.sh` with no arguments exits
@@ -705,10 +718,10 @@ Four workflows in `.github/workflows/`. Every lane pins the ARCH rather than usi
 
 | Workflow | Trigger | Lanes / what it gates |
 | --- | --- | --- |
-| `zfish_parity.yml` | push to `main`/`github_ci`, dispatch | `zig fmt --check` over `src/`, `tools/`, `build.zig` — cheap, first, blocks the rest. **Linux x86-64 parity**: `zig build parity`, `test`, `test -Doptimize=ReleaseSafe`, `fuzz` smoke, `parity -Doptimize=ReleaseSafe`, and `tools/arch_determinism.sh --host-tiers` (every x86-64 tier above the sse41 baseline built, the same signature benched AND the net round-tripped byte-identically on every tier the runner can execute, the rest named), and `tools/negative_control.sh` — the meta-gate runs on **every push**, not by hand, so a gate that has stopped being able to fail is caught here rather than the next time someone remembers to check. **Linux aarch64 parity** on a native arm64 runner: the `@Vector` NNUE lowers to NEON with no source changes and must bench identically. **native-os matrix** (Windows x86-64, Windows aarch64, macOS aarch64, macOS x86-64): runs `zig build parity-portable` on the real OS, so the anchor is validated on native hardware. Three of the four build natively; **Windows aarch64 does not** — the native aarch64-windows Zig 0.16.0 segfaults on startup on that runner (a toolchain bug, not ours: the engine cross-compiles to a valid aarch64 PE). That lane runs the x86-64 Zig under Windows-on-ARM x64 emulation and cross-compiles to aarch64-windows; the produced binary still executes natively, so the signature is still proven on arm64 silicon. **Linux TSan race gate**: `zig build tsan-race -Dtsan -Dlto=false` at the baseline tier — the one lane that can see a data race at all, since `parity`'s bench is single-threaded. **Linux valgrind memcheck**: `parity-teardown` + `parity-valgrind`, pinned to the baseline tier; its `apt-get update` is bounded and retried because an unreachable mirror once ate the job's whole 30m deadline before either gate ran. **Zig master compatibility**: non-blocking. |
+| `zfish_parity.yml` | push to `main`/`github_ci`, dispatch | `zig fmt --check` over `src/`, `tools/`, `build.zig` — cheap, first, blocks the rest. **Linux x86-64 parity**: `zig build parity`, `fuzz` smoke, `parity -Doptimize=ReleaseSafe`, and `tools/arch_determinism.sh --host-tiers` (every x86-64 tier above the sse41 baseline built, the same signature benched AND the net round-tripped byte-identically on every tier the runner can execute, the rest named), and `tools/negative_control.sh` — the meta-gate runs on **every push**, not by hand, so a gate that has stopped being able to fail is caught here rather than the next time someone remembers to check. **Linux x86-64 tests**: `zig build test` and `test -Doptimize=ReleaseSafe`, split into their own job because the two test compiles were 52% of the parity job's budget and were timing it out. **Linux aarch64 parity** on a native arm64 runner: the `@Vector` NNUE lowers to NEON with no source changes and must bench identically. **native-os matrix** (Windows x86-64, Windows aarch64, macOS aarch64, macOS x86-64): runs `zig build parity-portable` on the real OS, so the anchor is validated on native hardware. Three of the four build natively; **Windows aarch64 does not** — the native aarch64-windows Zig 0.16.0 segfaults on startup on that runner (a toolchain bug, not ours: the engine cross-compiles to a valid aarch64 PE). That lane runs the x86-64 Zig under Windows-on-ARM x64 emulation and cross-compiles to aarch64-windows; the produced binary still executes natively, so the signature is still proven on arm64 silicon. **Linux TSan race gate**: `zig build tsan-race -Dtsan -Dlto=false` at `-Darch=x86-64`, the bare baseline rather than the sse41 tier the other Linux lanes pin — the one lane that can see a data race at all, since `parity`'s bench is single-threaded. **Linux valgrind memcheck**: `parity-teardown` + `parity-valgrind`, pinned to `-Darch=x86-64` like the TSan lane; its `apt-get update` is bounded and retried because an unreachable mirror once ate the job's whole 30m deadline before either gate ran. **Zig master compatibility**: non-blocking. |
 | `zfish_fuzz.yml` | nightly schedule, dispatch | Two jobs. **Board targets**: `fuzz-board`, `fuzz-tb` and `fuzz-tb-probe` each `--fuzz`ed under `ReleaseSafe` for ~5 min of its own, mutating toward new coverage over FEN-parse → `generateLegal` → make/unmake and over the Syzygy parse; a SIGINT at each sub-budget with no crash passes. **A crash is read out of the OUTPUT, never the exit code**: `zig build --fuzz` does not stop when a target crashes — it reports the failing test, saves the reproducing input and keeps fuzzing — so the interrupt still sets the status and the run exits 130 exactly as a clean one does. This lane shipped the opposite claim and printed "no crash found" over a genuine out-of-bounds the fuzzer had just found (2026-08-04, `fuzz-tb-probe`); the only thing that went red was the execution-counter gate, and only because the crash had stopped that target early — a crash late in a budget would have cleared the floor and reported the night clean. The step now greps for the fuzzer's own "input saved to" line, and runs every target before failing, so one crash does not hide the others. **One session per target, not one over all three** — `Fuzz.start` spawns a worker per artifact via `Io.Group.async`, `Io.Threaded` caps `async_limit` at `cpu_count - 1`, and the coverage task holds a slot, so on the 4-core runner a single session only ever started two of the three and the third left no coverage file at all. The job then asserts the fuzzer **actually executed** — `tools/fuzz_report.zig check` against a pre-run snapshot, all three artifacts, 1M inputs each — because the step above cannot tell an idle lane from a clean one. **UCI command loop**: `tools/uci_fuzz.py` against a `ReleaseSafe` build for ~10 min, seed defaulting to the wall clock so successive nights walk fresh input space; the seed prints first, so a red run names its one-flag reproducer. |
 | `zfish_perft.yml` | nightly schedule, dispatch | **Deep perft against the published reference counts.** The `perft` gate inside `parity` is a GOLDEN over shallow depths, chosen so the aggregate stays under a minute; this lane drives the same standard positions several plies deeper — startpos d6 and d7, Kiwipete d5, CPW 3 d7, 4 d6, 5 d5, 6 d5 — through the real UCI front end. That is ~4.7e9 leaves, measured at 21 s locally, so the compile dominates the job and not the counting. What it pins is **not** a golden: `tools/perft.golden` is a photograph of ourselves and `perft-update` can re-bless it, whereas these counts are published facts about chess, so a mismatch here is a movegen bug and never an update candidate. It runs the committed fast gate first, so an already-wrong pinned depth surfaces as the cheaper finding. Perft never evaluates, but the engine loads the net at STARTUP and terminates without it printing no count at all — so the lane fetches the net and runs from `resources/`, and every position reports its own pass/fail before the job exits, so one bad count cannot hide the others. The FRC position the fast gate carries is deliberately absent: this lane only pins counts published independently of us, and FRC movegen is adjudicated instead by `upstream_golden_audit.sh` re-deriving the whole perft golden from the pristine oracle. |
-| `zfish_upstream_check.yml` | weekly schedule, dispatch | Three steps. **Drift detection**: fetches `official-stockfish/master` and prints how many commits the port is behind `UPSTREAM_BASE`, into the job summary — always exits 0, and porting stays a deliberate, human-gated session. **Map audit** (`upstream-map`) and **random-walk node parity** (`upstream-walk`) are gates, and both live here rather than in `parity` because they need the pinned upstream tree that a plain checkout of origin does not carry — the detection step's fetch is what brings those objects in. The walk builds the oracle into `runner.temp` and runs a **fixed** seed, so a red weekly run is reproducible from the log with one flag; widen coverage with `--positions`, never with a fresh seed. |
+| `zfish_upstream_check.yml` | weekly schedule, dispatch | The sync-time gate battery — drift detection, `upstream-map`, `authors-lint`, `upstream-walk`, `upstream_golden_audit.sh --skip tb-cursed` (after a `zig build tb-init`), `tools_smoke.sh`, `upstream-parity` and `upstream_fingerprint.sh`. **Drift detection**: fetches `official-stockfish/master` and prints how many commits the port is behind `UPSTREAM_BASE`, into the job summary — always exits 0, and porting stays a deliberate, human-gated session. **Map audit** (`upstream-map`) and **random-walk node parity** (`upstream-walk`) are gates, and both live here rather than in `parity` because they need the pinned upstream tree that a plain checkout of origin does not carry — the detection step's fetch is what brings those objects in. The walk builds the oracle into `runner.temp` and runs a **fixed** seed, so a red weekly run is reproducible from the log with one flag; widen coverage with `--positions`, never with a fresh seed. |
 
 The **Zig master compatibility** lane runs the full Linux parity suite under a
 **pinned** Zig master snapshot with `continue-on-error: true`. It is informational:
@@ -773,8 +786,8 @@ no ratio printed. Seen to fail, as a gate must be: perturbing `razorMargin`'s ma
 398,988 and the run was refused.
 
 **Counter access can be refused, and a skip is not a pass.** It exits **2** when
-`perf_event_open` is unavailable, the same refusal `perf_budget.sh` makes and for the same
-reason. `perf_counters --wrap` is the mode that reaches it: the other modes own the child's
+`perf_event_open` is unavailable, for the same reason `perf_budget.sh` refuses — though
+that one exits **127**, so test the tool's own documented code rather than assuming 2. `perf_counters --wrap` is the mode that reaches it: the other modes own the child's
 argv and stdout, where a UCI session driven move by move needs its own, so `--wrap` execs an
 inherited-stdio child and writes the counter totals to `-o`. `--core` picks the engine's
 core, because the driver is a second process and sharing one core cost half the throughput.

@@ -33,7 +33,7 @@ the hook pattern see [00-architecture.md](00-architecture.md).
 | `src/platform/runtime_hooks.zig` | The lifecycle hook registry (`worker_build`, `worker_clear`, `worker_destroy`, the setup-state handoff, the shared-history insert/clear, `verify_thread_graph`) |
 | `src/platform/numa.zig`, `numa/config.zig`, `numa/policy.zig`, `numa/replication.zig` | The topology surface, the `NumaConfig` model + thread distribution, the `NumaPolicy` string reader, and the replica registry |
 | **engine — the search side** | |
-| `src/engine/search/thread_ops.zig` | The pool-op seam: `startSiblings`, `waitSiblings`, `waitThread`, `bestThreadWorker` |
+| `src/engine/search/thread_ops.zig` | The pool-op seam: `startSiblings`, `waitSiblings`, `waitThread`, `runThread`, `bestThreadWorker` |
 | `src/engine/search/search_driver.zig` | `workerStartSearching` — the per-worker entry: main-thread branch, sibling start/wait, best-thread pick, final emit |
 | `src/engine/search/search_id.zig` | The seam wrappers `ssThreadsStart` / `ssWaitFinished` / `ssGetBestThread`, `searchIdState`, `searchIdCollectBmc` |
 | `src/engine/search/search_ctx.zig` | The per-iteration snapshots the ID loop reads through, including `ZfishIdState` (`stop`, `increase_depth`) |
@@ -51,7 +51,7 @@ the hook pattern see [00-architecture.md](00-architecture.md).
 | `src/engine/state/shared_state.zig` | `SharedStateOf` — the typed bundle (pool, TT, shared histories) handed to every Worker at construction |
 | **shell** | |
 | `src/shell/engine/session.zig` | `resizeThreads` / `resizeThreadsEngine` — the `Threads` / `NumaPolicy` reconfigure chain |
-| `src/shell/main.zig` | The composition root: registers the lifecycle hooks and the four pool ops |
+| `src/shell/main.zig` | The composition root: registers the lifecycle hooks and the five pool ops |
 
 ## The model
 
@@ -165,8 +165,11 @@ lets `deinit`'s `exit` flag race the idle loop and drop a just-queued search job
 ## Shared vs per-worker state
 
 `worker_construct` binds each Worker's references from the `SharedState` bundle
-(`src/engine/state/shared_state.zig`): the pool, the TT, and its node's
-`SharedHistories`.
+(`src/engine/state/shared_state.zig`): the pool, the TT, and **node 0's**
+`SharedHistories`. Not its own node's — the `worker_build` hook is not told which node the
+thread is on (`main.zig` passes index 0 and says so), so the per-node entries
+`reconfigure` allocates are sized and cleared but never reached. That is an unimplemented
+binding, not a design.
 
 | State | Scope | Where |
 | --- | --- | --- |
@@ -179,7 +182,7 @@ lets `deinit`'s `exit` flag race the idle loop and drop a just-queued search job
 | `SearchManager` (time management, `ponder`, `stop_on_ponderhit`) | Per-worker, meaningful only on thread 0 | `WorkerLayout.manager` |
 | `thread_idx`, `numa_thread_idx`, `numa_total`, `numa_access_token` | Per-worker identity | `WorkerLayout`, written by `worker_construct` |
 | Transposition table | **Shared, unsynchronized** | `WorkerLayout.tt` → `SharedState.tt` |
-| Correction + pawn + continuation histories | **Shared per NUMA node** | `WorkerHistories.shared_history` → `SharedState.shared_histories` (`shared_histories_map`, one `SharedHistories` per node; continuation entries relaxed-atomic) |
+| Correction + pawn + continuation histories | **Shared across the whole pool** | `WorkerHistories.shared_history` → `SharedState.shared_histories` (`shared_histories_map` allocates one `SharedHistories` per populated node; only node 0's is ever bound — see above; continuation entries relaxed-atomic) |
 | `stop`, `increase_depth`, `setup_states`, the threads and bound slices | **Shared** | `worker_layout.ThreadPool` |
 | NNUE network weights | **Shared, always resident** — not replicated per node | `engine/eval/` network storage |
 
@@ -187,7 +190,9 @@ lets `deinit`'s `exit` flag race the idle loop and drop a just-queued search job
 `shared_histories.sharedHistoriesSizes(thread_count)`: the correction and pawn arrays
 scale with `nextPowerOfTwo(threads on the node)`, and their index masks are the counts
 minus one. `clearSharedHistory` is partitioned by `thread_idx` / `numa_total`, so every
-worker on a node clears a disjoint slice of the node's shared arrays in parallel.
+worker clears a disjoint slice of the bound arrays in parallel — `numa_thread_idx` and
+`numa_total` are the GLOBAL index and total today, so this is the global partition of the
+one array every worker shares.
 
 ## Memory ordering
 
@@ -210,7 +215,7 @@ counters:
 
 | Site | Pattern |
 | --- | --- |
-| `platform/syzygy/registry.zig` | A table is parsed, then `ready` is set with a **release** store and read with **acquire**. A thread on the fast path therefore sees either no table or a fully parsed one — announcing readiness first would let a concurrent probe read a null base as "table absent" or walk half-written `PairsData`. The double-checked path re-reads `ready` relaxed *under the lock*, where the mutex already supplies the ordering |
+| `platform/syzygy/table_load.zig` | A table is parsed, then `ready` (the field `registry.zig` declares) is set with a **release** store and read with **acquire**. A thread on the fast path therefore sees either no table or a fully parsed one — announcing readiness first would let a concurrent probe read a null base as "table absent" or walk half-written `PairsData`. The double-checked path re-reads `ready` relaxed *under the lock*, where the mutex already supplies the ordering |
 | `platform/thread_runtime.zig` | The futex mutex and condition primitives themselves — acquire on lock, release on unlock. This is where the ordering the rest of the runtime borrows is actually built |
 
 The two cross-thread control signals (`stop`, `increase_depth`) are plain `u8` atomics read
@@ -268,9 +273,10 @@ The topology surface is live: `numa.configNodeCount` reports the config's real n
 `distributeThreadsAmongNodes` calls `NumaConfig.distributeThreads`, and
 `suggestsBindingThreads` evaluates upstream's rule. Every `NumaPolicy` value that can be
 driven on a single-node host matches upstream, including a two-node string
-(`0-7:8-15` → `2/8` on both) and the refusal of an unparseable one.
+(`0-7:8-15` at Threads 4 → `2/8:2/8` on both) and the refusal of an unparseable one.
 
-What remains single-node is **discovery**, not wiring: `NumaConfig.fromSystem` enumerates
+What remains single-node is **discovery** and the per-worker node binding, not the sizing
+math: `NumaConfig.fromSystem` enumerates
 every online CPU onto one node rather than reading `/sys/devices/system/node`, so `system`
 and `hardware` cannot differ on **any** host — auto-detection collapses even a real
 multi-socket machine to one node, and only an explicit `NumaPolicy` topology string reaches
@@ -285,7 +291,7 @@ and NUMA primitives are described in [06-platform.md](06-platform.md).
 stack imports the engine's `position` for its own pool ops. Importing back would invert
 the zone stack and close a cycle.
 
-So the four pool operations are `pub var` function pointers in
+So the five pool operations are `pub var` function pointers in
 `src/engine/search/thread_ops.zig`, registered by the composition root:
 
 | Seam | Registered to | Called from | Failure mode when unregistered |
@@ -293,9 +299,10 @@ So the four pool operations are `pub var` function pointers in
 | `startSiblings` | `search_thread.startPoolSiblings` | `ssThreadsStart`, before the main thread's own ID loop | silent — starts nothing |
 | `waitSiblings` | `search_thread.waitPoolSiblings` | `ssWaitFinished`, after `stop` is set | silent — waits for nothing |
 | `waitThread` | `thread.waitThread` | `tt.zig`, while a resize clears the table | silent — no wait |
+| `runThread` | `thread.runThreadJob` | `tt.zig`, to zero one span per pool thread on a resize or clear | silent — runs the job inline on the caller |
 | `bestThreadWorker` | `thread_vote.bestThreadWorker` | `ssGetBestThread` | silent — returns thread 0's worker |
 
-These four are the unusual case: they are classed **service** hooks and declared
+These five are the unusual case: they are classed **service** hooks and declared
 **search-affecting**, because unregistered they *answer* rather than abort. That is
 deliberate. The defaults are exactly the correct single-threaded answers — there are no
 siblings to start or wait for, no in-flight job to wait on, and the main worker *is* the

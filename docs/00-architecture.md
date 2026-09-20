@@ -50,8 +50,9 @@ The zone rule is not tidiness — it is what lets the engine be *driven* with no
 around it. Upstream is a UCI binary and does not claim otherwise: `Search::Worker` holds
 `const OptionsMap&` and `ThreadPool&` as members and `evaluate.cpp` includes `uci.h`, so
 linking its search means linking the frontend and the thread pool. Here the same
-dependencies are hook seams that **self-default headless**, and `zig build headless`
-proves the boundary at the compiler and linker rather than by inspection.
+dependencies are hook seams that **self-default headless**, and `zig build engine`
+proves the boundary at the compiler and linker rather than by inspection — `zig build
+headless` is the inspection half, a lint over the declared imports.
 
 **In use today:**
 
@@ -59,7 +60,7 @@ proves the boundary at the compiler and linker rather than by inspection.
 | --- | --- | --- |
 | Compile and unit-test the whole engine with no runtime attached | `src/engine/headless.zig`, `zig build engine` | One root referencing every engine module; the `headless` gate ratchets engine → platform/shell up-edges toward zero |
 | Coverage-guided fuzzing of the **real search** | `board/fuzz_targets.zig`'s `fuzzShallowSearch` → `search/headless_search.zig`, `zig build fuzz-board --fuzz` | A Worker, a one-thread pool, a TT and a `SharedHistories` stood up in-process. The fuzz root imports engine modules only, so a mutation drives move ordering, the TT, pruning, qsearch, the accumulator and the eval under ReleaseSafe — with no thread orchestrator to construct per iteration |
-| Gates that test the **algorithm** rather than the protocol | `driver-golden`, `search-modes` | The search driver and its emit callback are callable directly. A gate that pipes `go` at the binary tests the command loop; one that drives `iterativeDeepening` tests the search |
+| Gates that could test the **algorithm** rather than the protocol | the driver and its emit callback | The search driver is callable directly, so a gate that drives `iterativeDeepening` would test the search where one that pipes `go` at the binary tests the command loop. Nothing takes that route today — `driver-golden` and `search-modes` both pipe UCI at the binary; only the fuzz targets above drive the search in-process |
 | A reproducible search under a substituted platform | the seams' headless defaults | A depth-capped search needs no clock, no UCI option model and no pool: `headless_search` registers one deterministic option source (Skill off, MultiPV 1) and nothing else |
 | Porting to a new OS | `src/platform/` | The engine issues no OS call, so a new target is a platform-zone change; the `@Vector` NNUE lowers to NEON with no source change |
 
@@ -102,7 +103,7 @@ rather than trusting this paragraph:
 
 ```sh
 comm -23 <(find src -name '*.zig' | sort) <( \
-  { grep -oE '"src/[A-Za-z0-9_/.-]+\.zig"' build.zig | tr -d '"'
+  { grep -ohE '"src/[A-Za-z0-9_/.-]+\.zig"' build.zig build/*.zig | tr -d '"'
     for f in $(find src -name '*.zig'); do d=$(dirname "$f")
       grep -ohE '@import\("[A-Za-z0-9_/.-]+\.zig"\)' "$f" \
         | sed 's/@import("\(.*\)")/\1/' \
@@ -120,7 +121,7 @@ it, and each fails on a different mistake. Run them together with `zig build par
 
 | Gate | Fails when |
 | --- | --- |
-| `headless` | an `engine/` file imports a `platform/` or `shell/` module. Resolves every `@import` through `build.zig`'s module table, so it sees the real edge, not a naming convention. Ratcheted — the count may only fall |
+| `headless` | an `engine/` file imports a `platform/` or `shell/` module. Resolves every `@import` through `build/modules.zig`'s module table, so it sees the real edge, not a naming convention. Ratcheted — the count may only fall |
 | `headless.zig` + `zig build engine` | the engine graph stops compiling and testing on its own. This is the compiler-and-linker half: the lint proves no *declared* up-edge, this proves the result actually links with nothing else attached |
 | `arch-report` | the module graph gains a cycle, or the file graph gains one that is not the declared `search_main ↔ search_back`, or a `src/` file is reachable from no declared root |
 | `hook-lint` | a cycle-break hook is added without declaring its failure mode, or the composition root forgets to register one. The second is the dangerous case: an unregistered hook does not crash, it *answers* |

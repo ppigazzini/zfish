@@ -82,7 +82,8 @@ loop per table. One lane width to tune, and a new table cannot silently stay sca
 The NNUE feature transformer is written once in portable `@Vector` code. LLVM lowers
 it to AVX-512, AVX2, or SSE on x86 and to NEON on aarch64. Reach for an intrinsic only
 where the portable form leaves measurable throughput behind: the affine layers add
-comptime x86 specializations (`nnue_inference.zig`) over the same `@Vector` fallback,
+comptime x86 specializations (`nnue_affine.zig`, `nnue_affine_vnni.zig`) over the same
+`@Vector` fallback,
 and every path is bit-identical.
 
 ```zig
@@ -182,19 +183,20 @@ guaranteed memory layout — consume it with `@select`/`@reduce`, never `@bitCas
 | `__builtin_popcountll` | `@popCount` |
 | `alignas(64)` | `align(64)` |
 
-**No portable equivalent — and here, deliberately not reached for.**
+**No portable equivalent, so declare it — and then measure whether it pays per tier.**
 `_mm512_maskz_compress_epi16` / `_epi32` and `_mm512_mask_compressstoreu_epi16`
 (`vpcompress`) have no Zig builtin and no pattern LLVM infers, so reaching them needs a
-declared intrinsic like the dot-product ones above. Upstream uses them to compact its
-non-zero-chunk indices into a flat `u16` list on AVX-512. This codebase records a bitset
-instead and pops it with `@ctz`, and that is a measured choice rather than an unclosed gap:
-the affine kernels hoist the input and weight base pointers once per 64-group word and index
-with a word-local offset, which a flat list of absolute indices undoes. Building the list at
-the transform was implemented and measured as an instruction *regression*, because the
-per-chunk compress, store and popcount bookkeeping costs more than a flat consumer read
-saves against the hoisted walk. Upstream has no hoisted alternative, which is why the same
-shape pays for it and not for us. Anything needing lane compaction still has to declare the
-intrinsic — but check whether the consumer already has a cheaper access pattern first.
+declared intrinsic like the dot-product ones above. Three sites declare one:
+`nnue_nnz.zig`, `threats_write_avx512.zig` and `movegen_splat_avx512.zig`. Upstream uses
+`vpcompress` to compact its non-zero-chunk indices into a flat `u16` list on AVX-512, and
+`nnue_nnz.zig` ships **both** shapes behind `use_nnz_index_list` (`avx512vnni` AND
+`avx512vbmi2`): the index list where the compress can be paid for, the `@ctz`-popped bitset
+everywhere else. The split is the measurement, not a preference — the affine kernels hoist
+the input and weight base pointers once per 64-group word and index with a word-local
+offset, which a flat list of absolute indices undoes, so the same patch measured 0.998
+instructions at `avx512icl` and 1.003 at `vnni512` (no VBMI2), with branch misses gaining
+0.934 either way. The lesson is the per-tier verdict: an intrinsic worth declaring is not
+therefore worth enabling everywhere, and the consumer's access pattern is what decides.
 
 Two entries above read as ordinary code and are not.
 
@@ -234,7 +236,7 @@ non-VEX SSE op folds a load into its `m128` operand only when 16-byte alignment 
 upstream's `alignas(64)` weights fold straight into every `pmaddubsw`/`paddw`/`pminsw`.
 
 Declaring `align(64)` on the parameter does not survive the offset. Restore it at each
-load instead — `nnue_acc_rowops.zig`'s `loadVec` and `nnue_affine.zig`'s `loadW`:
+load instead — `nnue_acc_rowops.zig`'s `loadVec` and `nnue_affine_load.zig`'s `loadW`:
 
 ```zig
 const q: *align(A) const [V]i16 = @alignCast(@ptrCast(p + off));
@@ -349,7 +351,7 @@ A zero-init the producer overwrites is a dead store, and the optimizer removes i
 where it can see the writer — across a call, through a pointer, or into an arena it
 cannot, so the write is real work. Both scales cost real instructions on the bench. Per
 node: the accumulator update's scratch is `undefined`, worth 4.18% of instructions, and
-`evaluateBucketRaw`'s 128-byte `concat` likewise, because the four activations fill every
+`propagateBucket`'s 128-byte `concat` likewise, because the four activations fill every
 byte before `fc_1` reads one. At startup: `memory` hands out large-page blocks
 uninitialized, since the net parse, `resizeState`'s clear and worker construction rewrite
 them — which holds the bench's `memset` self-cost at 107.8 M instructions rather than
@@ -358,7 +360,7 @@ them — which holds the bench's `memset` self-cost at 107.8 M instructions rath
 The condition is `undefined` **where a producer provably writes every byte before any
 read**, and it is the proof that makes it safe rather than the pattern: the feature-
 transformer arena is tiled gaplessly by the parse, pinned by a `comptime` assertion in
-`nnue_parse.zig` so a dimension change cannot open a padding gap. Where a fill is
+`nnue_dimensions.zig` so a dimension change cannot open a padding gap. Where a fill is
 load-bearing it stays — `resizeState` must clear the table it resizes, and no gate here
 can see otherwise, none of them having a clock; the sibling port that dropped it measured
 roughly 90–118 Elo.
@@ -383,15 +385,15 @@ read out of the files themselves. Everything below follows from that.
 
 | Rule | How this tree holds it | Gate |
 | --- | --- | --- |
-| **Raise `@setRuntimeSafety(true)` over untrusted parses.** The scope is lexical — it does not follow calls, so it goes on each function. | The `.nnue` section framing (`readLebSection`, `parseFeatureTransformer`, `parseLayer`, `dstSlice`) and the Syzygy header parse (`table_load.set`, `setDtzMap`, `decode.setSizes`). | `signature` (bytes unchanged) |
+| **Raise `@setRuntimeSafety(true)` over untrusted parses.** The scope is lexical — it does not follow calls, so it goes on each function. | The `.nnue` section framing (`readLebSection`, `parseFeatureTransformer`, `parseLayer`, `dstSlice`) and the Syzygy header parse (`table_load.set`, `setDtzMap`, `decode_header.setSizes`). | `signature` (bytes unchanged) |
 | **…and price it before you place it.** A check on a per-byte loop is not free. | `decodeLeb` is deliberately excluded: +22.8% of a whole `bench 16 1 5` instruction count versus +0.1% for the framing, and its every access is bounded by a test it states itself. | `perf_counters.zig` |
-| **Prefer slices to `[*]` at every input boundary.** A many-item pointer carries no length, so neither the producer nor the consumer can check one. | `PairsData`'s file-backed fields are slices; the parse carves them with a bounded `take`. The ~220 remaining `[*]` are hot NNUE/search kernels where the pointer is the calling convention, plus the erased hook seams — none of them reads a file. | `tb-*` goldens |
-| **Validate once at load, not once per use.** | `setSizes` checks every btree child in one O(n) pass, which makes `probe.setSymLen`'s writes in-bounds by construction and leaves the probe path free of the check. | `decode.zig` unit tests |
+| **Prefer slices to `[*]` at every input boundary.** A many-item pointer carries no length, so neither the producer nor the consumer can check one. | `PairsData`'s file-backed fields are slices; the parse carves them with a bounded `take`. The ~260 remaining `[*]` are hot NNUE/search kernels where the pointer is the calling convention, plus the erased hook seams — none of them reads a file. | `tb-*` goldens |
+| **Validate once at load, not once per use.** | `setSizes` checks every btree child in one O(n) pass, which makes `probe.setSymLen`'s writes in-bounds by construction and leaves the probe path free of the check. | `decode_header.zig` unit tests |
 | **Check what the header could not pin, at the point of use.** | `block` and `sym` in `decompressPairs` are decoded from the payload, so the header cannot bound them; they are checked there and bail to 0. | Syzygy fuzz target |
 | **…and what the header could not pin BECAUSE THE POSITION IS NOT KNOWN AT LOAD.** | `doProbeTable`'s group walk is driven by `group_len[]`, derived from the file's piece nibbles, while `squares` comes from the position — so a corrupt table asks for a group the position never filled, and the column goes negative. Refused at the probe, which already answers that way for a table it cannot read. | `fuzz_probe.zig` |
 | **Port C's wrapping arithmetic as wrapping.** `+`/`-` trap in safe modes where upstream's `uint64_t` is defined to wrap; on corrupt input that difference is a crash, not a hardening. | The canonical-Huffman recurrence uses `+%`/`-%`; the region widths use `*|` so an absurd size stays absurd instead of wrapping into a satisfiable one. | Syzygy fuzz target |
 | **Poison uninitialized arenas in the safe modes.** | `memory.poison_uninitialized` fills large-page blocks with `0xAA` in Debug **and ReleaseSafe** — Debug alone is dead code here, because `zig build -Doptimize=Debug` SEGVs the Zig 0.16 compiler. | ReleaseSafe engine benches the anchor |
-| **Let a checking allocator own the error paths.** | `std.testing.allocator` and `checkAllAllocationFailures` (19 sites). It earns this: the leak on every `error.CorruptTable` path in `setSizes` was found the moment a corrupt-table test existed, not by reading the code. | `test`, `parity-valgrind` |
+| **Let a checking allocator own the error paths.** | `std.testing.allocator` and `checkAllAllocationFailures` (11 call sites). It earns this: the leak on every `error.CorruptTable` path in `setSizes` was found the moment a corrupt-table test existed, not by reading the code. | `test`, `parity-valgrind` |
 | **Fuzz the boundary, and assert the boundary — not the answer.** | `src/platform/syzygy/fuzz_targets.zig` asserts every region stays inside its buffer; a garbage table is *allowed* to decode to garbage. Built ReleaseSafe so a missed bound trips a check. | `zig build fuzz-tb --fuzz` |
 | **Validate a file's claim against something derived WITHOUT the file.** A parse that only checks a header against itself accepts any self-consistent lie. | `table_load.set` tests the pawnful table's leading piece against the lead colour the registry derived from the material configuration — from the filename enumeration, never from a byte of the file. Without it a flipped nibble left the leading group empty and the probe indexed the pawn geometry with a square it never wrote. | `tb-*` goldens, `fuzz_probe.zig` |
 | **Fuzz the CONSUMER too, not only the parser.** A unit target cannot see an invariant that only the code downstream of it relies on: a header it accepts can still be one the probe cannot survive. | `fuzz_probe.zig` parses an image into a registered `TBTable`, publishes it by hand so no file is opened, and probes — fixture-free, because a target guarded on tables that are absent skips silently and reads exactly like a clean run. | `zig build fuzz-tb-probe --fuzz` |
@@ -410,7 +412,7 @@ the Linux large-page arena, which now comes from `mmap` rather than `posix_memal
 ([06-platform.md](06-platform.md)); `memory.liveLargePageBlocks()` and its unit test carry
 that coverage instead, because a client request would only re-describe a mapping the
 allocator already has the length of. Search
-threads take `std.Thread`'s default stack; recursion is bounded by `MAX_PLY`, and a guard
+threads take `std.Thread`'s default stack; recursion is bounded by `search_values.max_ply` (246), and a guard
 page catches the overflow Zig's absent stack probes would not. Neither is a gap someone
 should close without new evidence.
 
@@ -425,7 +427,8 @@ the call, or fill a caller-owned `result: *T` out-param for a freshly built one 
 NNUE feature and threat path (`nnue_feature.zig`, `nnue_acc_layout.zig`) returns both
 ways. Removing two such returns cut the bench's `memcpy` from 3.4% of instructions to
 0.8%. The gate is the signature — the returned bytes are unchanged — plus a
-`perf_callgrind.sh` `costs` sweep to confirm `memcpy` actually fell; see
+`perf_fingerprint.py costs` sweep over a `perf_callgrind.sh` profile to confirm `memcpy`
+actually fell; see
 [10-tooling-ci](10-tooling-ci.md). The mirror caveat is real: a by-value return that
 the optimizer inlines costs nothing, so verify the returner is a live symbol in the
 profile before rewriting it.
@@ -450,7 +453,9 @@ Reach for this to invert a *specific* upward dependency, not as a default.
 Zig's newtype over an integer is a sized enum: `enum(u2)` where the space is closed and
 the tag width is the array bound, `enum(u32) { _ }` where it is open. It has the layout
 of its tag, is opened by `@intFromEnum` and closed by `@enumFromInt`, and adds nothing
-at runtime. `encode.TbFile` is the instance in the tree.
+at runtime. `encode.TbFile` is the instance in the tree for an index space; the continuation-history
+plane selectors `history.InCheck` and `history.WasCapture` are the same move applied to an
+accessor's arguments.
 
 **Which spaces deserve one, what it costs, and what it does not stop are the neighbouring
 page's subject — [09-type-design.md](09-type-design.md), including
@@ -593,8 +598,8 @@ one is charged only where it is *executed*, not where its stack slots sit. Outli
 therefore buys nothing here and pays three call/ret pairs plus the argument setup and the
 post-call reloads for it.
 
-Measured, refuted, do not retry without new evidence. `movepick.nextMove` is entered
-1.27M times on `bench 16 1 8`; the three `*_init` stage setups in it run once per picker
+Measured, refuted, do not retry without new evidence. `movepick.nextMove` was entered
+1.27M times on the then-163,081-node `bench 16 1 8`; the three `*_init` stage setups in it run once per picker
 and inline a 256-entry move buffer each. Lifting all three into `noinline` helpers did
 exactly what it was meant to — `nextMove`'s frame fell from `sub $0x2e8` to `sub $0x18` —
 and retired **more** instructions on both tiers:
@@ -624,7 +629,7 @@ prefetch as a small loss, never as a win. Adjudicate one on `perf_counters` cycl
 tier that runs, or on a fastchess Elo match, and treat any Ir or nps reading of it as the
 instrument rather than the change.
 
-Two placement rules, both mirroring upstream's `position.cpp:1006-1010`:
+Two placement rules, both mirroring upstream's `position.cpp:1008,1014-1018`:
 
 - **Issue it where the address becomes final, not where the consumer sits.** The hints
   live *inside* `doMove` (`move_do.zig`), at the point the child's keys are final —
@@ -637,10 +642,14 @@ Two placement rules, both mirroring upstream's `position.cpp:1006-1010`:
   in i16 units (`history.zig`). Only a cache profile can see this wrong — every
   deterministic gate above is blind to it by construction.
 
-The limit, and it binds hard: more prefetching is not better. A faithful port of
-upstream's full seven-hint block reproduces its cache-miss improvement, costs 0.5–0.9%
-instructions, and reads **−10.1 ±18.2 Elo** over 1000 self-play games — certain cost,
-unproven benefit. Each site earns its place on its own measurement.
+The limit, and it binds hard: more prefetching is not better. Porting upstream's full
+six-hint block reproduces its cache-miss improvement, costs 0.5–0.9% instructions, and read
+**−10.1 ±18.2 Elo** over 1000 self-play games — certain cost, unproven benefit. The block
+is nonetheless carried in full (`move_do.zig`'s six, plus the three continuation-correction
+hints in `search_acc.zig` and the pre-make approximate TT hint in `tt.zig`), because an
+upstream algorithm is the spec here and that Elo reading does not refute it. What the
+measurement buys is the rule for a hint zfish would add on its OWN account: each such site
+earns its place on its own measurement, not by analogy with these.
 
 ## Measure differentially, before attributing
 
@@ -666,7 +675,7 @@ says nothing about what those nodes cost, so a change can shed no nodes, keep ev
 nothing else here can fail on. Instructions are near-deterministic (measured spread 0.00063% over six runs),
 which is what makes an absolute budget gateable where a cycle count is not.
 
-The tolerance is 0.05%, about 50x that spread, and it was **not** chosen by feel: the first
+The tolerance is 0.05%, about 80x that spread, and it was **not** chosen by feel: the first
 value tried was 0.20%, and mutation-testing rejected it — making the per-node `adjustKey50`
 call non-inline costs +0.0876% with the node signature still green, so the gate passed the
 exact regression it exists to catch. Pick a tolerance against a measured noise floor *and*
@@ -686,7 +695,9 @@ containers, and the count is toolchain-specific, so a Zig upgrade legitimately m
 Re-derive with `tools/perf_budget.sh update` and carry the measurement in the commit body.
 A skip exits **127**, never 0, so "could not measure" cannot be read as "did not regress" —
 and being local-only it carries the staleness failure mode `docs/10-tooling-ci.md` records
-for `tb-cursed`, so run it by hand after a toolchain bump or a perf commit.
+for `tb-cursed`, so run it by hand after a toolchain bump, a perf commit, **or an upstream
+resync** — a resync moves the node count the row is keyed against, and `perf_budget.sh`
+refuses on a node mismatch rather than comparing across two different workloads.
 
 **Attribute cost with `tools/perf_fingerprint.py compare`, never by reading a profile
 line.** callgrind emits one entry per *(origin-file, function)* pair -- inlined code is
@@ -958,8 +969,10 @@ LLVM has no sign-extending-load pattern for an atomic load: the node's result ty
 and the widening cannot fold into it, so an `@atomicLoad` of an `i16` feeding `i32` arithmetic
 lowers to `movzwl (mem)` plus a reg-reg `movswl`, where a plain `i16` load gets one
 `movswl (mem)`. The cost is per LOAD and the shared banks are read six times per quiet move
-scored. It is real here and not a hypothesis -- 59 of that exact pair in the shipped binary,
-counted with `objdump -d`.
+scored. It is real here and not a hypothesis: the pair is present in the shipped binary in the
+dozens, counted by scanning `objdump -d` output for a `movzwl` immediately followed by a
+`movswl` of the same register. The count moves with the build, so re-run the scan rather
+than trusting a number written here.
 
 Naming the widening in inline asm is what removes it, and that is the reason not to: inline
 asm is invisible to ThreatSanitizer, so replacing the relaxed atomic on `SharedHistories`

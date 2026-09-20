@@ -18,7 +18,7 @@ For the zones and the module graph, see [00-architecture.md](00-architecture.md)
 | `thread_vote.zig` | the Lazy-SMP vote picking the best thread's move |
 | `memory.zig` | the aligned / huge-page allocator (uninitialized blocks; safe-mode 0xAA poison) |
 | `os_path.zig` | `toWtf8Alloc` — a path the OS handed us, in the WTF-8 the file APIs take |
-| `numa.zig` | the NUMA topology surface (config, binding, execute-on-node) |
+| `numa.zig` | the NUMA topology surface (config, node-index assignment, execute-on-node — no CPU affinity is ever applied) |
 | `numa/config.zig` | `NumaConfig`: nodes, CPU sets, the system topology, `toString`, thread distribution |
 | `numa/policy.zig` | `parse` — the `NumaPolicy` string reader, over `str_to_size_t`'s rule |
 | `numa/replication.zig` | `NumaReplicationContext` / `NumaReplicatedBase`: the replica registry |
@@ -115,8 +115,9 @@ ANSI path in the system code page got the net reported as missing on a path that
 fallback can never make an already-working path worse.
 
 `option_model.normalize` is the single caller, because every string option this engine has
-is a path (`EvalFile`, `SyzygyPath`, `Debug Log File`) and the model already owns the
-storage — converting there covers all three without any consumer growing a lifetime.
+but `NumaPolicy` is a path (`EvalFile`, `SyzygyPath`, `Debug Log File`) and the model
+already owns the storage — converting there covers all of them without any consumer growing
+a lifetime, and the topology string passes through the same conversion harmlessly.
 Upstream instead converts at each open, which is the same set of paths reached one call
 site at a time.
 
@@ -139,8 +140,9 @@ headless engine build allocates correctly and loses only the huge pages.
 
 ## NUMA
 
-`numa.zig` is the topology surface, and it delegates: every function resolves the erased
-`numa_context` to the `NumaReplicationContext` that owns the `NumaConfig` and asks it.
+`numa.zig` is the topology surface, and it delegates: every function takes the typed
+`*NumaReplicationContext` that owns the `NumaConfig` and asks it. The one surviving
+`*const anyopaque` is `executeOnNode`'s node handle, which it discards.
 `suggestsBindingThreads` evaluates the real rule, `configNodeCount` and `contextCpusInNode`
 report the config's node count and per-node CPU count, `distributeThreadsAmongNodes` calls
 `NumaConfig.distributeThreads`, and `contextSetSystem`/`Hardware`/`None` plus `setFromString`
@@ -172,8 +174,13 @@ when there is more than one node**.
 online CPU onto a single node, so `system`, `hardware`, and `auto` collapse to one node on
 **any** host — including a real multi-socket machine, where upstream (whose `from_system`
 reads `/sys/devices/system/node`) would report the true nodes and bind across them. Only an
-explicit `NumaPolicy` topology string (`0-23:24-47`) reaches the multi-node distribution and
-binding paths here. The gap is topology *discovery*, not the wiring above.
+explicit `NumaPolicy` topology string (`0-23:24-47`) reaches the multi-node distribution
+math here. No thread is ever bound to a CPU: nothing in `src/` calls any of the three
+affinity-setting APIs (the Linux, pthread and Win32 spellings alike — only the *get* form
+appears, in `numa/config.zig`), and `executeOnNode` discards its node argument and runs the
+callback inline. "Binding" here means recording a node index and
+sizing the shared histories. The gaps are topology *discovery* and thread *binding*; the
+sizing wiring above is real.
 
 `numa/replication.zig` is the replica registry. `NumaReplicationContext` owns a
 `NumaConfig` and tracks `NumaReplicatedBase` hooks — a plain function pointer

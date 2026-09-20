@@ -25,7 +25,10 @@ other leaves, so the board graph is a DAG with `position` at its root.
 | `score.zig` | `classify()` — score → non-decisive / tablebase / mate, in plies |
 | **Bitboards** | |
 | `bitboard_geom.zig` | pure square/file/rank math and the from-scratch attack generators used to build the tables |
-| `bitboard.zig` | the runtime magic-bitboard slider tables, the AVX2 dual-hyperbola-quintessence tables and `bothAttacks`, leaper and pseudo-attack tables, `between` / `line` / `rayPass` |
+| `bitboard.zig` | the runtime magic-bitboard slider tables, the `bothAttacks` dispatch and `bothAttacksMagic`, leaper and pseudo-attack tables, `between` / `line` / `rayPass` |
+| `bitboard_dual.zig` | the AVX2 dual-hyperbola-quintessence path: `DualMagic`, `dual_magics`, `rank_attacks`, `initDualMagics`, `bothAttacksAvx2`, and the `use_avx2` / `use_gfni_rank` tier gates |
+| `move_do_pieces.zig` | the board mutators — `putPiece` / `removePiece` / `movePieceQuiet` / `swapPiece` and their `*Dts` threat-recording forms, with all six `updatePieceThreats` call sites |
+| `threats_write_avx512.zig` | the AVX-512 threat writer: compress, `permutexvar` and the unmasked 16-word store |
 | **Position** | |
 | `position.zig` | the facade: re-exports, `initRuntime()`, self-registration of the two snapshot hooks |
 | `position_query.zig` | read-only accessors (`sideToMove`, `gamePly`, `hasCheckers`, `wdlMaterial`) and the snapshot fills |
@@ -34,7 +37,7 @@ other leaves, so the board graph is a DAG with `position` at its root.
 | `state_setup.zig` | derived-state (re)computation: `setState`, `setCheckInfo`, `updateSliderBlockers`, `setCastlingRight` |
 | `state_list.zig` | `StateList` / `PendingStateStorage` — the pointer-stable `StateInfo` chain the engine holds |
 | **Moves** | |
-| `move_do.zig` | `doMove` / `undoMove` / `doNullMove` / `undoNullMove`, `putPiece`, the board mutators |
+| `move_do.zig` | `doMove` / `undoMove` / `doNullMove` / `undoNullMove`, `adjustKey50`, `prefetchKey`; it re-exports `putPiece` from `move_do_pieces.zig` |
 | `move_do_threats.zig` | `updatePieceThreats` — the dirty-threat deltas the NNUE threat features consume |
 | `movegen.zig` | the staged pseudo-legal generators plus `generateLegal` |
 | `movegen_splat_avx512.zig` | `splatPawnMoves`/`splatMoves` — the AVX512VBMI+VBMI2 vector fast path for packing a destination bitboard into move words |
@@ -188,7 +191,7 @@ incoming (each square in `sliders`/`incoming` threatens PC on S) — plus
 
 **Both of its flag parameters are `comptime`.** `compute_ray` always was; `put_piece`
 became one, and the tell was the profile rather than the source. All six call sites in
-`move_do.zig` pass a literal — `putPiece` true, `removePiece` false, `movePiece` and
+`move_do_pieces.zig` pass a literal — `putPiece` true, `removePiece` false, `movePiece` and
 `swapPiece` false then true — and the parameter is read where it costs: inside
 `processSliders`' loop where both records take it, again in each of the two trailing
 loops, and stored into the template of every `DirtyThreat`, so it occupied a register
@@ -275,18 +278,24 @@ on plain `attacks()`, matching upstream exactly (`Position::attackers_to_exist` 
 
 At `use_avx2` (comptime, tracking upstream's `USE_DUAL_HYPERBOLA_QUINT`,
 `#elif defined(USE_AVX2)`) `bothAttacks` runs upstream's dual hyperbola quintessence
-instead of two magic lookups. Per square, `DualMagic` holds the file/diagonal/
-antidiagonal rays as one `@Vector(4, u64)` (the fourth lane always 0 — there is no
-fourth ray, it exists only so the vector has a clean width), plus `r = 2*squareBb(s)`
+instead of two magic lookups. Per square, `DualMagic` holds the file, the two
+diagonals and the rank as one `@Vector(4, u64)`, in the order {file, diagonal, rank,
+antidiagonal} — the RANK lane (index 2) is the zero one below `use_gfni_rank`, not the
+fourth, plus `r = 2*squareBb(s)`
 and `rr = 2*squareBb(63-s)`. One pass computes all three rays together:
 `fwd = (occupied & masks) - r`, `rev = byteSwap(byteSwap(occupied & masks) - rr)`,
 `result = (fwd ^ rev) & masks` — the classic o-2r hyperbola-quintessence identity,
-run on 3 lanes at once instead of one ray at a time. The rank ray is the one
+run on 3 lanes at once instead of one ray at a time. Below `use_gfni_rank` the rank ray is the one
 direction the trick cannot fold in (a rank's 8 squares share a byte under a
 per-lane byte-reversal), so it comes from `rank_attacks[file][inner_occupancy]`, a
 64-entry-per-file `comptime` table built from `slidingAttack(ROOK, file, occ6 << 1)` —
 `occ` zero-extends past bit 7, so the north/south rays run unblocked off the top of the
 `u64` and the `u8` truncation drops them, leaving only the rank bits.
+
+At `use_gfni_rank` — one tier, `x86-64-avx512icl` — it does fold in: `@bitReverse` on a
+`@Vector(4, u64)` lowers to `vpshufb` plus `vgf2p8affineqb`, which is the real 64-bit
+reversal, so the rank moves into the empty lane and the table, the shift and the scalar
+load beside every call all go. `DualMagic.rank_file` and `.shift` become `void` there.
 
 The index is the **6 inner bits** of the rank's occupancy, not all 8: a blocker on the
 a- or h-file cannot shorten a ray that already stops at the board edge, so the two outer
@@ -327,7 +336,8 @@ trip through the magic pipeline.
 
 ## Move generation and legality
 
-`movegen.zig` generates into a caller-supplied `[*]u16` and returns a count. Moves
+`movegen.zig` generates into a caller-supplied `[]u16` slice — deliberately a slice and not
+`[*]u16`, so a ReleaseSafe build can trap a generator that over-emits — and returns a count. Moves
 are 16-bit words: `to` in bits 0–5, `from` in bits 6–11, the promotion piece in
 bits 12–13, the move type in bits 14–15 (`normal` / `promotion` / `en_passant` /
 `castling`). Castling is encoded king-captures-rook.
