@@ -320,8 +320,9 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
             }
         }
 
-        // Step 8. Apply razoring.
-        if (!pv_node and eval < alpha - search.razorMargin(depth) and !seek_mate)
+        // Step 8. Apply razoring. Razoring is a fail-low cutoff, so take it only at allNodes --
+        // the mirror of null-move pruning, which is a fail-high cutoff taken only at cutNodes.
+        if (all_node and eval < alpha - search.razorMargin(depth) and !seek_mate)
             return qsearchImpl(ctx, pos_ptr, ss_ptr, alpha, beta, .non_pv);
 
         // Step 9. Prune by futility, below a cutoff depth that tightens while the root seeks
