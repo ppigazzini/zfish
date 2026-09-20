@@ -173,10 +173,11 @@ pub fn correctionValue(
     bnpcv: i32,
     cch2: i32,
     cch4: i32,
+    cch6: i32,
     m_ok: bool,
 ) i32 {
-    const cntcv: i32 = if (m_ok) 8761 * (cch2 + cch4) else 64049;
-    return 15341 * pcv + 10569 * micv + 12906 * (wnpcv + bnpcv) + cntcv;
+    const cntcv: i32 = if (m_ok) 7885 * (cch2 + cch4) + 6307 * cch6 else 80695;
+    return 13806 * pcv + 9512 * micv + 11615 * (wnpcv + bnpcv) + cntcv;
 }
 
 // Compute the base stat bonus/malus formulas applied at the end of search() when a
