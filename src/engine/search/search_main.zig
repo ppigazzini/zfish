@@ -261,36 +261,39 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     // path, not just on a miss: probeTable reads a cluster no lock protects, so a
     // concurrent write can hand back an entry whose value never belonged to this key
     // (upstream 074b1eac).
-    if (!pv_node and excluded_move == 0 and tt_depth > depth - @as(i32, @intFromBool(tt_value <= beta)) and
-        qIsValid(tt_value) and (tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0 and
-        (cut_node == (tt_value >= beta) or depth > 4))
+    if (!pv_node and excluded_move == 0 and qIsValid(tt_value) and
+        tt_depth > depth - @as(i32, @intFromBool(tt_value <= beta)))
     {
-        if (tt_move != 0 and tt_value >= beta) {
-            if (!tt_capture)
-                updateQuietHistoriesWorker(ctx.worker, pos_ptr, ss_ptr, tt_move, 131 * depth); // upstream e52ea9ac
-            if (prev_sq != @as(i32, sq_none) and ss1.move_count < 5 and !prior_capture)
-                updateContinuationHistories(ss1, pos.board[@intCast(prev_sq)], @intCast(prev_sq), -2210);
+        // Case A: the entry's bound can produce a cutoff.
+        if ((tt_bound & (if (tt_value >= beta) q_bound_lower else q_bound_upper)) != 0 and
+            (cut_node == (tt_value >= beta) or depth > 4))
+        {
+            if (tt_move != 0 and tt_value >= beta) {
+                if (!tt_capture)
+                    updateQuietHistoriesWorker(ctx.worker, pos_ptr, ss_ptr, tt_move, 131 * depth); // upstream e52ea9ac
+                if (prev_sq != @as(i32, sq_none) and ss1.move_count < 5 and !prior_capture)
+                    updateContinuationHistories(ss1, pos.board[@intCast(prev_sq)], @intCast(prev_sq), -2210);
+            }
+            if (pos.st.rule50 < 96) {
+                if (depth >= 7 and tt_move != 0 and pseudoLegal(pos_ptr, tt_move) and legal(pos_ptr, tt_move) and !qIsDecisive(tt_value)) {
+                    verifyDoMove(pos_ptr, tt_move, &st);
+                    const next_key = adjustKey50(pos);
+                    const probe_next = tt.probeTable(ctx.table, ctx.cluster_count, next_key, ctx.generation, q_depth_none);
+                    verifyUndoMove(pos_ptr, tt_move);
+                    const next_value: i32 = probe_next.data.value16;
+                    if (!qIsValid(next_value)) return tt_value;
+                    if ((tt_value >= beta) == (-next_value >= beta)) return tt_value;
+                } else return tt_value;
+            }
         }
-        if (pos.st.rule50 < 96) {
-            if (depth >= 7 and tt_move != 0 and pseudoLegal(pos_ptr, tt_move) and legal(pos_ptr, tt_move) and !qIsDecisive(tt_value)) {
-                verifyDoMove(pos_ptr, tt_move, &st);
-                const next_key = adjustKey50(pos);
-                const probe_next = tt.probeTable(ctx.table, ctx.cluster_count, next_key, ctx.generation, q_depth_none);
-                verifyUndoMove(pos_ptr, tt_move);
-                const next_value: i32 = probe_next.data.value16;
-                if (!qIsValid(next_value)) return tt_value;
-                if ((tt_value >= beta) == (-next_value >= beta)) return tt_value;
-            } else return tt_value;
+        // Case B: the depth was deep enough but the bound was not. upstream 319d61eff: if a
+        // window-bound mismatch is the only reason the cutoff failed, penalize the now-useless
+        // tte (decrement its stored depth).
+        else if (tt_bound != (q_bound_lower | q_bound_upper) and
+            (tt_bound & (if (tt_value >= beta) q_bound_upper else q_bound_lower)) != 0 and depth > 5)
+        {
+            tt.entryPenalize(writer, 1);
         }
-    }
-    // upstream 319d61eff: take no cutoff, but if a window-bound mismatch is the only reason, penalize the
-    // now-useless tte (decrement its stored depth).
-    else if (!pv_node and excluded_move == 0 and
-        tt_depth > depth - @as(i32, @intFromBool(tt_value <= beta)) and
-        qIsValid(tt_value) and tt_bound != (q_bound_lower | q_bound_upper) and
-        (tt_bound & (if (tt_value >= beta) q_bound_upper else q_bound_lower)) != 0 and depth > 5)
-    {
-        tt.entryPenalize(writer, 1);
     }
 
     // Step 7. Probe the tablebases -- search_tb_probe owns the whole block (cold: a default
