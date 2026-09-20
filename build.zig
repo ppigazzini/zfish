@@ -419,7 +419,7 @@ pub fn build(b: *std.Build) void {
     // Reuse the same harness `signature_cmd` `parity` uses for the bench signature (1687572 invariant).
     const parity_portable_step = b.step(
         "parity-portable",
-        "Cross-OS parity via the pure-Zig harness: signature + seven golden gates + mt/stress/time",
+        "Cross-OS parity via the pure-Zig harness: signature + the in_portable golden gates + mt/stress/time",
     );
     for (buildpkg.gates.golden) |g| {
         if (g.in_portable) parity_portable_step.dependOn(&gate_runs.get(g.check).?.step);

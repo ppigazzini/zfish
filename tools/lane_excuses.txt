@@ -33,7 +33,7 @@ fuzz-report CI drives tools/fuzz_report.zig directly in snapshot/check modes; th
 # Needs the 5-man tables. No CI lane fetches them -- `tb` fetches the 3-man set only -- so this
 # pair is local-only by construction, and it went red for a week once because of exactly that:
 # a resync refreshed every golden a lane could reach and left this one behind. Run it by hand
-# after any sync. (docs/09, "A resync must refresh every golden it moves".)
+# after any sync. (docs/10-tooling-ci.md, "A resync must refresh every golden it moves".)
 tb-cursed needs the 5-man Syzygy set that no CI lane fetches; local-only, run by hand every upstream sync
 tb-cursed-update regeneration half of the local-only tb-cursed gate
 
