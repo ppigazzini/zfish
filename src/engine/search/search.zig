@@ -171,6 +171,14 @@ pub fn quietSeeMargin(lmr_depth: i32) i32 {
     return 23 * lmr_depth * lmr_depth;
 }
 
+// Scale the move-loop history into lmr_depth. (*Scaler): generally, lower divisors
+// scale well. The tuned 16-entry table this replaced was a parabola in disguise
+// (upstream ce330df8).
+pub fn lmrDivisor(depth: i32) i32 {
+    const d = @min(depth, 16);
+    return 3000 + 7 * (d - 8) * (d - 8);
+}
+
 // Adjust the LMR reduction (r) before the reduced search.
 pub fn lmrTtpvReduction(pv_node: bool, value_gt_alpha: bool, depth_ge: bool, cut_node: bool) i32 {
     return 3023 + @as(i32, @intFromBool(pv_node)) * 1004 +

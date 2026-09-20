@@ -116,7 +116,6 @@ const rootTtMove = search_control.rootTtMove;
 const rootInList = search_control.rootInList;
 const searchStopped = search_control.searchStopped;
 const inLastIterPv = search_control.inLastIterPv;
-const lmr_divisor = [16]i32{ 3637, 2787, 2761, 2939, 3171, 3347, 3147, 2762, 2772, 3106, 3107, 3060, 3112, 2991, 3090, 3542 };
 const search_qsearch = @import("search_qsearch.zig");
 pub const isShuffling = search_qsearch.isShuffling;
 const pvClear = search_qsearch.pvClear;
