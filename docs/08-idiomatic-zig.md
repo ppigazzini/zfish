@@ -891,8 +891,9 @@ a function of the position and the table alone. Two binaries that search the sam
 report the same total. The anchor visits only its own thirteen positions from a cold table,
 which is the blind spot `docs/10-tooling-ci.md` records; this walks one game to depth 20 and
 sees a divergence there. A run whose totals differ is **void, not slow** — `ltc_ab.sh` exits
-1 and prints no ratio. Verified by mutation: `razorMargin`'s `482` changed to `481` moves
-the 20-ply depth-13 total from 390,947 to 398,988 and the run is refused.
+1 and prints no ratio. Verified by mutation: perturbing `razorMargin`'s margin by one (`482` to `481`, before
+upstream 9c11e231 rescaled it) moved the 20-ply depth-13 total from 390,947 to 398,988 and
+the run was refused.
 
 **Startup is subtracted per binary.** Two revisions do not pay the same price to map the
 binary and read the `.nnue`, and a raw counter total charges that difference to the search.

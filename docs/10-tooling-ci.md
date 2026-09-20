@@ -526,7 +526,7 @@ require it to go green again. One representative mutant rather than a mutant set
 competent-programmer hypothesis is what makes a single mutation worth gating on.
 
 ```
-  ok    signature    razor margin 482->483                        red (1)
+  ok    signature    razor margin 342->343                        red (1)
   ok    perft        movegen omits knight under-promotion         red (1)
   ok    misc         d renders checkers one file off              red (1)
   ok    docs-lint    a doc names a path that is not in the tree   red (1)
@@ -768,8 +768,9 @@ question has a deterministic answer.
 list is fixed input, every search is `go depth D`, `Threads` is 1. Two binaries that search
 the same tree must report the same total at every ply — over one whole game, not over the
 anchor's thirteen cold positions. A run whose totals differ is **void, not slow**: exit 1,
-no ratio printed. Seen to fail, as a gate must be: `razorMargin`'s `482` changed to `481`
-moved a 20-ply depth-13 total from 390,947 to 398,988 and the run was refused.
+no ratio printed. Seen to fail, as a gate must be: perturbing `razorMargin`'s margin by one (`482` to
+`481`, before upstream 9c11e231 rescaled it) moved a 20-ply depth-13 total from 390,947 to
+398,988 and the run was refused.
 
 **Counter access can be refused, and a skip is not a pass.** It exits **2** when
 `perf_event_open` is unavailable, the same refusal `perf_budget.sh` makes and for the same

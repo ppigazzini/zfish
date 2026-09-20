@@ -103,8 +103,8 @@ emits the final PV and `bestmove`.
 `max_ply + 10`, with the root at index 7 and **seven sentinel frames beneath it** — then
 loops on depth. The sentinels are not padding: a node reads its ancestors unconditionally,
 without a ply test. `updateContinuationHistories` walks `ss-1 … ss-6`, and the correction
-path reads `ss-2` and `ss-4`, so a node at ply 0 or 1 would index below the array if the
-frames were not there. Each sentinel is initialized the way a real frame would be if
+path reads `ss-2`, `ss-4` and `ss-6`, so a node at ply 0 or 1 would index below the array if
+the frames were not there. Each sentinel is initialized the way a real frame would be if
 nothing had been played — `setContHist` with all-`NO_PIECE` indices, which resolves to the
 table bases, and `static_eval = value_none` — so the reads return a defined "no prior move"
 rather than whatever the stack happened to hold. Removing a frame does not crash; it
@@ -188,7 +188,7 @@ a step is greppable across both trees. Steps 1–13 are `searchImpl`, 14–24 `r
 | 5 | Compute the static eval, correct it (below), and derive `improving` / `opponent_worsening` |
 | 6 | Cut off early at a non-PV node on a stored value whose bound covers the window and whose depth suffices; a window-bound mismatch that was the cutoff's only obstacle penalizes the now-useless entry instead |
 | 7 | Probe the tablebases — gated on `worker.tb_config.cardinality`, see [05-tablebases.md](05-tablebases.md) |
-| 8 | **Razoring**: a non-PV node whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch — stood down while `seekMate` holds, so a mate hunt is not razored away |
+| 8 | **Razoring**: an allNode whose eval sits below `alpha - razorMargin(depth)` drops straight into qsearch — a fail-low cutoff, so it is taken at the node type opposite to null-move pruning's cutNode — stood down while `seekMate` holds, so a mate hunt is not razored away |
 | 9 | **Futility**: return early when `eval - futilityMargin(...) >= beta`, off the TT-PV path, below `futilityDepth(seek_mate)` — 19 normally, 6 while `seekMate` holds, so mating lines stay searched |
 | 10 | **Null move** (below) |
 | 11 | **Internal iterative reduction**: with no TT move, off the PV, not an all-node, at depth ≥ 6, shed one ply rather than searching a badly ordered node at full depth |
@@ -384,10 +384,10 @@ searched-but-rejected quiets and captures, with a running malus decay;
 weights, stopping after `ss-2` when in check.
 
 **Correction history** adjusts the raw NNUE eval into `ss.static_eval`.
-`qCorrectionValue` gathers the four shared correction values plus the `ss-2` and `ss-4`
-continuation-correction entries and applies `search.correctionValue`;
+`qCorrectionValue` gathers the four shared correction values plus the `ss-2`, `ss-4` and
+`ss-6` continuation-correction entries and applies `search.correctionValue`;
 `search.toCorrectedStaticEval` folds the result into the eval. After the move loop,
-`updateCorrectionHistory` nudges all six back toward the observed search/static-eval
+`updateCorrectionHistory` nudges all seven back toward the observed search/static-eval
 delta — only when the node is not in check and the best move is not a capture.
 
 There are **two** writers, not one. The Step 16 multi-cut return (`search_back.zig`)
@@ -443,8 +443,9 @@ different points. `doMoveAcc` issues a `tt.prefetch` for the child cluster *befo
 the move — keyed by `move_do.prefetchKey`, an approximate post-move key (from/to/captured
 psq toggles, side flip, and the rule50 mix; castling/en-passant/promotion left wrong, so
 those rare moves prefetch an unused line) reached through the same `firstEntryIndex` the
-probe uses. Beside it, and equally approximate, go the two continuation-correction entries
-the child will read: its `(ss-2)` and `(ss-4)` are this node's `ss-1` and `ss-3`, addressed
+probe uses. Beside it, and equally approximate, go the three continuation-correction entries
+the child will read: its `(ss-2)`, `(ss-4)` and `(ss-6)` are this node's `ss-1`, `ss-3` and
+`ss-5`, addressed
 by `history.contCorrIndex` — the same derivation `setContHist` pages with, so the hint
 cannot drift from the load — off the pre-move moved piece, which castling and promotion
 make approximate the same way. `doMove` itself then issues a second, EXACT round of prefetches once the
