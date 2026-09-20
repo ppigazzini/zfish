@@ -19,13 +19,13 @@ repos:
       - id: trailing-whitespace
         exclude: '\.(golden|epd|nnue|patch)$'
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.1
+    rev: v0.16.8
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: v0.0.65
+    rev: v0.0.82
     hooks:
       # The hook's own entry checks the whole project (ty's cross-file
       # diagnostics make per-filename invocation wrong); tools/ is the only
@@ -47,7 +47,7 @@ repos:
   # Its first run found five, three of them the same class in gate drivers -- a `cd` with no
   # `|| exit`, which leaves the gate running in the caller's directory.
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.11.0.1
+    rev: v0.11.0.1-1
     hooks:
       - id: shellcheck
         args: [--severity=warning]
