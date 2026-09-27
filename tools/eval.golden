@@ -35,7 +35,7 @@ NNUE network contributions (Normalized, White to move)
 
 NNUE evaluation          -484 (side to move, internal units)
 NNUE evaluation        -1.71 (white side)
-Final evaluation      -2.15 (white side) [with scaled NNUE, ...]
+Final evaluation      -2.18 (white side) [with scaled NNUE, ...]
 == endgame ==
 NNUE network contributions (Normalized, White to move)
 +------------+------------+------------+------------+
@@ -54,7 +54,7 @@ NNUE network contributions (Normalized, White to move)
 
 NNUE evaluation          +184 (side to move, internal units)
 NNUE evaluation        +0.54 (white side)
-Final evaluation      +0.56 (white side) [with scaled NNUE, ...]
+Final evaluation      +0.57 (white side) [with scaled NNUE, ...]
 == midgame ==
 NNUE network contributions (Normalized, White to move)
 +------------+------------+------------+------------+
