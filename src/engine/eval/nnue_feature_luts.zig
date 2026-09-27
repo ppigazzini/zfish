@@ -148,6 +148,31 @@ pub const orient_tbl_half = [64]u32{
     7, 7, 7, 7, 0, 0, 0, 0,
 };
 
+// Fold every term halfMakeIndex adds to the square into one entry per (perspective, king
+// square, piece): upstream bf450596's `offsets`, indexed [perspective * 64 + ksq][piece].
+// The index then costs one xor and one load instead of two xors, two adds and three loads.
+//
+// The xor is only an add in disguise because the carry cannot reach the square's bits:
+// piece_square_index and king_buckets are both multiples of 64 and the orientation is below
+// 64, so the entry's low six bits ARE the orientation. The comptime check below holds that
+// for every entry, and the largest (22527) is what makes u16 lossless.
+pub const half_offsets: [2 * 64][16]u16 align(64) = blk: {
+    @setEvalBranchQuota(10_000);
+    var table: [2 * 64][16]u16 = undefined;
+    for (0..2) |c| {
+        const flip: u32 = 56 * c;
+        for (0..64) |sq| {
+            const orient: u32 = orient_tbl_half[sq] ^ flip;
+            for (0..16) |pc| {
+                const base = piece_square_index[c][pc] + king_buckets[sq ^ flip];
+                if (base % 64 != 0 or orient >= 64) @compileError("half_offsets: xor is not an add");
+                table[c * 64 + sq][pc] = @intCast(base + orient);
+            }
+        }
+    }
+    break :blk table;
+};
+
 pub const orient_tbl_full = [64]i8{
     0, 0, 0, 0, 7, 7, 7, 7,
     0, 0, 0, 0, 7, 7, 7, 7,

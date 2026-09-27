@@ -141,7 +141,7 @@ The net has **three feature sets**. Their dimensions are pinned in
 
 | Feature set | Dimensions | Index | Weights |
 | --- | --- | --- | --- |
-| PSQ (HalfKA v2, king-bucketed / horizontally mirrored) | `psq_feature_dimensions = 22528` | `halfMakeIndex` — oriented square + `piece_square_index` + `king_buckets` | `i16` |
+| PSQ (HalfKA v2, king-bucketed / horizontally mirrored) | `psq_feature_dimensions = 22528` | `halfMakeIndex` — `square ^ half_offsets[perspective * 64 + ksq][pc]`, one comptime row holding orientation + `piece_square_index` + `king_buckets` | `i16` |
 | Threats (full threats: attacker × attacked × from × to) | `threat_dimensions = 59808` | `fullMakeIndex` — LUT over the oriented attacker/attacked pair and move | `i8` |
 | Pawn pairs (PP_3Wide: pairs of pawns on the same or an adjacent file, ranks 2–7) | `pp_dimensions = 4560` | `ppMakeIndex` — triangular index of the two oriented pawn ids, base `pp_index_base = 59808` | `i8` |
 
@@ -405,7 +405,11 @@ the square only ever use the low 6 bits, no carry crosses bit 6, so
 `permutexvar` gathers each active feature's `psi[pc] + bucket + orient` from a
 per-piece table built once per call, and one XOR against the compressed squares
 produces every index at once. Below that tier, the scalar loop calls
-`halfMakeIndex` per changed square, upstream's own non-vector path. `refreshCombined`
+`halfMakeIndex` per changed square, upstream's own non-vector path — which since upstream
+`bf450596` rests on the same identity: `nnue_feature_luts.half_offsets` holds
+`psi[pc] + bucket + orient` for every (perspective, king square, piece) at comptime, so a
+scalar index is one XOR and one load, and a comptime check refuses any entry whose low six
+bits are not the orientation. `refreshCombined`
 then collects every active threat row (`fullAppendActive`,
 with each attacker's targets pre-restricted to the piece types its map row can
 index — upstream's `pawnTargets`/`minorSliderTargets`/`queenTargets`) plus every
