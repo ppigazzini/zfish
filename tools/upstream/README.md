@@ -175,6 +175,17 @@ into the `if` so it stops outliving the loop -- is what `repetition.upcomingRepe
 does with `var j = h1(move_key)` inside its own iteration. The `O_CLOEXEC`, the `is_inexact`
 rename and the step renumbering from that commit ARE ported, below.
 
+**Declined on measurement** — upstream's form is value-identical, was ported and gated
+bit-exact, and then measured MORE retired instructions here on an identical tree, so it
+is deliberately not carried. The rule is that a *No functional change* port lands only if
+it does not lose on the deterministic axis; a row here is re-opened only by new evidence
+taken on this tree, not by a newer upstream sha of the same code:
+
+| commit | what was measured, and what stays instead |
+|---|---|
+| `205f0052` Use permute in both_attacks_bb() | upstream reorders `DualMagic`'s lanes to {file, diagonal, antidiagonal, unused} so one `vpermq` + OR pairs the diagonals, where it used `vextracti128` + OR. Ported and compiled on its own it is op-for-op the same kernel -- 34 instructions at avx2, 22 at icelake, both forms -- but whole-engine it measured +0.028% at avx2 (7051 -> 7053 per node) and +0.021% at native (5332 -> 5333), from register allocation around the inlined sites, on one 1687572-node tree. Upstream's reason is latency, which cycles cannot resolve on this box below 1%. Reverted: lanes stay {file, diagonal, rank, antidiagonal}. |
+| `d8f77ce4` merge the template and non-template versions of attacks_bb | the merge itself is the shape `bitboard.attacks(piece_type, square, occupied)` always had. Its `USE_DUAL_HYPERBOLA_QUINT` branch -- at AVX2+ upstream answers even a SINGLE-ray query through the dual pass -- was ported and measured +0.32% instructions at native avx512icl (5325 -> 5342 per node) and +0.60% at avx2 (7036 -> 7078), flat at sse41, `perf_counters` over `bench 16 1 13` on one 1687572-node tree. Reverted: single-ray sites keep the magic/PEXT lookup at every tier, and only `bothAttacks` runs the dual pass. |
+
 **Ported** — the real changes in these ranges. Skipping these silently is how a port
 stops being a port:
 
