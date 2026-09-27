@@ -77,10 +77,9 @@ pub inline fn reductionWindowTerm(ctx: *const QCtx, beta: i32, alpha: i32) i32 {
     return @divTrunc((beta - alpha) * 577, ctx.root_delta.*);
 }
 
-// Run the evaluate step: the NNUE forward pass on the current position,
-// then apply the eval scaling. Material is 534 * pawn count (both colours) +
-// non-pawn material, optimism is indexed by the side to move, and the TB clamp
-// bounds are +/-VALUE_TB_WIN_IN_MAX_PLY.
+// Run the evaluate step: the NNUE forward pass on the current position, then
+// evaluate.scaleEvaluation over it with the side to move's optimism, the position's
+// pawn counts and non-pawn material, and +/-VALUE_TB_WIN_IN_MAX_PLY as the clamp.
 pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     const pos = pos_ptr;
     // SPINE ISOLATION (-Dstub-eval): replace the whole NNUE forward pass and the eval blend
@@ -88,7 +87,7 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
     // oracle takes the identical stub via tools/upstream/material_eval.patch, so both engines
     // score every position the same and search ONE tree -- tools/material_eval.sh gates on
     // that by refusing to report unless the two bench node counts match. Off by default and
-    // comptime, so the shipped binary is unchanged (the anchor still reads 2497913).
+    // comptime, so the shipped binary is unchanged and still benches the anchor.
     if (comptime build_options.stub_eval) {
         const pc = pos.piece_count;
         var w: [5]i32 = undefined;
@@ -101,14 +100,12 @@ pub inline fn evaluateAcc(ctx: *const QCtx, pos_ptr: *const Position) i32 {
         }
         return evaluate_mod.stubMaterialValue(w, b, pos.side_to_move == 0);
     }
-    const out = network_port.evaluate(pos_ptr, ctx.acc_stack, ctx.cache);
-    const pawns = pos.piece_count[1] + pos.piece_count[9];
-    const material = 534 * pawns + pos.st.non_pawn_material[0] + pos.st.non_pawn_material[1];
-    return evaluate_mod.computeValue(.{
-        .psqt = out.psqt,
-        .positional = out.positional,
+    return evaluate_mod.scaleEvaluation(.{
+        .nnue = network_port.evaluate(pos_ptr, ctx.acc_stack, ctx.cache),
         .optimism = ctx.optimism[pos.side_to_move],
-        .material = material,
+        .pawn_count = .{ pos.piece_count[1], pos.piece_count[9] },
+        .non_pawn_material = pos.st.non_pawn_material,
+        .side_to_move = @intCast(pos.side_to_move),
         .rule50_count = pos.st.rule50,
         .value_tb_loss_in_max_ply = -q_value_tb_win,
         .value_tb_win_in_max_ply = q_value_tb_win,

@@ -42,7 +42,7 @@ for the same position.
 | `nnue_affine.zig` | `affineDpbusd` and the non-VNNI affine kernels: the AVX2/SSSE3 maddubs dots, the `OUT == 1` contiguous dot, the portable reduction, and `GroupIter` |
 | `nnue_affine_vnni.zig` | the AVX-512 VNNI kernel `affineVnni` — `vpdpbusd` plus the two sparse walks (index-list cursor under VBMI2, hoisted bitset otherwise) |
 | `nnue_affine_load.zig` | `loadW`, the alignment-asserting weight-chunk load both affine files share |
-| `evaluate.zig` | `computeValue` — blending the network output with optimism, material, and the 50-move counter into the final score — and `formatTrace`, the `eval` command's trace renderer (built by the file-local `formatTraceAlloc`) |
+| `evaluate.zig` | `scaleEvaluation` — scaling the network output by its agreement with `simpleEval`, optimism, material, and the 50-move counter into the final score — and `formatTrace`, the `eval` command's trace renderer (built by the file-local `formatTraceAlloc`) |
 | `nnue_misc.zig` | the `eval` command's per-bucket contribution table |
 
 ## The network
@@ -505,19 +505,24 @@ magnitude; instructions and branch misses pass it).
 Activations are `sqrClippedReLU` (`min(127, (clamp(x, -32768, 32767)^2) >> shift)` — the clamp before the square is what keeps the product in range) and `clippedReLU`
 (`clamp(x >> shift, 0, 127)`), written into a 128-byte `concat` that `fc_1` and
 `fc_2` read. `evaluateBucketRaw` returns the two halves — `psqt` from the
-transformer, `positional` from `propagateBucket` — and `evaluate` scales both by
-`output_scale`.
+transformer, `positional` from `propagateBucket` — and `evaluate` scales each by
+`output_scale` and returns their sum, one value, as upstream's `Network::evaluate` has
+since `f740707f`.
 
-`evaluate.zig` blends them into the final score. `computeValue` folds
-`psqt + positional`, scales optimism by the psqt/positional disagreement
-(complexity), damps the net output by the same, weights the net term by material
-while optimism now rides a flat weight, applies the
-50-move-rule decay, and clamps inside the TB bounds — all in `i64` with truncating
-division. The net term is added OUTSIDE that division (`nnue + (nnue * material +
-optimism * 7675) / 91000`), not folded into its numerator: the two are the same
-rational number and a different integer, because the truncation then runs over a
-numerator smaller by `91000 * nnue`. The search calls it through `search_acc.evaluateAcc`, which supplies
-material and the side-to-move optimism.
+`evaluate.zig` turns it into the final score. `scaleEvaluation` is upstream's
+`scale_evaluation`: nothing downstream of the net sees its psqt/positional split any
+more. It normalises the net value and `simpleEval` (the side to move's material
+balance, `208 * pawn difference + non-pawn difference`) each into [-1024, 1024] with
+`x * 1024 / (|x| + 1024)`, takes their product over 512 as the ALIGNMENT, and adds
+`nnue * alignment / 65536 + optimism * alignment / 16384` to the net value — agreement
+between the net and material favours the side that is winning, disagreement the one
+that is not. That sum is scaled by `(90649 + material) / 90649`, with material
+`521 * pawns + non-pawn material` over both colours, damped by `rule50 / 189`, and
+clamped inside the TB bounds. Every step is C++ `int` arithmetic with truncating
+division, `i64` only for the material product where upstream casts to it. The search
+calls it through `search_acc.evaluateAcc`, and the `eval` trace with zero optimism;
+both hand it the position's pawn counts and non-pawn material rather than a
+pre-weighted material, so the two weights have one owner.
 
 ## SIMD
 
@@ -537,7 +542,7 @@ touch different loops.
 
 | Invariant | Held by |
 | --- | --- |
-| The evaluation is **integer-exact** — no floating point anywhere on the path from features to score. | `computeValue` in `i64`; every kernel integer |
+| The evaluation is **integer-exact** — no floating point anywhere on the path from features to score. | `scaleEvaluation` in `i32`/`i64`; every kernel integer |
 | The evaluation is **arch-invariant**: every `-Darch` tier yields the same score. All three `affineDpbusd` paths are bit-identical dots. | the per-path scalar-reference test in `nnue_inference.zig`; the cross-tier bench signature |
 | An **incremental update equals a full refresh**. Integer add/sub commute under two's-complement `i16` wrap, so applying rows in any order, tiled or not, forward or backward, yields the same accumulator. | `applyCombinedDelta`; the refresh/incremental split in `evaluateSide` |
 | The combined accumulator always equals `psq + threat + pawn-pair`, and all three feature sets refresh together — a threat/pawn-pair refresh is a subset of a PSQ refresh. | `findLastUsable` keyed on the PSQ condition only |

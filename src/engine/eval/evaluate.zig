@@ -1,14 +1,21 @@
 const std = @import("std");
 
+/// scaleEvaluation's inputs: the net's value, the side to move's optimism, and the
+/// position's material ingredients, from which the two material readings the blend takes
+/// are derived here rather than at each caller.
 pub const EvalInput = struct {
-    psqt: i32,
-    positional: i32,
+    nnue: i32,
     optimism: i32,
-    material: i32,
+    pawn_count: [2]i32, // by colour
+    non_pawn_material: [2]i32, // by colour
+    side_to_move: u1,
     rule50_count: i32,
     value_tb_loss_in_max_ply: i32,
     value_tb_win_in_max_ply: i32,
 };
+
+// Upstream's PawnValue (types.h), the pawn weight of simple_eval's material balance.
+const pawn_value: i32 = 208;
 
 pub const EvalTraceInput = struct {
     inner_trace_ptr: [*]const u8,
@@ -28,7 +35,7 @@ pub const EvalTraceInput = struct {
 pub const stub_piece_values = [5]i32{ 100, 300, 300, 500, 900 };
 
 /// Score a position by material alone, from the side to move's perspective. Counts are indexed
-/// pawn..queen. No optimism, no complexity blend, no 50-move damping and no TB clamp -- the
+/// pawn..queen. No optimism, no alignment blend, no 50-move damping and no TB clamp -- the
 /// clamp would be a no-op here anyway (max material is far inside the TB bounds), and leaving
 /// all four out of BOTH engines keeps the two stubs a line-for-line match.
 pub fn stubMaterialValue(white: [5]i32, black: [5]i32, side_to_move_is_white: bool) i32 {
@@ -41,31 +48,42 @@ pub fn stubMaterialValue(white: [5]i32, black: [5]i32, side_to_move_is_white: bo
     return if (side_to_move_is_white) w - b else b - w;
 }
 
-pub fn computeValue(input: EvalInput) i32 {
-    var nnue = @as(i64, input.psqt) + @as(i64, input.positional); // upstream 6088838: yeet psqt weights
+/// Return upstream simple_eval: the material balance from the side to move's view.
+pub fn simpleEval(input: EvalInput) i32 {
+    const us = input.side_to_move;
+    const them = us ^ 1;
+    return pawn_value * (input.pawn_count[us] - input.pawn_count[them]) +
+        input.non_pawn_material[us] - input.non_pawn_material[them];
+}
 
-    const nnue_complexity = absInt(@as(i64, input.psqt) - @as(i64, input.positional));
-    var optimism = @as(i64, input.optimism);
-    optimism += @divTrunc(optimism * nnue_complexity, 476);
-    nnue -= @divTrunc(nnue * nnue_complexity, 18236);
+/// Apply the search-dependent scaling (optimism, material, rule50) to the raw NNUE value --
+/// upstream's scale_evaluation, since f740707f replaced the net's psqt/positional
+/// complexity with how far the net and simple_eval AGREE. Arithmetic is C++ `int` with
+/// truncating division throughout, i64 only where upstream casts to it.
+pub fn scaleEvaluation(input: EvalInput) i32 {
+    const se = simpleEval(input);
+    const nnue = input.nnue;
 
-    // Blend the net's value with optimism, scaled by material. Upstream 2edd935b lifts `nnue`
-    // out of the numerator: `nnue * (91000 + material) / 91000` is `nnue` plus a remainder, and
-    // adding it OUTSIDE the division truncates once over a much smaller numerator instead of
-    // once over the whole thing. The i64 is kept for the product, as upstream keeps its cast.
-    var value = nnue + @divTrunc(
-        nnue * @as(i64, input.material) + optimism * 7675,
-        91000,
-    );
+    // Normalize both to [-1024, 1024] to measure their correlation.
+    const se_norm = @divTrunc(se * 1024, absInt(se) + 1024);
+    const nnue_norm = @divTrunc(nnue * 1024, absInt(nnue) + 1024);
+    // Agreement means a straightforward position, disagreement a complex compensation.
+    const alignment = @divTrunc(se_norm * nnue_norm, 512);
 
-    value -= @divTrunc(value * @as(i64, input.rule50_count), 199);
-    value = std.math.clamp(
-        value,
-        @as(i64, input.value_tb_loss_in_max_ply) + 1,
-        @as(i64, input.value_tb_win_in_max_ply) - 1,
-    );
+    // When winning, favor easy positions, and vice versa.
+    const base_eval = nnue + @divTrunc(nnue * alignment, 65536) +
+        @divTrunc(input.optimism * alignment, 16384);
 
-    return @intCast(value);
+    // Scale the combined evaluation by total material.
+    const material = 521 * (input.pawn_count[0] + input.pawn_count[1]) +
+        input.non_pawn_material[0] + input.non_pawn_material[1];
+    var v: i32 = @intCast(@divTrunc(@as(i64, base_eval) * (90649 + material), 90649));
+
+    // Damp the evaluation down linearly when shuffling.
+    v -= @divTrunc(v * input.rule50_count, 189);
+
+    // Keep the evaluation out of the tablebase range.
+    return std.math.clamp(v, input.value_tb_loss_in_max_ply + 1, input.value_tb_win_in_max_ply - 1);
 }
 
 pub fn formatTrace(input: EvalTraceInput) ?[]u8 {
@@ -150,41 +168,46 @@ fn appendFloatLine(
     try buffer.appendSlice(std.heap.c_allocator, suffix);
 }
 
-fn absInt(value: i64) i64 {
+fn absInt(value: i32) i32 {
     return if (value < 0) -value else value;
 }
 
 // --- tests --------------------------------------------------------------
-test "computeValue: zeros -> 0; equal psqt/positional passes through" {
-    try std.testing.expectEqual(@as(i32, 0), computeValue(.{
-        .psqt = 0,
-        .positional = 0,
-        .optimism = 0,
-        .material = 0,
-        .rule50_count = 0,
+fn testInput(nnue: i32, optimism: i32, rule50_count: i32) EvalInput {
+    // Start position material: 8 pawns and 6989 non-pawn material a side, white to move.
+    return .{
+        .nnue = nnue,
+        .optimism = optimism,
+        .pawn_count = .{ 8, 8 },
+        .non_pawn_material = .{ 6989, 6989 },
+        .side_to_move = 0,
+        .rule50_count = rule50_count,
         .value_tb_loss_in_max_ply = -30000,
         .value_tb_win_in_max_ply = 30000,
-    }));
-    // psqt == positional -> zero complexity, zero optimism -> value == psqt+positional
-    try std.testing.expectEqual(@as(i32, 200), computeValue(.{
-        .psqt = 100,
-        .positional = 100,
-        .optimism = 0,
-        .material = 0,
-        .rule50_count = 0,
-        .value_tb_loss_in_max_ply = -30000,
-        .value_tb_win_in_max_ply = 30000,
-    }));
+    };
 }
 
-test "computeValue: clamps to the tb bounds" {
-    try std.testing.expectEqual(@as(i32, 30000 - 1), computeValue(.{
-        .psqt = 100000,
-        .positional = 100000,
-        .optimism = 0,
-        .material = 0,
-        .rule50_count = 0,
-        .value_tb_loss_in_max_ply = -30000,
-        .value_tb_win_in_max_ply = 30000,
-    }));
+test "scaleEvaluation: zero stays zero; balanced material only scales by material" {
+    try std.testing.expectEqual(@as(i32, 0), scaleEvaluation(testInput(0, 0, 0)));
+    // simple_eval 0 -> alignment 0, so v = 100 * (90649 + 22314) / 90649 = 124.
+    try std.testing.expectEqual(@as(i32, 124), scaleEvaluation(testInput(100, 50, 0)));
+    // rule50 damping: 124 - 124 * 50 / 189 = 124 - 32 = 92.
+    try std.testing.expectEqual(@as(i32, 92), scaleEvaluation(testInput(100, 50, 50)));
+}
+
+test "scaleEvaluation: alignment truncates toward zero like C++ int division" {
+    var input = testInput(-300, -40, 0);
+    input.pawn_count = .{ 8, 7 }; // white a pawn up, white to move: simple_eval = 208
+    // se_norm = 208*1024/1232 = 172, nnue_norm = -300*1024/1324 = -232,
+    // alignment = 172 * -232 / 512 = -77 (trunc, not -78),
+    // base = -300 + (-300*-77)/65536 + (-40*-77)/16384 = -300 + 0 + 0 = -300,
+    // v = -300 * (90649 + 521*15 + 13978) / 90649 = -300 * 112442 / 90649 = -372.
+    try std.testing.expectEqual(@as(i32, -372), scaleEvaluation(input));
+    input.side_to_move = 1; // the same board from black's view: simple_eval = -208
+    try std.testing.expectEqual(@as(i32, -208), simpleEval(input));
+}
+
+test "scaleEvaluation: clamps to the tb bounds" {
+    try std.testing.expectEqual(@as(i32, 30000 - 1), scaleEvaluation(testInput(100000, 0, 0)));
+    try std.testing.expectEqual(@as(i32, -30000 + 1), scaleEvaluation(testInput(-100000, 0, 0)));
 }

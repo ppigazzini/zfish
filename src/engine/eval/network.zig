@@ -39,7 +39,6 @@ pub const Network = opaque {};
 // through the network module.
 pub const evaluate = nnue_inference.evaluate;
 pub const traceEvaluate = nnue_inference.traceEvaluate;
-pub const EvalOutput = nnue_inference.EvalOutput;
 pub const TraceOutput = nnue_inference.TraceOutput;
 
 pub const ByteView = struct {

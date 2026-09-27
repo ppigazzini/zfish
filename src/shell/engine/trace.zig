@@ -62,30 +62,13 @@ pub const PositionSummary = struct {
     side_to_move_white: u8,
     checkers: u64,
     key: u64,
-    // material: the eval blend's material (534*pawns + non_pawn_material) for computeValue.
-    // wdl_material: the win-rate model's material (pawns + 3N + 3B + 5R + 9Q, uci.cpp:526) for
-    // toCp/wdl -- a DIFFERENT quantity. They coincide only where both clamp to 78.
-    material: i32,
+    // The win-rate model's material (pawns + 3N + 3B + 5R + 9Q, uci.cpp:526) for toCp/wdl --
+    // NOT the eval blend's, which evaluate.scaleEvaluation derives from the position itself.
     wdl_material: i32,
     rule50_count: i32,
 };
 
 pub const TablebaseProbe = tablebase.ProbeResult;
-
-pub const EvalInput = struct {
-    psqt: i32,
-    positional: i32,
-    optimism: i32,
-    material: i32,
-    rule50_count: i32,
-    value_tb_loss_in_max_ply: i32,
-    value_tb_win_in_max_ply: i32,
-};
-
-pub const EvalOutput = struct {
-    psqt: i32,
-    positional: i32,
-};
 
 pub const TraceOutput = struct {
     psqt: [layer_stacks]i32,
@@ -176,15 +159,15 @@ pub fn evalTrace(pos: *const position_port.Position) ?[]u8 {
     const accumulators = accumulatorStackCreate() orelse return null;
     defer accumulatorStackDestroy(accumulators);
 
-    const nnue_output = network_port.evaluate(pos, accumulators, caches);
-    const nnue_value = nnue_output.psqt + nnue_output.positional;
+    const nnue_value = network_port.evaluate(pos, accumulators, caches);
     const nnue_white_side = if (summary.side_to_move_white != 0) nnue_value else -nnue_value;
 
-    const final_value = evaluate_mod.computeValue(.{
-        .psqt = nnue_output.psqt,
-        .positional = nnue_output.positional,
+    const final_value = evaluate_mod.scaleEvaluation(.{
+        .nnue = nnue_value,
         .optimism = 0,
-        .material = summary.material,
+        .pawn_count = .{ pos.piece_count[1], pos.piece_count[9] },
+        .non_pawn_material = pos.st.non_pawn_material,
+        .side_to_move = @intCast(pos.side_to_move),
         .rule50_count = summary.rule50_count,
         .value_tb_loss_in_max_ply = value_tb_loss_in_max_ply,
         .value_tb_win_in_max_ply = value_tb_win_in_max_ply,
@@ -308,7 +291,6 @@ fn positionSummary(pos: *const position_port.Position) PositionSummary {
         .side_to_move_white = if (snapshot.side_to_move == white) 1 else 0,
         .checkers = snapshot.checkers,
         .key = snapshot.key,
-        .material = snapshot.material_value,
         .wdl_material = position_port.wdlMaterial(pos),
         .rule50_count = snapshot.rule50_count,
     };

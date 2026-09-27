@@ -214,23 +214,6 @@ pub fn workerStartSearching(worker: ?*anyopaque) void {
 // the stack and hands back pointers to the just-reserved DirtyPiece/DirtyThreats
 // scratch that pos.do_move fills in; pop() drops the top entry.
 
-// Run the NNUE forward pass + final eval scaling (defined in stockfish_zcu.o).
-// network_evaluate runs the bucketed network and returns the scaled psqt/positional
-// halves; eval_compute_value applies the optimism/material/rule50 blend.
-const EvalOutput = struct {
-    psqt: i32,
-    positional: i32,
-};
-const EvalInput = struct {
-    psqt: i32,
-    positional: i32,
-    optimism: i32,
-    material: i32,
-    rule50_count: i32,
-    value_tb_loss_in_max_ply: i32,
-    value_tb_win_in_max_ply: i32,
-};
-
 // Fetch the SearchManager check-time inputs once per search tree in worker_state.
 // Live (mutable) fields are pointers; fixed-per-search fields are snapshot values.
 // calls_cnt is null when this worker is not the main thread (check_time is a

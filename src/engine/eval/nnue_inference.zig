@@ -37,7 +37,7 @@ const no_piece: u8 = 0;
 const layerPtr = weight_storage.layerPtr;
 const ftPtr = weight_storage.ftPtr;
 
-pub const EvalOutput = struct {
+const EvalOutput = struct {
     psqt: i32,
     positional: i32,
 };
@@ -124,18 +124,18 @@ fn propagateBucket(bucket: usize, transformed: [*]const u8, nnz: *const nnue_acc
     return @intCast(@divTrunc(fwd_sum * (600 * 16), 128 * 64 * 2));
 }
 
+// Return the net's value for the side to move: the psqt and positional halves, each
+// scaled down on its own and then summed, which is the order upstream's
+// Network::evaluate truncates in (it returns one Value since f740707f).
 pub fn evaluate(
     pos: *const Position,
     accumulator_stack: *nnue_accumulator_port.AccumulatorStack,
     cache: *nnue_accumulator_port.RefreshCache,
-) EvalOutput {
+) i32 {
     const piece_count = pieceCount(pos);
     const bucket = (piece_count - 1) / 4;
     const raw = evaluateBucketRaw(pos, accumulator_stack, cache, bucket);
-    return .{
-        .psqt = @divTrunc(raw.psqt, output_scale),
-        .positional = @divTrunc(raw.positional, output_scale),
-    };
+    return @divTrunc(raw.psqt, output_scale) + @divTrunc(raw.positional, output_scale);
 }
 
 pub fn traceEvaluate(
