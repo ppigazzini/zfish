@@ -5,8 +5,8 @@
 // subtract / reverse / xor pass produces every ray set at once. The RANK is the direction
 // the trick historically could not fold in: hyperbola quintessence needs a full bit
 // reversal, and the vector reversal is `vpshufb`, which moves whole bytes and so leaves a
-// rank's eight bits inside the byte they came from. That is why the fourth lane is zero
-// and the rank comes from a small table beside the vector call.
+// rank's eight bits inside the byte they came from. That is why the rank lane (index 2)
+// is zero and the rank comes from a small table beside the vector call.
 //
 // Where the ISA can reverse the bits INSIDE a byte, it can. See `use_gfni_rank`.
 //
@@ -147,7 +147,10 @@ pub fn bothAttacksAvx2(square: usize, occupied: u64) DualAttacks {
         @byteSwap(@byteSwap(o) -% rr);
     const result = (fwd ^ rev) & m.masks;
     // Lane 0 is the file ray (the rook's other direction); lanes 1 and 3 are the two
-    // diagonals, ORed into the full bishop attack set.
+    // diagonals, ORed into the full bishop attack set. Upstream 205f0052 reorders its
+    // lanes so one `vpermq` pairs the diagonals instead; here that is op-for-op the same
+    // kernel and measured more instructions whole-engine, so it is not carried
+    // (tools/upstream/README.md, "Declined on measurement").
     const bishop = result[1] | result[3];
     if (comptime use_gfni_rank) {
         // Lane 2 carries the rank, so the rook falls out of the same vector as the rest.

@@ -175,6 +175,14 @@ fn initDerivedTables() void {
     }
 }
 
+// Return upstream's attacks_bb(pt, s, occupied) -- one function with a RUNTIME piece type,
+// the shape upstream d8f77ce4 merged its template and non-template forms into.
+//
+// A deliberate divergence at use_avx2: upstream answers a SINGLE-ray query there through
+// the dual pass too (its magic tables are not compiled above sse41), while this keeps the
+// magic/PEXT lookup and leaves the dual pass to bothAttacks, whose callers want both rays.
+// The two are value-identical; upstream's form was ported, measured MORE instructions on
+// an identical tree at every AVX2+ tier, and reverted (tools/upstream/README.md, d8f77ce4).
 pub fn attacks(piece_type: u8, square: u8, occupied: u64) u64 {
     const sq = @as(usize, @intCast(square));
     return switch (piece_type) {

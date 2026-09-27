@@ -272,9 +272,14 @@ candidate, so it costs almost nothing at startup.
 the five sites that want both ray sets from the same square/occupancy: `attackersTo`
 (board), `setCheckInfo` (board), `updatePieceThreats` (board), `givesCheck`'s
 en-passant case and `seeGe`'s queen branch (both legality). Sites that want only one
-ray — `attackersToExist`'s short-circuit, `seeGe`'s pawn/bishop/rook branches — stay
-on plain `attacks()`, matching upstream exactly (`Position::attackers_to_exist` /
-`see_ge`'s non-queen branches keep a single `attacks_bb` too).
+ray — `attackersToExist`'s short-circuit, `seeGe`'s pawn/bishop/rook branches, movegen's
+slider loop, `pseudoLegal` — call plain `attacks()`, as upstream's
+`Position::attackers_to_exist` / `see_ge` call a single `attacks_bb`. That call is a
+magic/PEXT lookup on EVERY tier, and at `use_avx2` this is a deliberate divergence:
+upstream's `attacks_bb(pt, s, occupied)` runs the dual pass there too and keeps the lane
+asked for. The two are value-identical, and upstream's form measured more instructions
+here on an identical tree at every AVX2+ tier (the `d8f77ce4` row in
+`tools/upstream/README.md`), so this tree does not carry it.
 
 At `use_avx2` (comptime, tracking upstream's `USE_DUAL_HYPERBOLA_QUINT`,
 `#elif defined(USE_AVX2)`) `bothAttacks` runs upstream's dual hyperbola quintessence
@@ -285,7 +290,11 @@ fourth, plus `r = 2*squareBb(s)`
 and `rr = 2*squareBb(63-s)`. One pass computes all three rays together:
 `fwd = (occupied & masks) - r`, `rev = byteSwap(byteSwap(occupied & masks) - rr)`,
 `result = (fwd ^ rev) & masks` — the classic o-2r hyperbola-quintessence identity,
-run on 3 lanes at once instead of one ray at a time. Below `use_gfni_rank` the rank ray is the one
+run on 3 lanes at once instead of one ray at a time. The bishop set is `result[1] |
+result[3]`, which LLVM lowers to `vextracti128` + `vpor`. Upstream `205f0052` reorders its
+lanes to {file, diagonal, antidiagonal, unused} so a `vpermq` pairs the diagonals; here
+that kernel is op-for-op the same length and measured more instructions whole-engine, so
+it is not carried (`tools/upstream/README.md`). Below `use_gfni_rank` the rank ray is the one
 direction the trick cannot fold in (a rank's 8 squares share a byte under a
 per-lane byte-reversal), so it comes from `rank_attacks[file][inner_occupancy]`, a
 64-entry-per-file `comptime` table built from `slidingAttack(ROOK, file, occ6 << 1)` —
@@ -316,9 +325,9 @@ at all.
 This is a port of upstream's algorithm SWITCH, not an addition: upstream does not
 compile its magic tables at all above sse41. This tree keeps them compiled at every
 tier regardless (`initDerivedTables` below still bootstraps `line`/`between`/
-`rayPass` through the magic path), trading upstream's footprint win for not touching
-that bootstrap — the runtime per-node dispatch, which is what the algorithm choice
-actually costs or saves, is unaffected either way.
+`rayPass` through the magic path), and at `use_avx2` the single-ray `attacks()` sites
+still read them at search time (above) — so both the footprint and the single-ray
+dispatch differ from upstream, while the both-rays dispatch is upstream's.
 
 ### Derived geometry
 
