@@ -807,7 +807,7 @@ the stub from `zig build -Dstub-eval` (comptime, default off — the shipped bin
 unchanged and still benches the anchor); the oracle takes
 `tools/upstream/material_eval.patch`, which the script applies and reverts on exit,
 including on failure. The two stubs are line-for-line equivalents: the same five piece
-values, the same side-to-move perspective, and no optimism, complexity blend, rule50
+values, the same side-to-move perspective, and no optimism, alignment blend, rule50
 damping or TB clamp on either side.
 
 **Its gate is not the anchor — it is tree equality.** A stubbed build does not bench the

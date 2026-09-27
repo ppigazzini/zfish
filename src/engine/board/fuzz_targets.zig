@@ -356,10 +356,10 @@ fn fuzzNnueEval(_: void, smith: *std.testing.Smith) anyerror!void {
     const biases: [*]const i16 = @ptrCast(@alignCast(network.ftPtr().?));
     nnue_acc.clearRefreshCache(cache, biases);
 
-    const out = network.evaluate(&p, stack, cache);
-    const limit: i32 = 1 << 22;
-    if (out.psqt > limit or out.psqt < -limit) return error.NnuePsqtOutOfRange;
-    if (out.positional > limit or out.positional < -limit) return error.NnuePositionalOutOfRange;
+    // The net returns one value now: the sum of the two halves this bounded at 1 << 22 each.
+    const value = network.evaluate(&p, stack, cache);
+    const limit: i32 = 1 << 23;
+    if (value > limit or value < -limit) return error.NnueValueOutOfRange;
 
     while (ply > 0) {
         ply -= 1;

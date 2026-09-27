@@ -73,8 +73,6 @@ pub fn fillSnapshot(pos: *const Position, out: *FillSnapshot) void {
     // position whose counter has reached 14 -- invisible to every golden here, because
     // bench and case positions all sit below the threshold where the mix is identity.
     out.key = position_types.adjustKey50(st.key, st.rule50);
-    const pawns = pos.piece_count[1] + pos.piece_count[9];
-    out.material_value = 534 * pawns + st.non_pawn_material[0] + st.non_pawn_material[1];
     out.rule50_count = st.rule50;
     out.game_ply = pos.game_ply;
     out.is_chess960 = @intFromBool(pos.chess960);

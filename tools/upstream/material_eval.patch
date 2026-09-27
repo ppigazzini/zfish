@@ -1,16 +1,17 @@
 diff --git a/src/evaluate.cpp b/src/evaluate.cpp
-index 03727b89..615e15a3 100644
+index 45dc82d..72e30d3 100644
 --- a/src/evaluate.cpp
 +++ b/src/evaluate.cpp
-@@ -47,6 +47,30 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
+@@ -52,6 +52,31 @@ Value Eval::evaluate(const Eval::NNUE::Network&     network,
+                      int                            optimism) {
  
      assert(!pos.checkers());
- 
++
 +    // SPINE ISOLATION: replace the NNUE forward pass and the eval blend with material alone.
 +    // This MUST stay a line-for-line match of zfish's -Dstub-eval stub
 +    // (src/engine/eval/evaluate.zig stubMaterialValue): the same five piece values, the same
-+    // side-to-move perspective, and no optimism / complexity / rule50 damping / TB clamp on
-+    // either side. If the two ever disagree by one centipawn the engines search DIFFERENT
++    // side-to-move perspective, and no optimism / alignment blend / rule50 damping / TB clamp
++    // on either side. If the two ever disagree by one centipawn the engines search DIFFERENT
 +    // TREES and every ratio taken from them is meaningless -- tools/material_eval.sh refuses
 +    // to report unless the two bench node counts are equal.
 +    {
@@ -30,6 +31,6 @@ index 03727b89..615e15a3 100644
 +        return Value(pos.side_to_move() == WHITE ? w - b : b - w);
 +    }
 +
-     auto [psqt, positional] = network.evaluate(pos, accumulators, caches);
- 
-     Value nnue = psqt + positional;
+     Value nnue = network.evaluate(pos, accumulators, caches);
+     return scale_evaluation(nnue, optimism, pos);
+ }
