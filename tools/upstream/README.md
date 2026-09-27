@@ -98,7 +98,7 @@ construction while this table called the same state expected, and a lane that is
 a lane nobody reads.
 
 Every one is Zone-A — reached only by a MALFORMED or sloppy input, or by a non-default option —
-so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 1687572 with all
+so none of them costs the bit-exact bridge anything: `upstream-parity` is OK at 1495562 with all
 three in place.
 
 | gate / row | zfish vs upstream | owner | expires when |
@@ -167,6 +167,8 @@ construct zfish does not have:
 | `8f6a95de` Use a local accumulator in MovePicker::score | upstream wrote each history term into `m.value` and let the compiler coalesce; the commit accumulates into a local and stores once. `movepick_score.scoreList` already fills a `ScoreInput` and stores `scoreValue(kind, input)` into `outputs[index]` in a single write -- one store per move, which is the state this commit converges on. |
 | `82d73d0a` Optimize both_attacks_bb() | drops the rook out of the `_mm_or_si128` of the two 128-bit halves and reads lane 0 of `result` straight, shortening its dependency chain. `bitboard_dual.bothAttacksAvx2` indexes the `@Vector(4, u64)` directly (`result[0] +% rank_ray`) and never forms that OR, so the shape is already here -- and the GFNI tier solves the rank on lane 2, which upstream has no counterpart for. |
 | `031dfeb4` Remove unused constexpr_lsb and lsb_index64 | a de Bruijn LSB helper and its 64-entry table, dead upstream because runtime `lsb()` uses intrinsics that are not `constexpr`. Zig's `@ctz` works at comptime and at runtime, so the second spelling never existed here. |
+| `b69fd130` Use LLD w/ Clang for Universal builds, `e8e9bcf5` add MACOSX_VERSION_MIN, use ndk r28b, `81bdd796` [CI] Reorder matetrack runs | upstream's Makefile and its universal-build and matetrack workflows. zfish builds with `zig build` and its lanes are its own. |
+| `0a215d6c` Miscellaneous cleanups September 2026 | C++ spelling throughout: `const` on a `constexpr`, stray semicolons after member bodies, a namespace closing comment, a forward declaration and includes nobody used, and `-latomic` moved from CXXFLAGS to LDFLAGS. The three typo fixes land in code zfish does not have (`shm_unix.h`, `windows_try_with_large_page_privileges`) or in a comment it never carried. The unused `Thread::nthreads` member and `fullCommand` local have no counterpart. `get_working_directory` is NOT dead here: `misc.getBinaryDirectoryAlloc` still resolves a relative `argv0` against the cwd, the shape upstream's `get_binary_directory` had before `22548cb0` replaced it with `argv0.parent_path()` (and `GetModuleFileNameW` on Windows). That gap predates this range and is not closed by it. Its AUTHORS half IS carried: three names. |
 
 The parts of `22dfb404` (*miscellaneous cleanups*) that did not need porting: `nodes[n].size() == 0`
 -> `empty()` and `threads.size() == 0` -> `empty()` name a C++ container idiom Zig has no

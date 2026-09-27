@@ -281,8 +281,8 @@ pub fn build(b: *std.Build) void {
 
     // Verify the bench signature with the pure-Zig parity harness (tools/parity_harness.zig
     // `signature` check), not tests/signature.sh -- one cross-OS gate instead of a bash wrapper that
-    // only ran on Linux. Default to the 1687572 arch/OS invariant; -Dsignature-ref overrides.
-    const signature_reference = signature_ref orelse "1687572";
+    // only ran on Linux. Default to the 1495562 arch/OS invariant; -Dsignature-ref overrides.
+    const signature_reference = signature_ref orelse "1495562";
     const signature_cmd = addHarnessRun(b, harness_exe, exe, install_step, &net_cmd.step, "signature", signature_reference, "check");
 
     // Interpolate the reference rather than repeating it: a second copy in the help text is a
@@ -383,11 +383,11 @@ pub fn build(b: *std.Build) void {
         "Run the current bench, UCI, and signature checks through the Zig build entry",
     );
     // Assemble the per-push `parity` aggregate: whole-engine regression is caught by `signature`
-    // (== 1687572) and the GOLDEN gates (output-golden / perft / eval-trace / misc /
+    // (== 1495562) and the GOLDEN gates (output-golden / perft / eval-trace / misc /
     // search-parity / search-modes), all in-repo. The authoritative
     // differential-vs-real-upstream check is `upstream-parity` (worktree oracle), run at
     // sync time where upstream is already fetched -- per push it would only re-assert the
-    // same 1687572 the signature checks.
+    // same 1495562 the signature checks.
     // Aggregate membership is a property of the ROW, not of a hand-kept list here: a gate
     // added to build/gates.zig joins the aggregates by its own flags.
     for (buildpkg.gates.golden) |g| {
@@ -416,7 +416,7 @@ pub fn build(b: *std.Build) void {
     // the UCI handshake, the bench signature, and all six golden checks, every one driven by
     // the pure-Zig harness (no bash / no nm). This is what the Windows and macOS lanes run;
     // the Linux-only structural gates (src-free via `nm`, arch-determinism) stay in `parity`.
-    // Reuse the same harness `signature_cmd` `parity` uses for the bench signature (1687572 invariant).
+    // Reuse the same harness `signature_cmd` `parity` uses for the bench signature (1495562 invariant).
     const parity_portable_step = b.step(
         "parity-portable",
         "Cross-OS parity via the pure-Zig harness: signature + the in_portable golden gates + mt/stress/time",
