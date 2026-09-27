@@ -98,9 +98,9 @@ pub fn writeIndices(
     const removed_len: usize = @popCount(removed_bb);
     const added_len: usize = @popCount(added_bb);
 
-    // Mirror nnue_feature.halfMakeIndex's own flip/orient/bucket expressions exactly
-    // (nnue_feature.zig:59-62), just factored so bucket+orient is computed once
-    // instead of once per active feature.
+    // Build the row of luts.half_offsets that nnue_feature.halfMakeIndex reads, from the
+    // same flip/orient/bucket terms that table is folded from, so bucket+orient is
+    // computed once per call and the permute below gathers each piece's entry.
     const flip: u16 = 56 * @as(u16, perspective);
     const orient: u16 = @as(u16, @intCast(luts.orient_tbl_half[king_square])) ^ flip;
     const bucket: u16 = @as(u16, @intCast(luts.king_buckets[king_square ^ perspective * 56]));

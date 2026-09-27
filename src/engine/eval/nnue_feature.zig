@@ -50,8 +50,8 @@ pub const FullThreatParams = struct {
 };
 
 pub fn halfMakeIndex(params: HalfThreatParams) u32 {
-    const flip: u32 = 56 * params.perspective;
-    return (@as(u32, params.square) ^ orient_tbl_half[params.king_square] ^ flip) + piece_square_index[params.perspective][params.piece] + king_buckets[params.king_square ^ params.perspective * 56];
+    const row = @as(usize, params.perspective) * 64 + params.king_square;
+    return @as(u32, params.square) ^ half_offsets[row][params.piece];
 }
 
 pub fn halfRequiresRefresh(diff: HalfDiff, perspective: u8) bool {
@@ -336,6 +336,7 @@ const piece_square_index = luts.piece_square_index;
 const king_buckets = luts.king_buckets;
 const orient_tbl_half = luts.orient_tbl_half;
 const orient_tbl_full = luts.orient_tbl_full;
+const half_offsets = luts.half_offsets;
 const ThreatRouteBlock = luts.ThreatRouteBlock;
 const threat_route_blocks = luts.threat_route_blocks;
 const full_dimensions = luts.full_dimensions;
@@ -357,6 +358,20 @@ const north_east = luts.north_east;
 const north_west = luts.north_west;
 const south_east = luts.south_east;
 const south_west = luts.south_west;
+
+test "halfMakeIndex: the offset table agrees with the unfolded formula everywhere" {
+    for (0..2) |p| for (0..64) |ksq| for (0..64) |sq| for (0..16) |pc| {
+        const flip: u32 = 56 * @as(u32, @intCast(p));
+        const unfolded = (@as(u32, @intCast(sq)) ^ orient_tbl_half[ksq] ^ flip) +
+            piece_square_index[p][pc] + king_buckets[ksq ^ (p * 56)];
+        try std.testing.expectEqual(unfolded, halfMakeIndex(.{
+            .perspective = @intCast(p),
+            .square = @intCast(sq),
+            .piece = @intCast(pc),
+            .king_square = @intCast(ksq),
+        }));
+    };
+}
 
 test {
     @import("std").testing.refAllDecls(@This());
