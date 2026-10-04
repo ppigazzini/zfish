@@ -329,6 +329,7 @@ pub fn register(ctx: Context) void {
         "state_setup",       "worker_layout",    "move_do",              "nnue_accumulator",
         "engine_object",     "engine_nnue",      "shared_history",       "history",
         "worker_construct",  "headless_search",  "memory",               "os_path",
+        "misc",
     };
     for (module_unit_test_names) |name| {
         const spec_path = blk: {

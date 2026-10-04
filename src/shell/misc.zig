@@ -79,8 +79,10 @@ fn getBinaryDirectoryAlloc(gpa: std.mem.Allocator, argv0: []const u8) ![]u8 {
     const working_directory = try getWorkingDirectoryAlloc(allocator);
     defer allocator.free(working_directory);
 
+    // Free on every exit, not only on error: the `./` branch below returns a second buffer and
+    // must release this one, and toOwnedSlice empties the list on the path that returns it.
     var binary_directory = std.ArrayList(u8).empty;
-    errdefer binary_directory.deinit(allocator);
+    defer binary_directory.deinit(allocator);
     try binary_directory.appendSlice(allocator, argv0);
 
     const separator_index = std.mem.findLastAny(u8, binary_directory.items, "\\/");
@@ -204,4 +206,16 @@ fn computeFallbackBuildDate() [8]u8 {
     // (injected by build.zig) as the authoritative build date; Zig exposes no compile-time
     // date, so keep this fallback -- used only when git metadata is absent -- a fixed placeholder.
     return .{ '0', '0', '0', '0', '0', '0', '0', '0' };
+}
+
+test "getBinaryDirectoryAlloc hands back only the directory it returns" {
+    // The testing allocator fails the test on any block left live, which is the property under
+    // test: every branch frees its working buffer. A relative argv0 -- `./../zig-out/bin/x`, or a
+    // bare name, which resolves as `./` -- builds a second buffer for the result.
+    const gpa = std.testing.allocator;
+    for ([_][]const u8{ "./../zig-out/bin/stockfish", "/opt/zfish/bin/stockfish", "stockfish" }) |argv0| {
+        const dir = try getBinaryDirectoryAlloc(gpa, argv0);
+        defer gpa.free(dir);
+        try std.testing.expect(std.mem.endsWith(u8, dir, "/"));
+    }
 }
