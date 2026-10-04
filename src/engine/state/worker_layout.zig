@@ -29,6 +29,8 @@ pub const thread_pool_size: usize = 48;
 // 64-rounded); search_id comptime-asserts the equality. The size-sentinel offset below
 // (arena end - 64) addresses the arena's live size field.
 pub const accumulator_stack_size: usize = 1138240;
+// Equal nnue_refresh_cache.table_bytes, as refresh_table_bytes below does; search_id
+// comptime-asserts both.
 pub const accumulator_caches_size: usize = 278528;
 pub const root_move_size: usize = root_move.root_move_footprint;
 
@@ -52,7 +54,7 @@ pub fn poolTbHits(tp: *ThreadPool) u64 {
 
 // Measure the byte size of the WorkerHistories block embedded in the Worker.
 pub const worker_histories_bytes: usize = @sizeOf(worker_histories.WorkerHistories);
-pub const refresh_table_bytes: usize = 278528; // FT refresh cache
+pub const refresh_table_bytes: usize = 278528; // FT refresh cache, asserted in search_id
 
 // Lay out the full Worker block as a Zig layout, using worker_layout's own
 // LimitsType/PVMoves and the typed WorkerHistories. Let Zig pick the field order (the

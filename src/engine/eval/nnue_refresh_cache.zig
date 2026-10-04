@@ -28,6 +28,9 @@ const cache_entry_pieces_offset = half_dimensions * @sizeOf(i16);
 // 2176 B -- the size upstream's alignas(CacheLineSize) Entry has for the same three fields.
 const cache_entry_piece_bb_offset = cache_entry_pieces_offset + square_count * @sizeOf(u8);
 const cache_entry_bytes = roundUp(cache_entry_piece_bb_offset + @sizeOf(u64), nnue_align);
+// The whole table: one entry per (king square, perspective). The Worker embeds a buffer of
+// exactly this many bytes; search_id comptime-asserts worker_layout's pins against it.
+pub const table_bytes = cache_entry_bytes * square_count * color_count;
 
 /// Expose opaque handles. The refresh cache is a raw byte arena (the
 /// per-(king-square,perspective) finny table); its entries are byte slots within it.
