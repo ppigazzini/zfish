@@ -20,8 +20,13 @@ pub const DualAttacks = bitboard_dual.DualAttacks;
 
 // LLVM's BMI2 parallel-bit-extract (PEXT). Referenced only on the use_pext path, behind
 // the comptime gate in computeMagicIndex, so non-BMI2 targets never analyse or lower it.
+// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+// convention on Linux and macOS, where the declaration lowers exactly as before.
 const pext64 = struct {
-    extern fn @"llvm.x86.bmi.pext.64"(u64, u64) u64;
+    extern fn @"llvm.x86.bmi.pext.64"(u64, u64) callconv(.{ .x86_64_sysv = .{} }) u64;
 }.@"llvm.x86.bmi.pext.64";
 
 // Alias back the geometry/magic-index helpers, which now live in a std-only
@@ -78,9 +83,9 @@ comptime {
     // Keep the two facts joined: the alignment above buys a single-line probe only while
     // a square's bishop/rook pair still fits in one line, so widening Magic must fail the
     // build rather than silently undo it. Assert the SIZE only -- the compiler already
-    // enforces the `align(64)` on the declaration, and reading it back by reflection is
-    // not portable: `@typeInfo(...).pointer.alignment` exists in 0.16 and moved under
-    // `.attrs` in 0.17, which broke the non-blocking Zig-master lane.
+    // enforces the `align(64)` on the declaration, and reading it back by reflection ties
+    // the assert to one compiler: `@typeInfo(...).pointer.alignment` moved under `.attrs`
+    // between 0.16 and 0.17.
     std.debug.assert(@sizeOf([2]Magic) == 64);
 }
 

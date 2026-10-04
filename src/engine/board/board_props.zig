@@ -418,7 +418,7 @@ test "seeGe classifies winning and losing captures" {
 // Run refAllDecls over the board path + the typed-view graph, so every pub decl
 // compiles under `zig build test` even if the exe never reaches it (catches dead/
 // broken code the golden gates and the property tests above miss). Non-recursive is
-// the Zig 0.16 std.testing API; it forces each module's top-level pub decls.
+// the std.testing API; it forces each module's top-level pub decls.
 test "all public decls compile (position + movegen + worker_layout)" {
     std.testing.refAllDecls(position);
     std.testing.refAllDecls(movegen);

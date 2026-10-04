@@ -48,8 +48,8 @@ const Event = struct {
     config: u64,
 };
 
-const cycles_ev = Event{ .name = "cycles", .type_ = .HARDWARE, .config = @intFromEnum(linux.PERF.COUNT.HW.CPU_CYCLES) };
-const instr_ev = Event{ .name = "instructions", .type_ = .HARDWARE, .config = @intFromEnum(linux.PERF.COUNT.HW.INSTRUCTIONS) };
+const cycles_ev = Event{ .name = "cycles", .type_ = .HARDWARE, .config = @backingInt(linux.PERF.COUNT.HW.CPU_CYCLES) };
+const instr_ev = Event{ .name = "instructions", .type_ = .HARDWARE, .config = @backingInt(linux.PERF.COUNT.HW.INSTRUCTIONS) };
 
 // Zen 4 top-down level 1 (PMCx1A0 de_no_dispatch_per_slot, units of dispatch SLOTS,
 // 6 per cycle) and its retiring complement (PMCx0C1 ex_ret_ops).
@@ -63,7 +63,7 @@ const sets = [_]NamedSet{
     // Top-down: which side of dispatch loses the slots.
     .{ .name = "slots", .events = &.{ cycles_ev, instr_ev, fe_slots_ev, be_slots_ev } },
     // Frontend cross-check: the kernel's generic frontend-stall mapping + retired uops.
-    .{ .name = "front", .events = &.{ cycles_ev, ret_ops_ev, fe_slots_ev, .{ .name = "stall_fe_generic", .type_ = .HARDWARE, .config = @intFromEnum(linux.PERF.COUNT.HW.STALLED_CYCLES_FRONTEND) } } },
+    .{ .name = "front", .events = &.{ cycles_ev, ret_ops_ev, fe_slots_ev, .{ .name = "stall_fe_generic", .type_ = .HARDWARE, .config = @backingInt(linux.PERF.COUNT.HW.STALLED_CYCLES_FRONTEND) } } },
     // L1 misses by structure: demand DC fills from anywhere (0x43; 0x44 adds
     // prefetcher-initiated fills) + IC tag misses.
     .{ .name = "l1", .events = &.{ cycles_ev, instr_ev, .{ .name = "l1d_demand_fill", .type_ = .RAW, .config = zen4(0x043, 0xFF) }, .{ .name = "l1i_tag_miss", .type_ = .RAW, .config = zen4(0x18E, 0x18) } } },
@@ -86,7 +86,7 @@ const probe_events = [_]Event{
     fe_slots_ev,
     be_slots_ev,
     ret_ops_ev,
-    .{ .name = "stall_fe_generic", .type_ = .HARDWARE, .config = @intFromEnum(linux.PERF.COUNT.HW.STALLED_CYCLES_FRONTEND) },
+    .{ .name = "stall_fe_generic", .type_ = .HARDWARE, .config = @backingInt(linux.PERF.COUNT.HW.STALLED_CYCLES_FRONTEND) },
     .{ .name = "l1d_demand_fill", .type_ = .RAW, .config = zen4(0x043, 0xFF) },
     .{ .name = "l1d_any_fill", .type_ = .RAW, .config = zen4(0x044, 0xFF) },
     .{ .name = "l1i_tag_miss", .type_ = .RAW, .config = zen4(0x18E, 0x18) },
@@ -166,7 +166,7 @@ fn runOnce(gpa: std.mem.Allocator, argv: []const [*:0]const u8, events: []const 
     }
     _ = linux.close(pipe_fds[1]);
     { // wait for the child's SIGSTOP: counters must be armed BEFORE it runs
-        var status: u32 = 0;
+        var status: i32 = 0;
         _ = linux.waitpid(pid, &status, 0);
     }
 
@@ -190,7 +190,7 @@ fn runOnce(gpa: std.mem.Allocator, argv: []const [*:0]const u8, events: []const 
     }
     _ = linux.close(pipe_fds[0]);
     {
-        var status: u32 = 0;
+        var status: i32 = 0;
         _ = linux.waitpid(pid, &status, 0);
     }
 

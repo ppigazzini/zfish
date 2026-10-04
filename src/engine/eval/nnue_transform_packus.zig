@@ -22,11 +22,16 @@ pub const use_packus_avx2 = @import("builtin").cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx2) and
     !std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512bw);
 
+// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+// convention on Linux and macOS, where the declaration lowers exactly as before.
 const packuswb256 = struct {
-    extern fn @"llvm.x86.avx2.packuswb"(@Vector(16, i16), @Vector(16, i16)) @Vector(32, u8);
+    extern fn @"llvm.x86.avx2.packuswb"(@Vector(16, i16), @Vector(16, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(32, u8);
 }.@"llvm.x86.avx2.packuswb";
 const transform_pmulhw256 = struct {
-    extern fn @"llvm.x86.avx2.pmulh.w"(@Vector(16, i16), @Vector(16, i16)) @Vector(16, i16);
+    extern fn @"llvm.x86.avx2.pmulh.w"(@Vector(16, i16), @Vector(16, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, i16);
 }.@"llvm.x86.avx2.pmulh.w";
 
 // Run the same packus body at zmm width, which is the arm upstream's transform takes on
@@ -40,10 +45,10 @@ pub const use_packus_avx512 = @import("builtin").cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx512bw);
 
 const packuswb512 = struct {
-    extern fn @"llvm.x86.avx512.packuswb.512"(@Vector(32, i16), @Vector(32, i16)) @Vector(64, u8);
+    extern fn @"llvm.x86.avx512.packuswb.512"(@Vector(32, i16), @Vector(32, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(64, u8);
 }.@"llvm.x86.avx512.packuswb.512";
 const transform_pmulhw512 = struct {
-    extern fn @"llvm.x86.avx512.pmulh.w.512"(@Vector(32, i16), @Vector(32, i16)) @Vector(32, i16);
+    extern fn @"llvm.x86.avx512.pmulh.w.512"(@Vector(32, i16), @Vector(32, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(32, i16);
 }.@"llvm.x86.avx512.pmulh.w.512";
 
 // Run the same packus body at xmm width on the pre-AVX2 x86 tiers (upstream's SSE2
@@ -54,18 +59,18 @@ pub const use_packus_sse = @import("builtin").cpu.arch == .x86_64 and
     !std.Target.x86.featureSetHas(@import("builtin").cpu.features, .avx2);
 
 const packuswb128 = struct {
-    extern fn @"llvm.x86.sse2.packuswb.128"(@Vector(8, i16), @Vector(8, i16)) @Vector(16, u8);
+    extern fn @"llvm.x86.sse2.packuswb.128"(@Vector(8, i16), @Vector(8, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, u8);
 }.@"llvm.x86.sse2.packuswb.128";
 const transform_pmulhw128 = struct {
-    extern fn @"llvm.x86.sse2.pmulh.w"(@Vector(8, i16), @Vector(8, i16)) @Vector(8, i16);
+    extern fn @"llvm.x86.sse2.pmulh.w"(@Vector(8, i16), @Vector(8, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(8, i16);
 }.@"llvm.x86.sse2.pmulh.w";
 
 // Compute 16 output bytes from the two halves' i16 accumulator lanes (a = first half,
 const packssdw256 = struct {
-    extern fn @"llvm.x86.avx2.packssdw"(@Vector(8, i32), @Vector(8, i32)) @Vector(16, i16);
+    extern fn @"llvm.x86.avx2.packssdw"(@Vector(8, i32), @Vector(8, i32)) callconv(.{ .x86_64_sysv = .{} }) @Vector(16, i16);
 }.@"llvm.x86.avx2.packssdw";
 const packsswb256 = struct {
-    extern fn @"llvm.x86.avx2.packsswb"(@Vector(16, i16), @Vector(16, i16)) @Vector(32, i8);
+    extern fn @"llvm.x86.avx2.packsswb"(@Vector(16, i16), @Vector(16, i16)) callconv(.{ .x86_64_sysv = .{} }) @Vector(32, i8);
 }.@"llvm.x86.avx2.packsswb";
 
 /// Fold FOUR packed output vectors into one 32-bit non-zero bitset -- upstream's `record4`.

@@ -66,12 +66,12 @@ first had reported clean.
 
 | Reference | Use |
 |---|---|
-| [Zig language reference](https://ziglang.org/documentation/0.16.0/) | `comptime`, `@Vector`, `@splat`, builtins, and the semantics the hot path relies on. |
+| [Zig language reference](https://ziglang.org/documentation/0.17.0/) | `comptime`, `@Vector`, `@splat`, builtins, and the semantics the hot path relies on. |
 | [Zig build system](https://ziglang.org/learn/build-system/) | Modules, `addImport`, per-module tests — the artefact `build.zig` is. See [00-architecture.md](00-architecture.md). |
 | [Zig standard library source](https://github.com/ziglang/zig/tree/master/lib/std) | The authority when an API differs across supported versions. Read the std source, not a changelog. |
 | [Ghostty — useful Zig patterns](https://mitchellh.com/writing/ghostty-and-useful-zig-patterns) | Comptime interfaces for platform/arch dispatch, and the caveat that CI must build every option or a configuration rots. |
 | [TigerBeetle `TIGER_STYLE.md`](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md) | Static allocation and near-zero dependencies — the hot-path discipline in [08-idiomatic-zig.md](08-idiomatic-zig.md). |
-| [matklad — Newtype Index Pattern in Zig](https://matklad.github.io/2025/12/23/zig-newtype-index-pattern.html) | The sized-enum newtype (`enum(u32) { _ }`, `@intFromEnum`/`@enumFromInt`) that `encode.TbFile` is an instance of, and its stated limit: the conversion is open, so the pattern stops a confusion rather than an intent. |
+| [matklad — Newtype Index Pattern in Zig](https://matklad.github.io/2025/12/23/zig-newtype-index-pattern.html) | The sized-enum newtype (`enum(u32) { _ }`, `@intFromEnum`/`@enumFromInt` in the article, `@backingInt`/`@fromBackingInt` in Zig 0.17) that `encode.TbFile` is an instance of, and its stated limit: the conversion is open, so the pattern stops a confusion rather than an intent. |
 | [Zig issue 12524 — niche packing for optional enums](https://github.com/ziglang/zig/issues/12524) | Why `?E` is wider than `E` here even when the tag leaves values unused, and therefore why the board keeps in-band sentinels. |
 | [Zig issue 1595 — request: distinct types](https://github.com/ziglang/zig/issues/1595) | The standing discussion of a first-class distinct-type feature. Zig has none, so the sized enum above is the whole instrument, and the absence is why [09-type-design.md](09-type-design.md) can guarantee so little. |
 | [Zig issue 21946 — `@enumFromInt` and non-exhaustive enums](https://github.com/ziglang/zig/issues/21946) | The conversion into an open sized enum is not range-checked, which is the mechanical statement of "the pattern stops a confusion, not an intent". |

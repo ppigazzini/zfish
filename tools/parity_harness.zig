@@ -102,7 +102,7 @@ fn runNetMissing(gpa: std.mem.Allocator, io: Io, bin_arg: []const u8) noreturn {
         .signal => |sig| fail(
             "net-missing: engine died on signal {d} (a crash, not a diagnostic) -- " ++
                 "this is the defect the gate exists to catch",
-            .{@intFromEnum(sig)},
+            .{@backingInt(sig)},
         ),
         else => fail("net-missing: engine terminated abnormally: {any}", .{term}),
     }

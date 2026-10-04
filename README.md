@@ -10,7 +10,7 @@ no bindings to an external library. See [docs/](docs/README.md).
 
 ## Build
 
-Requires **Zig 0.16.0**, no other dependencies.
+Requires **Zig 0.17.0**, no other dependencies.
 
 ```
 zig build          # build the engine (ReleaseFast) -> zig-out/bin/stockfish

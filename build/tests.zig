@@ -23,7 +23,7 @@ const module_edges = graph.edges;
 pub const Context = struct {
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.Optimize,
     /// The wired module graph, so a test root resolves the same imports the engine does.
     mods: *std.StringHashMap(*std.Build.Module),
     /// kcov output dir when -Dtest-coverage is on, else null.
@@ -167,10 +167,10 @@ pub fn register(ctx: Context) void {
     //
     // FORCE ReleaseSafe, never the build's `optimize`. The whole value of these targets is
     // that a bad index or cast TRAPS instead of reading garbage, and inheriting the default
-    // made `zig build fuzz` a ReleaseFast run locally while CI passed -Doptimize=ReleaseSafe --
+    // made `zig build fuzz` a ReleaseFast run locally while CI passed -Doptimize=safe --
     // a local gate weaker than the blocking lane, which is how a real `@intCast` overflow in
     // the tablebase group walk reached main green.
-    const fuzz_optimize: std.builtin.OptimizeMode = .ReleaseSafe;
+    const fuzz_optimize: std.lang.Optimize = .safe;
 
     // Give every artifact a PER-TARGET step as well as a place on the aggregate, because
     // `zig build fuzz --fuzz` cannot actually fuzz them all at once. `Fuzz.start` spawns one
@@ -181,7 +181,7 @@ pub fn register(ctx: Context) void {
     // scheduling order. Fuzz them one step at a time and each gets its own session.
     const fuzz_step = b.step("fuzz", "Run the coverage-guided fuzz targets (add --fuzz to fuzz)");
 
-    // Build under -Doptimize=ReleaseSafe so a found crash trips a safety check.
+    // Build under -Doptimize=safe so a found crash trips a safety check.
     const fuzz_targets_test = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/engine/board/fuzz_targets.zig"),
@@ -245,7 +245,7 @@ pub fn register(ctx: Context) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/fuzz_report.zig"),
             .target = b.graph.host,
-            .optimize = .Debug,
+            .optimize = .debug,
         }),
     });
     const fuzz_report_cmd = b.addRunArtifact(fuzz_report_exe);

@@ -50,12 +50,12 @@ pub const TbFile = enum(u2) {
 
     /// Fold a board file onto its sub-table -- upstream's `edge_distance(f)`.
     pub inline fn fromBoardFile(f: usize) TbFile {
-        return @enumFromInt(@min(f, 7 - f));
+        return @fromBackingInt(@intCast(@min(f, 7 - f)));
     }
 
     /// Open the space back up at the one place it must be: an array subscript.
     pub inline fn index(self: TbFile) usize {
-        return @intFromEnum(self);
+        return @backingInt(self);
     }
 
     /// List the four sub-tables in file order. A pawnless table has only the first,

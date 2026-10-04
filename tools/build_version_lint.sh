@@ -2,15 +2,16 @@
 # Cross-version build-script gate: the version shims have ONE owner, and nothing else
 # names a std.Build field that only one supported compiler has.
 #
-# WHY THIS EXISTS, AND WHY IT IS NOT PARANOIA. zfish targets Zig 0.16.0 and tracks Zig
-# master in a non-blocking lane. `build/config.zig` carries a comptime `@hasField` shim
-# per differing API -- 0.16 `build_root: Cache.Directory` vs 0.17 `root: Cache.Path` --
-# so the rest of the build never has to know which compiler it is under.
+# WHY THIS EXISTS, AND WHY IT IS NOT PARANOIA. zfish targets Zig 0.17.0 and tracks Zig
+# master in a non-blocking lane. `build/config.zig` owns every read of a std.Build field
+# whose name a compiler release has changed -- the build root is `root: Cache.Path` today,
+# and it was `build_root: Cache.Directory` one release ago -- so the rest of the build never
+# has to know which compiler it is under.
 #
 # That works exactly as long as everyone CALLS the shim. Two sites did not: `lanes.zig`
 # reached for `b.build_root.path` and `structural.zig` for `b.build_root.handle`, and
-# both landed green because 0.16 -- the compiler every contributor runs -- has that
-# field. The master lane was red from the commit that added them.
+# both landed green under the compiler every contributor ran while the master lane was
+# red from the commit that added them.
 #
 # The failure is worse than one broken step. A `std.Build` field break is a CONFIGURE
 # error: `build()` never finishes, so EVERY step of that lane dies at once -- exe, test,
@@ -21,8 +22,9 @@
 # file may name `build_root` or `b.root`. The shim is the interface; this is what makes
 # it one.
 #
-# The second list is the removed-API set, each with the spelling that works on BOTH
-# compilers. These are cheap to grep and expensive to find at a toolchain bump.
+# The second list is the removed-API set, each with the spelling that replaced it. These
+# are cheap to grep and expensive to find at a toolchain bump, and copying an older build
+# snippet is how one comes back.
 #
 # Usage: build_version_lint.sh          (run from anywhere; resolves its own root)
 set -u
@@ -68,7 +70,7 @@ done
 #
 # <pattern>|<what to use instead>. Each was paid for: see docs/08-idiomatic-zig.md.
 REMOVED=(
-    'b\.args|a -D string option, tokenized -- `b.args` does not exist on 0.17 and has no shim'
+    'b\.args|a -D string option, tokenized -- std.Build has no `b.args` since 0.17'
     'b\.pathFromRoot|config.repoPath(b, ...)'
     'b\.getInstallPath|run.addArtifactArg(exe) -- and absolutize it if the step re-spawns from another cwd'
     'std\.meta\.Int|@Int(.unsigned, n) -- the builtin survives std renames'
@@ -87,7 +89,7 @@ done
 
 if [ "$fail" -ne 0 ]; then
     printf 'build-version-lint: FAIL -- %d cross-version violation(s) above.\n' "$fail" >&2
-    printf 'build-version-lint: these are CONFIGURE errors under the other compiler, so they\n' >&2
+    printf 'build-version-lint: these are CONFIGURE errors under a supported compiler, so they\n' >&2
     printf 'build-version-lint: take down every step of that lane at once, not just this one.\n' >&2
     exit 1
 fi

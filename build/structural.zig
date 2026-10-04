@@ -98,13 +98,12 @@ pub const script_gates = [_]ScriptGate{
     // to go red without its fix; one that could not was removed rather than kept as decoration.
     .{ .step = "liveness", .script = "tools/liveness.sh", .desc = "hang gate: every mid-search command and self-limiting search still yields a bestmove", .needs_engine = true, .cwd_resources = true, .in_parity = true },
     .{ .step = "docs-lint", .script = "tools/docs_lint.sh", .desc = "docs rot gate: every link resolves, every named src/tools path exists, no page pins the bench anchor", .in_parity = true },
-    // Gate the cross-version build shims structurally. `build/config.zig` owns one comptime
-    // branch per std.Build API that differs between 0.16 and master; the rest of the build is
-    // supposed to call it. Two sites reached past it for `b.build_root` instead, which 0.16
-    // has and master does not, and the master lane was red from the commit that added them --
-    // as a CONFIGURE error, so every step of that lane died at once and the log named files
-    // nobody had edited. A shim only has one owner if something says so.
-    .{ .step = "build-version-lint", .script = "tools/build_version_lint.sh", .desc = "cross-version gate: the 0.16/master std.Build shims in build/config.zig have no bypass", .in_parity = true },
+    // Gate the version-dependent std.Build fields structurally. `build/config.zig` owns every
+    // read of one; the rest of the build is supposed to call it. A field one supported
+    // compiler lacks is a CONFIGURE error under that compiler, so every step of its lane dies
+    // at once and the log names files nobody edited. A shim only has one owner if something
+    // says so.
+    .{ .step = "build-version-lint", .script = "tools/build_version_lint.sh", .desc = "cross-version gate: the std.Build field shims in build/config.zig have no bypass", .in_parity = true },
 };
 
 pub const Context = struct {
@@ -181,7 +180,7 @@ pub fn registerLints(b: *std.Build) std.StringHashMap(*std.Build.Step.Run) {
             .root_module = b.createModule(.{
                 .root_source_file = b.path(t.source),
                 .target = b.graph.host,
-                .optimize = .Debug,
+                .optimize = .debug,
             }),
         });
         const cmd = b.addRunArtifact(exe);
@@ -251,10 +250,9 @@ pub fn registerUpstream(
     // aggregate for the same reason as upstream-map -- it needs the pinned upstream tree,
     // and it builds the oracle. Depend on the exe and the net: it drives the built binary
     // from resources/.
-    // Take the tool's flags through a -D option rather than `zig build ... -- args`:
-    // `b.args` is a 0.16 field that Zig master removed, and the passthrough has no
-    // cross-version spelling. A -D option behaves identically on both compilers and
-    // `zig build --help` lists it, where `--` args are invisible.
+    // Take the tool's flags through a -D option rather than `zig build ... -- args`: std.Build
+    // has no `b.args` since 0.17, so the passthrough has no spelling. A -D option is stable
+    // across compilers and `zig build --help` lists it, where `--` args are invisible.
     const upstream_walk_cmd = b.addSystemCommand(&.{
         "python3",
         repoPath(b, "tools/upstream_walk.py"),

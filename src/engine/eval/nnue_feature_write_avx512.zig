@@ -32,7 +32,11 @@ pub const use_avx512_nnue_feature = builtin.cpu.arch == .x86_64 and
     std.Target.x86.featureSetHas(builtin.cpu.features, .avx512vbmi2);
 
 const V64u8 = @Vector(64, u8);
-const V64mask = @Vector(64, bool);
+// Type the intrinsic's mask as a vector of u1, never of bool: LLVM declares it `<N x i1>`,
+// which a u1 lane lowers to, and Zig 0.17 lowers a bool vector to something else at an
+// extern boundary -- the verifier then rejects the module ("Intrinsic has incorrect
+// argument type") and the AVX-512 tiers stop building.
+const V64mask = @Vector(64, u1);
 const V32u16 = @Vector(32, u16);
 
 // LLVM intrinsic names/argument orders verified empirically (clang -O2 -mavx512f
@@ -44,8 +48,13 @@ const V32u16 = @Vector(32, u16);
 // all lower to plain shufflevector(+zext/sext), no intrinsic; `_mm512_add_epi16`/
 // `_mm512_xor_si512` are plain add/xor. Only compress (already verified for the
 // dirty-threat writer) and this permute need raw declarations.
-extern fn @"llvm.x86.avx512.mask.compress.v64i8"(a: V64u8, src: V64u8, mask: V64mask) V64u8;
-extern fn @"llvm.x86.avx512.permvar.hi.512"(table: V32u16, idx: V32u16) V32u16;
+// Declare each LLVM intrinsic with the SysV convention, not the target's C one: the Win64 C
+// ABI passes a vector argument by reference, and Zig 0.17 then emits a call LLVM rejects
+// ("Intrinsic has incorrect argument type"), so no x86 tier builds for Windows. SysV passes
+// vectors by value -- the shape the intrinsic's own signature has -- and is already the C
+// convention on Linux and macOS, where the declaration lowers exactly as before.
+extern fn @"llvm.x86.avx512.mask.compress.v64i8"(a: V64u8, src: V64u8, mask: V64mask) callconv(.{ .x86_64_sysv = .{} }) V64u8;
+extern fn @"llvm.x86.avx512.permvar.hi.512"(table: V32u16, idx: V32u16) callconv(.{ .x86_64_sysv = .{} }) V32u16;
 
 const all_squares: V64u8 = blk: {
     var arr: [64]u8 = undefined;

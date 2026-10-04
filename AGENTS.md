@@ -98,7 +98,7 @@ Cross-compile before committing anything under `src/platform/`, `std.Io`, or sta
 
 **Any edit to `build.zig` or `build/` re-opens the Zig-master lane** — build it under the
 pinned snapshot before committing, the same way a platform edit forces a cross-compile.
-0.16 is the primary target and the compiler you are running, so a master-only API break
+0.17.0 is the primary target and the compiler you are running, so a master-only API break
 lands green locally. It is a CONFIGURE error, so it takes down every step of that lane at
 once and names a file you did not edit. `build/config.zig` owns every version shim and
 `zig build build-version-lint` refuses a bypass; the spellings are in
@@ -187,7 +187,7 @@ Pointers, not explanations — each is documented where it belongs.
 | Bit-exactness ≠ faithfulness: the bench is a fixed position list, so a divergence off those positions is invisible to the anchor. Ask "is the search faithful" with `zig build upstream-walk` (random walk, positions nobody chose); ask "which commit broke it" with `tools/upstream_nodes.sh` (a FEN suite you supply, bisected over oracle shas). Neither covers time management, SMP or Syzygy. | [docs/10-tooling-ci.md](docs/10-tooling-ci.md) |
 | A perf-symbol group regex is a **hypothesis** (upstream `do_move`'s signature contains `TranspositionTable const*`; inlining differs per side) — verify per-symbol before trusting any component ratio. | [docs/08-idiomatic-zig.md](docs/08-idiomatic-zig.md) |
 | `tools/perft.golden` counts are **facts about chess**, not a golden: a mismatch is always a movegen bug, never an update candidate. | [docs/10-tooling-ci.md](docs/10-tooling-ci.md) |
-| Run `zig build test -Doptimize=ReleaseSafe` locally — CI runs it, and deep node-limited searches have tripped latent i32 overflows the default build can't see. | [docs/10-tooling-ci.md](docs/10-tooling-ci.md) |
+| Run `zig build test -Doptimize=safe` locally — CI runs it, and deep node-limited searches have tripped latent i32 overflows the default build can't see. | [docs/10-tooling-ci.md](docs/10-tooling-ci.md) |
 | A warm cache lies: `zig build test` can pass on stale state while CI's arch-pinned fresh compile catches a module-resolution break. Gate refactors with a fresh `-Darch=x86-64-sse41-popcnt` build. | [docs/10-tooling-ci.md](docs/10-tooling-ci.md) |
 | `zig fmt --check` is CI's first gate and blocks everything after it; deletions leave blank lines fmt rejects. Run it every commit. | [docs/10-tooling-ci.md](docs/10-tooling-ci.md) |
 | A type is free while a value is **carried** and can cost when many are **live at once** in one big function. Type an index space whose swap would not fault; do NOT type a quantity that is computed with — a score, a `Depth`, a Zobrist key and a ply pushed into the transformer are all refuted, and Zig has no operator overloading. Type the ACCESSOR instead. | [docs/09-type-design.md](docs/09-type-design.md) |

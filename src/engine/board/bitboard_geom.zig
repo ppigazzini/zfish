@@ -174,7 +174,7 @@ pub fn absDiff(left: usize, right: usize) usize {
 }
 
 pub fn magicIndexForPiece(pt: PieceType) usize {
-    return @intFromEnum(pt) - @intFromEnum(PieceType.bishop);
+    return @backingInt(pt) - @backingInt(PieceType.bishop);
 }
 
 pub fn lsb(bitboard: u64) usize {

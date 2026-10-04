@@ -498,8 +498,8 @@ just the board path (`initRuntime` → `setPosition` → `generateLegal` →
 | **Compilation** | `refAllDecls` over `position`, `movegen`, and `worker_layout` |
 
 `fuzz_targets.zig` is a separate artifact wired to `zig build fuzz`, deliberately
-outside `zig build test`. It honours `-Doptimize`, so request
-`-Doptimize=ReleaseSafe` for a discovered crash to trip a Zig safety check. Its
+outside `zig build test`. It is built in the safe mode whatever `-Doptimize` says
+(`build/tests.zig` forces it), so a discovered crash trips a Zig safety check. Its
 targets are coverage-guided rather than random:
 
 | Target | Asserts |

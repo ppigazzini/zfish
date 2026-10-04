@@ -15,7 +15,7 @@ build script is also the only place the ISA tier, the target OS, and the
 `build_options` feature flags are chosen; the engine reads them at comptime (see
 [08-idiomatic-zig.md](08-idiomatic-zig.md)).
 
-Zig 0.16.0 is the required toolchain. No C++ is vendored or compiled.
+Zig 0.17.0 is the required toolchain. No C++ is vendored or compiled.
 
 ### Options
 
@@ -343,7 +343,7 @@ cycles, unused import edges, and unregistered hooks alike.
 | `tools/loc_lint.sh` | `loc` | No new god-file. |
 | `tools/headless_lint.sh` | `headless` | `engine/` imports only `engine/`. |
 | `tools/src_free.sh` | `src-free` | Zero C++ in the shipped binary. |
-| `tools/build_version_lint.sh` | `build-version-lint` | The 0.16/master `std.Build` shims have one owner. |
+| `tools/build_version_lint.sh` | `build-version-lint` | The version-dependent `std.Build` field reads have one owner. |
 
 **`hook_lint.zig`** bounds the mechanism that buys the DAG. Where an import cycle
 would exist, a leaf declares a `pub var` function pointer and the composition root
@@ -382,13 +382,13 @@ lines and leave one long specialized hot body alone. (zfish compiles as one LLVM
 module, so a split can never un-inline anything — the seam choice is about
 cohesion, not codegen.)
 
-**`build_version_lint.sh`** holds the cross-version shims to one owner. `build/config.zig`
-carries a comptime `@hasField` branch per `std.Build` API that 0.16 and Zig master spell
-differently; every other build file is supposed to call it. Two did not — they named
-`b.build_root` directly, which 0.16 has and master does not — and the compatibility lane
+**`build_version_lint.sh`** holds the version-dependent `std.Build` reads to one owner.
+`build/config.zig` reads the build-root field, whose name has changed across releases; every
+other build file is supposed to call it. Two did not — they named `b.build_root` directly,
+which the contributor-facing compiler had and master did not — and the compatibility lane
 was red from the commit that added them, because the contributor-facing compiler is the one
 that still works. The lint refuses a field access to either spelling outside the owner, plus
-a short list of APIs one compiler has removed. It matters more than its size suggests: a
+a short list of removed APIs. It matters more than its size suggests: a
 `Build` break is a **configure** error, so it takes down every step of that lane at once and
 names a file nobody edited. See [08-idiomatic-zig.md](08-idiomatic-zig.md) for the table of
 spellings and the rule that any build edit re-opens the lane.
@@ -420,9 +420,8 @@ it is — and those come apart in one edit. The weekly upstream job ran `python3
 step, the step was switched to `zig build upstream-map`, and `setup-zig` stayed three steps
 below, so the job died at `zig: command not found`, exit 127, before it measured anything;
 nothing in the tree could see it, because every step named there was still dispatched. The
-ordering is read TEXTUALLY, so an `if:`-guarded install still counts (the Windows-arm job's is
-guarded, and its emulated fallback is a later `run:`) — what is checked is the order the runner
-and a reader both see. Only lines that run something are read: an inline `run:` and the body of
+ordering is read TEXTUALLY, so an `if:`-guarded install still counts — what is checked is the
+order the runner and a reader both see. Only lines that run something are read: an inline `run:` and the body of
 a `run: |` block, which is what keeps the `fmt` job's *name* — `zig fmt --check` — from reading
 as a use of zig three lines before its install. Seen to fail on the real defect before the fix
 landed (`TOOLCHAIN AFTER USE … :88`, exit 1), and refusing a YAML walk that finds fewer than
@@ -733,20 +732,25 @@ verified locally. Its value is early warning on the road to the next toolchain b
 
 What the lane does **not** prove is speed. It gates on the node signature, and that
 signature is codegen-independent by construction: a toolchain that emits far worse code
-still benches the anchor and still passes green. Measured locally with
-`tools/perf_counters.zig`, `0.17.0-dev.1417+20befa4e6` against `0.16.0`, identical tree,
-core-pinned: **+16.8%** instructions on sse41, **+23.6%** on avx2, **+10.4%** on avx512,
-and **+6117%** on vnni512 — there `nnue_inference.evaluateBucketRaw` loses its vector
-lowering and is emulated with scalar `shld`/`shrd` (477 → 5512 instructions), while the
-NNUE `vpdpbusd` kernels stay intact. So read the lane as compile-and-correctness only,
-and run the counters before believing any toolchain bump.
+still benches the anchor and still passes green. So read the lane as
+compile-and-correctness only, and run the counters on every toolchain bump, per tier — the
+two readings below are one release line apart. `tools/perf_counters.zig`, identical tree,
+core-pinned, instructions against `0.16.0`:
 
-Two rules the matrix follows. Only lanes that can be reproduced green locally live in
+| compiler | sse41 | avx2 | native (avx512icl) | vnni512 |
+| --- | --- | --- | --- | --- |
+| `0.17.0-dev.1417+20befa4e6` snapshot | +16.8% | +23.6% | +10.4% (avx512) | **+6117%** — `evaluateBucketRaw` lost its vector lowering to scalar `shld`/`shrd` |
+| `0.17.0` release, `bench 16 1 13` | +0.58% | −0.72% | −1.55% | not measured |
+
+The release's sse41 loss sits in the NNUE path (`networkTransform`, `propagateBucket`,
+`applyCombined` each about +2% in callgrind at the same tier) and is register allocation —
+the same `movdqu` count, more register-to-register copies — not a lost alignment fold.
+
+One rule the matrix follows: only lanes that can be reproduced green locally live in
 CI — a gate that is red by design, or red for reasons the dev environment cannot
 reproduce, stays local (coverage is one: available via `-Dtest-coverage`, absent from
-CI). And the Windows aarch64 lane cross-compiles under x64 emulation because the
-native aarch64-windows toolchain crashes on that runner; the produced binary still
-runs natively, so the harness validates the signature on real arm64 hardware.
+CI). The Windows aarch64 lane runs the native aarch64-windows toolchain on real arm64
+hardware, so the harness validates the signature there.
 
 ## Local-only tooling
 

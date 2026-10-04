@@ -4,8 +4,8 @@
 // worker threads. Stay self-contained (std only): own a std.Thread and execute
 // opaque jobs (a callback plus context pointer).
 //
-// Build the blocking primitives directly on a wait/wake-on-address seam, since Zig
-// 0.16 removed std.Thread.Mutex / Condition / Futex: a canonical three-state
+// Build the blocking primitives directly on a wait/wake-on-address seam, since std.Thread
+// has no Mutex / Condition / Futex (removed in 0.16, absent in 0.17): a canonical three-state
 // (Drepper) mutex and a sequence-counter condition variable. Exercise both in the
 // tests at the bottom, which spawn the thread and round-trip jobs, so the
 // concurrency handshake is verified here.

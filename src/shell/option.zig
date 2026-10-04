@@ -12,7 +12,7 @@ fn ensureModel() *OptionsModel {
 
 pub fn addOption(name: []const u8, kind: u8, default: []const u8, min: i32, max: i32) usize {
     const model = ensureModel();
-    const resolved: OptionKind = @enumFromInt(if (kind > 3) @as(u8, 0) else kind);
+    const resolved: OptionKind = @fromBackingInt(@intCast(if (kind > 3) @as(u8, 0) else kind));
     return model.add(name, resolved, default, min, max, callbackKindForName(name)) catch
         std.math.maxInt(usize);
 }
@@ -76,7 +76,7 @@ pub fn setByName(name: []const u8, value: []const u8, out: *ModelSetResult) void
     out.* = .{ .found = 0, .accepted = 0, .changed = 0, .callback_kind = 0, .kind = 0, .idx = 0 };
     const model = ensureModel();
     const idx = model.indexOf(name) orelse return;
-    const kind_val: u8 = @intFromEnum(model.entries.items[idx].kind);
+    const kind_val: u8 = @backingInt(model.entries.items[idx].kind);
     const outcome = model.setValue(name, value) catch {
         out.* = .{ .found = 1, .accepted = 0, .changed = 0, .callback_kind = 0, .kind = kind_val, .idx = idx };
         return;

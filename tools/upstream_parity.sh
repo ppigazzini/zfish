@@ -15,6 +15,9 @@ set -uo pipefail
 
 REPO="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 OUR_BIN="${1:-$REPO/zig-out/bin/stockfish}"
+# Anchor a relative path to the cwd it was given in: sig() runs the binary from the net
+# directory, and `zig build` passes the artifact relative to the build root.
+case "$OUR_BIN" in /*) ;; *) OUR_BIN="$PWD/$OUR_BIN" ;; esac
 SHA="${2:-$(cat "$REPO/tools/upstream/UPSTREAM_TARGET")}"
 ORACLE_DIR="${ZFISH_ORACLE_DIR:-/home/usr00/_git/.zfish-upstream-oracle}"
 

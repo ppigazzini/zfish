@@ -83,7 +83,7 @@ pub fn updateQuietHistoriesWorker(
 /// it says that something changed, never what. These are the arguments, not the result: the
 /// page the function stores was already a distinct pointer type and that stopped nothing here.
 ///
-/// Backed by `u8` and used only to index, so `@intFromEnum` is the value that was already
+/// Backed by `u8` and used only to index, so `@backingInt` is the value that was already
 /// being passed -- this is the accessor-typing case, not the "type a quantity that is computed
 /// with" case the cost rule refutes (see docs/09-type-design.md).
 /// Construct through `of`, never through a bare `.yes` / `.no`. An enum LITERAL infers its
@@ -112,7 +112,7 @@ pub const WasCapture = enum(u8) {
 pub fn setContHist(worker_ptr: *WorkerLayout, ss_ptr: *SearchStack, in_check: InCheck, capture: WasCapture, pc: u8, to: u8) void {
     const w: *WorkerHistories = workerHistories(worker_ptr);
     const ss = ss_ptr;
-    const ch_block = (@as(usize, @intFromEnum(in_check)) * 2 + @intFromEnum(capture)) * hist_pieceto +
+    const ch_block = (@as(usize, @backingInt(in_check)) * 2 + @backingInt(capture)) * hist_pieceto +
         @as(usize, pc) * hist_square_nb + to;
     ss.continuation_history = @ptrCast(&sharedOf(w).cont_data[ch_block * hist_pieceto]);
     ss.continuation_correction_history =

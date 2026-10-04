@@ -297,7 +297,7 @@ pub fn searchPv(manager: ?*worker_layout.SearchManager, worker: ?*worker_layout.
         // Assert the two flags stay mutually exclusive, as upstream's output_pv does: a score
         // is exact or it is ONE-sided, and the `else if` below reports `lowerbound` for a move
         // carrying both rather than saying anything true. Compiled out of the shipped
-        // ReleaseFast binary; `zig build test -Doptimize=ReleaseSafe` is what runs it.
+        // ReleaseFast binary; `zig build test -Doptimize=safe` is what runs it.
         std.debug.assert(!(rm.inexact_lower and rm.inexact_upper));
         // Treat TB scores as exact even if the root move's inexact flags say otherwise.
         if (!use_prev and !is_tb_score) {

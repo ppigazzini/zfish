@@ -42,7 +42,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Installs Zig 0.16.0 and caches the build cache. Needed for two things here:
+      # Installs Zig 0.17.0 and caches the build cache. Needed for two things here:
       # the zfish binary under test, and tools/zigcxx -- the oracle compiles with ZIG
       # C++ so both sides share one LLVM backend.
       #
@@ -54,7 +54,7 @@ jobs:
       # all of them to it.
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       # The sync driver fetches from a remote named `upstream`; add it here (the
       # local dev clone adds it separately, CI adds its own).

@@ -33,7 +33,7 @@ const payload_offset = 64;
 
 // Mirror src/platform/memory.zig's poison predicate. Restate it rather than import it: engine/
 // imports nothing outside engine/, and this default allocator must stay usable headless.
-const poison_uninitialized = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
+const poison_uninitialized = builtin.mode == .debug or builtin.mode == .safe;
 
 fn defaultAlloc(size: usize) ?*anyopaque {
     if (size == 0) return null;
@@ -42,7 +42,7 @@ fn defaultAlloc(size: usize) ?*anyopaque {
     // Poison in the safe modes, mirroring the platform allocator: fresh mmap pages happen
     // to be zero, which would let a read-before-write consumer pass every test while being
     // heap-dependent in production. The poison makes that bug fail here. ReleaseSafe is in
-    // the set because that is what `zig build test -Doptimize=ReleaseSafe` and `zig build
+    // the set because that is what `zig build test -Doptimize=safe` and `zig build
     // fuzz` build -- see src/platform/memory.zig for why Debug alone never runs.
     if (poison_uninitialized) @memset(raw[payload_offset..], 0xAA);
     std.mem.writeInt(usize, raw[0..@sizeOf(usize)], total, .little);

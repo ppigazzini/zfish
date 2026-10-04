@@ -19,7 +19,7 @@ extern "c" fn _aligned_free(ptr: ?*anyopaque) void;
 /// Poison freshly handed-out blocks with 0xAA wherever safety checks are on, so a consumer that
 /// reads before it writes fails on an obviously wrong value instead of on heap residue. Both safe
 /// modes, not Debug alone -- see alignedLargePagesAlloc for why Debug alone is unreachable here.
-pub const poison_uninitialized = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
+pub const poison_uninitialized = builtin.mode == .debug or builtin.mode == .safe;
 
 pub fn stdAlignedAlloc(alignment: usize, size: usize) ?*anyopaque {
     if (builtin.os.tag == .windows) {
@@ -177,10 +177,10 @@ pub fn alignedLargePagesAlloc(alloc_size: usize) ?*anyopaque {
         // rather than riding whatever the heap happens to hold.
         //
         // ReleaseSafe is in that set deliberately, and it is the half that runs: a
-        // Debug build of the exe SEGVs the Zig 0.16 compiler itself (deterministic,
-        // `zig build -Doptimize=Debug` -> "process terminated with signal SEGV"), so a
-        // Debug-only poison could never execute in the engine at all. ReleaseSafe is
-        // what `zig build test -Doptimize=ReleaseSafe` and `zig build fuzz` build, so
+        // Debug build of the exe SEGVs the Zig compiler itself (deterministic on 0.16 and
+        // 0.17.0, `zig build -Doptimize=debug` -> "process terminated with signal SEGV"), so
+        // a Debug-only poison could never execute in the engine at all. ReleaseSafe is
+        // what `zig build test -Doptimize=safe` and `zig build fuzz` build, so
         // gating on `builtin.mode` rather than on Debug alone is what makes the audit
         // reachable. The shipped ReleaseFast binary prunes the branch at comptime.
         if (poison_uninitialized) {

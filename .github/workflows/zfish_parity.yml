@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
       # The whole owned tree: src/, tools/, build.zig.
       - run: zig fmt --check src/ tools/ build.zig
 
@@ -57,11 +57,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Installs Zig 0.16.0 and caches the global + local Zig build cache
+      # Installs Zig 0.17.0 and caches the global + local Zig build cache
       # (use-cache defaults to true), so reruns skip recompilation.
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       # Cache the downloaded NNUE network (~50 MB) keyed on the net name the Zig
       # binary actually loads -- the `default_eval_file_name` constant in
@@ -95,16 +95,16 @@ jobs:
       # separate nightly job (zfish_fuzz.yml). Built under ReleaseSafe so a target
       # that trips a bounds/overflow/alignment/null check fails here. Cheap and
       # deterministic.
-      - run: zig build fuzz -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
+      - run: zig build fuzz -Darch=x86-64-sse41-popcnt -Doptimize=safe
 
       # Safety-checked full engine: the ENTIRE parity suite rebuilt under
-      # -Doptimize=ReleaseSafe. Supersets the safety-checked bench (signature 1714434)
+      # -Doptimize=safe. Supersets the safety-checked bench (signature 1714434)
       # and additionally drives the multi-thread (mt-sanity), Lazy-SMP go/stop stress,
       # transposition-table, NNUE-eval, time-management, and every UCI-output golden
       # path with Zig's runtime safety checks ON -- the paths the property tests and a
       # bare bench do not reach. This gate keeps any future bounds / overflow /
       # alignment / null-unwrap regression out of CI.
-      - run: zig build parity -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
+      - run: zig build parity -Darch=x86-64-sse41-popcnt -Doptimize=safe
 
       # Arch-variant determinism: the
       # pure-Zig port must yield the SAME bench on every arch -- a SIMD width or
@@ -164,7 +164,7 @@ jobs:
 
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       # `zig build test` builds the engine, which loads the net, and drives the Syzygy
       # gates' fixtures; cache both exactly as the parity job does or every run refetches.
@@ -188,26 +188,25 @@ jobs:
       - run: zig build test -Darch=x86-64-sse41-popcnt
 
       # Safety-checked (UBSan-equivalent) test run: the same unit + property suite
-      # rebuilt under -Doptimize=ReleaseSafe, so Zig's runtime safety checks --
+      # rebuilt under -Doptimize=safe, so Zig's runtime safety checks --
       # bounds, integer overflow, pointer alignment, null-unwrap, illegal cast --
       # are ON across the board path the tests drive (incl. the 80k-iteration parser
       # fuzz).
-      - run: zig build test -Darch=x86-64-sse41-popcnt -Doptimize=ReleaseSafe
+      - run: zig build test -Darch=x86-64-sse41-popcnt -Doptimize=safe
 
   # NON-BLOCKING Zig-master compatibility monitor.
   #
-  # zfish targets Zig 0.16.0 (every gate above). This lane additionally builds and runs
+  # zfish targets Zig 0.17.0 (every gate above). This lane additionally builds and runs
   # the full parity suite under an AUDITED Zig master snapshot, so a language / std /
-  # build-system change on Zig's road to 0.17 surfaces here as an early warning instead
+  # build-system change on Zig's road to 0.18 surfaces here as an early warning instead
   # of ambushing the next toolchain bump. `continue-on-error: true` makes it INFORMATIONAL:
   # the job reports its real pass/fail in the UI but never fails the workflow, because
   # master is a moving target that may break at any time through no fault of this repo.
   #
-  # The snapshot is PINNED (not floating "master") for reproducibility and bumped by hand
-  # -- same value z47 audits. Today the port is master-clean on the Linux host (build +
-  # bench 1714434 + every gate `parity` aggregates), achieved via cross-version idioms: @splat for
-  # array-repeat (0.17 rejects `**` after `}`), @Int for the removed std.meta.Int, and a
-  # comptime repoPath shim + addArtifactArg for the removed b.pathFromRoot / getInstallPath.
+  # The snapshot is PINNED (not floating "master") for reproducibility and bumped by hand,
+  # after the port builds and passes under it locally. Today the port is master-clean on the
+  # Linux host (build + bench 1714434 + every gate `parity` aggregates, plus test and fuzz);
+  # the cross-version spellings it relies on are tabled in docs/08-idiomatic-zig.md.
   zig-master-compat:
     name: Zig master compatibility (non-blocking)
     runs-on: ubuntu-latest
@@ -222,7 +221,7 @@ jobs:
       # in-flight work rather than on our regressions.
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.17.0-dev.1398+cb5635714
+          version: 0.18.0-dev.2+faa537cf9
 
       - name: Cache NNUE network
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -262,7 +261,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       - name: Cache NNUE network
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -317,7 +316,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
       - name: Cache NNUE network
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -344,12 +343,8 @@ jobs:
             runner: windows-11-arm
             os: windows
             arch: armv8-dotprod
-            # The native aarch64-windows Zig 0.16.0 segfaults on startup on this runner
-            # (a toolchain bug -- the engine itself cross-compiles to a valid aarch64
-            # PE). Run the x86_64 Zig under Windows-on-ARM x64 emulation instead and
-            # cross-compile to aarch64-windows; the produced binaries still run natively,
-            # so the harness validates the signature on real arm64 hardware.
-            zig_x64_emu: true
+            # The native aarch64-windows Zig, like every other lane: the x86_64 Zig 0.17.0 run
+            # under Windows-on-ARM x64 emulation hung in `zig build net` until the job timeout.
           - name: macOS aarch64 parity
             runner: macos-26
             os: macos
@@ -361,23 +356,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Standard path: setup-zig installs the host-native Zig 0.16.0 (+cache).
+      # setup-zig installs the host-native Zig 0.17.0 (+cache) on every runner.
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        if: ${{ !matrix.zig_x64_emu }}
         with:
-          version: 0.16.0
-
-      # windows-11-arm only: the native arm64 Zig crashes, so fetch the x86_64 build and
-      # run it under x64 emulation (7-Zip + curl are preinstalled on the runner). Zig
-      # cross-compiles to any target regardless of host arch, so this still produces the
-      # native aarch64-windows binary.
-      - name: Install x86_64 Zig (emulated)
-        if: ${{ matrix.zig_x64_emu }}
-        shell: bash
-        run: |
-          curl -fsSL https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip -o zig.zip
-          7z x zig.zip -o"$HOME/zigdl" >/dev/null
-          echo "$HOME/zigdl/zig-x86_64-windows-0.16.0" >> "$GITHUB_PATH"
+          version: 0.17.0
 
       - name: Cache NNUE network
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -387,16 +369,14 @@ jobs:
 
       # Pre-fetch the net so it is cached before the build. `zig build net` runs the pure-Zig
       # fetcher (tools/fetch_net.zig) -- no bash/curl/wget -- and early-exits when present.
-      # `shell: bash` is required on the windows-11-arm emulated lane: the x86_64 Zig above is
-      # put on PATH via a bash step ($GITHUB_PATH with a bash-style path), so a step must run
-      # under bash to resolve `zig`; the default Windows shell is PowerShell and can't. Harmless
-      # on the other lanes (git-bash on Windows-x64, bash on macOS).
+      # `shell: bash` runs this and the parity step under one shell on every runner (git-bash
+      # on Windows, bash on macOS).
       - name: Fetch the NNUE net
         shell: bash
         run: zig build net
 
       # Full cross-OS parity: bench signature (1714434) + the golden gates `parity-portable` aggregates, all via the
-      # pure-Zig harness. `shell: bash` for the same emulated-lane PATH reason as the fetch step.
+      # pure-Zig harness, under the same shell as the fetch step.
       - name: Build + parity-portable (native, ${{ matrix.arch }})
         shell: bash
         run: zig build parity-portable -Dos=${{ matrix.os }} -Darch=${{ matrix.arch }}
@@ -416,7 +396,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
-          version: 0.16.0
+          version: 0.17.0
       - name: Install valgrind
         run: |
           # `apt-get update` is the fragile step here, not valgrind. On 2026-08-19 it retried

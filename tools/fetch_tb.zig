@@ -54,7 +54,7 @@ pub fn main(init: std.process.Init) !void {
             defer body.deinit();
             const res = client.fetch(.{ .location = .{ .url = url }, .response_writer = &body.writer }) catch |e|
                 fatal("download failed {s} ({s})", .{ url, @errorName(e) });
-            if (res.status != .ok) fatal("download failed {s} (HTTP {d})", .{ url, @intFromEnum(res.status) });
+            if (res.status != .ok) fatal("download failed {s} (HTTP {d})", .{ url, @backingInt(res.status) });
             const bytes = body.written();
             if (bytes.len < 4 or !std.mem.eql(u8, bytes[0..4], &magic))
                 fatal("bad magic for {s}{s} ({d} bytes) -- not a Syzygy file", .{ name, ext, bytes.len });

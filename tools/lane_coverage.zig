@@ -121,8 +121,7 @@ fn invokesZig(content: []const u8) bool {
 /// Nothing could see it. `lane-coverage` above reads these same files and was satisfied,
 /// because a dispatched step is dispatched whether or not a compiler exists to serve it.
 ///
-/// Position is TEXTUAL, so an `if:`-guarded install still counts (the Windows-arm job's
-/// action is guarded and its emulated fallback is a later `run:`); what is being checked is
+/// Position is TEXTUAL, so an `if:`-guarded install still counts; what is being checked is
 /// the order a reader and the runner both see. A job that never touches zig is not required
 /// to install it, and a job that touches it without installing it at all fails here too.
 ///

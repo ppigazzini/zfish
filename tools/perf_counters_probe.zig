@@ -95,18 +95,18 @@ pub fn runOnce(gpa: std.mem.Allocator, argv: []const [*:0]const u8, core: usize)
     }
     _ = linux.close(pipe_fds[1]);
     { // wait for the child's SIGSTOP: counters must be armed BEFORE it runs
-        var status: u32 = 0;
+        var status: i32 = 0;
         _ = linux.waitpid(pid, &status, 0);
     }
 
-    const c_instr = try openCounter(@intFromEnum(linux.PERF.COUNT.HW.INSTRUCTIONS), pid);
+    const c_instr = try openCounter(@backingInt(linux.PERF.COUNT.HW.INSTRUCTIONS), pid);
     defer _ = linux.close(c_instr);
-    const c_cyc = try openCounter(@intFromEnum(linux.PERF.COUNT.HW.CPU_CYCLES), pid);
+    const c_cyc = try openCounter(@backingInt(linux.PERF.COUNT.HW.CPU_CYCLES), pid);
     defer _ = linux.close(c_cyc);
-    const c_cache = openCounter(@intFromEnum(linux.PERF.COUNT.HW.CACHE_MISSES), pid) catch -1;
-    const c_branch = openCounter(@intFromEnum(linux.PERF.COUNT.HW.BRANCH_MISSES), pid) catch -1;
+    const c_cache = openCounter(@backingInt(linux.PERF.COUNT.HW.CACHE_MISSES), pid) catch -1;
+    const c_branch = openCounter(@backingInt(linux.PERF.COUNT.HW.BRANCH_MISSES), pid) catch -1;
     // Retired branches, so the miss RATE is readable and not just the miss count.
-    const c_branch_all = openCounter(@intFromEnum(linux.PERF.COUNT.HW.BRANCH_INSTRUCTIONS), pid) catch -1;
+    const c_branch_all = openCounter(@backingInt(linux.PERF.COUNT.HW.BRANCH_INSTRUCTIONS), pid) catch -1;
 
     const fds = [_]i32{ c_instr, c_cyc, c_cache, c_branch, c_branch_all };
     for (fds) |fd| if (fd >= 0) {
@@ -127,7 +127,7 @@ pub fn runOnce(gpa: std.mem.Allocator, argv: []const [*:0]const u8, core: usize)
     }
     _ = linux.close(pipe_fds[0]);
     {
-        var status: u32 = 0;
+        var status: i32 = 0;
         _ = linux.waitpid(pid, &status, 0);
     }
 
@@ -181,17 +181,17 @@ pub fn runWrapped(argv: []const [*:0]const u8, core: usize) !Counters {
         linux.exit(127);
     }
     {
-        var status: u32 = 0;
+        var status: i32 = 0;
         _ = linux.waitpid(pid, &status, 0);
     }
 
-    const c_instr = try openCounter(@intFromEnum(linux.PERF.COUNT.HW.INSTRUCTIONS), pid);
+    const c_instr = try openCounter(@backingInt(linux.PERF.COUNT.HW.INSTRUCTIONS), pid);
     defer _ = linux.close(c_instr);
-    const c_cyc = try openCounter(@intFromEnum(linux.PERF.COUNT.HW.CPU_CYCLES), pid);
+    const c_cyc = try openCounter(@backingInt(linux.PERF.COUNT.HW.CPU_CYCLES), pid);
     defer _ = linux.close(c_cyc);
-    const c_cache = openCounter(@intFromEnum(linux.PERF.COUNT.HW.CACHE_MISSES), pid) catch -1;
-    const c_branch = openCounter(@intFromEnum(linux.PERF.COUNT.HW.BRANCH_MISSES), pid) catch -1;
-    const c_branch_all = openCounter(@intFromEnum(linux.PERF.COUNT.HW.BRANCH_INSTRUCTIONS), pid) catch -1;
+    const c_cache = openCounter(@backingInt(linux.PERF.COUNT.HW.CACHE_MISSES), pid) catch -1;
+    const c_branch = openCounter(@backingInt(linux.PERF.COUNT.HW.BRANCH_MISSES), pid) catch -1;
+    const c_branch_all = openCounter(@backingInt(linux.PERF.COUNT.HW.BRANCH_INSTRUCTIONS), pid) catch -1;
 
     const fds = [_]i32{ c_instr, c_cyc, c_cache, c_branch, c_branch_all };
     for (fds) |fd| if (fd >= 0) {
@@ -200,7 +200,7 @@ pub fn runWrapped(argv: []const [*:0]const u8, core: usize) !Counters {
     };
     _ = linux.ptrace(linux.PTRACE.DETACH, pid, 0, 0, 0);
 
-    var status: u32 = 0;
+    var status: i32 = 0;
     _ = linux.waitpid(pid, &status, 0);
 
     for (fds) |fd| if (fd >= 0) {

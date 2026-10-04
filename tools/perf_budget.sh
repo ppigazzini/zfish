@@ -80,7 +80,7 @@ trap 'rm -rf "$WORK"' EXIT
     echo "perf-budget: engine build failed for $ARCH" >&2
     exit 2
 }
-( cd "$REPO" && zig build-exe tools/perf_counters.zig -OReleaseFast \
+( cd "$REPO" && zig build-exe tools/perf_counters.zig -Ofast \
     -femit-bin="$WORK/perf_counters" ) >/dev/null 2>&1 || {
     echo "perf-budget: perf_counters build failed" >&2
     exit 2

@@ -18,30 +18,23 @@ const hasMacro = arch_cfg.hasMacro;
 const resolveArch = arch_cfg.resolveArch;
 const native_arch = arch_cfg.native_arch;
 
-/// Resolve a repo-root-relative path to an absolute string. Read the build root from
-/// whichever field the running std.Build exposes -- 0.16 `build_root: Cache.Directory`,
-/// 0.17 `root: Cache.Path` -- so this compiles on both; the comptime @hasField branch
-/// prunes the absent field. The whole build shares this one definition.
+/// Resolve a repo-root-relative path to an absolute string, from the build root that
+/// std.Build carries as `root: Cache.Path`. The whole build shares this one definition.
 ///
-/// THIS FILE IS THE ONLY PLACE THAT MAY NAME EITHER FIELD. A `std.Build` field break is a
-/// CONFIGURE error, so it takes down every step of the 0.17 lane at once -- exe, test,
-/// fuzz, all tiers -- rather than the one step that touched it. Two sites bypassed these
-/// shims and reached for `b.build_root` directly, and the lane was red on both from the
-/// commit that added them. `zig build build-version-lint` now refuses a third.
+/// THIS FILE IS THE ONLY PLACE THAT MAY NAME THAT FIELD. A `std.Build` field break is a
+/// CONFIGURE error, so it takes down every step of a compiler's lane at once -- exe, test,
+/// fuzz, all tiers -- rather than the one step that touched it, and the next compiler is
+/// where such a break lands. One owner means one edit when it does;
+/// `zig build build-version-lint` refuses a second.
 pub fn repoPath(b: *std.Build, sub: []const u8) []const u8 {
-    if (@hasField(std.Build, "build_root")) {
-        return b.pathResolve(&.{ b.build_root.path orelse ".", sub });
-    }
-    // 0.17's root is a Cache.Path: a directory plus a sub-path within it, and the sub-path
-    // is "" only when the build root IS the directory. Carry it rather than assume.
+    // The root is a Cache.Path: a directory plus a sub-path within it, and the sub-path is
+    // "" only when the build root IS the directory. Carry it rather than assume.
     return b.pathResolve(&.{ b.root.root_dir.path orelse ".", b.root.sub_path, sub });
 }
 
 /// Hand back the build root as an open directory, for the reads that want a handle rather
-/// than a path. Same two fields, same comptime branch, same single owner -- `handle` is an
-/// `Io.Dir` on both versions, so only the field name differs.
+/// than a path. Same field, same single owner.
 pub fn repoDir(b: *std.Build) std.Io.Dir {
-    if (@hasField(std.Build, "build_root")) return b.build_root.handle;
     return b.root.root_dir.handle;
 }
 
@@ -55,7 +48,7 @@ const GitInfo = struct {
 pub const Config = struct {
     os_tag: std.Target.Os.Tag,
     abi: std.Target.Abi,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.lang.Optimize,
     target: std.Build.ResolvedTarget,
     arch: ArchConfig,
     os_choice: TargetOs,
@@ -103,10 +96,10 @@ fn trimOutput(output: []const u8) []const u8 {
 
 pub fn resolve(b: *std.Build) Config {
     const optimize = b.option(
-        std.builtin.OptimizeMode,
+        std.lang.Optimize,
         "optimize",
         "Prioritize performance, safety, or binary size",
-    ) orelse .ReleaseFast;
+    ) orelse .fast;
     const signature_ref = b.option(
         []const u8,
         "signature-ref",

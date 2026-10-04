@@ -453,7 +453,7 @@ Reach for this to invert a *specific* upward dependency, not as a default.
 
 Zig's newtype over an integer is a sized enum: `enum(u2)` where the space is closed and
 the tag width is the array bound, `enum(u32) { _ }` where it is open. It has the layout
-of its tag, is opened by `@intFromEnum` and closed by `@enumFromInt`, and adds nothing
+of its tag, is opened by `@backingInt` and closed by `@fromBackingInt`, and adds nothing
 at runtime. `encode.TbFile` is the instance in the tree for an index space; the continuation-history
 plane selectors `history.InCheck` and `history.WasCapture` are the same move applied to an
 accessor's arguments.
@@ -473,7 +473,7 @@ belongs here is the four mechanical facts about doing it in *this* language:
   rather than saving it. `sq_none = 64` in
   [board_core.zig](../src/engine/board/board_core.zig) stays in-band for that reason,
   matching upstream.
-- **`@enumFromInt` into an open enum is not range-checked.** The pattern stops a confusion,
+- **`@fromBackingInt` into an open enum is not range-checked.** The pattern stops a confusion,
   never an intent, so it is not a substitute for a bound.
 - **A path-imported file belongs to exactly one module.** A type shared across module
   boundaries must be a named module in [build/modules.zig](../build/modules.zig) with an
@@ -505,30 +505,29 @@ wrong evaluation rather than a crash. `tools/c_backend_check.sh`
 1% of instructions on the hottest path in the engine, measured — cheap for not depending on a
 representation nobody promised.
 
-## Write cross-version Zig with comptime shims
+## Write cross-version Zig with one owner per spelling
 
-zfish builds on Zig **0.16.0**, the required toolchain, and a non-blocking CI lane builds
+zfish builds on Zig **0.17.0**, the required toolchain, and a non-blocking CI lane builds
 it under a pinned Zig master snapshot so a future break surfaces early instead of at the
-next toolchain bump. Where a std API differs between the two, one comptime branch reads
-whichever the running compiler exposes and prunes the other — a comptime-known `if` drops
-the untaken branch from analysis, so an absent field never trips a compile error.
+next toolchain bump. Where the two compilers could disagree, the spelling lives in one
+place and everything else calls it.
 
-**Every such branch lives in `build/config.zig`, and callers call it.** That is the rule,
-not a preference, and it is the one this repo learned by breaking. The shim below existed
-and was correct; two later sites re-derived it inline anyway — `lanes.zig` reached for
-`b.build_root.path`, `structural.zig` for `b.build_root.handle` — and both landed green,
-because 0.16 (the compiler every contributor runs) has that field. The master lane was red
-from the commit that added them.
+**Every read of a version-dependent `std.Build` field lives in `build/config.zig`, and
+callers call it.** That is the rule, not a preference, and it is the one this repo learned
+by breaking. The shim existed and was correct; two later sites re-derived it inline anyway
+— `lanes.zig` reached for `b.build_root.path`, `structural.zig` for `b.build_root.handle` —
+and both landed green, because the compiler every contributor ran had that field. The
+master lane was red from the commit that added them.
 
 ```zig
-// build/config.zig — the ONLY file that may name either field.
+// build/config.zig — the ONLY file that may name the build-root field.
 pub fn repoPath(b: *std.Build, sub: []const u8) []const u8 { ... }  // a path
 pub fn repoDir(b: *std.Build) std.Io.Dir { ... }                    // a handle
 ```
 
-Both shims answer the same 0.16-vs-master split (`build_root: Cache.Directory` against
-`root: Cache.Path`), so both belong to the same owner; a caller that needs the directory
-handle rather than the path must not open a second branch for it. `zig build
+The build root is `root: Cache.Path` today and was `build_root: Cache.Directory` one
+release ago, so both shims read the same field from the same owner; a caller that needs the
+directory handle rather than the path must not open a second read of it. `zig build
 build-version-lint` refuses a bypass, and runs inside `parity`.
 
 **A `std.Build` break is a CONFIGURE error, and that is what makes it expensive.**
@@ -539,27 +538,41 @@ master lane**, exactly the way a `src/platform/` edit forces a cross-compile: bu
 under the pinned snapshot before committing. Source-only edits are the cheap case; build
 edits are not.
 
-The APIs that differ, each with the spelling that works on both:
+The spellings this tree uses, each against the one it replaced:
 
 | Instead of | Use | Why |
 | --- | --- | --- |
-| `b.build_root.path` / `b.root.root_dir.path` | `config.repoPath(b, sub)` | 0.16 and master disagree on the field |
-| `b.build_root.handle` | `config.repoDir(b)` | same split, and `handle` is an `Io.Dir` on both |
+| `b.build_root.path` / `b.root.root_dir.path` | `config.repoPath(b, sub)` | the field has been renamed across releases; one owner absorbs the next rename |
+| `b.build_root.handle` | `config.repoDir(b)` | the same field, as an `Io.Dir` |
 | `b.pathFromRoot(x)` | `config.repoPath(b, x)` | removed |
-| `b.getInstallPath(.bin, …)` | `run.addArtifactArg(exe)` | removed. **Absolutize it** if the step re-spawns from another cwd: it yields an absolute path on 0.16 and a build-root-relative one on master |
-| `b.args` (the `zig build … -- args` passthrough) | a `-D` string option, tokenized | **There is no shim.** Master's `Build` has no equivalent field, so `@hasField`-guarding it compiles and then silently DROPS the flags while still exiting 0 — a step that runs at defaults and reports a pass over a smaller sample than its log claims |
+| `b.getInstallPath(.bin, …)` | `run.addArtifactArg(exe)` | removed. **Absolutize it** if the step re-spawns from another cwd: it yields a build-root-RELATIVE path, and a binary launched as `./../zig-out/bin/stockfish` resolves its own directory differently from one launched by absolute path |
+| `b.args` (the `zig build … -- args` passthrough) | a `-D` string option, tokenized | **There is no shim.** `std.Build` has no such field, so `@hasField`-guarding it compiles and then silently DROPS the flags while still exiting 0 — a step that runs at defaults and reports a pass over a smaller sample than its log claims |
+| `std.builtin.OptimizeMode`, `.ReleaseFast` / `.ReleaseSafe` / `.Debug` | `std.lang.Optimize`, `.fast` / `.safe` / `.debug` | the old names are deprecated aliases slated for removal after 0.18; on the command line, `-Doptimize=safe` |
+| `@intFromEnum` / `@enumFromInt` | `@backingInt` / `@fromBackingInt` | renamed in 0.17, and 0.17's `zig fmt` rewrites the old names in place |
 | `std.meta.Int(sign, bits)` | `@Int(sign, bits)` | a builtin survives std renames |
-| `[_]u8{0} ** N` | `@splat(0)` | master rejects `**` after `}`/`)` and its own `zig fmt` mangles it to `* *`. Nested: `@splat(.{...})`; a repeated string: `++ @as([N]u8, @splat('A'))` |
+| `[_]u8{0} ** N` | `@splat(0)` | 0.17 rejects `**` after `}`/`)`, and its own `zig fmt` mangles it to `* *`. Nested: `@splat(.{...})`; a repeated string: `++ @as([N]u8, @splat('A'))` |
+| a `@Vector(N, bool)` mask in an `extern fn @"llvm.x86.…"` | `@Vector(N, u1)` | LLVM declares the mask `<N x i1>`, which a `u1` lane lowers to; a bool vector does not lower to that at an extern boundary under 0.17, and the verifier rejects the module |
+| an `extern fn @"llvm.x86.…"` in the target's C convention | `callconv(.{ .x86_64_sysv = .{} })` | the Win64 C ABI passes a vector argument by reference, which makes the intrinsic call invalid IR; SysV passes vectors by value on every OS and is already the C convention on Linux and macOS, where the machine code is unchanged |
+
+**A compiler error is not automatically the compiler's.** Cross-building `-Dos=windows`
+under the 0.17 snapshots died with `Invalid bitcast` and no source location, which reads as
+a toolchain crash. It was this tree's intrinsic declarations meeting the Win64 C ABI — the
+last row above — and every x86 tier failed the same way, the CI lane's sse41 included. Read
+the IR the verifier names before filing a break as upstream's.
+
+**A wrong answer can be the compiler's, though.** Under 0.17 (LLVM 22) the macOS aarch64
+bench diverged from the first incremental ply while every other lane stayed bit-exact. The
+trigger was the CPU model, not the OS: `.baseline` on aarch64-macos is `apple_m1`, and for
+the Apple models alone LLVM 22 unrolls a loop subtracting widened i8 rows into four partial
+accumulators and recombines them with the wrong signs (`nnue_acc_rowops.zig`'s
+`apple_tuned` turns that loop into an add). To chase a macOS-only arm64 failure without a
+Mac, build Linux aarch64 locally with the same model and the musl ABI in
+`build/config.zig`, and run it under `qemu-aarch64`.
 
 **Pin the master snapshot; never float it.** A floating `master` makes the lane flap on
 upstream's in-flight work rather than on our regressions, and the lane is only worth
 having if a red means *us*. Bump the pin by hand after building under that exact compiler
-locally. Two things to expect while doing it: master carries genuine in-flight churn
-(the optimize-mode enum was being renamed from `ReleaseFast` to `fast` and moved out of
-`std.builtin` during this pin's lifetime), and at least one master breakage is not ours at
-all — cross-building `-Dos=windows` under master has ICEd the compiler itself
-(`Invalid bitcast`, no source location). That is why the lane is non-blocking; do not
-chase it.
+locally.
 
 **Never `@bitCast` an `extern struct`.** An extern struct's padding bits are not defined
 by the language, so the newer compiler rejects the cast outright — and it rejects it even

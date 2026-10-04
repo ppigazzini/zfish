@@ -116,7 +116,7 @@ pub fn main(init: std.process.Init) !void {
             continue;
         };
         if (res.status != .ok) {
-            std.debug.print("Failed from {s} (HTTP {d})\n", .{ url, @intFromEnum(res.status) });
+            std.debug.print("Failed from {s} (HTTP {d})\n", .{ url, @backingInt(res.status) });
             continue;
         }
         const bytes = body.written();

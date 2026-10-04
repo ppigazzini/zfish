@@ -72,8 +72,28 @@ inline fn tileRows(
     weights: [*]align(64) const WT,
     tile_off: usize,
 ) void {
+    if (WT == i8 and !add and apple_tuned) {
+        // Sum the rows, then take the sum out once: the same wrapping i16 value, but an add
+        // recurrence, which LLVM 22 recombines correctly. See apple_tuned.
+        var sum: @Vector(row_tile_width, i16) = @splat(0);
+        for (rows) |index| tileRow(WT, IT, true, &sum, index, weights, tile_off);
+        acc.* -%= sum;
+        return;
+    }
     for (rows) |index| tileRow(WT, IT, add, acc, index, weights, tile_off);
 }
+
+/// Mark an Apple CPU model, which Zig's `.baseline` picks on aarch64-macos (apple_m1). LLVM 22
+/// (Zig 0.17) unrolls a loop subtracting widened i8 rows into four zero-started partial
+/// accumulators for these models only, then recombines them with the wrong signs: the tile
+/// comes out near the NEGATED source once a list holds 4+ rows. LLVM 21 (Zig 0.16) and every
+/// other aarch64 model (generic, cortex, neoverse, oryon, ampere) compile it correctly, and
+/// the i16 rows and every add are unaffected. Linux aarch64 built with an apple model
+/// reproduces it under qemu-aarch64; drop this once that repro passes on the pinned Zig.
+const apple_tuned = blk: {
+    const b = @import("builtin");
+    break :blk b.cpu.arch == .aarch64 and std.mem.startsWith(u8, b.cpu.model.name, "apple_");
+};
 
 /// Add or subtract ONE weight row into the tile -- the body of upstream's `apply<sign>`.
 inline fn tileRow(
