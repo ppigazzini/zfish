@@ -106,11 +106,20 @@ missing_flags() {  # $1 = space-separated cpuinfo flags
 }
 
 # Locate the net the engine loads, so the round-trip below has something to compare AGAINST.
+# Read its name from the single owner, network.zig, as liveness.sh does. A glob over
+# resources/nn-*.nnue picks whichever net sorts FIRST, which is the loaded one only while no
+# older net sits beside it -- after a net bump on a box that keeps the old file, every tier
+# "exported a different net" against a net it never loaded.
 # Absent (a checkout that never ran `zig build net`) is a rig fault, not a pass: the sweep would
 # silently drop the round-trip half and still report every tier OK.
-NET="$(ls "$REPO"/resources/nn-*.nnue 2>/dev/null | head -1)"
-if [ -z "$NET" ]; then
-    echo "arch-determinism: RIG FAULT -- no resources/nn-*.nnue; run 'zig build net' first." >&2
+NET_NAME="$(sed -n 's/.*default_eval_file_name = "\(.*\)";.*/\1/p' "$REPO/src/engine/eval/network.zig")"
+if [ -z "$NET_NAME" ]; then
+    echo "arch-determinism: RIG FAULT -- cannot read default_eval_file_name from network.zig." >&2
+    exit 2
+fi
+NET="$REPO/resources/$NET_NAME"
+if [ ! -f "$NET" ]; then
+    echo "arch-determinism: RIG FAULT -- no resources/$NET_NAME; run 'zig build net' first." >&2
     echo "arch-determinism: without it the net round-trip cannot run and would go unreported." >&2
     exit 2
 fi
