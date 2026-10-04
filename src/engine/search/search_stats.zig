@@ -92,9 +92,11 @@ pub fn correctionHistoryBonus(eval_delta: i32, depth: i32, has_best_move: bool) 
 // Compute the multi-cut correction-history bonus (Step 16): when the singular
 // probe itself fails high above beta it has proven the static eval too low, so
 // nudge the correction tables by the scaled error. Clamp into
-// +/- CORRECTION_HISTORY_LIMIT/4 like every other correction bonus.
-pub fn multiCutCorrectionBonus(eval_delta: i32, singular_depth: i32) i32 {
-    const raw = @divTrunc(eval_delta * singular_depth * 177, 1024);
+// +/- CORRECTION_HISTORY_LIMIT/4 like every other correction bonus. The probe's
+// depth no longer scales it: a flat 664/1024 replaced `singularDepth * 177`
+// (upstream 49ea5ded).
+pub fn multiCutCorrectionBonus(eval_delta: i32) i32 {
+    const raw = @divTrunc(eval_delta * 664, 1024);
     return @max(-correction_bonus_clamp, @min(correction_bonus_clamp, raw));
 }
 
@@ -196,29 +198,35 @@ pub fn statMalus(depth: i32) i32 {
 test "multiCutCorrectionBonus: clamps at a quarter of the correction-history limit" {
     const quarter = @divTrunc(correction_history_limit, 4);
 
-    try std.testing.expectEqual(@as(i32, 0), multiCutCorrectionBonus(0, 8)); // no delta, no bonus
+    try std.testing.expectEqual(@as(i32, 0), multiCutCorrectionBonus(0)); // no delta, no bonus
 
-    // Pin the 177 weight itself. Pick delta*singular_depth == 1024 so the /1024 divides
-    // out and the answer IS the weight -- at a smaller product the truncation swallows a
-    // one-off change to it (64*4*177/1024 and 64*4*178/1024 are both 44).
-    try std.testing.expectEqual(@as(i32, 177), multiCutCorrectionBonus(64, 16));
+    // Pin the 664 weight itself. No delta that stays under the clamp tells 663, 664 and 665
+    // apart at once, so take one per neighbour: 54 * 664 / 1024 is 35 where 663 gives 34, and
+    // 37 * 664 / 1024 is 23 where 665 gives 24.
+    try std.testing.expectEqual(@as(i32, 35), multiCutCorrectionBonus(54));
+    try std.testing.expectEqual(@as(i32, 23), multiCutCorrectionBonus(37));
 
-    try std.testing.expectEqual(quarter, multiCutCorrectionBonus(30000, 60));
-    try std.testing.expectEqual(-quarter, multiCutCorrectionBonus(-30000, 60));
+    // Truncate toward zero, as C++ int division does: -100 * 664 / 1024 is -64.84 -> -64,
+    // where a floor would give -65.
+    try std.testing.expectEqual(@as(i32, -64), multiCutCorrectionBonus(-100));
+
+    try std.testing.expectEqual(quarter, multiCutCorrectionBonus(30000));
+    try std.testing.expectEqual(-quarter, multiCutCorrectionBonus(-30000));
 }
 
 test "correction bonuses track the limit they are a quarter of" {
     // Both clamps derive from correction_history_limit rather than repeating 256, so a
     // retuned limit moves them together. Assert the relationship, not the number.
     //
-    // Stay inside the domain the callers can actually reach: both bodies multiply three
-    // i32 terms before dividing, so a delta beyond a non-decisive score (~32k) times a
-    // plausible depth overflows i32 and the clamp reports the WRONG sign. That is a
-    // property of the formula, not of these inputs -- the same shape as the conthistDelta
-    // overflow ReleaseSafe caught. Callers bound the delta: the multi-cut site is guarded
-    // by `!qIsDecisive(value)`, and the end-of-search site by a real eval difference.
+    // Stay inside the domain the callers can actually reach: correctionHistoryBonus
+    // multiplies three i32 terms before dividing, so a delta beyond a non-decisive score
+    // (~32k) times a plausible depth overflows i32 and the clamp reports the WRONG sign.
+    // That is a property of the formula, not of these inputs -- the same shape as the
+    // conthistDelta overflow ReleaseSafe caught. Callers bound the delta: the multi-cut site
+    // is guarded by `!qIsDecisive(value)`, and the end-of-search site by a real eval
+    // difference. multiCutCorrectionBonus multiplies two (delta * 664) and cannot overflow.
     const quarter = @divTrunc(correction_history_limit, 4);
-    try std.testing.expectEqual(quarter, multiCutCorrectionBonus(30000, 60));
+    try std.testing.expectEqual(quarter, multiCutCorrectionBonus(30000));
     // correctionHistoryBonus clamps to the same quarter, then applies its 1061/1024 scale.
     try std.testing.expectEqual(@divTrunc(1061 * quarter, 1024), correctionHistoryBonus(30000, 64, true));
 }

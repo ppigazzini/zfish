@@ -237,7 +237,7 @@ pub inline fn runBack(nd: anytype) i32 {
                 ttMoveHistoryUpdate(nd.w, search.ttMoveHistoryDepthBonus(depth));
 
                 if (!nd.ss.in_check and value > nd.ss.static_eval) {
-                    const bonus = search.multiCutCorrectionBonus(value - nd.ss.static_eval, singular_depth);
+                    const bonus = search.multiCutCorrectionBonus(value - nd.ss.static_eval);
                     updateCorrectionHistory(nd.ctx.worker, nd.pos_ptr, nd.ss_ptr, bonus);
                 }
 
