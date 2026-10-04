@@ -1065,7 +1065,9 @@ per move, and at that frequency LLVM's lowering costs nothing measurable -- so t
 
 **A reciprocal for a divide buys latency and costs instructions, so the instruction axis
 cannot adjudicate it.** Replacing a depth-indexed divide with a magic multiply retires *more*
-instructions (+0.06%) while removing half the engine's integer divides. The divider is not
-pipelined, so the claim is cycles — and cycles do not resolve below this box's floor. That
+instructions (+0.06%) while removing half the engine's integer divides. A divide is slow
+rather than numerous — on this box's Zen 4, `idiv r32` is 10–13 cycles of latency at one
+issue per 6 cycles ([Agner Fog's instruction tables](11-references.md#the-x86-hardware)) —
+so the claim is cycles, and cycles do not resolve below this box's floor. That
 makes it a change this tree cannot currently decide, whatever length of instruction run is
 put behind it.
