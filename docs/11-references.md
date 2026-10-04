@@ -76,6 +76,28 @@ first had reported clean.
 | [Zig issue 1595 — request: distinct types](https://github.com/ziglang/zig/issues/1595) | The standing discussion of a first-class distinct-type feature. Zig has none, so the sized enum above is the whole instrument, and the absence is why [09-type-design.md](09-type-design.md) can guarantee so little. |
 | [Zig issue 21946 — `@enumFromInt` and non-exhaustive enums](https://github.com/ziglang/zig/issues/21946) | The conversion into an open sized enum is not range-checked, which is the mechanical statement of "the pattern stops a confusion, not an intent". |
 
+## The x86 hardware
+
+What an instruction costs on the core it runs on — the half of a performance claim the
+deterministic instruction axis cannot see ([08-idiomatic-zig.md](08-idiomatic-zig.md)). An
+op-for-op rewrite, a divide traded for a multiply, a 512-bit kernel against a 256-bit one:
+each can retire the same instructions or more and still differ in cycles. Agner Fog's
+manuals are the standard public source for that, **measured** on real parts rather than
+copied from vendor sheets. The development box is an AMD Zen 4 (Ryzen 7 PRO 7840U); the
+Zen 4 tables were measured on a Ryzen 9 7900X, the same core.
+
+| Reference | Use |
+|---|---|
+| [Agner Fog — Instruction tables](https://www.agner.org/optimize/instruction_tables.pdf) (manual 4; also as `.ods`) | Per microarchitecture: µops, latency, reciprocal throughput and execution pipes of every instruction. Read the row before arguing a latency case, and read it for the core that runs the code — Zen 4 puts `vpermq ymm` at 4 cycles against `vextracti128`'s 3, so the latency argument upstream made for `205f0052` does not hold here ([tools/upstream/README.md](../tools/upstream/README.md)). |
+| [Agner Fog — The microarchitecture of Intel, AMD and VIA CPUs](https://www.agner.org/optimize/microarchitecture.pdf) (manual 3) | The pipeline behind those numbers: decoders, µop cache, branch prediction, execution pipes, per core. Chapter 24 is Zen 4: a 512-bit vector instruction is ONE µop that occupies two 256-bit pipes, so it issues at half the rate of a 256-bit one and moves the same bytes per clock; a 512-bit store issues one per two clocks; and an AVX-512 compare into a mask register takes 5 cycles at 512 bits against 1 for an AVX2 integer compare. That is why halving the instruction count by going to 512 bits does not halve the cycles on this box. |
+| [Agner Fog — Software optimization resources](https://www.agner.org/optimize/) | The index: the manuals above, the C++ and assembly optimization guides, and his own counter-based test programs. The PMC harness here is `tools/perf_counters.zig`, which already does what `testp` does for a whole engine run. |
+
+**A table row is a hypothesis about a kernel, never a verdict on the engine.** It cannot
+see register allocation around an inlined site, the other work in the loop, or the tree
+the search actually walks — `205f0052` was the same kernel length and still measured more
+instructions whole-engine. The gates in [08-idiomatic-zig.md](08-idiomatic-zig.md) decide;
+a table explains a result they measured, or says which measurement to take next.
+
 ## Type theory and type design
 
 The theory behind [09-type-design.md](09-type-design.md). Each entry says what it is *for*
