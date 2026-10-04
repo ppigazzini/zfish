@@ -149,7 +149,7 @@ pub fn searchImpl(ctx: *const QCtx, pos_ptr: *Position, ss_ptr: *SearchStack, al
     // down, so the tree collapses onto the mating line instead of re-proving the moves around
     // it. Read AFTER the qsearch dive rather than beside the other node-kind constants where
     // upstream declares it -- a leaf node returns before either reader, and this is two loads
-    // through ctx.
+    // through ctx and a divide.
     const seek_mate = search.seekMate(ctx.root_depth.*, ctx.root_moves[ctx.pv_idx.*].score);
 
     const w: *WorkerHistories = workerHistories(ctx.worker);
