@@ -206,12 +206,16 @@ a step is greppable across both trees. Steps 1–13 are `searchImpl`, 14–24 `r
 
 **`seekMate`** is the one predicate two steps share, and it is the only one read from the
 ROOT rather than from the node. `search.seekMate(root_depth, root_moves[pv_idx].score)`
-holds at root depth 16 or more once the line under examination scores past 2000 — a mate
-or a decisive win, in either direction. While it holds, Step 9's futility cutoff drops from
+holds once the line under examination scores past `750 + 220000 / root_depth²` — a curve
+that falls from 2950 at depth 10 through 1609 at 16 towards 750, so a decisive win or a
+mate, in either direction, triggers it sooner the deeper the root has gone. It replaced a
+step (depth 16 and a flat 2000) that a line evaluated just under 2000 could sit beneath
+for every iteration. While it holds, Step 9's futility cutoff drops from
 depth 19 to 6 and Step 16's singular extension stands down entirely, so the tree stops
 re-proving the moves around a line the root has already resolved and collapses onto the
-line itself. The first PV line is scored before depth reaches 16, so an unscored root move
-(`-value_inf`) reading as a mate hunt is upstream's behaviour, not an edge case to guard.
+line itself. An unscored root move (`-value_inf`, 32001) clears the curve from depth 3;
+the PV line is scored by the iteration before, so reading it as a mate hunt is upstream's
+behaviour, not an edge case to guard.
 
 **Null move** (Step 10) is the one step whose mechanics differ visibly from an ordinary
 child. It runs only on a cut-node whose static eval clears `nullMoveThreshold`, with no
